@@ -1,11 +1,16 @@
 package cli
 
 import (
+	"context"
+	"io"
+	"reflect"
 	"testing"
 
 	"git.dpemmons.com/dpemmons/cswap/internal/autoswitch"
+	"git.dpemmons.com/dpemmons/cswap/internal/codex/switcher"
 	"git.dpemmons.com/dpemmons/cswap/internal/core"
 	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
+	"git.dpemmons.com/dpemmons/cswap/internal/providers"
 	"git.dpemmons.com/dpemmons/cswap/internal/settings"
 	"git.dpemmons.com/dpemmons/cswap/internal/store"
 	"git.dpemmons.com/dpemmons/cswap/internal/tui"
@@ -38,5 +43,70 @@ func TestEngineFactoryForwardsSwitcherOAuthClient(t *testing.T) {
 
 	if got != oauth.Client(sentinel) {
 		t.Fatalf("factory forwarded oauth client %#v, want the switcher's injected client %#v", got, sentinel)
+	}
+}
+
+// tuiProvidersCapture records what tuiOptions handed tui.WithProviders.
+type tuiProvidersCapture struct {
+	built, calls int
+	src          tui.ProviderSource
+	codex        tui.CodexActions
+}
+
+func stubTUIProviders(t *testing.T, present bool, codexSw *switcher.Switcher) *tuiProvidersCapture {
+	t.Helper()
+	c := &tuiProvidersCapture{}
+	origPresent, origNew, origWith := codexIsPresent, newTUICodexSwitcher, withTUIProviders
+	t.Cleanup(func() { codexIsPresent, newTUICodexSwitcher, withTUIProviders = origPresent, origNew, origWith })
+	codexIsPresent = func() bool { return present }
+	newTUICodexSwitcher = func() *switcher.Switcher { c.built++; return codexSw }
+	withTUIProviders = func(ctx context.Context, src tui.ProviderSource, codex tui.CodexActions) tui.Option {
+		c.calls++
+		c.src, c.codex = src, codex
+		return origWith(ctx, src, codex)
+	}
+	return c
+}
+
+// TestTUIWiringIsClaudeOnlyWithoutCodex pins that an install with no Codex
+// store keeps the exact Claude-only option set: no Codex switcher is built and
+// the dashboard reads the Facade as before.
+func TestTUIWiringIsClaudeOnlyWithoutCodex(t *testing.T) {
+	c := stubTUIProviders(t, false, nil)
+	opts := tuiOptions(context.Background(), &core.Switcher{Store: &store.Store{}})
+	if len(opts) != 1 || c.built != 0 || c.calls != 0 {
+		t.Fatalf("opts=%d built=%d providers=%d, want the engine factory alone", len(opts), c.built, c.calls)
+	}
+}
+
+// TestTUIWiringAddsCodexRowsWhenCodexIsPresent pins the multi-provider wiring:
+// a merged Claude + Codex source over the Claude switcher and the Codex one,
+// and the same Codex switcher as the action router.
+func TestTUIWiringAddsCodexRowsWhenCodexIsPresent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("CODEX_HOME", dir+"/.codex")
+	t.Setenv("XDG_DATA_HOME", dir+"/data")
+	codexSw := switcher.New(switcher.Options{Stdout: io.Discard})
+	c := stubTUIProviders(t, true, codexSw)
+
+	opts := tuiOptions(context.Background(), &core.Switcher{Store: &store.Store{}})
+	if len(opts) != 2 || c.built != 1 || c.calls != 1 {
+		t.Fatalf("opts=%d built=%d providers=%d, want engine factory + providers", len(opts), c.built, c.calls)
+	}
+	if c.codex != tui.CodexActions(codexSw) {
+		t.Errorf("action router = %#v, want the Codex switcher", c.codex)
+	}
+	multi, ok := c.src.(*providers.MultiSnapshotSource)
+	if !ok {
+		t.Fatalf("source = %T, want *providers.MultiSnapshotSource", c.src)
+	}
+	ps := multi.Providers()
+	var ids []string
+	for _, p := range ps {
+		ids = append(ids, p.ID())
+	}
+	if !reflect.DeepEqual(ids, []string{"claude", "codex"}) || providers.Switcher(ps[1]) != codexSw {
+		t.Errorf("providers = %v, want claude then the wired codex switcher", ids)
 	}
 }

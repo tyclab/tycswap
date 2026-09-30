@@ -72,6 +72,7 @@ type Model struct {
 	facade    Facade
 	newEngine EngineFactory
 	source    snapshotSource
+	multi     providerWiring
 	start     string
 
 	snapshot         *reporting.AccountsSnapshot
@@ -198,6 +199,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case refreshDoneMsg:
+		m.multi.adopt(msg.owners)
 		return m, m.applySnapshot(msg.snap)
 
 	case actionDoneMsg:
@@ -371,6 +373,9 @@ func (m *Model) tickRefresh() tea.Cmd {
 
 // refreshCmd runs one blocking snapshot pass off the Update goroutine.
 func (m *Model) refreshCmd(full, storeOnly bool) tea.Cmd {
+	if c := m.multiRefreshCmd(full, storeOnly); c != nil {
+		return c
+	}
 	src := m.source
 	return func() tea.Msg {
 		return refreshDoneMsg{snap: src.take(full, storeOnly)}
@@ -448,6 +453,9 @@ func (m *Model) actionDone(msg actionDoneMsg) tea.Cmd {
 	}
 	if fl := msg.result.firstLine(); fl != "" && !msg.showOutput {
 		cmds = append(cmds, m.notify(fl, "", ""))
+		if w := msg.result.Warning; w != "" {
+			cmds = append(cmds, m.notify(w, "", "warning"))
+		}
 	} else {
 		// Deviation #7 for showOutput: no captured stdout to display, so a plain
 		// completion toast built from the structured result stands in for an output
@@ -492,7 +500,12 @@ func reasonString(payload map[string]any) string {
 // -- account operations (09§2.7) ---------------------------------------------
 
 // doSwitch switches to a specific account (09§2.7 do_switch).
-func (m *Model) doSwitch(number string) tea.Cmd {
+func (m *Model) doSwitch(id string) tea.Cmd {
+	t := m.resolveRow(id)
+	if t.codex != nil {
+		return m.codexSwitch(t)
+	}
+	number := t.number
 	return m.startAction("Switch to account "+number, func() (map[string]any, error) {
 		return m.facade.SwitchTo(number, true)
 	}, false)
@@ -509,11 +522,16 @@ func (m *Model) switchBest() tea.Cmd {
 // toggleDisabled holds an account out of rotation or returns it, reading the
 // direction from the live snapshot (09§2.7 do_toggle_disabled). A number not in
 // the snapshot is silently dropped.
-func (m *Model) toggleDisabled(number string) tea.Cmd {
-	acc := m.accountByNumber(number)
+func (m *Model) toggleDisabled(id string) tea.Cmd {
+	acc := m.accountByID(id)
 	if acc == nil {
 		return nil
 	}
+	t := m.resolveRow(id)
+	if t.codex != nil {
+		return m.codexToggleDisabled(t, !acc.Disabled)
+	}
+	number := t.number
 	target := !acc.Disabled
 	verb := "Enable"
 	if target {
@@ -527,6 +545,9 @@ func (m *Model) toggleDisabled(number string) tea.Cmd {
 // confirmRemove pushes the remove-confirmation modal (09§2.7) for an account read
 // from the live snapshot, and re-checks that account's identity before firing.
 func (m *Model) confirmRemove(acc reporting.AccountSnapshot) tea.Cmd {
+	if t := m.resolveRow(rowID(acc)); t.codex != nil {
+		return m.codexConfirmRemove(t, rowID(acc), acc)
+	}
 	number, email, orgUUID := acc.Number, acc.Email, acc.OrgUUID
 	return m.pushScreen(&confirmModal{
 		title:    "Remove account",
@@ -564,7 +585,7 @@ func (m *Model) confirmRemove(acc reporting.AccountSnapshot) tea.Cmd {
 // vanishedToast reports a per-account action whose target left the roster between
 // the keypress and the dispatch (issue #2).
 func (m *Model) vanishedToast(number string) tea.Cmd {
-	return m.notify("Account "+number+" is no longer managed", "", "warning")
+	return m.notify(rowNoun(number)+" is no longer managed", "", "warning")
 }
 
 // addCurrent pushes the add-current-login confirmation (09§2.7).
@@ -683,7 +704,7 @@ func (m *Model) accountByNumber(number string) *reporting.AccountSnapshot {
 		return nil
 	}
 	for i := range m.snapshot.Accounts {
-		if m.snapshot.Accounts[i].Number == number {
+		if a := m.snapshot.Accounts[i]; rowID(a) == number || a.Key() == number {
 			return &m.snapshot.Accounts[i]
 		}
 	}

@@ -57,6 +57,26 @@ credstore        usage        oauth      sessprofile  procdetect  mappings   fil
 Settings sits beside `usage` (depends `paths`, `atomicfile`, `cerr`,
 `logging`); `cache` (TTL JSON) is a small file inside `usage`.
 
+The Codex provider (Amendment A22) adds a second column of packages beside
+`core`. It depends on the shared leaves, `usage`, and `reporting`; outside
+the Codex packages it is imported only by `cli`, `tui`, and `providers`, and
+`providers` is the only package that sees both `core` and `codex/switcher`.
+
+```text
+internal/cli ──► internal/providers ──► core, internal/codex/switcher ──► reporting
+      │                                         │
+      ├──► internal/codex/{registryimport,transfer,autoswitch}
+      │                                         │
+      ▼                                         ▼
+internal/codex/usagecache ──► internal/codex/store ──► internal/codex/authfile
+      │         │                    │                         │
+      ▼         ▼                    ▼                         ▼
+    usage   internal/codex/api   keychain, filelock,     paths, atomicfile,
+                  │              atomicfile, clock        platform
+                  ▼
+           oauth, logging          internal/codex/procdetect (stdlib only)
+```
+
 ### What each package owns
 
 | Package | Owns (spec §) |
@@ -92,6 +112,16 @@ Settings sits beside `usage` (depends `paths`, `atomicfile`, `cerr`,
 | `update` | Go-redesigned update check + upgrade guidance (§6). |
 | `cli` | Two-layer front controller, verb→flag translation, dispatch, cross-flag validation, exit codes, config command. (08§1–7) |
 | `tui` | bubbletea app/screens/widgets/modals/theme + `SnapshotSource`. (09§1–9) |
+| `codex/authfile` | Codex paths (`CODEX_HOME`, live `auth.json`, codex-auth registry, `<backup root>/codex/` store layout), `auth.json` identity parsing (JWT claims, `AccountKey` = `user::account`, `FileKey`), atomic live-file write, plan normalization. (A22; PR #252 `codex/paths.py`, `auth_file.py`, `plans.py`) |
+| `codex/procdetect` | Running `codex`/`codext` process detection by executable name; injectable lister; never fails. (A22; `codex/processes.py`) |
+| `codex/api` | Codex network client (`Client` interface + HTTP impl + fake): token refresh, `wham/usage` fetch and normalization into the Claude usage shape (windows classified by length), `/backend-api/accounts` workspace names. (A22; `codex/oauth.py`, `usage.py`, `workspaces.py`) |
+| `codex/store` | Codex slot registry (`codex/sequence.json`) and per-identity snapshot store (Keychain service `claude-swap-codex` on macOS, 0600 files elsewhere); the Codex lock. (A22; `codex/store.py`) |
+| `codex/usagecache` | Adapter onto `usage.UsageStore` + poll policy with identity `(email, chatgpt_account_id)`; grouped-scope workspace-name refresh. (A22; `codex/usage_cache.py`, `workspaces.py`) |
+| `codex/switcher` | Codex verbs: resolve, add, switch/rotate/best, remove, alias, disable, swap, move, status, token status, snapshots. Owns both Codex invariants. (A22; `codex/switcher.py`) |
+| `codex/registryimport` | One-time, read-only import of codex-auth registries (schemas 2–4). (A22; `codex/registry_import.py`) |
+| `codex/transfer` | Codex export (v1, `provider`, `warning`, 0600) / import / purge. (A22; `codex/transfer.py`) |
+| `codex/autoswitch` | The small Codex auto engine: one threshold-and-hysteresis tick, never raises. (A22; `codex/autoswitch.py`) |
+| `providers` | Provider interface, presence registry (Codex only when it has accounts or an importable registry), merged provider-major snapshot and row-key → owner map. (A22; `providers/*.py`) |
 
 ---
 
@@ -3137,3 +3167,182 @@ on every render, so the candidates panel ranks on a mount-time axis
 (`.Threshold`'s freeze is deliberate — 09§4.5). `Model.thresholdPct` is read once at
 construction and thereafter only rewritten by an Auto-screen visit. Both are
 tracked separately from this amendment.
+
+## A22. Codex provider (Go-side additive extension)
+
+cswap manages Codex (ChatGPT) accounts as a second provider, under a `cswap
+codex <verb>` namespace. It ports claude-swap PR #252, which the Python
+reference pinned in `docs/port-spec/` does not contain, so relative to that
+reference it is a Go-side extension in the same sense as `cswap env` (A16) and
+the at-limit markers (A15). Within the extension the PR is the spec: the
+command grammar, the messages, the store layout, the export format, and the
+`--json` payloads follow it so that a Codex store or export written by either
+implementation reads in the other. `docs/port-spec/` is unchanged.
+
+**Surface.** A namespace rather than a `--provider` flag: bare `cswap list` and
+`cswap switch` keep meaning Claude, so no existing command, script, or JSON
+shape changes. `codex` is pre-dispatched on the first argv token like `run`,
+`auto`, and `config`, with its own parser: `cswap codex [--debug] <verb>`,
+where every verb also accepts `-h`/`--help` and `--debug` and value flags take
+`--flag=value`. Handled errors exit 1 (a red `Error: <msg>` on stderr, or the
+error envelope on stdout under `--json`), usage errors exit 2, Ctrl-C exits
+130; `codex login` exits with the codex CLI's own status when that login fails.
+
+**Packages.** `internal/codex/{authfile,procdetect,api,store,usagecache,
+switcher,registryimport,transfer,autoswitch}` and `internal/providers`; see the
+§1 graph and table. The Codex packages depend on the shared leaves, `usage`,
+and `reporting`, never on `lifecycle`, `switching`, or `store`: the Claude substrate's provenance machinery has no Codex analogue and
+is not imitated.
+
+**Seams.** `api.Client` (with `HTTPClient` and `FakeClient`, mirroring
+`oauth.Client`) is the only network seam. `procdetect.ListProcesses` is an
+injectable variable. `store.Options` injects the Keychain client, clock, and
+platform. `reporting.AccountSnapshot` and `AccountsSnapshot` gain a `Provider`
+field whose zero value means Claude, and `AccountSnapshot.Key()` returns
+`<provider>:<number>`. Slot numbers are per provider, so any surface that
+shows both providers — the dashboard — must not address a Codex row by
+`Number` alone: Codex rows are addressed by `Key()` (`codex:1`), while Claude
+rows keep their bare number as their id. `providers` decides whether a surface is single- or multi-provider:
+Codex is present only when its store has slots or a codex-auth registry awaits
+import, so a Claude-only install renders and ticks exactly as before. A
+provider whose snapshot fails is dropped from the merged view; the others still
+render.
+
+**Invariant 1 — the live file decides who is active.** The codex CLI owns
+`$CODEX_HOME/auth.json` and rewrites it whenever it refreshes. The active Codex
+slot is the one whose identity matches the live file's identity;
+`activeAccountKey` in `codex/sequence.json` records intent only. A session left
+open on account A can rewrite the live file after a switch to B, and a
+registry-derived answer would then report B while every codex command runs as
+A. Capturing the live login before a switch stores it into the slot its own
+identity names, for the same reason.
+
+**Invariant 2 — the active account is never refreshed from its snapshot.** The
+codex CLI holds the same refresh token as the active account's snapshot. If the
+server rotates refresh tokens, two parties refreshing one token logs one of
+them out. The active account's usage is therefore read with the live payload;
+inactive accounts refresh from their snapshots, and the refresh runs under the
+Codex lock so a rotated token is persisted before it is used. A refresh that
+could not be persisted is not performed. The rule lives in
+`codex/switcher`'s payload callback, so `codex/usagecache` never needs to
+know it.
+
+**Separate lock.** Codex mutations take `<backup root>/codex/.lock`, never the
+Claude lock or the Claude Code lock. The two providers touch disjoint files, and
+a Codex switch must not be able to block a Claude one. A switch holds the lock
+end to end (capture, write, roll back on failure), because a concurrent switch
+or dashboard refresh that interleaved would land one account's tokens in
+another's slot. Beyond the switch, every read-modify-write of
+`codex/sequence.json` (`UpsertSlot`, `RemoveSlot`, `Renumber`, `SetActive`,
+alias, disabled, workspace name) takes the lock itself, so a background
+`cswap auto` writing workspace names cannot interleave with `cswap codex add`
+in another terminal and drop the new slot; a caller already holding
+`Store.Lock()` is not blocked (in-process ownership is tracked per root, the
+flock is never taken twice). A `sequence.json` that no longer parses is never
+overwritten by a mutation (`ErrCorruptRegistry`); listing reads treat it as
+empty. `export` and `purge` take no store lock, as in the PR and as the Claude
+transfer verbs do; both importers run their writes under it because their
+check-then-act (`--force`, `OnlyIfEmpty`) would otherwise race the same way.
+
+**Hardening beyond the PR (review before the first push).** The refresh
+decision is re-taken under the lock: the active account is never refreshed from
+its snapshot, and the snapshot is re-read after the lock so two processes never
+send the same refresh token (a rotated token reused is `invalid_grant` and can
+revoke the token family). `switch <active>` captures the live login and writes
+nothing, so a refresh token codex rotated since the last capture survives. On
+macOS a snapshot too large for the Keychain's stdin path (three JWTs are) goes
+to the 0600 file under `codex/credentials/` instead of the `security` command
+line, where `ps` would show it; reads and deletes cover both places. Imports
+skip a row whose payload identity is not its account key, normalise aliases with
+the switcher's rule, and cap the document at 8 MiB. The purge root guard
+resolves symlinks and fails closed. `auth.json` is rewritten 0600 and a missing
+`~/.codex` is created 0700. Stopping the auto loop waits for an in-flight Codex
+tick.
+
+**Usage table reuse.** Codex usage goes through `usage.UsageStore` and the poll
+policy unchanged, in its own directory `codex/cache/`: serve TTL, cross-process
+fetch leases, backoff, `Retry-After`, and the adaptive cadence come with it. The
+store's row guard is an identity tuple; for Codex it is `(email,
+chatgpt_account_id)`, the account id taking the `organizationUuid` position,
+since it is what distinguishes two workspaces of one user. The normalized usage
+dict has the Claude shape (`five_hour`, `seven_day`, `spend`, `plan`), so every
+renderer and the auto comparison consume a Codex row without branching. Windows
+are classified by `limit_window_seconds` (one day or longer is weekly), not by
+response position, because some plans report the weekly window as the primary
+one.
+
+**Why Codex API-key accounts are never rotation targets.**
+`autoswitch.includeApiKeyAccounts` exists because a Claude API-key account is a
+real rotation target that bills per token. A Codex API-key login reports no
+usage at all, so there is nothing for a threshold to compare it against. Codex
+API-key accounts are excluded from rotation unconditionally, and the setting is
+documented as Claude-only rather than silently ignored.
+
+**Why a second small engine.** The Claude `autoswitch` engine is built around
+Claude specifics: per-model scoped windows, setup tokens, session profiles,
+credential quarantine, cooldown. Generalizing its tick to fit a provider that
+needs almost none of that would rewrite the most load-bearing code in the
+project. `codex/autoswitch` is instead one small tick — at or over threshold,
+move to the candidate with the lowest worse window that clears the threshold
+and the hysteresis margin — and `cswap auto` runs both engines in one process.
+With `--once` the Codex tick runs after the Claude tick and the exit status is
+the Claude outcome. In the loop the Codex engine runs on its own goroutine,
+ticking once at launch and then every interval, stopped when the loop returns,
+so the Claude engine gains no hook and no failure mode, and a slow Codex fetch
+never delays a Claude switch. `autoswitch.codexEnabled` (default true) and
+`autoswitch.codexThreshold` (0–99.9, 0 inherits the effective Claude threshold)
+tune it; the hysteresis margin is the Claude `autoswitch.hysteresisPct`, and
+`cswap auto` gains no flag. A Codex event is printed only when the tick
+switched or errored, or on every tick under `--dry-run`, in the Claude events'
+format: the `HH:MM:SS` prefix and kind colouring for humans, and
+`{"schemaVersion":1,"event":"codex","ts":"<RFC3339 UTC>","outcome","detail",
+"switchedTo","runningPids"}` under `--json`.
+
+**Running sessions.** A switch rewrites `auth.json`, but a running codex session
+keeps its tokens in memory. `cswap codex switch` and the Codex engine detect
+running `codex`/`codext` processes by executable name — codex writes no
+liveness record, so the process table is the only source — and name their PIDs
+rather than switching silently.
+
+**Dashboard.** When Codex is present the dashboard's Codex rows follow the
+Claude rows, each tagged `⟨codex⟩` after the workspace tag. Switch, disable /
+enable, and remove act on the row's own provider; add-account stays
+Claude-only, and the auto-switch screen lists Claude candidates only, because
+that screen drives the Claude engine. A Codex switch that leaves codex
+sessions running raises a second warning naming their PIDs.
+
+**Differences from the Python PR.** Where the PR is inconsistent with the rest
+of cswap or unsafe, cswap deviates deliberately:
+
+- `list --json` and `status --json` carry `schemaVersion`, and `usage` uses
+  the camelCase `cswap list` / `cswap status` encoding; `status` reports
+  `totalManagedAccounts`. The PR's field names are otherwise kept.
+- Errors under `--json` are the standard error envelope on stdout; without
+  `--json`, `Error: <msg>` on stderr. Usage errors exit 2.
+- The namespace and every verb accept `--debug`, which enables the file
+  logger under the backup root (and its stderr console) for the Codex network
+  client, process detection, and the registry import.
+- The `cswap auto` Codex event line follows the engine's JSONL contract
+  (`schemaVersion`, RFC3339 `ts`, camelCase keys) and the human timestamp
+  prefix; the loop's Codex engine ticks at once rather than after one
+  interval, on a goroutine where the PR uses a daemon thread.
+- `remove` prints `Removed Codex account <n>` only when a removal happened (a
+  declined prompt prints only `Cancelled`), and `remove`, `disable`, `enable`,
+  and `alias` name the resolved slot number, not the identifier as typed.
+- `import-codex-auth` prints the unsupported-schema warning, as the automatic
+  import does, and still prints its `Imported N, skipped M.` count; the
+  automatic import's notices go to stderr under `--json`.
+- The registry import normalises plan names only for schemas below 4; a
+  schema 4 plan is taken as is.
+- `export` narrows an existing destination file to 0600 before writing
+  tokens; `purge` refuses a store root that is empty, is `CODEX_HOME`, or
+  contains it.
+- `codex login` runs the binary found on `PATH` directly, never through a
+  shell; a start failure or a signal death exits 1, and `codex login did not
+  complete.` carries no `Error:` prefix.
+- Human `list` rows carry the workspace tag (`personal` when none) by the
+  Claude renderer's rule.
+- Transfer and registry errors carry a cerr kind (`Transfer`,
+  `AccountNotFound`); the message text is the PR's.
+
+Any other divergence is a bug against the PR.

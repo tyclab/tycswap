@@ -194,6 +194,17 @@ func (s Security) Exists(service, account string) bool {
 	return res.rc == 0
 }
 
+// FitsStdin reports whether Set would pass password to `security -i` on stdin.
+// When it is false Set falls back to argv, where the hex-encoded secret is
+// visible to every local user through ps; callers holding large secrets can
+// check this first and store them elsewhere. It measures the exact command
+// line Set builds against SecurityStdinLineLimit.
+func FitsStdin(service, account, password string) bool {
+	command := fmt.Sprintf("add-generic-password -U -a %s -s %s -X %s\n",
+		quote(account), quote(service), toHex(password))
+	return len(command) <= SecurityStdinLineLimit
+}
+
 // Set creates or updates an item (-U). The secret is hex-encoded (-X) and rides
 // on stdin under the line-buffer limit; larger payloads fall back to argv.
 func (s Security) Set(service, account, password string) error {

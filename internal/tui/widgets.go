@@ -166,6 +166,9 @@ func accountCardText(acc reporting.AccountSnapshot, width int, threshold *float6
 		t.addFg(acc.Email, colForeground)
 	}
 	t.addFg("  ["+acc.DisplayTag()+"]", colMuted)
+	if b := providerBadge(acc); b != "" {
+		t.addFg(b, colMuted)
+	}
 	if acc.IsActive {
 		t.add("   ● active", segStyle{Fg: colAccent, Bold: true})
 	}
@@ -250,6 +253,9 @@ func miniLabelCell(acc reporting.AccountSnapshot) richText {
 		t.addFg(acc.Email, colForeground)
 	}
 	t.addFg("  ["+acc.DisplayTag()+"]", colMuted)
+	if b := providerBadge(acc); b != "" {
+		t.addFg(b, colMuted)
+	}
 	if acc.Disabled {
 		t.addFg("  (disabled)", colSevWarn)
 	}

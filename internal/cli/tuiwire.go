@@ -8,12 +8,23 @@
 // the seams the autoswitch engine needs (spec 05, 09§4.3), matching autoCommand
 // (spec 08§7.7). tui does not import cli, so this direct cli→tui edge (per the
 // DESIGN dependency graph) introduces no cycle.
+//
+// When Codex is present (providers.CodexIsPresent: a cswap Codex store or a
+// codex-auth registry), the dashboard is fed a merged Claude + Codex snapshot
+// and routes Codex rows to a Codex switcher — the Go twin of claude-swap PR
+// #252 tui/app.py's available_providers + MultiSnapshotSource. Without Codex the
+// wiring is exactly the Claude-only one, so the dashboard renders as before.
 package cli
 
 import (
+	"context"
+	"io"
+
 	"git.dpemmons.com/dpemmons/cswap/internal/autoswitch"
+	"git.dpemmons.com/dpemmons/cswap/internal/codex/switcher"
 	"git.dpemmons.com/dpemmons/cswap/internal/core"
 	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
+	"git.dpemmons.com/dpemmons/cswap/internal/providers"
 	"git.dpemmons.com/dpemmons/cswap/internal/settings"
 	"git.dpemmons.com/dpemmons/cswap/internal/tui"
 )
@@ -31,8 +42,36 @@ func init() {
 // build the engine factory over autoswitchAdapter, then launch tui.Run.
 func runTUI(f any, start string) int {
 	sw := f.(*core.Switcher)
-	return tui.Run(sw, start, tui.WithEngineFactory(engineFactoryFor(sw)))
+	return tui.Run(sw, start, tuiOptions(context.Background(), sw)...)
 }
+
+// tuiOptions is the TUI's option set for sw: the engine factory always, and the
+// Codex rows only when Codex is present.
+func tuiOptions(ctx context.Context, sw *core.Switcher) []tui.Option {
+	opts := []tui.Option{tui.WithEngineFactory(engineFactoryFor(sw))}
+	if !codexIsPresent() {
+		return opts
+	}
+	codexSw := newTUICodexSwitcher()
+	src := providers.NewMultiSnapshotSource(ctx, sw, codexSw)
+	return append(opts, withTUIProviders(ctx, src, codexSw))
+}
+
+// codexIsPresent, newTUICodexSwitcher and withTUIProviders are the wiring seams
+// tests replace.
+var (
+	codexIsPresent = providers.CodexIsPresent
+
+	// newTUICodexSwitcher discards the switcher's stdout: Remove warns there
+	// about an active slot even when assumeYes is set, and a write to stdout
+	// under the alt screen corrupts the display. The confirmation modal has
+	// already said what the warning would.
+	newTUICodexSwitcher = func() *switcher.Switcher {
+		return switcher.New(switcher.Options{Stdout: io.Discard})
+	}
+
+	withTUIProviders = tui.WithProviders
+)
 
 // engineFactoryFor builds the Auto-screen engine factory for sw. It forwards the
 // switcher's OWN injected OAuth client (sw.OAuth) — exactly as autoCommand does

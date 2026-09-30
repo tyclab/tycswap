@@ -9,17 +9,21 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
 	"git.dpemmons.com/dpemmons/cswap/internal/autoswitch"
+	codexauto "git.dpemmons.com/dpemmons/cswap/internal/codex/autoswitch"
 	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
 	"git.dpemmons.com/dpemmons/cswap/internal/printer"
+	"git.dpemmons.com/dpemmons/cswap/internal/providers"
 	"git.dpemmons.com/dpemmons/cswap/internal/settings"
 )
 
@@ -124,14 +128,43 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	if jsonMode {
 		onEvent = jsonlEmit(s.out)
 	}
+	// The Codex engine emits from its own goroutine in loop mode; one mutex
+	// keeps the two engines' lines whole on the shared stdout.
+	var outMu sync.Mutex
+	emitClaude := onEvent
+	onEvent = func(ev autoswitch.Event) {
+		outMu.Lock()
+		defer outMu.Unlock()
+		emitClaude(ev)
+	}
 	engine := autoswitch.NewEngine(autoswitchAdapter{sw}, merged, onEvent, dryRun,
 		autoswitch.WithOAuthClient(sw.OAuth),
 		autoswitch.WithLogger(sw.Log),
 		autoswitch.WithClock(sw.Clk),
 	)
 
+	// Codex rides along in this process as its own small engine (claude-swap
+	// PR #252 cli.py _codex_auto_engine); nil on a Claude-only machine, which
+	// then behaves exactly as before.
+	codexEngine := newCodexAutoEngine(merged, s)
+	runCodexTick := func(ctx context.Context) {
+		if codexEngine == nil {
+			return
+		}
+		tick := codexEngine.Tick(ctx, dryRun)
+		if tick.Outcome != codexauto.OutcomeSwitched && tick.Outcome != codexauto.OutcomeError && !dryRun {
+			return
+		}
+		outMu.Lock()
+		defer outMu.Unlock()
+		emitCodexTick(s.out, tick, jsonMode)
+	}
+
 	if once {
-		return int(engine.Tick())
+		// Claude first, then Codex; the exit status is the Claude outcome.
+		code := int(engine.Tick())
+		runCodexTick(context.Background())
+		return code
 	}
 
 	// Loop mode: SIGTERM (systemd stop) exits the loop cleanly (spec 05§19).
@@ -150,7 +183,111 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 			"Auto-switch running: threshold %.0f%%, every %.0fs%s — Ctrl-C to stop",
 			merged.Threshold, merged.IntervalSeconds, dry)))
 	}
-	return engine.RunLoop()
+	stopCodex := startCodexLoop(codexEngine != nil,
+		time.Duration(merged.IntervalSeconds*float64(time.Second)), runCodexTick)
+	code := engine.RunLoop()
+	stopCodex()
+	return code
+}
+
+// newCodexAutoEngine returns the Codex auto-switcher, or nil when
+// autoswitch.codexEnabled is off or this machine has no Codex accounts (cli.py
+// _codex_auto_engine). The threshold is autoswitch.codexThreshold, or the
+// effective Claude threshold when that is 0. A broken Codex store must never
+// stop the Claude loop starting, so a panic here is a nil engine.
+func newCodexAutoEngine(merged settings.AutoSwitchSettings, s ioStreams) (eng *codexauto.AutoSwitcher) {
+	if !merged.CodexEnabled {
+		return nil
+	}
+	defer func() {
+		if recover() != nil {
+			eng = nil
+		}
+	}()
+	if !providers.CodexIsPresent() {
+		return nil
+	}
+	threshold := merged.CodexThreshold
+	if threshold == 0 {
+		threshold = merged.Threshold
+	}
+	return codexauto.New(newCodexSwitcher(s), threshold, merged.HysteresisPct)
+}
+
+// startCodexLoop runs tick on its own goroutine — once immediately, then every
+// interval — until the returned stop is called (deviation 7: #252's thread
+// waited one interval first). A separate goroutine rather than a hook in the
+// Claude engine: a slow Codex fetch never delays a Claude switch, and a Codex
+// panic never takes down `cswap auto`. stop cancels an in-flight tick and then
+// waits for the goroutine to return, so the process never exits in the middle
+// of a Codex switch and no Codex line is printed after the loop has stopped.
+func startCodexLoop(enabled bool, interval time.Duration, tick func(context.Context)) (stop func()) {
+	if !enabled {
+		return func() {}
+	}
+	if interval <= 0 {
+		interval = time.Second
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	safeTick := func() {
+		defer func() { _ = recover() }()
+		tick(ctx)
+	}
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			safeTick()
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
+}
+
+// emitCodexTick prints one Codex tick in the engine's event contract
+// (deviation 2): a compact JSONL object with schemaVersion/event/ts under
+// --json, else the same timestamped, kind-colored line the Claude events use.
+func emitCodexTick(out io.Writer, tick codexauto.Tick, jsonMode bool) {
+	now := time.Now()
+	if jsonMode {
+		var switchedTo any
+		if tick.SwitchedTo != "" {
+			switchedTo = tick.SwitchedTo
+		}
+		pids := tick.RunningPIDs
+		if pids == nil {
+			pids = []int{}
+		}
+		writeJSONCompact(out, map[string]any{
+			"schemaVersion": jsonout.SchemaVersion,
+			"event":         "codex",
+			"ts":            now.UTC().Format("2006-01-02T15:04:05Z"),
+			"outcome":       tick.Outcome,
+			"detail":        tick.Detail,
+			"switchedTo":    switchedTo,
+			"runningPids":   pids,
+		})
+		return
+	}
+	line := tick.Human()
+	switch tick.Outcome {
+	case codexauto.OutcomeSwitched:
+		line = printer.Accent(line)
+	case codexauto.OutcomeError:
+		line = printer.Yellowed(line)
+	default:
+		line = printer.Dimmed(line)
+	}
+	fmt.Fprintf(out, "%s  %s\n", now.Format("15:04:05"), line)
 }
 
 // jsonlEmit prints one compact JSON object per event on stdout (spec 08§7.7).

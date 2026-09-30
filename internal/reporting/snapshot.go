@@ -51,7 +51,39 @@ type AccountSnapshot struct {
 	// RelevantWindows order (Go-side additive extension, DESIGN A15).
 	AtLimit         bool
 	LimitingWindows []string
+	// Provider names the CLI this account belongs to: ProviderClaude or
+	// ProviderCodex (claude-swap PR #252 models.py). The zero value "" means
+	// ProviderClaude, so every existing construction site — and every test that
+	// builds a snapshot literal — keeps working untouched; only multi-provider
+	// consumers (the TUI grouping, the auto loop) ever read it, and they go
+	// through ProviderName or Key rather than the raw field.
+	Provider string
 }
+
+// Provider names carried by AccountSnapshot.Provider and AccountsSnapshot.Provider.
+const (
+	ProviderClaude = "claude"
+	ProviderCodex  = "codex"
+)
+
+// providerOrDefault maps the zero value to ProviderClaude.
+func providerOrDefault(p string) string {
+	if p == "" {
+		return ProviderClaude
+	}
+	return p
+}
+
+// ProviderName returns the account's provider, treating "" as ProviderClaude.
+func (a AccountSnapshot) ProviderName() string { return providerOrDefault(a.Provider) }
+
+// Key returns "<provider>:<number>", the identity that stays unique once more
+// than one provider is listed (claude-swap PR #252 models.py
+// AccountSnapshot.key). Slot numbers are per-provider, so "1" names a Claude
+// account and a Codex one; any surface that shows both — the dashboard, the
+// menu bar — must address rows by Key, never by Number, or a keystroke aimed
+// at one provider lands on the other.
+func (a AccountSnapshot) Key() string { return a.ProviderName() + ":" + a.Number }
 
 // DisplayTag returns the org tag for display: the org name, or "personal".
 func (a AccountSnapshot) DisplayTag() string { return displayTag(a.OrgName) }
@@ -65,7 +97,13 @@ type AccountsSnapshot struct {
 	ActiveNumber string
 	Accounts     []AccountSnapshot
 	TakenAt      float64
+	// Provider names whose accounts these are (claude-swap PR #252 models.py);
+	// "" means ProviderClaude, as on AccountSnapshot.
+	Provider string
 }
+
+// ProviderName returns the snapshot's provider, treating "" as ProviderClaude.
+func (s AccountsSnapshot) ProviderName() string { return providerOrDefault(s.Provider) }
 
 // Snapshot takes one coherent snapshot of every managed account (spec 02§13
 // accounts_snapshot). fetch has CollectUsageEntries semantics: nil makes every
@@ -101,12 +139,14 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 			RotationEligible: rotationEligible(data, switchable, disabled),
 			AtLimit:          atLimit,
 			LimitingWindows:  limiting,
+			Provider:         ProviderClaude,
 		})
 	}
 	return &AccountsSnapshot{
 		ActiveNumber: activeNumber,
 		Accounts:     accounts,
 		TakenAt:      clock.Seconds(s.Clk),
+		Provider:     ProviderClaude,
 	}
 }
 

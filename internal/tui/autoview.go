@@ -394,7 +394,8 @@ func (a *autoScreen) candidatesText(snap *reporting.AccountsSnapshot, width int,
 		// both carried by the snapshot's single RotationEligible field (store
 		// RotationEligible). A slot the engine can never pick would let the
 		// displayed order disagree with every pick (Go-side deviation, DESIGN A18).
-		if acc.Number == snap.ActiveNumber || !acc.RotationEligible {
+		// A Codex row is never a Claude engine candidate (claude-swap PR #252).
+		if acc.Number == snap.ActiveNumber || !acc.RotationEligible || acc.ProviderName() != reporting.ProviderClaude {
 			continue
 		}
 		pct := bindingPct(acc.Usage.LastGood, models)

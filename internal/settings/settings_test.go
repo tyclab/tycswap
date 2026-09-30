@@ -87,6 +87,16 @@ func TestLoad_ClampTable(t *testing.T) {
 			func(s AutoSwitchSettings) bool { return s.Strategy == "best" }, "strategy=best"},
 		{"model_123_falls_back_to_none", `{"autoswitch":{"model":123}}`,
 			func(s AutoSwitchSettings) bool { return s.Model == nil }, "model=nil"},
+		{"codexThreshold_200_clamps_to_99_9", `{"autoswitch":{"codexThreshold":200}}`,
+			func(s AutoSwitchSettings) bool { return s.CodexThreshold == 99.9 }, "codexThreshold=99.9"},
+		{"codexThreshold_neg5_clamps_to_0", `{"autoswitch":{"codexThreshold":-5}}`,
+			func(s AutoSwitchSettings) bool { return s.CodexThreshold == 0.0 }, "codexThreshold=0.0"},
+		{"codexThreshold_bad_type_falls_back_to_default", `{"autoswitch":{"codexThreshold":"high"}}`,
+			func(s AutoSwitchSettings) bool { return s.CodexThreshold == 0.0 }, "codexThreshold=0.0 (default)"},
+		{"codexEnabled_false_is_false", `{"autoswitch":{"codexEnabled":false}}`,
+			func(s AutoSwitchSettings) bool { return !s.CodexEnabled }, "codexEnabled=false"},
+		{"codexEnabled_0_is_false", `{"autoswitch":{"codexEnabled":0}}`,
+			func(s AutoSwitchSettings) bool { return !s.CodexEnabled }, "codexEnabled=false"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -105,8 +115,8 @@ func TestLoad_ClampTable(t *testing.T) {
 func TestSave_Roundtrip(t *testing.T) {
 	root := t.TempDir()
 	custom := AutoSwitchSettings{
-		Threshold: 85.0, IntervalSeconds: 60.0, CooldownSeconds: 60.0,
-		HysteresisPct: 10.0, Strategy: "best", IncludeAPIKeyAccounts: false,
+		Threshold: 85.0, IntervalSeconds: 60.0, CodexEnabled: false,
+		CodexThreshold: 75.0, CooldownSeconds: 60.0, HysteresisPct: 10.0, Strategy: "best", IncludeAPIKeyAccounts: false,
 		UnhealthyTicks: 3, Model: nil,
 	}
 	if err := Save(root, custom); err != nil {
@@ -173,7 +183,8 @@ func TestSave_FileMode0600(t *testing.T) {
 
 func TestSettingSpecs_CoversEveryField(t *testing.T) {
 	want := map[string]bool{
-		"Threshold": true, "IntervalSeconds": true, "CooldownSeconds": true,
+		"Threshold": true, "IntervalSeconds": true, "CodexEnabled": true,
+		"CodexThreshold": true, "CooldownSeconds": true,
 		"HysteresisPct": true, "Strategy": true, "IncludeAPIKeyAccounts": true,
 		"UnhealthyTicks": true, "Model": true,
 	}
@@ -300,6 +311,103 @@ func TestSetSetting_StrategyChoices(t *testing.T) {
 	_, err = SetSetting(root, "autoswitch.strategy", "chaos")
 	if err == nil || !strings.Contains(err.Error(), "soonest-reset") {
 		t.Errorf("err = %v, want it to list the valid choices including soonest-reset", err)
+	}
+}
+
+// TestDefault_CodexKnobs pins the claude-swap PR #252 defaults: Codex rides in
+// the auto loop unless turned off, and its threshold inherits
+// autoswitch.threshold (0) until set.
+func TestDefault_CodexKnobs(t *testing.T) {
+	d := Default()
+	if !d.CodexEnabled {
+		t.Error("Default().CodexEnabled = false, want true")
+	}
+	if d.CodexThreshold != 0.0 {
+		t.Errorf("Default().CodexThreshold = %v, want 0", d.CodexThreshold)
+	}
+	for _, tc := range []struct {
+		key, help string
+		kind      Kind
+	}{
+		{"autoswitch.codexEnabled", "Also auto-switch Codex accounts in the cswap auto loop", KindBool},
+		{"autoswitch.codexThreshold", "Codex-only switch threshold (0 = use autoswitch.threshold)", KindFloat},
+	} {
+		spec, err := SpecFor(tc.key)
+		if err != nil {
+			t.Fatalf("SpecFor(%s): %v", tc.key, err)
+		}
+		if spec.Kind != tc.kind || spec.Help != tc.help {
+			t.Errorf("%s: Kind=%q Help=%q, want %q %q", tc.key, spec.Kind, spec.Help, tc.kind, tc.help)
+		}
+	}
+	if spec, _ := SpecFor("autoswitch.codexThreshold"); spec.Lo != 0.0 || spec.Hi != 99.9 {
+		t.Errorf("codexThreshold range = [%v, %v], want [0, 99.9]", spec.Lo, spec.Hi)
+	}
+}
+
+// TestSetSetting_CodexThresholdRange: the strict config-set parser accepts the
+// whole 0–99.9 range — 0 included, since it is the "inherit" sentinel — and
+// rejects anything above 99.9 without writing.
+func TestSetSetting_CodexThresholdRange(t *testing.T) {
+	root := t.TempDir()
+	for _, tc := range []struct {
+		raw  string
+		want float64
+	}{
+		{"0", 0.0},
+		{"99.9", 99.9},
+		{"85", 85.0},
+	} {
+		v, err := SetSetting(root, "autoswitch.codexThreshold", tc.raw)
+		if err != nil || v != tc.want {
+			t.Fatalf("set %s: v=%v err=%v, want %v, nil", tc.raw, v, err, tc.want)
+		}
+		if got := Load(root).CodexThreshold; got != tc.want {
+			t.Errorf("after set %s: Load().CodexThreshold = %v, want %v", tc.raw, got, tc.want)
+		}
+	}
+	data, err := os.ReadFile(SettingsPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); !strings.Contains(got, `"codexThreshold": 85.0`) {
+		t.Errorf("settings.json = %s, want it to contain \"codexThreshold\": 85.0", got)
+	}
+
+	fresh := t.TempDir()
+	_, err = SetSetting(fresh, "autoswitch.codexThreshold", "100")
+	if err == nil || !strings.Contains(err.Error(), "between 0 and 99.9") {
+		t.Errorf("err = %v, want it to contain 'between 0 and 99.9'", err)
+	}
+	if _, statErr := os.Stat(SettingsPath(fresh)); !os.IsNotExist(statErr) {
+		t.Error("settings.json should not have been created")
+	}
+}
+
+// TestSetSetting_CodexEnabledRoundTrips: set false persists and loads, get's
+// effective row reports it set, and unset restores the true default.
+func TestSetSetting_CodexEnabledRoundTrips(t *testing.T) {
+	root := t.TempDir()
+	v, err := SetSetting(root, "autoswitch.codexEnabled", "no")
+	if err != nil || v != false {
+		t.Fatalf("v=%v err=%v, want false, nil", v, err)
+	}
+	if Load(root).CodexEnabled {
+		t.Error("Load().CodexEnabled = true after set false")
+	}
+	for _, r := range EffectiveSettings(root) {
+		if r.Spec.Dotted() == "autoswitch.codexEnabled" {
+			if !r.IsSet || r.Value != false || FormatSettingValue(r.Value) != "false" {
+				t.Errorf("effective row = %+v, want IsSet with value false", r)
+			}
+		}
+	}
+	removed, err := UnsetSetting(root, "autoswitch.codexEnabled")
+	if err != nil || !removed {
+		t.Fatalf("removed=%v err=%v", removed, err)
+	}
+	if !Load(root).CodexEnabled {
+		t.Error("Load().CodexEnabled = false after unset, want default true")
 	}
 }
 
@@ -461,6 +569,19 @@ func TestMergedWithCLI_CLIBeatsSettings(t *testing.T) {
 	}
 	if merged.CooldownSeconds != 10.0 {
 		t.Errorf("CooldownSeconds = %v, want untouched 10", merged.CooldownSeconds)
+	}
+}
+
+// TestMergedWithCLI_PreservesCodexKnobs: the codex knobs have no `cswap auto`
+// flag, so a merge carrying other overrides must pass them through unchanged.
+func TestMergedWithCLI_PreservesCodexKnobs(t *testing.T) {
+	base := Default()
+	base.CodexEnabled = false
+	base.CodexThreshold = 70.0
+	threshold := 60.0
+	merged := MergedWithCLI(base, CLIOverrides{Threshold: &threshold})
+	if merged.CodexEnabled || merged.CodexThreshold != 70.0 {
+		t.Errorf("CodexEnabled=%v CodexThreshold=%v, want false/70", merged.CodexEnabled, merged.CodexThreshold)
 	}
 }
 

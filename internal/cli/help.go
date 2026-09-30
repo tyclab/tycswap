@@ -58,6 +58,23 @@ Commands:
   cswap upgrade                    self-upgrade to latest
   cswap purge                      remove all claude-swap data
 
+Codex (ChatGPT) accounts — the commands above stay Claude-only:
+  cswap codex list                 list Codex accounts and usage
+  cswap codex status               show the account codex is running as
+  cswap codex switch               rotate to the next Codex account
+  cswap codex switch <num|email>   switch to a specific Codex account
+  cswap codex add                  store the current Codex login
+  cswap codex login                run ` + "`codex login`" + `, then store it
+  cswap codex remove <num|email>   remove a Codex account
+  cswap codex alias <num> <name>   set a short alias (--unset to clear)
+  cswap codex disable|enable <n>   hold out of / return to auto-rotation
+  cswap codex swap <a> <b>         exchange two Codex slot numbers
+  cswap codex move <a> <slot>      assign a Codex account to a slot
+  cswap codex export <path>        export Codex accounts
+  cswap codex import <path>        import Codex accounts
+  cswap codex purge                remove all cswap Codex data
+  cswap codex --help               full Codex help
+
 Aliases: ls=list  rm=remove  update=upgrade`
 
 // mainEpilog is the RawDescription epilog (spec 08§3), verbatim.
@@ -72,6 +89,8 @@ const mainEpilog = `Flags combine with subcommands:
   eval "$(cswap env 2)"                   # pin THIS shell to account 2 (no claude launch)
   cswap auto --once                       # single auto-switch tick (cron-friendly)
   cswap config set autoswitch.threshold 80
+  cswap codex list --token-status         # Codex token expiry (never the token)
+  cswap codex list --json --skip-api      # machine-readable, no network
 
 The original flag spellings (cswap --switch, cswap --list, ...) keep working.`
 

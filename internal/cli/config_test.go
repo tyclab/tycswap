@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"git.dpemmons.com/dpemmons/cswap/internal/settings"
 )
 
 // runConfig drives `cswap config <args>` over a clean home with buffered I/O.
@@ -16,23 +18,25 @@ func runConfig(t *testing.T, args ...string) (int, string, string) {
 	return code, out.String(), errb.String()
 }
 
-// TestConfigListShowsAllDefaults: no args lists all 8 keys, each marked
-// "(default)" on a fresh home (spec 08§7.8/§14).
+// TestConfigListShowsAllDefaults: no args lists every SettingSpecs key, each
+// marked "(default)" on a fresh home (spec 08§7.8/§14). The count follows the
+// registry, as the Python test does, so adding a setting does not break it.
 func TestConfigListShowsAllDefaults(t *testing.T) {
 	cleanHome(t)
 	code, out, errStr := runConfig(t)
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0 (stderr=%q)", code, errStr)
 	}
-	if n := strings.Count(out, "(default)"); n != 8 {
-		t.Errorf("(default) count = %d, want 8\n%s", n, out)
+	if n, want := strings.Count(out, "(default)"), len(settings.SettingSpecs); n != want {
+		t.Errorf("(default) count = %d, want %d\n%s", n, want, out)
 	}
 	if !strings.Contains(out, "autoswitch.threshold") {
 		t.Errorf("list missing autoswitch.threshold:\n%s", out)
 	}
 }
 
-// TestConfigListJSON: --json list has 8 settings with key/value/isSet.
+// TestConfigListJSON: --json list has one entry per SettingSpecs key with
+// key/value/isSet.
 func TestConfigListJSON(t *testing.T) {
 	cleanHome(t)
 	code, out, errStr := runConfig(t, "--json", "list")
@@ -52,8 +56,8 @@ func TestConfigListJSON(t *testing.T) {
 	if payload.SchemaVersion != 1 {
 		t.Errorf("schemaVersion = %d, want 1", payload.SchemaVersion)
 	}
-	if len(payload.Settings) != 8 {
-		t.Errorf("settings len = %d, want 8", len(payload.Settings))
+	if want := len(settings.SettingSpecs); len(payload.Settings) != want {
+		t.Errorf("settings len = %d, want %d", len(payload.Settings), want)
 	}
 	for _, s := range payload.Settings {
 		if s.IsSet {
@@ -82,10 +86,10 @@ func TestConfigSetThenGet(t *testing.T) {
 		t.Errorf("get output = %q, want '80'", out)
 	}
 
-	// The set key is no longer marked default; the other 7 still are.
+	// The set key is no longer marked default; every other key still is.
 	code, out, _ = runConfig(t)
-	if n := strings.Count(out, "(default)"); n != 7 {
-		t.Errorf("(default) count after set = %d, want 7\n%s", n, out)
+	if n, want := strings.Count(out, "(default)"), len(settings.SettingSpecs)-1; n != want {
+		t.Errorf("(default) count after set = %d, want %d\n%s", n, want, out)
 	}
 }
 

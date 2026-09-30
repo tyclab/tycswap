@@ -68,6 +68,8 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 			return swapCommand(prog, argv[1:], s)
 		case "move":
 			return moveCommand(prog, argv[1:], s)
+		case "codex":
+			return codexCommand(prog, argv[1:], s)
 		}
 	}
 
