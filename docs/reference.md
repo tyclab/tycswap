@@ -49,9 +49,30 @@ cswap menubar                                macOS menu bar app (not available i
 cswap upgrade                                self-upgrade to the latest release
 cswap purge                                  remove all claude-swap data (prompts to confirm)
 cswap --version                              print the program name and version
+cswap codex list [--json] [--skip-api] [--token-status]
+                                            list managed Codex accounts and their usage
+cswap codex status [--json]                 show the account the codex CLI is using
+cswap codex switch [<NUM|EMAIL|ALIAS>] [--strategy best]
+                                            rotate, or activate a Codex account
+cswap codex add [--alias NAME]              store the current Codex login
+cswap codex login [--device-auth] [--alias NAME]
+                                            run 'codex login', then store the result
+cswap codex remove <NUM|EMAIL|ALIAS> [-y]   forget a Codex account
+cswap codex alias <NUM|EMAIL> [NAME] [--unset]
+                                            set / clear a Codex alias
+cswap codex disable|enable <NUM|EMAIL|ALIAS>
+                                            hold out of / return to auto-rotation
+cswap codex swap <A> <B>                    exchange two Codex slot numbers
+cswap codex move <NUM|EMAIL|ALIAS> <SLOT>   assign a Codex account to a slot
+cswap codex export <PATH> [--account NUM|EMAIL]
+                                            export Codex accounts ("-" = stdout)
+cswap codex import <PATH> [--force]         import Codex accounts ("-" = stdin)
+cswap codex purge [-y]                      remove all cswap Codex data
+cswap codex import-codex-auth               re-run the codex-auth registry import
 ```
 
-Every subcommand also accepts `--debug` (enable debug logging) and `-h` / `--help`.
+Every subcommand also accepts `--debug` (enable debug logging) and `-h` / `--help`,
+the `cswap codex` namespace and each of its verbs included.
 
 Legacy flag spellings are equivalent to the verbs and remain supported:
 `--list`, `--status`, `--switch`, `--switch-to <id>`, `--add-account`,
@@ -1229,12 +1250,32 @@ tried is governed by `autoswitch.strategy` — most headroom first (`best`,
 the default) or earliest weekly renewal first (`soonest-reset`). See
 [SETTINGS](#settings) for the ordering rules.
 
+**Codex accounts.** When `autoswitch.codexEnabled` is true (the default) and
+cswap holds Codex accounts, or an un-imported codex-auth registry exists, `cswap
+auto` also runs a Codex engine in the same process. It is a second, small
+engine, not a mode of the Claude one: each tick reads every Codex account's
+usage and, when the active account's worse window (5h or weekly) is at or above
+the Codex threshold, switches to the enabled OAuth account with the lowest
+worse window that is below the threshold and at least `autoswitch.hysteresisPct`
+below the active account. The Codex threshold is `autoswitch.codexThreshold`,
+or the effective `--threshold` / `autoswitch.threshold` when that is 0. An
+account with no measurement is never switched away from. Cooldown, quarantine,
+`--model`, and `--include-api-key-accounts` apply to Claude only; Codex API-key
+accounts are never targets. `--dry-run` applies to both engines.
+
+With `--once`, the Codex tick runs after the Claude tick, and the exit status
+is the Claude tick's outcome. In loop mode the Codex engine ticks on its own
+goroutine, once at launch and then every interval, so a slow Codex fetch never
+delays a Claude switch; a Codex failure never stops the loop.
+A Codex switch rewrites `~/.codex/auth.json`, so it affects the next codex
+session started, not one already running.
+
 ### Files
 
 Reads `sequence.json`, `settings.json`, `cache/usage.json`. Reads and writes
 `autoswitch_state.json` (cooldown / quarantine state) under
 `.autoswitch_state.lock`. A real switch writes the same files `cswap switch`
-does.
+does. The Codex engine reads and writes the files `cswap codex switch` does.
 
 ### Exit status
 
@@ -1267,6 +1308,21 @@ a `Z` suffix), plus per-kind fields:
 | `sleep` | `seconds` (float), `until` (string) |
 | `error` | `message` (string), `transient` (bool) |
 | `config-warning` | `message` (string) |
+
+The Codex engine reports a tick only when it switched or failed, or on every
+tick under `--dry-run`. Its human line carries the same `HH:MM:SS` prefix as
+the Claude events and is coloured the same way (a switch accented, an error in
+yellow, anything else dimmed): `<HH:MM:SS>  codex: <detail>` (`codex:
+<outcome>` when there is no detail), with ` — restart codex (pid <pids>) for it to take effect`
+appended when codex processes are running. `<detail>` is one of `switched <a>
+(<pct>%) -> <b> (<pct>%)`, `would switch <a> (<pct>%) -> <b> (<pct>%)`, `account
+<n> at <pct>% (below threshold)`, `account <n> at <pct>% and no better
+candidate`, `account <n> usage unknown`, `no managed account active`, `no
+rotatable accounts`, `snapshot failed (<error>)`, or `switch failed: <message>`.
+Under `--json` it is one compact line, `{"schemaVersion": 1, "event": "codex",
+"ts": "<RFC3339 UTC, Z suffix>", "outcome": ..., "detail": ..., "switchedTo":
+<num>|null, "runningPids": [...]}`; `ts` has the format of the Claude events'
+`ts`, and `outcome` is `ok`, `switched`, `blocked`, `no-accounts`, or `error`.
 
 A handled error in `--json` mode is emitted as the compact error envelope
 (see JSON OUTPUT CONTRACT) on stdout.
@@ -1303,7 +1359,7 @@ already searches.
 
 ### See also
 
-`cswap switch`, [SETTINGS](#settings), [SIGNALS](#signals).
+`cswap switch`, `cswap codex switch`, [SETTINGS](#settings), [SIGNALS](#signals).
 
 ---
 
@@ -1569,6 +1625,20 @@ screen, `enter` switch, `b` best pick, `esc` back; on the watch screen, `s`
 switch (`enter` confirm while a target is selected), `esc` back; on the
 auto-switch screen, `l` go live / dry-run, `t` threshold (with `←`/`→` to adjust
 and `enter` to finish while adjusting), `esc` back.
+
+When a Codex store or a codex-auth registry is present, the dashboard's Codex
+rows follow the Claude rows, each tagged `⟨codex⟩` after its workspace tag, on
+the full card and the compact row alike; the remove and disable menu labels
+carry the tag too. Claude rows keep their bare slot number as their id; Codex
+rows are addressed by key (`codex:1`). Switch, disable / enable, and remove act
+on the row's own provider and name the resolved slot: `Switched to Codex
+account <n>: <email>`, `Disabled Codex account <n>`, `Enabled Codex account
+<n>`, `Removed Codex account <n>`. When codex sessions are still running after a
+Codex switch, a second warning lists them: `codex is running (pid <pid>[,
+<pid>...]) — restart it for the new account to take effect.` Adding an account
+stays Claude-only (use `cswap codex add` or `cswap codex login`). The
+auto-switch screen's candidate list shows Claude rows only, since that engine
+switches Claude; the Codex engine runs inside `cswap auto`.
 
 The dashboard's menu nests: "Add account…", "Disable / enable account…" and
 "Remove account…" each open a submenu, and `esc` or `←` returns to the
@@ -2215,6 +2285,1068 @@ Are you sure you want to purge all data? [y/N] Cancelled
 
 ---
 
+## cswap codex
+
+### Synopsis
+
+```text
+cswap codex [--debug] <verb> [args]
+cswap codex -h | --help
+cswap codex <verb> -h | --help
+```
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `-h`, `--help` | flag | off | Before the verb: prints the verb list, examples, and notes. After a verb: prints that verb's usage line. |
+| `--debug` | flag | off | Accepted before or after the verb. Enables debug logging. |
+
+A verb is required. Value flags accept both `--flag value` and `--flag=value`.
+`--debug` writes debug records to `<backup_root>/claude-swap.log` and to stderr
+for the Codex network client, process detection, and the codex-auth import.
+
+### Description
+
+The `codex` namespace manages Codex (ChatGPT) accounts. It is a second provider
+beside Claude: every verb below acts on Codex accounts only, and bare `cswap
+list`, `cswap switch`, and the other top-level verbs keep acting on Claude
+accounts. Codex slot numbers are a separate sequence from Claude slot numbers.
+
+Two rules govern every verb. The live `auth.json` decides which account is
+active: cswap reads its identity and matches it to a slot, and the store's own
+record of the active account is intent only. The active account is never
+refreshed from its stored snapshot, because the codex CLI holds the same refresh
+token and keeps the live file current; inactive accounts are refreshed from
+their snapshots and a rotated token is written back before it is used.
+
+Every verb except `import-codex-auth` first runs the one-time codex-auth import:
+when cswap holds no Codex account and `~/.codex/accounts/registry.json` exists,
+its accounts are copied into cswap's store (see `cswap codex import-codex-auth`).
+The import prints `Imported <n> Codex account(s) from <path> (the original is
+left untouched).` and, when rows had no usable auth file, `Skipped <n>
+account(s) with no usable auth file.` A registry whose schema is newer than 4
+prints `codex-auth registry uses schema <n>, which this version of cswap does
+not understand — not importing.` and imports nothing; the verb then runs as
+usual. Under `--json` these notices go to stderr, so stdout holds only the JSON
+document.
+
+**Account resolution.** A verb that names an account accepts the slot number,
+the email, or the alias. The identifier is trimmed and compared
+case-insensitively against all three at once; this differs from the Claude
+resolution order above. An identifier that matches nothing raises `No Codex
+account matches '<id>'`.
+
+This namespace is a Go-side extension relative to the Python reference pinned in
+`docs/port-spec/`; it ports claude-swap PR #252 (DESIGN Amendment A22).
+
+### Files
+
+Reads and writes the Codex store under `<backup_root>/codex/` (`sequence.json`,
+`credentials/`, `cache/`, `.lock`) and the codex CLI's live
+`$CODEX_HOME/auth.json` (`~/.codex/auth.json` when `CODEX_HOME` is unset),
+written 0600 with an existing file's group and world bits dropped, inside a
+`~/.codex` created 0700 when it does not exist yet. Reads
+codex-auth's `~/.codex/accounts/` during the import and never writes it.
+Mutations run under `<backup_root>/codex/.lock`, which is separate from the
+Claude lock, so a Codex operation never blocks a Claude one. `export`,
+`import`, and `purge` take no store lock, like the Claude transfer verbs.
+
+### Exit status
+
+`0` on success. `1` on a handled error. `2` on a usage error (unknown verb,
+unknown flag, missing or extra argument, invalid `--strategy`). `130` on
+Ctrl-C. `cswap codex login` exits with the codex CLI's status when `codex
+login` fails.
+
+### Output
+
+Human output per verb, below. Only `list` and `status` accept `--json`; each
+writes one indented JSON document to stdout carrying `schemaVersion`.
+
+### Errors
+
+Handled errors print a red `Error: <message>` to stderr and exit 1. Under
+`--json` the error is instead the standard error envelope on stdout (see [JSON
+OUTPUT CONTRACT](#json-output-contract)), with the same exit code. An invalid
+alias is reported the same way. A mutation that cannot take the store lock
+reports `Another cswap process is using the Codex store; try again.`
+
+### Example
+
+```text
+$ cswap codex list
+* 1. alice@example.com [personal]  5h 12%  7d 40%
+  2. alice@example.com [Example Team] (work)  7d 3%
+```
+
+### See also
+
+`cswap codex list`, `cswap codex switch`, `cswap auto`,
+[COMPATIBILITY](#compatibility).
+
+---
+
+## cswap codex list
+
+### Synopsis
+
+```text
+cswap codex list [--json] [--skip-api] [--token-status]
+```
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `--json` | flag | off | May be combined with `--token-status`. |
+| `--skip-api` | flag | off | Serves cached usage only; no network. |
+| `--token-status` | flag | off | Adds token diagnostics; never prints a token. |
+
+### Description
+
+Lists every managed Codex account in slot order with its usage summary. Usage is
+served through the same cache the Claude side uses (serve TTL, cross-process
+fetch leases, failure backoff, `Retry-After` handling), so two consecutive
+listings cost one round of requests. Windows are classified by their declared
+length, not their position in the response: a window of one day or longer is
+the weekly (`7d`) window and a shorter one is the `5h` window. A plan that
+reports only one window shows only that window.
+
+Workspace names for Business, Enterprise, and Edu accounts ride along with a
+usage fetch. A request is made only for a user who holds more than one stored
+account, at least one of them on a workspace plan and still unnamed; a failed
+request leaves stored names untouched.
+
+`--token-status` adds one line per account: its access-token expiry, whether a
+refresh is due, whether a refresh token is present, and the last refresh time.
+
+### Files
+
+Reads `codex/sequence.json`, the stored snapshots, `codex/cache/`, and the live
+`auth.json`. Writes the usage cache, refreshed snapshots of inactive accounts,
+and workspace names in `codex/sequence.json`.
+
+### Exit status
+
+`0` on success; `1` on a handled error; `2` on a usage error.
+
+### Output
+
+One line per account:
+
+```text
+<marker> <n>. <email> [<workspace|personal>][ (<alias>)][ [disabled]][  <usage>]
+```
+
+`<marker>` is `*` for the active account and a space otherwise. `<usage>` is
+`5h <pct>%  7d <pct>%` for the windows the account reports, or the fetch
+sentinel when there is no measurement: `api key`, `http <status>`, `network`,
+`bad-response`, `MissingAuth`. An empty roster prints `No Codex accounts. Run
+'cswap codex add' or 'cswap codex login'.`
+
+`--token-status` adds, per account, `      token: <state>` for an account that
+is not an OAuth login (`api key`, `no credentials`), otherwise
+`      token: <valid|refresh due>, expires in <duration>[, NO refresh token];
+last refresh <time|never>`. `<duration>` reads `6d 4h`, `3h 12m`, `12m`,
+`expired`, or `unknown`.
+
+With `--json`:
+
+```json
+{
+  "schemaVersion": 1,
+  "provider": "codex",
+  "activeNumber": "<num>|null",
+  "accounts": ["<codex-row>"],
+  "tokenStatus": ["<token-status>"]
+}
+```
+
+`tokenStatus` is present only with `--token-status`. Slot numbers are strings
+in this payload. A `<codex-row>` holds:
+
+| Key | Type | Meaning |
+|-----|------|---------|
+| `number` | string | Slot number. |
+| `email` | string | Recorded email. |
+| `workspace` | string | Workspace name, or `""` for a personal account. |
+| `alias` | string | Alias, or `""`. |
+| `active` | bool | `true` for the account the live `auth.json` holds. |
+| `disabled` | bool | `true` when held out of auto-rotation. |
+| `kind` | string | `oauth` or `api_key`. |
+| `usage` | object \| null | The last good measurement in the `cswap list --json` usage encoding: `fiveHour` and `sevenDay` (present when reported) and `spend` (when the account has credits). |
+| `sentinel` | string \| null | Why there is no fresh measurement (values above). |
+| `fetchedAt` | number \| null | When `usage` was measured, POSIX seconds. |
+| `ageSeconds` | number \| null | Age of `usage`. |
+| `plan` | string \| null | The plan reported with `usage`. |
+
+A `<token-status>` object holds `number` and `state` (`oauth`, `api key`, or
+`no credentials`); an `oauth` entry adds `expiresAt` (POSIX seconds or null),
+`expiresInSeconds`, `refreshDue`, `hasRefreshToken`, and `lastRefresh`.
+
+### Errors
+
+Handled errors print `Error: <message>` to stderr, exit 1; under `--json`, the
+error envelope on stdout.
+
+### Example
+
+```text
+$ cswap codex list
+* 1. alice@example.com [personal]  5h 12%  7d 40%
+  2. alice@example.com [Example Team] (work)  7d 3%
+  3. bob@example.com [personal] [disabled]  http 429
+```
+
+### See also
+
+`cswap codex status`, `cswap list`.
+
+---
+
+## cswap codex status
+
+### Synopsis
+
+```text
+cswap codex status [--json]
+```
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `--json` | flag | off | — |
+
+### Description
+
+Reports the account the codex CLI is using, read from the live `auth.json`, and
+the number of managed Codex accounts. The usage lines are rendered by the same
+code as `cswap status`, so the two blocks have the same layout.
+
+### Files
+
+Reads the live `auth.json`, `codex/sequence.json`, and `codex/cache/`; may
+refresh and write inactive accounts' snapshots and the usage cache.
+
+### Exit status
+
+`0` on success; `1` on a handled error.
+
+### Output
+
+Human output is `Status: Codex-<n> (<email> [<workspace|personal>])`, then
+`  Total managed Codex accounts: <n>`, then the usage lines. When the live login
+matches no managed account it is `Status: No active Codex account`.
+
+With `--json`:
+
+```json
+{
+  "schemaVersion": 1,
+  "provider": "codex",
+  "active": {
+    "number": 1,
+    "email": "<email>",
+    "workspace": "<name or empty>",
+    "alias": "<alias or empty>",
+    "plan": "<plan>",
+    "managed": true,
+    "usageStatus": "<status>",
+    "usage": "<object|null>"
+  },
+  "totalManagedAccounts": 3
+}
+```
+
+`number` is an integer here, unlike the string slot numbers of `list --json`.
+`usageStatus` and `usage` use the `cswap status` encoding (`fiveHour`,
+`sevenDay`, camelCase sub-keys). With no active Codex account the document is
+`{"schemaVersion": 1, "provider": "codex", "active": null}`, without
+`totalManagedAccounts`.
+
+### Errors
+
+Handled errors print `Error: <message>` to stderr, exit 1; under `--json`, the
+error envelope on stdout.
+
+### Example
+
+```text
+$ cswap codex status --json
+{
+  "schemaVersion": 1,
+  "provider": "codex",
+  "active": null
+}
+```
+
+### See also
+
+`cswap codex list`, `cswap status`.
+
+---
+
+## cswap codex switch
+
+### Synopsis
+
+```text
+cswap codex switch
+cswap codex switch <NUM|EMAIL|ALIAS>
+cswap codex switch --strategy best
+```
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `NUM\|EMAIL\|ALIAS` | positional | — | Optional. |
+| `--strategy` | choice | — | Only `best`. Takes precedence over the positional. |
+
+### Description
+
+Bare `switch` rotates to the next rotatable account after the active one; when
+no rotatable account is active it activates the first one. A rotatable account
+is enabled and is not an API-key login. With an identifier it activates that
+account. `--strategy best` activates the rotatable, non-active account whose
+worse window (5h or weekly) is lowest, skipping accounts with no measurement.
+
+The switch runs under the store lock end to end: it stores the live login into
+the slot its own identity matches, then writes the target's snapshot to
+`auth.json`. If the write fails, the previous `auth.json` is put back. After the
+switch cswap looks for running `codex` or `codext` processes by executable name.
+Naming the account that is already live stores the live login and writes
+nothing, so a refresh token rotated by codex since the last capture is kept.
+
+### Files
+
+Reads and writes the live `auth.json`, the stored snapshots, and
+`codex/sequence.json`, under `codex/.lock`.
+
+### Exit status
+
+`0` on success; `1` on a handled error; `2` on a usage error.
+
+### Output
+
+`Switched to Codex account <n>: <email>`. When codex processes are running, a
+second line follows: `codex is running (pid <pid>[, <pid>...]) — restart it for
+the new account to take effect.` A running session keeps its old account until
+it is restarted. When the named account is already live the only line is
+`Codex account <n> is already active: <email>`, and no restart warning follows.
+
+### Errors
+
+| Message (exit 1) | Condition |
+|------------------|-----------|
+| `No Codex account matches '<id>'` | The identifier resolves to nothing. |
+| `Codex account <n> has no stored credentials` | The target has no snapshot. |
+| `Failed to activate Codex account: <err>` | Writing `auth.json` failed; the previous file was restored. |
+| `No rotatable Codex accounts` | Bare `switch` with no enabled OAuth account. |
+| `Only one rotatable Codex account — nothing to rotate to` | Bare `switch` when the active account is the only candidate. |
+| `No Codex account with a known measurement to switch to` | `--strategy best` found no measured candidate. |
+| `Another cswap process is using the Codex store; try again.` | The store lock is held. |
+
+### Example
+
+```text
+$ cswap codex switch work
+Switched to Codex account 2: alice@example.com
+codex is running (pid 4242) — restart it for the new account to take effect.
+```
+
+### See also
+
+`cswap codex list`, `cswap switch`.
+
+---
+
+## cswap codex add
+
+### Synopsis
+
+```text
+cswap codex add [--alias NAME]
+```
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `--alias` | string | none | Validated like `cswap alias`. |
+
+### Description
+
+Stores the account the codex CLI is logged in as: it reads the live `auth.json`,
+creates or updates the slot keyed by the account's identity (user id and ChatGPT
+account id), writes the snapshot, and records the account as active. An account
+already stored keeps its slot; a new one takes the lowest free slot number.
+
+### Files
+
+Reads the live `auth.json`. Writes `codex/sequence.json` and the snapshot, under
+`codex/.lock`.
+
+### Exit status
+
+`0` on success; `1` on a handled error.
+
+### Output
+
+`Added Codex account <n>: <email> [<workspace|personal>]`.
+
+### Errors
+
+| Message (exit 1) | Condition |
+|------------------|-----------|
+| `No Codex login found. Run 'cswap codex login' (or 'codex login') first.` | No readable `auth.json`. |
+| `The current Codex login carries no account id, so it cannot be told apart from another account. API-key logins are not switchable.` | The login has no ChatGPT account id. |
+| `Another cswap process is using the Codex store; try again.` | The store lock is held. |
+
+### Example
+
+```text
+$ cswap codex add --alias home
+Added Codex account 1: alice@example.com [personal]
+```
+
+### See also
+
+`cswap codex login`, `cswap add`.
+
+---
+
+## cswap codex login
+
+### Synopsis
+
+```text
+cswap codex login [--device-auth] [--alias NAME]
+```
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `--device-auth` | flag | off | Passed to `codex login`. |
+| `--alias` | string | none | As for `cswap codex add`. |
+
+### Description
+
+Runs `codex login` (with `--device-auth` when given), then stores the resulting
+account as `cswap codex add` does. The `codex` binary is resolved on `PATH` and
+executed directly, without a shell, so a shell function named `codex` does not
+add flags to the login.
+
+### Files
+
+As `cswap codex add`; `codex login` itself writes the live `auth.json`.
+
+### Exit status
+
+`0` on success; `1` when `codex` is not on `PATH`, cannot be started, or is
+killed by a signal, or on a handled error; the codex CLI's status when `codex
+login` exits non-zero.
+
+### Output
+
+The codex CLI's own login output, then `Added Codex account <n>: <email>
+[<workspace|personal>]`.
+
+### Errors
+
+| Message | Exit | Condition |
+|---------|------|-----------|
+| `The 'codex' CLI is not on PATH. Install it, or run 'cswap codex add' after logging in another way.` | 1 | No `codex` binary. |
+| `codex login did not complete.` | codex's status, or 1 | `codex login` exited non-zero, could not start, or was killed. |
+
+Both messages are printed in red on stderr without an `Error:` prefix.
+
+### Example
+
+```text
+$ cswap codex login --device-auth --alias work
+...
+Added Codex account 2: alice@example.com [Example Team]
+```
+
+### See also
+
+`cswap codex add`.
+
+---
+
+## cswap codex remove
+
+### Synopsis
+
+```text
+cswap codex remove <NUM|EMAIL|ALIAS> [-y|--yes]
+```
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `NUM\|EMAIL\|ALIAS` | positional | — | Required. |
+| `-y`, `--yes` | flag | off | Skips the confirmation prompt. |
+
+### Description
+
+Forgets an account: removes its slot and deletes its stored snapshot, including
+the Keychain item on macOS. Removing the active account prints `Warning: Codex
+account <n> (<email>) is currently active` first; the live `auth.json` is not
+changed. Without `--yes` it prompts `Are you sure you want to permanently remove
+Codex account <n> (<email>)? [y/N]`; any answer other than `y` prints
+`Cancelled`.
+
+### Files
+
+Writes `codex/sequence.json`; deletes the snapshot.
+
+### Exit status
+
+`0` on success or a cancelled prompt; `1` on a handled error.
+
+### Output
+
+`Removed Codex account <n>`, naming the resolved slot number, printed only when
+the account was removed. A declined prompt prints `Cancelled` and nothing else.
+
+### Errors
+
+`No Codex account matches '<id>'`, exit 1.
+
+### Example
+
+```text
+$ cswap codex remove 3 --yes
+Removed Codex account 3
+```
+
+### See also
+
+`cswap codex disable`, `cswap codex purge`.
+
+---
+
+## cswap codex alias
+
+### Synopsis
+
+```text
+cswap codex alias <NUM|EMAIL> [NAME]
+cswap codex alias <NUM|EMAIL> --unset
+```
+
+The account may also be named by its current alias.
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `NAME` | positional | empty | Validated like `cswap alias`. |
+| `--unset` | flag | off | Clears the alias. |
+
+### Description
+
+Sets an account's alias. `--unset`, or omitting `NAME`, clears it. There is no
+listing form; `cswap codex list` shows aliases.
+
+### Files
+
+Writes `codex/sequence.json`.
+
+### Exit status
+
+`0` on success; `1` on a handled error.
+
+### Output
+
+`Codex account <n> is now '<alias>'`, or `Cleared alias for Codex account <n>`.
+
+### Errors
+
+`No Codex account matches '<id>'` or the alias validation message, exit 1.
+
+### Example
+
+```text
+$ cswap codex alias 2 work
+Codex account 2 is now 'work'
+$ cswap codex alias 2 --unset
+Cleared alias for Codex account 2
+```
+
+### See also
+
+`cswap alias`.
+
+---
+
+## cswap codex disable
+
+### Synopsis
+
+```text
+cswap codex disable <NUM|EMAIL|ALIAS>
+```
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `NUM\|EMAIL\|ALIAS` | positional | — | Required. |
+
+### Description
+
+Holds an account out of rotation: bare `cswap codex switch`, `--strategy best`,
+and the Codex side of `cswap auto` skip it. It stays switchable by name.
+
+### Files
+
+Writes `codex/sequence.json`.
+
+### Exit status
+
+`0` on success; `1` on a handled error.
+
+### Output
+
+`Codex account <n> disabled`, naming the resolved slot number.
+
+### Errors
+
+`No Codex account matches '<id>'`, exit 1.
+
+### Example
+
+```text
+$ cswap codex disable work
+Codex account 2 disabled
+```
+
+### See also
+
+`cswap codex enable`.
+
+---
+
+## cswap codex enable
+
+### Synopsis
+
+```text
+cswap codex enable <NUM|EMAIL|ALIAS>
+```
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `NUM\|EMAIL\|ALIAS` | positional | — | Required. |
+
+### Description
+
+Returns a disabled account to rotation.
+
+### Files
+
+Writes `codex/sequence.json`.
+
+### Exit status
+
+`0` on success; `1` on a handled error.
+
+### Output
+
+`Codex account <n> enabled`, naming the resolved slot number.
+
+### Errors
+
+`No Codex account matches '<id>'`, exit 1.
+
+### Example
+
+```text
+$ cswap codex enable 2
+Codex account 2 enabled
+```
+
+### See also
+
+`cswap codex disable`.
+
+---
+
+## cswap codex swap
+
+### Synopsis
+
+```text
+cswap codex swap <A> <B>
+```
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `A`, `B` | positional | — | Each a slot number, email, or alias. |
+
+### Description
+
+Exchanges two accounts' slot numbers. Only `codex/sequence.json` changes:
+snapshots are keyed by account identity, so renumbering never moves a secret.
+
+### Files
+
+Writes `codex/sequence.json` under `codex/.lock`.
+
+### Exit status
+
+`0` on success; `1` on a handled error.
+
+### Output
+
+`Swapped Codex slots <a> and <b>`.
+
+### Errors
+
+| Message (exit 1) | Condition |
+|------------------|-----------|
+| `Cannot swap an account with itself` | Both arguments name one account. |
+| `No Codex account matches '<id>'` | An argument resolves to nothing. |
+| `Another cswap process is using the Codex store; try again.` | The store lock is held. |
+
+### Example
+
+```text
+$ cswap codex swap 1 2
+Swapped Codex slots 1 and 2
+```
+
+### See also
+
+`cswap codex move`, `cswap swap`.
+
+---
+
+## cswap codex move
+
+### Synopsis
+
+```text
+cswap codex move <NUM|EMAIL|ALIAS> <SLOT>
+```
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `SLOT` | positional | — | A positive integer. |
+
+### Description
+
+Assigns an account to a slot number. When the slot is taken, its occupant moves
+to the account's old number. Only `codex/sequence.json` changes.
+
+### Files
+
+Writes `codex/sequence.json` under `codex/.lock`.
+
+### Exit status
+
+`0` on success; `1` on a handled error.
+
+### Output
+
+`Moved Codex account <from> to slot <to>`, with ` (swapped with its occupant)`
+appended when the slot was taken, or `Codex account is already in slot <n>`.
+
+### Errors
+
+| Message (exit 1) | Condition |
+|------------------|-----------|
+| `'<slot>' is not a valid slot number` | `SLOT` is not a positive integer. |
+| `No Codex account matches '<id>'` | The account resolves to nothing. |
+| `Another cswap process is using the Codex store; try again.` | The store lock is held. |
+
+### Example
+
+```text
+$ cswap codex move 3 1
+Moved Codex account 3 to slot 1 (swapped with its occupant)
+```
+
+### See also
+
+`cswap codex swap`, `cswap move`.
+
+---
+
+## cswap codex export
+
+### Synopsis
+
+```text
+cswap codex export <PATH> [--account NUM|EMAIL]
+```
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `PATH` | positional | — | `-` writes to stdout. |
+| `--account` | string | all accounts | Limits the export to one account. |
+
+### Description
+
+Writes Codex accounts, with their live OAuth tokens, to a JSON file. An export
+that cannot log in is not a backup, so the file is as sensitive as the stored
+credentials: it is created with mode 0600 before any token is written (an
+existing file is narrowed to 0600 before it is overwritten), and it carries a
+`warning` field saying so. Accounts without a stored snapshot are
+left out. The format is separate from the Claude `.cswap` format, and a
+`provider` field lets an import refuse a file from the other provider.
+
+### Files
+
+Reads `codex/sequence.json` and the snapshots. Writes `PATH`, creating parent
+directories. Takes no store lock.
+
+### Exit status
+
+`0` on success; `1` on a handled error.
+
+### Output
+
+`Exported <n> Codex account(s) to <path>`; nothing else when `PATH` is `-`. The
+file:
+
+```json
+{
+  "version": 1,
+  "provider": "codex",
+  "warning": "This file contains live OAuth tokens for the accounts below. Anyone who can read it can use those accounts. Keep it private and delete it once imported.",
+  "accounts": [
+    {
+      "accountKey": "<user id>::<account id>",
+      "email": "<email>",
+      "plan": "<plan>",
+      "workspaceName": "<name>",
+      "alias": "<alias>",
+      "disabled": false,
+      "authMode": "chatgpt",
+      "auth": {}
+    }
+  ]
+}
+```
+
+`auth` is the account's `auth.json` payload.
+
+### Errors
+
+| Message (exit 1) | Condition |
+|------------------|-----------|
+| `No Codex accounts to export` | The roster, or the `--account` selection, is empty. |
+| `No Codex accounts with stored credentials to export` | No selected account has a snapshot. |
+| `No Codex account matches '<id>'` | `--account` resolves to nothing. |
+
+### Example
+
+```text
+$ cswap codex export ~/codex.json
+Exported 2 Codex account(s) to ~/codex.json
+```
+
+### See also
+
+`cswap codex import`, `cswap export`.
+
+---
+
+## cswap codex import
+
+### Synopsis
+
+```text
+cswap codex import <PATH> [--force]
+```
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `PATH` | positional | — | `-` reads from stdin. |
+| `--force` | flag | off | Overwrites accounts already stored. |
+
+### Description
+
+Reads a `cswap codex export` file into the store. Accounts are matched by
+`accountKey`; an account already stored is skipped unless `--force` is given.
+Rows without an `accountKey` or an `auth` object are skipped, and so is a row
+whose `auth` payload carries an identity that is not the row's `accountKey`
+(a payload with no decodable identity, such as an API-key login, is taken as
+labelled). An `alias` goes through the same rule as `cswap codex alias`; an
+alias that rule rejects is dropped, the row is still imported. A file whose
+`provider` is present and not `codex`, or whose `version` is newer than 1, is
+refused whole, as is a document larger than 8 MiB. Import does not change the
+live `auth.json`.
+
+### Files
+
+Reads `PATH`. Writes `codex/sequence.json` and the snapshots under
+`codex/.lock`.
+
+### Exit status
+
+`0` on success; `1` on a handled error.
+
+### Output
+
+`Imported <n> Codex account(s)`.
+
+### Errors
+
+| Message (exit 1) | Condition |
+|------------------|-----------|
+| `Cannot read <path>: <err>` | The file cannot be read. |
+| `<path> is not valid JSON: <err>` | The file does not parse. |
+| `<path> is not a cswap export` | The document is not a JSON object. |
+| `<path> is a '<provider>' export, not a Codex one` | `provider` names another provider. |
+| `<path> uses export version <v>, newer than this cswap understands` | `version` is above 1. |
+| `<path> contains no accounts` | `accounts` is missing or empty. |
+| `<path> is larger than 8 MiB; refusing to import it` | The document exceeds the import size limit. |
+
+### Example
+
+```text
+$ cswap codex import ~/codex.json
+Imported 2 Codex account(s)
+```
+
+### See also
+
+`cswap codex export`, `cswap import`.
+
+---
+
+## cswap codex purge
+
+### Synopsis
+
+```text
+cswap codex purge [-y|--yes]
+```
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `-y`, `--yes` | flag | off | Skips the confirmation prompt. |
+
+### Description
+
+Deletes every Codex snapshot cswap holds, including the Keychain items on macOS,
+then removes `<backup_root>/codex/`. The codex CLI's own login in `~/.codex` is
+left alone. Without `--yes` it prompts; any answer other than `y` prints
+`Cancelled`. `cswap purge` removes the Codex store with the rest of the backup
+root.
+
+### Files
+
+Removes `<backup_root>/codex/` and the Keychain items under service
+`claude-swap-codex`. Takes no store lock.
+
+### Exit status
+
+`0` on success, a cancelled prompt, or nothing to remove; `1` on a handled
+error.
+
+### Output
+
+`No cswap Codex data to remove.` when there is none. Otherwise the prompt
+`Remove <n> managed Codex account(s) and all cswap Codex data? Your ~/.codex
+login is left alone. [y/N]`, then `Removed <n> Codex account(s) and <path>`.
+
+### Errors
+
+| Message (exit 1) | Condition |
+|------------------|-----------|
+| `refusing to purge: the Codex store root is empty` | The store root resolves to an empty path. |
+| `refusing to purge <root>: it contains the codex login at <CODEX_HOME>` | The store root, with symlinks resolved on both sides, is `CODEX_HOME` or contains it, so the removal could reach the live login. A root or home that cannot be resolved is refused the same way. |
+
+### Example
+
+```text
+$ cswap codex purge --yes
+Removed 2 Codex account(s) and ~/.local/share/claude-swap/codex
+```
+
+### See also
+
+`cswap codex remove`, `cswap purge`.
+
+---
+
+## cswap codex import-codex-auth
+
+### Synopsis
+
+```text
+cswap codex import-codex-auth
+```
+
+### Description
+
+Re-runs the codex-auth import by hand, whether or not cswap already holds Codex
+accounts. It reads `~/.codex/accounts/registry.json` (schema 2, 3, or 4) and the
+matching `<key>.auth.json` snapshots beside it, and upserts each account into
+cswap's store with its email, plan, workspace name, and alias. Plan names from
+a schema below 4 are normalized to schema 4 names; schema 4 plans are taken as
+they are, and a plan that is not a string becomes empty. Schema 2 rows carry no account key and
+are skipped. A row whose auth file is missing or unreadable is skipped, and so
+is a row whose auth file carries an identity that is not the row's account key.
+An alias goes through the same rule as `cswap codex alias`; one that rule
+rejects is dropped and the row is still imported. The registry's active account
+becomes cswap's recorded active account when it is stored. `~/.codex/accounts/`
+is never written. A registry with a schema newer than 4 imports nothing.
+
+### Files
+
+Reads `~/.codex/accounts/`. Writes `codex/sequence.json` and the snapshots
+under `codex/.lock`.
+
+### Exit status
+
+`0` on success; `1` on a handled error.
+
+### Output
+
+`Imported <n>, skipped <m>.` A registry whose schema is newer than 4 first
+prints the unsupported-schema warning (see `cswap codex`), then `Imported 0,
+skipped 0.`
+
+### Errors
+
+Handled errors print `Error: <message>` to stderr, exit 1.
+
+### Example
+
+```text
+$ cswap codex import-codex-auth
+Imported 2, skipped 0.
+```
+
+### See also
+
+`cswap codex`, `cswap codex import`.
+
+---
+
 ## cswap help
 
 ### Synopsis
@@ -2285,6 +3417,7 @@ cswap reads the following environment variables.
 | `NO_COLOR` | When present (even empty), disables ANSI color. Highest color precedence. |
 | `FORCE_COLOR` | When present, forces color on (unless `NO_COLOR` is also present). |
 | `TERM` | `TERM=dumb` disables color on a TTY. |
+| `CODEX_HOME` | The codex CLI's home, resolved as the codex CLI resolves it: the live login is `<CODEX_HOME>/auth.json` and codex-auth's registry `<CODEX_HOME>/accounts/registry.json`. Defaults to `~/.codex`. |
 | `GOBIN`, `GOPATH` | Consulted by `cswap upgrade` and the passive update notice to detect a `go install` layout. |
 
 Color precedence: `NO_COLOR` present → off; else `FORCE_COLOR` present → on;
@@ -2332,6 +3465,10 @@ Inside the backup root:
 | `cache/usage.json` | Cached usage measurements. |
 | `cache/update_check.json` | Last passive update-check result (`{"timestamp": <epoch-seconds>, "data": <latest-version>}`). |
 | `claude-swap.log` | Rotating log file, 1 MB per file, 3 backups (`claude-swap.log.1`, `.2`, `.3`). |
+| `codex/sequence.json` | The Codex slot registry: `accounts` keyed by slot (`account_key`, `email`, `plan`, `workspaceName`, `alias`, `added`, `disabled`, `authMode`), `activeAccountKey`, `lastUpdated`. No secrets. |
+| `codex/credentials/` | Per-account Codex `auth.json` snapshots, `<file key>.json`, mode 0600, keyed by account identity. macOS stores these in the Keychain under service `claude-swap-codex` instead, except a snapshot too large to reach the `security` command over stdin, which stays in this file (mode 0600) rather than on a command line; reads and deletes cover both places. |
+| `codex/cache/` | The Codex usage cache (the same usage table format as `cache/usage.json`). |
+| `codex/.lock` | The Codex store's lock, separate from the Claude lock. |
 
 Claude Code's own files that cswap reads and writes:
 
@@ -2339,6 +3476,13 @@ Claude Code's own files that cswap reads and writes:
 |------|------|
 | `~/.claude.json` (or `<CLAUDE_CONFIG_DIR>/.claude.json`, or the legacy `<config_home>/.config.json` when present) | The global config; the active `oauthAccount` lives here. |
 | `~/.claude/.credentials.json` (file backend) | The active OAuth credentials. |
+
+The codex CLI's files that cswap reads and writes:
+
+| Path | Role |
+|------|------|
+| `~/.codex/auth.json` (or `<CODEX_HOME>/auth.json`) | The live Codex login; it decides which Codex account is active. `cswap codex switch` rewrites it. |
+| `~/.codex/accounts/` | codex-auth's registry and snapshots; read during the import, never written. |
 
 ## SETTINGS
 
@@ -2349,10 +3493,12 @@ Every key, with its type, range, default, and meaning:
 |-----|------|-------|---------|---------|
 | `autoswitch.threshold` | float (percent) | 50–99.9 | 90 | Switch when the binding 5h/7d window reaches this percent. |
 | `autoswitch.intervalSeconds` | float (seconds) | 15–3600 | 60 | Poll interval for the `cswap auto` loop. |
+| `autoswitch.codexEnabled` | bool | — | true | Also auto-switch Codex accounts in the `cswap auto` loop. A no-op without Codex accounts. |
+| `autoswitch.codexThreshold` | float (percent) | 0–99.9 | 0 | Codex-only switch threshold; 0 uses `autoswitch.threshold`. |
 | `autoswitch.cooldownSeconds` | float (seconds) | 0–86400 | 300 | Minimum seconds between proactive switches. |
 | `autoswitch.hysteresisPct` | float (percent) | 0–50 | 10 | A switch target must beat the active account by at least this many percent. |
 | `autoswitch.strategy` | choice | `best`, `soonest-reset` | `best` | How auto-switch orders qualifying targets: `best` (most headroom) or `soonest-reset` (earliest weekly renewal). See below. |
-| `autoswitch.includeApiKeyAccounts` | bool | — | false | Allow rotating onto managed API-key accounts (billed per token). |
+| `autoswitch.includeApiKeyAccounts` | bool | — | false | Allow rotating onto managed API-key accounts (billed per token). Claude only; Codex API-key accounts are never rotation targets. |
 | `autoswitch.unhealthyTicks` | int | 1–100 | 3 | Consecutive failed polls before an account is treated as unhealthy. |
 | `autoswitch.model` | string | — | (none) | Also switch on these models' weekly limits (for example `Fable`, `Fable,Opus`, or `all`). |
 
@@ -2441,6 +3587,14 @@ build.
 `config list`, and `config get`; `cswap auto --json` emits JSONL. Every JSON
 payload carries `"schemaVersion": 1`.
 
+`cswap codex list --json` and `cswap codex status --json` also carry
+`schemaVersion` 1, add `"provider": "codex"`, and are documented under those
+commands. Both use the camelCase usage encoding of `cswap list` / `cswap
+status`. Slot numbers are strings in the `list` payload (`number`,
+`activeNumber`) and an integer in the `status` payload. Errors under `--json`
+in the `codex` namespace use the same error envelope as every other verb. The
+Codex line in `cswap auto --json` is described under `cswap auto`.
+
 - **One document per command.** `list`, `status`, `switch`, and `config`
   write exactly one indented (2-space) JSON document to stdout.
 - **JSONL for `auto`.** `cswap auto --json` writes one compact JSON object per
@@ -2503,6 +3657,16 @@ payload carries `"schemaVersion": 1`.
     at-limit marker that folds in the per-model weekly windows configured by
     `autoswitch.model`. The additive `--json` fields `atLimit` and
     `limitingWindows` are present only when an account is at limit.
+  - The `cswap codex` namespace, the Codex engine in `cswap auto`, and the
+    `autoswitch.codexEnabled` / `autoswitch.codexThreshold` settings port
+    claude-swap PR #252, which the pinned Python reference does not contain.
+    The Codex store (`codex/`), the Codex export format (`version` 1,
+    `provider: "codex"`), and the Codex `--json` field names follow that PR, so a
+    Codex store written by either implementation reads in the other. cswap
+    deviates from the PR where the PR is inconsistent with the rest of the
+    CLI (`schemaVersion` and the camelCase usage encoding in the `--json`
+    payloads, the error envelope, `--debug`, the `cswap auto` event line);
+    DESIGN Amendment A22 lists the deviations.
 
 ## NOTES
 

@@ -62,6 +62,9 @@ type actionResult struct {
 	OK      bool
 	Message string
 	Payload map[string]any
+	// Warning is a second toast at warning severity (a Codex switch reporting
+	// running codex sessions, multiprovider.go); "" for every Facade action.
+	Warning string
 }
 
 // firstLine is the notification-material line (09§6.2 first_line) — here simply
@@ -84,7 +87,12 @@ func runAction(fn func() (map[string]any, error)) actionResult {
 // refreshDoneMsg carries a completed snapshot pass back to Update (the
 // "refresh" worker group). reporting.Snapshot never errors, so there is no
 // refreshErr counterpart.
-type refreshDoneMsg struct{ snap *reporting.AccountsSnapshot }
+type refreshDoneMsg struct {
+	snap *reporting.AccountsSnapshot
+	// owners is the row-key → provider map of a ProviderSource pass; nil for a
+	// Facade pass (multiprovider.go).
+	owners rowOwners
+}
 
 // pollTickMsg fires every POLL_INTERVAL_S from tea.Tick (09§2.3 poll loop).
 type pollTickMsg struct{}

@@ -163,3 +163,62 @@ func TestSnapshot_RotationEligibleFailsClosedWithoutARoster(t *testing.T) {
 		}
 	})
 }
+
+// TestAccountSnapshot_Key pins the multi-provider row identity (claude-swap
+// PR #252 models.py AccountSnapshot.key): the zero-value provider reads as
+// claude, so the same slot number under two providers yields two keys.
+func TestAccountSnapshot_Key(t *testing.T) {
+	for _, tc := range []struct {
+		name, provider, wantProvider, wantKey string
+	}{
+		{"zero value defaults to claude", "", ProviderClaude, "claude:1"},
+		{"explicit claude", ProviderClaude, ProviderClaude, "claude:1"},
+		{"codex", ProviderCodex, ProviderCodex, "codex:1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := AccountSnapshot{Number: "1", Provider: tc.provider}
+			if got := a.ProviderName(); got != tc.wantProvider {
+				t.Errorf("ProviderName() = %q, want %q", got, tc.wantProvider)
+			}
+			if got := a.Key(); got != tc.wantKey {
+				t.Errorf("Key() = %q, want %q", got, tc.wantKey)
+			}
+		})
+	}
+	if (AccountsSnapshot{}).ProviderName() != ProviderClaude {
+		t.Errorf("zero AccountsSnapshot ProviderName() = %q, want %q", (AccountsSnapshot{}).ProviderName(), ProviderClaude)
+	}
+}
+
+// TestSnapshot_RowsCarryClaudeProvider checks that Snapshot sets the provider
+// explicitly rather than leaning on the zero-value default, on the snapshot and
+// on every row.
+func TestSnapshot_RowsCarryClaudeProvider(t *testing.T) {
+	clk := testutil.FixedClock(t, fixedNow)
+	s := newStore(t, clk, nil)
+
+	writeSequenceRaw(t, s, `{
+  "activeAccountNumber": 1,
+  "lastUpdated": "2026-07-17T08:00:00Z",
+  "sequence": [1, 2],
+  "accounts": {
+    "1": {"email": "a@example.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "x"},
+    "2": {"email": "b@example.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "x"}
+  }
+}`)
+	snap := Snapshot(s, nil)
+	if snap.Provider != ProviderClaude {
+		t.Errorf("snapshot Provider = %q, want %q", snap.Provider, ProviderClaude)
+	}
+	if len(snap.Accounts) != 2 {
+		t.Fatalf("got %d accounts, want 2", len(snap.Accounts))
+	}
+	for _, a := range snap.Accounts {
+		if a.Provider != ProviderClaude {
+			t.Errorf("slot %s Provider = %q, want %q", a.Number, a.Provider, ProviderClaude)
+		}
+		if want := "claude:" + a.Number; a.Key() != want {
+			t.Errorf("slot %s Key() = %q, want %q", a.Number, a.Key(), want)
+		}
+	}
+}

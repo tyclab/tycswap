@@ -1,12 +1,35 @@
-# cswap
+<p align="center">
+  <img src="docs/logo.svg" width="160" alt="tycswap: an octopus holding two login cards, arrows swapping them">
+</p>
 
-cswap manages multiple Claude Code logins from one machine. It stores each
-account's credentials and configuration under a backup directory, activates one
-account at a time as Claude Code's live login, switches between accounts without
-a manual logout, switches automatically before an account reaches its rate
-limit, reports each account's usage in a list and a full-screen dashboard, and
-runs additional accounts in parallel terminals. It works with the Claude Code
-CLI and the VS Code extension, and ships as a single static Go binary.
+# tycswap
+
+**One machine, several Claude Code and Codex logins, never a logout.**
+
+tycswap keeps every login you own for an agent CLI in a numbered slot, makes one
+of them live, switches to another in place, and does that by itself before the
+live one runs into its rate limit. It shows every account's usage windows in a
+list and in a full-screen dashboard, and runs a second account in its own
+terminal beside the live one. It works with the Claude Code CLI and the VS Code
+extension, and ships as a single static Go binary for Linux, macOS and Windows.
+
+It is a fork of [cswap](https://github.com/dpemmons/cswap), the Go port of
+[claude-swap](https://github.com/realiti4/claude-swap), and keeps that
+command grammar, on-disk store and JSON contract unchanged. What it adds is a
+second provider: **Codex (ChatGPT)** accounts get the same slots, in-place
+switching, usage windows, auto-switch, dashboard rows and export/import as
+Claude accounts, under `cswap codex …` — see
+[Codex accounts](#codex-chatgpt-accounts). The binary is still called `cswap`,
+so scripts, docs and habits from either parent keep working.
+
+| | Claude Code | Codex (ChatGPT) |
+|---|---|---|
+| store a login, switch in place, alias, disable | yes | yes |
+| usage windows in list and dashboard | 5h, 7d, per model | 5h, weekly |
+| auto-switch before a limit | yes | yes, same `cswap auto` loop |
+| second account in its own terminal | `run`, `env` | no: a switch lists the `codex` processes still on the old token |
+| take over an existing switcher's registry | — | yes, from codex-auth |
+| export, import, purge | yes | yes |
 
 This document is the entry-point guide: concepts, installation, and the tasks a
 user performs in order. The complete per-command contract — every argument,
@@ -59,8 +82,8 @@ parallel.
 formats and `--json` schemas: a backup store, an export file, or a switch log
 written by either implementation is read by the other. The command grammar,
 exit codes, and lock protocol are identical. The macOS menu bar application is
-not part of cswap. The update mechanism, the `cswap env` command, and the
-at-limit markers are Go-only; where the Go binary and the Python reference
+not part of cswap. The update mechanism, the `cswap env` command, the
+at-limit markers, and the Codex provider are Go-only; where the Go binary and the Python reference
 diverge, the divergences are enumerated in [`docs/DESIGN.md`](docs/DESIGN.md)
 §6 and its Amendments.
 
@@ -72,25 +95,24 @@ diverge, the divergences are enumerated in [`docs/DESIGN.md`](docs/DESIGN.md)
 - The Claude Code CLI, for the accounts to run against.
 - macOS only: the `security` command, used to read and write the login Keychain.
 
-**With `go install`:**
-
-```bash
-go install git.dpemmons.com/dpemmons/cswap/cmd/cswap@latest
-```
-
-The binary is named `cswap` and is placed in the Go install directory (`$GOBIN`,
-or `$GOPATH/bin`, or `~/go/bin`). Add that directory to `PATH`.
-
 **From a checkout:**
 
 ```bash
-git clone https://git.dpemmons.com/dpemmons/cswap
-cd cswap
+git clone https://github.com/tyclab/tycswap
+cd tycswap
 make build      # builds ./cswap with the version embedded
 make install    # go install with the version embedded
 ```
 
-`make help` lists every target.
+The binary is named `cswap` and `make install` places it in the Go install
+directory (`$GOBIN`, or `$GOPATH/bin`, or `~/go/bin`). Add that directory to
+`PATH`. `make help` lists every target.
+
+**Why no `go install …@latest` line.** tycswap keeps the upstream module path
+so that its changes can be offered to cswap as plain pull requests, and Go
+refuses to install a module under a path other than the one it declares. A
+`go install` of the upstream path gives you cswap without the Codex provider.
+Build from the checkout, or use a packaged build (a Nix package is planned).
 
 ## Tasks
 
@@ -459,6 +481,8 @@ given, which overwrites it. Import rejects any file marked `encrypted: true`.
 $ cswap config
 autoswitch.threshold              80
 autoswitch.intervalSeconds        60     (default)
+autoswitch.codexEnabled           true   (default)
+autoswitch.codexThreshold         0      (default)
 autoswitch.cooldownSeconds        300    (default)
 autoswitch.hysteresisPct          10     (default)
 autoswitch.strategy               best   (default)
@@ -523,6 +547,133 @@ Are you sure you want to purge all data? [y/N] n
 Cancelled
 ```
 
+### Codex (ChatGPT) accounts
+
+cswap also switches [Codex](https://github.com/openai/codex) accounts, under a
+`codex` namespace. Bare `cswap list` and `cswap switch` keep meaning Claude, so
+no existing command changes.
+
+```bash
+cswap codex list                     # accounts + 5h/weekly usage
+cswap codex list --skip-api          # cached usage only, no network
+cswap codex list --token-status      # token expiry (never prints the token)
+cswap codex list --json              # machine-readable
+cswap codex status                   # the account codex is running as
+cswap codex switch                   # rotate to the next account
+cswap codex switch 2                 # or by number / email / alias
+cswap codex switch --strategy best   # jump to the most quota left
+cswap codex add                      # store the account you are logged in as
+cswap codex login                    # run `codex login`, then store it
+cswap codex alias 2 work
+cswap codex disable 2                # hold it out of auto-rotation
+cswap codex swap 1 2                 # exchange slot numbers
+cswap codex move 3 1                 # assign a slot (swaps if taken)
+cswap codex export ~/codex.json      # back up (contains live tokens)
+cswap codex import ~/codex.json
+cswap codex purge                    # drop cswap's copies; your login stays
+```
+
+Each verb mirrors its Claude counterpart, and each accepts `-h` / `--help` and
+`--debug`. `cswap codex status` prints the same block as `cswap status`, rendered
+by the same code. The `--json` payloads of `list` and `status` carry
+`schemaVersion`, a `provider: "codex"` field and the same camelCase usage
+encoding as the Claude verbs, with Codex field names (`workspace` rather than
+`organizationName`); an error under `--json` is the usual error envelope on
+stdout. Their shapes are in [`docs/reference.md`](docs/reference.md).
+
+A listing marks the active account with `*`, shows the workspace tag, the alias
+and a `[disabled]` marker, then the usage summary:
+
+```text
+$ cswap codex list
+* 1. alice@example.com [personal]  5h 12%  7d 40%
+  2. alice@example.com [Example Team] (work)  7d 3%
+  3. bob@example.com [personal] [disabled]  http 429
+```
+
+Switching prints the new account and, when a codex session is running, names
+its PIDs:
+
+```text
+$ cswap codex switch work
+Switched to Codex account 2: alice@example.com
+codex is running (pid 4242) — restart it for the new account to take effect.
+```
+
+**Coming from `codex-auth`?** Its accounts are imported automatically the first
+time any `cswap codex` command runs while cswap holds no Codex account.
+`~/.codex/accounts/` is read, never written, so that tool keeps working. Re-run
+the import by hand with `cswap codex import-codex-auth`.
+
+> [!IMPORTANT]
+> Switching rewrites `~/.codex/auth.json`. A codex session that is **already
+> running** keeps its old account until it is restarted — cswap warns and names
+> the running PIDs. This applies to automatic switching too: a switch affects
+> only the next session started. For switching without a restart, see the
+> [`codext`](https://github.com/Loongphy/codext) fork of the Codex CLI.
+
+Codex accounts appear in the dashboard after the Claude ones, each tagged
+`⟨codex⟩`. Switch, disable / enable and remove act on the selected row's own
+provider; adding an account from the dashboard stays Claude-only. After a Codex
+switch the dashboard warns with the PIDs of any codex sessions still running.
+
+`cswap auto` rotates both providers in one process. With `--once` the Codex tick
+runs after the Claude one; in the loop the Codex engine ticks at once and then
+every interval. It prints a line only when it switched or failed (every tick
+under `--dry-run`), with the same timestamp prefix as the Claude events, or a
+JSON line with `"event": "codex"` under `--json`. It uses the Claude
+`autoswitch.hysteresisPct`, and two settings tune the rest:
+
+```bash
+cswap config set autoswitch.codexThreshold 85   # 0 = use autoswitch.threshold
+cswap config set autoswitch.codexEnabled false  # leave Codex out of `cswap auto`
+```
+
+`autoswitch.includeApiKeyAccounts` applies to Claude only: a Codex API-key login
+reports no usage, so a threshold has nothing to compare, and such an account is
+never a rotation target.
+
+The Codex provider is a Go-side extension relative to the Python reference that
+`docs/port-spec/` pins; it ports claude-swap PR #252 so that the command
+grammar, the on-disk store and the export format stay compatible across the two
+implementations. Where the PR disagrees with the rest of cswap (JSON envelope,
+`--debug`, the `cswap auto` event line, a few messages and safety checks),
+cswap follows its own conventions; [`docs/DESIGN.md`](docs/DESIGN.md)
+Amendment A22 lists each deviation.
+
+<details>
+<summary>Where Codex data is stored</summary>
+
+Accounts live in cswap's own store, a sibling of the Claude one, not in
+`~/.codex/accounts/`:
+
+| What                       | Where                                             |
+|----------------------------|---------------------------------------------------|
+| Slot registry (no secrets) | `<backup store>/codex/sequence.json`              |
+| Credentials, macOS         | Keychain, service `claude-swap-codex`             |
+| Credentials, Linux/Windows | `<backup store>/codex/credentials/`, mode 0600    |
+| Usage cache                | `<backup store>/codex/cache/`                     |
+| Lock                       | `<backup store>/codex/.lock`                      |
+
+The lock is the Codex store's own, so a Codex switch never waits on a Claude
+switch; `export` and `purge` take no lock, like their Claude counterparts,
+while `import` and `import-codex-auth` write under it, and every roster write
+takes it on its own. The codex CLI's own directory is `$CODEX_HOME`, or
+`~/.codex` when it is unset. cswap writes exactly one file there, `auth.json`,
+mode 0600.
+
+Credentials are keyed by account identity rather than slot number, so `swap` and
+`move` rewrite only the registry and never move a secret.
+
+`cswap codex export` writes real OAuth tokens — an export that cannot log in is
+not a backup. The file is created private (0600), an existing file is narrowed
+to 0600 before it is overwritten, and the document says so in a `warning`
+field. Treat it like a password. `cswap codex purge` refuses to run when the
+store root is, or contains, `$CODEX_HOME`, so it can never delete your live
+login.
+
+</details>
+
 ## Data locations
 
 The backup store is the root of everything cswap persists.
@@ -546,6 +697,7 @@ Inside the backup store:
 | `cache/update_check.json` | Cached update-check result.                                  |
 | `sessions/`               | Session profiles for `cswap run` and `cswap env`.            |
 | `claude-swap.log`         | The switch log; rotates at 1 MB, keeping 3 backups.          |
+| `codex/`                  | The Codex store; see Codex accounts under Tasks.             |
 
 The full per-command contract — arguments, defaults, exit codes, JSON schemas,
 environment variables, and error conditions — is in

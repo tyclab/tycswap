@@ -117,8 +117,8 @@ func (d *dashboardScreen) removeEntries(m *Model) []menuEntry {
 	var entries []menuEntry
 	for _, acc := range m.accounts() {
 		entries = append(entries, menuEntry{
-			label:    fmt.Sprintf("%s  %s  [%s]", acc.Number, accountName(acc), acc.DisplayTag()),
-			actionID: "remove:" + acc.Number,
+			label:    fmt.Sprintf("%s  %s  [%s]%s", acc.Number, accountName(acc), acc.DisplayTag(), providerBadge(acc)),
+			actionID: "remove:" + rowID(acc),
 			notes:    stateNotes(acc),
 		})
 	}
@@ -145,8 +145,8 @@ func (d *dashboardScreen) disableEntries(m *Model) []menuEntry {
 			state = "  (disabled)"
 		}
 		entries = append(entries, menuEntry{
-			label:    fmt.Sprintf("%s  %s%s   %s", acc.Number, name, state, action),
-			actionID: "disable:" + acc.Number,
+			label:    fmt.Sprintf("%s  %s%s%s   %s", acc.Number, name, providerBadge(acc), state, action),
+			actionID: "disable:" + rowID(acc),
 		})
 	}
 	return append(entries, backEntry)
@@ -524,7 +524,7 @@ func (a *accountListScreen) onSnapshotBase(m *Model, indexAfterBuild func(snap *
 	}
 	numbers := make([]string, len(snap.Accounts))
 	for i, acc := range snap.Accounts {
-		numbers[i] = acc.Number
+		numbers[i] = rowID(acc)
 	}
 	if !equalStrings(numbers, a.numbers) {
 		firstBuild := len(a.numbers) == 0
@@ -544,7 +544,7 @@ func (a *accountListScreen) onSnapshotBase(m *Model, indexAfterBuild func(snap *
 func (a *accountListScreen) flashUpdated(m *Model, snap *reporting.AccountsSnapshot) tea.Cmd {
 	newStamps := make(map[string]*float64, len(snap.Accounts))
 	for _, acc := range snap.Accounts {
-		newStamps[acc.Number] = acc.Usage.FetchedAt
+		newStamps[rowID(acc)] = acc.Usage.FetchedAt
 	}
 	var cmds []tea.Cmd
 	if len(a.stamps) > 0 {
@@ -585,7 +585,7 @@ func (a *accountListScreen) onMessage(m *Model, msg tea.Msg) tea.Cmd {
 // activeIndex is the index of the active account, or 0 (09§3.4).
 func (a *accountListScreen) activeIndex(snap *reporting.AccountsSnapshot) int {
 	for i, acc := range snap.Accounts {
-		if acc.Number == snap.ActiveNumber {
+		if acc.Number == snap.ActiveNumber && acc.ProviderName() == reporting.ProviderClaude {
 			return i
 		}
 	}
@@ -659,7 +659,7 @@ func (a *accountListScreen) renderList(m *Model) string {
 			marker = lipgloss.NewStyle().Foreground(lipgloss.Color(colAccent)).Render("▌ ")
 		}
 		card := accountCardText(acc, inner-2, m.thresholdPct, now).render()
-		if _, flashing := a.flashing[acc.Number]; flashing {
+		if _, flashing := a.flashing[rowID(acc)]; flashing {
 			card = lipgloss.NewStyle().Background(lipgloss.Color(colPanel)).Render(card)
 		}
 		blockLines := strings.Split(marker+indentContinuation(card), "\n")
@@ -730,7 +730,7 @@ func (s *switchScreen) selectHighlighted(m *Model) tea.Cmd {
 	if s.index == nil || m.snapshot == nil || *s.index >= len(m.snapshot.Accounts) {
 		return nil
 	}
-	number := m.snapshot.Accounts[*s.index].Number
+	number := rowID(m.snapshot.Accounts[*s.index])
 	cmd := m.doSwitch(number)
 	pop := m.popScreen()
 	return tea.Batch(cmd, pop)
@@ -824,7 +824,7 @@ func (w *watchScreen) selectHighlighted(m *Model) tea.Cmd {
 	if w.index == nil || m.snapshot == nil || *w.index >= len(m.snapshot.Accounts) {
 		return nil
 	}
-	number := m.snapshot.Accounts[*w.index].Number
+	number := rowID(m.snapshot.Accounts[*w.index])
 	cmd := m.doSwitch(number)
 	w.setSelecting(m, false)
 	return cmd

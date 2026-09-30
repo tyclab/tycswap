@@ -76,8 +76,18 @@ const Filename = "settings.json"
 // engine (`cswap auto`). See spec 08§8.2 / 05§2 for the field-by-field
 // rationale.
 type AutoSwitchSettings struct {
-	Threshold             float64
-	IntervalSeconds       float64
+	Threshold       float64
+	IntervalSeconds float64
+	// CodexEnabled: Codex rides in the same `cswap auto` process as its own
+	// small engine. Enabled by default, but a no-op unless the user has Codex
+	// accounts — a Claude-only install never notices it exists (claude-swap
+	// PR #252 settings.py).
+	CodexEnabled bool
+	// CodexThreshold: 0 means "use Threshold". A separate knob because
+	// Claude's 5h/7d rhythm and a ChatGPT plan's limits are not the same
+	// shape, so one number need not suit both (claude-swap PR #252
+	// settings.py).
+	CodexThreshold        float64
 	CooldownSeconds       float64
 	HysteresisPct         float64
 	Strategy              string
@@ -89,12 +99,14 @@ type AutoSwitchSettings struct {
 }
 
 // Default returns the dataclass defaults: threshold 90, intervalSeconds 60,
-// cooldownSeconds 300, hysteresisPct 10, strategy "best",
+// codexEnabled true, codexThreshold 0, cooldownSeconds 300, hysteresisPct 10, strategy "best",
 // includeApiKeyAccounts false, unhealthyTicks 3, model nil.
 func Default() AutoSwitchSettings {
 	return AutoSwitchSettings{
 		Threshold:             90.0,
 		IntervalSeconds:       60.0,
+		CodexEnabled:          true,
+		CodexThreshold:        0.0,
 		CooldownSeconds:       300.0,
 		HysteresisPct:         10.0,
 		Strategy:              "best",
@@ -145,6 +157,12 @@ var SettingSpecs = []Spec{
 	{Section: "autoswitch", JSONKey: "intervalSeconds", Field: "IntervalSeconds", Kind: KindFloat,
 		Lo: 15.0, Hi: 3600.0, Default: 60.0,
 		Help: "Poll interval for the cswap auto loop, in seconds"},
+	{Section: "autoswitch", JSONKey: "codexEnabled", Field: "CodexEnabled", Kind: KindBool,
+		Default: true,
+		Help:    "Also auto-switch Codex accounts in the cswap auto loop"},
+	{Section: "autoswitch", JSONKey: "codexThreshold", Field: "CodexThreshold", Kind: KindFloat,
+		Lo: 0.0, Hi: 99.9, Default: 0.0,
+		Help: "Codex-only switch threshold (0 = use autoswitch.threshold)"},
 	{Section: "autoswitch", JSONKey: "cooldownSeconds", Field: "CooldownSeconds", Kind: KindFloat,
 		Lo: 0.0, Hi: 86400.0, Default: 300.0,
 		Help: "Minimum seconds between proactive switches"},
@@ -342,6 +360,10 @@ func applyField(out *AutoSwitchSettings, field string, value any) {
 		out.Threshold = value.(float64)
 	case "IntervalSeconds":
 		out.IntervalSeconds = value.(float64)
+	case "CodexEnabled":
+		out.CodexEnabled = value.(bool)
+	case "CodexThreshold":
+		out.CodexThreshold = value.(float64)
 	case "CooldownSeconds":
 		out.CooldownSeconds = value.(float64)
 	case "HysteresisPct":
@@ -372,6 +394,8 @@ func fieldsOf(s AutoSwitchSettings) map[string]any {
 	return map[string]any{
 		"Threshold":             s.Threshold,
 		"IntervalSeconds":       s.IntervalSeconds,
+		"CodexEnabled":          s.CodexEnabled,
+		"CodexThreshold":        s.CodexThreshold,
 		"CooldownSeconds":       s.CooldownSeconds,
 		"HysteresisPct":         s.HysteresisPct,
 		"Strategy":              s.Strategy,
