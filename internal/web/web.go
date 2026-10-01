@@ -282,11 +282,11 @@ type Deps struct {
 	// Kill stops the Claude Code session with this pid, which the session
 	// file says started at startedAt (epoch milliseconds); nil →
 	// DefaultKill, which verifies the process's start time first.
-	Kill  func(pid int, startedAt int64) error
-	Clock clock.Clock
-	Rand         io.Reader     // token entropy; default crypto/rand
-	Interval     time.Duration // poll tick; default 5 s
-	Logger       func(string)  // default discards
+	Kill     func(pid int, startedAt int64) error
+	Clock    clock.Clock
+	Rand     io.Reader     // token entropy; default crypto/rand
+	Interval time.Duration // poll tick; default 5 s
+	Logger   func(string)  // default discards
 	// Ticker builds the poll ticker; default time.NewTicker. Tests inject a
 	// channel they drive by hand.
 	Ticker func(d time.Duration) (<-chan time.Time, func())
