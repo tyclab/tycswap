@@ -677,8 +677,14 @@ func copyKeychain(oldRoot, newRoot string, items []kcItem, kc keychain.KeychainC
 			continue
 		}
 		// A resumed run may find the item copied already: identical is
-		// verified, different is a conflict, never overwritten.
-		if cur, ok, err := kc.Get(it.ToService, it.Account); err == nil && ok {
+		// verified, different is a conflict, never overwritten. A read that
+		// fails (denied, timed out) is an error: `Set -U` would replace an
+		// item this run could not see.
+		cur, ok, err := kc.Get(it.ToService, it.Account)
+		if err != nil {
+			return nil, fmt.Errorf("read Keychain item %s/%s: %w", it.ToService, it.Account, err)
+		}
+		if ok {
 			if cur != v {
 				return nil, fmt.Errorf("%w: Keychain item %s/%s already exists with other content", ErrConflict, it.ToService, it.Account)
 			}

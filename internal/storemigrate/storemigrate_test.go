@@ -581,3 +581,38 @@ func TestResumeRestoresTheStoreModes(t *testing.T) {
 		t.Errorf("verified dir mode = %v, want 0700", fi.Mode().Perm())
 	}
 }
+
+// deniedGetKC is a Keychain whose reads of one service fail, as a denied or
+// timed-out `security find-generic-password` does.
+type deniedGetKC struct {
+	*keychain.Fake
+	service string
+}
+
+func (d *deniedGetKC) Get(service, account string) (string, bool, error) {
+	if service == d.service {
+		return "", false, &keychain.KeychainError{Msg: "denied"}
+	}
+	return d.Fake.Get(service, account)
+}
+
+// TestKeychainReadErrorOnTheNewServiceStopsTheCopy: when the new service
+// cannot be read, migrate refuses with the error instead of writing over an
+// item it could not see.
+func TestKeychainReadErrorOnTheNewServiceStopsTheCopy(t *testing.T) {
+	old := oldStore(t)
+	newRoot := filepath.Join(t.TempDir(), "tycswap")
+	base := keychain.NewFake()
+	base.Seed(keychain.OldBackupService, "account-1-a@example.com", "blob")
+	base.Seed(keychain.BackupService, "account-1-a@example.com", "newer, unseen")
+	kc := &deniedGetKC{Fake: base, service: keychain.BackupService}
+	mac := platform.MacOS
+
+	_, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &mac, Keychain: kc})
+	if err == nil || !strings.Contains(err.Error(), "read Keychain item "+keychain.BackupService+"/account-1-a@example.com") {
+		t.Fatalf("Run = %v, want the read error naming the item", err)
+	}
+	if v, _, _ := base.Get(keychain.BackupService, "account-1-a@example.com"); v != "newer, unseen" {
+		t.Errorf("the unreadable item was overwritten: %q", v)
+	}
+}
