@@ -131,10 +131,15 @@ func (a *autoFacade) View() web.AutoView {
 		s = settings.Load(a.sw.BackupDir())
 		threshold = s.Threshold
 	}
-	q := autoswitch.ReadQuarantine(autoswitch.StatePath(a.sw.BackupDir()))
+	// Each quarantine entry carries its reason and the engine's RFC3339 "at"
+	// stamp, so the page can show since when a slot has been held out.
 	quarantine := map[string]any{}
-	for k, v := range q {
-		quarantine[k] = v
+	for k, e := range autoswitch.ReadQuarantineEntries(autoswitch.StatePath(a.sw.BackupDir())) {
+		entry := map[string]any{"reason": e.Reason}
+		if e.At != "" {
+			entry["at"] = e.At
+		}
+		quarantine[k] = entry
 	}
 	events := make([]web.AutoEventView, len(a.events)) // never nil: the UI wants []
 	copy(events, a.events)

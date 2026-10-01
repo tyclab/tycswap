@@ -9,6 +9,7 @@ import (
 	"net/http/cookiejar"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -179,6 +180,24 @@ func TestAutoFacade(t *testing.T) {
 	}
 	if err := a.Stop(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The quarantine section carries each entry's reason and "at" stamp, so the
+// page's Since column has a value.
+func TestAutoFacadeQuarantineCarriesReasonAndTime(t *testing.T) {
+	sw := fixtureSwitcher(t)
+	body := `{"schemaVersion":1,"quarantine":{"3":{"email":"c@example.com","reason":"invalid_grant","at":"2026-09-19T10:00:00Z"},"4":{"email":"d@example.com"}}}`
+	if err := os.WriteFile(autoswitch.StatePath(sw.BackupDir()), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	q := newAutoFacade(sw).View().Quarantine
+	want := map[string]any{
+		"3": map[string]any{"reason": "invalid_grant", "at": "2026-09-19T10:00:00Z"},
+		"4": map[string]any{"reason": ""},
+	}
+	if !reflect.DeepEqual(q, want) {
+		t.Fatalf("quarantine = %#v, want %#v", q, want)
 	}
 }
 

@@ -445,10 +445,14 @@
     return entry.reason || entry.cause || entry.kind || '';
   }
 
+  // quarantineSince: the entry's "at" as Unix seconds. The engine writes an
+  // RFC3339 stamp; a number is taken as seconds already.
   function quarantineSince(entry) {
     if (!entry || typeof entry !== 'object') { return null; }
-    var v = entry.at || entry.since || entry.quarantinedAt || entry.quarantined_at;
-    return typeof v === 'number' ? v : null;
+    var v = entry.at;
+    if (typeof v === 'number') { return v; }
+    if (typeof v === 'string') { var t = Date.parse(v); return isNaN(t) ? null : t / 1000; }
+    return null;
   }
 
   var SENTINEL_STATUSES = { token_expired: 'token expired', api_key: 'api key', keychain_unavailable: 'keychain unavailable', relogin_required: 're-login needed', no_credentials: 'no credentials' };

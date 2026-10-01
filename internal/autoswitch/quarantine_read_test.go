@@ -57,6 +57,31 @@ func TestReadQuarantine(t *testing.T) {
 	}
 }
 
+// ReadQuarantineEntries carries the email and the timestamp as well, so a
+// reader that shows "since when" need not parse the state file itself.
+func TestReadQuarantineEntries(t *testing.T) {
+	path := filepath.Join(t.TempDir(), StateFilename)
+	body := `{"quarantine":{` +
+		`"2":{"email":"b@x","reason":"invalid_grant","at":"2026-09-19T10:00:00Z"},` +
+		`"3":{"email":"c@x"},` +
+		`"5":true}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := ReadQuarantineEntries(path)
+	want := map[string]QuarantineEntry{
+		"2": {Email: "b@x", Reason: "invalid_grant", At: "2026-09-19T10:00:00Z"},
+		"3": {Email: "c@x"},
+		"5": {},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ReadQuarantineEntries = %#v, want %#v", got, want)
+	}
+	if got := ReadQuarantineEntries(filepath.Join(t.TempDir(), StateFilename)); len(got) != 0 {
+		t.Fatalf("missing file: %#v, want empty", got)
+	}
+}
+
 // TestStatePathJoin pins that the exported path helper joins under the backup
 // dir the same way the engine defaults e.statePath, so the reader and the engine
 // never target different files.
