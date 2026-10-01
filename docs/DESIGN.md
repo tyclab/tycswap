@@ -3610,7 +3610,9 @@ opens can make the browser do so. The design keeps both from driving it.
 8. **Opening the browser** never puts the launch token on a command line on
    unix, where argv is world-readable: `tycswap web` writes a 0600 redirect
    page to the temp directory and hands the launcher its `file://` URL
-   (`internal/browser`: `open`; `wslview`, `xdg-open`, `sensible-browser`).
+   (`internal/browser`: `open`; `wslview`, `xdg-open`, `sensible-browser`,
+   each resolved on PATH and started directly, so no shell sees the URL and
+   "could not open a browser" is reported only when no launcher started).
    On Windows, where another user cannot read argv, the URL goes to the
    default browser directly (ShellExecuteW, `rundll32`, `cmd start`).
    `internal/browser` refuses URLs with shell-significant characters.

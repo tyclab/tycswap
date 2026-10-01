@@ -45,7 +45,7 @@ const redirectFileTTL = 30 * time.Second
 // local user (/proc, ps), so the token never goes on a command line there: it
 // is written into a 0600 HTML page under the temp directory that redirects to
 // the URL, and the launcher gets that page's file:// URL. On WSL the launcher
-// chain reaches the Windows browser through wslview, or an xdg-open, that
+// chain reaches the Windows browser through wslview, or an xdg-open that
 // translates the Linux path. The token is single-use on the server side as
 // well, so even a captured URL is dead after the first open. If the page
 // cannot be written, the plain URL is the last resort.

@@ -2282,12 +2282,13 @@ The URL printed at start carries a one-time token. On macOS and Linux,
 WSL included, the browser is handed a `file://` URL of a 0600 redirect page
 in the temp directory (removed 30 seconds later), so the token never appears
 on a command line; the launcher chain is `wslview`, `xdg-open`,
-`sensible-browser` (`open` on macOS). On WSL this relies on `wslview`, or an
-`xdg-open` that translates Linux paths, to reach the Windows browser. On
-Windows the URL goes to the default browser directly (ShellExecuteW, then
-`rundll32 url.dll,FileProtocolHandler`, then `cmd /c start`). If the redirect
-page cannot be written, or no browser opens, the plain URL is the last
-resort: open the printed URL yourself.
+`sensible-browser` (`open` on macOS), each looked up on `PATH` and started
+directly, without a shell. On WSL this relies on `wslview`, or an `xdg-open`
+that translates Linux paths, to reach the Windows browser. On Windows the
+URL goes to the default browser directly (ShellExecuteW, then `rundll32
+url.dll,FileProtocolHandler`, then `cmd /c start`). When no launcher starts,
+`tycswap web` says so and the printed URL is the way in; if the redirect
+page cannot be written, the plain URL is the last resort.
 
 **Security model.** The server listens on a loopback address only and
 refuses any other before it accepts a connection. Each start mints three

@@ -1,7 +1,8 @@
-// browser_unix.go — detach the browser child into its own session (unix).
+// browser_unix.go — the unix launcher chain, each child detached into its own
+// session.
 //
-// Mirrors Node's `spawn(..., { detached: true })`, which calls setsid so the
-// browser outlives the CLI and never receives the terminal's SIGHUP/SIGINT.
+// detach mirrors Node's `spawn(..., { detached: true })`, which calls setsid so
+// the browser outlives the CLI and never receives the terminal's SIGHUP/SIGINT.
 
 //go:build unix
 
@@ -13,8 +14,9 @@ import (
 	"syscall"
 )
 
-// openURL hands url to the platform launcher (`open`, or the xdg chain).
-func openURL(url string) error { return startLauncher(runtime.GOOS, url) }
+// openURL hands url to the first launcher on PATH that starts (`open` on
+// macOS; wslview, xdg-open, sensible-browser elsewhere).
+func openURL(url string) error { return openChain(url, launcherOpeners(runtime.GOOS)) }
 
 func detach(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}

@@ -1,47 +1,30 @@
 // Package browser opens a URL in the user's default browser.
 //
 // `open` on macOS and a wslview → xdg-open → sensible-browser chain on other
-// unix systems (wslview first, so a WSL distro reaches the Windows browser).
-// On Windows the shell is asked directly (ShellExecuteW), then
-// `rundll32 url.dll,FileProtocolHandler`, and only last `cmd /c start "" <url>`
-// (with & escaped as ^& so cmd does not split the query). The child is
-// detached with stdio ignored, so a chatty browser never writes into the
-// caller's output.
+// unix systems (wslview first, so a WSL distro reaches the Windows browser),
+// each launcher looked up on PATH and started directly: no shell is involved,
+// and success means a launcher process actually started. On Windows the shell
+// is asked directly (ShellExecuteW), then `rundll32 url.dll,FileProtocolHandler`,
+// and only last `cmd /c start "" <url>` (with & escaped as ^& so cmd does not
+// split the query). The child is detached with stdio ignored, so a chatty
+// browser never writes into the caller's output.
 package browser
 
 import (
 	"errors"
-	"fmt"
 	"os/exec"
 	"strings"
 )
 
-// Open launches url in the user's default browser without
-// waiting for it. It refuses URLs containing characters outside the RFC 3986
-// set, since the unix path interpolates the URL into an `sh -c` string.
-//
-// On Windows it asks the shell itself (ShellExecuteW) first and only then
-// spawns a launcher (openURL in browser_windows.go): a command line through
-// cmd.exe has its own quoting and expansion rules and flashes a console
-// window from a tray app.
+// Open launches url in the user's default browser without waiting for it.
+// It refuses URLs containing characters outside the RFC 3986 set or that a
+// command interpreter treats specially: the Windows `cmd /c start` fallback
+// re-parses its command line, and refusing them everywhere keeps one rule.
 func Open(url string) error {
 	if !urlShellSafe(url) {
 		return errors.New("refusing to open a URL with shell-significant characters")
 	}
 	return openURL(url)
-}
-
-// startLauncher runs the platform's launcher command for url, detached, and
-// reaps it in the background so it never lingers as a zombie.
-func startLauncher(goos, url string) error {
-	name, args := browserCommand(goos, url)
-	cmd := exec.Command(name, args...)
-	detach(cmd)
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	go func() { _ = cmd.Wait() }()
-	return nil
 }
 
 // opener is one way of handing a URL to the default browser.
@@ -68,24 +51,56 @@ func openChain(url string, steps []opener) error {
 	return errors.New("could not open a browser (" + strings.Join(why, "; ") + ")")
 }
 
-// browserCommand picks the launcher argv for a GOOS; split out so every
-// platform branch is unit-tested on every platform.
-func browserCommand(goos, url string) (string, []string) {
-	switch goos {
-	case "darwin":
-		return "open", []string{url}
-	case "windows":
-		return "cmd", []string{"/c", "start", "", strings.ReplaceAll(url, "&", "^&")}
-	default:
-		q := `"` + url + `"`
-		script := fmt.Sprintf("wslview %s 2>/dev/null || xdg-open %s 2>/dev/null || sensible-browser %s 2>/dev/null", q, q, q)
-		return "sh", []string{"-c", script}
+// launchers names the unix launcher binaries for a GOOS, in the order they
+// are tried; split out so every platform's chain is unit-tested on every
+// platform. Windows has its own chain (browser_windows.go).
+func launchers(goos string) []string {
+	if goos == "darwin" {
+		return []string{"open"}
 	}
+	return []string{"wslview", "xdg-open", "sensible-browser"}
+}
+
+// launcherOpeners builds the opener chain for the unix launchers: each one is
+// resolved on PATH (a missing binary is that step's failure, and the chain
+// moves on) and started detached with the URL as its only argument.
+func launcherOpeners(goos string) []opener {
+	var steps []opener
+	for _, bin := range launchers(goos) {
+		bin := bin
+		steps = append(steps, opener{name: bin, open: func(url string) error {
+			path, err := exec.LookPath(bin)
+			if err != nil {
+				return err
+			}
+			return startDetached(path, url)
+		}})
+	}
+	return steps
+}
+
+// startDetached runs the launcher at path for url, detached, and reaps it in
+// the background so it never lingers as a zombie. nil means the launcher
+// process started.
+func startDetached(path, url string) error {
+	cmd := exec.Command(path, url)
+	detach(cmd)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
+}
+
+// cmdStartArgs is the argv for `cmd.exe` opening url with `start`: & escaped
+// as ^& so cmd does not split the query string.
+func cmdStartArgs(url string) []string {
+	return []string{"/c", "start", "", strings.ReplaceAll(url, "&", "^&")}
 }
 
 // urlShellSafe reports whether every byte of url is in the RFC 3986 unreserved
-// / reserved / percent set, less the characters that are shell-significant
-// inside double quotes. A url.Values-encoded query always passes.
+// / reserved / percent set, less the characters a command interpreter treats
+// specially. A url.Values-encoded query always passes.
 func urlShellSafe(url string) bool {
 	if url == "" {
 		return false
@@ -95,8 +110,8 @@ func urlShellSafe(url string) bool {
 		switch {
 		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
 		case strings.IndexByte("-._~:/?#[]@!$&'()*+,;=%", c) >= 0:
-			// '$', '\'' and '!' are RFC-legal but shell-significant inside
-			// double quotes (sh) — url.Values never emits them, so reject.
+			// '$', '\'', '!' and '`' are RFC-legal but shell-significant —
+			// url.Values never emits them, so reject.
 			if c == '$' || c == '\'' || c == '!' || c == '`' {
 				return false
 			}

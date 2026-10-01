@@ -129,8 +129,7 @@ func rundll32Open(url string) error {
 }
 
 func cmdStartOpen(url string) error {
-	_, args := browserCommand("windows", url)
-	cmd := exec.Command(systemPath("cmd.exe"), args...)
+	cmd := exec.Command(systemPath("cmd.exe"), cmdStartArgs(url)...)
 	detach(cmd)
 	if err := cmd.Start(); err != nil {
 		return err
