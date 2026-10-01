@@ -3455,14 +3455,16 @@ credstore takes its file fallback without marking the Keychain unusable.
 Finding *"tokens on the command line are encouraged"*: the docs use the
 prompt and `-`, and `add-token` warns on a positional token.
 
-**3. File names never carry raw outside strings.** Finding *"an unvalidated
-email builds file paths"*: `add` validates the login email like `import`, and
-per-account backup files are named from `storenames.EmailKey` (unpadded
-base64url), one scheme for config and credential files. This deliberately
-changes the A23 promise that the layout inside the store stays as before:
-`configs/` and `credentials/` names change once, by the `email_file_names`
-migration (and `tycswap migrate` writes the new names directly). A tool that
-read those two directories by raw email must derive the key the same way.
+**3. A string that names a file is validated where it enters the store.**
+Finding *"an unvalidated email builds file paths"*: `add` and `add --login`
+validate the login email as `import` does (`storenames.ValidEmail`: the
+`_validate_email` pattern, at most 254 bytes), and `purge` validates every
+roster email before it builds a path from one, refusing with the slot named.
+The pattern admits no path separator, whitespace or control character, so a
+validated email is a single path component, and the backup files keep the
+raw email in their names (`configs/.claude-config-<n>-<email>.json`,
+`credentials/.creds-<n>-<email>.enc[.prev]`, built in one place,
+`storenames`, for store, credstore and purge); the layout A23 describes holds.
 `codex import` validates its rows before writing, as the Claude import does.
 
 **4. A refresh that cannot be persisted is not performed.** Findings

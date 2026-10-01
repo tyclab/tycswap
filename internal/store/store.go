@@ -196,7 +196,6 @@ type migHost struct{ s *Store }
 
 func (h migHost) BackupDir() string      { return h.s.backupDir }
 func (h migHost) CredentialsDir() string { return h.s.CredentialsDir }
-func (h migHost) ConfigsDir() string     { return h.s.ConfigsDir }
 func (h migHost) StateFilePath() string {
 	return filepath.Join(h.s.backupDir, migrations.StateFilename)
 }

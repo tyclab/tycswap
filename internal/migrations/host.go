@@ -44,9 +44,6 @@ type Host interface {
 	// Windows migration materializes it (mkdir + chmod 0700) before its first
 	// write, since pre-migration Windows installs never had it (spec 07§5.3).
 	CredentialsDir() string
-	// ConfigsDir is where the per-account config backups live (the
-	// email_file_names migration renames files there).
-	ConfigsDir() string
 	// StateFilePath is .migrations.json's exact path — ordinarily
 	// filepath.Join(BackupDir(), StateFilename), kept as its own accessor per
 	// DESIGN A3 so a caller can point it elsewhere (e.g. a fixture) without

@@ -56,6 +56,28 @@ func Purge(s *store.Store) error {
 		return cerr.Session("Live session-mode Claude instance(s) found: %s. Exit them first, then retry --purge.", strings.Join(parts, "; "))
 	}
 
+	// Purge's only roster read, and the one operation that reads it through
+	// ReadSequence by design: it never writes sequence.json — it deletes the
+	// directory containing it — so it needs no classification and must not refuse
+	// an unparseable file. The roster is used solely to enumerate per-account
+	// credential keys; a nil one just means that enumeration contributes nothing,
+	// and the directory removal below still takes everything with it.
+	data, _ := s.ReadSequence()
+	var slots []string
+	if data != nil {
+		slots = sortedSlots(data)
+	}
+	// Each email names the credential file to unlink and the Keychain item to
+	// delete. sequence.json is a file anyone with access to the store can edit,
+	// so an email that is not a plain address is refused before a path is
+	// built from it, and before the user is asked anything.
+	for _, num := range slots {
+		if email := decodeRecord(data.Accounts[num]).str("email"); !storenames.ValidEmail(email) {
+			return cerr.Validation("Slot %s has an email that is not a plain address: %s. purge names credential files from it and refuses; fix the record in %s or remove %s by hand.",
+				num, strconv.Quote(email), s.SequenceFile, backupDir)
+		}
+	}
+
 	emitWarning("This will remove ALL tycswap data from your system:")
 	emitLine("  - Backup directory: " + backupDir)
 	if s.Platform == platform.MacOS {
@@ -78,36 +100,27 @@ func Purge(s *store.Store) error {
 
 	var removed []string
 
-	// Purge's only roster read, and the one operation that reads it through
-	// ReadSequence by design: it never writes sequence.json — it deletes the
-	// directory containing it — so it needs no classification and must not refuse
-	// an unparseable file. The roster is used solely to enumerate per-account
-	// credential keys; a nil one just means that enumeration contributes nothing,
-	// and the directory removal below still takes everything with it.
-	data, _ := s.ReadSequence()
-	if data != nil {
-		for _, num := range sortedSlots(data) {
-			email := decodeRecord(data.Accounts[num]).str("email")
-			nums := []string{num}
-			if num != "None" {
-				nums = append(nums, "None")
+	for _, num := range slots {
+		email := decodeRecord(data.Accounts[num]).str("email") // validated above
+		nums := []string{num}
+		if num != "None" {
+			nums = append(nums, "None")
+		}
+		for _, n := range nums {
+			credFile := filepath.Join(s.CredentialsDir, storenames.CredsFile(n, email))
+			if pathExists(credFile) {
+				if err := os.Remove(credFile); err == nil {
+					removed = append(removed, "Credential file: "+filepath.Base(credFile))
+				}
 			}
+		}
+		// macOS Keychain items via the security backend.
+		if s.Platform == platform.MacOS {
+			kc := keychain.Security{}
 			for _, n := range nums {
-				credFile := filepath.Join(s.CredentialsDir, storenames.CredsFile(n, email))
-				if pathExists(credFile) {
-					if err := os.Remove(credFile); err == nil {
-						removed = append(removed, "Credential file: "+filepath.Base(credFile))
-					}
-				}
-			}
-			// macOS Keychain items via the security backend.
-			if s.Platform == platform.MacOS {
-				kc := keychain.Security{}
-				for _, n := range nums {
-					username := "account-" + n + "-" + email
-					_ = kc.Delete(securityService, username)
-					removed = append(removed, "Credential: "+username)
-				}
+				username := "account-" + n + "-" + email
+				_ = kc.Delete(securityService, username)
+				removed = append(removed, "Credential: "+username)
 			}
 		}
 	}

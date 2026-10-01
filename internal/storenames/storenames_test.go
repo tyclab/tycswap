@@ -27,20 +27,42 @@ func TestValidEmail(t *testing.T) {
 	}
 }
 
-// TestNamesNeverLeaveTheirDirectory: whatever the email holds, the encoded
-// names are single path components.
-func TestNamesNeverLeaveTheirDirectory(t *testing.T) {
-	for _, email := range []string{"a/../../../x", `..\..\x`, "a@example.com", "..", "/etc/passwd", "é@x.com"} {
-		for _, name := range []string{ConfigFile("1", email), CredsFile("1", email), CredsPrevFile("1", email)} {
-			if strings.ContainsAny(name, `/\:`) || filepath.Base(name) != name {
-				t.Errorf("%q -> %q is not a single safe component", email, name)
-			}
+// TestValidEmailAdmitsOnlySafeBytes: every byte the pattern lets into an
+// email is one that is inert in a file name, which is what makes a validated
+// email a single path component without any encoding.
+func TestValidEmailAdmitsOnlySafeBytes(t *testing.T) {
+	for b := 0; b < 256; b++ {
+		c := string([]byte{byte(b)})
+		if !ValidEmail("a"+c+"b@example.com") && !ValidEmail("ab@ex"+c+"ample.com") {
+			continue
+		}
+		if b <= 0x20 || b == 0x7f || b >= 0x80 || strings.ContainsAny(c, `/\:*?"<>|`) {
+			t.Errorf("ValidEmail admits byte %#x, which is not safe in a file name", b)
 		}
 	}
-	if EmailKey("a@x.com") == EmailKey("a@x.co") {
-		t.Error("EmailKey is not injective")
+}
+
+// TestNamesAreTheRawEmailScheme: the names are the email joined as it is, and
+// for a validated email each is a single path component.
+func TestNamesAreTheRawEmailScheme(t *testing.T) {
+	for want, got := range map[string]string{
+		".claude-config-3-a@example.com.json": ConfigFile("3", "a@example.com"),
+		".creds-3-a@example.com.enc":          CredsFile("3", "a@example.com"),
+		".creds-3-a@example.com.enc.prev":     CredsPrevFile("3", "a@example.com"),
+		".creds-None-a@example.com.enc":       CredsFile("None", "a@example.com"),
+	} {
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
 	}
-	if got := ConfigFile("3", "a@example.com"); got != ".claude-config-3-YUBleGFtcGxlLmNvbQ.json" {
-		t.Errorf("ConfigFile = %q", got)
+	for _, email := range []string{"a@example.com", "first.last+tag%x-y_z@sub.example.co", strings.Repeat("a", 240) + "@example.com"} {
+		if !ValidEmail(email) {
+			t.Fatalf("%q should be a valid email", email)
+		}
+		for _, name := range []string{ConfigFile("1", email), CredsFile("1", email), CredsPrevFile("1", email)} {
+			if filepath.Base(name) != name || filepath.Clean(name) != name || strings.ContainsAny(name, `/\`) {
+				t.Errorf("%q -> %q is not a single path component", email, name)
+			}
+		}
 	}
 }

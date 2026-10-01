@@ -2370,6 +2370,14 @@ credential file. It never touches an old claude-swap store that
 confirmation (`[y/N]`) on an interactive terminal; any answer other than `y`
 cancels. The passive update notice is suppressed for this command.
 
+Each account's email in `sequence.json` names the credential file to unlink
+(and, on macOS, the Keychain item to delete), so it must be a plain address of
+at most 254 bytes, the rule `add` and `import` apply. A slot whose email is
+anything else is refused before the prompt and before anything is removed:
+`Slot <n> has an email that is not a plain address: "<email>". purge names
+credential files from it and refuses; fix the record in <sequence.json> or
+remove <store> by hand.`
+
 ### Files
 
 Removes the backup root and its contents (and the macOS Keychain entries under
@@ -2388,6 +2396,11 @@ declined.
 
 A filesystem or Keychain removal failure surfaces as `Error: <message>`
 (`ClaudeSwitchError`), exit 1.
+
+| Message | Meaning |
+|---------|---------|
+| `Live session-mode Claude instance(s) found: <dir> (PID <n>) …` | A session profile has a running instance; exit it first. |
+| `Slot <n> has an email that is not a plain address: "<email>" …` | A `sequence.json` record's email would not be a safe file name (`ValidationError`); nothing was removed. |
 
 ### Example
 
@@ -2447,10 +2460,8 @@ a path with other content is `the tycswap store differs from the old store:
 store's `.lock` while it copies. Directories are created 0700 and files written
 0600 by temp file and rename; symlinks (a session profile's links into
 `~/.claude`) are copied as links, never followed; lock files are skipped.
-`claude-swap.log*` is copied as `tycswap.log*`, `.cswap-*` marker files as
-`.tycswap-*`, and the per-account backups under `configs/` and `credentials/`
-from their raw-email names to the encoded names (see FILES); every other name
-and the layout are unchanged. On macOS the
+`claude-swap.log*` is copied as `tycswap.log*` and `.cswap-*` marker files as
+`.tycswap-*`; every other name and the layout are unchanged. On macOS the
 Keychain items are copied to the new service names: per-account backups
 (`claude-swap` → `tycswap`, including the `.prev` generation and the
 `account-None` alias), Codex snapshots (`claude-swap-codex` → `tycswap-codex`),
@@ -3744,8 +3755,8 @@ Inside the backup root:
 | `settings.json` | Settings (see SETTINGS). |
 | `mappings.json` | Directory→account mappings (`schemaVersion`, `mappings` keyed by absolute path). |
 | `autoswitch_state.json` | `tycswap auto` cooldown / quarantine state, guarded by `.autoswitch_state.lock`. |
-| `configs/` | Per-account config snapshots, `.claude-config-<n>-<key>.json`, where `<key>` is the account's email as unpadded base64url (so `a@example.com` is `YUBleGFtcGxlLmNvbQ`). A store written before this used the raw email (`.claude-config-<n>-<email>.json`, as claude-swap does); the `email_file_names` migration renames such files once, on the first run, for every roster email that is a plain address, removes a leftover identical to its renamed copy, and leaves a differing one in place with a log warning. |
-| `credentials/` | Per-account credential files, `.creds-<n>-<key>.enc` and `.creds-<n>-<key>.enc.prev` (file backend; `<key>` as for `configs/`). macOS stores these in the Keychain instead, except a credential too large to reach the `security` command over stdin (a command line over 4032 bytes, so a credential over about 2 KB, for example one carrying many `mcpOAuth` tokens), which stays in this file (mode 0600) rather than on a command line. The live Claude Code credential falls back to `.credentials.json` the same way. |
+| `configs/` | Per-account config snapshots, `.claude-config-<n>-<email>.json`. `<email>` is the account's email as `add` and `import` accept it: a plain address of at most 254 bytes, with no path separator, whitespace or control character, so the name is a single path component. |
+| `credentials/` | Per-account credential files, `.creds-<n>-<email>.enc` and the retained previous generation `.creds-<n>-<email>.enc.prev` (file backend; `<email>` as for `configs/`). macOS stores these in the Keychain instead, except a credential too large to reach the `security` command over stdin (a command line over 4032 bytes, so a credential over about 2 KB, for example one carrying many `mcpOAuth` tokens), which stays in this file (mode 0600) rather than on a command line. The live Claude Code credential falls back to `.credentials.json` the same way. |
 | `sessions/` | Per-account session-mode profiles, `<n>-<email>` (the `@` in the email replaced by `_`), created by `tycswap run` / `tycswap env`. |
 | `cache/usage.json` | Cached usage measurements. |
 | `cache/update_check.json` | Last passive update-check result (`{"timestamp": <epoch-seconds>, "data": <latest-version>}`). |

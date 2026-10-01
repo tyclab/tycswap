@@ -2,7 +2,6 @@ package storemigrate
 
 import (
 	"errors"
-	"github.com/tyclab/tycswap/internal/storenames"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -96,11 +95,11 @@ func TestRunCopiesOnceAndLeavesOldStoreUntouched(t *testing.T) {
 	}
 
 	for rel, want := range map[string]string{
-		"sequence.json": `{"accounts":{"1":{"email":"a@example.com"}},"sequence":[1]}`,
-		"credentials/" + storenames.CredsFile("1", "a@example.com"): "c2VjcmV0",
-		"configs/" + storenames.ConfigFile("1", "a@example.com"):    `{}`,
-		"tycswap.log":   "log\n",
-		"tycswap.log.1": "older\n",
+		"sequence.json":                                 `{"accounts":{"1":{"email":"a@example.com"}},"sequence":[1]}`,
+		"credentials/.creds-1-a@example.com.enc":        "c2VjcmV0",
+		"configs/.claude-config-1-a@example.com.json":   `{}`,
+		"tycswap.log":                                   "log\n",
+		"tycswap.log.1":                                 "older\n",
 		"sessions/1-a_example.com/.tycswap-shared.json": `{"items":[]}`,
 		"codex/sequence.json":                           `{"accounts":[]}`,
 	} {

@@ -8,13 +8,10 @@
 // interrupted copy resumes it (copies what is missing, verifies byte for byte
 // what is there), and anything else in the new store refuses the run, so it
 // can never merge or clobber.
-// The layout inside the store is unchanged; only four kinds of name change on
+// The layout inside the store is unchanged; only three kinds of name change on
 // the way: the log (claude-swap.log* → tycswap.log*), the per-profile marker
-// files (.cswap-* → .tycswap-*), the per-account backup files, whose raw email
-// becomes storenames.EmailKey (.claude-config-<n>-<email>.json →
-// .claude-config-<n>-<key>.json, likewise .creds-*.enc[.prev]), and the
-// Keychain services (claude-swap → tycswap, claude-swap-codex →
-// tycswap-codex).
+// files (.cswap-* → .tycswap-*), and the Keychain services
+// (claude-swap → tycswap, claude-swap-codex → tycswap-codex).
 package storemigrate
 
 import (
@@ -36,7 +33,6 @@ import (
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/sessprofile"
-	"github.com/tyclab/tycswap/internal/storenames"
 )
 
 // Store modes: every directory 0700, every file 0600, whatever the source had.
@@ -209,8 +205,7 @@ func Run(o Options) (Report, error) {
 	}
 	rep := Report{From: old, To: o.NewRoot, DryRun: o.DryRun}
 
-	renames := backupRenames(old)
-	plan, err := planTree(old, renames)
+	plan, err := planTree(old)
 	if err != nil {
 		return rep, err
 	}
@@ -246,7 +241,7 @@ func Run(o Options) (Report, error) {
 		}
 	}
 
-	if err := copyTree(old, o.NewRoot, renames, o.DryRun, &rep); err != nil {
+	if err := copyTree(old, o.NewRoot, o.DryRun, &rep); err != nil {
 		return rep, err
 	}
 	if plat == platform.MacOS {
@@ -268,26 +263,7 @@ func newName(name string, top bool) string {
 	return name
 }
 
-// backupRenames maps the old store's raw-email backup file names (relative,
-// slash-separated) to their encoded names, from the old roster. Only plain
-// addresses are mapped; any other file keeps its name, and the store's
-// email_file_names migration warns about it.
-func backupRenames(oldRoot string) map[string]string {
-	out := map[string]string{}
-	for num, email := range rosterEmails(oldRoot) {
-		if !storenames.ValidEmail(email) {
-			continue
-		}
-		out["configs/"+storenames.LegacyConfigFile(num, email)] = "configs/" + storenames.ConfigFile(num, email)
-		for _, n := range []string{num, "None"} {
-			out["credentials/"+storenames.LegacyCredsFile(n, email)] = "credentials/" + storenames.CredsFile(n, email)
-			out["credentials/"+storenames.LegacyCredsPrevFile(n, email)] = "credentials/" + storenames.CredsPrevFile(n, email)
-		}
-	}
-	return out
-}
-
-func copyTree(src, dst string, renames map[string]string, dryRun bool, rep *Report) error {
+func copyTree(src, dst string, dryRun bool, rep *Report) error {
 	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("read %s: %w", p, err)
@@ -304,9 +280,6 @@ func copyTree(src, dst string, renames map[string]string, dryRun bool, rep *Repo
 			parts[i] = newName(parts[i], i == 0)
 		}
 		toRel := filepath.Join(parts...)
-		if to, ok := renames[filepath.ToSlash(rel)]; ok && d.Type().IsRegular() {
-			toRel = filepath.FromSlash(to)
-		}
 		target := filepath.Join(dst, toRel)
 		name := d.Name()
 
@@ -394,8 +367,8 @@ type planned struct {
 }
 
 // planTree maps every path the copy would write (relative to the new root) to
-// its source, applying the same renames copyTree does.
-func planTree(src string, renames map[string]string) (map[string]planned, error) {
+// its source, applying the same name changes copyTree does.
+func planTree(src string) (map[string]planned, error) {
 	plan := map[string]planned{}
 	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -410,9 +383,6 @@ func planTree(src string, renames map[string]string) (map[string]planned, error)
 			parts[i] = newName(parts[i], i == 0)
 		}
 		toRel := filepath.Join(parts...)
-		if to, ok := renames[filepath.ToSlash(rel)]; ok && d.Type().IsRegular() {
-			toRel = filepath.FromSlash(to)
-		}
 		switch {
 		case d.Type()&fs.ModeSymlink != 0:
 			plan[toRel] = planned{p, "symlink"}

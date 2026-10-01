@@ -9,7 +9,6 @@ package credstore
 import (
 	"encoding/base64"
 	"encoding/json"
-	"github.com/tyclab/tycswap/internal/storenames"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -195,12 +194,6 @@ func TestReadBackup_FixtureDecode(t *testing.T) {
 		{"5", "carol@example.com", `{"claudeAiOauth": {"accessToken": "sk-ant-oat01-DDDDfixture0000000000000000000000000000000000000000", "scopes": ["user:inference"]}}`},
 	}
 	for _, tc := range cases {
-		// The fixture is a claude-swap store with raw-email names; the
-		// email_file_names migration renames them before any read.
-		if err := os.Rename(filepath.Join(credDir, storenames.LegacyCredsFile(tc.num, tc.email)),
-			filepath.Join(credDir, storenames.CredsFile(tc.num, tc.email))); err != nil {
-			t.Fatal(err)
-		}
 		got, err := s.ReadBackup(tc.num, tc.email)
 		if err != nil {
 			t.Fatalf("ReadBackup(%s): %v", tc.num, err)

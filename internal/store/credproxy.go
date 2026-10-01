@@ -22,9 +22,10 @@ import (
 	"github.com/tyclab/tycswap/internal/storenames"
 )
 
-// configBackupPath is configs/.claude-config-{num}-{EmailKey(email)}.json.
-// The email is encoded, never joined raw (storenames; claude-swap and stores
-// before the security pass used it raw, spec 01§1.2).
+// configBackupPath is configs/.claude-config-{num}-{email}.json (email raw,
+// unslugified; spec 01§1.2), built by storenames so store, credstore and purge
+// share one scheme. The email has passed storenames.ValidEmail at the store's
+// entry points, which is what keeps the name a single path component.
 func (s *Store) configBackupPath(num, email string) string {
 	return filepath.Join(s.ConfigsDir, storenames.ConfigFile(num, email))
 }
