@@ -965,7 +965,7 @@
     if (ignored) { nbSub.appendChild(document.createTextNode(' \u00b7 ')); nbSub.appendChild(ignored); }
     if (a && a.running && JSON.stringify(res.models) !== JSON.stringify(savedModels)) {
       nbSub.appendChild(document.createTextNode(' \u00b7 '));
-      nbSub.appendChild(chip('running engine: ' + countingNote(res.models), 'outline', 'The engine keeps the settings it was started with; restart it to apply the saved ones'));
+      nbSub.appendChild(chip('running engine: ' + countingNote(res.models), 'outline', 'The running engine counts a different set than the saved setting; save autoswitch.model again to retarget it'));
     }
     var mlt = $('model-limits-toggle');
     if (mlt && document.activeElement !== mlt) { mlt.checked = savedModels.length > 0; }
@@ -1446,16 +1446,13 @@
   // Count model limits: on -> autoswitch.model = "all" (every per-model weekly
   // window counts towards headroom and at-limit), off -> unset (5h + 7d only).
   // Naming specific models is still possible in the settings field below. The
-  // setting is saved AND applied to a running engine, so Next best changes at
-  // once instead of after a restart.
+  // server retargets a running engine on every save or unset of
+  // autoswitch.model — this toggle and the grid's Save alike — so Next best
+  // changes at once instead of after a restart.
   $('model-limits-toggle').addEventListener('change', function (ev) {
     var on = !!ev.target.checked;
-    var saved = on ? api('POST', '/api/settings/' + encodeURIComponent('autoswitch.model'), { value: 'all' })
-                   : api('DELETE', '/api/settings/' + encodeURIComponent('autoswitch.model'));
-    var req = saved.then(function (r) {
-      if (!(state && state.auto && state.auto.running)) { return r; }
-      return api('POST', '/api/auto/model', { model: on ? 'all' : '' }).then(function () { return r; });
-    });
+    var req = on ? api('POST', '/api/settings/' + encodeURIComponent('autoswitch.model'), { value: 'all' })
+                 : api('DELETE', '/api/settings/' + encodeURIComponent('autoswitch.model'));
     ev.target.blur(); // let the next render set the checkbox from the saved setting
     run(ev.target, on ? 'Count model limits' : 'Ignore model limits', req).then(function () { return loadOnce(); }).catch(function () {});
   });

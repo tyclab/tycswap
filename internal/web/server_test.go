@@ -401,7 +401,7 @@ func TestIndexHTML_HasEverySection(t *testing.T) {
 		}
 	}
 	js, _ := staticFS.ReadFile("static/app.js")
-	for _, needle := range []string{"'force-switch'", "'alias'", "'move'", "'swap'", "'remove'", "/api/accounts/swap", "/api/auto/threshold", "/api/auto/model", "/api/settings/", "?force=1", "?tokenStatus=1", "addEventListener('auto'", "lessSoonest", "lessBest", "997", "998", "999"} {
+	for _, needle := range []string{"'force-switch'", "'alias'", "'move'", "'swap'", "'remove'", "/api/accounts/swap", "/api/auto/threshold", "/api/settings/", "?force=1", "?tokenStatus=1", "addEventListener('auto'", "lessSoonest", "lessBest", "997", "998", "999"} {
 		if !strings.Contains(string(js), needle) {
 			t.Errorf("app.js lacks %q", needle)
 		}

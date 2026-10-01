@@ -2254,11 +2254,14 @@ tabs:
 - **Auto**: an auto-switch engine hosted in the `web` process: start, start
   as a dry run, stop, wake; a slider that sets the threshold of the running
   engine (not saved; enabled only while it runs); *Count model limits*, which
-  saves `autoswitch.model` as `all` (or unsets it) and applies it to the
-  running engine; the *Next best* ranking with each account's verdict; the
-  quarantine; the `autoswitch.*` settings editor (`threshold`,
-  `codexThreshold`, `codexEnabled`, `includeApiKeyAccounts`, `strategy` and
-  the rest of `tycswap config`); and the engine's event log. The hosted
+  saves `autoswitch.model` as `all` (or unsets it); the *Next best* ranking
+  with each account's verdict; the quarantine; the `autoswitch.*` settings
+  editor (`threshold`, `codexThreshold`, `codexEnabled`,
+  `includeApiKeyAccounts`, `strategy` and the rest of `tycswap config`); and
+  the engine's event log. Every save or unset of `autoswitch.model`, from the
+  toggle or the editor, also retargets a running engine at once, so *Next
+  best* follows without a restart; the other settings take effect when the
+  engine is next started. The hosted
   engine switches Claude accounts only; Codex auto-switching stays with
   `tycswap auto`.
 - **Sessions**: running Claude Code sessions grouped by directory, with
@@ -2358,7 +2361,7 @@ anything else `500`.
 | `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` | `400` missing slot or bare key, `404` other provider |
 | `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` | `400` missing or bare keys, `404` other provider |
 | `POST /api/sessions/{pid}/stop` | | stop a listed Claude Code session, after verifying the process start time | `400` bad pid, `404` not listed (or gone before the lock), `409` the pid now belongs to another process or cannot be verified, `500` the signal failed |
-| `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset` | `400` unknown key, value out of range, or missing value |
+| `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset`; saving or unsetting `autoswitch.model` also retargets a running engine (`"applied": true` in the result) | `400` unknown key, value out of range, or missing value; the engine's own error when the retarget fails after the save |
 | `POST /api/auto/start` | `{"dryRun": bool}` | start the hosted engine | `400` already running or still stopping |
 | `POST /api/auto/stop`, `/api/auto/wake` | | stop it (waits up to 2 s for its loop to end), poll now | `400` not running; stop `409` when the tick in flight outlasts the wait (the engine is stopping; Start refuses until it has) |
 | `POST /api/auto/threshold` | `{"threshold": 50-99.9}` | retarget the running engine; the bounds are `autoswitch.threshold`'s | `400` missing, out of range, or not running |

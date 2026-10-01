@@ -3653,7 +3653,10 @@ process. `Engine.ApplyThreshold` and `Engine.ApplyModels` retarget a running
 engine. Both store the new value in the engine's atomic settings and re-pin
 the poll plan from those settings; the model slice the tick goroutine counts
 is touched by that goroutine alone, which adopts a queued set at the start
-of its next tick. Stop asks the engine to stop and waits up to 2 s for its
+of its next tick. The settings routes call `ApplyModels` themselves whenever
+`autoswitch.model` is saved or unset while the engine runs, so the toggle
+and the settings grid share one path and the page never has to remember to
+retarget. Stop asks the engine to stop and waits up to 2 s for its
 loop to return; past that it answers 409 ("stopping") rather than holding the
 dashboard's mutation lock, the engine already counts as stopped, and Start
 refuses while the old loop is still finishing, so two engines never run at

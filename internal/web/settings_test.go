@@ -70,6 +70,80 @@ func TestSettingSet_ValueTypes(t *testing.T) {
 	}
 }
 
+// Saving autoswitch.model, or unsetting it, also retargets a running engine,
+// so the settings grid and the Count model limits toggle behave the same
+// while the engine runs; another key never reaches the engine, and a stopped
+// engine or a build without one is left alone.
+func TestSettingModel_AppliesToRunningEngine(t *testing.T) {
+	h := newHarness(t) // sampleAuto reports a running engine
+	resp := h.postJSON("/api/settings/autoswitch.model", map[string]any{"value": " Fable, Opus "})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("set: status %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+	if res, _ := decodeJSON(t, resp)["result"].(map[string]any); res["applied"] != true || res["key"] != "autoswitch.model" {
+		t.Fatalf("set result %v, want applied: true", res)
+	}
+	if resp := h.send(http.MethodDelete, "/api/settings/autoswitch.model", nil); resp.StatusCode != http.StatusOK {
+		t.Fatalf("unset: status %d", resp.StatusCode)
+	}
+	if resp := h.post("/api/settings/autoswitch.model/unset"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("unset via POST: status %d", resp.StatusCode)
+	}
+	if resp := h.postJSON("/api/settings/autoswitch.threshold", map[string]any{"value": 80}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("threshold: status %d", resp.StatusCode)
+	}
+	if res, _ := decodeJSON(t, h.postJSON("/api/settings/autoswitch.strategy", map[string]any{"value": "best"}))["result"].(map[string]any); res["applied"] != nil {
+		t.Fatalf("another key reports applied: %v", res)
+	}
+	wantSet := []string{"Set(autoswitch.model, Fable, Opus )", "Unset(autoswitch.model)", "Unset(autoswitch.model)", "Set(autoswitch.threshold,80)", "Set(autoswitch.strategy,best)"}
+	if got := h.set.Calls(); !reflect.DeepEqual(got, wantSet) {
+		t.Fatalf("settings calls %v, want %v", got, wantSet)
+	}
+	wantAuto := []string{`ApplyModels("Fable, Opus")`, `ApplyModels("")`, `ApplyModels("")`}
+	if got := h.auto.Calls(); !reflect.DeepEqual(got, wantAuto) {
+		t.Fatalf("engine calls %v, want %v (the model saves, trimmed, and nothing else)", got, wantAuto)
+	}
+
+	// Stopped engine: the setting is saved, the engine is not touched.
+	h.auto.mu.Lock()
+	h.auto.view.Running = false
+	h.auto.mu.Unlock()
+	resp = h.postJSON("/api/settings/autoswitch.model", map[string]any{"value": "all"})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("set while stopped: status %d", resp.StatusCode)
+	}
+	if res, _ := decodeJSON(t, resp)["result"].(map[string]any); res["applied"] != nil {
+		t.Fatalf("stopped engine reported applied: %v", res)
+	}
+	if got := h.auto.Calls(); len(got) != len(wantAuto) {
+		t.Fatalf("a stopped engine was retargeted: %v", got)
+	}
+
+	// The engine refusing the retarget is the response's error; the save
+	// itself happened and the next state shows it.
+	h.auto.mu.Lock()
+	h.auto.view.Running = true
+	h.auto.errs[`ApplyModels("all")`] = cerr.Lock("engine busy")
+	h.auto.mu.Unlock()
+	if resp := h.postJSON("/api/settings/autoswitch.model", map[string]any{"value": "all"}); resp.StatusCode != http.StatusConflict {
+		t.Fatalf("engine error: status %d, want 409", resp.StatusCode)
+	}
+}
+
+func TestSettingModel_NoEngineWired(t *testing.T) {
+	h := newHarness(t, withNoAuto())
+	resp := h.postJSON("/api/settings/autoswitch.model", map[string]any{"value": "all"})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+	if res, _ := decodeJSON(t, resp)["result"].(map[string]any); res["applied"] != nil {
+		t.Fatalf("no engine, yet applied: %v", res)
+	}
+	if got := h.set.Calls(); !reflect.DeepEqual(got, []string{"Set(autoswitch.model,all)"}) {
+		t.Fatalf("settings calls %v", got)
+	}
+}
+
 func TestSettingSet_ValueRequired400(t *testing.T) {
 	h := newHarness(t)
 	for _, body := range []any{nil, map[string]any{}, map[string]any{"value": nil}, map[string]any{"other": 1}} {

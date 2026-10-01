@@ -664,7 +664,9 @@ func (s *Server) handleSettingsList(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSettingSet accepts {"value": <string|number|bool>}; non-strings are
-// rendered with fmt so a JS client may send the natural JSON type.
+// rendered with fmt so a JS client may send the natural JSON type. Saving
+// autoswitch.model also retargets a running engine (applyModelSetting), and
+// the result says so with "applied": true.
 func (s *Server) handleSettingSet(w http.ResponseWriter, r *http.Request) {
 	if unavailable(w, s.d.Settings != nil, "settings") {
 		return
@@ -686,8 +688,37 @@ func (s *Server) handleSettingSet(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"key": key, "value": v}, nil
+		res := map[string]any{"key": key, "value": v}
+		applied, err := s.applyModelSetting(key, raw)
+		if err != nil {
+			return nil, err
+		}
+		if applied {
+			res["applied"] = true
+		}
+		return res, nil
 	})
+}
+
+// modelSettingKey is the one setting whose save must also reach a running
+// engine: the engine counts the model windows it was started with, so a
+// saved autoswitch.model would otherwise wait for a restart. Every save goes
+// through the settings routes — the Count model limits toggle and the
+// settings grid alike — so the retarget lives here, once, rather than in
+// each client path.
+const modelSettingKey = "autoswitch.model"
+
+// applyModelSetting retargets the running engine after autoswitch.model was
+// saved (value) or unset (""). Another key, a build without an engine, or an
+// engine that is not running leave it alone and report false.
+func (s *Server) applyModelSetting(key, value string) (bool, error) {
+	if key != modelSettingKey || s.d.Auto == nil || !s.d.Auto.View().Running {
+		return false, nil
+	}
+	if err := s.d.Auto.ApplyModels(strings.TrimSpace(value)); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // valueString renders a JSON scalar the way a CLI user would type it.
@@ -714,7 +745,15 @@ func (s *Server) handleSettingUnset(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"key": key, "removed": removed}, nil
+		res := map[string]any{"key": key, "removed": removed}
+		applied, err := s.applyModelSetting(key, "")
+		if err != nil {
+			return nil, err
+		}
+		if applied {
+			res["applied"] = true
+		}
+		return res, nil
 	})
 }
 
