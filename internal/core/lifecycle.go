@@ -58,3 +58,11 @@ func (sw *Switcher) SetAccountDisabled(id string, disabled bool) error {
 func (sw *Switcher) Purge() error {
 	return lifecycle.Purge(sw.Store)
 }
+
+// AddAccountFromLogin stores the login a `claude auth login` left in a
+// scratch CLAUDE_CONFIG_DIR (src, built by lifecycle.LoginDir) exactly as
+// AddAccount stores the live one, but without touching the live login or the
+// recorded active account. It returns the slot the account landed on.
+func (sw *Switcher) AddAccountFromLogin(src lifecycle.AddSource, slot *int, assumeYes bool, alias *string) (string, error) {
+	return lifecycle.AddAccountFrom(sw.Store, src, slot, assumeYes, alias)
+}

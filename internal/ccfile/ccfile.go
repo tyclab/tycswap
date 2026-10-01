@@ -128,7 +128,14 @@ func SpliceOAuthAccount(configText string, oauth map[string]any) (string, error)
 // organizationUuid yields "" (personal account), mirroring Python's
 // `oauth.get("organizationUuid", "") or ""`.
 func ReadOAuthIdentity() (email, orgUUID string, ok bool) {
-	m := readLenient(paths.GetGlobalConfigPath())
+	return ReadOAuthIdentityFrom(paths.GetGlobalConfigPath())
+}
+
+// ReadOAuthIdentityFrom is ReadOAuthIdentity over an explicit config file — a
+// .claude.json outside the live config home, such as the one a scratch-profile
+// login writes.
+func ReadOAuthIdentityFrom(configPath string) (email, orgUUID string, ok bool) {
+	m := readLenient(configPath)
 	if m == nil {
 		return "", "", false
 	}

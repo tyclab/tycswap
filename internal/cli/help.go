@@ -33,6 +33,8 @@ Commands:
   cswap switch                     rotate to the next account
   cswap switch <num|email>         switch to a specific account
   cswap add                        add the current account
+  cswap add --login [--switch]     log another account in beside the live one
+                                   (claude auth login), then store it
   cswap add-token [TOKEN|-]        register a setup-token or API key
   cswap remove <num|email>         remove an account
   cswap disable <num|email>        hold an account out of auto-rotation
@@ -84,6 +86,9 @@ const mainEpilog = `Flags combine with subcommands:
   cswap switch user@example.com
   cswap list --json
   cswap add --slot 3                      # add to a specific slot
+  cswap add --login --alias work          # second account, the live one untouched
+  cswap add --login --switch -- --email me@example.com
+                                          # log in, store, make it live
   cswap add-token sk-ant-oat01-... --email me@example.com
   cswap run 2 -- --resume                 # forward args after '--' to claude
   eval "$(cswap env 2)"                   # pin THIS shell to account 2 (no claude launch)
@@ -115,6 +120,13 @@ const visibleOptions = `options:
   --account NUM|EMAIL   Limit export to one account (use with 'export')
   --alias NAME          Set a short display alias for the account (use with
                         'add')
+  --login               With 'add': run 'claude auth login' in a scratch
+                        profile and store that account; the live login is
+                        untouched. Args after '--' go to the login
+                        (--email EMAIL, --sso; --console makes an API key,
+                        which add refuses: use 'add-token')
+  --switch              With 'add --login': switch to the new account after
+                        storing it
   --force               Overwrite existing accounts during import; with
                         'switch <num|email>', activate without backing up first
   --full                Include full ~/.claude.json in export`

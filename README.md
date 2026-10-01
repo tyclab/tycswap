@@ -134,14 +134,30 @@ no account is yet managed, it lands in slot 1.
 
 ### Add a second account
 
-There are two ways to register another account.
+There are two ways to register another account, and neither touches the
+current login.
 
-To capture an interactive login, log out of Claude Code, log in as the second
-account, and run `cswap add` again. The new login is snapshotted into the next
-free slot and becomes active.
+To add an interactive (subscription) login, run `cswap add --login`. It runs
+Claude Code's own `claude auth login` in a private scratch profile, so the
+browser flow signs the second account in beside the live one, and stores the
+result in the next free slot:
 
-To register an account from a setup token or API key without disturbing the
-current login, use `cswap add-token`. The token is read from the argument, from
+```
+$ cswap add --login
+Added Account 2: bob@example.com [personal] (from login)
+```
+
+The live login stays as it was and remains the active account; add `--switch`
+to make the new account live straight away, through the same switch as
+`cswap switch 2`. Arguments after `--` go to `claude auth login`, for example
+`cswap add --login -- --email bob@example.com` or `-- --sso`. `--slot` and
+`--alias` work as for `cswap add`. If the account is already managed, its
+stored credentials are refreshed in place. The scratch profile is deleted
+whether the login succeeds or not. On macOS, where Claude Code keeps the new login in
+the Keychain, cswap reads it from the item made for the scratch profile and
+deletes that item along with the profile.
+
+To register an account from a setup token or API key, use `cswap add-token`. The token is read from the argument, from
 `-` (standard input), or interactively:
 
 ```
