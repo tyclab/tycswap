@@ -430,6 +430,13 @@ func (s *Server) handleAddToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "token is required")
 		return
 	}
+	// "-" tells the CLI to read the token from stdin. Here stdin is the
+	// terminal running `web`: the request would block every mutation until
+	// someone typed a line there, and that line would become the token.
+	if b.Token == "-" {
+		writeError(w, http.StatusBadRequest, "token must be the token itself, not \"-\"")
+		return
+	}
 	if b.Alias != "" && unavailable(w, s.d.Accounts != nil, "account operations") {
 		return
 	}

@@ -212,7 +212,9 @@ func TestAddToken_OptionalFieldsNil(t *testing.T) {
 
 func TestAddToken_TokenRequired400(t *testing.T) {
 	h := newHarness(t)
-	for _, body := range []any{nil, map[string]any{}, map[string]any{"token": ""}, map[string]any{"token": "   "}, map[string]any{"email": "x@y"}} {
+	// "-" would make the facade read the server's own stdin while holding
+	// the mutation lock, so it is refused like an empty token.
+	for _, body := range []any{nil, map[string]any{}, map[string]any{"token": ""}, map[string]any{"token": "   "}, map[string]any{"email": "x@y"}, map[string]any{"token": "-"}, map[string]any{"token": " - "}} {
 		resp := h.postJSON("/api/accounts/add-token", body)
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("body %v: status %d, want 400", body, resp.StatusCode)
