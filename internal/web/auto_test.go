@@ -65,7 +65,7 @@ func TestAutoThreshold_Bounds(t *testing.T) {
 		v    any
 		want string
 	}{
-		{0, "ApplyThreshold(0)"}, {100, "ApplyThreshold(100)"}, {55.5, "ApplyThreshold(55.5)"}, {80, "ApplyThreshold(80)"},
+		{50, "ApplyThreshold(50)"}, {99.9, "ApplyThreshold(99.9)"}, {55.5, "ApplyThreshold(55.5)"}, {80, "ApplyThreshold(80)"},
 	}
 	var want []string
 	for _, tc := range ok {
@@ -75,8 +75,13 @@ func TestAutoThreshold_Bounds(t *testing.T) {
 		}
 		want = append(want, tc.want)
 	}
+	// The bounds are the autoswitch.threshold setting's (50-99.9), as in the
+	// CLI and the TUI; 0 would make every account count as over the limit.
 	bad := []any{
 		map[string]any{"threshold": -1},
+		map[string]any{"threshold": 0},
+		map[string]any{"threshold": 49.9},
+		map[string]any{"threshold": 100},
 		map[string]any{"threshold": 100.01},
 		map[string]any{"threshold": 1000},
 		map[string]any{"threshold": "80"},

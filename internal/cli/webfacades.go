@@ -238,9 +238,15 @@ func (a *autoFacade) Wake() error {
 	return nil
 }
 
+// ApplyThreshold retargets the running engine's threshold. The bounds are the
+// autoswitch.threshold spec's (50–99.9), as for `tycswap config` and the TUI.
 func (a *autoFacade) ApplyThreshold(t float64) error {
-	if t < 0 || t > 100 {
-		return cerr.Validation("threshold must be between 0 and 100")
+	spec, err := settings.SpecFor("autoswitch.threshold")
+	if err != nil {
+		return err
+	}
+	if t != t || t < spec.Lo || t > spec.Hi {
+		return cerr.Validation("threshold must be between %g and %g", spec.Lo, spec.Hi)
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()

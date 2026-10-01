@@ -127,7 +127,7 @@ type AutoFacade interface {
 	Start(dryRun bool) error
 	Stop() error
 	Wake() error
-	ApplyThreshold(threshold float64) error // 0–100
+	ApplyThreshold(threshold float64) error // within the autoswitch.threshold bounds (50–99.9)
 	// ApplyModels retargets which per-model weekly windows the RUNNING engine
 	// counts ("all", a comma-separated list, or "" for 5h + 7d only).
 	ApplyModels(model string) error

@@ -25,6 +25,7 @@ import (
 	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/settings"
 )
 
 // maxBody bounds a JSON request body.
@@ -741,8 +742,10 @@ func (s *Server) handleAutoSimple(action string) http.HandlerFunc {
 	}
 }
 
-// handleAutoThreshold applies a session threshold; the value must be a number
-// in 0–100.
+// handleAutoThreshold applies a session threshold. The value must lie in the
+// range the autoswitch.threshold setting allows (50–99.9), the same bounds
+// the CLI and the TUI's +/- keys enforce: below 50 the engine would treat
+// every account as over the limit.
 func (s *Server) handleAutoThreshold(w http.ResponseWriter, r *http.Request) {
 	if unavailable(w, s.d.Auto != nil, "auto-switch") {
 		return
@@ -758,8 +761,8 @@ func (s *Server) handleAutoThreshold(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t := *b.Threshold
-	if t < 0 || t > 100 || t != t {
-		writeError(w, http.StatusBadRequest, "threshold must be between 0 and 100")
+	if err := checkThreshold(t); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	s.mutate(w, func() (map[string]any, error) {
@@ -795,6 +798,19 @@ func (s *Server) handleAutoModel(w http.ResponseWriter, r *http.Request) {
 		}
 		return map[string]any{"model": model}, nil
 	})
+}
+
+// checkThreshold validates a live threshold against the autoswitch.threshold
+// spec's bounds.
+func checkThreshold(t float64) error {
+	spec, err := settings.SpecFor("autoswitch.threshold")
+	if err != nil {
+		return err
+	}
+	if t != t || t < spec.Lo || t > spec.Hi {
+		return cerr.Validation("threshold must be between %g and %g", spec.Lo, spec.Hi)
+	}
+	return nil
 }
 
 // -- errors -------------------------------------------------------------------

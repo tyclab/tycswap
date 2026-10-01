@@ -132,8 +132,10 @@ func TestAutoFacade(t *testing.T) {
 			t.Errorf("idle op err = %v", err)
 		}
 	}
-	if err := a.ApplyThreshold(101); err == nil || !strings.Contains(err.Error(), "between 0 and 100") {
-		t.Errorf("bounds err = %v", err)
+	for _, bad := range []float64{0, 49.9, 100, 101} {
+		if err := a.ApplyThreshold(bad); err == nil || !strings.Contains(err.Error(), "between 50 and 99.9") {
+			t.Errorf("ApplyThreshold(%v) err = %v, want the settings bounds", bad, err)
+		}
 	}
 	if err := a.Start(true); err != nil {
 		t.Fatal(err)

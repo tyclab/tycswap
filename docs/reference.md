@@ -2335,7 +2335,7 @@ a key of another provider answers 404, because slot numbers are per provider.
 | `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset` |
 | `POST /api/auto/start` | `{"dryRun": bool}` | start the hosted engine |
 | `POST /api/auto/stop`, `/api/auto/wake` | | stop it (waits for its loop to end), poll now |
-| `POST /api/auto/threshold` | `{"threshold": 0-100}` | retarget the running engine |
+| `POST /api/auto/threshold` | `{"threshold": 50-99.9}` | retarget the running engine; the bounds are `autoswitch.threshold`'s |
 | `POST /api/auto/model` | `{"model": "all"\|"<names>"\|""}` | retarget the running engine's model windows |
 
 ### Files
