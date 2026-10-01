@@ -49,7 +49,7 @@ func liveMatchesSlotBackup(s *store.Store, slot, email string) bool {
 	if backup == "" {
 		return false
 	}
-	return live == backup || fingerprintEqual(live, backup)
+	return sameAccountBytes(live, backup) || fingerprintEqual(live, backup)
 }
 
 // selfSwitchAction decides how to treat a switch targeting the already-active
@@ -103,7 +103,7 @@ func prefetchLiveIdentity(s *store.Store) *Provenance {
 		return result
 	}
 	backup, _ := s.ReadAccountCredentials(slot, email)
-	if backup == live || fingerprintEqual(backup, live) {
+	if sameAccountBytes(backup, live) || fingerprintEqual(backup, live) {
 		return result // provenance already established locally
 	}
 	accessToken := oauth.ExtractAccessToken(live)
@@ -117,6 +117,14 @@ func prefetchLiveIdentity(s *store.Store) *Provenance {
 		result.Resolved = id
 	}
 	return result
+}
+
+// sameAccountBytes reports whether two credentials are the same account bytes:
+// identical, or identical once the seat-wide mcpOAuth is set aside. A backup
+// never carries that key and the live file may, so a plain byte compare would
+// read every MCP server login as a changed credential.
+func sameAccountBytes(a, b string) bool {
+	return a == b || oauth.AccountOnly(a) == oauth.AccountOnly(b)
 }
 
 // fingerprintEqual reports whether two credentials share a fingerprint,

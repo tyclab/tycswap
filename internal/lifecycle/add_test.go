@@ -1062,3 +1062,46 @@ func TestAddBackfillsOrgFieldsBeforeReadingTheRosterItWrites(t *testing.T) {
 		t.Errorf("slot 3 = %+v, want the added account", r.vals)
 	}
 }
+
+const liveBlobWithMCP = `{"claudeAiOauth":{"accessToken":"sk-ant-oat01-LIVE","refreshToken":"ref-live"},"mcpOAuth":{"srv|1111":{"accessToken":"mcp-live"}},"trustedDeviceToken":"dev-live"}`
+
+// assertAccountOnly asserts a stored credential kept the account part and the
+// device token but not the seat's MCP server logins.
+func assertAccountOnly(t *testing.T, stored string) {
+	t.Helper()
+	if strings.Contains(stored, "mcpOAuth") || strings.Contains(stored, "mcp-live") {
+		t.Errorf("stored credential carries the seat's mcpOAuth: %s", stored)
+	}
+	for _, want := range []string{"sk-ant-oat01-LIVE", "ref-live", `"trustedDeviceToken":"dev-live"`} {
+		if !strings.Contains(stored, want) {
+			t.Errorf("stored credential lost %s: %s", want, stored)
+		}
+	}
+}
+
+// TestAddStoresTheAccountOnly: `add` leaves the live mcpOAuth out of the slot,
+// on a new add and on the refresh-in-place path; the live file is untouched.
+func TestAddStoresTheAccountOnly(t *testing.T) {
+	s := newStore(t)
+	seedLiveLogin(t, s, "alice@example.com", "", "", "uuid-a", liveBlobWithMCP)
+	if err := AddAccount(s, nil, false, nil); err != nil {
+		t.Fatalf("AddAccount: %v", err)
+	}
+	stored, _ := s.ReadAccountCredentials("1", "alice@example.com")
+	assertAccountOnly(t, stored)
+
+	// Refresh in place: same identity, no slot.
+	if err := AddAccount(s, nil, false, nil); err != nil {
+		t.Fatalf("AddAccount (refresh): %v", err)
+	}
+	stored, _ = s.ReadAccountCredentials("1", "alice@example.com")
+	assertAccountOnly(t, stored)
+
+	live, err := os.ReadFile(filepath.Join(s.Home, ".claude", ".credentials.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(live) != liveBlobWithMCP {
+		t.Errorf("add changed the live credentials file: %s", live)
+	}
+}

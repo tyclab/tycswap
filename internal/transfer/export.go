@@ -20,6 +20,7 @@ import (
 	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/slotkey"
 	"github.com/tyclab/tycswap/internal/version"
@@ -146,7 +147,9 @@ func Export(acc Accounts, destination, account string, full bool) error {
 		if isAPIKey {
 			credsOut = strings.TrimSpace(credsText)
 		} else {
-			obj, err := parsePayload(credsText, "credentials for "+email)
+			// Account only: the MCP server logins under mcpOAuth are the seat's
+			// and never leave the machine in an export.
+			obj, err := parsePayload(oauth.AccountOnly(credsText), "credentials for "+email)
 			if err != nil {
 				return err
 			}

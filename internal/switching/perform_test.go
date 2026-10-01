@@ -2,8 +2,10 @@ package switching
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -172,7 +174,7 @@ func mcpSwitchFixture(t *testing.T) (s *store.Store, backup1, backup2, live stri
 // blob with the live mcpOAuth carried over it, so the seat's MCP server logins
 // survive the change of Claude account.
 func TestSwitchKeepsLiveMCPOAuth(t *testing.T) {
-	s, _, _, _ := mcpSwitchFixture(t)
+	s, backup1, _, _ := mcpSwitchFixture(t)
 	if _, err := SwitchTo(s, "2", true, false); err != nil {
 		t.Fatalf("SwitchTo: %v", err)
 	}
@@ -182,6 +184,37 @@ func TestSwitchKeepsLiveMCPOAuth(t *testing.T) {
 	}
 	if mcpTokenOf(t, got, "srv|1111") != "mcp-live" {
 		t.Fatalf("the live mcpOAuth did not survive the switch: %s", got)
+	}
+	// The outgoing slot's backup holds the account only — the live file only
+	// gained mcpOAuth, so the classifier saw own-bytes and left the stored
+	// bytes alone.
+	stored, _ := s.ReadAccountCredentials("1", "a@x.com")
+	if stored != backup1 {
+		t.Fatalf("outgoing backup = %q, want the untouched %q", stored, backup1)
+	}
+	if hasMCPOAuth(t, stored) {
+		t.Fatalf("outgoing backup carries the seat's mcpOAuth: %s", stored)
+	}
+}
+
+// TestSwitchBacksUpTheAccountOnly: when the outgoing credential does need a
+// backup (its access token rotated), the backup still carries no mcpOAuth.
+func TestSwitchBacksUpTheAccountOnly(t *testing.T) {
+	s, _, _, _ := mcpSwitchFixture(t)
+	rotated := withMCPOAuth(t, oauthCreds("a1-rotated", "ref1"), "srv|1111", "mcp-live")
+	seedLive(t, s, "a@x.com", "", rotated)
+	if _, err := SwitchTo(s, "2", true, false); err != nil {
+		t.Fatalf("SwitchTo: %v", err)
+	}
+	stored, _ := s.ReadAccountCredentials("1", "a@x.com")
+	if oauth.ExtractAccessToken(stored) != "a1-rotated" {
+		t.Fatalf("outgoing backup = %q, want the rotated account", stored)
+	}
+	if hasMCPOAuth(t, stored) {
+		t.Fatalf("outgoing backup carries the seat's mcpOAuth: %s", stored)
+	}
+	if mcpTokenOf(t, readActiveCreds(t, s), "srv|1111") != "mcp-live" {
+		t.Fatal("the live mcpOAuth did not survive the switch")
 	}
 }
 
@@ -199,6 +232,53 @@ func TestDirectActivateKeepsLiveMCPOAuth(t *testing.T) {
 	if mcpTokenOf(t, got, "srv|1111") != "mcp-live" {
 		t.Fatalf("the live mcpOAuth did not survive the activation: %s", got)
 	}
+	// The displaced live login is stashed account-only.
+	for _, entry := range unclaimedEntries(t, s) {
+		if hasMCPOAuth(t, entry) {
+			t.Fatalf("the unclaimed stash carries the seat's mcpOAuth: %s", entry)
+		}
+		if oauth.ExtractAccessToken(entry) != "a1" {
+			t.Fatalf("stash = %q, want the displaced account", entry)
+		}
+	}
+	if len(unclaimedEntries(t, s)) != 1 {
+		t.Fatalf("want one stash entry for the displaced login")
+	}
+}
+
+// TestDirectActivateSameAccountWithMCPOAuthStashesNothing: forcing the active
+// account back on when the live file differs from its backup only by mcpOAuth
+// displaces nothing, so nothing is stashed.
+func TestDirectActivateSameAccountWithMCPOAuthStashesNothing(t *testing.T) {
+	s, _, _, _ := mcpSwitchFixture(t)
+	if _, err := SwitchTo(s, "1", true, true); err != nil {
+		t.Fatalf("SwitchTo --force: %v", err)
+	}
+	if n := len(unclaimedEntries(t, s)); n != 0 {
+		t.Fatalf("%d stash entries, want none: only mcpOAuth differed", n)
+	}
+	if mcpTokenOf(t, readActiveCreds(t, s), "srv|1111") != "mcp-live" {
+		t.Fatal("the live mcpOAuth did not survive the re-activation")
+	}
+}
+
+// unclaimedEntries decodes every stash entry file under the credentials dir.
+func unclaimedEntries(t *testing.T, s *store.Store) []string {
+	t.Helper()
+	paths, _ := filepath.Glob(filepath.Join(s.CredentialsDir, ".unclaimed-*.enc"))
+	var out []string
+	for _, p := range paths {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dec, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(raw)))
+		if err != nil {
+			t.Fatalf("stash entry %s: %v", p, err)
+		}
+		out = append(out, string(dec))
+	}
+	return out
 }
 
 // TestSwitchRollbackRestoresLiveBytesVerbatim: a failure after the credential

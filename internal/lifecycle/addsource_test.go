@@ -103,3 +103,31 @@ func TestCheckLoginKeychainFallback(t *testing.T) {
 		}
 	})
 }
+
+// TestLoginDirMaterialStoresTheAccountOnly: a login directory's credential is
+// stored without any mcpOAuth it might carry, like the live login's.
+func TestLoginDirMaterialStoresTheAccountOnly(t *testing.T) {
+	const (
+		cfg   = `{"oauthAccount":{"emailAddress":"b@example.com","organizationUuid":""}}`
+		creds = `{"claudeAiOauth":{"accessToken":"sk-ant-oat01-test-token-1","refreshToken":"refresh-token-1"},"mcpOAuth":{"srv|1111":{"accessToken":"mcp-login"}}}`
+	)
+	dir := t.TempDir()
+	for name, body := range map[string]string{".claude.json": cfg, ".credentials.json": creds} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, gotCfg, err := LoginDir(dir, nil).material(nil)
+	if err != nil {
+		t.Fatalf("material: %v", err)
+	}
+	if strings.Contains(got, "mcpOAuth") {
+		t.Errorf("login credential stored with mcpOAuth: %s", got)
+	}
+	if !strings.Contains(got, "sk-ant-oat01-test-token-1") || !strings.Contains(got, "refresh-token-1") {
+		t.Errorf("login credential lost its account part: %s", got)
+	}
+	if gotCfg != cfg {
+		t.Errorf("config = %q, want verbatim", gotCfg)
+	}
+}

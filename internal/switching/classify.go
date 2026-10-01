@@ -25,8 +25,10 @@ import (
 func classifyOutgoing(s *store.Store, currentAccount, currentEmail, originalCreds string, prov *Provenance, data *store.SequenceData) (string, string) {
 	backup, _ := s.ReadAccountCredentials(currentAccount, currentEmail)
 
-	// 1. Byte-identical to the slot's stored backup.
-	if backup != "" && backup == originalCreds {
+	// 1. Byte-identical to the slot's stored backup — modulo the seat-wide
+	//    mcpOAuth, which a backup never carries and the live file may: an MCP
+	//    server login is not a change of account.
+	if backup != "" && sameAccountBytes(backup, originalCreds) {
 		return "own-bytes", ""
 	}
 	// 2. Same refresh-token lineage (access token rotated).
@@ -103,7 +105,7 @@ func classifyOutgoing(s *store.Store, currentAccount, currentEmail, originalCred
 	// 8. If the foreign slot already holds this lineage → foreign-synced.
 	foreignEmail := recStr(storedRec, "email")
 	foreignBackup, _ := s.ReadAccountCredentials(slot, foreignEmail)
-	if foreignBackup != "" && (foreignBackup == originalCreds || fingerprintEqual(foreignBackup, originalCreds)) {
+	if foreignBackup != "" && (sameAccountBytes(foreignBackup, originalCreds) || fingerprintEqual(foreignBackup, originalCreds)) {
 		return "foreign-synced", slot
 	}
 	return "foreign", slot
@@ -152,8 +154,10 @@ func sortedAccountKeys(data *store.SequenceData) []string {
 // stashLiveCredential preserves an unowned live credential before it is
 // overwritten, via credstore's write-only unclaimed stash (spec 02§9). It raises
 // on write failure — a successful stash is the license to overwrite the live
-// store. Logs a WARNING. resolved may be nil.
+// store. Logs a WARNING. resolved may be nil. The stash holds the account part
+// only: the live mcpOAuth is the seat's and is carried over the write.
 func stashLiveCredential(s *store.Store, originalCreds, reason, currentAccount string, resolved *oauth.Identity) (string, error) {
+	originalCreds = oauth.AccountOnly(originalCreds)
 	var credsMtime any
 	if fi, err := os.Stat(paths.GetCredentialsPath()); err == nil {
 		credsMtime = fi.ModTime().UTC().Format("2006-01-02T15:04:05Z")

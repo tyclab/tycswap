@@ -16,6 +16,7 @@ import (
 	"os"
 
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/store"
@@ -220,8 +221,9 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 	}
 
 	// Invariant II stash: the replaced live credential would otherwise have no
-	// surviving copy.
-	if haveRollbackCreds && rollbackCreds != "" && rollbackCreds != targetCreds && curOK {
+	// surviving copy. A live blob that differs from the target only by its
+	// mcpOAuth is not replaced: that part is carried over the write.
+	if haveRollbackCreds && rollbackCreds != "" && !sameAccountBytes(rollbackCreds, targetCreds) && curOK {
 		slotForStash := currentAccount
 		if slotForStash == "" {
 			slotForStash = "unmanaged"
@@ -336,7 +338,7 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 			*warningsOut = append(*warningsOut, msg)
 		}
 	case "unresolved":
-		if err := s.WriteAccountCredentials(currentAccount, currentEmail, originalCreds); err != nil {
+		if err := s.WriteAccountCredentials(currentAccount, currentEmail, oauth.AccountOnly(originalCreds)); err != nil {
 			return err
 		}
 		if err := s.WriteAccountConfig(currentAccount, currentEmail, originalConfig); err != nil {
@@ -353,7 +355,9 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 			s.Log.Infof("Backed up account %s (config only; credentials unchanged)", currentAccount)
 		}
 	default: // own-family / own-rotated
-		if err := s.WriteAccountCredentials(currentAccount, currentEmail, originalCreds); err != nil {
+		// The backup is the account part only: the live mcpOAuth is the seat's
+		// and stays live across the switch.
+		if err := s.WriteAccountCredentials(currentAccount, currentEmail, oauth.AccountOnly(originalCreds)); err != nil {
 			return err
 		}
 		if err := s.WriteAccountConfig(currentAccount, currentEmail, originalConfig); err != nil {

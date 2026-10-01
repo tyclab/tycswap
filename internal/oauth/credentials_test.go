@@ -100,3 +100,39 @@ func TestBuildTokenStatus(t *testing.T) {
 		}
 	})
 }
+
+// TestAccountOnly pins the seat-wide rule: mcpOAuth is the only key a capture
+// leaves out; everything else, and every non-object blob, is returned verbatim.
+func TestAccountOnly(t *testing.T) {
+	const withMCP = `{"claudeAiOauth":{"accessToken":"acc","expiresAt":4102444800000},"mcpOAuth":{"srv|1111":{"accessToken":"mcp"}},"trustedDeviceToken":"dev"}`
+	got := AccountOnly(withMCP)
+	if strings.Contains(got, "mcpOAuth") || strings.Contains(got, `"mcp"`) {
+		t.Errorf("mcpOAuth survived: %s", got)
+	}
+	for _, want := range []string{`"accessToken":"acc"`, `"expiresAt":4102444800000`, `"trustedDeviceToken":"dev"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("AccountOnly dropped %s: %s", want, got)
+		}
+	}
+	if strings.Contains(got, "\n") {
+		t.Errorf("AccountOnly must re-encode compact: %q", got)
+	}
+	// Idempotent, and a second application is byte-stable.
+	if again := AccountOnly(got); again != got {
+		t.Errorf("AccountOnly is not idempotent:\n%s\n%s", got, again)
+	}
+
+	verbatim := []string{
+		`{"claudeAiOauth": {"accessToken": "acc", "scopes": ["user:inference"]}}`, // no key: bytes untouched
+		"sk-ant-api03-key",   // API key
+		"sk-ant-oat01-setup", // setup token
+		`{bad`,               // malformed
+		`[1, 2]`,             // non-object
+		"",                   // empty
+	}
+	for _, in := range verbatim {
+		if out := AccountOnly(in); out != in {
+			t.Errorf("AccountOnly(%q) = %q, want verbatim", in, out)
+		}
+	}
+}

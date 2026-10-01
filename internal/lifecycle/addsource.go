@@ -15,6 +15,7 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/store"
 )
@@ -87,7 +88,9 @@ func (src AddSource) identity(s *store.Store) (email, orgUUID string, ok bool) {
 }
 
 // material reads the credential and the config text an add stores, refusing an
-// API-key credential (a different auth axis, added with --add-token).
+// API-key credential (a different auth axis, added with --add-token). The
+// credential is stored account-only: the MCP server logins under mcpOAuth are
+// the seat's, stay in the live file, and are carried over every switch.
 func (src AddSource) material(s *store.Store) (creds, configText string, err error) {
 	if !src.isLoginDir() {
 		creds, err = readActiveCredential(s)
@@ -98,7 +101,7 @@ func (src AddSource) material(s *store.Store) (creds, configText string, err err
 			return "", "", err
 		}
 		configText, err = readLiveConfigText()
-		return creds, configText, err
+		return oauth.AccountOnly(creds), configText, err
 	}
 	if err := CheckLogin(src); err != nil {
 		return "", "", err
@@ -111,7 +114,7 @@ func (src AddSource) material(s *store.Store) (creds, configText string, err err
 	if err != nil {
 		return "", "", errLoginIncomplete()
 	}
-	return rawCreds, string(rawConfig), nil
+	return oauth.AccountOnly(rawCreds), string(rawConfig), nil
 }
 
 // errLoginIncomplete is the one answer for a login that left nothing usable
