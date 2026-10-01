@@ -264,6 +264,41 @@ func TestSessionsInProfiles(t *testing.T) {
 	}
 }
 
+// An IDE instance whose lock file appears under the default directory and
+// under a session profile is one instance, listed once; a different port is
+// another instance.
+func TestSessionsInDedupsIDEInstances(t *testing.T) {
+	backup := t.TempDir()
+	def := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", def)
+	pid := strconv.Itoa(os.Getpid())
+	lock := func(dir, port, folder string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(dir, "ide"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		body := `{"pid":` + pid + `,"ideName":"Editor","workspaceFolders":["` + folder + `"]}`
+		if err := os.WriteFile(filepath.Join(dir, "ide", port+".lock"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prof := filepath.Join(backup, "sessions", "2-bob_example.com")
+	lock(def, "51234", "/work/repo")
+	lock(prof, "51234", "/work/repo") // the same instance, seen from the profile
+	lock(prof, "51235", "/work/other")
+	v := SessionsIn(backup)()
+	if len(v.IDE) != 2 {
+		t.Fatalf("IDE instances %+v, want the one on 51234 once and the one on 51235", v.IDE)
+	}
+	ports := map[int]int{}
+	for _, i := range v.IDE {
+		ports[i.Port]++
+	}
+	if ports[51234] != 1 || ports[51235] != 1 {
+		t.Fatalf("ports %v, want 51234 and 51235 once each", ports)
+	}
+}
+
 func TestAccentStylesheet(t *testing.T) {
 	h := newHarness(t)
 	if resp := h.do(h.newReq(http.MethodGet, "/static/accent.css", nil)); resp.StatusCode != http.StatusUnauthorized {

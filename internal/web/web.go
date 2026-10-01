@@ -166,8 +166,10 @@ func DefaultSessions() SessionsView {
 // directory AND every session profile under <backupDir>/sessions/ (the
 // CLAUDE_CONFIG_DIR of `tycswap run` and `tycswap env`), so a session started
 // as another account is listed and can be stopped. Profile directories are
-// named <slot>-<email slug> (sessprofile.SessionDirFor); a PID seen twice is
-// listed once, the default directory winning.
+// named <slot>-<email slug> (sessprofile.SessionDirFor). A session PID seen
+// twice is listed once, and so is an IDE instance (its lock file names a
+// port and carries a PID) found under more than one directory; the default
+// directory wins.
 func SessionsIn(backupDir string) func() SessionsView {
 	return func() SessionsView {
 		v := probeSessions(procdetect.GetClaudeDir(), "")
@@ -181,6 +183,10 @@ func SessionsIn(backupDir string) func() SessionsView {
 		seen := map[int]bool{}
 		for _, c := range v.Claude {
 			seen[c.PID] = true
+		}
+		seenIDE := map[[2]int]bool{}
+		for _, i := range v.IDE {
+			seenIDE[[2]int{i.PID, i.Port}] = true
 		}
 		for _, e := range entries {
 			if !e.IsDir() {
@@ -196,7 +202,14 @@ func SessionsIn(backupDir string) func() SessionsView {
 				v.Claude = append(v.Claude, c)
 				v.ConfigDir[c.PID], v.Profile[c.PID] = p.ConfigDir[c.PID], slot
 			}
-			v.IDE = append(v.IDE, p.IDE...)
+			for _, i := range p.IDE {
+				k := [2]int{i.PID, i.Port}
+				if seenIDE[k] {
+					continue
+				}
+				seenIDE[k] = true
+				v.IDE = append(v.IDE, i)
+			}
 		}
 		return v
 	}
