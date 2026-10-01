@@ -224,8 +224,6 @@ func (o *fakeOps) SwapAccounts(first, second string) (string, string, error) {
 	return first, second, nil
 }
 
-func (o *fakeOps) ApproveAPIKeySwitch(num string) { o.record("ApproveAPIKeySwitch(" + num + ")") }
-
 func (o *fakeOps) SwitchToForce(id string, jsonOut, force bool) (map[string]any, error) {
 	o.record(fmt.Sprintf("SwitchToForce(%s,%v,%v)", id, jsonOut, force))
 	if err := o.err("SwitchToForce"); err != nil {

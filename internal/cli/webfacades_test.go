@@ -290,11 +290,6 @@ func (e fakeAutoEvent) Kind() string         { return e.kind }
 func (e fakeAutoEvent) JSON() map[string]any { return e.fields }
 func (e fakeAutoEvent) Human() string        { return e.human }
 
-func TestWebAccountsApproveIsANoOp(t *testing.T) {
-	sw := fixtureSwitcher(t)
-	webAccounts{sw}.ApproveAPIKeySwitch("2") // must not panic or write anything
-}
-
 // The wired dashboard serves: the launch URL sets the port-scoped cookie, the
 // page carries the CSRF token, and /api/state lists the fixture's accounts
 // with provider keys.

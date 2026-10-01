@@ -186,7 +186,7 @@ func newDashboard(interval float64, debug bool, s ioStreams) (*web.Server, *auto
 	auto := newAutoFacade(sw)
 	srv, err := web.New(web.Deps{
 		Facade:     sw,
-		Accounts:   webAccounts{sw},
+		Accounts:   sw,
 		Settings:   settingsFacade{root: sw.BackupDir()},
 		Auto:       auto,
 		AutoEvents: auto.Events(),

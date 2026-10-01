@@ -428,16 +428,6 @@ func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// ?confirmAuthChange=1 records the user's yes to switching onto an
-	// API-key account (AccountOps.ApproveAPIKeySwitch). tycswap's switch
-	// layer does not ask for one, so the page never sends it; the parameter
-	// stays accepted for a switch layer that does.
-	if isTruthy(r.URL.Query().Get("confirmAuthChange")) {
-		if unavailable(w, s.d.Accounts != nil, "account operations") {
-			return
-		}
-		s.d.Accounts.ApproveAPIKeySwitch(id)
-	}
 	if isTruthy(r.URL.Query().Get("force")) {
 		if unavailable(w, s.d.Accounts != nil, "account operations") {
 			return

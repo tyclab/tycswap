@@ -21,16 +21,6 @@ import (
 	"github.com/tyclab/tycswap/internal/web"
 )
 
-// ---- account operations ----
-
-// webAccounts is web.AccountOps over *core.Switcher. Everything is promoted
-// except ApproveAPIKeySwitch: tycswap's switch layer switches onto an API-key
-// account without asking, so there is nothing to approve.
-type webAccounts struct{ *core.Switcher }
-
-// ApproveAPIKeySwitch is a no-op in tycswap (see webAccounts).
-func (webAccounts) ApproveAPIKeySwitch(string) {}
-
 // ---- settings ----
 
 // settingsFacade is `tycswap config` over the backup root's settings.json.
@@ -318,7 +308,7 @@ func (a *autoFacade) waitStopped(timeout time.Duration) bool {
 
 var (
 	_ web.Facade         = (*core.Switcher)(nil)
-	_ web.AccountOps     = webAccounts{}
+	_ web.AccountOps     = (*core.Switcher)(nil)
 	_ web.SettingsFacade = settingsFacade{}
 	_ web.AutoFacade     = (*autoFacade)(nil)
 	_ autoEngine         = (*autoswitch.Engine)(nil)
