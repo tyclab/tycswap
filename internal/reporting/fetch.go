@@ -74,58 +74,12 @@ func fetchAccountUsage(s *store.Store, info AccountInfo) usage.FetchRecord {
 	return recordFromOutcome(outcome)
 }
 
-// refreshDeclined is the RefreshOutcome error of an inactive-slot refresh that
-// was not attempted (lock busy, slot became active or live, lineage moved).
-const refreshDeclined = "refresh_declined"
-
-// inactiveRefresh is the inactive-slot refresh, modelled on the Codex
-// switcher's: the store lock is taken BEFORE the refresh, not around the
-// persist alone. A rotated refresh token may die the moment the response is
-// issued, so a refresh that cannot be persisted must not be performed. Under
-// the lock everything read earlier is re-checked: the slot must still be
-// inactive with no live session, and the backup is re-read. If its refresh
-// token is no longer the one this fetch started from, another process
-// refreshed it (or a switch wrote it back) and that newer credential is used
-// as is; only an unchanged lineage is refreshed and written back.
+// inactiveRefresh is the inactive-slot refresh: store.RefreshBackupGuarded
+// with the store's own client, so the lock is taken before the refresh and
+// the lineage re-checked under it.
 func inactiveRefresh(s *store.Store, num, email string) oauth.GuardedRefresh {
 	return func(ctx context.Context, held string) oauth.RefreshOutcome {
-		out := oauth.RefreshOutcome{Error: refreshDeclined}
-		err := s.Lock.With(func() error {
-			if cur := s.CurrentAccountNumber(); cur != nil && *cur == num {
-				return nil // became the live login: Claude Code owns its token now
-			}
-			if len(s.LiveSessionPidsFor(num, email)) > 0 {
-				return nil // a `tycswap run` session owns this lineage
-			}
-			backup, _ := s.ReadAccountCredentials(num, email)
-			if backup == "" {
-				return nil
-			}
-			if !fingerprintsEqual(backup, held) {
-				// Someone else moved the lineage on. Their credential is on disk
-				// already; use it if it is a credential at all.
-				if oauth.ExtractAccessToken(backup) != "" {
-					out = oauth.RefreshOutcome{Credentials: backup}
-				}
-				return nil
-			}
-			out = s.OAuth.Refresh(ctx, backup)
-			if out.Credentials == "" {
-				return nil
-			}
-			if werr := s.WriteAccountCredentials(num, email, out.Credentials); werr != nil {
-				if s.Log != nil {
-					s.Log.Warningf("Refreshed the token for account %s but could not store it: %v", num, werr)
-				}
-				// Serve nothing the store does not hold.
-				out = oauth.RefreshOutcome{Error: oauth.ErrRefreshFailed}
-			}
-			return nil
-		})
-		if err != nil && s.Log != nil {
-			s.Log.Debugf("Skipped the token refresh for account %s: %v", num, err)
-		}
-		return out
+		return s.RefreshBackupGuarded(ctx, s.OAuth, num, email, held)
 	}
 }
 
@@ -273,9 +227,8 @@ func stringOf(v any) string {
 	return s
 }
 
-// fingerprintsEqual reports whether two credentials share a fingerprint — same
-// refresh-token lineage or identical bytes. An empty credential fingerprints to
-// nil, which compares unequal to any real fingerprint (spec 04§1.5).
+// fingerprintsEqual reports whether two credentials share a refresh-token
+// lineage.
 func fingerprintsEqual(a, b string) bool {
 	fa := oauth.CredentialFingerprint(a)
 	fb := oauth.CredentialFingerprint(b)

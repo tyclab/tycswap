@@ -3486,7 +3486,12 @@ live login's newest token"*: the inactive-slot refresh takes the store lock
 first, re-checks the slot and re-reads the backup, and refreshes only an
 unchanged lineage (the Codex switcher's rule). Bootstrap never refreshes a
 backup sharing the live login's lineage. `codex login` captures the live
-auth under the lock before codex overwrites it. The active-account refresh
+auth under the lock before codex overwrites it. The auto-switch freshen of a
+candidate slot goes through the same guarded refresh
+(`store.RefreshBackupGuarded`, shared with the usage fetch), so no path
+refreshes an inactive slot without the lock; the HTTP refresh under the lock
+is bounded to 5 s, below the lock's 10 s timeout, so a concurrent command
+waiting for the lock gets it. The active-account refresh
 keeps its post-refresh lineage re-check (A-level behaviour unchanged): holding
 Claude Code's own locks across a network call would stall Claude Code.
 
@@ -3521,8 +3526,6 @@ missing, verifies byte for byte what is already there, and refuses only on a
 real conflict.
 
 **Not done here.** Windows has no owner-only DACL on `credentials/`, exports
-and the store root (`CheckPrivateRoot` is a no-op there); the auto-switch
-freshen step still refreshes a candidate without the store lock (it persists
-unconditionally, so a token is never lost, but a concurrent write-back can be
-overwritten). Both are follow-ups. Dependencies: `go.mod` pins
-`toolchain go1.25.14`; `make vuln` runs govulncheck.
+and the store root (`CheckPrivateRoot` is a no-op there); a follow-up.
+Dependencies: `go.mod` pins `toolchain go1.25.14`; `make vuln` runs
+govulncheck.

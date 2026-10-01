@@ -24,8 +24,13 @@ func TestInactiveRefreshRechecksUnderTheLock(t *testing.T) {
 
 	setup := func(t *testing.T, active int) (*store.Store, *int) {
 		calls := new(int)
-		oc := &oauth.FakeClient{RefreshFn: func(_ context.Context, _ string) oauth.RefreshOutcome {
+		oc := &oauth.FakeClient{RefreshFn: func(ctx context.Context, _ string) oauth.RefreshOutcome {
 			*calls++
+			// The refresh runs under the store lock, so its HTTP timeout is
+			// bounded below the lock's own 10 s timeout.
+			if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > store.GuardedRefreshTimeout || store.GuardedRefreshTimeout >= filelock.DefaultTimeout {
+				t.Errorf("refresh context deadline = %v, %v; want within %v, below the lock timeout %v", deadline, ok, store.GuardedRefreshTimeout, filelock.DefaultTimeout)
+			}
 			return oauth.RefreshOutcome{Credentials: rotated}
 		}}
 		s := newStore(t, testutil.FixedClock(t, fixedNow), oc)

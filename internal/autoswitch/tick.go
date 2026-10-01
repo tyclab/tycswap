@@ -203,11 +203,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 			// Dry-run stops at the decision: no refresh, no quarantine writes.
 			return e.perform(num, email, trigger)
 		}
-		status, err := e.freshenTarget(num, email)
-		if err != nil {
-			return 0, err
-		}
-		switch status {
+		switch e.freshenTarget(num, email) {
 		case "identity-conflict":
 			if err := e.quarantine(num, email, "identity-conflict"); err != nil {
 				return 0, err

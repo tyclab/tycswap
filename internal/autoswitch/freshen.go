@@ -3,9 +3,11 @@
 // Implements spec 05§12 (_freshen_target: ensure a candidate's stored token
 // outlives Claude Code's 5-min refresh buffer before activation, touching only
 // the slot's backup store) and _note_token_identity (org-first conflict check,
-// blank-uuid backfill only when no org conflict). A successful refresh persists
-// the rotated credential FIRST, unconditionally (the grant consumed a
-// generation). Persist failures propagate as a tick error.
+// blank-uuid backfill only when no org conflict). The refresh itself is the
+// Switcher's guarded refresh (DESIGN A25 item 4): it runs under the store
+// lock, after the slot and its backup have been re-checked, and the rotated
+// credential is persisted before it is returned, so a concurrent write-back
+// is never overwritten and its token never consumed.
 
 package autoswitch
 
@@ -17,25 +19,24 @@ import (
 )
 
 // freshenTarget returns one of "ok", "invalid_grant", "identity-conflict",
-// "transient", "skip-live-session" (05§12). The error return is non-nil only
-// when persisting a rotated credential fails.
-func (e *Engine) freshenTarget(number, email string) (string, error) {
+// "transient", "skip-live-session" (05§12).
+func (e *Engine) freshenTarget(number, email string) string {
 	if e.sw.AccountKindFor(number) == "api_key" {
-		return "ok", nil // API keys don't expire/refresh
+		return "ok" // API keys don't expire/refresh
 	}
 	if len(e.sw.LiveSessionPidsFor(number, email)) > 0 {
 		// A live `tycswap run` session owns this account's token in its own
 		// profile; auto-activating it as the default too would duplicate a
 		// rotating refresh token with nobody reading the warning.
-		return "skip-live-session", nil
+		return "skip-live-session"
 	}
 	creds := e.sw.ReadAccountCredentials(number, email)
 	if creds == "" {
-		return "transient", nil
+		return "transient"
 	}
 	data := oauth.ExtractOAuthData(creds)
 	if data == nil {
-		return "invalid_grant", nil
+		return "invalid_grant"
 	}
 	nowMs := e.nowSeconds() * 1000
 	nearExpiry := false
@@ -43,24 +44,23 @@ func (e *Engine) freshenTarget(number, email string) (string, error) {
 		nearExpiry = nowMs+FreshenBufferMS >= ms
 	}
 	if !nearExpiry {
-		return "ok", nil // fresh token, no refresh
+		return "ok" // fresh token, no refresh
 	}
-	outcome := e.oauth.Refresh(context.Background(), creds)
+	// Under the lock: the slot is re-checked and the backup re-read; a
+	// lineage another process moved on comes back as stored, a refreshed one
+	// is persisted before it is returned, and a declined refresh (lock busy,
+	// slot became live) is a transient outcome.
+	outcome := e.sw.RefreshBackupGuarded(context.Background(), e.oauth, number, email, creds)
 	if outcome.Error == "" && outcome.Credentials != "" {
-		// Persist first, unconditionally: not writing the successor would kill
-		// the lineage regardless of whose it turns out to be.
-		if err := e.sw.PersistBackupCredentials(number, email, outcome.Credentials); err != nil {
-			return "", err
-		}
 		if e.noteTokenIdentity(number, outcome.TokenAccount) {
-			return "identity-conflict", nil
+			return "identity-conflict"
 		}
-		return "ok", nil
+		return "ok"
 	}
 	if outcome.Error == oauth.ErrInvalidGrant || outcome.Error == oauth.ErrNoRefreshToken {
-		return "invalid_grant", nil
+		return "invalid_grant"
 	}
-	return "transient", nil
+	return "transient"
 }
 
 // noteTokenIdentity verifies/backfills a slot from the refresh grant's free
