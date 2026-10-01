@@ -130,6 +130,13 @@ func TestSSE_DisconnectCleansUp(t *testing.T) {
 	h.fireTick()
 }
 
+// Concurrent mutations from several goroutines while twelve subscribers
+// listen: every subscriber ends on the tick's document (the newest one),
+// nothing follows it, and nobody sees more documents than there were
+// broadcasts. Fewer is allowed: a mutation's document that a newer one
+// overtook is dropped on purpose (TestHub_OlderStateNeverOvertakesNewer),
+// and the newer document, built after that mutation was applied, carries
+// its effect.
 func TestSSE_ConcurrentSubscribersReceiveBroadcast(t *testing.T) {
 	h := newHarness(t)
 	const n = 12
@@ -145,7 +152,6 @@ func TestSSE_ConcurrentSubscribersReceiveBroadcast(t *testing.T) {
 	}()
 	waitFor(t, timeout, func() bool { return h.s.hub.count() == n })
 
-	// Concurrent mutations from several goroutines while everybody listens.
 	var wg sync.WaitGroup
 	for i := 0; i < 4; i++ {
 		wg.Add(1)
@@ -163,21 +169,28 @@ func TestSSE_ConcurrentSubscribersReceiveBroadcast(t *testing.T) {
 			_ = resp.Body.Close()
 		}(i)
 	}
-	wg.Wait()
+	wg.Wait() // every mutation has broadcast (or been overtaken) before its response
 	h.clk.Advance(time.Minute)
+	tickTime := h.clk.Now().UTC().Format(time.RFC3339)
 	h.fireTick()
 
-	// Every subscriber sees the tick state (4 mutation states + 1 tick state).
 	for i, st := range streams {
 		seen := 0
-		for seen < 5 {
+		for {
 			ev := st.nextState(t, timeout)
 			seen++
 			var doc map[string]any
 			if err := json.Unmarshal([]byte(ev.data), &doc); err != nil {
 				t.Fatalf("sub %d: bad JSON: %v", i, err)
 			}
+			if doc["serverTime"] == tickTime {
+				break
+			}
+			if seen > 4 {
+				t.Fatalf("sub %d: %d documents and the tick's has not arrived; an older one must never follow a newer one", i, seen)
+			}
 		}
+		st.expectNone(t, 100*time.Millisecond)
 	}
 	if got := len(h.fa.Calls()); got != 4 {
 		t.Fatalf("facade calls %d, want 4", got)
