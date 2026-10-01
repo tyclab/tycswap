@@ -185,45 +185,42 @@ func TestSSETokenStatus(t *testing.T) {
 }
 
 // Engine events that arrive together go out one `auto` frame each, then ONE
-// state document for the batch, not one per event.
+// state document for the batch, not one per event. The burst is queued while
+// Serve is held inside a tick's state build, so the drain loop sees every
+// event at once.
 func TestAutoEventsCoalesced(t *testing.T) {
-	h := newHarness(t)
-	var mu sync.Mutex
-	states := 0
-	h.s.OnState(func(State) { mu.Lock(); states++; mu.Unlock() })
-	autoCh := make(chan AutoEventView, 8)
-	for i := 0; i < 5; i++ {
-		autoCh <- AutoEventView{At: float64(i), Kind: "poll"}
-	}
-	// Drive the batch through the same path Serve uses.
-	h.s.publishAuto(<-autoCh)
-	for len(autoCh) > 0 {
-		h.s.publishAuto(<-autoCh)
-	}
-	h.s.broadcast()
-	mu.Lock()
-	got := states
-	mu.Unlock()
-	if got != 1 {
-		t.Fatalf("%d state documents for one batch, want 1", got)
-	}
-	// And through Serve itself: a burst on the channel yields far fewer
-	// states than events.
+	const burst = 5
+	h := newHarness(t, withAutoEventBuffer(burst))
 	st := h.openSSE()
 	defer st.close()
-	st.nextState(t, timeout)
-	for i := 0; i < 3; i++ {
+	st.nextState(t, timeout) // the subscriber's initial state
+
+	gate := make(chan struct{})
+	h.fa.mu.Lock()
+	h.fa.gate = gate
+	h.fa.mu.Unlock()
+	h.fireTick() // Serve is now blocked in buildState, behind the gate
+	for i := 0; i < burst; i++ {
 		h.fireAuto(AutoEventView{At: float64(10 + i), Kind: "poll"})
 	}
-	autos := 0
-	deadline := time.Now().Add(2 * time.Second)
-	for autos < 3 && time.Now().Before(deadline) {
-		if ev := st.next(t, timeout); ev.name == "auto" {
+	h.fa.mu.Lock()
+	h.fa.gate = nil
+	h.fa.mu.Unlock()
+	close(gate)
+
+	// The tick's state, then burst `auto` frames, then one state for them all.
+	autos, states := 0, 0
+	for autos < burst || states < 2 {
+		switch ev := st.next(t, timeout); ev.name {
+		case "auto":
 			autos++
+		case "state":
+			states++
 		}
 	}
-	if autos != 3 {
-		t.Fatalf("auto frames %d, want 3", autos)
+	st.expectNone(t, 200*time.Millisecond)
+	if autos != burst || states != 2 {
+		t.Fatalf("%d auto frames and %d state frames for a burst of %d events, want %d and 2 (one for the tick, one for the batch)", autos, states, burst, burst)
 	}
 }
 

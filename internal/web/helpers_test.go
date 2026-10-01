@@ -61,6 +61,9 @@ type fakeFacade struct {
 	errs          map[string]error // by method name
 	lastToken     string           // AddAccountFromToken's token, kept out of calls
 	postAddSnap   *reporting.AccountsSnapshot
+	// gate, when non-nil, holds every AccountsSnapshot call until it is
+	// closed, so a test can keep the serve loop inside one state build.
+	gate chan struct{}
 }
 
 func (f *fakeFacade) record(s string) {
@@ -91,7 +94,11 @@ func (f *fakeFacade) AccountsSnapshot(fetch map[string]bool) *reporting.Accounts
 	if f.postAddSnap != nil && fetch != nil {
 		snap = f.postAddSnap // store-only lookup after add-token
 	}
+	gate := f.gate
 	f.mu.Unlock()
+	if gate != nil {
+		<-gate
+	}
 	return snap
 }
 
@@ -416,6 +423,15 @@ func withNoAuto() option       { return func(h *harness, d *Deps) { d.Auto = nil
 func withNoAutoEvents() option { return func(h *harness, d *Deps) { d.AutoEvents = nil } }
 func withRand(r io.Reader) option {
 	return func(h *harness, d *Deps) { d.Rand = r }
+}
+
+// withAutoEventBuffer replaces the hand-fed auto-event channel with a
+// buffered one, so a test can queue a burst before the serve loop reads it.
+func withAutoEventBuffer(n int) option {
+	return func(h *harness, d *Deps) {
+		h.autoEv = make(chan AutoEventView, n)
+		d.AutoEvents = h.autoEv
+	}
 }
 
 // newHarness builds, binds and serves a Server on 127.0.0.1:0 with every seam
