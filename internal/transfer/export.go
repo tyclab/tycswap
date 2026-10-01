@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/platform"
@@ -287,6 +288,10 @@ func atomicWriteFile(path, content string) error {
 		tmp.Close()
 		return err
 	}
+	if err := atomicfile.SyncFile(tmp); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
@@ -298,6 +303,7 @@ func atomicWriteFile(path, content string) error {
 	if err := os.Rename(tmpName, path); err != nil {
 		return err
 	}
+	atomicfile.SyncDir(filepath.Dir(path))
 	committed = true
 	if !platform.IsWindows() {
 		if err := os.Chmod(path, 0o600); err != nil {

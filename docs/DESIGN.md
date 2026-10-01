@@ -3422,3 +3422,93 @@ program, and the passive notice announced upstream releases. Now:
 3. There was no downgrade guard in `SelfUpgrade` to keep: it installs
    `@latest`, and the notice only fires when the latest tag is semver-greater.
 
+
+---
+
+## A25. Security pass: trust nothing that arrives from outside the store
+
+A security review of the renamed tree found one HIGH, six MEDIUM and a run of
+LOW/INFO findings. Their common root is that tycswap treated four kinds of
+outside input as its own: an export file, another tool's `.claude.json`, an
+HTTP response, and the shared filesystem around the store. The rules below
+override anything above; the CHANGELOG lists each change.
+
+**1. An import carries an identity, not a configuration.** Finding *"a
+malicious export can get code executed"*: `import` stored an export's
+`config` whole and `directActivate` wrote a stored config whole when no live
+`~/.claude.json` existed, so `mcpServers` or allowed tools in an export ran on
+the importing machine. Now `import` keeps only `{"oauthAccount": …}` (also
+from a `--full` export), and a switch only ever takes the `oauthAccount` out
+of a stored config: with no live config it writes that key alone. Finding
+*"corrupt config wipes the user's ~/.claude.json"*: a live config that exists
+but cannot be read or parsed is an error for every read-modify-write
+(`ccfile.ErrUnusableConfig`), never an empty object; only absent, blank or
+`null` start from `{}`. Finding *"import validates one value and stores
+another"*: the envelope is decoded once into raw members with exact keys, the
+stored credential bytes are those of the validated member, and input is
+capped at 8 MiB. Display fields are stored without control characters.
+
+**2. A secret never goes on a command line.** Finding *"Claude credentials can
+appear on the `security` command line"*: `keychain.Security.Set` refuses a
+payload too large for `security -i`'s stdin with a `TooLarge` KeychainError;
+credstore takes its file fallback without marking the Keychain unusable.
+Finding *"tokens on the command line are encouraged"*: the docs use the
+prompt and `-`, and `add-token` warns on a positional token.
+
+**3. File names never carry raw outside strings.** Finding *"an unvalidated
+email builds file paths"*: `add` validates the login email like `import`, and
+per-account backup files are named from `storenames.EmailKey` (unpadded
+base64url), one scheme for config and credential files. This deliberately
+changes the A23 promise that the layout inside the store stays as before:
+`configs/` and `credentials/` names change once, by the `email_file_names`
+migration (and `tycswap migrate` writes the new names directly). A tool that
+read those two directories by raw email must derive the key the same way.
+`codex import` validates its rows before writing, as the Claude import does.
+
+**4. A refresh that cannot be persisted is not performed.** Findings
+*"inactive-slot refresh can overwrite a newer credential"*, *"`run` can
+consume the live login's refresh token"* and *"`codex login` destroys the
+live login's newest token"*: the inactive-slot refresh takes the store lock
+first, re-checks the slot and re-reads the backup, and refreshes only an
+unchanged lineage (the Codex switcher's rule). Bootstrap never refreshes a
+backup sharing the live login's lineage. `codex login` captures the live
+auth under the lock before codex overwrites it. The active-account refresh
+keeps its post-refresh lineage re-check (A-level behaviour unchanged): holding
+Claude Code's own locks across a network call would stall Claude Code.
+
+**5. The store is private, and so are its locks.** Findings *"no check that
+the backup root is private"*, *"the log and update cache can be
+world-readable"* and *"two processes can both break the same stale lock"*:
+every command refuses a store root not owned by the effective user or
+writable by group/other; lock files open without following symlinks and
+without truncation, 0600; directories tycswap creates are 0700; a stale
+Claude Code lock is broken by rename, age recheck, then remove.
+`settings.json` and `mappings.json` read-modify-writes hold their own lock
+files (`.settings.lock`, `.mappings.lock`), not the store lock, because
+`remove` prunes mappings while holding the non-reentrant store lock. Atomic
+writers fsync the temp file and the directory.
+
+**6. HTTP responses are bounded and typed.** Finding *"the Claude HTTP client
+lacks limits and type checks"*: redirects are returned, not followed;
+success bodies are capped at 1 MiB; `access_token` must be a non-empty string
+and `0 < expires_in < 1e7`. Finding *"refresh error bodies go to the log"*:
+only the OAuth error code is logged.
+
+**7. Printed strings are inert.** Findings *"no sanitising of printed
+strings"*, *"pwsh quoting misses smart quotes"*, *"`add --login` keeps auth
+override variables"*, *"`.cmd` argument injection on Windows"*: one helper,
+`termsafe.Strip`, removes C0/C1/ESC from every outside-sourced string at
+print time; `pwshQuote` doubles U+2018–U+201B; `add --login` scrubs the auth
+override variables; a `.cmd`/`.bat` claude refuses cmd.exe metacharacters in
+passed-through arguments. *"Codex export is not atomic"* was already fixed.
+
+**8. An interrupted `tycswap migrate` resumes.** A rerun copies what is
+missing, verifies byte for byte what is already there, and refuses only on a
+real conflict.
+
+**Not done here.** Windows has no owner-only DACL on `credentials/`, exports
+and the store root (`CheckPrivateRoot` is a no-op there); the auto-switch
+freshen step still refreshes a candidate without the store lock (it persists
+unconditionally, so a token is never lost, but a concurrent write-back can be
+overwritten). Both are follow-ups. Dependencies: `go.mod` pins
+`toolchain go1.25.14`; `make vuln` runs govulncheck.

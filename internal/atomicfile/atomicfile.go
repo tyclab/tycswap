@@ -68,6 +68,10 @@ func Write(path string, data []byte, o Opts) error {
 		tmp.Close()
 		return err
 	}
+	if err := SyncFile(tmp); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
@@ -79,6 +83,7 @@ func Write(path string, data []byte, o Opts) error {
 	if err := os.Rename(tmpName, path); err != nil {
 		return err
 	}
+	SyncDir(filepath.Dir(path))
 	committed = true
 	return nil
 }
@@ -148,6 +153,10 @@ func WriteJSONValidated(path string, v any, o Opts) error {
 		tmp.Close()
 		return err
 	}
+	if err := SyncFile(tmp); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
@@ -170,6 +179,7 @@ func WriteJSONValidated(path string, v any, o Opts) error {
 	if err := os.Rename(tmpName, path); err != nil {
 		return err
 	}
+	SyncDir(filepath.Dir(path))
 	committed = true
 	return nil
 }

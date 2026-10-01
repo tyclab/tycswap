@@ -3739,6 +3739,7 @@ Inside the backup root:
 | `codex/credentials/` | Per-account Codex `auth.json` snapshots, `<file key>.json`, mode 0600, keyed by account identity. macOS stores these in the Keychain under service `tycswap-codex` instead, except a snapshot too large to reach the `security` command over stdin, which stays in this file (mode 0600) rather than on a command line; reads and deletes cover both places. |
 | `codex/cache/` | The Codex usage cache (the same usage table format as `cache/usage.json`). |
 | `codex/.lock` | The Codex store's lock, separate from the Claude lock. |
+| `.settings.lock`, `.mappings.lock` | Held while `settings.json` or `mappings.json` is read, changed and written back, so concurrent commands cannot lose an update. No data; skipped by `tycswap migrate`. |
 
 Claude Code's own files that tycswap reads and writes:
 

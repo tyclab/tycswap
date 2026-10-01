@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/platform"
@@ -345,12 +346,17 @@ func atomicRawWrite(dir, target string, data []byte) error {
 		tmp.Close()
 		return err
 	}
+	if err := atomicfile.SyncFile(tmp); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
 	if err := os.Rename(tmpName, target); err != nil {
 		return err
 	}
+	atomicfile.SyncDir(filepath.Dir(target))
 	committed = true
 	if !platform.IsWindows() {
 		if err := os.Chmod(target, 0o600); err != nil {

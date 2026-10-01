@@ -20,6 +20,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/filelock"
 )
 
 // pyFloat is a float64 whose JSON form matches Python's json.dumps: a
@@ -407,10 +408,50 @@ func fieldsOf(s AutoSwitchSettings) map[string]any {
 
 // --- writing ---------------------------------------------------------------
 
+// LockFilename is the lock every settings.json read-modify-write holds, so two
+// concurrent writers cannot lose each other's update. It is its own lock, not
+// the store's .lock: settings are written by commands that may already hold
+// the store lock, and that lock is not reentrant.
+const LockFilename = ".settings.lock"
+
+func withLock(root string, fn func() error) error {
+	return filelock.New(filepath.Join(root, LockFilename), 0).With(fn)
+}
+
+// Save writes every known key + schemaVersion under the settings lock; see
+// saveUnlocked.
+func Save(root string, s AutoSwitchSettings) error {
+	return withLock(root, func() error { return saveUnlocked(root, s) })
+}
+
+// SetSetting is setSettingUnlocked under the settings lock.
+func SetSetting(root, dotted, raw string) (value any, err error) {
+	lerr := withLock(root, func() error {
+		value, err = setSettingUnlocked(root, dotted, raw)
+		return nil
+	})
+	if lerr != nil {
+		return nil, lerr
+	}
+	return value, err
+}
+
+// UnsetSetting is unsetSettingUnlocked under the settings lock.
+func UnsetSetting(root, dotted string) (removed bool, err error) {
+	lerr := withLock(root, func() error {
+		removed, err = unsetSettingUnlocked(root, dotted)
+		return nil
+	})
+	if lerr != nil {
+		return false, lerr
+	}
+	return removed, err
+}
+
 // Save writes every known key + schemaVersion, preserving unknown
 // keys/sections. Used by non-config callers (e.g. the TUI); NOT used by
 // SetSetting, which would otherwise freeze current defaults into the file.
-func Save(root string, s AutoSwitchSettings) error {
+func saveUnlocked(root string, s AutoSwitchSettings) error {
 	path := SettingsPath(root)
 	raw := readRaw(path)
 	if _, ok := raw["schemaVersion"]; !ok {
@@ -433,7 +474,7 @@ func Save(root string, s AutoSwitchSettings) error {
 // only that key (plus schemaVersion if absent) so a single set never
 // freezes every other default into the file. Unknown keys/sections in the
 // file survive. Returns the parsed value.
-func SetSetting(root, dotted, raw string) (any, error) {
+func setSettingUnlocked(root, dotted, raw string) (any, error) {
 	spec, err := SpecFor(dotted)
 	if err != nil {
 		return nil, err
@@ -466,7 +507,7 @@ func SetSetting(root, dotted, raw string) (any, error) {
 // UnsetSetting removes one key from settings.json; if its section becomes
 // empty the whole section is deleted. Returns false (and does not write)
 // when the key wasn't present.
-func UnsetSetting(root, dotted string) (bool, error) {
+func unsetSettingUnlocked(root, dotted string) (bool, error) {
 	spec, err := SpecFor(dotted)
 	if err != nil {
 		return false, err

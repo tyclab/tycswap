@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/codex/authfile"
 	codexstore "github.com/tyclab/tycswap/internal/codex/store"
 	"github.com/tyclab/tycswap/internal/filelock"
@@ -128,7 +129,7 @@ func onlyThrowaway(dir string, top bool) bool {
 	for _, e := range entries {
 		name := e.Name()
 		switch {
-		case name == lockName, name == cacheDir:
+		case isLockFile(name), name == cacheDir:
 			continue
 		case top && (strings.HasPrefix(name, newLogName) || strings.HasPrefix(name, oldLogName)):
 			continue
@@ -311,7 +312,7 @@ func copyTree(src, dst string, renames map[string]string, dryRun bool, rep *Repo
 				return fmt.Errorf("chmod %s: %w", target, err)
 			}
 		case d.Type().IsRegular():
-			if name == lockName {
+			if isLockFile(name) {
 				// Lock files carry no data and are created on demand; the
 				// new root's lock is the one this run holds.
 				rep.Skipped = append(rep.Skipped, rel)
@@ -352,12 +353,17 @@ func copyFile(src, dst string) error {
 		tmp.Close()
 		return fmt.Errorf("write %s: %w", dst, err)
 	}
+	if err := atomicfile.SyncFile(tmp); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("write %s: %w", dst, err)
 	}
 	if err := os.Rename(name, dst); err != nil {
 		return fmt.Errorf("write %s: %w", dst, err)
 	}
+	atomicfile.SyncDir(filepath.Dir(dst))
 	return nil
 }
 
@@ -461,6 +467,13 @@ func rosterEmails(oldRoot string) map[string]string {
 		out[n] = a.Email
 	}
 	return out
+}
+
+// isLockFile reports whether name is one of the store's lock files (.lock,
+// .settings.lock, .mappings.lock, .autoswitch_state.lock): they carry no data
+// and are created on demand.
+func isLockFile(name string) bool {
+	return name == lockName || (strings.HasPrefix(name, ".") && strings.HasSuffix(name, ".lock"))
 }
 
 func samePath(a, b string) bool {

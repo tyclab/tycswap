@@ -41,6 +41,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/codex/authfile"
 	"github.com/tyclab/tycswap/internal/codex/store"
@@ -176,12 +177,17 @@ func writeExportFile(path string, blob []byte) error {
 		tmp.Close()
 		return err
 	}
+	if err := atomicfile.SyncFile(tmp); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
 	if err := os.Rename(name, path); err != nil {
 		return err
 	}
+	atomicfile.SyncDir(filepath.Dir(path))
 	committed = true
 	return nil
 }

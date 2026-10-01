@@ -11,13 +11,13 @@ package store
 
 import (
 	"errors"
+	"github.com/tyclab/tycswap/internal/atomicfile"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/mappings"
-	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/storenames"
 )
@@ -51,19 +51,9 @@ func (s *Store) ReadAccountConfig(num, email string) (string, error) {
 // WriteAccountConfig writes a slot's backup config, chmod 0600 on non-Windows
 // (spec 01§ _write_account_config). The config directory is created if needed.
 func (s *Store) WriteAccountConfig(num, email, config string) error {
-	path := s.configBackupPath(num, email)
-	if err := os.MkdirAll(s.ConfigsDir, 0o700); err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, []byte(config), 0o600); err != nil {
-		return err
-	}
-	if !platform.IsWindows() {
-		if err := os.Chmod(path, 0o600); err != nil {
-			return err
-		}
-	}
-	return nil
+	// Atomic (temp file, fsync, rename): a crash mid-write must not leave an
+	// empty config backup, which would make the slot unswitchable.
+	return atomicfile.Write(s.configBackupPath(num, email), []byte(config), atomicfile.Opts{})
 }
 
 // DeleteConfigBackup unconditionally unlinks a slot's config backup, treating a
