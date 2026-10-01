@@ -225,6 +225,25 @@ func TestAddToken_TokenRequired400(t *testing.T) {
 	}
 }
 
+// A slot that is not a whole number >= 1 is the user's mistake: 400 before
+// the facade is reached, not a config error from the store (500).
+func TestAddToken_BadSlot400(t *testing.T) {
+	h := newHarness(t)
+	for _, slot := range []string{"x", "0", "-1", "1.5", "two"} {
+		resp := h.postJSON("/api/accounts/add-token", map[string]any{"token": secretSetupToken, "slot": slot})
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("slot %q: status %d, want 400", slot, resp.StatusCode)
+		}
+		decodeError(t, resp)
+	}
+	if len(h.fa.Calls()) != 0 {
+		t.Fatalf("facade reached with a bad slot: %v", h.fa.Calls())
+	}
+	if resp := h.postJSON("/api/accounts/add-token", map[string]any{"token": secretSetupToken, "slot": " 4 "}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("slot with spaces: status %d", resp.StatusCode)
+	}
+}
+
 func TestAddToken_NeverEchoedOrLogged(t *testing.T) {
 	// Success path, failure path, alias path: the token appears in no
 	// response body, no state document, no SSE frame and no log line.

@@ -445,7 +445,14 @@ func (s *Server) handleAddToken(w http.ResponseWriter, r *http.Request) {
 	if b.Email != "" {
 		email = &b.Email
 	}
-	if b.Slot != "" {
+	if b.Slot = strings.TrimSpace(b.Slot); b.Slot != "" {
+		// A slot that is not a number is the user's mistake, not a broken
+		// store: refuse it here as a 400 rather than let the facade report
+		// a config error (500).
+		if n, err := strconv.Atoi(b.Slot); err != nil || n < 1 {
+			writeError(w, http.StatusBadRequest, "slot must be a whole number >= 1")
+			return
+		}
 		slot = &b.Slot
 	}
 	s.mutate(w, func() (map[string]any, error) {
@@ -625,7 +632,7 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !still {
-			return nil, cerr.AccountNotFound("session %d is no longer running", pid)
+			return nil, httpErr(http.StatusNotFound, "session %d is no longer running", pid)
 		}
 		if err := s.d.Kill(pid); err != nil {
 			return nil, err
@@ -815,8 +822,28 @@ func checkThreshold(t float64) error {
 
 // -- errors -------------------------------------------------------------------
 
-// statusFor maps a cerr kind to the HTTP status (A25 / DESIGN §3.1).
+// httpError is an error raised by a handler itself (not a facade) that
+// already knows its HTTP status: a condition the cerr kinds have no word for,
+// such as a session that is listed but no longer running.
+type httpError struct {
+	status int
+	msg    string
+}
+
+func (e *httpError) Error() string { return e.msg }
+
+func httpErr(status int, format string, a ...any) error {
+	return &httpError{status: status, msg: fmt.Sprintf(format, a...)}
+}
+
+// statusFor maps an error to the HTTP status (A25 / DESIGN §3.1): a handler's
+// own httpError carries its status; a cerr kind maps by kind; anything else
+// is a 500.
 func statusFor(err error) int {
+	var he *httpError
+	if errors.As(err, &he) {
+		return he.status
+	}
 	var e *cerr.Error
 	if !errors.As(err, &e) {
 		return http.StatusInternalServerError
@@ -830,8 +857,6 @@ func statusFor(err error) int {
 		return http.StatusConflict
 	case cerr.KindClaudeCodeLockTimeout:
 		return http.StatusLocked
-	case cerr.KindConfig:
-		return http.StatusInternalServerError
 	default:
 		return http.StatusInternalServerError
 	}

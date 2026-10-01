@@ -422,6 +422,8 @@ func TestStatusFor(t *testing.T) {
 		{cerr.Transfer("tr"), http.StatusInternalServerError},
 		{errors.New("plain"), http.StatusInternalServerError},
 		{errors.Join(errors.New("outer"), cerr.Validation("inner")), http.StatusBadRequest},
+		{httpErr(http.StatusNotFound, "gone"), http.StatusNotFound},
+		{httpErr(http.StatusConflict, "changed"), http.StatusConflict},
 	}
 	for _, tc := range cases {
 		if got := statusFor(tc.err); got != tc.want {

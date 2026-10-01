@@ -2237,7 +2237,7 @@ tycswap web [--port N] [--no-open] [--interval SECONDS] [--debug]
 |--------|---------|
 | `--port N` | Listen on this loopback port (0–65535; default `0`, any free port). |
 | `--no-open` | Print the URL only; do not open a browser. |
-| `--interval SECONDS` | Live-state poll interval (greater than 0, at most 3600; default `5`). |
+| `--interval SECONDS` | Live-state poll interval (1 to 3600; default `5`). |
 | `--debug` | Log server errors to stderr. |
 
 ### Description
@@ -2362,7 +2362,7 @@ no launcher worked.
 ### Errors
 
 `argument --port: invalid int value: '<v>' (0-65535)`, `argument --interval:
-invalid number of seconds: '<v>' (0-3600, exclusive of 0)`, `unrecognized
+invalid number of seconds: '<v>' (1-3600)`, `unrecognized
 arguments: <tok>` (exit 2); the bind error (exit 1), for example when the
 port is taken.
 

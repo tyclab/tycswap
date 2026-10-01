@@ -128,6 +128,8 @@ func TestWebCommandFlags(t *testing.T) {
 		{[]string{"web", "--port"}, "argument --port: expected one argument"},
 		{[]string{"web", "--port", "70000"}, "argument --port: invalid int value"},
 		{[]string{"web", "--interval=0"}, "argument --interval: invalid number of seconds"},
+		{[]string{"web", "--interval", "0.5"}, "argument --interval: invalid number of seconds: '0.5' (1-3600)"},
+		{[]string{"web", "--interval", "3601"}, "argument --interval: invalid number of seconds"},
 		{[]string{"web", "--remote"}, "unrecognized arguments: --remote"},
 	} {
 		code, _, errOut := runCLI(t, tc.argv, false, false)

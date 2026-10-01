@@ -127,9 +127,12 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 			if !ok {
 				return subError(wprog, s.err, "argument --interval: expected one argument")
 			}
+			// At least a second: every tick rebuilds the whole state (a
+			// store snapshot, a process scan, the JSON), which is no use
+			// faster than that.
 			f, err := strconv.ParseFloat(v, 64)
-			if err != nil || f <= 0 || f > 3600 {
-				return subError(wprog, s.err, "argument --interval: invalid number of seconds: '"+v+"' (0-3600, exclusive of 0)")
+			if err != nil || f < 1 || f > 3600 {
+				return subError(wprog, s.err, "argument --interval: invalid number of seconds: '"+v+"' (1-3600)")
 			}
 			interval = f
 		case tok == "-h" || tok == "--help":
@@ -215,7 +218,7 @@ carries a one-time token; only the browser that opens it can drive the page.
 options:
   --port N          fixed port (default 0 = any free port)
   --no-open         print the URL only
-  --interval S      live-state poll interval in seconds (default 5)
+  --interval S      live-state poll interval in seconds (1-3600, default 5)
   --debug           log errors to stderr
 `, prog)
 	return 0
