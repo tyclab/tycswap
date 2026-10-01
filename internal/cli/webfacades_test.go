@@ -20,6 +20,7 @@ import (
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/testutil"
@@ -165,6 +166,11 @@ func TestAutoFacade(t *testing.T) {
 	}
 	if a.View().Running {
 		t.Error("View reports running right after Stop")
+	}
+	// The stopped engine's threshold and models no longer steer the usage
+	// poll plan (the pin is package-global; the TUI clears it the same way).
+	if th, models, pinned := reporting.PollPolicyInputs(); pinned {
+		t.Errorf("poll policy still pinned after Stop: threshold %v models %v", th, models)
 	}
 	if err := a.Start(false); err != nil {
 		t.Fatal(err)
