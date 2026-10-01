@@ -472,10 +472,13 @@ root. `--slot` places it in a specific slot (swapping if occupied); `--alias`
 sets a short display name at the same time.
 
 The email of the login (`oauthAccount.emailAddress`, from the live
-`~/.claude.json` or the scratch profile's) must be a plain address of at most
-254 bytes, as `import` requires; anything else (a `/`, a backslash, whitespace,
-a control character) is refused before anything is written:
-`The logged-in account's email is not a plain address: "<email>"`.
+`~/.claude.json` or the scratch profile's) names the account's backup files, so
+it must be one a file name can carry: one `@` between a non-empty local part
+and domain, at most 254 bytes, and no whitespace, control character, `/`, `\`
+or `< > : " | ? *`. Any address that passes (an apostrophe or a non-ASCII
+letter included) is stored under its raw name; anything else is refused before
+anything is written: `The logged-in account's email cannot name a store file:
+"<email>". It needs …`.
 
 When the current login's identity `(email, organizationUuid)` already belongs to
 a managed account and no `--slot` is given, `add` refreshes that account's
@@ -2371,12 +2374,13 @@ confirmation (`[y/N]`) on an interactive terminal; any answer other than `y`
 cancels. The passive update notice is suppressed for this command.
 
 Each account's email in `sequence.json` names the credential file to unlink
-(and, on macOS, the Keychain item to delete), so it must be a plain address of
-at most 254 bytes, the rule `add` and `import` apply. A slot whose email is
-anything else is refused before the prompt and before anything is removed:
-`Slot <n> has an email that is not a plain address: "<email>". purge names
-credential files from it and refuses; fix the record in <sequence.json> or
-remove <store> by hand.`
+(and, on macOS, the Keychain item to delete), so it must be one a file name
+can carry, the rule `add` applies (one `@`, at most 254 bytes, no whitespace,
+control character, `/`, `\` or `< > : " | ? *`). A slot whose email is anything
+else is refused before the prompt and before anything is removed: `Slot <n> has
+an email that cannot name a store file: "<email>". purge builds credential
+file names from it and refuses; fix the record in <sequence.json> or remove
+<store> by hand.`
 
 ### Files
 
@@ -2400,7 +2404,7 @@ A filesystem or Keychain removal failure surfaces as `Error: <message>`
 | Message | Meaning |
 |---------|---------|
 | `Live session-mode Claude instance(s) found: <dir> (PID <n>) …` | A session profile has a running instance; exit it first. |
-| `Slot <n> has an email that is not a plain address: "<email>" …` | A `sequence.json` record's email would not be a safe file name (`ValidationError`); nothing was removed. |
+| `Slot <n> has an email that cannot name a store file: "<email>" …` | A `sequence.json` record's email would not be a safe file name (`ValidationError`); nothing was removed. |
 
 ### Example
 
@@ -3463,7 +3467,9 @@ whose `auth` payload carries an identity that is not the row's `accountKey`
 labelled). An `alias` goes through the same rule as `tycswap codex alias`; an
 alias that rule rejects is dropped, the row is still imported. Before anything
 is written every importable row is checked, and one bad row refuses the whole
-file: a non-empty `email` must be a plain address of at most 254 bytes, an
+file: a non-empty `email` must be one a file name can carry (the rule `add`
+applies: one `@`, at most 254 bytes, no whitespace, control character, `/`,
+`\` or `< > : " | ? *`), an
 `alias` may hold no control character and at most 64 bytes, and `accountKey`
 no control character. `plan` and `workspaceName` are stored without control
 characters. A file whose
@@ -3495,7 +3501,7 @@ Reads `PATH`. Writes `codex/sequence.json` and the snapshots under
 | `<path> uses export version <v>, newer than this tycswap understands` | `version` is above 1. |
 | `<path> contains no accounts` | `accounts` is missing or empty. |
 | `<path> is larger than 8 MiB; refusing to import it` | The document exceeds the import size limit. |
-| `invalid email in imported account: "<email>"` | A row's email is not a plain address. |
+| `invalid email in imported account: "<email>"` | A row's email is one a file name cannot carry. |
 | `invalid alias for <key>: …` | A row's alias holds a control character or exceeds 64 bytes. |
 | `invalid accountKey in imported account: …` | A row's accountKey holds a control character. |
 
@@ -3755,7 +3761,7 @@ Inside the backup root:
 | `settings.json` | Settings (see SETTINGS). |
 | `mappings.json` | Directory→account mappings (`schemaVersion`, `mappings` keyed by absolute path). |
 | `autoswitch_state.json` | `tycswap auto` cooldown / quarantine state, guarded by `.autoswitch_state.lock`. |
-| `configs/` | Per-account config snapshots, `.claude-config-<n>-<email>.json`. `<email>` is the account's email as `add` and `import` accept it: a plain address of at most 254 bytes, with no path separator, whitespace or control character, so the name is a single path component. |
+| `configs/` | Per-account config snapshots, `.claude-config-<n>-<email>.json`. `<email>` is the account's email as `add` accepts it (one `@`, at most 254 bytes, no whitespace, control character, `/`, `\` or `< > : " | ? *`), so the name is a single path component. |
 | `credentials/` | Per-account credential files, `.creds-<n>-<email>.enc` and the retained previous generation `.creds-<n>-<email>.enc.prev` (file backend; `<email>` as for `configs/`). macOS stores these in the Keychain instead, except a credential too large to reach the `security` command over stdin (a command line over 4032 bytes, so a credential over about 2 KB, for example one carrying many `mcpOAuth` tokens), which stays in this file (mode 0600) rather than on a command line. The live Claude Code credential falls back to `.credentials.json` the same way. |
 | `sessions/` | Per-account session-mode profiles, `<n>-<email>` (the `@` in the email replaced by `_`), created by `tycswap run` / `tycswap env`. |
 | `cache/usage.json` | Cached usage measurements. |

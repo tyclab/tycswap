@@ -25,6 +25,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
 // FormatVersion is the .tycswap envelope version (FORMAT_VERSION in transfer.py).
@@ -56,25 +58,21 @@ type SequenceData struct {
 	Accounts            map[string]json.RawMessage `json:"accounts"`
 }
 
-// emailRE mirrors _validate_email (spec 07§1.2 / 01§6.1), anchored strictly at
-// both ends. Python's non-multiline `$` also matches before one trailing
-// newline, and an earlier `\n?$` here reproduced that; it is dropped on
-// purpose (a deviation from Python): the email flows into credential file names
-// and Keychain account names, where a newline has no business.
-var emailRE = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-
-// Bounds on imported identity fields. An email is at most 254 octets (RFC
-// 5321's path limit); an alias is a short display name; a slot number has at
-// most six digits.
+// Bounds on imported identity fields. An alias is a short display name; a
+// slot number has at most six digits. An email is bounded by
+// storenames.MaxEmailLen.
 const (
-	maxEmailLen  = 254
 	maxAliasLen  = 64
 	maxSlotValue = 999999
 )
 
-func validateEmail(email string) bool {
-	return len(email) <= maxEmailLen && !hasSpaceOrControl(email) && emailRE.MatchString(email)
-}
+// validateEmail is the import contract for an account's email: claude-swap's
+// _validate_email pattern (spec 07§1.2 / 01§6.1), anchored at both ends and
+// defined once in storenames.StrictEmail. The anchoring is strict on purpose
+// (a deviation from Python, whose non-multiline `$` also matches before one
+// trailing newline): the email flows into credential file names and Keychain
+// account names, where a newline has no business.
+func validateEmail(email string) bool { return storenames.StrictEmail(email) }
 
 // hasSpaceOrControl reports whether s holds any whitespace or control
 // character (or invalid UTF-8), anywhere, including a trailing newline.

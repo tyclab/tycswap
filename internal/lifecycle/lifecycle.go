@@ -273,8 +273,10 @@ func displayTag(orgName string) string {
 	return "personal"
 }
 
-// validateEmail mirrors _validate_email (spec 01§6.1), with the 254-byte bound
-// the import check has.
+// validateEmail is the path-safety rule for an email that names store files
+// (storenames.ValidEmail): add, add-token and remove accept every address a
+// file name can carry. The import holds exports to claude-swap's stricter
+// pattern (storenames.StrictEmail) as its own contract.
 func validateEmail(email string) bool { return storenames.ValidEmail(email) }
 
 var aliasRE = regexp.MustCompile(`^[a-z0-9_.-]+$`)

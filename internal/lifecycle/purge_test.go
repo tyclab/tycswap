@@ -54,7 +54,7 @@ func TestPurgeSweepsLegacyNone(t *testing.T) {
 	}
 }
 
-// TestPurgeRefusesTraversalEmail: a roster email that is not a plain address
+// TestPurgeRefusesTraversalEmail: a roster email a file name cannot carry
 // is refused, naming the slot, before any path is built from it: nothing
 // inside the store is removed, and a file where the raw name would resolve,
 // above the store, is never touched.

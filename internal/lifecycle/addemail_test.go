@@ -8,18 +8,19 @@ import (
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
 // TestAddRefusesUnsafeEmail: the email in a .claude.json names the backup
-// files, so add refuses anything but a plain address, from the live login and
-// from a scratch login directory, before any write.
+// files, so add refuses anything a file name cannot carry, from the live
+// login and from a scratch login directory, before any write.
 func TestAddRefusesUnsafeEmail(t *testing.T) {
-	for _, email := range []string{"a/../../../x", "a/../../../x@example.com", "a@example.com\n", `a\..\x@example.com`} {
+	for _, email := range []string{"a/../../../x", "a/../../../x@example.com", "a@example.com\n", `a\..\x@example.com`, "a:b@example.com", "a@b@example.com"} {
 		t.Run("live "+email, func(t *testing.T) {
 			s := newStore(t)
 			seedLiveLogin(t, s, email, "", "", "uuid", oauthBlob)
 			err := AddAccount(s, nil, true, nil)
-			if err == nil || !strings.Contains(err.Error(), "not a plain address") {
+			if err == nil || !strings.Contains(err.Error(), "cannot name a store file") {
 				t.Fatalf("AddAccount = %v, want the email refusal", err)
 			}
 			assertNoBackups(t, s.ConfigsDir, s.CredentialsDir)
@@ -40,10 +41,30 @@ func TestAddRefusesUnsafeEmail(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, err := AddAccountFrom(s, LoginDir(dir, kc), nil, true, nil)
-			if err == nil || !strings.Contains(err.Error(), "not a plain address") {
+			if err == nil || !strings.Contains(err.Error(), "cannot name a store file") {
 				t.Fatalf("AddAccountFrom = %v, want the email refusal", err)
 			}
 			assertNoBackups(t, s.ConfigsDir, s.CredentialsDir)
+		})
+	}
+}
+
+// TestAddAcceptsEveryAddressAFileNameCanCarry: an apostrophe or a non-ASCII
+// letter is a real address; add stores it under its raw name.
+func TestAddAcceptsEveryAddressAFileNameCanCarry(t *testing.T) {
+	for _, email := range []string{"a'b@example.com", "jörg@example.com", "a@xn--bcher-kva.example"} {
+		t.Run(email, func(t *testing.T) {
+			s := newStore(t)
+			seedLiveLogin(t, s, email, "", "", "uuid", oauthBlob)
+			if err := AddAccount(s, nil, true, nil); err != nil {
+				t.Fatalf("AddAccount(%q) = %v", email, err)
+			}
+			if _, err := os.Stat(filepath.Join(s.ConfigsDir, storenames.ConfigFile("1", email))); err != nil {
+				t.Errorf("config backup not written under the raw name: %v", err)
+			}
+			if got, _ := s.ReadAccountCredentials("1", email); got != oauthBlob {
+				t.Errorf("credential backup = %q, want the login's", got)
+			}
 		})
 	}
 }

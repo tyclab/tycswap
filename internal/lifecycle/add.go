@@ -40,6 +40,7 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
 // AddAccount adds the current live Claude account to the managed set (spec
@@ -89,9 +90,9 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 	}
 	// The email names the account's backup files and Keychain items. It comes
 	// from a .claude.json (the live one or a scratch login's), which is not
-	// tycswap's to trust: refuse anything but a plain address, as import does.
+	// tycswap's to trust: refuse anything a file name cannot carry.
 	if !validateEmail(email) {
-		return cerr.Validation("The logged-in account's email is not a plain address: %s", strconv.Quote(email))
+		return cerr.Validation("The logged-in account's email cannot name a store file: %s. It needs %s.", strconv.Quote(email), storenames.EmailRule)
 	}
 
 	// The slot number is a pure argument check, so it is settled before anything

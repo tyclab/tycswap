@@ -69,11 +69,11 @@ func Purge(s *store.Store) error {
 	}
 	// Each email names the credential file to unlink and the Keychain item to
 	// delete. sequence.json is a file anyone with access to the store can edit,
-	// so an email that is not a plain address is refused before a path is
-	// built from it, and before the user is asked anything.
+	// so an email a file name cannot carry is refused before a path is built
+	// from it, and before the user is asked anything.
 	for _, num := range slots {
 		if email := decodeRecord(data.Accounts[num]).str("email"); !storenames.ValidEmail(email) {
-			return cerr.Validation("Slot %s has an email that is not a plain address: %s. purge names credential files from it and refuses; fix the record in %s or remove %s by hand.",
+			return cerr.Validation("Slot %s has an email that cannot name a store file: %s. purge builds credential file names from it and refuses; fix the record in %s or remove %s by hand.",
 				num, strconv.Quote(email), s.SequenceFile, backupDir)
 		}
 	}

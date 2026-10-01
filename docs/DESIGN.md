@@ -3456,16 +3456,21 @@ Finding *"tokens on the command line are encouraged"*: the docs use the
 prompt and `-`, and `add-token` warns on a positional token.
 
 **3. A string that names a file is validated where it enters the store.**
-Finding *"an unvalidated email builds file paths"*: `add` and `add --login`
-validate the login email as `import` does (`storenames.ValidEmail`: the
-`_validate_email` pattern, at most 254 bytes), and `purge` validates every
-roster email before it builds a path from one, refusing with the slot named.
-The pattern admits no path separator, whitespace or control character, so a
-validated email is a single path component, and the backup files keep the
-raw email in their names (`configs/.claude-config-<n>-<email>.json`,
-`credentials/.creds-<n>-<email>.enc[.prev]`, built in one place,
-`storenames`, for store, credstore and purge); the layout A23 describes holds.
-`codex import` validates its rows before writing, as the Claude import does.
+Finding *"an unvalidated email builds file paths"*: the check that guards a
+path is a path-safety rule, not an address format. `storenames.ValidEmail`
+accepts at most 254 bytes with exactly one `@` between a non-empty local part
+and domain, and refuses whitespace, control characters, `/`, `\` and the
+characters Windows forbids (`< > : " | ? *`); `add`, `add --login`, `add-token`
+and `codex import` apply it where an email enters the store, and `purge`
+applies it to every roster email before it builds a path from one, refusing
+with the slot named. A validated email is therefore a single path component,
+so the backup files keep the raw email in their names
+(`configs/.claude-config-<n>-<email>.json`,
+`credentials/.creds-<n>-<email>.enc[.prev]`, built in one place, `storenames`,
+for store, credstore and purge); the layout A23 describes holds, and a real
+address with an apostrophe or a non-ASCII letter works. The Claude `import`
+keeps claude-swap's `_validate_email` pattern as its contract for export
+files, defined once as `storenames.StrictEmail`.
 
 **4. A refresh that cannot be persisted is not performed.** Findings
 *"inactive-slot refresh can overwrite a newer credential"*, *"`run` can

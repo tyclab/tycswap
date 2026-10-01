@@ -207,7 +207,7 @@ func writeExportFile(path string, blob []byte) error {
 //
 // Like the Claude import, every row that would be imported is validated
 // before anything is written, and one bad row refuses the whole import: a
-// non-empty email must be a plain address of at most 254 bytes, an alias must
+// non-empty email must be one a file name can carry (storenames.ValidEmail), an alias must
 // hold no control character and be at most 64 bytes, and the
 // accountKey may hold no control character. Plan and workspace names are
 // stored without control characters (termsafe.Strip).
