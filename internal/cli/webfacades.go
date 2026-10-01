@@ -9,7 +9,6 @@
 package cli
 
 import (
-	"errors"
 	"sync"
 	"time"
 
@@ -75,8 +74,13 @@ func (f settingsFacade) Unset(dotted string) (bool, error) {
 const autoEventRing = 200
 
 // autoStopWait bounds how long Stop waits for the engine's loop to return (a
-// tick in flight finishes first).
-const autoStopWait = 30 * time.Second
+// tick in flight finishes first). It is short because the dashboard calls
+// Stop while holding its mutation lock, which every other action waits on.
+// Past it Stop reports the engine as still stopping (a 409 on the API, with
+// the engine already marked not running), and Start keeps refusing until the
+// loop has returned, so two engines still never overlap. A var so tests can
+// shorten it.
+var autoStopWait = 2 * time.Second
 
 // autoEngine is what autoFacade drives; *autoswitch.Engine satisfies it.
 type autoEngine interface {
@@ -213,8 +217,11 @@ func (a *autoFacade) Start(dryRun bool) error {
 	return nil
 }
 
-// Stop stops the engine and waits (up to autoStopWait) for its loop to
-// return, so a Start right after it can never overlap two engines.
+// Stop asks the engine to stop and waits (up to autoStopWait) for its loop
+// to return, so a Start right after it can never overlap two engines. When
+// a tick in flight outlasts the wait, the engine is stopping all the same:
+// Stop reports it with a lock-kind error (409) and Start refuses until the
+// loop has returned.
 func (a *autoFacade) Stop() error {
 	a.mu.Lock()
 	if !a.running || a.engine == nil {
@@ -229,7 +236,7 @@ func (a *autoFacade) Stop() error {
 	case <-done:
 		return nil
 	case <-time.After(autoStopWait):
-		return errors.New("auto-switch was asked to stop but its current tick has not finished yet")
+		return cerr.Lock("auto-switch is stopping; its current tick has not finished yet — try again in a moment")
 	}
 }
 

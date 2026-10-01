@@ -235,11 +235,16 @@ func (e *fakeEngine) Wake()                  {}
 func (e *fakeEngine) ApplyThreshold(float64) {}
 func (e *fakeEngine) ApplyModels(string)     {}
 
-// Stop waits for the engine's loop to return, so Stop then Start never runs
-// two engines side by side.
+// Stop waits (bounded) for the engine's loop to return; when a tick outlasts
+// the wait, Stop reports a lock-kind error (409 on the API) instead of
+// holding the caller, the engine counts as stopped, and Start keeps refusing
+// until the loop has returned, so two engines never run side by side.
 func TestAutoFacadeStopThenStartNeverOverlaps(t *testing.T) {
 	sw := fixtureSwitcher(t)
 	a := newAutoFacade(sw)
+	prevWait := autoStopWait
+	autoStopWait = 50 * time.Millisecond
+	t.Cleanup(func() { autoStopWait = prevWait })
 	live := &int32Counter{}
 	release := make(chan struct{})
 	a.newEngine = func(settings.AutoSwitchSettings, func(autoswitch.Event), bool) autoEngine {
@@ -248,29 +253,25 @@ func TestAutoFacadeStopThenStartNeverOverlaps(t *testing.T) {
 	if err := a.Start(true); err != nil {
 		t.Fatal(err)
 	}
-	stopped := make(chan error, 1)
-	go func() { stopped <- a.Stop() }()
-	// While the old loop is still finishing, Start is refused, not doubled.
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if err := a.Start(true); err != nil && strings.Contains(err.Error(), "still stopping") {
-			break
-		} else if err == nil {
-			t.Fatal("Start succeeded while the previous engine was still running")
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("Start never reported the engine as stopping")
-		}
-		time.Sleep(time.Millisecond)
+	began := time.Now()
+	err := a.Stop()
+	var ce *cerr.Error
+	if !errors.As(err, &ce) || ce.Kind != cerr.KindLock || !strings.Contains(err.Error(), "stopping") {
+		t.Fatalf("Stop with the loop still running = %v, want a lock-kind \"stopping\" error", err)
 	}
-	select {
-	case <-stopped:
-		t.Fatal("Stop returned before the engine's loop did")
-	default:
+	if waited := time.Since(began); waited > 5*time.Second {
+		t.Fatalf("Stop held the caller for %v", waited)
+	}
+	if a.View().Running {
+		t.Error("View reports running after Stop")
+	}
+	// While the old loop is still finishing, Start is refused, not doubled.
+	if err := a.Start(true); err == nil || !strings.Contains(err.Error(), "still stopping") {
+		t.Fatalf("Start while the previous loop runs = %v, want \"still stopping\"", err)
 	}
 	close(release)
-	if err := <-stopped; err != nil {
-		t.Fatal(err)
+	if !a.waitStopped(5 * time.Second) {
+		t.Fatal("the released loop never returned")
 	}
 	for i := 0; i < 5; i++ {
 		if err := a.Start(true); err != nil {
