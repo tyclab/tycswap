@@ -568,7 +568,3 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 /* ---------- tycswap additions ---------- */
 /* An empty chip (a label not yet known, a count of nothing) is no chip. */
 .chip:empty { display: none; }
-.form-grid { display: grid; gap: var(--s3); margin: var(--s3) 0; }
-.form-grid > label:not(.switch) { display: grid; gap: var(--s1); font-size: var(--t13); font-weight: 600; }
-.form-grid input[type="text"], .form-grid select { width: 100%; }
-#transfer-out { max-height: 240px; }

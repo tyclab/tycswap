@@ -290,34 +290,6 @@ func (e fakeAutoEvent) Kind() string         { return e.kind }
 func (e fakeAutoEvent) JSON() map[string]any { return e.fields }
 func (e fakeAutoEvent) Human() string        { return e.human }
 
-// Export then import through the façade round-trips, the CLI's lines come
-// back as messages, and the export file is 0600.
-func TestTransferFacadeRoundTrip(t *testing.T) {
-	sw := fixtureSwitcher(t)
-	f := transferFacade{sw: sw}
-	path := filepath.Join(t.TempDir(), "accounts.tycswap")
-	res, err := f.Export(path, "", false)
-	if err != nil {
-		t.Fatalf("Export: %v (%v)", err, res.Messages)
-	}
-	if len(res.Messages) == 0 || !strings.Contains(res.Messages[len(res.Messages)-1], "Exported") {
-		t.Errorf("export messages %v", res.Messages)
-	}
-	if fi, err := os.Stat(path); err != nil || fi.Mode().Perm()&0o077 != 0 {
-		t.Fatalf("export file: %v %v", fi, err)
-	}
-	res, err = f.Import(path, false)
-	if err != nil {
-		t.Fatalf("Import: %v (%v)", err, res.Messages)
-	}
-	if joined := strings.Join(res.Messages, "\n"); !strings.Contains(joined, "Done:") {
-		t.Errorf("import messages %v", res.Messages)
-	}
-	if _, err := f.Import(filepath.Join(t.TempDir(), "missing.tycswap"), false); err == nil {
-		t.Error("import of a missing file succeeded")
-	}
-}
-
 func TestWebAccountsApproveIsANoOp(t *testing.T) {
 	sw := fixtureSwitcher(t)
 	webAccounts{sw}.ApproveAPIKeySwitch("2") // must not panic or write anything
@@ -366,7 +338,7 @@ func TestNewDashboardServes(t *testing.T) {
 	var st web.State
 	err = json.NewDecoder(resp.Body).Decode(&st)
 	resp.Body.Close()
-	if err != nil || resp.StatusCode != http.StatusOK || len(st.Accounts) == 0 || !st.Transfer || st.Settings == nil || st.Auto == nil {
+	if err != nil || resp.StatusCode != http.StatusOK || len(st.Accounts) == 0 || st.Settings == nil || st.Auto == nil {
 		t.Fatalf("state %d %v: %+v", resp.StatusCode, err, st)
 	}
 	for _, row := range st.Accounts {

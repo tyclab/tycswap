@@ -139,21 +139,6 @@ type AutoFacade interface {
 	ApplyModels(model string) error
 }
 
-// TransferResult is what one export or import did, in the words the CLI
-// prints for it.
-type TransferResult struct {
-	Path     string   `json:"path"`
-	Messages []string `json:"messages"`
-}
-
-// TransferFacade moves accounts to and from a .tycswap file on this machine
-// (`tycswap export` / `tycswap import`). Paths are local to the server; the
-// export holds live credentials and is never sent to the browser.
-type TransferFacade interface {
-	Export(path, account string, full bool) (TransferResult, error)
-	Import(path string, force bool) (TransferResult, error)
-}
-
 // Strategies are the manual `switch --strategy` choices the UI offers.
 // "soonest-reset" is deliberately NOT here: switching.Switch treats any
 // string outside this set as plain rotation (next slot, usage ignored), and
@@ -273,7 +258,6 @@ type Deps struct {
 	Accounts AccountOps
 	Settings SettingsFacade
 	Auto     AutoFacade
-	Transfer TransferFacade
 	// AutoEvents, when non-nil, is fanned out as SSE `auto` events; each one
 	// also triggers a state broadcast. A closed channel ends the auto stream.
 	AutoEvents <-chan AutoEventView

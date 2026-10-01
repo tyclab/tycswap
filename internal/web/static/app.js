@@ -1213,8 +1213,8 @@
 
   // ---- guarded section rendering --------------------------------------------
   // A state event arrives every poll tick. Rebuilding a section's DOM on each
-  // one destroyed whatever the user was typing into it (settings fields, the
-  // transfer form) and reset open row menus and session groups. So
+  // one destroyed whatever the user was typing into it (settings fields) and
+  // reset open row menus and session groups. So
   // a section is repainted only when ITS slice of the state changed, never
   // while a control inside it has focus or a menu inside it is open (the
   // repaint is deferred until focus leaves / the menu closes), and open
@@ -1318,7 +1318,6 @@
       { auto: st.auto, accounts: st.accounts, active: st.activeNumber, settings: st.settings },
       function () { renderAuto(st); renderSettings(st); });
     renderGuarded('sessions', 'panel-sessions', st.sessions, function () { renderSessions(st.sessions); });
-    renderGuarded('transfer', 'panel-transfer', { transfer: st.transfer, accounts: claudeRows(st).map(function (a) { return [a.number, a.email, a.alias]; }) }, function () { renderTransfer(st); });
     tickCountdowns();
   }
 
@@ -1421,52 +1420,8 @@
     'auto-start': function (btn) {
       var dry = btn.getAttribute('data-dry') === '1';
       return run(btn, dry ? 'Start dry-run' : 'Start', api('POST', '/api/auto/start', { dryRun: dry }));
-    },
-    'export': function (btn) {
-      var body = { path: $('export-path').value.trim(), account: $('export-account').value, full: $('export-full').checked, overwrite: $('export-overwrite').checked };
-      if (!body.path) { toast('Choose a file to export to.'); $('export-path').focus(); return Promise.resolve(); }
-      return confirmModal('Export accounts', 'Write ' + (body.account ? 'account #' + body.account : 'every account') + ' to ' + body.path + '? The file holds live credentials in plain text: keep it like a password and delete it once it is imported.', 'Export').then(function (ok) {
-        if (!ok) { return; }
-        return transferRun(btn, 'Export', api('POST', '/api/transfer/export', body));
-      });
-    },
-    'import': function (btn) {
-      var body = { path: $('import-path').value.trim(), force: $('import-force').checked };
-      if (!body.path) { toast('Choose a file to import.'); $('import-path').focus(); return Promise.resolve(); }
-      var go = body.force ? confirmModal('Import and overwrite', 'Overwrite the local slots that match accounts in ' + body.path + '?', 'Import') : Promise.resolve(true);
-      return go.then(function (ok) {
-        if (!ok) { return; }
-        return transferRun(btn, 'Import', api('POST', '/api/transfer/import', body));
-      });
     }
   };
-
-  // ---- transfer ----------------------------------------------------------------
-
-  // transferRun is run() plus the messages the CLI would have printed, shown
-  // under the form (skipped slots, overwritten slots, the summary).
-  function transferRun(btn, label, promise) {
-    var out = $('transfer-out');
-    clear(out);
-    return run(btn, label, promise.then(function (data) {
-      var msgs = (data && data.result && data.result.messages) || [];
-      msgs.forEach(function (m) { out.appendChild(el('li', { text: m })); });
-      out.hidden = msgs.length === 0;
-      return data;
-    }));
-  }
-
-  function renderTransfer(st) {
-    var on = !!st.transfer;
-    $('transfer-cards').hidden = !on;
-    $('transfer-unavailable').hidden = on;
-    var sel = $('export-account');
-    if (document.activeElement === sel) { return; }
-    var cur = sel.value;
-    clear(sel);
-    sel.appendChild(el('option', { value: '', text: 'Every account' }));
-    claudeRows(st).forEach(function (a) { sel.appendChild(el('option', { value: String(a.number), selected: String(a.number) === cur, text: accountLabel(a) })); });
-  }
 
   document.addEventListener('click', function (ev) {
     var btn = ev.target.closest ? ev.target.closest('button[data-post], button[data-action]') : null;

@@ -190,7 +190,6 @@ func newDashboard(interval float64, debug bool, s ioStreams) (*web.Server, *auto
 		Settings:   settingsFacade{root: sw.BackupDir()},
 		Auto:       auto,
 		AutoEvents: auto.Events(),
-		Transfer:   transferFacade{sw: sw},
 		Sessions:   web.SessionsIn(sw.BackupDir()),
 		Kill:       web.DefaultKill,
 		Interval:   time.Duration(interval * float64(time.Second)),

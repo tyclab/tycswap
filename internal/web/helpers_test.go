@@ -1,8 +1,7 @@
 // Test harness for the dashboard: fake Facade / AccountOps / Settings / Auto /
-// Transfer / Sessions / Kill seams, a
-// loopback server driven by a hand-fed tick channel, a hand-fed auto-event
-// channel and a clock.Fake, plus small request/SSE helpers. No test here
-// signals a real process or touches $HOME.
+// Sessions / Kill seams, a loopback server driven by a hand-fed tick channel,
+// a hand-fed auto-event channel and a clock.Fake, plus small request/SSE
+// helpers. No test here signals a real process or touches $HOME.
 package web
 
 import (
@@ -321,38 +320,6 @@ func (a *fakeAuto) ApplyThreshold(t float64) error {
 	return a.op(fmt.Sprintf("ApplyThreshold(%g)", t))
 }
 
-type fakeTransfer struct {
-	mu    sync.Mutex
-	calls []string
-	errs  map[string]error
-}
-
-func (f *fakeTransfer) Calls() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]string(nil), f.calls...)
-}
-
-func (f *fakeTransfer) Export(path, account string, full bool) (TransferResult, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, fmt.Sprintf("Export(%s,%s,%v)", path, account, full))
-	if err := f.errs["Export"]; err != nil {
-		return TransferResult{}, err
-	}
-	return TransferResult{Path: path, Messages: []string{"Exported 2 account(s) to " + path}}, nil
-}
-
-func (f *fakeTransfer) Import(path string, force bool) (TransferResult, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, fmt.Sprintf("Import(%s,%v)", path, force))
-	if err := f.errs["Import"]; err != nil {
-		return TransferResult{}, err
-	}
-	return TransferResult{Path: path}, nil
-}
-
 // -- fixtures ----------------------------------------------------------------
 
 func sampleSnapshot() *reporting.AccountsSnapshot {
@@ -429,7 +396,6 @@ type harness struct {
 	fa     *fakeFacade
 	ops    *fakeOps
 	set    *fakeSettings
-	tr     *fakeTransfer
 	auto   *fakeAuto
 	clk    *clock.Fake
 	tick   chan time.Time
@@ -446,7 +412,6 @@ type harness struct {
 
 type option func(*harness, *Deps)
 
-func withNoTransfer() option   { return func(h *harness, d *Deps) { d.Transfer = nil } }
 func withNoAccounts() option   { return func(h *harness, d *Deps) { d.Accounts = nil } }
 func withNoSettings() option   { return func(h *harness, d *Deps) { d.Settings = nil } }
 func withNoAuto() option       { return func(h *harness, d *Deps) { d.Auto = nil } }
@@ -471,7 +436,6 @@ func newHarness(t *testing.T, opts ...option) *harness {
 		}},
 		set:      &fakeSettings{views: sampleSettings(), unsetOK: true},
 		auto:     &fakeAuto{view: sampleAuto(), errs: map[string]error{}},
-		tr:       &fakeTransfer{errs: map[string]error{}},
 		clk:      clock.NewFake(testNow),
 		tick:     make(chan time.Time),
 		autoEv:   make(chan AutoEventView),
@@ -482,7 +446,6 @@ func newHarness(t *testing.T, opts ...option) *harness {
 		Accounts: h.ops,
 		Settings: h.set,
 		Auto:     h.auto,
-		Transfer: h.tr,
 		Sessions: func() SessionsView {
 			h.mu.Lock()
 			defer h.mu.Unlock()

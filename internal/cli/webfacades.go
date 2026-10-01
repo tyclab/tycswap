@@ -1,17 +1,15 @@
 // webfacades.go — the façades `tycswap web` hands the dashboard (DESIGN A25):
-// settings, the hosted auto-switch engine, transfer, and the account
-// operations beyond the frozen Facade.
+// settings, the hosted auto-switch engine, and the account operations beyond
+// the frozen Facade.
 //
 // internal/web owns the consumer interfaces and plain view structs; this file
 // binds them to the same packages the CLI commands use (settings, autoswitch
-// via autoswitchAdapter, transfer via transferAdapter), so the dashboard and
-// `tycswap config|auto|export|import` cannot drift apart.
+// via autoswitchAdapter), so the dashboard and `tycswap config|auto` cannot
+// drift apart.
 package cli
 
 import (
-	"bytes"
 	"errors"
-	"strings"
 	"sync"
 	"time"
 
@@ -20,7 +18,6 @@ import (
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/settings"
-	"github.com/tyclab/tycswap/internal/transfer"
 	"github.com/tyclab/tycswap/internal/web"
 )
 
@@ -319,52 +316,10 @@ func (a *autoFacade) waitStopped(timeout time.Duration) bool {
 	}
 }
 
-// ---- transfer ----
-
-// transferMu serialises the dashboard's transfer calls: transfer reports
-// through its package-level Stderr, which each call borrows.
-var transferMu sync.Mutex
-
-// transferFacade is `tycswap export` / `tycswap import` over a file on this
-// machine; the lines the CLI would print come back as the result's messages.
-type transferFacade struct{ sw *core.Switcher }
-
-func (t transferFacade) Export(path, account string, full bool) (web.TransferResult, error) {
-	msgs, err := captureTransfer(func() error {
-		return transfer.Export(transferAdapter{t.sw}, path, account, full)
-	})
-	return web.TransferResult{Path: path, Messages: msgs}, err
-}
-
-func (t transferFacade) Import(path string, force bool) (web.TransferResult, error) {
-	msgs, err := captureTransfer(func() error {
-		return transfer.Import(transferAdapter{t.sw}, path, force)
-	})
-	return web.TransferResult{Path: path, Messages: msgs}, err
-}
-
-func captureTransfer(fn func() error) ([]string, error) {
-	transferMu.Lock()
-	defer transferMu.Unlock()
-	var buf bytes.Buffer
-	prev := transfer.Stderr
-	transfer.Stderr = &buf
-	defer func() { transfer.Stderr = prev }()
-	err := fn()
-	var msgs []string
-	for _, line := range strings.Split(buf.String(), "\n") {
-		if line = strings.TrimRight(line, "\r"); strings.TrimSpace(line) != "" {
-			msgs = append(msgs, line)
-		}
-	}
-	return msgs, err
-}
-
 var (
 	_ web.Facade         = (*core.Switcher)(nil)
 	_ web.AccountOps     = webAccounts{}
 	_ web.SettingsFacade = settingsFacade{}
 	_ web.AutoFacade     = (*autoFacade)(nil)
-	_ web.TransferFacade = transferFacade{}
 	_ autoEngine         = (*autoswitch.Engine)(nil)
 )

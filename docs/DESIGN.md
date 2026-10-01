@@ -3561,14 +3561,16 @@ loopback port. The page (`static/index.html`, `app.js`, `style.css`, the
 JSON API and a Server-Sent-Events stream drive it. Like tui (A13),
 `internal/web` declares its own seams and imports neither core nor cli:
 `Facade` is the frozen tui.Facade method set, and `AccountOps`,
-`SettingsFacade`, `AutoFacade` and `TransferFacade` are bound in
-`internal/cli/webfacades.go` to the packages the CLI commands use, so the
-dashboard and `tycswap switch|config|auto|export|import` cannot drift apart.
+`SettingsFacade` and `AutoFacade` are bound in `internal/cli/webfacades.go`
+to the packages the CLI commands use, so the dashboard and
+`tycswap switch|config|auto` cannot drift apart. Export and import are not
+in the dashboard: writing live credentials to a path a page names is the
+CLI's job, where the user sees the path and the file.
 
-**Threat model.** The dashboard can do everything the CLI can, including
-reading the account list and exporting live credentials to a file. Anything
-on the machine can send requests to a loopback port, and any web page the
-user opens can make the browser do so. The design keeps both from driving it.
+**Threat model.** The dashboard can switch, add, remove and re-slot accounts,
+drive the auto-switch engine and stop Claude Code sessions. Anything on the
+machine can send requests to a loopback port, and any web page the user
+opens can make the browser do so. The design keeps both from driving it.
 
 1. **Loopback only.** `Server.Start` refuses a non-loopback address before
    listening and checks the bound address after. A `Host` header other than
@@ -3601,8 +3603,8 @@ user opens can make the browser do so. The design keeps both from driving it.
    frame-ancestors none, nosniff, no-referrer, no-store, DENY framing.
 6. **No credential material leaves the process.** State rows carry
    metadata, usage and, on request, the token *status* line; the add-token
-   body is input only and never echoed or logged; exports go to a local
-   file the user names, never to the browser.
+   body is input only and never echoed or logged; no route reads or writes
+   a credential file.
 7. **The client renders API data as text.** `el()` sets no `href`, `src`,
    `style` or `on*` attribute at all, and the page uses no `innerHTML` or
    `eval`, so an alias, a path or a session title cannot become markup.

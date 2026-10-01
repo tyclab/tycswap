@@ -136,7 +136,6 @@ func TestState_ExactShape(t *testing.T) {
 			"quarantine": map[string]any{"quarantine": map[string]any{"3": map[string]any{"reason": "invalid_grant", "at": 1758275000}}},
 		},
 		"strategies": []any{"best", "next-available"},
-		"transfer":   true,
 		"name":       "tycswap",
 	}
 	if _, has := got["tokenStatus"]; has {
@@ -282,7 +281,7 @@ func TestState_TokenStatus_NilAccountOps(t *testing.T) {
 }
 
 func TestState_NilSectionsAndEmptyLists(t *testing.T) {
-	h := newHarness(t, withNoSettings(), withNoAuto(), withNoTransfer())
+	h := newHarness(t, withNoSettings(), withNoAuto())
 	h.fa.mu.Lock()
 	h.fa.snap = &reporting.AccountsSnapshot{}
 	h.fa.mu.Unlock()
@@ -295,9 +294,6 @@ func TestState_NilSectionsAndEmptyLists(t *testing.T) {
 		if got[k] != nil {
 			t.Errorf("nil facade section %q must serialise as null: %v", k, got[k])
 		}
-	}
-	if got["transfer"] != false {
-		t.Errorf("transfer = %v, want false without a TransferFacade", got["transfer"])
 	}
 	// Exactly the manual strategies the CLI accepts; soonest-reset is
 	// auto-switch only and must never be offered here.

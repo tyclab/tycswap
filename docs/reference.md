@@ -2242,7 +2242,7 @@ tycswap web [--port N] [--no-open] [--interval SECONDS] [--debug]
 
 ### Description
 
-Serves a dashboard in the browser on `127.0.0.1` and opens it. It has four
+Serves a dashboard in the browser on `127.0.0.1` and opens it. It has three
 tabs:
 
 - **Dashboard**: the active account and its 5h, 7d and model windows in the
@@ -2269,11 +2269,9 @@ tabs:
   to a PID that is listed as a Claude Code session at that moment;
   `claude --continue` in that directory resumes the session. IDE instances
   are listed below.
-- **Transfer**: export to and import from a `.tycswap` file on this machine,
-  with the options of `tycswap export` (`--account`, `--full`) and `tycswap
-  import` (`--force`). An existing export file is replaced only when
-  *Overwrite* is ticked. Nothing is uploaded or downloaded through the
-  browser; the lines the CLI would print are shown under the form.
+
+Export and import stay on the command line (`tycswap export`, `tycswap
+import`): the dashboard never writes credentials to a file or reads one.
 
 The page updates live: a state document arrives on connect, on every poll
 tick, after every action and after each batch of engine events. The
@@ -2339,8 +2337,6 @@ a key of another provider answers 404, because slot numbers are per provider.
 | `POST /api/auto/stop`, `/api/auto/wake` | | stop it (waits for its loop to end), poll now |
 | `POST /api/auto/threshold` | `{"threshold": 0-100}` | retarget the running engine |
 | `POST /api/auto/model` | `{"model": "all"\|"<names>"\|""}` | retarget the running engine's model windows |
-| `POST /api/transfer/export` | `{"path", "account", "full", "overwrite"}` | `tycswap export` to a local file |
-| `POST /api/transfer/import` | `{"path", "force"}` | `tycswap import` from a local file |
 | `POST /api/launch` | | a fresh one-time URL; bearer token only (below) |
 
 The server also accepts a bearer token (`Authorization: Bearer <token>`) in
@@ -2386,8 +2382,7 @@ Press Ctrl-C to stop.
 
 ### See also
 
-`tycswap tui`, `tycswap auto`, `tycswap config`, `tycswap export`,
-`tycswap import`.
+`tycswap tui`, `tycswap auto`, `tycswap config`.
 
 **Not yet in the dashboard** (follow-ups): Codex accounts (rows, actions and
 auto-switching; account routes already take provider keys), the Codex

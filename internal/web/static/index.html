@@ -31,7 +31,6 @@
     <button type="button" role="tab" id="tab-dashboard" aria-controls="panel-dashboard" aria-selected="true" data-tab="dashboard">Dashboard <span class="tab-badge" id="badge-dashboard"></span></button>
     <button type="button" role="tab" id="tab-auto" aria-controls="panel-auto" aria-selected="false" tabindex="-1" data-tab="auto">Auto <span class="tab-badge" id="badge-auto"></span></button>
     <button type="button" role="tab" id="tab-sessions" aria-controls="panel-sessions" aria-selected="false" tabindex="-1" data-tab="sessions">Sessions <span class="tab-badge" id="badge-sessions"></span></button>
-    <button type="button" role="tab" id="tab-transfer" aria-controls="panel-transfer" aria-selected="false" tabindex="-1" data-tab="transfer">Transfer</button>
   </div>
 </nav>
 
@@ -202,45 +201,6 @@
     </div>
   </section>
 
-  <!-- ===================== Transfer ===================== -->
-  <section class="panel" id="panel-transfer" role="tabpanel" aria-labelledby="tab-transfer" hidden>
-    <div id="transfer-unavailable" class="card" hidden>
-      <div class="empty-state"><span class="title">Transfer is not wired into this build</span><code>{{.Name}} export &lt;path&gt;</code></div>
-    </div>
-    <div class="grid2" id="transfer-cards">
-      <form class="card" id="export-form" novalidate>
-        <div class="card-head">
-          <div class="head-l"><h2>Export</h2></div>
-          <span class="card-sub"><code>{{.Name}} export &lt;path&gt;</code></span>
-        </div>
-        <p class="notice notice-crit">The file holds live credentials in plain text. Keep it like a password and delete it once it is imported.</p>
-        <div class="form-grid">
-          <label for="export-path">File on this machine<input type="text" id="export-path" autocomplete="off" spellcheck="false" placeholder="~/accounts.tycswap"></label>
-          <label for="export-account">Accounts<select id="export-account"><option value="">Every account</option></select></label>
-          <label class="switch" for="export-full"><input type="checkbox" id="export-full"> Full config copy (<code>--full</code>)</label>
-          <label class="switch" for="export-overwrite"><input type="checkbox" id="export-overwrite"> Overwrite an existing file</label>
-        </div>
-        <div class="actions"><button type="button" class="btn btn-primary" data-action="export">Export…</button></div>
-      </form>
-      <form class="card" id="import-form" novalidate>
-        <div class="card-head">
-          <div class="head-l"><h2>Import</h2></div>
-          <span class="card-sub"><code>{{.Name}} import &lt;path&gt;</code></span>
-        </div>
-        <p class="muted small">Every account in the file is checked before anything is written. A slot that already holds the same account is skipped unless you overwrite it.</p>
-        <div class="form-grid">
-          <label for="import-path">File on this machine<input type="text" id="import-path" autocomplete="off" spellcheck="false" placeholder="~/accounts.tycswap"></label>
-          <label class="switch" for="import-force"><input type="checkbox" id="import-force"> Overwrite matching slots (<code>--force</code>)</label>
-        </div>
-        <div class="actions"><button type="button" class="btn btn-primary" data-action="import">Import</button></div>
-      </form>
-    </div>
-    <div class="card">
-      <div class="card-head"><div class="head-l"><h2>Result</h2></div></div>
-      <ul class="log" id="transfer-out" aria-live="polite" hidden></ul>
-      <p class="muted small">Paths are on the machine running <code>{{.Name}} web</code>; nothing is uploaded or downloaded through the browser. Codex accounts move with <code>{{.Name}} codex export</code> and <code>{{.Name}} codex import</code>.</p>
-    </div>
-  </section>
 </main>
 
 <dialog id="modal" class="modal" aria-labelledby="modal-title">

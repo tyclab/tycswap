@@ -40,8 +40,6 @@ var allRoutes = []struct{ method, path string }{
 	{"POST", "/api/auto/wake"},
 	{"POST", "/api/auto/threshold"},
 	{"POST", "/api/auto/model"},
-	{"POST", "/api/transfer/export"},
-	{"POST", "/api/transfer/import"},
 }
 
 // mutatingRoutes are the non-GET routes (POST and DELETE).
@@ -61,9 +59,9 @@ func mutatingRoutes() []struct{ method, path string } {
 func facadesUntouched(t *testing.T, h *harness, allowList bool) {
 	t.Helper()
 	_ = allowList
-	if len(h.fa.Calls())+len(h.tr.Calls())+len(h.Killed())+len(h.ops.Calls())+len(h.set.Calls())+len(h.auto.Calls()) != 0 {
-		t.Fatalf("a facade was reached: fa=%v transfer=%v kill=%v ops=%v set=%v auto=%v",
-			h.fa.Calls(), h.tr.Calls(), h.Killed(), h.ops.Calls(), h.set.Calls(), h.auto.Calls())
+	if len(h.fa.Calls())+len(h.Killed())+len(h.ops.Calls())+len(h.set.Calls())+len(h.auto.Calls()) != 0 {
+		t.Fatalf("a facade was reached: fa=%v kill=%v ops=%v set=%v auto=%v",
+			h.fa.Calls(), h.Killed(), h.ops.Calls(), h.set.Calls(), h.auto.Calls())
 	}
 }
 
@@ -419,7 +417,7 @@ func TestMethodNotAllowed(t *testing.T) {
 	cases := []struct{ method, path string }{
 		{http.MethodGet, "/api/switch/claude:1"},
 		{http.MethodDelete, "/api/state"},
-		{http.MethodPut, "/api/transfer/export"},
+		{http.MethodPut, "/api/auto/start"},
 	}
 	for _, tc := range cases {
 		resp := h.do(h.authed(h.newReq(tc.method, tc.path, nil)))

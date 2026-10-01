@@ -1,6 +1,6 @@
 // handlers.go — routes, the Host / cookie / CSRF middleware, the cerr-kind →
 // HTTP status mapping, and every mutating endpoint (accounts, sessions,
-// settings, auto-switch, transfer).
+// settings, auto-switch).
 //
 // Implements DESIGN A25 "Security model" and "API". Method+pattern routing is
 // Go 1.22 net/http (`POST /api/switch/{id}`); every mutation broadcasts a
@@ -19,8 +19,6 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -79,10 +77,6 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("POST /api/auto/wake", s.handleAutoSimple("wake"))
 	api.HandleFunc("POST /api/auto/threshold", s.handleAutoThreshold)
 	api.HandleFunc("POST /api/auto/model", s.handleAutoModel)
-
-	// transfer
-	api.HandleFunc("POST /api/transfer/export", s.handleExport)
-	api.HandleFunc("POST /api/transfer/import", s.handleImport)
 
 	mux.Handle("/api/", s.requireAuth(api))
 	return securityHeaders(s.checkHost(mux)) // headers on every response, the 421 included
@@ -847,106 +841,6 @@ func (s *Server) handleAutoModel(w http.ResponseWriter, r *http.Request) {
 		}
 		return map[string]any{"model": model}, nil
 	})
-}
-
-// -- transfer -----------------------------------------------------------------
-
-// transferPath validates a path from the Transfer tab: required, local, and
-// never "-" (stdin/stdout mean nothing to a server). "~" expands as in the CLI.
-func transferPath(raw string) (string, error) {
-	p := strings.TrimSpace(raw)
-	if p == "" {
-		return "", cerr.Validation("path is required")
-	}
-	if p == "-" {
-		return "", cerr.Validation("path must be a file, not \"-\"")
-	}
-	if strings.ContainsAny(p, "\x00\r\n") {
-		return "", cerr.Validation("path must not contain control characters")
-	}
-	return p, nil
-}
-
-// handleExport writes a .tycswap file on this machine (`tycswap export`). The
-// file holds live credentials, so it is written where the user says and never
-// returned in the response; an existing file is refused unless overwrite is
-// set, because the browser cannot show what it would replace.
-func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
-	if unavailable(w, s.d.Transfer != nil, "transfer") {
-		return
-	}
-	var b struct {
-		Path      string `json:"path"`
-		Account   string `json:"account"`
-		Full      bool   `json:"full"`
-		Overwrite bool   `json:"overwrite"`
-	}
-	if !decodeBody(w, r, &b) {
-		return
-	}
-	path, err := transferPath(b.Path)
-	if err != nil {
-		writeError(w, statusFor(err), err.Error())
-		return
-	}
-	s.mutate(w, func() (map[string]any, error) {
-		if !b.Overwrite {
-			if _, err := os.Stat(expandHome(path)); err == nil {
-				return nil, cerr.Validation("%s already exists; tick overwrite to replace it", path)
-			}
-		}
-		res, err := s.d.Transfer.Export(path, strings.TrimSpace(b.Account), b.Full)
-		if err != nil {
-			return nil, err
-		}
-		return transferPayload(res), nil
-	})
-}
-
-// handleImport reads a .tycswap file on this machine (`tycswap import`).
-func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
-	if unavailable(w, s.d.Transfer != nil, "transfer") {
-		return
-	}
-	var b struct {
-		Path  string `json:"path"`
-		Force bool   `json:"force"`
-	}
-	if !decodeBody(w, r, &b) {
-		return
-	}
-	path, err := transferPath(b.Path)
-	if err != nil {
-		writeError(w, statusFor(err), err.Error())
-		return
-	}
-	s.mutate(w, func() (map[string]any, error) {
-		res, err := s.d.Transfer.Import(path, b.Force)
-		if err != nil {
-			return nil, err
-		}
-		return transferPayload(res), nil
-	})
-}
-
-func transferPayload(res TransferResult) map[string]any {
-	msgs := res.Messages
-	if msgs == nil {
-		msgs = []string{}
-	}
-	return map[string]any{"path": res.Path, "messages": msgs}
-}
-
-// expandHome expands a leading "~" or "~/" the way the CLI's transfer paths do.
-func expandHome(p string) string {
-	if p != "~" && !strings.HasPrefix(p, "~/") && !strings.HasPrefix(p, "~\\") {
-		return p
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return p
-	}
-	return filepath.Join(home, p[1:])
 }
 
 // -- errors -------------------------------------------------------------------

@@ -38,8 +38,7 @@ type State struct {
 	Settings      []SettingView    `json:"settings"` // null when no SettingsFacade
 	Auto          *AutoView        `json:"auto"`     // null when no AutoFacade
 	Strategies    []string         `json:"strategies"`
-	Transfer      bool             `json:"transfer"` // the Transfer tab's routes are wired
-	Name          string           `json:"name"`     // brand.Name, for the command hints the page prints
+	Name          string           `json:"name"` // brand.Name, for the command hints the page prints
 }
 
 // SessionsJSON is the sessions section.
@@ -88,7 +87,6 @@ func (s *Server) buildState(o stateOpts) State {
 		Accounts:      []map[string]any{},
 		Sessions:      SessionsJSON{Claude: []ClaudeSessionJSON{}, IDE: []IdeInstanceJSON{}},
 		Strategies:    append([]string(nil), Strategies...),
-		Transfer:      s.d.Transfer != nil,
 		Name:          brand.Sanitized().Name,
 	}
 	if snap != nil {

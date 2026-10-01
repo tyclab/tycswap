@@ -317,7 +317,6 @@ func TestIndexHTML_DesignSystemMarkup(t *testing.T) {
 		`class="seg" role="radiogroup" aria-label="Switch strategy" id="strategy-seg"`, // segmented strategy control
 		`data-strategy="best"`, `data-strategy="next-available"`,
 		`id="hdr-acct"`, // header strip: active account + 5h / 7d / model windows
-		`id="tab-transfer"`, `id="panel-transfer"`, `id="export-path"`, `id="import-path"`, `id="transfer-out"`,
 		`id="summary-tiles"`, `id="badge-dashboard"`, `id="badge-sessions"`, `id="badge-auto"`, `id="conn-age"`,
 		`id="sess-filter"`, `id="sess-status"`, `id="sess-sort"`, `id="sessions-groups"`, `id="ide-tbl"`,
 		`id="log-kind"`, `id="log-follow"`, `id="log-clear"`, `id="nextbest-tbl"`, `id="auto-settings"`,
@@ -377,14 +376,14 @@ func TestAppJS_NodeCheck(t *testing.T) {
 }
 
 func TestIndexHTML_HasEverySection(t *testing.T) {
-	// The comprehensive dashboard: one tab per surface, the modal dialog, the
-	// per-row action hooks the client wires up, and the forms.
+	// The comprehensive dashboard: one tab per surface, the modal dialog and
+	// the per-row action hooks the client wires up.
 	src, err := staticFS.ReadFile("static/index.html")
 	if err != nil {
 		t.Fatal(err)
 	}
 	index := string(src)
-	for _, tab := range []string{"dashboard", "auto", "sessions", "transfer"} {
+	for _, tab := range []string{"dashboard", "auto", "sessions"} {
 		if !strings.Contains(index, `data-tab="`+tab+`"`) || !strings.Contains(index, `id="panel-`+tab+`"`) {
 			t.Errorf("tab/panel %q missing", tab)
 		}
@@ -394,13 +393,13 @@ func TestIndexHTML_HasEverySection(t *testing.T) {
 			t.Errorf("element #%s missing", id)
 		}
 	}
-	for _, action := range []string{"switch-strategy", "add-current", "add-token", "auto-start", "export", "import"} {
+	for _, action := range []string{"switch-strategy", "add-current", "add-token", "auto-start"} {
 		if !strings.Contains(index, `data-action="`+action+`"`) {
 			t.Errorf("toolbar action %q missing", action)
 		}
 	}
 	js, _ := staticFS.ReadFile("static/app.js")
-	for _, needle := range []string{"'force-switch'", "'alias'", "'move'", "'swap'", "'remove'", "/api/accounts/swap", "/api/auto/threshold", "/api/auto/model", "/api/transfer/export", "/api/transfer/import", "/api/settings/", "?force=1", "?tokenStatus=1", "addEventListener('auto'", "lessSoonest", "lessBest", "997", "998", "999"} {
+	for _, needle := range []string{"'force-switch'", "'alias'", "'move'", "'swap'", "'remove'", "/api/accounts/swap", "/api/auto/threshold", "/api/auto/model", "/api/settings/", "?force=1", "?tokenStatus=1", "addEventListener('auto'", "lessSoonest", "lessBest", "997", "998", "999"} {
 		if !strings.Contains(string(js), needle) {
 			t.Errorf("app.js lacks %q", needle)
 		}

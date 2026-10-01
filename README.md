@@ -609,7 +609,7 @@ account action (switch, add, add a token, enable/disable, alias, move, swap,
 remove); *Auto* runs an auto-switch engine in the `web` process with its
 settings, *Next best* ranking, quarantine and event log; *Sessions* lists the
 running Claude Code sessions (also those started with `tycswap run`) and can
-stop one; *Transfer* exports to and imports from a file on this machine.
+stop one. Export and import stay on the command line.
 
 Only the browser that opens the printed URL can use the page: the token in
 it works once, the server listens on loopback only, and every API call needs
