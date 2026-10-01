@@ -16,9 +16,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/mappings"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/mappings"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/sessprofile"
 )
 
 // configBackupPath is configs/.claude-config-{num}-{email}.json (email raw,
@@ -90,7 +90,7 @@ func (s *Store) WriteAccountCredentials(num, email, creds string) error {
 // postBackupWrite is _post_backup_write (spec 01§7): a LIVE session keeps its own
 // credential copy but is stale-marked so setup_session re-bootstraps it once it
 // exits; a non-live profile has its credential material dropped immediately so
-// the next `cswap run` re-bootstraps from the fresh backup (history preserved).
+// the next `tycswap run` re-bootstraps from the fresh backup (history preserved).
 func (s *Store) postBackupWrite(num, email string) {
 	dir := s.SessionDir(num, email)
 	if len(sessprofile.LiveSessionPIDs(dir)) > 0 {

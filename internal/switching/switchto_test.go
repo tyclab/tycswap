@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // twoAccountStore seeds two switchable accounts with the live login on account

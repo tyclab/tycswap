@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/cerr"
 )
 
 // importText feeds text to Import via stdin ("-") and returns the stderr output
@@ -74,7 +74,7 @@ func TestImportFixtureBackupAll(t *testing.T) {
 	f := newFakeAccounts(t)
 	var err error
 	_, stderr := captureIO(t, func() {
-		err = Import(f, fixturePath(t, "backup-all.cswap"), false)
+		err = Import(f, fixturePath(t, "backup-all.tycswap"), false)
 	})
 	if err != nil {
 		t.Fatalf("Import: %v", err)
@@ -146,6 +146,7 @@ func TestImportFixtureBackupAcct2(t *testing.T) {
 	f := newFakeAccounts(t)
 	var err error
 	_, stderr := captureIO(t, func() {
+		// An old .cswap export: import reads it as migration (DESIGN A23).
 		err = Import(f, fixturePath(t, "backup-acct2.cswap"), false)
 	})
 	if err != nil {
@@ -252,7 +253,7 @@ func TestValidateEmailTrailingNewlineMatchesPython(t *testing.T) {
 }
 
 func TestImportTrailingNewlineEmailAccepted(t *testing.T) {
-	// A .cswap whose account email has a trailing newline is accepted by Python
+	// A .tycswap whose account email has a trailing newline is accepted by Python
 	// and must be accepted by Go (was rejected before the emailRE `\n?$` fix).
 	f := newFakeAccounts(t)
 	acct := oauthAccount(1, "bob@example.com\n", "")
@@ -555,7 +556,7 @@ func TestImportLiveLoginActivationHint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
-	if !strings.Contains(stderr, "Note: bob@example.com is your current live login — activate the imported credentials with: cswap --switch-to 2 --force") {
+	if !strings.Contains(stderr, "Note: bob@example.com is your current live login — activate the imported credentials with: tycswap --switch-to 2 --force") {
 		t.Errorf("missing activation hint; stderr=%q", stderr)
 	}
 }
@@ -603,7 +604,7 @@ func TestImportSeedsActiveOnlyWhenUnset(t *testing.T) {
 
 func TestImportFileNotFound(t *testing.T) {
 	f := newFakeAccounts(t)
-	err := Import(f, filepath.Join(t.TempDir(), "nope.cswap"), false)
+	err := Import(f, filepath.Join(t.TempDir(), "nope.tycswap"), false)
 	msg := transferErr(t, err)
 	if !strings.Contains(msg, "import file not found:") {
 		t.Errorf("message = %q", msg)

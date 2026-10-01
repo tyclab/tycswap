@@ -30,6 +30,21 @@ const (
 	securityBin = "/usr/bin/security"
 )
 
+// Keychain services tycswap's own items live under: per-account Claude backups
+// and Codex snapshots. Claude Code's own services are named by the callers.
+const (
+	BackupService = "tycswap"
+	CodexService  = "tycswap-codex"
+)
+
+// The services the store this fork came from used. Only `tycswap migrate` reads
+// them, to copy their items to the services above; nothing writes or deletes
+// them, because another installed tool may still own them.
+const (
+	OldBackupService = "claude-swap"
+	OldCodexService  = "claude-swap-codex"
+)
+
 // KeychainClient is the seam every credential store uses.
 type KeychainClient interface {
 	// Get returns (value, found, err). rc 0 → (value, true, nil); rc 44 →

@@ -17,7 +17,7 @@ import "time"
 
 // Endpoint is the Forgejo releases API for the canonical repo (Amendment A6).
 // It is a package-level var (not a const) so it is overridable both via
-// -ldflags "-X git.dpemmons.com/dpemmons/cswap/internal/update.Endpoint=..."
+// -ldflags "-X github.com/tyclab/tycswap/internal/update.Endpoint=..."
 // at build time and by tests, which point it at an httptest server.
 var Endpoint = "https://git.dpemmons.com/api/v1/repos/dpemmons/cswap/releases/latest"
 

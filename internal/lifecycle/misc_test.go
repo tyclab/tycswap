@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/mappings"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/mappings"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // TestAddTokenCrossKindCollision: an email registered as OAuth rejects a later

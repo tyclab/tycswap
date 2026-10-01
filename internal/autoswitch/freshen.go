@@ -13,7 +13,7 @@ import (
 	"context"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/oauth"
 )
 
 // freshenTarget returns one of "ok", "invalid_grant", "identity-conflict",
@@ -24,7 +24,7 @@ func (e *Engine) freshenTarget(number, email string) (string, error) {
 		return "ok", nil // API keys don't expire/refresh
 	}
 	if len(e.sw.LiveSessionPidsFor(number, email)) > 0 {
-		// A live `cswap run` session owns this account's token in its own
+		// A live `tycswap run` session owns this account's token in its own
 		// profile; auto-activating it as the default too would duplicate a
 		// rotating refresh token with nobody reading the warning.
 		return "skip-live-session", nil

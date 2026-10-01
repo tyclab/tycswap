@@ -16,8 +16,8 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/lifecycle"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/lifecycle"
+	"github.com/tyclab/tycswap/internal/printer"
 )
 
 // sigintJSON reports whether the active command is in JSON mode (routes the
@@ -29,15 +29,15 @@ var sigintJSON atomic.Bool
 var sigintNote atomic.Value // string
 
 // sigintCancelToStderr, when true, forces the cancel note to stderr regardless
-// of JSON mode — the per-command stream selector `cswap env` sets because its
+// of JSON mode — the per-command stream selector `tycswap env` sets because its
 // stdout is a pure eval stream (a cancel note on stdout would corrupt the
-// `eval "$(cswap env)"` the user runs). It is a separate flag from JSON mode so
+// `eval "$(tycswap env)"` the user runs). It is a separate flag from JSON mode so
 // the JSON-vs-plain routing every other command relies on is untouched.
 var sigintCancelToStderr atomic.Bool
 
 // setSigintJSON records JSON mode AND clears the per-command stderr override, so
 // the override never leaks across commands (run() drives many commands per
-// process in tests). Every command calls this; `cswap env` re-asserts the
+// process in tests). Every command calls this; `tycswap env` re-asserts the
 // override with setSigintCancelToStderr immediately after.
 func setSigintJSON(v bool) {
 	sigintJSON.Store(v)

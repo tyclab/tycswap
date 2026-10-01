@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
-// TestSetupEnvSharesRunBootstrapPath proves `cswap env` and `cswap run` prepare
+// TestSetupEnvSharesRunBootstrapPath proves `tycswap env` and `tycswap run` prepare
 // the profile through the SAME exported SetupSession: SetupEnv bootstraps the
 // profile at the exact dir Run targets, never execs, and a subsequent Run reuses
 // that profile (no re-bootstrap, no second credential write).
@@ -66,7 +66,7 @@ func TestSetupEnvSharesRunBootstrapPath(t *testing.T) {
 
 // TestSetupEnvReturnsScrubListAndWarns: every AUTH_OVERRIDE_ENV_VARS currently
 // set is returned (declaration order) for the caller's unset lines, and exactly
-// one warning naming them is written to the notice sink (stderr for `cswap env`).
+// one warning naming them is written to the notice sink (stderr for `tycswap env`).
 func TestSetupEnvReturnsScrubListAndWarns(t *testing.T) {
 	setupHome(t)
 	backup := t.TempDir()

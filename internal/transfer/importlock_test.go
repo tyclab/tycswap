@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/filelock"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
-// rivalLock is another cswap's handle on the import write lock: a DISTINCT
+// rivalLock is another tycswap's handle on the import write lock: a DISTINCT
 // FileLock object on the same path, so contention resolves at the flock level
 // (what two processes do) rather than on an in-process mutex.
 type rivalLock struct{ l *filelock.FileLock }
@@ -64,7 +64,7 @@ func (s *syncSink) Write(p []byte) (int, error) {
 // source that touches no package global, so two imports can run at once.
 func exportFile(t *testing.T, text string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "export.cswap")
+	path := filepath.Join(t.TempDir(), "export.tycswap")
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func exportFile(t *testing.T, text string) string {
 // in-memory fake cannot model the race an import actually loses: two imports
 // each hold their own *SequenceData and each renames a whole file over the
 // other's, so the loss only exists when the roster round-trips through disk.
-// Two diskAccounts over one directory are two `cswap --import` processes.
+// Two diskAccounts over one directory are two `tycswap --import` processes.
 type diskAccounts struct {
 	dir string
 	ts  string
@@ -247,7 +247,7 @@ func TestConcurrentImportsBothLand(t *testing.T) {
 }
 
 // TestImportReadsTheRosterUnderTheWriteLock proves the ordering directly: while
-// the import runs, its lock file cannot be taken by another cswap — and the
+// the import runs, its lock file cannot be taken by another tycswap — and the
 // roster read is inside that window, not in front of it.
 func TestImportReadsTheRosterUnderTheWriteLock(t *testing.T) {
 	dir := t.TempDir()

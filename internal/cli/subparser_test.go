@@ -9,7 +9,7 @@ import (
 func runSub(t *testing.T, argv ...string) (int, string, string) {
 	t.Helper()
 	var out, errb bytes.Buffer
-	code := run("cswap", argv, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
+	code := run("tycswap", argv, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 	return code, out.String(), errb.String()
 }
 

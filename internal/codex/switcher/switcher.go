@@ -39,20 +39,20 @@ import (
 	"strings"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/api"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/procdetect"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/transfer"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/usagecache"
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/codex/api"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/procdetect"
+	"github.com/tyclab/tycswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/codex/transfer"
+	"github.com/tyclab/tycswap/internal/codex/usagecache"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // ProviderID is this provider's id, matching AccountSnapshot.Provider.
@@ -66,7 +66,7 @@ const DefaultLockTimeout = 10 * time.Second
 // the cache without one, so the cache's documented default of 100 applies.
 const usageThreshold = 100.0
 
-const busyMsg = "Another cswap process is using the Codex store; try again."
+const busyMsg = "Another tycswap process is using the Codex store; try again."
 
 // Options configures a Switcher. Zero fields take their production defaults.
 type Options struct {
@@ -367,7 +367,7 @@ func (s *Switcher) Add(ctx context.Context, alias string) (store.Slot, error) {
 		id = authfile.ParseIdentity(payload)
 	}
 	if payload == nil || id == nil {
-		return store.Slot{}, cerr.Switch("No Codex login found. Run 'cswap codex login' (or 'codex login') first.")
+		return store.Slot{}, cerr.Switch("No Codex login found. Run 'tycswap codex login' (or 'codex login') first.")
 	}
 	if !id.Identifiable() {
 		return store.Slot{}, cerr.Switch("The current Codex login carries no account id, so it cannot be " +
@@ -579,7 +579,7 @@ func (s *Switcher) Status(ctx context.Context) Status {
 	return Status{TotalManaged: len(slots)}
 }
 
-// JSON is the `cswap codex status --json` document.
+// JSON is the `tycswap codex status --json` document.
 func (st Status) JSON() map[string]any {
 	if st.Slot == nil {
 		return map[string]any{"schemaVersion": jsonout.SchemaVersion, "provider": ProviderID, "active": nil}

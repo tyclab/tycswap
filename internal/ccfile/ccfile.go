@@ -22,8 +22,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // ReadGlobalConfig reads and parses ~/.claude.json (paths.GetGlobalConfigPath),

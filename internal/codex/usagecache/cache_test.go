@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/api"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/codex/api"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 var (
@@ -71,7 +71,7 @@ func TestColdCacheFetchesEverySlot(t *testing.T) {
 	}
 }
 
-// Two `cswap codex list` calls in a row cost one round of requests, not two.
+// Two `tycswap codex list` calls in a row cost one round of requests, not two.
 func TestSecondPassServesFromCacheWithoutARequest(t *testing.T) {
 	f := newCacheFixture(t)
 	f.refresh(f.slots)

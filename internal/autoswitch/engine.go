@@ -17,14 +17,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/settings"
 )
 
 // TickOutcome is the result of one evaluation tick; its int value doubles as the
-// `cswap auto --once` process exit code (05§4).
+// `tycswap auto --once` process exit code (05§4).
 type TickOutcome int
 
 // Tick outcomes / --once exit codes (05§4).

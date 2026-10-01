@@ -17,8 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/printer"
 )
 
 // outputSeam is the permanently-installed, concurrency-safe writer behind
@@ -230,12 +230,12 @@ func persistCredentials(persist PersistFn, num, email, creds string) {
 		warningf(
 			"Refreshed OAuth token for account %s (%s) but failed to persist it: %v. "+
 				"The refresh token on disk may now be stale; if the next refresh fails "+
-				"with invalid_grant, re-run `cswap --add-account` after logging in.",
+				"with invalid_grant, re-run `tycswap --add-account` after logging in.",
 			num, email, err,
 		)
 		fmt.Fprintln(Output, printer.Yellowed(fmt.Sprintf(
 			"Warning: failed to save refreshed token for account %s (%s). "+
-				"If the next refresh fails, re-run `cswap --add-account` after logging in.",
+				"If the next refresh fails, re-run `tycswap --add-account` after logging in.",
 			num, email,
 		)))
 	}

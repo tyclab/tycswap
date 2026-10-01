@@ -1,7 +1,7 @@
 // cache.go — Codex usage fetching behind the same cache the Claude side uses.
 // Implements claude-swap PR #252 codex/usage_cache.py.
 //
-// A live fetch on every call costs one request per account per `cswap codex
+// A live fetch on every call costs one request per account per `tycswap codex
 // list`: fine for a human at a terminal, unacceptable for an auto loop that
 // ticks every few minutes. This package puts Codex behind usage.Store and the
 // poll policy, which already implement — and have tests for — the serve TTL,
@@ -31,10 +31,10 @@ import (
 	"context"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/api"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/codex/api"
+	"github.com/tyclab/tycswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // Sentinels this package derives itself, before any request is made.
@@ -135,7 +135,7 @@ func (c *Cache) Refresh(ctx context.Context, slots []store.Slot, payloadFor Payl
 	identities := c.Identities(slots)
 
 	// respectPlans=true: the on-demand caller contract. Fetch only when the
-	// entry is both stale and poll-due, so a second `cswap codex list` seconds
+	// entry is both stale and poll-due, so a second `tycswap codex list` seconds
 	// after the first costs nothing. A reserve error claims nothing, which
 	// degrades to serving the cache.
 	claims, _ := c.usage.Reserve(numbers, identities, true)

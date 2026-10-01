@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // fakeAccounts is an in-memory Accounts (DESIGN A2) for transfer tests. It models

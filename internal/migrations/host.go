@@ -1,7 +1,7 @@
 // Package migrations is claude-swap's one-time, self-guarded compatibility
 // migration registry: relocating legacy per-account backup-credential storage
 // (Windows Credential Manager → files, macOS third-party `keyring` library →
-// the security-CLI-backed "claude-swap" Keychain service) and tracking which
+// the security-CLI-backed "tycswap" Keychain service) and tracking which
 // migrations have already run in <backup_dir>/.migrations.json.
 //
 // Implements spec 07§5 (migrations.py) in full, plus 07§9's Go-port notes on
@@ -19,12 +19,12 @@
 package migrations
 
 import (
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/credstore"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/wincred"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/wincred"
 )
 
 // StateFilename is .migrations.json's basename under BackupDir (spec 07§5.1).

@@ -15,14 +15,14 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/filelock"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // A mutation waits for another holder of the flock (a separate descriptor,
-// as another cswap process would have) and completes once it is released.
+// as another tycswap process would have) and completes once it is released.
 func TestAMutationWaitsForAnotherHolderOfTheLock(t *testing.T) {
 	f := newFixture(t)
 	s := f.open()

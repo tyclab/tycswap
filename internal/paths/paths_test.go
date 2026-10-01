@@ -3,10 +3,9 @@ package paths
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
-
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
 )
 
 // isolate points HOME at a fresh temp dir and clears the two env vars that bypass
@@ -64,21 +63,25 @@ func TestGetGlobalConfigPathRespectsCCD(t *testing.T) {
 }
 
 func TestGetBackupRootXDG(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("XDG layout is the Linux/WSL store root")
+	}
 	home := isolate(t)
-	defaultRoot := filepath.Join(home, ".local", "share", "claude-swap")
+	defaultRoot := filepath.Join(home, ".local", "share", "tycswap")
 	absXDG := t.TempDir()
 
 	tests := []struct {
-		name string
-		xdg  string
-		set  bool
-		want string
+		name    string
+		xdg     string
+		set     bool
+		want    string
+		wantOld string
 	}{
-		{"unset", "", false, defaultRoot},
-		{"empty ignored", "", true, defaultRoot},
-		{"absolute honored", absXDG, true, filepath.Join(absXDG, "claude-swap")},
-		{"relative ignored", "rel/data", true, defaultRoot},
-		{"tilde expanded", "~/data", true, filepath.Join(home, "data", "claude-swap")},
+		{"unset", "", false, defaultRoot, filepath.Join(home, ".local", "share", "claude-swap")},
+		{"empty ignored", "", true, defaultRoot, filepath.Join(home, ".local", "share", "claude-swap")},
+		{"absolute honored", absXDG, true, filepath.Join(absXDG, "tycswap"), filepath.Join(absXDG, "claude-swap")},
+		{"relative ignored", "rel/data", true, defaultRoot, filepath.Join(home, ".local", "share", "claude-swap")},
+		{"tilde expanded", "~/data", true, filepath.Join(home, "data", "tycswap"), filepath.Join(home, "data", "claude-swap")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -90,171 +93,12 @@ func TestGetBackupRootXDG(t *testing.T) {
 			if got := GetBackupRoot(); got != tt.want {
 				t.Errorf("GetBackupRoot = %q, want %q", got, tt.want)
 			}
+			old := OldBackupRoots()
+			want := []string{tt.wantOld, filepath.Join(home, ".claude-swap-backup")}
+			if strings.Join(old, "|") != strings.Join(want, "|") {
+				t.Errorf("OldBackupRoots = %q, want %q", old, want)
+			}
 		})
-	}
-}
-
-func TestMigrateNoLegacyIsNoOp(t *testing.T) {
-	isolate(t)
-	target := filepath.Join(t.TempDir(), "claude-swap")
-	moved, err := MigrateLegacyBackupDir(target)
-	if err != nil || moved {
-		t.Errorf("no-legacy migrate = (%v, %v), want (false, nil)", moved, err)
-	}
-}
-
-func TestMigrateSamePathIsNoOp(t *testing.T) {
-	isolate(t)
-	legacy := GetLegacyBackupRoot()
-	if err := os.MkdirAll(legacy, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	moved, err := MigrateLegacyBackupDir(legacy)
-	if err != nil || moved {
-		t.Errorf("same-path migrate = (%v, %v), want (false, nil)", moved, err)
-	}
-	if _, err := os.Stat(legacy); err != nil {
-		t.Errorf("legacy should be untouched: %v", err)
-	}
-}
-
-func TestMigrateMovesNestedTree(t *testing.T) {
-	isolate(t)
-	legacy := GetLegacyBackupRoot()
-	mustWrite(t, filepath.Join(legacy, "configs", "a.json"), "{}")
-	mustWrite(t, filepath.Join(legacy, "sequence.json"), "{}")
-	target := filepath.Join(t.TempDir(), "claude-swap")
-
-	moved, err := MigrateLegacyBackupDir(target)
-	if err != nil || !moved {
-		t.Fatalf("migrate = (%v, %v), want (true, nil)", moved, err)
-	}
-	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
-		t.Errorf("legacy should be gone after move")
-	}
-	if _, err := os.Stat(filepath.Join(target, "configs", "a.json")); err != nil {
-		t.Errorf("nested file not migrated: %v", err)
-	}
-}
-
-func TestMigrateCollisionWithRealData(t *testing.T) {
-	isolate(t)
-	legacy := GetLegacyBackupRoot()
-	mustWrite(t, filepath.Join(legacy, "sequence.json"), "{}")
-	target := filepath.Join(t.TempDir(), "claude-swap")
-	mustWrite(t, filepath.Join(target, "sequence.json"), "{}") // real data
-
-	_, err := MigrateLegacyBackupDir(target)
-	if err == nil || !strings.Contains(err.Error(), "Refusing to merge") {
-		t.Fatalf("collision err = %v, want 'Refusing to merge'", err)
-	}
-	if cerr.TypeName(err) != "MigrationError" {
-		t.Errorf("err type = %q, want MigrationError", cerr.TypeName(err))
-	}
-}
-
-func TestMigrateThrowawayOnlyTargetWipedThenMigrated(t *testing.T) {
-	isolate(t)
-	legacy := GetLegacyBackupRoot()
-	mustWrite(t, filepath.Join(legacy, "sequence.json"), "{}")
-	target := filepath.Join(t.TempDir(), "claude-swap")
-	// Target holds only throwaway artifacts.
-	mustWrite(t, filepath.Join(target, "cache", "usage.json"), "{}")
-	mustWrite(t, filepath.Join(target, "claude-swap.log"), "log")
-	mustWrite(t, filepath.Join(target, "claude-swap.log.1"), "log")
-
-	moved, err := MigrateLegacyBackupDir(target)
-	if err != nil || !moved {
-		t.Fatalf("throwaway migrate = (%v, %v), want (true, nil)", moved, err)
-	}
-	if _, err := os.Stat(filepath.Join(target, "sequence.json")); err != nil {
-		t.Errorf("legacy data not migrated over wiped throwaway: %v", err)
-	}
-}
-
-func TestMigrateRealDataAlongsideThrowawayIsCollision(t *testing.T) {
-	isolate(t)
-	legacy := GetLegacyBackupRoot()
-	mustWrite(t, filepath.Join(legacy, "sequence.json"), "{}")
-	target := filepath.Join(t.TempDir(), "claude-swap")
-	mustWrite(t, filepath.Join(target, "cache", "x.json"), "{}") // throwaway
-	mustWrite(t, filepath.Join(target, "sequence.json"), "{}")   // real
-
-	_, err := MigrateLegacyBackupDir(target)
-	if err == nil || !strings.Contains(err.Error(), "Refusing to merge") {
-		t.Fatalf("mixed target err = %v, want collision", err)
-	}
-}
-
-func TestMigrateFlagPresentLegacyPresentRedoes(t *testing.T) {
-	isolate(t)
-	legacy := GetLegacyBackupRoot()
-	mustWrite(t, filepath.Join(legacy, "sequence.json"), "{}")
-	targetBase := t.TempDir()
-	target := filepath.Join(targetBase, "claude-swap")
-	// A partial target and the flag file both present (interrupted prior run).
-	mustWrite(t, filepath.Join(target, "partial.json"), "{}")
-	flag := filepath.Join(targetBase, ".claude-swap.migrating")
-	mustWrite(t, flag, "")
-
-	moved, err := MigrateLegacyBackupDir(target)
-	if err != nil || !moved {
-		t.Fatalf("interrupted redo = (%v, %v), want (true, nil)", moved, err)
-	}
-	// Partial discarded; legacy content present; flag cleaned.
-	if _, err := os.Stat(filepath.Join(target, "partial.json")); !os.IsNotExist(err) {
-		t.Errorf("partial target not discarded")
-	}
-	if _, err := os.Stat(filepath.Join(target, "sequence.json")); err != nil {
-		t.Errorf("legacy not migrated: %v", err)
-	}
-	if _, err := os.Stat(flag); !os.IsNotExist(err) {
-		t.Errorf("flag not cleaned")
-	}
-}
-
-func TestMigrateFlagPresentLegacyGoneCleansFlag(t *testing.T) {
-	isolate(t)
-	targetBase := t.TempDir()
-	target := filepath.Join(targetBase, "claude-swap")
-	mustWrite(t, filepath.Join(target, "real.json"), "{}") // completed target
-	flag := filepath.Join(targetBase, ".claude-swap.migrating")
-	mustWrite(t, flag, "")
-	// Legacy absent (prior run completed the move, died before cleaning flag).
-
-	moved, err := MigrateLegacyBackupDir(target)
-	if err != nil || moved {
-		t.Fatalf("flag+no-legacy = (%v, %v), want (false, nil)", moved, err)
-	}
-	if _, err := os.Stat(flag); !os.IsNotExist(err) {
-		t.Errorf("flag not cleaned")
-	}
-	if _, err := os.Stat(filepath.Join(target, "real.json")); err != nil {
-		t.Errorf("completed target must be left untouched: %v", err)
-	}
-}
-
-func TestMigrateMoveFailureWrapped(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("running as root defeats the read-only-parent failure injection")
-	}
-	isolate(t)
-	legacy := GetLegacyBackupRoot()
-	mustWrite(t, filepath.Join(legacy, "sequence.json"), "{}")
-	// Make the target's parent read-only so MkdirAll/rename fails.
-	parent := t.TempDir()
-	if err := os.Chmod(parent, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(parent, 0o700) })
-	target := filepath.Join(parent, "sub", "claude-swap")
-
-	_, err := MigrateLegacyBackupDir(target)
-	if err == nil || !strings.Contains(err.Error(), "failed") {
-		t.Fatalf("move-failure err = %v, want wrapped 'failed'", err)
-	}
-	if cerr.TypeName(err) != "MigrationError" {
-		t.Errorf("err type = %q, want MigrationError", cerr.TypeName(err))
 	}
 }
 

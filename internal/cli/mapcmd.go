@@ -1,4 +1,4 @@
-// mapcmd.go — the `cswap map` / `cswap unmap` pre-dispatched subcommands
+// mapcmd.go — the `tycswap map` / `tycswap unmap` pre-dispatched subcommands
 // (spec 08§7.2/§7.3, 06§5).
 //
 // Implements spec 08§7.2 (map: list vs set, the not-a-directory warning, the
@@ -15,12 +15,12 @@ import (
 	"os"
 	"sort"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/core"
-	"git.dpemmons.com/dpemmons/cswap/internal/mappings"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/mappings"
+	"github.com/tyclab/tycswap/internal/printer"
 )
 
-// mapCommand handles `cswap map ...` (spec 08§7.2). argv excludes "map".
+// mapCommand handles `tycswap map ...` (spec 08§7.2). argv excludes "map".
 func mapCommand(_ string, argv []string, s ioStreams) int {
 	var pos []string
 	var debug bool
@@ -29,16 +29,16 @@ func mapCommand(_ string, argv []string, s ioStreams) int {
 		case tok == "--debug":
 			debug = true
 		case tok == "-h" || tok == "--help":
-			fmt.Fprintln(s.out, "usage: cswap map [-h] [--debug] [NUM|EMAIL] [PATH]")
+			fmt.Fprintln(s.out, "usage: tycswap map [-h] [--debug] [NUM|EMAIL] [PATH]")
 			return 0
 		case len(tok) > 0 && tok[0] == '-' && tok != "-":
-			return subError("cswap map", s.err, "unrecognized arguments: "+tok)
+			return subError("tycswap map", s.err, "unrecognized arguments: "+tok)
 		default:
 			pos = append(pos, tok)
 		}
 	}
 	if len(pos) > 2 {
-		return subError("cswap map", s.err, "unrecognized arguments: "+pos[2])
+		return subError("tycswap map", s.err, "unrecognized arguments: "+pos[2])
 	}
 
 	sw, err := constructSwitcher(debug, s.err)
@@ -90,7 +90,7 @@ func mapCommand(_ string, argv []string, s ioStreams) int {
 	return 0
 }
 
-// unmapCommand handles `cswap unmap ...` (spec 08§7.3). argv excludes "unmap".
+// unmapCommand handles `tycswap unmap ...` (spec 08§7.3). argv excludes "unmap".
 func unmapCommand(_ string, argv []string, s ioStreams) int {
 	var pos []string
 	var debug bool
@@ -99,16 +99,16 @@ func unmapCommand(_ string, argv []string, s ioStreams) int {
 		case tok == "--debug":
 			debug = true
 		case tok == "-h" || tok == "--help":
-			fmt.Fprintln(s.out, "usage: cswap unmap [-h] [--debug] [PATH]")
+			fmt.Fprintln(s.out, "usage: tycswap unmap [-h] [--debug] [PATH]")
 			return 0
 		case len(tok) > 0 && tok[0] == '-' && tok != "-":
-			return subError("cswap unmap", s.err, "unrecognized arguments: "+tok)
+			return subError("tycswap unmap", s.err, "unrecognized arguments: "+tok)
 		default:
 			pos = append(pos, tok)
 		}
 	}
 	if len(pos) > 1 {
-		return subError("cswap unmap", s.err, "unrecognized arguments: "+pos[1])
+		return subError("tycswap unmap", s.err, "unrecognized arguments: "+pos[1])
 	}
 
 	sw, err := constructSwitcher(debug, s.err)
@@ -149,7 +149,7 @@ func listMappings(sw *core.Switcher, out io.Writer) {
 	all := mstore.All()
 	if len(all) == 0 {
 		fmt.Fprintln(out, printer.Dimmed("No directory mappings yet."))
-		fmt.Fprintln(out, printer.Muted("Map one with: cswap map <NUM|EMAIL> [PATH]"))
+		fmt.Fprintln(out, printer.Muted("Map one with: tycswap map <NUM|EMAIL> [PATH]"))
 		return
 	}
 	seq, _ := sw.Store.SequenceMigrated()

@@ -19,18 +19,18 @@ import (
 	"sync"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // Storage-layer constants (spec 03§5.1).
 const (
-	// securityService is the Keychain service for cswap's per-account backups.
+	// securityService is the Keychain service for tycswap's per-account backups.
 	// Deliberately distinct from the active-credential services and from the old
 	// keyring service so migration items coexist.
-	securityService = "claude-swap"
+	securityService = keychain.BackupService
 	// claudeCodeKeychainService is Claude Code's active OAuth credential service.
 	claudeCodeKeychainService = "Claude Code-credentials"
 	// managedKeychainService is Claude Code's active managed-API-key service
@@ -48,7 +48,7 @@ const (
 )
 
 // Store is the credential-store seam. ReadActive reports Claude Code's active
-// credential (OAuth or managed key); the backup methods manage cswap's own
+// credential (OAuth or managed key); the backup methods manage tycswap's own
 // per-slot copies. The fail-closed DeleteBackupStrict aborts a transaction
 // rather than leaving a slot that must be empty possibly still serving material.
 type Store interface {

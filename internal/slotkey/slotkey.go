@@ -1,5 +1,5 @@
 // Package slotkey defines the canonical total order over slot-key strings used
-// wherever cswap iterates an account map deterministically (Python relied on
+// wherever tycswap iterates an account map deterministically (Python relied on
 // dict insertion order). It is a leaf package with no internal dependencies.
 //
 // The order is: numeric keys first, compared by integer value, with equal

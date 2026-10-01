@@ -31,12 +31,12 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/credstore"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // outputSeam is the permanently-installed, concurrency-safe writer behind
@@ -332,7 +332,7 @@ func readActiveCredential(s *store.Store) (string, error) {
 // refuse to snapshot a live managed key as a kindless OAuth account.
 func rejectLiveAPIKeyCapture(creds string) error {
 	if credstore.LooksLikeAPIKey(creds) {
-		return cerr.Validation("Active login is an API-key account. Add it with 'cswap --add-token sk-ant-api...' instead of --add-account.")
+		return cerr.Validation("Active login is an API-key account. Add it with 'tycswap --add-token sk-ant-api...' instead of --add-account.")
 	}
 	return nil
 }

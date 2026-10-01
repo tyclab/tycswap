@@ -3,13 +3,13 @@
 //
 // The live file is the authority on which Codex account is active. The codex
 // CLI refreshes its own tokens and writes them back here, so a session still
-// open on account A can overwrite this file after cswap has switched to B. Any
-// "which account is active" answer derived from cswap's own registry alone
+// open on account A can overwrite this file after tycswap has switched to B. Any
+// "which account is active" answer derived from tycswap's own registry alone
 // would therefore be wrong; it is derived from this file instead, and the
 // mismatch is what capture-on-switch repairs.
 //
 // Identity resolution follows codex-auth's rules so imported records and
-// cswap-captured records key identically:
+// tycswap-captured records key identically:
 //
 //  1. tokens.account_id when present — the value the codex CLI itself uses.
 //  2. else the JWT's chatgpt_account_id.
@@ -18,7 +18,7 @@
 //     files carry only this.
 //
 // Nothing here verifies a token's signature: that is the server's job, and
-// cswap only needs the claims to know whose token it is holding. Field lookups
+// tycswap only needs the claims to know whose token it is holding. Field lookups
 // follow Python truthiness (an empty string, 0, false, null, {} or [] counts as
 // absent) because the resolution chain above is written as `a or b or c`.
 
@@ -38,8 +38,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/atomicfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // AuthClaim is the namespaced claim block the ChatGPT tokens carry their

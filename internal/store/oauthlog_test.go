@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 func TestNew_WiresOAuthLog_PasteSafeUsageWarning(t *testing.T) {
@@ -48,7 +48,7 @@ func TestNew_WiresOAuthLog_PasteSafeUsageWarning(t *testing.T) {
 		t.Fatalf("error = %q, want http-429", out.Error)
 	}
 
-	data, err := os.ReadFile(filepath.Join(s.BackupDir(), "claude-swap.log"))
+	data, err := os.ReadFile(filepath.Join(s.BackupDir(), "tycswap.log"))
 	if err != nil {
 		t.Fatalf("read log: %v", err)
 	}

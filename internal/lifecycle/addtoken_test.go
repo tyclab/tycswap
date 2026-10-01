@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/mappings"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/mappings"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 func sp(s string) *string { return &s }
@@ -470,7 +470,7 @@ func TestAddTokenMigrateTruncatedRosterKeepsOtherSlots(t *testing.T) {
 
 // TestAddTokenRecordLandsInTheRosterItsSlotWasChosenFrom is add-token's copy:
 // an unlocked write lands while the new slot's credential is stored — inside the
-// locked span, where no cswap can be — and its file PARSES, so nothing about "is
+// locked span, where no tycswap can be — and its file PARSES, so nothing about "is
 // this file readable" would keep it out of the record write.
 func TestAddTokenRecordLandsInTheRosterItsSlotWasChosenFrom(t *testing.T) {
 	s := newStore(t)
@@ -515,7 +515,7 @@ func TestAddTokenDisplaceCommitsTheRosterReadAfterTheConfirmation(t *testing.T) 
 		acct{num: "1", email: "old@example.com", uuid: "uuid-o", creds: "c1", config: "g1"},
 		acct{num: "2", email: "work@example.com", uuid: "uuid-w", alias: "work", creds: "c2", config: "g2"},
 	)
-	// A concurrent `cswap remove work` commits while the prompt is open.
+	// A concurrent `tycswap remove work` commits while the prompt is open.
 	withPrompter(t, &racingPrompter{t: t, s: s, commit: commitRival(t, s, ip(1),
 		acct{num: "1", email: "old@example.com", uuid: "uuid-o"},
 	)})
@@ -569,7 +569,7 @@ func TestAddTokenAtThePromptKeepsARivalsCommittedRecord(t *testing.T) {
 // against an unlocked write whose file parses. It lands at the prune notice —
 // inside the locked span, after this call's own displace commit — so the
 // disagreement is between the roster in hand and a strictly newer, perfectly
-// readable file that no cswap could have written.
+// readable file that no tycswap could have written.
 func TestAddTokenMigrateCommitsTheRosterItDecidedFrom(t *testing.T) {
 	s := newStore(t)
 	seed(t, s, ip(1),
@@ -586,7 +586,7 @@ func TestAddTokenMigrateCommitsTheRosterItDecidedFrom(t *testing.T) {
 		t.Fatal(err)
 	}
 	withPrompter(t, &fakePrompter{prompts: []promptResp{{val: "y", ok: true}}})
-	// A concurrent `cswap remove keep` commits inside the window.
+	// A concurrent `tycswap remove keep` commits inside the window.
 	seam := &racingOnMappingNotice{t: t, s: s, commit: commitRival(t, s, nil,
 		acct{num: "2", email: "tok@token.local"},
 	)}
@@ -659,7 +659,7 @@ func TestAddTokenRefreshInPlaceCommitsTheRosterItResolvedFrom(t *testing.T) {
 		acct{num: "1", email: "keep@example.com", uuid: "uuid-k", alias: "keep", creds: "c1", config: "g1"},
 		acct{num: "2", email: "tok@token.local", creds: "c2", config: "g2"},
 	)
-	// A concurrent `cswap remove keep` commits while the credential is stored.
+	// A concurrent `tycswap remove keep` commits while the credential is stored.
 	seam := &racingCreds{Store: s.Creds, t: t, s: s, on: "WriteBackup",
 		commit: commitRival(t, s, ip(1),
 			acct{num: "2", email: "tok@token.local"},

@@ -15,10 +15,10 @@ import (
 	"io/fs"
 	"os"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // performSwitch performs the actual switch (spec 02§8). emitOutput=false (JSON
@@ -38,7 +38,7 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 				"Claude instance (PID " + joinInts(pids) + "). Running the same account as both " +
 				"the default login and a session can make one copy's token go stale if the server " +
 				"rotates it. If the session later fails to authenticate, exit it and re-run " +
-				"'cswap run " + targetAccount + "'."
+				"'tycswap run " + targetAccount + "'."
 			if emitOutput {
 				printWarning(msg)
 			} else {
@@ -163,7 +163,7 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 					if s.Log != nil {
 						s.Log.Warningf("Post-switch usage display failed: %v", lerr)
 					}
-					printOut(printer.Dimmed("  (usage display unavailable — run `cswap --list` to retry)"))
+					printOut(printer.Dimmed("  (usage display unavailable — run `tycswap --list` to retry)"))
 				}
 			}
 			printOut("")
@@ -183,10 +183,10 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 	targetCreds, _ := s.ReadAccountCredentials(targetAccount, targetEmail)
 	targetConfig, _ := s.ReadAccountConfig(targetAccount, targetEmail)
 	if targetCreds == "" {
-		return switchOp{}, cerr.Switch("Account-%s has no stored credentials. Re-add with: cswap --add-account --slot %s", targetAccount, targetAccount)
+		return switchOp{}, cerr.Switch("Account-%s has no stored credentials. Re-add with: tycswap --add-account --slot %s", targetAccount, targetAccount)
 	}
 	if targetConfig == "" {
-		return switchOp{}, cerr.Switch("Account-%s has no stored config backup. Re-add with: cswap --add-account --slot %s", targetAccount, targetAccount)
+		return switchOp{}, cerr.Switch("Account-%s has no stored config backup. Re-add with: tycswap --add-account --slot %s", targetAccount, targetAccount)
 	}
 	var targetConfigData map[string]any
 	if err := json.Unmarshal([]byte(targetConfig), &targetConfigData); err != nil {
@@ -310,11 +310,11 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 		if kind == "foreign" {
 			msg = "Credential ownership mismatch detected. The live credential was preserved and " +
 				"was not written into Account-" + currentAccount + ". If Account-" + foreignSlot +
-				" later cannot authenticate, log in as it and run: cswap add --slot " + foreignSlot
+				" later cannot authenticate, log in as it and run: tycswap add --slot " + foreignSlot
 		} else {
 			msg = "The live login does not match a managed account. It was preserved and not " +
 				"written into Account-" + currentAccount + ". If you need that account, log in as " +
-				"it and run: cswap add"
+				"it and run: tycswap add"
 		}
 		if emitOutput {
 			printWarning(msg)
@@ -367,10 +367,10 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 	targetCreds, _ := s.ReadAccountCredentials(targetAccount, targetEmail)
 	targetConfig, _ := s.ReadAccountConfig(targetAccount, targetEmail)
 	if targetCreds == "" {
-		return cerr.Switch("Account-%s has no stored credentials. Re-add with: cswap --add-account --slot %s", targetAccount, targetAccount)
+		return cerr.Switch("Account-%s has no stored credentials. Re-add with: tycswap --add-account --slot %s", targetAccount, targetAccount)
 	}
 	if targetConfig == "" {
-		return cerr.Switch("Account-%s has no stored config backup. Re-add with: cswap --add-account --slot %s", targetAccount, targetAccount)
+		return cerr.Switch("Account-%s has no stored config backup. Re-add with: tycswap --add-account --slot %s", targetAccount, targetAccount)
 	}
 
 	// Step 3: activate target credentials.

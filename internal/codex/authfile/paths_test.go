@@ -1,4 +1,4 @@
-// paths_test.go — Codex path resolution: ~/.codex on the read side, cswap's
+// paths_test.go — Codex path resolution: ~/.codex on the read side, tycswap's
 // own store on the write side. Ports claude-swap PR #252
 // tests/test_codex_paths.py.
 
@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 func TestHome_DefaultsToDotCodex(t *testing.T) {
@@ -20,7 +20,7 @@ func TestHome_DefaultsToDotCodex(t *testing.T) {
 	}
 }
 
-// The codex CLI reads CODEX_HOME; cswap must resolve the same file it does.
+// The codex CLI reads CODEX_HOME; tycswap must resolve the same file it does.
 func TestHome_HonoursTheEnvVar(t *testing.T) {
 	home := isolate(t)
 	testutil.Setenv(t, "CODEX_HOME", filepath.Join(home, "elsewhere"))

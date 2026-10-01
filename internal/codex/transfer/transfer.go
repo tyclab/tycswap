@@ -1,4 +1,4 @@
-// transfer.go — export and import Codex accounts, and purge cswap's Codex
+// transfer.go — export and import Codex accounts, and purge tycswap's Codex
 // data. Implements claude-swap PR #252 codex/transfer.py.
 //
 // The export file contains live OAuth tokens. That is the point — an export
@@ -7,23 +7,23 @@
 // any token goes in, and the format says so in a top-level "warning" field
 // that any tool reading it will surface.
 //
-// Deliberately a separate format from the Claude side's .cswap envelope
+// Deliberately a separate format from the Claude side's .tycswap envelope
 // (internal/transfer): the two providers store different things (an
 // account_key and an auth.json payload here, an org-scoped credential blob
 // there), and one file that had to describe both would be a union type nobody
 // could validate. A "provider" field means an import can refuse a file from
 // the wrong side rather than half-applying it.
 //
-// Purge removes cswap's Codex store root (the Store's Root) and every
+// Purge removes tycswap's Codex store root (the Store's Root) and every
 // snapshot in it, Keychain items included — a purge that left the secrets
 // behind would be worse than none, since nothing would list them any more. It
-// never touches the live login or anything else under ~/.codex: cswap manages
+// never touches the live login or anything else under ~/.codex: tycswap manages
 // copies, and the user's actual codex login is not ours to delete. As
 // hardening over the Python, Purge refuses a root that is, or contains, the
 // codex home.
 //
 // Errors are TransferError (cerr.Transfer): transfer.py raises the bare
-// ClaudeSwitchError base, which has no Kind in cswap, and TransferError is the
+// ClaudeSwitchError base, which has no Kind in tycswap, and TransferError is the
 // Kind the Claude-side transfer package uses for the same failures.
 
 // Package transfer is the Codex provider's export/import format and purge.
@@ -41,9 +41,9 @@ import (
 	"strconv"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/store"
 )
 
 // ExportVersion is bumped when the on-disk export shape changes incompatibly.
@@ -201,12 +201,12 @@ func Import(st *store.Store, source string, force bool, stdin io.Reader) (int, e
 	if err := json.Unmarshal(raw, &document); err != nil {
 		var probe any
 		if json.Unmarshal(raw, &probe) == nil {
-			return 0, cerr.Transfer("%s is not a cswap export", source)
+			return 0, cerr.Transfer("%s is not a tycswap export", source)
 		}
 		return 0, cerr.Transfer("%s is not valid JSON: %s", source, err.Error()).Wrap(err)
 	}
 	if document == nil {
-		return 0, cerr.Transfer("%s is not a cswap export", source)
+		return 0, cerr.Transfer("%s is not a tycswap export", source)
 	}
 
 	if p, has := document["provider"]; has && string(bytes.TrimSpace(p)) != "null" {
@@ -221,7 +221,7 @@ func Import(st *store.Store, source string, force bool, stdin io.Reader) (int, e
 		}
 	}
 	if v, ok := pyInt(document["version"]); ok && v > ExportVersion {
-		return 0, cerr.Transfer("%s uses export version %d, newer than this cswap understands", source, v)
+		return 0, cerr.Transfer("%s uses export version %d, newer than this tycswap understands", source, v)
 	}
 
 	var rows []json.RawMessage
@@ -292,7 +292,7 @@ func readLimited(r io.Reader) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(r, MaxImportBytes+1))
 }
 
-// Purge deletes every Codex account cswap manages and st's store root, after
+// Purge deletes every Codex account tycswap manages and st's store root, after
 // a "[y/N]" confirmation read from in (os.Stdin when nil) unless assumeYes.
 // Messages go to out (os.Stdout when nil). Returns whether it ran; EOF at the
 // prompt reads as "no".
@@ -310,12 +310,12 @@ func Purge(st *store.Store, assumeYes bool, in io.Reader, out io.Writer) (bool, 
 		return false, err
 	}
 	if _, err := os.Stat(root); len(slots) == 0 && os.IsNotExist(err) {
-		io.WriteString(out, "No cswap Codex data to remove.\n")
+		io.WriteString(out, "No tycswap Codex data to remove.\n")
 		return false, nil
 	}
 
 	if !assumeYes {
-		io.WriteString(out, "Remove "+strconv.Itoa(len(slots))+" managed Codex account(s) and all cswap Codex "+
+		io.WriteString(out, "Remove "+strconv.Itoa(len(slots))+" managed Codex account(s) and all tycswap Codex "+
 			"data? Your ~/.codex login is left alone. [y/N] ")
 		// A read error (EOF included) leaves whatever was read, usually "",
 		// which is not "y" — the Python's EOFError becomes a plain "no".

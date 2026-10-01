@@ -26,7 +26,7 @@ import "fmt"
 
 // migrationFunc is one registry entry's shape: completed reports whether the
 // runner should record it as applied; notices are user-facing progress lines
-// (spec 07§5.3/§5.4's stderr "claude-swap: migrated N ..." messages) Run
+// (spec 07§5.3/§5.4's stderr "tycswap: migrated N ..." messages) Run
 // returns to its caller to print wherever it prints such things — this
 // package never writes to stdout/stderr itself, keeping it free of any
 // printer/cli dependency. err non-nil means "partially failed, retry next

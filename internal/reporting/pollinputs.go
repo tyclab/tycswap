@@ -20,8 +20,8 @@ package reporting
 import (
 	"sync"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/settings"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 type pollInputs struct {

@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/cerr"
 )
 
 var aliasRE = regexp.MustCompile(`^[a-z0-9_.-]+$`)

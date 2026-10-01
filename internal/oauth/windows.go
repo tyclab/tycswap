@@ -104,7 +104,7 @@ func NewUsage(normalized map[string]any) *Usage {
 // A NEGATIVE pct is not rejected. It compares fine, it is not a width hazard,
 // and it is a measurement this projection has always passed through to
 // reporting and to every JSON consumer — dropping it would silently change what
-// `cswap list --json` says about a window, which is a far larger change than the
+// `tycswap list --json` says about a window, which is a far larger change than the
 // comparability guard this function exists for.
 func pctFloat(v any) (float64, bool) {
 	f, ok := numFloat(v)

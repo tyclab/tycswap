@@ -1,8 +1,8 @@
 // prog.go — program-name derivation for usage/help (spec 08§1 _prog_name).
 //
-// Implements spec 08§1 (_prog_name) and 10-audit Gap 2 (the __main__→"cswap"
+// Implements spec 08§1 (_prog_name) and 10-audit Gap 2 (the __main__→"tycswap"
 // fallback). A Go binary has no importlib metadata; the name shown in usage is
-// the invoked basename (stripping a trailing .exe), falling back to "cswap".
+// the invoked basename (stripping a trailing .exe), falling back to "tycswap".
 package cli
 
 import (
@@ -15,7 +15,7 @@ import (
 // Mirrors Python _prog_name (spec 08§1): basename(argv0), strip a trailing
 // ".exe"/".pyw"/".py" (case-insensitive, first match), and map an empty or
 // launcher-shim name ("__main__"/"python"/"python3"/"py") to the literal
-// "cswap".
+// "tycswap".
 func progName(argv0 string) string {
 	name := filepath.Base(argv0)
 	if name == "." || name == string(filepath.Separator) {
@@ -29,7 +29,7 @@ func progName(argv0 string) string {
 	}
 	switch name {
 	case "", "__main__", "python", "python3", "py":
-		return "cswap"
+		return "tycswap"
 	}
 	return name
 }

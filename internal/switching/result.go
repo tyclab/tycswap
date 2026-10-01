@@ -6,7 +6,7 @@
 // switched:false payload reports from == to.
 package switching
 
-import "git.dpemmons.com/dpemmons/cswap/internal/jsonout"
+import "github.com/tyclab/tycswap/internal/jsonout"
 
 // switchOp is the return of performSwitch: the left/landed identities captured
 // under the lock plus any warnings. From may be nil (fresh machine).

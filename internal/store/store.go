@@ -29,17 +29,17 @@ import (
 	"os"
 	"path/filepath"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/credstore"
-	"git.dpemmons.com/dpemmons/cswap/internal/filelock"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
-	"git.dpemmons.com/dpemmons/cswap/internal/migrations"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
-	"git.dpemmons.com/dpemmons/cswap/internal/wincred"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/migrations"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/wincred"
 )
 
 // Store is the shared substrate. Home/SequenceFile/ConfigsDir/CredentialsDir/
@@ -124,18 +124,8 @@ func New(opts Options) (*Store, error) {
 	// (2) backup root.
 	backupDir := paths.GetBackupRoot()
 
-	// (3) legacy-dir migration — the ONLY fallible construction step. A genuine
-	// collision returns a MigrationError that aborts startup (caught by the CLI
-	// like any init-time ClaudeSwitchError). Runs BEFORE any path derivation,
-	// logging, or directory setup writes to the new location.
-	moved, err := paths.MigrateLegacyBackupDir(backupDir)
-	if err != nil {
-		return nil, err
-	}
-	if moved {
-		fmt.Fprintf(stderr, "claude-swap: migrated data from %s to %s\n",
-			paths.GetLegacyBackupRoot(), backupDir)
-	}
+	// (3) no legacy-dir move any more (DESIGN Amendment A23): an old store
+	// is only ever copied, by `tycswap migrate`, and never touched here.
 
 	// (4) derive paths.
 	sequenceFile := filepath.Join(backupDir, "sequence.json")
@@ -188,7 +178,7 @@ func New(opts Options) (*Store, error) {
 	return s, nil
 }
 
-// BackupDir is the cswap backup root. It is a method, not a field, so
+// BackupDir is the tycswap backup root. It is a method, not a field, so
 // *core.Switcher (which embeds *Store) can satisfy the frozen
 // autoswitch.Switcher / tui.Facade BackupDir() interfaces (DESIGN A13).
 func (s *Store) BackupDir() string { return s.backupDir }

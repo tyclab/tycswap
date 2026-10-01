@@ -1,6 +1,6 @@
 // .migrations.json state file (spec 07§5.1): {"version": 1, "applied":
 // {migration_id: iso-timestamp}}. STATE_VERSION is this file's own schema
-// version — unrelated to the .cswap export FORMAT_VERSION, and never itself
+// version — unrelated to the .tycswap export FORMAT_VERSION, and never itself
 // checked on read (Python's _load_applied never inspects data["version"],
 // only data["applied"]).
 //
@@ -20,8 +20,8 @@ import (
 	"encoding/json"
 	"os"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/atomicfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/clock"
 )
 
 const stateVersion = 1

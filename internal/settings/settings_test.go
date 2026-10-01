@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 func writeSettingsJSON(t *testing.T, root, content string) {
@@ -329,7 +329,7 @@ func TestDefault_CodexKnobs(t *testing.T) {
 		key, help string
 		kind      Kind
 	}{
-		{"autoswitch.codexEnabled", "Also auto-switch Codex accounts in the cswap auto loop", KindBool},
+		{"autoswitch.codexEnabled", "Also auto-switch Codex accounts in the tycswap auto loop", KindBool},
 		{"autoswitch.codexThreshold", "Codex-only switch threshold (0 = use autoswitch.threshold)", KindFloat},
 	} {
 		spec, err := SpecFor(tc.key)
@@ -572,7 +572,7 @@ func TestMergedWithCLI_CLIBeatsSettings(t *testing.T) {
 	}
 }
 
-// TestMergedWithCLI_PreservesCodexKnobs: the codex knobs have no `cswap auto`
+// TestMergedWithCLI_PreservesCodexKnobs: the codex knobs have no `tycswap auto`
 // flag, so a merge carrying other overrides must pass them through unchanged.
 func TestMergedWithCLI_PreservesCodexKnobs(t *testing.T) {
 	base := Default()

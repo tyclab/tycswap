@@ -16,7 +16,7 @@ import (
 	"strings"
 )
 
-// negNumRe mirrors argparse's _negative_number_matcher. Since no cswap option
+// negNumRe mirrors argparse's _negative_number_matcher. Since no tycswap option
 // string looks like a negative number, argparse consumes such tokens as values
 // rather than treating them as options (spec 08§15).
 var negNumRe = regexp.MustCompile(`^-\d+$|^-\d*\.\d+$`)

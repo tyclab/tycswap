@@ -12,9 +12,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/filelock"
-	"git.dpemmons.com/dpemmons/cswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/sessprofile"
 )
 
 // SetupSession ensures a valid session profile exists, bootstrapping or reusing
@@ -32,7 +32,7 @@ func (m *Manager) SetupSession(identifier string, share, shareHistory bool) (str
 	sessionDir := sessprofile.SessionDirFor(m.accounts.BackupDir(), accountNum, email)
 
 	// Deferred invalidation: honored only when no session is live — a second
-	// `cswap run` joining a live session must not invalidate under the running
+	// `tycswap run` joining a live session must not invalidate under the running
 	// claude (the marker survives for later).
 	if !m.staleApplies(sessionDir) && m.isSessionValid(sessionDir, email, orgUUID) {
 		// Cheap reuse check without the lock: most launches hit this.
@@ -52,7 +52,7 @@ func (m *Manager) SetupSession(identifier string, share, shareHistory bool) (str
 	defer lock.Release()
 
 	// Re-evaluate the marker under the lock, then re-check validity: another
-	// `cswap run` may have bootstrapped while we waited.
+	// `tycswap run` may have bootstrapped while we waited.
 	if m.staleApplies(sessionDir) {
 		if _, err := sessprofile.InvalidateSessionCredentials(m.kc, sessionDir); err != nil {
 			return "", "", "", err
@@ -74,7 +74,7 @@ func (m *Manager) SetupSession(identifier string, share, shareHistory bool) (str
 		m.cleanupFailedSession(sessionDir)
 		return "", "", "", cerr.Session(
 			"Session profile for Account-%s (%s) failed validation. Log in with "+
-				"that account and re-add it: cswap --add-account --slot %s",
+				"that account and re-add it: tycswap --add-account --slot %s",
 			accountNum, email, accountNum)
 	}
 	// Lock released by defer, before any exec.
@@ -104,7 +104,7 @@ func (m *Manager) bootstrap(sessionDir, accountNum, email, orgUUID string) error
 	}
 	if creds == "" {
 		return cerr.Session(
-			"Account-%s has no stored credentials. Re-add with: cswap --add-account --slot %s",
+			"Account-%s has no stored credentials. Re-add with: tycswap --add-account --slot %s",
 			accountNum, accountNum)
 	}
 
@@ -135,7 +135,7 @@ func (m *Manager) bootstrap(sessionDir, accountNum, email, orgUUID string) error
 	oauthAccount, present := configData["oauthAccount"]
 	if !present || !pyTruthy(oauthAccount) {
 		return cerr.Session(
-			"Account-%s has no stored config backup. Re-add with: cswap --add-account --slot %s",
+			"Account-%s has no stored config backup. Re-add with: tycswap --add-account --slot %s",
 			accountNum, accountNum)
 	}
 

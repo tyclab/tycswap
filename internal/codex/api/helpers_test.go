@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// makeJWT builds an unsigned JWT carrying claims. Nothing in cswap verifies
+// makeJWT builds an unsigned JWT carrying claims. Nothing in tycswap verifies
 // these tokens — the server does — so an unsigned token is a faithful stand-in.
 func makeJWT(t *testing.T, claims map[string]any) string {
 	t.Helper()

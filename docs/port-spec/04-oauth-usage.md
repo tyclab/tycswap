@@ -2,7 +2,7 @@
 
 ## Overview
 
-This module family is `claude-swap`'s (`cswap`) bridge to Anthropic's OAuth and
+This module family is `claude-swap`'s (`tycswap`) bridge to Anthropic's OAuth and
 usage APIs plus the local machinery that caches, schedules, and interprets the
 results. It covers four Python modules — `oauth.py` (all network I/O: token
 refresh, profile resolution, usage fetch, and the normalization + error
@@ -14,13 +14,13 @@ adaptive polling cadence keyed to a measured per-token rate limit), and
 re-export via `AccountSnapshot`). Every number, URL, JSON key, header, and error
 token below is load-bearing: the Go port must reproduce them exactly, because
 callers (the switcher, the auto engine, the TUI) branch on these exact string
-tokens and the on-disk formats are shared with other `cswap` processes and
+tokens and the on-disk formats are shared with other `tycswap` processes and
 persist across versions.
 
 All network I/O uses Python's `urllib.request` with **no** custom TLS/truststore
 configuration — it relies on the system CA store and Python's default HTTPS
 verification. There is no `truststore`, no `certifi`, no proxy handling, and no
-retry library. The User-Agent on every cswap-originated request is the literal
+retry library. The User-Agent on every tycswap-originated request is the literal
 `"claude-swap/1.0"`. The choice of a non-first-party User-Agent is
 **deliberate and consequential**: the usage endpoint enforces a per-access-token
 request budget specifically on non-first-party UA classes (see the poll policy
@@ -54,10 +54,10 @@ profile and usage go to `api.anthropic.com`.
 
 ### 1.2 Credential shape (external contract — Claude Code's on-disk format)
 
-cswap reads/writes credentials as a **JSON string** whose top-level object may
+tycswap reads/writes credentials as a **JSON string** whose top-level object may
 contain a `claudeAiOauth` object. This is Claude Code's own credentials format
 (from `~/.claude/.credentials.json` on Linux/WSL, or the macOS Keychain). The
-OAuth payload shape cswap depends on:
+OAuth payload shape tycswap depends on:
 
 ```jsonc
 {
@@ -412,7 +412,7 @@ email `a@b.c` never appears in the warning line, while `"account 1"` and
 
 ### 1.18 `build_usage_result(data: dict) -> dict | None`
 
-Normalizes the raw usage-API response into cswap's internal usage dict. Logs the
+Normalizes the raw usage-API response into tycswap's internal usage dict. Logs the
 full raw response at DEBUG (`json.dumps(data, indent=2)`). Returns `None` if the
 result would be empty.
 
@@ -439,7 +439,7 @@ result would be empty.
 }
 ```
 
-**Normalized output shape** (internal — what the rest of cswap consumes):
+**Normalized output shape** (internal — what the rest of tycswap consumes):
 ```jsonc
 {
   "five_hour": {"pct": 22.0, "resets_at": "...", "countdown": "1h 0m", "clock": "20:39"},
@@ -574,7 +574,7 @@ Flow:
      anyway — the 401 path below will retry the refresh.
 4. **Active accounts are NEVER proactively refreshed.** (Verbatim: "Claude Code
    owns the active account's credentials and coordinates its own refresh via a
-   lockfile on `~/.claude/` that cswap doesn't honor, so cswap must never touch
+   lockfile on `~/.claude/` that tycswap doesn't honor, so tycswap must never touch
    the active account's tokens.")
 5. `request_usage_data(access_token)` → on success `UsageOutcome(build_usage_result(data))`.
 6. **On `HTTPError`**:
@@ -611,11 +611,11 @@ Calls the persist callback; on **any exception**:
 - WARNING log (with email — this is the internal log, not the paste-safe path):
   `"Refreshed OAuth token for account %s (%s) but failed to persist it: %r. The
   refresh token on disk may now be stale; if the next refresh fails with
-  invalid_grant, re-run \`cswap --add-account\` after logging in."`
+  invalid_grant, re-run \`tycswap --add-account\` after logging in."`
   (args: account_num, email, exception).
 - Also `printer.warning(...)` to stdout (user-visible, yellow):
   `"Warning: failed to save refreshed token for account {account_num} ({email}).
-  If the next refresh fails, re-run \`cswap --add-account\` after logging in."`
+  If the next refresh fails, re-run \`tycswap --add-account\` after logging in."`
 
 If `callback` is `None` → no-op.
 
@@ -628,7 +628,7 @@ If `callback` is `None` → no-op.
 Replaces an older all-or-nothing 15s snapshot. Persists **measurements**
 (`lastGood`) and **fetch state** (failures, backoff, poll schedule) per account,
 so one failed round trip never blanks every account (stale-on-error). Shared by
-`--list`/`--status` (on-demand refresh of stale entries) and `cswap auto`
+`--list`/`--status` (on-demand refresh of stale entries) and `tycswap auto`
 (scheduled polling).
 
 - **File path**: `<cache_dir>/usage.json` where `cache_dir` is passed to the
@@ -898,7 +898,7 @@ token × UA-class** (measured 2026-07-11, probe3). Key facts:
 
 Plans computed here are persisted per-account in the usage store
 (`nextPollAt`/`pollIntervalS`) by whichever collector fetched, so **every
-surface** (`cswap list`, TUI, menu bar, auto engine) inherits the same cadence.
+surface** (`tycswap list`, TUI, menu bar, auto engine) inherits the same cadence.
 
 ### 3.2 Constants
 

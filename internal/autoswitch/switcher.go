@@ -7,7 +7,7 @@
 
 package autoswitch
 
-import "git.dpemmons.com/dpemmons/cswap/internal/usage"
+import "github.com/tyclab/tycswap/internal/usage"
 
 // Switcher is the account-store facade the auto-switch engine operates over.
 // All methods mirror ClaudeAccountSwitcher entry points autoswitch.py calls.
@@ -15,7 +15,7 @@ type Switcher interface {
 	// CurrentAccountNumber returns the active managed slot number, or nil when
 	// no managed account is active (05§6 step 3).
 	CurrentAccountNumber() *string
-	// HasLiveLogin reports whether a Claude Code login exists that cswap does
+	// HasLiveLogin reports whether a Claude Code login exists that tycswap does
 	// not manage (05§6 step 3, unmanaged-active-account).
 	HasLiveLogin() bool
 	// AccountEmail returns the email recorded for a slot, or "" if unknown.
@@ -40,7 +40,7 @@ type Switcher interface {
 	UsageEntriesByAccount(fetch map[string]bool) map[string]usage.UsageEntry
 	// SwitchTo performs a real switch and returns the switch payload (05§12).
 	SwitchTo(num string, jsonOut bool) (map[string]any, error)
-	// LiveSessionPidsFor returns live `cswap run` PIDs owning a slot (05§12).
+	// LiveSessionPidsFor returns live `tycswap run` PIDs owning a slot (05§12).
 	LiveSessionPidsFor(num, email string) []int
 	// SetPollPolicyInputs pins the threshold/models the collector plans against.
 	SetPollPolicyInputs(threshold float64, models []string)

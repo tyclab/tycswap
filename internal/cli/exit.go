@@ -14,14 +14,14 @@ import (
 	"io"
 	"os"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/core"
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // ANSI codes for the red error line (spec 08§10.1). printer.Error writes to a
@@ -51,7 +51,7 @@ func warningTo(w io.Writer, msg string) {
 
 // RunTUI is the indirection through which cli hands control to internal/tui
 // (--tui/--watch). internal/tui is built concurrently and MUST NOT be imported
-// here; the integrator wires this variable from a tiny file in cmd/cswap. When
+// here; the integrator wires this variable from a tiny file in cmd/tycswap. When
 // nil (a build without the TUI), the dispatch prints a notice and exits 1.
 //
 // The first parameter is the façade (an *core.Switcher, passed as any so this

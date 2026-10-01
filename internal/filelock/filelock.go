@@ -1,4 +1,4 @@
-// Package filelock is cswap's own cross-process advisory lock.
+// Package filelock is tycswap's own cross-process advisory lock.
 //
 // Implements spec 03§7 (locking.py). POSIX uses flock(LOCK_EX|LOCK_NB) with a
 // 0.1s poll and a monotonic timeout (default 10s); Windows uses LockFileEx on a
@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/cerr"
 )
 
 // pollInterval matches Python's time.sleep(0.1).

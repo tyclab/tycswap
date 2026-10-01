@@ -7,8 +7,8 @@
 package switching
 
 import (
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // Provenance mirrors Python's {"live": str|None, "resolved": dict|None}. Live is

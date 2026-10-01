@@ -14,11 +14,11 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/autoswitch"
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
-	"git.dpemmons.com/dpemmons/cswap/internal/settings"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/autoswitch"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // candAcct builds a switchable, non-active candidate carrying a trusted LastGood
@@ -1190,17 +1190,17 @@ func TestCandidatesPanelWithCountdownsNeverWrapsAtAnyWidth(t *testing.T) {
 // TestWindowTableSpanPrecedence pins.)
 func TestCandidateLabelRowFitsWidth(t *testing.T) {
 	// "   4  sentinel.person@example.com  re-login needed — refresh token dead;
-	// log in with Claude Code, then run: cswap add": 6 + 27 + 2 + 82 = 117 columns.
+	// log in with Claude Code, then run: tycswap add": 6 + 27 + 2 + 84 = 119 columns.
 	const email = "sentinel.person@example.com"
 	full := sentinelLabel(jsonout.UsageReloginRequired)
-	for _, width := range []int{117, 116, 100, 91, 90, 60, 30, 12} {
+	for _, width := range []int{119, 118, 100, 91, 90, 60, 30, 12} {
 		var rt richText
 		rt.addText(candidateLabelRow("4", email, full, colMuted, width))
 		assertNoWrap(t, rt, width)
 		gotEmail, gotLabel := rowParts(t, panelRow(t, rt, "4"), "4")
 		assertTruncation(t, "email", gotEmail, email, width)
 		assertTruncation(t, "label", gotLabel, full, width)
-		if width >= 117 && (gotEmail != email || gotLabel != full) {
+		if width >= 119 && (gotEmail != email || gotLabel != full) {
 			t.Errorf("at width %d the row fits whole, got %q + %q", width, gotEmail, gotLabel)
 		}
 		// Precedence: the label only starts truncating once the email has clipped

@@ -1,4 +1,4 @@
-// Package oauth is cswap's bridge to Anthropic's OAuth and usage APIs: token
+// Package oauth is tycswap's bridge to Anthropic's OAuth and usage APIs: token
 // refresh, profile resolution, usage fetch, plus the normalization, error
 // classification, fingerprinting, window math, and reset-time formatting around
 // them.

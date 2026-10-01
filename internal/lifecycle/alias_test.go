@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/filelock"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 func TestSetAlias(t *testing.T) {
@@ -96,7 +96,7 @@ func TestUnsetAliasIdempotent(t *testing.T) {
 // TestAliasRefusesCorruptSequence: with an unparseable sequence.json, set and
 // unset must name the corruption. Resolving first would report "Account-1 does
 // not exist" — a lie about a slot whose record is sitting right there in the
-// file, and one that sends the user to `cswap add` (which would then overwrite
+// file, and one that sends the user to `tycswap add` (which would then overwrite
 // it) instead of to a repair.
 func TestAliasRefusesCorruptSequence(t *testing.T) {
 	for _, tc := range []struct{ name, body string }{
@@ -173,7 +173,7 @@ func TestSetAliasResolvesTheIdentifierUnderTheLock(t *testing.T) {
 		done <- e
 	}()
 
-	// The rival `cswap swap 2 3` commits while the alias command is still waiting
+	// The rival `tycswap swap 2 3` commits while the alias command is still waiting
 	// for the lock: two@example.com is now slot 3, and slot 2 is someone else.
 	select {
 	case e := <-done:

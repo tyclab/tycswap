@@ -1,4 +1,4 @@
-// Package cclock is the proper-lockfile interop layer: cswap holds Claude
+// Package cclock is the proper-lockfile interop layer: tycswap holds Claude
 // Code's OWN advisory locks while mutating its files, closing the token-refresh
 // race with a running Claude Code.
 //
@@ -20,14 +20,14 @@ import (
 	"sync"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/paths"
 )
 
 // Timing constants, matching claude_locks.py verbatim. proper-lockfile defaults
 // Claude Code runs with: stale after 10s, holder touches every stale/2 = 5s;
-// cswap touches faster (3s) for margin. 9s of bounded waiting comfortably
+// tycswap touches faster (3s) for margin. 9s of bounded waiting comfortably
 // outlasts a sub-second-to-few-second credential/config hold.
 const (
 	// StalenessS is the age past which a held lock is considered stale.

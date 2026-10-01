@@ -12,27 +12,27 @@ import (
 // options section (the substring before "Flags combine with subcommands:").
 func TestHelpFlag(t *testing.T) {
 	var out bytes.Buffer
-	if code := renderMainHelp("cswap", &out); code != 0 {
+	if code := renderMainHelp("tycswap", &out); code != 0 {
 		t.Fatalf("renderMainHelp code = %d, want 0", code)
 	}
 	help := out.String()
 
 	mustContain := []string{
 		"Multi-Account Switcher for Claude Code",
-		"cswap switch <num|email>",
-		"cswap list",
-		"cswap status",
-		"cswap add",
-		"cswap add-token [TOKEN|-]",
-		"cswap export <path>",
-		"cswap import <path>",
-		"cswap upgrade",
-		"cswap alias <num|email>",
-		"cswap auto",
-		"cswap config",
+		"tycswap switch <num|email>",
+		"tycswap list",
+		"tycswap status",
+		"tycswap add",
+		"tycswap add-token [TOKEN|-]",
+		"tycswap export <path>",
+		"tycswap import <path>",
+		"tycswap upgrade",
+		"tycswap alias <num|email>",
+		"tycswap auto",
+		"tycswap config",
 		"--slot",
 		"--email",
-		"cswap run 2 -- --resume", // epilog example
+		"tycswap run 2 -- --resume", // epilog example
 		"keep working",
 	}
 	for _, s := range mustContain {
@@ -57,7 +57,7 @@ func TestHelpFlag(t *testing.T) {
 }
 
 // TestHelpProgSubstitution: a non-default program name is substituted throughout
-// (%(prog)s parity), and "claude-swap" is never mangled by the replace.
+// (%(prog)s parity), including the purge line.
 func TestHelpProgSubstitution(t *testing.T) {
 	var out bytes.Buffer
 	renderMainHelp("claude-swap", &out)
@@ -66,7 +66,7 @@ func TestHelpProgSubstitution(t *testing.T) {
 		t.Errorf("--help did not substitute prog into command lines: %q", firstLines(help, 6))
 	}
 	if !strings.Contains(help, "remove all claude-swap data") {
-		t.Errorf("--help mangled the literal 'claude-swap' data line")
+		t.Errorf("--help did not substitute prog into the purge line")
 	}
 }
 

@@ -21,7 +21,7 @@ func TestTranslateSubcommand(t *testing.T) {
 		{"ls alias", []string{"ls"}, []string{"--list"}},
 		{"rm with target", []string{"rm", "2"}, []string{"--remove-account", "2"}},
 		{"update to upgrade", []string{"update"}, []string{"--upgrade"}},
-		{"export passthrough", []string{"export", "b.cswap", "--full"}, []string{"--export", "b.cswap", "--full"}},
+		{"export passthrough", []string{"export", "b.tycswap", "--full"}, []string{"--export", "b.tycswap", "--full"}},
 		{"bogus unchanged", []string{"bogus"}, []string{"bogus"}},
 	}
 	for _, tc := range cases {
@@ -37,16 +37,16 @@ func TestTranslateSubcommand(t *testing.T) {
 // TestProgName pins _prog_name (spec 08§1, 10-audit Gap 2).
 func TestProgName(t *testing.T) {
 	cases := map[string]string{
-		"cswap":                "cswap",
+		"tycswap":              "tycswap",
 		"/usr/bin/claude-swap": "claude-swap",
-		"cswap.exe":            "cswap",
+		"tycswap.exe":          "tycswap",
 		"claude-swap.EXE":      "claude-swap",
-		"__main__":             "cswap",
-		"python":               "cswap",
-		"python3":              "cswap",
-		"py":                   "cswap",
-		"":                     "cswap",
-		"/opt/tools/cswap":     "cswap",
+		"__main__":             "tycswap",
+		"python":               "tycswap",
+		"python3":              "tycswap",
+		"py":                   "tycswap",
+		"":                     "tycswap",
+		"/opt/tools/tycswap":   "tycswap",
 	}
 	for in, want := range cases {
 		if got := progName(in); got != want {

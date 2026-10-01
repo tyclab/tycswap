@@ -15,10 +15,10 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
-	"git.dpemmons.com/dpemmons/cswap/internal/settings"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // -- fixtures ----------------------------------------------------------------
@@ -500,7 +500,7 @@ func monitorOf(width int, accs ...reporting.AccountSnapshot) richText {
 // apart: it is not the row's ranking key, and it is one point from unusable, so
 // a plain-foreground cell would report a nearly spent window as unremarkable —
 // which is exactly what every other surface (the card's bars, the mini account
-// line, cswap list) refuses to do.
+// line, tycswap list) refuses to do.
 func TestCountedFigureCarriesItsOwnSeverity(t *testing.T) {
 	const email = "nearly@dpemmons.com"
 	lg := windows(99, 100)
@@ -1862,7 +1862,7 @@ func headerLabels(header string) []string {
 // scoped columns by name. Built by first appearance across rows instead, the
 // order becomes a function of ROW order — and on the panel row order is the live
 // ranking, so the header would reorder itself as accounts re-rank, disagreeing
-// with the account card, the mini account line and cswap list, all of which read
+// with the account card, the mini account line and tycswap list, all of which read
 // 5h before 7d, always. Ordering the scoped columns by first appearance left
 // exactly that defect standing behind the two fixed heads: two accounts
 // reporting different models swapped their columns as they re-ranked.

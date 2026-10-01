@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // isoAt mirrors jsonout.isoUTCSeconds for building expected freshness strings.

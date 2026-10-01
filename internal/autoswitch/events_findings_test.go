@@ -3,7 +3,7 @@ package autoswitch
 import (
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/jsonout"
 )
 
 // TestFormatRecoveryISORoundsMicroseconds pins Finding 15: formatRecoveryISO

@@ -5,7 +5,7 @@
 // 02§13).
 //
 // Implements spec 02§13 (_fetch_account_usage, _fetch_active_usage) and the
-// issue #62/#117 provenance guards. Never holds the cswap FileLock across the
+// issue #62/#117 provenance guards. Never holds the tycswap FileLock across the
 // network refresh: FileLock is non-reentrant, so the persist callback re-
 // acquires FileLock → Claude credentials lock → Claude config lock and re-checks
 // owner/refresh-token lineage before writing.
@@ -15,12 +15,12 @@ import (
 	"strconv"
 	"sync"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cclock"
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/sessprofile"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/cclock"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // fetchAccountUsage runs one network fetch for one account, never raising (spec
@@ -41,7 +41,7 @@ func fetchAccountUsage(s *store.Store, info AccountInfo) usage.FetchRecord {
 
 	// A session profile that has run holds the newest generation of this
 	// account's token family (claude rotates in place, nothing syncs back). Read
-	// it strictly read-only; rotating its family would log the next `cswap run`
+	// it strictly read-only; rotating its family would log the next `tycswap run`
 	// out the same way the backup's consumed generation would 401 forever.
 	sessionDir := s.SessionDir(num, info.Email)
 	sessionCreds, sessOK := sessprofile.ReadSessionCredentials(reportKC, sessionDir)
@@ -127,7 +127,7 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 
 	persist := oauth.PersistFn(func(n, acctEmail, newCreds string) error {
 		// withTripleLock returns without running its inner fn when a lock cannot be
-		// acquired (cswap FileLock contended, or a Claude Code cred/config lock
+		// acquired (tycswap FileLock contended, or a Claude Code cred/config lock
 		// times out). That means the rotated credential was NOT persisted, so mark
 		// it skipped — mirroring Python's `except Exception: persist_skipped=True`
 		// around the whole `with FileLock, ...:` block. markSkipped is idempotent,
@@ -186,7 +186,7 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 }
 
 // withTripleLock runs fn under FileLock → Claude credentials lock → Claude
-// config lock (spec 03§7.4 ordering), the same triple a switch holds. The cswap
+// config lock (spec 03§7.4 ordering), the same triple a switch holds. The tycswap
 // FileLock is non-reentrant, so callers must not already hold it.
 func withTripleLock(s *store.Store, fn func() error) error {
 	return s.Lock.With(func() error {

@@ -2,7 +2,7 @@
 // codex/oauth.py.
 //
 // codex-auth does not do this: it leaves refresh to the codex CLI and renders
-// the resulting HTTP status in its usage column. cswap refreshes, because
+// the resulting HTTP status in its usage column. tycswap refreshes, because
 // autoswitch has to compare accounts nobody has opened in hours, and a stale
 // token answers 401 instead of a percentage.
 //
@@ -22,7 +22,7 @@
 //
 // Because nothing here is documented, every failure mode degrades rather than
 // raises: the account renders its status and drops out of autoswitch
-// candidacy, and the rest of cswap keeps working.
+// candidacy, and the rest of tycswap keeps working.
 //
 // The active account is never refreshed from a stored snapshot. The codex CLI
 // holds its own copy of that refresh token and keeps auth.json current;
@@ -40,7 +40,7 @@ import (
 	"net/http"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
 )
 
 // Endpoints, the public client, and the shared tuning constants.
@@ -58,7 +58,7 @@ const (
 	// site.
 	ExpiryMarginS = 120.0
 	// WeeklyWindowMinS is the length at or above which a rate-limit window is
-	// cswap's weekly (seven_day) window; anything shorter is the 5-hour one. One
+	// tycswap's weekly (seven_day) window; anything shorter is the 5-hour one. One
 	// day is a wide moat between the two real values (5 h and 7 d).
 	WeeklyWindowMinS = 86400
 )

@@ -1,5 +1,5 @@
 // addsource.go — where an add reads the login it stores: the live login, or a
-// Claude config directory a fresh `claude auth login` was run in (`cswap add
+// Claude config directory a fresh `claude auth login` was run in (`tycswap add
 // --login`), and the check that decides whether such a login completed.
 package lifecycle
 
@@ -11,12 +11,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/ccfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/credstore"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/sessprofile"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/ccfile"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // AddSource names the login an add stores. The zero value (LiveLogin) is the
@@ -28,7 +28,7 @@ type AddSource struct {
 	kc        keychain.KeychainClient
 }
 
-// LiveLogin is the live Claude Code login — what plain `cswap add` stores.
+// LiveLogin is the live Claude Code login — what plain `tycswap add` stores.
 var LiveLogin = AddSource{}
 
 // LoginDir is the login a `claude auth login` run with CLAUDE_CONFIG_DIR=dir
@@ -120,10 +120,10 @@ func errLoginIncomplete() error {
 	return cerr.Config("claude's login did not complete; nothing stored, the live login untouched")
 }
 
-// errLoginAPIKey refuses a console login: it yields an API key, which cswap
+// errLoginAPIKey refuses a console login: it yields an API key, which tycswap
 // manages on the --add-token axis, not as an OAuth slot.
 func errLoginAPIKey() error {
-	return cerr.Validation("claude's login made an API key, which is a different auth axis: use cswap --add-token")
+	return cerr.Validation("claude's login made an API key, which is a different auth axis: use tycswap --add-token")
 }
 
 // ErrLoginIncomplete is errLoginIncomplete for callers that observe the failure
@@ -131,7 +131,7 @@ func errLoginAPIKey() error {
 func ErrLoginIncomplete() error { return errLoginIncomplete() }
 
 // CheckLogin decides whether the `claude auth login` a LoginDir source names
-// produced a subscription (OAuth) login cswap can store.
+// produced a subscription (OAuth) login tycswap can store.
 //
 //   - a credential (file or Keychain item) without a claudeAiOauth block, or a
 //     bare API key; or no credential but a primaryApiKey in the config: an API

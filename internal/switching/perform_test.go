@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/oauth"
 )
 
 // TestConfigReadErrorNotFoundOnlyForENOENT: a non-ENOENT read error on

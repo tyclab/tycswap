@@ -2,7 +2,7 @@
 
 ## Overview
 
-`claude-swap` ships a Textual-based terminal UI (`cswap tui` / bare `cswap` / `cswap watch`) and an optional macOS-only menu-bar app (`cswap --menubar`, built on `rumps`). Both are thin display/interaction shells over the same core engine used by the CLI: `ClaudeAccountSwitcher` (account CRUD, credential I/O, structured `accounts_snapshot()`), `SnapshotSource` (paced, store-governed usage reads shared by every dashboard), and `AutoSwitchEngine` (the exact threshold-based auto-switcher `cswap auto` runs, driven live from the TUI's "Auto view" and, on macOS, from the menu bar). Neither surface re-implements account/usage/switch logic or scrapes CLI text output — the TUI consumes typed dataclasses (`AccountsSnapshot`, `AccountSnapshot`, `UsageEntry`, `AutoSwitchEvent`) and renders them itself; the one place raw text crosses the boundary is captured, ANSI-colored stdout/stderr from mutating CLI-style calls (add/remove/disable), shown verbatim in an "output modal." All blocking work (file locks, Keychain subprocesses, network) runs in background thread workers; the UI event loop only ever touches in-memory state and dispatches via `call_from_thread`.
+`claude-swap` ships a Textual-based terminal UI (`tycswap tui` / bare `tycswap` / `tycswap watch`) and an optional macOS-only menu-bar app (`tycswap --menubar`, built on `rumps`). Both are thin display/interaction shells over the same core engine used by the CLI: `ClaudeAccountSwitcher` (account CRUD, credential I/O, structured `accounts_snapshot()`), `SnapshotSource` (paced, store-governed usage reads shared by every dashboard), and `AutoSwitchEngine` (the exact threshold-based auto-switcher `tycswap auto` runs, driven live from the TUI's "Auto view" and, on macOS, from the menu bar). Neither surface re-implements account/usage/switch logic or scrapes CLI text output — the TUI consumes typed dataclasses (`AccountsSnapshot`, `AccountSnapshot`, `UsageEntry`, `AutoSwitchEvent`) and renders them itself; the one place raw text crosses the boundary is captured, ANSI-colored stdout/stderr from mutating CLI-style calls (add/remove/disable), shown verbatim in an "output modal." All blocking work (file locks, Keychain subprocesses, network) runs in background thread workers; the UI event loop only ever touches in-memory state and dispatches via `call_from_thread`.
 
 ---
 
@@ -10,10 +10,10 @@
 
 | Invocation | Behavior |
 |---|---|
-| `cswap tui` | Explicit dashboard launch. |
-| bare `cswap` (both stdout and stdin are TTYs) | Rewritten internally to `argv = ["--tui"]` before parsing — see `cli.py`: `if not argv and sys.stdout.isatty() and sys.stdin.isatty(): argv = ["--tui"]`. Non-interactive/piped invocation with no args keeps the normal argparse usage error (exit code `2`). |
-| `cswap watch` | `tui_run(switcher, start="watch")` — dashboard is pushed first, then `WatchScreen` is pushed **on top of it** (`app.push_screen(WatchScreen())` inside `on_mount` when `self._start == "watch"`), so `Esc` from the watch page lands back on the dashboard, not on process exit. |
-| `cswap --menubar` | macOS only. Non-macOS: prints `"The menu bar is only available on macOS."` and exits `1`. If the `rumps` extra isn't installed: `ImportError` is caught and it prints `"Menu bar mode requires 'rumps'. Install with: pip install 'claude-swap[menubar]'"`, exits `1`. |
+| `tycswap tui` | Explicit dashboard launch. |
+| bare `tycswap` (both stdout and stdin are TTYs) | Rewritten internally to `argv = ["--tui"]` before parsing — see `cli.py`: `if not argv and sys.stdout.isatty() and sys.stdin.isatty(): argv = ["--tui"]`. Non-interactive/piped invocation with no args keeps the normal argparse usage error (exit code `2`). |
+| `tycswap watch` | `tui_run(switcher, start="watch")` — dashboard is pushed first, then `WatchScreen` is pushed **on top of it** (`app.push_screen(WatchScreen())` inside `on_mount` when `self._start == "watch"`), so `Esc` from the watch page lands back on the dashboard, not on process exit. |
+| `tycswap --menubar` | macOS only. Non-macOS: prints `"The menu bar is only available on macOS."` and exits `1`. If the `rumps` extra isn't installed: `ImportError` is caught and it prints `"Menu bar mode requires 'rumps'. Install with: pip install 'claude-swap[menubar]'"`, exits `1`. |
 
 Entry function (`src/claude_swap/tui/__init__.py`):
 
@@ -25,7 +25,7 @@ def run(switcher: "ClaudeAccountSwitcher", start: str = "dashboard") -> int:
     return app.return_code or 0
 ```
 
-Heavy imports (`textual`, `rich`) are deferred inside `run()` so plain CLI paths (`cswap list`, cron's `cswap auto --once`) never pay the import cost. **Go port note**: bubbletea/lipgloss imports have no comparable cost concern, but keep the TUI package import-isolated from the CLI's hot paths regardless, for build-graph hygiene.
+Heavy imports (`textual`, `rich`) are deferred inside `run()` so plain CLI paths (`tycswap list`, cron's `tycswap auto --once`) never pay the import cost. **Go port note**: bubbletea/lipgloss imports have no comparable cost concern, but keep the TUI package import-isolated from the CLI's hot paths regardless, for build-graph hygiene.
 
 Exit code: `app.return_code or 0` — Textual's `App.return_code` is `None` on a normal `action_quit`, so the process exits `0`. There is no distinct non-zero exit path from inside the TUI itself (errors are shown as notifications/modals, never propagated to the exit code).
 
@@ -38,7 +38,7 @@ Exit code: `app.return_code or 0` — Textual's `App.return_code` is `None` on a
 ```python
 class CswapApp(App):
     TITLE = "claude-swap"
-    CSS_PATH = "cswap.tcss"
+    CSS_PATH = "tycswap.tcss"
     ENABLE_COMMAND_PALETTE = False   # see §2.5
     POLL_INTERVAL_S = 3.0            # matches the old watch view's recapture cadence
 
@@ -55,8 +55,8 @@ Constructor takes `(switcher, *, start="dashboard")`. It:
 
 ```python
 def on_mount(self) -> None:
-    self.register_theme(CSWAP_DARK)
-    self.theme = "cswap-dark"
+    self.register_theme(TYCSWAP_DARK)
+    self.theme = "tycswap-dark"
     self.push_screen(DashboardScreen())
     if self._start == "watch":
         self.push_screen(WatchScreen())   # stacked, so Esc → dashboard not exit
@@ -64,7 +64,7 @@ def on_mount(self) -> None:
     self._tick()   # fire immediately, don't wait for the first interval
 ```
 
-Only one theme is ever registered (`cswap-dark`); see §5.
+Only one theme is ever registered (`tycswap-dark`); see §5.
 
 ### 2.3 Snapshot poll loop
 
@@ -93,7 +93,7 @@ def _apply_snapshot(self, snap: AccountsSnapshot) -> None:
 
 - `request_refresh(*, full=False)`: if `full`, arms `self._full_next = True`, then immediately calls `_tick()` (bypassing the timer, but still respecting the single-flight guard — a refresh already in flight silently absorbs the request; the "full" flag is queued for the *next* tick if one is currently running, since `_full_next` is set before the in-flight check would matter on the following invocation... in practice: if a refresh is already running, `_tick()` no-ops this call, but `_full_next` remains `True` and is picked up + reset to `False` on the *next* natural or explicit tick).
 - `set_store_only(value)`: sets `self._store_only` and immediately calls `request_refresh()`. Used exclusively by the Auto screen (§4) to switch the poller from "may fetch the network" to "read the persisted usage store only," because while the Auto screen is open the `AutoSwitchEngine` itself is the sole fetcher.
-- **Important**: `full=True` (`action_refresh_full`, bound to hidden key `f`) is **not** a faster path than normal polling — see §6.1: `SnapshotSource.take(full=...)` is accepted for API stability only; the underlying usage store's serve-TTL/poll-plan cadence caps every pass identically, full or not. `_full_next`/`full` exist only to route the pass through `fetch=None` (an on-demand pass, same as a plain `cswap list`) vs `fetch=set()` (store-only, no network) — see §6.1's exact fetch-set semantics. There is no "force re-fetch now" capability from the TUI.
+- **Important**: `full=True` (`action_refresh_full`, bound to hidden key `f`) is **not** a faster path than normal polling — see §6.1: `SnapshotSource.take(full=...)` is accepted for API stability only; the underlying usage store's serve-TTL/poll-plan cadence caps every pass identically, full or not. `_full_next`/`full` exist only to route the pass through `fetch=None` (an on-demand pass, same as a plain `tycswap list`) vs `fetch=set()` (store-only, no network) — see §6.1's exact fetch-set semantics. There is no "force re-fetch now" capability from the TUI.
 
 `_refreshing`/`busy` are only ever *written* from the main/UI thread (workers only read blocking I/O results and hand them back via `call_from_thread`) — a clean single-writer pattern. **Go port note**: replicate by never mutating shared UI state directly from a goroutine; always post a message back to the update loop.
 
@@ -358,7 +358,7 @@ Bindings:
 
 ## 4. Auto-switch view (`tui/autoview.py`)
 
-Purpose (from the module docstring): "Runs `AutoSwitchEngine` in a thread worker and renders its typed events... Opens in **dry-run** — opening a view must never start switching accounts on its own; going live is an explicit, confirmed action." The engine's own state-file semantics (shared cooldown/quarantine/state lock in `<backup_root>/autoswitch_state.json`) make it safe to run alongside an external `cswap auto` process.
+Purpose (from the module docstring): "Runs `AutoSwitchEngine` in a thread worker and renders its typed events... Opens in **dry-run** — opening a view must never start switching accounts on its own; going live is an explicit, confirmed action." The engine's own state-file semantics (shared cooldown/quarantine/state lock in `<backup_root>/autoswitch_state.json`) make it safe to run alongside an external `tycswap auto` process.
 
 Layout (`compose`):
 ```
@@ -433,7 +433,7 @@ def _emit_from_thread(self, event):
 - If `self._engine.dry_run`: pushes a confirm modal:
   ```
   "Go live? claude-swap will switch your active account automatically when the "
-  "threshold is reached.\n\n(Same behavior as running `cswap auto` in a terminal.)"
+  "threshold is reached.\n\n(Same behavior as running `tycswap auto` in a terminal.)"
   title="Go live", yes_label="Go live"
   ```
   Only on confirm → `_restart_engine(dry_run=False)`.
@@ -596,7 +596,7 @@ f"{number:>2}  "  [bold foreground]
 ```
 "\n    " + marker + " " + sentinel_label
 ```
-where `marker = "·"` (style muted) if the sentinel is `USAGE_API_KEY`, else `"⚠"` (style `SEV_WARN`). If the sentinel is **not** `USAGE_API_KEY`, a "last seen" line is appended below (same wording `cswap list` prints, via `switcher.last_seen_note`):
+where `marker = "·"` (style muted) if the sentinel is `USAGE_API_KEY`, else `"⚠"` (style `SEV_WARN`). If the sentinel is **not** `USAGE_API_KEY`, a "last seen" line is appended below (same wording `tycswap list` prints, via `switcher.last_seen_note`):
 ```
 "\n    " + f"└ {last_seen}"   [muted]
 ```
@@ -670,10 +670,10 @@ class SnapshotSource:
         self._last = snap
         return snap
 ```
-- `fetch=None` → every stale account is *eligible* to be fetched this pass (the usage store's own poll-plan/freshness/backoff logic in `UsageStore.reserve` decides which, if any, actually are — this is the same on-demand pass `cswap list` runs).
+- `fetch=None` → every stale account is *eligible* to be fetched this pass (the usage store's own poll-plan/freshness/backoff logic in `UsageStore.reserve` decides which, if any, actually are — this is the same on-demand pass `tycswap list` runs).
 - `fetch=set()` (empty set, `store_only=True`) → **no network eligibility at all**; a pure read of whatever the store already has cached.
 - `full=True` does **not** change the `fetch` argument or bypass pacing — test-asserted: `source.take(); source.take(); source.take(full=True)` all produce identical `fetch_sets == [None, None, None]` against the fake switcher.
-- Shared by any future GUI shell, not TUI-specific — the module comment: "Pacing is store-governed... this class therefore just runs the same on-demand pass as `cswap list`... and offers `store_only` for shells that host an auto engine."
+- Shared by any future GUI shell, not TUI-specific — the module comment: "Pacing is store-governed... this class therefore just runs the same on-demand pass as `tycswap list`... and offers `store_only` for shells that host an auto engine."
 
 ### 6.2 `ActionResult` / `run_action`
 
@@ -725,7 +725,7 @@ Notes load-bearing for the port:
 
 ```python
 def sentinel_label(sentinel: str) -> str:
-    return SENTINEL_NOTES.get(sentinel, sentinel)   # exact wording `cswap list` prints
+    return SENTINEL_NOTES.get(sentinel, sentinel)   # exact wording `tycswap list` prints
 ```
 
 ```python
@@ -822,7 +822,7 @@ Compose: a wide `.modal-box.modal-box-wide` containing `Label(title)`, then insi
 
 ---
 
-## 8. Theme & visual language (`tui/theme.py`, `cswap.tcss`)
+## 8. Theme & visual language (`tui/theme.py`, `tycswap.tcss`)
 
 ### 8.1 Color constants (single source of truth — widgets import these directly for Rich renderables; the `Theme` object below maps the same values onto Textual's design tokens)
 
@@ -850,9 +850,9 @@ def severity_color(pct):
 ```
 Note: `CRIT_PCT` (90.0) intentionally mirrors the auto-switch default threshold (`AutoSwitchSettings.threshold = 90.0`) — "bar color and switch behavior agree," per the module docstring — so out-of-the-box the bar turns red right around where auto-switch would fire.
 
-`CSWAP_DARK = Theme(name="cswap-dark", primary=ACCENT, secondary=MUTED, accent=ACCENT, foreground=FOREGROUND, background=BACKGROUND, surface=SURFACE, panel=PANEL, success=SEV_OK, warning=SEV_WARN, error=SEV_CRIT, dark=True, variables={"footer-key-foreground": ACCENT, "block-cursor-background": PANEL, "block-cursor-foreground": FOREGROUND, "block-cursor-text-style": "none"})` — this is the **only** theme registered; footer keybinding hints render in the accent color instead of Textual's default blue.
+`TYCSWAP_DARK = Theme(name="tycswap-dark", primary=ACCENT, secondary=MUTED, accent=ACCENT, foreground=FOREGROUND, background=BACKGROUND, surface=SURFACE, panel=PANEL, success=SEV_OK, warning=SEV_WARN, error=SEV_CRIT, dark=True, variables={"footer-key-foreground": ACCENT, "block-cursor-background": PANEL, "block-cursor-foreground": FOREGROUND, "block-cursor-text-style": "none"})` — this is the **only** theme registered; footer keybinding hints render in the accent color instead of Textual's default blue.
 
-### 8.2 Layout (`cswap.tcss`) — key structural facts for the Go port's visual parity
+### 8.2 Layout (`tycswap.tcss`) — key structural facts for the Go port's visual parity
 
 - Screen background = `$background`.
 - `#accounts-panel` (dashboard monitor): `height: auto`, `padding: 1 3`, `border-bottom: solid $panel`.
@@ -1068,7 +1068,7 @@ On a successful switch (any of the three strategies, or a direct account pick), 
 
 `on_refresh_creds`: re-runs `switcher.add_account(slot=None)` to refresh the *currently active* account's stored credential in place. Two special error paths:
 - No active login detected (`switcher._get_current_account() is None`) → alert `"No active Claude Code login detected. Log in first."`
-- `CredentialReadError` (typically a locked/inaccessible Keychain) → alert: `"Couldn't read the active credential. If the menu bar is running as a background/login agent, macOS blocks its Keychain access — quit and relaunch it from a Terminal with: cswap --menubar"` — **documents a real macOS platform quirk**: a `launchd` background/login-agent process cannot prompt for Keychain access the way a Terminal-foreground process can; the `security` CLI call simply times out/fails silently in that context.
+- `CredentialReadError` (typically a locked/inaccessible Keychain) → alert: `"Couldn't read the active credential. If the menu bar is running as a background/login agent, macOS blocks its Keychain access — quit and relaunch it from a Terminal with: tycswap --menubar"` — **documents a real macOS platform quirk**: a `launchd` background/login-agent process cannot prompt for Keychain access the way a Terminal-foreground process can; the `security` CLI call simply times out/fails silently in that context.
 
 `on_refresh_now`: `refresh_async(full=True)` — the user's one explicit "go fetch" action (unlike the TUI's `f`, this **does** actually matter here in the sense that it kicks a refresh outside the timer cadence, though the underlying store pacing still applies).
 
@@ -1076,7 +1076,7 @@ On a successful switch (any of the three strategies, or a direct account pick), 
 
 `_make_interval(secs)`: rumps 0.4.0's `Timer.interval` setter is a documented no-op while the timer is already running unless a full interval has already elapsed — worked around by explicit `stop(); interval = secs; start()` to force the new cadence to take effect immediately rather than waiting out the stale interval once.
 
-`_make_threshold(pct)`: calls the **shared** `set_setting(backup_dir, "autoswitch.threshold", str(pct))` (writes to `settings.json`, the same file/keys the CLI's `cswap config set` uses), then `_restart_engine()` to apply immediately if running.
+`_make_threshold(pct)`: calls the **shared** `set_setting(backup_dir, "autoswitch.threshold", str(pct))` (writes to `settings.json`, the same file/keys the CLI's `tycswap config set` uses), then `_restart_engine()` to apply immediately if running.
 
 ---
 
@@ -1114,7 +1114,7 @@ Two pieces of state are explicitly documented as memory-only, reverted on screen
 
 | Concern | Where | Go treatment |
 |---|---|---|
-| `cswap --menubar` gate (`sys.platform != "darwin"`) | `cli.py` | If ported: `runtime.GOOS != "darwin"` equivalent gate, or omit the flag entirely per §10's recommendation. |
+| `tycswap --menubar` gate (`sys.platform != "darwin"`) | `cli.py` | If ported: `runtime.GOOS != "darwin"` equivalent gate, or omit the flag entirely per §10's recommendation. |
 | `rumps`/`AppKit` import | `menubar.py` | No cross-platform Go equivalent without a Cocoa binding; see §10 recommendation to exclude. |
 | macOS Keychain background-agent access failure (`CredentialReadError` → specific alert text) | `menubar.py` `on_refresh_creds` | Only relevant if the menu bar is ported; the underlying Keychain-access constraint itself belongs to the credential-storage module's spec, not this one. |
 | `open -R` (Finder reveal) | `menubar.py` `on_open_log` | macOS-only `open` CLI; no attempt needed unless the whole menu bar is ported. |
@@ -1159,7 +1159,7 @@ These are facts about Claude Code's own files, the Anthropic usage API's data sh
 ```
 `resets_at` is an ISO-8601 timestamp; both consuming code paths handle a trailing literal `"Z"` by rewriting it to `"+00:00"` before `datetime.fromisoformat` (`str(resets_at).replace("Z", "+00:00")` in `data.py`'s `reset_text`/`reset_clock`; `menubar.py`'s `_resets_at_ts` uses `datetime.fromisoformat` directly and tolerates either form — Python 3.11+ `fromisoformat` accepts `Z` natively but the code doesn't rely on that for the `data.py` path, defensively normalizing first). A window's `"countdown"`/`"clock"` fields, when present, are **fetch-time snapshots that go stale** — every live render recomputes both from `resets_at` instead (documented rationale in both `data.py` and `menubar.py`: "the API's own countdown string is correct only at fetch time and drifts as the measurement ages").
 
-**Sentinel usage states** — string constants standing in for a usage dict when normal fetching isn't applicable, and their exact user-facing wording (must be byte-identical to what `cswap list` prints, per multiple explicit test assertions):
+**Sentinel usage states** — string constants standing in for a usage dict when normal fetching isn't applicable, and their exact user-facing wording (must be byte-identical to what `tycswap list` prints, per multiple explicit test assertions):
 ```python
 USAGE_NO_CREDENTIALS      = "no credentials"      # (json_output.py — not surfaced via SENTINEL_NOTES)
 USAGE_TOKEN_EXPIRED       = "token expired"
@@ -1171,7 +1171,7 @@ SENTINEL_NOTES = {
     USAGE_TOKEN_EXPIRED:        "token expired — Claude Code refreshes the active account",
     USAGE_API_KEY:               "API key (no quota)",
     USAGE_KEYCHAIN_UNAVAILABLE:  "keychain unavailable — locked or in use; try again",
-    USAGE_RELOGIN_REQUIRED:      "re-login needed — refresh token dead; log in with Claude Code, then run: cswap add",
+    USAGE_RELOGIN_REQUIRED:      "re-login needed — refresh token dead; log in with Claude Code, then run: tycswap add",
 }
 ```
 `USAGE_TOKEN_EXPIRED` specifically means "Claude Code refreshes the active account" (i.e. this is *not* asking the user to re-login) — a distinction the UI text must preserve precisely, since it's semantically different from `USAGE_RELOGIN_REQUIRED` ("only the user can fix it").

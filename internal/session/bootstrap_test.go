@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 const (
@@ -50,7 +50,7 @@ type logBuf struct {
 
 func (l *logBuf) log(t *testing.T) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(l.dir, "claude-swap.log"))
+	data, err := os.ReadFile(filepath.Join(l.dir, "tycswap.log"))
 	if err != nil {
 		return ""
 	}
@@ -262,7 +262,7 @@ func TestStaleMarkerDeferredWhileLive(t *testing.T) {
 
 	sessionDir := sessionDirFor(t, backup, "2", "user@example.com")
 	seedProfile(t, sessionDir, "user@example.com", "", oauthCreds, nil)
-	markerPath := filepath.Join(sessionDir, ".cswap-stale-credentials")
+	markerPath := filepath.Join(sessionDir, ".tycswap-stale-credentials")
 	if err := os.WriteFile(markerPath, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +294,7 @@ func TestStaleMarkerForcesRebootstrapAfterExit(t *testing.T) {
 
 	sessionDir := sessionDirFor(t, backup, "2", "user@example.com")
 	seedProfile(t, sessionDir, "user@example.com", "", oauthCreds, nil)
-	markerPath := filepath.Join(sessionDir, ".cswap-stale-credentials")
+	markerPath := filepath.Join(sessionDir, ".tycswap-stale-credentials")
 	if err := os.WriteFile(markerPath, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}

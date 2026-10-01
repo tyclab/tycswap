@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 func TestMergesExistingProfileHistory(t *testing.T) {

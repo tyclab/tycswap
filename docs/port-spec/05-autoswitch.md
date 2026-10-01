@@ -15,7 +15,7 @@ no-switch, quarantine, all-exhausted, sleep, error, config-warning — is report
 as a typed frozen-dataclass event handed to an `on_event` callback; the CLI
 renders those as timestamped human lines or one JSON object per line. Cooldown
 and quarantine state persist in `<backup_root>/autoswitch_state.json` (mutated
-read-modify-write under a dedicated file lock) so cron-driven `cswap auto --once`
+read-modify-write under a dedicated file lock) so cron-driven `tycswap auto --once`
 ticks behave consistently across processes. The engine also has a foreground
 `run_loop()` with adaptive inter-tick delays and a `--once` mode whose
 `TickOutcome` enum value doubles as the process exit code.
@@ -158,7 +158,7 @@ Fields: `number` (str), `email` (str), `reason` (str).
 ```json
 { "number": "2", "email": "b@example.com", "reason": "invalid_grant" }
 ```
-Human: `"Account-{number} ({email}) quarantined: {reason}. Log in with it and run 'cswap --add-account --slot {number}' to recover."`
+Human: `"Account-{number} ({email}) quarantined: {reason}. Log in with it and run 'tycswap --add-account --slot {number}' to recover."`
 
 ### `account-unquarantined` (`UnquarantineEvent`)
 Fields: `number`, `email`, `reason` (default `"credentials-replaced"`).
@@ -208,7 +208,7 @@ class TickOutcome(enum.Enum):
     NO_ACTION = 2   # nothing to do (below threshold, cooldown, idle, api-key active, ...)
     BLOCKED   = 3   # wanted to switch but no viable target / all exhausted
 ```
-The `.value` is the process exit code for `cswap auto --once` (`sys.exit(engine.tick().value)`).
+The `.value` is the process exit code for `tycswap auto --once` (`sys.exit(engine.tick().value)`).
 CLI epilog documents them verbatim:
 ```
 Exit codes with --once:
@@ -273,8 +273,8 @@ return `ERROR`. **`tick()` never raises.**
 3. `current = switcher.current_account_number()`.
    - If `None`: emit `PollEvent(active=None, headroom={}, threshold)`. Then:
      - if `switcher.has_live_login()`: emit
-       `NoSwitchEvent("unmanaged-active-account", "run 'cswap --add-account' to include it in rotation")`.
-     - else: emit `NoSwitchEvent("no-active-account", "log in and run 'cswap --add-account' first")`.
+       `NoSwitchEvent("unmanaged-active-account", "run 'tycswap --add-account' to include it in rotation")`.
+     - else: emit `NoSwitchEvent("no-active-account", "log in and run 'tycswap --add-account' first")`.
      - Return `NO_ACTION`.
 4. `current_email = switcher.account_email(current)`. Build
    `active_ref = {"number": int(current), "email": current_email or ""}`.
@@ -309,7 +309,7 @@ When `active_headroom is None`:
 
 - **If `usage.get(current) == USAGE_TOKEN_EXPIRED`** (`"token expired"` sentinel —
   active token locally expired while an *owner* (default-profile Claude Code or a
-  live `cswap run` session) holds the credential; produced by the collector, never
+  live `tycswap run` session) holds the credential; produced by the collector, never
   by a network fetch):
   - `now = self.clock()`. If `_idle_hold_since is None`: set it to `now`.
   - If `now - _idle_hold_since <= IDLE_HOLD_MAX_S` (1800 s): set
@@ -519,7 +519,7 @@ credential belongs to Claude Code). Returns one of `"ok"`, `"invalid_grant"`,
 
 1. `account_kind_for(number) == "api_key"` → `"ok"` (API keys don't expire/refresh).
 2. `live_session_pids_for(number, email)` non-empty → `"skip-live-session"`
-   (a live `cswap run` session owns that account's token in its own profile;
+   (a live `tycswap run` session owns that account's token in its own profile;
    auto-activating it as the default too would put one rotating refresh token in
    two config dirs with nobody reading the warning, and its quota is already
    being consumed). *Manual* `switch_to` keeps warn-and-proceed; auto skips.
@@ -682,7 +682,7 @@ return interval * (0.9 + 0.2 * random.random())            # ±10% jitter
   included they are only a **last resort** (`ordered = api_key_candidates` only
   when no oauth candidate qualified). They have unmeasurable headroom and are
   never refreshed (`_freshen_target` returns `"ok"` immediately for api_key).
-- **Disabled accounts** (`cswap disable`): excluded by
+- **Disabled accounts** (`tycswap disable`): excluded by
   `switchable_account_numbers()` (which filters `_account_is_switchable` and
   `disabled`). They never appear as candidates and never consume a poll slot. A
   disabled *active* account stays live but is not an automatic target.

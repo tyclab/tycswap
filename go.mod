@@ -1,4 +1,4 @@
-module git.dpemmons.com/dpemmons/cswap
+module github.com/tyclab/tycswap
 
 go 1.25.5
 

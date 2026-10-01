@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/credstore"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/wincred"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/wincred"
 )
 
 // -- test double ----------------------------------------------------------
@@ -138,7 +138,7 @@ func TestMacOSRelocation_HappyPathViaRunner(t *testing.T) {
 	if _, found, _ := kc.Get(legacyKeyringService, "account-1-alice@x.com"); found {
 		t.Fatal("legacy keyring entry survived a successful relocation")
 	}
-	wantNotice := "claude-swap: migrated 1 macOS credential(s) from the keyring into the Keychain via security"
+	wantNotice := "tycswap: migrated 1 macOS credential(s) from the keyring into the Keychain via security"
 	if !containsString(notices, wantNotice) {
 		t.Fatalf("notices = %v, want to contain %q", notices, wantNotice)
 	}
@@ -215,7 +215,7 @@ func TestWindowsRelocation_HappyPath(t *testing.T) {
 	if _, found, _ := wc.Get(legacyKeyringService, "account-1-alice@x.com"); found {
 		t.Fatal("legacy Credential Manager entry survived a successful relocation")
 	}
-	wantNotice := "claude-swap: migrated 1 Windows credential(s) from Credential Manager to files"
+	wantNotice := "tycswap: migrated 1 Windows credential(s) from Credential Manager to files"
 	if !containsString(notices, wantNotice) {
 		t.Fatalf("notices = %v, want to contain %q", notices, wantNotice)
 	}

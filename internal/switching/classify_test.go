@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // TestClassifyOutgoing exercises the issue-#117 ownership oracle (spec 02§9).

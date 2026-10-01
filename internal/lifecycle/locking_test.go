@@ -5,7 +5,7 @@
 // The concurrency tests build TWO *store.Store over ONE $HOME. That is the
 // cross-process shape reproduced in-process: flock is per open file
 // description, so two distinct *filelock.FileLock on the same path exclude each
-// other exactly as two `cswap` processes do — unlike two goroutines sharing one
+// other exactly as two `tycswap` processes do — unlike two goroutines sharing one
 // *FileLock, which queue on its in-process mutex and would prove nothing about
 // the file.
 package lifecycle
@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/filelock"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // secondStore builds another *store.Store over the same $HOME as s — a second
@@ -194,7 +194,7 @@ func assertRosterHolds(t *testing.T, s *store.Store, want map[string]string) {
 
 // probingPrompter answers "y" and, as it is asked, checks that the store lock is
 // free. A DISTINCT FileLock on the same path is the other process's handle: if
-// it can be taken, no cswap is holding one across this question.
+// it can be taken, no tycswap is holding one across this question.
 type probingPrompter struct {
 	lockPath string
 	asked    int
@@ -218,7 +218,7 @@ func (p *probingPrompter) StdinLine() (string, bool)    { p.probe(); return "sk-
 
 // TestNoPromptIsAskedUnderTheStoreLock is the constraint that shapes every
 // operation above: the store lock has a 10-second cross-process budget and
-// `cswap run`'s session bootstrap queues on the same file, so a question held
+// `tycswap run`'s session bootstrap queues on the same file, so a question held
 // under it fails other commands outright — and a user who steps away turns a
 // lock into a hang. Each interactive path is exercised and the lock probed at
 // the moment the question is asked.

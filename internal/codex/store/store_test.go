@@ -18,11 +18,11 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 var (
@@ -811,7 +811,7 @@ func TestLastUpdatedIsStampedOnEveryWrite(t *testing.T) {
 }
 
 // A torn write must degrade to "no accounts", never to an error that makes
-// every cswap command unusable.
+// every tycswap command unusable.
 func TestUnusableSequenceFilesDegradeToNoAccounts(t *testing.T) {
 	cases := []struct{ name, content string }{
 		{"not json", "{ not json"},
@@ -936,7 +936,7 @@ func TestNewDefaultsAndPaths(t *testing.T) {
 	testutil.Setenv(t, "XDG_DATA_HOME", xdg)
 	testutil.Unsetenv(t, "WSL_DISTRO_NAME")
 	s := New(Options{})
-	if want := filepath.Join(xdg, "claude-swap", "codex"); s.Root() != want || s.Root() != authfile.StoreRoot() {
+	if want := filepath.Join(xdg, "tycswap", "codex"); s.Root() != want || s.Root() != authfile.StoreRoot() {
 		t.Fatalf("Root = %q, want %q", s.Root(), want)
 	}
 	if s.platform != platform.Linux {

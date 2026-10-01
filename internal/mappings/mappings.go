@@ -1,5 +1,5 @@
 // Package mappings is the directory → account mapping store for
-// `cswap run`'s auto-resolution and the `cswap map`/`unmap` commands.
+// `tycswap run`'s auto-resolution and the `tycswap map`/`unmap` commands.
 //
 // Implements spec 06§5 (mappings.py): path normalization (normalize_path),
 // the MappingStore API (load/all/get/set/remove/prune_account/resolve), and
@@ -15,9 +15,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/atomicfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // SchemaVersion is mappings.json's schemaVersion.

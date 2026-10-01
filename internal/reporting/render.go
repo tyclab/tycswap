@@ -15,10 +15,10 @@ import (
 	"fmt"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // usageAgeNoteS is _USAGE_AGE_NOTE_S (= SERVE_TTL_S): served usage older than
@@ -33,7 +33,7 @@ var sentinelNotes = map[string]string{
 	jsonout.UsageTokenExpired:        "token expired — Claude Code refreshes the active account",
 	jsonout.UsageAPIKey:              "API key (no quota)",
 	jsonout.UsageKeychainUnavailable: "keychain unavailable — locked or in use; try again",
-	jsonout.UsageReloginRequired:     "re-login needed — refresh token dead; log in with Claude Code, then run: cswap add",
+	jsonout.UsageReloginRequired:     "re-login needed — refresh token dead; log in with Claude Code, then run: tycswap add",
 }
 
 // usageEntryLines returns the styled usage lines (sans indent) for one account's

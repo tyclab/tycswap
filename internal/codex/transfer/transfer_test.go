@@ -16,12 +16,12 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 var (
@@ -350,7 +350,7 @@ func TestImportRefusals(t *testing.T) {
 		{"claude export", `{"provider":"claude","accounts":[{}]}`, "not a Codex one"},
 		{"newer version", `{"provider":"codex","version":99,"accounts":[{}]}`, "newer than"},
 		{"junk", `{ not json`, "not valid JSON"},
-		{"non-object", `[1]`, "is not a cswap export"},
+		{"non-object", `[1]`, "is not a tycswap export"},
 		{"no accounts", `{"provider":"codex","version":1,"accounts":[]}`, "contains no accounts"},
 	}
 	for _, c := range cases {
@@ -431,7 +431,7 @@ func TestPurgeRemovesKeychainItems(t *testing.T) {
 }
 
 func TestPurgeLeavesTheLiveCodexLoginAlone(t *testing.T) {
-	// cswap manages copies; the user's actual ~/.codex login is not ours.
+	// tycswap manages copies; the user's actual ~/.codex login is not ours.
 	e := seeded(t)
 	live := filepath.Join(e.codexHome, "auth.json")
 	before, _ := os.ReadFile(live)
@@ -486,7 +486,7 @@ func TestPurgeOnAnEmptyStoreSaysSo(t *testing.T) {
 	e := newEnv(t)
 	var out bytes.Buffer
 	ran, err := Purge(e.open(), true, nil, &out)
-	if err != nil || ran || !strings.Contains(out.String(), "No cswap Codex data") {
+	if err != nil || ran || !strings.Contains(out.String(), "No tycswap Codex data") {
 		t.Fatalf("ran=%v err=%v out=%q", ran, err, out.String())
 	}
 }

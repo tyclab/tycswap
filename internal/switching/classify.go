@@ -14,9 +14,9 @@ import (
 	"sort"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // classifyOutgoing returns (kind, foreignSlot) per spec 02§9. kind ∈
@@ -189,7 +189,7 @@ func stashLiveCredential(s *store.Store, originalCreds, reason, currentAccount s
 		}
 		s.Log.Warningf(
 			"Live credential does not belong to Account-%s (%s): stashed as %s "+
-				"(credentials mtime %s). Something outside cswap rewrote the live "+
+				"(credentials mtime %s). Something outside tycswap rewrote the live "+
 				"login after the last switch.", currentAccount, reason, id, mt)
 	}
 	return id, nil

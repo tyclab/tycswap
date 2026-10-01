@@ -1,9 +1,9 @@
-# cswap — Idiomatic Go Architecture
+# tycswap — Idiomatic Go Architecture
 
 A full-fidelity Go port of `claude-swap`, grounded in the behavioral specs in
 `docs/port-spec/01–10` (10-audit.md corrections override the rest).
 
-- Module: `git.dpemmons.com/dpemmons/cswap` · Go 1.25 · single binary `cswap`
+- Module: `github.com/tyclab/tycswap` · Go 1.25 · single binary `tycswap`
   (also installed as `claude-swap`).
 - No cgo. macOS Keychain via the `security` subprocess exactly as Python.
 - TUI: bubbletea v1.3 + lipgloss v1.1 + bubbles v1.0. HTTP: stdlib `net/http`.
@@ -27,7 +27,7 @@ façade interfaces for the auto engine and TUI.
 No import cycles. Arrows point "depends on". Layers are strictly downward.
 
 ```
-cmd/cswap ─────────────────────────────────────────────► internal/cli
+cmd/tycswap ─────────────────────────────────────────────► internal/cli
 
                                        ┌──────────────► internal/tui
 internal/cli ──────────────────────────┼──────────────► internal/autoswitch
@@ -92,7 +92,7 @@ internal/codex/usagecache ──► internal/codex/store ──► internal/code
 | `keychain` | `/usr/bin/security` wrapper (get/set/delete/item_exists), exact argv, hex `-X`, single-`\n` strip, rc 44, 5s timeout; `KeychainClient` interface + real + in-memory fake; `IsUnusable(err)` = `KEYCHAIN_ERRORS`. (03§4) |
 | `ccfile` | Claude Code file I/O: read `~/.claude.json` as `map[string]any`, key-scoped atomic RMW preserving unknown keys, `oauthAccount` splice, raw `.credentials.json` read/write. (03§3, 03§5.5) |
 | `cclock` | proper-lockfile interop: directory `mkdir` mutex, 10s staleness (wall mtime), 3s touch goroutine, 9s acquire (monotonic), `[0.25,0.50)` jitter; `ClaudeCodeLockTimeout`. (03§6) |
-| `filelock` | cswap's own advisory lock (`flock`/`LockFileEx`, 0.1s poll, 10s default), non-reentrant. `LockError`. (03§7) |
+| `filelock` | tycswap's own advisory lock (`flock`/`LockFileEx`, 0.1s poll, 10s default), non-reentrant. `LockError`. (03§7) |
 | `credstore` | `Store` interface + `FileKeychainStore`: active OAuth/managed-key read/write, backup `.enc`/Keychain routing, usability cache (None/T/F + 60s monotonic cooldown + sticky pin), `.prev`, unclaimed stash, `looks_like_api_key`, `approved_form`. (03§5, 01§3) |
 | `oauth` | Network client (`Client` interface + HTTP impl + fake): refresh/profile/usage, normalization (`build_usage_result`), classification tokens, `relevant_windows`, `account_headroom`, fingerprint, reset formatting. Owns the normalized `Usage` type. (04§1) |
 | `usage` | `UsageStore` (schema v2, identity-guarded, lock protocol), `UsageEntry`/`FetchRecord`, poll policy (`plan_after_fetch`, backoff, due-candidate), TTL `cache`. (04§2–4) |
@@ -106,7 +106,7 @@ internal/codex/usagecache ──► internal/codex/store ──► internal/code
 | `reporting` | list/status renderers + JSON payloads, `collectUsageEntries` (paced, identity-guarded), snapshots, duplicate/lockstep warnings. (02§10–13) |
 | `core` | `Switcher` façade: composes `store` + `lifecycle`/`switching`/`reporting`; satisfies the façade interfaces `autoswitch`/`tui`/`session`/`transfer` consume. |
 | `session` | `SessionManager`: run/exec-default, bootstrap/reuse, `_sync_sharing`, MCP mirror, share-history. (06§1–3) |
-| `transfer` | `.cswap` export/import (reads Python files). (07§1–4) |
+| `transfer` | `.tycswap` export/import (reads Python files). (07§1–4) |
 | `migrations` | Registry migrations (windows keyring, macos keyring) + `.migrations.json` state; org backfill is in `store`. (07§5–6) |
 | `autoswitch` | `AutoSwitchEngine`, events, tick, `run_loop`, quarantine, cooldown, freshen. (05) |
 | `update` | Go-redesigned update check + upgrade guidance (§6). |
@@ -236,7 +236,7 @@ govern every caller built on `FileLock`, and are load-bearing for A20's RULE 4:
 - **F2 — release on handle close or process death.** The OS-level lock
   (`flock` / `LockFileEx`) releases automatically when the holding file
   descriptor closes or its process exits; no explicit `Release` call is
-  required, and a crashed cswap leaves no stuck lock.
+  required, and a crashed tycswap leaves no stuck lock.
 - **F3 — an in-process waiter on the SAME `*FileLock` object ignores its own
   timeout.** `Acquire` takes the `hold` mutex unconditionally before it enters
   its timeout loop, so a goroutine sharing one `*FileLock` with the current
@@ -527,12 +527,12 @@ Container detection uses the two **distinct** substring sets for cgroup vs mount
 
 ### 3.5 Path resolution — see `paths` (§2.7)
 One `GetBackupRoot()` used everywhere (XDG on Linux/WSL with absolute-and-`~`-expanded
-guard; legacy `~/.claude-swap-backup` on macOS/Windows/unknown). The `.claude.json`
+guard; `~/.tycswap` on macOS/Windows/unknown since A23). The `.claude.json`
 home-root asymmetry and legacy `.config.json` precedence are external Claude Code
 contracts (03§2.3).
 
 ### 3.6 Logging — see `logging` (§2.6)
-Named `"claude-swap"`; **lazy** dir creation on first write (a no-op run must not
+Named `"tycswap"`, file `tycswap.log` (A23); **lazy** dir creation on first write (a no-op run must not
 materialize `cache/` or the log under the XDG path — would trip the migration
 collision check). Rotating 1 MB × 3. Console handler (stderr) only with `--debug`.
 Paste-safe invariant preserved (never log email in usage-failure WARNING; 04§1.17).
@@ -552,7 +552,7 @@ Every Python thread/loop → Go construct, with lifecycle/shutdown:
 | active-refresh persist callback re-acquiring locks from inside a fetch | network refresh runs with **no** `FileLock` held; the persist callback re-acquires `FileLock → cclock.Credentials → cclock.Config` and re-checks owner/lineage before writing (non-reentrant lock preserved) | callback returns `USAGE_TOKEN_EXPIRED` on mid-refresh owner-appears/lineage change. |
 | TUI Textual workers (`run_worker(thread=True, group=…)`) + 3s poll timer | bubbletea: `tea.Tick(3s)` poll; workers are `tea.Cmd`s returning typed msgs (`refreshDoneMsg`/`refreshErrMsg`/`actionDoneMsg`/`engineEventMsg`/`engineStoppedMsg`) handled in `Update`; single-flight = plain `bool` model fields (Update is single-goroutine) | goroutines never touch model state directly — only send messages. Engine hosted as long-lived goroutine draining onto a channel, re-armed by a `tea.Cmd` blocking-receive. |
 | `FileLock` (flock/msvcrt, 0.1s poll, 10s) | `filelock.FileLock` `unix.Flock`/`LockFileEx`, monotonic timeout | released on `Release()`/fd-close/process death; non-reentrant. |
-| SIGINT / Ctrl-C (Python: no handler, `KeyboardInterrupt` → 130) | `cli` installs `signal.Notify(sigint)`; on receipt prints the cancelled note and `os.Exit(130)`. For `cswap run` POSIX the process is already replaced by `syscall.Exec` (no cswap signal handler after exec); Windows run wrapper mirrors child exit / Ctrl-C→130. The auto loop installs **only** SIGTERM→Stop (matching the single Python signal handler); its Ctrl-C path prints "Auto-switch stopped" → 130. |
+| SIGINT / Ctrl-C (Python: no handler, `KeyboardInterrupt` → 130) | `cli` installs `signal.Notify(sigint)`; on receipt prints the cancelled note and `os.Exit(130)`. For `tycswap run` POSIX the process is already replaced by `syscall.Exec` (no tycswap signal handler after exec); Windows run wrapper mirrors child exit / Ctrl-C→130. The auto loop installs **only** SIGTERM→Stop (matching the single Python signal handler); its Ctrl-C path prints "Auto-switch stopped" → 130. |
 
 Data-race discipline: usability cache (`credstore`) guarded by a mutex if a store
 is shared across goroutines (TUI). Store CRUD is single-threaded under `FileLock`.
@@ -629,7 +629,7 @@ Work packages with explicit files, dependency order, and per-package test strate
 - **WP10** `core` façade — depends WP7/8. Thin; implements `autoswitch.Switcher` and
   `tui.Facade`. Tests: interface-satisfaction compile checks + delegation smoke.
 - **WP11** `transfer` — depends core/store, credstore, oauth. Files. Tests: **import a
-  Python-produced `.cswap` file**, path-traversal defense, `--full` privacy boundary,
+  Python-produced `.tycswap` file**, path-traversal defense, `--full` privacy boundary,
   bool-not-int number check, alias self-collision, active-account slim/full, broken-
   slot tolerance, dead-token clear on import.
 - **WP12** `migrations` — depends store, credstore, keychain. Tests: windows/macos
@@ -663,7 +663,7 @@ the tiers.
 **Shared test scaffolding (built in WP0, used everywhere):** `keychain.Fake`,
 `clock.Fake`, an `oauth.Client` fake, a fixture-`$HOME` builder (fake `~/.claude`,
 `~/.claude.json`, `.credentials.json`), and a set of **Python-produced golden
-files** (`sequence.json`, `usage.json` v2, a `.cswap` export, `.migrations.json`)
+files** (`sequence.json`, `usage.json` v2, a `.tycswap` export, `.migrations.json`)
 committed under `testdata/` to enforce data compatibility.
 
 ---
@@ -691,7 +691,7 @@ committed under `testdata/` to enforce data compatibility.
    verifier (SChannel on Windows) natively, so the Windows OpenSSL stale-intermediate
    workaround is unnecessary (08§15). Action item: verify inactive-account refresh
    against `platform.claude.com` on Windows before finalizing.
-5. **macOS menu bar excluded** (task-mandated; spec 09 §10). `cswap --menubar` on any
+5. **macOS menu bar excluded** (task-mandated; spec 09 §10). `tycswap --menubar` on any
    platform prints a "not available in this build" message and exits 1 (macOS text
    preserved for parity where reasonable).
 6. **Four atomic-write helpers unified into one** `atomicfile` (07§9), keeping the
@@ -714,7 +714,7 @@ committed under `testdata/` to enforce data compatibility.
    behavior is unchanged; concurrent safety improves. Flagged as an intentional,
    low-risk hardening rather than a silent fix.
 10. **CLI front controller preserved as-is (no cobra)** — `run`/`map`/etc. must be the
-    first argv token (`cswap --debug run 2` unsupported). A cobra port would silently
+    first argv token (`tycswap --debug run 2` unsupported). A cobra port would silently
     change this (spec 06 §7.3). We keep the exact Python two-layer dispatch for
     fidelity — an explicit decision *not* to "improve" it.
 11. **TUI "Next best" candidates panel excludes disabled accounts** — Python's
@@ -757,7 +757,7 @@ and everything must work. The five things most likely to break:
    semantics for other platforms.
 2. **proper-lockfile interop with a live Claude Code.** If the directory-`mkdir`
    mutex, 10s staleness (wall-clock vs filesystem mtime), 3s touch, 9s acquire, or
-   `[0.25,0.50)` jitter diverge, cswap and a refreshing `claude` can stomp each
+   `[0.25,0.50)` jitter diverge, tycswap and a refreshing `claude` can stomp each
    other's `~/.claude.json` / credentials during the token-refresh window.
    *Defense:* `cclock` mirrors the protocol exactly — staleness from
    `fi.ModTime()` (wall), acquire timeout monotonic, a touch goroutine on a 3s ticker
@@ -881,7 +881,7 @@ reader, and cross-check against a Python-produced log-line fixture.
 
 The Go port's own versions are **semver with a leading `v`** (`v0.1.0`,
 `v0.2.0-beta.1`), embedded at build time via
-`-ldflags "-X git.dpemmons.com/dpemmons/cswap/internal/version.Version=v0.1.0"`
+`-ldflags "-X github.com/tyclab/tycswap/internal/version.Version=v0.1.0"`
 (package `internal/version`, default value `v0.0.0-dev`). `--version` prints
 `<prog> <version>` with the `v` stripped for display parity. The update
 comparator is `golang.org/x/mod/semver` (approved dep) on the `v`-prefixed
@@ -911,7 +911,7 @@ delivery kills the process before the cancel note / JSON-vs-plain routing can
 run, so `cli` MUST install a SIGINT notifier to **reproduce** (never extend)
 Python's semantics: print the exact cancelled note, route stderr-vs-stdout by
 JSON mode, exit 130. Interactive prompts convert cancellation into the
-prompt-local "Cancelled" behavior. On the POSIX `cswap run` path the handler
+prompt-local "Cancelled" behavior. On the POSIX `tycswap run` path the handler
 is irrelevant after `syscall.Exec` (process image replaced). The auto loop
 additionally installs SIGTERM→`engine.Stop()` — the only signal handler the
 Python code has.
@@ -974,7 +974,7 @@ hand-edit them casually; a README in that directory records how they were made.
 
 ## A15. At-limit surfacing (Go-side additive extension)
 
-`cswap list` / `cswap status` (human and `--json`) and the TUI dashboard/watch
+`tycswap list` / `tycswap status` (human and `--json`) and the TUI dashboard/watch
 views surface when an account sits at a rate limit, folding in the per-model
 weekly windows configured via the existing `autoswitch.model` setting. An
 account whose named "Fable 5" weekly window is exhausted reads as at-limit even
@@ -1008,12 +1008,12 @@ Python original shows per-model pct rows but its `usageStatus` and list markers
 ignore them, so this adds signal without breaking any documented shape. The
 Python-fidelity contract in `docs/port-spec/` is unchanged.
 
-## A16. `cswap env` — pin a shell to an account (Go-side additive extension)
+## A16. `tycswap env` — pin a shell to an account (Go-side additive extension)
 
-`cswap env [NUM|EMAIL|ALIAS] [--no-share] [--share-history] [--shell sh|fish|pwsh]
+`tycswap env [NUM|EMAIL|ALIAS] [--no-share] [--share-history] [--shell sh|fish|pwsh]
 [--unset] [--debug]` gives the CURRENT shell a per-account Claude Code identity —
-`eval "$(cswap env 2)"` — by preparing the same persistent session profile
-`cswap run` uses and then PRINTING shell-evalable env lines instead of exec'ing
+`eval "$(tycswap env 2)"` — by preparing the same persistent session profile
+`tycswap run` uses and then PRINTING shell-evalable env lines instead of exec'ing
 claude. It is a deliberate Go-side extension with no Python counterpart, added to
 the `--help` command list (one line) and epilog as a documented deviation from
 the verbatim Python help text; `docs/port-spec/` is untouched.
@@ -1030,7 +1030,7 @@ argument is a usage error (exit 2).
 cwd's directory mapping, else error (exit 1). Unlike `run` there is NO
 default-login fallback — an unset `CLAUDE_CONFIG_DIR` IS the default, so the
 error points the user at passing an account, mapping the directory, or
-`cswap env --unset`.
+`tycswap env --unset`.
 
 **Profile preparation** reuses the existing session machinery verbatim:
 `session.Manager.SetupEnv` calls the SAME exported `SetupSession`
@@ -1054,7 +1054,7 @@ quoted for its shell so a profile path containing a single quote survives.
 
 **Staleness.** The shell keeps the pinned profile until the user re-evals; after
 switching accounts or a credential change they re-run the `eval` or use
-`cswap run` (which re-prepares on every launch). Claude Code's live-session
+`tycswap run` (which re-prepares on every launch). Claude Code's live-session
 guards keep working because it writes its session files inside the profile
 directory the export points at.
 
@@ -1228,7 +1228,7 @@ line (`miniAccountText`), both in `internal/tui/widgets.go`, render their
 (`colMuted`); text, spacing, and position are unchanged. This tracks the
 marker's meaning under this amendment: a disabled slot is a valid explicit
 switch/watch target but is never an automatic one. CLI (non-TUI) output is
-untouched — `cswap list`'s `(disabled)` marker
+untouched — `tycswap list`'s `(disabled)` marker
 (`internal/reporting/list.go`, via `printer.Muted`) stays exactly as it is,
 preserving byte-fidelity with the Python original for CLI surfaces.
 
@@ -1266,7 +1266,7 @@ Emphasis has three levels, applied per window segment (`addCandidateCell`):
   uses, not bold. Severity states what the figure MEANS, and every other
   surface already colors a counted `Pct` that way — `miniAccountText`'s
   window cells, the account card's bars (`barCells`/`usageBar`), and
-  `cswap list`'s figures — so a candidate row states it no differently.
+  `tycswap list`'s figures — so a candidate row states it no differently.
   Bold is the separate fact of which figure the row is ranked by and the
   engine acts on; only the binding cell carries it. The two facts are not
   interchangeable, so withholding color from a non-binding `Pct` to make the
@@ -1363,7 +1363,7 @@ appearance across the rows instead makes it a function of ROW order: a
 reporting different models swap their scoped columns as they re-rank. On the
 panel row order IS the live ranking, so such a header re-reads itself from
 one poll to the next with no resize and no change in what any account
-reports, disagreeing with the account card, the mini account line and `cswap
+reports, disagreeing with the account card, the mini account line and `tycswap
 list`, all of which read `5h` before `7d` always. Whichever way a row's
 labels land, one guarantee holds regardless of either pass: the cell carrying
 a row's ranking figure is always present on the table, and it is always that
@@ -1448,7 +1448,7 @@ sized every column a store-supplied number touches off a single absurd
 measurement, since `minTableWidth` charges a pinned column its widest
 figure; bounding only the rendered text keeps that cost fixed — six
 columns, the width of `"<-999%"`, whatever the number — without touching
-what the account card and `cswap list` — which read the same entry and
+what the account card and `tycswap list` — which read the same entry and
 share no column with any other account — still print in full.
 
 **How a header abbreviates — `headerLadders`, injectivity.** A column's
@@ -1716,7 +1716,7 @@ shared table buys its column alignment out of that very cell (rung (e),
 below), so weighing identity in the same comparison would refuse the table
 at exactly the widths where lining every row's figures up under one
 heading is what it is FOR — and the slot number still names the account
-for `cswap switch`/`cswap use` either way. This is the one respect in
+for `tycswap switch`/`tycswap use` either way. This is the one respect in
 which the choice does not stay monotone: a surface can show a SHORTER
 email at the width where it just switched into table mode than it showed
 one column narrower, in the per-row layout it left behind. It is measured
@@ -1873,7 +1873,7 @@ widest PHRASED first word in this codebase already demands, "quarantined
 short of the whole does, and bounding it here keeps the width this
 package's own choice rather than one a store-supplied string makes on its
 behalf — the alternative, rewording the raw state behind a word of this
-package's own, was rejected because it would change what `cswap list`, the
+package's own, was rejected because it would change what `tycswap list`, the
 account card and the watch and switch screens print to answer a question
 only the narrow table asks.
 
@@ -2215,7 +2215,7 @@ the one projection every surface reads — rather than the stored map
 directly, so a window `oauth`'s numeric guard drops (`pctFloat` rejects only
 NaN and ±Inf, a window with neither compares against nothing and gates
 nothing; a NEGATIVE measurement is not dropped — it compares fine, is not a
-width hazard, and is a figure `cswap list --json` has always reported, so
+width hazard, and is a figure `tycswap list --json` has always reported, so
 the projection passes it through unchanged) never renders on the fallback as
 a figure the table correctly omits: the two surfaces agree about which
 windows an account has.
@@ -2517,18 +2517,18 @@ rollback and no retry. The store lock timeout is 10s
 (`filelock.DefaultTimeout`); the realistic trigger is a long-held lock, such
 as a macOS Keychain prompt blocking a concurrent switch. Consequence: that
 slot's stored refresh token is stale, and its next refresh fails
-`invalid_grant`. Recovery: log in with the account and run `cswap add`.
+`invalid_grant`. Recovery: log in with the account and run `tycswap add`.
 
 **(ii) A CLI switch strategy can install a credential the engine has just
 quarantined.** `internal/switching/strategies.go` filters candidates on
 rotation eligibility only; it does not consult `autoswitch_state.json`'s
 quarantine map. Within the usage cache's serve window, a manual
-`cswap switch --strategy best` can therefore select a slot the auto engine
+`tycswap switch --strategy best` can therefore select a slot the auto engine
 quarantined moments earlier, installing a credential whose refresh token is
 already dead. Consequence: the installed access token works until it
 expires, then the account fails; auto-switch fails over, and the usage
 store's dead-token strikes surface as "re-login needed." Recovery: log in
-with the account and run `cswap add`. A naive fix — have the CLI strategy
+with the account and run `tycswap add`. A naive fix — have the CLI strategy
 skip quarantined slots — is unsafe on its own: quarantine entries are
 released only by a real engine tick
 (`releaseRecoveredQuarantines`), so a CLI-side check keyed on slot number
@@ -2686,27 +2686,27 @@ write-capable entry read does. `ResolveAccount` (same file) calls
 `SequenceMigrated` first for the same reason. A caller that propagates either
 function's error inherits RULE 1's refusal even though the caller's own
 command never touches `sequence.json`. Five do: `lifecycle.ListAliases`
-propagates it for `cswap alias` with no arguments; `store.ResolveAccount`
-propagates it for `cswap env <id>`, `cswap map <id>`, and `cswap run <id>`
+propagates it for `tycswap alias` with no arguments; `store.ResolveAccount`
+propagates it for `tycswap env <id>`, `tycswap map <id>`, and `tycswap run <id>`
 (each resolves through it — `session.Manager.setupPreamble`/`SetupSession`
 for the first and third, `cli.mapCommand` for the second);
-`core.Switcher.SlotForDirectory` propagates it for a bare `cswap env` or
-`cswap run` resolving the current directory's mapping; and `transfer.Export`,
+`core.Switcher.SlotForDirectory` propagates it for a bare `tycswap env` or
+`tycswap run` resolving the current directory's mapping; and `transfer.Export`,
 through its `MigratedSequence` adapter method, propagates it for
-`cswap export`. Each reports `corruptSequenceError`'s `cerr.Config` text and
+`tycswap export`. Each reports `corruptSequenceError`'s `cerr.Config` text and
 exits 1 in place of what it gives an absent (not corrupt) roster:
-`cswap alias` prints "No aliases set" for absent, refuses for corrupt;
-`cswap env`/`cswap map <id>`/`cswap run <id>` report `AccountNotFoundError`
+`tycswap alias` prints "No aliases set" for absent, refuses for corrupt;
+`tycswap env`/`tycswap map <id>`/`tycswap run <id>` report `AccountNotFoundError`
 for absent (the identifier resolves against zero accounts), refuse for
-corrupt; `cswap export` already errors on absent (`cerr.Transfer("no
+corrupt; `tycswap export` already errors on absent (`cerr.Transfer("no
 accounts to export...")`), so corrupt trades one error message for a more
 specific one — the misleading "no accounts to export" for the diagnostic
 refusal naming the file and the intact backups.
 
 Not every read-only surface propagates it. `reporting.BuildAccountsInfo`
-(`cswap list`), `reporting.buildStatusPayload` / `renderStatus`
-(`cswap status`), `reporting.Snapshot` (`cswap tui` / `cswap watch`), and the
-bare, no-argument `cswap map` listing (`cli.listMappings`) all discard
+(`tycswap list`), `reporting.buildStatusPayload` / `renderStatus`
+(`tycswap status`), `reporting.Snapshot` (`tycswap tui` / `tycswap watch`), and the
+bare, no-argument `tycswap map` listing (`cli.listMappings`) all discard
 `SequenceMigrated`'s or `ReadSequence`'s error and keep the collapse: a
 corrupt roster displays as an empty one there, silently. This is not a gap
 to close — RULE 1 governs writes, and none of these four ever writes
@@ -2852,7 +2852,7 @@ under the lock rather than trusting its pre-prompt resolution: a slot key
 absent from the locked roster is checked against the confirmed identity's
 composite (email, organizationUuid) across the whole roster — found under a
 different slot, a concurrent move or swap has renumbered it, and the
-operation refuses, naming the new slot; found nowhere, another cswap has
+operation refuses, naming the new slot; found nowhere, another tycswap has
 already removed it, and there is nothing to do (no error) — and a slot key
 present but holding a different email than the one confirmed refuses. Both
 replace what would otherwise be a second, unlocked classified read taken
@@ -2961,12 +2961,12 @@ wrong success it replaces, though never a worse outcome: nothing is
 destroyed either way, and the refusal names the slot and what now occupies
 it.
 
-**(v) The guarantee is advisory and cswap-only.** A hand edit of
+**(v) The guarantee is advisory and tycswap-only.** A hand edit of
 `sequence.json`, or a future tool that writes it without taking the store
 `FileLock`, is invisible to every rule in this amendment and still
-last-writer-wins against a cswap process mid-operation. RULE 1's corruption
+last-writer-wins against a tycswap process mid-operation. RULE 1's corruption
 refusal catches an unparseable result of such an edit; it cannot catch a
-well-formed one that simply disagrees with what a concurrent cswap decided
+well-formed one that simply disagrees with what a concurrent tycswap decided
 from.
 
 **(vi) RULE 4's locked span makes a lock order load-bearing.** `clearDeadToken` (`internal/lifecycle/lifecycle.go`),
@@ -3170,19 +3170,19 @@ tracked separately from this amendment.
 
 ## A22. Codex provider (Go-side additive extension)
 
-cswap manages Codex (ChatGPT) accounts as a second provider, under a `cswap
+tycswap manages Codex (ChatGPT) accounts as a second provider, under a `tycswap
 codex <verb>` namespace. It ports claude-swap PR #252, which the Python
 reference pinned in `docs/port-spec/` does not contain, so relative to that
-reference it is a Go-side extension in the same sense as `cswap env` (A16) and
+reference it is a Go-side extension in the same sense as `tycswap env` (A16) and
 the at-limit markers (A15). Within the extension the PR is the spec: the
 command grammar, the messages, the store layout, the export format, and the
 `--json` payloads follow it so that a Codex store or export written by either
 implementation reads in the other. `docs/port-spec/` is unchanged.
 
-**Surface.** A namespace rather than a `--provider` flag: bare `cswap list` and
-`cswap switch` keep meaning Claude, so no existing command, script, or JSON
+**Surface.** A namespace rather than a `--provider` flag: bare `tycswap list` and
+`tycswap switch` keep meaning Claude, so no existing command, script, or JSON
 shape changes. `codex` is pre-dispatched on the first argv token like `run`,
-`auto`, and `config`, with its own parser: `cswap codex [--debug] <verb>`,
+`auto`, and `config`, with its own parser: `tycswap codex [--debug] <verb>`,
 where every verb also accepts `-h`/`--help` and `--debug` and value flags take
 `--flag=value`. Handled errors exit 1 (a red `Error: <msg>` on stderr, or the
 error envelope on stdout under `--json`), usage errors exit 2, Ctrl-C exits
@@ -3235,7 +3235,7 @@ or dashboard refresh that interleaved would land one account's tokens in
 another's slot. Beyond the switch, every read-modify-write of
 `codex/sequence.json` (`UpsertSlot`, `RemoveSlot`, `Renumber`, `SetActive`,
 alias, disabled, workspace name) takes the lock itself, so a background
-`cswap auto` writing workspace names cannot interleave with `cswap codex add`
+`tycswap auto` writing workspace names cannot interleave with `tycswap codex add`
 in another terminal and drop the new slot; a caller already holding
 `Store.Lock()` is not blocked (in-process ownership is tracked per root, the
 flock is never taken twice). A `sequence.json` that no longer parses is never
@@ -3284,7 +3284,7 @@ credential quarantine, cooldown. Generalizing its tick to fit a provider that
 needs almost none of that would rewrite the most load-bearing code in the
 project. `codex/autoswitch` is instead one small tick — at or over threshold,
 move to the candidate with the lowest worse window that clears the threshold
-and the hysteresis margin — and `cswap auto` runs both engines in one process.
+and the hysteresis margin — and `tycswap auto` runs both engines in one process.
 With `--once` the Codex tick runs after the Claude tick and the exit status is
 the Claude outcome. In the loop the Codex engine runs on its own goroutine,
 ticking once at launch and then every interval, stopped when the loop returns,
@@ -3292,14 +3292,14 @@ so the Claude engine gains no hook and no failure mode, and a slow Codex fetch
 never delays a Claude switch. `autoswitch.codexEnabled` (default true) and
 `autoswitch.codexThreshold` (0–99.9, 0 inherits the effective Claude threshold)
 tune it; the hysteresis margin is the Claude `autoswitch.hysteresisPct`, and
-`cswap auto` gains no flag. A Codex event is printed only when the tick
+`tycswap auto` gains no flag. A Codex event is printed only when the tick
 switched or errored, or on every tick under `--dry-run`, in the Claude events'
 format: the `HH:MM:SS` prefix and kind colouring for humans, and
 `{"schemaVersion":1,"event":"codex","ts":"<RFC3339 UTC>","outcome","detail",
 "switchedTo","runningPids"}` under `--json`.
 
 **Running sessions.** A switch rewrites `auth.json`, but a running codex session
-keeps its tokens in memory. `cswap codex switch` and the Codex engine detect
+keeps its tokens in memory. `tycswap codex switch` and the Codex engine detect
 running `codex`/`codext` processes by executable name — codex writes no
 liveness record, so the process table is the only source — and name their PIDs
 rather than switching silently.
@@ -3312,17 +3312,17 @@ that screen drives the Claude engine. A Codex switch that leaves codex
 sessions running raises a second warning naming their PIDs.
 
 **Differences from the Python PR.** Where the PR is inconsistent with the rest
-of cswap or unsafe, cswap deviates deliberately:
+of tycswap or unsafe, tycswap deviates deliberately:
 
 - `list --json` and `status --json` carry `schemaVersion`, and `usage` uses
-  the camelCase `cswap list` / `cswap status` encoding; `status` reports
+  the camelCase `tycswap list` / `tycswap status` encoding; `status` reports
   `totalManagedAccounts`. The PR's field names are otherwise kept.
 - Errors under `--json` are the standard error envelope on stdout; without
   `--json`, `Error: <msg>` on stderr. Usage errors exit 2.
 - The namespace and every verb accept `--debug`, which enables the file
   logger under the backup root (and its stderr console) for the Codex network
   client, process detection, and the registry import.
-- The `cswap auto` Codex event line follows the engine's JSONL contract
+- The `tycswap auto` Codex event line follows the engine's JSONL contract
   (`schemaVersion`, RFC3339 `ts`, camelCase keys) and the human timestamp
   prefix; the loop's Codex engine ticks at once rather than after one
   interval, on a goroutine where the PR uses a daemon thread.
@@ -3346,3 +3346,50 @@ of cswap or unsafe, cswap deviates deliberately:
   `AccountNotFound`); the message text is the PR's.
 
 Any other divergence is a bug against the PR.
+
+---
+
+## A23. Rename to tycswap: own module, binary, store; copy once, never touch the old store
+
+tycswap is its own product, not a cswap with extras, so the cswap name goes
+completely: module `github.com/tyclab/tycswap`, `cmd/tycswap`, binary
+`tycswap`, every user-facing string, the export extension `.tycswap`, the
+macOS Keychain services `tycswap` and `tycswap-codex`. There is **no
+compatibility shim**: no `cswap` binary alias, no `CSWAP_*` fallback, no
+reading of the old store in place. Sharing a store or a Keychain service with
+the tool it was forked from would let two products with diverging behaviour
+write the same roster and credentials; a separate store makes that impossible.
+
+**Paths.** Only the store root moves. Linux/WSL:
+`$XDG_DATA_HOME/tycswap` (default `~/.local/share/tycswap`); macOS, Windows,
+unknown: `~/.tycswap`. The layout INSIDE the store stays exactly as before
+(`sequence.json`, `settings.json`, `mappings.json`, `credentials/`,
+`configs/`, `cache/`, `sessions/<n>-<email>/`,
+`codex/{sequence.json,registry.json,credentials/,cache/}`, `.lock`), because
+tools that integrate with the store read that layout. Two names inside it
+change: the log is `tycswap.log` (was `claude-swap.log`), and the session
+profiles' marker files are `.tycswap-*` (were `.cswap-*`).
+
+**Migration rule: copy once, never touch the old store.** `tycswap migrate`
+(package `storemigrate`) copies the first existing old store
+(`$XDG_DATA_HOME/claude-swap` when set, else `~/.local/share/claude-swap`,
+then `~/.claude-swap-backup` on Linux/WSL; `~/.claude-swap-backup` on
+macOS/Windows) into the new one, under the new store's lock, and only when
+the new store is absent or holds nothing but throwaway artefacts (lock,
+cache, log, migrations ledger). Files land 0600 by temp file and rename,
+directories 0700, symlinks are copied as links, lock files are skipped,
+`claude-swap.log*` becomes `tycswap.log*` and `.cswap-*` becomes `.tycswap-*`.
+On macOS the per-account, Codex and session-profile Keychain items are copied
+to their new service names (a session profile's service hashes its path,
+which changed). The old directory and the old Keychain items are opened for
+reading only: never moved, modified or deleted, since another installed tool
+may still own them. A non-empty new store is refused, never merged. Every
+other command prints one stderr line while the new store is empty and an old
+one exists (not under `--json`).
+
+**Consequences.** The startup move `~/.claude-swap-backup` → XDG (§2.13 step
+3, `paths.MigrateLegacyBackupDir`) is removed: it moved another tool's
+directory. `purge` removes only tycswap's store, never an old one. `import`
+still reads a `.cswap` export: reading an old file is migration, not
+compatibility, and the envelope format is unchanged.
+

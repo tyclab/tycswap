@@ -1,0 +1,301 @@
+package storemigrate
+
+import (
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/sessprofile"
+)
+
+// snapshot records every path under root with its mode, mtime and contents, so
+// a test can prove the old store came through a run byte-for-byte untouched.
+func snapshot(t *testing.T, root string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		fi, err := os.Lstat(p)
+		if err != nil {
+			return err
+		}
+		v := fi.Mode().String() + "|" + fi.ModTime().Format(time.RFC3339Nano)
+		switch {
+		case fi.Mode()&fs.ModeSymlink != 0:
+			l, _ := os.Readlink(p)
+			v += "|->" + l
+		case fi.Mode().IsRegular():
+			b, _ := os.ReadFile(p)
+			v += "|" + string(b)
+		}
+		out[p] = v
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func write(t *testing.T, p, content string, mode fs.FileMode) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(content), mode); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// oldStore lays down a small store in the old layout and returns its root.
+func oldStore(t *testing.T) string {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "claude-swap")
+	write(t, filepath.Join(root, "sequence.json"), `{"accounts":{"1":{"email":"a@example.com"}},"sequence":[1]}`, 0o644)
+	write(t, filepath.Join(root, "settings.json"), `{}`, 0o644)
+	write(t, filepath.Join(root, "mappings.json"), `{}`, 0o644)
+	write(t, filepath.Join(root, "credentials", ".creds-1-a@example.com.enc"), "c2VjcmV0", 0o644)
+	write(t, filepath.Join(root, "configs", ".claude-config-1-a@example.com.json"), `{}`, 0o644)
+	write(t, filepath.Join(root, "cache", "usage.json"), `{}`, 0o644)
+	write(t, filepath.Join(root, "claude-swap.log"), "log\n", 0o644)
+	write(t, filepath.Join(root, "claude-swap.log.1"), "older\n", 0o644)
+	write(t, filepath.Join(root, ".lock"), "", 0o644)
+	write(t, filepath.Join(root, "sessions", "1-a_example.com", ".credentials.json"), "{}", 0o644)
+	write(t, filepath.Join(root, "sessions", "1-a_example.com", ".cswap-shared.json"), `{"items":[]}`, 0o644)
+	write(t, filepath.Join(root, "codex", "sequence.json"), `{"accounts":[]}`, 0o644)
+	if runtime.GOOS != "windows" {
+		if err := os.Symlink("/nonexistent/.claude/settings.json", filepath.Join(root, "sessions", "1-a_example.com", "settings.json")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+func TestRunCopiesOnceAndLeavesOldStoreUntouched(t *testing.T) {
+	old := oldStore(t)
+	before := snapshot(t, old)
+	newRoot := filepath.Join(t.TempDir(), "tycswap")
+	linux := platform.Linux
+
+	rep, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if rep.From != old || rep.To != newRoot || rep.DryRun {
+		t.Errorf("report header = %+v", rep)
+	}
+
+	for rel, want := range map[string]string{
+		"sequence.json":                          `{"accounts":{"1":{"email":"a@example.com"}},"sequence":[1]}`,
+		"credentials/.creds-1-a@example.com.enc": "c2VjcmV0",
+		"tycswap.log":                            "log\n",
+		"tycswap.log.1":                          "older\n",
+		"sessions/1-a_example.com/.tycswap-shared.json": `{"items":[]}`,
+		"codex/sequence.json":                           `{"accounts":[]}`,
+	} {
+		p := filepath.Join(newRoot, filepath.FromSlash(rel))
+		b, err := os.ReadFile(p)
+		if err != nil || string(b) != want {
+			t.Errorf("%s = %q, %v; want %q", rel, b, err, want)
+		}
+		if runtime.GOOS != "windows" {
+			if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o600 {
+				t.Errorf("%s mode = %v, want 0600", rel, fi.Mode().Perm())
+			}
+		}
+	}
+	for _, gone := range []string{"claude-swap.log", "sessions/1-a_example.com/.cswap-shared.json"} {
+		if _, err := os.Lstat(filepath.Join(newRoot, filepath.FromSlash(gone))); !os.IsNotExist(err) {
+			t.Errorf("%s copied under its old name", gone)
+		}
+	}
+	if runtime.GOOS != "windows" {
+		for _, d := range []string{"", "credentials", "sessions", "sessions/1-a_example.com", "codex"} {
+			fi, err := os.Stat(filepath.Join(newRoot, filepath.FromSlash(d)))
+			if err != nil || fi.Mode().Perm() != 0o700 {
+				t.Errorf("dir %q mode = %v, %v; want 0700", d, fi.Mode().Perm(), err)
+			}
+		}
+		link, err := os.Readlink(filepath.Join(newRoot, "sessions", "1-a_example.com", "settings.json"))
+		if err != nil || link != "/nonexistent/.claude/settings.json" {
+			t.Errorf("symlink = %q, %v; want the link itself copied", link, err)
+		}
+	}
+
+	if after := snapshot(t, old); !equalMaps(before, after) {
+		t.Errorf("old store changed:\nbefore %v\nafter  %v", before, after)
+	}
+
+	// A second run refuses: the new store now holds data.
+	if _, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux}); !errors.Is(err, ErrNotEmpty) {
+		t.Errorf("second Run err = %v, want ErrNotEmpty", err)
+	}
+}
+
+func TestRunRefusesNonEmptyStore(t *testing.T) {
+	old := oldStore(t)
+	before := snapshot(t, old)
+	newRoot := filepath.Join(t.TempDir(), "tycswap")
+	write(t, filepath.Join(newRoot, "sequence.json"), `{"accounts":{}}`, 0o600)
+	linux := platform.Linux
+
+	_, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux})
+	if !errors.Is(err, ErrNotEmpty) || !strings.Contains(err.Error(), newRoot) {
+		t.Fatalf("err = %v, want ErrNotEmpty naming %s", err, newRoot)
+	}
+	b, _ := os.ReadFile(filepath.Join(newRoot, "sequence.json"))
+	if string(b) != `{"accounts":{}}` {
+		t.Errorf("refused run modified the new store: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(newRoot, "settings.json")); !os.IsNotExist(err) {
+		t.Errorf("refused run copied files")
+	}
+	if !equalMaps(before, snapshot(t, old)) {
+		t.Errorf("refused run changed the old store")
+	}
+}
+
+func TestRunCopiesOverThrowawayOnly(t *testing.T) {
+	old := oldStore(t)
+	newRoot := filepath.Join(t.TempDir(), "tycswap")
+	write(t, filepath.Join(newRoot, "tycswap.log"), "fresh\n", 0o600)
+	write(t, filepath.Join(newRoot, "cache", "update_check.json"), "{}", 0o600)
+	if !IsEmpty(newRoot) {
+		t.Fatal("a store with only a log and a cache counts as empty")
+	}
+	linux := platform.Linux
+	if _, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestDryRunWritesNothing(t *testing.T) {
+	old := oldStore(t)
+	before := snapshot(t, old)
+	newRoot := filepath.Join(t.TempDir(), "tycswap")
+	linux := platform.Linux
+
+	rep, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, DryRun: true, Platform: &linux})
+	if err != nil {
+		t.Fatalf("dry run: %v", err)
+	}
+	if !rep.DryRun {
+		t.Error("report not marked dry run")
+	}
+	_, files, _ := rep.Counts()
+	if files == 0 {
+		t.Error("dry run listed no files")
+	}
+	found := false
+	for _, e := range rep.Entries {
+		if e.From == "claude-swap.log" && e.To == "tycswap.log" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("dry run does not show the log rename: %+v", rep.Entries)
+	}
+	if _, err := os.Lstat(newRoot); !os.IsNotExist(err) {
+		t.Errorf("dry run created the new store: %v", err)
+	}
+	if !equalMaps(before, snapshot(t, old)) {
+		t.Error("dry run changed the old store")
+	}
+}
+
+func TestNoOldStore(t *testing.T) {
+	linux := platform.Linux
+	_, err := Run(Options{NewRoot: filepath.Join(t.TempDir(), "n"), OldRoots: []string{filepath.Join(t.TempDir(), "absent")}, Platform: &linux})
+	if !errors.Is(err, ErrNoOldStore) {
+		t.Errorf("err = %v, want ErrNoOldStore", err)
+	}
+}
+
+func TestFindOldPrefersFirstWithData(t *testing.T) {
+	empty := t.TempDir()
+	old := oldStore(t)
+	if got, ok := FindOld([]string{filepath.Join(t.TempDir(), "absent"), empty, old}); !ok || got != old {
+		t.Errorf("FindOld = %q, %v; want %q", got, ok, old)
+	}
+}
+
+func TestHint(t *testing.T) {
+	old := oldStore(t)
+	newRoot := filepath.Join(t.TempDir(), "tycswap")
+	want := "a cswap store exists at " + old + "; `tycswap migrate` copies it once"
+	if got := Hint(newRoot, []string{old}); got != want {
+		t.Errorf("Hint = %q, want %q", got, want)
+	}
+	write(t, filepath.Join(newRoot, "sequence.json"), "{}", 0o600)
+	if got := Hint(newRoot, []string{old}); got != "" {
+		t.Errorf("Hint with a populated store = %q, want none", got)
+	}
+	if got := Hint(filepath.Join(t.TempDir(), "x"), []string{filepath.Join(t.TempDir(), "absent")}); got != "" {
+		t.Errorf("Hint without an old store = %q, want none", got)
+	}
+}
+
+func TestKeychainItemsCopiedNeverDeleted(t *testing.T) {
+	old := oldStore(t)
+	newRoot := filepath.Join(t.TempDir(), "tycswap")
+	kc := keychain.NewFake()
+	mustSet := func(svc, acct, v string) {
+		if err := kc.Set(svc, acct, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustSet(keychain.OldBackupService, "account-1-a@example.com", "blob")
+	mustSet(keychain.OldBackupService, "account-1-a@example.com.prev", "older")
+	oldSess := sessprofile.KeychainServiceName(filepath.Join(old, "sessions", "1-a_example.com"))
+	mustSet(oldSess, keychain.AccountName(), "sess")
+	mac := platform.MacOS
+
+	dry, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, DryRun: true, Platform: &mac, Keychain: kc})
+	if err != nil || len(dry.Keychain) != 3 {
+		t.Fatalf("dry run keychain = %+v, %v; want 3 items", dry.Keychain, err)
+	}
+	if kc.Exists(keychain.BackupService, "account-1-a@example.com") {
+		t.Fatal("dry run wrote a Keychain item")
+	}
+
+	rep, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &mac, Keychain: kc})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(rep.Keychain) != 3 {
+		t.Errorf("copied %d Keychain items, want 3: %+v", len(rep.Keychain), rep.Keychain)
+	}
+	newSess := sessprofile.KeychainServiceName(filepath.Join(newRoot, "sessions", "1-a_example.com"))
+	for _, c := range []struct{ svc, acct, want string }{
+		{keychain.BackupService, "account-1-a@example.com", "blob"},
+		{keychain.BackupService, "account-1-a@example.com.prev", "older"},
+		{newSess, keychain.AccountName(), "sess"},
+		{keychain.OldBackupService, "account-1-a@example.com", "blob"},
+		{oldSess, keychain.AccountName(), "sess"},
+	} {
+		if v, ok, _ := kc.Get(c.svc, c.acct); !ok || v != c.want {
+			t.Errorf("%s/%s = %q, %v; want %q", c.svc, c.acct, v, ok, c.want)
+		}
+	}
+}
+
+func equalMaps(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
+}

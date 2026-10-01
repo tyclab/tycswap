@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/keychain"
 )
 
 func TestCheckLoginDir(t *testing.T) {

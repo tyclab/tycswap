@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 func TestFormatUsageLines_StandardWindowsLegacyLayout(t *testing.T) {
@@ -160,7 +160,7 @@ func TestFormatUsageLines_SpendRow(t *testing.T) {
 func TestUsageEntryLines_SentinelNote(t *testing.T) {
 	entry := usage.WithSentinel(usage.UsageEntry{}, jsonout.UsageReloginRequired)
 	got := usageEntryLines(entry)
-	want := []string{"re-login needed — refresh token dead; log in with Claude Code, then run: cswap add"}
+	want := []string{"re-login needed — refresh token dead; log in with Claude Code, then run: tycswap add"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("usageEntryLines = %q want %q", got, want)
 	}

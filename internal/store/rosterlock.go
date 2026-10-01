@@ -11,7 +11,7 @@
 package store
 
 // WithRosterLocked runs fn under the store FileLock with exactly ONE classified
-// roster read taken INSIDE the lock, after the org backfill. No other cswap can
+// roster read taken INSIDE the lock, after the org backfill. No other tycswap can
 // write sequence.json while fn runs, so the roster fn decides from is the roster
 // fn commits — the same bytes on disk, not merely the same object — and the
 // backfill fn's commit carries is the backfill that is on disk.
@@ -24,7 +24,7 @@ package store
 //     deadlock, not a timeout. (A second *FileLock object on the same path
 //     conflicts at the flock level instead: a 10s stall, then cerr.Lock.)
 //   - fn must NOT prompt a human. The cross-process acquire budget is 10s
-//     (filelock.DefaultTimeout) and `cswap run`'s session bootstrap waits on the
+//     (filelock.DefaultTimeout) and `tycswap run`'s session bootstrap waits on the
 //     same file, so a question held under the lock fails other commands outright.
 //     Ask before the lock and re-validate the answer's premise inside it.
 //

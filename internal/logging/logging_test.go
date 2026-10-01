@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // TestFormatLineExact pins the on-disk contract format including the COMMA
@@ -89,7 +89,7 @@ func TestLazyDirCreation(t *testing.T) {
 	}
 
 	lg.Info("hello")
-	logPath := filepath.Join(dir, "claude-swap.log")
+	logPath := filepath.Join(dir, "tycswap.log")
 	data, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("log file not created after first write: %v", err)
@@ -106,7 +106,7 @@ func TestDebugGatedByLevel(t *testing.T) {
 	lg := NewWithClock(dir, false, clk) // INFO level
 	lg.Debug("should be dropped")
 	lg.Info("kept")
-	data, _ := os.ReadFile(filepath.Join(dir, "claude-swap.log"))
+	data, _ := os.ReadFile(filepath.Join(dir, "tycswap.log"))
 	if strings.Contains(string(data), "should be dropped") {
 		t.Error("DEBUG record written at INFO level")
 	}
@@ -117,7 +117,7 @@ func TestDebugGatedByLevel(t *testing.T) {
 
 func TestRotation(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "claude-swap.log")
+	path := filepath.Join(dir, "tycswap.log")
 	w := newRotatingWriter(path, 64, 3)            // tiny cap to force rotation
 	line := []byte("0123456789ABCDEF0123456789\n") // 27 bytes
 	for i := 0; i < 6; i++ {

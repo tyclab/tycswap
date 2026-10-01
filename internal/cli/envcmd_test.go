@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/core"
-	"git.dpemmons.com/dpemmons/cswap/internal/session"
+	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/session"
 )
 
 // TestEnvGetwdErrorSurfaced: FINDING 11. When os.Getwd fails (the process cwd was
@@ -53,7 +53,7 @@ func TestEnvPreDispatchRegistered(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0 (stderr=%q)", code, errStr)
 	}
-	for _, want := range []string{"env [-h]", "--shell {sh,fish,pwsh}", "--unset", `eval "$(cswap env 2)"`} {
+	for _, want := range []string{"env [-h]", "--shell {sh,fish,pwsh}", "--unset", `eval "$(tycswap env 2)"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("env --help missing %q\n%s", want, out)
 		}
@@ -67,12 +67,12 @@ func TestEnvPreDispatchRegistered(t *testing.T) {
 // TestEnvInHelpList: the main --help command list and epilog document env.
 func TestEnvInHelpList(t *testing.T) {
 	var out bytes.Buffer
-	renderMainHelp("cswap", &out)
+	renderMainHelp("tycswap", &out)
 	help := out.String()
-	if !strings.Contains(help, "cswap env <num|email>") {
+	if !strings.Contains(help, "tycswap env <num|email>") {
 		t.Errorf("main help missing the env command line:\n%s", help)
 	}
-	if !strings.Contains(help, `eval "$(cswap env 2)"`) {
+	if !strings.Contains(help, `eval "$(tycswap env 2)"`) {
 		t.Errorf("main help epilog missing the env example:\n%s", help)
 	}
 }
@@ -236,7 +236,7 @@ func (f *fakeEnvPreparer) SetupEnv(identifier string, _, _ bool) (session.EnvRes
 
 // TestEnvNoOpEmitsNothingOnStdout: D1 (FINDING 1). When SetupEnv returns a NoOp
 // result (requested account is already the active default login, no preset),
-// `cswap env` exits 0 and writes NOTHING to stdout — the note landed on stderr.
+// `tycswap env` exits 0 and writes NOTHING to stdout — the note landed on stderr.
 func TestEnvNoOpEmitsNothingOnStdout(t *testing.T) {
 	cleanHome(t)
 	prev := newEnvPreparer

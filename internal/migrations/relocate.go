@@ -9,8 +9,8 @@
 package migrations
 
 import (
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
-	"git.dpemmons.com/dpemmons/cswap/internal/slotkey"
+	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/slotkey"
 )
 
 // relocateConfig parameterizes relocate over the two migrations' distinct

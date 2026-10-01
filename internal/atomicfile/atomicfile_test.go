@@ -50,7 +50,7 @@ func TestWriteJSONIndentTwoSpaces(t *testing.T) {
 // matching Python's json.dumps (which does not HTML-escape), rather than being
 // rewritten to </>/& by json.MarshalIndent's default escaping.
 // The realistic case is a mappings.json key that is a filesystem path
-// containing such characters, e.g. `cswap map 2 /home/me/a&b/proj`.
+// containing such characters, e.g. `tycswap map 2 /home/me/a&b/proj`.
 func TestWriteJSONNoHTMLEscape(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mappings.json")
 	if err := WriteJSON(path, map[string]string{"2": "/home/me/a&b<c>d/proj"}, Opts{}); err != nil {

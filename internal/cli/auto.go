@@ -1,11 +1,11 @@
-// auto.go — the `cswap auto` pre-dispatched subcommand (spec 08§7.7, 05§19).
+// auto.go — the `tycswap auto` pre-dispatched subcommand (spec 08§7.7, 05§19).
 //
 // Implements spec 08§7.7 / 05§19: the flag grammar (--once/--json/--interval/
 // --threshold/--cooldown/--model/--include-api-key-accounts tri-state/--dry-run/
 // --debug), merged_with_cli, the engine construction, --once (exit = outcome),
 // loop mode with SIGTERM→Stop and the dimmed banner, and the JSONL/human emit
 // callbacks. The compact JSONL/error-envelope discipline (spec 08§7.7) is
-// distinct from the main path's indent-2. prog is hardcoded "cswap auto".
+// distinct from the main path's indent-2. prog is hardcoded "tycswap auto".
 package cli
 
 import (
@@ -19,17 +19,17 @@ import (
 	"syscall"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/autoswitch"
-	codexauto "git.dpemmons.com/dpemmons/cswap/internal/codex/autoswitch"
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/providers"
-	"git.dpemmons.com/dpemmons/cswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/autoswitch"
+	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/providers"
+	"github.com/tyclab/tycswap/internal/settings"
 )
 
-const autoProg = "cswap auto"
+const autoProg = "tycswap auto"
 
-// autoCommand handles `cswap auto ...` (spec 08§7.7). argv excludes "auto".
+// autoCommand handles `tycswap auto ...` (spec 08§7.7). argv excludes "auto".
 func autoCommand(_ string, argv []string, s ioStreams) int {
 	var once, jsonMode, dryRun, debug bool
 	var interval, threshold, cooldown *float64
@@ -218,7 +218,7 @@ func newCodexAutoEngine(merged settings.AutoSwitchSettings, s ioStreams) (eng *c
 // interval — until the returned stop is called (deviation 7: #252's thread
 // waited one interval first). A separate goroutine rather than a hook in the
 // Claude engine: a slow Codex fetch never delays a Claude switch, and a Codex
-// panic never takes down `cswap auto`. stop cancels an in-flight tick and then
+// panic never takes down `tycswap auto`. stop cancels an in-flight tick and then
 // waits for the goroutine to return, so the process never exits in the middle
 // of a Codex switch and no Codex line is printed after the loop has stopped.
 func startCodexLoop(enabled bool, interval time.Duration, tick func(context.Context)) (stop func()) {
@@ -325,7 +325,7 @@ func autoError(err error, jsonMode bool, s ioStreams) int {
 }
 
 func renderAutoHelp(out io.Writer) {
-	fmt.Fprintln(out, "usage: cswap auto [-h] [--once] [--json] [--interval SECONDS] [--threshold PCT]")
+	fmt.Fprintln(out, "usage: tycswap auto [-h] [--once] [--json] [--interval SECONDS] [--threshold PCT]")
 	fmt.Fprintln(out, "                  [--cooldown SECONDS] [--model NAMES]")
 	fmt.Fprintln(out, "                  [--include-api-key-accounts | --no-include-api-key-accounts]")
 	fmt.Fprintln(out, "                  [--dry-run] [--debug]")

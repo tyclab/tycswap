@@ -5,7 +5,7 @@
 // reports overall success so the caller can pick the right SwitchError message.
 package switching
 
-import "git.dpemmons.com/dpemmons/cswap/internal/store"
+import "github.com/tyclab/tycswap/internal/store"
 
 // switchTransaction captures the pre-switch state and the steps that completed,
 // so a mid-switch failure can be undone.

@@ -51,7 +51,7 @@ port.
 | `__init__.py` | — (implicit only) | **thin — see Gap 1** |
 | `__main__.py` | — (not specced) | **thin — see Gap 2** |
 
-Non-`.py` shipped asset: `tui/cswap.tcss` — covered behaviorally by 09 §8.2
+Non-`.py` shipped asset: `tui/tycswap.tcss` — covered behaviorally by 09 §8.2
 (the port uses lipgloss, so the exact CSS is not a hard contract; the
 visually load-bearing facts are captured).
 
@@ -98,12 +98,12 @@ if __name__ == "__main__":
 ```
 
 Missing spec content: in addition to the two console scripts
-`claude-swap` and `cswap` (both → `claude_swap.cli:main`, specced in 08),
+`claude-swap` and `tycswap` (both → `claude_swap.cli:main`, specced in 08),
 the tool is runnable as `python -m claude_swap`, which dispatches to the
 same `main()`. Note this interacts with `_prog_name()` (08 §1): when invoked
 this way `sys.argv[0]` basename is `__main__`, which `_prog_name()` maps to
-the literal `"cswap"`. A Go port has no `-m` equivalent; only the two binary
-names matter, but the `__main__`→`"cswap"` fallback in `_prog_name()` is
+the literal `"tycswap"`. A Go port has no `-m` equivalent; only the two binary
+names matter, but the `__main__`→`"tycswap"` fallback in `_prog_name()` is
 already covered by 08 §1 and needs no change.
 
 ### Gap 3 (minor) — `_is_running_in_container` mountinfo substrings not enumerated
@@ -131,7 +131,7 @@ substrings for mountinfo, not reuse the cgroup set.
 
 ## Cross-cutting concerns audit
 
-**Entry points & version** — Console scripts `claude-swap`/`cswap` →
+**Entry points & version** — Console scripts `claude-swap`/`tycswap` →
 `cli:main` (08, correct). `python -m claude_swap` and version derivation:
 Gaps 1–2 above. `pyproject.toml` `requires-python = ">=3.12"`; the 3.12/3.13
 `Path.exists()` divergence is already called out in 03 §5.7/§9.3, but the

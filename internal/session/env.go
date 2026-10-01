@@ -1,15 +1,15 @@
-// env.go — SetupEnv: the `cswap env` profile-preparation path (Go-side
+// env.go — SetupEnv: the `tycswap env` profile-preparation path (Go-side
 // extension, no Python counterpart; DESIGN A16).
 //
 // SetupEnv reuses the exact same SetupSession bootstrap/validate/mirror/share
 // pipeline Run uses, but never execs. It returns the prepared profile dir plus
-// the currently-set AUTH_OVERRIDE_ENV_VARS so `cswap env` can print shell
+// the currently-set AUTH_OVERRIDE_ENV_VARS so `tycswap env` can print shell
 // `unset` lines that stop those vars from shadowing the pinned account. Every
-// human notice is written to the Manager's Stdout sink; `cswap env` wires that
+// human notice is written to the Manager's Stdout sink; `tycswap env` wires that
 // sink to stderr so the command's own stdout carries only eval-able lines.
 package session
 
-// EnvResult carries what `cswap env` needs to emit its eval-able export after
+// EnvResult carries what `tycswap env` needs to emit its eval-able export after
 // the shared bootstrap. Dir is the prepared session profile;
 // Scrubbed lists the AUTH_OVERRIDE_ENV_VARS currently set in the environment,
 // in declaration order. NoOp is set when the requested account is already the
@@ -23,7 +23,7 @@ type EnvResult struct {
 	NoOp       bool
 }
 
-// SetupEnv prepares the persistent session profile for `cswap env` and returns
+// SetupEnv prepares the persistent session profile for `tycswap env` and returns
 // the profile dir plus the env-scrub list. It reuses the EXACT shared
 // preamble + bootstrap path Run uses (setupPreamble / setupBootstrap → the same
 // SetupSession bootstrap/validate/mirror/share pipeline; no duplicated logic)

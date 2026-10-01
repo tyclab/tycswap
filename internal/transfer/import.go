@@ -18,7 +18,7 @@
 // import does not carry. That single roster is then threaded through the alias
 // check, every slot decision, and every write, so no record can land in a roster
 // other than the one its slot was chosen against — and because the read is
-// inside the lock, that roster is also the bytes on disk: a second cswap cannot
+// inside the lock, that roster is also the bytes on disk: a second tycswap cannot
 // commit between the read and the writes, so its records cannot be renamed away
 // by this import's own commit. Only the envelope read (which may drain stdin)
 // stays outside.
@@ -34,9 +34,9 @@ import (
 	"strings"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/credstore"
-	"git.dpemmons.com/dpemmons/cswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/filelock"
 )
 
 // Stdin is the source for "-"/stdin imports (transfer.py::sys.stdin.read). Tests
@@ -64,7 +64,7 @@ type normalizedEntry struct {
 	configText  string
 }
 
-// Import reads a .cswap envelope from source ("-" for stdin) and writes its
+// Import reads a .tycswap envelope from source ("-" for stdin) and writes its
 // accounts into the local store. force overwrites the matching local slot in
 // place. Mirrors import_accounts (spec 07§3).
 func Import(acc Accounts, source string, force bool) error {
@@ -90,7 +90,7 @@ func Import(acc Accounts, source string, force bool) error {
 	}
 	if enc, ok := envelope["encrypted"].(bool); ok && enc {
 		return cerr.Transfer("encrypted exports are not supported in this version — " +
-			"decrypt before piping (e.g. gpg -d backup.gpg | cswap --import -)")
+			"decrypt before piping (e.g. gpg -d backup.gpg | tycswap --import -)")
 	}
 	accountsRaw, ok := envelope["accounts"].([]any)
 	if !ok || len(accountsRaw) == 0 {
@@ -112,7 +112,7 @@ func Import(acc Accounts, source string, force bool) error {
 	// DESIGN Deviation 9: the classified roster read, pass 1, the bootstrap and
 	// the whole write pass run under ONE FileLock — a hardening over Python's
 	// unlocked RMW. The read has to be inside it, not merely the writes: a roster
-	// read before the lock is a roster another cswap can commit over while this
+	// read before the lock is a roster another tycswap can commit over while this
 	// import waits for the lock, and this import's own commit would then rename a
 	// file built from the pre-lock roster over that record. None of the callees
 	// re-acquire this lock (they are the non-locking store primitives; the usage
@@ -266,7 +266,7 @@ func Import(acc Accounts, source string, force bool) error {
 				if pids := acc.LiveSessionPidsFor(targetNum, entry.email); len(pids) > 0 {
 					eprint("Warning: " + entry.email + " (slot " + targetNum + ") has a live " +
 						"session-mode instance (PID " + joinPIDs(pids) + "); its session profile keeps " +
-						"the pre-import credentials until it is restarted via 'cswap run'.")
+						"the pre-import credentials until it is restarted via 'tycswap run'.")
 				}
 			} else {
 				if !slotOccupied(data, entry.exportedNum) {
@@ -347,7 +347,7 @@ func Import(acc Accounts, source string, force bool) error {
 	if email, org, ok := acc.CurrentAccount(); ok {
 		if liveSlot := findAccountSlot(data, email, org); liveSlot != "" && writtenSlots[liveSlot] {
 			eprint("Note: " + email + " is your current live login — activate the " +
-				"imported credentials with: cswap --switch-to " + liveSlot + " --force")
+				"imported credentials with: tycswap --switch-to " + liveSlot + " --force")
 		}
 	}
 	return nil
@@ -377,6 +377,11 @@ func rosterForUpdate(acc Accounts) (*SequenceData, error) {
 }
 
 // readSource reads the import text from stdin ("-") or a file (spec 07§3.1).
+//
+// Any file name is read: tycswap writes its exports as .tycswap, and an old
+// .cswap export from the tool it was forked from carries the same envelope.
+// Reading such a file is migration of the user's data, not a compatibility
+// promise for the old name (DESIGN Amendment A23).
 func readSource(source string) (string, error) {
 	if source == "-" {
 		b, err := io.ReadAll(Stdin)

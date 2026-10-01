@@ -13,7 +13,7 @@
 // names). That single roster decides the placeholder email's slot, the
 // auto-assigned slot and the cross-kind collision check, and is the object every
 // WriteSequence below commits — nothing re-fetches it mid-flight, so no two of
-// those decisions can answer from different rosters, and no other cswap can
+// those decisions can answer from different rosters, and no other tycswap can
 // commit between the read and the writes for this call's commit to erase.
 //
 // The overwrite confirmation is asked before the lock and its premise
@@ -30,10 +30,10 @@ import (
 	"sort"
 	"strconv"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/credstore"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // AddAccountFromToken registers token as a managed account (spec 01§6). token

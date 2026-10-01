@@ -19,9 +19,9 @@ import (
 
 	"golang.org/x/mod/semver"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // Checker performs the passive update check. The zero value is usable in
@@ -113,7 +113,7 @@ func (c Checker) CheckForUpdate(exePath, currentVersion string, plat platform.Pl
 	shape := DetectInstallShape(exePath, c.getenv(), c.homeDir())
 	hint := UpgradeHint(shape, plat)
 	return fmt.Sprintf(
-		"A newer version of claude-swap is available (%s). You are using %s. %s",
+		"A newer version of tycswap is available (%s). You are using %s. %s",
 		strings.TrimPrefix(latest, "v"), strings.TrimPrefix(currentVersion, "v"), hint,
 	)
 }

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/version"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/version"
 )
 
 // the exact bloat-config fixture keys (spec 07§8): all must be absent in slim
@@ -243,7 +243,7 @@ func TestExportNoAccounts(t *testing.T) {
 	f := newFakeAccounts(t)
 	err := Export(f, "-", "", false)
 	msg := transferErr(t, err)
-	if !strings.Contains(msg, "no accounts to export — run cswap --add-account first") {
+	if !strings.Contains(msg, "no accounts to export — run tycswap --add-account first") {
 		t.Errorf("message = %q", msg)
 	}
 }
@@ -271,7 +271,7 @@ func TestExportAmbiguousEmailPropagatesConfigError(t *testing.T) {
 func TestExportToFileWrites0600(t *testing.T) {
 	f := newFakeAccounts(t)
 	f.seedAccount("1", "a@example.com", "", recordOpts{creds: oauthCreds, config: bloatConfig})
-	dest := t.TempDir() + "/out.cswap"
+	dest := t.TempDir() + "/out.tycswap"
 	var err error
 	_, stderr := captureIO(t, func() { err = Export(f, dest, "", false) })
 	if err != nil {

@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/sessprofile"
 )
 
-// makeSessionProfile creates a cswap session profile dir under the current
-// backup root and returns its path (the value a `cswap env`-pinned shell carries
+// makeSessionProfile creates a tycswap session profile dir under the current
+// backup root and returns its path (the value a `tycswap env`-pinned shell carries
 // in CLAUDE_CONFIG_DIR).
 func makeSessionProfile(t *testing.T) string {
 	t.Helper()
@@ -23,7 +23,7 @@ func makeSessionProfile(t *testing.T) string {
 	return dir
 }
 
-// TestNeutralizePinnedSessionProfile: when CLAUDE_CONFIG_DIR points at a cswap
+// TestNeutralizePinnedSessionProfile: when CLAUDE_CONFIG_DIR points at a tycswap
 // session profile, the front-controller helper unsets it and prints the one D2
 // note. A non-env/run command then resolves the default login.
 func TestNeutralizePinnedSessionProfile(t *testing.T) {
@@ -38,12 +38,12 @@ func TestNeutralizePinnedSessionProfile(t *testing.T) {
 	if got := os.Getenv("CLAUDE_CONFIG_DIR"); got != "" {
 		t.Errorf("CLAUDE_CONFIG_DIR = %q, want unset", got)
 	}
-	if !strings.Contains(errb.String(), "pinned via cswap env; operating on the default login") {
+	if !strings.Contains(errb.String(), "pinned via tycswap env; operating on the default login") {
 		t.Errorf("missing D2 note: %q", errb.String())
 	}
 }
 
-// TestNeutralizeCustomConfigDirHonored: a custom, non-cswap CLAUDE_CONFIG_DIR is
+// TestNeutralizeCustomConfigDirHonored: a custom, non-tycswap CLAUDE_CONFIG_DIR is
 // left untouched (Python parity) — no note, value preserved.
 func TestNeutralizeCustomConfigDirHonored(t *testing.T) {
 	cleanHome(t)
@@ -83,11 +83,11 @@ func TestRunNeutralizesForNonEnvRun(t *testing.T) {
 		t.Cleanup(func() { os.Unsetenv("CLAUDE_CONFIG_DIR") })
 
 		var out, errb bytes.Buffer
-		code := run("cswap", []string{"list"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
+		code := run("tycswap", []string{"list"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 		if code != 0 {
 			t.Fatalf("exit = %d, want 0 (stderr=%q)", code, errb.String())
 		}
-		if !strings.Contains(errb.String(), "pinned via cswap env") {
+		if !strings.Contains(errb.String(), "pinned via tycswap env") {
 			t.Errorf("list did not emit the D2 note: %q", errb.String())
 		}
 		if got := os.Getenv("CLAUDE_CONFIG_DIR"); got != "" {
@@ -104,11 +104,11 @@ func TestRunNeutralizesForNonEnvRun(t *testing.T) {
 		// `env --unset` returns before switcher construction; run() must NOT
 		// neutralize (env owns preset handling), so no note and the pin survives.
 		var out, errb bytes.Buffer
-		code := run("cswap", []string{"env", "--unset"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
+		code := run("tycswap", []string{"env", "--unset"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 		if code != 0 {
 			t.Fatalf("exit = %d, want 0 (stderr=%q)", code, errb.String())
 		}
-		if strings.Contains(errb.String(), "pinned via cswap env") {
+		if strings.Contains(errb.String(), "pinned via tycswap env") {
 			t.Errorf("env emitted the D2 neutralization note: %q", errb.String())
 		}
 		if got := os.Getenv("CLAUDE_CONFIG_DIR"); got != profile {

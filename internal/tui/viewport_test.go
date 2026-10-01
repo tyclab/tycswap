@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/reporting"
 )
 
 var ansiRE = regexp.MustCompile("\x1b\\[[0-9;]*m")

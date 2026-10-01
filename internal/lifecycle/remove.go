@@ -18,9 +18,9 @@ import (
 	"strconv"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // RemoveAccount removes the account matching identifier (spec 01§10.2).
@@ -144,11 +144,11 @@ func RemoveAccount(s *store.Store, identifier string, assumeYes bool) error {
 					"Account-%s (%s) moved to slot %s while the confirmation was open, so nothing was removed. Re-run the command against slot %s to remove it there.",
 					accountNum, email, moved, moved)
 			}
-			// Another cswap retired the slot while the question was open. Its
+			// Another tycswap retired the slot while the question was open. Its
 			// backups went with it; there is nothing here to delete and nothing to
 			// commit, and reporting an error for an outcome the user asked for
 			// would be a lie about the end state.
-			emitLine(printer.Dimmed("Account-" + accountNum + " (" + email + ") was already removed by another cswap; nothing to do"))
+			emitLine(printer.Dimmed("Account-" + accountNum + " (" + email + ") was already removed by another tycswap; nothing to do"))
 			return nil
 		}
 		// The identity the user confirmed is the composite (email,

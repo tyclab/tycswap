@@ -10,8 +10,8 @@ package transfer
 import (
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/codex/store"
 )
 
 // ResolveSlot returns the first slot (in slot order) whose number, email or

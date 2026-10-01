@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
 )
 
 // ErrMissingAuth is returned when there is no access token or account id to

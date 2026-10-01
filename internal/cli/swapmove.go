@@ -1,4 +1,4 @@
-// swapmove.go — the `cswap swap` / `cswap move` pre-dispatched subcommands
+// swapmove.go — the `tycswap swap` / `tycswap move` pre-dispatched subcommands
 // (spec 08§7.5/§7.6).
 //
 // Implements spec 08§7.5 (swap two slots + numbered echo) and §7.6 (move onto a
@@ -13,11 +13,11 @@ import (
 	"strconv"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/core"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/printer"
 )
 
-// swapCommand handles `cswap swap ...` (spec 08§7.5). argv excludes "swap".
+// swapCommand handles `tycswap swap ...` (spec 08§7.5). argv excludes "swap".
 func swapCommand(prog string, argv []string, s ioStreams) int {
 	swapProg := prog + " swap"
 	pos, debug, help, code := parsePositional(argv, swapProg, s)
@@ -59,7 +59,7 @@ func swapCommand(prog string, argv []string, s ioStreams) int {
 	return 0
 }
 
-// moveCommand handles `cswap move ...` (spec 08§7.6). argv excludes "move".
+// moveCommand handles `tycswap move ...` (spec 08§7.6). argv excludes "move".
 func moveCommand(prog string, argv []string, s ioStreams) int {
 	moveProg := prog + " move"
 	pos, debug, help, code := parsePositional(argv, moveProg, s)

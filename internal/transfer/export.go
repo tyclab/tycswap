@@ -2,7 +2,7 @@
 //
 // Reads the local backup store (transparently backend-agnostic: file .enc or
 // macOS Keychain, whichever the credential store resolves) and serializes one or
-// all accounts to a .cswap file or stdout. The live active account is read from
+// all accounts to a .tycswap file or stdout. The live active account is read from
 // the live vault (fresher tokens) rather than its backup; a bulk export skips
 // individually-broken slots with a stderr warning (issue #41) while a single
 // named account treats the same condition as a hard failure. Missing oauthAccount
@@ -17,11 +17,11 @@ import (
 	"strconv"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/credstore"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/slotkey"
-	"git.dpemmons.com/dpemmons/cswap/internal/version"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/slotkey"
+	"github.com/tyclab/tycswap/internal/version"
 )
 
 // exportEntry is one per-account object in the envelope. Field order matches
@@ -41,7 +41,7 @@ type exportEntry struct {
 	Alias            string `json:"alias,omitempty"`
 }
 
-// exportEnvelope is the whole .cswap document (spec 07§1.1). activeAccountNumber
+// exportEnvelope is the whole .tycswap document (spec 07§1.1). activeAccountNumber
 // is a *int so it serializes as null (never omitted) when no in-payload slot is
 // the recorded active one.
 type exportEnvelope struct {
@@ -63,7 +63,7 @@ func Export(acc Accounts, destination, account string, full bool) error {
 		return err
 	}
 	if data == nil || len(data.Accounts) == 0 {
-		return cerr.Transfer("no accounts to export — run cswap --add-account first")
+		return cerr.Transfer("no accounts to export — run tycswap --add-account first")
 	}
 
 	explicit := account != ""
@@ -122,7 +122,7 @@ func Export(acc Accounts, destination, account string, full bool) error {
 					return cerr.Config("no backup config found for account %s (%s)", num, email)
 				}
 				eprint("Skipping Account-" + num + " (" + email + "): no stored " +
-					"credentials/config — re-add with: cswap --add-account --slot " + num)
+					"credentials/config — re-add with: tycswap --add-account --slot " + num)
 				continue
 			}
 		}
@@ -174,7 +174,7 @@ func Export(acc Accounts, destination, account string, full bool) error {
 
 	if len(payload) == 0 {
 		return cerr.Transfer("no exportable accounts — all managed slots are missing stored " +
-			"credentials/config. Re-add with: cswap --add-account --slot <number>")
+			"credentials/config. Re-add with: tycswap --add-account --slot <number>")
 	}
 
 	// activeAccountNumber only carries a slot that is actually present in the
@@ -272,7 +272,7 @@ func sortedSlotKeys(data *SequenceData) []string {
 // is replaced by os.CreateTemp (not observable in the final file).
 func atomicWriteFile(path, content string) error {
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".cswap-*.tmp")
+	tmp, err := os.CreateTemp(dir, ".tycswap-*.tmp")
 	if err != nil {
 		return err
 	}

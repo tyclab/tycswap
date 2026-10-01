@@ -19,15 +19,15 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/api"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/codex/api"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 const (
@@ -385,7 +385,7 @@ func TestSwitchIsSerializedByTheStoreLock(t *testing.T) {
 	sw := f.seeded()
 	holdLock(t, sw)
 	_, err := sw.SwitchTo(ctx, "2")
-	wantErr(t, err, cerr.KindSwitch, "Another cswap process")
+	wantErr(t, err, cerr.KindSwitch, "Another tycswap process")
 	if got := tokensOf(t, f.readLive())["account_id"]; got != acctA {
 		t.Errorf("live file changed under a held lock: %v", got)
 	}
@@ -773,7 +773,7 @@ func TestAddUnderAHeldLockFails(t *testing.T) {
 	sw := f.open()
 	holdLock(t, sw)
 	_, err := sw.Add(ctx, "")
-	wantErr(t, err, cerr.KindSwitch, "Another cswap process")
+	wantErr(t, err, cerr.KindSwitch, "Another tycswap process")
 }
 
 func TestRemoveDropsTheSlotAndItsSnapshot(t *testing.T) {
@@ -1004,7 +1004,7 @@ func TestMoveUnderAHeldLockFails(t *testing.T) {
 	sw := f.seeded()
 	holdLock(t, sw)
 	_, _, _, err := sw.Move("1", "2")
-	wantErr(t, err, cerr.KindSwitch, "Another cswap process")
+	wantErr(t, err, cerr.KindSwitch, "Another tycswap process")
 }
 
 func TestRotateCyclesThroughTheRotatableAccounts(t *testing.T) {

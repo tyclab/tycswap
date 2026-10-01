@@ -5,7 +5,7 @@
 // / the earliest slot.
 package switching
 
-import "git.dpemmons.com/dpemmons/cswap/internal/store"
+import "github.com/tyclab/tycswap/internal/store"
 
 // selectBestSwitchable decides the `best` target relative to current (spec
 // 02§5). Returns (target, note); target "" with a note means stay. Notes: none,

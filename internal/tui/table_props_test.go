@@ -24,9 +24,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
-	"git.dpemmons.com/dpemmons/cswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/settings"
 )
 
 // tableSweepMax is the width the shape corpus sweeps to; the large rosters use
@@ -2974,7 +2974,7 @@ const tableFirstFitBaseline = `
 //
 // That roster stores a pct of 1e9. The pre-change renderer respelled it as the
 // display cap, "999%" — four columns, and a measurement the store never
-// reported, while the account card and cswap list printed the real number from
+// reported, while the account card and tycswap list printed the real number from
 // the same entry. It is now ELIDED instead, ">999%", which is true of every
 // value above the cap and is five columns wide; the column is exhausted, so the
 // monitor pins it, and the floor rises by that one column. No roster carrying a

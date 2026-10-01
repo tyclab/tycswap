@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // newShareManager sets up a fake $HOME/.claude source, a session profile dir,
@@ -101,7 +101,7 @@ func TestShareNeverTouchesUserData(t *testing.T) {
 func TestShareRepointsStaleLink(t *testing.T) {
 	m, claudeHome, sessionDir, _ := newShareManager(t, platform.Linux)
 	writeFile(t, filepath.Join(claudeHome, "settings.json"), `{"a":1}`)
-	// A stale cswap link pointing at the wrong place.
+	// A stale tycswap link pointing at the wrong place.
 	stale := filepath.Join(t.TempDir(), "old-settings.json")
 	writeFile(t, stale, "old")
 	if err := os.Symlink(stale, filepath.Join(sessionDir, "settings.json")); err != nil {

@@ -1,4 +1,4 @@
-// Package logging is the named "claude-swap" logger with the interop log format.
+// Package logging is the named "tycswap" logger with the interop log format.
 //
 // Implements spec 08§12 (logging_config.py) and DESIGN A4. The on-disk line
 // format "YYYY-MM-DD HH:MM:SS,mmm - LEVEL - message" (Python %(asctime)s with a
@@ -16,11 +16,11 @@ import (
 	"sync"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/clock"
 )
 
 // LoggerName is the shared logger name (parity with logging.getLogger).
-const LoggerName = "claude-swap"
+const LoggerName = "tycswap"
 
 const (
 	maxBytes    = 1024 * 1024 // 1 MB
@@ -116,7 +116,7 @@ type Logger struct {
 	console io.Writer
 }
 
-// New configures the "claude-swap" logger writing to dir/claude-swap.log. The
+// New configures the "tycswap" logger writing to dir/tycswap.log. The
 // directory is not created until the first record is written.
 func New(dir string, debug bool) *Logger {
 	return NewWithClock(dir, debug, clock.System{})
@@ -129,7 +129,7 @@ func NewWithClock(dir string, debug bool, clk clock.Clock) *Logger {
 		lvl = LevelDebug
 	}
 	l := &Logger{
-		w:     newRotatingWriter(filepath.Join(dir, "claude-swap.log"), maxBytes, backupCount),
+		w:     newRotatingWriter(filepath.Join(dir, "tycswap.log"), maxBytes, backupCount),
 		level: lvl,
 		debug: debug,
 		clk:   clk,

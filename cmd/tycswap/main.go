@@ -1,4 +1,4 @@
-// Command cswap is the multi-account switcher for Claude Code (also installed
+// Command tycswap is the multi-account switcher for Claude Code (also installed
 // as claude-swap). It is a thin shell around internal/cli.Main.
 //
 // Implements spec 08§1 (the two console-script entry points → cli.main) and
@@ -8,7 +8,7 @@ package main
 import (
 	"os"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cli"
+	"github.com/tyclab/tycswap/internal/cli"
 )
 
 func main() {

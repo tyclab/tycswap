@@ -1,5 +1,5 @@
 // Per-account backup credentials: base64 .enc files (every platform) and the
-// macOS Keychain (service "claude-swap"). Reads are .enc-wins on every platform;
+// macOS Keychain (service "tycswap"). Reads are .enc-wins on every platform;
 // a successful Keychain write reconciles the .enc away (correctness-critical).
 // One .prev generation is retained per slot, routed by the same rule as the
 // backup itself.
@@ -17,9 +17,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 func (s *FileKeychainStore) backupEncPath(num, email string) string {

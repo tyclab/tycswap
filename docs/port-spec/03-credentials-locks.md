@@ -1,18 +1,18 @@
-# cswap Spec 03 — Credential Storage, Paths, and Locking
+# tycswap Spec 03 — Credential Storage, Paths, and Locking
 
 ## Overview
 
-This spec covers three leaf subsystems of `claude-swap` (cswap), a multi-account
+This spec covers three leaf subsystems of `claude-swap` (tycswap), a multi-account
 switcher for Claude Code: **path resolution** (`paths.py` — where Claude Code's
-config/credential files live and where cswap keeps its own backup tree),
-**credential storage** (`credentials.py` + `macos_keychain.py` — how cswap reads
+config/credential files live and where tycswap keeps its own backup tree),
+**credential storage** (`credentials.py` + `macos_keychain.py` — how tycswap reads
 and writes Claude Code's *active* credential and its own *per-account backups*,
 routing between the macOS Keychain and plaintext files with a sticky per-process
 capability cache), and **two independent locking mechanisms** (`claude_locks.py`
 — an npm-`proper-lockfile`-compatible directory lock that cooperates with a
-running Claude Code's own advisory locks; and `locking.py` — cswap's own
-cross-process `flock`/`msvcrt` file lock serializing cswap invocations against
-each other). Because cswap reads and writes files owned by Claude Code, large
+running Claude Code's own advisory locks; and `locking.py` — tycswap's own
+cross-process `flock`/`msvcrt` file lock serializing tycswap invocations against
+each other). Because tycswap reads and writes files owned by Claude Code, large
 parts of this spec are *encodings of external Claude Code / npm behavior* that
 the Go port must reproduce byte-for-byte — those are called out explicitly and
 quoted verbatim throughout.
@@ -125,7 +125,7 @@ So it honors `CLAUDE_CONFIG_DIR` (via config_home). Default:
 return Path.home() / ".claude-swap-backup"
 ```
 
-### 2.7 `get_backup_root() -> Path`  (cswap's own backup tree)
+### 2.7 `get_backup_root() -> Path`  (tycswap's own backup tree)
 
 **Platform-conditional. Calls `Platform.detect()` live.**
 
@@ -232,7 +232,7 @@ State-machine summary (from docstring + tests):
 
 ## 3. External knowledge: where Claude Code stores credentials
 
-This section quotes/derives what cswap knows about **Claude Code's own** storage,
+This section quotes/derives what tycswap knows about **Claude Code's own** storage,
 which the Go port must reproduce to interoperate. Source references cited in the
 Python are `utils/secureStorage/*.ts`, `utils/env.ts`, `utils/auth.ts`,
 `utils/config.ts`, `utils/lockfile.ts` in claude-code.
@@ -250,7 +250,7 @@ Two backends, checked in order (macOS):
 2. **Plaintext file** `<config_home>/.credentials.json` (Claude Code's own
    fallback; every platform). On Linux/WSL/Windows this is the only backend.
 
-The credential value is a JSON object. cswap's classifier only cares that it is
+The credential value is a JSON object. tycswap's classifier only cares that it is
 NOT a raw API key — i.e. it starts with `{`. The canonical OAuth shape (from
 Claude Code + the `oauth` module) is:
 
@@ -286,7 +286,7 @@ Claude Code's `~/.claude.json` also carries `"customApiKeyResponses"` (see §5.6
 }
 ```
 
-**External behavior cswap mirrors exactly:**
+**External behavior tycswap mirrors exactly:**
 - `normalizeApiKeyForConfig` = `apiKey.slice(-20)` → the value stored in
   `customApiKeyResponses.approved` is the **last 20 characters** of the key.
   Storing anything else makes Claude Code's "is this key approved?" check miss
@@ -297,7 +297,7 @@ Claude Code's `~/.claude.json` also carries `"customApiKeyResponses"` (see §5.6
 - `removeApiKey`: deletes the Keychain "Claude Code" item and drops
   `primaryApiKey`, but **leaves `customApiKeyResponses.approved` intact**.
 - Activating one axis clears the other (mutual exclusion) — Claude Code does
-  this and so must cswap.
+  this and so must tycswap.
 
 ### 3.3 Keychain read constraint (external caveat, quoted)
 
@@ -471,7 +471,7 @@ subprocess.run(
 ### 4.8 Real-keychain interop shapes (from contract tests)
 
 - Claude Code seeds an item with `add-generic-password -a $USER -s "Claude
-  Code-credentials" -w <token> -A <keychain>`. cswap reads it via the search
+  Code-credentials" -w <token> -A <keychain>`. tycswap reads it via the search
   list with the §4.4 shape (no `-k`/explicit keychain), so it must be findable by
   `(account=$USER, service="Claude Code-credentials")`.
 - A wrapper-created item (no `-A` any-app access) is read back via the keychain
@@ -733,7 +733,7 @@ projects, settings).
 
 ### 5.7 Per-account backup credentials
 
-cswap keeps a per-slot backup of each account's credential. Two backends:
+tycswap keeps a per-slot backup of each account's credential. Two backends:
 base64-encoded `.enc` files under `credentials_dir`, and the macOS Keychain under
 `SECURITY_SERVICE = "claude-swap"`.
 
@@ -869,7 +869,7 @@ Write-only preservation of live credential bytes a switch positively attributed
 to someone other than the outgoing slot. **Always 0600 base64 files on every
 platform — never the Keychain** (a flaky Keychain must not start blocking
 switches, #101/#106). Append-only; nothing consumes them automatically (recovery
-is a documented `/login` + `cswap add [--slot N]`).
+is a documented `/login` + `tycswap add [--slot N]`).
 
 Paths:
 - Manifest: `credentials_dir / ".unclaimed-manifest.json"`
@@ -917,7 +917,7 @@ None}`); `OSError` during glob is swallowed.
 
 ## 6. Claude Code cooperative locks (`claude_locks.py`)
 
-cswap holds Claude Code's **own** advisory locks while mutating its files, to
+tycswap holds Claude Code's **own** advisory locks while mutating its files, to
 close the one real race with a running Claude Code (its OAuth refresh reads
 credentials, refreshes over the network, and saves — all under `~/.claude.lock`).
 
@@ -938,8 +938,8 @@ checkAndRefreshOAuthTokenIfNeededImpl`, `utils/config.ts saveConfigWithLock`,
 ### 6.2 Constants
 
 - `STALENESS_S = 10.0` — a lock is stale when its mtime is older than this.
-- `TOUCH_INTERVAL_S = 3.0` — cswap touches the held lock's mtime this often
-  (Claude Code uses `stale/2 = 5s`; cswap touches faster for margin).
+- `TOUCH_INTERVAL_S = 3.0` — tycswap touches the held lock's mtime this often
+  (Claude Code uses `stale/2 = 5s`; tycswap touches faster for margin).
 - `DEFAULT_TIMEOUT_S = 9.0` — default max wait to acquire (comfortably outlasts a
   sub-second-to-few-second credential/config hold without stalling the CLI
   forever).
@@ -1034,9 +1034,9 @@ Nothing is mutated when it raises; the operation is safe to retry.
 
 ---
 
-## 7. cswap's own file lock (`locking.py`)
+## 7. tycswap's own file lock (`locking.py`)
 
-`FileLock` — a cross-process advisory lock serializing cswap invocations against
+`FileLock` — a cross-process advisory lock serializing tycswap invocations against
 **each other** (distinct from §6, which cooperates with Claude Code). Uses
 `fcntl.flock` on POSIX, `msvcrt.locking` on Windows.
 
@@ -1081,7 +1081,7 @@ be running")`; else returns `self`. `__exit__` calls `release()`.
 ### 7.2 Semantics
 
 - **Non-reentrant** across `FileLock` instances in one process (`flock`/`msvcrt`
-  are process- or fd-scoped; cswap's callers explicitly note "FileLock is
+  are process- or fd-scoped; tycswap's callers explicitly note "FileLock is
   non-reentrant" and never re-acquire while held — e.g. `persist_active` must not
   nest inside another `FileLock(self.lock_file)`).
 - Timeout returns `False` from `acquire`; only the context-manager form raises
@@ -1091,7 +1091,7 @@ be running")`; else returns `self`. `__exit__` calls `release()`.
 
 ### 7.3 Where FileLock is used (protects what)
 
-- `switcher.lock_file = backup_dir / ".lock"` — the primary cswap mutation lock,
+- `switcher.lock_file = backup_dir / ".lock"` — the primary tycswap mutation lock,
   wrapped around `swap_accounts`, add/remove, renumber, and the switch body
   (`with FileLock(self.lock_file): ...`). Default 10s timeout.
 - `session.py` bootstrap: `FileLock(switcher.lock_file,
@@ -1103,7 +1103,7 @@ be running")`; else returns `self`. `__exit__` calls `release()`.
 ### 7.4 Lock ordering across operations (from switcher.py)
 
 When a switch also needs Claude Code's cooperative locks, the acquisition order
-is **cswap FileLock first, then Claude Code credentials lock, then Claude Code
+is **tycswap FileLock first, then Claude Code credentials lock, then Claude Code
 config lock**:
 ```
 with FileLock(self.lock_file), claude_credentials_lock(), claude_config_lock():
@@ -1287,7 +1287,7 @@ it), then persistence re-takes all three under a fresh double-checked re-read.
 ### 9.4 Exact interop invariants the port must not break
 
 - Keychain service strings verbatim: active OAuth `"Claude Code-credentials"`,
-  active managed `"Claude Code"`, cswap backups `"claude-swap"`.
+  active managed `"Claude Code"`, tycswap backups `"claude-swap"`.
 - Keychain account name resolution: `$USER` → OS username → `"claude-code-user"`.
 - `customApiKeyResponses.approved` entry = last 20 chars of the key.
 - `.credentials.json` is written **raw** (the credential string verbatim), not

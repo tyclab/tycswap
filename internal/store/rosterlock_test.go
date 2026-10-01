@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/filelock"
 )
 
 // TestWithRosterLockedHoldsTheLockAcrossTheRead is the whole point of the
@@ -30,7 +30,7 @@ func TestWithRosterLockedHoldsTheLockAcrossTheRead(t *testing.T) {
 		}
 		if ok {
 			rival.Release()
-			t.Error("another cswap took the lock while the roster span was open")
+			t.Error("another tycswap took the lock while the roster span was open")
 		}
 		return nil
 	})
@@ -44,7 +44,7 @@ func TestWithRosterLockedHoldsTheLockAcrossTheRead(t *testing.T) {
 
 // TestWithRosterLockedReleasesOnEveryPath: success, an error from fn, and the
 // corrupt-roster refusal all end with the lock free. A refusal that kept it
-// would leave the store unusable to every other cswap until the process exited.
+// would leave the store unusable to every other tycswap until the process exited.
 func TestWithRosterLockedReleasesOnEveryPath(t *testing.T) {
 	boom := cerr.Config("boom")
 	for _, tc := range []struct {

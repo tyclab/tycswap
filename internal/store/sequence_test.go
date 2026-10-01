@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // newFixtureStore builds a Store rooted at a materialized Python-fixture $HOME
@@ -232,7 +232,7 @@ func TestSequenceForUpdateRefusesUnparseableFile(t *testing.T) {
 			if got := cerr.TypeName(err); got != "ConfigError" {
 				t.Fatalf("want ConfigError, got %q (%v)", got, err)
 			}
-			for _, want := range []string{s.SequenceFile, "not valid JSON", "intact", "Repair the file", "cswap add"} {
+			for _, want := range []string{s.SequenceFile, "not valid JSON", "intact", "Repair the file", "tycswap add"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("refusal message is missing %q: %s", want, err)
 				}
@@ -273,7 +273,7 @@ func TestSequenceForUpdateRefusesUnreadableFile(t *testing.T) {
 			if got := cerr.TypeName(err); got != "ConfigError" {
 				t.Fatalf("want ConfigError, got %q (%v)", got, err)
 			}
-			for _, want := range []string{s.SequenceFile, "unreadable", "intact", "Repair the file", "cswap add"} {
+			for _, want := range []string{s.SequenceFile, "unreadable", "intact", "Repair the file", "tycswap add"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("refusal message is missing %q: %s", want, err)
 				}
@@ -364,7 +364,7 @@ func assertRefusalWording(t *testing.T, s *Store, err error, want, absent string
 	for _, remedy := range []string{
 		"Every stored credential and config backup is intact",
 		"Repair the file",
-		"delete it to start a fresh roster and re-register each account with `cswap add`",
+		"delete it to start a fresh roster and re-register each account with `tycswap add`",
 	} {
 		if !strings.Contains(msg, remedy) {
 			t.Errorf("refusal lost the %q part: %s", remedy, msg)

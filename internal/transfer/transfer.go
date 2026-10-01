@@ -1,11 +1,11 @@
-// Package transfer implements the .cswap portable export/import format: a single
+// Package transfer implements the .tycswap portable export/import format: a single
 // JSON envelope carrying one or more accounts' OAuth/API-key credentials plus a
 // slimmed (or --full) copy of ~/.claude.json, used to move accounts between
 // machines. export reads from the local backup store and serializes to a file or
 // stdout; import validates every account (an all-or-nothing pass) before a
 // best-effort write pass that skips / overwrites / freshly-allocates each slot.
 //
-// Implements spec 07§1–4 (the .cswap format, export_accounts, import_accounts,
+// Implements spec 07§1–4 (the .tycswap format, export_accounts, import_accounts,
 // the CLI error surface) and honours the 10-audit corrections. Per DESIGN
 // Amendment A2 this package declares its own narrow Accounts interface (a
 // consumer-defined seam) and imports neither core nor store: *core.Switcher
@@ -25,7 +25,7 @@ import (
 	"strings"
 )
 
-// FormatVersion is the .cswap envelope version (FORMAT_VERSION in transfer.py).
+// FormatVersion is the .tycswap envelope version (FORMAT_VERSION in transfer.py).
 // Import rejects any other value, including a missing key.
 const FormatVersion = 1
 

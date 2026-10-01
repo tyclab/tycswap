@@ -10,12 +10,12 @@ import (
 	"sync"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/core"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/lifecycle"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/lifecycle"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // fakeClaudeScript stands in for Claude Code. It refuses anything but
@@ -114,7 +114,7 @@ func (f *loginFixture) run(t *testing.T, argv ...string) (int, string, string) {
 	t.Helper()
 	f.out.Reset()
 	var out, errb bytes.Buffer
-	code := run("cswap", argv, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
+	code := run("tycswap", argv, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 	return code, f.out.String() + out.String(), errb.String()
 }
 
@@ -320,7 +320,7 @@ func TestAddLoginAppliesAliasAndSlot(t *testing.T) {
 func TestAddLoginFailureStoresNothing(t *testing.T) {
 	for _, tc := range []struct{ mode, want string }{
 		{"fail", "Error: claude's login did not complete; nothing stored, the live login untouched"},
-		{"apikey", "Error: claude's login made an API key, which is a different auth axis: use cswap --add-token"},
+		{"apikey", "Error: claude's login made an API key, which is a different auth axis: use tycswap --add-token"},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			f := newLoginFixture(t)
@@ -358,7 +358,7 @@ func TestAddRefusesLoginOnlyArguments(t *testing.T) {
 		{[]string{"--add-account", "--", "--sso"}, "Error: arguments after -- go with --login: they are claude's login arguments"},
 	} {
 		var out, errb bytes.Buffer
-		code := run("cswap", tc.argv, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
+		code := run("tycswap", tc.argv, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 		if code != 1 || !strings.Contains(errb.String(), tc.want) {
 			t.Errorf("%v: exit %d stderr %q, want 1 and %q", tc.argv, code, errb.String(), tc.want)
 		}
@@ -369,7 +369,7 @@ func TestAddRefusesLoginOnlyArguments(t *testing.T) {
 func TestAddLoginKeepsAddsFlagRefusals(t *testing.T) {
 	cleanHome(t)
 	var out, errb bytes.Buffer
-	code := run("cswap", []string{"add", "--login", "--json"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
+	code := run("tycswap", []string{"add", "--login", "--json"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 	if code != 2 || !strings.Contains(errb.String(), "--json can only be used with") {
 		t.Errorf("exit %d stderr %q, want add's --json refusal", code, errb.String())
 	}

@@ -1,10 +1,10 @@
-// purge.go — Purge: remove all cswap data from the system.
+// purge.go — Purge: remove all tycswap data from the system.
 //
 // Implements spec 01§11 (purge): refuse while any session-mode instance is live,
 // print the warning header + the platform-specific credential line, confirm,
 // then delete per-account credential files (including the legacy account-None
-// alias), macOS Keychain items and session-profile Keychain entries, the backup
-// directory, and any stale distinct legacy directory. Every deletion is
+// alias), macOS Keychain items and session-profile Keychain entries, and the
+// backup directory, never an old store `tycswap migrate` copied from. Every deletion is
 // best-effort; the collected "Removed:" list is printed at the end.
 package lifecycle
 
@@ -14,25 +14,24 @@ import (
 	"strconv"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/sessprofile"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
-// securityService is SECURITY_SERVICE, the Keychain service for cswap backups
+// securityService is SECURITY_SERVICE, the Keychain service for tycswap backups
 // (spec 01§1.2). Purge deletes these directly on macOS.
-const securityService = "claude-swap"
+const securityService = keychain.BackupService
 
-// Purge removes all cswap data (spec 01§11). It refuses while any session-mode
+// Purge removes all tycswap data (spec 01§11). It refuses while any session-mode
 // Claude instance is live.
 func Purge(s *store.Store) error {
+	// Only tycswap's own store: an old store `tycswap migrate` copied from may
+	// belong to another installed tool, so purge never lists or removes it.
 	backupDir := s.BackupDir()
-	legacy := paths.GetLegacyBackupRoot()
-	legacyDistinct := legacy != backupDir
 
 	sessionsRoot := filepath.Join(backupDir, "sessions")
 	sessionDirs := listSessionDirs(sessionsRoot)
@@ -56,11 +55,8 @@ func Purge(s *store.Store) error {
 		return cerr.Session("Live session-mode Claude instance(s) found: %s. Exit them first, then retry --purge.", strings.Join(parts, "; "))
 	}
 
-	emitWarning("This will remove ALL claude-swap data from your system:")
+	emitWarning("This will remove ALL tycswap data from your system:")
 	emitLine("  - Backup directory: " + backupDir)
-	if legacyDistinct && pathExists(legacy) {
-		emitLine("  - Legacy backup directory: " + legacy)
-	}
 	if s.Platform == platform.MacOS {
 		emitLine("  - All stored account credentials (macOS Keychain and/or files)")
 	} else {
@@ -132,11 +128,6 @@ func Purge(s *store.Store) error {
 			removed = append(removed, "Directory: "+backupDir)
 		}
 	}
-	if legacyDistinct && pathExists(legacy) {
-		if err := os.RemoveAll(legacy); err == nil {
-			removed = append(removed, "Legacy directory: "+legacy)
-		}
-	}
 
 	if len(removed) > 0 {
 		emitLine("\n" + printer.Accent("Removed:"))
@@ -144,7 +135,7 @@ func Purge(s *store.Store) error {
 			emitLine("  " + printer.Dimmed("-") + " " + item)
 		}
 	} else {
-		emitLine("\n" + printer.Dimmed("No claude-swap data found to remove."))
+		emitLine("\n" + printer.Dimmed("No tycswap data found to remove."))
 	}
 	emitLine("\n" + printer.Accent("Purge complete."))
 	return nil

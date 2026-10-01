@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/paths"
 )
 
 func TestBuildFixtureHomeMaterializes(t *testing.T) {
@@ -34,12 +34,12 @@ func TestBuildFixtureHomeMaterializes(t *testing.T) {
 }
 
 func TestEnvSaveRestore(t *testing.T) {
-	Setenv(t, "CSWAP_TEST_VAR", "value1")
-	if os.Getenv("CSWAP_TEST_VAR") != "value1" {
+	Setenv(t, "TYCSWAP_TEST_VAR", "value1")
+	if os.Getenv("TYCSWAP_TEST_VAR") != "value1" {
 		t.Fatal("Setenv did not set")
 	}
-	Unsetenv(t, "CSWAP_TEST_VAR")
-	if _, ok := os.LookupEnv("CSWAP_TEST_VAR"); ok {
+	Unsetenv(t, "TYCSWAP_TEST_VAR")
+	if _, ok := os.LookupEnv("TYCSWAP_TEST_VAR"); ok {
 		t.Error("Unsetenv did not clear the var")
 	}
 }

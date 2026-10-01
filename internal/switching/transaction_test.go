@@ -65,7 +65,7 @@ func TestSwitchTransactionRollback(t *testing.T) {
 	// Reverse order: the log records each rolled-back step; the ledger was
 	// [credentials, config, sequence], so rollback visits sequence → config →
 	// credentials.
-	logBytes, err := os.ReadFile(filepath.Join(s.BackupDir(), "claude-swap.log"))
+	logBytes, err := os.ReadFile(filepath.Join(s.BackupDir(), "tycswap.log"))
 	if err != nil {
 		t.Fatalf("read log: %v", err)
 	}

@@ -16,7 +16,7 @@
 // Implements DESIGN §2.15/§2.17/§2.18/§2.20.
 package core
 
-import "git.dpemmons.com/dpemmons/cswap/internal/switching"
+import "github.com/tyclab/tycswap/internal/switching"
 
 // Switch delegates to switching.Switch (spec 02§4).
 func (sw *Switcher) Switch(strategy *string, jsonOut bool, models []string, modelSrc *string) (map[string]any, error) {

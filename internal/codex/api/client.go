@@ -28,7 +28,7 @@ import (
 	"strconv"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/logging"
 )
 
 // Timeouts per request class. The refresh gets the longer budget because a
@@ -41,7 +41,7 @@ const (
 
 // Body-size ceilings. Error bodies are only mined for an error code; success
 // bodies are small JSON documents. Both are bounded so a misbehaving proxy
-// cannot make cswap buffer without limit.
+// cannot make tycswap buffer without limit.
 const (
 	maxErrorBody   = 1 << 16
 	maxSuccessBody = 1 << 20

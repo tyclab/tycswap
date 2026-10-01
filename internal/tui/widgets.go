@@ -14,7 +14,7 @@ import (
 	"math"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/reporting"
 )
 
 // Bar glyphs (09§5.1).

@@ -125,7 +125,7 @@ Protocol (flag file `<target.parent>/.<target.name>.migrating`):
 }
 ```
 
-- `activeAccountNumber`: integer slot number, or `null`. This is cswap's
+- `activeAccountNumber`: integer slot number, or `null`. This is tycswap's
   *recorded* active slot; the *live* active slot is derived from
   `~/.claude.json` (§5.4). Written as an **int** (`int(account_num)`).
 - `lastUpdated`: UTC timestamp, format `%Y-%m-%dT%H:%M:%SZ` (`get_timestamp()`).
@@ -199,7 +199,7 @@ returns `None`.
 
 The switcher delegates all credential I/O to `CredentialStore` via thin proxy
 methods. Two axes: the **active** credential (Claude Code's own store) and the
-**per-account backup** credential (cswap's store). This mandate is the backup
+**per-account backup** credential (tycswap's store). This mandate is the backup
 store plus enough of the active store to serve add/switch.
 
 ### 3.1 Backup backend routing
@@ -338,7 +338,7 @@ Used by add/refresh to snapshot the live account:
 - **Credentials file** (`get_credentials_path`):
   `<config_home>/.credentials.json`.
 
-`~/.claude.json` `oauthAccount` object fields cswap reads: `emailAddress`,
+`~/.claude.json` `oauthAccount` object fields tycswap reads: `emailAddress`,
 `accountUuid`, `organizationUuid`, `organizationName` (and, elsewhere,
 `organizationRole`, `displayName`).
 
@@ -370,7 +370,7 @@ Condition: `slot is None and _account_exists(email, org_uuid)`.
    `CredentialReadError("Failed to read credentials for current account")`; `""`
    → `CredentialReadError("No credentials found for current account")`.
 4. `_reject_live_api_key_capture(current_creds)`: if `looks_like_api_key` →
-   `ValidationError("Active login is an API-key account. Add it with 'cswap
+   `ValidationError("Active login is an API-key account. Add it with 'tycswap
    --add-token sk-ant-api...' instead of --add-account.")`.
 5. Read live config text (`config_path.read_text`). `FileNotFoundError` →
    `ConfigError("Claude config file not found")`; `PermissionError` →
@@ -454,7 +454,7 @@ sequence file)
 
 Interactive: if no live identity → `No active Claude account found. Please log in
 first.`; else prompt `No managed accounts found. Add current account ({email}) to
-managed list? [Y/n] `. Response `"n"` → `Setup cancelled. You can run 'cswap
+managed list? [Y/n] `. Response `"n"` → `Setup cancelled. You can run 'tycswap
 --add-account' later.`; otherwise call `add_account()`.
 
 ### 5.4 Live-identity helper
@@ -553,7 +553,7 @@ Session profiles live at `sessions/{account_num}-{slugify_email(email)}/`.
 alphanumeric or `._-` with `_`.
 
 Every op that removes or relocates a slot goes through `_delete_account_files` /
-`_ensure_no_live_session`, which **refuse while a session-mode `cswap run`
+`_ensure_no_live_session`, which **refuse while a session-mode `tycswap run`
 process is live** against that slot:
 
 - `_ensure_no_live_session(num, email, action)` → `SessionError("Account-{num}
@@ -568,7 +568,7 @@ process is live** against that slot:
 - `_post_backup_write(num, email)` (run after every successful backup write via
   the switcher wrapper): if a live session exists, `mark_session_stale(...)`; else
   `_invalidate_session_credentials(...)` (drops the profile's
-  `.credentials.json`, `STALE_MARKER` = `.cswap-stale-credentials`, and macOS
+  `.credentials.json`, `STALE_MARKER` = `.tycswap-stale-credentials`, and macOS
   keychain entry, keeping history).
 
 Add-token/API-key accounts are rejected by session mode entirely
@@ -603,7 +603,7 @@ Precedence: **number → alias → email**.
   matches) → return that slot.
 - Else match records by exact `email`. 0 matches → `None`; 1 → that slot; ≥2 →
   `ConfigError("Email '{identifier}' is ambiguous — matches accounts: {details}.
-  Use account number instead (e.g., cswap --switch-to 1).")` where `details` is
+  Use account number instead (e.g., tycswap --switch-to 1).")` where `details` is
   `{num} [{organizationName or 'personal'}]` comma-joined.
 
 `resolve_account(identifier)` (public, for map/run/disable): migrates org fields,
@@ -641,7 +641,7 @@ hard `ConfigError` (no interactive prompt).
   won't be an automatic switch target.`
 - If disabling and `switchable_account_numbers()` is now empty: `warning("  No
   accounts remain in rotation — auto-switch and bare switch have nothing to pick.
-  Re-enable one with cswap enable <num|email>.")`.
+  Re-enable one with tycswap enable <num|email>.")`.
 - If enabling: print `  It is back in the rotation.`
 
 Disabled semantics (constraining rotation/strategies — read-only here):
@@ -786,7 +786,7 @@ creds+config up front (missing → `""`). Then:
   copies (0600, `O_EXCL`, never overwriting). A leftover staging file →
   `ConfigError("Found leftover staging from an interrupted swap: {path}. It holds
   that slot's pre-swap credentials and may be the only surviving copy. Verify both
-  accounts still work (`cswap list`), then delete the file and retry.")`. Staging
+  accounts still work (`tycswap list`), then delete the file and retry.")`. Staging
   `OSError` → `ConfigError("Could not stage swap material, nothing was changed:
   {e}")`.
 - `_swap_session_dirs`: exchange the two profile dirs (via a `.swapping` staging
@@ -821,7 +821,7 @@ poll.
 
 ## 11. `purge()`
 
-Removes all cswap data. Refuses while any session-mode instance is live.
+Removes all tycswap data. Refuses while any session-mode instance is live.
 
 - Enumerate `sessions/*` dirs; if any has live PIDs → `SessionError("Live
   session-mode Claude instance(s) found: {name (PID …); …}. Exit them first, then
@@ -863,14 +863,14 @@ Impossible-by-construction offline signals surfaced in `list`/`list --json`
   - Identical credential **fingerprint** (`oauth.credential_fingerprint`) across
     two slots → `"Account-{other} and Account-{snum} hold the same credential
     ({email}) — one slot's backup was overwritten. Log in with the missing account
-    and re-add it: cswap add --slot N"`.
+    and re-add it: tycswap add --slot N"`.
   - Same non-empty `uuid` + org across two slots → `"Account-{other} and
     Account-{snum} both authenticate as {email} — remove or re-login one of them."`
     (empty uuids — add-token placeholders — never match each other).
 - `_lockstep_usage_warnings`: heuristic for two generations of the same account —
   identical 5h & 7d pct + reset timestamps → `"Account-{other} and Account-{snum}
   report identical usage and reset times — they may be the same account (issue
-  #117). If it persists, log in with the missing account and re-add it: cswap add
+  #117). If it persists, log in with the missing account and re-add it: tycswap add
   --slot N"`. Only compares rows where both windows carry non-null `resets_at` and
   `pct`.
 
@@ -883,7 +883,7 @@ falls into refresh-in-place) are the write-side counterparts.
 
 - **Sequence stays sorted**: `add`, `add-token`, `move`, `swap` all `.append`
   then `.sort()` `sequence`. Renumber-then-sort in move/swap means rotation and
-  `cswap list` order follow the **new** numbers, not old visual positions
+  `tycswap list` order follow the **new** numbers, not old visual positions
   (`test_move_keeps_sequence_sorted`, `test_swap_keeps_sequence_sorted`).
 - **Sparse slots are legal**: `remove` leaves gaps; `add` numbers from `max+1`;
   `move` accepts any `1..cap` where `cap = max(99, existing_max_slot)`. A table

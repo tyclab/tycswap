@@ -1,4 +1,4 @@
-// Package testutil is shared test scaffolding for the cswap port.
+// Package testutil is shared test scaffolding for the tycswap port.
 //
 // Supports DESIGN §5 WP0: a fixture-$HOME builder that materializes
 // testdata/python-fixtures into a temp dir with the correct dotfile names,
@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/clock"
 )
 
 // RepoRoot walks up from this source file to the module root (the directory
@@ -48,7 +48,7 @@ type FixtureHome struct {
 	Home string
 	// ClaudeHome is <Home>/.claude.
 	ClaudeHome string
-	// BackupRoot is <Home>/.local/share/claude-swap (the XDG default on Linux),
+	// BackupRoot is <Home>/.local/share/tycswap (the XDG default on Linux),
 	// where claude-swap-data was materialized.
 	BackupRoot string
 	// GlobalConfig is <Home>/.claude.json.
@@ -65,7 +65,7 @@ type FixtureHome struct {
 // Mapping:
 //   - claude-home/dot-claude.json       → <Home>/.claude.json
 //   - claude-home/dot-credentials.json  → <Home>/.claude/.credentials.json
-//   - claude-swap-data/*                → <Home>/.local/share/claude-swap/*
+//   - claude-swap-data/*                → <Home>/.local/share/tycswap/*
 func BuildFixtureHome(t *testing.T) FixtureHome {
 	t.Helper()
 	fixtures := FixturesDir(t)
@@ -81,7 +81,7 @@ func BuildFixtureHome(t *testing.T) FixtureHome {
 	copyFile(t, filepath.Join(fixtures, "claude-home", "dot-credentials.json"),
 		filepath.Join(claudeHome, ".credentials.json"))
 
-	backupRoot := filepath.Join(home, ".local", "share", "claude-swap")
+	backupRoot := filepath.Join(home, ".local", "share", "tycswap")
 	copyDir(t, filepath.Join(fixtures, "claude-swap-data"), backupRoot)
 
 	Setenv(t, "HOME", home)

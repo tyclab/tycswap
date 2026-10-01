@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // fakeRunner returns a CommandRunner that records the invocation and returns
@@ -33,7 +33,7 @@ func fakeRunner(gotName *string, gotArgs *[]string, exitCode int, err error) Com
 func goInstallUpgrader(t *testing.T, run CommandRunner) (u Upgrader, exePath string, stdout, stderr *bytes.Buffer) {
 	t.Helper()
 	home := t.TempDir()
-	exePath = filepath.Join(home, "go", "bin", "cswap")
+	exePath = filepath.Join(home, "go", "bin", "tycswap")
 	stdout, stderr = &bytes.Buffer{}, &bytes.Buffer{}
 	u = Upgrader{
 		Getenv:  func(string) string { return "" }, // no GOBIN/GOPATH -> falls to $HOME/go/bin
@@ -58,7 +58,7 @@ func TestSelfUpgrade_UnknownShapePrintsGuidance(t *testing.T) {
 		Stdout:  stdout,
 		Stderr:  stderr,
 	}
-	code := u.SelfUpgrade("/usr/bin/cswap", platform.Linux)
+	code := u.SelfUpgrade("/usr/bin/tycswap", platform.Linux)
 
 	if code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
@@ -95,7 +95,7 @@ func TestSelfUpgrade_WindowsPrintsOnlyNeverRuns(t *testing.T) {
 		t.Errorf("stderr should be empty on the Windows print-only path, got %q", stderr.String())
 	}
 	got := stdout.String()
-	if !strings.Contains(got, "To upgrade claude-swap on Windows, run:") {
+	if !strings.Contains(got, "To upgrade tycswap on Windows, run:") {
 		t.Errorf("stdout = %q, missing Windows guidance header", got)
 	}
 	wantCmd := "go install " + ModulePath + "@latest"
@@ -208,7 +208,7 @@ func TestRunCommand_RealExec(t *testing.T) {
 }
 
 func TestRunCommand_NotFound(t *testing.T) {
-	_, err := RunCommand(context.Background(), "cswap-definitely-not-a-real-binary-xyz", nil, io.Discard, io.Discard)
+	_, err := RunCommand(context.Background(), "tycswap-definitely-not-a-real-binary-xyz", nil, io.Discard, io.Discard)
 	if err == nil {
 		t.Fatal("expected an error for a missing binary")
 	}

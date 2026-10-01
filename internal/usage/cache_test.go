@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // TestCacheRoundTrip covers write/read within TTL and the null-vs-miss

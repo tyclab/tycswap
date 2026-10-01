@@ -20,7 +20,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/atomicfile"
 )
 
 // stashDoc is the manifest document. The struct field order fixes the JSON key

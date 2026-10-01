@@ -28,7 +28,7 @@
 // Emphasis is per CELL (DESIGN A18), and color and weight say different
 // things. A COUNTED window carries its own SEVERITY color, binding or not —
 // severity is what the figure MEANS, and it means the same here as in the
-// account card's bars, the mini account line and cswap list. An EXHAUSTED
+// account card's bars, the mini account line and tycswap list. An EXHAUSTED
 // window carries it too, counted or not. BOLD, alone, marks the row's BINDING
 // window: the figure the ranking and the engine act on. Only an UNCOUNTED
 // window still short of its limit drives nothing at all, and only that one is
@@ -395,7 +395,7 @@ func (s layoutScore) plus(o layoutScore) layoutScore {
 // adds and the reader pays nothing for them.
 //
 // IDENTITY IS NOT AN AXIS. A shared-column table buys its alignment out of the
-// identity cell, and the slot number `cswap use N` takes names the account
+// identity cell, and the slot number `tycswap use N` takes names the account
 // either way; were identity compared here, the table would be refused at exactly
 // the widths where it is doing what it is for. It is measured (identChars) and
 // reported, and a surface may therefore show a SHORTER email at a width where it
@@ -943,7 +943,7 @@ func (l tableLayout) render(opts tableOpts) (windowTable, layoutScore) {
 // header a function of ROW order: a 7d-only account listed above a 5h+7d one
 // yields "7d 5h". On the panel row order is the live ranking, so the columns
 // would reorder themselves as accounts re-rank, and the header would disagree
-// with the account card, the mini account line and cswap list — all of which
+// with the account card, the mini account line and tycswap list — all of which
 // read 5h before 7d, always.
 //
 // A column is keyed by (label, OCCURRENCE within the row), not by the label
@@ -1017,7 +1017,7 @@ func tableColumnRank(label string) int {
 // header would re-read itself with no resize and no change in what any account
 // reports. The two account-wide windows are placed ahead of every scoped one by
 // name, because 5h reads before 7d on the account card, the mini account line
-// and cswap list alike.
+// and tycswap list alike.
 func canonicalTableColumns(cols []*windowColumn, at [][]int) ([]*windowColumn, [][]int) {
 	order := make([]int, len(cols))
 	for i := range order {
@@ -1568,7 +1568,7 @@ const spanTokenFloor = 12
 // a prefix of it identifies it as well as anything short of the whole does. So
 // it MAY be cut inside itself, down to spanTokenFloor — which is what keeps the
 // floor a width this package chooses. The alternative, phrasing the raw state
-// behind a word of our own, was tried and rejected: it changes what cswap list,
+// behind a word of our own, was tried and rejected: it changes what tycswap list,
 // the account card and the watch and switch screens all print, to answer a
 // question only the narrow table asks.
 func spanFloor(msg string) int {
@@ -2009,7 +2009,7 @@ func finishTableLine(t pricedText, width int) (richText, layoutScore) {
 //   - COLOR is the window's own SEVERITY, on every counted figure, binding or
 //     not. Severity is what a percentage MEANS — a window at 99% is nearly
 //     exhausted wherever it is rendered — and every other surface already says
-//     it that way (accountCardText's bars, miniAccountText, cswap list). A
+//     it that way (accountCardText's bars, miniAccountText, tycswap list). A
 //     counted figure in the plain foreground would read as unremarkable at the
 //     very moment it matters most.
 //   - BOLD, and bold alone, marks the row's BINDING window: the figure the
