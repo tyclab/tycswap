@@ -48,7 +48,6 @@ func (s *Server) routes() http.Handler {
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/state", s.handleState)
 	api.HandleFunc("GET /api/events", s.handleEvents)
-	api.HandleFunc("POST /api/launch", s.handleLaunch)
 
 	// accounts
 	api.HandleFunc("POST /api/switch", s.handleSwitchStrategy)
@@ -165,25 +164,8 @@ func (s *Server) hasCSRF(r *http.Request) bool {
 	return r.Method == http.MethodGet && r.URL.Path == "/api/events" && tokenEqual(r.URL.Query().Get("csrf"), s.token)
 }
 
-// hasBearer reports whether the request carries the remote token:
-// "Authorization: Bearer <token>", constant-time compared. Always false
-// while no RemoteToken is configured, so the header is then simply ignored
-// and the cookie + CSRF rules decide alone, as before.
-func (s *Server) hasBearer(r *http.Request) bool {
-	if s.d.RemoteToken == "" {
-		return false
-	}
-	const scheme = "Bearer "
-	auth := r.Header.Get("Authorization")
-	if len(auth) <= len(scheme) || !strings.EqualFold(auth[:len(scheme)], scheme) {
-		return false
-	}
-	return tokenEqual(strings.TrimSpace(auth[len(scheme):]), s.d.RemoteToken)
-}
-
-// requireCookie is the static-asset gate: cookie only. The remote token is
-// not accepted here on purpose: a non-browser client never fetches the
-// page's assets, so admitting it would widen the surface for nothing.
+// requireCookie is the static-asset gate: cookie only (<script> and <link>
+// cannot send a header).
 func (s *Server) requireCookie(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.hasCookie(r) {
@@ -201,21 +183,16 @@ func tokenEqual(a, b string) bool {
 // requireAuth enforces BOTH factors on every /api route — the session cookie
 // and the page's CSRF token (reads included, so a cookie leaked to another
 // loopback port cannot even read the state) — and, for non-safe methods, the
-// Origin / Sec-Fetch-Site same-origin rules on top. The remote token is both
-// factors at once; a non-browser client sends neither Origin nor
-// Sec-Fetch-Site, so those rules do not fire for it, and nothing here ever
-// sets a cookie for a bearer.
+// Origin / Sec-Fetch-Site same-origin rules on top.
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.hasBearer(r) {
-			if !s.hasCookie(r) {
-				writeError(w, http.StatusUnauthorized, "unauthorized: missing or invalid session cookie")
-				return
-			}
-			if !s.hasCSRF(r) {
-				writeError(w, http.StatusForbidden, "forbidden: missing or invalid CSRF token")
-				return
-			}
+		if !s.hasCookie(r) {
+			writeError(w, http.StatusUnauthorized, "unauthorized: missing or invalid session cookie")
+			return
+		}
+		if !s.hasCSRF(r) {
+			writeError(w, http.StatusForbidden, "forbidden: missing or invalid CSRF token")
+			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			if o := r.Header.Get("Origin"); o != "" && !strings.EqualFold(o, "http://"+r.Host) {
@@ -270,26 +247,6 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if err := s.index.Execute(w, map[string]string{"CSRF": s.token, "Name": b.Name, "DisplayName": b.DisplayName, "Accent": b.AccentColor}); err != nil {
 		s.d.Logger("web: index: " + err.Error())
 	}
-}
-
-// handleLaunch mints — or hands out the still-unused — one-time dashboard
-// URL (LaunchURL), for a client that cannot open the page with its own
-// credentials: a remote tray's "Open dashboard". The URL redeems
-// once, like the one printed at start. Bearer only: a browser session
-// already has its cookie and gains nothing here but a way to transplant that
-// session into another profile or machine, so the cookie + CSRF pair that
-// opens every other route is refused on this one.
-func (s *Server) handleLaunch(w http.ResponseWriter, r *http.Request) {
-	if !s.hasBearer(r) {
-		writeError(w, http.StatusForbidden, "forbidden: remote token only")
-		return
-	}
-	u, err := s.LaunchURL()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"url": u})
 }
 
 func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {

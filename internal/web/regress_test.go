@@ -101,54 +101,37 @@ func TestCookieNamePerPort(t *testing.T) {
 	}
 }
 
-// Concurrent launch requests agree on one token, and a redeemed token is
-// never handed out again. Run with -race.
-func TestLaunchURLConcurrent(t *testing.T) {
-	h := newHarness(t, withRemoteToken(remoteToken), withRand(&countingReader{}))
-	if !h.s.consumeLaunch(fixedLaunch) {
-		t.Fatal("first redeem refused")
-	}
+// Concurrent redemptions of the launch token agree on exactly one winner, and
+// the token is dead for everyone afterwards. Run with -race.
+func TestConsumeLaunchConcurrent(t *testing.T) {
+	h := newHarness(t)
 	const n = 16
-	urls := make([]string, n)
 	var wg sync.WaitGroup
+	var mu sync.Mutex
+	won := 0
 	for i := 0; i < n; i++ {
 		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			u, err := h.s.LaunchURL()
-			if err != nil {
-				t.Error(err)
-			}
-			urls[i] = u
-			_ = h.s.URL()
-		}(i)
-	}
-	wg.Wait()
-	for _, u := range urls {
-		if u != urls[0] {
-			t.Fatalf("concurrent LaunchURL calls disagree: %q vs %q", u, urls[0])
-		}
-		if strings.Contains(u, fixedLaunch) {
-			t.Fatalf("a redeemed token was handed out again: %q", u)
-		}
-	}
-	tok := urls[0][strings.Index(urls[0], "token=")+len("token="):]
-	if !h.s.consumeLaunch(tok) || h.s.consumeLaunch(tok) {
-		t.Fatal("fresh token must redeem exactly once")
-	}
-	// Concurrent /api/launch calls race against a redeem.
-	var wg2 sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg2.Add(1)
 		go func() {
-			defer wg2.Done()
-			resp := h.do(bearer(h.newReq(http.MethodPost, "/api/launch", nil), remoteToken))
-			if resp.StatusCode != http.StatusOK {
-				t.Errorf("launch status %d", resp.StatusCode)
+			defer wg.Done()
+			ok := h.s.consumeLaunch(fixedLaunch)
+			_ = h.s.URL()
+			if ok {
+				mu.Lock()
+				won++
+				mu.Unlock()
 			}
 		}()
 	}
-	wg2.Wait()
+	wg.Wait()
+	if won != 1 {
+		t.Fatalf("%d of %d concurrent redemptions succeeded, want exactly 1", won, n)
+	}
+	if h.s.consumeLaunch(fixedLaunch) {
+		t.Fatal("the token redeemed again after the race")
+	}
+	if resp := h.do(h.newReq(http.MethodGet, "/?token="+fixedLaunch, nil)); resp.StatusCode != http.StatusForbidden || len(resp.Cookies()) != 0 {
+		t.Fatalf("redeemed token over HTTP: %d with cookies %v, want 403 and none", resp.StatusCode, resp.Cookies())
+	}
 }
 
 // A subscriber that asks for token status gets it on every state frame; a
@@ -352,17 +335,4 @@ func TestStaticStreamStopsOnDeadSession(t *testing.T) {
 	if strings.Contains(js, "prev[String(a.number)] = a.tokenStatus") {
 		t.Error("app.js still copies stale token status forward")
 	}
-}
-
-// countingReader yields 0, 1, 2, … (mod 256) forever: the same first 48
-// bytes as fixedRand (so fixedLaunch still names the first launch token), and
-// enough low-entropy material for any number of re-minted tokens.
-type countingReader struct{ n byte }
-
-func (c *countingReader) Read(p []byte) (int, error) {
-	for i := range p {
-		p[i] = c.n
-		c.n++
-	}
-	return len(p), nil
 }

@@ -3580,8 +3580,7 @@ opens can make the browser do so. The design keeps both from driving it.
    different:
    - the *launch token*, only in the printed URL, redeemed once by
      `GET /?token=`; the check and the redemption are one critical section,
-     and `LaunchURL` mints a fresh one only after the current one was used,
-     under the same lock, so concurrent callers share it;
+     so concurrent redeem attempts agree on exactly one winner;
    - the *session cookie* value, set by that redemption: HttpOnly,
      SameSite=Lax (Strict would be withheld on the redirect from the file://
      launch page), Path=/, named `<brand.SessionCookie>_<port>` because
@@ -3615,12 +3614,6 @@ opens can make the browser do so. The design keeps both from driving it.
    On Windows, where another user cannot read argv, the URL goes to the
    default browser directly (ShellExecuteW, `rundll32`, `cmd start`).
    `internal/browser` refuses URLs with shell-significant characters.
-9. **Bearer seam.** `Deps.RemoteToken`, when set, is accepted as
-   `Authorization: Bearer` in place of cookie plus CSRF on `/api` (stream
-   included), never for the page or assets, and never sets a cookie;
-   `POST /api/launch` is bearer-only and returns a fresh one-time URL. It is
-   for a later non-browser client (a tray across a VM boundary); `tycswap
-   web` sets no token.
 
 **Row identity.** Slot numbers are per provider (A22), so every state row
 carries `provider` and `key` (`AccountSnapshot.Key`), and every account route
@@ -3659,4 +3652,7 @@ before use.
 façade and a `codex` state section; the Codex auto loop moving out of
 `autoCommand` into a host the dashboard shares; `add --login` and `codex
 login` as a cancellable job streamed over SSE; `map`/`unmap` in the
-dashboard; a `--remote` mode and the tray that would use the bearer seam.
+dashboard; a remote mode for a tray across a VM boundary, which re-adds a
+bearer token accepted in place of the cookie and CSRF pair and a route that
+mints a fresh one-time URL for such a client (nothing in `tycswap web`
+calls either today, so neither is built).

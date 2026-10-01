@@ -2337,13 +2337,6 @@ a key of another provider answers 404, because slot numbers are per provider.
 | `POST /api/auto/stop`, `/api/auto/wake` | | stop it (waits for its loop to end), poll now |
 | `POST /api/auto/threshold` | `{"threshold": 0-100}` | retarget the running engine |
 | `POST /api/auto/model` | `{"model": "all"\|"<names>"\|""}` | retarget the running engine's model windows |
-| `POST /api/launch` | | a fresh one-time URL; bearer token only (below) |
-
-The server also accepts a bearer token (`Authorization: Bearer <token>`) in
-place of the cookie and CSRF pair on `/api`, for a non-browser client such
-as a tray on the other side of a VM boundary. `tycswap web` configures none,
-so the header is ignored; the Host and Origin rules apply to a bearer client
-too, and no cookie is ever set for one.
 
 ### Files
 
@@ -2387,8 +2380,9 @@ Press Ctrl-C to stop.
 **Not yet in the dashboard** (follow-ups): Codex accounts (rows, actions and
 auto-switching; account routes already take provider keys), the Codex
 auto loop in the hosted engine, `add --login` and `codex login` as a
-cancellable job, `map`/`unmap`, and a remote mode for a tray (the bearer
-token and `POST /api/launch` exist; no flag enables them yet).
+cancellable job, `map`/`unmap`, and a remote mode for a tray (a bearer
+token in place of the cookie and CSRF pair, and a route that hands such a
+client a fresh one-time URL).
 
 ---
 

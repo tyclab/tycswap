@@ -4,9 +4,7 @@
 package web
 
 import (
-	"crypto/rand"
 	"encoding/json"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -18,7 +16,6 @@ var allRoutes = []struct{ method, path string }{
 	{"GET", "/api/state"},
 	{"GET", "/api/state?tokenStatus=1"},
 	{"GET", "/api/events"},
-	{"POST", "/api/launch"},
 	{"POST", "/api/switch"},
 	{"POST", "/api/switch/claude:1"},
 	{"POST", "/api/switch/claude:1?force=1"},
@@ -437,43 +434,5 @@ func TestUnknownAPIRoute404(t *testing.T) {
 	resp = h.do(h.newReq(http.MethodGet, "/api/nope", nil))
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated unknown api route: %d, want 401 (auth precedes routing)", resp.StatusCode)
-	}
-}
-
-// TestLaunchURLReusesUnusedTokenThenMints pins the desktop shell's contract:
-// the URL printed at start stays valid until it is opened; after that every
-// call hands out a fresh single-use token and the old one is dead.
-func TestLaunchURLReusesUnusedTokenThenMints(t *testing.T) {
-	// the fixed 48 bytes seed the three start tokens; the re-mint needs more
-	h := newHarness(t, withRand(io.MultiReader(fixedRand(), rand.Reader)))
-	tokenOf := func(u string) string { return u[strings.LastIndex(u, "=")+1:] }
-	first, err := h.s.LaunchURL()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first != h.s.URL() {
-		t.Fatalf("LaunchURL = %q, want the still-unused start URL %q", first, h.s.URL())
-	}
-	if again, _ := h.s.LaunchURL(); again != first {
-		t.Fatalf("second LaunchURL before use = %q, want the same %q", again, first)
-	}
-	if !h.s.consumeLaunch(tokenOf(first)) {
-		t.Fatal("the start token should redeem once")
-	}
-	second, err := h.s.LaunchURL()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if second == first {
-		t.Fatal("a redeemed token must not be handed out again")
-	}
-	if h.s.consumeLaunch(tokenOf(first)) {
-		t.Error("old token must stay dead after the re-mint")
-	}
-	if !h.s.consumeLaunch(tokenOf(second)) {
-		t.Error("new token should redeem once")
-	}
-	if h.s.consumeLaunch(tokenOf(second)) {
-		t.Error("new token must be single-use too")
 	}
 }

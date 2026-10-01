@@ -16,10 +16,7 @@
 // Sec-Fetch-Site header that is absent or same-origin. The server binds
 // loopback only and answers 421 to any Host header other than
 // 127.0.0.1:<port> / localhost:<port>. Credential material is never
-// serialised. With Deps.RemoteToken set, a client holding that token may
-// present it as "Authorization: Bearer <token>" in place of the cookie and
-// CSRF pair (a non-browser client such as a tray across a VM boundary);
-// nothing else changes for it, and no cookie is ever set for it.
+// serialised.
 package web
 
 import (
@@ -258,16 +255,6 @@ type Deps struct {
 	// AutoEvents, when non-nil, is fanned out as SSE `auto` events; each one
 	// also triggers a state broadcast. A closed channel ends the auto stream.
 	AutoEvents <-chan AutoEventView
-
-	// RemoteToken, when non-empty, is a bearer token that counts as BOTH
-	// factors — cookie and CSRF — on every /api route, the event stream
-	// included, for a client that is not a browser: a tray driving this
-	// dashboard from the other side of a VM boundary through a forwarded
-	// loopback port. It is never accepted for the page or the static assets.
-	// The Host check stays, and the Origin / Sec-Fetch-Site rules still apply
-	// when a request carries those headers. Empty means bearer auth is off and
-	// an Authorization header is ignored.
-	RemoteToken string
 }
 
 // Server is one dashboard instance. Construct with New, bind with Start, run
@@ -278,9 +265,9 @@ type Server struct {
 	cookie string // session cookie value: distinct from token, so a cookie leaked
 	//                 to another 127.0.0.1 port (cookies are not port-scoped) is useless alone
 	cookieBase string // brand.SessionCookie, validated; the port is appended once bound
-	// launchMu guards launch and launchUsed together: one lock, so a token is
-	// never handed out after it was redeemed and two concurrent LaunchURL
-	// calls agree on one fresh token instead of invalidating each other.
+	// launchMu guards launch and launchUsed together: the check and the
+	// redemption are one critical section, so concurrent redeem attempts
+	// agree on exactly one winner.
 	launchMu   sync.Mutex
 	launch     string // one-time bootstrap token carried in the printed URL
 	launchUsed bool
@@ -297,12 +284,6 @@ type Server struct {
 	ln   net.Listener
 	port int
 	done chan struct{} // closed when Serve winds down; ends SSE streams
-
-	// obsMu guards in-process observers (a desktop shell hosting the server):
-	// every published state document and every engine event.
-	obsMu    sync.Mutex
-	stateObs []func(State)
-	autoObs  []func(AutoEventView)
 }
 
 const (
@@ -395,30 +376,6 @@ func (s *Server) consumeLaunch(t string) bool {
 	return true
 }
 
-// LaunchURL returns a URL carrying a one-time bootstrap token: the current
-// one while it is still unused (so the URL printed at start stays valid until
-// somebody opens it), a freshly minted one once it has been redeemed. A
-// remote client's "Open dashboard" reaches it through POST /api/launch. The
-// check and the mint happen under one lock, so concurrent calls share one
-// fresh token and none returns a token redeemed in between.
-func (s *Server) LaunchURL() (string, error) {
-	port := s.Port()
-	if port == 0 {
-		return "", nil
-	}
-	s.launchMu.Lock()
-	defer s.launchMu.Unlock()
-	if s.launchUsed {
-		buf := make([]byte, tokenBytes)
-		if _, err := io.ReadFull(s.d.Rand, buf); err != nil {
-			return "", fmt.Errorf("web: minting launch token: %w", err)
-		}
-		s.launch = hex.EncodeToString(buf)
-		s.launchUsed = false
-	}
-	return launchURL(port, s.launch), nil
-}
-
 func launchURL(port int, token string) string {
 	return "http://127.0.0.1:" + strconv.Itoa(port) + "/?token=" + token
 }
@@ -432,31 +389,6 @@ func (s *Server) cookieName() string {
 	}
 	return s.cookieBase
 }
-
-// Snapshot builds the state document the dashboard would receive now.
-func (s *Server) Snapshot() State { return s.buildState(stateOpts{}) }
-
-// OnState registers fn to receive every state document the server publishes:
-// on each poll tick, after each engine event batch and after every mutation.
-// fn runs on whichever goroutine published (the serve loop or a request
-// handler), possibly concurrently with itself; keep it quick and safe for
-// concurrent use.
-func (s *Server) OnState(fn func(State)) {
-	s.obsMu.Lock()
-	s.stateObs = append(s.stateObs, fn)
-	s.obsMu.Unlock()
-}
-
-// OnAuto registers fn to receive every auto-switch engine event.
-func (s *Server) OnAuto(fn func(AutoEventView)) {
-	s.obsMu.Lock()
-	s.autoObs = append(s.autoObs, fn)
-	s.obsMu.Unlock()
-}
-
-// Handler returns the fully wired handler (Host check, auth, routes). It is
-// exported so callers can mount it under a test server of their own.
-func (s *Server) Handler() http.Handler { return s.handler }
 
 // Start binds addr, which must resolve to a loopback interface (an empty addr
 // means 127.0.0.1:0), and returns the bootstrap URL http://127.0.0.1:<port>/?token=<t>.
@@ -579,10 +511,10 @@ func (s *Server) Serve(ctx context.Context) error {
 }
 
 // broadcast rebuilds the state document and pushes it to every SSE
-// subscriber and every in-process observer. Subscribers that asked for token
-// status (?tokenStatus=1) get the enriched document; it is built only while
-// one of them is connected, and the plain document is the same state with
-// the tokenStatus keys dropped, so both come from one snapshot.
+// subscriber. Subscribers that asked for token status (?tokenStatus=1) get
+// the enriched document; it is built only while one of them is connected,
+// and the plain document is the same state with the tokenStatus keys
+// dropped, so both come from one snapshot.
 func (s *Server) broadcast() {
 	wantTS := s.hub.wantsTokenStatus()
 	st := s.buildState(stateOpts{tokenStatus: wantTS})
@@ -602,17 +534,10 @@ func (s *Server) broadcast() {
 		return
 	}
 	s.hub.publishState(body, withTS)
-	s.obsMu.Lock()
-	obs := make([]func(State), len(s.stateObs))
-	copy(obs, s.stateObs)
-	s.obsMu.Unlock()
-	for _, fn := range obs {
-		fn(st)
-	}
 }
 
-// publishAuto fans one engine event out as an `auto` SSE event and to the
-// observers. The caller follows a batch of them with one broadcast.
+// publishAuto fans one engine event out as an `auto` SSE event. The caller
+// follows a batch of them with one broadcast.
 func (s *Server) publishAuto(ev AutoEventView) {
 	body, err := json.Marshal(ev)
 	if err != nil {
@@ -620,11 +545,4 @@ func (s *Server) publishAuto(ev AutoEventView) {
 		return
 	}
 	s.hub.publish("auto", body)
-	s.obsMu.Lock()
-	obs := make([]func(AutoEventView), len(s.autoObs))
-	copy(obs, s.autoObs)
-	s.obsMu.Unlock()
-	for _, fn := range obs {
-		fn(ev)
-	}
 }
