@@ -164,7 +164,10 @@ func (s *FileKeychainStore) learn(err error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err != nil {
-		if keychain.IsUnusable(err) {
+		// A secret too large for security's stdin is a property of the
+		// payload, not of the Keychain: the caller stores it in a file, and the
+		// Keychain stays in use for everything else.
+		if keychain.IsUnusable(err) && !keychain.IsTooLarge(err) {
 			f := false
 			s.cache = &f
 			s.disabledUntil = s.clk.Now().Add(recheckCooldown)

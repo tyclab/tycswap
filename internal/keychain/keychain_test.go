@@ -85,29 +85,31 @@ func TestSetSmallPayloadUsesStdinHex(t *testing.T) {
 	}
 }
 
-func TestSetLargePayloadFallsBackToArgv(t *testing.T) {
+// TestSetLargePayloadNeverUsesArgv: a secret too large for stdin is refused
+// with a TooLarge KeychainError and security never runs, so the secret is
+// never on a command line (-X in argv).
+func TestSetLargePayloadNeverUsesArgv(t *testing.T) {
 	rec := &recordExec{res: execResult{rc: 0}}
 	s := Security{Exec: rec.fn}
-	// Hex doubles length; a secret of SecurityStdinLineLimit bytes overflows.
-	big := strings.Repeat("x", SecurityStdinLineLimit)
-	if err := s.Set("claude-swap", "acct", big); err != nil {
+	big := strings.Repeat("x", SecurityStdinLineLimit) // hex doubles it
+	err := s.Set("tycswap", "acct", big)
+	if err == nil || !IsTooLarge(err) || !IsUnusable(err) {
+		t.Fatalf("err = %v, want a TooLarge KeychainError", err)
+	}
+	if rec.argv != nil || contains(rec.argv, "-X") || rec.stdin != "" {
+		t.Fatalf("security ran: argv=%v", rec.argv)
+	}
+	if strings.Contains(err.Error(), toHex(big)[:64]) {
+		t.Error("error message carries the secret")
+	}
+	// Just under the limit still goes to stdin.
+	overhead := len(setCommand("tycswap", "acct", ""))
+	fits := strings.Repeat("y", (SecurityStdinLineLimit-overhead)/2)
+	if err := s.Set("tycswap", "acct", fits); err != nil {
 		t.Fatal(err)
 	}
-	if rec.stdin != "" {
-		t.Errorf("large payload should not use stdin, got %q...", rec.stdin[:20])
-	}
-	want := []string{"/usr/bin/security", "add-generic-password", "-U", "-a", "acct", "-s", "claude-swap", "-X"}
-	if len(rec.argv) != len(want)+1 {
-		t.Fatalf("argv len = %d, want %d: %v", len(rec.argv), len(want)+1, rec.argv)
-	}
-	for i, w := range want {
-		if rec.argv[i] != w {
-			t.Errorf("argv[%d] = %q, want %q", i, rec.argv[i], w)
-		}
-	}
-	// Last element is the raw hex value.
-	if rec.argv[len(rec.argv)-1] != toHex(big) {
-		t.Errorf("last argv element is not the hex value")
+	if len(rec.argv) != 2 || rec.argv[1] != "-i" {
+		t.Fatalf("argv = %v, want [security -i]", rec.argv)
 	}
 }
 

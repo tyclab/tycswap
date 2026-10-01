@@ -239,6 +239,11 @@ func (s *FileKeychainStore) retainPreviousBackup(num, email, newCreds string) {
 	var err error
 	if s.useKeychain() {
 		err = s.kcSet(securityService, s.prevBackupUsername(num, email), current)
+		if keychain.IsTooLarge(err) {
+			// Too large for security's stdin: keep it in the 0600 file
+			// instead (ReadPrev is .enc.prev-wins).
+			err = s.atomicB64Write(s.prevBackupPath(num, email), current)
+		}
 	} else {
 		err = s.atomicB64Write(s.prevBackupPath(num, email), current)
 	}

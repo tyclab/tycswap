@@ -84,8 +84,13 @@ type KeychainClient interface {
 
 // KeychainError is a security invocation failure other than "not found". It is
 // classified as "Keychain unusable" by IsUnusable.
+//
+// TooLarge marks the one failure that says nothing about the Keychain itself:
+// a Set payload too large for `security -i`'s stdin line. Callers store such a
+// secret elsewhere, but must not conclude the Keychain is down (IsTooLarge).
 type KeychainError struct {
-	Msg string
+	Msg      string
+	TooLarge bool
 }
 
 func (e *KeychainError) Error() string { return e.Msg }
@@ -114,6 +119,13 @@ func IsUnusable(err error) bool {
 		return true
 	}
 	return false
+}
+
+// IsTooLarge reports whether err is Set's refusal of a payload that does not fit
+// `security -i`'s stdin line.
+func IsTooLarge(err error) bool {
+	var ke *KeychainError
+	return errors.As(err, &ke) && ke.TooLarge
 }
 
 // AccountName mirrors Claude Code's getUsername: $USER, then the OS username,
@@ -239,37 +251,37 @@ func (s Security) Exists(service, account string) bool {
 	return res.rc == 0
 }
 
-// FitsStdin reports whether Set would pass password to `security -i` on stdin.
-// When it is false Set falls back to argv, where the hex-encoded secret is
-// visible to every local user through ps; callers holding large secrets can
-// check this first and store them elsewhere. It measures the exact command
-// line Set builds against SecurityStdinLineLimit.
+// FitsStdin reports whether Set can store password: the secret only ever rides
+// on `security -i`'s stdin, and a command line over SecurityStdinLineLimit
+// makes Set refuse with a TooLarge KeychainError. It measures the exact
+// command line Set builds.
 func FitsStdin(service, account, password string) bool {
-	command := fmt.Sprintf("add-generic-password -U -a %s -s %s -X %s\n",
+	return len(setCommand(service, account, password)) <= SecurityStdinLineLimit
+}
+
+func setCommand(service, account, password string) string {
+	return fmt.Sprintf("add-generic-password -U -a %s -s %s -X %s\n",
 		quote(account), quote(service), toHex(password))
-	return len(command) <= SecurityStdinLineLimit
 }
 
 // Set creates or updates an item (-U). The secret is hex-encoded (-X) and rides
-// on stdin under the line-buffer limit; larger payloads fall back to argv.
+// on stdin. A payload whose command line exceeds the line-buffer limit is
+// refused with a TooLarge KeychainError and nothing is run: the old fallback
+// put the hex secret in argv, readable by every local user through ps.
+// IsUnusable is true for that error, so callers take their file fallback.
 func (s Security) Set(service, account, password string) error {
 	if err := ValidateName(service, account); err != nil {
 		return err
 	}
-	hexValue := toHex(password)
-	command := fmt.Sprintf("add-generic-password -U -a %s -s %s -X %s\n",
-		quote(account), quote(service), hexValue)
-
-	var res execResult
-	var err error
-	if len(command) <= SecurityStdinLineLimit {
-		res, err = s.call([]string{s.bin(), "-i"}, command)
-	} else {
-		res, err = s.call([]string{
-			s.bin(), "add-generic-password", "-U",
-			"-a", account, "-s", service, "-X", hexValue,
-		}, "")
+	command := setCommand(service, account, password)
+	if len(command) > SecurityStdinLineLimit {
+		return &KeychainError{
+			Msg: fmt.Sprintf("secret for %s/%s is too large for the Keychain's stdin interface (%d > %d bytes); "+
+				"refusing to pass it on the command line", service, account, len(command), SecurityStdinLineLimit),
+			TooLarge: true,
+		}
 	}
+	res, err := s.call([]string{s.bin(), "-i"}, command)
 	if err != nil {
 		return err
 	}

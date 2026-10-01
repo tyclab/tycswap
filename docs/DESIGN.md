@@ -189,7 +189,8 @@ func IsUnusable(err error) bool                         // KeychainError | ctx-d
 type Security struct{ Path string; Timeout time.Duration } // real: exec /usr/bin/security
 type Fake struct{ m map[[2]string]string }              // conftest block_real_keychain parity
 ```
-`Set` hex-encodes via `-X`, stdin `-i` under 4032-byte limit else argv fallback;
+`Set` hex-encodes via `-X` on stdin `-i`; over the 4032-byte line limit it refuses with a
+`TooLarge` `KeychainError` (never argv; see Amendment on the security pass);
 `Get` uses `find-generic-password -a … -w -s …`, `strings.TrimSuffix(out,"\n")`
 (not TrimSpace). 5s `exec.CommandContext` timeout → `IsUnusable`-classified.
 
