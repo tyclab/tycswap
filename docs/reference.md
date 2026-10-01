@@ -4066,6 +4066,33 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   `--json` mode and after `purge` and `upgrade`, and it never affects the exit
   status.
 
+## BUILD-TIME BRANDING
+
+The names and the colour tycswap shows outside its data store live in
+`internal/brand` as package variables, so a packager can rebrand a build at
+link time with `-ldflags -X` and no source patch:
+
+| Variable | Default | Used for |
+|----------|---------|----------|
+| `github.com/tyclab/tycswap/internal/brand.Name` | `tycswap` | the command name the dashboard prints in its hints |
+| `github.com/tyclab/tycswap/internal/brand.DisplayName` | `tycswap` | page title and header of the dashboard |
+| `github.com/tyclab/tycswap/internal/brand.ReverseDNS` | `io.github.tyclab.tycswap` | reverse-DNS identifier |
+| `github.com/tyclab/tycswap/internal/brand.SessionCookie` | `tycswap_session` | name of the dashboard's session cookie |
+| `github.com/tyclab/tycswap/internal/brand.EnvPrefix` | `TYCSWAP_` | prefix of tycswap's environment variables |
+| `github.com/tyclab/tycswap/internal/brand.RedirectFilePrefix` | `tycswap-dashboard-` | prefix of the 0600 redirect page `tycswap web` writes to the temp directory |
+| `github.com/tyclab/tycswap/internal/brand.AccentColor` | `#5aa2ff` | the dashboard accent: links, focus rings, active tab, primary buttons, the switch target |
+
+```
+go build -ldflags "-X github.com/tyclab/tycswap/internal/brand.DisplayName=Example \
+  -X github.com/tyclab/tycswap/internal/brand.AccentColor=#12356f" ./cmd/tycswap
+```
+
+An override that does not fit its shape is replaced by the default rather than
+used: `Name` is lower-case letters, digits and `-`; `DisplayName` letters,
+digits, spaces, `.` and `-`; `SessionCookie` letters, digits and `_`;
+`RedirectFilePrefix` letters, digits, `.`, `_` and `-`; `AccentColor` a
+`#rrggbb` colour. Each is at most 64 characters.
+
 ## See also
 
 Project overview: `README.md`. Architecture and design decisions:
