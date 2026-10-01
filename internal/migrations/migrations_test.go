@@ -368,8 +368,7 @@ func TestRunIgnoresUnknownAppliedIDs(t *testing.T) {
 // TestRun_NoOpWhenBackupDirMissing confirms the fresh-install lazy-dir
 // invariant (spec 07§5.5): Run must not touch the filesystem, the Keychain,
 // or SequenceAccounts at all when host.BackupDir() doesn't exist yet — a
-// no-op run must never materialize .migrations.json (which would itself trip
-// the migration-collision check paths.MigrateLegacyBackupDir guards against).
+// no-op run must never materialize .migrations.json.
 func TestRun_NoOpWhenBackupDirMissing(t *testing.T) {
 	kc := keychain.NewFake()
 	host := newTestHost(t, platform.MacOS, kc, nil, map[string]string{"1": "alice@x.com"}, true)

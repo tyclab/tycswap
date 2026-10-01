@@ -3422,8 +3422,8 @@ program, and the passive notice announced upstream releases. Now:
    `tycswap was built from a checkout: git pull && make install` and exits 1;
    its update notice ends with the same advice instead of "run tycswap
    upgrade". The install-shape detection of A6 applies only to module builds.
-3. There was no downgrade guard in `SelfUpgrade` to keep: it installs
-   `@latest`, and the notice only fires when the latest tag is semver-greater.
+3. `SelfUpgrade` has no downgrade guard: it installs `@latest`, and the
+   notice only fires when the latest tag is semver-greater.
 
 
 ---

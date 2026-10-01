@@ -22,7 +22,7 @@ import (
 // Constants mirroring macos_keychain.py.
 const (
 	// SecurityStdinLineLimit is security -i's fgets buffer minus 64 bytes of
-	// headroom (4096-64). Commands longer than this fall back to argv.
+	// headroom (4096-64). Set refuses a longer command (TooLarge).
 	SecurityStdinLineLimit = 4096 - 64
 	// notFoundRC is errSecItemNotFound from find/delete-generic-password.
 	notFoundRC = 44
@@ -265,10 +265,10 @@ func setCommand(service, account, password string) string {
 }
 
 // Set creates or updates an item (-U). The secret is hex-encoded (-X) and rides
-// on stdin. A payload whose command line exceeds the line-buffer limit is
-// refused with a TooLarge KeychainError and nothing is run: the old fallback
-// put the hex secret in argv, readable by every local user through ps.
-// IsUnusable is true for that error, so callers take their file fallback.
+// on stdin, never in argv, where every local user could read it through ps.
+// A payload whose command line exceeds the line-buffer limit is refused with
+// a TooLarge KeychainError and nothing is run. IsUnusable is true for that
+// error, so callers take their file fallback.
 func (s Security) Set(service, account, password string) error {
 	if err := ValidateName(service, account); err != nil {
 		return err

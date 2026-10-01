@@ -442,10 +442,10 @@ func sourceLabel(source string) string {
 // (for validation), and each account's credentials as the raw bytes of the very
 // member that was validated (for storage, preserving source key order).
 //
-// Keys are matched exactly. An earlier version took the raw credentials from a
-// second, struct-based decode, whose key matching is case-insensitive: an entry
-// carrying both "credentials" and "CREDENTIALS" (or a top-level "ACCOUNTS")
-// was validated on one value and stored the other.
+// Keys are matched exactly, from this one decode: a struct-based decode
+// matches keys case-insensitively, so taking the raw credentials from one
+// would store a "CREDENTIALS" member (or read a top-level "ACCOUNTS") while
+// the "credentials" member was the one validated.
 //
 // accounts is empty when the member is absent or not an array; the caller
 // reports that as "no accounts". Only the first JSON value of text is read.

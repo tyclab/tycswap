@@ -244,11 +244,8 @@ func fishQuote(s string) string {
 	return "'" + s + "'"
 }
 
-// pwshQuote wraps s in a PowerShell single-quoted string; the only escape is a
-// doubled single quote.
-// PowerShell ends a single-quoted string at any of ' and U+2018–U+201B (the
-// typographic single quotes), so each is doubled, which PowerShell reads as
-// one literal character of the same kind.
+// pwshQuoteEscaper doubles each of the five characters that end a PowerShell
+// single-quoted string.
 var pwshQuoteEscaper = strings.NewReplacer(
 	"'", "''",
 	"\u2018", "\u2018\u2018",
@@ -257,6 +254,10 @@ var pwshQuoteEscaper = strings.NewReplacer(
 	"\u201b", "\u201b\u201b",
 )
 
+// pwshQuote wraps s in a PowerShell single-quoted string. PowerShell ends such
+// a string at any of ' and U+2018–U+201B (the typographic single quotes), so
+// each is doubled, which PowerShell reads as one literal character of the
+// same kind.
 func pwshQuote(s string) string {
 	return "'" + pwshQuoteEscaper.Replace(s) + "'"
 }

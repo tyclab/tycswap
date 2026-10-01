@@ -15,11 +15,10 @@
 // call Run as its LAST construction step, after the credential-store
 // abstraction is built (the macOS migration performs storage ops through it)
 // and after every other fallible/non-fallible setup step — and Run itself
-// must never be allowed to abort construction, unlike the legacy-backup-dir
-// relocation (paths.MigrateLegacyBackupDir) that runs first and *can* raise.
-// Swapping that ordering, or making Run fallible, would be an observable
-// regression this package cannot itself guard against — it's store.New's
-// responsibility to call Run in the right place.
+// must never be allowed to abort construction. Swapping that ordering, or
+// making Run fallible, would be an observable regression this package cannot
+// itself guard against — it's store.New's responsibility to call Run in the
+// right place.
 package migrations
 
 import "fmt"
