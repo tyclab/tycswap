@@ -263,6 +263,14 @@ The conftest test fixture `mock_credentials_file` seeds a simplified
 as an opaque string end-to-end; only §4 classification (`looks_like_api_key`)
 inspects the first characters.
 
+One exception to "opaque": the value is the account block plus a seat-wide
+remainder. Claude Code keeps MCP server logins in the same file under the
+top-level key `mcpOAuth`, and those belong to the seat, not to the account. A
+switch writes the stored blob with the live file's `mcpOAuth` carried over
+(`ccfile.SpliceCredentials`); `add`, the switch-time backup of the outgoing
+account and `export` store the blob without it (`oauth.AccountOnly`). A
+rollback writes the bytes it saved, verbatim.
+
 ### 3.2 The active managed API key (`/login` with `sk-ant-api…`)
 
 A **separate auth axis** from OAuth. Two backends (checked in order, mirroring
@@ -1201,6 +1209,9 @@ it), then persistence re-takes all three under a fresh double-checked re-read.
 
 ---
 
+- A switch keeps the live `mcpOAuth` and a rollback restores the exact bytes it
+  saved (`TestSwitchKeepsLiveMCPOAuth`, `TestSwitchRollbackRestoresLiveBytesVerbatim`).
+
 ## 9. Go port notes
 
 ### 9.1 Platform-conditional logic
@@ -1290,9 +1301,12 @@ it), then persistence re-takes all three under a fresh double-checked re-read.
   active managed `"Claude Code"`, tycswap backups `"claude-swap"`.
 - Keychain account name resolution: `$USER` → OS username → `"claude-code-user"`.
 - `customApiKeyResponses.approved` entry = last 20 chars of the key.
-- `.credentials.json` is written **raw** (the credential string verbatim), not
-  re-serialized JSON.
-- Backup `.enc` files are base64 of the raw credential string; filename
+- `.credentials.json` is written **raw** (the credential string verbatim) on a
+  rollback and when the live file holds no `mcpOAuth`; otherwise a switch
+  writes the stored blob re-encoded compact with the live `mcpOAuth` carried
+  over (§3.1).
+- Backup `.enc` files are base64 of the account-only credential string (no
+  `mcpOAuth`); filename
   `.creds-<num>-<email>.enc`; `.prev` sibling `.creds-<num>-<email>.enc.prev`.
 - Lock dirs `<target>.lock` as directories, mtime-based staleness at 10s.
 - `security` binary is the pinned absolute path `/usr/bin/security`.
