@@ -90,6 +90,8 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 			return codexCommand(prog, argv[1:], s)
 		case "migrate":
 			return migrateCommand(prog, argv[1:], s)
+		case "web":
+			return webCommand(prog, argv[1:], s)
 		}
 	}
 
