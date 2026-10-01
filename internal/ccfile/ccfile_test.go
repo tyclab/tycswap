@@ -491,3 +491,28 @@ func TestUpdateGlobalConfig_CorruptIsAnErrorNotEmpty(t *testing.T) {
 		t.Fatalf("absent: %v", err)
 	}
 }
+
+// TestWriteCredentialsCreatesPrivateDir: a config home this tool has to create
+// is 0700; an existing one keeps its mode.
+func TestWriteCredentialsCreatesPrivateDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX modes")
+	}
+	home := setHome(t)
+	if err := ccfile.WriteCredentialsFile(`{}`); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(filepath.Join(home, ".claude"))
+	if err != nil || fi.Mode().Perm() != 0o700 {
+		t.Fatalf("created dir mode = %v, %v; want 0700", fi.Mode().Perm(), err)
+	}
+	if err := os.Chmod(filepath.Join(home, ".claude"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := ccfile.WriteCredentialsFile(`{}`); err != nil {
+		t.Fatal(err)
+	}
+	if fi, _ := os.Stat(filepath.Join(home, ".claude")); fi.Mode().Perm() != 0o750 {
+		t.Fatalf("existing dir mode changed to %v", fi.Mode().Perm())
+	}
+}

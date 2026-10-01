@@ -48,6 +48,15 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 
 	printOldStoreHint(argv, s.err)
 
+	// The store holds credentials and the lock file: refuse one another local
+	// user could write before any command reads or writes it.
+	if !isHelpOrVersion(argv) {
+		if err := paths.CheckPrivateRoot(paths.GetBackupRoot()); err != nil {
+			errorTo(s.err, err.Error())
+			return 1
+		}
+	}
+
 	// Pre-dispatch on the first token (spec 08§1 step 4). Each must be the
 	// first argument (DESIGN Deviation 10): `tycswap --debug run 2` is unsupported.
 	if len(argv) > 0 {
@@ -135,4 +144,17 @@ func isTTY(f *os.File) bool {
 		return false
 	}
 	return fi.Mode()&os.ModeCharDevice != 0
+}
+
+// isHelpOrVersion reports whether argv only asks for help or the version,
+// which touch no store.
+func isHelpOrVersion(argv []string) bool {
+	if len(argv) != 1 {
+		return false
+	}
+	switch argv[0] {
+	case "-h", "--help", "help", "--version", "version", "-V":
+		return true
+	}
+	return false
 }

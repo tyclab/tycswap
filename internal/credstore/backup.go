@@ -81,7 +81,7 @@ func (s *FileKeychainStore) KCWriteBackup(num, email, creds string) error {
 
 // atomicB64Write base64-encodes credentials and atomically writes them to target
 // under credentialsDir (0600), mirroring _atomic_b64_write. It mkdirs the parent
-// with default perms but never chmods it (matching Python; unlike atomicfile,
+// 0700 when it has to create it, but never chmods an existing one (unlike atomicfile,
 // which chmods the parent to 0700).
 func (s *FileKeychainStore) atomicB64Write(target, credentials string) error {
 	encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
@@ -327,7 +327,7 @@ func removeMissingOK(path string) error {
 // perms and never chmods it — mirroring Python's _atomic_b64_write /
 // _write_active_credentials_file.
 func atomicRawWrite(dir, target string, data []byte) error {
-	if err := os.MkdirAll(dir, 0o777); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(dir, "*.tmp")

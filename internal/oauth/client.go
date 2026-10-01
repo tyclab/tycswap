@@ -64,10 +64,27 @@ type HTTPClient struct {
 	UsageURL   string
 }
 
+// maxSuccessBody caps a decoded success response, as the Codex client does.
+const maxSuccessBody = 1 << 20
+
+// maxExpiresIn bounds a token lifetime in seconds (about 115 days); anything
+// at or above it, or not positive, is a malformed response.
+const maxExpiresIn = 1e7
+
+// newSafeHTTPClient never follows a redirect: a 307/308 from the token
+// endpoint would re-POST the refresh token to whatever Location names, an
+// http:// one included. The redirect response itself is returned and treated
+// as a failure.
+func newSafeHTTPClient() *http.Client {
+	return &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
+var safeDefaultClient = newSafeHTTPClient()
+
 // NewHTTPClient returns an HTTPClient pointed at the production endpoints.
 func NewHTTPClient() *HTTPClient {
 	return &HTTPClient{
-		Client:     &http.Client{},
+		Client:     newSafeHTTPClient(),
 		TokenURL:   OAuthTokenURL,
 		ProfileURL: profileURL,
 		UsageURL:   usageURL,
@@ -78,7 +95,7 @@ func (c *HTTPClient) httpClient() *http.Client {
 	if c.Client != nil {
 		return c.Client
 	}
-	return http.DefaultClient
+	return safeDefaultClient
 }
 
 // Refresh performs a refresh-token grant (04§1.8/§1.9). No scope field is ever
@@ -121,13 +138,14 @@ func (c *HTTPClient) Refresh(ctx context.Context, creds string) RefreshOutcome {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		debugf("OAuth refresh failed: HTTP %d redirect, not followed", resp.StatusCode)
+		return RefreshOutcome{Error: ErrTransient}
+	}
 	if resp.StatusCode >= 400 {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-		trunc := errBody
-		if len(trunc) > 500 {
-			trunc = trunc[:500]
-		}
-		debugf("OAuth refresh failed: HTTP %d, body: %s", resp.StatusCode, trunc)
+		// Only the error code is logged: the body may echo request material.
+		debugf("OAuth refresh failed: HTTP %d, error: %s", resp.StatusCode, oauthErrorCode(errBody))
 		// Permanent only when the server rejected the grant: a 400/401/403 AND
 		// an explicit marker in the body (case-sensitive substring).
 		if (resp.StatusCode == 400 || resp.StatusCode == 401 || resp.StatusCode == 403) &&
@@ -137,19 +155,19 @@ func (c *HTTPClient) Refresh(ctx context.Context, creds string) RefreshOutcome {
 		return RefreshOutcome{Error: ErrTransient}
 	}
 
-	respData, ok := decodeResponseMap(resp.Body)
+	respData, ok := decodeResponseMap(io.LimitReader(resp.Body, maxSuccessBody))
 	if !ok {
 		debugf("OAuth refresh failed: undecodable token response")
 		return RefreshOutcome{Error: ErrTransient}
 	}
-	accessToken, ok := respData["access_token"]
-	if !ok {
-		debugf("OAuth refresh failed: missing access_token")
+	accessToken, ok := respData["access_token"].(string)
+	if !ok || accessToken == "" {
+		debugf("OAuth refresh failed: access_token missing or not a non-empty string")
 		return RefreshOutcome{Error: ErrTransient}
 	}
 	expiresIn, ok := numFloat(respData["expires_in"])
-	if !ok {
-		debugf("OAuth refresh failed: missing expires_in")
+	if !ok || !(expiresIn > 0 && expiresIn < maxExpiresIn) {
+		debugf("OAuth refresh failed: expires_in missing or out of range")
 		return RefreshOutcome{Error: ErrTransient}
 	}
 
@@ -193,7 +211,7 @@ func (c *HTTPClient) Profile(ctx context.Context, accessToken string) *Identity 
 		return nil
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= 300 {
 		if resp.StatusCode == 401 {
 			warningf("OAuth profile returned 401 while resolving credential " +
 				"ownership; proceeding without identity (pre-fix behavior).")
@@ -202,7 +220,7 @@ func (c *HTTPClient) Profile(ctx context.Context, accessToken string) *Identity 
 		}
 		return nil
 	}
-	data, ok := decodeResponseMap(resp.Body)
+	data, ok := decodeResponseMap(io.LimitReader(resp.Body, maxSuccessBody))
 	if !ok {
 		debugf("OAuth profile fetch failed: undecodable response")
 		return nil
@@ -257,11 +275,33 @@ func (c *HTTPClient) Usage(ctx context.Context, accessToken string) (map[string]
 			RetryAfter: resp.Header.Get("Retry-After"),
 		}
 	}
-	raw, decErr := decodeResponseMapErr(resp.Body)
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("usage: %w: HTTP %d redirect, not followed", errBadResponse, resp.StatusCode)
+	}
+	raw, decErr := decodeResponseMapErr(io.LimitReader(resp.Body, maxSuccessBody))
 	if decErr != nil {
 		return nil, fmt.Errorf("usage decode: %w: %w", errBadResponse, decErr)
 	}
 	return raw, nil
+}
+
+// oauthErrorCode extracts the OAuth "error" code from an error body for the
+// log, limited to a short token of [A-Za-z0-9_.-]; "unknown" otherwise.
+func oauthErrorCode(body []byte) string {
+	var m map[string]any
+	if json.Unmarshal(body, &m) != nil {
+		return "unknown"
+	}
+	code, _ := m["error"].(string)
+	if code == "" || len(code) > 64 {
+		return "unknown"
+	}
+	for _, r := range code {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '.' || r == '-') {
+			return "unknown"
+		}
+	}
+	return code
 }
 
 // decodeResponseMap decodes a JSON response body into a map (json.Number),

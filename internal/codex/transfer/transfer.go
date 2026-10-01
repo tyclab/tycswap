@@ -139,7 +139,7 @@ func Export(st *store.Store, destination, account string, stdout io.Writer) (int
 	}
 
 	path := expandUser(destination)
-	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return 0, cerr.Transfer("Cannot write %s: %s", destination, err.Error()).Wrap(err)
 	}
 	if err := writeExportFile(path, blob); err != nil {

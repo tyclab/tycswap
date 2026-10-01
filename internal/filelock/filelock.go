@@ -64,7 +64,10 @@ func (l *FileLock) Acquire(timeout time.Duration) (bool, error) {
 		l.hold.Unlock()
 		return false, err
 	}
-	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	// No O_TRUNC: the lock file carries no data, and truncating would let a
+	// symlink planted at the lock path truncate whatever it points to.
+	// noFollow refuses such a symlink outright (POSIX).
+	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|noFollow, 0o600)
 	if err != nil {
 		l.hold.Unlock()
 		return false, err

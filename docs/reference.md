@@ -3690,6 +3690,18 @@ that the log is `tycswap.log` and the per-profile marker files are named
 (`${XDG_DATA_HOME:-~/.local/share}/claude-swap/` or `~/.claude-swap-backup/`)
 except to copy it, once, in `tycswap migrate`.
 
+The store root must be owned by the user running tycswap and not writable by
+group or other. Every command except `--help` and `--version` checks this
+first (POSIX; not on Windows) and refuses with exit 1 and
+`Error: refusing to use the tycswap store <path>: it is writable by group or
+other (mode <mode>); run: chmod 700 <path>` or `… it is owned by uid <n>, not
+by you (uid <m>) …`. A missing root is created 0700, and so is every directory
+tycswap creates (also a missing `~/.claude`); existing directories keep their
+modes. The store lock `.lock` (and `codex/.lock`) is opened without following
+a symlink and without truncation, created 0600. A stale Claude Code
+credential or config lock directory is broken by renaming it aside and
+re-checking its age before it is removed, so two waiters cannot both take it.
+
 Inside the backup root:
 
 | Path | Contents |

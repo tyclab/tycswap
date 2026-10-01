@@ -4,7 +4,7 @@
 //
 // The atomic writer deliberately does NOT reuse internal/atomicfile (which
 // chmods the parent 0700): ~/.claude.json's parent is $HOME. It mirrors Python
-// _write_json exactly — mkdir parent with default perms, temp sibling, rename,
+// _write_json — mkdir parent (0700 when created, never chmodded), temp sibling, rename,
 // then chmod the file 0600 (non-Windows) — so the rename is the last fallible op.
 package switching
 
@@ -106,11 +106,11 @@ func marshalIndent2(v any) ([]byte, error) {
 }
 
 // atomicConfigWrite writes to path via a temp sibling + rename, then chmods the
-// file 0600 (non-Windows). It mkdirs the parent with default perms but never
+// file 0600 (non-Windows). It mkdirs a missing parent 0700 but never
 // chmods it — $HOME must keep its mode.
 func atomicConfigWrite(path string, data []byte) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o777); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(dir, "*.tmp")

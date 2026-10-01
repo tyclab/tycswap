@@ -34,3 +34,6 @@ func unlock(f *os.File) {
 	ol := new(windows.Overlapped)
 	_ = windows.UnlockFileEx(h, 0, 1, 0, ol)
 }
+
+// noFollow has no os.OpenFile equivalent on Windows.
+const noFollow = 0

@@ -10,7 +10,7 @@
 // _update_global_config / _write_active_credentials_file only chmod the file
 // (0600) and never touch the parent — critical for ~/.claude.json, whose parent
 // is the user's $HOME. This package mirrors Python exactly: mkdir the parent
-// (default perms), write a temp sibling, rename, then chmod the file (non-Windows).
+// (0700 when it is created; an existing one keeps its mode), write a temp sibling, rename, then chmod the file (non-Windows).
 package ccfile
 
 import (
@@ -217,12 +217,12 @@ func marshalIndent2(v any) ([]byte, error) {
 }
 
 // atomicWrite writes data to path via a temp sibling + rename, then chmods the
-// final file to 0600 (skipped on Windows). It mkdirs the parent with default
-// permissions but never chmods it — mirroring Python _update_global_config /
+// final file to 0600 (skipped on Windows). It mkdirs a missing parent 0700
+// but never chmods an existing one — mirroring Python _update_global_config /
 // _write_active_credentials_file, which must not alter $HOME's mode.
 func atomicWrite(path string, data []byte) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o777); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 
