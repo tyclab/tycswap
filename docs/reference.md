@@ -2295,17 +2295,24 @@ refuses any other before it accepts a connection. Each start mints three
 independent 128-bit secrets:
 
 1. the *launch token* in the printed URL, redeemed once by `GET /?token=`,
-   which sets the session cookie and redirects to `/`; a second use answers
-   403;
+   which sets the session cookie and redirects to `/#csrf=<CSRF token>`; a
+   second use answers 403;
 2. the *session cookie*, HttpOnly, SameSite=Lax, Path=/, named
    `tycswap_session_<port>` so dashboards on different ports never share
    one;
-3. the *CSRF token*, carried in the page's `<meta name="csrf">`.
+3. the *CSRF token*, handed to the page once in that redirect's URL
+   fragment. A fragment is never sent to any server; the page moves it into
+   `sessionStorage` and drops it from the address bar and the history
+   entry. The page itself, which the cookie alone fetches, never contains
+   the token.
 
 Every `/api` request needs the cookie and the CSRF token in `X-CSRF-Token`,
 reads included, so a cookie that reached another loopback port is useless on
-its own. The event stream, which cannot send headers, takes the token as
-`?csrf=`; no other route accepts it in the URL. Every request other than GET
+its own: the page it can fetch holds no token. The event stream, which
+cannot send headers, takes the token as `?csrf=`; no other route accepts it
+in the URL. A reload keeps the token (`sessionStorage` survives it); a new
+tab or window does not have it and shows "no session": open a fresh URL
+from `tycswap web`. Every request other than GET
 and HEAD also needs an `Origin` that is absent or equal to the dashboard's own
 and a `Sec-Fetch-Site` that is absent, `same-origin` or `none`. A `Host`
 other than `127.0.0.1:<port>` or `localhost:<port>` answers 421. The page and

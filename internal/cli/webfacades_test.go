@@ -335,9 +335,9 @@ func (e fakeAutoEvent) Kind() string         { return e.kind }
 func (e fakeAutoEvent) JSON() map[string]any { return e.fields }
 func (e fakeAutoEvent) Human() string        { return e.human }
 
-// The wired dashboard serves: the launch URL sets the port-scoped cookie, the
-// page carries the CSRF token, and /api/state lists the fixture's accounts
-// with provider keys.
+// The wired dashboard serves: the launch URL sets the port-scoped cookie and
+// redirects to /#csrf=<token>, the page itself carries no token, and
+// /api/state lists the fixture's accounts with provider keys.
 func TestNewDashboardServes(t *testing.T) {
 	sw := fixtureSwitcher(t)
 	prev := newSwitcher
@@ -365,8 +365,14 @@ func TestNewDashboardServes(t *testing.T) {
 	}
 	page, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || !strings.Contains(string(page), `<meta name="csrf" content="`+srv.Token()+`">`) || !strings.Contains(string(page), "<title>tycswap</title>") {
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(page), "<title>tycswap</title>") {
 		t.Fatalf("page %d: %.200s", resp.StatusCode, page)
+	}
+	if strings.Contains(string(page), srv.Token()) {
+		t.Fatal("the page carries the CSRF token")
+	}
+	if got := resp.Request.URL.Fragment; got != "csrf="+srv.Token() {
+		t.Fatalf("redirect landed on fragment %q, want csrf=<token>", got)
 	}
 	base := launch[:strings.Index(launch, "/?token=")]
 	req, _ := http.NewRequest(http.MethodGet, base+"/api/state?tokenStatus=1", nil)

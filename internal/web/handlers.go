@@ -154,7 +154,7 @@ func (s *Server) hasCookie(r *http.Request) bool {
 }
 
 // hasCSRF reports whether the request proves it came from the dashboard
-// page: the token from the page's <meta>, in the X-CSRF-Token header or — for
+// page: the token the page holds, in the X-CSRF-Token header or — for
 // EventSource, which cannot set headers, and ONLY on its route — in the csrf
 // query parameter. A token in a URL can leak (history, logs), so no other
 // route accepts it there.
@@ -211,9 +211,14 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 
 // -- page + state -------------------------------------------------------------
 
-// handleIndex bootstraps the session from ?token= (cookie + 303) and serves
-// the templated index.html to a cookie-bearing visitor. Anyone else gets a
-// 401 page: the page embeds the CSRF token, so it is as guarded as the API.
+// handleIndex bootstraps the session from ?token= (cookie + 303 to
+// /#csrf=<token>) and serves the templated index.html to a cookie-bearing
+// visitor. The page never carries the CSRF token: the cookie alone fetches
+// it, and a cookie set for 127.0.0.1 reaches every other loopback port, so a
+// page holding the token would hand the second factor to whoever holds the
+// first. The token rides once in the redirect's fragment, which browsers
+// never send to any server; app.js keeps it in sessionStorage and strips the
+// fragment. Anyone without the cookie gets a 401 page.
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if t := r.URL.Query().Get("token"); t != "" {
 		if !s.consumeLaunch(t) {
@@ -233,7 +238,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
 		})
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		http.Redirect(w, r, "/#csrf="+s.token, http.StatusSeeOther)
 		return
 	}
 	if !s.hasCookie(r) {
@@ -245,7 +250,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	b := brand.Sanitized()
-	if err := s.index.Execute(w, map[string]string{"CSRF": s.token, "Name": b.Name, "DisplayName": b.DisplayName, "Accent": b.AccentColor}); err != nil {
+	if err := s.index.Execute(w, map[string]string{"Name": b.Name, "DisplayName": b.DisplayName}); err != nil {
 		s.d.Logger("web: index: " + err.Error())
 	}
 }

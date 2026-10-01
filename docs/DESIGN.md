@@ -3586,17 +3586,22 @@ opens can make the browser do so. The design keeps both from driving it.
      launch page), Path=/, named `<brand.SessionCookie>_<port>` because
      cookies are not port-scoped and one name would let a second dashboard
      log out the first;
-   - the *CSRF token*, only in the page's `<meta>`.
+   - the *CSRF token*, handed to the page once in the fragment of that
+     redirect (`/#csrf=<token>`). A fragment never reaches a server; app.js
+     moves it into `sessionStorage` (per tab; a reload keeps it, a new tab
+     needs a fresh launch URL) and drops it from the URL and the history
+     entry with `history.replaceState`. The page is rendered without it.
    The cookie alone is never enough: a cookie set for 127.0.0.1 reaches every
-   port on 127.0.0.1, so a hostile local service could see it.
+   port on 127.0.0.1, so a hostile local service could see it — and the page
+   that cookie fetches holds no second factor to read.
 3. **Both factors on every `/api` call**, reads included: cookie plus
    `X-CSRF-Token`. EventSource cannot send headers, so `/api/events` alone
    accepts `?csrf=`; anywhere else a token in a URL would only leak (history,
    logs). Non-GET requests also need `Origin` absent or same-origin and
    `Sec-Fetch-Site` absent, `same-origin` or `none`.
 4. **The page and its assets need the cookie**, so a foreign page cannot
-   fingerprint the port by loading `/static/app.js`. The page is the only
-   carrier of the CSRF token, so it is guarded like the API.
+   fingerprint the port by loading `/static/app.js`. Neither carries the
+   CSRF token, so the cookie buys a reader nothing but the static UI.
 5. **Headers.** CSP `default-src 'self'` with no inline script or style (the
    build's accent colour is therefore served as `/static/accent.css`),
    frame-ancestors none, nosniff, no-referrer, no-store, DENY framing.

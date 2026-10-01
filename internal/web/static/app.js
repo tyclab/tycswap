@@ -1,6 +1,8 @@
 // app.js — tycswap dashboard client (DESIGN A25). Vanilla JS, no build step:
-// fetch /api/state once, then follow /api/events (SSE) with the browser's
-// built-in reconnect. Countdowns are recomputed client-side every second from
+// take the CSRF token from the launch redirect's #csrf= fragment (kept in
+// sessionStorage, so a reload keeps it and a new tab needs a fresh launch
+// URL), fetch /api/state once, then follow /api/events (SSE) with the
+// browser's built-in reconnect. Countdowns are recomputed client-side every second from
 // the server's resets_at / expiresAt / startedAt values. The Auto tab ranks
 // "Next best" candidates client-side with the same keys tui/autoview.go uses
 // (candidateLessBest / candidateLessSoonest) and colours engine events like
@@ -9,7 +11,22 @@
 (function () {
   'use strict';
 
-  var CSRF = (document.querySelector('meta[name="csrf"]') || {}).content || '';
+  // CSRF: the second factor. The launch redirect lands on /#csrf=<token>;
+  // the fragment never reaches a server, so the page is the only thing that
+  // sees it. It is moved into sessionStorage (per tab, gone when the tab
+  // closes; a reload keeps it) and the fragment is dropped from the URL and
+  // the history entry at once. A tab without a token cannot have come from
+  // the launch URL and is told to open it.
+  var CSRF = (function () {
+    var key = 'csrf';
+    var m = /^#csrf=([0-9a-f]+)$/.exec(window.location.hash || '');
+    if (m) {
+      try { sessionStorage.setItem(key, m[1]); } catch (e) { /* storage disabled: the token lives for this load only */ }
+      try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) { /* ignore */ }
+      return m[1];
+    }
+    try { return sessionStorage.getItem(key) || ''; } catch (e) { return ''; }
+  })();
   // The command name for the hints this page prints (brand.Name, templated).
   var NAME = (document.querySelector('meta[name="app-name"]') || {}).content || 'tycswap';
   var $ = function (id) { return document.getElementById(id); };
@@ -1466,9 +1483,10 @@
   function deadSession() {
     sessionDead = true;
     if (es) { es.close(); es = null; }
+    try { sessionStorage.removeItem('csrf'); } catch (e) { /* ignore */ }
     setConn('off');
     $('conn-text').textContent = 'session ended';
-    toast('This dashboard session has ended. Run ' + NAME + ' web again and open the URL it prints.');
+    toast('This dashboard session has ended. Run ' + NAME + ' web again and open the URL it prints (a new tab needs a fresh URL too).');
   }
 
   function subscribe() {
@@ -1503,6 +1521,14 @@
     });
   }
 
+  if (!CSRF) {
+    // No token: this tab was not opened from the launch URL (or storage was
+    // cleared). Nothing here can succeed, so say what to do instead of
+    // firing requests that answer 403.
+    deadSession();
+    $('conn-text').textContent = 'no session';
+    return;
+  }
   if (!window.EventSource) { loadOnce().catch(function (err) { toast(err.message); setConn('off'); }); }
   subscribe();
   setInterval(function () { if (!document.hidden) { tickCountdowns(); } }, 1000);

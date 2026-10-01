@@ -186,9 +186,8 @@ func TestStatic_ContentTypesAndCookieGated(t *testing.T) {
 }
 
 func TestStatic_RawIndexNotServedAndNoListing(t *testing.T) {
-	// The raw template must not be reachable (it would show {{.CSRF}} but
-	// more importantly bypasses the guarded index handler), and the directory
-	// must not list.
+	// The raw template must not be reachable (it bypasses the guarded index
+	// handler), and the directory must not list.
 	h := newHarness(t)
 	for _, p := range []string{"/static/", "/static", "/static/index.html", "/static/missing.js", "/static/../web.go"} {
 		resp := h.do(h.newReq(http.MethodGet, p, nil))
@@ -200,7 +199,7 @@ func TestStatic_RawIndexNotServedAndNoListing(t *testing.T) {
 		}
 	}
 	resp := h.do(h.newReq(http.MethodGet, "/static/index.html", nil))
-	if resp.StatusCode == http.StatusOK && strings.Contains(string(readBody(t, resp)), "{{.CSRF}}") {
+	if resp.StatusCode == http.StatusOK && strings.Contains(string(readBody(t, resp)), "{{.") {
 		t.Fatal("raw index template is exposed")
 	}
 }
@@ -256,8 +255,10 @@ func TestIndexHTML_OnlyLocalReferences(t *testing.T) {
 	if _, ok := entries["static/icon.svg"]; !ok {
 		t.Error("static/icon.svg not embedded")
 	}
-	if !strings.Contains(index, `<meta name="csrf" content="{{.CSRF}}">`) {
-		t.Error("index lacks the csrf meta template")
+	// The CSRF token reaches the page through the launch redirect's fragment
+	// and lives in sessionStorage; the cookie-gated page must not template it.
+	if strings.Contains(index, "csrf") || strings.Contains(index, "{{.CSRF}}") {
+		t.Error("index templates the CSRF token; it must travel in the redirect fragment only")
 	}
 	if !strings.Contains(index, `aria-live=`) {
 		t.Error("index lacks a live region for toasts")
@@ -297,7 +298,7 @@ func TestIndexHTML_OnlyLocalReferences(t *testing.T) {
 		t.Error("style.css lacks the phone card grid for account rows")
 	}
 	js := string(entries["static/app.js"])
-	for _, needle := range []string{`meta[name="csrf"]`, "EventSource", "/api/state", "/api/events", "X-CSRF-Token", "renderActiveStrip", "hashchange", "function meter(", "function tile(", "function chip("} {
+	for _, needle := range []string{"#csrf=", "sessionStorage", "history.replaceState", "EventSource", "/api/state", "/api/events", "X-CSRF-Token", "renderActiveStrip", "hashchange", "function meter(", "function tile(", "function chip("} {
 		if !strings.Contains(js, needle) {
 			t.Errorf("app.js lacks %q", needle)
 		}

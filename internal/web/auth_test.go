@@ -1,11 +1,13 @@
-// Tests for the A25 security model: token bootstrap → cookie, cookie-gated
-// API, CSRF + Origin + Sec-Fetch-Site on mutations, Host pinning, and the
-// guarded index page.
+// Tests for the A25 security model: token bootstrap → cookie plus the CSRF
+// token in the redirect's fragment, cookie-gated API, CSRF + Origin +
+// Sec-Fetch-Site on mutations, Host pinning, and the guarded, token-free
+// index page.
 package web
 
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -93,8 +95,11 @@ func TestTokenBootstrap_SetsCookieAndRedirects(t *testing.T) {
 	if wrong := h.do(h.newReq(http.MethodGet, "/?token="+fixedToken, nil)); wrong.StatusCode != http.StatusForbidden {
 		t.Fatalf("CSRF token accepted as launch token: %d", wrong.StatusCode)
 	}
-	if loc := resp.Header.Get("Location"); loc != "/" {
-		t.Fatalf("Location %q, want /", loc)
+	// The CSRF token rides in the redirect's fragment and nowhere else: a
+	// fragment never reaches a server, and the page itself (fetched with the
+	// cookie alone) must not carry it.
+	if loc := resp.Header.Get("Location"); loc != "/#csrf="+fixedToken {
+		t.Fatalf("Location %q, want /#csrf=<token>", loc)
 	}
 	var c *http.Cookie
 	for _, ck := range resp.Cookies() {
@@ -153,7 +158,10 @@ func TestIndex_RequiresCookie(t *testing.T) {
 	}
 }
 
-func TestIndex_ServedWithCSRFMeta(t *testing.T) {
+// The page is fetched with the cookie alone, and a 127.0.0.1 cookie reaches
+// every loopback port, so the page must not carry the CSRF token: whoever
+// holds the cookie would otherwise read the second factor from it.
+func TestIndex_CookieOnlyPageCarriesNoToken(t *testing.T) {
 	h := newHarness(t)
 	resp := h.do(h.withCookie(h.newReq(http.MethodGet, "/", nil)))
 	if resp.StatusCode != http.StatusOK {
@@ -163,8 +171,8 @@ func TestIndex_ServedWithCSRFMeta(t *testing.T) {
 		t.Errorf("content-type %q", ct)
 	}
 	body := string(readBody(t, resp))
-	if !strings.Contains(body, `<meta name="csrf" content="`+fixedToken+`">`) {
-		t.Fatalf("index lacks csrf meta with token; body head: %.300s", body)
+	if strings.Contains(body, fixedToken) || strings.Contains(body, `name="csrf"`) {
+		t.Fatalf("the cookie-gated page carries the CSRF token; body head: %.300s", body)
 	}
 	if strings.Contains(body, "{{") {
 		t.Fatal("index left template markers unexpanded")
@@ -174,6 +182,32 @@ func TestIndex_ServedWithCSRFMeta(t *testing.T) {
 			t.Errorf("missing %s header", hdr)
 		}
 	}
+}
+
+// The attack the fragment design closes: a cookie leaked to another loopback
+// port is replayed against the page, which used to carry the CSRF token in a
+// <meta>. Now the page yields no usable token and a cookie-only client cannot
+// reach a mutating route.
+func TestCookieOnlyClientCannotMutate(t *testing.T) {
+	h := newHarness(t)
+	page := string(readBody(t, h.do(h.withCookie(h.newReq(http.MethodGet, "/", nil)))))
+	for _, cand := range regexp.MustCompile(`[0-9a-f]{32}`).FindAllString(page, -1) {
+		if cand == fixedToken {
+			t.Fatal("the page leaks the CSRF token to a cookie-only client")
+		}
+	}
+	for _, asset := range []string{"/static/app.js", "/static/style.css"} {
+		if b := readBody(t, h.do(h.withCookie(h.newReq(http.MethodGet, asset, nil)))); strings.Contains(string(b), fixedToken) {
+			t.Fatalf("%s leaks the CSRF token to a cookie-only client", asset)
+		}
+	}
+	for _, r := range mutatingRoutes() {
+		resp := h.do(h.withCookie(h.newReq(r.method, r.path, strings.NewReader("{}"))))
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s %s with the cookie alone: status %d, want 403", r.method, r.path, resp.StatusCode)
+		}
+	}
+	facadesUntouched(t, h, false)
 }
 
 func TestAPI_MissingCookie401_EveryRoute(t *testing.T) {

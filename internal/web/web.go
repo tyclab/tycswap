@@ -10,7 +10,9 @@
 // Security model (A25): three independent 128-bit secrets are minted per
 // launch. The one-time launch token rides in the printed URL; GET /?token=<t>
 // redeems it once, sets the HttpOnly, SameSite=Lax, Path=/ session cookie and
-// redirects to /. The page carries the CSRF token in a <meta>. Every /api/*
+// redirects to /#csrf=<token>. The CSRF token travels in that URL fragment
+// alone — never in the page, which the cookie alone fetches, and never to
+// the server — and the page keeps it in sessionStorage. Every /api/*
 // request needs the cookie AND X-CSRF-Token (reads included; EventSource
 // sends ?csrf= instead); every mutating request also needs an Origin /
 // Sec-Fetch-Site header that is absent or same-origin. The server binds
@@ -261,7 +263,7 @@ type Deps struct {
 // with Serve.
 type Server struct {
 	d      Deps
-	token  string // CSRF token: in the page's <meta>, required on every /api call
+	token  string // CSRF token: handed to the page once in the redirect's fragment, required on every /api call
 	cookie string // session cookie value: distinct from token, so a cookie leaked
 	//                 to another 127.0.0.1 port (cookies are not port-scoped) is useless alone
 	cookieBase string // brand.SessionCookie, validated; the port is appended once bound
@@ -326,9 +328,9 @@ func New(d Deps) (*Server, error) {
 			return t.C, t.Stop
 		}
 	}
-	// Three independent secrets, in this order: the CSRF token (page <meta>),
-	// the session cookie value and the one-time launch token in the printed
-	// URL. See the Server fields for why they must differ.
+	// Three independent secrets, in this order: the CSRF token (the redirect
+	// fragment), the session cookie value and the one-time launch token in
+	// the printed URL. See the Server fields for why they must differ.
 	buf := make([]byte, tokenBytes)
 	if _, err := io.ReadFull(d.Rand, buf); err != nil {
 		return nil, fmt.Errorf("web: minting session token: %w", err)
@@ -360,7 +362,8 @@ func New(d Deps) (*Server, error) {
 	return s, nil
 }
 
-// Token returns the per-launch CSRF token (the value in the page's <meta>).
+// Token returns the per-launch CSRF token (the value the redirect's fragment
+// hands the page).
 func (s *Server) Token() string { return s.token }
 
 // consumeLaunch redeems the one-time bootstrap token: true exactly once for

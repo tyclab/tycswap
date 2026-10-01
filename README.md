@@ -611,9 +611,10 @@ settings, *Next best* ranking, quarantine and event log; *Sessions* lists the
 running Claude Code sessions (also those started with `tycswap run`) and can
 stop one. Export and import stay on the command line.
 
-Only the browser that opens the printed URL can use the page: the token in
-it works once, the server listens on loopback only, and every API call needs
-the session cookie and a per-launch CSRF token. On WSL the browser opens on
+Only the browser tab that opens the printed URL can use the page: the token
+in it works once, the server listens on loopback only, and every API call
+needs the session cookie and a per-launch CSRF token the tab received from
+the launch URL alone (a new tab needs a fresh URL). On WSL the browser opens on
 the Windows side through `wslview` or an `xdg-open` that translates Linux
 paths. The dashboard drives Claude accounts; Codex accounts stay with
 `tycswap codex`. See `docs/reference.md`, `tycswap web`, for the API and the
