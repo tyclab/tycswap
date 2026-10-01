@@ -343,7 +343,10 @@ func copyTree(src, dst string, inFiles map[string]bool, dryRun bool, rep *Report
 				if !fi.IsDir() {
 					return conflict(dst, toRel)
 				}
-				return nil // created by an interrupted run; its contents are checked one by one
+				// Created by an interrupted run; its contents are checked
+				// one by one. Its mode is set again: a resumed copy promises
+				// the store's modes as much as a fresh one.
+				return pinMode(target, dirMode, dryRun)
 			}
 			rep.Entries = append(rep.Entries, Entry{From: rel, To: toRel, Kind: "dir"})
 			if dryRun {
@@ -381,7 +384,7 @@ func copyTree(src, dst string, inFiles map[string]bool, dryRun bool, rep *Report
 					return conflict(dst, toRel)
 				}
 				rep.Verified = append(rep.Verified, toRel)
-				return nil
+				return pinMode(target, fileMode, dryRun)
 			}
 			rep.Entries = append(rep.Entries, Entry{From: rel, To: toRel, Kind: "file"})
 			if dryRun {
@@ -557,6 +560,19 @@ func copyFile(src, dst string) error {
 	return writeFile(dst, data)
 }
 
+// pinMode gives an existing path the store's mode when the copy is real:
+// a verified file 0600, a verified directory 0700. Windows has no POSIX
+// modes to pin.
+func pinMode(path string, mode fs.FileMode, dryRun bool) error {
+	if dryRun || platform.IsWindows() {
+		return nil
+	}
+	if err := os.Chmod(path, mode); err != nil {
+		return fmt.Errorf("chmod %s: %w", path, err)
+	}
+	return nil
+}
+
 // writeFile writes data to dst by temp file and rename, mode 0600.
 func writeFile(dst string, data []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(dst), ".tycswap-migrate-*.tmp")
@@ -704,7 +720,7 @@ func writeFallback(newRoot string, it kcItem, v string) (written bool, err error
 		if !bytes.Equal(existing, data) {
 			return false, conflict(newRoot, filepath.FromSlash(it.fallback))
 		}
-		return false, nil
+		return false, pinMode(target, fileMode, false)
 	} else if !errors.Is(rerr, fs.ErrNotExist) {
 		return false, fmt.Errorf("read %s: %w", target, rerr)
 	}

@@ -543,3 +543,41 @@ func TestDryRunOfAResumeRemovesNothing(t *testing.T) {
 		t.Errorf("the real run did not copy the missing file: %v", err)
 	}
 }
+
+// TestResumeRestoresTheStoreModes: a rerun gives a verified file 0600 and a
+// verified directory 0700 again, the modes a fresh copy writes; a dry run
+// leaves them.
+func TestResumeRestoresTheStoreModes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no POSIX modes")
+	}
+	old := oldStore(t)
+	newRoot := filepath.Join(t.TempDir(), "tycswap")
+	linux := platform.Linux
+	if _, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux}); err != nil {
+		t.Fatal(err)
+	}
+	seq := filepath.Join(newRoot, "sequence.json")
+	cfg := filepath.Join(newRoot, "configs")
+	for p, m := range map[string]os.FileMode{seq: 0o644, cfg: 0o755} {
+		if err := os.Chmod(p, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, DryRun: true, Platform: &linux}); err != nil {
+		t.Fatal(err)
+	}
+	if fi, _ := os.Stat(seq); fi.Mode().Perm() != 0o644 {
+		t.Errorf("dry run changed the file mode to %v", fi.Mode().Perm())
+	}
+	rep, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux})
+	if err != nil || !rep.Resumed {
+		t.Fatalf("rerun = %+v, %v", rep, err)
+	}
+	if fi, _ := os.Stat(seq); fi.Mode().Perm() != 0o600 {
+		t.Errorf("verified file mode = %v, want 0600", fi.Mode().Perm())
+	}
+	if fi, _ := os.Stat(cfg); fi.Mode().Perm() != 0o700 {
+		t.Errorf("verified dir mode = %v, want 0700", fi.Mode().Perm())
+	}
+}
