@@ -3498,8 +3498,9 @@ Claude Code's own locks across a network call would stall Claude Code.
 **5. The store is private, and so are its locks.** Findings *"no check that
 the backup root is private"*, *"the log and update cache can be
 world-readable"* and *"two processes can both break the same stale lock"*:
-every command refuses a store root not owned by the effective user or
-writable by group/other; lock files open without following symlinks and
+every command refuses a store root not owned by the effective user and
+makes one writable by group/other 0700 (a mode chmod cannot change, as on
+a Windows drive under WSL, is one warning line); lock files open without following symlinks and
 without truncation, 0600; directories tycswap creates are 0700; a stale
 Claude Code lock is broken by rename, age recheck, then remove.
 `settings.json` and `mappings.json` read-modify-writes hold their own lock

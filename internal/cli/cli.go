@@ -7,6 +7,7 @@
 package cli
 
 import (
+	"fmt"
 	"io"
 	"os"
 
@@ -48,12 +49,18 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 
 	printOldStoreHint(argv, s.err)
 
-	// The store holds credentials and the lock file: refuse one another local
-	// user could write before any command reads or writes it.
+	// The store holds credentials and the lock file: before any command reads
+	// or writes it, refuse one another local user owns and make one that is
+	// writable by group or other private; a mode chmod cannot change is one
+	// warning line on stderr.
 	if !isHelpOrVersion(argv) {
-		if err := paths.CheckPrivateRoot(paths.GetBackupRoot()); err != nil {
+		warning, err := paths.CheckPrivateRoot(paths.GetBackupRoot())
+		if err != nil {
 			errorTo(s.err, err.Error())
 			return 1
+		}
+		if warning != "" {
+			fmt.Fprintln(s.err, printer.Yellowed("warning: "+warning))
 		}
 	}
 
