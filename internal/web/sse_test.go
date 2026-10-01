@@ -6,6 +6,7 @@ package web
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -192,6 +193,46 @@ func TestSSE_ServerShutdownEndsStreams(t *testing.T) {
 	st.nextState(t, timeout)
 	// Leave the stream open; Cleanup cancels Serve.
 	_ = st
+}
+
+// A state document whose build began before a newer one's, but finished
+// after it, is dropped rather than overtaking it on the stream.
+func TestHub_OlderStateNeverOvertakesNewer(t *testing.T) {
+	h := newHub()
+	ch, unsub := h.subscribe(false)
+	defer unsub()
+	h.publishState(2, []byte("second"), nil)
+	h.publishState(1, []byte("first, late"), nil)
+	h.publishState(3, []byte("third"), nil)
+	h.publishState(3, []byte("third again"), nil)
+	var got []string
+	for len(ch) > 0 {
+		got = append(got, string((<-ch).data))
+	}
+	if want := []string{"second", "third"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("delivered %q, want %q", got, want)
+	}
+	// Non-state events are not ordered by the state sequence.
+	h.publish("auto", []byte("ev"))
+	if ev := <-ch; ev.name != "auto" {
+		t.Fatalf("auto event not delivered: %+v", ev)
+	}
+}
+
+// Every broadcast takes the next sequence number before it builds.
+func TestBroadcast_SequencesEveryDocument(t *testing.T) {
+	h := newHarness(t)
+	st := h.openSSE()
+	defer st.close()
+	st.nextState(t, timeout)
+	before := h.s.stateSeq.Load()
+	h.fireTick()
+	st.nextState(t, timeout)
+	h.post("/api/accounts/claude:2/enable") // a mutation broadcasts too
+	st.nextState(t, timeout)
+	if got := h.s.stateSeq.Load(); got != before+2 {
+		t.Fatalf("sequence advanced %d for two broadcasts, want 2", got-before)
+	}
 }
 
 func TestHub_DropsWhenSubscriberIsSlow(t *testing.T) {

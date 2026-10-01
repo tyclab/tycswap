@@ -38,6 +38,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/brand"
@@ -324,6 +325,11 @@ type Server struct {
 
 	mutMu sync.Mutex // serialises façade (store) mutations
 
+	// stateSeq numbers the state documents in the order their builds began;
+	// the hub drops a document older than the newest one it has published
+	// (see broadcast).
+	stateSeq atomic.Uint64
+
 	mu   sync.Mutex
 	ln   net.Listener
 	port int
@@ -560,7 +566,18 @@ func (s *Server) Serve(ctx context.Context) error {
 // the enriched document; it is built only while one of them is connected,
 // and the plain document is the same state with the tokenStatus keys
 // dropped, so both come from one snapshot.
+//
+// It runs on the serve loop (ticks, engine-event batches) and on request
+// goroutines (after every mutation), so two builds can overlap. The snapshot
+// itself is safe to take concurrently: it is a set of file reads, the usage
+// cache is read lock-free from atomic replaces and written under its file
+// lock behind a reservation step, and the credential store has its own
+// mutex. What overlapping builds could do is publish out of order — the
+// build that started first, with the older store state, finishing last —
+// so every document takes a sequence number before its build starts and the
+// hub drops any document older than the newest it has published.
 func (s *Server) broadcast() {
+	seq := s.stateSeq.Add(1)
 	wantTS := s.hub.wantsTokenStatus()
 	st := s.buildState(stateOpts{tokenStatus: wantTS})
 	var withTS []byte
@@ -578,7 +595,7 @@ func (s *Server) broadcast() {
 		s.d.Logger("web: state: " + err.Error())
 		return
 	}
-	s.hub.publishState(body, withTS)
+	s.hub.publishState(seq, body, withTS)
 }
 
 // publishAuto fans one engine event out as an `auto` SSE event. The caller

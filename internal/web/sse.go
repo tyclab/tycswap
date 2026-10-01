@@ -33,6 +33,9 @@ type sub struct {
 type hub struct {
 	mu   sync.Mutex
 	subs map[chan event]sub
+	// lastSeq is the sequence number of the newest state document published;
+	// an older one arriving later is dropped (publishState).
+	lastSeq uint64
 }
 
 func newHub() *hub { return &hub{subs: map[chan event]sub{}} }
@@ -81,10 +84,17 @@ func (h *hub) wantsTokenStatus() bool {
 }
 
 // publishState delivers a state document: withTS to the subscribers that
-// asked for token status (when non-nil), plain to everyone else.
-func (h *hub) publishState(plain, withTS []byte) {
+// asked for token status (when non-nil), plain to everyone else. seq orders
+// the documents by when their builds began; one older than the newest
+// already published is dropped, so a slow build never overtakes a newer
+// state on the stream.
+func (h *hub) publishState(seq uint64, plain, withTS []byte) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if seq <= h.lastSeq {
+		return
+	}
+	h.lastSeq = seq
 	for ch, s := range h.subs {
 		body := plain
 		if s.tokenStatus && withTS != nil {
