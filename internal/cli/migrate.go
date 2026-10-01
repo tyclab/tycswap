@@ -152,6 +152,10 @@ func printMigrateReport(out io.Writer, rep storemigrate.Report) {
 		}
 	}
 	for _, k := range rep.Keychain {
+		if k.File != "" {
+			fmt.Fprintf(out, "  Keychain %s / %s -> file %s (too large for the Keychain)\n", k.FromService, k.Account, k.File)
+			continue
+		}
 		fmt.Fprintf(out, "  Keychain %s / %s -> %s\n", k.FromService, k.Account, k.ToService)
 	}
 	if rep.Resumed {

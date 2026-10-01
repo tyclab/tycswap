@@ -1,6 +1,7 @@
 package storemigrate
 
 import (
+	"encoding/base64"
 	"errors"
 	"io/fs"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/codex/authfile"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/sessprofile"
@@ -391,4 +393,114 @@ func TestRunResumeRefusesConflictsAndForeignData(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestKeychainItemsTooLargeGoToTheFile: an old Keychain item over `security
+// -i`'s stdin line (the old tool stored such items through argv) is written
+// to the file tycswap reads for it instead of failing the copy: the Claude
+// backup and its .prev as base64 .enc files, the Codex snapshot as its JSON
+// file, the session profile's credential as .credentials.json, each 0600.
+// The report names the file, items that fit still go to the Keychain, and a
+// rerun verifies the files instead of refusing them.
+func TestKeychainItemsTooLargeGoToTheFile(t *testing.T) {
+	old := oldStore(t)
+	// On macOS the credential lives in the Keychain, not beside it.
+	if err := os.Remove(filepath.Join(old, "credentials", ".creds-1-a@example.com.enc")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(old, "codex", "sequence.json"), `{"accounts":{"1":{"account_key":"k1"}},"activeAccountKey":null}`, 0o644)
+	// Slot 2 has an .enc file, which credstore serves first: its Keychain
+	// item is stale, whatever its size.
+	write(t, filepath.Join(old, "sequence.json"), `{"accounts":{"1":{"email":"a@example.com"},"2":{"email":"b@example.com"}},"sequence":[1,2]}`, 0o644)
+	write(t, filepath.Join(old, "credentials", ".creds-2-b@example.com.enc"), "c2VjcmV0", 0o644)
+	newRoot := filepath.Join(t.TempDir(), "tycswap")
+	kc := keychain.NewFake()
+	big := strings.Repeat("x", keychain.SecurityStdinLineLimit)
+	kc.Seed(keychain.OldBackupService, "account-1-a@example.com", big)
+	kc.Seed(keychain.OldBackupService, "account-2-b@example.com", big+"stale")
+	kc.Seed(keychain.OldBackupService, "account-1-a@example.com.prev", big+"p")
+	kc.Seed(keychain.OldBackupService, "account-None-a@example.com", "small")
+	kc.Seed(keychain.OldCodexService, authfile.FileKey("k1"), big+"c")
+	oldSess := sessprofile.KeychainServiceName(filepath.Join(old, "sessions", "1-a_example.com"))
+	kc.Seed(oldSess, keychain.AccountName(), big+"s")
+	mac := platform.MacOS
+
+	rep, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &mac, Keychain: kc})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	b64 := func(v string) string { return base64.StdEncoding.EncodeToString([]byte(v)) }
+	wantFiles := map[string]string{
+		"credentials/.creds-1-a@example.com.enc":                b64(big),
+		"credentials/.creds-1-a@example.com.enc.prev":           b64(big + "p"),
+		"codex/credentials/" + authfile.FileKey("k1") + ".json": big + "c",
+		"sessions/1-a_example.com/.credentials.json":            big + "s",
+	}
+	for rel, want := range wantFiles {
+		p := filepath.Join(newRoot, filepath.FromSlash(rel))
+		b, err := os.ReadFile(p)
+		if err != nil || string(b) != want {
+			t.Errorf("%s: %v, content matches = %v", rel, err, string(b) == want)
+		}
+		if runtime.GOOS != "windows" {
+			if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o600 {
+				t.Errorf("%s mode = %v, want 0600", rel, fi.Mode().Perm())
+			}
+		}
+	}
+	for _, a := range []string{"account-1-a@example.com", "account-1-a@example.com.prev"} {
+		if kc.Exists(keychain.BackupService, a) {
+			t.Errorf("%s was stored in the Keychain although it does not fit", a)
+		}
+	}
+	if v, ok, _ := kc.Get(keychain.BackupService, "account-None-a@example.com"); !ok || v != "small" {
+		t.Error("the item that fits was not copied to the Keychain")
+	}
+	files := map[string]bool{}
+	for _, it := range rep.Keychain {
+		if it.File != "" {
+			files[it.File] = true
+		}
+	}
+	for rel := range wantFiles {
+		if !files[rel] {
+			t.Errorf("report does not name %s; keychain = %+v", rel, rep.Keychain)
+		}
+	}
+	if len(rep.Keychain) != 5 {
+		t.Errorf("reported %d Keychain items, want 5 (the stale slot-2 item is not one)", len(rep.Keychain))
+	}
+	if b, _ := os.ReadFile(filepath.Join(newRoot, "credentials", ".creds-2-b@example.com.enc")); string(b) != "c2VjcmV0" {
+		t.Errorf("slot 2's .enc = %q, want the old store's file, which it serves first", b)
+	}
+	if kc.Exists(keychain.BackupService, "account-2-b@example.com") {
+		t.Error("the stale slot-2 item was copied")
+	}
+	if !containsPath(rep.Skipped, "sessions/1-a_example.com/.credentials.json") {
+		t.Errorf("the profile's seed file was not reported skipped: %v", rep.Skipped)
+	}
+	// The session profile reads the file now; credstore and the Codex store
+	// read their files first by their own rules.
+	if creds, ok := sessprofile.ReadSessionCredentials(kc, filepath.Join(newRoot, "sessions", "1-a_example.com")); !ok || creds != big+"s" {
+		t.Errorf("session credential = %q, %v", len(creds), ok)
+	}
+
+	rep2, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &mac, Keychain: kc})
+	if err != nil || !rep2.Resumed || len(rep2.Entries) != 0 || len(rep2.Keychain) != 0 {
+		t.Errorf("rerun = %+v, %v; want a verified no-op", rep2, err)
+	}
+	// A fallback file with other content is a conflict, as any copied file is.
+	write(t, filepath.Join(newRoot, "codex", "credentials", authfile.FileKey("k1")+".json"), "other", 0o600)
+	if _, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &mac, Keychain: kc}); !errors.Is(err, ErrConflict) {
+		t.Errorf("rerun with a changed fallback file = %v, want ErrConflict", err)
+	}
+}
+
+func containsPath(xs []string, slashPath string) bool {
+	for _, x := range xs {
+		if filepath.ToSlash(x) == slashPath {
+			return true
+		}
+	}
+	return false
 }

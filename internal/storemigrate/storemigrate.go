@@ -16,6 +16,7 @@ package storemigrate
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -33,6 +34,7 @@ import (
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
 // Store modes: every directory 0700, every file 0600, whatever the source had.
@@ -92,6 +94,22 @@ type KeychainItem struct {
 	FromService string `json:"fromService"`
 	ToService   string `json:"toService"`
 	Account     string `json:"account"`
+	// File is set (relative to the new root) when the item was too large for
+	// `security -i` and its value went to the file tycswap reads instead.
+	File string `json:"file,omitempty"`
+}
+
+// kcItem is one Keychain item to copy, with the file that holds its value
+// when it does not fit the Keychain and the encoding that file uses.
+type kcItem struct {
+	KeychainItem
+	fallback string              // slash-separated, relative to the new root
+	encode   func(string) []byte // the fallback file's format
+	// fileWins says which copy the reader serves when both exist: credstore
+	// and the Codex store serve the file first (so an existing file makes the
+	// Keychain item stale), a session profile serves the Keychain first (so
+	// the item's value replaces the profile's seed file).
+	fileWins bool
 }
 
 // Report is what Run copied (or, in a dry run, would copy).
@@ -209,6 +227,11 @@ func Run(o Options) (Report, error) {
 	if err != nil {
 		return rep, err
 	}
+	var items []kcItem
+	if plat == platform.MacOS {
+		items = keychainItems(old, o.NewRoot, kc)
+		planKeychainFiles(plan, items)
+	}
 	if !IsEmpty(o.NewRoot) {
 		if err := checkResumable(o.NewRoot, plan); err != nil {
 			return rep, err
@@ -241,13 +264,17 @@ func Run(o Options) (Report, error) {
 		}
 	}
 
-	if err := copyTree(old, o.NewRoot, o.DryRun, &rep); err != nil {
-		return rep, err
-	}
+	// Keychain items go first: one too large for the Keychain lands in a file
+	// of the tree, which the tree copy then leaves to it.
+	var inFiles map[string]bool
 	if plat == platform.MacOS {
-		if err := copyKeychain(old, o.NewRoot, kc, o.DryRun, &rep); err != nil {
+		var err error
+		if inFiles, err = copyKeychain(old, o.NewRoot, items, kc, o.DryRun, &rep); err != nil {
 			return rep, err
 		}
+	}
+	if err := copyTree(old, o.NewRoot, inFiles, o.DryRun, &rep); err != nil {
+		return rep, err
 	}
 	return rep, nil
 }
@@ -263,7 +290,11 @@ func newName(name string, top bool) string {
 	return name
 }
 
-func copyTree(src, dst string, dryRun bool, rep *Report) error {
+// copyTree copies the old store's tree. inFiles names the paths (relative to
+// dst) a Keychain item's value was written to; the old store's file there, a
+// session profile's seed, is skipped, since the profile serves the Keychain
+// value first and that value is what the file now holds.
+func copyTree(src, dst string, inFiles map[string]bool, dryRun bool, rep *Report) error {
 	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("read %s: %w", p, err)
@@ -329,6 +360,10 @@ func copyTree(src, dst string, dryRun bool, rep *Report) error {
 				rep.Skipped = append(rep.Skipped, rel)
 				return nil
 			}
+			if inFiles[toRel] {
+				rep.Skipped = append(rep.Skipped, rel)
+				return nil
+			}
 			if _, err := os.Lstat(target); err == nil {
 				if throwawayTop(toRel) {
 					// The new store's own log, cache or ledger, written since
@@ -363,7 +398,25 @@ func copyTree(src, dst string, dryRun bool, rep *Report) error {
 // planned is one path the copy would write, keyed by its path in the new store.
 type planned struct {
 	src  string // absolute path in the old store
-	kind string // "dir" | "file" | "symlink"
+	kind string // "dir" | "file" | "symlink" | "keychain-file"
+}
+
+// planKeychainFiles adds to plan the files a Keychain item too large for
+// `security -i` is written to (and their directories), so a rerun accepts
+// them as part of the copy. Their content is checked by copyKeychain against
+// the item's value, not here.
+func planKeychainFiles(plan map[string]planned, items []kcItem) {
+	for _, it := range items {
+		rel := filepath.FromSlash(it.fallback)
+		if _, ok := plan[rel]; !ok || !it.fileWins {
+			plan[rel] = planned{kind: "keychain-file"}
+		}
+		for dir := filepath.Dir(rel); dir != "." && dir != string(filepath.Separator); dir = filepath.Dir(dir) {
+			if _, ok := plan[dir]; !ok {
+				plan[dir] = planned{kind: "dir"}
+			}
+		}
+	}
 }
 
 // planTree maps every path the copy would write (relative to the new root) to
@@ -439,6 +492,10 @@ func checkResumable(newRoot string, plan map[string]planned) error {
 			if aerr != nil || berr != nil || a != b {
 				return conflict(newRoot, rel)
 			}
+		case "keychain-file":
+			if !d.Type().IsRegular() {
+				return conflict(newRoot, rel)
+			}
 		case "file":
 			if !d.Type().IsRegular() {
 				return conflict(newRoot, rel)
@@ -489,6 +546,11 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", src, err)
 	}
+	return writeFile(dst, data)
+}
+
+// writeFile writes data to dst by temp file and rename, mode 0600.
+func writeFile(dst string, data []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(dst), ".tycswap-migrate-*.tmp")
 	if err != nil {
 		return fmt.Errorf("write %s: %w", dst, err)
@@ -517,43 +579,75 @@ func copyFile(src, dst string) error {
 	return nil
 }
 
-// copyKeychain copies the old store's macOS Keychain items to the new service
-// names: the per-account Claude backups (and their .prev generation and the
-// legacy account-None alias), the Codex snapshots, and each session profile's
-// hashed Claude Code entry, whose service name derives from the profile path
-// and so changes with the store root. Items are read and written, never deleted.
-func copyKeychain(oldRoot, newRoot string, kc keychain.KeychainClient, dryRun bool, rep *Report) error {
-	var items []KeychainItem
+// keychainItems lists the old store's macOS Keychain items with their new
+// service names: the per-account Claude backups (and their .prev generation
+// and the legacy account-None alias), the Codex snapshots, and each session
+// profile's hashed Claude Code entry, whose service name derives from the
+// profile path and so changes with the store root. Each item names the file
+// under the new root that holds its value when it does not fit the Keychain:
+// the file tycswap reads first for that item (credstore's .enc[.prev] in
+// base64, the Codex snapshot file, the profile's .credentials.json).
+func keychainItems(oldRoot, newRoot string, kc keychain.KeychainClient) []kcItem {
+	b64 := func(v string) []byte { return []byte(base64.StdEncoding.EncodeToString([]byte(v))) }
+	raw := func(v string) []byte { return []byte(v) }
+	var items []kcItem
 	for _, acct := range claudeBackupAccounts(oldRoot) {
-		items = append(items, KeychainItem{keychain.OldBackupService, keychain.BackupService, acct})
+		items = append(items, kcItem{
+			KeychainItem: KeychainItem{keychain.OldBackupService, keychain.BackupService, acct.name, ""},
+			fallback:     "credentials/" + acct.file,
+			encode:       b64,
+			fileWins:     true,
+		})
 	}
 	cs := codexstore.New(codexstore.Options{Root: filepath.Join(oldRoot, codexDir), Keychain: kc, Platform: platform.Linux})
 	for _, sl := range cs.Slots() {
-		items = append(items, KeychainItem{keychain.OldCodexService, keychain.CodexService, authfile.FileKey(sl.AccountKey)})
+		key := authfile.FileKey(sl.AccountKey)
+		items = append(items, kcItem{
+			KeychainItem: KeychainItem{keychain.OldCodexService, keychain.CodexService, key, ""},
+			fallback:     codexDir + "/credentials/" + key + ".json",
+			encode:       raw,
+			fileWins:     true,
+		})
 	}
 	if entries, err := os.ReadDir(filepath.Join(oldRoot, sessionsDir)); err == nil {
 		for _, e := range entries {
 			if !e.IsDir() {
 				continue
 			}
-			items = append(items, KeychainItem{
-				FromService: sessprofile.KeychainServiceName(filepath.Join(oldRoot, sessionsDir, e.Name())),
-				ToService:   sessprofile.KeychainServiceName(filepath.Join(newRoot, sessionsDir, e.Name())),
-				Account:     keychain.AccountName(),
+			items = append(items, kcItem{
+				KeychainItem: KeychainItem{
+					FromService: sessprofile.KeychainServiceName(filepath.Join(oldRoot, sessionsDir, e.Name())),
+					ToService:   sessprofile.KeychainServiceName(filepath.Join(newRoot, sessionsDir, e.Name())),
+					Account:     keychain.AccountName(),
+				},
+				fallback: sessionsDir + "/" + e.Name() + "/" + sessprofile.CredentialsFileName,
+				encode:   raw,
 			})
 		}
 	}
+	return items
+}
 
+// copyKeychain copies the Keychain items to their new services. Items are
+// read and written, never deleted. An item too large for `security -i`'s
+// stdin line (one the old tool stored through argv) is written to its
+// fallback file instead, 0600, so the account keeps working; the report
+// names the file. Where the reader serves the file first and the old store
+// has that file, the item is stale and nothing is written for it. The
+// returned set names the fallback files (relative to newRoot) that hold an
+// item's value after this call.
+func copyKeychain(oldRoot, newRoot string, items []kcItem, kc keychain.KeychainClient, dryRun bool, rep *Report) (map[string]bool, error) {
+	inFiles := map[string]bool{}
 	for _, it := range items {
 		if dryRun {
 			if kc.Exists(it.FromService, it.Account) {
-				rep.Keychain = append(rep.Keychain, it)
+				rep.Keychain = append(rep.Keychain, it.KeychainItem)
 			}
 			continue
 		}
 		v, found, err := kc.Get(it.FromService, it.Account)
 		if err != nil {
-			return fmt.Errorf("read Keychain item %s/%s: %w", it.FromService, it.Account, err)
+			return nil, fmt.Errorf("read Keychain item %s/%s: %w", it.FromService, it.Account, err)
 		}
 		if !found {
 			continue
@@ -562,28 +656,73 @@ func copyKeychain(oldRoot, newRoot string, kc keychain.KeychainClient, dryRun bo
 		// verified, different is a conflict, never overwritten.
 		if cur, ok, err := kc.Get(it.ToService, it.Account); err == nil && ok {
 			if cur != v {
-				return fmt.Errorf("%w: Keychain item %s/%s already exists with other content", ErrConflict, it.ToService, it.Account)
+				return nil, fmt.Errorf("%w: Keychain item %s/%s already exists with other content", ErrConflict, it.ToService, it.Account)
 			}
 			continue
 		}
-		if err := kc.Set(it.ToService, it.Account, v); err != nil {
-			return fmt.Errorf("write Keychain item %s/%s: %w", it.ToService, it.Account, err)
+		err = kc.Set(it.ToService, it.Account, v)
+		if keychain.IsTooLarge(err) {
+			if it.fileWins {
+				if fi, err := os.Lstat(filepath.Join(oldRoot, filepath.FromSlash(it.fallback))); err == nil && fi.Mode().IsRegular() {
+					continue // the old store served that file; the item is stale
+				}
+			}
+			written, ferr := writeFallback(newRoot, it, v)
+			if ferr != nil {
+				return nil, ferr
+			}
+			inFiles[filepath.FromSlash(it.fallback)] = true
+			if written {
+				it.KeychainItem.File = it.fallback
+				rep.Keychain = append(rep.Keychain, it.KeychainItem)
+			}
+			continue
 		}
-		rep.Keychain = append(rep.Keychain, it)
+		if err != nil {
+			return nil, fmt.Errorf("write Keychain item %s/%s: %w", it.ToService, it.Account, err)
+		}
+		rep.Keychain = append(rep.Keychain, it.KeychainItem)
 	}
-	return nil
+	return inFiles, nil
 }
+
+// writeFallback writes an item's value to its fallback file. A file already
+// holding the same bytes (a resumed run) is left as it is and reported as
+// not written; one with other content is a conflict.
+func writeFallback(newRoot string, it kcItem, v string) (written bool, err error) {
+	target := filepath.Join(newRoot, filepath.FromSlash(it.fallback))
+	data := it.encode(v)
+	if existing, rerr := os.ReadFile(target); rerr == nil {
+		if !bytes.Equal(existing, data) {
+			return false, conflict(newRoot, filepath.FromSlash(it.fallback))
+		}
+		return false, nil
+	} else if !errors.Is(rerr, fs.ErrNotExist) {
+		return false, fmt.Errorf("read %s: %w", target, rerr)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), dirMode); err != nil {
+		return false, fmt.Errorf("create %s: %w", filepath.Dir(target), err)
+	}
+	if err := writeFile(target, data); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// backupAccount is one per-account Keychain account name and the credstore
+// file that holds the same value when it does not fit the Keychain.
+type backupAccount struct{ name, file string }
 
 // claudeBackupAccounts lists the Keychain account names the old store's roster
 // implies: account-<n>-<email>, its .prev, and the legacy account-None alias.
-func claudeBackupAccounts(oldRoot string) []string {
+func claudeBackupAccounts(oldRoot string) []backupAccount {
 	emails := rosterEmails(oldRoot)
 	seen := map[string]bool{}
-	var out []string
-	add := func(s string) {
-		if !seen[s] {
-			seen[s] = true
-			out = append(out, s)
+	var out []backupAccount
+	add := func(name, file string) {
+		if !seen[name] {
+			seen[name] = true
+			out = append(out, backupAccount{name, file})
 		}
 	}
 	nums := make([]string, 0, len(emails))
@@ -598,8 +737,8 @@ func claudeBackupAccounts(oldRoot string) []string {
 		}
 		for _, num := range []string{n, "None"} {
 			base := "account-" + num + "-" + email
-			add(base)
-			add(base + ".prev")
+			add(base, storenames.CredsFile(num, email))
+			add(base+".prev", storenames.CredsPrevFile(num, email))
 		}
 	}
 	return out

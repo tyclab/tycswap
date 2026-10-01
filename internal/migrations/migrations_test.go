@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -146,6 +147,39 @@ func TestMacOSRelocation_HappyPathViaRunner(t *testing.T) {
 	applied := loadApplied(host.stateFilePath)
 	if _, ok := applied["macos_keyring_to_security"]; !ok {
 		t.Fatalf(".migrations.json applied map = %v, want macos_keyring_to_security recorded", applied)
+	}
+}
+
+// TestMacOSRelocation_TooLargeItemGoesToTheFile: a legacy keyring item over
+// `security -i`'s stdin line (the keyring library had no such limit) is
+// relocated into the 0600 .enc file credstore serves first, the legacy entry
+// is removed, and the migration completes instead of retrying forever.
+func TestMacOSRelocation_TooLargeItemGoesToTheFile(t *testing.T) {
+	kc := keychain.NewFake()
+	big := strings.Repeat("x", keychain.SecurityStdinLineLimit)
+	kc.Seed(legacyKeyringService, "account-1-alice@x.com", big)
+	host := newTestHost(t, platform.MacOS, kc, nil, map[string]string{"1": "alice@x.com"}, true)
+
+	notices := Run(host)
+
+	if got, err := host.creds.ReadBackup("1", "alice@x.com"); err != nil || got != big {
+		t.Fatalf("ReadBackup = %d bytes, %v; want the legacy value", len(got), err)
+	}
+	encPath := filepath.Join(host.credentialsDir, ".creds-1-alice@x.com.enc")
+	if fi, err := os.Stat(encPath); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf(".enc file: %v, mode %v; want present and 0600", err, fi.Mode().Perm())
+	}
+	if kc.Exists(securityService, "account-1-alice@x.com") {
+		t.Error("an oversized item was stored in the Keychain")
+	}
+	if kc.Exists(legacyKeyringService, "account-1-alice@x.com") {
+		t.Error("legacy keyring entry survived a successful relocation")
+	}
+	if !containsString(notices, "tycswap: migrated 1 macOS credential(s) from the keyring into the Keychain via security") {
+		t.Errorf("notices = %v", notices)
+	}
+	if _, ok := loadApplied(host.stateFilePath)["macos_keyring_to_security"]; !ok {
+		t.Error("migration not recorded as applied")
 	}
 }
 

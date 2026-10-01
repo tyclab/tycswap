@@ -2470,7 +2470,17 @@ Keychain items are copied to the new service names: per-account backups
 (`claude-swap` → `tycswap`, including the `.prev` generation and the
 `account-None` alias), Codex snapshots (`claude-swap-codex` → `tycswap-codex`),
 and each session profile's `Claude Code-credentials-<hash>` entry, whose hash
-follows the profile's new path.
+follows the profile's new path. An item too large for the `security` command's
+stdin line (over about 2 KB; the old tool stored such items on the command
+line) is written to the file tycswap reads for it instead, mode 0600: a
+per-account backup to `credentials/.creds-<n>-<email>.enc` (its `.prev`
+generation to `.enc.prev`), a Codex snapshot to `codex/credentials/<key>.json`,
+a session profile's credential to `sessions/<n>-<email>/.credentials.json`
+(replacing the profile's seed copy, since a profile serves the Keychain value
+first; a backup or snapshot whose file the old store already has is left to
+that file, which is served first, and the item is not copied). The report
+lists such an item as `Keychain <service> / <account> -> file <path> (too
+large for the Keychain)`, and in `--json` its `keychain` entry carries `file`.
 
 The old store and the old Keychain items are only read: `migrate` never moves,
 modifies or deletes them, because another tool may still use them. Remove them

@@ -3454,7 +3454,11 @@ capped at 8 MiB. Display fields are stored without control characters.
 **2. A secret never goes on a command line.** Finding *"Claude credentials can
 appear on the `security` command line"*: `keychain.Security.Set` refuses a
 payload too large for `security -i`'s stdin with a `TooLarge` KeychainError;
-credstore takes its file fallback without marking the Keychain unusable.
+credstore takes its file fallback without marking the Keychain unusable, and
+so do `tycswap migrate` (the item goes to the file tycswap reads for it: the
+`.enc[.prev]`, the Codex snapshot file, the profile's `.credentials.json`) and
+the legacy keyring migration (the `.enc`), so an account whose item the old
+tool stored through argv still migrates.
 Finding *"tokens on the command line are encouraged"*: the docs use the
 prompt and `-`, and `add-token` warns on a positional token.
 

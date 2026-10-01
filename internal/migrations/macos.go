@@ -20,11 +20,16 @@
 package migrations
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
 // securityService is Python's SECURITY_SERVICE (credentials.py) — the
@@ -84,6 +89,7 @@ func migrateMacOSKeyringToSecurity(host Host) (completed bool, notices []string,
 	}
 
 	kc := host.Keychain()
+	inFile := map[string]bool{} // slots whose credential went to the .enc file
 	migrated, failed := relocate(relocateConfig{
 		label:       "macos_keyring_to_security",
 		pending:     pending,
@@ -103,9 +109,30 @@ func migrateMacOSKeyringToSecurity(host Host) (completed bool, notices []string,
 				host.Logger().Warningf("macos_keyring_to_security: best-effort delete of %s failed: %v", username, err)
 			}
 		},
-		writeNew: func(num, email, creds string) error { return store.KCWriteBackup(num, email, creds) },
-		readNew:  func(num, email string) (string, error) { return store.KCReadBackup(num, email) },
+		writeNew: func(num, email, creds string) error {
+			err := store.KCWriteBackup(num, email, creds)
+			if keychain.IsTooLarge(err) {
+				// Too large for `security -i`'s stdin line (the keyring
+				// library had no such limit): the 0600 .enc file, which
+				// ReadBackup serves first, holds it instead.
+				inFile[num] = true
+				return store.WriteBackup(num, email, creds)
+			}
+			return err
+		},
+		readNew: func(num, email string) (string, error) {
+			if inFile[num] {
+				return store.ReadBackup(num, email)
+			}
+			return store.KCReadBackup(num, email)
+		},
 		deleteBadNew: func(num, email string) {
+			if inFile[num] {
+				if err := os.Remove(filepath.Join(host.CredentialsDir(), storenames.CredsFile(num, email))); err != nil && !errors.Is(err, fs.ErrNotExist) {
+					host.Logger().Warningf("Failed to delete the credentials file: %v", err)
+				}
+				return
+			}
 			if err := kc.Delete(securityService, backupUsername(num, email)); err != nil {
 				host.Logger().Warningf("Failed to delete credentials from Keychain: %v", err)
 			}
