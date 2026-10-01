@@ -41,6 +41,7 @@ import (
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 const codexProg = "tycswap codex"
@@ -296,10 +297,10 @@ func runCodexVerb(a codexArgs, jsonMode bool, s ioStreams) int {
 			return fail(err)
 		}
 		if res.AlreadyActive {
-			fmt.Fprintf(s.out, "Codex account %s is already active: %s\n", res.Number, res.Email)
+			fmt.Fprintf(s.out, "Codex account %s is already active: %s\n", res.Number, termsafe.Strip(res.Email))
 			return 0
 		}
-		fmt.Fprintf(s.out, "Switched to Codex account %s: %s\n", res.Number, res.Email)
+		fmt.Fprintf(s.out, "Switched to Codex account %s: %s\n", res.Number, termsafe.Strip(res.Email))
 		if len(res.RunningPIDs) > 0 {
 			warningTo(s.out, fmt.Sprintf("codex is running (pid %s) — restart it for the new account to take effect.",
 				joinPIDs(res.RunningPIDs)))
@@ -310,7 +311,7 @@ func runCodexVerb(a codexArgs, jsonMode bool, s ioStreams) int {
 		if err != nil {
 			return fail(err)
 		}
-		fmt.Fprintf(s.out, "Added Codex account %s: %s\n", slot.Number, slot.DisplayLabel())
+		fmt.Fprintf(s.out, "Added Codex account %s: %s\n", slot.Number, termsafe.Strip(slot.DisplayLabel()))
 		return 0
 	case "login":
 		return codexLogin(ctx, sw, a.bools["--device-auth"], a.values["--alias"], s)
@@ -661,7 +662,7 @@ func codexLogin(ctx context.Context, sw *codexswitcher.Switcher, deviceAuth bool
 	if err != nil {
 		return renderDomainError(err, false, s.out, s.err)
 	}
-	fmt.Fprintf(s.out, "Added Codex account %s: %s\n", slot.Number, slot.DisplayLabel())
+	fmt.Fprintf(s.out, "Added Codex account %s: %s\n", slot.Number, termsafe.Strip(slot.DisplayLabel()))
 	return 0
 }
 

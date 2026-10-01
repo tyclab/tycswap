@@ -24,6 +24,7 @@ import (
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/termsafe"
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
@@ -122,10 +123,12 @@ func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries ma
 	fmt.Fprintln(w, printer.Bolded("Accounts:"))
 	for i, info := range infos {
 		num := strconv.Itoa(info.Number)
-		tag := displayTag(info.OrgName)
-		label := info.Email
+		// Display fields come from exports, APIs and other tools' files:
+		// never print a terminal control sequence they carry.
+		tag := termsafe.Strip(displayTag(info.OrgName))
+		label := termsafe.Strip(info.Email)
 		if info.Alias != "" {
-			label = printer.Accent(info.Alias) + " (" + info.Email + ")"
+			label = printer.Accent(termsafe.Strip(info.Alias)) + " (" + label + ")"
 		}
 		markers := ""
 		if info.IsActive {
@@ -193,12 +196,12 @@ func renderRunningInstances(w io.Writer) {
 		return g
 	}
 	for _, sess := range sessions {
-		get(printer.EntrypointLabel(sess.Entrypoint), printer.AbbreviatePath(sess.CWD)).sessions++
+		get(termsafe.Strip(printer.EntrypointLabel(sess.Entrypoint)), termsafe.Strip(printer.AbbreviatePath(sess.CWD))).sessions++
 	}
 	for _, ide := range ides {
-		name := printer.IDEShortName(ide.IDEName)
+		name := termsafe.Strip(printer.IDEShortName(ide.IDEName))
 		for _, folder := range ide.WorkspaceFolders {
-			get(name, printer.AbbreviatePath(folder)).ide++
+			get(name, termsafe.Strip(printer.AbbreviatePath(folder))).ide++
 		}
 	}
 

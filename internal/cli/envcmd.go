@@ -246,8 +246,19 @@ func fishQuote(s string) string {
 
 // pwshQuote wraps s in a PowerShell single-quoted string; the only escape is a
 // doubled single quote.
+// PowerShell ends a single-quoted string at any of ' and U+2018–U+201B (the
+// typographic single quotes), so each is doubled, which PowerShell reads as
+// one literal character of the same kind.
+var pwshQuoteEscaper = strings.NewReplacer(
+	"'", "''",
+	"\u2018", "\u2018\u2018",
+	"\u2019", "\u2019\u2019",
+	"\u201a", "\u201a\u201a",
+	"\u201b", "\u201b\u201b",
+)
+
 func pwshQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	return "'" + pwshQuoteEscaper.Replace(s) + "'"
 }
 
 // renderEnvHelp writes `tycswap env --help` and returns exit 0.

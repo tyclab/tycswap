@@ -282,3 +282,19 @@ func TestEnvExportLineEvalsSafely(t *testing.T) {
 		t.Errorf("the eval ran an injected command (line %q)", line)
 	}
 }
+
+// TestPwshQuoteDoublesTypographicQuotes: PowerShell ends a single-quoted
+// string at U+2018–U+201B as well as at '.
+func TestPwshQuoteDoublesTypographicQuotes(t *testing.T) {
+	for in, want := range map[string]string{
+		`C:\p`:                  `'C:\p'`,
+		"it's":                  `'it''s'`,
+		"a\u2018b":              "'a\u2018\u2018b'",
+		"a\u2019; calc; \u2019": "'a\u2019\u2019; calc; \u2019\u2019'",
+		"\u201a\u201b":          "'\u201a\u201a\u201b\u201b'",
+	} {
+		if got := pwshQuote(in); got != want {
+			t.Errorf("pwshQuote(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

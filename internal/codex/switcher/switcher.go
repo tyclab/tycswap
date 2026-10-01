@@ -52,6 +52,7 @@ import (
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/termsafe"
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
@@ -344,13 +345,13 @@ func (s *Switcher) AccountsSnapshot(ctx context.Context, fetch map[string]bool) 
 		switchable := sl.AuthMode != "apikey"
 		rows = append(rows, reporting.AccountSnapshot{
 			Number:           sl.Number,
-			Email:            sl.Email,
-			OrgName:          sl.WorkspaceName,
+			Email:            termsafe.Strip(sl.Email), // display only
+			OrgName:          termsafe.Strip(sl.WorkspaceName),
 			IsActive:         sl.Number == active,
 			Kind:             kind,
 			Switchable:       switchable,
 			Usage:            entry,
-			Alias:            sl.Alias,
+			Alias:            termsafe.Strip(sl.Alias),
 			Disabled:         sl.Disabled,
 			RotationEligible: switchable && !sl.Disabled,
 			Provider:         ProviderID,
@@ -489,10 +490,10 @@ func (s *Switcher) Remove(identifier string, assumeYes bool) (removed bool, err 
 		return false, err
 	}
 	if slot.Number == s.CurrentAccountNumber() {
-		fmt.Fprintln(s.out, printer.Yellowed(fmt.Sprintf("Warning: Codex account %s (%s) is currently active", slot.Number, slot.Email)))
+		fmt.Fprintln(s.out, printer.Yellowed(fmt.Sprintf("Warning: Codex account %s (%s) is currently active", slot.Number, termsafe.Strip(slot.Email))))
 	}
 	if !assumeYes {
-		fmt.Fprintf(s.out, "Are you sure you want to permanently remove Codex account %s (%s)? [y/N] ", slot.Number, slot.Email)
+		fmt.Fprintf(s.out, "Are you sure you want to permanently remove Codex account %s (%s)? [y/N] ", slot.Number, termsafe.Strip(slot.Email))
 		line, _ := bufio.NewReader(s.in).ReadString('\n')
 		if strings.ToLower(strings.TrimRight(line, "\r\n")) != "y" {
 			fmt.Fprintln(s.out, printer.Dimmed("Cancelled"))
@@ -621,12 +622,12 @@ func (st Status) Render(w io.Writer) {
 		fmt.Fprintf(w, "%s %s\n", printer.Bolded("Status:"), printer.Dimmed("No active Codex account"))
 		return
 	}
-	ws := st.Slot.WorkspaceName
+	ws := termsafe.Strip(st.Slot.WorkspaceName)
 	if ws == "" {
 		ws = "personal"
 	}
 	fmt.Fprintf(w, "%s %s (%s %s)\n", printer.Bolded("Status:"), printer.Accent("Codex-"+st.Slot.Number),
-		st.Slot.Email, printer.Muted("["+ws+"]"))
+		termsafe.Strip(st.Slot.Email), printer.Muted("["+ws+"]"))
 	fmt.Fprintf(w, "  %s\n", printer.Dimmed(fmt.Sprintf("Total managed Codex accounts: %d", st.TotalManaged)))
 	for _, line := range usageLines(st.Usage) {
 		fmt.Fprintf(w, "  %s\n", line)

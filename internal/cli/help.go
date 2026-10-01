@@ -90,7 +90,7 @@ const mainEpilog = `Flags combine with subcommands:
   tycswap add --login --alias work          # second account, the live one untouched
   tycswap add --login --switch -- --email me@example.com
                                           # log in, store, make it live
-  tycswap add-token sk-ant-oat01-... --email me@example.com
+  tycswap add-token --email me@example.com # prompts for the token (or pipe it: add-token -)
   tycswap run 2 -- --resume                 # forward args after '--' to claude
   eval "$(tycswap env 2)"                   # pin THIS shell to account 2 (no claude launch)
   tycswap auto --once                       # single auto-switch tick (cron-friendly)

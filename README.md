@@ -161,12 +161,15 @@ whether the login succeeds or not. On macOS, where Claude Code keeps the new log
 the Keychain, tycswap reads it from the item made for the scratch profile and
 deletes that item along with the profile.
 
-To register an account from a setup token or API key, use `tycswap add-token`. The token is read from the argument, from
-`-` (standard input), or interactively:
+To register an account from a setup token or API key, use `tycswap add-token`. The token is read interactively (not echoed) or
+from `-` (standard input). Avoid passing it as an argument: the command line is visible to other local users through `ps`
+and stays in your shell history, and tycswap warns when you do.
 
 ```
-$ tycswap add-token sk-ant-oat01-... --email bob@example.com --slot 2
+$ tycswap add-token --email bob@example.com --slot 2
+Token:
 Added Account 2: bob@example.com [personal] (from token)
+$ pass show claude/bob-token | tycswap add-token - --email bob@example.com
 ```
 
 `--slot` is optional; without it the account lands in the next free slot.

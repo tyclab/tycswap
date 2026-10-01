@@ -36,6 +36,12 @@ import (
 	"github.com/tyclab/tycswap/internal/store"
 )
 
+// TokenOnCommandLineWarning is printed when add-token is given the token as an
+// argument: argv is readable by every local user through ps, and the shell
+// keeps it in its history.
+const TokenOnCommandLineWarning = "Warning: a token on the command line is visible to other local users (ps) " +
+	"and stays in your shell history; prefer 'tycswap add-token' (prompt) or 'tycswap add-token -' (stdin)."
+
 // AddAccountFromToken registers token as a managed account (spec 01§6). token
 // "-" reads one stdin line; "" prompts securely. email nil/"" defaults to a
 // slot-unique placeholder. slotArg nil auto-assigns.
@@ -47,6 +53,8 @@ func AddAccountFromToken(s *store.Store, token string, email, slotArg *string, a
 	case "":
 		line, _ := ActivePrompter.Secret("Token: ")
 		token = line
+	default:
+		emitWarning(TokenOnCommandLineWarning)
 	}
 
 	token = trimSpace(token)

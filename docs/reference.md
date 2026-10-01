@@ -579,7 +579,7 @@ tycswap add-token [TOKEN|-] [--email EMAIL] [--slot NUM] [--debug]
 
 | Option | Type | Default | Constraints |
 |--------|------|---------|-------------|
-| `TOKEN` | positional string | read interactively if omitted | A lone `-` reads the token from stdin. |
+| `TOKEN` | positional string | read interactively if omitted | A lone `-` reads the token from stdin. A token given here is visible to other local users through `ps` and kept in shell history; `add-token` prints a warning and still uses it. Prefer the prompt or `-`. |
 | `--email` | string | derived if possible | Only with `add-token`. |
 | `--slot` | int | next free slot | Only with `add` or `add-token`. |
 | `--debug` | flag | off | — |
@@ -609,8 +609,11 @@ Handled errors surface as `Error: <message>` (exit 1).
 ### Example (illustrative token)
 
 ```
-$ tycswap add-token sk-ant-oat01-EXAMPLE --email me@example.com
+$ tycswap add-token --email me@example.com
+Token:
 Added Account 6: me@example.com [personal] (from token)
+$ tycswap add-token - --email me@example.com < token.txt
+Added Account 7: me@example.com [personal] (from token)
 ```
 
 ### See also
@@ -1090,6 +1093,22 @@ Output discipline: stdout carries only the eval-able lines. Before the export,
 one unset line is emitted for each currently-set authentication-override
 variable (see ENVIRONMENT) so it cannot shadow the pinned account. All notices
 and warnings go to stderr.
+
+
+In `--shell pwsh` output every value is single-quoted with `'` doubled, and
+so are the typographic single quotes U+2018 to U+201B, which PowerShell also
+treats as quote characters. Strings shown by `list`, `status`, the dashboard
+and the Codex commands that come from exports, APIs or other tools' files
+(emails, aliases, organization and workspace names, running-instance paths)
+are printed with control characters (C0, DEL, C1, ESC) removed.
+
+On Windows, when `claude` resolves to a `.cmd` or `.bat` shim (the npm
+install), `run` and `add --login` refuse an argument holding a character
+cmd.exe interprets (`& | < > ^ % ! " ( )` or a line break), because cmd.exe
+re-parses such a script's command line; the native `claude.exe` has no such
+restriction. `add --login` also removes the auth override variables
+(`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, …) from the login's
+environment, as `run` and `env` do.
 
 ### Files
 

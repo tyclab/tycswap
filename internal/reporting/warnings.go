@@ -14,6 +14,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/termsafe"
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
@@ -32,7 +33,7 @@ func duplicateAccountWarnings(s *store.Store, infos []AccountInfo) []string {
 			if fp := oauth.CredentialFingerprint(info.Creds); fp != nil {
 				if other, ok := byFP[*fp]; ok {
 					out = append(out, "Account-"+other+" and Account-"+snum+
-						" hold the same credential ("+info.Email+") — one slot's backup was "+
+						" hold the same credential ("+termsafe.Strip(info.Email)+") — one slot's backup was "+
 						"overwritten. Log in with the missing account and re-add it: tycswap add --slot N")
 				} else {
 					byFP[*fp] = snum
@@ -46,7 +47,7 @@ func duplicateAccountWarnings(s *store.Store, infos []AccountInfo) []string {
 			other, ok := byIdentity[key]
 			if ok && other != snum {
 				out = append(out, "Account-"+other+" and Account-"+snum+
-					" both authenticate as "+info.Email+" — remove or re-login one of them.")
+					" both authenticate as "+termsafe.Strip(info.Email)+" — remove or re-login one of them.")
 			} else if !ok {
 				byIdentity[key] = snum
 			}

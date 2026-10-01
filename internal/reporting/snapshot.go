@@ -13,6 +13,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/termsafe"
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
@@ -127,14 +128,14 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 		disabled := recordDisabled(data, num)
 		accounts = append(accounts, AccountSnapshot{
 			Number:           num,
-			Email:            info.Email,
-			OrgName:          info.OrgName,
+			Email:            termsafe.Strip(info.Email), // display only
+			OrgName:          termsafe.Strip(info.OrgName),
 			OrgUUID:          info.OrgUUID,
 			IsActive:         info.IsActive,
 			Kind:             s.AccountKindFor(num),
 			Switchable:       switchable,
 			Usage:            entries[num],
-			Alias:            info.Alias,
+			Alias:            termsafe.Strip(info.Alias),
 			Disabled:         disabled,
 			RotationEligible: rotationEligible(data, switchable, disabled),
 			AtLimit:          atLimit,

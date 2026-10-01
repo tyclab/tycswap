@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/tyclab/tycswap/internal/session"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -513,5 +514,21 @@ func TestLoginScratchCleanupOnInterrupt(t *testing.T) {
 	remove()
 	if got := kc.deleted(); len(got) != 1 {
 		t.Errorf("remove after the cleanup deleted again: %v", got)
+	}
+}
+
+// TestAddLoginScrubsAuthOverrides: the variables that make claude skip the
+// account login are removed from the login's environment, as run/env do.
+func TestAddLoginScrubsAuthOverrides(t *testing.T) {
+	env := loginEnv(session.ScrubAuthOverrides([]string{"A=1", "ANTHROPIC_API_KEY=sk", "CLAUDE_CODE_OAUTH_TOKEN=t", "B=2"}), "/scratch")
+	for _, kv := range env {
+		for _, v := range session.AuthOverrideEnvVars {
+			if strings.HasPrefix(kv, v+"=") {
+				t.Errorf("%s survived: %v", v, env)
+			}
+		}
+	}
+	if len(env) != 3 || env[2] != "CLAUDE_CONFIG_DIR=/scratch" {
+		t.Errorf("env = %v", env)
 	}
 }

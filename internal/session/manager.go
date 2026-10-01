@@ -263,6 +263,9 @@ func (m *Manager) ExecDefault(claudeArgs []string) error {
 // image (never returns on success); Windows spawns, waits, and exits with
 // claude's own return code.
 func (m *Manager) exec(claudeBin string, claudeArgs []string, env []string) error {
+	if err := CheckCmdShimArgs(claudeBin, claudeArgs); err != nil {
+		return err
+	}
 	argv := append([]string{claudeBin}, claudeArgs...)
 	return m.runner.Exec(claudeBin, argv, env)
 }
@@ -337,6 +340,10 @@ func envKey(entry string) string {
 	}
 	return entry
 }
+
+// ScrubAuthOverrides returns environ without the AuthOverrideEnvVars, the
+// scrub run and env apply, for other commands that start claude.
+func ScrubAuthOverrides(environ []string) []string { return scrubEnv(environ, AuthOverrideEnvVars) }
 
 // scrubEnv returns a fresh slice with every entry whose key is in drop removed.
 func scrubEnv(environ, drop []string) []string {
