@@ -72,8 +72,8 @@ func TestSentinelLabel(t *testing.T) {
 		"token expired":        "token expired — Claude Code refreshes the active account",
 		"api key":              "API key (no quota)",
 		"keychain unavailable": "keychain unavailable — locked or in use; try again",
-		"re-login needed":      "re-login needed — refresh token dead; log in with Claude Code, then run: cswap add",
-		// An unmapped state is stated RAW, byte for byte as cswap list, the account
+		"re-login needed":      "re-login needed — refresh token dead; log in with Claude Code, then run: tycswap add",
+		// An unmapped state is stated RAW, byte for byte as tycswap list, the account
 		// card and the watch and switch screens state it — however long it is, and
 		// whether or not it has a space in it. What a narrow shared table may cut off
 		// such a string is a layout question, answered in the layout (spanFloor), and
@@ -167,7 +167,7 @@ func TestCandidateWindowsCarryResetsAt(t *testing.T) {
 // there.
 //
 // A NEGATIVE pct is NOT dropped. It compares like any other number, and this
-// projection is what reporting and `cswap list --json` read too — so rejecting
+// projection is what reporting and `tycswap list --json` read too — so rejecting
 // one would change what every consumer says about a window to buy the TUI
 // nothing at all.
 func TestCandidateWindowsRejectUnusablePercentages(t *testing.T) {
@@ -229,7 +229,7 @@ func TestCandidateWindowsCarryTheMeasuredPercentage(t *testing.T) {
 // cap. Every shared-column layout sizes a column to the widest figure in it, so
 // an absurd stored measurement must not set the width of a column every account
 // pays for — but a bare "999%" would state a measurement the store never
-// reported, while the account card and cswap list, reading the same entry, print
+// reported, while the account card and tycswap list, reading the same entry, print
 // the real one.
 //
 // BOTH TAILS are bounded, and the negative one is not hypothetical: the

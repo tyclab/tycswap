@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // TestSnapshot_RotationEligible walks the truth table: slot 1 switchable +

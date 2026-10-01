@@ -8,11 +8,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // newTestStore builds a Store rooted at a fresh empty $HOME with a fixed clock,
@@ -163,4 +164,48 @@ func readActiveCreds(t *testing.T, s *store.Store) string {
 		t.Fatalf("ReadActive: %v", err)
 	}
 	return v
+}
+
+// withMCPOAuth returns creds with a Claude Code mcpOAuth block added: one MCP
+// server entry (keyed as Claude Code keys them) holding token. Numbers are kept
+// as json.Number so expiresAt survives the round trip.
+func withMCPOAuth(t *testing.T, creds, server, token string) string {
+	t.Helper()
+	dec := json.NewDecoder(strings.NewReader(creds))
+	dec.UseNumber()
+	var m map[string]any
+	if err := dec.Decode(&m); err != nil {
+		t.Fatalf("withMCPOAuth: %v", err)
+	}
+	m["mcpOAuth"] = map[string]any{server: map[string]any{"accessToken": token, "refreshToken": token + "-refresh"}}
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// mcpTokenOf returns the access token of the named MCP server entry in creds,
+// "" when the blob has no such entry (or no mcpOAuth at all).
+func mcpTokenOf(t *testing.T, creds, server string) string {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(creds), &m); err != nil {
+		t.Fatalf("mcpTokenOf: %v\n%s", err, creds)
+	}
+	mcp, _ := m["mcpOAuth"].(map[string]any)
+	entry, _ := mcp[server].(map[string]any)
+	tok, _ := entry["accessToken"].(string)
+	return tok
+}
+
+// hasMCPOAuth reports whether creds carries a top-level mcpOAuth key.
+func hasMCPOAuth(t *testing.T, creds string) bool {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(creds), &m); err != nil {
+		t.Fatalf("hasMCPOAuth: %v\n%s", err, creds)
+	}
+	_, ok := m["mcpOAuth"]
+	return ok
 }

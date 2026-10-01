@@ -3,9 +3,10 @@ package usage
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // TestCacheRoundTrip covers write/read within TTL and the null-vs-miss
@@ -81,5 +82,23 @@ func TestReadCacheParsesPythonFixture(t *testing.T) {
 	}
 	if got != "0.21.0" {
 		t.Errorf("fixture data = %v, want 0.21.0", got)
+	}
+}
+
+// TestWriteCacheIsPrivate: the cache lands 0600 under a 0700 directory.
+func TestWriteCacheIsPrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX modes only")
+	}
+	dir := filepath.Join(t.TempDir(), "cache")
+	p := filepath.Join(dir, "usage.json")
+	if err := WriteCache(p, map[string]any{}, 1); err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]os.FileMode{dir: 0o700, p: 0o600} {
+		fi, err := os.Stat(path)
+		if err != nil || fi.Mode().Perm() != want {
+			t.Errorf("%s mode = %v, %v; want %v", path, fi.Mode().Perm(), err, want)
+		}
 	}
 }

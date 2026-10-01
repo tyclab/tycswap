@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // TestClassifyOutgoing exercises the issue-#117 ownership oracle (spec 02§9).
@@ -178,4 +178,40 @@ func TestClassifyOutgoingOffSequenceDeterministic(t *testing.T) {
 			t.Fatalf("iteration %d: got (%q, %q), want (\"foreign\", \"8\")", i, kind, foreign)
 		}
 	}
+}
+
+// TestClassifyOutgoingIgnoresMCPOAuth: the seat-wide mcpOAuth never reads as a
+// changed account — a live file that gained (or changed) MCP server logins
+// since the backup was taken is still own-bytes.
+func TestClassifyOutgoingIgnoresMCPOAuth(t *testing.T) {
+	const curEmail = "a@x.com"
+	data := seqData(ptrInt(1), []int{1}, map[string]json.RawMessage{
+		"1": record(map[string]any{"email": curEmail, "organizationUuid": "", "uuid": "uuid-1"}),
+	})
+	account := oauthCreds("acc", "ref1")
+
+	t.Run("live gained mcpOAuth since the backup", func(t *testing.T) {
+		s := newTestStore(t, nil)
+		seedBackup(t, s, "1", curEmail, account, "")
+		live := withMCPOAuth(t, account, "srv|1111", "mcp-live")
+		if kind, _ := classifyOutgoing(s, "1", curEmail, live, nil, data); kind != "own-bytes" {
+			t.Fatalf("kind = %q, want own-bytes", kind)
+		}
+	})
+	t.Run("stale mcpOAuth in the backup, another one live", func(t *testing.T) {
+		s := newTestStore(t, nil)
+		seedBackup(t, s, "1", curEmail, withMCPOAuth(t, account, "srv|1111", "mcp-stale"), "")
+		live := withMCPOAuth(t, account, "srv|2222", "mcp-live")
+		if kind, _ := classifyOutgoing(s, "1", curEmail, live, nil, data); kind != "own-bytes" {
+			t.Fatalf("kind = %q, want own-bytes", kind)
+		}
+	})
+	t.Run("a rotated access token is still own-family", func(t *testing.T) {
+		s := newTestStore(t, nil)
+		seedBackup(t, s, "1", curEmail, account, "")
+		live := withMCPOAuth(t, oauthCreds("rotated", "ref1"), "srv|1111", "mcp-live")
+		if kind, _ := classifyOutgoing(s, "1", curEmail, live, nil, data); kind != "own-family" {
+			t.Fatalf("kind = %q, want own-family", kind)
+		}
+	})
 }

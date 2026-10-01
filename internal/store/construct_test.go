@@ -11,8 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // TestNew_NoOpDoesNotMaterializeBackupDir: constructing against a fresh $HOME
@@ -34,54 +33,17 @@ func TestNew_NoOpDoesNotMaterializeBackupDir(t *testing.T) {
 	}
 }
 
-// TestNew_LegacyMigrationMovesDataAndPrintsNotice: on Linux the legacy
-// ~/.claude-swap-backup is moved to the XDG path (step 3), the data survives,
-// and the "migrated data from X to Y" notice is printed to the injected stderr.
-func TestNew_LegacyMigrationMovesDataAndPrintsNotice(t *testing.T) {
+// TestNew_NeverTouchesOldStores: construction neither moves nor reads the
+// stores this fork came from (DESIGN A23): both old roots keep their data and
+// the store resolves to tycswap's own root, with no notice printed.
+func TestNew_NeverTouchesOldStores(t *testing.T) {
 	home := t.TempDir()
 	testutil.Setenv(t, "HOME", home)
 	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
 	testutil.Unsetenv(t, "XDG_DATA_HOME")
 
-	legacy := filepath.Join(home, ".claude-swap-backup")
-	if err := os.MkdirAll(legacy, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	marker := filepath.Join(legacy, "sequence.json")
-	if err := os.WriteFile(marker, []byte(`{"sequence":[1]}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	var stderr bytes.Buffer
-	s, err := New(Options{Clock: testutil.FixedClock(t, "2026-07-17T09:00:00Z"), Stderr: &stderr})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-
-	moved := filepath.Join(s.BackupDir(), "sequence.json")
-	if _, err := os.Stat(moved); err != nil {
-		t.Errorf("data not moved to XDG path: %v", err)
-	}
-	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
-		t.Errorf("legacy dir still present after migration: %v", err)
-	}
-	if !strings.Contains(stderr.String(), "claude-swap: migrated data from") {
-		t.Errorf("migration notice not printed; stderr=%q", stderr.String())
-	}
-}
-
-// TestNew_LegacyCollisionAborts: a genuine collision (legacy AND target both
-// hold meaningful data, no in-flight flag) makes step 3 return a MigrationError
-// that aborts construction — proving the one fallible step is wired.
-func TestNew_LegacyCollisionAborts(t *testing.T) {
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
-
-	legacy := filepath.Join(home, ".claude-swap-backup")
-	target := filepath.Join(home, ".local", "share", "claude-swap")
-	for _, d := range []string{legacy, target} {
+	olds := []string{filepath.Join(home, ".claude-swap-backup"), filepath.Join(home, ".local", "share", "claude-swap")}
+	for _, d := range olds {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -90,12 +52,24 @@ func TestNew_LegacyCollisionAborts(t *testing.T) {
 		}
 	}
 
-	_, err := New(Options{Clock: testutil.FixedClock(t, "2026-07-17T09:00:00Z"), Stderr: &bytes.Buffer{}})
-	if err == nil {
-		t.Fatal("expected MigrationError, got nil")
+	var stderr bytes.Buffer
+	s, err := New(Options{Clock: testutil.FixedClock(t, "2026-07-17T09:00:00Z"), Stderr: &stderr})
+	if err != nil {
+		t.Fatalf("New: %v", err)
 	}
-	if cerr.TypeName(err) != "MigrationError" {
-		t.Errorf("error type = %q, want MigrationError (%v)", cerr.TypeName(err), err)
+	if strings.Contains(s.BackupDir(), "claude-swap") {
+		t.Errorf("BackupDir = %q, want tycswap's own root", s.BackupDir())
+	}
+	for _, d := range olds {
+		if b, err := os.ReadFile(filepath.Join(d, "sequence.json")); err != nil || string(b) != `{"sequence":[1]}` {
+			t.Errorf("old store %s changed: %q, %v", d, b, err)
+		}
+	}
+	if _, err := os.Stat(s.BackupDir()); !os.IsNotExist(err) {
+		t.Errorf("construction materialized %s", s.BackupDir())
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr = %q, want nothing", stderr.String())
 	}
 }
 

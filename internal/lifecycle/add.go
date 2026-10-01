@@ -13,19 +13,19 @@
 // other slot's backups. That one in-memory roster is then threaded through the
 // displace, migrate and record-write branches, and is the object every
 // WriteSequence below commits. Because the read is under the lock, it is also
-// the bytes on disk: no other cswap can commit between it and this call's
+// the bytes on disk: no other tycswap can commit between it and this call's
 // writes, so the slot this record lands on is free in the file, not merely in a
-// copy of it, and a record another cswap added meanwhile cannot be renamed away
+// copy of it, and a record another tycswap added meanwhile cannot be renamed away
 // by this commit.
 //
-// The login it stores comes from an AddSource: the live login (`cswap add`) or
-// a Claude config directory a fresh `claude auth login` was just run in (`cswap
+// The login it stores comes from an AddSource: the live login (`tycswap add`) or
+// a Claude config directory a fresh `claude auth login` was just run in (`tycswap
 // add --login`). Only the source of the bytes differs, plus one rule: a
 // login-directory add leaves activeAccountNumber alone, because the live login
 // is still the account it was.
 //
 // The one human pause — "Overwrite slot N?" — is asked BEFORE the lock is taken
-// (holding a lock across a question would fail every other cswap on a 10s
+// (holding a lock across a question would fail every other tycswap on a 10s
 // budget), and the occupancy it was answered against is re-validated inside the
 // lock: unchanged proceeds, vanished de-escalates to no displacement, and a
 // different occupant aborts with nothing changed.
@@ -37,9 +37,10 @@ import (
 	"sort"
 	"strconv"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
 // AddAccount adds the current live Claude account to the managed set (spec
@@ -86,6 +87,12 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 			return errLoginIncomplete()
 		}
 		return cerr.Config("No active Claude account found. Please log in first.")
+	}
+	// The email names the account's backup files and Keychain items. It comes
+	// from a .claude.json (the live one or a scratch login's), which is not
+	// tycswap's to trust: refuse anything a file name cannot carry.
+	if !validateEmail(email) {
+		return cerr.Validation("The logged-in account's email cannot name a store file: %s. It needs %s.", strconv.Quote(email), storenames.EmailRule)
 	}
 
 	// The slot number is a pure argument check, so it is settled before anything
@@ -138,7 +145,7 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		} else {
 			// The slot must be free in the roster this record is written into, so
 			// it is decided from that roster — read under the lock that commits it,
-			// so "free" is a fact about the file and not about a copy another cswap
+			// so "free" is a fact about the file and not about a copy another tycswap
 			// has since moved on from.
 			accountNum = strconv.Itoa(s.NextAccountNumberFrom(data))
 		}
@@ -273,8 +280,8 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 // premise revalidateDisplacement re-checks under the lock that commits.
 //
 // It runs BEFORE that lock. A human pause is unbounded; the store lock is not
-// (10s cross-process, and `cswap run`'s bootstrap queues on the same file), so a
-// question asked with it held turns every concurrent cswap into a lock failure.
+// (10s cross-process, and `tycswap run`'s bootstrap queues on the same file), so a
+// question asked with it held turns every concurrent tycswap into a lock failure.
 // The occupancy shown is still read under a lock of its own, so what the user is
 // asked about is a classified, backfilled roster and never a file caught
 // mid-commit.

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // runCLI drives the front controller with buffered streams and no TTY, unless
@@ -14,7 +14,7 @@ func runCLI(t *testing.T, argv []string, stdinTTY, stdoutTTY bool) (int, string,
 	t.Helper()
 	testutil.Setenv(t, "NO_COLOR", "1")
 	var out, errb bytes.Buffer
-	code := run("cswap", argv, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, stdinTTY, stdoutTTY)
+	code := run("tycswap", argv, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, stdinTTY, stdoutTTY)
 	return code, out.String(), errb.String()
 }
 
@@ -28,8 +28,8 @@ func TestNoCommandNonTTY(t *testing.T) {
 	if !strings.Contains(errStr, "no command given") {
 		t.Errorf("stderr = %q, want it to contain %q", errStr, "no command given")
 	}
-	if !strings.Contains(errStr, "cswap help") {
-		t.Errorf("stderr = %q, want it to mention 'cswap help'", errStr)
+	if !strings.Contains(errStr, "tycswap help") {
+		t.Errorf("stderr = %q, want it to mention 'tycswap help'", errStr)
 	}
 	for _, leaked := range []string{"--add-account", "one of the arguments"} {
 		if strings.Contains(errStr, leaked) {
@@ -105,7 +105,7 @@ func TestSlotInvalidInt(t *testing.T) {
 }
 
 // TestNegativeNumberValues: argparse's _negative_number_matcher lets tokens like
-// "-1" / "-5" be consumed as flag values (no cswap option looks like a negative
+// "-1" / "-5" be consumed as flag values (no tycswap option looks like a negative
 // number), so they flow to domain logic instead of being rejected as options
 // (spec 08§15). A "-1.5" still fails the int parse — but as "invalid int value",
 // not "expected one argument", proving it was consumed as the value.
@@ -141,8 +141,8 @@ func TestVersionFlag(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
-	if !strings.HasPrefix(out, "cswap ") {
-		t.Errorf("version output = %q, want it to start with 'cswap '", out)
+	if !strings.HasPrefix(out, "tycswap ") {
+		t.Errorf("version output = %q, want it to start with 'tycswap '", out)
 	}
 	if !strings.Contains(out, "0.0.0-dev") {
 		t.Errorf("version output = %q, want the default build version", out)

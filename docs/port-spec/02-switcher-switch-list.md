@@ -35,7 +35,7 @@ below are the source of truth — omitting any is a port bug.
 - `sequence_file` = `backup_dir/sequence.json`
 - `configs_dir` = `backup_dir/configs`
 - `credentials_dir` = `backup_dir/credentials`
-- `lock_file` = `backup_dir/.lock` (the cswap account lock; `FileLock`)
+- `lock_file` = `backup_dir/.lock` (the tycswap account lock; `FileLock`)
 - usage cache = `backup_dir/cache/usage.json` (via `UsageStore(backup_dir/"cache")`)
 
 Per-account backup file names:
@@ -92,7 +92,7 @@ Directory permissions: `_setup_directories()` creates `backup_dir`, `configs_dir
   - Pure-digit string returns itself unchanged (note: not normalized, so `"01"` stays `"01"` here; `move_account`/`swap` normalize separately).
   - Alias match is case-insensitive (`account.alias.lower() == identifier.lower()`); empty alias never matches.
   - Email that matches multiple accounts raises `ConfigError`:
-    `Email '{identifier}' is ambiguous — matches accounts: {num [OrgName|personal], ...}. Use account number instead (e.g., cswap --switch-to 1).`
+    `Email '{identifier}' is ambiguous — matches accounts: {num [OrgName|personal], ...}. Use account number instead (e.g., tycswap --switch-to 1).`
 - Alias validation (`models.normalize_alias`): lowercased+stripped; must be non-empty, not purely numeric, not start with `-`, and match `^[a-z0-9_.-]+$`. Violations raise `ValueError` (wrapped as `ValidationError` by callers).
 
 ---
@@ -131,7 +131,7 @@ From `switcher.py`, `poll_policy.py`, `usage_store.py`, `credentials.py`, `claud
 | `STALENESS_S` (claude locks) | `10.0` | proper-lockfile stale threshold |
 | `TOUCH_INTERVAL_S` | `3.0` | Lock mtime touch cadence |
 | `DEFAULT_TIMEOUT_S` | `9.0` | Claude Code lock acquire timeout |
-| `FileLock` default timeout | `10.0` | cswap account lock acquire timeout |
+| `FileLock` default timeout | `10.0` | tycswap account lock acquire timeout |
 | `OAUTH_EXPIRY_BUFFER_MS` | `5*60*1000` | Token treated expired this early |
 | `CACHE_TTL` (update check) | `24*3600` | PyPI version cache TTL |
 | PyPI request timeout | `2s` | Update check |
@@ -149,7 +149,7 @@ External URLs:
 
 Three lock layers, all cooperating; **never hold any lock across network I/O**.
 
-1. **cswap account lock** — `FileLock(self.lock_file)` = `backup_dir/.lock`.
+1. **tycswap account lock** — `FileLock(self.lock_file)` = `backup_dir/.lock`.
    POSIX `fcntl.flock(LOCK_EX|LOCK_NB)` retried every `0.1s` up to `10s`; Windows
    `msvcrt.locking(LK_NBLCK,1)`. On timeout `__enter__` raises
    `LockError("Failed to acquire lock - another instance may be running")`.
@@ -201,12 +201,12 @@ If `_get_current_account()` is `None` (no `~/.claude.json` oauthAccount email):
 - If no `preferred`: `ConfigError("No accounts are managed yet")`.
 - If `preferred` is disabled or not switchable, skip it:
   - Disabled → reason `(disabled)`.
-  - Not switchable → console reason `(no stored credentials/config, re-add with cswap --add-account --slot {target})`; JSON warning `Skipped Account-{target} (no stored credentials/config)`.
+  - Not switchable → console reason `(no stored credentials/config, re-add with tycswap --add-account --slot {target})`; JSON warning `Skipped Account-{target} (no stored credentials/config)`.
   - JSON: append `Skipped Account-{target} {reason}` to warnings; human: `{accent('Skipping')} Account-{target} {console_reason}`.
   - Fallback = first `num != target` in `sequence` that is enabled and switchable.
   - If no fallback:
-    - Some slot is switchable (all remaining disabled) → `ConfigError("No accounts remain in rotation. Re-enable one with: cswap enable <num|email>")`.
-    - Else → `ConfigError("No managed accounts have valid stored credentials/config. Re-add a slot with: cswap --add-account --slot <number>")`.
+    - Some slot is switchable (all remaining disabled) → `ConfigError("No accounts remain in rotation. Re-enable one with: tycswap enable <num|email>")`.
+    - Else → `ConfigError("No managed accounts have valid stored credentials/config. Re-add a slot with: tycswap --add-account --slot <number>")`.
 - Calls `_perform_switch(target, emit_output=not json_output)`; returns `_switch_result_from_op(op, strategy_label, warnings)` in JSON mode.
 - **Strategies are ignored on this path** (documented).
 
@@ -214,7 +214,7 @@ If `_get_current_account()` is `None` (no `~/.claude.json` oauthAccount email):
 
 If the live `(email, org_uuid)` is not a managed account:
 
-- **JSON**: no auto-add. Returns `_switch_noop(strategy=strategy_label, reason="unmanaged-account", from_ref=to_ref=account_ref(None, current_email), message="Active account is not managed; run cswap --add-account")`.
+- **JSON**: no auto-add. Returns `_switch_noop(strategy=strategy_label, reason="unmanaged-account", from_ref=to_ref=account_ref(None, current_email), message="Active account is not managed; run tycswap --add-account")`.
 - **Human**: prints `{accent('Notice:')} Active account '{current_email}' was not managed.`, calls `add_account()`, then prints `It has been automatically added as Account-{activeAccountNumber}.` and `Please run the switch command again to switch to the next account.`; returns `None`.
 
 ### 4.3 Only one account
@@ -239,15 +239,15 @@ If `len(sequence) < 2`:
 
 | note | JSON reason | Human message |
 |---|---|---|
-| `current-unavailable` | `usage-unavailable` | `Current account usage is unavailable — staying on Account-{n}. Run cswap --switch to rotate.` |
-| `no-comparison` | `usage-unavailable` | `No other account has usage data to compare — staying on Account-{n}. Run cswap --switch to rotate.` |
+| `current-unavailable` | `usage-unavailable` | `Current account usage is unavailable — staying on Account-{n}. Run tycswap --switch to rotate.` |
+| `no-comparison` | `usage-unavailable` | `No other account has usage data to compare — staying on Account-{n}. Run tycswap --switch to rotate.` |
 | `incomplete-comparison` | `usage-unavailable` | `No account with known usage has more remaining quota; some usage is unavailable — staying on Account-{n}.` |
 | `stay` | `already-best` | `Already on the account with the most remaining quota (Account-{n}).` (accent, human) |
 | `exhausted` | `candidates-exhausted` | `All accounts are at their {limits_label} — staying on Account-{n}.` (`warning()`) |
 | `none` | (falls through to rotation) | — |
 
 `limits_label` = `"usage limits"` if `models` else `"5h/7d limit"`. JSON messages
-mirror human wording (without the "Run cswap --switch to rotate." tail on the
+mirror human wording (without the "Run tycswap --switch to rotate." tail on the
 already-best/exhausted cases; the current-unavailable/no-comparison JSON drop the
 tail too — see verbatim strings in code lines 3596–3672).
 
@@ -263,13 +263,13 @@ also `_warn_inert_models(...)`.
 
 Loop `offset` in `1..len(sequence)-1`, `candidate = str(sequence[(current_index+offset) % len])`:
 - Disabled → skip. JSON warning `Skipped Account-{candidate} (disabled)`; human `{accent('Skipping')} Account-{candidate} (disabled)`.
-- Not switchable → skip. JSON `Skipped Account-{candidate} (no stored credentials/config)`; human `{accent('Skipping')} Account-{candidate} (no stored credentials/config, re-add with cswap --add-account --slot {candidate})`.
+- Not switchable → skip. JSON `Skipped Account-{candidate} (no stored credentials/config)`; human `{accent('Skipping')} Account-{candidate} (no stored credentials/config, re-add with tycswap --add-account --slot {candidate})`.
 - `next-available`: `headroom = oauth.account_headroom(usage.get(candidate), models)`; if `headroom is not None and headroom <= 0`, mark exhausted-skip. `label = "5h/7d"` by default; with `models`, `label = "/".join(name for name, pct, _ in oauth.relevant_windows(...) if pct >= 100.0)` if any (names the binding window, e.g. `Fable`, `5h/Fable`). JSON warning `Skipped Account-{candidate} (at {label} limit)`; human `{accent('Skipping')} Account-{candidate} (at {label} limit)`.
 - Otherwise `next_account = candidate`, break.
 
 After the loop:
 - `next_account is None` and some were `skipped_exhausted` → stay: JSON `_switch_noop(reason="candidates-exhausted", to_ref=current_ref, message="All other accounts are at their {limits_label} — staying on Account-{n}.")`; human `warning("All other accounts are at their {limits_label} — staying on Account-{n}.")`.
-- `next_account is None` (no exhausted) → JSON `_switch_noop(reason="no-valid-target", to_ref=current_ref, message="No other accounts have valid stored credentials/config.")`; human prints (dimmed) `No other accounts have valid stored credentials/config.\nRe-add a skipped slot with: cswap --add-account --slot <number>`.
+- `next_account is None` (no exhausted) → JSON `_switch_noop(reason="no-valid-target", to_ref=current_ref, message="No other accounts have valid stored credentials/config.")`; human prints (dimmed) `No other accounts have valid stored credentials/config.\nRe-add a skipped slot with: tycswap --add-account --slot <number>`.
 
 ### 4.7 Self-switch guard on rotation
 
@@ -331,7 +331,7 @@ If **not** `force` and there is data and the live identity resolves to `target_a
 `action, provenance = _self_switch_action(target_account, live_email)`.
 - If still `target_account` and `action != "reconcile"` → no-op:
   - Human: `{accent('Already on')} Account-{n} ({email})` then dimmed
-    `To rewrite the live login from the stored backup (e.g. after --import), run: cswap --switch-to {n} --force`; returns `None`.
+    `To rewrite the live login from the stored backup (e.g. after --import), run: tycswap --switch-to {n} --force`; returns `None`.
   - JSON: `_switch_noop(strategy="direct", reason="already-active", from_ref=to_ref=account_ref(int(n), email), message="Already on Account-{n} ({email})")`.
 - `reconcile` falls through (so `_perform_switch` reconciles a resolved divergence).
 
@@ -373,8 +373,8 @@ mode) suppresses all human prints; the live-session warning rides back in `warni
 ### 8.1 Pre-lock steps
 
 1. **Session-mode drift warning** (warn, never block): if the target slot has live
-   `cswap run` session PIDs, message:
-   `Account-{n} ({email}) has a live session-mode Claude instance (PID {ids}). Running the same account as both the default login and a session can make one copy's token go stale if the server rotates it. If the session later fails to authenticate, exit it and re-run 'cswap run {n}'.`
+   `tycswap run` session PIDs, message:
+   `Account-{n} ({email}) has a live session-mode Claude instance (PID {ids}). Running the same account as both the default login and a session can make one copy's token go stale if the server rotates it. If the session later fails to authenticate, exit it and re-run 'tycswap run {n}'.`
    → `warning()` (human) or appended to `warnings_out`.
 2. **Provenance**: if `provenance is None`, set to `{"live": None, "resolved": None}` when
    `force_activate`, else `_prefetch_live_identity()`.
@@ -388,7 +388,7 @@ recorded `activeAccountNumber`), `target_email`, `to_ref`.
 OR `current_account is None` (fresh machine / unmanaged live / --force):
 
 - `from_ref`: `None` (fresh machine) / `account_ref(None, live_email)` (unmanaged live) / `account_ref(int(current_account), live_email)` (--force with managed login).
-- Read `target_creds` / `target_config`; missing creds → `SwitchError("Account-{n} has no stored credentials. Re-add with: cswap --add-account --slot {n}")`; missing config → `SwitchError("Account-{n} has no stored config backup. Re-add with: cswap --add-account --slot {n}")`; bad JSON → `SwitchError("Invalid backup config: {exc}")`; missing `oauthAccount` → `SwitchError("Invalid oauthAccount in backup")`.
+- Read `target_creds` / `target_config`; missing creds → `SwitchError("Account-{n} has no stored credentials. Re-add with: tycswap --add-account --slot {n}")`; missing config → `SwitchError("Account-{n} has no stored config backup. Re-add with: tycswap --add-account --slot {n}")`; bad JSON → `SwitchError("Invalid backup config: {exc}")`; missing `oauthAccount` → `SwitchError("Invalid oauthAccount in backup")`.
 - Snapshot live state for rollback when a live identity exists: `rollback_creds = _read_credentials()`; `None` → `CredentialReadError("Cannot snapshot live credentials before activation")`; config read failure → `ConfigError("Cannot snapshot live config before activation: {e}")`.
 - **Invariant II stash** (issue #117): if `rollback_creds` exists, differs from `target_creds`, and there is a live identity, `_stash_live_credential(rollback_creds, "displaced-live-login", current_account or "unmanaged", None)`. On stash failure: without `--force` → `SwitchError("Could not preserve the live credential before activation (safety-copy write failed: {e}); aborting rather than destroying it")`; with `--force` → warn `Could not preserve the replaced live credential (safety-copy write failed: {e}) — proceeding because --force explicitly rewrites the live login.` and proceed.
 - Write order (each recorded for rollback): `_write_credentials(target_creds)` → splice `oauthAccount` into existing `~/.claude.json` (preserving local settings/projects) or write full imported config when none → set `activeAccountNumber` + `lastUpdated` and `_write_json(sequence_file)`. On any exception, roll back config then credentials (best-effort, logged), re-raise.
@@ -403,8 +403,8 @@ OR `current_account is None` (fresh machine / unmanaged live / --force):
 - Build `SwitchTransaction(original_credentials, original_config, original_account_num=current_account, original_email, config_path)`.
 - **Step 1 — back up the outgoing slot**, classified by `_classify_outgoing_credential` (§9):
   - `foreign` / `alien` → `_stash_live_credential(original_creds, kind, current_account, resolved)` (raises on failure → aborts before overwriting live), then warn:
-    - `foreign`: `Credential ownership mismatch detected. The live credential was preserved and was not written into Account-{current}. If Account-{foreign_slot} later cannot authenticate, log in as it and run: cswap add --slot {foreign_slot}`.
-    - `alien`: `The live login does not match a managed account. It was preserved and not written into Account-{current}. If you need that account, log in as it and run: cswap add`.
+    - `foreign`: `Credential ownership mismatch detected. The live credential was preserved and was not written into Account-{current}. If Account-{foreign_slot} later cannot authenticate, log in as it and run: tycswap add --slot {foreign_slot}`.
+    - `alien`: `The live login does not match a managed account. It was preserved and not written into Account-{current}. If you need that account, log in as it and run: tycswap add`.
   - `foreign-synced` → warn only (no write): `Credential ownership mismatch detected. The live credential already matches Account-{foreign_slot}'s stored backup, so nothing was written into Account-{current}.`
   - `unresolved` → **pre-fix backup**: `_write_account_credentials(current, email, original_creds)` + `_write_account_config(...)`, INFO-log only (no warning).
   - `own-bytes` → config-only backup: `_write_account_config(...)`, INFO `Backed up account {current} (config only; credentials unchanged)`.
@@ -419,7 +419,7 @@ OR `current_account is None` (fresh machine / unmanaged live / --force):
 
 If `emit_output`: `{accent('Switched to')} Account-{n} ({target_email})`, then a nested
 `self.list_accounts()` (post-switch usage display; on exception logs warning and prints
-`  (usage display unavailable — run cswap --list to retry)`), blank line,
+`  (usage display unavailable — run tycswap --list to retry)`), blank line,
 `_print_switch_followup()`, blank line. Then `_replan_new_active(...)` regardless of
 `emit_output`, and return `{"from", "to", "warnings"}`.
 
@@ -642,7 +642,7 @@ Accounts:
     - `token expired` → `token expired — Claude Code refreshes the active account`
     - `api key` → `API key (no quota)`
     - `keychain unavailable` → `keychain unavailable — locked or in use; try again`
-    - `re-login needed` → `re-login needed — refresh token dead; log in with Claude Code, then run: cswap add`
+    - `re-login needed` → `re-login needed — refresh token dead; log in with Claude Code, then run: tycswap add`
     - (`no credentials` has no entry → renders the raw sentinel string `no credentials`.)
 - **Measurement (`last_good`) present**: `lines = _format_usage_lines(last_good)`; if the served data is older than `_USAGE_AGE_NOTE_S` (=180s) and `fetched_at` set, append ` · {format_age(int(fetched_at*1000))}` to the **last** line. Then each line becomes `{dimmed('├' or '└')} {muted(line)}` (`└` on the last).
 - **Neither**: `dimmed("usage unavailable")` plus ` ({last_error})` when a last error exists.
@@ -713,7 +713,7 @@ Feeds both human and JSON reporting. Shared, identity-guarded, poll-planned.
 (0.25s) so N accounts never burst the endpoint in one instant.
 
 **Active vs inactive fetch routing** (`_fetch_account_usage`):
-- Active/default account → `_fetch_active_usage`: only refreshes the token when **no owner** is detected (`_active_cc_running()` or a live `cswap run` session). With an owner + expired token → `USAGE_TOKEN_EXPIRED` (would 401). Provenance guard (issue #117): only refresh when the live bytes lineage-match the stored backup; on mismatch, read usage as-is (don't consume a generation). No-owner refresh persists the rotated credential to **both** the active store and the backup (never holding the cswap lock across the network refresh; the persist callback re-acquires `FileLock` + Claude Code locks and re-checks owner/refresh-token lineage before writing; on a mid-refresh owner-appears or lineage change, discards and returns `USAGE_TOKEN_EXPIRED`).
+- Active/default account → `_fetch_active_usage`: only refreshes the token when **no owner** is detected (`_active_cc_running()` or a live `tycswap run` session). With an owner + expired token → `USAGE_TOKEN_EXPIRED` (would 401). Provenance guard (issue #117): only refresh when the live bytes lineage-match the stored backup; on mismatch, read usage as-is (don't consume a generation). No-owner refresh persists the rotated credential to **both** the active store and the backup (never holding the tycswap lock across the network refresh; the persist callback re-acquires `FileLock` + Claude Code locks and re-checks owner/refresh-token lineage before writing; on a mid-refresh owner-appears or lineage change, discards and returns `USAGE_TOKEN_EXPIRED`).
 - Inactive account → prefers a live **session profile** credential if fresh (read-only, no refresh); expired-with-live-session → `USAGE_TOKEN_EXPIRED`; drifted profile identity → falls back to backup; otherwise fetch with the backup (refreshing + persisting via `FileLock`-guarded callback).
 
 `_usage_by_account()` (used by strategies) = `{num: entry.decision_value()}` — a dict
@@ -731,7 +731,7 @@ Feeds both human and JSON reporting. Shared, identity-guarded, poll-planned.
 - Already in target state → prints `Account-{n} ({email}) is already {disabled|enabled}.` (dimmed), returns.
 - Sets/pops `disabled` in the record, `lastUpdated`, writes. Logs `Disabled account {n}: {email}` / `Enabled account {n}: {email}`.
 - Prints `{accent(verb.capitalize())} Account-{n} ({email}).` (`Disabled`/`Enabled`).
-- On disable: if the target is the active account, dimmed note `  It is the active account — it stays live until you switch away; it just won't be an automatic switch target.`; if no switchable accounts remain, `warning("  No accounts remain in rotation — auto-switch and bare switch have nothing to pick. Re-enable one with cswap enable <num|email>.")`.
+- On disable: if the target is the active account, dimmed note `  It is the active account — it stays live until you switch away; it just won't be an automatic switch target.`; if no switchable accounts remain, `warning("  No accounts remain in rotation — auto-switch and bare switch have nothing to pick. Re-enable one with tycswap enable <num|email>.")`.
 - On enable: dimmed `  It is back in the rotation.`
 
 Accessors: `is_account_disabled`, `disabled_account_numbers()` (sequence order),
@@ -761,15 +761,15 @@ init (so the tool can upgrade without touching config/Keychain); `sys.exit(run_s
 `run_self_upgrade()` → int exit code:
 - `uv` → `["uv","tool","upgrade","claude-swap"]`; `pipx` → `["pipx","upgrade","claude-swap"]`.
 - `None`: `error(...)` with the multi-line manual instructions (lists `uv tool upgrade claude-swap`, `pipx upgrade claude-swap`, `{sys.executable} -m pip install --upgrade claude-swap`, and the editable-install `git pull` hint) plus `sys.prefix`/`sys.executable`; return `1`.
-- **Windows** (`sys.platform=="win32"`): the running `cswap.exe` is locked, so it does NOT run the upgrade — prints `To upgrade claude-swap on Windows, run:\n  {accent(' '.join(cmd))}` and returns `1`.
+- **Windows** (`sys.platform=="win32"`): the running `tycswap.exe` is locked, so it does NOT run the upgrade — prints `To upgrade claude-swap on Windows, run:\n  {accent(' '.join(cmd))}` and returns `1`.
 - Else `subprocess.run(cmd, check=False)`; return its `returncode`. `FileNotFoundError` (manager missing from PATH) → `error("Detected {method} install but `{cmd[0]}` is not on PATH. Run the upgrade manually from a shell where it is available.")`, return `1`.
 
 **Passive update notice** (`check_for_update`, separate from `upgrade`; runs after any
 non-purge, non-upgrade, non-JSON command): reads/writes cache `CACHE_DIR/update_check.json`
 (TTL 24h), fetches PyPI (2s timeout), compares tuple versions. When newer:
 `A newer version of claude-swap is available ({latest}). You are using {current}. {hint}`
-where hint is `Run `cswap upgrade` to update.` (uv/pipx, non-Windows), `Run `{direct}` to update.`
-(uv/pipx on Windows), or `Run `cswap upgrade` for upgrade instructions.` (unknown method).
+where hint is `Run `tycswap upgrade` to update.` (uv/pipx, non-Windows), `Run `{direct}` to update.`
+(uv/pipx on Windows), or `Run `tycswap upgrade` for upgrade instructions.` (unknown method).
 
 ---
 
@@ -868,7 +868,7 @@ where hint is `Run `cswap upgrade` to update.` (uv/pipx, non-Windows), `Run `{di
   `map[string]FetchRecord`. The Claude Code lock toucher is a **daemon thread** doing
   `os.utime` every 3s while held → a background goroutine stopped via a channel/context on
   release. The active-refresh persist callback re-acquires locks from inside the fetch — the
-  cswap `FileLock` is **non-reentrant**, so the network refresh must happen with no lock
+  tycswap `FileLock` is **non-reentrant**, so the network refresh must happen with no lock
   held and the persist callback re-locks; preserve this ordering exactly (a reentrant
   mutex would silently drop the refreshed token / deadlock).
 - **File locking**: POSIX `fcntl.flock(LOCK_EX|LOCK_NB)` with 0.1s poll to 10s; Windows
@@ -877,7 +877,7 @@ where hint is `Run `cswap upgrade` to update.` (uv/pipx, non-Windows), `Run `{di
 - **proper-lockfile protocol** (external contract — Claude Code interop): a **directory**
   `<target>.lock` created with `mkdir` (atomic mutex), stale after 10s (mtime), touched
   every 3s by the holder, taken over by `rmdir`+`mkdir` when stale, acquire timeout 9s with
-  `0.25+rand*0.25s` sleeps. Must be byte-compatible so a running Claude Code and cswap
+  `0.25+rand*0.25s` sleeps. Must be byte-compatible so a running Claude Code and tycswap
   cooperate. Guards `~/.claude.lock` (credential refresh) and `~/.claude.json.lock` (config
   writes). References: claude-code `utils/auth.ts checkAndRefreshOAuthTokenIfNeededImpl`,
   `utils/config.ts saveConfigWithLock`, `utils/lockfile.ts`.

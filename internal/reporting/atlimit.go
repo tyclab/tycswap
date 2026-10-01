@@ -14,10 +14,10 @@ package reporting
 import (
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/settings"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // configuredModels returns the per-model weekly windows to fold into the

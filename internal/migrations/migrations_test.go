@@ -10,16 +10,17 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/credstore"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/wincred"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/wincred"
 )
 
 // -- test double ----------------------------------------------------------
@@ -138,7 +139,7 @@ func TestMacOSRelocation_HappyPathViaRunner(t *testing.T) {
 	if _, found, _ := kc.Get(legacyKeyringService, "account-1-alice@x.com"); found {
 		t.Fatal("legacy keyring entry survived a successful relocation")
 	}
-	wantNotice := "claude-swap: migrated 1 macOS credential(s) from the keyring into the Keychain via security"
+	wantNotice := "tycswap: migrated 1 macOS credential(s) from the keyring into the Keychain via security"
 	if !containsString(notices, wantNotice) {
 		t.Fatalf("notices = %v, want to contain %q", notices, wantNotice)
 	}
@@ -146,6 +147,39 @@ func TestMacOSRelocation_HappyPathViaRunner(t *testing.T) {
 	applied := loadApplied(host.stateFilePath)
 	if _, ok := applied["macos_keyring_to_security"]; !ok {
 		t.Fatalf(".migrations.json applied map = %v, want macos_keyring_to_security recorded", applied)
+	}
+}
+
+// TestMacOSRelocation_TooLargeItemGoesToTheFile: a legacy keyring item over
+// `security -i`'s stdin line (the keyring library had no such limit) is
+// relocated into the 0600 .enc file credstore serves first, the legacy entry
+// is removed, and the migration completes instead of retrying forever.
+func TestMacOSRelocation_TooLargeItemGoesToTheFile(t *testing.T) {
+	kc := keychain.NewFake()
+	big := strings.Repeat("x", keychain.SecurityStdinLineLimit)
+	kc.Seed(legacyKeyringService, "account-1-alice@x.com", big)
+	host := newTestHost(t, platform.MacOS, kc, nil, map[string]string{"1": "alice@x.com"}, true)
+
+	notices := Run(host)
+
+	if got, err := host.creds.ReadBackup("1", "alice@x.com"); err != nil || got != big {
+		t.Fatalf("ReadBackup = %d bytes, %v; want the legacy value", len(got), err)
+	}
+	encPath := filepath.Join(host.credentialsDir, ".creds-1-alice@x.com.enc")
+	if fi, err := os.Stat(encPath); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf(".enc file: %v, mode %v; want present and 0600", err, fi.Mode().Perm())
+	}
+	if kc.Exists(securityService, "account-1-alice@x.com") {
+		t.Error("an oversized item was stored in the Keychain")
+	}
+	if kc.Exists(legacyKeyringService, "account-1-alice@x.com") {
+		t.Error("legacy keyring entry survived a successful relocation")
+	}
+	if !containsString(notices, "tycswap: migrated 1 macOS credential(s) from the keyring into the Keychain via security") {
+		t.Errorf("notices = %v", notices)
+	}
+	if _, ok := loadApplied(host.stateFilePath)["macos_keyring_to_security"]; !ok {
+		t.Error("migration not recorded as applied")
 	}
 }
 
@@ -215,7 +249,7 @@ func TestWindowsRelocation_HappyPath(t *testing.T) {
 	if _, found, _ := wc.Get(legacyKeyringService, "account-1-alice@x.com"); found {
 		t.Fatal("legacy Credential Manager entry survived a successful relocation")
 	}
-	wantNotice := "claude-swap: migrated 1 Windows credential(s) from Credential Manager to files"
+	wantNotice := "tycswap: migrated 1 Windows credential(s) from Credential Manager to files"
 	if !containsString(notices, wantNotice) {
 		t.Fatalf("notices = %v, want to contain %q", notices, wantNotice)
 	}
@@ -310,11 +344,31 @@ func TestIdempotentRunnerShortCircuit(t *testing.T) {
 	}
 }
 
+// TestRunIgnoresUnknownAppliedIDs: an id in .migrations.json that no registry
+// entry carries is left in the ledger and stops nothing; the registered
+// migrations still run and are recorded beside it.
+func TestRunIgnoresUnknownAppliedIDs(t *testing.T) {
+	kc := keychain.NewFake()
+	kc.Set(legacyKeyringService, "account-1-alice@x.com", "SECRET-1")
+	host := newTestHost(t, platform.MacOS, kc, nil, map[string]string{"1": "alice@x.com"}, true)
+	if err := markApplied(host.StateFilePath(), host.Clock(), "some_former_migration"); err != nil {
+		t.Fatal(err)
+	}
+	if notices := Run(host); len(notices) != 1 {
+		t.Fatalf("Run() notices = %v, want exactly one migrated-credential notice", notices)
+	}
+	applied := loadApplied(host.StateFilePath())
+	for _, id := range []string{"some_former_migration", "macos_keyring_to_security"} {
+		if _, ok := applied[id]; !ok {
+			t.Errorf("%s missing from the ledger: %v", id, applied)
+		}
+	}
+}
+
 // TestRun_NoOpWhenBackupDirMissing confirms the fresh-install lazy-dir
 // invariant (spec 07§5.5): Run must not touch the filesystem, the Keychain,
 // or SequenceAccounts at all when host.BackupDir() doesn't exist yet — a
-// no-op run must never materialize .migrations.json (which would itself trip
-// the migration-collision check paths.MigrateLegacyBackupDir guards against).
+// no-op run must never materialize .migrations.json.
 func TestRun_NoOpWhenBackupDirMissing(t *testing.T) {
 	kc := keychain.NewFake()
 	host := newTestHost(t, platform.MacOS, kc, nil, map[string]string{"1": "alice@x.com"}, true)

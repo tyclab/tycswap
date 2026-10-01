@@ -19,9 +19,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/autoswitch"
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
-	"git.dpemmons.com/dpemmons/cswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/autoswitch"
+	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // event styling (09§4.4).
@@ -249,8 +250,8 @@ func (a *autoScreen) toggleLive(m *Model) tea.Cmd {
 			title:    "Go live",
 			yesLabel: "Go live",
 			focusYes: true,
-			message: "Go live? claude-swap will switch your active account automatically when the threshold is reached.\n\n" +
-				"(Same behavior as running `cswap auto` in a terminal.)",
+			message: "Go live? tycswap will switch your active account automatically when the threshold is reached.\n\n" +
+				"(Same behavior as running `tycswap auto` in a terminal.)",
 			onDone: func(m *Model, confirmed bool) tea.Cmd {
 				if !confirmed {
 					return nil
@@ -399,7 +400,7 @@ func (a *autoScreen) candidatesText(snap *reporting.AccountsSnapshot, width int,
 			continue
 		}
 		pct := bindingPct(acc.Usage.LastGood, models)
-		entry := candidateEntry{number: acc.Number, email: acc.Email}
+		entry := candidateEntry{number: acc.Number, email: termsafe.Strip(acc.Email)}
 		switch {
 		case a.isQuarantined(acc.Number):
 			// The engine quarantined this slot (invalid_grant / identity conflict)

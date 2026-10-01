@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/tyclab/tycswap/internal/ccfile"
 )
 
 // decodeCredsMap parses a credentials JSON string into a map using json.Number
@@ -43,6 +45,31 @@ func ExtractOAuthData(creds string) map[string]any {
 		return nil
 	}
 	return oauth
+}
+
+// AccountOnly returns creds without its seat-wide remainder: the MCP server
+// logins Claude Code keeps under ccfile.MCPOAuthKey, which belong to the seat
+// and not to the account (DESIGN A25 item 9). It is what a capture stores and
+// what leaves the machine. A blob without the key, an API key, and anything
+// that is not a JSON object come back byte for byte, so a credential that never
+// carried the key compares and stores exactly as before; a blob that did is
+// re-encoded compact, as Claude Code writes the file.
+func AccountOnly(creds string) string {
+	m, ok := decodeCredsMap(creds)
+	if !ok {
+		return creds
+	}
+	if _, present := m[ccfile.MCPOAuthKey]; !present {
+		return creds
+	}
+	delete(m, ccfile.MCPOAuthKey)
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(m); err != nil {
+		return creds
+	}
+	return string(bytes.TrimSuffix(buf.Bytes(), []byte("\n")))
 }
 
 // ExtractAccessToken returns the OAuth access token from a credentials JSON

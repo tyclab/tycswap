@@ -20,10 +20,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/autoswitch"
-	"git.dpemmons.com/dpemmons/cswap/internal/lifecycle"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/autoswitch"
+	"github.com/tyclab/tycswap/internal/lifecycle"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // pollIntervalS is the main snapshot poll cadence (09§2.1 POLL_INTERVAL_S).
@@ -554,7 +555,7 @@ func (m *Model) confirmRemove(acc reporting.AccountSnapshot) tea.Cmd {
 		yesLabel: "Remove",
 		focusYes: true,
 		message: fmt.Sprintf("Remove account %s (%s)?\n\nIts stored credentials and config backup are deleted.",
-			number, email),
+			number, termsafe.Strip(email)),
 		onDone: func(m *Model, confirmed bool) tea.Cmd {
 			if !confirmed {
 				return nil
@@ -659,7 +660,7 @@ func (m *Model) slotOccupant(slot *int) string {
 	want := strconv.Itoa(*slot)
 	for _, acc := range m.snapshot.Accounts {
 		if acc.Number == want {
-			return acc.Email
+			return termsafe.Strip(acc.Email)
 		}
 	}
 	return ""

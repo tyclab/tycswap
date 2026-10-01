@@ -26,8 +26,8 @@ import (
 	"io/fs"
 	"os"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/atomicfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/cerr"
 )
 
 // SequenceData is sequence.json. Field order matches Python's write order so a
@@ -234,7 +234,7 @@ func (s *Store) corruptSequenceError(diagnosis string, cause error) error {
 		"%s %s, so the accounts it lists cannot be read — refusing to overwrite it. "+
 			"Every stored credential and config backup is intact, but this file is the only thing that names them. "+
 			"Repair the file (the records are plain text; a JSON editor or a copy of the file will do) and retry, "+
-			"or delete it to start a fresh roster and re-register each account with `cswap add`.",
+			"or delete it to start a fresh roster and re-register each account with `tycswap add`.",
 		s.SequenceFile, diagnosis)
 	if cause != nil {
 		return err.Wrap(cause)
@@ -412,7 +412,7 @@ func atoiSlot(s string) (int, bool) {
 }
 
 // isDigits reports whether s is non-empty and all ASCII digits (Python
-// str.isdigit for the identifiers cswap resolves).
+// str.isdigit for the identifiers tycswap resolves).
 func isDigits(s string) bool {
 	if s == "" {
 		return false

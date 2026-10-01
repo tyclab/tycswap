@@ -12,9 +12,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/filelock"
-	"git.dpemmons.com/dpemmons/cswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/sessprofile"
 )
 
 // SetupSession ensures a valid session profile exists, bootstrapping or reusing
@@ -32,7 +33,7 @@ func (m *Manager) SetupSession(identifier string, share, shareHistory bool) (str
 	sessionDir := sessprofile.SessionDirFor(m.accounts.BackupDir(), accountNum, email)
 
 	// Deferred invalidation: honored only when no session is live — a second
-	// `cswap run` joining a live session must not invalidate under the running
+	// `tycswap run` joining a live session must not invalidate under the running
 	// claude (the marker survives for later).
 	if !m.staleApplies(sessionDir) && m.isSessionValid(sessionDir, email, orgUUID) {
 		// Cheap reuse check without the lock: most launches hit this.
@@ -52,7 +53,7 @@ func (m *Manager) SetupSession(identifier string, share, shareHistory bool) (str
 	defer lock.Release()
 
 	// Re-evaluate the marker under the lock, then re-check validity: another
-	// `cswap run` may have bootstrapped while we waited.
+	// `tycswap run` may have bootstrapped while we waited.
 	if m.staleApplies(sessionDir) {
 		if _, err := sessprofile.InvalidateSessionCredentials(m.kc, sessionDir); err != nil {
 			return "", "", "", err
@@ -74,7 +75,7 @@ func (m *Manager) SetupSession(identifier string, share, shareHistory bool) (str
 		m.cleanupFailedSession(sessionDir)
 		return "", "", "", cerr.Session(
 			"Session profile for Account-%s (%s) failed validation. Log in with "+
-				"that account and re-add it: cswap --add-account --slot %s",
+				"that account and re-add it: tycswap --add-account --slot %s",
 			accountNum, email, accountNum)
 	}
 	// Lock released by defer, before any exec.
@@ -104,7 +105,7 @@ func (m *Manager) bootstrap(sessionDir, accountNum, email, orgUUID string) error
 	}
 	if creds == "" {
 		return cerr.Session(
-			"Account-%s has no stored credentials. Re-add with: cswap --add-account --slot %s",
+			"Account-%s has no stored credentials. Re-add with: tycswap --add-account --slot %s",
 			accountNum, accountNum)
 	}
 
@@ -112,7 +113,17 @@ func (m *Manager) bootstrap(sessionDir, accountNum, email, orgUUID string) error
 	// persist a possibly-rotated refresh token back to backup. Setup-token
 	// accounts have no refresh token — skip silently. Any refresh failure is
 	// non-fatal (warn + keep the stored creds).
-	if hasRefreshToken(creds) {
+	//
+	// Not when the slot shares its lineage with the live default login: right
+	// after a switch the backup holds the live login's refresh token, and
+	// rotating it here would log the default login out. That is the case when
+	// the slot IS the current account (reachable with CLAUDE_CONFIG_DIR preset,
+	// which bypasses the same-account fast path) or the backup's refresh-token
+	// fingerprint matches the live credential's. The caller holds the lock, so
+	// the backup read above is current.
+	if hasRefreshToken(creds) && m.sharesLiveLineage(accountNum, creds) {
+		m.logInfof("Skipped the bootstrap refresh for account %s: it shares the live login's refresh token", accountNum)
+	} else if hasRefreshToken(creds) {
 		if refreshed := m.refresh(creds); refreshed != "" {
 			creds = refreshed
 			if err := m.accounts.WriteAccountCredentials(accountNum, email, creds); err != nil {
@@ -135,7 +146,7 @@ func (m *Manager) bootstrap(sessionDir, accountNum, email, orgUUID string) error
 	oauthAccount, present := configData["oauthAccount"]
 	if !present || !pyTruthy(oauthAccount) {
 		return cerr.Session(
-			"Account-%s has no stored config backup. Re-add with: cswap --add-account --slot %s",
+			"Account-%s has no stored config backup. Re-add with: tycswap --add-account --slot %s",
 			accountNum, accountNum)
 	}
 
@@ -250,4 +261,21 @@ func (m *Manager) isSessionValid(sessionDir, email, orgUUID string) bool {
 		return false
 	}
 	return true
+}
+
+// sharesLiveLineage reports whether refreshing accountNum's backup creds could
+// consume the live default login's refresh token.
+func (m *Manager) sharesLiveLineage(accountNum, creds string) bool {
+	if cur := m.accounts.CurrentAccountNumber(); cur != nil && *cur == accountNum {
+		return true
+	}
+	live := m.accounts.LiveCredentials()
+	if live == "" {
+		return false
+	}
+	if live == creds {
+		return true
+	}
+	a, b := oauth.CredentialFingerprint(live), oauth.CredentialFingerprint(creds)
+	return a != nil && b != nil && *a == *b
 }

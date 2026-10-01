@@ -6,14 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/settings"
 )
 
-// runConfig drives `cswap config <args>` over a clean home with buffered I/O.
+// runConfig drives `tycswap config <args>` over a clean home with buffered I/O.
 func runConfig(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var out, errb bytes.Buffer
-	code := run("cswap", append([]string{"config"}, args...),
+	code := run("tycswap", append([]string{"config"}, args...),
 		ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 	return code, out.String(), errb.String()
 }

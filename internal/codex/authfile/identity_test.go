@@ -1,4 +1,4 @@
-// identity_test.go — parsing ~/.codex/auth.json into an identity cswap can
+// identity_test.go — parsing ~/.codex/auth.json into an identity tycswap can
 // match to a slot, and writing it back. Ports claude-swap PR #252
 // tests/test_codex_auth_file.py.
 
@@ -232,7 +232,7 @@ func TestReadLivePayload_RejectsNonObjects(t *testing.T) {
 }
 
 // The file carries bearer tokens: an existing auth.json keeps its owner bits
-// but never stays group- or world-readable once cswap has written tokens to it.
+// but never stays group- or world-readable once tycswap has written tokens to it.
 func TestWriteLiveAuth_DropsGroupAndWorldBitsFromTheExistingMode(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX modes are not meaningful on Windows")

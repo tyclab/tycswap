@@ -5,22 +5,23 @@
 // 02§13).
 //
 // Implements spec 02§13 (_fetch_account_usage, _fetch_active_usage) and the
-// issue #62/#117 provenance guards. Never holds the cswap FileLock across the
+// issue #62/#117 provenance guards. Never holds the tycswap FileLock across the
 // network refresh: FileLock is non-reentrant, so the persist callback re-
 // acquires FileLock → Claude credentials lock → Claude config lock and re-checks
 // owner/refresh-token lineage before writing.
 package reporting
 
 import (
+	"context"
 	"strconv"
 	"sync"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cclock"
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/sessprofile"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/cclock"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // fetchAccountUsage runs one network fetch for one account, never raising (spec
@@ -33,15 +34,11 @@ func fetchAccountUsage(s *store.Store, info AccountInfo) usage.FetchRecord {
 		return fetchActiveUsage(s, num, info.Email, info.Creds)
 	}
 
-	persist := oauth.PersistFn(func(n, email, creds string) error {
-		return s.PersistBackupCredentials(n, email, creds)
-	})
-
 	hasLiveSession := len(s.LiveSessionPidsFor(num, info.Email)) > 0
 
 	// A session profile that has run holds the newest generation of this
 	// account's token family (claude rotates in place, nothing syncs back). Read
-	// it strictly read-only; rotating its family would log the next `cswap run`
+	// it strictly read-only; rotating its family would log the next `tycswap run`
 	// out the same way the backup's consumed generation would 401 forever.
 	sessionDir := s.SessionDir(num, info.Email)
 	sessionCreds, sessOK := sessprofile.ReadSessionCredentials(reportKC, sessionDir)
@@ -72,8 +69,18 @@ func fetchAccountUsage(s *store.Store, info AccountInfo) usage.FetchRecord {
 		}
 	}
 
-	outcome := oauth.TryFetchUsageForAccount(backgroundCtx(), s.OAuth, num, info.Email, info.Creds, hasLiveSession, persist)
+	outcome := oauth.TryFetchUsageGuarded(backgroundCtx(), s.OAuth, num, info.Email, info.Creds, hasLiveSession,
+		inactiveRefresh(s, num, info.Email))
 	return recordFromOutcome(outcome)
+}
+
+// inactiveRefresh is the inactive-slot refresh: store.RefreshBackupGuarded
+// with the store's own client, so the lock is taken before the refresh and
+// the lineage re-checked under it.
+func inactiveRefresh(s *store.Store, num, email string) oauth.GuardedRefresh {
+	return func(ctx context.Context, held string) oauth.RefreshOutcome {
+		return s.RefreshBackupGuarded(ctx, s.OAuth, num, email, held)
+	}
 }
 
 // fetchActiveUsage fetches usage for the active/default account, refreshing its
@@ -127,7 +134,7 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 
 	persist := oauth.PersistFn(func(n, acctEmail, newCreds string) error {
 		// withTripleLock returns without running its inner fn when a lock cannot be
-		// acquired (cswap FileLock contended, or a Claude Code cred/config lock
+		// acquired (tycswap FileLock contended, or a Claude Code cred/config lock
 		// times out). That means the rotated credential was NOT persisted, so mark
 		// it skipped — mirroring Python's `except Exception: persist_skipped=True`
 		// around the whole `with FileLock, ...:` block. markSkipped is idempotent,
@@ -157,7 +164,9 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 				markSkipped()
 				return err
 			}
-			if err := s.WriteAccountCredentials(n, acctEmail, newCreds); err != nil {
+			// The backup takes the account part only; the live file keeps the
+			// seat-wide mcpOAuth the refresh preserved.
+			if err := s.WriteAccountCredentials(n, acctEmail, oauth.AccountOnly(newCreds)); err != nil {
 				markSkipped()
 				return err
 			}
@@ -186,7 +195,7 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 }
 
 // withTripleLock runs fn under FileLock → Claude credentials lock → Claude
-// config lock (spec 03§7.4 ordering), the same triple a switch holds. The cswap
+// config lock (spec 03§7.4 ordering), the same triple a switch holds. The tycswap
 // FileLock is non-reentrant, so callers must not already hold it.
 func withTripleLock(s *store.Store, fn func() error) error {
 	return s.Lock.With(func() error {
@@ -220,9 +229,8 @@ func stringOf(v any) string {
 	return s
 }
 
-// fingerprintsEqual reports whether two credentials share a fingerprint — same
-// refresh-token lineage or identical bytes. An empty credential fingerprints to
-// nil, which compares unequal to any real fingerprint (spec 04§1.5).
+// fingerprintsEqual reports whether two credentials share a refresh-token
+// lineage.
 func fingerprintsEqual(a, b string) bool {
 	fa := oauth.CredentialFingerprint(a)
 	fb := oauth.CredentialFingerprint(b)

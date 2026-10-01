@@ -30,10 +30,10 @@ func (w *rotatingWriter) open() error {
 	if w.f != nil {
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(w.path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(w.path), 0o700); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}

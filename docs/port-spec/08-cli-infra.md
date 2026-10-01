@@ -2,11 +2,11 @@
 
 ## Overview
 
-`claude-swap` (binary `cswap`, also `claude-swap`) is a Python CLI that switches
+`claude-swap` (binary `tycswap`, also `claude-swap`) is a Python CLI that switches
 between multiple Claude Code login accounts. This spec covers the **command
 grammar** (every subcommand and flag, legacy `--flag` spellings and their
 aliasing, argument-form resolution, and help text), plus the **infrastructure
-modules**: `settings.py` (`settings.json` config store, `cswap config`),
+modules**: `settings.py` (`settings.json` config store, `tycswap config`),
 `json_output.py` (the `--json` schema-v1 envelope), `printer.py` (human/color
 output), `exceptions.py` (the exception→exit-code table), `logging_config.py`
 (log destinations), and `update_check.py` (PyPI update check + self-upgrade).
@@ -40,7 +40,7 @@ Files covered:
    - `alias` → `_alias_command(argv[1:])`
    - `swap`  → `_swap_command(argv[1:])`
    - `move`  → `_move_command(argv[1:])`
-5. **Bare-`cswap` TUI gate**: if `argv` is empty AND `sys.stdout.isatty()` AND
+5. **Bare-`tycswap` TUI gate**: if `argv` is empty AND `sys.stdout.isatty()` AND
    `sys.stdin.isatty()`, set `argv = ["--tui"]`. (Non-TTY bare invocation falls
    through to the "no command" error — scripts/pipes keep getting the usage error.)
 6. `argv = _translate_subcommand(argv)` — rewrite memorable verbs → legacy flags (§2).
@@ -48,8 +48,8 @@ Files covered:
    dispatch (§5), serialize any JSON payload, then run the passive update check (§6).
 
 The pre-dispatched subcommands (`run`, `auto`, `config`, `map`, `unmap`, `alias`,
-`swap`, `move`) **must be the first argument** — e.g. `cswap --debug run 2` is
-NOT supported; use `cswap run 2 --debug`. Each of these builds its own
+`swap`, `move`) **must be the first argument** — e.g. `tycswap --debug run 2` is
+NOT supported; use `tycswap run 2 --debug`. Each of these builds its own
 `argparse.ArgumentParser` and accepts its own `--debug`.
 
 ### `_prog_name()`
@@ -58,10 +58,10 @@ Computes the program name shown in usage/help:
 ```
 name = basename(sys.argv[0] or "")
 strip a trailing ".exe" / ".pyw" / ".py" (case-insensitive, first match)
-if not name or name in {"__main__","python","python3","py"} → return "cswap"
+if not name or name in {"__main__","python","python3","py"} → return "tycswap"
 else return name
 ```
-Go equivalent: use the invoked binary basename, stripping `.exe`; fall back to `"cswap"`.
+Go equivalent: use the invoked binary basename, stripping `.exe`; fall back to `"tycswap"`.
 
 ---
 
@@ -110,52 +110,52 @@ canonical command list (rendered in `--help`); reproduce it verbatim:
 Multi-Account Switcher for Claude Code
 
 Commands:
-  cswap help                       show this help
-  cswap list                       list managed accounts
-  cswap status                     show current account
-  cswap switch                     rotate to the next account
-  cswap switch <num|email>         switch to a specific account
-  cswap add                        add the current account
-  cswap add-token [TOKEN|-]        register a setup-token or API key
-  cswap remove <num|email>         remove an account
-  cswap disable <num|email>        hold an account out of auto-rotation
-  cswap enable <num|email>         return a disabled account to rotation
-  cswap run <num|email> [-- ...]   run as an account, this terminal only
-  cswap run                        run the current dir's mapped account
-  cswap map <num|email> [path]     map a directory to an account
-  cswap map                        list directory mappings
-  cswap unmap [path]               remove a directory mapping
-  cswap alias <num|email> <name>   set a short alias for an account
-  cswap alias <num|email> --unset  remove an account's alias
-  cswap alias                      list all aliases
-  cswap swap <a> <b>               exchange two accounts' slot numbers
-  cswap move <a> <slot>            assign an account to a slot (swaps if taken)
-  cswap auto                       auto-switch when nearing rate limits
-  cswap config [set KEY VALUE]     show or change settings (settings.json)
-  cswap export <path>              export accounts
-  cswap import <path>              import accounts
-  cswap tui                        interactive dashboard (also: bare cswap)
-  cswap watch                      dashboard, opened on the live watch page
-  cswap menubar                    macOS menu bar app
-  cswap upgrade                    self-upgrade to latest
-  cswap purge                      remove all claude-swap data
+  tycswap help                       show this help
+  tycswap list                       list managed accounts
+  tycswap status                     show current account
+  tycswap switch                     rotate to the next account
+  tycswap switch <num|email>         switch to a specific account
+  tycswap add                        add the current account
+  tycswap add-token [TOKEN|-]        register a setup-token or API key
+  tycswap remove <num|email>         remove an account
+  tycswap disable <num|email>        hold an account out of auto-rotation
+  tycswap enable <num|email>         return a disabled account to rotation
+  tycswap run <num|email> [-- ...]   run as an account, this terminal only
+  tycswap run                        run the current dir's mapped account
+  tycswap map <num|email> [path]     map a directory to an account
+  tycswap map                        list directory mappings
+  tycswap unmap [path]               remove a directory mapping
+  tycswap alias <num|email> <name>   set a short alias for an account
+  tycswap alias <num|email> --unset  remove an account's alias
+  tycswap alias                      list all aliases
+  tycswap swap <a> <b>               exchange two accounts' slot numbers
+  tycswap move <a> <slot>            assign an account to a slot (swaps if taken)
+  tycswap auto                       auto-switch when nearing rate limits
+  tycswap config [set KEY VALUE]     show or change settings (settings.json)
+  tycswap export <path>              export accounts
+  tycswap import <path>              import accounts
+  tycswap tui                        interactive dashboard (also: bare tycswap)
+  tycswap watch                      dashboard, opened on the live watch page
+  tycswap menubar                    macOS menu bar app
+  tycswap upgrade                    self-upgrade to latest
+  tycswap purge                      remove all claude-swap data
 
 Aliases: ls=list  rm=remove  update=upgrade
 ```
-(Each `cswap` above is literally `%(prog)s`.) The epilog is:
+(Each `tycswap` above is literally `%(prog)s`.) The epilog is:
 ```
 Flags combine with subcommands:
-  cswap switch --strategy best           # pick the account with most quota left
-  cswap switch --strategy next-available # rotate, skipping rate-limited accounts
-  cswap switch user@example.com
-  cswap list --json
-  cswap add --slot 3                      # add to a specific slot
-  cswap add-token sk-ant-oat01-... --email me@example.com
-  cswap run 2 -- --resume                 # forward args after '--' to claude
-  cswap auto --once                       # single auto-switch tick (cron-friendly)
-  cswap config set autoswitch.threshold 80
+  tycswap switch --strategy best           # pick the account with most quota left
+  tycswap switch --strategy next-available # rotate, skipping rate-limited accounts
+  tycswap switch user@example.com
+  tycswap list --json
+  tycswap add --slot 3                      # add to a specific slot
+  tycswap add-token sk-ant-oat01-... --email me@example.com
+  tycswap run 2 -- --resume                 # forward args after '--' to claude
+  tycswap auto --once                       # single auto-switch tick (cron-friendly)
+  tycswap config set autoswitch.threshold 80
 
-The original flag spellings (cswap --switch, cswap --list, ...) keep working.
+The original flag spellings (tycswap --switch, tycswap --list, ...) keep working.
 ```
 
 ### 3.1 Visible flags (outside the mutually-exclusive group)
@@ -215,8 +215,8 @@ Checked in this order after parse:
 1. **No command selected** (none of add_account/list/switch/status/purge/tui/
    watch/menubar/upgrade set, and remove_account/disable_account/enable_account/
    switch_to/export/import_/add_token all `None`):
-   `parser.error("no command given — try 'cswap help'")`
-   *(the `'cswap'` is `_prog_name()` substituted). Must NOT leak legacy flag
+   `parser.error("no command given — try 'tycswap help'")`
+   *(the `'tycswap'` is `_prog_name()` substituted). Must NOT leak legacy flag
    names or argparse's "one of the arguments … is required".*
 2. `--token-status` without `--list` → `--token-status can only be used with 'list'`
 3. `--json` without (list|status|switch|switch_to) → `--json can only be used with 'list', 'status', or 'switch'`
@@ -329,12 +329,12 @@ work, and wraps in `except ClaudeSwitchError → error("Error: …"); exit 1` /
 `error("Error: Do not run this script as root (unless running in a container)")`,
 `sys.exit(1)`.
 
-### 7.1 `cswap run [NUM|EMAIL] [--no-share] [--share-history/--no-share-history] [--debug] [-- <claude args>]`
+### 7.1 `tycswap run [NUM|EMAIL] [--no-share] [--share-history/--no-share-history] [--debug] [-- <claude args>]`
 
 - `prog = f"{_prog_name()} run"`. `RawDescriptionHelpFormatter`.
 - description: `"[EXPERIMENTAL] Launch Claude Code as a stored account in this terminal only (the default login and other terminals are unaffected)."`
 - **`--` split**: everything after the *first* `--` is `tail`, forwarded to claude
-  verbatim and never parsed (`cswap run 2 -- --no-share` forwards `["--no-share"]`).
+  verbatim and never parsed (`tycswap run 2 -- --no-share` forwards `["--no-share"]`).
 - args:
   - `account` (`nargs="?"`, `metavar="NUM|EMAIL"`) — omit to use the cwd's mapping.
   - `--no-share` (store_true) — don't share settings/keybindings/CLAUDE.md/skills/commands/agents.
@@ -350,12 +350,12 @@ work, and wraps in `except ClaudeSwitchError → error("Error: …"); exit 1` /
 - On POSIX `manager.run`/`exec_default` exec into claude and never return; on
   Windows they exit with claude's return code. The post-dispatch update check is
   thus unreachable (intended). Test doubles mock exec so `run()` returns.
-- Epilog examples: `cswap run 2`, `cswap run user@example.com`, `cswap run 2 --no-share`, `cswap run 2 --share-history`, `cswap run 2 -- --resume`.
+- Epilog examples: `tycswap run 2`, `tycswap run user@example.com`, `tycswap run 2 --no-share`, `tycswap run 2 --share-history`, `tycswap run 2 -- --resume`.
 - `SessionError("boom")` → stderr contains "boom", exit 1.
 
-### 7.2 `cswap map [NUM|EMAIL] [PATH]`
+### 7.2 `tycswap map [NUM|EMAIL] [PATH]`
 
-- `prog = "cswap map"` (hardcoded). args: `account` (`nargs="?"`), `path`
+- `prog = "tycswap map"` (hardcoded). args: `account` (`nargs="?"`), `path`
   (`nargs="?"`, default cwd), `--debug`.
 - No `account` → `switcher.list_mappings()`, return. (Human strings originate in
   switcher: empty → `"No directory mappings yet"`; populated → `"Directory
@@ -371,16 +371,16 @@ work, and wraps in `except ClaudeSwitchError → error("Error: …"); exit 1` /
   - else → `print(f"{accent('Mapped')} {shown} → Account-{account_num} ({email})")`
 - Unknown account (`resolve_account` raises) → exit 1, "Error" on stderr.
 
-### 7.3 `cswap unmap [PATH]`
+### 7.3 `tycswap unmap [PATH]`
 
-- `prog = "cswap unmap"`. args: `path` (`nargs="?"`, default cwd), `--debug`.
+- `prog = "tycswap unmap"`. args: `path` (`nargs="?"`, default cwd), `--debug`.
 - `store = MappingStore(switcher.backup_dir)`; `target = path or cwd`; `shown = normalize_path(target)`.
   - `store.remove(target)` truthy → `print(f"{accent('Unmapped')} {shown}")`
   - else → `print(dimmed(f"No mapping for {shown}"))`
 
-### 7.4 `cswap alias [NUM|EMAIL] [NAME] [--unset]`
+### 7.4 `tycswap alias [NUM|EMAIL] [NAME] [--unset]`
 
-- `prog = "cswap alias"`. args: `account` (`nargs="?"`), `alias_name`
+- `prog = "tycswap alias"`. args: `account` (`nargs="?"`), `alias_name`
   (`nargs="?"`, `metavar="NAME"`), `--unset` (store_true), `--debug`.
 - Argument validation (via `parser.error`, exit 2):
   - `--unset` with a NAME → `--unset does not take a NAME argument`
@@ -393,7 +393,7 @@ work, and wraps in `except ClaudeSwitchError → error("Error: …"); exit 1` /
 - NAME validity (letters, digits, `.`, `-`, `_`; **not purely numeric**) is
   enforced in `switcher.set_alias`; e.g. `alias 2 123` raises → exit 1.
 
-### 7.5 `cswap swap NUM|EMAIL|ALIAS NUM|EMAIL|ALIAS`
+### 7.5 `tycswap swap NUM|EMAIL|ALIAS NUM|EMAIL|ALIAS`
 
 - `prog = f"{_prog_name()} swap"`. Positionals `first`, `second` (both required,
   `metavar="NUM|EMAIL|ALIAS"`), `--debug`.
@@ -401,7 +401,7 @@ work, and wraps in `except ClaudeSwitchError → error("Error: …"); exit 1` /
   `print(f"{accent('Swapped')} Account {num_a} and Account {num_b}:")`; then for
   each num in `sorted((num_a,num_b), key=int)` print `f"  {num}: {email}"`.
 
-### 7.6 `cswap move NUM|EMAIL|ALIAS SLOT`
+### 7.6 `tycswap move NUM|EMAIL|ALIAS SLOT`
 
 - `prog = f"{_prog_name()} move"`. Positionals `account`, `slot` (required),
   `--debug`.
@@ -410,9 +410,9 @@ work, and wraps in `except ClaudeSwitchError → error("Error: …"); exit 1` /
   - `swapped` → `print(f"{accent('Swapped')} Account {num_src} and Account {num_target}:")` + numbered list
   - else → `print(f"{accent('Moved')} {email} to slot {num_target}")`
 
-### 7.7 `cswap auto` (CLI surface; engine is a separate module)
+### 7.7 `tycswap auto` (CLI surface; engine is a separate module)
 
-- `prog = "cswap auto"`. Flags:
+- `prog = "tycswap auto"`. Flags:
   - `--once` (store_true) — single tick; exit code = outcome.
   - `--json` (store_true) — one JSON event per line on stdout.
   - `--interval` (`type=float`, `metavar="SECONDS"`) — poll interval (min 15; default 60).
@@ -442,9 +442,9 @@ work, and wraps in `except ClaudeSwitchError → error("Error: …"); exit 1` /
   `file=sys.stderr if args.json else sys.stdout)`; exit 130.
 - Epilog documents the exit codes and examples verbatim.
 
-### 7.8 `cswap config [list | get KEY | set KEY VALUE | unset KEY | path]`
+### 7.8 `tycswap config [list | get KEY | set KEY VALUE | unset KEY | path]`
 
-- `prog = "cswap config"`. Top-level flags `--json`, `--debug`. Subparsers
+- `prog = "tycswap config"`. Top-level flags `--json`, `--debug`. Subparsers
   `dest="action"`, `metavar="{list,get,set,unset,path}"`:
   - `list` (default when no action) — also re-adds `--json` (`default=argparse.SUPPRESS`).
   - `get KEY` — `KEY` metavar `KEY`; also re-adds `--json` (SUPPRESS).
@@ -452,7 +452,7 @@ work, and wraps in `except ClaudeSwitchError → error("Error: …"); exit 1` /
   - `unset KEY`.
   - `path`.
 - `--json` on `list`/`get` uses `default=argparse.SUPPRESS` so a pre-verb
-  `cswap config --json get X` isn't clobbered by the subparser's default. Both
+  `tycswap config --json get X` isn't clobbered by the subparser's default. Both
   `config get X --json` and `config --json get X` work identically.
 - `json_mode = bool(getattr(args, "json", False))`; `action = args.action or "list"`.
 - If `json_mode and action not in ("list","get")` → `parser.error("--json can only be used with list or get")` (exit 2).
@@ -501,7 +501,7 @@ work, and wraps in `except ClaudeSwitchError → error("Error: …"); exit 1` /
 - Written atomically with 0600 file / 0700 dir modes (POSIX). Unknown keys and
   unknown top-level sections **survive a round trip**.
 - Reading is **forgiving** (missing/corrupt/wrong-type → defaults, logged
-  warning, never a crash). Writing via `cswap config set` is **strict**.
+  warning, never a crash). Writing via `tycswap config set` is **strict**.
 
 ### 8.2 `AutoSwitchSettings` dataclass (frozen) & the setting registry
 
@@ -510,7 +510,7 @@ Every key (single source of truth is `SETTING_SPECS`, keyed by dotted key):
 | dotted key | field (snake) | kind | lo | hi | choices | default | help |
 |-----------|---------------|------|----|----|---------|---------|------|
 | `autoswitch.threshold` | `threshold` | float | 50.0 | 99.9 | — | `90.0` | Switch when the binding 5h/7d window reaches this pct |
-| `autoswitch.intervalSeconds` | `interval_seconds` | float | 15.0 | 3600.0 | — | `60.0` | Poll interval for the cswap auto loop, in seconds |
+| `autoswitch.intervalSeconds` | `interval_seconds` | float | 15.0 | 3600.0 | — | `60.0` | Poll interval for the tycswap auto loop, in seconds |
 | `autoswitch.cooldownSeconds` | `cooldown_seconds` | float | 0.0 | 86400.0 | — | `300.0` | Minimum seconds between proactive switches |
 | `autoswitch.hysteresisPct` | `hysteresis_pct` | float | 0.0 | 50.0 | — | `10.0` | A target must beat the active account by this many pct |
 | `autoswitch.strategy` | `strategy` | choice | — | — | `("best",)` | `"best"` | How auto-switch picks the target account |
@@ -577,7 +577,7 @@ empty the whole section is deleted; stamps `schemaVersion`; returns `False`
 - bool via `_BOOL_WORDS = {true:1:yes → True, false:0:no → False}` (lowercased,
   stripped); miss → `f"{dotted} expects true or false (or 1/0, yes/no), got '{raw_value}'"`.
 - choice not in choices → `f"{dotted} must be one of: {comma-joined choices}"`.
-- string stripped empty → `f"{dotted} expects a non-empty value; use 'cswap config unset {dotted}' to clear it"`.
+- string stripped empty → `f"{dotted} expects a non-empty value; use 'tycswap config unset {dotted}' to clear it"`.
 - int (`int(raw)`) / float (`float(raw)`) parse fail → `f"{dotted} expects an integer, got '{raw}'"` / `f"{dotted} expects a number, got '{raw}'"`.
 - out of range → `f"{dotted} must be between {format_setting_value(lo)} and {format_setting_value(hi)}"` (e.g. `between 50 and 99.9`).
 
@@ -844,7 +844,7 @@ action, `3` blocked.
 `Path(self.baseFilename).parent.mkdir(parents=True, exist_ok=True)` before opening.
 Combined with `delay=True`, **the log dir is created lazily on the first record
 actually written**, not when the logger is configured. Critical: a no-op run
-(e.g. `cswap --status` with no accounts) must not materialize `cache/` or log
+(e.g. `tycswap --status` with no accounts) must not materialize `cache/` or log
 files under the XDG path, which would later trip the legacy→XDG migration
 collision check.
 
@@ -884,9 +884,9 @@ cache"). `write_cache(path, data)` writes `{"timestamp": now, "data": data}`
   numeric tuple compare. Notify only when `latest and parse(latest) > parse(current)`.
 - Message: `f"A newer version of claude-swap is available ({latest}). You are
   using {current}. {hint}"` where `hint` depends on install method and platform:
-  - method uv/pipx (a `direct` command exists) AND not Windows → `"Run \`cswap upgrade\` to update."`
+  - method uv/pipx (a `direct` command exists) AND not Windows → `"Run \`tycswap upgrade\` to update."`
   - method uv/pipx AND Windows → `f"Run \`{direct}\` to update."` (`direct` = `"uv tool upgrade claude-swap"` or `"pipx upgrade claude-swap"`)
-  - unknown method → `"Run \`cswap upgrade\` for upgrade instructions."`
+  - unknown method → `"Run \`tycswap upgrade\` for upgrade instructions."`
 
 ### 13.3 `_detect_install_method() -> "uv" | "pipx" | None`
 
@@ -901,7 +901,7 @@ Reads `sys.prefix`, lowercases its path parts, forms adjacent pairs
   `ValueError`/`OSError`). The env var alone, with the prefix elsewhere, does NOT trigger.
 - Otherwise `None` (e.g. a `pip install -e .` source checkout `.../claude-swap/.venv`).
 
-### 13.4 `run_self_upgrade() -> int` (invoked by `cswap upgrade`)
+### 13.4 `run_self_upgrade() -> int` (invoked by `tycswap upgrade`)
 
 `commands = {"uv": ["uv","tool","upgrade","claude-swap"], "pipx": ["pipx","upgrade","claude-swap"]}`.
 - Unknown method → `error(...)` (to stderr) with the full manual-instruction block:
@@ -916,7 +916,7 @@ Reads `sys.prefix`, lowercases its path parts, forms adjacent pairs
   If you installed with `pip install -e .`, use `git pull` instead.
   ```
   return `1`.
-- Windows (`sys.platform == "win32"`): the running `cswap.exe` is locked, so it
+- Windows (`sys.platform == "win32"`): the running `tycswap.exe` is locked, so it
   never upgrades in place — `print(f"To upgrade claude-swap on Windows, run:\n  {accent(' '.join(cmd))}")`
   (stdout), return `1`.
 - Else `subprocess.run(cmd, check=False)`, return its `returncode` (propagates
@@ -956,16 +956,16 @@ Reads `sys.prefix`, lowercases its path parts, forms adjacent pairs
   email=None, slot=None)` (switcher defaults the email). With `--slot 3` →
   `slot=3` forwarded.
 - **`--upgrade`** never constructs the switcher; `run_self_upgrade` called with no args.
-- **Bare `cswap menubar`** and `cswap --menubar` route identically to `menubar.run`.
+- **Bare `tycswap menubar`** and `tycswap --menubar` route identically to `menubar.run`.
 - **`_translate_subcommand`** unit behaviors: `["--list"]` unchanged; `[]`
   unchanged; `["switch"]→["--switch"]`; `["switch","--strategy","best"]→["--switch","--strategy","best"]`;
   `["switch","2"]→["--switch-to","2"]`; `["switch","u@x.com","--json"]→["--switch-to","u@x.com","--json"]`;
   `["ls"]→["--list"]`; `["rm","2"]→["--remove-account","2"]`;
-  `["update"]→["--upgrade"]`; `["export","b.cswap","--full"]→["--export","b.cswap","--full"]`;
+  `["update"]→["--upgrade"]`; `["export","b.tycswap","--full"]→["--export","b.tycswap","--full"]`;
   `["bogus"]` unchanged.
-- **`cswap run 2 -- --no-share`**: the tail after `--` is NOT parsed by cswap
-  (forwards `["--no-share"]`). `cswap run 2 --bogus` (before `--`) → exit 2.
-- **`cswap run`** with no account resolves the cwd mapping; a mapped subdir
+- **`tycswap run 2 -- --no-share`**: the tail after `--` is NOT parsed by tycswap
+  (forwards `["--no-share"]`). `tycswap run 2 --bogus` (before `--`) → exit 2.
+- **`tycswap run`** with no account resolves the cwd mapping; a mapped subdir
   inherits the parent's mapping; unmapped → `exec_default([])` and prints "No
   account mapped"; a removed mapped account → `exec_default` and prints "no
   longer exists". `--share-history` and the `--`-tail survive the resolve path.
@@ -1023,7 +1023,7 @@ Reads `sys.prefix`, lowercases its path parts, forms adjacent pairs
   and `--include-api-key-accounts/--no-include-api-key-accounts`. The latter is
   **tri-state** (`default=None`) so `merged_with_cli` can tell "unset" from
   "explicitly false". Model this with a `*bool` (nil = unset).
-- **`--` verbatim tail**: in `cswap run`, split on the first `--`; everything
+- **`--` verbatim tail**: in `tycswap run`, split on the first `--`; everything
   after is forwarded to `claude` unparsed. Do not let a Go flag library consume it.
 - **`nargs="?" const=""`** on `--add-token`: an empty-string sentinel distinct
   from unset; downstream logic keys on `is not None`. Represent with `*string`.

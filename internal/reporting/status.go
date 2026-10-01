@@ -15,10 +15,11 @@ import (
 	"os"
 	"strconv"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/termsafe"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // Status displays the current account status (spec 02§12). In JSON mode it
@@ -103,23 +104,24 @@ func unmanagedStatus(email string) map[string]any {
 // renderStatus prints the human status view to w (spec 02§12).
 func renderStatus(w io.Writer, s *store.Store) {
 	email, orgUUID, ok := s.GetCurrentAccount()
+	shown := termsafe.Strip(email) // printed; email itself stays the lookup key
 	if !ok {
 		fmt.Fprintf(w, "%s %s\n", printer.Bolded("Status:"), printer.Dimmed("No active Claude account"))
 		return
 	}
 	data, _ := s.SequenceMigrated()
 	if data == nil {
-		fmt.Fprintf(w, "%s %s %s\n", printer.Bolded("Status:"), email, printer.Dimmed("(not managed)"))
+		fmt.Fprintf(w, "%s %s %s\n", printer.Bolded("Status:"), shown, printer.Dimmed("(not managed)"))
 		return
 	}
 	accountNum := s.FindAccountSlot(data, email, orgUUID)
 	if accountNum == "" {
-		fmt.Fprintf(w, "%s %s %s\n", printer.Bolded("Status:"), email, printer.Dimmed("(not managed)"))
+		fmt.Fprintf(w, "%s %s %s\n", printer.Bolded("Status:"), shown, printer.Dimmed("(not managed)"))
 		return
 	}
 
 	rec, _ := recordFor(data, accountNum)
-	tag := displayTag(recStr(rec, "organizationName"))
+	tag := termsafe.Strip(displayTag(recStr(rec, "organizationName")))
 	total := len(data.Accounts)
 	entry := activeAccountUsage(s, accountNum, email, orgUUID)
 	marker := ""
@@ -127,7 +129,7 @@ func renderStatus(w io.Writer, s *store.Store) {
 		marker = " " + mk
 	}
 	fmt.Fprintf(w, "%s %s (%s %s)%s\n",
-		printer.Bolded("Status:"), printer.Accent("Account-"+accountNum), email, printer.Muted("["+tag+"]"), marker)
+		printer.Bolded("Status:"), printer.Accent("Account-"+accountNum), shown, printer.Muted("["+tag+"]"), marker)
 	fmt.Fprintf(w, "  %s\n", printer.Dimmed(fmt.Sprintf("Total managed accounts: %d", total)))
 	for _, line := range usageEntryLines(entry) {
 		fmt.Fprintf(w, "  %s\n", line)

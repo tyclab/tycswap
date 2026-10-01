@@ -1,10 +1,11 @@
-// purge.go — Purge: remove all cswap data from the system.
+// purge.go — Purge: remove all tycswap data from the system.
 //
 // Implements spec 01§11 (purge): refuse while any session-mode instance is live,
 // print the warning header + the platform-specific credential line, confirm,
 // then delete per-account credential files (including the legacy account-None
-// alias), macOS Keychain items and session-profile Keychain entries, the backup
-// directory, and any stale distinct legacy directory. Every deletion is
+// alias), macOS Keychain items (the backup and its .prev generation) and
+// session-profile Keychain entries, and the
+// backup directory, never an old store `tycswap migrate` copied from. Every deletion is
 // best-effort; the collected "Removed:" list is printed at the end.
 package lifecycle
 
@@ -14,25 +15,25 @@ import (
 	"strconv"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/sessprofile"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
-// securityService is SECURITY_SERVICE, the Keychain service for cswap backups
+// securityService is SECURITY_SERVICE, the Keychain service for tycswap backups
 // (spec 01§1.2). Purge deletes these directly on macOS.
-const securityService = "claude-swap"
+const securityService = keychain.BackupService
 
-// Purge removes all cswap data (spec 01§11). It refuses while any session-mode
+// Purge removes all tycswap data (spec 01§11). It refuses while any session-mode
 // Claude instance is live.
 func Purge(s *store.Store) error {
+	// Only tycswap's own store: an old store `tycswap migrate` copied from may
+	// belong to another installed tool, so purge never lists or removes it.
 	backupDir := s.BackupDir()
-	legacy := paths.GetLegacyBackupRoot()
-	legacyDistinct := legacy != backupDir
 
 	sessionsRoot := filepath.Join(backupDir, "sessions")
 	sessionDirs := listSessionDirs(sessionsRoot)
@@ -56,11 +57,30 @@ func Purge(s *store.Store) error {
 		return cerr.Session("Live session-mode Claude instance(s) found: %s. Exit them first, then retry --purge.", strings.Join(parts, "; "))
 	}
 
-	emitWarning("This will remove ALL claude-swap data from your system:")
-	emitLine("  - Backup directory: " + backupDir)
-	if legacyDistinct && pathExists(legacy) {
-		emitLine("  - Legacy backup directory: " + legacy)
+	// Purge's only roster read, and the one operation that reads it through
+	// ReadSequence by design: it never writes sequence.json — it deletes the
+	// directory containing it — so it needs no classification and must not refuse
+	// an unparseable file. The roster is used solely to enumerate per-account
+	// credential keys; a nil one just means that enumeration contributes nothing,
+	// and the directory removal below still takes everything with it.
+	data, _ := s.ReadSequence()
+	var slots []string
+	if data != nil {
+		slots = sortedSlots(data)
 	}
+	// Each email names the credential file to unlink and the Keychain item to
+	// delete. sequence.json is a file anyone with access to the store can edit,
+	// so an email a file name cannot carry is refused before a path is built
+	// from it, and before the user is asked anything.
+	for _, num := range slots {
+		if email := decodeRecord(data.Accounts[num]).str("email"); !storenames.ValidEmail(email) {
+			return cerr.Validation("Slot %s has an email that cannot name a store file: %s. purge builds credential file names from it and refuses; fix the record in %s or remove %s by hand.",
+				num, strconv.Quote(email), s.SequenceFile, backupDir)
+		}
+	}
+
+	emitWarning("This will remove ALL tycswap data from your system:")
+	emitLine("  - Backup directory: " + backupDir)
 	if s.Platform == platform.MacOS {
 		emitLine("  - All stored account credentials (macOS Keychain and/or files)")
 	} else {
@@ -81,33 +101,26 @@ func Purge(s *store.Store) error {
 
 	var removed []string
 
-	// Purge's only roster read, and the one operation that reads it through
-	// ReadSequence by design: it never writes sequence.json — it deletes the
-	// directory containing it — so it needs no classification and must not refuse
-	// an unparseable file. The roster is used solely to enumerate per-account
-	// credential keys; a nil one just means that enumeration contributes nothing,
-	// and the directory removal below still takes everything with it.
-	data, _ := s.ReadSequence()
-	if data != nil {
-		for _, num := range sortedSlots(data) {
-			email := decodeRecord(data.Accounts[num]).str("email")
-			nums := []string{num}
-			if num != "None" {
-				nums = append(nums, "None")
-			}
-			for _, n := range nums {
-				credFile := filepath.Join(s.CredentialsDir, ".creds-"+n+"-"+email+".enc")
-				if pathExists(credFile) {
-					if err := os.Remove(credFile); err == nil {
-						removed = append(removed, "Credential file: "+filepath.Base(credFile))
-					}
+	for _, num := range slots {
+		email := decodeRecord(data.Accounts[num]).str("email") // validated above
+		nums := []string{num}
+		if num != "None" {
+			nums = append(nums, "None")
+		}
+		for _, n := range nums {
+			credFile := filepath.Join(s.CredentialsDir, storenames.CredsFile(n, email))
+			if pathExists(credFile) {
+				if err := os.Remove(credFile); err == nil {
+					removed = append(removed, "Credential file: "+filepath.Base(credFile))
 				}
 			}
-			// macOS Keychain items via the security backend.
-			if s.Platform == platform.MacOS {
-				kc := keychain.Security{}
-				for _, n := range nums {
-					username := "account-" + n + "-" + email
+		}
+		// macOS Keychain items: the backup and its retained .prev generation,
+		// under the names credstore writes.
+		if s.Platform == platform.MacOS {
+			kc := s.Keychain()
+			for _, n := range nums {
+				for _, username := range []string{storenames.KeychainAccount(n, email), storenames.KeychainAccountPrev(n, email)} {
 					_ = kc.Delete(securityService, username)
 					removed = append(removed, "Credential: "+username)
 				}
@@ -119,7 +132,7 @@ func Purge(s *store.Store) error {
 	// service names derive from the dir paths.
 	if len(sessionDirs) > 0 {
 		if s.Platform == platform.MacOS {
-			kc := keychain.Security{}
+			kc := s.Keychain()
 			for _, d := range sessionDirs {
 				sessprofile.DeleteMacOSKeychainEntry(kc, filepath.Join(sessionsRoot, d))
 			}
@@ -132,11 +145,6 @@ func Purge(s *store.Store) error {
 			removed = append(removed, "Directory: "+backupDir)
 		}
 	}
-	if legacyDistinct && pathExists(legacy) {
-		if err := os.RemoveAll(legacy); err == nil {
-			removed = append(removed, "Legacy directory: "+legacy)
-		}
-	}
 
 	if len(removed) > 0 {
 		emitLine("\n" + printer.Accent("Removed:"))
@@ -144,7 +152,7 @@ func Purge(s *store.Store) error {
 			emitLine("  " + printer.Dimmed("-") + " " + item)
 		}
 	} else {
-		emitLine("\n" + printer.Dimmed("No claude-swap data found to remove."))
+		emitLine("\n" + printer.Dimmed("No tycswap data found to remove."))
 	}
 	emitLine("\n" + printer.Accent("Purge complete."))
 	return nil

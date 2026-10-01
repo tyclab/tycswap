@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/credstore"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // fakeCreds wraps the real credential store to inject write/strict-clear failures

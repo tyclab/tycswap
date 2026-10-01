@@ -3,6 +3,7 @@ package keychain
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -84,29 +85,31 @@ func TestSetSmallPayloadUsesStdinHex(t *testing.T) {
 	}
 }
 
-func TestSetLargePayloadFallsBackToArgv(t *testing.T) {
+// TestSetLargePayloadNeverUsesArgv: a secret too large for stdin is refused
+// with a TooLarge KeychainError and security never runs, so the secret is
+// never on a command line (-X in argv).
+func TestSetLargePayloadNeverUsesArgv(t *testing.T) {
 	rec := &recordExec{res: execResult{rc: 0}}
 	s := Security{Exec: rec.fn}
-	// Hex doubles length; a secret of SecurityStdinLineLimit bytes overflows.
-	big := strings.Repeat("x", SecurityStdinLineLimit)
-	if err := s.Set("claude-swap", "acct", big); err != nil {
+	big := strings.Repeat("x", SecurityStdinLineLimit) // hex doubles it
+	err := s.Set("tycswap", "acct", big)
+	if err == nil || !IsTooLarge(err) || !IsUnusable(err) {
+		t.Fatalf("err = %v, want a TooLarge KeychainError", err)
+	}
+	if rec.argv != nil || contains(rec.argv, "-X") || rec.stdin != "" {
+		t.Fatalf("security ran: argv=%v", rec.argv)
+	}
+	if strings.Contains(err.Error(), toHex(big)[:64]) {
+		t.Error("error message carries the secret")
+	}
+	// Just under the limit still goes to stdin.
+	overhead := len(setCommand("tycswap", "acct", ""))
+	fits := strings.Repeat("y", (SecurityStdinLineLimit-overhead)/2)
+	if err := s.Set("tycswap", "acct", fits); err != nil {
 		t.Fatal(err)
 	}
-	if rec.stdin != "" {
-		t.Errorf("large payload should not use stdin, got %q...", rec.stdin[:20])
-	}
-	want := []string{"/usr/bin/security", "add-generic-password", "-U", "-a", "acct", "-s", "claude-swap", "-X"}
-	if len(rec.argv) != len(want)+1 {
-		t.Fatalf("argv len = %d, want %d: %v", len(rec.argv), len(want)+1, rec.argv)
-	}
-	for i, w := range want {
-		if rec.argv[i] != w {
-			t.Errorf("argv[%d] = %q, want %q", i, rec.argv[i], w)
-		}
-	}
-	// Last element is the raw hex value.
-	if rec.argv[len(rec.argv)-1] != toHex(big) {
-		t.Errorf("last argv element is not the hex value")
+	if len(rec.argv) != 2 || rec.argv[1] != "-i" {
+		t.Fatalf("argv = %v, want [security -i]", rec.argv)
 	}
 }
 
@@ -243,4 +246,41 @@ func contains(ss []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// TestSecurityRefusesControlCharacterNames: a CR, LF or other control character
+// in a service or account never reaches the security CLI (on stdin it would
+// end the command and start another).
+func TestSecurityRefusesControlCharacterNames(t *testing.T) {
+	bad := []struct{ service, account string }{
+		{"tycswap", "account-1-a@example.com\n"},
+		{"tycswap", "acct\rdelete-generic-password -s x"},
+		{"tycs\nwap", "acct"},
+		{"tycswap", "acct\x00"},
+		{"tycswap", "acct\x7f"},
+		{"tycswap", "acct\u0085"},
+		{"tycswap", "acct\xff"},
+	}
+	for _, b := range bad {
+		rec := &recordExec{res: execResult{rc: 0}}
+		s := Security{Exec: rec.fn}
+		if err := s.Set(b.service, b.account, "secret"); !errors.Is(err, ErrInvalidName) {
+			t.Errorf("Set(%q, %q) err = %v, want ErrInvalidName", b.service, b.account, err)
+		}
+		if _, _, err := s.Get(b.service, b.account); !errors.Is(err, ErrInvalidName) {
+			t.Errorf("Get(%q, %q) err = %v", b.service, b.account, err)
+		}
+		if err := s.Delete(b.service, b.account); !errors.Is(err, ErrInvalidName) {
+			t.Errorf("Delete(%q, %q) err = %v", b.service, b.account, err)
+		}
+		if s.Exists(b.service, b.account) {
+			t.Errorf("Exists(%q, %q) = true", b.service, b.account)
+		}
+		if rec.argv != nil {
+			t.Errorf("security ran for %q/%q: %v", b.service, b.account, rec.argv)
+		}
+	}
+	if err := ValidateName("Claude Code-credentials-1a2b3c4d", "o'brien"); err != nil {
+		t.Errorf("a printable name was refused: %v", err)
+	}
 }

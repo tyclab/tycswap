@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 func fakeAt(epoch float64) *clock.Fake {
@@ -55,8 +55,8 @@ func TestCheckForUpdate_NewerVersionAvailable(t *testing.T) {
 
 	c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}
 	msg := c.CheckForUpdate("", "v0.2.0", platform.Linux)
-	want := "A newer version of claude-swap is available (0.3.0). You are using 0.2.0. " +
-		"Run `cswap upgrade` for upgrade instructions."
+	want := "A newer version of tycswap is available (0.3.0). You are using 0.2.0. " +
+		"Run `tycswap upgrade` for upgrade instructions."
 	if msg != want {
 		t.Errorf("CheckForUpdate = %q, want %q", msg, want)
 	}
@@ -251,7 +251,7 @@ func TestCheckForUpdate_CacheExpiresRefetches(t *testing.T) {
 // equivalent of Python's uv/pipx hint dispatch, spec 08§13.2).
 func TestCheckForUpdate_HintByInstallShape(t *testing.T) {
 	gobin := filepath.Join(t.TempDir(), "gobin")
-	exe := filepath.Join(gobin, "cswap")
+	exe := filepath.Join(gobin, "tycswap")
 
 	cases := []struct {
 		name     string
@@ -259,11 +259,11 @@ func TestCheckForUpdate_HintByInstallShape(t *testing.T) {
 		plat     platform.Platform
 		wantHint string
 	}{
-		{"go-install shape, linux", exe, platform.Linux, "Run `cswap upgrade` to update."},
+		{"go-install shape, linux", exe, platform.Linux, "Run `tycswap upgrade` to update."},
 		{"go-install shape, windows", exe, platform.Windows,
 			"Run `go install " + ModulePath + "@latest` to update."},
-		{"unknown shape", filepath.Join(t.TempDir(), "cswap"), platform.Linux,
-			"Run `cswap upgrade` for upgrade instructions."},
+		{"unknown shape", filepath.Join(t.TempDir(), "tycswap"), platform.Linux,
+			"Run `tycswap upgrade` for upgrade instructions."},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -285,7 +285,7 @@ func TestCheckForUpdate_HintByInstallShape(t *testing.T) {
 			if msg == "" {
 				t.Fatal("expected a notice")
 			}
-			want := "A newer version of claude-swap is available (0.9.0). You are using 0.1.0. " + tc.wantHint
+			want := "A newer version of tycswap is available (0.9.0). You are using 0.1.0. " + tc.wantHint
 			if msg != want {
 				t.Errorf("CheckForUpdate = %q, want %q", msg, want)
 			}
@@ -323,20 +323,20 @@ func TestReleaseEndpointReceivesRequest(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"tag_name": "v9.9.9"})
 	}))
 	t.Cleanup(srv.Close)
-	withEndpoint(t, srv.URL+"/api/v1/repos/dpemmons/cswap/releases/latest")
+	withEndpoint(t, srv.URL+"/repos/tyclab/tycswap/releases/latest")
 
 	c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}
 	msg := c.CheckForUpdate("", "v0.1.0", platform.Linux)
 	if msg == "" {
 		t.Fatal("expected a notice")
 	}
-	if want := "/api/v1/repos/dpemmons/cswap/releases/latest"; gotPath != want {
+	if want := "/repos/tyclab/tycswap/releases/latest"; gotPath != want {
 		t.Errorf("request path = %q, want %q", gotPath, want)
 	}
 }
 
 func TestDefaultEndpointAndCacheTTL(t *testing.T) {
-	if Endpoint != "https://git.dpemmons.com/api/v1/repos/dpemmons/cswap/releases/latest" {
+	if Endpoint != "https://api.github.com/repos/tyclab/tycswap/releases/latest" {
 		t.Errorf("default Endpoint = %q, unexpected", Endpoint)
 	}
 	if fmt.Sprint(CacheTTL) != "24h0m0s" {

@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cclock"
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/cclock"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 var sys = clock.System{}

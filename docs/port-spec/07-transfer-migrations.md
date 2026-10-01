@@ -2,14 +2,14 @@
 
 ## Overview
 
-`claude_swap.transfer` implements the `.cswap` portable backup format: a single
+`claude_swap.transfer` implements the `.tycswap` portable backup format: a single
 JSON envelope containing one or more accounts' OAuth/API-key credentials and a
 (slimmed or full) copy of `~/.claude.json`, used to move accounts between
 machines or to back them up. `export_accounts()` reads from the local backup
 store (files and/or macOS Keychain, whichever the switcher's per-account
 credential backend resolves to) and serializes to a file or stdout; no
 encryption is built in by design — the docstring explicitly tells users to
-compose their own (`cswap --export - | gpg -c > out.gpg`). `import_accounts()`
+compose their own (`tycswap --export - | gpg -c > out.gpg`). `import_accounts()`
 reads the envelope, validates every account *before* writing anything (an
 all-or-nothing validation pass followed by a best-effort write pass), and
 either skips, overwrites (`--force`), or allocates a fresh slot for each
@@ -31,7 +31,7 @@ reproduce the same ordering.
 
 ---
 
-## 1. The `.cswap` export file format
+## 1. The `.tycswap` export file format
 
 ### 1.1 Envelope schema (verbatim keys, camelCase)
 
@@ -158,7 +158,7 @@ config file / missing `oauthAccount`).
 Calls `switcher._get_sequence_data_migrated()` first (this transparently
 triggers the org-field backfill migration described in §6.1 as a side
 effect, mutating local `sequence.json` if needed). If there is no sequence
-data or no accounts: `TransferError("no accounts to export — run cswap
+data or no accounts: `TransferError("no accounts to export — run tycswap
 --add-account first")`.
 
 ### 2.2 Account selection
@@ -235,7 +235,7 @@ live):
 - If **either** is missing/empty and `explicit_account` is `False` (bulk
   export): **skip with a stderr warning**, never fail the whole export:
   ```
-  Skipping Account-{num} ({email}): no stored credentials/config — re-add with: cswap --add-account --slot {num}
+  Skipping Account-{num} ({email}): no stored credentials/config — re-add with: tycswap --add-account --slot {num}
   ```
   (single message regardless of whether it was creds, config, or both that
   were missing).
@@ -245,7 +245,7 @@ live):
   `ConfigError(f"no backup config found for account {num} ({email})")`.
 - If **every** candidate slot ends up skipped (bulk mode): `TransferError("no
   exportable accounts — all managed slots are missing stored
-  credentials/config. Re-add with: cswap --add-account --slot <number>")`.
+  credentials/config. Re-add with: tycswap --add-account --slot <number>")`.
 
 ### 2.7 `activeAccountNumber` computation
 
@@ -276,7 +276,7 @@ account absent from the payload, or import would dangle.
   `f"Exported {len(accounts_payload)} account(s) to {out_path}"`.
 
 Per-slot skip warnings (§2.6) always go to **stderr**, in both stdout and
-file-destination modes, so `cswap --export -` piped into a JSON consumer
+file-destination modes, so `tycswap --export -` piped into a JSON consumer
 never sees them mixed into stdout.
 
 ---
@@ -309,7 +309,7 @@ def import_accounts(
    `version` key (`None != 1`) hits this same branch with `version!r ==
    'None'`.
 4. `encrypted is True` → `TransferError("encrypted exports are not supported
-   in this version — decrypt before piping (e.g. gpg -d backup.gpg | cswap
+   in this version — decrypt before piping (e.g. gpg -d backup.gpg | tycswap
    --import -)")`. (Checked *after* version, so a version mismatch on an
    encrypted file reports the version error first.)
 5. `accounts` must be a non-empty list → else `TransferError("export file has
@@ -457,7 +457,7 @@ For each normalized entry, **in envelope order**:
     email)` — if any live PIDs are running against this slot's session-mode
     profile, stderr:
     ```
-    Warning: {email} (slot {target_num}) has a live session-mode instance (PID {pid, pid, ...}); its session profile keeps the pre-import credentials until it is restarted via 'cswap run'.
+    Warning: {email} (slot {target_num}) has a live session-mode instance (PID {pid, pid, ...}); its session profile keeps the pre-import credentials until it is restarted via 'tycswap run'.
     ```
     (comma-joined PIDs). This is a warning only — the import proceeds
     regardless; the live process's own in-memory/session-profile copy of
@@ -488,19 +488,19 @@ switcher._usage_store.clear_dead_token([target_num], {target_num: (entry["email"
   mandate) and, as a side effect on the switcher wrapper, calls
   `_post_backup_write` which **invalidates the slot's session-mode
   profile**: if a live session is running, the profile is marked *stale*
-  (`.cswap-stale-credentials` sentinel file — session directory's
+  (`.tycswap-stale-credentials` sentinel file — session directory's
   `.claude.json` **survives**, only `.credentials.json` and the stale marker
   get cleaned on the *next* stale check); if **no** live session, the
   profile's `.credentials.json` is deleted outright (and any macOS session
   Keychain entry) while `.claude.json` (profile history: projects, MCP
-  config, etc.) is preserved. Net effect either way: the next `cswap run`
+  config, etc.) is preserved. Net effect either way: the next `tycswap run`
   for that slot re-bootstraps credentials from the freshly imported backup.
 - `_usage_store.clear_dead_token(...)` **unconditionally** clears the
   dead-token quarantine (`authDeadStrikes = 0`, `consecutiveFailures = 0`,
   `lastError = None`, `backoffUntil = None`) for `target_num`, for **both**
   `"imported"` and `"overwrote"` outcomes. This matters even for a brand-new
   slot number: if the identity `(email, org_uuid)` was previously *removed*
-  (`cswap remove` does **not** prune `usage.json`) and is now being
+  (`tycswap remove` does **not** prune `usage.json`) and is now being
   re-imported into a numerically fresh slot, the orphaned dead-token row
   from the old removed slot-number would otherwise still quarantine the
   reused slot number — `clear_dead_token` is keyed by slot **number** in
@@ -574,12 +574,12 @@ if identity is not None and final is not None:
     if live_slot is not None and live_slot in written_slots:
         _eprint(
             f"Note: {identity[0]} is your current live login — activate the "
-            f"imported credentials with: cswap --switch-to {live_slot} --force"
+            f"imported credentials with: tycswap --switch-to {live_slot} --force"
         )
 ```
 Fires whenever the currently-live logged-in account's slot was **written**
 this run (imported *or* overwrote — not merely skipped). Rationale: a plain
-`cswap --switch` would back the (possibly stale) live credentials up over
+`tycswap --switch` would back the (possibly stale) live credentials up over
 the freshly imported ones; the user needs the explicit
 `--switch-to <slot> --force` path to force-activate without that backup
 step. `--force` here refers to the *switch* command's own force flag (skip
@@ -591,8 +591,8 @@ parameter — same flag name, different call site, different semantics.
 ## 4. CLI surface
 
 Subcommand → legacy flag translation (`_SUBCOMMAND_FLAGS` in `cli.py`):
-`"export"` → `--export`, `"import"` → `--import`. So `cswap export PATH` and
-`cswap --export PATH` are identical; likewise `cswap import PATH` / `cswap
+`"export"` → `--export`, `"import"` → `--import`. So `tycswap export PATH` and
+`tycswap --export PATH` are identical; likewise `tycswap import PATH` / `tycswap
 --import PATH`.
 
 Flags (argparse):
@@ -680,7 +680,7 @@ Path: `<backup_dir>/.migrations.json`. Format:
 {"version": 1, "applied": {"windows_keyring_to_files": "<iso-timestamp>"}}
 ```
 `STATE_VERSION = 1` (this file's own schema version — **unrelated** to the
-`.cswap` export `FORMAT_VERSION`, and never itself checked/enforced on read
+`.tycswap` export `FORMAT_VERSION`, and never itself checked/enforced on read
 — `_load_applied` never inspects `data["version"]`, only `data["applied"]`).
 
 - `_load_applied(switcher)`: missing file → `{}`. Any parse failure
@@ -1052,7 +1052,7 @@ migration for any real upgrading user on Linux/WSL.
   - flag absent, both `legacy` and `target` exist: **genuine collision**.
     If `target` holds anything beyond "throwaway artifacts" (a `cache/`
     subdir, or files whose name starts with `claude-swap.log` — i.e.
-    anything a prior *cswap run itself* might have laid down before legacy
+    anything a prior *tycswap run itself* might have laid down before legacy
     data reappeared, e.g. synced in from another machine) →
     `raise MigrationError(f"Both legacy ({legacy}) and new ({target}) backup
     paths exist. Refusing to merge or overwrite — inspect both and remove
@@ -1127,7 +1127,7 @@ migration for any real upgrading user on Linux/WSL.
   `add_account`'s own allocator exactly (`test_slot_allocation_when_exported_slot_taken`).
 - **Cross-backend transparency**: exporting from a macOS (Keychain-backed)
   switcher and importing into a Linux (file-backed) switcher works
-  transparently — the `.cswap` envelope is entirely backend-agnostic
+  transparently — the `.tycswap` envelope is entirely backend-agnostic
   (`test_export_macos_keychain_import_linux_files`).
 - **Path traversal defense is airtight even on validation failure mid-list**:
   a second account in the envelope with `email="../../evil"` fails
@@ -1175,7 +1175,7 @@ migration for any real upgrading user on Linux/WSL.
   `_setup_directories()` + `_init_sequence_file()` inside `import_accounts`
   itself (`TestEmptyHome`).
 - **`--force` overwriting the backup of the *currently live logged-in*
-  account** prints the activation hint pointing at `cswap --switch-to <slot>
+  account** prints the activation hint pointing at `tycswap --switch-to <slot>
   --force`; this hint is **absent** when the live login isn't among the
   written slots this run (`TestConflictPolicy` live-login tests). It fires
   for *both* "overwrote" and "imported" outcomes, not just overwrite
@@ -1188,7 +1188,7 @@ migration for any real upgrading user on Linux/WSL.
   backup is still updated (`TestImportSessionInvalidation`).
 - **Dead-token quarantine interactions are three-way**: (1) `--force` over
   an existing quarantined slot rewrites creds and unconditionally lifts the
-  quarantine; (2) re-importing (no `--force`, fresh slot) after a `cswap
+  quarantine; (2) re-importing (no `--force`, fresh slot) after a `tycswap
   remove` that left an orphaned `usage.json` row for that *slot number*
   **also** lifts it, because `clear_dead_token` is unconditional on every
   successful write regardless of `imported` vs. `overwrote`; (3) a **plain
@@ -1261,8 +1261,8 @@ migration for any real upgrading user on Linux/WSL.
   **neither `export_accounts` nor `import_accounts` nor any migration
   function acquires it.** Import's pass-2 loop does a plain read-modify-write
   of `sequence.json` per account with no lock held across the read and the
-  write — concurrent `cswap import` invocations, or an import racing a
-  `cswap switch`, are **not** safe against interleaving in the current
+  write — concurrent `tycswap import` invocations, or an import racing a
+  `tycswap switch`, are **not** safe against interleaving in the current
   Python implementation. A Go port should either (a) faithfully preserve
   this gap for behavioral parity, or (b) deliberately improve it by taking
   `FileLock` around each write (or the whole import) — but this is a real

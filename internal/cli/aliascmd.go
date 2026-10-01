@@ -1,20 +1,20 @@
-// aliascmd.go — the `cswap alias` pre-dispatched subcommand (spec 08§7.4).
+// aliascmd.go — the `tycswap alias` pre-dispatched subcommand (spec 08§7.4).
 //
 // Implements spec 08§7.4: the three argument-validation errors (exit 2), the
 // list/unset/set branches, and the exact human strings. Name validity (letters/
 // digits/./-/_, not purely numeric) is enforced inside SetAlias (a ConfigError,
-// exit 1). prog is hardcoded "cswap alias".
+// exit 1). prog is hardcoded "tycswap alias".
 package cli
 
 import (
 	"fmt"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/printer"
 )
 
-const aliasProg = "cswap alias"
+const aliasProg = "tycswap alias"
 
-// aliasCommand handles `cswap alias ...` (spec 08§7.4). argv excludes "alias".
+// aliasCommand handles `tycswap alias ...` (spec 08§7.4). argv excludes "alias".
 func aliasCommand(_ string, argv []string, s ioStreams) int {
 	var pos []string
 	var unset, debug bool
@@ -25,7 +25,7 @@ func aliasCommand(_ string, argv []string, s ioStreams) int {
 		case tok == "--debug":
 			debug = true
 		case tok == "-h" || tok == "--help":
-			fmt.Fprintln(s.out, "usage: cswap alias [-h] [--unset] [--debug] [NUM|EMAIL] [NAME]")
+			fmt.Fprintln(s.out, "usage: tycswap alias [-h] [--unset] [--debug] [NUM|EMAIL] [NAME]")
 			return 0
 		case len(tok) > 0 && tok[0] == '-' && tok != "-":
 			return subError(aliasProg, s.err, "unrecognized arguments: "+tok)

@@ -1,4 +1,4 @@
-// `cswap upgrade` self-upgrade dispatch.
+// `tycswap upgrade` self-upgrade dispatch.
 //
 // Implements spec 08§13.4 (run_self_upgrade), redesigned per DESIGN.md §6
 // Deviation #2 and Amendment A6: there is no PyPI/uv/pipx for a Go binary, so
@@ -18,8 +18,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/printer"
 )
 
 // CommandRunner executes a subprocess and reports its exit code. A non-nil
@@ -52,7 +52,7 @@ func IsNotFound(err error) bool {
 	return errors.Is(err, exec.ErrNotFound)
 }
 
-// Upgrader implements `cswap upgrade`. The zero value uses the real OS
+// Upgrader implements `tycswap upgrade`. The zero value uses the real OS
 // environment, subprocess execution, and stdio; tests override every seam.
 type Upgrader struct {
 	// Getenv looks up GOBIN/GOPATH for install-shape detection; nil -> os.Getenv.
@@ -110,6 +110,13 @@ func (u Upgrader) stderr() io.Writer {
 // exePath is the running binary's path (symlink-resolved os.Executable());
 // plat gates the Windows print-only branch.
 func (u Upgrader) SelfUpgrade(exePath string, plat platform.Platform) int {
+	// A checkout build is never re-installed from a remote: `go install
+	// <ModulePath>@latest` would replace the user's own tree with whatever is
+	// published there (Amendment A24).
+	if DetectBuildSource() == SourceCheckout {
+		fmt.Fprintf(u.stdout(), "tycswap was %s\n", CheckoutHint)
+		return 1
+	}
 	shape := DetectInstallShape(exePath, u.getenv(), u.homeDir())
 	cmdArgs := []string{"install", ModulePath + "@latest"}
 	fullCmd := "go " + strings.Join(cmdArgs, " ")
@@ -130,12 +137,12 @@ func (u Upgrader) SelfUpgrade(exePath string, plat platform.Platform) int {
 		return 1
 	}
 
-	// Windows: the running cswap.exe is locked, so `go install` cannot replace
+	// Windows: the running tycswap.exe is locked, so `go install` cannot replace
 	// it in place even though the module itself would update fine (spec
 	// 08§13.4's win32 rationale, carried over). Print the command instead of
-	// running it; cswap exits right after this, releasing the lock.
+	// running it; tycswap exits right after this, releasing the lock.
 	if plat == platform.Windows {
-		fmt.Fprintf(u.stdout(), "To upgrade claude-swap on Windows, run:\n  %s\n", printer.Accent(fullCmd))
+		fmt.Fprintf(u.stdout(), "To upgrade tycswap on Windows, run:\n  %s\n", printer.Accent(fullCmd))
 		return 1
 	}
 

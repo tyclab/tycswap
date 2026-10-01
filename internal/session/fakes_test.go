@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/sessprofile"
 )
 
 // fakeAccount is one stored account in the fake Accounts store.
@@ -29,6 +29,7 @@ type fakeAccounts struct {
 	accounts   map[string]*fakeAccount
 	byEmail    map[string]string
 	current    *string
+	live       string
 	mappingFn  func(dir string) (*string, *string, error)
 	written    []credWrite
 	resolveErr error
@@ -115,6 +116,8 @@ func (f *fakeAccounts) AccountKindFor(num string) string {
 }
 
 func (f *fakeAccounts) CurrentAccountNumber() *string { return f.current }
+
+func (f *fakeAccounts) LiveCredentials() string { return f.live }
 
 func (f *fakeAccounts) BackupDir() string { return f.backupDir }
 

@@ -13,7 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/reporting"
 )
 
 // -- fixtures ----------------------------------------------------------------

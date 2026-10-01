@@ -16,11 +16,11 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 var (
@@ -492,7 +492,7 @@ func TestOnlyIfEmptyRunsOnAnEmptyStore(t *testing.T) {
 }
 
 func TestAnExplicitImportCanBeReRun(t *testing.T) {
-	// `cswap codex import-codex-auth` is a recovery path; it must not
+	// `tycswap codex import-codex-auth` is a recovery path; it must not
 	// silently no-op.
 	e := newEnv(t)
 	e.writeRegistry([]map[string]any{seed(keyA, "a@x", "pro")}, 3)

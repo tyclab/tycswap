@@ -5,14 +5,14 @@
 // Implements spec 01§7 (_ensure_no_live_session, _session_dir,
 // _live_session_pids, _invalidate_session_credentials, _delete_session_profile).
 // Every destructive slot op funnels through EnsureNoLiveSession, which refuses
-// while a session-mode `cswap run` process is live against that slot.
+// while a session-mode `tycswap run` process is live against that slot.
 package store
 
 import (
 	"os"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/sessprofile"
 )
 
 // SessionDir is the per-account session profile directory

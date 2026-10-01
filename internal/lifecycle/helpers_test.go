@@ -12,10 +12,10 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/credstore"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // newStore builds a Store rooted at a fresh empty $HOME with a fixed clock and
@@ -23,12 +23,24 @@ import (
 // "No accounts are managed yet" paths and add's own init both work).
 func newStore(t *testing.T) *store.Store {
 	t.Helper()
+	return newStoreOpts(t, store.Options{})
+}
+
+// newStoreOpts is newStore with the caller's seams (a Keychain Fake, say);
+// the clock and stderr sink are filled in when unset.
+func newStoreOpts(t *testing.T, opts store.Options) *store.Store {
+	t.Helper()
 	home := t.TempDir()
 	testutil.Setenv(t, "HOME", home)
 	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
 	testutil.Unsetenv(t, "XDG_DATA_HOME")
-	clk := testutil.FixedClock(t, "2026-07-17T09:00:00Z")
-	s, err := store.New(store.Options{Clock: clk, Stderr: &bytes.Buffer{}})
+	if opts.Clock == nil {
+		opts.Clock = testutil.FixedClock(t, "2026-07-17T09:00:00Z")
+	}
+	if opts.Stderr == nil {
+		opts.Stderr = &bytes.Buffer{}
+	}
+	s, err := store.New(opts)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
@@ -273,13 +285,13 @@ func captureOut(t *testing.T) *bytes.Buffer {
 //
 // WHERE a seam fires decides what it models. racingPrompter fires at a
 // confirmation, which is deliberately OUTSIDE the lock: that is a real
-// concurrent cswap, the one window it still has, and the operation must take its
+// concurrent tycswap, the one window it still has, and the operation must take its
 // commit into account. The credential-store and Output seams fire INSIDE the
-// locked span, where no cswap can be — they model a writer that does not take
+// locked span, where no tycswap can be — they model a writer that does not take
 // the lock at all (a hand edit, a foreign tool), and there the rule is that the
 // roster read under the lock is the one committed.
 
-// commitRival returns a rival commit: another cswap reaching its own
+// commitRival returns a rival commit: another tycswap reaching its own
 // WriteSequence with a roster of its own, replacing sequence.json wholesale and
 // leaving its accounts' backups on disk, exactly as a real commit does.
 func commitRival(t *testing.T, s *store.Store, active *int, accts ...acct) func() {
@@ -483,7 +495,7 @@ func assertCorruptRefusal(t *testing.T, s *store.Store, err error) {
 		"intact",                //   "
 		"Repair the file",       // way out 1
 		"re-register",           // way out 2
-		"cswap add",             //   "
+		"tycswap add",           //   "
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("refusal message is missing %q: %s", want, err)

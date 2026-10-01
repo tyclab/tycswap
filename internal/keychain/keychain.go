@@ -15,12 +15,14 @@ import (
 	"os/user"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Constants mirroring macos_keychain.py.
 const (
 	// SecurityStdinLineLimit is security -i's fgets buffer minus 64 bytes of
-	// headroom (4096-64). Commands longer than this fall back to argv.
+	// headroom (4096-64). Set refuses a longer command (TooLarge).
 	SecurityStdinLineLimit = 4096 - 64
 	// notFoundRC is errSecItemNotFound from find/delete-generic-password.
 	notFoundRC = 44
@@ -29,6 +31,43 @@ const (
 	// securityBin is the pinned absolute path to Apple's system binary.
 	securityBin = "/usr/bin/security"
 )
+
+// Keychain services tycswap's own items live under: per-account Claude backups
+// and Codex snapshots. Claude Code's own services are named by the callers.
+const (
+	BackupService = "tycswap"
+	CodexService  = "tycswap-codex"
+)
+
+// The services the store this fork came from used. Only `tycswap migrate` reads
+// them, to copy their items to the services above; nothing writes or deletes
+// them, because another installed tool may still own them.
+const (
+	OldBackupService = "claude-swap"
+	OldCodexService  = "claude-swap-codex"
+)
+
+// ErrInvalidName is returned (wrapped) when a service or account name holds a
+// control character. Set feeds `security -i` a command line on stdin, so a
+// CR or LF in a name would end that command and start another; every Security
+// call refuses such a name before spawning anything.
+var ErrInvalidName = errors.New("keychain item name contains a control character")
+
+// ValidateName refuses a service or account name containing any control
+// character (C0 including \r and \n, DEL, C1) or invalid UTF-8.
+func ValidateName(service, account string) error {
+	for _, f := range [...]struct{ what, v string }{{"service", service}, {"account", account}} {
+		if !utf8.ValidString(f.v) {
+			return fmt.Errorf("%w: %s %q is not valid UTF-8", ErrInvalidName, f.what, f.v)
+		}
+		for _, r := range f.v {
+			if unicode.IsControl(r) {
+				return fmt.Errorf("%w: %s %q", ErrInvalidName, f.what, f.v)
+			}
+		}
+	}
+	return nil
+}
 
 // KeychainClient is the seam every credential store uses.
 type KeychainClient interface {
@@ -45,8 +84,13 @@ type KeychainClient interface {
 
 // KeychainError is a security invocation failure other than "not found". It is
 // classified as "Keychain unusable" by IsUnusable.
+//
+// TooLarge marks the one failure that says nothing about the Keychain itself:
+// a Set payload too large for `security -i`'s stdin line. Callers store such a
+// secret elsewhere, but must not conclude the Keychain is down (IsTooLarge).
 type KeychainError struct {
-	Msg string
+	Msg      string
+	TooLarge bool
 }
 
 func (e *KeychainError) Error() string { return e.Msg }
@@ -75,6 +119,13 @@ func IsUnusable(err error) bool {
 		return true
 	}
 	return false
+}
+
+// IsTooLarge reports whether err is Set's refusal of a payload that does not fit
+// `security -i`'s stdin line.
+func IsTooLarge(err error) bool {
+	var ke *KeychainError
+	return errors.As(err, &ke) && ke.TooLarge
 }
 
 // AccountName mirrors Claude Code's getUsername: $USER, then the OS username,
@@ -168,6 +219,9 @@ func commandName(argv []string) string {
 // Get reads a password via find-generic-password -a … -w -s …. It strips exactly
 // one trailing newline (TrimSuffix, not TrimSpace).
 func (s Security) Get(service, account string) (string, bool, error) {
+	if err := ValidateName(service, account); err != nil {
+		return "", false, err
+	}
 	res, err := s.call([]string{s.bin(), "find-generic-password", "-a", account, "-w", "-s", service}, "")
 	if err != nil {
 		return "", false, err
@@ -187,6 +241,9 @@ func (s Security) Get(service, account string) (string, bool, error) {
 // nothing is decrypted). Never raises: rc 44, error exits, timeouts and a
 // missing binary all return false.
 func (s Security) Exists(service, account string) bool {
+	if ValidateName(service, account) != nil {
+		return false
+	}
 	res, err := s.call([]string{s.bin(), "find-generic-password", "-a", account, "-s", service}, "")
 	if err != nil {
 		return false
@@ -194,34 +251,37 @@ func (s Security) Exists(service, account string) bool {
 	return res.rc == 0
 }
 
-// FitsStdin reports whether Set would pass password to `security -i` on stdin.
-// When it is false Set falls back to argv, where the hex-encoded secret is
-// visible to every local user through ps; callers holding large secrets can
-// check this first and store them elsewhere. It measures the exact command
-// line Set builds against SecurityStdinLineLimit.
+// FitsStdin reports whether Set can store password: the secret only ever rides
+// on `security -i`'s stdin, and a command line over SecurityStdinLineLimit
+// makes Set refuse with a TooLarge KeychainError. It measures the exact
+// command line Set builds.
 func FitsStdin(service, account, password string) bool {
-	command := fmt.Sprintf("add-generic-password -U -a %s -s %s -X %s\n",
+	return len(setCommand(service, account, password)) <= SecurityStdinLineLimit
+}
+
+func setCommand(service, account, password string) string {
+	return fmt.Sprintf("add-generic-password -U -a %s -s %s -X %s\n",
 		quote(account), quote(service), toHex(password))
-	return len(command) <= SecurityStdinLineLimit
 }
 
 // Set creates or updates an item (-U). The secret is hex-encoded (-X) and rides
-// on stdin under the line-buffer limit; larger payloads fall back to argv.
+// on stdin, never in argv, where every local user could read it through ps.
+// A payload whose command line exceeds the line-buffer limit is refused with
+// a TooLarge KeychainError and nothing is run. IsUnusable is true for that
+// error, so callers take their file fallback.
 func (s Security) Set(service, account, password string) error {
-	hexValue := toHex(password)
-	command := fmt.Sprintf("add-generic-password -U -a %s -s %s -X %s\n",
-		quote(account), quote(service), hexValue)
-
-	var res execResult
-	var err error
-	if len(command) <= SecurityStdinLineLimit {
-		res, err = s.call([]string{s.bin(), "-i"}, command)
-	} else {
-		res, err = s.call([]string{
-			s.bin(), "add-generic-password", "-U",
-			"-a", account, "-s", service, "-X", hexValue,
-		}, "")
+	if err := ValidateName(service, account); err != nil {
+		return err
 	}
+	command := setCommand(service, account, password)
+	if len(command) > SecurityStdinLineLimit {
+		return &KeychainError{
+			Msg: fmt.Sprintf("secret for %s/%s is too large for the Keychain's stdin interface (%d > %d bytes); "+
+				"refusing to pass it on the command line", service, account, len(command), SecurityStdinLineLimit),
+			TooLarge: true,
+		}
+	}
+	res, err := s.call([]string{s.bin(), "-i"}, command)
 	if err != nil {
 		return err
 	}
@@ -234,6 +294,9 @@ func (s Security) Set(service, account, password string) error {
 
 // Delete removes an item; rc 0 and rc 44 (already absent) both succeed.
 func (s Security) Delete(service, account string) error {
+	if err := ValidateName(service, account); err != nil {
+		return err
+	}
 	res, err := s.call([]string{s.bin(), "delete-generic-password", "-a", account, "-s", service}, "")
 	if err != nil {
 		return err

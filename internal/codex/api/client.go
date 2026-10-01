@@ -28,7 +28,7 @@ import (
 	"strconv"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/logging"
 )
 
 // Timeouts per request class. The refresh gets the longer budget because a
@@ -41,7 +41,7 @@ const (
 
 // Body-size ceilings. Error bodies are only mined for an error code; success
 // bodies are small JSON documents. Both are bounded so a misbehaving proxy
-// cannot make cswap buffer without limit.
+// cannot make tycswap buffer without limit.
 const (
 	maxErrorBody   = 1 << 16
 	maxSuccessBody = 1 << 20
@@ -65,10 +65,20 @@ type HTTPClient struct {
 	AccountsURL string
 }
 
+// newSafeHTTPClient never follows a redirect, like internal/oauth's: a
+// 307/308 from the token endpoint would re-POST the refresh token to whatever
+// Location names, an http:// one included. The redirect response itself is
+// returned, and every non-2xx status is a failure to the callers.
+func newSafeHTTPClient() *http.Client {
+	return &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
+var safeDefaultClient = newSafeHTTPClient()
+
 // NewHTTPClient returns an HTTPClient pointed at the production endpoints.
 func NewHTTPClient() *HTTPClient {
 	return &HTTPClient{
-		Client:      &http.Client{},
+		Client:      newSafeHTTPClient(),
 		TokenURL:    OAuthTokenURL,
 		UsageURL:    UsageURL,
 		AccountsURL: AccountsURL,
@@ -79,7 +89,7 @@ func (c *HTTPClient) httpClient() *http.Client {
 	if c.Client != nil {
 		return c.Client
 	}
-	return http.DefaultClient
+	return safeDefaultClient
 }
 
 // StatusError is a non-2xx answer from a GET endpoint. It carries the status

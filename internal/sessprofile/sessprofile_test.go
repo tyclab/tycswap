@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/keychain"
 )
 
 // --- SlugifyEmail (spec 06§1.5, DESIGN §5 WP4: NFC rune-by-rune) ---

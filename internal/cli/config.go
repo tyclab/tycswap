@@ -1,9 +1,9 @@
-// config.go — the `cswap config` pre-dispatched subcommand (spec 08§7.8).
+// config.go — the `tycswap config` pre-dispatched subcommand (spec 08§7.8).
 //
 // Implements spec 08§7.8 (config list/get/set/unset/path, strict validation,
 // the --json-only-with-list/get gate, JSON payload shapes, human column
 // padding, unset "nothing to do" on stderr) over the settings package. prog is
-// hardcoded "cswap config" to match Python. Errors are exit-2 (usage) or exit-1
+// hardcoded "tycswap config" to match Python. Errors are exit-2 (usage) or exit-1
 // (ConfigError envelope/line); KeyboardInterrupt is handled by the global SIGINT
 // notifier (exit 130).
 package cli
@@ -13,12 +13,12 @@ import (
 	"io"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/settings"
 )
 
-const configProg = "cswap config"
+const configProg = "tycswap config"
 
 // subError prints a sub-parser usage error and returns exit 2.
 func subError(prog string, stderr io.Writer, msg string) int {
@@ -38,7 +38,7 @@ func isConfigAction(a string) bool {
 	return false
 }
 
-// configCommand handles `cswap config ...` (spec 08§7.8). argv excludes "config".
+// configCommand handles `tycswap config ...` (spec 08§7.8). argv excludes "config".
 func configCommand(_ string, argv []string, s ioStreams) int {
 	var jsonMode, debug bool
 	var pos []string
@@ -228,12 +228,12 @@ func renderConfigError(err error, jsonMode bool, s ioStreams) int {
 	return 1
 }
 
-// renderConfigHelp writes a compact help for `cswap config` (the dynamic key
+// renderConfigHelp writes a compact help for `tycswap config` (the dynamic key
 // list mirrors the Python epilog).
 func renderConfigHelp(out io.Writer) {
-	fmt.Fprintln(out, "usage: cswap config [-h] [--json] [--debug] {list,get,set,unset,path} ...")
+	fmt.Fprintln(out, "usage: tycswap config [-h] [--json] [--debug] {list,get,set,unset,path} ...")
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "Read and edit claude-swap settings (settings.json in the backup root).")
+	fmt.Fprintln(out, "Read and edit tycswap settings (settings.json in the backup root).")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Keys:")
 	for _, spec := range settings.SettingSpecs {

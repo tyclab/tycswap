@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 const (
@@ -59,7 +59,7 @@ func writeLiveAuth(t *testing.T, dir string, payload map[string]any) string {
 }
 
 // makeJWT builds an unsigned JWT carrying claims. The signature is a fixed
-// placeholder: cswap never verifies these tokens, it only reads the claims.
+// placeholder: tycswap never verifies these tokens, it only reads the claims.
 func makeJWT(t *testing.T, claims map[string]any) string {
 	t.Helper()
 	seg := func(v any) string {

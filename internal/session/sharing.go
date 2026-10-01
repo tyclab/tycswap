@@ -1,6 +1,6 @@
 // Sharing: _sync_sharing — mirror SHARED_ITEMS / HISTORY_ITEMS from ~/.claude
 // into the profile (symlink on POSIX, copy on Windows), the manifest that
-// records what cswap created so removal never touches user data, and the
+// records what tycswap created so removal never touches user data, and the
 // deactivation prune / adopt-existing-link / repoint-stale-link / never-touch-
 // user-data rules.
 //
@@ -14,16 +14,16 @@ import (
 	"os"
 	"path/filepath"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/atomicfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/printer"
 )
 
 // Sharing constants (spec 06§2.1). SHARED_ITEMS excludes anything account- or
 // instance-scoped (plugins/, sessions/, ide/, .claude.json, .credentials.json,
 // statsig/, telemetry); .claude.json's one user-scoped key (mcpServers) is
 // mirrored separately by syncMCPServers.
-const shareManifestName = ".cswap-shared.json"
+const shareManifestName = ".tycswap-shared.json"
 
 var (
 	sharedItems  = []string{"settings.json", "keybindings.json", "CLAUDE.md", "skills", "commands", "agents"}
@@ -113,7 +113,7 @@ func (m *Manager) syncSharing(sessionDir string, share, shareHistory bool) {
 
 		if isSymlink(dest) {
 			if !inSlice(name, managed) {
-				managed = append(managed, name) // adopt: only cswap links here
+				managed = append(managed, name) // adopt: only tycswap links here
 			}
 			if useSymlinks {
 				target, rlErr := os.Readlink(dest)
@@ -166,7 +166,7 @@ func createShare(src, dest string, useSymlinks bool) error {
 	return copyFile(src, dest)
 }
 
-// removeManaged removes a cswap-created share entry (link or copy), never user
+// removeManaged removes a tycswap-created share entry (link or copy), never user
 // data beyond it — callers guarantee dest is manifest-listed or a symlink.
 func removeManaged(dest string) {
 	if isSymlink(dest) || isRegularFile(dest) {
@@ -176,7 +176,7 @@ func removeManaged(dest string) {
 	}
 }
 
-// readManifest loads the manifest's item list, filtered to only names cswap
+// readManifest loads the manifest's item list, filtered to only names tycswap
 // could have created (defense against a hand-edited or foreign file). Missing,
 // corrupt, non-object, or non-list-items files yield an empty list.
 func readManifest(manifestPath string) []string {
@@ -223,7 +223,7 @@ func (m *Manager) writeManifest(manifestPath string, items []string) {
 }
 
 // copyFile copies a regular file's bytes and mode (shutil.copy2 parity for the
-// bits cswap relies on).
+// bits tycswap relies on).
 func copyFile(src, dst string) error {
 	info, err := os.Stat(src)
 	if err != nil {

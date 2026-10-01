@@ -1,6 +1,6 @@
 //go:build !windows
 
-// POSIX terminal handoff: syscall.Exec replaces the cswap process image
+// POSIX terminal handoff: syscall.Exec replaces the tycswap process image
 // entirely (same as execvpe) — the FileLock is already released, so an exec'd
 // claude never inherits a held flock.
 //

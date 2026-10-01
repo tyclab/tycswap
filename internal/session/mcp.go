@@ -14,16 +14,16 @@ import (
 	"reflect"
 	"unicode/utf8"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/atomicfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/printer"
 )
 
 // MCP mirror constants (spec 06§3.1).
 const (
 	mcpKey            = "mcpServers"
-	mcpMirrorMarker   = ".cswap-mcp-mirror-v1"      // empty marker file
-	mcpDisplacedStash = ".cswap-mcp-displaced.json" // write-once stash
+	mcpMirrorMarker   = ".tycswap-mcp-mirror-v1"      // empty marker file
+	mcpDisplacedStash = ".tycswap-mcp-displaced.json" // write-once stash
 )
 
 // mcpStash is the write-once stash of definitions the first mirror displaced.
@@ -214,7 +214,7 @@ func (m *Manager) ensureMCPMarker(markerPath string) {
 	if fileExists(markerPath) {
 		return
 	}
-	if err := touchFile(markerPath, 0o644); err != nil {
+	if err := touchFile(markerPath, 0o600); err != nil {
 		m.logWarnf("Could not write %s: %v", filepath.Base(markerPath), err)
 	}
 }

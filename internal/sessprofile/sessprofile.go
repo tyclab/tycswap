@@ -1,5 +1,5 @@
 // Package sessprofile is the session-profile leaf: everything both internal
-// store (WP6) and internal session (WP9) need to know about a `cswap run`
+// store (WP6) and internal session (WP9) need to know about a `tycswap run`
 // session profile's identity and on-disk location, without pulling in
 // session's heavier bootstrap/exec/sharing machinery — this is what breaks
 // the store↔session import cycle (DESIGN §1 / §2.19).
@@ -25,16 +25,16 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/procdetect"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/procdetect"
 )
 
 // StaleMarkerName is the deferred-invalidation marker file: backup
 // credentials changed while a session was live, so the profile must be
-// re-bootstrapped on the next non-live `cswap run` even if it still passes
+// re-bootstrapped on the next non-live `tycswap run` even if it still passes
 // the local reuse check.
-const StaleMarkerName = ".cswap-stale-credentials"
+const StaleMarkerName = ".tycswap-stale-credentials"
 
 // CredentialsFileName is the plaintext credential seed every session profile
 // carries (POSIX and Windows both use it as the Claude Code fallback; macOS
@@ -86,10 +86,10 @@ func SessionDirFor(backupDir, accountNum, email string) string {
 	return filepath.Join(backupDir, "sessions", accountNum+"-"+SlugifyEmail(email))
 }
 
-// IsSessionProfileDir reports whether configDir is a `cswap env`/`cswap run`
+// IsSessionProfileDir reports whether configDir is a `tycswap env`/`tycswap run`
 // session profile — i.e. it resolves to a path strictly inside
 // <backupRoot>/sessions/. The cli front controller uses it to detect a shell
-// pinned via `cswap env` (whose CLAUDE_CONFIG_DIR points at such a profile) so
+// pinned via `tycswap env` (whose CLAUDE_CONFIG_DIR points at such a profile) so
 // non-env/run commands can fall back to the default login (D2 / FINDING 2).
 //
 // Both paths are symlink-resolved when they exist (a symlinked backup root
@@ -137,7 +137,7 @@ func KeychainServiceName(sessionDir string) string {
 	return "Claude Code-credentials-" + digest
 }
 
-// StaleMarkerPath returns <sessionDir>/.cswap-stale-credentials.
+// StaleMarkerPath returns <sessionDir>/.tycswap-stale-credentials.
 func StaleMarkerPath(sessionDir string) string {
 	return filepath.Join(sessionDir, StaleMarkerName)
 }
@@ -147,7 +147,7 @@ func StaleMarkerPath(sessionDir string) string {
 // old reuse behavior applies), mirroring mark_session_stale's bare `except
 // OSError: pass`.
 func MarkStale(sessionDir string) {
-	f, err := os.OpenFile(StaleMarkerPath(sessionDir), os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(StaleMarkerPath(sessionDir), os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
 	}
@@ -196,7 +196,7 @@ func DeleteMacOSKeychainEntry(kc keychain.KeychainClient, sessionDir string) {
 }
 
 // InvalidateSessionCredentials drops a session profile's credential material
-// while keeping its history: the next `cswap run` fails the reuse check and
+// while keeping its history: the next `tycswap run` fails the reuse check and
 // re-bootstraps from backup (bootstrap merges .claude.json, so the profile's
 // own projects/history survive). Used when backup credentials change under
 // an existing profile (e.g. --import --force). Returns existed=false with a

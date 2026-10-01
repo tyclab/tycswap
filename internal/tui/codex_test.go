@@ -1,7 +1,7 @@
 // codex_test.go — the TUI with two providers on screen.
 //
 // Port of claude-swap PR #252 tests/test_tui_multiprovider.py (the TUI half;
-// the menu-bar tests belong to a surface cswap does not have). The risk this
+// the menu-bar tests belong to a surface tycswap does not have). The risk this
 // file exists for: slot numbers repeat across providers, so a keystroke aimed
 // at "account 1" can land on the wrong CLI's account. Every test here is
 // ultimately about that.
@@ -16,9 +16,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/switcher"
-	"git.dpemmons.com/dpemmons/cswap/internal/providers"
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/codex/switcher"
+	"github.com/tyclab/tycswap/internal/providers"
+	"github.com/tyclab/tycswap/internal/reporting"
 )
 
 // fakeCodex records every Codex action the dashboard routes to it.

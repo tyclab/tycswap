@@ -11,7 +11,7 @@ import (
 	"os"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/printer"
 )
 
 // printOut writes a line to stdout (Python print()).

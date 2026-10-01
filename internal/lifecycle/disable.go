@@ -11,9 +11,9 @@ import (
 	"os"
 	"strconv"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // SetAccountDisabled disables (disabled=true) or re-enables a managed slot (spec
@@ -26,7 +26,7 @@ func SetAccountDisabled(s *store.Store, identifier string, disabled bool) error 
 
 	// The whole read-decide-write span runs under the store lock, with the one
 	// classified read taken inside it: the roster this call commits is the bytes
-	// on disk, so a record another cswap commits meanwhile cannot be renamed away
+	// on disk, so a record another tycswap commits meanwhile cannot be renamed away
 	// by the disabled-flag write.
 	//
 	// The entry read comes before store.ResolveAccount (see SetAlias): resolving
@@ -87,7 +87,7 @@ func SetAccountDisabled(s *store.Store, identifier string, disabled bool) error 
 			// the lock and after the commit above, so it sees the roster this call
 			// just wrote — which is exactly the rotation the hint describes.
 			if len(s.SwitchableAccountNumbers()) == 0 {
-				emitWarning("  No accounts remain in rotation — auto-switch and bare switch have nothing to pick. Re-enable one with cswap enable <num|email>.")
+				emitWarning("  No accounts remain in rotation — auto-switch and bare switch have nothing to pick. Re-enable one with tycswap enable <num|email>.")
 			}
 		} else {
 			emitLine(printer.Dimmed("  It is back in the rotation."))

@@ -1,80 +1,81 @@
-# cswap — Command Reference
+# tycswap — Command Reference
 
 ## NAME
 
-cswap — multi-account switcher for Claude Code.
+tycswap — multi-account switcher for Claude Code.
 
 ## SYNOPSIS
 
 ```
-cswap                                       open the interactive dashboard (TTY only)
-cswap help                                  print the command list and options
-cswap list [--json] [--token-status]        list managed accounts
-cswap status [--json]                       show the active account
-cswap switch [--json]                       rotate to the next account
-cswap switch <NUM|EMAIL|ALIAS> [--json] [--force]
+tycswap                                       open the interactive dashboard (TTY only)
+tycswap help                                  print the command list and options
+tycswap list [--json] [--token-status]        list managed accounts
+tycswap status [--json]                       show the active account
+tycswap switch [--json]                       rotate to the next account
+tycswap switch <NUM|EMAIL|ALIAS> [--json] [--force]
                                             switch to a specific account
-cswap switch --strategy {best|next-available} [--model NAMES] [--json]
+tycswap switch --strategy {best|next-available} [--model NAMES] [--json]
                                             pick the target by remaining quota
-cswap add [--slot NUM] [--alias NAME]       snapshot the current login as an account
-cswap add --login [--switch] [--slot NUM] [--alias NAME] [-- LOGIN-ARGS...]
+tycswap add [--slot NUM] [--alias NAME]       snapshot the current login as an account
+tycswap add --login [--switch] [--slot NUM] [--alias NAME] [-- LOGIN-ARGS...]
                                             log another account in beside the live one and store it
-cswap add-token [TOKEN|-] [--email EMAIL] [--slot NUM]
+tycswap add-token [TOKEN|-] [--email EMAIL] [--slot NUM]
                                             register a setup-token or API key
-cswap remove <NUM|EMAIL|ALIAS>              remove an account (prompts to confirm)
-cswap disable <NUM|EMAIL|ALIAS>             hold an account out of auto-rotation
-cswap enable <NUM|EMAIL|ALIAS>              return a disabled account to rotation
-cswap alias [<NUM|EMAIL|ALIAS> <NAME>]      set / list account aliases
-cswap alias <NUM|EMAIL|ALIAS> --unset       remove an account's alias
-cswap move <NUM|EMAIL|ALIAS> <SLOT>         assign an account to a slot (swaps if taken)
-cswap swap <A> <B>                          exchange two accounts' slot numbers
-cswap run [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history|--no-share-history] [-- ARGS...]
+tycswap remove <NUM|EMAIL|ALIAS>              remove an account (prompts to confirm)
+tycswap disable <NUM|EMAIL|ALIAS>             hold an account out of auto-rotation
+tycswap enable <NUM|EMAIL|ALIAS>              return a disabled account to rotation
+tycswap alias [<NUM|EMAIL|ALIAS> <NAME>]      set / list account aliases
+tycswap alias <NUM|EMAIL|ALIAS> --unset       remove an account's alias
+tycswap move <NUM|EMAIL|ALIAS> <SLOT>         assign an account to a slot (swaps if taken)
+tycswap swap <A> <B>                          exchange two accounts' slot numbers
+tycswap run [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history|--no-share-history] [-- ARGS...]
                                             launch Claude Code as an account, this terminal only
-cswap env [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history] [--shell {sh|fish|pwsh}] [--unset]
+tycswap env [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history] [--shell {sh|fish|pwsh}] [--unset]
                                             print eval-able env lines that pin this shell
-cswap map [<NUM|EMAIL|ALIAS> [PATH]]        map a directory to an account / list mappings
-cswap unmap [PATH]                          remove a directory mapping
-cswap auto [--once] [--json] [--interval SECONDS] [--threshold PCT] [--cooldown SECONDS]
+tycswap map [<NUM|EMAIL|ALIAS> [PATH]]        map a directory to an account / list mappings
+tycswap unmap [PATH]                          remove a directory mapping
+tycswap auto [--once] [--json] [--interval SECONDS] [--threshold PCT] [--cooldown SECONDS]
            [--model NAMES] [--include-api-key-accounts|--no-include-api-key-accounts]
            [--dry-run]                      auto-switch when nearing rate limits
-cswap config [list] [--json]                show settings
-cswap config get <KEY> [--json]             read one setting
-cswap config set <KEY> <VALUE>              change one setting
-cswap config unset <KEY>                    clear one setting
-cswap config path                           print the settings.json path
-cswap export <PATH> [--account NUM|EMAIL] [--full]
+tycswap config [list] [--json]                show settings
+tycswap config get <KEY> [--json]             read one setting
+tycswap config set <KEY> <VALUE>              change one setting
+tycswap config unset <KEY>                    clear one setting
+tycswap config path                           print the settings.json path
+tycswap export <PATH> [--account NUM|EMAIL] [--full]
                                             export accounts to a file ("-" = stdout)
-cswap import <PATH> [--force]               import accounts from a file ("-" = stdin)
-cswap tui                                    interactive dashboard
-cswap watch                                  interactive dashboard, live watch page
-cswap menubar                                macOS menu bar app (not available in this build)
-cswap upgrade                                self-upgrade to the latest release
-cswap purge                                  remove all claude-swap data (prompts to confirm)
-cswap --version                              print the program name and version
-cswap codex list [--json] [--skip-api] [--token-status]
+tycswap import <PATH> [--force]               import accounts from a file ("-" = stdin)
+tycswap tui                                    interactive dashboard
+tycswap watch                                  interactive dashboard, live watch page
+tycswap menubar                                macOS menu bar app (not available in this build)
+tycswap upgrade                                self-upgrade to the latest release
+tycswap purge                                  remove all tycswap data (prompts to confirm)
+tycswap migrate [--dry-run] [--json]           copy the claude-swap store into tycswap's, once
+tycswap --version                              print the program name and version
+tycswap codex list [--json] [--skip-api] [--token-status]
                                             list managed Codex accounts and their usage
-cswap codex status [--json]                 show the account the codex CLI is using
-cswap codex switch [<NUM|EMAIL|ALIAS>] [--strategy best]
+tycswap codex status [--json]                 show the account the codex CLI is using
+tycswap codex switch [<NUM|EMAIL|ALIAS>] [--strategy best]
                                             rotate, or activate a Codex account
-cswap codex add [--alias NAME]              store the current Codex login
-cswap codex login [--device-auth] [--alias NAME]
+tycswap codex add [--alias NAME]              store the current Codex login
+tycswap codex login [--device-auth] [--alias NAME]
                                             run 'codex login', then store the result
-cswap codex remove <NUM|EMAIL|ALIAS> [-y]   forget a Codex account
-cswap codex alias <NUM|EMAIL> [NAME] [--unset]
+tycswap codex remove <NUM|EMAIL|ALIAS> [-y]   forget a Codex account
+tycswap codex alias <NUM|EMAIL> [NAME] [--unset]
                                             set / clear a Codex alias
-cswap codex disable|enable <NUM|EMAIL|ALIAS>
+tycswap codex disable|enable <NUM|EMAIL|ALIAS>
                                             hold out of / return to auto-rotation
-cswap codex swap <A> <B>                    exchange two Codex slot numbers
-cswap codex move <NUM|EMAIL|ALIAS> <SLOT>   assign a Codex account to a slot
-cswap codex export <PATH> [--account NUM|EMAIL]
+tycswap codex swap <A> <B>                    exchange two Codex slot numbers
+tycswap codex move <NUM|EMAIL|ALIAS> <SLOT>   assign a Codex account to a slot
+tycswap codex export <PATH> [--account NUM|EMAIL]
                                             export Codex accounts ("-" = stdout)
-cswap codex import <PATH> [--force]         import Codex accounts ("-" = stdin)
-cswap codex purge [-y]                      remove all cswap Codex data
-cswap codex import-codex-auth               re-run the codex-auth registry import
+tycswap codex import <PATH> [--force]         import Codex accounts ("-" = stdin)
+tycswap codex purge [-y]                      remove all tycswap Codex data
+tycswap codex import-codex-auth               re-run the codex-auth registry import
 ```
 
 Every subcommand also accepts `--debug` (enable debug logging) and `-h` / `--help`,
-the `cswap codex` namespace and each of its verbs included.
+the `tycswap codex` namespace and each of its verbs included.
 
 Legacy flag spellings are equivalent to the verbs and remain supported:
 `--list`, `--status`, `--switch`, `--switch-to <id>`, `--add-account`,
@@ -82,7 +83,7 @@ Legacy flag spellings are equivalent to the verbs and remain supported:
 `--enable-account <id>`, `--export <path>`, `--import <path>`, `--tui`,
 `--watch`, `--menubar`, `--upgrade`, `--purge`. `ls` is an alias for `list`,
 `rm` for `remove`, `update` for `upgrade`. A verb, or the leading legacy flag,
-must be the first argument; `cswap --debug run 2` is not accepted (place the
+must be the first argument; `tycswap --debug run 2` is not accepted (place the
 verb first).
 
 ## Account resolution: NUM | EMAIL | ALIAS
@@ -92,7 +93,7 @@ Commands that name an account accept any of three forms, resolved in this order:
 - **NUM** — the account's slot number (`2`). Slot numbers are stable and need
   not be contiguous.
 - **EMAIL** — the account's exact recorded email address (`bob@example.com`).
-- **ALIAS** — a short display name previously set with `cswap alias`
+- **ALIAS** — a short display name previously set with `tycswap alias`
   (`dev`). An all-numeric string is never treated as an alias; it resolves as
   a slot number.
 
@@ -101,12 +102,12 @@ A form that matches no account raises `AccountNotFoundError`
 
 ---
 
-## cswap list
+## tycswap list
 
 ### Synopsis
 
 ```
-cswap list [--json] [--token-status] [--debug]
+tycswap list [--json] [--token-status] [--debug]
 ```
 
 ### Options
@@ -210,7 +211,7 @@ are human strings recomputed at serialization time.
 ### Example
 
 ```
-$ cswap list
+$ tycswap list
 Accounts:
   1: alice@example.com [personal] (active)
      usage unavailable (http-429)
@@ -227,16 +228,16 @@ Accounts:
 
 ### See also
 
-`cswap status`, `cswap switch`, [JSON OUTPUT CONTRACT](#json-output-contract).
+`tycswap status`, `tycswap switch`, [JSON OUTPUT CONTRACT](#json-output-contract).
 
 ---
 
-## cswap status
+## tycswap status
 
 ### Synopsis
 
 ```
-cswap status [--json] [--debug]
+tycswap status [--json] [--debug]
 ```
 
 ### Options
@@ -249,13 +250,13 @@ cswap status [--json] [--debug]
 ### Description
 
 Reports the current default login (the account Claude Code will use) and the
-number of managed accounts. When the live account is not one cswap manages, the
+number of managed accounts. When the live account is not one tycswap manages, the
 active record is reported as unmanaged.
 
 ### Files
 
 Reads `sequence.json`, the live `~/.claude.json` (or a custom `CLAUDE_CONFIG_DIR`
-equivalent; a cswap session pin is ignored — see ENVIRONMENT), and
+equivalent; a tycswap session pin is ignored — see ENVIRONMENT), and
 `cache/usage.json`. Writes nothing.
 
 ### Exit status
@@ -290,14 +291,14 @@ error envelope on stdout under `--json`.
 ### Example
 
 ```
-$ cswap status
+$ tycswap status
 Status: Account-1 (alice@example.com [personal])
   Total managed accounts: 4
   usage unavailable (http-429)
 ```
 
 ```
-$ cswap status --json
+$ tycswap status --json
 {
   "active": {
     "email": "alice@example.com",
@@ -317,24 +318,24 @@ $ cswap status --json
 To extract the active account's email in a script:
 
 ```
-$ cswap status --json | jq -r '.active.email'
+$ tycswap status --json | jq -r '.active.email'
 alice@example.com
 ```
 
 ### See also
 
-`cswap list`, `cswap switch`.
+`tycswap list`, `tycswap switch`.
 
 ---
 
-## cswap switch
+## tycswap switch
 
 ### Synopsis
 
 ```
-cswap switch [--json] [--debug]
-cswap switch <NUM|EMAIL|ALIAS> [--json] [--force] [--debug]
-cswap switch --strategy {best|next-available} [--model NAMES] [--json] [--debug]
+tycswap switch [--json] [--debug]
+tycswap switch <NUM|EMAIL|ALIAS> [--json] [--force] [--debug]
+tycswap switch --strategy {best|next-available} [--model NAMES] [--json] [--debug]
 ```
 
 ### Options
@@ -349,7 +350,7 @@ cswap switch --strategy {best|next-available} [--model NAMES] [--json] [--debug]
 
 ### Description
 
-Bare `cswap switch` rotates to the next account in the sequence. `cswap switch
+Bare `tycswap switch` rotates to the next account in the sequence. `tycswap switch
 <NUM|EMAIL|ALIAS>` activates a specific account. `--strategy best` picks the
 account with the most remaining 5h/7d quota; `--strategy next-available`
 rotates, skipping rate-limited accounts. `--model` adds the named models'
@@ -358,6 +359,19 @@ strategies. A switch never requires restarting Claude Code to be correct; the
 post-switch note is informational (see NOTES). The switch cooperates with
 Claude Code's own credential lock, so it never interleaves with a token
 refresh.
+
+A switch changes only the `oauthAccount` key of `~/.claude.json`; every other
+key stays as it is. With no live config (absent, blank or `null`) the file is
+created holding `{"oauthAccount": …}` alone; a stored config is never written
+whole. A live config that exists but cannot be read or is not a JSON object
+stops the switch with a `ConfigError` naming the file, before any credential is
+written, rather than being replaced. The same holds for `add-token`, which
+rewrites `primaryApiKey` in that file.
+
+The live credential's `mcpOAuth` key — Claude Code's MCP server logins, which
+belong to the seat and not to the account — is carried over the target
+account's stored credential, and the outgoing account's backup is written
+without it; a rollback restores the exact pre-switch bytes.
 
 ### Files
 
@@ -410,7 +424,7 @@ A `<ref>` is `{"number": <int|null>, "email": "<string>"}`. `switched` is
 ### Example
 
 ```
-$ cswap switch 2 --json
+$ tycswap switch 2 --json
 {
   "from": {
     "email": "alice@example.com",
@@ -431,17 +445,17 @@ $ cswap switch 2 --json
 
 ### See also
 
-`cswap auto`, `cswap list`, `cswap status`, [SETTINGS](#settings).
+`tycswap auto`, `tycswap list`, `tycswap status`, [SETTINGS](#settings).
 
 ---
 
-## cswap add
+## tycswap add
 
 ### Synopsis
 
 ```
-cswap add [--slot NUM] [--alias NAME] [--debug]
-cswap add --login [--switch] [--slot NUM] [--alias NAME] [--debug] [-- LOGIN-ARGS...]
+tycswap add [--slot NUM] [--alias NAME] [--debug]
+tycswap add --login [--switch] [--slot NUM] [--alias NAME] [--debug] [-- LOGIN-ARGS...]
 ```
 
 ### Options
@@ -462,27 +476,36 @@ account, copying its credentials and `oauthAccount` config into the backup
 root. `--slot` places it in a specific slot (swapping if occupied); `--alias`
 sets a short display name at the same time.
 
+The email of the login (`oauthAccount.emailAddress`, from the live
+`~/.claude.json` or the scratch profile's) names the account's backup files, so
+it must be one a file name can carry: one `@` between a non-empty local part
+and domain, at most 254 bytes, and no whitespace, control character, `/`, `\`
+or `< > : " | ? *`. Any address that passes (an apostrophe or a non-ASCII
+letter included) is stored under its raw name; anything else is refused before
+anything is written: `The logged-in account's email cannot name a store file:
+"<email>". It needs …`.
+
 When the current login's identity `(email, organizationUuid)` already belongs to
 a managed account and no `--slot` is given, `add` refreshes that account's
 stored credentials and config in place rather than allocating a second slot, and
 reports `Updated credentials for Account <n> (<email> [<tag>]).`. This is the
 supported way to repair an account whose refresh token has died (`usageStatus:
-relogin_required`): run `cswap add --login` and sign in as that account, or
-log in with it in Claude Code and re-run `cswap add`. The refresh also clears
-any `cswap auto` quarantine on that slot.
+relogin_required`): run `tycswap add --login` and sign in as that account, or
+log in with it in Claude Code and re-run `tycswap add`. The refresh also clears
+any `tycswap auto` quarantine on that slot.
 
 With `--login`, `add` stores a login the live one never sees. It creates a
 private scratch profile (`login.*`, mode 0700) under the backup root and runs
 `claude auth login [LOGIN-ARGS...]` with `CLAUDE_CONFIG_DIR` pointing at it,
 replacing any `CLAUDE_CONFIG_DIR` the shell already carries (including a
-`cswap env` pin). The terminal is handed to the login so the browser flow can be
+`tycswap env` pin). The terminal is handed to the login so the browser flow can be
 completed; no store or roster lock is held while it runs. When it exits, the
 `.claude.json` and `.credentials.json` it wrote are stored exactly as `add`
 stores the live login: an identity already managed is refreshed in place,
 otherwise the account takes `--slot` or the next free slot, with `--alias`
 applied. The live login is untouched and `activeAccountNumber` is unchanged.
 With `--switch`, `add` then switches to the new account through the same path
-as `cswap switch <n>`, so the outgoing account's credentials are written back
+as `tycswap switch <n>`, so the outgoing account's credentials are written back
 as on any switch. The scratch profile is deleted on every exit path, including
 a failed login and Ctrl-C.
 
@@ -492,7 +515,7 @@ Reads the live `~/.claude.json` and credentials store, or with `--login` the
 scratch profile's `.claude.json` and `.credentials.json`. Writes
 `sequence.json`, `configs/`, and `credentials/` (or the macOS Keychain). With
 `--login`, creates and removes `<backup root>/login.*`; with `--switch`, also
-writes the live login as `cswap switch` does. On macOS, where Claude Code
+writes the live login as `tycswap switch` does. On macOS, where Claude Code
 keeps a login's credential in the Keychain rather than in
 `.credentials.json`, `--login` reads it from the item Claude Code creates for
 the scratch directory (`Claude Code-credentials-<first 8 hex of the
@@ -525,7 +548,7 @@ With `--login`:
   untouched` — the login exited non-zero, or left no `oauthAccount` or no
   `.credentials.json`.
 - `Error: claude's login made an API key, which is a different auth axis: use
-  cswap --add-token` — the login produced an API key (a console login) rather
+  tycswap --add-token` — the login produced an API key (a console login) rather
   than a `claudeAiOauth` subscription credential.
 - `Error: 'claude' was not found on PATH. Install Claude Code first.`
 
@@ -539,32 +562,32 @@ Without `--login`:
 ### Example (illustrative — requires a current Claude Code login to snapshot)
 
 ```
-$ cswap add --slot 3 --alias work
+$ tycswap add --slot 3 --alias work
 Added Account 3: me@example.com [personal]
 
-$ cswap add --login --alias second -- --email other@example.com
+$ tycswap add --login --alias second -- --email other@example.com
 Added Account 4: other@example.com [personal] (from login)
 ```
 
 ### See also
 
-`cswap add-token`, `cswap switch`, `cswap alias`, `cswap remove`.
+`tycswap add-token`, `tycswap switch`, `tycswap alias`, `tycswap remove`.
 
 ---
 
-## cswap add-token
+## tycswap add-token
 
 ### Synopsis
 
 ```
-cswap add-token [TOKEN|-] [--email EMAIL] [--slot NUM] [--debug]
+tycswap add-token [TOKEN|-] [--email EMAIL] [--slot NUM] [--debug]
 ```
 
 ### Options
 
 | Option | Type | Default | Constraints |
 |--------|------|---------|-------------|
-| `TOKEN` | positional string | read interactively if omitted | A lone `-` reads the token from stdin. |
+| `TOKEN` | positional string | read interactively if omitted | A lone `-` reads the token from stdin. A token given here is visible to other local users through `ps` and kept in shell history; `add-token` prints a warning and still uses it. Prefer the prompt or `-`. |
 | `--email` | string | derived if possible | Only with `add-token`. |
 | `--slot` | int | next free slot | Only with `add` or `add-token`. |
 | `--debug` | flag | off | — |
@@ -594,25 +617,28 @@ Handled errors surface as `Error: <message>` (exit 1).
 ### Example (illustrative token)
 
 ```
-$ cswap add-token sk-ant-oat01-EXAMPLE --email me@example.com
+$ tycswap add-token --email me@example.com
+Token:
 Added Account 6: me@example.com [personal] (from token)
+$ tycswap add-token - --email me@example.com < token.txt
+Added Account 7: me@example.com [personal] (from token)
 ```
 
 ### See also
 
-`cswap add`, `cswap remove`.
+`tycswap add`, `tycswap remove`.
 
 ---
 
-## cswap remove
+## tycswap remove
 
 ### Synopsis
 
 ```
-cswap remove <NUM|EMAIL|ALIAS> [--debug]
+tycswap remove <NUM|EMAIL|ALIAS> [--debug]
 ```
 
-Legacy: `cswap --remove-account <id>`. Alias: `cswap rm <id>`.
+Legacy: `tycswap --remove-account <id>`. Alias: `tycswap rm <id>`.
 
 ### Options
 
@@ -644,25 +670,25 @@ Removes the account's `configs/` and `credentials/` entries and its
 ### Example
 
 ```
-$ cswap remove 5
+$ tycswap remove 5
 Are you sure you want to permanently remove Account-5 (carol@example.com)? [y/N] Cancelled
 ```
 
 ### See also
 
-`cswap disable`, `cswap add`.
+`tycswap disable`, `tycswap add`.
 
 ---
 
-## cswap disable
+## tycswap disable
 
 ### Synopsis
 
 ```
-cswap disable <NUM|EMAIL|ALIAS> [--debug]
+tycswap disable <NUM|EMAIL|ALIAS> [--debug]
 ```
 
-Legacy: `cswap --disable-account <id>`.
+Legacy: `tycswap --disable-account <id>`.
 
 ### Options
 
@@ -673,7 +699,7 @@ Legacy: `cswap --disable-account <id>`.
 
 ### Description
 
-Holds an account out of auto-rotation. `cswap auto` and the usage-aware `switch`
+Holds an account out of auto-rotation. `tycswap auto` and the usage-aware `switch`
 strategies skip a disabled account; a direct `switch <id>` still activates it.
 The account and its credentials are retained.
 
@@ -698,26 +724,26 @@ you switch away; it just won't be an automatic switch target.`
 ### Example
 
 ```
-$ cswap disable 1
+$ tycswap disable 1
 Disabled Account-1 (alice@example.com).
   It is the active account — it stays live until you switch away; it just won't be an automatic switch target.
 ```
 
 ### See also
 
-`cswap enable`, `cswap auto`.
+`tycswap enable`, `tycswap auto`.
 
 ---
 
-## cswap enable
+## tycswap enable
 
 ### Synopsis
 
 ```
-cswap enable <NUM|EMAIL|ALIAS> [--debug]
+tycswap enable <NUM|EMAIL|ALIAS> [--debug]
 ```
 
-Legacy: `cswap --enable-account <id>`.
+Legacy: `tycswap --enable-account <id>`.
 
 ### Options
 
@@ -757,26 +783,26 @@ For an account that is already enabled:
 ### Example
 
 ```
-$ cswap enable 5
+$ tycswap enable 5
 Enabled Account-5 (carol@example.com).
   It is back in the rotation.
 ```
 
 ### See also
 
-`cswap disable`, `cswap auto`.
+`tycswap disable`, `tycswap auto`.
 
 ---
 
-## cswap alias
+## tycswap alias
 
 ### Synopsis
 
 ```
-cswap alias                                 list all aliases
-cswap alias <NUM|EMAIL|ALIAS> <NAME>        set an alias
-cswap alias <NUM|EMAIL|ALIAS> --unset       remove an alias
-cswap alias [...] [--debug]
+tycswap alias                                 list all aliases
+tycswap alias <NUM|EMAIL|ALIAS> <NAME>        set an alias
+tycswap alias <NUM|EMAIL|ALIAS> --unset       remove an alias
+tycswap alias [...] [--debug]
 ```
 
 ### Options
@@ -828,23 +854,23 @@ intact even though the roster naming it is not.
 ### Example
 
 ```
-$ cswap alias
+$ tycswap alias
 Aliases:
   2: dev (bob@example.com)
 ```
 
 ### See also
 
-`cswap add`, [Account resolution](#account-resolution-num--email--alias).
+`tycswap add`, [Account resolution](#account-resolution-num--email--alias).
 
 ---
 
-## cswap move
+## tycswap move
 
 ### Synopsis
 
 ```
-cswap move <NUM|EMAIL|ALIAS> <SLOT> [--debug]
+tycswap move <NUM|EMAIL|ALIAS> <SLOT> [--debug]
 ```
 
 ### Options
@@ -891,7 +917,7 @@ argument).
 ### Example
 
 ```
-$ cswap move 1 3
+$ tycswap move 1 3
 Swapped Account 1 and Account 3:
   1: key@example.com
   3: alice@example.com
@@ -899,16 +925,16 @@ Swapped Account 1 and Account 3:
 
 ### See also
 
-`cswap swap`.
+`tycswap swap`.
 
 ---
 
-## cswap swap
+## tycswap swap
 
 ### Synopsis
 
 ```
-cswap swap <A> <B> [--debug]
+tycswap swap <A> <B> [--debug]
 ```
 
 ### Options
@@ -948,7 +974,7 @@ in numeric order.
 ### Example
 
 ```
-$ cswap swap 1 2
+$ tycswap swap 1 2
 Swapped Account 1 and Account 2:
   1: bob@example.com
   2: alice@example.com
@@ -956,16 +982,16 @@ Swapped Account 1 and Account 2:
 
 ### See also
 
-`cswap move`.
+`tycswap move`.
 
 ---
 
-## cswap run
+## tycswap run
 
 ### Synopsis
 
 ```
-cswap run [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history|--no-share-history] [--debug] [-- ARGS...]
+tycswap run [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history|--no-share-history] [--debug] [-- ARGS...]
 ```
 
 ### Options
@@ -985,7 +1011,7 @@ changing the machine-wide default login. It prepares the account's persistent
 session profile (bootstrap, token validate, MCP mirror, credential scrub) and
 then execs `claude` with `CLAUDE_CONFIG_DIR` pointed at that profile. With no
 account argument, the account is resolved from the current directory's mapping
-(see `cswap map`); if the directory has no usable mapping, `claude` launches as
+(see `tycswap map`); if the directory has no usable mapping, `claude` launches as
 the default login. This is an experimental feature.
 
 ### Files
@@ -996,7 +1022,7 @@ Creates and maintains the account's `sessions/<n>-<email>` profile directory.
 ### Exit status
 
 The exit status of the launched `claude` process. `1` on a pre-exec failure;
-`2` on a usage error. On POSIX the process is replaced by `claude`, so cswap
+`2` on a usage error. On POSIX the process is replaced by `claude`, so tycswap
 itself does not return on success.
 
 ### Output
@@ -1023,23 +1049,23 @@ mapping — refuses on a corrupt roster; with no account argument this means
 ### Example (illustrative — requires a real Claude Code install)
 
 ```
-$ cswap run 2 -- --resume
+$ tycswap run 2 -- --resume
 Launching Account-2 (bob@example.com) [session mode]
 # ... claude starts as account 2 with --resume ...
 ```
 
 ### See also
 
-`cswap env`, `cswap map`.
+`tycswap env`, `tycswap map`.
 
 ---
 
-## cswap env
+## tycswap env
 
 ### Synopsis
 
 ```
-cswap env [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history] [--shell {sh|fish|pwsh}] [--unset] [--debug]
+tycswap env [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history] [--shell {sh|fish|pwsh}] [--unset] [--debug]
 ```
 
 ### Options
@@ -1056,29 +1082,45 @@ cswap env [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history] [--shell {sh|fish|p
 
 Prints shell-evalable lines that pin the current shell to a stored account's
 session profile without launching `claude`. It prepares the same profile
-`cswap run` does (bootstrap / validate / mirror / `--no-share` /
+`tycswap run` does (bootstrap / validate / mirror / `--no-share` /
 `--share-history` all apply), then prints a `CLAUDE_CONFIG_DIR` export instead
-of exec'ing. Intended for `eval "$(cswap env 2)"`. `--unset` prints only the
+of exec'ing. Intended for `eval "$(tycswap env 2)"`. `--unset` prints only the
 `CLAUDE_CONFIG_DIR` unset line for the chosen shell, dropping the pin. With no
 account, the account is resolved from the current directory's mapping; unlike
 `run`, `env` has no default-login fallback and errors when nothing is mapped.
 
 When the chosen account is already the active default login and
-`CLAUDE_CONFIG_DIR` is not already set, `cswap env` does nothing: it prepares no
+`CLAUDE_CONFIG_DIR` is not already set, `tycswap env` does nothing: it prepares no
 profile, creates no second credential copy, and exports nothing. It writes one
-note to stderr and exits 0, so `eval "$(cswap env <n>)"` is a safe no-op. When
+note to stderr and exits 0, so `eval "$(tycswap env <n>)"` is a safe no-op. When
 `CLAUDE_CONFIG_DIR` is already set, the preset-override behavior applies instead:
 the profile is prepared and exported for this shell, overriding the preset,
-identical to `cswap run`.
+identical to `tycswap run`.
 
 Output discipline: stdout carries only the eval-able lines. Before the export,
 one unset line is emitted for each currently-set authentication-override
 variable (see ENVIRONMENT) so it cannot shadow the pinned account. All notices
 and warnings go to stderr.
 
+
+In `--shell pwsh` output every value is single-quoted with `'` doubled, and
+so are the typographic single quotes U+2018 to U+201B, which PowerShell also
+treats as quote characters. Strings shown by `list`, `status`, the dashboard
+and the Codex commands that come from exports, APIs or other tools' files
+(emails, aliases, organization and workspace names, running-instance paths)
+are printed with control characters (C0, DEL, C1, ESC) removed.
+
+On Windows, when `claude` resolves to a `.cmd` or `.bat` shim (the npm
+install), `run` and `add --login` refuse an argument holding a character
+cmd.exe interprets (`& | < > ^ % ! " ( )` or a line break), because cmd.exe
+re-parses such a script's command line; the native `claude.exe` has no such
+restriction. `add --login` also removes the auth override variables
+(`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, …) from the login's
+environment, as `run` and `env` do.
+
 ### Files
 
-Same as `cswap run`: reads the registry and mappings, prepares the account's
+Same as `tycswap run`: reads the registry and mappings, prepares the account's
 `sessions/<n>-<email>` profile.
 
 ### Exit status
@@ -1108,7 +1150,7 @@ written (see Description).
 | `--unset does not take a NUM\|EMAIL\|ALIAS argument` | 2 |
 | `argument --shell: expected one argument` | 2 |
 | `unrecognized arguments: <tok>` | 2 |
-| `Nothing to prepare an environment for (...). Pass an account ..., map this directory ..., or clear a pinned profile with cswap env --unset.` | 1 |
+| `Nothing to prepare an environment for (...). Pass an account ..., map this directory ..., or clear a pinned profile with tycswap env --unset.` | 1 |
 | Corrupt or unreadable `sequence.json` (`ConfigError`, names the file and the repair/restart options) | 1 |
 
 Account resolution (an explicit `NUM\|EMAIL\|ALIAS`, or the current
@@ -1118,34 +1160,34 @@ no such account exists.
 ### Example
 
 ```
-$ cswap env 2
+$ tycswap env 2
 Prepared Account-2 (bob@example.com) [session mode]      # (stderr)
-export CLAUDE_CONFIG_DIR='~/.local/share/claude-swap/sessions/2-bob_example.com'
-$ cswap env 1                                            # already the active default login
+export CLAUDE_CONFIG_DIR='~/.local/share/tycswap/sessions/2-bob_example.com'
+$ tycswap env 1                                            # already the active default login
 Account-1 (alice@example.com) is the active default login — an unpinned shell already uses it; nothing exported.      # (stderr; exit 0, nothing exported)
-$ cswap env --unset
+$ tycswap env --unset
 unset CLAUDE_CONFIG_DIR
-$ cswap env --unset --shell fish
+$ tycswap env --unset --shell fish
 set -e CLAUDE_CONFIG_DIR
 ```
 
-`cswap env` has no counterpart in claude-swap (Python); it is defined by this
+`tycswap env` has no counterpart in claude-swap (Python); it is defined by this
 implementation.
 
 ### See also
 
-`cswap run`, `cswap map`, ENVIRONMENT.
+`tycswap run`, `tycswap map`, ENVIRONMENT.
 
 ---
 
-## cswap map
+## tycswap map
 
 ### Synopsis
 
 ```
-cswap map                                   list directory mappings
-cswap map <NUM|EMAIL|ALIAS> [PATH]          map a directory to an account
-cswap map [...] [--debug]
+tycswap map                                   list directory mappings
+tycswap map <NUM|EMAIL|ALIAS> [PATH]          map a directory to an account
+tycswap map [...] [--debug]
 ```
 
 ### Options
@@ -1160,7 +1202,7 @@ cswap map [...] [--debug]
 
 With no arguments, lists directory→account mappings. With an account and an
 optional path (defaulting to the current directory), records that a bare
-`cswap run` / `cswap env` in that directory resolves to the given account. A
+`tycswap run` / `tycswap env` in that directory resolves to the given account. A
 path that is not an existing directory is mapped anyway with a warning.
 
 ### Files
@@ -1201,23 +1243,23 @@ absence.
 ### Example
 
 ```
-$ cswap map
+$ tycswap map
 Directory mappings:
   ~/work/client-app → 2: bob@example.com [personal]
 ```
 
 ### See also
 
-`cswap unmap`, `cswap run`, `cswap env`.
+`tycswap unmap`, `tycswap run`, `tycswap env`.
 
 ---
 
-## cswap unmap
+## tycswap unmap
 
 ### Synopsis
 
 ```
-cswap unmap [PATH] [--debug]
+tycswap unmap [PATH] [--debug]
 ```
 
 ### Options
@@ -1250,22 +1292,22 @@ Reads and writes `mappings.json`.
 ### Example
 
 ```
-$ cswap unmap ~/work/client-app
+$ tycswap unmap ~/work/client-app
 Unmapped ~/work/client-app
 ```
 
 ### See also
 
-`cswap map`.
+`tycswap map`.
 
 ---
 
-## cswap auto
+## tycswap auto
 
 ### Synopsis
 
 ```
-cswap auto [--once] [--json] [--interval SECONDS] [--threshold PCT] [--cooldown SECONDS]
+tycswap auto [--once] [--json] [--interval SECONDS] [--threshold PCT] [--cooldown SECONDS]
            [--model NAMES] [--include-api-key-accounts|--no-include-api-key-accounts]
            [--dry-run] [--debug]
 ```
@@ -1304,7 +1346,7 @@ the default) or earliest weekly renewal first (`soonest-reset`). See
 [SETTINGS](#settings) for the ordering rules.
 
 **Codex accounts.** When `autoswitch.codexEnabled` is true (the default) and
-cswap holds Codex accounts, or an un-imported codex-auth registry exists, `cswap
+tycswap holds Codex accounts, or an un-imported codex-auth registry exists, `tycswap
 auto` also runs a Codex engine in the same process. It is a second, small
 engine, not a mode of the Claude one: each tick reads every Codex account's
 usage and, when the active account's worse window (5h or weekly) is at or above
@@ -1327,8 +1369,8 @@ session started, not one already running.
 
 Reads `sequence.json`, `settings.json`, `cache/usage.json`. Reads and writes
 `autoswitch_state.json` (cooldown / quarantine state) under
-`.autoswitch_state.lock`. A real switch writes the same files `cswap switch`
-does. The Codex engine reads and writes the files `cswap codex switch` does.
+`.autoswitch_state.lock`. A real switch writes the same files `tycswap switch`
+does. The Codex engine reads and writes the files `tycswap codex switch` does.
 
 ### Exit status
 
@@ -1392,7 +1434,7 @@ A handled error in `--json` mode is emitted as the compact error envelope
 ### Example
 
 ```
-$ cswap auto --once --json
+$ tycswap auto --once --json
 {"active":{"email":"alice@example.com","number":1},"event":"poll","fetchErrors":{"1":"http-429","2":"http-429","5":"http-401"},"headroomPct":{"1":null,"2":null,"3":null,"5":null},"schemaVersion":1,"threshold":80.0,"ts":"2026-07-17T20:52:55Z"}
 {"detail":"1/3 before failover","event":"no-switch","reason":"active-usage-unknown","schemaVersion":1,"ts":"2026-07-17T20:52:55Z"}
 $ echo $?
@@ -1402,30 +1444,30 @@ $ echo $?
 A cron entry that checks every five minutes and appends output to a log:
 
 ```
-*/5 * * * * cswap auto --once --json >> cswap-auto.log 2>&1
+*/5 * * * * tycswap auto --once --json >> tycswap-auto.log 2>&1
 ```
 
-cron runs with a minimal `PATH`; the entry finds `cswap` only when its install
+cron runs with a minimal `PATH`; the entry finds `tycswap` only when its install
 directory is on cron's `PATH`. Either set a `PATH=` line at the top of the
-crontab that includes that directory, or place `cswap` in a directory cron
+crontab that includes that directory, or place `tycswap` in a directory cron
 already searches.
 
 ### See also
 
-`cswap switch`, `cswap codex switch`, [SETTINGS](#settings), [SIGNALS](#signals).
+`tycswap switch`, `tycswap codex switch`, [SETTINGS](#settings), [SIGNALS](#signals).
 
 ---
 
-## cswap config
+## tycswap config
 
 ### Synopsis
 
 ```
-cswap config [list] [--json] [--debug]
-cswap config get <KEY> [--json] [--debug]
-cswap config set <KEY> <VALUE> [--debug]
-cswap config unset <KEY> [--debug]
-cswap config path [--debug]
+tycswap config [list] [--json] [--debug]
+tycswap config get <KEY> [--json] [--debug]
+tycswap config set <KEY> <VALUE> [--debug]
+tycswap config unset <KEY> [--debug]
+tycswap config path [--debug]
 ```
 
 ### Options
@@ -1483,16 +1525,16 @@ range, wrong type, corrupt file); `2` on a usage error.
 | `<key> expects an integer, got '<v>'` / `expects a number, got '<v>'` | 1 |
 | `<key> expects true or false (or 1/0, yes/no), got '<v>'` | 1 |
 | `<key> must be one of: <choices>` | 1 |
-| `<key> expects a non-empty value; use 'cswap config unset <key>' to clear it` | 1 |
+| `<key> expects a non-empty value; use 'tycswap config unset <key>' to clear it` | 1 |
 
 ### Example
 
 ```
-$ cswap config set autoswitch.threshold 80
+$ tycswap config set autoswitch.threshold 80
 autoswitch.threshold = 80
-$ cswap config get autoswitch.threshold
+$ tycswap config get autoswitch.threshold
 80
-$ cswap config set autoswitch.threshold 40
+$ tycswap config set autoswitch.threshold 40
 Error: autoswitch.threshold must be between 50 and 99.9
 $ echo $?
 1
@@ -1500,19 +1542,19 @@ $ echo $?
 
 ### See also
 
-[SETTINGS](#settings), `cswap auto`.
+[SETTINGS](#settings), `tycswap auto`.
 
 ---
 
-## cswap export
+## tycswap export
 
 ### Synopsis
 
 ```
-cswap export <PATH> [--account NUM|EMAIL] [--full] [--debug]
+tycswap export <PATH> [--account NUM|EMAIL] [--full] [--debug]
 ```
 
-Legacy: `cswap --export <path>`.
+Legacy: `tycswap --export <path>`.
 
 ### Options
 
@@ -1525,18 +1567,21 @@ Legacy: `cswap --export <path>`.
 
 ### Description
 
-Serializes managed accounts (with their credentials) to a `.cswap` JSON file
+Serializes managed accounts (with their credentials) to a `.tycswap` JSON file
 for transfer to another machine. By default each account carries only its
-`oauthAccount` config; `--full` embeds the whole per-account config. The active
+`oauthAccount` config; `--full` embeds the whole per-account config. An import
+reads only the `oauthAccount` of either form. The active
 account is read from the live vault for the freshest tokens. In a bulk export, a
 single broken account is skipped with a stderr warning; a named single-account
 export treats the same condition as a hard failure. A missing `oauthAccount` is
-always fatal.
+always fatal. Each account's credentials are exported without the `mcpOAuth`
+key (Claude Code's MCP server logins, which belong to the seat and never leave
+the machine).
 
 ### Files
 
 Reads `sequence.json`, `configs/`, `credentials/` (or Keychain). Writes the
-`.cswap` file (or stdout).
+`.tycswap` file (or stdout).
 
 ### Exit status
 
@@ -1570,30 +1615,30 @@ Handled errors surface as `Error: <message>` (`TransferError` or a credential
 error), exit 1. A corrupt or unreadable `sequence.json` surfaces a
 `ConfigError` naming the file and the repair/restart options instead of the
 `TransferError` an absent or empty roster reports (`no accounts to
-export — run cswap --add-account first`).
+export — run tycswap --add-account first`).
 
 ### Example
 
 ```
-$ cswap export backup.cswap
-Exported 4 account(s) to backup.cswap
+$ tycswap export backup.tycswap
+Exported 4 account(s) to backup.tycswap
 ```
 
 ### See also
 
-`cswap import`, [COMPATIBILITY](#compatibility).
+`tycswap import`, [COMPATIBILITY](#compatibility).
 
 ---
 
-## cswap import
+## tycswap import
 
 ### Synopsis
 
 ```
-cswap import <PATH> [--force] [--debug]
+tycswap import <PATH> [--force] [--debug]
 ```
 
-Legacy: `cswap --import <path>`.
+Legacy: `tycswap --import <path>`.
 
 ### Options
 
@@ -1605,7 +1650,7 @@ Legacy: `cswap --import <path>`.
 
 ### Description
 
-Reads a `.cswap` envelope and writes its accounts into the local store. It
+Reads a `.tycswap` envelope and writes its accounts into the local store. It
 validates every account first (path-traversal defence, credential shape,
 duplicate-identity and alias-collision checks) with zero writes, so a malformed
 account late in the file never half-imports an earlier one. Each account is then
@@ -1614,9 +1659,20 @@ skipped, or overwritten with `--force`; a new identity gets a freshly allocated
 slot. Only a destination with no prior preference inherits the file's
 `activeAccountNumber`. Encrypted exports are rejected.
 
+Only the account identity is imported: each account's `config` is reduced to
+its `oauthAccount`, also from a `--full` export, because every other key of
+`~/.claude.json` is machine-local and some (`mcpServers`, allowed tools, hooks)
+name commands to run. An account whose `config` has no `oauthAccount` object is
+refused. `organizationName`, `uuid`, `added` and the string members of
+`oauthAccount` are stored without control characters (C0, DEL, C1, ESC); an
+`organizationUuid` holding one is refused, since it is part of the identity.
+Keys are matched exactly (`CREDENTIALS` or `ACCOUNTS` are not the
+members `credentials` and `accounts`), and the credentials stored are the bytes
+of the member that was validated. Input over 8 MiB is refused before parsing.
+
 ### Files
 
-Reads the `.cswap` file (or stdin). Writes `sequence.json`, `configs/`,
+Reads the `.tycswap` file (or stdin). Writes `sequence.json`, `configs/`,
 `credentials/` under one lock spanning the write pass.
 
 ### Exit status
@@ -1636,40 +1692,45 @@ exists, use --force)`) then a summary
 | `export file is not valid JSON: <detail>` | `TransferError` |
 | `export file must be a JSON object` | `TransferError` |
 | `unsupported export version: <v> (expected 1)` | `TransferError` |
-| `encrypted exports are not supported in this version — decrypt before piping (e.g. gpg -d backup.gpg \| cswap --import -)` | `TransferError` |
+| `encrypted exports are not supported in this version — decrypt before piping (e.g. gpg -d backup.gpg \| tycswap --import -)` | `TransferError` |
 | `export file has no accounts to import` | `TransferError` |
+| `<path> is larger than 8 MiB; refusing to import it` (`stdin` for `-`) | `TransferError` |
+| `config for <email> is missing oauthAccount` | `TransferError` |
+| `invalid or missing email in imported account: <repr>`: not a plain address, longer than 254 bytes, or holding any whitespace or control character (a trailing newline included) | `TransferError` |
+| `invalid slot number in imported account (<email>): <repr>`: not an integer from 1 to 999999 | `TransferError` |
+| `invalid alias for <email>: <repr> contains whitespace or a control character` or `longer than 64 bytes` | `TransferError` |
 
-All are exit 1.
+All are exit 1, and every account is validated before anything is written.
 
 ### Example
 
 ```
-$ cswap import backup-acct2.cswap
+$ tycswap import backup-acct2.tycswap
 Skipped bob@example.com (already exists, use --force)
 Done: 0 imported, 0 overwritten, 1 skipped
 ```
 
 ### See also
 
-`cswap export`, [COMPATIBILITY](#compatibility).
+`tycswap export`, [COMPATIBILITY](#compatibility).
 
 ---
 
-## cswap tui
+## tycswap tui
 
 ### Synopsis
 
 ```
-cswap tui [--debug]
+tycswap tui [--debug]
 ```
 
-Legacy: `cswap --tui`. A bare `cswap` in an interactive terminal opens the TUI.
+Legacy: `tycswap --tui`. A bare `tycswap` in an interactive terminal opens the TUI.
 
 ### Description
 
 Opens the full-screen interactive dashboard (accounts, usage, live switching,
 an auto-switch screen). Requires an interactive terminal on both stdin and
-stdout; a bare `cswap` invoked from a pipe or non-interactive context prints the
+stdout; a bare `tycswap` invoked from a pipe or non-interactive context prints the
 `no command given` usage error instead of opening the dashboard.
 
 A keybinding bar at the bottom of each screen lists the keys available there:
@@ -1689,15 +1750,15 @@ account <n>: <email>`, `Disabled Codex account <n>`, `Enabled Codex account
 <n>`, `Removed Codex account <n>`. When codex sessions are still running after a
 Codex switch, a second warning lists them: `codex is running (pid <pid>[,
 <pid>...]) — restart it for the new account to take effect.` Adding an account
-stays Claude-only (use `cswap codex add` or `cswap codex login`). The
+stays Claude-only (use `tycswap codex add` or `tycswap codex login`). The
 auto-switch screen's candidate list shows Claude rows only, since that engine
-switches Claude; the Codex engine runs inside `cswap auto`.
+switches Claude; the Codex engine runs inside `tycswap auto`.
 
 The dashboard's menu nests: "Add account…", "Disable / enable account…" and
 "Remove account…" each open a submenu, and `esc` or `←` returns to the
 level above. The two submenus that list accounts show one row per managed
 account, and those rows track the roster as it changes: an account removed,
-added, renamed, or disabled from another `cswap` instance or by the
+added, renamed, or disabled from another `tycswap` instance or by the
 auto-switch engine appears, disappears, or relabels itself on the next
 poll, rather than at the next visit to the submenu. A remove row also
 carries the account's state, in the account card's colors — `● active` for
@@ -1728,11 +1789,11 @@ rotation rather than out of the roster. The auto-switch screen's ranked
 account held out of automatic rotation never appears in a ranking of
 automatic-switch targets. A quarantined account (one the auto engine has
 sidelined for a dead or identity-mismatched stored credential; see
-`cswap auto` below) is not excluded the same way: the panel keeps its row
+`tycswap auto` below) is not excluded the same way: the panel keeps its row
 but labels it "quarantined (<reason>)" in place of a usage figure, rather
 than ranking it as a target, since quarantine is transient and clears
 itself once the account's stored credential is replaced. Recovery is
-logging in with the account and running `cswap add`.
+logging in with the account and running `tycswap add`.
 
 A candidate with a readable usage figure lists every rate-limit window the
 account reports, not only the one it is ranked by, laid out as one shared
@@ -1746,8 +1807,8 @@ ranked ahead of one reporting both would print `7d` before `5h`, and two
 accounts reporting different models would swap their columns as they
 re-ranked — the header reshuffling itself from one poll to the next with no
 resize and nothing about any account changed, which no other usage display in
-`cswap` does, since the account card, the minimized account line, and
-`cswap list` all read `5h` before `7d` always. Every candidate below the header supplies only its own figures
+`tycswap` does, since the account card, the minimized account line, and
+`tycswap list` all read `5h` before `7d` always. Every candidate below the header supplies only its own figures
 under those headings. A candidate that does not report a given column's
 window shows an em dash there, in plain muted text rather than an empty
 cell — plain, never the dimming an unmatched window's own figure carries
@@ -1808,7 +1869,7 @@ called. A utilization past 999%, in either direction, prints as `>999%` or
 the width every account on the row pays for; the ranking, the severity
 color, and whether a window counts as exhausted are unaffected and still
 read the real, unbounded number. The
-account card and `cswap list` do not share a column with any other account
+account card and `tycswap list` do not share a column with any other account
 and always print the real figure, however large. A heading too wide for the
 room it sits over is shortened instead, and
 every heading on the row is shortened together, never past the point at which
@@ -1823,7 +1884,7 @@ timestamp at render time, never served from the countdown string the
 measurement was fetched with — a stored string is correct only at fetch time
 and drifts as the measurement ages — and reads `now` once the reset has
 elapsed, or nothing when the reset timestamp is absent or unparseable. It
-keeps the wording `cswap tui` uses everywhere else (`2d 4h`, `6d`, `now`),
+keeps the wording `tycswap tui` uses everywhere else (`2d 4h`, `6d`, `now`),
 minus the leading "resets": the column heading above it already names the
 window, so the cell does not repeat it on every row.
 
@@ -1836,7 +1897,7 @@ since which window binds a candidate's rank varies from row to row within
 one column, and it reads three ways, not two. Severity color states what a
 figure MEANS, and every COUNTED figure carries it — the same color the
 account card's bars, the monitor's own per-row fallback line, and
-`cswap list` already show a used-up window in — whether or not that figure
+`tycswap list` already show a used-up window in — whether or not that figure
 happens to be the one the row is ranked by. A window that has run out — at
 or over its limit — carries that same severity color too, whether or not it
 counts: an EXHAUSTED figure is the single most important number on its row,
@@ -1987,7 +2048,7 @@ candidate's own identity — the alias or email — is on the screen. A
 shared table buys its column alignment out of that very cell, so weighing
 identity in the same comparison would refuse the table at exactly the
 widths where lining every account's figures up under one heading is what
-it is for; the slot number still names the account for `cswap switch`
+it is for; the slot number still names the account for `tycswap switch`
 either way. Identity is measured, not compared, and it is the one respect
 in which the panel does not simply give back more of everything as the
 terminal widens: at the exact width where the panel switches into table
@@ -2099,76 +2160,76 @@ Full-screen terminal UI (no JSON). `--json` does not apply.
 
 | Message | Condition | Exit |
 |---------|-----------|------|
-| (terminal error, no dashboard opened) | stdin or stdout is not an interactive terminal (`cswap tui` from a pipe or redirect). | 1 |
-| `no command given — try 'cswap help'` | A bare `cswap` (which would open the TUI) in a non-interactive context. | 2 |
+| (terminal error, no dashboard opened) | stdin or stdout is not an interactive terminal (`tycswap tui` from a pipe or redirect). | 1 |
+| `no command given — try 'tycswap help'` | A bare `tycswap` (which would open the TUI) in a non-interactive context. | 2 |
 
 ### Example (illustrative — requires an interactive terminal)
 
 ```
-$ cswap
+$ tycswap
 # ... full-screen dashboard ...
 ```
 
 ### See also
 
-`cswap watch`, `cswap list`.
+`tycswap watch`, `tycswap list`.
 
 ---
 
-## cswap watch
+## tycswap watch
 
 ### Synopsis
 
 ```
-cswap watch [--debug]
+tycswap watch [--debug]
 ```
 
-Legacy: `cswap --watch`.
+Legacy: `tycswap --watch`.
 
 ### Description
 
-Opens the same interactive dashboard as `cswap tui`, starting on the live watch
+Opens the same interactive dashboard as `tycswap tui`, starting on the live watch
 page.
 
 ### Files
 
-As for `cswap tui`.
+As for `tycswap tui`.
 
 ### Exit status
 
-As for `cswap tui`: `0` on a clean quit; `1` when a terminal is unavailable.
+As for `tycswap tui`: `0` on a clean quit; `1` when a terminal is unavailable.
 
 ### Output
 
-As for `cswap tui`: a full-screen terminal UI (no JSON).
+As for `tycswap tui`: a full-screen terminal UI (no JSON).
 
 ### Errors
 
-As for `cswap tui`: a terminal error (exit 1) when stdin or stdout is not an
+As for `tycswap tui`: a terminal error (exit 1) when stdin or stdout is not an
 interactive terminal.
 
 ### Example (illustrative — requires an interactive terminal)
 
 ```
-$ cswap watch
+$ tycswap watch
 # ... dashboard on the watch page ...
 ```
 
 ### See also
 
-`cswap tui`.
+`tycswap tui`.
 
 ---
 
-## cswap menubar
+## tycswap menubar
 
 ### Synopsis
 
 ```
-cswap menubar
+tycswap menubar
 ```
 
-Legacy: `cswap --menubar`.
+Legacy: `tycswap --menubar`.
 
 ### Description
 
@@ -2178,7 +2239,7 @@ that the menu bar is macOS-only. Either way it exits 1.
 
 ### Files
 
-None. `cswap menubar` touches no files.
+None. `tycswap menubar` touches no files.
 
 ### Exit status
 
@@ -2199,7 +2260,7 @@ Always `1`.
 ### Example
 
 ```
-$ cswap menubar
+$ tycswap menubar
 The menu bar is only available on macOS.
 $ echo $?
 1
@@ -2207,42 +2268,65 @@ $ echo $?
 
 ### See also
 
-`cswap tui`.
+`tycswap tui`.
 
 ---
 
-## cswap upgrade
+## tycswap upgrade
 
 ### Synopsis
 
 ```
-cswap upgrade
+tycswap upgrade
 ```
 
-Legacy: `cswap --upgrade`. Alias: `cswap update`.
+Legacy: `tycswap --upgrade`. Alias: `tycswap update`.
 
 ### Description
 
-Self-upgrades to the latest release. It runs before the switcher is
-constructed, so upgrading never touches config or credentials. When the running
-binary lives in a Go-managed bin directory (`$GOBIN`, `$GOPATH/bin`, or
-`$HOME/go/bin`), it re-runs `go install
-git.dpemmons.com/dpemmons/cswap/cmd/cswap@latest`. Otherwise it prints manual
-upgrade guidance. On Windows the running executable is locked, so the command
-always prints the upgrade command rather than running it.
+Self-upgrades to the latest tycswap release. It runs before the switcher is
+constructed, so upgrading never touches config or credentials. A binary built
+from a checkout (`make build`, `make install`, `go build` in a clone: its build
+info carries a VCS stamp or the `(devel)` version) is never re-installed from a
+remote; it prints `tycswap was built from a checkout: git pull && make install`
+and exits 1. A binary installed with `go install <module>@<version>` that lives
+in a Go-managed bin directory (`$GOBIN`, `$GOPATH/bin`, or `$HOME/go/bin`)
+re-runs `go install github.com/tyclab/tycswap/cmd/tycswap@latest`. Otherwise it
+prints manual upgrade guidance. On Windows the running executable is locked, so
+the command always prints the upgrade command rather than running it.
+
+Packagers can point both at another place at link time; the defaults are
+tycswap's own module and releases:
+
+| Variable | Default |
+|----------|---------|
+| `github.com/tyclab/tycswap/internal/update.ModulePath` | `github.com/tyclab/tycswap/cmd/tycswap` (what `go install …@latest` installs) |
+| `github.com/tyclab/tycswap/internal/update.Endpoint` | `https://api.github.com/repos/tyclab/tycswap/releases/latest` (the passive update notice's source; `tag_name` is read) |
+| `github.com/tyclab/tycswap/internal/update.ReleasesURL` | `https://github.com/tyclab/tycswap/releases` (shown in manual guidance) |
+
+```
+go build -ldflags "-X github.com/tyclab/tycswap/internal/update.ModulePath=example.com/fork/cmd/tycswap \
+  -X github.com/tyclab/tycswap/internal/update.Endpoint=https://example.com/releases/latest" ./cmd/tycswap
+```
 
 ### Files
 
-None of cswap's data files. On a `go install` upgrade, the Go toolchain
+None of tycswap's data files. On a `go install` upgrade, the Go toolchain
 replaces the binary.
 
 ### Exit status
 
 The exit status of the `go install` subprocess on a `go install` layout; `1`
-when only guidance was printed (unknown layout, Windows, `go` missing from
-PATH).
+when only guidance was printed (checkout build, unknown layout, Windows, `go`
+missing from PATH).
 
 ### Output
+
+For a checkout build:
+
+```
+tycswap was built from a checkout: git pull && make install
+```
 
 On an unknown layout:
 
@@ -2250,12 +2334,12 @@ On an unknown layout:
 Could not detect a `go install` layout (looked for $GOBIN, $GOPATH/bin, $HOME/go/bin).
   binary: <path>
 To upgrade manually, run:
-  go install git.dpemmons.com/dpemmons/cswap/cmd/cswap@latest
+  go install github.com/tyclab/tycswap/cmd/tycswap@latest
 Or download a release from:
-  https://git.dpemmons.com/dpemmons/cswap/releases
+  https://github.com/tyclab/tycswap/releases
 ```
 
-On Windows: `To upgrade claude-swap on Windows, run:` followed by the
+On Windows: `To upgrade tycswap on Windows, run:` followed by the
 `go install` command.
 
 ### Errors
@@ -2266,13 +2350,8 @@ manually from a shell where it is available.` (exit 1).
 ### Example
 
 ```
-$ cswap upgrade
-Could not detect a `go install` layout (looked for $GOBIN, $GOPATH/bin, $HOME/go/bin).
-  binary: ~/go/bin/cswap
-To upgrade manually, run:
-  go install git.dpemmons.com/dpemmons/cswap/cmd/cswap@latest
-Or download a release from:
-  https://git.dpemmons.com/dpemmons/cswap/releases
+$ tycswap upgrade                # built with make install in a clone
+tycswap was built from a checkout: git pull && make install
 $ echo $?
 1
 ```
@@ -2283,27 +2362,38 @@ The passive update notice under NOTES.
 
 ---
 
-## cswap purge
+## tycswap purge
 
 ### Synopsis
 
 ```
-cswap purge [--debug]
+tycswap purge [--debug]
 ```
 
-Legacy: `cswap --purge`.
+Legacy: `tycswap --purge`.
 
 ### Description
 
-Removes all claude-swap data — the backup directory and every stored account
-credential file. It does not affect the current Claude Code login. Prompts for
+Removes all tycswap data — the backup directory and every stored account
+credential file. It never touches an old claude-swap store that
+`tycswap migrate` copied from. It does not affect the current Claude Code login. Prompts for
 confirmation (`[y/N]`) on an interactive terminal; any answer other than `y`
 cancels. The passive update notice is suppressed for this command.
 
+Each account's email in `sequence.json` names the credential file to unlink
+(and, on macOS, the Keychain item to delete), so it must be one a file name
+can carry, the rule `add` applies (one `@`, at most 254 bytes, no whitespace,
+control character, `/`, `\` or `< > : " | ? *`). A slot whose email is anything
+else is refused before the prompt and before anything is removed: `Slot <n> has
+an email that cannot name a store file: "<email>". purge builds credential
+file names from it and refuses; fix the record in <sequence.json> or remove
+<store> by hand.`
+
 ### Files
 
-Removes the backup root and its contents (and the macOS Keychain entries under
-service `claude-swap`).
+Removes the backup root and its contents (and, on macOS, each account's
+Keychain backup and its retained `.prev` generation under service `tycswap`,
+plus the session profiles' entries).
 
 ### Exit status
 
@@ -2319,12 +2409,17 @@ declined.
 A filesystem or Keychain removal failure surfaces as `Error: <message>`
 (`ClaudeSwitchError`), exit 1.
 
+| Message | Meaning |
+|---------|---------|
+| `Live session-mode Claude instance(s) found: <dir> (PID <n>) …` | A session profile has a running instance; exit it first. |
+| `Slot <n> has an email that cannot name a store file: "<email>" …` | A `sequence.json` record's email would not be a safe file name (`ValidationError`); nothing was removed. |
+
 ### Example
 
 ```
-$ cswap purge
-This will remove ALL claude-swap data from your system:
-  - Backup directory: ~/.local/share/claude-swap
+$ tycswap purge
+This will remove ALL tycswap data from your system:
+  - Backup directory: ~/.local/share/tycswap
   - All stored account credential files
 
 Note: This does NOT affect your current Claude Code login.
@@ -2334,18 +2429,159 @@ Are you sure you want to purge all data? [y/N] Cancelled
 
 ### See also
 
-`cswap remove`.
+`tycswap remove`.
 
 ---
 
-## cswap codex
+## tycswap migrate
+
+### Synopsis
+
+```
+tycswap migrate [--dry-run] [--json]
+```
+
+### Options
+
+| Option | Type | Default | Constraints |
+|--------|------|---------|-------------|
+| `--dry-run` | flag | off | Report what would be copied; write nothing. |
+| `--json` | flag | off | Emit the report (or the error envelope) as one JSON document on stdout. |
+| `-h`, `--help` | flag | off | Print the usage line. |
+
+### Description
+
+Copies the store tycswap was forked from into tycswap's own store, once. The
+old store is the first of these that exists and holds data:
+
+| Platform | Old store |
+|----------|-----------|
+| Linux / WSL | `$XDG_DATA_HOME/claude-swap/` when `XDG_DATA_HOME` is set (absolute), else `~/.local/share/claude-swap/`; then `~/.claude-swap-backup/` |
+| macOS, Windows | `~/.claude-swap-backup/` |
+
+The copy runs when tycswap's store is absent or empty (nothing but lock files,
+`cache/`, `tycswap.log*`, `.migrations.json`, or a `codex/` holding only the
+same), or when it holds part of this same copy. Before anything is written,
+every other path in the new store must be one the copy writes, of the same
+kind, a file byte for byte the old store's (after the renames below) and a
+symlink with the same target; anything else refuses the run and changes
+nothing: a path that is not from the old store is `the tycswap store is not
+empty: <store> holds <path>, which is not part of a copy of the old store …`,
+a path with other content is `the tycswap store differs from the old store:
+<path> already exists in <store> with other content than the old store's …`. It holds the new
+store's `.lock` while it copies. Directories are created 0700 and files written
+0600 by temp file and rename; symlinks (a session profile's links into
+`~/.claude`) are copied as links, never followed; lock files are skipped.
+`claude-swap.log*` is copied as `tycswap.log*` and `.cswap-*` marker files as
+`.tycswap-*`; every other name and the layout are unchanged. On macOS the
+Keychain items are copied to the new service names: per-account backups
+(`claude-swap` → `tycswap`, including the `.prev` generation and the
+`account-None` alias), Codex snapshots (`claude-swap-codex` → `tycswap-codex`),
+and each session profile's `Claude Code-credentials-<hash>` entry, whose hash
+follows the profile's new path. An item too large for the `security` command's
+stdin line (over about 2 KB; the old tool stored such items on the command
+line) is written to the file tycswap reads for it instead, mode 0600: a
+per-account backup to `credentials/.creds-<n>-<email>.enc` (its `.prev`
+generation to `.enc.prev`), a Codex snapshot to `codex/credentials/<key>.json`,
+a session profile's credential to `sessions/<n>-<email>/.credentials.json`
+(replacing the profile's seed copy, since a profile serves the Keychain value
+first; a backup or snapshot whose file the old store already has is left to
+that file, which is served first, and the item is not copied). The report
+lists such an item as `Keychain <service> / <account> -> file <path> (too
+large for the Keychain)`, and in `--json` its `keychain` entry carries `file`.
+
+The old store and the old Keychain items are only read: `migrate` never moves,
+modifies or deletes them, because another tool may still use them. Remove them
+yourself once nothing does. A copy interrupted part-way is resumed by running
+`migrate` again: it copies what is missing, verifies byte for byte what is
+already there (reported as `<n> path(s) already copied, verified byte for
+byte`, and in `--json` as `resumed` and `verified`), removes a temp file the
+interrupted run left, and keeps the log, cache and migrations ledger the new
+store wrote since. Keychain items already copied are verified the same way;
+one with other content is a conflict. A rerun after a complete copy is a
+no-op. If a command changed the new store in between (for example
+`sequence.json`), the rerun refuses as above; move the file aside or remove the
+store (`tycswap purge`) and run `migrate` again.
+
+Until the copy is made, every other command prints one line on stderr while
+tycswap's store is empty and an old store exists (not in `--json` mode):
+
+```
+a claude-swap store exists at <path>; `tycswap migrate` copies it once
+```
+
+### Files
+
+Reads the old store; writes `<backup_root>/` (see FILES). macOS: reads the
+`claude-swap`, `claude-swap-codex` and old session-profile Keychain services;
+writes `tycswap`, `tycswap-codex` and the new session-profile services.
+
+### Exit status
+
+`0` on a completed copy or dry run; `1` when there is no old store, the
+tycswap store is not empty, or the copy fails; `2` on a usage error.
+
+### Output
+
+Human: the source and destination, the directory/file/symlink counts, one line
+per top-level entry, every renamed entry, every Keychain item, and a closing
+note. `--json`:
+
+```json
+{
+  "schemaVersion": 1,
+  "from": "/home/me/.local/share/claude-swap",
+  "to": "/home/me/.local/share/tycswap",
+  "dryRun": false,
+  "dirs": 6,
+  "files": 14,
+  "symlinks": 3,
+  "entries": [{"from": "claude-swap.log", "to": "tycswap.log", "kind": "file"}],
+  "skipped": [".lock"],
+  "keychain": [{"fromService": "claude-swap", "toService": "tycswap", "account": "account-1-alice@example.com"}]
+}
+```
+
+### Errors
+
+| Condition | Exit |
+|-----------|------|
+| `No old store to copy (looked in <paths>).` (`MigrationError`) | 1 |
+| `the tycswap store is not empty: <path> already holds data; migrate copies only into an empty store, and never merges` (`MigrationError`) | 1 |
+| `Copy from <old> to <new> failed: <cause>` (`MigrationError`) | 1 |
+| `unrecognized arguments: <tok>` | 2 |
+
+### Example
+
+```
+$ tycswap migrate --dry-run
+Would copy /home/me/.local/share/claude-swap
+  to /home/me/.local/share/tycswap
+  6 directories, 14 files, 3 symlinks
+  cache/ (2 files)
+  configs/ (4 files)
+  credentials/ (4 files)
+  sequence.json
+  sessions/ (1 files)
+  tycswap.log
+  renamed claude-swap.log -> tycswap.log
+Dry run: nothing was written.
+```
+
+### See also
+
+`tycswap purge`; FILES.
+
+---
+
+## tycswap codex
 
 ### Synopsis
 
 ```text
-cswap codex [--debug] <verb> [args]
-cswap codex -h | --help
-cswap codex <verb> -h | --help
+tycswap codex [--debug] <verb> [args]
+tycswap codex -h | --help
+tycswap codex <verb> -h | --help
 ```
 
 ### Options
@@ -2356,30 +2592,30 @@ cswap codex <verb> -h | --help
 | `--debug` | flag | off | Accepted before or after the verb. Enables debug logging. |
 
 A verb is required. Value flags accept both `--flag value` and `--flag=value`.
-`--debug` writes debug records to `<backup_root>/claude-swap.log` and to stderr
+`--debug` writes debug records to `<backup_root>/tycswap.log` and to stderr
 for the Codex network client, process detection, and the codex-auth import.
 
 ### Description
 
 The `codex` namespace manages Codex (ChatGPT) accounts. It is a second provider
-beside Claude: every verb below acts on Codex accounts only, and bare `cswap
-list`, `cswap switch`, and the other top-level verbs keep acting on Claude
+beside Claude: every verb below acts on Codex accounts only, and bare `tycswap
+list`, `tycswap switch`, and the other top-level verbs keep acting on Claude
 accounts. Codex slot numbers are a separate sequence from Claude slot numbers.
 
 Two rules govern every verb. The live `auth.json` decides which account is
-active: cswap reads its identity and matches it to a slot, and the store's own
+active: tycswap reads its identity and matches it to a slot, and the store's own
 record of the active account is intent only. The active account is never
 refreshed from its stored snapshot, because the codex CLI holds the same refresh
 token and keeps the live file current; inactive accounts are refreshed from
 their snapshots and a rotated token is written back before it is used.
 
 Every verb except `import-codex-auth` first runs the one-time codex-auth import:
-when cswap holds no Codex account and `~/.codex/accounts/registry.json` exists,
-its accounts are copied into cswap's store (see `cswap codex import-codex-auth`).
+when tycswap holds no Codex account and `~/.codex/accounts/registry.json` exists,
+its accounts are copied into tycswap's store (see `tycswap codex import-codex-auth`).
 The import prints `Imported <n> Codex account(s) from <path> (the original is
 left untouched).` and, when rows had no usable auth file, `Skipped <n>
 account(s) with no usable auth file.` A registry whose schema is newer than 4
-prints `codex-auth registry uses schema <n>, which this version of cswap does
+prints `codex-auth registry uses schema <n>, which this version of tycswap does
 not understand — not importing.` and imports nothing; the verb then runs as
 usual. Under `--json` these notices go to stderr, so stdout holds only the JSON
 document.
@@ -2409,7 +2645,7 @@ Claude lock, so a Codex operation never blocks a Claude one. `export`,
 
 `0` on success. `1` on a handled error. `2` on a usage error (unknown verb,
 unknown flag, missing or extra argument, invalid `--strategy`). `130` on
-Ctrl-C. `cswap codex login` exits with the codex CLI's status when `codex
+Ctrl-C. `tycswap codex login` exits with the codex CLI's status when `codex
 login` fails.
 
 ### Output
@@ -2423,29 +2659,29 @@ Handled errors print a red `Error: <message>` to stderr and exit 1. Under
 `--json` the error is instead the standard error envelope on stdout (see [JSON
 OUTPUT CONTRACT](#json-output-contract)), with the same exit code. An invalid
 alias is reported the same way. A mutation that cannot take the store lock
-reports `Another cswap process is using the Codex store; try again.`
+reports `Another tycswap process is using the Codex store; try again.`
 
 ### Example
 
 ```text
-$ cswap codex list
+$ tycswap codex list
 * 1. alice@example.com [personal]  5h 12%  7d 40%
   2. alice@example.com [Example Team] (work)  7d 3%
 ```
 
 ### See also
 
-`cswap codex list`, `cswap codex switch`, `cswap auto`,
+`tycswap codex list`, `tycswap codex switch`, `tycswap auto`,
 [COMPATIBILITY](#compatibility).
 
 ---
 
-## cswap codex list
+## tycswap codex list
 
 ### Synopsis
 
 ```text
-cswap codex list [--json] [--skip-api] [--token-status]
+tycswap codex list [--json] [--skip-api] [--token-status]
 ```
 
 ### Options
@@ -2496,7 +2732,7 @@ One line per account:
 `5h <pct>%  7d <pct>%` for the windows the account reports, or the fetch
 sentinel when there is no measurement: `api key`, `http <status>`, `network`,
 `bad-response`, `MissingAuth`. An empty roster prints `No Codex accounts. Run
-'cswap codex add' or 'cswap codex login'.`
+'tycswap codex add' or 'tycswap codex login'.`
 
 `--token-status` adds, per account, `      token: <state>` for an account that
 is not an OAuth login (`api key`, `no credentials`), otherwise
@@ -2528,7 +2764,7 @@ in this payload. A `<codex-row>` holds:
 | `active` | bool | `true` for the account the live `auth.json` holds. |
 | `disabled` | bool | `true` when held out of auto-rotation. |
 | `kind` | string | `oauth` or `api_key`. |
-| `usage` | object \| null | The last good measurement in the `cswap list --json` usage encoding: `fiveHour` and `sevenDay` (present when reported) and `spend` (when the account has credits). |
+| `usage` | object \| null | The last good measurement in the `tycswap list --json` usage encoding: `fiveHour` and `sevenDay` (present when reported) and `spend` (when the account has credits). |
 | `sentinel` | string \| null | Why there is no fresh measurement (values above). |
 | `fetchedAt` | number \| null | When `usage` was measured, POSIX seconds. |
 | `ageSeconds` | number \| null | Age of `usage`. |
@@ -2546,7 +2782,7 @@ error envelope on stdout.
 ### Example
 
 ```text
-$ cswap codex list
+$ tycswap codex list
 * 1. alice@example.com [personal]  5h 12%  7d 40%
   2. alice@example.com [Example Team] (work)  7d 3%
   3. bob@example.com [personal] [disabled]  http 429
@@ -2554,16 +2790,16 @@ $ cswap codex list
 
 ### See also
 
-`cswap codex status`, `cswap list`.
+`tycswap codex status`, `tycswap list`.
 
 ---
 
-## cswap codex status
+## tycswap codex status
 
 ### Synopsis
 
 ```text
-cswap codex status [--json]
+tycswap codex status [--json]
 ```
 
 ### Options
@@ -2576,7 +2812,7 @@ cswap codex status [--json]
 
 Reports the account the codex CLI is using, read from the live `auth.json`, and
 the number of managed Codex accounts. The usage lines are rendered by the same
-code as `cswap status`, so the two blocks have the same layout.
+code as `tycswap status`, so the two blocks have the same layout.
 
 ### Files
 
@@ -2614,7 +2850,7 @@ With `--json`:
 ```
 
 `number` is an integer here, unlike the string slot numbers of `list --json`.
-`usageStatus` and `usage` use the `cswap status` encoding (`fiveHour`,
+`usageStatus` and `usage` use the `tycswap status` encoding (`fiveHour`,
 `sevenDay`, camelCase sub-keys). With no active Codex account the document is
 `{"schemaVersion": 1, "provider": "codex", "active": null}`, without
 `totalManagedAccounts`.
@@ -2627,7 +2863,7 @@ error envelope on stdout.
 ### Example
 
 ```text
-$ cswap codex status --json
+$ tycswap codex status --json
 {
   "schemaVersion": 1,
   "provider": "codex",
@@ -2637,18 +2873,18 @@ $ cswap codex status --json
 
 ### See also
 
-`cswap codex list`, `cswap status`.
+`tycswap codex list`, `tycswap status`.
 
 ---
 
-## cswap codex switch
+## tycswap codex switch
 
 ### Synopsis
 
 ```text
-cswap codex switch
-cswap codex switch <NUM|EMAIL|ALIAS>
-cswap codex switch --strategy best
+tycswap codex switch
+tycswap codex switch <NUM|EMAIL|ALIAS>
+tycswap codex switch --strategy best
 ```
 
 ### Options
@@ -2669,7 +2905,7 @@ worse window (5h or weekly) is lowest, skipping accounts with no measurement.
 The switch runs under the store lock end to end: it stores the live login into
 the slot its own identity matches, then writes the target's snapshot to
 `auth.json`. If the write fails, the previous `auth.json` is put back. After the
-switch cswap looks for running `codex` or `codext` processes by executable name.
+switch tycswap looks for running `codex` or `codext` processes by executable name.
 Naming the account that is already live stores the live login and writes
 nothing, so a refresh token rotated by codex since the last capture is kept.
 
@@ -2700,35 +2936,35 @@ it is restarted. When the named account is already live the only line is
 | `No rotatable Codex accounts` | Bare `switch` with no enabled OAuth account. |
 | `Only one rotatable Codex account — nothing to rotate to` | Bare `switch` when the active account is the only candidate. |
 | `No Codex account with a known measurement to switch to` | `--strategy best` found no measured candidate. |
-| `Another cswap process is using the Codex store; try again.` | The store lock is held. |
+| `Another tycswap process is using the Codex store; try again.` | The store lock is held. |
 
 ### Example
 
 ```text
-$ cswap codex switch work
+$ tycswap codex switch work
 Switched to Codex account 2: alice@example.com
 codex is running (pid 4242) — restart it for the new account to take effect.
 ```
 
 ### See also
 
-`cswap codex list`, `cswap switch`.
+`tycswap codex list`, `tycswap switch`.
 
 ---
 
-## cswap codex add
+## tycswap codex add
 
 ### Synopsis
 
 ```text
-cswap codex add [--alias NAME]
+tycswap codex add [--alias NAME]
 ```
 
 ### Options
 
 | Option | Type | Default | Constraints |
 |--------|------|---------|-------------|
-| `--alias` | string | none | Validated like `cswap alias`. |
+| `--alias` | string | none | Validated like `tycswap alias`. |
 
 ### Description
 
@@ -2754,29 +2990,29 @@ Reads the live `auth.json`. Writes `codex/sequence.json` and the snapshot, under
 
 | Message (exit 1) | Condition |
 |------------------|-----------|
-| `No Codex login found. Run 'cswap codex login' (or 'codex login') first.` | No readable `auth.json`. |
+| `No Codex login found. Run 'tycswap codex login' (or 'codex login') first.` | No readable `auth.json`. |
 | `The current Codex login carries no account id, so it cannot be told apart from another account. API-key logins are not switchable.` | The login has no ChatGPT account id. |
-| `Another cswap process is using the Codex store; try again.` | The store lock is held. |
+| `Another tycswap process is using the Codex store; try again.` | The store lock is held. |
 
 ### Example
 
 ```text
-$ cswap codex add --alias home
+$ tycswap codex add --alias home
 Added Codex account 1: alice@example.com [personal]
 ```
 
 ### See also
 
-`cswap codex login`, `cswap add`.
+`tycswap codex login`, `tycswap add`.
 
 ---
 
-## cswap codex login
+## tycswap codex login
 
 ### Synopsis
 
 ```text
-cswap codex login [--device-auth] [--alias NAME]
+tycswap codex login [--device-auth] [--alias NAME]
 ```
 
 ### Options
@@ -2784,18 +3020,21 @@ cswap codex login [--device-auth] [--alias NAME]
 | Option | Type | Default | Constraints |
 |--------|------|---------|-------------|
 | `--device-auth` | flag | off | Passed to `codex login`. |
-| `--alias` | string | none | As for `cswap codex add`. |
+| `--alias` | string | none | As for `tycswap codex add`. |
 
 ### Description
 
 Runs `codex login` (with `--device-auth` when given), then stores the resulting
-account as `cswap codex add` does. The `codex` binary is resolved on `PATH` and
+account as `tycswap codex add` does. Before `codex login` replaces
+`~/.codex/auth.json`, the live login is written back into its slot under the
+store lock (when it is a managed account), so the outgoing account's newest
+rotated tokens are kept. The `codex` binary is resolved on `PATH` and
 executed directly, without a shell, so a shell function named `codex` does not
 add flags to the login.
 
 ### Files
 
-As `cswap codex add`; `codex login` itself writes the live `auth.json`.
+As `tycswap codex add`; `codex login` itself writes the live `auth.json`.
 
 ### Exit status
 
@@ -2812,7 +3051,7 @@ The codex CLI's own login output, then `Added Codex account <n>: <email>
 
 | Message | Exit | Condition |
 |---------|------|-----------|
-| `The 'codex' CLI is not on PATH. Install it, or run 'cswap codex add' after logging in another way.` | 1 | No `codex` binary. |
+| `The 'codex' CLI is not on PATH. Install it, or run 'tycswap codex add' after logging in another way.` | 1 | No `codex` binary. |
 | `codex login did not complete.` | codex's status, or 1 | `codex login` exited non-zero, could not start, or was killed. |
 
 Both messages are printed in red on stderr without an `Error:` prefix.
@@ -2820,23 +3059,23 @@ Both messages are printed in red on stderr without an `Error:` prefix.
 ### Example
 
 ```text
-$ cswap codex login --device-auth --alias work
+$ tycswap codex login --device-auth --alias work
 ...
 Added Codex account 2: alice@example.com [Example Team]
 ```
 
 ### See also
 
-`cswap codex add`.
+`tycswap codex add`.
 
 ---
 
-## cswap codex remove
+## tycswap codex remove
 
 ### Synopsis
 
 ```text
-cswap codex remove <NUM|EMAIL|ALIAS> [-y|--yes]
+tycswap codex remove <NUM|EMAIL|ALIAS> [-y|--yes]
 ```
 
 ### Options
@@ -2875,23 +3114,23 @@ the account was removed. A declined prompt prints `Cancelled` and nothing else.
 ### Example
 
 ```text
-$ cswap codex remove 3 --yes
+$ tycswap codex remove 3 --yes
 Removed Codex account 3
 ```
 
 ### See also
 
-`cswap codex disable`, `cswap codex purge`.
+`tycswap codex disable`, `tycswap codex purge`.
 
 ---
 
-## cswap codex alias
+## tycswap codex alias
 
 ### Synopsis
 
 ```text
-cswap codex alias <NUM|EMAIL> [NAME]
-cswap codex alias <NUM|EMAIL> --unset
+tycswap codex alias <NUM|EMAIL> [NAME]
+tycswap codex alias <NUM|EMAIL> --unset
 ```
 
 The account may also be named by its current alias.
@@ -2900,13 +3139,13 @@ The account may also be named by its current alias.
 
 | Option | Type | Default | Constraints |
 |--------|------|---------|-------------|
-| `NAME` | positional | empty | Validated like `cswap alias`. |
+| `NAME` | positional | empty | Validated like `tycswap alias`. |
 | `--unset` | flag | off | Clears the alias. |
 
 ### Description
 
 Sets an account's alias. `--unset`, or omitting `NAME`, clears it. There is no
-listing form; `cswap codex list` shows aliases.
+listing form; `tycswap codex list` shows aliases.
 
 ### Files
 
@@ -2927,24 +3166,24 @@ Writes `codex/sequence.json`.
 ### Example
 
 ```text
-$ cswap codex alias 2 work
+$ tycswap codex alias 2 work
 Codex account 2 is now 'work'
-$ cswap codex alias 2 --unset
+$ tycswap codex alias 2 --unset
 Cleared alias for Codex account 2
 ```
 
 ### See also
 
-`cswap alias`.
+`tycswap alias`.
 
 ---
 
-## cswap codex disable
+## tycswap codex disable
 
 ### Synopsis
 
 ```text
-cswap codex disable <NUM|EMAIL|ALIAS>
+tycswap codex disable <NUM|EMAIL|ALIAS>
 ```
 
 ### Options
@@ -2955,8 +3194,8 @@ cswap codex disable <NUM|EMAIL|ALIAS>
 
 ### Description
 
-Holds an account out of rotation: bare `cswap codex switch`, `--strategy best`,
-and the Codex side of `cswap auto` skip it. It stays switchable by name.
+Holds an account out of rotation: bare `tycswap codex switch`, `--strategy best`,
+and the Codex side of `tycswap auto` skip it. It stays switchable by name.
 
 ### Files
 
@@ -2977,22 +3216,22 @@ Writes `codex/sequence.json`.
 ### Example
 
 ```text
-$ cswap codex disable work
+$ tycswap codex disable work
 Codex account 2 disabled
 ```
 
 ### See also
 
-`cswap codex enable`.
+`tycswap codex enable`.
 
 ---
 
-## cswap codex enable
+## tycswap codex enable
 
 ### Synopsis
 
 ```text
-cswap codex enable <NUM|EMAIL|ALIAS>
+tycswap codex enable <NUM|EMAIL|ALIAS>
 ```
 
 ### Options
@@ -3024,22 +3263,22 @@ Writes `codex/sequence.json`.
 ### Example
 
 ```text
-$ cswap codex enable 2
+$ tycswap codex enable 2
 Codex account 2 enabled
 ```
 
 ### See also
 
-`cswap codex disable`.
+`tycswap codex disable`.
 
 ---
 
-## cswap codex swap
+## tycswap codex swap
 
 ### Synopsis
 
 ```text
-cswap codex swap <A> <B>
+tycswap codex swap <A> <B>
 ```
 
 ### Options
@@ -3071,27 +3310,27 @@ Writes `codex/sequence.json` under `codex/.lock`.
 |------------------|-----------|
 | `Cannot swap an account with itself` | Both arguments name one account. |
 | `No Codex account matches '<id>'` | An argument resolves to nothing. |
-| `Another cswap process is using the Codex store; try again.` | The store lock is held. |
+| `Another tycswap process is using the Codex store; try again.` | The store lock is held. |
 
 ### Example
 
 ```text
-$ cswap codex swap 1 2
+$ tycswap codex swap 1 2
 Swapped Codex slots 1 and 2
 ```
 
 ### See also
 
-`cswap codex move`, `cswap swap`.
+`tycswap codex move`, `tycswap swap`.
 
 ---
 
-## cswap codex move
+## tycswap codex move
 
 ### Synopsis
 
 ```text
-cswap codex move <NUM|EMAIL|ALIAS> <SLOT>
+tycswap codex move <NUM|EMAIL|ALIAS> <SLOT>
 ```
 
 ### Options
@@ -3124,27 +3363,27 @@ appended when the slot was taken, or `Codex account is already in slot <n>`.
 |------------------|-----------|
 | `'<slot>' is not a valid slot number` | `SLOT` is not a positive integer. |
 | `No Codex account matches '<id>'` | The account resolves to nothing. |
-| `Another cswap process is using the Codex store; try again.` | The store lock is held. |
+| `Another tycswap process is using the Codex store; try again.` | The store lock is held. |
 
 ### Example
 
 ```text
-$ cswap codex move 3 1
+$ tycswap codex move 3 1
 Moved Codex account 3 to slot 1 (swapped with its occupant)
 ```
 
 ### See also
 
-`cswap codex swap`, `cswap move`.
+`tycswap codex swap`, `tycswap move`.
 
 ---
 
-## cswap codex export
+## tycswap codex export
 
 ### Synopsis
 
 ```text
-cswap codex export <PATH> [--account NUM|EMAIL]
+tycswap codex export <PATH> [--account NUM|EMAIL]
 ```
 
 ### Options
@@ -3161,7 +3400,7 @@ that cannot log in is not a backup, so the file is as sensitive as the stored
 credentials: it is created with mode 0600 before any token is written (an
 existing file is narrowed to 0600 before it is overwritten), and it carries a
 `warning` field saying so. Accounts without a stored snapshot are
-left out. The format is separate from the Claude `.cswap` format, and a
+left out. The format is separate from the Claude `.tycswap` format, and a
 `provider` field lets an import refuse a file from the other provider.
 
 ### Files
@@ -3211,22 +3450,22 @@ file:
 ### Example
 
 ```text
-$ cswap codex export ~/codex.json
+$ tycswap codex export ~/codex.json
 Exported 2 Codex account(s) to ~/codex.json
 ```
 
 ### See also
 
-`cswap codex import`, `cswap export`.
+`tycswap codex import`, `tycswap export`.
 
 ---
 
-## cswap codex import
+## tycswap codex import
 
 ### Synopsis
 
 ```text
-cswap codex import <PATH> [--force]
+tycswap codex import <PATH> [--force]
 ```
 
 ### Options
@@ -3238,13 +3477,20 @@ cswap codex import <PATH> [--force]
 
 ### Description
 
-Reads a `cswap codex export` file into the store. Accounts are matched by
+Reads a `tycswap codex export` file into the store. Accounts are matched by
 `accountKey`; an account already stored is skipped unless `--force` is given.
 Rows without an `accountKey` or an `auth` object are skipped, and so is a row
 whose `auth` payload carries an identity that is not the row's `accountKey`
 (a payload with no decodable identity, such as an API-key login, is taken as
-labelled). An `alias` goes through the same rule as `cswap codex alias`; an
-alias that rule rejects is dropped, the row is still imported. A file whose
+labelled). An `alias` goes through the same rule as `tycswap codex alias`; an
+alias that rule rejects is dropped, the row is still imported. Before anything
+is written every importable row is checked, and one bad row refuses the whole
+file: a non-empty `email` must be one a file name can carry (the rule `add`
+applies: one `@`, at most 254 bytes, no whitespace, control character, `/`,
+`\` or `< > : " | ? *`), an
+`alias` may hold no control character and at most 64 bytes, and `accountKey`
+no control character. `plan` and `workspaceName` are stored without control
+characters. A file whose
 `provider` is present and not `codex`, or whose `version` is newer than 1, is
 refused whole, as is a document larger than 8 MiB. Import does not change the
 live `auth.json`.
@@ -3268,31 +3514,34 @@ Reads `PATH`. Writes `codex/sequence.json` and the snapshots under
 |------------------|-----------|
 | `Cannot read <path>: <err>` | The file cannot be read. |
 | `<path> is not valid JSON: <err>` | The file does not parse. |
-| `<path> is not a cswap export` | The document is not a JSON object. |
+| `<path> is not a tycswap export` | The document is not a JSON object. |
 | `<path> is a '<provider>' export, not a Codex one` | `provider` names another provider. |
-| `<path> uses export version <v>, newer than this cswap understands` | `version` is above 1. |
+| `<path> uses export version <v>, newer than this tycswap understands` | `version` is above 1. |
 | `<path> contains no accounts` | `accounts` is missing or empty. |
 | `<path> is larger than 8 MiB; refusing to import it` | The document exceeds the import size limit. |
+| `invalid email in imported account: "<email>"` | A row's email is one a file name cannot carry. |
+| `invalid alias for <key>: …` | A row's alias holds a control character or exceeds 64 bytes. |
+| `invalid accountKey in imported account: …` | A row's accountKey holds a control character. |
 
 ### Example
 
 ```text
-$ cswap codex import ~/codex.json
+$ tycswap codex import ~/codex.json
 Imported 2 Codex account(s)
 ```
 
 ### See also
 
-`cswap codex export`, `cswap import`.
+`tycswap codex export`, `tycswap import`.
 
 ---
 
-## cswap codex purge
+## tycswap codex purge
 
 ### Synopsis
 
 ```text
-cswap codex purge [-y|--yes]
+tycswap codex purge [-y|--yes]
 ```
 
 ### Options
@@ -3303,16 +3552,16 @@ cswap codex purge [-y|--yes]
 
 ### Description
 
-Deletes every Codex snapshot cswap holds, including the Keychain items on macOS,
+Deletes every Codex snapshot tycswap holds, including the Keychain items on macOS,
 then removes `<backup_root>/codex/`. The codex CLI's own login in `~/.codex` is
 left alone. Without `--yes` it prompts; any answer other than `y` prints
-`Cancelled`. `cswap purge` removes the Codex store with the rest of the backup
+`Cancelled`. `tycswap purge` removes the Codex store with the rest of the backup
 root.
 
 ### Files
 
 Removes `<backup_root>/codex/` and the Keychain items under service
-`claude-swap-codex`. Takes no store lock.
+`tycswap-codex`. Takes no store lock.
 
 ### Exit status
 
@@ -3321,8 +3570,8 @@ error.
 
 ### Output
 
-`No cswap Codex data to remove.` when there is none. Otherwise the prompt
-`Remove <n> managed Codex account(s) and all cswap Codex data? Your ~/.codex
+`No tycswap Codex data to remove.` when there is none. Otherwise the prompt
+`Remove <n> managed Codex account(s) and all tycswap Codex data? Your ~/.codex
 login is left alone. [y/N]`, then `Removed <n> Codex account(s) and <path>`.
 
 ### Errors
@@ -3335,37 +3584,37 @@ login is left alone. [y/N]`, then `Removed <n> Codex account(s) and <path>`.
 ### Example
 
 ```text
-$ cswap codex purge --yes
-Removed 2 Codex account(s) and ~/.local/share/claude-swap/codex
+$ tycswap codex purge --yes
+Removed 2 Codex account(s) and ~/.local/share/tycswap/codex
 ```
 
 ### See also
 
-`cswap codex remove`, `cswap purge`.
+`tycswap codex remove`, `tycswap purge`.
 
 ---
 
-## cswap codex import-codex-auth
+## tycswap codex import-codex-auth
 
 ### Synopsis
 
 ```text
-cswap codex import-codex-auth
+tycswap codex import-codex-auth
 ```
 
 ### Description
 
-Re-runs the codex-auth import by hand, whether or not cswap already holds Codex
+Re-runs the codex-auth import by hand, whether or not tycswap already holds Codex
 accounts. It reads `~/.codex/accounts/registry.json` (schema 2, 3, or 4) and the
 matching `<key>.auth.json` snapshots beside it, and upserts each account into
-cswap's store with its email, plan, workspace name, and alias. Plan names from
+tycswap's store with its email, plan, workspace name, and alias. Plan names from
 a schema below 4 are normalized to schema 4 names; schema 4 plans are taken as
 they are, and a plan that is not a string becomes empty. Schema 2 rows carry no account key and
 are skipped. A row whose auth file is missing or unreadable is skipped, and so
 is a row whose auth file carries an identity that is not the row's account key.
-An alias goes through the same rule as `cswap codex alias`; one that rule
+An alias goes through the same rule as `tycswap codex alias`; one that rule
 rejects is dropped and the row is still imported. The registry's active account
-becomes cswap's recorded active account when it is stored. `~/.codex/accounts/`
+becomes tycswap's recorded active account when it is stored. `~/.codex/accounts/`
 is never written. A registry with a schema newer than 4 imports nothing.
 
 ### Files
@@ -3380,7 +3629,7 @@ under `codex/.lock`.
 ### Output
 
 `Imported <n>, skipped <m>.` A registry whose schema is newer than 4 first
-prints the unsupported-schema warning (see `cswap codex`), then `Imported 0,
+prints the unsupported-schema warning (see `tycswap codex`), then `Imported 0,
 skipped 0.`
 
 ### Errors
@@ -3390,23 +3639,23 @@ Handled errors print `Error: <message>` to stderr, exit 1.
 ### Example
 
 ```text
-$ cswap codex import-codex-auth
+$ tycswap codex import-codex-auth
 Imported 2, skipped 0.
 ```
 
 ### See also
 
-`cswap codex`, `cswap codex import`.
+`tycswap codex`, `tycswap codex import`.
 
 ---
 
-## cswap help
+## tycswap help
 
 ### Synopsis
 
 ```
-cswap help
-cswap -h | --help
+tycswap help
+tycswap -h | --help
 ```
 
 ### Description
@@ -3417,7 +3666,7 @@ line instead.
 
 ### Files
 
-None. `cswap help` touches no files.
+None. `tycswap help` touches no files.
 
 ### Exit status
 
@@ -3430,19 +3679,19 @@ and the legacy-spelling note).
 
 ### Errors
 
-None. `cswap help` cannot fail.
+None. `tycswap help` cannot fail.
 
 ### Example
 
 ```
-$ cswap help
-usage: cswap <command> [args] [options]
+$ tycswap help
+usage: tycswap <command> [args] [options]
 
 Multi-Account Switcher for Claude Code
 
 Commands:
-  cswap help                       show this help
-  cswap list                       list managed accounts
+  tycswap help                       show this help
+  tycswap list                       list managed accounts
   ...
 Aliases: ls=list  rm=remove  update=upgrade
   ...
@@ -3450,7 +3699,7 @@ Aliases: ls=list  rm=remove  update=upgrade
 
 ### See also
 
-`cswap --version`.
+`tycswap --version`.
 
 ---
 
@@ -3458,28 +3707,28 @@ Aliases: ls=list  rm=remove  update=upgrade
 
 ## ENVIRONMENT
 
-cswap reads the following environment variables.
+tycswap reads the following environment variables.
 
 | Variable | Effect |
 |----------|--------|
-| `CLAUDE_CONFIG_DIR` | Overrides the Claude Code config home: the global config is `<dir>/.claude.json` and credentials are `<dir>/.credentials.json`. `cswap env` and `cswap run` treat any set value as a preset and override it with the session profile they prepare. For every other command the effect depends on the value: a cswap session pin — a value inside `<backup_root>/sessions/`, as set by `cswap env` — is ignored, and the command operates on the default login and prints `This shell is pinned via cswap env; operating on the default login.` to stderr; a custom value outside `<backup_root>/sessions/` is honored. The default-profile mirror used by session sharing deliberately ignores this and reads the real `~/.claude` profile. |
-| `XDG_DATA_HOME` | On Linux/WSL, selects the backup-root parent: `<XDG_DATA_HOME>/claude-swap`. Ignored when unset, empty, or non-absolute; a leading `~` is expanded. |
-| `HOME` | The user's home directory; the base for `~/.claude.json`, `~/.claude/`, `~/.local/share`, `~/.claude-swap-backup`, and `~/go/bin`. |
+| `CLAUDE_CONFIG_DIR` | Overrides the Claude Code config home: the global config is `<dir>/.claude.json` and credentials are `<dir>/.credentials.json`. `tycswap env` and `tycswap run` treat any set value as a preset and override it with the session profile they prepare. For every other command the effect depends on the value: a tycswap session pin — a value inside `<backup_root>/sessions/`, as set by `tycswap env` — is ignored, and the command operates on the default login and prints `This shell is pinned via tycswap env; operating on the default login.` to stderr; a custom value outside `<backup_root>/sessions/` is honored. The default-profile mirror used by session sharing deliberately ignores this and reads the real `~/.claude` profile. |
+| `XDG_DATA_HOME` | On Linux/WSL, selects the backup-root parent: `<XDG_DATA_HOME>/tycswap` (and, for `tycswap migrate`, the old store `<XDG_DATA_HOME>/claude-swap`). Ignored when unset, empty, or non-absolute; a leading `~` is expanded. |
+| `HOME` | The user's home directory; the base for `~/.claude.json`, `~/.claude/`, `~/.local/share`, `~/.tycswap`, the old `~/.claude-swap-backup` (read only by `tycswap migrate`), and `~/go/bin`. |
 | `WSL_DISTRO_NAME` | When non-empty, the platform is detected as WSL (which uses the Linux/WSL backup-root layout). |
 | `CONTAINER`, `container` | When either is non-empty, the root-user guard is bypassed (running as root is permitted in a container). |
 | `NO_COLOR` | When present (even empty), disables ANSI color. Highest color precedence. |
 | `FORCE_COLOR` | When present, forces color on (unless `NO_COLOR` is also present). |
 | `TERM` | `TERM=dumb` disables color on a TTY. |
 | `CODEX_HOME` | The codex CLI's home, resolved as the codex CLI resolves it: the live login is `<CODEX_HOME>/auth.json` and codex-auth's registry `<CODEX_HOME>/accounts/registry.json`. Defaults to `~/.codex`. |
-| `GOBIN`, `GOPATH` | Consulted by `cswap upgrade` and the passive update notice to detect a `go install` layout. |
+| `GOBIN`, `GOPATH` | Consulted by `tycswap upgrade` and the passive update notice to detect a `go install` layout. |
 
 Color precedence: `NO_COLOR` present → off; else `FORCE_COLOR` present → on;
 else non-TTY → off; else `TERM=dumb` → off; else on. The result is computed once
 per process and cached.
 
 **Authentication-override variables (scrubbed).** The following make `claude`
-bypass account OAuth. `cswap run` and `cswap env` scrub them from the prepared
-session environment (and `cswap env` emits an unset line for each one currently
+bypass account OAuth. `tycswap run` and `tycswap env` scrub them from the prepared
+session environment (and `tycswap env` emits an unset line for each one currently
 set, so the calling shell drops it too):
 
 - `ANTHROPIC_API_KEY`
@@ -3488,7 +3737,7 @@ set, so the calling shell drops it too):
 - `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR`
 - `CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR`
 
-They are not scrubbed on the same-account fast path or when `cswap run` falls
+They are not scrubbed on the same-account fast path or when `tycswap run` falls
 through to launching the default login.
 
 ## FILES
@@ -3497,12 +3746,34 @@ The **backup root** is platform-dependent:
 
 | Platform | Backup root | Credential store |
 |----------|-------------|------------------|
-| Linux / WSL | `${XDG_DATA_HOME:-~/.local/share}/claude-swap/` | file-based, under the backup root |
-| macOS | `~/.claude-swap-backup/` | login Keychain, service `claude-swap` |
-| Windows | `~/.claude-swap-backup/` | file-based, under the backup root |
+| Linux / WSL | `${XDG_DATA_HOME:-~/.local/share}/tycswap/` | file-based, under the backup root |
+| macOS | `~/.tycswap/` | login Keychain, service `tycswap` (Codex: `tycswap-codex`) |
+| Windows | `~/.tycswap/` | file-based, under the backup root |
 
-A legacy `~/.claude-swap-backup/` on Linux/WSL is migrated to the XDG location
-on first use.
+Only the root is tycswap's own: the layout inside it is the one claude-swap
+uses, unchanged (`sequence.json`, `settings.json`, `mappings.json`,
+`credentials/`, `configs/`, `cache/`, `sessions/<n>-<email>/`,
+`codex/{sequence.json,registry.json,credentials/,cache/}`, `.lock`), except
+that the log is `tycswap.log` and the per-profile marker files are named
+`.tycswap-*`. tycswap never reads or writes the old claude-swap store
+(`${XDG_DATA_HOME:-~/.local/share}/claude-swap/` or `~/.claude-swap-backup/`)
+except to copy it, once, in `tycswap migrate`.
+
+The store root must be owned by the user running tycswap and not writable by
+group or other. Every command except `--help` and `--version` checks this
+first (POSIX; not on Windows). A root owned by someone else is refused with
+exit 1 and `Error: refusing to use the tycswap store <path>: it is owned by
+uid <n>, not by you (uid <m>) …`. A root writable by group or other is made
+0700; when its mode does not change (a filesystem without POSIX modes, such
+as a Windows drive under WSL, reports 0777 for your own directories), the
+command runs and stderr carries one line: `warning: the tycswap store <path>
+is writable by group or other (mode <mode>) and chmod 700 did not change
+that; … otherwise run: chmod 700 '<path>'`. A missing root is created 0700, and so is every directory
+tycswap creates (also a missing `~/.claude`); existing directories keep their
+modes. The store lock `.lock` (and `codex/.lock`) is opened without following
+a symlink and without truncation, created 0600. A stale Claude Code
+credential or config lock directory is broken by renaming it aside and
+re-checking its age before it is removed, so two waiters cannot both take it.
 
 Inside the backup root:
 
@@ -3511,30 +3782,31 @@ Inside the backup root:
 | `sequence.json` | The account registry: `activeAccountNumber`, `lastUpdated`, the `sequence` array of slot numbers, and an `accounts` map keyed by slot (`email`, `uuid`, `organizationUuid`, `organizationName`, `added`, and optional `alias`, `kind: "api_key"`, `disabled: true`). |
 | `settings.json` | Settings (see SETTINGS). |
 | `mappings.json` | Directory→account mappings (`schemaVersion`, `mappings` keyed by absolute path). |
-| `autoswitch_state.json` | `cswap auto` cooldown / quarantine state, guarded by `.autoswitch_state.lock`. |
-| `configs/` | Per-account config snapshots, `.claude-config-<n>-<email>.json`. |
-| `credentials/` | Per-account credential files, `.creds-<n>-<email>.enc` (file backend). macOS stores these in the Keychain instead. |
-| `sessions/` | Per-account session-mode profiles, `<n>-<email>` (the `@` in the email replaced by `_`), created by `cswap run` / `cswap env`. |
+| `autoswitch_state.json` | `tycswap auto` cooldown / quarantine state, guarded by `.autoswitch_state.lock`. |
+| `configs/` | Per-account config snapshots, `.claude-config-<n>-<email>.json`. `<email>` is the account's email as `add` accepts it (one `@`, at most 254 bytes, no whitespace, control character, `/`, `\` or `< > : " | ? *`), so the name is a single path component. |
+| `credentials/` | Per-account credential files, `.creds-<n>-<email>.enc` and the retained previous generation `.creds-<n>-<email>.enc.prev` (file backend; `<email>` as for `configs/`). macOS stores these in the Keychain instead, except a credential too large to reach the `security` command over stdin (a command line over 4032 bytes, so a credential over about 2 KB, for example one carrying many `mcpOAuth` tokens), which stays in this file (mode 0600) rather than on a command line. The live Claude Code credential falls back to `.credentials.json` the same way. |
+| `sessions/` | Per-account session-mode profiles, `<n>-<email>` (the `@` in the email replaced by `_`), created by `tycswap run` / `tycswap env`. |
 | `cache/usage.json` | Cached usage measurements. |
 | `cache/update_check.json` | Last passive update-check result (`{"timestamp": <epoch-seconds>, "data": <latest-version>}`). |
-| `claude-swap.log` | Rotating log file, 1 MB per file, 3 backups (`claude-swap.log.1`, `.2`, `.3`). |
+| `tycswap.log` | Rotating log file, 1 MB per file, 3 backups (`tycswap.log.1`, `.2`, `.3`). `tycswap migrate` copies an old `claude-swap.log*` under this name. |
 | `codex/sequence.json` | The Codex slot registry: `accounts` keyed by slot (`account_key`, `email`, `plan`, `workspaceName`, `alias`, `added`, `disabled`, `authMode`), `activeAccountKey`, `lastUpdated`. No secrets. |
-| `codex/credentials/` | Per-account Codex `auth.json` snapshots, `<file key>.json`, mode 0600, keyed by account identity. macOS stores these in the Keychain under service `claude-swap-codex` instead, except a snapshot too large to reach the `security` command over stdin, which stays in this file (mode 0600) rather than on a command line; reads and deletes cover both places. |
+| `codex/credentials/` | Per-account Codex `auth.json` snapshots, `<file key>.json`, mode 0600, keyed by account identity. macOS stores these in the Keychain under service `tycswap-codex` instead, except a snapshot too large to reach the `security` command over stdin, which stays in this file (mode 0600) rather than on a command line; reads and deletes cover both places. |
 | `codex/cache/` | The Codex usage cache (the same usage table format as `cache/usage.json`). |
 | `codex/.lock` | The Codex store's lock, separate from the Claude lock. |
+| `.settings.lock`, `.mappings.lock` | Held while `settings.json` or `mappings.json` is read, changed and written back, so concurrent commands cannot lose an update. No data; skipped by `tycswap migrate`. |
 
-Claude Code's own files that cswap reads and writes:
+Claude Code's own files that tycswap reads and writes:
 
 | Path | Role |
 |------|------|
 | `~/.claude.json` (or `<CLAUDE_CONFIG_DIR>/.claude.json`, or the legacy `<config_home>/.config.json` when present) | The global config; the active `oauthAccount` lives here. |
 | `~/.claude/.credentials.json` (file backend) | The active OAuth credentials. |
 
-The codex CLI's files that cswap reads and writes:
+The codex CLI's files that tycswap reads and writes:
 
 | Path | Role |
 |------|------|
-| `~/.codex/auth.json` (or `<CODEX_HOME>/auth.json`) | The live Codex login; it decides which Codex account is active. `cswap codex switch` rewrites it. |
+| `~/.codex/auth.json` (or `<CODEX_HOME>/auth.json`) | The live Codex login; it decides which Codex account is active. `tycswap codex switch` rewrites it. |
 | `~/.codex/accounts/` | codex-auth's registry and snapshots; read during the import, never written. |
 
 ## SETTINGS
@@ -3545,8 +3817,8 @@ Every key, with its type, range, default, and meaning:
 | Key | Type | Range | Default | Meaning |
 |-----|------|-------|---------|---------|
 | `autoswitch.threshold` | float (percent) | 50–99.9 | 90 | Switch when the binding 5h/7d window reaches this percent. |
-| `autoswitch.intervalSeconds` | float (seconds) | 15–3600 | 60 | Poll interval for the `cswap auto` loop. |
-| `autoswitch.codexEnabled` | bool | — | true | Also auto-switch Codex accounts in the `cswap auto` loop. A no-op without Codex accounts. |
+| `autoswitch.intervalSeconds` | float (seconds) | 15–3600 | 60 | Poll interval for the `tycswap auto` loop. |
+| `autoswitch.codexEnabled` | bool | — | true | Also auto-switch Codex accounts in the `tycswap auto` loop. A no-op without Codex accounts. |
 | `autoswitch.codexThreshold` | float (percent) | 0–99.9 | 0 | Codex-only switch threshold; 0 uses `autoswitch.threshold`. |
 | `autoswitch.cooldownSeconds` | float (seconds) | 0–86400 | 300 | Minimum seconds between proactive switches. |
 | `autoswitch.hysteresisPct` | float (percent) | 0–50 | 10 | A switch target must beat the active account by at least this many percent. |
@@ -3556,13 +3828,13 @@ Every key, with its type, range, default, and meaning:
 | `autoswitch.model` | string | — | (none) | Also switch on these models' weekly limits (for example `Fable`, `Fable,Opus`, or `all`). |
 
 Reads are forgiving: a missing file, a bad type, or an out-of-range value
-degrades to the (clamped) default without error. Writes via `cswap config set`
+degrades to the (clamped) default without error. Writes via `tycswap config set`
 are strict: an out-of-range or mistyped value is rejected with a `ConfigError`.
 A whole-number float is stored and shown without a fractional part
 (`80.0` → `80`).
 
 **`autoswitch.strategy` ordering.** The strategy governs only the order in
-which already-qualifying candidates are offered to `cswap auto`; it changes
+which already-qualifying candidates are offered to `tycswap auto`; it changes
 none of the qualification gates. Known and positive headroom, the cooldown,
 quarantine exclusion, and the API-key last resort apply identically under
 both values and for every trigger (`proactive`, `at-limit`, `failover`). The
@@ -3596,7 +3868,7 @@ sit at or above the threshold.
   one below it merely for an earlier renewal.
 
 ```
-$ cswap config set autoswitch.strategy soonest-reset
+$ tycswap config set autoswitch.strategy soonest-reset
 autoswitch.strategy = soonest-reset
 ```
 
@@ -3609,7 +3881,7 @@ usage-aware `switch`/`auto` strategies accept `best` and `next-available` — a
 separate vocabulary from the persisted `autoswitch.strategy` setting, which
 accepts `best` and `soonest-reset`.
 
-This matching decision is visible, not just enforced: `cswap tui`'s
+This matching decision is visible, not just enforced: `tycswap tui`'s
 auto-switch screen (above) lists every per-model weekly window an account
 reports in its "Next best" candidates panel whether or not `autoswitch.model`
 names it, but only a window this setting matches counts toward that row's
@@ -3626,31 +3898,31 @@ of the match, the same as any other exhausted window (above).
 | `0` | Success. For `switch`, includes a no-op "already active". |
 | `1` | A handled domain error (a `ClaudeSwitchError`: config, switch, session, credential, lock, transfer, or migration). Also printed for guidance-only `upgrade`. |
 | `2` | A usage error: an unknown flag, a bad value, a missing required argument, or an illegal flag combination (the argument-parser surface). |
-| `3` | `cswap auto --once` only: blocked — a switch was wanted but no viable target exists / all accounts exhausted. |
+| `3` | `tycswap auto --once` only: blocked — a switch was wanted but no viable target exists / all accounts exhausted. |
 | `130` | Interrupted by SIGINT (Ctrl-C). |
 
-For `cswap auto --once` the status is the tick outcome: `0` switched, `1` error,
-`2` no action, `3` blocked. `cswap run` on success is replaced by the launched
-`claude` and exits with its status. `cswap menubar` always exits `1` in this
+For `tycswap auto --once` the status is the tick outcome: `0` switched, `1` error,
+`2` no action, `3` blocked. `tycswap run` on success is replaced by the launched
+`claude` and exits with its status. `tycswap menubar` always exits `1` in this
 build.
 
 ## JSON OUTPUT CONTRACT
 
 `--json` is accepted by `list`, `status`, `switch` (and `switch <id>`),
-`config list`, and `config get`; `cswap auto --json` emits JSONL. Every JSON
+`config list`, and `config get`; `tycswap auto --json` emits JSONL. Every JSON
 payload carries `"schemaVersion": 1`.
 
-`cswap codex list --json` and `cswap codex status --json` also carry
+`tycswap codex list --json` and `tycswap codex status --json` also carry
 `schemaVersion` 1, add `"provider": "codex"`, and are documented under those
-commands. Both use the camelCase usage encoding of `cswap list` / `cswap
+commands. Both use the camelCase usage encoding of `tycswap list` / `tycswap
 status`. Slot numbers are strings in the `list` payload (`number`,
 `activeNumber`) and an integer in the `status` payload. Errors under `--json`
 in the `codex` namespace use the same error envelope as every other verb. The
-Codex line in `cswap auto --json` is described under `cswap auto`.
+Codex line in `tycswap auto --json` is described under `tycswap auto`.
 
 - **One document per command.** `list`, `status`, `switch`, and `config`
   write exactly one indented (2-space) JSON document to stdout.
-- **JSONL for `auto`.** `cswap auto --json` writes one compact JSON object per
+- **JSONL for `auto`.** `tycswap auto --json` writes one compact JSON object per
   event, one per line.
 - **Additive rule.** Under schemaVersion 1 the schema only grows: optional keys
   (`alias`, `disabled`, `atLimit`, `limitingWindows`, `usageFetchedAt`,
@@ -3665,13 +3937,13 @@ Codex line in `cswap auto --json` is described under `cswap auto`.
     "error": { "type": "<ErrorClass>", "message": "<text>" }
   }
   ```
-  On the main commands the envelope is indented on stdout; for `cswap auto` it
+  On the main commands the envelope is indented on stdout; for `tycswap auto` it
   is compact on stdout. `<ErrorClass>` is one of `ConfigError`, `SwitchError`,
   `SessionError`, `ValidationError`, `AccountNotFoundError`, `CredentialError`,
   `CredentialReadError`, `CredentialWriteError`, `LockError`,
   `ClaudeCodeLockTimeout`, `TransferError`, `MigrationError`, or
   `MigrationIncomplete`.
-- **`auto` event kinds** and their fields are enumerated under `cswap auto`
+- **`auto` event kinds** and their fields are enumerated under `tycswap auto`
   above (`poll`, `switch`, `no-switch`, `account-quarantined`,
   `account-unquarantined`, `all-exhausted`, `sleep`, `error`,
   `config-warning`). Every event also carries `event` and `ts` (RFC3339 UTC,
@@ -3681,18 +3953,18 @@ Codex line in `cswap auto --json` is described under `cswap auto`.
 
 | Signal | Effect |
 |--------|--------|
-| `SIGINT` (Ctrl-C) | Prints a dimmed cancellation note (to stderr under `--json`, otherwise stdout) and exits `130`. During `cswap auto` the note reads `Auto-switch stopped`; elsewhere `Operation cancelled`. |
-| `SIGTERM` | During the `cswap auto` loop, stops the loop cleanly and exits `0` (the systemd-stop path). Other commands take the default action. |
+| `SIGINT` (Ctrl-C) | Prints a dimmed cancellation note (to stderr under `--json`, otherwise stdout) and exits `130`. During `tycswap auto` the note reads `Auto-switch stopped`; elsewhere `Operation cancelled`. |
+| `SIGTERM` | During the `tycswap auto` loop, stops the loop cleanly and exits `0` (the systemd-stop path). Other commands take the default action. |
 
 ## COMPATIBILITY
 
 - The on-disk formats are shared with claude-swap (Python): `sequence.json`,
   `settings.json`, `mappings.json`, the per-account `configs/` and
   `credentials/` files, `cache/usage.json`, and the log format are read and
-  written identically. A backup directory created by either implementation
-  works in place with the other.
-- The `.cswap` export file format is identical; either implementation reads the
-  other's export files byte-for-byte. Exports are always written with
+  written identically. The store root is not shared: tycswap keeps its own
+  (see FILES), and `tycswap migrate` copies a claude-swap store into it once.
+- The export file format is identical; tycswap names its exports `.tycswap`,
+  and `import` reads any export, including an old `.cswap` file, byte-for-byte. Exports are always written with
   `"encrypted": false`, and an export marked `"encrypted": true` is rejected on
   import by both.
 - The command grammar, `--json` schemas, exit codes, and the Claude Code
@@ -3701,50 +3973,62 @@ Codex line in `cswap auto --json` is described under `cswap auto`.
 - This implementation defines these behaviors differently from claude-swap
   (Python):
   - It ships as a single static binary; there is no Python runtime.
-  - The macOS menu bar app is not included (`cswap menubar` exits 1).
-  - `cswap upgrade` and the passive update notice use this repository's releases
+  - The macOS menu bar app is not included (`tycswap menubar` exits 1).
+  - `tycswap upgrade` and the passive update notice use this repository's releases
     and `go install`, not PyPI/uv/pipx. Pre-release builds do receive update
     notices.
-  - `cswap env` is provided; it has no claude-swap (Python) counterpart.
-  - `cswap list` / `cswap status` (human and `--json`) and the TUI surface an
+  - `tycswap env` is provided; it has no claude-swap (Python) counterpart.
+  - `tycswap list` / `tycswap status` (human and `--json`) and the TUI surface an
     at-limit marker that folds in the per-model weekly windows configured by
     `autoswitch.model`. The additive `--json` fields `atLimit` and
     `limitingWindows` are present only when an account is at limit.
-  - The `cswap codex` namespace, the Codex engine in `cswap auto`, and the
+  - The `tycswap codex` namespace, the Codex engine in `tycswap auto`, and the
     `autoswitch.codexEnabled` / `autoswitch.codexThreshold` settings port
     claude-swap PR #252, which the pinned Python reference does not contain.
     The Codex store (`codex/`), the Codex export format (`version` 1,
     `provider: "codex"`), and the Codex `--json` field names follow that PR, so a
-    Codex store written by either implementation reads in the other. cswap
+    Codex store written by either implementation reads in the other. tycswap
     deviates from the PR where the PR is inconsistent with the rest of the
     CLI (`schemaVersion` and the camelCase usage encoding in the `--json`
-    payloads, the error envelope, `--debug`, the `cswap auto` event line);
+    payloads, the error envelope, `--debug`, the `tycswap auto` event line);
     DESIGN Amendment A22 lists the deviations.
 
 ## NOTES
 
 - **macOS Keychain propagation (~30 s).** On macOS, a running Claude Code
   process reads credentials through a Keychain cache and may take up to about 30
-  seconds to observe a just-switched account. `cswap switch` on macOS prints
+  seconds to observe a just-switched account. `tycswap switch` on macOS prints
   `Restart Claude Code to apply immediately — otherwise the session can take up
   to ~30 seconds to pick up the new account.` Restarting Claude Code applies the
-  change at once. `cswap auto` switches proactively (while the old account is
+  change at once. `tycswap auto` switches proactively (while the old account is
   still valid) so this latency is harmless.
 - **A switch never requires a restart to be correct.** On the file-credential
   platforms (Linux, WSL, Windows) the new account is active on the next message;
-  `cswap switch` prints `New account is active on your next message — no restart
+  `tycswap switch` prints `New account is active on your next message — no restart
   needed.` The restart advice on macOS is only about applying the change sooner
   than the Keychain cache would.
 - **Same account in two places can drift.** An account held as both the default
   login and a session-mode profile can make one copy's token go stale if the
-  server rotates it, because each profile refreshes independently. `cswap run`
-  and `cswap env` do not create a second copy for an account that is already the
+  server rotates it, because each profile refreshes independently. `tycswap run`
+  and `tycswap env` do not create a second copy for an account that is already the
   active default login — `run` launches the default login directly and `env`
   exports nothing — so this arises only when the two roles are established
-  separately, for example pinning an account with `cswap env` and later making it
-  the default login with `cswap switch`. If a session later fails to
-  authenticate, exit it and re-run `cswap run <n>`. `cswap list` flags two slots
+  separately, for example pinning an account with `tycswap env` and later making it
+  the default login with `tycswap switch`. If a session later fails to
+  authenticate, exit it and re-run `tycswap run <n>`. `tycswap list` flags two slots
   that report identical usage and reset times as possibly the same account.
+  When `run` or `env` does prepare a profile for the account that is the
+  default login (with `CLAUDE_CONFIG_DIR` preset), or for a slot whose stored
+  refresh token is the live login's (right after a switch), it seeds the
+  profile from the stored credential without refreshing it, so the default
+  login's refresh token is never consumed by tycswap.
+- **Inactive-account refreshes hold the store lock.** When `list`, `status`
+  or the dashboard refresh an inactive account's expired token, the store lock
+  is taken before the request, the account is re-checked (still inactive, no
+  live session) and its backup re-read; if the backup's refresh token changed
+  meanwhile (another process refreshed it, or a switch wrote it back) the
+  newer credential is used and nothing is refreshed. A busy lock skips the
+  refresh for that pass. The Codex side has worked this way from the start.
 - **At-limit is independent of `usageStatus`.** `atLimit` reflects a relevant
   rate-limit window (including a per-model weekly window from `autoswitch.model`)
   being at or over its limit. An account can be `usageStatus: "ok"` and still
@@ -3752,31 +4036,33 @@ Codex line in `cswap auto --json` is described under `cswap auto`.
   account-wide 7d window has room; conversely `atLimit` is absent whenever no
   window is at its limit. Treat the two fields as orthogonal.
 - **macOS Keychain unavailable.** When the login Keychain is locked or busy,
-  cswap does not misreport the active account as having no credentials. A read of
+  tycswap does not misreport the active account as having no credentials. A read of
   the active account's OAuth credential is retried briefly and, on continued
   failure, surfaces as `usageStatus: "keychain_unavailable"` (human line
   `keychain unavailable — locked or in use; try again`) rather than
   `no_credentials`. Backup-store credential reads and writes fall back to
   file-based storage for the rest of the process run, so a flaky Keychain never
   blocks a switch.
-- **Auto-switch quarantine.** During a real (non-`--dry-run`) `cswap auto` tick,
+- **Auto-switch quarantine.** During a real (non-`--dry-run`) `tycswap auto` tick,
   a slot whose token cannot be freshened is quarantined: excluded from the
   auto-switch candidate pool until recovered. A quarantine is raised for
   `invalid_grant` (the stored refresh-token lineage is dead) or
   `identity-conflict` (the stored credential now authenticates as a different
   account or organization); the `account-quarantined` event carries the slot
   `number`, `email`, and this `reason`, and its human line is `Account-<n>
-  (<email>) quarantined: <reason>. Log in with it and run 'cswap --add-account
+  (<email>) quarantined: <reason>. Log in with it and run 'tycswap --add-account
   --slot <n>' to recover.` The state persists in `autoswitch_state.json`.
-  Quarantine affects only `cswap auto`; a direct `cswap switch <n>` still
+  Quarantine affects only `tycswap auto`; a direct `tycswap switch <n>` still
   activates a quarantined account. A quarantine is released automatically at the
   next real tick once the slot's recorded email changes (`account-replaced`) or
   its stored credential fingerprint changes (`credentials-replaced`) — which is
-  exactly what re-running `cswap add --slot <n>` (or `cswap add-token ... --slot
+  exactly what re-running `tycswap add --slot <n>` (or `tycswap add-token ... --slot
   <n>`) after logging the account back in produces; an `account-unquarantined`
   event is then emitted.
 - **Passive update notice.** After most commands, a muted one-line update notice
-  may be printed to stderr when a newer release is known. It is suppressed in
+  may be printed to stderr when a newer tycswap release (from
+  `update.Endpoint`, see `tycswap upgrade`) is known; a checkout build is told
+  to `git pull && make install` instead of `tycswap upgrade`. It is suppressed in
   `--json` mode and after `purge` and `upgrade`, and it never affects the exit
   status.
 

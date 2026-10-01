@@ -14,9 +14,9 @@ import (
 	"strconv"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/filelock"
-	"git.dpemmons.com/dpemmons/cswap/internal/settings"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // Tick evaluates once: poll usage, maybe switch. It never panics out — a
@@ -59,9 +59,9 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 	if current == nil {
 		e.emit(PollEvent{Ts: e.nowISO(), Active: nil, Headroom: map[string]*float64{}, Threshold: s.Threshold})
 		if e.sw.HasLiveLogin() {
-			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "unmanaged-active-account", Detail: "run 'cswap --add-account' to include it in rotation"})
+			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "unmanaged-active-account", Detail: "run 'tycswap --add-account' to include it in rotation"})
 		} else {
-			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-active-account", Detail: "log in and run 'cswap --add-account' first"})
+			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-active-account", Detail: "log in and run 'tycswap --add-account' first"})
 		}
 		return NoAction, nil
 	}
@@ -203,11 +203,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 			// Dry-run stops at the decision: no refresh, no quarantine writes.
 			return e.perform(num, email, trigger)
 		}
-		status, err := e.freshenTarget(num, email)
-		if err != nil {
-			return 0, err
-		}
-		switch status {
+		switch e.freshenTarget(num, email) {
 		case "identity-conflict":
 			if err := e.quarantine(num, email, "identity-conflict"); err != nil {
 				return 0, err

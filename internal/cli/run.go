@@ -1,4 +1,4 @@
-// run.go — the `cswap run` pre-dispatched subcommand (spec 08§7.1, 06§7).
+// run.go — the `tycswap run` pre-dispatched subcommand (spec 08§7.1, 06§7).
 //
 // Implements spec 08§7.1: the verbatim-`--`-tail split, the account/--no-share/
 // --share-history(/--no-share-history)/--debug grammar, the cwd-mapping
@@ -12,12 +12,12 @@ import (
 	"io"
 	"os"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/session"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/session"
 )
 
-// runCommand handles `cswap run ...` (spec 08§7.1). argv excludes "run".
+// runCommand handles `tycswap run ...` (spec 08§7.1). argv excludes "run".
 func runCommand(prog string, argv []string, s ioStreams) int {
 	runProg := prog + " run"
 

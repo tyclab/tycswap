@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/tyclab/tycswap/internal/session"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,12 +11,12 @@ import (
 	"sync"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/core"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/lifecycle"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/lifecycle"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // fakeClaudeScript stands in for Claude Code. It refuses anything but
@@ -114,7 +115,7 @@ func (f *loginFixture) run(t *testing.T, argv ...string) (int, string, string) {
 	t.Helper()
 	f.out.Reset()
 	var out, errb bytes.Buffer
-	code := run("cswap", argv, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
+	code := run("tycswap", argv, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 	return code, f.out.String() + out.String(), errb.String()
 }
 
@@ -320,7 +321,7 @@ func TestAddLoginAppliesAliasAndSlot(t *testing.T) {
 func TestAddLoginFailureStoresNothing(t *testing.T) {
 	for _, tc := range []struct{ mode, want string }{
 		{"fail", "Error: claude's login did not complete; nothing stored, the live login untouched"},
-		{"apikey", "Error: claude's login made an API key, which is a different auth axis: use cswap --add-token"},
+		{"apikey", "Error: claude's login made an API key, which is a different auth axis: use tycswap --add-token"},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			f := newLoginFixture(t)
@@ -358,7 +359,7 @@ func TestAddRefusesLoginOnlyArguments(t *testing.T) {
 		{[]string{"--add-account", "--", "--sso"}, "Error: arguments after -- go with --login: they are claude's login arguments"},
 	} {
 		var out, errb bytes.Buffer
-		code := run("cswap", tc.argv, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
+		code := run("tycswap", tc.argv, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 		if code != 1 || !strings.Contains(errb.String(), tc.want) {
 			t.Errorf("%v: exit %d stderr %q, want 1 and %q", tc.argv, code, errb.String(), tc.want)
 		}
@@ -369,7 +370,7 @@ func TestAddRefusesLoginOnlyArguments(t *testing.T) {
 func TestAddLoginKeepsAddsFlagRefusals(t *testing.T) {
 	cleanHome(t)
 	var out, errb bytes.Buffer
-	code := run("cswap", []string{"add", "--login", "--json"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
+	code := run("tycswap", []string{"add", "--login", "--json"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 	if code != 2 || !strings.Contains(errb.String(), "--json can only be used with") {
 		t.Errorf("exit %d stderr %q, want add's --json refusal", code, errb.String())
 	}
@@ -513,5 +514,47 @@ func TestLoginScratchCleanupOnInterrupt(t *testing.T) {
 	remove()
 	if got := kc.deleted(); len(got) != 1 {
 		t.Errorf("remove after the cleanup deleted again: %v", got)
+	}
+}
+
+// TestAddLoginScrubsAuthOverrides: the variables that make claude skip the
+// account login are removed from the login's environment, as run/env do.
+func TestAddLoginScrubsAuthOverrides(t *testing.T) {
+	env := loginEnv(session.ScrubAuthOverrides([]string{"A=1", "ANTHROPIC_API_KEY=sk", "CLAUDE_CODE_OAUTH_TOKEN=t", "B=2"}), "/scratch")
+	for _, kv := range env {
+		for _, v := range session.AuthOverrideEnvVars {
+			if strings.HasPrefix(kv, v+"=") {
+				t.Errorf("%s survived: %v", v, env)
+			}
+		}
+	}
+	if len(env) != 3 || env[2] != "CLAUDE_CONFIG_DIR=/scratch" {
+		t.Errorf("env = %v", env)
+	}
+}
+
+// TestAddLoginSwitchKeepsTheLiveMCPLogins: the scratch profile a login runs in
+// never has mcpOAuth, so activating the new account used to wipe the seat's MCP
+// server logins. The switch carries the live mcpOAuth over the new account.
+func TestAddLoginSwitchKeepsTheLiveMCPLogins(t *testing.T) {
+	f := newLoginFixture(t)
+	live := `{"claudeAiOauth":{"accessToken":"sk-ant-oat01-test-token-1","refreshToken":"refresh-token-1","expiresAt":4102444800000,"scopes":["user:inference"]},"mcpOAuth":{"srv|1111":{"accessToken":"mcp-live","refreshToken":"mcp-live-refresh"}}}`
+	if err := os.WriteFile(filepath.Join(f.home, ".claude", ".credentials.json"), []byte(live), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, errb := f.run(t, "add", "--login", "--switch")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errb)
+	}
+	after := f.liveCreds(t)
+	if !strings.Contains(after, "sk-ant-oat01-test-token-2") {
+		t.Errorf("live credential after --switch = %q, want the new account", after)
+	}
+	if !strings.Contains(after, `"mcp-live"`) {
+		t.Errorf("live credential after --switch lost the MCP server login: %q", after)
+	}
+	if got := f.storedCreds(t, "2", "b@example.com"); strings.Contains(got, "mcp-live") {
+		t.Errorf("stored credential for slot 2 carries the seat's MCP login: %q", got)
 	}
 }

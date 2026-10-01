@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/mappings"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/mappings"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // TestRemoveConfirmed removes a slot after a "y" and drops it from the sequence.
@@ -278,7 +278,7 @@ func seedSameEmailTwoOrgs(t *testing.T, s *store.Store) {
 // the absent-slot branch searches by — and the refusal names both org tags,
 // because two lines differing only in an invisible uuid explain nothing.
 func TestRemoveChecksTheWholeIdentityAfterThePrompt(t *testing.T) {
-	// The rival is a `cswap swap 2 3`: same two accounts, exchanged slots. Slot 2
+	// The rival is a `tycswap swap 2 3`: same two accounts, exchanged slots. Slot 2
 	// still holds dup@example.com — and it is the other account.
 	t.Run("identity differs: refuse", func(t *testing.T) {
 		s := newStore(t)
@@ -320,7 +320,7 @@ func TestRemoveChecksTheWholeIdentityAfterThePrompt(t *testing.T) {
 	t.Run("identity matches: proceed", func(t *testing.T) {
 		s := newStore(t)
 		seedSameEmailTwoOrgs(t, s)
-		// A concurrent `cswap add-token` lands a fourth account.
+		// A concurrent `tycswap add-token` lands a fourth account.
 		withPrompter(t, &racingPrompter{t: t, s: s, commit: commitRival(t, s, ip(1),
 			acct{num: "1", email: "u1@example.com", uuid: "uuid-1", creds: "c1", config: "g1"},
 			acct{num: "2", email: "dup@example.com", org: "org-AAA", orgName: "Org A", uuid: "uuid-a", creds: "cA", config: "gA"},
@@ -355,7 +355,7 @@ func TestRemoveChecksTheWholeIdentityAfterThePrompt(t *testing.T) {
 func TestRemoveCommitsAgainstThePostPromptRoster(t *testing.T) {
 	s := newStore(t)
 	seedThreeSlots(t, s)
-	// A concurrent `cswap add` lands a fourth account while the prompt is open.
+	// A concurrent `tycswap add` lands a fourth account while the prompt is open.
 	withPrompter(t, &racingPrompter{t: t, s: s, commit: commitRival(t, s, ip(1),
 		acct{num: "1", email: "one@example.com", org: "orgA", orgName: "Alpha", uuid: "uuid-1", alias: "one", creds: "c1", config: "g1"},
 		acct{num: "2", email: "two@example.com", uuid: "uuid-2", creds: "c2", config: "g2"},
@@ -456,14 +456,14 @@ func TestRemoveDisambiguationTagsComeFromTheBackfilledRoster(t *testing.T) {
 // TestRemoveRefusesWhenTheSlotWasRelocatedDuringThePrompt: an empty slot key is
 // not by itself evidence of a removal. A concurrent move or swap empties one
 // too, and there the account is alive under a new number with every backup
-// intact — so reading the absence as "another cswap already removed it" reports
+// intact — so reading the absence as "another tycswap already removed it" reports
 // a destruction that never happened, in the one direction the user cannot
 // notice: rc=0 and a reassuring line, while the account they meant to delete is
 // still on disk.
 func TestRemoveRefusesWhenTheSlotWasRelocatedDuringThePrompt(t *testing.T) {
 	s := newStore(t)
 	seedThreeSlots(t, s)
-	// A concurrent `cswap move 3 9` commits while the confirmation is open.
+	// A concurrent `tycswap move 3 9` commits while the confirmation is open.
 	var before map[string][]byte
 	rival := commitRival(t, s, ip(1),
 		acct{num: "1", email: "one@example.com", org: "orgA", orgName: "Alpha", uuid: "uuid-1", alias: "one", creds: "c1", config: "g1"},
@@ -502,7 +502,7 @@ func TestRemoveTreatsARivalsCompletedRemovalAsDone(t *testing.T) {
 	s := newStore(t)
 	seedThreeSlots(t, s)
 	out := captureOut(t)
-	// A concurrent `cswap remove 3` commits while the confirmation is open.
+	// A concurrent `tycswap remove 3` commits while the confirmation is open.
 	withPrompter(t, &racingPrompter{t: t, s: s, commit: commitRival(t, s, ip(1),
 		acct{num: "1", email: "one@example.com", org: "orgA", orgName: "Alpha", uuid: "uuid-1", alias: "one", creds: "c1", config: "g1"},
 		acct{num: "2", email: "two@example.com", uuid: "uuid-2", creds: "c2", config: "g2"},
@@ -525,7 +525,7 @@ func TestRemoveTreatsARivalsCompletedRemovalAsDone(t *testing.T) {
 // working the moment the identity is registered again. So only a removal this
 // call actually performed has mappings to retire. The window is the corrupt-
 // roster refusal's own second remedy: the user deletes sequence.json while a
-// confirmation stands open, intending to re-register with `cswap add`. This call
+// confirmation stands open, intending to re-register with `tycswap add`. This call
 // then correctly removes nothing — and pruning on the way out would delete their
 // directory mappings as a side effect of a command that reported "nothing to do",
 // silently, with rc=0.
@@ -559,7 +559,7 @@ func TestRemoveRetiresNoMappingsWhenItRemovedNothing(t *testing.T) {
 }
 
 // startLiveSession seeds a session-mode profile for (num, email) carrying this
-// process's PID — the shape LiveSessionPidsFor reports as a live `cswap run`.
+// process's PID — the shape LiveSessionPidsFor reports as a live `tycswap run`.
 func startLiveSession(t *testing.T, s *store.Store, num, email string) {
 	t.Helper()
 	dir := filepath.Join(s.SessionDir(num, email), "sessions")
@@ -574,7 +574,7 @@ func startLiveSession(t *testing.T, s *store.Store, num, email string) {
 
 // TestRemoveRefusesASessionThatWentLiveDuringThePrompt: the pre-prompt session
 // check answers for the moment it ran, and the confirmation can stand open for
-// minutes afterwards. A `cswap run` that starts in that window has to be caught
+// minutes afterwards. A `tycswap run` that starts in that window has to be caught
 // by the re-check inside the lock — and caught with remove's OWN message. The
 // delete chokepoint refuses too, but names "the operation", which tells a user
 // staring at a remove prompt neither what is holding the slot open nor which

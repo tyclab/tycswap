@@ -5,14 +5,16 @@ package ccfile_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/ccfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/ccfile"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // setHome points $HOME at a fresh temp dir and clears the env vars that bypass
@@ -456,5 +458,154 @@ func TestCLAUDEConfigDirHonored(t *testing.T) {
 	email, org, ok := ccfile.ReadOAuthIdentity()
 	if !ok || email != "ccd@example.com" || org != "org-x" {
 		t.Errorf("ReadOAuthIdentity under CCD = (%q, %q, %v)", email, org, ok)
+	}
+}
+
+// TestUpdateGlobalConfig_CorruptIsAnErrorNotEmpty: a config that exists but
+// does not parse is never replaced by the few keys mutate sets.
+func TestUpdateGlobalConfig_CorruptIsAnErrorNotEmpty(t *testing.T) {
+	home := setHome(t)
+	path := filepath.Join(home, ".claude.json")
+	for _, corrupt := range []string{`{"projects": {"/w": {}}, `, `[1, 2]`, `"text"`} {
+		writeFile(t, path, corrupt)
+		called := false
+		err := ccfile.UpdateGlobalConfig(func(cfg map[string]any) { called = true; cfg["primaryApiKey"] = "k" })
+		if err == nil || !errors.Is(err, ccfile.ErrUnusableConfig) {
+			t.Fatalf("%q: err = %v, want ErrUnusableConfig", corrupt, err)
+		}
+		if called {
+			t.Errorf("%q: mutate ran on a corrupt config", corrupt)
+		}
+		if raw, _ := os.ReadFile(path); string(raw) != corrupt {
+			t.Errorf("%q: file rewritten to %q", corrupt, raw)
+		}
+	}
+	// Blank and absent start from an empty object.
+	for _, blank := range []string{"", "  \n", "null"} {
+		writeFile(t, path, blank)
+		if err := ccfile.UpdateGlobalConfig(func(cfg map[string]any) { cfg["k"] = "v" }); err != nil {
+			t.Fatalf("%q: %v", blank, err)
+		}
+	}
+	_ = os.Remove(path)
+	if err := ccfile.UpdateGlobalConfig(func(cfg map[string]any) { cfg["k"] = "v" }); err != nil {
+		t.Fatalf("absent: %v", err)
+	}
+}
+
+// TestWriteCredentialsCreatesPrivateDir: a config home this tool has to create
+// is 0700; an existing one keeps its mode.
+func TestWriteCredentialsCreatesPrivateDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX modes")
+	}
+	home := setHome(t)
+	if err := ccfile.WriteCredentialsFile(`{}`); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(filepath.Join(home, ".claude"))
+	if err != nil || fi.Mode().Perm() != 0o700 {
+		t.Fatalf("created dir mode = %v, %v; want 0700", fi.Mode().Perm(), err)
+	}
+	if err := os.Chmod(filepath.Join(home, ".claude"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := ccfile.WriteCredentialsFile(`{}`); err != nil {
+		t.Fatal(err)
+	}
+	if fi, _ := os.Stat(filepath.Join(home, ".claude")); fi.Mode().Perm() != 0o750 {
+		t.Fatalf("existing dir mode changed to %v", fi.Mode().Perm())
+	}
+}
+
+// TestSpliceCredentials pins the seat-wide rule for the credentials file: the
+// stored account blob is what gets written, with the live mcpOAuth carried over
+// it; nothing else of the live file survives, and nothing of the stored blob's
+// own mcpOAuth does either.
+func TestSpliceCredentials(t *testing.T) {
+	const (
+		stored      = `{"claudeAiOauth":{"accessToken":"stored-access","refreshToken":"stored-refresh","expiresAt":4102444800000},"trustedDeviceToken":"device-stored"}`
+		storedStale = `{"claudeAiOauth":{"accessToken":"stored-access"},"mcpOAuth":{"srv|aaaa":{"accessToken":"stale"}}}`
+		liveMCP     = `{"claudeAiOauth":{"accessToken":"live-access"},"mcpOAuth":{"srv|bbbb":{"accessToken":"fresh","expiresAt":1790856000000}},"trustedDeviceToken":"device-live"}`
+	)
+	cases := []struct {
+		name         string
+		stored, live string
+		wantErr      bool
+		wantVerbatim bool           // out == stored byte for byte
+		wantMCP      map[string]any // expected mcpOAuth object in out (nil: key absent)
+	}{
+		{
+			name: "live mcpOAuth is carried over the stored blob", stored: stored, live: liveMCP,
+			wantMCP: map[string]any{"srv|bbbb": map[string]any{"accessToken": "fresh", "expiresAt": json.Number("1790856000000")}},
+		},
+		{
+			name: "stored stale mcpOAuth loses to live", stored: storedStale, live: liveMCP,
+			wantMCP: map[string]any{"srv|bbbb": map[string]any{"accessToken": "fresh", "expiresAt": json.Number("1790856000000")}},
+		},
+		{name: "live without the key leaves stored verbatim", stored: storedStale, live: `{"claudeAiOauth":{"accessToken":"x"}}`, wantVerbatim: true},
+		{name: "empty live file leaves stored verbatim", stored: stored, live: "", wantVerbatim: true},
+		{name: "blank live file leaves stored verbatim", stored: stored, live: " \n", wantVerbatim: true},
+		{name: "malformed live falls back to stored and reports", stored: stored, live: `{"mcpOAuth": {`, wantErr: true, wantVerbatim: true},
+		{name: "non-object live falls back to stored and reports", stored: stored, live: `[1,2]`, wantErr: true, wantVerbatim: true},
+		{name: "malformed stored falls back verbatim and reports", stored: `{"claudeAiOauth":`, live: liveMCP, wantErr: true, wantVerbatim: true},
+		{name: "API-key stored falls back verbatim and reports", stored: "sk-ant-api03-key", live: liveMCP, wantErr: true, wantVerbatim: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := ccfile.SpliceCredentials(tc.stored, tc.live)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantVerbatim {
+				if out != tc.stored {
+					t.Fatalf("out = %q, want the stored blob verbatim %q", out, tc.stored)
+				}
+				return
+			}
+			dec := json.NewDecoder(strings.NewReader(out))
+			dec.UseNumber()
+			var got map[string]any
+			if err := dec.Decode(&got); err != nil {
+				t.Fatalf("out is not JSON: %v\n%s", err, out)
+			}
+			// The account part is the stored one, untouched.
+			var want map[string]any
+			wdec := json.NewDecoder(strings.NewReader(tc.stored))
+			wdec.UseNumber()
+			if err := wdec.Decode(&want); err != nil {
+				t.Fatal(err)
+			}
+			delete(want, "mcpOAuth")
+			if tc.wantMCP != nil {
+				want["mcpOAuth"] = tc.wantMCP
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("spliced =\n%v\nwant\n%v", got, want)
+			}
+			if strings.Contains(out, "live-access") || strings.Contains(out, "device-live") {
+				t.Fatalf("live account material leaked into the write: %s", out)
+			}
+			if strings.HasSuffix(out, "\n") || strings.Contains(out, "\n") {
+				t.Fatalf("out must be compact single-line JSON: %q", out)
+			}
+		})
+	}
+}
+
+// TestSpliceCredentials_NumbersSurvive: the re-encode must not turn an
+// epoch-millisecond integer into a float (1.7908e+12 would not parse back the
+// same for Claude Code's comparisons).
+func TestSpliceCredentials_NumbersSurvive(t *testing.T) {
+	out, err := ccfile.SpliceCredentials(
+		`{"claudeAiOauth":{"expiresAt":4102444800123}}`,
+		`{"mcpOAuth":{"s":{"expiresAt":1790856000456}}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"4102444800123", "1790856000456"} {
+		if !strings.Contains(out, n) {
+			t.Errorf("integer %s not preserved in %s", n, out)
+		}
 	}
 }

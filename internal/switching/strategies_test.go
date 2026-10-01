@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // setupAccounts writes switchable backups + sequence for slots (the first slot

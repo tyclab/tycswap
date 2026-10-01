@@ -1,5 +1,5 @@
 // Usage-response normalization: the raw Anthropic /api/oauth/usage response
-// into cswap's internal usage dict (the persisted form).
+// into tycswap's internal usage dict (the persisted form).
 //
 // Implements spec 04§1.18 (build_usage_result) under Amendment A1: the result
 // is a map[string]any with NO numeric coercion of five_hour/seven_day pct (the
@@ -11,7 +11,7 @@ package oauth
 
 import "time"
 
-// BuildUsageResult normalizes a raw usage-API response into cswap's internal
+// BuildUsageResult normalizes a raw usage-API response into tycswap's internal
 // usage dict, or nil when empty. The countdown/clock strings are computed
 // against the current wall clock (fetch time), matching Python.
 func BuildUsageResult(raw map[string]any) map[string]any {

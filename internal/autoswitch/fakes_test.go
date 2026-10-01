@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // fakeSwitcher implements Switcher against in-memory state.
@@ -34,11 +34,12 @@ type fakeSwitcher struct {
 	persistErr error
 
 	// Recorded interactions.
-	fetchCalls [][]string
-	persisted  map[string]string
-	backfilled map[string]string
-	pollInputs []pollInput
-	mu         sync.Mutex
+	fetchCalls       [][]string
+	guardedRefreshes []string // slots refreshed through RefreshBackupGuarded
+	persisted        map[string]string
+	backfilled       map[string]string
+	pollInputs       []pollInput
+	mu               sync.Mutex
 }
 
 type pollInput struct {
@@ -91,6 +92,24 @@ func (f *fakeSwitcher) PersistBackupCredentials(num, email, creds string) error 
 	f.mu.Unlock()
 	return nil
 }
+
+// RefreshBackupGuarded stands in for the store's: it refreshes held with c and
+// persists the result before returning it (the fake has no lock to take),
+// recording the call so a test can show the engine took this path.
+func (f *fakeSwitcher) RefreshBackupGuarded(ctx context.Context, c oauth.Client, num, email, held string) oauth.RefreshOutcome {
+	f.mu.Lock()
+	f.guardedRefreshes = append(f.guardedRefreshes, num)
+	f.mu.Unlock()
+	out := c.Refresh(ctx, held)
+	if out.Credentials == "" {
+		return out
+	}
+	if err := f.PersistBackupCredentials(num, email, out.Credentials); err != nil {
+		return oauth.RefreshOutcome{Error: oauth.ErrRefreshFailed}
+	}
+	return out
+}
+
 func (f *fakeSwitcher) BackfillAccountUUID(num, uuid string) {
 	f.mu.Lock()
 	f.backfilled[num] = uuid

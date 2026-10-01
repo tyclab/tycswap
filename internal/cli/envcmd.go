@@ -1,10 +1,10 @@
-// envcmd.go — the `cswap env` pre-dispatched subcommand (Go-side extension,
+// envcmd.go — the `tycswap env` pre-dispatched subcommand (Go-side extension,
 // DESIGN A16; no Python counterpart).
 //
-// `cswap env [NUM|EMAIL|ALIAS]` prints shell-evalable env lines that pin the
+// `tycswap env [NUM|EMAIL|ALIAS]` prints shell-evalable env lines that pin the
 // CURRENT shell to a stored account's persistent session profile —
-// `eval "$(cswap env 2)"` — after preparing that profile through the exact
-// SessionManager bootstrap path `cswap run` uses, WITHOUT exec'ing claude.
+// `eval "$(tycswap env 2)"` — after preparing that profile through the exact
+// SessionManager bootstrap path `tycswap run` uses, WITHOUT exec'ing claude.
 //
 // Output discipline (critical): stdout carries ONLY the eval-able lines; every
 // notice/warning goes to stderr. The SessionManager's Stdout sink is wired to
@@ -19,10 +19,10 @@ import (
 	"os"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/core"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/session"
+	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/session"
 )
 
 // envPreparer is the SetupEnv seam (satisfied by *session.Manager) so tests can
@@ -31,7 +31,7 @@ type envPreparer interface {
 	SetupEnv(identifier string, share, shareHistory bool) (session.EnvResult, error)
 }
 
-// newEnvPreparer builds the SessionManager `cswap env` prepares the profile
+// newEnvPreparer builds the SessionManager `tycswap env` prepares the profile
 // with, routing its human notices to out (env passes stderr) so stdout stays a
 // pure eval stream. A package var so tests can substitute a fake.
 var newEnvPreparer = func(sw *core.Switcher, out io.Writer) envPreparer {
@@ -47,7 +47,7 @@ var newEnvPreparer = func(sw *core.Switcher, out io.Writer) envPreparer {
 // envShellChoices are the supported --shell values (default sh).
 var envShellChoices = []string{"sh", "fish", "pwsh"}
 
-// envCommand handles `cswap env ...` (DESIGN A16). argv excludes "env".
+// envCommand handles `tycswap env ...` (DESIGN A16). argv excludes "env".
 func envCommand(prog string, argv []string, s ioStreams) int {
 	envProg := prog + " env"
 
@@ -114,7 +114,7 @@ func envCommand(prog string, argv []string, s ioStreams) int {
 	}
 	setSigintJSON(false)
 	// env's stdout is a pure eval stream; a Ctrl-C cancel note must go to stderr
-	// (never stdout) so it can't corrupt the `eval "$(cswap env)"` (FINDING 9).
+	// (never stdout) so it can't corrupt the `eval "$(tycswap env)"` (FINDING 9).
 	setSigintCancelToStderr()
 
 	// Account resolution identical to run: explicit NUM|EMAIL|ALIAS, else the
@@ -177,8 +177,8 @@ func resolveEnvAccount(sw *core.Switcher, account *string, s ioStreams) (string,
 		detail = "no account is mapped for " + cwd
 	}
 	errorTo(s.err, "Error: Nothing to prepare an environment for ("+detail+"). "+
-		"Pass an account (cswap env <num|email>), map this directory (cswap map <num|email>), "+
-		"or clear a pinned profile with cswap env --unset.")
+		"Pass an account (tycswap env <num|email>), map this directory (tycswap map <num|email>), "+
+		"or clear a pinned profile with tycswap env --unset.")
 	return "", 1, true
 }
 
@@ -244,13 +244,25 @@ func fishQuote(s string) string {
 	return "'" + s + "'"
 }
 
-// pwshQuote wraps s in a PowerShell single-quoted string; the only escape is a
-// doubled single quote.
+// pwshQuoteEscaper doubles each of the five characters that end a PowerShell
+// single-quoted string.
+var pwshQuoteEscaper = strings.NewReplacer(
+	"'", "''",
+	"\u2018", "\u2018\u2018",
+	"\u2019", "\u2019\u2019",
+	"\u201a", "\u201a\u201a",
+	"\u201b", "\u201b\u201b",
+)
+
+// pwshQuote wraps s in a PowerShell single-quoted string. PowerShell ends such
+// a string at any of ' and U+2018–U+201B (the typographic single quotes), so
+// each is doubled, which PowerShell reads as one literal character of the
+// same kind.
 func pwshQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+	return "'" + pwshQuoteEscaper.Replace(s) + "'"
 }
 
-// renderEnvHelp writes `cswap env --help` and returns exit 0.
+// renderEnvHelp writes `tycswap env --help` and returns exit 0.
 func renderEnvHelp(prog string, out io.Writer) int {
 	fmt.Fprintf(out, "usage: %s env [-h] [--no-share] [--share-history] [--shell {sh,fish,pwsh}] [--unset] [--debug] [NUM|EMAIL|ALIAS]\n", prog)
 	fmt.Fprintln(out, "\n[EXTENSION] Print eval-able env lines that pin THIS shell to a stored account's")

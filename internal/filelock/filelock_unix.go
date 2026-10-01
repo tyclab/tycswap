@@ -27,3 +27,6 @@ func tryLock(f *os.File) (bool, error) {
 func unlock(f *os.File) {
 	_ = unix.Flock(int(f.Fd()), unix.LOCK_UN)
 }
+
+// noFollow makes the lock-file open fail on a symlink.
+const noFollow = unix.O_NOFOLLOW

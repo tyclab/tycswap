@@ -9,7 +9,7 @@
 //
 // The point of this file is not fetching, it is *not* fetching. Asking for
 // workspace names on every listing would add a request per user scope to every
-// `cswap codex list`, forever, to fill a field that changes approximately
+// `tycswap codex list`, forever, to fill a field that changes approximately
 // never. So codex-auth's grouped-scope rules (its docs/api.md) are followed
 // exactly:
 //
@@ -32,8 +32,8 @@ package usagecache
 import (
 	"context"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/api"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/codex/api"
+	"github.com/tyclab/tycswap/internal/codex/store"
 )
 
 // Plans that have a workspace name worth fetching (WORKSPACE_PLANS). A

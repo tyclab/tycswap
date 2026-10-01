@@ -12,15 +12,16 @@ import (
 	"strconv"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // duplicateAccountWarnings returns warnings for slots that provably authenticate
 // as the same account (spec 02§13). Two offline signals: an identical credential
 // fingerprint across two slots, or the same non-empty uuid+org recorded for two
-// slots (empty uuids — add-token placeholders — never match each other).
+// slots (empty uuids — add-token placeholders — never match each other). The
+// messages carry the stored email; the text renderer strips it.
 func duplicateAccountWarnings(s *store.Store, infos []AccountInfo) []string {
 	data, _ := s.ReadSequence()
 	byFP := map[string]string{}
@@ -33,7 +34,7 @@ func duplicateAccountWarnings(s *store.Store, infos []AccountInfo) []string {
 				if other, ok := byFP[*fp]; ok {
 					out = append(out, "Account-"+other+" and Account-"+snum+
 						" hold the same credential ("+info.Email+") — one slot's backup was "+
-						"overwritten. Log in with the missing account and re-add it: cswap add --slot N")
+						"overwritten. Log in with the missing account and re-add it: tycswap add --slot N")
 				} else {
 					byFP[*fp] = snum
 				}
@@ -91,7 +92,7 @@ func lockstepUsageWarnings(infos []AccountInfo, entries map[string]usage.UsageEn
 		if other, exists := seen[key]; exists {
 			out = append(out, "Account-"+other+" and Account-"+snum+
 				" report identical usage and reset times — they may be the same account "+
-				"(issue #117). If it persists, log in with the missing account and re-add it: cswap add --slot N")
+				"(issue #117). If it persists, log in with the missing account and re-add it: tycswap add --slot N")
 		} else {
 			seen[key] = snum
 		}

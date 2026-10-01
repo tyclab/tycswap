@@ -12,8 +12,8 @@ package core
 import (
 	"encoding/json"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/mappings"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/mappings"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // ReadAccountConfig reads a slot's backup config text via *store.Store and
@@ -37,13 +37,20 @@ func (sw *Switcher) ReadAccountConfig(num, email string) (map[string]any, error)
 	return m, nil
 }
 
+// LiveCredentials returns the live default login's credential, "" when absent
+// or unreadable (session.Accounts).
+func (sw *Switcher) LiveCredentials() string {
+	creds, _, _ := sw.Store.Creds.ReadActive()
+	return creds
+}
+
 // Platform returns the store's detected platform. store.Store.Platform is a
 // FIELD (DESIGN A13 rationale: a promoted field of the same name would make
 // this method unimplementable), so this method shadows the promotion
 // (session.Accounts, DESIGN A2 / WP9 note).
 func (sw *Switcher) Platform() platform.Platform { return sw.Store.Platform }
 
-// SlotForDirectory resolves a cwd to its mapped account slot for bare `cswap
+// SlotForDirectory resolves a cwd to its mapped account slot for bare `tycswap
 // run` (spec switcher.py slot_for_directory): (nil, nil) when no mapping
 // covers the directory, (nil, email) when the mapping's account was since
 // removed, (slot, email) when it resolves. session.Accounts (DESIGN A2 / WP9

@@ -1,11 +1,11 @@
-// Package transfer implements the .cswap portable export/import format: a single
+// Package transfer implements the .tycswap portable export/import format: a single
 // JSON envelope carrying one or more accounts' OAuth/API-key credentials plus a
 // slimmed (or --full) copy of ~/.claude.json, used to move accounts between
 // machines. export reads from the local backup store and serializes to a file or
 // stdout; import validates every account (an all-or-nothing pass) before a
 // best-effort write pass that skips / overwrites / freshly-allocates each slot.
 //
-// Implements spec 07§1–4 (the .cswap format, export_accounts, import_accounts,
+// Implements spec 07§1–4 (the .tycswap format, export_accounts, import_accounts,
 // the CLI error surface) and honours the 10-audit corrections. Per DESIGN
 // Amendment A2 this package declares its own narrow Accounts interface (a
 // consumer-defined seam) and imports neither core nor store: *core.Switcher
@@ -23,9 +23,13 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
-// FormatVersion is the .cswap envelope version (FORMAT_VERSION in transfer.py).
+// FormatVersion is the .tycswap envelope version (FORMAT_VERSION in transfer.py).
 // Import rejects any other value, including a missing key.
 const FormatVersion = 1
 
@@ -54,15 +58,35 @@ type SequenceData struct {
 	Accounts            map[string]json.RawMessage `json:"accounts"`
 }
 
-// emailRE mirrors _validate_email (spec 07§1.2 / 01§6.1). transfer cannot import
-// lifecycle's unexported validator, so the pattern is replicated verbatim, save
-// for the trailing anchor: Python's re.match treats non-multiline `$` as matching
-// at end-of-text OR immediately before a single trailing newline, whereas Go RE2's
-// `$` means end-of-text only. `\n?$` reproduces Python's acceptance of exactly one
-// trailing newline (e.g. "bob@example.com\n") while still rejecting two.
-var emailRE = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\n?$`)
+// Bounds on imported identity fields. An alias is a short display name; a
+// slot number has at most six digits. An email is bounded by
+// storenames.MaxEmailLen.
+const (
+	maxAliasLen  = 64
+	maxSlotValue = 999999
+)
 
-func validateEmail(email string) bool { return emailRE.MatchString(email) }
+// validateEmail is the import contract for an account's email: claude-swap's
+// _validate_email pattern (spec 07§1.2 / 01§6.1), anchored at both ends and
+// defined once in storenames.StrictEmail. The anchoring is strict on purpose
+// (a deviation from Python, whose non-multiline `$` also matches before one
+// trailing newline): the email flows into credential file names and Keychain
+// account names, where a newline has no business.
+func validateEmail(email string) bool { return storenames.StrictEmail(email) }
+
+// hasSpaceOrControl reports whether s holds any whitespace or control
+// character (or invalid UTF-8), anywhere, including a trailing newline.
+func hasSpaceOrControl(s string) bool {
+	if !utf8.ValidString(s) {
+		return true
+	}
+	for _, r := range s {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return true
+		}
+	}
+	return false
+}
 
 var aliasRE = regexp.MustCompile(`^[a-z0-9_.-]+$`)
 

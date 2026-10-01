@@ -18,13 +18,14 @@
 // import does not carry. That single roster is then threaded through the alias
 // check, every slot decision, and every write, so no record can land in a roster
 // other than the one its slot was chosen against — and because the read is
-// inside the lock, that roster is also the bytes on disk: a second cswap cannot
+// inside the lock, that roster is also the bytes on disk: a second tycswap cannot
 // commit between the read and the writes, so its records cannot be renamed away
 // by this import's own commit. Only the envelope read (which may drain stdin)
 // stays outside.
 package transfer
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"os"
@@ -34,9 +35,10 @@ import (
 	"strings"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/credstore"
-	"git.dpemmons.com/dpemmons/cswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // Stdin is the source for "-"/stdin imports (transfer.py::sys.stdin.read). Tests
@@ -64,7 +66,7 @@ type normalizedEntry struct {
 	configText  string
 }
 
-// Import reads a .cswap envelope from source ("-" for stdin) and writes its
+// Import reads a .tycswap envelope from source ("-" for stdin) and writes its
 // accounts into the local store. force overwrites the matching local slot in
 // place. Mirrors import_accounts (spec 07§3).
 func Import(acc Accounts, source string, force bool) error {
@@ -73,15 +75,9 @@ func Import(acc Accounts, source string, force bool) error {
 		return err
 	}
 
-	dec := json.NewDecoder(strings.NewReader(text))
-	dec.UseNumber()
-	var top any
-	if err := dec.Decode(&top); err != nil {
-		return cerr.Transfer("export file is not valid JSON: %s", err.Error())
-	}
-	envelope, ok := asObject(top)
-	if !ok {
-		return cerr.Transfer("export file must be a JSON object")
+	envelope, accountsRaw, rawCreds, err := decodeEnvelope(text)
+	if err != nil {
+		return err
 	}
 
 	if v, ok := intValue(envelope["version"]); !ok || v != FormatVersion {
@@ -90,18 +86,16 @@ func Import(acc Accounts, source string, force bool) error {
 	}
 	if enc, ok := envelope["encrypted"].(bool); ok && enc {
 		return cerr.Transfer("encrypted exports are not supported in this version — " +
-			"decrypt before piping (e.g. gpg -d backup.gpg | cswap --import -)")
+			"decrypt before piping (e.g. gpg -d backup.gpg | tycswap --import -)")
 	}
-	accountsRaw, ok := envelope["accounts"].([]any)
-	if !ok || len(accountsRaw) == 0 {
+	if len(accountsRaw) == 0 {
 		return cerr.Transfer("export file has no accounts to import")
 	}
-	// Ordered raw bytes for each account's credentials, parsed from the same text
-	// and aligned index-for-index with accountsRaw. An OAuth credential object is
-	// re-serialized from these (Python json.dumps form: spaced, source key order)
-	// rather than from the order-losing decoded map, so the stored blob is
-	// byte-identical to Python and to Go's add-token path.
-	rawCreds := rawCredentialsBytes(text)
+	// rawCreds holds each account's credentials as raw JSON from the same
+	// decode, aligned index-for-index with accountsRaw. An OAuth credential is
+	// re-serialized from these (Python json.dumps form: spaced, source key
+	// order) rather than from the order-losing decoded map, so the stored blob
+	// is byte-identical to Python and to Go's add-token path.
 
 	var (
 		data                           *SequenceData
@@ -112,7 +106,7 @@ func Import(acc Accounts, source string, force bool) error {
 	// DESIGN Deviation 9: the classified roster read, pass 1, the bootstrap and
 	// the whole write pass run under ONE FileLock — a hardening over Python's
 	// unlocked RMW. The read has to be inside it, not merely the writes: a roster
-	// read before the lock is a roster another cswap can commit over while this
+	// read before the lock is a roster another tycswap can commit over while this
 	// import waits for the lock, and this import's own commit would then rename a
 	// file built from the pre-lock roster over that record. None of the callees
 	// re-acquire this lock (they are the non-locking store primitives; the usage
@@ -143,10 +137,21 @@ func Import(acc Accounts, source string, force bool) error {
 			}
 			m, _ := asObject(raw)
 			orgUUID := strOrEmpty(m["organizationUuid"])
+			if termsafe.HasControl(orgUUID) {
+				return cerr.Transfer("organizationUuid for %s contains a control character", email)
+			}
 			credsObj := m["credentials"]
 			configObj, ok := asObject(m["config"])
 			if !ok {
 				return cerr.Transfer("config for %s must be a JSON object", email)
+			}
+			// Only the account identity is imported. A config is spliced into the
+			// live ~/.claude.json on a switch, so mcpServers,
+			// projects.*.allowedTools, hooks or any other key an export carried
+			// would otherwise configure commands on this machine.
+			configObj, err = importedConfig(configObj, email)
+			if err != nil {
+				return err
 			}
 
 			_, credsIsString := credsObj.(string)
@@ -218,9 +223,9 @@ func Import(acc Accounts, source string, force bool) error {
 				email:       email,
 				exportedNum: exportedNum,
 				orgUUID:     orgUUID,
-				orgName:     strOrEmpty(m["organizationName"]),
-				uuid:        strOrEmpty(m["uuid"]),
-				added:       added,
+				orgName:     termsafe.Strip(strOrEmpty(m["organizationName"])),
+				uuid:        termsafe.Strip(strOrEmpty(m["uuid"])),
+				added:       termsafe.Strip(added),
 				kind:        kind,
 				alias:       alias,
 				credsText:   credsText,
@@ -266,7 +271,7 @@ func Import(acc Accounts, source string, force bool) error {
 				if pids := acc.LiveSessionPidsFor(targetNum, entry.email); len(pids) > 0 {
 					eprint("Warning: " + entry.email + " (slot " + targetNum + ") has a live " +
 						"session-mode instance (PID " + joinPIDs(pids) + "); its session profile keeps " +
-						"the pre-import credentials until it is restarted via 'cswap run'.")
+						"the pre-import credentials until it is restarted via 'tycswap run'.")
 				}
 			} else {
 				if !slotOccupied(data, entry.exportedNum) {
@@ -347,7 +352,7 @@ func Import(acc Accounts, source string, force bool) error {
 	if email, org, ok := acc.CurrentAccount(); ok {
 		if liveSlot := findAccountSlot(data, email, org); liveSlot != "" && writtenSlots[liveSlot] {
 			eprint("Note: " + email + " is your current live login — activate the " +
-				"imported credentials with: cswap --switch-to " + liveSlot + " --force")
+				"imported credentials with: tycswap --switch-to " + liveSlot + " --force")
 		}
 	}
 	return nil
@@ -377,48 +382,157 @@ func rosterForUpdate(acc Accounts) (*SequenceData, error) {
 }
 
 // readSource reads the import text from stdin ("-") or a file (spec 07§3.1).
+//
+// Any file name is read: tycswap writes its exports as .tycswap, and an old
+// .cswap export from the tool it was forked from carries the same envelope.
+// Reading such a file is migration of the user's data, not a compatibility
+// promise for the old name (DESIGN Amendment A23).
 func readSource(source string) (string, error) {
+	var (
+		b   []byte
+		err error
+	)
 	if source == "-" {
-		b, err := io.ReadAll(Stdin)
+		if b, err = readLimited(Stdin); err != nil {
+			return "", err
+		}
+	} else {
+		inPath := expandUser(source)
+		f, oerr := os.Open(inPath)
+		if oerr != nil {
+			if os.IsNotExist(oerr) {
+				return "", cerr.Transfer("import file not found: %s", inPath)
+			}
+			return "", oerr
+		}
+		b, err = readLimited(f)
+		f.Close()
 		if err != nil {
 			return "", err
 		}
-		return string(b), nil
 	}
-	inPath := expandUser(source)
-	if _, err := os.Stat(inPath); err != nil {
-		if os.IsNotExist(err) {
-			return "", cerr.Transfer("import file not found: %s", inPath)
-		}
-		return "", err
-	}
-	b, err := os.ReadFile(inPath)
-	if err != nil {
-		return "", err
+	if len(b) > MaxImportBytes {
+		return "", cerr.Transfer("%s is larger than %d MiB; refusing to import it", sourceLabel(source), MaxImportBytes>>20)
 	}
 	return string(b), nil
 }
 
-// rawCredentialsBytes re-parses the envelope keeping each account's credentials
-// as raw JSON, so an OAuth credential can be re-emitted preserving its source
-// member order (which the decoded map[string]any loses). The result is aligned
-// index-for-index with envelope["accounts"] because it parses the same bytes and
-// the same array. A parse failure (impossible here — the text already decoded)
-// yields nil, and callers fall back to the map form.
-func rawCredentialsBytes(text string) []json.RawMessage {
-	var env struct {
-		Accounts []struct {
-			Credentials json.RawMessage `json:"credentials"`
-		} `json:"accounts"`
+// MaxImportBytes caps what Import reads from a file or stdin. An export of a
+// few accounts is kilobytes; an unbounded read of a wrong file or an endless
+// pipe would exhaust memory before the JSON parse could reject it. The Codex
+// import uses the same cap.
+const MaxImportBytes = 8 << 20
+
+// readLimited reads at most MaxImportBytes+1 bytes, so an oversized document is
+// detectable without reading all of it.
+func readLimited(r io.Reader) ([]byte, error) {
+	return io.ReadAll(io.LimitReader(r, MaxImportBytes+1))
+}
+
+// sourceLabel names the import source in the size error.
+func sourceLabel(source string) string {
+	if source == "-" {
+		return "stdin"
 	}
-	if err := json.Unmarshal([]byte(text), &env); err != nil {
+	return expandUser(source)
+}
+
+// decodeEnvelope parses the export text ONCE into raw members and derives both
+// views from that one decode: the envelope and each account as decoded values
+// (for validation), and each account's credentials as the raw bytes of the very
+// member that was validated (for storage, preserving source key order).
+//
+// Keys are matched exactly, from this one decode: a struct-based decode
+// matches keys case-insensitively, so taking the raw credentials from one
+// would store a "CREDENTIALS" member (or read a top-level "ACCOUNTS") while
+// the "credentials" member was the one validated.
+//
+// accounts is empty when the member is absent or not an array; the caller
+// reports that as "no accounts". Only the first JSON value of text is read.
+func decodeEnvelope(text string) (envelope map[string]any, accounts []any, rawCreds []json.RawMessage, err error) {
+	dec := json.NewDecoder(strings.NewReader(text))
+	var first json.RawMessage
+	if err := dec.Decode(&first); err != nil {
+		return nil, nil, nil, cerr.Transfer("export file is not valid JSON: %s", err.Error())
+	}
+	top, ok := rawObject(first)
+	if !ok {
+		return nil, nil, nil, cerr.Transfer("export file must be a JSON object")
+	}
+	envelope = make(map[string]any, len(top))
+	for k, v := range top {
+		envelope[k] = decodeUseNumber(v)
+	}
+	var rawAccounts []json.RawMessage
+	if v := bytes.TrimSpace(top["accounts"]); len(v) > 0 && v[0] == '[' {
+		if json.Unmarshal(v, &rawAccounts) != nil {
+			rawAccounts = nil
+		}
+	}
+	accounts = make([]any, len(rawAccounts))
+	rawCreds = make([]json.RawMessage, len(rawAccounts))
+	for i, ra := range rawAccounts {
+		members, ok := rawObject(ra)
+		if !ok {
+			accounts[i] = decodeUseNumber(ra) // validateImportedAccount refuses it
+			continue
+		}
+		m := make(map[string]any, len(members))
+		for k, v := range members {
+			m[k] = decodeUseNumber(v)
+		}
+		accounts[i] = m
+		rawCreds[i] = members["credentials"]
+	}
+	return envelope, accounts, rawCreds, nil
+}
+
+// rawObject decodes raw as a JSON object into its raw members; ok is false for
+// any other JSON value, null included.
+func rawObject(raw json.RawMessage) (map[string]json.RawMessage, bool) {
+	t := bytes.TrimSpace(raw)
+	if len(t) == 0 || t[0] != '{' {
+		return nil, false
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(t, &m) != nil || m == nil {
+		return nil, false
+	}
+	return m, true
+}
+
+// decodeUseNumber decodes one raw member with numbers kept as json.Number, the
+// form intValue expects. The bytes already parsed as part of the document, so
+// a failure cannot happen; it would yield nil.
+func decodeUseNumber(raw json.RawMessage) any {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	if dec.Decode(&v) != nil {
 		return nil
 	}
-	out := make([]json.RawMessage, len(env.Accounts))
-	for i, a := range env.Accounts {
-		out[i] = a.Credentials
+	return v
+}
+
+// importedConfig reduces an imported config to {"oauthAccount": …}, the shape a
+// default export carries (slimConfig). A --full export imports only its
+// identity too: every other key of ~/.claude.json is machine-local, and some of
+// them (mcpServers, allowed tools, hooks) name commands to run.
+func importedConfig(config map[string]any, email string) (map[string]any, error) {
+	oauth, ok := config["oauthAccount"].(map[string]any)
+	if !ok {
+		return nil, cerr.Transfer("config for %s is missing oauthAccount", email)
 	}
-	return out
+	// Its strings (organizationName, displayName, …) reach ~/.claude.json and
+	// every listing; none may carry a terminal control sequence.
+	clean := make(map[string]any, len(oauth))
+	for k, v := range oauth {
+		if str, isStr := v.(string); isStr {
+			v = termsafe.Strip(str)
+		}
+		clean[k] = v
+	}
+	return map[string]any{"oauthAccount": clean}, nil
 }
 
 // validateImportedAccount validates one account's fields BEFORE any filename is
@@ -439,7 +553,7 @@ func validateImportedAccount(raw any) (email, exportedNum string, err error) {
 
 	rawNumber := m["number"]
 	n, ok := intValue(rawNumber)
-	if !ok || n < 1 {
+	if !ok || n < 1 || n > maxSlotValue {
 		return "", "", cerr.Transfer("invalid slot number in imported account (%s): %s",
 			emailStr, pyRepr(rawNumber))
 	}
@@ -457,6 +571,14 @@ func validateImportedAccount(raw any) (email, exportedNum string, err error) {
 	}
 
 	if aliasStr, isStr := m["alias"].(string); isStr {
+		// Checked on the raw value: normalizeAlias trims, which would let a
+		// crafted " work\r\n" through as "work".
+		if len(aliasStr) > maxAliasLen {
+			return "", "", cerr.Transfer("invalid alias for %s: longer than %d bytes", emailStr, maxAliasLen)
+		}
+		if hasSpaceOrControl(aliasStr) {
+			return "", "", cerr.Transfer("invalid alias for %s: %s contains whitespace or a control character", emailStr, pyRepr(aliasStr))
+		}
 		if _, e := normalizeAlias(aliasStr); e != nil {
 			return "", "", cerr.Transfer("invalid alias for %s: %s", emailStr, e.Error())
 		}

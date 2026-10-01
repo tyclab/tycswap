@@ -4,7 +4,7 @@
 //
 // The atomic writer deliberately does NOT reuse internal/atomicfile (which
 // chmods the parent 0700): ~/.claude.json's parent is $HOME. It mirrors Python
-// _write_json exactly — mkdir parent with default perms, temp sibling, rename,
+// _write_json — mkdir parent (0700 when created, never chmodded), temp sibling, rename,
 // then chmod the file 0600 (non-Windows) — so the rename is the last fallible op.
 package switching
 
@@ -14,10 +14,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/ccfile"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // claudeConfigPath is _get_claude_config_path() = get_global_config_path().
@@ -52,6 +54,18 @@ func readConfigJSON(s *store.Store) map[string]any {
 		return nil
 	}
 	return m
+}
+
+// readConfigForUpdate is the strict read for a read-modify-write of the live
+// config: (nil, nil) only when it is absent, blank or null; a file that exists
+// but cannot be read or parsed is a ConfigError, never an empty object, so a
+// switch cannot replace the user's ~/.claude.json with one key.
+func readConfigForUpdate() (map[string]any, error) {
+	m, err := ccfile.ReadGlobalConfigStrict(claudeConfigPath())
+	if err != nil {
+		return nil, cerr.Config("Cannot update the Claude config: %v (fix or move the file, then retry)", err).Wrap(err)
+	}
+	return m, nil
 }
 
 // writeConfigJSON renders data as two-space-indented JSON, rejects a
@@ -93,11 +107,11 @@ func marshalIndent2(v any) ([]byte, error) {
 }
 
 // atomicConfigWrite writes to path via a temp sibling + rename, then chmods the
-// file 0600 (non-Windows). It mkdirs the parent with default perms but never
+// file 0600 (non-Windows). It mkdirs a missing parent 0700 but never
 // chmods it — $HOME must keep its mode.
 func atomicConfigWrite(path string, data []byte) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o777); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(dir, "*.tmp")
@@ -115,12 +129,17 @@ func atomicConfigWrite(path string, data []byte) error {
 		tmp.Close()
 		return err
 	}
+	if err := atomicfile.SyncFile(tmp); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
 	if err := os.Rename(tmpName, path); err != nil {
 		return err
 	}
+	atomicfile.SyncDir(filepath.Dir(path))
 	committed = true
 	if !platform.IsWindows() {
 		if err := os.Chmod(path, 0o600); err != nil {

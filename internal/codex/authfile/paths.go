@@ -1,26 +1,26 @@
-// paths.go — path resolution for the codex CLI's config and for cswap's own
+// paths.go — path resolution for the codex CLI's config and for tycswap's own
 // Codex store. Implements claude-swap PR #252 codex/paths.py.
 //
 // Two distinct roots, deliberately kept apart. ~/.codex (or $CODEX_HOME) is the
-// codex CLI's directory: cswap reads and writes exactly one file in it,
+// codex CLI's directory: tycswap reads and writes exactly one file in it,
 // auth.json, and reads codex-auth's accounts/registry.json once at import time.
-// Nothing else in there is ours. <cswap backup root>/codex/ is cswap's own
+// Nothing else in there is ours. <tycswap backup root>/codex/ is tycswap's own
 // store, a sibling of the existing Claude configs/ and credentials/; keeping it
 // under the same root means the existing purge, backup-root migration and the
 // tests' real-store isolation cover Codex data for free.
 //
 // CODEX_HOME mirrors the codex CLI's own env var; resolving it the same way is
-// what makes cswap and codex agree on which file is live.
+// what makes tycswap and codex agree on which file is live.
 
 // Package authfile reads and writes the codex CLI's live auth.json, derives the
-// account identity it belongs to, and resolves every Codex path cswap uses.
+// account identity it belongs to, and resolves every Codex path tycswap uses.
 package authfile
 
 import (
 	"os"
 	"path/filepath"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/paths"
 )
 
 // userHome returns the user's home directory, or "" when it cannot be
@@ -53,12 +53,12 @@ func AuthRegistryPath() string {
 	return filepath.Join(Home(), "accounts", "registry.json")
 }
 
-// AuthAccountsDir returns codex-auth's snapshot directory (read-only for cswap).
+// AuthAccountsDir returns codex-auth's snapshot directory (read-only for tycswap).
 func AuthAccountsDir() string {
 	return filepath.Join(Home(), "accounts")
 }
 
-// StoreRoot returns cswap's own Codex store root, under the cswap backup root.
+// StoreRoot returns tycswap's own Codex store root, under the tycswap backup root.
 func StoreRoot() string {
 	return filepath.Join(paths.GetBackupRoot(), "codex")
 }
@@ -79,7 +79,7 @@ func CacheDir() string {
 	return filepath.Join(StoreRoot(), "cache")
 }
 
-// LockPath returns cswap's Codex lock file. It is separate from the Claude
+// LockPath returns tycswap's Codex lock file. It is separate from the Claude
 // lock on purpose: a Codex switch and a Claude switch touch disjoint files and
 // must never block each other.
 func LockPath() string {

@@ -1,4 +1,4 @@
-// theme.go — the "cswap-dark" color palette and severity ramp.
+// theme.go — the "tycswap-dark" color palette and severity ramp.
 //
 // Implements spec 09§8.1 (theme.py color constants + severity_color) and the
 // numeric bands in 09§11.8. The hex values are the single source of truth

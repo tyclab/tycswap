@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // lockRecorder is an injectable MCP config-lock seam that counts acquisitions

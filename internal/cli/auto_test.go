@@ -1,4 +1,4 @@
-// auto_test.go — the Codex loop that rides along in `cswap auto`.
+// auto_test.go — the Codex loop that rides along in `tycswap auto`.
 package cli
 
 import (

@@ -1,4 +1,4 @@
-// Package filelock is cswap's own cross-process advisory lock.
+// Package filelock is tycswap's own cross-process advisory lock.
 //
 // Implements spec 03§7 (locking.py). POSIX uses flock(LOCK_EX|LOCK_NB) with a
 // 0.1s poll and a monotonic timeout (default 10s); Windows uses LockFileEx on a
@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/cerr"
 )
 
 // pollInterval matches Python's time.sleep(0.1).
@@ -64,7 +64,10 @@ func (l *FileLock) Acquire(timeout time.Duration) (bool, error) {
 		l.hold.Unlock()
 		return false, err
 	}
-	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	// No O_TRUNC: the lock file carries no data, and truncating would let a
+	// symlink planted at the lock path truncate whatever it points to.
+	// noFollow refuses such a symlink outright (POSIX).
+	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_WRONLY|noFollow, 0o600)
 	if err != nil {
 		l.hold.Unlock()
 		return false, err

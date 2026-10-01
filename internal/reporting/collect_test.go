@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/filelock"
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 func TestCollect_FreshEntryServedWithoutFetch(t *testing.T) {
@@ -350,7 +350,7 @@ func TestCollect_ActiveRefreshLockContentionShowsExpired(t *testing.T) {
 	// Short-timeout FileLock so the contended persist acquisition resolves fast.
 	s.Lock = filelock.New(s.LockFile, 20*time.Millisecond)
 
-	// A separate instance holds the cswap FileLock across the whole collect, so
+	// A separate instance holds the tycswap FileLock across the whole collect, so
 	// the persist callback's withTripleLock times out and never runs its inner
 	// write (the rotated credential is not persisted).
 	holder := filelock.New(s.LockFile, time.Second)

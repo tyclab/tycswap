@@ -17,13 +17,13 @@ import (
 	"strings"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/printer"
 )
 
 // AuthOverrideEnvVars are the env vars that make claude bypass account OAuth
@@ -162,7 +162,7 @@ var (
 		presetOverride: "CLAUDE_CONFIG_DIR is already set (%s); this export overrides it for this shell.",
 		sameActiveNote: "Account-%s (%s) is the active default login — an unpinned shell already uses it; nothing exported.",
 		scrubIgnore: "Removing %s for this shell — these override the selected account inside Claude Code. " +
-			"They are unset for the WHOLE shell (not just cswap); re-export them to restore.",
+			"They are unset for the WHOLE shell (not just tycswap); re-export them to restore.",
 	}
 )
 
@@ -263,6 +263,9 @@ func (m *Manager) ExecDefault(claudeArgs []string) error {
 // image (never returns on success); Windows spawns, waits, and exits with
 // claude's own return code.
 func (m *Manager) exec(claudeBin string, claudeArgs []string, env []string) error {
+	if err := CheckCmdShimArgs(claudeBin, claudeArgs); err != nil {
+		return err
+	}
 	argv := append([]string{claudeBin}, claudeArgs...)
 	return m.runner.Exec(claudeBin, argv, env)
 }
@@ -273,8 +276,8 @@ func (m *Manager) exec(claudeBin string, claudeArgs []string, env []string) erro
 func (m *Manager) ensureNotAPIKey(accountNum, email string) error {
 	if m.accounts.AccountKindFor(accountNum) == "api_key" {
 		return cerr.Session(
-			"Account-%s (%s) is an API-key account; 'cswap run' (session mode) "+
-				"does not support API-key accounts yet. Use 'cswap --switch-to' "+
+			"Account-%s (%s) is an API-key account; 'tycswap run' (session mode) "+
+				"does not support API-key accounts yet. Use 'tycswap --switch-to' "+
 				"to make it your default login instead.", accountNum, email)
 	}
 	return nil
@@ -337,6 +340,10 @@ func envKey(entry string) string {
 	}
 	return entry
 }
+
+// ScrubAuthOverrides returns environ without the AuthOverrideEnvVars, the
+// scrub run and env apply, for other commands that start claude.
+func ScrubAuthOverrides(environ []string) []string { return scrubEnv(environ, AuthOverrideEnvVars) }
 
 // scrubEnv returns a fresh slice with every entry whose key is in drop removed.
 func scrubEnv(environ, drop []string) []string {

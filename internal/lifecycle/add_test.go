@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 func ip(i int) *int { return &i }
@@ -289,7 +289,7 @@ func TestAddRefusesCorruptSequence(t *testing.T) {
 
 // TestAddRefusesTruncatedRosterOnTheAutoAddPath is the end-to-end defect: a
 // three-slot roster truncated mid-write (emails and aliases still readable
-// ASCII), an unmanaged live identity, and the auto-add that `cswap switch` makes
+// ASCII), an unmanaged live identity, and the auto-add that `tycswap switch` makes
 // on that identity — core.autoAddCurrent's bare AddAccount(nil, false, nil).
 // Before the refusal, that call completed and renamed a ONE-account roster over
 // slots 1-3, orphaning six backups with exit 0 and a diagnostic only --debug
@@ -638,7 +638,7 @@ func assertBackupsReachable(t *testing.T, s *store.Store, want ...[4]string) {
 // a file there that parses perfectly. Consulting it would put the record add
 // already decided to write into a roster where that slot belongs to someone
 // else — replacing a live record with no occupancy warning and no confirmation,
-// and dropping every slot that writer's roster did not carry. No cswap can be in
+// and dropping every slot that writer's roster did not carry. No tycswap can be in
 // this window (the lock is held across it), so the file found there is not
 // information: the roster read under the lock is the roster committed.
 func TestAddRecordLandsInTheRosterItsSlotWasChosenFrom(t *testing.T) {
@@ -650,7 +650,7 @@ func TestAddRecordLandsInTheRosterItsSlotWasChosenFrom(t *testing.T) {
 	)
 	seedLiveLogin(t, s, "new@example.com", "", "", "uuid-n", oauthBlob)
 
-	// The intruder writes what `cswap add --slot 4` would have written, but
+	// The intruder writes what `tycswap add --slot 4` would have written, but
 	// without taking the lock — a hand edit, or a tool that does not know about
 	// it. It lands while this call is writing slot 4's backups.
 	seam := &racingCreds{Store: s.Creds, t: t, s: s, on: "WriteBackup",
@@ -692,7 +692,7 @@ func TestAddRecordLandsInTheRosterItsSlotWasChosenFrom(t *testing.T) {
 }
 
 // TestAddDisplaceCommitsTheRosterReadAfterTheConfirmation is the rule at the
-// displace branch. The question is asked before the lock, so a rival cswap CAN
+// displace branch. The question is asked before the lock, so a rival tycswap CAN
 // commit while it is open — that is the one window left where it can. The
 // displacement is therefore applied to the roster read after the answer, under
 // the lock: the rival's removal of slot 2 stands, and re-committing the
@@ -706,7 +706,7 @@ func TestAddDisplaceCommitsTheRosterReadAfterTheConfirmation(t *testing.T) {
 		acct{num: "2", email: "work@example.com", uuid: "uuid-w", alias: "work", creds: "c2", config: "g2"},
 	)
 	seedLiveLogin(t, s, "new@example.com", "", "", "uuid-n", oauthBlob)
-	// A concurrent `cswap remove work` commits while the prompt is open.
+	// A concurrent `tycswap remove work` commits while the prompt is open.
 	withPrompter(t, &racingPrompter{t: t, s: s,
 		commit: commitRival(t, s, ip(1),
 			acct{num: "1", email: "old@example.com", uuid: "uuid-o"},
@@ -729,7 +729,7 @@ func TestAddDisplaceCommitsTheRosterReadAfterTheConfirmation(t *testing.T) {
 }
 
 // TestAddAtThePromptKeepsARivalsCommittedRecord is the loss this locking exists
-// to close, in the shape it was first demonstrated: `cswap add --slot 1` sits at
+// to close, in the shape it was first demonstrated: `tycswap add --slot 1` sits at
 // its overwrite prompt while a second terminal registers a new account and
 // commits it. Answering "y" must displace slot 1 and leave the rival's slot
 // alone — the rival's record AND the credential/config backups it wrote before
@@ -740,7 +740,7 @@ func TestAddAtThePromptKeepsARivalsCommittedRecord(t *testing.T) {
 	s := newStore(t)
 	seed(t, s, ip(1), acct{num: "1", email: "a@example.com", uuid: "uuid-a", creds: "c1", config: "g1"})
 	seedLiveLogin(t, s, "b@example.com", "", "", "uuid-b", oauthBlob)
-	// The rival is `cswap add-token --email z@example.com`, committing slot 2.
+	// The rival is `tycswap add-token --email z@example.com`, committing slot 2.
 	withPrompter(t, &racingPrompter{t: t, s: s,
 		commit: commitRival(t, s, ip(1),
 			acct{num: "1", email: "a@example.com", uuid: "uuid-a", creds: "c1", config: "g1"},
@@ -772,7 +772,7 @@ func TestAddAtThePromptAbortsWhenTheSlotChangedHands(t *testing.T) {
 	s := newStore(t)
 	seed(t, s, ip(1), acct{num: "1", email: "a@example.com", uuid: "uuid-a", creds: "c1", config: "g1"})
 	seedLiveLogin(t, s, "b@example.com", "", "", "uuid-b", oauthBlob)
-	// A concurrent `cswap move` (or add --slot 1) puts someone else in slot 1.
+	// A concurrent `tycswap move` (or add --slot 1) puts someone else in slot 1.
 	// The baseline is taken as that rival finishes: "nothing was changed" is a
 	// claim about the state the abort found, not about the state before it.
 	var before map[string][]byte
@@ -799,7 +799,7 @@ func TestAddAtThePromptAbortsWhenTheSlotChangedHands(t *testing.T) {
 // to overwrite is gone by the time the lock is held. There is nothing to
 // destroy, so the add proceeds into the now-free slot and DeleteAccountFiles is
 // never called — a delete keyed on the vanished record would either no-op or,
-// worse, hit a slot another cswap has since refilled.
+// worse, hit a slot another tycswap has since refilled.
 func TestAddAtThePromptDeEscalatesWhenTheSlotIsFreed(t *testing.T) {
 	s := newStore(t)
 	seed(t, s, ip(1),
@@ -809,7 +809,7 @@ func TestAddAtThePromptDeEscalatesWhenTheSlotIsFreed(t *testing.T) {
 	seedLiveLogin(t, s, "b@example.com", "", "", "uuid-b", oauthBlob)
 	counting := &countingCreds{Store: s.Creds}
 	s.Creds = counting
-	// A concurrent `cswap remove a@example.com` empties slot 1 during the prompt.
+	// A concurrent `tycswap remove a@example.com` empties slot 1 during the prompt.
 	withPrompter(t, &racingPrompter{t: t, s: s,
 		commit: commitRival(t, s, ip(2),
 			acct{num: "2", email: "keep@example.com", uuid: "uuid-k", creds: "c2", config: "g2"},
@@ -971,7 +971,7 @@ func TestAddMigrateCommitsTheRosterItDecidedFrom(t *testing.T) {
 		acct{num: "2", email: "alice@example.com", uuid: "uuid-a", alias: "work", creds: "c2", config: "g2"},
 	)
 	seedLiveLogin(t, s, "alice@example.com", "", "", "uuid-a", oauthBlob)
-	// A concurrent `cswap remove keep` commits while the live credential is read.
+	// A concurrent `tycswap remove keep` commits while the live credential is read.
 	seam := &racingCreds{Store: s.Creds, t: t, s: s, on: "ReadActive",
 		commit: commitRival(t, s, ip(2),
 			acct{num: "2", email: "alice@example.com", uuid: "uuid-a", alias: "work"},
@@ -1013,7 +1013,7 @@ func TestAddRefreshInPlaceCommitsTheRosterItResolvedFrom(t *testing.T) {
 		acct{num: "2", email: "alice@example.com", uuid: "uuid-a", creds: "c2", config: "g2"},
 	)
 	seedLiveLogin(t, s, "alice@example.com", "", "", "uuid-a", oauthBlob)
-	// A concurrent `cswap remove keep` commits while the live credential is read.
+	// A concurrent `tycswap remove keep` commits while the live credential is read.
 	seam := &racingCreds{Store: s.Creds, t: t, s: s, on: "ReadActive",
 		commit: commitRival(t, s, ip(2),
 			acct{num: "2", email: "alice@example.com", uuid: "uuid-a"},
@@ -1060,5 +1060,48 @@ func TestAddBackfillsOrgFieldsBeforeReadingTheRosterItWrites(t *testing.T) {
 	assertBackfilled(t, s, "2", "orgB", "Beta")
 	if r := rec(t, readSeq(t, s), "3"); r.str("email") != "new@example.com" {
 		t.Errorf("slot 3 = %+v, want the added account", r.vals)
+	}
+}
+
+const liveBlobWithMCP = `{"claudeAiOauth":{"accessToken":"sk-ant-oat01-LIVE","refreshToken":"ref-live"},"mcpOAuth":{"srv|1111":{"accessToken":"mcp-live"}},"trustedDeviceToken":"dev-live"}`
+
+// assertAccountOnly asserts a stored credential kept the account part and the
+// device token but not the seat's MCP server logins.
+func assertAccountOnly(t *testing.T, stored string) {
+	t.Helper()
+	if strings.Contains(stored, "mcpOAuth") || strings.Contains(stored, "mcp-live") {
+		t.Errorf("stored credential carries the seat's mcpOAuth: %s", stored)
+	}
+	for _, want := range []string{"sk-ant-oat01-LIVE", "ref-live", `"trustedDeviceToken":"dev-live"`} {
+		if !strings.Contains(stored, want) {
+			t.Errorf("stored credential lost %s: %s", want, stored)
+		}
+	}
+}
+
+// TestAddStoresTheAccountOnly: `add` leaves the live mcpOAuth out of the slot,
+// on a new add and on the refresh-in-place path; the live file is untouched.
+func TestAddStoresTheAccountOnly(t *testing.T) {
+	s := newStore(t)
+	seedLiveLogin(t, s, "alice@example.com", "", "", "uuid-a", liveBlobWithMCP)
+	if err := AddAccount(s, nil, false, nil); err != nil {
+		t.Fatalf("AddAccount: %v", err)
+	}
+	stored, _ := s.ReadAccountCredentials("1", "alice@example.com")
+	assertAccountOnly(t, stored)
+
+	// Refresh in place: same identity, no slot.
+	if err := AddAccount(s, nil, false, nil); err != nil {
+		t.Fatalf("AddAccount (refresh): %v", err)
+	}
+	stored, _ = s.ReadAccountCredentials("1", "alice@example.com")
+	assertAccountOnly(t, stored)
+
+	live, err := os.ReadFile(filepath.Join(s.Home, ".claude", ".credentials.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(live) != liveBlobWithMCP {
+		t.Errorf("add changed the live credentials file: %s", live)
 	}
 }

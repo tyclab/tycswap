@@ -1,5 +1,5 @@
 // Package mappings is the directory → account mapping store for
-// `cswap run`'s auto-resolution and the `cswap map`/`unmap` commands.
+// `tycswap run`'s auto-resolution and the `tycswap map`/`unmap` commands.
 //
 // Implements spec 06§5 (mappings.py): path normalization (normalize_path),
 // the MappingStore API (load/all/get/set/remove/prune_account/resolve), and
@@ -15,9 +15,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/atomicfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // SchemaVersion is mappings.json's schemaVersion.
@@ -48,6 +49,16 @@ func New(backupDir string) *Store {
 // NewWithClock is New with an injectable clock, for deterministic tests.
 func NewWithClock(backupDir string, clk clock.Clock) *Store {
 	return &Store{path: filepath.Join(backupDir, Filename), clk: clk}
+}
+
+// LockFilename is the lock every mappings.json read-modify-write holds, so
+// concurrent `map`/`unmap`/remove cannot lose each other's update. It is its
+// own lock, not the store's .lock: PruneAccount runs from remove, which already
+// holds the store lock, and that lock is not reentrant.
+const LockFilename = ".mappings.lock"
+
+func (s *Store) withLock(fn func() error) error {
+	return filelock.New(filepath.Join(filepath.Dir(s.path), LockFilename), 0).With(fn)
 }
 
 // Path returns the mapping store's file path.
@@ -120,6 +131,10 @@ func (s *Store) Get(path string) (Entry, bool) {
 // Set upserts a mapping for path and persists it atomically, always
 // rewriting "added" to now.
 func (s *Store) Set(path, email, orgUUID string) error {
+	return s.withLock(func() error { return s.set(path, email, orgUUID) })
+}
+
+func (s *Store) set(path, email, orgUUID string) error {
 	m := s.Load()
 	m[NormalizePath(path)] = Entry{
 		Email:            email,
@@ -130,7 +145,14 @@ func (s *Store) Set(path, email, orgUUID string) error {
 }
 
 // Remove deletes the mapping for path; the bool reports whether one existed.
-func (s *Store) Remove(path string) (bool, error) {
+func (s *Store) Remove(path string) (removed bool, err error) {
+	if lerr := s.withLock(func() error { removed, err = s.remove(path); return nil }); lerr != nil {
+		return false, lerr
+	}
+	return removed, err
+}
+
+func (s *Store) remove(path string) (bool, error) {
 	m := s.Load()
 	key := NormalizePath(path)
 	if _, ok := m[key]; !ok {
@@ -145,7 +167,14 @@ func (s *Store) Remove(path string) (bool, error) {
 
 // PruneAccount deletes every mapping for (email, orgUUID) and returns the
 // count removed. The file is rewritten only when at least one was removed.
-func (s *Store) PruneAccount(email, orgUUID string) (int, error) {
+func (s *Store) PruneAccount(email, orgUUID string) (n int, err error) {
+	if lerr := s.withLock(func() error { n, err = s.pruneAccount(email, orgUUID); return nil }); lerr != nil {
+		return 0, lerr
+	}
+	return n, err
+}
+
+func (s *Store) pruneAccount(email, orgUUID string) (int, error) {
 	m := s.Load()
 	removed := 0
 	for key, e := range m {

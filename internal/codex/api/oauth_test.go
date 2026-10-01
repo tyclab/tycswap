@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/logging"
 )
 
 func TestRefresh_UpdatesTheAccessToken(t *testing.T) {
@@ -228,7 +228,7 @@ func TestRefresh_NoTokenValueEverReachesALog(t *testing.T) {
 	clientFor(s).TryRefresh(context.Background(), makeAuthJSON(t, "SECRET-RT", 0))
 	deadClient(t).TryRefresh(context.Background(), makeAuthJSON(t, "SECRET-RT", 0))
 
-	data, err := os.ReadFile(filepath.Join(dir, "claude-swap.log"))
+	data, err := os.ReadFile(filepath.Join(dir, "tycswap.log"))
 	if err != nil {
 		t.Fatalf("read log: %v", err)
 	}

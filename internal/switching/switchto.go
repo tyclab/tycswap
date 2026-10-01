@@ -10,9 +10,9 @@ import (
 	"regexp"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // Prompt is the interactive prompt seam for the human ambiguous-email path
@@ -84,7 +84,7 @@ func SwitchTo(s *store.Store, identifier string, jsonOut, force bool) (any, erro
 				ref := numRef(targetAccount, recEmail)
 				if !jsonOut {
 					printOut(printer.Accent("Already on") + " Account-" + targetAccount + " (" + recEmail + ")")
-					printOut(printer.Dimmed("To rewrite the live login from the stored backup (e.g. after --import), run: cswap --switch-to " + targetAccount + " --force"))
+					printOut(printer.Dimmed("To rewrite the live login from the stored backup (e.g. after --import), run: tycswap --switch-to " + targetAccount + " --force"))
 					return nil, nil
 				}
 				return switchNoop(noopArgs{

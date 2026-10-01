@@ -16,7 +16,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // menuNote is one trailing marker on a menu row, styled independently of the
@@ -87,12 +88,10 @@ func (d *dashboardScreen) addEntries() []menuEntry {
 
 // accountName is the account's display name in a menu row: alias, when set,
 // precedes the parenthesized email; a plain account shows only the bare email
-// (09§3.2 — never "(email)" with no alias).
+// (09§3.2 — never "(email)" with no alias). Control sequences are stripped
+// here, where the stored strings are drawn.
 func accountName(acc reporting.AccountSnapshot) string {
-	if acc.Alias != "" {
-		return fmt.Sprintf("%s (%s)", acc.Alias, acc.Email)
-	}
-	return acc.Email
+	return identityText(acc).plain()
 }
 
 // stateNotes are the markers an account row carries after its label, in the
@@ -117,7 +116,7 @@ func (d *dashboardScreen) removeEntries(m *Model) []menuEntry {
 	var entries []menuEntry
 	for _, acc := range m.accounts() {
 		entries = append(entries, menuEntry{
-			label:    fmt.Sprintf("%s  %s  [%s]%s", acc.Number, accountName(acc), acc.DisplayTag(), providerBadge(acc)),
+			label:    fmt.Sprintf("%s  %s  [%s]%s", acc.Number, accountName(acc), termsafe.Strip(acc.DisplayTag()), providerBadge(acc)),
 			actionID: "remove:" + rowID(acc),
 			notes:    stateNotes(acc),
 		})

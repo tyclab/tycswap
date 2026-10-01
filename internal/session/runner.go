@@ -15,8 +15,8 @@ import (
 	"os/exec"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cclock"
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/cclock"
+	"github.com/tyclab/tycswap/internal/clock"
 )
 
 // probeWaitDelay bounds how long Probe blocks after the deadline fires (or the

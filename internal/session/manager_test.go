@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 const oauthCreds = `{"claudeAiOauth":{"refreshToken":"rt-1","accessToken":"at-1"}}`

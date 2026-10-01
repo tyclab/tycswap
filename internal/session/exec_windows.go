@@ -1,7 +1,7 @@
 //go:build windows
 
 // Windows terminal handoff: os.exec* detaches from the console confusingly, so
-// cswap stays resident as a thin wrapper subprocess and exits with claude's own
+// tycswap stays resident as a thin wrapper subprocess and exits with claude's own
 // return code. Ctrl+C while waiting mirrors to exit code 130.
 //
 // Implements spec 06§1.8 (_exec Windows branch). Not compiled/vetted on the

@@ -1,5 +1,5 @@
 // Per-account backup credentials: base64 .enc files (every platform) and the
-// macOS Keychain (service "claude-swap"). Reads are .enc-wins on every platform;
+// macOS Keychain (service "tycswap"). Reads are .enc-wins on every platform;
 // a successful Keychain write reconciles the .enc away (correctness-critical).
 // One .prev generation is retained per slot, routed by the same rule as the
 // backup itself.
@@ -17,25 +17,27 @@ import (
 	"path/filepath"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
 func (s *FileKeychainStore) backupEncPath(num, email string) string {
-	return filepath.Join(s.credentialsDir, ".creds-"+num+"-"+email+".enc")
+	return filepath.Join(s.credentialsDir, storenames.CredsFile(num, email))
 }
 
 func (s *FileKeychainStore) prevBackupPath(num, email string) string {
-	return filepath.Join(s.credentialsDir, ".creds-"+num+"-"+email+".enc.prev")
+	return filepath.Join(s.credentialsDir, storenames.CredsPrevFile(num, email))
 }
 
 func (s *FileKeychainStore) backupUsername(num, email string) string {
-	return "account-" + num + "-" + email
+	return storenames.KeychainAccount(num, email)
 }
 
 func (s *FileKeychainStore) prevBackupUsername(num, email string) string {
-	return s.backupUsername(num, email) + ".prev"
+	return storenames.KeychainAccountPrev(num, email)
 }
 
 // kcReadBackup reads a per-account backup from the Keychain only (via learn),
@@ -80,7 +82,7 @@ func (s *FileKeychainStore) KCWriteBackup(num, email, creds string) error {
 
 // atomicB64Write base64-encodes credentials and atomically writes them to target
 // under credentialsDir (0600), mirroring _atomic_b64_write. It mkdirs the parent
-// with default perms but never chmods it (matching Python; unlike atomicfile,
+// 0700 when it has to create it, but never chmods an existing one (unlike atomicfile,
 // which chmods the parent to 0700).
 func (s *FileKeychainStore) atomicB64Write(target, credentials string) error {
 	encoded := base64.StdEncoding.EncodeToString([]byte(credentials))
@@ -239,6 +241,11 @@ func (s *FileKeychainStore) retainPreviousBackup(num, email, newCreds string) {
 	var err error
 	if s.useKeychain() {
 		err = s.kcSet(securityService, s.prevBackupUsername(num, email), current)
+		if keychain.IsTooLarge(err) {
+			// Too large for security's stdin: keep it in the 0600 file
+			// instead (ReadPrev is .enc.prev-wins).
+			err = s.atomicB64Write(s.prevBackupPath(num, email), current)
+		}
 	} else {
 		err = s.atomicB64Write(s.prevBackupPath(num, email), current)
 	}
@@ -321,7 +328,7 @@ func removeMissingOK(path string) error {
 // perms and never chmods it — mirroring Python's _atomic_b64_write /
 // _write_active_credentials_file.
 func atomicRawWrite(dir, target string, data []byte) error {
-	if err := os.MkdirAll(dir, 0o777); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(dir, "*.tmp")
@@ -339,12 +346,17 @@ func atomicRawWrite(dir, target string, data []byte) error {
 		tmp.Close()
 		return err
 	}
+	if err := atomicfile.SyncFile(tmp); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
 	if err := os.Rename(tmpName, target); err != nil {
 		return err
 	}
+	atomicfile.SyncDir(filepath.Dir(target))
 	committed = true
 	if !platform.IsWindows() {
 		if err := os.Chmod(target, 0o600); err != nil {

@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/lifecycle"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/lifecycle"
+	"github.com/tyclab/tycswap/internal/oauth"
 )
 
 // -- FINDING 5-part: switch-toast number rendering ---------------------------
@@ -156,7 +156,7 @@ func TestPersistWarningSurfacesAsToast(t *testing.T) {
 	// The persist path (oauth.persistCredentials, 04§1.25) writes a warning like
 	// this to oauth.Output, potentially from the auto-engine goroutine.
 	fmt.Fprintln(oauth.Output, "Warning: failed to save refreshed token for account 2 (b@x.com). "+
-		"If the next refresh fails, re-run `cswap --add-account` after logging in.")
+		"If the next refresh fails, re-run `tycswap --add-account` after logging in.")
 
 	// A poll tick drains the collector into toasts on the Update goroutine.
 	m.Update(pollTickMsg{})

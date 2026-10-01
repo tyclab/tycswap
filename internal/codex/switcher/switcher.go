@@ -39,20 +39,21 @@ import (
 	"strings"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/api"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/procdetect"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/transfer"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/usagecache"
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/codex/api"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/procdetect"
+	"github.com/tyclab/tycswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/codex/transfer"
+	"github.com/tyclab/tycswap/internal/codex/usagecache"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/termsafe"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // ProviderID is this provider's id, matching AccountSnapshot.Provider.
@@ -66,7 +67,7 @@ const DefaultLockTimeout = 10 * time.Second
 // the cache without one, so the cache's documented default of 100 applies.
 const usageThreshold = 100.0
 
-const busyMsg = "Another cswap process is using the Codex store; try again."
+const busyMsg = "Another tycswap process is using the Codex store; try again."
 
 // Options configures a Switcher. Zero fields take their production defaults.
 type Options struct {
@@ -219,6 +220,14 @@ func (s *Switcher) ResolveAccount(identifier string) (number, email, label strin
 // Matching on the live file's identity rather than on the registry's idea of
 // the active slot is what makes this repair a clobber instead of committing
 // one. An unmanaged login is not ours to store.
+// CaptureLive writes the live auth.json back into its managed slot's snapshot
+// under the store lock, so a command about to replace the live file outside a
+// switch (codex login) cannot lose the outgoing account's newest rotated
+// refresh token. An unmanaged or unidentifiable live login is left alone.
+func (s *Switcher) CaptureLive() error {
+	return s.withLock(s.captureLive)
+}
+
 func (s *Switcher) captureLive() error {
 	payload := authfile.ReadLivePayload()
 	if payload == nil {
@@ -367,7 +376,7 @@ func (s *Switcher) Add(ctx context.Context, alias string) (store.Slot, error) {
 		id = authfile.ParseIdentity(payload)
 	}
 	if payload == nil || id == nil {
-		return store.Slot{}, cerr.Switch("No Codex login found. Run 'cswap codex login' (or 'codex login') first.")
+		return store.Slot{}, cerr.Switch("No Codex login found. Run 'tycswap codex login' (or 'codex login') first.")
 	}
 	if !id.Identifiable() {
 		return store.Slot{}, cerr.Switch("The current Codex login carries no account id, so it cannot be " +
@@ -481,10 +490,10 @@ func (s *Switcher) Remove(identifier string, assumeYes bool) (removed bool, err 
 		return false, err
 	}
 	if slot.Number == s.CurrentAccountNumber() {
-		fmt.Fprintln(s.out, printer.Yellowed(fmt.Sprintf("Warning: Codex account %s (%s) is currently active", slot.Number, slot.Email)))
+		fmt.Fprintln(s.out, printer.Yellowed(fmt.Sprintf("Warning: Codex account %s (%s) is currently active", slot.Number, termsafe.Strip(slot.Email))))
 	}
 	if !assumeYes {
-		fmt.Fprintf(s.out, "Are you sure you want to permanently remove Codex account %s (%s)? [y/N] ", slot.Number, slot.Email)
+		fmt.Fprintf(s.out, "Are you sure you want to permanently remove Codex account %s (%s)? [y/N] ", slot.Number, termsafe.Strip(slot.Email))
 		line, _ := bufio.NewReader(s.in).ReadString('\n')
 		if strings.ToLower(strings.TrimRight(line, "\r\n")) != "y" {
 			fmt.Fprintln(s.out, printer.Dimmed("Cancelled"))
@@ -579,7 +588,7 @@ func (s *Switcher) Status(ctx context.Context) Status {
 	return Status{TotalManaged: len(slots)}
 }
 
-// JSON is the `cswap codex status --json` document.
+// JSON is the `tycswap codex status --json` document.
 func (st Status) JSON() map[string]any {
 	if st.Slot == nil {
 		return map[string]any{"schemaVersion": jsonout.SchemaVersion, "provider": ProviderID, "active": nil}
@@ -613,12 +622,12 @@ func (st Status) Render(w io.Writer) {
 		fmt.Fprintf(w, "%s %s\n", printer.Bolded("Status:"), printer.Dimmed("No active Codex account"))
 		return
 	}
-	ws := st.Slot.WorkspaceName
+	ws := termsafe.Strip(st.Slot.WorkspaceName)
 	if ws == "" {
 		ws = "personal"
 	}
 	fmt.Fprintf(w, "%s %s (%s %s)\n", printer.Bolded("Status:"), printer.Accent("Codex-"+st.Slot.Number),
-		st.Slot.Email, printer.Muted("["+ws+"]"))
+		termsafe.Strip(st.Slot.Email), printer.Muted("["+ws+"]"))
 	fmt.Fprintf(w, "  %s\n", printer.Dimmed(fmt.Sprintf("Total managed Codex accounts: %d", st.TotalManaged)))
 	for _, line := range usageLines(st.Usage) {
 		fmt.Fprintf(w, "  %s\n", line)

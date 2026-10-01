@@ -15,8 +15,8 @@ import (
 	"sort"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/sessprofile"
 )
 
 // prepareHistoryShare makes a history item linkable, returning false to skip it

@@ -1,7 +1,7 @@
-// codex.go — the `cswap codex` pre-dispatched namespace: the Codex (ChatGPT)
+// codex.go — the `tycswap codex` pre-dispatched namespace: the Codex (ChatGPT)
 // provider's command surface. Port of claude-swap PR #252 cli_codex.py.
 //
-// A namespace rather than a --provider flag: bare `cswap switch` and `cswap
+// A namespace rather than a --provider flag: bare `tycswap switch` and `tycswap
 // list` keep meaning Claude, so every script and every habit built on the
 // existing CLI is untouched, and nothing here changes an existing command. It
 // is pre-dispatched from run() alongside run/auto/config/map for the same
@@ -10,7 +10,7 @@
 //
 // Every verb except import-codex-auth first runs the one-time codex-auth
 // import, because an explicit import the user has to discover means they run
-// `cswap codex list`, see nothing, and conclude cswap is broken. Deliberate
+// `tycswap codex list`, see nothing, and conclude tycswap is broken. Deliberate
 // deviations from #252 (TYCSWAP plan): list/status --json carry schemaVersion
 // and camelCase usage and errors under --json use the ErrorEnvelope (1);
 // remove reports only a removal that happened (3); messages name the resolved
@@ -30,24 +30,25 @@ import (
 	"strconv"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/api"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/procdetect"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/registryimport"
-	codexstore "git.dpemmons.com/dpemmons/cswap/internal/codex/store"
-	codexswitcher "git.dpemmons.com/dpemmons/cswap/internal/codex/switcher"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/transfer"
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/codex/api"
+	"github.com/tyclab/tycswap/internal/codex/procdetect"
+	"github.com/tyclab/tycswap/internal/codex/registryimport"
+	codexstore "github.com/tyclab/tycswap/internal/codex/store"
+	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
+	"github.com/tyclab/tycswap/internal/codex/transfer"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
-const codexProg = "cswap codex"
+const codexProg = "tycswap codex"
 
 // newCodexSwitcher builds the Codex switcher for one command, with its prompts
 // and warnings on the command's streams. A package var so tests inject an
-// offline api client and a fixed running-process list; `cswap auto` builds its
+// offline api client and a fixed running-process list; `tycswap auto` builds its
 // Codex engine through it too.
 var newCodexSwitcher = func(s ioStreams) *codexswitcher.Switcher {
 	return codexswitcher.New(codexswitcher.Options{Stdout: s.out, Stdin: s.in})
@@ -60,7 +61,7 @@ var codexLookPath = exec.LookPath
 // runCodexLogin runs the resolved codex binary directly, never through a
 // shell: a shell function named `codex` is a common setup (one injecting
 // --dangerously-bypass-approvals-and-sandbox is in the wild), and inheriting it
-// would run the login under flags cswap never chose. It returns the process's
+// would run the login under flags tycswap never chose. It returns the process's
 // exit status.
 var runCodexLogin = func(binary string, args []string, s ioStreams) (int, error) {
 	cmd := exec.Command(binary, args...)
@@ -121,7 +122,7 @@ type codexArgs struct {
 	debug  bool
 }
 
-// codexCommand handles `cswap codex ...`. argv excludes "codex".
+// codexCommand handles `tycswap codex ...`. argv excludes "codex".
 func codexCommand(_ string, argv []string, s ioStreams) int {
 	var debug bool
 	i := 0
@@ -296,10 +297,10 @@ func runCodexVerb(a codexArgs, jsonMode bool, s ioStreams) int {
 			return fail(err)
 		}
 		if res.AlreadyActive {
-			fmt.Fprintf(s.out, "Codex account %s is already active: %s\n", res.Number, res.Email)
+			fmt.Fprintf(s.out, "Codex account %s is already active: %s\n", res.Number, termsafe.Strip(res.Email))
 			return 0
 		}
-		fmt.Fprintf(s.out, "Switched to Codex account %s: %s\n", res.Number, res.Email)
+		fmt.Fprintf(s.out, "Switched to Codex account %s: %s\n", res.Number, termsafe.Strip(res.Email))
 		if len(res.RunningPIDs) > 0 {
 			warningTo(s.out, fmt.Sprintf("codex is running (pid %s) — restart it for the new account to take effect.",
 				joinPIDs(res.RunningPIDs)))
@@ -310,7 +311,7 @@ func runCodexVerb(a codexArgs, jsonMode bool, s ioStreams) int {
 		if err != nil {
 			return fail(err)
 		}
-		fmt.Fprintf(s.out, "Added Codex account %s: %s\n", slot.Number, slot.DisplayLabel())
+		fmt.Fprintf(s.out, "Added Codex account %s: %s\n", slot.Number, termsafe.Strip(slot.DisplayLabel()))
 		return 0
 	case "login":
 		return codexLogin(ctx, sw, a.bools["--device-auth"], a.values["--alias"], s)
@@ -424,7 +425,7 @@ func warnUnsupportedSchema(result registryimport.Result, out io.Writer) bool {
 	if result.UnsupportedSchema == nil {
 		return false
 	}
-	warningTo(out, fmt.Sprintf("codex-auth registry uses schema %d, which this version of cswap does not understand — not importing.",
+	warningTo(out, fmt.Sprintf("codex-auth registry uses schema %d, which this version of tycswap does not understand — not importing.",
 		*result.UnsupportedSchema))
 	return true
 }
@@ -469,7 +470,7 @@ func codexList(ctx context.Context, sw *codexswitcher.Switcher, skipAPI, tokenSt
 	}
 
 	if len(snap.Accounts) == 0 {
-		fmt.Fprintln(s.out, "No Codex accounts. Run 'cswap codex add' or 'cswap codex login'.")
+		fmt.Fprintln(s.out, "No Codex accounts. Run 'tycswap codex add' or 'tycswap codex login'.")
 		return 0
 	}
 	for _, a := range snap.Accounts {
@@ -477,9 +478,12 @@ func codexList(ctx context.Context, sw *codexswitcher.Switcher, skipAPI, tokenSt
 		if a.IsActive {
 			marker = "*"
 		}
+		// Display fields come from the Codex API and other tools' files: the
+		// JSON row carries them as stored, the text row never prints a terminal
+		// control sequence they carry.
 		alias := ""
 		if a.Alias != "" {
-			alias = " (" + a.Alias + ")"
+			alias = " (" + termsafe.Strip(a.Alias) + ")"
 		}
 		state := ""
 		if a.Disabled {
@@ -493,7 +497,7 @@ func codexList(ctx context.Context, sw *codexswitcher.Switcher, skipAPI, tokenSt
 		if summary != "" {
 			suffix = "  " + summary
 		}
-		fmt.Fprintf(s.out, "%s %s. %s [%s]%s%s%s\n", marker, a.Number, a.Email, a.DisplayTag(), alias, state, suffix)
+		fmt.Fprintf(s.out, "%s %s. %s [%s]%s%s%s\n", marker, a.Number, termsafe.Strip(a.Email), termsafe.Strip(a.DisplayTag()), alias, state, suffix)
 
 		if tokenStatus {
 			st, err := sw.TokenStatus(a.Number)
@@ -632,7 +636,7 @@ func joinPIDs(pids []int) string {
 func codexLogin(ctx context.Context, sw *codexswitcher.Switcher, deviceAuth bool, alias string, s ioStreams) int {
 	binary, err := codexLookPath("codex")
 	if err != nil || binary == "" {
-		errorTo(s.err, "The 'codex' CLI is not on PATH. Install it, or run 'cswap codex add' after logging in another way.")
+		errorTo(s.err, "The 'codex' CLI is not on PATH. Install it, or run 'tycswap codex add' after logging in another way.")
 		return 1
 	}
 	if abs, aerr := filepath.Abs(binary); aerr == nil {
@@ -641,6 +645,13 @@ func codexLogin(ctx context.Context, sw *codexswitcher.Switcher, deviceAuth bool
 	args := []string{"login"}
 	if deviceAuth {
 		args = append(args, "--device-auth")
+	}
+	// codex login overwrites ~/.codex/auth.json. Store the outgoing account's
+	// newest tokens first: codex rotates refresh tokens in place, so the copy
+	// in its snapshot may already be dead.
+	if err := sw.CaptureLive(); err != nil {
+		errorTo(s.err, "Could not save the current Codex login before 'codex login' replaces it: "+err.Error())
+		return 1
 	}
 	code, err := runCodexLogin(binary, args, s)
 	if err != nil || code != 0 {
@@ -654,14 +665,14 @@ func codexLogin(ctx context.Context, sw *codexswitcher.Switcher, deviceAuth bool
 	if err != nil {
 		return renderDomainError(err, false, s.out, s.err)
 	}
-	fmt.Fprintf(s.out, "Added Codex account %s: %s\n", slot.Number, slot.DisplayLabel())
+	fmt.Fprintf(s.out, "Added Codex account %s: %s\n", slot.Number, termsafe.Strip(slot.DisplayLabel()))
 	return 0
 }
 
-// renderCodexHelp writes `cswap codex --help` (cli_codex.py's parser
+// renderCodexHelp writes `tycswap codex --help` (cli_codex.py's parser
 // description and RawDescription epilog, verbatim apart from --debug).
 func renderCodexHelp(out io.Writer) {
-	fmt.Fprintln(out, "usage: cswap codex [-h] [--debug] {"+strings.Join(codexVerbOrder, ",")+"} ...")
+	fmt.Fprintln(out, "usage: tycswap codex [-h] [--debug] {"+strings.Join(codexVerbOrder, ",")+"} ...")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Multi-account switcher for the Codex CLI")
 	fmt.Fprintln(out)
@@ -690,38 +701,38 @@ Commands:
   move <target> <slot>    assign an account to a slot (swaps if taken)
   export <path>           export accounts (with tokens) to a file; '-' = stdout
   import <path>           import accounts from a file; '-' = stdin
-  purge                   remove all cswap Codex data (your login is untouched)
+  purge                   remove all tycswap Codex data (your login is untouched)
   import-codex-auth       re-run the one-time codex-auth registry import
 
 Examples:
-  cswap codex list                    5h / weekly usage per account
-  cswap codex list --skip-api         cached only, no network
-  cswap codex list --token-status     token expiry (never prints the token)
-  cswap codex list --json             machine-readable
-  cswap codex switch                  rotate to the next account
-  cswap codex switch work             by alias
-  cswap codex switch --strategy best  most quota left
-  cswap codex status --json           machine-readable status
-  cswap codex disable 2               keep it out of ` + "`cswap auto`" + ` rotation
-  cswap codex swap 1 2                exchange slot numbers
-  cswap codex export ~/codex.json     back up accounts (contains live tokens)
+  tycswap codex list                    5h / weekly usage per account
+  tycswap codex list --skip-api         cached only, no network
+  tycswap codex list --token-status     token expiry (never prints the token)
+  tycswap codex list --json             machine-readable
+  tycswap codex switch                  rotate to the next account
+  tycswap codex switch work             by alias
+  tycswap codex switch --strategy best  most quota left
+  tycswap codex status --json           machine-readable status
+  tycswap codex disable 2               keep it out of ` + "`tycswap auto`" + ` rotation
+  tycswap codex swap 1 2                exchange slot numbers
+  tycswap codex export ~/codex.json     back up accounts (contains live tokens)
 
 Auto-switching:
-  Codex rides along in ` + "`cswap auto`" + `, which rotates both providers. Tune it with
-  ` + "`cswap config set autoswitch.codexThreshold 85`" + ` (0 = inherit
+  Codex rides along in ` + "`tycswap auto`" + `, which rotates both providers. Tune it with
+  ` + "`tycswap config set autoswitch.codexThreshold 85`" + ` (0 = inherit
   autoswitch.threshold) or turn it off with ` + "`autoswitch.codexEnabled false`" + `.
   autoswitch.includeApiKeyAccounts is Claude-only: a Codex API-key login
   reports no usage, so a threshold has nothing to compare.
 
 Notes:
-  Bare ` + "`cswap list` / `cswap switch`" + ` still mean Claude — nothing you already
+  Bare ` + "`tycswap list` / `tycswap switch`" + ` still mean Claude — nothing you already
   type changes.
 
   Switching rewrites ~/.codex/auth.json. A codex session that is ALREADY
-  RUNNING keeps its old account until you restart it; cswap warns you and names
+  RUNNING keeps its old account until you restart it; tycswap warns you and names
   the running PIDs. This applies to automatic switching too — it only affects
   the next session you start.
 
   If you use codex-auth, your accounts are imported automatically on the first
-  ` + "`cswap codex`" + ` command. ~/.codex/accounts/ is left untouched.
+  ` + "`tycswap codex`" + ` command. ~/.codex/accounts/ is left untouched.
 `

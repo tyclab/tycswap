@@ -1,4 +1,4 @@
-// store.go — cswap's own Codex account store: the slot registry plus the
+// store.go — tycswap's own Codex account store: the slot registry plus the
 // credential snapshots. Implements claude-swap PR #252 codex/store.py.
 //
 // Two pieces with different lifetimes and different security postures.
@@ -6,11 +6,11 @@
 // workspace name, disabled flag, auth mode) keyed by slot number, each row
 // naming its account_key. The snapshot store holds one auth.json payload per
 // account, keyed by account_key, in the macOS Keychain (service
-// "claude-swap-codex", account = authfile.FileKey(key)) or in 0600 files under
+// "tycswap-codex", account = authfile.FileKey(key)) or in 0600 files under
 // a 0700 credentials/ directory everywhere else.
 //
 // Snapshots are keyed by account_key rather than slot number on purpose. Slot
-// numbers are a presentation concern that `cswap codex swap`/`move` renumber;
+// numbers are a presentation concern that `tycswap codex swap`/`move` renumber;
 // the account key never changes. Keying secrets by a mutable number would turn
 // that feature into a data migration, so Renumber only ever rewrites
 // sequence.json and never touches a secret.
@@ -24,13 +24,13 @@
 // no trailing newline, rows in to_dict key order, and a read-modify-write that
 // keeps the file's own key order and any keys this port does not know about
 // (the Python round-trips a plain dict, so it does the same). A missing, torn
-// or non-object file degrades to "no accounts" rather than making every cswap
+// or non-object file degrades to "no accounts" rather than making every tycswap
 // command fail; lastUpdated is stamped on every write in get_timestamp's
 // seconds-precision, Z-suffixed UTC form.
 //
 // The Store holds no in-memory state: every call re-reads the file, exactly
 // like CodexStore. Every read-modify-write of sequence.json holds the store's
-// file lock for the whole operation, so a background `cswap auto` recording a
+// file lock for the whole operation, so a background `tycswap auto` recording a
 // workspace name cannot interleave with an add in another terminal and drop
 // its slot. The lock is a non-reentrant flock, so a caller that already holds
 // Lock() (the switch path holds it from start to end) is recognised through a
@@ -42,7 +42,7 @@
 // mutation fails with ErrCorruptRegistry instead of replacing the registry
 // with an empty one. A zero-length file is read as fresh.
 
-// Package store is cswap's Codex slot registry and credential snapshot store.
+// Package store is tycswap's Codex slot registry and credential snapshot store.
 package store
 
 import (
@@ -60,18 +60,18 @@ import (
 	"sync/atomic"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/atomicfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/filelock"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // KeychainService is the Keychain service for Codex snapshots. Distinct from
 // the Claude side's so a purge or an audit can tell the two apart at a glance.
-const KeychainService = "claude-swap-codex"
+const KeychainService = keychain.CodexService
 
 // defaultAuthMode is CodexSlot.auth_mode's default ("chatgpt" | "apikey").
 const defaultAuthMode = "chatgpt"
@@ -181,7 +181,7 @@ func (s *Store) lockState() *lockState {
 	return v.(*lockState)
 }
 
-// StoreLock is cswap's advisory lock on the Codex store. It wraps a fresh
+// StoreLock is tycswap's advisory lock on the Codex store. It wraps a fresh
 // filelock.FileLock (so contention inside one process still times out on the
 // flock rather than blocking forever) and, while acquired, marks the store as
 // held in this process so the store's own mutations do not take the
@@ -193,7 +193,7 @@ type StoreLock struct {
 	acquired bool
 }
 
-// Lock returns cswap's advisory lock on the Codex store (default timeout).
+// Lock returns tycswap's advisory lock on the Codex store (default timeout).
 func (s *Store) Lock() *StoreLock {
 	return &StoreLock{fl: filelock.New(s.lockPath(), 0), state: s.lockState()}
 }
@@ -689,7 +689,7 @@ func activeKey(d *seqDoc) string {
 	return k
 }
 
-// SetActive records cswap's intent; "" clears it (null on disk). The live
+// SetActive records tycswap's intent; "" clears it (null on disk). The live
 // auth.json remains the authority on what is actually active — see
 // authfile.ReadLiveIdentity.
 func (s *Store) SetActive(accountKey string) error {

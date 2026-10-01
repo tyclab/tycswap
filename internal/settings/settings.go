@@ -1,11 +1,11 @@
 // Package settings is the `<backup_root>/settings.json` config store: the
-// autoswitch policy knobs (AutoSwitchSettings) and the `cswap config`
+// autoswitch policy knobs (AutoSwitchSettings) and the `tycswap config`
 // get/set/unset machinery.
 //
 // Implements spec 08§8 (settings.py) and 05§2 (AutoSwitchSettings as consumed
 // by the autoswitch engine): SETTING_SPECS as the single source of truth for
 // bounds/choices/defaults (used by both the lenient clamp on load and the
-// strict cswap-config-set validation), forgiving reads, strict writes,
+// strict tycswap-config-set validation), forgiving reads, strict writes,
 // merged_with_cli, and parse_model_names.
 package settings
 
@@ -18,8 +18,9 @@ import (
 	"strconv"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/atomicfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/filelock"
 )
 
 // pyFloat is a float64 whose JSON form matches Python's json.dumps: a
@@ -73,12 +74,12 @@ const SchemaVersion = 1
 const Filename = "settings.json"
 
 // AutoSwitchSettings is the frozen policy-knob value for the autoswitch
-// engine (`cswap auto`). See spec 08§8.2 / 05§2 for the field-by-field
+// engine (`tycswap auto`). See spec 08§8.2 / 05§2 for the field-by-field
 // rationale.
 type AutoSwitchSettings struct {
 	Threshold       float64
 	IntervalSeconds float64
-	// CodexEnabled: Codex rides in the same `cswap auto` process as its own
+	// CodexEnabled: Codex rides in the same `tycswap auto` process as its own
 	// small engine. Enabled by default, but a no-op unless the user has Codex
 	// accounts — a Claude-only install never notices it exists (claude-swap
 	// PR #252 settings.py).
@@ -117,7 +118,7 @@ func Default() AutoSwitchSettings {
 }
 
 // Kind is a setting's value kind, driving both the lenient load-time clamp
-// and the strict `cswap config set` parser.
+// and the strict `tycswap config set` parser.
 type Kind string
 
 // Kind values, one per settings.json value shape.
@@ -131,7 +132,7 @@ const (
 
 // Spec is one settings.json key's metadata: single source of truth for
 // bounds/choices/defaults, shared by the lenient clamp on load and the
-// strict `parse_setting_value` used by `cswap config set`.
+// strict `parse_setting_value` used by `tycswap config set`.
 type Spec struct {
 	Section string // top-level JSON section ("autoswitch")
 	JSONKey string // camelCase key inside the section
@@ -156,10 +157,10 @@ var SettingSpecs = []Spec{
 		Help: "Switch when the binding 5h/7d window reaches this pct"},
 	{Section: "autoswitch", JSONKey: "intervalSeconds", Field: "IntervalSeconds", Kind: KindFloat,
 		Lo: 15.0, Hi: 3600.0, Default: 60.0,
-		Help: "Poll interval for the cswap auto loop, in seconds"},
+		Help: "Poll interval for the tycswap auto loop, in seconds"},
 	{Section: "autoswitch", JSONKey: "codexEnabled", Field: "CodexEnabled", Kind: KindBool,
 		Default: true,
-		Help:    "Also auto-switch Codex accounts in the cswap auto loop"},
+		Help:    "Also auto-switch Codex accounts in the tycswap auto loop"},
 	{Section: "autoswitch", JSONKey: "codexThreshold", Field: "CodexThreshold", Kind: KindFloat,
 		Lo: 0.0, Hi: 99.9, Default: 0.0,
 		Help: "Codex-only switch threshold (0 = use autoswitch.threshold)"},
@@ -407,10 +408,50 @@ func fieldsOf(s AutoSwitchSettings) map[string]any {
 
 // --- writing ---------------------------------------------------------------
 
+// LockFilename is the lock every settings.json read-modify-write holds, so two
+// concurrent writers cannot lose each other's update. It is its own lock, not
+// the store's .lock: settings are written by commands that may already hold
+// the store lock, and that lock is not reentrant.
+const LockFilename = ".settings.lock"
+
+func withLock(root string, fn func() error) error {
+	return filelock.New(filepath.Join(root, LockFilename), 0).With(fn)
+}
+
+// Save writes every known key + schemaVersion under the settings lock; see
+// saveUnlocked.
+func Save(root string, s AutoSwitchSettings) error {
+	return withLock(root, func() error { return saveUnlocked(root, s) })
+}
+
+// SetSetting is setSettingUnlocked under the settings lock.
+func SetSetting(root, dotted, raw string) (value any, err error) {
+	lerr := withLock(root, func() error {
+		value, err = setSettingUnlocked(root, dotted, raw)
+		return nil
+	})
+	if lerr != nil {
+		return nil, lerr
+	}
+	return value, err
+}
+
+// UnsetSetting is unsetSettingUnlocked under the settings lock.
+func UnsetSetting(root, dotted string) (removed bool, err error) {
+	lerr := withLock(root, func() error {
+		removed, err = unsetSettingUnlocked(root, dotted)
+		return nil
+	})
+	if lerr != nil {
+		return false, lerr
+	}
+	return removed, err
+}
+
 // Save writes every known key + schemaVersion, preserving unknown
 // keys/sections. Used by non-config callers (e.g. the TUI); NOT used by
 // SetSetting, which would otherwise freeze current defaults into the file.
-func Save(root string, s AutoSwitchSettings) error {
+func saveUnlocked(root string, s AutoSwitchSettings) error {
 	path := SettingsPath(root)
 	raw := readRaw(path)
 	if _, ok := raw["schemaVersion"]; !ok {
@@ -429,11 +470,11 @@ func Save(root string, s AutoSwitchSettings) error {
 	return atomicfile.WriteJSON(path, raw, atomicfile.Opts{})
 }
 
-// SetSetting validates and persists one key for `cswap config set`, writing
+// SetSetting validates and persists one key for `tycswap config set`, writing
 // only that key (plus schemaVersion if absent) so a single set never
 // freezes every other default into the file. Unknown keys/sections in the
 // file survive. Returns the parsed value.
-func SetSetting(root, dotted, raw string) (any, error) {
+func setSettingUnlocked(root, dotted, raw string) (any, error) {
 	spec, err := SpecFor(dotted)
 	if err != nil {
 		return nil, err
@@ -466,7 +507,7 @@ func SetSetting(root, dotted, raw string) (any, error) {
 // UnsetSetting removes one key from settings.json; if its section becomes
 // empty the whole section is deleted. Returns false (and does not write)
 // when the key wasn't present.
-func UnsetSetting(root, dotted string) (bool, error) {
+func unsetSettingUnlocked(root, dotted string) (bool, error) {
 	spec, err := SpecFor(dotted)
 	if err != nil {
 		return false, err
@@ -528,7 +569,7 @@ func EffectiveSettings(root string) []Effective {
 
 // --- CLI merge / model names -------------------------------------------
 
-// CLIOverrides holds the optional `cswap auto` flag overrides; a nil field
+// CLIOverrides holds the optional `tycswap auto` flag overrides; a nil field
 // means "not passed on the command line".
 type CLIOverrides struct {
 	Threshold             *float64
@@ -592,7 +633,7 @@ func ParseModelNames(v *string) []string {
 	return out
 }
 
-// --- strict parsing for `cswap config set` ------------------------------
+// --- strict parsing for `tycswap config set` ------------------------------
 
 var boolWords = map[string]bool{
 	"true": true, "1": true, "yes": true,
@@ -600,7 +641,7 @@ var boolWords = map[string]bool{
 }
 
 // ParseSettingValue strictly parses a CLI-provided string for
-// `cswap config set`. Unlike the forgiving clamp on load, out-of-range or
+// `tycswap config set`. Unlike the forgiving clamp on load, out-of-range or
 // mistyped values return a cerr.Config so the user learns about the problem
 // immediately rather than via silently degraded auto-switch behavior.
 func ParseSettingValue(spec Spec, rawValue string) (any, error) {
@@ -622,7 +663,7 @@ func ParseSettingValue(spec Spec, rawValue string) (any, error) {
 	case KindString:
 		value := strings.TrimSpace(rawValue)
 		if value == "" {
-			return nil, cerr.Config("%s expects a non-empty value; use 'cswap config unset %s' to clear it", spec.Dotted(), spec.Dotted())
+			return nil, cerr.Config("%s expects a non-empty value; use 'tycswap config unset %s' to clear it", spec.Dotted(), spec.Dotted())
 		}
 		return value, nil
 	case KindInt:

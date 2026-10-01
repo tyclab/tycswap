@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // asMap asserts a Switch return value is a JSON payload map.
@@ -77,7 +77,7 @@ func TestSwitchRotationJSON(t *testing.T) {
 	}
 	// DESIGN A4: the exact switch-history INFO line is a hard interop contract
 	// (the TUI history reader parses it).
-	logBytes, err := os.ReadFile(filepath.Join(s.BackupDir(), "claude-swap.log"))
+	logBytes, err := os.ReadFile(filepath.Join(s.BackupDir(), "tycswap.log"))
 	if err != nil {
 		t.Fatalf("read log: %v", err)
 	}

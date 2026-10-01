@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/cerr"
 )
 
 func TestErrorEnvelope(t *testing.T) {

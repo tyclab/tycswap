@@ -1,7 +1,7 @@
-// import.go — one-time import of codex-auth's accounts into cswap's own Codex
+// import.go — one-time import of codex-auth's accounts into tycswap's own Codex
 // store. Implements claude-swap PR #252 codex/registry_import.py.
 //
-// Read-only against ~/.codex/accounts/: cswap never writes that tree. The user
+// Read-only against ~/.codex/accounts/: tycswap never writes that tree. The user
 // keeps a working codex-auth install and can go back to it — the price is that
 // the two stores diverge after the import, which is the accepted cost of
 // owning our own format.
@@ -24,7 +24,7 @@
 // ones normalised, so this port normalises rows of schema < 4 only.
 
 // Package registryimport imports codex-auth's registry.json and auth snapshots
-// into cswap's Codex store, once and read-only.
+// into tycswap's Codex store, once and read-only.
 package registryimport
 
 import (
@@ -36,9 +36,9 @@ import (
 	"strconv"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/logging"
 )
 
 // MaxSchema is the highest schema_version this importer understands.
@@ -64,7 +64,7 @@ func (r Result) DidAnything() bool { return r.Imported > 0 }
 // Options configures Import. Empty paths default to the authfile locations.
 type Options struct {
 	// OnlyIfEmpty is what the automatic first-run path passes: the call is a
-	// no-op once cswap has any Codex slot of its own, so an import can never
+	// no-op once tycswap has any Codex slot of its own, so an import can never
 	// overwrite accounts the user has since added or renamed here.
 	OnlyIfEmpty bool
 	// RegistryPath defaults to authfile.AuthRegistryPath().
@@ -82,7 +82,7 @@ type Options struct {
 //
 // The whole pass holds the store lock (st.WithLock, which is a no-op when this
 // process already holds it), so OnlyIfEmpty's check and the writes it guards
-// cannot interleave with an add in another cswap process.
+// cannot interleave with an add in another tycswap process.
 //
 // Hardening over the Python: a row whose snapshot decodes to an identity with
 // a different account_key is skipped (the registry key is not trusted to name
@@ -144,7 +144,7 @@ func importLocked(st *store.Store, opts Options) (Result, error) {
 	schema, isInt := pyInt(schemaRaw)
 	if !isInt || schema > MaxSchema {
 		if Log != nil {
-			Log.Warningf("codex-auth registry uses schema %s, newer than this cswap "+
+			Log.Warningf("codex-auth registry uses schema %s, newer than this tycswap "+
 				"understands (max %d); not importing", string(schemaRaw), MaxSchema)
 		}
 		r := Result{}

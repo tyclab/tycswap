@@ -9,12 +9,12 @@ of writing.
 
 ## Overview
 
-`cswap run NUM|EMAIL` launches Claude Code as a *stored account* inside the
+`tycswap run NUM|EMAIL` launches Claude Code as a *stored account* inside the
 current terminal only, by pointing `CLAUDE_CONFIG_DIR` at a persistent
 per-account profile directory under `<backup_dir>/sessions/<num>-<email-slug>/`
 and `exec`ing (POSIX) or subprocess-wrapping (Windows) the real `claude`
 binary — the default `~/.claude` login, every other terminal, and the VS Code
-extension are untouched. The profile is lazily bootstrapped from cswap's
+extension are untouched. The profile is lazily bootstrapped from tycswap's
 backup store (credentials + config), validated with a local `claude auth
 status --json` probe, and reused on subsequent launches until something
 invalidates it. By default a curated set of user customizations
@@ -25,31 +25,31 @@ straight through to `~/.claude`, re-synced by copy on Windows. An opt-in
 `--share-history` flag additionally unifies conversation history
 (`projects/`, `history.jsonl`) across every account via the same symlink
 mechanism (POSIX-only), merging in any history the profile already
-accumulated so nothing is lost. `cswap map`/`unmap` maintain a
+accumulated so nothing is lost. `tycswap map`/`unmap` maintain a
 per-machine, non-exported `<backup_dir>/mappings.json` associating absolute
-directories with a stored account identity, so a bare `cswap run` (no
+directories with a stored account identity, so a bare `tycswap run` (no
 account argument) can resolve the current working directory — walking up to
 the nearest mapped ancestor — and auto-launch the right account.
 `process_detection.py` reads Claude Code's own `~/.claude/sessions/*.json`
 PID files and `~/.claude/ide/*.lock` IDE lockfiles (filtering to processes
 that are still alive) to answer "is anything running against this profile
-right now?" — the guard that stops cswap from deleting, invalidating, or
+right now?" — the guard that stops tycswap from deleting, invalidating, or
 otherwise pulling storage out from under a live `claude` process.
 
 ---
 
-## 1. Session mode: `cswap run`
+## 1. Session mode: `tycswap run`
 
 ### 1.1 CLI surface
 
 Pre-dispatched in `cli.py` before the main argparse tree is built (`run` must
-be the *first* argv token — `cswap --debug run 2` is not supported; use
-`cswap run 2 --debug`). Argument split: everything after the first literal
+be the *first* argv token — `tycswap --debug run 2` is not supported; use
+`tycswap run 2 --debug`). Argument split: everything after the first literal
 `--` token is forwarded to `claude` verbatim (`claude_args`); everything
-before it is parsed by `cswap run`'s own parser.
+before it is parsed by `tycswap run`'s own parser.
 
 ```
-cswap run [NUM|EMAIL] [--no-share] [--share-history | --no-share-history] [--debug] [-- <claude args>]
+tycswap run [NUM|EMAIL] [--no-share] [--share-history | --no-share-history] [--debug] [-- <claude args>]
 ```
 
 - `NUM|EMAIL` (positional, optional): account to run. Omitted → resolve from
@@ -59,17 +59,17 @@ cswap run [NUM|EMAIL] [--no-share] [--share-history | --no-share-history] [--deb
   remove any such items a previous launch shared in.
 - `--share-history` / `--no-share-history` (`argparse.BooleanOptionalAction`,
   default `False`): share `projects/` + `history.jsonl`. Independent of
-  `--no-share` — `cswap run 2 --no-share --share-history` gives a bare
+  `--no-share` — `tycswap run 2 --no-share --share-history` gives a bare
   profile with unified history.
 - `--debug`: enable debug logging.
 
 Examples from the parser's own epilog:
 ```
-cswap run 2
-cswap run user@example.com
-cswap run 2 --no-share
-cswap run 2 --share-history
-cswap run 2 -- --resume
+tycswap run 2
+tycswap run user@example.com
+tycswap run 2 --no-share
+tycswap run 2 --share-history
+tycswap run 2 -- --resume
 ```
 
 Root guard shared with `map`/`unmap` (`_guard_root`): on non-Windows, if
@@ -81,7 +81,7 @@ Errors from `run`/`map`/`unmap` surface as `Error: {message}` with exit code
 1 (`ClaudeSwitchError` subclasses); `Ctrl+C` prints `\n{dimmed("Operation
 cancelled")}` and exits 130.
 
-### 1.2 Bare `cswap run` (directory-mapping resolution)
+### 1.2 Bare `tycswap run` (directory-mapping resolution)
 
 When no `NUM|EMAIL` is given, `cli.py` calls
 `switcher.slot_for_directory(os.getcwd())` → `(slot, email)`:
@@ -112,7 +112,7 @@ Claude Code first.")` if `shutil.which("claude")` is falsy.
    error (no interactive prompt) because session mode ends in an `exec`.
 4. `_ensure_not_api_key(account_num, email)`: if the account's stored `kind`
    is `"api_key"`, raise:
-   `f"Account-{account_num} ({email}) is an API-key account; 'cswap run' (session mode) does not support API-key accounts yet. Use 'cswap --switch-to' to make it your default login instead."`
+   `f"Account-{account_num} ({email}) is an API-key account; 'tycswap run' (session mode) does not support API-key accounts yet. Use 'tycswap --switch-to' to make it your default login instead."`
    Called *before* the same-account fast path and again inside
    `setup_session` (defense in depth).
 5. **Same-account fast path** (only when `CLAUDE_CONFIG_DIR` is *not* already
@@ -160,15 +160,15 @@ def setup_session(self, identifier: str, share: bool, share_history: bool = Fals
    (§1.5).
 3. **Deferred-invalidation check** (lock-free): `stale = (session_dir / STALE_MARKER).exists() and not live_sessions_for(session_dir)`.
    The marker is honored only when no `claude` is currently live against the
-   profile — a second `cswap run` joining an already-live session must never
+   profile — a second `tycswap run` joining an already-live session must never
    invalidate credentials out from under it; the marker simply survives for
    later.
 4. **Cheap reuse check** (no lock): if `not stale and self._is_session_valid(session_dir, email, org_uuid)` (§1.7), call `_sync_sharing` (§2) and return `(session_dir, account_num, email)`. This is the hot path for most launches.
 5. Otherwise, acquire `FileLock(switcher.lock_file, timeout=_BOOTSTRAP_LOCK_TIMEOUT)` — **`_BOOTSTRAP_LOCK_TIMEOUT = 30.0`** seconds (larger than the switch paths' default 10s because bootstrap may hold the lock across one token refresh — a 10s network call — plus auth-status probes).
-6. Under the lock: re-check the stale marker + re-check `_is_session_valid` (another concurrent `cswap run` may have already bootstrapped while this one waited). If the marker still applies and no session is live, call `switcher._invalidate_session_credentials(account_num, email)` then unlink the marker. If now valid, sync sharing and return.
+6. Under the lock: re-check the stale marker + re-check `_is_session_valid` (another concurrent `tycswap run` may have already bootstrapped while this one waited). If the marker still applies and no session is live, call `switcher._invalidate_session_credentials(account_num, email)` then unlink the marker. If now valid, sync sharing and return.
 7. Otherwise `self._bootstrap(session_dir, account_num, email, org_uuid)` (§1.6), then `_sync_sharing`.
 8. Re-validate with `_is_session_valid`; if still invalid, `_cleanup_failed_session(session_dir)` (deletes the macOS keychain entry then `shutil.rmtree(session_dir, ignore_errors=True)`) and raise:
-   `SessionError(f"Session profile for Account-{account_num} ({email}) failed validation. Log in with that account and re-add it: cswap --add-account --slot {account_num}")`
+   `SessionError(f"Session profile for Account-{account_num} ({email}) failed validation. Log in with that account and re-add it: tycswap --add-account --slot {account_num}")`
 9. Lock is released before any `exec` — an exec'd `claude` must never inherit a held flock.
 
 ### 1.5 Session profile directory naming
@@ -203,12 +203,12 @@ Caller holds `switcher.lock_file`. Steps, in order:
    Claude reads its Keychain entry *before* the plaintext `.credentials.json`
    fallback, so a stale hashed entry left by an earlier profile at this exact
    path would silently shadow the fresh seed.
-2. `creds = switcher.read_account_credentials(account_num, email)`; if falsy, raise `SessionError(f"Account-{account_num} has no stored credentials. Re-add with: cswap --add-account --slot {account_num}")`.
+2. `creds = switcher.read_account_credentials(account_num, email)`; if falsy, raise `SessionError(f"Account-{account_num} has no stored credentials. Re-add with: tycswap --add-account --slot {account_num}")`.
 3. **Refresh-token check + one proactive refresh.** `_has_refresh_token(creds)` parses `json.loads(creds)["claudeAiOauth"]["refreshToken"]`; treats an unparsable/unknown shape as `True` (let the refresh attempt decide) rather than `False`. If truthy:
    - `refreshed = refresh_oauth_credentials(creds)` (see external OAuth contract below). On success, `creds = refreshed` and `switcher.write_account_credentials(account_num, email, creds)` — persists the possibly-rotated refresh token back to backup so future switches/runs see the latest generation.
    - On failure (`None`), warn: `f"Could not refresh the token for Account-{account_num}; continuing with the stored credentials."` and proceed with the original `creds`.
    - Setup-token accounts (`--add-token`) have no refresh token by design — `_has_refresh_token` returns `False` for them and the refresh is skipped **silently** (no warning printed).
-4. `config_text = switcher.read_account_config(account_num, email)`; parse JSON (empty dict on decode failure or empty text). `oauth_account = config_data.get("oauthAccount")`; if falsy, raise `SessionError(f"Account-{account_num} has no stored config backup. Re-add with: cswap --add-account --slot {account_num}")`.
+4. `config_text = switcher.read_account_config(account_num, email)`; parse JSON (empty dict on decode failure or empty text). `oauth_account = config_data.get("oauthAccount")`; if falsy, raise `SessionError(f"Account-{account_num} has no stored config backup. Re-add with: tycswap --add-account --slot {account_num}")`.
 5. `session_dir.mkdir(parents=True, exist_ok=True)`; on POSIX, `os.chmod(session_dir, 0o700)`.
 6. Write `.credentials.json` = `creds` verbatim; POSIX chmod `0o600`.
 7. **Merge** the identity seed into any existing `.claude.json` at the profile (so a re-bootstrap after invalidation preserves the profile's own `projects`/history — never overwrite the whole file):
@@ -281,9 +281,9 @@ def _exec(self, claude_bin: str, claude_args: list[str], env: dict[str, str]) ->
     os.execvpe(claude_bin, argv, env)
     raise AssertionError("unreachable")  # pragma: no cover
 ```
-POSIX: `execvpe` replaces the cswap process image entirely — by this point
+POSIX: `execvpe` replaces the tycswap process image entirely — by this point
 `switcher.lock_file`'s `FileLock` is already released (never held across an
-exec). Windows: `os.exec*` detaches from the console confusingly, so cswap
+exec). Windows: `os.exec*` detaches from the console confusingly, so tycswap
 stays resident as a thin wrapper subprocess and exits with `claude`'s own
 return code (Ctrl+C while waiting → exit code 130).
 
@@ -326,7 +326,7 @@ identically even when invoked from inside another session
 ```python
 SHARED_ITEMS = ("settings.json", "keybindings.json", "CLAUDE.md", "skills", "commands", "agents")
 HISTORY_ITEMS = ("projects", "history.jsonl")
-SHARE_MANIFEST = ".cswap-shared.json"
+SHARE_MANIFEST = ".tycswap-shared.json"
 ```
 `SHARED_ITEMS` deliberately excludes anything account- or instance-scoped:
 `plugins/`, `sessions/`, `ide/`, `.claude.json`, `.credentials.json`,
@@ -341,7 +341,7 @@ active_items = (SHARED_ITEMS if share else ()) + (HISTORY_ITEMS if share_history
 ```
 (with `share_history` forced to `False` when `switcher.platform == Platform.WINDOWS`, both to keep Windows copy-mode from forking history and to auto-drop links left behind by a profile that moved from POSIX → Windows).
 
-1. `managed = _read_manifest(manifest_path)` — the list of item names cswap
+1. `managed = _read_manifest(manifest_path)` — the list of item names tycswap
    itself created last time (manifest schema below); silently `[]` on
    missing/corrupt/non-dict.
 2. **Prune deactivated items**: for every `name in managed` that is *not* in
@@ -358,9 +358,9 @@ active_items = (SHARED_ITEMS if share else ()) + (HISTORY_ITEMS if share_history
      next time).
    - If `src = source_root / name` doesn't exist: prune any previously-managed entry for it and skip (source vanished or never existed).
    - If `dest` is already a symlink:
-     - Adopt it into `managed` if not already listed (cswap only ever
+     - Adopt it into `managed` if not already listed (tycswap only ever
        manages symlinks it created — any symlink found here is presumed
-       cswap's).
+       tycswap's).
      - On POSIX (`use_symlinks`): if `dest.readlink() != src`, unlink and
        re-`symlink_to(src)` (repoint a stale link, e.g. after a profile
        moved between machines); append to `new_managed`; continue to next
@@ -377,7 +377,7 @@ active_items = (SHARED_ITEMS if share else ()) + (HISTORY_ITEMS if share_history
 
 ### 2.3 Share manifest — format & location
 
-Path: `<session_dir>/.cswap-shared.json`.
+Path: `<session_dir>/.tycswap-shared.json`.
 ```json
 {
   "items": ["settings.json", "CLAUDE.md", "skills"],
@@ -385,7 +385,7 @@ Path: `<session_dir>/.cswap-shared.json`.
 }
 ```
 `mode` is `"symlink"` on macOS/Linux/WSL, `"copy"` on Windows (recorded from
-`switcher.platform`, not per-item). Written atomically: `tempfile.mkstemp(dir=parent, prefix=".cswap-shared-", suffix=".tmp")` → write → `os.replace(tmp, manifest_path)`; on any `OSError`, best-effort `os.unlink(tmp)`, no exception propagated. `_read_manifest` filters the loaded `items` list to only names that are in `SHARED_ITEMS + HISTORY_ITEMS` (defense against a hand-edited or foreign-written file naming something cswap never manages).
+`switcher.platform`, not per-item). Written atomically: `tempfile.mkstemp(dir=parent, prefix=".tycswap-shared-", suffix=".tmp")` → write → `os.replace(tmp, manifest_path)`; on any `OSError`, best-effort `os.unlink(tmp)`, no exception propagated. `_read_manifest` filters the loaded `items` list to only names that are in `SHARED_ITEMS + HISTORY_ITEMS` (defense against a hand-edited or foreign-written file naming something tycswap never manages).
 
 `_remove_managed(dest)`: unlinks if `dest` is a symlink or regular file
 (`missing_ok=True`), or `shutil.rmtree(dest, ignore_errors=True)` if it's a
@@ -418,7 +418,7 @@ link/skip logic runs):
    `~/.claude`, or first-ever history share): create it so the generic loop
    has something to link.
    - For `history.jsonl` (name ends `.jsonl`): `src.parent.mkdir(parents=True, exist_ok=True)`; `src.touch(mode=0o600)`.
-   - For `projects` (a directory): `_mkdir_private(src)` — `mkdir -p` applying `0o700` to **every** level created, not just the leaf (`Path.mkdir(mode=...)` only applies mode to the leaf; Claude Code's own history dirs are `0o700` at every level, so cswap must match that exactly).
+   - For `projects` (a directory): `_mkdir_private(src)` — `mkdir -p` applying `0o700` to **every** level created, not just the leaf (`Path.mkdir(mode=...)` only applies mode to the leaf; Claude Code's own history dirs are `0o700` at every level, so tycswap must match that exactly).
    - On `OSError`, log `f"Could not create {src}: {e}"` and return `False`.
 3. Return `True` (item is now linkable this launch).
 
@@ -437,7 +437,7 @@ remains in place for the next attempt):
 ### 2.5 Cross-cutting sharing behaviors
 
 - `test_toggle_off_removes_links_keeps_data`: turning `share`/`share_history`
-  off removes only the cswap-created links, never the shared source data in
+  off removes only the tycswap-created links, never the shared source data in
   `~/.claude`.
 - `share_history` is fully independent of `share` — `share=False,
   share_history=True` still links history while leaving `settings.json`
@@ -458,20 +458,20 @@ one-way mirror: the *default* profile's `~/.claude.json` (or legacy
 `~/.claude/.config.json`) top-level `mcpServers` key is the single source of
 truth. Adds, edits, and deletions in the default profile all propagate; any
 edit made to `mcpServers` *inside* a session gets silently overwritten the
-next time cswap prepares that profile. Nothing ever flows back to the
+next time tycswap prepares that profile. Nothing ever flows back to the
 default config. Per-project entries (`projects[…].mcpServers`) on both sides
 are never touched.
 
 ### 3.1 Constants
 ```python
 MCP_KEY = "mcpServers"
-MCP_MIRROR_MARKER = ".cswap-mcp-mirror-v1"        # empty marker file
-MCP_DISPLACED_STASH = ".cswap-mcp-displaced.json"  # write-once stash
+MCP_MIRROR_MARKER = ".tycswap-mcp-mirror-v1"        # empty marker file
+MCP_DISPLACED_STASH = ".tycswap-mcp-displaced.json"  # write-once stash
 ```
 
 ### 3.2 Adoption gating (backward compatibility)
 
-`share=False` (i.e. `cswap run --no-share`) removes the mirrored key —
+`share=False` (i.e. `tycswap run --no-share`) removes the mirrored key —
 **but only** from profiles that have already adopted mirroring
 (`MCP_MIRROR_MARKER` exists). An unadopted profile is left completely
 untouched by `--no-share`, so pre-feature session-local MCP definitions can
@@ -498,7 +498,7 @@ else:
 `_read_mcp_source()`: loads `get_default_global_config_path()` (legacy
 `~/.claude/.config.json` if it exists, else `~/.claude.json` — **always**
 the real default path, ignoring any `CLAUDE_CONFIG_DIR` in the calling
-environment, so a nested `cswap run` from inside a session never mirrors
+environment, so a nested `tycswap run` from inside a session never mirrors
 from another session). Returns `None` if the file is missing/unreadable/not
 valid JSON/not a dict; `config.get(MCP_KEY, {})` otherwise, further coerced
 to `None` if that value isn't a dict. `{}` and `None` are semantically
@@ -565,7 +565,7 @@ warn `f"Could not sync MCP servers ({e}) — skipping this launch."` and
 ### 3.4 Stash format & validity
 
 `_stash_displaced_mcp(session_dir, displaced) -> bool`:
-- If `<session_dir>/.cswap-mcp-displaced.json` already exists (file, dir, or
+- If `<session_dir>/.tycswap-mcp-displaced.json` already exists (file, dir, or
   symlink): only counts as "already saved" if `_is_valid_stash` — a
   **regular file**, not a symlink, whose parsed JSON has a dict at key
   `mcpServers`. If it exists but is *not* a valid stash (e.g. a directory
@@ -605,10 +605,10 @@ warn `f"Could not sync MCP servers ({e}) — skipping this launch."` and
 > checkAndRefreshOAuthTokenIfNeededImpl`, `utils/config.ts
 > saveConfigWithLock`, `utils/lockfile.ts`.
 
-cswap's own `proper_lockfile(lock_dir, timeout=None, staleness=STALENESS_S)`
+tycswap's own `proper_lockfile(lock_dir, timeout=None, staleness=STALENESS_S)`
 implements the identical directory-`mkdir` protocol:
 - `STALENESS_S = 10.0` (matches Claude's own staleness threshold).
-- `TOUCH_INTERVAL_S = 3.0` (cswap touches a bit faster than Claude's 5s for
+- `TOUCH_INTERVAL_S = 3.0` (tycswap touches a bit faster than Claude's 5s for
   margin) — a daemon thread calls `os.utime(lock_dir)` every 3s while held.
 - `DEFAULT_TIMEOUT_S = 9.0` — the default acquire timeout when the caller
   passes `timeout=None` (as `_sync_mcp_servers` does); resolved at call time
@@ -756,7 +756,7 @@ Windows: `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION=0x1000, bInheritHandle=F
     touch the session profile's own credential copy.
   - `list_accounts()` skips a **proactive token refresh** for any account
     with a live session PID (treating it "like active": no refresh) — so
-    `cswap --list` never rotates a session's backup-store token copy out
+    `tycswap --list` never rotates a session's backup-store token copy out
     from under a running `claude`.
 - **TUI/CLI display** (`printer.py`, exercised alongside process-detection
   tests): `entrypoint_label(entrypoint)` maps raw entrypoint strings to
@@ -859,7 +859,7 @@ match — `Path.parents` is component-aware, not a string-prefix test (e.g.
 `/foo/bar` mapped does not match cwd `/foo/barbaz`). Unmapped or missing
 store → `None`.
 
-### 5.5 `cswap run` (bare) resolution — `switcher.slot_for_directory`
+### 5.5 `tycswap run` (bare) resolution — `switcher.slot_for_directory`
 
 ```python
 def slot_for_directory(self, directory) -> tuple[str | None, str | None]:
@@ -877,11 +877,11 @@ Three-way result consumed by `cli.py`'s `_run_command` (§1.2):
 account behind it no longer has a slot (removed); `(slot, email)` = live
 resolution.
 
-### 5.6 CLI: `cswap map` / `cswap unmap`
+### 5.6 CLI: `tycswap map` / `tycswap unmap`
 
 ```
-cswap map [NUM|EMAIL] [PATH]     # no NUM|EMAIL → list all mappings
-cswap unmap [PATH]               # default PATH: current directory
+tycswap map [NUM|EMAIL] [PATH]     # no NUM|EMAIL → list all mappings
+tycswap unmap [PATH]               # default PATH: current directory
 ```
 `map` with an account argument: `target = args.path or os.getcwd()`; if
 `not os.path.isdir(target)`, warns
@@ -897,7 +897,7 @@ re-map:
 
 `map` with no account argument → `switcher.list_mappings()`:
 - No mappings at all: `dimmed("No directory mappings yet.")` then
-  `muted("Map one with: cswap map <NUM|EMAIL> [PATH]")`.
+  `muted("Map one with: tycswap map <NUM|EMAIL> [PATH]")`.
 - Otherwise, `bolded("Directory mappings:")` then, for each path in sorted
   key order:
   - If the mapped `(email, org)` still resolves to a slot: `f"  {path} {dimmed('→')} {slot}: {email} {muted(f'[{tag}]')}"` (`tag` from `_get_display_tag`, e.g. an org name or `"personal"`).
@@ -966,7 +966,7 @@ does).
 
 - **Fast path only fires without a preset `CLAUDE_CONFIG_DIR`, even when the
   identity matches.** `test_preset_config_dir_disables_fast_path`: if
-  `CLAUDE_CONFIG_DIR` is already set in the environment, `cswap run` for the
+  `CLAUDE_CONFIG_DIR` is already set in the environment, `tycswap run` for the
   currently-active account still builds a full session profile rather than
   exec'ing plain `claude` — "current default account" is undefined/
   ambiguous from inside another session.
@@ -1018,7 +1018,7 @@ does).
   profile holds is left completely alone, with an explicit
   `"Not sharing CLAUDE.md: ..."` message, and is never added to the
   manifest (so it's still recognized as "not ours" on the next launch too).
-- **A previously-cswap-managed symlink pointing somewhere unexpected gets
+- **A previously-tycswap-managed symlink pointing somewhere unexpected gets
   silently repointed** to the correct source
   (`test_repoints_stale_link`) — sharing self-heals a manually-edited or
   stale symlink without user intervention or warning.
@@ -1113,7 +1113,7 @@ does).
   exception (`test_byte_corrupt_file_returns_none`).
 - **`is_pid_alive` treats a live PID owned by another user (`EPERM`) as
   alive**, not as "can't tell" — this matters for the live-session guard,
-  which must refuse a destructive operation even when cswap cannot signal
+  which must refuse a destructive operation even when tycswap cannot signal
   the process directly.
 - **`slot_for_directory`'s three-state return (`(None,None)` /
   `(None,email)` / `(slot,email)`) is exactly mirrored by the CLI's
@@ -1141,9 +1141,9 @@ does).
   `threading.Event` and joined with a `1.0`s timeout on release. A Go port
   needs an equivalent background goroutine + cancellation (context or a done
   channel) around every `proper_lockfile`-guarded critical section — this is
-  the mechanism that keeps cswap's own MCP-sync lock hold from being
+  the mechanism that keeps tycswap's own MCP-sync lock hold from being
   mistaken for a dead/stale lock by a concurrently-running real `claude`
-  process (or another `cswap` instance) waiting on the same directory.
+  process (or another `tycswap` instance) waiting on the same directory.
 - **`FileLock`** (`locking.py`) is a straightforward blocking-poll wrapper
   over `fcntl.flock` (POSIX) / `msvcrt.locking` (Windows) with a
   `time.sleep(0.1)` retry loop up to a timeout — no background thread. Go:
@@ -1266,6 +1266,6 @@ does).
   explicit limitation that `run` must be argv's first token) is a
   hand-rolled shortcut, not something a Go flag/cobra framework does for
   free — a Go port using e.g. `cobra` subcommands would naturally support
-  `cswap --debug run 2`, which is a **behavior change** from the Python CLI
+  `tycswap --debug run 2`, which is a **behavior change** from the Python CLI
   (arguably an improvement, but worth flagging as an intentional deviation
   rather than an accidental one if adopted).

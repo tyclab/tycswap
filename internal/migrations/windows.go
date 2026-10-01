@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"os"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // legacyKeyringService is Python's KEYRING_SERVICE (switcher.py) — the
@@ -80,7 +80,7 @@ func migrateWindowsKeyringToFiles(host Host) (completed bool, notices []string, 
 
 	if migrated > 0 {
 		notices = append(notices, fmt.Sprintf(
-			"claude-swap: migrated %d Windows credential(s) from Credential Manager to files", migrated))
+			"tycswap: migrated %d Windows credential(s) from Credential Manager to files", migrated))
 	}
 	if failed > 0 {
 		return false, notices, cerr.MigrationIncomplete(

@@ -16,12 +16,12 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 var (
@@ -66,7 +66,7 @@ func seeded(t *testing.T) *env {
 	e := newEnv(t)
 	st := e.open()
 	for _, r := range []struct{ key, acct, email string }{
-		{keyA, "acct-a", "a@x"}, {keyB, "acct-b", "b@x"}, {keyC, "acct-c", "c@x"},
+		{keyA, "acct-a", "a@x.io"}, {keyB, "acct-b", "b@x.io"}, {keyC, "acct-c", "c@x.io"},
 	} {
 		if _, err := st.UpsertSlot(r.key, store.Upsert{Email: r.email, Plan: "pro"}); err != nil {
 			t.Fatal(err)
@@ -81,7 +81,7 @@ func seeded(t *testing.T) *env {
 	if err := os.MkdirAll(e.codexHome, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := json.Marshal(authJSON("acct-a", "a@x"))
+	b, _ := json.Marshal(authJSON("acct-a", "a@x.io"))
 	if err := os.WriteFile(filepath.Join(e.codexHome, "auth.json"), b, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestResolveSlotAcceptsNumberEmailAndAlias(t *testing.T) {
 	if err := e.open().SetAlias(keyB, "work"); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"2", "b@x", "B@X", "work", "WORK", "  work  "} {
+	for _, id := range []string{"2", "b@x.io", "B@X.IO", "work", "WORK", "  work  "} {
 		sl, err := ResolveSlot(e.open(), id)
 		if err != nil || sl.Number != "2" {
 			t.Fatalf("ResolveSlot(%q) = %+v, %v", id, sl, err)
@@ -231,7 +231,7 @@ func TestExportCanBeLimitedToOneAccount(t *testing.T) {
 	if err != nil || n != 1 {
 		t.Fatalf("Export = %d, %v", n, err)
 	}
-	if email := readDoc(t, target)["accounts"].([]any)[0].(map[string]any)["email"]; email != "b@x" {
+	if email := readDoc(t, target)["accounts"].([]any)[0].(map[string]any)["email"]; email != "b@x.io" {
 		t.Fatalf("email = %v", email)
 	}
 }
@@ -267,7 +267,7 @@ func TestExportOfAnEmptyStoreFails(t *testing.T) {
 
 func TestExportSkipsSlotsWithoutCredentials(t *testing.T) {
 	e := newEnv(t)
-	if _, err := e.open().UpsertSlot(keyA, store.Upsert{Email: "a@x"}); err != nil {
+	if _, err := e.open().UpsertSlot(keyA, store.Upsert{Email: "a@x.io"}); err != nil {
 		t.Fatal(err)
 	}
 	_, err := Export(e.open(), "-", "", &bytes.Buffer{})
@@ -350,7 +350,7 @@ func TestImportRefusals(t *testing.T) {
 		{"claude export", `{"provider":"claude","accounts":[{}]}`, "not a Codex one"},
 		{"newer version", `{"provider":"codex","version":99,"accounts":[{}]}`, "newer than"},
 		{"junk", `{ not json`, "not valid JSON"},
-		{"non-object", `[1]`, "is not a cswap export"},
+		{"non-object", `[1]`, "is not a tycswap export"},
 		{"no accounts", `{"provider":"codex","version":1,"accounts":[]}`, "contains no accounts"},
 	}
 	for _, c := range cases {
@@ -419,7 +419,7 @@ func TestPurgeRemovesSlotsAndSnapshots(t *testing.T) {
 func TestPurgeRemovesKeychainItems(t *testing.T) {
 	e := seeded(t)
 	st := store.New(store.Options{Root: e.root, Keychain: e.kc, Platform: platform.MacOS})
-	if err := st.WriteSnapshot(keyA, authJSON("acct-a", "a@x")); err != nil {
+	if err := st.WriteSnapshot(keyA, authJSON("acct-a", "a@x.io")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Purge(st, true, nil, &bytes.Buffer{}); err != nil {
@@ -431,7 +431,7 @@ func TestPurgeRemovesKeychainItems(t *testing.T) {
 }
 
 func TestPurgeLeavesTheLiveCodexLoginAlone(t *testing.T) {
-	// cswap manages copies; the user's actual ~/.codex login is not ours.
+	// tycswap manages copies; the user's actual ~/.codex login is not ours.
 	e := seeded(t)
 	live := filepath.Join(e.codexHome, "auth.json")
 	before, _ := os.ReadFile(live)
@@ -486,7 +486,36 @@ func TestPurgeOnAnEmptyStoreSaysSo(t *testing.T) {
 	e := newEnv(t)
 	var out bytes.Buffer
 	ran, err := Purge(e.open(), true, nil, &out)
-	if err != nil || ran || !strings.Contains(out.String(), "No cswap Codex data") {
+	if err != nil || ran || !strings.Contains(out.String(), "No tycswap Codex data") {
 		t.Fatalf("ran=%v err=%v out=%q", ran, err, out.String())
+	}
+}
+
+// TestTheExportIsWrittenAtomically: the export replaces the destination by
+// rename (a new inode, so a reader holding the old file never sees a mix) and
+// leaves no temp file behind.
+func TestTheExportIsWrittenAtomically(t *testing.T) {
+	e := seeded(t)
+	target := filepath.Join(e.dir, "out", "codex.json")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.Stat(target)
+	if _, err := Export(e.open(), target, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && os.SameFile(before, after) {
+		t.Error("export wrote in place instead of renaming a temp file over the target")
+	}
+	entries, _ := os.ReadDir(filepath.Dir(target))
+	if len(entries) != 1 {
+		t.Errorf("directory holds %d entries, want only the export: %v", len(entries), entries)
 	}
 }

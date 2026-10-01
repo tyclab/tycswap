@@ -18,7 +18,7 @@ import (
 	"strconv"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/paths"
 )
 
 // ClaudeSession is a running Claude Code session read from

@@ -19,9 +19,9 @@ import (
 
 	"golang.org/x/mod/semver"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // Checker performs the passive update check. The zero value is usable in
@@ -113,12 +113,12 @@ func (c Checker) CheckForUpdate(exePath, currentVersion string, plat platform.Pl
 	shape := DetectInstallShape(exePath, c.getenv(), c.homeDir())
 	hint := UpgradeHint(shape, plat)
 	return fmt.Sprintf(
-		"A newer version of claude-swap is available (%s). You are using %s. %s",
+		"A newer version of tycswap is available (%s). You are using %s. %s",
 		strings.TrimPrefix(latest, "v"), strings.TrimPrefix(currentVersion, "v"), hint,
 	)
 }
 
-// releaseResponse is the subset of the Forgejo (GitHub-compatible) releases
+// releaseResponse is the subset of the GitHub releases
 // schema this checker needs (Amendment A6).
 type releaseResponse struct {
 	TagName string `json:"tag_name"`
@@ -135,6 +135,7 @@ func (c Checker) fetchLatestTag() string {
 	if err != nil {
 		return ""
 	}
+	req.Header.Set("Accept", "application/vnd.github+json")
 	resp, err := c.client().Do(req)
 	if err != nil {
 		return ""

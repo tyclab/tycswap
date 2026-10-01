@@ -14,13 +14,13 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/core"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/settings"
-	"git.dpemmons.com/dpemmons/cswap/internal/transfer"
-	"git.dpemmons.com/dpemmons/cswap/internal/update"
-	"git.dpemmons.com/dpemmons/cswap/internal/version"
+	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/transfer"
+	"github.com/tyclab/tycswap/internal/update"
+	"github.com/tyclab/tycswap/internal/version"
 )
 
 // exePath resolves the running binary path (install-shape detection input);

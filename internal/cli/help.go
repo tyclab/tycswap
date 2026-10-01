@@ -13,7 +13,7 @@ import (
 	"io"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/version"
+	"github.com/tyclab/tycswap/internal/version"
 )
 
 // usageLine is argparse's `usage=` for the main parser (spec 08§3).
@@ -22,82 +22,83 @@ func usageLine(prog string) string {
 }
 
 // mainDescription is the RawDescription help body (spec 08§3), verbatim. Every
-// literal "cswap" is a %(prog)s slot; "claude-swap" contains no "cswap"
-// substring, so a blanket replace is safe.
+// literal "tycswap" is a %(prog)s slot, including the purge line's "remove all
+// tycswap data", which names the program the user invoked.
 const mainDescription = `Multi-Account Switcher for Claude Code
 
 Commands:
-  cswap help                       show this help
-  cswap list                       list managed accounts
-  cswap status                     show current account
-  cswap switch                     rotate to the next account
-  cswap switch <num|email>         switch to a specific account
-  cswap add                        add the current account
-  cswap add --login [--switch]     log another account in beside the live one
+  tycswap help                       show this help
+  tycswap list                       list managed accounts
+  tycswap status                     show current account
+  tycswap switch                     rotate to the next account
+  tycswap switch <num|email>         switch to a specific account
+  tycswap add                        add the current account
+  tycswap add --login [--switch]     log another account in beside the live one
                                    (claude auth login), then store it
-  cswap add-token [TOKEN|-]        register a setup-token or API key
-  cswap remove <num|email>         remove an account
-  cswap disable <num|email>        hold an account out of auto-rotation
-  cswap enable <num|email>         return a disabled account to rotation
-  cswap run <num|email> [-- ...]   run as an account, this terminal only
-  cswap run                        run the current dir's mapped account
-  cswap env <num|email>            print an eval-able CLAUDE_CONFIG_DIR export for this shell
-  cswap map <num|email> [path]     map a directory to an account
-  cswap map                        list directory mappings
-  cswap unmap [path]               remove a directory mapping
-  cswap alias <num|email> <name>   set a short alias for an account
-  cswap alias <num|email> --unset  remove an account's alias
-  cswap alias                      list all aliases
-  cswap swap <a> <b>               exchange two accounts' slot numbers
-  cswap move <a> <slot>            assign an account to a slot (swaps if taken)
-  cswap auto                       auto-switch when nearing rate limits
-  cswap config [set KEY VALUE]     show or change settings (settings.json)
-  cswap export <path>              export accounts
-  cswap import <path>              import accounts
-  cswap tui                        interactive dashboard (also: bare cswap)
-  cswap watch                      dashboard, opened on the live watch page
-  cswap menubar                    macOS menu bar app
-  cswap upgrade                    self-upgrade to latest
-  cswap purge                      remove all claude-swap data
+  tycswap add-token [TOKEN|-]        register a setup-token or API key
+  tycswap remove <num|email>         remove an account
+  tycswap disable <num|email>        hold an account out of auto-rotation
+  tycswap enable <num|email>         return a disabled account to rotation
+  tycswap run <num|email> [-- ...]   run as an account, this terminal only
+  tycswap run                        run the current dir's mapped account
+  tycswap env <num|email>            print an eval-able CLAUDE_CONFIG_DIR export for this shell
+  tycswap map <num|email> [path]     map a directory to an account
+  tycswap map                        list directory mappings
+  tycswap unmap [path]               remove a directory mapping
+  tycswap alias <num|email> <name>   set a short alias for an account
+  tycswap alias <num|email> --unset  remove an account's alias
+  tycswap alias                      list all aliases
+  tycswap swap <a> <b>               exchange two accounts' slot numbers
+  tycswap move <a> <slot>            assign an account to a slot (swaps if taken)
+  tycswap auto                       auto-switch when nearing rate limits
+  tycswap config [set KEY VALUE]     show or change settings (settings.json)
+  tycswap export <path>              export accounts
+  tycswap import <path>              import accounts
+  tycswap tui                        interactive dashboard (also: bare tycswap)
+  tycswap watch                      dashboard, opened on the live watch page
+  tycswap menubar                    macOS menu bar app
+  tycswap upgrade                    self-upgrade to latest
+  tycswap purge                      remove all tycswap data
+  tycswap migrate [--dry-run]        copy the claude-swap store into this one, once
 
 Codex (ChatGPT) accounts — the commands above stay Claude-only:
-  cswap codex list                 list Codex accounts and usage
-  cswap codex status               show the account codex is running as
-  cswap codex switch               rotate to the next Codex account
-  cswap codex switch <num|email>   switch to a specific Codex account
-  cswap codex add                  store the current Codex login
-  cswap codex login                run ` + "`codex login`" + `, then store it
-  cswap codex remove <num|email>   remove a Codex account
-  cswap codex alias <num> <name>   set a short alias (--unset to clear)
-  cswap codex disable|enable <n>   hold out of / return to auto-rotation
-  cswap codex swap <a> <b>         exchange two Codex slot numbers
-  cswap codex move <a> <slot>      assign a Codex account to a slot
-  cswap codex export <path>        export Codex accounts
-  cswap codex import <path>        import Codex accounts
-  cswap codex purge                remove all cswap Codex data
-  cswap codex --help               full Codex help
+  tycswap codex list                 list Codex accounts and usage
+  tycswap codex status               show the account codex is running as
+  tycswap codex switch               rotate to the next Codex account
+  tycswap codex switch <num|email>   switch to a specific Codex account
+  tycswap codex add                  store the current Codex login
+  tycswap codex login                run ` + "`codex login`" + `, then store it
+  tycswap codex remove <num|email>   remove a Codex account
+  tycswap codex alias <num> <name>   set a short alias (--unset to clear)
+  tycswap codex disable|enable <n>   hold out of / return to auto-rotation
+  tycswap codex swap <a> <b>         exchange two Codex slot numbers
+  tycswap codex move <a> <slot>      assign a Codex account to a slot
+  tycswap codex export <path>        export Codex accounts
+  tycswap codex import <path>        import Codex accounts
+  tycswap codex purge                remove all tycswap Codex data
+  tycswap codex --help               full Codex help
 
 Aliases: ls=list  rm=remove  update=upgrade`
 
 // mainEpilog is the RawDescription epilog (spec 08§3), verbatim.
 const mainEpilog = `Flags combine with subcommands:
-  cswap switch --strategy best           # pick the account with most quota left
-  cswap switch --strategy next-available # rotate, skipping rate-limited accounts
-  cswap switch user@example.com
-  cswap list --json
-  cswap add --slot 3                      # add to a specific slot
-  cswap add --login --alias work          # second account, the live one untouched
-  cswap add --login --switch -- --email me@example.com
+  tycswap switch --strategy best           # pick the account with most quota left
+  tycswap switch --strategy next-available # rotate, skipping rate-limited accounts
+  tycswap switch user@example.com
+  tycswap list --json
+  tycswap add --slot 3                      # add to a specific slot
+  tycswap add --login --alias work          # second account, the live one untouched
+  tycswap add --login --switch -- --email me@example.com
                                           # log in, store, make it live
-  cswap add-token sk-ant-oat01-... --email me@example.com
-  cswap run 2 -- --resume                 # forward args after '--' to claude
-  eval "$(cswap env 2)"                   # pin THIS shell to account 2 (no claude launch)
-  cswap auto --once                       # single auto-switch tick (cron-friendly)
-  cswap config set autoswitch.threshold 80
-  cswap codex list --token-status         # Codex token expiry (never the token)
-  cswap codex list --json --skip-api      # machine-readable, no network
+  tycswap add-token --email me@example.com # prompts for the token (or pipe it: add-token -)
+  tycswap run 2 -- --resume                 # forward args after '--' to claude
+  eval "$(tycswap env 2)"                   # pin THIS shell to account 2 (no claude launch)
+  tycswap auto --once                       # single auto-switch tick (cron-friendly)
+  tycswap config set autoswitch.threshold 80
+  tycswap codex list --token-status         # Codex token expiry (never the token)
+  tycswap codex list --json --skip-api      # machine-readable, no network
 
-The original flag spellings (cswap --switch, cswap --list, ...) keep working.`
+The original flag spellings (tycswap --switch, tycswap --list, ...) keep working.`
 
 // visibleOptions is the --help options block for the non-suppressed flags
 // (spec 08§3.1). The legacy --flag group is hidden (spec 08§3.2), so it never
@@ -133,7 +134,7 @@ const visibleOptions = `options:
 
 // renderMainHelp writes the full --help text (spec 08§14) and returns exit 0.
 func renderMainHelp(prog string, out io.Writer) int {
-	rep := func(s string) string { return strings.ReplaceAll(s, "cswap", prog) }
+	rep := func(s string) string { return strings.ReplaceAll(s, "tycswap", prog) }
 	fmt.Fprintln(out, rep(usageLine(prog)))
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, rep(mainDescription))

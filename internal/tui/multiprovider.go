@@ -29,9 +29,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/switcher"
-	"git.dpemmons.com/dpemmons/cswap/internal/providers"
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/codex/switcher"
+	"github.com/tyclab/tycswap/internal/providers"
+	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // ProviderSource takes one merged, provider-major snapshot pass plus the owners
@@ -204,7 +205,7 @@ func (m *Model) startMessageAction(label string, fn func() (msg, warn string, er
 
 // codexSwitch switches a Codex row (app.py do_switch for a non-Claude
 // provider). The toast names the resolved slot, and running codex sessions are
-// reported exactly as `cswap codex switch` reports them: they keep the old
+// reported exactly as `tycswap codex switch` reports them: they keep the old
 // account until restarted.
 func (m *Model) codexSwitch(t rowTarget) tea.Cmd {
 	ctx, codex, number := m.multi.ctx, t.codex, t.number
@@ -264,7 +265,7 @@ func (m *Model) codexConfirmRemove(t rowTarget, id string, acc reporting.Account
 		yesLabel: "Remove",
 		focusYes: true,
 		message: fmt.Sprintf("Remove codex account %s (%s)?\n\nIts stored credentials and config backup are deleted.",
-			number, email),
+			number, termsafe.Strip(email)),
 		onDone: func(m *Model, confirmed bool) tea.Cmd {
 			if !confirmed {
 				return nil

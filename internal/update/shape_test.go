@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 func TestDetectInstallShape(t *testing.T) {
@@ -29,28 +29,28 @@ func TestDetectInstallShape(t *testing.T) {
 	}{
 		{
 			name:    "GOBIN set, binary inside it",
-			exePath: filepath.Join(gobin, "cswap"),
+			exePath: filepath.Join(gobin, "tycswap"),
 			getenv:  envWith(map[string]string{"GOBIN": gobin}),
 			homeDir: home,
 			want:    ShapeGoInstall,
 		},
 		{
 			name:    "GOBIN set, binary elsewhere",
-			exePath: filepath.Join(string(filepath.Separator), "usr", "local", "bin", "cswap"),
+			exePath: filepath.Join(string(filepath.Separator), "usr", "local", "bin", "tycswap"),
 			getenv:  envWith(map[string]string{"GOBIN": gobin}),
 			homeDir: home,
 			want:    ShapeUnknown,
 		},
 		{
 			name:    "GOPATH set, binary in GOPATH/bin",
-			exePath: filepath.Join(gopath, "bin", "cswap"),
+			exePath: filepath.Join(gopath, "bin", "tycswap"),
 			getenv:  envWith(map[string]string{"GOPATH": gopath}),
 			homeDir: home,
 			want:    ShapeGoInstall,
 		},
 		{
 			name:    "no GOBIN/GOPATH, binary in default $HOME/go/bin",
-			exePath: filepath.Join(home, "go", "bin", "cswap"),
+			exePath: filepath.Join(home, "go", "bin", "tycswap"),
 			getenv:  envWith(nil),
 			homeDir: home,
 			want:    ShapeGoInstall,
@@ -59,14 +59,14 @@ func TestDetectInstallShape(t *testing.T) {
 			name: "GOPATH set to something else, binary still in $HOME/go/bin",
 			// Amendment A6 lists $HOME/go/bin as always checked, even when
 			// GOPATH points elsewhere.
-			exePath: filepath.Join(home, "go", "bin", "cswap"),
+			exePath: filepath.Join(home, "go", "bin", "tycswap"),
 			getenv:  envWith(map[string]string{"GOPATH": gopath}),
 			homeDir: home,
 			want:    ShapeGoInstall,
 		},
 		{
 			name:    "no env, binary in an unrelated dir",
-			exePath: filepath.Join(string(filepath.Separator), "usr", "bin", "cswap"),
+			exePath: filepath.Join(string(filepath.Separator), "usr", "bin", "tycswap"),
 			getenv:  envWith(nil),
 			homeDir: home,
 			want:    ShapeUnknown,
@@ -80,7 +80,7 @@ func TestDetectInstallShape(t *testing.T) {
 		},
 		{
 			name:    "nil getenv treated as all-unset",
-			exePath: filepath.Join(home, "go", "bin", "cswap"),
+			exePath: filepath.Join(home, "go", "bin", "tycswap"),
 			getenv:  nil,
 			homeDir: home,
 			want:    ShapeGoInstall,
@@ -112,12 +112,12 @@ func TestUpgradeHint(t *testing.T) {
 		plat  platform.Platform
 		want  string
 	}{
-		{"go-install, linux", ShapeGoInstall, platform.Linux, "Run `cswap upgrade` to update."},
-		{"go-install, macos", ShapeGoInstall, platform.MacOS, "Run `cswap upgrade` to update."},
+		{"go-install, linux", ShapeGoInstall, platform.Linux, "Run `tycswap upgrade` to update."},
+		{"go-install, macos", ShapeGoInstall, platform.MacOS, "Run `tycswap upgrade` to update."},
 		{"go-install, windows", ShapeGoInstall, platform.Windows,
 			"Run `go install " + ModulePath + "@latest` to update."},
-		{"unknown, linux", ShapeUnknown, platform.Linux, "Run `cswap upgrade` for upgrade instructions."},
-		{"unknown, windows", ShapeUnknown, platform.Windows, "Run `cswap upgrade` for upgrade instructions."},
+		{"unknown, linux", ShapeUnknown, platform.Linux, "Run `tycswap upgrade` for upgrade instructions."},
+		{"unknown, windows", ShapeUnknown, platform.Windows, "Run `tycswap upgrade` for upgrade instructions."},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

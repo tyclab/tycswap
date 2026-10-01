@@ -1,4 +1,4 @@
-// transfer.go — export and import Codex accounts, and purge cswap's Codex
+// transfer.go — export and import Codex accounts, and purge tycswap's Codex
 // data. Implements claude-swap PR #252 codex/transfer.py.
 //
 // The export file contains live OAuth tokens. That is the point — an export
@@ -7,23 +7,23 @@
 // any token goes in, and the format says so in a top-level "warning" field
 // that any tool reading it will surface.
 //
-// Deliberately a separate format from the Claude side's .cswap envelope
+// Deliberately a separate format from the Claude side's .tycswap envelope
 // (internal/transfer): the two providers store different things (an
 // account_key and an auth.json payload here, an org-scoped credential blob
 // there), and one file that had to describe both would be a union type nobody
 // could validate. A "provider" field means an import can refuse a file from
 // the wrong side rather than half-applying it.
 //
-// Purge removes cswap's Codex store root (the Store's Root) and every
+// Purge removes tycswap's Codex store root (the Store's Root) and every
 // snapshot in it, Keychain items included — a purge that left the secrets
 // behind would be worse than none, since nothing would list them any more. It
-// never touches the live login or anything else under ~/.codex: cswap manages
+// never touches the live login or anything else under ~/.codex: tycswap manages
 // copies, and the user's actual codex login is not ours to delete. As
 // hardening over the Python, Purge refuses a root that is, or contains, the
 // codex home.
 //
 // Errors are TransferError (cerr.Transfer): transfer.py raises the bare
-// ClaudeSwitchError base, which has no Kind in cswap, and TransferError is the
+// ClaudeSwitchError base, which has no Kind in tycswap, and TransferError is the
 // Kind the Claude-side transfer package uses for the same failures.
 
 // Package transfer is the Codex provider's export/import format and purge.
@@ -41,9 +41,12 @@ import (
 	"strconv"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/storenames"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // ExportVersion is bumped when the on-disk export shape changes incompatibly.
@@ -137,30 +140,56 @@ func Export(st *store.Store, destination, account string, stdout io.Writer) (int
 	}
 
 	path := expandUser(destination)
-	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return 0, cerr.Transfer("Cannot write %s: %s", destination, err.Error()).Wrap(err)
 	}
-	// Created 0600 before the tokens go in, not chmod'ed afterwards: between
-	// write and chmod the file would be world-readable.
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return 0, cerr.Transfer("Cannot write %s: %s", destination, err.Error()).Wrap(err)
-	}
-	defer f.Close()
-	// Hardening over the Python: O_CREAT's mode only applies to a new file, so
-	// an existing wider-mode file is narrowed before the tokens are written.
-	if runtime.GOOS != "windows" {
-		if err := f.Chmod(0o600); err != nil {
-			return 0, cerr.Transfer("Cannot write %s: %s", destination, err.Error()).Wrap(err)
-		}
-	}
-	if _, err := f.Write(blob); err != nil {
-		return 0, cerr.Transfer("Cannot write %s: %s", destination, err.Error()).Wrap(err)
-	}
-	if err := f.Close(); err != nil {
+	if err := writeExportFile(path, blob); err != nil {
 		return 0, cerr.Transfer("Cannot write %s: %s", destination, err.Error()).Wrap(err)
 	}
 	return len(accounts), nil
+}
+
+// writeExportFile writes blob to path atomically: a temp file in path's own
+// directory, created 0600 before the tokens go in (never chmod'ed afterwards,
+// when it would already have been readable), then renamed over path. A reader
+// never sees a half-written export, an interrupted write leaves the previous
+// file intact, and an existing wider-mode file is replaced by a 0600 one. The
+// parent directory's mode is left alone: it is the user's.
+func writeExportFile(path string, blob []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tycswap-codex-*.tmp")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	committed := false
+	defer func() {
+		if !committed {
+			_ = os.Remove(name)
+		}
+	}()
+	if runtime.GOOS != "windows" {
+		if err := tmp.Chmod(0o600); err != nil {
+			tmp.Close()
+			return err
+		}
+	}
+	if _, err := tmp.Write(blob); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := atomicfile.SyncFile(tmp); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(name, path); err != nil {
+		return err
+	}
+	atomicfile.SyncDir(filepath.Dir(path))
+	committed = true
+	return nil
 }
 
 // Import reads accounts from source ("-" reads stdin, os.Stdin when nil) into
@@ -175,6 +204,13 @@ func Export(st *store.Store, destination, account string, stdout io.Writer) (int
 // accepted, as the Python accepts every row); an alias the switcher's
 // NormalizeAlias would reject is dropped rather than imported. The rows are
 // written under the store lock (st.WithLock).
+//
+// Like the Claude import, every row that would be imported is validated
+// before anything is written, and one bad row refuses the whole import: a
+// non-empty email must be one a file name can carry (storenames.ValidEmail), an alias must
+// hold no control character and be at most 64 bytes, and the
+// accountKey may hold no control character. Plan and workspace names are
+// stored without control characters (termsafe.Strip).
 func Import(st *store.Store, source string, force bool, stdin io.Reader) (int, error) {
 	var raw []byte
 	var err error
@@ -201,12 +237,12 @@ func Import(st *store.Store, source string, force bool, stdin io.Reader) (int, e
 	if err := json.Unmarshal(raw, &document); err != nil {
 		var probe any
 		if json.Unmarshal(raw, &probe) == nil {
-			return 0, cerr.Transfer("%s is not a cswap export", source)
+			return 0, cerr.Transfer("%s is not a tycswap export", source)
 		}
 		return 0, cerr.Transfer("%s is not valid JSON: %s", source, err.Error()).Wrap(err)
 	}
 	if document == nil {
-		return 0, cerr.Transfer("%s is not a cswap export", source)
+		return 0, cerr.Transfer("%s is not a tycswap export", source)
 	}
 
 	if p, has := document["provider"]; has && string(bytes.TrimSpace(p)) != "null" {
@@ -221,12 +257,16 @@ func Import(st *store.Store, source string, force bool, stdin io.Reader) (int, e
 		}
 	}
 	if v, ok := pyInt(document["version"]); ok && v > ExportVersion {
-		return 0, cerr.Transfer("%s uses export version %d, newer than this cswap understands", source, v)
+		return 0, cerr.Transfer("%s uses export version %d, newer than this tycswap understands", source, v)
 	}
 
 	var rows []json.RawMessage
 	if json.Unmarshal(document["accounts"], &rows) != nil || len(rows) == 0 {
 		return 0, cerr.Transfer("%s contains no accounts", source)
+	}
+
+	if err := validateRows(rows); err != nil {
+		return 0, err
 	}
 
 	imported := 0
@@ -253,8 +293,8 @@ func Import(st *store.Store, source string, force bool, stdin io.Reader) (int, e
 			}
 			if _, err := st.UpsertSlot(key, store.Upsert{
 				Email:         pyStr(row["email"], ""),
-				Plan:          pyStr(row["plan"], ""),
-				WorkspaceName: pyStr(row["workspaceName"], ""),
+				Plan:          termsafe.Strip(pyStr(row["plan"], "")),
+				WorkspaceName: termsafe.Strip(pyStr(row["workspaceName"], "")),
 				AuthMode:      pyStr(row["authMode"], "chatgpt"),
 			}); err != nil {
 				return err
@@ -281,6 +321,42 @@ func Import(st *store.Store, source string, force bool, stdin io.Reader) (int, e
 	return imported, err
 }
 
+// maxAliasLen bounds an imported alias, as the Claude import does.
+const maxAliasLen = 64
+
+// validateRows is the import's pass 1: every row the write pass would take
+// (an object with an accountKey and an auth object) is checked before any
+// write, so a bad row late in the file cannot leave earlier rows imported.
+func validateRows(rows []json.RawMessage) error {
+	for _, r := range rows {
+		var row map[string]json.RawMessage
+		if json.Unmarshal(r, &row) != nil || row == nil {
+			continue
+		}
+		key, _ := stringValue(row["accountKey"])
+		if _, ok := decodeObject(row["auth"]); key == "" || !ok {
+			continue
+		}
+		if termsafe.HasControl(key) {
+			return cerr.Transfer("invalid accountKey in imported account: %q contains a control character", key)
+		}
+		if email, isStr := stringValue(row["email"]); isStr && email != "" && !storenames.ValidEmail(email) {
+			return cerr.Transfer("invalid email in imported account: %q", email)
+		}
+		if alias, isStr := stringValue(row["alias"]); isStr && alias != "" {
+			if len(alias) > maxAliasLen {
+				return cerr.Transfer("invalid alias for %s: longer than %d bytes", key, maxAliasLen)
+			}
+			// Surrounding spaces are trimmed and an alias the switcher would
+			// reject is dropped (ValidAlias); a control character is refused.
+			if strings.IndexFunc(alias, termsafe.IsControl) >= 0 {
+				return cerr.Transfer("invalid alias for %s: %q contains a control character", key, alias)
+			}
+		}
+	}
+	return nil
+}
+
 // MaxImportBytes caps what Import reads from a file or stdin: an export of a
 // few accounts is kilobytes, and an unbounded read of a wrong file (or an
 // endless pipe) would exhaust memory before JSON parsing could reject it.
@@ -292,7 +368,7 @@ func readLimited(r io.Reader) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(r, MaxImportBytes+1))
 }
 
-// Purge deletes every Codex account cswap manages and st's store root, after
+// Purge deletes every Codex account tycswap manages and st's store root, after
 // a "[y/N]" confirmation read from in (os.Stdin when nil) unless assumeYes.
 // Messages go to out (os.Stdout when nil). Returns whether it ran; EOF at the
 // prompt reads as "no".
@@ -310,12 +386,12 @@ func Purge(st *store.Store, assumeYes bool, in io.Reader, out io.Writer) (bool, 
 		return false, err
 	}
 	if _, err := os.Stat(root); len(slots) == 0 && os.IsNotExist(err) {
-		io.WriteString(out, "No cswap Codex data to remove.\n")
+		io.WriteString(out, "No tycswap Codex data to remove.\n")
 		return false, nil
 	}
 
 	if !assumeYes {
-		io.WriteString(out, "Remove "+strconv.Itoa(len(slots))+" managed Codex account(s) and all cswap Codex "+
+		io.WriteString(out, "Remove "+strconv.Itoa(len(slots))+" managed Codex account(s) and all tycswap Codex "+
 			"data? Your ~/.codex login is left alone. [y/N] ")
 		// A read error (EOF included) leaves whatever was read, usually "",
 		// which is not "y" — the Python's EOFError becomes a plain "no".

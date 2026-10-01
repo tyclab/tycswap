@@ -5,7 +5,7 @@ https://github.com/realiti4/claude-swap), run from source on Linux against a
 throwaway `$HOME`. They are the data-compatibility contract for the Go port:
 golden tests read them to prove the Go implementation parses, and where
 applicable round-trips, exactly what the Python tool writes. They are not
-hand-edited.
+hand-edited, with one exception noted below.
 
 ## Layout
 
@@ -28,8 +28,13 @@ hand-edited.
 - `claude-home/dot-claude.json`, `claude-home/dot-credentials.json` — what the
   Python tool writes into the fake Claude Code home: `~/.claude.json` after
   `switch 1`, and `~/.claude/.credentials.json` holding account 1's token blob.
-- `backup-all.cswap`, `backup-acct2.cswap` — export files, all accounts and one
-  account respectively.
+  The credentials file was extended by hand with the `mcpOAuth` and
+  `trustedDeviceToken` keys Claude Code itself (not the Python tool) keeps in
+  that file, with placeholder values, so the live file carries the seat-wide
+  remainder a switch must preserve.
+- `backup-all.tycswap`, `backup-acct2.cswap` — export files, all accounts and one
+  account respectively (the first renamed to the tycswap extension; the second
+  keeps the old one, so the tests read an old-name export).
 
 ## Invariants the fixtures pin
 
@@ -71,7 +76,7 @@ run config set autoswitch.threshold 80
 run config set autoswitch.model Fable
 run switch 2
 run switch 1
-run export "$FIXHOME/backup-all.cswap"
+run export "$FIXHOME/backup-all.tycswap"
 run export "$FIXHOME/backup-acct2.cswap" --account 2
 ```
 

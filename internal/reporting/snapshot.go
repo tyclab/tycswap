@@ -11,15 +11,19 @@ package reporting
 import (
 	"strconv"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // AccountSnapshot is one managed account as seen by interactive UIs (spec
 // models.py AccountSnapshot). Usage is the store-backed read model: display code
 // reads Usage.LastGood/AgeS directly (may show old data, age-annotated), while
 // Usage.Sentinel carries derived states that replace the bars entirely.
+//
+// Email, OrgName and Alias are the stored values, so a JSON consumer sees
+// what the store holds; a text renderer passes them through termsafe.Strip,
+// since they come from exports, APIs and other tools' files.
 type AccountSnapshot struct {
 	Number   string
 	Email    string

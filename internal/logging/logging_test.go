@@ -4,12 +4,13 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // TestFormatLineExact pins the on-disk contract format including the COMMA
@@ -89,7 +90,7 @@ func TestLazyDirCreation(t *testing.T) {
 	}
 
 	lg.Info("hello")
-	logPath := filepath.Join(dir, "claude-swap.log")
+	logPath := filepath.Join(dir, "tycswap.log")
 	data, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("log file not created after first write: %v", err)
@@ -106,7 +107,7 @@ func TestDebugGatedByLevel(t *testing.T) {
 	lg := NewWithClock(dir, false, clk) // INFO level
 	lg.Debug("should be dropped")
 	lg.Info("kept")
-	data, _ := os.ReadFile(filepath.Join(dir, "claude-swap.log"))
+	data, _ := os.ReadFile(filepath.Join(dir, "tycswap.log"))
 	if strings.Contains(string(data), "should be dropped") {
 		t.Error("DEBUG record written at INFO level")
 	}
@@ -117,7 +118,7 @@ func TestDebugGatedByLevel(t *testing.T) {
 
 func TestRotation(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "claude-swap.log")
+	path := filepath.Join(dir, "tycswap.log")
 	w := newRotatingWriter(path, 64, 3)            // tiny cap to force rotation
 	line := []byte("0123456789ABCDEF0123456789\n") // 27 bytes
 	for i := 0; i < 6; i++ {
@@ -132,5 +133,24 @@ func TestRotation(t *testing.T) {
 	// Never more backups than backupCount.
 	if _, err := os.Stat(path + ".4"); err == nil {
 		t.Errorf("backup .4 exists but backupCount is 3")
+	}
+}
+
+// TestLogFileIsPrivate: the first write creates the store directory 0700 and
+// the log 0600, like every other file in the store.
+func TestLogFileIsPrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX modes only")
+	}
+	dir := filepath.Join(t.TempDir(), "store")
+	w := newRotatingWriter(filepath.Join(dir, "tycswap.log"), 1<<20, 3)
+	if err := w.write([]byte("line\n")); err != nil {
+		t.Fatal(err)
+	}
+	for p, want := range map[string]os.FileMode{dir: 0o700, filepath.Join(dir, "tycswap.log"): 0o600} {
+		fi, err := os.Stat(p)
+		if err != nil || fi.Mode().Perm() != want {
+			t.Errorf("%s mode = %v, %v; want %v", p, fi.Mode().Perm(), err, want)
+		}
 	}
 }

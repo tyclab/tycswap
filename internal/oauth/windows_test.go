@@ -232,7 +232,7 @@ func TestNewUsageProjectsSpendAndScoped(t *testing.T) {
 // is.
 //
 // A NEGATIVE pct is kept. It compares like any other number, it is not a width
-// hazard on any surface, and this projection is what `cswap list` and its --json
+// hazard on any surface, and this projection is what `tycswap list` and its --json
 // payload are built from: dropping one would change what every consumer says
 // about a window in order to buy a renderer nothing at all.
 func TestNewUsageDropsOnlyIncomparablePercentages(t *testing.T) {

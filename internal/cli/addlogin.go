@@ -1,15 +1,15 @@
-// addlogin.go — `cswap add --login [--switch] [-- <claude auth login args>]`.
+// addlogin.go — `tycswap add --login [--switch] [-- <claude auth login args>]`.
 //
 // Adding a second Claude account used to mean logging the live one out, which
 // discards its refresh token. --login runs Claude Code's own `claude auth
 // login` in a scratch CLAUDE_CONFIG_DIR instead and stores what it leaves
-// there, the same way `cswap codex login` stores a codex login: the live login
+// there, the same way `tycswap codex login` stores a codex login: the live login
 // is never touched, and the account recorded as active stays the one that is
 // live. --switch then makes the new account live through the regular switch,
-// so the outgoing credential is written back as on any `cswap switch <n>`.
+// so the outgoing credential is written back as on any `tycswap switch <n>`.
 //
 // The login waits on a browser, so it runs before any store or roster lock is
-// taken: a lock held across it would fail every other cswap invocation and the
+// taken: a lock held across it would fail every other tycswap invocation and the
 // auto engine for as long as the browser tab stays open.
 package cli
 
@@ -22,21 +22,25 @@ import (
 	"strings"
 	"sync"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/lifecycle"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/lifecycle"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/session"
 )
 
-// claudeLookPath resolves the claude binary the way `cswap run` does
+// claudeLookPath resolves the claude binary the way `tycswap run` does
 // (shutil.which, so a Windows .cmd shim resolves). A seam for the tests.
 var claudeLookPath = exec.LookPath
 
 // runClaudeLogin runs the resolved claude binary directly — never through a
-// shell, so a shell function or alias named `claude` cannot add flags cswap
+// shell, so a shell function or alias named `claude` cannot add flags tycswap
 // never chose — with env as its whole environment and the terminal inherited,
 // so the user can finish the browser flow. It returns the exit status.
 var runClaudeLogin = func(binary string, args, env []string, s ioStreams) (int, error) {
+	if err := session.CheckCmdShimArgs(binary, args); err != nil {
+		return 1, err
+	}
 	cmd := exec.Command(binary, args...)
 	cmd.Env = env
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.in, s.out, s.err
@@ -70,7 +74,7 @@ const (
 	errTailWithoutLogin   = "arguments after -- go with --login: they are claude's login arguments"
 )
 
-// addArgs is `cswap add`'s argv split into the parts --login owns and the rest,
+// addArgs is `tycswap add`'s argv split into the parts --login owns and the rest,
 // which the main parser still reads (--slot, --alias, --debug, --help, and the
 // usual refusals for flags add does not take).
 type addArgs struct {
@@ -98,7 +102,7 @@ func splitAddArgs(argv []string) addArgs {
 	return a
 }
 
-// addCommand intercepts `cswap add` (and its legacy spelling --add-account).
+// addCommand intercepts `tycswap add` (and its legacy spelling --add-account).
 // handled is false for a plain add, which the main parser dispatches as before.
 func addCommand(prog string, argv []string, s ioStreams) (code int, handled bool) {
 	a := splitAddArgs(argv)
@@ -155,7 +159,12 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 	defer removeScratch()
 
 	args := append([]string{"auth", "login"}, a.tail...)
-	code, err := runClaudeLogin(binary, args, loginEnv(os.Environ(), scratch), s)
+	if err := session.CheckCmdShimArgs(binary, args); err != nil {
+		return renderDomainError(err, false, s.out, s.err)
+	}
+	// The auth override variables (ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN,
+	// …) make claude skip the account login; they are scrubbed as run/env do.
+	code, err := runClaudeLogin(binary, args, loginEnv(session.ScrubAuthOverrides(os.Environ()), scratch), s)
 	if err != nil || code != 0 {
 		return renderDomainError(lifecycle.ErrLoginIncomplete(), false, s.out, s.err)
 	}
@@ -187,7 +196,7 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 // cleanups, so a Ctrl-C during the browser wait leaves no login behind. With
 // a Keychain (macOS) it first deletes the item Claude Code keyed by the
 // scratch dir: once the dir is gone that item's name can no longer be derived
-// from anything cswap keeps, so it would outlive the login. A "not found"
+// from anything tycswap keeps, so it would outlive the login. A "not found"
 // delete is success, and any other failure is ignored.
 func makeLoginScratch(root string, kc keychain.KeychainClient) (dir string, remove func(), err error) {
 	dir, err = os.MkdirTemp(root, "login.")
@@ -217,7 +226,7 @@ func makeLoginScratch(root string, kc keychain.KeychainClient) (dir string, remo
 
 // loginEnv is the parent environment with CLAUDE_CONFIG_DIR pointing at the
 // scratch profile. Any CLAUDE_CONFIG_DIR already set — a custom one, or the
-// session profile of a `cswap env`-pinned shell — is replaced, so the login
+// session profile of a `tycswap env`-pinned shell — is replaced, so the login
 // can never land in a live profile.
 func loginEnv(parent []string, scratch string) []string {
 	const key = "CLAUDE_CONFIG_DIR"

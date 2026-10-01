@@ -9,7 +9,7 @@
 // (spec 08§7.7). tui does not import cli, so this direct cli→tui edge (per the
 // DESIGN dependency graph) introduces no cycle.
 //
-// When Codex is present (providers.CodexIsPresent: a cswap Codex store or a
+// When Codex is present (providers.CodexIsPresent: a tycswap Codex store or a
 // codex-auth registry), the dashboard is fed a merged Claude + Codex snapshot
 // and routes Codex rows to a Codex switcher — the Go twin of claude-swap PR
 // #252 tui/app.py's available_providers + MultiSnapshotSource. Without Codex the
@@ -20,13 +20,13 @@ import (
 	"context"
 	"io"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/autoswitch"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/switcher"
-	"git.dpemmons.com/dpemmons/cswap/internal/core"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/providers"
-	"git.dpemmons.com/dpemmons/cswap/internal/settings"
-	"git.dpemmons.com/dpemmons/cswap/internal/tui"
+	"github.com/tyclab/tycswap/internal/autoswitch"
+	"github.com/tyclab/tycswap/internal/codex/switcher"
+	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/providers"
+	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/tui"
 )
 
 // *core.Switcher satisfies the frozen tui.Facade method set (DESIGN A13). This

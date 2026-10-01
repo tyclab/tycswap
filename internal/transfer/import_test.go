@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/cerr"
 )
 
 // importText feeds text to Import via stdin ("-") and returns the stderr output
@@ -74,7 +74,7 @@ func TestImportFixtureBackupAll(t *testing.T) {
 	f := newFakeAccounts(t)
 	var err error
 	_, stderr := captureIO(t, func() {
-		err = Import(f, fixturePath(t, "backup-all.cswap"), false)
+		err = Import(f, fixturePath(t, "backup-all.tycswap"), false)
 	})
 	if err != nil {
 		t.Fatalf("Import: %v", err)
@@ -146,6 +146,7 @@ func TestImportFixtureBackupAcct2(t *testing.T) {
 	f := newFakeAccounts(t)
 	var err error
 	_, stderr := captureIO(t, func() {
+		// An old .cswap export: import reads it as migration (DESIGN A23).
 		err = Import(f, fixturePath(t, "backup-acct2.cswap"), false)
 	})
 	if err != nil {
@@ -230,18 +231,25 @@ func TestImportPathTraversalRejectedNoPartialWrite(t *testing.T) {
 	}
 }
 
-func TestValidateEmailTrailingNewlineMatchesPython(t *testing.T) {
-	// Python's re.match(r"^...$", email) accepts end-of-text OR one trailing
-	// newline; Go RE2's `$` is end-of-text only. emailRE uses `\n?$` to match
-	// Python. Empirically confirmed against _validate_email (switcher.py:322-324).
+func TestValidateEmailStrictAnchor(t *testing.T) {
+	// Deliberately stricter than Python's re.match `$`, which also accepts one
+	// trailing newline: the email becomes part of file and Keychain names.
 	tests := []struct {
 		email string
 		want  bool
 	}{
 		{"bob@example.com", true},
-		{"bob@example.com\n", true},    // Python True; must match
-		{"bob@example.com\n\n", false}, // Python False (only one trailing \n)
+		{"bob@example.com\n", false},
+		{"bob@example.com\r\n", false},
+		{"bob@example.com\n\n", false},
 		{"\nbob@example.com", false},
+		{"bob\r@example.com", false},
+		{"bob @example.com", false},
+		{"bob@exa\tmple.com", false},
+		{"bob@example.com\x00", false},
+		{"bob@example.com\u0085", false},
+		{strings.Repeat("a", 243) + "@example.com", false}, // 255 bytes
+		{strings.Repeat("a", 242) + "@example.com", true},  // 254 bytes
 		{"not-an-email", false},
 	}
 	for _, tc := range tests {
@@ -251,13 +259,54 @@ func TestValidateEmailTrailingNewlineMatchesPython(t *testing.T) {
 	}
 }
 
-func TestImportTrailingNewlineEmailAccepted(t *testing.T) {
-	// A .cswap whose account email has a trailing newline is accepted by Python
-	// and must be accepted by Go (was rejected before the emailRE `\n?$` fix).
+// TestImportRejectsCraftedFields feeds exports whose email, alias or slot
+// carries a newline, a CR/LF or an out-of-bounds value; each is refused in
+// pass 1, before anything is written.
+func TestImportRejectsCraftedFields(t *testing.T) {
+	cases := []struct {
+		name  string
+		patch func(map[string]any)
+		want  string
+	}{
+		{"email trailing newline", func(a map[string]any) { a["email"] = "bob@example.com\n" }, "invalid or missing email"},
+		{"email CRLF", func(a map[string]any) { a["email"] = "bob@example.com\r\nx" }, "invalid or missing email"},
+		{"email CR inside", func(a map[string]any) { a["email"] = "bo\rb@example.com" }, "invalid or missing email"},
+		{"alias trailing newline", func(a map[string]any) { a["alias"] = "work\n" }, "contains whitespace or a control character"},
+		{"alias CRLF", func(a map[string]any) { a["alias"] = "wo\r\nrk" }, "contains whitespace or a control character"},
+		{"alias padded", func(a map[string]any) { a["alias"] = " work" }, "contains whitespace or a control character"},
+		{"alias too long", func(a map[string]any) { a["alias"] = strings.Repeat("a", 65) }, "longer than 64 bytes"},
+		{"slot as string with newline", func(a map[string]any) { a["number"] = "1\n" }, "invalid slot number"},
+		{"slot out of bounds", func(a map[string]any) { a["number"] = 1000000 }, "invalid slot number"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFakeAccounts(t)
+			acct := oauthAccount(1, "bob@example.com", "")
+			tc.patch(acct)
+			_, err := importText(t, f, envelopeJSON(nil, acct), false)
+			if msg := transferErr(t, err); !strings.Contains(msg, tc.want) {
+				t.Errorf("message = %q, want %q", msg, tc.want)
+			}
+			if len(f.writtenCreds) != 0 || f.seq != nil {
+				t.Error("a refused import wrote something")
+			}
+		})
+	}
+}
+
+// TestImportRejectsRawTrailingNewlineExport is the crafted file itself: an
+// export whose email literally ends in an escaped newline.
+func TestImportRejectsRawTrailingNewlineExport(t *testing.T) {
 	f := newFakeAccounts(t)
-	acct := oauthAccount(1, "bob@example.com\n", "")
-	if _, err := importText(t, f, envelopeJSON(nil, acct), false); err != nil {
-		t.Fatalf("import with trailing-newline email failed: %v", err)
+	text := strings.Replace(envelopeJSON(nil, oauthAccount(1, "bob@example.com", "")),
+		`"email":"bob@example.com"`, `"email":"bob@example.com\n"`, 1)
+	if !strings.Contains(text, `bob@example.com\n`) {
+		t.Fatal("crafted envelope lacks the newline")
+	}
+	_, err := importText(t, f, text, false)
+	transferErr(t, err)
+	if len(f.writtenCreds) != 0 {
+		t.Error("a refused import wrote credentials")
 	}
 }
 
@@ -555,7 +604,7 @@ func TestImportLiveLoginActivationHint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
-	if !strings.Contains(stderr, "Note: bob@example.com is your current live login — activate the imported credentials with: cswap --switch-to 2 --force") {
+	if !strings.Contains(stderr, "Note: bob@example.com is your current live login — activate the imported credentials with: tycswap --switch-to 2 --force") {
 		t.Errorf("missing activation hint; stderr=%q", stderr)
 	}
 }
@@ -603,7 +652,7 @@ func TestImportSeedsActiveOnlyWhenUnset(t *testing.T) {
 
 func TestImportFileNotFound(t *testing.T) {
 	f := newFakeAccounts(t)
-	err := Import(f, filepath.Join(t.TempDir(), "nope.cswap"), false)
+	err := Import(f, filepath.Join(t.TempDir(), "nope.tycswap"), false)
 	msg := transferErr(t, err)
 	if !strings.Contains(msg, "import file not found:") {
 		t.Errorf("message = %q", msg)

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 func mustParse(t *testing.T, rfc3339 string) time.Time {

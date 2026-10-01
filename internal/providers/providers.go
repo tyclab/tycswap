@@ -22,11 +22,11 @@ import (
 	"os"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/switcher"
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/codex/switcher"
+	"github.com/tyclab/tycswap/internal/reporting"
 )
 
 // Provider is what a surface needs to drive one provider's account list: its
@@ -85,10 +85,10 @@ func Switcher(p Provider) *switcher.Switcher {
 
 // ---- registry ----------------------------------------------------------------
 
-// CodexIsPresent reports whether this machine has any Codex accounts cswap
+// CodexIsPresent reports whether this machine has any Codex accounts tycswap
 // knows or could import: a slot in the Codex store, or a codex-auth registry
 // not yet imported, so the provider shows up on the first run rather than only
-// after a `cswap codex` command. It never panics.
+// after a `tycswap codex` command. It never panics.
 func CodexIsPresent() (present bool) {
 	defer func() {
 		if recover() != nil {

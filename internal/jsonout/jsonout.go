@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/cerr"
 )
 
 // SchemaVersion is the payload schema version; scripts key off it.

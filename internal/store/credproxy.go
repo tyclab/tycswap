@@ -11,20 +11,23 @@ package store
 
 import (
 	"errors"
+	"github.com/tyclab/tycswap/internal/atomicfile"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/mappings"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/mappings"
+	"github.com/tyclab/tycswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
 // configBackupPath is configs/.claude-config-{num}-{email}.json (email raw,
-// unslugified; spec 01§1.2).
+// unslugified; spec 01§1.2), built by storenames so store, credstore and purge
+// share one scheme. The email has passed storenames.ValidEmail at the store's
+// entry points, which is what keeps the name a single path component.
 func (s *Store) configBackupPath(num, email string) string {
-	return filepath.Join(s.ConfigsDir, ".claude-config-"+num+"-"+email+".json")
+	return filepath.Join(s.ConfigsDir, storenames.ConfigFile(num, email))
 }
 
 // ReadAccountCredentials returns a slot's backup credential (.enc-wins), "" when
@@ -49,19 +52,9 @@ func (s *Store) ReadAccountConfig(num, email string) (string, error) {
 // WriteAccountConfig writes a slot's backup config, chmod 0600 on non-Windows
 // (spec 01§ _write_account_config). The config directory is created if needed.
 func (s *Store) WriteAccountConfig(num, email, config string) error {
-	path := s.configBackupPath(num, email)
-	if err := os.MkdirAll(s.ConfigsDir, 0o700); err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, []byte(config), 0o600); err != nil {
-		return err
-	}
-	if !platform.IsWindows() {
-		if err := os.Chmod(path, 0o600); err != nil {
-			return err
-		}
-	}
-	return nil
+	// Atomic (temp file, fsync, rename): a crash mid-write must not leave an
+	// empty config backup, which would make the slot unswitchable.
+	return atomicfile.Write(s.configBackupPath(num, email), []byte(config), atomicfile.Opts{})
 }
 
 // DeleteConfigBackup unconditionally unlinks a slot's config backup, treating a
@@ -90,7 +83,7 @@ func (s *Store) WriteAccountCredentials(num, email, creds string) error {
 // postBackupWrite is _post_backup_write (spec 01§7): a LIVE session keeps its own
 // credential copy but is stale-marked so setup_session re-bootstraps it once it
 // exits; a non-live profile has its credential material dropped immediately so
-// the next `cswap run` re-bootstraps from the fresh backup (history preserved).
+// the next `tycswap run` re-bootstraps from the fresh backup (history preserved).
 func (s *Store) postBackupWrite(num, email string) {
 	dir := s.SessionDir(num, email)
 	if len(sessprofile.LiveSessionPIDs(dir)) > 0 {

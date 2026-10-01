@@ -13,11 +13,11 @@ import (
 	"os"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/lifecycle"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/lifecycle"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // ListAccounts delegates to reporting.ListAccounts (spec 02§11).
@@ -95,7 +95,7 @@ func firstRunSetup(s *store.Store) error {
 		return nil
 	}
 	if strings.ToLower(strings.TrimSpace(answer)) == "n" {
-		fmt.Fprintln(os.Stdout, printer.Dimmed("Setup cancelled. You can run 'cswap --add-account' later."))
+		fmt.Fprintln(os.Stdout, printer.Dimmed("Setup cancelled. You can run 'tycswap --add-account' later."))
 		return nil
 	}
 	return lifecycle.AddAccount(s, nil, false, nil)

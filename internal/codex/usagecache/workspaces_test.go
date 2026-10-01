@@ -8,9 +8,9 @@ import (
 	"errors"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/api"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/codex/api"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/store"
 )
 
 const wsUser = "user-a"

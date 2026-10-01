@@ -29,11 +29,11 @@ import (
 	"encoding/json"
 	"strconv"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cclock"
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/cclock"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // UsageProvider returns the decision-grade usage map keyed by account number,
@@ -107,7 +107,7 @@ func nilNumRef(email string) map[string]any {
 }
 
 // withTripleLock runs fn under the switch lock stack in the mandated order
-// (spec 03§7.4): cswap FileLock, then Claude Code credentials lock, then Claude
+// (spec 03§7.4): tycswap FileLock, then Claude Code credentials lock, then Claude
 // Code config lock — released in reverse via defers. A FileLock timeout is a
 // LockError; a Claude Code lock timeout is a ClaudeCodeLockTimeout. Nothing is
 // mutated when acquisition fails. The FileLock is non-reentrant, so no network

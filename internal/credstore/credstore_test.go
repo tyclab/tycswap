@@ -17,14 +17,14 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/ccfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/keychain"
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/ccfile"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // -- test doubles --------------------------------------------------------------
@@ -827,4 +827,203 @@ func itoa(n int64) string {
 		buf[i] = '-'
 	}
 	return string(buf[i:])
+}
+
+// -- WriteActiveAccount: the seat-wide mcpOAuth carry-over -----------------------
+
+const (
+	storedAcct = `{"claudeAiOauth":{"accessToken":"stored-access","refreshToken":"stored-refresh"},"trustedDeviceToken":"device-stored"}`
+	liveAcct   = `{"claudeAiOauth":{"accessToken":"live-access","refreshToken":"live-refresh"},"mcpOAuth":{"srv|1111":{"accessToken":"mcp-live"}},"trustedDeviceToken":"device-live"}`
+)
+
+// decodeCreds parses a credential blob for structural assertions.
+func decodeCreds(t *testing.T, text string) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(text), &m); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, text)
+	}
+	return m
+}
+
+// assertSpliced asserts text holds storedAcct's account part with liveAcct's
+// mcpOAuth carried over it.
+func assertSpliced(t *testing.T, text string) {
+	t.Helper()
+	m := decodeCreds(t, text)
+	if oa, _ := m["claudeAiOauth"].(map[string]any); oa["accessToken"] != "stored-access" {
+		t.Errorf("claudeAiOauth = %v, want the stored account", m["claudeAiOauth"])
+	}
+	if m["trustedDeviceToken"] != "device-stored" {
+		t.Errorf("trustedDeviceToken = %v, want the stored one (it travels with the account)", m["trustedDeviceToken"])
+	}
+	mcp, _ := m["mcpOAuth"].(map[string]any)
+	srv, _ := mcp["srv|1111"].(map[string]any)
+	if srv["accessToken"] != "mcp-live" {
+		t.Errorf("mcpOAuth = %v, want the live MCP login carried over", m["mcpOAuth"])
+	}
+}
+
+func TestWriteActiveAccount_FileCarriesLiveMCPOAuth(t *testing.T) {
+	fh := testutil.BuildFixtureHome(t)
+	writeFile(t, fh.CredentialsFile, liveAcct)
+	s := newStore(t, platform.Linux, t.TempDir(), newFakeKC(), nil)
+
+	if err := s.WriteActiveAccount(storedAcct); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(fh.CredentialsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSpliced(t, string(got))
+	if s.LastActiveBackend() != "file" {
+		t.Fatalf("last backend = %q, want file", s.LastActiveBackend())
+	}
+}
+
+func TestWriteActiveAccount_NoLiveFileWritesVerbatim(t *testing.T) {
+	fh := testutil.BuildFixtureHome(t)
+	if err := os.Remove(fh.CredentialsFile); err != nil {
+		t.Fatal(err)
+	}
+	s := newStore(t, platform.Linux, t.TempDir(), newFakeKC(), nil)
+	if err := s.WriteActiveAccount(storedAcct); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(fh.CredentialsFile)
+	if string(got) != storedAcct {
+		t.Fatalf("credentials file = %q, want the stored blob verbatim", got)
+	}
+}
+
+func TestWriteActiveAccount_LiveWithoutKeyWritesVerbatim(t *testing.T) {
+	fh := testutil.BuildFixtureHome(t)
+	writeFile(t, fh.CredentialsFile, `{"claudeAiOauth":{"accessToken":"live-access"}}`)
+	s := newStore(t, platform.Linux, t.TempDir(), newFakeKC(), nil)
+	if err := s.WriteActiveAccount(storedAcct); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(fh.CredentialsFile)
+	if string(got) != storedAcct {
+		t.Fatalf("credentials file = %q, want the stored blob verbatim", got)
+	}
+}
+
+func TestWriteActiveAccount_MalformedLiveWritesVerbatim(t *testing.T) {
+	fh := testutil.BuildFixtureHome(t)
+	writeFile(t, fh.CredentialsFile, `{"mcpOAuth": {`)
+	s := newStore(t, platform.Linux, t.TempDir(), newFakeKC(), nil)
+	if err := s.WriteActiveAccount(storedAcct); err != nil {
+		t.Fatalf("a malformed live file must not stop the write: %v", err)
+	}
+	got, _ := os.ReadFile(fh.CredentialsFile)
+	if string(got) != storedAcct {
+		t.Fatalf("credentials file = %q, want the stored blob verbatim", got)
+	}
+}
+
+func TestWriteActiveAccount_APIKeyTakesTheManagedPath(t *testing.T) {
+	fh := testutil.BuildFixtureHome(t)
+	writeFile(t, fh.CredentialsFile, liveAcct)
+	s := newStore(t, platform.Linux, t.TempDir(), newFakeKC(), nil)
+	key := "sk-ant-api03-ABCDEFGHIJKLMNOPQRSTUVWX"
+	if err := s.WriteActiveAccount(key); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := ccfile.ReadGlobalConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg["primaryApiKey"] != key {
+		t.Fatalf("primaryApiKey = %v, want %q", cfg["primaryApiKey"], key)
+	}
+	if _, err := os.Stat(fh.CredentialsFile); err == nil {
+		t.Fatal("OAuth credentials file must be cleared when a managed key activates")
+	}
+}
+
+func TestWriteActiveAccount_KeychainCarriesLiveMCPOAuth_macOS(t *testing.T) {
+	fh := testutil.BuildFixtureHome(t)
+	kc := keychain.NewFake()
+	if err := kc.Set(claudeCodeKeychainService, keychain.AccountName(), liveAcct); err != nil {
+		t.Fatal(err)
+	}
+	// The shadow file holds an older generation; the Keychain is authoritative.
+	writeFile(t, fh.CredentialsFile, `{"claudeAiOauth":{"accessToken":"shadow"},"mcpOAuth":{"srv|1111":{"accessToken":"mcp-shadow"}}}`)
+	s := newStore(t, platform.MacOS, t.TempDir(), kc, nil)
+
+	if err := s.WriteActiveAccount(storedAcct); err != nil {
+		t.Fatal(err)
+	}
+	item, ok, _ := kc.Get(claudeCodeKeychainService, keychain.AccountName())
+	if !ok {
+		t.Fatal("Keychain item missing after the write")
+	}
+	assertSpliced(t, item)
+	// The shadow .credentials.json is refreshed with the same merged blob.
+	shadow, err := os.ReadFile(fh.CredentialsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(shadow) != item {
+		t.Fatalf("shadow file = %q, want the Keychain item %q", shadow, item)
+	}
+	if s.LastActiveBackend() != "keychain" {
+		t.Fatalf("last backend = %q, want keychain", s.LastActiveBackend())
+	}
+}
+
+func TestWriteActiveAccount_KeychainEmptyFallsBackToFile_macOS(t *testing.T) {
+	fh := testutil.BuildFixtureHome(t)
+	kc := keychain.NewFake() // no active item: the live blob is in the file
+	writeFile(t, fh.CredentialsFile, liveAcct)
+	s := newStore(t, platform.MacOS, t.TempDir(), kc, nil)
+
+	if err := s.WriteActiveAccount(storedAcct); err != nil {
+		t.Fatal(err)
+	}
+	item, ok, _ := kc.Get(claudeCodeKeychainService, keychain.AccountName())
+	if !ok {
+		t.Fatal("Keychain item missing after the write")
+	}
+	assertSpliced(t, item)
+}
+
+func TestWriteActiveAccount_KeychainReadFailureNeverAborts_macOS(t *testing.T) {
+	fh := testutil.BuildFixtureHome(t)
+	kc := newFakeKC()
+	kc.failGet = true
+	writeFile(t, fh.CredentialsFile, liveAcct)
+	clk := testutil.FixedClock(t, "2026-07-17T00:00:00Z")
+	s := newStore(t, platform.MacOS, t.TempDir(), kc, clk)
+
+	if err := s.WriteActiveAccount(storedAcct); err != nil {
+		t.Fatalf("a Keychain read failure must fall back, not abort: %v", err)
+	}
+	// The failed read pinned file mode (as ReadActive's would); the file holds
+	// the merged blob, carried over from the file read that followed.
+	got, err := os.ReadFile(fh.CredentialsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSpliced(t, string(got))
+	if s.LastActiveBackend() != "file" {
+		t.Fatalf("last backend = %q, want file", s.LastActiveBackend())
+	}
+}
+
+// TestWriteActive_StaysVerbatimWithLiveMCPOAuth pins the rollback / refresh
+// contract: WriteActive never splices.
+func TestWriteActive_StaysVerbatimWithLiveMCPOAuth(t *testing.T) {
+	fh := testutil.BuildFixtureHome(t)
+	writeFile(t, fh.CredentialsFile, liveAcct)
+	s := newStore(t, platform.Linux, t.TempDir(), newFakeKC(), nil)
+	if err := s.WriteActive(storedAcct); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(fh.CredentialsFile)
+	if string(got) != storedAcct {
+		t.Fatalf("WriteActive wrote %q, want the blob verbatim", got)
+	}
 }

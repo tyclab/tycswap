@@ -1,4 +1,4 @@
-// usage_test.go — mapping the ChatGPT usage API onto cswap's usage map
+// usage_test.go — mapping the ChatGPT usage API onto tycswap's usage map
 // (claude-swap PR #252 tests/test_codex_usage.py), driven by httptest servers.
 
 package api
@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/oauth"
 )
 
 // rawJSON is the live endpoint's real wire shape, captured 2026-08-16. NOT
@@ -85,7 +85,7 @@ func pct(t *testing.T, w map[string]any) float64 {
 	return f
 }
 
-// cswap's renderers, pace and autoswitch all read five_hour/seven_day; the
+// tycswap's renderers, pace and autoswitch all read five_hour/seven_day; the
 // mapping is what makes every Claude-side consumer work unchanged.
 func TestPrimaryWindowMapsToFiveHour(t *testing.T) {
 	w := win(t, build(decode(t, rawJSON)), "five_hour")
@@ -151,7 +151,7 @@ func TestEpochResetsAreConvertedToISO(t *testing.T) {
 }
 
 // The real contract this mapping exists to satisfy: the Claude-side consumers
-// read it. cswap has no pace module, so its stand-ins are the typed projection
+// read it. tycswap has no pace module, so its stand-ins are the typed projection
 // (weekly renewal is what pace keys on) and the JSON renderer.
 func TestTheMappedShapeIsReadableByTheClaudeSideConsumers(t *testing.T) {
 	for name, fixture := range map[string]string{"two windows": rawJSON, "live plus": livePlusJSON} {

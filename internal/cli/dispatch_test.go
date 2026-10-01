@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/core"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // cleanHome points $HOME at a fresh temp dir with a fixed non-root uid and
@@ -42,7 +42,7 @@ func TestUpgradeDoesNotConstructSwitcher(t *testing.T) {
 	for _, argv := range [][]string{{"upgrade"}, {"--upgrade"}} {
 		constructed = false
 		var out, errb bytes.Buffer
-		run("cswap", argv, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
+		run("tycswap", argv, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 		if constructed {
 			t.Errorf("%v constructed the switcher; --upgrade must not", argv)
 		}
@@ -54,7 +54,7 @@ func TestUpgradeDoesNotConstructSwitcher(t *testing.T) {
 func TestListJSONEndToEnd(t *testing.T) {
 	cleanHome(t)
 	var out, errb bytes.Buffer
-	code := run("cswap", []string{"list", "--json"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
+	code := run("tycswap", []string{"list", "--json"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0 (stderr=%q)", code, errb.String())
 	}
@@ -78,7 +78,7 @@ func TestListJSONEndToEnd(t *testing.T) {
 func TestStatusJSONEndToEnd(t *testing.T) {
 	cleanHome(t)
 	var out, errb bytes.Buffer
-	code := run("cswap", []string{"status", "--json"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
+	code := run("tycswap", []string{"status", "--json"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0 (stderr=%q)", code, errb.String())
 	}
@@ -99,7 +99,7 @@ func TestBareTTYGateOpensTUI(t *testing.T) {
 	RunTUI = nil
 	t.Cleanup(func() { RunTUI = prev })
 	var out, errb bytes.Buffer
-	code := run("cswap", []string{}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, true, true)
+	code := run("tycswap", []string{}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, true, true)
 	if code != 1 {
 		t.Fatalf("exit = %d, want 1 (unwired TUI)", code)
 	}
@@ -122,7 +122,7 @@ func TestBareTTYGateWiredTUI(t *testing.T) {
 	}
 	t.Cleanup(func() { RunTUI = prev })
 	var out, errb bytes.Buffer
-	code := run("cswap", []string{}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, true, true)
+	code := run("tycswap", []string{}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, true, true)
 	if code != 7 {
 		t.Fatalf("exit = %d, want 7 (RunTUI return, stderr=%q)", code, errb.String())
 	}
@@ -142,7 +142,7 @@ func TestWatchRoutesToWatchScreen(t *testing.T) {
 	RunTUI = func(_ any, start string) int { gotStart = start; return 0 }
 	t.Cleanup(func() { RunTUI = prev })
 	var out, errb bytes.Buffer
-	run("cswap", []string{"watch"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
+	run("tycswap", []string{"watch"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 	if gotStart != "watch" {
 		t.Errorf("start = %q, want \"watch\"", gotStart)
 	}
@@ -153,7 +153,7 @@ func TestWatchRoutesToWatchScreen(t *testing.T) {
 func TestMenubarNotAvailable(t *testing.T) {
 	cleanHome(t)
 	var out, errb bytes.Buffer
-	code := run("cswap", []string{"menubar"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
+	code := run("tycswap", []string{"menubar"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 	if code != 1 {
 		t.Fatalf("exit = %d, want 1", code)
 	}

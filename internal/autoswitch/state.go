@@ -13,9 +13,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/atomicfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/filelock"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/oauth"
 )
 
 // StatePath is the persisted cooldown/quarantine state file path under a backup

@@ -6,16 +6,17 @@ package autoswitch
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/settings"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 var baseTime = time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
@@ -704,6 +705,35 @@ func TestFresheningNearExpiryRefreshes(t *testing.T) {
 	}
 	if f.persisted["2"] != rotated {
 		t.Errorf("rotated credential not persisted: %q", f.persisted["2"])
+	}
+	// The refresh goes through the Switcher's guarded path (lock, re-check,
+	// persist before return), never through the engine's own client alone.
+	if len(f.guardedRefreshes) != 1 || f.guardedRefreshes[0] != "2" {
+		t.Errorf("guarded refreshes = %v, want [2]", f.guardedRefreshes)
+	}
+}
+
+// TestFresheningPersistFailureIsTransient: a rotated credential the store
+// could not keep is not served; the guarded refresh reports a failure, which
+// the engine treats as transient (no quarantine, no switch).
+func TestFresheningPersistFailureIsTransient(t *testing.T) {
+	clk := newClk()
+	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f.creds["2"] = nearExpiryCreds(clk, "r2")
+	f.persistErr = errors.New("disk full")
+	oc := fakeOAuth(func(string) oauth.RefreshOutcome {
+		return oauth.RefreshOutcome{Credentials: farFutureCreds(clk, "r2-new")}
+	})
+	rec := &recorder{}
+	e := build(t, f, settings.Default(), rec, clk, false, WithOAuthClient(oc))
+	if got := e.Tick(); got != Error {
+		t.Fatalf("outcome = %v, want Error", got)
+	}
+	if rec.last("account-quarantined") != nil {
+		t.Error("a persist failure quarantined the slot")
+	}
+	if deref(f.current) != "1" {
+		t.Errorf("current = %q, want 1 (no switch)", deref(f.current))
 	}
 }
 

@@ -15,8 +15,8 @@ import (
 	"strconv"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/slotkey"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/slotkey"
 )
 
 // pyFloat is a float64 whose JSON form matches Python's json.dumps: a
@@ -309,7 +309,7 @@ func (e QuarantineEvent) JSON() map[string]any {
 func (e QuarantineEvent) Human() string {
 	return fmt.Sprintf(
 		"Account-%s (%s) quarantined: %s. Log in with it and run "+
-			"'cswap --add-account --slot %s' to recover.",
+			"'tycswap --add-account --slot %s' to recover.",
 		e.Number, e.Email, e.Reason, e.Number,
 	)
 }

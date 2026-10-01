@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/core"
-	"git.dpemmons.com/dpemmons/cswap/internal/session"
+	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/session"
 )
 
 // TestEnvGetwdErrorSurfaced: FINDING 11. When os.Getwd fails (the process cwd was
@@ -53,7 +55,7 @@ func TestEnvPreDispatchRegistered(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0 (stderr=%q)", code, errStr)
 	}
-	for _, want := range []string{"env [-h]", "--shell {sh,fish,pwsh}", "--unset", `eval "$(cswap env 2)"`} {
+	for _, want := range []string{"env [-h]", "--shell {sh,fish,pwsh}", "--unset", `eval "$(tycswap env 2)"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("env --help missing %q\n%s", want, out)
 		}
@@ -67,12 +69,12 @@ func TestEnvPreDispatchRegistered(t *testing.T) {
 // TestEnvInHelpList: the main --help command list and epilog document env.
 func TestEnvInHelpList(t *testing.T) {
 	var out bytes.Buffer
-	renderMainHelp("cswap", &out)
+	renderMainHelp("tycswap", &out)
 	help := out.String()
-	if !strings.Contains(help, "cswap env <num|email>") {
+	if !strings.Contains(help, "tycswap env <num|email>") {
 		t.Errorf("main help missing the env command line:\n%s", help)
 	}
-	if !strings.Contains(help, `eval "$(cswap env 2)"`) {
+	if !strings.Contains(help, `eval "$(tycswap env 2)"`) {
 		t.Errorf("main help epilog missing the env example:\n%s", help)
 	}
 }
@@ -236,7 +238,7 @@ func (f *fakeEnvPreparer) SetupEnv(identifier string, _, _ bool) (session.EnvRes
 
 // TestEnvNoOpEmitsNothingOnStdout: D1 (FINDING 1). When SetupEnv returns a NoOp
 // result (requested account is already the active default login, no preset),
-// `cswap env` exits 0 and writes NOTHING to stdout — the note landed on stderr.
+// `tycswap env` exits 0 and writes NOTHING to stdout — the note landed on stderr.
 func TestEnvNoOpEmitsNothingOnStdout(t *testing.T) {
 	cleanHome(t)
 	prev := newEnvPreparer
@@ -254,5 +256,45 @@ func TestEnvNoOpEmitsNothingOnStdout(t *testing.T) {
 	}
 	if !strings.Contains(errStr, "nothing exported") {
 		t.Errorf("D1 note did not reach stderr: %q", errStr)
+	}
+}
+
+// TestEnvExportLineEvalsSafely evaluates the sh export line in a real shell for
+// a profile path holding a space, a single quote and shell metacharacters: the
+// variable must come back byte-identical and nothing else may run.
+func TestEnvExportLineEvalsSafely(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh")
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "pwned")
+	tricky := filepath.Join(dir, "my profiles", "o'brien'; touch "+marker+"; echo '$(id)`x`")
+	line := envExportLine("sh", "CLAUDE_CONFIG_DIR", tricky)
+	out, err := exec.Command(sh, "-c", "eval \"$1\"; printf %s \"$CLAUDE_CONFIG_DIR\"", "sh", line).Output()
+	if err != nil {
+		t.Fatalf("eval failed: %v (line %q)", err, line)
+	}
+	if string(out) != tricky {
+		t.Errorf("eval gave %q, want %q", out, tricky)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Errorf("the eval ran an injected command (line %q)", line)
+	}
+}
+
+// TestPwshQuoteDoublesTypographicQuotes: PowerShell ends a single-quoted
+// string at U+2018–U+201B as well as at '.
+func TestPwshQuoteDoublesTypographicQuotes(t *testing.T) {
+	for in, want := range map[string]string{
+		`C:\p`:                  `'C:\p'`,
+		"it's":                  `'it''s'`,
+		"a\u2018b":              "'a\u2018\u2018b'",
+		"a\u2019; calc; \u2019": "'a\u2019\u2019; calc; \u2019\u2019'",
+		"\u201a\u201b":          "'\u201a\u201a\u201b\u201b'",
+	} {
+		if got := pwshQuote(in); got != want {
+			t.Errorf("pwshQuote(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

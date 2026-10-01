@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/logging"
 )
 
 const inactiveEmail = "a@b.c"
@@ -215,7 +215,7 @@ func TestTryFetchPasteSafeWarning(t *testing.T) {
 		t.Errorf("retry-after = %v, want 42", out.RetryAfterS)
 	}
 
-	data, err := os.ReadFile(filepath.Join(dir, "claude-swap.log"))
+	data, err := os.ReadFile(filepath.Join(dir, "tycswap.log"))
 	if err != nil {
 		t.Fatalf("read log: %v", err)
 	}

@@ -31,12 +31,13 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/credstore"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/storenames"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // outputSeam is the permanently-installed, concurrency-safe writer behind
@@ -272,10 +273,11 @@ func displayTag(orgName string) string {
 	return "personal"
 }
 
-var emailRE = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-
-// validateEmail mirrors _validate_email (spec 01§6.1).
-func validateEmail(email string) bool { return emailRE.MatchString(email) }
+// validateEmail is the path-safety rule for an email that names store files
+// (storenames.ValidEmail): add, add-token and remove accept every address a
+// file name can carry. The import holds exports to claude-swap's stricter
+// pattern (storenames.StrictEmail) as its own contract.
+func validateEmail(email string) bool { return storenames.ValidEmail(email) }
 
 var aliasRE = regexp.MustCompile(`^[a-z0-9_.-]+$`)
 
@@ -332,7 +334,7 @@ func readActiveCredential(s *store.Store) (string, error) {
 // refuse to snapshot a live managed key as a kindless OAuth account.
 func rejectLiveAPIKeyCapture(creds string) error {
 	if credstore.LooksLikeAPIKey(creds) {
-		return cerr.Validation("Active login is an API-key account. Add it with 'cswap --add-token sk-ant-api...' instead of --add-account.")
+		return cerr.Validation("Active login is an API-key account. Add it with 'tycswap --add-token sk-ant-api...' instead of --add-account.")
 	}
 	return nil
 }

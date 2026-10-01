@@ -17,8 +17,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/logging"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/printer"
 )
 
 // outputSeam is the permanently-installed, concurrency-safe writer behind
@@ -94,6 +94,31 @@ func TryFetchUsageForAccount(
 	isActive bool,
 	persist PersistFn,
 ) UsageOutcome {
+	return TryFetchUsageGuarded(ctx, c, num, email, creds, isActive, func(ctx context.Context, held string) RefreshOutcome {
+		out := c.Refresh(ctx, held)
+		if out.Credentials != "" {
+			persistCredentials(persist, num, email, out.Credentials)
+		}
+		return out
+	})
+}
+
+// GuardedRefresh refreshes held and persists the result before returning it.
+// An implementation may decline (returning no Credentials) or answer with a
+// newer credential it found on disk instead of refreshing; whatever it returns
+// in Credentials must already be stored.
+type GuardedRefresh func(ctx context.Context, held string) RefreshOutcome
+
+// TryFetchUsageGuarded is TryFetchUsageForAccount with the refresh-and-persist
+// step supplied by the caller, so it can run under the store lock with the
+// backup re-read first (reporting's inactive path).
+func TryFetchUsageGuarded(
+	ctx context.Context,
+	c Client,
+	num, email, creds string,
+	isActive bool,
+	refreshFn GuardedRefresh,
+) UsageOutcome {
 	logCtx := "for account " + num // no email: paste-safe for public issues
 	oauth := ExtractOAuthData(creds)
 	accessToken := ""
@@ -110,10 +135,9 @@ func TryFetchUsageForAccount(
 	// access token only.
 	if !isActive && oauth != nil && truthyStr(oauth["refreshToken"]) &&
 		IsOAuthTokenExpired(oauth["expiresAt"], time.Now().UTC()) {
-		refresh := c.Refresh(ctx, working)
+		refresh := refreshFn(ctx, working)
 		if refresh.Credentials != "" {
 			working = refresh.Credentials
-			persistCredentials(persist, num, email, working)
 			if o2 := ExtractOAuthData(working); o2 != nil {
 				oauth = o2
 			}
@@ -142,7 +166,7 @@ func TryFetchUsageForAccount(
 			return UsageOutcome{Error: kind, RetryAfterS: retryAfter}
 		}
 		// Inactive account, 401, has refresh token: retry once after refresh.
-		refresh := c.Refresh(ctx, working)
+		refresh := refreshFn(ctx, working)
 		if refresh.Credentials == "" {
 			logUsageFailure(logCtx, err, kind, nil)
 			if refresh.Error == ErrInvalidGrant {
@@ -151,7 +175,6 @@ func TryFetchUsageForAccount(
 			return UsageOutcome{Error: ErrRefreshFailed}
 		}
 		working = refresh.Credentials
-		persistCredentials(persist, num, email, working)
 		newToken := ""
 		if ro := ExtractOAuthData(working); ro != nil {
 			newToken, _ = ro["accessToken"].(string)
@@ -230,12 +253,12 @@ func persistCredentials(persist PersistFn, num, email, creds string) {
 		warningf(
 			"Refreshed OAuth token for account %s (%s) but failed to persist it: %v. "+
 				"The refresh token on disk may now be stale; if the next refresh fails "+
-				"with invalid_grant, re-run `cswap --add-account` after logging in.",
+				"with invalid_grant, re-run `tycswap --add-account` after logging in.",
 			num, email, err,
 		)
 		fmt.Fprintln(Output, printer.Yellowed(fmt.Sprintf(
 			"Warning: failed to save refreshed token for account %s (%s). "+
-				"If the next refresh fails, re-run `cswap --add-account` after logging in.",
+				"If the next refresh fails, re-run `tycswap --add-account` after logging in.",
 			num, email,
 		)))
 	}

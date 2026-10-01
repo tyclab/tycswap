@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/oauth"
 )
 
 // usageDict returns the decision value as a usage map, or nil when it is a

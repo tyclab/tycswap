@@ -8,8 +8,8 @@ package lifecycle
 import (
 	"sort"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // AliasRow is one row of ListAliases: (slot, alias, email).
@@ -36,7 +36,7 @@ func SetAlias(s *store.Store, identifier, alias string) (num, normalized string,
 
 	// The whole read-decide-write span runs under the store lock, with the one
 	// classified read taken inside it (store.WithRosterLocked): the roster this
-	// call commits is then the bytes on disk, so a concurrent cswap cannot land a
+	// call commits is then the bytes on disk, so a concurrent tycswap cannot land a
 	// record between the read and the write for this commit to rename away.
 	//
 	// Inside the span, the entry read comes before store.ResolveAccount because

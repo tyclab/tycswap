@@ -1,4 +1,4 @@
-// Package cclock is the proper-lockfile interop layer: cswap holds Claude
+// Package cclock is the proper-lockfile interop layer: tycswap holds Claude
 // Code's OWN advisory locks while mutating its files, closing the token-refresh
 // race with a running Claude Code.
 //
@@ -13,21 +13,23 @@ package cclock
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/clock"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/paths"
 )
 
 // Timing constants, matching claude_locks.py verbatim. proper-lockfile defaults
 // Claude Code runs with: stale after 10s, holder touches every stale/2 = 5s;
-// cswap touches faster (3s) for margin. 9s of bounded waiting comfortably
+// tycswap touches faster (3s) for margin. 9s of bounded waiting comfortably
 // outlasts a sub-second-to-few-second credential/config hold.
 const (
 	// StalenessS is the age past which a held lock is considered stale.
@@ -77,13 +79,13 @@ func Acquire(lockDir string, timeout time.Duration, clk clock.Clock) (*Handle, e
 		timeout = DefaultTimeoutS
 	}
 	// proper-lockfile: lock_dir.parent.mkdir(parents=True, exist_ok=True).
-	if err := os.MkdirAll(filepath.Dir(lockDir), 0o777); err != nil {
+	if err := os.MkdirAll(filepath.Dir(lockDir), 0o700); err != nil {
 		return nil, err
 	}
 
 	start := time.Now() // monotonic reading embedded; time.Since below is monotonic.
 	for {
-		err := os.Mkdir(lockDir, 0o777)
+		err := os.Mkdir(lockDir, 0o700)
 		if err == nil {
 			break // acquired
 		}
@@ -104,11 +106,8 @@ func Acquire(lockDir string, timeout time.Duration, clk clock.Clock) (*Handle, e
 			return nil, statErr
 		}
 		if clk.Now().Sub(fi.ModTime()) > StalenessS {
-			// Dead holder per the protocol: remove and retake. Losing the
-			// rmdir/mkdir race to another waiter just means looping again.
-			if rmErr := os.Remove(lockDir); rmErr != nil {
-				time.Sleep(50 * time.Millisecond) // can't remove it either; don't spin hot
-			}
+			// Dead holder per the protocol: break it and retake.
+			breakStale(lockDir, clk)
 			continue
 		}
 		time.Sleep(jitterBackoff())
@@ -164,3 +163,46 @@ func (h *Handle) Release() {
 func jitterBackoff() time.Duration {
 	return time.Duration((0.25 + rand.Float64()*0.25) * float64(time.Second))
 }
+
+// breakStale removes a lock dir judged stale without ever removing a fresh one.
+//
+// A plain os.Remove is not safe when two waiters judge the same lock stale:
+// the first removes it and takes a fresh lock, and the second's Remove then
+// deletes that fresh lock, so both believe they hold it. Instead the stale dir
+// is renamed to a name unique to this attempt, which only one waiter can do,
+// and its mtime is checked again after the rename. Still stale: it is removed.
+// Fresh: another waiter retook the lock between our stat and our rename, so
+// it is put back where it was, by a rename that fails when the name has been
+// taken since (renameNoReplace: rename(2) alone would replace an empty
+// directory, that is, the lock a third waiter just made). Taken: it is
+// dropped; the protocol has then moved on without it.
+func breakStale(lockDir string, clk clock.Clock) {
+	aside := fmt.Sprintf("%s.stale-%d-%d", lockDir, os.Getpid(), staleSeq.Add(1))
+	if err := os.Rename(lockDir, aside); err != nil {
+		// Gone already (another waiter broke it) or not renamable: loop.
+		time.Sleep(50 * time.Millisecond)
+		return
+	}
+	fi, err := os.Stat(aside)
+	if err == nil && clk.Now().Sub(fi.ModTime()) <= StalenessS {
+		if renameNoReplace(aside, lockDir) == nil {
+			return
+		}
+	}
+	_ = os.Remove(aside)
+}
+
+// renameIfAbsent renames oldpath to newpath after checking that newpath does
+// not exist. The two calls are not one operation: a name taken in between is
+// replaced. It is the put-back where renameNoReplace has nothing better.
+func renameIfAbsent(oldpath, newpath string) error {
+	if _, err := os.Lstat(newpath); err == nil {
+		return fs.ErrExist
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return os.Rename(oldpath, newpath)
+}
+
+// staleSeq makes each breakStale attempt's aside name unique in the process.
+var staleSeq atomic.Int64

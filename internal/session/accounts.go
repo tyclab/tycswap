@@ -1,4 +1,4 @@
-// Package session implements `cswap run` session mode: launching Claude Code as
+// Package session implements `tycswap run` session mode: launching Claude Code as
 // a stored account inside the current terminal via a persistent per-account
 // profile under <backup_dir>/sessions/<num>-<email-slug>/.
 //
@@ -13,7 +13,7 @@
 // *core.Switcher satisfies it structurally (compile-asserted in cli).
 package session
 
-import "git.dpemmons.com/dpemmons/cswap/internal/platform"
+import "github.com/tyclab/tycswap/internal/platform"
 
 // Accounts is the account-store seam the session manager needs (DESIGN A2).
 // *core.Switcher satisfies it structurally; tests use a fake. The interface is
@@ -40,13 +40,16 @@ type Accounts interface {
 	// login resolves to, or nil (unmanaged/no live login). Used by the
 	// same-account fast path.
 	CurrentAccountNumber() *string
-	// BackupDir is the cswap backup root; the FileLock lives at <BackupDir>/.lock.
+	// LiveCredentials returns the live default login's credential, "" when
+	// there is none or it cannot be read. Bootstrap compares lineages with it.
+	LiveCredentials() string
+	// BackupDir is the tycswap backup root; the FileLock lives at <BackupDir>/.lock.
 	BackupDir() string
 	// Platform is the switcher's platform (drives symlink-vs-copy sharing and
 	// the Windows share-history rejection). Injectable so copy-mode can be
 	// exercised off Windows.
 	Platform() platform.Platform
-	// SlotForDirectory resolves a cwd to its mapped account (bare `cswap run`).
+	// SlotForDirectory resolves a cwd to its mapped account (bare `tycswap run`).
 	// Consumed by cli's three-way dispatch, not the manager itself.
 	SlotForDirectory(dir string) (slot *string, email *string, err error)
 }

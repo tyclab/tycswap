@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // apiKeySentinel is the one sentinel kind that never shows a "last seen" line
@@ -36,18 +36,18 @@ const staleOKS = usage.StaleOKS
 // oauth.RelevantWindows itself instead of re-implementing its matcher.
 const allModelsSentinel = "all"
 
-// sentinelNotes maps a sentinel state to the exact wording cswap list prints
+// sentinelNotes maps a sentinel state to the exact wording tycswap list prints
 // (09§12 SENTINEL_NOTES). The fallback is the raw sentinel string. Byte-
 // identical to reporting's own map so both surfaces describe a state the same:
 // an unmapped state is a diagnostic identifier the store wrote, and every
-// surface — cswap list, the account card, the watch and switch screens, the
+// surface — tycswap list, the account card, the watch and switch screens, the
 // shared table's span row — states it verbatim. What a NARROW table may cut off
 // such a string is a layout question and is answered in the layout (spanFloor).
 var sentinelNotes = map[string]string{
 	jsonout.UsageTokenExpired:        "token expired — Claude Code refreshes the active account",
 	jsonout.UsageAPIKey:              "API key (no quota)",
 	jsonout.UsageKeychainUnavailable: "keychain unavailable — locked or in use; try again",
-	jsonout.UsageReloginRequired:     "re-login needed — refresh token dead; log in with Claude Code, then run: cswap add",
+	jsonout.UsageReloginRequired:     "re-login needed — refresh token dead; log in with Claude Code, then run: tycswap add",
 }
 
 // sentinelLabel returns the human note for a sentinel state (09§6.3).
@@ -123,7 +123,7 @@ const exhaustedPct = 100.0
 // Past it the figure is ELIDED, never rewritten: ">999%" is true of every value
 // above the cap and "<-999%" of every value below it, where a bare "999%" is
 // true of exactly one and states a measurement the store never reported — the
-// account card and cswap list read the same entry and print the real figure. The
+// account card and tycswap list read the same entry and print the real figure. The
 // bound is what the layout needs (six columns, whatever the number); the marker
 // is what honesty needs.
 const displayPctCap = 999.0

@@ -14,10 +14,10 @@ import (
 	"strconv"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/ccfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/slotkey"
+	"github.com/tyclab/tycswap/internal/ccfile"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/slotkey"
 )
 
 // SequenceMigrated returns sequence.json after ensuring the org-field backfill
@@ -238,7 +238,7 @@ func resolveIdentifier(data *SequenceData, identifier string) (string, error) {
 			details += num + " [" + tag + "]"
 		}
 		return "", cerr.Config(
-			"Email '%s' is ambiguous — matches accounts: %s. Use account number instead (e.g., cswap --switch-to 1).",
+			"Email '%s' is ambiguous — matches accounts: %s. Use account number instead (e.g., tycswap --switch-to 1).",
 			identifier, details)
 	}
 }

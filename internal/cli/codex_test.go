@@ -1,4 +1,4 @@
-// codex_test.go — the `cswap codex` namespace and the Codex side of `cswap
+// codex_test.go — the `tycswap codex` namespace and the Codex side of `tycswap
 // auto`. Port of claude-swap PR #252 tests/test_codex_cli.py (the CLI-layer
 // assertions), plus the Go-side deviations: envelope shape, remove on decline,
 // the explicit import's schema warning, and the --once tick order.
@@ -16,14 +16,14 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/api"
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	codexstore "git.dpemmons.com/dpemmons/cswap/internal/codex/store"
-	codexswitcher "git.dpemmons.com/dpemmons/cswap/internal/codex/switcher"
-	"git.dpemmons.com/dpemmons/cswap/internal/paths"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/settings"
-	"git.dpemmons.com/dpemmons/cswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/codex/api"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	codexstore "github.com/tyclab/tycswap/internal/codex/store"
+	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 const (
@@ -54,7 +54,7 @@ func codexHome(t *testing.T, pids []int, usageFn func(ctx context.Context, at, a
 		})
 	}
 	t.Cleanup(func() { newCodexSwitcher = prev })
-	// `cswap auto` sets a process-wide cancel note; later tests expect the default.
+	// `tycswap auto` sets a process-wide cancel note; later tests expect the default.
 	t.Cleanup(func() { setSigintNote("") })
 	return home
 }
@@ -141,7 +141,7 @@ func writeLiveAuth(t *testing.T, payload map[string]any) {
 func runCodex(t *testing.T, stdin string, argv ...string) (int, string, string) {
 	t.Helper()
 	var out, errb bytes.Buffer
-	code := run("cswap", argv, ioStreams{in: strings.NewReader(stdin), out: &out, err: &errb}, false, false)
+	code := run("tycswap", argv, ioStreams{in: strings.NewReader(stdin), out: &out, err: &errb}, false, false)
 	return code, out.String(), errb.String()
 }
 
@@ -159,14 +159,14 @@ func decodeJSON(t *testing.T, s string) map[string]any {
 func TestBareCswapVerbsAreUntouched(t *testing.T) {
 	codexHome(t, nil, nil)
 	code, out, _ := runCodex(t, "", "--version")
-	if code != 0 || !strings.Contains(out, "cswap") {
+	if code != 0 || !strings.Contains(out, "tycswap") {
 		t.Errorf("--version = %d %q", code, out)
 	}
 }
 
 func TestMainHelpAdvertisesTheCodexNamespace(t *testing.T) {
 	var out bytes.Buffer
-	renderMainHelp("cswap", &out)
+	renderMainHelp("tycswap", &out)
 	help := out.String()
 	for _, want := range []string{"Codex (ChatGPT) accounts", "Claude-only", "codex list", "codex status",
 		"codex switch", "codex add", "codex login", "codex list --json --skip-api"} {
@@ -175,7 +175,7 @@ func TestMainHelpAdvertisesTheCodexNamespace(t *testing.T) {
 		}
 	}
 	// The codex block sits after the Claude command list, before the aliases.
-	if strings.Index(help, "cswap purge") > strings.Index(help, "Codex (ChatGPT)") ||
+	if strings.Index(help, "tycswap purge") > strings.Index(help, "Codex (ChatGPT)") ||
 		strings.Index(help, "Codex (ChatGPT)") > strings.Index(help, "Aliases:") {
 		t.Error("codex block is not between the Claude commands and the aliases line")
 	}
@@ -216,7 +216,7 @@ func TestCodexUsageErrorsExit2(t *testing.T) {
 
 func TestCodexVerbHelp(t *testing.T) {
 	code, out, _ := runCodex(t, "", "codex", "switch", "-h")
-	if code != 0 || !strings.Contains(out, "usage: cswap codex switch") {
+	if code != 0 || !strings.Contains(out, "usage: tycswap codex switch") {
 		t.Errorf("switch -h = %d %q", code, out)
 	}
 }
@@ -633,7 +633,7 @@ func TestExportImportPurge(t *testing.T) {
 func TestPurgeOfAnEmptyStore(t *testing.T) {
 	codexHome(t, nil, nil)
 	_, out, _ := runCodex(t, "", "codex", "purge", "-y")
-	if !strings.Contains(out, "No cswap Codex data to remove.") {
+	if !strings.Contains(out, "No tycswap Codex data to remove.") {
 		t.Errorf("out = %q", out)
 	}
 }
@@ -750,7 +750,7 @@ func TestAddWithoutALiveLoginFails(t *testing.T) {
 	}
 }
 
-// ---- cswap auto ---------------------------------------------------------
+// ---- tycswap auto ---------------------------------------------------------
 
 func TestAutoOnceRunsTheCodexTickAfterTheClaudeTick(t *testing.T) {
 	codexHome(t, nil, func(context.Context, string, string) api.UsageFetch {
@@ -833,5 +833,59 @@ func TestStartCodexLoopTicksImmediatelyThenStops(t *testing.T) {
 	stop()
 	if s := startCodexLoop(false, time.Hour, func(context.Context) { t.Error("disabled loop ticked") }); s == nil {
 		t.Error("nil stop")
+	}
+}
+
+// TestCodexLoginCapturesTheOutgoingLoginFirst: codex login overwrites
+// auth.json, so the outgoing managed account's newest (rotated) tokens are
+// written into its snapshot before codex runs.
+func TestCodexLoginCapturesTheOutgoingLoginFirst(t *testing.T) {
+	codexHome(t, nil, nil)
+	seedOne(t)
+	rotated := makeCodexAuth(t, testAcctA, testUserA, "a@example.com", time.Now().Unix()+7200)
+	rotated["tokens"].(map[string]any)["refresh_token"] = "rt-rotated-by-codex"
+	writeLiveAuth(t, rotated)
+	var snapAtSpawn map[string]any
+	stubLogin(t, "/usr/local/bin/codex", nil, 0, func(string, []string) {
+		snapAtSpawn = testStore().ReadSnapshot(authfile.AccountKey(testUserA, testAcctA))
+		writeLiveAuth(t, makeCodexAuth(t, testAcctB, testUserB, "b@example.com", time.Now().Unix()+3600))
+	})
+	if code, out, errb := runCodex(t, "", "codex", "login"); code != 0 {
+		t.Fatalf("exit %d out %q err %q", code, out, errb)
+	}
+	tok, _ := snapAtSpawn["tokens"].(map[string]any)
+	if tok["refresh_token"] != "rt-rotated-by-codex" {
+		t.Fatalf("snapshot at spawn holds %v, want the live login's rotated refresh token", tok["refresh_token"])
+	}
+}
+
+// TestCodexListJSONKeepsControlCharactersTextStripsThem: an alias or
+// workspace name holding a terminal control sequence reaches `list --json`
+// as stored and is printed by the text list without it.
+func TestCodexListJSONKeepsControlCharactersTextStripsThem(t *testing.T) {
+	codexHome(t, nil, offlineUsage(t))
+	seedOne(t)
+	const alias, workspace = "w\x1b[1m", "Evil\x1b[2J"
+	st := testStore()
+	key := authfile.AccountKey(testUserA, testAcctA)
+	if err := st.SetAlias(key, alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetWorkspaceName(key, workspace); err != nil {
+		t.Fatal(err)
+	}
+
+	_, out, _ := runCodex(t, "", "codex", "list", "--json", "--skip-api")
+	row := decodeJSON(t, out)["accounts"].([]any)[0].(map[string]any)
+	if row["alias"] != alias || row["workspace"] != workspace {
+		t.Errorf("JSON row changed the stored values: alias %q workspace %q", row["alias"], row["workspace"])
+	}
+
+	_, out, _ = runCodex(t, "", "codex", "list", "--skip-api")
+	if strings.Contains(out, "\x1b") {
+		t.Errorf("text list carries an escape: %q", out)
+	}
+	if !strings.Contains(out, "a@example.com [Evil[2J] (w[1m)") {
+		t.Errorf("text list = %q, want the fields as plain text", out)
 	}
 }

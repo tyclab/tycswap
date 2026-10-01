@@ -1,5 +1,5 @@
 // autoswitch.go — threshold rotation for Codex accounts, run alongside the
-// Claude engine by `cswap auto`. Port of claude-swap PR #252
+// Claude engine by `tycswap auto`. Port of claude-swap PR #252
 // codex/autoswitch.py (binding_pct, CodexTick, CodexAutoSwitcher).
 //
 // Deliberately not a genericized Claude engine: that engine is built around
@@ -22,8 +22,8 @@ import (
 	"fmt"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/switcher"
-	"git.dpemmons.com/dpemmons/cswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/codex/switcher"
+	"github.com/tyclab/tycswap/internal/reporting"
 )
 
 // Tick outcomes (codex/autoswitch.py CodexTick.outcome).

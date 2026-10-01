@@ -11,8 +11,8 @@
 package autoswitch
 
 import (
-	"git.dpemmons.com/dpemmons/cswap/internal/jsonout"
-	"git.dpemmons.com/dpemmons/cswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // collectScheduledUsage returns (entries, usage, headroom) for the tick. usage

@@ -10,7 +10,7 @@ package reporting
 import (
 	"strconv"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // BuildAccountsInfo builds the ordered per-account info rows (spec 02§13). Rows

@@ -3,7 +3,7 @@
 // Implements DESIGN A5 / audit 10 Gap 1. There is no importlib.metadata in Go:
 // the version is embedded at build time via
 //
-//	-ldflags "-X git.dpemmons.com/dpemmons/cswap/internal/version.Version=v0.1.0"
+//	-ldflags "-X github.com/tyclab/tycswap/internal/version.Version=v0.1.0"
 //
 // The port's own versions are semver with a leading v; Display strips the v for
 // parity with Python's --version / swapVersion presentation.

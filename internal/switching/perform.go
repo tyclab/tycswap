@@ -15,10 +15,11 @@ import (
 	"io/fs"
 	"os"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // performSwitch performs the actual switch (spec 02§8). emitOutput=false (JSON
@@ -38,7 +39,7 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 				"Claude instance (PID " + joinInts(pids) + "). Running the same account as both " +
 				"the default login and a session can make one copy's token go stale if the server " +
 				"rotates it. If the session later fails to authenticate, exit it and re-run " +
-				"'cswap run " + targetAccount + "'."
+				"'tycswap run " + targetAccount + "'."
 			if emitOutput {
 				printWarning(msg)
 			} else {
@@ -163,7 +164,7 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 					if s.Log != nil {
 						s.Log.Warningf("Post-switch usage display failed: %v", lerr)
 					}
-					printOut(printer.Dimmed("  (usage display unavailable — run `cswap --list` to retry)"))
+					printOut(printer.Dimmed("  (usage display unavailable — run `tycswap --list` to retry)"))
 				}
 			}
 			printOut("")
@@ -183,10 +184,10 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 	targetCreds, _ := s.ReadAccountCredentials(targetAccount, targetEmail)
 	targetConfig, _ := s.ReadAccountConfig(targetAccount, targetEmail)
 	if targetCreds == "" {
-		return switchOp{}, cerr.Switch("Account-%s has no stored credentials. Re-add with: cswap --add-account --slot %s", targetAccount, targetAccount)
+		return switchOp{}, cerr.Switch("Account-%s has no stored credentials. Re-add with: tycswap --add-account --slot %s", targetAccount, targetAccount)
 	}
 	if targetConfig == "" {
-		return switchOp{}, cerr.Switch("Account-%s has no stored config backup. Re-add with: cswap --add-account --slot %s", targetAccount, targetAccount)
+		return switchOp{}, cerr.Switch("Account-%s has no stored config backup. Re-add with: tycswap --add-account --slot %s", targetAccount, targetAccount)
 	}
 	var targetConfigData map[string]any
 	if err := json.Unmarshal([]byte(targetConfig), &targetConfigData); err != nil {
@@ -220,8 +221,9 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 	}
 
 	// Invariant II stash: the replaced live credential would otherwise have no
-	// surviving copy.
-	if haveRollbackCreds && rollbackCreds != "" && rollbackCreds != targetCreds && curOK {
+	// surviving copy. A live blob that differs from the target only by its
+	// mcpOAuth is not replaced: that part is carried over the write.
+	if haveRollbackCreds && rollbackCreds != "" && !sameAccountBytes(rollbackCreds, targetCreds) && curOK {
 		slotForStash := currentAccount
 		if slotForStash == "" {
 			slotForStash = "unmanaged"
@@ -243,20 +245,26 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 	credsWritten := false
 	configWritten := false
 	commit := func() error {
-		if err := s.Creds.WriteActive(targetCreds); err != nil {
+		// Read the live config before anything is written: a corrupt or
+		// unreadable one aborts the activation instead of being replaced.
+		existing, err := readConfigForUpdate()
+		if err != nil {
+			return err
+		}
+		if err := s.Creds.WriteActiveAccount(targetCreds); err != nil {
 			return err
 		}
 		credsWritten = true
-		existing := readConfigJSON(s)
-		if len(existing) > 0 {
-			existing["oauthAccount"] = targetOAuth
-			if err := writeConfigJSON(existing); err != nil {
-				return err
-			}
-		} else {
-			if err := writeConfigJSON(targetConfigData); err != nil {
-				return err
-			}
+		// Only the oauthAccount is ever taken from the stored config. With no
+		// live config the result is {"oauthAccount": …} alone: a stored config
+		// is never written whole, so keys an import or an old full backup
+		// carried (mcpServers, allowed tools, hooks) cannot reach ~/.claude.json.
+		if existing == nil {
+			existing = map[string]any{}
+		}
+		existing["oauthAccount"] = targetOAuth
+		if err := writeConfigJSON(existing); err != nil {
+			return err
 		}
 		configWritten = true
 		targetInt, _ := parseInt(targetAccount)
@@ -310,11 +318,11 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 		if kind == "foreign" {
 			msg = "Credential ownership mismatch detected. The live credential was preserved and " +
 				"was not written into Account-" + currentAccount + ". If Account-" + foreignSlot +
-				" later cannot authenticate, log in as it and run: cswap add --slot " + foreignSlot
+				" later cannot authenticate, log in as it and run: tycswap add --slot " + foreignSlot
 		} else {
 			msg = "The live login does not match a managed account. It was preserved and not " +
 				"written into Account-" + currentAccount + ". If you need that account, log in as " +
-				"it and run: cswap add"
+				"it and run: tycswap add"
 		}
 		if emitOutput {
 			printWarning(msg)
@@ -330,7 +338,7 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 			*warningsOut = append(*warningsOut, msg)
 		}
 	case "unresolved":
-		if err := s.WriteAccountCredentials(currentAccount, currentEmail, originalCreds); err != nil {
+		if err := s.WriteAccountCredentials(currentAccount, currentEmail, oauth.AccountOnly(originalCreds)); err != nil {
 			return err
 		}
 		if err := s.WriteAccountConfig(currentAccount, currentEmail, originalConfig); err != nil {
@@ -347,7 +355,9 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 			s.Log.Infof("Backed up account %s (config only; credentials unchanged)", currentAccount)
 		}
 	default: // own-family / own-rotated
-		if err := s.WriteAccountCredentials(currentAccount, currentEmail, originalCreds); err != nil {
+		// The backup is the account part only: the live mcpOAuth is the seat's
+		// and stays live across the switch.
+		if err := s.WriteAccountCredentials(currentAccount, currentEmail, oauth.AccountOnly(originalCreds)); err != nil {
 			return err
 		}
 		if err := s.WriteAccountConfig(currentAccount, currentEmail, originalConfig); err != nil {
@@ -367,14 +377,16 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 	targetCreds, _ := s.ReadAccountCredentials(targetAccount, targetEmail)
 	targetConfig, _ := s.ReadAccountConfig(targetAccount, targetEmail)
 	if targetCreds == "" {
-		return cerr.Switch("Account-%s has no stored credentials. Re-add with: cswap --add-account --slot %s", targetAccount, targetAccount)
+		return cerr.Switch("Account-%s has no stored credentials. Re-add with: tycswap --add-account --slot %s", targetAccount, targetAccount)
 	}
 	if targetConfig == "" {
-		return cerr.Switch("Account-%s has no stored config backup. Re-add with: cswap --add-account --slot %s", targetAccount, targetAccount)
+		return cerr.Switch("Account-%s has no stored config backup. Re-add with: tycswap --add-account --slot %s", targetAccount, targetAccount)
 	}
 
-	// Step 3: activate target credentials.
-	if err := s.Creds.WriteActive(targetCreds); err != nil {
+	// Step 3: activate target credentials. The live mcpOAuth (the seat's MCP
+	// server logins) rides over the stored account blob; rollback below restores
+	// the original bytes verbatim through WriteActive.
+	if err := s.Creds.WriteActiveAccount(targetCreds); err != nil {
 		return err
 	}
 	tx.recordStep("credentials_written")
@@ -391,7 +403,10 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 	if !ok {
 		return cerr.Switch("Invalid oauthAccount in backup")
 	}
-	cfg := readConfigJSON(s)
+	cfg, err := readConfigForUpdate()
+	if err != nil {
+		return err
+	}
 	if cfg == nil {
 		// Python would TypeError here (None["oauthAccount"]); an exception →
 		// rollback of credentials_written. Surface the same failure.

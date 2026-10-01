@@ -22,8 +22,8 @@ import (
 	"sort"
 	"strconv"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // MoveAccount assigns account (NUM|EMAIL|ALIAS) to slot number target (spec
@@ -334,7 +334,7 @@ func stageOverlapMaterial(s *store.Store, items []stageItem) (map[string]string,
 			if _, err := os.Stat(path); err == nil {
 				discardStaging(s, staged)
 				return nil, cerr.Config(
-					"Found leftover staging from an interrupted swap: %s. It holds that slot's pre-swap credentials and may be the only surviving copy. Verify both accounts still work (`cswap list`), then delete the file and retry.",
+					"Found leftover staging from an interrupted swap: %s. It holds that slot's pre-swap credentials and may be the only surviving copy. Verify both accounts still work (`tycswap list`), then delete the file and retry.",
 					path)
 			}
 			fd, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)

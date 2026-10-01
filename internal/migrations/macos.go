@@ -1,6 +1,6 @@
 // migrate_macos_keyring_to_security (spec 07§5.4): relocates any pre-existing
 // macOS `keyring`-library backup-credential entries (legacy service
-// "claude-code") to the security-CLI-backed "claude-swap" Keychain service —
+// "claude-code") to the security-CLI-backed "tycswap" Keychain service —
 // a *different* service in the same Keychain, so source and destination
 // coexist safely during write → verify → delete, identical in shape to the
 // Windows migration.
@@ -11,7 +11,7 @@
 // (NoKeyringError/InitError) — a distinction that exists because Python has
 // two genuinely different backends. A from-scratch Go binary has only one:
 // `internal/keychain`'s /usr/bin/security wrapper, used for *both* the legacy
-// "claude-code" service and the new "claude-swap" service (the legacy read
+// "claude-code" service and the new "tycswap" service (the legacy read
 // simply targets the old service string). There is therefore no
 // keyring-unavailable/security-fallback branch to reproduce — every Keychain
 // failure here is uniformly a hard failure that retries next run, which is
@@ -20,21 +20,27 @@
 package migrations
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
 // securityService is Python's SECURITY_SERVICE (credentials.py) — the
-// security-CLI-backed Keychain service cswap's own per-account backups live
+// security-CLI-backed Keychain service tycswap's own per-account backups live
 // under. Duplicated from internal/credstore's private constant of the same
 // name/value (spec 07§7's "external system knowledge": a stable cross-package
 // contract, not an accidental copy) because credstore.Store exposes no
 // Keychain-only *delete* primitive narrow enough for this migration's
 // discard-a-bad-write step — only the broader best-effort DeleteBackup sweep,
 // which would also touch an unrelated .enc file.
-const securityService = "claude-swap"
+const securityService = keychain.BackupService
 
 // backupUsername mirrors credstore's private per-account Keychain username
 // scheme exactly ("account-{num}-{email}"), needed only for the Keychain-only
@@ -83,6 +89,7 @@ func migrateMacOSKeyringToSecurity(host Host) (completed bool, notices []string,
 	}
 
 	kc := host.Keychain()
+	inFile := map[string]bool{} // slots whose credential went to the .enc file
 	migrated, failed := relocate(relocateConfig{
 		label:       "macos_keyring_to_security",
 		pending:     pending,
@@ -102,9 +109,30 @@ func migrateMacOSKeyringToSecurity(host Host) (completed bool, notices []string,
 				host.Logger().Warningf("macos_keyring_to_security: best-effort delete of %s failed: %v", username, err)
 			}
 		},
-		writeNew: func(num, email, creds string) error { return store.KCWriteBackup(num, email, creds) },
-		readNew:  func(num, email string) (string, error) { return store.KCReadBackup(num, email) },
+		writeNew: func(num, email, creds string) error {
+			err := store.KCWriteBackup(num, email, creds)
+			if keychain.IsTooLarge(err) {
+				// Too large for `security -i`'s stdin line (the keyring
+				// library had no such limit): the 0600 .enc file, which
+				// ReadBackup serves first, holds it instead.
+				inFile[num] = true
+				return store.WriteBackup(num, email, creds)
+			}
+			return err
+		},
+		readNew: func(num, email string) (string, error) {
+			if inFile[num] {
+				return store.ReadBackup(num, email)
+			}
+			return store.KCReadBackup(num, email)
+		},
 		deleteBadNew: func(num, email string) {
+			if inFile[num] {
+				if err := os.Remove(filepath.Join(host.CredentialsDir(), storenames.CredsFile(num, email))); err != nil && !errors.Is(err, fs.ErrNotExist) {
+					host.Logger().Warningf("Failed to delete the credentials file: %v", err)
+				}
+				return
+			}
 			if err := kc.Delete(securityService, backupUsername(num, email)); err != nil {
 				host.Logger().Warningf("Failed to delete credentials from Keychain: %v", err)
 			}
@@ -127,7 +155,7 @@ func migrateMacOSKeyringToSecurity(host Host) (completed bool, notices []string,
 
 	if migrated > 0 {
 		notices = append(notices, fmt.Sprintf(
-			"claude-swap: migrated %d macOS credential(s) from the keyring into the Keychain via security", migrated))
+			"tycswap: migrated %d macOS credential(s) from the keyring into the Keychain via security", migrated))
 	}
 	if failed > 0 {
 		return false, notices, cerr.MigrationIncomplete(

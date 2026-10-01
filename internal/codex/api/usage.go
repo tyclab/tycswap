@@ -1,7 +1,7 @@
-// usage.go — fetching ChatGPT usage and shaping it the way the rest of cswap
+// usage.go — fetching ChatGPT usage and shaping it the way the rest of tycswap
 // already reads. Ports claude-swap PR #252 codex/usage.py.
 //
-// The whole point of this file is the mapping. cswap's renderers, its pace
+// The whole point of this file is the mapping. tycswap's renderers, its pace
 // calculation, its JSON output and its autoswitch comparison all consume a map
 // with five_hour/seven_day windows of {"pct", "resets_at", "countdown",
 // "clock"} (internal/oauth BuildUsageResult, jsonout.UsageToJSON). Producing
@@ -20,7 +20,7 @@
 //	credits: {has_credits, unlimited, overage_limit_reached, balance, ...}
 //
 // Four conversions matter and each is easy to get wrong: the windows are
-// nested under rate_limit; ChatGPT's used_percent is cswap's pct; reset_at is
+// nested under rate_limit; ChatGPT's used_percent is tycswap's pct; reset_at is
 // epoch seconds while pace parses an ISO string (a raw epoch would silently
 // disable pace for every Codex row); and primary_window is NOT necessarily the
 // 5-hour window. Its length is data, carried in limit_window_seconds, and live
@@ -43,8 +43,8 @@ import (
 	"strings"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/codex/authfile"
-	"git.dpemmons.com/dpemmons/cswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/oauth"
 )
 
 // Usage sentinels. SentinelMissingAuth is codex-auth's wording, kept so a user
@@ -93,7 +93,7 @@ func isoFromEpoch(epoch any) string {
 	return s + "+00:00"
 }
 
-// window maps one ChatGPT rate-limit window onto cswap's window shape, or nil
+// window maps one ChatGPT rate-limit window onto tycswap's window shape, or nil
 // when it carries no numeric used_percent. pct passes through as decoded
 // (json.Number keeps int vs float), matching the Claude side's uncoerced pct.
 // A window with no reset keeps its percentage and simply omits the rest.
@@ -117,7 +117,7 @@ func window(raw any, now time.Time) map[string]any {
 	return entry
 }
 
-// BuildUsageResult normalizes a wham/usage response into cswap's usage map, or
+// BuildUsageResult normalizes a wham/usage response into tycswap's usage map, or
 // nil when the response carries no usable window. countdown/clock are computed
 // against the current wall clock (fetch time), as on the Claude side.
 func BuildUsageResult(data any) map[string]any {

@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/cerr"
 )
 
 func TestAcquireReleaseReacquire(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sub", "cswap.lock")
+	path := filepath.Join(t.TempDir(), "sub", "tycswap.lock")
 	l := New(path, DefaultTimeout)
 	ok, err := l.Acquire(time.Second)
 	if err != nil || !ok {
@@ -37,7 +37,7 @@ func TestAcquireReleaseReacquire(t *testing.T) {
 func TestContentionTimesOut(t *testing.T) {
 	// Two independent open file descriptions on the same path contend under
 	// flock, mirroring two processes.
-	path := filepath.Join(t.TempDir(), "cswap.lock")
+	path := filepath.Join(t.TempDir(), "tycswap.lock")
 	holder := New(path, DefaultTimeout)
 	ok, err := holder.Acquire(time.Second)
 	if err != nil || !ok {
@@ -68,7 +68,7 @@ func TestContentionTimesOut(t *testing.T) {
 }
 
 func TestWithReturnsLockErrorOnContention(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cswap.lock")
+	path := filepath.Join(t.TempDir(), "tycswap.lock")
 	holder := New(path, DefaultTimeout)
 	if ok, err := holder.Acquire(time.Second); err != nil || !ok {
 		t.Fatalf("holder Acquire failed: %v", err)
@@ -100,7 +100,7 @@ func TestWithReturnsLockErrorOnContention(t *testing.T) {
 // the shared file field, leaking the first holder's flock and timing the others
 // out with a LockError.
 func TestSharedInstanceConcurrentWith(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cswap.lock")
+	path := filepath.Join(t.TempDir(), "tycswap.lock")
 	l := New(path, 3*time.Second)
 
 	const n = 8
@@ -152,7 +152,7 @@ func TestSharedInstanceConcurrentWith(t *testing.T) {
 }
 
 func TestWithRunsAndReleases(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cswap.lock")
+	path := filepath.Join(t.TempDir(), "tycswap.lock")
 	l := New(path, DefaultTimeout)
 	ran := false
 	if err := l.With(func() error { ran = true; return nil }); err != nil {

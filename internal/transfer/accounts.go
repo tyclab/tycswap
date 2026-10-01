@@ -7,7 +7,7 @@
 // WP10's adapter is mechanical. Tests supply a fake.
 package transfer
 
-import "git.dpemmons.com/dpemmons/cswap/internal/platform"
+import "github.com/tyclab/tycswap/internal/platform"
 
 // Accounts is everything export/import need from the switcher substrate. Every
 // method mirrors a switcher.py call: the mapping to the store primitive (built by
@@ -101,7 +101,7 @@ type Accounts interface {
 	// Platform drives the envelope's exportedFrom tag (== switcher.platform). →
 	// a Platform() method on core (shadowing store's promoted Platform field).
 	Platform() platform.Platform
-	// BackupDir is the cswap backup root; the import write-pass FileLock lives at
+	// BackupDir is the tycswap backup root; the import write-pass FileLock lives at
 	// <BackupDir>/.lock (DESIGN Deviation 9). → store.BackupDir.
 	BackupDir() string
 }

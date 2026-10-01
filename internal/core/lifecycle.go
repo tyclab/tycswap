@@ -6,7 +6,7 @@
 // Implements DESIGN §2.14/§2.17/§2.20.
 package core
 
-import "git.dpemmons.com/dpemmons/cswap/internal/lifecycle"
+import "github.com/tyclab/tycswap/internal/lifecycle"
 
 // AddAccount delegates to lifecycle.AddAccount (spec 01§5).
 func (sw *Switcher) AddAccount(slot *int, assumeYes bool, alias *string) error {

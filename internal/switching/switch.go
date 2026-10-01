@@ -8,9 +8,9 @@ import (
 	"os"
 	"strings"
 
-	"git.dpemmons.com/dpemmons/cswap/internal/cerr"
-	"git.dpemmons.com/dpemmons/cswap/internal/printer"
-	"git.dpemmons.com/dpemmons/cswap/internal/store"
+	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // Switch rotates to the next account or runs a usage-aware strategy (spec 02§4).
@@ -67,7 +67,7 @@ func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, mod
 			return switchNoop(noopArgs{
 				strategy: strategyLabel, reason: "unmanaged-account",
 				fromRef: ref, toRef: ref,
-				message: "Active account is not managed; run cswap --add-account",
+				message: "Active account is not managed; run tycswap --add-account",
 			}), nil
 		}
 		printOut(printer.Accent("Notice:") + " Active account '" + email + "' was not managed.")
@@ -190,7 +190,7 @@ func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, mod
 				warnings = append(warnings, "Skipped Account-"+candidate+" (no stored credentials/config)")
 			} else {
 				printOut(printer.Accent("Skipping") + " Account-" + candidate +
-					" (no stored credentials/config, re-add with cswap --add-account --slot " + candidate + ")")
+					" (no stored credentials/config, re-add with tycswap --add-account --slot " + candidate + ")")
 			}
 			continue
 		}
@@ -249,7 +249,7 @@ func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, mod
 			}), nil
 		}
 		printOut(printer.Dimmed("No other accounts have valid stored credentials/config.\n" +
-			"Re-add a skipped slot with: cswap --add-account --slot <number>"))
+			"Re-add a skipped slot with: tycswap --add-account --slot <number>"))
 		return nil, nil
 	}
 
@@ -313,7 +313,7 @@ func switchFreshMachine(s *store.Store, strategyLabel string, jsonOut bool, warn
 			reason, consoleReason = "(disabled)", "(disabled)"
 		} else {
 			reason = "(no stored credentials/config)"
-			consoleReason = "(no stored credentials/config, re-add with cswap --add-account --slot " + target + ")"
+			consoleReason = "(no stored credentials/config, re-add with tycswap --add-account --slot " + target + ")"
 		}
 		if jsonOut {
 			*warnings = append(*warnings, "Skipped Account-"+target+" "+reason)
@@ -339,9 +339,9 @@ func switchFreshMachine(s *store.Store, strategyLabel string, jsonOut bool, warn
 				}
 			}
 			if anySwitchable {
-				return nil, cerr.Config("No accounts remain in rotation. Re-enable one with: cswap enable <num|email>")
+				return nil, cerr.Config("No accounts remain in rotation. Re-enable one with: tycswap enable <num|email>")
 			}
-			return nil, cerr.Config("No managed accounts have valid stored credentials/config. Re-add a slot with: cswap --add-account --slot <number>")
+			return nil, cerr.Config("No managed accounts have valid stored credentials/config. Re-add a slot with: tycswap --add-account --slot <number>")
 		}
 		target = fallback
 	}
@@ -367,7 +367,7 @@ func bestNoop(note, strategyLabel, currentNum string, currentRef map[string]any,
 				message: "Current account usage is unavailable — staying on Account-" + currentNum + ".",
 			})
 		}
-		printOut(printer.Dimmed("Current account usage is unavailable — staying on Account-" + currentNum + ". Run cswap --switch to rotate."))
+		printOut(printer.Dimmed("Current account usage is unavailable — staying on Account-" + currentNum + ". Run tycswap --switch to rotate."))
 		return nil
 	case "no-comparison":
 		if jsonOut {
@@ -376,7 +376,7 @@ func bestNoop(note, strategyLabel, currentNum string, currentRef map[string]any,
 				message: "No other account has usage data to compare — staying on Account-" + currentNum + ".",
 			})
 		}
-		printOut(printer.Dimmed("No other account has usage data to compare — staying on Account-" + currentNum + ". Run cswap --switch to rotate."))
+		printOut(printer.Dimmed("No other account has usage data to compare — staying on Account-" + currentNum + ". Run tycswap --switch to rotate."))
 		return nil
 	case "incomplete-comparison":
 		if jsonOut {

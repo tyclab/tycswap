@@ -1,4 +1,4 @@
-// Package oauth is cswap's bridge to Anthropic's OAuth and usage APIs: token
+// Package oauth is tycswap's bridge to Anthropic's OAuth and usage APIs: token
 // refresh, profile resolution, usage fetch, plus the normalization, error
 // classification, fingerprinting, window math, and reset-time formatting around
 // them.
@@ -25,6 +25,8 @@ const (
 	// OAuthClientID is the public OAuth client id sent on refresh.
 	OAuthClientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
+	// userAgent stays upstream's: the endpoints accept it, and a name of
+	// tycswap's own would buy nothing.
 	userAgent = "claude-swap/1.0"
 )
 
