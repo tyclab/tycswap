@@ -55,6 +55,19 @@ func ClearPollPolicyInputs() {
 	pollInputsOverride = nil
 }
 
+// PollPolicyInputs reports the current pin: the threshold and models a hosted
+// engine set, and whether one is set at all. The read side of
+// SetPollPolicyInputs / ClearPollPolicyInputs, for callers that must know
+// whether a stopped engine still steers the poll plan.
+func PollPolicyInputs() (threshold float64, models []string, pinned bool) {
+	pollInputsMu.Lock()
+	defer pollInputsMu.Unlock()
+	if pollInputsOverride == nil {
+		return 0, nil, false
+	}
+	return pollInputsOverride.threshold, append([]string(nil), pollInputsOverride.models...), true
+}
+
 // resolvePollInputs returns the pinned override when present, else the settings
 // file's threshold and parsed model names (spec 02§13 _poll_policy_inputs).
 func resolvePollInputs(s *store.Store) (float64, []string) {

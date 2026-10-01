@@ -31,6 +31,7 @@ type ClaudeSession struct {
 	Kind       string  // "interactive", "bg", "daemon", "daemon-worker"
 	Entrypoint string  // "cli", "claude-vscode", "claude-desktop", "sdk-cli", "mcp", ...
 	Status     *string // "busy" | "idle" | "waiting" | nil
+	Path       string  // the session file this record was read from
 }
 
 // IdeInstance is a running IDE instance read from
@@ -119,6 +120,7 @@ func ListSessionsErr(claudeDir string) ([]ClaudeSession, error) {
 			Kind:       getString(m, "kind", ""),
 			Entrypoint: getString(m, "entrypoint", ""),
 			Status:     getOptionalString(m, "status"),
+			Path:       path,
 		})
 	}
 	return out, nil

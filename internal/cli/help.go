@@ -56,6 +56,7 @@ Commands:
   tycswap import <path>              import accounts
   tycswap tui                        interactive dashboard (also: bare tycswap)
   tycswap watch                      dashboard, opened on the live watch page
+  tycswap web                        browser dashboard on 127.0.0.1
   tycswap menubar                    macOS menu bar app
   tycswap upgrade                    self-upgrade to latest
   tycswap purge                      remove all tycswap data

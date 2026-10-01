@@ -594,6 +594,32 @@ Are you sure you want to purge all data? [y/N] n
 Cancelled
 ```
 
+### Dashboard
+
+`tycswap web` serves a dashboard in the browser on `127.0.0.1` and opens it:
+
+```
+$ tycswap web
+Dashboard: http://127.0.0.1:52117/?token=<one-time token>
+Press Ctrl-C to stop.
+```
+
+*Dashboard* lists the accounts with their 5h, 7d and model windows and every
+account action (switch, add, add a token, enable/disable, alias, move, swap,
+remove); *Auto* runs an auto-switch engine in the `web` process with its
+settings, *Next best* ranking, quarantine and event log; *Sessions* lists the
+running Claude Code sessions (also those started with `tycswap run`) and can
+stop one. Export and import stay on the command line.
+
+Only the browser tab that opens the printed URL can use the page: the token
+in it works once, the server listens on loopback only, and every API call
+needs the session cookie and a per-launch CSRF token the tab received from
+the launch URL alone (a new tab needs a fresh URL). On WSL the browser opens on
+the Windows side through `wslview` or an `xdg-open` that translates Linux
+paths. The dashboard drives Claude accounts; Codex accounts stay with
+`tycswap codex`. See `docs/reference.md`, `tycswap web`, for the API and the
+security model.
+
 ### Codex (ChatGPT) accounts
 
 tycswap also switches [Codex](https://github.com/openai/codex) accounts, under a

@@ -52,28 +52,51 @@ func (e *Engine) readState() map[string]any {
 	return readStateFile(e.statePath)
 }
 
-// ReadQuarantine returns the quarantined slots recorded in the state file at
-// statePath: slot number → reason ("" when the entry carries no readable
-// reason string). Tolerant like readState (missing file / parse error /
-// non-object top level → empty map) and lock-free, matching the engine's own
-// readState at tick start. Every key of the "quarantine" object is reported,
-// mirroring quarantinedSet, so the reader and the engine's exclusion set agree.
-//
-// This is the read seam the TUI's Auto "next best" panel uses to label the
-// quarantined slots the engine excludes from its candidate set but that would
-// otherwise rank as viable targets (DESIGN A18).
-func ReadQuarantine(statePath string) map[string]string {
-	out := map[string]string{}
+// QuarantineEntry is one quarantined slot as the state file records it
+// (quarantine): the email the slot held, the reason, and when, as the RFC3339
+// stamp the engine wrote ("" when the entry carries none).
+type QuarantineEntry struct {
+	Email  string
+	Reason string
+	At     string
+}
+
+// ReadQuarantineEntries returns the quarantined slots recorded in the state
+// file at statePath, slot number → entry. Tolerant like readState (missing
+// file / parse error / non-object top level → empty map) and lock-free,
+// matching the engine's own readState at tick start. Every key of the
+// "quarantine" object is reported, mirroring quarantinedSet, so the reader
+// and the engine's exclusion set agree; a non-object entry yields a zero
+// QuarantineEntry.
+func ReadQuarantineEntries(statePath string) map[string]QuarantineEntry {
+	out := map[string]QuarantineEntry{}
 	q, ok := readStateFile(statePath)["quarantine"].(map[string]any)
 	if !ok {
 		return out
 	}
 	for num, raw := range q {
-		reason := ""
+		var e QuarantineEntry
 		if entry, ok := raw.(map[string]any); ok {
-			reason, _ = entry["reason"].(string)
+			e.Email, _ = entry["email"].(string)
+			e.Reason, _ = entry["reason"].(string)
+			e.At, _ = entry["at"].(string)
 		}
-		out[num] = reason
+		out[num] = e
+	}
+	return out
+}
+
+// ReadQuarantine is ReadQuarantineEntries reduced to slot number → reason (""
+// when the entry carries no readable reason string).
+//
+// This is the read seam the TUI's Auto "next best" panel uses to label the
+// quarantined slots the engine excludes from its candidate set but that would
+// otherwise rank as viable targets (DESIGN A18).
+func ReadQuarantine(statePath string) map[string]string {
+	entries := ReadQuarantineEntries(statePath)
+	out := make(map[string]string, len(entries))
+	for num, e := range entries {
+		out[num] = e.Reason
 	}
 	return out
 }

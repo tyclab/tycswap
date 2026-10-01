@@ -47,6 +47,8 @@ tycswap export <PATH> [--account NUM|EMAIL] [--full]
 tycswap import <PATH> [--force]               import accounts from a file ("-" = stdin)
 tycswap tui                                    interactive dashboard
 tycswap watch                                  interactive dashboard, live watch page
+tycswap web [--port N] [--no-open] [--interval SECONDS]
+                                            browser dashboard on 127.0.0.1
 tycswap menubar                                macOS menu bar app (not available in this build)
 tycswap upgrade                                self-upgrade to the latest release
 tycswap purge                                  remove all tycswap data (prompts to confirm)
@@ -2221,6 +2223,204 @@ $ tycswap watch
 
 ---
 
+## tycswap web
+
+### Synopsis
+
+```
+tycswap web [--port N] [--no-open] [--interval SECONDS] [--debug]
+```
+
+### Options
+
+| Option | Meaning |
+|--------|---------|
+| `--port N` | Listen on this loopback port (0–65535; default `0`, any free port). |
+| `--no-open` | Print the URL only; do not open a browser. |
+| `--interval SECONDS` | Live-state poll interval (1 to 3600; default `5`). |
+| `--debug` | Log server errors to stderr. |
+
+### Description
+
+Serves a dashboard in the browser on `127.0.0.1` and opens it. It has three
+tabs:
+
+- **Dashboard**: the active account and its 5h, 7d and model windows in the
+  header, summary tiles, and the account table with switch, force switch
+  (no backup), enable/disable, alias, move, swap and remove per row; a
+  strategy switch (`best`, `next-available`), *Add current login*, *Add
+  token* (a setup-token or API key; it is sent once and never shown or
+  logged), and an optional *Token status* column.
+- **Auto**: an auto-switch engine hosted in the `web` process: start, start
+  as a dry run, stop, wake; a slider that sets the threshold of the running
+  engine (not saved; enabled only while it runs); *Count model limits*, which
+  saves `autoswitch.model` as `all` (or unsets it); the *Next best* ranking
+  with each account's verdict; the quarantine; the `autoswitch.*` settings
+  editor (`threshold`, `codexThreshold`, `codexEnabled`,
+  `includeApiKeyAccounts`, `strategy` and the rest of `tycswap config`); and
+  the engine's event log. Every save or unset of `autoswitch.model`, from the
+  toggle or the editor, also retargets a running engine at once, so *Next
+  best* follows without a restart; the other settings take effect when the
+  engine is next started. The hosted
+  engine switches Claude accounts only; Codex auto-switching stays with
+  `tycswap auto`.
+- **Sessions**: running Claude Code sessions grouped by directory, with
+  status (busy, waiting, idle), title from the transcript, and *Stop*. The
+  list includes sessions started with `tycswap run` or `tycswap env` (found
+  in the session profiles under the backup root and marked with the slot
+  they run as). Only a session file named after the pid it carries
+  (`sessions/<pid>.json`, as Claude Code writes it) is listed. Stop sends
+  SIGTERM, or TerminateProcess on Windows, and only to a PID that is listed
+  as a Claude Code session at that moment and whose process start time
+  (Linux `/proc/<pid>/stat`, macOS `kinfo_proc`, Windows `GetProcessTimes`
+  on the handle that is then terminated) matches the session file's
+  `startedAt` within 20 seconds; a PID the system has since given to
+  another process answers 409 and is not signalled. `claude --continue` in
+  that directory resumes the session. IDE instances are listed below.
+
+Export and import stay on the command line (`tycswap export`, `tycswap
+import`): the dashboard never writes credentials to a file or reads one.
+
+The page updates live: a state document arrives on connect, on every poll
+tick, after every action and after each batch of engine events. Each
+account row in it carries the fields of a `tycswap list --json` row plus
+`provider` and `key`; with `?tokenStatus=1` every row also carries
+`tokenStatus`, its own token-status string (`""` when there is none), and
+the document has no top-level `tokenStatus`. The dashboard shows and drives
+Claude accounts only; Codex accounts are managed with `tycswap codex`.
+
+The URL printed at start carries a one-time token. On macOS and Linux,
+WSL included, the browser is handed a `file://` URL of a 0600 redirect page
+under a private 0700 directory of the user's own (`$XDG_RUNTIME_DIR/tycswap`,
+else `tycswap/` in the user cache directory, never the shared temp
+directory; the page is removed 30 seconds later while the server runs), so
+the token never appears on a command line; the launcher chain is `wslview`,
+`xdg-open`, `sensible-browser` (`open` on macOS), each looked up on `PATH`
+and started directly, without a shell. On WSL this relies on `wslview`, or
+an `xdg-open` that translates Linux paths, to reach the Windows browser. On
+Windows the URL goes to the default browser directly (ShellExecuteW, then
+`rundll32 url.dll,FileProtocolHandler`, then `cmd /c start`). When no
+launcher starts, or the redirect page cannot be written, `tycswap web` says
+`Could not open a browser; visit the URL above.` and hands nothing to a
+launcher: the printed URL is the way in.
+
+**Security model.** The server listens on a loopback address only and
+refuses any other before it accepts a connection. Each start mints three
+independent 128-bit secrets:
+
+1. the *launch token* in the printed URL, redeemed once by `GET /?token=`,
+   which sets the session cookie and redirects to `/#csrf=<CSRF token>`; a
+   second use answers 403;
+2. the *session cookie*, HttpOnly, SameSite=Lax, Path=/, named
+   `tycswap_session_<port>` so dashboards on different ports never share
+   one;
+3. the *CSRF token*, handed to the page once in that redirect's URL
+   fragment. A fragment is never sent to any server; the page moves it into
+   `sessionStorage` and drops it from the address bar and the history
+   entry. The page itself, which the cookie alone fetches, never contains
+   the token.
+
+Every `/api` request needs the cookie and the CSRF token in `X-CSRF-Token`,
+reads included, so a cookie that reached another loopback port is useless on
+its own: the page it can fetch holds no token. The event stream, which
+cannot send headers, takes the token as `?csrf=`; no other route accepts it
+in the URL. A reload keeps the token (`sessionStorage` survives it); a new
+tab or window does not have it and shows "no session": open a fresh URL
+from `tycswap web`. Every request other than GET
+and HEAD also needs an `Origin` that is absent or equal to the dashboard's own
+and a `Sec-Fetch-Site` that is absent, `same-origin` or `none`. A `Host`
+other than `127.0.0.1:<port>` or `localhost:<port>` answers 421. The page and
+its static files need the cookie. Every response carries a strict
+Content-Security-Policy (self only, no inline script or style),
+`X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: no-referrer` and `Cache-Control: no-store`. Credentials
+never appear in any response.
+
+**API.** All bodies are JSON; a success is `{"ok": true, "result": {...}}`
+and an error `{"error": "<message>"}` with the status below. An account
+`{key}` is the row's `key`, `<provider>:<ref>` (for example `claude:2`,
+`claude:work`, `claude:me@example.com`); a bare slot is refused with 400, and
+a key of another provider answers 404, because slot numbers are per provider.
+
+Statuses every route shares: `401` without the session cookie; `403` without
+the CSRF token, with `?csrf=` anywhere but the event stream, or with a
+cross-origin `Origin` or `Sec-Fetch-Site` on a non-GET request; `421` for a
+foreign `Host`; `400` for a malformed JSON body and `413` for one over 64 KiB;
+`503` when the facade behind the route is not wired into this build; `405`
+for the wrong method. Errors from the switcher map by kind: not found `404`,
+validation `400`, the store lock `409`, Claude Code holding its lock `423`,
+anything else `500`.
+
+| Route | Body | Does | Route's own statuses |
+|-------|------|------|----------------------|
+| `GET /api/state[?tokenStatus=1]` | | the state document | `200` |
+| `GET /api/events?csrf=<t>[&tokenStatus=1]` | | Server-Sent Events: `state` frames, `auto` frames (one engine event each), a `: ping` every 15 s | `200`, then a stream |
+| `POST /api/switch` | `{"strategy": "best"\|"next-available", "models": [...]}` | `tycswap switch --strategy` | `400` missing or unknown strategy |
+| `POST /api/switch/{key}[?force=1]` | | `tycswap switch <id> [--force]` | `400` bare key, `404` other provider |
+| `POST /api/accounts/add` | | `tycswap add` | |
+| `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias"}` | `tycswap add-token` (the token is never echoed or logged) | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
+| `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y` | `400` bare key, `404` other provider |
+| `POST /api/accounts/{key}/alias` | `{"alias": "<name>"}` (empty unsets) | `tycswap alias` | `400` bare key, `404` other provider |
+| `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` | `400` missing slot or bare key, `404` other provider |
+| `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` | `400` missing or bare keys, `404` other provider |
+| `POST /api/sessions/{pid}/stop` | | stop a listed Claude Code session, after verifying the process start time | `400` bad pid, `404` not listed (or gone before the lock), `409` the pid now belongs to another process or cannot be verified, `500` the signal failed |
+| `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset`; saving or unsetting `autoswitch.model` also retargets a running engine (`"applied": true` in the result) | `400` unknown key, value out of range, or missing value; the engine's own error when the retarget fails after the save |
+| `POST /api/auto/start` | `{"dryRun": bool}` | start the hosted engine | `400` already running or still stopping |
+| `POST /api/auto/stop`, `/api/auto/wake` | | stop it (waits up to 2 s for its loop to end), poll now | `400` not running; stop `409` when the tick in flight outlasts the wait (the engine is stopping; Start refuses until it has) |
+| `POST /api/auto/threshold` | `{"threshold": 50-99.9}` | retarget the running engine; the bounds are `autoswitch.threshold`'s | `400` missing, out of range, or not running |
+| `POST /api/auto/model` | `{"model": "all"\|"<names>"\|""}` | retarget the running engine's model windows | `400` missing (`""` is a value) or not running |
+
+### Files
+
+Reads and writes what the CLI commands behind each action do (the backup
+root's `sequence.json`, `settings.json`, `autoswitch_state.json`, the
+credential stores, Claude Code's files). Writes a 0600
+`tycswap-dashboard-*.html` redirect page under `$XDG_RUNTIME_DIR/tycswap`
+(else `tycswap/` in the user cache directory, created 0700) on macOS and
+Linux. Reads `sessions/*.json` and transcripts under the Claude config
+directory and under each session profile in `<backup root>/sessions/`.
+
+### Exit status
+
+`0` when the server ends cleanly; `130` after SIGINT or SIGTERM; `1` when the
+switcher cannot be built or the port cannot be bound; `2` for a usage error.
+
+### Output
+
+On stderr: `Dashboard: http://127.0.0.1:<port>/?token=<launch token>`, then
+`Press Ctrl-C to stop.`; `Could not open a browser; visit the URL above.` when
+no launcher started or the redirect page could not be written (`--debug`
+adds the reason on the next line).
+
+### Errors
+
+`argument --port: invalid int value: '<v>' (0-65535)`, `argument --interval:
+invalid number of seconds: '<v>' (1-3600)`, `unrecognized
+arguments: <tok>` (exit 2); the bind error (exit 1), for example when the
+port is taken.
+
+### Example
+
+```
+$ tycswap web --port 8765
+Dashboard: http://127.0.0.1:8765/?token=<one-time token>
+Press Ctrl-C to stop.
+```
+
+### See also
+
+`tycswap tui`, `tycswap auto`, `tycswap config`.
+
+**Not yet in the dashboard** (follow-ups): Codex accounts (rows, actions and
+auto-switching; account routes already take provider keys), the Codex
+auto loop in the hosted engine, `add --login` and `codex login` as a
+cancellable job, `map`/`unmap`, a remote mode for a tray (a bearer token in
+place of the cookie and CSRF pair, and a route that hands such a client a
+fresh one-time URL), the tray itself, and a short Guide tab (what the tool
+does, slots and windows, getting started, a command cheat-sheet).
+
+---
+
 ## tycswap menubar
 
 ### Synopsis
@@ -4065,6 +4265,31 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   to `git pull && make install` instead of `tycswap upgrade`. It is suppressed in
   `--json` mode and after `purge` and `upgrade`, and it never affects the exit
   status.
+
+## BUILD-TIME BRANDING
+
+The names and the colour tycswap shows outside its data store live in
+`internal/brand` as package variables, so a packager can rebrand a build at
+link time with `-ldflags -X` and no source patch:
+
+| Variable | Default | Used for |
+|----------|---------|----------|
+| `github.com/tyclab/tycswap/internal/brand.Name` | `tycswap` | the command name the dashboard prints in its hints |
+| `github.com/tyclab/tycswap/internal/brand.DisplayName` | `tycswap` | page title and header of the dashboard |
+| `github.com/tyclab/tycswap/internal/brand.SessionCookie` | `tycswap_session` | name of the dashboard's session cookie |
+| `github.com/tyclab/tycswap/internal/brand.RedirectFilePrefix` | `tycswap-dashboard-` | prefix of the 0600 redirect page `tycswap web` writes under the user's runtime or cache directory |
+| `github.com/tyclab/tycswap/internal/brand.AccentColor` | `#5aa2ff` | the dashboard accent: links, focus rings, active tab, primary buttons, the switch target |
+
+```
+go build -ldflags "-X github.com/tyclab/tycswap/internal/brand.DisplayName=Example \
+  -X github.com/tyclab/tycswap/internal/brand.AccentColor=#12356f" ./cmd/tycswap
+```
+
+An override that does not fit its shape is replaced by the default rather than
+used: `Name` is lower-case letters, digits and `-`; `DisplayName` letters,
+digits, spaces, `.` and `-`; `SessionCookie` letters, digits and `_`;
+`RedirectFilePrefix` letters, digits, `.`, `_` and `-`; `AccentColor` a
+`#rrggbb` colour. Each is at most 64 characters.
 
 ## See also
 

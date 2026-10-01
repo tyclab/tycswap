@@ -54,7 +54,7 @@ func ListAccounts(s *store.Store, showTokenStatus, jsonOut bool, fetch map[strin
 	entries := CollectUsageEntries(s, infos, fetch)
 
 	if jsonOut {
-		return buildListPayload(s, infos, entries), nil
+		return buildListPayload(s, infos, entries, showTokenStatus), nil
 	}
 
 	renderAccounts(os.Stdout, s, infos, entries, showTokenStatus)
@@ -65,8 +65,10 @@ func ListAccounts(s *store.Store, showTokenStatus, jsonOut bool, fetch map[strin
 // carries the decision-grade usage value (last-good only while ≤ STALE_OK_S or
 // trust-extended); older reads report unavailable even though the human list
 // still shows the numbers with an age note. Additive top-level fields are
-// present only when non-empty.
-func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]usage.UsageEntry) map[string]any {
+// present only when non-empty. With showTokenStatus every row also carries
+// "tokenStatus": the line the human --token-status list prints ("" when there
+// is none, e.g. no stored credentials).
+func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]usage.UsageEntry, showTokenStatus bool) map[string]any {
 	data, _ := s.ReadSequence()
 	models := configuredModels(s)
 	var activeNum any
@@ -78,7 +80,7 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 		}
 		entry := entries[num]
 		atLimit, limiting := atLimitFor(entry.DecisionValue(), models)
-		accounts = append(accounts, jsonout.AccountRow(
+		row := jsonout.AccountRow(
 			info.Number, info.Email, info.OrgName, info.OrgUUID, info.IsActive,
 			entry.DecisionValue(),
 			jsonout.RowOpts{
@@ -89,7 +91,12 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 				AtLimit:         atLimit,
 				LimitingWindows: limiting,
 			},
-		))
+		)
+		if showTokenStatus {
+			ts, _ := oauth.BuildTokenStatus(info.Creds, s.Clk.Now())
+			row["tokenStatus"] = ts
+		}
+		accounts = append(accounts, row)
 	}
 	payload := map[string]any{
 		"schemaVersion":       jsonout.SchemaVersion,

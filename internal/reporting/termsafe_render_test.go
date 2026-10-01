@@ -39,7 +39,7 @@ func TestDuplicateWarningKeepsControlCharactersInJSONTextStripsThem(t *testing.T
 	infos := []AccountInfo{{Number: 1, Email: email}, {Number: 2, Email: email}}
 	entries := map[string]usage.UsageEntry{}
 
-	payload := buildListPayload(s, infos, entries)
+	payload := buildListPayload(s, infos, entries, false)
 	dup, _ := payload["duplicateAccountWarnings"].([]string)
 	if len(dup) != 1 || !strings.Contains(dup[0], email) {
 		t.Fatalf("duplicateAccountWarnings = %q, want one warning with the stored email", dup)

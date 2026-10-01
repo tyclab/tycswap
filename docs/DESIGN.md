@@ -3553,3 +3553,153 @@ then re-prompts, as before) — the next capture of that slot drops it.
 and the store root (`CheckPrivateRoot` is a no-op there); a follow-up.
 Dependencies: `go.mod` pins `toolchain go1.25.14`; `make vuln` runs
 govulncheck.
+## A26. `internal/web` — the browser dashboard and its security model (Go-side additive extension)
+
+`tycswap web` serves a single-page dashboard from `internal/web` on a
+loopback port. The page (`static/index.html`, `app.js`, `style.css`, the
+`docs/logo.svg` mark as `icon.svg`) is embedded and works offline; a small
+JSON API and a Server-Sent-Events stream drive it. Like tui (A13),
+`internal/web` declares its own seams and imports neither core nor cli:
+`Facade` is the frozen tui.Facade method set, and `AccountOps`,
+`SettingsFacade` and `AutoFacade` are bound in `internal/cli/webfacades.go`
+to the packages the CLI commands use, so the dashboard and
+`tycswap switch|config|auto` cannot drift apart. Export and import are not
+in the dashboard: writing live credentials to a path a page names is the
+CLI's job, where the user sees the path and the file.
+
+**Threat model.** The dashboard can switch, add, remove and re-slot accounts,
+drive the auto-switch engine and stop Claude Code sessions. Anything on the
+machine can send requests to a loopback port, and any web page the user
+opens can make the browser do so. The design keeps both from driving it.
+
+1. **Loopback only.** `Server.Start` refuses a non-loopback address before
+   listening and checks the bound address after. A `Host` header other than
+   `127.0.0.1:<port>` or `localhost:<port>` answers 421, which defeats DNS
+   rebinding.
+2. **Three per-launch secrets**, 128 bits each from crypto/rand, all
+   different:
+   - the *launch token*, only in the printed URL, redeemed once by
+     `GET /?token=`; the check and the redemption are one critical section,
+     so concurrent redeem attempts agree on exactly one winner;
+   - the *session cookie* value, set by that redemption: HttpOnly,
+     SameSite=Lax (Strict would be withheld on the redirect from the file://
+     launch page), Path=/, named `<brand.SessionCookie>_<port>` because
+     cookies are not port-scoped and one name would let a second dashboard
+     log out the first;
+   - the *CSRF token*, handed to the page once in the fragment of that
+     redirect (`/#csrf=<token>`). A fragment never reaches a server; app.js
+     moves it into `sessionStorage` (per tab; a reload keeps it, a new tab
+     needs a fresh launch URL) and drops it from the URL and the history
+     entry with `history.replaceState`. The page is rendered without it.
+   The cookie alone is never enough: a cookie set for 127.0.0.1 reaches every
+   port on 127.0.0.1, so a hostile local service could see it — and the page
+   that cookie fetches holds no second factor to read.
+3. **Both factors on every `/api` call**, reads included: cookie plus
+   `X-CSRF-Token`. EventSource cannot send headers, so `/api/events` alone
+   accepts `?csrf=`; anywhere else a token in a URL would only leak (history,
+   logs). Non-GET requests also need `Origin` absent or same-origin and
+   `Sec-Fetch-Site` absent, `same-origin` or `none`.
+4. **The page and its assets need the cookie**, so a foreign page cannot
+   fingerprint the port by loading `/static/app.js`. Neither carries the
+   CSRF token, so the cookie buys a reader nothing but the static UI.
+5. **Headers.** CSP `default-src 'self'` with no inline script or style (the
+   build's accent colour is therefore served as `/static/accent.css`),
+   frame-ancestors none, nosniff, no-referrer, no-store, DENY framing.
+6. **No credential material leaves the process.** State rows carry
+   metadata, usage and, on request, the token *status* line; the add-token
+   body is input only and never echoed or logged; no route reads or writes
+   a credential file.
+7. **The client renders API data as text.** `el()` sets no `href`, `src`,
+   `style` or `on*` attribute at all, and the page uses no `innerHTML` or
+   `eval`, so an alias, a path or a session title cannot become markup.
+8. **Opening the browser** never puts the launch token on a command line on
+   unix, where argv is world-readable: `tycswap web` writes a 0600 redirect
+   page under a private 0700 directory (`$XDG_RUNTIME_DIR/<name>`, else
+   `<user cache dir>/<name>`; never the shared temp directory, which another
+   user can fill to force the write to fail) and hands the launcher its
+   `file://` URL; when the page cannot be written nothing is handed to a
+   launcher and the CLI points at the printed URL
+   (`internal/browser`: `open`; `wslview`, `xdg-open`, `sensible-browser`,
+   each resolved on PATH and started directly, so no shell sees the URL and
+   "could not open a browser" is reported only when no launcher started).
+   On Windows, where another user cannot read argv, the URL goes to the
+   default browser directly (ShellExecuteW, `rundll32`, `cmd start`).
+   `internal/browser` refuses URLs with shell-significant characters.
+
+**Row identity.** Slot numbers are per provider (A22), so every state row
+carries `provider` and `key` (`AccountSnapshot.Key`), and every account route
+takes the key (`claude:2`). A bare reference answers 400 and another
+provider's key 404 before any façade is reached, so a later Codex row can
+never address the Claude account with the same number. One row shape for
+every provider: when token status is asked for, each row carries
+`tokenStatus` as its own string (`""` when there is none), the way the
+Claude rows do today. `tycswap codex list --json` reports token status as a
+top-level array beside its rows; the dashboard's Codex rows, when they
+arrive, carry the per-row string instead, and the state document never
+gains a top-level `tokenStatus`.
+
+**Live data.** One poll loop rebuilds the state document every interval and
+after every mutation; engine events are fanned out as `auto` frames and
+followed by one state per batch. Token status is enriched only while a
+subscriber asked for it (`?tokenStatus=1`), from the same snapshot, through
+the `tokenStatus` key `reporting.ListAccounts` puts on each JSON row when
+asked for token status (the plain `list --json` payload is unchanged). The
+page reconnects by itself and, when the server no longer knows its tokens (a
+restart mints new ones), stops and says to reopen the printed URL.
+
+**Errors.** Every error body is `{"error"}`; the status comes from the cerr
+kind (not found 404, validation 400, lock 409, Claude Code's lock 423, else
+500), or from the handler itself where no kind fits (a session gone before
+the lock, 404; a pid that is not the recorded process, 409). Ordinary user
+mistakes a facade would report as a config error (a slot that is not a
+number) are refused in the handler as 400 before the facade is reached.
+
+**Hosted engine.** The Auto tab drives one `autoswitch.Engine` in the `web`
+process. `Engine.ApplyThreshold` and `Engine.ApplyModels` retarget a running
+engine. Both store the new value in the engine's atomic settings and re-pin
+the poll plan from those settings; the model slice the tick goroutine counts
+is touched by that goroutine alone, which adopts a queued set at the start
+of its next tick. The settings routes call `ApplyModels` themselves whenever
+`autoswitch.model` is saved or unset while the engine runs, so the toggle
+and the settings grid share one path and the page never has to remember to
+retarget. Stop asks the engine to stop and waits up to 2 s for its
+loop to return; past that it answers 409 ("stopping") rather than holding the
+dashboard's mutation lock, the engine already counts as stopped, and Start
+refuses while the old loop is still finishing, so two engines never run at
+once. When the loop has returned the engine's poll-plan pin is cleared, as
+the TUI's Auto screen does on exit, so a stopped engine's threshold and
+models stop steering the usage polling.
+
+**Sessions.** The list covers the default Claude config directory and every
+session profile under `<backup root>/sessions/` (A16), so sessions started
+with `run` or `env` appear with their slot and can be stopped. A session
+file counts only when its name is the pid it carries (`sessions/<pid>.json`,
+as Claude Code writes it). Stop acts only on a PID listed at that moment,
+consulted again under the mutation lock, and only after the process
+holding the PID is verified as the one the file describes: its start time
+(Linux `/proc/<pid>/stat` starttime plus boot time; macOS `kinfo_proc`;
+Windows `GetProcessTimes` on an `OpenProcess` handle that `TerminateProcess`
+then uses, so the process checked is the process ended) must match the
+file's `startedAt` within 20 seconds, or the route answers 409 and nothing
+is signalled. A session file left behind by a crash or a power loss names a
+PID the system may have reused; on Windows, which also has no SIGTERM for
+another process and terminates hard, PIDs are reused quickly.
+
+**Branding.** Names, the cookie name, the redirect-file prefix and the accent
+colour come from `internal/brand`, overridable at link time and validated
+before use.
+
+**Follow-ups, deliberately not in this extension:** Codex rows (each with
+the per-row `tokenStatus` string above), a Codex façade and a `codex` state
+section; the Codex auto loop moving out of
+`autoCommand` into a host the dashboard shares; `add --login` and `codex
+login` as a cancellable job streamed over SSE; `map`/`unmap` in the
+dashboard; a remote mode for a tray across a VM boundary, which re-adds a
+bearer token accepted in place of the cookie and CSRF pair and a route that
+mints a fresh one-time URL for such a client (nothing in `tycswap web`
+calls either today, so neither is built); the tray itself, which also
+brings back the brand vars it needs (a reverse-DNS identifier, an
+environment-variable prefix); and a short generic Guide tab: what the tool
+does, slots and the active account, the 5h/7d/model windows and the single
+threshold, getting started, manual switching, Auto, Sessions, a command
+cheat-sheet and where the data lives.
