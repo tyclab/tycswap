@@ -205,6 +205,11 @@ func renderRunningInstances(w io.Writer) {
 		}
 	}
 
+	// An IDE lock without workspace folders contributes no group; with only
+	// such locks there is nothing to list, so no heading either.
+	if len(order) == 0 {
+		return
+	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, printer.Bolded("Running instances:"))
 	for _, g := range order {

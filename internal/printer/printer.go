@@ -10,6 +10,7 @@ package printer
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -168,14 +169,28 @@ func IDEShortName(ideName string) string {
 	return ideName
 }
 
-// AbbreviatePath replaces the user's home-directory prefix with ~.
+// AbbreviatePath replaces the user's home-directory prefix with ~. The home
+// directory must be the whole path or followed by a separator: /home/xavier
+// is not under /home/x. Windows compares case-insensitively.
 func AbbreviatePath(path string) string {
 	h, err := os.UserHomeDir()
 	if err != nil || h == "" {
 		return path
 	}
-	if strings.HasPrefix(path, h) {
-		return "~" + path[len(h):]
+	return abbreviateUnder(path, h, runtime.GOOS == "windows", string(os.PathSeparator))
+}
+
+func abbreviateUnder(path, home string, foldCase bool, sep string) string {
+	home = strings.TrimSuffix(home, sep)
+	if home == "" {
+		return path
+	}
+	p, h := path, home
+	if foldCase {
+		p, h = strings.ToLower(path), strings.ToLower(home)
+	}
+	if p == h || strings.HasPrefix(p, h+sep) {
+		return "~" + path[len(home):]
 	}
 	return path
 }
