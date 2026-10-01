@@ -552,7 +552,6 @@
     v.hidden = !st.version;
     var accts = st.accounts || [];
     $('badge-dashboard').textContent = accts.length ? String(accts.length) : '';
-    document.title = (st.name && st.name !== 'tycswap' ? st.name : document.title);
     var sess = (st.sessions && st.sessions.claude) || [];
     var badgeS = $('badge-sessions');
     badgeS.textContent = sess.length ? String(sess.length) : '';

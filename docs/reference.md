@@ -4247,9 +4247,7 @@ link time with `-ldflags -X` and no source patch:
 |----------|---------|----------|
 | `github.com/tyclab/tycswap/internal/brand.Name` | `tycswap` | the command name the dashboard prints in its hints |
 | `github.com/tyclab/tycswap/internal/brand.DisplayName` | `tycswap` | page title and header of the dashboard |
-| `github.com/tyclab/tycswap/internal/brand.ReverseDNS` | `io.github.tyclab.tycswap` | reverse-DNS identifier |
 | `github.com/tyclab/tycswap/internal/brand.SessionCookie` | `tycswap_session` | name of the dashboard's session cookie |
-| `github.com/tyclab/tycswap/internal/brand.EnvPrefix` | `TYCSWAP_` | prefix of tycswap's environment variables |
 | `github.com/tyclab/tycswap/internal/brand.RedirectFilePrefix` | `tycswap-dashboard-` | prefix of the 0600 redirect page `tycswap web` writes to the temp directory |
 | `github.com/tyclab/tycswap/internal/brand.AccentColor` | `#5aa2ff` | the dashboard accent: links, focus rings, active tab, primary buttons, the switch target |
 

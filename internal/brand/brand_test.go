@@ -14,9 +14,6 @@ func TestDefaults(t *testing.T) {
 	if v != want {
 		t.Fatalf("Sanitized() = %+v, want %+v", v, want)
 	}
-	if ReverseDNS != "io.github.tyclab.tycswap" || EnvPrefix != "TYCSWAP_" {
-		t.Fatalf("ReverseDNS=%q EnvPrefix=%q", ReverseDNS, EnvPrefix)
-	}
 }
 
 func TestSanitizedFallsBackOnBadOverrides(t *testing.T) {

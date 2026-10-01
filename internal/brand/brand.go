@@ -1,8 +1,7 @@
 // Package brand holds the names and the accent colour tycswap shows to people
 // and writes to their machine outside its data store: the program name in the
-// dashboard, the reverse-DNS identifier, the dashboard's session cookie, the
-// environment-variable prefix, the prefix of the dashboard's redirect file and
-// the dashboard accent colour.
+// dashboard, the dashboard's session cookie, the prefix of the dashboard's
+// redirect file and the dashboard accent colour.
 //
 // Every value is a package var, not a const, so a packager can rebrand a
 // build at link time without patching the source:
@@ -20,12 +19,8 @@ var (
 	Name = "tycswap"
 	// DisplayName is the product name shown in page titles and headers.
 	DisplayName = "tycswap"
-	// ReverseDNS is the reverse-DNS identifier ("io.github.tyclab.tycswap").
-	ReverseDNS = "io.github.tyclab.tycswap"
 	// SessionCookie names the dashboard's session cookie.
 	SessionCookie = "tycswap_session"
-	// EnvPrefix prefixes tycswap's environment variables ("TYCSWAP_").
-	EnvPrefix = "TYCSWAP_"
 	// RedirectFilePrefix prefixes the 0600 redirect page `tycswap web` writes
 	// to the temp directory so the launch token never appears on a command line.
 	RedirectFilePrefix = "tycswap-dashboard-"
