@@ -52,7 +52,9 @@ const (
 	OAuthScope    = "openid profile email offline_access"
 	UsageURL      = "https://chatgpt.com/backend-api/wham/usage"
 	AccountsURL   = "https://chatgpt.com/backend-api/accounts"
-	UserAgent     = "claude-swap/1.0"
+	// UserAgent stays upstream's: the endpoints accept it, and a name of
+	// tycswap's own would buy nothing.
+	UserAgent = "claude-swap/1.0"
 	// ExpiryMarginS refreshes this far before nominal expiry: a token that
 	// expires mid-request is indistinguishable from a revoked one at the call
 	// site.
