@@ -235,6 +235,9 @@ func TestSessionsInProfiles(t *testing.T) {
 			t.Fatalf("a session file named 999999.json carrying pid %d was listed: %+v", pid, c)
 		}
 	}
+	// The test's own PID is alive on every platform (kill(pid, 0) on unix,
+	// OpenProcess on Windows), and the file is named after it, so the
+	// profile session must be listed; anything else is a regression.
 	var found *procdetect.ClaudeSession
 	for i := range v.Claude {
 		if v.Claude[i].PID == pid {
@@ -242,7 +245,10 @@ func TestSessionsInProfiles(t *testing.T) {
 		}
 	}
 	if found == nil {
-		t.Skipf("procdetect did not list the profile session (%+v); platform liveness check differs", v)
+		t.Fatalf("the profile session for this process (pid %d) was not listed: %+v", pid, v)
+	}
+	if found.SessionID != "sess-run" || found.CWD != "/work/run" {
+		t.Fatalf("listed session %+v, want the profile's record", *found)
 	}
 	if v.Profile[pid] != "2" || v.ConfigDir[pid] != prof {
 		t.Fatalf("profile %q dir %q", v.Profile[pid], v.ConfigDir[pid])
@@ -353,8 +359,25 @@ func TestStaticElRefusesUnsafeAttributes(t *testing.T) {
 		!strings.Contains(js, `if (UNSAFE_ATTR.test(k)) { return; }`) {
 		t.Fatal("el() lacks the unsafe-attribute guard")
 	}
-	if m := regexp.MustCompile(`el\('[a-z]+', \{[^}]*\b(href|src|style|on[a-z]+)\s*:`).FindString(js); m != "" {
+	// A key may be bare (style:) or quoted ('style':, "onclick":); both
+	// forms must be caught, and a key is what follows "{", "," or space.
+	unsafeKey := regexp.MustCompile(`el\('[a-z]+', \{[^}]*[\s{,]['"]?(href|src|srcdoc|style|formaction|action|on[a-z]+)['"]?\s*:`)
+	if m := unsafeKey.FindString(js); m != "" {
 		t.Fatalf("a call site passes an unsafe attribute: %s", m)
+	}
+	// The check itself must see every spelling.
+	for _, bad := range []string{
+		`el('a', { href: u })`, `el('a', { 'href': u })`, `el('a', { "href": u })`,
+		`el('img', { class: 'x', src: u })`, `el('div', { text: t, 'style': s })`, `el('b', { onclick: f })`,
+	} {
+		if !unsafeKey.MatchString(bad) {
+			t.Errorf("the unsafe-attribute check misses %s", bad)
+		}
+	}
+	for _, ok := range []string{`el('details', { class: 'group', open: true })`, `el('span', { 'data-started': s, text: '' })`, `el('span', { class: 'action-x', text: 'icon' })`} {
+		if unsafeKey.MatchString(ok) {
+			t.Errorf("the unsafe-attribute check flags a safe call site: %s", ok)
+		}
 	}
 	for _, bad := range []string{".innerHTML", "eval(", "new Function(", "document.write("} {
 		if strings.Contains(js, bad) {
