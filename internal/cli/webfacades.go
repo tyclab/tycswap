@@ -111,14 +111,13 @@ type autoFacade struct {
 	stream    chan web.AutoEventView
 }
 
+// newAutoFacade builds the host over sw. The engine comes from newAutoEngine,
+// the seam the TUI's Auto screen uses too (tuiwire.go), so both hosts wire the
+// switcher's OAuth client, logger and clock the same way.
 func newAutoFacade(sw *core.Switcher) *autoFacade {
 	a := &autoFacade{sw: sw, clk: sw.Clk, stream: make(chan web.AutoEventView, 64)}
 	a.newEngine = func(s settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool) autoEngine {
-		return autoswitch.NewEngine(autoswitchAdapter{sw}, s, onEvent, dryRun,
-			autoswitch.WithOAuthClient(sw.OAuth),
-			autoswitch.WithLogger(sw.Log),
-			autoswitch.WithClock(sw.Clk),
-		)
+		return newAutoEngine(sw, s, onEvent, dryRun, sw.OAuth)
 	}
 	return a
 }

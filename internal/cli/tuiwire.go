@@ -83,11 +83,13 @@ func engineFactoryFor(sw *core.Switcher) tui.EngineFactory {
 	}
 }
 
-// newAutoEngine is the engine-construction seam (default builds the real
-// autoswitch.Engine). The OAuth client is passed explicitly (oc) so the factory
-// wiring is observable in tests without reaching into the engine's unexported
-// state; tests override this var to capture the forwarded client.
-var newAutoEngine = func(sw *core.Switcher, s settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool, oc oauth.Client) tui.AutoEngine {
+// newAutoEngine is the engine-construction seam the TUI's factory and the
+// dashboard's autoFacade share (default builds the real autoswitch.Engine,
+// which satisfies both tui.AutoEngine and the dashboard's autoEngine). The
+// OAuth client is passed explicitly (oc) so the factory wiring is observable
+// in tests without reaching into the engine's unexported state; tests
+// override this var to capture the forwarded client.
+var newAutoEngine = func(sw *core.Switcher, s settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool, oc oauth.Client) *autoswitch.Engine {
 	return autoswitch.NewEngine(autoswitchAdapter{sw}, s, onEvent, dryRun,
 		autoswitch.WithOAuthClient(oc),
 		autoswitch.WithLogger(sw.Log),
