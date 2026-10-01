@@ -3631,12 +3631,13 @@ no longer knows its tokens (a restart mints new ones), stops and says to
 reopen the printed URL.
 
 **Hosted engine.** The Auto tab drives one `autoswitch.Engine` in the `web`
-process. `Engine.ApplyThreshold` retargets a running engine; the new
-`Engine.ApplyModels` does the same for `autoswitch.model`: it queues the
-model set, which the tick goroutine adopts at the start of its next tick, so
-the slice is never written concurrently. Stop waits (bounded) for the
-engine's loop to return, and Start refuses while an old loop is still
-finishing, so two engines never run at once.
+process. `Engine.ApplyThreshold` and `Engine.ApplyModels` retarget a running
+engine. Both store the new value in the engine's atomic settings and re-pin
+the poll plan from those settings; the model slice the tick goroutine counts
+is touched by that goroutine alone, which adopts a queued set at the start
+of its next tick. Stop waits (bounded) for the engine's loop to return, and
+Start refuses while an old loop is still finishing, so two engines never run
+at once.
 
 **Sessions.** The list covers the default Claude config directory and every
 session profile under `<backup root>/sessions/` (A16), so sessions started

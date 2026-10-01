@@ -6,7 +6,8 @@
 // the ranking keep counting a window the user just excluded until a restart.
 // The model slice is read throughout a tick without a lock, so ApplyModels
 // never writes it: it queues the new set, and the tick goroutine adopts it at
-// the start of its next tick.
+// the start of its next tick. Nothing but the tick goroutine reads the slice
+// either: ApplyThreshold re-pins the poll plan from the settings' Model.
 package autoswitch
 
 import "github.com/tyclab/tycswap/internal/settings"

@@ -1,12 +1,13 @@
 // Engine construction, lifecycle (stop/wake/apply-threshold), and the shared
 // clock/emit helpers.
 //
-// Implements spec 05§1-2 (construction, settings/models), 05§8 (apply_threshold
-// — threshold only, models fixed at construction), and DESIGN §4 rows 2-3 (the
-// stop/wake channel discipline). settings live behind an atomic.Pointer so a
-// mid-tick apply_threshold is consistent (each tick snapshots once). The state
-// path defaults to <BackupDir>/autoswitch_state.json with its own
-// .autoswitch_state.lock beside it.
+// Implements spec 05§1-2 (construction, settings/models), 05§8 (apply_threshold),
+// and DESIGN §4 rows 2-3 (the stop/wake channel discipline). settings live
+// behind an atomic.Pointer so a mid-tick apply_threshold is consistent (each
+// tick snapshots once); the model set the tick goroutine counts is retargeted
+// through the same pointer plus a queue (models.go). The state path defaults to
+// <BackupDir>/autoswitch_state.json with its own .autoswitch_state.lock beside
+// it.
 
 package autoswitch
 
@@ -149,12 +150,17 @@ func (e *Engine) currentSettings() settings.AutoSwitchSettings {
 }
 
 // ApplyThreshold retargets the trigger and poll cadence mid-run (TUI session
-// override). Threshold only — the model axes are fixed at construction (05§8).
+// override). Safe to call from any goroutine: the poll plan is re-pinned with
+// the model set parsed from the current settings, never from e.models, which
+// only the tick goroutine reads and writes (adoptPendingModels). The settings
+// already carry whatever ApplyModels requested last, so a threshold change
+// right after a model change pins the new set, not the one still counted
+// until the next tick.
 func (e *Engine) ApplyThreshold(threshold float64) {
 	s := e.currentSettings()
 	s.Threshold = threshold
 	e.settings.Store(&s)
-	e.sw.SetPollPolicyInputs(threshold, e.models)
+	e.sw.SetPollPolicyInputs(threshold, settings.ParseModelNames(s.Model))
 }
 
 // Stop asks RunLoop to exit and wakes it from any sleep. Latching and
