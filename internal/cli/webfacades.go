@@ -152,30 +152,10 @@ func (a *autoFacade) View() web.AutoView {
 		DryRun:     a.dryRun,
 		StartedAt:  a.startedAt,
 		Threshold:  threshold,
-		Settings:   settingsMap(s),
+		Settings:   settings.ValuesOf(s),
 		Events:     events,
 		Quarantine: quarantine,
 	}
-}
-
-// settingsMap renders the settings the way `tycswap config` names them.
-func settingsMap(s settings.AutoSwitchSettings) map[string]any {
-	m := map[string]any{
-		"autoswitch.threshold":             s.Threshold,
-		"autoswitch.intervalSeconds":       s.IntervalSeconds,
-		"autoswitch.codexEnabled":          s.CodexEnabled,
-		"autoswitch.codexThreshold":        s.CodexThreshold,
-		"autoswitch.cooldownSeconds":       s.CooldownSeconds,
-		"autoswitch.hysteresisPct":         s.HysteresisPct,
-		"autoswitch.strategy":              s.Strategy,
-		"autoswitch.includeApiKeyAccounts": s.IncludeAPIKeyAccounts,
-		"autoswitch.unhealthyTicks":        s.UnhealthyTicks,
-		"autoswitch.model":                 nil,
-	}
-	if s.Model != nil {
-		m["autoswitch.model"] = *s.Model
-	}
-	return m
 }
 
 func (a *autoFacade) Start(dryRun bool) error {

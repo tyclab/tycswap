@@ -567,6 +567,19 @@ func EffectiveSettings(root string) []Effective {
 	return out
 }
 
+// ValuesOf renders s the way `tycswap config` names its keys: dotted key →
+// effective value for every spec in registry order (an unset Model is nil).
+// It is derived from SettingSpecs and the same field map EffectiveSettings
+// uses, so a new setting shows up here without a second list to maintain.
+func ValuesOf(s AutoSwitchSettings) map[string]any {
+	fields := fieldsOf(s)
+	out := make(map[string]any, len(SettingSpecs))
+	for _, spec := range SettingSpecs {
+		out[spec.Dotted()] = fields[spec.Field]
+	}
+	return out
+}
+
 // --- CLI merge / model names -------------------------------------------
 
 // CLIOverrides holds the optional `tycswap auto` flag overrides; a nil field

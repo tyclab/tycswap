@@ -128,6 +128,14 @@ func TestAutoFacade(t *testing.T) {
 	if !v.Available || v.Running || v.StartedAt != nil || v.Settings["autoswitch.threshold"] != float64(80) || v.Threshold != 80 || v.Events == nil || v.Quarantine == nil {
 		t.Fatalf("idle view = %+v", v)
 	}
+	// The settings map is derived from the spec: one key per setting, the
+	// unset model nil.
+	if len(v.Settings) != len(settings.SettingSpecs) {
+		t.Fatalf("view settings has %d keys, want %d (one per spec)", len(v.Settings), len(settings.SettingSpecs))
+	}
+	if m, ok := v.Settings["autoswitch.model"]; !ok || m != nil {
+		t.Fatalf("unset model = %#v (present %v), want nil", m, ok)
+	}
 	for _, err := range []error{a.Stop(), a.Wake(), a.ApplyThreshold(50), a.ApplyModels("all")} {
 		if err == nil || !strings.Contains(err.Error(), "not running") {
 			t.Errorf("idle op err = %v", err)

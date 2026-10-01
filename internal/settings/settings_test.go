@@ -682,3 +682,29 @@ func TestLoad_PythonFixture(t *testing.T) {
 		t.Errorf("IntervalSeconds = %v, want default", got.IntervalSeconds)
 	}
 }
+
+// ValuesOf names every spec by its dotted key and carries the struct's value
+// for it; an unset Model is nil and a set one its string.
+func TestValuesOf_CoversEverySpec(t *testing.T) {
+	got := ValuesOf(Default())
+	if len(got) != len(SettingSpecs) {
+		t.Fatalf("ValuesOf has %d keys, want one per spec (%d)", len(got), len(SettingSpecs))
+	}
+	for _, spec := range SettingSpecs {
+		v, ok := got[spec.Dotted()]
+		if !ok {
+			t.Errorf("ValuesOf lacks %s", spec.Dotted())
+			continue
+		}
+		if !reflect.DeepEqual(v, spec.Default) {
+			t.Errorf("ValuesOf(Default())[%s] = %#v, want the spec default %#v", spec.Dotted(), v, spec.Default)
+		}
+	}
+	s := Default()
+	m := "Fable, Opus"
+	s.Model, s.Threshold = &m, 77
+	got = ValuesOf(s)
+	if got["autoswitch.model"] != "Fable, Opus" || got["autoswitch.threshold"] != 77.0 {
+		t.Fatalf("ValuesOf(set) model %#v threshold %#v", got["autoswitch.model"], got["autoswitch.threshold"])
+	}
+}
