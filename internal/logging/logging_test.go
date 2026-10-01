@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -132,5 +133,24 @@ func TestRotation(t *testing.T) {
 	// Never more backups than backupCount.
 	if _, err := os.Stat(path + ".4"); err == nil {
 		t.Errorf("backup .4 exists but backupCount is 3")
+	}
+}
+
+// TestLogFileIsPrivate: the first write creates the store directory 0700 and
+// the log 0600, like every other file in the store.
+func TestLogFileIsPrivate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX modes only")
+	}
+	dir := filepath.Join(t.TempDir(), "store")
+	w := newRotatingWriter(filepath.Join(dir, "tycswap.log"), 1<<20, 3)
+	if err := w.write([]byte("line\n")); err != nil {
+		t.Fatal(err)
+	}
+	for p, want := range map[string]os.FileMode{dir: 0o700, filepath.Join(dir, "tycswap.log"): 0o600} {
+		fi, err := os.Stat(p)
+		if err != nil || fi.Mode().Perm() != want {
+			t.Errorf("%s mode = %v, %v; want %v", p, fi.Mode().Perm(), err, want)
+		}
 	}
 }

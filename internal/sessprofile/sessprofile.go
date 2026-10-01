@@ -147,7 +147,7 @@ func StaleMarkerPath(sessionDir string) string {
 // old reuse behavior applies), mirroring mark_session_stale's bare `except
 // OSError: pass`.
 func MarkStale(sessionDir string) {
-	f, err := os.OpenFile(StaleMarkerPath(sessionDir), os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(StaleMarkerPath(sessionDir), os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
 	}

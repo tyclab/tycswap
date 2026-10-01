@@ -444,7 +444,7 @@ func validateImportedAccount(raw any) (email, exportedNum string, err error) {
 
 	rawNumber := m["number"]
 	n, ok := intValue(rawNumber)
-	if !ok || n < 1 {
+	if !ok || n < 1 || n > maxSlotValue {
 		return "", "", cerr.Transfer("invalid slot number in imported account (%s): %s",
 			emailStr, pyRepr(rawNumber))
 	}
@@ -462,6 +462,14 @@ func validateImportedAccount(raw any) (email, exportedNum string, err error) {
 	}
 
 	if aliasStr, isStr := m["alias"].(string); isStr {
+		// Checked on the raw value: normalizeAlias trims, which would let a
+		// crafted " work\r\n" through as "work".
+		if len(aliasStr) > maxAliasLen {
+			return "", "", cerr.Transfer("invalid alias for %s: longer than %d bytes", emailStr, maxAliasLen)
+		}
+		if hasSpaceOrControl(aliasStr) {
+			return "", "", cerr.Transfer("invalid alias for %s: %s contains whitespace or a control character", emailStr, pyRepr(aliasStr))
+		}
 		if _, e := normalizeAlias(aliasStr); e != nil {
 			return "", "", cerr.Transfer("invalid alias for %s: %s", emailStr, e.Error())
 		}

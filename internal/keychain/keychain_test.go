@@ -3,6 +3,7 @@ package keychain
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -243,4 +244,41 @@ func contains(ss []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// TestSecurityRefusesControlCharacterNames: a CR, LF or other control character
+// in a service or account never reaches the security CLI (on stdin it would
+// end the command and start another).
+func TestSecurityRefusesControlCharacterNames(t *testing.T) {
+	bad := []struct{ service, account string }{
+		{"tycswap", "account-1-a@example.com\n"},
+		{"tycswap", "acct\rdelete-generic-password -s x"},
+		{"tycs\nwap", "acct"},
+		{"tycswap", "acct\x00"},
+		{"tycswap", "acct\x7f"},
+		{"tycswap", "acct\u0085"},
+		{"tycswap", "acct\xff"},
+	}
+	for _, b := range bad {
+		rec := &recordExec{res: execResult{rc: 0}}
+		s := Security{Exec: rec.fn}
+		if err := s.Set(b.service, b.account, "secret"); !errors.Is(err, ErrInvalidName) {
+			t.Errorf("Set(%q, %q) err = %v, want ErrInvalidName", b.service, b.account, err)
+		}
+		if _, _, err := s.Get(b.service, b.account); !errors.Is(err, ErrInvalidName) {
+			t.Errorf("Get(%q, %q) err = %v", b.service, b.account, err)
+		}
+		if err := s.Delete(b.service, b.account); !errors.Is(err, ErrInvalidName) {
+			t.Errorf("Delete(%q, %q) err = %v", b.service, b.account, err)
+		}
+		if s.Exists(b.service, b.account) {
+			t.Errorf("Exists(%q, %q) = true", b.service, b.account)
+		}
+		if rec.argv != nil {
+			t.Errorf("security ran for %q/%q: %v", b.service, b.account, rec.argv)
+		}
+	}
+	if err := ValidateName("Claude Code-credentials-1a2b3c4d", "o'brien"); err != nil {
+		t.Errorf("a printable name was refused: %v", err)
+	}
 }

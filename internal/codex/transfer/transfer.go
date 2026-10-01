@@ -140,27 +140,48 @@ func Export(st *store.Store, destination, account string, stdout io.Writer) (int
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		return 0, cerr.Transfer("Cannot write %s: %s", destination, err.Error()).Wrap(err)
 	}
-	// Created 0600 before the tokens go in, not chmod'ed afterwards: between
-	// write and chmod the file would be world-readable.
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return 0, cerr.Transfer("Cannot write %s: %s", destination, err.Error()).Wrap(err)
-	}
-	defer f.Close()
-	// Hardening over the Python: O_CREAT's mode only applies to a new file, so
-	// an existing wider-mode file is narrowed before the tokens are written.
-	if runtime.GOOS != "windows" {
-		if err := f.Chmod(0o600); err != nil {
-			return 0, cerr.Transfer("Cannot write %s: %s", destination, err.Error()).Wrap(err)
-		}
-	}
-	if _, err := f.Write(blob); err != nil {
-		return 0, cerr.Transfer("Cannot write %s: %s", destination, err.Error()).Wrap(err)
-	}
-	if err := f.Close(); err != nil {
+	if err := writeExportFile(path, blob); err != nil {
 		return 0, cerr.Transfer("Cannot write %s: %s", destination, err.Error()).Wrap(err)
 	}
 	return len(accounts), nil
+}
+
+// writeExportFile writes blob to path atomically: a temp file in path's own
+// directory, created 0600 before the tokens go in (never chmod'ed afterwards,
+// when it would already have been readable), then renamed over path. A reader
+// never sees a half-written export, an interrupted write leaves the previous
+// file intact, and an existing wider-mode file is replaced by a 0600 one. The
+// parent directory's mode is left alone: it is the user's.
+func writeExportFile(path string, blob []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tycswap-codex-*.tmp")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	committed := false
+	defer func() {
+		if !committed {
+			_ = os.Remove(name)
+		}
+	}()
+	if runtime.GOOS != "windows" {
+		if err := tmp.Chmod(0o600); err != nil {
+			tmp.Close()
+			return err
+		}
+	}
+	if _, err := tmp.Write(blob); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(name, path); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 // Import reads accounts from source ("-" reads stdin, os.Stdin when nil) into

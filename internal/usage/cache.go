@@ -46,15 +46,16 @@ func ReadCache(path string, ttl, now float64) (data any, ok bool) {
 }
 
 // WriteCache writes {"timestamp": now, "data": data} to path (04§4). DELIBERATE
-// (Amendment A8): a plain, non-atomic, non-chmod'd write — do NOT route this
+// (Amendment A8): a plain, non-atomic, non-chmod'd write (created 0600 under a
+// 0700 directory, like the rest of the store) — do NOT route this
 // through atomicfile. The parent directory is created if absent.
 func WriteCache(path string, data any, now float64) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	b, err := json.Marshal(map[string]any{"timestamp": now, "data": data})
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o644)
+	return os.WriteFile(path, b, 0o600)
 }

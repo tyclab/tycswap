@@ -214,7 +214,7 @@ func (m *Manager) ensureMCPMarker(markerPath string) {
 	if fileExists(markerPath) {
 		return
 	}
-	if err := touchFile(markerPath, 0o644); err != nil {
+	if err := touchFile(markerPath, 0o600); err != nil {
 		m.logWarnf("Could not write %s: %v", filepath.Base(markerPath), err)
 	}
 }

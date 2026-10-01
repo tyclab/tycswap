@@ -23,6 +23,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // FormatVersion is the .tycswap envelope version (FORMAT_VERSION in transfer.py).
@@ -54,15 +56,39 @@ type SequenceData struct {
 	Accounts            map[string]json.RawMessage `json:"accounts"`
 }
 
-// emailRE mirrors _validate_email (spec 07§1.2 / 01§6.1). transfer cannot import
-// lifecycle's unexported validator, so the pattern is replicated verbatim, save
-// for the trailing anchor: Python's re.match treats non-multiline `$` as matching
-// at end-of-text OR immediately before a single trailing newline, whereas Go RE2's
-// `$` means end-of-text only. `\n?$` reproduces Python's acceptance of exactly one
-// trailing newline (e.g. "bob@example.com\n") while still rejecting two.
-var emailRE = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\n?$`)
+// emailRE mirrors _validate_email (spec 07§1.2 / 01§6.1), anchored strictly at
+// both ends. Python's non-multiline `$` also matches before one trailing
+// newline, and an earlier `\n?$` here reproduced that; it is dropped on
+// purpose (a deviation from Python): the email flows into credential file names
+// and Keychain account names, where a newline has no business.
+var emailRE = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 
-func validateEmail(email string) bool { return emailRE.MatchString(email) }
+// Bounds on imported identity fields. An email is at most 254 octets (RFC
+// 5321's path limit); an alias is a short display name; a slot number has at
+// most six digits.
+const (
+	maxEmailLen  = 254
+	maxAliasLen  = 64
+	maxSlotValue = 999999
+)
+
+func validateEmail(email string) bool {
+	return len(email) <= maxEmailLen && !hasSpaceOrControl(email) && emailRE.MatchString(email)
+}
+
+// hasSpaceOrControl reports whether s holds any whitespace or control
+// character (or invalid UTF-8), anywhere, including a trailing newline.
+func hasSpaceOrControl(s string) bool {
+	if !utf8.ValidString(s) {
+		return true
+	}
+	for _, r := range s {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return true
+		}
+	}
+	return false
+}
 
 var aliasRE = regexp.MustCompile(`^[a-z0-9_.-]+$`)
 

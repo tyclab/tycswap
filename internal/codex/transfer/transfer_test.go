@@ -490,3 +490,32 @@ func TestPurgeOnAnEmptyStoreSaysSo(t *testing.T) {
 		t.Fatalf("ran=%v err=%v out=%q", ran, err, out.String())
 	}
 }
+
+// TestTheExportIsWrittenAtomically: the export replaces the destination by
+// rename (a new inode, so a reader holding the old file never sees a mix) and
+// leaves no temp file behind.
+func TestTheExportIsWrittenAtomically(t *testing.T) {
+	e := seeded(t)
+	target := filepath.Join(e.dir, "out", "codex.json")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.Stat(target)
+	if _, err := Export(e.open(), target, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && os.SameFile(before, after) {
+		t.Error("export wrote in place instead of renaming a temp file over the target")
+	}
+	entries, _ := os.ReadDir(filepath.Dir(target))
+	if len(entries) != 1 {
+		t.Errorf("directory holds %d entries, want only the export: %v", len(entries), entries)
+	}
+}

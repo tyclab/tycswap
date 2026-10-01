@@ -1639,8 +1639,11 @@ exists, use --force)`) then a summary
 | `unsupported export version: <v> (expected 1)` | `TransferError` |
 | `encrypted exports are not supported in this version — decrypt before piping (e.g. gpg -d backup.gpg \| tycswap --import -)` | `TransferError` |
 | `export file has no accounts to import` | `TransferError` |
+| `invalid or missing email in imported account: <repr>`: not a plain address, longer than 254 bytes, or holding any whitespace or control character (a trailing newline included) | `TransferError` |
+| `invalid slot number in imported account (<email>): <repr>`: not an integer from 1 to 999999 | `TransferError` |
+| `invalid alias for <email>: <repr> contains whitespace or a control character` or `longer than 64 bytes` | `TransferError` |
 
-All are exit 1.
+All are exit 1, and every account is validated before anything is written.
 
 ### Example
 

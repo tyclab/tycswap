@@ -15,6 +15,8 @@ import (
 	"os/user"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Constants mirroring macos_keychain.py.
@@ -44,6 +46,28 @@ const (
 	OldBackupService = "claude-swap"
 	OldCodexService  = "claude-swap-codex"
 )
+
+// ErrInvalidName is returned (wrapped) when a service or account name holds a
+// control character. Set feeds `security -i` a command line on stdin, so a
+// CR or LF in a name would end that command and start another; every Security
+// call refuses such a name before spawning anything.
+var ErrInvalidName = errors.New("keychain item name contains a control character")
+
+// ValidateName refuses a service or account name containing any control
+// character (C0 including \r and \n, DEL, C1) or invalid UTF-8.
+func ValidateName(service, account string) error {
+	for _, f := range [...]struct{ what, v string }{{"service", service}, {"account", account}} {
+		if !utf8.ValidString(f.v) {
+			return fmt.Errorf("%w: %s %q is not valid UTF-8", ErrInvalidName, f.what, f.v)
+		}
+		for _, r := range f.v {
+			if unicode.IsControl(r) {
+				return fmt.Errorf("%w: %s %q", ErrInvalidName, f.what, f.v)
+			}
+		}
+	}
+	return nil
+}
 
 // KeychainClient is the seam every credential store uses.
 type KeychainClient interface {
@@ -183,6 +207,9 @@ func commandName(argv []string) string {
 // Get reads a password via find-generic-password -a … -w -s …. It strips exactly
 // one trailing newline (TrimSuffix, not TrimSpace).
 func (s Security) Get(service, account string) (string, bool, error) {
+	if err := ValidateName(service, account); err != nil {
+		return "", false, err
+	}
 	res, err := s.call([]string{s.bin(), "find-generic-password", "-a", account, "-w", "-s", service}, "")
 	if err != nil {
 		return "", false, err
@@ -202,6 +229,9 @@ func (s Security) Get(service, account string) (string, bool, error) {
 // nothing is decrypted). Never raises: rc 44, error exits, timeouts and a
 // missing binary all return false.
 func (s Security) Exists(service, account string) bool {
+	if ValidateName(service, account) != nil {
+		return false
+	}
 	res, err := s.call([]string{s.bin(), "find-generic-password", "-a", account, "-s", service}, "")
 	if err != nil {
 		return false
@@ -223,6 +253,9 @@ func FitsStdin(service, account, password string) bool {
 // Set creates or updates an item (-U). The secret is hex-encoded (-X) and rides
 // on stdin under the line-buffer limit; larger payloads fall back to argv.
 func (s Security) Set(service, account, password string) error {
+	if err := ValidateName(service, account); err != nil {
+		return err
+	}
 	hexValue := toHex(password)
 	command := fmt.Sprintf("add-generic-password -U -a %s -s %s -X %s\n",
 		quote(account), quote(service), hexValue)
@@ -249,6 +282,9 @@ func (s Security) Set(service, account, password string) error {
 
 // Delete removes an item; rc 0 and rc 44 (already absent) both succeed.
 func (s Security) Delete(service, account string) error {
+	if err := ValidateName(service, account); err != nil {
+		return err
+	}
 	res, err := s.call([]string{s.bin(), "delete-generic-password", "-a", account, "-s", service}, "")
 	if err != nil {
 		return err

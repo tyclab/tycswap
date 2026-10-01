@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -254,5 +256,29 @@ func TestEnvNoOpEmitsNothingOnStdout(t *testing.T) {
 	}
 	if !strings.Contains(errStr, "nothing exported") {
 		t.Errorf("D1 note did not reach stderr: %q", errStr)
+	}
+}
+
+// TestEnvExportLineEvalsSafely evaluates the sh export line in a real shell for
+// a profile path holding a space, a single quote and shell metacharacters: the
+// variable must come back byte-identical and nothing else may run.
+func TestEnvExportLineEvalsSafely(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh")
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "pwned")
+	tricky := filepath.Join(dir, "my profiles", "o'brien'; touch "+marker+"; echo '$(id)`x`")
+	line := envExportLine("sh", "CLAUDE_CONFIG_DIR", tricky)
+	out, err := exec.Command(sh, "-c", "eval \"$1\"; printf %s \"$CLAUDE_CONFIG_DIR\"", "sh", line).Output()
+	if err != nil {
+		t.Fatalf("eval failed: %v (line %q)", err, line)
+	}
+	if string(out) != tricky {
+		t.Errorf("eval gave %q, want %q", out, tricky)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Errorf("the eval ran an injected command (line %q)", line)
 	}
 }
