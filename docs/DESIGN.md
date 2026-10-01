@@ -3385,9 +3385,12 @@ On macOS the per-account, Codex and session-profile Keychain items are copied
 to their new service names (a session profile's service hashes its path,
 which changed). The old directory and the old Keychain items are opened for
 reading only: never moved, modified or deleted, since another installed tool
-may still own them. A non-empty new store is refused, never merged. Every
-other command prints one stderr line while the new store is empty and an old
-one exists (not under `--json`).
+may still own them. A new store holding anything that is neither a throwaway
+artefact nor part of this same copy is refused, never merged; a copy that was
+interrupted is resumed by the next run, which copies what is missing and
+verifies byte for byte what is already there (A25 item 8). Every other
+command prints one stderr line while the new store is empty and an old one
+exists (not under `--json`).
 
 **Consequences.** The startup move `~/.claude-swap-backup` → XDG (§2.13 step
 3, `paths.MigrateLegacyBackupDir`) is removed: it moved another tool's
@@ -3427,7 +3430,7 @@ program, and the passive notice announced upstream releases. Now:
 
 ## A25. Security pass: trust nothing that arrives from outside the store
 
-A security review of the renamed tree found one HIGH, six MEDIUM and a run of
+A security review of the renamed tree found two HIGH, five MEDIUM and a run of
 LOW/INFO findings. Their common root is that tycswap treated four kinds of
 outside input as its own: an export file, another tool's `.claude.json`, an
 HTTP response, and the shared filesystem around the store. The rules below
