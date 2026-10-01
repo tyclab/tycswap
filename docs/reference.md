@@ -2224,13 +2224,30 @@ Legacy: `tycswap --upgrade`. Alias: `tycswap update`.
 
 ### Description
 
-Self-upgrades to the latest release. It runs before the switcher is
-constructed, so upgrading never touches config or credentials. When the running
-binary lives in a Go-managed bin directory (`$GOBIN`, `$GOPATH/bin`, or
-`$HOME/go/bin`), it re-runs `go install
-git.dpemmons.com/dpemmons/cswap/cmd/cswap@latest`. Otherwise it prints manual
-upgrade guidance. On Windows the running executable is locked, so the command
-always prints the upgrade command rather than running it.
+Self-upgrades to the latest tycswap release. It runs before the switcher is
+constructed, so upgrading never touches config or credentials. A binary built
+from a checkout (`make build`, `make install`, `go build` in a clone: its build
+info carries a VCS stamp or the `(devel)` version) is never re-installed from a
+remote; it prints `tycswap was built from a checkout: git pull && make install`
+and exits 1. A binary installed with `go install <module>@<version>` that lives
+in a Go-managed bin directory (`$GOBIN`, `$GOPATH/bin`, or `$HOME/go/bin`)
+re-runs `go install github.com/tyclab/tycswap/cmd/tycswap@latest`. Otherwise it
+prints manual upgrade guidance. On Windows the running executable is locked, so
+the command always prints the upgrade command rather than running it.
+
+Packagers can point both at another place at link time; the defaults are
+tycswap's own module and releases:
+
+| Variable | Default |
+|----------|---------|
+| `github.com/tyclab/tycswap/internal/update.ModulePath` | `github.com/tyclab/tycswap/cmd/tycswap` (what `go install …@latest` installs) |
+| `github.com/tyclab/tycswap/internal/update.Endpoint` | `https://api.github.com/repos/tyclab/tycswap/releases/latest` (the passive update notice's source; `tag_name` is read) |
+| `github.com/tyclab/tycswap/internal/update.ReleasesURL` | `https://github.com/tyclab/tycswap/releases` (shown in manual guidance) |
+
+```
+go build -ldflags "-X github.com/tyclab/tycswap/internal/update.ModulePath=example.com/fork/cmd/tycswap \
+  -X github.com/tyclab/tycswap/internal/update.Endpoint=https://example.com/releases/latest" ./cmd/tycswap
+```
 
 ### Files
 
@@ -2240,10 +2257,16 @@ replaces the binary.
 ### Exit status
 
 The exit status of the `go install` subprocess on a `go install` layout; `1`
-when only guidance was printed (unknown layout, Windows, `go` missing from
-PATH).
+when only guidance was printed (checkout build, unknown layout, Windows, `go`
+missing from PATH).
 
 ### Output
+
+For a checkout build:
+
+```
+tycswap was built from a checkout: git pull && make install
+```
 
 On an unknown layout:
 
@@ -2251,9 +2274,9 @@ On an unknown layout:
 Could not detect a `go install` layout (looked for $GOBIN, $GOPATH/bin, $HOME/go/bin).
   binary: <path>
 To upgrade manually, run:
-  go install git.dpemmons.com/dpemmons/cswap/cmd/cswap@latest
+  go install github.com/tyclab/tycswap/cmd/tycswap@latest
 Or download a release from:
-  https://git.dpemmons.com/dpemmons/cswap/releases
+  https://github.com/tyclab/tycswap/releases
 ```
 
 On Windows: `To upgrade tycswap on Windows, run:` followed by the
@@ -2267,13 +2290,8 @@ manually from a shell where it is available.` (exit 1).
 ### Example
 
 ```
-$ tycswap upgrade
-Could not detect a `go install` layout (looked for $GOBIN, $GOPATH/bin, $HOME/go/bin).
-  binary: ~/go/bin/tycswap
-To upgrade manually, run:
-  go install git.dpemmons.com/dpemmons/cswap/cmd/cswap@latest
-Or download a release from:
-  https://git.dpemmons.com/dpemmons/cswap/releases
+$ tycswap upgrade                # built with make install in a clone
+tycswap was built from a checkout: git pull && make install
 $ echo $?
 1
 ```
@@ -3900,7 +3918,9 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   <n>`) after logging the account back in produces; an `account-unquarantined`
   event is then emitted.
 - **Passive update notice.** After most commands, a muted one-line update notice
-  may be printed to stderr when a newer release is known. It is suppressed in
+  may be printed to stderr when a newer tycswap release (from
+  `update.Endpoint`, see `tycswap upgrade`) is known; a checkout build is told
+  to `git pull && make install` instead of `tycswap upgrade`. It is suppressed in
   `--json` mode and after `purge` and `upgrade`, and it never affects the exit
   status.
 

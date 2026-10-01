@@ -528,19 +528,17 @@ Each key's type, default, and range are listed in
 ### Upgrade
 
 `tycswap upgrade` (alias `update`) updates the binary in place. When tycswap was
-installed with `go install`, it detects the install layout and re-runs
-`go install ...@latest`. When it cannot detect a `go install` layout, it prints
-the manual command and the releases URL instead:
+installed with `go install github.com/tyclab/tycswap/cmd/tycswap@…`, it re-runs
+that for `@latest`. A binary built from a checkout is never replaced from the
+remote; it says so and leaves the update to you:
 
 ```
 $ tycswap upgrade
-Could not detect a `go install` layout (looked for $GOBIN, $GOPATH/bin, $HOME/go/bin).
-  binary: ~/go/bin/tycswap
-To upgrade manually, run:
-  go install git.dpemmons.com/dpemmons/cswap/cmd/cswap@latest
-Or download a release from:
-  https://git.dpemmons.com/dpemmons/cswap/releases
+tycswap was built from a checkout: git pull && make install
 ```
+
+When it cannot detect a `go install` layout, it prints the manual command and
+the releases URL (`https://github.com/tyclab/tycswap/releases`) instead.
 
 On Windows, `tycswap upgrade` never self-replaces; it prints the upgrade command
 for the user to run.

@@ -17,7 +17,13 @@ import "github.com/tyclab/tycswap/internal/platform"
 // same shape on Windows gets the literal command (SelfUpgrade there is
 // print-only — the running .exe is locked), and an unknown shape gets the
 // generic "see instructions" hint.
+//
+// A binary built from a checkout gets CheckoutHint whatever its shape: `make
+// install` puts it in a Go bin dir, but upgrading it is the checkout's job.
 func UpgradeHint(shape InstallShape, plat platform.Platform) string {
+	if DetectBuildSource() == SourceCheckout {
+		return "This binary was " + CheckoutHint + "."
+	}
 	switch {
 	case shape == ShapeGoInstall && plat != platform.Windows:
 		return "Run `tycswap upgrade` to update."

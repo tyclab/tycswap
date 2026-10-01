@@ -901,7 +901,8 @@ variable overridable via ldflags. Cache file keeps the Python
 `<backup_root>/cache/update_check.json`. `SelfUpgrade`: if the running binary
 resolves inside `$GOBIN`/`$GOPATH/bin`/`$HOME/go/bin`, run
 `go install git.dpemmons.com/dpemmons/cswap/cmd/cswap@latest`; otherwise print
-download/upgrade guidance (Windows always print-only).
+download/upgrade guidance (Windows always print-only). **Superseded by A24**
+for the endpoint, the module path, and checkout builds.
 
 ## A7. SIGINT handling rationale (audit 10 §Signal handling)
 
@@ -3392,4 +3393,31 @@ one exists (not under `--json`).
 directory. `purge` removes only tycswap's store, never an old one. `import`
 still reads a `.cswap` export: reading an old file is migration, not
 compatibility, and the envelope format is unchanged.
+
+---
+
+## A24. Self-upgrade installs tycswap, never the project it was forked from
+
+A6 pointed `update.ModulePath` and `update.Endpoint` at the upstream project,
+so after the rename (A23) `tycswap upgrade` of a go-installed binary ran
+`go install <upstream>/cmd/cswap@latest`, replacing tycswap with a different
+program, and the passive notice announced upstream releases. Now:
+
+1. `ModulePath` = `github.com/tyclab/tycswap/cmd/tycswap`, `Endpoint` =
+   `https://api.github.com/repos/tyclab/tycswap/releases/latest` (GitHub
+   schema, `tag_name`), `ReleasesURL` = `https://github.com/tyclab/tycswap/releases`.
+   All three stay package vars, settable with `-ldflags -X` (a test links a
+   probe binary with overrides to keep that true).
+2. A binary built from a checkout is never re-installed from a remote. The
+   signal is the binary's own build info (`runtime/debug.ReadBuildInfo`): a
+   `vcs.*` stamp (Go writes it when building inside a repository: `make
+   build`, `make install`, `go build`, `go install ./cmd/tycswap`) or a
+   `(devel)`/empty main version means checkout; a real module version with no
+   VCS stamp means `go install <module>@<version>` from the module cache. No
+   build info is treated as checkout. A checkout build's `upgrade` prints
+   `tycswap was built from a checkout: git pull && make install` and exits 1;
+   its update notice ends with the same advice instead of "run tycswap
+   upgrade". The install-shape detection of A6 applies only to module builds.
+3. There was no downgrade guard in `SelfUpgrade` to keep: it installs
+   `@latest`, and the notice only fires when the latest tag is semver-greater.
 

@@ -110,6 +110,13 @@ func (u Upgrader) stderr() io.Writer {
 // exePath is the running binary's path (symlink-resolved os.Executable());
 // plat gates the Windows print-only branch.
 func (u Upgrader) SelfUpgrade(exePath string, plat platform.Platform) int {
+	// A checkout build is never re-installed from a remote: `go install
+	// <ModulePath>@latest` would replace the user's own tree with whatever is
+	// published there (Amendment A24).
+	if DetectBuildSource() == SourceCheckout {
+		fmt.Fprintf(u.stdout(), "tycswap was %s\n", CheckoutHint)
+		return 1
+	}
 	shape := DetectInstallShape(exePath, u.getenv(), u.homeDir())
 	cmdArgs := []string{"install", ModulePath + "@latest"}
 	fullCmd := "go " + strings.Join(cmdArgs, " ")

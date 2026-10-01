@@ -323,20 +323,20 @@ func TestReleaseEndpointReceivesRequest(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"tag_name": "v9.9.9"})
 	}))
 	t.Cleanup(srv.Close)
-	withEndpoint(t, srv.URL+"/api/v1/repos/dpemmons/tycswap/releases/latest")
+	withEndpoint(t, srv.URL+"/repos/tyclab/tycswap/releases/latest")
 
 	c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}
 	msg := c.CheckForUpdate("", "v0.1.0", platform.Linux)
 	if msg == "" {
 		t.Fatal("expected a notice")
 	}
-	if want := "/api/v1/repos/dpemmons/tycswap/releases/latest"; gotPath != want {
+	if want := "/repos/tyclab/tycswap/releases/latest"; gotPath != want {
 		t.Errorf("request path = %q, want %q", gotPath, want)
 	}
 }
 
 func TestDefaultEndpointAndCacheTTL(t *testing.T) {
-	if Endpoint != "https://git.dpemmons.com/api/v1/repos/dpemmons/cswap/releases/latest" {
+	if Endpoint != "https://api.github.com/repos/tyclab/tycswap/releases/latest" {
 		t.Errorf("default Endpoint = %q, unexpected", Endpoint)
 	}
 	if fmt.Sprint(CacheTTL) != "24h0m0s" {

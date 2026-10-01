@@ -118,7 +118,7 @@ func (c Checker) CheckForUpdate(exePath, currentVersion string, plat platform.Pl
 	)
 }
 
-// releaseResponse is the subset of the Forgejo (GitHub-compatible) releases
+// releaseResponse is the subset of the GitHub releases
 // schema this checker needs (Amendment A6).
 type releaseResponse struct {
 	TagName string `json:"tag_name"`
@@ -135,6 +135,7 @@ func (c Checker) fetchLatestTag() string {
 	if err != nil {
 		return ""
 	}
+	req.Header.Set("Accept", "application/vnd.github+json")
 	resp, err := c.client().Do(req)
 	if err != nil {
 		return ""
