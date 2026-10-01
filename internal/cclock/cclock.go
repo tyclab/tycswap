@@ -172,8 +172,10 @@ func jitterBackoff() time.Duration {
 // is renamed to a name unique to this attempt, which only one waiter can do,
 // and its mtime is checked again after the rename. Still stale: it is removed.
 // Fresh: another waiter retook the lock between our stat and our rename, so
-// it is put back where it was (unless someone has taken the name since, in
-// which case it is dropped; the protocol has then moved on without it).
+// it is put back where it was, by a rename that fails when the name has been
+// taken since (renameNoReplace: rename(2) alone would replace an empty
+// directory, that is, the lock a third waiter just made). Taken: it is
+// dropped; the protocol has then moved on without it.
 func breakStale(lockDir string, clk clock.Clock) {
 	aside := fmt.Sprintf("%s.stale-%d-%d", lockDir, os.Getpid(), staleSeq.Add(1))
 	if err := os.Rename(lockDir, aside); err != nil {
@@ -183,13 +185,23 @@ func breakStale(lockDir string, clk clock.Clock) {
 	}
 	fi, err := os.Stat(aside)
 	if err == nil && clk.Now().Sub(fi.ModTime()) <= StalenessS {
-		if _, lerr := os.Lstat(lockDir); errors.Is(lerr, fs.ErrNotExist) {
-			if os.Rename(aside, lockDir) == nil {
-				return
-			}
+		if renameNoReplace(aside, lockDir) == nil {
+			return
 		}
 	}
 	_ = os.Remove(aside)
+}
+
+// renameIfAbsent renames oldpath to newpath after checking that newpath does
+// not exist. The two calls are not one operation: a name taken in between is
+// replaced. It is the put-back where renameNoReplace has nothing better.
+func renameIfAbsent(oldpath, newpath string) error {
+	if _, err := os.Lstat(newpath); err == nil {
+		return fs.ErrExist
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return os.Rename(oldpath, newpath)
 }
 
 // staleSeq makes each breakStale attempt's aside name unique in the process.
