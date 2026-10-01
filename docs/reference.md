@@ -2958,7 +2958,10 @@ tycswap codex login [--device-auth] [--alias NAME]
 ### Description
 
 Runs `codex login` (with `--device-auth` when given), then stores the resulting
-account as `tycswap codex add` does. The `codex` binary is resolved on `PATH` and
+account as `tycswap codex add` does. Before `codex login` replaces
+`~/.codex/auth.json`, the live login is written back into its slot under the
+store lock (when it is a managed account), so the outgoing account's newest
+rotated tokens are kept. The `codex` binary is resolved on `PATH` and
 executed directly, without a shell, so a shell function named `codex` does not
 add flags to the login.
 
@@ -3928,6 +3931,18 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   the default login with `tycswap switch`. If a session later fails to
   authenticate, exit it and re-run `tycswap run <n>`. `tycswap list` flags two slots
   that report identical usage and reset times as possibly the same account.
+  When `run` or `env` does prepare a profile for the account that is the
+  default login (with `CLAUDE_CONFIG_DIR` preset), or for a slot whose stored
+  refresh token is the live login's (right after a switch), it seeds the
+  profile from the stored credential without refreshing it, so the default
+  login's refresh token is never consumed by tycswap.
+- **Inactive-account refreshes hold the store lock.** When `list`, `status`
+  or the dashboard refresh an inactive account's expired token, the store lock
+  is taken before the request, the account is re-checked (still inactive, no
+  live session) and its backup re-read; if the backup's refresh token changed
+  meanwhile (another process refreshed it, or a switch wrote it back) the
+  newer credential is used and nothing is refreshed. A busy lock skips the
+  refresh for that pass. The Codex side has worked this way from the start.
 - **At-limit is independent of `usageStatus`.** `atLimit` reflects a relevant
   rate-limit window (including a per-model weekly window from `autoswitch.model`)
   being at or over its limit. An account can be `usageStatus: "ok"` and still

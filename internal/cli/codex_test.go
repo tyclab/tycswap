@@ -835,3 +835,26 @@ func TestStartCodexLoopTicksImmediatelyThenStops(t *testing.T) {
 		t.Error("nil stop")
 	}
 }
+
+// TestCodexLoginCapturesTheOutgoingLoginFirst: codex login overwrites
+// auth.json, so the outgoing managed account's newest (rotated) tokens are
+// written into its snapshot before codex runs.
+func TestCodexLoginCapturesTheOutgoingLoginFirst(t *testing.T) {
+	codexHome(t, nil, nil)
+	seedOne(t)
+	rotated := makeCodexAuth(t, testAcctA, testUserA, "a@example.com", time.Now().Unix()+7200)
+	rotated["tokens"].(map[string]any)["refresh_token"] = "rt-rotated-by-codex"
+	writeLiveAuth(t, rotated)
+	var snapAtSpawn map[string]any
+	stubLogin(t, "/usr/local/bin/codex", nil, 0, func(string, []string) {
+		snapAtSpawn = testStore().ReadSnapshot(authfile.AccountKey(testUserA, testAcctA))
+		writeLiveAuth(t, makeCodexAuth(t, testAcctB, testUserB, "b@example.com", time.Now().Unix()+3600))
+	})
+	if code, out, errb := runCodex(t, "", "codex", "login"); code != 0 {
+		t.Fatalf("exit %d out %q err %q", code, out, errb)
+	}
+	tok, _ := snapAtSpawn["tokens"].(map[string]any)
+	if tok["refresh_token"] != "rt-rotated-by-codex" {
+		t.Fatalf("snapshot at spawn holds %v, want the live login's rotated refresh token", tok["refresh_token"])
+	}
+}

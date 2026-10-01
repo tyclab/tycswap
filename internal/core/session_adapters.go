@@ -37,6 +37,13 @@ func (sw *Switcher) ReadAccountConfig(num, email string) (map[string]any, error)
 	return m, nil
 }
 
+// LiveCredentials returns the live default login's credential, "" when absent
+// or unreadable (session.Accounts).
+func (sw *Switcher) LiveCredentials() string {
+	creds, _, _ := sw.Store.Creds.ReadActive()
+	return creds
+}
+
 // Platform returns the store's detected platform. store.Store.Platform is a
 // FIELD (DESIGN A13 rationale: a promoted field of the same name would make
 // this method unimplementable), so this method shadows the promotion

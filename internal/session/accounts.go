@@ -40,6 +40,9 @@ type Accounts interface {
 	// login resolves to, or nil (unmanaged/no live login). Used by the
 	// same-account fast path.
 	CurrentAccountNumber() *string
+	// LiveCredentials returns the live default login's credential, "" when
+	// there is none or it cannot be read. Bootstrap compares lineages with it.
+	LiveCredentials() string
 	// BackupDir is the tycswap backup root; the FileLock lives at <BackupDir>/.lock.
 	BackupDir() string
 	// Platform is the switcher's platform (drives symlink-vs-copy sharing and

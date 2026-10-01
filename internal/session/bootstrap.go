@@ -14,6 +14,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/sessprofile"
 )
 
@@ -112,7 +113,17 @@ func (m *Manager) bootstrap(sessionDir, accountNum, email, orgUUID string) error
 	// persist a possibly-rotated refresh token back to backup. Setup-token
 	// accounts have no refresh token — skip silently. Any refresh failure is
 	// non-fatal (warn + keep the stored creds).
-	if hasRefreshToken(creds) {
+	//
+	// Not when the slot shares its lineage with the live default login: right
+	// after a switch the backup holds the live login's refresh token, and
+	// rotating it here would log the default login out. That is the case when
+	// the slot IS the current account (reachable with CLAUDE_CONFIG_DIR preset,
+	// which bypasses the same-account fast path) or the backup's refresh-token
+	// fingerprint matches the live credential's. The caller holds the lock, so
+	// the backup read above is current.
+	if hasRefreshToken(creds) && m.sharesLiveLineage(accountNum, creds) {
+		m.logInfof("Skipped the bootstrap refresh for account %s: it shares the live login's refresh token", accountNum)
+	} else if hasRefreshToken(creds) {
 		if refreshed := m.refresh(creds); refreshed != "" {
 			creds = refreshed
 			if err := m.accounts.WriteAccountCredentials(accountNum, email, creds); err != nil {
@@ -250,4 +261,21 @@ func (m *Manager) isSessionValid(sessionDir, email, orgUUID string) bool {
 		return false
 	}
 	return true
+}
+
+// sharesLiveLineage reports whether refreshing accountNum's backup creds could
+// consume the live default login's refresh token.
+func (m *Manager) sharesLiveLineage(accountNum, creds string) bool {
+	if cur := m.accounts.CurrentAccountNumber(); cur != nil && *cur == accountNum {
+		return true
+	}
+	live := m.accounts.LiveCredentials()
+	if live == "" {
+		return false
+	}
+	if live == creds {
+		return true
+	}
+	a, b := oauth.CredentialFingerprint(live), oauth.CredentialFingerprint(creds)
+	return a != nil && b != nil && *a == *b
 }

@@ -642,6 +642,13 @@ func codexLogin(ctx context.Context, sw *codexswitcher.Switcher, deviceAuth bool
 	if deviceAuth {
 		args = append(args, "--device-auth")
 	}
+	// codex login overwrites ~/.codex/auth.json. Store the outgoing account's
+	// newest tokens first: codex rotates refresh tokens in place, so the copy
+	// in its snapshot may already be dead.
+	if err := sw.CaptureLive(); err != nil {
+		errorTo(s.err, "Could not save the current Codex login before 'codex login' replaces it: "+err.Error())
+		return 1
+	}
 	code, err := runCodexLogin(binary, args, s)
 	if err != nil || code != 0 {
 		errorTo(s.err, "codex login did not complete.")

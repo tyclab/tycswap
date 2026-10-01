@@ -219,6 +219,14 @@ func (s *Switcher) ResolveAccount(identifier string) (number, email, label strin
 // Matching on the live file's identity rather than on the registry's idea of
 // the active slot is what makes this repair a clobber instead of committing
 // one. An unmanaged login is not ours to store.
+// CaptureLive writes the live auth.json back into its managed slot's snapshot
+// under the store lock, so a command about to replace the live file outside a
+// switch (codex login) cannot lose the outgoing account's newest rotated
+// refresh token. An unmanaged or unidentifiable live login is left alone.
+func (s *Switcher) CaptureLive() error {
+	return s.withLock(s.captureLive)
+}
+
 func (s *Switcher) captureLive() error {
 	payload := authfile.ReadLivePayload()
 	if payload == nil {
