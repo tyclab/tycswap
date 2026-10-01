@@ -127,6 +127,75 @@ func WriteCredentialsFile(raw string) error {
 	return atomicWrite(paths.GetCredentialsPath(), []byte(raw))
 }
 
+// MCPOAuthKey is the top-level key of ~/.claude/.credentials.json under which
+// Claude Code keeps its MCP server OAuth tokens. Those tokens are keyed by
+// server, not by Claude account: they belong to the seat, not to the login, so
+// a switch carries the live value over the stored account blob and a capture
+// leaves it out. It is the whole allow-list of seat-wide keys; every other key
+// (claudeAiOauth, trustedDeviceToken, ...) travels with the account.
+const MCPOAuthKey = "mcpOAuth"
+
+// SpliceCredentials returns the credential text a switch writes live: stored
+// (an account's backup blob) with live's MCPOAuthKey value carried over it. It
+// is a pure function over the two texts.
+//
+// The stored text is returned verbatim, with a nil error, when live is blank or
+// is a JSON object without the key: there is nothing to carry, and the bytes a
+// slot holds are written exactly. It is also returned verbatim when either text
+// is not a JSON object (malformed, or an API-key string) — then with a non-nil
+// error naming why no splice happened, so the caller can log it and still
+// write. A stored blob's own stale MCPOAuthKey value never survives: the live
+// value wins, as it is the one the seat's servers issued last.
+func SpliceCredentials(stored, live string) (string, error) {
+	if strings.TrimSpace(live) == "" {
+		return stored, nil
+	}
+	liveObj, ok := decodeObject(live)
+	if !ok {
+		return stored, errors.New("live credentials are not a JSON object")
+	}
+	mcp, present := liveObj[MCPOAuthKey]
+	if !present {
+		return stored, nil
+	}
+	storedObj, ok := decodeObject(stored)
+	if !ok {
+		return stored, errors.New("stored credential is not a JSON object")
+	}
+	storedObj[MCPOAuthKey] = mcp
+	encoded, err := marshalCompact(storedObj)
+	if err != nil {
+		return stored, err
+	}
+	return string(encoded), nil
+}
+
+// decodeObject parses text into a JSON object, keeping numbers as json.Number
+// so a re-encode reproduces them (expiresAt is an epoch-millisecond integer).
+// ok is false for malformed text and for any non-object top level.
+func decodeObject(text string) (map[string]any, bool) {
+	dec := json.NewDecoder(strings.NewReader(text))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, false
+	}
+	m, ok := v.(map[string]any)
+	return m, ok
+}
+
+// marshalCompact renders v as compact JSON without HTML escaping, the form
+// Claude Code itself writes its credentials file in (JSON.stringify).
+func marshalCompact(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
+}
+
 // SpliceOAuthAccount parses configText, replaces its "oauthAccount" with oauth,
 // and returns the re-serialized config text (two-space indent, no trailing
 // newline). Every other key of configText is preserved. Empty or non-object
