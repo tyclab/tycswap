@@ -3630,7 +3630,13 @@ opens can make the browser do so. The design keeps both from driving it.
 carries `provider` and `key` (`AccountSnapshot.Key`), and every account route
 takes the key (`claude:2`). A bare reference answers 400 and another
 provider's key 404 before any façade is reached, so a later Codex row can
-never address the Claude account with the same number.
+never address the Claude account with the same number. One row shape for
+every provider: when token status is asked for, each row carries
+`tokenStatus` as its own string (`""` when there is none), the way the
+Claude rows do today. `tycswap codex list --json` reports token status as a
+top-level array beside its rows; the dashboard's Codex rows, when they
+arrive, carry the per-row string instead, and the state document never
+gains a top-level `tokenStatus`.
 
 **Live data.** One poll loop rebuilds the state document every interval and
 after every mutation; engine events are fanned out as `auto` frames and
@@ -3683,8 +3689,9 @@ another process and terminates hard, PIDs are reused quickly.
 colour come from `internal/brand`, overridable at link time and validated
 before use.
 
-**Follow-ups, deliberately not in this extension:** Codex rows, a Codex
-façade and a `codex` state section; the Codex auto loop moving out of
+**Follow-ups, deliberately not in this extension:** Codex rows (each with
+the per-row `tokenStatus` string above), a Codex façade and a `codex` state
+section; the Codex auto loop moving out of
 `autoCommand` into a host the dashboard shares; `add --login` and `codex
 login` as a cancellable job streamed over SSE; `map`/`unmap` in the
 dashboard; a remote mode for a tray across a VM boundary, which re-adds a

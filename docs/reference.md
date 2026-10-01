@@ -2282,9 +2282,12 @@ Export and import stay on the command line (`tycswap export`, `tycswap
 import`): the dashboard never writes credentials to a file or reads one.
 
 The page updates live: a state document arrives on connect, on every poll
-tick, after every action and after each batch of engine events. The
-dashboard shows and drives Claude accounts only; Codex accounts are managed
-with `tycswap codex`.
+tick, after every action and after each batch of engine events. Each
+account row in it carries the fields of a `tycswap list --json` row plus
+`provider` and `key`; with `?tokenStatus=1` every row also carries
+`tokenStatus`, its own token-status string (`""` when there is none), and
+the document has no top-level `tokenStatus`. The dashboard shows and drives
+Claude accounts only; Codex accounts are managed with `tycswap codex`.
 
 The URL printed at start carries a one-time token. On macOS and Linux,
 WSL included, the browser is handed a `file://` URL of a 0600 redirect page
