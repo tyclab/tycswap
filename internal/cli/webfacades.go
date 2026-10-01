@@ -313,24 +313,6 @@ func (a *autoFacade) onEvent(ev autoswitch.Event) {
 	}
 }
 
-// waitStopped blocks until the most recently started engine goroutine has
-// returned, or the timeout passes. Tests use it so no tick can outlive the
-// test's temp dir.
-func (a *autoFacade) waitStopped(timeout time.Duration) bool {
-	a.mu.Lock()
-	done := a.done
-	a.mu.Unlock()
-	if done == nil {
-		return true
-	}
-	select {
-	case <-done:
-		return true
-	case <-time.After(timeout):
-		return false
-	}
-}
-
 var (
 	_ web.Facade         = (*core.Switcher)(nil)
 	_ web.AccountOps     = (*core.Switcher)(nil)

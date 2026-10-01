@@ -104,8 +104,9 @@
   }
 
   function accountName(a) { return a.alias || a.email || ('#' + a.number); }
-  // Claude rows are the ones every action targets; other providers' rows
-  // (Codex) are shown read-only and numbered in their own slot space.
+  // Every row is a Claude row today (the snapshot lists Claude accounts
+  // only); rows carry provider and key so another provider's rows, whose
+  // slot numbers overlap, could be told apart.
   function isClaude(a) { return (a.provider || 'claude') === 'claude'; }
   function claudeRows(st) { return ((st && st.accounts) || []).filter(isClaude); }
   // rowKey is the account's API address: every account route takes the row
@@ -378,16 +379,13 @@
   }
 
   // engineSetting: the value the RUNNING engine was started with (the Go
-  // AutoView.Settings map is keyed "autoswitch.<key>"; bare names are accepted
-  // too), falling back to the saved settings.json value when not running.
-  function engineSetting(st, names, settingsKey) {
+  // AutoView.Settings map is keyed "autoswitch.<key>"), falling back to the
+  // saved settings.json value when not running.
+  function engineSetting(st, key) {
     var a = st.auto || {};
     var s = (a.running && a.settings) || {};
-    var keys = [settingsKey].concat(names.map(function (n) { return 'autoswitch.' + n; }), names);
-    for (var i = 0; i < keys.length; i++) {
-      if (s[keys[i]] !== undefined && s[keys[i]] !== null && s[keys[i]] !== '') { return s[keys[i]]; }
-    }
-    return settingValue(st, settingsKey);
+    if (s[key] !== undefined && s[key] !== null && s[key] !== '') { return s[key]; }
+    return settingValue(st, key);
   }
 
   // parseModelNames mirrors settings.ParseModelNames: COMMA-separated, never
@@ -442,7 +440,7 @@
 
   function quarantineReason(entry) {
     if (!entry || typeof entry !== 'object') { return typeof entry === 'string' ? entry : ''; }
-    return entry.reason || entry.cause || entry.kind || '';
+    return entry.reason || '';
   }
 
   // quarantineSince: the entry's "at" as Unix seconds. The engine writes an
@@ -462,8 +460,8 @@
   // binding counted window.
   function rankCandidates(st) {
     var auto = st.auto || {};
-    var models = parseModelNames(engineSetting(st, ['model', 'Model', 'models'], 'autoswitch.model'));
-    var strat = engineSetting(st, ['strategy', 'Strategy'], 'autoswitch.strategy') || 'best';
+    var models = parseModelNames(engineSetting(st, 'autoswitch.model'));
+    var strat = engineSetting(st, 'autoswitch.strategy') || 'best';
     var threshold = pctNum(settingValue(st, 'autoswitch.threshold')) || 90;
     if (auto.running && typeof auto.threshold === 'number') { threshold = auto.threshold; }
     var quarantine = quarantineMap(auto);
@@ -530,10 +528,8 @@
   function modelWindowNames(st) {
     var names = {};
     claudeRows(st).forEach(function (a) {
-      var u = a && a.usage;
-      var scoped = (u && (u.scoped || u.models || u.perModel)) || [];
+      var scoped = (a && a.usage && a.usage.scoped) || [];
       if (Array.isArray(scoped)) { scoped.forEach(function (w) { if (w && w.name) { names[w.name] = true; } }); }
-      else if (scoped && typeof scoped === 'object') { Object.keys(scoped).forEach(function (k) { names[k] = true; }); }
     });
     return Object.keys(names).sort();
   }
@@ -673,13 +669,10 @@
   function renderAccounts(st) {
     var body = $('accounts-body');
     clear(body);
-    var list = st.accounts || [];
-    var nClaude = claudeRows(st).length;
-    var multi = list.some(function (a) { return !isClaude(a); });
-    list = claudeRows(st);
+    var list = claudeRows(st);
     $('accounts-empty').hidden = list.length > 0;
     $('accounts-tbl').hidden = list.length === 0;
-    $('accounts-sub').textContent = nClaude + (nClaude === 1 ? ' account' : ' accounts') + (st.activeNumber !== null && st.activeNumber !== undefined ? ' · active #' + st.activeNumber : ' · none active') + (multi ? ' · other providers are listed with ' + NAME + ' codex list' : '');
+    $('accounts-sub').textContent = list.length + (list.length === 1 ? ' account' : ' accounts') + (st.activeNumber !== null && st.activeNumber !== undefined ? ' · active #' + st.activeNumber : ' · none active');
     var accIgnored = ignoredModelsNote(st, parseModelNames(settingValue(st, 'autoswitch.model')));
     if (accIgnored) { $('accounts-sub').appendChild(document.createTextNode(' · ')); $('accounts-sub').appendChild(accIgnored); }
     var tokenCol = document.querySelector('.col-token');
@@ -895,8 +888,8 @@
     clear(body);
     var actions = $('auto-actions');
     var slider = $('threshold-slider');
-    var strat = String(engineSetting(st, ['strategy', 'Strategy'], 'autoswitch.strategy') || 'best');
-    var models = parseModelNames(engineSetting(st, ['model', 'Model', 'models'], 'autoswitch.model'));
+    var strat = String(engineSetting(st, 'autoswitch.strategy') || 'best');
+    var models = parseModelNames(engineSetting(st, 'autoswitch.model'));
     if (!a) {
       badge.textContent = 'unavailable'; badge.className = 'chip chip-outline';
       body.appendChild(el('div', { class: 'empty-state' }, [el('span', { class: 'title', text: 'Auto-switch is not wired into this build' }), el('code', { text: NAME + ' auto' })]));
@@ -1168,9 +1161,7 @@
     ]));
     var save = el('button', { type: 'button', class: 'btn btn-sm btn-primary', text: 'Save', 'aria-label': 'Save ' + sv.key });
     save.addEventListener('click', function () {
-      var value = controlValue(input, sv);
-      var go = Promise.resolve(true);
-      go.then(function (ok) { if (ok) { run(save, 'Save ' + humanLabel(sv.key), api('POST', '/api/settings/' + encodeURIComponent(sv.key), { value: value })); } });
+      run(save, 'Save ' + humanLabel(sv.key), api('POST', '/api/settings/' + encodeURIComponent(sv.key), { value: controlValue(input, sv) }));
     });
     input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); save.click(); } });
     var reset = el('button', { type: 'button', class: 'btn btn-sm btn-ghost', text: 'Reset', 'aria-label': 'Reset ' + sv.key + ' to default', disabled: !!sv.isDefault, title: 'Remove the override and fall back to the default' });
@@ -1200,19 +1191,6 @@
       sections[sec].forEach(function (sv) { body.appendChild(settingRow(sv)); });
     });
   }
-
-  document.addEventListener('click', function (ev) {
-    var btn = ev.target.closest ? ev.target.closest('button[data-copy]') : null;
-    if (!btn) { return; }
-    var text = ($(btn.getAttribute('data-copy')) || {}).textContent || '';
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(function () { toast('Copied.', 'ok'); }, function () { toast('Copy failed — select the text and copy manually.'); });
-    } else {
-      toast('Copy is not available here — select the text and copy manually.');
-    }
-  });
-
-  // ---- render root -----------------------------------------------------------
 
   // ---- guarded section rendering --------------------------------------------
   // A state event arrives every poll tick. Rebuilding a section's DOM on each
@@ -1255,7 +1233,7 @@
   // without changing what is painted (usage freshness, server time, the event
   // ring the log consumes on its own path) are dropped, otherwise the guard
   // would repaint on every poll and defeat its purpose.
-  var VOLATILE = { usageAgeSeconds: true, usageFetchedAt: true, serverTime: true, events: true, lastHookRun: true };
+  var VOLATILE = { usageAgeSeconds: true, usageFetchedAt: true, serverTime: true, events: true };
   function sigOf(data) {
     return JSON.stringify(data === undefined ? null : data, function (k, v) { return VOLATILE[k] ? undefined : v; });
   }

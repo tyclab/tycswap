@@ -230,16 +230,16 @@ func TestState_TokenStatusEnrichment(t *testing.T) {
 	}
 }
 
-func TestState_TokenStatus_AltKeyAndListError(t *testing.T) {
+func TestState_TokenStatus_OddPayloadAndListError(t *testing.T) {
 	h := newHarness(t)
 	h.ops.mu.Lock()
-	h.ops.listPayload = map[string]any{"accounts": []any{map[string]any{"number": 2, "token_status": "oauth: expired"}, "junk", map[string]any{"number": "3", "tokenStatus": 5}}}
+	h.ops.listPayload = map[string]any{"accounts": []any{map[string]any{"number": 2, "tokenStatus": "oauth: expired"}, "junk", map[string]any{"number": "3", "tokenStatus": 5}}}
 	h.ops.mu.Unlock()
 	var got map[string]any
 	_ = json.Unmarshal(readBody(t, h.get("/api/state?tokenStatus=1")), &got)
 	rows := got["accounts"].([]any)
 	if rows[1].(map[string]any)["tokenStatus"] != "oauth: expired" {
-		t.Errorf("snake_case key not lifted: %v", rows[1])
+		t.Errorf("status not lifted by number: %v", rows[1])
 	}
 	if rows[2].(map[string]any)["tokenStatus"] != "" {
 		t.Errorf("non-string status not blanked: %v", rows[2])

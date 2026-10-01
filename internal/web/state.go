@@ -1,7 +1,7 @@
 // state.go — the GET /api/state document: accounts (jsonout usage + at-limit
 // fields, exactly as `tycswap list --json` serialises them, optionally enriched
-// with the token status, plus other providers' rows read-only), sessions,
-// settings, auto-switch engine, strategies, server time.
+// with the token status), sessions, settings, auto-switch engine, strategies,
+// server time.
 //
 // Implements DESIGN A25 "API. GET /api/state → one State document". Account
 // rows are maps because the additive at-limit / freshness / tokenStatus keys
@@ -153,9 +153,6 @@ func (s *Server) enrichTokenStatus(rows []map[string]any) {
 					continue
 				}
 				ts, _ := row["tokenStatus"].(string)
-				if ts == "" {
-					ts, _ = row["token_status"].(string)
-				}
 				byNum[fmt.Sprint(row["number"])] = ts
 			}
 		}

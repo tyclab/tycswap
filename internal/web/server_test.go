@@ -388,7 +388,7 @@ func TestIndexHTML_HasEverySection(t *testing.T) {
 			t.Errorf("tab/panel %q missing", tab)
 		}
 	}
-	for _, id := range []string{"modal", "modal-form", "threshold-slider", "nextbest-list", "auto-log", "quarantine-body", "auto-settings", "auto-settings-empty", "hdr-acct", "token-status-toggle", "accounts-body", "sessions-body", "toasts"} {
+	for _, id := range []string{"modal", "modal-form", "threshold-slider", "nextbest-list", "auto-log", "quarantine-body", "auto-settings", "auto-settings-empty", "hdr-acct", "token-status-toggle", "accounts-body", "toasts"} {
 		if !strings.Contains(index, `id="`+id+`"`) {
 			t.Errorf("element #%s missing", id)
 		}
