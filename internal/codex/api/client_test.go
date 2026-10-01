@@ -95,3 +95,36 @@ func TestRequestsHonourTheCallerContext(t *testing.T) {
 		t.Errorf("requests ignored the context deadline: %v", time.Since(start))
 	}
 }
+
+// A 307/308 from any endpoint is not followed: the token endpoint's answer
+// would otherwise be re-POSTed, refresh token included, to whatever Location
+// names. The redirect is a failed request; the target sees nothing. The
+// default client, used when none is set, behaves the same.
+func TestRedirectsAreNotFollowed(t *testing.T) {
+	target := newServer(t, 200, mustJSON(t, map[string]any{"access_token": "leaked"}), nil)
+	for _, status := range []int{307, 308, 302} {
+		redirect := newServer(t, status, "", map[string]string{"Location": target.srv.URL + "/elsewhere"})
+		for _, c := range []*HTTPClient{clientFor(redirect), func() *HTTPClient {
+			c := clientFor(redirect)
+			c.Client = nil
+			return c
+		}()} {
+			ctx := context.Background()
+			if got := c.TryRefresh(ctx, defaultAuth(t)).Kind; got != KindTransient {
+				t.Errorf("%d: refresh kind = %q, want transient", status, got)
+			}
+			if got := c.FetchUsage(ctx, "at", "acct"); got.Usage != nil || got.Sentinel == "" {
+				t.Errorf("%d: usage = %+v, want a sentinel and no data", status, got)
+			}
+			if ws, err := c.FetchAccounts(ctx, "at", "acct"); err == nil || ws != nil {
+				t.Errorf("%d: accounts = %v, %v, want an error", status, ws, err)
+			}
+		}
+		if redirect.hits() != 6 {
+			t.Errorf("%d: redirecting server saw %d requests, want 6", status, redirect.hits())
+		}
+	}
+	if target.hits() != 0 {
+		t.Errorf("redirect target saw %d requests; a refresh token was re-posted", target.hits())
+	}
+}

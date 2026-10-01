@@ -3509,7 +3509,8 @@ files (`.settings.lock`, `.mappings.lock`), not the store lock, because
 writers fsync the temp file and the directory.
 
 **6. HTTP responses are bounded and typed.** Finding *"the Claude HTTP client
-lacks limits and type checks"*: redirects are returned, not followed;
+lacks limits and type checks"*: redirects are returned, not followed, by the
+Claude and the Codex client alike (a 3xx is a failed request);
 success bodies are capped at 1 MiB; `access_token` must be a non-empty string
 and `0 < expires_in < 1e7`. Finding *"refresh error bodies go to the log"*:
 only the OAuth error code is logged.
