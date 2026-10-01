@@ -22,7 +22,8 @@ var (
 	// SessionCookie names the dashboard's session cookie.
 	SessionCookie = "tycswap_session"
 	// RedirectFilePrefix prefixes the 0600 redirect page `tycswap web` writes
-	// to the temp directory so the launch token never appears on a command line.
+	// under the user's runtime or cache directory so the launch token never
+	// appears on a command line.
 	RedirectFilePrefix = "tycswap-dashboard-"
 	// AccentColor is the dashboard's accent: links, focus rings, the active
 	// tab, primary buttons and the switch target highlight. A #rrggbb colour.

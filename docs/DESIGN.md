@@ -3614,7 +3614,11 @@ opens can make the browser do so. The design keeps both from driving it.
    `eval`, so an alias, a path or a session title cannot become markup.
 8. **Opening the browser** never puts the launch token on a command line on
    unix, where argv is world-readable: `tycswap web` writes a 0600 redirect
-   page to the temp directory and hands the launcher its `file://` URL
+   page under a private 0700 directory (`$XDG_RUNTIME_DIR/<name>`, else
+   `<user cache dir>/<name>`; never the shared temp directory, which another
+   user can fill to force the write to fail) and hands the launcher its
+   `file://` URL; when the page cannot be written nothing is handed to a
+   launcher and the CLI points at the printed URL
    (`internal/browser`: `open`; `wslview`, `xdg-open`, `sensible-browser`,
    each resolved on PATH and started directly, so no shell sees the URL and
    "could not open a browser" is reported only when no launcher started).

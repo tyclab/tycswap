@@ -26,29 +26,58 @@ import (
 	"github.com/tyclab/tycswap/internal/web"
 )
 
-// Seams for the opener's tests: which platform's rules apply, and what
-// finally hands a URL to the browser.
+// Seams for the opener's tests: which platform's rules apply, what finally
+// hands a URL to the browser, and where the user's cache directory is.
 var (
 	browserGOOS   = runtime.GOOS
 	launchBrowser = browser.Open
+	userCacheDir  = os.UserCacheDir
 )
 
 // redirectFileTTL is how long the redirect page stays on disk: the browser
 // must still find it when it gets round to opening it (a cold start, or on
-// WSL a hop to the Windows side), and it carries a token, so not longer.
+// WSL a hop to the Windows side), and it carries a token, so not longer. The
+// timer belongs to the server process, so the page outlives a server that is
+// stopped sooner.
 const redirectFileTTL = 30 * time.Second
+
+// redirectDir is the per-user directory the redirect page is written to,
+// created 0700: $XDG_RUNTIME_DIR/<name> (the runtime directory is 0700 by
+// its specification and gone at logout), else <user cache dir>/<name>. Never
+// the shared temp directory: it is world-writable, usually a size-limited
+// tmpfs with no per-user quota, so another local user could fill it and force
+// the write to fail.
+func redirectDir(name string) (string, error) {
+	if run := os.Getenv("XDG_RUNTIME_DIR"); run != "" {
+		dir := filepath.Join(run, name)
+		if err := os.MkdirAll(dir, 0o700); err == nil {
+			return dir, nil
+		}
+	}
+	base, err := userCacheDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(base, name)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
 
 // openBrowser opens the dashboard URL, which carries the one-time launch
 // token.
 //
 // On Unix — WSL included — a browser launcher's argv is readable by every
 // local user (/proc, ps), so the token never goes on a command line there: it
-// is written into a 0600 HTML page under the temp directory that redirects to
-// the URL, and the launcher gets that page's file:// URL. On WSL the launcher
-// chain reaches the Windows browser through wslview, or an xdg-open that
-// translates the Linux path. The token is single-use on the server side as
-// well, so even a captured URL is dead after the first open. If the page
-// cannot be written, the plain URL is the last resort.
+// is written into a 0600 HTML page under a private 0700 directory
+// (redirectDir) that redirects to the URL, and the launcher gets that page's
+// file:// URL. On WSL the launcher chain reaches the Windows browser through
+// wslview, or an xdg-open that translates the Linux path. The token is
+// single-use on the server side as well, so even a captured URL is dead after
+// the first open. If the page cannot be written, the URL is NOT handed to a
+// launcher: the error makes `tycswap web` tell the user to open the printed
+// URL instead, where only their own terminal shows it.
 //
 // On Windows the URL goes to the browser directly: a file: page there depends
 // on .html being associated with a browser and on file URLs not being blocked
@@ -59,9 +88,13 @@ var openBrowser = func(url string) error {
 		return launchBrowser(url)
 	}
 	b := brand.Sanitized()
-	f, err := os.CreateTemp("", b.RedirectFilePrefix+"*.html")
+	dir, err := redirectDir(b.Name)
 	if err != nil {
-		return launchBrowser(url) // last resort: the plain URL
+		return fmt.Errorf("cannot create a private directory for the redirect page: %w", err)
+	}
+	f, err := os.CreateTemp(dir, b.RedirectFilePrefix+"*.html")
+	if err != nil {
+		return fmt.Errorf("cannot write the redirect page: %w", err)
 	}
 	name := f.Name()
 	_ = f.Chmod(0o600)
@@ -69,7 +102,7 @@ var openBrowser = func(url string) error {
 	if _, err := f.WriteString(page); err != nil {
 		_ = f.Close()
 		_ = os.Remove(name)
-		return launchBrowser(url)
+		return fmt.Errorf("cannot write the redirect page: %w", err)
 	}
 	_ = f.Close()
 	time.AfterFunc(redirectFileTTL, func() { _ = os.Remove(name) })
@@ -155,6 +188,9 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 	if !noOpen {
 		if err := openBrowser(url); err != nil {
 			fmt.Fprintln(s.err, "Could not open a browser; visit the URL above.")
+			if debug {
+				fmt.Fprintln(s.err, err.Error())
+			}
 		}
 	}
 	fmt.Fprintln(s.err, "Press Ctrl-C to stop.")

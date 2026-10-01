@@ -2280,15 +2280,18 @@ with `tycswap codex`.
 
 The URL printed at start carries a one-time token. On macOS and Linux,
 WSL included, the browser is handed a `file://` URL of a 0600 redirect page
-in the temp directory (removed 30 seconds later), so the token never appears
-on a command line; the launcher chain is `wslview`, `xdg-open`,
-`sensible-browser` (`open` on macOS), each looked up on `PATH` and started
-directly, without a shell. On WSL this relies on `wslview`, or an `xdg-open`
-that translates Linux paths, to reach the Windows browser. On Windows the
-URL goes to the default browser directly (ShellExecuteW, then `rundll32
-url.dll,FileProtocolHandler`, then `cmd /c start`). When no launcher starts,
-`tycswap web` says so and the printed URL is the way in; if the redirect
-page cannot be written, the plain URL is the last resort.
+under a private 0700 directory of the user's own (`$XDG_RUNTIME_DIR/tycswap`,
+else `tycswap/` in the user cache directory, never the shared temp
+directory; the page is removed 30 seconds later while the server runs), so
+the token never appears on a command line; the launcher chain is `wslview`,
+`xdg-open`, `sensible-browser` (`open` on macOS), each looked up on `PATH`
+and started directly, without a shell. On WSL this relies on `wslview`, or
+an `xdg-open` that translates Linux paths, to reach the Windows browser. On
+Windows the URL goes to the default browser directly (ShellExecuteW, then
+`rundll32 url.dll,FileProtocolHandler`, then `cmd /c start`). When no
+launcher starts, or the redirect page cannot be written, `tycswap web` says
+`Could not open a browser; visit the URL above.` and hands nothing to a
+launcher: the printed URL is the way in.
 
 **Security model.** The server listens on a loopback address only and
 refuses any other before it accepts a connection. Each start mints three
@@ -2351,7 +2354,8 @@ a key of another provider answers 404, because slot numbers are per provider.
 Reads and writes what the CLI commands behind each action do (the backup
 root's `sequence.json`, `settings.json`, `autoswitch_state.json`, the
 credential stores, Claude Code's files). Writes a 0600
-`tycswap-dashboard-*.html` redirect page to the temp directory on macOS and
+`tycswap-dashboard-*.html` redirect page under `$XDG_RUNTIME_DIR/tycswap`
+(else `tycswap/` in the user cache directory, created 0700) on macOS and
 Linux. Reads `sessions/*.json` and transcripts under the Claude config
 directory and under each session profile in `<backup root>/sessions/`.
 
@@ -2364,7 +2368,8 @@ switcher cannot be built or the port cannot be bound; `2` for a usage error.
 
 On stderr: `Dashboard: http://127.0.0.1:<port>/?token=<launch token>`, then
 `Press Ctrl-C to stop.`; `Could not open a browser; visit the URL above.` when
-no launcher worked.
+no launcher started or the redirect page could not be written (`--debug`
+adds the reason on the next line).
 
 ### Errors
 
@@ -4250,7 +4255,7 @@ link time with `-ldflags -X` and no source patch:
 | `github.com/tyclab/tycswap/internal/brand.Name` | `tycswap` | the command name the dashboard prints in its hints |
 | `github.com/tyclab/tycswap/internal/brand.DisplayName` | `tycswap` | page title and header of the dashboard |
 | `github.com/tyclab/tycswap/internal/brand.SessionCookie` | `tycswap_session` | name of the dashboard's session cookie |
-| `github.com/tyclab/tycswap/internal/brand.RedirectFilePrefix` | `tycswap-dashboard-` | prefix of the 0600 redirect page `tycswap web` writes to the temp directory |
+| `github.com/tyclab/tycswap/internal/brand.RedirectFilePrefix` | `tycswap-dashboard-` | prefix of the 0600 redirect page `tycswap web` writes under the user's runtime or cache directory |
 | `github.com/tyclab/tycswap/internal/brand.AccentColor` | `#5aa2ff` | the dashboard accent: links, focus rings, active tab, primary buttons, the switch target |
 
 ```
