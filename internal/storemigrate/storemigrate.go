@@ -196,7 +196,7 @@ func Hint(newRoot string, oldRoots []string) string {
 	if !ok || samePath(old, newRoot) {
 		return ""
 	}
-	return fmt.Sprintf("a cswap store exists at %s; `tycswap migrate` copies it once", old)
+	return fmt.Sprintf("a claude-swap store exists at %s; `tycswap migrate` copies it once", old)
 }
 
 // Run copies the old store into the new one, once. It never writes, moves or

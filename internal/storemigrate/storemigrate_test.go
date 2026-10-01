@@ -235,7 +235,7 @@ func TestFindOldPrefersFirstWithData(t *testing.T) {
 func TestHint(t *testing.T) {
 	old := oldStore(t)
 	newRoot := filepath.Join(t.TempDir(), "tycswap")
-	want := "a cswap store exists at " + old + "; `tycswap migrate` copies it once"
+	want := "a claude-swap store exists at " + old + "; `tycswap migrate` copies it once"
 	if got := Hint(newRoot, []string{old}); got != want {
 		t.Errorf("Hint = %q, want %q", got, want)
 	}

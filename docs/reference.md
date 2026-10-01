@@ -2500,7 +2500,7 @@ Until the copy is made, every other command prints one line on stderr while
 tycswap's store is empty and an old store exists (not in `--json` mode):
 
 ```
-a cswap store exists at <path>; `tycswap migrate` copies it once
+a claude-swap store exists at <path>; `tycswap migrate` copies it once
 ```
 
 ### Files

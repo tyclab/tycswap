@@ -51,7 +51,7 @@ func runMig(t *testing.T, argv ...string) (int, string, string) {
 
 func TestOldStoreHintOnOtherCommands(t *testing.T) {
 	old, _ := migrateHome(t)
-	want := "a cswap store exists at " + old + "; `tycswap migrate` copies it once"
+	want := "a claude-swap store exists at " + old + "; `tycswap migrate` copies it once"
 
 	_, _, stderr := runMig(t, "alias", "--help")
 	if !strings.Contains(stderr, want) || strings.Count(stderr, "\n") != 1 {
