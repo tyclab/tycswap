@@ -58,7 +58,7 @@ func migrateCommand(_ string, argv []string, s ioStreams) int {
 		switch {
 		case errors.Is(err, storemigrate.ErrNoOldStore):
 			e = cerr.Migration("No old store to copy (looked in %s).", strings.Join(paths.OldBackupRoots(), ", "))
-		case errors.Is(err, storemigrate.ErrNotEmpty):
+		case errors.Is(err, storemigrate.ErrNotEmpty), errors.Is(err, storemigrate.ErrConflict):
 			e = cerr.Migration("%s", err.Error())
 		default:
 			e = cerr.Migration("Copy from %s to %s failed: %v", rep.From, rep.To, err)
@@ -99,6 +99,8 @@ func migrateJSON(rep storemigrate.Report) map[string]any {
 		"entries":       entries,
 		"skipped":       skipped,
 		"keychain":      kc,
+		"resumed":       rep.Resumed,
+		"verified":      nonNilStrings(rep.Verified),
 	}
 }
 
@@ -108,6 +110,12 @@ func printMigrateReport(out io.Writer, rep storemigrate.Report) {
 	verb := "Copied"
 	if rep.DryRun {
 		verb = "Would copy"
+	}
+	if rep.Resumed {
+		verb = "Resumed copy of"
+		if rep.DryRun {
+			verb = "Would resume copy of"
+		}
 	}
 	dirs, files, links := rep.Counts()
 	fmt.Fprintf(out, "%s %s\n  to %s\n", printer.Accent(verb), rep.From, rep.To)
@@ -146,6 +154,9 @@ func printMigrateReport(out io.Writer, rep storemigrate.Report) {
 	for _, k := range rep.Keychain {
 		fmt.Fprintf(out, "  Keychain %s / %s -> %s\n", k.FromService, k.Account, k.ToService)
 	}
+	if rep.Resumed {
+		fmt.Fprintf(out, "  %d path(s) already copied, verified byte for byte\n", len(rep.Verified))
+	}
 	if rep.DryRun {
 		fmt.Fprintln(out, printer.Dimmed("Dry run: nothing was written."))
 		return
@@ -176,4 +187,11 @@ func printOldStoreHint(argv []string, stderr io.Writer) {
 	if h := oldStoreHint(); h != "" {
 		fmt.Fprintln(stderr, printer.Dimmed(h))
 	}
+}
+
+func nonNilStrings(v []string) []string {
+	if v == nil {
+		return []string{}
+	}
+	return v
 }

@@ -3,8 +3,11 @@
 //
 // The rule (DESIGN Amendment A23) is "copy once, never touch the old store":
 // the old directory and its macOS Keychain items may still belong to another
-// installed tool, so this package only ever reads them. It refuses to copy into
-// a store that already holds data, so a second run can never merge or clobber.
+// installed tool, so this package only ever reads them. It copies only into a
+// store that is empty or holds a part of this same copy: a rerun after an
+// interrupted copy resumes it (copies what is missing, verifies byte for byte
+// what is there), and anything else in the new store refuses the run, so it
+// can never merge or clobber.
 // The layout inside the store is unchanged; only four kinds of name change on
 // the way: the log (claude-swap.log* → tycswap.log*), the per-profile marker
 // files (.cswap-* → .tycswap-*), the per-account backup files, whose raw email
@@ -15,6 +18,7 @@
 package storemigrate
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,8 +61,13 @@ const (
 // ErrNoOldStore is returned when no old store with data exists.
 var ErrNoOldStore = errors.New("no old store to copy")
 
-// ErrNotEmpty is returned (wrapped) when the new store already holds data.
+// ErrNotEmpty is returned (wrapped) when the new store holds data that is not
+// part of a copy of the old store.
 var ErrNotEmpty = errors.New("the tycswap store is not empty")
+
+// ErrConflict is returned (wrapped) when a path the copy would write already
+// exists in the new store with different content.
+var ErrConflict = errors.New("the tycswap store differs from the old store")
 
 // Options configures Run. Zero fields take the production defaults.
 type Options struct {
@@ -97,6 +106,11 @@ type Report struct {
 	Entries  []Entry        `json:"entries"`
 	Skipped  []string       `json:"skipped"`
 	Keychain []KeychainItem `json:"keychain"`
+	// Verified lists paths (relative to To) a resumed run found already
+	// copied, byte for byte; they were not written again.
+	Verified []string `json:"verified"`
+	// Resumed is true when the new store already held part of the copy.
+	Resumed bool `json:"resumed"`
 }
 
 // Counts returns the number of directories, files and symlinks in the report.
@@ -195,8 +209,16 @@ func Run(o Options) (Report, error) {
 	}
 	rep := Report{From: old, To: o.NewRoot, DryRun: o.DryRun}
 
+	renames := backupRenames(old)
+	plan, err := planTree(old, renames)
+	if err != nil {
+		return rep, err
+	}
 	if !IsEmpty(o.NewRoot) {
-		return rep, fmt.Errorf("%w: %s already holds data; migrate copies only into an empty store, and never merges", ErrNotEmpty, o.NewRoot)
+		if err := checkResumable(o.NewRoot, plan); err != nil {
+			return rep, err
+		}
+		rep.Resumed = true
 	}
 
 	if !o.DryRun {
@@ -217,11 +239,14 @@ func Run(o Options) (Report, error) {
 		defer lock.Release()
 		// Re-check under the lock: a command may have written in between.
 		if !IsEmpty(o.NewRoot) {
-			return rep, fmt.Errorf("%w: %s already holds data; migrate copies only into an empty store, and never merges", ErrNotEmpty, o.NewRoot)
+			if err := checkResumable(o.NewRoot, plan); err != nil {
+				return rep, err
+			}
+			rep.Resumed = true
 		}
 	}
 
-	if err := copyTree(old, o.NewRoot, backupRenames(old), o.DryRun, &rep); err != nil {
+	if err := copyTree(old, o.NewRoot, renames, o.DryRun, &rep); err != nil {
 		return rep, err
 	}
 	if plat == platform.MacOS {
@@ -293,6 +318,13 @@ func copyTree(src, dst string, renames map[string]string, dryRun bool, rep *Repo
 			if err != nil {
 				return fmt.Errorf("read link %s: %w", p, err)
 			}
+			if existing, err := os.Readlink(target); err == nil {
+				if existing != link {
+					return conflict(dst, toRel)
+				}
+				rep.Verified = append(rep.Verified, toRel)
+				return nil
+			}
 			rep.Entries = append(rep.Entries, Entry{From: rel, To: toRel, Kind: "symlink"})
 			if dryRun {
 				return nil
@@ -301,6 +333,12 @@ func copyTree(src, dst string, renames map[string]string, dryRun bool, rep *Repo
 				return fmt.Errorf("link %s: %w", target, err)
 			}
 		case d.IsDir():
+			if fi, err := os.Lstat(target); err == nil {
+				if !fi.IsDir() {
+					return conflict(dst, toRel)
+				}
+				return nil // created by an interrupted run; its contents are checked one by one
+			}
 			rep.Entries = append(rep.Entries, Entry{From: rel, To: toRel, Kind: "dir"})
 			if dryRun {
 				return nil
@@ -318,6 +356,23 @@ func copyTree(src, dst string, renames map[string]string, dryRun bool, rep *Repo
 				rep.Skipped = append(rep.Skipped, rel)
 				return nil
 			}
+			if _, err := os.Lstat(target); err == nil {
+				if throwawayTop(toRel) {
+					// The new store's own log, cache or ledger, written since
+					// the interrupted run: keep it.
+					rep.Skipped = append(rep.Skipped, rel)
+					return nil
+				}
+				same, err := sameFile(p, target)
+				if err != nil {
+					return err
+				}
+				if !same {
+					return conflict(dst, toRel)
+				}
+				rep.Verified = append(rep.Verified, toRel)
+				return nil
+			}
 			rep.Entries = append(rep.Entries, Entry{From: rel, To: toRel, Kind: "file"})
 			if dryRun {
 				return nil
@@ -330,6 +385,131 @@ func copyTree(src, dst string, renames map[string]string, dryRun bool, rep *Repo
 		}
 		return nil
 	})
+}
+
+// planned is one path the copy would write, keyed by its path in the new store.
+type planned struct {
+	src  string // absolute path in the old store
+	kind string // "dir" | "file" | "symlink"
+}
+
+// planTree maps every path the copy would write (relative to the new root) to
+// its source, applying the same renames copyTree does.
+func planTree(src string, renames map[string]string) (map[string]planned, error) {
+	plan := map[string]planned{}
+	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("read %s: %w", p, err)
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil || rel == "." {
+			return err
+		}
+		parts := strings.Split(rel, string(filepath.Separator))
+		for i := range parts {
+			parts[i] = newName(parts[i], i == 0)
+		}
+		toRel := filepath.Join(parts...)
+		if to, ok := renames[filepath.ToSlash(rel)]; ok && d.Type().IsRegular() {
+			toRel = filepath.FromSlash(to)
+		}
+		switch {
+		case d.Type()&fs.ModeSymlink != 0:
+			plan[toRel] = planned{p, "symlink"}
+		case d.IsDir():
+			plan[toRel] = planned{p, "dir"}
+		case d.Type().IsRegular() && !isLockFile(d.Name()):
+			plan[toRel] = planned{p, "file"}
+		}
+		return nil
+	})
+	return plan, err
+}
+
+// checkResumable accepts a non-empty new store only when everything in it is
+// throwaway or part of this copy: every other path must be one the copy
+// writes, of the same kind, and a file byte for byte the source's, a symlink
+// pointing at the same target. A file a previous run left half-written cannot
+// exist (files are written by temp file and rename); such temp files are
+// removed here. Nothing else is written.
+func checkResumable(newRoot string, plan map[string]planned) error {
+	return filepath.WalkDir(newRoot, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("read %s: %w", p, err)
+		}
+		rel, err := filepath.Rel(newRoot, p)
+		if err != nil || rel == "." {
+			return err
+		}
+		name := d.Name()
+		top := !strings.Contains(rel, string(filepath.Separator))
+		switch {
+		case d.IsDir() && name == cacheDir:
+			return filepath.SkipDir
+		case isLockFile(name):
+			return nil
+		case top && (name == migrationsLog || strings.HasPrefix(name, newLogName)):
+			return nil
+		case strings.HasPrefix(name, ".tycswap-migrate-") && strings.HasSuffix(name, ".tmp"):
+			return os.Remove(p) // left by an interrupted copyFile
+		}
+		want, ok := plan[rel]
+		if !ok {
+			return fmt.Errorf("%w: %s holds %s, which is not part of a copy of the old store; "+
+				"migrate copies only into an empty store or resumes its own copy, and never merges", ErrNotEmpty, newRoot, rel)
+		}
+		switch want.kind {
+		case "dir":
+			if !d.IsDir() {
+				return conflict(newRoot, rel)
+			}
+		case "symlink":
+			a, aerr := os.Readlink(want.src)
+			b, berr := os.Readlink(p)
+			if aerr != nil || berr != nil || a != b {
+				return conflict(newRoot, rel)
+			}
+		case "file":
+			if !d.Type().IsRegular() {
+				return conflict(newRoot, rel)
+			}
+			same, err := sameFile(want.src, p)
+			if err != nil {
+				return err
+			}
+			if !same {
+				return conflict(newRoot, rel)
+			}
+		}
+		return nil
+	})
+}
+
+func conflict(root, rel string) error {
+	return fmt.Errorf("%w: %s already exists in %s with other content than the old store's; "+
+		"nothing was copied — move it aside (or remove the store with `tycswap purge`) and run migrate again", ErrConflict, rel, root)
+}
+
+// throwawayTop reports whether rel (in the new store) is the log, the cache or
+// the migrations ledger, which the new store may have written itself.
+func throwawayTop(rel string) bool {
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	if parts[0] == cacheDir || (parts[0] == codexDir && len(parts) > 1 && parts[1] == cacheDir) {
+		return true
+	}
+	return len(parts) == 1 && (parts[0] == migrationsLog || strings.HasPrefix(parts[0], newLogName))
+}
+
+func sameFile(a, b string) (bool, error) {
+	x, err := os.ReadFile(a)
+	if err != nil {
+		return false, fmt.Errorf("read %s: %w", a, err)
+	}
+	y, err := os.ReadFile(b)
+	if err != nil {
+		return false, fmt.Errorf("read %s: %w", b, err)
+	}
+	return bytes.Equal(x, y), nil
 }
 
 // copyFile writes src's bytes to dst as a 0600 file, atomically (temp file in
@@ -406,6 +586,14 @@ func copyKeychain(oldRoot, newRoot string, kc keychain.KeychainClient, dryRun bo
 			return fmt.Errorf("read Keychain item %s/%s: %w", it.FromService, it.Account, err)
 		}
 		if !found {
+			continue
+		}
+		// A resumed run may find the item copied already: identical is
+		// verified, different is a conflict, never overwritten.
+		if cur, ok, err := kc.Get(it.ToService, it.Account); err == nil && ok {
+			if cur != v {
+				return fmt.Errorf("%w: Keychain item %s/%s already exists with other content", ErrConflict, it.ToService, it.Account)
+			}
 			continue
 		}
 		if err := kc.Set(it.ToService, it.Account, v); err != nil {

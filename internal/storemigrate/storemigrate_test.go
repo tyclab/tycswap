@@ -137,9 +137,10 @@ func TestRunCopiesOnceAndLeavesOldStoreUntouched(t *testing.T) {
 		t.Errorf("old store changed:\nbefore %v\nafter  %v", before, after)
 	}
 
-	// A second run refuses: the new store now holds data.
-	if _, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux}); !errors.Is(err, ErrNotEmpty) {
-		t.Errorf("second Run err = %v, want ErrNotEmpty", err)
+	// A second run of a complete copy writes nothing and verifies everything.
+	rep2, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux})
+	if err != nil || !rep2.Resumed || len(rep2.Entries) != 0 || len(rep2.Verified) == 0 {
+		t.Errorf("second Run = %+v, %v; want a resumed no-op", rep2, err)
 	}
 }
 
@@ -151,8 +152,8 @@ func TestRunRefusesNonEmptyStore(t *testing.T) {
 	linux := platform.Linux
 
 	_, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux})
-	if !errors.Is(err, ErrNotEmpty) || !strings.Contains(err.Error(), newRoot) {
-		t.Fatalf("err = %v, want ErrNotEmpty naming %s", err, newRoot)
+	if !errors.Is(err, ErrConflict) || !strings.Contains(err.Error(), newRoot) || !strings.Contains(err.Error(), "sequence.json") {
+		t.Fatalf("err = %v, want ErrConflict naming %s and the file", err, newRoot)
 	}
 	b, _ := os.ReadFile(filepath.Join(newRoot, "sequence.json"))
 	if string(b) != `{"accounts":{}}` {
@@ -300,4 +301,95 @@ func equalMaps(a, b map[string]string) bool {
 		}
 	}
 	return true
+}
+
+// TestRunResumesAnInterruptedCopy: a rerun after a copy that stopped part-way
+// copies what is missing, verifies what is there, removes a leftover temp
+// file, and keeps the new store's own log.
+func TestRunResumesAnInterruptedCopy(t *testing.T) {
+	old := oldStore(t)
+	newRoot := filepath.Join(t.TempDir(), "tycswap")
+	linux := platform.Linux
+	if _, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux}); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate the interruption: later files never arrived, a temp file was
+	// left, and a command since wrote its own log line.
+	for _, rel := range []string{"settings.json", "mappings.json", "codex/sequence.json"} {
+		if err := os.Remove(filepath.Join(newRoot, filepath.FromSlash(rel))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.RemoveAll(filepath.Join(newRoot, "sessions")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(newRoot, "configs", ".tycswap-migrate-123.tmp"), "half", 0o600)
+	write(t, filepath.Join(newRoot, "tycswap.log"), "new log\n", 0o600)
+
+	rep, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux})
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+	if !rep.Resumed {
+		t.Error("not reported as resumed")
+	}
+	for _, rel := range []string{"settings.json", "mappings.json", "codex/sequence.json", "sessions/1-a_example.com/.tycswap-shared.json"} {
+		if _, err := os.Stat(filepath.Join(newRoot, filepath.FromSlash(rel))); err != nil {
+			t.Errorf("%s not copied on resume: %v", rel, err)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(newRoot, "tycswap.log")); string(b) != "new log\n" {
+		t.Errorf("the new store's log was overwritten: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(newRoot, "configs", ".tycswap-migrate-123.tmp")); !os.IsNotExist(err) {
+		t.Error("leftover temp file kept")
+	}
+	verified := strings.Join(rep.Verified, ",")
+	if !strings.Contains(verified, "sequence.json") {
+		t.Errorf("verified = %v", rep.Verified)
+	}
+}
+
+// TestRunResumeRefusesConflictsAndForeignData: a file changed since the
+// interrupted copy, or data that is not from the old store, refuses the rerun
+// before anything is written.
+func TestRunResumeRefusesConflictsAndForeignData(t *testing.T) {
+	linux := platform.Linux
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, newRoot string)
+		want  error
+	}{
+		{"changed file", func(t *testing.T, newRoot string) {
+			write(t, filepath.Join(newRoot, "settings.json"), `{"changed":true}`, 0o600)
+		}, ErrConflict},
+		{"foreign file", func(t *testing.T, newRoot string) {
+			write(t, filepath.Join(newRoot, "configs", "mine.json"), `{}`, 0o600)
+		}, ErrNotEmpty},
+		{"file where a dir belongs", func(t *testing.T, newRoot string) {
+			if err := os.RemoveAll(filepath.Join(newRoot, "sessions")); err != nil {
+				t.Fatal(err)
+			}
+			write(t, filepath.Join(newRoot, "sessions"), "x", 0o600)
+		}, ErrConflict},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			old := oldStore(t)
+			newRoot := filepath.Join(t.TempDir(), "tycswap")
+			if _, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux}); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(filepath.Join(newRoot, "mappings.json")); err != nil {
+				t.Fatal(err)
+			}
+			tc.setup(t, newRoot)
+			_, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux})
+			if !errors.Is(err, tc.want) || !strings.Contains(err.Error(), newRoot) {
+				t.Fatalf("err = %v, want %v naming the store", err, tc.want)
+			}
+			if _, err := os.Stat(filepath.Join(newRoot, "mappings.json")); !os.IsNotExist(err) {
+				t.Error("a refused resume copied files")
+			}
+		})
+	}
 }

@@ -2434,9 +2434,16 @@ old store is the first of these that exists and holds data:
 | Linux / WSL | `$XDG_DATA_HOME/claude-swap/` when `XDG_DATA_HOME` is set (absolute), else `~/.local/share/claude-swap/`; then `~/.claude-swap-backup/` |
 | macOS, Windows | `~/.claude-swap-backup/` |
 
-The copy runs only when tycswap's store is absent or empty (nothing but
-`.lock`, `cache/`, `tycswap.log*`, `.migrations.json`, or a `codex/` holding
-only the same); otherwise it refuses and changes nothing. It holds the new
+The copy runs when tycswap's store is absent or empty (nothing but lock files,
+`cache/`, `tycswap.log*`, `.migrations.json`, or a `codex/` holding only the
+same), or when it holds part of this same copy. Before anything is written,
+every other path in the new store must be one the copy writes, of the same
+kind, a file byte for byte the old store's (after the renames below) and a
+symlink with the same target; anything else refuses the run and changes
+nothing: a path that is not from the old store is `the tycswap store is not
+empty: <store> holds <path>, which is not part of a copy of the old store …`,
+a path with other content is `the tycswap store differs from the old store:
+<path> already exists in <store> with other content than the old store's …`. It holds the new
 store's `.lock` while it copies. Directories are created 0700 and files written
 0600 by temp file and rename; symlinks (a session profile's links into
 `~/.claude`) are copied as links, never followed; lock files are skipped.
@@ -2452,8 +2459,16 @@ follows the profile's new path.
 
 The old store and the old Keychain items are only read: `migrate` never moves,
 modifies or deletes them, because another tool may still use them. Remove them
-yourself once nothing does. A copy interrupted part-way leaves a non-empty
-tycswap store; remove that store (`tycswap purge`) and run `migrate` again.
+yourself once nothing does. A copy interrupted part-way is resumed by running
+`migrate` again: it copies what is missing, verifies byte for byte what is
+already there (reported as `<n> path(s) already copied, verified byte for
+byte`, and in `--json` as `resumed` and `verified`), removes a temp file the
+interrupted run left, and keeps the log, cache and migrations ledger the new
+store wrote since. Keychain items already copied are verified the same way;
+one with other content is a conflict. A rerun after a complete copy is a
+no-op. If a command changed the new store in between (for example
+`sequence.json`), the rerun refuses as above; move the file aside or remove the
+store (`tycswap purge`) and run `migrate` again.
 
 Until the copy is made, every other command prints one line on stderr while
 tycswap's store is empty and an old store exists (not in `--json` mode):

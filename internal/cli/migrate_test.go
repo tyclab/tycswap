@@ -98,13 +98,22 @@ func TestMigrateCommandCopiesThenRefuses(t *testing.T) {
 		t.Error("old store modified")
 	}
 
-	// The new store holds data now: the hint is gone and a rerun refuses.
+	// The new store holds data now: the hint is gone, and a rerun of the
+	// complete copy verifies it and writes nothing.
 	if _, _, stderr := runMig(t, "alias", "--help"); stderr != "" {
 		t.Errorf("hint after migrate: %q", stderr)
 	}
+	code, out, stderr = runMig(t, "migrate")
+	if code != 0 || !strings.Contains(out, "Resumed") || !strings.Contains(out, "already copied") {
+		t.Errorf("rerun = %d, %q, %q; want a verified no-op", code, out, stderr)
+	}
+	// A store changed since refuses.
+	if err := os.WriteFile(filepath.Join(newRoot, "sequence.json"), []byte(`{"accounts":{}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	code, _, stderr = runMig(t, "migrate")
-	if code != 1 || !strings.Contains(stderr, "not empty") {
-		t.Errorf("rerun = %d, %q; want a refusal", code, stderr)
+	if code != 1 || !strings.Contains(stderr, "other content") {
+		t.Errorf("conflicting rerun = %d, %q; want a refusal", code, stderr)
 	}
 }
 
