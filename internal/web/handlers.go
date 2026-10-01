@@ -2,7 +2,7 @@
 // HTTP status mapping, and every mutating endpoint (accounts, sessions,
 // settings, auto-switch).
 //
-// Implements DESIGN A25 "Security model" and "API". Method+pattern routing is
+// Implements DESIGN A26 "Security model" and "API". Method+pattern routing is
 // Go 1.22 net/http (`POST /api/switch/{id}`); every mutation broadcasts a
 // fresh state to SSE subscribers when it returns, success or not, so the UI
 // converges on what the store actually holds. Request bodies are JSON,
@@ -227,7 +227,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Lax, not Strict: the launcher opens the token URL from a file://
-		// redirect page (DESIGN A25), and browsers treat the whole navigation
+		// redirect page (DESIGN A26), and browsers treat the whole navigation
 		// — including this 303 — as cross-site, so a Strict cookie would be
 		// withheld on the very next request and the visitor would see 401.
 		// Lax still keeps the cookie off cross-site POSTs; every mutation is
@@ -608,7 +608,7 @@ func (s *Server) handleSwap(w http.ResponseWriter, r *http.Request) {
 
 // handleStop stops a PID (SIGTERM; TerminateProcess on Windows, where there
 // is no SIGTERM) only when procdetect currently lists it as a Claude Code
-// session (A25: never an arbitrary PID), and only when the process holding
+// session (A26: never an arbitrary PID), and only when the process holding
 // the PID is the one the session file describes: Kill verifies the process
 // start time against the file's startedAt and answers 409 when they
 // disagree, so a PID the system reused after a crash is never signalled.
@@ -845,7 +845,7 @@ func httpErr(status int, format string, a ...any) error {
 	return &httpError{status: status, msg: fmt.Sprintf(format, a...)}
 }
 
-// statusFor maps an error to the HTTP status (A25 / DESIGN §3.1): a handler's
+// statusFor maps an error to the HTTP status (A26 / DESIGN §3.1): a handler's
 // own httpError carries its status; a cerr kind maps by kind; anything else
 // is a 500.
 func statusFor(err error) int {

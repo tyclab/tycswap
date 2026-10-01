@@ -1,4 +1,4 @@
-// Tests for the A25 security model: token bootstrap → cookie plus the CSRF
+// Tests for the A26 security model: token bootstrap → cookie plus the CSRF
 // token in the redirect's fragment, cookie-gated API, CSRF + Origin +
 // Sec-Fetch-Site on mutations, Host pinning, and the guarded, token-free
 // index page.

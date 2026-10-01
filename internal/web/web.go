@@ -1,13 +1,13 @@
 // web.go — the local dashboard server: consumer-defined seams, token/cookie
 // security model, loopback-only bind, and the poll loop that drives SSE.
 //
-// Package web implements DESIGN A25 (`internal/web` — the local dashboard):
+// Package web implements DESIGN A26 (`internal/web` — the local dashboard):
 // an embedded single-page UI on 127.0.0.1:<port> backed by a small JSON API
 // and a Server-Sent-Events stream. Every seam is consumer-defined here (A2
 // style; Facade is the frozen tui.Facade method set), so this package never
 // imports internal/core, internal/tui or internal/cli.
 //
-// Security model (A25): three independent 128-bit secrets are minted per
+// Security model (A26): three independent 128-bit secrets are minted per
 // launch. The one-time launch token rides in the printed URL; GET /?token=<t>
 // redeems it once, sets the HttpOnly, SameSite=Lax, Path=/ session cookie and
 // redirects to /#csrf=<token>. The CSRF token travels in that URL fragment

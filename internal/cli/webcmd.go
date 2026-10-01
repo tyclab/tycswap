@@ -1,6 +1,6 @@
 // webcmd.go — `tycswap web`: wire the dashboard's façades, bind loopback,
 // print the one-time URL, open the browser, serve until SIGINT/SIGTERM
-// (DESIGN A25).
+// (DESIGN A26).
 package cli
 
 import (

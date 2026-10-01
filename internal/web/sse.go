@@ -1,7 +1,7 @@
 // sse.go — the Server-Sent-Events fan-out: one hub, one buffered channel per
 // subscriber, drop-on-slow so a stalled browser never blocks the poll loop.
 //
-// Implements DESIGN A25 "GET /api/events → SSE, a state event per poll tick
+// Implements DESIGN A26 "GET /api/events → SSE, a state event per poll tick
 // and on every mutation", extended with `auto` events (one per auto-switch
 // engine event, one state per batch of them). ?tokenStatus=1 subscribes to
 // the enriched state documents. Wire format per event: "event: <name>\ndata: <json>\n\n"; a

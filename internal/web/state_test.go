@@ -419,7 +419,6 @@ func TestStatusFor(t *testing.T) {
 		{cerr.Config("cfg"), http.StatusInternalServerError},
 		{cerr.Switch("sw"), http.StatusInternalServerError},
 		{cerr.Credential("cred"), http.StatusInternalServerError},
-		{cerr.Transfer("tr"), http.StatusInternalServerError},
 		{errors.New("plain"), http.StatusInternalServerError},
 		{errors.Join(errors.New("outer"), cerr.Validation("inner")), http.StatusBadRequest},
 		{httpErr(http.StatusNotFound, "gone"), http.StatusNotFound},

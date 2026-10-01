@@ -1,4 +1,4 @@
-// app.js — tycswap dashboard client (DESIGN A25). Vanilla JS, no build step:
+// app.js — tycswap dashboard client (DESIGN A26). Vanilla JS, no build step:
 // take the CSRF token from the launch redirect's #csrf= fragment (kept in
 // sessionStorage, so a reload keeps it and a new tab needs a fresh launch
 // URL), fetch /api/state once, then follow /api/events (SSE) with the

@@ -1,5 +1,5 @@
 // Tests for the mutating routes: each one reaches the right façade method
-// with the right arguments, errors map to the A25 status table, and the stop
+// with the right arguments, errors map to the A26 status table, and the stop
 // route only ever signals a PID procdetect currently lists.
 package web
 

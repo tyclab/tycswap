@@ -3,7 +3,7 @@
 // with the token status), sessions, settings, auto-switch engine, strategies,
 // server time.
 //
-// Implements DESIGN A25 "API. GET /api/state → one State document". Account
+// Implements DESIGN A26 "API. GET /api/state → one State document". Account
 // rows are maps because the additive at-limit / freshness / tokenStatus keys
 // are present only when set (schemaVersion-1 optional-key discipline,
 // jsonout); every other section is a tagged struct so the shape is fixed at

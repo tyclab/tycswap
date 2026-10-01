@@ -1,4 +1,4 @@
-// webfacades.go — the façades `tycswap web` hands the dashboard (DESIGN A25):
+// webfacades.go — the façades `tycswap web` hands the dashboard (DESIGN A26):
 // settings, the hosted auto-switch engine, and the account operations beyond
 // the frozen Facade.
 //

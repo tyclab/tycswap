@@ -3553,7 +3553,7 @@ then re-prompts, as before) — the next capture of that slot drops it.
 and the store root (`CheckPrivateRoot` is a no-op there); a follow-up.
 Dependencies: `go.mod` pins `toolchain go1.25.14`; `make vuln` runs
 govulncheck.
-## A25. `internal/web` — the browser dashboard and its security model (Go-side additive extension)
+## A26. `internal/web` — the browser dashboard and its security model (Go-side additive extension)
 
 `tycswap web` serves a single-page dashboard from `internal/web` on a
 loopback port. The page (`static/index.html`, `app.js`, `style.css`, the
@@ -3635,20 +3635,31 @@ never address the Claude account with the same number.
 **Live data.** One poll loop rebuilds the state document every interval and
 after every mutation; engine events are fanned out as `auto` frames and
 followed by one state per batch. Token status is enriched only while a
-subscriber asked for it (`?tokenStatus=1`), from the same snapshot; for that
-`reporting.ListAccounts` now honours `showTokenStatus` in its JSON payload,
-which it used to ignore. The page reconnects by itself and, when the server
-no longer knows its tokens (a restart mints new ones), stops and says to
-reopen the printed URL.
+subscriber asked for it (`?tokenStatus=1`), from the same snapshot, through
+the `tokenStatus` key `reporting.ListAccounts` puts on each JSON row when
+asked for token status (the plain `list --json` payload is unchanged). The
+page reconnects by itself and, when the server no longer knows its tokens (a
+restart mints new ones), stops and says to reopen the printed URL.
+
+**Errors.** Every error body is `{"error"}`; the status comes from the cerr
+kind (not found 404, validation 400, lock 409, Claude Code's lock 423, else
+500), or from the handler itself where no kind fits (a session gone before
+the lock, 404; a pid that is not the recorded process, 409). Ordinary user
+mistakes a facade would report as a config error (a slot that is not a
+number) are refused in the handler as 400 before the facade is reached.
 
 **Hosted engine.** The Auto tab drives one `autoswitch.Engine` in the `web`
 process. `Engine.ApplyThreshold` and `Engine.ApplyModels` retarget a running
 engine. Both store the new value in the engine's atomic settings and re-pin
 the poll plan from those settings; the model slice the tick goroutine counts
 is touched by that goroutine alone, which adopts a queued set at the start
-of its next tick. Stop waits (bounded) for the engine's loop to return, and
-Start refuses while an old loop is still finishing, so two engines never run
-at once.
+of its next tick. Stop asks the engine to stop and waits up to 2 s for its
+loop to return; past that it answers 409 ("stopping") rather than holding the
+dashboard's mutation lock, the engine already counts as stopped, and Start
+refuses while the old loop is still finishing, so two engines never run at
+once. When the loop has returned the engine's poll-plan pin is cleared, as
+the TUI's Auto screen does on exit, so a stopped engine's threshold and
+models stop steering the usage polling.
 
 **Sessions.** The list covers the default Claude config directory and every
 session profile under `<backup root>/sessions/` (A16), so sessions started
@@ -3676,4 +3687,9 @@ login` as a cancellable job streamed over SSE; `map`/`unmap` in the
 dashboard; a remote mode for a tray across a VM boundary, which re-adds a
 bearer token accepted in place of the cookie and CSRF pair and a route that
 mints a fresh one-time URL for such a client (nothing in `tycswap web`
-calls either today, so neither is built).
+calls either today, so neither is built); the tray itself, which also
+brings back the brand vars it needs (a reverse-DNS identifier, an
+environment-variable prefix); and a short generic Guide tab: what the tool
+does, slots and the active account, the 5h/7d/model windows and the single
+threshold, getting started, manual switching, Auto, Sessions, a command
+cheat-sheet and where the data lives.

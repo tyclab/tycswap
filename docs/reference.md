@@ -2330,29 +2330,39 @@ Content-Security-Policy (self only, no inline script or style),
 `Referrer-Policy: no-referrer` and `Cache-Control: no-store`. Credentials
 never appear in any response.
 
-**API.** All bodies are JSON; errors are `{"error": "<message>"}`. An account
+**API.** All bodies are JSON; a success is `{"ok": true, "result": {...}}`
+and an error `{"error": "<message>"}` with the status below. An account
 `{key}` is the row's `key`, `<provider>:<ref>` (for example `claude:2`,
 `claude:work`, `claude:me@example.com`); a bare slot is refused with 400, and
 a key of another provider answers 404, because slot numbers are per provider.
 
-| Route | Body | Does |
-|-------|------|------|
-| `GET /api/state[?tokenStatus=1]` | | the state document |
-| `GET /api/events?csrf=<t>[&tokenStatus=1]` | | Server-Sent Events: `state` frames, `auto` frames (one engine event each), a `: ping` every 15 s |
-| `POST /api/switch` | `{"strategy": "best"\|"next-available", "models": [...]}` | `tycswap switch --strategy` |
-| `POST /api/switch/{key}[?force=1]` | | `tycswap switch <id> [--force]` |
-| `POST /api/accounts/add` | | `tycswap add` |
-| `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias"}` | `tycswap add-token` (the token is never echoed or logged) |
-| `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y` |
-| `POST /api/accounts/{key}/alias` | `{"alias": "<name>"}` (empty unsets) | `tycswap alias` |
-| `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` |
-| `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` |
-| `POST /api/sessions/{pid}/stop` | | stop a listed Claude Code session, after verifying the process start time |
-| `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset` |
-| `POST /api/auto/start` | `{"dryRun": bool}` | start the hosted engine |
-| `POST /api/auto/stop`, `/api/auto/wake` | | stop it (waits for its loop to end), poll now |
-| `POST /api/auto/threshold` | `{"threshold": 50-99.9}` | retarget the running engine; the bounds are `autoswitch.threshold`'s |
-| `POST /api/auto/model` | `{"model": "all"\|"<names>"\|""}` | retarget the running engine's model windows |
+Statuses every route shares: `401` without the session cookie; `403` without
+the CSRF token, with `?csrf=` anywhere but the event stream, or with a
+cross-origin `Origin` or `Sec-Fetch-Site` on a non-GET request; `421` for a
+foreign `Host`; `400` for a malformed JSON body and `413` for one over 64 KiB;
+`503` when the facade behind the route is not wired into this build; `405`
+for the wrong method. Errors from the switcher map by kind: not found `404`,
+validation `400`, the store lock `409`, Claude Code holding its lock `423`,
+anything else `500`.
+
+| Route | Body | Does | Route's own statuses |
+|-------|------|------|----------------------|
+| `GET /api/state[?tokenStatus=1]` | | the state document | `200` |
+| `GET /api/events?csrf=<t>[&tokenStatus=1]` | | Server-Sent Events: `state` frames, `auto` frames (one engine event each), a `: ping` every 15 s | `200`, then a stream |
+| `POST /api/switch` | `{"strategy": "best"\|"next-available", "models": [...]}` | `tycswap switch --strategy` | `400` missing or unknown strategy |
+| `POST /api/switch/{key}[?force=1]` | | `tycswap switch <id> [--force]` | `400` bare key, `404` other provider |
+| `POST /api/accounts/add` | | `tycswap add` | |
+| `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias"}` | `tycswap add-token` (the token is never echoed or logged) | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
+| `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y` | `400` bare key, `404` other provider |
+| `POST /api/accounts/{key}/alias` | `{"alias": "<name>"}` (empty unsets) | `tycswap alias` | `400` bare key, `404` other provider |
+| `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` | `400` missing slot or bare key, `404` other provider |
+| `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` | `400` missing or bare keys, `404` other provider |
+| `POST /api/sessions/{pid}/stop` | | stop a listed Claude Code session, after verifying the process start time | `400` bad pid, `404` not listed (or gone before the lock), `409` the pid now belongs to another process or cannot be verified, `500` the signal failed |
+| `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset` | `400` unknown key, value out of range, or missing value |
+| `POST /api/auto/start` | `{"dryRun": bool}` | start the hosted engine | `400` already running or still stopping |
+| `POST /api/auto/stop`, `/api/auto/wake` | | stop it (waits up to 2 s for its loop to end), poll now | `400` not running; stop `409` when the tick in flight outlasts the wait (the engine is stopping; Start refuses until it has) |
+| `POST /api/auto/threshold` | `{"threshold": 50-99.9}` | retarget the running engine; the bounds are `autoswitch.threshold`'s | `400` missing, out of range, or not running |
+| `POST /api/auto/model` | `{"model": "all"\|"<names>"\|""}` | retarget the running engine's model windows | `400` missing (`""` is a value) or not running |
 
 ### Files
 
@@ -2398,9 +2408,10 @@ Press Ctrl-C to stop.
 **Not yet in the dashboard** (follow-ups): Codex accounts (rows, actions and
 auto-switching; account routes already take provider keys), the Codex
 auto loop in the hosted engine, `add --login` and `codex login` as a
-cancellable job, `map`/`unmap`, and a remote mode for a tray (a bearer
-token in place of the cookie and CSRF pair, and a route that hands such a
-client a fresh one-time URL).
+cancellable job, `map`/`unmap`, a remote mode for a tray (a bearer token in
+place of the cookie and CSRF pair, and a route that hands such a client a
+fresh one-time URL), the tray itself, and a short Guide tab (what the tool
+does, slots and windows, getting started, a command cheat-sheet).
 
 ---
 
