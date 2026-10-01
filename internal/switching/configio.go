@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
@@ -52,6 +53,18 @@ func readConfigJSON(s *store.Store) map[string]any {
 		return nil
 	}
 	return m
+}
+
+// readConfigForUpdate is the strict read for a read-modify-write of the live
+// config: (nil, nil) only when it is absent, blank or null; a file that exists
+// but cannot be read or parsed is a ConfigError, never an empty object, so a
+// switch cannot replace the user's ~/.claude.json with one key.
+func readConfigForUpdate() (map[string]any, error) {
+	m, err := ccfile.ReadGlobalConfigStrict(claudeConfigPath())
+	if err != nil {
+		return nil, cerr.Config("Cannot update the Claude config: %v (fix or move the file, then retry)", err).Wrap(err)
+	}
+	return m, nil
 }
 
 // writeConfigJSON renders data as two-space-indented JSON, rejects a

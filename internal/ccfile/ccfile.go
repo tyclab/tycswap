@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -54,12 +55,18 @@ func ReadGlobalConfig() (map[string]any, error) {
 // writes the result back atomically with 0600 perms, preserving every key that
 // mutate does not touch (oauthAccount, projects, settings, ...).
 //
-// Mirrors Python _update_global_config: a missing or unparseable config starts
-// from an empty object (the `_read_global_config() or {}` idiom), so a corrupt
-// file is replaced rather than aborting.
+// Only a missing or blank file (or the literal null) starts from an empty
+// object. A file that exists but cannot be read, does not parse, or is not a
+// JSON object is an error (ErrUnusableConfig) and nothing is written: Python's
+// `_read_global_config() or {}` replaced such a file with the few keys mutate
+// sets, which destroyed the user's projects, MCP servers and settings over what
+// may be a transient read failure or a half-written file.
 func UpdateGlobalConfig(mutate func(map[string]any)) error {
 	path := paths.GetGlobalConfigPath()
-	data := readLenient(path)
+	data, err := ReadGlobalConfigStrict(path)
+	if err != nil {
+		return err
+	}
 	if data == nil {
 		data = map[string]any{}
 	}
@@ -69,6 +76,31 @@ func UpdateGlobalConfig(mutate func(map[string]any)) error {
 		return err
 	}
 	return atomicWrite(path, encoded)
+}
+
+// ErrUnusableConfig marks a config file that exists but cannot be read or is
+// not a JSON object. Callers must not treat it as empty.
+var ErrUnusableConfig = errors.New("config file exists but is unreadable or not a JSON object")
+
+// ReadGlobalConfigStrict reads the config at path for a read-modify-write. It
+// returns (nil, nil) only when the file is absent, blank, or the literal null;
+// any other failure wraps ErrUnusableConfig and names the path.
+func ReadGlobalConfigStrict(path string) (map[string]any, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("%w: %s: %v", ErrUnusableConfig, path, err)
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil, nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, fmt.Errorf("%w: %s: %v", ErrUnusableConfig, path, err)
+	}
+	return m, nil
 }
 
 // ReadCredentialsFile reads the raw text of ~/.claude/.credentials.json. The

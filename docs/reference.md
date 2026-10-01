@@ -360,6 +360,14 @@ post-switch note is informational (see NOTES). The switch cooperates with
 Claude Code's own credential lock, so it never interleaves with a token
 refresh.
 
+A switch changes only the `oauthAccount` key of `~/.claude.json`; every other
+key stays as it is. With no live config (absent, blank or `null`) the file is
+created holding `{"oauthAccount": …}` alone; a stored config is never written
+whole. A live config that exists but cannot be read or is not a JSON object
+stops the switch with a `ConfigError` naming the file, before any credential is
+written, rather than being replaced. The same holds for `add-token`, which
+rewrites `primaryApiKey` in that file.
+
 ### Files
 
 Reads and writes `sequence.json` (the active pointer), the live Claude Code
@@ -1528,7 +1536,8 @@ Legacy: `tycswap --export <path>`.
 
 Serializes managed accounts (with their credentials) to a `.tycswap` JSON file
 for transfer to another machine. By default each account carries only its
-`oauthAccount` config; `--full` embeds the whole per-account config. The active
+`oauthAccount` config; `--full` embeds the whole per-account config. An import
+reads only the `oauthAccount` of either form. The active
 account is read from the live vault for the freshest tokens. In a bulk export, a
 single broken account is skipped with a stderr warning; a named single-account
 export treats the same condition as a hard failure. A missing `oauthAccount` is
@@ -1615,6 +1624,14 @@ skipped, or overwritten with `--force`; a new identity gets a freshly allocated
 slot. Only a destination with no prior preference inherits the file's
 `activeAccountNumber`. Encrypted exports are rejected.
 
+Only the account identity is imported: each account's `config` is reduced to
+its `oauthAccount`, also from a `--full` export, because every other key of
+`~/.claude.json` is machine-local and some (`mcpServers`, allowed tools, hooks)
+name commands to run. An account whose `config` has no `oauthAccount` object is
+refused. Keys are matched exactly (`CREDENTIALS` or `ACCOUNTS` are not the
+members `credentials` and `accounts`), and the credentials stored are the bytes
+of the member that was validated. Input over 8 MiB is refused before parsing.
+
 ### Files
 
 Reads the `.tycswap` file (or stdin). Writes `sequence.json`, `configs/`,
@@ -1639,6 +1656,8 @@ exists, use --force)`) then a summary
 | `unsupported export version: <v> (expected 1)` | `TransferError` |
 | `encrypted exports are not supported in this version — decrypt before piping (e.g. gpg -d backup.gpg \| tycswap --import -)` | `TransferError` |
 | `export file has no accounts to import` | `TransferError` |
+| `<path> is larger than 8 MiB; refusing to import it` (`stdin` for `-`) | `TransferError` |
+| `config for <email> is missing oauthAccount` | `TransferError` |
 | `invalid or missing email in imported account: <repr>`: not a plain address, longer than 254 bytes, or holding any whitespace or control character (a trailing newline included) | `TransferError` |
 | `invalid slot number in imported account (<email>): <repr>`: not an integer from 1 to 999999 | `TransferError` |
 | `invalid alias for <email>: <repr> contains whitespace or a control character` or `longer than 64 bytes` | `TransferError` |

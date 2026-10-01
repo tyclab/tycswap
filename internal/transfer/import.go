@@ -25,6 +25,7 @@
 package transfer
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"os"
@@ -73,15 +74,9 @@ func Import(acc Accounts, source string, force bool) error {
 		return err
 	}
 
-	dec := json.NewDecoder(strings.NewReader(text))
-	dec.UseNumber()
-	var top any
-	if err := dec.Decode(&top); err != nil {
-		return cerr.Transfer("export file is not valid JSON: %s", err.Error())
-	}
-	envelope, ok := asObject(top)
-	if !ok {
-		return cerr.Transfer("export file must be a JSON object")
+	envelope, accountsRaw, rawCreds, err := decodeEnvelope(text)
+	if err != nil {
+		return err
 	}
 
 	if v, ok := intValue(envelope["version"]); !ok || v != FormatVersion {
@@ -92,16 +87,14 @@ func Import(acc Accounts, source string, force bool) error {
 		return cerr.Transfer("encrypted exports are not supported in this version — " +
 			"decrypt before piping (e.g. gpg -d backup.gpg | tycswap --import -)")
 	}
-	accountsRaw, ok := envelope["accounts"].([]any)
-	if !ok || len(accountsRaw) == 0 {
+	if len(accountsRaw) == 0 {
 		return cerr.Transfer("export file has no accounts to import")
 	}
-	// Ordered raw bytes for each account's credentials, parsed from the same text
-	// and aligned index-for-index with accountsRaw. An OAuth credential object is
-	// re-serialized from these (Python json.dumps form: spaced, source key order)
-	// rather than from the order-losing decoded map, so the stored blob is
-	// byte-identical to Python and to Go's add-token path.
-	rawCreds := rawCredentialsBytes(text)
+	// rawCreds holds each account's credentials as raw JSON from the same
+	// decode, aligned index-for-index with accountsRaw. An OAuth credential is
+	// re-serialized from these (Python json.dumps form: spaced, source key
+	// order) rather than from the order-losing decoded map, so the stored blob
+	// is byte-identical to Python and to Go's add-token path.
 
 	var (
 		data                           *SequenceData
@@ -147,6 +140,14 @@ func Import(acc Accounts, source string, force bool) error {
 			configObj, ok := asObject(m["config"])
 			if !ok {
 				return cerr.Transfer("config for %s must be a JSON object", email)
+			}
+			// Only the account identity is imported. A config is spliced into the
+			// live ~/.claude.json on a switch, so mcpServers,
+			// projects.*.allowedTools, hooks or any other key an export carried
+			// would otherwise configure commands on this machine.
+			configObj, err = importedConfig(configObj, email)
+			if err != nil {
+				return err
 			}
 
 			_, credsIsString := credsObj.(string)
@@ -383,47 +384,142 @@ func rosterForUpdate(acc Accounts) (*SequenceData, error) {
 // Reading such a file is migration of the user's data, not a compatibility
 // promise for the old name (DESIGN Amendment A23).
 func readSource(source string) (string, error) {
+	var (
+		b   []byte
+		err error
+	)
 	if source == "-" {
-		b, err := io.ReadAll(Stdin)
+		if b, err = readLimited(Stdin); err != nil {
+			return "", err
+		}
+	} else {
+		inPath := expandUser(source)
+		f, oerr := os.Open(inPath)
+		if oerr != nil {
+			if os.IsNotExist(oerr) {
+				return "", cerr.Transfer("import file not found: %s", inPath)
+			}
+			return "", oerr
+		}
+		b, err = readLimited(f)
+		f.Close()
 		if err != nil {
 			return "", err
 		}
-		return string(b), nil
 	}
-	inPath := expandUser(source)
-	if _, err := os.Stat(inPath); err != nil {
-		if os.IsNotExist(err) {
-			return "", cerr.Transfer("import file not found: %s", inPath)
-		}
-		return "", err
-	}
-	b, err := os.ReadFile(inPath)
-	if err != nil {
-		return "", err
+	if len(b) > MaxImportBytes {
+		return "", cerr.Transfer("%s is larger than %d MiB; refusing to import it", sourceLabel(source), MaxImportBytes>>20)
 	}
 	return string(b), nil
 }
 
-// rawCredentialsBytes re-parses the envelope keeping each account's credentials
-// as raw JSON, so an OAuth credential can be re-emitted preserving its source
-// member order (which the decoded map[string]any loses). The result is aligned
-// index-for-index with envelope["accounts"] because it parses the same bytes and
-// the same array. A parse failure (impossible here — the text already decoded)
-// yields nil, and callers fall back to the map form.
-func rawCredentialsBytes(text string) []json.RawMessage {
-	var env struct {
-		Accounts []struct {
-			Credentials json.RawMessage `json:"credentials"`
-		} `json:"accounts"`
+// MaxImportBytes caps what Import reads from a file or stdin. An export of a
+// few accounts is kilobytes; an unbounded read of a wrong file or an endless
+// pipe would exhaust memory before the JSON parse could reject it. The Codex
+// import uses the same cap.
+const MaxImportBytes = 8 << 20
+
+// readLimited reads at most MaxImportBytes+1 bytes, so an oversized document is
+// detectable without reading all of it.
+func readLimited(r io.Reader) ([]byte, error) {
+	return io.ReadAll(io.LimitReader(r, MaxImportBytes+1))
+}
+
+// sourceLabel names the import source in the size error.
+func sourceLabel(source string) string {
+	if source == "-" {
+		return "stdin"
 	}
-	if err := json.Unmarshal([]byte(text), &env); err != nil {
+	return expandUser(source)
+}
+
+// decodeEnvelope parses the export text ONCE into raw members and derives both
+// views from that one decode: the envelope and each account as decoded values
+// (for validation), and each account's credentials as the raw bytes of the very
+// member that was validated (for storage, preserving source key order).
+//
+// Keys are matched exactly. An earlier version took the raw credentials from a
+// second, struct-based decode, whose key matching is case-insensitive: an entry
+// carrying both "credentials" and "CREDENTIALS" (or a top-level "ACCOUNTS")
+// was validated on one value and stored the other.
+//
+// accounts is empty when the member is absent or not an array; the caller
+// reports that as "no accounts". Only the first JSON value of text is read.
+func decodeEnvelope(text string) (envelope map[string]any, accounts []any, rawCreds []json.RawMessage, err error) {
+	dec := json.NewDecoder(strings.NewReader(text))
+	var first json.RawMessage
+	if err := dec.Decode(&first); err != nil {
+		return nil, nil, nil, cerr.Transfer("export file is not valid JSON: %s", err.Error())
+	}
+	top, ok := rawObject(first)
+	if !ok {
+		return nil, nil, nil, cerr.Transfer("export file must be a JSON object")
+	}
+	envelope = make(map[string]any, len(top))
+	for k, v := range top {
+		envelope[k] = decodeUseNumber(v)
+	}
+	var rawAccounts []json.RawMessage
+	if v := bytes.TrimSpace(top["accounts"]); len(v) > 0 && v[0] == '[' {
+		if json.Unmarshal(v, &rawAccounts) != nil {
+			rawAccounts = nil
+		}
+	}
+	accounts = make([]any, len(rawAccounts))
+	rawCreds = make([]json.RawMessage, len(rawAccounts))
+	for i, ra := range rawAccounts {
+		members, ok := rawObject(ra)
+		if !ok {
+			accounts[i] = decodeUseNumber(ra) // validateImportedAccount refuses it
+			continue
+		}
+		m := make(map[string]any, len(members))
+		for k, v := range members {
+			m[k] = decodeUseNumber(v)
+		}
+		accounts[i] = m
+		rawCreds[i] = members["credentials"]
+	}
+	return envelope, accounts, rawCreds, nil
+}
+
+// rawObject decodes raw as a JSON object into its raw members; ok is false for
+// any other JSON value, null included.
+func rawObject(raw json.RawMessage) (map[string]json.RawMessage, bool) {
+	t := bytes.TrimSpace(raw)
+	if len(t) == 0 || t[0] != '{' {
+		return nil, false
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(t, &m) != nil || m == nil {
+		return nil, false
+	}
+	return m, true
+}
+
+// decodeUseNumber decodes one raw member with numbers kept as json.Number, the
+// form intValue expects. The bytes already parsed as part of the document, so
+// a failure cannot happen; it would yield nil.
+func decodeUseNumber(raw json.RawMessage) any {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	if dec.Decode(&v) != nil {
 		return nil
 	}
-	out := make([]json.RawMessage, len(env.Accounts))
-	for i, a := range env.Accounts {
-		out[i] = a.Credentials
+	return v
+}
+
+// importedConfig reduces an imported config to {"oauthAccount": …}, the shape a
+// default export carries (slimConfig). A --full export imports only its
+// identity too: every other key of ~/.claude.json is machine-local, and some of
+// them (mcpServers, allowed tools, hooks) name commands to run.
+func importedConfig(config map[string]any, email string) (map[string]any, error) {
+	oauth, ok := config["oauthAccount"].(map[string]any)
+	if !ok {
+		return nil, cerr.Transfer("config for %s is missing oauthAccount", email)
 	}
-	return out
+	return map[string]any{"oauthAccount": oauth}, nil
 }
 
 // validateImportedAccount validates one account's fields BEFORE any filename is

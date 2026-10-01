@@ -5,6 +5,7 @@ package ccfile_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -456,5 +457,37 @@ func TestCLAUDEConfigDirHonored(t *testing.T) {
 	email, org, ok := ccfile.ReadOAuthIdentity()
 	if !ok || email != "ccd@example.com" || org != "org-x" {
 		t.Errorf("ReadOAuthIdentity under CCD = (%q, %q, %v)", email, org, ok)
+	}
+}
+
+// TestUpdateGlobalConfig_CorruptIsAnErrorNotEmpty: a config that exists but
+// does not parse is never replaced by the few keys mutate sets.
+func TestUpdateGlobalConfig_CorruptIsAnErrorNotEmpty(t *testing.T) {
+	home := setHome(t)
+	path := filepath.Join(home, ".claude.json")
+	for _, corrupt := range []string{`{"projects": {"/w": {}}, `, `[1, 2]`, `"text"`} {
+		writeFile(t, path, corrupt)
+		called := false
+		err := ccfile.UpdateGlobalConfig(func(cfg map[string]any) { called = true; cfg["primaryApiKey"] = "k" })
+		if err == nil || !errors.Is(err, ccfile.ErrUnusableConfig) {
+			t.Fatalf("%q: err = %v, want ErrUnusableConfig", corrupt, err)
+		}
+		if called {
+			t.Errorf("%q: mutate ran on a corrupt config", corrupt)
+		}
+		if raw, _ := os.ReadFile(path); string(raw) != corrupt {
+			t.Errorf("%q: file rewritten to %q", corrupt, raw)
+		}
+	}
+	// Blank and absent start from an empty object.
+	for _, blank := range []string{"", "  \n", "null"} {
+		writeFile(t, path, blank)
+		if err := ccfile.UpdateGlobalConfig(func(cfg map[string]any) { cfg["k"] = "v" }); err != nil {
+			t.Fatalf("%q: %v", blank, err)
+		}
+	}
+	_ = os.Remove(path)
+	if err := ccfile.UpdateGlobalConfig(func(cfg map[string]any) { cfg["k"] = "v" }); err != nil {
+		t.Fatalf("absent: %v", err)
 	}
 }

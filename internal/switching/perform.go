@@ -243,20 +243,26 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 	credsWritten := false
 	configWritten := false
 	commit := func() error {
+		// Read the live config before anything is written: a corrupt or
+		// unreadable one aborts the activation instead of being replaced.
+		existing, err := readConfigForUpdate()
+		if err != nil {
+			return err
+		}
 		if err := s.Creds.WriteActive(targetCreds); err != nil {
 			return err
 		}
 		credsWritten = true
-		existing := readConfigJSON(s)
-		if len(existing) > 0 {
-			existing["oauthAccount"] = targetOAuth
-			if err := writeConfigJSON(existing); err != nil {
-				return err
-			}
-		} else {
-			if err := writeConfigJSON(targetConfigData); err != nil {
-				return err
-			}
+		// Only the oauthAccount is ever taken from the stored config. With no
+		// live config the result is {"oauthAccount": …} alone: a stored config
+		// is never written whole, so keys an import or an old full backup
+		// carried (mcpServers, allowed tools, hooks) cannot reach ~/.claude.json.
+		if existing == nil {
+			existing = map[string]any{}
+		}
+		existing["oauthAccount"] = targetOAuth
+		if err := writeConfigJSON(existing); err != nil {
+			return err
 		}
 		configWritten = true
 		targetInt, _ := parseInt(targetAccount)
@@ -391,7 +397,10 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 	if !ok {
 		return cerr.Switch("Invalid oauthAccount in backup")
 	}
-	cfg := readConfigJSON(s)
+	cfg, err := readConfigForUpdate()
+	if err != nil {
+		return err
+	}
 	if cfg == nil {
 		// Python would TypeError here (None["oauthAccount"]); an exception →
 		// rollback of credentials_written. Surface the same failure.
