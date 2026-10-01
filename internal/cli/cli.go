@@ -73,6 +73,14 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 		}
 	}
 
+	// `cswap add --login` runs a login before it stores anything; a plain add
+	// falls through to the main parser (handled == false).
+	if len(argv) > 0 && (argv[0] == "add" || argv[0] == "--add-account") {
+		if code, handled := addCommand(prog, argv[1:], s); handled {
+			return code
+		}
+	}
+
 	// Bare `cswap` in an interactive terminal opens the TUI (spec 08§1 step 5),
 	// TTY-gated on both ends so scripts/pipes still get the "no command" error.
 	if len(argv) == 0 && stdoutTTY && stdinTTY {

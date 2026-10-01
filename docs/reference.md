@@ -17,6 +17,8 @@ cswap switch <NUM|EMAIL|ALIAS> [--json] [--force]
 cswap switch --strategy {best|next-available} [--model NAMES] [--json]
                                             pick the target by remaining quota
 cswap add [--slot NUM] [--alias NAME]       snapshot the current login as an account
+cswap add --login [--switch] [--slot NUM] [--alias NAME] [-- LOGIN-ARGS...]
+                                            log another account in beside the live one and store it
 cswap add-token [TOKEN|-] [--email EMAIL] [--slot NUM]
                                             register a setup-token or API key
 cswap remove <NUM|EMAIL|ALIAS>              remove an account (prompts to confirm)
@@ -439,6 +441,7 @@ $ cswap switch 2 --json
 
 ```
 cswap add [--slot NUM] [--alias NAME] [--debug]
+cswap add --login [--switch] [--slot NUM] [--alias NAME] [--debug] [-- LOGIN-ARGS...]
 ```
 
 ### Options
@@ -447,6 +450,9 @@ cswap add [--slot NUM] [--alias NAME] [--debug]
 |--------|------|---------|-------------|
 | `--slot` | int | next free slot | Only with `add` or `add-token`. |
 | `--alias` | string | none | Only with `add`. Letters/digits/`.`/`-`/`_`; not all-numeric. |
+| `--login` | flag | off | Run `claude auth login` in a scratch profile and store that account instead of the live login. |
+| `--switch` | flag | off | Only with `--login`: switch to the new account after storing it. |
+| `-- LOGIN-ARGS...` | strings | none | Only with `--login`: passed to `claude auth login` (`--email EMAIL`, `--sso`, `--claudeai`; `--console` makes an API key and is refused). |
 | `--debug` | flag | off | — |
 
 ### Description
@@ -461,24 +467,51 @@ a managed account and no `--slot` is given, `add` refreshes that account's
 stored credentials and config in place rather than allocating a second slot, and
 reports `Updated credentials for Account <n> (<email> [<tag>]).`. This is the
 supported way to repair an account whose refresh token has died (`usageStatus:
-relogin_required`): log in with the account in Claude Code, then re-run
-`cswap add`. The refresh also clears any `cswap auto` quarantine on that slot.
+relogin_required`): run `cswap add --login` and sign in as that account, or
+log in with it in Claude Code and re-run `cswap add`. The refresh also clears
+any `cswap auto` quarantine on that slot.
+
+With `--login`, `add` stores a login the live one never sees. It creates a
+private scratch profile (`login.*`, mode 0700) under the backup root and runs
+`claude auth login [LOGIN-ARGS...]` with `CLAUDE_CONFIG_DIR` pointing at it,
+replacing any `CLAUDE_CONFIG_DIR` the shell already carries (including a
+`cswap env` pin). The terminal is handed to the login so the browser flow can be
+completed; no store or roster lock is held while it runs. When it exits, the
+`.claude.json` and `.credentials.json` it wrote are stored exactly as `add`
+stores the live login: an identity already managed is refreshed in place,
+otherwise the account takes `--slot` or the next free slot, with `--alias`
+applied. The live login is untouched and `activeAccountNumber` is unchanged.
+With `--switch`, `add` then switches to the new account through the same path
+as `cswap switch <n>`, so the outgoing account's credentials are written back
+as on any switch. The scratch profile is deleted on every exit path, including
+a failed login and Ctrl-C.
 
 ### Files
 
-Reads the live `~/.claude.json` and credentials store. Writes `sequence.json`,
-`configs/`, and `credentials/` (or the macOS Keychain).
+Reads the live `~/.claude.json` and credentials store, or with `--login` the
+scratch profile's `.claude.json` and `.credentials.json`. Writes
+`sequence.json`, `configs/`, and `credentials/` (or the macOS Keychain). With
+`--login`, creates and removes `<backup root>/login.*`; with `--switch`, also
+writes the live login as `cswap switch` does. On macOS, where Claude Code
+keeps a login's credential in the Keychain rather than in
+`.credentials.json`, `--login` reads it from the item Claude Code creates for
+the scratch directory (`Claude Code-credentials-<first 8 hex of the
+directory's SHA-256>`) and deletes that item before removing the directory, on
+success, failure and Ctrl-C alike.
 
 ### Exit status
 
-`0` on success; `1` on a handled error (for example no current login, or an
-invalid alias).
+`0` on success; `1` on a handled error (for example no current login, an
+invalid alias, a `--login` that did not complete, or `--switch` / `--`
+arguments without `--login`); `2` on a usage error (for example `--json`).
 
 ### Output
 
 `Added Account <n>: <email> [<tag>]` on a new account, or `Updated credentials
 for Account <n> (<email> [<tag>]).` when refreshing an already-managed identity
-in place.
+in place. With `--login`, a new account reads `Added Account <n>: <email>
+[<tag>] (from login)`, preceded by whatever `claude auth login` prints; with
+`--switch`, the switch's usual output follows. `add` has no `--json` mode.
 
 ### Errors
 
@@ -486,16 +519,36 @@ An invalid alias raises `ConfigError` (exit 1). A missing or unreadable Claude
 config raises `ConfigError` (`Claude config file not found`,
 `Permission denied reading Claude config`, or a wrapped read error).
 
+With `--login`:
+
+- `Error: claude's login did not complete; nothing stored, the live login
+  untouched` — the login exited non-zero, or left no `oauthAccount` or no
+  `.credentials.json`.
+- `Error: claude's login made an API key, which is a different auth axis: use
+  cswap --add-token` — the login produced an API key (a console login) rather
+  than a `claudeAiOauth` subscription credential.
+- `Error: 'claude' was not found on PATH. Install Claude Code first.`
+
+Without `--login`:
+
+- `Error: --switch goes with --login: the live login is already the one add
+  stores`
+- `Error: arguments after -- go with --login: they are claude's login
+  arguments`
+
 ### Example (illustrative — requires a current Claude Code login to snapshot)
 
 ```
 $ cswap add --slot 3 --alias work
 Added Account 3: me@example.com [personal]
+
+$ cswap add --login --alias second -- --email other@example.com
+Added Account 4: other@example.com [personal] (from login)
 ```
 
 ### See also
 
-`cswap add-token`, `cswap alias`, `cswap remove`.
+`cswap add-token`, `cswap switch`, `cswap alias`, `cswap remove`.
 
 ---
 

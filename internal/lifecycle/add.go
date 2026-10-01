@@ -18,6 +18,12 @@
 // copy of it, and a record another cswap added meanwhile cannot be renamed away
 // by this commit.
 //
+// The login it stores comes from an AddSource: the live login (`cswap add`) or
+// a Claude config directory a fresh `claude auth login` was just run in (`cswap
+// add --login`). Only the source of the bytes differs, plus one rule: a
+// login-directory add leaves activeAccountNumber alone, because the live login
+// is still the account it was.
+//
 // The one human pause — "Overwrite slot N?" — is asked BEFORE the lock is taken
 // (holding a lock across a question would fail every other cswap on a 10s
 // budget), and the occupancy it was answered against is re-validated inside the
@@ -42,6 +48,25 @@ import (
 // identity from another slot. alias nil preserves any existing alias; a set
 // alias replaces it.
 func AddAccount(s *store.Store, slot *int, assumeYes bool, alias *string) error {
+	_, err := AddAccountFrom(s, LiveLogin, slot, assumeYes, alias)
+	return err
+}
+
+// AddAccountFrom is AddAccount with the login it stores named explicitly: the
+// live login (LiveLogin) or a Claude config directory a login was just made in
+// (LoginDir). It returns the slot the account landed on.
+//
+// The two sources differ in one rule besides where the bytes are read: a live
+// add records the stored slot as the active account, because it IS the live
+// login; a login-directory add leaves activeAccountNumber alone, because the
+// live login has not changed.
+func AddAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, alias *string) (string, error) {
+	var accountNum string
+	err := addAccountFrom(s, src, slot, assumeYes, alias, &accountNum)
+	return accountNum, err
+}
+
+func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, alias *string, landed *string) error {
 	if err := s.SetupDirectories(); err != nil {
 		return err
 	}
@@ -55,8 +80,11 @@ func AddAccount(s *store.Store, slot *int, assumeYes bool, alias *string) error 
 		normAlias = na
 	}
 
-	email, orgUUID, ok := s.GetCurrentAccount()
+	email, orgUUID, ok := src.identity(s)
 	if !ok {
+		if src.isLoginDir() {
+			return errLoginIncomplete()
+		}
 		return cerr.Config("No active Claude account found. Please log in first.")
 	}
 
@@ -78,7 +106,8 @@ func AddAccount(s *store.Store, slot *int, assumeYes bool, alias *string) error 
 		// Refresh-in-place: no slot given and the identity is already managed.
 		if slot == nil {
 			if existing := s.FindAccountSlot(data, email, orgUUID); existing != "" {
-				return addRefreshInPlace(s, data, existing, email, orgUUID, alias, normAlias)
+				*landed = existing
+				return addRefreshInPlace(s, src, data, existing, email, orgUUID, alias, normAlias)
 			}
 		}
 
@@ -139,14 +168,7 @@ func AddAccount(s *store.Store, slot *int, assumeYes bool, alias *string) error 
 		}
 
 		// Read the new account material BEFORE any destructive operation.
-		creds, err := readActiveCredential(s)
-		if err != nil {
-			return err
-		}
-		if err := rejectLiveAPIKeyCapture(creds); err != nil {
-			return err
-		}
-		configText, err := readLiveConfigText()
+		creds, configText, err := src.material(s)
 		if err != nil {
 			return err
 		}
@@ -217,11 +239,14 @@ func AddAccount(s *store.Store, slot *int, assumeYes bool, alias *string) error 
 			data.Sequence = append(data.Sequence, slotInt)
 			sort.Ints(data.Sequence)
 		}
-		setActive(data, slotInt)
+		if !src.isLoginDir() {
+			setActive(data, slotInt)
+		}
 		data.LastUpdated = timestamp(s)
 		if err := s.WriteSequence(data); err != nil {
 			return err
 		}
+		*landed = accountNum
 
 		tag := displayTag(cfgOrgName)
 		if s.Log != nil {
@@ -234,7 +259,11 @@ func AddAccount(s *store.Store, slot *int, assumeYes bool, alias *string) error 
 		if migrateFrom != "" {
 			emitLine(printer.Dimmed(fmt.Sprintf("Moved from slot %s → %s", migrateFrom, accountNum)))
 		}
-		emitLine(printer.Accent("Added") + " Account " + accountNum + ": " + email + " " + printer.Muted("["+tag+"]"))
+		line := printer.Accent("Added") + " Account " + accountNum + ": " + email + " " + printer.Muted("["+tag+"]")
+		if src.isLoginDir() {
+			line += " " + printer.Dimmed("(from login)")
+		}
+		emitLine(line)
 		return nil
 	})
 }
@@ -345,7 +374,7 @@ func emitSlotOccupied(occ *displaceInfo) {
 
 // addRefreshInPlace is spec 01§5.1: the identity is already managed and no slot
 // was given, so refresh its stored credential/config in place.
-func addRefreshInPlace(s *store.Store, data *store.SequenceData, accountNum, email, orgUUID string, alias *string, normAlias string) error {
+func addRefreshInPlace(s *store.Store, src AddSource, data *store.SequenceData, accountNum, email, orgUUID string, alias *string, normAlias string) error {
 	rec, _ := recordAt(data, accountNum)
 	matchedOrgName := ""
 	if rec != nil {
@@ -358,14 +387,7 @@ func addRefreshInPlace(s *store.Store, data *store.SequenceData, accountNum, ema
 		}
 	}
 
-	creds, err := readActiveCredential(s)
-	if err != nil {
-		return err
-	}
-	if err := rejectLiveAPIKeyCapture(creds); err != nil {
-		return err
-	}
-	configText, err := readLiveConfigText()
+	creds, configText, err := src.material(s)
 	if err != nil {
 		return err
 	}
@@ -384,8 +406,10 @@ func addRefreshInPlace(s *store.Store, data *store.SequenceData, accountNum, ema
 			return err
 		}
 	}
-	slotInt, _ := parseSlot(accountNum)
-	setActive(data, slotInt)
+	if !src.isLoginDir() {
+		slotInt, _ := parseSlot(accountNum)
+		setActive(data, slotInt)
+	}
 	data.LastUpdated = timestamp(s)
 	if err := s.WriteSequence(data); err != nil {
 		return err
