@@ -504,3 +504,42 @@ func containsPath(xs []string, slashPath string) bool {
 	}
 	return false
 }
+
+// TestDryRunOfAResumeRemovesNothing: a dry run over a half-filled store
+// reports the resume and leaves the interrupted run's temp file in place; the
+// temp file goes only in the real run, under the lock.
+func TestDryRunOfAResumeRemovesNothing(t *testing.T) {
+	old := oldStore(t)
+	newRoot := filepath.Join(t.TempDir(), "tycswap")
+	linux := platform.Linux
+	if _, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(newRoot, "mappings.json")); err != nil {
+		t.Fatal(err)
+	}
+	tmp := filepath.Join(newRoot, "configs", ".tycswap-migrate-123.tmp")
+	write(t, tmp, "half", 0o600)
+	before := snapshot(t, newRoot)
+
+	rep, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, DryRun: true, Platform: &linux})
+	if err != nil || !rep.Resumed {
+		t.Fatalf("dry run = %+v, %v; want a resumed report", rep, err)
+	}
+	if !equalMaps(before, snapshot(t, newRoot)) {
+		t.Error("the dry run changed the new store")
+	}
+	if _, err := os.Stat(tmp); err != nil {
+		t.Errorf("the dry run removed the temp file: %v", err)
+	}
+
+	if _, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
+		t.Error("the real run kept the temp file")
+	}
+	if _, err := os.Stat(filepath.Join(newRoot, "mappings.json")); err != nil {
+		t.Errorf("the real run did not copy the missing file: %v", err)
+	}
+}

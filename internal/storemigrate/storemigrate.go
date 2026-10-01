@@ -233,7 +233,8 @@ func Run(o Options) (Report, error) {
 		planKeychainFiles(plan, items)
 	}
 	if !IsEmpty(o.NewRoot) {
-		if err := checkResumable(o.NewRoot, plan); err != nil {
+		// Check only: nothing is removed before the lock is held.
+		if err := checkResumable(o.NewRoot, plan, false); err != nil {
 			return rep, err
 		}
 		rep.Resumed = true
@@ -256,8 +257,9 @@ func Run(o Options) (Report, error) {
 		}
 		defer lock.Release()
 		// Re-check under the lock: a command may have written in between.
+		// Temp files an interrupted copy left are removed in this pass only.
 		if !IsEmpty(o.NewRoot) {
-			if err := checkResumable(o.NewRoot, plan); err != nil {
+			if err := checkResumable(o.NewRoot, plan, true); err != nil {
 				return rep, err
 			}
 			rep.Resumed = true
@@ -454,8 +456,11 @@ func planTree(src string) (map[string]planned, error) {
 // writes, of the same kind, and a file byte for byte the source's, a symlink
 // pointing at the same target. A file a previous run left half-written cannot
 // exist (files are written by temp file and rename); such temp files are
-// removed here. Nothing else is written.
-func checkResumable(newRoot string, plan map[string]planned) error {
+// accepted, and removed only when removeTemps is set, which Run does in the
+// pass under the store lock and never in a dry run: an unlocked pass must not
+// remove a temp file a run in progress is about to rename. Nothing else is
+// written.
+func checkResumable(newRoot string, plan map[string]planned, removeTemps bool) error {
 	return filepath.WalkDir(newRoot, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("read %s: %w", p, err)
@@ -474,7 +479,10 @@ func checkResumable(newRoot string, plan map[string]planned) error {
 		case top && (name == migrationsLog || strings.HasPrefix(name, newLogName)):
 			return nil
 		case strings.HasPrefix(name, ".tycswap-migrate-") && strings.HasSuffix(name, ".tmp"):
-			return os.Remove(p) // left by an interrupted copyFile
+			if removeTemps {
+				return os.Remove(p) // left by an interrupted copyFile
+			}
+			return nil
 		}
 		want, ok := plan[rel]
 		if !ok {
