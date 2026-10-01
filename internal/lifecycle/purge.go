@@ -3,7 +3,8 @@
 // Implements spec 01§11 (purge): refuse while any session-mode instance is live,
 // print the warning header + the platform-specific credential line, confirm,
 // then delete per-account credential files (including the legacy account-None
-// alias), macOS Keychain items and session-profile Keychain entries, and the
+// alias), macOS Keychain items (the backup and its .prev generation) and
+// session-profile Keychain entries, and the
 // backup directory, never an old store `tycswap migrate` copied from. Every deletion is
 // best-effort; the collected "Removed:" list is printed at the end.
 package lifecycle
@@ -114,13 +115,15 @@ func Purge(s *store.Store) error {
 				}
 			}
 		}
-		// macOS Keychain items via the security backend.
+		// macOS Keychain items: the backup and its retained .prev generation,
+		// under the names credstore writes.
 		if s.Platform == platform.MacOS {
-			kc := keychain.Security{}
+			kc := s.Keychain()
 			for _, n := range nums {
-				username := "account-" + n + "-" + email
-				_ = kc.Delete(securityService, username)
-				removed = append(removed, "Credential: "+username)
+				for _, username := range []string{storenames.KeychainAccount(n, email), storenames.KeychainAccountPrev(n, email)} {
+					_ = kc.Delete(securityService, username)
+					removed = append(removed, "Credential: "+username)
+				}
 			}
 		}
 	}
@@ -129,7 +132,7 @@ func Purge(s *store.Store) error {
 	// service names derive from the dir paths.
 	if len(sessionDirs) > 0 {
 		if s.Platform == platform.MacOS {
-			kc := keychain.Security{}
+			kc := s.Keychain()
 			for _, d := range sessionDirs {
 				sessprofile.DeleteMacOSKeychainEntry(kc, filepath.Join(sessionsRoot, d))
 			}

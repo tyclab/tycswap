@@ -33,11 +33,11 @@ func (s *FileKeychainStore) prevBackupPath(num, email string) string {
 }
 
 func (s *FileKeychainStore) backupUsername(num, email string) string {
-	return "account-" + num + "-" + email
+	return storenames.KeychainAccount(num, email)
 }
 
 func (s *FileKeychainStore) prevBackupUsername(num, email string) string {
-	return s.backupUsername(num, email) + ".prev"
+	return storenames.KeychainAccountPrev(num, email)
 }
 
 // kcReadBackup reads a per-account backup from the Keychain only (via learn),

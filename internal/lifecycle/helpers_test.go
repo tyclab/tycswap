@@ -23,12 +23,24 @@ import (
 // "No accounts are managed yet" paths and add's own init both work).
 func newStore(t *testing.T) *store.Store {
 	t.Helper()
+	return newStoreOpts(t, store.Options{})
+}
+
+// newStoreOpts is newStore with the caller's seams (a Keychain Fake, say);
+// the clock and stderr sink are filled in when unset.
+func newStoreOpts(t *testing.T, opts store.Options) *store.Store {
+	t.Helper()
 	home := t.TempDir()
 	testutil.Setenv(t, "HOME", home)
 	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
 	testutil.Unsetenv(t, "XDG_DATA_HOME")
-	clk := testutil.FixedClock(t, "2026-07-17T09:00:00Z")
-	s, err := store.New(store.Options{Clock: clk, Stderr: &bytes.Buffer{}})
+	if opts.Clock == nil {
+		opts.Clock = testutil.FixedClock(t, "2026-07-17T09:00:00Z")
+	}
+	if opts.Stderr == nil {
+		opts.Stderr = &bytes.Buffer{}
+	}
+	s, err := store.New(opts)
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}

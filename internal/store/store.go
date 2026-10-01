@@ -183,6 +183,10 @@ func New(opts Options) (*Store, error) {
 // autoswitch.Switcher / tui.Facade BackupDir() interfaces (DESIGN A13).
 func (s *Store) BackupDir() string { return s.backupDir }
 
+// Keychain is the macOS Keychain client the store was built with
+// (Options.Keychain; keychain.Security by default).
+func (s *Store) Keychain() keychain.KeychainClient { return s.kc }
+
 // timestamp is get_timestamp(): the current wall time in UTC, seconds
 // precision, Z-suffixed (spec 01§2.1, models.get_timestamp).
 func (s *Store) timestamp() string {

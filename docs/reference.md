@@ -2384,8 +2384,9 @@ file names from it and refuses; fix the record in <sequence.json> or remove
 
 ### Files
 
-Removes the backup root and its contents (and the macOS Keychain entries under
-service `tycswap`).
+Removes the backup root and its contents (and, on macOS, each account's
+Keychain backup and its retained `.prev` generation under service `tycswap`,
+plus the session profiles' entries).
 
 ### Exit status
 

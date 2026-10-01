@@ -1,12 +1,16 @@
 package lifecycle
 
 import (
-	"github.com/tyclab/tycswap/internal/storenames"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
 // TestPurgeConfirmed removes the entire backup directory after a "y".
@@ -107,5 +111,42 @@ func TestPurgeRefusesLiveSession(t *testing.T) {
 	}
 	if errKind(Purge(s)) != "SessionError" {
 		t.Fatal("want SessionError while a live session is running")
+	}
+}
+
+// TestPurgeRemovesKeychainBackupsAndTheirPrev: on macOS, purge deletes each
+// slot's Keychain backup and its retained .prev generation, for the slot's
+// name and the legacy account-None alias, through the store's Keychain
+// client, and reports every one; an item of another service stays.
+func TestPurgeRemovesKeychainBackupsAndTheirPrev(t *testing.T) {
+	kc := keychain.NewFake()
+	s := newStoreOpts(t, store.Options{Keychain: kc})
+	s.Platform = platform.MacOS
+	seed(t, s, ip(1), switchable("1", "a@example.com"))
+	const email = "a@example.com"
+	ours := []string{
+		storenames.KeychainAccount("1", email), storenames.KeychainAccountPrev("1", email),
+		storenames.KeychainAccount("None", email), storenames.KeychainAccountPrev("None", email),
+	}
+	for _, name := range ours {
+		kc.Seed(keychain.BackupService, name, "secret "+name)
+	}
+	kc.Seed("other-tool", "account-1-"+email, "not ours")
+
+	out := captureOut(t)
+	answerYes(t)
+	if err := Purge(s); err != nil {
+		t.Fatalf("Purge: %v", err)
+	}
+	for _, name := range ours {
+		if kc.Exists(keychain.BackupService, name) {
+			t.Errorf("Keychain item %s survived purge", name)
+		}
+		if !strings.Contains(out.String(), "Credential: "+name) {
+			t.Errorf("removal of %s not reported:\n%s", name, out.String())
+		}
+	}
+	if !kc.Exists("other-tool", "account-1-"+email) {
+		t.Error("purge deleted another service's item")
 	}
 }

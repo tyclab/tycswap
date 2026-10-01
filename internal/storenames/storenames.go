@@ -76,3 +76,11 @@ func CredsFile(num, email string) string {
 
 // CredsPrevFile is the retained previous credential generation's base name.
 func CredsPrevFile(num, email string) string { return CredsFile(num, email) + ".prev" }
+
+// KeychainAccount is the account name of a per-account backup in the macOS
+// Keychain (service keychain.BackupService).
+func KeychainAccount(num, email string) string { return "account-" + num + "-" + email }
+
+// KeychainAccountPrev is the account name of the retained previous credential
+// generation in the macOS Keychain.
+func KeychainAccountPrev(num, email string) string { return KeychainAccount(num, email) + ".prev" }
