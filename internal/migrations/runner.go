@@ -45,6 +45,7 @@ type migrationEntry struct {
 var registry = []migrationEntry{
 	{"windows_keyring_to_files", migrateWindowsKeyringToFiles},
 	{"macos_keyring_to_security", migrateMacOSKeyringToSecurity},
+	{"email_file_names", migrateEmailFileNames},
 }
 
 // Run applies every not-yet-applied migration in host's backup dir, in

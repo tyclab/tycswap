@@ -44,6 +44,8 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/codex/authfile"
 	"github.com/tyclab/tycswap/internal/codex/store"
+	"github.com/tyclab/tycswap/internal/storenames"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // ExportVersion is bumped when the on-disk export shape changes incompatibly.
@@ -196,6 +198,13 @@ func writeExportFile(path string, blob []byte) error {
 // accepted, as the Python accepts every row); an alias the switcher's
 // NormalizeAlias would reject is dropped rather than imported. The rows are
 // written under the store lock (st.WithLock).
+//
+// Like the Claude import, every row that would be imported is validated
+// before anything is written, and one bad row refuses the whole import: a
+// non-empty email must be a plain address of at most 254 bytes, an alias must
+// hold no control character and be at most 64 bytes, and the
+// accountKey may hold no control character. Plan and workspace names are
+// stored without control characters (termsafe.Strip).
 func Import(st *store.Store, source string, force bool, stdin io.Reader) (int, error) {
 	var raw []byte
 	var err error
@@ -250,6 +259,10 @@ func Import(st *store.Store, source string, force bool, stdin io.Reader) (int, e
 		return 0, cerr.Transfer("%s contains no accounts", source)
 	}
 
+	if err := validateRows(rows); err != nil {
+		return 0, err
+	}
+
 	imported := 0
 	err = st.WithLock(func() error {
 		existing := map[string]bool{}
@@ -274,8 +287,8 @@ func Import(st *store.Store, source string, force bool, stdin io.Reader) (int, e
 			}
 			if _, err := st.UpsertSlot(key, store.Upsert{
 				Email:         pyStr(row["email"], ""),
-				Plan:          pyStr(row["plan"], ""),
-				WorkspaceName: pyStr(row["workspaceName"], ""),
+				Plan:          termsafe.Strip(pyStr(row["plan"], "")),
+				WorkspaceName: termsafe.Strip(pyStr(row["workspaceName"], "")),
 				AuthMode:      pyStr(row["authMode"], "chatgpt"),
 			}); err != nil {
 				return err
@@ -300,6 +313,42 @@ func Import(st *store.Store, source string, force bool, stdin io.Reader) (int, e
 		return nil
 	})
 	return imported, err
+}
+
+// maxAliasLen bounds an imported alias, as the Claude import does.
+const maxAliasLen = 64
+
+// validateRows is the import's pass 1: every row the write pass would take
+// (an object with an accountKey and an auth object) is checked before any
+// write, so a bad row late in the file cannot leave earlier rows imported.
+func validateRows(rows []json.RawMessage) error {
+	for _, r := range rows {
+		var row map[string]json.RawMessage
+		if json.Unmarshal(r, &row) != nil || row == nil {
+			continue
+		}
+		key, _ := stringValue(row["accountKey"])
+		if _, ok := decodeObject(row["auth"]); key == "" || !ok {
+			continue
+		}
+		if termsafe.HasControl(key) {
+			return cerr.Transfer("invalid accountKey in imported account: %q contains a control character", key)
+		}
+		if email, isStr := stringValue(row["email"]); isStr && email != "" && !storenames.ValidEmail(email) {
+			return cerr.Transfer("invalid email in imported account: %q", email)
+		}
+		if alias, isStr := stringValue(row["alias"]); isStr && alias != "" {
+			if len(alias) > maxAliasLen {
+				return cerr.Transfer("invalid alias for %s: longer than %d bytes", key, maxAliasLen)
+			}
+			// Surrounding spaces are trimmed and an alias the switcher would
+			// reject is dropped (ValidAlias); a control character is refused.
+			if strings.IndexFunc(alias, termsafe.IsControl) >= 0 {
+				return cerr.Transfer("invalid alias for %s: %q contains a control character", key, alias)
+			}
+		}
+	}
+	return nil
 }
 
 // MaxImportBytes caps what Import reads from a file or stdin: an export of a

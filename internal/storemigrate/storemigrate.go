@@ -5,10 +5,13 @@
 // the old directory and its macOS Keychain items may still belong to another
 // installed tool, so this package only ever reads them. It refuses to copy into
 // a store that already holds data, so a second run can never merge or clobber.
-// The layout inside the store is unchanged; only three kinds of name change on
+// The layout inside the store is unchanged; only four kinds of name change on
 // the way: the log (claude-swap.log* → tycswap.log*), the per-profile marker
-// files (.cswap-* → .tycswap-*), and the Keychain services
-// (claude-swap → tycswap, claude-swap-codex → tycswap-codex).
+// files (.cswap-* → .tycswap-*), the per-account backup files, whose raw email
+// becomes storenames.EmailKey (.claude-config-<n>-<email>.json →
+// .claude-config-<n>-<key>.json, likewise .creds-*.enc[.prev]), and the
+// Keychain services (claude-swap → tycswap, claude-swap-codex →
+// tycswap-codex).
 package storemigrate
 
 import (
@@ -28,6 +31,7 @@ import (
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
 // Store modes: every directory 0700, every file 0600, whatever the source had.
@@ -216,7 +220,7 @@ func Run(o Options) (Report, error) {
 		}
 	}
 
-	if err := copyTree(old, o.NewRoot, o.DryRun, &rep); err != nil {
+	if err := copyTree(old, o.NewRoot, backupRenames(old), o.DryRun, &rep); err != nil {
 		return rep, err
 	}
 	if plat == platform.MacOS {
@@ -238,7 +242,26 @@ func newName(name string, top bool) string {
 	return name
 }
 
-func copyTree(src, dst string, dryRun bool, rep *Report) error {
+// backupRenames maps the old store's raw-email backup file names (relative,
+// slash-separated) to their encoded names, from the old roster. Only plain
+// addresses are mapped; any other file keeps its name, and the store's
+// email_file_names migration warns about it.
+func backupRenames(oldRoot string) map[string]string {
+	out := map[string]string{}
+	for num, email := range rosterEmails(oldRoot) {
+		if !storenames.ValidEmail(email) {
+			continue
+		}
+		out["configs/"+storenames.LegacyConfigFile(num, email)] = "configs/" + storenames.ConfigFile(num, email)
+		for _, n := range []string{num, "None"} {
+			out["credentials/"+storenames.LegacyCredsFile(n, email)] = "credentials/" + storenames.CredsFile(n, email)
+			out["credentials/"+storenames.LegacyCredsPrevFile(n, email)] = "credentials/" + storenames.CredsPrevFile(n, email)
+		}
+	}
+	return out
+}
+
+func copyTree(src, dst string, renames map[string]string, dryRun bool, rep *Report) error {
 	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("read %s: %w", p, err)
@@ -255,6 +278,9 @@ func copyTree(src, dst string, dryRun bool, rep *Report) error {
 			parts[i] = newName(parts[i], i == 0)
 		}
 		toRel := filepath.Join(parts...)
+		if to, ok := renames[filepath.ToSlash(rel)]; ok && d.Type().IsRegular() {
+			toRel = filepath.FromSlash(to)
+		}
 		target := filepath.Join(dst, toRel)
 		name := d.Name()
 
@@ -387,6 +413,37 @@ func copyKeychain(oldRoot, newRoot string, kc keychain.KeychainClient, dryRun bo
 // claudeBackupAccounts lists the Keychain account names the old store's roster
 // implies: account-<n>-<email>, its .prev, and the legacy account-None alias.
 func claudeBackupAccounts(oldRoot string) []string {
+	emails := rosterEmails(oldRoot)
+	seen := map[string]bool{}
+	var out []string
+	add := func(s string) {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	nums := make([]string, 0, len(emails))
+	for n := range emails {
+		nums = append(nums, n)
+	}
+	sort.Strings(nums)
+	for _, n := range nums {
+		email := emails[n]
+		if email == "" {
+			continue
+		}
+		for _, num := range []string{n, "None"} {
+			base := "account-" + num + "-" + email
+			add(base)
+			add(base + ".prev")
+		}
+	}
+	return out
+}
+
+// rosterEmails reads slot → email from the old store's sequence.json; nil when
+// it is absent or unreadable.
+func rosterEmails(oldRoot string) map[string]string {
 	raw, err := os.ReadFile(filepath.Join(oldRoot, sequenceFile))
 	if err != nil {
 		return nil
@@ -399,29 +456,9 @@ func claudeBackupAccounts(oldRoot string) []string {
 	if json.Unmarshal(raw, &doc) != nil {
 		return nil
 	}
-	seen := map[string]bool{}
-	var out []string
-	add := func(s string) {
-		if !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	nums := make([]string, 0, len(doc.Accounts))
-	for n := range doc.Accounts {
-		nums = append(nums, n)
-	}
-	sort.Strings(nums)
-	for _, n := range nums {
-		email := doc.Accounts[n].Email
-		if email == "" {
-			continue
-		}
-		for _, num := range []string{n, "None"} {
-			base := "account-" + num + "-" + email
-			add(base)
-			add(base + ".prev")
-		}
+	out := make(map[string]string, len(doc.Accounts))
+	for n, a := range doc.Accounts {
+		out[n] = a.Email
 	}
 	return out
 }

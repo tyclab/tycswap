@@ -36,6 +36,7 @@ import (
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/storenames"
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
@@ -272,10 +273,9 @@ func displayTag(orgName string) string {
 	return "personal"
 }
 
-var emailRE = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-
-// validateEmail mirrors _validate_email (spec 01§6.1).
-func validateEmail(email string) bool { return emailRE.MatchString(email) }
+// validateEmail mirrors _validate_email (spec 01§6.1), with the 254-byte bound
+// the import check has.
+func validateEmail(email string) bool { return storenames.ValidEmail(email) }
 
 var aliasRE = regexp.MustCompile(`^[a-z0-9_.-]+$`)
 

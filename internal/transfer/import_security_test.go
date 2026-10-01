@@ -129,3 +129,28 @@ func TestImportSizeCap(t *testing.T) {
 		t.Fatalf("at the cap: %v", err)
 	}
 }
+
+func TestImportStripsControlCharactersFromDisplayFields(t *testing.T) {
+	f := newFakeAccounts(t)
+	a := oauthAccount(1, "a@example.com", "")
+	a["organizationName"] = "Evil\x1b]0;pwned\x07 Org"
+	a["uuid"] = "u\u009b1"
+	a["config"] = map[string]any{"oauthAccount": map[string]any{"emailAddress": "a@example.com", "displayName": "D\x1b[2J"}}
+	if _, err := importText(t, f, envelopeJSON(1, a), false); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	r := f.record(t, "1")
+	if r["organizationName"] != "Evil]0;pwned Org" || r["uuid"] != "u1" {
+		t.Errorf("record = %v", r)
+	}
+	if strings.Contains(f.configBackup["1"], "\\u001b") || strings.Contains(f.configBackup["1"], "\x1b") {
+		t.Errorf("config kept the ESC: %q", f.configBackup["1"])
+	}
+
+	f2 := newFakeAccounts(t)
+	b := oauthAccount(1, "a@example.com", "")
+	b["organizationUuid"] = "org\x1b"
+	if _, err := importText(t, f2, envelopeJSON(1, b), false); err == nil || !strings.Contains(err.Error(), "control character") {
+		t.Fatalf("err = %v, want the organizationUuid refusal", err)
+	}
+}

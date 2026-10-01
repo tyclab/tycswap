@@ -50,10 +50,10 @@ func (e *env) importDoc(rows ...map[string]any) int {
 func TestImportSkipsARowWhoseTokensBelongToAnotherAccount(t *testing.T) {
 	e := newEnv(t)
 	n := e.importDoc(
-		map[string]any{"accountKey": keyA, "email": "a@x", "auth": jwtAuth("user-b", "acct-b", "b@x")},
-		map[string]any{"accountKey": keyB, "email": "b@x", "auth": jwtAuth("user-b", "acct-b", "b@x")},
+		map[string]any{"accountKey": keyA, "email": "a@x.io", "auth": jwtAuth("user-b", "acct-b", "b@x.io")},
+		map[string]any{"accountKey": keyB, "email": "b@x.io", "auth": jwtAuth("user-b", "acct-b", "b@x.io")},
 		// No decodable identity: accepted, as the Python accepts every row.
-		map[string]any{"accountKey": keyC, "email": "c@x", "auth": authJSON("acct-c", "c@x")},
+		map[string]any{"accountKey": keyC, "email": "c@x.io", "auth": authJSON("acct-c", "c@x.io")},
 	)
 	if n != 2 {
 		t.Fatalf("imported %d, want 2", n)
@@ -70,9 +70,9 @@ func TestImportSkipsARowWhoseTokensBelongToAnotherAccount(t *testing.T) {
 func TestImportNormalisesAliasesAndDropsInvalidOnes(t *testing.T) {
 	e := newEnv(t)
 	e.importDoc(
-		map[string]any{"accountKey": keyA, "alias": " Work ", "auth": authJSON("acct-a", "a@x")},
-		map[string]any{"accountKey": keyB, "alias": "2", "auth": authJSON("acct-b", "b@x")},
-		map[string]any{"accountKey": keyC, "alias": "-rm", "auth": authJSON("acct-c", "c@x")},
+		map[string]any{"accountKey": keyA, "alias": " Work ", "auth": authJSON("acct-a", "a@x.io")},
+		map[string]any{"accountKey": keyB, "alias": "2", "auth": authJSON("acct-b", "b@x.io")},
+		map[string]any{"accountKey": keyC, "alias": "-rm", "auth": authJSON("acct-c", "c@x.io")},
 	)
 	st := e.open()
 	if got := st.SlotForKey(keyA).Alias; got != "work" {

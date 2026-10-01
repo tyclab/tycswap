@@ -20,14 +20,15 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
 func (s *FileKeychainStore) backupEncPath(num, email string) string {
-	return filepath.Join(s.credentialsDir, ".creds-"+num+"-"+email+".enc")
+	return filepath.Join(s.credentialsDir, storenames.CredsFile(num, email))
 }
 
 func (s *FileKeychainStore) prevBackupPath(num, email string) string {
-	return filepath.Join(s.credentialsDir, ".creds-"+num+"-"+email+".enc.prev")
+	return filepath.Join(s.credentialsDir, storenames.CredsPrevFile(num, email))
 }
 
 func (s *FileKeychainStore) backupUsername(num, email string) string {

@@ -471,6 +471,12 @@ account, copying its credentials and `oauthAccount` config into the backup
 root. `--slot` places it in a specific slot (swapping if occupied); `--alias`
 sets a short display name at the same time.
 
+The email of the login (`oauthAccount.emailAddress`, from the live
+`~/.claude.json` or the scratch profile's) must be a plain address of at most
+254 bytes, as `import` requires; anything else (a `/`, a backslash, whitespace,
+a control character) is refused before anything is written:
+`The logged-in account's email is not a plain address: "<email>"`.
+
 When the current login's identity `(email, organizationUuid)` already belongs to
 a managed account and no `--slot` is given, `add` refreshes that account's
 stored credentials and config in place rather than allocating a second slot, and
@@ -1628,7 +1634,10 @@ Only the account identity is imported: each account's `config` is reduced to
 its `oauthAccount`, also from a `--full` export, because every other key of
 `~/.claude.json` is machine-local and some (`mcpServers`, allowed tools, hooks)
 name commands to run. An account whose `config` has no `oauthAccount` object is
-refused. Keys are matched exactly (`CREDENTIALS` or `ACCOUNTS` are not the
+refused. `organizationName`, `uuid`, `added` and the string members of
+`oauthAccount` are stored without control characters (C0, DEL, C1, ESC); an
+`organizationUuid` holding one is refused, since it is part of the identity.
+Keys are matched exactly (`CREDENTIALS` or `ACCOUNTS` are not the
 members `credentials` and `accounts`), and the credentials stored are the bytes
 of the member that was validated. Input over 8 MiB is refused before parsing.
 
@@ -2412,8 +2421,10 @@ only the same); otherwise it refuses and changes nothing. It holds the new
 store's `.lock` while it copies. Directories are created 0700 and files written
 0600 by temp file and rename; symlinks (a session profile's links into
 `~/.claude`) are copied as links, never followed; lock files are skipped.
-`claude-swap.log*` is copied as `tycswap.log*` and `.cswap-*` marker files as
-`.tycswap-*`; every other name and the layout are unchanged. On macOS the
+`claude-swap.log*` is copied as `tycswap.log*`, `.cswap-*` marker files as
+`.tycswap-*`, and the per-account backups under `configs/` and `credentials/`
+from their raw-email names to the encoded names (see FILES); every other name
+and the layout are unchanged. On macOS the
 Keychain items are copied to the new service names: per-account backups
 (`claude-swap` → `tycswap`, including the `.prev` generation and the
 `account-None` alias), Codex snapshots (`claude-swap-codex` → `tycswap-codex`),
@@ -3402,7 +3413,12 @@ Rows without an `accountKey` or an `auth` object are skipped, and so is a row
 whose `auth` payload carries an identity that is not the row's `accountKey`
 (a payload with no decodable identity, such as an API-key login, is taken as
 labelled). An `alias` goes through the same rule as `tycswap codex alias`; an
-alias that rule rejects is dropped, the row is still imported. A file whose
+alias that rule rejects is dropped, the row is still imported. Before anything
+is written every importable row is checked, and one bad row refuses the whole
+file: a non-empty `email` must be a plain address of at most 254 bytes, an
+`alias` may hold no control character and at most 64 bytes, and `accountKey`
+no control character. `plan` and `workspaceName` are stored without control
+characters. A file whose
 `provider` is present and not `codex`, or whose `version` is newer than 1, is
 refused whole, as is a document larger than 8 MiB. Import does not change the
 live `auth.json`.
@@ -3431,6 +3447,9 @@ Reads `PATH`. Writes `codex/sequence.json` and the snapshots under
 | `<path> uses export version <v>, newer than this tycswap understands` | `version` is above 1. |
 | `<path> contains no accounts` | `accounts` is missing or empty. |
 | `<path> is larger than 8 MiB; refusing to import it` | The document exceeds the import size limit. |
+| `invalid email in imported account: "<email>"` | A row's email is not a plain address. |
+| `invalid alias for <key>: …` | A row's alias holds a control character or exceeds 64 bytes. |
+| `invalid accountKey in imported account: …` | A row's accountKey holds a control character. |
 
 ### Example
 
@@ -3676,8 +3695,8 @@ Inside the backup root:
 | `settings.json` | Settings (see SETTINGS). |
 | `mappings.json` | Directory→account mappings (`schemaVersion`, `mappings` keyed by absolute path). |
 | `autoswitch_state.json` | `tycswap auto` cooldown / quarantine state, guarded by `.autoswitch_state.lock`. |
-| `configs/` | Per-account config snapshots, `.claude-config-<n>-<email>.json`. |
-| `credentials/` | Per-account credential files, `.creds-<n>-<email>.enc` (file backend). macOS stores these in the Keychain instead, except a credential too large to reach the `security` command over stdin (a command line over 4032 bytes, so a credential over about 2 KB, for example one carrying many `mcpOAuth` tokens), which stays in this file (mode 0600) rather than on a command line. The live Claude Code credential falls back to `.credentials.json` the same way. |
+| `configs/` | Per-account config snapshots, `.claude-config-<n>-<key>.json`, where `<key>` is the account's email as unpadded base64url (so `a@example.com` is `YUBleGFtcGxlLmNvbQ`). A store written before this used the raw email (`.claude-config-<n>-<email>.json`, as claude-swap does); the `email_file_names` migration renames such files once, on the first run, for every roster email that is a plain address, removes a leftover identical to its renamed copy, and leaves a differing one in place with a log warning. |
+| `credentials/` | Per-account credential files, `.creds-<n>-<key>.enc` and `.creds-<n>-<key>.enc.prev` (file backend; `<key>` as for `configs/`). macOS stores these in the Keychain instead, except a credential too large to reach the `security` command over stdin (a command line over 4032 bytes, so a credential over about 2 KB, for example one carrying many `mcpOAuth` tokens), which stays in this file (mode 0600) rather than on a command line. The live Claude Code credential falls back to `.credentials.json` the same way. |
 | `sessions/` | Per-account session-mode profiles, `<n>-<email>` (the `@` in the email replaced by `_`), created by `tycswap run` / `tycswap env`. |
 | `cache/usage.json` | Cached usage measurements. |
 | `cache/update_check.json` | Last passive update-check result (`{"timestamp": <epoch-seconds>, "data": <latest-version>}`). |

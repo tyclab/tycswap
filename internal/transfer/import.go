@@ -38,6 +38,7 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // Stdin is the source for "-"/stdin imports (transfer.py::sys.stdin.read). Tests
@@ -136,6 +137,9 @@ func Import(acc Accounts, source string, force bool) error {
 			}
 			m, _ := asObject(raw)
 			orgUUID := strOrEmpty(m["organizationUuid"])
+			if termsafe.HasControl(orgUUID) {
+				return cerr.Transfer("organizationUuid for %s contains a control character", email)
+			}
 			credsObj := m["credentials"]
 			configObj, ok := asObject(m["config"])
 			if !ok {
@@ -219,9 +223,9 @@ func Import(acc Accounts, source string, force bool) error {
 				email:       email,
 				exportedNum: exportedNum,
 				orgUUID:     orgUUID,
-				orgName:     strOrEmpty(m["organizationName"]),
-				uuid:        strOrEmpty(m["uuid"]),
-				added:       added,
+				orgName:     termsafe.Strip(strOrEmpty(m["organizationName"])),
+				uuid:        termsafe.Strip(strOrEmpty(m["uuid"])),
+				added:       termsafe.Strip(added),
 				kind:        kind,
 				alias:       alias,
 				credsText:   credsText,
@@ -519,7 +523,16 @@ func importedConfig(config map[string]any, email string) (map[string]any, error)
 	if !ok {
 		return nil, cerr.Transfer("config for %s is missing oauthAccount", email)
 	}
-	return map[string]any{"oauthAccount": oauth}, nil
+	// Its strings (organizationName, displayName, …) reach ~/.claude.json and
+	// every listing; none may carry a terminal control sequence.
+	clean := make(map[string]any, len(oauth))
+	for k, v := range oauth {
+		if str, isStr := v.(string); isStr {
+			v = termsafe.Strip(str)
+		}
+		clean[k] = v
+	}
+	return map[string]any{"oauthAccount": clean}, nil
 }
 
 // validateImportedAccount validates one account's fields BEFORE any filename is

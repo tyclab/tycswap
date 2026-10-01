@@ -19,12 +19,14 @@ import (
 	"github.com/tyclab/tycswap/internal/mappings"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
-// configBackupPath is configs/.claude-config-{num}-{email}.json (email raw,
-// unslugified; spec 01§1.2).
+// configBackupPath is configs/.claude-config-{num}-{EmailKey(email)}.json.
+// The email is encoded, never joined raw (storenames; claude-swap and stores
+// before the security pass used it raw, spec 01§1.2).
 func (s *Store) configBackupPath(num, email string) string {
-	return filepath.Join(s.ConfigsDir, ".claude-config-"+num+"-"+email+".json")
+	return filepath.Join(s.ConfigsDir, storenames.ConfigFile(num, email))
 }
 
 // ReadAccountCredentials returns a slot's backup credential (.enc-wins), "" when

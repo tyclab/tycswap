@@ -1,6 +1,7 @@
 package lifecycle
 
 import (
+	"github.com/tyclab/tycswap/internal/storenames"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -39,7 +40,7 @@ func TestPurgeCancelled(t *testing.T) {
 func TestPurgeSweepsLegacyNone(t *testing.T) {
 	s := newStore(t)
 	seed(t, s, ip(3), acct{num: "3", email: "key@example.com", creds: "x", config: "y"})
-	noneFile := filepath.Join(s.CredentialsDir, ".creds-None-key@example.com.enc")
+	noneFile := filepath.Join(s.CredentialsDir, storenames.CredsFile("None", "key@example.com"))
 	if err := os.WriteFile(noneFile, []byte("c3RhbGU="), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +49,7 @@ func TestPurgeSweepsLegacyNone(t *testing.T) {
 	if err := Purge(s); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Credential file: .creds-None-key@example.com.enc") {
+	if !strings.Contains(out.String(), "Credential file: "+storenames.CredsFile("None", "key@example.com")) {
 		t.Errorf("legacy account-None sweep not reported:\n%s", out.String())
 	}
 }

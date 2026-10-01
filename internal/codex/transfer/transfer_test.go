@@ -66,7 +66,7 @@ func seeded(t *testing.T) *env {
 	e := newEnv(t)
 	st := e.open()
 	for _, r := range []struct{ key, acct, email string }{
-		{keyA, "acct-a", "a@x"}, {keyB, "acct-b", "b@x"}, {keyC, "acct-c", "c@x"},
+		{keyA, "acct-a", "a@x.io"}, {keyB, "acct-b", "b@x.io"}, {keyC, "acct-c", "c@x.io"},
 	} {
 		if _, err := st.UpsertSlot(r.key, store.Upsert{Email: r.email, Plan: "pro"}); err != nil {
 			t.Fatal(err)
@@ -81,7 +81,7 @@ func seeded(t *testing.T) *env {
 	if err := os.MkdirAll(e.codexHome, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	b, _ := json.Marshal(authJSON("acct-a", "a@x"))
+	b, _ := json.Marshal(authJSON("acct-a", "a@x.io"))
 	if err := os.WriteFile(filepath.Join(e.codexHome, "auth.json"), b, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestResolveSlotAcceptsNumberEmailAndAlias(t *testing.T) {
 	if err := e.open().SetAlias(keyB, "work"); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"2", "b@x", "B@X", "work", "WORK", "  work  "} {
+	for _, id := range []string{"2", "b@x.io", "B@X.IO", "work", "WORK", "  work  "} {
 		sl, err := ResolveSlot(e.open(), id)
 		if err != nil || sl.Number != "2" {
 			t.Fatalf("ResolveSlot(%q) = %+v, %v", id, sl, err)
@@ -231,7 +231,7 @@ func TestExportCanBeLimitedToOneAccount(t *testing.T) {
 	if err != nil || n != 1 {
 		t.Fatalf("Export = %d, %v", n, err)
 	}
-	if email := readDoc(t, target)["accounts"].([]any)[0].(map[string]any)["email"]; email != "b@x" {
+	if email := readDoc(t, target)["accounts"].([]any)[0].(map[string]any)["email"]; email != "b@x.io" {
 		t.Fatalf("email = %v", email)
 	}
 }
@@ -267,7 +267,7 @@ func TestExportOfAnEmptyStoreFails(t *testing.T) {
 
 func TestExportSkipsSlotsWithoutCredentials(t *testing.T) {
 	e := newEnv(t)
-	if _, err := e.open().UpsertSlot(keyA, store.Upsert{Email: "a@x"}); err != nil {
+	if _, err := e.open().UpsertSlot(keyA, store.Upsert{Email: "a@x.io"}); err != nil {
 		t.Fatal(err)
 	}
 	_, err := Export(e.open(), "-", "", &bytes.Buffer{})
@@ -419,7 +419,7 @@ func TestPurgeRemovesSlotsAndSnapshots(t *testing.T) {
 func TestPurgeRemovesKeychainItems(t *testing.T) {
 	e := seeded(t)
 	st := store.New(store.Options{Root: e.root, Keychain: e.kc, Platform: platform.MacOS})
-	if err := st.WriteSnapshot(keyA, authJSON("acct-a", "a@x")); err != nil {
+	if err := st.WriteSnapshot(keyA, authJSON("acct-a", "a@x.io")); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Purge(st, true, nil, &bytes.Buffer{}); err != nil {

@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/tyclab/tycswap/internal/storenames"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +25,7 @@ func recKeys(t *testing.T, s *json.RawMessage) []string {
 // readConfigBlob reads a slot's backup config file bytes.
 func readConfigBlob(t *testing.T, configsDir, num, email string) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(configsDir, ".claude-config-"+num+"-"+email+".json"))
+	b, err := os.ReadFile(filepath.Join(configsDir, storenames.ConfigFile(num, email)))
 	if err != nil {
 		t.Fatalf("read config blob: %v", err)
 	}

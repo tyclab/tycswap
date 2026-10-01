@@ -20,6 +20,7 @@ import (
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
 // securityService is SECURITY_SERVICE, the Keychain service for tycswap backups
@@ -92,7 +93,7 @@ func Purge(s *store.Store) error {
 				nums = append(nums, "None")
 			}
 			for _, n := range nums {
-				credFile := filepath.Join(s.CredentialsDir, ".creds-"+n+"-"+email+".enc")
+				credFile := filepath.Join(s.CredentialsDir, storenames.CredsFile(n, email))
 				if pathExists(credFile) {
 					if err := os.Remove(credFile); err == nil {
 						removed = append(removed, "Credential file: "+filepath.Base(credFile))

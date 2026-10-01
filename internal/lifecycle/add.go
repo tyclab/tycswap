@@ -87,6 +87,12 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		}
 		return cerr.Config("No active Claude account found. Please log in first.")
 	}
+	// The email names the account's backup files and Keychain items. It comes
+	// from a .claude.json (the live one or a scratch login's), which is not
+	// tycswap's to trust: refuse anything but a plain address, as import does.
+	if !validateEmail(email) {
+		return cerr.Validation("The logged-in account's email is not a plain address: %s", strconv.Quote(email))
+	}
 
 	// The slot number is a pure argument check, so it is settled before anything
 	// is asked: the locked body rejects it too, but prompting first would ask the

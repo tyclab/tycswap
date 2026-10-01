@@ -47,6 +47,7 @@ type fakeHost struct {
 
 func (h *fakeHost) BackupDir() string                 { return h.backupDir }
 func (h *fakeHost) CredentialsDir() string            { return h.credentialsDir }
+func (h *fakeHost) ConfigsDir() string                { return filepath.Join(h.backupDir, "configs") }
 func (h *fakeHost) StateFilePath() string             { return h.stateFilePath }
 func (h *fakeHost) Platform() platform.Platform       { return h.plat }
 func (h *fakeHost) Clock() clock.Clock                { return h.clk }
@@ -293,8 +294,9 @@ func TestIdempotentRunnerShortCircuit(t *testing.T) {
 	if len(first) != 1 {
 		t.Fatalf("first Run() notices = %v, want exactly one migrated-credential notice", first)
 	}
-	if host.sequenceCalls != 1 {
-		t.Fatalf("SequenceAccounts calls after first Run = %d, want 1", host.sequenceCalls)
+	// One call each from macos_keyring_to_security and email_file_names.
+	if host.sequenceCalls != 2 {
+		t.Fatalf("SequenceAccounts calls after first Run = %d, want 2", host.sequenceCalls)
 	}
 
 	// A second run must short-circuit at the applied-map check, BEFORE the
@@ -305,8 +307,8 @@ func TestIdempotentRunnerShortCircuit(t *testing.T) {
 	if len(second) != 0 {
 		t.Fatalf("second Run() notices = %v, want none", second)
 	}
-	if host.sequenceCalls != 1 {
-		t.Fatalf("SequenceAccounts calls after second Run = %d, want still 1 (migration function never re-entered)", host.sequenceCalls)
+	if host.sequenceCalls != 2 {
+		t.Fatalf("SequenceAccounts calls after second Run = %d, want still 2 (migration functions never re-entered)", host.sequenceCalls)
 	}
 }
 
