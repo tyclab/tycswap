@@ -22,6 +22,7 @@ import (
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // event styling (09§4.4).
@@ -399,7 +400,7 @@ func (a *autoScreen) candidatesText(snap *reporting.AccountsSnapshot, width int,
 			continue
 		}
 		pct := bindingPct(acc.Usage.LastGood, models)
-		entry := candidateEntry{number: acc.Number, email: acc.Email}
+		entry := candidateEntry{number: acc.Number, email: termsafe.Strip(acc.Email)}
 		switch {
 		case a.isQuarantined(acc.Number):
 			// The engine quarantined this slot (invalid_grant / identity conflict)

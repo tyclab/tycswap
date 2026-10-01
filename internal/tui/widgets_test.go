@@ -928,3 +928,28 @@ func TestMonitorRowWithNoUsableMeasurementSaysWhy(t *testing.T) {
 		t.Errorf("the per-row line %q lost the same note", got)
 	}
 }
+
+// TestAccountRenderersStripControlSequences: the snapshot carries the stored
+// alias, email and org name; the card, the monitor label and the menu name
+// draw them without the control sequences they hold.
+func TestAccountRenderersStripControlSequences(t *testing.T) {
+	acc := reporting.AccountSnapshot{
+		Number: "1", Email: "a@example.com\x1b]0;x\x07", OrgName: "Evil\x1b[2J", Alias: "w\x1b[1m",
+	}
+	for name, got := range map[string]string{
+		"card":  accountCardText(acc, 80, nil, 0).plain(),
+		"mini":  miniLabelCell(acc).plain(),
+		"menu":  accountName(acc),
+		"ident": identityText(acc).plain(),
+	} {
+		if strings.ContainsAny(got, "\x1b\x07") {
+			t.Errorf("%s carries a control character: %q", name, got)
+		}
+		if !strings.Contains(got, "w[1m (a@example.com]0;x)") {
+			t.Errorf("%s = %q, want the identity as plain text", name, got)
+		}
+	}
+	if got := accountCardText(acc, 80, nil, 0).plain(); !strings.Contains(got, "[Evil[2J]") {
+		t.Errorf("card = %q, want the org tag as plain text", got)
+	}
+}

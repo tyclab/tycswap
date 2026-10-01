@@ -26,3 +26,32 @@ func TestRenderAccountsStripsControlSequences(t *testing.T) {
 		t.Errorf("org name not shown as text: %q", out)
 	}
 }
+
+// TestDuplicateWarningKeepsControlCharactersInJSONTextStripsThem: the
+// duplicate-account warning carries the stored email into the --json payload
+// unchanged; the human list prints it without the control sequence.
+func TestDuplicateWarningKeepsControlCharactersInJSONTextStripsThem(t *testing.T) {
+	s := newStore(t, nil, nil)
+	writeSequenceRaw(t, s, `{"sequence": [1, 2], "accounts": {
+		"1": {"email": "a@example.com", "uuid": "u-1", "organizationUuid": ""},
+		"2": {"email": "a@example.com", "uuid": "u-1", "organizationUuid": ""}}}`)
+	const email = "a@example.com\x1b[2J"
+	infos := []AccountInfo{{Number: 1, Email: email}, {Number: 2, Email: email}}
+	entries := map[string]usage.UsageEntry{}
+
+	payload := buildListPayload(s, infos, entries)
+	dup, _ := payload["duplicateAccountWarnings"].([]string)
+	if len(dup) != 1 || !strings.Contains(dup[0], email) {
+		t.Fatalf("duplicateAccountWarnings = %q, want one warning with the stored email", dup)
+	}
+
+	var buf bytes.Buffer
+	renderAccounts(&buf, s, infos, entries, false)
+	out := buf.String()
+	if strings.Contains(out, "\x1b") {
+		t.Errorf("text output carries an escape: %q", out)
+	}
+	if !strings.Contains(out, "both authenticate as a@example.com[2J") {
+		t.Errorf("warning not shown as plain text: %q", out)
+	}
+}

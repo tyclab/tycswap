@@ -858,3 +858,34 @@ func TestCodexLoginCapturesTheOutgoingLoginFirst(t *testing.T) {
 		t.Fatalf("snapshot at spawn holds %v, want the live login's rotated refresh token", tok["refresh_token"])
 	}
 }
+
+// TestCodexListJSONKeepsControlCharactersTextStripsThem: an alias or
+// workspace name holding a terminal control sequence reaches `list --json`
+// as stored and is printed by the text list without it.
+func TestCodexListJSONKeepsControlCharactersTextStripsThem(t *testing.T) {
+	codexHome(t, nil, offlineUsage(t))
+	seedOne(t)
+	const alias, workspace = "w\x1b[1m", "Evil\x1b[2J"
+	st := testStore()
+	key := authfile.AccountKey(testUserA, testAcctA)
+	if err := st.SetAlias(key, alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetWorkspaceName(key, workspace); err != nil {
+		t.Fatal(err)
+	}
+
+	_, out, _ := runCodex(t, "", "codex", "list", "--json", "--skip-api")
+	row := decodeJSON(t, out)["accounts"].([]any)[0].(map[string]any)
+	if row["alias"] != alias || row["workspace"] != workspace {
+		t.Errorf("JSON row changed the stored values: alias %q workspace %q", row["alias"], row["workspace"])
+	}
+
+	_, out, _ = runCodex(t, "", "codex", "list", "--skip-api")
+	if strings.Contains(out, "\x1b") {
+		t.Errorf("text list carries an escape: %q", out)
+	}
+	if !strings.Contains(out, "a@example.com [Evil[2J] (w[1m)") {
+		t.Errorf("text list = %q, want the fields as plain text", out)
+	}
+}

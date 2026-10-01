@@ -32,6 +32,7 @@ import (
 	"github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/providers"
 	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // ProviderSource takes one merged, provider-major snapshot pass plus the owners
@@ -264,7 +265,7 @@ func (m *Model) codexConfirmRemove(t rowTarget, id string, acc reporting.Account
 		yesLabel: "Remove",
 		focusYes: true,
 		message: fmt.Sprintf("Remove codex account %s (%s)?\n\nIts stored credentials and config backup are deleted.",
-			number, email),
+			number, termsafe.Strip(email)),
 		onDone: func(m *Model, confirmed bool) tea.Cmd {
 			if !confirmed {
 				return nil

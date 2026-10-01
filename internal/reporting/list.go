@@ -159,10 +159,10 @@ func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries ma
 	if len(dup) > 0 || len(lockstep) > 0 {
 		fmt.Fprintln(w)
 		for _, msg := range dup {
-			fmt.Fprintln(w, printer.Yellowed(msg))
+			fmt.Fprintln(w, printer.Yellowed(termsafe.Strip(msg)))
 		}
 		for _, msg := range lockstep {
-			fmt.Fprintln(w, printer.Yellowed(msg))
+			fmt.Fprintln(w, printer.Yellowed(termsafe.Strip(msg)))
 		}
 	}
 

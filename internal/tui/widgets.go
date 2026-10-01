@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // Bar glyphs (09§5.1).
@@ -154,18 +155,29 @@ func usageRows(lastGood map[string]any, now float64) []usageRow {
 	return rows
 }
 
+// identityText is an account's alias-first identity, "alias (email)" or the
+// bare email. The snapshot carries the stored strings, which come from
+// exports, APIs and other tools' files, so a terminal control sequence they
+// hold is removed here, where they are drawn.
+func identityText(acc reporting.AccountSnapshot) richText {
+	var t richText
+	email := termsafe.Strip(acc.Email)
+	if acc.Alias != "" {
+		t.add(termsafe.Strip(acc.Alias), segStyle{Fg: colAccent, Bold: true})
+		t.addFg(" ("+email+")", colForeground)
+	} else {
+		t.addFg(email, colForeground)
+	}
+	return t
+}
+
 // accountCardText renders the full account card: header + per-window bar rows
 // (09§5.4). threshold draws the tick; now is fractional Unix seconds.
 func accountCardText(acc reporting.AccountSnapshot, width int, threshold *float64, now float64) richText {
 	var t richText
 	t.add(fmt.Sprintf("%2s  ", acc.Number), segStyle{Fg: colForeground, Bold: true})
-	if acc.Alias != "" {
-		t.add(acc.Alias, segStyle{Fg: colAccent, Bold: true})
-		t.addFg(" ("+acc.Email+")", colForeground)
-	} else {
-		t.addFg(acc.Email, colForeground)
-	}
-	t.addFg("  ["+acc.DisplayTag()+"]", colMuted)
+	t.addText(identityText(acc))
+	t.addFg("  ["+termsafe.Strip(acc.DisplayTag())+"]", colMuted)
 	if b := providerBadge(acc); b != "" {
 		t.addFg(b, colMuted)
 	}
@@ -246,13 +258,8 @@ func accountCardText(acc reporting.AccountSnapshot, width int, threshold *float6
 // cell of the shared table's monitor rows, and the head of miniAccountText.
 func miniLabelCell(acc reporting.AccountSnapshot) richText {
 	var t richText
-	if acc.Alias != "" {
-		t.add(acc.Alias, segStyle{Fg: colAccent, Bold: true})
-		t.addFg(" ("+acc.Email+")", colForeground)
-	} else {
-		t.addFg(acc.Email, colForeground)
-	}
-	t.addFg("  ["+acc.DisplayTag()+"]", colMuted)
+	t.addText(identityText(acc))
+	t.addFg("  ["+termsafe.Strip(acc.DisplayTag())+"]", colMuted)
 	if b := providerBadge(acc); b != "" {
 		t.addFg(b, colMuted)
 	}

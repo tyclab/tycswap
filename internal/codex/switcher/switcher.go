@@ -345,13 +345,13 @@ func (s *Switcher) AccountsSnapshot(ctx context.Context, fetch map[string]bool) 
 		switchable := sl.AuthMode != "apikey"
 		rows = append(rows, reporting.AccountSnapshot{
 			Number:           sl.Number,
-			Email:            termsafe.Strip(sl.Email), // display only
-			OrgName:          termsafe.Strip(sl.WorkspaceName),
+			Email:            sl.Email,
+			OrgName:          sl.WorkspaceName,
 			IsActive:         sl.Number == active,
 			Kind:             kind,
 			Switchable:       switchable,
 			Usage:            entry,
-			Alias:            termsafe.Strip(sl.Alias),
+			Alias:            sl.Alias,
 			Disabled:         sl.Disabled,
 			RotationEligible: switchable && !sl.Disabled,
 			Provider:         ProviderID,

@@ -478,9 +478,12 @@ func codexList(ctx context.Context, sw *codexswitcher.Switcher, skipAPI, tokenSt
 		if a.IsActive {
 			marker = "*"
 		}
+		// Display fields come from the Codex API and other tools' files: the
+		// JSON row carries them as stored, the text row never prints a terminal
+		// control sequence they carry.
 		alias := ""
 		if a.Alias != "" {
-			alias = " (" + a.Alias + ")"
+			alias = " (" + termsafe.Strip(a.Alias) + ")"
 		}
 		state := ""
 		if a.Disabled {
@@ -494,7 +497,7 @@ func codexList(ctx context.Context, sw *codexswitcher.Switcher, skipAPI, tokenSt
 		if summary != "" {
 			suffix = "  " + summary
 		}
-		fmt.Fprintf(s.out, "%s %s. %s [%s]%s%s%s\n", marker, a.Number, a.Email, a.DisplayTag(), alias, state, suffix)
+		fmt.Fprintf(s.out, "%s %s. %s [%s]%s%s%s\n", marker, a.Number, termsafe.Strip(a.Email), termsafe.Strip(a.DisplayTag()), alias, state, suffix)
 
 		if tokenStatus {
 			st, err := sw.TokenStatus(a.Number)

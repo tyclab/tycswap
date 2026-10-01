@@ -13,7 +13,6 @@ import (
 
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/store"
-	"github.com/tyclab/tycswap/internal/termsafe"
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
@@ -21,6 +20,10 @@ import (
 // models.py AccountSnapshot). Usage is the store-backed read model: display code
 // reads Usage.LastGood/AgeS directly (may show old data, age-annotated), while
 // Usage.Sentinel carries derived states that replace the bars entirely.
+//
+// Email, OrgName and Alias are the stored values, so a JSON consumer sees
+// what the store holds; a text renderer passes them through termsafe.Strip,
+// since they come from exports, APIs and other tools' files.
 type AccountSnapshot struct {
 	Number   string
 	Email    string
@@ -128,14 +131,14 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 		disabled := recordDisabled(data, num)
 		accounts = append(accounts, AccountSnapshot{
 			Number:           num,
-			Email:            termsafe.Strip(info.Email), // display only
-			OrgName:          termsafe.Strip(info.OrgName),
+			Email:            info.Email,
+			OrgName:          info.OrgName,
 			OrgUUID:          info.OrgUUID,
 			IsActive:         info.IsActive,
 			Kind:             s.AccountKindFor(num),
 			Switchable:       switchable,
 			Usage:            entries[num],
-			Alias:            termsafe.Strip(info.Alias),
+			Alias:            info.Alias,
 			Disabled:         disabled,
 			RotationEligible: rotationEligible(data, switchable, disabled),
 			AtLimit:          atLimit,
