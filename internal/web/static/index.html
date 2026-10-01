@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf" content="{{.CSRF}}">
+<meta name="app-name" content="{{.Name}}">
+<meta name="color-scheme" content="light dark">
+<title>{{.DisplayName}}</title>
+<link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/accent.css">
+</head>
+<body>
+<header class="top">
+  <h1 class="brand">
+    <img class="logo" src="/static/icon.svg" alt="" width="30" height="30">
+    <span class="brand-text"><span class="brand-name">{{.DisplayName}}</span><span class="brand-sub">dashboard</span></span>
+    <span id="version" class="chip chip-outline" aria-label="version"></span>
+  </h1>
+  <div class="hdr-acct" id="hdr-acct" aria-label="Active account and its limits"></div>
+  <div class="conn" role="status" aria-live="polite">
+    <span id="conn-dot" class="dot dot-off" aria-hidden="true"></span>
+    <span id="conn-text">connecting…</span>
+    <span id="conn-age" class="muted small"></span>
+  </div>
+</header>
+
+<nav class="tabs" aria-label="Sections">
+  <div role="tablist" id="tablist">
+    <button type="button" role="tab" id="tab-dashboard" aria-controls="panel-dashboard" aria-selected="true" data-tab="dashboard">Dashboard <span class="tab-badge" id="badge-dashboard"></span></button>
+    <button type="button" role="tab" id="tab-auto" aria-controls="panel-auto" aria-selected="false" tabindex="-1" data-tab="auto">Auto <span class="tab-badge" id="badge-auto"></span></button>
+    <button type="button" role="tab" id="tab-sessions" aria-controls="panel-sessions" aria-selected="false" tabindex="-1" data-tab="sessions">Sessions <span class="tab-badge" id="badge-sessions"></span></button>
+    <button type="button" role="tab" id="tab-transfer" aria-controls="panel-transfer" aria-selected="false" tabindex="-1" data-tab="transfer">Transfer</button>
+  </div>
+</nav>
+
+<main class="wrap">
+
+  <!-- ===================== Dashboard ===================== -->
+  <section class="panel" id="panel-dashboard" role="tabpanel" aria-labelledby="tab-dashboard">
+    <div class="tiles" id="summary-tiles" aria-label="Summary"></div>
+    <div class="card">
+      <div class="card-head">
+        <div class="head-l"><h2>Accounts</h2><span id="accounts-sub" class="card-sub"></span></div>
+        <div class="head-r">
+          <label class="switch" for="token-status-toggle"><input type="checkbox" id="token-status-toggle"> Token status</label>
+        </div>
+      </div>
+      <div class="toolbar" role="group" aria-label="Account actions">
+        <span class="toolbar-label">Switch</span>
+        <div class="seg" role="radiogroup" aria-label="Switch strategy" id="strategy-seg">
+          <button type="button" role="radio" aria-checked="true" data-strategy="best" title="Pick the account with the most quota left">Best</button>
+          <button type="button" role="radio" aria-checked="false" data-strategy="next-available" title="Rotate, skipping rate-limited accounts">Next available</button>
+        </div>
+        <button type="button" class="btn btn-primary" data-action="switch-strategy" data-label="Switch">Switch now</button>
+        <span class="spacer" aria-hidden="true"></span>
+        <button type="button" class="btn" data-action="add-current" data-label="Add current login">Add current login</button>
+        <button type="button" class="btn" data-action="add-token" data-label="Add token">Add token…</button>
+      </div>
+      <div class="divider"></div>
+      <table class="tbl acct-tbl" id="accounts-tbl">
+        <thead>
+          <tr>
+            <th scope="col" class="c-slot">Slot</th>
+            <th scope="col" class="c-acct">Account</th>
+            <th scope="col" class="c-meter">5h window</th>
+            <th scope="col" class="c-meter">7d window</th>
+            <th scope="col" class="c-meter">Model</th>
+            <th scope="col" class="c-token col-token" hidden>Token</th>
+            <th scope="col" class="c-actions"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody id="accounts-body"></tbody>
+      </table>
+      <div id="accounts-empty" class="empty-state" hidden>
+        <span class="title">No managed accounts yet</span>
+        <span>Snapshot the login Claude Code is using right now, or register a setup-token.</span>
+        <code>{{.Name}} add</code>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Auto ===================== -->
+  <section class="panel" id="panel-auto" role="tabpanel" aria-labelledby="tab-auto" hidden>
+    <div class="grid2 w-2-3">
+      <div class="card" id="engine-card">
+        <div class="card-head">
+          <div class="head-l"><h2>Auto-switch engine</h2><span id="auto-badge" class="chip"></span></div>
+          <div class="head-r">
+            <label class="switch" for="model-limits-toggle" title="Count every per-model weekly window as a limit, not just the 5h and 7d windows. Sets autoswitch.model to all and applies it to the running engine; turn off to unset it.">
+              <input type="checkbox" id="model-limits-toggle"> Count model limits <span id="model-limits-which" class="card-sub"></span>
+            </label>
+            <span class="card-sub"><code>{{.Name}} auto</code></span>
+          </div>
+        </div>
+        <div id="auto-body"></div>
+        <div class="actions" id="auto-actions">
+          <button type="button" class="btn btn-primary" data-action="auto-start" data-dry="0" data-label="Start">Start</button>
+          <button type="button" class="btn" data-action="auto-start" data-dry="1" data-label="Start dry-run">Start dry-run</button>
+          <button type="button" class="btn" data-post="/api/auto/stop" data-label="Stop">Stop</button>
+          <button type="button" class="btn" data-post="/api/auto/wake" data-label="Wake" title="Poll now instead of waiting for the next interval">Wake</button>
+        </div>
+        <div class="slider-row">
+          <div class="slider-head">
+            <label for="threshold-slider">Threshold, this run</label>
+            <output id="threshold-out" for="threshold-slider">–</output>
+          </div>
+          <input type="range" id="threshold-slider" min="50" max="99" step="1" value="90" list="threshold-ticks" aria-describedby="threshold-help">
+          <datalist id="threshold-ticks"><option value="50"></option><option value="60"></option><option value="70"></option><option value="80"></option><option value="90"></option><option value="99"></option></datalist>
+          <div class="ticks" aria-hidden="true"><span>50</span><span>60</span><span>70</span><span>80</span><span>90</span><span>99</span></div>
+          <p id="threshold-help" class="muted small">Applied live to the running engine, like the TUI's +/− keys; it is not saved. The saved value is <code>autoswitch.threshold</code> below. The engine switches when the binding window (5h, 7d, and the model windows <code>autoswitch.model</code> counts) reaches it.</p>
+        </div>
+        <div id="quarantine-section" class="section" hidden>
+          <h3>Quarantine</h3>
+          <table class="tbl compact" id="quarantine-tbl">
+            <thead><tr><th scope="col">Slot</th><th scope="col">Reason</th><th scope="col">Since</th></tr></thead>
+            <tbody id="quarantine-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="head-l"><h2>Next best</h2></div>
+          <span id="nextbest-sub" class="card-sub"></span>
+        </div>
+        <table class="tbl compact nb-tbl" id="nextbest-tbl" hidden>
+          <thead><tr><th scope="col" class="c-rank">#</th><th scope="col">Account</th><th scope="col" class="c-mini">5h</th><th scope="col" class="c-mini">7d</th><th scope="col" class="c-mini">Model</th><th scope="col" class="c-head num">Headroom</th><th scope="col" class="c-verdict">Verdict</th></tr></thead>
+          <tbody id="nextbest-list"></tbody>
+        </table>
+        <div id="nextbest-empty" class="empty-state" hidden>
+          <span class="title">No other switchable account</span>
+          <span>Add a second account or enable a disabled one to give the engine somewhere to go.</span>
+          <code>{{.Name}} enable &lt;num|email&gt;</code>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="head-l"><h2>Auto-switch settings</h2></div>
+        <span class="card-sub">settings.json · <code>{{.Name}} config set autoswitch.&lt;key&gt; &lt;value&gt;</code></span>
+      </div>
+      <div class="settings-grid" id="auto-settings"></div>
+      <div id="auto-settings-empty" class="empty-state" hidden>
+        <span class="title">Settings are not available in this build</span>
+        <code>{{.Name}} config</code>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="head-l"><h2>Event log</h2><span id="log-count" class="chip chip-outline"></span></div>
+        <div class="log-toolbar">
+          <label class="sr-only" for="log-kind">Filter by kind</label>
+          <select id="log-kind"><option value="">All kinds</option></select>
+          <label class="switch" for="log-quiet"><input type="checkbox" id="log-quiet"> quiet events</label>
+          <label class="switch" for="log-follow"><input type="checkbox" id="log-follow" checked> follow</label>
+          <button type="button" class="btn btn-sm btn-ghost" id="log-clear">Clear</button>
+        </div>
+      </div>
+      <ul class="log" id="auto-log" aria-live="polite" aria-relevant="additions"></ul>
+      <div id="auto-log-empty" class="empty-state log-empty">
+        <span class="title">No events yet</span>
+        <span>Start the engine (dry-run is safe: it decides but never switches) and every poll, decision and switch lands here.</span>
+        <code>{{.Name}} auto --once</code>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Sessions ===================== -->
+  <section class="panel" id="panel-sessions" role="tabpanel" aria-labelledby="tab-sessions" hidden>
+    <div class="card">
+      <div class="card-head">
+        <div class="head-l"><h2>Claude Code sessions</h2></div>
+        <div class="stat-chips" id="sessions-stats"></div>
+      </div>
+      <div class="sess-controls">
+        <label class="sr-only" for="sess-filter">Filter sessions</label>
+        <input type="search" id="sess-filter" placeholder="Filter by pid, directory or entrypoint…" autocomplete="off">
+        <label class="sr-only" for="sess-status">Status</label>
+        <select id="sess-status"><option value="active" selected>Active (busy + waiting)</option><option value="">All statuses</option><option value="busy">busy</option><option value="waiting">waiting</option><option value="idle">idle</option></select>
+        <label class="sr-only" for="sess-sort">Sort</label>
+        <select id="sess-sort"><option value="busy">Busy first, then newest</option><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="pid">PID</option></select>
+      </div>
+      <div id="sessions-groups"></div>
+      <table class="tbl compact sess-tbl" id="sessions-tbl" hidden><tbody id="sessions-body"></tbody></table>
+      <div id="sessions-empty" class="empty-state" hidden>
+        <span class="title">No running Claude Code sessions</span>
+        <span>Sessions appear here as soon as a <code>claude</code> process writes its session file.</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <div class="head-l"><h2>IDE instances</h2><span id="ide-count" class="chip chip-outline"></span></div>
+      </div>
+      <table class="tbl compact" id="ide-tbl">
+        <thead><tr><th scope="col">IDE</th><th scope="col" class="num">PID</th><th scope="col" class="num">Port</th><th scope="col">Workspace</th></tr></thead>
+        <tbody id="ide-list"></tbody>
+      </table>
+      <div id="ide-empty" class="empty-state" hidden><span class="title">No IDE instances</span><span>VS Code, Cursor and friends register here while the Claude Code extension is running.</span></div>
+    </div>
+  </section>
+
+  <!-- ===================== Transfer ===================== -->
+  <section class="panel" id="panel-transfer" role="tabpanel" aria-labelledby="tab-transfer" hidden>
+    <div id="transfer-unavailable" class="card" hidden>
+      <div class="empty-state"><span class="title">Transfer is not wired into this build</span><code>{{.Name}} export &lt;path&gt;</code></div>
+    </div>
+    <div class="grid2" id="transfer-cards">
+      <form class="card" id="export-form" novalidate>
+        <div class="card-head">
+          <div class="head-l"><h2>Export</h2></div>
+          <span class="card-sub"><code>{{.Name}} export &lt;path&gt;</code></span>
+        </div>
+        <p class="notice notice-crit">The file holds live credentials in plain text. Keep it like a password and delete it once it is imported.</p>
+        <div class="form-grid">
+          <label for="export-path">File on this machine<input type="text" id="export-path" autocomplete="off" spellcheck="false" placeholder="~/accounts.tycswap"></label>
+          <label for="export-account">Accounts<select id="export-account"><option value="">Every account</option></select></label>
+          <label class="switch" for="export-full"><input type="checkbox" id="export-full"> Full config copy (<code>--full</code>)</label>
+          <label class="switch" for="export-overwrite"><input type="checkbox" id="export-overwrite"> Overwrite an existing file</label>
+        </div>
+        <div class="actions"><button type="button" class="btn btn-primary" data-action="export">Export…</button></div>
+      </form>
+      <form class="card" id="import-form" novalidate>
+        <div class="card-head">
+          <div class="head-l"><h2>Import</h2></div>
+          <span class="card-sub"><code>{{.Name}} import &lt;path&gt;</code></span>
+        </div>
+        <p class="muted small">Every account in the file is checked before anything is written. A slot that already holds the same account is skipped unless you overwrite it.</p>
+        <div class="form-grid">
+          <label for="import-path">File on this machine<input type="text" id="import-path" autocomplete="off" spellcheck="false" placeholder="~/accounts.tycswap"></label>
+          <label class="switch" for="import-force"><input type="checkbox" id="import-force"> Overwrite matching slots (<code>--force</code>)</label>
+        </div>
+        <div class="actions"><button type="button" class="btn btn-primary" data-action="import">Import</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="head-l"><h2>Result</h2></div></div>
+      <ul class="log" id="transfer-out" aria-live="polite" hidden></ul>
+      <p class="muted small">Paths are on the machine running <code>{{.Name}} web</code>; nothing is uploaded or downloaded through the browser. Codex accounts move with <code>{{.Name}} codex export</code> and <code>{{.Name}} codex import</code>.</p>
+    </div>
+  </section>
+</main>
+
+<dialog id="modal" class="modal" aria-labelledby="modal-title">
+  <form method="dialog" id="modal-form" novalidate>
+    <h2 id="modal-title"></h2>
+    <p id="modal-message" class="modal-msg"></p>
+    <div id="modal-fields" class="modal-fields"></div>
+    <p id="modal-error" class="modal-error" role="alert"></p>
+    <div class="actions modal-actions">
+      <button type="button" class="btn" id="modal-cancel">Cancel</button>
+      <button type="submit" class="btn btn-primary" id="modal-ok">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toasts" class="toasts" role="region" aria-live="assertive" aria-label="Notifications"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

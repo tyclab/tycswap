@@ -1,0 +1,649 @@
+// web.go — the local dashboard server: consumer-defined seams, token/cookie
+// security model, loopback-only bind, and the poll loop that drives SSE.
+//
+// Package web implements DESIGN A25 (`internal/web` — the local dashboard):
+// an embedded single-page UI on 127.0.0.1:<port> backed by a small JSON API
+// and a Server-Sent-Events stream. Every seam is consumer-defined here (A2
+// style; Facade is the frozen tui.Facade method set), so this package never
+// imports internal/core, internal/tui or internal/cli.
+//
+// Security model (A25): three independent 128-bit secrets are minted per
+// launch. The one-time launch token rides in the printed URL; GET /?token=<t>
+// redeems it once, sets the HttpOnly, SameSite=Lax, Path=/ session cookie and
+// redirects to /. The page carries the CSRF token in a <meta>. Every /api/*
+// request needs the cookie AND X-CSRF-Token (reads included; EventSource
+// sends ?csrf= instead); every mutating request also needs an Origin /
+// Sec-Fetch-Site header that is absent or same-origin. The server binds
+// loopback only and answers 421 to any Host header other than
+// 127.0.0.1:<port> / localhost:<port>. Credential material is never
+// serialised. With Deps.RemoteToken set, a client holding that token may
+// present it as "Authorization: Bearer <token>" in place of the cookie and
+// CSRF pair (a non-browser client such as a tray across a VM boundary);
+// nothing else changes for it, and no cookie is ever set for it.
+package web
+
+import (
+	"context"
+	"crypto/rand"
+	"embed"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"html/template"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/tyclab/tycswap/internal/brand"
+	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/procdetect"
+	"github.com/tyclab/tycswap/internal/reporting"
+)
+
+//go:embed static
+var staticFS embed.FS
+
+// Facade is the account-operation seam the dashboard drives — the frozen
+// tui.Facade method set (DESIGN §2.20/A13), copied verbatim so *core.Switcher
+// satisfies it structurally without this package importing tui or core.
+type Facade interface {
+	AccountsSnapshot(fetch map[string]bool) *reporting.AccountsSnapshot
+	SwitchTo(id string, jsonOut bool) (map[string]any, error)
+	Switch(strategy *string, jsonOut bool, models []string, modelSrc *string) (map[string]any, error)
+	SetAccountDisabled(id string, disabled bool) error
+	RemoveAccount(id string, yes bool) error
+	AddAccount(slot *int, assumeYes bool, alias *string) error
+	AddAccountFromToken(token string, email, slotArg *string, assumeYes bool) error
+	BackupDir() string
+	SetPollPolicyInputs(threshold float64, models []string)
+	ClearPollPolicyInputs()
+}
+
+// AccountOps is the account lifecycle beyond Facade (alias, move, swap, force
+// switch, token-status listing). *core.Switcher satisfies all of it except
+// ApproveAPIKeySwitch, which cli adds.
+type AccountOps interface {
+	SetAlias(id, alias string) (num, normalized string, err error)
+	UnsetAlias(id string) (num string, err error)
+	MoveAccount(account, target string) (srcNum, tgtNum string, swapped bool, err error)
+	SwapAccounts(first, second string) (numA, numB string, err error)
+	SwitchToForce(id string, jsonOut, force bool) (map[string]any, error)
+	// ApproveAPIKeySwitch records the user's explicit yes to switching onto an
+	// API-key account. tycswap's switch layer needs no such confirmation, so
+	// its implementation is a no-op; the seam stays so a switch layer that
+	// does ask can be wired without touching the handlers.
+	ApproveAPIKeySwitch(num string)
+	// ListAccounts with showTokenStatus=true, jsonOut=true yields the
+	// `tycswap list --token-status --json` payload; /api/state?tokenStatus=1
+	// lifts each row's "tokenStatus" string from it.
+	ListAccounts(showTokenStatus, jsonOut bool, fetch map[string]bool) (any, error)
+}
+
+// SettingView is one effective setting (`tycswap config`).
+type SettingView struct {
+	Key         string   `json:"key"`   // dotted, e.g. "autoswitch.threshold"
+	Kind        string   `json:"kind"`  // "float"|"int"|"bool"|"choice"|"string"
+	Value       any      `json:"value"` // effective value
+	Default     any      `json:"default"`
+	IsDefault   bool     `json:"isDefault"`
+	Choices     []string `json:"choices,omitempty"`
+	Description string   `json:"description"`
+	Min         *float64 `json:"min,omitempty"`
+	Max         *float64 `json:"max,omitempty"`
+}
+
+// SettingsFacade is the settings.json surface.
+type SettingsFacade interface {
+	Effective() []SettingView
+	Set(dotted, raw string) (any, error)
+	Unset(dotted string) (bool, error)
+}
+
+// AutoEventView is one auto-switch engine event.
+type AutoEventView struct {
+	At      float64        `json:"at"`
+	Kind    string         `json:"kind"`
+	Message string         `json:"message"`
+	Account string         `json:"account,omitempty"`
+	Fields  map[string]any `json:"fields,omitempty"`
+}
+
+// AutoView is the auto-switch engine's state as the dashboard shows it.
+type AutoView struct {
+	Available  bool            `json:"available"`
+	Running    bool            `json:"running"`
+	DryRun     bool            `json:"dryRun"`
+	StartedAt  *float64        `json:"startedAt"`
+	Threshold  float64         `json:"threshold"`  // live autoswitch.threshold (ApplyThreshold-adjusted)
+	Settings   map[string]any  `json:"settings"`   // effective autoswitch settings the engine started with
+	Events     []AutoEventView `json:"events"`     // most recent last, ring of <= 200
+	Quarantine map[string]any  `json:"quarantine"` // contents of autoswitch_state.json (may be nil)
+}
+
+// AutoFacade drives the hosted auto-switch engine.
+type AutoFacade interface {
+	View() AutoView
+	Start(dryRun bool) error
+	Stop() error
+	Wake() error
+	ApplyThreshold(threshold float64) error // 0–100
+	// ApplyModels retargets which per-model weekly windows the RUNNING engine
+	// counts ("all", a comma-separated list, or "" for 5h + 7d only).
+	ApplyModels(model string) error
+}
+
+// TransferResult is what one export or import did, in the words the CLI
+// prints for it.
+type TransferResult struct {
+	Path     string   `json:"path"`
+	Messages []string `json:"messages"`
+}
+
+// TransferFacade moves accounts to and from a .tycswap file on this machine
+// (`tycswap export` / `tycswap import`). Paths are local to the server; the
+// export holds live credentials and is never sent to the browser.
+type TransferFacade interface {
+	Export(path, account string, full bool) (TransferResult, error)
+	Import(path string, force bool) (TransferResult, error)
+}
+
+// Strategies are the manual `switch --strategy` choices the UI offers.
+// "soonest-reset" is deliberately NOT here: switching.Switch treats any
+// string outside this set as plain rotation (next slot, usage ignored), and
+// soonest-reset exists only as the AUTO-switch ordering (autoswitch.strategy,
+// DESIGN A17), so offering it would rotate without looking at usage.
+var Strategies = []string{"best", "next-available"}
+
+// SessionsView is one probe of procdetect's running Claude Code sessions and
+// IDE instances. ConfigDir and Profile are keyed by PID: the Claude config
+// directory the session was found in (its transcripts live there too) and,
+// for a session started with `tycswap run` / `tycswap env`, the slot of the
+// account its session profile belongs to ("" for the default login).
+type SessionsView struct {
+	Claude    []procdetect.ClaudeSession
+	IDE       []procdetect.IdeInstance
+	ConfigDir map[int]string
+	Profile   map[int]string
+}
+
+// DefaultSessions probes procdetect's on-disk state under the default Claude
+// config directory only. It is the Deps.Sessions default; SessionsIn also
+// covers the session profiles.
+func DefaultSessions() SessionsView {
+	return probeSessions(procdetect.GetClaudeDir(), "")
+}
+
+// SessionsIn returns a Deps.Sessions probe over the default Claude config
+// directory AND every session profile under <backupDir>/sessions/ (the
+// CLAUDE_CONFIG_DIR of `tycswap run` and `tycswap env`), so a session started
+// as another account is listed and can be stopped. Profile directories are
+// named <slot>-<email slug> (sessprofile.SessionDirFor); a PID seen twice is
+// listed once, the default directory winning.
+func SessionsIn(backupDir string) func() SessionsView {
+	return func() SessionsView {
+		v := probeSessions(procdetect.GetClaudeDir(), "")
+		if backupDir == "" {
+			return v
+		}
+		entries, err := os.ReadDir(filepath.Join(backupDir, "sessions"))
+		if err != nil {
+			return v
+		}
+		seen := map[int]bool{}
+		for _, c := range v.Claude {
+			seen[c.PID] = true
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			slot, _, _ := strings.Cut(e.Name(), "-")
+			p := probeSessions(filepath.Join(backupDir, "sessions", e.Name()), slot)
+			for _, c := range p.Claude {
+				if seen[c.PID] {
+					continue
+				}
+				seen[c.PID] = true
+				v.Claude = append(v.Claude, c)
+				v.ConfigDir[c.PID], v.Profile[c.PID] = p.ConfigDir[c.PID], slot
+			}
+			v.IDE = append(v.IDE, p.IDE...)
+		}
+		return v
+	}
+}
+
+func probeSessions(dir, slot string) SessionsView {
+	claude, ide := procdetect.GetRunningInstances(dir)
+	v := SessionsView{Claude: claude, IDE: ide, ConfigDir: map[int]string{}, Profile: map[int]string{}}
+	for _, c := range claude {
+		v.ConfigDir[c.PID], v.Profile[c.PID] = dir, slot
+	}
+	return v
+}
+
+// DefaultSessionTitle reads the title from the transcript under claudeDir
+// (the default Claude config directory when ""). It is the Deps.SessionTitle
+// default.
+func DefaultSessionTitle(claudeDir, cwd, sessionID string) string {
+	if claudeDir == "" {
+		claudeDir = procdetect.GetClaudeDir()
+	}
+	return SessionTitle(claudeDir, cwd, sessionID)
+}
+
+// DefaultKill stops pid — SIGTERM, or TerminateProcess on Windows, which has
+// no SIGTERM for another process (terminate, kill_*.go). It is the Deps.Kill
+// default; the stop handler only ever calls it for a PID procdetect currently
+// lists.
+func DefaultKill(pid int) error {
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+	return terminate(p)
+}
+
+// Deps are the server's injectable seams. Facade is required; every other
+// field has a production default (see New) or is optional.
+type Deps struct {
+	Facade   Facade
+	Sessions func() SessionsView
+	// SessionTitle names a running session from its transcript under the
+	// config directory it was found in; nil → DefaultSessionTitle.
+	SessionTitle func(claudeDir, cwd, sessionID string) string
+	Kill         func(pid int) error
+	Clock        clock.Clock
+	Rand         io.Reader     // token entropy; default crypto/rand
+	Interval     time.Duration // poll tick; default 5 s
+	Logger       func(string)  // default discards
+	// Ticker builds the poll ticker; default time.NewTicker. Tests inject a
+	// channel they drive by hand.
+	Ticker func(d time.Duration) (<-chan time.Time, func())
+
+	// Optional surfaces: nil → the section is null in the state document and
+	// its routes answer 503.
+	Accounts AccountOps
+	Settings SettingsFacade
+	Auto     AutoFacade
+	Transfer TransferFacade
+	// AutoEvents, when non-nil, is fanned out as SSE `auto` events; each one
+	// also triggers a state broadcast. A closed channel ends the auto stream.
+	AutoEvents <-chan AutoEventView
+
+	// RemoteToken, when non-empty, is a bearer token that counts as BOTH
+	// factors — cookie and CSRF — on every /api route, the event stream
+	// included, for a client that is not a browser: a tray driving this
+	// dashboard from the other side of a VM boundary through a forwarded
+	// loopback port. It is never accepted for the page or the static assets.
+	// The Host check stays, and the Origin / Sec-Fetch-Site rules still apply
+	// when a request carries those headers. Empty means bearer auth is off and
+	// an Authorization header is ignored.
+	RemoteToken string
+}
+
+// Server is one dashboard instance. Construct with New, bind with Start, run
+// with Serve.
+type Server struct {
+	d      Deps
+	token  string // CSRF token: in the page's <meta>, required on every /api call
+	cookie string // session cookie value: distinct from token, so a cookie leaked
+	//                 to another 127.0.0.1 port (cookies are not port-scoped) is useless alone
+	cookieBase string // brand.SessionCookie, validated; the port is appended once bound
+	// launchMu guards launch and launchUsed together: one lock, so a token is
+	// never handed out after it was redeemed and two concurrent LaunchURL
+	// calls agree on one fresh token instead of invalidating each other.
+	launchMu   sync.Mutex
+	launch     string // one-time bootstrap token carried in the printed URL
+	launchUsed bool
+	index      *template.Template
+	handler    http.Handler
+	hub        *hub
+	httpSrv    *http.Server
+
+	pingInterval time.Duration
+
+	mutMu sync.Mutex // serialises façade (store) mutations
+
+	mu   sync.Mutex
+	ln   net.Listener
+	port int
+	done chan struct{} // closed when Serve winds down; ends SSE streams
+
+	// obsMu guards in-process observers (a desktop shell hosting the server):
+	// every published state document and every engine event.
+	obsMu    sync.Mutex
+	stateObs []func(State)
+	autoObs  []func(AutoEventView)
+}
+
+const (
+	csrfHeader    = "X-CSRF-Token"
+	defaultPeriod = 5 * time.Second
+	defaultPing   = 15 * time.Second
+	tokenBytes    = 16 // 128 bits
+)
+
+// New builds a Server from d, minting the per-launch token. It errors when
+// Facade is nil or the token cannot be read from Rand.
+func New(d Deps) (*Server, error) {
+	if d.Facade == nil {
+		return nil, errors.New("web: Deps.Facade is required")
+	}
+	if d.Clock == nil {
+		d.Clock = clock.System{}
+	}
+	if d.Rand == nil {
+		d.Rand = rand.Reader
+	}
+	if d.Interval <= 0 {
+		d.Interval = defaultPeriod
+	}
+	if d.Logger == nil {
+		d.Logger = func(string) {}
+	}
+	if d.Sessions == nil {
+		d.Sessions = DefaultSessions
+	}
+	if d.Kill == nil {
+		d.Kill = DefaultKill
+	}
+	if d.SessionTitle == nil {
+		d.SessionTitle = DefaultSessionTitle
+	}
+	if d.Ticker == nil {
+		d.Ticker = func(dur time.Duration) (<-chan time.Time, func()) {
+			t := time.NewTicker(dur)
+			return t.C, t.Stop
+		}
+	}
+	// Three independent secrets, in this order: the CSRF token (page <meta>),
+	// the session cookie value and the one-time launch token in the printed
+	// URL. See the Server fields for why they must differ.
+	buf := make([]byte, tokenBytes)
+	if _, err := io.ReadFull(d.Rand, buf); err != nil {
+		return nil, fmt.Errorf("web: minting session token: %w", err)
+	}
+	cookieBuf := make([]byte, tokenBytes)
+	if _, err := io.ReadFull(d.Rand, cookieBuf); err != nil {
+		return nil, fmt.Errorf("web: minting session cookie: %w", err)
+	}
+	launchBuf := make([]byte, tokenBytes)
+	if _, err := io.ReadFull(d.Rand, launchBuf); err != nil {
+		return nil, fmt.Errorf("web: minting launch token: %w", err)
+	}
+	tmpl, err := template.ParseFS(staticFS, "static/index.html")
+	if err != nil {
+		return nil, fmt.Errorf("web: parsing index.html: %w", err)
+	}
+	s := &Server{
+		d:            d,
+		cookieBase:   brand.Sanitized().SessionCookie,
+		token:        hex.EncodeToString(buf),
+		cookie:       hex.EncodeToString(cookieBuf),
+		launch:       hex.EncodeToString(launchBuf),
+		index:        tmpl,
+		hub:          newHub(),
+		pingInterval: defaultPing,
+		done:         make(chan struct{}),
+	}
+	s.handler = s.routes()
+	return s, nil
+}
+
+// Token returns the per-launch CSRF token (the value in the page's <meta>).
+func (s *Server) Token() string { return s.token }
+
+// consumeLaunch redeems the one-time bootstrap token: true exactly once for
+// the right value. A replay (browser history, shell scrollback, a `ps`
+// snapshot of the launcher's argv) is refused.
+func (s *Server) consumeLaunch(t string) bool {
+	s.launchMu.Lock()
+	defer s.launchMu.Unlock()
+	if s.launchUsed || !tokenEqual(t, s.launch) {
+		return false
+	}
+	s.launchUsed = true
+	return true
+}
+
+// LaunchURL returns a URL carrying a one-time bootstrap token: the current
+// one while it is still unused (so the URL printed at start stays valid until
+// somebody opens it), a freshly minted one once it has been redeemed. A
+// remote client's "Open dashboard" reaches it through POST /api/launch. The
+// check and the mint happen under one lock, so concurrent calls share one
+// fresh token and none returns a token redeemed in between.
+func (s *Server) LaunchURL() (string, error) {
+	port := s.Port()
+	if port == 0 {
+		return "", nil
+	}
+	s.launchMu.Lock()
+	defer s.launchMu.Unlock()
+	if s.launchUsed {
+		buf := make([]byte, tokenBytes)
+		if _, err := io.ReadFull(s.d.Rand, buf); err != nil {
+			return "", fmt.Errorf("web: minting launch token: %w", err)
+		}
+		s.launch = hex.EncodeToString(buf)
+		s.launchUsed = false
+	}
+	return launchURL(port, s.launch), nil
+}
+
+func launchURL(port int, token string) string {
+	return "http://127.0.0.1:" + strconv.Itoa(port) + "/?token=" + token
+}
+
+// cookieName is the session cookie's name: brand.SessionCookie plus the bound
+// port. Cookies are not port-scoped, so with one name a second dashboard on
+// another port would overwrite the first one's cookie and log it out.
+func (s *Server) cookieName() string {
+	if p := s.Port(); p != 0 {
+		return s.cookieBase + "_" + strconv.Itoa(p)
+	}
+	return s.cookieBase
+}
+
+// Snapshot builds the state document the dashboard would receive now.
+func (s *Server) Snapshot() State { return s.buildState(stateOpts{}) }
+
+// OnState registers fn to receive every state document the server publishes:
+// on each poll tick, after each engine event batch and after every mutation.
+// fn runs on whichever goroutine published (the serve loop or a request
+// handler), possibly concurrently with itself; keep it quick and safe for
+// concurrent use.
+func (s *Server) OnState(fn func(State)) {
+	s.obsMu.Lock()
+	s.stateObs = append(s.stateObs, fn)
+	s.obsMu.Unlock()
+}
+
+// OnAuto registers fn to receive every auto-switch engine event.
+func (s *Server) OnAuto(fn func(AutoEventView)) {
+	s.obsMu.Lock()
+	s.autoObs = append(s.autoObs, fn)
+	s.obsMu.Unlock()
+}
+
+// Handler returns the fully wired handler (Host check, auth, routes). It is
+// exported so callers can mount it under a test server of their own.
+func (s *Server) Handler() http.Handler { return s.handler }
+
+// Start binds addr, which must resolve to a loopback interface (an empty addr
+// means 127.0.0.1:0), and returns the bootstrap URL http://127.0.0.1:<port>/?token=<t>.
+// A non-loopback bind is refused before any byte is served.
+func (s *Server) Start(addr string) (string, error) {
+	if addr == "" {
+		addr = "127.0.0.1:0"
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", fmt.Errorf("web: bad listen address %q: %w", addr, err)
+	}
+	if host != "localhost" {
+		ip := net.ParseIP(host)
+		if ip == nil || !ip.IsLoopback() {
+			return "", fmt.Errorf("web: refusing non-loopback listen address %q", addr)
+		}
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return "", err
+	}
+	tcp, ok := ln.Addr().(*net.TCPAddr)
+	if !ok || !tcp.IP.IsLoopback() {
+		_ = ln.Close()
+		return "", fmt.Errorf("web: listener %s is not loopback", ln.Addr())
+	}
+	s.mu.Lock()
+	s.ln = ln
+	s.port = tcp.Port
+	s.mu.Unlock()
+	return s.URL(), nil
+}
+
+// URL returns the bootstrap URL after Start ("" before), with the current
+// launch token whether or not it was redeemed.
+func (s *Server) URL() string {
+	port := s.Port()
+	if port == 0 {
+		return ""
+	}
+	s.launchMu.Lock()
+	defer s.launchMu.Unlock()
+	return launchURL(port, s.launch)
+}
+
+// Port returns the bound port after Start (0 before).
+func (s *Server) Port() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.port
+}
+
+// Serve runs the HTTP server on the Start listener and the poll loop that
+// broadcasts a state event every Interval, until ctx is cancelled. It returns
+// nil on a clean shutdown; Start must have succeeded first.
+func (s *Server) Serve(ctx context.Context) error {
+	s.mu.Lock()
+	ln := s.ln
+	s.mu.Unlock()
+	if ln == nil {
+		return errors.New("web: Serve before Start")
+	}
+	srv := &http.Server{
+		Handler:           s.handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ErrorLog:          nil,
+	}
+	s.httpSrv = srv
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.Serve(ln) }()
+
+	tick, stop := s.d.Ticker(s.d.Interval)
+	defer stop()
+	autoCh := s.d.AutoEvents
+	for {
+		select {
+		case ev, ok := <-autoCh:
+			if !ok {
+				autoCh = nil // closed: stop selecting on it, keep serving
+				continue
+			}
+			// Coalesce: every event already queued goes out as its own `auto`
+			// frame, followed by ONE state document for the whole batch.
+			s.publishAuto(ev)
+		drain:
+			for {
+				select {
+				case more, ok := <-autoCh:
+					if !ok {
+						autoCh = nil
+						break drain
+					}
+					s.publishAuto(more)
+				default:
+					break drain
+				}
+			}
+			s.broadcast()
+		case <-ctx.Done():
+			close(s.done)
+			shutCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			err := srv.Shutdown(shutCtx)
+			cancel()
+			<-serveErr
+			if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+			return nil
+		case err := <-serveErr:
+			close(s.done)
+			if errors.Is(err, http.ErrServerClosed) {
+				return nil
+			}
+			return err
+		case <-tick:
+			s.broadcast()
+		}
+	}
+}
+
+// broadcast rebuilds the state document and pushes it to every SSE
+// subscriber and every in-process observer. Subscribers that asked for token
+// status (?tokenStatus=1) get the enriched document; it is built only while
+// one of them is connected, and the plain document is the same state with
+// the tokenStatus keys dropped, so both come from one snapshot.
+func (s *Server) broadcast() {
+	wantTS := s.hub.wantsTokenStatus()
+	st := s.buildState(stateOpts{tokenStatus: wantTS})
+	var withTS []byte
+	if wantTS {
+		b, err := json.Marshal(st)
+		if err != nil {
+			s.d.Logger("web: state: " + err.Error())
+			return
+		}
+		withTS = b
+		st = withoutTokenStatus(st)
+	}
+	body, err := json.Marshal(st)
+	if err != nil {
+		s.d.Logger("web: state: " + err.Error())
+		return
+	}
+	s.hub.publishState(body, withTS)
+	s.obsMu.Lock()
+	obs := make([]func(State), len(s.stateObs))
+	copy(obs, s.stateObs)
+	s.obsMu.Unlock()
+	for _, fn := range obs {
+		fn(st)
+	}
+}
+
+// publishAuto fans one engine event out as an `auto` SSE event and to the
+// observers. The caller follows a batch of them with one broadcast.
+func (s *Server) publishAuto(ev AutoEventView) {
+	body, err := json.Marshal(ev)
+	if err != nil {
+		s.d.Logger("web: auto event: " + err.Error())
+		return
+	}
+	s.hub.publish("auto", body)
+	s.obsMu.Lock()
+	obs := make([]func(AutoEventView), len(s.autoObs))
+	copy(obs, s.autoObs)
+	s.obsMu.Unlock()
+	for _, fn := range obs {
+		fn(ev)
+	}
+}
