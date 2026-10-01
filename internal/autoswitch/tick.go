@@ -38,6 +38,7 @@ func (e *Engine) Tick() (outcome TickOutcome) {
 }
 
 func (e *Engine) tickInner() (TickOutcome, error) {
+	e.adoptPendingModels()
 	e.sleepUntilTS = nil
 	e.blockedWaitLong = false
 	e.idleHoldSlow = false

@@ -52,8 +52,11 @@ type Engine struct {
 	sw       Switcher
 	settings atomic.Pointer[settings.AutoSwitchSettings]
 	models   []string
-	onEvent  func(Event)
-	dryRun   bool
+	// pendingModels is a model set ApplyModels queued for the tick goroutine,
+	// which adopts it at the start of its next tick (models.go).
+	pendingModels atomic.Pointer[[]string]
+	onEvent       func(Event)
+	dryRun        bool
 
 	clk       clock.Clock
 	sleeper   Sleeper
