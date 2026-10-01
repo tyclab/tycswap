@@ -3652,9 +3652,18 @@ at once.
 
 **Sessions.** The list covers the default Claude config directory and every
 session profile under `<backup root>/sessions/` (A16), so sessions started
-with `run` or `env` appear with their slot and can be stopped. Stop acts only
-on a PID listed at that moment, re-checked under the mutation lock; on
-Windows, which has no SIGTERM for another process, it is TerminateProcess.
+with `run` or `env` appear with their slot and can be stopped. A session
+file counts only when its name is the pid it carries (`sessions/<pid>.json`,
+as Claude Code writes it). Stop acts only on a PID listed at that moment,
+consulted again under the mutation lock, and only after the process
+holding the PID is verified as the one the file describes: its start time
+(Linux `/proc/<pid>/stat` starttime plus boot time; macOS `kinfo_proc`;
+Windows `GetProcessTimes` on an `OpenProcess` handle that `TerminateProcess`
+then uses, so the process checked is the process ended) must match the
+file's `startedAt` within 20 seconds, or the route answers 409 and nothing
+is signalled. A session file left behind by a crash or a power loss names a
+PID the system may have reused; on Windows, which also has no SIGTERM for
+another process and terminates hard, PIDs are reused quickly.
 
 **Branding.** Names, the cookie name, the redirect-file prefix and the accent
 colour come from `internal/brand`, overridable at link time and validated

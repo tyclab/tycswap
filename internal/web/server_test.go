@@ -4,6 +4,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"io"
 	"io/fs"
 	"net"
@@ -407,11 +408,33 @@ func TestIndexHTML_HasEverySection(t *testing.T) {
 	}
 }
 
-func TestDefaultKill_RefusesNothingButSignalsPID(t *testing.T) {
-	// DefaultKill on a PID that cannot exist must surface an error rather
-	// than panic; we never signal a live process from tests.
-	if err := DefaultKill(1<<30 - 1); err == nil {
-		t.Skip("platform accepted an absurd pid; nothing to assert")
+func TestDefaultKill_RefusesWhatItCannotVerify(t *testing.T) {
+	// A PID that cannot exist, and a session file without a start time: both
+	// are ErrNotTheProcess, never a signal. We never signal a live process
+	// from tests.
+	if err := DefaultKill(1<<30-1, testNow.UnixMilli()); !errors.Is(err, ErrNotTheProcess) {
+		t.Fatalf("absurd pid: %v, want ErrNotTheProcess", err)
+	}
+	if err := DefaultKill(os.Getpid(), 0); !errors.Is(err, ErrNotTheProcess) {
+		t.Fatalf("no startedAt: %v, want ErrNotTheProcess", err)
+	}
+}
+
+// startMatches is the identity decision shared by every platform.
+func TestStartMatches(t *testing.T) {
+	recorded := testNow
+	for _, tc := range []struct {
+		d    time.Duration
+		want bool
+	}{
+		{0, true}, {time.Second, true}, {-time.Second, true},
+		{startTolerance, true}, {-startTolerance, true},
+		{startTolerance + time.Second, false}, {-startTolerance - time.Second, false},
+		{time.Hour, false}, {-24 * time.Hour, false},
+	} {
+		if got := startMatches(recorded, recorded.Add(tc.d)); got != tc.want {
+			t.Errorf("startMatches(recorded, recorded%+v) = %v, want %v", tc.d, got, tc.want)
+		}
 	}
 }
 

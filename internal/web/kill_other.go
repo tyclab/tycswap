@@ -1,14 +1,19 @@
-//go:build !windows
+//go:build !linux && !darwin && !windows
 
 package web
 
 import (
-	"os"
-	"syscall"
+	"fmt"
+	"runtime"
+	"time"
 )
 
 // stopSignalName is what handleStop reports it sent.
 const stopSignalName = "SIGTERM"
 
-// terminate asks the process to end; Claude Code exits cleanly on SIGTERM.
-func terminate(p *os.Process) error { return p.Signal(syscall.SIGTERM) }
+// terminateVerified refuses: without a way to read a process's start time
+// the PID cannot be matched to the session file, and signalling an
+// unverified PID is what the check exists to prevent.
+func terminateVerified(int, time.Time) error {
+	return fmt.Errorf("%w: process start times cannot be read on %s", ErrNotTheProcess, runtime.GOOS)
+}

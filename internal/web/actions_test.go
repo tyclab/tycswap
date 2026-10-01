@@ -6,8 +6,10 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/cerr"
@@ -182,6 +184,31 @@ func TestStop_ListedPID_CallsKill(t *testing.T) {
 	}
 	if got := h.Killed(); !reflect.DeepEqual(got, []int{4242}) {
 		t.Fatalf("killed %v, want [4242]", got)
+	}
+	// Kill is handed the listed session's startedAt, so it can verify the
+	// process before signalling it.
+	h.mu.Lock()
+	at := append([]int64(nil), h.killedAt...)
+	h.mu.Unlock()
+	if !reflect.DeepEqual(at, []int64{1758276000000}) {
+		t.Fatalf("Kill got startedAt %v, want the listed session's", at)
+	}
+}
+
+// A PID whose process is not the one the session file describes (reused
+// after a crash, or unverifiable) answers 409 and is reported, not signalled
+// further.
+func TestStop_NotTheProcess409(t *testing.T) {
+	h := newHarness(t)
+	h.mu.Lock()
+	h.killErr = fmt.Errorf("%w: it started at 2026-09-19T11:00:00Z, the session file says 2026-09-19T10:00:00Z", ErrNotTheProcess)
+	h.mu.Unlock()
+	resp := h.post("/api/sessions/4242/stop")
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status %d, want 409", resp.StatusCode)
+	}
+	if msg := decodeError(t, resp); !strings.Contains(msg, "not stopping pid 4242") || !strings.Contains(msg, "another process") {
+		t.Fatalf("error %q", msg)
 	}
 }
 

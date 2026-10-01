@@ -24,6 +24,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
 )
@@ -606,44 +607,47 @@ func (s *Server) handleSwap(w http.ResponseWriter, r *http.Request) {
 // -- sessions -----------------------------------------------------------------
 
 // handleStop stops a PID (SIGTERM; TerminateProcess on Windows, where there
-// is no SIGTERM) only when procdetect currently lists it as a
-// Claude Code session (A25: never an arbitrary PID).
+// is no SIGTERM) only when procdetect currently lists it as a Claude Code
+// session (A25: never an arbitrary PID), and only when the process holding
+// the PID is the one the session file describes: Kill verifies the process
+// start time against the file's startedAt and answers 409 when they
+// disagree, so a PID the system reused after a crash is never signalled.
 func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 	pid, err := strconv.Atoi(r.PathValue("pid"))
 	if err != nil || pid <= 1 {
 		writeError(w, http.StatusBadRequest, "invalid pid")
 		return
 	}
-	listed := false
-	for _, c := range s.d.Sessions().Claude {
-		if c.PID == pid {
-			listed = true
-			break
-		}
-	}
-	if !listed {
+	if _, ok := listedSession(s.d.Sessions(), pid); !ok {
 		writeError(w, http.StatusNotFound, "no running Claude Code session with pid "+strconv.Itoa(pid))
 		return
 	}
 	s.mutate(w, func() (map[string]any, error) {
-		// Re-check under the lock: the listing above and the signal below
-		// must see the same process (a session that exited meanwhile could
-		// have had its PID reused).
-		still := false
-		for _, c := range s.d.Sessions().Claude {
-			if c.PID == pid {
-				still = true
-				break
-			}
-		}
-		if !still {
+		// The listing is consulted again under the lock, so a session that
+		// exited between the two reads answers 404 instead of being
+		// signalled; the identity check itself is Kill's.
+		sess, ok := listedSession(s.d.Sessions(), pid)
+		if !ok {
 			return nil, httpErr(http.StatusNotFound, "session %d is no longer running", pid)
 		}
-		if err := s.d.Kill(pid); err != nil {
+		if err := s.d.Kill(pid, sess.StartedAt); err != nil {
+			if errors.Is(err, ErrNotTheProcess) {
+				return nil, httpErr(http.StatusConflict, "not stopping pid %d: %s", pid, err.Error())
+			}
 			return nil, err
 		}
 		return map[string]any{"pid": pid, "signal": stopSignalName}, nil
 	})
+}
+
+// listedSession finds pid among the Claude Code sessions in v.
+func listedSession(v SessionsView, pid int) (procdetect.ClaudeSession, bool) {
+	for _, c := range v.Claude {
+		if c.PID == pid {
+			return c, true
+		}
+	}
+	return procdetect.ClaudeSession{}, false
 }
 
 // -- settings -----------------------------------------------------------------

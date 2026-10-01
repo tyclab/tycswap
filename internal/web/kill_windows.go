@@ -2,14 +2,37 @@
 
 package web
 
-import "os"
+import (
+	"fmt"
+	"time"
+
+	"golang.org/x/sys/windows"
+)
 
 // stopSignalName is what handleStop reports it sent.
 const stopSignalName = "terminate"
 
-// terminate ends the process. Windows has no SIGTERM for another process:
-// os.Process.Signal supports only Kill there and answers anything else with
-// "not supported by windows", so TerminateProcess (os.Process.Kill) is the
-// stop that exists. Claude Code writes its transcript as it goes, so
-// `claude --continue` in that directory resumes the session.
-func terminate(p *os.Process) error { return p.Kill() }
+// terminateVerified opens the process, compares its creation time
+// (GetProcessTimes) with the session file's startedAt, and terminates it
+// through that same handle, so the process checked is the process ended
+// even if the PID is reused in between. Windows has no SIGTERM for another
+// process, so TerminateProcess is the stop that exists; Claude Code writes
+// its transcript as it goes, so `claude --continue` in that directory resumes
+// the session. A disagreement is ErrNotTheProcess and nothing is terminated.
+func terminateVerified(pid int, recorded time.Time) error {
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_TERMINATE, false, uint32(pid))
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrNotTheProcess, err)
+	}
+	defer func() { _ = windows.CloseHandle(h) }()
+	var creation, exit, kernel, user windows.Filetime
+	if err := windows.GetProcessTimes(h, &creation, &exit, &kernel, &user); err != nil {
+		return fmt.Errorf("%w: %v", ErrNotTheProcess, err)
+	}
+	started := time.Unix(0, creation.Nanoseconds())
+	if !startMatches(recorded, started) {
+		return fmt.Errorf("%w: it started at %s, the session file says %s",
+			ErrNotTheProcess, started.UTC().Format(time.RFC3339), recorded.UTC().Format(time.RFC3339))
+	}
+	return windows.TerminateProcess(h, 1)
+}

@@ -411,6 +411,7 @@ type harness struct {
 	mu       sync.Mutex
 	sessions SessionsView
 	killed   []int
+	killedAt []int64 // the startedAt handed to Kill, one per killed entry
 	killErr  error
 	logs     []string
 }
@@ -471,10 +472,11 @@ func newHarness(t *testing.T, opts ...option) *harness {
 			}
 			return ""
 		},
-		Kill: func(pid int) error {
+		Kill: func(pid int, startedAt int64) error {
 			h.mu.Lock()
 			defer h.mu.Unlock()
 			h.killed = append(h.killed, pid)
+			h.killedAt = append(h.killedAt, startedAt)
 			return h.killErr
 		},
 		Clock:    h.clk,

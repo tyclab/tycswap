@@ -222,7 +222,19 @@ func TestSessionsInProfiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(prof, "sessions", strconv.Itoa(pid)+".json"), []byte(rec), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// A record whose file name disagrees with its pid field was not written
+	// by that process (Claude Code writes sessions/<pid>.json): not listed,
+	// so it can never be stopped as that pid.
+	forged := `{"pid":` + strconv.Itoa(pid) + `,"sessionId":"forged","cwd":"/elsewhere","startedAt":1,"kind":"interactive","entrypoint":"cli"}`
+	if err := os.WriteFile(filepath.Join(prof, "sessions", "999999.json"), []byte(forged), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	v := SessionsIn(backup)()
+	for _, c := range v.Claude {
+		if c.SessionID == "forged" {
+			t.Fatalf("a session file named 999999.json carrying pid %d was listed: %+v", pid, c)
+		}
+	}
 	var found *procdetect.ClaudeSession
 	for i := range v.Claude {
 		if v.Claude[i].PID == pid {

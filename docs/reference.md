@@ -2265,10 +2265,15 @@ tabs:
   status (busy, waiting, idle), title from the transcript, and *Stop*. The
   list includes sessions started with `tycswap run` or `tycswap env` (found
   in the session profiles under the backup root and marked with the slot
-  they run as). Stop sends SIGTERM, or TerminateProcess on Windows, and only
-  to a PID that is listed as a Claude Code session at that moment;
-  `claude --continue` in that directory resumes the session. IDE instances
-  are listed below.
+  they run as). Only a session file named after the pid it carries
+  (`sessions/<pid>.json`, as Claude Code writes it) is listed. Stop sends
+  SIGTERM, or TerminateProcess on Windows, and only to a PID that is listed
+  as a Claude Code session at that moment and whose process start time
+  (Linux `/proc/<pid>/stat`, macOS `kinfo_proc`, Windows `GetProcessTimes`
+  on the handle that is then terminated) matches the session file's
+  `startedAt` within 20 seconds; a PID the system has since given to
+  another process answers 409 and is not signalled. `claude --continue` in
+  that directory resumes the session. IDE instances are listed below.
 
 Export and import stay on the command line (`tycswap export`, `tycswap
 import`): the dashboard never writes credentials to a file or reads one.
@@ -2342,7 +2347,7 @@ a key of another provider answers 404, because slot numbers are per provider.
 | `POST /api/accounts/{key}/alias` | `{"alias": "<name>"}` (empty unsets) | `tycswap alias` |
 | `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` |
 | `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` |
-| `POST /api/sessions/{pid}/stop` | | stop a listed Claude Code session |
+| `POST /api/sessions/{pid}/stop` | | stop a listed Claude Code session, after verifying the process start time |
 | `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset` |
 | `POST /api/auto/start` | `{"dryRun": bool}` | start the hosted engine |
 | `POST /api/auto/stop`, `/api/auto/wake` | | stop it (waits for its loop to end), poll now |

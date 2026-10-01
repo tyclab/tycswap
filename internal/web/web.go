@@ -201,8 +201,18 @@ func SessionsIn(backupDir string) func() SessionsView {
 	}
 }
 
+// probeSessions lists dir's sessions, keeping only records whose file is
+// named after the pid they carry: Claude Code writes sessions/<pid>.json, so
+// a record whose file name disagrees with its pid field was not written by
+// the process it names, and must not be shown or stopped as that process.
 func probeSessions(dir, slot string) SessionsView {
-	claude, ide := procdetect.GetRunningInstances(dir)
+	listed, ide := procdetect.GetRunningInstances(dir)
+	claude := make([]procdetect.ClaudeSession, 0, len(listed))
+	for _, c := range listed {
+		if filepath.Base(c.Path) == strconv.Itoa(c.PID)+".json" {
+			claude = append(claude, c)
+		}
+	}
 	v := SessionsView{Claude: claude, IDE: ide, ConfigDir: map[int]string{}, Profile: map[int]string{}}
 	for _, c := range claude {
 		v.ConfigDir[c.PID], v.Profile[c.PID] = dir, slot
@@ -220,16 +230,45 @@ func DefaultSessionTitle(claudeDir, cwd, sessionID string) string {
 	return SessionTitle(claudeDir, cwd, sessionID)
 }
 
-// DefaultKill stops pid — SIGTERM, or TerminateProcess on Windows, which has
-// no SIGTERM for another process (terminate, kill_*.go). It is the Deps.Kill
-// default; the stop handler only ever calls it for a PID procdetect currently
-// lists.
-func DefaultKill(pid int) error {
-	p, err := os.FindProcess(pid)
-	if err != nil {
-		return err
+// ErrNotTheProcess reports that the process holding a listed PID is not the
+// one the session file describes — its start time disagrees with the file's
+// startedAt, or cannot be read — so nothing was signalled. A session file
+// left behind by a crash names a PID the system may since have given to an
+// unrelated process.
+var ErrNotTheProcess = errors.New("the pid now belongs to another process, or its start time cannot be verified")
+
+// startTolerance is how far the process start time read from the system may
+// lie from the session file's startedAt and still count as the same process.
+// Claude Code records startedAt moments after it starts, and the system's
+// clock for process starts has second granularity on Linux (boot time), so
+// a few seconds is normal; a reused PID differs by the old process's whole
+// lifetime.
+const startTolerance = 20 * time.Second
+
+// startMatches is the decision: recorded (the session file's startedAt) and
+// actual (the process's start time from the system) within startTolerance of
+// each other.
+func startMatches(recorded, actual time.Time) bool {
+	d := recorded.Sub(actual)
+	if d < 0 {
+		d = -d
 	}
-	return terminate(p)
+	return d <= startTolerance
+}
+
+// DefaultKill stops pid, but only after verifying that the process holding
+// it is the one the session file describes: its start time (Linux
+// /proc/<pid>/stat, macOS kinfo_proc, Windows GetProcessTimes on the handle
+// that is then terminated) must match startedAt (epoch milliseconds) within
+// startTolerance; otherwise ErrNotTheProcess and no signal. The stop is
+// SIGTERM, or TerminateProcess on Windows, which has no SIGTERM for another
+// process (kill_*.go). It is the Deps.Kill default; the stop handler only
+// ever calls it for a PID procdetect currently lists.
+func DefaultKill(pid int, startedAt int64) error {
+	if startedAt <= 0 {
+		return fmt.Errorf("%w: the session file records no start time", ErrNotTheProcess)
+	}
+	return terminateVerified(pid, time.UnixMilli(startedAt))
 }
 
 // Deps are the server's injectable seams. Facade is required; every other
@@ -240,8 +279,11 @@ type Deps struct {
 	// SessionTitle names a running session from its transcript under the
 	// config directory it was found in; nil → DefaultSessionTitle.
 	SessionTitle func(claudeDir, cwd, sessionID string) string
-	Kill         func(pid int) error
-	Clock        clock.Clock
+	// Kill stops the Claude Code session with this pid, which the session
+	// file says started at startedAt (epoch milliseconds); nil →
+	// DefaultKill, which verifies the process's start time first.
+	Kill  func(pid int, startedAt int64) error
+	Clock clock.Clock
 	Rand         io.Reader     // token entropy; default crypto/rand
 	Interval     time.Duration // poll tick; default 5 s
 	Logger       func(string)  // default discards
