@@ -3527,6 +3527,28 @@ passed-through arguments. *"Codex export is not atomic"* was already fixed.
 missing, verifies byte for byte what is already there, and refuses only on a
 real conflict.
 
+**9. The credentials file is the account plus a seat-wide remainder.**
+Finding *"a switch logs the MCP servers out"*: Claude Code keeps its MCP
+server OAuth tokens in `~/.claude/.credentials.json` (and the macOS Keychain
+item) under the top-level key `mcpOAuth`, keyed by server, not by Claude
+account; writing a stored blob over that file whole swapped or dropped them on
+every switch, swept a fresh MCP login into the outgoing slot's backup where it
+went stale, and shipped MCP refresh tokens in exports. The rule is an
+allow-list of one key: `mcpOAuth` is the seat's, everything else
+(`claudeAiOauth`, `trustedDeviceToken`, which Claude Code mints per login) is
+the account's. A switch writes the stored account blob with the live
+`mcpOAuth` carried over it (`ccfile.SpliceCredentials`, through
+`credstore.WriteActiveAccount`, which reads the live credential first and
+writes the blob verbatim when that read fails or does not parse); a capture —
+`add`, `add --login`, the switch-time backup and stash, the active refresh
+write-back, `export` — stores `oauth.AccountOnly(blob)`, the blob minus that
+key; the ownership classifier compares account bytes, so an MCP login never
+reads as a changed credential. Rollback and the refresh write-back keep
+`WriteActive` verbatim. `import` writes what it is given; a stale `mcpOAuth`
+in an old backup or export loses to the live one whenever the seat has MCP
+logins, and is written as it is only when the live file has none (Claude Code
+then re-prompts, as before) — the next capture of that slot drops it.
+
 **Not done here.** Windows has no owner-only DACL on `credentials/`, exports
 and the store root (`CheckPrivateRoot` is a no-op there); a follow-up.
 Dependencies: `go.mod` pins `toolchain go1.25.14`; `make vuln` runs

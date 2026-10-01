@@ -368,6 +368,11 @@ stops the switch with a `ConfigError` naming the file, before any credential is
 written, rather than being replaced. The same holds for `add-token`, which
 rewrites `primaryApiKey` in that file.
 
+The live credential's `mcpOAuth` key — Claude Code's MCP server logins, which
+belong to the seat and not to the account — is carried over the target
+account's stored credential, and the outgoing account's backup is written
+without it; a rollback restores the exact pre-switch bytes.
+
 ### Files
 
 Reads and writes `sequence.json` (the active pointer), the live Claude Code
@@ -1569,7 +1574,9 @@ reads only the `oauthAccount` of either form. The active
 account is read from the live vault for the freshest tokens. In a bulk export, a
 single broken account is skipped with a stderr warning; a named single-account
 export treats the same condition as a hard failure. A missing `oauthAccount` is
-always fatal.
+always fatal. Each account's credentials are exported without the `mcpOAuth`
+key (Claude Code's MCP server logins, which belong to the seat and never leave
+the machine).
 
 ### Files
 
