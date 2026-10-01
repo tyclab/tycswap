@@ -249,7 +249,7 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 		if err != nil {
 			return err
 		}
-		if err := s.Creds.WriteActive(targetCreds); err != nil {
+		if err := s.Creds.WriteActiveAccount(targetCreds); err != nil {
 			return err
 		}
 		credsWritten = true
@@ -379,8 +379,10 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 		return cerr.Switch("Account-%s has no stored config backup. Re-add with: tycswap --add-account --slot %s", targetAccount, targetAccount)
 	}
 
-	// Step 3: activate target credentials.
-	if err := s.Creds.WriteActive(targetCreds); err != nil {
+	// Step 3: activate target credentials. The live mcpOAuth (the seat's MCP
+	// server logins) rides over the stored account blob; rollback below restores
+	// the original bytes verbatim through WriteActive.
+	if err := s.Creds.WriteActiveAccount(targetCreds); err != nil {
 		return err
 	}
 	tx.recordStep("credentials_written")

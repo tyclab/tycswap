@@ -61,6 +61,11 @@ type Store interface {
 	// WriteActive persists the active credential on a single auth axis: an OAuth
 	// blob clears any managed key and vice-versa.
 	WriteActive(creds string) error
+	// WriteActiveAccount is WriteActive for a stored account blob: the live
+	// credential's seat-wide mcpOAuth (MCP server logins) is carried over it.
+	// Best-effort — a live credential that cannot be read or parsed writes
+	// creds verbatim.
+	WriteActiveAccount(creds string) error
 
 	// ReadBackup returns a slot's backup credential (.enc-wins), "" when missing;
 	// it never fails (all backend errors are swallowed with a warning log).

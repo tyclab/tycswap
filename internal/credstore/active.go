@@ -125,6 +125,45 @@ func (s *FileKeychainStore) WriteActive(creds string) error {
 	return nil
 }
 
+// WriteActiveAccount writes a stored account credential as Claude Code's active
+// one, carrying the live credential's seat-wide remainder — the MCP server
+// logins under ccfile.MCPOAuthKey — over it (DESIGN A25 item 9). It reads the
+// live credential first (the Keychain while it is in use, else the plaintext
+// file) and splices with ccfile.SpliceCredentials; a failed read or a live file
+// that does not parse falls back to writing creds verbatim, with a warning: the
+// carry-over is best-effort and never stops a switch. An API key takes
+// WriteActive's managed path unchanged. WriteActive itself stays verbatim: it
+// is what rollback restores with, and what the refresh write-back uses for a
+// blob that already holds the live remainder.
+func (s *FileKeychainStore) WriteActiveAccount(creds string) error {
+	if LooksLikeAPIKey(creds) {
+		return s.WriteActive(creds)
+	}
+	merged, err := ccfile.SpliceCredentials(creds, s.readLiveOAuth())
+	if err != nil {
+		s.log.Warningf("Writing the stored credential as is; the live MCP server logins could not be carried over it: %v", err)
+	}
+	return s.WriteActive(merged)
+}
+
+// readLiveOAuth returns the live OAuth credential text for the carry-over: the
+// Keychain item while the Keychain is in use (bounded retry, then the file),
+// else the plaintext file; "" when neither holds one or the file read fails
+// (logged, so the caller writes verbatim).
+func (s *FileKeychainStore) readLiveOAuth() string {
+	if s.useKeychain() {
+		if v, _ := s.readActiveOAuthKeychain(); v != "" {
+			return v
+		}
+	}
+	raw, _, err := ccfile.ReadCredentialsFile()
+	if err != nil {
+		s.log.Warningf("Could not read the live credentials file; the live MCP server logins will not be carried over: %v", err)
+		return ""
+	}
+	return raw
+}
+
 // writeOAuthCredentials writes Claude Code's active OAuth credential (spec
 // 03§5.5). macOS writes the Keychain when usable and bumps an already-present
 // shadow .credentials.json (#86 hot-reload); on failure or off macOS it writes

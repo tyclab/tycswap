@@ -9,6 +9,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // TestConfigReadErrorNotFoundOnlyForENOENT: a non-ENOENT read error on
@@ -145,5 +146,76 @@ func TestSwitchForeignCredentialPreserved(t *testing.T) {
 	// The switch still completed onto account 2.
 	if got := readActiveCreds(t, s); got != backup2 {
 		t.Fatalf("switch did not activate account 2")
+	}
+}
+
+// mcpSwitchFixture seeds two managed accounts, slot 1 live, with the seat's MCP
+// server login in the live credentials file (not in any backup).
+func mcpSwitchFixture(t *testing.T) (s *store.Store, backup1, backup2, live string) {
+	t.Helper()
+	s = newTestStore(t, nil)
+	backup1 = oauthCreds("a1", "ref1")
+	backup2 = oauthCreds("b2", "ref2")
+	live = withMCPOAuth(t, backup1, "srv|1111", "mcp-live")
+	recs := map[string]json.RawMessage{
+		"1": record(map[string]any{"email": "a@x.com", "organizationUuid": "", "uuid": "uuid-1"}),
+		"2": record(map[string]any{"email": "b@x.com", "organizationUuid": "", "uuid": "uuid-2"}),
+	}
+	writeSeq(t, s, seqData(ptrInt(1), []int{1, 2}, recs))
+	seedBackup(t, s, "1", "a@x.com", backup1, "")
+	seedBackup(t, s, "2", "b@x.com", backup2, "")
+	seedLive(t, s, "a@x.com", "", live)
+	return s, backup1, backup2, live
+}
+
+// TestSwitchKeepsLiveMCPOAuth: a normal switch writes the target's account
+// blob with the live mcpOAuth carried over it, so the seat's MCP server logins
+// survive the change of Claude account.
+func TestSwitchKeepsLiveMCPOAuth(t *testing.T) {
+	s, _, _, _ := mcpSwitchFixture(t)
+	if _, err := SwitchTo(s, "2", true, false); err != nil {
+		t.Fatalf("SwitchTo: %v", err)
+	}
+	got := readActiveCreds(t, s)
+	if oauth.ExtractAccessToken(got) != "b2" {
+		t.Fatalf("live account after the switch = %q, want account 2", got)
+	}
+	if mcpTokenOf(t, got, "srv|1111") != "mcp-live" {
+		t.Fatalf("the live mcpOAuth did not survive the switch: %s", got)
+	}
+}
+
+// TestDirectActivateKeepsLiveMCPOAuth: the direct-activation path (--force,
+// also what `add --login --switch` takes) carries the live mcpOAuth too.
+func TestDirectActivateKeepsLiveMCPOAuth(t *testing.T) {
+	s, _, _, _ := mcpSwitchFixture(t)
+	if _, err := SwitchTo(s, "2", true, true); err != nil {
+		t.Fatalf("SwitchTo --force: %v", err)
+	}
+	got := readActiveCreds(t, s)
+	if oauth.ExtractAccessToken(got) != "b2" {
+		t.Fatalf("live account after the activation = %q, want account 2", got)
+	}
+	if mcpTokenOf(t, got, "srv|1111") != "mcp-live" {
+		t.Fatalf("the live mcpOAuth did not survive the activation: %s", got)
+	}
+}
+
+// TestSwitchRollbackRestoresLiveBytesVerbatim: a failure after the credential
+// write rolls the live file back to the exact pre-switch bytes — WriteActive,
+// not the splice.
+func TestSwitchRollbackRestoresLiveBytesVerbatim(t *testing.T) {
+	s, _, _, live := mcpSwitchFixture(t)
+	// Step 4 fails after credentials_written: the target's stored config has no
+	// oauthAccount to splice into the live ~/.claude.json.
+	if err := s.WriteAccountConfig("2", "b@x.com", `{"other": 1}`); err != nil {
+		t.Fatal(err)
+	}
+	_, err := SwitchTo(s, "2", true, false)
+	if err == nil || !strings.Contains(err.Error(), "rolled back") {
+		t.Fatalf("err = %v, want a rolled-back switch failure", err)
+	}
+	if got := readActiveCreds(t, s); got != live {
+		t.Fatalf("rollback wrote\n%s\nwant the original live bytes verbatim\n%s", got, live)
 	}
 }

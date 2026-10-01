@@ -532,3 +532,29 @@ func TestAddLoginScrubsAuthOverrides(t *testing.T) {
 		t.Errorf("env = %v", env)
 	}
 }
+
+// TestAddLoginSwitchKeepsTheLiveMCPLogins: the scratch profile a login runs in
+// never has mcpOAuth, so activating the new account used to wipe the seat's MCP
+// server logins. The switch carries the live mcpOAuth over the new account.
+func TestAddLoginSwitchKeepsTheLiveMCPLogins(t *testing.T) {
+	f := newLoginFixture(t)
+	live := `{"claudeAiOauth":{"accessToken":"sk-ant-oat01-test-token-1","refreshToken":"refresh-token-1","expiresAt":4102444800000,"scopes":["user:inference"]},"mcpOAuth":{"srv|1111":{"accessToken":"mcp-live","refreshToken":"mcp-live-refresh"}}}`
+	if err := os.WriteFile(filepath.Join(f.home, ".claude", ".credentials.json"), []byte(live), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code, _, errb := f.run(t, "add", "--login", "--switch")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errb)
+	}
+	after := f.liveCreds(t)
+	if !strings.Contains(after, "sk-ant-oat01-test-token-2") {
+		t.Errorf("live credential after --switch = %q, want the new account", after)
+	}
+	if !strings.Contains(after, `"mcp-live"`) {
+		t.Errorf("live credential after --switch lost the MCP server login: %q", after)
+	}
+	if got := f.storedCreds(t, "2", "b@example.com"); strings.Contains(got, "mcp-live") {
+		t.Errorf("stored credential for slot 2 carries the seat's MCP login: %q", got)
+	}
+}
