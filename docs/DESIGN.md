@@ -4148,7 +4148,11 @@ switchable; `export` leaves it out, or fails when it is named; `tycswap run
 <n>` refuses to bootstrap it. The bytes stay where they are:
 `credstore.ReadBackup` is unchanged, so the `.prev` retention, the strict
 clear and the migrations still see them, and the key in `.prev` is left
-alone.
+alone. A direct activation (`--force`, or a live identity no slot holds)
+whose `ReadActive` finds no credential snapshots the raw live OAuth text for
+its rollback instead (`ReadLiveOAuth`), so a commit that fails after the
+credential write puts a seat-wide-only file back as it was rather than an
+empty one (`TestForcedActivationRollbackRestoresASeatWideOnlyFile`).
 
 **Tests.** `internal/switching/apikeyseat_test.go`: an API-key slot holding
 `{}`, the MCP server logins or the MCP client secrets, with its key in

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
@@ -310,5 +311,54 @@ func TestRotationSkipsADamagedAPIKeySlot(t *testing.T) {
 			}
 			assertSeatUnchanged(t, s, before)
 		})
+	}
+}
+
+// failSequenceAfterCredentialWrite lets the activation write the target
+// credential, then puts a directory where sequence.json is, so the commit
+// fails after the credential write and the activation rolls back.
+type failSequenceAfterCredentialWrite struct {
+	credstore.Store
+	t   *testing.T
+	seq string
+}
+
+func (f failSequenceAfterCredentialWrite) WriteActiveAccount(creds string) error {
+	if err := f.Store.WriteActiveAccount(creds); err != nil {
+		return err
+	}
+	if err := os.Remove(f.seq); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(f.seq, "in-the-way"), 0o700); err != nil {
+		f.t.Fatal(err)
+	}
+	return nil
+}
+
+// TestForcedActivationRollbackRestoresASeatWideOnlyFile: the live file holds
+// only the seat's MCP server logins and no managed key is behind it, so
+// ReadActive finds no credential. A forced activation that fails after the
+// credential write must put that file back as it was, not an empty one.
+func TestForcedActivationRollbackRestoresASeatWideOnlyFile(t *testing.T) {
+	s := newTestStore(t, nil)
+	writeSeq(t, s, seqData(ptrInt(1), []int{1, 2}, map[string]json.RawMessage{
+		"1": record(map[string]any{"email": oauthSeatEmail, "organizationUuid": ""}),
+		"2": record(map[string]any{"email": "b@x.com", "organizationUuid": ""}),
+	}))
+	seedBackup(t, s, "1", oauthSeatEmail, oauthCreds("acc-a", "ref-a"), "")
+	seedBackup(t, s, "2", "b@x.com", oauthCreds("acc-b", "ref-b"), "")
+	live := seatWideFiles[0].file
+	seedLive(t, s, oauthSeatEmail, "", live)
+	if got := readActiveCreds(t, s); got != "" {
+		t.Fatalf("precondition: live credential = %q, want none", got)
+	}
+	s.Creds = failSequenceAfterCredentialWrite{Store: s.Creds, t: t, seq: s.SequenceFile}
+
+	if _, err := SwitchTo(s, "2", true, true); err == nil {
+		t.Fatal("SwitchTo(2) --force succeeded with sequence.json unwritable")
+	}
+	if raw, _ := os.ReadFile(liveCredentialsPath(s)); string(raw) != live {
+		t.Errorf("after the rollback: live credentials file = %q, want it restored as it was %q", raw, live)
 	}
 }
