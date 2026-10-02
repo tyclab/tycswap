@@ -573,7 +573,7 @@
     if (models.length) { return null; }
     var names = modelWindowNames(st);
     if (!names.length) { return null; }
-    return el('span', { class: 'chip chip-warn', title: 'Set autoswitch.model on the Auto tab (a name, a comma-separated list, or all) to count them', text: names.join(', ') + ' limits ignored' });
+    return el('span', { class: 'chip chip-warn', title: 'Turn on "Count model limits" on the Auto tab, or set autoswitch.model on the Settings tab (a name, a comma-separated list, or all)', text: names.join(', ') + ' limits ignored' });
   }
 
   // ---- header + summary ------------------------------------------------------
@@ -1766,7 +1766,7 @@
 
   // Count model limits: on -> autoswitch.model = "all" (every per-model weekly
   // window counts towards headroom and at-limit), off -> unset (5h + 7d only).
-  // Naming specific models is still possible in the settings field below. The
+  // Naming specific models is still possible on the Settings tab. The
   // server retargets a running engine on every save or unset of
   // autoswitch.model — this toggle and the grid's Save alike — so Next best
   // changes at once instead of after a restart.
