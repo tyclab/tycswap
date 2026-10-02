@@ -1,5 +1,6 @@
-// settingsscreen.go — the Settings screen: every settings.json key, grouped by
-// section the way `tycswap config list` prints them, edited in place with a
+// settingsscreen.go — the Settings screen: every settings.json key with the
+// value and (default) marker `tycswap config list` prints, grouped under a
+// header per section (the CLI lists them flat), edited in place with a
 // control matching its kind and persisted at once through the settings
 // package (DESIGN A28).
 //
@@ -33,7 +34,9 @@ import (
 // engine lives only while the Auto view is open and is started from a fresh
 // settings.Load at mount, so a change made here is in force the next time
 // that view opens — the same contract as the CLI path. One note for every
-// key, because no key is applied earlier than that.
+// key, because no engine applies a key earlier than that (outside the engine,
+// the poll plan, the at-limit markers and `tycswap switch` read threshold and
+// model from the file each time).
 const engineNote = "applies when the auto-switch engine next starts"
 
 // settingsScreen lists and edits settings.json (DESIGN A28).

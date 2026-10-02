@@ -1748,8 +1748,9 @@ typed).
 The Settings screen (`c`, or the menu's "Settings…" row) shows every key of
 `settings.json` (see [SETTINGS](#settings)) under its section, with its
 effective value and a `(default)` marker on a key that is not set, as
-`tycswap config list` prints them; the highlighted key's help text, kind,
-range or choices, and default are shown below the rows. `enter` edits the
+`tycswap config list` prints them (which lists the dotted keys without
+section headers); the highlighted key's help text, kind, range or choices,
+and default are shown below the rows. `enter` edits the
 highlighted key with a control matching its kind: a bool toggles and a
 choice cycles, saved at once; a number or string opens an inline input over
 the current value. A typed value is validated the way `tycswap config set`
@@ -1770,10 +1771,14 @@ The auto-switch engine reads `settings.json` when it starts and does not
 re-read it while it runs — `tycswap config set` does not reach a running
 `tycswap auto` either — so the screen notes for every key that the change
 applies when the engine next starts. In the TUI that is the next time the
-auto-switch screen is opened (it starts its engine from the file), and for a
-`tycswap auto` process its next launch. The auto-switch screen's own `t`
-threshold adjustment remains session-only and is never written to the file;
-its hint says so and points at Settings for a change that should persist.
+auto-switch screen is opened (it starts its engine from the file), for a
+`tycswap auto` process its next launch, and for the engine `tycswap web`
+runs its next start from that dashboard. Outside the engine, the at-limit
+markers and `tycswap switch` read `autoswitch.model` from the file each time,
+so they follow a change on the next poll or command. The auto-switch
+screen's own `t` threshold adjustment remains session-only and is never
+written to the file; its hint says so and points at Settings for a change
+that should persist.
 
 When a Codex store or a codex-auth registry is present, the dashboard's Codex
 rows follow the Claude rows, each tagged `⟨codex⟩` after its workspace tag, on

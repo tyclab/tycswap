@@ -3713,10 +3713,11 @@ browser dashboard's Settings tab (A27): the two edit the same file through the
 same package, and neither knows about the other.
 
 **What.** The screen lists every key `settings.SettingSpecs` defines, in
-registry order under a header per `Spec.Section` — the grouping `tycswap
-config list` prints — as `key  value` rows with the muted `(default)` marker
-on a key that is not set, the same aligned columns as the CLI listing. There
-is no list of keys in the TUI: the rows are `settings.EffectiveSettings`,
+registry order under a header per `Spec.Section`, as `key  value` rows with
+the muted `(default)` marker on a key that is not set — the values, markers
+and aligned columns `tycswap config list` prints, though the CLI lists the
+dotted keys flat, with no section header. There is no list of keys in the
+TUI: the rows are `settings.EffectiveSettings`,
 so a new spec appears without a change here. The highlighted key's detail
 sits pinned under the rows: its dotted name and `Help`, its kind with the
 `Lo`–`Hi` range or its `Choices`, its default, and when the engine applies
@@ -3737,8 +3738,9 @@ use.
 (strict validation, the `.settings.lock`, atomic rename, the Python float
 form), run through the app's single-flight action gate (09§2.6,
 `startMessageAction`): a second write while one is in flight is refused
-with the `Another action is still running` toast, a completed write toasts
-the line `tycswap config set|unset` prints (`autoswitch.threshold = 80`,
+with the `Another action is still running` toast (an open input keeps the
+typed value, to be submitted again), a completed write toasts the line
+`tycswap config set|unset` prints (`autoswitch.threshold = 80`,
 `autoswitch.threshold unset (default: 90)`), and a failed write (a
 settings.json that no longer parses, a lock error) opens the output modal
 titled `Set <key> — failed` with the error, as every other action's failure
@@ -3772,12 +3774,19 @@ next starts. The TUI mirrors that and invents nothing: its engine lives only
 while the Auto view is open, is built from a fresh `settings.Load` at mount
 (09§4.2) and stopped at exit, and the Settings screen opens from the
 dashboard, so no TUI-hosted engine is running while a key is changed, and
-the next opening of the Auto view starts one from the saved file. The detail
-line says so for every key (`applies when the auto-switch engine next
-starts`); no key is applied earlier than that, so the note is the same for
-all of them. The in-process retargets the browser dashboard uses on a
-running engine (`ApplyModels` from its settings routes, A26) are not wired
-here, because here nothing is running to retarget.
+the next opening of the Auto view starts one from the saved file. Nor does a
+write from here reach an engine running elsewhere: a `tycswap auto` process,
+another TUI's Auto view, or the engine `tycswap web` hosts, which its own
+settings routes retarget only for an `autoswitch.model` saved through them
+(`ApplyModels`, A26). The detail line says so for every key (`applies when
+the auto-switch engine next starts`); no engine applies a key earlier than
+that, so the note is the same for all of them. Outside the engine,
+`autoswitch.threshold` and `autoswitch.model` are read from the file where
+they are used — the usage poll plan while no engine pins it, the at-limit
+markers of `list`, `status` and the dashboard, and `tycswap switch`'s model
+windows — so those follow a save on the next poll or command. The
+in-process retargets the browser dashboard uses on a running engine are not
+wired here, because here nothing is running to retarget.
 
 **Visual.** The row cursor is the accent left border (09§8.2), the input the
 accent-coloured typed text with a `▏` caret, the refused message in the
