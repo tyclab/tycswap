@@ -2,10 +2,11 @@
 // shared Switch/Watch account-list screens.
 //
 // Implements spec 09§3: dashboard bindings (§3.1), the menu stack + exact root/
-// submenu entries and labels (§3.2), the dispatch table + special-cased
-// prefixes (§3.3), the AccountListScreen snapshot diffing / cursor-preservation
-// rules (§3.4), flash-on-update (§3.5), SwitchScreen (§3.6, pops on select),
-// and WatchScreen (§3.7, two-stage escape, monitor-vs-select modes).
+// submenu entries and labels (§3.2, plus the Settings… row and its c binding,
+// DESIGN A28), the dispatch table + special-cased prefixes (§3.3), the
+// AccountListScreen snapshot diffing / cursor-preservation rules (§3.4),
+// flash-on-update (§3.5), SwitchScreen (§3.6, pops on select), and WatchScreen
+// (§3.7, two-stage escape, monitor-vs-select modes).
 package tui
 
 import (
@@ -73,6 +74,7 @@ func (d *dashboardScreen) rootEntries() []menuEntry {
 		{label: "Add account…", actionID: "add-menu"},
 		{label: "Disable / enable account…", actionID: "disable-menu"},
 		{label: "Remove account…", actionID: "remove-menu"},
+		{label: "Settings…", actionID: "settings"},
 		{label: "Quit", actionID: "quit"},
 	}
 }
@@ -264,6 +266,8 @@ func (d *dashboardScreen) update(m *Model, msg tea.Msg) tea.Cmd {
 		return m.quit()
 	case "g":
 		return m.openAuto()
+	case "c":
+		return m.openSettings()
 	case "f":
 		return m.refreshFull()
 	case "j", "down":
@@ -331,6 +335,8 @@ func (d *dashboardScreen) dispatch(m *Model, actionID string) tea.Cmd {
 		return m.addCurrent()
 	case actionID == "add-token":
 		return m.addToken()
+	case actionID == "settings":
+		return m.openSettings()
 	case actionID == "quit":
 		return m.quit()
 	}
@@ -338,11 +344,14 @@ func (d *dashboardScreen) dispatch(m *Model, actionID string) tea.Cmd {
 }
 
 // footerBindings are the dashboard's footer-visible bindings (09§3.1): s/w/q
-// show; back/g/f/j/k are hidden.
+// show; back/g/f/j/k are hidden. c (Settings, DESIGN A28) shows as well: the
+// Auto view's adjust-mode hint sends the user to Settings by name, so the key
+// that opens it is in the legend.
 func (d *dashboardScreen) footerBindings(m *Model) []footerBinding {
 	return []footerBinding{
 		{"s", "Switch accounts"},
 		{"w", "Watch"},
+		{"c", "Settings"},
 		{"q", "Quit"},
 	}
 }

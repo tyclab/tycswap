@@ -292,6 +292,22 @@ func TestSetSetting_RejectsOutOfRangeWithoutWriting(t *testing.T) {
 	}
 }
 
+// TestSetSetting_RejectsNaNAsOutOfRange: strconv.ParseFloat accepts "NaN",
+// which compares false against both bounds; it must be refused with the
+// range message, not reach the JSON encoder.
+func TestSetSetting_RejectsNaNAsOutOfRange(t *testing.T) {
+	root := t.TempDir()
+	for _, raw := range []string{"NaN", "nan"} {
+		_, err := SetSetting(root, "autoswitch.threshold", raw)
+		if err == nil || !strings.Contains(err.Error(), "must be between 50 and 99.9") {
+			t.Errorf("SetSetting(%q) err = %v, want the range message", raw, err)
+		}
+	}
+	if _, statErr := os.Stat(SettingsPath(root)); !os.IsNotExist(statErr) {
+		t.Error("settings.json should not have been created")
+	}
+}
+
 // TestSetSetting_StrategyChoices locks the two accepted autoswitch.strategy
 // values ("best" and the added "soonest-reset") and that an off-list value is
 // still strictly rejected with the choice list (the lenient-load fallback for a

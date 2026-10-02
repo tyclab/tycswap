@@ -693,7 +693,10 @@ func ParseSettingValue(spec Spec, rawValue string) (any, error) {
 		if err != nil {
 			return nil, cerr.Config("%s expects a number, got '%s'", spec.Dotted(), rawValue)
 		}
-		if f < spec.Lo || f > spec.Hi {
+		// Inside the range, not "below Lo or above Hi": NaN compares false
+		// both ways, so the latter let "nan" through to a write that then
+		// failed in the JSON encoder.
+		if !(f >= spec.Lo && f <= spec.Hi) {
 			return nil, cerr.Config("%s must be between %s and %s", spec.Dotted(), FormatSettingValue(spec.Lo), FormatSettingValue(spec.Hi))
 		}
 		return f, nil

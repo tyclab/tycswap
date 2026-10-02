@@ -1736,11 +1736,49 @@ stdout; a bare `tycswap` invoked from a pipe or non-interactive context prints t
 `no command given` usage error instead of opening the dashboard.
 
 A keybinding bar at the bottom of each screen lists the keys available there:
-on the dashboard, `s` switch accounts, `w` watch, `q` quit; on the switch
-screen, `enter` switch, `b` best pick, `esc` back; on the watch screen, `s`
-switch (`enter` confirm while a target is selected), `esc` back; on the
-auto-switch screen, `l` go live / dry-run, `t` threshold (with `←`/`→` to adjust
-and `enter` to finish while adjusting), `esc` back.
+on the dashboard, `s` switch accounts, `w` watch, `c` settings, `q` quit; on
+the switch screen, `enter` switch, `b` best pick, `esc` back; on the watch
+screen, `s` switch (`enter` confirm while a target is selected), `esc` back;
+on the auto-switch screen, `l` go live / dry-run, `t` threshold (with `←`/`→`
+to adjust and `enter` to finish while adjusting), `esc` back; on the settings
+screen, `enter` edit (toggle for a bool, next choice for a choice), `u` reset
+to default, `esc` back (`enter` save and `esc` cancel while a value is being
+typed).
+
+The Settings screen (`c`, or the menu's "Settings…" row) shows every key of
+`settings.json` (see [SETTINGS](#settings)) under its section, with its
+effective value and a `(default)` marker on a key that is not set, as
+`tycswap config list` prints them (which lists the dotted keys without
+section headers); the highlighted key's help text, kind, range or choices,
+and default are shown below the rows. `enter` edits the
+highlighted key with a control matching its kind: a bool toggles and a
+choice cycles, saved at once; a number or string opens an inline input over
+the current value. A typed value is validated the way `tycswap config set`
+validates it — out of range, wrong type or empty is refused with the same
+message, shown under the rows, and nothing is written. `u` removes the key so
+its default applies again (`<key> unset (default: <value>)`), or reports
+`<key> is not set; nothing to do`. Every change is written to `settings.json`
+at once through the same validated path `tycswap config set` and `unset` use,
+one at a time (a second change while one is still being written is refused
+with "Another action is still running"); a saved value is confirmed with the
+line `tycswap config set` prints (`autoswitch.threshold = 80`), and a write
+that fails opens the same output dialog other failed actions open. The rows
+follow the file: a key changed from another `tycswap` instance or by `tycswap
+config set` in a terminal shows on the next poll. A saved threshold moves the
+threshold tick on the dashboard's usage bars at once.
+
+The auto-switch engine reads `settings.json` when it starts and does not
+re-read it while it runs — `tycswap config set` does not reach a running
+`tycswap auto` either — so the screen notes for every key that the change
+applies when the engine next starts. In the TUI that is the next time the
+auto-switch screen is opened (it starts its engine from the file), for a
+`tycswap auto` process its next launch, and for the engine `tycswap web`
+runs its next start from that dashboard. Outside the engine, the at-limit
+markers and `tycswap switch` read `autoswitch.model` from the file each time,
+so they follow a change on the next poll or command. The auto-switch
+screen's own `t` threshold adjustment remains session-only and is never
+written to the file; its hint says so and points at Settings for a change
+that should persist.
 
 When a Codex store or a codex-auth registry is present, the dashboard's Codex
 rows follow the Claude rows, each tagged `⟨codex⟩` after its workspace tag, on
@@ -4031,7 +4069,9 @@ Reads are forgiving: a missing file, a bad type, or an out-of-range value
 degrades to the (clamped) default without error. Writes via `tycswap config set`
 are strict: an out-of-range or mistyped value is rejected with a `ConfigError`.
 A whole-number float is stored and shown without a fractional part
-(`80.0` → `80`).
+(`80.0` → `80`). The TUI's Settings screen (`c` on the dashboard; see
+`tycswap tui`) and the browser dashboard's Settings tab edit the same file
+through the same validation.
 
 **`autoswitch.strategy` ordering.** The strategy governs only the order in
 which already-qualifying candidates are offered to `tycswap auto`; it changes
