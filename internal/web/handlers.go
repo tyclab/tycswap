@@ -685,14 +685,15 @@ func (s *Server) settingsViews() []SettingView {
 // (A27); nothing here changes when. An engine copies the settings when it
 // starts (the host's Start runs settings.Load) and only ApplyThreshold and
 // ApplyModels change a running one. A save or reset of autoswitch.model
-// calls ApplyModels (applyModelSetting), and the at-limit marks re-read it
-// for every state document. The engine this page hosts rotates Claude
+// calls ApplyModels (applyModelSetting) on the engine this page hosts, never
+// on one in another process, and the at-limit marks re-read it for every
+// state document. The engine this page hosts rotates Claude
 // accounts only, so the Codex keys reach `tycswap auto` alone. Every other
 // key, a new one included, waits for the next engine start.
 func settingApplies(key string) string {
 	switch key {
 	case modelSettingKey:
-		return "At once: a running engine is retargeted when it is saved or reset, and the at-limit marks follow."
+		return "At once for the engine on the Auto tab: a save or reset retargets it while it runs, and the at-limit marks follow. An engine in the terminal dashboard or " + brand.Sanitized().Name + " auto keeps its value until it next starts."
 	case "autoswitch.threshold":
 		return "When an engine next starts. The Auto tab's slider changes the running engine's threshold for this run only, without saving."
 	case "autoswitch.codexEnabled", "autoswitch.codexThreshold":

@@ -3821,7 +3821,7 @@ settings when it starts (`settings.Load` in the host's `Start`) and only
 
 | Key | Takes effect |
 |---|---|
-| `autoswitch.model` | at once: a save or reset through the settings routes calls `ApplyModels` on a running engine (A26), and the at-limit marks re-read it for every state document |
+| `autoswitch.model` | at once for the engine this page hosts: a save or reset through the settings routes calls `ApplyModels` on it while it runs (A26; an engine in the TUI or `tycswap auto` keeps its value until it next starts), and the at-limit marks re-read it for every state document |
 | `autoswitch.threshold` | at the next engine start; the Auto tab's slider retargets the running engine for this run only, unsaved |
 | `autoswitch.codexEnabled`, `autoswitch.codexThreshold` | at the next `tycswap auto`: the engine this page hosts rotates Claude accounts only |
 | every other key (`intervalSeconds`, `cooldownSeconds`, `hysteresisPct`, `strategy`, `includeApiKeyAccounts`, `unhealthyTicks`, and any key added later) | at the next engine start, here, in the TUI's Auto view or in `tycswap auto` |

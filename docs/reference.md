@@ -2321,8 +2321,9 @@ tabs:
   effect, *Save* and *Reset* per key, validated as `config set` validates,
   and a line saying when a saved value takes effect. An engine reads the
   settings when it starts, so a running one keeps what it started with:
-  every save or unset of `autoswitch.model` also retargets a running engine
-  at once (and the at-limit marks follow), so *Next best* follows without a
+  every save or unset of `autoswitch.model` also retargets the Auto tab's
+  running engine at once (and the at-limit marks follow; an engine in the TUI
+  or `tycswap auto` keeps its value until it next starts), so *Next best* follows without a
   restart; `autoswitch.threshold` and the other keys take effect when an
   engine next starts (the Auto tab's slider changes the running engine's
   threshold without saving); `autoswitch.codexEnabled` and

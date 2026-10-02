@@ -244,7 +244,7 @@
         <div class="head-l"><h2>Settings</h2><span id="settings-sub" class="card-sub"></span></div>
         <span class="card-sub">settings.json · <code>{{.Name}} config set &lt;key&gt; &lt;value&gt;</code> · <code>{{.Name}} config unset &lt;key&gt;</code></span>
       </div>
-      <p class="muted settings-intro">Every key <code>{{.Name}} config</code> knows, with its type, range, default and the value in effect. <strong>Save</strong> writes one key to <code>settings.json</code> after validating it; <strong>Reset</strong> removes the override so the default applies again. Each key says when a saved value takes effect: an engine reads the settings when it starts, so most keys wait for the next start; <code>autoswitch.model</code> also reaches a running engine at once, and the Auto tab's slider changes the running engine's threshold without saving it.</p>
+      <p class="muted settings-intro">Every key <code>{{.Name}} config</code> knows, with its type, range, default and the value in effect. <strong>Save</strong> writes one key to <code>settings.json</code> after validating it; <strong>Reset</strong> removes the override so the default applies again. Each key says when a saved value takes effect: an engine reads the settings when it starts, so most keys wait for the next start; <code>autoswitch.model</code> also reaches the Auto tab's running engine at once, and the Auto tab's slider changes the running engine's threshold without saving it.</p>
       <div class="settings-grid" id="settings-grid"></div>
       <div id="settings-empty" class="empty-state" hidden>
         <span class="title">Settings are not available in this build</span>
