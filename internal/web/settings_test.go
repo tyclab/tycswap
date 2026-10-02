@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,7 +27,11 @@ func TestSettingsList_GET(t *testing.T) {
 	if err := json.Unmarshal(readBody(t, resp), &body); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(canon(t, body.Settings), canon(t, sampleSettings())) {
+	want := sampleSettings()
+	for i := range want {
+		want[i].Applies = settingApplies(want[i].Key)
+	}
+	if !reflect.DeepEqual(canon(t, body.Settings), canon(t, want)) {
 		t.Fatalf("settings %+v", body.Settings)
 	}
 	// nil slice from the facade → [] not null
@@ -251,3 +256,60 @@ func TestSettingSet_BroadcastsState(t *testing.T) {
 }
 
 // -- mappings ----------------------------------------------------------------
+
+// Every key says when a saved value takes effect, worded from what the code
+// does (A27): autoswitch.model at once (the routes retarget a running
+// engine), the threshold at the next engine start with the slider for the
+// running one, the Codex keys at the next `tycswap auto`, and every other key,
+// a new one included, at the next engine start.
+func TestSettingApplies(t *testing.T) {
+	cases := map[string]string{
+		"autoswitch.model":           "At once",
+		"autoswitch.threshold":       "slider",
+		"autoswitch.codexEnabled":    "tycswap auto next starts",
+		"autoswitch.codexThreshold":  "tycswap auto next starts",
+		"autoswitch.intervalSeconds": "When an engine next starts",
+		"autoswitch.cooldownSeconds": "When an engine next starts",
+		"autoswitch.someFutureKey":   "When an engine next starts",
+	}
+	for key, want := range cases {
+		if got := settingApplies(key); !strings.Contains(got, want) {
+			t.Errorf("settingApplies(%s) = %q, want it to say %q", key, got, want)
+		}
+	}
+}
+
+// The note reaches both the list route and the state, and annotating never
+// writes into the slice the facade handed over.
+func TestSettingsCarryApplies(t *testing.T) {
+	h := newHarness(t)
+	var body struct {
+		Settings []SettingView `json:"settings"`
+	}
+	if err := json.Unmarshal(readBody(t, h.get("/api/settings")), &body); err != nil {
+		t.Fatal(err)
+	}
+	var st struct {
+		Settings []SettingView `json:"settings"`
+	}
+	if err := json.Unmarshal(readBody(t, h.get("/api/state")), &st); err != nil {
+		t.Fatal(err)
+	}
+	for _, list := range [][]SettingView{body.Settings, st.Settings} {
+		if len(list) == 0 {
+			t.Fatal("no settings")
+		}
+		for _, sv := range list {
+			if sv.Applies != settingApplies(sv.Key) {
+				t.Errorf("%s applies = %q", sv.Key, sv.Applies)
+			}
+		}
+	}
+	h.set.mu.Lock()
+	defer h.set.mu.Unlock()
+	for _, sv := range h.set.views {
+		if sv.Applies != "" {
+			t.Errorf("the facade's own slice was annotated: %s", sv.Key)
+		}
+	}
+}

@@ -2280,28 +2280,57 @@ tycswap web [--port N] [--no-open] [--interval SECONDS] [--debug]
 
 ### Description
 
-Serves a dashboard in the browser on `127.0.0.1` and opens it. It has three
+Serves a dashboard in the browser on `127.0.0.1` and opens it. It has five
 tabs:
 
 - **Dashboard**: the active account and its 5h, 7d and model windows in the
   header, summary tiles, and the account table with switch, force switch
   (no backup), enable/disable, alias, move, swap and remove per row; a
-  strategy switch (`best`, `next-available`), *Add current login*, *Add
-  token* (a setup-token or API key; it is sent once and never shown or
-  logged), and an optional *Token status* column.
+  strategy switch (`best`, `next-available`), *Add current login* as the
+  Accounts card's main button, *Add token* (a setup-token or API key; it is
+  sent once and never shown or logged), and an optional *Token status*
+  column. When Claude Code is signed in with an account that is not stored
+  yet, a callout above the table names it and offers *Add current login*;
+  a line under the table says how to add another account and warns against
+  `/logout`. Above the accounts, a notice names any authentication override
+  that makes Claude Code ignore the stored login: `ANTHROPIC_API_KEY`,
+  `ANTHROPIC_AUTH_TOKEN` or `ANTHROPIC_BASE_URL` in the environment `tycswap
+  web` runs in, or `apiKeyHelper` / `env.ANTHROPIC_*` in Claude Code's
+  `settings.json` (names only, never a value). An **Updates** card (or a
+  quiet "Everything is up to date · checked 3m ago" line) shows what can be
+  updated — a newer tycswap release, a newer Claude Code from the installer
+  Claude Code was set up with — with *Install update* / *Update Claude Code*
+  after a confirmation, the installer's output, and what the last check could
+  not read; the header carries a pill with the count on every tab while
+  something waits. The server checks at start and every six hours; *Check
+  now* checks again. The Accounts and the Updates card fold to their heading;
+  the choice is remembered in `ui_prefs.json` under the backup root.
 - **Auto**: an auto-switch engine hosted in the `web` process: start, start
   as a dry run, stop, wake; a slider that sets the threshold of the running
   engine (not saved; enabled only while it runs); *Count model limits*, which
   saves `autoswitch.model` as `all` (or unsets it); the *Next best* ranking
-  with each account's verdict; the quarantine; the `autoswitch.*` settings
-  editor (`threshold`, `codexThreshold`, `codexEnabled`,
-  `includeApiKeyAccounts`, `strategy` and the rest of `tycswap config`); and
-  the engine's event log. Every save or unset of `autoswitch.model`, from the
-  toggle or the editor, also retargets a running engine at once, so *Next
-  best* follows without a restart; the other settings take effect when the
-  engine is next started. The hosted
-  engine switches Claude accounts only; Codex auto-switching stays with
-  `tycswap auto`.
+  with each account's verdict; the quarantine; a link to the Settings tab;
+  and the engine's event log. The hosted engine switches Claude accounts
+  only; Codex auto-switching stays with `tycswap auto`.
+- **Settings**: every `settings.json` key `tycswap config` knows
+  (`autoswitch.threshold`, `intervalSeconds`, `codexEnabled`,
+  `codexThreshold`, `cooldownSeconds`, `hysteresisPct`, `strategy`, `model`,
+  `includeApiKeyAccounts`, `unhealthyTicks`), each with a control of its type
+  (number with range, switch, select, text), its default and the value in
+  effect, *Save* and *Reset* per key, validated as `config set` validates,
+  and a line saying when a saved value takes effect. An engine reads the
+  settings when it starts, so a running one keeps what it started with:
+  every save or unset of `autoswitch.model` also retargets a running engine
+  at once (and the at-limit marks follow), so *Next best* follows without a
+  restart; `autoswitch.threshold` and the other keys take effect when an
+  engine next starts (the Auto tab's slider changes the running engine's
+  threshold without saving); `autoswitch.codexEnabled` and
+  `codexThreshold` are read by `tycswap auto` only. The tab's badge counts
+  the keys set away from their default.
+- **Guide**: what the tool is, slots and the active account, the 5h / 7d /
+  model windows and the threshold, getting started, switching by hand, Auto
+  mode, the settings, sessions, updates, Codex accounts, a command cheat-sheet,
+  troubleshooting and where the data lives.
 - **Sessions**: running Claude Code sessions grouped by directory, with
   status (busy, waiting, idle), title from the transcript, and *Stop*. The
   list includes sessions started with `tycswap run` or `tycswap env` (found
@@ -2319,12 +2348,44 @@ tabs:
 Export and import stay on the command line (`tycswap export`, `tycswap
 import`): the dashboard never writes credentials to a file or reads one.
 
+The update check compares the running version with the latest release at the
+endpoint `tycswap upgrade` uses (`update.Endpoint`), and the installed Claude
+Code (`claude --version`, found on `PATH` or where its installers put it) with
+the release source for its installer: the native release channel for native
+or unknown installs, native latest for WinGet, npm's `dist-tags` for an npm
+install, and the cask's formula for Homebrew. Native and unknown installs
+use `autoUpdatesChannel` from the user's `settings.json` under
+`CLAUDE_CONFIG_DIR` or `~/.claude` (`stable` or `latest`; absent means `latest`).
+Project and managed policies still apply in the installer. *Install
+update* runs `tycswap upgrade`'s own path (`go install` for a go-installed
+binary; a checkout build, an unknown layout or Windows is shown the command to
+type instead of a button); *Update Claude Code* runs the installer's own
+command (`claude update`, `npm install -g @anthropic-ai/claude-code@latest`,
+`brew upgrade --cask <cask>`, `winget upgrade`). A missing Claude Code is
+named with the install line to type, never installed from the page. A check
+that fails keeps what the check before it found and names the error; the
+card never says everything is up to date while something could not be
+checked. The running `tycswap web` keeps its version until it is started
+again; running Claude Code sessions keep theirs until restarted. After a
+Claude Code update, the installed version must reach the advertised release
+before the dashboard reports success; a no-op or unverifiable result reports
+an error and keeps the installer's output.
+
 The page updates live: a state document arrives on connect, on every poll
-tick, after every action and after each batch of engine events. Each
+tick, after every action, after each batch of engine events and whenever an
+update check has learnt something. Each
 account row in it carries the fields of a `tycswap list --json` row plus
 `provider` and `key`; with `?tokenStatus=1` every row also carries
 `tokenStatus`, its own token-status string (`""` when there is none), and
-the document has no top-level `tokenStatus`. The dashboard shows and drives
+the document has no top-level `tokenStatus`. The document also carries
+`currentLogin` (`{"email", "saved"}` for the login Claude Code has; `saved`
+is whether a stored account is the active one; null when there is none),
+`authOverrides` (`{"env": [...], "settings": [...], "settingsPath"}`, names
+only), `updates` (`available`, `checking`, `checkedAt`, `app` with `current`,
+`latest`, `available`, `installed`, `hint`, `error`; `claudeCode` with
+`installed`, `latest`, `state` = `checking` | `missing` | `update` | `latest`
+| `unknown`, `method`, `command`, `detail`, `available`, `error`) and `ui`
+(`{"folded": {"<card>": true}}`). The dashboard shows and drives
 Claude accounts only; Codex accounts are managed with `tycswap codex`.
 
 The URL printed at start carries a one-time token. On macOS and Linux,
@@ -2402,17 +2463,23 @@ anything else `500`.
 | `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` | `400` missing slot or bare key, `404` other provider |
 | `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` | `400` missing or bare keys, `404` other provider |
 | `POST /api/sessions/{pid}/stop` | | stop a listed Claude Code session, after verifying the process start time | `400` bad pid, `404` not listed (or gone before the lock), `409` the pid now belongs to another process or cannot be verified, `500` the signal failed |
-| `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset`; saving or unsetting `autoswitch.model` also retargets a running engine (`"applied": true` in the result) | `400` unknown key, value out of range, or missing value; the engine's own error when the retarget fails after the save |
+| `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset`; each listed key carries `applies`, a sentence saying when a saved value takes effect; saving or unsetting `autoswitch.model` also retargets a running engine (`"applied": true` in the result) | `400` unknown key, value out of range, or missing value; the engine's own error when the retarget fails after the save |
 | `POST /api/auto/start` | `{"dryRun": bool}` | start the hosted engine | `400` already running or still stopping |
 | `POST /api/auto/stop`, `/api/auto/wake` | | stop it (waits up to 2 s for its loop to end), poll now | `400` not running; stop `409` when the tick in flight outlasts the wait (the engine is stopping; Start refuses until it has) |
 | `POST /api/auto/threshold` | `{"threshold": 50-99.9}` | retarget the running engine; the bounds are `autoswitch.threshold`'s | `400` missing, out of range, or not running |
 | `POST /api/auto/model` | `{"model": "all"\|"<names>"\|""}` | retarget the running engine's model windows | `400` missing (`""` is a value) or not running |
+| `POST /api/updates/check` | | check for a newer tycswap release and a newer Claude Code now, in the background; the result arrives with the state | `202` at once; `503` without the updates host |
+| `POST /api/updates/apply` | `{"target": "app"\|"claude-code"}` | run one update after the page asked: `tycswap upgrade`'s path, or Claude Code's own installer; answers `{"message", "output"}`, on failure `{"error", "output"}` | `400` missing or unknown target, nothing known to update, or the installer's refusal (its last line); `409` another update is still running |
+| `POST /api/ui/folded` | `{"card": "accounts-card"\|"updates-card", "folded": bool}` | remember a folded card in `ui_prefs.json`, then broadcast | `400` unknown card; `503` without view preferences |
 
 ### Files
 
 Reads and writes what the CLI commands behind each action do (the backup
 root's `sequence.json`, `settings.json`, `autoswitch_state.json`, the
-credential stores, Claude Code's files). Writes a 0600
+credential stores, Claude Code's files). Reads and writes the backup root's
+`ui_prefs.json` (the folded cards) and `cache/update_check.json` (the release
+check's cache, shared with the passive notice); reads Claude Code's
+`settings.json` for the auth overrides and runs `claude --version`. Writes a 0600
 `tycswap-dashboard-*.html` redirect page under `$XDG_RUNTIME_DIR/tycswap`
 (else `tycswap/` in the user cache directory, created 0700) on macOS and
 Linux. Reads `sessions/*.json` and transcripts under the Claude config
@@ -2454,8 +2521,7 @@ auto-switching; account routes already take provider keys), the Codex
 auto loop in the hosted engine, `add --login` and `codex login` as a
 cancellable job, `map`/`unmap`, a remote mode for a tray (a bearer token in
 place of the cookie and CSRF pair, and a route that hands such a client a
-fresh one-time URL), the tray itself, and a short Guide tab (what the tool
-does, slots and windows, getting started, a command cheat-sheet).
+fresh one-time URL), and the tray itself.
 
 ---
 

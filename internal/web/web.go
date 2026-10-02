@@ -94,6 +94,9 @@ type SettingView struct {
 	Description string   `json:"description"`
 	Min         *float64 `json:"min,omitempty"`
 	Max         *float64 `json:"max,omitempty"`
+	// Applies says when a saved value takes effect for this dashboard. The
+	// server sets it (settingApplies, A27); a facade's value is replaced.
+	Applies string `json:"applies"`
 }
 
 // SettingsFacade is the settings.json surface.
@@ -313,6 +316,28 @@ type Deps struct {
 	// AutoEvents, when non-nil, is fanned out as SSE `auto` events; each one
 	// also triggers a state broadcast. A closed channel ends the auto stream.
 	AutoEvents <-chan AutoEventView
+
+	// Updates is what the host found to update (A27). nil: state.updates is
+	// null and the update routes answer 503. With one, Serve asks it to
+	// check at start and every UpdateInterval.
+	Updates UpdatesFacade
+	// UpdateInterval is how often Serve asks Updates to check again;
+	// default six hours.
+	UpdateInterval time.Duration
+	// UpdateTicker builds the update ticker; default time.NewTicker. Tests
+	// inject a channel they drive by hand.
+	UpdateTicker func(d time.Duration) (<-chan time.Time, func())
+	// UIPrefs keeps the page's view choices for the machine (A27); nil: the
+	// page keeps them for its own lifetime only and state.ui is null.
+	UIPrefs UIPrefs
+	// CurrentLogin is the account Claude Code is signed in with (the email
+	// of its OAuth identity); false when there is none. nil leaves
+	// state.currentLogin null (A27).
+	CurrentLogin func() (email string, ok bool)
+	// AuthOverrides lists what makes Claude Code ignore its stored login
+	// (A27); nil → DetectAuthOverrides over this process's environment and
+	// the live config home's settings.json.
+	AuthOverrides func() AuthOverridesView
 }
 
 // Server is one dashboard instance. Construct with New, bind with Start, run
@@ -342,6 +367,12 @@ type Server struct {
 	// the hub drops a document older than the newest one it has published
 	// (see broadcast).
 	stateSeq atomic.Uint64
+
+	// refresh carries Refresh requests to the serve loop; one slot, so a
+	// burst coalesces into one broadcast and no caller ever blocks.
+	refresh chan struct{}
+	// applying: one update apply runs at a time (handleUpdatesApply).
+	applying atomic.Bool
 
 	mu   sync.Mutex
 	ln   net.Listener
@@ -389,6 +420,18 @@ func New(d Deps) (*Server, error) {
 			return t.C, t.Stop
 		}
 	}
+	if d.UpdateInterval <= 0 {
+		d.UpdateInterval = defaultUpdateInterval
+	}
+	if d.UpdateTicker == nil {
+		d.UpdateTicker = func(dur time.Duration) (<-chan time.Time, func()) {
+			t := time.NewTicker(dur)
+			return t.C, t.Stop
+		}
+	}
+	if d.AuthOverrides == nil {
+		d.AuthOverrides = defaultAuthOverrides
+	}
 	// Three independent secrets, in this order: the CSRF token (the redirect
 	// fragment), the session cookie value and the one-time launch token in
 	// the printed URL. See the Server fields for why they must differ.
@@ -418,6 +461,7 @@ func New(d Deps) (*Server, error) {
 		hub:          newHub(),
 		pingInterval: defaultPing,
 		done:         make(chan struct{}),
+		refresh:      make(chan struct{}, 1),
 	}
 	s.handler = s.routes()
 	return s, nil
@@ -527,9 +571,23 @@ func (s *Server) Serve(ctx context.Context) error {
 
 	tick, stop := s.d.Ticker(s.d.Interval)
 	defer stop()
+	// The update check runs on the server's own clock (A27): once at start
+	// and then every UpdateInterval; the facade checks in the background
+	// and calls Refresh when it has learnt something.
+	var updTick <-chan time.Time
+	if s.d.Updates != nil {
+		var stopUpd func()
+		updTick, stopUpd = s.d.UpdateTicker(s.d.UpdateInterval)
+		defer stopUpd()
+		s.checkUpdates()
+	}
 	autoCh := s.d.AutoEvents
 	for {
 		select {
+		case <-s.refresh:
+			s.broadcast()
+		case <-updTick:
+			s.checkUpdates()
 		case ev, ok := <-autoCh:
 			if !ok {
 				autoCh = nil // closed: stop selecting on it, keep serving

@@ -325,7 +325,98 @@ func (a *fakeAuto) ApplyThreshold(t float64) error {
 	return a.op(fmt.Sprintf("ApplyThreshold(%g)", t))
 }
 
+// fakeUpdates is the UpdatesFacade seam: a view the test sets, recorded
+// calls, and an Apply that can block (gate) to prove one-at-a-time.
+type fakeUpdates struct {
+	mu       sync.Mutex
+	view     UpdatesView
+	calls    []string
+	checkErr error
+	applyErr error
+	result   UpdateResult
+	gate     chan struct{} // when non-nil, Apply waits on it
+	// markChecking: Check flips the view to Checking, as the real host does.
+	markChecking bool
+}
+
+func (u *fakeUpdates) Calls() []string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return append([]string(nil), u.calls...)
+}
+
+func (u *fakeUpdates) View() UpdatesView {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.view
+}
+
+func (u *fakeUpdates) Check() error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.calls = append(u.calls, "Check")
+	if u.checkErr == nil && u.markChecking {
+		u.view.Checking = true
+	}
+	return u.checkErr
+}
+
+func (u *fakeUpdates) Apply(target string) (UpdateResult, error) {
+	u.mu.Lock()
+	u.calls = append(u.calls, "Apply("+target+")")
+	gate, res, err := u.gate, u.result, u.applyErr
+	u.mu.Unlock()
+	if gate != nil {
+		<-gate
+	}
+	return res, err
+}
+
+// fakeUIPrefs is the UIPrefs seam over a map.
+type fakeUIPrefs struct {
+	mu     sync.Mutex
+	folded map[string]bool
+	calls  []string
+	setErr error
+}
+
+func (p *fakeUIPrefs) Calls() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.calls...)
+}
+
+func (p *fakeUIPrefs) Folded() map[string]bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := map[string]bool{}
+	for k, v := range p.folded {
+		out[k] = v
+	}
+	return out
+}
+
+func (p *fakeUIPrefs) SetFolded(card string, folded bool) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls = append(p.calls, fmt.Sprintf("SetFolded(%s,%v)", card, folded))
+	if p.setErr != nil {
+		return p.setErr
+	}
+	if folded {
+		p.folded[card] = true
+	} else {
+		delete(p.folded, card)
+	}
+	return nil
+}
+
 // -- fixtures ----------------------------------------------------------------
+
+// sampleUpdates: nothing checked yet.
+func sampleUpdates() UpdatesView {
+	return UpdatesView{App: &AppUpdateView{Current: "v0.4.0"}, ClaudeCode: &ClaudeCodeUpdateView{State: "checking"}}
+}
 
 func sampleSnapshot() *reporting.AccountsSnapshot {
 	return &reporting.AccountsSnapshot{
@@ -396,17 +487,26 @@ func sampleAuto() AutoView {
 // -- harness -----------------------------------------------------------------
 
 type harness struct {
-	t      *testing.T
-	s      *Server
-	fa     *fakeFacade
-	ops    *fakeOps
-	set    *fakeSettings
-	auto   *fakeAuto
-	clk    *clock.Fake
-	tick   chan time.Time
-	autoEv chan AutoEventView
-	base   string
-	client *http.Client
+	t       *testing.T
+	s       *Server
+	fa      *fakeFacade
+	ops     *fakeOps
+	set     *fakeSettings
+	auto    *fakeAuto
+	upd     *fakeUpdates
+	prefs   *fakeUIPrefs
+	clk     *clock.Fake
+	tick    chan time.Time
+	updTick chan time.Time
+	autoEv  chan AutoEventView
+	base    string
+	client  *http.Client
+	// login is what Deps.CurrentLogin answers; overrides what Deps.AuthOverrides answers.
+	login struct {
+		email string
+		ok    bool
+	}
+	overrides AuthOverridesView
 
 	mu       sync.Mutex
 	sessions SessionsView
@@ -422,6 +522,11 @@ func withNoAccounts() option   { return func(h *harness, d *Deps) { d.Accounts =
 func withNoSettings() option   { return func(h *harness, d *Deps) { d.Settings = nil } }
 func withNoAuto() option       { return func(h *harness, d *Deps) { d.Auto = nil } }
 func withNoAutoEvents() option { return func(h *harness, d *Deps) { d.AutoEvents = nil } }
+func withNoUpdates() option    { return func(h *harness, d *Deps) { d.Updates = nil } }
+func withNoUIPrefs() option    { return func(h *harness, d *Deps) { d.UIPrefs = nil } }
+func withNoCurrentLogin() option {
+	return func(h *harness, d *Deps) { d.CurrentLogin = nil }
+}
 func withRand(r io.Reader) option {
 	return func(h *harness, d *Deps) { d.Rand = r }
 }
@@ -451,16 +556,34 @@ func newHarness(t *testing.T, opts ...option) *harness {
 		}},
 		set:      &fakeSettings{views: sampleSettings(), unsetOK: true},
 		auto:     &fakeAuto{view: sampleAuto(), errs: map[string]error{}},
+		upd:      &fakeUpdates{view: sampleUpdates()},
+		prefs:    &fakeUIPrefs{folded: map[string]bool{}},
 		clk:      clock.NewFake(testNow),
 		tick:     make(chan time.Time),
+		updTick:  make(chan time.Time),
 		autoEv:   make(chan AutoEventView),
 		sessions: sampleSessions(),
 	}
+	h.login.email, h.login.ok = "alice@example.com", true
+	h.overrides = AuthOverridesView{Env: []string{}, Settings: []string{}, SettingsPath: "/home/t/.claude/settings.json"}
 	d := Deps{
 		Facade:   h.fa,
 		Accounts: h.ops,
 		Settings: h.set,
 		Auto:     h.auto,
+		Updates:  h.upd,
+		UIPrefs:  h.prefs,
+		CurrentLogin: func() (string, bool) {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			return h.login.email, h.login.ok
+		},
+		AuthOverrides: func() AuthOverridesView {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			return h.overrides
+		},
+		UpdateTicker: func(time.Duration) (<-chan time.Time, func()) { return h.updTick, func() {} },
 		Sessions: func() SessionsView {
 			h.mu.Lock()
 			defer h.mu.Unlock()
@@ -532,6 +655,28 @@ func (h *harness) fireTick() {
 	case <-time.After(5 * time.Second):
 		h.t.Fatal("Serve loop did not accept a tick")
 	}
+}
+
+// fireUpdateTick drives one update tick through the UpdateTicker seam.
+func (h *harness) fireUpdateTick() {
+	h.t.Helper()
+	select {
+	case h.updTick <- h.clk.Now():
+	case <-time.After(5 * time.Second):
+		h.t.Fatal("Serve loop did not accept an update tick")
+	}
+}
+
+func (h *harness) setLogin(email string, ok bool) {
+	h.mu.Lock()
+	h.login.email, h.login.ok = email, ok
+	h.mu.Unlock()
+}
+
+func (h *harness) setOverrides(v AuthOverridesView) {
+	h.mu.Lock()
+	h.overrides = v
+	h.mu.Unlock()
 }
 
 // fireAuto pushes one engine event through the AutoEvents seam.

@@ -349,11 +349,11 @@ func TestIndexHTML_DesignSystemMarkup(t *testing.T) {
 			t.Errorf("app.js lacks the guarded-render piece %q", needle)
 		}
 	}
-	// The settings editor lives on the Auto tab; a separate Settings tab would
-	// duplicate it.
-	for _, gone := range []string{`data-tab="settings"`, `id="panel-settings"`} {
-		if strings.Contains(index, gone) {
-			t.Errorf("index still has %q", gone)
+	// The settings editor is its own tab (A27): every key, not buried on the
+	// Auto tab, which keeps only a short way there.
+	for _, want := range []string{`data-tab="settings"`, `id="panel-settings"`, `id="settings-grid"`, `id="settings-empty"`, `href="#settings"`} {
+		if !strings.Contains(index, want) {
+			t.Errorf("index lacks %q", want)
 		}
 	}
 }
@@ -385,12 +385,12 @@ func TestIndexHTML_HasEverySection(t *testing.T) {
 		t.Fatal(err)
 	}
 	index := string(src)
-	for _, tab := range []string{"dashboard", "auto", "sessions"} {
+	for _, tab := range []string{"dashboard", "auto", "sessions", "settings", "guide"} {
 		if !strings.Contains(index, `data-tab="`+tab+`"`) || !strings.Contains(index, `id="panel-`+tab+`"`) {
 			t.Errorf("tab/panel %q missing", tab)
 		}
 	}
-	for _, id := range []string{"modal", "modal-form", "threshold-slider", "nextbest-list", "auto-log", "quarantine-body", "auto-settings", "auto-settings-empty", "hdr-acct", "token-status-toggle", "accounts-body", "toasts"} {
+	for _, id := range []string{"modal", "modal-form", "threshold-slider", "nextbest-list", "auto-log", "quarantine-body", "settings-grid", "settings-empty", "hdr-acct", "token-status-toggle", "accounts-body", "toasts"} {
 		if !strings.Contains(index, `id="`+id+`"`) {
 			t.Errorf("element #%s missing", id)
 		}
@@ -401,7 +401,7 @@ func TestIndexHTML_HasEverySection(t *testing.T) {
 		}
 	}
 	js, _ := staticFS.ReadFile("static/app.js")
-	for _, needle := range []string{"'force-switch'", "'alias'", "'move'", "'swap'", "'remove'", "/api/accounts/swap", "/api/auto/threshold", "/api/settings/", "?force=1", "?tokenStatus=1", "addEventListener('auto'", "lessSoonest", "lessBest", "997", "998", "999"} {
+	for _, needle := range []string{"'force-switch'", "'alias'", "'move'", "'swap'", "'remove'", "/api/accounts/swap", "/api/auto/threshold", "/api/settings/", "?force=1", "?tokenStatus=1", "addEventListener('auto'", "lessSoonest", "lessBest", "997", "998", "999", "renderGuarded('settings'"} {
 		if !strings.Contains(string(js), needle) {
 			t.Errorf("app.js lacks %q", needle)
 		}

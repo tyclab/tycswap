@@ -1,6 +1,7 @@
 // handlers.go — routes, the Host / cookie / CSRF middleware, the cerr-kind →
 // HTTP status mapping, and every mutating endpoint (accounts, sessions,
-// settings, auto-switch).
+// settings, auto-switch; the update routes are in updates.go, the view
+// choices in uiprefs.go).
 //
 // Implements DESIGN A26 "Security model" and "API". Method+pattern routing is
 // Go 1.22 net/http (`POST /api/switch/{id}`); every mutation broadcasts a
@@ -78,6 +79,13 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("POST /api/auto/wake", s.handleAutoSimple("wake"))
 	api.HandleFunc("POST /api/auto/threshold", s.handleAutoThreshold)
 	api.HandleFunc("POST /api/auto/model", s.handleAutoModel)
+
+	// updates (A27)
+	api.HandleFunc("POST /api/updates/check", s.handleUpdatesCheck)
+	api.HandleFunc("POST /api/updates/apply", s.handleUpdatesApply)
+
+	// the page's view choices (A27)
+	api.HandleFunc("POST /api/ui/folded", s.handleFolded)
 
 	mux.Handle("/api/", s.requireAuth(api))
 	return securityHeaders(s.checkHost(mux)) // headers on every response, the 421 included
@@ -656,11 +664,41 @@ func (s *Server) handleSettingsList(w http.ResponseWriter, r *http.Request) {
 	if unavailable(w, s.d.Settings != nil, "settings") {
 		return
 	}
-	list := s.d.Settings.Effective()
-	if list == nil {
-		list = []SettingView{}
+	writeJSON(w, http.StatusOK, map[string]any{"settings": s.settingsViews()})
+}
+
+// settingsViews is the facade's list, never nil, each key with its Applies
+// note. It annotates a copy: a facade may hand the same slice to the serve
+// loop and to a request at once. The caller has checked that Settings is
+// set.
+func (s *Server) settingsViews() []SettingView {
+	eff := s.d.Settings.Effective()
+	list := make([]SettingView, len(eff))
+	copy(list, eff)
+	for i := range list {
+		list[i].Applies = settingApplies(list[i].Key)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"settings": list})
+	return list
+}
+
+// settingApplies says when a saved value takes effect, as the code has it
+// (A27); nothing here changes when. An engine copies the settings when it
+// starts (the host's Start runs settings.Load) and only ApplyThreshold and
+// ApplyModels change a running one. A save or reset of autoswitch.model
+// calls ApplyModels (applyModelSetting), and the at-limit marks re-read it
+// for every state document. The engine this page hosts rotates Claude
+// accounts only, so the Codex keys reach `tycswap auto` alone. Every other
+// key, a new one included, waits for the next engine start.
+func settingApplies(key string) string {
+	switch key {
+	case modelSettingKey:
+		return "At once: a running engine is retargeted when it is saved or reset, and the at-limit marks follow."
+	case "autoswitch.threshold":
+		return "When an engine next starts. The Auto tab's slider changes the running engine's threshold for this run only, without saving."
+	case "autoswitch.codexEnabled", "autoswitch.codexThreshold":
+		return "When " + brand.Sanitized().Name + " auto next starts. The engine on this page rotates Claude accounts only."
+	}
+	return "When an engine next starts (this page's Auto tab, the terminal dashboard or " + brand.Sanitized().Name + " auto); a running one keeps the value it started with."
 }
 
 // handleSettingSet accepts {"value": <string|number|bool>}; non-strings are

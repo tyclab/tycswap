@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -130,23 +131,52 @@ type releaseResponse struct {
 func (c Checker) fetchLatestTag() string {
 	ctx, cancel := context.WithTimeout(context.Background(), FetchTimeout)
 	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, Endpoint, nil)
+	tag, err := c.latestTag(ctx)
 	if err != nil {
 		return ""
+	}
+	return tag
+}
+
+// Latest asks Endpoint for the latest release's tag now and says why when it
+// cannot (DESIGN A27: the dashboard's Updates card names what it could not
+// check). The answer also refreshes cache/update_check.json, so the passive
+// notice of the next CLI command agrees with the card; a failure leaves the
+// cache alone. The tag is a v-prefixed semver string; one that is not
+// semver is an error, never a "newer version".
+func (c Checker) Latest(ctx context.Context) (string, error) {
+	tag, err := c.latestTag(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !semver.IsValid(tag) {
+		return "", fmt.Errorf("release tag %q is not a version", tag)
+	}
+	_ = usage.WriteCache(filepath.Join(c.CacheDir, "update_check.json"), tag, clock.Seconds(c.clock()))
+	return tag, nil
+}
+
+// latestTag is the one request both Latest and fetchLatestTag make.
+func (c Checker) latestTag(ctx context.Context) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, Endpoint, nil)
+	if err != nil {
+		return "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	resp, err := c.client().Do(req)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		return "", fmt.Errorf("%s: HTTP %d", Endpoint, resp.StatusCode)
 	}
 	var rel releaseResponse
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return ""
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&rel); err != nil {
+		return "", fmt.Errorf("%s: %w", Endpoint, err)
 	}
-	return rel.TagName
+	if rel.TagName == "" {
+		return "", fmt.Errorf("%s: no tag_name in the release", Endpoint)
+	}
+	return rel.TagName, nil
 }
