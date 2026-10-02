@@ -169,11 +169,11 @@ func (h *updatesHost) runCheck() {
 }
 
 // sameClaudeCode reports whether two checks found the same Claude Code at
-// the same version: then the newest version one of them learnt holds for
-// the other.
+// the same version and update channel: then the newest version one of them
+// learnt holds for the other.
 func sameClaudeCode(a, b ccversion.Status) bool {
 	x, y := a.Installed, b.Installed
-	return x != nil && y != nil && x.Version != "" && x.Path == y.Path && x.Version == y.Version && x.Method == y.Method
+	return x != nil && y != nil && x.Version != "" && x.Path == y.Path && x.Version == y.Version && x.Method == y.Method && x.Channel == y.Channel
 }
 
 // View is what the card shows.
@@ -314,15 +314,21 @@ func (h *updatesHost) applyClaudeCode() (web.UpdateResult, error) {
 	out, err := h.runClaude(ctx, ccversion.UpgradeCommand(st.Installed), st.Installed)
 	out = strings.TrimSpace(out)
 	// Look again either way, so the card shows the version now installed.
-	h.recheckClaudeCode()
+	after := h.recheckClaudeCode()
 	if err != nil {
 		return web.UpdateResult{Output: out}, cerr.Validation("%s", lastOutputLine(out, err.Error()))
 	}
-	return web.UpdateResult{Message: "Claude Code is updated. Restart running Claude Code sessions to use the new version.", Output: out}, nil
+	if after.Installed == nil || after.Installed.Version == "" {
+		return web.UpdateResult{Output: out}, cerr.Validation("the installer finished, but the installed Claude Code version could not be verified")
+	}
+	if after.Installed.Version != st.Latest && !ccversion.Newer(after.Installed.Version, st.Latest) {
+		return web.UpdateResult{Output: out}, cerr.Validation("the installer finished, but Claude Code is still at %s (expected %s or newer)", after.Installed.Version, st.Latest)
+	}
+	return web.UpdateResult{Message: "Claude Code is updated to " + after.Installed.Version + ". Restart running Claude Code sessions to use the new version.", Output: out}, nil
 }
 
 // recheckClaudeCode runs the Claude Code check once more, now.
-func (h *updatesHost) recheckClaudeCode() {
+func (h *updatesHost) recheckClaudeCode() ccversion.Status {
 	ctx, cancel := context.WithTimeout(context.Background(), updateCheckTimeout)
 	defer cancel()
 	st := h.check(ctx)
@@ -336,6 +342,7 @@ func (h *updatesHost) recheckClaudeCode() {
 	}
 	h.mu.Unlock()
 	h.changed()
+	return st
 }
 
 // brandName is the program name the card's sentences use.

@@ -69,6 +69,9 @@ func newHostFixture(t *testing.T, current string) *hostFixture {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			f.ranCmds = append(f.ranCmds, c.String())
+			updated := *f.cc.Installed
+			updated.Version = f.cc.Latest
+			f.cc.Installed = &updated
 			return "updated\n", nil
 		},
 		hint:    func() string { return "" },
@@ -220,23 +223,17 @@ func TestUpdatesHostApplyClaudeCode(t *testing.T) {
 		t.Fatalf("apply before a check: %v", err)
 	}
 	f.checkAndWait(t)
-	// After the run the check says the new version is in.
-	f.mu.Lock()
-	next := f.cc
-	next.Installed = &ccversion.Installed{Path: "/x/claude", Version: "2.2.0", Method: ccversion.Native}
-	f.mu.Unlock()
+	// The installer changes the version, and Apply verifies it immediately.
 	res, err := f.h.Apply("claude-code")
 	if err != nil || !strings.Contains(res.Message, "Claude Code is updated") || res.Output != "updated" {
 		t.Fatalf("apply: %+v, %v", res, err)
 	}
 	f.mu.Lock()
 	ran := append([]string(nil), f.ranCmds...)
-	f.cc = next
 	f.mu.Unlock()
 	if len(ran) != 1 || ran[0] != "claude update" {
 		t.Errorf("ran %v", ran)
 	}
-	f.h.recheckClaudeCode()
 	if cc := f.h.View().ClaudeCode; cc.State != "latest" {
 		t.Errorf("after the update: %+v", cc)
 	}
@@ -256,6 +253,54 @@ func TestUpdatesHostApplyClaudeCode(t *testing.T) {
 	f.mu.Unlock()
 	if !strings.HasPrefix(last, "npm install -g") {
 		t.Errorf("npm install ran %q", last)
+	}
+}
+
+func TestUpdatesHostApplyClaudeCodeVerifiesAdvertisedVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		version string
+		want    string
+	}{
+		{"no-op", "2.1.0", "still at 2.1.0 (expected 2.2.0 or newer)"},
+		{"partial update", "2.1.5", "still at 2.1.5 (expected 2.2.0 or newer)"},
+		{"invalid version", "01.2.0", "still at 01.2.0 (expected 2.2.0 or newer)"},
+		{"version unavailable", "", "could not be verified"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newHostFixture(t, "v0.5.0")
+			f.h.runClaude = func(context.Context, ccversion.Command, *ccversion.Installed) (string, error) {
+				f.mu.Lock()
+				defer f.mu.Unlock()
+				installed := *f.cc.Installed
+				installed.Version = tc.version
+				f.cc.Installed = &installed
+				return "Installer finished\n", nil
+			}
+			f.checkAndWait(t)
+			res, err := f.h.Apply("claude-code")
+			if err == nil || !strings.Contains(err.Error(), tc.want) || res.Message != "" || res.Output != "Installer finished" {
+				t.Fatalf("Apply = %+v, %v", res, err)
+			}
+			if got := f.h.View().ClaudeCode.Installed; got != tc.version {
+				t.Errorf("installed version = %q, want %q", got, tc.version)
+			}
+		})
+	}
+}
+
+func TestUpdatesHostDoesNotReuseLatestAcrossChannels(t *testing.T) {
+	f := newHostFixture(t, "v0.5.0")
+	f.cc.Installed.Channel = "latest"
+	f.checkAndWait(t)
+	f.mu.Lock()
+	installed := *f.cc.Installed
+	installed.Channel = "stable"
+	f.cc = ccversion.Status{Checked: true, Installed: &installed, Err: errors.New("stable endpoint unavailable")}
+	f.mu.Unlock()
+	f.checkAndWait(t)
+	if cc := f.h.View().ClaudeCode; cc.Available || cc.Latest != "" || cc.State != "unknown" {
+		t.Fatalf("stable inherited latest's cached release: %+v", cc)
 	}
 }
 

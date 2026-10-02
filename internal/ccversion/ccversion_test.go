@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -209,6 +210,85 @@ func TestLatestErrors(t *testing.T) {
 	e = Env{Endpoints: Endpoints{Downloads: url}}
 	if _, err := Latest(ctx, e, nil); err == nil {
 		t.Error("closed port: want an error")
+	}
+}
+
+func TestCheckUsesNativeUserChannel(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		settings string
+		custom   bool
+		channel  string
+		latest   string
+		state    State
+	}{
+		{"missing file", "", false, "latest", "2.2.0", UpdateAvailable},
+		{"missing setting", `{}`, false, "latest", "2.2.0", UpdateAvailable},
+		{"explicit latest", `{"autoUpdatesChannel":"latest"}`, false, "latest", "2.2.0", UpdateAvailable},
+		{"stable", `{"autoUpdatesChannel":"stable"}`, false, "stable", "2.1.0", UpToDate},
+		{"custom config directory", `{"autoUpdatesChannel":"stable"}`, true, "stable", "2.1.0", UpToDate},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := fakeEnv(t, "", "", nil)
+			path := filepath.Join(e.Home, ".local", "bin", "claude")
+			e.LookPath = func(string) (string, error) { return path, nil }
+			e.Run = func(context.Context, []string) (string, error) { return "2.1.0 (Claude Code)", nil }
+			dir := filepath.Join(e.Home, ".claude")
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if tc.custom {
+				// The override must replace, not merge with, ~/.claude.
+				if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"autoUpdatesChannel":"latest"}`), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				dir = t.TempDir()
+				e.Getenv = func(k string) string {
+					if k == "CLAUDE_CONFIG_DIR" {
+						return dir
+					}
+					return ""
+				}
+			}
+			if tc.settings != "" {
+				if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(tc.settings), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/"+tc.channel {
+					t.Errorf("requested %s, want /%s", r.URL.Path, tc.channel)
+				}
+				if r.URL.Path == "/stable" {
+					_, _ = w.Write([]byte("2.1.0\n"))
+				} else {
+					_, _ = w.Write([]byte("2.2.0\n"))
+				}
+			}))
+			defer srv.Close()
+			e.Endpoints.Downloads = srv.URL
+			st := Check(context.Background(), e)
+			if st.Err != nil || st.State() != tc.state || st.Latest != tc.latest || st.Installed.Channel != tc.channel {
+				t.Fatalf("Check = %+v, installed %+v, state %v", st, st.Installed, st.State())
+			}
+		})
+	}
+}
+
+func TestInvalidChannelSettingsDoNotRequestLatest(t *testing.T) {
+	for _, raw := range []string{`{`, `null`, `[]`, `{"autoUpdatesChannel":null}`, `{"autoUpdatesChannel":false}`, `{"autoUpdatesChannel":"preview"}`} {
+		t.Run(raw, func(t *testing.T) {
+			e := Env{Home: t.TempDir(), ReadFile: func(string) ([]byte, error) { return []byte(raw), nil }}
+			// No endpoint is configured: an invalid setting must fail before HTTP.
+			_, err := Latest(context.Background(), e, &Installed{Method: Native})
+			if err == nil || !strings.Contains(err.Error(), "update channel") {
+				t.Fatalf("Latest with %q: %v", raw, err)
+			}
+		})
+	}
+	e := Env{Home: t.TempDir(), ReadFile: func(string) ([]byte, error) { return nil, os.ErrPermission }}
+	if _, err := Latest(context.Background(), e, &Installed{Method: Native}); !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("unreadable channel: %v", err)
 	}
 }
 

@@ -2351,9 +2351,12 @@ import`): the dashboard never writes credentials to a file or reads one.
 The update check compares the running version with the latest release at the
 endpoint `tycswap upgrade` uses (`update.Endpoint`), and the installed Claude
 Code (`claude --version`, found on `PATH` or where its installers put it) with
-the newest version its own installer offers: the native release channel for
-the native installer (and for WinGet or an install of unknown origin), npm's
-`dist-tags` for an npm install, the cask's formula for Homebrew. *Install
+the release source for its installer: the native release channel for native
+or unknown installs, native latest for WinGet, npm's `dist-tags` for an npm
+install, and the cask's formula for Homebrew. Native and unknown installs
+use `autoUpdatesChannel` from the user's `settings.json` under
+`CLAUDE_CONFIG_DIR` or `~/.claude` (`stable` or `latest`; absent means `latest`).
+Project and managed policies still apply in the installer. *Install
 update* runs `tycswap upgrade`'s own path (`go install` for a go-installed
 binary; a checkout build, an unknown layout or Windows is shown the command to
 type instead of a button); *Update Claude Code* runs the installer's own
@@ -2363,7 +2366,10 @@ named with the install line to type, never installed from the page. A check
 that fails keeps what the check before it found and names the error; the
 card never says everything is up to date while something could not be
 checked. The running `tycswap web` keeps its version until it is started
-again; running Claude Code sessions keep theirs until restarted.
+again; running Claude Code sessions keep theirs until restarted. After a
+Claude Code update, the installed version must reach the advertised release
+before the dashboard reports success; a no-op or unverifiable result reports
+an error and keeps the installer's output.
 
 The page updates live: a state document arrives on connect, on every poll
 tick, after every action, after each batch of engine events and whenever an

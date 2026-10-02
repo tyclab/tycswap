@@ -3744,9 +3744,13 @@ itself and Claude Code.
   `node_modules` path or the legacy `~/.claude/local`), a Homebrew cask, WinGet,
   else unknown. The newest version is read from that method's own source
   (the native release channel, npm's `dist-tags`, the cask's formula; WinGet
-  and an unknown install follow the native releases), so an update is only
-  announced where the same installer can deliver it, and the apply is that
-  installer's own command: `claude update` for a native or unknown install,
+  follows native latest). Native and unknown installs read `autoUpdatesChannel`
+  from the user's `settings.json` under `CLAUDE_CONFIG_DIR` or `~/.claude`:
+  `stable` or `latest`, defaulting to `latest` only when the file or key is
+  absent. Invalid or unreadable settings are a check error. A cached release
+  is not reused across channel changes. Project and managed policy remain
+  the installer's responsibility; the host verifies the result of an apply.
+  The apply is that installer's own command: `claude update` for a native or unknown install,
   `npm install -g @anthropic-ai/claude-code@latest`, `brew upgrade --cask
   <cask>`, `winget upgrade`. A missing Claude Code is said (with the install
   line to type), never run. Versions compare by semver; a version that does
@@ -3778,7 +3782,9 @@ itself and Claude Code.
   second), outside `mutMu`: an account switch must not stall behind a
   multi-minute install. The response gets a 30-minute write deadline. After
   a Claude Code apply the host looks at Claude Code again, so the card shows
-  the version now installed.
+  the version now installed. A zero exit status alone is not success: if the
+  installed version cannot be verified or is older than the advertised
+  release, the response is an error with the installer's output.
 - *The indicator.* The header carries a pill on every tab while something
   waits, with the count (one per update the user would run; "9+" past nine)
   and the updates as its tooltip; it pulses three times when it appears, not
@@ -3831,7 +3837,8 @@ cheat-sheet that includes `tycswap config`, troubleshooting, and where the
 data lives. It names no URL: the page works offline and the static-asset test
 forbids any (`TestIndexHTML_OnlyLocalReferences`), so the Claude Code install
 lines live in Go (`ccversion.InstallHint`) and reach the page through the
-state.
+state. Section fragments (`#g-…`) select the Guide tab and scroll after it
+is visible, preserving the fragment for reload and history navigation.
 
 **Folding** (`internal/web/uiprefs.go`, `internal/cli/uiprefs.go`). The
 Accounts card and the Updates card fold to their heading with a chevron (a

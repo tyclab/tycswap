@@ -270,7 +270,7 @@
   // ---- tabs ----------------------------------------------------------------
 
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
-  function selectTab(name, focus) {
+  function selectTab(name, focus, hash) {
     tabs.forEach(function (t) {
       var on = t.getAttribute('data-tab') === name;
       t.setAttribute('aria-selected', on ? 'true' : 'false');
@@ -279,8 +279,9 @@
       if (panel) { panel.hidden = !on; }
       if (on && focus) { t.focus(); }
     });
-    if (window.location.hash !== '#' + name) {
-      try { history.replaceState(null, '', '#' + name); } catch (e) { /* ignore */ }
+    var targetHash = hash || '#' + name;
+    if (window.location.hash !== targetHash) {
+      try { history.replaceState(null, '', targetHash); } catch (e) { /* ignore */ }
     }
   }
   tabs.forEach(function (t) {
@@ -298,6 +299,14 @@
   });
   function tabFromHash() {
     var h = (window.location.hash || '').replace('#', '');
+    var section = $(h);
+    if (section && section.classList.contains('guide-section')) {
+      // A contents link names a section inside Guide, not another tab. Keep
+      // its fragment for reload/Back, then scroll after revealing the panel.
+      selectTab('guide', false, '#' + h);
+      section.scrollIntoView({ block: 'start' });
+      return;
+    }
     var known = tabs.some(function (t) { return t.getAttribute('data-tab') === h; });
     selectTab(known ? h : 'dashboard');
   }

@@ -91,6 +91,7 @@ type Installed struct {
 	Version string // e.g. "2.1.280"; "" when --version said nothing usable
 	Method  Method
 	Cask    string // Homebrew: the cask token, e.g. "claude-code"
+	Channel string // native/unknown: the user's stable/latest update channel
 }
 
 // Classify tells the method from where the binary really lives.
@@ -132,7 +133,7 @@ func Newer(a, b string) bool {
 
 // Endpoints are where the newest versions are read.
 type Endpoints struct {
-	Downloads string // <base>/latest is a plain-text version
+	Downloads string // <base>/<latest|stable> is a plain-text version
 	Homebrew  string // <base>/<cask>.json has "version"
 	NPM       string // dist-tags JSON
 }
@@ -152,6 +153,7 @@ type Env struct {
 	LookPath  func(string) (string, error)
 	Exists    func(string) bool
 	Realpath  func(string) (string, error)
+	ReadFile  func(string) ([]byte, error) // nil -> os.ReadFile
 	Run       func(ctx context.Context, argv []string) (string, error)
 	HTTP      *http.Client
 	Endpoints Endpoints
@@ -170,6 +172,7 @@ func DefaultEnv() Env {
 			return err == nil && !fi.IsDir()
 		},
 		Realpath:  filepath.EvalSymlinks,
+		ReadFile:  os.ReadFile,
 		Run:       runOutput,
 		HTTP:      http.DefaultClient,
 		Endpoints: DefaultEndpoints,
@@ -231,12 +234,63 @@ func Find(ctx context.Context, e Env) (*Installed, error) {
 	if in.Version == "" && err != nil {
 		return in, fmt.Errorf("claude --version: %w", err)
 	}
+	if in.Method == Native || in.Method == Unknown {
+		in.Channel, err = userChannel(e)
+		if err != nil {
+			return in, err
+		}
+	}
 	return in, nil
 }
 
+// userChannel reads the channel /config and the native installer save in
+// the user's settings.json. CLAUDE_CONFIG_DIR replaces ~/.claude. This is
+// not a resolver for Claude Code's project or managed policy: the installer
+// still applies those, and the host verifies the version after an update.
+// A missing setting defaults to latest; unreadable or invalid settings are
+// an error, rather than an invitation to offer the wrong channel.
+func userChannel(e Env) (string, error) {
+	dir := ""
+	if e.Getenv != nil {
+		dir = e.Getenv("CLAUDE_CONFIG_DIR")
+	}
+	if dir == "" {
+		if e.Home == "" {
+			return "latest", nil
+		}
+		dir = filepath.Join(e.Home, ".claude")
+	}
+	path := filepath.Join(dir, "settings.json")
+	read := e.ReadFile
+	if read == nil {
+		read = os.ReadFile
+	}
+	raw, err := read(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "latest", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("read Claude Code update channel from %s: %w", path, err)
+	}
+	var settings map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &settings); err != nil || settings == nil {
+		return "", fmt.Errorf("read Claude Code update channel from %s: settings must be a JSON object", path)
+	}
+	value, ok := settings["autoUpdatesChannel"]
+	if !ok {
+		return "latest", nil
+	}
+	var channel string
+	if json.Unmarshal(value, &channel) != nil || channel != "latest" && channel != "stable" {
+		return "", fmt.Errorf("read Claude Code update channel from %s: autoUpdatesChannel must be latest or stable", path)
+	}
+	return channel, nil
+}
+
 // Latest is the newest version the install's own method can deliver now: the
-// cask's version for Homebrew, npm's latest tag, else the native release
-// channel (WinGet and an unknown install follow the native releases).
+// cask's version for Homebrew, npm's latest tag, or the native release
+// channel selected in user settings (also for an unknown install). WinGet
+// follows the native latest feed.
 func Latest(ctx context.Context, e Env, in *Installed) (string, error) {
 	method, cask := Native, defaultCask
 	if in != nil {
@@ -262,7 +316,22 @@ func Latest(ctx context.Context, e Env, in *Installed) (string, error) {
 		}
 		return checkVersion(tags["latest"])
 	default:
-		body, err := get(ctx, e.HTTP, e.Endpoints.Downloads+"/latest")
+		channel := "latest"
+		if method == Native || method == Unknown {
+			if in != nil {
+				channel = in.Channel
+			} else {
+				channel = ""
+			}
+			if channel == "" {
+				var err error
+				channel, err = userChannel(e)
+				if err != nil {
+					return "", err
+				}
+			}
+		}
+		body, err := get(ctx, e.HTTP, e.Endpoints.Downloads+"/"+channel)
 		if err != nil {
 			return "", err
 		}
@@ -394,6 +463,7 @@ func Check(ctx context.Context, e Env) Status {
 	st.Installed = in
 	if err != nil {
 		st.Err = err
+		return st
 	}
 	if in == nil {
 		return st
