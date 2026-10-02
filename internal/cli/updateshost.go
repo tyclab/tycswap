@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,7 +71,14 @@ func newUpdatesHost(backupDir string) *updatesHost {
 		latest: checker.Latest,
 		check:  func(ctx context.Context) ccversion.Status { return ccversion.Check(ctx, env) },
 		upgrade: func(stdout, stderr *bytes.Buffer) int {
-			return update.Upgrader{Stdout: stdout, Stderr: stderr}.SelfUpgrade(exePath(), plat)
+			// SelfUpgrade runs `go install` without a deadline; bound it here,
+			// or a hung install holds the server's one apply slot for good.
+			ctx, cancel := context.WithTimeout(context.Background(), updateApplyTimeout)
+			defer cancel()
+			run := func(_ context.Context, name string, args []string, o, e io.Writer) (int, error) {
+				return update.RunCommand(ctx, name, args, o, e)
+			}
+			return update.Upgrader{Stdout: stdout, Stderr: stderr, Run: run}.SelfUpgrade(exePath(), plat)
 		},
 		runClaude: func(ctx context.Context, c ccversion.Command, in *ccversion.Installed) (string, error) {
 			return ccversion.Run(ctx, env, c, in)
