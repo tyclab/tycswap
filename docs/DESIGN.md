@@ -3753,10 +3753,12 @@ itself and Claude Code.
   absent. Invalid or unreadable settings are a check error. A cached release
   is not reused across channel changes. Project and managed policy remain
   the installer's responsibility; the host verifies the result of an apply.
-  The apply is that installer's own command: `claude update` for a native or unknown install,
-  `npm install -g @anthropic-ai/claude-code@latest`, `brew upgrade --cask
-  <cask>`, `winget upgrade`. A missing Claude Code is said (with the install
-  line to type), never run. Versions compare by semver; a version that does
+  The apply is that installer's own command: `claude update` for a native
+  or unknown install (and for the legacy `~/.claude/local`, whose own
+  `node_modules` a global npm install would not touch), `npm install -g
+  @anthropic-ai/claude-code@latest`, `brew upgrade --cask <cask>`, `winget
+  upgrade`. A missing Claude Code is said (with the install line to type),
+  never run. Versions compare by semver; a version that does
   not parse is an error, never "newer".
 - *Cadence.* `tycswap web` had no periodic check. `Server.Serve` now asks the
   `UpdatesFacade` to check once at start and then every `Deps.UpdateInterval`

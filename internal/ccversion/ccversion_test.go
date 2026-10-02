@@ -76,6 +76,8 @@ func TestUpgradeCommandPerMethod(t *testing.T) {
 		{&Installed{Method: Native}, "claude update"},
 		{&Installed{Method: Unknown}, "claude update"},
 		{&Installed{Method: NPM}, "npm install -g " + npmPackage},
+		// The legacy local install: npm -g would update another copy.
+		{&Installed{Method: NPM, Real: "/home/u/.claude/local/node_modules/@anthropic-ai/claude-code/cli.js"}, "claude update"},
 		{&Installed{Method: Homebrew, Cask: "claude-code@latest"}, "brew upgrade --cask claude-code@latest"},
 		{&Installed{Method: Homebrew}, "brew upgrade --cask claude-code"},
 		{&Installed{Method: WinGet}, "winget upgrade --id Anthropic.ClaudeCode --exact"},
