@@ -27,13 +27,21 @@ import (
 // credentials file returns a non-nil error (Python's None outcome, which the
 // caller maps to a CredentialReadError); "nothing anywhere" returns "" with the
 // keychainUnavailable flag set when the OAuth Keychain read failed uncovered.
+//
+// An OAuth Keychain item or file holding nothing but seat-wide keys
+// (ccfile.SeatWideOnly: the MCP server logins and client secrets Claude Code
+// writes on an API-key seat) is no login and reads as absent, so the managed
+// key behind it is found (DESIGN A29). Every "is there a live login, and
+// which" decision reads through here, so they all agree: the switch-time
+// backup and classifier, the self-switch check, the direct-activation stash,
+// add, export, status, list, the usage fetch and session bootstrap.
 func (s *FileKeychainStore) ReadActive() (string, bool, error) {
 	keychainFailed := false
 	// 1. OAuth Keychain (macOS, when usable), with a bounded retry.
 	if s.useKeychain() {
 		val, failed := s.readActiveOAuthKeychain()
 		keychainFailed = failed
-		if val != "" {
+		if val != "" && !ccfile.SeatWideOnly(val) {
 			return val, false, nil
 		}
 	} else if s.macOS() {
@@ -49,7 +57,7 @@ func (s *FileKeychainStore) ReadActive() (string, bool, error) {
 		s.log.Errorf("Failed to read credentials file: %v", rerr)
 		return "", false, rerr
 	}
-	if existsFile && strings.TrimSpace(raw) != "" {
+	if existsFile && strings.TrimSpace(raw) != "" && !ccfile.SeatWideOnly(raw) {
 		return raw, false, nil // raw text, NOT stripped
 	}
 
@@ -150,7 +158,9 @@ func (s *FileKeychainStore) WriteActiveAccount(creds string) error {
 // readLiveOAuth returns the live OAuth credential text for the carry-over: the
 // Keychain item while the Keychain is in use (bounded retry, then the file),
 // else the plaintext file; "" when neither holds one or the file read fails
-// (logged, so the caller writes verbatim).
+// (logged, so the caller writes verbatim). Unlike ReadActive it returns a
+// value holding seat-wide keys only, deliberately: that value is no login, but
+// it is exactly the remainder a switch carries over (DESIGN A29).
 func (s *FileKeychainStore) readLiveOAuth() string {
 	if s.useKeychain() {
 		if v, _ := s.readActiveOAuthKeychain(); v != "" {

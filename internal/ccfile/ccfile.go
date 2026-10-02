@@ -177,6 +177,24 @@ func SpliceCredentials(stored, live string) (string, error) {
 	return string(encoded), err
 }
 
+// SeatWideOnly reports whether creds is a JSON object holding nothing but
+// SeatWideKeys, the empty object included: no account part at all. Claude Code
+// writes one when an MCP server is signed in to, or added with a client
+// secret, while no claude.ai login is stored, as on an API-key seat: every
+// write to its credential store is a whole-object read-modify-write, so over an
+// absent file the result is {"mcpOAuth": {...}} alone. Claude Code takes its
+// login from claudeAiOauth only, and to tycswap such a credential is no OAuth
+// login either. Anything that is not a JSON object, a managed API key among
+// them, is not seat-wide only.
+func SeatWideOnly(creds string) bool {
+	obj, ok := decodeObject(creds)
+	if !ok {
+		return false
+	}
+	dropSeatWide(obj)
+	return len(obj) == 0
+}
+
 // seatWideOf returns the SeatWideKeys present in creds. Blank text holds none;
 // text that is not a JSON object holds none and is an error.
 func seatWideOf(creds string) (map[string]any, error) {

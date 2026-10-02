@@ -616,3 +616,33 @@ func TestSpliceCredentials_NumbersSurvive(t *testing.T) {
 		}
 	}
 }
+
+// TestSeatWideOnly: a credential holding nothing but seat-wide keys, the empty
+// object included, has no account part and is no login (DESIGN A29); any
+// other key, or any text that is not a JSON object, is not seat-wide only.
+func TestSeatWideOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name, creds string
+		want        bool
+	}{
+		{"MCP server logins alone, as Claude Code writes them on an API-key seat", `{"mcpOAuth":{"srv|1111":{"accessToken":"mcp"}}}`, true},
+		{"MCP client secrets alone", `{"mcpOAuthClientConfig":{"srv|1111":{"clientSecret":"cs"}}}`, true},
+		{"both seat-wide keys", `{"mcpOAuth":{},"mcpOAuthClientConfig":{}}`, true},
+		{"indented", "{\n  \"mcpOAuth\": {}\n}\n", true},
+		{"the empty object", `{}`, true},
+		{"a login beside the MCP server logins", `{"claudeAiOauth":{"accessToken":"acc"},"mcpOAuth":{}}`, false},
+		{"a login alone", `{"claudeAiOauth":{"accessToken":"acc"}}`, false},
+		{"a key not known to be seat-wide", `{"mcpOAuth":{},"trustedDeviceToken":"tdt"}`, false},
+		{"a managed API key", "sk-ant-api03-key", false},
+		{"empty text", "", false},
+		{"null", "null", false},
+		{"an array", `[{"mcpOAuth":{}}]`, false},
+		{"malformed", `{"mcpOAuth":`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ccfile.SeatWideOnly(tc.creds); got != tc.want {
+				t.Errorf("SeatWideOnly(%q) = %v, want %v", tc.creds, got, tc.want)
+			}
+		})
+	}
+}
