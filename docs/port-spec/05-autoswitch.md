@@ -379,7 +379,8 @@ can't be targets).
      a candidate-style plan (interval > `ACTIVE_MAX_INTERVAL_S`=300) left over from
      a role change the switcher never saw (e.g. a manual login), and `age_s >=
      ACTIVE_MAX_INTERVAL_S`, **and** its binding pct < 100 (an exhausted account
-     stays parked at its reset — the age cap must not defeat reset parking), or
+     stays parked at its reset, for at most `PARK_CAP_S` (04§3.4) — the age cap
+     must not defeat reset parking), or
    - poll-due (`next_poll_at is not None and now >= next_poll_at`), or
    - no plan yet but `age_s >= poll_policy.MIN_INTERVAL_S` (180).
 3. **If not in an idle-hold** (`_idle_hold_since is None`): pick **one** due
@@ -816,7 +817,8 @@ empty. When a model filter is configured:
     exactly one due candidate (stalest first); escalates to full refresh when
     active within `ESCALATION_MARGIN_PCT` of threshold or active unknown; urgent
     60 s cadence when the active account is *moving inside the band*; unmoved usage
-    decays ×1.5 toward the ceiling; exhausted accounts park at their reset; polls
+    decays ×1.5 toward the ceiling; exhausted accounts park at their reset (for at
+    most `PARK_CAP_S`, 04§3.4); polls
     are clamped to `reset + RESET_SLACK_S`; quarantined candidates never consume the
     poll slot.
 22. **Escalation keys on the tick-snapshot threshold**

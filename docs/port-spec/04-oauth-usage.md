@@ -976,8 +976,11 @@ Algorithm:
    - `headroom = account_headroom(new_usage, models)`.
    - If `headroom is not None and headroom <= 0` (at/over limit): `reset_ts =
      limiting_reset_ts(...)`; if `reset_ts is not None and reset_ts > next_poll`
-     → `next_poll = reset_ts` (**skip straight to the reset that frees it**; the
-     learned interval is still returned for its return).
+     → `next_poll = min(reset_ts, now + PARK_CAP_S)` (**wait for the reset that
+     frees it, but never longer than `PARK_CAP_S`**; the learned interval is
+     still returned for its return). Go: `PARK_CAP_S = TRUST_MAX_AGE_S -
+     SERVE_TTL_S` (3420), so the cached measurement is polled again before it
+     leaves the decision-trust ceiling (§2.5; DESIGN A31).
    - Else: `reset_ts = earliest_future_reset_ts(new_usage, now, models)`; if not
      None → `next_poll = min(next_poll, reset_ts + RESET_SLACK_S)` (**never
      scheduled past a future reset + slack**; stored usage is obsolete once the
@@ -995,8 +998,8 @@ Algorithm:
 - Urgent suppressed by recent_429 → 360.
 - Urgent base 60 then unmoved → snaps to 180 (never 60→90→135).
 - Reset cap: future reset at now+90, usage 40% → next_poll ≈ reset+60, interval
-  300. At-limit (100%) reset at now+7200 → next_poll ≈ reset_ts exactly, interval
-  300.
+  300. At-limit (100%) reset at now+7200 → next_poll ≈ now+3420 (`PARK_CAP_S`),
+  interval 300; reset at now+600 → next_poll ≈ reset_ts exactly, interval 300.
 - Jitter bounds: rng=0.0 → now + interval·0.9; rng=1.0 → now + interval·1.1.
 
 ---
