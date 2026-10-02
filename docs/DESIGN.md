@@ -3874,11 +3874,12 @@ said what it does. A line under the table says how to add another account —
 stays in the toolbar as the secondary way in.
 
 **The auth overrides** (`state.authOverrides`,
-`web.DetectAuthOverrides`). `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or
-`ANTHROPIC_BASE_URL` in the environment `tycswap web` runs in — which a
-plain `claude` from the same shell inherits, while `tycswap run` and `tycswap
-env` scrub them — or `apiKeyHelper`, `env.ANTHROPIC_API_KEY`,
-`env.ANTHROPIC_AUTH_TOKEN`, `env.ANTHROPIC_BASE_URL` in Claude Code's
+`web.DetectAuthOverrides`). `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+`CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_BASE_URL` in the environment `tycswap
+web` runs in — which a plain `claude` from the same shell inherits, while
+`tycswap run` and `tycswap env` scrub the key and token ones — or
+`apiKeyHelper`, `env.ANTHROPIC_API_KEY`, `env.ANTHROPIC_AUTH_TOKEN`,
+`env.CLAUDE_CODE_OAUTH_TOKEN`, `env.ANTHROPIC_BASE_URL` in Claude Code's
 `settings.json` make Claude Code sign in with something other than the stored
 login. The state lists the names that are set (an empty or null value
 selects nothing; a settings file that is missing or does not parse declares

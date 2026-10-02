@@ -54,17 +54,19 @@ func TestDetectAuthOverrides(t *testing.T) {
 	if v.Any() || v.Env == nil || v.Settings == nil || v.SettingsPath != path {
 		t.Errorf("empty = %+v", v)
 	}
-	// The three variables, in their order; empty ones select nothing.
-	v = DetectAuthOverrides(getenv(map[string]string{"ANTHROPIC_BASE_URL": "https://proxy.example", "ANTHROPIC_API_KEY": "  ", "ANTHROPIC_AUTH_TOKEN": "t"}), path)
-	if !reflect.DeepEqual(v.Env, []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"}) || len(v.Settings) != 0 {
+	// The variables, in their order; empty ones select nothing. A
+	// setup-token in CLAUDE_CODE_OAUTH_TOKEN bypasses the stored login too
+	// (session.AuthOverrideEnvVars).
+	v = DetectAuthOverrides(getenv(map[string]string{"ANTHROPIC_BASE_URL": "https://proxy.example", "ANTHROPIC_API_KEY": "  ", "ANTHROPIC_AUTH_TOKEN": "t", "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-x"}), path)
+	if !reflect.DeepEqual(v.Env, []string{"ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL"}) || len(v.Settings) != 0 {
 		t.Errorf("env = %+v", v)
 	}
 	// The settings file's env block and apiKeyHelper; blanks and nulls skipped.
-	if err := os.WriteFile(path, []byte(`{"apiKeyHelper": "/usr/local/bin/key.sh", "env": {"ANTHROPIC_API_KEY": "sk-x", "ANTHROPIC_AUTH_TOKEN": "", "ANTHROPIC_BASE_URL": null, "OTHER": "1"}}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"apiKeyHelper": "/usr/local/bin/key.sh", "env": {"ANTHROPIC_API_KEY": "sk-x", "ANTHROPIC_AUTH_TOKEN": "", "ANTHROPIC_BASE_URL": null, "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-y", "OTHER": "1"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	v = DetectAuthOverrides(getenv(nil), path)
-	if !reflect.DeepEqual(v.Settings, []string{"apiKeyHelper", "env.ANTHROPIC_API_KEY"}) || len(v.Env) != 0 {
+	if !reflect.DeepEqual(v.Settings, []string{"apiKeyHelper", "env.ANTHROPIC_API_KEY", "env.CLAUDE_CODE_OAUTH_TOKEN"}) || len(v.Env) != 0 {
 		t.Errorf("settings = %+v", v)
 	}
 	// A file that does not parse declares nothing.
