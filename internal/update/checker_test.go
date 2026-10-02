@@ -5,12 +5,14 @@
 package update
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -341,5 +343,70 @@ func TestDefaultEndpointAndCacheTTL(t *testing.T) {
 	}
 	if fmt.Sprint(CacheTTL) != "24h0m0s" {
 		t.Errorf("CacheTTL = %v, want 24h0m0s", CacheTTL)
+	}
+}
+
+// Latest is the dashboard's release check (DESIGN A27): it reports the tag
+// or why it could not, and a tag it read refreshes the passive notice's
+// cache.
+func TestLatest_ReportsTagAndRefreshesCache(t *testing.T) {
+	srv := releaseServer(t, "v0.9.0")
+	withEndpoint(t, srv.URL)
+	dir := t.TempDir()
+	c := Checker{CacheDir: dir, Clk: fakeAt(1000)}
+	tag, err := c.Latest(context.Background())
+	if err != nil || tag != "v0.9.0" {
+		t.Fatalf("Latest = %q, %v", tag, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "update_check.json"))
+	if err != nil {
+		t.Fatalf("cache not written: %v", err)
+	}
+	var cached struct {
+		Data any `json:"data"`
+	}
+	if json.Unmarshal(raw, &cached) != nil || cached.Data != "v0.9.0" {
+		t.Errorf("cache = %s", raw)
+	}
+	// The passive check now answers from the cache without the network.
+	srv.Close()
+	if msg := c.CheckForUpdate("", "v0.2.0", platform.Linux); !strings.Contains(msg, "0.9.0") {
+		t.Errorf("CheckForUpdate after Latest = %q", msg)
+	}
+}
+
+func TestLatest_Errors(t *testing.T) {
+	ctx := context.Background()
+	c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}
+
+	withEndpoint(t, releaseServer(t, "").URL) // 404
+	if _, err := c.Latest(ctx); err == nil || !strings.Contains(err.Error(), "HTTP 404") {
+		t.Errorf("non-200: %v", err)
+	}
+	withEndpoint(t, releaseServer(t, "not-a-version").URL)
+	if _, err := c.Latest(ctx); err == nil || !strings.Contains(err.Error(), "not a version") {
+		t.Errorf("odd tag: %v", err)
+	}
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("{")) }))
+	t.Cleanup(bad.Close)
+	withEndpoint(t, bad.URL)
+	if _, err := c.Latest(ctx); err == nil {
+		t.Error("bad JSON: want an error")
+	}
+	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("{}")) }))
+	t.Cleanup(empty.Close)
+	withEndpoint(t, empty.URL)
+	if _, err := c.Latest(ctx); err == nil || !strings.Contains(err.Error(), "no tag_name") {
+		t.Errorf("empty release: %v", err)
+	}
+	closed := httptest.NewServer(http.NotFoundHandler())
+	url := closed.URL
+	closed.Close()
+	withEndpoint(t, url)
+	if _, err := c.Latest(ctx); err == nil {
+		t.Error("closed port: want an error")
+	}
+	if _, err := os.Stat(filepath.Join(c.CacheDir, "update_check.json")); !os.IsNotExist(err) {
+		t.Errorf("a failed Latest wrote the cache: %v", err)
 	}
 }
