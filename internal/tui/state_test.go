@@ -160,6 +160,7 @@ func TestRootMenuStructure(t *testing.T) {
 		{label: "Add account…", actionID: "add-menu"},
 		{label: "Disable / enable account…", actionID: "disable-menu"},
 		{label: "Remove account…", actionID: "remove-menu"},
+		{label: "Settings…", actionID: "settings"},
 		{label: "Quit", actionID: "quit"},
 	}
 	if !reflect.DeepEqual(d.rootEntries(), want) {

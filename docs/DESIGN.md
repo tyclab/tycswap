@@ -3896,3 +3896,110 @@ run from the page except through the apply route's two fixed targets.
 amendment does not cover (Codex rows, `add --login` as a streamed job,
 `map`/`unmap`, the remote mode and the tray), and no marketplace, plugin or
 telemetry surface: tycswap has none of those.
+## A28. TUI Settings screen: `settings.json` edited from the dashboard (Go-side additive extension)
+
+`tycswap tui` gains a Settings screen (`internal/tui/settingsscreen.go`),
+reached from the dashboard menu's `Settings…` row (above `Quit`) and the `c`
+key (as in `tycswap config`; shown in the footer legend). It lands beside the
+browser dashboard's Settings tab (A27): the two edit the same file through the
+same package, and neither knows about the other.
+
+**What.** The screen lists every key `settings.SettingSpecs` defines, in
+registry order under a header per `Spec.Section`, as `key  value` rows with
+the muted `(default)` marker on a key that is not set — the values, markers
+and aligned columns `tycswap config list` prints, though the CLI lists the
+dotted keys flat, with no section header. There is no list of keys in the
+TUI: the rows are `settings.EffectiveSettings`,
+so a new spec appears without a change here. The highlighted key's detail
+sits pinned under the rows: its dotted name and `Help`, its kind with the
+`Lo`–`Hi` range or its `Choices`, its default, and when the engine applies
+it (below). `enter` edits with the control the kind calls for: a bool
+toggles and a choice cycles to the next value, each saved at once; an int,
+float or string opens an inline input over the current value (empty for an
+unset string, whose `(none)` is a marker). The typed value is checked with
+`settings.ParseSettingValue` — the parser `tycswap config set` uses — before
+anything is written; a refused value (out of range, wrong type, empty
+string) keeps the input open with the message under it, so `50 and 99.9` is
+read where it is corrected. `u` resets the highlighted key through
+`settings.UnsetSetting`; a key that is not set gets the CLI's `is not set;
+nothing to do` notice as a toast. `esc` cancels an open input first and
+leaves the screen second, the two-stage escape the Watch and Auto screens
+use.
+
+**Writes.** Every write is `settings.SetSetting` / `settings.UnsetSetting`
+(strict validation, the `.settings.lock`, atomic rename, the Python float
+form), run through the app's single-flight action gate (09§2.6,
+`startMessageAction`): a second write while one is in flight is refused
+with the `Another action is still running` toast (an open input keeps the
+typed value, to be submitted again), a completed write toasts the line
+`tycswap config set|unset` prints (`autoswitch.threshold = 80`,
+`autoswitch.threshold unset (default: 90)`), and a failed write (a
+settings.json that no longer parses, a lock error) opens the output modal
+titled `Set <key> — failed` with the error, as every other action's failure
+does. The rows are re-read when a write lands (the app now fans every
+`actionDoneMsg` out to the stacked screens' `onMessage`, which the list
+screens ignore) and on every poll, so a value changed by another tycswap
+instance or by `tycswap config set` in a terminal shows on the next tick,
+the way the dashboard's account submenus track the roster (A21). A saved
+or reset `autoswitch.threshold` moves the dashboard's bar tick
+(`Model.thresholdPct`) at once, as the Auto view's mount sync does.
+
+**Why.** Until now the file was reachable only from the command line (and,
+beside this, the browser dashboard's tab). The one knob the TUI could change,
+the Auto view's threshold-adjust mode, is session-only by contract (09§4.5,
+§11.6: never written to `settings.json`, reverted on exit) and stays exactly
+that — its adjusting hint now ends in `session only — Settings persists`, so
+the user who wants the change to outlive the screen is told where it is made.
+The hint (09§4.5's `← → adjust · enter done` plus that ending) moves off the
+summary line onto a line of its own under it, shown only while adjusting: on
+the summary line it ran past column 80 and was cut off.
+The Facade is not extended (A13): the screen reads and writes through the
+settings package over `Facade.BackupDir()`, as `loadThreshold` and the Auto
+view's `settings.Load` already do.
+
+**Engine pickup, as the CLI path has it.** The engine does not re-read
+`settings.json`: `NewEngine` takes a frozen `AutoSwitchSettings`,
+`Engine.currentSettings` reads an `atomic.Pointer` that only
+`ApplyThreshold` and `ApplyModels` ever replace, and `tycswap config set`
+notifies no running `tycswap auto` — a saved key is in force when an engine
+next starts. The TUI mirrors that and invents nothing: its engine lives only
+while the Auto view is open, is built from a fresh `settings.Load` at mount
+(09§4.2) and stopped at exit, and the Settings screen opens from the
+dashboard, so no TUI-hosted engine is running while a key is changed, and
+the next opening of the Auto view starts one from the saved file. Nor does a
+write from here reach an engine running elsewhere: a `tycswap auto` process,
+another TUI's Auto view, or the engine `tycswap web` hosts, which its own
+settings routes retarget only for an `autoswitch.model` saved through them
+(`ApplyModels`, A26). The detail line says so for every key (`applies when
+the auto-switch engine next starts`); no engine applies a key earlier than
+that, so the note is the same for all of them. Outside the engine,
+`autoswitch.threshold` and `autoswitch.model` are read from the file where
+they are used — the usage poll plan while no engine pins it, the at-limit
+markers of `list`, `status` and the dashboard, and `tycswap switch`'s model
+windows — so those follow a save on the next poll or command. The
+in-process retargets the browser dashboard uses on a running engine are not
+wired here, because here nothing is running to retarget.
+
+**Visual.** The row cursor is the accent left border (09§8.2), the input the
+accent-coloured typed text with a `▏` caret, the refused message in the
+critical colour under the detail, the section header muted bold. Every line
+is fitted to the width (`clipRichLines`) and the rows window around the
+cursor on the content height (viewport.go); the title above and the
+detail below stay pinned. The detail's help and kind lines wrap between
+words, two lines each at most, so a long help or choice list is read whole
+at 80 columns instead of being clipped; its message line is always there,
+so the layout does not jump when an input opens. The Auto view's badge + summary
+line and its adjusting-hint line are now fitted to the width too
+(`truncRich`): the summary line with the hint on it was 81 columns while
+adjusting, so it wrapped at 80 and threw the viewport's line count off.
+
+**Tests** (`internal/tui/settings_test.go`): the menu row and the `c`
+binding; one row per `SettingSpecs` entry, in order, with the section
+header and the default markers; int within range persists and out of range
+is refused with the message and nothing written; float persists and moves
+the bar tick; bool toggles; choice cycles and wraps; string edits and the
+empty string is refused; reset removes the key (section too, when empty)
+and an unset key gets the notice; the single-flight gate; a failed write
+opens the output modal; two-stage escape; the footer legends; no line wider
+than the terminal at any width, and every key's detail read whole at 80
+columns; and the Auto view's hint names Settings and stays within the width.
