@@ -192,7 +192,8 @@ func nextChoice(choices []string, cur string) string {
 // submit validates the typed value with the parser `tycswap config set` uses
 // and, when it is refused, keeps the input open with the message under it so
 // the value can be corrected; nothing is written. An accepted value is saved
-// through the single-flight gate.
+// through the single-flight gate; when the gate refuses it (another action is
+// still running) the input stays open too, so the typed value is not lost.
 func (s *settingsScreen) submit(m *Model) tea.Cmd {
 	row, ok := s.current()
 	if !ok {
@@ -203,8 +204,12 @@ func (s *settingsScreen) submit(m *Model) tea.Cmd {
 		s.editError = err.Error()
 		return nil
 	}
-	s.editing, s.input, s.editError = false, "", ""
-	return s.save(m, row.Spec, raw)
+	busy := m.busy
+	cmd := s.save(m, row.Spec, raw)
+	if !busy {
+		s.editing, s.input, s.editError = false, "", ""
+	}
+	return cmd
 }
 
 // save persists one key through settings.SetSetting (strict: the value is

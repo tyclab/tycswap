@@ -294,6 +294,26 @@ func TestSettingsFloatPersistsAndMovesTheBarTick(t *testing.T) {
 	}
 }
 
+// NaN parses as a float; it is refused inline with the range message like any
+// other out-of-range value, not let through to a failing write.
+func TestSettingsFloatNaNIsRefusedInline(t *testing.T) {
+	m, s, dir := settingsModel(t)
+	selectKey(t, s, "autoswitch.threshold")
+	s.update(m, keyPress("enter"))
+	s.update(m, keyPress("backspace"))
+	s.update(m, keyPress("backspace"))
+	typeText(m, s, "NaN")
+	if cmd := s.update(m, keyPress("enter")); cmd != nil {
+		t.Fatal("a refused value must start no action")
+	}
+	if want := "autoswitch.threshold must be between 50 and 99.9"; !s.editing || s.editError != want {
+		t.Fatalf("editing=%v editError=%q, want the input open with %q", s.editing, s.editError, want)
+	}
+	if readSettings(t, dir) != nil {
+		t.Fatal("a refused value must not be written")
+	}
+}
+
 func TestSettingsBoolToggles(t *testing.T) {
 	m, s, dir := settingsModel(t)
 	selectKey(t, s, "autoswitch.codexEnabled")
@@ -397,6 +417,69 @@ func TestSettingsWritesRideTheSingleFlightGate(t *testing.T) {
 	}
 	if readSettings(t, dir) != nil {
 		t.Fatal("a refused action must write nothing")
+	}
+}
+
+// A typed value the gate refuses stays in the open input, to be saved once
+// the running action has landed; a poll while typing leaves it alone too.
+func TestSettingsTypedValueSurvivesTheGateAndAPoll(t *testing.T) {
+	m, s, dir := settingsModel(t)
+	selectKey(t, s, "autoswitch.threshold")
+	s.update(m, keyPress("enter"))
+	s.update(m, keyPress("backspace"))
+	s.update(m, keyPress("backspace"))
+	typeText(m, s, "8")
+	execAll(m.applySnapshot(snapshotOf("1", acct("1", "a@x.com", true, nil))))
+	if !s.editing || s.input != "8" {
+		t.Fatalf("a poll must not touch the open input; editing=%v input=%q", s.editing, s.input)
+	}
+	typeText(m, s, "5")
+	m.busy = true
+	dropCmd(s.update(m, keyPress("enter")))
+	if !hasToast(m, "Another action is still running", "", "warning") {
+		t.Fatalf("toasts = %v", toastMessages(m))
+	}
+	if !s.editing || s.input != "85" {
+		t.Fatalf("a refused save must keep the input; editing=%v input=%q", s.editing, s.input)
+	}
+	if readSettings(t, dir) != nil {
+		t.Fatal("a refused save must write nothing")
+	}
+	m.busy = false
+	landSettingsAction(t, m, s.update(m, keyPress("enter")))
+	if s.editing {
+		t.Fatal("the save, once let through, closes the input")
+	}
+	if got := readSettings(t, dir)["threshold"]; got != 85.0 {
+		t.Fatalf("settings.json threshold = %v, want 85", got)
+	}
+}
+
+// A file written by a newer version keeps its unknown keys and sections and
+// its schemaVersion through a write from this screen.
+func TestSettingsWriteKeepsUnknownKeys(t *testing.T) {
+	m, s, dir := settingsModel(t)
+	path := filepath.Join(dir, "settings.json")
+	newer := `{"schemaVersion": 2, "future": {"x": 1}, "autoswitch": {"futureKnob": true, "threshold": 80}}`
+	if err := os.WriteFile(path, []byte(newer), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.reload(m)
+	selectKey(t, s, "autoswitch.codexEnabled")
+	landSettingsAction(t, m, s.update(m, keyPress("enter")))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	section, _ := raw["autoswitch"].(map[string]any)
+	future, _ := raw["future"].(map[string]any)
+	if raw["schemaVersion"] != 2.0 || future["x"] != 1.0 || section["futureKnob"] != true ||
+		section["threshold"] != 80.0 || section["codexEnabled"] != false {
+		t.Fatalf("settings.json after the write = %s", data)
 	}
 }
 
