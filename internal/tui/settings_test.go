@@ -565,6 +565,34 @@ func TestSettingsViewNeverWraps(t *testing.T) {
 	}
 }
 
+// At 80 columns every key's detail is read whole: the help, the kind with its
+// range or choices, the default and the engine note wrap between words rather
+// than being clipped.
+func TestSettingsDetailIsReadWholeAt80(t *testing.T) {
+	_, s, _ := settingsModel(t)
+	for i, r := range s.rows {
+		s.index = i
+		lines := s.detailLines(80)
+		var plain []string
+		for _, l := range lines {
+			l = stripANSI(l)
+			if w := lipgloss.Width(l); w > 80 {
+				t.Fatalf("%s: detail line is %d columns: %q", r.Spec.Dotted(), w, l)
+			}
+			plain = append(plain, l)
+		}
+		joined := strings.Join(plain, " ")
+		for _, want := range []string{r.Spec.Dotted() + "  " + r.Spec.Help, kindLabel(r.Spec), engineNote} {
+			if !strings.Contains(joined, want) {
+				t.Fatalf("%s: detail lacks %q:\n%s", r.Spec.Dotted(), want, strings.Join(plain, "\n"))
+			}
+		}
+		if strings.Contains(joined, "…") {
+			t.Fatalf("%s: detail is clipped at 80 columns:\n%s", r.Spec.Dotted(), strings.Join(plain, "\n"))
+		}
+	}
+}
+
 // -- the Auto view's adjust mode stays session-only and says where to persist --
 
 func TestAutoAdjustHintNamesSettings(t *testing.T) {

@@ -367,25 +367,63 @@ func (s *settingsScreen) rowText(r settings.Effective, selected bool, keyW, valW
 
 // detailLines describe the highlighted key: its dotted name and help text, its
 // kind with range or choices, its default and when the engine applies it, and
-// a third line for the refused value's message or the typing hint. Always
-// three lines, so the layout does not jump when editing starts.
+// a last line for the refused value's message or the typing hint. The first
+// two parts wrap between words onto up to detailWrapLines lines each, so a
+// long help or choice list is read whole at 80 columns; the last line is
+// always there, so the layout does not jump when editing starts.
 func (s *settingsScreen) detailLines(width int) []string {
 	r, ok := s.current()
 	if !ok {
 		return nil
 	}
 	fit := func(t richText) string { return clipRichLines(t, width).render() }
-	var l1, l2, l3 richText
-	l1.addFg(r.Spec.Dotted(), colForeground)
-	l1.addFg("  "+r.Spec.Help, colMuted)
-	l2.addFg(kindLabel(r.Spec)+" · default "+settings.FormatSettingValue(r.Spec.Default)+" · "+engineNote, colMuted)
+	var out []string
+	for _, t := range wrapDetail(r.Spec.Dotted(), r.Spec.Help, width) {
+		out = append(out, fit(t))
+	}
+	for _, t := range wrapDetail("", kindLabel(r.Spec)+" · default "+settings.FormatSettingValue(r.Spec.Default)+" · "+engineNote, width) {
+		out = append(out, fit(t))
+	}
+	var last richText
 	switch {
 	case s.editError != "":
-		l3.addFg(s.editError, colSevCrit)
+		last.addFg(s.editError, colSevCrit)
 	case s.editing:
-		l3.addFg("type a value · enter save · esc cancel", colMuted)
+		last.addFg("type a value · enter save · esc cancel", colMuted)
 	}
-	return []string{fit(l1), fit(l2), fit(l3)}
+	return append(out, fit(last))
+}
+
+// detailWrapLines caps the lines one detail part wraps onto; whatever does not
+// fit is clipped on the last of them.
+const detailWrapLines = 2
+
+// wrapDetail lays head (foreground, may be empty) and then text (muted) out
+// over at most detailWrapLines lines of width columns, breaking between words.
+func wrapDetail(head, text string, width int) []richText {
+	var lines []richText
+	var cur richText
+	used := 0
+	if head != "" {
+		cur.addFg(head, colForeground)
+		used = lipgloss.Width(head)
+	}
+	sep := "  " // after the head; one space between words
+	for _, word := range strings.Fields(text) {
+		w := lipgloss.Width(word)
+		if used > 0 && used+len(sep)+w > width && len(lines) < detailWrapLines-1 {
+			lines = append(lines, cur)
+			cur, used = richText{}, 0
+		}
+		if used > 0 {
+			cur.addFg(sep, colMuted)
+			used += len(sep)
+		}
+		cur.addFg(word, colMuted)
+		used += w
+		sep = " "
+	}
+	return append(lines, cur)
 }
 
 // kindLabel names a key's kind with its range (int/float) or its choices.

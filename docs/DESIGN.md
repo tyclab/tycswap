@@ -3784,8 +3784,10 @@ accent-coloured typed text with a `▏` caret, the refused message in the
 critical colour under the detail, the section header muted bold. Every line
 is fitted to the width (`clipRichLines`) and the rows window around the
 cursor on the content height (viewport.go); the title above and the
-three-line detail below stay pinned, the detail always three lines so the
-layout does not jump when an input opens. The Auto view's badge + summary
+detail below stay pinned. The detail's help and kind lines wrap between
+words, two lines each at most, so a long help or choice list is read whole
+at 80 columns instead of being clipped; its message line is always there,
+so the layout does not jump when an input opens. The Auto view's badge + summary
 line and its adjusting-hint line are now fitted to the width too
 (`truncRich`): the summary line with the hint on it was 81 columns while
 adjusting, so it wrapped at 80 and threw the viewport's line count off.
@@ -3798,5 +3800,5 @@ the bar tick; bool toggles; choice cycles and wraps; string edits and the
 empty string is refused; reset removes the key (section too, when empty)
 and an unset key gets the notice; the single-flight gate; a failed write
 opens the output modal; two-stage escape; the footer legends; no line wider
-than the terminal at any width; and the Auto view's hint names Settings
-and stays within the width.
+than the terminal at any width, and every key's detail read whole at 80
+columns; and the Auto view's hint names Settings and stays within the width.
