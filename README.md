@@ -281,7 +281,11 @@ alice@example.com
 
 The full-screen interactive dashboard is `tycswap` with no arguments (also
 `tycswap tui` and `tycswap watch`). It shows the same accounts with live usage and
-refreshes on a timer.
+refreshes on a timer. Its Settings screen (`c`, or the menu's "Settings…" row)
+lists every `settings.json` key with its value and help text and edits it in
+place — a bool toggles, a choice cycles, a number or string is typed and
+validated like `tycswap config set` — and `u` resets a key to its default; the
+auto-switch screen's own threshold adjustment stays session-only.
 
 ### Alias accounts
 

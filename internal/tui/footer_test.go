@@ -38,8 +38,8 @@ func TestFooterDashboard(t *testing.T) {
 	m := newTestModel(&fakeFacade{})
 	d := m.top().(*dashboardScreen)
 	got := footerText(d.footerBindings(m), wideFooter).plain()
-	// Visible: s Switch accounts, w Watch, q Quit.
-	mustContain(t, got, "s Switch accounts", "w Watch", "q Quit")
+	// Visible: s Switch accounts, w Watch, c Settings (DESIGN A28), q Quit.
+	mustContain(t, got, "s Switch accounts", "w Watch", "c Settings", "q Quit")
 	// Hidden: back (escape/left), g Auto view, f Refresh usage, j/k cursor.
 	mustOmit(t, got, "Back", "Auto view", "Refresh")
 }

@@ -205,6 +205,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case actionDoneMsg:
 		cmds := append([]tea.Cmd{m.actionDone(msg)}, m.drainNotices()...)
+		// Every stacked screen learns a write landed (the Settings screen
+		// re-reads its rows on it, DESIGN A28); the list screens ignore it.
+		cmds = append(cmds, m.routeToObservers(msg))
 		return m, tea.Batch(cmds...)
 
 	case flashClearMsg:
@@ -680,6 +683,15 @@ func (m *Model) openAuto() tea.Cmd {
 		return nil
 	}
 	return m.pushScreen(newAutoScreen())
+}
+
+// openSettings pushes the Settings screen unless it is already the top
+// (DESIGN A28; the same idempotence openAuto has).
+func (m *Model) openSettings() tea.Cmd {
+	if _, ok := m.top().(*settingsScreen); ok {
+		return nil
+	}
+	return m.pushScreen(newSettingsScreen())
 }
 
 // openWatch pushes a Watch screen unless the top already is one (09§2.8).
