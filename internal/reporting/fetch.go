@@ -165,7 +165,7 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 				return err
 			}
 			// The backup takes the account part only; the live file keeps the
-			// seat-wide mcpOAuth the refresh preserved.
+			// seat-wide keys the refresh preserved.
 			if err := s.WriteAccountCredentials(n, acctEmail, oauth.AccountOnly(newCreds)); err != nil {
 				markSkipped()
 				return err

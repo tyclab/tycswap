@@ -263,6 +263,27 @@ func TestWindowsRelocation_HappyPath(t *testing.T) {
 	}
 }
 
+// TestRelocationStoresTheAccountPartOnly: the old tool captured the live
+// credentials file whole, so a legacy item may carry the seat's MCP server
+// logins and client secrets (DESIGN A29). The relocated slot holds the account
+// part, verified against what was written, and the legacy entry goes.
+func TestRelocationStoresTheAccountPartOnly(t *testing.T) {
+	const legacy = `{"claudeAiOauth":{"accessToken":"acc","refreshToken":"ref"},"mcpOAuth":{"srv|1111":{"accessToken":"mcp"}},"mcpOAuthClientConfig":{"srv|1111":{"clientSecret":"secret"}}}`
+	const want = `{"claudeAiOauth":{"accessToken":"acc","refreshToken":"ref"}}`
+	wc := wincred.NewFake()
+	wc.Set(legacyKeyringService, "account-1-alice@x.com", legacy)
+	host := newTestHost(t, platform.Windows, keychain.NewFake(), wc, map[string]string{"1": "alice@x.com"}, true)
+
+	Run(host)
+
+	if got, err := host.creds.ReadBackup("1", "alice@x.com"); err != nil || got != want {
+		t.Fatalf("ReadBackup(1, alice) = (%q, %v), want the account part %q", got, err, want)
+	}
+	if _, found, _ := wc.Get(legacyKeyringService, "account-1-alice@x.com"); found {
+		t.Fatal("legacy Credential Manager entry survived a successful relocation")
+	}
+}
+
 // -- account-None disambiguation (spec 07§5.3/§5.4, 07§8) -------------------
 
 func TestAccountNoneDisambiguation(t *testing.T) {

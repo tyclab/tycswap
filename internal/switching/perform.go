@@ -222,7 +222,7 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 
 	// Invariant II stash: the replaced live credential would otherwise have no
 	// surviving copy. A live blob that differs from the target only by its
-	// mcpOAuth is not replaced: that part is carried over the write.
+	// seat-wide keys is not replaced: that part is carried over the write.
 	if haveRollbackCreds && rollbackCreds != "" && !sameAccountBytes(rollbackCreds, targetCreds) && curOK {
 		slotForStash := currentAccount
 		if slotForStash == "" {
@@ -355,8 +355,8 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 			s.Log.Infof("Backed up account %s (config only; credentials unchanged)", currentAccount)
 		}
 	default: // own-family / own-rotated
-		// The backup is the account part only: the live mcpOAuth is the seat's
-		// and stays live across the switch.
+		// The backup is the account part only: the live seat-wide keys are the
+		// seat's and stay live across the switch.
 		if err := s.WriteAccountCredentials(currentAccount, currentEmail, oauth.AccountOnly(originalCreds)); err != nil {
 			return err
 		}
@@ -383,9 +383,9 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 		return cerr.Switch("Account-%s has no stored config backup. Re-add with: tycswap --add-account --slot %s", targetAccount, targetAccount)
 	}
 
-	// Step 3: activate target credentials. The live mcpOAuth (the seat's MCP
-	// server logins) rides over the stored account blob; rollback below restores
-	// the original bytes verbatim through WriteActive.
+	// Step 3: activate target credentials. The live seat-wide keys (the seat's
+	// MCP server logins and client secrets) ride over the stored account blob;
+	// rollback below restores the original bytes verbatim through WriteActive.
 	if err := s.Creds.WriteActiveAccount(targetCreds); err != nil {
 		return err
 	}

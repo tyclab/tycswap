@@ -10,6 +10,7 @@ package migrations
 
 import (
 	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/slotkey"
 )
 
@@ -102,6 +103,12 @@ func relocate(cfg relocateConfig) (migrated, failed int) {
 			// Benign — not a failure.
 			continue
 		}
+
+		// A slot holds the account part only (DESIGN A29): the old tool
+		// captured the live credential whole, MCP server logins and client
+		// secrets included, and those are the seat's. The read-back is
+		// compared with what is written.
+		creds = oauth.AccountOnly(creds)
 
 		if err := cfg.writeNew(num, email, creds); err != nil {
 			cfg.log.Warningf("%s: write/read-back for %s failed: %v", cfg.label, canonical, err)

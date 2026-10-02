@@ -147,8 +147,9 @@ func Export(acc Accounts, destination, account string, full bool) error {
 		if isAPIKey {
 			credsOut = strings.TrimSpace(credsText)
 		} else {
-			// Account only: the MCP server logins under mcpOAuth are the seat's
-			// and never leave the machine in an export.
+			// Account only: the MCP server logins and client secrets under the
+			// seat-wide keys are the seat's and never leave the machine in an
+			// export.
 			obj, err := parsePayload(oauth.AccountOnly(credsText), "credentials for "+email)
 			if err != nil {
 				return err

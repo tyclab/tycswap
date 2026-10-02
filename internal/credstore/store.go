@@ -62,9 +62,10 @@ type Store interface {
 	// blob clears any managed key and vice-versa.
 	WriteActive(creds string) error
 	// WriteActiveAccount is WriteActive for a stored account blob: the live
-	// credential's seat-wide mcpOAuth (MCP server logins) is carried over it.
-	// Best-effort — a live credential that cannot be read or parsed writes
-	// creds verbatim.
+	// credential's seat-wide keys (ccfile.SeatWideKeys, the MCP server logins
+	// and client secrets) are carried over it, and the blob's own copy of them
+	// is dropped. Best-effort — a live credential that cannot be read or parsed
+	// writes the blob's account part without a carry-over.
 	WriteActiveAccount(creds string) error
 
 	// ReadBackup returns a slot's backup credential (.enc-wins), "" when missing;

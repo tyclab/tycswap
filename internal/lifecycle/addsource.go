@@ -89,8 +89,9 @@ func (src AddSource) identity(s *store.Store) (email, orgUUID string, ok bool) {
 
 // material reads the credential and the config text an add stores, refusing an
 // API-key credential (a different auth axis, added with --add-token). The
-// credential is stored account-only: the MCP server logins under mcpOAuth are
-// the seat's, stay in the live file, and are carried over every switch.
+// credential is stored account-only: the MCP server logins and client secrets
+// under ccfile.SeatWideKeys are the seat's, stay in the live file, and are
+// carried over every switch.
 func (src AddSource) material(s *store.Store) (creds, configText string, err error) {
 	if !src.isLoginDir() {
 		creds, err = readActiveCredential(s)

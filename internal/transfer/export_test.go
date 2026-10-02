@@ -310,11 +310,12 @@ func readFile(t *testing.T, path string) string {
 	return string(b)
 }
 
-// TestExportLeavesMCPOAuthOut: the MCP server logins under mcpOAuth are the
-// seat's and never travel in an export — not from a backup, not from the live
-// vault of the active account.
+// TestExportLeavesMCPOAuthOut: the MCP server logins under mcpOAuth and the
+// client secrets under mcpOAuthClientConfig are the seat's and never travel in
+// an export — not from a backup, not from the live vault of the active
+// account.
 func TestExportLeavesMCPOAuthOut(t *testing.T) {
-	const withMCP = `{"claudeAiOauth":{"accessToken":"sk-ant-oat01-XYZ","refreshToken":"r"},"mcpOAuth":{"srv|1111":{"accessToken":"mcp-secret","refreshToken":"mcp-refresh"}},"trustedDeviceToken":"dev"}`
+	const withMCP = `{"claudeAiOauth":{"accessToken":"sk-ant-oat01-XYZ","refreshToken":"r"},"mcpOAuth":{"srv|1111":{"accessToken":"mcp-secret","refreshToken":"mcp-refresh"}},"mcpOAuthClientConfig":{"srv|1111":{"clientSecret":"mcp-client-secret"}},"trustedDeviceToken":"dev"}`
 	f := newFakeAccounts(t)
 	f.seedAccount("1", "alice@example.com", "org-a", recordOpts{creds: withMCP, config: bloatConfig})
 	f.seedAccount("2", "bob@example.com", "", recordOpts{creds: `{"claudeAiOauth":{"accessToken":"sk-ant-oat01-BOB"}}`, config: bloatConfig})
@@ -327,7 +328,7 @@ func TestExportLeavesMCPOAuthOut(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
-	if strings.Contains(stdout, "mcpOAuth") || strings.Contains(stdout, "mcp-secret") {
+	if strings.Contains(stdout, "mcpOAuth") || strings.Contains(stdout, "mcp-secret") || strings.Contains(stdout, "mcp-client-secret") {
 		t.Fatalf("export carries the seat's MCP logins:\n%s", stdout)
 	}
 	env := parseExport(t, strings.TrimRight(stdout, "\n"))
