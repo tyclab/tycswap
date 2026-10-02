@@ -4117,3 +4117,43 @@ tables. `internal/reporting/apikeyseat_test.go`: `status` and `list` show
 the API-key account as `api_key`. `internal/lifecycle/apikeyseat_test.go`:
 `add` refuses the live key or finds no credential. Export, import, the
 `AccountOnly` table and the relocation cover the second key.
+
+---
+
+## A30. A stored credential holding only seat-wide keys is no stored credential
+
+A29 made a live credential holding nothing but seat-wide keys read as no
+login, but left alone the slots the switch-time backup had already filled
+with one before it. That backup took an API-key seat's seat-wide-only
+credentials file for the live login, so the API-key slot holds `{}` (the file
+with its seat-wide keys stripped), or the file itself from a build that did
+not strip them, and the key survives only in `.prev`. Such a slot still
+counted as switchable. A switch onto it (`switch <n>`, `--force`, the
+rotation, the dashboard, the auto-switch engine, whose freshening passes an
+API-key candidate without looking at its credential) took the stored text
+for an OAuth credential, wrote it live with the seat's seat-wide keys
+carried over it and cleared the managed key, and reported success over a
+seat left with no working credential. `export` shipped the `{}` as the
+account's credentials.
+
+**The rule.** `store.ReadAccountCredentials` reads a stored credential for
+which `ccfile.SeatWideOnly` holds as missing, the same rule `ReadActive`
+applies to the live one. Every question whether a slot holds a credential is
+asked there, so such a slot gets the existing answers for a slot without
+one: `switch <n>`, with or without `--force`, stops with `Account-<n> has no
+stored credentials` before the live login or the managed key is written;
+`store.AccountIsSwitchable` is false, so the rotation, the fresh-machine
+activation and the auto-switch engine skip it and the snapshot marks it not
+switchable; `export` leaves it out, or fails when it is named; `tycswap run
+<n>` refuses to bootstrap it. The bytes stay where they are:
+`credstore.ReadBackup` is unchanged, so the `.prev` retention, the strict
+clear and the migrations still see them, and the key in `.prev` is left
+alone.
+
+**Tests.** `internal/switching/apikeyseat_test.go`: an API-key slot holding
+`{}`, the MCP server logins or the MCP client secrets, with its key in
+`.prev`, while a subscription login and an MCP server login are live. A
+switch to it, with and without `--force`, fails with the no-credential error
+and leaves the live credential, the live credentials file and config, both
+slots and their `.prev` generations as they were; the slot is not
+switchable, and the rotation switches nowhere.
