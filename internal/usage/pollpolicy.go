@@ -169,7 +169,9 @@ type PlanInput struct {
 // the escalation band; no movement backs off x1.5 toward the ceiling; a recent
 // 429 floors the cadence at POST_429_MIN_INTERVAL_S and suppresses urgent mode;
 // the scheduled time gets jitter and is never later than the next window reset
-// (+ slack), while an at-limit account skips straight to the freeing reset.
+// (+ slack), while an at-limit account waits for the freeing reset, but never
+// longer than ParkCapS (DESIGN A31: a longer park would outlive the trust in
+// its cached measurement).
 func PlanAfterFetch(in PlanInput) (float64, float64) {
 	rng := in.RNG
 	if rng == nil {
@@ -217,7 +219,7 @@ func PlanAfterFetch(in PlanInput) (float64, float64) {
 	headroom := accountHeadroom(in.NewUsage, in.Models)
 	if headroom != nil && *headroom <= 0 {
 		if resetTS := limitingResetTS(in.NewUsage, in.Models); resetTS != nil && *resetTS > nextPoll {
-			nextPoll = *resetTS
+			nextPoll = math.Min(*resetTS, in.Now+ParkCapS)
 		}
 	} else if resetTS := earliestFutureResetTS(in.NewUsage, in.Now, in.Models); resetTS != nil {
 		nextPoll = math.Min(nextPoll, *resetTS+ResetSlackS)
