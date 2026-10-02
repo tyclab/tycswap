@@ -95,7 +95,7 @@ func TestIndexHTML_FoldMarkup(t *testing.T) {
 		}
 	}
 	js := staticFile(t, "app.js")
-	for _, needle := range []string{"var FOLDABLE = ['accounts-card', 'updates-card'];", "'card-toggle'", "/api/ui/folded", "function applyFolds(", "function setFolded("} {
+	for _, needle := range []string{"var FOLDABLE = ['accounts-card', 'updates-card'];", "'card-toggle'", "/api/ui/folded", "function applyFolds(", "function setFolded(", "foldCard('updates-card', false)"} {
 		if !strings.Contains(js, needle) {
 			t.Errorf("app.js lacks %q", needle)
 		}

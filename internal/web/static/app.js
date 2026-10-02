@@ -819,6 +819,16 @@
     });
   }
 
+  // foldCard folds or unfolds a card at once and has the server remember it.
+  function foldCard(id, folded) {
+    foldSent[id] = folded;
+    setFolded(id, folded);
+    if (!state || !state.ui) { return Promise.resolve(); } // nothing remembers it: this page only
+    return api('POST', '/api/ui/folded', { card: id, folded: folded }).catch(function (err) {
+      toast('Could not remember that: ' + (err && err.message ? err.message : err));
+    });
+  }
+
   function setFolded(id, folded) {
     var card = $(id);
     if (!card) { return; }
@@ -1604,17 +1614,13 @@
   var ACTIONS = {
     'card-toggle': function (btn) {
       var id = btn.getAttribute('data-card');
-      var folded = !$(id).classList.contains('folded');
-      foldSent[id] = folded;
-      setFolded(id, folded);
-      if (!state || !state.ui) { return Promise.resolve(); } // nothing remembers it: this page only
-      return api('POST', '/api/ui/folded', { card: id, folded: folded }).catch(function (err) {
-        toast('Could not remember that: ' + (err && err.message ? err.message : err));
-      });
+      return foldCard(id, !$(id).classList.contains('folded'));
     },
     'updates-show': function () {
       selectTab('dashboard');
-      setFolded('updates-card', false);
+      // Unfolding here is a fold change like the chevron's: sent, or the
+      // next state folds the card again.
+      if ($('updates-card').classList.contains('folded')) { foldCard('updates-card', false); }
       var card = $('updates-card').hidden ? $('updates-ok') : $('updates-card');
       if (card.scrollIntoView) { card.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
       var title = $('updates-title');
