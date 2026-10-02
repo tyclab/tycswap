@@ -3737,7 +3737,10 @@ itself and Claude Code.
   the apply would run `go install`. After a
   successful install the running server is still the old version: the card
   says so (`Installed`) and stops offering until `tycswap web` is started
-  again.
+  again. Such a build carries no `-ldflags`, so `internal/version` reads its
+  version from the build info (the module version, for a module-cache build
+  with no VCS stamp); otherwise it would report `v0.0.0-dev` and be offered
+  the release it already is.
 - *Claude Code.* `ccversion` finds the binary (PATH, then the places the
   installers put it), reads `claude --version`, and tells the install method
   from where the binary really lives: the native installer, npm (a
