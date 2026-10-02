@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/mappings"
 	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/storenames"
@@ -31,9 +32,16 @@ func (s *Store) configBackupPath(num, email string) string {
 }
 
 // ReadAccountCredentials returns a slot's backup credential (.enc-wins), "" when
-// missing (spec 03§5.3, via credstore).
+// missing (spec 03§5.3, via credstore). A stored credential holding nothing but
+// seat-wide keys ({} included, ccfile.SeatWideOnly) is no credential and reads
+// as missing too, so every switch path refuses the slot instead of writing no
+// login live over the managed key (DESIGN A30).
 func (s *Store) ReadAccountCredentials(num, email string) (string, error) {
-	return s.Creds.ReadBackup(num, email)
+	creds, err := s.Creds.ReadBackup(num, email)
+	if ccfile.SeatWideOnly(creds) {
+		return "", err
+	}
+	return creds, err
 }
 
 // ReadAccountConfig returns a slot's backup config text, or "" when absent (spec
