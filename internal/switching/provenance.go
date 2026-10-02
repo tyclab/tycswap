@@ -120,8 +120,8 @@ func prefetchLiveIdentity(s *store.Store) *Provenance {
 }
 
 // sameAccountBytes reports whether two credentials are the same account bytes:
-// identical, or identical once the seat-wide mcpOAuth is set aside. A backup
-// never carries that key and the live file may, so a plain byte compare would
+// identical, or identical once the seat-wide keys are set aside. A backup
+// never carries them and the live file may, so a plain byte compare would
 // read every MCP server login as a changed credential.
 func sameAccountBytes(a, b string) bool {
 	return a == b || oauth.AccountOnly(a) == oauth.AccountOnly(b)

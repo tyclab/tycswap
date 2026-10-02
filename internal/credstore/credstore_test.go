@@ -798,8 +798,17 @@ func TestWriteActive_ManagedKeyFileMode(t *testing.T) {
 	if _, ok := responses["rejected"]; !ok {
 		t.Fatal("rejected list should be present")
 	}
-	if _, err := os.Stat(fh.CredentialsFile); err == nil {
-		t.Fatal("OAuth credentials file must be cleared when a managed key activates")
+	// The OAuth login is cleared; the fixture's MCP server logins are the
+	// seat's and stay, alone (DESIGN A29).
+	raw, err := os.ReadFile(fh.CredentialsFile)
+	if err != nil {
+		t.Fatalf("the seat's MCP server logins went with the OAuth login: %v", err)
+	}
+	if m := decodeCreds(t, string(raw)); len(m) != 1 || m["mcpOAuth"] == nil {
+		t.Fatalf("credentials file = %s, want the MCP server logins alone", raw)
+	}
+	if got, _, _ := s.ReadActive(); got != key {
+		t.Fatalf("ReadActive = %q, want the managed key", got)
 	}
 	if s.LastActiveBackend() != "file" {
 		t.Fatalf("last backend = %q, want file", s.LastActiveBackend())
@@ -938,8 +947,13 @@ func TestWriteActiveAccount_APIKeyTakesTheManagedPath(t *testing.T) {
 	if cfg["primaryApiKey"] != key {
 		t.Fatalf("primaryApiKey = %v, want %q", cfg["primaryApiKey"], key)
 	}
-	if _, err := os.Stat(fh.CredentialsFile); err == nil {
-		t.Fatal("OAuth credentials file must be cleared when a managed key activates")
+	// The OAuth login is cleared; the live MCP server login stays (A29).
+	raw, err := os.ReadFile(fh.CredentialsFile)
+	if err != nil {
+		t.Fatalf("the seat's MCP server logins went with the OAuth login: %v", err)
+	}
+	if string(raw) != `{"mcpOAuth":{"srv|1111":{"accessToken":"mcp-live"}}}` {
+		t.Fatalf("credentials file = %s, want the live MCP server login alone", raw)
 	}
 }
 

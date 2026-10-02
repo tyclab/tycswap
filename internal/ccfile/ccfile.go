@@ -127,47 +127,118 @@ func WriteCredentialsFile(raw string) error {
 	return atomicWrite(paths.GetCredentialsPath(), []byte(raw))
 }
 
-// MCPOAuthKey is the top-level key of ~/.claude/.credentials.json under which
-// Claude Code keeps its MCP server OAuth tokens. Those tokens are keyed by
-// server, not by Claude account: they belong to the seat, not to the login, so
-// a switch carries the live value over the stored account blob and a capture
-// leaves it out. It is the whole allow-list of seat-wide keys; every other key
-// (claudeAiOauth, trustedDeviceToken, ...) travels with the account.
-const MCPOAuthKey = "mcpOAuth"
+// SeatWideKeys are the top-level keys of ~/.claude/.credentials.json that
+// belong to the seat, not to the Claude account logged in on it. Claude Code
+// keys both by MCP server: "mcpOAuth" holds the MCP server logins,
+// "mcpOAuthClientConfig" the client secret an MCP server was added with
+// (`claude mcp add --client-secret`), which Claude Code reads beside that
+// server's login and cannot recreate. A switch carries the live values over
+// the stored account blob, and a capture leaves them out. The list is an
+// allow-list: every other key (claudeAiOauth, trustedDeviceToken, ...) travels
+// with the account until it is known to be the seat's.
+var SeatWideKeys = []string{"mcpOAuth", "mcpOAuthClientConfig"}
 
 // SpliceCredentials returns the credential text a switch writes live: stored
-// (an account's backup blob) with live's MCPOAuthKey value carried over it. It
-// is a pure function over the two texts.
+// (an account's backup blob) with live's SeatWideKeys carried over it. It is a
+// pure function over the two texts.
 //
-// The stored text is returned verbatim, with a nil error, when live is blank or
-// is a JSON object without the key: there is nothing to carry, and the bytes a
-// slot holds are written exactly. It is also returned verbatim when either text
-// is not a JSON object (malformed, or an API-key string) — then with a non-nil
-// error naming why no splice happened, so the caller can log it and still
-// write. A stored blob's own stale MCPOAuthKey value never survives: the live
-// value wins, as it is the one the seat's servers issued last.
+// A stored blob's own copy of a seat-wide key never survives, whether live has
+// one to replace it or not: a slot captured before a key was known to be the
+// seat's, or an imported one, would otherwise put back logins or secrets the
+// seat has since changed. The stored text is returned verbatim, with a nil
+// error, when nothing changes: it holds no seat-wide key and live has none to
+// carry (live blank, or a JSON object without one), so the bytes a slot holds
+// are written exactly. A live text that is not a JSON object (malformed, or an
+// API-key string) carries nothing and a stored one that is not cannot carry
+// anything: the stored text comes back with its seat-wide keys dropped where
+// it has any, together with a non-nil error naming why no carry-over happened,
+// so the caller can log it and still write.
 func SpliceCredentials(stored, live string) (string, error) {
-	if strings.TrimSpace(live) == "" {
-		return stored, nil
-	}
-	liveObj, ok := decodeObject(live)
-	if !ok {
-		return stored, errors.New("live credentials are not a JSON object")
-	}
-	mcp, present := liveObj[MCPOAuthKey]
-	if !present {
-		return stored, nil
-	}
+	carried, err := seatWideOf(live)
 	storedObj, ok := decodeObject(stored)
 	if !ok {
-		return stored, errors.New("stored credential is not a JSON object")
-	}
-	storedObj[MCPOAuthKey] = mcp
-	encoded, err := marshalCompact(storedObj)
-	if err != nil {
+		if len(carried) > 0 {
+			return stored, errors.New("stored credential is not a JSON object")
+		}
 		return stored, err
 	}
-	return string(encoded), nil
+	changed := dropSeatWide(storedObj)
+	for key, v := range carried {
+		storedObj[key] = v
+		changed = true
+	}
+	if !changed {
+		return stored, err
+	}
+	encoded, merr := marshalCompact(storedObj)
+	if merr != nil {
+		return stored, merr
+	}
+	return string(encoded), err
+}
+
+// SeatWideOnly reports whether creds is a JSON object holding nothing but
+// SeatWideKeys, the empty object included: no account part at all. Claude Code
+// writes one when an MCP server is signed in to, or added with a client
+// secret, while no claude.ai login is stored, as on an API-key seat: every
+// write to its credential store is a whole-object read-modify-write, so over an
+// absent file the result is {"mcpOAuth": {...}} alone. Claude Code takes its
+// login from claudeAiOauth only, and to tycswap such a credential is no OAuth
+// login either. Anything that is not a JSON object, a managed API key among
+// them, is not seat-wide only.
+func SeatWideOnly(creds string) bool {
+	obj, ok := decodeObject(creds)
+	if !ok {
+		return false
+	}
+	dropSeatWide(obj)
+	return len(obj) == 0
+}
+
+// SeatWidePart returns the SeatWideKeys of creds alone, as compact JSON; ok is
+// false when creds is not a JSON object or holds none of them. It is what is
+// left of a live credential once its login is cleared.
+func SeatWidePart(creds string) (string, bool) {
+	part, err := seatWideOf(creds)
+	if err != nil || len(part) == 0 {
+		return "", false
+	}
+	encoded, err := marshalCompact(part)
+	if err != nil {
+		return "", false
+	}
+	return string(encoded), true
+}
+
+// seatWideOf returns the SeatWideKeys present in creds. Blank text holds none;
+// text that is not a JSON object holds none and is an error.
+func seatWideOf(creds string) (map[string]any, error) {
+	if strings.TrimSpace(creds) == "" {
+		return nil, nil
+	}
+	obj, ok := decodeObject(creds)
+	if !ok {
+		return nil, errors.New("live credentials are not a JSON object")
+	}
+	part := map[string]any{}
+	for _, key := range SeatWideKeys {
+		if v, present := obj[key]; present {
+			part[key] = v
+		}
+	}
+	return part, nil
+}
+
+// dropSeatWide deletes SeatWideKeys from obj, reporting whether it held any.
+func dropSeatWide(obj map[string]any) bool {
+	dropped := false
+	for _, key := range SeatWideKeys {
+		if _, present := obj[key]; present {
+			delete(obj, key)
+			dropped = true
+		}
+	}
+	return dropped
 }
 
 // decodeObject parses text into a JSON object, keeping numbers as json.Number

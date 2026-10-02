@@ -38,6 +38,7 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
@@ -180,7 +181,10 @@ func Import(acc Accounts, source string, force bool) error {
 				if err != nil {
 					return err
 				}
-				credsText = string(b)
+				// Account only: an export taken before a key was known to be
+				// the seat's may carry the exporting seat's MCP server logins
+				// or client secrets, which are not this account's (DESIGN A29).
+				credsText = oauth.AccountOnly(string(b))
 			}
 
 			key := [2]string{email, orgUUID}

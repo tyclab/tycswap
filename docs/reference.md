@@ -370,10 +370,23 @@ stops the switch with a `ConfigError` naming the file, before any credential is
 written, rather than being replaced. The same holds for `add-token`, which
 rewrites `primaryApiKey` in that file.
 
-The live credential's `mcpOAuth` key — Claude Code's MCP server logins, which
-belong to the seat and not to the account — is carried over the target
-account's stored credential, and the outgoing account's backup is written
-without it; a rollback restores the exact pre-switch bytes.
+The live credential's seat-wide keys belong to the seat and not to the
+account: `mcpOAuth` (Claude Code's MCP server logins) and
+`mcpOAuthClientConfig` (the client secret an MCP server was added with,
+`claude mcp add --client-secret`), both keyed by server. They are carried over
+the target account's stored credential, which loses any copy of its own, and
+the outgoing account's backup is written without them. A switch onto an
+API-key account keeps them as well: the login leaves the credentials file (or
+the Keychain item) and the seat-wide keys stay in it alone, as on Claude Code's
+own move onto an API key. Such a file, or `{}`, is no login. Claude Code
+writes one when an MCP server is signed in to on an API-key seat, and tycswap
+reads the managed key behind it as the live credential (for the switch-time
+backup, `add`, `export`, `list` and `status` alike); with no managed key
+behind it there is no live credential, and a switch away stops with
+`Current account credential is empty (Keychain unreadable?); refusing to
+overwrite its backup` instead of storing the file as the outgoing account's
+credential. A rollback restores the exact pre-switch credential (an API key
+with the seat-wide keys left beside it).
 
 ### Files
 
@@ -477,6 +490,13 @@ Snapshots the account currently logged into Claude Code as a new managed
 account, copying its credentials and `oauthAccount` config into the backup
 root. `--slot` places it in a specific slot (swapping if occupied); `--alias`
 sets a short display name at the same time.
+
+The credentials are stored without the seat-wide keys `mcpOAuth` and
+`mcpOAuthClientConfig` (see `tycswap switch`). A live credentials file holding
+nothing else is no login: with a managed API key behind it, `add` refuses as
+for any live API key (`Active login is an API-key account. Add it with
+'tycswap --add-token sk-ant-api...' instead of --add-account.`); without one,
+it reports `No credentials found for current account`.
 
 The email of the login (`oauthAccount.emailAddress`, from the live
 `~/.claude.json` or the scratch profile's) names the account's backup files, so
@@ -1576,9 +1596,11 @@ reads only the `oauthAccount` of either form. The active
 account is read from the live vault for the freshest tokens. In a bulk export, a
 single broken account is skipped with a stderr warning; a named single-account
 export treats the same condition as a hard failure. A missing `oauthAccount` is
-always fatal. Each account's credentials are exported without the `mcpOAuth`
-key (Claude Code's MCP server logins, which belong to the seat and never leave
-the machine).
+always fatal. Each account's credentials are exported without the seat-wide
+keys `mcpOAuth` and `mcpOAuthClientConfig` (Claude Code's MCP server logins and
+client secrets, which belong to the seat and never leave the machine). A live
+credentials file holding nothing but those keys is no login, so an active
+API-key account exports its managed key.
 
 ### Files
 
@@ -1670,7 +1692,10 @@ refused. `organizationName`, `uuid`, `added` and the string members of
 `organizationUuid` holding one is refused, since it is part of the identity.
 Keys are matched exactly (`CREDENTIALS` or `ACCOUNTS` are not the
 members `credentials` and `accounts`), and the credentials stored are the bytes
-of the member that was validated. Input over 8 MiB is refused before parsing.
+of the member that was validated, without the seat-wide keys `mcpOAuth` and
+`mcpOAuthClientConfig`: an older export may carry the exporting seat's MCP
+server logins and client secrets, and a member that does is stored re-encoded
+compact without them. Input over 8 MiB is refused before parsing.
 
 ### Files
 
@@ -4104,7 +4129,7 @@ Claude Code's own files that tycswap reads and writes:
 | Path | Role |
 |------|------|
 | `~/.claude.json` (or `<CLAUDE_CONFIG_DIR>/.claude.json`, or the legacy `<config_home>/.config.json` when present) | The global config; the active `oauthAccount` lives here. |
-| `~/.claude/.credentials.json` (file backend) | The active OAuth credentials. |
+| `~/.claude/.credentials.json` (file backend) | The active OAuth credentials, and the seat's MCP server logins and client secrets (`mcpOAuth`, `mcpOAuthClientConfig`), which it holds alone on an API-key seat. |
 
 The codex CLI's files that tycswap reads and writes:
 

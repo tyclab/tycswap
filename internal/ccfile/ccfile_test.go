@@ -519,37 +519,43 @@ func TestWriteCredentialsCreatesPrivateDir(t *testing.T) {
 }
 
 // TestSpliceCredentials pins the seat-wide rule for the credentials file: the
-// stored account blob is what gets written, with the live mcpOAuth carried over
-// it; nothing else of the live file survives, and nothing of the stored blob's
-// own mcpOAuth does either.
+// stored account blob is what gets written, with the live seat-wide keys
+// (mcpOAuth, mcpOAuthClientConfig) carried over it; nothing else of the live
+// file survives, and nothing of the stored blob's own copy of those keys does
+// either, whether live has one to replace it or not.
 func TestSpliceCredentials(t *testing.T) {
 	const (
 		stored      = `{"claudeAiOauth":{"accessToken":"stored-access","refreshToken":"stored-refresh","expiresAt":4102444800000},"trustedDeviceToken":"device-stored"}`
-		storedStale = `{"claudeAiOauth":{"accessToken":"stored-access"},"mcpOAuth":{"srv|aaaa":{"accessToken":"stale"}}}`
+		storedStale = `{"claudeAiOauth":{"accessToken":"stored-access"},"mcpOAuth":{"srv|aaaa":{"accessToken":"stale"}},"mcpOAuthClientConfig":{"srv|aaaa":{"clientSecret":"stale-secret"}}}`
 		liveMCP     = `{"claudeAiOauth":{"accessToken":"live-access"},"mcpOAuth":{"srv|bbbb":{"accessToken":"fresh","expiresAt":1790856000000}},"trustedDeviceToken":"device-live"}`
+		liveSecret  = `{"claudeAiOauth":{"accessToken":"live-access"},"mcpOAuthClientConfig":{"srv|bbbb":{"clientSecret":"fresh-secret"}}}`
+		liveBoth    = `{"mcpOAuth":{"srv|bbbb":{"accessToken":"fresh","expiresAt":1790856000000}},"mcpOAuthClientConfig":{"srv|bbbb":{"clientSecret":"fresh-secret"}}}`
 	)
+	freshMCP := map[string]any{"srv|bbbb": map[string]any{"accessToken": "fresh", "expiresAt": json.Number("1790856000000")}}
+	freshSecret := map[string]any{"srv|bbbb": map[string]any{"clientSecret": "fresh-secret"}}
 	cases := []struct {
 		name         string
 		stored, live string
 		wantErr      bool
 		wantVerbatim bool           // out == stored byte for byte
-		wantMCP      map[string]any // expected mcpOAuth object in out (nil: key absent)
+		wantSeatWide map[string]any // expected seat-wide keys in out (absent: not there)
 	}{
-		{
-			name: "live mcpOAuth is carried over the stored blob", stored: stored, live: liveMCP,
-			wantMCP: map[string]any{"srv|bbbb": map[string]any{"accessToken": "fresh", "expiresAt": json.Number("1790856000000")}},
-		},
-		{
-			name: "stored stale mcpOAuth loses to live", stored: storedStale, live: liveMCP,
-			wantMCP: map[string]any{"srv|bbbb": map[string]any{"accessToken": "fresh", "expiresAt": json.Number("1790856000000")}},
-		},
-		{name: "live without the key leaves stored verbatim", stored: storedStale, live: `{"claudeAiOauth":{"accessToken":"x"}}`, wantVerbatim: true},
+		{name: "live mcpOAuth is carried over the stored blob", stored: stored, live: liveMCP, wantSeatWide: map[string]any{"mcpOAuth": freshMCP}},
+		{name: "live mcpOAuthClientConfig is carried over the stored blob", stored: stored, live: liveSecret, wantSeatWide: map[string]any{"mcpOAuthClientConfig": freshSecret}},
+		{name: "a live file of seat-wide keys alone is carried whole", stored: stored, live: liveBoth, wantSeatWide: map[string]any{"mcpOAuth": freshMCP, "mcpOAuthClientConfig": freshSecret}},
+		{name: "stored stale keys lose to live", stored: storedStale, live: liveBoth, wantSeatWide: map[string]any{"mcpOAuth": freshMCP, "mcpOAuthClientConfig": freshSecret}},
+		{name: "a stored stale key live does not hold is dropped too", stored: storedStale, live: liveMCP, wantSeatWide: map[string]any{"mcpOAuth": freshMCP}},
+		{name: "live without the keys drops the stored stale ones", stored: storedStale, live: `{"claudeAiOauth":{"accessToken":"x"}}`},
+		{name: "no live file drops the stored stale ones", stored: storedStale, live: ""},
+		{name: "live without the keys leaves stored verbatim", stored: stored, live: `{"claudeAiOauth":{"accessToken":"x"}}`, wantVerbatim: true},
 		{name: "empty live file leaves stored verbatim", stored: stored, live: "", wantVerbatim: true},
 		{name: "blank live file leaves stored verbatim", stored: stored, live: " \n", wantVerbatim: true},
 		{name: "malformed live falls back to stored and reports", stored: stored, live: `{"mcpOAuth": {`, wantErr: true, wantVerbatim: true},
 		{name: "non-object live falls back to stored and reports", stored: stored, live: `[1,2]`, wantErr: true, wantVerbatim: true},
+		{name: "malformed live still drops the stored stale keys and reports", stored: storedStale, live: `{"mcpOAuth": {`, wantErr: true},
 		{name: "malformed stored falls back verbatim and reports", stored: `{"claudeAiOauth":`, live: liveMCP, wantErr: true, wantVerbatim: true},
 		{name: "API-key stored falls back verbatim and reports", stored: "sk-ant-api03-key", live: liveMCP, wantErr: true, wantVerbatim: true},
+		{name: "API-key stored with nothing to carry is verbatim", stored: "sk-ant-api03-key", live: `{"claudeAiOauth":{"accessToken":"x"}}`, wantVerbatim: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -577,13 +583,14 @@ func TestSpliceCredentials(t *testing.T) {
 				t.Fatal(err)
 			}
 			delete(want, "mcpOAuth")
-			if tc.wantMCP != nil {
-				want["mcpOAuth"] = tc.wantMCP
+			delete(want, "mcpOAuthClientConfig")
+			for key, v := range tc.wantSeatWide {
+				want[key] = v
 			}
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("spliced =\n%v\nwant\n%v", got, want)
 			}
-			if strings.Contains(out, "live-access") || strings.Contains(out, "device-live") {
+			if strings.Contains(out, "live-access") || strings.Contains(out, "device-live") || strings.Contains(out, "stale") {
 				t.Fatalf("live account material leaked into the write: %s", out)
 			}
 			if strings.HasSuffix(out, "\n") || strings.Contains(out, "\n") {
@@ -607,5 +614,60 @@ func TestSpliceCredentials_NumbersSurvive(t *testing.T) {
 		if !strings.Contains(out, n) {
 			t.Errorf("integer %s not preserved in %s", n, out)
 		}
+	}
+}
+
+// TestSeatWideOnly: a credential holding nothing but seat-wide keys, the empty
+// object included, has no account part and is no login (DESIGN A29); any
+// other key, or any text that is not a JSON object, is not seat-wide only.
+func TestSeatWideOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name, creds string
+		want        bool
+	}{
+		{"MCP server logins alone, as Claude Code writes them on an API-key seat", `{"mcpOAuth":{"srv|1111":{"accessToken":"mcp"}}}`, true},
+		{"MCP client secrets alone", `{"mcpOAuthClientConfig":{"srv|1111":{"clientSecret":"cs"}}}`, true},
+		{"both seat-wide keys", `{"mcpOAuth":{},"mcpOAuthClientConfig":{}}`, true},
+		{"indented", "{\n  \"mcpOAuth\": {}\n}\n", true},
+		{"the empty object", `{}`, true},
+		{"a login beside the MCP server logins", `{"claudeAiOauth":{"accessToken":"acc"},"mcpOAuth":{}}`, false},
+		{"a login alone", `{"claudeAiOauth":{"accessToken":"acc"}}`, false},
+		{"a key not known to be seat-wide", `{"mcpOAuth":{},"trustedDeviceToken":"tdt"}`, false},
+		{"a managed API key", "sk-ant-api03-key", false},
+		{"empty text", "", false},
+		{"null", "null", false},
+		{"an array", `[{"mcpOAuth":{}}]`, false},
+		{"malformed", `{"mcpOAuth":`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ccfile.SeatWideOnly(tc.creds); got != tc.want {
+				t.Errorf("SeatWideOnly(%q) = %v, want %v", tc.creds, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSeatWidePart: what is left of a live credential once its login is
+// cleared — its seat-wide keys alone, or nothing.
+func TestSeatWidePart(t *testing.T) {
+	for _, tc := range []struct {
+		name, creds, want string
+		ok                bool
+	}{
+		{"a login beside MCP server logins", `{"claudeAiOauth":{"accessToken":"acc"},"mcpOAuth":{"s":{"expiresAt":1790856000456}},"trustedDeviceToken":"tdt"}`, `{"mcpOAuth":{"s":{"expiresAt":1790856000456}}}`, true},
+		{"a login beside MCP client secrets", `{"claudeAiOauth":{"accessToken":"acc"},"mcpOAuthClientConfig":{"s":{"clientSecret":"cs"}}}`, `{"mcpOAuthClientConfig":{"s":{"clientSecret":"cs"}}}`, true},
+		{"both seat-wide keys", `{"mcpOAuthClientConfig":{},"mcpOAuth":{}}`, `{"mcpOAuth":{},"mcpOAuthClientConfig":{}}`, true},
+		{"a login alone", `{"claudeAiOauth":{"accessToken":"acc"}}`, "", false},
+		{"the empty object", `{}`, "", false},
+		{"empty text", "", "", false},
+		{"malformed", `{"mcpOAuth":`, "", false},
+		{"a managed API key", "sk-ant-api03-key", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := ccfile.SeatWidePart(tc.creds)
+			if got != tc.want || ok != tc.ok {
+				t.Errorf("SeatWidePart(%q) = (%q, %v), want (%q, %v)", tc.creds, got, ok, tc.want, tc.ok)
+			}
+		})
 	}
 }

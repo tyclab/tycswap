@@ -26,7 +26,7 @@ func classifyOutgoing(s *store.Store, currentAccount, currentEmail, originalCred
 	backup, _ := s.ReadAccountCredentials(currentAccount, currentEmail)
 
 	// 1. Byte-identical to the slot's stored backup — modulo the seat-wide
-	//    mcpOAuth, which a backup never carries and the live file may: an MCP
+	//    keys, which a backup never carries and the live file may: an MCP
 	//    server login is not a change of account.
 	if backup != "" && sameAccountBytes(backup, originalCreds) {
 		return "own-bytes", ""
@@ -155,7 +155,7 @@ func sortedAccountKeys(data *store.SequenceData) []string {
 // overwritten, via credstore's write-only unclaimed stash (spec 02§9). It raises
 // on write failure — a successful stash is the license to overwrite the live
 // store. Logs a WARNING. resolved may be nil. The stash holds the account part
-// only: the live mcpOAuth is the seat's and is carried over the write.
+// only: the live seat-wide keys are the seat's and are carried over the write.
 func stashLiveCredential(s *store.Store, originalCreds, reason, currentAccount string, resolved *oauth.Identity) (string, error) {
 	originalCreds = oauth.AccountOnly(originalCreds)
 	var credsMtime any

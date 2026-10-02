@@ -190,6 +190,31 @@ func TestImportOAuthCredentialSpacedAndOrdered(t *testing.T) {
 	}
 }
 
+// TestImportLeavesTheSeatWideKeysOut: an export written before a key was known
+// to be the seat's carries the exporting seat's MCP server logins and client
+// secrets; the stored slot holds the account part only, and a blob without
+// those keys keeps its bytes (TestImportOAuthCredentialSpacedAndOrdered).
+func TestImportLeavesTheSeatWideKeysOut(t *testing.T) {
+	f := newFakeAccounts(t)
+	rawCred := `{"claudeAiOauth": {"accessToken": "sk-ant-oat01-X", "refreshToken": "r-tok"}, ` +
+		`"mcpOAuth": {"srv|1111": {"accessToken": "mcp-secret"}}, ` +
+		`"mcpOAuthClientConfig": {"srv|1111": {"clientSecret": "client-secret"}}, "trustedDeviceToken": "dev"}`
+	text := `{"version": 1, "accounts": [{"number": 1, "email": "a@example.com", ` +
+		`"credentials": ` + rawCred + `, "config": {"oauthAccount": {"emailAddress": "a@example.com"}}}]}`
+	if _, err := importText(t, f, text, false); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	stored := f.credsBackup["1"]
+	if strings.Contains(stored, "mcpOAuth") || strings.Contains(stored, "secret") {
+		t.Fatalf("the stored slot carries the exporting seat's keys: %s", stored)
+	}
+	for _, want := range []string{`"accessToken":"sk-ant-oat01-X"`, `"refreshToken":"r-tok"`, `"trustedDeviceToken":"dev"`} {
+		if !strings.Contains(stored, want) {
+			t.Errorf("the stored slot lost %s: %s", want, stored)
+		}
+	}
+}
+
 func TestImportEmptyHomeBootstraps(t *testing.T) {
 	f := newFakeAccounts(t)
 	text := envelopeJSON(1, oauthAccount(1, "a@example.com", ""))
