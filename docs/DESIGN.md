@@ -3756,6 +3756,9 @@ the Auto view's threshold-adjust mode, is session-only by contract (09§4.5,
 §11.6: never written to `settings.json`, reverted on exit) and stays exactly
 that — its adjusting hint now ends in `session only — Settings persists`, so
 the user who wants the change to outlive the screen is told where it is made.
+The hint (09§4.5's `← → adjust · enter done` plus that ending) moves off the
+summary line onto a line of its own under it, shown only while adjusting: on
+the summary line it ran past column 80 and was cut off.
 The Facade is not extended (A13): the screen reads and writes through the
 settings package over `Facade.BackupDir()`, as `loadThreshold` and the Auto
 view's `settings.Load` already do.
@@ -3783,9 +3786,9 @@ is fitted to the width (`clipRichLines`) and the rows window around the
 cursor on the content height (viewport.go); the title above and the
 three-line detail below stay pinned, the detail always three lines so the
 layout does not jump when an input opens. The Auto view's badge + summary
-line is now fitted to the width too (`truncRich`): with the longer adjusting
-hint it would otherwise wrap at 80 columns and throw the viewport's line
-count off.
+line and its adjusting-hint line are now fitted to the width too
+(`truncRich`): the summary line with the hint on it was 81 columns while
+adjusting, so it wrapped at 80 and threw the viewport's line count off.
 
 **Tests** (`internal/tui/settings_test.go`): the menu row and the `c`
 binding; one row per `SettingSpecs` entry, in order, with the section

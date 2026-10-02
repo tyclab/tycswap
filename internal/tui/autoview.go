@@ -1056,9 +1056,8 @@ func (a *autoScreen) view(m *Model) string {
 	chrome.addText(accountsPanelText(m.snapshot, inner, false, m.thresholdPct, now))
 	chrome.addPlain("\n\n")
 	// The badge and the summary share one line, fitted to the width like every
-	// other line this package returns: while adjusting, the summary carries its
-	// hint, and a line wider than the terminal would wrap and throw the
-	// viewport's line count off (DESIGN A28).
+	// other line this package returns: a line wider than the terminal would
+	// wrap and throw the viewport's line count off (DESIGN A28).
 	var status richText
 	if a.dryRun || a.engine == nil {
 		status.add(" DRY-RUN ", segStyle{Fg: colSevWarn, Bold: true})
@@ -1066,9 +1065,19 @@ func (a *autoScreen) view(m *Model) string {
 		status.add(" LIVE ", segStyle{Fg: colBackground, Bold: true})
 	}
 	status.addPlain("  ")
+	indent := lipgloss.Width(status.plain())
 	status.addText(a.summaryText())
 	chrome.addText(truncRich(status, inner))
 	chrome.addPlain("\n")
+	if a.adjusting {
+		// The adjusting hint has a line of its own under the summary: on the
+		// summary line it ran past column 80 and was cut off (DESIGN A28).
+		var hint richText
+		hint.addPlain(strings.Repeat(" ", indent))
+		hint.addFg(adjustHint, colMuted)
+		chrome.addText(truncRich(hint, inner))
+		chrome.addPlain("\n")
+	}
 	// The ranked panel is built fresh on every render, at the CURRENT width and
 	// the CURRENT clock, rather than cached from the last poll (DESIGN A18): a
 	// resize changes which window cells survive on a row, and every cell's reset
@@ -1120,7 +1129,9 @@ func (a *autoScreen) view(m *Model) string {
 	return strings.Join(append(out, tail...), "\n")
 }
 
-// summaryText builds the #auto-summary line exactly (09§4.5).
+// summaryText builds the #auto-summary line exactly (09§4.5), less the
+// adjusting hint the spec appends: view puts that on its own line (adjustHint,
+// DESIGN A28).
 func (a *autoScreen) summaryText() richText {
 	var t richText
 	t.addPlain("auto-switch · ")
@@ -1136,13 +1147,14 @@ func (a *autoScreen) summaryText() richText {
 	if a.settings.Strategy != "best" {
 		t.addPlain(" · soonest-reset")
 	}
-	if a.adjusting {
-		// Session-only by contract (09§4.5, §11.6); the hint names where a
-		// persistent change is made (DESIGN A28).
-		t.addFg("   ← → adjust · enter done · session only — Settings persists", colMuted)
-	}
 	return t
 }
+
+// adjustHint is the line view shows under the summary while the threshold is
+// being adjusted: the keys (09§4.5's "← → adjust · enter done"), then that the
+// adjustment is session-only by contract (09§4.5, §11.6) and where a
+// persistent change is made (DESIGN A28).
+const adjustHint = "← → adjust · enter done · session only — Settings persists"
 
 func (a *autoScreen) appendEvent(ev autoswitch.Event) {
 	a.log = append(a.log, logLine{stamp: clockStamp(nowLocal()), body: ev.Human(), color: eventColor(ev.Kind())})

@@ -572,19 +572,29 @@ func TestAutoAdjustHintNamesSettings(t *testing.T) {
 	m := newModel(&fakeFacade{backupDir: t.TempDir()}, "dashboard", WithEngineFactory(host.factory()))
 	m.pushScreen(newAutoScreen())
 	a := m.top().(*autoScreen)
-	if strings.Contains(a.summaryText().plain(), "Settings") {
+	m.width, m.height = 80, 40
+	if strings.Contains(stripANSI(a.view(m)), "Settings") {
 		t.Fatal("the hint shows only while adjusting")
 	}
 	a.adjustThreshold(m)
-	got := a.summaryText().plain()
-	if !strings.Contains(got, "← → adjust · enter done") || !strings.Contains(got, "Settings") {
-		t.Fatalf("adjusting summary = %q", got)
+	a.thresholdStep(m, -1) // the " (session)" marker lengthens the summary
+	// Readable whole at 80 columns; no line wider than the terminal at 80 or
+	// 60 (the event log's lines are not fitted, so not narrower than that).
+	const hint = "← → adjust · enter done · session only — Settings persists"
+	if view := stripANSI(a.view(m)); !strings.Contains(view, hint) {
+		t.Fatalf("the adjusting hint %q is not shown whole at 80 columns:\n%s", hint, view)
 	}
-	// The badge + summary line is fitted to the width while adjusting.
-	m.width, m.height = 60, 40
-	for i, line := range strings.Split(stripANSI(a.view(m)), "\n") {
-		if w := lipgloss.Width(line); w > 60 {
-			t.Fatalf("auto view line %d is %d columns at width 60: %q", i, w, line)
+	for _, width := range []int{80, 60} {
+		m.width = width
+		for i, line := range strings.Split(stripANSI(a.view(m)), "\n") {
+			if w := lipgloss.Width(line); w > width {
+				t.Fatalf("auto view line %d is %d columns at width %d: %q", i, w, width, line)
+			}
 		}
+	}
+	a.endAdjust(m)
+	m.width = 80
+	if strings.Contains(stripANSI(a.view(m)), "Settings") {
+		t.Fatal("the hint goes when adjusting ends")
 	}
 }
