@@ -181,6 +181,13 @@ func (s *FileKeychainStore) readLiveOAuth() string {
 // the plaintext file, best-effort clears any stale Keychain entry, and pins file
 // mode.
 func (s *FileKeychainStore) writeOAuthCredentials(creds string) error {
+	return s.writeOAuthCredentialsBeforeFile(creds, nil)
+}
+
+// writeOAuthCredentialsBeforeFile lets a managed-key write persist its file
+// fallback before the OAuth remainder replaces the live login and pins file
+// mode. Ordinary OAuth writes have no prerequisite.
+func (s *FileKeychainStore) writeOAuthCredentialsBeforeFile(creds string, beforeFile func() error) error {
 	if s.useKeychain() {
 		err := s.kcSet(claudeCodeKeychainService, keychain.AccountName(), creds)
 		if err == nil {
@@ -194,6 +201,11 @@ func (s *FileKeychainStore) writeOAuthCredentials(creds string) error {
 		s.log.Warningf("Keychain write failed, falling back to file: %v", err)
 	}
 	// File mode: non-macOS, Keychain known unusable, or a just-failed write.
+	if beforeFile != nil {
+		if err := beforeFile(); err != nil {
+			return err
+		}
+	}
 	if err := ccfile.WriteCredentialsFile(creds); err != nil {
 		return cerr.CredentialWrite("Failed to write credentials: %v", err)
 	}
@@ -269,7 +281,22 @@ func (s *FileKeychainStore) writeManagedCredentials(apiKey string) error {
 
 	// Mutual exclusion: drop the OAuth login so it can't shadow the key. The
 	// seat's MCP server logins and client secrets are no login and stay.
-	s.clearOAuthLogin()
+	if err := s.clearOAuthLogin(func() error {
+		if wroteToKeychain {
+			// Keeping the remainder can pin file mode (for example, MCP
+			// tokens exceeding security's stdin limit). Reads then skip
+			// the managed Keychain key too. Persist its fallback BEFORE
+			// replacing the original OAuth login, so a failure leaves that
+			// login intact and does not need a credential rollback.
+			wroteToKeychain = false
+			if err := ccfile.UpdateGlobalConfig(mutate); err != nil {
+				return cerr.CredentialWrite("Failed to write managed API key for OAuth file fallback: %v", err)
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
 	if s.macOS() && !wroteToKeychain {
 		// The key fell back to primaryApiKey while a stale "Claude Code" Keychain
 		// item may remain (read before primaryApiKey). Pin so a cooldown re-probe
@@ -309,16 +336,34 @@ func (s *FileKeychainStore) clearManagedKey() {
 // keeps the MCP server logins, and a credential holding seat-wide keys only is
 // no login (ccfile.SeatWideOnly), so it cannot shadow the key. Without a
 // seat-wide part, or when it cannot be written, the credential is cleared
-// whole (spec 03§5.6).
-func (s *FileKeychainStore) clearOAuthLogin() {
+// whole (spec 03§5.6). beforeFile makes the managed key readable in file mode
+// before that fallback overwrites the original OAuth credential; its failure
+// propagates without clearing the original login.
+func (s *FileKeychainStore) clearOAuthLogin(beforeFile func() error) error {
 	if rest, ok := ccfile.SeatWidePart(s.readLiveOAuth()); ok {
-		err := s.writeOAuthCredentials(rest)
+		var fallbackErr error
+		err := s.writeOAuthCredentialsBeforeFile(rest, func() error {
+			fallbackErr = beforeFile()
+			return fallbackErr
+		})
+		if fallbackErr != nil {
+			return fallbackErr
+		}
 		if err == nil {
-			return
+			return nil
 		}
 		s.log.Warningf("Could not keep the MCP server logins beside the API key; clearing them with the OAuth login: %v", err)
 	}
+	// Reading the old OAuth item can disable the Keychain too, even when
+	// no seat-wide remainder is found. Commit the managed fallback before
+	// clearing that original login in this case as well.
+	if !s.useKeychain() {
+		if err := beforeFile(); err != nil {
+			return err
+		}
+	}
 	s.clearOAuthCredential()
+	return nil
 }
 
 // clearOAuthCredential clears the active OAuth credential — Keychain item and
