@@ -4010,3 +4010,110 @@ and an unset key gets the notice; the single-flight gate; a failed write
 opens the output modal; two-stage escape; the footer legends; no line wider
 than the terminal at any width, and every key's detail read whole at 80
 columns; and the Auto view's hint names Settings and stays within the width.
+## A29. A credential holding only seat-wide keys is no login; MCP client secrets are seat-wide
+
+A25 item 9 split `~/.claude/.credentials.json` into the account and a
+seat-wide remainder, but kept two assumptions that do not hold: that a
+non-blank credentials file is an OAuth login, and that `mcpOAuth` is the
+whole remainder. The rules below override A25 item 9 where they differ.
+
+**The bug.** An API-key account is active: its key is in Claude Code's
+managed-key path (`primaryApiKey`, or the macOS `Claude Code` Keychain item)
+and no OAuth login is stored. Someone signs in to an MCP server. Every write
+Claude Code makes to its credential store is a whole-object
+read-modify-write, so over an absent file the result is
+`{"mcpOAuth": {...}}` alone. `ReadActive` tried the OAuth Keychain item and
+the file before the managed key and returned any non-blank file, so it
+returned that MCP-only text as the live login. A switch away then backed it
+up into the API-key slot (`{}` once the seat-wide key was stripped; the key
+survived only in `.prev`), and the switch back wrote the slot's `{}` as an
+OAuth credential and cleared the managed key: the seat ended with no working
+credential. `status` and `list` showed the API-key account as `no
+credentials`, and `add` stored the MCP data as a new subscription account.
+Activating a managed key also deleted the credentials file whole, so even a
+correct switch from a subscription account onto an API key logged the MCP
+servers out.
+
+**What Claude Code does** (2.1.287). It takes a claude.ai login only from
+`claudeAiOauth` with an `accessToken`; otherwise it uses the managed key.
+Its Console (API-key) login replaces a claude.ai login by setting
+`claudeAiOauth` to undefined and keeps every other key; its move from one
+claude.ai login to another deletes `claudeAiOauth`, `organizationUuid`,
+`trustedDeviceToken`, `enterpriseGateway` and `designOauth` and keeps
+`mcpOAuth` and `mcpOAuthClientConfig`. `claude mcp add --client-id …
+--client-secret` (and `add-json --client-secret`) writes the secret to
+`mcpOAuthClientConfig[serverKey] = {clientSecret}`, keyed by the same server
+key as `mcpOAuth`; the server's OAuth client reads it beside `mcpOAuth[key]`,
+and a cross-app-access server whose secret is missing fails with `AS client
+secret not found … Re-add with --client-secret`. Like the MCP logins, the
+secret is the seat's: it was typed into this machine for this server, not
+issued to the Claude account.
+
+**1. The seat-wide keys are a list.** `ccfile.SeatWideKeys` is
+`["mcpOAuth", "mcpOAuthClientConfig"]`, still an allow-list: any other key
+travels with the account until it is known to be the seat's. The switch
+splice (`ccfile.SpliceCredentials`) carries every listed key the live
+credential holds over the stored blob and always drops the stored blob's own
+copy, whether live has one to replace it or not, so a slot captured before a
+key was known to be the seat's can no longer put back a stale login or
+secret. Every capture stores `oauth.AccountOnly(blob)`, which strips every
+listed key: `add`, `add --login`, the switch-time backup and stash, the
+active refresh write-back, `export`, and now also `import` and the legacy
+keyring relocation (`migrations.relocate`, which compares its read-back with
+the stripped value). The ownership classifier's same-account compare ignores
+every listed key.
+
+**2. A credential holding only seat-wide keys is no login.**
+`ccfile.SeatWideOnly` is true for a JSON object with nothing but listed keys,
+`{}` included, and false for anything else (a managed key, malformed text,
+`null`, a key not on the list). `ReadActive` treats such an OAuth Keychain
+item or file as absent and goes on to the managed key behind it. Every
+decision that asks whether there is a live login, and which, reads through
+`ReadActive`: the switch-time backup and classifier, the self-switch
+provenance check, the direct-activation stash and rollback snapshot, `add`
+(which therefore refuses a live API key as before, or finds no credential),
+`export` of the active account, `status`, `list`, the active-account usage
+fetch and session bootstrap. The one reader that still returns a
+seat-wide-only value is `readLiveOAuth`, which supplies the live remainder to
+the splice: that value is no login, but it is exactly what a switch carries.
+
+**3. A switch onto an API key keeps the seat-wide part.**
+`writeManagedCredentials` stores the key, then clears the OAuth login by
+writing the live credential's seat-wide part (`ccfile.SeatWidePart`) back
+through the OAuth write path: the Keychain item and its shadow file while the
+Keychain is in use, else the plaintext file. Being seat-wide only, it never
+shadows the key. The credential is cleared whole, as before, only when there
+is no seat-wide part (or the live text does not parse) or that write fails.
+This holds for every path onto a key: a switch, `--force`, auto-switch and a
+rollback to an API-key original.
+
+**4. No managed key behind it.** A seat-wide-only file with no managed key
+reads as no credential at all. A normal switch away then stops with the
+existing `Current account credential is empty (Keychain unreadable?);
+refusing to overwrite its backup` instead of writing `{}` into the outgoing
+slot; `switch <n> --force` activates the target, and its splice still
+carries the seat-wide keys over it.
+
+**Not done here.** Claude Code 2.1.287 keeps more top-level keys in the same
+store (`mcpXaaIdp`, `mcpXaaIdpConfig`, `pluginSecrets`, `gatewayTrust`,
+`mcpDiscoveryCacheKey`, `coworkRemoteDevice`); they stay with the account
+until each is shown to be the seat's. For the same reason a credential that
+holds any key off the list but no `claudeAiOauth` (a `trustedDeviceToken`
+left beside the MCP data, say) is still read as a login, although Claude Code
+would use the managed key.
+
+**Tests.** `internal/switching/apikeyseat_test.go`: from an API-key seat with
+a file holding `mcpOAuth`, `mcpOAuthClientConfig` or both, a switch to a
+subscription account and back keeps the key in its slot at every step, makes
+it live again, keeps the seat-wide keys across both switches and needs no
+`.prev`; without a key behind the file the switch away refuses and touches
+nothing. `internal/credstore/seatwide_test.go`: the `ReadActive` table (each
+seat-wide-only shape and `{}`, with and without a key, a login beside the MCP
+data), the macOS Keychain seam with and without a shadow file, and the
+write-back on a switch onto a key (file mode, Keychain plus shadow file, a
+failed Keychain write landing in the file, no seat-wide part clearing the
+file). `internal/ccfile`: the `SeatWideOnly`, `SeatWidePart` and splice
+tables. `internal/reporting/apikeyseat_test.go`: `status` and `list` show
+the API-key account as `api_key`. `internal/lifecycle/apikeyseat_test.go`:
+`add` refuses the live key or finds no credential. Export, import, the
+`AccountOnly` table and the relocation cover the second key.
