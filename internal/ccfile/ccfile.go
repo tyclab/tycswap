@@ -195,6 +195,21 @@ func SeatWideOnly(creds string) bool {
 	return len(obj) == 0
 }
 
+// SeatWidePart returns the SeatWideKeys of creds alone, as compact JSON; ok is
+// false when creds is not a JSON object or holds none of them. It is what is
+// left of a live credential once its login is cleared.
+func SeatWidePart(creds string) (string, bool) {
+	part, err := seatWideOf(creds)
+	if err != nil || len(part) == 0 {
+		return "", false
+	}
+	encoded, err := marshalCompact(part)
+	if err != nil {
+		return "", false
+	}
+	return string(encoded), true
+}
+
 // seatWideOf returns the SeatWideKeys present in creds. Blank text holds none;
 // text that is not a JSON object holds none and is an error.
 func seatWideOf(creds string) (map[string]any, error) {

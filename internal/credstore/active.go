@@ -267,8 +267,9 @@ func (s *FileKeychainStore) writeManagedCredentials(apiKey string) error {
 		return cerr.CredentialWrite("Failed to write managed API key: %v", err)
 	}
 
-	// Mutual exclusion: drop the OAuth credential so it can't shadow the key.
-	s.clearOAuthCredential()
+	// Mutual exclusion: drop the OAuth login so it can't shadow the key. The
+	// seat's MCP server logins and client secrets are no login and stay.
+	s.clearOAuthLogin()
 	if s.macOS() && !wroteToKeychain {
 		// The key fell back to primaryApiKey while a stale "Claude Code" Keychain
 		// item may remain (read before primaryApiKey). Pin so a cooldown re-probe
@@ -299,6 +300,25 @@ func (s *FileKeychainStore) clearManagedKey() {
 			}
 		}
 	}
+}
+
+// clearOAuthLogin clears the active OAuth login for a managed key and writes
+// the live credential's seat-wide part back in its place (DESIGN A29), on the
+// Keychain item and its shadow file or on the plaintext file, as any OAuth
+// write lands. Claude Code's own move onto an API key drops claudeAiOauth and
+// keeps the MCP server logins, and a credential holding seat-wide keys only is
+// no login (ccfile.SeatWideOnly), so it cannot shadow the key. Without a
+// seat-wide part, or when it cannot be written, the credential is cleared
+// whole (spec 03§5.6).
+func (s *FileKeychainStore) clearOAuthLogin() {
+	if rest, ok := ccfile.SeatWidePart(s.readLiveOAuth()); ok {
+		err := s.writeOAuthCredentials(rest)
+		if err == nil {
+			return
+		}
+		s.log.Warningf("Could not keep the MCP server logins beside the API key; clearing them with the OAuth login: %v", err)
+	}
+	s.clearOAuthCredential()
 }
 
 // clearOAuthCredential clears the active OAuth credential — Keychain item and

@@ -109,3 +109,102 @@ func TestReadActive_LoginKeychainItemBesideMCP_macOS(t *testing.T) {
 		t.Fatalf("ReadActive = %q, want the Keychain login verbatim", got)
 	}
 }
+
+// -- a switch onto an API key keeps the seat-wide part -----------------------
+
+func TestWriteActive_APIKeyKeepsTheSeatWidePart_FileMode(t *testing.T) {
+	for _, tc := range []struct{ name, live, want string }{
+		{"a login beside MCP server logins", loginBesideMCP, mcpOnly},
+		{"a login beside MCP client secrets", `{"claudeAiOauth":{"accessToken":"live-access"},"mcpOAuthClientConfig":{"srv|1111":{"clientSecret":"cs-fixture"}},"trustedDeviceToken":"device-live"}`, clientOnly},
+		{"seat-wide keys only", seatWideBoth, seatWideBoth},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fh := testutil.BuildFixtureHome(t)
+			writeFile(t, fh.CredentialsFile, tc.live)
+			s := newStore(t, platform.Linux, t.TempDir(), newFakeKC(), nil)
+
+			if err := s.WriteActive(seatKey); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(fh.CredentialsFile)
+			if err != nil {
+				t.Fatalf("the seat-wide keys went with the OAuth login: %v", err)
+			}
+			if string(raw) != tc.want {
+				t.Fatalf("credentials file = %s, want the seat-wide part alone %s", raw, tc.want)
+			}
+			if got, _, _ := s.ReadActive(); got != seatKey {
+				t.Fatalf("ReadActive = %q, want the managed key", got)
+			}
+		})
+	}
+}
+
+func TestWriteActive_APIKeyWithoutASeatWidePartClearsTheFile(t *testing.T) {
+	for _, live := range []string{
+		storedAcct,     // a login and nothing seat-wide
+		`{"mcpOAuth":`, // malformed: nothing can be kept
+	} {
+		fh := testutil.BuildFixtureHome(t)
+		writeFile(t, fh.CredentialsFile, live)
+		s := newStore(t, platform.Linux, t.TempDir(), newFakeKC(), nil)
+
+		if err := s.WriteActive(seatKey); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(fh.CredentialsFile); err == nil {
+			t.Fatalf("live %q: a credential with no seat-wide part must be cleared whole", live)
+		}
+	}
+}
+
+func TestWriteActive_APIKeyKeepsTheSeatWidePart_Keychain_macOS(t *testing.T) {
+	fh := testutil.BuildFixtureHome(t) // the shadow .credentials.json is present
+	kc := newFakeKC()
+	kc.put(claudeCodeKeychainService, keychain.AccountName(), loginBesideMCP)
+	s := newStore(t, platform.MacOS, t.TempDir(), kc, nil)
+
+	if err := s.WriteActive(seatKey); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := kc.peek(managedKeychainService, keychain.AccountName()); v != seatKey {
+		t.Fatalf("managed Keychain item = %q, want the key", v)
+	}
+	item, ok := kc.peek(claudeCodeKeychainService, keychain.AccountName())
+	if !ok || item != mcpOnly {
+		t.Fatalf("OAuth Keychain item = %q (present %v), want the MCP server logins alone", item, ok)
+	}
+	// The shadow file carries the same bytes, as after every Keychain write.
+	if raw, _ := os.ReadFile(fh.CredentialsFile); string(raw) != mcpOnly {
+		t.Errorf("shadow .credentials.json = %s, want the Keychain item's bytes", raw)
+	}
+	if got, _, _ := s.ReadActive(); got != seatKey {
+		t.Fatalf("ReadActive = %q, want the managed key", got)
+	}
+}
+
+// TestWriteActive_APIKeyKeychainWriteFailsKeepsTheSeatWidePartInTheFile_macOS:
+// when the Keychain cannot be written, the key falls back to primaryApiKey and
+// the seat-wide part to the plaintext file (the shadow of the Keychain item),
+// as any OAuth write does, and the stale Keychain login goes.
+func TestWriteActive_APIKeyKeychainWriteFailsKeepsTheSeatWidePartInTheFile_macOS(t *testing.T) {
+	fh := testutil.BuildFixtureHome(t)
+	writeFile(t, fh.CredentialsFile, loginBesideMCP)
+	kc := newFakeKC()
+	kc.put(claudeCodeKeychainService, keychain.AccountName(), loginBesideMCP)
+	kc.failSet = true
+	s := newStore(t, platform.MacOS, t.TempDir(), kc, testutil.FixedClock(t, "2026-07-17T00:00:00Z"))
+
+	if err := s.WriteActive(seatKey); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := os.ReadFile(fh.CredentialsFile); string(raw) != mcpOnly {
+		t.Fatalf("credentials file = %s, want the MCP server logins alone", raw)
+	}
+	if _, ok := kc.peek(claudeCodeKeychainService, keychain.AccountName()); ok {
+		t.Fatal("the Keychain login survived beside the API key")
+	}
+	if got, _, _ := s.ReadActive(); got != seatKey {
+		t.Fatalf("ReadActive = %q, want the managed key", got)
+	}
+}

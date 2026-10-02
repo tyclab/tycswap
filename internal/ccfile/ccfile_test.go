@@ -646,3 +646,28 @@ func TestSeatWideOnly(t *testing.T) {
 		})
 	}
 }
+
+// TestSeatWidePart: what is left of a live credential once its login is
+// cleared — its seat-wide keys alone, or nothing.
+func TestSeatWidePart(t *testing.T) {
+	for _, tc := range []struct {
+		name, creds, want string
+		ok                bool
+	}{
+		{"a login beside MCP server logins", `{"claudeAiOauth":{"accessToken":"acc"},"mcpOAuth":{"s":{"expiresAt":1790856000456}},"trustedDeviceToken":"tdt"}`, `{"mcpOAuth":{"s":{"expiresAt":1790856000456}}}`, true},
+		{"a login beside MCP client secrets", `{"claudeAiOauth":{"accessToken":"acc"},"mcpOAuthClientConfig":{"s":{"clientSecret":"cs"}}}`, `{"mcpOAuthClientConfig":{"s":{"clientSecret":"cs"}}}`, true},
+		{"both seat-wide keys", `{"mcpOAuthClientConfig":{},"mcpOAuth":{}}`, `{"mcpOAuth":{},"mcpOAuthClientConfig":{}}`, true},
+		{"a login alone", `{"claudeAiOauth":{"accessToken":"acc"}}`, "", false},
+		{"the empty object", `{}`, "", false},
+		{"empty text", "", "", false},
+		{"malformed", `{"mcpOAuth":`, "", false},
+		{"a managed API key", "sk-ant-api03-key", "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := ccfile.SeatWidePart(tc.creds)
+			if got != tc.want || ok != tc.ok {
+				t.Errorf("SeatWidePart(%q) = (%q, %v), want (%q, %v)", tc.creds, got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}
