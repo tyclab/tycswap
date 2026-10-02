@@ -3703,3 +3703,196 @@ environment-variable prefix); and a short generic Guide tab: what the tool
 does, slots and the active account, the 5h/7d/model windows and the single
 threshold, getting started, manual switching, Auto, Sessions, a command
 cheat-sheet and where the data lives.
+
+## A27. Dashboard parity: updates, a Settings tab, a Guide, folding cards, the live login and the auth overrides (Go-side additive extension)
+
+A26 shipped the dashboard with three tabs and listed what it still lacked.
+This amendment brings it to parity with the reference dashboard for every
+feature that is generic: an Updates card with a header indicator, a Settings
+tab for every `settings.json` key, a Guide tab, two cards that fold and are
+remembered, a callout for a login Claude Code has that is not stored yet, and
+a notice for the authentication overrides that make Claude Code ignore the
+stored login. What is not generic stays out: no telemetry, no gateway, no
+plugin marketplace, plugin updates or plugin cards, and no launch route (that
+belongs to a tray, a separate stage). `internal/web` keeps A26's rule:
+consumer-defined seams only, no import of core, tui or cli, and the page
+renders API data as text.
+
+**Updates** (`internal/web/updates.go`, `internal/cli/updateshost.go`,
+`internal/ccversion`). Two things can be updated from the page: tycswap
+itself and Claude Code.
+
+- *tycswap.* `update.Checker.Latest` asks the release endpoint `tycswap
+  upgrade` already uses and, unlike the passive CLI notice, says why when it
+  cannot (the card names what it could not check). A tag it reads refreshes
+  `cache/update_check.json`, so the next CLI command's notice agrees with the
+  card; a failure leaves the cache alone. The apply is `tycswap upgrade`'s own
+  path, `update.Upgrader.SelfUpgrade`, with its output captured: `go install
+  <ModulePath>@latest` for a go-installed binary, and for a checkout build, an
+  unknown layout or Windows the guidance it prints, which becomes the error's
+  output. The card knows beforehand (`AppUpdateView.Hint`) when this build
+  upgrades from a terminal and shows the command instead of a button; the
+  install layout behind that hint is read from the environment and home
+  directory `SelfUpgrade` itself reads, so the button is offered exactly when
+  the apply would run `go install`. After a
+  successful install the running server is still the old version: the card
+  says so (`Installed`) and stops offering until `tycswap web` is started
+  again.
+- *Claude Code.* `ccversion` finds the binary (PATH, then the places the
+  installers put it), reads `claude --version`, and tells the install method
+  from where the binary really lives: the native installer, npm (a
+  `node_modules` path or the legacy `~/.claude/local`), a Homebrew cask, WinGet,
+  else unknown. The newest version is read from that method's own source
+  (the native release channel, npm's `dist-tags`, the cask's formula; WinGet
+  and an unknown install follow the native releases), so an update is only
+  announced where the same installer can deliver it, and the apply is that
+  installer's own command: `claude update` for a native or unknown install,
+  `npm install -g @anthropic-ai/claude-code@latest`, `brew upgrade --cask
+  <cask>`, `winget upgrade`. A missing Claude Code is said (with the install
+  line to type), never run. Versions compare by semver; a version that does
+  not parse is an error, never "newer".
+- *Cadence.* `tycswap web` had no periodic check. `Server.Serve` now asks the
+  `UpdatesFacade` to check once at start and then every `Deps.UpdateInterval`
+  (six hours by default; `Deps.UpdateTicker` is the seam tests drive by
+  hand), never on a poll tick; `POST /api/updates/check` asks again and
+  answers 202 at once, the state it broadcasts already saying "Checking…".
+  The host checks in the background, both lookups at once, and pushes a
+  fresh state through `Server.Refresh`, which only signals the serve loop
+  (one slot, so a burst coalesces and no caller ever blocks; before Serve the
+  signal waits for the loop's first turn, after it is a no-op).
+- *A failed check forgets nothing.* Being offline says nothing about whether
+  an update still waits: a release check that fails keeps the release the
+  check before it found and adds its error; a Claude Code check that cannot
+  learn the newest version keeps the last one for the same installed Claude
+  Code (same path, version and method) and adds its error; a different
+  Claude Code (updated by hand meanwhile) inherits nothing and shows as
+  "could not check". `checkedAt` is the last check that reached the network;
+  before the first the card says "Not checked for updates yet", and while an
+  error is set it says "Could not check for every update", never "Everything
+  is up to date".
+- *Apply.* `POST /api/updates/apply {"target": "app"|"claude-code"}` runs one
+  update synchronously, after the page has asked the user, and answers the
+  host's `UpdateResult` (`message`, `output`); a failed apply answers
+  `{"error", "output"}`, so the page's Output disclosure shows what the
+  commands printed after a failure too. One apply runs at a time (409 for a
+  second), outside `mutMu`: an account switch must not stall behind a
+  multi-minute install. The response gets a 30-minute write deadline. After
+  a Claude Code apply the host looks at Claude Code again, so the card shows
+  the version now installed.
+- *The indicator.* The header carries a pill on every tab while something
+  waits, with the count (one per update the user would run; "9+" past nine)
+  and the updates as its tooltip; it pulses three times when it appears, not
+  at all with `prefers-reduced-motion`, and a click opens the card. The pill
+  is the mark's violet: neither the brand blue (the active account) nor the
+  status red (a limit).
+
+**Settings tab.** The settings editor was a card on the Auto tab, where it
+read as part of the engine. It is now its own tab, Settings, listing every key
+`settings.SettingSpecs` defines — the single source of truth `tycswap config`
+reads — with a type-aware control (a number field with its range, a switch
+for a bool, a select for a choice, a text field for a string), the default,
+the value in effect, *Save* and *Reset to default* per key, through the
+existing `GET /api/settings`, `POST /api/settings/{key}` and `DELETE
+/api/settings/{key}` routes, so the tab and `tycswap config` cannot drift
+apart. The tab's badge counts the keys set away from their default. The grid
+depends on the settings facade alone: it is hidden only when `state.settings`
+is null, which `tycswap web` never sends (the facade is always wired), and
+never on the auto engine. The Auto tab keeps its live threshold slider and
+the *Count model limits* switch and gains a short way to the Settings tab in
+place of the duplicated card. A test wires the real `settingsFacade` over a
+store with no `settings.json` and asserts that `/api/state` carries every
+defined key, at its default and marked so, in registry order.
+
+*When a saved value takes effect.* Each row says so (`SettingView.Applies`,
+set by the server in `settingApplies`, next to the route that owns the one
+live retarget, so the wording and the behaviour live in one file). It
+describes what the code does and adds no mechanism: an engine copies the
+settings when it starts (`settings.Load` in the host's `Start`) and only
+`ApplyThreshold` and `ApplyModels` change a running one.
+
+| Key | Takes effect |
+|---|---|
+| `autoswitch.model` | at once: a save or reset through the settings routes calls `ApplyModels` on a running engine (A26), and the at-limit marks re-read it for every state document |
+| `autoswitch.threshold` | at the next engine start; the Auto tab's slider retargets the running engine for this run only, unsaved |
+| `autoswitch.codexEnabled`, `autoswitch.codexThreshold` | at the next `tycswap auto`: the engine this page hosts rotates Claude accounts only |
+| every other key (`intervalSeconds`, `cooldownSeconds`, `hysteresisPct`, `strategy`, `includeApiKeyAccounts`, `unhealthyTicks`, and any key added later) | at the next engine start, here, in the TUI's Auto view or in `tycswap auto` |
+
+The TUI's Settings screen (A28) edits the same `settings.json` through the
+same package (`settings.SetSetting` / `UnsetSetting` and the
+`EffectiveSettings` list); neither surface knows about the other, and a value
+saved in one shows in the other on its next read.
+
+**Guide tab.** Static markup in `index.html`, templated with the brand name
+only: what the tool is, the five concepts (slot, active account, the 5h / 7d /
+model windows, at limit and eligible, the one threshold), getting started,
+switching by hand, Auto mode and its settings, the Settings tab, Sessions,
+Updates, Codex accounts (the CLI has them, the page does not), a command
+cheat-sheet that includes `tycswap config`, troubleshooting, and where the
+data lives. It names no URL: the page works offline and the static-asset test
+forbids any (`TestIndexHTML_OnlyLocalReferences`), so the Claude Code install
+lines live in Go (`ccversion.InstallHint`) and reach the page through the
+state.
+
+**Folding** (`internal/web/uiprefs.go`, `internal/cli/uiprefs.go`). The
+Accounts card and the Updates card fold to their heading with a chevron (a
+`<button aria-expanded>` inside the `h2`, the disclosure pattern). A folded
+Accounts card keeps its count line, its *Add current login* button and the
+callout for a login that is not stored yet; the *Token status* switch hides,
+since it changes nothing then. The server remembers the choice, not the
+browser: the dashboard's port is ephemeral and browser storage is kept per
+origin, port included, and the page has no `localStorage` by rule. `<backup
+root>/ui_prefs.json` (`{"version": 1, "folded": {"<card>": true}}`, written
+atomically, 0600, under a process-wide mutex so two pages folding two cards
+drop neither) is the store; the state carries `ui.folded` (null without
+`Deps.UIPrefs`), and `POST /api/ui/folded {"card", "folded"}` changes it for
+the two known card ids only (400 otherwise), then broadcasts, so other open
+pages fold too. A fold the page sent wins over a state that does not carry
+it yet; a card the file names that the page does not know is not carried
+into the state.
+
+**The live login** (`state.currentLogin`). `Deps.CurrentLogin` is the email
+of Claude Code's OAuth identity (`store.GetCurrentAccount`); `saved` is
+exactly "the active account is managed" — the snapshot's active number is
+the stored slot of the live login — so while it is false the Accounts card
+shows a callout, *Claude Code is signed in as <email>, which is not stored
+here yet*, with a large *Add current login*. The button is also the card's
+main action, in its head, where the toolbar had it; the click no longer asks:
+storing the login Claude Code has changes nothing else, and the callout has
+said what it does. A line under the table says how to add another account —
+`/login` in Claude Code, then *Add current login*, or `tycswap add --login`
+— and that `/logout` first would end the login stored here. *Add token…*
+stays in the toolbar as the secondary way in.
+
+**The auth overrides** (`state.authOverrides`,
+`web.DetectAuthOverrides`). `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or
+`ANTHROPIC_BASE_URL` in the environment `tycswap web` runs in — which a
+plain `claude` from the same shell inherits, while `tycswap run` and `tycswap
+env` scrub them — or `apiKeyHelper`, `env.ANTHROPIC_API_KEY`,
+`env.ANTHROPIC_AUTH_TOKEN`, `env.ANTHROPIC_BASE_URL` in Claude Code's
+`settings.json` make Claude Code sign in with something other than the stored
+login. The state lists the names that are set (an empty or null value
+selects nothing; a settings file that is missing or does not parse declares
+nothing), never a value, and the page shows a notice above the accounts
+naming each source. `Deps.AuthOverrides` defaults to the detection over
+`os.Getenv` and `<config home>/settings.json`; tests pin it.
+
+**Sessions.** The reference's Sessions tab was compared with A26's: both
+group the running sessions by directory in `<details>` groups with the same
+columns (session title, PID, kind and entrypoint, status, started, Stop), the
+same filters and sort; the reference's markup also carries a flat sessions
+table that its client never renders. tycswap's list, which also marks the
+slot a `run`/`env` session runs as, is kept as it is.
+
+**Security.** No new unauthenticated route: every new route is under
+`requireAuth` (cookie and CSRF token), every one is a POST and so also under
+the Origin / `Sec-Fetch-Site` rules; the state's new sections carry names,
+versions and commands, never a token, a key or a value; the apply route runs
+one update at a time and bounds its response; the fold route stores two
+known ids and nothing else; the host's log lines carry the target, not the
+output. The Guide's and the card's commands are text the user types, never
+run from the page except through the apply route's two fixed targets.
+
+**Follow-ups, deliberately not here:** everything A26 listed that this
+amendment does not cover (Codex rows, `add --login` as a streamed job,
+`map`/`unmap`, the remote mode and the tray), and no marketplace, plugin or
+telemetry surface: tycswap has none of those.

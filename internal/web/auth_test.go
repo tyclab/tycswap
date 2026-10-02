@@ -39,6 +39,9 @@ var allRoutes = []struct{ method, path string }{
 	{"POST", "/api/auto/wake"},
 	{"POST", "/api/auto/threshold"},
 	{"POST", "/api/auto/model"},
+	{"POST", "/api/updates/check"},
+	{"POST", "/api/updates/apply"},
+	{"POST", "/api/ui/folded"},
 }
 
 // mutatingRoutes are the non-GET routes (POST and DELETE).

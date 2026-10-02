@@ -1,6 +1,7 @@
 // webcmd.go — `tycswap web`: wire the dashboard's façades, bind loopback,
 // print the one-time URL, open the browser, serve until SIGINT/SIGTERM
-// (DESIGN A26).
+// (DESIGN A26; the updates host, the view preferences and the live login
+// seam are A27).
 package cli
 
 import (
@@ -223,15 +224,24 @@ func newDashboard(interval float64, debug bool, s ioStreams) (*web.Server, *auto
 		return nil, nil, code
 	}
 	auto := newAutoFacade(sw)
+	updates := newUpdatesHost(sw.BackupDir())
 	srv, err := web.New(web.Deps{
 		Facade:     sw,
 		Accounts:   sw,
 		Settings:   settingsFacade{root: sw.BackupDir()},
 		Auto:       auto,
 		AutoEvents: auto.Events(),
-		Sessions:   web.SessionsIn(sw.BackupDir()),
-		Kill:       web.DefaultKill,
-		Interval:   time.Duration(interval * float64(time.Second)),
+		Updates:    updates,
+		UIPrefs:    uiPrefs{path: uiPrefsPath(sw.BackupDir())},
+		// The live login's email, for the "Add your current login" callout
+		// (A27); the store reads it from Claude Code's config file.
+		CurrentLogin: func() (string, bool) {
+			email, _, ok := sw.GetCurrentAccount()
+			return email, ok && email != ""
+		},
+		Sessions: web.SessionsIn(sw.BackupDir()),
+		Kill:     web.DefaultKill,
+		Interval: time.Duration(interval * float64(time.Second)),
 		Logger: func(m string) {
 			if debug {
 				fmt.Fprintln(s.err, m)
@@ -242,6 +252,8 @@ func newDashboard(interval float64, debug bool, s ioStreams) (*web.Server, *auto
 		errorTo(s.err, "Error: "+err.Error())
 		return nil, nil, 1
 	}
+	// A check that learns something pushes a fresh state at once.
+	updates.onChange = srv.Refresh
 	return srv, auto, 0
 }
 

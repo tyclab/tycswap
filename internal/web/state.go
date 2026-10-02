@@ -1,7 +1,8 @@
 // state.go — the GET /api/state document: accounts (jsonout usage + at-limit
 // fields, exactly as `tycswap list --json` serialises them, optionally enriched
 // with the token status), sessions, settings, auto-switch engine, strategies,
-// server time.
+// server time, and (A27) the live login, the auth overrides, the updates and
+// the page's view choices.
 //
 // Implements DESIGN A26 "API. GET /api/state → one State document". Account
 // rows are maps because the additive at-limit / freshness / tokenStatus keys
@@ -39,6 +40,16 @@ type State struct {
 	Auto          *AutoView        `json:"auto"`     // null when no AutoFacade
 	Strategies    []string         `json:"strategies"`
 	Name          string           `json:"name"` // brand.Name, for the command hints the page prints
+	// CurrentLogin is the account Claude Code is signed in with; null when
+	// the server cannot tell (no Deps.CurrentLogin) or Claude Code has none
+	// (A27).
+	CurrentLogin *CurrentLoginView `json:"currentLogin"`
+	// AuthOverrides: what makes Claude Code ignore its stored login (A27).
+	AuthOverrides AuthOverridesView `json:"authOverrides"`
+	// Updates: what the host found to update; null when no UpdatesFacade (A27).
+	Updates *UpdatesView `json:"updates"`
+	// UI: the page's remembered view choices; null without Deps.UIPrefs (A27).
+	UI *UIView `json:"ui"`
 }
 
 // SessionsJSON is the sessions section.
@@ -100,12 +111,29 @@ func (s *Server) buildState(o stateOpts) State {
 	if o.tokenStatus && s.d.Accounts != nil {
 		s.enrichTokenStatus(st.Accounts)
 	}
+	if s.d.CurrentLogin != nil {
+		if email, ok := s.d.CurrentLogin(); ok && email != "" {
+			// Saved is exactly "the active account is managed": the
+			// snapshot's active number is the stored slot of the live login.
+			st.CurrentLogin = &CurrentLoginView{Email: email, Saved: st.ActiveNumber != nil}
+		}
+	}
+	st.AuthOverrides = s.d.AuthOverrides()
+	if st.AuthOverrides.Env == nil {
+		st.AuthOverrides.Env = []string{}
+	}
+	if st.AuthOverrides.Settings == nil {
+		st.AuthOverrides.Settings = []string{}
+	}
+	if s.d.Updates != nil {
+		st.Updates = s.updatesView()
+	}
+	if s.d.UIPrefs != nil {
+		st.UI = s.uiView()
+	}
 
 	if s.d.Settings != nil {
-		st.Settings = s.d.Settings.Effective()
-		if st.Settings == nil {
-			st.Settings = []SettingView{}
-		}
+		st.Settings = s.settingsViews()
 	}
 	if s.d.Auto != nil {
 		v := s.d.Auto.View()

@@ -120,11 +120,11 @@ func TestState_ExactShape(t *testing.T) {
 			},
 		},
 		"settings": []any{
-			map[string]any{"key": "autoswitch.threshold", "kind": "float", "value": 90, "default": 90, "isDefault": true, "description": "Switch when the binding 5h/7d window reaches this pct", "min": 50, "max": 99.9},
-			map[string]any{"key": "autoswitch.codexThreshold", "kind": "float", "value": 0, "default": 0, "isDefault": true, "description": "Codex-only switch threshold (0 = use autoswitch.threshold)", "min": 0, "max": 99.9},
-			map[string]any{"key": "autoswitch.codexEnabled", "kind": "bool", "value": true, "default": true, "isDefault": true, "description": "Also auto-switch Codex accounts"},
-			map[string]any{"key": "autoswitch.includeApiKeyAccounts", "kind": "bool", "value": false, "default": false, "isDefault": true, "description": "Allow rotating onto managed API-key accounts"},
-			map[string]any{"key": "autoswitch.strategy", "kind": "choice", "value": "soonest-reset", "default": "best", "isDefault": false, "choices": []any{"best", "soonest-reset"}, "description": "How auto-switch orders qualifying targets"},
+			map[string]any{"key": "autoswitch.threshold", "kind": "float", "value": 90, "default": 90, "isDefault": true, "description": "Switch when the binding 5h/7d window reaches this pct", "min": 50, "max": 99.9, "applies": settingApplies("autoswitch.threshold")},
+			map[string]any{"key": "autoswitch.codexThreshold", "kind": "float", "value": 0, "default": 0, "isDefault": true, "description": "Codex-only switch threshold (0 = use autoswitch.threshold)", "min": 0, "max": 99.9, "applies": settingApplies("autoswitch.codexThreshold")},
+			map[string]any{"key": "autoswitch.codexEnabled", "kind": "bool", "value": true, "default": true, "isDefault": true, "description": "Also auto-switch Codex accounts", "applies": settingApplies("autoswitch.codexEnabled")},
+			map[string]any{"key": "autoswitch.includeApiKeyAccounts", "kind": "bool", "value": false, "default": false, "isDefault": true, "description": "Allow rotating onto managed API-key accounts", "applies": settingApplies("autoswitch.includeApiKeyAccounts")},
+			map[string]any{"key": "autoswitch.strategy", "kind": "choice", "value": "soonest-reset", "default": "best", "isDefault": false, "choices": []any{"best", "soonest-reset"}, "description": "How auto-switch orders qualifying targets", "applies": settingApplies("autoswitch.strategy")},
 		},
 		"auto": map[string]any{
 			"available": true, "running": true, "dryRun": true, "startedAt": 1758276000, "threshold": 85,
@@ -135,8 +135,12 @@ func TestState_ExactShape(t *testing.T) {
 			},
 			"quarantine": map[string]any{"quarantine": map[string]any{"3": map[string]any{"reason": "invalid_grant", "at": 1758275000}}},
 		},
-		"strategies": []any{"best", "next-available"},
-		"name":       "tycswap",
+		"strategies":    []any{"best", "next-available"},
+		"name":          "tycswap",
+		"currentLogin":  map[string]any{"email": "alice@example.com", "saved": true},
+		"authOverrides": map[string]any{"env": []any{}, "settings": []any{}, "settingsPath": "/home/t/.claude/settings.json"},
+		"updates":       map[string]any{"available": false, "checking": false, "app": map[string]any{"current": "v0.4.0", "available": false}, "claudeCode": map[string]any{"state": "checking", "available": false}},
+		"ui":            map[string]any{"folded": map[string]any{}},
 	}
 	if _, has := got["tokenStatus"]; has {
 		t.Error("tokenStatus present at top level")
@@ -281,7 +285,7 @@ func TestState_TokenStatus_NilAccountOps(t *testing.T) {
 }
 
 func TestState_NilSectionsAndEmptyLists(t *testing.T) {
-	h := newHarness(t, withNoSettings(), withNoAuto())
+	h := newHarness(t, withNoSettings(), withNoAuto(), withNoUpdates(), withNoUIPrefs(), withNoCurrentLogin())
 	h.fa.mu.Lock()
 	h.fa.snap = &reporting.AccountsSnapshot{}
 	h.fa.mu.Unlock()
@@ -290,7 +294,7 @@ func TestState_NilSectionsAndEmptyLists(t *testing.T) {
 	if err := json.Unmarshal(readBody(t, h.get("/api/state")), &got); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"settings", "auto"} {
+	for _, k := range []string{"settings", "auto", "updates", "ui", "currentLogin"} {
 		if got[k] != nil {
 			t.Errorf("nil facade section %q must serialise as null: %v", k, got[k])
 		}

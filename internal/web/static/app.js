@@ -7,7 +7,9 @@
 // "Next best" candidates client-side with the same keys tui/autoview.go uses
 // (candidateLessBest / candidateLessSoonest) and colours engine events like
 // tui eventColor. Components: tile(), meter(), chip() — one implementation
-// each, reused on every tab.
+// each, reused on every tab. DESIGN A27 adds the Updates card and header
+// indicator, the Settings tab, the foldable cards, the add-current-login
+// callout and the auth-overrides notice; the Guide tab is static markup.
 (function () {
   'use strict';
 
@@ -161,7 +163,11 @@
         var data = null;
         try { data = txt ? JSON.parse(txt) : null; } catch (e) { data = null; }
         if (res.status === 401) { throw new Error('Session expired — run ' + NAME + ' web again and open the URL it prints.'); }
-        if (!res.ok) { throw new Error((data && data.error) || ('HTTP ' + res.status)); }
+        if (!res.ok) {
+          var e = new Error((data && data.error) || ('HTTP ' + res.status));
+          if (data && data.output) { e.output = data.output; } // what an update's commands printed
+          throw e;
+        }
         return data;
       });
     });
@@ -578,7 +584,241 @@
     var badgeA = $('badge-auto');
     if (st.auto && st.auto.running) { badgeA.textContent = st.auto.dryRun ? 'dry' : '●'; badgeA.className = 'tab-badge live'; badgeA.title = st.auto.dryRun ? 'engine running (dry-run)' : 'engine running'; }
     else { badgeA.textContent = ''; badgeA.className = 'tab-badge'; }
+    // Settings: how many keys are set away from their default.
+    var custom = (Array.isArray(st.settings) ? st.settings : []).filter(function (sv) { return !sv.isDefault; }).length;
+    var badgeSt = $('badge-settings');
+    badgeSt.textContent = custom ? String(custom) : '';
+    badgeSt.title = custom ? custom + ' setting' + (custom === 1 ? '' : 's') + ' changed from the default' : '';
     renderActiveStrip(st);
+    renderUpdatesBadge(st);
+  }
+
+  // ---- onboarding (DESIGN A27) ------------------------------------------------
+  // What keeps Claude Code from using the stored login: an auth override in
+  // the server's environment or in Claude Code's settings.json. Names only;
+  // the server never sends a value.
+  function renderOnboarding(st) {
+    var ov = st.authOverrides || { env: [], settings: [] };
+    var envKeys = ov.env || [], setKeys = ov.settings || [];
+    var any = envKeys.length > 0 || setKeys.length > 0;
+    $('auth-overrides').hidden = !any;
+    $('auth-overrides-env').hidden = !envKeys.length;
+    $('auth-overrides-env-keys').textContent = envKeys.join(', ');
+    $('auth-overrides-settings').hidden = !setKeys.length;
+    $('auth-overrides-settings-keys').textContent = setKeys.join(', ');
+    $('auth-overrides-path').textContent = ov.settingsPath || 'settings.json';
+    // An empty wrapper would still take a grid gap at the top of the panel.
+    $('onboard').hidden = !any;
+  }
+
+  // ---- updates (DESIGN A27) ---------------------------------------------------
+  // What can be updated (this program, Claude Code) as the server last saw
+  // it: a prominent card while anything waits, a quiet "up to date" line
+  // otherwise, and the header indicator on every tab. An apply runs in the
+  // server and can take minutes. The target in flight is kept here, so the
+  // repaints the state stream causes meanwhile keep its button busy, and the
+  // outcome stays on the page until it is dismissed.
+
+  var updApplying = null; // 'app' | 'claude-code' while one runs
+  var updResult = null;   // { ok, pending, message, output } of the last apply
+
+  function bareVersion(v) { return String(v || '').replace(/^v/, ''); }
+
+  // agoSpan renders "3m ago" for an RFC3339 stamp and keeps it ticking.
+  function agoSpan(iso) {
+    var t = Date.parse(iso);
+    if (isNaN(t)) { return el('span', { text: '—' }); }
+    return el('span', { 'data-started': String(t), text: fmtAgo(Date.now() - t) });
+  }
+
+  // updateCount: one per thing the user would update.
+  function updateCount(u) {
+    if (!u || !u.available) { return 0; }
+    var n = (u.app && u.app.available ? 1 : 0) + (u.claudeCode && u.claudeCode.available ? 1 : 0);
+    return Math.max(n, 1); // "available" with nothing itemised is still one
+  }
+
+  // updateLines: one short line per update, for the header indicator's tooltip.
+  function updateLines(u) {
+    var out = [];
+    if (u.app && u.app.available) { out.push(NAME + ' ' + bareVersion(u.app.current) + ' → ' + bareVersion(u.app.latest)); }
+    if (u.claudeCode && u.claudeCode.available) { out.push('Claude Code ' + (u.claudeCode.installed || '?') + ' → ' + (u.claudeCode.latest || 'latest')); }
+    return out;
+  }
+
+  // updateProblems: what the last check could not read (errors), and what is
+  // said rather than offered (notes: Claude Code not installed, a build that
+  // upgrades itself another way). While there is an error the page never
+  // says everything is up to date.
+  function updateProblems(u) {
+    var errors = [], notes = [];
+    if (u.app && u.app.error) { errors.push(['Could not check for a new ' + NAME + ': ' + u.app.error]); }
+    if (u.app && u.app.installed) { notes.push([NAME + ' ' + bareVersion(u.app.latest) + ' is installed; this server still runs ' + bareVersion(u.app.current) + ' until you start ', el('code', { text: NAME + ' web' }), ' again.']); }
+    else if (u.app && u.app.available && u.app.hint) { notes.push([NAME + ' ' + bareVersion(u.app.latest) + ' is out, and this build upgrades from a terminal: ', el('code', { text: u.app.hint }), '.']); }
+    var cc = u.claudeCode;
+    if (cc && cc.error) {
+      errors.push(['Could not check for a newer Claude Code: ' + cc.error]);
+    } else if (cc && cc.state === 'unknown' && cc.detail) {
+      errors.push([cc.detail]);
+    } else if (cc && cc.state === 'missing') {
+      var note = [cc.detail || 'Claude Code is not installed on this machine.'];
+      if (cc.command) { note.push(' Install it with ', el('code', { text: cc.command }), '.'); }
+      notes.push(note);
+    }
+    return { errors: errors, notes: notes };
+  }
+
+  function renderUpdatesBadge(st) {
+    var u = st.updates;
+    var n = updateCount(u);
+    var b = $('hdr-updates');
+    b.hidden = !n;
+    if (b.hidden) { b.title = ''; return; }
+    var text = n === 1 ? 'Update available' : n + ' updates available';
+    $('hdr-updates-text').textContent = text;
+    $('hdr-updates-count').textContent = n > 9 ? '9+' : String(n);
+    b.setAttribute('aria-label', text + '. Show the updates.');
+    b.title = updateLines(u).join('\n');
+  }
+
+  // applyButton is one update's button; the target in flight stays busy
+  // across repaints.
+  function applyButton(target, label, doing) {
+    var busy = updApplying === target;
+    var b = el('button', { type: 'button', class: 'btn btn-primary', 'data-action': 'updates-apply', 'data-target': target, disabled: !!updApplying, text: busy ? (doing || 'Working…') : label });
+    if (busy) { b.setAttribute('aria-busy', 'true'); }
+    return b;
+  }
+
+  // updItem is one row of the card: name, versions, notes, the button.
+  function updItem(name, versions, notes, button, method) {
+    var body = el('div', { class: 'upd-body' }, [
+      el('div', { class: 'upd-line' }, [el('span', { class: 'upd-name', text: name }), el('span', { class: 'upd-ver', text: versions }), method ? chip(method, 'outline') : null]),
+      el('div', { class: 'upd-sub' }, notes.map(function (n) { return typeof n === 'string' ? el('span', { text: n }) : n; }))
+    ]);
+    return el('li', { class: 'upd-item' }, [body, button]);
+  }
+
+  function renderUpdates(st) {
+    var u = st.updates;
+    $('updates').hidden = !u;
+    if (!u) { return; }
+    var show = !!u.available;
+    var list = $('updates-list'), errs = $('updates-errors');
+    clear(list);
+    clear(errs);
+    $('updates-card').hidden = !show;
+    $('updates-ok').hidden = show;
+    $('updates-title-text').textContent = updateCount(u) === 1 ? 'Update available' : updateCount(u) + ' updates available';
+
+    // "checked …" is the last check that reached the network.
+    var when = $('updates-checked');
+    clear(when);
+    if (u.checking) { when.appendChild(chip('checking…', 'accent')); }
+    else if (u.checkedAt) { when.appendChild(document.createTextNode('checked ')); when.appendChild(agoSpan(u.checkedAt)); }
+    else { when.textContent = 'not checked for updates yet'; }
+
+    var problems = updateProblems(u);
+    $('updates-ok-dot').className = 'dot ' + (u.checking || problems.errors.length ? 'dot-wait' : 'dot-on');
+    $('updates-ok-text').textContent = u.checking ? 'Checking for updates…'
+      : problems.errors.length ? 'Could not check for every update'
+      : !u.checkedAt ? 'Not checked for updates yet'
+      : problems.notes.length ? 'No updates found' : 'Everything is up to date';
+    var okWhen = $('updates-ok-when');
+    clear(okWhen);
+    if (!u.checking && u.checkedAt) { okWhen.appendChild(document.createTextNode('· checked ')); okWhen.appendChild(agoSpan(u.checkedAt)); }
+    document.querySelectorAll('[data-action="updates-check"]').forEach(function (b) {
+      b.disabled = !!u.checking || !!updApplying;
+      if (u.checking) { b.setAttribute('aria-busy', 'true'); } else { b.removeAttribute('aria-busy'); }
+    });
+
+    if (show) {
+      if (u.app && u.app.available) {
+        var appNotes = u.app.hint
+          ? [el('span', null, ['This build upgrades from a terminal: ', el('code', { text: u.app.hint }), '.'])]
+          : [el('span', null, ['Runs ', el('code', { text: 'go install' }), ' for the new release, then start ', el('code', { text: NAME + ' web' }), ' again to run it.'])];
+        list.appendChild(updItem(NAME, bareVersion(u.app.current) + ' → ' + bareVersion(u.app.latest), appNotes,
+          u.app.hint ? el('span', { class: 'upd-manual muted', text: 'from a terminal' }) : applyButton('app', 'Install update', 'Installing…')));
+      }
+      var cc = u.claudeCode;
+      if (cc && cc.available) {
+        var ccNotes = [];
+        if (cc.detail) { ccNotes.push(cc.detail); }
+        if (cc.command) { ccNotes.push(el('span', null, ['Runs ', el('code', { text: cc.command }), '.'])); }
+        ccNotes.push('Running Claude Code sessions keep the old version until you restart them.');
+        list.appendChild(updItem('Claude Code', (cc.installed || '?') + ' → ' + (cc.latest || 'latest'), ccNotes,
+          applyButton('claude-code', 'Update Claude Code', 'Updating…'), cc.method));
+      }
+      if (!list.firstChild) {
+        list.appendChild(el('li', { class: 'upd-sub', text: 'Something can be updated.' }));
+      }
+    }
+    problems.errors.forEach(function (parts) { (show ? list : errs).appendChild(el('li', { class: 'upd-err' }, parts)); });
+    problems.notes.forEach(function (parts) { (show ? list : errs).appendChild(el('li', { class: 'upd-note' }, parts)); });
+    errs.hidden = !errs.firstChild;
+    renderUpdateResult();
+  }
+
+  function renderUpdateResult() {
+    var box = $('updates-result');
+    box.hidden = !updResult;
+    if (!updResult) { return; }
+    box.className = 'notice upd-result' + (updResult.ok ? '' : ' notice-crit');
+    box.setAttribute('role', updResult.ok ? 'status' : 'alert');
+    $('updates-result-text').textContent = updResult.message;
+    box.querySelector('[data-action="updates-dismiss"]').hidden = !!updResult.pending;
+    $('updates-result-more').hidden = !updResult.output;
+    $('updates-result-output').textContent = updResult.output || '';
+  }
+
+  // updateAsk: the confirmation for one target.
+  function updateAsk(u, target) {
+    if (target === 'app') {
+      var v = bareVersion(u.app && u.app.latest);
+      return {
+        title: 'Install ' + NAME + ' ' + v + '?', ok: 'Install update', doing: 'Installing ' + NAME + ' ' + v + '…',
+        message: 'Runs go install for the new release. This server keeps running the old version until you stop it and start ' + NAME + ' web again.'
+      };
+    }
+    var cc = u.claudeCode || {};
+    return {
+      title: 'Update Claude Code?', ok: 'Update Claude Code', doing: 'Updating Claude Code. This can take a minute.',
+      message: 'Update Claude Code from ' + (cc.installed || 'the installed version') + ' to ' + (cc.latest || 'the latest version') +
+        (cc.command ? ' with ' + cc.command : '') + '. Running Claude Code sessions keep the old version until you restart them.'
+    };
+  }
+
+  // ---- foldable cards (DESIGN A27) --------------------------------------------
+  // The Accounts and the Updates card fold to their heading, which keeps its
+  // count line (and the Accounts card its Add current login button and the
+  // callout for a login that is not stored yet). The server remembers them
+  // (state.ui.folded; the dashboard's port changes at every start, so the
+  // browser could not); a fold this page sent wins until the state agrees.
+
+  var FOLDABLE = ['accounts-card', 'updates-card'];
+  var foldSent = {}; // card → folded, sent and not yet in the state
+
+  function applyFolds(st) {
+    var saved = (st && st.ui && st.ui.folded) || null;
+    FOLDABLE.forEach(function (id) {
+      var want = foldSent[id];
+      if (saved && (want === undefined || !!saved[id] === want)) {
+        delete foldSent[id];
+        want = !!saved[id];
+      }
+      setFolded(id, !!want);
+    });
+  }
+
+  function setFolded(id, folded) {
+    var card = $(id);
+    if (!card) { return; }
+    card.classList.toggle('folded', folded);
+    var b = card.querySelector('.card-toggle');
+    if (b) {
+      b.setAttribute('aria-expanded', folded ? 'false' : 'true');
+      b.title = folded ? 'Show' : 'Hide';
+    }
   }
 
   // fallbackNotices: one notice while Claude Code is on an API-key account,
@@ -688,6 +928,14 @@
     clear(body);
     var list = claudeRows(st);
     $('accounts-empty').hidden = list.length > 0;
+    // A login Claude Code has that is not stored yet is the next account to
+    // add (A27): the callout says so, and the Add current login button in
+    // the card's head is the main action either way.
+    var cur = st.currentLogin;
+    var unsaved = !!(cur && cur.email && !cur.saved);
+    $('add-callout').hidden = !unsaved;
+    $('add-callout-email').textContent = unsaved ? cur.email : '';
+    $('add-hint').hidden = unsaved || list.length === 0;
     $('accounts-tbl').hidden = list.length === 0;
     $('accounts-sub').textContent = list.length + (list.length === 1 ? ' account' : ' accounts') + (st.activeNumber !== null && st.activeNumber !== undefined ? ' · active #' + st.activeNumber : ' · none active');
     var accIgnored = ignoredModelsNote(st, parseModelNames(settingValue(st, 'autoswitch.model')));
@@ -1151,16 +1399,22 @@
     return input.value;
   }
 
-  function fmtDefault(sv) {
-    if (sv.default === null || sv.default === undefined || sv.default === '') { return 'empty'; }
-    return String(sv.default) + (typeof sv.default === 'number' ? unitFor(sv.key) : '');
+  function fmtSetting(v, key) {
+    if (v === null || v === undefined || v === '') { return 'empty'; }
+    return String(v) + (typeof v === 'number' ? unitFor(key) : '');
   }
 
+  function fmtDefault(sv) { return fmtSetting(sv.default, sv.key); }
+
+  // settingRow: the key, what it does and when a saved value takes effect
+  // (sv.applies, which the server words from what the code does), the
+  // control, the value in effect and the default, Save and Reset.
   function settingRow(sv) {
     var row = el('div', { class: 'setting-row', role: 'group', 'aria-label': sv.key });
     var idc = el('div', { class: 'setting-id' }, [
       el('div', { class: 'label-row' }, [el('span', { class: 'label', text: humanLabel(sv.key) }), el('span', { class: 'key', text: sv.key, title: sv.key })]),
-      sv.description ? el('div', { class: 'desc', text: sv.description }) : null
+      sv.description ? el('div', { class: 'desc', text: sv.description }) : null,
+      sv.applies ? el('div', { class: 'applies', text: sv.applies }) : null
     ]);
     row.appendChild(idc);
     var input = settingControl(sv);
@@ -1174,7 +1428,8 @@
     row.appendChild(ctl);
     row.appendChild(el('div', { class: 'setting-default' }, [
       sv.isDefault ? chip('default', 'outline') : chip('custom', 'accent'),
-      el('span', { class: 'def', text: (sv.isDefault ? '' : 'default ') + fmtDefault(sv), title: 'default value' })
+      el('span', { class: 'eff', text: 'in effect ' + fmtSetting(sv.value, sv.key), title: 'the value in effect' }),
+      sv.isDefault ? null : el('span', { class: 'def', text: 'default ' + fmtDefault(sv), title: 'default value' })
     ]));
     var save = el('button', { type: 'button', class: 'btn btn-sm btn-primary', text: 'Save', 'aria-label': 'Save ' + sv.key });
     save.addEventListener('click', function () {
@@ -1187,14 +1442,18 @@
     return row;
   }
 
-  // The settings editor lives on the Auto tab: every settings.json key is
-  // autoswitch.*, so a separate Settings tab would duplicate it.
+  // The settings editor is its own tab (A27): every key the settings
+  // package defines, with its type, range, default and current value. It
+  // needs only the settings facade (state.settings), never the auto engine:
+  // the grid is hidden only when the server has no settings facade at all
+  // (state.settings is null), which `tycswap web` always wires.
   function renderSettings(st) {
-    var body = $('auto-settings');
+    var body = $('settings-grid');
     clear(body);
     var list = st.settings;
     var avail = Array.isArray(list);
-    $('auto-settings-empty').hidden = avail;
+    $('settings-empty').hidden = avail;
+    $('settings-sub').textContent = avail ? list.length + ' keys · ' + list.filter(function (sv) { return !sv.isDefault; }).length + ' changed' : '';
     if (!avail) { return; }
     var sections = {};
     var order = [];
@@ -1308,14 +1567,18 @@
     state = st;
     lastStateAt = Date.now();
     renderHeader(st);
-    renderGuarded('dashboard', 'panel-dashboard',
-      { accounts: st.accounts, active: st.activeNumber, strategies: st.strategies, settings: st.settings,
+    renderOnboarding(st);
+    renderGuarded('updates', 'updates', { updates: st.updates, applying: updApplying }, function () { renderUpdates(st); });
+    renderGuarded('dashboard', 'accounts-card',
+      { accounts: st.accounts, active: st.activeNumber, strategies: st.strategies, settings: st.settings, currentLogin: st.currentLogin,
         auto: st.auto && { running: st.auto.running, threshold: st.auto.threshold, settings: st.auto.settings, quarantine: st.auto.quarantine } },
       function () { renderSummary(st); renderAccounts(st); });
     renderGuarded('auto', 'panel-auto',
       { auto: st.auto, accounts: st.accounts, active: st.activeNumber, settings: st.settings },
-      function () { renderAuto(st); renderSettings(st); });
+      function () { renderAuto(st); });
+    renderGuarded('settings', 'panel-settings', st.settings, function () { renderSettings(st); });
     renderGuarded('sessions', 'panel-sessions', st.sessions, function () { renderSessions(st.sessions); });
+    applyFolds(st);
     tickCountdowns();
   }
 
@@ -1330,17 +1593,66 @@
   function closeMenus() { document.querySelectorAll('details.menu[open]').forEach(function (d) { d.removeAttribute('open'); }); }
 
   var ACTIONS = {
+    'card-toggle': function (btn) {
+      var id = btn.getAttribute('data-card');
+      var folded = !$(id).classList.contains('folded');
+      foldSent[id] = folded;
+      setFolded(id, folded);
+      if (!state || !state.ui) { return Promise.resolve(); } // nothing remembers it: this page only
+      return api('POST', '/api/ui/folded', { card: id, folded: folded }).catch(function (err) {
+        toast('Could not remember that: ' + (err && err.message ? err.message : err));
+      });
+    },
+    'updates-show': function () {
+      selectTab('dashboard');
+      setFolded('updates-card', false);
+      var card = $('updates-card').hidden ? $('updates-ok') : $('updates-card');
+      if (card.scrollIntoView) { card.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+      var title = $('updates-title');
+      if (title && !$('updates-card').hidden) { title.focus({ preventScroll: true }); }
+      return Promise.resolve();
+    },
+    'updates-check': function (btn) {
+      btn.disabled = true; btn.setAttribute('aria-busy', 'true');
+      return api('POST', '/api/updates/check', {}).catch(function (err) {
+        toast(err && err.message ? err.message : String(err));
+      }).then(function () {
+        btn.disabled = false; btn.removeAttribute('aria-busy');
+        if (state) { renderUpdates(state); }
+      });
+    },
+    'updates-apply': function (btn) {
+      var target = btn.getAttribute('data-target');
+      var u = (state && state.updates) || {};
+      var ask = updateAsk(u, target);
+      return openModal({ title: ask.title, message: ask.message, okLabel: ask.ok }).then(function (v) {
+        if (v === null) { return; }
+        updApplying = target;
+        updResult = { ok: true, pending: true, message: ask.doing };
+        if (state) { renderUpdates(state); }
+        return api('POST', '/api/updates/apply', { target: target }).then(function (res) {
+          updResult = { ok: true, message: (res && res.message) || 'Done.', output: res && res.output };
+        }).catch(function (err) {
+          updResult = { ok: false, message: (err && err.message) || String(err), output: err && err.output };
+        }).then(function () {
+          updApplying = null;
+          if (state) { renderUpdates(state); }
+          return loadOnce().catch(function () {});
+        });
+      });
+    },
+    'updates-dismiss': function () { updResult = null; renderUpdateResult(); return Promise.resolve(); },
     'switch-strategy': function (btn) {
       var models = parseModelNames(settingValue(state, 'autoswitch.model'));
       var body = { strategy: strategy };
       if (models.length) { body.models = models; }
       return run(btn, 'Switch (' + strategy + ')', api('POST', '/api/switch', body));
     },
+    // No confirmation (A27): storing the login Claude Code has changes
+    // nothing else, and the callout above the table has already said what
+    // the click does.
     'add-current': function (btn) {
-      return confirmModal('Add current login', 'Snapshot the Claude Code login that is active right now into a new slot?', 'Add').then(function (ok) {
-        if (!ok) { return; }
-        return run(btn, 'Add current login', api('POST', '/api/accounts/add', {}));
-      });
+      return run(btn, 'Add current login', api('POST', '/api/accounts/add', {}));
     },
     'add-token': function (btn) {
       return openModal({

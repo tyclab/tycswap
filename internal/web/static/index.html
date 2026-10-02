@@ -17,6 +17,8 @@
     <span class="brand-text"><span class="brand-name">{{.DisplayName}}</span><span class="brand-sub">dashboard</span></span>
     <span id="version" class="chip chip-outline" aria-label="version"></span>
   </h1>
+  <!-- Updates indicator (DESIGN A27): on every tab while something can be updated. -->
+  <button type="button" class="hdr-upd" id="hdr-updates" data-action="updates-show" aria-controls="updates-card" hidden><span class="hdr-upd-count" id="hdr-updates-count" aria-hidden="true">1</span><span id="hdr-updates-text">Update available</span></button>
   <div class="hdr-acct" id="hdr-acct" aria-label="Active account and its limits"></div>
   <div class="conn" role="status" aria-live="polite">
     <span id="conn-dot" class="dot dot-off" aria-hidden="true"></span>
@@ -30,6 +32,8 @@
     <button type="button" role="tab" id="tab-dashboard" aria-controls="panel-dashboard" aria-selected="true" data-tab="dashboard">Dashboard <span class="tab-badge" id="badge-dashboard"></span></button>
     <button type="button" role="tab" id="tab-auto" aria-controls="panel-auto" aria-selected="false" tabindex="-1" data-tab="auto">Auto <span class="tab-badge" id="badge-auto"></span></button>
     <button type="button" role="tab" id="tab-sessions" aria-controls="panel-sessions" aria-selected="false" tabindex="-1" data-tab="sessions">Sessions <span class="tab-badge" id="badge-sessions"></span></button>
+    <button type="button" role="tab" id="tab-settings" aria-controls="panel-settings" aria-selected="false" tabindex="-1" data-tab="settings">Settings <span class="tab-badge" id="badge-settings"></span></button>
+    <button type="button" role="tab" id="tab-guide" aria-controls="panel-guide" aria-selected="false" tabindex="-1" data-tab="guide">Guide</button>
   </div>
 </nav>
 
@@ -37,13 +41,56 @@
 
   <!-- ===================== Dashboard ===================== -->
   <section class="panel" id="panel-dashboard" role="tabpanel" aria-labelledby="tab-dashboard">
+    <!-- Before the accounts (DESIGN A27): what keeps Claude Code from using the stored login. -->
+    <div class="onboard" id="onboard" hidden>
+      <section class="card auth-warn" id="auth-overrides" hidden>
+        <h2>Claude Code may not use the stored login</h2>
+        <p id="auth-overrides-env" hidden>The environment <code>{{.Name}} web</code> runs in sets <strong id="auth-overrides-env-keys"></strong>. A <code>claude</code> started from the same shell inherits them and signs in with them instead of the login shown here; <code>{{.Name}} run</code> and <code>{{.Name}} env</code> scrub them.</p>
+        <p id="auth-overrides-settings" hidden><code id="auth-overrides-path">settings.json</code> sets <strong id="auth-overrides-settings-keys"></strong>. Claude Code signs in with these instead of the stored login. Remove them from the file to use the accounts below.</p>
+      </section>
+    </div>
+
+    <!-- Updates (DESIGN A27): this program and Claude Code. -->
+    <div class="updates" id="updates" hidden>
+      <section class="card upd-card" id="updates-card" aria-labelledby="updates-title" hidden>
+        <div class="card-head">
+          <div class="head-l"><h2 id="updates-title" tabindex="-1"><button type="button" class="card-toggle" data-action="card-toggle" data-card="updates-card" aria-expanded="true"><span class="chev" aria-hidden="true"></span><span id="updates-title-text">Updates available</span></button></h2><span id="updates-checked" class="card-sub"></span></div>
+          <div class="head-r"><button type="button" class="btn btn-sm btn-ghost" data-action="updates-check">Check now</button></div>
+        </div>
+        <ul class="upd-list" id="updates-list"></ul>
+      </section>
+      <p class="upd-ok" id="updates-ok" role="status" hidden>
+        <span class="dot dot-on" id="updates-ok-dot" aria-hidden="true"></span>
+        <span id="updates-ok-text">Everything is up to date</span>
+        <span id="updates-ok-when" class="muted small"></span>
+        <button type="button" class="btn btn-sm btn-ghost" data-action="updates-check">Check now</button>
+      </p>
+      <ul class="upd-errors" id="updates-errors" hidden></ul>
+      <div class="notice upd-result" id="updates-result" role="status" hidden>
+        <div class="upd-result-head">
+          <span id="updates-result-text"></span>
+          <button type="button" class="btn btn-sm btn-ghost" data-action="updates-dismiss">Dismiss</button>
+        </div>
+        <details id="updates-result-more" hidden><summary>Output</summary><pre id="updates-result-output"></pre></details>
+      </div>
+    </div>
+
     <div class="tiles" id="summary-tiles" aria-label="Summary"></div>
-    <div class="card">
+    <div class="card" id="accounts-card">
       <div class="card-head">
-        <div class="head-l"><h2>Accounts</h2><span id="accounts-sub" class="card-sub"></span></div>
+        <div class="head-l"><h2><button type="button" class="card-toggle" data-action="card-toggle" data-card="accounts-card" aria-expanded="true"><span class="chev" aria-hidden="true"></span>Accounts</button></h2><span id="accounts-sub" class="card-sub"></span></div>
         <div class="head-r">
           <label class="switch" for="token-status-toggle"><input type="checkbox" id="token-status-toggle"> Token status</label>
+          <button type="button" class="btn btn-primary" data-action="add-current" data-label="Add current login">+ Add current login</button>
         </div>
+      </div>
+      <!-- Add current login (DESIGN A27): Claude Code is signed in with an account that is not stored yet. -->
+      <div class="add-callout" id="add-callout" role="status" hidden>
+        <div class="add-callout-body">
+          <strong>Claude Code is signed in as <span id="add-callout-email"></span>, which is not stored here yet.</strong>
+          <span>Store it to switch back to it later and let auto-switch use it.</span>
+        </div>
+        <button type="button" class="btn btn-primary btn-hero" data-action="add-current" data-label="Add current login">Add current login</button>
       </div>
       <div class="toolbar" role="group" aria-label="Account actions">
         <span class="toolbar-label">Switch</span>
@@ -53,7 +100,6 @@
         </div>
         <button type="button" class="btn btn-primary" data-action="switch-strategy" data-label="Switch">Switch now</button>
         <span class="spacer" aria-hidden="true"></span>
-        <button type="button" class="btn" data-action="add-current" data-label="Add current login">Add current login</button>
         <button type="button" class="btn" data-action="add-token" data-label="Add token">Add token…</button>
       </div>
       <div class="divider"></div>
@@ -73,9 +119,10 @@
       </table>
       <div id="accounts-empty" class="empty-state" hidden>
         <span class="title">No managed accounts yet</span>
-        <span>Snapshot the login Claude Code is using right now, or register a setup-token.</span>
+        <span>Sign in to Claude Code (<code>/login</code>), then click <strong>Add current login</strong>; or register a setup-token.</span>
         <code>{{.Name}} add</code>
       </div>
+      <p class="add-hint" id="add-hint" hidden>To add another account: in Claude Code type <code>/login</code> and sign in with that account, then click <strong>Add current login</strong>. <strong>Do not type <code>/logout</code> first:</strong> logging out ends the login stored here, and that account stops working. From a terminal, <code>{{.Name}} add --login</code> signs the next account in without touching the live one.</p>
     </div>
   </section>
 
@@ -107,7 +154,7 @@
           <input type="range" id="threshold-slider" min="50" max="99" step="1" value="90" list="threshold-ticks" aria-describedby="threshold-help">
           <datalist id="threshold-ticks"><option value="50"></option><option value="60"></option><option value="70"></option><option value="80"></option><option value="90"></option><option value="99"></option></datalist>
           <div class="ticks" aria-hidden="true"><span>50</span><span>60</span><span>70</span><span>80</span><span>90</span><span>99</span></div>
-          <p id="threshold-help" class="muted small">Applied live to the running engine, like the TUI's +/− keys; it is not saved. The saved value is <code>autoswitch.threshold</code> below. The engine switches when the binding window (5h, 7d, and the model windows <code>autoswitch.model</code> counts) reaches it.</p>
+          <p id="threshold-help" class="muted small">Applied live to the running engine, like the TUI's +/− keys; it is not saved. The saved value is <code>autoswitch.threshold</code> on the <a href="#settings">Settings tab</a>. The engine switches when the binding window (5h, 7d, and the model windows <code>autoswitch.model</code> counts) reaches it.</p>
         </div>
         <div id="quarantine-section" class="section" hidden>
           <h3>Quarantine</h3>
@@ -134,17 +181,8 @@
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-head">
-        <div class="head-l"><h2>Auto-switch settings</h2></div>
-        <span class="card-sub">settings.json · <code>{{.Name}} config set autoswitch.&lt;key&gt; &lt;value&gt;</code></span>
-      </div>
-      <div class="settings-grid" id="auto-settings"></div>
-      <div id="auto-settings-empty" class="empty-state" hidden>
-        <span class="title">Settings are not available in this build</span>
-        <code>{{.Name}} config</code>
-      </div>
-    </div>
+    <!-- The settings editor is its own tab (A27); this is the short way there. -->
+    <p class="settings-link" id="auto-settings"><span id="auto-settings-note">The engine starts with the saved <code>autoswitch.*</code> settings: threshold, poll interval, cooldown, hysteresis, strategy, model windows and the rest.</span> <a class="btn btn-sm" href="#settings">Edit them on the Settings tab</a></p>
 
     <div class="card">
       <div class="card-head">
@@ -196,6 +234,177 @@
         <tbody id="ide-list"></tbody>
       </table>
       <div id="ide-empty" class="empty-state" hidden><span class="title">No IDE instances</span><span>VS Code, Cursor and friends register here while the Claude Code extension is running.</span></div>
+    </div>
+  </section>
+
+  <!-- ===================== Settings ===================== -->
+  <section class="panel" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+    <div class="card" id="settings-card">
+      <div class="card-head">
+        <div class="head-l"><h2>Settings</h2><span id="settings-sub" class="card-sub"></span></div>
+        <span class="card-sub">settings.json · <code>{{.Name}} config set &lt;key&gt; &lt;value&gt;</code> · <code>{{.Name}} config unset &lt;key&gt;</code></span>
+      </div>
+      <p class="muted settings-intro">Every key <code>{{.Name}} config</code> knows, with its type, range, default and the value in effect. <strong>Save</strong> writes one key to <code>settings.json</code> after validating it; <strong>Reset</strong> removes the override so the default applies again. Each key says when a saved value takes effect: an engine reads the settings when it starts, so most keys wait for the next start; <code>autoswitch.model</code> also reaches a running engine at once, and the Auto tab's slider changes the running engine's threshold without saving it.</p>
+      <div class="settings-grid" id="settings-grid"></div>
+      <div id="settings-empty" class="empty-state" hidden>
+        <span class="title">Settings are not available in this build</span>
+        <span>The settings façade is not wired into this server; use the command line.</span>
+        <code>{{.Name}} config</code>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Guide ===================== -->
+  <section class="panel" id="panel-guide" role="tabpanel" aria-labelledby="tab-guide" hidden>
+    <div class="guide">
+      <nav class="guide-toc card" aria-label="Guide contents">
+        <div class="card-head"><div class="head-l"><h2>Guide</h2></div><span class="card-sub">how to use {{.Name}}</span></div>
+        <ol>
+          <li><a href="#g-what">What this is</a></li>
+          <li><a href="#g-concepts">The five things to understand</a></li>
+          <li><a href="#g-start">Getting started in 3 minutes</a></li>
+          <li><a href="#g-switch">Switching by hand</a></li>
+          <li><a href="#g-auto">Auto mode</a></li>
+          <li><a href="#g-settings">Settings</a></li>
+          <li><a href="#g-sessions">Sessions</a></li>
+          <li><a href="#g-updates">Updates</a></li>
+          <li><a href="#g-codex">Codex accounts</a></li>
+          <li><a href="#g-cli">Command cheat-sheet</a></li>
+          <li><a href="#g-trouble">When something looks wrong</a></li>
+          <li><a href="#g-privacy">Where your data lives</a></li>
+        </ol>
+      </nav>
+
+      <article class="card guide-section" id="g-what">
+        <h2>What this is</h2>
+        <p>Claude Code signs in as <em>one</em> account at a time, and every account has usage windows that run out. <strong>{{.Name}}</strong> keeps several Claude accounts on this machine, shows how much room each of them has left, and swaps the one Claude Code uses: by hand with one click, or automatically before you hit a wall. It does the same for Codex (ChatGPT) accounts from the command line.</p>
+        <p>With your accounts it only reads their usage and refreshes a stored login's token; the update check reads public release information and sends nothing about you. Switching only rewrites Claude Code's local credential and config files, exactly as signing out and back in would.</p>
+      </article>
+
+      <article class="card guide-section" id="g-concepts">
+        <h2>The five things to understand</h2>
+        <dl class="guide-dl">
+          <dt>Account / slot</dt>
+          <dd>Each stored login is an <em>account</em> in a numbered <em>slot</em> (<code>#1</code>, <code>#2</code>, …). You can give a slot an alias (<code>work</code>, <code>spare</code>) and use number, alias or email interchangeably everywhere.</dd>
+          <dt>Active account</dt>
+          <dd>The one Claude Code is using right now. The header always shows it with its three meters. Changing it is what “switching” means.</dd>
+          <dt>Windows: 5h, 7d, model</dt>
+          <dd>Anthropic limits each account per <strong>rolling 5-hour window</strong> and per <strong>7-day window</strong>, and some plans add a <strong>per-model weekly window</strong>. A meter shows the share used; the small text underneath says when that window resets. <span class="good">green</span> = plenty left, <span class="warn">amber</span> = getting close, <span class="crit">red</span> = at the limit.</dd>
+          <dt>At limit / eligible</dt>
+          <dd>An account is <em>at limit</em> when any counted window is at 100 %. It is <em>eligible for rotation</em> when it is enabled, has stored credentials and is not the active one; those are the accounts Auto mode may pick.</dd>
+          <dt>The threshold</dt>
+          <dd>One bar, <code>autoswitch.threshold</code> (<strong>90 %</strong> by default), at which Auto mode considers the <em>binding</em> window full and looks for another account. The binding window is whichever of 5h, 7d and the counted model windows is fullest. Set it on the Settings tab; the Auto tab's slider moves it for the running engine only.</dd>
+        </dl>
+      </article>
+
+      <article class="card guide-section" id="g-start">
+        <h2>Getting started in 3 minutes</h2>
+        <ol class="guide-steps">
+          <li><strong>Sign in to Claude Code</strong> with your first account: start <code>claude</code>, type <code>/login</code> and sign in in the browser.</li>
+          <li><strong>Store it here.</strong> Dashboard → <em>Add current login</em>. The account appears as <code>#1</code>. Give it an alias from its row menu if you like.</li>
+          <li><strong>Repeat for every account:</strong> in Claude Code type <code>/login</code> and sign in with the next one, then <em>Add current login</em> again. Each becomes the next slot. <strong>Never <code>/logout</code> in between:</strong> logging out ends the login you just stored, and that account stops working. From a terminal, <code>{{.Name}} add --login</code> does the same without touching the live login: it signs in with the next account in the browser and stores it as the next slot; add <code>--switch</code> to make it active at once.</li>
+          <li><strong>Pick the active one</strong> from the Dashboard (the row's <em>Switch</em>) or turn on Auto mode and let it decide.</li>
+          <li><strong>Restart running Claude Code sessions</strong> after a switch (<code>claude --continue</code> picks up where you were). The Sessions tab shows what is running.</li>
+        </ol>
+        <p class="muted">Have a setup token or an API key instead of a browser login? <em>Add token…</em> here, or <code>{{.Name}} add-token</code> in a terminal. API-key accounts have no usage windows and are rotated onto only when <code>autoswitch.includeApiKeyAccounts</code> is on.</p>
+      </article>
+
+      <article class="card guide-section" id="g-switch">
+        <h2>Switching by hand</h2>
+        <ul>
+          <li><strong>Switch</strong> in an account's row makes that account active at once, whatever its windows say. <strong>Force switch</strong> in the row menu skips the backup of the current login first.</li>
+          <li><strong>Best</strong> (the strategy control on the Dashboard) switches to the account with the most headroom; <strong>Next available</strong> goes to the next slot in order that is not at limit. Neither ever picks a disabled account.</li>
+          <li><strong>Disable</strong> an account to keep it stored but out of every rotation; a shared account you only want on demand, say. <strong>Enable</strong> brings it back.</li>
+          <li><strong>Move / Swap</strong> renumbers slots; <strong>Remove</strong> deletes the stored copy (your Claude login itself is untouched).</li>
+        </ul>
+        <p>Windows come back on their own: a 5-hour window at 100 % is usable again five hours after it filled, which is what the countdown under each meter tells you.</p>
+      </article>
+
+      <article class="card guide-section" id="g-auto">
+        <h2>Auto mode</h2>
+        <p>The engine polls every account's usage, and when the active one's binding window crosses the threshold it switches to the best candidate and logs why. Start and stop it on the Auto tab; the tab badge shows a dot while it runs. The engine here runs inside <code>{{.Name}} web</code>; <code>{{.Name}} auto</code> runs the same engine in a terminal, and also rotates Codex accounts.</p>
+        <h3>Settings that matter</h3>
+        <dl class="guide-dl">
+          <dt>Threshold</dt><dd><code>autoswitch.threshold</code>, <strong>90 %</strong> by default: the engine looks for another account when the binding window reaches it. Lower it if a fan-out of parallel subagents can take a window from 80 % to full between two polls.</dd>
+          <dt>Strategy</dt><dd><code>autoswitch.strategy</code>: <em>best</em> (the default) takes the account with the most headroom; <em>soonest-reset</em> prefers the account whose weekly window renews first, so several accounts are used evenly.</dd>
+          <dt>Count model limits</dt><dd><code>autoswitch.model</code>: empty counts 5h and 7d only; <em>all</em>, or a comma-separated list of model names, also counts those per-model weekly windows, so an account at 100 % of a model's week is skipped even if its 5h/7d meters are low. The Auto tab's switch sets <em>all</em> or clears it.</dd>
+          <dt>Hysteresis, cooldown</dt><dd><code>autoswitch.hysteresisPct</code>: a target must beat the active account by this much, so two accounts at the same level do not flap. <code>autoswitch.cooldownSeconds</code>: the least time between two proactive switches.</dd>
+          <dt>API-key accounts</dt><dd>Auto-switch never moves onto an API-key account unless <code>autoswitch.includeApiKeyAccounts</code> is on: it is billed per token. The header says so in red while one is active.</dd>
+          <dt>Dry run</dt><dd>Starts the engine so it logs what it <em>would</em> do without switching. Good for a first day.</dd>
+        </dl>
+        <h3>Quarantine</h3>
+        <p>An account whose credentials stop working (expired refresh token, re-login required) is quarantined: the engine stops trying it and lists the reason. Run <code>{{.Name}} add --login</code> in a terminal and sign in as that account to refresh it; the live login is untouched.</p>
+        <p class="muted">The <em>Next best</em> panel shows the engine's current ranking with the reason for every account, so a surprising choice is never a mystery.</p>
+      </article>
+
+      <article class="card guide-section" id="g-settings">
+        <h2>Settings</h2>
+        <p>The Settings tab lists every key of <code>settings.json</code> with its type, range, default and current value, and saves or resets one key at a time; it is <code>{{.Name}} config</code> in the browser. Every key is an <code>autoswitch.*</code> key today: the threshold, the poll interval, the cooldown, the hysteresis, the strategy, the model windows, whether API-key accounts count, how many failed polls make an account unhealthy, and the Codex engine's own switch and threshold.</p>
+        <p>A saved value is validated like <code>config set</code> (an out-of-range number is refused and nothing is written), and every row says when it takes effect. An auto-switch engine reads the settings when it starts (here, in <code>{{.Name}} tui</code> or in <code>{{.Name}} auto</code>), so a running one keeps what it started with; only <code>autoswitch.model</code> reaches a running engine on this page at once. The Codex keys are read by <code>{{.Name}} auto</code> only.</p>
+      </article>
+
+      <article class="card guide-section" id="g-sessions">
+        <h2>Sessions</h2>
+        <p>Every running Claude Code process on this machine, grouped by project directory, with its state (idle, busy, waiting for you), the IDE it belongs to, and the slot it runs as when it was started with <code>{{.Name}} run</code> or <code>{{.Name}} env</code>. Use it to see what a switch would interrupt, and <em>Stop</em> a session you forgot about. A running session keeps its current account until it is restarted; <code>claude --continue</code> resumes it.</p>
+      </article>
+
+      <article class="card guide-section" id="g-updates">
+        <h2>Updates</h2>
+        <p>The Dashboard checks for two updates when it starts and every six hours: a newer <strong>{{.Name}}</strong> release, and a newer <strong>Claude Code</strong> from the installer Claude Code was set up with (its native installer, npm, Homebrew or WinGet). The header shows a count while something waits; the card installs each one after you confirm, and shows what the installer printed. <code>{{.Name}} web</code> keeps running the old version until you start it again; running Claude Code sessions keep theirs until you restart them. A build from a checkout, or one installed outside a Go bin directory, is told how to upgrade instead.</p>
+      </article>
+
+      <article class="card guide-section" id="g-codex">
+        <h2>Codex accounts</h2>
+        <p>{{.Name}} switches Codex (ChatGPT) accounts too, under <code>{{.Name}} codex</code>: <code>list</code>, <code>status</code>, <code>switch</code>, <code>add</code>, <code>login</code>, <code>alias</code>, <code>export</code> and <code>import</code>. The terminal dashboard (<code>{{.Name}} tui</code>) shows them beside the Claude accounts, and <code>{{.Name}} auto</code> rotates them when <code>autoswitch.codexEnabled</code> is on (its own bar is <code>autoswitch.codexThreshold</code>; 0 means the Claude threshold). This page shows and drives Claude accounts only.</p>
+      </article>
+
+      <article class="card guide-section" id="g-cli">
+        <h2>Command cheat-sheet</h2>
+        <p>Everything the dashboard does is also a command, handy in scripts and hooks.</p>
+        <table class="tbl compact guide-tbl">
+          <thead><tr><th scope="col">Task</th><th scope="col">Command</th></tr></thead>
+          <tbody>
+            <tr><td>List accounts with usage</td><td><code>{{.Name}} list</code></td></tr>
+            <tr><td>Store the current Claude login</td><td><code>{{.Name}} add</code></td></tr>
+            <tr><td>Sign another account in beside the live one</td><td><code>{{.Name}} add --login [--switch]</code></td></tr>
+            <tr><td>Switch to slot 2 / alias / email</td><td><code>{{.Name}} switch 2</code></td></tr>
+            <tr><td>Switch to the best account</td><td><code>{{.Name}} switch --strategy best</code></td></tr>
+            <tr><td>Run Claude once as account 2</td><td><code>{{.Name}} run 2 -- --resume</code></td></tr>
+            <tr><td>Pin a shell to an account</td><td><code>eval "$({{.Name}} env 2)"</code></td></tr>
+            <tr><td>Auto mode in the foreground</td><td><code>{{.Name}} auto --threshold 85</code></td></tr>
+            <tr><td>Show, set or reset a setting</td><td><code>{{.Name}} config</code> · <code>config set autoswitch.threshold 85</code> · <code>config unset autoswitch.model</code></td></tr>
+            <tr><td>Codex accounts</td><td><code>{{.Name}} codex list</code> · <code>codex switch 2</code> · <code>codex add</code></td></tr>
+            <tr><td>Export / import accounts (<strong>plain text</strong>: it holds live credentials, so treat the file like a password)</td><td><code>{{.Name}} export accounts.{{.Name}}</code> · <code>import accounts.{{.Name}}</code></td></tr>
+            <tr><td>Update {{.Name}}</td><td><code>{{.Name}} upgrade</code></td></tr>
+            <tr><td>The terminal dashboard</td><td><code>{{.Name}}</code> (or <code>{{.Name}} tui</code>)</td></tr>
+            <tr><td>This dashboard</td><td><code>{{.Name}} web</code></td></tr>
+          </tbody>
+        </table>
+        <p class="muted"><code>{{.Name}} --help</code> and <code>{{.Name}} &lt;command&gt; --help</code> list every flag.</p>
+      </article>
+
+      <article class="card guide-section" id="g-trouble">
+        <h2>When something looks wrong</h2>
+        <details class="guide-faq"><summary>A switch happened but Claude Code still uses the old account</summary><p>Running sessions keep the credentials they started with. Restart them (<code>claude --continue</code>). The Sessions tab lists what is still running.</p></details>
+        <details class="guide-faq"><summary>Claude Code ignores the stored login altogether</summary><p>An <code>ANTHROPIC_API_KEY</code>, <code>ANTHROPIC_AUTH_TOKEN</code> or <code>ANTHROPIC_BASE_URL</code> in the environment, or in the <code>env</code> block of Claude Code's <code>settings.json</code>, takes the place of the login. The Dashboard says so above the accounts when it sees one; unset the variable or remove the key.</p></details>
+        <details class="guide-faq"><summary>An account says “re-login needed” or “token expired”</summary><p>Its refresh token was revoked or expired. Run <code>{{.Name}} add --login</code> in a terminal and sign in as that account; the slot keeps its number and alias, and the live login is untouched. If it is the live account, signing in again in Claude Code and <em>Add current login</em> does the same.</p></details>
+        <details class="guide-faq"><summary>“Usage unavailable”</summary><p>The last usage read failed or is stale (offline, or the usage endpoint hiccuped). The meters keep the last good values; they refresh on the next poll.</p></details>
+        <details class="guide-faq"><summary>Auto mode switched to an account I did not expect</summary><p>Open the Auto tab: <em>Next best</em> shows the ranking and reasons at the time, and the event log records every decision. Usually the answer is a per-model window: turn on <em>Count model limits</em> if you care about a model's weekly headroom.</p></details>
+        <details class="guide-faq"><summary>“Not switchable” on an account</summary><p>Its stored credential or config backup is missing, typically after Claude Code changed its file layout. Re-add the account.</p></details>
+        <details class="guide-faq"><summary>The Updates card says it could not check</summary><p>The release endpoint or Claude Code's source could not be read (offline, a proxy, a rate limit). What the last successful check found still shows, and <em>Check now</em> asks again. <code>{{.Name}} upgrade</code> in a terminal says the same for this program.</p></details>
+        <details class="guide-faq"><summary>The dashboard lost its connection</summary><p>The dashboard only ever listens on this machine (127.0.0.1). If the process was stopped, run <code>{{.Name}} web</code> again and open the URL it prints: the old page's tokens are dead, so the page says “session ended” rather than retrying.</p></details>
+      </article>
+
+      <article class="card guide-section" id="g-privacy">
+        <h2>Where your data lives</h2>
+        <ul>
+          <li><strong>Accounts</strong> are stored under your user profile: <code>~/.local/share/{{.Name}}</code> on Linux and WSL (<code>$XDG_DATA_HOME/{{.Name}}</code> when that is set), <code>~/.{{.Name}}</code> on macOS and Windows. Each account's credential goes to the macOS Keychain where available, otherwise to a file only you can read; the roster (<code>sequence.json</code>), the config snapshots, <code>settings.json</code> and the usage cache sit next to them, and <code>{{.Name}} config path</code> prints where.</li>
+          <li><strong>The dashboard</strong> binds to 127.0.0.1 only and requires the per-launch secrets its URL carries; nothing is reachable from the network, and no credential ever leaves the process.</li>
+          <li><strong>Usage numbers</strong> come from the usage endpoint of each stored account; nothing about your conversations is read or sent anywhere.</li>
+          <li><strong>Exports</strong> (<code>{{.Name}} export</code>) hold live credentials in plain text: treat the file like a password.</li>
+          <li><strong>Nothing is reported anywhere.</strong> There is no telemetry; the update check reads a release endpoint and Claude Code's installer source, and sends nothing but the request.</li>
+        </ul>
+      </article>
     </div>
   </section>
 

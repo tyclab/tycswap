@@ -605,11 +605,20 @@ Press Ctrl-C to stop.
 ```
 
 *Dashboard* lists the accounts with their 5h, 7d and model windows and every
-account action (switch, add, add a token, enable/disable, alias, move, swap,
-remove); *Auto* runs an auto-switch engine in the `web` process with its
-settings, *Next best* ranking, quarantine and event log; *Sessions* lists the
-running Claude Code sessions (also those started with `tycswap run`) and can
-stop one. Export and import stay on the command line.
+account action (switch, add the current login, add a token, enable/disable,
+alias, move, swap, remove), says when Claude Code is signed in with an
+account that is not stored yet, warns when an `ANTHROPIC_*` variable or a
+`settings.json` key makes Claude Code ignore the stored login, and shows what
+can be updated: a newer tycswap release and a newer Claude Code from the
+installer it was set up with, each installed from the page after a
+confirmation (the header carries the count on every tab; the check runs at
+start and every six hours). *Auto* runs an auto-switch engine in the `web`
+process with its *Next best* ranking, quarantine and event log; *Sessions*
+lists the running Claude Code sessions (also those started with `tycswap
+run`) and can stop one; *Settings* edits every `settings.json` key with its
+type, range and default, the same keys as `tycswap config`; *Guide* explains
+the tool. The Accounts and Updates cards fold, and the choice is remembered.
+Export and import stay on the command line.
 
 Only the browser tab that opens the printed URL can use the page: the token
 in it works once, the server listens on loopback only, and every API call
