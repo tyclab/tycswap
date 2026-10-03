@@ -266,9 +266,12 @@ func (k managedReadFailsKC) Get(service, account string) (string, bool, error) {
 
 // TestWriteActiveAccount_ManagedKeyItemRead_macOS: the key goes into the
 // Keychain only once what it replaces has been read, with the active read's
-// bounded retry. A read that fails once is retried and the key reaches the
-// Keychain; a read that keeps failing takes the file fallback a failed
-// Keychain write takes, and the key is live from primaryApiKey.
+// bounded retry, from a login whose MCP server logins are in the OAuth
+// Keychain item with no shadow file. A read that fails once is retried and
+// the write runs as with no failure: the key is in the Keychain alone and the
+// MCP server logins stay in the OAuth item. A read that keeps failing takes
+// the file fallback a failed Keychain write takes, and the key is live from
+// primaryApiKey.
 func TestWriteActiveAccount_ManagedKeyItemRead_macOS(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -279,9 +282,13 @@ func TestWriteActiveAccount_ManagedKeyItemRead_macOS(t *testing.T) {
 		{"keeps failing", activeReadAttempts, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			testutil.BuildFixtureHome(t)
+			fh := testutil.BuildFixtureHome(t)
+			if err := os.Remove(fh.CredentialsFile); err != nil {
+				t.Fatal(err)
+			}
 			n := tc.failures
 			kc := managedReadFailsKC{fakeKC: newFakeKC(), n: &n}
+			kc.put(claudeCodeKeychainService, keychain.AccountName(), loginBesideMCP)
 			s := newStore(t, platform.MacOS, t.TempDir(), kc, testutil.FixedClock(t, "2026-10-03T12:00:00Z"))
 
 			if err := s.WriteActiveAccount(seatKey); err != nil {
@@ -298,8 +305,20 @@ func TestWriteActiveAccount_ManagedKeyItemRead_macOS(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !tc.inItem && cfg["primaryApiKey"] != seatKey {
-				t.Errorf("primaryApiKey = %v, want the key", cfg["primaryApiKey"])
+			key, inConfig := cfg["primaryApiKey"]
+			if tc.inItem && inConfig {
+				t.Errorf("primaryApiKey = %v after the retried read, want the key in the Keychain alone", key)
+			}
+			if !tc.inItem && key != seatKey {
+				t.Errorf("primaryApiKey = %v, want the key", key)
+			}
+			if tc.inItem {
+				if got := s.LastActiveBackend(); got != "keychain" {
+					t.Errorf("reported backend %q after the retried read, want keychain", got)
+				}
+				if got, _ := kc.peek(claudeCodeKeychainService, keychain.AccountName()); got != mcpOnly {
+					t.Errorf("OAuth Keychain item = %q after the retried read, want the MCP server logins kept alone", got)
+				}
 			}
 			if got, _, _ := s.ReadActive(); got != seatKey {
 				t.Errorf("ReadActive = %q, want the managed key", got)

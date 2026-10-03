@@ -349,20 +349,22 @@ func (s *FileKeychainStore) writeManagedCredentials(apiKey string, undo bool) er
 
 // readManagedKeychainItem reads the managed-key Keychain item with the active
 // read's bounded retry (spec 03§5.4): its value and whether it exists, or the
-// last error once every attempt failed.
+// last error once every attempt failed. Only the outcome of the last attempt
+// reaches the usability cache, so a failure the retry overcomes does not turn
+// the Keychain off for the rest of the write.
 func (s *FileKeychainStore) readManagedKeychainItem() (string, bool, error) {
 	var err error
 	for attempt := 0; attempt < activeReadAttempts; attempt++ {
 		var v string
 		var found bool
-		if v, found, err = s.kcGet(managedKeychainService, keychain.AccountName()); err == nil {
-			return v, found, nil
+		if v, found, err = s.kc.Get(managedKeychainService, keychain.AccountName()); err == nil {
+			return v, found, s.learn(nil)
 		}
 		if attempt+1 < activeReadAttempts {
 			s.sleep(activeReadRetryDelay)
 		}
 	}
-	return "", false, err
+	return "", false, s.learn(err)
 }
 
 // restoreManagedKeychainItem puts the managed-key Keychain item back after a
