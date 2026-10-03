@@ -467,7 +467,7 @@ func sampleSessions() SessionsView {
 func sampleSettings() []SettingView {
 	return []SettingView{
 		{Key: "autoswitch.sevenDayThreshold", Kind: "float", Value: 97.0, Default: 97.0, IsDefault: true, Description: "Switch when the 7d window reaches this pct", Min: f64(50), Max: f64(100)},
-		{Key: "autoswitch.codexThreshold", Kind: "float", Value: 0.0, Default: 0.0, IsDefault: true, Description: "Codex-only switch threshold for both Codex windows (0 = use the 5h and 7d bars)", Min: f64(0), Max: f64(99.9)},
+		{Key: "autoswitch.codexThreshold", Kind: "float", Value: 0.0, Default: 0.0, IsDefault: true, Description: "Codex-only switch threshold (0 = use autoswitch.sevenDayThreshold)", Min: f64(0), Max: f64(99.9)},
 		{Key: "autoswitch.codexEnabled", Kind: "bool", Value: true, Default: true, IsDefault: true, Description: "Also auto-switch Codex accounts"},
 		{Key: "autoswitch.strategy", Kind: "choice", Value: "best", Default: "soonest-reset", IsDefault: false, Choices: []string{"best", "soonest-reset"}, Description: "How auto-switch orders qualifying targets"},
 	}

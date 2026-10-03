@@ -94,11 +94,10 @@ type AutoSwitchSettings struct {
 	// accounts — a Claude-only install never notices it exists (claude-swap
 	// PR #252 settings.py).
 	CodexEnabled bool
-	// CodexThreshold: 0 means "use the 5h and 7d bars" for the Codex windows
-	// too (DESIGN A34); any other value is one bar for both Codex windows. A
-	// separate knob because Claude's 5h/7d rhythm and a ChatGPT plan's limits
-	// are not the same shape, so one setting need not suit both (claude-swap
-	// PR #252 settings.py).
+	// CodexThreshold: 0 means "use SevenDayThreshold", the bar the single
+	// pre-A34 threshold seeds. A separate knob because Claude's 5h/7d rhythm
+	// and a ChatGPT plan's limits are not the same shape, so one number need
+	// not suit both (claude-swap PR #252 settings.py).
 	CodexThreshold  float64
 	CooldownSeconds float64
 	HysteresisPct   float64
@@ -185,7 +184,7 @@ var SettingSpecs = []Spec{
 		Help:    "Also auto-switch Codex accounts in the tycswap auto loop"},
 	{Section: "autoswitch", JSONKey: "codexThreshold", Field: "CodexThreshold", Kind: KindFloat,
 		Lo: 0.0, Hi: 99.9, Default: 0.0,
-		Help: "Codex-only switch threshold for both Codex windows (0 = use the 5h and 7d bars)"},
+		Help: "Codex-only switch threshold (0 = use autoswitch.sevenDayThreshold)"},
 	{Section: "autoswitch", JSONKey: "cooldownSeconds", Field: "CooldownSeconds", Kind: KindFloat,
 		Lo: 0.0, Hi: 86400.0, Default: 300.0,
 		Help: "Minimum seconds between proactive switches"},

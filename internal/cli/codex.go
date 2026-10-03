@@ -718,11 +718,9 @@ Examples:
   tycswap codex export ~/codex.json     back up accounts (contains live tokens)
 
 Auto-switching:
-  Codex rides along in ` + "`tycswap auto`" + `, which rotates both providers. Each Codex
-  window is judged against the Claude bar for it (autoswitch.fiveHourThreshold,
-  autoswitch.sevenDayThreshold); ` + "`tycswap config set autoswitch.codexThreshold 85`" + `
-  sets one bar for both (0 = the Claude bars), and ` + "`autoswitch.codexEnabled false`" + `
-  turns it off.
+  Codex rides along in ` + "`tycswap auto`" + `, which rotates both providers. Tune it with
+  ` + "`tycswap config set autoswitch.codexThreshold 85`" + ` (0 = inherit
+  autoswitch.sevenDayThreshold) or turn it off with ` + "`autoswitch.codexEnabled false`" + `.
   A Codex API-key login is never a rotation target, as on the Claude side: it
   reports no usage, so a threshold has nothing to compare.
 

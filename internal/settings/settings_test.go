@@ -397,8 +397,8 @@ func TestSetSetting_StrategyChoices(t *testing.T) {
 }
 
 // TestDefault_CodexKnobs pins the claude-swap PR #252 defaults: Codex rides in
-// the auto loop unless turned off, and its threshold is 0 until set: the Codex
-// windows then use the 5h and 7d bars (DESIGN A34).
+// the auto loop unless turned off, and its threshold is 0 until set, which
+// inherits autoswitch.sevenDayThreshold (DESIGN A34).
 func TestDefault_CodexKnobs(t *testing.T) {
 	d := Default()
 	if !d.CodexEnabled {
@@ -412,7 +412,7 @@ func TestDefault_CodexKnobs(t *testing.T) {
 		kind      Kind
 	}{
 		{"autoswitch.codexEnabled", "Also auto-switch Codex accounts in the tycswap auto loop", KindBool},
-		{"autoswitch.codexThreshold", "Codex-only switch threshold for both Codex windows (0 = use the 5h and 7d bars)", KindFloat},
+		{"autoswitch.codexThreshold", "Codex-only switch threshold (0 = use autoswitch.sevenDayThreshold)", KindFloat},
 	} {
 		spec, err := SpecFor(tc.key)
 		if err != nil {

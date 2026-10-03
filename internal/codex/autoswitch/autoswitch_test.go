@@ -100,11 +100,7 @@ func (s *fakeSwitcher) SwitchTo(_ context.Context, number string) (switcher.Swit
 	return switcher.SwitchResult{Number: number, Email: number + "@x", RunningPIDs: append([]int{}, s.running...)}, nil
 }
 
-// auto builds an engine with one bar for both windows, as a non-zero
-// autoswitch.codexThreshold sets.
-func auto(fake *fakeSwitcher, threshold float64) *AutoSwitcher {
-	return New(fake, SingleBar(threshold), 10)
-}
+func auto(fake *fakeSwitcher, threshold float64) *AutoSwitcher { return New(fake, threshold, 10) }
 
 // ---- the binding window ------------------------------------------------------
 
@@ -128,7 +124,7 @@ func TestBindingPctIsNilWithoutAMeasurement(t *testing.T) {
 func TestAnActiveAccountBelowThresholdIsLeftAlone(t *testing.T) {
 	fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{acc("1", f(40), accOpt{active: true}), acc("2", f(5), accOpt{})}}
 	tick := auto(fake, 90).Tick(ctx, false)
-	if tick.Outcome != OutcomeOK || tick.Detail != "account 1 at 5h 40% (below its 90% bar)" || len(fake.switched) != 0 {
+	if tick.Outcome != OutcomeOK || tick.Detail != "account 1 at 40% (below threshold)" || len(fake.switched) != 0 {
 		t.Fatalf("tick = %+v switched=%v", tick, fake.switched)
 	}
 }
@@ -144,21 +140,21 @@ func TestAnUnmeasuredActiveAccountIsNeverSwitchedAwayFrom(t *testing.T) {
 func TestNoCandidateBelowThresholdBlocksRatherThanMoving(t *testing.T) {
 	fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{acc("1", f(95), accOpt{active: true}), acc("2", f(97), accOpt{})}}
 	tick := auto(fake, 90).Tick(ctx, false)
-	if tick.Outcome != OutcomeBlocked || tick.Detail != "account 1 at 5h 95% and no better candidate" || len(fake.switched) != 0 {
+	if tick.Outcome != OutcomeBlocked || tick.Detail != "account 1 at 95% and no better candidate" || len(fake.switched) != 0 {
 		t.Fatalf("tick = %+v switched=%v", tick, fake.switched)
 	}
 }
 
 func TestACandidateInsideTheHysteresisMarginIsRefused(t *testing.T) {
 	fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{acc("1", f(92), accOpt{active: true}), acc("2", f(89), accOpt{})}}
-	if tick := auto(fake, 90).Tick(ctx, false); tick.Outcome != OutcomeBlocked || len(fake.switched) != 0 {
+	if tick := New(fake, 90, 10).Tick(ctx, false); tick.Outcome != OutcomeBlocked || len(fake.switched) != 0 {
 		t.Fatalf("tick = %+v", tick)
 	}
 }
 
 func TestACandidateExactlyAtTheHysteresisMarginIsAccepted(t *testing.T) {
 	fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{acc("1", f(92), accOpt{active: true}), acc("2", f(82), accOpt{})}}
-	if tick := auto(fake, 90).Tick(ctx, false); tick.Outcome != OutcomeSwitched {
+	if tick := New(fake, 90, 10).Tick(ctx, false); tick.Outcome != OutcomeSwitched {
 		t.Fatalf("tick = %+v", tick)
 	}
 }
@@ -193,7 +189,7 @@ func TestNoActiveAccountIsAQuietNoOp(t *testing.T) {
 }
 
 func TestASnapshotFailureIsReportedNeverRaised(t *testing.T) {
-	tick := auto(&fakeSwitcher{snapPanic: true}, 90).Tick(ctx, false)
+	tick := New(&fakeSwitcher{snapPanic: true}, 90, 10).Tick(ctx, false)
 	if tick.Outcome != OutcomeError || !strings.Contains(tick.Detail, "snapshot failed") {
 		t.Fatalf("tick = %+v", tick)
 	}
@@ -209,7 +205,7 @@ func TestAnExhaustedActiveAccountMovesToTheRoomiestCandidate(t *testing.T) {
 	if tick.Outcome != OutcomeSwitched || tick.SwitchedTo != "3" || !reflect.DeepEqual(fake.switched, []string{"3"}) {
 		t.Fatalf("tick = %+v switched=%v", tick, fake.switched)
 	}
-	if tick.Detail != "switched 1 (5h 95%) -> 3 (5h 10%)" {
+	if tick.Detail != "switched 1 (95%) -> 3 (10%)" {
 		t.Errorf("detail = %q", tick.Detail)
 	}
 }
@@ -220,7 +216,7 @@ func TestDryRunDecidesWithoutSwitching(t *testing.T) {
 	if tick.Outcome != OutcomeOK || !strings.Contains(tick.Detail, "would switch") || len(fake.switched) != 0 {
 		t.Fatalf("tick = %+v switched=%v", tick, fake.switched)
 	}
-	if tick.Detail != "would switch 1 (5h 95%) -> 2 (5h 5%)" || tick.SwitchedTo != "" {
+	if tick.Detail != "would switch 1 (95%) -> 2 (5%)" || tick.SwitchedTo != "" {
 		t.Errorf("tick = %+v", tick)
 	}
 }
@@ -249,78 +245,36 @@ func TestASwitchFailureIsReportedNotRaised(t *testing.T) {
 	}
 }
 
-// ---- one bar per window (DESIGN A34) -----------------------------------------
-
-// bars is the default per-window bars: the 5h window bursts, so its bar is
-// the lower one; the week creeps.
-var bars = Bars{FiveHour: 85, SevenDay: 97}
-
-// TestEachCodexWindowHasItsOwnBar: with autoswitch.codexThreshold at 0 the
-// Codex windows are judged as the Claude ones are, each against its own bar. A
-// 5h window at 90 % is over its 85 % bar; a week at 96 % is under its 97 % bar.
-func TestEachCodexWindowHasItsOwnBar(t *testing.T) {
-	fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{
-		acc("1", f(90), accOpt{active: true, weekly: f(10)}), acc("2", f(5), accOpt{weekly: f(5)}),
-	}}
-	tick := New(fake, bars, 10).Tick(ctx, false)
-	if tick.Outcome != OutcomeSwitched || tick.Detail != "switched 1 (5h 90%) -> 2 (5h 5%)" {
-		t.Fatalf("5h over its bar: tick = %+v", tick)
+// TestACandidateAtItsFiveHourLimitIsNeverATarget: a candidate whose 5h window
+// is at 100 % is refused, however much weekly room it has, whatever triggered
+// the move, with the 7d bar (97) as the bar or a codexThreshold of 90.
+func TestACandidateAtItsFiveHourLimitIsNeverATarget(t *testing.T) {
+	for _, bar := range []float64{97, 90} {
+		fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{
+			acc("1", f(10), accOpt{active: true, weekly: f(98)}), acc("2", f(100), accOpt{weekly: f(10)}),
+		}}
+		tick := auto(fake, bar).Tick(ctx, false)
+		if tick.Outcome != OutcomeBlocked || len(fake.switched) != 0 {
+			t.Errorf("bar %v: tick = %+v switched=%v, want blocked", bar, tick, fake.switched)
+		}
 	}
+}
 
+// TestABarOfOneHundredNeverMovesProactively: with the 7d bar at 100 (reachable
+// since the bars range to 100) the Codex engine moves only off an account at
+// its limit, and is not clamped below 100.
+func TestABarOfOneHundredNeverMovesProactively(t *testing.T) {
+	fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{
+		acc("1", f(99.9), accOpt{active: true, weekly: f(50)}), acc("2", f(5), accOpt{weekly: f(5)}),
+	}}
+	if tick := auto(fake, 100).Tick(ctx, false); tick.Outcome != OutcomeOK || len(fake.switched) != 0 {
+		t.Fatalf("99.9%% under a bar of 100: tick = %+v switched=%v", tick, fake.switched)
+	}
 	fake = &fakeSwitcher{accounts: []reporting.AccountSnapshot{
-		acc("1", f(10), accOpt{active: true, weekly: f(96)}), acc("2", f(5), accOpt{weekly: f(5)}),
+		acc("1", f(100), accOpt{active: true, weekly: f(50)}), acc("2", f(5), accOpt{weekly: f(5)}),
 	}}
-	tick = New(fake, bars, 10).Tick(ctx, false)
-	if tick.Outcome != OutcomeOK || tick.Detail != "account 1 at 7d 96% (below its 97% bar)" || len(fake.switched) != 0 {
-		t.Fatalf("week under its bar: tick = %+v switched=%v", tick, fake.switched)
-	}
-}
-
-// TestTheCostlierCodexWindowNamesTheMove: both windows over their bars, the
-// week decides, and the candidate is judged on it.
-func TestTheCostlierCodexWindowNamesTheMove(t *testing.T) {
-	fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{
-		acc("1", f(99), accOpt{active: true, weekly: f(98)}), acc("2", f(50), accOpt{weekly: f(20)}),
-	}}
-	tick := New(fake, bars, 10).Tick(ctx, false)
-	if tick.Outcome != OutcomeSwitched || tick.Detail != "switched 1 (7d 98%) -> 2 (7d 20%)" {
-		t.Fatalf("tick = %+v", tick)
-	}
-}
-
-// TestACodexMoveNeverLandsOnASpentWeek: however much 5h room a candidate has,
-// a week at its limit is out for days.
-func TestACodexMoveNeverLandsOnASpentWeek(t *testing.T) {
-	fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{
-		acc("1", f(95), accOpt{active: true, weekly: f(10)}), acc("2", f(0), accOpt{weekly: f(100)}),
-	}}
-	if tick := New(fake, bars, 10).Tick(ctx, false); tick.Outcome != OutcomeBlocked || len(fake.switched) != 0 {
-		t.Fatalf("tick = %+v switched=%v", tick, fake.switched)
-	}
-}
-
-// TestCodexCandidatesRankByWeeklyRoom: among qualifying candidates the one with
-// the most weekly room wins, not the one resting its 5h window.
-func TestCodexCandidatesRankByWeeklyRoom(t *testing.T) {
-	fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{
-		acc("1", f(95), accOpt{active: true, weekly: f(10)}),
-		acc("2", f(1), accOpt{weekly: f(60)}),
-		acc("3", f(50), accOpt{weekly: f(20)}),
-	}}
-	tick := New(fake, bars, 10).Tick(ctx, false)
-	if tick.Outcome != OutcomeSwitched || tick.SwitchedTo != "3" {
-		t.Fatalf("tick = %+v, want a switch to 3 (most weekly room)", tick)
-	}
-}
-
-// TestACodexCandidateWithoutTheTriggeringWindowIsJudgedOnItsWeek: a candidate
-// reporting no 5h window is not disqualified by the unknown; its week decides.
-func TestACodexCandidateWithoutTheTriggeringWindowIsJudgedOnItsWeek(t *testing.T) {
-	fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{
-		acc("1", f(95), accOpt{active: true, weekly: f(10)}), acc("2", nil, accOpt{weekly: f(5)}),
-	}}
-	if tick := New(fake, bars, 10).Tick(ctx, false); tick.Outcome != OutcomeSwitched || tick.SwitchedTo != "2" {
-		t.Fatalf("tick = %+v", tick)
+	if tick := auto(fake, 100).Tick(ctx, false); tick.Outcome != OutcomeSwitched || tick.SwitchedTo != "2" {
+		t.Fatalf("at the limit under a bar of 100: tick = %+v", tick)
 	}
 }
 
@@ -404,7 +358,7 @@ func TestRepeatedTicksDoNotRePollTheAPI(t *testing.T) {
 		}
 	}
 
-	a := New(sw, SingleBar(90), 10)
+	a := New(sw, 90, 10)
 	a.Tick(ctx, false)
 	first := calls.Load()
 	a.Tick(ctx, false)

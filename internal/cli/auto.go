@@ -199,10 +199,9 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 
 // newCodexAutoEngine returns the Codex auto-switcher, or nil when
 // autoswitch.codexEnabled is off or this machine has no Codex accounts (cli.py
-// _codex_auto_engine). Its bars are the effective 5h and 7d bars, or
-// autoswitch.codexThreshold for both Codex windows when that is not 0 (DESIGN
-// A34). A broken Codex store must never stop the Claude loop starting, so a
-// panic here is a nil engine.
+// _codex_auto_engine). The threshold is autoswitch.codexThreshold, or the
+// effective Claude 7d bar when that is 0 (codexThreshold). A broken Codex store
+// must never stop the Claude loop starting, so a panic here is a nil engine.
 func newCodexAutoEngine(merged settings.AutoSwitchSettings, s ioStreams) (eng *codexauto.AutoSwitcher) {
 	if !merged.CodexEnabled {
 		return nil
@@ -215,16 +214,18 @@ func newCodexAutoEngine(merged settings.AutoSwitchSettings, s ioStreams) (eng *c
 	if !providers.CodexIsPresent() {
 		return nil
 	}
-	return codexauto.New(newCodexSwitcher(s), codexBars(merged), merged.HysteresisPct)
+	return codexauto.New(newCodexSwitcher(s), codexThreshold(merged), merged.HysteresisPct)
 }
 
-// codexBars is the Codex engine's bar per window: the Claude 5h and 7d bars,
-// or autoswitch.codexThreshold for both when it is set (not 0).
-func codexBars(merged settings.AutoSwitchSettings) codexauto.Bars {
+// codexThreshold is the Codex engine's one bar: autoswitch.codexThreshold, or
+// the Claude 7d bar when that is 0. The 7d bar is the one a pre-A34
+// autoswitch.threshold seeds, so a migrated settings file keeps its Codex
+// behaviour (DESIGN A34).
+func codexThreshold(merged settings.AutoSwitchSettings) float64 {
 	if merged.CodexThreshold != 0 {
-		return codexauto.SingleBar(merged.CodexThreshold)
+		return merged.CodexThreshold
 	}
-	return codexauto.Bars{FiveHour: merged.FiveHourThreshold, SevenDay: merged.SevenDayThreshold}
+	return merged.SevenDayThreshold
 }
 
 // startCodexLoop runs tick on its own goroutine — once immediately, then every

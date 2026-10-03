@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
 	"github.com/tyclab/tycswap/internal/settings"
 )
 
@@ -53,17 +52,18 @@ func TestStopCodexLoopWaitsForAnInFlightTick(t *testing.T) {
 	}
 }
 
-// TestCodexBarsFollowTheClaudeBars: with autoswitch.codexThreshold at 0 each
-// Codex window is judged against the Claude bar for it; a non-zero value is
-// one bar for both Codex windows (DESIGN A34).
-func TestCodexBarsFollowTheClaudeBars(t *testing.T) {
+// TestCodexThresholdFallsBackToTheSevenDayBar: the Codex engine keeps one bar
+// for its windows. It is autoswitch.codexThreshold when set (not 0), else the
+// Claude 7d bar, the bar a pre-A34 autoswitch.threshold seeds, so a migrated
+// settings file keeps its Codex behaviour (DESIGN A34).
+func TestCodexThresholdFallsBackToTheSevenDayBar(t *testing.T) {
 	s := settings.Default()
 	s.FiveHourThreshold, s.SevenDayThreshold = 80, 96
-	if got, want := codexBars(s), (codexauto.Bars{FiveHour: 80, SevenDay: 96}); got != want {
-		t.Errorf("codexThreshold 0: bars %+v, want %+v", got, want)
+	if got := codexThreshold(s); got != 96 {
+		t.Errorf("codexThreshold 0: bar %v, want the 7d bar 96", got)
 	}
 	s.CodexThreshold = 88
-	if got, want := codexBars(s), codexauto.SingleBar(88); got != want {
-		t.Errorf("codexThreshold 88: bars %+v, want %+v", got, want)
+	if got := codexThreshold(s); got != 88 {
+		t.Errorf("codexThreshold 88: bar %v, want 88", got)
 	}
 }
