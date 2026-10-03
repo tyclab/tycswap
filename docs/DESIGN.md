@@ -4091,7 +4091,14 @@ Keychain is in use, else the plaintext file. Being seat-wide only, it never
 shadows the key. The credential is cleared whole, as before, only when there
 is no seat-wide part (or the live text does not parse) or that write fails.
 This holds for every path onto a key: a switch, `--force`, auto-switch and a
-rollback to an API-key original.
+rollback to an API-key original. A direct activation (`--force`, a fresh
+machine, a live login no slot holds) reads `~/.claude.json` once before the
+credential write, to refuse a corrupt file, and again after it, as the normal
+switch does, before it sets `oauthAccount`. It used to write the first copy
+back, which dropped the `primaryApiKey` and the approval the key write had
+just stored: outside the macOS Keychain the seat was left with no credential,
+and a `--force` from a live key onto a subscription account left the old key
+in the file (`internal/switching/directapikey_test.go`).
 
 **4. No managed key behind it.** A seat-wide-only file with no managed key
 reads as no credential at all. A normal switch away then stops with the
