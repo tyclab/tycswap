@@ -4,6 +4,8 @@ import (
 	"math"
 	"testing"
 	"time"
+
+	"github.com/tyclab/tycswap/internal/clock"
 )
 
 func approxEq(a, b float64) bool { return math.Abs(a-b) < 1e-6 }
@@ -130,7 +132,8 @@ func TestPlanAfterFetchResetCapping(t *testing.T) {
 // TestPlanAfterFetchAtLimitPark covers the at-limit park (04§3.4 step 9,
 // DESIGN A31): an account with no headroom waits for the reset that frees it,
 // but never longer than ParkCapS, so its cached measurement is polled again
-// before it leaves the decision-trust ceiling (TrustMaxAgeS).
+// before it leaves the decision-trust ceiling (TrustMaxAgeS). The capped park
+// is jittered downward only; at rng 0.5 it is ParkCapS·(1−JitterFrac/2).
 func TestPlanAfterFetchAtLimitPark(t *testing.T) {
 	const now = 1784277975.0
 	const day = 86400.0
@@ -147,6 +150,7 @@ func TestPlanAfterFetchAtLimitPark(t *testing.T) {
 		}
 	}
 	all := []string{"all"}
+	const parkAtHalf = ParkCapS * (1 - JitterFrac/2) // 3249 s
 
 	cases := []struct {
 		name         string
@@ -157,12 +161,12 @@ func TestPlanAfterFetchAtLimitPark(t *testing.T) {
 		{
 			name:         "inactive, model window at 100% resets in 5 days: capped",
 			in:           PlanInput{NewUsage: modelAt(100, 5*day), Models: all, Now: now},
-			wantInterval: 300, wantNextPoll: now + ParkCapS,
+			wantInterval: 300, wantNextPoll: now + parkAtHalf,
 		},
 		{
 			name:         "inactive, 5h window at 100% resets in 2 hours: capped",
 			in:           PlanInput{NewUsage: fhReset(100, iso(7200)), Now: now},
-			wantInterval: 300, wantNextPoll: now + ParkCapS,
+			wantInterval: 300, wantNextPoll: now + parkAtHalf,
 		},
 		{
 			name:         "inactive, model window at 100% resets in 10 minutes: parks at the reset",
@@ -172,7 +176,7 @@ func TestPlanAfterFetchAtLimitPark(t *testing.T) {
 		{
 			name:         "active, model window at 100% resets in 5 days: capped",
 			in:           PlanInput{IsActive: true, NewUsage: modelAt(100, 5*day), Models: all, Now: now},
-			wantInterval: 180, wantNextPoll: now + ParkCapS,
+			wantInterval: 180, wantNextPoll: now + parkAtHalf,
 		},
 		{
 			name:         "model window not counted: headroom left, normal cadence",
@@ -194,16 +198,95 @@ func TestPlanAfterFetchAtLimitPark(t *testing.T) {
 		})
 	}
 
-	// Whatever the jitter, a park far from its reset is due at least one
-	// interval out and before the trust ceiling.
-	for _, r := range []float64{0, 0.5, 1} {
-		in := PlanInput{NewUsage: modelAt(100, 5*day), Models: all, Now: now, RNG: func() float64 { return r }}
-		next, interval := PlanAfterFetch(in)
+	// The capped park is jittered downward only: a park far from its reset is
+	// due between ParkCapS·(1−JitterFrac) and ParkCapS out, so at least one
+	// interval out and before the trust ceiling. A park at a nearer reset is
+	// the reset itself, at every jitter.
+	for _, tc := range []struct {
+		rng  float64
+		want float64
+	}{
+		{0, now + ParkCapS},                // 3420 s
+		{0.5, now + parkAtHalf},            // 3249 s, the midpoint
+		{1, now + ParkCapS*(1-JitterFrac)}, // 3078 s
+	} {
+		rng := func() float64 { return tc.rng }
+		next, interval := PlanAfterFetch(PlanInput{NewUsage: modelAt(100, 5*day), Models: all, Now: now, RNG: rng})
+		if !approxEq(next, tc.want) {
+			t.Errorf("rng=%v: nextPoll = now%+.1f, want now%+.1f", tc.rng, next-now, tc.want-now)
+		}
 		if next > now+ParkCapS || next < now+interval {
-			t.Errorf("rng=%v: nextPoll = now%+.0f, want within [now+%v, now+%v]", r, next-now, interval, ParkCapS)
+			t.Errorf("rng=%v: nextPoll = now%+.0f, want within [now+%v, now+%v]", tc.rng, next-now, interval, ParkCapS)
 		}
 		if next-now >= TrustMaxAgeS {
-			t.Errorf("rng=%v: nextPoll = now%+.0f reaches the trust ceiling %v", r, next-now, TrustMaxAgeS)
+			t.Errorf("rng=%v: nextPoll = now%+.0f reaches the trust ceiling %v", tc.rng, next-now, TrustMaxAgeS)
+		}
+		if next, _ := PlanAfterFetch(PlanInput{NewUsage: modelAt(100, 600), Models: all, Now: now, RNG: rng}); !approxEq(next, now+600) {
+			t.Errorf("rng=%v, reset in 10 minutes: nextPoll = now%+.1f, want the reset, now+600", tc.rng, next-now)
+		}
+	}
+}
+
+// TestAtLimitParksFetchedTogetherFallDueApart replays, over the real store,
+// three at-limit candidates fetched in one pass (as the escalation pass
+// fetches them) and then polled the engine's way: every 15 s tick fetches the
+// one candidate DueCandidate picks (DESIGN A31 item 3). Each account keeps one
+// fixed jitter draw at every park, so their due times stay apart and each
+// reads as decision-grade after every tick for three hours. The replay shows
+// the spread and that every park ends inside the trust ceiling, not that
+// collisions never happen: in production every plan draws afresh, and two
+// accounts can still fall due on one tick. Without the jitter all three fall
+// due on one tick and two wait for theirs.
+func TestAtLimitParksFetchedTogetherFallDueApart(t *testing.T) {
+	const start = 1784277975.0
+	const tick = 15.0
+	clk := fakeAt(start)
+	s := NewStore(t.TempDir(), clk)
+	weekly := time.Unix(int64(start+5*86400), 0).UTC().Format(time.RFC3339)
+	atLimit := map[string]any{"seven_day": map[string]any{"pct": 100.0, "resets_at": weekly}}
+	cands := []string{"2", "3", "4"}
+	ids := map[string]Identity{"2": {Email: "b@x.com"}, "3": {Email: "c@x.com"}, "4": {Email: "d@x.com"}}
+	draw := map[string]float64{"2": 0.1, "3": 0.5, "4": 0.9}
+
+	fetch := func(nums ...string) {
+		t.Helper()
+		recs := make(map[string]FetchRecord, len(nums))
+		for _, n := range nums {
+			recs[n] = FetchRecord{Usage: atLimit}
+		}
+		if err := s.Record(recs, ids); err != nil {
+			t.Fatal(err)
+		}
+		plans := make(map[string]PollPlan, len(nums))
+		for _, n := range nums {
+			r := draw[n]
+			next, interval := PlanAfterFetch(PlanInput{NewUsage: atLimit, Now: clock.Seconds(clk), RNG: func() float64 { return r }})
+			plans[n] = PollPlan{NextPollAt: &next, IntervalS: &interval}
+		}
+		if err := s.SetPollPlan(plans, ids); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	fetch(cands...)
+	due := map[float64]string{}
+	for n, e := range s.Entries(ids) {
+		if prev, ok := due[*e.NextPollAt]; ok {
+			t.Fatalf("accounts %s and %s fetched together fall due together, at now%+.0f", prev, n, *e.NextPollAt-start)
+		}
+		due[*e.NextPollAt] = n
+	}
+
+	for elapsed := tick; elapsed <= 3*3600; elapsed += tick {
+		clk.Advance(time.Duration(tick) * time.Second)
+		if pick := DueCandidate(cands, s.Entries(ids), clock.Seconds(clk)); pick != "" {
+			fetch(pick)
+		}
+		for n, e := range s.Entries(ids) {
+			if e.DecisionValue() == nil {
+				t.Fatalf("at +%.0fs: account %s reads usage unavailable (age %.0fs, due at +%.0fs)",
+					elapsed, n, *e.AgeS, *e.NextPollAt-start)
+			}
 		}
 	}
 }
