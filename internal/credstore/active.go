@@ -235,12 +235,22 @@ func (s *FileKeychainStore) refreshStaleCredentialsFile(creds string) {
 // writeManagedCredentials activates a managed API key, then clears OAuth (spec
 // 03§5.6). It records the approved form on every platform (even on Keychain
 // success) and stores the key in the Keychain when usable, else primaryApiKey.
+// An error leaves nothing for the caller's rollback, which runs only after a
+// write that succeeded: on the file backend the key and its approval are one
+// config write, and a failure after the Keychain write puts the managed
+// Keychain item back as it was, the previous key or none (DESIGN A29).
 func (s *FileKeychainStore) writeManagedCredentials(apiKey string) error {
 	wroteToKeychain := false
+	restoreKeychain := func() {}
 	if s.useKeychain() {
-		err := s.kcSet(managedKeychainService, keychain.AccountName(), apiKey)
+		// What the item holds now is what a failure below puts back.
+		prev, hadPrev, err := s.kcGet(managedKeychainService, keychain.AccountName())
+		if err == nil {
+			err = s.kcSet(managedKeychainService, keychain.AccountName(), apiKey)
+		}
 		if err == nil {
 			wroteToKeychain = true
+			restoreKeychain = func() { s.restoreManagedKeychainItem(prev, hadPrev) }
 		} else if !keychain.IsUnusable(err) {
 			return err // a programming error propagates
 		} else {
@@ -280,6 +290,7 @@ func (s *FileKeychainStore) writeManagedCredentials(apiKey string) error {
 		}
 	}
 	if err := ccfile.UpdateGlobalConfig(mutate); err != nil {
+		restoreKeychain()
 		return cerr.CredentialWrite("Failed to write managed API key: %v", err)
 	}
 
@@ -299,6 +310,7 @@ func (s *FileKeychainStore) writeManagedCredentials(apiKey string) error {
 		}
 		return nil
 	}); err != nil {
+		restoreKeychain()
 		return err
 	}
 	if s.macOS() && !wroteToKeychain {
@@ -313,6 +325,22 @@ func (s *FileKeychainStore) writeManagedCredentials(apiKey string) error {
 		s.setBackend("file")
 	}
 	return nil
+}
+
+// restoreManagedKeychainItem puts the managed-key Keychain item back as it was
+// before a write that failed after storing its key there: the previous value,
+// or no item. Best-effort and not through the usability cache, like
+// clearManagedKey.
+func (s *FileKeychainStore) restoreManagedKeychainItem(prev string, hadPrev bool) {
+	var err error
+	if hadPrev {
+		err = s.kc.Set(managedKeychainService, keychain.AccountName(), prev)
+	} else {
+		err = s.kc.Delete(managedKeychainService, keychain.AccountName())
+	}
+	if err != nil {
+		s.log.Warningf("Could not put the managed-key Keychain item back after the failed write: %v", err)
+	}
 }
 
 // clearManagedKey clears any active managed API key (Claude Code removeApiKey
