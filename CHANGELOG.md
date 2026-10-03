@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Auto-switch orders the accounts that qualify by earliest weekly renewal by default: `autoswitch.strategy` defaults to `soonest-reset` instead of `best`, so quota is spent where it comes back soonest and an account whose weekly window is about to renew is not left idle. A `settings.json` without the key (including a store copied from claude-swap) follows the new default; one that sets `best` keeps it, and `tycswap config set autoswitch.strategy best` restores the old order. `tycswap config`, the TUI's Settings screen, the dashboard's Settings tab and Guide show the new default (DESIGN A32).
 - CI: a GitHub Actions workflow runs `make fmt`, `make vet` and `make test` on every push to `main` and every pull request. Until now the suite ran only on a developer's machine; the flakelab build of a release skips it.
 
 - `tycswap web`: the "limits ignored" warning's tooltip says where model windows are counted: the *Count model limits* switch on the Auto tab, or `autoswitch.model` on the Settings tab. It still sent the user to the Auto tab for `autoswitch.model`, which moved to the Settings tab with the rest of the editor.

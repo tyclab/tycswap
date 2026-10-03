@@ -337,15 +337,16 @@ func TestSettingsBoolToggles(t *testing.T) {
 func TestSettingsEnumCycles(t *testing.T) {
 	m, s, dir := settingsModel(t)
 	selectKey(t, s, "autoswitch.strategy")
-	landSettingsAction(t, m, s.update(m, keyPress("enter")))
-	if got := readSettings(t, dir)["strategy"]; got != "soonest-reset" {
-		t.Fatalf("strategy after one cycle = %v, want soonest-reset", got)
-	}
+	// The cycle starts at the effective value, soonest-reset (the default).
 	landSettingsAction(t, m, s.update(m, keyPress("enter")))
 	if got := readSettings(t, dir)["strategy"]; got != "best" {
-		t.Fatalf("strategy after two cycles = %v, want best (wrapped)", got)
+		t.Fatalf("strategy after one cycle = %v, want best (wrapped)", got)
 	}
-	if !hasToast(m, "autoswitch.strategy = best", "", "") {
+	landSettingsAction(t, m, s.update(m, keyPress("enter")))
+	if got := readSettings(t, dir)["strategy"]; got != "soonest-reset" {
+		t.Fatalf("strategy after two cycles = %v, want soonest-reset", got)
+	}
+	if !hasToast(m, "autoswitch.strategy = soonest-reset", "", "") {
 		t.Fatalf("toasts = %v", toastMessages(m))
 	}
 }

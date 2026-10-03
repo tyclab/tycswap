@@ -1363,8 +1363,8 @@ latency.
 
 Which accounts qualify as targets is governed by the threshold, hysteresis,
 cooldown, and quarantine rules; the order in which qualifying targets are
-tried is governed by `autoswitch.strategy` — most headroom first (`best`,
-the default) or earliest weekly renewal first (`soonest-reset`). See
+tried is governed by `autoswitch.strategy` — earliest weekly renewal first
+(`soonest-reset`, the default) or most headroom first (`best`). See
 [SETTINGS](#settings) for the ordering rules.
 
 **Codex accounts.** When `autoswitch.codexEnabled` is true (the default) and
@@ -4153,7 +4153,7 @@ Every key, with its type, range, default, and meaning:
 | `autoswitch.codexThreshold` | float (percent) | 0–99.9 | 0 | Codex-only switch threshold; 0 uses `autoswitch.threshold`. |
 | `autoswitch.cooldownSeconds` | float (seconds) | 0–86400 | 300 | Minimum seconds between proactive switches. |
 | `autoswitch.hysteresisPct` | float (percent) | 0–50 | 10 | A switch target must beat the active account by at least this many percent. |
-| `autoswitch.strategy` | choice | `best`, `soonest-reset` | `best` | How auto-switch orders qualifying targets: `best` (most headroom) or `soonest-reset` (earliest weekly renewal). See below. |
+| `autoswitch.strategy` | choice | `best`, `soonest-reset` | `soonest-reset` | How auto-switch orders qualifying targets: `soonest-reset` (earliest weekly renewal) or `best` (most headroom). See below. |
 | `autoswitch.includeApiKeyAccounts` | bool | — | false | Allow rotating onto managed API-key accounts (billed per token). Claude only; Codex API-key accounts are never rotation targets. |
 | `autoswitch.unhealthyTicks` | int | 1–100 | 3 | Consecutive failed polls before an account is treated as unhealthy. |
 | `autoswitch.model` | string | — | (none) | Also switch on these models' weekly limits (for example `Fable`, `Fable,Opus`, or `all`). |
@@ -4178,31 +4178,36 @@ qualifying candidate reached by either of those two triggers may therefore
 sit at or above the threshold.
 
 - `best` orders candidates by headroom, most remaining first; accounts tied
-  on headroom keep sequence order. This is the setting's default.
-- `soonest-reset` orders candidates by *renewal time*, in two tiers. The
-  first tier holds every candidate below the threshold — headroom such that
-  `100` minus headroom is under `autoswitch.threshold` — and ranks by the
-  latest parseable `resets_at` among the account's weekly-scope windows: the
-  7-day window plus every per-model scoped window matched by
-  `autoswitch.model`. The 5h window is never part of the renewal, since it
-  is not weekly. A window whose `resets_at` is absent or unparseable is
-  skipped; an account with no parseable weekly `resets_at` at all has an
-  *unknown* renewal. Within this tier, a known renewal sorts before an
-  unknown one; among known renewals the earliest sorts first; ties — an
-  equal renewal, or two unknown renewals — fall back to headroom descending,
-  then to sequence order. The second tier holds every candidate at or above
-  the threshold and ranks by headroom descending, as a last resort. This
-  tier is reachable only under the `at-limit` and `failover` triggers: under
-  `proactive`, the threshold-landing gate above already excludes such a
-  candidate from qualifying at all, so the second tier is always empty and
-  `soonest-reset` orders proactive candidates exactly as the first tier
-  describes. Every first-tier candidate sorts before every second-tier
-  candidate — a candidate at or above the threshold is never preferred over
-  one below it merely for an earlier renewal.
+  on headroom keep sequence order.
+- `soonest-reset`, the setting's default, orders candidates by *renewal
+  time*, in two tiers. The first tier holds every candidate below the
+  threshold — headroom such that `100` minus headroom is under
+  `autoswitch.threshold` — and ranks by the latest parseable `resets_at`
+  among the account's weekly-scope windows: the 7-day window plus every
+  per-model scoped window matched by `autoswitch.model`. The 5h window is
+  never part of the renewal, since it is not weekly. A window whose
+  `resets_at` is absent or unparseable is skipped; an account with no
+  parseable weekly `resets_at` at all has an *unknown* renewal. Within this
+  tier, a known renewal sorts before an unknown one; among known renewals
+  the earliest sorts first; ties — an equal renewal, or two unknown renewals
+  — fall back to headroom descending, then to sequence order. The second
+  tier holds every candidate at or above the threshold and ranks by headroom
+  descending, as a last resort. This tier is reachable only under the
+  `at-limit` and `failover` triggers: under `proactive`, the
+  threshold-landing gate above already excludes such a candidate from
+  qualifying at all, so the second tier is always empty and `soonest-reset`
+  orders proactive candidates exactly as the first tier describes. Every
+  first-tier candidate sorts before every second-tier candidate — a
+  candidate at or above the threshold is never preferred over one below it
+  merely for an earlier renewal.
+
+The default is `soonest-reset` (DESIGN A32). A settings file without the key,
+or with a value outside the two choices, orders by earliest renewal; a file
+that sets `best` keeps it, since loading the settings never rewrites the file.
 
 ```
-$ tycswap config set autoswitch.strategy soonest-reset
-autoswitch.strategy = soonest-reset
+$ tycswap config set autoswitch.strategy best
+autoswitch.strategy = best
 ```
 
 **`autoswitch.model` name matching.** A model name is matched against the

@@ -100,7 +100,8 @@ type AutoSwitchSettings struct {
 }
 
 // Default returns the dataclass defaults: threshold 90, intervalSeconds 60,
-// codexEnabled true, codexThreshold 0, cooldownSeconds 300, hysteresisPct 10, strategy "best",
+// codexEnabled true, codexThreshold 0, cooldownSeconds 300, hysteresisPct 10,
+// strategy "soonest-reset" (DESIGN A32; the Python dataclass has "best"),
 // includeApiKeyAccounts false, unhealthyTicks 3, model nil.
 func Default() AutoSwitchSettings {
 	return AutoSwitchSettings{
@@ -110,7 +111,7 @@ func Default() AutoSwitchSettings {
 		CodexThreshold:        0.0,
 		CooldownSeconds:       300.0,
 		HysteresisPct:         10.0,
-		Strategy:              "best",
+		Strategy:              "soonest-reset",
 		IncludeAPIKeyAccounts: false,
 		UnhealthyTicks:        3,
 		Model:                 nil,
@@ -171,7 +172,7 @@ var SettingSpecs = []Spec{
 		Lo: 0.0, Hi: 50.0, Default: 10.0,
 		Help: "A target must beat the active account by this many pct"},
 	{Section: "autoswitch", JSONKey: "strategy", Field: "Strategy", Kind: KindChoice,
-		Choices: []string{"best", "soonest-reset"}, Default: "best",
+		Choices: []string{"best", "soonest-reset"}, Default: "soonest-reset",
 		Help: "How auto-switch orders qualifying targets (best: most headroom; soonest-reset: earliest weekly renewal)"},
 	{Section: "autoswitch", JSONKey: "includeApiKeyAccounts", Field: "IncludeAPIKeyAccounts", Kind: KindBool,
 		Default: false,

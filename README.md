@@ -68,9 +68,9 @@ backup store and the active login; it removes nothing.
 weekly windows. tycswap fetches each account's usage and reports the remaining
 headroom as a percentage. An account is *at limit* when a relevant window has
 reached or exceeded its limit. Auto-switch and the `best` switch strategy use
-this headroom to choose a target; setting `autoswitch.strategy` to
-`soonest-reset` makes auto-switch order targets by earliest weekly renewal
-instead.
+this headroom to choose a target; by default (`autoswitch.strategy`
+`soonest-reset`) auto-switch orders the targets that qualify by earliest weekly
+renewal, and `best` orders them by most headroom instead.
 
 **Session profile.** A session profile is a private `CLAUDE_CONFIG_DIR` under
 the backup store's `sessions/` directory. It lets one account run in a single
@@ -377,11 +377,12 @@ matches no window is a silent no-op — use the display name exactly as it appea
 in the account's per-model usage rows.
 
 **Renewal-ordered switching.** By default auto-switch tries the qualifying
-target with the most headroom first (`autoswitch.strategy best`). Setting the
-strategy to `soonest-reset` orders qualifying targets by weekly renewal
-instead: the account whose 7-day window — and any `autoswitch.model` weekly
-windows — refills earliest is tried first, so quota is spent where it returns
-soonest. Qualification itself is unchanged. On a proactive switch, a target
+target with the earliest weekly renewal first (`autoswitch.strategy
+soonest-reset`): the account whose 7-day window — and any `autoswitch.model`
+weekly windows — refills earliest is tried first, so quota is spent where it
+returns soonest and no account sits idle on a window that is about to renew.
+`best` instead tries the target with the most headroom first. Qualification
+itself is the same under both. On a proactive switch, a target
 must still land under the threshold and beat the active account by the
 hysteresis margin. On an at-limit or failover switch neither check applies,
 but `soonest-reset` still never lets an early renewal beat the threshold: an
@@ -389,9 +390,12 @@ account at or above the threshold is tried only after every account below
 it, regardless of how soon it renews.
 
 ```
-$ tycswap config set autoswitch.strategy soonest-reset
-autoswitch.strategy = soonest-reset
+$ tycswap config set autoswitch.strategy best
+autoswitch.strategy = best
 ```
+
+A settings file that does not name a strategy uses `soonest-reset`; one that
+sets `best` keeps it.
 
 ### Run accounts in parallel
 
@@ -507,14 +511,14 @@ given, which overwrites it. Import rejects any file marked `encrypted: true`.
 ```
 $ tycswap config
 autoswitch.threshold              80
-autoswitch.intervalSeconds        60     (default)
-autoswitch.codexEnabled           true   (default)
-autoswitch.codexThreshold         0      (default)
-autoswitch.cooldownSeconds        300    (default)
-autoswitch.hysteresisPct          10     (default)
-autoswitch.strategy               best   (default)
-autoswitch.includeApiKeyAccounts  false  (default)
-autoswitch.unhealthyTicks         3      (default)
+autoswitch.intervalSeconds        60             (default)
+autoswitch.codexEnabled           true           (default)
+autoswitch.codexThreshold         0              (default)
+autoswitch.cooldownSeconds        300            (default)
+autoswitch.hysteresisPct          10             (default)
+autoswitch.strategy               soonest-reset  (default)
+autoswitch.includeApiKeyAccounts  false          (default)
+autoswitch.unhealthyTicks         3              (default)
 autoswitch.model                  Fable
 ```
 
