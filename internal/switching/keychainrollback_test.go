@@ -14,6 +14,7 @@ import (
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // Claude Code's Keychain services: the OAuth credential and the managed key.
@@ -100,13 +101,104 @@ func TestFailedSwitchOntoAnAPIKeyLeavesTheKeychainAsItWas_macOS(t *testing.T) {
 				case tc.live == prevKey && item != prevKey:
 					t.Errorf("managed Keychain item = %q after the failed switch, want the previous key", item)
 				}
+				oauthItem, oauthPresent, _ := kc.Get(oauthKeychainService, keychain.AccountName())
+				if wantItem := tc.live == login; oauthPresent != wantItem || (wantItem && oauthItem != login) {
+					t.Errorf("OAuth Keychain item = %q (present %v) after the failed switch, want it untouched", oauthItem, oauthPresent)
+				}
+				if raw, err := os.ReadFile(liveCredentialsPath(s)); err != nil || string(raw) != tc.file {
+					t.Errorf("live credentials file = %q (%v) after the failed switch, want it untouched %q", raw, err, tc.file)
+				}
 				if got := readActiveCreds(t, s); got != tc.live {
 					t.Errorf("live credential = %q after the failed switch, want slot 1's %q", got, tc.live)
 				}
-				data, err := s.ReadSequence()
-				if err != nil || data.ActiveAccountNumber == nil || *data.ActiveAccountNumber != 1 {
-					t.Errorf("active account after the failed switch: %v (%v), want 1", data, err)
+				assertActiveAccount(t, s, 1)
+			})
+		}
+	}
+}
+
+// assertActiveAccount checks the active account sequence.json records.
+func assertActiveAccount(t *testing.T, s *store.Store, want int) {
+	t.Helper()
+	data, err := s.ReadSequence()
+	if err != nil || data.ActiveAccountNumber == nil || *data.ActiveAccountNumber != want {
+		t.Errorf("active account: %v (%v), want %d", data, err, want)
+	}
+}
+
+// breakConfigAfterCredentialWrite lets a switch write the target credential,
+// then breaks ~/.claude.json, so the switch fails after the credential write
+// and rolls back, and the rollback's own config update fails the same way.
+type breakConfigAfterCredentialWrite struct {
+	credstore.Store
+	brk func()
+}
+
+func (b breakConfigAfterCredentialWrite) WriteActiveAccount(creds string) error {
+	if err := b.Store.WriteActiveAccount(creds); err != nil {
+		return err
+	}
+	b.brk()
+	return nil
+}
+
+// TestRollbackOntoAnAPIKeyKeepsItLive_macOS: a switch from one API-key account
+// to another writes the new key, then fails on ~/.claude.json and rolls back
+// onto the first key, whose own config update fails too. The key the rollback
+// stored stays: the first key is in the Keychain item and live, as the active
+// account says. Undoing that write as a failed switch's write is undone would
+// put the second key back.
+func TestRollbackOntoAnAPIKeyKeepsItLive_macOS(t *testing.T) {
+	const prevKey = "sk-ant-api03-previous-fixture-0123456789"
+	for _, mode := range []string{"a corrupt config", "a read-only home"} {
+		for _, force := range []bool{false, true} {
+			name := mode
+			if force {
+				name += " with --force"
+			}
+			t.Run(name, func(t *testing.T) {
+				if mode == "a read-only home" && os.Geteuid() == 0 {
+					t.Skip("root writes into a read-only directory")
 				}
+				s := newTestStore(t, nil)
+				writeSeq(t, s, seqData(ptrInt(1), []int{1, 2}, map[string]json.RawMessage{
+					"1": record(map[string]any{"email": oauthSeatEmail, "organizationUuid": "", "kind": "api_key"}),
+					"2": record(map[string]any{"email": apiKeySeatEmail, "organizationUuid": "", "kind": "api_key"}),
+				}))
+				seedBackup(t, s, "1", oauthSeatEmail, prevKey, "")
+				seedBackup(t, s, "2", apiKeySeatEmail, apiKeySeatKey, "")
+				seedLive(t, s, oauthSeatEmail, "", seatWideFiles[0].file)
+				t.Cleanup(func() { _ = os.Chmod(s.Home, 0o700) })
+				brk := func() {
+					if mode == "a corrupt config" {
+						if err := os.WriteFile(filepath.Join(s.Home, ".claude.json"), []byte("{"), 0o600); err != nil {
+							t.Fatal(err)
+						}
+					} else if err := os.Chmod(s.Home, 0o500); err != nil {
+						t.Fatal(err)
+					}
+				}
+
+				kc := keychain.NewFake()
+				kc.Seed(managedKeychainService, keychain.AccountName(), prevKey)
+				s.Creds = breakConfigAfterCredentialWrite{
+					Store: credstore.New(credstore.Config{Platform: platform.MacOS, CredentialsDir: s.CredentialsDir}, kc, s.Clk, s.Log),
+					brk:   brk,
+				}
+				if got := readActiveCreds(t, s); got != prevKey {
+					t.Fatalf("precondition: live credential = %q, want slot 1's key", got)
+				}
+
+				if _, err := SwitchTo(s, "2", true, force); err == nil {
+					t.Fatal("SwitchTo(2) succeeded although ~/.claude.json broke after the credential write")
+				}
+				if item, _, _ := kc.Get(managedKeychainService, keychain.AccountName()); item != prevKey {
+					t.Errorf("managed Keychain item = %q after the rollback, want slot 1's key", item)
+				}
+				if got := readActiveCreds(t, s); got != prevKey {
+					t.Errorf("live credential = %q after the rollback, want slot 1's key", got)
+				}
+				assertActiveAccount(t, s, 1)
 			})
 		}
 	}

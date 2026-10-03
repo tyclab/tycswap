@@ -97,10 +97,8 @@ func TestWriteActive_RemainderFallbackConfigFailureIsReported_macOS(t *testing.T
 	if err == nil || !strings.Contains(err.Error(), "managed API key for OAuth file fallback") {
 		t.Fatalf("fallback config write failure was not reported: %v", err)
 	}
-	// The error leaves nothing for a rollback to undo: the key is not left in
-	// the Keychain beside the original login.
-	if stored, found := kc.peek(managedKeychainService, keychain.AccountName()); found {
-		t.Fatalf("the failed write left the key in the managed Keychain item (%q)", stored)
+	if stored, _ := kc.peek(managedKeychainService, keychain.AccountName()); stored != seatKey {
+		t.Fatal("the failure lost the successful managed Keychain copy")
 	}
 	if original, _ := kc.peek(claudeCodeKeychainService, keychain.AccountName()); original != live {
 		t.Fatal("the failed write replaced the original OAuth login or MCP credentials")

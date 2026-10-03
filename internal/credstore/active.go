@@ -10,6 +10,7 @@ package credstore
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"strings"
@@ -124,7 +125,7 @@ func (s *FileKeychainStore) readGlobalConfig() map[string]any {
 // axis (spec 03§5.5): a managed key clears OAuth and vice-versa.
 func (s *FileKeychainStore) WriteActive(creds string) error {
 	if LooksLikeAPIKey(creds) {
-		return s.writeManagedCredentials(strings.TrimSpace(creds))
+		return s.writeManagedCredentials(strings.TrimSpace(creds), false)
 	}
 	if err := s.writeOAuthCredentials(creds); err != nil {
 		return err
@@ -141,12 +142,13 @@ func (s *FileKeychainStore) WriteActive(creds string) error {
 // which drops the stored blob's own copy of those keys; a failed read or a
 // live file that does not parse writes the stored account part without a
 // carry-over, with a warning: the carry-over is best-effort and never stops a
-// switch. An API key takes WriteActive's managed path unchanged. WriteActive
+// switch. An API key takes WriteActive's managed path, except that a failure
+// after the key reached the Keychain puts the Keychain item back. WriteActive
 // itself stays verbatim: it is what rollback restores with, and what the
 // refresh write-back uses for a blob that already holds the live remainder.
 func (s *FileKeychainStore) WriteActiveAccount(creds string) error {
 	if LooksLikeAPIKey(creds) {
-		return s.WriteActive(creds)
+		return s.writeManagedCredentials(strings.TrimSpace(creds), true)
 	}
 	merged, err := ccfile.SpliceCredentials(creds, s.readLiveOAuth())
 	if err != nil {
@@ -235,30 +237,46 @@ func (s *FileKeychainStore) refreshStaleCredentialsFile(creds string) {
 // writeManagedCredentials activates a managed API key, then clears OAuth (spec
 // 03§5.6). It records the approved form on every platform (even on Keychain
 // success) and stores the key in the Keychain when usable, else primaryApiKey.
-// An error leaves nothing for the caller's rollback, which runs only after a
-// write that succeeded: on the file backend the key and its approval are one
-// config write, and a failure after the Keychain write puts the managed
-// Keychain item back as it was, the previous key or none (DESIGN A29).
-func (s *FileKeychainStore) writeManagedCredentials(apiKey string) error {
+//
+// With undo (a switch's own write, WriteActiveAccount) an error leaves nothing
+// for the caller's rollback, which runs only after a write that succeeded: on
+// the file backend the key and its approval are one config write, and a
+// failure after the Keychain write puts the managed Keychain item back
+// (DESIGN A29). Without it (WriteActive: the rollback itself) a key stored
+// before a later failure stays: it is the key the rollback restores.
+func (s *FileKeychainStore) writeManagedCredentials(apiKey string, undo bool) error {
 	wroteToKeychain := false
-	restoreKeychain := func() {}
+	var restoreKeychain func(dropped string) error
 	if s.useKeychain() {
-		// What the item holds now is what a failure below puts back.
-		prev, hadPrev, err := s.kcGet(managedKeychainService, keychain.AccountName())
+		var prev string
+		var hadPrev bool
+		var err error
+		failed := "write"
+		if undo {
+			// What the item holds now is what a failure below puts back.
+			if prev, hadPrev, err = s.readManagedKeychainItem(); err != nil {
+				failed = "read"
+			}
+		}
 		if err == nil {
 			err = s.kcSet(managedKeychainService, keychain.AccountName(), apiKey)
 		}
 		if err == nil {
 			wroteToKeychain = true
-			restoreKeychain = func() { s.restoreManagedKeychainItem(prev, hadPrev) }
+			if undo {
+				restoreKeychain = func(dropped string) error {
+					return s.restoreManagedKeychainItem(prev, hadPrev, dropped)
+				}
+			}
 		} else if !keychain.IsUnusable(err) {
 			return err // a programming error propagates
 		} else {
-			s.log.Warningf("Managed-key Keychain write failed, falling back to config: %v", err)
+			s.log.Warningf("Managed-key Keychain %s failed, falling back to config: %v", failed, err)
 		}
 	}
 
 	approved := ApprovedForm(apiKey)
+	dropped := "" // the primaryApiKey the Keychain write's config update removes
 	mutate := func(cfg map[string]any) {
 		responses, ok := cfg["customApiKeyResponses"].(map[string]any)
 		if !ok {
@@ -284,14 +302,15 @@ func (s *FileKeychainStore) writeManagedCredentials(apiKey string) error {
 		}
 		cfg["customApiKeyResponses"] = responses
 		if wroteToKeychain {
+			dropped, _ = cfg["primaryApiKey"].(string)
 			delete(cfg, "primaryApiKey") // keep the key out of plaintext
 		} else {
 			cfg["primaryApiKey"] = apiKey
 		}
 	}
 	if err := ccfile.UpdateGlobalConfig(mutate); err != nil {
-		restoreKeychain()
-		return cerr.CredentialWrite("Failed to write managed API key: %v", err)
+		// Nothing reached the config, so only the Keychain item goes back.
+		return managedWriteFailed(cerr.CredentialWrite("Failed to write managed API key: %v", err), restoreKeychain, "")
 	}
 
 	// Mutual exclusion: drop the OAuth login so it can't shadow the key. The
@@ -310,8 +329,9 @@ func (s *FileKeychainStore) writeManagedCredentials(apiKey string) error {
 		}
 		return nil
 	}); err != nil {
-		restoreKeychain()
-		return err
+		// The first config update landed: a previous key it dropped from
+		// primaryApiKey is put back too.
+		return managedWriteFailed(err, restoreKeychain, dropped)
 	}
 	if s.macOS() && !wroteToKeychain {
 		// The key fell back to primaryApiKey while a stale "Claude Code" Keychain
@@ -327,20 +347,60 @@ func (s *FileKeychainStore) writeManagedCredentials(apiKey string) error {
 	return nil
 }
 
-// restoreManagedKeychainItem puts the managed-key Keychain item back as it was
-// before a write that failed after storing its key there: the previous value,
-// or no item. Best-effort and not through the usability cache, like
-// clearManagedKey.
-func (s *FileKeychainStore) restoreManagedKeychainItem(prev string, hadPrev bool) {
+// readManagedKeychainItem reads the managed-key Keychain item with the active
+// read's bounded retry (spec 03§5.4): its value and whether it exists, or the
+// last error once every attempt failed.
+func (s *FileKeychainStore) readManagedKeychainItem() (string, bool, error) {
 	var err error
-	if hadPrev {
+	for attempt := 0; attempt < activeReadAttempts; attempt++ {
+		var v string
+		var found bool
+		if v, found, err = s.kcGet(managedKeychainService, keychain.AccountName()); err == nil {
+			return v, found, nil
+		}
+		if attempt+1 < activeReadAttempts {
+			s.sleep(activeReadRetryDelay)
+		}
+	}
+	return "", false, err
+}
+
+// restoreManagedKeychainItem puts the managed-key Keychain item back after a
+// switch's write failed past storing its key there: the previous value; with
+// no previous item, the previous key the failed write dropped from
+// primaryApiKey, since the item is read first (by Claude Code too); else no
+// item. Not through the usability cache, like clearManagedKey. Its error says
+// the new key is still in the Keychain.
+func (s *FileKeychainStore) restoreManagedKeychainItem(prev string, hadPrev bool, dropped string) error {
+	var err error
+	switch {
+	case hadPrev:
 		err = s.kc.Set(managedKeychainService, keychain.AccountName(), prev)
-	} else {
+	case dropped != "":
+		err = s.kc.Set(managedKeychainService, keychain.AccountName(), dropped)
+	default:
 		err = s.kc.Delete(managedKeychainService, keychain.AccountName())
 	}
 	if err != nil {
 		s.log.Warningf("Could not put the managed-key Keychain item back after the failed write: %v", err)
+		return fmt.Errorf("the new API key is still in the Keychain, putting the item back failed: %w", err)
 	}
+	return nil
+}
+
+// managedWriteFailed returns a failed managed-key write's error after putting
+// the Keychain item back (restore is nil when there is nothing to undo). A
+// restore that fails as well is joined to the error and appended to its
+// message.
+func managedWriteFailed(err error, restore func(dropped string) error, dropped string) error {
+	if restore == nil {
+		return err
+	}
+	rerr := restore(dropped)
+	if rerr == nil {
+		return err
+	}
+	return cerr.CredentialWrite("%v; %v", err, rerr).Wrap(errors.Join(err, rerr))
 }
 
 // clearManagedKey clears any active managed API key (Claude Code removeApiKey
