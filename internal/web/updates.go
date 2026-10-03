@@ -189,12 +189,15 @@ func (s *Server) handleUpdatesApply(w http.ResponseWriter, r *http.Request) {
 	s.applying.Store(false)
 	s.broadcast()
 	if err != nil {
-		s.d.Logger("web: update " + target + ": " + err.Error())
+		// The target and the status only: the error is the installer's last
+		// line, and what an installer prints is for the page, not the log.
+		status := statusFor(err)
+		s.d.Logger("web: update " + target + " failed (HTTP " + strconv.Itoa(status) + ")")
 		body := map[string]any{"error": err.Error()}
 		if res.Output != "" {
 			body["output"] = res.Output
 		}
-		writeJSON(w, statusFor(err), body)
+		writeJSON(w, status, body)
 		return
 	}
 	writeJSON(w, http.StatusOK, res)

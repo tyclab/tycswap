@@ -24,10 +24,10 @@ type CurrentLoginView struct {
 
 // AuthOverridesView lists what makes Claude Code authenticate with something
 // other than its stored login: the variables set in the server's own
-// environment (which `tycswap run` and `tycswap env` scrub, but a plain
-// `claude` inherits), and the keys set in Claude Code's settings.json
-// (`env.ANTHROPIC_API_KEY` and the like, or an `apiKeyHelper`). Names only,
-// never a value.
+// environment (which a plain `claude` inherits; `tycswap run` and `tycswap
+// env` scrub the key and token ones), and the keys set in Claude Code's
+// settings.json (`env.ANTHROPIC_API_KEY` and the like, or an `apiKeyHelper`).
+// Names only, never a value.
 type AuthOverridesView struct {
 	Env          []string `json:"env"`      // never null
 	Settings     []string `json:"settings"` // never null; dotted keys
@@ -38,13 +38,14 @@ type AuthOverridesView struct {
 func (v AuthOverridesView) Any() bool { return len(v.Env) > 0 || len(v.Settings) > 0 }
 
 // authOverrideEnv are the environment variables Claude Code takes over the
-// stored login: a key or token in place of OAuth, and a base URL that sends
-// the requests elsewhere (verified against Claude Code's documented
-// settings).
-var authOverrideEnv = []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"}
+// stored login: a key or token in place of OAuth (CLAUDE_CODE_OAUTH_TOKEN,
+// a setup-token, among them, as session.AuthOverrideEnvVars has it), and a
+// base URL that sends the requests elsewhere (verified against Claude Code's
+// documented settings).
+var authOverrideEnv = []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL"}
 
 // authOverrideSettings are the settings.json keys with the same effect.
-var authOverrideSettings = []string{"apiKeyHelper", "env.ANTHROPIC_API_KEY", "env.ANTHROPIC_AUTH_TOKEN", "env.ANTHROPIC_BASE_URL"}
+var authOverrideSettings = []string{"apiKeyHelper", "env.ANTHROPIC_API_KEY", "env.ANTHROPIC_AUTH_TOKEN", "env.CLAUDE_CODE_OAUTH_TOKEN", "env.ANTHROPIC_BASE_URL"}
 
 // DetectAuthOverrides reads the overrides from getenv and from the Claude
 // Code settings file at settingsPath. An empty value selects nothing; a

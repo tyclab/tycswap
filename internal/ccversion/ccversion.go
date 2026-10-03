@@ -9,10 +9,11 @@
 // channel, npm's dist-tags, the cask's formula — so an update is only
 // announced where the same installer can deliver it, and the upgrade command
 // is that installer's own: `claude update` for a native install, `npm
-// install -g` for npm, `brew upgrade --cask` for Homebrew, `winget upgrade`
-// for WinGet. A Claude Code installed some other way is still compared
-// against the native channel, and `claude update`, Claude Code's own
-// installer, is offered for it.
+// install -g` for npm (`claude update` for the legacy ~/.claude/local, which
+// keeps a node_modules of its own), `brew upgrade --cask` for Homebrew,
+// `winget upgrade` for WinGet. A Claude Code installed some other way is
+// still compared against the native channel, and `claude update`, Claude
+// Code's own installer, is offered for it.
 package ccversion
 
 import (
@@ -390,6 +391,11 @@ func UpgradeCommand(in *Installed) Command {
 	}
 	switch in.Method {
 	case NPM:
+		// The legacy local install has a node_modules of its own, which
+		// `npm install -g` does not touch; Claude Code's updater updates it.
+		if legacyLocal(in.Real) {
+			return Command{Argv: []string{"claude", "update"}}
+		}
 		return Command{Argv: []string{"npm", "install", "-g", npmPackage}}
 	case Homebrew:
 		cask := in.Cask
@@ -401,6 +407,11 @@ func UpgradeCommand(in *Installed) Command {
 		return Command{Argv: []string{"winget", "upgrade", "--id", "Anthropic.ClaudeCode", "--exact"}}
 	}
 	return Command{Argv: []string{"claude", "update"}}
+}
+
+// legacyLocal reports whether real is in the legacy ~/.claude/local install.
+func legacyLocal(real string) bool {
+	return strings.Contains(strings.ToLower(strings.ReplaceAll(real, `\`, "/")), "/.claude/local/")
 }
 
 // InstallHint says, for a person, how Claude Code is installed on goos when

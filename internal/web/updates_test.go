@@ -205,6 +205,16 @@ func TestUpdatesApplyErrorKeepsOutput(t *testing.T) {
 	if got["error"] != "go install failed" || got["output"] != "go: module not found" {
 		t.Errorf("body = %v", got)
 	}
+	// The log names the target and the status, never what the installer
+	// printed (the error is its last line).
+	for _, l := range h.Logs() {
+		if strings.Contains(l, "go install failed") || strings.Contains(l, "module not found") {
+			t.Errorf("the log carries the installer's output: %q", l)
+		}
+	}
+	if logs := strings.Join(h.Logs(), "\n"); !strings.Contains(logs, "web: update app failed (HTTP 400)") {
+		t.Errorf("logs = %q", logs)
+	}
 	// A plain error is a 500 and an empty output is omitted.
 	h.upd.mu.Lock()
 	h.upd.applyErr, h.upd.result = errFake, UpdateResult{}

@@ -277,6 +277,11 @@ func TestSettingApplies(t *testing.T) {
 			t.Errorf("settingApplies(%s) = %q, want it to say %q", key, got, want)
 		}
 	}
+	// The routes retarget the engine this page hosts only: an engine in
+	// another process (the TUI, tycswap auto) keeps the value it started with.
+	if got := settingApplies("autoswitch.model"); !strings.Contains(got, "tycswap auto keeps its value until it next starts") {
+		t.Errorf("settingApplies(autoswitch.model) = %q, want it to name the engines it does not reach", got)
+	}
 }
 
 // The note reaches both the list route and the state, and annotating never

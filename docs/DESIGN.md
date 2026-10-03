@@ -3737,7 +3737,10 @@ itself and Claude Code.
   the apply would run `go install`. After a
   successful install the running server is still the old version: the card
   says so (`Installed`) and stops offering until `tycswap web` is started
-  again.
+  again. Such a build carries no `-ldflags`, so `internal/version` reads its
+  version from the build info (the module version, for a module-cache build
+  with no VCS stamp); otherwise it would report `v0.0.0-dev` and be offered
+  the release it already is.
 - *Claude Code.* `ccversion` finds the binary (PATH, then the places the
   installers put it), reads `claude --version`, and tells the install method
   from where the binary really lives: the native installer, npm (a
@@ -3750,10 +3753,12 @@ itself and Claude Code.
   absent. Invalid or unreadable settings are a check error. A cached release
   is not reused across channel changes. Project and managed policy remain
   the installer's responsibility; the host verifies the result of an apply.
-  The apply is that installer's own command: `claude update` for a native or unknown install,
-  `npm install -g @anthropic-ai/claude-code@latest`, `brew upgrade --cask
-  <cask>`, `winget upgrade`. A missing Claude Code is said (with the install
-  line to type), never run. Versions compare by semver; a version that does
+  The apply is that installer's own command: `claude update` for a native
+  or unknown install (and for the legacy `~/.claude/local`, whose own
+  `node_modules` a global npm install would not touch), `npm install -g
+  @anthropic-ai/claude-code@latest`, `brew upgrade --cask <cask>`, `winget
+  upgrade`. A missing Claude Code is said (with the install line to type),
+  never run. Versions compare by semver; a version that does
   not parse is an error, never "newer".
 - *Cadence.* `tycswap web` had no periodic check. `Server.Serve` now asks the
   `UpdatesFacade` to check once at start and then every `Deps.UpdateInterval`
@@ -3818,7 +3823,7 @@ settings when it starts (`settings.Load` in the host's `Start`) and only
 
 | Key | Takes effect |
 |---|---|
-| `autoswitch.model` | at once: a save or reset through the settings routes calls `ApplyModels` on a running engine (A26), and the at-limit marks re-read it for every state document |
+| `autoswitch.model` | at once for the engine this page hosts: a save or reset through the settings routes calls `ApplyModels` on it while it runs (A26; an engine in the TUI or `tycswap auto` keeps its value until it next starts), and the at-limit marks re-read it for every state document |
 | `autoswitch.threshold` | at the next engine start; the Auto tab's slider retargets the running engine for this run only, unsaved |
 | `autoswitch.codexEnabled`, `autoswitch.codexThreshold` | at the next `tycswap auto`: the engine this page hosts rotates Claude accounts only |
 | every other key (`intervalSeconds`, `cooldownSeconds`, `hysteresisPct`, `strategy`, `includeApiKeyAccounts`, `unhealthyTicks`, and any key added later) | at the next engine start, here, in the TUI's Auto view or in `tycswap auto` |
@@ -3871,11 +3876,12 @@ said what it does. A line under the table says how to add another account —
 stays in the toolbar as the secondary way in.
 
 **The auth overrides** (`state.authOverrides`,
-`web.DetectAuthOverrides`). `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or
-`ANTHROPIC_BASE_URL` in the environment `tycswap web` runs in — which a
-plain `claude` from the same shell inherits, while `tycswap run` and `tycswap
-env` scrub them — or `apiKeyHelper`, `env.ANTHROPIC_API_KEY`,
-`env.ANTHROPIC_AUTH_TOKEN`, `env.ANTHROPIC_BASE_URL` in Claude Code's
+`web.DetectAuthOverrides`). `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+`CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_BASE_URL` in the environment `tycswap
+web` runs in — which a plain `claude` from the same shell inherits, while
+`tycswap run` and `tycswap env` scrub the key and token ones — or
+`apiKeyHelper`, `env.ANTHROPIC_API_KEY`, `env.ANTHROPIC_AUTH_TOKEN`,
+`env.CLAUDE_CODE_OAUTH_TOKEN`, `env.ANTHROPIC_BASE_URL` in Claude Code's
 `settings.json` make Claude Code sign in with something other than the stored
 login. The state lists the names that are set (an empty or null value
 selects nothing; a settings file that is missing or does not parse declares
