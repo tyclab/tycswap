@@ -4268,11 +4268,11 @@ check and the hysteresis check apply only under the `proactive`
 trigger — an `at-limit` or `failover` tick must leave the active account
 regardless, so refusing every imperfect target would strand it — and a
 qualifying candidate reached by either of those two triggers may therefore
-sit at or above a threshold. Both checks are made on the **window that
-triggered the tick**, the 5h, the 7d or a counted per-model week, since each
-has a threshold of its own (DESIGN A34). Whatever the trigger, a candidate
-whose weekly budget is already spent (the 7d window or a counted model window)
-is never a target.
+sit at or above a threshold. The landing and hysteresis checks are made on the
+**window that triggered the tick**, the 5h, the 7d or a counted per-model
+week, since each has a threshold of its own (DESIGN A34). Whatever the
+trigger, a candidate whose weekly budget is already spent (the 7d window or a
+counted model window) is never a target.
 
 - `best` orders candidates by **weekly** headroom, most remaining first;
   accounts tied on it keep sequence order. An account reporting no weekly

@@ -49,7 +49,7 @@ class CswapApp(App):
 Constructor takes `(switcher, *, start="dashboard")`. It:
 - builds `self.source = SnapshotSource(switcher)`;
 - sets `self._store_only = False`, `self._full_next = False`, `self._refreshing = False`, `self._last_refresh_error = ""`;
-- loads `self.threshold_pct: float | None = load_settings(switcher.backup_dir).threshold` — **any exception during load falls back to `None`** (bare `except Exception: self.threshold_pct = None`). `threshold_pct` is the value drawn as the tick mark on every usage bar everywhere in the app (dashboard, switch, watch, auto screens) — it is loaded once at construction and only otherwise mutated by the Auto screen's session-only threshold adjustment (§4.4).
+- loads `self.threshold_pct: float | None = load_settings(switcher.backup_dir).threshold` — **any exception during load falls back to `None`** (bare `except Exception: self.threshold_pct = None`). `threshold_pct` is the value drawn as the tick mark on every usage bar everywhere in the app (dashboard, switch, watch, auto screens) — it is loaded once at construction and only otherwise mutated by the Auto screen's session-only threshold adjustment (§4.4). Go: three bars, `fiveHourThreshold` 85, `sevenDayThreshold` 97, `modelThreshold` 95; `threshold_pct` is the 7d bar, which the old `threshold` key seeds (DESIGN A34).
 
 ### 2.2 Mount sequence
 
@@ -485,6 +485,7 @@ def _end_adjust(self):
     if self._engine is not None:
         self._engine.wake()   # show a decision at the new value now
     log.write(Text(f"— threshold set to {pct_label(self._settings.threshold)}% for this session —", style=MUTED))
+    # Go: "— 7d threshold set to {pct_label}% for this session —" (DESIGN A34)
 ```
 **Escape while adjusting** exits adjust mode only (via `action_back`'s check), it does **not** leave the screen — a second `Esc` is needed to actually leave.
 
@@ -492,6 +493,8 @@ def _end_adjust(self):
 ```
 "auto-switch · " + "threshold {pct_label}%"[accented if adjusting] + (" (session)"[muted] if threshold != _configured_threshold) + f" · poll every {interval_seconds:.0f}s" + ("   ← → adjust · enter done"[muted] if adjusting)
 ```
+Go: `"auto-switch · switch at 5h {pct_label}% · 7d {pct_label}%"`, the 7d bar accented while adjusting and marked `(session)`, then `" · model {pct_label}%"` while `autoswitch.model` names a window, before the poll interval (DESIGN A34).
+
 `pct_label(value)` (`autoswitch.py`) is `f"{value:.10g}"` — 10-significant-digit `%g` formatting, chosen so `99.9` never renders as a lying `"100"` (as `.0f` would) and a computed value like `85.555555` isn't rounded to `"85.5556"`. **Any place displaying a threshold percentage must use this exact formatter**; mixing it with a differently-rounded formatter elsewhere risks impossible-looking comparisons like "85.5556% < 85.555555%".
 
 The session override is **never written to `settings.json`** — confirmed by test: after adjusting, `not (tmp_path / "settings.json").exists()`. Unmounting the screen reverts `app.threshold_pct` to the file value and calls `clear_poll_policy_inputs()` on the switcher.
@@ -878,7 +881,7 @@ Note: `CRIT_PCT` (90.0) intentionally mirrors the auto-switch default threshold 
 - **The occupied-slot overwrite check in `add_account_from_token` only fires when a slot was explicitly typed** — `slot=None` never triggers the confirm, even if some other logic downstream would auto-assign into an occupied slot.
 - **A `_slot_occupant` lookup silently returns `None` (no confirmation) if `self.snapshot is None`** — i.e. if the very first snapshot poll hasn't landed yet when the user races through Add Token, the occupied-slot guard is a no-op for that one submission.
 - **Threshold session-adjust: `wake()`/log-line only fire on a *net* change** — entering adjust mode and immediately leaving without touching arrows (or nudging it back to exactly the entry value) produces neither a forced engine tick nor a log line. Test: `test_threshold_adjust_escape_exits_mode_not_screen` explicitly asserts `wakes == 0` in that case.
-- **Threshold clamp is `[50.0, 99.9]` inclusive, never `100.0`** — the spec deliberately excludes 100 so the display never lies ("never a lying 100%"); `pct_label` uses `%.10g` specifically so `99.9` doesn't get rounded up to `"100"` by a naive `.0f`.
+- **Threshold clamp is `[50.0, 99.9]` inclusive, never `100.0`** — the spec deliberately excludes 100 so the display never lies ("never a lying 100%"); `pct_label` uses `%.10g` specifically so `99.9` doesn't get rounded up to `"100"` by a naive `.0f`. Go: each bar is `[50.0, 100.0]`; 100 = never proactively (DESIGN A34).
 - **A dry↔live engine restart carries forward the session threshold** — `_restart_engine` rebuilds the engine from `self._settings` (which holds the adjusted value in memory), not from a fresh `load_settings()` re-read, so toggling live after adjusting doesn't silently drop the adjustment.
 - **`AccountCard.render()` omits `now=`** (unlike `AccountsPanel.render()`, which passes an explicit `now=time.time()`) — both ultimately default to `time.time()` internally, but they call it at slightly different instants; this only matters for sub-second countdown-string skew and is presumably harmless, but note it if the Go port centralizes "now" into a single per-frame value (which would actually be a slight behavior *improvement*/simplification, not a regression, if done deliberately).
 - **`sentinel != USAGE_API_KEY` gates the "last seen" line** on both the full card and (implicitly, since the mini form shows no percentages at all under a sentinel) the mini row — API-key accounts are the one sentinel kind that never shows historical usage, because they structurally have none to show.
@@ -1130,7 +1133,7 @@ Two pieces of state are explicitly documented as memory-only, reverted on screen
 | `SERVE_TTL_S` | `180.0` s | `poll_policy.py` (re-exported via `usage_store`) — `format_age` silence threshold |
 | `WARN_PCT` / `CRIT_PCT` | `70.0` / `90.0` | `theme.py` — severity color bands |
 | autoswitch threshold clamp | `[50.0, 99.9]` | `settings.py` `SETTING_SPECS["autoswitch.threshold"]`. Go: each bar `[50.0, 100.0]` (DESIGN A34) |
-| `AutoSwitchSettings` defaults | `threshold=90.0, interval_seconds=60.0, cooldown_seconds=300.0, hysteresis_pct=10.0, unhealthy_ticks=3` | `settings.py` |
+| `AutoSwitchSettings` defaults | `threshold=90.0, interval_seconds=60.0, cooldown_seconds=300.0, hysteresis_pct=10.0, unhealthy_ticks=3` | `settings.py`. Go: three bars in place of `threshold`, `fiveHourThreshold=85.0, sevenDayThreshold=97.0, modelThreshold=95.0`; the old `threshold` key seeds the 7d bar (DESIGN A34) |
 | menu bar `REFRESH_CHOICES` | `(30, 60, 300)` s | `menubar.py` |
 | menu bar `AUTO_THRESHOLD_CHOICES` | `(80, 90, 95, 98)` % | `menubar.py` |
 | menu bar `TITLE_PCT_CHOICES` | `("off", "5h", "7d", "both")` | `menubar.py` |

@@ -112,7 +112,7 @@ JSON `_fields()`:
 {
   "active": {"number": 1, "email": "a@example.com"},
   "headroomPct": {"1": 40.0, "2": 90.0},
-  "threshold": 90.0,
+  "threshold": 90.0,                  // Go: the 7d bar (DESIGN A34)
   "fetchErrors": {"1": "http-429"},   // only if non-empty
   "windowsPct": {"2": {"5h": 3.0, "7d": 89.0, "Fable": 21.0}}  // only if non-empty
 }
@@ -133,6 +133,8 @@ Human line:
   each other account rendered `"#{n}: {describe}"`. `_describe(n)`:
   windows (`" · ".join(f"{name} {pct:.0f}%")`) if present, else
   `"{100-h:.0f}%"`, else `"? ({err})"` or `"?"`.
+  Go: `(7d bar {pct_label(threshold)}%)` in place of `(switch at …)`; JSON
+  `threshold` is the 7d bar (DESIGN A34).
 
 ### `switch` (`SwitchEvent`)
 Fields: `trigger` (`"proactive"` | `"at-limit"` | `"failover"`), `from_ref`

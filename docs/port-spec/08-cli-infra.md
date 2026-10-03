@@ -429,7 +429,9 @@ work, and wraps in `except ClaudeSwitchError → error("Error: …"); exit 1` /
 - `--once`: `sys.exit(engine.tick().value)`.
 - loop mode: `signal.signal(signal.SIGTERM, lambda *_: engine.stop())`; if not
   JSON print the dimmed banner
-  `f"Auto-switch running: threshold {settings.threshold:.0f}%, every {settings.interval_seconds:.0f}s{' (dry-run)' if args.dry_run else ''} — Ctrl-C to stop"`;
+  `f"Auto-switch running: threshold {settings.threshold:.0f}%, every {settings.interval_seconds:.0f}s{' (dry-run)' if args.dry_run else ''} — Ctrl-C to stop"`
+  (Go: `Auto-switch running: 5h 85% · 7d 97% · model 95%, every 60s — Ctrl-C to stop`,
+  one figure per bar in place of the threshold, DESIGN A34);
   `sys.exit(engine.run_loop())`.
 - Root guard here is inlined (not `_guard_root`) but identical.
 - `jsonl_emit(event)`: `print(json.dumps(event.to_json()), flush=True)`.
@@ -549,7 +551,9 @@ Clamp examples (tests): `threshold 200 → 99.9`; `intervalSeconds 1 → 15.0`;
 default; `includeApiKeyAccounts 1 → True`; `strategy "chaos" → "best"`;
 `model 123 → None`. Go: `strategy "chaos" → "soonest-reset"`, the Go default
 (DESIGN A32); the `includeApiKeyAccounts` case is gone with the key (DESIGN
-A33).
+A33). Go: the threshold cases are per bar, clamped to 50–100:
+`sevenDayThreshold 200 → 100`, `fiveHourThreshold 10 → 50`,
+`sevenDayThreshold "high" → 97.0` default (DESIGN A34).
 
 ### 8.4 Writing
 

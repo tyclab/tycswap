@@ -3296,10 +3296,11 @@ ticking once at launch and then every interval, stopped when the loop returns,
 so the Claude engine gains no hook and no failure mode, and a slow Codex fetch
 never delays a Claude switch. `autoswitch.codexEnabled` (default true) and
 `autoswitch.codexThreshold` (0–99.9, 0 inherits the effective Claude threshold;
-since A34, the 7d bar) tune it; the hysteresis margin is the Claude `autoswitch.hysteresisPct`, and
-`tycswap auto` gains no flag. A Codex event is printed only when the tick
-switched or errored, or on every tick under `--dry-run`, in the Claude events'
-format: the `HH:MM:SS` prefix and kind colouring for humans, and
+since A34, the 7d bar) tune it; the hysteresis margin is the Claude
+`autoswitch.hysteresisPct`, and `tycswap auto` gains no flag. A Codex event is
+printed only when the tick switched or errored, or on every tick under
+`--dry-run`, in the Claude events' format: the `HH:MM:SS` prefix and kind
+colouring for humans, and
 `{"schemaVersion":1,"event":"codex","ts":"<RFC3339 UTC>","outcome","detail",
 "switchedTo","runningPids"}` under `--json`.
 
@@ -4663,6 +4664,6 @@ slider's bounds are 50–100. `internal/tui`: the panel judges each window
 against its own bar and ranks by weekly room, the summary names every bar and
 the session mark, the `t` adjustment moves the 7d bar, and the Settings screen
 edits the new keys. `internal/web`: the slider route's bounds and the settings
-notes. The dashboard's ranking script has no committed test (the repository
-has no JavaScript harness).
+notes. The dashboard's ranking script has no committed test (the node harness
+in `internal/web/testdata` covers tab routing only).
 
