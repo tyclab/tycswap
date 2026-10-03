@@ -104,12 +104,13 @@ func TestEngineKeepsAnAtLimitCandidateTrusted(t *testing.T) {
 		clk.Advance(step)
 	}
 
-	// Refetched at least once per trust ceiling, at most once per park.
+	// Refetched at least once per trust ceiling, at most once per park (the
+	// shortest, with the downward jitter at its full JitterFrac).
 	mu.Lock()
 	got := calls["tok-b"]
 	mu.Unlock()
 	lo := 1 + int(span.Seconds()/usage.TrustMaxAgeS)
-	hi := 1 + int(span.Seconds()/usage.ParkCapS)
+	hi := 1 + int(span.Seconds()/(usage.ParkCapS*(1-usage.JitterFrac)))
 	if got < lo || got > hi {
 		t.Errorf("account 2 fetched %d times in %v, want %d..%d", got, span, lo, hi)
 	}
