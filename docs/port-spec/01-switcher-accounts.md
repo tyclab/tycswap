@@ -647,7 +647,8 @@ hard `ConfigError` (no interactive prompt).
 Disabled semantics (constraining rotation/strategies — read-only here):
 - `is_account_disabled(num)`, `disabled_account_numbers()` (sequence order),
   `switchable_account_numbers()` = sequence slots that are switchable **and not
-  disabled**.
+  disabled**. Go: and not an API-key account (`store.RotationEligible`, DESIGN
+  A33); an API-key slot stays a valid explicit `switch <num|email>` target.
 - `_disabled_from_data(data, num)` = `bool(record and record.get("disabled"))`.
 - Disabled slots stay managed and remain valid **explicit** `switch <num|email>`
   targets; only auto-selection, bare-`switch` rotation, and `best`/`next-available`

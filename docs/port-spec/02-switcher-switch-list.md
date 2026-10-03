@@ -263,6 +263,7 @@ also `_warn_inert_models(...)`.
 
 Loop `offset` in `1..len(sequence)-1`, `candidate = str(sequence[(current_index+offset) % len])`:
 - Disabled → skip. JSON warning `Skipped Account-{candidate} (disabled)`; human `{accent('Skipping')} Account-{candidate} (disabled)`.
+- Go: an API-key account → skip (DESIGN A33). JSON `Skipped Account-{candidate} (API key: switching to it changes how Claude Code authenticates)`; human `{accent('Skipping')} Account-{candidate} (API key — switch to it by hand if you mean to)`.
 - Not switchable → skip. JSON `Skipped Account-{candidate} (no stored credentials/config)`; human `{accent('Skipping')} Account-{candidate} (no stored credentials/config, re-add with tycswap --add-account --slot {candidate})`.
 - `next-available`: `headroom = oauth.account_headroom(usage.get(candidate), models)`; if `headroom is not None and headroom <= 0`, mark exhausted-skip. `label = "5h/7d"` by default; with `models`, `label = "/".join(name for name, pct, _ in oauth.relevant_windows(...) if pct >= 100.0)` if any (names the binding window, e.g. `Fable`, `5h/Fable`). JSON warning `Skipped Account-{candidate} (at {label} limit)`; human `{accent('Skipping')} Account-{candidate} (at {label} limit)`.
 - Otherwise `next_account = candidate`, break.

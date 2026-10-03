@@ -1,11 +1,12 @@
 // auto.go — the `tycswap auto` pre-dispatched subcommand (spec 08§7.7, 05§19).
 //
 // Implements spec 08§7.7 / 05§19: the flag grammar (--once/--json/--interval/
-// --threshold/--cooldown/--model/--dry-run/--debug; the include-api-key-accounts
-// pair is gone with its setting, DESIGN A33), merged_with_cli, the engine construction, --once (exit = outcome),
-// loop mode with SIGTERM→Stop and the dimmed banner, and the JSONL/human emit
-// callbacks. The compact JSONL/error-envelope discipline (spec 08§7.7) is
-// distinct from the main path's indent-2. prog is hardcoded "tycswap auto".
+// --threshold/--cooldown/--model/--dry-run/--debug; the include-api-key-
+// accounts pair is gone with its setting, DESIGN A33), merged_with_cli, the
+// engine construction, --once (exit = outcome), loop mode with SIGTERM→Stop
+// and the dimmed banner, and the JSONL/human emit callbacks. The compact
+// JSONL/error-envelope discipline (spec 08§7.7) is distinct from the main
+// path's indent-2. prog is hardcoded "tycswap auto".
 package cli
 
 import (
