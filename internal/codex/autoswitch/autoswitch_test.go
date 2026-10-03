@@ -245,6 +245,50 @@ func TestASwitchFailureIsReportedNotRaised(t *testing.T) {
 	}
 }
 
+// TestACandidateAtItsFiveHourLimitIsNeverATarget: a candidate whose 5h window
+// is at 100 % is refused, however much weekly room it has, whatever triggered
+// the move, with the 7d bar (97) as the bar or a codexThreshold of 90.
+func TestACandidateAtItsFiveHourLimitIsNeverATarget(t *testing.T) {
+	for _, bar := range []float64{97, 90} {
+		fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{
+			acc("1", f(10), accOpt{active: true, weekly: f(98)}), acc("2", f(100), accOpt{weekly: f(10)}),
+		}}
+		tick := auto(fake, bar).Tick(ctx, false)
+		if tick.Outcome != OutcomeBlocked || len(fake.switched) != 0 {
+			t.Errorf("bar %v: tick = %+v switched=%v, want blocked", bar, tick, fake.switched)
+		}
+	}
+}
+
+// TestACandidateExactlyAtTheBarIsRefused: a candidate sitting exactly at the
+// bar would trigger again on the next tick, so it is refused even where the
+// hysteresis margin alone would let it through (100 - 10 = 90).
+func TestACandidateExactlyAtTheBarIsRefused(t *testing.T) {
+	fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{acc("1", f(100), accOpt{active: true}), acc("2", f(90), accOpt{})}}
+	tick := auto(fake, 90).Tick(ctx, false)
+	if tick.Outcome != OutcomeBlocked || len(fake.switched) != 0 {
+		t.Fatalf("tick = %+v switched=%v, want blocked", tick, fake.switched)
+	}
+}
+
+// TestABarOfOneHundredNeverMovesProactively: with the 7d bar at 100 (reachable
+// since the bars range to 100) the Codex engine moves only off an account at
+// its limit, and is not clamped below 100.
+func TestABarOfOneHundredNeverMovesProactively(t *testing.T) {
+	fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{
+		acc("1", f(99.9), accOpt{active: true, weekly: f(50)}), acc("2", f(5), accOpt{weekly: f(5)}),
+	}}
+	if tick := auto(fake, 100).Tick(ctx, false); tick.Outcome != OutcomeOK || len(fake.switched) != 0 {
+		t.Fatalf("99.9%% under a bar of 100: tick = %+v switched=%v", tick, fake.switched)
+	}
+	fake = &fakeSwitcher{accounts: []reporting.AccountSnapshot{
+		acc("1", f(100), accOpt{active: true, weekly: f(50)}), acc("2", f(5), accOpt{weekly: f(5)}),
+	}}
+	if tick := auto(fake, 100).Tick(ctx, false); tick.Outcome != OutcomeSwitched || tick.SwitchedTo != "2" {
+		t.Fatalf("at the limit under a bar of 100: tick = %+v", tick)
+	}
+}
+
 // ---- the restart caveat, stated rather than hidden ---------------------------
 
 func TestASwitchUnderARunningSessionSaysSo(t *testing.T) {

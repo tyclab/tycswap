@@ -16,6 +16,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
@@ -99,6 +100,57 @@ func bindingPct(lastGood map[string]any, models []string) *float64 {
 	}
 	pct := 100.0 - *h
 	return &pct
+}
+
+// classPcts splits bindingPct's single figure into the three windows an
+// account reports — 5h, 7d and the counted per-model ones — each nil when no
+// window of that class was reported. Each is governed by a bar of its own, so
+// a panel that ranks the way the engine decides needs all three (DESIGN A34).
+func classPcts(lastGood map[string]any, models []string) classUtilization {
+	five, seven, model := oauth.ClassPcts(oauth.NewUsage(lastGood), models)
+	return classUtilization{fiveHour: five, sevenDay: seven, model: model}
+}
+
+// classUtilization is one account's utilization per window class.
+type classUtilization struct {
+	fiveHour *float64
+	sevenDay *float64
+	model    *float64
+}
+
+// weekly is the worse of the two BUDGET figures — the week and a counted model
+// window — which is what ranking compares, since 5h room is abundant and
+// expires.
+func (c classUtilization) weekly() *float64 {
+	switch {
+	case c.sevenDay == nil:
+		return c.model
+	case c.model == nil:
+		return c.sevenDay
+	case *c.model > *c.sevenDay:
+		return c.model
+	default:
+		return c.sevenDay
+	}
+}
+
+// overAnyBar reports whether any window has reached the bar that governs it:
+// the 5h window its own high bar, the week and each counted model window
+// theirs (DESIGN A34).
+func (c classUtilization) overAnyBar(s settings.AutoSwitchSettings) bool {
+	for _, pair := range []struct {
+		pct *float64
+		bar float64
+	}{
+		{c.fiveHour, s.FiveHourThreshold},
+		{c.sevenDay, s.SevenDayThreshold},
+		{c.model, s.ModelThreshold},
+	} {
+		if pair.pct != nil && *pair.pct >= pair.bar {
+			return true
+		}
+	}
+	return false
 }
 
 // exhaustedPct is the utilization at or above which a window has RUN OUT: the

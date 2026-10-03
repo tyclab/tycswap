@@ -83,6 +83,13 @@ func (e *Engine) collectScheduledUsage(current string, quarantined map[string]bo
 	return entries, usageMap, headroom
 }
 
+// headroomByClass is the per-axis view of one account: the 5h rate limit, the
+// week and the counted per-model weeks kept apart, because each has a bar of
+// its own (DESIGN A34).
+func (e *Engine) headroomByClass(value any) usage.Headroom {
+	return usage.AccountHeadroomByClass(usageDict(value), e.models)
+}
+
 // decisionValues projects each entry to its decision value (dict | sentinel |
 // nil); every key is present (nil stands in for Python's None).
 func decisionValues(entries map[string]usage.UsageEntry) map[string]any {

@@ -449,6 +449,33 @@
     return out.filter(function (w) { return w.pct !== null; });
   }
 
+  // classPcts mirrors oauth.ClassPcts: the worst utilization in each window
+  // class, kept apart because each has a bar of its own (DESIGN A34): the 5h
+  // window bursts, the week creeps, a per-model week is one model's budget.
+  function classPcts(wins) {
+    var out = { fiveHour: null, sevenDay: null, model: null };
+    wins.forEach(function (w) {
+      var k = w.label === '5h' ? 'fiveHour' : (w.label === '7d' ? 'sevenDay' : 'model');
+      if (out[k] === null || w.pct > out[k]) { out[k] = w.pct; }
+    });
+    return out;
+  }
+
+  // weeklyPct is the worse of the two budget figures, the week and a counted
+  // model window, which is what ranking compares.
+  function weeklyPct(cls) {
+    if (cls.sevenDay === null) { return cls.model; }
+    if (cls.model === null) { return cls.sevenDay; }
+    return Math.max(cls.sevenDay, cls.model);
+  }
+
+  // overAnyBar: has any window reached the bar that governs it?
+  function overAnyBar(cls, bars) {
+    return (cls.fiveHour !== null && cls.fiveHour >= bars.fiveHour) ||
+           (cls.sevenDay !== null && cls.sevenDay >= bars.sevenDay) ||
+           (cls.model !== null && cls.model >= bars.model);
+  }
+
   function bindingPct(wins) {
     if (!wins.length) { return null; }
     return wins.reduce(function (m, w) { return w.pct > m ? w.pct : m; }, wins[0].pct);
@@ -487,15 +514,21 @@
 
   var SENTINEL_STATUSES = { token_expired: 'token expired', api_key: 'api key', keychain_unavailable: 'keychain unavailable', relogin_required: 're-login needed', no_credentials: 'no credentials' };
 
-  // rankCandidates mirrors tui/autoview.go candidatesText: one threshold
-  // (autoswitch.threshold, or the running engine's live value) against the
-  // binding counted window.
+  // rankCandidates mirrors tui/autoview.go candidatesText: each window against
+  // its own bar (DESIGN A34), ranked on the weekly figure.
   function rankCandidates(st) {
     var auto = st.auto || {};
     var models = parseModelNames(engineSetting(st, 'autoswitch.model'));
     var strat = engineSetting(st, 'autoswitch.strategy') || 'soonest-reset';
-    var threshold = pctNum(settingValue(st, 'autoswitch.threshold')) || 90;
-    if (auto.running && typeof auto.threshold === 'number') { threshold = auto.threshold; }
+    // One bar per window. The 7d one follows the running engine when the
+    // slider has moved it; the other two are settings only.
+    var sevenDay = pctNum(settingValue(st, 'autoswitch.sevenDayThreshold')) || 97;
+    if (auto.running && typeof auto.threshold === 'number') { sevenDay = auto.threshold; }
+    var bars = {
+      fiveHour: pctNum(engineSetting(st, 'autoswitch.fiveHourThreshold')) || 85,
+      sevenDay: sevenDay,
+      model: pctNum(engineSetting(st, 'autoswitch.modelThreshold')) || 95
+    };
     var quarantine = quarantineMap(auto);
     var ranked = [];
     claudeRows(st).forEach(function (a) {
@@ -514,9 +547,15 @@
         if (pct === null) {
           r.label = 'usage unknown'; r.bestKey = 999; r.tier = 6;
         } else {
-          r.windows = wins; r.bestKey = pct; r.pct = pct; r.renewal = renewalTS(wins);
+          // Rank on the weekly figure and judge each window against its own
+          // bar, the way the engine picks; an account reporting no weekly
+          // window falls back to the binding figure.
+          var cls = classPcts(wins);
+          var weekly = weeklyPct(cls);
+          var key = weekly === null ? pct : weekly;
+          r.windows = wins; r.bestKey = key; r.pct = key; r.renewal = renewalTS(wins);
           if (pct >= 100) { r.tier = 3; }
-          else if (pct >= threshold) { r.tier = 2; }
+          else if (overAnyBar(cls, bars)) { r.tier = 2; }
           else if (r.renewal !== null) { r.tier = 0; }
           else { r.tier = 1; }
         }
@@ -525,7 +564,7 @@
     });
     var less = strat === 'soonest-reset' ? lessSoonest : lessBest;
     ranked.sort(function (a, b) { return less(a, b) ? -1 : less(b, a) ? 1 : 0; });
-    return { ranked: ranked, models: models, strategy: strat, threshold: threshold };
+    return { ranked: ranked, models: models, strategy: strat, bars: bars };
   }
 
   function numLess(a, b) { var x = parseInt(a, 10), y = parseInt(b, 10); if (!isNaN(x) && !isNaN(y)) { return x < y; } return a < b; }
@@ -908,7 +947,7 @@
     if (best) {
       box.appendChild(tile('Best candidate', '#' + best.number, [el('span', { class: 'ellipsis', text: accountName(best.account) }), chip((100 - best.pct).toFixed(0) + '% headroom', 'good')], 'good'));
     } else {
-      box.appendChild(tile('Best candidate', '—', [res.ranked.length ? 'no account is under the threshold' : 'no other account'], res.ranked.length ? 'warn' : ''));
+      box.appendChild(tile('Best candidate', '—', [res.ranked.length ? 'no account is under every one of its bars' : 'no other account'], res.ranked.length ? 'warn' : ''));
     }
   }
 
@@ -1194,7 +1233,7 @@
 
       var tiles = el('div', { class: 'tiles' });
       tiles.appendChild(tile('State', a.running ? (a.dryRun ? 'dry-run' : 'running') : 'stopped', [a.running ? (a.dryRun ? 'decides, never switches' : 'switches near the limit') : 'not polling'], a.running ? (a.dryRun ? 'warn' : 'good') : ''));
-      tiles.appendChild(tile('Threshold', Math.round(a.threshold * 10) / 10 + '%', [a.running ? 'live for this run' : 'autoswitch.threshold']));
+      tiles.appendChild(tile('7d threshold', Math.round(a.threshold * 10) / 10 + '%', ['the 5h and model windows have bars of their own']));
       tiles.appendChild(tile('Strategy', strat, [el('span', { class: 'ellipsis', text: countingNote(models), title: countingNote(models) })]));
       tiles.appendChild(tile('Started', a.startedAt ? el('span', { 'data-started': String(Math.round(a.startedAt * 1000)), text: fmtAgo(Date.now() - a.startedAt * 1000) }) : '—', [a.startedAt ? fmtUnix(a.startedAt) : 'not running']));
       body.appendChild(tiles);
@@ -1232,7 +1271,9 @@
     var res = rankCandidates(st);
     var tb = $('nextbest-list');
     clear(tb);
-    $('nextbest-sub').textContent = countingNote(res.models) + ' · ' + res.strategy + ' · switch at ' + Math.round(res.threshold * 10) / 10 + '%';
+    var barNote = '5h ' + Math.round(res.bars.fiveHour * 10) / 10 + '% · 7d ' + Math.round(res.bars.sevenDay * 10) / 10 + '%';
+    if (res.models.length) { barNote += ' · model ' + Math.round(res.bars.model * 10) / 10 + '%'; }
+    $('nextbest-sub').textContent = countingNote(res.models) + ' · ' + res.strategy + ' · switch at ' + barNote;
     var nbSub = $('nextbest-sub');
     var savedModels = parseModelNames(settingValue(st, 'autoswitch.model'));
     var ignored = ignoredModelsNote(st, savedModels);
@@ -1362,7 +1403,7 @@
     var slider = $('threshold-slider');
     function send() {
       var v = parseInt(slider.value, 10);
-      api('POST', '/api/auto/threshold', { threshold: v }).then(function () { toast('Threshold ' + v + '% applied to the running engine.', 'ok'); }).catch(function (err) { toast(err.message); });
+      api('POST', '/api/auto/threshold', { threshold: v }).then(function () { toast('7d threshold ' + v + '% applied to the running engine.', 'ok'); }).catch(function (err) { toast(err.message); });
     }
     slider.addEventListener('input', function () {
       sliderActive = true;
@@ -1380,7 +1421,8 @@
   // ---- settings (shared row renderer) ---------------------------------------
 
   var SETTING_LABELS = {
-    'autoswitch.threshold': 'Threshold', 'autoswitch.intervalSeconds': 'Poll interval',
+    'autoswitch.fiveHourThreshold': '5h threshold', 'autoswitch.sevenDayThreshold': '7d threshold',
+    'autoswitch.modelThreshold': 'Model threshold', 'autoswitch.intervalSeconds': 'Poll interval',
     'autoswitch.codexEnabled': 'Codex auto-switch', 'autoswitch.codexThreshold': 'Codex threshold',
     'autoswitch.cooldownSeconds': 'Cooldown', 'autoswitch.hysteresisPct': 'Hysteresis',
     'autoswitch.strategy': 'Strategy',

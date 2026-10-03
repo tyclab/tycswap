@@ -12,6 +12,7 @@
 package autoswitch
 
 import (
+	"math"
 	"math/rand/v2"
 	"path/filepath"
 	"sync"
@@ -137,8 +138,8 @@ func NewEngine(sw Switcher, s settings.AutoSwitchSettings, onEvent func(Event), 
 		e.statePath = StatePath(sw.BackupDir())
 	}
 	e.lockPath = filepath.Join(filepath.Dir(e.statePath), ".autoswitch_state.lock")
-	// Poll plans must key on the same threshold/models the engine decides with.
-	sw.SetPollPolicyInputs(s.Threshold, e.models)
+	// Poll plans must key on the same bars/models the engine decides with.
+	sw.SetPollPolicyInputs(pollThreshold(s, e.models), e.models)
 	// One-shot model typo guard: done immediately when no model filter is set.
 	e.modelCheckDone = len(e.models) == 0
 	return e
@@ -150,17 +151,33 @@ func (e *Engine) currentSettings() settings.AutoSwitchSettings {
 }
 
 // ApplyThreshold retargets the trigger and poll cadence mid-run (TUI session
-// override). Safe to call from any goroutine: the poll plan is re-pinned with
-// the model set parsed from the current settings, never from e.models, which
-// only the tick goroutine reads and writes (adoptPendingModels). The settings
-// already carry whatever ApplyModels requested last, so a threshold change
-// right after a model change pins the new set, not the one still counted
-// until the next tick.
+// override, the dashboard slider). It moves the 7d bar, the account's whole
+// budget, and nothing else; the 5h and per-model bars are settings only
+// (DESIGN A34). Safe to call from any goroutine: the poll plan is re-pinned
+// with the model set parsed from the current settings, never from e.models,
+// which only the tick goroutine reads and writes (adoptPendingModels). The
+// settings already carry whatever ApplyModels requested last, so a threshold
+// change right after a model change pins the new set, not the one still
+// counted until the next tick.
 func (e *Engine) ApplyThreshold(threshold float64) {
 	s := e.currentSettings()
-	s.Threshold = threshold
+	s.SevenDayThreshold = threshold
 	e.settings.Store(&s)
-	e.sw.SetPollPolicyInputs(threshold, settings.ParseModelNames(s.Model))
+	models := settings.ParseModelNames(s.Model)
+	e.sw.SetPollPolicyInputs(pollThreshold(s, models), models)
+}
+
+// pollThreshold is the single figure the poll planner escalates on. The
+// planner compares it against the BINDING headroom, so the lowest bar in
+// force is the honest one to hand it: whichever window is closest to making
+// the engine act decides how often it looks. The per-model bar counts only
+// while models names a window for it to govern (DESIGN A34).
+func pollThreshold(s settings.AutoSwitchSettings, models []string) float64 {
+	lowest := math.Min(s.SevenDayThreshold, s.FiveHourThreshold)
+	if len(models) > 0 {
+		lowest = math.Min(lowest, s.ModelThreshold)
+	}
+	return lowest
 }
 
 // Stop asks RunLoop to exit and wakes it from any sleep. Latching and

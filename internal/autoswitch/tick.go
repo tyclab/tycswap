@@ -58,7 +58,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 
 	current := e.sw.CurrentAccountNumber()
 	if current == nil {
-		e.emit(PollEvent{Ts: e.nowISO(), Active: nil, Headroom: map[string]*float64{}, Threshold: s.Threshold})
+		e.emit(PollEvent{Ts: e.nowISO(), Active: nil, Headroom: map[string]*float64{}, Threshold: s.SevenDayThreshold})
 		if e.sw.HasLiveLogin() {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "unmanaged-active-account", Detail: "run 'tycswap --add-account' to include it in rotation"})
 		} else {
@@ -70,7 +70,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 	currentEmail := e.sw.AccountEmail(cur)
 	activeRef := refOf(cur, currentEmail)
 
-	entries, usageMap, headroom := e.collectScheduledUsage(cur, quarantined, s.Threshold)
+	entries, usageMap, headroom := e.collectScheduledUsage(cur, quarantined, pollThreshold(s, e.models))
 
 	fetchErrors := map[string]string{}
 	for num, entry := range entries {
@@ -89,7 +89,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		Active:      activeRef,
 		Order:       sortNumeric(mapKeysAny(usageMap)),
 		Headroom:    headroom,
-		Threshold:   s.Threshold,
+		Threshold:   s.SevenDayThreshold,
 		FetchErrors: fetchErrors,
 		Windows:     windows,
 	})
@@ -108,16 +108,26 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 	}
 
 	activeHeadroom := headroom[cur]
+	activeByClass := e.headroomByClass(usageMap[cur])
+	// axis names the window class that made the tick move, so the log, the
+	// qualification gate and the hysteresis all talk about the same resource
+	// (DESIGN A34).
+	axis := usage.ClassWeek
 	var trigger string
 	if activeHeadroom != nil {
 		e.unhealthyTicks = 0
 		e.idleHoldSince = nil
-		utilization := 100.0 - *activeHeadroom
-		if utilization < s.Threshold {
+		hot, ok := hotAxis(activeByClass, s)
+		if !ok {
+			// No window is over its own bar. Name the one closest to its
+			// bar, so the line says which window to watch.
+			near := nearestAxis(activeByClass, s)
+			util, _ := utilizationOver(activeByClass.Axis(near), 0)
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "below-threshold",
-				Detail: pctLabel(utilization) + "% < " + pctLabel(s.Threshold) + "%"})
+				Detail: near.Name() + " " + pctLabel(util) + "% < " + pctLabel(axisThreshold(s, near)) + "%"})
 			return NoAction, nil
 		}
+		axis = hot
 		if *activeHeadroom <= 0 {
 			trigger = "at-limit"
 		} else {
@@ -165,7 +175,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		return NoAction, nil
 	}
 
-	ordered, oauthCandidates, anyKnown, blk := e.selectCandidates(cur, quarantined, s, trigger, activeHeadroom, headroom, usageMap)
+	ordered, oauthCandidates, anyKnown, blk := e.selectCandidates(cur, quarantined, s, trigger, axis, activeByClass, headroom, usageMap)
 	if blk != nil {
 		return *blk, nil
 	}
@@ -200,12 +210,13 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		return Blocked, nil
 	}
 
+	axisName := axisLabel(axis, trigger)
 	transientFailure := false
 	for _, num := range ordered {
 		email := e.sw.AccountEmail(num)
 		if e.dryRun {
 			// Dry-run stops at the decision: no refresh, no quarantine writes.
-			return e.perform(num, email, trigger)
+			return e.perform(num, email, trigger, axisName)
 		}
 		switch e.freshenTarget(num, email) {
 		case "identity-conflict":
@@ -221,7 +232,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		case "skip-live-session":
 			// skip silently
 		default: // "ok"
-			return e.perform(num, email, trigger)
+			return e.perform(num, email, trigger, axisName)
 		}
 	}
 
@@ -231,6 +242,16 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 	}
 	e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-viable-target"})
 	return Blocked, nil
+}
+
+// axisLabel names the axis for the log ("5h", "7d" or "model"). A failover
+// tick had no readable usage, so no window decided it and the label is empty
+// (DESIGN A34).
+func axisLabel(axis usage.Class, trigger string) string {
+	if trigger == "failover" {
+		return ""
+	}
+	return axis.Name()
 }
 
 // selectCandidates builds the ordered target list from the switchable accounts
@@ -244,7 +265,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 // slice varies (Go-side extension, DESIGN A17).
 func (e *Engine) selectCandidates(
 	cur string, quarantined map[string]bool, s settings.AutoSwitchSettings, trigger string,
-	activeHeadroom *float64, headroom map[string]*float64, usageMap map[string]any,
+	axis usage.Class, activeByClass usage.Headroom, headroom map[string]*float64, usageMap map[string]any,
 ) (ordered, oauthCandidates []string, anyKnown bool, blk *TickOutcome) {
 	var candidates []string
 	for _, num := range e.sw.SwitchableAccountNumbers() {
@@ -265,6 +286,7 @@ func (e *Engine) selectCandidates(
 	}
 
 	var qualifying []qual
+	activeAxis := activeByClass.Axis(axis)
 	for _, num := range oauthCandidates {
 		h := headroom[num]
 		if h == nil {
@@ -274,57 +296,152 @@ func (e *Engine) selectCandidates(
 		if *h <= 0 {
 			continue // itself at its limit — never a target
 		}
-		if trigger == "proactive" && activeHeadroom != nil {
-			// (a) landing below threshold, and (b) better by the full margin.
-			if (100.0 - *h) >= s.Threshold {
+		cand := e.headroomByClass(usageMap[num])
+		if trigger == "proactive" && activeAxis != nil {
+			// (a) landing below the bar and (b) better by the full margin,
+			// both judged on the window that made the tick move, and only on
+			// that one (DESIGN A34).
+			ch := cand.Axis(axis)
+			if ch == nil {
+				// The candidate reports no window of that class (an account
+				// that has never used the model whose week the active one is
+				// leaving, say): judge it on its weekly budget rather than
+				// let "unknown" disqualify an account that plainly has room.
+				ch = cand.Weekly()
+			}
+			if ch == nil {
 				continue
 			}
-			if *h-*activeHeadroom < s.HysteresisPct {
+			if (100.0 - *ch) >= axisThreshold(s, axis) {
+				continue
+			}
+			if *ch-*activeAxis < s.HysteresisPct {
 				continue
 			}
 		}
-		qualifying = append(qualifying, qual{h: *h, renewal: renewalTS(usageDict(usageMap[num]), e.models), num: num})
+		// Whatever the trigger, never land on an account whose weekly budget
+		// (the week or a counted model window) is already spent.
+		if cand.WeeklyExhausted() {
+			continue
+		}
+		qualifying = append(qualifying, qual{
+			h:       *h,
+			weekly:  cand.Weekly(),
+			below:   belowEveryBar(cand, s),
+			renewal: renewalTS(usageDict(usageMap[num]), e.models),
+			num:     num,
+		})
 	}
-	sortQualifying(qualifying, s.Strategy, s.Threshold)
+	sortQualifying(qualifying, s.Strategy)
 	for _, q := range qualifying {
 		ordered = append(ordered, q.num)
 	}
 	return ordered, oauthCandidates, anyKnown, nil
 }
 
+// decisionAxes is the order in which the three classes are considered. The
+// week comes first because losing it costs days across every model; a single
+// model's week costs days for that model alone; the 5h window costs a wait.
+// When more than one is over its bar, the costliest names the move (DESIGN
+// A34).
+var decisionAxes = []usage.Class{usage.ClassWeek, usage.ClassModel, usage.ClassSession}
+
+// utilizationOver reports an axis's utilization and whether it has reached the
+// threshold. An unknown axis is never over.
+func utilizationOver(headroom *float64, threshold float64) (float64, bool) {
+	if headroom == nil {
+		return 0, false
+	}
+	util := 100.0 - *headroom
+	return util, util >= threshold
+}
+
+// hotAxis is the costliest axis that has reached its own bar, or ok=false
+// when none has.
+func hotAxis(h usage.Headroom, s settings.AutoSwitchSettings) (usage.Class, bool) {
+	for _, axis := range decisionAxes {
+		if _, hot := utilizationOver(h.Axis(axis), axisThreshold(s, axis)); hot {
+			return axis, true
+		}
+	}
+	return usage.ClassWeek, false
+}
+
+// nearestAxis is the known axis closest to its own bar, the one worth naming
+// when none has crossed. Distance is measured in points below the bar, so
+// axes with different bars compare fairly.
+func nearestAxis(h usage.Headroom, s settings.AutoSwitchSettings) usage.Class {
+	best, bestGap := usage.ClassWeek, 0.0
+	found := false
+	for _, axis := range decisionAxes {
+		room := h.Axis(axis)
+		if room == nil {
+			continue
+		}
+		gap := axisThreshold(s, axis) - (100.0 - *room)
+		if !found || gap < bestGap {
+			best, bestGap, found = axis, gap, true
+		}
+	}
+	return best
+}
+
+// axisThreshold picks the bar that governs one class.
+func axisThreshold(s settings.AutoSwitchSettings, axis usage.Class) float64 {
+	switch axis {
+	case usage.ClassSession:
+		return s.FiveHourThreshold
+	case usage.ClassModel:
+		return s.ModelThreshold
+	default:
+		return s.SevenDayThreshold
+	}
+}
+
+// belowEveryBar reports whether no axis of this account has reached its own
+// threshold.
+func belowEveryBar(h usage.Headroom, s settings.AutoSwitchSettings) bool {
+	_, hot := hotAxis(h, s)
+	return !hot
+}
+
 // qual is one qualifying oauth target: its headroom, its weekly renewal epoch
 // (nil = unknown), and its account number. The slice is built in switchable
 // (sequence) order, so a stable sort resolves every ordering tie by sequence.
 type qual struct {
-	h       float64
+	h float64
+	// weekly is the binding BUDGET headroom (the week, or a counted model
+	// window when that is tighter), which the orderings prefer; nil when no
+	// weekly window was readable.
+	weekly *float64
+	// below records whether every known axis sits under its own bar, which is
+	// what "below threshold" means once there is one per window (DESIGN A34).
+	below   bool
 	renewal *float64
 	num     string
 }
 
-// sortQualifying orders the qualifying targets per autoswitch.strategy. "best"
-// is headroom descending (byte-identical to the original single stable sort:
-// ties keep sequence order); threshold is ignored. "soonest-reset" is
-// threshold-tiered so that an at/above-threshold account is never preferred for
-// its early renewal: it sorts after every below-threshold candidate, by
-// headroom, as a last resort. Tier A (utilization 100-h below threshold) ranks
-// candidates with a known weekly renewal ahead of those without, earliest
-// renewal first, then falls back to headroom descending, then to sequence order.
-// Tier B (utilization at/above threshold; at-limit accounts never qualify) is
-// ordered by headroom descending. Every tier-A candidate sorts before every
-// tier-B candidate. Under the proactive trigger tier B is always empty (the
-// qualification gate already excluded those), so proactive ordering is
-// unchanged; the tiering matters only for at-limit/failover (Go-side extension,
-// DESIGN A17).
-func sortQualifying(qualifying []qual, strategy string, threshold float64) {
+// sortQualifying orders the qualifying targets per autoswitch.strategy.
+// "soonest-reset" is threshold-tiered so that a candidate over one of its bars
+// is never preferred for its early renewal: it sorts after every candidate
+// below all of them, by headroom, as a last resort. Tier A (every known axis
+// under its own bar, qual.below) ranks candidates with a known weekly renewal
+// ahead of those without, earliest renewal first, then falls back to headroom
+// descending, then to sequence order. Tier B (some axis at/above its bar;
+// at-limit accounts never qualify) is ordered by headroom descending. Every
+// tier-A candidate sorts before every tier-B candidate. Under the proactive
+// trigger tier B holds only candidates over a bar OTHER than the triggering
+// one (the qualification gate excluded the rest); the tiering matters chiefly
+// for at-limit/failover (Go-side extension, DESIGN A17, A34). "best" is
+// weekly headroom descending, ties in sequence order.
+func sortQualifying(qualifying []qual, strategy string) {
 	if strategy == "soonest-reset" {
-		belowThreshold := func(q qual) bool { return (100.0 - q.h) < threshold }
 		sort.SliceStable(qualifying, func(i, j int) bool {
 			a, b := qualifying[i], qualifying[j]
-			aBelow, bBelow := belowThreshold(a), belowThreshold(b)
-			if aBelow != bBelow {
-				return aBelow // tier A (below threshold) before tier B (at/above)
+			if a.below != b.below {
+				return a.below // tier A (below every bar) before tier B
 			}
-			if !aBelow {
+			if !a.below {
 				return a.h > b.h // tier B: most headroom first (best-like last resort)
 			}
 			if (a.renewal != nil) != (b.renewal != nil) {
@@ -337,17 +454,32 @@ func sortQualifying(qualifying []qual, strategy string, threshold float64) {
 		})
 		return
 	}
-	sort.SliceStable(qualifying, func(i, j int) bool { return qualifying[i].h > qualifying[j].h })
+	// "best" means most WEEKLY room, not most room overall: ranking by the
+	// binding figure sent work to whichever account happened to be resting
+	// its 5h window rather than to the one with budget to spare (DESIGN A34).
+	// A candidate with no readable weekly window falls back to the binding
+	// figure.
+	sort.SliceStable(qualifying, func(i, j int) bool {
+		a, b := qualifying[i], qualifying[j]
+		if a.weekly != nil && b.weekly != nil && *a.weekly != *b.weekly {
+			return *a.weekly > *b.weekly
+		}
+		if (a.weekly != nil) != (b.weekly != nil) {
+			return a.weekly != nil
+		}
+		return a.h > b.h
+	})
 }
 
-// perform runs (or, in dry-run, reports) the switch decision (05§12).
-func (e *Engine) perform(number, email, trigger string) (TickOutcome, error) {
+// perform runs (or, in dry-run, reports) the switch decision (05§12). axis is
+// the window that made the tick move ("" under failover, DESIGN A34).
+func (e *Engine) perform(number, email, trigger, axis string) (TickOutcome, error) {
 	if e.dryRun {
 		var from map[string]any
 		if current := e.sw.CurrentAccountNumber(); current != nil {
 			from = refOf(*current, e.sw.AccountEmail(*current))
 		}
-		e.emit(SwitchEvent{Ts: e.nowISO(), Trigger: trigger, FromRef: from, ToRef: refOf(number, email), DryRun: true})
+		e.emit(SwitchEvent{Ts: e.nowISO(), Trigger: trigger, Axis: axis, FromRef: from, ToRef: refOf(number, email), DryRun: true})
 		return Switched, nil
 	}
 
@@ -394,6 +526,7 @@ func (e *Engine) perform(number, email, trigger string) (TickOutcome, error) {
 		e.emit(SwitchEvent{
 			Ts:       e.nowISO(),
 			Trigger:  trigger,
+			Axis:     axis,
 			FromRef:  mapOf(result["from"]),
 			ToRef:    mapOf(result["to"]),
 			Warnings: sliceOf(result["warnings"]),

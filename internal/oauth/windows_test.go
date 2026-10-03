@@ -272,3 +272,42 @@ func TestNewUsageDropsOnlyIncomparablePercentages(t *testing.T) {
 		})
 	}
 }
+
+// ClassPcts keeps the three resources apart — the 5h rate window, the week,
+// and the per-model week — each judged against a bar of its own (DESIGN A34).
+func TestClassPctsSplitsTheAxes(t *testing.T) {
+	u := NewUsage(map[string]any{
+		"five_hour": map[string]any{"pct": 96.0},
+		"seven_day": map[string]any{"pct": 40.0},
+		"scoped":    []any{map[string]any{"name": "Fable", "pct": 88.0}},
+	})
+	// Uncounted, the model window is not an axis at all.
+	five, seven, model := ClassPcts(u, nil)
+	if headroomVal(t, five) != 96.0 || headroomVal(t, seven) != 40.0 || model != nil {
+		t.Errorf("5h/7d/model = %v/%v/%v, want 96/40/nil", five, seven, model)
+	}
+	// Counted, it is its own axis; the other two are untouched by it.
+	five, seven, model = ClassPcts(u, []string{"Fable"})
+	if headroomVal(t, five) != 96.0 || headroomVal(t, seven) != 40.0 || headroomVal(t, model) != 88.0 {
+		t.Errorf("5h/7d/model = %v/%v/%v, want 96/40/88", five, seven, model)
+	}
+	// AccountHeadroom still answers the single-figure question with the worst
+	// window of any class.
+	if got := headroomVal(t, AccountHeadroom(u, []string{"Fable"})); got != 4.0 {
+		t.Errorf("binding headroom = %v, want 4 (100-96)", got)
+	}
+}
+
+func TestClassPctsMissingClassIsNil(t *testing.T) {
+	onlyWeekly := NewUsage(map[string]any{"seven_day": map[string]any{"pct": 10.0}})
+	if five, seven, model := ClassPcts(onlyWeekly, nil); five != nil || model != nil || headroomVal(t, seven) != 10.0 {
+		t.Errorf("5h/7d/model = %v/%v/%v, want nil/10/nil", five, seven, model)
+	}
+	onlySession := NewUsage(map[string]any{"five_hour": map[string]any{"pct": 10.0}})
+	if five, seven, model := ClassPcts(onlySession, nil); seven != nil || model != nil || headroomVal(t, five) != 10.0 {
+		t.Errorf("5h/7d/model = %v/%v/%v, want 10/nil/nil", five, seven, model)
+	}
+	if five, seven, model := ClassPcts(nil, nil); five != nil || seven != nil || model != nil {
+		t.Errorf("nil usage = %v/%v/%v, want all nil", five, seven, model)
+	}
+}

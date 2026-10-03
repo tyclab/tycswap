@@ -158,6 +158,8 @@ Flags combine with subcommands:
 The original flag spellings (tycswap --switch, tycswap --list, ...) keep working.
 ```
 
+Go: the epilog's example sets `autoswitch.sevenDayThreshold 92` (DESIGN A34).
+
 ### 3.1 Visible flags (outside the mutually-exclusive group)
 
 | flag | type / action | metavar | default | notes |
@@ -416,7 +418,7 @@ work, and wraps in `except ClaudeSwitchError → error("Error: …"); exit 1` /
   - `--once` (store_true) — single tick; exit code = outcome.
   - `--json` (store_true) — one JSON event per line on stdout.
   - `--interval` (`type=float`, `metavar="SECONDS"`) — poll interval (min 15; default 60).
-  - `--threshold` (`type=float`, `metavar="PCT"`) — 50–99.9; default 90.
+  - `--threshold` (`type=float`, `metavar="PCT"`) — 50–99.9; default 90. Go: replaced by `--five-hour-threshold` (85), `--seven-day-threshold` (97) and `--model-threshold` (95), each 50–100 (DESIGN A34).
   - `--cooldown` (`type=float`, `metavar="SECONDS"`) — default 300.
   - `--model` (`metavar="NAMES"`) — one name or comma list (Fable, Opus, Sonnet, Haiku) or `all`.
   - `--include-api-key-accounts` (`argparse.BooleanOptionalAction`, `default=None`). Go: removed with its setting (DESIGN A33).
@@ -427,7 +429,9 @@ work, and wraps in `except ClaudeSwitchError → error("Error: …"); exit 1` /
 - `--once`: `sys.exit(engine.tick().value)`.
 - loop mode: `signal.signal(signal.SIGTERM, lambda *_: engine.stop())`; if not
   JSON print the dimmed banner
-  `f"Auto-switch running: threshold {settings.threshold:.0f}%, every {settings.interval_seconds:.0f}s{' (dry-run)' if args.dry_run else ''} — Ctrl-C to stop"`;
+  `f"Auto-switch running: threshold {settings.threshold:.0f}%, every {settings.interval_seconds:.0f}s{' (dry-run)' if args.dry_run else ''} — Ctrl-C to stop"`
+  (Go: `Auto-switch running: 5h 85% · 7d 97% · model 95%, every 60s — Ctrl-C to stop`,
+  one figure per bar in place of the threshold, DESIGN A34);
   `sys.exit(engine.run_loop())`.
 - Root guard here is inlined (not `_guard_root`) but identical.
 - `jsonl_emit(event)`: `print(json.dumps(event.to_json()), flush=True)`.
@@ -509,7 +513,7 @@ Every key (single source of truth is `SETTING_SPECS`, keyed by dotted key):
 
 | dotted key | field (snake) | kind | lo | hi | choices | default | help |
 |-----------|---------------|------|----|----|---------|---------|------|
-| `autoswitch.threshold` | `threshold` | float | 50.0 | 99.9 | — | `90.0` | Switch when the binding 5h/7d window reaches this pct |
+| `autoswitch.threshold` | `threshold` | float | 50.0 | 99.9 | — | `90.0` | Switch when the binding 5h/7d window reaches this pct. Go: replaced by `autoswitch.fiveHourThreshold`, `sevenDayThreshold`, `modelThreshold` (50.0–100.0; 85, 97, 95); the old key seeds the 7d bar (DESIGN A34) |
 | `autoswitch.intervalSeconds` | `interval_seconds` | float | 15.0 | 3600.0 | — | `60.0` | Poll interval for the tycswap auto loop, in seconds |
 | `autoswitch.cooldownSeconds` | `cooldown_seconds` | float | 0.0 | 86400.0 | — | `300.0` | Minimum seconds between proactive switches |
 | `autoswitch.hysteresisPct` | `hysteresis_pct` | float | 0.0 | 50.0 | — | `10.0` | A target must beat the active account by this many pct |
@@ -547,7 +551,9 @@ Clamp examples (tests): `threshold 200 → 99.9`; `intervalSeconds 1 → 15.0`;
 default; `includeApiKeyAccounts 1 → True`; `strategy "chaos" → "best"`;
 `model 123 → None`. Go: `strategy "chaos" → "soonest-reset"`, the Go default
 (DESIGN A32); the `includeApiKeyAccounts` case is gone with the key (DESIGN
-A33).
+A33). Go: the threshold cases are per bar, clamped to 50–100:
+`sevenDayThreshold 200 → 100`, `fiveHourThreshold 10 → 50`,
+`sevenDayThreshold "high" → 97.0` default (DESIGN A34).
 
 ### 8.4 Writing
 
@@ -561,7 +567,8 @@ preserving unknown keys/sections. Used by non-config callers (TUI etc.), NOT by
 - Read via `_read_raw_for_write` (corrupt file **errors**, does not degrade to `{}`).
 - Stamp `schemaVersion` (only if absent), write **only that one key** into its
   section. Unknown keys/sections survive. Returns the parsed value.
-- Result file for a single set is minimal, e.g. `{"schemaVersion": 1, "autoswitch": {"threshold": 80.0}}`.
+- Result file for a single set is minimal, e.g. `{"schemaVersion": 1, "autoswitch": {"threshold": 80.0}}`
+  (Go: `"sevenDayThreshold": 80.0`, DESIGN A34).
 
 `unset_setting(root, dotted_key)` → removes the key; if its section becomes
 empty the whole section is deleted; stamps `schemaVersion`; returns `False`
@@ -984,7 +991,9 @@ Reads `sys.prefix`, lowercases its path parts, forms adjacent pairs
   `cooldownSeconds` from the file is kept; `--dry-run` forwarded; `--json --once`
   stdout is pure JSONL (one object/line, each `event`+`schemaVersion:1`);
   switcher init error → exit 1, "nope" on stderr; a value set via `config set
-  autoswitch.threshold 77` is picked up by `auto` (end-to-end).
+  autoswitch.threshold 77` is picked up by `auto` (end-to-end). Go: the bars are
+  `--five-hour-threshold`/`--seven-day-threshold`/`--model-threshold` and
+  `autoswitch.sevenDayThreshold` etc. (DESIGN A34).
 - **config**: `config` with no args lists all 8 keys, `(default)` appears 8×;
   after `set` a key is not marked default (even setting it equal to the default);
   `--json` list has 8 settings with correct `value`/`isSet`; `set` writes only

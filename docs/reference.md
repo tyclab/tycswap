@@ -34,7 +34,8 @@ tycswap env [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history] [--shell {sh|fish
                                             print eval-able env lines that pin this shell
 tycswap map [<NUM|EMAIL|ALIAS> [PATH]]        map a directory to an account / list mappings
 tycswap unmap [PATH]                          remove a directory mapping
-tycswap auto [--once] [--json] [--interval SECONDS] [--threshold PCT] [--cooldown SECONDS]
+tycswap auto [--once] [--json] [--interval SECONDS] [--five-hour-threshold PCT]
+           [--seven-day-threshold PCT] [--model-threshold PCT] [--cooldown SECONDS]
            [--model NAMES] [--dry-run]      auto-switch when nearing rate limits
 tycswap config [list] [--json]                show settings
 tycswap config get <KEY> [--json]             read one setting
@@ -1358,7 +1359,8 @@ Unmapped ~/work/client-app
 ### Synopsis
 
 ```
-tycswap auto [--once] [--json] [--interval SECONDS] [--threshold PCT] [--cooldown SECONDS]
+tycswap auto [--once] [--json] [--interval SECONDS] [--five-hour-threshold PCT]
+           [--seven-day-threshold PCT] [--model-threshold PCT] [--cooldown SECONDS]
            [--model NAMES] [--dry-run] [--debug]
 ```
 
@@ -1369,7 +1371,9 @@ tycswap auto [--once] [--json] [--interval SECONDS] [--threshold PCT] [--cooldow
 | `--once` | flag | off (loop) | Runs a single tick; the exit status is the tick outcome. |
 | `--json` | flag | off | Emit JSONL events (compact) instead of human lines. |
 | `--interval` | float seconds | `autoswitch.intervalSeconds` (60) | Clamped to 15–3600. |
-| `--threshold` | float percent | `autoswitch.threshold` (90) | Clamped to 50–99.9. |
+| `--five-hour-threshold` | float percent | `autoswitch.fiveHourThreshold` (85) | Clamped to 50–100. |
+| `--seven-day-threshold` | float percent | `autoswitch.sevenDayThreshold` (97) | Clamped to 50–100. |
+| `--model-threshold` | float percent | `autoswitch.modelThreshold` (95) | Clamped to 50–100; applies only to the windows `--model` / `autoswitch.model` counts. |
 | `--cooldown` | float seconds | `autoswitch.cooldownSeconds` (300) | Clamped to 0–86400. |
 | `--model` | string (comma names) | `autoswitch.model` | Adds per-model weekly limits. |
 | `--dry-run` | flag | off | Evaluate and report but never switch. |
@@ -1380,8 +1384,8 @@ run only, then are re-clamped to the ranges above.
 
 ### Description
 
-Watches the active account's usage and proactively switches before it reaches
-the threshold. In loop mode it polls every interval; in `--once` mode it
+Watches the active account's usage and proactively switches before one of its
+windows reaches its limit. In loop mode it polls every interval; in `--once` mode it
 evaluates a single tick and exits with the outcome as the status code — the
 form intended for cron. Switching proactively (while the old account is still
 valid) is what keeps the change safe under the macOS Keychain propagation
@@ -1394,7 +1398,29 @@ active the engine leaves it alone with the `no-switch` reason `active-api-key`:
 moving onto or off an API key changes how Claude Code authenticates, which a
 running session does not pick up, so only the user makes that switch.
 
-Which accounts qualify as targets is governed by the threshold, hysteresis,
+**One bar per window** (DESIGN A34). The 5h window, the 7d window and each
+per-model weekly window `autoswitch.model` counts are judged against bars of
+their own: `autoswitch.fiveHourThreshold` (85), `autoswitch.sevenDayThreshold`
+(97) and `autoswitch.modelThreshold` (95). The 5h window bursts (a fan-out of
+parallel subagents can fill it between two polls), so its bar is the lowest;
+the weekly windows creep, so they can run close to full. A bar of 100 means
+"never move proactively on this window"; only an actual at-limit does. A tick
+moves when a window has reached its own bar, and when more than one has, the
+costliest names the move: the 7d window, then a counted model week, then the
+5h window. The proactive checks (landing below the bar, beating the active
+account by `autoswitch.hysteresisPct`) are made on that window alone; a
+candidate that reports no window of that class is judged on its weekly figure.
+Whatever the trigger, a candidate whose week, or a counted model week, is
+spent is never a target. The startup line names every bar (`Auto-switch
+running: 5h 85% · 7d 97% · model 95%, every 60s`); the poll line carries the
+7d bar (`(7d bar 97%)`); the `below-threshold` reason names the window closest
+to its own bar (`7d 50% < 97%`), and a switch names the window that made it
+(`(proactive, 5h)`). The poll cadence escalates on the lowest bar in force (the
+model bar only while `autoswitch.model` counts something), so from 15 points
+under the 5h bar the active account is fetched more often. A `settings.json`
+that still carries the single `autoswitch.threshold` seeds the 7d bar.
+
+Which accounts qualify as targets is governed by the bars, hysteresis,
 cooldown, and quarantine rules; the order in which qualifying targets are
 tried is governed by `autoswitch.strategy` — earliest weekly renewal first
 (`soonest-reset`, the default) or most headroom first (`best`). See
@@ -1408,7 +1434,8 @@ usage and, when the active account's worse window (5h or weekly) is at or above
 the Codex threshold, switches to the enabled OAuth account with the lowest
 worse window that is below the threshold and at least `autoswitch.hysteresisPct`
 below the active account. The Codex threshold is `autoswitch.codexThreshold`,
-or the effective `--threshold` / `autoswitch.threshold` when that is 0. An
+or the effective `--seven-day-threshold` / `autoswitch.sevenDayThreshold` when
+that is 0 (DESIGN A34); at 100 it moves only off an account at its limit. An
 account with no measurement is never switched away from. Cooldown, quarantine
 and `--model` apply to Claude only; Codex API-key accounts are never targets,
 as Claude ones are not. `--dry-run` applies to both engines.
@@ -1449,8 +1476,8 @@ a `Z` suffix), plus per-kind fields:
 
 | `event` | Fields |
 |---------|--------|
-| `poll` | `active` (`{number,email}` or null), `headroomPct` (`{num: float|null}`), `threshold` (float), `fetchErrors` (`{num: msg}`, optional), `windowsPct` (`{num: {label: float}}`, optional) |
-| `switch` | `trigger` (`proactive`\|`at-limit`\|`failover`), `from` (ref), `to` (ref), `warnings` (array), `dryRun` (bool) |
+| `poll` | `active` (`{number,email}` or null), `headroomPct` (`{num: float|null}`), `threshold` (float: the 7d bar), `fetchErrors` (`{num: msg}`, optional), `windowsPct` (`{num: {label: float}}`, optional) |
+| `switch` | `trigger` (`proactive`\|`at-limit`\|`failover`), `axis` (`5h`\|`7d`\|`model`: the window that made the tick move; empty under `failover`, where usage was unreadable), `from` (ref), `to` (ref), `warnings` (array), `dryRun` (bool) |
 | `no-switch` | `reason` (string), `detail` (string) |
 | `account-quarantined` | `number`, `email`, `reason` |
 | `account-unquarantined` | `number`, `email`, `reason` |
@@ -1481,9 +1508,9 @@ A handled error in `--json` mode is emitted as the compact error envelope
 
 | Message | Exit |
 |---------|------|
-| `argument --interval: invalid float value: '<v>'` (and `--threshold`, `--cooldown`) | 2 |
+| `argument --interval: invalid float value: '<v>'` (and each `--*-threshold`, `--cooldown`) | 2 |
 | `argument --interval: expected one argument` (and the others) | 2 |
-| `unrecognized arguments: <tok>` | 2 |
+| `unrecognized arguments: <tok>` (including the removed `--threshold`) | 2 |
 | A `ClaudeSwitchError` before the loop | 1 |
 
 ### Example
@@ -1585,12 +1612,12 @@ range, wrong type, corrupt file); `2` on a usage error.
 ### Example
 
 ```
-$ tycswap config set autoswitch.threshold 80
-autoswitch.threshold = 80
-$ tycswap config get autoswitch.threshold
+$ tycswap config set autoswitch.sevenDayThreshold 80
+autoswitch.sevenDayThreshold = 80
+$ tycswap config get autoswitch.sevenDayThreshold
 80
-$ tycswap config set autoswitch.threshold 40
-Error: autoswitch.threshold must be between 50 and 99.9
+$ tycswap config set autoswitch.sevenDayThreshold 40
+Error: autoswitch.sevenDayThreshold must be between 50 and 100
 $ echo $?
 1
 ```
@@ -1797,8 +1824,8 @@ A keybinding bar at the bottom of each screen lists the keys available there:
 on the dashboard, `s` switch accounts, `w` watch, `c` settings, `q` quit; on
 the switch screen, `enter` switch, `b` best pick, `esc` back; on the watch
 screen, `s` switch (`enter` confirm while a target is selected), `esc` back;
-on the auto-switch screen, `l` go live / dry-run, `t` threshold (with `←`/`→`
-to adjust and `enter` to finish while adjusting), `esc` back; on the settings
+on the auto-switch screen, `l` go live / dry-run, `t` threshold (the 7d bar;
+with `←`/`→` to adjust and `enter` to finish while adjusting), `esc` back; on the settings
 screen, `enter` edit (toggle for a bool, next choice for a choice), `u` reset
 to default, `esc` back (`enter` save and `esc` cancel while a value is being
 typed).
@@ -1824,11 +1851,12 @@ its default applies again (`<key> unset (default: <value>)`), or reports
 at once through the same validated path `tycswap config set` and `unset` use,
 one at a time (a second change while one is still being written is refused
 with "Another action is still running"); a saved value is confirmed with the
-line `tycswap config set` prints (`autoswitch.threshold = 80`), and a write
-that fails opens the same output dialog other failed actions open. The rows
-follow the file: a key changed from another `tycswap` instance or by `tycswap
-config set` in a terminal shows on the next poll. A saved threshold moves the
-threshold tick on the dashboard's usage bars at once.
+line `tycswap config set` prints (`autoswitch.sevenDayThreshold = 80`), and a
+write that fails opens the same output dialog other failed actions open. The
+rows follow the file: a key changed from another `tycswap` instance or by
+`tycswap config set` in a terminal shows on the next poll. A saved
+`autoswitch.sevenDayThreshold` moves the threshold tick on the dashboard's
+usage bars at once.
 
 The auto-switch engine reads `settings.json` when it starts and does not
 re-read it while it runs — `tycswap config set` does not reach a running
@@ -1839,9 +1867,17 @@ auto-switch screen is opened (it starts its engine from the file), for a
 runs its next start from that dashboard. Outside the engine, the at-limit
 markers and `tycswap switch` read `autoswitch.model` from the file each time,
 so they follow a change on the next poll or command. The auto-switch
-screen's own `t` threshold adjustment remains session-only and is never
+screen's own `t` threshold adjustment moves the 7d bar, the account's whole
+budget, and nothing else (DESIGN A34); it remains session-only and is never
 written to the file; its hint says so and points at Settings for a change
-that should persist.
+that should persist. The screen's summary line names every bar in force
+(`switch at 5h 85% · 7d 97%`, then `· model 95%` while `autoswitch.model`
+counts a window), marks the 7d bar `(session)` once the adjustment moved it,
+and logs `— 7d threshold set to <n>% for this session —`. The *Next best*
+panel ranks the way the engine decides: a row counts as at threshold when any
+of its windows has reached the bar that governs it, and `best` orders by the
+weekly figure (the 7d window, or a counted model window when that is fuller),
+not by the fullest window.
 
 When a Codex store or a codex-auth registry is present, the dashboard's Codex
 rows follow the Claude rows, each tagged `⟨codex⟩` after its workspace tag, on
@@ -2376,16 +2412,20 @@ tabs:
   now* checks again. The Accounts and the Updates card fold to their heading;
   the choice is remembered in `ui_prefs.json` under the backup root.
 - **Auto**: an auto-switch engine hosted in the `web` process: start, start
-  as a dry run, stop, wake; a slider that sets the threshold of the running
-  engine (not saved; enabled only while it runs); *Count model limits*, which
-  saves `autoswitch.model` as `all` (or unsets it); the *Next best* ranking
-  with each account's verdict; the quarantine; a link to the Settings tab;
+  as a dry run, stop, wake; a slider that sets the 7d threshold of the running
+  engine (50–100; not saved; enabled only while it runs; the 5h and model bars
+  are settings only, DESIGN A34); *Count model limits*, which saves
+  `autoswitch.model` as `all` (or unsets it); the *Next best* ranking with each
+  account's verdict, which marks a row *at threshold* when any of its windows
+  has reached its own bar, ranks `best` by the weekly figure, and names the
+  bars in force (`switch at 5h 85% · 7d 97%`, plus the model bar while model
+  windows count); the quarantine; a link to the Settings tab;
   and the engine's event log. The hosted engine switches Claude accounts
   only; Codex auto-switching stays with `tycswap auto`.
 - **Settings**: every `settings.json` key `tycswap config` knows
-  (`autoswitch.threshold`, `intervalSeconds`, `codexEnabled`,
-  `codexThreshold`, `cooldownSeconds`, `hysteresisPct`, `strategy`, `model`,
-  `unhealthyTicks`), each with a control of its type
+  (`autoswitch.fiveHourThreshold`, `sevenDayThreshold`, `modelThreshold`,
+  `intervalSeconds`, `codexEnabled`, `codexThreshold`, `cooldownSeconds`,
+  `hysteresisPct`, `strategy`, `model`, `unhealthyTicks`), each with a control of its type
   (number with range, switch, select, text), its default and the value in
   effect, *Save* and *Reset* per key, validated as `config set` validates,
   and a line saying when a saved value takes effect. An engine reads the
@@ -2393,13 +2433,13 @@ tabs:
   every save or unset of `autoswitch.model` also retargets the Auto tab's
   running engine at once (and the at-limit marks follow; an engine in the TUI
   or `tycswap auto` keeps its value until it next starts), so *Next best* follows without a
-  restart; `autoswitch.threshold` and the other keys take effect when an
+  restart; `autoswitch.sevenDayThreshold` and the other keys take effect when an
   engine next starts (the Auto tab's slider changes the running engine's
-  threshold without saving); `autoswitch.codexEnabled` and
+  7d threshold without saving); `autoswitch.codexEnabled` and
   `codexThreshold` are read by `tycswap auto` only. The tab's badge counts
   the keys set away from their default.
 - **Guide**: what the tool is, slots and the active account, the 5h / 7d /
-  model windows and the threshold, getting started, switching by hand, Auto
+  model windows and their thresholds, getting started, switching by hand, Auto
   mode, the settings, sessions, updates, Codex accounts, a command cheat-sheet,
   troubleshooting and where the data lives.
 - **Sessions**: running Claude Code sessions grouped by directory, with
@@ -2537,7 +2577,7 @@ anything else `500`.
 | `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset`; each listed key carries `applies`, a sentence saying when a saved value takes effect; saving or unsetting `autoswitch.model` also retargets a running engine (`"applied": true` in the result) | `400` unknown key, value out of range, or missing value; the engine's own error when the retarget fails after the save |
 | `POST /api/auto/start` | `{"dryRun": bool}` | start the hosted engine | `400` already running or still stopping |
 | `POST /api/auto/stop`, `/api/auto/wake` | | stop it (waits up to 2 s for its loop to end), poll now | `400` not running; stop `409` when the tick in flight outlasts the wait (the engine is stopping; Start refuses until it has) |
-| `POST /api/auto/threshold` | `{"threshold": 50-99.9}` | retarget the running engine; the bounds are `autoswitch.threshold`'s | `400` missing, out of range, or not running |
+| `POST /api/auto/threshold` | `{"threshold": 50-100}` | retarget the running engine's 7d bar; the bounds are `autoswitch.sevenDayThreshold`'s (DESIGN A34) | `400` missing, out of range, or not running |
 | `POST /api/auto/model` | `{"model": "all"\|"<names>"\|""}` | retarget the running engine's model windows | `400` missing (`""` is a value) or not running |
 | `POST /api/updates/check` | | check for a newer tycswap release and a newer Claude Code now, in the background; the result arrives with the state | `202` at once; `503` without the updates host |
 | `POST /api/updates/apply` | `{"target": "app"\|"claude-code"}` | run one update after the page asked: `tycswap upgrade`'s path, or Claude Code's own installer; answers `{"message", "output"}`, on failure `{"error", "output"}` | `400` missing or unknown target, nothing known to update, or the installer's refusal (its last line); `409` another update is still running |
@@ -4191,10 +4231,12 @@ Every key, with its type, range, default, and meaning:
 
 | Key | Type | Range | Default | Meaning |
 |-----|------|-------|---------|---------|
-| `autoswitch.threshold` | float (percent) | 50–99.9 | 90 | Switch when the binding 5h/7d window reaches this percent. |
+| `autoswitch.fiveHourThreshold` | float (percent) | 50–100 | 85 | Switch when the **5h** window reaches this percent. The lowest bar on purpose: this window bursts (a fan-out of parallel subagents can fill it from 85 to 100 between two polls), and the margin is what lets the next poll act before it stops a task midway. |
+| `autoswitch.sevenDayThreshold` | float (percent) | 50–100 | 97 | Switch when the **7d** window reaches this percent: the account's whole budget. A week creeps rather than bursts, so it can be squeezed nearly full. The TUI's `t` adjustment and the dashboard slider move this bar for one run. A file that still carries the single `autoswitch.threshold` seeds it. |
+| `autoswitch.modelThreshold` | float (percent) | 50–100 | 95 | Switch when a **per-model weekly** window reaches this percent. Weekly too, so also high. Applies only to the windows `autoswitch.model` counts. |
 | `autoswitch.intervalSeconds` | float (seconds) | 15–3600 | 60 | Poll interval for the `tycswap auto` loop. |
 | `autoswitch.codexEnabled` | bool | — | true | Also auto-switch Codex accounts in the `tycswap auto` loop. A no-op without Codex accounts. |
-| `autoswitch.codexThreshold` | float (percent) | 0–99.9 | 0 | Codex-only switch threshold; 0 uses `autoswitch.threshold`. |
+| `autoswitch.codexThreshold` | float (percent) | 0–99.9 | 0 | Codex-only switch threshold; 0 uses `autoswitch.sevenDayThreshold` (DESIGN A34). |
 | `autoswitch.cooldownSeconds` | float (seconds) | 0–86400 | 300 | Minimum seconds between proactive switches. |
 | `autoswitch.hysteresisPct` | float (percent) | 0–50 | 10 | A switch target must beat the active account by at least this many percent. |
 | `autoswitch.strategy` | choice | `best`, `soonest-reset` | `soonest-reset` | How auto-switch orders qualifying targets: `soonest-reset` (earliest weekly renewal) or `best` (most headroom). See below. |
@@ -4206,7 +4248,11 @@ degrades to the (clamped) default without error, and a key tycswap does not
 know is ignored on read and kept by every write.
 `autoswitch.includeApiKeyAccounts` is such a key since DESIGN A33 removed it:
 a file that still carries it loads as if it did not, and `config set`, `get`
-and `unset` refuse it as an unknown setting. Writes via `tycswap config set`
+and `unset` refuse it as an unknown setting. `autoswitch.threshold`, the
+single bar before DESIGN A34, is no key either, but it still counts: a file
+that carries it seeds `autoswitch.sevenDayThreshold` (the new key wins where
+both are present), `config` reports the 7d bar as set, and `config unset
+autoswitch.sevenDayThreshold` removes both keys. Writes via `tycswap config set`
 are strict: an out-of-range or mistyped value is rejected with a `ConfigError`.
 A whole-number float is stored and shown without a fractional part
 (`80.0` → `80`). The TUI's Settings screen (`c` on the dashboard; see
@@ -4215,38 +4261,46 @@ through the same validation.
 
 **`autoswitch.strategy` ordering.** The strategy governs only the order in
 which already-qualifying candidates are offered to `tycswap auto`; it changes
-none of the qualification gates. Known and positive headroom, the cooldown,
-and quarantine exclusion apply identically under
-both values and for every trigger (`proactive`, `at-limit`, `failover`). The
-threshold-landing and hysteresis checks apply only under the `proactive`
+none of the qualification gates. Known and positive headroom and quarantine
+exclusion apply identically under both values and for every trigger
+(`proactive`, `at-limit`, `failover`). The cooldown, the threshold-landing
+check and the hysteresis check apply only under the `proactive`
 trigger — an `at-limit` or `failover` tick must leave the active account
 regardless, so refusing every imperfect target would strand it — and a
 qualifying candidate reached by either of those two triggers may therefore
-sit at or above the threshold.
+sit at or above a threshold. The landing and hysteresis checks are made on the
+**window that triggered the tick**, the 5h, the 7d or a counted per-model
+week, since each has a threshold of its own (DESIGN A34). Whatever the
+trigger, a candidate whose weekly budget is already spent (the 7d window or a
+counted model window) is never a target.
 
-- `best` orders candidates by headroom, most remaining first; accounts tied
-  on headroom keep sequence order.
+- `best` orders candidates by **weekly** headroom, most remaining first;
+  accounts tied on it keep sequence order. An account reporting no weekly
+  window at all falls back to its binding headroom. Ranking by the binding
+  figure would send work to whichever account happened to be resting its 5h
+  window rather than to the one with budget to spare (DESIGN A34).
 - `soonest-reset`, the setting's default, orders candidates by *renewal
-  time*, in two tiers. The first tier holds every candidate below the
-  threshold — headroom such that `100` minus headroom is under
-  `autoswitch.threshold` — and ranks by the latest parseable `resets_at`
-  among the account's weekly-scope windows: the 7-day window plus every
-  per-model scoped window matched by `autoswitch.model`. The 5h window is
-  never part of the renewal, since it is not weekly. A window whose
-  `resets_at` is absent or unparseable is skipped; an account with no
+  time*, in two tiers. The first tier holds every candidate under **every
+  one of its own bars** — its 5h utilization below
+  `autoswitch.fiveHourThreshold`, its 7d below
+  `autoswitch.sevenDayThreshold`, each counted model window below
+  `autoswitch.modelThreshold` — and ranks by the latest parseable
+  `resets_at` among the account's weekly-scope windows: the 7-day window
+  plus every per-model scoped window matched by `autoswitch.model`. The 5h
+  window is never part of the renewal, since it is not weekly. A window
+  whose `resets_at` is absent or unparseable is skipped; an account with no
   parseable weekly `resets_at` at all has an *unknown* renewal. Within this
   tier, a known renewal sorts before an unknown one; among known renewals
   the earliest sorts first; ties — an equal renewal, or two unknown renewals
   — fall back to headroom descending, then to sequence order. The second
-  tier holds every candidate at or above the threshold and ranks by headroom
-  descending, as a last resort. This tier is reachable only under the
-  `at-limit` and `failover` triggers: under `proactive`, the
-  threshold-landing gate above already excludes such a candidate from
-  qualifying at all, so the second tier is always empty and `soonest-reset`
-  orders proactive candidates exactly as the first tier describes. Every
-  first-tier candidate sorts before every second-tier candidate — a
-  candidate at or above the threshold is never preferred over one below it
-  merely for an earlier renewal.
+  tier holds every candidate at or above one of its bars and ranks by
+  headroom descending, as a last resort. Under `proactive` the
+  threshold-landing gate above judges only the triggering window, so the
+  second tier holds only candidates over a bar of a different window; under
+  `at-limit` and `failover` it holds any candidate over one of its bars.
+  Every first-tier candidate sorts before every second-tier candidate — a
+  candidate at or above one of its bars is never preferred over one below
+  all of them merely for an earlier renewal.
 
 The default is `soonest-reset` (DESIGN A32). A settings file without the key,
 or with a value outside the two choices, orders by earliest renewal; a file

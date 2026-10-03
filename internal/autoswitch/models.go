@@ -27,7 +27,7 @@ func (e *Engine) ApplyModels(model string) {
 	s.Model = mp
 	e.settings.Store(&s)
 	e.pendingModels.Store(&models)
-	e.sw.SetPollPolicyInputs(s.Threshold, models)
+	e.sw.SetPollPolicyInputs(pollThreshold(s, models), models)
 	e.Wake()
 }
 

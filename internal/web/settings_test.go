@@ -60,15 +60,15 @@ func TestSettingSet_ValueTypes(t *testing.T) {
 	}
 	var want []string
 	for _, tc := range cases {
-		resp := h.postJSON("/api/settings/autoswitch.threshold", map[string]any{"value": tc.value})
+		resp := h.postJSON("/api/settings/autoswitch.sevenDayThreshold", map[string]any{"value": tc.value})
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("value %v: status %d: %s", tc.value, resp.StatusCode, readBody(t, resp))
 		}
 		res, _ := decodeJSON(t, resp)["result"].(map[string]any)
-		if res["key"] != "autoswitch.threshold" || res["value"] != tc.want {
+		if res["key"] != "autoswitch.sevenDayThreshold" || res["value"] != tc.want {
 			t.Errorf("value %v: result %v", tc.value, res)
 		}
-		want = append(want, "Set(autoswitch.threshold,"+tc.want+")")
+		want = append(want, "Set(autoswitch.sevenDayThreshold,"+tc.want+")")
 	}
 	if got := h.set.Calls(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("calls %v, want %v", got, want)
@@ -94,13 +94,13 @@ func TestSettingModel_AppliesToRunningEngine(t *testing.T) {
 	if resp := h.post("/api/settings/autoswitch.model/unset"); resp.StatusCode != http.StatusOK {
 		t.Fatalf("unset via POST: status %d", resp.StatusCode)
 	}
-	if resp := h.postJSON("/api/settings/autoswitch.threshold", map[string]any{"value": 80}); resp.StatusCode != http.StatusOK {
+	if resp := h.postJSON("/api/settings/autoswitch.sevenDayThreshold", map[string]any{"value": 80}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("threshold: status %d", resp.StatusCode)
 	}
 	if res, _ := decodeJSON(t, h.postJSON("/api/settings/autoswitch.strategy", map[string]any{"value": "best"}))["result"].(map[string]any); res["applied"] != nil {
 		t.Fatalf("another key reports applied: %v", res)
 	}
-	wantSet := []string{"Set(autoswitch.model, Fable, Opus )", "Unset(autoswitch.model)", "Unset(autoswitch.model)", "Set(autoswitch.threshold,80)", "Set(autoswitch.strategy,best)"}
+	wantSet := []string{"Set(autoswitch.model, Fable, Opus )", "Unset(autoswitch.model)", "Unset(autoswitch.model)", "Set(autoswitch.sevenDayThreshold,80)", "Set(autoswitch.strategy,best)"}
 	if got := h.set.Calls(); !reflect.DeepEqual(got, wantSet) {
 		t.Fatalf("settings calls %v, want %v", got, wantSet)
 	}
@@ -152,7 +152,7 @@ func TestSettingModel_NoEngineWired(t *testing.T) {
 func TestSettingSet_ValueRequired400(t *testing.T) {
 	h := newHarness(t)
 	for _, body := range []any{nil, map[string]any{}, map[string]any{"value": nil}, map[string]any{"other": 1}} {
-		if resp := h.postJSON("/api/settings/autoswitch.threshold", body); resp.StatusCode != http.StatusBadRequest {
+		if resp := h.postJSON("/api/settings/autoswitch.sevenDayThreshold", body); resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("body %v: status %d", body, resp.StatusCode)
 		}
 	}
@@ -175,7 +175,7 @@ func TestSettingSet_ErrorMapping(t *testing.T) {
 		h.set.mu.Lock()
 		h.set.setErr = tc.err
 		h.set.mu.Unlock()
-		resp := h.postJSON("/api/settings/autoswitch.threshold", map[string]any{"value": "x"})
+		resp := h.postJSON("/api/settings/autoswitch.sevenDayThreshold", map[string]any{"value": "x"})
 		if resp.StatusCode != tc.want {
 			t.Errorf("%v: status %d, want %d", tc.err, resp.StatusCode, tc.want)
 		}
@@ -246,7 +246,7 @@ func TestSettingSet_BroadcastsState(t *testing.T) {
 	defer st.close()
 	st.nextState(t, timeout)
 	h.clk.Advance(time.Second)
-	h.postJSON("/api/settings/autoswitch.threshold", map[string]any{"value": 50})
+	h.postJSON("/api/settings/autoswitch.sevenDayThreshold", map[string]any{"value": 50})
 	ev := st.nextState(t, timeout)
 	var doc map[string]any
 	_ = json.Unmarshal([]byte(ev.data), &doc)
@@ -264,13 +264,15 @@ func TestSettingSet_BroadcastsState(t *testing.T) {
 // a new one included, at the next engine start.
 func TestSettingApplies(t *testing.T) {
 	cases := map[string]string{
-		"autoswitch.model":           "At once",
-		"autoswitch.threshold":       "slider",
-		"autoswitch.codexEnabled":    "tycswap auto next starts",
-		"autoswitch.codexThreshold":  "tycswap auto next starts",
-		"autoswitch.intervalSeconds": "When an engine next starts",
-		"autoswitch.cooldownSeconds": "When an engine next starts",
-		"autoswitch.someFutureKey":   "When an engine next starts",
+		"autoswitch.model":             "At once",
+		"autoswitch.sevenDayThreshold": "slider",
+		"autoswitch.fiveHourThreshold": "When an engine next starts",
+		"autoswitch.modelThreshold":    "When an engine next starts",
+		"autoswitch.codexEnabled":      "tycswap auto next starts",
+		"autoswitch.codexThreshold":    "tycswap auto next starts",
+		"autoswitch.intervalSeconds":   "When an engine next starts",
+		"autoswitch.cooldownSeconds":   "When an engine next starts",
+		"autoswitch.someFutureKey":     "When an engine next starts",
 	}
 	for key, want := range cases {
 		if got := settingApplies(key); !strings.Contains(got, want) {

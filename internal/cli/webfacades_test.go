@@ -67,31 +67,34 @@ func TestSettingsFacade(t *testing.T) {
 	for _, v := range views {
 		byKey[v.Key] = v
 	}
-	// The fixture's settings.json sets autoswitch.threshold to 80.
-	th, ok := byKey["autoswitch.threshold"]
-	if !ok || th.Kind != "float" || th.Min == nil || *th.Min != 50 || th.Max == nil || *th.Max != 99.9 || th.IsDefault || th.Value != float64(80) || th.Default != float64(90) || th.Description == "" {
-		t.Fatalf("threshold view = %+v", th)
+	// The fixture's settings.json sets the single pre-A34 threshold key to 80,
+	// which still steers the 7d bar: the view shows the file value, not the
+	// default 97, and reports it as set (DESIGN A34).
+	th, ok := byKey["autoswitch.sevenDayThreshold"]
+	if !ok || th.Kind != "float" || th.Min == nil || *th.Min != 50 || th.Max == nil || *th.Max != 100 || th.IsDefault || th.Value != float64(80) || th.Default != float64(97) || th.Description == "" {
+		t.Fatalf("7d threshold view = %+v", th)
 	}
-	for _, k := range []string{"autoswitch.codexThreshold", "autoswitch.codexEnabled", "autoswitch.strategy", "autoswitch.model"} {
+	for _, k := range []string{"autoswitch.fiveHourThreshold", "autoswitch.modelThreshold", "autoswitch.codexThreshold", "autoswitch.codexEnabled", "autoswitch.strategy", "autoswitch.model"} {
 		if _, ok := byKey[k]; !ok {
 			t.Errorf("setting %s missing", k)
 		}
 	}
-	// includeApiKeyAccounts is gone (DESIGN A33).
-	for _, k := range []string{"autoswitch.includeApiKeyAccounts", "autoswitch.fiveHourThreshold", "autoswitch.sevenDayThreshold", "autoswitch.modelThreshold"} {
+	// includeApiKeyAccounts is gone (DESIGN A33), and so is the single
+	// threshold (DESIGN A34).
+	for _, k := range []string{"autoswitch.includeApiKeyAccounts", "autoswitch.threshold"} {
 		if _, ok := byKey[k]; ok {
 			t.Errorf("unexpected setting %s", k)
 		}
 	}
-	if _, err := f.Set("autoswitch.threshold", "77"); err != nil {
+	if _, err := f.Set("autoswitch.sevenDayThreshold", "77"); err != nil {
 		t.Fatal(err)
 	}
 	for _, v := range f.Effective() {
-		if v.Key == "autoswitch.threshold" && (v.IsDefault || v.Value != float64(77)) {
+		if v.Key == "autoswitch.sevenDayThreshold" && (v.IsDefault || v.Value != float64(77)) {
 			t.Errorf("after Set: %+v", v)
 		}
 	}
-	for _, tc := range [][2]string{{"autoswitch.threshold", "abc"}, {"autoswitch.threshold", "120"}, {"autoswitch.nope", "1"}, {"autoswitch.codexEnabled", "maybe"}} {
+	for _, tc := range [][2]string{{"autoswitch.sevenDayThreshold", "abc"}, {"autoswitch.sevenDayThreshold", "120"}, {"autoswitch.nope", "1"}, {"autoswitch.codexEnabled", "maybe"}} {
 		_, err := f.Set(tc[0], tc[1])
 		var ce *cerr.Error
 		if !errors.As(err, &ce) || ce.Kind != cerr.KindValidation {
@@ -101,11 +104,18 @@ func TestSettingsFacade(t *testing.T) {
 	if _, err := f.Unset("autoswitch.nope"); err == nil {
 		t.Error("unknown key unset")
 	}
-	removed, err := f.Unset("autoswitch.threshold")
+	// Unset drops the 7d key and the legacy one with it, so the bar is back
+	// at its default rather than at the legacy value.
+	removed, err := f.Unset("autoswitch.sevenDayThreshold")
 	if err != nil || !removed {
 		t.Fatalf("Unset = %v, %v", removed, err)
 	}
-	if removed, _ := f.Unset("autoswitch.threshold"); removed {
+	for _, v := range f.Effective() {
+		if v.Key == "autoswitch.sevenDayThreshold" && (!v.IsDefault || v.Value != float64(97)) {
+			t.Errorf("after Unset: %+v", v)
+		}
+	}
+	if removed, _ := f.Unset("autoswitch.sevenDayThreshold"); removed {
 		t.Error("second Unset reported a removal")
 	}
 	b, _ := json.Marshal(views[0])
@@ -126,7 +136,7 @@ func TestAutoFacade(t *testing.T) {
 		}
 	})
 	v := a.View()
-	if !v.Available || v.Running || v.StartedAt != nil || v.Settings["autoswitch.threshold"] != float64(80) || v.Threshold != 80 || v.Events == nil || v.Quarantine == nil {
+	if !v.Available || v.Running || v.StartedAt != nil || v.Settings["autoswitch.sevenDayThreshold"] != float64(80) || v.Threshold != 80 || v.Events == nil || v.Quarantine == nil {
 		t.Fatalf("idle view = %+v", v)
 	}
 	// The settings map is derived from the spec: one key per setting, and the
@@ -147,8 +157,9 @@ func TestAutoFacade(t *testing.T) {
 			t.Errorf("idle op err = %v", err)
 		}
 	}
-	for _, bad := range []float64{0, 49.9, 100, 101} {
-		if err := a.ApplyThreshold(bad); err == nil || !strings.Contains(err.Error(), "between 50 and 99.9") {
+	// The slider moves the 7d bar: autoswitch.sevenDayThreshold's 50–100.
+	for _, bad := range []float64{0, 49.9, 100.1, 101} {
+		if err := a.ApplyThreshold(bad); err == nil || !strings.Contains(err.Error(), "between 50 and 100") {
 			t.Errorf("ApplyThreshold(%v) err = %v, want the settings bounds", bad, err)
 		}
 	}

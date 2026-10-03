@@ -32,8 +32,8 @@ func relevantWindows(usage map[string]any, models []string) []winTuple {
 	}
 	var out []winTuple
 	for _, kl := range []struct{ field, label string }{
-		{"five_hour", "5h"},
-		{"seven_day", "7d"},
+		{"five_hour", FiveHourLabel},
+		{"seven_day", SevenDayLabel},
 	} {
 		w, ok := usage[kl.field].(map[string]any)
 		if !ok {
@@ -78,20 +78,10 @@ func relevantWindows(usage map[string]any, models []string) []winTuple {
 }
 
 // accountHeadroom returns remaining percent before the binding window, or nil
-// if unknown (04§1.20).
+// if unknown (04§1.20): the smallest of the three axes AccountHeadroomByClass
+// keeps apart (classes.go, DESIGN A34).
 func accountHeadroom(usage map[string]any, models []string) *float64 {
-	wins := relevantWindows(usage, models)
-	if len(wins) == 0 {
-		return nil
-	}
-	maxPct := wins[0].pct
-	for _, w := range wins[1:] {
-		if w.pct > maxPct {
-			maxPct = w.pct
-		}
-	}
-	h := 100.0 - maxPct
-	return &h
+	return AccountHeadroomByClass(usage, models).Binding()
 }
 
 // bindingPct returns the utilization of the binding window, or nil (04§3.3).

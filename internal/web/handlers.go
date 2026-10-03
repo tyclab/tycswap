@@ -703,8 +703,8 @@ func settingApplies(key string) string {
 	switch key {
 	case modelSettingKey:
 		return "At once for the engine on the Auto tab: a save or reset retargets it while it runs, and the at-limit marks follow. An engine in the terminal dashboard or " + brand.Sanitized().Name + " auto keeps its value until it next starts."
-	case "autoswitch.threshold":
-		return "When an engine next starts. The Auto tab's slider changes the running engine's threshold for this run only, without saving."
+	case "autoswitch.sevenDayThreshold":
+		return "When an engine next starts. The Auto tab's slider changes the running engine's 7d threshold for this run only, without saving."
 	case "autoswitch.codexEnabled", "autoswitch.codexThreshold":
 		return "When " + brand.Sanitized().Name + " auto next starts. The engine on this page rotates Claude accounts only."
 	}
@@ -845,10 +845,11 @@ func (s *Server) handleAutoSimple(action string) http.HandlerFunc {
 	}
 }
 
-// handleAutoThreshold applies a session threshold. The value must lie in the
-// range the autoswitch.threshold setting allows (50–99.9), the same bounds
-// the CLI and the TUI's +/- keys enforce: below 50 the engine would treat
-// every account as over the limit.
+// handleAutoThreshold applies a session 7d threshold: the slider moves the 7d
+// bar, the account's whole budget, and nothing else (DESIGN A34). The value
+// must lie in the range autoswitch.sevenDayThreshold allows (50–100), the
+// same bounds the CLI and the TUI's +/- keys enforce: below 50 the engine
+// would treat every account as over the limit.
 func (s *Server) handleAutoThreshold(w http.ResponseWriter, r *http.Request) {
 	if unavailable(w, s.d.Auto != nil, "auto-switch") {
 		return
@@ -903,10 +904,10 @@ func (s *Server) handleAutoModel(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// checkThreshold validates a live threshold against the autoswitch.threshold
-// spec's bounds.
+// checkThreshold validates a live 7d threshold against the
+// autoswitch.sevenDayThreshold spec's bounds.
 func checkThreshold(t float64) error {
-	spec, err := settings.SpecFor("autoswitch.threshold")
+	spec, err := settings.SpecFor("autoswitch.sevenDayThreshold")
 	if err != nil {
 		return err
 	}

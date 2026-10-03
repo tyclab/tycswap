@@ -18,6 +18,7 @@
 package reporting
 
 import (
+	"math"
 	"sync"
 
 	"github.com/tyclab/tycswap/internal/settings"
@@ -78,5 +79,20 @@ func resolvePollInputs(s *store.Store) (float64, []string) {
 		return o.threshold, append([]string(nil), o.models...)
 	}
 	loaded := settings.Load(s.BackupDir())
-	return loaded.Threshold, settings.ParseModelNames(loaded.Model)
+	models := settings.ParseModelNames(loaded.Model)
+	return lowestBar(loaded, models), models
+}
+
+// lowestBar is the single figure poll planning escalates on now that each
+// window has a threshold of its own (DESIGN A34). The planner compares it
+// against the BINDING headroom, so the lowest bar in force is the honest one:
+// whichever window is closest to making the engine act decides how often an
+// account is looked at. The per-model bar is in force only while models
+// counts something. It is the same rule the engine pins (its pollThreshold).
+func lowestBar(s settings.AutoSwitchSettings, models []string) float64 {
+	lowest := math.Min(s.SevenDayThreshold, s.FiveHourThreshold)
+	if len(models) > 0 {
+		lowest = math.Min(lowest, s.ModelThreshold)
+	}
+	return lowest
 }

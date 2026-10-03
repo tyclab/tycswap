@@ -720,7 +720,7 @@ Examples:
 Auto-switching:
   Codex rides along in ` + "`tycswap auto`" + `, which rotates both providers. Tune it with
   ` + "`tycswap config set autoswitch.codexThreshold 85`" + ` (0 = inherit
-  autoswitch.threshold) or turn it off with ` + "`autoswitch.codexEnabled false`" + `.
+  autoswitch.sevenDayThreshold) or turn it off with ` + "`autoswitch.codexEnabled false`" + `.
   A Codex API-key login is never a rotation target, as on the Claude side: it
   reports no usage, so a threshold has nothing to compare.
 

@@ -77,17 +77,27 @@ const Filename = "settings.json"
 // engine (`tycswap auto`). See spec 08§8.2 / 05§2 for the field-by-field
 // rationale.
 type AutoSwitchSettings struct {
-	Threshold       float64
+	// One bar per window, because an account's windows fill at very different
+	// rates (DESIGN A34). FiveHourThreshold gates the rolling 5h window and
+	// sits lowest: a burst of parallel subagents can take that window from
+	// 85 % to full inside one poll interval, and an overshoot is a hard stop
+	// mid-task. SevenDayThreshold gates the week, which creeps, so it can be
+	// squeezed close to full before moving; ModelThreshold gates the per-model
+	// weekly windows, which count only when Model names them.
+	FiveHourThreshold float64
+	SevenDayThreshold float64
+	ModelThreshold    float64
+
 	IntervalSeconds float64
 	// CodexEnabled: Codex rides in the same `tycswap auto` process as its own
 	// small engine. Enabled by default, but a no-op unless the user has Codex
 	// accounts — a Claude-only install never notices it exists (claude-swap
 	// PR #252 settings.py).
 	CodexEnabled bool
-	// CodexThreshold: 0 means "use Threshold". A separate knob because
-	// Claude's 5h/7d rhythm and a ChatGPT plan's limits are not the same
-	// shape, so one number need not suit both (claude-swap PR #252
-	// settings.py).
+	// CodexThreshold: 0 means "use SevenDayThreshold", the bar the single
+	// pre-A34 threshold seeds. A separate knob because Claude's 5h/7d rhythm
+	// and a ChatGPT plan's limits are not the same shape, so one number need
+	// not suit both (claude-swap PR #252 settings.py).
 	CodexThreshold  float64
 	CooldownSeconds float64
 	HysteresisPct   float64
@@ -98,22 +108,27 @@ type AutoSwitchSettings struct {
 	Model *string
 }
 
-// Default returns the dataclass defaults: threshold 90, intervalSeconds 60,
-// codexEnabled true, codexThreshold 0, cooldownSeconds 300, hysteresisPct 10,
+// Default returns the dataclass defaults, except the threshold, which is three
+// bars (DESIGN A34; the Python dataclass has one threshold, 90):
+// fiveHourThreshold 85, sevenDayThreshold 97, modelThreshold 95,
+// intervalSeconds 60, codexEnabled true, codexThreshold 0, cooldownSeconds 300,
+// hysteresisPct 10,
 // strategy "soonest-reset" (DESIGN A32; the Python dataclass has "best"),
 // unhealthyTicks 3, model nil. The dataclass's includeApiKeyAccounts is gone
 // (DESIGN A33): auto-switch never moves onto an API-key account.
 func Default() AutoSwitchSettings {
 	return AutoSwitchSettings{
-		Threshold:       90.0,
-		IntervalSeconds: 60.0,
-		CodexEnabled:    true,
-		CodexThreshold:  0.0,
-		CooldownSeconds: 300.0,
-		HysteresisPct:   10.0,
-		Strategy:        "soonest-reset",
-		UnhealthyTicks:  3,
-		Model:           nil,
+		FiveHourThreshold: 85.0,
+		SevenDayThreshold: 97.0,
+		ModelThreshold:    95.0,
+		IntervalSeconds:   60.0,
+		CodexEnabled:      true,
+		CodexThreshold:    0.0,
+		CooldownSeconds:   300.0,
+		HysteresisPct:     10.0,
+		Strategy:          "soonest-reset",
+		UnhealthyTicks:    3,
+		Model:             nil,
 	}
 }
 
@@ -144,7 +159,7 @@ type Spec struct {
 	Help    string
 }
 
-// Dotted returns "section.jsonKey", e.g. "autoswitch.threshold".
+// Dotted returns "section.jsonKey", e.g. "autoswitch.sevenDayThreshold".
 func (s Spec) Dotted() string { return s.Section + "." + s.JSONKey }
 
 // SettingSpecs is the single source of truth for every settings.json key, in
@@ -152,9 +167,15 @@ func (s Spec) Dotted() string { return s.Section + "." + s.JSONKey }
 // spec's Default must equal Default()'s corresponding field (both enforced
 // by tests).
 var SettingSpecs = []Spec{
-	{Section: "autoswitch", JSONKey: "threshold", Field: "Threshold", Kind: KindFloat,
-		Lo: 50.0, Hi: 99.9, Default: 90.0,
-		Help: "Switch when the binding 5h/7d window reaches this pct"},
+	{Section: "autoswitch", JSONKey: "fiveHourThreshold", Field: "FiveHourThreshold", Kind: KindFloat,
+		Lo: 50.0, Hi: 100.0, Default: 85.0,
+		Help: "Switch when the 5h window reaches this pct. The lowest bar: a burst of subagents can fill this window between two polls"},
+	{Section: "autoswitch", JSONKey: "sevenDayThreshold", Field: "SevenDayThreshold", Kind: KindFloat,
+		Lo: 50.0, Hi: 100.0, Default: 97.0,
+		Help: "Switch when the 7d window reaches this pct. It creeps rather than bursts, so it can run close to full"},
+	{Section: "autoswitch", JSONKey: "modelThreshold", Field: "ModelThreshold", Kind: KindFloat,
+		Lo: 50.0, Hi: 100.0, Default: 95.0,
+		Help: "Switch when a per-model weekly window reaches this pct; only for the models autoswitch.model counts"},
 	{Section: "autoswitch", JSONKey: "intervalSeconds", Field: "IntervalSeconds", Kind: KindFloat,
 		Lo: 15.0, Hi: 3600.0, Default: 60.0,
 		Help: "Poll interval for the tycswap auto loop, in seconds"},
@@ -163,7 +184,7 @@ var SettingSpecs = []Spec{
 		Help:    "Also auto-switch Codex accounts in the tycswap auto loop"},
 	{Section: "autoswitch", JSONKey: "codexThreshold", Field: "CodexThreshold", Kind: KindFloat,
 		Lo: 0.0, Hi: 99.9, Default: 0.0,
-		Help: "Codex-only switch threshold (0 = use autoswitch.threshold)"},
+		Help: "Codex-only switch threshold (0 = use autoswitch.sevenDayThreshold)"},
 	{Section: "autoswitch", JSONKey: "cooldownSeconds", Field: "CooldownSeconds", Kind: KindFloat,
 		Lo: 0.0, Hi: 86400.0, Default: 300.0,
 		Help: "Minimum seconds between proactive switches"},
@@ -258,8 +279,23 @@ func Load(root string) AutoSwitchSettings {
 			fields[spec.Field] = v
 		}
 	}
+	// A file written before the bars were split per window (DESIGN A34)
+	// carries the single "threshold" key. It meant "whichever window is
+	// fullest", and the week is the window that rule was really about, so it
+	// seeds the 7d bar: silently resetting a configured limit to the default
+	// would be worse. The new key wins whenever it is present.
+	if _, present := fields["SevenDayThreshold"]; !present {
+		if v, legacy := section[LegacyThresholdKey]; legacy {
+			fields["SevenDayThreshold"] = v
+		}
+	}
 	return clamp(fields)
 }
+
+// LegacyThresholdKey is the single bar a settings file written before the
+// per-window bars carries; Load seeds autoswitch.sevenDayThreshold from it
+// (DESIGN A34).
+const LegacyThresholdKey = "threshold"
 
 // --- clamping ------------------------------------------------------------
 
@@ -354,8 +390,12 @@ func truthy(v any) bool {
 // clampValue produces for each Kind.
 func applyField(out *AutoSwitchSettings, field string, value any) {
 	switch field {
-	case "Threshold":
-		out.Threshold = value.(float64)
+	case "FiveHourThreshold":
+		out.FiveHourThreshold = value.(float64)
+	case "SevenDayThreshold":
+		out.SevenDayThreshold = value.(float64)
+	case "ModelThreshold":
+		out.ModelThreshold = value.(float64)
 	case "IntervalSeconds":
 		out.IntervalSeconds = value.(float64)
 	case "CodexEnabled":
@@ -388,15 +428,17 @@ func fieldsOf(s AutoSwitchSettings) map[string]any {
 		model = *s.Model
 	}
 	return map[string]any{
-		"Threshold":       s.Threshold,
-		"IntervalSeconds": s.IntervalSeconds,
-		"CodexEnabled":    s.CodexEnabled,
-		"CodexThreshold":  s.CodexThreshold,
-		"CooldownSeconds": s.CooldownSeconds,
-		"HysteresisPct":   s.HysteresisPct,
-		"Strategy":        s.Strategy,
-		"UnhealthyTicks":  s.UnhealthyTicks,
-		"Model":           model,
+		"FiveHourThreshold": s.FiveHourThreshold,
+		"SevenDayThreshold": s.SevenDayThreshold,
+		"ModelThreshold":    s.ModelThreshold,
+		"IntervalSeconds":   s.IntervalSeconds,
+		"CodexEnabled":      s.CodexEnabled,
+		"CodexThreshold":    s.CodexThreshold,
+		"CooldownSeconds":   s.CooldownSeconds,
+		"HysteresisPct":     s.HysteresisPct,
+		"Strategy":          s.Strategy,
+		"UnhealthyTicks":    s.UnhealthyTicks,
+		"Model":             model,
 	}
 }
 
@@ -500,7 +542,9 @@ func setSettingUnlocked(root, dotted, raw string) (any, error) {
 
 // UnsetSetting removes one key from settings.json; if its section becomes
 // empty the whole section is deleted. Returns false (and does not write)
-// when the key wasn't present.
+// when the key wasn't present. Unsetting autoswitch.sevenDayThreshold also
+// removes the legacy "threshold" key, which would otherwise keep steering the
+// bar the user just reset (DESIGN A34).
 func unsetSettingUnlocked(root, dotted string) (bool, error) {
 	spec, err := SpecFor(dotted)
 	if err != nil {
@@ -515,13 +559,25 @@ func unsetSettingUnlocked(root, dotted string) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	if _, present := section[spec.JSONKey]; !present {
+	keys := []string{spec.JSONKey}
+	if spec.Field == "SevenDayThreshold" {
+		keys = append(keys, LegacyThresholdKey)
+	}
+	present := false
+	for _, k := range keys {
+		if _, ok := section[k]; ok {
+			present = true
+		}
+	}
+	if !present {
 		return false, nil
 	}
 	if _, ok := data["schemaVersion"]; !ok {
 		data["schemaVersion"] = SchemaVersion
 	}
-	delete(section, spec.JSONKey)
+	for _, k := range keys {
+		delete(section, k)
+	}
 	if len(section) == 0 {
 		delete(data, spec.Section)
 	} else {
@@ -555,6 +611,11 @@ func EffectiveSettings(root string) []Effective {
 		isSet := false
 		if section, ok := raw[spec.Section].(map[string]any); ok {
 			_, isSet = section[spec.JSONKey]
+			if !isSet && spec.Field == "SevenDayThreshold" {
+				// The legacy "threshold" key still steers this bar (see
+				// Load), so a file carrying it has set this setting.
+				_, isSet = section[LegacyThresholdKey]
+			}
 		}
 		out = append(out, Effective{Spec: spec, Value: fields[spec.Field], IsSet: isSet})
 	}
@@ -579,15 +640,19 @@ func ValuesOf(s AutoSwitchSettings) map[string]any {
 // CLIOverrides holds the optional `tycswap auto` flag overrides; a nil field
 // means "not passed on the command line".
 type CLIOverrides struct {
-	Threshold       *float64
-	IntervalSeconds *float64
-	CooldownSeconds *float64
-	Model           *string
+	// One per bar, named after the window it governs (DESIGN A34).
+	FiveHourThreshold *float64
+	SevenDayThreshold *float64
+	ModelThreshold    *float64
+	IntervalSeconds   *float64
+	CooldownSeconds   *float64
+	Model             *string
 }
 
 func (o CLIOverrides) isEmpty() bool {
-	return o.Threshold == nil && o.IntervalSeconds == nil && o.CooldownSeconds == nil &&
-		o.Model == nil
+	return o.FiveHourThreshold == nil && o.SevenDayThreshold == nil &&
+		o.ModelThreshold == nil && o.IntervalSeconds == nil &&
+		o.CooldownSeconds == nil && o.Model == nil
 }
 
 // MergedWithCLI overlays o's non-nil overrides onto s, then re-clamps (so
@@ -598,8 +663,14 @@ func MergedWithCLI(s AutoSwitchSettings, o CLIOverrides) AutoSwitchSettings {
 		return s
 	}
 	fields := fieldsOf(s)
-	if o.Threshold != nil {
-		fields["Threshold"] = *o.Threshold
+	if o.FiveHourThreshold != nil {
+		fields["FiveHourThreshold"] = *o.FiveHourThreshold
+	}
+	if o.SevenDayThreshold != nil {
+		fields["SevenDayThreshold"] = *o.SevenDayThreshold
+	}
+	if o.ModelThreshold != nil {
+		fields["ModelThreshold"] = *o.ModelThreshold
 	}
 	if o.IntervalSeconds != nil {
 		fields["IntervalSeconds"] = *o.IntervalSeconds

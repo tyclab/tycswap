@@ -466,8 +466,8 @@ func sampleSessions() SessionsView {
 
 func sampleSettings() []SettingView {
 	return []SettingView{
-		{Key: "autoswitch.threshold", Kind: "float", Value: 90.0, Default: 90.0, IsDefault: true, Description: "Switch when the binding 5h/7d window reaches this pct", Min: f64(50), Max: f64(99.9)},
-		{Key: "autoswitch.codexThreshold", Kind: "float", Value: 0.0, Default: 0.0, IsDefault: true, Description: "Codex-only switch threshold (0 = use autoswitch.threshold)", Min: f64(0), Max: f64(99.9)},
+		{Key: "autoswitch.sevenDayThreshold", Kind: "float", Value: 97.0, Default: 97.0, IsDefault: true, Description: "Switch when the 7d window reaches this pct", Min: f64(50), Max: f64(100)},
+		{Key: "autoswitch.codexThreshold", Kind: "float", Value: 0.0, Default: 0.0, IsDefault: true, Description: "Codex-only switch threshold (0 = use autoswitch.sevenDayThreshold)", Min: f64(0), Max: f64(99.9)},
 		{Key: "autoswitch.codexEnabled", Kind: "bool", Value: true, Default: true, IsDefault: true, Description: "Also auto-switch Codex accounts"},
 		{Key: "autoswitch.strategy", Kind: "choice", Value: "best", Default: "soonest-reset", IsDefault: false, Choices: []string{"best", "soonest-reset"}, Description: "How auto-switch orders qualifying targets"},
 	}
@@ -476,7 +476,7 @@ func sampleSettings() []SettingView {
 func sampleAuto() AutoView {
 	return AutoView{
 		Available: true, Running: true, DryRun: true, StartedAt: f64(1758276000), Threshold: 85,
-		Settings: map[string]any{"autoswitch.threshold": 85.0, "autoswitch.strategy": "soonest-reset", "autoswitch.codexEnabled": true},
+		Settings: map[string]any{"autoswitch.sevenDayThreshold": 85.0, "autoswitch.strategy": "soonest-reset", "autoswitch.codexEnabled": true},
 		Events: []AutoEventView{
 			{At: 1758276001, Kind: "poll", Message: "polled 3 accounts"},
 			{At: 1758276002, Kind: "switch", Message: "switched to #2", Account: "2", Fields: map[string]any{"from": "1"}},
