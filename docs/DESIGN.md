@@ -1064,7 +1064,7 @@ directory the export points at.
 
 `autoswitch.strategy` (`internal/settings/settings.go` `SettingSpecs`, kind
 `KindChoice`) gains a second choice, `soonest-reset`, alongside the existing
-`best`. Default stays `best`; an invalid persisted value still falls back to
+`best`. Default stays `best` (A32 later makes `soonest-reset` the default); an invalid persisted value still falls back to
 the default via the existing `KindChoice` clamp — no new fallback path. It is
 a deliberate Go-side extension with no Python counterpart: Python's auto-switch
 has no ranking axis beyond most-headroom, so this adds a second one without
@@ -4246,3 +4246,47 @@ collector and planner, with a fake clock and a stub usage endpoint, ticks
 every 15 s for three hours beside one such candidate. After every tick the
 store reads the candidate's measurement as decision-grade, and the stub
 served it at least once per trust ceiling and at most once per park.
+
+## A32. `autoswitch.strategy` defaults to `soonest-reset`
+
+A17 added `soonest-reset` beside `best` and kept `best` as the default.
+`best` tries the qualifying account with the most headroom first. Across a
+working week that piles the load onto whichever account happens to have room
+and lets an account whose weekly window is about to renew sit idle, so the
+quota it would have spent before the renewal is lost. Ordering by the earliest
+weekly renewal spends quota where it comes back soonest and spreads the use
+over the accounts. The default in `settings.Default()` and in the
+`autoswitch.strategy` spec is therefore `soonest-reset`; `best` stays
+selectable. Qualification is unchanged, and `soonest-reset` still never
+prefers an account at or over the threshold for its early renewal (A17's two
+tiers).
+
+**What an existing settings file means now.** The default applies wherever
+the key does not decide:
+
+- a `settings.json` without `autoswitch.strategy` (including no file, a store
+  copied by `tycswap migrate` from claude-swap, whose default was `best`, and
+  the Python-produced fixture under `testdata/python-fixtures/`) now orders by
+  earliest renewal;
+- a value outside the two choices falls back to `soonest-reset` through the
+  existing `KindChoice` clamp;
+- a file that sets `best` keeps `best`. Loading never rewrites the file, and
+  `tycswap config set` writes only the key it is given, so the key is present
+  only where someone chose it. `tycswap config set autoswitch.strategy best`
+  is the way back to the old order.
+
+**Surfaces.** `tycswap config` lists `soonest-reset  (default)`; the TUI's
+Settings screen and the dashboard's Settings tab show the new default from the
+same spec, and the TUI's enum control cycles from the effective value. The
+auto-switch screen's summary names the strategy whenever it is not `best`, so
+it now reads `· soonest-reset` on an untouched install. The dashboard's Next
+best ranking falls back to `soonest-reset` when the state document carries no
+strategy, and the Guide describes it as the default.
+
+**Tests.** `internal/settings` (`TestStrategyDefaultIsSoonestReset`): the
+default and the spec agree; a file without the key loads `soonest-reset`; a
+file that sets `best` loads `best`, reports it as set, and is not rewritten by
+the reads; an unknown value falls back to `soonest-reset`
+(`TestLoad_ClampTable`). The TUI tests that pin `best` order set the strategy
+explicitly instead of relying on the default, and the summary test checks the
+segment on a default install.
