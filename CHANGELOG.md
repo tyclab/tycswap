@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- CI: a GitHub Actions workflow runs `make fmt`, `make vet` and `make test` on every push to `main` and every pull request. Until now the suite ran only on a developer's machine; the flakelab build of a release skips it.
+
 - `tycswap web`: the "limits ignored" warning's tooltip says where model windows are counted: the *Count model limits* switch on the Auto tab, or `autoswitch.model` on the Settings tab. It still sent the user to the Auto tab for `autoswitch.model`, which moved to the Settings tab with the rest of the editor.
 - On macOS, a switch onto an API key keeps the key readable when an oversized MCP credential falls back from Keychain to the credentials file. If the managed-key fallback cannot be saved, the switch fails before replacing the original OAuth credential.
 - An account at the limit of a window that resets more than an hour out no longer reads as `usage unavailable` from an hour after its last fetch until that reset. Such an account (for example an inactive one whose per-model weekly window is at 100% while `autoswitch.model` is `all`) was not polled again before the window reset, days later, while its measurement stopped being trusted after an hour: `list --json` and `status --json` reported `usageStatus: "unavailable"`, the dashboard showed *usage unavailable*, `list` printed the old numbers with an age note and did not refetch, and the auto-switch engine could not rank the account. An account at its limit is now polled again at least every 57 minutes until its reset (DESIGN A31).
