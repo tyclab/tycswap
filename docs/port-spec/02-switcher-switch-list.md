@@ -202,6 +202,7 @@ If `_get_current_account()` is `None` (no `~/.claude.json` oauthAccount email):
 - If `preferred` is disabled or not switchable, skip it:
   - Disabled → reason `(disabled)`.
   - Not switchable → console reason `(no stored credentials/config, re-add with tycswap --add-account --slot {target})`; JSON warning `Skipped Account-{target} (no stored credentials/config)`.
+  - Go: an API-key slot → console reason `(API key — switch to it by hand if you mean to)`; JSON warning `Skipped Account-{target} (API key: switching to it changes how Claude Code authenticates)` (DESIGN A33).
   - JSON: append `Skipped Account-{target} {reason}` to warnings; human: `{accent('Skipping')} Account-{target} {console_reason}`.
   - Fallback = first `num != target` in `sequence` that is enabled and switchable.
   - If no fallback:
@@ -430,6 +431,7 @@ Keyed to where the active credential write landed (`_last_active_credentials_bac
 fallback `"keychain" if _use_keychain() else "file"`):
 - `keychain`: `Restart Claude Code to apply immediately — otherwise the session can take up to ~30 seconds to pick up the new account.`
 - `file`: `New account is active on your next message — no restart needed.`
+- Go: after a switch onto an API-key account, `switching.APIKeyRestartNote` replaces both: `Restart your Claude Code sessions: one that is already running keeps its previous login until it is restarted.` (DESIGN A33).
 
 ### 8.5 `_replan_new_active(number, email, org_uuid)`
 
@@ -846,6 +848,7 @@ where hint is `Run `tycswap upgrade` to update.` (uv/pipx, non-Windows), `Run `{
   present only on disabled rows (absent, not `false`, on enabled).
 - **Switch followup**: macOS shows the `~30 seconds` / `apply immediately` note; Linux/WSL/
   Windows show `no restart needed` (keyed by `_last_active_credentials_backend`).
+  Go: after a switch onto an API-key account, every platform shows `APIKeyRestartNote` instead (DESIGN A33).
 - **Empty-current-creds guard**: a `""` read (Keychain timeout) must NOT overwrite the
   departing slot's backup → `CredentialReadError` aborts the switch.
 - **Purge with unset active account** must not write `account-None-*` backups (direct
