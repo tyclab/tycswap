@@ -72,6 +72,9 @@ const (
 	// and the engine keep a trusted measurement while it waits for its
 	// freeing reset. The ServeTTLS margin covers the planner's clock read
 	// trailing the fetch stamp and leaves room for a failed re-poll to be
-	// retried while the measurement is still trusted (DESIGN A31).
+	// retried while the measurement is still trusted (DESIGN A31). The
+	// planner jitters the capped park by up to JitterFrac so that accounts
+	// fetched together fall due apart, and downward only (3078-3420 s):
+	// upward jitter would carry the park past the ceiling.
 	ParkCapS = TrustMaxAgeS - ServeTTLS
 )
