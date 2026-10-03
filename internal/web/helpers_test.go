@@ -231,6 +231,8 @@ func (o *fakeOps) SwapAccounts(first, second string) (string, string, error) {
 	return first, second, nil
 }
 
+func (o *fakeOps) ApproveAPIKeySwitch(id string) { o.record("ApproveAPIKeySwitch(" + id + ")") }
+
 func (o *fakeOps) SwitchToForce(id string, jsonOut, force bool) (map[string]any, error) {
 	o.record(fmt.Sprintf("SwitchToForce(%s,%v,%v)", id, jsonOut, force))
 	if err := o.err("SwitchToForce"); err != nil {
@@ -467,7 +469,6 @@ func sampleSettings() []SettingView {
 		{Key: "autoswitch.threshold", Kind: "float", Value: 90.0, Default: 90.0, IsDefault: true, Description: "Switch when the binding 5h/7d window reaches this pct", Min: f64(50), Max: f64(99.9)},
 		{Key: "autoswitch.codexThreshold", Kind: "float", Value: 0.0, Default: 0.0, IsDefault: true, Description: "Codex-only switch threshold (0 = use autoswitch.threshold)", Min: f64(0), Max: f64(99.9)},
 		{Key: "autoswitch.codexEnabled", Kind: "bool", Value: true, Default: true, IsDefault: true, Description: "Also auto-switch Codex accounts"},
-		{Key: "autoswitch.includeApiKeyAccounts", Kind: "bool", Value: false, Default: false, IsDefault: true, Description: "Allow rotating onto managed API-key accounts"},
 		{Key: "autoswitch.strategy", Kind: "choice", Value: "best", Default: "soonest-reset", IsDefault: false, Choices: []string{"best", "soonest-reset"}, Description: "How auto-switch orders qualifying targets"},
 	}
 }

@@ -72,12 +72,13 @@ func TestSettingsFacade(t *testing.T) {
 	if !ok || th.Kind != "float" || th.Min == nil || *th.Min != 50 || th.Max == nil || *th.Max != 99.9 || th.IsDefault || th.Value != float64(80) || th.Default != float64(90) || th.Description == "" {
 		t.Fatalf("threshold view = %+v", th)
 	}
-	for _, k := range []string{"autoswitch.codexThreshold", "autoswitch.codexEnabled", "autoswitch.includeApiKeyAccounts", "autoswitch.strategy", "autoswitch.model"} {
+	for _, k := range []string{"autoswitch.codexThreshold", "autoswitch.codexEnabled", "autoswitch.strategy", "autoswitch.model"} {
 		if _, ok := byKey[k]; !ok {
 			t.Errorf("setting %s missing", k)
 		}
 	}
-	for _, k := range []string{"autoswitch.fiveHourThreshold", "autoswitch.sevenDayThreshold", "autoswitch.modelThreshold"} {
+	// includeApiKeyAccounts is gone (DESIGN A33).
+	for _, k := range []string{"autoswitch.includeApiKeyAccounts", "autoswitch.fiveHourThreshold", "autoswitch.sevenDayThreshold", "autoswitch.modelThreshold"} {
 		if _, ok := byKey[k]; ok {
 			t.Errorf("unexpected setting %s", k)
 		}

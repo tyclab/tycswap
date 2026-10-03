@@ -46,8 +46,10 @@ func resetSeams(t *testing.T) {
 	t.Helper()
 	up, pl, aa, pr := UsageProvider, PostSwitchList, AutoAddCurrent, Prompt
 	UsageProvider, PostSwitchList, AutoAddCurrent, Prompt = nil, nil, nil, nil
+	clearApprovals()
 	t.Cleanup(func() {
 		UsageProvider, PostSwitchList, AutoAddCurrent, Prompt = up, pl, aa, pr
+		clearApprovals()
 	})
 }
 

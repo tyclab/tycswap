@@ -103,12 +103,19 @@ func TestSnapshot_RotationEligibleFailsClosedWithoutARoster(t *testing.T) {
 				if tc.nilData {
 					data = nil
 				}
-				if got := rotationEligible(data, tc.switchable, tc.disabled); got != tc.want {
+				if got := rotationEligible(data, tc.switchable, tc.disabled, "oauth"); got != tc.want {
 					t.Errorf("rotationEligible(nil=%v, switchable=%v, disabled=%v) = %v, want %v",
 						tc.nilData, tc.switchable, tc.disabled, got, tc.want)
 				}
 			})
 		}
+		// An API-key account is never eligible for automatic selection, even
+		// switchable and enabled (DESIGN A33).
+		t.Run("api_key is never eligible", func(t *testing.T) {
+			if rotationEligible(&store.SequenceData{}, true, false, "api_key") {
+				t.Error("an API-key account must not be rotation eligible")
+			}
+		})
 	})
 
 	// End to end, the whole pass degrades rather than ranking anything: the usage

@@ -98,7 +98,11 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		e.checkModelNames(quarantined, usageMap)
 	}
 
-	if e.sw.AccountKindFor(cur) == "api_key" && !s.IncludeAPIKeyAccounts {
+	// An API-key account has no quota to watch, and the engine never moves on
+	// or off one by itself (DESIGN A33): that is a change of how Claude Code
+	// authenticates, which a running session does not pick up. Only the user
+	// can decide to make it.
+	if e.sw.AccountKindFor(cur) == "api_key" {
 		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "active-api-key", Detail: "API-key accounts have no quota to watch"})
 		return NoAction, nil
 	}
@@ -161,7 +165,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		return NoAction, nil
 	}
 
-	ordered, oauthCandidates, apiKeyCandidates, anyKnown, blk := e.selectCandidates(cur, quarantined, s, trigger, activeHeadroom, headroom, usageMap)
+	ordered, oauthCandidates, anyKnown, blk := e.selectCandidates(cur, quarantined, s, trigger, activeHeadroom, headroom, usageMap)
 	if blk != nil {
 		return *blk, nil
 	}
@@ -195,7 +199,6 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		e.emit(AllExhaustedEvent{Ts: e.nowISO(), EarliestResetAt: resetAt})
 		return Blocked, nil
 	}
-	_ = apiKeyCandidates // consumed inside selectCandidates for the last-resort path
 
 	transientFailure := false
 	for _, num := range ordered {
@@ -231,9 +234,10 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 }
 
 // selectCandidates builds the ordered target list from the switchable accounts
-// (05§10). It returns the ordered oauth targets (or the api-key last resort),
-// the oauth/api-key candidate splits, whether any oauth candidate had readable
-// usage, and a non-nil BLOCKED outcome for the no-candidates early return.
+// (05§10). It returns the ordered targets, the candidate list they were drawn
+// from, whether any candidate had readable usage, and a non-nil BLOCKED
+// outcome for the no-candidates early return. API-key accounts are never
+// candidates (DESIGN A33), not even as a last resort.
 // usageMap supplies the per-account decision values the soonest-reset strategy
 // needs to compute each candidate's weekly renewal; the qualification gates are
 // identical for every strategy — only the final ordering of the qualifying
@@ -241,7 +245,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 func (e *Engine) selectCandidates(
 	cur string, quarantined map[string]bool, s settings.AutoSwitchSettings, trigger string,
 	activeHeadroom *float64, headroom map[string]*float64, usageMap map[string]any,
-) (ordered, oauthCandidates, apiKeyCandidates []string, anyKnown bool, blk *TickOutcome) {
+) (ordered, oauthCandidates []string, anyKnown bool, blk *TickOutcome) {
 	var candidates []string
 	for _, num := range e.sw.SwitchableAccountNumbers() {
 		if num != cur && !quarantined[num] {
@@ -251,15 +255,13 @@ func (e *Engine) selectCandidates(
 	for _, n := range candidates {
 		if e.sw.AccountKindFor(n) != "api_key" {
 			oauthCandidates = append(oauthCandidates, n)
-		} else if s.IncludeAPIKeyAccounts {
-			apiKeyCandidates = append(apiKeyCandidates, n)
 		}
 	}
-	if len(oauthCandidates) == 0 && len(apiKeyCandidates) == 0 {
+	if len(oauthCandidates) == 0 {
 		e.blockedWaitLong = true
 		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-candidates"})
 		b := Blocked
-		return nil, oauthCandidates, apiKeyCandidates, false, &b
+		return nil, oauthCandidates, false, &b
 	}
 
 	var qualifying []qual
@@ -287,10 +289,7 @@ func (e *Engine) selectCandidates(
 	for _, q := range qualifying {
 		ordered = append(ordered, q.num)
 	}
-	if len(ordered) == 0 && len(apiKeyCandidates) > 0 {
-		ordered = apiKeyCandidates // last resort (unmeasurable headroom)
-	}
-	return ordered, oauthCandidates, apiKeyCandidates, anyKnown, nil
+	return ordered, oauthCandidates, anyKnown, nil
 }
 
 // qual is one qualifying oauth target: its headroom, its weekly renewal epoch

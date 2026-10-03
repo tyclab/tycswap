@@ -131,6 +131,8 @@ const visibleOptions = `options:
                         storing it
   --force               Overwrite existing accounts during import; with
                         'switch <num|email>', activate without backing up first
+  -y, --yes             With 'switch <num|email>' onto an API-key account:
+                        answer the confirmation (for scripts)
   --full                Include full ~/.claude.json in export`
 
 // renderMainHelp writes the full --help text (spec 08§14) and returns exit 0.

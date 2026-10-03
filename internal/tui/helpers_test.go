@@ -47,6 +47,14 @@ type fakeFacade struct {
 
 	setPollCalls   []pollCall
 	clearPollCalls int
+
+	approvals []string // ApproveAPIKeySwitch calls, in order
+}
+
+// ApproveAPIKeySwitch makes the fake a tui.APIKeyApprover, as *core.Switcher
+// is.
+func (f *fakeFacade) ApproveAPIKeySwitch(id string) {
+	f.approvals = append(f.approvals, id)
 }
 
 type disableCall struct {

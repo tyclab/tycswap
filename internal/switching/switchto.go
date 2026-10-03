@@ -67,6 +67,11 @@ func SwitchTo(s *store.Store, identifier string, jsonOut, force bool) (any, erro
 	if err != nil {
 		return nil, err
 	}
+	// An API-key target is an auth-mode change: only with the user's approval
+	// (DESIGN A33).
+	if err := guardAPIKeyTarget(s, targetAccount); err != nil {
+		return nil, err
+	}
 
 	// Already-active short-circuit (issue #79 / #117). --force skips it.
 	var prov *Provenance

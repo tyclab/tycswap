@@ -166,10 +166,19 @@ func TestApiKeyKindAndDisabled(t *testing.T) {
 	if got := s.DisabledAccountNumbers(); len(got) != 1 || got[0] != "2" {
 		t.Errorf("DisabledAccountNumbers=%v want [2]", got)
 	}
-	// Disabled slot is excluded from switchable rotation.
-	sw := s.SwitchableAccountNumbers()
-	if len(sw) != 1 || sw[0] != "1" {
-		t.Errorf("SwitchableAccountNumbers=%v want [1]", sw)
+	// Neither slot is an automatic-rotation target: slot 2 is disabled, and
+	// slot 1 is an API key, which automatic selection never moves onto because
+	// switching to it changes how Claude Code authenticates (DESIGN A33). Both
+	// stay switchable by hand: AccountIsSwitchable still says so.
+	if sw := s.SwitchableAccountNumbers(); len(sw) != 0 {
+		t.Errorf("SwitchableAccountNumbers=%v want none", sw)
+	}
+	if !s.AccountIsSwitchable("1") {
+		t.Error("an API-key slot with backups is still a valid manual switch target")
+	}
+	data, _ := s.ReadSequence()
+	if s.RotationEligible(data, "1") {
+		t.Error("an API-key slot must not be rotation eligible")
 	}
 }
 

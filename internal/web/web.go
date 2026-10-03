@@ -67,16 +67,19 @@ type Facade interface {
 }
 
 // AccountOps is the account lifecycle beyond Facade (alias, move, swap, force
-// switch, token-status listing). *core.Switcher satisfies it. Switching onto
-// an API-key account asks for no confirmation here, as the CLI and the TUI
-// ask for none; the page marks API-key rows and shows a notice while one is
-// active.
+// switch, token-status listing, the API-key switch approval). *core.Switcher
+// satisfies it.
 type AccountOps interface {
 	SetAlias(id, alias string) (num, normalized string, err error)
 	UnsetAlias(id string) (num string, err error)
 	MoveAccount(account, target string) (srcNum, tgtNum string, swapped bool, err error)
 	SwapAccounts(first, second string) (numA, numB string, err error)
 	SwitchToForce(id string, jsonOut, force bool) (map[string]any, error)
+	// ApproveAPIKeySwitch records the user's explicit yes to switching onto
+	// the API-key account id names: a change of how Claude Code
+	// authenticates that a running session does not pick up, so the switch
+	// layer refuses it without one (DESIGN A33).
+	ApproveAPIKeySwitch(id string)
 	// ListAccounts with showTokenStatus=true, jsonOut=true yields the
 	// `tycswap list --token-status --json` payload; /api/state?tokenStatus=1
 	// lifts each row's "tokenStatus" string from it.

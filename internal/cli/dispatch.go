@@ -100,6 +100,12 @@ func runMainAction(p *parsed, sw *core.Switcher, payload *any) error {
 	case p.switchFlag:
 		return dispatchSwitch(p, sw, payload)
 	case p.switchTo != nil:
+		// Moving onto an API-key account changes how Claude Code
+		// authenticates, which a running session does not pick up (DESIGN
+		// A33). The engine never does it; a person may, once they said so.
+		if confirmSwitchToAPIKey(os.Stdout, *p.switchTo, sw, p.json, p.yes) {
+			return nil
+		}
 		sp, err := sw.SwitchToForce(*p.switchTo, p.json, p.force)
 		if sp != nil {
 			*payload = sp

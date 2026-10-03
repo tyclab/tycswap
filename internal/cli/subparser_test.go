@@ -124,6 +124,21 @@ func TestAutoBadThreshold(t *testing.T) {
 	}
 }
 
+// TestAutoIncludeAPIKeyFlagsAreGone: the --include-api-key-accounts pair went
+// with its setting (DESIGN A33); either spelling is an unrecognized argument.
+func TestAutoIncludeAPIKeyFlagsAreGone(t *testing.T) {
+	for _, flag := range []string{"--include-api-key-accounts", "--no-include-api-key-accounts"} {
+		code, _, errStr := runSub(t, "auto", flag)
+		if code != 2 || !strings.Contains(errStr, "unrecognized arguments: "+flag) {
+			t.Errorf("%s: exit %d, stderr %q; want exit 2, unrecognized", flag, code, errStr)
+		}
+	}
+	code, out, _ := runSub(t, "auto", "--help")
+	if code != 0 || strings.Contains(out, "include-api-key") || !strings.Contains(out, "never moves onto") {
+		t.Errorf("auto --help (exit %d) = %q", code, out)
+	}
+}
+
 // TestAutoUnknownFlag: an unknown auto flag is an exit-2 error.
 func TestAutoUnknownFlag(t *testing.T) {
 	code, _, errStr := runSub(t, "auto", "--bogus")

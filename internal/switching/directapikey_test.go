@@ -82,6 +82,7 @@ func TestDirectActivationOntoAnAPIKeyLeavesTheKeyLive(t *testing.T) {
 			seedBackup(t, s, "2", apiKeySeatEmail, apiKeySeatKey, "")
 			tc.seed(t, s)
 
+			ApproveAPIKeySwitch("2") // the user confirmed the auth-mode change (DESIGN A33)
 			if _, err := SwitchTo(s, "2", true, tc.force); err != nil {
 				t.Fatalf("SwitchTo(2): %v", err)
 			}

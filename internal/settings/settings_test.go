@@ -81,8 +81,6 @@ func TestLoad_ClampTable(t *testing.T) {
 			func(s AutoSwitchSettings) bool { return s.UnhealthyTicks == 1 }, "unhealthyTicks=1"},
 		{"threshold_bad_type_falls_back_to_default", `{"autoswitch":{"threshold":"high"}}`,
 			func(s AutoSwitchSettings) bool { return s.Threshold == 90.0 }, "threshold=90.0 (default)"},
-		{"includeApiKeyAccounts_1_is_true", `{"autoswitch":{"includeApiKeyAccounts":1}}`,
-			func(s AutoSwitchSettings) bool { return s.IncludeAPIKeyAccounts == true }, "includeApiKeyAccounts=true"},
 		{"strategy_chaos_falls_back_to_soonest_reset", `{"autoswitch":{"strategy":"chaos"}}`,
 			func(s AutoSwitchSettings) bool { return s.Strategy == "soonest-reset" }, "strategy=soonest-reset"},
 		{"model_123_falls_back_to_none", `{"autoswitch":{"model":123}}`,
@@ -116,7 +114,7 @@ func TestSave_Roundtrip(t *testing.T) {
 	root := t.TempDir()
 	custom := AutoSwitchSettings{
 		Threshold: 85.0, IntervalSeconds: 60.0, CodexEnabled: false,
-		CodexThreshold: 75.0, CooldownSeconds: 60.0, HysteresisPct: 10.0, Strategy: "best", IncludeAPIKeyAccounts: false,
+		CodexThreshold: 75.0, CooldownSeconds: 60.0, HysteresisPct: 10.0, Strategy: "best",
 		UnhealthyTicks: 3, Model: nil,
 	}
 	if err := Save(root, custom); err != nil {
@@ -185,7 +183,7 @@ func TestSettingSpecs_CoversEveryField(t *testing.T) {
 	want := map[string]bool{
 		"Threshold": true, "IntervalSeconds": true, "CodexEnabled": true,
 		"CodexThreshold": true, "CooldownSeconds": true,
-		"HysteresisPct": true, "Strategy": true, "IncludeAPIKeyAccounts": true,
+		"HysteresisPct": true, "Strategy": true,
 		"UnhealthyTicks": true, "Model": true,
 	}
 	got := map[string]bool{}
@@ -473,6 +471,55 @@ func TestSetSetting_CodexEnabledRoundTrips(t *testing.T) {
 	}
 }
 
+// TestRemovedIncludeApiKeyAccountsIsAnUnknownKey: autoswitch.includeApiKeyAccounts
+// is gone (DESIGN A33). A settings.json that still carries it loads exactly as
+// one without it, whatever its value; a whole-file save keeps it as it keeps
+// any key it does not know; and config set/get/unset refuse it as unknown,
+// naming the valid keys.
+func TestRemovedIncludeApiKeyAccountsIsAnUnknownKey(t *testing.T) {
+	for _, v := range []string{"true", "false", "1", `"yes"`} {
+		root := t.TempDir()
+		writeSettingsJSON(t, root, `{"schemaVersion":1,"autoswitch":{"includeApiKeyAccounts":`+v+`,"intervalSeconds":30}}`)
+		want := Default()
+		want.IntervalSeconds = 30
+		if got := Load(root); !reflect.DeepEqual(got, want) {
+			t.Errorf("includeApiKeyAccounts=%s: Load = %+v, want %+v", v, got, want)
+		}
+		for _, e := range EffectiveSettings(root) {
+			if e.Spec.JSONKey == "includeApiKeyAccounts" {
+				t.Errorf("EffectiveSettings still lists %s", e.Spec.Dotted())
+			}
+		}
+	}
+
+	root := t.TempDir()
+	writeSettingsJSON(t, root, `{"schemaVersion":1,"autoswitch":{"includeApiKeyAccounts":true}}`)
+	if err := Save(root, Default()); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(SettingsPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if section, _ := raw["autoswitch"].(map[string]any); section["includeApiKeyAccounts"] != true {
+		t.Errorf("Save dropped the unknown key: %s", data)
+	}
+
+	if _, err := SetSetting(root, "autoswitch.includeApiKeyAccounts", "true"); err == nil || !strings.Contains(err.Error(), "unknown setting") || !strings.Contains(err.Error(), "autoswitch.strategy") {
+		t.Errorf("SetSetting err = %v, want unknown setting with the valid keys", err)
+	}
+	if _, err := SpecFor("autoswitch.includeApiKeyAccounts"); err == nil {
+		t.Error("SpecFor found the removed key")
+	}
+	if _, err := UnsetSetting(root, "autoswitch.includeApiKeyAccounts"); err == nil || !strings.Contains(err.Error(), "unknown setting") {
+		t.Errorf("UnsetSetting err = %v, want unknown setting", err)
+	}
+}
+
 func TestSetSetting_RejectsUnknownKey(t *testing.T) {
 	root := t.TempDir()
 	_, err := SetSetting(root, "autoswitch.bogus", "1")
@@ -505,11 +552,11 @@ func TestSetSetting_StringKindRejectsEmpty(t *testing.T) {
 
 func TestSetSetting_RejectsBoolWordsStrictly(t *testing.T) {
 	root := t.TempDir()
-	v, err := SetSetting(root, "autoswitch.includeApiKeyAccounts", "FALSE")
+	v, err := SetSetting(root, "autoswitch.codexEnabled", "FALSE")
 	if err != nil || v != false {
 		t.Fatalf("v=%v err=%v, want false, nil", v, err)
 	}
-	_, err = SetSetting(root, "autoswitch.includeApiKeyAccounts", "falsy")
+	_, err = SetSetting(root, "autoswitch.codexEnabled", "falsy")
 	if err == nil || !strings.Contains(err.Error(), "true or false") {
 		t.Errorf("err = %v, want it to mention 'true or false'", err)
 	}
@@ -652,14 +699,6 @@ func TestMergedWithCLI_ValuesAreClamped(t *testing.T) {
 	merged := MergedWithCLI(Default(), CLIOverrides{IntervalSeconds: &interval})
 	if merged.IntervalSeconds != 15.0 {
 		t.Errorf("IntervalSeconds = %v, want clamped 15", merged.IntervalSeconds)
-	}
-}
-
-func TestMergedWithCLI_BooleanOverride(t *testing.T) {
-	v := true
-	merged := MergedWithCLI(Default(), CLIOverrides{IncludeAPIKeyAccounts: &v})
-	if !merged.IncludeAPIKeyAccounts {
-		t.Error("IncludeAPIKeyAccounts should be true")
 	}
 }
 
