@@ -12,8 +12,10 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
@@ -187,5 +189,176 @@ func TestSwitchAwayFromASeatWideOnlyFileWithoutAKeyRefuses(t *testing.T) {
 	}
 	if raw, _ := os.ReadFile(liveCredentialsPath(s)); string(raw) != seatWideFiles[0].file {
 		t.Errorf("live credentials file = %s, want it untouched", raw)
+	}
+}
+
+// damagedSlotCredentials are what an API-key slot held after a switch away
+// from its seat before A29: the switch-time backup took the seat-wide-only
+// credentials file for the live login, so the slot kept {} once the seat-wide
+// keys were stripped (or the file whole, from a build that did not strip
+// them), and the key survived only in .prev.
+var damagedSlotCredentials = []struct{ name, creds string }{
+	{"empty object", `{}`},
+	{"MCP server logins", seatWideFiles[0].file},
+	{"MCP client secrets", seatWideFiles[1].file},
+}
+
+// damagedAPIKeySeat seeds slot 1 (a subscription login, live, with an MCP
+// server login in the live file) and slot 2, an API-key account whose stored
+// credential was replaced by damaged as described above.
+func damagedAPIKeySeat(t *testing.T, s *store.Store, damaged string) {
+	t.Helper()
+	ca := oauthCreds("acc-a", "ref-a")
+	writeSeq(t, s, seqData(ptrInt(1), []int{1, 2}, map[string]json.RawMessage{
+		"1": record(map[string]any{"email": oauthSeatEmail, "organizationUuid": ""}),
+		"2": record(map[string]any{"email": apiKeySeatEmail, "organizationUuid": "", "kind": "api_key"}),
+	}))
+	seedBackup(t, s, "1", oauthSeatEmail, ca, "")
+	seedBackup(t, s, "2", apiKeySeatEmail, apiKeySeatKey, "")
+	if err := s.WriteAccountCredentials("2", apiKeySeatEmail, damaged); err != nil {
+		t.Fatal(err)
+	}
+	seedLive(t, s, oauthSeatEmail, "", withMCPOAuth(t, ca, "srv|1111", "mcp-live"))
+}
+
+// seatState is everything a refused switch must leave as it found it: the
+// live credentials file and config, the managed key, and both slots with
+// their .prev generations.
+func seatState(t *testing.T, s *store.Store) map[string]string {
+	t.Helper()
+	state := map[string]string{"live credential": readActiveCreds(t, s)}
+	for name, path := range map[string]string{
+		"live credentials file": liveCredentialsPath(s),
+		"live config":           filepath.Join(s.Home, ".claude.json"),
+	} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		state[name] = string(raw)
+	}
+	for _, slot := range [][2]string{{"1", oauthSeatEmail}, {"2", apiKeySeatEmail}} {
+		state["Account-"+slot[0]], _ = s.ReadAccountCredentials(slot[0], slot[1])
+		state["Account-"+slot[0]+" .prev"], _ = s.Creds.ReadPrev(slot[0], slot[1])
+	}
+	return state
+}
+
+func assertSeatUnchanged(t *testing.T, s *store.Store, before map[string]string) {
+	t.Helper()
+	after := seatState(t, s)
+	for key, was := range before {
+		if after[key] != was {
+			t.Errorf("%s changed:\n was %q\n now %q", key, was, after[key])
+		}
+	}
+}
+
+// TestSwitchToADamagedAPIKeySlotRefuses: a stored credential holding nothing
+// but seat-wide keys is no credential, so a slot holding one is refused with
+// the existing no-credential error, with and without --force, and nothing is
+// written. Taking it for an OAuth login would write it live, spliced with the
+// seat's MCP data, and clear the managed key: the switch would report success
+// over a seat left with no credential at all.
+func TestSwitchToADamagedAPIKeySlotRefuses(t *testing.T) {
+	for _, tc := range damagedSlotCredentials {
+		for _, force := range []bool{false, true} {
+			name := tc.name
+			if force {
+				name += " --force"
+			}
+			t.Run(name, func(t *testing.T) {
+				s := newTestStore(t, nil)
+				damagedAPIKeySeat(t, s, tc.creds)
+				before := seatState(t, s)
+
+				_, err := SwitchTo(s, "2", true, force)
+				if err == nil {
+					t.Fatalf("SwitchTo(2) succeeded onto a slot holding %s; live credential now %q", tc.creds, readActiveCreds(t, s))
+				}
+				if want := "Account-2 has no stored credentials"; !strings.Contains(err.Error(), want) {
+					t.Errorf("SwitchTo(2) error = %q, want the no-credential error %q", err, want)
+				}
+				assertSeatUnchanged(t, s, before)
+			})
+		}
+	}
+}
+
+// TestRotationSkipsADamagedAPIKeySlot: the same slot is no rotation or
+// auto-switch candidate. The rotation names it as having no stored
+// credentials and switches nowhere.
+func TestRotationSkipsADamagedAPIKeySlot(t *testing.T) {
+	for _, tc := range damagedSlotCredentials {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTestStore(t, nil)
+			damagedAPIKeySeat(t, s, tc.creds)
+			before := seatState(t, s)
+
+			if s.AccountIsSwitchable("2") {
+				t.Error("AccountIsSwitchable(2) = true for a slot with no credential in it")
+			}
+			if got := s.SwitchableAccountNumbers(); !reflect.DeepEqual(got, []string{"1"}) {
+				t.Errorf("SwitchableAccountNumbers() = %v, want [1]", got)
+			}
+			res, err := Switch(s, nil, true, nil, nil)
+			if err != nil {
+				t.Fatalf("Switch: %v", err)
+			}
+			m, _ := res.(map[string]any)
+			if m["switched"] != false || m["reason"] != "no-valid-target" {
+				t.Errorf("Switch = %v, want no switch for want of a valid target", m)
+			}
+			assertSeatUnchanged(t, s, before)
+		})
+	}
+}
+
+// failSequenceAfterCredentialWrite lets the activation write the target
+// credential, then puts a directory where sequence.json is, so the commit
+// fails after the credential write and the activation rolls back.
+type failSequenceAfterCredentialWrite struct {
+	credstore.Store
+	t   *testing.T
+	seq string
+}
+
+func (f failSequenceAfterCredentialWrite) WriteActiveAccount(creds string) error {
+	if err := f.Store.WriteActiveAccount(creds); err != nil {
+		return err
+	}
+	if err := os.Remove(f.seq); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(f.seq, "in-the-way"), 0o700); err != nil {
+		f.t.Fatal(err)
+	}
+	return nil
+}
+
+// TestForcedActivationRollbackRestoresASeatWideOnlyFile: the live file holds
+// only the seat's MCP server logins and no managed key is behind it, so
+// ReadActive finds no credential. A forced activation that fails after the
+// credential write must put that file back as it was, not an empty one.
+func TestForcedActivationRollbackRestoresASeatWideOnlyFile(t *testing.T) {
+	s := newTestStore(t, nil)
+	writeSeq(t, s, seqData(ptrInt(1), []int{1, 2}, map[string]json.RawMessage{
+		"1": record(map[string]any{"email": oauthSeatEmail, "organizationUuid": ""}),
+		"2": record(map[string]any{"email": "b@x.com", "organizationUuid": ""}),
+	}))
+	seedBackup(t, s, "1", oauthSeatEmail, oauthCreds("acc-a", "ref-a"), "")
+	seedBackup(t, s, "2", "b@x.com", oauthCreds("acc-b", "ref-b"), "")
+	live := seatWideFiles[0].file
+	seedLive(t, s, oauthSeatEmail, "", live)
+	if got := readActiveCreds(t, s); got != "" {
+		t.Fatalf("precondition: live credential = %q, want none", got)
+	}
+	s.Creds = failSequenceAfterCredentialWrite{Store: s.Creds, t: t, seq: s.SequenceFile}
+
+	if _, err := SwitchTo(s, "2", true, true); err == nil {
+		t.Fatal("SwitchTo(2) --force succeeded with sequence.json unwritable")
+	}
+	if raw, _ := os.ReadFile(liveCredentialsPath(s)); string(raw) != live {
+		t.Errorf("after the rollback: live credentials file = %q, want it restored as it was %q", raw, live)
 	}
 }

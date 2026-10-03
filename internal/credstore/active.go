@@ -175,6 +175,10 @@ func (s *FileKeychainStore) readLiveOAuth() string {
 	return raw
 }
 
+// ReadLiveOAuth is readLiveOAuth for a caller that must restore the live
+// credential exactly, a seat-wide-only one included (DESIGN A30).
+func (s *FileKeychainStore) ReadLiveOAuth() string { return s.readLiveOAuth() }
+
 // writeOAuthCredentials writes Claude Code's active OAuth credential (spec
 // 03§5.5). macOS writes the Keychain when usable and bumps an already-present
 // shadow .credentials.json (#86 hot-reload); on failure or off macOS it writes
