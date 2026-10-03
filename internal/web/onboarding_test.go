@@ -203,3 +203,22 @@ func TestIndexHTML_SettingsTab(t *testing.T) {
 		t.Error("renderSettings reads the auto engine's state")
 	}
 }
+
+// The "limits ignored" warning says where model windows are counted: the
+// Count model limits switch on the Auto tab, or autoswitch.model on the
+// Settings tab. The key left the Auto tab with the settings editor, so the
+// warning must not send the user there to set it.
+func TestStaticIgnoredModelsNoteNamesBothPlaces(t *testing.T) {
+	note := regexp.MustCompile(`function ignoredModelsNote\(st, models\) \{[\s\S]*?\n  \}`).FindString(staticFile(t, "app.js"))
+	if note == "" {
+		t.Fatal("no ignoredModelsNote in app.js")
+	}
+	for _, want := range []string{`"Count model limits" on the Auto tab`, "autoswitch.model on the Settings tab"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("the warning lacks %q:\n%s", want, note)
+		}
+	}
+	if strings.Contains(note, "autoswitch.model on the Auto tab") {
+		t.Error("the warning sends the user to the Auto tab to set autoswitch.model")
+	}
+}
