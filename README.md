@@ -397,6 +397,30 @@ autoswitch.strategy = best
 A settings file that does not name a strategy uses `soonest-reset`; one that
 sets `best` keeps it.
 
+**Auto-switch never changes how Claude Code authenticates.** It rotates
+between subscription accounts only. It does not move onto an API-key account
+when every subscription account is at its limit (it reports the wall
+instead), and it does not move off one that you made active. An API-key
+account replaces the subscription login with a key billed per token, and a
+Claude Code session that is already running keeps the login it started with
+until you restart it; an automatic switch into that state would leave every
+open session on the old login while tycswap reports the new one. Switching to
+an API-key account by hand asks first and says how many sessions you will have
+to restart:
+
+```
+$ tycswap switch 3
+An API-key account authenticates with a key instead of a subscription login, and its usage is billed per token.
+2 Claude Code sessions are running; they keep their current login until each one is restarted.
+Switch to API-key account #3? [y/N] y
+Switched to Account-3 (key@example.com)
+```
+
+`--yes` (`-y`) answers the question for scripts; without a terminal and
+without `--yes` the switch is refused. The bare `switch` and `switch
+--strategy` skip API-key accounts, and the TUI and the browser dashboard ask
+before switching to one.
+
 ### Run accounts in parallel
 
 `tycswap run` launches Claude Code as a chosen account in the current terminal
@@ -510,16 +534,15 @@ given, which overwrites it. Import rejects any file marked `encrypted: true`.
 
 ```
 $ tycswap config
-autoswitch.threshold              80
-autoswitch.intervalSeconds        60             (default)
-autoswitch.codexEnabled           true           (default)
-autoswitch.codexThreshold         0              (default)
-autoswitch.cooldownSeconds        300            (default)
-autoswitch.hysteresisPct          10             (default)
-autoswitch.strategy               soonest-reset  (default)
-autoswitch.includeApiKeyAccounts  false          (default)
-autoswitch.unhealthyTicks         3              (default)
-autoswitch.model                  Fable
+autoswitch.threshold        80
+autoswitch.intervalSeconds  60             (default)
+autoswitch.codexEnabled     true           (default)
+autoswitch.codexThreshold   0              (default)
+autoswitch.cooldownSeconds  300            (default)
+autoswitch.hysteresisPct    10             (default)
+autoswitch.strategy         soonest-reset  (default)
+autoswitch.unhealthyTicks   3              (default)
+autoswitch.model            Fable
 ```
 
 `tycswap config set KEY VALUE` validates and stores one setting. An out-of-range
@@ -719,9 +742,8 @@ tycswap config set autoswitch.codexThreshold 85   # 0 = use autoswitch.threshold
 tycswap config set autoswitch.codexEnabled false  # leave Codex out of `tycswap auto`
 ```
 
-`autoswitch.includeApiKeyAccounts` applies to Claude only: a Codex API-key login
-reports no usage, so a threshold has nothing to compare, and such an account is
-never a rotation target.
+A Codex API-key login is never a rotation target either: it reports no usage, so
+a threshold has nothing to compare.
 
 The Codex provider is a Go-side extension relative to the Python reference that
 `docs/port-spec/` pins; it ports claude-swap PR #252 so that the command
@@ -811,8 +833,9 @@ backup does not go stale against the live login.
 
 **API-key accounts.** An account authenticated by API key has no measured usage
 quota. It shows `API key (no quota)` in the list, never carries usage
-percentages, and is excluded from auto-switch unless
-`autoswitch.includeApiKeyAccounts` is set.
+percentages, and is never a target for auto-switch or the rotation: moving onto
+it changes how Claude Code authenticates, which a running session does not pick
+up. Switch to one by hand, confirm the prompt, then restart your sessions.
 
 **macOS Keychain.** On macOS, active and session-profile credentials live in the
 login Keychain. The first credential read or write in a session may prompt for
