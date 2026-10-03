@@ -254,14 +254,21 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 	commit := func() error {
 		// Read the live config before anything is written: a corrupt or
 		// unreadable one aborts the activation instead of being replaced.
-		existing, err := readConfigForUpdate()
-		if err != nil {
+		if _, err := readConfigForUpdate(); err != nil {
 			return err
 		}
 		if err := s.Creds.WriteActiveAccount(targetCreds); err != nil {
 			return err
 		}
 		credsWritten = true
+		// Read it again, as the normal switch does: the credential write
+		// changes it too (a managed key and its approval are stored there, an
+		// OAuth write drops the key), so the copy read above would lose the new
+		// key or put the replaced one back.
+		existing, err := readConfigForUpdate()
+		if err != nil {
+			return err
+		}
 		// Only the oauthAccount is ever taken from the stored config. With no
 		// live config the result is {"oauthAccount": …} alone: a stored config
 		// is never written whole, so keys an import or an old full backup
