@@ -67,11 +67,11 @@ func SwitchTo(s *store.Store, identifier string, jsonOut, force bool) (any, erro
 	if err != nil {
 		return nil, err
 	}
-	// An API-key target is an auth-mode change: only with the user's approval
-	// (DESIGN A33).
-	if err := guardAPIKeyTarget(s, targetAccount); err != nil {
-		return nil, err
-	}
+	// Every approval is used up by the switch it was given for, whatever the
+	// target turns out to be and whether or not a switch follows: one left
+	// behind would let a later switch onto the slot through unasked (DESIGN
+	// A33).
+	approved := takeApproval(targetAccount)
 
 	// Already-active short-circuit (issue #79 / #117). --force skips it.
 	var prov *Provenance
@@ -99,6 +99,13 @@ func SwitchTo(s *store.Store, identifier string, jsonOut, force bool) (any, erro
 				}), nil
 			}
 		}
+	}
+
+	// An API-key target is an auth-mode change: only with the user's approval
+	// (DESIGN A33). Checked after the short-circuit above, which writes
+	// nothing, so the API-key account already in use reports "Already on".
+	if err := guardAPIKeyTarget(s, targetAccount, approved); err != nil {
+		return nil, err
 	}
 
 	op, err := performSwitch(s, targetAccount, !jsonOut, force, prov)

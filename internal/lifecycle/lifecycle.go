@@ -133,6 +133,11 @@ type terminalControl interface {
 // activeTerminal is the terminalControl seam; tests swap it.
 var activeTerminal terminalControl = stdTerminal{}
 
+// StdinIsTerminal reports whether stdin is a terminal that can answer a
+// prompt (termios on unix, the console mode on Windows), so /dev/null and a
+// pipe are not.
+func StdinIsTerminal() bool { return stdTerminal{}.isTerminal() }
+
 func (StdPrompter) Secret(message string) (string, bool) {
 	fmt.Fprint(Output, message)
 	// Non-terminal stdin (pipe/redirect): getpass falls back to a plain read
