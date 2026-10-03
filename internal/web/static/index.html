@@ -326,7 +326,7 @@
         <h3>Settings that matter</h3>
         <dl class="guide-dl">
           <dt>Threshold</dt><dd><code>autoswitch.threshold</code>, <strong>90 %</strong> by default: the engine looks for another account when the binding window reaches it. Lower it if a fan-out of parallel subagents can take a window from 80 % to full between two polls.</dd>
-          <dt>Strategy</dt><dd><code>autoswitch.strategy</code>: <em>best</em> (the default) takes the account with the most headroom; <em>soonest-reset</em> prefers the account whose weekly window renews first, so several accounts are used evenly.</dd>
+          <dt>Strategy</dt><dd><code>autoswitch.strategy</code>: <em>soonest-reset</em> (the default) prefers the account whose weekly window renews first, so several accounts are used evenly and none sits idle on a window that is about to renew; <em>best</em> takes the account with the most headroom right now.</dd>
           <dt>Count model limits</dt><dd><code>autoswitch.model</code>: empty counts 5h and 7d only; <em>all</em>, or a comma-separated list of model names, also counts those per-model weekly windows, so an account at 100 % of a model's week is skipped even if its 5h/7d meters are low. The Auto tab's switch sets <em>all</em> or clears it.</dd>
           <dt>Hysteresis, cooldown</dt><dd><code>autoswitch.hysteresisPct</code>: a target must beat the active account by this much, so two accounts at the same level do not flap. <code>autoswitch.cooldownSeconds</code>: the least time between two proactive switches.</dd>
           <dt>API-key accounts</dt><dd>Auto-switch never moves onto an API-key account unless <code>autoswitch.includeApiKeyAccounts</code> is on: it is billed per token. The header says so in red while one is active.</dd>

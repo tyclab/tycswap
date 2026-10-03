@@ -62,6 +62,7 @@ func tablePanel(t *testing.T, snap *reporting.AccountsSnapshot, model *string, w
 	t.Helper()
 	a := newAutoScreen()
 	a.settings = settings.Default()
+	a.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 	a.settings.Model = model
 	return a.candidatesText(snap, width, testNow)
 }
@@ -72,6 +73,7 @@ func tablePanelQ(t *testing.T, snap *reporting.AccountsSnapshot, model *string, 
 	t.Helper()
 	a := newAutoScreen()
 	a.settings = settings.Default()
+	a.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 	a.settings.Model = model
 	a.quarantined = map[string]string{"3": "invalid_grant"}
 	return a.candidatesText(snap, width, testNow)

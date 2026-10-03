@@ -447,6 +447,7 @@ func assertPanelDrawsItsChoice(t *testing.T, r rosterSpec, snap *reporting.Accou
 	t.Helper()
 	a := newAutoScreen()
 	a.settings = settings.Default()
+	a.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 	a.settings.Model = modelsPtr(r.models)
 	got := renderedLines(a.candidatesText(snap, width, testNow))
 	var want []string
@@ -1878,6 +1879,7 @@ func surfaceDrewTableAt(t *testing.T, r rosterSpec, snap *reporting.AccountsSnap
 	}
 	a := newAutoScreen()
 	a.settings = settings.Default()
+	a.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 	a.settings.Model = modelsPtr(r.models)
 	want := renderedOne(candidateRowText(tbl.Header, width))
 	for _, line := range renderedLines(a.candidatesText(snap, width, now)) {
@@ -3801,6 +3803,7 @@ func panelOf(t *testing.T, r rosterSpec, width int) richText {
 	t.Helper()
 	a := newAutoScreen()
 	a.settings = settings.Default()
+	a.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 	if len(r.models) > 0 {
 		a.settings.Model = modelPtr(strings.Join(r.models, ","))
 	}
