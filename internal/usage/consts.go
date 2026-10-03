@@ -67,4 +67,11 @@ const (
 	EscalationMarginPct = 15.0
 	// ResetSlackS: never schedule past a window reset + this.
 	ResetSlackS = 60.0
+	// ParkCapS: an at-limit account is re-polled before its cached
+	// measurement leaves the decision-trust ceiling, so list/status/dashboard
+	// and the engine keep a trusted measurement while it waits for its
+	// freeing reset. The ServeTTLS margin covers the planner's clock read
+	// trailing the fetch stamp and leaves room for a failed re-poll to be
+	// retried while the measurement is still trusted (DESIGN A31).
+	ParkCapS = TrustMaxAgeS - ServeTTLS
 )

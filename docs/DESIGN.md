@@ -4167,3 +4167,75 @@ switch to it, with and without `--force`, fails with the no-credential error
 and leaves the live credential, the live credentials file and config, both
 slots and their `.prev` generations as they were; the slot is not
 switchable, and the rotation switches nowhere.
+
+## A31. An at-limit account's poll park ends before the trust in its measurement does
+
+04§3.4 step 9 schedules the next poll of an account with no headroom at the
+reset that frees it (`limiting_reset_ts`), however far away that is. 04§2.5
+trusts a stale measurement only while `age_s <= TRUST_MAX_AGE_S` (3600 s). The
+two disagree whenever the freeing reset is more than an hour out. The rule
+below overrides 04§3.4 step 9.
+
+**The bug.** With `autoswitch.model` set to `all` (or naming a model), an
+inactive account whose per-model weekly window is at 100% was parked until
+that window reset, up to a week away. One hour after its last fetch the
+measurement passed the trust ceiling and `UsageEntry.DecisionValue` became
+nil: `list --json` and `status --json` reported `usageStatus:
+"unavailable"`, the dashboard showed *usage unavailable*, and the human
+`list` printed the old numbers with an age note. None of them fetched again,
+because an on-demand read refetches a stale entry only when its poll is due
+or it has no plan; the engine's due-candidate pick skips a not-yet-due entry
+too, so the engine could not rank the account either. It stayed that way
+until the window reset, although its 5h window had reset long before. A 5h
+or 7d window at 100% with its reset more than an hour out, and a Codex
+account at its limit, went the same way for the rest of their park.
+
+**1. The park is capped.** When the account has no headroom and the freeing
+reset is later than the jittered interval, the next poll is
+`min(reset, now + PARK_CAP_S)` (`usage.ParkCapS`), with
+`PARK_CAP_S = TRUST_MAX_AGE_S - SERVE_TTL_S` = 3420 s. A reset nearer than
+that is still the next poll, and the returned interval is unchanged. Each
+re-poll plans again from the new measurement: an account still at its limit
+is parked again, for at most another `PARK_CAP_S`; one whose window has
+reset gets the normal cadence. The rule lives in `PlanAfterFetch`, so it
+holds for every collector that plans (`list`, `status`, the dashboard, the
+TUI, the engine, the Codex usage cache) and for an at-limit active account as
+well; in the engine an active account at its limit is also refetched by the
+escalation pass whenever there is a candidate.
+
+**2. Why the margin is `SERVE_TTL_S`.** A stale measurement is trusted while
+it is within the ceiling and its poll is not yet due (or a failure is on
+record, or a fetch is in flight). A park that ends inside the ceiling keeps
+the measurement trusted up to the moment its poll falls due, and from then
+on whoever reads it next fetches it: `list`, `status` and the dashboard in
+the same call, the engine at its next tick and before it decides. The margin
+covers two things. The Claude collector plans after it has recorded the fetch
+(lock, write, re-read), so the planner's `now` trails `fetchedAt`; the park
+must end inside the ceiling measured from `fetchedAt`. And when the re-poll
+fails, the stale-on-error trust lasts only up to the ceiling: at the default
+engine interval of 60 s (±10%) the re-poll lands at most 66 s after it falls
+due, and the retry after the base 30 s failure backoff at most 66 s after
+that, 132 s in all, inside the 180 s. One failed re-poll therefore does not
+make the account read as unavailable. A wider margin would only poll more
+often.
+
+**Not done here.** Trust extension ends when the poll falls due, so a reader
+that does not fetch (a store-only redraw) sees the entry as untrusted between
+that moment and the fetch, as it does at every other poll; no margin changes
+that. Accounts fetched in one pass come due together, and the engine still
+fetches one due candidate per tick, stalest first; when the active account
+nears the threshold the escalation pass fetches them all.
+
+**Tests.** `internal/usage/pollpolicy_test.go`
+(`TestPlanAfterFetchAtLimitPark`): an inactive account under `all` with a
+per-model window at 100% resetting in five days is due at
+`now + PARK_CAP_S`, and within `[now + interval, now + PARK_CAP_S]` at every
+jitter; so are a 5h window at 100% resetting in two hours (the old worked
+value, which parked at the reset) and an at-limit active account; a reset ten
+minutes out is still the next poll; with the model window not counted the
+cadence is unchanged. `internal/core/usagepark_test.go`
+(`TestEngineKeepsAnAtLimitCandidateTrusted`): the engine over the real store,
+collector and planner, with a fake clock and a stub usage endpoint, ticks
+every 15 s for three hours beside one such candidate. After every tick the
+store reads the candidate's measurement as decision-grade, and the stub
+served it at least once per trust ceiling and at most once per park.

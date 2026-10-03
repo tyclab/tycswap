@@ -106,8 +106,8 @@ func TestPlanAfterFetchWorkedValues(t *testing.T) {
 	}
 }
 
-// TestPlanAfterFetchResetCapping covers the future-reset cap and the at-limit
-// skip-to-reset (04§3.4 steps 9, worked values).
+// TestPlanAfterFetchResetCapping covers the future-reset cap (04§3.4 step 9,
+// worked values).
 func TestPlanAfterFetchResetCapping(t *testing.T) {
 	const now = 1784277975.0
 	iso := func(off float64) string {
@@ -125,18 +125,87 @@ func TestPlanAfterFetchResetCapping(t *testing.T) {
 			t.Errorf("nextPoll = %v, want %v (reset+slack)", next, want)
 		}
 	})
+}
 
-	t.Run("at-limit skips straight to freeing reset", func(t *testing.T) {
-		in := PlanInput{NewUsage: fhReset(100, iso(7200)), Now: now, RNG: rngHalf}
+// TestPlanAfterFetchAtLimitPark covers the at-limit park (04§3.4 step 9,
+// DESIGN A31): an account with no headroom waits for the reset that frees it,
+// but never longer than ParkCapS, so its cached measurement is polled again
+// before it leaves the decision-trust ceiling (TrustMaxAgeS).
+func TestPlanAfterFetchAtLimitPark(t *testing.T) {
+	const now = 1784277975.0
+	const day = 86400.0
+	iso := func(off float64) string {
+		return time.Unix(int64(now+off), 0).UTC().Format(time.RFC3339)
+	}
+	// modelAt is a measurement whose 5h window has reset and whose per-model
+	// weekly window is at pct until it resets off seconds from now.
+	modelAt := func(pct, off float64) map[string]any {
+		return map[string]any{
+			"five_hour": map[string]any{"pct": 0.0},
+			"seven_day": map[string]any{"pct": 40.0, "resets_at": iso(3 * day)},
+			"scoped":    []any{map[string]any{"name": "Fable", "pct": pct, "resets_at": iso(off)}},
+		}
+	}
+	all := []string{"all"}
+
+	cases := []struct {
+		name         string
+		in           PlanInput
+		wantInterval float64
+		wantNextPoll float64
+	}{
+		{
+			name:         "inactive, model window at 100% resets in 5 days: capped",
+			in:           PlanInput{NewUsage: modelAt(100, 5*day), Models: all, Now: now},
+			wantInterval: 300, wantNextPoll: now + ParkCapS,
+		},
+		{
+			name:         "inactive, 5h window at 100% resets in 2 hours: capped",
+			in:           PlanInput{NewUsage: fhReset(100, iso(7200)), Now: now},
+			wantInterval: 300, wantNextPoll: now + ParkCapS,
+		},
+		{
+			name:         "inactive, model window at 100% resets in 10 minutes: parks at the reset",
+			in:           PlanInput{NewUsage: modelAt(100, 600), Models: all, Now: now},
+			wantInterval: 300, wantNextPoll: now + 600,
+		},
+		{
+			name:         "active, model window at 100% resets in 5 days: capped",
+			in:           PlanInput{IsActive: true, NewUsage: modelAt(100, 5*day), Models: all, Now: now},
+			wantInterval: 180, wantNextPoll: now + ParkCapS,
+		},
+		{
+			name:         "model window not counted: headroom left, normal cadence",
+			in:           PlanInput{NewUsage: modelAt(100, 5*day), Now: now},
+			wantInterval: 300, wantNextPoll: now + 300,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := tc.in
+			in.RNG = rngHalf
+			next, interval := PlanAfterFetch(in)
+			if !approxEq(interval, tc.wantInterval) {
+				t.Errorf("interval = %v, want %v", interval, tc.wantInterval)
+			}
+			if !approxEq(next, tc.wantNextPoll) {
+				t.Errorf("nextPoll = now%+.0f, want now%+.0f", next-now, tc.wantNextPoll-now)
+			}
+		})
+	}
+
+	// Whatever the jitter, a park far from its reset is due at least one
+	// interval out and before the trust ceiling.
+	for _, r := range []float64{0, 0.5, 1} {
+		in := PlanInput{NewUsage: modelAt(100, 5*day), Models: all, Now: now, RNG: func() float64 { return r }}
 		next, interval := PlanAfterFetch(in)
-		if !approxEq(interval, 300) {
-			t.Errorf("interval = %v, want 300", interval)
+		if next > now+ParkCapS || next < now+interval {
+			t.Errorf("rng=%v: nextPoll = now%+.0f, want within [now+%v, now+%v]", r, next-now, interval, ParkCapS)
 		}
-		want := now + 7200
-		if !approxEq(next, want) {
-			t.Errorf("nextPoll = %v, want %v (reset ts)", next, want)
+		if next-now >= TrustMaxAgeS {
+			t.Errorf("rng=%v: nextPoll = now%+.0f reaches the trust ceiling %v", r, next-now, TrustMaxAgeS)
 		}
-	})
+	}
 }
 
 // TestPlanAfterFetchJitterBounds pins the jitter endpoints (04§3.4 step 8).
