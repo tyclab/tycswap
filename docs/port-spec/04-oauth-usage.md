@@ -980,7 +980,10 @@ Algorithm:
      frees it, but never longer than `PARK_CAP_S`**; the learned interval is
      still returned for its return). Go: `PARK_CAP_S = TRUST_MAX_AGE_S -
      SERVE_TTL_S` (3420), so the cached measurement is polled again before it
-     leaves the decision-trust ceiling (§2.5; DESIGN A31).
+     leaves the decision-trust ceiling (§2.5; DESIGN A31), and the cap is
+     jittered downward only with step 8's draw `r`: `now + PARK_CAP_S *
+     (1.0 - JITTER_FRAC * r)` (3078–3420 s), so accounts fetched together fall
+     due apart; a nearer reset is the next poll exactly.
    - Else: `reset_ts = earliest_future_reset_ts(new_usage, now, models)`; if not
      None → `next_poll = min(next_poll, reset_ts + RESET_SLACK_S)` (**never
      scheduled past a future reset + slack**; stored usage is obsolete once the
@@ -998,9 +1001,12 @@ Algorithm:
 - Urgent suppressed by recent_429 → 360.
 - Urgent base 60 then unmoved → snaps to 180 (never 60→90→135).
 - Reset cap: future reset at now+90, usage 40% → next_poll ≈ reset+60, interval
-  300. At-limit (100%) reset at now+7200 → next_poll ≈ now+3420 (`PARK_CAP_S`),
-  interval 300; reset at now+600 → next_poll ≈ reset_ts exactly, interval 300.
+  300. At-limit (100%) reset at now+7200 → next_poll ≈ now+3249
+  (`PARK_CAP_S·0.95`, the downward jitter at rng=0.5), interval 300; reset at
+  now+600 → next_poll ≈ reset_ts exactly, interval 300.
 - Jitter bounds: rng=0.0 → now + interval·0.9; rng=1.0 → now + interval·1.1.
+  The capped at-limit park: rng=0.0 → now+3420 (`PARK_CAP_S`); rng=1.0 →
+  now+3078 (`PARK_CAP_S·0.9`).
 
 ---
 
