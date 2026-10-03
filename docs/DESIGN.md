@@ -4090,6 +4090,15 @@ through the OAuth write path: the Keychain item and its shadow file while the
 Keychain is in use, else the plaintext file. Being seat-wide only, it never
 shadows the key. The credential is cleared whole, as before, only when there
 is no seat-wide part (or the live text does not parse) or that write fails.
+On macOS, when that part lands in the plaintext file while the key is in the
+`Claude Code` Keychain item (it is too large for the Keychain, or the Keychain
+stopped answering), the key is written to `primaryApiKey` as well before the
+file replaces the OAuth login, so a failure there leaves the login in place.
+A switch rolls the credential back only after a write that succeeded, so a
+write that fails leaves the Keychain as it found it: when a `~/.claude.json`
+update fails after the key reached the Keychain, the item is put back (the
+previous key, or no item) before the error returns, as the file backend,
+whose key and approval are one config write, leaves nothing behind.
 This holds for every path onto a key: a switch, `--force`, auto-switch and a
 rollback to an API-key original. A direct activation (`--force`, a fresh
 machine, a live login no slot holds) reads `~/.claude.json` once before the
@@ -4125,7 +4134,13 @@ seat-wide-only shape and `{}`, with and without a key, a login beside the MCP
 data), the macOS Keychain seam with and without a shadow file, and the
 write-back on a switch onto a key (file mode, Keychain plus shadow file, a
 failed Keychain write landing in the file, no seat-wide part clearing the
-file). `internal/ccfile`: the `SeatWideOnly`, `SeatWidePart` and splice
+file). `internal/credstore/managedrollback_test.go` and
+`internal/switching/keychainrollback_test.go`: a config update that fails
+after the key reached the Keychain, from a login and from another key, on
+the first config write and on the file fallback's, and through a switch and
+a `--force` activation, leaves the Keychain item and the live credential as
+they were; on the file backend the same failure writes nothing.
+`internal/ccfile`: the `SeatWideOnly`, `SeatWidePart` and splice
 tables. `internal/reporting/apikeyseat_test.go`: `status` and `list` show
 the API-key account as `api_key`. `internal/lifecycle/apikeyseat_test.go`:
 `add` refuses the live key or finds no credential. Export, import, the
