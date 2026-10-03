@@ -394,11 +394,20 @@ func (s *Server) handleSwitchStrategy(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSwitch switches to one account; ?force=1 skips the backup via
-// AccountOps.SwitchToForce.
+// AccountOps.SwitchToForce. ?confirmAuthChange=1 carries the user's yes to a
+// switch onto an API-key account, which the page asks for first: the handler
+// records it as the switch layer's approval for that account (DESIGN A33).
+// Without it the switch layer refuses an API-key target and says why.
 func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathKey(w, r)
 	if !ok {
 		return
+	}
+	if isTruthy(r.URL.Query().Get("confirmAuthChange")) {
+		if unavailable(w, s.d.Accounts != nil, "account operations") {
+			return
+		}
+		s.d.Accounts.ApproveAPIKeySwitch(id)
 	}
 	if isTruthy(r.URL.Query().Get("force")) {
 		if unavailable(w, s.d.Accounts != nil, "account operations") {

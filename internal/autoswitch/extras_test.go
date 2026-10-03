@@ -331,26 +331,6 @@ func TestActiveApiKeyIdles(t *testing.T) {
 	}
 }
 
-func TestApiKeyCandidateLastResort(t *testing.T) {
-	clk := newClk()
-	f := newFake()
-	f.current = strp("1")
-	f.switchable = []string{"1", "2"}
-	f.emails = map[string]string{"1": "a", "2": "b"}
-	f.kinds = map[string]string{"2": "api_key"}
-	f.entries = map[string]usage.UsageEntry{"1": dictEntry(usageOf(100, 0)), "2": nilEntry()}
-	s := settings.Default()
-	s.IncludeAPIKeyAccounts = true
-	rec := &recorder{}
-	e := build(t, f, s, rec, clk, false)
-	if got := e.Tick(); got != Switched {
-		t.Fatalf("outcome = %v, want Switched (api-key last resort)", got)
-	}
-	if deref(f.current) != "2" {
-		t.Errorf("current = %q, want 2", deref(f.current))
-	}
-}
-
 // -- apply-threshold ------------------------------------------------------
 
 func TestApplyThreshold(t *testing.T) {

@@ -185,6 +185,15 @@ func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, mod
 			}
 			continue
 		}
+		if s.AccountKindFor(candidate) == "api_key" {
+			// The rotation never changes the auth mode (DESIGN A33).
+			if jsonOut {
+				warnings = append(warnings, "Skipped Account-"+candidate+" (API key: switching to it changes how Claude Code authenticates)")
+			} else {
+				printOut(printer.Accent("Skipping") + " Account-" + candidate + " (API key — switch to it by hand if you mean to)")
+			}
+			continue
+		}
 		if !s.AccountIsSwitchable(candidate) {
 			if jsonOut {
 				warnings = append(warnings, "Skipped Account-"+candidate+" (no stored credentials/config)")
@@ -309,9 +318,15 @@ func switchFreshMachine(s *store.Store, strategyLabel string, jsonOut bool, warn
 	targetDisabled := disabledFromData(data, target)
 	if !s.RotationEligible(data, target) {
 		var reason, consoleReason string
-		if targetDisabled {
+		switch {
+		case targetDisabled:
 			reason, consoleReason = "(disabled)", "(disabled)"
-		} else {
+		case s.AccountKindFor(target) == "api_key" && s.AccountIsSwitchable(target):
+			// Not eligible because automatic selection never changes the auth
+			// mode (DESIGN A33), as in the rotation loop.
+			reason = "(API key: switching to it changes how Claude Code authenticates)"
+			consoleReason = "(API key — switch to it by hand if you mean to)"
+		default:
 			reason = "(no stored credentials/config)"
 			consoleReason = "(no stored credentials/config, re-add with tycswap --add-account --slot " + target + ")"
 		}

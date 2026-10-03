@@ -539,9 +539,9 @@ func (s *Switcher) SetAccountDisabled(identifier string, disabled bool) (string,
 }
 
 // SwitchableAccountNumbers lists slots eligible for automatic rotation.
-// API-key accounts are excluded unconditionally, unlike the Claude side's
-// includeApiKeyAccounts: a Codex API-key login reports no usage at all, so
-// there is nothing for a threshold to mean.
+// API-key accounts are excluded unconditionally, as on the Claude side (DESIGN
+// A33): a Codex API-key login reports no usage at all, so there is nothing for
+// a threshold to mean.
 func (s *Switcher) SwitchableAccountNumbers() []string {
 	out := []string{}
 	for _, sl := range s.st.Slots() {

@@ -1,11 +1,12 @@
 // auto.go — the `tycswap auto` pre-dispatched subcommand (spec 08§7.7, 05§19).
 //
 // Implements spec 08§7.7 / 05§19: the flag grammar (--once/--json/--interval/
-// --threshold/--cooldown/--model/--include-api-key-accounts tri-state/--dry-run/
-// --debug), merged_with_cli, the engine construction, --once (exit = outcome),
-// loop mode with SIGTERM→Stop and the dimmed banner, and the JSONL/human emit
-// callbacks. The compact JSONL/error-envelope discipline (spec 08§7.7) is
-// distinct from the main path's indent-2. prog is hardcoded "tycswap auto".
+// --threshold/--cooldown/--model/--dry-run/--debug; the include-api-key-
+// accounts pair is gone with its setting, DESIGN A33), merged_with_cli, the
+// engine construction, --once (exit = outcome), loop mode with SIGTERM→Stop
+// and the dimmed banner, and the JSONL/human emit callbacks. The compact
+// JSONL/error-envelope discipline (spec 08§7.7) is distinct from the main
+// path's indent-2. prog is hardcoded "tycswap auto".
 package cli
 
 import (
@@ -34,7 +35,6 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	var once, jsonMode, dryRun, debug bool
 	var interval, threshold, cooldown *float64
 	var model *string
-	var includeAPIKey *bool
 
 	// takeFloat / takeStr consume the value for a value flag, erroring (exit 2)
 	// on a missing/invalid argument.
@@ -56,12 +56,6 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 			dryRun = true
 		case tok == "--debug":
 			debug = true
-		case tok == "--include-api-key-accounts":
-			b := true
-			includeAPIKey = &b
-		case tok == "--no-include-api-key-accounts":
-			b := false
-			includeAPIKey = &b
 		case tok == "--interval":
 			v, ok := next()
 			if !ok {
@@ -117,11 +111,10 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	setSigintNote("Auto-switch stopped")
 
 	merged := settings.MergedWithCLI(settings.Load(sw.BackupDir()), settings.CLIOverrides{
-		Threshold:             threshold,
-		IntervalSeconds:       interval,
-		CooldownSeconds:       cooldown,
-		IncludeAPIKeyAccounts: includeAPIKey,
-		Model:                 model,
+		Threshold:       threshold,
+		IntervalSeconds: interval,
+		CooldownSeconds: cooldown,
+		Model:           model,
 	})
 
 	onEvent := humanEmit(s.out)
@@ -327,8 +320,10 @@ func autoError(err error, jsonMode bool, s ioStreams) int {
 func renderAutoHelp(out io.Writer) {
 	fmt.Fprintln(out, "usage: tycswap auto [-h] [--once] [--json] [--interval SECONDS] [--threshold PCT]")
 	fmt.Fprintln(out, "                  [--cooldown SECONDS] [--model NAMES]")
-	fmt.Fprintln(out, "                  [--include-api-key-accounts | --no-include-api-key-accounts]")
 	fmt.Fprintln(out, "                  [--dry-run] [--debug]")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Auto-switch rotates between subscription accounts only: it never moves onto")
+	fmt.Fprintln(out, "or off an API-key account, since that changes how Claude Code authenticates.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Exit codes with --once:")
 	fmt.Fprintln(out, "  0  switched to another account")

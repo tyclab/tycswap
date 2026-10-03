@@ -168,7 +168,7 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 				}
 			}
 			printOut("")
-			printSwitchFollowup(s)
+			printSwitchFollowup(s, targetAccount)
 			printOut("")
 		}
 		replanNewActive(s, targetAccount, targetEmail, targetOrg)
@@ -310,7 +310,7 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 	if emitOutput {
 		printOut(printer.Accent("Activated") + " Account-" + targetAccount + " (" + targetEmail + ")")
 		printOut("")
-		printSwitchFollowup(s)
+		printSwitchFollowup(s, targetAccount)
 		printOut("")
 	}
 	replanNewActive(s, targetAccount, targetEmail, targetOrg)
@@ -488,8 +488,14 @@ func oauthSection(cfg map[string]any) (map[string]any, bool) {
 }
 
 // printSwitchFollowup prints the post-switch note keyed to where the active
-// credential write landed (spec 02§8.4). A restart is never required.
-func printSwitchFollowup(s *store.Store) {
+// credential write landed (spec 02§8.4). A restart is never required, except
+// after a switch onto an API-key account: that changes how Claude Code
+// authenticates, and a running session keeps its old login (DESIGN A33).
+func printSwitchFollowup(s *store.Store, target string) {
+	if s.AccountKindFor(target) == "api_key" {
+		printOut(printer.Dimmed(APIKeyRestartNote))
+		return
+	}
 	backend := s.Creds.LastActiveBackend()
 	if backend == "" {
 		// No write recorded (defensive; a switch always writes): fall back to

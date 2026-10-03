@@ -8,12 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/switching"
 )
 
 func newTestModel(f *fakeFacade, opts ...Option) *Model {
@@ -120,6 +122,34 @@ func TestSwitchActionNoBetterTarget(t *testing.T) {
 	m.actionDone(runCmd(m.doSwitch("2")).(actionDoneMsg))
 	if !hasToast(m, "no-better-target", "No switch", "warning") {
 		t.Fatalf("expected 'no-better-target' warning toast, got %v", m.toasts)
+	}
+}
+
+// TestSwitchToAnAPIKeyAccountIsRefused: the TUI does not ask before a switch
+// onto an API-key account (DESIGN A33). It switches as for any row, the switch
+// layer refuses without an approval, and the failure shows that refusal, which
+// points at `tycswap switch <n>`.
+func TestSwitchToAnAPIKeyAccountIsRefused(t *testing.T) {
+	key := acct("2", "key@x.com", false, nil)
+	key.Kind = "api_key"
+	f := &fakeFacade{
+		snap:        snapshotOf("1", acct("1", "a@x.com", true, nil), key),
+		switchToErr: switching.ErrAPIKeyNeedsApproval("2"),
+	}
+	m := newTestModel(f)
+	m.snapshot = f.snap
+	m.actionDone(runCmd(m.doSwitch("2")).(actionDoneMsg))
+	if !reflect.DeepEqual(f.switchToCalls, []string{"2"}) {
+		t.Fatalf("SwitchTo calls %v, want [2]", f.switchToCalls)
+	}
+	top, ok := m.top().(*outputModal)
+	if !ok {
+		t.Fatalf("top = %T, want the failure output", m.top())
+	}
+	for _, want := range []string{"authenticates with an API key", "`tycswap switch 2` asks first"} {
+		if !strings.Contains(top.output, want) {
+			t.Errorf("failure output %q lacks %q", top.output, want)
+		}
 	}
 }
 

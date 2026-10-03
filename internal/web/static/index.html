@@ -306,14 +306,14 @@
           <li><strong>Pick the active one</strong> from the Dashboard (the row's <em>Switch</em>) or turn on Auto mode and let it decide.</li>
           <li><strong>Restart running Claude Code sessions</strong> after a switch (<code>claude --continue</code> picks up where you were). The Sessions tab shows what is running.</li>
         </ol>
-        <p class="muted">Have a setup token or an API key instead of a browser login? <em>Add token…</em> here, or <code>{{.Name}} add-token</code> in a terminal. API-key accounts have no usage windows and are rotated onto only when <code>autoswitch.includeApiKeyAccounts</code> is on.</p>
+        <p class="muted">Have a setup token or an API key instead of a browser login? <em>Add token…</em> here, or <code>{{.Name}} add-token</code> in a terminal. API-key accounts have no usage windows, and neither Auto mode nor a rotation ever moves onto one: you switch to one by hand and confirm.</p>
       </article>
 
       <article class="card guide-section" id="g-switch">
         <h2>Switching by hand</h2>
         <ul>
-          <li><strong>Switch</strong> in an account's row makes that account active at once, whatever its windows say. <strong>Force switch</strong> in the row menu skips the backup of the current login first.</li>
-          <li><strong>Best</strong> (the strategy control on the Dashboard) switches to the account with the most headroom; <strong>Next available</strong> goes to the next slot in order that is not at limit. Neither ever picks a disabled account.</li>
+          <li><strong>Switch</strong> in an account's row makes that account active at once, whatever its windows say. <strong>Force switch</strong> in the row menu skips the backup of the current login first. A switch onto an API-key account asks first: it changes how Claude Code authenticates, and running sessions keep their old login until restarted. <strong>Force switch</strong> does not ask that and is refused for an API-key account.</li>
+          <li><strong>Best</strong> (the strategy control on the Dashboard) switches to the account with the most headroom; <strong>Next available</strong> goes to the next slot in order that is not at limit. Neither ever picks a disabled account or an API-key account.</li>
           <li><strong>Disable</strong> an account to keep it stored but out of every rotation; a shared account you only want on demand, say. <strong>Enable</strong> brings it back.</li>
           <li><strong>Move / Swap</strong> renumbers slots; <strong>Remove</strong> deletes the stored copy (your Claude login itself is untouched).</li>
         </ul>
@@ -329,7 +329,7 @@
           <dt>Strategy</dt><dd><code>autoswitch.strategy</code>: <em>soonest-reset</em> (the default) prefers the account whose weekly window renews first, so several accounts are used evenly and none sits idle on a window that is about to renew; <em>best</em> takes the account with the most headroom right now.</dd>
           <dt>Count model limits</dt><dd><code>autoswitch.model</code>: empty counts 5h and 7d only; <em>all</em>, or a comma-separated list of model names, also counts those per-model weekly windows, so an account at 100 % of a model's week is skipped even if its 5h/7d meters are low. The Auto tab's switch sets <em>all</em> or clears it.</dd>
           <dt>Hysteresis, cooldown</dt><dd><code>autoswitch.hysteresisPct</code>: a target must beat the active account by this much, so two accounts at the same level do not flap. <code>autoswitch.cooldownSeconds</code>: the least time between two proactive switches.</dd>
-          <dt>API-key accounts</dt><dd>Auto-switch never moves onto an API-key account unless <code>autoswitch.includeApiKeyAccounts</code> is on: it is billed per token. The header says so in red while one is active.</dd>
+          <dt>API-key accounts</dt><dd>Auto-switch never moves onto, or off, an API-key account by itself. That is a change of <em>how</em> Claude Code authenticates, billed per token, and a session that is already running keeps its old login until you restart it, so only you can decide to make it. Switching to one by hand asks first. The header says so in red while one is active.</dd>
           <dt>Dry run</dt><dd>Starts the engine so it logs what it <em>would</em> do without switching. Good for a first day.</dd>
         </dl>
         <h3>Quarantine</h3>
@@ -339,7 +339,7 @@
 
       <article class="card guide-section" id="g-settings">
         <h2>Settings</h2>
-        <p>The Settings tab lists every key of <code>settings.json</code> with its type, range, default and current value, and saves or resets one key at a time; it is <code>{{.Name}} config</code> in the browser. Every key is an <code>autoswitch.*</code> key today: the threshold, the poll interval, the cooldown, the hysteresis, the strategy, the model windows, whether API-key accounts count, how many failed polls make an account unhealthy, and the Codex engine's own switch and threshold.</p>
+        <p>The Settings tab lists every key of <code>settings.json</code> with its type, range, default and current value, and saves or resets one key at a time; it is <code>{{.Name}} config</code> in the browser. Every key is an <code>autoswitch.*</code> key today: the threshold, the poll interval, the cooldown, the hysteresis, the strategy, the model windows, how many failed polls make an account unhealthy, and the Codex engine's own switch and threshold.</p>
         <p>A saved value is validated like <code>config set</code> (an out-of-range number is refused and nothing is written), and every row says when it takes effect. An auto-switch engine reads the settings when it starts (here, in <code>{{.Name}} tui</code> or in <code>{{.Name}} auto</code>), so a running one keeps what it started with; only <code>autoswitch.model</code> reaches a running engine on this page at once. The Codex keys are read by <code>{{.Name}} auto</code> only.</p>
       </article>
 

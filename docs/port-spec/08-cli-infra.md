@@ -419,7 +419,7 @@ work, and wraps in `except ClaudeSwitchError → error("Error: …"); exit 1` /
   - `--threshold` (`type=float`, `metavar="PCT"`) — 50–99.9; default 90.
   - `--cooldown` (`type=float`, `metavar="SECONDS"`) — default 300.
   - `--model` (`metavar="NAMES"`) — one name or comma list (Fable, Opus, Sonnet, Haiku) or `all`.
-  - `--include-api-key-accounts` (`argparse.BooleanOptionalAction`, `default=None`).
+  - `--include-api-key-accounts` (`argparse.BooleanOptionalAction`, `default=None`). Go: removed with its setting (DESIGN A33).
   - `--dry-run` (store_true).
   - `--debug` (store_true).
 - `settings = merged_with_cli(load_settings(switcher.backup_dir), args)` (CLI flags override settings.json).
@@ -514,7 +514,7 @@ Every key (single source of truth is `SETTING_SPECS`, keyed by dotted key):
 | `autoswitch.cooldownSeconds` | `cooldown_seconds` | float | 0.0 | 86400.0 | — | `300.0` | Minimum seconds between proactive switches |
 | `autoswitch.hysteresisPct` | `hysteresis_pct` | float | 0.0 | 50.0 | — | `10.0` | A target must beat the active account by this many pct |
 | `autoswitch.strategy` | `strategy` | choice | — | — | `("best",)` | `"best"` | How auto-switch picks the target account. Go: choices `("best", "soonest-reset")` (DESIGN A17), default `"soonest-reset"` (DESIGN A32) |
-| `autoswitch.includeApiKeyAccounts` | `include_api_key_accounts` | bool | — | — | — | `False` | Allow rotating onto managed API-key accounts (bill per token) |
+| `autoswitch.includeApiKeyAccounts` | `include_api_key_accounts` | bool | — | — | — | `False` | Allow rotating onto managed API-key accounts (bill per token). Go: removed; an unknown key on load, refused by `config` (DESIGN A33) |
 | `autoswitch.unhealthyTicks` | `unhealthy_ticks` | int | 1 | 100 | — | `3` | Consecutive failed polls before an account is unhealthy |
 | `autoswitch.model` | `model` | string | — | — | — | `None` | Also switch on these models' weekly limits (e.g. Fable, Fable,Opus, or all) |
 
@@ -546,7 +546,8 @@ Clamp examples (tests): `threshold 200 → 99.9`; `intervalSeconds 1 → 15.0`;
 `hysteresisPct -5 → 0.0`; `unhealthyTicks 0 → 1`; `threshold "high" → 90.0`
 default; `includeApiKeyAccounts 1 → True`; `strategy "chaos" → "best"`;
 `model 123 → None`. Go: `strategy "chaos" → "soonest-reset"`, the Go default
-(DESIGN A32).
+(DESIGN A32); the `includeApiKeyAccounts` case is gone with the key (DESIGN
+A33).
 
 ### 8.4 Writing
 
@@ -592,7 +593,8 @@ value equal to the default still counts as set (presence, not value equality).
 `merged_with_cli(settings, args)` — overlays non-`None` CLI overrides
 (argparse Namespace attr → field): `threshold→threshold`,
 `interval→interval_seconds`, `cooldown→cooldown_seconds`,
-`include_api_key_accounts→include_api_key_accounts`, `model→model`. No overrides
+`include_api_key_accounts→include_api_key_accounts`, `model→model` (Go: no
+`include_api_key_accounts` override, DESIGN A33). No overrides
 → returns the **same object** (identity). Else `_clamped(dataclasses.replace(...))`
 (so CLI values are clamped too — `interval 1 → 15.0`).
 
@@ -1023,7 +1025,8 @@ Reads `sys.prefix`, lowercases its path parts, forms adjacent pairs
 - **`BooleanOptionalAction`**: two flags accept `--share-history/--no-share-history`
   and `--include-api-key-accounts/--no-include-api-key-accounts`. The latter is
   **tri-state** (`default=None`) so `merged_with_cli` can tell "unset" from
-  "explicitly false". Model this with a `*bool` (nil = unset).
+  "explicitly false". Model this with a `*bool` (nil = unset). Go: the
+  `--include-api-key-accounts` pair is removed (DESIGN A33).
 - **`--` verbatim tail**: in `tycswap run`, split on the first `--`; everything
   after is forwarded to `claude` unparsed. Do not let a Go flag library consume it.
 - **`nargs="?" const=""`** on `--add-token`: an empty-string sentinel distinct

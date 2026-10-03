@@ -841,15 +841,15 @@
   }
 
   // fallbackNotices: one notice while Claude Code is on an API-key account,
-  // which is billed per token. Auto-switch only rotates onto one when
-  // autoswitch.includeApiKeyAccounts is on.
+  // which is billed per token. Auto-switch never moves onto or off one by
+  // itself (DESIGN A33): that changes how Claude Code authenticates.
   function fallbackNotices(st) {
     var out = [];
     var active = claudeRows(st).filter(function (a) { return a.isActive; })[0];
     if (active && active.kind === 'api_key') {
       out.push(el('div', { class: 'notice notice-crit', role: 'alert' }, [
         el('b', { text: 'Running on API-key account #' + active.number + ' — billed per token. ' }),
-        el('span', { text: settingValue(st, 'autoswitch.includeApiKeyAccounts') === true ? 'autoswitch.includeApiKeyAccounts is on, so the engine may keep using it.' : 'Switch to a subscription account when one has room again.' })
+        el('span', { text: 'Auto-switch leaves this alone; switch back by hand, then restart your Claude Code sessions.' })
       ]));
     }
     return out;
@@ -987,7 +987,14 @@
 
       var acts = el('div', { class: 'row-actions' });
       var sw = el('button', { type: 'button', class: 'btn btn-sm btn-primary', 'data-label': 'Switch', 'aria-label': 'Switch to account ' + a.number, text: a.isActive ? 'Active' : 'Switch' });
-      sw.setAttribute('data-post', '/api/switch/' + keyPath(a));
+      if (a.kind === 'api_key') {
+        // A change of how Claude Code authenticates: ask first (DESIGN A33).
+        sw.setAttribute('data-action', 'switch-api-key');
+        sw.setAttribute('data-id', rowKey(a));
+        sw.setAttribute('data-name', accountLabel(a));
+      } else {
+        sw.setAttribute('data-post', '/api/switch/' + keyPath(a));
+      }
       if (a.isActive || !a.switchable) { sw.disabled = true; }
       acts.appendChild(sw);
 
@@ -1376,7 +1383,7 @@
     'autoswitch.threshold': 'Threshold', 'autoswitch.intervalSeconds': 'Poll interval',
     'autoswitch.codexEnabled': 'Codex auto-switch', 'autoswitch.codexThreshold': 'Codex threshold',
     'autoswitch.cooldownSeconds': 'Cooldown', 'autoswitch.hysteresisPct': 'Hysteresis',
-    'autoswitch.strategy': 'Strategy', 'autoswitch.includeApiKeyAccounts': 'Include API-key accounts',
+    'autoswitch.strategy': 'Strategy',
     'autoswitch.unhealthyTicks': 'Unhealthy ticks', 'autoswitch.model': 'Model windows'
   };
 
@@ -1611,6 +1618,11 @@
 
   function closeMenus() { document.querySelectorAll('details.menu[open]').forEach(function (d) { d.removeAttribute('open'); }); }
 
+  // API_KEY_SWITCH_NOTE is what the page says before a switch onto an API-key
+  // account: it changes how Claude Code authenticates, so the server refuses
+  // it unless the request carries the user's yes (DESIGN A33).
+  var API_KEY_SWITCH_NOTE = 'This account authenticates with a key instead of a subscription login, and its usage is billed per token. Every Claude Code session that is already running keeps its current login until you restart it.';
+
   var ACTIONS = {
     'card-toggle': function (btn) {
       var id = btn.getAttribute('data-card');
@@ -1687,6 +1699,13 @@
         if (v.slot) { body.slot = v.slot; }
         if (v.alias) { body.alias = v.alias; }
         return run(btn, 'Add token', api('POST', '/api/accounts/add-token', body));
+      });
+    },
+    'switch-api-key': function (btn) {
+      var id = btn.getAttribute('data-id');
+      return confirmModal('Switch to API-key account ' + btn.getAttribute('data-name') + '?', API_KEY_SWITCH_NOTE, 'Switch').then(function (ok) {
+        if (!ok) { return; }
+        return run(btn, 'Switch', api('POST', '/api/switch/' + encodeURIComponent(id) + '?confirmAuthChange=1'));
       });
     },
     'force-switch': function (btn) {

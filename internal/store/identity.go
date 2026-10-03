@@ -388,7 +388,10 @@ func (s *Store) AccountIsSwitchable(num string) bool {
 }
 
 // RotationEligible is the sole owner of the automatic-rotation eligibility rule
-// (spec 01§8.4 switchable_account_numbers): switchable and not disabled. Every
+// (spec 01§8.4 switchable_account_numbers): switchable, not disabled, and not
+// an API-key account. The last one is DESIGN A33: moving onto an API key
+// changes how Claude Code authenticates, which a running session does not pick
+// up, so automatic selection never does it; only a person who was asked. Every
 // surface that asks "may automatic selection pick this slot" must ask through
 // here, so the rule can never drift between them (DESIGN A18). It does not know
 // about the auto-switch engine's transient quarantine (autoswitch_state.json),
@@ -406,7 +409,7 @@ func (s *Store) RotationEligible(data *SequenceData, num string) bool {
 	if data == nil {
 		return false
 	}
-	return s.AccountIsSwitchable(num) && !disabledFromData(data, num)
+	return s.AccountIsSwitchable(num) && !disabledFromData(data, num) && s.AccountKindFor(num) != "api_key"
 }
 
 // SwitchableAccountNumbers returns the rotation-eligible slots in sequence order

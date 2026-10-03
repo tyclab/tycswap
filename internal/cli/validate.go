@@ -8,8 +8,9 @@ package cli
 
 import "io"
 
-// crossFlagValidate runs the twelve cross-flag checks (spec 08§4). It returns
-// done==true with code 2 on the first failure, else a zero parseResult.
+// crossFlagValidate runs the twelve cross-flag checks (spec 08§4), plus a
+// thirteenth for --yes (DESIGN A33). It returns done==true with code 2 on the
+// first failure, else a zero parseResult.
 func crossFlagValidate(prog string, p *parsed, stderr io.Writer) parseResult {
 	fail := func(msg string) parseResult { return argError(prog, stderr, msg) }
 
@@ -74,6 +75,12 @@ func crossFlagValidate(prog string, p *parsed, stderr io.Writer) parseResult {
 	// 12. --full without export.
 	if p.full && p.export == nil {
 		return fail("--full can only be used with 'export'")
+	}
+
+	// 13. --yes without switch-to: it answers the API-key confirmation and
+	// nothing else (DESIGN A33).
+	if p.yes && p.switchTo == nil {
+		return fail("--yes can only be used with 'switch <num|email>'")
 	}
 
 	return parseResult{}

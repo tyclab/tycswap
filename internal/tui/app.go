@@ -503,7 +503,9 @@ func reasonString(payload map[string]any) string {
 
 // -- account operations (09§2.7) ---------------------------------------------
 
-// doSwitch switches to a specific account (09§2.7 do_switch).
+// doSwitch switches to a specific account (09§2.7 do_switch). A switch onto an
+// API-key account is not asked about here: the switch layer refuses it with a
+// message that points at `tycswap switch <n>`, which asks (DESIGN A33).
 func (m *Model) doSwitch(id string) tea.Cmd {
 	t := m.resolveRow(id)
 	if t.codex != nil {

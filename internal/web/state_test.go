@@ -123,7 +123,6 @@ func TestState_ExactShape(t *testing.T) {
 			map[string]any{"key": "autoswitch.threshold", "kind": "float", "value": 90, "default": 90, "isDefault": true, "description": "Switch when the binding 5h/7d window reaches this pct", "min": 50, "max": 99.9, "applies": settingApplies("autoswitch.threshold")},
 			map[string]any{"key": "autoswitch.codexThreshold", "kind": "float", "value": 0, "default": 0, "isDefault": true, "description": "Codex-only switch threshold (0 = use autoswitch.threshold)", "min": 0, "max": 99.9, "applies": settingApplies("autoswitch.codexThreshold")},
 			map[string]any{"key": "autoswitch.codexEnabled", "kind": "bool", "value": true, "default": true, "isDefault": true, "description": "Also auto-switch Codex accounts", "applies": settingApplies("autoswitch.codexEnabled")},
-			map[string]any{"key": "autoswitch.includeApiKeyAccounts", "kind": "bool", "value": false, "default": false, "isDefault": true, "description": "Allow rotating onto managed API-key accounts", "applies": settingApplies("autoswitch.includeApiKeyAccounts")},
 			map[string]any{"key": "autoswitch.strategy", "kind": "choice", "value": "best", "default": "soonest-reset", "isDefault": false, "choices": []any{"best", "soonest-reset"}, "description": "How auto-switch orders qualifying targets", "applies": settingApplies("autoswitch.strategy")},
 		},
 		"auto": map[string]any{

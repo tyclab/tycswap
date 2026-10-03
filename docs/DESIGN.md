@@ -2481,11 +2481,12 @@ test-guarded duplication by design, not an oversight.
 
 **The boundary.** `RotationEligible` is necessary but NOT sufficient for the
 auto engine to select a slot. The engine additionally excludes the current
-account (it cannot switch onto itself), quarantined slots
-(`autoswitch_state.json`, A18), and API-key slots unless
-`autoswitch.includeApiKeyAccounts` is set. A `RotationEligible` account can
-therefore still be off the engine's candidate list for any of those three
-further reasons; the field tells a display "this slot is a legitimate
+account (it cannot switch onto itself) and quarantined slots
+(`autoswitch_state.json`, A18). API-key slots were a third reason, behind
+`autoswitch.includeApiKeyAccounts`; since A33 `RotationEligible` excludes them
+itself and the setting is gone. A `RotationEligible` account can therefore
+still be off the engine's candidate list for either of those two further
+reasons; the field tells a display "this slot is a legitimate
 rotation target in principle," not "the engine will pick it this tick."
 
 **`switch.go`'s rotation loop is the deliberate exception.** The bare
@@ -3275,11 +3276,12 @@ response position, because some plans report the weekly window as the primary
 one.
 
 **Why Codex API-key accounts are never rotation targets.**
-`autoswitch.includeApiKeyAccounts` exists because a Claude API-key account is a
-real rotation target that bills per token. A Codex API-key login reports no
-usage at all, so there is nothing for a threshold to compare it against. Codex
-API-key accounts are excluded from rotation unconditionally, and the setting is
-documented as Claude-only rather than silently ignored.
+`autoswitch.includeApiKeyAccounts` existed because a Claude API-key account was
+a rotation target that bills per token (A33 removed it: no API-key account is a
+rotation target any more). A Codex API-key login reports no usage at all, so
+there is nothing for a threshold to compare it against. Codex API-key accounts
+are excluded from rotation unconditionally, and the setting was documented as
+Claude-only rather than silently ignored.
 
 **Why a second small engine.** The Claude `autoswitch` engine is built around
 Claude specifics: per-model scoped windows, setup tokens, session profiles,
@@ -3827,7 +3829,7 @@ settings when it starts (`settings.Load` in the host's `Start`) and only
 | `autoswitch.model` | at once for the engine this page hosts: a save or reset through the settings routes calls `ApplyModels` on it while it runs (A26; an engine in the TUI or `tycswap auto` keeps its value until it next starts), and the at-limit marks re-read it for every state document |
 | `autoswitch.threshold` | at the next engine start; the Auto tab's slider retargets the running engine for this run only, unsaved |
 | `autoswitch.codexEnabled`, `autoswitch.codexThreshold` | at the next `tycswap auto`: the engine this page hosts rotates Claude accounts only |
-| every other key (`intervalSeconds`, `cooldownSeconds`, `hysteresisPct`, `strategy`, `includeApiKeyAccounts`, `unhealthyTicks`, and any key added later) | at the next engine start, here, in the TUI's Auto view or in `tycswap auto` |
+| every other key (`intervalSeconds`, `cooldownSeconds`, `hysteresisPct`, `strategy`, `unhealthyTicks`, and any key added later) | at the next engine start, here, in the TUI's Auto view or in `tycswap auto` |
 
 The TUI's Settings screen (A28) edits the same `settings.json` through the
 same package (`settings.SetSetting` / `UnsetSetting` and the
@@ -4365,3 +4367,142 @@ set; neither file is rewritten by the reads; an unknown value falls back to
 08§8.2, 08§8.3) record the new default and the clamp case. The TUI tests that
 pin `best` order set the strategy explicitly instead of relying on the
 default, and the summary test checks the segment on a default install.
+
+## A33. A switch onto an API-key account needs the user's approval
+
+tycswap has two kinds of switch, and only one of them is cheap. Switching
+between subscription accounts rewrites the OAuth credential, and a running
+Claude Code session picks that up on its own (the post-switch note says when).
+Switching onto an API-key account changes **how** Claude Code authenticates:
+the OAuth login leaves the credential store, the managed key goes into the
+Keychain item or `primaryApiKey` with its approval, and usage is billed per
+token. A Claude Code session that is already running keeps the login it
+started with until it is restarted. The switch in the other direction is the
+same change in reverse.
+
+`autoswitch.includeApiKeyAccounts` (the claude-swap setting, default off) let
+the engine rotate onto API-key accounts, as ordinary targets when one
+qualified and as the last resort (unmeasurable headroom) when no subscription
+account did, and let it leave an active API-key account the same way. Such a
+switch would leave every open session on the old login while the log, the
+TUI and the dashboard reported the new one. **Removed**: the setting, the
+`auto --include-api-key-accounts` / `--no-include-api-key-accounts` flags, and
+the last-resort path.
+
+**The engine.** It rotates between subscription accounts only. An API-key
+account is never a candidate, not even when every subscription account is at
+its limit: the tick reports `all-exhausted` (or `no-candidates`) instead. An
+API-key account that is already active is left alone with the `no-switch`
+reason `active-api-key`, as before when the setting was off.
+
+**Automatic selection.** `store.RotationEligible`, the one owner of the
+automatic-selection rule (A18, A19), also excludes API-key accounts, and so
+does the snapshot's inline copy of it (`reporting.rotationEligible`): the
+engine's candidates, the TUI's and the dashboard's Next best and the
+"eligible for rotation" figure agree. `AccountIsSwitchable` is unchanged, so an
+API-key account stays a valid target for a switch by hand. The bare `switch`
+rotation and `switch --strategy` skip it and say why: `Skipping Account-<n>
+(API key — switch to it by hand if you mean to)`, or the `--json` warning
+`Skipped Account-<n> (API key: switching to it changes how Claude Code
+authenticates)`.
+
+**The guard sits at the chokepoint.** `switching.SwitchTo`, which every
+front-end funnels through, refuses an API-key target unless an approval was
+recorded for exactly that slot (`switching.ApproveAPIKeySwitch`): single-use
+and per slot. Any approval for the resolved slot is used up as soon as the
+identifier resolves (so naming the account by email or alias is no way around
+it), whatever the slot's kind and whether or not a switch follows: an approval
+given for a subscription slot cannot survive to let a later switch onto an API
+key put into that slot through unasked. The kind is checked after the
+already-active short-circuit, which writes nothing, so a switch to the API-key
+account already in use reports `Already on` without an approval; every other
+switch onto an API key, `--force` included, is checked before anything is
+written. The refusal is a `ValidationError` that names the restart and the way
+to confirm: `Account-<n> authenticates with an API key. Switching to it
+changes how Claude Code authenticates, and every Claude Code session that is
+already running keeps its current login until you restart it. Confirm the
+switch to go ahead: `tycswap switch <n>` asks first.` Refusing is therefore
+the default; the command line and the dashboard's *Switch* opt in after
+asking. After a switch onto an API-key account the follow-up note says the
+running sessions need a restart (`switching.APIKeyRestartNote`) instead of "no
+restart needed", and on a machine with no live login the bare `switch` skips a
+preferred API-key slot with the API-key reason, not as missing credentials.
+
+- **CLI.** `switch <num|email|alias>` onto an API-key account prints what
+  changes and how many Claude Code sessions are running (the count comes from
+  `procdetect` under the default config directory, the login a switch
+  rewrites; a detection failure counts as none, since the notice is advisory),
+  then asks `Switch to API-key account #<n>? [y/N]`. Only `y` approves.
+  `--yes` / `-y` answers for scripts and still prints the notice; it is valid
+  with `switch <num|email>` only (a usage error elsewhere, like every other
+  flag outside its command). Stdin that is not a terminal is refused at once,
+  without reading, so a pipe that never writes cannot leave the command
+  waiting: `Not a terminal — rerun with --yes to confirm the switch to API-key
+  account #<n>.` Any other answer, end of input included, is `Cancelled: not
+  switched to API-key account #<n>.` Every refusal is a `ValidationError` and
+  exits 1, as the switch layer's own refusal does. `--json` never prompts,
+  since a machine-readable run has no one to ask: `--json --yes` approves,
+  because `--yes` is the documented answer for scripts and approves everywhere
+  else, and `--json` alone is refused by the switch layer (the JSON error
+  envelope, exit 1). The API-key account already in use is not asked about
+  unless `--force`.
+- **TUI.** It does not ask. A switch onto an API-key row goes to the switch
+  layer like any other and is refused there; the failure shows the refusal,
+  which points at `tycswap switch <n>`.
+- **Dashboard.** *Switch* on an API-key row asks first, then sends `POST
+  /api/switch/{key}?confirmAuthChange=1`. The handler turns the flag into an
+  approval through the `AccountOps` facade
+  (`core.Switcher.ApproveAPIKeySwitch` resolves the key's identifier to its
+  slot and records nothing for an unknown one), so the web package still
+  touches nothing but its facades; without account operations the confirmed
+  switch answers `503` instead of being attempted. *Force switch* does not ask
+  about the auth mode and is refused for an API-key account, as the TUI is.
+  The red notice shown while an API-key account is active says auto-switch
+  leaves it alone. The Guide says the same.
+
+**The settings file.** A `settings.json` that still carries
+`autoswitch.includeApiKeyAccounts` loads exactly as one without it, whatever
+its value: `Load` reads only the keys in `SettingSpecs` and ignores the rest,
+and every write keeps a key it does not know. `config set`, `get` and `unset`
+refuse it as an unknown setting and list the valid keys; the TUI's Settings
+screen and the dashboard's Settings tab no longer show it.
+
+**Codex.** Unchanged: a Codex API-key login was never a rotation target, and a
+Codex switch already leaves running codex sessions on their old login (the
+switch names their PIDs), so no approval is added there. The help text that
+called the Claude setting Claude-only now says both sides exclude API keys.
+
+**Tests.** `internal/switching` (`authmode_test.go`): an approval is
+single-use and per slot; the refusal names the account, the API key, the
+restart and `tycswap switch <n>`; a switch onto the API-key slot without an
+approval is refused with nothing written, with and without `--force`, and an
+approval for another slot does not help; with one it switches, and the next
+switch onto the slot is refused again; naming the account by email is guarded
+the same way; an approval is used up by the switch it was given for, onto a
+subscription slot or the active one, so a later API key in that slot is still
+refused; the active API-key account is `already-active` without an approval,
+and `--force` onto it still needs one; the follow-up after a switch onto an
+API key says to restart; the rotation skips the API-key slot with the warning,
+or finds no valid target when it is the only other account; and the
+fresh-machine path names the API-key reason. The existing API-key seat tests
+and the Keychain rollback tests record an approval first, and the rollback
+tests fail if the approval refusal is what stopped the switch.
+`internal/store`, `internal/reporting`: an API-key slot is switchable but not
+rotation eligible. `internal/autoswitch` (`apikey_test.go`): an API-key
+account is never a target, at the limit or proactively, and an active one is
+left alone with `active-api-key`. `internal/settings`: a file carrying the
+removed key loads as without it, a whole-file save keeps it, and `config
+set`/`unset` refuse it. `internal/cli` (`authmode_test.go`): stdin that is not
+a terminal is refused without being read and the error names `--yes`; end of
+input and any answer but `y` cancel with an error; `--yes` skips the prompt,
+terminal or not, but prints the notice; the notice counts the sessions;
+`--yes` and `-y` parse after the verb and are a usage error elsewhere; the
+prompt records the approval only on yes, `--json` alone does not and `--json
+--yes` does; a subscription target and the active API-key account are not
+asked about; end to end, `switch 3` without a terminal and `switch 3 --json`
+exit 1, and `switch 3 --json --yes` switches. The `auto` flags are
+unrecognized arguments. `internal/tui`: a switch onto an API-key row is
+refused with the switch layer's message. `internal/web`: `confirmAuthChange=1`
+records the approval before the plain or forced switch, nothing is approved
+without it, and without account operations it is `503`.
+

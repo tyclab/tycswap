@@ -1198,6 +1198,10 @@ Parsed via `re.compile(r"Switched from account (\d+) to (\d+)")` against the mes
   }
 }
 ```
+
+Go: `includeApiKeyAccounts` is removed (DESIGN A33); a file that still has it
+loads as without it.
+
 The Auto screen reads this at mount (`load_settings`) and, via the menu bar's threshold quick-picks, writes back through `set_setting(backup_dir, "autoswitch.threshold", str(pct))` — the **only** write path from either UI surface into this file (everything else the TUI adjusts is session-memory-only, §11.6).
 
 **Switch action JSON payload** shape returned by `switcher.switch_to`/`switcher.switch` (consumed directly by `app._action_done`, §2.6):

@@ -31,6 +31,10 @@ type parsed struct {
 	json        bool
 	force       bool
 	full        bool
+	// yes answers the one prompt a switch can raise: moving onto an API-key
+	// account changes how Claude Code authenticates (DESIGN A33). Without it a
+	// non-interactive run is refused rather than silently approved.
+	yes bool
 
 	addAccount bool
 	list       bool
@@ -122,6 +126,12 @@ func parseArgs(prog string, argv []string, stdout, stderr io.Writer) parseResult
 		if tok == "--version" {
 			return parseResult{code: renderVersion(prog, stdout), done: true}
 		}
+		// -y is the one single-dash flag besides -h: the API-key prompt tells
+		// the user to rerun with --yes, and -y is its usual short form.
+		if tok == "-y" {
+			p.yes = true
+			continue
+		}
 
 		if !strings.HasPrefix(tok, "--") {
 			// Single-dash unknowns and bare positionals are unrecognized.
@@ -164,6 +174,8 @@ func parseArgs(prog string, argv []string, stdout, stderr io.Writer) parseResult
 			p.force = true
 		case "--full":
 			p.full = true
+		case "--yes":
+			p.yes = true
 
 		// ---- value flags (outside the group) ------------------------------
 		case "--strategy":

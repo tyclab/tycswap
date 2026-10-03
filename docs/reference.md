@@ -12,7 +12,7 @@ tycswap help                                  print the command list and options
 tycswap list [--json] [--token-status]        list managed accounts
 tycswap status [--json]                       show the active account
 tycswap switch [--json]                       rotate to the next account
-tycswap switch <NUM|EMAIL|ALIAS> [--json] [--force]
+tycswap switch <NUM|EMAIL|ALIAS> [--json] [--force] [--yes]
                                             switch to a specific account
 tycswap switch --strategy {best|next-available} [--model NAMES] [--json]
                                             pick the target by remaining quota
@@ -35,8 +35,7 @@ tycswap env [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history] [--shell {sh|fish
 tycswap map [<NUM|EMAIL|ALIAS> [PATH]]        map a directory to an account / list mappings
 tycswap unmap [PATH]                          remove a directory mapping
 tycswap auto [--once] [--json] [--interval SECONDS] [--threshold PCT] [--cooldown SECONDS]
-           [--model NAMES] [--include-api-key-accounts|--no-include-api-key-accounts]
-           [--dry-run]                      auto-switch when nearing rate limits
+           [--model NAMES] [--dry-run]      auto-switch when nearing rate limits
 tycswap config [list] [--json]                show settings
 tycswap config get <KEY> [--json]             read one setting
 tycswap config set <KEY> <VALUE>              change one setting
@@ -336,7 +335,7 @@ alice@example.com
 
 ```
 tycswap switch [--json] [--debug]
-tycswap switch <NUM|EMAIL|ALIAS> [--json] [--force] [--debug]
+tycswap switch <NUM|EMAIL|ALIAS> [--json] [--force] [--yes] [--debug]
 tycswap switch --strategy {best|next-available} [--model NAMES] [--json] [--debug]
 ```
 
@@ -346,6 +345,7 @@ tycswap switch --strategy {best|next-available} [--model NAMES] [--json] [--debu
 |--------|------|---------|-------------|
 | `--json` | flag | off | — |
 | `--force` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; activates without backing up the current login first. |
+| `--yes` / `-y` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; answers the API-key confirmation below, for scripts. |
 | `--strategy` | choice `best` \| `next-available` | unset | Only with bare `switch` (no target). |
 | `--model` | string (comma-separated names) | unset | Only with `switch --strategy`. |
 | `--debug` | flag | off | — |
@@ -357,10 +357,35 @@ Bare `tycswap switch` rotates to the next account in the sequence. `tycswap swit
 account with the most remaining 5h/7d quota; `--strategy next-available`
 rotates, skipping rate-limited accounts. `--model` adds the named models'
 per-model weekly limits to the quota computation for the usage-aware
-strategies. A switch never requires restarting Claude Code to be correct; the
-post-switch note is informational (see NOTES). The switch cooperates with
-Claude Code's own credential lock, so it never interleaves with a token
-refresh.
+strategies.
+
+Switching onto an **API-key account** is the one switch that asks first
+(DESIGN A33). It replaces the subscription login with a managed key billed per
+token, and a Claude Code session that is already running keeps its current
+login until it is restarted, so the prompt says what changes, how many Claude
+Code sessions are running, and waits for `y` (`Switch to API-key account #<n>?
+[y/N]`). `--yes` answers it for scripts and still prints the notice. When
+stdin is not a terminal and `--yes` is not given, the switch is refused at
+once, without reading, with `Not a terminal — rerun with --yes to confirm the
+switch to API-key account #<n>.`; an answer other than `y` (end of input
+included) is `Cancelled: not switched to API-key account #<n>.` Both are
+errors and exit 1. `--json` never prompts: with `--yes` it switches, without
+it the switch is refused with the error below. The account already in use is
+not asked about (`Already on`) unless `--force` is given. The rule sits in the
+switch itself: the dashboard's *Switch* asks first, while the TUI and the
+dashboard's *Force switch* do not ask and are refused with the error below,
+which points here. The bare rotation and `--strategy` never land on an API-key
+account: they skip it with `Skipping Account-<n> (API key — switch to it by
+hand if you mean to)`, or the `--json` warning `Skipped Account-<n> (API key:
+switching to it changes how Claude Code authenticates)`. After a switch onto
+an API-key account the follow-up note says `Restart your Claude Code sessions:
+one that is already running keeps its previous login until it is restarted.`
+Every other switch is unaffected.
+
+A switch onto a subscription account never requires restarting Claude Code to
+be correct; the post-switch note is informational (see NOTES). The switch
+cooperates with Claude Code's own credential lock, so it never interleaves
+with a token refresh.
 
 A switch changes only the `oauthAccount` key of `~/.claude.json`; every other
 key stays as it is. With no live config (absent, blank or `null`) the file is
@@ -435,6 +460,10 @@ A `<ref>` is `{"number": <int|null>, "email": "<string>"}`. `switched` is
 | `--strategy can only be used with bare 'switch'` | usage, exit 2 |
 | `--model can only be used with 'switch --strategy best' or 'switch --strategy next-available'` | usage, exit 2 |
 | `--force can only be used with 'import' or 'switch <num\|email>'` | usage, exit 2 |
+| `--yes can only be used with 'switch <num\|email>'` | usage, exit 2 |
+| ``Account-<n> authenticates with an API key. Switching to it changes how Claude Code authenticates, and every Claude Code session that is already running keeps its current login until you restart it. Confirm the switch to go ahead: `tycswap switch <n>` asks first.`` | `ValidationError`, exit 1: a switch onto an API-key account without an approval (`--json` without `--yes`) |
+| `Not a terminal — rerun with --yes to confirm the switch to API-key account #<n>.` | `ValidationError`, exit 1: stdin is not a terminal and `--yes` was not given |
+| `Cancelled: not switched to API-key account #<n>.` | `ValidationError`, exit 1: the prompt was answered with anything but `y` |
 
 ### Example
 
@@ -1330,8 +1359,7 @@ Unmapped ~/work/client-app
 
 ```
 tycswap auto [--once] [--json] [--interval SECONDS] [--threshold PCT] [--cooldown SECONDS]
-           [--model NAMES] [--include-api-key-accounts|--no-include-api-key-accounts]
-           [--dry-run] [--debug]
+           [--model NAMES] [--dry-run] [--debug]
 ```
 
 ### Options
@@ -1344,8 +1372,6 @@ tycswap auto [--once] [--json] [--interval SECONDS] [--threshold PCT] [--cooldow
 | `--threshold` | float percent | `autoswitch.threshold` (90) | Clamped to 50–99.9. |
 | `--cooldown` | float seconds | `autoswitch.cooldownSeconds` (300) | Clamped to 0–86400. |
 | `--model` | string (comma names) | `autoswitch.model` | Adds per-model weekly limits. |
-| `--include-api-key-accounts` | flag | `autoswitch.includeApiKeyAccounts` (false) | Allow rotating onto API-key accounts. |
-| `--no-include-api-key-accounts` | flag | — | The negated form. |
 | `--dry-run` | flag | off | Evaluate and report but never switch. |
 | `--debug` | flag | off | — |
 
@@ -1360,6 +1386,13 @@ evaluates a single tick and exits with the outcome as the status code — the
 form intended for cron. Switching proactively (while the old account is still
 valid) is what keeps the change safe under the macOS Keychain propagation
 latency.
+
+Auto-switch rotates between subscription accounts only (DESIGN A33). An
+API-key account is never a target, not even when every subscription account
+is at its limit (the tick reports `all-exhausted` instead), and when one is
+active the engine leaves it alone with the `no-switch` reason `active-api-key`:
+moving onto or off an API key changes how Claude Code authenticates, which a
+running session does not pick up, so only the user makes that switch.
 
 Which accounts qualify as targets is governed by the threshold, hysteresis,
 cooldown, and quarantine rules; the order in which qualifying targets are
@@ -1376,9 +1409,9 @@ the Codex threshold, switches to the enabled OAuth account with the lowest
 worse window that is below the threshold and at least `autoswitch.hysteresisPct`
 below the active account. The Codex threshold is `autoswitch.codexThreshold`,
 or the effective `--threshold` / `autoswitch.threshold` when that is 0. An
-account with no measurement is never switched away from. Cooldown, quarantine,
-`--model`, and `--include-api-key-accounts` apply to Claude only; Codex API-key
-accounts are never targets. `--dry-run` applies to both engines.
+account with no measurement is never switched away from. Cooldown, quarantine
+and `--model` apply to Claude only; Codex API-key accounts are never targets,
+as Claude ones are not. `--dry-run` applies to both engines.
 
 With `--once`, the Codex tick runs after the Claude tick, and the exit status
 is the Claude tick's outcome. In loop mode the Codex engine ticks on its own
@@ -1769,6 +1802,11 @@ to adjust and `enter` to finish while adjusting), `esc` back; on the settings
 screen, `enter` edit (toggle for a bool, next choice for a choice), `u` reset
 to default, `esc` back (`enter` save and `esc` cancel while a value is being
 typed).
+
+A switch onto an API-key account (from the switch screen, the watch screen or
+an account's menu) is not asked about here: the switch is refused without an
+approval and the failure shows why (DESIGN A33), naming `tycswap switch <n>`,
+which asks first.
 
 The Settings screen (`c`, or the menu's "Settings…" row) shows every key of
 `settings.json` (see [SETTINGS](#settings)) under its section, with its
@@ -2314,8 +2352,14 @@ tabs:
   strategy switch (`best`, `next-available`), *Add current login* as the
   Accounts card's main button, *Add token* (a setup-token or API key; it is
   sent once and never shown or logged), and an optional *Token status*
-  column. When Claude Code is signed in with an account that is not stored
-  yet, a callout above the table names it and offers *Add current login*;
+  column. *Switch* onto an API-key account asks first, saying that it changes
+  how Claude Code authenticates, is billed per token, and that running
+  sessions keep their old login until restarted; the request then carries
+  `confirmAuthChange=1`. *Force switch* does not ask that and is refused for an
+  API-key account. While an API-key account is active a red notice says
+  auto-switch leaves it alone. When Claude Code is signed in with an account
+  that is not stored yet, a callout above the table names it and offers
+  *Add current login*;
   a line under the table says how to add another account and warns against
   `/logout`. Above the accounts, a notice names any authentication override
   that makes Claude Code ignore the stored login: `ANTHROPIC_API_KEY`,
@@ -2341,7 +2385,7 @@ tabs:
 - **Settings**: every `settings.json` key `tycswap config` knows
   (`autoswitch.threshold`, `intervalSeconds`, `codexEnabled`,
   `codexThreshold`, `cooldownSeconds`, `hysteresisPct`, `strategy`, `model`,
-  `includeApiKeyAccounts`, `unhealthyTicks`), each with a control of its type
+  `unhealthyTicks`), each with a control of its type
   (number with range, switch, select, text), its default and the value in
   effect, *Save* and *Reset* per key, validated as `config set` validates,
   and a line saying when a saved value takes effect. An engine reads the
@@ -2482,7 +2526,7 @@ anything else `500`.
 | `GET /api/state[?tokenStatus=1]` | | the state document | `200` |
 | `GET /api/events?csrf=<t>[&tokenStatus=1]` | | Server-Sent Events: `state` frames, `auto` frames (one engine event each), a `: ping` every 15 s | `200`, then a stream |
 | `POST /api/switch` | `{"strategy": "best"\|"next-available", "models": [...]}` | `tycswap switch --strategy` | `400` missing or unknown strategy |
-| `POST /api/switch/{key}[?force=1]` | | `tycswap switch <id> [--force]` | `400` bare key, `404` other provider |
+| `POST /api/switch/{key}[?force=1][&confirmAuthChange=1]` | | `tycswap switch <id> [--force] [--yes]`; `confirmAuthChange=1` records the user's yes to a switch onto an API-key account, which the page asks for first (DESIGN A33) | `400` bare key or an API-key target without `confirmAuthChange`, `404` other provider, `503` `confirmAuthChange` without account operations |
 | `POST /api/accounts/add` | | `tycswap add` | |
 | `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias"}` | `tycswap add-token` (the token is never echoed or logged) | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
 | `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y` | `400` bare key, `404` other provider |
@@ -4154,12 +4198,15 @@ Every key, with its type, range, default, and meaning:
 | `autoswitch.cooldownSeconds` | float (seconds) | 0–86400 | 300 | Minimum seconds between proactive switches. |
 | `autoswitch.hysteresisPct` | float (percent) | 0–50 | 10 | A switch target must beat the active account by at least this many percent. |
 | `autoswitch.strategy` | choice | `best`, `soonest-reset` | `soonest-reset` | How auto-switch orders qualifying targets: `soonest-reset` (earliest weekly renewal) or `best` (most headroom). See below. |
-| `autoswitch.includeApiKeyAccounts` | bool | — | false | Allow rotating onto managed API-key accounts (billed per token). Claude only; Codex API-key accounts are never rotation targets. |
 | `autoswitch.unhealthyTicks` | int | 1–100 | 3 | Consecutive failed polls before an account is treated as unhealthy. |
 | `autoswitch.model` | string | — | (none) | Also switch on these models' weekly limits (for example `Fable`, `Fable,Opus`, or `all`). |
 
 Reads are forgiving: a missing file, a bad type, or an out-of-range value
-degrades to the (clamped) default without error. Writes via `tycswap config set`
+degrades to the (clamped) default without error, and a key tycswap does not
+know is ignored on read and kept by every write.
+`autoswitch.includeApiKeyAccounts` is such a key since DESIGN A33 removed it:
+a file that still carries it loads as if it did not, and `config set`, `get`
+and `unset` refuse it as an unknown setting. Writes via `tycswap config set`
 are strict: an out-of-range or mistyped value is rejected with a `ConfigError`.
 A whole-number float is stored and shown without a fractional part
 (`80.0` → `80`). The TUI's Settings screen (`c` on the dashboard; see
@@ -4169,7 +4216,7 @@ through the same validation.
 **`autoswitch.strategy` ordering.** The strategy governs only the order in
 which already-qualifying candidates are offered to `tycswap auto`; it changes
 none of the qualification gates. Known and positive headroom, the cooldown,
-quarantine exclusion, and the API-key last resort apply identically under
+and quarantine exclusion apply identically under
 both values and for every trigger (`proactive`, `at-limit`, `failover`). The
 threshold-landing and hysteresis checks apply only under the `proactive`
 trigger — an `at-limit` or `failover` tick must leave the active account

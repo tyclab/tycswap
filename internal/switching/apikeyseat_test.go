@@ -49,6 +49,7 @@ func apiKeySeat(t *testing.T, s *store.Store, seatWide string) {
 	seedBackup(t, s, "2", apiKeySeatEmail, apiKeySeatKey, "")
 	seedLive(t, s, oauthSeatEmail, "", ca)
 
+	ApproveAPIKeySwitch("2") // the user confirmed the auth-mode change (DESIGN A33)
 	if _, err := SwitchTo(s, "2", true, false); err != nil {
 		t.Fatalf("SwitchTo(2): %v", err)
 	}
@@ -146,6 +147,7 @@ func TestSwitchFromAnAPIKeySeatWithASeatWideOnlyFileAndBack(t *testing.T) {
 
 			// And back: the key is live again, from its own slot, and the
 			// credentials file keeps the seat-wide keys alone.
+			ApproveAPIKeySwitch("2")
 			if _, err := SwitchTo(s, "2", true, false); err != nil {
 				t.Fatalf("SwitchTo(2): %v", err)
 			}
@@ -272,6 +274,9 @@ func TestSwitchToADamagedAPIKeySlotRefuses(t *testing.T) {
 				damagedAPIKeySeat(t, s, tc.creds)
 				before := seatState(t, s)
 
+				// Approved, so what is pinned is the no-credential refusal
+				// that follows the approval check (DESIGN A33).
+				ApproveAPIKeySwitch("2")
 				_, err := SwitchTo(s, "2", true, force)
 				if err == nil {
 					t.Fatalf("SwitchTo(2) succeeded onto a slot holding %s; live credential now %q", tc.creds, readActiveCreds(t, s))
