@@ -260,6 +260,17 @@ func TestACandidateAtItsFiveHourLimitIsNeverATarget(t *testing.T) {
 	}
 }
 
+// TestACandidateExactlyAtTheBarIsRefused: a candidate sitting exactly at the
+// bar would trigger again on the next tick, so it is refused even where the
+// hysteresis margin alone would let it through (100 - 10 = 90).
+func TestACandidateExactlyAtTheBarIsRefused(t *testing.T) {
+	fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{acc("1", f(100), accOpt{active: true}), acc("2", f(90), accOpt{})}}
+	tick := auto(fake, 90).Tick(ctx, false)
+	if tick.Outcome != OutcomeBlocked || len(fake.switched) != 0 {
+		t.Fatalf("tick = %+v switched=%v, want blocked", tick, fake.switched)
+	}
+}
+
 // TestABarOfOneHundredNeverMovesProactively: with the 7d bar at 100 (reachable
 // since the bars range to 100) the Codex engine moves only off an account at
 // its limit, and is not clamped below 100.
