@@ -468,7 +468,7 @@ func sampleSettings() []SettingView {
 		{Key: "autoswitch.codexThreshold", Kind: "float", Value: 0.0, Default: 0.0, IsDefault: true, Description: "Codex-only switch threshold (0 = use autoswitch.threshold)", Min: f64(0), Max: f64(99.9)},
 		{Key: "autoswitch.codexEnabled", Kind: "bool", Value: true, Default: true, IsDefault: true, Description: "Also auto-switch Codex accounts"},
 		{Key: "autoswitch.includeApiKeyAccounts", Kind: "bool", Value: false, Default: false, IsDefault: true, Description: "Allow rotating onto managed API-key accounts"},
-		{Key: "autoswitch.strategy", Kind: "choice", Value: "soonest-reset", Default: "best", IsDefault: false, Choices: []string{"best", "soonest-reset"}, Description: "How auto-switch orders qualifying targets"},
+		{Key: "autoswitch.strategy", Kind: "choice", Value: "best", Default: "soonest-reset", IsDefault: false, Choices: []string{"best", "soonest-reset"}, Description: "How auto-switch orders qualifying targets"},
 	}
 }
 

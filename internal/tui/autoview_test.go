@@ -87,7 +87,8 @@ func candidatesSnapshot() *reporting.AccountsSnapshot {
 
 func TestCandidatesTextBestOrder(t *testing.T) {
 	a := newAutoScreen()
-	a.settings = settings.Default() // Strategy "best"
+	a.settings = settings.Default()
+	a.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 	out := a.candidatesText(candidatesSnapshot(), 0, testNow).plain()
 	// binding pct ascending; the two 100% accounts tie on pct -> account number
 	// asc (5 before 6); sentinel (998) then usage-unknown (999) sort last.
@@ -201,6 +202,7 @@ func TestCandidatesTextConsumesRotationEligible(t *testing.T) {
 	}
 	a := newAutoScreen()
 	a.settings = settings.Default()
+	a.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 	out := a.candidatesText(snap, 0, testNow).plain()
 	for _, email := range []string{"ineligible@x", "unswitchable@x"} {
 		if strings.Contains(out, email) {
@@ -283,6 +285,7 @@ func TestCandidatesTextMarksQuarantined(t *testing.T) {
 
 		withRead := newAutoScreen()
 		withRead.settings = settings.Default()
+		withRead.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 		withRead.refreshQuarantine(m)
 		if len(withRead.quarantined) != 0 {
 			t.Fatalf("a state file with no quarantine must read empty, got %v", withRead.quarantined)
@@ -290,6 +293,7 @@ func TestCandidatesTextMarksQuarantined(t *testing.T) {
 
 		baseline := newAutoScreen() // quarantined stays nil: the pre-feature path
 		baseline.settings = settings.Default()
+		baseline.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 		if got, want := withRead.candidatesText(snap, 0, testNow).render(), baseline.candidatesText(snap, 0, testNow).render(); got != want {
 			t.Fatalf("empty quarantine must render byte-identical to today's:\n got=%q\nwant=%q", got, want)
 		}
@@ -353,6 +357,7 @@ func oneRowPanel(t *testing.T, lastGood map[string]any, model *string, width int
 	t.Helper()
 	a := newAutoScreen()
 	a.settings = settings.Default()
+	a.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 	a.settings.Model = model
 	return a.candidatesText(&reporting.AccountsSnapshot{
 		ActiveNumber: "1",
@@ -726,6 +731,7 @@ func TestUncountedScopedWindowNeverRanks(t *testing.T) {
 	}
 	a := newAutoScreen()
 	a.settings = settings.Default() // autoswitch.model unset
+	a.settings.Strategy = "best"    // pinned: soonest-reset is the default (DESIGN A32)
 	out := a.candidatesText(withScoped, 80, testNow).plain()
 	assertOrder(t, out, []string{"acc2@x", "acc3@x"})
 	assertOrder(t, a.candidatesText(control, 80, testNow).plain(), []string{"acc2@x", "acc3@x"})
@@ -775,6 +781,7 @@ func TestCandidatesHeaderNamesCountedAxis(t *testing.T) {
 	// The empty state keeps the header (and its note) intact.
 	a := newAutoScreen()
 	a.settings = settings.Default()
+	a.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 	out := a.candidatesText(&reporting.AccountsSnapshot{ActiveNumber: "1"}, 80, testNow).plain()
 	if out != "Next best · counting 5h, 7d\n  no other switchable accounts" {
 		t.Errorf("empty-state panel = %q", out)
@@ -1072,6 +1079,7 @@ func panelShapesOf(t *testing.T, snap *reporting.AccountsSnapshot, width int) ri
 	t.Helper()
 	a := newAutoScreen()
 	a.settings = settings.Default()
+	a.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 	a.quarantined = map[string]string{"3": "invalid_grant"}
 	return a.candidatesText(snap, width, testNow)
 }
@@ -1132,6 +1140,7 @@ func TestCandidatesPanelNeverWrapsAtAnyWidth(t *testing.T) {
 	// The empty state is a panel row too.
 	a := newAutoScreen()
 	a.settings = settings.Default()
+	a.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 	for width := 1; width <= 60; width++ {
 		assertNoWrap(t, a.candidatesText(&reporting.AccountsSnapshot{ActiveNumber: "1"}, width, testNow), width)
 	}
@@ -1260,6 +1269,7 @@ func TestAutoViewRelaysCandidatesOnResize(t *testing.T) {
 	}
 	a := newAutoScreen()
 	a.settings = settings.Default()
+	a.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 	a.dryRun = true
 	m.height, m.width = 24, 100
 	if row := viewLine(t, a.view(m), "candidate"); !strings.Contains(row, "40%") {
@@ -1299,6 +1309,7 @@ func TestAutoViewRendersBeforeTheFirstSnapshot(t *testing.T) {
 	m.height, m.width = 24, 100
 	a := newAutoScreen()
 	a.settings = settings.Default()
+	a.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 	a.dryRun = true
 	if m.snapshot != nil {
 		t.Fatalf("fixture must start unpolled, got %+v", m.snapshot)
@@ -1317,6 +1328,7 @@ func TestAutoViewBuildsCandidatesEveryRender(t *testing.T) {
 	m.height, m.width = 24, 100
 	a := newAutoScreen()
 	a.settings = settings.Default()
+	a.settings.Strategy = "best" // pinned: soonest-reset is the default (DESIGN A32)
 	a.dryRun = true
 
 	realNow := float64(time.Now().UnixNano()) / 1e9
@@ -1357,10 +1369,13 @@ func viewLine(t *testing.T, view, want string) string {
 func TestSummaryTextStrategySegment(t *testing.T) {
 	a := newAutoScreen()
 	a.settings = settings.Default()
+	a.settings.Strategy = "best"
 	if got := a.summaryText().plain(); strings.Contains(got, "soonest-reset") {
 		t.Errorf("best summary = %q, want no soonest-reset segment", got)
 	}
-	a.settings.Strategy = "soonest-reset"
+	// soonest-reset is the default strategy: an untouched settings file shows
+	// the segment.
+	a.settings = settings.Default()
 	got := a.summaryText().plain()
 	if !strings.Contains(got, " · soonest-reset") {
 		t.Errorf("soonest-reset summary = %q, want a ' · soonest-reset' segment", got)

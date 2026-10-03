@@ -83,8 +83,8 @@ func TestLoad_ClampTable(t *testing.T) {
 			func(s AutoSwitchSettings) bool { return s.Threshold == 90.0 }, "threshold=90.0 (default)"},
 		{"includeApiKeyAccounts_1_is_true", `{"autoswitch":{"includeApiKeyAccounts":1}}`,
 			func(s AutoSwitchSettings) bool { return s.IncludeAPIKeyAccounts == true }, "includeApiKeyAccounts=true"},
-		{"strategy_chaos_falls_back_to_best", `{"autoswitch":{"strategy":"chaos"}}`,
-			func(s AutoSwitchSettings) bool { return s.Strategy == "best" }, "strategy=best"},
+		{"strategy_chaos_falls_back_to_soonest_reset", `{"autoswitch":{"strategy":"chaos"}}`,
+			func(s AutoSwitchSettings) bool { return s.Strategy == "soonest-reset" }, "strategy=soonest-reset"},
 		{"model_123_falls_back_to_none", `{"autoswitch":{"model":123}}`,
 			func(s AutoSwitchSettings) bool { return s.Model == nil }, "model=nil"},
 		{"codexThreshold_200_clamps_to_99_9", `{"autoswitch":{"codexThreshold":200}}`,
@@ -305,6 +305,52 @@ func TestSetSetting_RejectsNaNAsOutOfRange(t *testing.T) {
 	}
 	if _, statErr := os.Stat(SettingsPath(root)); !os.IsNotExist(statErr) {
 		t.Error("settings.json should not have been created")
+	}
+}
+
+// TestStrategyDefaultIsSoonestReset pins the auto-switch ordering default and
+// what it means for a settings.json that already exists: a file without the
+// key (or with a value Load does not know) now orders by earliest weekly
+// renewal, and a file that names `best` keeps it. Nothing is rewritten on
+// load, so an explicit choice survives the change of default.
+func TestStrategyDefaultIsSoonestReset(t *testing.T) {
+	if got := Default().Strategy; got != "soonest-reset" {
+		t.Fatalf("Default().Strategy = %q, want soonest-reset", got)
+	}
+	spec, err := SpecFor("autoswitch.strategy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Default != "soonest-reset" {
+		t.Errorf("spec default = %v, want soonest-reset", spec.Default)
+	}
+
+	absent := t.TempDir()
+	writeSettingsJSON(t, absent, `{"schemaVersion":1,"autoswitch":{"intervalSeconds":60}}`)
+	if got := Load(absent).Strategy; got != "soonest-reset" {
+		t.Errorf("a file without autoswitch.strategy loads %q, want soonest-reset", got)
+	}
+
+	explicit := t.TempDir()
+	writeSettingsJSON(t, explicit, `{"schemaVersion":1,"autoswitch":{"strategy":"best"}}`)
+	if got := Load(explicit).Strategy; got != "best" {
+		t.Errorf("a file that sets best loads %q, want best", got)
+	}
+	before, err := os.ReadFile(SettingsPath(explicit))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range EffectiveSettings(explicit) {
+		if e.Spec.Dotted() == "autoswitch.strategy" && (!e.IsSet || e.Value != "best") {
+			t.Errorf("effective strategy = %+v, want best and set", e)
+		}
+	}
+	after, err := os.ReadFile(SettingsPath(explicit))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Errorf("reading the settings rewrote the file:\n%s\n->\n%s", before, after)
 	}
 }
 

@@ -493,7 +493,7 @@
   function rankCandidates(st) {
     var auto = st.auto || {};
     var models = parseModelNames(engineSetting(st, 'autoswitch.model'));
-    var strat = engineSetting(st, 'autoswitch.strategy') || 'best';
+    var strat = engineSetting(st, 'autoswitch.strategy') || 'soonest-reset';
     var threshold = pctNum(settingValue(st, 'autoswitch.threshold')) || 90;
     if (auto.running && typeof auto.threshold === 'number') { threshold = auto.threshold; }
     var quarantine = quarantineMap(auto);
@@ -1172,7 +1172,7 @@
     clear(body);
     var actions = $('auto-actions');
     var slider = $('threshold-slider');
-    var strat = String(engineSetting(st, 'autoswitch.strategy') || 'best');
+    var strat = String(engineSetting(st, 'autoswitch.strategy') || 'soonest-reset');
     var models = parseModelNames(engineSetting(st, 'autoswitch.model'));
     if (!a) {
       badge.textContent = 'unavailable'; badge.className = 'chip chip-outline';
