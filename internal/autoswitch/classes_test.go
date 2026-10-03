@@ -153,8 +153,10 @@ func TestBestRanksByTheWeeklyAxis(t *testing.T) {
 	f.emails = map[string]string{"1": "a@x", "2": "b@x", "3": "c@x"}
 	f.entries = map[string]usage.UsageEntry{
 		"1": dictEntry(usageOf(10, 95)), // 7d over its bar → move
-		"2": dictEntry(usageOf(1, 60)),  // most 5h room, less week left
-		"3": dictEntry(usageOf(50, 20)), // less 5h room, most week left
+		// The fullest-window order and the weekly order disagree: #2's
+		// fullest window (40) beats #3's (70), #3's week (10) beats #2's (40).
+		"2": dictEntry(usageOf(1, 40)),
+		"3": dictEntry(usageOf(70, 10)),
 	}
 	s := threeBars()
 	s.Strategy = "best"
@@ -166,6 +168,19 @@ func TestBestRanksByTheWeeklyAxis(t *testing.T) {
 	}
 	if got := switchTarget(t, rec); got != 3 {
 		t.Errorf("switched to %v, want 3 (most weekly room)", got)
+	}
+}
+
+// The hysteresis margin is measured on the window that made the tick move: the
+// candidate is 15 points better on the week that decided, although its fullest
+// window (89) is barely better than the active account's (90).
+func TestHysteresisIsMeasuredOnTheDecidingWindow(t *testing.T) {
+	_, rec, e, _ := twoAxis(t, usageOf(0, 90), usageOf(89, 75))
+	if got := e.Tick(); got != Switched {
+		t.Fatalf("outcome = %v, want Switched (kinds=%v)", got, rec.kinds())
+	}
+	if got := switchTarget(t, rec); got != 2 {
+		t.Errorf("switched to %v, want 2", got)
 	}
 }
 

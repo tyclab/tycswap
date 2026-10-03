@@ -231,8 +231,13 @@ func TestFailoverAfterUnknownTicks(t *testing.T) {
 	if got := e.Tick(); got != Switched {
 		t.Fatalf("tick 3 outcome = %v, want Switched (failover)", got)
 	}
-	if sw := rec.last("switch").(SwitchEvent); sw.Trigger != "failover" {
+	sw := rec.last("switch").(SwitchEvent)
+	if sw.Trigger != "failover" {
 		t.Errorf("trigger = %q, want failover", sw.Trigger)
+	}
+	// No usage was readable, so no window decided the move (DESIGN A34).
+	if sw.Axis != "" || sw.JSON()["axis"] != "" || strings.Contains(sw.Human(), ", ") {
+		t.Errorf("failover switch axis = %q (json %v, human %q), want empty", sw.Axis, sw.JSON()["axis"], sw.Human())
 	}
 }
 
