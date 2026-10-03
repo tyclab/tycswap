@@ -27,8 +27,12 @@ func ErrAPIKeyNeedsApproval(num string) error {
 	return cerr.Validation(
 		"Account-%s authenticates with an API key. Switching to it changes how Claude Code authenticates, "+
 			"and every Claude Code session that is already running keeps its current login until you restart it. "+
-			"Confirm the switch to go ahead.", num)
+			"Confirm the switch to go ahead: `tycswap switch %s` asks first.", num, num)
 }
+
+// APIKeyRestartNote follows a switch onto an API-key account in place of the
+// usual "no restart needed" note.
+const APIKeyRestartNote = "Restart your Claude Code sessions: one that is already running keeps its previous login until it is restarted."
 
 // RestartNotice is the sentence every front-end shows with the question it
 // asks before a switch onto an API-key account. running is the number of
@@ -87,12 +91,10 @@ func clearApprovals() {
 }
 
 // guardAPIKeyTarget returns an error when num is an API-key account the user
-// has not approved switching to.
-func guardAPIKeyTarget(s *store.Store, num string) error {
-	if s.AccountKindFor(num) != "api_key" {
-		return nil
-	}
-	if takeApproval(num) {
+// has not approved switching to. approved is the approval SwitchTo took for
+// num when it resolved the target, so it is used up whatever the kind.
+func guardAPIKeyTarget(s *store.Store, num string, approved bool) error {
+	if s.AccountKindFor(num) != "api_key" || approved {
 		return nil
 	}
 	return ErrAPIKeyNeedsApproval(num)

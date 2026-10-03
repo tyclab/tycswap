@@ -23,9 +23,7 @@ import (
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/oauth"
-	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/reporting"
-	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
@@ -506,62 +504,17 @@ func reasonString(payload map[string]any) string {
 // -- account operations (09§2.7) ---------------------------------------------
 
 // doSwitch switches to a specific account (09§2.7 do_switch). A switch onto an
-// API-key account asks first (confirmAPIKeySwitch).
+// API-key account is not asked about here: the switch layer refuses it with a
+// message that points at `tycswap switch <n>`, which asks (DESIGN A33).
 func (m *Model) doSwitch(id string) tea.Cmd {
 	t := m.resolveRow(id)
 	if t.codex != nil {
 		return m.codexSwitch(t)
 	}
 	number := t.number
-	if acc := m.accountByNumber(number); acc != nil && acc.Kind == "api_key" {
-		return m.confirmAPIKeySwitch(*acc)
-	}
 	return m.startAction("Switch to account "+number, func() (map[string]any, error) {
 		return m.facade.SwitchTo(number, true)
 	}, false)
-}
-
-// runningClaudeSessions counts the Claude Code sessions under the default
-// config directory, the login a switch rewrites; tests replace it.
-var runningClaudeSessions = func() int {
-	return len(procdetect.ListSessions(procdetect.GetClaudeDir()))
-}
-
-// confirmAPIKeySwitch asks before a switch onto an API-key account (DESIGN
-// A33): it changes how Claude Code authenticates, billed per token, and every
-// running session keeps its old login until it is restarted, which the modal
-// counts. Cancel has the focus. A yes is re-checked against the roster as it is
-// now (the poll runs while the modal is up), recorded as the switch layer's
-// approval for that slot, and then switched; without the approval the switch
-// layer refuses the target.
-func (m *Model) confirmAPIKeySwitch(acc reporting.AccountSnapshot) tea.Cmd {
-	number, email := acc.Number, acc.Email
-	return m.pushScreen(&confirmModal{
-		title:    "Switch to an API-key account",
-		yesLabel: "Switch",
-		message: fmt.Sprintf("Switch to API-key account %s (%s)?\n\n"+
-			"It authenticates with a key instead of a subscription login, and its usage is billed per token. %s",
-			number, termsafe.Strip(email), switching.RestartNotice(runningClaudeSessions())),
-		onDone: func(m *Model, confirmed bool) tea.Cmd {
-			if !confirmed {
-				return nil
-			}
-			live := m.accountByNumber(number)
-			switch {
-			case live == nil:
-				return m.vanishedToast(number)
-			case live.Email != email || live.Kind != "api_key":
-				return m.notify(fmt.Sprintf("Account %s is now %s — not switched", number, termsafe.Strip(live.Email)),
-					"Switch", "warning")
-			}
-			if ap, ok := m.facade.(APIKeyApprover); ok {
-				ap.ApproveAPIKeySwitch(number)
-			}
-			return m.startAction("Switch to account "+number, func() (map[string]any, error) {
-				return m.facade.SwitchTo(number, true)
-			}, false)
-		},
-	})
 }
 
 // switchBest runs the best-pick strategy (09§2.7 action_switch_best).

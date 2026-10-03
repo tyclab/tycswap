@@ -6,8 +6,9 @@
 // --threshold, DESIGN A34, and the include-api-key-accounts pair is gone with
 // its setting, DESIGN A33), merged_with_cli, the engine construction, --once
 // (exit = outcome), loop mode with SIGTERM→Stop and the dimmed banner, and the
-// JSONL/human emit callbacks. The compact JSONL/error-envelope discipline (spec 08§7.7) is
-// distinct from the main path's indent-2. prog is hardcoded "tycswap auto".
+// JSONL/human emit callbacks. The compact JSONL/error-envelope discipline
+// (spec 08§7.7) is distinct from the main path's indent-2. prog is hardcoded
+// "tycswap auto".
 package cli
 
 import (

@@ -4408,45 +4408,57 @@ authenticates)`.
 
 **The guard sits at the chokepoint.** `switching.SwitchTo`, which every
 front-end funnels through, refuses an API-key target unless an approval was
-recorded for exactly that slot (`switching.ApproveAPIKeySwitch`): single-use,
-per slot, consumed by the next switch to that slot, checked right after the
-identifier resolves (so naming the account by email or alias is no way
-around it) and before anything is written, `--force` included. The refusal is
-a `ValidationError` that names the restart: `Account-<n> authenticates with an
-API key. Switching to it changes how Claude Code authenticates, and every
-Claude Code session that is already running keeps its current login until you
-restart it. Confirm the switch to go ahead.` Refusing is therefore the
-default, and every front-end opts in after asking:
+recorded for exactly that slot (`switching.ApproveAPIKeySwitch`): single-use
+and per slot. Any approval for the resolved slot is used up as soon as the
+identifier resolves (so naming the account by email or alias is no way around
+it), whatever the slot's kind and whether or not a switch follows: an approval
+given for a subscription slot cannot survive to let a later switch onto an API
+key put into that slot through unasked. The kind is checked after the
+already-active short-circuit, which writes nothing, so a switch to the API-key
+account already in use reports `Already on` without an approval; every other
+switch onto an API key, `--force` included, is checked before anything is
+written. The refusal is a `ValidationError` that names the restart and the way
+to confirm: `Account-<n> authenticates with an API key. Switching to it
+changes how Claude Code authenticates, and every Claude Code session that is
+already running keeps its current login until you restart it. Confirm the
+switch to go ahead: `tycswap switch <n>` asks first.` Refusing is therefore
+the default; the command line and the dashboard's *Switch* opt in after
+asking. After a switch onto an API-key account the follow-up note says the
+running sessions need a restart (`switching.APIKeyRestartNote`) instead of "no
+restart needed", and on a machine with no live login the bare `switch` skips a
+preferred API-key slot with the API-key reason, not as missing credentials.
 
 - **CLI.** `switch <num|email|alias>` onto an API-key account prints what
   changes and how many Claude Code sessions are running (the count comes from
   `procdetect` under the default config directory, the login a switch
-  rewrites; a detection failure counts as none, since the notice is
-  advisory), then asks `Switch to API-key account #<n>? [y/N]`. Only `y`
-  approves. `--yes` / `-y` answers for scripts and still prints the notice;
-  it is valid with `switch <num|email>` only (a usage error elsewhere, like
-  every other flag outside its command). A run without a terminal and
-  without `--yes` is refused rather than silently approved: `Not a terminal —
-  rerun with --yes to confirm.` and `Cancelled.`, exit 0. `--json` never
-  prompts, since a machine-readable run has no one to ask: with `--yes` it
-  approves, without it the switch layer refuses with the error above (the JSON
-  error envelope, exit 1).
-- **TUI.** A switch onto an API-key row opens a confirmation with the same
-  facts and the session count; *Cancel* has the focus. A yes is re-checked
-  against the roster as it is then (the poll runs while the modal is up): if
-  the slot no longer holds that API-key account nothing is switched and a
-  warning says what it holds now. Otherwise the approval is recorded through
-  `tui.APIKeyApprover`, which `*core.Switcher` satisfies beside the frozen
-  `tui.Facade` (cli asserts both), and the switch runs.
-- **Dashboard.** *Switch* and *Force switch* on an API-key row ask first, then
-  send `POST /api/switch/{key}?confirmAuthChange=1`. The handler turns the
-  flag into an approval through the `AccountOps` facade
+  rewrites; a detection failure counts as none, since the notice is advisory),
+  then asks `Switch to API-key account #<n>? [y/N]`. Only `y` approves.
+  `--yes` / `-y` answers for scripts and still prints the notice; it is valid
+  with `switch <num|email>` only (a usage error elsewhere, like every other
+  flag outside its command). Stdin that is not a terminal is refused at once,
+  without reading, so a pipe that never writes cannot leave the command
+  waiting: `Not a terminal — rerun with --yes to confirm the switch to API-key
+  account #<n>.` Any other answer, end of input included, is `Cancelled: not
+  switched to API-key account #<n>.` Every refusal is a `ValidationError` and
+  exits 1, as the switch layer's own refusal does. `--json` never prompts,
+  since a machine-readable run has no one to ask: `--json --yes` approves,
+  because `--yes` is the documented answer for scripts and approves everywhere
+  else, and `--json` alone is refused by the switch layer (the JSON error
+  envelope, exit 1). The API-key account already in use is not asked about
+  unless `--force`.
+- **TUI.** It does not ask. A switch onto an API-key row goes to the switch
+  layer like any other and is refused there; the failure shows the refusal,
+  which points at `tycswap switch <n>`.
+- **Dashboard.** *Switch* on an API-key row asks first, then sends `POST
+  /api/switch/{key}?confirmAuthChange=1`. The handler turns the flag into an
+  approval through the `AccountOps` facade
   (`core.Switcher.ApproveAPIKeySwitch` resolves the key's identifier to its
   slot and records nothing for an unknown one), so the web package still
   touches nothing but its facades; without account operations the confirmed
-  switch answers `503` instead of being attempted. The red notice shown while
-  an API-key account is active says auto-switch leaves it alone. The Guide
-  says the same.
+  switch answers `503` instead of being attempted. *Force switch* does not ask
+  about the auth mode and is refused for an API-key account, as the TUI is.
+  The red notice shown while an API-key account is active says auto-switch
+  leaves it alone. The Guide says the same.
 
 **The settings file.** A `settings.json` that still carries
 `autoswitch.includeApiKeyAccounts` loads exactly as one without it, whatever
@@ -4462,32 +4474,37 @@ called the Claude setting Claude-only now says both sides exclude API keys.
 
 **Tests.** `internal/switching` (`authmode_test.go`): an approval is
 single-use and per slot; the refusal names the account, the API key, the
-restart and the confirmation; a switch onto the API-key slot without an
+restart and `tycswap switch <n>`; a switch onto the API-key slot without an
 approval is refused with nothing written, with and without `--force`, and an
 approval for another slot does not help; with one it switches, and the next
 switch onto the slot is refused again; naming the account by email is guarded
-the same way; the rotation skips the API-key slot with the warning, or finds
-no valid target when it is the only other account. The existing API-key seat
-tests and the Keychain rollback tests record an approval first, and the
-rollback tests fail if the approval refusal is what stopped the switch. `internal/store`, `internal/reporting`: an
-API-key slot is switchable but not rotation eligible. `internal/autoswitch`
-(`apikey_test.go`): an API-key account is never a target, at the limit or
-proactively, and an active one is left alone with `active-api-key`.
-`internal/settings`: a file carrying the removed key loads as without it, a
-whole-file save keeps it, and `config set`/`unset` refuse it.
-`internal/cli` (`authmode_test.go`): no terminal is a refusal that names
-`--yes`; `--yes` skips the prompt but prints the notice; only `y` approves;
-the notice counts the sessions; `--yes` and `-y` parse after the verb and are
-a usage error elsewhere; the prompt records the approval only on yes, `--json`
-alone does not and `--json --yes` does; a subscription target is never
-gated; end to end, `switch 3 --json` exits 1 with the refusal and `switch 3
---json --yes` switches. The `auto` flags are unrecognized arguments.
-`internal/tui`: the confirmation names the account, the billing and the
-session count, starts on *Cancel*, records the approval and switches only on
-yes, and refuses a slot that changed meanwhile. `internal/web`:
-`confirmAuthChange=1` records the approval before the plain or forced
-switch, nothing is approved without it, and without account operations it is
-`503`.
+the same way; an approval is used up by the switch it was given for, onto a
+subscription slot or the active one, so a later API key in that slot is still
+refused; the active API-key account is `already-active` without an approval,
+and `--force` onto it still needs one; the follow-up after a switch onto an
+API key says to restart; the rotation skips the API-key slot with the warning,
+or finds no valid target when it is the only other account; and the
+fresh-machine path names the API-key reason. The existing API-key seat tests
+and the Keychain rollback tests record an approval first, and the rollback
+tests fail if the approval refusal is what stopped the switch.
+`internal/store`, `internal/reporting`: an API-key slot is switchable but not
+rotation eligible. `internal/autoswitch` (`apikey_test.go`): an API-key
+account is never a target, at the limit or proactively, and an active one is
+left alone with `active-api-key`. `internal/settings`: a file carrying the
+removed key loads as without it, a whole-file save keeps it, and `config
+set`/`unset` refuse it. `internal/cli` (`authmode_test.go`): stdin that is not
+a terminal is refused without being read and the error names `--yes`; end of
+input and any answer but `y` cancel with an error; `--yes` skips the prompt,
+terminal or not, but prints the notice; the notice counts the sessions;
+`--yes` and `-y` parse after the verb and are a usage error elsewhere; the
+prompt records the approval only on yes, `--json` alone does not and `--json
+--yes` does; a subscription target and the active API-key account are not
+asked about; end to end, `switch 3` without a terminal and `switch 3 --json`
+exit 1, and `switch 3 --json --yes` switches. The `auto` flags are
+unrecognized arguments. `internal/tui`: a switch onto an API-key row is
+refused with the switch layer's message. `internal/web`: `confirmAuthChange=1`
+records the approval before the plain or forced switch, nothing is approved
+without it, and without account operations it is `503`.
 
 ## A34. One threshold per window
 

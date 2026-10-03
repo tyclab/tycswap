@@ -17,11 +17,16 @@ import (
 	"io"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/switching"
 )
+
+// stdinIsTerminal reports whether stdin can answer a prompt (a terminal, not
+// /dev/null or a pipe); tests replace it.
+var stdinIsTerminal = lifecycle.StdinIsTerminal
 
 // runningSessions counts the Claude Code sessions alive under the default
 // Claude config directory, the login a switch rewrites. A detection failure
@@ -38,55 +43,87 @@ func restartNotice() string {
 	return switching.RestartNotice(runningSessions())
 }
 
+// Why confirmAuthModeChange said no.
+const (
+	authModeApproved = iota
+	authModeNotATerminal
+	authModeDeclined
+)
+
 // confirmAuthModeChange asks before changing how Claude Code authenticates.
 // question is the one-line ask, detail says what changes. assumeYes (--yes)
 // skips the prompt but still prints the notice, so a scripted run leaves the
 // same trace in the output.
 //
-// A non-interactive terminal cannot answer, so it is refused rather than
-// silently approved: this is exactly the operation that must not happen by
-// accident.
-func confirmAuthModeChange(out io.Writer, question, detail string, assumeYes bool) bool {
+// Stdin that is not a terminal cannot answer, so it is refused at once,
+// without reading, rather than silently approved or left waiting on a pipe:
+// this is exactly the operation that must not happen by accident. On a
+// terminal only "y" approves; anything else, end of input included, declines.
+func confirmAuthModeChange(out io.Writer, question, detail string, assumeYes bool) int {
 	fmt.Fprintln(out, detail)
 	fmt.Fprintln(out, restartNotice())
 	if assumeYes {
-		return true
+		return authModeApproved
+	}
+	if !stdinIsTerminal() {
+		return authModeNotATerminal
 	}
 	answer, ok := lifecycle.ActivePrompter.Prompt(question + " [y/N] ")
-	if !ok {
-		fmt.Fprintln(out, "Not a terminal — rerun with --yes to confirm.")
-		return false
+	if !ok || !strings.EqualFold(strings.TrimSpace(answer), "y") {
+		return authModeDeclined
 	}
-	return strings.EqualFold(strings.TrimSpace(answer), "y")
+	return authModeApproved
 }
 
-// confirmSwitchToAPIKey gates `switch <num|email>` onto an API-key account. It
-// returns stop=true when the user declined, in which case the caller must not
-// switch. Anything it cannot resolve (an unknown identifier, a store error) is
-// left to the switch itself to report, so error messages stay in one place.
+// confirmSwitchToAPIKey gates `switch <num|email>` onto an API-key account.
+// A non-nil error is a refusal (a ValidationError, exit 1, like the switch
+// layer's own refusal), and the caller must not switch. Anything it cannot
+// resolve (an unknown identifier, a store error) is left to the switch itself
+// to report, so error messages stay in one place. The account already in use
+// is not asked about (unless force): the switch reports it as already active.
 //
 // --json is never prompted, since a machine-readable run has no one to ask:
-// --yes approves it, and without --yes the switch layer refuses the target
-// with its approval error. Without --json and without a terminal, the prompt
-// refuses and names --yes, the flag that exists to answer it.
-func confirmSwitchToAPIKey(out io.Writer, identifier string, sw *core.Switcher, jsonOut, assumeYes bool) (stop bool) {
+// --yes approves it, as everywhere else, and without --yes the switch layer
+// refuses the target with its approval error. Without --json, stdin that is
+// not a terminal is refused at once and the error names --yes, the flag that
+// exists to answer it.
+func confirmSwitchToAPIKey(out io.Writer, identifier string, sw *core.Switcher, jsonOut, assumeYes, force bool) error {
 	num, _, _, err := sw.Store.ResolveAccount(identifier)
 	if err != nil || num == "" || sw.Store.AccountKindFor(num) != "api_key" {
-		return false
+		return nil
+	}
+	if !force && !assumeYes && activeSlot(sw) == num {
+		return nil
 	}
 	if jsonOut {
 		if assumeYes {
 			switching.ApproveAPIKeySwitch(num)
 		}
-		return false
+		return nil
 	}
-	if confirmAuthModeChange(out,
+	switch confirmAuthModeChange(out,
 		"Switch to API-key account #"+num+"?",
 		"An API-key account authenticates with a key instead of a subscription login, and its usage is billed per token.",
 		assumeYes) {
+	case authModeApproved:
 		switching.ApproveAPIKeySwitch(num)
-		return false
+		return nil
+	case authModeNotATerminal:
+		return cerr.Validation("Not a terminal — rerun with --yes to confirm the switch to API-key account #%s.", num)
+	default:
+		return cerr.Validation("Cancelled: not switched to API-key account #%s.", num)
 	}
-	fmt.Fprintln(out, "Cancelled.")
-	return true
+}
+
+// activeSlot is the slot the live login belongs to, or "".
+func activeSlot(sw *core.Switcher) string {
+	email, orgUUID, ok := sw.Store.GetCurrentAccount()
+	if !ok {
+		return ""
+	}
+	data, _ := sw.Store.ReadSequence()
+	if data == nil {
+		return ""
+	}
+	return sw.Store.FindAccountSlot(data, email, orgUUID)
 }

@@ -4,7 +4,10 @@
 package switching
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -36,7 +39,7 @@ func TestApprovalIsSingleUseAndPerAccount(t *testing.T) {
 // the running sessions.
 func TestRefusalNamesTheRestart(t *testing.T) {
 	msg := ErrAPIKeyNeedsApproval("7").Error()
-	for _, want := range []string{"Account-7", "API key", "restart", "Confirm"} {
+	for _, want := range []string{"Account-7", "API key", "restart", "Confirm", "`tycswap switch 7`"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("message %q lacks %q", msg, want)
 		}
@@ -176,4 +179,146 @@ func TestRotationWithOnlyAnAPIKeyLeftSwitchesNowhere(t *testing.T) {
 		t.Errorf("Switch = %v, want no switch for want of a valid target", m)
 	}
 	assertSeatUnchanged(t, s, before)
+}
+
+// TestAnApprovalIsUsedUpByTheSwitchItWasGivenFor: an approval recorded for a
+// subscription slot is consumed by the switch it was given for, so it cannot
+// later let a switch onto an API-key account put into that slot through
+// unasked (remove, then add-token into the same slot).
+func TestAnApprovalIsUsedUpByTheSwitchItWasGivenFor(t *testing.T) {
+	s := newTestStore(t, nil)
+	approvalSeat(t, s)
+	ApproveAPIKeySwitch("3") // slot 3 is a subscription account
+	if _, err := SwitchTo(s, "3", true, false); err != nil {
+		t.Fatalf("SwitchTo(3): %v", err)
+	}
+	if takeApproval("3") {
+		t.Fatal("the approval for #3 survived the switch it was given for")
+	}
+
+	// The same holds when the switch writes nothing: the already-active
+	// short-circuit consumes it too.
+	ApproveAPIKeySwitch("3")
+	if _, err := SwitchTo(s, "3", true, false); err != nil {
+		t.Fatalf("SwitchTo(3) onto the active slot: %v", err)
+	}
+	if takeApproval("3") {
+		t.Fatal("the approval for #3 survived an already-active switch")
+	}
+
+	// Slot 3 is then removed and an API key added in its place: a switch
+	// onto it is refused, since no approval was left behind.
+	if _, err := SwitchTo(s, "1", true, false); err != nil {
+		t.Fatalf("SwitchTo(1): %v", err)
+	}
+	data, err := s.ReadSequence()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data.Accounts["3"] = record(map[string]any{"email": "key-3@token.local", "organizationUuid": "", "kind": "api_key"})
+	writeSeq(t, s, data)
+	seedBackup(t, s, "3", "key-3@token.local", apiKeySeatKey, "")
+	if _, err := SwitchTo(s, "3", true, false); err == nil || err.Error() != ErrAPIKeyNeedsApproval("3").Error() {
+		t.Fatalf("SwitchTo(3) onto the new API key = %v, want the approval refusal", err)
+	}
+}
+
+// TestSwitchToTheActiveAPIKeyAccountIsAlreadyOn: the API-key account already in
+// use is reported as such, with no approval and nothing written; --force still
+// needs one.
+func TestSwitchToTheActiveAPIKeyAccountIsAlreadyOn(t *testing.T) {
+	s := newTestStore(t, nil)
+	approvalSeat(t, s)
+	ApproveAPIKeySwitch("2")
+	if _, err := SwitchTo(s, "2", true, false); err != nil {
+		t.Fatalf("SwitchTo(2): %v", err)
+	}
+	liveBefore := readActiveCreds(t, s)
+	res, err := SwitchTo(s, "2", true, false)
+	if err != nil {
+		t.Fatalf("SwitchTo(2) onto the active API key = %v, want already-active", err)
+	}
+	if m, _ := res.(map[string]any); m["reason"] != "already-active" {
+		t.Errorf("result = %v, want already-active", res)
+	}
+	if got := readActiveCreds(t, s); got != liveBefore || got != apiKeySeatKey {
+		t.Errorf("live credential = %q, want the key untouched", got)
+	}
+	if _, err := SwitchTo(s, "2", true, true); err == nil || err.Error() != ErrAPIKeyNeedsApproval("2").Error() {
+		t.Errorf("SwitchTo(2) --force without an approval = %v, want the approval refusal", err)
+	}
+}
+
+// captureStdout runs fn with os.Stdout redirected and returns what it wrote.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	prev := os.Stdout
+	os.Stdout = w
+	done := make(chan string)
+	go func() {
+		var b bytes.Buffer
+		_, _ = io.Copy(&b, r)
+		done <- b.String()
+	}()
+	defer func() { os.Stdout = prev }()
+	fn()
+	os.Stdout = prev
+	_ = w.Close()
+	return <-done
+}
+
+// TestTheFollowupAfterAnAPIKeySwitchSaysRestart: after a switch onto an
+// API-key account the note says the running sessions need a restart, not
+// "no restart needed"; a switch back to a subscription account keeps the
+// usual note.
+func TestTheFollowupAfterAnAPIKeySwitchSaysRestart(t *testing.T) {
+	s := newTestStore(t, nil)
+	approvalSeat(t, s)
+	ApproveAPIKeySwitch("2")
+	out := captureStdout(t, func() {
+		if _, err := SwitchTo(s, "2", false, false); err != nil {
+			t.Errorf("SwitchTo(2): %v", err)
+		}
+	})
+	if !strings.Contains(out, APIKeyRestartNote) || strings.Contains(out, "no restart needed") {
+		t.Errorf("follow-up onto the API key:\n%s", out)
+	}
+	out = captureStdout(t, func() {
+		if _, err := SwitchTo(s, "1", false, false); err != nil {
+			t.Errorf("SwitchTo(1): %v", err)
+		}
+	})
+	if strings.Contains(out, APIKeyRestartNote) || !strings.Contains(out, "no restart needed") {
+		t.Errorf("follow-up onto the subscription account:\n%s", out)
+	}
+}
+
+// TestTheFreshMachineSkipNamesTheAPIKeyRule: on a machine with no live login
+// the bare switch skips a preferred API-key slot for the approval rule, not
+// for missing credentials, and activates the next subscription account.
+func TestTheFreshMachineSkipNamesTheAPIKeyRule(t *testing.T) {
+	s := newTestStore(t, nil)
+	writeSeq(t, s, seqData(ptrInt(1), []int{1, 2}, map[string]json.RawMessage{
+		"1": record(map[string]any{"email": apiKeySeatEmail, "organizationUuid": "", "kind": "api_key"}),
+		"2": record(map[string]any{"email": "b@x.com", "organizationUuid": ""}),
+	}))
+	seedBackup(t, s, "1", apiKeySeatEmail, apiKeySeatKey, "")
+	seedBackup(t, s, "2", "b@x.com", oauthCreds("acc-b", "ref-b"), "")
+	res, err := Switch(s, nil, true, nil, nil)
+	if err != nil {
+		t.Fatalf("Switch: %v", err)
+	}
+	m, _ := res.(map[string]any)
+	warnings, _ := json.Marshal(m["warnings"])
+	if !strings.Contains(string(warnings), "Skipped Account-1 (API key: switching to it changes how Claude Code authenticates)") ||
+		strings.Contains(string(warnings), "no stored credentials") {
+		t.Errorf("warnings = %s, want the API-key skip reason", warnings)
+	}
+	if to, _ := m["to"].(map[string]any); to["email"] != "b@x.com" {
+		t.Errorf("activated %v, want #2", m["to"])
+	}
 }

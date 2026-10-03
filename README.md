@@ -441,10 +441,12 @@ Switch to API-key account #3? [y/N] y
 Switched to Account-3 (key@example.com)
 ```
 
-`--yes` (`-y`) answers the question for scripts; without a terminal and
-without `--yes` the switch is refused. The bare `switch` and `switch
---strategy` skip API-key accounts, and the TUI and the browser dashboard ask
-before switching to one.
+`--yes` (`-y`) answers the question for scripts. Without a terminal and
+without `--yes` the switch is refused at once, and any answer but `y` cancels
+it; both exit 1. The bare `switch` and `switch --strategy` skip API-key
+accounts. The browser dashboard's *Switch* asks before switching to one; the
+TUI and the dashboard's *Force switch* do not ask and refuse, pointing at
+`tycswap switch <n>`.
 
 ### Run accounts in parallel
 

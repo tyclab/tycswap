@@ -1752,13 +1752,9 @@
     },
     'force-switch': function (btn) {
       var id = btn.getAttribute('data-id');
-      var a = findAccount(id);
-      var apiKey = !!(a && a.kind === 'api_key');
-      var msg = 'Switch to ' + btn.getAttribute('data-name') + ' WITHOUT backing up the current login first? Unsaved changes to the active login are lost.';
-      if (apiKey) { msg += ' ' + API_KEY_SWITCH_NOTE; }
-      return confirmModal('Force switch', msg, 'Force switch').then(function (ok) {
+      return confirmModal('Force switch', 'Switch to ' + btn.getAttribute('data-name') + ' WITHOUT backing up the current login first? Unsaved changes to the active login are lost.', 'Force switch').then(function (ok) {
         if (!ok) { return; }
-        return run(btn, 'Force switch', api('POST', '/api/switch/' + encodeURIComponent(id) + '?force=1' + (apiKey ? '&confirmAuthChange=1' : '')));
+        return run(btn, 'Force switch', api('POST', '/api/switch/' + encodeURIComponent(id) + '?force=1'));
       });
     },
     'alias': function (btn) {

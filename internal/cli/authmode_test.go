@@ -3,10 +3,12 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/lifecycle"
@@ -43,50 +45,76 @@ func withRunningSessions(t *testing.T, n int) {
 	t.Cleanup(func() { runningSessions = prev })
 }
 
-// TestConfirmAuthModeChangeNeedsAnAnswer: an auth-mode change is never made
-// because nobody objected. Without a terminal to answer and without --yes it
-// is refused (DESIGN A33), and the refusal names the flag that answers it.
-func TestConfirmAuthModeChangeNeedsAnAnswer(t *testing.T) {
+func withStdinTerminal(t *testing.T, tty bool) {
+	t.Helper()
+	prev := stdinIsTerminal
+	stdinIsTerminal = func() bool { return tty }
+	t.Cleanup(func() { stdinIsTerminal = prev })
+}
+
+// TestConfirmAuthModeChangeRefusesANonTerminal: an auth-mode change is never
+// made because nobody objected. Stdin that is not a terminal (a pipe, even an
+// open one that never writes) is refused at once, without reading, and
+// without --yes (DESIGN A33). The notice still prints.
+func TestConfirmAuthModeChangeRefusesANonTerminal(t *testing.T) {
 	withRunningSessions(t, 0)
-	fp := &fakePrompter{ok: false} // a non-terminal: no input available
+	withStdinTerminal(t, false)
+	fp := &fakePrompter{answer: "y", ok: true}
 	withPrompter(t, fp)
 	var out bytes.Buffer
-	if confirmAuthModeChange(&out, "Switch to API-key account #3?", "detail", false) {
-		t.Fatal("a non-terminal must not be taken as approval")
+	if got := confirmAuthModeChange(&out, "Switch to API-key account #3?", "detail", false); got != authModeNotATerminal {
+		t.Fatalf("result = %v, want not-a-terminal", got)
 	}
-	if !strings.Contains(out.String(), "rerun with --yes to confirm") {
-		t.Errorf("output = %q, want it to name --yes", out.String())
+	if len(fp.asked) != 0 {
+		t.Errorf("read from a non-terminal: %v", fp.asked)
 	}
 	if !strings.Contains(out.String(), "restart") {
 		t.Errorf("output = %q, want the restart notice", out.String())
 	}
 }
 
-// TestConfirmAuthModeChangeAssumeYesSkipsThePrompt: --yes is that answer. The
-// prompt is skipped, but the notice still prints, so a scripted run leaves the
-// same trace as an interactive one.
+// TestConfirmAuthModeChangeEndOfInputDeclines: on a terminal, end of input
+// (Ctrl-D) is no answer and declines.
+func TestConfirmAuthModeChangeEndOfInputDeclines(t *testing.T) {
+	withRunningSessions(t, 0)
+	withStdinTerminal(t, true)
+	withPrompter(t, &fakePrompter{ok: false})
+	var out bytes.Buffer
+	if got := confirmAuthModeChange(&out, "q?", "detail", false); got != authModeDeclined {
+		t.Fatalf("result = %v, want declined", got)
+	}
+}
+
+// TestConfirmAuthModeChangeAssumeYesSkipsThePrompt: --yes is the answer for
+// scripts. The prompt is skipped, terminal or not, but the notice still
+// prints, so a scripted run leaves the same trace as an interactive one.
 func TestConfirmAuthModeChangeAssumeYesSkipsThePrompt(t *testing.T) {
 	withRunningSessions(t, 0)
-	fp := &fakePrompter{answer: "n", ok: true}
-	withPrompter(t, fp)
-	var out bytes.Buffer
-	if !confirmAuthModeChange(&out, "Switch to API-key account #3?", "detail", true) {
-		t.Fatal("--yes must approve")
-	}
-	if len(fp.asked) != 0 {
-		t.Errorf("prompted despite --yes: %v", fp.asked)
-	}
-	if !strings.Contains(out.String(), "restart") {
-		t.Errorf("output = %q, want the restart notice even with --yes", out.String())
+	for _, tty := range []bool{true, false} {
+		withStdinTerminal(t, tty)
+		fp := &fakePrompter{answer: "n", ok: true}
+		withPrompter(t, fp)
+		var out bytes.Buffer
+		if got := confirmAuthModeChange(&out, "Switch to API-key account #3?", "detail", true); got != authModeApproved {
+			t.Fatalf("terminal=%v: --yes must approve, got %v", tty, got)
+		}
+		if len(fp.asked) != 0 {
+			t.Errorf("terminal=%v: prompted despite --yes: %v", tty, fp.asked)
+		}
+		if !strings.Contains(out.String(), "restart") {
+			t.Errorf("output = %q, want the restart notice even with --yes", out.String())
+		}
 	}
 }
 
 func TestConfirmAuthModeChangeTakesYes(t *testing.T) {
 	withRunningSessions(t, 0)
+	withStdinTerminal(t, true)
 	for _, tc := range []struct {
 		answer string
-		want   bool
-	}{{"y", true}, {"Y", true}, {" y ", true}, {"n", false}, {"", false}, {"yes please", false}} {
+		want   int
+	}{{"y", authModeApproved}, {"Y", authModeApproved}, {" y ", authModeApproved},
+		{"n", authModeDeclined}, {"", authModeDeclined}, {"yes please", authModeDeclined}} {
 		fp := &fakePrompter{answer: tc.answer, ok: true}
 		withPrompter(t, fp)
 		var out bytes.Buffer
@@ -156,36 +184,51 @@ func apiKeySwitcher(t *testing.T) *core.Switcher {
 
 // TestSwitchToAPIKeyAccountAsks: `switch <n>` onto an API-key account asks
 // first, names the running sessions, and only an answer of y (or --yes)
-// records the approval the switch layer needs. --json never asks: --yes
-// approves it, and without --yes the switch is refused.
+// records the approval the switch layer needs; every refusal is an error
+// (exit 1). Stdin that is not a terminal is refused without being read.
+// --json never asks: --yes approves it, and without --yes the switch is
+// refused by the switch layer.
 func TestSwitchToAPIKeyAccountAsks(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
 		prompter        *fakePrompter
+		notTerminal     bool
 		jsonOut, yes    bool
-		wantStop        bool
+		wantErr         string
 		wantAsked       bool
 		wantApproved    bool
 		wantOut, notOut []string
 	}{
 		{name: "answered y", prompter: &fakePrompter{answer: "y", ok: true}, wantAsked: true, wantApproved: true,
 			wantOut: []string{"billed per token", "2 Claude Code sessions are running"}},
-		{name: "answered n", prompter: &fakePrompter{answer: "n", ok: true}, wantAsked: true, wantStop: true,
-			wantOut: []string{"Cancelled."}},
-		{name: "no terminal", prompter: &fakePrompter{ok: false}, wantAsked: true, wantStop: true,
-			wantOut: []string{"Not a terminal — rerun with --yes to confirm.", "Cancelled."}},
+		{name: "answered n", prompter: &fakePrompter{answer: "n", ok: true}, wantAsked: true,
+			wantErr: "Cancelled: not switched to API-key account #3."},
+		{name: "end of input", prompter: &fakePrompter{ok: false}, wantAsked: true,
+			wantErr: "Cancelled: not switched to API-key account #3."},
+		{name: "not a terminal", prompter: &fakePrompter{answer: "y", ok: true}, notTerminal: true,
+			wantErr: "Not a terminal — rerun with --yes to confirm the switch to API-key account #3.",
+			wantOut: []string{"2 Claude Code sessions are running"}},
 		{name: "--yes", prompter: &fakePrompter{answer: "n", ok: true}, yes: true, wantApproved: true,
 			wantOut: []string{"2 Claude Code sessions are running"}},
+		{name: "--yes, not a terminal", prompter: &fakePrompter{answer: "n", ok: true}, notTerminal: true, yes: true, wantApproved: true},
 		{name: "--json", prompter: &fakePrompter{answer: "y", ok: true}, jsonOut: true, notOut: []string{"billed"}},
 		{name: "--json --yes", prompter: &fakePrompter{answer: "n", ok: true}, jsonOut: true, yes: true, wantApproved: true, notOut: []string{"billed"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sw := apiKeySwitcher(t)
 			withRunningSessions(t, 2)
+			withStdinTerminal(t, !tc.notTerminal)
 			withPrompter(t, tc.prompter)
 			var out bytes.Buffer
-			if stop := confirmSwitchToAPIKey(&out, "3", sw, tc.jsonOut, tc.yes); stop != tc.wantStop {
-				t.Fatalf("stop = %v, want %v (output %q)", stop, tc.wantStop, out.String())
+			err := confirmSwitchToAPIKey(&out, "3", sw, tc.jsonOut, tc.yes, false)
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Fatalf("err = %v, want none (output %q)", err, out.String())
+			case tc.wantErr != "":
+				var ce *cerr.Error
+				if !errors.As(err, &ce) || ce.Kind != cerr.KindValidation || err.Error() != tc.wantErr {
+					t.Fatalf("err = %v, want the ValidationError %q", err, tc.wantErr)
+				}
 			}
 			if asked := len(tc.prompter.asked) > 0; asked != tc.wantAsked {
 				t.Errorf("asked = %v (%v), want %v", asked, tc.prompter.asked, tc.wantAsked)
@@ -204,7 +247,7 @@ func TestSwitchToAPIKeyAccountAsks(t *testing.T) {
 				}
 			}
 			// The approval is what lets the switch layer through, once.
-			_, err := sw.SwitchToForce("3", true, false)
+			_, err = sw.SwitchToForce("3", true, false)
 			if (err == nil) != tc.wantApproved {
 				t.Errorf("switch after the prompt: err = %v, want approved=%v", err, tc.wantApproved)
 			}
@@ -215,14 +258,44 @@ func TestSwitchToAPIKeyAccountAsks(t *testing.T) {
 // TestSwitchToASubscriptionAccountNeverAsks: every other switch is unchanged.
 func TestSwitchToASubscriptionAccountNeverAsks(t *testing.T) {
 	sw := apiKeySwitcher(t)
+	withStdinTerminal(t, true)
 	fp := &fakePrompter{answer: "n", ok: true}
 	withPrompter(t, fp)
 	var out bytes.Buffer
-	if confirmSwitchToAPIKey(&out, "2", sw, false, false) || len(fp.asked) != 0 || out.Len() != 0 {
-		t.Errorf("a subscription target was gated: asked %v, output %q", fp.asked, out.String())
+	if err := confirmSwitchToAPIKey(&out, "2", sw, false, false, false); err != nil || len(fp.asked) != 0 || out.Len() != 0 {
+		t.Errorf("a subscription target was gated: err %v, asked %v, output %q", err, fp.asked, out.String())
 	}
-	if confirmSwitchToAPIKey(&out, "nobody@example.com", sw, false, false) || len(fp.asked) != 0 {
+	if err := confirmSwitchToAPIKey(&out, "nobody@example.com", sw, false, false, false); err != nil || len(fp.asked) != 0 {
 		t.Error("an unknown identifier must be left to the switch to report")
+	}
+}
+
+// TestSwitchToTheActiveAPIKeyAccountDoesNotAsk: the API-key account already in
+// use is not asked about; the switch reports it as already active. --force
+// still asks, since it rewrites the live login.
+func TestSwitchToTheActiveAPIKeyAccountDoesNotAsk(t *testing.T) {
+	sw := apiKeySwitcher(t)
+	withRunningSessions(t, 0)
+	withStdinTerminal(t, true)
+	withPrompter(t, &fakePrompter{answer: "y", ok: true})
+	var out bytes.Buffer
+	if err := confirmSwitchToAPIKey(&out, "3", sw, false, false, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sw.SwitchToForce("3", true, false); err != nil {
+		t.Fatalf("switch onto #3: %v", err)
+	}
+	fp := &fakePrompter{answer: "n", ok: true}
+	withPrompter(t, fp)
+	if err := confirmSwitchToAPIKey(&out, "3", sw, false, false, false); err != nil || len(fp.asked) != 0 {
+		t.Fatalf("the active API key was asked about: err %v, asked %v", err, fp.asked)
+	}
+	res, err := sw.SwitchToForce("3", true, false)
+	if err != nil || res["reason"] != "already-active" {
+		t.Errorf("switch onto the active API key = %v, %v, want already-active", res, err)
+	}
+	if err := confirmSwitchToAPIKey(&out, "3", sw, false, false, true); err == nil || len(fp.asked) != 1 {
+		t.Errorf("--force onto the active API key: err %v, asked %v; want asked and declined", err, fp.asked)
 	}
 }
 
@@ -241,6 +314,13 @@ func TestSwitchJSONOntoAnAPIKeyEndToEnd(t *testing.T) {
 	geteuid = func() int { return 1000 }
 	t.Cleanup(func() { geteuid = geteuidPrev })
 	withPrompter(t, &fakePrompter{answer: "y", ok: true})
+	withStdinTerminal(t, false)
+
+	// Not a terminal: refused at once, exit 1, nothing switched.
+	code, _, errStr := runCLI(t, []string{"switch", "3"}, false, false)
+	if code != 1 || !strings.Contains(errStr, "Not a terminal — rerun with --yes") {
+		t.Fatalf("switch 3 without a terminal: exit %d, stderr %q", code, errStr)
+	}
 
 	code, out, _ := runCLI(t, []string{"switch", "3", "--json"}, false, false)
 	if code != 1 {
@@ -254,7 +334,7 @@ func TestSwitchJSONOntoAnAPIKeyEndToEnd(t *testing.T) {
 		t.Errorf("error envelope = %v, want the approval refusal", env)
 	}
 
-	code, out, errStr := runCLI(t, []string{"switch", "3", "--json", "--yes"}, false, false)
+	code, out, errStr = runCLI(t, []string{"switch", "3", "--json", "--yes"}, false, false)
 	if code != 0 {
 		t.Fatalf("switch 3 --json --yes: exit %d (stdout %q, stderr %q)", code, out, errStr)
 	}

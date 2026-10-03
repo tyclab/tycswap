@@ -365,17 +365,23 @@ Switching onto an **API-key account** is the one switch that asks first
 token, and a Claude Code session that is already running keeps its current
 login until it is restarted, so the prompt says what changes, how many Claude
 Code sessions are running, and waits for `y` (`Switch to API-key account #<n>?
-[y/N]`). `--yes` answers it for scripts and still prints the notice. Without a
-terminal and without `--yes` the switch is refused with `Not a terminal —
-rerun with --yes to confirm.` and `Cancelled.`, and exits 0 without switching;
-an answer other than `y` prints `Cancelled.` the same way. `--json` never
-prompts: with `--yes` it switches, without it the switch is refused with the
-error below. The rule sits in the switch itself, so every other way onto an
-API-key account asks too (the TUI and the dashboard confirm first), and the
-bare rotation and `--strategy` never land on one: they skip it with `Skipping
-Account-<n> (API key — switch to it by hand if you mean to)`, or the `--json`
-warning `Skipped Account-<n> (API key: switching to it changes how Claude Code
-authenticates)`. Every other switch is unaffected.
+[y/N]`). `--yes` answers it for scripts and still prints the notice. When
+stdin is not a terminal and `--yes` is not given, the switch is refused at
+once, without reading, with `Not a terminal — rerun with --yes to confirm the
+switch to API-key account #<n>.`; an answer other than `y` (end of input
+included) is `Cancelled: not switched to API-key account #<n>.` Both are
+errors and exit 1. `--json` never prompts: with `--yes` it switches, without
+it the switch is refused with the error below. The account already in use is
+not asked about (`Already on`) unless `--force` is given. The rule sits in the
+switch itself: the dashboard's *Switch* asks first, while the TUI and the
+dashboard's *Force switch* do not ask and are refused with the error below,
+which points here. The bare rotation and `--strategy` never land on an API-key
+account: they skip it with `Skipping Account-<n> (API key — switch to it by
+hand if you mean to)`, or the `--json` warning `Skipped Account-<n> (API key:
+switching to it changes how Claude Code authenticates)`. After a switch onto
+an API-key account the follow-up note says `Restart your Claude Code sessions:
+one that is already running keeps its previous login until it is restarted.`
+Every other switch is unaffected.
 
 A switch onto a subscription account never requires restarting Claude Code to
 be correct; the post-switch note is informational (see NOTES). The switch
@@ -456,7 +462,9 @@ A `<ref>` is `{"number": <int|null>, "email": "<string>"}`. `switched` is
 | `--model can only be used with 'switch --strategy best' or 'switch --strategy next-available'` | usage, exit 2 |
 | `--force can only be used with 'import' or 'switch <num\|email>'` | usage, exit 2 |
 | `--yes can only be used with 'switch <num\|email>'` | usage, exit 2 |
-| `Account-<n> authenticates with an API key. Switching to it changes how Claude Code authenticates, and every Claude Code session that is already running keeps its current login until you restart it. Confirm the switch to go ahead.` | `ValidationError`, exit 1: a switch onto an API-key account without an approval (`--json` without `--yes`) |
+| ``Account-<n> authenticates with an API key. Switching to it changes how Claude Code authenticates, and every Claude Code session that is already running keeps its current login until you restart it. Confirm the switch to go ahead: `tycswap switch <n>` asks first.`` | `ValidationError`, exit 1: a switch onto an API-key account without an approval (`--json` without `--yes`) |
+| `Not a terminal — rerun with --yes to confirm the switch to API-key account #<n>.` | `ValidationError`, exit 1: stdin is not a terminal and `--yes` was not given |
+| `Cancelled: not switched to API-key account #<n>.` | `ValidationError`, exit 1: the prompt was answered with anything but `y` |
 
 ### Example
 
@@ -1827,12 +1835,9 @@ to default, `esc` back (`enter` save and `esc` cancel while a value is being
 typed).
 
 A switch onto an API-key account (from the switch screen, the watch screen or
-an account's menu) opens a confirmation first (DESIGN A33): `Switch to API-key
-account <n> (<email>)?`, that it authenticates with a key billed per token,
-and how many Claude Code sessions are running and keep their current login
-until restarted. *Cancel* has the focus; `y`, or `enter` on *Switch*, switches.
-If the row is no longer that API-key account when the answer comes, nothing is
-switched and a warning says what the slot holds now.
+an account's menu) is not asked about here: the switch is refused without an
+approval and the failure shows why (DESIGN A33), naming `tycswap switch <n>`,
+which asks first.
 
 The Settings screen (`c`, or the menu's "Settings…" row) shows every key of
 `settings.json` (see [SETTINGS](#settings)) under its section, with its
@@ -2387,12 +2392,14 @@ tabs:
   strategy switch (`best`, `next-available`), *Add current login* as the
   Accounts card's main button, *Add token* (a setup-token or API key; it is
   sent once and never shown or logged), and an optional *Token status*
-  column. *Switch* or *Force switch* onto an API-key account asks first,
-  saying that it changes how Claude Code authenticates, is billed per token,
-  and that running sessions keep their old login until restarted; the
-  request then carries `confirmAuthChange=1`. While an API-key account is
-  active a red notice says auto-switch leaves it alone. When Claude Code is signed in with an account that is not stored
-  yet, a callout above the table names it and offers *Add current login*;
+  column. *Switch* onto an API-key account asks first, saying that it changes
+  how Claude Code authenticates, is billed per token, and that running
+  sessions keep their old login until restarted; the request then carries
+  `confirmAuthChange=1`. *Force switch* does not ask that and is refused for an
+  API-key account. While an API-key account is active a red notice says
+  auto-switch leaves it alone. When Claude Code is signed in with an account
+  that is not stored yet, a callout above the table names it and offers
+  *Add current login*;
   a line under the table says how to add another account and warns against
   `/logout`. Above the accounts, a notice names any authentication override
   that makes Claude Code ignore the stored login: `ANTHROPIC_API_KEY`,
@@ -4242,13 +4249,13 @@ Every key, with its type, range, default, and meaning:
 
 Reads are forgiving: a missing file, a bad type, or an out-of-range value
 degrades to the (clamped) default without error, and a key tycswap does not
-know is ignored on read and kept by every write. `autoswitch.includeApiKeyAccounts`
-is such a key since DESIGN A33 removed it: a file that still carries it loads
-as if it did not, and `config set`, `get` and `unset` refuse it as an unknown
-setting. `autoswitch.threshold`, the single bar before DESIGN A34, is no key
-either, but it still counts: a file that carries it seeds
-`autoswitch.sevenDayThreshold` (the new key wins where both are present),
-`config` reports the 7d bar as set, and `config unset
+know is ignored on read and kept by every write.
+`autoswitch.includeApiKeyAccounts` is such a key since DESIGN A33 removed it:
+a file that still carries it loads as if it did not, and `config set`, `get`
+and `unset` refuse it as an unknown setting. `autoswitch.threshold`, the
+single bar before DESIGN A34, is no key either, but it still counts: a file
+that carries it seeds `autoswitch.sevenDayThreshold` (the new key wins where
+both are present), `config` reports the 7d bar as set, and `config unset
 autoswitch.sevenDayThreshold` removes both keys. Writes via `tycswap config set`
 are strict: an out-of-range or mistyped value is rejected with a `ConfigError`.
 A whole-number float is stored and shown without a fractional part

@@ -63,7 +63,7 @@ Frozen dataclass; defaults and CLI/`settings.json` bounds:
 | `cooldown_seconds` | `cooldownSeconds` | `300.0` | float | `0.0 … 86400.0` |
 | `hysteresis_pct` | `hysteresisPct` | `10.0` | float | `0.0 … 50.0` |
 | `strategy` | `strategy` | `"best"` | choice | only `"best"` in v1. Go: `"best"` or `"soonest-reset"` (DESIGN A17), default `"soonest-reset"` (DESIGN A32) |
-| `include_api_key_accounts` | `includeApiKeyAccounts` | `False` | bool | — |
+| `include_api_key_accounts` | `includeApiKeyAccounts` | `False` | bool | — Go: removed; a file that still has it loads as without it (DESIGN A33) |
 | `unhealthy_ticks` | `unhealthyTicks` | `3` | int | `1 … 100` |
 | `model` | `model` | `None` | string | comma-separated names, or `"all"`, or unset |
 
@@ -79,7 +79,8 @@ Frozen dataclass; defaults and CLI/`settings.json` bounds:
 - CLI overrides (`merged_with_cli`): `--threshold`→threshold,
   `--interval`→interval_seconds, `--cooldown`→cooldown_seconds,
   `--include-api-key-accounts`→include_api_key_accounts, `--model`→model. Only
-  non-`None` overrides applied, then re-clamped.
+  non-`None` overrides applied, then re-clamped. Go: `--include-api-key-accounts`
+  is removed with its setting (DESIGN A33).
 
 ---
 
@@ -286,7 +287,8 @@ return `ERROR`. **`tick()` never raises.**
 7. If `not self._model_check_done`: run `_check_model_names(quarantined, usage)` (§11).
 8. If active is an api-key account **and** `not include_api_key_accounts`:
    emit `NoSwitchEvent("active-api-key", "API-key accounts have no quota to watch")`,
-   return `NO_ACTION`.
+   return `NO_ACTION`. Go: always for an active api-key account; the setting is
+   removed (DESIGN A33).
 9. `active_headroom = headroom.get(current)`.
    - **If known (not None):** reset `_unhealthy_ticks = 0`, `_idle_hold_since = None`.
      `utilization = 100.0 - active_headroom`.
@@ -442,6 +444,10 @@ ordered = [num for _, num in qualifying]
 if not ordered and api_key_candidates:
     ordered = api_key_candidates       # last resort (unmeasurable headroom)
 ```
+
+Go: removed: there are no api-key candidates and no last resort; an api-key
+account is never a target, and `no-candidates` means no oauth candidate
+(DESIGN A33).
 
 ### The hysteresis rule (verbatim from source comment)
 
@@ -680,10 +686,13 @@ return interval * (0.9 + 0.2 * random.random())            # ±10% jitter
 
 - **Active api-key account** (`account_kind_for(current) == "api_key"`) and
   `include_api_key_accounts` False → `NoSwitchEvent("active-api-key")`, `NO_ACTION`.
+  Go: whatever the (removed) setting (DESIGN A33).
 - **API-key candidates** are excluded unless `include_api_key_accounts`; when
   included they are only a **last resort** (`ordered = api_key_candidates` only
   when no oauth candidate qualified). They have unmeasurable headroom and are
   never refreshed (`_freshen_target` returns `"ok"` immediately for api_key).
+  Go: removed: api-key accounts are never candidates, and
+  `switchable_account_numbers()` excludes them (DESIGN A33).
 - **Disabled accounts** (`tycswap disable`): excluded by
   `switchable_account_numbers()` (which filters `_account_is_switchable` and
   `disabled`). They never appear as candidates and never consume a poll slot. A
@@ -725,7 +734,8 @@ empty. When a model filter is configured:
 
 - Flags: `--once`, `--json`, `--interval SECONDS`, `--threshold PCT`,
   `--cooldown SECONDS`, `--model NAMES`,
-  `--include-api-key-accounts` (`BooleanOptionalAction`, default `None`),
+  `--include-api-key-accounts` (`BooleanOptionalAction`, default `None`)
+  (Go: removed, DESIGN A33),
   `--dry-run`, `--debug`. `auto` must be the **first** argument (pre-dispatched).
 - Settings = `merged_with_cli(load_settings(switcher.backup_dir), args)`.
 - Root guard (non-Windows): `os.geteuid() == 0 and not _is_running_in_container()`
@@ -828,6 +838,8 @@ empty. When a model filter is configured:
     not against 99.9.
 23. **API-key accounts** (`TestApiKeyAccounts`): excluded by default; last-resort
     when included; used when all oauth exhausted; an active api-key idles the engine.
+    Go: never a target, at the limit or not, and an active one idles the engine
+    (`internal/autoswitch/apikey_test.go`, DESIGN A33).
 24. **Freshening** (`TestFreshening`): near-expiry target is refreshed and the
     rotated token ends up live after the switch; a fresh target is not refreshed
     (`mock_refresh.assert_not_called()`); `invalid_grant` quarantines then tries the

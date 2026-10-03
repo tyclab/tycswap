@@ -312,7 +312,7 @@
       <article class="card guide-section" id="g-switch">
         <h2>Switching by hand</h2>
         <ul>
-          <li><strong>Switch</strong> in an account's row makes that account active at once, whatever its windows say. <strong>Force switch</strong> in the row menu skips the backup of the current login first. A switch onto an API-key account asks first: it changes how Claude Code authenticates, and running sessions keep their old login until restarted.</li>
+          <li><strong>Switch</strong> in an account's row makes that account active at once, whatever its windows say. <strong>Force switch</strong> in the row menu skips the backup of the current login first. A switch onto an API-key account asks first: it changes how Claude Code authenticates, and running sessions keep their old login until restarted. <strong>Force switch</strong> does not ask that and is refused for an API-key account.</li>
           <li><strong>Best</strong> (the strategy control on the Dashboard) switches to the account with the most headroom; <strong>Next available</strong> goes to the next slot in order that is not at limit. Neither ever picks a disabled account or an API-key account.</li>
           <li><strong>Disable</strong> an account to keep it stored but out of every rotation; a shared account you only want on demand, say. <strong>Enable</strong> brings it back.</li>
           <li><strong>Move / Swap</strong> renumbers slots; <strong>Remove</strong> deletes the stored copy (your Claude login itself is untouched).</li>
