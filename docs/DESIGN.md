@@ -3296,7 +3296,7 @@ ticking once at launch and then every interval, stopped when the loop returns,
 so the Claude engine gains no hook and no failure mode, and a slow Codex fetch
 never delays a Claude switch. `autoswitch.codexEnabled` (default true) and
 `autoswitch.codexThreshold` (0–99.9, 0 inherits the effective Claude threshold;
-since A34, 0 judges each Codex window against the Claude bar for it) tune it; the hysteresis margin is the Claude `autoswitch.hysteresisPct`, and
+since A34, the 7d bar) tune it; the hysteresis margin is the Claude `autoswitch.hysteresisPct`, and
 `tycswap auto` gains no flag. A Codex event is printed only when the tick
 switched or errored, or on every tick under `--dry-run`, in the Claude events'
 format: the `HH:MM:SS` prefix and kind colouring for humans, and
@@ -4622,40 +4622,47 @@ usage-bar tick follow it. The other two bars are settings.
   running: 5h 85% · 7d 97% · model 95%, every 60s`), its help says each
   window has its own bar, and `tycswap config` lists the three keys.
 
-**Codex.** The Codex engine reads `five_hour` and `seven_day` from the same
-usage shape, so it applies the same mechanism with the two bars that fit its
-windows (`codexauto.Bars`): the costlier window over its bar decides (the week
-first), a candidate is judged on that window (or on its week when it reports
-no such window) against its bar and the hysteresis margin, a spent week is
-never a target, and the most weekly room wins. With
-`autoswitch.codexThreshold` at 0 the bars are the Claude 5h and 7d bars; a
-non-zero value is one bar for both Codex windows (`codexauto.SingleBar`), as
-before. The tick details name the window (`switched 1 (5h 95%) -> 3 (5h
-10%)`, `account 1 at 7d 96% (below its 97% bar)`).
+**Codex.** The Codex engine keeps its single-threshold decision unchanged: the
+worse of an account's 5h and weekly windows against one bar, and a candidate
+at or over that bar is never a target. Only the bar's source changes, since
+`autoswitch.threshold` is gone: `autoswitch.codexThreshold` when it is set
+(not 0), else the effective Claude 7d bar (`cli.codexThreshold`). The 7d bar
+is the one a pre-A34 `autoswitch.threshold` seeds, so a migrated settings file
+keeps its Codex behaviour; on a fresh install the Codex bar moves from 90 to
+97 with the 7d default. A bar of 100, reachable through the 7d bar, means the
+Codex engine moves only off an account at its limit; the engine applies no
+clamp of its own, and the 0–99.9 range of `codexThreshold` itself is
+unchanged. Judging the Codex windows per class, as the Claude engine now does,
+would be a separate change.
 
-**Tests.** `internal/autoswitch` (`classes_test.go`): a 5h window under its own
-bar does not switch and the line names it; the 7d window over its bar
+**Tests.** `internal/autoswitch` (`classes_test.go`): a 5h window under its
+own bar does not switch and the line names it; the 7d window over its bar
 switches; the 5h window over its own bar switches; the model bar applies only
 while counted, with `axis` `model`; a 5h-driven move does not land on a nearly
-spent week; `best` ranks by the weekly axis; the costliest hot window names
-the move; the axis reaches the event's JSON and human line; the axes split as
-documented (`TestHeadroomByClassSplitsTheAxes`); a model-driven move accepts a
-candidate without that window; poll cadence keys on the lowest bar in force and
-`ApplyThreshold` moves the 7d bar only. The existing engine tests drive the
-week instead of the 5h window where they meant the old single bar.
-`internal/settings`: the three defaults and ranges, the per-bar CLI overrides
-and their clamping, the legacy key seeding the 7d bar (and losing to the new
-key), `EffectiveSettings` reporting it as set, and unsetting the 7d bar
-dropping the legacy key. `internal/oauth`: `ClassPcts`. `internal/reporting`:
-`resolvePollInputs` returns the lowest bar in force. `internal/codex/autoswitch`:
-each Codex window against its own bar, the week naming the move, never a spent
-week, ranking by weekly room, a candidate without the triggering window, and
-the single bar from `codexThreshold`. `internal/cli`: the three `auto` flags
-parse and refuse a non-number, `--threshold` is unrecognized, the help names
-them, `config` and the web facades show the 7d bar seeded from the fixture's
-legacy key, and the slider's bounds are 50–100. `internal/tui`: the panel
-judges each window against its own bar and ranks by weekly room, the summary
-names every bar and the session mark, the `t` adjustment moves the 7d bar, and
-the Settings screen edits the new keys. `internal/web`: the slider route's
-bounds and the settings notes.
+spent week; `best` ranks by the weekly axis, with a fixture where the weekly
+and the fullest-window orders disagree; the hysteresis margin is measured on
+the deciding window, with a candidate that beats the active account there but
+not on its fullest window; the costliest hot window names the move; the axis
+reaches the event's JSON and human line, and is empty under `failover`; the
+axes split as documented (`TestHeadroomByClassSplitsTheAxes`); a model-driven
+move accepts a candidate without that window; poll cadence keys on the lowest
+bar in force and `ApplyThreshold` moves the 7d bar only. The existing engine
+tests drive the week instead of the 5h window where they meant the old single
+bar. `internal/settings`: the three defaults and ranges, the per-bar CLI
+overrides and their clamping, the legacy key seeding the 7d bar (and losing to
+the new key), `EffectiveSettings` reporting it as set, and unsetting the 7d
+bar dropping the legacy key. `internal/oauth`: `ClassPcts`.
+`internal/reporting`: `resolvePollInputs` returns the lowest bar in force.
+`internal/codex/autoswitch`: a candidate at its 5h limit is never a target,
+with the 7d bar or a `codexThreshold` as the bar, and a bar of 100 moves only
+off an account at its limit. `internal/cli`: the Codex bar is
+`codexThreshold`, else the 7d bar; the three `auto` flags parse and refuse a
+non-number, `--threshold` is unrecognized, the help names them, `config` and
+the web facades show the 7d bar seeded from the fixture's legacy key, and the
+slider's bounds are 50–100. `internal/tui`: the panel judges each window
+against its own bar and ranks by weekly room, the summary names every bar and
+the session mark, the `t` adjustment moves the 7d bar, and the Settings screen
+edits the new keys. `internal/web`: the slider route's bounds and the settings
+notes. The dashboard's ranking script has no committed test (the repository
+has no JavaScript harness).
 

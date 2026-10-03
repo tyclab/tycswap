@@ -58,7 +58,7 @@ Frozen dataclass; defaults and CLI/`settings.json` bounds:
 
 | Field | JSON key (`autoswitch.*`) | Default | Kind | Bounds/choices |
 |---|---|---|---|---|
-| `threshold` | `threshold` | `90.0` | float | `50.0 … 99.9` |
+| `threshold` | `threshold` | `90.0` | float | `50.0 … 99.9`. Go: three bars, `fiveHourThreshold` 85, `sevenDayThreshold` 97, `modelThreshold` 95, each `50.0 … 100.0`; a legacy `threshold` seeds the 7d bar (DESIGN A34) |
 | `interval_seconds` | `intervalSeconds` | `60.0` | float | `15.0 … 3600.0` |
 | `cooldown_seconds` | `cooldownSeconds` | `300.0` | float | `0.0 … 86400.0` |
 | `hysteresis_pct` | `hysteresisPct` | `10.0` | float | `0.0 … 50.0` |
@@ -76,7 +76,9 @@ Frozen dataclass; defaults and CLI/`settings.json` bounds:
 - `parse_model_names(value)` splits on `,`, trims each, dedupes
   case-insensitively (**first spelling wins**), returns a `tuple[str, ...]`;
   empty/`None` → `()`.
-- CLI overrides (`merged_with_cli`): `--threshold`→threshold,
+- CLI overrides (`merged_with_cli`): `--threshold`→threshold (Go:
+  `--five-hour-threshold`, `--seven-day-threshold`, `--model-threshold`, one
+  per bar, DESIGN A34),
   `--interval`→interval_seconds, `--cooldown`→cooldown_seconds,
   `--include-api-key-accounts`→include_api_key_accounts, `--model`→model. Only
   non-`None` overrides applied, then re-clamped. Go: `--include-api-key-accounts`
@@ -296,6 +298,9 @@ return `ERROR`. **`tick()` never raises.**
        `NoSwitchEvent("below-threshold", f"{pct_label(utilization)}% < {pct_label(threshold)}%")`,
        return `NO_ACTION`.
      - Else `trigger = "at-limit" if active_headroom <= 0 else "proactive"`.
+     - Go: each window against its own bar; the costliest window over its bar
+       (7d, model, 5h) decides and names the move, and `below-threshold` names
+       the window closest to its bar (`7d 50% < 97%`) (DESIGN A34).
    - **If unknown (None):** see §7 (idle-hold + unhealthy counting). Either
      returns `NO_ACTION` early, or sets `trigger = "failover"`.
 10. **Cooldown gate (proactive only):** if `trigger == "proactive"` and
@@ -356,12 +361,15 @@ counter and holds; a plain `None` increments it. A healthy reading resets both
   when `model="Fable"` → the engine leaves it even though session windows have
   room. The most-Fable-headroom candidate wins (`test_model_maxed_switches_despite_session_headroom`).
 - `threshold` is compared against `utilization = 100 - active_headroom`; switch
-  when `utilization >= threshold`.
+  when `utilization >= threshold`. Go: per window, each against its own bar
+  (DESIGN A34).
 - **`apply_threshold(threshold)`** (TUI session override): atomically swaps
   `self.settings = replace(self.settings, threshold=...)` and calls
   `switcher.set_poll_policy_inputs(threshold, self._models)`. **Threshold only** —
   the model axes are fixed at construction. Each tick snapshots `self.settings`
-  once so a mid-tick threshold change is consistent; no locking needed.
+  once so a mid-tick threshold change is consistent; no locking needed. Go:
+  `ApplyThreshold` moves the 7d bar only, and the poll plan is pinned to the
+  lowest bar in force (DESIGN A34).
 
 ---
 
@@ -436,7 +444,7 @@ for num in oauth_candidates:
     any_known = True
     if h <= 0:                 continue          # candidate itself at its limit
     if trigger == "proactive" and active_headroom is not None:
-        if (100.0 - h) >= settings.threshold:  continue   # would re-trigger next tick
+        if (100.0 - h) >= settings.threshold:  continue   # would re-trigger next tick (Go: on the deciding window, against its bar, A34)
         if h - active_headroom < settings.hysteresis_pct: continue  # not provably better
     qualifying.append((h, num))
 qualifying.sort(key=lambda t: -t[0])   # best headroom first; list order breaks ties
@@ -462,7 +470,9 @@ account is never a target, and `no-candidates` means no oauth candidate
 Two proactive gates, both must pass: **(a)** landing below threshold
 (`(100 - h) < threshold`), and **(b)** better by full margin
 (`h - active_headroom >= hysteresis_pct`). `at-limit` and `failover` apply
-**neither** gate (only `h > 0`).
+**neither** gate (only `h > 0`). Go: both gates are judged on the window that
+decided the move, against its own bar; whatever the trigger a spent week is
+never a target, and `best` ranks by weekly headroom (DESIGN A34).
 
 ### When `ordered` is empty
 
@@ -732,7 +742,9 @@ empty. When a model filter is configured:
 
 ## 19. CLI wiring (`_auto_command`)
 
-- Flags: `--once`, `--json`, `--interval SECONDS`, `--threshold PCT`,
+- Flags: `--once`, `--json`, `--interval SECONDS`, `--threshold PCT` (Go:
+  replaced by `--five-hour-threshold`, `--seven-day-threshold`,
+  `--model-threshold`, DESIGN A34),
   `--cooldown SECONDS`, `--model NAMES`,
   `--include-api-key-accounts` (`BooleanOptionalAction`, default `None`)
   (Go: removed, DESIGN A33),
@@ -742,7 +754,8 @@ empty. When a model filter is configured:
   → `"Error: Do not run this script as root (unless running in a container)"`, exit 1.
 - `--once`: `sys.exit(engine.tick().value)`.
 - Loop mode: install `SIGTERM → engine.stop()`; if not `--json`, print a dimmed
-  banner `"Auto-switch running: threshold {:.0f}%, every {:.0f}s{ (dry-run)?} — Ctrl-C to stop"`;
+  banner `"Auto-switch running: threshold {:.0f}%, every {:.0f}s{ (dry-run)?} — Ctrl-C to stop"`
+  (Go: `5h 85% · 7d 97% · model 95%` in place of the threshold, DESIGN A34);
   `sys.exit(engine.run_loop())` (returns 0).
 - Emit callbacks:
   - `jsonl_emit`: `print(json.dumps(event.to_json()), flush=True)` — **one JSON

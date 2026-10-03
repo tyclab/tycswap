@@ -1430,16 +1430,13 @@ tried is governed by `autoswitch.strategy` — earliest weekly renewal first
 tycswap holds Codex accounts, or an un-imported codex-auth registry exists, `tycswap
 auto` also runs a Codex engine in the same process. It is a second, small
 engine, not a mode of the Claude one: each tick reads every Codex account's
-usage and judges its two windows the way the Claude engine judges its 5h and
-7d windows (DESIGN A34): when one of the active account's windows is at or
-above its own bar (the week first), it switches to the enabled OAuth account
-that is below that bar on that window (or on its week, when it reports no
-such window) and at least `autoswitch.hysteresisPct` below the active account,
-never onto a spent week, preferring the most weekly room. The bars are the
-effective `--five-hour-threshold` / `autoswitch.fiveHourThreshold` and
-`--seven-day-threshold` / `autoswitch.sevenDayThreshold`; a non-zero
-`autoswitch.codexThreshold` is one bar for both Codex windows. An account with
-no measurement is never switched away from. Cooldown, quarantine
+usage and, when the active account's worse window (5h or weekly) is at or above
+the Codex threshold, switches to the enabled OAuth account with the lowest
+worse window that is below the threshold and at least `autoswitch.hysteresisPct`
+below the active account. The Codex threshold is `autoswitch.codexThreshold`,
+or the effective `--seven-day-threshold` / `autoswitch.sevenDayThreshold` when
+that is 0 (DESIGN A34); at 100 it moves only off an account at its limit. An
+account with no measurement is never switched away from. Cooldown, quarantine
 and `--model` apply to Claude only; Codex API-key accounts are never targets,
 as Claude ones are not. `--dry-run` applies to both engines.
 
@@ -1495,10 +1492,9 @@ the Claude events and is coloured the same way (a switch accented, an error in
 yellow, anything else dimmed): `<HH:MM:SS>  codex: <detail>` (`codex:
 <outcome>` when there is no detail), with ` — restart codex (pid <pids>) for it to take effect`
 appended when codex processes are running. `<detail>` is one of `switched <a>
-(<window> <pct>%) -> <b> (<window> <pct>%)`, `would switch <a> (<window> <pct>%)
--> <b> (<window> <pct>%)`, `account <n> at <window> <pct>% (below its <bar>%
-bar)`, `account <n> at <window> <pct>% and no better candidate`, `account <n>
-usage unknown`, `no managed account active`, `no
+(<pct>%) -> <b> (<pct>%)`, `would switch <a> (<pct>%) -> <b> (<pct>%)`, `account
+<n> at <pct>% (below threshold)`, `account <n> at <pct>% and no better
+candidate`, `account <n> usage unknown`, `no managed account active`, `no
 rotatable accounts`, `snapshot failed (<error>)`, or `switch failed: <message>`.
 Under `--json` it is one compact line, `{"schemaVersion": 1, "event": "codex",
 "ts": "<RFC3339 UTC, Z suffix>", "outcome": ..., "detail": ..., "switchedTo":
@@ -4240,7 +4236,7 @@ Every key, with its type, range, default, and meaning:
 | `autoswitch.modelThreshold` | float (percent) | 50–100 | 95 | Switch when a **per-model weekly** window reaches this percent. Weekly too, so also high. Applies only to the windows `autoswitch.model` counts. |
 | `autoswitch.intervalSeconds` | float (seconds) | 15–3600 | 60 | Poll interval for the `tycswap auto` loop. |
 | `autoswitch.codexEnabled` | bool | — | true | Also auto-switch Codex accounts in the `tycswap auto` loop. A no-op without Codex accounts. |
-| `autoswitch.codexThreshold` | float (percent) | 0–99.9 | 0 | Codex-only switch threshold, one bar for both Codex windows; 0 judges the Codex 5h and weekly windows against `autoswitch.fiveHourThreshold` and `autoswitch.sevenDayThreshold`. |
+| `autoswitch.codexThreshold` | float (percent) | 0–99.9 | 0 | Codex-only switch threshold; 0 uses `autoswitch.sevenDayThreshold` (DESIGN A34). |
 | `autoswitch.cooldownSeconds` | float (seconds) | 0–86400 | 300 | Minimum seconds between proactive switches. |
 | `autoswitch.hysteresisPct` | float (percent) | 0–50 | 10 | A switch target must beat the active account by at least this many percent. |
 | `autoswitch.strategy` | choice | `best`, `soonest-reset` | `soonest-reset` | How auto-switch orders qualifying targets: `soonest-reset` (earliest weekly renewal) or `best` (most headroom). See below. |
@@ -4265,10 +4261,10 @@ through the same validation.
 
 **`autoswitch.strategy` ordering.** The strategy governs only the order in
 which already-qualifying candidates are offered to `tycswap auto`; it changes
-none of the qualification gates. Known and positive headroom, the cooldown,
-and quarantine exclusion apply identically under
-both values and for every trigger (`proactive`, `at-limit`, `failover`). The
-threshold-landing and hysteresis checks apply only under the `proactive`
+none of the qualification gates. Known and positive headroom and quarantine
+exclusion apply identically under both values and for every trigger
+(`proactive`, `at-limit`, `failover`). The cooldown, the threshold-landing
+check and the hysteresis check apply only under the `proactive`
 trigger — an `at-limit` or `failover` tick must leave the active account
 regardless, so refusing every imperfect target would strand it — and a
 qualifying candidate reached by either of those two triggers may therefore

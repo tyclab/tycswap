@@ -763,14 +763,11 @@ switch the dashboard warns with the PIDs of any codex sessions still running.
 runs after the Claude one; in the loop the Codex engine ticks at once and then
 every interval. It prints a line only when it switched or failed (every tick
 under `--dry-run`), with the same timestamp prefix as the Claude events, or a
-JSON line with `"event": "codex"` under `--json`. It judges a Codex account's 5h
-and weekly windows each against its own bar, the Claude
-`autoswitch.fiveHourThreshold` and `autoswitch.sevenDayThreshold`, prefers the
-candidate with the most weekly room and never lands on a spent week; it uses
-the Claude `autoswitch.hysteresisPct`, and two settings tune the rest:
+JSON line with `"event": "codex"` under `--json`. It uses the Claude
+`autoswitch.hysteresisPct`, and two settings tune the rest:
 
 ```bash
-tycswap config set autoswitch.codexThreshold 85   # 0 = the 5h and 7d bars
+tycswap config set autoswitch.codexThreshold 85   # 0 = use autoswitch.sevenDayThreshold
 tycswap config set autoswitch.codexEnabled false  # leave Codex out of `tycswap auto`
 ```
 

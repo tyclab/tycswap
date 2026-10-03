@@ -468,7 +468,7 @@ State: `_adjusting: bool`, `_configured_threshold` (mount-time file value — re
 
 `action_threshold_step(delta)` (`←`/`→`, only live while adjusting): 
 ```python
-spec = SETTING_SPECS["autoswitch.threshold"]   # lo=50.0, hi=99.9
+spec = SETTING_SPECS["autoswitch.threshold"]   # lo=50.0, hi=99.9 (Go: the 7d bar, autoswitch.sevenDayThreshold, 50.0-100.0, DESIGN A34)
 value = min(spec.hi, max(spec.lo, self._settings.threshold + delta))
 self._set_threshold(value)
 ```
@@ -1129,7 +1129,7 @@ Two pieces of state are explicitly documented as memory-only, reverted on screen
 | `STALE_OK_S` | `300.0` s | `usage_store.py` — bar-dimming staleness threshold |
 | `SERVE_TTL_S` | `180.0` s | `poll_policy.py` (re-exported via `usage_store`) — `format_age` silence threshold |
 | `WARN_PCT` / `CRIT_PCT` | `70.0` / `90.0` | `theme.py` — severity color bands |
-| autoswitch threshold clamp | `[50.0, 99.9]` | `settings.py` `SETTING_SPECS["autoswitch.threshold"]` |
+| autoswitch threshold clamp | `[50.0, 99.9]` | `settings.py` `SETTING_SPECS["autoswitch.threshold"]`. Go: each bar `[50.0, 100.0]` (DESIGN A34) |
 | `AutoSwitchSettings` defaults | `threshold=90.0, interval_seconds=60.0, cooldown_seconds=300.0, hysteresis_pct=10.0, unhealthy_ticks=3` | `settings.py` |
 | menu bar `REFRESH_CHOICES` | `(30, 60, 300)` s | `menubar.py` |
 | menu bar `AUTO_THRESHOLD_CHOICES` | `(80, 90, 95, 98)` % | `menubar.py` |
