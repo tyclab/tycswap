@@ -1064,11 +1064,12 @@ directory the export points at.
 
 `autoswitch.strategy` (`internal/settings/settings.go` `SettingSpecs`, kind
 `KindChoice`) gains a second choice, `soonest-reset`, alongside the existing
-`best`. Default stays `best` (A32 later makes `soonest-reset` the default); an invalid persisted value still falls back to
-the default via the existing `KindChoice` clamp — no new fallback path. It is
-a deliberate Go-side extension with no Python counterpart: Python's auto-switch
-has no ranking axis beyond most-headroom, so this adds a second one without
-touching the Python-fidelity contract in `docs/port-spec/`.
+`best`. Default stays `best` (A32 later makes `soonest-reset` the default);
+an invalid persisted value still falls back to the default via the existing
+`KindChoice` clamp — no new fallback path. It is a deliberate Go-side
+extension with no Python counterpart: Python's auto-switch has no ranking
+axis beyond most-headroom, so this adds a second one without touching the
+Python-fidelity contract in `docs/port-spec/`.
 
 **Ordering only.** `internal/autoswitch/tick.go` `selectCandidates` changes
 exactly the sort of the already-built `qualifying` slice; it changes no gate.
@@ -4350,14 +4351,17 @@ the key does not decide:
 Settings screen and the dashboard's Settings tab show the new default from the
 same spec, and the TUI's enum control cycles from the effective value. The
 auto-switch screen's summary names the strategy whenever it is not `best`, so
-it now reads `· soonest-reset` on an untouched install. The dashboard's Next
-best ranking falls back to `soonest-reset` when the state document carries no
-strategy, and the Guide describes it as the default.
+it now reads `· soonest-reset` on an untouched install. On the dashboard, the
+Next best ranking and the Auto tab's Strategy tile both fall back to
+`soonest-reset` when the state document carries no strategy (the tile shows
+the running engine's strategy, else the saved one, else this fallback), and
+the Guide describes it as the default.
 
 **Tests.** `internal/settings` (`TestStrategyDefaultIsSoonestReset`): the
-default and the spec agree; a file without the key loads `soonest-reset`; a
-file that sets `best` loads `best`, reports it as set, and is not rewritten by
-the reads; an unknown value falls back to `soonest-reset`
-(`TestLoad_ClampTable`). The TUI tests that pin `best` order set the strategy
-explicitly instead of relying on the default, and the summary test checks the
-segment on a default install.
+default and the spec agree; a file without the key loads `soonest-reset` and
+reports it as not set; a file that sets `best` loads `best` and reports it as
+set; neither file is rewritten by the reads; an unknown value falls back to
+`soonest-reset` (`TestLoad_ClampTable`). The port spec's `Go:` notes (05§2,
+08§8.2, 08§8.3) record the new default and the clamp case. The TUI tests that
+pin `best` order set the strategy explicitly instead of relying on the
+default, and the summary test checks the segment on a default install.
