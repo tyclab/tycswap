@@ -52,10 +52,10 @@ func TestLoad_NonObjectRootGivesDefaults(t *testing.T) {
 
 func TestLoad_PartialSectionFillsDefaults(t *testing.T) {
 	root := t.TempDir()
-	writeSettingsJSON(t, root, `{"schemaVersion":1,"autoswitch":{"threshold":80}}`)
+	writeSettingsJSON(t, root, `{"schemaVersion":1,"autoswitch":{"sevenDayThreshold":80}}`)
 	got := Load(root)
-	if got.Threshold != 80.0 {
-		t.Errorf("Threshold = %v, want 80", got.Threshold)
+	if got.SevenDayThreshold != 80.0 {
+		t.Errorf("SevenDayThreshold = %v, want 80", got.SevenDayThreshold)
 	}
 	if got.IntervalSeconds != Default().IntervalSeconds {
 		t.Errorf("IntervalSeconds = %v, want default %v", got.IntervalSeconds, Default().IntervalSeconds)
@@ -71,16 +71,22 @@ func TestLoad_ClampTable(t *testing.T) {
 		want func(AutoSwitchSettings) bool
 		desc string
 	}{
-		{"threshold_200_clamps_to_99_9", `{"autoswitch":{"threshold":200}}`,
-			func(s AutoSwitchSettings) bool { return s.Threshold == 99.9 }, "threshold=99.9"},
+		{"sevenDayThreshold_200_clamps_to_100", `{"autoswitch":{"sevenDayThreshold":200}}`,
+			func(s AutoSwitchSettings) bool { return s.SevenDayThreshold == 100.0 }, "sevenDayThreshold=100"},
+		{"fiveHourThreshold_10_clamps_to_50", `{"autoswitch":{"fiveHourThreshold":10}}`,
+			func(s AutoSwitchSettings) bool { return s.FiveHourThreshold == 50.0 }, "fiveHourThreshold=50"},
+		{"modelThreshold_101_clamps_to_100", `{"autoswitch":{"modelThreshold":101}}`,
+			func(s AutoSwitchSettings) bool { return s.ModelThreshold == 100.0 }, "modelThreshold=100"},
 		{"intervalSeconds_1_clamps_to_15", `{"autoswitch":{"intervalSeconds":1}}`,
 			func(s AutoSwitchSettings) bool { return s.IntervalSeconds == 15.0 }, "intervalSeconds=15.0"},
 		{"hysteresisPct_neg5_clamps_to_0", `{"autoswitch":{"hysteresisPct":-5}}`,
 			func(s AutoSwitchSettings) bool { return s.HysteresisPct == 0.0 }, "hysteresisPct=0.0"},
 		{"unhealthyTicks_0_clamps_to_1", `{"autoswitch":{"unhealthyTicks":0}}`,
 			func(s AutoSwitchSettings) bool { return s.UnhealthyTicks == 1 }, "unhealthyTicks=1"},
-		{"threshold_bad_type_falls_back_to_default", `{"autoswitch":{"threshold":"high"}}`,
-			func(s AutoSwitchSettings) bool { return s.Threshold == 90.0 }, "threshold=90.0 (default)"},
+		{"sevenDayThreshold_bad_type_falls_back_to_default", `{"autoswitch":{"sevenDayThreshold":"high"}}`,
+			func(s AutoSwitchSettings) bool { return s.SevenDayThreshold == 97.0 }, "sevenDayThreshold=97 (default)"},
+		{"fiveHourThreshold_bad_type_falls_back_to_default", `{"autoswitch":{"fiveHourThreshold":true}}`,
+			func(s AutoSwitchSettings) bool { return s.FiveHourThreshold == 85.0 }, "fiveHourThreshold=85 (default)"},
 		{"strategy_chaos_falls_back_to_soonest_reset", `{"autoswitch":{"strategy":"chaos"}}`,
 			func(s AutoSwitchSettings) bool { return s.Strategy == "soonest-reset" }, "strategy=soonest-reset"},
 		{"model_123_falls_back_to_none", `{"autoswitch":{"model":123}}`,
@@ -113,7 +119,8 @@ func TestLoad_ClampTable(t *testing.T) {
 func TestSave_Roundtrip(t *testing.T) {
 	root := t.TempDir()
 	custom := AutoSwitchSettings{
-		Threshold: 85.0, IntervalSeconds: 60.0, CodexEnabled: false,
+		FiveHourThreshold: 99.0, SevenDayThreshold: 85.0, ModelThreshold: 88.0,
+		IntervalSeconds: 60.0, CodexEnabled: false,
 		CodexThreshold: 75.0, CooldownSeconds: 60.0, HysteresisPct: 10.0, Strategy: "best",
 		UnhealthyTicks: 3, Model: nil,
 	}
@@ -131,10 +138,10 @@ func TestSave_UnknownKeysSurvive(t *testing.T) {
 	writeSettingsJSON(t, root, `{
 		"schemaVersion": 1,
 		"futureSection": {"x": 1},
-		"autoswitch": {"threshold": 80, "futureKnob": true}
+		"autoswitch": {"sevenDayThreshold": 80, "futureKnob": true}
 	}`)
 	custom := Default()
-	custom.Threshold = 70.0
+	custom.SevenDayThreshold = 70.0
 	if err := Save(root, custom); err != nil {
 		t.Fatal(err)
 	}
@@ -155,8 +162,8 @@ func TestSave_UnknownKeysSurvive(t *testing.T) {
 	if autoswitch["futureKnob"] != true {
 		t.Errorf("futureKnob = %v, want true", autoswitch["futureKnob"])
 	}
-	if autoswitch["threshold"] != 70.0 {
-		t.Errorf("threshold = %v, want 70.0", autoswitch["threshold"])
+	if autoswitch["sevenDayThreshold"] != 70.0 {
+		t.Errorf("sevenDayThreshold = %v, want 70.0", autoswitch["sevenDayThreshold"])
 	}
 }
 
@@ -181,7 +188,8 @@ func TestSave_FileMode0600(t *testing.T) {
 
 func TestSettingSpecs_CoversEveryField(t *testing.T) {
 	want := map[string]bool{
-		"Threshold": true, "IntervalSeconds": true, "CodexEnabled": true,
+		"FiveHourThreshold": true, "SevenDayThreshold": true, "ModelThreshold": true,
+		"IntervalSeconds": true, "CodexEnabled": true,
 		"CodexThreshold": true, "CooldownSeconds": true,
 		"HysteresisPct": true, "Strategy": true,
 		"UnhealthyTicks": true, "Model": true,
@@ -209,7 +217,7 @@ func TestSettingSpecs_DefaultsMatchDataclass(t *testing.T) {
 
 func TestSetSetting_WritesMinimalFile(t *testing.T) {
 	root := t.TempDir()
-	value, err := SetSetting(root, "autoswitch.threshold", "80")
+	value, err := SetSetting(root, "autoswitch.sevenDayThreshold", "80")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +232,7 @@ func TestSetSetting_WritesMinimalFile(t *testing.T) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]any{"schemaVersion": 1.0, "autoswitch": map[string]any{"threshold": 80.0}}
+	want := map[string]any{"schemaVersion": 1.0, "autoswitch": map[string]any{"sevenDayThreshold": 80.0}}
 	if !reflect.DeepEqual(raw, want) {
 		t.Errorf("raw = %#v, want %#v", raw, want)
 	}
@@ -237,15 +245,15 @@ func TestSetSetting_WritesMinimalFile(t *testing.T) {
 // single-key write merely preserves must also keep its trailing decimal.
 func TestSetSetting_FloatKeepsTrailingDecimal(t *testing.T) {
 	root := t.TempDir()
-	if _, err := SetSetting(root, "autoswitch.threshold", "80"); err != nil {
+	if _, err := SetSetting(root, "autoswitch.sevenDayThreshold", "80"); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(SettingsPath(root))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(data); !strings.Contains(got, `"threshold": 80.0`) {
-		t.Errorf("settings.json = %s, want it to contain \"threshold\": 80.0", got)
+	if got := string(data); !strings.Contains(got, `"sevenDayThreshold": 80.0`) {
+		t.Errorf("settings.json = %s, want it to contain \"sevenDayThreshold\": 80.0", got)
 	}
 
 	// A subsequent write of a different key must preserve threshold's ".0".
@@ -256,7 +264,7 @@ func TestSetSetting_FloatKeepsTrailingDecimal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(data); !strings.Contains(got, `"threshold": 80.0`) {
+	if got := string(data); !strings.Contains(got, `"sevenDayThreshold": 80.0`) {
 		t.Errorf("after second set, settings.json = %s, want threshold still 80.0", got)
 	}
 }
@@ -278,12 +286,12 @@ func TestSetSetting_IntKindCoercesAndRejectsFloats(t *testing.T) {
 
 func TestSetSetting_RejectsOutOfRangeWithoutWriting(t *testing.T) {
 	root := t.TempDir()
-	_, err := SetSetting(root, "autoswitch.threshold", "200")
+	_, err := SetSetting(root, "autoswitch.sevenDayThreshold", "200")
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	if got := err.Error(); !strings.Contains(got, "between 50 and 99.9") {
-		t.Errorf("error = %q, want it to contain 'between 50 and 99.9'", got)
+	if got := err.Error(); !strings.Contains(got, "between 50 and 100") {
+		t.Errorf("error = %q, want it to contain 'between 50 and 100'", got)
 	}
 	if _, statErr := os.Stat(SettingsPath(root)); !os.IsNotExist(statErr) {
 		t.Error("settings.json should not have been created")
@@ -296,8 +304,8 @@ func TestSetSetting_RejectsOutOfRangeWithoutWriting(t *testing.T) {
 func TestSetSetting_RejectsNaNAsOutOfRange(t *testing.T) {
 	root := t.TempDir()
 	for _, raw := range []string{"NaN", "nan"} {
-		_, err := SetSetting(root, "autoswitch.threshold", raw)
-		if err == nil || !strings.Contains(err.Error(), "must be between 50 and 99.9") {
+		_, err := SetSetting(root, "autoswitch.sevenDayThreshold", raw)
+		if err == nil || !strings.Contains(err.Error(), "must be between 50 and 100") {
 			t.Errorf("SetSetting(%q) err = %v, want the range message", raw, err)
 		}
 	}
@@ -375,8 +383,8 @@ func TestSetSetting_StrategyChoices(t *testing.T) {
 }
 
 // TestDefault_CodexKnobs pins the claude-swap PR #252 defaults: Codex rides in
-// the auto loop unless turned off, and its threshold inherits
-// autoswitch.threshold (0) until set.
+// the auto loop unless turned off, and its threshold is 0 until set: the Codex
+// windows then use the 5h and 7d bars (DESIGN A34).
 func TestDefault_CodexKnobs(t *testing.T) {
 	d := Default()
 	if !d.CodexEnabled {
@@ -390,7 +398,7 @@ func TestDefault_CodexKnobs(t *testing.T) {
 		kind      Kind
 	}{
 		{"autoswitch.codexEnabled", "Also auto-switch Codex accounts in the tycswap auto loop", KindBool},
-		{"autoswitch.codexThreshold", "Codex-only switch threshold (0 = use autoswitch.threshold)", KindFloat},
+		{"autoswitch.codexThreshold", "Codex-only switch threshold for both Codex windows (0 = use the 5h and 7d bars)", KindFloat},
 	} {
 		spec, err := SpecFor(tc.key)
 		if err != nil {
@@ -565,7 +573,7 @@ func TestSetSetting_RejectsBoolWordsStrictly(t *testing.T) {
 func TestSetSetting_OnCorruptFileRaisesAndPreservesIt(t *testing.T) {
 	root := t.TempDir()
 	writeSettingsJSON(t, root, "{not json")
-	_, err := SetSetting(root, "autoswitch.threshold", "80")
+	_, err := SetSetting(root, "autoswitch.sevenDayThreshold", "80")
 	if err == nil || !strings.Contains(err.Error(), "not valid JSON") {
 		t.Errorf("err = %v, want it to mention 'not valid JSON'", err)
 	}
@@ -580,10 +588,10 @@ func TestSetSetting_OnCorruptFileRaisesAndPreservesIt(t *testing.T) {
 
 func TestUnsetSetting_RemovesKeyAndEmptySection(t *testing.T) {
 	root := t.TempDir()
-	if _, err := SetSetting(root, "autoswitch.threshold", "80"); err != nil {
+	if _, err := SetSetting(root, "autoswitch.sevenDayThreshold", "80"); err != nil {
 		t.Fatal(err)
 	}
-	removed, err := UnsetSetting(root, "autoswitch.threshold")
+	removed, err := UnsetSetting(root, "autoswitch.sevenDayThreshold")
 	if err != nil || !removed {
 		t.Fatalf("removed=%v err=%v", removed, err)
 	}
@@ -597,8 +605,8 @@ func TestUnsetSetting_RemovesKeyAndEmptySection(t *testing.T) {
 
 func TestUnsetSetting_StampsSchemaVersionOnUnversionedFile(t *testing.T) {
 	root := t.TempDir()
-	writeSettingsJSON(t, root, `{"autoswitch":{"threshold":80}}`)
-	removed, err := UnsetSetting(root, "autoswitch.threshold")
+	writeSettingsJSON(t, root, `{"autoswitch":{"sevenDayThreshold":80}}`)
+	removed, err := UnsetSetting(root, "autoswitch.sevenDayThreshold")
 	if err != nil || !removed {
 		t.Fatalf("removed=%v err=%v", removed, err)
 	}
@@ -612,7 +620,7 @@ func TestUnsetSetting_StampsSchemaVersionOnUnversionedFile(t *testing.T) {
 
 func TestUnsetSetting_AbsentKeyIsNoop(t *testing.T) {
 	root := t.TempDir()
-	removed, err := UnsetSetting(root, "autoswitch.threshold")
+	removed, err := UnsetSetting(root, "autoswitch.sevenDayThreshold")
 	if err != nil || removed {
 		t.Fatalf("removed=%v err=%v, want false, nil", removed, err)
 	}
@@ -637,15 +645,15 @@ func TestEffectiveSettings_MissingFileReportsAllDefaults(t *testing.T) {
 
 func TestEffectiveSettings_PresenceNotValueEqualityMarksSet(t *testing.T) {
 	root := t.TempDir()
-	if _, err := SetSetting(root, "autoswitch.threshold", "90"); err != nil { // equals default
+	if _, err := SetSetting(root, "autoswitch.sevenDayThreshold", "97"); err != nil { // equals default
 		t.Fatal(err)
 	}
 	byKey := map[string]bool{}
 	for _, r := range EffectiveSettings(root) {
 		byKey[r.Spec.Dotted()] = r.IsSet
 	}
-	if !byKey["autoswitch.threshold"] {
-		t.Error("autoswitch.threshold should be marked set even though it equals the default")
+	if !byKey["autoswitch.sevenDayThreshold"] {
+		t.Error("autoswitch.sevenDayThreshold should be marked set even though it equals the default")
 	}
 	if byKey["autoswitch.intervalSeconds"] {
 		t.Error("autoswitch.intervalSeconds should not be marked set")
@@ -656,7 +664,7 @@ func TestEffectiveSettings_PresenceNotValueEqualityMarksSet(t *testing.T) {
 
 func TestMergedWithCLI_NoFlagsReturnsUnchanged(t *testing.T) {
 	base := Default()
-	base.Threshold = 80.0
+	base.SevenDayThreshold = 80.0
 	got := MergedWithCLI(base, CLIOverrides{})
 	if !reflect.DeepEqual(got, base) {
 		t.Errorf("MergedWithCLI(no overrides) = %+v, want unchanged %+v", got, base)
@@ -665,13 +673,13 @@ func TestMergedWithCLI_NoFlagsReturnsUnchanged(t *testing.T) {
 
 func TestMergedWithCLI_CLIBeatsSettings(t *testing.T) {
 	base := Default()
-	base.Threshold = 80.0
+	base.SevenDayThreshold = 80.0
 	base.CooldownSeconds = 10.0
 	threshold := 60.0
 	interval := 30.0
-	merged := MergedWithCLI(base, CLIOverrides{Threshold: &threshold, IntervalSeconds: &interval})
-	if merged.Threshold != 60.0 {
-		t.Errorf("Threshold = %v, want 60", merged.Threshold)
+	merged := MergedWithCLI(base, CLIOverrides{SevenDayThreshold: &threshold, IntervalSeconds: &interval})
+	if merged.SevenDayThreshold != 60.0 {
+		t.Errorf("SevenDayThreshold = %v, want 60", merged.SevenDayThreshold)
 	}
 	if merged.IntervalSeconds != 30.0 {
 		t.Errorf("IntervalSeconds = %v, want 30", merged.IntervalSeconds)
@@ -688,7 +696,7 @@ func TestMergedWithCLI_PreservesCodexKnobs(t *testing.T) {
 	base.CodexEnabled = false
 	base.CodexThreshold = 70.0
 	threshold := 60.0
-	merged := MergedWithCLI(base, CLIOverrides{Threshold: &threshold})
+	merged := MergedWithCLI(base, CLIOverrides{SevenDayThreshold: &threshold})
 	if merged.CodexEnabled || merged.CodexThreshold != 70.0 {
 		t.Errorf("CodexEnabled=%v CodexThreshold=%v, want false/70", merged.CodexEnabled, merged.CodexThreshold)
 	}
@@ -772,8 +780,8 @@ func TestLoad_PythonFixture(t *testing.T) {
 	writeSettingsJSON(t, root, string(data))
 
 	got := Load(root)
-	if got.Threshold != 80.0 {
-		t.Errorf("Threshold = %v, want 80", got.Threshold)
+	if got.SevenDayThreshold != 80.0 {
+		t.Errorf("SevenDayThreshold = %v, want 80 (seeded by the fixture's legacy threshold key)", got.SevenDayThreshold)
 	}
 	if got.Model == nil || *got.Model != "Fable" {
 		t.Errorf("Model = %v, want Fable", got.Model)
@@ -803,9 +811,131 @@ func TestValuesOf_CoversEverySpec(t *testing.T) {
 	}
 	s := Default()
 	m := "Fable, Opus"
-	s.Model, s.Threshold = &m, 77
+	s.Model, s.SevenDayThreshold = &m, 77
 	got = ValuesOf(s)
-	if got["autoswitch.model"] != "Fable, Opus" || got["autoswitch.threshold"] != 77.0 {
-		t.Fatalf("ValuesOf(set) model %#v threshold %#v", got["autoswitch.model"], got["autoswitch.threshold"])
+	if got["autoswitch.model"] != "Fable, Opus" || got["autoswitch.sevenDayThreshold"] != 77.0 {
+		t.Fatalf("ValuesOf(set) model %#v threshold %#v", got["autoswitch.model"], got["autoswitch.sevenDayThreshold"])
+	}
+}
+
+// TestBarsPerWindowDefaultsAndRanges pins the three bars (DESIGN A34): one per
+// window, set by how fast that window fills — the 5h window bursts, so its bar
+// is the lowest; the week creeps; a per-model week is weekly too. All three
+// clamp to 50–100, where 100 means "never move proactively on this window".
+func TestBarsPerWindowDefaultsAndRanges(t *testing.T) {
+	d := Default()
+	if d.FiveHourThreshold != 85 || d.SevenDayThreshold != 97 || d.ModelThreshold != 95 {
+		t.Errorf("Default bars = 5h %v / 7d %v / model %v, want 85 / 97 / 95", d.FiveHourThreshold, d.SevenDayThreshold, d.ModelThreshold)
+	}
+	for _, key := range []string{"autoswitch.fiveHourThreshold", "autoswitch.sevenDayThreshold", "autoswitch.modelThreshold"} {
+		spec, err := SpecFor(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if spec.Kind != KindFloat || spec.Lo != 50 || spec.Hi != 100 {
+			t.Errorf("%s: kind %q range [%v, %v], want float [50, 100]", key, spec.Kind, spec.Lo, spec.Hi)
+		}
+		root := t.TempDir()
+		if v, err := SetSetting(root, key, "100"); err != nil || v != 100.0 {
+			t.Errorf("%s = 100: v=%v err=%v", key, v, err)
+		}
+		if _, err := SetSetting(root, key, "49.9"); err == nil || !strings.Contains(err.Error(), key+" must be between 50 and 100") {
+			t.Errorf("%s = 49.9: err = %v, want the range message", key, err)
+		}
+	}
+	if _, err := SpecFor("autoswitch.threshold"); err == nil || !strings.Contains(err.Error(), "autoswitch.sevenDayThreshold") {
+		t.Errorf("SpecFor(autoswitch.threshold) err = %v, want unknown with the valid keys", err)
+	}
+	five, seven, model := 90.0, 91.0, 92.0
+	merged := MergedWithCLI(Default(), CLIOverrides{FiveHourThreshold: &five, SevenDayThreshold: &seven, ModelThreshold: &model})
+	if merged.FiveHourThreshold != 90 || merged.SevenDayThreshold != 91 || merged.ModelThreshold != 92 {
+		t.Errorf("MergedWithCLI bars = %+v", merged)
+	}
+	high := 120.0
+	if got := MergedWithCLI(Default(), CLIOverrides{FiveHourThreshold: &high}).FiveHourThreshold; got != 100 {
+		t.Errorf("a CLI 5h bar of 120 = %v, want clamped 100", got)
+	}
+}
+
+// TestLegacyThresholdSeedsTheSevenDayBar: a settings.json written before the
+// bars were split per window carries the single "threshold" key. It keeps
+// steering the 7d bar, so an upgrade never silently reverts a configured limit
+// to the default, and the new key wins wherever both are present (DESIGN A34).
+func TestLegacyThresholdSeedsTheSevenDayBar(t *testing.T) {
+	root := t.TempDir()
+	writeSettingsJSON(t, root, `{"schemaVersion":1,"autoswitch":{"threshold":72}}`)
+	got := Load(root)
+	if got.SevenDayThreshold != 72.0 {
+		t.Errorf("SevenDayThreshold = %v, want the legacy 72", got.SevenDayThreshold)
+	}
+	if got.FiveHourThreshold != Default().FiveHourThreshold || got.ModelThreshold != Default().ModelThreshold {
+		t.Errorf("the legacy key moved another bar: %+v", got)
+	}
+	for _, e := range EffectiveSettings(root) {
+		if e.Spec.JSONKey == "sevenDayThreshold" && (!e.IsSet || e.Value != 72.0) {
+			t.Errorf("effective 7d bar = %+v, want 72 and set", e)
+		}
+		if e.Spec.JSONKey == "fiveHourThreshold" && e.IsSet {
+			t.Errorf("effective 5h bar = %+v, want the default", e)
+		}
+	}
+
+	both := t.TempDir()
+	writeSettingsJSON(t, both, `{"autoswitch":{"threshold":72,"sevenDayThreshold":85}}`)
+	if got := Load(both).SevenDayThreshold; got != 85.0 {
+		t.Errorf("SevenDayThreshold = %v, want the explicit 85", got)
+	}
+
+	// The legacy range was 50–99.9; a value there is in the new range too.
+	legacyHigh := t.TempDir()
+	writeSettingsJSON(t, legacyHigh, `{"autoswitch":{"threshold":99.9}}`)
+	if got := Load(legacyHigh).SevenDayThreshold; got != 99.9 {
+		t.Errorf("SevenDayThreshold = %v, want 99.9", got)
+	}
+}
+
+// TestUnsetSevenDayBarAlsoDropsTheLegacyKey: since the legacy "threshold" key
+// steers the 7d bar, resetting that bar removes it too; otherwise the reset
+// would leave the old value in force and report nothing to do.
+func TestUnsetSevenDayBarAlsoDropsTheLegacyKey(t *testing.T) {
+	root := t.TempDir()
+	writeSettingsJSON(t, root, `{"schemaVersion":1,"autoswitch":{"threshold":72,"model":"Fable"}}`)
+	removed, err := UnsetSetting(root, "autoswitch.sevenDayThreshold")
+	if err != nil || !removed {
+		t.Fatalf("UnsetSetting = %v, %v; want removed", removed, err)
+	}
+	if got := Load(root).SevenDayThreshold; got != Default().SevenDayThreshold {
+		t.Errorf("SevenDayThreshold after unset = %v, want the default", got)
+	}
+	data, err := os.ReadFile(SettingsPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatal(err)
+	}
+	section, _ := raw["autoswitch"].(map[string]any)
+	if _, present := section["threshold"]; present || section["model"] != "Fable" {
+		t.Errorf("autoswitch section after unset = %v, want the legacy key gone and model kept", section)
+	}
+
+	both := t.TempDir()
+	writeSettingsJSON(t, both, `{"autoswitch":{"threshold":72,"sevenDayThreshold":85}}`)
+	if removed, err := UnsetSetting(both, "autoswitch.sevenDayThreshold"); err != nil || !removed {
+		t.Fatalf("UnsetSetting(both) = %v, %v", removed, err)
+	}
+	if got := Load(both).SevenDayThreshold; got != Default().SevenDayThreshold {
+		t.Errorf("SevenDayThreshold after unset = %v, want the default, not the legacy 72", got)
+	}
+
+	// Unsetting another bar leaves the legacy key alone.
+	other := t.TempDir()
+	writeSettingsJSON(t, other, `{"autoswitch":{"threshold":72,"fiveHourThreshold":80}}`)
+	if removed, err := UnsetSetting(other, "autoswitch.fiveHourThreshold"); err != nil || !removed {
+		t.Fatalf("UnsetSetting(5h) = %v, %v", removed, err)
+	}
+	if got := Load(other).SevenDayThreshold; got != 72.0 {
+		t.Errorf("SevenDayThreshold = %v after unsetting the 5h bar, want the legacy 72", got)
 	}
 }

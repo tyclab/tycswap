@@ -180,10 +180,12 @@ func TestSettingsListsEveryKeyFromTheSettingsPackage(t *testing.T) {
 		t.Fatalf("default markers = %d, want %d:\n%s", n, len(settings.SettingSpecs), view)
 	}
 	// The detail names the highlighted key, its help, its range and when the
-	// engine applies it.
+	// engine applies it. The help may wrap between words, so compare with the
+	// whitespace collapsed.
 	first := settings.SettingSpecs[0]
+	flat := strings.Join(strings.Fields(view), " ")
 	for _, want := range []string{first.Dotted(), first.Help, kindLabel(first), engineNote} {
-		if !strings.Contains(view, want) {
+		if !strings.Contains(flat, strings.Join(strings.Fields(want), " ")) {
 			t.Fatalf("detail lacks %q:\n%s", want, view)
 		}
 	}
@@ -191,12 +193,12 @@ func TestSettingsListsEveryKeyFromTheSettingsPackage(t *testing.T) {
 
 func TestSettingsRowsFollowAnExternalChange(t *testing.T) {
 	m, s, dir := settingsModel(t)
-	if _, err := settings.SetSetting(dir, "autoswitch.threshold", "75"); err != nil {
+	if _, err := settings.SetSetting(dir, "autoswitch.sevenDayThreshold", "75"); err != nil {
 		t.Fatal(err)
 	}
 	// A poll lands: the row and the dashboard's bar tick follow the file.
 	execAll(m.applySnapshot(snapshotOf("1", acct("1", "a@x.com", true, nil))))
-	row := rowFor(t, s, "autoswitch.threshold")
+	row := rowFor(t, s, "autoswitch.sevenDayThreshold")
 	if !row.IsSet || row.Value != 75.0 {
 		t.Fatalf("threshold row after an external set = %+v", row)
 	}
@@ -277,16 +279,16 @@ func TestSettingsIntOutOfRangeIsRefusedWithTheMessage(t *testing.T) {
 
 func TestSettingsFloatPersistsAndMovesTheBarTick(t *testing.T) {
 	m, s, dir := settingsModel(t)
-	selectKey(t, s, "autoswitch.threshold")
+	selectKey(t, s, "autoswitch.sevenDayThreshold")
 	s.update(m, keyPress("enter"))
-	if s.input != "90" {
-		t.Fatalf("input prefilled with %q, want the effective value 90", s.input)
+	if s.input != "97" {
+		t.Fatalf("input prefilled with %q, want the effective value 97", s.input)
 	}
 	s.update(m, keyPress("backspace"))
 	s.update(m, keyPress("backspace"))
 	typeText(m, s, "80")
 	landSettingsAction(t, m, s.update(m, keyPress("enter")))
-	if got := readSettings(t, dir)["threshold"]; got != 80.0 {
+	if got := readSettings(t, dir)["sevenDayThreshold"]; got != 80.0 {
 		t.Fatalf("settings.json threshold = %v, want 80", got)
 	}
 	if m.thresholdPct == nil || *m.thresholdPct != 80 {
@@ -298,7 +300,7 @@ func TestSettingsFloatPersistsAndMovesTheBarTick(t *testing.T) {
 // other out-of-range value, not let through to a failing write.
 func TestSettingsFloatNaNIsRefusedInline(t *testing.T) {
 	m, s, dir := settingsModel(t)
-	selectKey(t, s, "autoswitch.threshold")
+	selectKey(t, s, "autoswitch.sevenDayThreshold")
 	s.update(m, keyPress("enter"))
 	s.update(m, keyPress("backspace"))
 	s.update(m, keyPress("backspace"))
@@ -306,7 +308,7 @@ func TestSettingsFloatNaNIsRefusedInline(t *testing.T) {
 	if cmd := s.update(m, keyPress("enter")); cmd != nil {
 		t.Fatal("a refused value must start no action")
 	}
-	if want := "autoswitch.threshold must be between 50 and 99.9"; !s.editing || s.editError != want {
+	if want := "autoswitch.sevenDayThreshold must be between 50 and 100"; !s.editing || s.editError != want {
 		t.Fatalf("editing=%v editError=%q, want the input open with %q", s.editing, s.editError, want)
 	}
 	if readSettings(t, dir) != nil {
@@ -373,26 +375,26 @@ func TestSettingsStringEditsAndEmptyIsRefused(t *testing.T) {
 
 func TestSettingsResetRemovesTheKey(t *testing.T) {
 	m, s, dir := settingsModel(t)
-	if _, err := settings.SetSetting(dir, "autoswitch.threshold", "80"); err != nil {
+	if _, err := settings.SetSetting(dir, "autoswitch.sevenDayThreshold", "80"); err != nil {
 		t.Fatal(err)
 	}
 	s.reload(m)
-	selectKey(t, s, "autoswitch.threshold")
+	selectKey(t, s, "autoswitch.sevenDayThreshold")
 	landSettingsAction(t, m, s.update(m, keyPress("u")))
 	if section := readSettings(t, dir); section != nil {
-		if _, present := section["threshold"]; present {
+		if _, present := section["sevenDayThreshold"]; present {
 			t.Fatalf("threshold still in settings.json after reset: %v", section)
 		}
 	}
-	row := rowFor(t, s, "autoswitch.threshold")
-	if row.IsSet || row.Value != 90.0 {
-		t.Fatalf("row after reset = %+v, want unset default 90", row)
+	row := rowFor(t, s, "autoswitch.sevenDayThreshold")
+	if row.IsSet || row.Value != 97.0 {
+		t.Fatalf("row after reset = %+v, want unset default 97", row)
 	}
-	if !hasToast(m, "autoswitch.threshold unset (default: 90)", "", "") {
+	if !hasToast(m, "autoswitch.sevenDayThreshold unset (default: 97)", "", "") {
 		t.Fatalf("toasts = %v", toastMessages(m))
 	}
-	if m.thresholdPct == nil || *m.thresholdPct != 90 {
-		t.Fatalf("bar tick after reset = %v, want 90", m.thresholdPct)
+	if m.thresholdPct == nil || *m.thresholdPct != 97 {
+		t.Fatalf("bar tick after reset = %v, want 97", m.thresholdPct)
 	}
 
 	// Reset on a key that is not set: the CLI's notice, no action.
@@ -401,7 +403,7 @@ func TestSettingsResetRemovesTheKey(t *testing.T) {
 		t.Fatal("reset of an unset key must start no action")
 	}
 	dropCmd(cmd)
-	if !hasToast(m, "autoswitch.threshold is not set; nothing to do", "", "") {
+	if !hasToast(m, "autoswitch.sevenDayThreshold is not set; nothing to do", "", "") {
 		t.Fatalf("toasts = %v", toastMessages(m))
 	}
 }
@@ -425,7 +427,7 @@ func TestSettingsWritesRideTheSingleFlightGate(t *testing.T) {
 // the running action has landed; a poll while typing leaves it alone too.
 func TestSettingsTypedValueSurvivesTheGateAndAPoll(t *testing.T) {
 	m, s, dir := settingsModel(t)
-	selectKey(t, s, "autoswitch.threshold")
+	selectKey(t, s, "autoswitch.sevenDayThreshold")
 	s.update(m, keyPress("enter"))
 	s.update(m, keyPress("backspace"))
 	s.update(m, keyPress("backspace"))
@@ -451,7 +453,7 @@ func TestSettingsTypedValueSurvivesTheGateAndAPoll(t *testing.T) {
 	if s.editing {
 		t.Fatal("the save, once let through, closes the input")
 	}
-	if got := readSettings(t, dir)["threshold"]; got != 85.0 {
+	if got := readSettings(t, dir)["sevenDayThreshold"]; got != 85.0 {
 		t.Fatalf("settings.json threshold = %v, want 85", got)
 	}
 }
@@ -502,7 +504,7 @@ func TestSettingsWriteFailureOpensTheOutputModal(t *testing.T) {
 
 func TestSettingsEscCancelsTheInputThenLeaves(t *testing.T) {
 	m, s, _ := settingsModel(t)
-	selectKey(t, s, "autoswitch.threshold")
+	selectKey(t, s, "autoswitch.sevenDayThreshold")
 	s.update(m, keyPress("enter"))
 	typeText(m, s, "1")
 	execAll(s.update(m, keyPress("esc")))
@@ -522,7 +524,7 @@ func TestSettingsFooterLegend(t *testing.T) {
 	d := m.stack[0].(*dashboardScreen)
 	mustContain(t, footerText(d.footerBindings(m), wideFooter).plain(), "c Settings")
 
-	selectKey(t, s, "autoswitch.threshold")
+	selectKey(t, s, "autoswitch.sevenDayThreshold")
 	got := footerText(s.footerBindings(m), wideFooter).plain()
 	mustContain(t, got, "enter Edit", "u Reset to default", "esc Back")
 
@@ -532,7 +534,7 @@ func TestSettingsFooterLegend(t *testing.T) {
 	selectKey(t, s, "autoswitch.strategy")
 	mustContain(t, footerText(s.footerBindings(m), wideFooter).plain(), "enter Next choice")
 
-	selectKey(t, s, "autoswitch.threshold")
+	selectKey(t, s, "autoswitch.sevenDayThreshold")
 	s.update(m, keyPress("enter"))
 	editing := footerText(s.footerBindings(m), wideFooter).plain()
 	mustContain(t, editing, "enter Save", "esc Cancel")

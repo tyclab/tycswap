@@ -18,7 +18,7 @@ import (
 
 func TestBelowThreshold(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(50, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 50)), dictEntry(usageOf(0, 10)))
 	rec := &recorder{}
 	e := build(t, f, settings.Default(), rec, clk, false)
 	if got := e.Tick(); got != NoAction {
@@ -28,24 +28,24 @@ func TestBelowThreshold(t *testing.T) {
 	if ns.Reason != "below-threshold" {
 		t.Fatalf("reason = %q", ns.Reason)
 	}
-	if ns.Detail != "50% < 90%" {
-		t.Errorf("detail = %q, want %q", ns.Detail, "50% < 90%")
+	if ns.Detail != "7d 50% < 97%" {
+		t.Errorf("detail = %q, want %q", ns.Detail, "7d 50% < 97%")
 	}
 }
 
 func TestBelowThresholdNeverImpossible(t *testing.T) {
 	clk := newClk()
-	// active 99.85% used, threshold 99.9 -> detail must read "99.85% < 99.9%",
-	// never a .0f-rounded "100% < 99.9%".
+	// active 99.85% of its week used, threshold 99.9 -> detail must read
+	// "99.85% < 99.9%", never a .0f-rounded "100% < 99.9%".
 	s := settings.Default()
-	s.Threshold = 99.9
-	f := twoAccounts(clk, dictEntry(usageOf(99.85, 0)), dictEntry(usageOf(10, 0)))
+	s.SevenDayThreshold = 99.9
+	f := twoAccounts(clk, dictEntry(usageOf(0, 99.85)), dictEntry(usageOf(0, 10)))
 	rec := &recorder{}
 	e := build(t, f, s, rec, clk, false)
 	e.Tick()
 	ns := rec.last("no-switch").(NoSwitchEvent)
-	if ns.Detail != "99.85% < 99.9%" {
-		t.Errorf("detail = %q, want %q", ns.Detail, "99.85% < 99.9%")
+	if ns.Detail != "7d 99.85% < 99.9%" {
+		t.Errorf("detail = %q, want %q", ns.Detail, "7d 99.85% < 99.9%")
 	}
 }
 
@@ -107,7 +107,7 @@ func TestEventEnvelope(t *testing.T) {
 
 func TestCooldownBlocksProactive(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), dictEntry(usageOf(0, 10)))
 	rec := &recorder{}
 	e := build(t, f, settings.Default(), rec, clk, false)
 	if _, err := e.mutateState(func(st map[string]any) { st["lastSwitchAt"] = e.nowSeconds() }); err != nil {
@@ -124,7 +124,7 @@ func TestCooldownBlocksProactive(t *testing.T) {
 func TestCooldownPersistsAcrossInstances(t *testing.T) {
 	clk := newClk()
 	statePath := filepath.Join(t.TempDir(), StateFilename)
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), dictEntry(usageOf(0, 10)))
 	rec := &recorder{}
 
 	e1 := build(t, f, settings.Default(), rec, clk, false, WithStatePath(statePath))
@@ -134,8 +134,8 @@ func TestCooldownPersistsAcrossInstances(t *testing.T) {
 	// A fresh engine over the same state file: active is now "2" at 95%, "1" has
 	// room, but the persisted cooldown must block a proactive move.
 	f.current = strp("2")
-	f.entries["2"] = dictEntry(usageOf(95, 0))
-	f.entries["1"] = dictEntry(usageOf(10, 0))
+	f.entries["2"] = dictEntry(usageOf(0, 98))
+	f.entries["1"] = dictEntry(usageOf(0, 10))
 	f.creds["1"] = farFutureCreds(clk, "r1")
 	rec.reset()
 	e2 := build(t, f, settings.Default(), rec, clk, false, WithStatePath(statePath))
@@ -152,7 +152,7 @@ func TestCooldownPersistsAcrossInstances(t *testing.T) {
 func TestQuarantinePersistsAndReleases(t *testing.T) {
 	clk := newClk()
 	statePath := filepath.Join(t.TempDir(), StateFilename)
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), dictEntry(usageOf(0, 10)))
 	f.creds["2"] = nearExpiryCreds(clk, "r2")
 	oc := fakeOAuth(func(string) oauth.RefreshOutcome {
 		return oauth.RefreshOutcome{Error: oauth.ErrInvalidGrant}
@@ -193,7 +193,7 @@ func TestQuarantinePersistsAndReleases(t *testing.T) {
 func TestQuarantineReleaseAccountReplaced(t *testing.T) {
 	clk := newClk()
 	statePath := filepath.Join(t.TempDir(), StateFilename)
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), dictEntry(usageOf(0, 10)))
 	f.creds["2"] = nearExpiryCreds(clk, "r2")
 	oc := fakeOAuth(func(string) oauth.RefreshOutcome {
 		return oauth.RefreshOutcome{Error: oauth.ErrInvalidGrant}
@@ -269,8 +269,10 @@ func indexOf(s, sub string) int {
 // -- item 22: escalation keys on the tick-snapshot threshold --------------
 
 func TestEscalationOnThreshold(t *testing.T) {
-	// active 80% used. threshold 90 -> escalate (80 >= 75); threshold 99.9 ->
-	// no escalate (80 < 84.9). Observed as a 3rd fetch (full refresh) vs 2.
+	// active 80% used. 7d bar 90 -> escalate (80 >= 75); 7d bar 99.9 -> no
+	// escalate (80 < 84.9). Observed as a 3rd fetch (full refresh) vs 2. The 5h
+	// bar is pinned out of the way at 100: poll planning keys on the LOWEST bar
+	// in force, which is the one this test varies (DESIGN A34).
 	for _, tc := range []struct {
 		threshold float64
 		wantCalls int
@@ -281,7 +283,8 @@ func TestEscalationOnThreshold(t *testing.T) {
 		clk := newClk()
 		f := twoAccounts(clk, dictEntry(usageOf(80, 0)), dictEntry(usageOf(10, 0)))
 		s := settings.Default()
-		s.Threshold = tc.threshold
+		s.FiveHourThreshold = 100
+		s.SevenDayThreshold = tc.threshold
 		rec := &recorder{}
 		e := build(t, f, s, rec, clk, false)
 		f.fetchCalls = nil
@@ -335,16 +338,16 @@ func TestActiveApiKeyIdles(t *testing.T) {
 
 func TestApplyThreshold(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(60, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 60)), dictEntry(usageOf(0, 10)))
 	rec := &recorder{}
 	e := build(t, f, settings.Default(), rec, clk, false)
-	// Default threshold 90: 60% used -> below threshold.
+	// Default threshold 90: 60% of the week used -> below threshold.
 	if got := e.Tick(); got != NoAction {
 		t.Fatalf("pre-apply outcome = %v, want NoAction", got)
 	}
 	e.ApplyThreshold(50)
-	if e.currentSettings().Threshold != 50 {
-		t.Fatalf("threshold not applied: %v", e.currentSettings().Threshold)
+	if e.currentSettings().SevenDayThreshold != 50 {
+		t.Fatalf("threshold not applied: %v", e.currentSettings().SevenDayThreshold)
 	}
 	last := f.pollInputs[len(f.pollInputs)-1]
 	if last.threshold != 50 {

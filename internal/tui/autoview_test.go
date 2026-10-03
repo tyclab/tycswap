@@ -112,16 +112,16 @@ func TestCandidatesTextSoonestResetOrder(t *testing.T) {
 // below-limit) candidate is never preferred for its early renewal: with the
 // earliest renewal of all it still sorts into tier 2, AFTER every below-threshold
 // candidate and BEFORE at-limit/sentinel/usage-unknown rows. Mirrors the engine's
-// sortQualifying threshold tiering (default threshold 90).
+// sortQualifying threshold tiering (default 7d bar 97).
 func TestCandidatesTextSoonestResetThresholdTier(t *testing.T) {
 	a := newAutoScreen()
-	a.settings = settings.Default() // threshold 90
+	a.settings = settings.Default() // 7d bar 97
 	a.settings.Strategy = "soonest-reset"
 	snap := &reporting.AccountsSnapshot{
 		ActiveNumber: "1",
 		Accounts: []reporting.AccountSnapshot{
-			// over threshold (95%) with the EARLIEST renewal of all -> tier 2, not first.
-			candAcct("2", "acc2@x", sevenDay(95, "2026-07-18T00:00:00Z")),
+			// over its bar (98%) with the EARLIEST renewal of all -> tier 2, not first.
+			candAcct("2", "acc2@x", sevenDay(98, "2026-07-18T00:00:00Z")),
 			// below threshold, known renewal (later) -> tier 0, still ahead of acc2.
 			candAcct("3", "acc3@x", sevenDay(30, "2026-07-25T00:00:00Z")),
 			// below threshold, unknown renewal -> tier 1.
@@ -172,7 +172,7 @@ func TestCandidatesTextExcludesDisabled(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.strategy, func(t *testing.T) {
 			a := newAutoScreen()
-			a.settings = settings.Default() // threshold 90
+			a.settings = settings.Default() // 7d bar 97
 			a.settings.Strategy = tc.strategy
 			out := a.candidatesText(snap, 0, testNow).plain()
 			if strings.Contains(out, "disabled@x") {
@@ -255,7 +255,7 @@ func TestCandidatesTextMarksQuarantined(t *testing.T) {
 		t.Run(strategy, func(t *testing.T) {
 			m := newTestModel(&fakeFacade{backupDir: dir})
 			a := newAutoScreen()
-			a.settings = settings.Default() // threshold 90
+			a.settings = settings.Default() // 7d bar 97
 			a.settings.Strategy = strategy
 			a.refreshQuarantine(m) // the live read seam: dir/autoswitch_state.json
 
@@ -1383,5 +1383,68 @@ func TestSummaryTextStrategySegment(t *testing.T) {
 	// The segment follows the poll-interval segment.
 	if strings.Index(got, "poll every") > strings.Index(got, "soonest-reset") {
 		t.Errorf("summary = %q, want soonest-reset after the poll-interval segment", got)
+	}
+}
+
+// accountWindows builds a LastGood map with both account-wide windows set.
+func accountWindows(fiveHour, sevenDay float64, resetsAt string) map[string]any {
+	sd := map[string]any{"pct": sevenDay}
+	if resetsAt != "" {
+		sd["resets_at"] = resetsAt
+	}
+	return map[string]any{"five_hour": map[string]any{"pct": fiveHour}, "seven_day": sd}
+}
+
+// TestCandidatesPanelJudgesEachWindowAgainstItsOwnBar: the panel ranks the
+// way the engine decides (DESIGN A34). A row is "at threshold" (tier 2) when
+// ANY window reached the bar that governs it: a 5h window at 90 % is over the
+// 85 % 5h bar although it is far below the 97 % 7d bar, so its early renewal
+// does not put it first. "best" ranks by WEEKLY room, not by the binding
+// figure.
+func TestCandidatesPanelJudgesEachWindowAgainstItsOwnBar(t *testing.T) {
+	snap := &reporting.AccountsSnapshot{
+		ActiveNumber: "1",
+		Accounts: []reporting.AccountSnapshot{
+			candAcct("2", "burst@x", accountWindows(90, 10, "2026-07-18T00:00:00Z")), // over the 5h bar, earliest renewal
+			candAcct("3", "calm@x", accountWindows(5, 30, "2026-07-25T00:00:00Z")),   // under every bar
+			candAcct("4", "week@x", accountWindows(1, 60, "2026-07-26T00:00:00Z")),   // most 5h room, less week
+		},
+	}
+	a := newAutoScreen()
+	a.settings = settings.Default() // 5h 85, 7d 97
+	a.settings.Strategy = "soonest-reset"
+	assertOrder(t, a.candidatesText(snap, 0, testNow).plain(), []string{"calm@x", "week@x", "burst@x"})
+
+	// Raise the 5h bar past 90 and the burst row is under every bar again; its
+	// early renewal leads.
+	a.settings.FiveHourThreshold = 95
+	assertOrder(t, a.candidatesText(snap, 0, testNow).plain(), []string{"burst@x", "calm@x", "week@x"})
+
+	// best: weekly room descending (10, 30, 60 used), whatever the 5h window.
+	a.settings = settings.Default()
+	a.settings.Strategy = "best"
+	assertOrder(t, a.candidatesText(snap, 0, testNow).plain(), []string{"burst@x", "calm@x", "week@x"})
+}
+
+// TestSummaryTextNamesEveryBar: the summary names each window's bar; the model
+// bar only while autoswitch.model counts a window, and the 7d bar, which the
+// threshold adjustment moves, carries the session mark (DESIGN A34).
+func TestSummaryTextNamesEveryBar(t *testing.T) {
+	a := newAutoScreen()
+	a.settings = settings.Default()
+	a.settings.Strategy = "best"
+	if got, want := a.summaryText().plain(), "auto-switch · switch at 5h 85% · 7d 97% · poll every 60s"; got != want {
+		t.Errorf("summary = %q, want %q", got, want)
+	}
+	all := "all"
+	a.settings.Model = &all
+	if got := a.summaryText().plain(); !strings.Contains(got, "7d 97% · model 95% · poll every 60s") {
+		t.Errorf("summary with model windows counted = %q", got)
+	}
+	configured := 97.0
+	a.configuredThreshold = &configured
+	a.settings.SevenDayThreshold = 98
+	if got := a.summaryText().plain(); !strings.Contains(got, "5h 85% · 7d 98% (session) · model 95%") {
+		t.Errorf("summary after a session adjustment = %q", got)
 	}
 }

@@ -1,10 +1,12 @@
 // auto.go — the `tycswap auto` pre-dispatched subcommand (spec 08§7.7, 05§19).
 //
 // Implements spec 08§7.7 / 05§19: the flag grammar (--once/--json/--interval/
-// --threshold/--cooldown/--model/--dry-run/--debug; the include-api-key-accounts
-// pair is gone with its setting, DESIGN A33), merged_with_cli, the engine construction, --once (exit = outcome),
-// loop mode with SIGTERM→Stop and the dimmed banner, and the JSONL/human emit
-// callbacks. The compact JSONL/error-envelope discipline (spec 08§7.7) is
+// --five-hour-threshold/--seven-day-threshold/--model-threshold/--cooldown/
+// --model/--dry-run/--debug; one threshold flag per window replaces
+// --threshold, DESIGN A34, and the include-api-key-accounts pair is gone with
+// its setting, DESIGN A33), merged_with_cli, the engine construction, --once
+// (exit = outcome), loop mode with SIGTERM→Stop and the dimmed banner, and the
+// JSONL/human emit callbacks. The compact JSONL/error-envelope discipline (spec 08§7.7) is
 // distinct from the main path's indent-2. prog is hardcoded "tycswap auto".
 package cli
 
@@ -32,7 +34,9 @@ const autoProg = "tycswap auto"
 // autoCommand handles `tycswap auto ...` (spec 08§7.7). argv excludes "auto".
 func autoCommand(_ string, argv []string, s ioStreams) int {
 	var once, jsonMode, dryRun, debug bool
-	var interval, threshold, cooldown *float64
+	var interval, cooldown *float64
+	// One flag per bar, named after the window it governs (DESIGN A34).
+	var fiveHour, sevenDay, modelBar *float64
 	var model *string
 
 	// takeFloat / takeStr consume the value for a value flag, erroring (exit 2)
@@ -65,16 +69,23 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 				return subError(autoProg, s.err, fmt.Sprintf("argument --interval: invalid float value: '%s'", v))
 			}
 			interval = &f
-		case tok == "--threshold":
+		case tok == "--five-hour-threshold" || tok == "--seven-day-threshold" || tok == "--model-threshold":
 			v, ok := next()
 			if !ok {
-				return subError(autoProg, s.err, "argument --threshold: expected one argument")
+				return subError(autoProg, s.err, "argument "+tok+": expected one argument")
 			}
 			f, err := strconv.ParseFloat(v, 64)
 			if err != nil {
-				return subError(autoProg, s.err, fmt.Sprintf("argument --threshold: invalid float value: '%s'", v))
+				return subError(autoProg, s.err, fmt.Sprintf("argument %s: invalid float value: '%s'", tok, v))
 			}
-			threshold = &f
+			switch tok {
+			case "--five-hour-threshold":
+				fiveHour = &f
+			case "--seven-day-threshold":
+				sevenDay = &f
+			default:
+				modelBar = &f
+			}
 		case tok == "--cooldown":
 			v, ok := next()
 			if !ok {
@@ -110,10 +121,12 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	setSigintNote("Auto-switch stopped")
 
 	merged := settings.MergedWithCLI(settings.Load(sw.BackupDir()), settings.CLIOverrides{
-		Threshold:       threshold,
-		IntervalSeconds: interval,
-		CooldownSeconds: cooldown,
-		Model:           model,
+		FiveHourThreshold: fiveHour,
+		SevenDayThreshold: sevenDay,
+		ModelThreshold:    modelBar,
+		IntervalSeconds:   interval,
+		CooldownSeconds:   cooldown,
+		Model:             model,
 	})
 
 	onEvent := humanEmit(s.out)
@@ -172,8 +185,9 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 			dry = " (dry-run)"
 		}
 		fmt.Fprintln(s.out, printer.Dimmed(fmt.Sprintf(
-			"Auto-switch running: threshold %.0f%%, every %.0fs%s — Ctrl-C to stop",
-			merged.Threshold, merged.IntervalSeconds, dry)))
+			"Auto-switch running: 5h %s%% · 7d %s%% · model %s%%, every %.0fs%s — Ctrl-C to stop",
+			pctText(merged.FiveHourThreshold), pctText(merged.SevenDayThreshold), pctText(merged.ModelThreshold),
+			merged.IntervalSeconds, dry)))
 	}
 	stopCodex := startCodexLoop(codexEngine != nil,
 		time.Duration(merged.IntervalSeconds*float64(time.Second)), runCodexTick)
@@ -184,9 +198,10 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 
 // newCodexAutoEngine returns the Codex auto-switcher, or nil when
 // autoswitch.codexEnabled is off or this machine has no Codex accounts (cli.py
-// _codex_auto_engine). The threshold is autoswitch.codexThreshold, or the
-// effective Claude threshold when that is 0. A broken Codex store must never
-// stop the Claude loop starting, so a panic here is a nil engine.
+// _codex_auto_engine). Its bars are the effective 5h and 7d bars, or
+// autoswitch.codexThreshold for both Codex windows when that is not 0 (DESIGN
+// A34). A broken Codex store must never stop the Claude loop starting, so a
+// panic here is a nil engine.
 func newCodexAutoEngine(merged settings.AutoSwitchSettings, s ioStreams) (eng *codexauto.AutoSwitcher) {
 	if !merged.CodexEnabled {
 		return nil
@@ -199,11 +214,16 @@ func newCodexAutoEngine(merged settings.AutoSwitchSettings, s ioStreams) (eng *c
 	if !providers.CodexIsPresent() {
 		return nil
 	}
-	threshold := merged.CodexThreshold
-	if threshold == 0 {
-		threshold = merged.Threshold
+	return codexauto.New(newCodexSwitcher(s), codexBars(merged), merged.HysteresisPct)
+}
+
+// codexBars is the Codex engine's bar per window: the Claude 5h and 7d bars,
+// or autoswitch.codexThreshold for both when it is set (not 0).
+func codexBars(merged settings.AutoSwitchSettings) codexauto.Bars {
+	if merged.CodexThreshold != 0 {
+		return codexauto.SingleBar(merged.CodexThreshold)
 	}
-	return codexauto.New(newCodexSwitcher(s), threshold, merged.HysteresisPct)
+	return codexauto.Bars{FiveHour: merged.FiveHourThreshold, SevenDay: merged.SevenDayThreshold}
 }
 
 // startCodexLoop runs tick on its own goroutine — once immediately, then every
@@ -317,9 +337,14 @@ func autoError(err error, jsonMode bool, s ioStreams) int {
 }
 
 func renderAutoHelp(out io.Writer) {
-	fmt.Fprintln(out, "usage: tycswap auto [-h] [--once] [--json] [--interval SECONDS] [--threshold PCT]")
-	fmt.Fprintln(out, "                  [--cooldown SECONDS] [--model NAMES]")
+	fmt.Fprintln(out, "usage: tycswap auto [-h] [--once] [--json] [--interval SECONDS]")
+	fmt.Fprintln(out, "                  [--five-hour-threshold PCT] [--seven-day-threshold PCT]")
+	fmt.Fprintln(out, "                  [--model-threshold PCT] [--cooldown SECONDS] [--model NAMES]")
 	fmt.Fprintln(out, "                  [--dry-run] [--debug]")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Each window has a bar of its own: the 5h window bursts and refills in hours,")
+	fmt.Fprintln(out, "the 7d one is the account's whole budget, and a per-model week counts only")
+	fmt.Fprintln(out, "with --model.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Auto-switch rotates between subscription accounts only: it never moves onto")
 	fmt.Fprintln(out, "or off an API-key account, since that changes how Claude Code authenticates.")
@@ -330,3 +355,7 @@ func renderAutoHelp(out io.Writer) {
 	fmt.Fprintln(out, "  2  no action needed")
 	fmt.Fprintln(out, "  3  blocked: wanted to switch but no viable target / all exhausted")
 }
+
+// pctText renders a bar the way the settings show it: 85 as "85", 99.5 as
+// "99.5".
+func pctText(v float64) string { return settings.FormatSettingValue(v) }

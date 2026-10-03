@@ -6,10 +6,12 @@
 // Claude specifics (per-model scoped windows, setup tokens, credential
 // quarantine, the consume gate), and abstracting it for a provider that needs
 // almost none of it would be a rewrite of the most load-bearing code in the
-// project. What Codex needs is small: read every account's usage, and if the
-// active one is at or over the threshold, move to whichever candidate has the
-// most headroom by at least the hysteresis margin. Cadence, backoff and
-// freshness are already the usage cache's job.
+// project. What Codex needs is small: read every account's usage, and if one
+// of the active account's windows is at or over its bar, move to a candidate
+// that is under that bar and better by the hysteresis margin, preferring the
+// most weekly room. The windows are judged the way the Claude engine judges
+// its 5h and 7d windows (DESIGN A34). Cadence, backoff and freshness are
+// already the usage cache's job.
 //
 // The honest caveat, surfaced rather than hidden: a Codex switch rewrites
 // ~/.codex/auth.json, but a codex session already running holds its tokens in
@@ -24,6 +26,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // Tick outcomes (codex/autoswitch.py CodexTick.outcome).
@@ -78,20 +81,60 @@ type Source interface {
 
 var _ Source = (*switcher.Switcher)(nil)
 
+// Bars is the switch threshold per Codex window, as for Claude (DESIGN A34):
+// FiveHour for the 5h window, which bursts, SevenDay for the weekly one, which
+// creeps. A non-zero autoswitch.codexThreshold is one bar for both
+// (SingleBar).
+type Bars struct {
+	FiveHour float64
+	SevenDay float64
+}
+
+// SingleBar is one threshold for both Codex windows.
+func SingleBar(threshold float64) Bars { return Bars{FiveHour: threshold, SevenDay: threshold} }
+
+// of is the bar that governs one window class.
+func (b Bars) of(c usage.Class) float64 {
+	if c == usage.ClassSession {
+		return b.FiveHour
+	}
+	return b.SevenDay
+}
+
 // AutoSwitcher is threshold rotation for Codex accounts.
 type AutoSwitcher struct {
 	Switcher   Source
-	Threshold  float64
+	Bars       Bars
 	Hysteresis float64
 }
 
 // New returns an engine over sw; a nil sw is a default switcher.
 // codex/autoswitch.py defaults are threshold 90 and hysteresis 10.
-func New(sw Source, threshold, hysteresis float64) *AutoSwitcher {
+func New(sw Source, bars Bars, hysteresis float64) *AutoSwitcher {
 	if sw == nil {
 		sw = switcher.New(switcher.Options{})
 	}
-	return &AutoSwitcher{Switcher: sw, Threshold: threshold, Hysteresis: hysteresis}
+	return &AutoSwitcher{Switcher: sw, Bars: bars, Hysteresis: hysteresis}
+}
+
+// codexAxes is the order the two windows are considered in: the week first,
+// because losing it costs days; the 5h window costs a wait. The costlier
+// window over its bar names the move.
+var codexAxes = []usage.Class{usage.ClassWeek, usage.ClassSession}
+
+// pctOf is one window's utilization, nil when the account reports none.
+func pctOf(h usage.Headroom, c usage.Class) *float64 {
+	room := h.Axis(c)
+	if room == nil {
+		return nil
+	}
+	v := 100.0 - *room
+	return &v
+}
+
+// label renders "5h 40%" or "7d 96%".
+func label(c usage.Class, pct float64) string {
+	return fmt.Sprintf("%s %.0f%%", c.Name(), pct)
 }
 
 // snapshot takes one pass, turning a panic into an error: a tick never raises.
@@ -139,40 +182,85 @@ func (a *AutoSwitcher) Tick(ctx context.Context, dryRun bool) Tick {
 		return Tick{Outcome: OutcomeOK, Detail: "no managed account active"}
 	}
 
-	activePct := BindingPct(active.Usage.LastGood)
-	if activePct == nil {
+	activeH := usage.AccountHeadroomByClass(active.Usage.LastGood, nil)
+	if !activeH.Known() {
 		// No measurement is not the same as no usage: switching on unknown data
 		// would move the user for no established reason.
 		return Tick{Outcome: OutcomeOK, Detail: fmt.Sprintf("account %s usage unknown", active.Number)}
 	}
-	if *activePct < a.Threshold {
-		return Tick{Outcome: OutcomeOK, Detail: fmt.Sprintf("account %s at %.0f%% (below threshold)", active.Number, *activePct)}
+	// The costliest window that has reached its own bar decides; none has,
+	// the line names the one closest to its bar.
+	axis, hot := usage.ClassWeek, false
+	for _, c := range codexAxes {
+		if p := pctOf(activeH, c); p != nil && *p >= a.Bars.of(c) {
+			axis, hot = c, true
+			break
+		}
 	}
+	if !hot {
+		near, gap := usage.ClassWeek, 0.0
+		found := false
+		for _, c := range codexAxes {
+			if p := pctOf(activeH, c); p != nil && (!found || a.Bars.of(c)-*p < gap) {
+				near, gap, found = c, a.Bars.of(c)-*p, true
+			}
+		}
+		return Tick{Outcome: OutcomeOK, Detail: fmt.Sprintf("account %s at %s (below its %.0f%% bar)",
+			active.Number, label(near, *pctOf(activeH, near)), a.Bars.of(near))}
+	}
+	activePct := *pctOf(activeH, axis)
 
-	best := ""
-	var bestPct *float64
+	best, bestLabel := "", ""
+	var bestWeekly *float64
+	bestBinding := 0.0
 	for _, c := range accounts {
 		if c.Number == active.Number {
 			continue
 		}
-		pct := BindingPct(c.Usage.LastGood)
-		if pct == nil || *pct >= a.Threshold {
+		h := usage.AccountHeadroomByClass(c.Usage.LastGood, nil)
+		// Judge the candidate on the window that made the tick move; one that
+		// reports no such window is judged on its week rather than ruled out
+		// for an unknown.
+		judged := axis
+		pct := pctOf(h, axis)
+		if pct == nil {
+			judged, pct = usage.ClassWeek, pctOf(h, usage.ClassWeek)
+		}
+		if pct == nil || *pct >= a.Bars.of(axis) {
 			continue
 		}
 		// Must beat the active account by the hysteresis margin, or two
 		// accounts hovering at the line would ping-pong every tick.
-		if *pct > *activePct-a.Hysteresis {
+		if *pct > activePct-a.Hysteresis {
 			continue
 		}
-		if bestPct == nil || *pct < *bestPct {
-			best, bestPct = c.Number, pct
+		// Never land on an account whose week is spent.
+		if h.WeeklyExhausted() {
+			continue
+		}
+		// The most weekly room wins, not the most 5h room; an account with no
+		// weekly window falls back to its binding figure.
+		weekly := pctOf(h, usage.ClassWeek)
+		binding := 100.0 - *h.Binding()
+		better := best == ""
+		switch {
+		case better:
+		case weekly != nil && bestWeekly != nil:
+			better = *weekly < *bestWeekly || (*weekly == *bestWeekly && binding < bestBinding)
+		case (weekly != nil) != (bestWeekly != nil):
+			better = weekly != nil
+		default:
+			better = binding < bestBinding
+		}
+		if better {
+			best, bestLabel, bestWeekly, bestBinding = c.Number, label(judged, *pct), weekly, binding
 		}
 	}
 	if best == "" {
-		return Tick{Outcome: OutcomeBlocked, Detail: fmt.Sprintf("account %s at %.0f%% and no better candidate", active.Number, *activePct)}
+		return Tick{Outcome: OutcomeBlocked, Detail: fmt.Sprintf("account %s at %s and no better candidate", active.Number, label(axis, activePct))}
 	}
 
-	move := fmt.Sprintf("%s (%.0f%%) -> %s (%.0f%%)", active.Number, *activePct, best, *bestPct)
+	move := fmt.Sprintf("%s (%s) -> %s (%s)", active.Number, label(axis, activePct), best, bestLabel)
 	if dryRun {
 		return Tick{Outcome: OutcomeOK, Detail: "would switch " + move}
 	}

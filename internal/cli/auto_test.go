@@ -6,6 +6,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
+	"github.com/tyclab/tycswap/internal/settings"
 )
 
 // stop must not return while a tick is in flight: the process would otherwise
@@ -47,5 +50,20 @@ func TestStopCodexLoopWaitsForAnInFlightTick(t *testing.T) {
 	}
 	if finished.Load() != ticks.Load() {
 		t.Fatalf("stop returned with %d of %d ticks unfinished", ticks.Load()-finished.Load(), ticks.Load())
+	}
+}
+
+// TestCodexBarsFollowTheClaudeBars: with autoswitch.codexThreshold at 0 each
+// Codex window is judged against the Claude bar for it; a non-zero value is
+// one bar for both Codex windows (DESIGN A34).
+func TestCodexBarsFollowTheClaudeBars(t *testing.T) {
+	s := settings.Default()
+	s.FiveHourThreshold, s.SevenDayThreshold = 80, 96
+	if got, want := codexBars(s), (codexauto.Bars{FiveHour: 80, SevenDay: 96}); got != want {
+		t.Errorf("codexThreshold 0: bars %+v, want %+v", got, want)
+	}
+	s.CodexThreshold = 88
+	if got, want := codexBars(s), codexauto.SingleBar(88); got != want {
+		t.Errorf("codexThreshold 88: bars %+v, want %+v", got, want)
 	}
 }

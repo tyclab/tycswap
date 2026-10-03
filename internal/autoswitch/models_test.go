@@ -92,8 +92,9 @@ func TestApplyModelsRetargetsAtNextTick(t *testing.T) {
 	f.mu.Lock()
 	last := f.pollInputs[len(f.pollInputs)-1]
 	f.mu.Unlock()
-	if want := settings.ParseModelNames(strp("Fable, Opus")); !reflect.DeepEqual(last.models, want) || last.threshold != 90 {
-		t.Fatalf("poll inputs %+v, want threshold 90 models %v", last, want)
+	// The poll plan keys on the lowest bar in force: the 5h bar, 85 (DESIGN A34).
+	if want := settings.ParseModelNames(strp("Fable, Opus")); !reflect.DeepEqual(last.models, want) || last.threshold != 85 {
+		t.Fatalf("poll inputs %+v, want threshold 85 models %v", last, want)
 	}
 	e.adoptPendingModels()
 	if want := settings.ParseModelNames(strp("Fable, Opus")); !reflect.DeepEqual(e.models, want) || e.modelCheckDone {

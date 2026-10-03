@@ -175,8 +175,11 @@ func (e PollEvent) Human() string {
 		tail = " | others: " + strings.Join(others, ", ")
 	}
 	email, _ := e.Active["email"].(string)
+	// The line carries the 7d bar only, so it says so: "switch at 92%" next
+	// to a 5h window at 90% would read as a contradiction now that each window
+	// has a bar of its own (DESIGN A34).
 	return fmt.Sprintf(
-		"Account-%s (%s): %s (switch at %s%%)%s",
+		"Account-%s (%s): %s (7d bar %s%%)%s",
 		num, email, used, pctLabel(e.Threshold), tail,
 	)
 }
@@ -214,8 +217,13 @@ func numToStr(v any) string { return AccountNumberStr(v) }
 
 // SwitchEvent reports a switch (or, in dry-run, the switch that would happen).
 type SwitchEvent struct {
-	Ts       string
-	Trigger  string // "proactive" | "at-limit" | "failover"
+	Ts      string
+	Trigger string // "proactive" | "at-limit" | "failover"
+	// Axis is the window class that made the tick move, "5h", "7d" or
+	// "model" (DESIGN A34), which tells a reader whether the wait avoided was
+	// hours or days. Empty under "failover", where usage was unreadable and
+	// no window decided.
+	Axis     string
 	FromRef  map[string]any
 	ToRef    map[string]any
 	Warnings []any
@@ -233,6 +241,7 @@ func (e SwitchEvent) JSON() map[string]any {
 	}
 	return baseJSON(e.Kind(), e.Ts, map[string]any{
 		"trigger":  e.Trigger,
+		"axis":     e.Axis,
 		"from":     e.FromRef,
 		"to":       e.ToRef,
 		"warnings": warnings,
@@ -255,7 +264,11 @@ func (e SwitchEvent) Human() string {
 	if e.DryRun {
 		prefix = "[dry-run] would switch"
 	}
-	return fmt.Sprintf("%s %s -> %s (%s)", prefix, src, dst, e.Trigger)
+	why := e.Trigger
+	if e.Axis != "" {
+		why += ", " + e.Axis
+	}
+	return fmt.Sprintf("%s %s -> %s (%s)", prefix, src, dst, why)
 }
 
 // NoSwitchEvent reports a tick that resolved without switching (05§3 no-switch).

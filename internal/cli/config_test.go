@@ -30,8 +30,8 @@ func TestConfigListShowsAllDefaults(t *testing.T) {
 	if n, want := strings.Count(out, "(default)"), len(settings.SettingSpecs); n != want {
 		t.Errorf("(default) count = %d, want %d\n%s", n, want, out)
 	}
-	if !strings.Contains(out, "autoswitch.threshold") {
-		t.Errorf("list missing autoswitch.threshold:\n%s", out)
+	if !strings.Contains(out, "autoswitch.sevenDayThreshold") {
+		t.Errorf("list missing autoswitch.sevenDayThreshold:\n%s", out)
 	}
 }
 
@@ -70,15 +70,15 @@ func TestConfigListJSON(t *testing.T) {
 // no longer marked default (spec 08§7.8/§14).
 func TestConfigSetThenGet(t *testing.T) {
 	cleanHome(t)
-	code, out, errStr := runConfig(t, "set", "autoswitch.threshold", "80")
+	code, out, errStr := runConfig(t, "set", "autoswitch.sevenDayThreshold", "80")
 	if code != 0 {
 		t.Fatalf("set exit = %d, want 0 (stderr=%q)", code, errStr)
 	}
-	if !strings.Contains(out, "autoswitch.threshold = 80") {
-		t.Errorf("set output = %q, want 'autoswitch.threshold = 80'", out)
+	if !strings.Contains(out, "autoswitch.sevenDayThreshold = 80") {
+		t.Errorf("set output = %q, want 'autoswitch.sevenDayThreshold = 80'", out)
 	}
 
-	code, out, _ = runConfig(t, "get", "autoswitch.threshold")
+	code, out, _ = runConfig(t, "get", "autoswitch.sevenDayThreshold")
 	if code != 0 {
 		t.Fatalf("get exit = %d, want 0", code)
 	}
@@ -97,8 +97,8 @@ func TestConfigSetThenGet(t *testing.T) {
 func TestConfigGetJSONBothOrders(t *testing.T) {
 	cleanHome(t)
 	for _, args := range [][]string{
-		{"get", "autoswitch.threshold", "--json"},
-		{"--json", "get", "autoswitch.threshold"},
+		{"get", "autoswitch.sevenDayThreshold", "--json"},
+		{"--json", "get", "autoswitch.sevenDayThreshold"},
 	} {
 		code, out, errStr := runConfig(t, args...)
 		if code != 0 {
@@ -108,7 +108,7 @@ func TestConfigGetJSONBothOrders(t *testing.T) {
 		if err := json.Unmarshal([]byte(out), &payload); err != nil {
 			t.Fatalf("%v stdout not JSON: %q", args, out)
 		}
-		if payload["key"] != "autoswitch.threshold" {
+		if payload["key"] != "autoswitch.sevenDayThreshold" {
 			t.Errorf("%v key = %v", args, payload["key"])
 		}
 	}
@@ -117,7 +117,7 @@ func TestConfigGetJSONBothOrders(t *testing.T) {
 // TestConfigJSONWithMutatingActionExit2: --json with set/unset is exit 2.
 func TestConfigJSONWithMutatingActionExit2(t *testing.T) {
 	cleanHome(t)
-	code, _, errStr := runConfig(t, "--json", "set", "autoswitch.threshold", "80")
+	code, _, errStr := runConfig(t, "--json", "set", "autoswitch.sevenDayThreshold", "80")
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2", code)
 	}
@@ -129,12 +129,12 @@ func TestConfigJSONWithMutatingActionExit2(t *testing.T) {
 // TestConfigSetOutOfRange: exit 1 with the range message (spec 08§14).
 func TestConfigSetOutOfRange(t *testing.T) {
 	cleanHome(t)
-	code, _, errStr := runConfig(t, "set", "autoswitch.threshold", "200")
+	code, _, errStr := runConfig(t, "set", "autoswitch.sevenDayThreshold", "200")
 	if code != 1 {
 		t.Fatalf("exit = %d, want 1", code)
 	}
-	if !strings.Contains(errStr, "between 50 and 99.9") {
-		t.Errorf("stderr = %q, want 'between 50 and 99.9'", errStr)
+	if !strings.Contains(errStr, "between 50 and 100") {
+		t.Errorf("stderr = %q, want 'between 50 and 100'", errStr)
 	}
 }
 
@@ -177,7 +177,7 @@ func TestConfigGetUnknownKeyJSON(t *testing.T) {
 // TestConfigUnsetNotSet: unset of an absent key is exit 0 with a stderr notice.
 func TestConfigUnsetNotSet(t *testing.T) {
 	cleanHome(t)
-	code, out, errStr := runConfig(t, "unset", "autoswitch.threshold")
+	code, out, errStr := runConfig(t, "unset", "autoswitch.sevenDayThreshold")
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}
@@ -213,7 +213,7 @@ func TestConfigUnknownAction(t *testing.T) {
 // TestConfigSetMissingValue: `set KEY` with no VALUE is exit 2.
 func TestConfigSetMissingValue(t *testing.T) {
 	cleanHome(t)
-	code, _, _ := runConfig(t, "set", "autoswitch.threshold")
+	code, _, _ := runConfig(t, "set", "autoswitch.sevenDayThreshold")
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2", code)
 	}

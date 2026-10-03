@@ -132,7 +132,7 @@ func (a *autoFacade) View() web.AutoView {
 	threshold := a.threshold
 	if !a.running {
 		s = settings.Load(a.sw.BackupDir())
-		threshold = s.Threshold
+		threshold = s.SevenDayThreshold
 	}
 	// Each quarantine entry carries its reason and the engine's RFC3339 "at"
 	// stamp, so the page can show since when a slot has been held out.
@@ -176,7 +176,7 @@ func (a *autoFacade) Start(dryRun bool) error {
 	engine := a.newEngine(s, a.onEvent, dryRun)
 	now := clock.Seconds(a.clk)
 	done := make(chan struct{})
-	a.engine, a.done, a.running, a.dryRun, a.startedAt, a.threshold, a.settings = engine, done, true, dryRun, &now, s.Threshold, s
+	a.engine, a.done, a.running, a.dryRun, a.startedAt, a.threshold, a.settings = engine, done, true, dryRun, &now, s.SevenDayThreshold, s
 	go func() {
 		defer close(done)
 		engine.RunLoop()
@@ -229,10 +229,11 @@ func (a *autoFacade) Wake() error {
 	return nil
 }
 
-// ApplyThreshold retargets the running engine's threshold. The bounds are the
-// autoswitch.threshold spec's (50–99.9), as for `tycswap config` and the TUI.
+// ApplyThreshold retargets the running engine's 7d bar, the one the slider
+// moves (DESIGN A34). The bounds are the autoswitch.sevenDayThreshold spec's
+// (50–100), as for `tycswap config` and the TUI.
 func (a *autoFacade) ApplyThreshold(t float64) error {
-	spec, err := settings.SpecFor("autoswitch.threshold")
+	spec, err := settings.SpecFor("autoswitch.sevenDayThreshold")
 	if err != nil {
 		return err
 	}

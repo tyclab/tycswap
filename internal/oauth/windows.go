@@ -181,6 +181,40 @@ func RelevantWindows(u *Usage, models []string) []RelevantWindow {
 	return out
 }
 
+// Window-class labels. The 5h window is a RATE limit that bursts: it can fill
+// between two polls, and it refills within hours. The 7d window is the
+// account's BUDGET: it creeps, and it is days-long when spent. A per-model
+// weekly window is a budget too, but only for that model, and only when
+// autoswitch.model counts it. Each is judged against a bar of its own (DESIGN
+// A34); usage.FiveHourLabel / SevenDayLabel are the same constants on the
+// engine's side of the split.
+const (
+	FiveHourLabel = "5h"
+	SevenDayLabel = "7d"
+)
+
+// ClassPcts is the highest utilization in each window class: fiveHour from the
+// rate window, sevenDay from the week, model from the counted per-model
+// windows. Each is nil when the account reports no window of that class —
+// model is nil whenever models is empty. It is the display side of
+// AccountHeadroomByClass, which the engine decides with (DESIGN A34).
+func ClassPcts(u *Usage, models []string) (fiveHour, sevenDay, model *float64) {
+	for _, w := range RelevantWindows(u, models) {
+		axis := &model
+		switch w.Label {
+		case FiveHourLabel:
+			axis = &fiveHour
+		case SevenDayLabel:
+			axis = &sevenDay
+		}
+		if *axis == nil || w.Pct > **axis {
+			pct := w.Pct
+			*axis = &pct
+		}
+	}
+	return fiveHour, sevenDay, model
+}
+
 // AccountHeadroom returns the remaining percent before the binding window hits
 // a rate limit (100 - max(pct)), or nil when no window data is available
 // ("unknown", never auto-skipped). <= 0 means at or over a limit.
@@ -208,7 +242,7 @@ func AccountHeadroom(u *Usage, models []string) *float64 {
 func RenewalTS(u *Usage, models []string) *float64 {
 	var latest *float64
 	for _, w := range RelevantWindows(u, models) {
-		if w.Label == "5h" {
+		if w.Label == FiveHourLabel {
 			continue
 		}
 		ts := parseRenewalTS(w.ResetsAt)

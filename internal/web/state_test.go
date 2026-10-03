@@ -120,14 +120,14 @@ func TestState_ExactShape(t *testing.T) {
 			},
 		},
 		"settings": []any{
-			map[string]any{"key": "autoswitch.threshold", "kind": "float", "value": 90, "default": 90, "isDefault": true, "description": "Switch when the binding 5h/7d window reaches this pct", "min": 50, "max": 99.9, "applies": settingApplies("autoswitch.threshold")},
-			map[string]any{"key": "autoswitch.codexThreshold", "kind": "float", "value": 0, "default": 0, "isDefault": true, "description": "Codex-only switch threshold (0 = use autoswitch.threshold)", "min": 0, "max": 99.9, "applies": settingApplies("autoswitch.codexThreshold")},
+			map[string]any{"key": "autoswitch.sevenDayThreshold", "kind": "float", "value": 97, "default": 97, "isDefault": true, "description": "Switch when the 7d window reaches this pct", "min": 50, "max": 100, "applies": settingApplies("autoswitch.sevenDayThreshold")},
+			map[string]any{"key": "autoswitch.codexThreshold", "kind": "float", "value": 0, "default": 0, "isDefault": true, "description": "Codex-only switch threshold for both Codex windows (0 = use the 5h and 7d bars)", "min": 0, "max": 99.9, "applies": settingApplies("autoswitch.codexThreshold")},
 			map[string]any{"key": "autoswitch.codexEnabled", "kind": "bool", "value": true, "default": true, "isDefault": true, "description": "Also auto-switch Codex accounts", "applies": settingApplies("autoswitch.codexEnabled")},
 			map[string]any{"key": "autoswitch.strategy", "kind": "choice", "value": "best", "default": "soonest-reset", "isDefault": false, "choices": []any{"best", "soonest-reset"}, "description": "How auto-switch orders qualifying targets", "applies": settingApplies("autoswitch.strategy")},
 		},
 		"auto": map[string]any{
 			"available": true, "running": true, "dryRun": true, "startedAt": 1758276000, "threshold": 85,
-			"settings": map[string]any{"autoswitch.threshold": 85, "autoswitch.strategy": "soonest-reset", "autoswitch.codexEnabled": true},
+			"settings": map[string]any{"autoswitch.sevenDayThreshold": 85, "autoswitch.strategy": "soonest-reset", "autoswitch.codexEnabled": true},
 			"events": []any{
 				map[string]any{"at": 1758276001, "kind": "poll", "message": "polled 3 accounts"},
 				map[string]any{"at": 1758276002, "kind": "switch", "message": "switched to #2", "account": "2", "fields": map[string]any{"from": "1"}},

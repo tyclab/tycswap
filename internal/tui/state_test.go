@@ -546,14 +546,14 @@ func TestThresholdSessionOverrideNeverPersisted(t *testing.T) {
 	// Adjust the threshold up one point.
 	a.adjustThreshold(m)
 	a.thresholdStep(m, 1)
-	if a.settings.Threshold != 91 {
-		t.Fatalf("threshold after +1 = %v, want 91", a.settings.Threshold)
+	if a.settings.SevenDayThreshold != 98 {
+		t.Fatalf("threshold after +1 = %v, want 98", a.settings.SevenDayThreshold)
 	}
-	if m.thresholdPct == nil || *m.thresholdPct != 91 {
-		t.Fatalf("app threshold tick = %v, want 91", m.thresholdPct)
+	if m.thresholdPct == nil || *m.thresholdPct != 98 {
+		t.Fatalf("app threshold tick = %v, want 98", m.thresholdPct)
 	}
-	if got := host.built[0].appliedThresholds; len(got) != 1 || got[0] != 91 {
-		t.Fatalf("engine.ApplyThreshold = %v, want [91]", got)
+	if got := host.built[0].appliedThresholds; len(got) != 1 || got[0] != 98 {
+		t.Fatalf("engine.ApplyThreshold = %v, want [98]", got)
 	}
 	// A net change wakes the engine and logs, but never writes settings.json.
 	a.endAdjust(m)
@@ -565,8 +565,8 @@ func TestThresholdSessionOverrideNeverPersisted(t *testing.T) {
 	}
 	// Unmount restores the pre-screen tick and un-pins the poll planner.
 	m.popScreen()
-	if m.thresholdPct == nil || *m.thresholdPct != 90 {
-		t.Fatalf("unmount should restore threshold to the file value 90, got %v", m.thresholdPct)
+	if m.thresholdPct == nil || *m.thresholdPct != 97 {
+		t.Fatalf("unmount should restore threshold to the file value 97, got %v", m.thresholdPct)
 	}
 	if f.clearPollCalls != 1 {
 		t.Fatalf("unmount should ClearPollPolicyInputs once, got %d", f.clearPollCalls)
@@ -586,14 +586,14 @@ func TestThresholdNoNetChangeIsSilent(t *testing.T) {
 	}
 }
 
-func TestDryLiveCarriesSessionThreshold(t *testing.T) {
+func TestDryLiveCarriesTheRunThreshold(t *testing.T) {
 	dir := t.TempDir()
 	host := &engineHost{}
 	m := newModel(&fakeFacade{backupDir: dir}, "dashboard", WithEngineFactory(host.factory()))
 	m.pushScreen(newAutoScreen())
 	a := m.top().(*autoScreen)
 	a.adjustThreshold(m)
-	a.thresholdStep(m, 5) // 90 → 95
+	a.thresholdStep(m, 2) // 97 → 99
 	a.endAdjust(m)
 	// Toggling live rebuilds the engine from the in-memory (adjusted) settings.
 	a.restartEngine(m, false)
@@ -603,8 +603,8 @@ func TestDryLiveCarriesSessionThreshold(t *testing.T) {
 	if host.built[1].dryRun {
 		t.Fatal("restarted engine should be live")
 	}
-	if host.built[1].settingsAt.Threshold != 95 {
-		t.Fatalf("live engine threshold = %v, want 95 (carried forward)", host.built[1].settingsAt.Threshold)
+	if host.built[1].settingsAt.SevenDayThreshold != 99 {
+		t.Fatalf("live engine threshold = %v, want 99 (carried forward)", host.built[1].settingsAt.SevenDayThreshold)
 	}
 	if !host.built[0].stopped {
 		t.Fatal("the dry-run engine should have been stopped on restart")

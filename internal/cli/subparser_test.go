@@ -112,10 +112,10 @@ func TestRunExtraPositional(t *testing.T) {
 	}
 }
 
-// TestAutoBadValue: a non-numeric --threshold is an exit-2 error (before the
+// TestAutoBadValue: a non-numeric --seven-day-threshold is an exit-2 error (before the
 // switcher is built).
 func TestAutoBadThreshold(t *testing.T) {
-	code, _, errStr := runSub(t, "auto", "--threshold", "high")
+	code, _, errStr := runSub(t, "auto", "--seven-day-threshold", "high")
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2 (stderr=%q)", code, errStr)
 	}
@@ -136,6 +136,31 @@ func TestAutoIncludeAPIKeyFlagsAreGone(t *testing.T) {
 	code, out, _ := runSub(t, "auto", "--help")
 	if code != 0 || strings.Contains(out, "include-api-key") || !strings.Contains(out, "never moves onto") {
 		t.Errorf("auto --help (exit %d) = %q", code, out)
+	}
+}
+
+// TestAutoThresholdFlagsPerWindow: one flag per bar (DESIGN A34); each takes
+// a number, and the single --threshold is gone.
+func TestAutoThresholdFlagsPerWindow(t *testing.T) {
+	for _, flag := range []string{"--five-hour-threshold", "--seven-day-threshold", "--model-threshold"} {
+		code, _, errStr := runSub(t, "auto", flag, "high")
+		if code != 2 || !strings.Contains(errStr, "argument "+flag+": invalid float value: 'high'") {
+			t.Errorf("%s high: exit %d, stderr %q", flag, code, errStr)
+		}
+		code, _, errStr = runSub(t, "auto", flag)
+		if code != 2 || !strings.Contains(errStr, "argument "+flag+": expected one argument") {
+			t.Errorf("%s: exit %d, stderr %q", flag, code, errStr)
+		}
+	}
+	code, _, errStr := runSub(t, "auto", "--threshold", "80")
+	if code != 2 || !strings.Contains(errStr, "unrecognized arguments: --threshold") {
+		t.Errorf("--threshold: exit %d, stderr %q", code, errStr)
+	}
+	code, out, _ := runSub(t, "auto", "--help")
+	for _, want := range []string{"--five-hour-threshold PCT", "--seven-day-threshold PCT", "--model-threshold PCT", "Each window has a bar of its own"} {
+		if code != 0 || !strings.Contains(out, want) {
+			t.Errorf("auto --help (exit %d) lacks %q:\n%s", code, want, out)
+		}
 	}
 }
 

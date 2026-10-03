@@ -561,7 +561,7 @@ func TestBody_MalformedJSON400_EveryBodyRoute(t *testing.T) {
 	routes := []struct{ method, path string }{
 		{"POST", "/api/switch"}, {"POST", "/api/accounts/add-token"}, {"POST", "/api/accounts/swap"},
 		{"POST", "/api/accounts/claude:2/alias"}, {"POST", "/api/accounts/claude:2/move"},
-		{"POST", "/api/settings/autoswitch.threshold"}, {"POST", "/api/auto/start"}, {"POST", "/api/auto/threshold"},
+		{"POST", "/api/settings/autoswitch.sevenDayThreshold"}, {"POST", "/api/auto/start"}, {"POST", "/api/auto/threshold"},
 	}
 	for _, r := range routes {
 		resp := h.send(r.method, r.path, "{\"broken")

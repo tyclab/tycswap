@@ -81,7 +81,7 @@ func twoAccounts(clk *clock.Fake, active, cand usage.UsageEntry) *fakeSwitcher {
 
 func TestProactiveSwitch(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(95, 10)), dictEntry(usageOf(10, 10)))
+	f := twoAccounts(clk, dictEntry(usageOf(10, 98)), dictEntry(usageOf(10, 10)))
 	rec := &recorder{}
 	e := build(t, f, settings.Default(), rec, clk, false)
 
@@ -104,8 +104,8 @@ func TestProactiveSwitch(t *testing.T) {
 
 func TestIssue115StrictlyBetter(t *testing.T) {
 	clk := newClk()
-	// active bound by 5h 99%, candidate bound by 7d 89% -> 89<90 and 99-89>=10.
-	f := twoAccounts(clk, dictEntry(usageOf(99, 5)), dictEntry(usageOf(1, 89)))
+	// active 7d 99%, candidate 7d 89% -> 89<90 and 99-89>=10 on the weekly axis.
+	f := twoAccounts(clk, dictEntry(usageOf(5, 99)), dictEntry(usageOf(1, 89)))
 	rec := &recorder{}
 	e := build(t, f, settings.Default(), rec, clk, false)
 	if got := e.Tick(); got != Switched {
@@ -120,9 +120,9 @@ func TestProactiveNeverLandsAtOrOver(t *testing.T) {
 	// threshold 80, hysteresis 5; active 90% (h=10), candidate 85% used (h=15).
 	// candidate is 5 better but sits at/over 80 -> BLOCKED no-qualifying-candidate.
 	s := settings.Default()
-	s.Threshold = 80
+	s.SevenDayThreshold = 80
 	s.HysteresisPct = 5
-	f := twoAccounts(clk, dictEntry(usageOf(90, 0)), dictEntry(usageOf(85, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 90)), dictEntry(usageOf(0, 85)))
 	rec := &recorder{}
 	e := build(t, f, s, rec, clk, false)
 	if got := e.Tick(); got != Blocked {
@@ -146,9 +146,9 @@ func TestTieResolvesToEarliestSlot(t *testing.T) {
 	f.switchable = []string{"1", "2", "3"}
 	f.emails = map[string]string{"1": "a@x", "2": "b@x", "3": "c@x"}
 	f.entries = map[string]usage.UsageEntry{
-		"1": dictEntry(usageOf(95, 0)),
-		"2": dictEntry(usageOf(10, 0)), // headroom 90
-		"3": dictEntry(usageOf(10, 0)), // headroom 90 (tie)
+		"1": dictEntry(usageOf(0, 98)),
+		"2": dictEntry(usageOf(0, 10)), // headroom 90
+		"3": dictEntry(usageOf(0, 10)), // headroom 90 (tie)
 	}
 	f.creds = map[string]string{"2": farFutureCreds(clk, "r2"), "3": farFutureCreds(clk, "r3")}
 	rec := &recorder{}
@@ -168,7 +168,7 @@ func TestAtLimitBypassesCooldownAndHysteresis(t *testing.T) {
 	// active at 100% (h=0 -> at-limit); candidate at 85% used -> above the
 	// proactive bar (threshold 80) but at-limit takes it anyway.
 	s := settings.Default()
-	s.Threshold = 80
+	s.SevenDayThreshold = 80
 	s.HysteresisPct = 20
 	s.CooldownSeconds = 3600
 	f := twoAccounts(clk, dictEntry(usageOf(100, 0)), dictEntry(usageOf(85, 0)))
@@ -292,7 +292,7 @@ func TestNoActiveAccount(t *testing.T) {
 
 func TestNoComparison(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), nilEntry())
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), nilEntry())
 	rec := &recorder{}
 	e := build(t, f, settings.Default(), rec, clk, false)
 	if got := e.Tick(); got != Blocked {
@@ -312,7 +312,7 @@ func TestMixedUnknownAndExhausted(t *testing.T) {
 	f.switchable = []string{"1", "2", "3"}
 	f.emails = map[string]string{"1": "a", "2": "b", "3": "c"}
 	f.entries = map[string]usage.UsageEntry{
-		"1": dictEntry(usageOf(95, 0)),
+		"1": dictEntry(usageOf(0, 98)),
 		"2": dictEntry(usageOf(100, 0)), // exhausted
 		"3": nilEntry(),                 // unreadable
 	}
@@ -485,7 +485,7 @@ func threeCandidatesForStrategy(pct2 float64, reset2 string, pct3 float64, reset
 	f.switchable = []string{"1", "2", "3"}
 	f.emails = map[string]string{"1": "a", "2": "b", "3": "c"}
 	f.entries = map[string]usage.UsageEntry{
-		"1": dictEntry(usageOf(95, 0)), // active over threshold -> proactive
+		"1": dictEntry(usageOf(0, 98)), // active over the weekly threshold -> proactive
 		"2": dictEntry(map[string]any{"five_hour": win(5, ""), "seven_day": win(pct2, reset2)}),
 		"3": dictEntry(map[string]any{"five_hour": win(5, ""), "seven_day": win(pct3, reset3)}),
 	}
@@ -559,12 +559,12 @@ func TestSoonestResetAtLimitPrefersBelowThreshold(t *testing.T) {
 	f.emails = map[string]string{"1": "a", "2": "b", "3": "c"}
 	f.entries = map[string]usage.UsageEntry{
 		"1": dictEntry(usageOf(100, 0)), // active at-limit (headroom 0)
-		// candidate 2: 94% used (h 6, over threshold 90) with the EARLIEST renewal.
-		"2": dictEntry(map[string]any{"five_hour": win(5, ""), "seven_day": win(94, "2026-07-19T00:00:00Z")}),
-		// candidate 3: 30% used (h 70, below threshold) with a LATER renewal.
+		// candidate 2: 98% used (h 2, over the 7d bar) with the EARLIEST renewal.
+		"2": dictEntry(map[string]any{"five_hour": win(5, ""), "seven_day": win(98, "2026-07-19T00:00:00Z")}),
+		// candidate 3: 30% used (h 70, below every bar) with a LATER renewal.
 		"3": dictEntry(map[string]any{"five_hour": win(5, ""), "seven_day": win(30, "2026-07-25T00:00:00Z")}),
 	}
-	s := settings.Default() // threshold 90
+	s := settings.Default() // 7d bar 97
 	s.Strategy = "soonest-reset"
 	rec := &recorder{}
 	e := build(t, f, s, rec, clk, true) // dry-run: decide only, no freshen
@@ -583,8 +583,8 @@ func TestSoonestResetAtLimitPrefersBelowThreshold(t *testing.T) {
 // TestSoonestResetAtLimitAllOverThresholdPicksMostHeadroom pins tier B ordering:
 // when EVERY qualifying candidate is over threshold under an at-limit trigger the
 // switch still happens (last resort, never Blocked), and among the over-threshold
-// last resorts the one with the most headroom wins — a 96%-used account renewing
-// tonight loses to a 92%-used account renewing later.
+// last resorts the one with the most headroom wins — a 99%-used account renewing
+// tonight loses to a 98%-used account renewing later.
 func TestSoonestResetAtLimitAllOverThresholdPicksMostHeadroom(t *testing.T) {
 	clk := newClk()
 	f := newFake()
@@ -593,12 +593,12 @@ func TestSoonestResetAtLimitAllOverThresholdPicksMostHeadroom(t *testing.T) {
 	f.emails = map[string]string{"1": "a", "2": "b", "3": "c"}
 	f.entries = map[string]usage.UsageEntry{
 		"1": dictEntry(usageOf(100, 0)), // active at-limit
-		// candidate 2: 96% used (h 4) renewing tonight (earliest).
-		"2": dictEntry(map[string]any{"five_hour": win(5, ""), "seven_day": win(96, "2026-07-18T20:00:00Z")}),
-		// candidate 3: 92% used (h 8) renewing later.
-		"3": dictEntry(map[string]any{"five_hour": win(5, ""), "seven_day": win(92, "2026-07-25T00:00:00Z")}),
+		// candidate 2: 99% used (h 1) renewing tonight (earliest).
+		"2": dictEntry(map[string]any{"five_hour": win(5, ""), "seven_day": win(99, "2026-07-18T20:00:00Z")}),
+		// candidate 3: 98% used (h 2) renewing later.
+		"3": dictEntry(map[string]any{"five_hour": win(5, ""), "seven_day": win(98, "2026-07-25T00:00:00Z")}),
 	}
-	s := settings.Default() // threshold 90
+	s := settings.Default() // 7d bar 97
 	s.Strategy = "soonest-reset"
 	rec := &recorder{}
 	e := build(t, f, s, rec, clk, true)
@@ -687,7 +687,7 @@ func TestPlainFetchFailureCountsUnhealthy(t *testing.T) {
 
 func TestFresheningNearExpiryRefreshes(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), dictEntry(usageOf(0, 10)))
 	f.creds["2"] = nearExpiryCreds(clk, "r2")
 	rotated := farFutureCreds(clk, "r2-new")
 	called := false
@@ -739,7 +739,7 @@ func TestFresheningPersistFailureIsTransient(t *testing.T) {
 
 func TestFresheningFreshTargetNotRefreshed(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), dictEntry(usageOf(0, 10)))
 	// credential is far-future (not near expiry) -> no refresh.
 	called := false
 	oc := fakeOAuth(func(string) oauth.RefreshOutcome {
@@ -756,7 +756,7 @@ func TestFresheningFreshTargetNotRefreshed(t *testing.T) {
 
 func TestFresheningTransientReturnsError(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), dictEntry(usageOf(0, 10)))
 	f.creds["2"] = nearExpiryCreds(clk, "r2")
 	oc := fakeOAuth(func(string) oauth.RefreshOutcome {
 		return oauth.RefreshOutcome{Error: oauth.ErrTransient}
@@ -783,9 +783,9 @@ func TestFresheningInvalidGrantQuarantinesThenNextCandidate(t *testing.T) {
 	f.switchable = []string{"1", "2", "3"}
 	f.emails = map[string]string{"1": "a", "2": "b", "3": "c"}
 	f.entries = map[string]usage.UsageEntry{
-		"1": dictEntry(usageOf(95, 0)),
-		"2": dictEntry(usageOf(5, 0)), // best headroom -> tried first
-		"3": dictEntry(usageOf(20, 0)),
+		"1": dictEntry(usageOf(0, 98)),
+		"2": dictEntry(usageOf(0, 5)), // best weekly headroom -> tried first
+		"3": dictEntry(usageOf(0, 20)),
 	}
 	f.creds = map[string]string{"2": nearExpiryCreds(clk, "r2"), "3": farFutureCreds(clk, "r3")}
 	oc := fakeOAuth(func(creds string) oauth.RefreshOutcome {
@@ -810,7 +810,7 @@ func TestFresheningInvalidGrantQuarantinesThenNextCandidate(t *testing.T) {
 
 func TestFresheningSkipsLiveSession(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), dictEntry(usageOf(0, 10)))
 	f.creds["2"] = nearExpiryCreds(clk, "r2")
 	f.liveSessions["2"] = []int{4242}
 	oc := fakeOAuth(func(string) oauth.RefreshOutcome {
@@ -831,7 +831,7 @@ func TestFresheningSkipsLiveSession(t *testing.T) {
 
 func TestTokenIdentityBackfill(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), dictEntry(usageOf(0, 10)))
 	f.creds["2"] = nearExpiryCreds(clk, "r2")
 	f.identities["2"] = map[string]string{"email": "b", "organizationUuid": "", "uuid": ""}
 	oc := fakeOAuth(func(string) oauth.RefreshOutcome {
@@ -849,7 +849,7 @@ func TestTokenIdentityBackfill(t *testing.T) {
 
 func TestTokenIdentityConflictQuarantines(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), dictEntry(usageOf(0, 10)))
 	f.creds["2"] = nearExpiryCreds(clk, "r2")
 	f.identities["2"] = map[string]string{"email": "b", "organizationUuid": "", "uuid": "U0"}
 	oc := fakeOAuth(func(string) oauth.RefreshOutcome {
@@ -872,7 +872,7 @@ func TestTokenIdentityConflictQuarantines(t *testing.T) {
 
 func TestTokenIdentityOrgConflictBeforeBackfill(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), dictEntry(usageOf(0, 10)))
 	f.creds["2"] = nearExpiryCreds(clk, "r2")
 	// blank slot uuid but a recorded org that differs from the token's org.
 	f.identities["2"] = map[string]string{"email": "b", "organizationUuid": "O0", "uuid": ""}
@@ -893,7 +893,7 @@ func TestTokenIdentityOrgConflictBeforeBackfill(t *testing.T) {
 
 func TestTokenIdentityMalformedIgnored(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), dictEntry(usageOf(0, 10)))
 	f.creds["2"] = nearExpiryCreds(clk, "r2")
 	oc := fakeOAuth(func(string) oauth.RefreshOutcome {
 		// nil TokenAccount -> ignored, credential persisted, "ok".
@@ -910,7 +910,7 @@ func TestTokenIdentityMalformedIgnored(t *testing.T) {
 
 func TestDryRun(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), dictEntry(usageOf(0, 10)))
 	f.creds["2"] = nearExpiryCreds(clk, "r2")
 	oc := fakeOAuth(func(string) oauth.RefreshOutcome {
 		t.Errorf("dry-run must not refresh")
@@ -941,7 +941,7 @@ func TestDryRun(t *testing.T) {
 
 func TestDryRunKeepsQuarantineBlocking(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), dictEntry(usageOf(0, 10)))
 	rec := &recorder{}
 	statePath := filepath.Join(t.TempDir(), StateFilename)
 	// pre-write a quarantine of the only candidate.
@@ -965,7 +965,7 @@ func TestDryRunKeepsQuarantineBlocking(t *testing.T) {
 
 func TestAlreadyActiveNoAction(t *testing.T) {
 	clk := newClk()
-	f := twoAccounts(clk, dictEntry(usageOf(95, 0)), dictEntry(usageOf(10, 0)))
+	f := twoAccounts(clk, dictEntry(usageOf(0, 98)), dictEntry(usageOf(0, 10)))
 	f.switchTo = func(_ *fakeSwitcher, num string) (map[string]any, error) {
 		return map[string]any{"switched": false, "reason": "already active"}, nil
 	}

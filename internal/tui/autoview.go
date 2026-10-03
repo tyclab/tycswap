@@ -80,9 +80,9 @@ func (a *autoScreen) onMount(m *Model) tea.Cmd {
 	cmds := []tea.Cmd{m.setStoreOnly(true)}
 	a.settings = settings.Load(m.facade.BackupDir())
 	a.refreshQuarantine(m)
-	ct := a.settings.Threshold
+	ct := a.settings.SevenDayThreshold
 	a.configuredThreshold = &ct
-	tp := a.settings.Threshold
+	tp := a.settings.SevenDayThreshold
 	m.thresholdPct = &tp
 	cmds = append(cmds, a.startEngine(m, true))
 	return tea.Batch(cmds...)
@@ -281,7 +281,7 @@ func (a *autoScreen) adjustThreshold(m *Model) tea.Cmd {
 		return nil
 	}
 	a.adjusting = true
-	et := a.settings.Threshold
+	et := a.settings.SevenDayThreshold
 	a.entryThreshold = &et
 	return nil
 }
@@ -291,7 +291,7 @@ func (a *autoScreen) thresholdStep(m *Model, delta float64) tea.Cmd {
 		return nil
 	}
 	lo, hi := thresholdBounds()
-	value := a.settings.Threshold + delta
+	value := a.settings.SevenDayThreshold + delta
 	if value > hi {
 		value = hi
 	}
@@ -306,10 +306,10 @@ func (a *autoScreen) thresholdStep(m *Model, delta float64) tea.Cmd {
 // threshold immediately and moves the bar tick everywhere (09§4.5). No-op when
 // unchanged.
 func (a *autoScreen) setThreshold(m *Model, value float64) {
-	if value == a.settings.Threshold {
+	if value == a.settings.SevenDayThreshold {
 		return
 	}
-	a.settings.Threshold = value
+	a.settings.SevenDayThreshold = value
 	if a.engine != nil {
 		a.engine.ApplyThreshold(value)
 	}
@@ -322,19 +322,19 @@ func (a *autoScreen) setThreshold(m *Model, value float64) {
 // session-set line (09§4.5). No net change → nothing announced.
 func (a *autoScreen) endAdjust(m *Model) {
 	a.adjusting = false
-	if a.entryThreshold != nil && a.settings.Threshold == *a.entryThreshold {
+	if a.entryThreshold != nil && a.settings.SevenDayThreshold == *a.entryThreshold {
 		return
 	}
 	if a.engine != nil {
 		a.engine.Wake()
 	}
-	a.appendSystem(fmt.Sprintf("— threshold set to %s%% for this session —", pctLabel(a.settings.Threshold)))
+	a.appendSystem(fmt.Sprintf("— 7d threshold set to %s%% for this session —", pctLabel(a.settings.SevenDayThreshold)))
 }
 
 // -- candidates (09§4.7) -----------------------------------------------------
 
 // candidateRank carries both ranking keys so the panel can order candidates by
-// either strategy from the same pass. "best" compares bestKey (binding pct, or
+// either strategy from the same pass. "best" compares bestKey (weekly pct, or
 // the 997 quarantined / 998 sentinel / 999 usage-unknown sort keys) then account
 // number. "soonest-reset" is threshold-tiered so an at/above-threshold account is
 // never preferred for its renewal; it sorts after every below-threshold
@@ -348,10 +348,13 @@ func (a *autoScreen) endAdjust(m *Model) {
 // is labeled with why (quarantined / sentinel / usage-unknown), the one exception
 // being disabled rows, which are dropped from the panel entirely.
 type candidateRank struct {
-	number  string
-	bestKey float64  // "best"-mode key: binding pct | 997 quarantined | 998 sentinel | 999 unknown
+	number string
+	// bestKey is the "best"-mode key: weekly pct, falling back to the binding
+	// pct for an account reporting no weekly window | 997 quarantined |
+	// 998 sentinel | 999 unknown (DESIGN A34).
+	bestKey float64
 	tier    int      // "soonest-reset" tier 0..6
-	pct     float64  // binding pct (within-tier tiebreak; 0 when not applicable)
+	pct     float64  // the same weekly figure (within-tier tiebreak; 0 when not applicable)
 	renewal *float64 // weekly renewal epoch (tiers 0/3; nil = unknown)
 }
 
@@ -386,7 +389,11 @@ func (a *autoScreen) candidatesText(snap *reporting.AccountsSnapshot, width int,
 		width = 80
 	}
 	models := settings.ParseModelNames(a.settings.Model)
-	threshold := a.settings.Threshold // session-adjusted; same value the engine gets
+	// The ± keys move the 7d bar only — the account's whole budget; the 5h and
+	// per-model bars are settings (DESIGN A34). All three are needed here, because a
+	// row is "at threshold" when ANY window has reached the bar that governs
+	// it, and the panel must agree with the engine.
+	bars := a.settings
 	var ranked []candidateRank
 	entries := map[string]candidateEntry{}
 	for _, acc := range snap.Accounts {
@@ -418,17 +425,28 @@ func (a *autoScreen) candidatesText(snap *reporting.AccountsSnapshot, width int,
 			ranked = append(ranked, candidateRank{number: acc.Number, bestKey: 999.0, tier: 6})
 		default:
 			entry.windows = candidateWindows(acc.Usage.LastGood, models)
-			r := candidateRank{number: acc.Number, bestKey: *pct, pct: *pct,
+			// Rank on the WEEKLY axis and judge each axis against its own bar,
+			// exactly as the engine does: ordering by the binding figure would
+			// send work to whichever account happens to be resting its 5h
+			// window, not to the one with budget to spare (DESIGN A34). An
+			// account reporting no weekly window at all falls back to the
+			// binding figure, as sortQualifying does.
+			pcts := classPcts(acc.Usage.LastGood, models)
+			key := *pct
+			if w := pcts.weekly(); w != nil {
+				key = *w
+			}
+			r := candidateRank{number: acc.Number, bestKey: key, pct: key,
 				renewal: renewalTS(acc.Usage.LastGood, models)}
 			switch {
 			case *pct >= 100.0:
-				r.tier = 3 // at/over limit
-			case *pct >= threshold:
-				r.tier = 2 // at/over threshold but below limit (headroom desc last resort)
+				r.tier = 3 // at/over a limit — unusable until that window resets
+			case pcts.overAnyBar(bars):
+				r.tier = 2 // at/over one of its bars but below limit (headroom desc last resort)
 			case r.renewal != nil:
-				r.tier = 0 // below threshold + known renewal
+				r.tier = 0 // below every bar + known renewal
 			default:
-				r.tier = 1 // below threshold, unknown renewal
+				r.tier = 1 // below every bar, unknown renewal
 			}
 			ranked = append(ranked, r)
 		}
@@ -978,7 +996,7 @@ func quarantineLabel(reason string) string {
 	return "quarantined (" + reason + ")"
 }
 
-// candidateLessBest is the "best" panel order: binding pct ascending (quarantined
+// candidateLessBest is the "best" panel order: weekly pct ascending (quarantined
 // 997, sentinel 998, usage-unknown 999 sort last), ties by account number
 // ascending.
 func candidateLessBest(a, b candidateRank) bool {
@@ -1132,16 +1150,25 @@ func (a *autoScreen) view(m *Model) string {
 // summaryText builds the #auto-summary line exactly (09§4.5), less the
 // adjusting hint the spec appends: view puts that on its own line (adjustHint,
 // DESIGN A28).
+//
+// Each window has a bar of its own (DESIGN A34), so the line names them:
+// "switch at 5h 85% · 7d 97%", plus the model bar while autoswitch.model
+// counts a window. The 7d bar is the one the threshold adjustment moves, so it
+// carries the adjusting color and the "(session)" mark.
 func (a *autoScreen) summaryText() richText {
 	var t richText
-	t.addPlain("auto-switch · ")
+	t.addPlain("auto-switch · switch at ")
+	t.addPlain(fmt.Sprintf("5h %s%% · ", pctLabel(a.settings.FiveHourThreshold)))
 	thStyle := segStyle{}
 	if a.adjusting {
 		thStyle = segStyle{Fg: colAccent}
 	}
-	t.add(fmt.Sprintf("threshold %s%%", pctLabel(a.settings.Threshold)), thStyle)
-	if a.configuredThreshold != nil && a.settings.Threshold != *a.configuredThreshold {
+	t.add(fmt.Sprintf("7d %s%%", pctLabel(a.settings.SevenDayThreshold)), thStyle)
+	if a.configuredThreshold != nil && a.settings.SevenDayThreshold != *a.configuredThreshold {
 		t.addFg(" (session)", colMuted)
+	}
+	if len(settings.ParseModelNames(a.settings.Model)) > 0 {
+		t.addPlain(fmt.Sprintf(" · model %s%%", pctLabel(a.settings.ModelThreshold)))
 	}
 	t.addPlain(fmt.Sprintf(" · poll every %.0fs", a.settings.IntervalSeconds))
 	if a.settings.Strategy != "best" {
@@ -1169,17 +1196,18 @@ func (a *autoScreen) appendSystem(text string) {
 // loadThreshold reads the configured threshold, or nil on any failure (09§2.1;
 // settings.Load is total, so this normally returns the file/default value).
 func loadThreshold(backupDir string) *float64 {
-	t := settings.Load(backupDir).Threshold
+	t := settings.Load(backupDir).SevenDayThreshold
 	return &t
 }
 
-// thresholdBounds returns the [lo, hi] clamp for autoswitch.threshold from the
-// single settings-spec source of truth (09§4.5: lo=50.0, hi=99.9).
+// thresholdBounds returns the [lo, hi] clamp for the bar the ± keys move —
+// autoswitch.sevenDayThreshold, the account's whole budget — from the single
+// settings-spec source of truth (09§4.5; DESIGN A34).
 func thresholdBounds() (lo, hi float64) {
 	for _, spec := range settings.SettingSpecs {
-		if spec.Section == "autoswitch" && spec.JSONKey == "threshold" {
+		if spec.Section == "autoswitch" && spec.JSONKey == "sevenDayThreshold" {
 			return spec.Lo, spec.Hi
 		}
 	}
-	return 50.0, 99.9
+	return 50.0, 100.0
 }

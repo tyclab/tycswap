@@ -35,8 +35,8 @@ import (
 // settings.Load at mount, so a change made here is in force the next time
 // that view opens — the same contract as the CLI path. One note for every
 // key, because no engine applies a key earlier than that (outside the engine,
-// the poll plan, the at-limit markers and `tycswap switch` read threshold and
-// model from the file each time).
+// the poll plan, the at-limit markers and `tycswap switch` read the bars and
+// the model from the file each time).
 const engineNote = "applies when the auto-switch engine next starts"
 
 // settingsScreen lists and edits settings.json (DESIGN A28).
@@ -79,8 +79,8 @@ func (s *settingsScreen) onMessage(m *Model, msg tea.Msg) tea.Cmd {
 }
 
 // reload re-reads every key's effective value and set-marker, and syncs the
-// dashboard's bar tick to the file's threshold, as the Auto view's mount does:
-// a threshold saved here moves the tick on the accounts monitor at once. The
+// dashboard's bar tick to the file's 7d bar, as the Auto view's mount does:
+// a 7d threshold saved here moves the tick on the accounts monitor at once. The
 // Auto view is never stacked under this screen (both open from the dashboard),
 // so no session override is in effect to be overwritten.
 func (s *settingsScreen) reload(m *Model) {

@@ -88,7 +88,7 @@ type AccountOps interface {
 
 // SettingView is one effective setting (`tycswap config`).
 type SettingView struct {
-	Key         string   `json:"key"`   // dotted, e.g. "autoswitch.threshold"
+	Key         string   `json:"key"`   // dotted, e.g. "autoswitch.sevenDayThreshold"
 	Kind        string   `json:"kind"`  // "float"|"int"|"bool"|"choice"|"string"
 	Value       any      `json:"value"` // effective value
 	Default     any      `json:"default"`
@@ -124,7 +124,7 @@ type AutoView struct {
 	Running    bool            `json:"running"`
 	DryRun     bool            `json:"dryRun"`
 	StartedAt  *float64        `json:"startedAt"`
-	Threshold  float64         `json:"threshold"`  // live autoswitch.threshold (ApplyThreshold-adjusted)
+	Threshold  float64         `json:"threshold"`  // live autoswitch.sevenDayThreshold, the 7d bar (ApplyThreshold-adjusted)
 	Settings   map[string]any  `json:"settings"`   // effective autoswitch settings the engine started with
 	Events     []AutoEventView `json:"events"`     // most recent last, ring of <= 200
 	Quarantine map[string]any  `json:"quarantine"` // contents of autoswitch_state.json (may be nil)
@@ -136,7 +136,7 @@ type AutoFacade interface {
 	Start(dryRun bool) error
 	Stop() error
 	Wake() error
-	ApplyThreshold(threshold float64) error // within the autoswitch.threshold bounds (50–99.9)
+	ApplyThreshold(threshold float64) error // the 7d bar, within the autoswitch.sevenDayThreshold bounds (50–100)
 	// ApplyModels retargets which per-model weekly windows the RUNNING engine
 	// counts ("all", a comma-separated list, or "" for 5h + 7d only).
 	ApplyModels(model string) error
