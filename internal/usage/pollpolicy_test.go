@@ -228,12 +228,15 @@ func TestPlanAfterFetchAtLimitPark(t *testing.T) {
 }
 
 // TestAtLimitParksFetchedTogetherFallDueApart replays, over the real store,
-// three at-limit candidates fetched in one pass (as a switch or the
-// escalation pass fetches them) and then polled the engine's way: every 15 s
-// tick fetches the one candidate DueCandidate picks (DESIGN A31 item 3). Each
-// account's park gets its own jitter draw, so they fall due on different ticks
-// and each reads as decision-grade after every tick for three hours. Without
-// the jitter all three fall due on one tick and two wait for theirs.
+// three at-limit candidates fetched in one pass (as the escalation pass
+// fetches them) and then polled the engine's way: every 15 s tick fetches the
+// one candidate DueCandidate picks (DESIGN A31 item 3). Each account keeps one
+// fixed jitter draw at every park, so their due times stay apart and each
+// reads as decision-grade after every tick for three hours. The replay shows
+// the spread and that every park ends inside the trust ceiling, not that
+// collisions never happen: in production every plan draws afresh, and two
+// accounts can still fall due on one tick. Without the jitter all three fall
+// due on one tick and two wait for theirs.
 func TestAtLimitParksFetchedTogetherFallDueApart(t *testing.T) {
 	const start = 1784277975.0
 	const tick = 15.0

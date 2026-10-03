@@ -4226,30 +4226,33 @@ that, 132 s in all, inside the 180 s. One failed re-poll therefore does not
 make the account read as unavailable. A wider margin would only poll more
 often.
 
-**3. The capped park is jittered downward only.** A pass that fetches every
-account (a switch, or the escalation pass) parked all the at-limit ones it
-fetched until the same instant, `PARK_CAP_S` later. The engine fetches one
-due candidate per tick, stalest first, so the k-th of them waited k − 1 ticks
-past its due time and read as untrusted for those ticks: it had no decision
-value, for the engine or for a reader that only reads the store (the TUI
-while its auto-switch view is open), and so no *at limit* mark. The cap is
-now `PARK_CAP_S · (1 − JITTER_FRAC · r)`, with r the draw that jitters the
-interval (04§3.4 step 8), so such accounts fall due anywhere from 3078 s to
-3420 s after the fetch. The jitter is downward only because `PARK_CAP_S` is
-already the longest park the trust ceiling allows with the margin of item 2;
-the interval's ±10% would carry a park to 3762 s, past the ceiling. A reset
-nearer than the jittered cap is still the next poll, exactly: the reset
-itself is not jittered. Two accounts whose due times fall between the same
-two ticks still come due on one tick, and the second waits one tick. The draw
-is new at every park, so that can happen at any park: for a pair, about one
-tick length in 342 s of the time (about 4% at 15 s ticks, 15% at the default
-60 s). Without the jitter it happened after every pass that fetched them
-together, to all but the first of them and for k − 1 ticks; the one-per-tick
-fetches then left them a tick apart, and a pair met again only when the
-engine's ±10% loop jitter put both due times between the same ticks (about
-3.5% of parks). At 60 s ticks the jitter therefore means fewer waits for a
-pair only where such passes come more often than about every eight parks; at
-any rate it breaks up the k − 1 tick chains.
+**3. The capped park is jittered downward only.** A pass that fetches
+several at-limit accounts at once (the engine's escalation pass, which
+ignores poll plans, or a read that finds them all due or without a plan)
+parked them all until the same instant, `PARK_CAP_S` later. The engine
+fetches one due candidate per tick, stalest first, so the k-th of them
+waited k − 1 ticks past its due time and read as untrusted for those ticks:
+it had no decision value, for the engine or for a reader that only reads the
+store (the TUI while its auto-switch view is open), and so no *at limit*
+mark. The cap is now `PARK_CAP_S · (1 − JITTER_FRAC · r)`, with r the draw
+that jitters the interval (04§3.4 step 8), so such accounts fall due anywhere
+from 3078 s to 3420 s after the fetch. The mean park falls from 3420 s to
+3249 s, about 5% more polls per parked account. The jitter is downward only
+because `PARK_CAP_S` is already the longest park the trust ceiling allows
+with the margin of item 2; the interval's ±10% would carry a park to 3762 s,
+past the ceiling. A reset nearer than the jittered cap is still the next
+poll, exactly: the reset itself is not jittered.
+
+The draw is new at every plan, so two accounts can still fall due between
+the same two ticks, and the second then waits one tick: for a pair fetched
+together, about one tick length in 342 s of the time (about 4% at 15 s
+ticks, about 15–17% at the default 60 s). Without the jitter every pass that
+fetched them together cost the k − 1 tick chain, and afterwards a pair met
+again only through tick rounding. In a steady-state simulation of a pair
+with a fetch-all pass every N parks, the jitter means fewer waits at 15 s
+ticks for every N up to 128, and at 60 s ticks while such passes come at
+least every 40 to 50 parks (roughly two days); past that it costs slightly
+more.
 
 **Not done here.** Trust extension ends when the poll falls due, so a reader
 that does not fetch (a store-only redraw) sees the entry as untrusted between
@@ -4271,8 +4274,11 @@ cadence is unchanged. `TestAtLimitParksFetchedTogetherFallDueApart`: three
 at-limit accounts fetched in one pass over the real store, each planned with
 its own draw, fall due at different times; fetched after that the engine's
 way, the one candidate `DueCandidate` picks every 15 s for three hours, each
-reads as decision-grade after every tick. Without the jitter all three fall
-due together, and after that tick two of them read as untrusted. The engine
+reads as decision-grade after every tick. Each account keeps one fixed draw
+at every park, so the replay shows the spread and that every park ends
+inside the trust ceiling, not that a pair never meets on a tick: in
+production every plan draws afresh. Without the jitter all three fall due
+together, and after that tick two of them read as untrusted. The engine
 harness cannot give each account its own draw (the Claude collector plans
 with the default random source; the engine's `WithRNG` paces only its loop),
 so this replay lives in `internal/usage`. `internal/core/usagepark_test.go`
@@ -4280,5 +4286,4 @@ so this replay lives in `internal/usage`. `internal/core/usagepark_test.go`
 collector and planner, with a fake clock and a stub usage endpoint, ticks
 every 15 s for three hours beside one such candidate. After every tick the
 store reads the candidate's measurement as decision-grade, and the stub
-served it at least once per trust ceiling and at most once per park, the
-shortest park counted with the full jitter.
+served it at least once per trust ceiling and at most once per park.
