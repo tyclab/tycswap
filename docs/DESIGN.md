@@ -3294,8 +3294,8 @@ the Claude outcome. In the loop the Codex engine runs on its own goroutine,
 ticking once at launch and then every interval, stopped when the loop returns,
 so the Claude engine gains no hook and no failure mode, and a slow Codex fetch
 never delays a Claude switch. `autoswitch.codexEnabled` (default true) and
-`autoswitch.codexThreshold` (0–99.9, 0 inherits the effective Claude threshold)
-tune it; the hysteresis margin is the Claude `autoswitch.hysteresisPct`, and
+`autoswitch.codexThreshold` (0–99.9, 0 inherits the effective Claude threshold;
+since A34, 0 judges each Codex window against the Claude bar for it) tune it; the hysteresis margin is the Claude `autoswitch.hysteresisPct`, and
 `tycswap auto` gains no flag. A Codex event is printed only when the tick
 switched or errored, or on every tick under `--dry-run`, in the Claude events'
 format: the `HH:MM:SS` prefix and kind colouring for humans, and
@@ -3826,7 +3826,7 @@ settings when it starts (`settings.Load` in the host's `Start`) and only
 | Key | Takes effect |
 |---|---|
 | `autoswitch.model` | at once for the engine this page hosts: a save or reset through the settings routes calls `ApplyModels` on it while it runs (A26; an engine in the TUI or `tycswap auto` keeps its value until it next starts), and the at-limit marks re-read it for every state document |
-| `autoswitch.threshold` | at the next engine start; the Auto tab's slider retargets the running engine for this run only, unsaved |
+| `autoswitch.sevenDayThreshold` (A34; `autoswitch.threshold` before it) | at the next engine start; the Auto tab's slider retargets the running engine's 7d bar for this run only, unsaved |
 | `autoswitch.codexEnabled`, `autoswitch.codexThreshold` | at the next `tycswap auto`: the engine this page hosts rotates Claude accounts only |
 | every other key (`intervalSeconds`, `cooldownSeconds`, `hysteresisPct`, `strategy`, `unhealthyTicks`, and any key added later) | at the next engine start, here, in the TUI's Auto view or in `tycswap auto` |
 
@@ -4484,4 +4484,157 @@ yes, and refuses a slot that changed meanwhile. `internal/web`:
 `confirmAuthChange=1` records the approval before the plain or forced
 switch, nothing is approved without it, and without account operations it is
 `503`.
+
+## A34. One threshold per window
+
+Every window an account reports was collapsed into one number, `100 −
+max(pct)`, and judged against one bar, `autoswitch.threshold`. The windows
+measure different things, and fill at different rates:
+
+- The rolling **5h window is a rate limit, and it bursts.** A fan-out of
+  parallel subagents can take it from 85 % to full inside one poll interval.
+  Reaching 100 % costs a wait, but one that lands in the middle of whatever
+  was running, with no chance to react: the next poll comes after the damage.
+- The **7d window is the account's budget, and it creeps.** It moves at the
+  pace of a week's work, so there is always another poll between "nearly
+  full" and "full". An account that reaches 100 % is out for days.
+- A **per-model weekly window** is a budget too, but a narrower one: at 100 %
+  that one model is gone for the week while the account still serves
+  everything else. It creeps like the week, and it counts only while
+  `autoswitch.model` names it.
+
+One bar could not serve both kinds. Set for the week it left no margin on the
+5h window, so a burst overshot it; set for the 5h window it gave up the week
+early, wasting budget nothing else would have used.
+
+**Three bars, each named after its window and set by how fast it fills:**
+
+| setting | window | default | why |
+|---|---|---|---|
+| `autoswitch.fiveHourThreshold` | 5h | **85** | it bursts; leave a margin the next poll can act inside |
+| `autoswitch.sevenDayThreshold` | 7d | **97** | it creeps; squeeze it, nothing is wasted by waiting |
+| `autoswitch.modelThreshold` | per-model week | **95** | weekly too, so also high; only while counted |
+
+The margin is the point of the 5h bar: 15 points is roughly what a heavy
+burst can consume between two 60-second polls. Someone working in small,
+predictable steps can raise it; someone running wide fan-outs should lower it
+or poll more often. All three clamp to 50–100, where **100 means "never move
+proactively on this window"**; only an actual at-limit does.
+
+**The settings file.** `autoswitch.threshold` is gone from the spec. A
+`settings.json` that still carries it seeds the 7d bar with its value in
+`settings.Load` (`settings.LegacyThresholdKey`), so an upgrade keeps the limit
+its owner chose instead of silently reverting to the default; the new key wins
+wherever both are present, and the legacy range (50–99.9) lies inside the new
+one. `EffectiveSettings` reports the 7d bar as set when only the legacy key
+is, and `UnsetSetting` of `autoswitch.sevenDayThreshold` removes the legacy
+key too: otherwise a reset from `tycswap config unset`, the TUI's Settings
+screen or the dashboard would report nothing to do and leave the old value in
+force. Writes keep the legacy key as they keep any key they do not know. The
+`auto --threshold` flag is replaced by `--five-hour-threshold`,
+`--seven-day-threshold` and `--model-threshold` (`settings.CLIOverrides`).
+
+**The split.** `usage.AccountHeadroomByClass` (`internal/usage/classes.go`)
+carries the three axes apart (`usage.Headroom`: `Session`, `Week`, `Model`,
+each nil when unknown; `Model` nil while no model window counts), with
+`Weekly()` the tighter of the week and a counted model window, `Binding()` the
+smallest of all three (the single figure `accountHeadroom` still returns for
+the at-limit verdict, the poll planner and the gauges) and `WeeklyExhausted()`.
+`usage.ClassOf` maps a relevant-window label to its class;
+`oauth.ClassPcts` is the display side, and the TUI and the dashboard build on
+it.
+
+**The axis that decides.** A tick picks the costliest window that has reached
+its own bar: the week, then a counted model week, then the 5h window, because
+losing the week costs days across every model, losing a model's week costs
+days for that model, and losing the 5h window costs a wait. (Cost orders the
+axes; fill rate sets their bars. The two are separate questions and their
+answers point opposite ways.) Everything downstream speaks about that axis
+alone: the proactive gate judges a candidate's landing on it, the hysteresis
+margin is measured on it (a candidate that reports no window of that class is
+judged on its weekly figure instead of being ruled out for an unknown), the
+`switch` event carries it as `axis` (`5h` | `7d` | `model`; empty under
+`failover`, where no usage was readable) and in its human line
+(`(proactive, 5h)`), and `below-threshold` names the window closest to its own
+bar (`7d 50% < 97%`). The poll line carries the 7d bar and says so
+(`(7d bar 97%)`), so it does not read as a contradiction beside a 5h window
+that has its own bar; the poll event's JSON `threshold` is that bar.
+
+**Two rules hold whatever the trigger:** a candidate whose weekly budget (the
+week, or a counted model window) is spent is never a target, even under
+`at-limit` or `failover`; and `strategy = best` ranks by weekly headroom, not
+by the binding figure, which sent work to whichever account happened to be
+resting its 5h window (an account with no weekly window falls back to the
+binding figure). `soonest-reset`'s first tier is now "under every one of its
+bars".
+
+**Poll cadence** keys on the lowest bar in force, since that is the window
+closest to making the engine act; the model bar joins the minimum only while
+`autoswitch.model` counts something. The engine pins it (`pollThreshold`, in
+`NewEngine`, `ApplyThreshold` and `ApplyModels`), and without an engine the
+collectors read it from the file (`reporting.resolvePollInputs`). That makes
+an 85 % bar workable: escalation starts `EscalationMarginPct` (15) below the
+lowest bar, so from 70 % of the 5h window the active account is fetched more
+often than the poll interval. `PlanAfterFetch` itself is unchanged.
+
+**One bar stays adjustable at runtime.** The TUI's `t` adjustment and the
+dashboard's slider move the 7d bar, the account's whole budget, and nothing
+else: `Engine.ApplyThreshold` and `POST /api/auto/threshold` are that bar,
+bounded by its spec (50–100), and the dashboard's bar tick and the TUI's
+usage-bar tick follow it. The other two bars are settings.
+
+**The surfaces follow the same split**, or they would contradict the engine:
+
+- **TUI.** The auto-switch screen's summary names every bar in force (`switch
+  at 5h 85% · 7d 97%`, `· model 95%` while model windows count) and marks the
+  7d bar `(session)` once adjusted; the session line reads `— 7d threshold set
+  to <n>% for this session —`. The Next best panel marks a row at threshold
+  (its tier) when any window has reached its own bar, and ranks `best` and
+  the within-tier order by the weekly figure. The Settings screen lists the
+  three keys; their help texts fit its detail pane at 80 columns.
+- **Dashboard.** The Next best ranking judges each window against its own bar
+  (the *at threshold* chip) and ranks by the weekly figure; its subtitle names
+  the bars (`switch at 5h 85% · 7d 97%`); the Auto tab's tile and slider are
+  the *7d threshold*; the Settings tab lists the three keys; the Guide
+  explains the three bars and why they differ.
+- **CLI.** `tycswap auto`'s startup line names all three bars (`Auto-switch
+  running: 5h 85% · 7d 97% · model 95%, every 60s`), its help says each
+  window has its own bar, and `tycswap config` lists the three keys.
+
+**Codex.** The Codex engine reads `five_hour` and `seven_day` from the same
+usage shape, so it applies the same mechanism with the two bars that fit its
+windows (`codexauto.Bars`): the costlier window over its bar decides (the week
+first), a candidate is judged on that window (or on its week when it reports
+no such window) against its bar and the hysteresis margin, a spent week is
+never a target, and the most weekly room wins. With
+`autoswitch.codexThreshold` at 0 the bars are the Claude 5h and 7d bars; a
+non-zero value is one bar for both Codex windows (`codexauto.SingleBar`), as
+before. The tick details name the window (`switched 1 (5h 95%) -> 3 (5h
+10%)`, `account 1 at 7d 96% (below its 97% bar)`).
+
+**Tests.** `internal/autoswitch` (`classes_test.go`): a 5h window under its own
+bar does not switch and the line names it; the 7d window over its bar
+switches; the 5h window over its own bar switches; the model bar applies only
+while counted, with `axis` `model`; a 5h-driven move does not land on a nearly
+spent week; `best` ranks by the weekly axis; the costliest hot window names
+the move; the axis reaches the event's JSON and human line; the axes split as
+documented (`TestHeadroomByClassSplitsTheAxes`); a model-driven move accepts a
+candidate without that window; poll cadence keys on the lowest bar in force and
+`ApplyThreshold` moves the 7d bar only. The existing engine tests drive the
+week instead of the 5h window where they meant the old single bar.
+`internal/settings`: the three defaults and ranges, the per-bar CLI overrides
+and their clamping, the legacy key seeding the 7d bar (and losing to the new
+key), `EffectiveSettings` reporting it as set, and unsetting the 7d bar
+dropping the legacy key. `internal/oauth`: `ClassPcts`. `internal/reporting`:
+`resolvePollInputs` returns the lowest bar in force. `internal/codex/autoswitch`:
+each Codex window against its own bar, the week naming the move, never a spent
+week, ranking by weekly room, a candidate without the triggering window, and
+the single bar from `codexThreshold`. `internal/cli`: the three `auto` flags
+parse and refuse a non-number, `--threshold` is unrecognized, the help names
+them, `config` and the web facades show the 7d bar seeded from the fixture's
+legacy key, and the slider's bounds are 50–100. `internal/tui`: the panel
+judges each window against its own bar and ranks by weekly room, the summary
+names every bar and the session mark, the `t` adjustment moves the 7d bar, and
+the Settings screen edits the new keys. `internal/web`: the slider route's
+bounds and the settings notes.
 

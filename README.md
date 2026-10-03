@@ -285,7 +285,8 @@ refreshes on a timer. Its Settings screen (`c`, or the menu's "Settings…" row)
 lists every `settings.json` key with its value and help text and edits it in
 place — a bool toggles, a choice cycles, a number or string is typed and
 validated like `tycswap config set` — and `u` resets a key to its default; the
-auto-switch screen's own threshold adjustment stays session-only.
+auto-switch screen's own threshold adjustment (`t`, which moves the 7d bar)
+stays session-only.
 
 ### Alias accounts
 
@@ -324,14 +325,35 @@ Enabled Account-2 (bob@example.com).
 account before the active one reaches its rate limit:
 
 ```
-$ tycswap auto --threshold 80
-Auto-switch running: threshold 80%, every 60s — Ctrl-C to stop
-13:53:36  Account-1 (alice@example.com): usage unknown (http-429) (switch at 80%) | others: #2: ? (http-429), #3: ?, #5: ? (http-429)
+$ tycswap auto --seven-day-threshold 92
+Auto-switch running: 5h 85% · 7d 92% · model 95%, every 60s — Ctrl-C to stop
+13:53:36  Account-1 (alice@example.com): usage unknown (http-429) (7d bar 92%) | others: #2: ? (http-429), #3: ?, #5: ? (http-429)
 13:53:36  no switch: active-usage-unknown (1/3 before failover)
 ```
 
-`--threshold` is the headroom percentage at which a switch triggers; the polling
-interval defaults to 60 seconds. Ctrl-C stops the loop and exits 130.
+Each window has a limit of its own, set by how fast that window fills:
+
+| flag / setting | window | default |
+|---|---|---|
+| `--five-hour-threshold` / `autoswitch.fiveHourThreshold` | 5h | 85 % |
+| `--seven-day-threshold` / `autoswitch.sevenDayThreshold` | 7d | 97 % |
+| `--model-threshold` / `autoswitch.modelThreshold` | per-model week | 95 % |
+
+The 5h window **bursts**: a fan-out of parallel subagents can take it from
+85 % to full between two polls, and hitting 100 % stops you mid-task with no
+chance to react. Its bar is the lowest of the three so the next poll has room
+to act. The weekly windows **creep**: they move at the pace of a week's work,
+so there is always another poll between "nearly full" and "full", and they can
+be squeezed close to full before moving. Raise the 5h bar if you work in
+small, predictable steps; lower it (or poll more often) if you run wide
+fan-outs. Set a bar to 100 to never switch off that window before it is
+actually full. The model bar applies only to the windows `autoswitch.model`
+counts. When more than one window is over its bar, the costliest decides (the
+week, then a model's week, then the 5h window), and the switch line names it
+(`Switched Account-1 -> Account-2 (b@example.com) (proactive, 7d)`). A settings
+file that still has the old single `autoswitch.threshold` keeps working: its
+value seeds the 7d bar. The polling interval defaults to 60 seconds; Ctrl-C
+stops the loop and exits 130.
 
 **Single tick, for cron.** `tycswap auto --once` performs exactly one evaluation
 and exits; `--json` prints the tick as JSON event lines:
@@ -384,10 +406,13 @@ returns soonest and no account sits idle on a window that is about to renew.
 `best` instead tries the target with the most headroom first. Qualification
 itself is the same under both. On a proactive switch, a target
 must still land under the threshold and beat the active account by the
-hysteresis margin. On an at-limit or failover switch neither check applies,
-but `soonest-reset` still never lets an early renewal beat the threshold: an
-account at or above the threshold is tried only after every account below
-it, regardless of how soon it renews.
+hysteresis margin, both measured on the window that triggered the tick. On an
+at-limit or failover switch neither check applies, but `soonest-reset` still
+never lets an early renewal beat a threshold: an account at or above one of its
+bars is tried only after every account below all of them, regardless of how
+soon it renews. Whatever the trigger, an account whose week (or a counted model
+week) is spent is never a target, and `best` ranks by weekly headroom rather
+than by the fullest window.
 
 ```
 $ tycswap config set autoswitch.strategy best
@@ -534,26 +559,28 @@ given, which overwrites it. Import rejects any file marked `encrypted: true`.
 
 ```
 $ tycswap config
-autoswitch.threshold        80
-autoswitch.intervalSeconds  60             (default)
-autoswitch.codexEnabled     true           (default)
-autoswitch.codexThreshold   0              (default)
-autoswitch.cooldownSeconds  300            (default)
-autoswitch.hysteresisPct    10             (default)
-autoswitch.strategy         soonest-reset  (default)
-autoswitch.unhealthyTicks   3              (default)
-autoswitch.model            Fable
+autoswitch.fiveHourThreshold  85             (default)
+autoswitch.sevenDayThreshold  92
+autoswitch.modelThreshold     95             (default)
+autoswitch.intervalSeconds    60             (default)
+autoswitch.codexEnabled       true           (default)
+autoswitch.codexThreshold     0              (default)
+autoswitch.cooldownSeconds    300            (default)
+autoswitch.hysteresisPct      10             (default)
+autoswitch.strategy           soonest-reset  (default)
+autoswitch.unhealthyTicks     3              (default)
+autoswitch.model              Fable
 ```
 
 `tycswap config set KEY VALUE` validates and stores one setting. An out-of-range
 value is rejected and nothing is written:
 
 ```
-$ tycswap config set autoswitch.threshold 85
-autoswitch.threshold = 85
+$ tycswap config set autoswitch.sevenDayThreshold 92
+autoswitch.sevenDayThreshold = 92
 
-$ tycswap config set autoswitch.threshold 40
-Error: autoswitch.threshold must be between 50 and 99.9
+$ tycswap config set autoswitch.sevenDayThreshold 40
+Error: autoswitch.sevenDayThreshold must be between 50 and 100
 ```
 
 Each key's type, default, and range are listed in
@@ -734,11 +761,14 @@ switch the dashboard warns with the PIDs of any codex sessions still running.
 runs after the Claude one; in the loop the Codex engine ticks at once and then
 every interval. It prints a line only when it switched or failed (every tick
 under `--dry-run`), with the same timestamp prefix as the Claude events, or a
-JSON line with `"event": "codex"` under `--json`. It uses the Claude
-`autoswitch.hysteresisPct`, and two settings tune the rest:
+JSON line with `"event": "codex"` under `--json`. It judges a Codex account's 5h
+and weekly windows each against its own bar, the Claude
+`autoswitch.fiveHourThreshold` and `autoswitch.sevenDayThreshold`, prefers the
+candidate with the most weekly room and never lands on a spent week; it uses
+the Claude `autoswitch.hysteresisPct`, and two settings tune the rest:
 
 ```bash
-tycswap config set autoswitch.codexThreshold 85   # 0 = use autoswitch.threshold
+tycswap config set autoswitch.codexThreshold 85   # 0 = the 5h and 7d bars
 tycswap config set autoswitch.codexEnabled false  # leave Codex out of `tycswap auto`
 ```
 
