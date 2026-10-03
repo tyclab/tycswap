@@ -4464,7 +4464,8 @@ approval for another slot does not help; with one it switches, and the next
 switch onto the slot is refused again; naming the account by email is guarded
 the same way; the rotation skips the API-key slot with the warning, or finds
 no valid target when it is the only other account. The existing API-key seat
-tests record an approval first. `internal/store`, `internal/reporting`: an
+tests and the Keychain rollback tests record an approval first, and the
+rollback tests fail if the approval refusal is what stopped the switch. `internal/store`, `internal/reporting`: an
 API-key slot is switchable but not rotation eligible. `internal/autoswitch`
 (`apikey_test.go`): an API-key account is never a target, at the limit or
 proactively, and an active one is left alone with `active-api-key`.
