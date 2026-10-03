@@ -62,7 +62,7 @@ Frozen dataclass; defaults and CLI/`settings.json` bounds:
 | `interval_seconds` | `intervalSeconds` | `60.0` | float | `15.0 … 3600.0` |
 | `cooldown_seconds` | `cooldownSeconds` | `300.0` | float | `0.0 … 86400.0` |
 | `hysteresis_pct` | `hysteresisPct` | `10.0` | float | `0.0 … 50.0` |
-| `strategy` | `strategy` | `"best"` | choice | only `"best"` in v1 |
+| `strategy` | `strategy` | `"best"` | choice | only `"best"` in v1. Go: `"best"` or `"soonest-reset"` (DESIGN A17), default `"soonest-reset"` (DESIGN A32) |
 | `include_api_key_accounts` | `includeApiKeyAccounts` | `False` | bool | — |
 | `unhealthy_ticks` | `unhealthyTicks` | `3` | int | `1 … 100` |
 | `model` | `model` | `None` | string | comma-separated names, or `"all"`, or unset |
@@ -71,7 +71,8 @@ Frozen dataclass; defaults and CLI/`settings.json` bounds:
   an `"autoswitch"` section, with `"schemaVersion": 1`.
 - Load is **forgiving**: missing/corrupt file → defaults; out-of-range numeric
   values are **clamped** to the bounds; a bad-type value reverts to the default;
-  an unsupported `strategy` logs a warning and uses the default.
+  an unsupported `strategy` logs a warning and uses the default. Go: that
+  default is `"soonest-reset"` (DESIGN A32).
 - `parse_model_names(value)` splits on `,`, trims each, dedupes
   case-insensitively (**first spelling wins**), returns a `tuple[str, ...]`;
   empty/`None` → `()`.
