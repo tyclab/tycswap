@@ -513,7 +513,7 @@ Every key (single source of truth is `SETTING_SPECS`, keyed by dotted key):
 | `autoswitch.intervalSeconds` | `interval_seconds` | float | 15.0 | 3600.0 | — | `60.0` | Poll interval for the tycswap auto loop, in seconds |
 | `autoswitch.cooldownSeconds` | `cooldown_seconds` | float | 0.0 | 86400.0 | — | `300.0` | Minimum seconds between proactive switches |
 | `autoswitch.hysteresisPct` | `hysteresis_pct` | float | 0.0 | 50.0 | — | `10.0` | A target must beat the active account by this many pct |
-| `autoswitch.strategy` | `strategy` | choice | — | — | `("best",)` | `"best"` | How auto-switch picks the target account |
+| `autoswitch.strategy` | `strategy` | choice | — | — | `("best",)` | `"best"` | How auto-switch picks the target account. Go: choices `("best", "soonest-reset")` (DESIGN A17), default `"soonest-reset"` (DESIGN A32) |
 | `autoswitch.includeApiKeyAccounts` | `include_api_key_accounts` | bool | — | — | — | `False` | Allow rotating onto managed API-key accounts (bill per token) |
 | `autoswitch.unhealthyTicks` | `unhealthy_ticks` | int | 1 | 100 | — | `3` | Consecutive failed polls before an account is unhealthy |
 | `autoswitch.model` | `model` | string | — | — | — | `None` | Also switch on these models' weekly limits (e.g. Fable, Fable,Opus, or all) |
@@ -545,7 +545,8 @@ defaults. Else copy present json_keys into kwargs, build
 Clamp examples (tests): `threshold 200 → 99.9`; `intervalSeconds 1 → 15.0`;
 `hysteresisPct -5 → 0.0`; `unhealthyTicks 0 → 1`; `threshold "high" → 90.0`
 default; `includeApiKeyAccounts 1 → True`; `strategy "chaos" → "best"`;
-`model 123 → None`.
+`model 123 → None`. Go: `strategy "chaos" → "soonest-reset"`, the Go default
+(DESIGN A32).
 
 ### 8.4 Writing
 

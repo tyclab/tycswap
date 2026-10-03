@@ -4277,27 +4277,27 @@ is never a target.
   figure would send work to whichever account happened to be resting its 5h
   window rather than to the one with budget to spare (DESIGN A34).
 - `soonest-reset`, the setting's default, orders candidates by *renewal
-  time*, in two tiers. The
-  first tier holds every candidate under **every one of its own bars** — its
-  5h utilization below `autoswitch.fiveHourThreshold`, its 7d below
+  time*, in two tiers. The first tier holds every candidate under **every
+  one of its own bars** — its 5h utilization below
+  `autoswitch.fiveHourThreshold`, its 7d below
   `autoswitch.sevenDayThreshold`, each counted model window below
-  `autoswitch.modelThreshold` — and ranks by the
-  latest parseable `resets_at` among the account's weekly-scope windows: the
-  7-day window plus every per-model scoped window matched by
-  `autoswitch.model`. The 5h window is never part of the renewal, since it
-  is not weekly. A window whose `resets_at` is absent or unparseable is
-  skipped; an account with no parseable weekly `resets_at` at all has an
-  *unknown* renewal. Within this tier, a known renewal sorts before an
-  unknown one; among known renewals the earliest sorts first; ties — an
-  equal renewal, or two unknown renewals — fall back to headroom descending,
-  then to sequence order. The second tier holds every candidate at or above
-  one of its bars and ranks by headroom descending, as a last resort. Under
-  `proactive` the threshold-landing gate above judges only the triggering
-  window, so the second tier holds only candidates over a bar of a different
-  window; under `at-limit` and `failover` it holds any candidate over one of
-  its bars. Every first-tier candidate sorts before every second-tier
-  candidate — a candidate at or above one of its bars is never preferred over
-  one below all of them merely for an earlier renewal.
+  `autoswitch.modelThreshold` — and ranks by the latest parseable
+  `resets_at` among the account's weekly-scope windows: the 7-day window
+  plus every per-model scoped window matched by `autoswitch.model`. The 5h
+  window is never part of the renewal, since it is not weekly. A window
+  whose `resets_at` is absent or unparseable is skipped; an account with no
+  parseable weekly `resets_at` at all has an *unknown* renewal. Within this
+  tier, a known renewal sorts before an unknown one; among known renewals
+  the earliest sorts first; ties — an equal renewal, or two unknown renewals
+  — fall back to headroom descending, then to sequence order. The second
+  tier holds every candidate at or above one of its bars and ranks by
+  headroom descending, as a last resort. Under `proactive` the
+  threshold-landing gate above judges only the triggering window, so the
+  second tier holds only candidates over a bar of a different window; under
+  `at-limit` and `failover` it holds any candidate over one of its bars.
+  Every first-tier candidate sorts before every second-tier candidate — a
+  candidate at or above one of its bars is never preferred over one below
+  all of them merely for an earlier renewal.
 
 The default is `soonest-reset` (DESIGN A32). A settings file without the key,
 or with a value outside the two choices, orders by earliest renewal; a file
