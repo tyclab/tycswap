@@ -33,10 +33,6 @@ import (
 // is the assertion DESIGN §2.20 places in cli.
 var _ tui.Facade = (*core.Switcher)(nil)
 
-// The TUI records the approval for a switch onto an API-key account through
-// this (DESIGN A33); without it the switch layer would refuse such a target.
-var _ tui.APIKeyApprover = (*core.Switcher)(nil)
-
 func init() {
 	RunTUI = runTUI
 }
