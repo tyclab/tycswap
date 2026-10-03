@@ -28,6 +28,20 @@ func (sw *Switcher) Switch(strategy *string, jsonOut bool, models []string, mode
 	return m, nil
 }
 
+// ApproveAPIKeySwitch records the user's approval for switching onto the
+// API-key account id names (a slot number, email or alias). The switch layer
+// refuses such a target without one, because it changes how Claude Code
+// authenticates and every session already running keeps its old login until it
+// is restarted (DESIGN A33). An id that resolves to no account records nothing:
+// the switch it was given for fails on the same lookup.
+func (sw *Switcher) ApproveAPIKeySwitch(id string) {
+	num, _, _, err := sw.Store.ResolveAccount(id)
+	if err != nil || num == "" {
+		return
+	}
+	switching.ApproveAPIKeySwitch(num)
+}
+
 // SwitchTo delegates to switching.SwitchTo with force=false (spec 02§6). The
 // frozen autoswitch.Switcher (§2.18) and tui.Facade (§2.20) pin exactly this
 // two-argument shape.

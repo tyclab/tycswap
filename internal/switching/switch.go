@@ -185,6 +185,15 @@ func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, mod
 			}
 			continue
 		}
+		if s.AccountKindFor(candidate) == "api_key" {
+			// The rotation never changes the auth mode (DESIGN A33).
+			if jsonOut {
+				warnings = append(warnings, "Skipped Account-"+candidate+" (API key: switching to it changes how Claude Code authenticates)")
+			} else {
+				printOut(printer.Accent("Skipping") + " Account-" + candidate + " (API key — switch to it by hand if you mean to)")
+			}
+			continue
+		}
 		if !s.AccountIsSwitchable(candidate) {
 			if jsonOut {
 				warnings = append(warnings, "Skipped Account-"+candidate+" (no stored credentials/config)")

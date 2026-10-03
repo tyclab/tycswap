@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -120,6 +121,109 @@ func TestSwitchActionNoBetterTarget(t *testing.T) {
 	m.actionDone(runCmd(m.doSwitch("2")).(actionDoneMsg))
 	if !hasToast(m, "no-better-target", "No switch", "warning") {
 		t.Fatalf("expected 'no-better-target' warning toast, got %v", m.toasts)
+	}
+}
+
+// apiKeyAcct is an API-key account row as the snapshot reports it.
+func apiKeyAcct(number, email string) reporting.AccountSnapshot {
+	a := acct(number, email, false, nil)
+	a.Kind = "api_key"
+	a.RotationEligible = false
+	return a
+}
+
+func withRunningClaudeSessions(t *testing.T, n int) {
+	t.Helper()
+	prev := runningClaudeSessions
+	runningClaudeSessions = func() int { return n }
+	t.Cleanup(func() { runningClaudeSessions = prev })
+}
+
+// TestSwitchToAnAPIKeyAccountAsksFirst: a switch onto an API-key account
+// changes how Claude Code authenticates, so the TUI asks first and names the
+// running sessions (DESIGN A33). Cancel has the focus; only a yes records the
+// approval the switch layer needs, and then switches.
+func TestSwitchToAnAPIKeyAccountAsksFirst(t *testing.T) {
+	withRunningClaudeSessions(t, 3)
+	f := &fakeFacade{
+		snap:           snapshotOf("1", acct("1", "a@x.com", true, nil), apiKeyAcct("2", "key@x.com")),
+		switchToResult: map[string]any{"switched": true, "to": map[string]any{"email": "key@x.com"}},
+	}
+	m := newTestModel(f)
+	m.snapshot = f.snap // the rows the dashboard shows
+	if cmd := m.doSwitch("2"); cmd != nil {
+		runCmd(cmd)
+	}
+	modal, ok := m.top().(*confirmModal)
+	if !ok {
+		t.Fatalf("top = %T, want the confirmation", m.top())
+	}
+	for _, want := range []string{"Switch to API-key account 2 (key@x.com)?", "billed per token", "3 Claude Code sessions are running"} {
+		if !strings.Contains(modal.message, want) {
+			t.Errorf("message %q lacks %q", modal.message, want)
+		}
+	}
+	if modal.focusYes {
+		t.Error("the confirmation must start on Cancel")
+	}
+	if len(f.switchToCalls) != 0 || len(f.approvals) != 0 {
+		t.Fatalf("switched before an answer: switch %v, approvals %v", f.switchToCalls, f.approvals)
+	}
+
+	// enter on the default focus cancels.
+	runCmd(modal.update(m, keyPress("enter")))
+	if len(f.switchToCalls) != 0 || len(f.approvals) != 0 {
+		t.Fatalf("a cancel switched: switch %v, approvals %v", f.switchToCalls, f.approvals)
+	}
+
+	// y approves that slot, then switches.
+	if cmd := m.doSwitch("2"); cmd != nil {
+		runCmd(cmd)
+	}
+	deliver(t, m, m.top().(*confirmModal).onDone(m, true))
+	if !reflect.DeepEqual(f.approvals, []string{"2"}) || !reflect.DeepEqual(f.switchToCalls, []string{"2"}) {
+		t.Fatalf("approvals %v, switch %v; want the approval for 2, then the switch", f.approvals, f.switchToCalls)
+	}
+	if !hasToast(m, "Switched to key@x.com", "Switch", "") {
+		t.Fatalf("toasts %v", m.toasts)
+	}
+}
+
+// TestAPIKeySwitchRechecksTheRow: the poll runs while the modal is up; a slot
+// that is no longer that API-key account is not switched to.
+func TestAPIKeySwitchRechecksTheRow(t *testing.T) {
+	withRunningClaudeSessions(t, 0)
+	f := &fakeFacade{snap: snapshotOf("1", acct("1", "a@x.com", true, nil), apiKeyAcct("2", "key@x.com"))}
+	m := newTestModel(f)
+	m.snapshot = f.snap
+	if cmd := m.doSwitch("2"); cmd != nil {
+		runCmd(cmd)
+	}
+	modal := m.top().(*confirmModal)
+	if !strings.Contains(modal.message, "Any Claude Code session that is already running") {
+		t.Errorf("message %q lacks the restart notice", modal.message)
+	}
+	m.snapshot = snapshotOf("1", acct("1", "a@x.com", true, nil), acct("2", "b@x.com", false, nil))
+	modal.onDone(m, true)
+	if len(f.switchToCalls) != 0 || len(f.approvals) != 0 {
+		t.Fatalf("switched to a replaced slot: switch %v, approvals %v", f.switchToCalls, f.approvals)
+	}
+	if !hasToast(m, "Account 2 is now b@x.com — not switched", "Switch", "warning") {
+		t.Fatalf("toasts %v", m.toasts)
+	}
+}
+
+// TestSwitchToASubscriptionAccountDoesNotAsk: every other switch is one key.
+func TestSwitchToASubscriptionAccountDoesNotAsk(t *testing.T) {
+	f := &fakeFacade{
+		snap:           snapshotOf("1", acct("1", "a@x.com", true, nil), acct("2", "b@x.com", false, nil)),
+		switchToResult: map[string]any{"switched": true},
+	}
+	m := newTestModel(f)
+	m.snapshot = f.snap
+	m.actionDone(runCmd(m.doSwitch("2")).(actionDoneMsg))
+	if len(f.approvals) != 0 || !reflect.DeepEqual(f.switchToCalls, []string{"2"}) {
+		t.Fatalf("approvals %v, switch %v", f.approvals, f.switchToCalls)
 	}
 }
 

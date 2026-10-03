@@ -37,8 +37,9 @@ type AccountSnapshot struct {
 	Usage      usage.UsageEntry
 	Alias      string
 	Disabled   bool // held out of auto-rotation (still a valid explicit target)
-	// RotationEligible is store.RotationEligible's rule — Switchable && !Disabled,
-	// and false outright when the roster could not be read (see rotationEligible).
+	// RotationEligible is store.RotationEligible's rule — Switchable && !Disabled
+	// and not an API-key account (DESIGN A33), and false outright when the
+	// roster could not be read (see rotationEligible).
 	// The snapshot carries all three so no consumer has to re-derive or re-AND
 	// them (DESIGN A18); the two inputs are not otherwise recoverable from the
 	// conjunction. It is eligibility for AUTOMATIC selection only, and it does NOT
@@ -140,7 +141,7 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 			Usage:            entries[num],
 			Alias:            info.Alias,
 			Disabled:         disabled,
-			RotationEligible: rotationEligible(data, switchable, disabled),
+			RotationEligible: rotationEligible(data, switchable, disabled, s.AccountKindFor(num)),
 			AtLimit:          atLimit,
 			LimitingWindows:  limiting,
 			Provider:         ProviderClaude,
@@ -166,8 +167,8 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 // read, so a nil roster here is reachable while the other half still answers
 // yes. ANDing a fresh answer with a blind one would rank a slot the user
 // deliberately held out of rotation.
-func rotationEligible(data *store.SequenceData, switchable, disabled bool) bool {
-	return data != nil && switchable && !disabled
+func rotationEligible(data *store.SequenceData, switchable, disabled bool, kind string) bool {
+	return data != nil && switchable && !disabled && kind != "api_key"
 }
 
 // UsageFetchStamps returns each managed slot's fetchedAt from the usage store — a

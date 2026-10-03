@@ -91,8 +91,13 @@ func TestFailedSwitchOntoAnAPIKeyLeavesTheKeychainAsItWas_macOS(t *testing.T) {
 					t.Fatalf("precondition: live credential = %q, want slot 1's", got)
 				}
 
-				if _, err := SwitchTo(s, "2", true, force); err == nil {
+				ApproveAPIKeySwitch("2") // the user confirmed the auth-mode change (DESIGN A33)
+				_, err := SwitchTo(s, "2", true, force)
+				if err == nil {
 					t.Fatal("SwitchTo(2) succeeded although ~/.claude.json could not be updated")
+				}
+				if err.Error() == ErrAPIKeyNeedsApproval("2").Error() {
+					t.Fatal("refused for want of an approval, not by the failed write")
 				}
 				item, present, _ := kc.Get(managedKeychainService, keychain.AccountName())
 				switch {
@@ -189,8 +194,13 @@ func TestRollbackOntoAnAPIKeyKeepsItLive_macOS(t *testing.T) {
 					t.Fatalf("precondition: live credential = %q, want slot 1's key", got)
 				}
 
-				if _, err := SwitchTo(s, "2", true, force); err == nil {
+				ApproveAPIKeySwitch("2") // the user confirmed the auth-mode change (DESIGN A33)
+				_, err := SwitchTo(s, "2", true, force)
+				if err == nil {
 					t.Fatal("SwitchTo(2) succeeded although ~/.claude.json broke after the credential write")
+				}
+				if err.Error() == ErrAPIKeyNeedsApproval("2").Error() {
+					t.Fatal("refused for want of an approval, not by the failed write")
 				}
 				if item, _, _ := kc.Get(managedKeychainService, keychain.AccountName()); item != prevKey {
 					t.Errorf("managed Keychain item = %q after the rollback, want slot 1's key", item)

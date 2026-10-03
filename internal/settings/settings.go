@@ -88,32 +88,32 @@ type AutoSwitchSettings struct {
 	// Claude's 5h/7d rhythm and a ChatGPT plan's limits are not the same
 	// shape, so one number need not suit both (claude-swap PR #252
 	// settings.py).
-	CodexThreshold        float64
-	CooldownSeconds       float64
-	HysteresisPct         float64
-	Strategy              string
-	IncludeAPIKeyAccounts bool
-	UnhealthyTicks        int
+	CodexThreshold  float64
+	CooldownSeconds float64
+	HysteresisPct   float64
+	Strategy        string
+	UnhealthyTicks  int
 	// Model is a comma-separated model display name list (e.g. "Fable" or
 	// "Fable,Opus"), "all", or nil (account-wide 5h/7d only, the default).
 	Model *string
 }
 
 // Default returns the dataclass defaults: threshold 90, intervalSeconds 60,
-// codexEnabled true, codexThreshold 0, cooldownSeconds 300, hysteresisPct 10, strategy "best",
-// includeApiKeyAccounts false, unhealthyTicks 3, model nil.
+// codexEnabled true, codexThreshold 0, cooldownSeconds 300, hysteresisPct 10,
+// strategy "soonest-reset" (DESIGN A32; the Python dataclass has "best"),
+// unhealthyTicks 3, model nil. The dataclass's includeApiKeyAccounts is gone
+// (DESIGN A33): auto-switch never moves onto an API-key account.
 func Default() AutoSwitchSettings {
 	return AutoSwitchSettings{
-		Threshold:             90.0,
-		IntervalSeconds:       60.0,
-		CodexEnabled:          true,
-		CodexThreshold:        0.0,
-		CooldownSeconds:       300.0,
-		HysteresisPct:         10.0,
-		Strategy:              "best",
-		IncludeAPIKeyAccounts: false,
-		UnhealthyTicks:        3,
-		Model:                 nil,
+		Threshold:       90.0,
+		IntervalSeconds: 60.0,
+		CodexEnabled:    true,
+		CodexThreshold:  0.0,
+		CooldownSeconds: 300.0,
+		HysteresisPct:   10.0,
+		Strategy:        "soonest-reset",
+		UnhealthyTicks:  3,
+		Model:           nil,
 	}
 }
 
@@ -171,11 +171,8 @@ var SettingSpecs = []Spec{
 		Lo: 0.0, Hi: 50.0, Default: 10.0,
 		Help: "A target must beat the active account by this many pct"},
 	{Section: "autoswitch", JSONKey: "strategy", Field: "Strategy", Kind: KindChoice,
-		Choices: []string{"best", "soonest-reset"}, Default: "best",
+		Choices: []string{"best", "soonest-reset"}, Default: "soonest-reset",
 		Help: "How auto-switch orders qualifying targets (best: most headroom; soonest-reset: earliest weekly renewal)"},
-	{Section: "autoswitch", JSONKey: "includeApiKeyAccounts", Field: "IncludeAPIKeyAccounts", Kind: KindBool,
-		Default: false,
-		Help:    "Allow rotating onto managed API-key accounts (bill per token)"},
 	{Section: "autoswitch", JSONKey: "unhealthyTicks", Field: "UnhealthyTicks", Kind: KindInt,
 		Lo: 1, Hi: 100, Default: 3,
 		Help: "Consecutive failed polls before an account is unhealthy"},
@@ -371,8 +368,6 @@ func applyField(out *AutoSwitchSettings, field string, value any) {
 		out.HysteresisPct = value.(float64)
 	case "Strategy":
 		out.Strategy = value.(string)
-	case "IncludeAPIKeyAccounts":
-		out.IncludeAPIKeyAccounts = value.(bool)
 	case "UnhealthyTicks":
 		out.UnhealthyTicks = value.(int)
 	case "Model":
@@ -393,16 +388,15 @@ func fieldsOf(s AutoSwitchSettings) map[string]any {
 		model = *s.Model
 	}
 	return map[string]any{
-		"Threshold":             s.Threshold,
-		"IntervalSeconds":       s.IntervalSeconds,
-		"CodexEnabled":          s.CodexEnabled,
-		"CodexThreshold":        s.CodexThreshold,
-		"CooldownSeconds":       s.CooldownSeconds,
-		"HysteresisPct":         s.HysteresisPct,
-		"Strategy":              s.Strategy,
-		"IncludeAPIKeyAccounts": s.IncludeAPIKeyAccounts,
-		"UnhealthyTicks":        s.UnhealthyTicks,
-		"Model":                 model,
+		"Threshold":       s.Threshold,
+		"IntervalSeconds": s.IntervalSeconds,
+		"CodexEnabled":    s.CodexEnabled,
+		"CodexThreshold":  s.CodexThreshold,
+		"CooldownSeconds": s.CooldownSeconds,
+		"HysteresisPct":   s.HysteresisPct,
+		"Strategy":        s.Strategy,
+		"UnhealthyTicks":  s.UnhealthyTicks,
+		"Model":           model,
 	}
 }
 
@@ -585,16 +579,15 @@ func ValuesOf(s AutoSwitchSettings) map[string]any {
 // CLIOverrides holds the optional `tycswap auto` flag overrides; a nil field
 // means "not passed on the command line".
 type CLIOverrides struct {
-	Threshold             *float64
-	IntervalSeconds       *float64
-	CooldownSeconds       *float64
-	IncludeAPIKeyAccounts *bool
-	Model                 *string
+	Threshold       *float64
+	IntervalSeconds *float64
+	CooldownSeconds *float64
+	Model           *string
 }
 
 func (o CLIOverrides) isEmpty() bool {
 	return o.Threshold == nil && o.IntervalSeconds == nil && o.CooldownSeconds == nil &&
-		o.IncludeAPIKeyAccounts == nil && o.Model == nil
+		o.Model == nil
 }
 
 // MergedWithCLI overlays o's non-nil overrides onto s, then re-clamps (so
@@ -613,9 +606,6 @@ func MergedWithCLI(s AutoSwitchSettings, o CLIOverrides) AutoSwitchSettings {
 	}
 	if o.CooldownSeconds != nil {
 		fields["CooldownSeconds"] = *o.CooldownSeconds
-	}
-	if o.IncludeAPIKeyAccounts != nil {
-		fields["IncludeAPIKeyAccounts"] = *o.IncludeAPIKeyAccounts
 	}
 	if o.Model != nil {
 		fields["Model"] = *o.Model

@@ -32,6 +32,14 @@ type Facade interface {
 	ClearPollPolicyInputs()
 }
 
+// APIKeyApprover records the user's yes to a switch onto an API-key account,
+// which the switch layer refuses without one (DESIGN A33). It sits beside the
+// frozen Facade rather than in it: *core.Switcher satisfies both, and cli
+// asserts it. A facade without it gets the switch layer's refusal.
+type APIKeyApprover interface {
+	ApproveAPIKeySwitch(id string)
+}
+
 // snapshotSource takes one coherent snapshot per call; the store paces the
 // network (09§6.1). full is accepted for API stability but is no faster than a
 // normal pass — the store's serve-TTL/poll-plan caps every pass identically.

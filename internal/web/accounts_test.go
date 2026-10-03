@@ -135,6 +135,49 @@ func TestSwitchForce_NilOps503(t *testing.T) {
 	}
 }
 
+// TestSwitchConfirmAuthChange_ApprovesThenSwitches: the page asks before a
+// switch onto an API-key account and then repeats the call with
+// ?confirmAuthChange=1, which the handler turns into the switch layer's
+// approval for exactly that account before switching, plain or forced
+// (DESIGN A33). Without the flag nothing is approved and the switch layer
+// refuses the API-key target on its own.
+func TestSwitchConfirmAuthChange_ApprovesThenSwitches(t *testing.T) {
+	h := newHarness(t)
+	if resp := h.post("/api/switch/claude:3?confirmAuthChange=1"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if resp := h.post("/api/switch/claude:3?confirmAuthChange=1&force=1"); resp.StatusCode != http.StatusOK {
+		t.Fatalf("forced: status %d", resp.StatusCode)
+	}
+	if got := h.ops.Calls(); !reflect.DeepEqual(got, []string{"ApproveAPIKeySwitch(3)", "ApproveAPIKeySwitch(3)", "SwitchToForce(3,true,true)"}) {
+		t.Fatalf("ops calls %v", got)
+	}
+	if got := h.fa.Calls(); !reflect.DeepEqual(got, []string{"SwitchTo(3,true)"}) {
+		t.Fatalf("facade calls %v", got)
+	}
+
+	plain := newHarness(t)
+	for _, q := range []string{"", "?confirmAuthChange=0", "?confirmAuthChange="} {
+		plain.post("/api/switch/claude:3" + q)
+	}
+	if got := plain.ops.Calls(); len(got) != 0 {
+		t.Fatalf("approval recorded without the flag: %v", got)
+	}
+}
+
+// TestSwitchConfirmAuthChange_NilOps503: the approval goes through the
+// AccountOps facade, so without it the confirmed switch is unavailable rather
+// than attempted unapproved.
+func TestSwitchConfirmAuthChange_NilOps503(t *testing.T) {
+	h := newHarness(t, withNoAccounts())
+	if resp := h.post("/api/switch/claude:3?confirmAuthChange=1"); resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if got := h.fa.Calls(); len(got) != 0 {
+		t.Fatalf("switched without an approval: %v", got)
+	}
+}
+
 func TestSwitchForce_ErrorMapping(t *testing.T) {
 	h := newHarness(t)
 	h.ops.mu.Lock()
