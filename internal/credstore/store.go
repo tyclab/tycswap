@@ -67,6 +67,10 @@ type Store interface {
 	// is dropped. Best-effort — a live credential that cannot be read or parsed
 	// writes the blob's account part without a carry-over.
 	WriteActiveAccount(creds string) error
+	// ReadLiveOAuth returns the live OAuth credential text as stored (the
+	// Keychain item while in use, else the plaintext file), "" when there is
+	// none. Unlike ReadActive it returns one holding seat-wide keys only.
+	ReadLiveOAuth() string
 
 	// ReadBackup returns a slot's backup credential (.enc-wins), "" when missing;
 	// it never fails (all backend errors are swallowed with a warning log).

@@ -199,7 +199,7 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 	}
 
 	// Snapshot live state for rollback (only when a live identity exists).
-	var rollbackCreds string
+	var rollbackCreds, restoreCreds string
 	haveRollbackCreds := false
 	var rollbackConfigText string
 	haveRollbackConfig := false
@@ -209,6 +209,13 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 			return switchOp{}, cerr.CredentialRead("Cannot snapshot live credentials before activation")
 		}
 		rollbackCreds = rc
+		// What a failed commit writes back. With no login or key live it is
+		// the raw OAuth text, so a credential holding only seat-wide keys is
+		// restored instead of replaced by an empty one (DESIGN A30).
+		restoreCreds = rc
+		if rc == "" {
+			restoreCreds = s.Creds.ReadLiveOAuth()
+		}
 		haveRollbackCreds = true
 		text, exists, err := readConfigText()
 		if err != nil {
@@ -279,7 +286,7 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 			}
 		}
 		if credsWritten && haveRollbackCreds {
-			if rerr := s.Creds.WriteActive(rollbackCreds); rerr != nil && s.Log != nil {
+			if rerr := s.Creds.WriteActive(restoreCreds); rerr != nil && s.Log != nil {
 				s.Log.Errorf("Failed to rollback credentials: %v", rerr)
 			}
 		}
