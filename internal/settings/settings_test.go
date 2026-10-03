@@ -325,32 +325,46 @@ func TestStrategyDefaultIsSoonestReset(t *testing.T) {
 		t.Errorf("spec default = %v, want soonest-reset", spec.Default)
 	}
 
-	absent := t.TempDir()
-	writeSettingsJSON(t, absent, `{"schemaVersion":1,"autoswitch":{"intervalSeconds":60}}`)
-	if got := Load(absent).Strategy; got != "soonest-reset" {
-		t.Errorf("a file without autoswitch.strategy loads %q, want soonest-reset", got)
-	}
-
-	explicit := t.TempDir()
-	writeSettingsJSON(t, explicit, `{"schemaVersion":1,"autoswitch":{"strategy":"best"}}`)
-	if got := Load(explicit).Strategy; got != "best" {
-		t.Errorf("a file that sets best loads %q, want best", got)
-	}
-	before, err := os.ReadFile(SettingsPath(explicit))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range EffectiveSettings(explicit) {
-		if e.Spec.Dotted() == "autoswitch.strategy" && (!e.IsSet || e.Value != "best") {
-			t.Errorf("effective strategy = %+v, want best and set", e)
-		}
-	}
-	after, err := os.ReadFile(SettingsPath(explicit))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(before) != string(after) {
-		t.Errorf("reading the settings rewrote the file:\n%s\n->\n%s", before, after)
+	for _, tc := range []struct {
+		name, file string
+		want       string
+		isSet      bool
+	}{
+		// The upgrade case: an existing file that never named a strategy.
+		{"no strategy key", `{"schemaVersion":1,"autoswitch":{"intervalSeconds":60}}`, "soonest-reset", false},
+		{"explicit best", `{"schemaVersion":1,"autoswitch":{"strategy":"best"}}`, "best", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeSettingsJSON(t, root, tc.file)
+			before, err := os.ReadFile(SettingsPath(root))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := Load(root).Strategy; got != tc.want {
+				t.Errorf("Load().Strategy = %q, want %q", got, tc.want)
+			}
+			found := false
+			for _, e := range EffectiveSettings(root) {
+				if e.Spec.Dotted() != "autoswitch.strategy" {
+					continue
+				}
+				found = true
+				if e.Value != tc.want || e.IsSet != tc.isSet {
+					t.Errorf("effective strategy = %+v, want %q, set=%v", e, tc.want, tc.isSet)
+				}
+			}
+			if !found {
+				t.Error("EffectiveSettings has no autoswitch.strategy row")
+			}
+			after, err := os.ReadFile(SettingsPath(root))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(before) != string(after) {
+				t.Errorf("reading the settings rewrote the file:\n%s\n->\n%s", before, after)
+			}
+		})
 	}
 }
 
