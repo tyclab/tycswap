@@ -516,18 +516,19 @@ func (s *Server) handleAddToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// findNumberByEmail looks the freshly added account up in a store-only
-// snapshot (empty fetch set: no network).
+// findNumberByEmail looks the freshly added Claude account up in a
+// store-only snapshot (empty fetch set: no network). A Codex row with the
+// same email is another CLI's account and never matches.
 func (s *Server) findNumberByEmail(email string) string {
 	if email == "" {
 		return ""
 	}
-	snap := s.d.Facade.AccountsSnapshot(map[string]bool{})
+	snap := s.d.Snapshot.AccountsSnapshot(map[string]bool{})
 	if snap == nil {
 		return ""
 	}
 	for _, a := range snap.Accounts {
-		if strings.EqualFold(a.Email, email) {
+		if a.ProviderName() == reporting.ProviderClaude && strings.EqualFold(a.Email, email) {
 			return a.Number
 		}
 	}

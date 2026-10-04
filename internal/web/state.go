@@ -87,11 +87,12 @@ type stateOpts struct {
 	tokenStatus bool
 }
 
-// buildState takes one façade snapshot (nil fetch set: every stale account is
+// buildState takes one snapshot (nil fetch set: every stale account is
 // eligible, the store paces the network exactly as the TUI's poll tick does)
-// and assembles the document.
+// and assembles the document. With a merged source the Codex rows follow the
+// Claude rows; activeNumber, currentLogin and the token status stay Claude's.
 func (s *Server) buildState(o stateOpts) State {
-	snap := s.d.Facade.AccountsSnapshot(nil)
+	snap := s.d.Snapshot.AccountsSnapshot(nil)
 	st := State{
 		SchemaVersion: stateSchemaVersion,
 		ServerTime:    s.d.Clock.Now().UTC().Format(time.RFC3339),
@@ -201,13 +202,17 @@ func (s *Server) enrichTokenStatus(rows []map[string]any) {
 	}
 }
 
-// activeHasBaseURL reports whether the snapshot's active account is an
-// API-key account with a base URL (DESIGN A46).
+// activeHasBaseURL reports whether the snapshot's active Claude account is
+// an API-key account with a base URL (DESIGN A46). A Codex row's active flag
+// is about another CLI's login and says nothing here.
 func activeHasBaseURL(snap *reporting.AccountsSnapshot) bool {
 	if snap == nil {
 		return false
 	}
 	for _, a := range snap.Accounts {
+		if a.ProviderName() != reporting.ProviderClaude {
+			continue
+		}
 		if a.IsActive {
 			return a.BaseURL != ""
 		}

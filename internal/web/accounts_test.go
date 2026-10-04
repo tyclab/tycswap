@@ -367,6 +367,19 @@ func TestAddToken_AliasLookupByEmail(t *testing.T) {
 	}
 }
 
+// The alias lookup by email reads the merged snapshot's Claude rows only: a
+// Codex account with the same email is another CLI's and never aliased.
+func TestAddToken_AliasLookupSkipsCodexRows(t *testing.T) {
+	h := newHarness(t, withCodex())
+	resp := h.postJSON("/api/accounts/add-token", map[string]any{"token": secretSetupToken, "email": "dana@example.com", "alias": "x"})
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+	if got := h.ops.Calls(); len(got) != 0 {
+		t.Fatalf("ops calls %v, want none", got)
+	}
+}
+
 func TestAddToken_AliasWithoutSlotOrEmail404(t *testing.T) {
 	h := newHarness(t)
 	resp := h.postJSON("/api/accounts/add-token", map[string]any{"token": secretSetupToken, "alias": "x"})

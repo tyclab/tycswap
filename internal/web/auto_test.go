@@ -209,6 +209,39 @@ func TestSSE_AutoEventFanOutAndStateBroadcast(t *testing.T) {
 	}
 }
 
+// A Codex tick reaches the stream as an ordinary `auto` frame carrying
+// "provider":"codex"; a Claude engine event carries no provider key, so its
+// JSON is what it was before Codex (DESIGN A47).
+func TestSSE_AutoEvent_CarriesProvider(t *testing.T) {
+	h := newHarness(t, withCodex())
+	st := h.openSSE()
+	defer st.close()
+	st.nextState(t, timeout)
+
+	codex := AutoEventView{At: 1758276100, Kind: "switch", Message: "codex: switched 1 (98%) -> 2 (12%)", Account: "2", Provider: "codex",
+		Fields: map[string]any{"outcome": "switched", "detail": "switched 1 (98%) -> 2 (12%)", "switchedTo": "2", "runningPids": []any{}}}
+	h.fireAuto(codex)
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(st.nextNamed(t, "auto", timeout).data), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if raw["provider"] != "codex" || raw["kind"] != "switch" || raw["account"] != "2" {
+		t.Errorf("codex auto frame %v", raw)
+	}
+	if !reflect.DeepEqual(canon(t, raw), canon(t, codex)) {
+		t.Errorf("codex auto frame %v, want %+v", raw, codex)
+	}
+
+	h.fireAuto(AutoEventView{At: 1758276101, Kind: "switch", Message: "switched to #2", Account: "2"})
+	raw = nil
+	if err := json.Unmarshal([]byte(st.nextNamed(t, "auto", timeout).data), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := raw["provider"]; has {
+		t.Errorf("a Claude event carries a provider key: %v", raw)
+	}
+}
+
 func TestSSE_AutoEventsClosedChannelKeepsServing(t *testing.T) {
 	h := newHarness(t)
 	st := h.openSSE()
