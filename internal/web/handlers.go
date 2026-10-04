@@ -852,7 +852,7 @@ func settingApplies(key string) string {
 	case "autoswitch.sevenDayThreshold":
 		return "When an engine next starts. The Auto tab's slider changes the running engine's 7d threshold for this run only, without saving."
 	case "autoswitch.codexEnabled", "autoswitch.codexThreshold":
-		return "When the Codex engine next starts: on this page's Auto tab, when " + brand.Sanitized().Name + " web started with Codex accounts, or in " + brand.Sanitized().Name + " auto. The terminal dashboard's engine rotates Claude accounts only."
+		return "When the Codex engine next starts: on this page's Auto tab, when the dashboard started with Codex accounts, or in " + brand.Sanitized().Name + " auto. The terminal dashboard's engine rotates Claude accounts only."
 	}
 	return "When an engine next starts (this page's Auto tab, the terminal dashboard or " + brand.Sanitized().Name + " auto); a running one keeps the value it started with."
 }

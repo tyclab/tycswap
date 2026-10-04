@@ -288,7 +288,7 @@ func TestSettingApplies(t *testing.T) {
 	// The TUI's engine never runs the Codex engine, so the Codex keys do
 	// not claim it.
 	for _, key := range []string{"autoswitch.codexEnabled", "autoswitch.codexThreshold"} {
-		if got := settingApplies(key); !strings.Contains(got, "tycswap auto") || !strings.Contains(got, "The terminal dashboard's engine rotates Claude accounts only.") {
+		if got := settingApplies(key); !strings.Contains(got, "when the dashboard started with Codex accounts") || !strings.Contains(got, "tycswap auto") || !strings.Contains(got, "The terminal dashboard's engine rotates Claude accounts only.") {
 			t.Errorf("settingApplies(%s) = %q", key, got)
 		}
 	}
