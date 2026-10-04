@@ -363,6 +363,9 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		}
 	}
 	update.RemoveStaleBinary(exePath()) // a Windows upgrade's leftover from last time
+	// How this build is upgraded, worked out once: it probes the binary's
+	// directory with a file, and the menu, the card and every check ask.
+	buildHint := appUpgradeHint()
 	sh = newAppShell(t, shellActions{
 		OpenDashboard: openDashboard,
 		SwitchTo: func(id string) error {
@@ -379,7 +382,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		AutoStart:    func() error { return d.auto.Start(false) },
 		AutoStop:     func() error { return d.auto.Stop() },
 		Upgrade:      func() (string, error) { return upgradeForShell() },
-		UpgradeHint:  func() string { return appUpgradeHint() },
+		UpgradeHint:  func() string { return buildHint },
 		Autostart:    func() (bool, error) { return autostart.Enabled(autostart.Config{}) },
 		SetAutostart: func(on bool) error { return setAutostart(autostart.Config{}, on) },
 		SetModelLimits: func(on bool) error {

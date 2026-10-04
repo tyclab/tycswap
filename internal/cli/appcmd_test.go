@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -152,8 +153,9 @@ func stubRestart(t *testing.T, lockPath string) (tags *[]string, lockFree *[]boo
 
 // installWithoutClicking makes the tray's update→restart path run on its own:
 // the test hooks for the first check and the dialog, an upgrade that reports
-// the running binary replaced, and a build the tray may upgrade.
-func installWithoutClicking(t *testing.T) {
+// the running binary replaced, and a build the tray may upgrade. It counts
+// how often the app works out how this build is upgraded.
+func installWithoutClicking(t *testing.T) *atomic.Int32 {
 	t.Helper()
 	testutil.Setenv(t, "TYCSWAP_TEST_UPDATE_FIRST", "20ms")
 	testutil.Setenv(t, "TYCSWAP_TEST_AUTO_APPROVE", "1")
@@ -161,11 +163,13 @@ func installWithoutClicking(t *testing.T) {
 	prevUp, prevHint := upgradeForShell, appUpgradeHint
 	claudeCodeCheckFirst = time.Hour
 	upgradeForShell = func() (string, error) { return "Updated tycswap.", nil }
-	appUpgradeHint = func() string { return "" }
+	var hints atomic.Int32
+	appUpgradeHint = func() string { hints.Add(1); return "" }
 	t.Cleanup(func() {
 		updateCheckFirst, claudeCodeCheckFirst = prevFirst, prevCC
 		upgradeForShell, appUpgradeHint = prevUp, prevHint
 	})
+	return &hints
 }
 
 // The update restart hands the single-instance lock over and ends with 0: the
@@ -175,7 +179,7 @@ func installWithoutClicking(t *testing.T) {
 func TestAppRestartHandOverReleasesTheLockOnce(t *testing.T) {
 	appTestHome(t)
 	releaseEndpoint(t, "v99.0.0")
-	installWithoutClicking(t)
+	hints := installWithoutClicking(t)
 	tags, free := stubRestart(t, appLockPath())
 	ft := &blockingTray{done: make(chan struct{})}
 	prev := newTray
@@ -192,6 +196,11 @@ func TestAppRestartHandOverReleasesTheLockOnce(t *testing.T) {
 	}
 	if !(*free)[0] {
 		t.Error("the successor would have found app.lock still held")
+	}
+	// The hint probes the binary's directory: once, at the start, however
+	// often the check, the menu and the card ask.
+	if n := hints.Load(); n != 1 {
+		t.Errorf("the upgrade hint was worked out %d times, want once", n)
 	}
 	if appIsRunning() {
 		t.Error("app.lock is held after the hand-over")
@@ -211,7 +220,7 @@ func TestRemoteRestartHandOverReleasesTheLockOnce(t *testing.T) {
 	appTestHome(t)
 	fx := startRemoteServer(t, testRemoteToken, "127.0.0.1:0")
 	releaseEndpoint(t, "v99.0.0")
-	installWithoutClicking(t)
+	hints := installWithoutClicking(t)
 	tags, free := stubRestart(t, remoteLockPath())
 	ft := &blockingTray{done: make(chan struct{})}
 	prev := newTray
@@ -225,6 +234,9 @@ func TestRemoteRestartHandOverReleasesTheLockOnce(t *testing.T) {
 	}
 	if len(*tags) != 1 || (*tags)[0] != "v99.0.0" || !(*free)[0] {
 		t.Fatalf("restart tags = %v, lock free = %v, stderr = %q", *tags, *free, errb.String())
+	}
+	if n := hints.Load(); n != 1 {
+		t.Errorf("the upgrade hint was worked out %d times, want once", n)
 	}
 	lock, held, err := acquireRemoteLock()
 	if err != nil || !held {

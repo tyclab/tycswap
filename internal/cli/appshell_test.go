@@ -587,6 +587,23 @@ func TestOfferUpdateTellsTheCommandWhenTheTrayCannotInstall(t *testing.T) {
 	}
 }
 
+// The card asks for the hint only while an update waits: the hint probes the
+// binary's directory with a file, and the card is drawn on every poll.
+func TestUpdatesViewAsksForTheHintOnlyWhenAnUpdateWaits(t *testing.T) {
+	for _, latest := range []string{"v2.1.0", "v2.2.0"} {
+		sh, _, _ := updateShell(t, latest, nil)
+		hints := 0
+		sh.act.UpgradeHint = func() string { hints++; return "git pull && make install" }
+		sh.offerUpdate()
+		hints = 0
+		v := sh.updatesView()
+		waits := latest == "v2.2.0"
+		if v.App.Available != waits || (hints == 1) != waits || hints > 1 || (v.App.Hint != "") != waits {
+			t.Errorf("latest %s: available %v, hint %q, %d hint calls", latest, v.App.Available, v.App.Hint, hints)
+		}
+	}
+}
+
 func TestOfferUpdateIgnoresOlderEqualAndErrors(t *testing.T) {
 	for _, latest := range []string{"v2.1.0", "v2.0.9", "nightly", ""} {
 		asked := false

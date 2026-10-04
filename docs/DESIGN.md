@@ -4826,7 +4826,10 @@ Windows (where `go install` cannot replace the running `.exe`), a binary in
 the Nix store or in an unwritable directory — is told how (the checkout's
 command, the `go install` line, the releases page: `AppUpdateView.Hint`) in a
 notification instead of a dialog, and the row reads *tycswap X is
-available…*; a release binary is never told `go install`.
+available…*; a release binary is never told `go install`. The app works the
+hint out once, at its start (it creates and removes a file in the binary's
+directory to learn whether it can write there), and the card carries it only
+while an update waits.
 
 **Restart.** An install that replaced the running binary (its modification
 time changed) restarts the app by itself: the shell's `Restart` sets a flag

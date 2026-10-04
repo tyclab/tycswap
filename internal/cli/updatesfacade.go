@@ -74,7 +74,6 @@ func (f *updatesFacade) Apply(target string) (web.UpdateResult, error) {
 // answer the icon's badge gives.
 func (a *appShell) updatesView() web.UpdatesView {
 	available := a.updateWaiting()
-	hint := a.upgradeHint()
 	a.mu.Lock()
 	pending, latest, checkedAt, checking := a.pending, a.appLatest, a.checkedAt, a.checking
 	releaseErr := a.releaseErr
@@ -90,7 +89,8 @@ func (a *appShell) updatesView() web.UpdatesView {
 	}
 	v.App = &web.AppUpdateView{Current: a.act.Current, Latest: latest, Available: pending != ""}
 	if pending != "" {
-		v.App.Hint = hint
+		// Only then: the hint probes the binary's directory with a file.
+		v.App.Hint = a.upgradeHint()
 	}
 	if releaseErr != nil {
 		v.App.Error = releaseErr.Error()
