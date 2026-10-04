@@ -163,9 +163,11 @@ type Spec struct {
 func (s Spec) Dotted() string { return s.Section + "." + s.JSONKey }
 
 // SettingSpecs is the single source of truth for every settings.json key, in
-// registry order. It must cover every AutoSwitchSettings field, and each
-// spec's Default must equal Default()'s corresponding field (both enforced
-// by tests).
+// registry order: the order `tycswap config`, the TUI's Settings screen and
+// the dashboard's Settings tab list them, so the bars come first and the
+// model windows sit right before the model bar that applies to them (DESIGN
+// A49). It must cover every AutoSwitchSettings field, and each spec's Default
+// must equal Default()'s corresponding field (both enforced by tests).
 var SettingSpecs = []Spec{
 	{Section: "autoswitch", JSONKey: "fiveHourThreshold", Field: "FiveHourThreshold", Kind: KindFloat,
 		Lo: 50.0, Hi: 100.0, Default: 85.0,
@@ -173,6 +175,9 @@ var SettingSpecs = []Spec{
 	{Section: "autoswitch", JSONKey: "sevenDayThreshold", Field: "SevenDayThreshold", Kind: KindFloat,
 		Lo: 50.0, Hi: 100.0, Default: 97.0,
 		Help: "Switch when the 7d window reaches this pct. It creeps rather than bursts, so it can run close to full"},
+	{Section: "autoswitch", JSONKey: "model", Field: "Model", Kind: KindString,
+		Default: nil,
+		Help:    "Also switch on these models' weekly limits (e.g. Fable, Fable,Opus, or all)"},
 	{Section: "autoswitch", JSONKey: "modelThreshold", Field: "ModelThreshold", Kind: KindFloat,
 		Lo: 50.0, Hi: 100.0, Default: 95.0,
 		Help: "Switch when a per-model weekly window reaches this pct; only for the models autoswitch.model counts"},
@@ -197,9 +202,6 @@ var SettingSpecs = []Spec{
 	{Section: "autoswitch", JSONKey: "unhealthyTicks", Field: "UnhealthyTicks", Kind: KindInt,
 		Lo: 1, Hi: 100, Default: 3,
 		Help: "Consecutive failed polls before an account is unhealthy"},
-	{Section: "autoswitch", JSONKey: "model", Field: "Model", Kind: KindString,
-		Default: nil,
-		Help:    "Also switch on these models' weekly limits (e.g. Fable, Fable,Opus, or all)"},
 }
 
 // SpecFor looks up a spec by dotted key; an unknown key returns a

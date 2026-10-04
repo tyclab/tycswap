@@ -5669,3 +5669,41 @@ exits 0 through the notify-context seam, offline; with the A7 notifier
 installed, a real SIGINT ends `tycswap web` with 0 and the headless app with 0
 and no token file (Linux; the file compiles on macOS, whose CI runs the tray
 scope only).
+
+## A49. The model windows sit beside their bar, picked from the reported windows
+
+`autoswitch.model` decides which per-model weekly windows auto-switch counts,
+and `autoswitch.modelThreshold` is the bar for exactly those windows. The
+registry (`settings.SettingSpecs`) listed the model key last, after the poll
+interval, the Codex keys, the cooldown, the hysteresis, the strategy and the
+unhealthy ticks, so every view that follows registry order (`tycswap config`,
+the TUI's Settings screen, the dashboard's Settings tab, A27, A28) put the
+choice at the bottom, eight rows away from its bar. Since accounts report a
+Fable window that runs full before their 7d window does, that choice matters
+as much as the bars. The registry now reads 5h threshold, 7d threshold, model
+windows, model threshold, then the rest unchanged; no view sorts on its own,
+so all three follow. Nothing reads the registry by position: the TUI and the
+tests look keys up by name.
+
+**A switch per reported window.** The Settings tab's text field asked for
+model names to be typed as the usage API spells them, comma-separated. The
+row now shows *All models* and a switch for every per-model window the
+accounts report (`modelWindowNames`, the list the "limits ignored" warning
+already uses), each ticked when the saved value names it, matched without
+case and split on commas only, as `settings.ParseModelNames` does. A name the
+saved value carries that no account reports keeps a ticked switch of its own:
+the picker shows the whole saved value and a save never drops a name the user
+did not untick. Ticking *All models* greys the named switches and saves
+`all`; *Save* with nothing ticked sends the reset (`DELETE`), since the
+server refuses an empty value. With no window reported and no name saved
+there is nothing to tick, and the row keeps the text field. The value goes
+through the same `POST /api/settings/{key}` route as before, so `ApplyModels`
+retargets a running engine exactly as it did (A26). The tab repaints when the
+reported windows change as well as when the settings do, so a window that
+appears after the page loaded gets its switch. The Auto tab's *Count model
+limits* switch and the tray's `<window> limit` switch (A39) are unchanged.
+
+*Tests.* The registry's first four keys are pinned by name. A node script
+runs the picker's pure block of `app.js` (`modelPickerOptions`,
+`modelPickerValue`): ticks for saved, case-folded, unreported, duplicated and
+`all` values, comma-only splitting, and what Save sends, `null` for a reset.
