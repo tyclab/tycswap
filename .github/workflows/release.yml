@@ -2,7 +2,7 @@
 # A release for every v* tag: the binaries the README lists, built from the
 # tag, attached to the GitHub release of that tag with their SHA256SUMS. A tag
 # without a release gets a draft, so the notes are written before anyone's
-# `tycswap upgrade` can see it. Nothing is signed (README: Tray application).
+# `tycswap upgrade` can see it. Nothing is signed (README: Installation).
 name: Release
 
 on:
@@ -10,29 +10,18 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
 
 env:
-  GH_TOKEN: ${{ github.token }}
   TAG: ${{ github.ref_name }}
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Find or draft the release
-        run: |
-          gh release view "$TAG" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1 ||
-            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --verify-tag \
-              --title "tycswap $TAG" --notes "Release notes to follow; see CHANGELOG.md."
-
   # Linux and Windows are pure Go: the Windows tray speaks Win32 through
   # golang.org/x/sys, and Linux's through D-Bus.
   linux-windows:
-    needs: release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -54,14 +43,16 @@ jobs:
           done
       - name: Smoke test
         run: ./dist/tycswap_${TAG}_linux_amd64 --version
-      - name: Upload
-        run: gh release upload "$TAG" dist/* --clobber -R "$GITHUB_REPOSITORY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-windows
+          path: dist/*
+          if-no-files-found: error
 
   # macOS links the menu-bar tray against Cocoa through cgo (DESIGN A12,
   # A35), so it builds on a Mac: arm64 natively, amd64 with clang told the
   # architecture.
   darwin:
-    needs: release
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -84,19 +75,37 @@ jobs:
           ./dist/tycswap_${TAG}_darwin_arm64 --version
           ./dist/tycswap_${TAG}_darwin_arm64 app --help > /dev/null
           lipo -archs "dist/tycswap_${TAG}_darwin_amd64" | grep -qx x86_64
-      - name: Upload
-        run: gh release upload "$TAG" dist/* --clobber -R "$GITHUB_REPOSITORY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: darwin
+          path: dist/*
+          if-no-files-found: error
 
-  checksums:
+  # The one job that writes to the repository: it checksums every binary and
+  # attaches them to the tag's release (a draft when there is none yet).
+  publish:
     needs: [linux-windows, darwin]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: dist
+          merge-multiple: true
       - name: SHA256SUMS
+        working-directory: dist
         run: |
           set -euo pipefail
-          mkdir -p dist
-          cd dist
-          gh release download "$TAG" -R "$GITHUB_REPOSITORY" --pattern "tycswap_${TAG}_*"
           sha256sum tycswap_* > SHA256SUMS
           cat SHA256SUMS
-          gh release upload "$TAG" SHA256SUMS --clobber -R "$GITHUB_REPOSITORY"
+      - name: Release
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1 ||
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --verify-tag \
+              --title "tycswap $TAG" --notes "Release notes to follow; see CHANGELOG.md."
+          gh release upload "$TAG" tycswap_* SHA256SUMS --clobber -R "$GITHUB_REPOSITORY"
