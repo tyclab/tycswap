@@ -4904,7 +4904,10 @@ under a live dashboard; a lock that cannot be read counts as held for
 `purge`. The OS releases the lock when the process dies, so a crash leaves
 nothing to clean up. A starting app waits two seconds for the lock, the
 window the update restart's successor needs (A36). `app --remote` holds
-`remote.lock` instead and does not exclude a local app (A45).
+`remote.lock` instead and does not exclude a local app (A45); it checks that
+lock before it builds its tray and takes it after, so a refusal (another
+remote tray, no tray here) creates no lock file. Asking whether an app runs
+(`purge`, the bare start) creates nothing either: no lock file means no app.
 
 ## A39. One switch for the model limit, in the tray as well
 

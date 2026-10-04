@@ -10,6 +10,9 @@
 package cli
 
 import (
+	"errors"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -53,14 +56,26 @@ func acquireLockAt(path string) (lock *filelock.FileLock, held bool, err error) 
 // a second app; an unreadable lock answers TRUE, because refusing is the
 // safe direction for both when we cannot tell.
 func appIsRunning() bool {
-	l := filelock.New(appLockPath(), 50*time.Millisecond)
-	ok, err := l.Acquire(50 * time.Millisecond)
+	held, err := lockHeldAt(appLockPath(), 50*time.Millisecond)
+	return held || err != nil
+}
+
+// lockHeldAt reports whether another process holds the lock at path, waiting
+// up to wait for it to come free. It creates nothing: without the file no
+// process holds the lock, so asking (a cancelled purge, a refused start)
+// leaves no lock file and no backup root behind.
+func lockHeldAt(path string, wait time.Duration) (bool, error) {
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	l := filelock.New(path, wait)
+	ok, err := l.Acquire(wait)
 	if err != nil {
-		return true
+		return false, err
 	}
 	if !ok {
-		return true
+		return true, nil
 	}
 	_ = l.Release()
-	return false
+	return false, nil
 }

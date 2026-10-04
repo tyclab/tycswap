@@ -1079,15 +1079,13 @@ func TestRemoteModeNeedsATray(t *testing.T) {
 	if code != 1 || !strings.Contains(errStr, "remote mode needs a tray; run tycswap app in the distro instead") {
 		t.Errorf("exit = %d, stderr = %q", code, errStr)
 	}
-	// The remote lock is taken beside app.lock, and released again.
+	// The remote lock lives beside app.lock, and a refusal creates none.
 	if remoteLockPath() != filepath.Join(filepath.Dir(appLockPath()), "remote.lock") {
 		t.Errorf("remote lock at %q", remoteLockPath())
 	}
-	lock, held, err := acquireRemoteLock()
-	if err != nil || !held {
-		t.Fatalf("remote lock after the exit: %v, %v", held, err)
+	if _, err := os.Stat(remoteLockPath()); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the refusal created %s: %v", remoteLockPath(), err)
 	}
-	_ = lock.Release()
 }
 
 // Two remote trays cannot run: the second says so like the local app does.

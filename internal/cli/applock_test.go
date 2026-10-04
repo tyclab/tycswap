@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,6 +78,28 @@ func TestPurgeRefusedWhileAppRuns(t *testing.T) {
 	}
 	if !strings.Contains(errb.String(), "app is running") {
 		t.Errorf("stderr = %q, want a running-app message", errb.String())
+	}
+}
+
+// Asking whether an app runs creates nothing: a purge, cancelled or not,
+// leaves no app.lock and no backup root behind (A38).
+func TestPurgeCreatesNoLock(t *testing.T) {
+	home := t.TempDir()
+	testutil.Setenv(t, "HOME", home)
+	testutil.Setenv(t, "USERPROFILE", home)
+	testutil.Unsetenv(t, "XDG_DATA_HOME")
+	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
+	if appIsRunning() {
+		t.Fatal("no app has run here")
+	}
+	if _, err := os.Stat(filepath.Dir(appLockPath())); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("asking created the backup root: %v", err)
+	}
+	appLockHome(t)
+	var out, errb bytes.Buffer
+	_ = run("tycswap", []string{"purge"}, ioStreams{in: strings.NewReader("n\n"), out: &out, err: &errb}, false, false)
+	if _, err := os.Stat(appLockPath()); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("purge created %s: %v (stderr %q)", appLockPath(), err, errb.String())
 	}
 }
 

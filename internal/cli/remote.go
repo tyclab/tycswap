@@ -622,21 +622,15 @@ func (c *remoteClient) dispatch(name string, data []byte, onState func(web.State
 // takes no store lock, builds no dashboard, resumes no engine, fetches no
 // settings and looks at no Claude Code — all of that is the distro's.
 func runRemoteApp(o appOptions, s ioStreams) int {
-	lock, got, lerr := acquireRemoteLock()
-	switch {
-	case lerr != nil:
-		fmt.Fprintln(s.err, "could not take the single-instance lock: "+lerr.Error())
-	case !got:
+	alreadyRunning := func() int {
 		errorTo(s.err, brandName()+" app --remote is already running on this machine (its icon is in the menu bar / tray). Quit it first.")
 		return 1
-	default:
-		// Released early on a restart hand-over (lock = nil below), so the
-		// deferred release must not touch a nil lock.
-		defer func() {
-			if lock != nil {
-				_ = lock.Release()
-			}
-		}()
+	}
+	// A second remote tray refuses before it builds a tray, whose icon shows
+	// at once on Linux. The lock itself is taken once the tray is built, so
+	// a refusal (no tray here, another remote tray) creates no lock file.
+	if held, _ := lockHeldAt(remoteLockPath(), startGrace); held {
+		return alreadyRunning()
 	}
 
 	var sh *appShell
@@ -662,6 +656,21 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	if err != nil {
 		errorTo(s.err, "Error: "+err.Error())
 		return 1
+	}
+	lock, got, lerr := acquireRemoteLock()
+	switch {
+	case lerr != nil:
+		fmt.Fprintln(s.err, "could not take the single-instance lock: "+lerr.Error())
+	case !got:
+		return alreadyRunning()
+	default:
+		// Released early on a restart hand-over (lock = nil below), so the
+		// deferred release must not touch a nil lock.
+		defer func() {
+			if lock != nil {
+				_ = lock.Release()
+			}
+		}()
 	}
 	ctx, cancel := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
