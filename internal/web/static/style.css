@@ -686,3 +686,7 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 .guide .warn { color: var(--warn-ink); font-weight: 600; }
 .guide .crit { color: var(--crit-ink); font-weight: 600; }
 @media (max-width: 700px) { .guide-toc ol { columns: 1; } .guide-dl { grid-template-columns: 1fr; } .guide-tbl code { white-space: normal; } }
+
+/* The Settings tab's model windows: a switch per window, wrapping (DESIGN A49). */
+.model-picker { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); align-items: center; }
+.model-picker .switch input[type="checkbox"]:disabled { cursor: default; opacity: .35; }

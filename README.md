@@ -596,6 +596,7 @@ given, which overwrites it. Import rejects any file marked `encrypted: true`.
 $ tycswap config
 autoswitch.fiveHourThreshold  85             (default)
 autoswitch.sevenDayThreshold  92
+autoswitch.model              Fable
 autoswitch.modelThreshold     95             (default)
 autoswitch.intervalSeconds    60             (default)
 autoswitch.codexEnabled       true           (default)
@@ -604,7 +605,6 @@ autoswitch.cooldownSeconds    300            (default)
 autoswitch.hysteresisPct      10             (default)
 autoswitch.strategy           soonest-reset  (default)
 autoswitch.unhealthyTicks     3              (default)
-autoswitch.model              Fable
 ```
 
 `tycswap config set KEY VALUE` validates and stores one setting. An out-of-range
@@ -726,7 +726,8 @@ start and every six hours). *Auto* runs an auto-switch engine in the `web`
 process with its *Next best* ranking, quarantine and event log; *Sessions*
 lists the running Claude Code sessions (also those started with `tycswap
 run`) and can stop one; *Settings* edits every `settings.json` key with its
-type, range and default, the same keys as `tycswap config`; *Guide* explains
+type, range and default, the same keys as `tycswap config`, and picks the
+counted model windows from the ones the accounts report; *Guide* explains
 the tool. The Accounts and Updates cards fold, and the choice is remembered.
 Export and import stay on the command line.
 

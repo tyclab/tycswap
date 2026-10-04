@@ -213,6 +213,25 @@ func TestSettingSpecs_DefaultsMatchDataclass(t *testing.T) {
 	}
 }
 
+// The keys that decide when a window is full lead the registry, and the
+// model windows sit right before the model bar that applies only to them:
+// `tycswap config`, the TUI's Settings screen and the dashboard's Settings
+// tab list the keys in this order, and autoswitch.model last put the choice
+// of which model limits count at the bottom, away from its bar (DESIGN A49).
+func TestSettingSpecs_ModelWindowsBesideTheirBar(t *testing.T) {
+	want := []string{
+		"autoswitch.fiveHourThreshold", "autoswitch.sevenDayThreshold",
+		"autoswitch.model", "autoswitch.modelThreshold",
+	}
+	var got []string
+	for _, s := range SettingSpecs[:len(want)] {
+		got = append(got, s.Dotted())
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("registry starts %v, want %v", got, want)
+	}
+}
+
 // --- SetSetting / UnsetSetting ---
 
 func TestSetSetting_WritesMinimalFile(t *testing.T) {

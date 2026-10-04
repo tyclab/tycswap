@@ -1,12 +1,16 @@
 // Tests for the settings and directory-mapping routes: listing, Set with
 // string / number / bool values, Unset via DELETE and POST, path-required
-// mapping rules, error mapping and nil-façade 503s.
+// mapping rules, error mapping and nil-façade 503s, and the Settings tab's
+// model picker.
 package web
 
 import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -326,5 +330,31 @@ func TestSettingsCarryApplies(t *testing.T) {
 		if sv.Applies != "" {
 			t.Errorf("the facade's own slice was annotated: %s", sv.Key)
 		}
+	}
+}
+
+// The Settings tab picks autoswitch.model from the model windows the accounts
+// report instead of a text field: run the picker's logic out of app.js, and
+// repaint the tab when the reported windows change, not only the settings
+// (DESIGN A49).
+func TestAppJS_ModelPicker(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed; model picker test skipped")
+	}
+	src, err := staticFS.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "app.js")
+	if err := os.WriteFile(path, src, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(node, "testdata/modelpicker.cjs", path).CombinedOutput()
+	if err != nil {
+		t.Fatalf("model picker failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(src), "renderGuarded('settings', 'panel-settings', { settings: st.settings, models: modelWindowNames(st) },") {
+		t.Fatal("the Settings tab does not repaint when the reported model windows change")
 	}
 }

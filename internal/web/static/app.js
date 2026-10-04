@@ -624,7 +624,7 @@
     if (models.length) { return null; }
     var names = modelWindowNames(st);
     if (!names.length) { return null; }
-    return el('span', { class: 'chip chip-warn', title: 'Turn on "Count model limits" on the Auto tab, or set autoswitch.model on the Settings tab (a name, a comma-separated list, or all)', text: names.join(', ') + ' limits ignored' });
+    return el('span', { class: 'chip chip-warn', title: 'Turn on "Count model limits" on the Auto tab, or tick the windows of autoswitch.model on the Settings tab', text: names.join(', ') + ' limits ignored' });
   }
 
   // ---- header + summary ------------------------------------------------------
@@ -1503,6 +1503,44 @@
     });
   })();
 
+  // ---- model picker (pure; testdata/modelpicker.cjs runs this block) ------
+
+  // modelPickerOptions: the boxes the Settings tab shows for autoswitch.model
+  // (DESIGN A49): one per model window the accounts report, then one per name
+  // the saved value carries that no account reports, ticked, so a save never
+  // drops it. Names split on commas only and match without case, as
+  // settings.ParseModelNames does; a box keeps the reported spelling. "all"
+  // ticks the All box and leaves the named ones as they are.
+  function modelPickerOptions(saved, reported) {
+    var names = typeof saved === 'string' ? saved.split(',').map(function (x) { return x.trim(); }).filter(Boolean) : [];
+    var all = false;
+    var picked = {};
+    names.forEach(function (n) {
+      if (n.toLowerCase() === 'all') { all = true; } else { picked[n.toLowerCase()] = true; }
+    });
+    var seen = {};
+    var options = [];
+    function add(n, checked) {
+      var k = n.toLowerCase();
+      if (k === 'all' || seen[k]) { return; }
+      seen[k] = true;
+      options.push({ name: n, checked: checked });
+    }
+    (reported || []).forEach(function (n) { add(n, !!picked[n.toLowerCase()]); });
+    names.forEach(function (n) { add(n, true); });
+    return { all: all, options: options };
+  }
+
+  // modelPickerValue: what Save sends: "all", the ticked names joined by
+  // commas, or null when nothing is ticked, which Save sends as a reset since
+  // the server refuses an empty value.
+  function modelPickerValue(all, ticked) {
+    if (all) { return 'all'; }
+    return ticked.length ? ticked.join(', ') : null;
+  }
+
+  // ---- end model picker ------------------------------------------------------
+
   // ---- settings (shared row renderer) ---------------------------------------
 
   var SETTING_LABELS = {
@@ -1527,9 +1565,38 @@
     return '';
   }
 
-  function settingControl(sv) {
+  // modelPicker: autoswitch.model as a box per model window with "All models"
+  // first, instead of a text field to type names into (DESIGN A49); null when
+  // there is nothing to tick yet, and the row keeps the text field. Ticking
+  // All greys the named boxes, since every window counts then.
+  // pickerValue() is what Save sends.
+  function modelPicker(sv, id, reported) {
+    var pick = modelPickerOptions(sv.value, reported);
+    if (!pick.options.length) { return null; }
+    var box = el('div', { class: 'model-picker', id: id, role: 'group' });
+    var allBox = el('input', { type: 'checkbox', checked: pick.all, 'aria-label': 'Count every model window' });
+    box.appendChild(el('label', { class: 'switch', title: 'Count every per-model weekly window the accounts report, now and later (saved as all)' }, [allBox, 'All models']));
+    var named = pick.options.map(function (o) {
+      var cb = el('input', { type: 'checkbox', checked: o.checked, disabled: pick.all, 'aria-label': 'Count the ' + o.name + ' window' });
+      box.appendChild(el('label', { class: 'switch' }, [cb, el('bdi', { text: o.name })]));
+      return { name: o.name, input: cb };
+    });
+    allBox.addEventListener('change', function () {
+      named.forEach(function (n) { n.input.disabled = allBox.checked; });
+    });
+    box.pickerValue = function () {
+      return modelPickerValue(allBox.checked, named.filter(function (n) { return n.input.checked; }).map(function (n) { return n.name; }));
+    };
+    return box;
+  }
+
+  function settingControl(sv, reported) {
     var id = 'set-' + sv.key.replace(/[^a-z0-9]/gi, '-');
-    var input;
+    var input = sv.key === 'autoswitch.model' ? modelPicker(sv, id, reported) : null;
+    if (input) {
+      input.setAttribute('aria-label', humanLabel(sv.key) + ' (' + sv.key + ')');
+      return input;
+    }
     if (sv.kind === 'bool') {
       input = el('input', { type: 'checkbox', id: id, checked: sv.value === true || sv.value === 'true' });
     } else if (sv.kind === 'choice') {
@@ -1547,6 +1614,7 @@
   }
 
   function controlValue(input, sv) {
+    if (input.pickerValue) { return input.pickerValue(); }
     if (sv.kind === 'bool') { return input.checked; }
     if (sv.kind === 'int' || sv.kind === 'float') { var n = parseFloat(input.value); return isNaN(n) ? input.value : n; }
     return input.value;
@@ -1562,7 +1630,7 @@
   // settingRow: the key, what it does and when a saved value takes effect
   // (sv.applies, which the server words from what the code does), the
   // control, the value in effect and the default, Save and Reset.
-  function settingRow(sv) {
+  function settingRow(sv, reported) {
     var row = el('div', { class: 'setting-row', role: 'group', 'aria-label': sv.key });
     var idc = el('div', { class: 'setting-id' }, [
       el('div', { class: 'label-row' }, [el('span', { class: 'label', text: humanLabel(sv.key) }), el('span', { class: 'key', text: sv.key, title: sv.key })]),
@@ -1570,7 +1638,7 @@
       sv.applies ? el('div', { class: 'applies', text: sv.applies }) : null
     ]);
     row.appendChild(idc);
-    var input = settingControl(sv);
+    var input = settingControl(sv, reported);
     var ctl = el('div', { class: 'setting-ctl' }, [input]);
     var unit = unitFor(sv.key);
     if (typeof sv.min === 'number' || typeof sv.max === 'number') {
@@ -1586,7 +1654,9 @@
     ]));
     var save = el('button', { type: 'button', class: 'btn btn-sm btn-primary', text: 'Save', 'aria-label': 'Save ' + sv.key });
     save.addEventListener('click', function () {
-      run(save, 'Save ' + humanLabel(sv.key), api('POST', '/api/settings/' + encodeURIComponent(sv.key), { value: controlValue(input, sv) }));
+      var v = controlValue(input, sv);
+      var url = '/api/settings/' + encodeURIComponent(sv.key);
+      run(save, 'Save ' + humanLabel(sv.key), v === null ? api('DELETE', url) : api('POST', url, { value: v }));
     });
     input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); save.click(); } });
     var reset = el('button', { type: 'button', class: 'btn btn-sm btn-ghost', text: 'Reset', 'aria-label': 'Reset ' + sv.key + ' to default', disabled: !!sv.isDefault, title: 'Remove the override and fall back to the default' });
@@ -1608,6 +1678,7 @@
     $('settings-empty').hidden = avail;
     $('settings-sub').textContent = avail ? list.length + ' keys · ' + list.filter(function (sv) { return !sv.isDefault; }).length + ' changed' : '';
     if (!avail) { return; }
+    var reported = modelWindowNames(st);
     var sections = {};
     var order = [];
     list.forEach(function (sv) {
@@ -1617,7 +1688,7 @@
     });
     order.forEach(function (sec) {
       if (order.length > 1) { body.appendChild(el('h3', { class: 'settings-section-title', text: sec })); }
-      sections[sec].forEach(function (sv) { body.appendChild(settingRow(sv)); });
+      sections[sec].forEach(function (sv) { body.appendChild(settingRow(sv, reported)); });
     });
   }
 
@@ -1729,7 +1800,7 @@
     renderGuarded('auto', 'panel-auto',
       { auto: st.auto, accounts: st.accounts, active: st.activeNumber, settings: st.settings },
       function () { renderAuto(st); });
-    renderGuarded('settings', 'panel-settings', st.settings, function () { renderSettings(st); });
+    renderGuarded('settings', 'panel-settings', { settings: st.settings, models: modelWindowNames(st) }, function () { renderSettings(st); });
     renderGuarded('sessions', 'panel-sessions', st.sessions, function () { renderSessions(st.sessions); });
     applyFolds(st);
     tickCountdowns();
