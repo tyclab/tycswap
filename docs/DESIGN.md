@@ -4710,7 +4710,7 @@ implementations and no third-party code:
 
 - **macOS** — `NSStatusItem` and `NSMenu` in Objective-C compiled by cgo
   against Cocoa only (`tray_darwin.m`; its classes carry the `TS` prefix and
-  its exports are `tycTrayClicked` / `tycTrayReady`). The main goroutine is
+  its export is `tycTrayClicked`). The main goroutine is
   locked to the main thread and `[NSApp run]` owns it; the process is an
   accessory app (no Dock icon). Notifications and the dialog go through
   `osascript`, because a bare binary has no bundle identifier. The switches,

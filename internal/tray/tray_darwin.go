@@ -224,13 +224,3 @@ func tycTrayClicked(tag C.int) {
 		}()
 	}
 }
-
-//export tycTrayReady
-func tycTrayReady() {
-	darwinMu.Lock()
-	t := darwinTray
-	darwinMu.Unlock()
-	if t != nil && t.opts.OnReady != nil {
-		t.opts.OnReady()
-	}
-}

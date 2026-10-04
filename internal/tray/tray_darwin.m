@@ -474,7 +474,6 @@ void tray_run(const void *png, int pngLen, int isTemplate, const void *brandPng,
             statusItem.button.toolTip = [NSString stringWithUTF8String:tooltip];
         }
         statusItem.menu = newMenu();
-        dispatch_async(dispatch_get_main_queue(), ^{ tycTrayReady(); });
         [NSApp run];
     }
 }

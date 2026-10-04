@@ -70,9 +70,6 @@ func newSNITray(icon Icon, opts Options) (Tray, error) {
 }
 
 func (t *sniTray) Run() error {
-	if t.opts.OnReady != nil {
-		t.opts.OnReady()
-	}
 	select {
 	case <-t.done:
 	case <-t.conn.done:

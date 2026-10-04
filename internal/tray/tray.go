@@ -173,8 +173,6 @@ type Options struct {
 	// not open the menu (Linux StatusNotifierItem); macOS and Windows open the
 	// menu on every click and never call it.
 	OnActivate func()
-	// OnReady runs once the icon is on screen, on the UI thread.
-	OnReady func()
 }
 
 // Tray is the live icon.

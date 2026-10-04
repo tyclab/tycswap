@@ -226,9 +226,6 @@ func (t *windowsTray) Run() error {
 	if ok, _, err := pShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&nid))); ok == 0 {
 		return errors.New("tray: Shell_NotifyIcon(NIM_ADD): " + err.Error())
 	}
-	if t.opts.OnReady != nil {
-		t.opts.OnReady()
-	}
 
 	var m msg
 	for {

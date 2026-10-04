@@ -32,8 +32,7 @@ void tray_menu_commit(void);
 // Closes the menu if it is open.
 void tray_close_menu(void);
 
-// Implemented in Go (exported): menu item with `tag` was chosen / icon ready.
+// Implemented in Go (exported): menu item with `tag` was chosen.
 extern void tycTrayClicked(int tag);
-extern void tycTrayReady(void);
 
 #endif
