@@ -6,7 +6,12 @@
 // with whatever the remote publishes (Amendment A24).
 package update
 
-import "runtime/debug"
+import (
+	"runtime/debug"
+	"strings"
+
+	"golang.org/x/mod/semver"
+)
 
 // BuildSource classifies where the running binary came from.
 type BuildSource int
@@ -18,7 +23,14 @@ const (
 	// SourceModule is a `go install <module>@<version>` build from the module
 	// cache: a real module version and no VCS stamp.
 	SourceModule
+	// SourceRelease is a build of the release workflow (DESIGN A35): no VCS
+	// stamp (-buildvcs=false), -trimpath, and a release version linked into
+	// internal/version. `tycswap upgrade` downloads the next release over it.
+	SourceRelease
 )
+
+// versionVar is the variable the release workflow sets with -X.
+const versionVar = "github.com/tyclab/tycswap/internal/version.Version="
 
 // readBuildInfo is the build-info seam, swapped by tests.
 var readBuildInfo = debug.ReadBuildInfo
@@ -36,14 +48,35 @@ func DetectBuildSource() BuildSource {
 }
 
 func classifyBuildInfo(info *debug.BuildInfo) BuildSource {
-	switch info.Main.Version {
-	case "", "(devel)":
-		return SourceCheckout
-	}
+	var trimpath bool
+	var ldflags string
 	for _, s := range info.Settings {
-		if s.Key == "vcs" || len(s.Key) > 4 && s.Key[:4] == "vcs." {
+		switch {
+		case s.Key == "vcs" || len(s.Key) > 4 && s.Key[:4] == "vcs.":
 			return SourceCheckout
+		case s.Key == "-trimpath":
+			trimpath = s.Value == "true"
+		case s.Key == "-ldflags":
+			ldflags = s.Value
 		}
 	}
+	switch info.Main.Version {
+	case "", "(devel)":
+		if trimpath && releaseVersion(ldflags) {
+			return SourceRelease
+		}
+		return SourceCheckout
+	}
 	return SourceModule
+}
+
+// releaseVersion reports whether ldflags link a release version (a valid
+// semver tag) into internal/version.
+func releaseVersion(ldflags string) bool {
+	for _, f := range strings.Fields(ldflags) {
+		if v, ok := strings.CutPrefix(f, versionVar); ok && semver.IsValid(v) && semver.Prerelease(v) == "" {
+			return true
+		}
+	}
+	return false
 }

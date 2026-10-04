@@ -64,6 +64,22 @@ func TestClassifyBuildInfo(t *testing.T) {
 			return &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, true
 		}, SourceCheckout},
 		{"no build info", func() (*debug.BuildInfo, bool) { return nil, false }, SourceCheckout},
+		{"the release workflow", releaseBuild, SourceRelease},
+		{"release flags with a pre-release version", func() (*debug.BuildInfo, bool) {
+			info, _ := releaseBuild()
+			info.Settings[1].Value = "-X github.com/tyclab/tycswap/internal/version.Version=v0.6.0-3-gabcdef"
+			return info, true
+		}, SourceCheckout},
+		{"no -trimpath", func() (*debug.BuildInfo, bool) {
+			info, _ := releaseBuild()
+			info.Settings = info.Settings[:2]
+			return info, true
+		}, SourceCheckout},
+		{"release flags in a checkout with a vcs stamp", func() (*debug.BuildInfo, bool) {
+			info, _ := releaseBuild()
+			info.Settings = append(info.Settings, debug.BuildSetting{Key: "vcs.revision", Value: "abc"})
+			return info, true
+		}, SourceCheckout},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

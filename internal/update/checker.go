@@ -158,25 +158,31 @@ func (c Checker) Latest(ctx context.Context) (string, error) {
 
 // latestTag is the one request both Latest and fetchLatestTag make.
 func (c Checker) latestTag(ctx context.Context) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, Endpoint, nil)
+	return fetchLatestTag(ctx, c.client(), Endpoint)
+}
+
+// fetchLatestTag asks endpoint, a GitHub releases API URL, for the latest
+// release's tag; the download shape of SelfUpgrade asks the same.
+func fetchLatestTag(ctx context.Context, client *http.Client, endpoint string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	resp, err := c.client().Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("%s: HTTP %d", Endpoint, resp.StatusCode)
+		return "", fmt.Errorf("%s: HTTP %d", endpoint, resp.StatusCode)
 	}
 	var rel releaseResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&rel); err != nil {
-		return "", fmt.Errorf("%s: %w", Endpoint, err)
+		return "", fmt.Errorf("%s: %w", endpoint, err)
 	}
 	if rel.TagName == "" {
-		return "", fmt.Errorf("%s: no tag_name in the release", Endpoint)
+		return "", fmt.Errorf("%s: no tag_name in the release", endpoint)
 	}
 	return rel.TagName, nil
 }

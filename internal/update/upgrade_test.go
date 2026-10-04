@@ -45,6 +45,8 @@ func goInstallUpgrader(t *testing.T, run CommandRunner) (u Upgrader, exePath str
 	return u, exePath, stdout, stderr
 }
 
+// A binary the package manager owns (the Nix store), or one in a directory
+// this process cannot write, is upgraded by hand.
 func TestSelfUpgrade_UnknownShapePrintsGuidance(t *testing.T) {
 	var gotName string
 	var gotArgs []string
@@ -58,7 +60,7 @@ func TestSelfUpgrade_UnknownShapePrintsGuidance(t *testing.T) {
 		Stdout:  stdout,
 		Stderr:  stderr,
 	}
-	code := u.SelfUpgrade("/usr/bin/tycswap", platform.Linux)
+	code := u.SelfUpgrade("/nix/store/0000-tycswap/bin/tycswap", platform.Linux)
 
 	if code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
@@ -66,11 +68,13 @@ func TestSelfUpgrade_UnknownShapePrintsGuidance(t *testing.T) {
 	if gotName != "" {
 		t.Error("subprocess should not run when the install shape is unknown")
 	}
-	if !strings.Contains(stderr.String(), "Could not detect a `go install` layout") {
+	if !strings.Contains(stderr.String(), "Could not upgrade this binary in place") {
 		t.Errorf("stderr = %q, missing guidance", stderr.String())
 	}
-	if !strings.Contains(stderr.String(), ModulePath) {
-		t.Errorf("stderr = %q, missing module path", stderr.String())
+	// A binary outside a Go bin directory is not told to `go install`: the
+	// guidance is the releases page.
+	if !strings.Contains(stderr.String(), ReleasesURL) || strings.Contains(stderr.String(), "go install") {
+		t.Errorf("stderr = %q, want the releases page and no go install", stderr.String())
 	}
 	if stdout.Len() != 0 {
 		t.Errorf("stdout should be empty, got %q", stdout.String())
