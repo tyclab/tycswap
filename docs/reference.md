@@ -292,7 +292,13 @@ unmanaged live account), `email`, `organizationName`, `organizationUuid`,
 `alias`, `baseUrl`, `atLimit`, `limitingWindows`, `usageFetchedAt`,
 `usageAgeSeconds` — appear here under the same conditions. While the active
 account carries a base URL, the human output adds `Endpoint: <host> (Claude
-Code's settings.json)` and its `usageStatus` is `api_key`.
+Code's settings.json)` and its `usageStatus` is `api_key`. When tycswap's
+endpoint profile is still in Claude Code's `settings.json` under another login
+(a `/login` made while the endpoint account was active), the human output adds
+`Claude Code's settings.json still sends its requests to <host>
+(env.ANTHROPIC_BASE_URL, env.ANTHROPIC_AUTH_TOKEN), over this login; a switch
+to any account puts back what it held.`, managed or not: those keys take
+precedence over that login.
 
 ### Errors
 
@@ -396,32 +402,50 @@ An API-key account that carries a **base URL** (`add-token --base-url`, DESIGN
 A46) asks the same question, and the notice also names the whole URL: `This
 account sends Claude Code's requests to <url>: the switch writes
 env.ANTHROPIC_BASE_URL and env.ANTHROPIC_AUTH_TOKEN into Claude Code's
-settings.json, and a switch to another account puts back what they held.` Its
-refusal without an approval reads `Account-<n> authenticates with an API key
-at <host>. …`. Such a switch stores no key in Claude Code's credential store
-(no `primaryApiKey`, no `Claude Code` Keychain item): every login leaves it,
-the seat-wide keys stay, and `<config home>/settings.json` (`~/.claude/` or
-`CLAUDE_CONFIG_DIR`) gets the endpoint as `env.ANTHROPIC_BASE_URL` and the key
-as `env.ANTHROPIC_AUTH_TOKEN`, which Claude Code sends as a bearer token and
-ranks above every stored login. Before it writes them, tycswap records what
-those two keys held (or that they were absent) in
+settings.json and removes env.ANTHROPIC_API_KEY, and a switch to another
+account puts back what they held. A running session can take the endpoint up
+at once when it re-reads settings.json.` Its refusal without an approval reads
+`Account-<n> authenticates with an API key at <host>. …`. Such a switch stores
+no key in Claude Code's credential store (no `primaryApiKey`, no `Claude Code`
+Keychain item): every login leaves it, the seat-wide keys stay, and
+`<config home>/settings.json` (`~/.claude/` or `CLAUDE_CONFIG_DIR`) gets the
+endpoint as `env.ANTHROPIC_BASE_URL` and the key as `env.ANTHROPIC_AUTH_TOKEN`,
+and loses `env.ANTHROPIC_API_KEY`. Claude Code fills two headers
+independently: `Authorization: Bearer` from `ANTHROPIC_AUTH_TOKEN` (else
+`apiKeyHelper`), and `X-Api-Key` from `ANTHROPIC_API_KEY` (always with `-p`,
+interactively once approved), else `apiKeyHelper`, else a stored Console key;
+a key in that second slot goes to the endpoint beside the bearer token. So the
+switch empties the second slot where tycswap owns it and names it where it
+does not: when `settings.json` sets `apiKeyHelper`, or `ANTHROPIC_API_KEY` is
+set in the environment the switch runs in, it warns (printed, or as a
+`--json` warning; names only) that Claude Code sends that key as `X-Api-Key`
+to the endpoint, and leaves it alone. Before it writes, tycswap records what
+the three keys held (or that they were absent) in
 `<backup root>/claude-settings.prev.json`; a switch onto any other account,
-`--force` and the fresh-machine activation included, restores exactly those two
+`--force` and the fresh-machine activation included, restores exactly those
 keys from the record and removes it, and leaves every other key of the file as
 it is now, including changes made while the endpoint was in use. A switch from
 one endpoint account to another keeps the first record, so the way back always
 lands on the settings from before the first. Without a record (it was removed
-by hand) a switch away still removes the two keys when they hold exactly an
-endpoint account's URL and key, and leaves them otherwise; a switch onto an
-endpoint then does not record such a pair as the user's. A key or login that
-is still readable after the switch took them off (a Keychain item that cannot
-be deleted) fails the switch, which rolls back. The follow-up after
-any switch that rewrote `settings.json` names the change and says to restart.
-A `settings.json` that is not a JSON object or is a symbolic link, a record
-that does not parse, a stored URL that no longer validates, or an API-key
-account without a base URL whose key is not an Anthropic key stops the switch
-before anything is written; a switch that fails after it wrote either file puts
-both back byte for byte (a link as the same link).
+by hand) a switch away still removes the two written keys when they hold
+exactly an endpoint account's URL and key, and leaves them otherwise; a switch
+onto an endpoint then does not record such a pair as the user's. A key or
+login that is still readable after the switch took them off (a Keychain item
+that cannot be deleted) fails the switch, which rolls back. Claude Code applies
+the `env` block when it starts and again when a running session sees the file
+change (in a trusted workspace), adding keys but never removing one, so the
+follow-up differs by direction: after a switch onto an endpoint, `… A Claude
+Code session that is already running takes this up when it re-reads
+settings.json (at once in a trusted workspace); restart one that does not.`;
+after a switch away, `Claude Code's settings.json no longer sends its requests
+to an API-key account's endpoint. Restart your Claude Code sessions: one that
+is already running keeps the endpoint and its key until it is restarted.` A
+`settings.json` that is not a JSON object or is a symbolic link, a record that
+is not one complete record (version 1, an entry for `env` and each of the
+three keys, nothing after it), a stored URL that no longer validates, or an
+API-key account without a base URL whose key is not an Anthropic key stops the
+switch before anything is written; a switch that fails after it wrote either
+file puts both back byte for byte (a link as the same link).
 
 A switch onto a subscription account never requires restarting Claude Code to
 be correct; the post-switch note is informational (see NOTES). The switch
@@ -4280,7 +4304,7 @@ Inside the backup root:
 |------|----------|
 | `sequence.json` | The account registry: `activeAccountNumber`, `lastUpdated`, the `sequence` array of slot numbers, and an `accounts` map keyed by slot (`email`, `uuid`, `organizationUuid`, `organizationName`, `added`, and optional `alias`, `kind: "api_key"`, `disabled: true`, and with `kind: "api_key"` a `baseUrl`, the endpoint the key is for). |
 | `settings.json` | Settings (see SETTINGS). |
-| `claude-settings.prev.json` | Present while an API-key account with a base URL is active (DESIGN A46): what the two keys of Claude Code's `settings.json` the switch wrote, `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN`, held before (`{"version": 1, "settingsPath", "keys": {"<key>": {"present", "value"?}}}`, including whether `env` existed), mode 0600. A switch onto any other account restores them from it and removes it; a corrupt one stops the switch. `tycswap purge` deletes it and says so first. |
+| `claude-settings.prev.json` | Present while an API-key account with a base URL is active (DESIGN A46): what the three keys of Claude Code's `settings.json` the switch owns, `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN` (written) and `env.ANTHROPIC_API_KEY` (removed), held before (`{"version": 1, "settingsPath", "keys": {"<key>": {"present", "value"?}}}`, including whether `env` existed), mode 0600. A switch onto any other account restores them from it and removes it; one that is not a complete record (version 1, an entry for `env` and each key, nothing after it) is corrupt and stops the switch. `tycswap purge` deletes it and says so first. |
 | `mappings.json` | Directory→account mappings (`schemaVersion`, `mappings` keyed by absolute path). |
 | `autoswitch_state.json` | `tycswap auto` cooldown / quarantine state, guarded by `.autoswitch_state.lock`. |
 | `configs/` | Per-account config snapshots, `.claude-config-<n>-<email>.json`. `<email>` is the account's email as `add` accepts it (one `@`, at most 254 bytes, no whitespace, control character, `/`, `\` or `< > : " | ? *`), so the name is a single path component. |
@@ -4301,7 +4325,7 @@ Claude Code's own files that tycswap reads and writes:
 |------|------|
 | `~/.claude.json` (or `<CLAUDE_CONFIG_DIR>/.claude.json`, or the legacy `<config_home>/.config.json` when present) | The global config; the active `oauthAccount` lives here. |
 | `~/.claude/.credentials.json` (file backend) | The active OAuth credentials, and the seat's MCP server logins and client secrets (`mcpOAuth`, `mcpOAuthClientConfig`), which it holds alone on an API-key seat. |
-| `~/.claude/settings.json` (or `<CLAUDE_CONFIG_DIR>/settings.json`) | Claude Code's own settings. tycswap writes exactly two keys there, `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN`, while an API-key account with a base URL is active, and puts back what they held when it is not; every other key is left as it is, the file is written atomically with mode 0600, and one that is not a JSON object, or is a symbolic link (a dotfile manager's), is never rewritten: the switch onto such an account is refused instead. The dashboard reads it for the auth-overrides notice, which leaves those two keys out while the record says they are tycswap's and their account is the active one. |
+| `~/.claude/settings.json` (or `<CLAUDE_CONFIG_DIR>/settings.json`) | Claude Code's own settings. While an API-key account with a base URL is active, tycswap writes two keys there, `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN`, and removes `env.ANTHROPIC_API_KEY`; it puts back what the three held when it is not. Every other key is left as it is; the file is written atomically and keeps its mode (a new one is 0600); one that is not a JSON object, or is a symbolic link (a dotfile manager's), is never rewritten: the switch onto such an account is refused instead. The dashboard reads it for the auth-overrides notice, which leaves the two written keys out while the record says they are tycswap's and their account is the active one. |
 
 The codex CLI's files that tycswap reads and writes:
 
