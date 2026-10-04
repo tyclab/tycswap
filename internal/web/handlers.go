@@ -336,32 +336,66 @@ func unavailable(w http.ResponseWriter, present bool, what string) bool {
 
 // -- accounts -----------------------------------------------------------------
 
-// claudeKey resolves an account key from the API ("claude:2", "claude:work",
-// "claude:me@example.com"; AccountSnapshot.Key for a row) to the Claude
-// account reference the façade takes. Slot numbers are per provider, so a
-// bare reference is refused rather than guessed, and a key for another
-// provider never reaches the Claude façade: this dashboard drives Claude
-// accounts only.
-func claudeKey(raw string) (string, error) {
-	provider, ref, ok := strings.Cut(strings.TrimSpace(raw), ":")
-	if !ok || provider == "" || strings.TrimSpace(ref) == "" {
-		return "", cerr.Validation("address the account by its key, e.g. claude:2 (got %q)", raw)
+// splitKey resolves an account key from the API ("claude:2", "claude:work",
+// "codex:1", "codex:me@example.com"; AccountSnapshot.Key for a row) to its
+// provider and the account reference that provider's façade takes. Slot
+// numbers are per provider, so a bare reference is refused rather than
+// guessed, and a key never reaches another provider's façade.
+func splitKey(raw string) (provider, ref string, err error) {
+	p, r, ok := strings.Cut(strings.TrimSpace(raw), ":")
+	r = strings.TrimSpace(r)
+	if !ok || p == "" || r == "" {
+		return "", "", cerr.Validation("address the account by its key, e.g. claude:2 (got %q)", raw)
 	}
-	if !strings.EqualFold(provider, reporting.ProviderClaude) {
-		return "", cerr.AccountNotFound("no %s account operations in this dashboard: %s", provider, raw)
+	switch {
+	case strings.EqualFold(p, reporting.ProviderClaude):
+		return reporting.ProviderClaude, r, nil
+	case strings.EqualFold(p, reporting.ProviderCodex):
+		return reporting.ProviderCodex, r, nil
 	}
-	return strings.TrimSpace(ref), nil
+	return "", "", cerr.AccountNotFound("no %s accounts in this dashboard: %s", p, raw)
 }
 
-// pathKey is claudeKey over the {id} path segment; false means the error was
+// claudeKey is splitKey for the operations the dashboard offers on Claude
+// rows only (alias, move, swap): a Codex key answers 404, as the terminal
+// dashboard offers none of them on a Codex row.
+func claudeKey(raw string) (string, error) {
+	provider, ref, err := splitKey(raw)
+	if err != nil {
+		return "", err
+	}
+	if provider != reporting.ProviderClaude {
+		return "", cerr.AccountNotFound("the dashboard aliases, moves and swaps Claude accounts only: %s", raw)
+	}
+	return ref, nil
+}
+
+// pathKey is splitKey over the {id} path segment; false means the error was
 // written.
-func pathKey(w http.ResponseWriter, r *http.Request) (string, bool) {
+func pathKey(w http.ResponseWriter, r *http.Request) (provider, ref string, ok bool) {
+	provider, ref, err := splitKey(r.PathValue("id"))
+	if err != nil {
+		writeError(w, statusFor(err), err.Error())
+		return "", "", false
+	}
+	return provider, ref, true
+}
+
+// claudePathKey is claudeKey over the {id} path segment; false means the
+// error was written.
+func claudePathKey(w http.ResponseWriter, r *http.Request) (string, bool) {
 	id, err := claudeKey(r.PathValue("id"))
 	if err != nil {
 		writeError(w, statusFor(err), err.Error())
 		return "", false
 	}
 	return id, true
+}
+
+// codexOps answers 503 when no Codex façade is wired (no Codex accounts at
+// launch) and reports whether the route may go on.
+func (s *Server) codexOps(w http.ResponseWriter) bool {
+	return !unavailable(w, s.d.Codex != nil, "Codex account operations")
 }
 
 type switchBody struct {
@@ -397,10 +431,24 @@ func (s *Server) handleSwitchStrategy(w http.ResponseWriter, r *http.Request) {
 // AccountOps.SwitchToForce. ?confirmAuthChange=1 carries the user's yes to a
 // switch onto an API-key account, which the page asks for first: the handler
 // records it as the switch layer's approval for that account (DESIGN A33).
-// Without it the switch layer refuses an API-key target and says why.
+// Without it the switch layer refuses an API-key target and says why. A
+// codex: key goes to CodexOps; both flags are Claude's and answer 400 there
+// (DESIGN A47).
 func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathKey(w, r)
+	provider, id, ok := pathKey(w, r)
 	if !ok {
+		return
+	}
+	if provider == reporting.ProviderCodex {
+		q := r.URL.Query()
+		if isTruthy(q.Get("force")) || isTruthy(q.Get("confirmAuthChange")) {
+			writeError(w, http.StatusBadRequest, "force and confirmAuthChange apply to Claude accounts only")
+			return
+		}
+		if !s.codexOps(w) {
+			return
+		}
+		s.mutate(w, func() (map[string]any, error) { return s.d.Codex.SwitchTo(id) })
 		return
 	}
 	if isTruthy(r.URL.Query().Get("confirmAuthChange")) {
@@ -421,8 +469,15 @@ func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDisable(disabled bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		id, ok := pathKey(w, r)
+		provider, id, ok := pathKey(w, r)
 		if !ok {
+			return
+		}
+		if provider == reporting.ProviderCodex {
+			if !s.codexOps(w) {
+				return
+			}
+			s.mutate(w, func() (map[string]any, error) { return nil, s.d.Codex.SetAccountDisabled(id, disabled) })
 			return
 		}
 		s.mutate(w, func() (map[string]any, error) {
@@ -431,8 +486,26 @@ func (s *Server) handleDisable(disabled bool) http.HandlerFunc {
 	}
 }
 
+// handleAddCurrent stores the live login: Claude Code's (`tycswap add`), or
+// with {"provider": "codex"} the codex CLI's (`tycswap codex add`).
 func (s *Server) handleAddCurrent(w http.ResponseWriter, r *http.Request) {
-	s.mutate(w, func() (map[string]any, error) { return nil, s.d.Facade.AddAccount(nil, true, nil) })
+	var b struct {
+		Provider string `json:"provider"`
+	}
+	if !decodeBody(w, r, &b) {
+		return
+	}
+	switch p := strings.TrimSpace(b.Provider); {
+	case p == "" || strings.EqualFold(p, reporting.ProviderClaude):
+		s.mutate(w, func() (map[string]any, error) { return nil, s.d.Facade.AddAccount(nil, true, nil) })
+	case strings.EqualFold(p, reporting.ProviderCodex):
+		if !s.codexOps(w) {
+			return
+		}
+		s.mutate(w, func() (map[string]any, error) { return s.d.Codex.AddCurrent() })
+	default:
+		writeError(w, http.StatusBadRequest, "unknown provider "+strconv.Quote(p))
+	}
 }
 
 type addTokenBody struct {
@@ -536,8 +609,15 @@ func (s *Server) findNumberByEmail(email string) string {
 }
 
 func (s *Server) handleRemove(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathKey(w, r)
+	provider, id, ok := pathKey(w, r)
 	if !ok {
+		return
+	}
+	if provider == reporting.ProviderCodex {
+		if !s.codexOps(w) {
+			return
+		}
+		s.mutate(w, func() (map[string]any, error) { return nil, s.d.Codex.RemoveAccount(id) })
 		return
 	}
 	s.mutate(w, func() (map[string]any, error) { return nil, s.d.Facade.RemoveAccount(id, true) })
@@ -550,7 +630,7 @@ func (s *Server) handleAlias(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		Alias string `json:"alias"`
 	}
-	id, ok := pathKey(w, r)
+	id, ok := claudePathKey(w, r)
 	if !ok {
 		return
 	}
@@ -588,7 +668,7 @@ func (s *Server) handleMove(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "slot is required")
 		return
 	}
-	id, ok := pathKey(w, r)
+	id, ok := claudePathKey(w, r)
 	if !ok {
 		return
 	}
@@ -711,17 +791,15 @@ func (s *Server) settingsViews() []SettingView {
 // ApplyModels change a running one. A save or reset of autoswitch.model
 // calls ApplyModels (applyModelSetting) on the engine this page hosts, never
 // on one in another process, and the at-limit marks re-read it for every
-// state document. The engine this page hosts rotates Claude
-// accounts only, so the Codex keys reach `tycswap auto` alone. Every other
-// key, a new one included, waits for the next engine start.
+// state document. Every other key, a new one included, waits for the next
+// engine start: the Codex keys too, which the host reads when it starts the
+// Codex engine beside the Claude one (A47).
 func settingApplies(key string) string {
 	switch key {
 	case modelSettingKey:
 		return "At once for the engine on the Auto tab: a save or reset retargets it while it runs, and the at-limit marks follow. An engine in the terminal dashboard or " + brand.Sanitized().Name + " auto keeps its value until it next starts."
 	case "autoswitch.sevenDayThreshold":
 		return "When an engine next starts. The Auto tab's slider changes the running engine's 7d threshold for this run only, without saving."
-	case "autoswitch.codexEnabled", "autoswitch.codexThreshold":
-		return "When " + brand.Sanitized().Name + " auto next starts. The engine on this page rotates Claude accounts only."
 	}
 	return "When an engine next starts (this page's Auto tab, the terminal dashboard or " + brand.Sanitized().Name + " auto); a running one keeps the value it started with."
 }

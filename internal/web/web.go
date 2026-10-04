@@ -93,6 +93,23 @@ type AccountOps interface {
 	ListAccounts(showTokenStatus, jsonOut bool, fetch map[string]bool) (any, error)
 }
 
+// CodexOps is the Codex account surface the dashboard drives (DESIGN A47):
+// what the terminal dashboard does with a Codex row, plus storing the login
+// the codex CLI has, as `tycswap codex add` does. It is its own narrow seam
+// because the Claude signatures do not fit: a Codex switch reports the codex
+// sessions still running on the old account. id is a Codex account reference
+// (slot number, email or alias); every call takes the Codex store's own lock.
+type CodexOps interface {
+	// SwitchTo activates the account and answers {"number", "email",
+	// "runningPids": [...], "alreadyActive"}.
+	SwitchTo(id string) (map[string]any, error)
+	SetAccountDisabled(id string, disabled bool) error
+	// RemoveAccount forgets the account without a prompt (`codex remove -y`).
+	RemoveAccount(id string) error
+	// AddCurrent stores the current Codex login and answers {"number", "email"}.
+	AddCurrent() (map[string]any, error)
+}
+
 // SettingView is one effective setting (`tycswap config`).
 type SettingView struct {
 	Key         string   `json:"key"`   // dotted, e.g. "autoswitch.sevenDayThreshold"
@@ -358,6 +375,9 @@ type Deps struct {
 	// Optional surfaces: nil → the section is null in the state document and
 	// its routes answer 503.
 	Accounts AccountOps
+	// Codex drives the Codex rows; nil (no Codex accounts at launch) makes
+	// every route given a codex: key answer 503 (DESIGN A47).
+	Codex    CodexOps
 	Settings SettingsFacade
 	Auto     AutoFacade
 	// AutoEvents, when non-nil, is fanned out as SSE `auto` events; each one

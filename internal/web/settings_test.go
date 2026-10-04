@@ -260,16 +260,16 @@ func TestSettingSet_BroadcastsState(t *testing.T) {
 // Every key says when a saved value takes effect, worded from what the code
 // does (A27): autoswitch.model at once (the routes retarget a running
 // engine), the threshold at the next engine start with the slider for the
-// running one, the Codex keys at the next `tycswap auto`, and every other key,
-// a new one included, at the next engine start.
+// running one, and every other key, the Codex ones and a new one included, at
+// the next engine start (the Auto tab starts the Codex engine too, A47).
 func TestSettingApplies(t *testing.T) {
 	cases := map[string]string{
 		"autoswitch.model":             "At once",
 		"autoswitch.sevenDayThreshold": "slider",
 		"autoswitch.fiveHourThreshold": "When an engine next starts",
 		"autoswitch.modelThreshold":    "When an engine next starts",
-		"autoswitch.codexEnabled":      "tycswap auto next starts",
-		"autoswitch.codexThreshold":    "tycswap auto next starts",
+		"autoswitch.codexEnabled":      "When an engine next starts",
+		"autoswitch.codexThreshold":    "When an engine next starts",
 		"autoswitch.intervalSeconds":   "When an engine next starts",
 		"autoswitch.cooldownSeconds":   "When an engine next starts",
 		"autoswitch.someFutureKey":     "When an engine next starts",
