@@ -32,10 +32,9 @@
 // like CodexStore. Every read-modify-write of sequence.json holds the store's
 // file lock for the whole operation, so a background `tycswap auto` recording a
 // workspace name cannot interleave with an add in another terminal and drop
-// its slot. The lock is a non-reentrant flock, so a caller that already holds
-// Lock() (the switch path holds it from start to end) is recognised through a
-// per-root in-process marker and its mutations do not try to take it again;
-// an in-process mutex still serialises every read-modify-write in the process.
+// its slot. A transaction supplies a scoped Store view that may reuse its
+// non-reentrant lock. Ordinary Store values always acquire a lock, even when
+// another goroutine in this process has a transaction open.
 //
 // Deviation from the Python: a sequence.json that exists but does not parse
 // is never overwritten. Listing reads still treat it as "no accounts", but a
@@ -57,7 +56,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/atomicfile"
@@ -126,6 +124,7 @@ type Store struct {
 	kc       keychain.KeychainClient
 	clk      clock.Clock
 	platform platform.Platform
+	tx       *StoreLock // non-nil only on the transaction-scoped view
 }
 
 // New returns a Store with Options defaults filled in: Root →
@@ -158,77 +157,58 @@ func (s *Store) Root() string { return s.root }
 // CacheDir returns the usage-cache directory under Root.
 func (s *Store) CacheDir() string { return s.under(authfile.CacheDir()) }
 
-// lockState is the in-process side of one store root's lock: held counts the
-// StoreLocks currently acquired in this process, and mu serialises every
-// read-modify-write of that root's sequence.json within the process.
-type lockState struct {
-	held int32 // atomic
-	mu   sync.Mutex
-}
-
-// lockStates maps a lock path to its *lockState, so two Store values over the
-// same root share one marker.
-var lockStates sync.Map
-
 func (s *Store) lockPath() string { return s.under(authfile.LockPath()) }
 
-func (s *Store) lockState() *lockState {
-	p := s.lockPath()
-	if v, ok := lockStates.Load(p); ok {
-		return v.(*lockState)
-	}
-	v, _ := lockStates.LoadOrStore(p, &lockState{})
-	return v.(*lockState)
-}
-
-// StoreLock is tycswap's advisory lock on the Codex store. It wraps a fresh
-// filelock.FileLock (so contention inside one process still times out on the
-// flock rather than blocking forever) and, while acquired, marks the store as
-// held in this process so the store's own mutations do not take the
-// non-reentrant flock a second time.
+// StoreLock owns one transaction. Only its Store view may reuse the lock;
+// another goroutine using the original Store must acquire its own lock.
+// Obtain a fresh StoreLock for each transaction; a released view stays expired.
 type StoreLock struct {
 	fl       *filelock.FileLock
-	state    *lockState
+	store    *Store
 	mu       sync.Mutex
 	acquired bool
+	used     bool
 }
 
-// Lock returns tycswap's advisory lock on the Codex store (default timeout).
+// ErrTransactionClosed prevents an escaped transaction view writing unlocked.
+var ErrTransactionClosed = errors.New("codex store transaction is not active")
+
 func (s *Store) Lock() *StoreLock {
-	return &StoreLock{fl: filelock.New(s.lockPath(), 0), state: s.lockState()}
+	return &StoreLock{fl: filelock.New(s.lockPath(), 0), store: s}
 }
 
-// Acquire tries to take the lock, waiting up to timeout (the default when
-// <= 0). It returns false on timeout rather than an error.
 func (l *StoreLock) Acquire(timeout time.Duration) (bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.used {
+		return false, ErrTransactionClosed
+	}
 	ok, err := l.fl.Acquire(timeout)
 	if ok && err == nil {
-		l.mu.Lock()
-		if !l.acquired {
-			l.acquired = true
-			atomic.AddInt32(&l.state.held, 1)
-		}
-		l.mu.Unlock()
+		l.acquired, l.used = true, true
 	}
 	return ok, err
 }
 
-// Release drops the lock. It is safe to call more than once. The in-process
-// marker is cleared before the flock goes, so a concurrent mutation never
-// skips the flock after another process could have taken it.
+// Store returns a view whose writes are valid only during this transaction.
+// Pass this view down the call chain instead of changing a shared Store.
+func (l *StoreLock) Store() *Store {
+	view := *l.store
+	view.tx = l
+	return &view
+}
+
 func (l *StoreLock) Release() error {
 	l.mu.Lock()
-	if l.acquired {
-		l.acquired = false
-		atomic.AddInt32(&l.state.held, -1)
+	defer l.mu.Unlock()
+	if !l.acquired {
+		return nil
 	}
-	l.mu.Unlock()
+	l.acquired = false
 	return l.fl.Release()
 }
 
-// With acquires the lock (default timeout), runs fn, then releases. If the
-// lock cannot be acquired it returns cerr.Lock without running fn.
-func (l *StoreLock) With(fn func() error) error {
+func (l *StoreLock) With(fn func(*Store) error) error {
 	ok, err := l.Acquire(0)
 	if err != nil {
 		return err
@@ -237,40 +217,45 @@ func (l *StoreLock) With(fn func() error) error {
 		return cerr.Lock("Failed to acquire lock - another instance may be running")
 	}
 	defer l.Release()
-	return fn()
+	return fn(l.Store())
 }
 
-// WithLock runs fn holding the store lock, for a check-then-act that spans
-// several calls (an import's "only if empty" test and its writes). When this
-// process already holds Lock() it runs fn directly: the flock is not
-// re-entrant.
-func (s *Store) WithLock(fn func() error) error {
-	if atomic.LoadInt32(&s.lockState().held) > 0 {
-		return fn()
+// WithLock supplies a transaction-scoped store for a multi-operation write.
+// Nested work must use that view; an ordinary Store never inherits ownership.
+func (s *Store) WithLock(fn func(*Store) error) error {
+	if s.tx != nil {
+		s.tx.mu.Lock()
+		active := s.tx.acquired
+		s.tx.mu.Unlock()
+		if !active {
+			return ErrTransactionClosed
+		}
+		return fn(s)
 	}
 	return s.Lock().With(fn)
 }
 
-// update runs one read-modify-write of sequence.json: under the store's file
-// lock unless this process already holds Lock(), and always under the
-// in-process mutex. The flock is taken before the mutex, the same order a
-// Lock() holder follows, so the two cannot deadlock. fn gets the parsed
-// document; a corrupt file never reaches it (ErrCorruptRegistry).
+func (s *Store) withWrite(fn func() error) error {
+	if s.tx != nil {
+		s.tx.mu.Lock()
+		defer s.tx.mu.Unlock()
+		if !s.tx.acquired {
+			return ErrTransactionClosed
+		}
+		return fn()
+	}
+	return filelock.New(s.lockPath(), 0).With(fn)
+}
+
+// update holds the transaction across the entire roster read-modify-write.
 func (s *Store) update(fn func(d *seqDoc) error) error {
-	st := s.lockState()
-	body := func() error {
-		st.mu.Lock()
-		defer st.mu.Unlock()
+	return s.withWrite(func() error {
 		d, err := s.readDoc()
 		if err != nil {
 			return err
 		}
 		return fn(d)
-	}
-	if atomic.LoadInt32(&st.held) > 0 {
-		return body()
-	}
-	return filelock.New(s.lockPath(), 0).With(body)
+	})
 }
 
 // under re-roots one of authfile's StoreRoot-relative paths onto s.root, so the
@@ -623,7 +608,7 @@ func (s *Store) RemoveSlot(accountKey string) (bool, error) {
 			return err
 		}
 		removed = true
-		return s.DeleteSnapshot(accountKey)
+		return s.deleteSnapshot(accountKey)
 	})
 	return removed, err
 }
@@ -790,6 +775,10 @@ func (s *Store) snapshotPath(accountKey string) string {
 // blob that fits goes to the Keychain and any older file is removed, so only
 // one copy is ever current.
 func (s *Store) WriteSnapshot(accountKey string, payload map[string]any) error {
+	return s.withWrite(func() error { return s.writeSnapshot(accountKey, payload) })
+}
+
+func (s *Store) writeSnapshot(accountKey string, payload map[string]any) error {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false) // Python json.dumps does not HTML-escape
@@ -857,6 +846,10 @@ func decodeSnapshot(blob string) map[string]any {
 // error; a Keychain failure is surfaced, as in the Python. On macOS both the
 // Keychain item and the file fallback are removed.
 func (s *Store) DeleteSnapshot(accountKey string) error {
+	return s.withWrite(func() error { return s.deleteSnapshot(accountKey) })
+}
+
+func (s *Store) deleteSnapshot(accountKey string) error {
 	_ = os.Remove(s.snapshotPath(accountKey))
 	if s.useKeychain() {
 		if err := s.kc.Delete(KeychainService, authfile.FileKey(accountKey)); err != nil {

@@ -32,7 +32,7 @@ package store
 // path like any other.
 func (s *Store) WithRosterLocked(fn func(*SequenceData) error) error {
 	return s.Lock.With(func() error {
-		data, err := s.MigratedSequenceForUpdate()
+		data, err := s.MigratedSequenceForUpdateLocked()
 		if err != nil {
 			return err
 		}

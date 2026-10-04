@@ -96,10 +96,10 @@ func (t transferAdapter) MigratedSequence() (*transfer.SequenceData, error) {
 // MigratedSequenceForUpdate is the classified entry read transfer's write paths
 // start from: absent yields an empty roster, unreadable refuses (spec 07§3).
 // transfer.Import calls it from INSIDE its own write-pass FileLock, so this
-// adapter must stay lock-free — store.MigratedSequenceForUpdate takes no lock,
+// adapter must stay lock-free — store.MigratedSequenceForUpdateLocked takes no lock,
 // and the store lock is non-reentrant (DESIGN A20 RULE 4, §2.8 F2).
 func (t transferAdapter) MigratedSequenceForUpdate() (*transfer.SequenceData, error) {
-	d, err := t.Store.MigratedSequenceForUpdate()
+	d, err := t.Store.MigratedSequenceForUpdateLocked()
 	if err != nil {
 		return nil, err
 	}

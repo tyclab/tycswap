@@ -176,10 +176,15 @@ to make the new account live straight away, through the same switch as
 `tycswap switch 2`. Arguments after `--` go to `claude auth login`, for example
 `tycswap add --login -- --email bob@example.com` or `-- --sso`. `--slot` and
 `--alias` work as for `tycswap add`. If the account is already managed, its
-stored credentials are refreshed in place. The scratch profile is deleted
-whether the login succeeds or not. On macOS, where Claude Code keeps the new login in
-the Keychain, tycswap reads it from the item made for the scratch profile and
-deletes that item along with the profile.
+stored credentials are refreshed in place. This flow explicitly selects subscription
+login (`--claudeai`) and rejects `--console` before starting Claude Code; API keys
+belong in `add-token`.
+
+Cleanup runs whether the login succeeds or not. On macOS it deletes only the
+Keychain item made for this scratch profile, then removes the directory. If
+cleanup fails, a warning names the retained private directory; the next
+`add --login` retries marked cleanup without touching another active login
+or a shared Console key. An account already saved stays saved.
 
 To register an account from a setup token or API key, use `tycswap add-token`. The token is read interactively (not echoed) or
 from `-` (standard input). Avoid passing it as an argument: the command line is visible to other local users through `ps`

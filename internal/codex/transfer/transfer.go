@@ -270,7 +270,7 @@ func Import(st *store.Store, source string, force bool, stdin io.Reader) (int, e
 	}
 
 	imported := 0
-	err = st.WithLock(func() error {
+	err = st.WithLock(func(st *store.Store) error {
 		existing := map[string]bool{}
 		for _, s := range st.Slots() {
 			existing[s.AccountKey] = true

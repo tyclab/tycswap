@@ -593,7 +593,7 @@ tycswap add --login [--switch] [--slot NUM] [--alias NAME] [--debug] [-- LOGIN-A
 | `--alias` | string | none | Only with `add`. Letters/digits/`.`/`-`/`_`; not all-numeric. |
 | `--login` | flag | off | Run `claude auth login` in a scratch profile and store that account instead of the live login. |
 | `--switch` | flag | off | Only with `--login`: switch to the new account after storing it. |
-| `-- LOGIN-ARGS...` | strings | none | Only with `--login`: passed to `claude auth login` (`--email EMAIL`, `--sso`, `--claudeai`; `--console` makes an API key and is refused). |
+| `-- LOGIN-ARGS...` | strings | none | Only with `--login`: passed to `claude auth login` (`--email EMAIL`, `--sso`, `--claudeai`; `--console` is refused before Claude starts; subscription mode is selected explicitly). |
 | `--debug` | flag | off | — |
 
 ### Description
@@ -640,8 +640,11 @@ otherwise the account takes `--slot` or the next free slot, with `--alias`
 applied. The live login is untouched and `activeAccountNumber` is unchanged.
 With `--switch`, `add` then switches to the new account through the same path
 as `tycswap switch <n>`, so the outgoing account's credentials are written back
-as on any switch. The scratch profile is deleted on every exit path, including
-a failed login and Ctrl-C.
+as on any switch. Scratch cleanup runs on every exit path, including a failed
+login and Ctrl-C. A failed cleanup retains the private directory with a
+`.cleanup-pending` marker and reports a warning; the next `add --login` retries
+it. Unmarked profiles may still be in use and are left alone. Cleanup failure
+does not undo a successful save or change its exit status.
 
 ### Files
 
@@ -654,7 +657,9 @@ keeps a login's credential in the Keychain rather than in
 `.credentials.json`, `--login` reads it from the item Claude Code creates for
 the scratch directory (`Claude Code-credentials-<first 8 hex of the
 directory's SHA-256>`) and deletes that item before removing the directory, on
-success, failure and Ctrl-C alike.
+success, failure and Ctrl-C alike. Only that scratch OAuth item is deleted;
+shared Console keys and the live login are untouched. Cleanup attempts serialize
+on `<backup root>/.login-cleanup.lock`.
 
 ### Exit status
 
@@ -678,6 +683,8 @@ config raises `ConfigError` (`Claude config file not found`,
 
 With `--login`:
 
+- `Error: --console is not supported by add --login; use tycswap add-token for API keys`
+  — refused before launching Claude Code or creating a scratch profile.
 - `Error: claude's login did not complete; nothing stored, the live login
   untouched` — the login exited non-zero, or left no `oauthAccount` or no
   `.credentials.json`.

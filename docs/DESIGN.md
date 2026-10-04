@@ -5707,3 +5707,45 @@ limits* switch and the tray's `<window> limit` switch (A39) are unchanged.
 runs the picker's pure block of `app.js` (`modelPickerOptions`,
 `modelPickerValue`): ticks for saved, case-folded, unreported, duplicated and
 `all` values, comma-only splitting, and what Save sends, `null` for a reset.
+
+
+## A50. Storage transaction ownership and scratch-login cleanup
+
+Claude's lazy org-field migration is a write even when triggered by `list`,
+`status`, or identifier resolution. `SequenceMigrated` probes read-only first,
+then takes the store lock and re-reads before migrating. Already-locked callers
+use `MigratedSequenceForUpdateLocked`; lifecycle resolution uses the roster
+passed into the locked operation via `ResolveAccountFrom`, without another
+migration or read. Import's write pass uses the locked entry too. Prompts stay
+outside the lock.
+
+Codex storage no longer infers ownership from a process-wide held counter.
+`StoreLock.Store` and `WithLock` supply a transaction-scoped Store view. Normal
+Store values always acquire the file lock, including writes to credential
+snapshots. Only the supplied view reuses its transaction's lock; its mutex
+serializes writes and release, and a retained view refuses writes after release.
+Switching, refresh, capture and both importers pass this view through their
+write spans. A released StoreLock is not reused for another transaction. This
+replaces the storage bypass described in A47/A48; the switcher still owns its
+whole multi-step operation and preserves its busy-error behavior.
+
+`add --login` explicitly passes `--claudeai` and refuses `--console` (including
+an equals form) before constructing the store or launching the child. Result
+validation remains a second check. Rejecting a result after a Console flow has
+already run cannot prevent key creation.
+
+Scratch cleanup deletes only the OAuth Keychain item derived from its own
+directory, never the shared Console key. Failures keep the private directory
+and a `.cleanup-pending` marker containing only the cleanup backend. The next
+`add --login` retries marked profiles under `.login-cleanup.lock`, leaving
+unmarked, potentially active profiles alone. Cleanup remains retryable until
+successful; success makes it idempotent. The recovery marker is removed last.
+A failed cleanup warns independently of the save/switch result and cannot undo
+a stored account. OAuth-before-managed-key read precedence is unchanged.
+
+Tests cover migration contention and preservation of a competing writer's
+changes, same-process registry/snapshot/transaction contention, expired views,
+Console refusal before subprocess launch, failed deletion followed by retry,
+shared-key and active-profile preservation, and reporting a cleanup failure
+after a successful save. Existing import, switch, login and lock tests remain
+in force.

@@ -165,25 +165,25 @@ func (s *Switcher) Cache() *usagecache.Cache { return s.cache }
 // acquire takes the store lock or returns the busy error: a lock error, like
 // the store's own and the Claude side's (409 on the dashboard's API, DESIGN
 // A48). The returned release func must be called exactly once.
-func (s *Switcher) acquire(timeout time.Duration) (func(), error) {
+func (s *Switcher) acquire(timeout time.Duration) (*store.Store, func(), error) {
 	l := s.st.Lock()
 	ok, err := l.Acquire(timeout)
 	if err != nil {
-		return nil, cerr.Lock(busyMsg).Wrap(err)
+		return nil, nil, cerr.Lock(busyMsg).Wrap(err)
 	}
 	if !ok {
-		return nil, cerr.Lock(busyMsg)
+		return nil, nil, cerr.Lock(busyMsg)
 	}
-	return func() { _ = l.Release() }, nil
+	return l.Store(), func() { _ = l.Release() }, nil
 }
 
-func (s *Switcher) withLock(fn func() error) error {
-	release, err := s.acquire(s.lockTimeout)
+func (s *Switcher) withLock(fn func(*store.Store) error) error {
+	tx, release, err := s.acquire(s.lockTimeout)
 	if err != nil {
 		return err
 	}
 	defer release()
-	return fn()
+	return fn(tx)
 }
 
 // ---- identity --------------------------------------------------------------
@@ -229,7 +229,7 @@ func (s *Switcher) CaptureLive() error {
 	return s.withLock(s.captureLive)
 }
 
-func (s *Switcher) captureLive() error {
+func (s *Switcher) captureLive(tx *store.Store) error {
 	payload := authfile.ReadLivePayload()
 	if payload == nil {
 		return nil
@@ -238,11 +238,11 @@ func (s *Switcher) captureLive() error {
 	if id == nil || !id.Identifiable() {
 		return nil
 	}
-	slot := s.st.SlotForKey(id.AccountKey())
+	slot := tx.SlotForKey(id.AccountKey())
 	if slot == nil {
 		return nil
 	}
-	return s.st.WriteSnapshot(slot.AccountKey, payload)
+	return tx.WriteSnapshot(slot.AccountKey, payload)
 }
 
 // payloadForUsage is the payload to read slot's usage from, refreshed if
@@ -263,7 +263,7 @@ func (s *Switcher) payloadForUsage(ctx context.Context, slot store.Slot, active 
 	// response is issued, so a refresh we cannot persist is a refresh we must
 	// not perform: refusing costs a stale row, refreshing without persisting
 	// can cost the account. A busy store skips this account's refresh.
-	release, err := s.acquire(s.lockTimeout * 3 / 2)
+	tx, release, err := s.acquire(s.lockTimeout * 3 / 2)
 	if err != nil {
 		return payload
 	}
@@ -275,7 +275,7 @@ func (s *Switcher) payloadForUsage(ctx context.Context, slot store.Slot, active 
 	if s.CurrentAccountNumber() == slot.Number {
 		return authfile.ReadLivePayload()
 	}
-	payload = s.st.ReadSnapshot(slot.AccountKey)
+	payload = tx.ReadSnapshot(slot.AccountKey)
 	if payload == nil || !s.needsRefresh(payload, clock.Seconds(s.clk)) {
 		return payload
 	}
@@ -283,7 +283,7 @@ func (s *Switcher) payloadForUsage(ctx context.Context, slot store.Slot, active 
 	if outcome.Payload == nil {
 		return payload
 	}
-	if err := s.st.WriteSnapshot(slot.AccountKey, outcome.Payload); err != nil {
+	if err := tx.WriteSnapshot(slot.AccountKey, outcome.Payload); err != nil {
 		// Not persisted: keep serving what is on disk rather than a token the
 		// store does not hold.
 		return payload
@@ -397,19 +397,19 @@ func (s *Switcher) Add(ctx context.Context, alias string) (store.Slot, error) {
 	}
 	key := id.AccountKey()
 	var slot store.Slot
-	err := s.withLock(func() error {
+	err := s.withLock(func(tx *store.Store) error {
 		var err error
-		if slot, err = s.st.UpsertSlot(key, store.Upsert{Email: id.Email, Plan: id.Plan, AuthMode: authMode}); err != nil {
+		if slot, err = tx.UpsertSlot(key, store.Upsert{Email: id.Email, Plan: id.Plan, AuthMode: authMode}); err != nil {
 			return err
 		}
-		if err := s.st.WriteSnapshot(key, payload); err != nil {
+		if err := tx.WriteSnapshot(key, payload); err != nil {
 			return err
 		}
-		if err := s.st.SetActive(key); err != nil {
+		if err := tx.SetActive(key); err != nil {
 			return err
 		}
 		if normalized != "" {
-			if err := s.st.SetAlias(key, normalized); err != nil {
+			if err := tx.SetAlias(key, normalized); err != nil {
 				return err
 			}
 			slot.Alias = normalized
@@ -431,8 +431,8 @@ func (s *Switcher) SwitchTo(ctx context.Context, identifier string) (SwitchResul
 		return SwitchResult{}, err
 	}
 	already := false
-	err = s.withLock(func() error {
-		if err := s.captureLive(); err != nil {
+	err = s.withLock(func(tx *store.Store) error {
+		if err := s.captureLive(tx); err != nil {
 			return cerr.Switch("Failed to capture the live Codex login: %v", err).Wrap(err)
 		}
 		// Already live: the capture above just stored the freshest tokens, and
@@ -441,15 +441,15 @@ func (s *Switcher) SwitchTo(ctx context.Context, identifier string) (SwitchResul
 		// rotated away. Record the intent and leave auth.json alone.
 		if s.CurrentAccountNumber() == slot.Number {
 			already = true
-			return s.st.SetActive(slot.AccountKey)
+			return tx.SetActive(slot.AccountKey)
 		}
 		// Read AFTER the capture, so the target is what the store now holds.
-		target := s.st.ReadSnapshot(slot.AccountKey)
+		target := tx.ReadSnapshot(slot.AccountKey)
 		if target == nil {
 			return cerr.Switch("Codex account %s has no stored credentials", slot.Number)
 		}
 		previousLive := authfile.ReadLivePayload()
-		previousActive := s.st.ActiveKey()
+		previousActive := tx.ActiveKey()
 
 		if _, err := s.writeLive(target); err != nil {
 			// Put the live file back exactly as it was; a half-switched login
@@ -460,12 +460,12 @@ func (s *Switcher) SwitchTo(ctx context.Context, identifier string) (SwitchResul
 					msg += fmt.Sprintf(" (rollback also failed: %v)", rbErr)
 				}
 			}
-			if saErr := s.st.SetActive(previousActive); saErr != nil {
+			if saErr := tx.SetActive(previousActive); saErr != nil {
 				msg += fmt.Sprintf(" (restoring the active account also failed: %v)", saErr)
 			}
 			return cerr.Switch("%s", msg).Wrap(err)
 		}
-		return s.st.SetActive(slot.AccountKey)
+		return tx.SetActive(slot.AccountKey)
 	})
 	if err != nil {
 		return SwitchResult{}, err
@@ -485,12 +485,9 @@ func (s *Switcher) SwitchTo(ctx context.Context, identifier string) (SwitchResul
 // Remove forgets an account and deletes its stored credentials. It prompts on
 // Stdout/Stdin unless assumeYes. removed reports whether a removal happened: a
 // declined prompt prints "Cancelled" and returns (false, nil). The removal
-// holds the store lock, as a switch does: the store's own write skips the
-// file lock while this process holds it, so a remove during a token refresh
-// of the same account (refresh holds the lock around its network call) would
-// delete the slot and have the refresh write the new token back under the
-// removed account's key (DESIGN A48). The prompt is answered before the lock
-// is taken, so a question never holds the store.
+// holds the store lock, as a switch does, so it cannot interleave with a token
+// refresh and leave a refreshed credential for a removed account. The prompt
+// is answered before taking the lock; writes use its transaction-scoped view.
 func (s *Switcher) Remove(identifier string, assumeYes bool) (removed bool, err error) {
 	slot, err := transfer.ResolveSlot(s.st, identifier)
 	if err != nil {
@@ -507,9 +504,9 @@ func (s *Switcher) Remove(identifier string, assumeYes bool) (removed bool, err 
 			return false, nil
 		}
 	}
-	err = s.withLock(func() error {
+	err = s.withLock(func(tx *store.Store) error {
 		var rerr error
-		removed, rerr = s.st.RemoveSlot(slot.AccountKey)
+		removed, rerr = tx.RemoveSlot(slot.AccountKey)
 		return rerr
 	})
 	return removed, err
@@ -545,13 +542,13 @@ func (s *Switcher) UnsetAlias(identifier string) (string, error) {
 // Remove does (DESIGN A48).
 func (s *Switcher) SetAccountDisabled(identifier string, disabled bool) (string, error) {
 	var number string
-	err := s.withLock(func() error {
-		slot, err := transfer.ResolveSlot(s.st, identifier)
+	err := s.withLock(func(tx *store.Store) error {
+		slot, err := transfer.ResolveSlot(tx, identifier)
 		if err != nil {
 			return err
 		}
 		number = slot.Number
-		return s.st.SetDisabled(slot.AccountKey, disabled)
+		return tx.SetDisabled(slot.AccountKey, disabled)
 	})
 	return number, err
 }
@@ -717,7 +714,7 @@ func (s *Switcher) TokenStatus(identifier string) (map[string]any, error) {
 }
 
 func (s *Switcher) renumber(mapping map[string]string) error {
-	return s.withLock(func() error { return s.st.Renumber(mapping) })
+	return s.withLock(func(tx *store.Store) error { return tx.Renumber(mapping) })
 }
 
 // Swap exchanges two accounts' slot numbers. Only sequence.json changes:

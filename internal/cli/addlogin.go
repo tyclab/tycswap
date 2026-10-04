@@ -20,7 +20,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/lifecycle"
@@ -130,6 +129,14 @@ func addCommand(prog string, argv []string, s ioStreams) (code int, handled bool
 
 // addLogin runs the login in a scratch profile and stores the result.
 func addLogin(p *parsed, a addArgs, s ioStreams) int {
+	// Refuse before constructing a store or starting Claude: validating the
+	// result cannot undo a Console key that the subprocess already created.
+	for _, arg := range a.tail {
+		if name, _, _ := strings.Cut(arg, "="); name == "--console" {
+			errorTo(s.err, "Error: --console is not supported by add --login; use tycswap add-token for API keys")
+			return 1
+		}
+	}
 	sw, err := constructSwitcher(p.debug, s.err)
 	if err != nil {
 		return renderDomainError(err, false, s.out, s.err)
@@ -152,13 +159,20 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 		return renderDomainError(err, false, s.out, s.err)
 	}
 	kc := loginKeychain()
+	if err := retryLoginCleanups(paths.GetBackupRoot(), kc); err != nil {
+		errorTo(s.err, "Warning: "+err.Error())
+	}
 	scratch, removeScratch, err := makeLoginScratch(paths.GetBackupRoot(), kc)
 	if err != nil {
 		return renderDomainError(err, false, s.out, s.err)
 	}
-	defer removeScratch()
+	defer func() {
+		if err := removeScratch(); err != nil {
+			errorTo(s.err, "Warning: "+err.Error())
+		}
+	}()
 
-	args := append([]string{"auth", "login"}, a.tail...)
+	args := append([]string{"auth", "login", "--claudeai"}, a.tail...)
 	if err := session.CheckCmdShimArgs(binary, args); err != nil {
 		return renderDomainError(err, false, s.out, s.err)
 	}
@@ -179,7 +193,7 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 	}
 	// The stored copy is all that is needed from here on; drop the scratch
 	// before the switch so a switch failure cannot leave a login behind.
-	removeScratch()
+	_ = removeScratch()
 
 	if a.switchAfter {
 		if _, err := sw.SwitchToForce(num, false, false); err != nil {
@@ -188,40 +202,6 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 	}
 	maybeUpdateNotice(p, sw.BackupDir(), sw.Platform(), s.err)
 	return 0
-}
-
-// makeLoginScratch creates the private scratch profile the login runs in,
-// under the backup root so it shares the store's filesystem and permissions.
-// The returned remove is idempotent and is also registered with the SIGINT
-// cleanups, so a Ctrl-C during the browser wait leaves no login behind. With
-// a Keychain (macOS) it first deletes the item Claude Code keyed by the
-// scratch dir: once the dir is gone that item's name can no longer be derived
-// from anything tycswap keeps, so it would outlive the login. A "not found"
-// delete is success, and any other failure is ignored.
-func makeLoginScratch(root string, kc keychain.KeychainClient) (dir string, remove func(), err error) {
-	dir, err = os.MkdirTemp(root, "login.")
-	if err != nil {
-		return "", nil, err
-	}
-	if !platform.IsWindows() {
-		if err := os.Chmod(dir, 0o700); err != nil {
-			_ = os.RemoveAll(dir)
-			return "", nil, err
-		}
-	}
-	var once sync.Once
-	var id uint64
-	remove = func() {
-		once.Do(func() {
-			lifecycle.Unregister(id)
-			if kc != nil {
-				_ = kc.Delete(lifecycle.LoginKeychainService(dir), keychain.AccountName())
-			}
-			_ = os.RemoveAll(dir)
-		})
-	}
-	id = lifecycle.RegisterCleanup(remove)
-	return dir, remove, nil
 }
 
 // loginEnv is the parent environment with CLAUDE_CONFIG_DIR pointing at the

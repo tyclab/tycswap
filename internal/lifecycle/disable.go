@@ -38,7 +38,7 @@ func SetAccountDisabled(s *store.Store, identifier string, disabled bool) error 
 	// Resolving stays inside the span so the slot the write lands on cannot be
 	// renumbered between the resolve and the commit.
 	return s.WithRosterLocked(func(data *store.SequenceData) error {
-		accountNum, email, _, err := s.ResolveAccount(identifier)
+		accountNum, email, _, err := s.ResolveAccountFrom(data, identifier)
 		if err != nil {
 			return err
 		}
