@@ -207,33 +207,19 @@ func (u Upgrader) httpClient() *http.Client {
 	return &cp
 }
 
-func (u Upgrader) endpoint() string {
-	if u.Endpoint != "" {
-		return u.Endpoint
-	}
-	return Endpoint
-}
-
-func (u Upgrader) releasesURL() string {
-	if u.ReleasesURL != "" {
-		return u.ReleasesURL
-	}
-	return ReleasesURL
-}
-
 // downloadUpgrade is SelfUpgrade for the download shape. It never returns an
 // error: each failure prints what happened and how to finish by hand, and
 // returns 1; success and "already current" return 0.
 func (u Upgrader) downloadUpgrade(exePath string, plat platform.Platform) int {
 	manual := func(format string, args ...any) int {
 		fmt.Fprintf(u.stderr(), format+"\n", args...)
-		fmt.Fprintf(u.stderr(), "To upgrade manually, download the build for this machine from:\n  %s\n", u.releasesURL())
+		fmt.Fprintf(u.stderr(), "To upgrade manually, download the build for this machine from:\n  %s\n", ReleasesURL)
 		return 1
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), DownloadTimeout)
 	defer cancel()
 	client := u.httpClient()
-	tag, err := fetchLatestTag(ctx, client, u.endpoint())
+	tag, err := fetchLatestTag(ctx, client, Endpoint)
 	if err != nil {
 		return manual("Could not read the newest release: %v", err)
 	}
@@ -250,7 +236,7 @@ func (u Upgrader) downloadUpgrade(exePath string, plat platform.Platform) int {
 	if asset == "" {
 		return manual("No release build is published for this platform.")
 	}
-	base := strings.TrimRight(u.releasesURL(), "/") + "/download/" + tag + "/"
+	base := strings.TrimRight(ReleasesURL, "/") + "/download/" + tag + "/"
 	if b, err := url.Parse(base); err != nil || b.Scheme != "https" || b.Host == "" {
 		return manual("The release downloads at %s are not https; refusing.", base)
 	}

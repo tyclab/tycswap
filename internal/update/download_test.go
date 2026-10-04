@@ -23,6 +23,7 @@ import (
 // downloadServer is an https stand-in for GitHub: the latest release at
 // /latest, and the release's files at /download/<tag>/<name>.
 type downloadServer struct {
+	t     *testing.T
 	srv   *httptest.Server
 	tag   string
 	files map[string][]byte // name → body, SHA256SUMS included
@@ -44,7 +45,7 @@ func sumsFor(assets map[string][]byte) []byte {
 // non-nil, replaces the file (nil means "generate it").
 func newDownloadServer(t *testing.T, tag string, assets map[string][]byte, sums []byte) *downloadServer {
 	t.Helper()
-	rs := &downloadServer{tag: tag, files: map[string][]byte{}}
+	rs := &downloadServer{t: t, tag: tag, files: map[string][]byte{}}
 	for name, body := range assets {
 		rs.files[name] = body
 	}
@@ -70,6 +71,14 @@ func newDownloadServer(t *testing.T, tag string, assets map[string][]byte, sums 
 	return rs
 }
 
+// withReleasesURL points the package's ReleasesURL at url for the test.
+func withReleasesURL(t *testing.T, url string) {
+	t.Helper()
+	prev := ReleasesURL
+	ReleasesURL = url
+	t.Cleanup(func() { ReleasesURL = prev })
+}
+
 // installedBinary makes the running binary a release build (withRelease)
 // and writes a fake copy of it into a fresh, writable directory that is not
 // a Go bin directory: the download shape.
@@ -84,18 +93,20 @@ func installedBinary(t *testing.T, name string) (dir, exe string) {
 	return dir, exe
 }
 
+// downloadUpgrader upgrades from rs: the package's Endpoint and ReleasesURL
+// point at it for the test.
 func downloadUpgrader(rs *downloadServer, version string) (Upgrader, *bytes.Buffer, *bytes.Buffer) {
+	withEndpoint(rs.t, rs.srv.URL+"/latest")
+	withReleasesURL(rs.t, rs.srv.URL)
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 	u := Upgrader{
-		Getenv:      func(string) string { return "" },
-		HomeDir:     "/nonexistent-home",
-		Stdout:      stdout,
-		Stderr:      stderr,
-		Version:     version,
-		Arch:        "amd64",
-		Endpoint:    rs.srv.URL + "/latest",
-		ReleasesURL: rs.srv.URL,
-		HTTPClient:  rs.srv.Client(),
+		Getenv:     func(string) string { return "" },
+		HomeDir:    "/nonexistent-home",
+		Stdout:     stdout,
+		Stderr:     stderr,
+		Version:    version,
+		Arch:       "amd64",
+		HTTPClient: rs.srv.Client(),
 		Run: func(context.Context, string, []string, io.Writer, io.Writer) (int, error) {
 			panic("go install must not run for the download shape")
 		},
@@ -242,7 +253,7 @@ func TestDownloadUpgrade_EndpointUnreachable(t *testing.T) {
 	rs := newDownloadServer(t, "v0.7.0", nil, nil)
 	_, exe := installedBinary(t, "tycswap")
 	u, _, stderr := downloadUpgrader(rs, "v0.6.0")
-	u.Endpoint = "https://127.0.0.1:1/latest"
+	withEndpoint(t, "https://127.0.0.1:1/latest")
 
 	if code := u.SelfUpgrade(exe, platform.Linux); code != 1 {
 		t.Fatalf("exit %d, want 1", code)
@@ -258,7 +269,7 @@ func TestDownloadUpgrade_HTTPSOnly(t *testing.T) {
 	rs := newDownloadServer(t, "v0.7.0", map[string][]byte{"tycswap_v0.7.0_linux_amd64": []byte("x")}, nil)
 	_, exe := installedBinary(t, "tycswap")
 	u, _, stderr := downloadUpgrader(rs, "v0.6.0")
-	u.ReleasesURL = "http://127.0.0.1:1"
+	withReleasesURL(t, "http://127.0.0.1:1")
 	if code := u.SelfUpgrade(exe, platform.Linux); code != 1 || !strings.Contains(stderr.String(), "not https") {
 		t.Errorf("http downloads: exit %d, stderr %q", code, stderr.String())
 	}
@@ -276,7 +287,9 @@ func TestDownloadUpgrade_HTTPSOnly(t *testing.T) {
 	}))
 	t.Cleanup(redirecting.Close)
 	u, _, stderr = downloadUpgrader(rs, "v0.6.0")
-	u.Endpoint, u.ReleasesURL, u.HTTPClient = redirecting.URL+"/latest", redirecting.URL, redirecting.Client()
+	withEndpoint(t, redirecting.URL+"/latest")
+	withReleasesURL(t, redirecting.URL)
+	u.HTTPClient = redirecting.Client()
 	if code := u.SelfUpgrade(exe, platform.Linux); code != 1 || !strings.Contains(stderr.String(), "non-https") {
 		t.Errorf("redirect to http: exit %d, stderr %q", code, stderr.String())
 	}
@@ -372,7 +385,7 @@ func TestDownloadUpgrade_RedirectCap(t *testing.T) {
 		}))
 		t.Cleanup(srv.Close)
 		_, exe := installedBinary(t, "tycswap")
-		u, _, stderr := downloadUpgrader(&downloadServer{srv: srv, tag: "v0.7.0"}, "v0.6.0")
+		u, _, stderr := downloadUpgrader(&downloadServer{t: t, srv: srv, tag: "v0.7.0"}, "v0.6.0")
 		code := u.SelfUpgrade(exe, platform.Linux)
 		got, _ := os.ReadFile(exe)
 		switch {

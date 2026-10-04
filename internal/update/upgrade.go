@@ -67,13 +67,11 @@ type Upgrader struct {
 	Stdout, Stderr io.Writer
 	// The download shape (download.go): Version is the running build's
 	// v-prefixed semver ("" → always install the newest); Arch overrides
-	// runtime.GOARCH; Endpoint and ReleasesURL override the package vars;
-	// HTTPClient nil → http.DefaultClient.
-	Version     string
-	Arch        string
-	Endpoint    string
-	ReleasesURL string
-	HTTPClient  *http.Client
+	// runtime.GOARCH; HTTPClient nil → http.DefaultClient. The release
+	// endpoint and downloads are the package's Endpoint and ReleasesURL.
+	Version    string
+	Arch       string
+	HTTPClient *http.Client
 }
 
 func (u Upgrader) getenv() func(string) string {
@@ -152,7 +150,7 @@ func (u Upgrader) SelfUpgrade(exePath string, plat platform.Platform) int {
 					"  %s\n"+
 					"Or download a release from:\n"+
 					"  %s\n",
-				binary, fullCmd, u.releasesURL())
+				binary, fullCmd, ReleasesURL)
 			return 1
 		}
 		fmt.Fprintf(u.stderr(),
@@ -161,7 +159,7 @@ func (u Upgrader) SelfUpgrade(exePath string, plat platform.Platform) int {
 				"  binary: %s\n"+
 				"To upgrade manually, download the build for this machine from:\n"+
 				"  %s\n",
-			binary, u.releasesURL())
+			binary, ReleasesURL)
 		return 1
 	}
 
