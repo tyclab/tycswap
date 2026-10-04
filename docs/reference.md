@@ -412,12 +412,16 @@ it is now, including changes made while the endpoint was in use. A switch from
 one endpoint account to another keeps the first record, so the way back always
 lands on the settings from before the first. Without a record (it was removed
 by hand) a switch away still removes the two keys when they hold exactly an
-endpoint account's URL and key, and leaves them otherwise. The follow-up after
+endpoint account's URL and key, and leaves them otherwise; a switch onto an
+endpoint then does not record such a pair as the user's. A key or login that
+is still readable after the switch took them off (a Keychain item that cannot
+be deleted) fails the switch, which rolls back. The follow-up after
 any switch that rewrote `settings.json` names the change and says to restart.
-A `settings.json` that is not a JSON object, a record that does not parse, a
-stored URL that no longer validates, or an API-key account without a base URL
-whose key is not an Anthropic key stops the switch before anything is written;
-a switch that fails after it wrote either file puts both back byte for byte.
+A `settings.json` that is not a JSON object or is a symbolic link, a record
+that does not parse, a stored URL that no longer validates, or an API-key
+account without a base URL whose key is not an Anthropic key stops the switch
+before anything is written; a switch that fails after it wrote either file puts
+both back byte for byte (a link as the same link).
 
 A switch onto a subscription account never requires restarting Claude Code to
 be correct; the post-switch note is informational (see NOTES). The switch
@@ -706,6 +710,9 @@ switch`). Re-adding the same email without `--slot` refreshes the key in place
 and sets the URL exactly as given, so a refresh without `--base-url` removes
 it; an endpoint key that is not shaped like an Anthropic key cannot be
 refreshed without its URL (the cross-kind guard refuses it as an OAuth token).
+A refresh changes the stored account only: for the account the live login
+belongs to it adds `Account <n> is the live login; activate the new API key
+with: tycswap switch <n> --force`.
 
 ### Files
 
@@ -4294,7 +4301,7 @@ Claude Code's own files that tycswap reads and writes:
 |------|------|
 | `~/.claude.json` (or `<CLAUDE_CONFIG_DIR>/.claude.json`, or the legacy `<config_home>/.config.json` when present) | The global config; the active `oauthAccount` lives here. |
 | `~/.claude/.credentials.json` (file backend) | The active OAuth credentials, and the seat's MCP server logins and client secrets (`mcpOAuth`, `mcpOAuthClientConfig`), which it holds alone on an API-key seat. |
-| `~/.claude/settings.json` (or `<CLAUDE_CONFIG_DIR>/settings.json`) | Claude Code's own settings. tycswap writes exactly two keys there, `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN`, while an API-key account with a base URL is active, and puts back what they held when it is not; every other key is left as it is, the file is written atomically with mode 0600, and one that is not a JSON object is never rewritten. The dashboard reads it for the auth-overrides notice, which leaves those two keys out while the record says they are tycswap's. |
+| `~/.claude/settings.json` (or `<CLAUDE_CONFIG_DIR>/settings.json`) | Claude Code's own settings. tycswap writes exactly two keys there, `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN`, while an API-key account with a base URL is active, and puts back what they held when it is not; every other key is left as it is, the file is written atomically with mode 0600, and one that is not a JSON object, or is a symbolic link (a dotfile manager's), is never rewritten: the switch onto such an account is refused instead. The dashboard reads it for the auth-overrides notice, which leaves those two keys out while the record says they are tycswap's and their account is the active one. |
 
 The codex CLI's files that tycswap reads and writes:
 

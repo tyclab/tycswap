@@ -4699,7 +4699,10 @@ refresh in place (same email, no slot) sets the URL exactly as given, so a
 refresh without `--base-url` removes it, and says which (`(endpoint <host>)`,
 `(endpoint removed)`). An endpoint key that is not shaped like an Anthropic
 key cannot be refreshed without its URL: the token then reads as a
-setup-token and the existing cross-kind guard refuses it.
+setup-token and the existing cross-kind guard refuses it. A refresh changes
+the backup only; when it is the live login's account it says that `tycswap
+switch <n> --force` puts the new key and URL in place (a plain switch to the
+account in use is `Already on`).
 
 **The profile** (`internal/ccsettings`, the generic port of the reference's
 settings profile). Claude Code reads the `env` block of `<config
@@ -4721,20 +4724,30 @@ place; an owned key the user edited is still reverted (the record wins, as in
 the reference). A second `Apply` keeps the ORIGINAL priors, so endpoint A →
 endpoint B → subscription lands on the file from before A; a record for
 another settings file (`CLAUDE_CONFIG_DIR` changed in between) is reverted
-there first, so one record always describes one file, and `Revert` restores
-the file the record names. A missing settings file is `{}`; one that is not a
+there first, so one record always describes one file, named by its absolute
+path, and `Revert` restores the file the record names. A new record never
+takes tycswap's own endpoint for the user's: without a record (removed by
+hand), two keys that hold exactly the profile being applied or another
+endpoint account's URL and key are recorded as absent, and an `env` holding
+nothing else as absent too, so the way back removes them instead of putting
+that endpoint back. A missing settings file is `{}`; one that is not a
 JSON object, and a record that does not parse, are refused and never
 rewritten. Writes are a temp sibling and a rename, mode 0600 (the file now
 holds a key); an existing config home keeps its mode. Numbers are kept as
 written (`json.Number`), so a rewrite changes no value it does not own; key
-order is not kept, as in the reference.
+order is not kept, as in the reference. A settings file that is a symbolic
+link (a dotfile manager's, into a repository or a read-only store) is refused
+before anything is written, where the reference's rename would replace the
+link with a regular file: that breaks the manager, writing through the link
+instead would put a key into a tracked or shared file, and neither is undone
+by a revert. The rollback snapshot puts a link back as the same link.
 
-The reference's two other ways out are kept in their generic form. Its revert
-"by value" (A51 there: deactivate must always get you out, also when the
-record is gone) becomes: without a record, a switch away removes the two keys
-when they hold exactly one endpoint account's URL and stored key, and leaves
-them otherwise; what they replaced cannot come back, as there. Its "two env
-keys come back out" (A53 there) is about two flags its fleet profile once set
+The reference's two other rules about the way out are kept in their generic
+form. Its revert "by value" (deactivate must always get you out, also when
+the record is gone) becomes: without a record, a switch away removes the two
+keys when they hold exactly one endpoint account's URL and stored key, and
+leaves them otherwise; what they replaced cannot come back, as there. Its
+"two env keys come back out" is about two flags its fleet profile once set
 and later removed; tycswap's profile never set them, and one of them is a flag
 users set on purpose for gateways that reject beta headers, so nothing removes
 them here. The lesson it records holds all the same: the profile sets nothing
@@ -4750,21 +4763,29 @@ onto one takes every login off Claude Code's credential store instead
 (`credstore.ClearActive`: the managed key from the Keychain item and
 `primaryApiKey`, the OAuth login cleared the way a switch onto a key clears
 it, keeping its seat-wide part, A29), so nothing there competes with the
-profile and `ReadActive` finds no credential. That is the account's normal
+profile and `ReadActive` finds no credential. The removals are best-effort
+one by one, as for any write that clears the other axis, but the result is
+checked: a key or login still readable afterwards (a Keychain item that
+cannot be deleted) fails the switch, since Claude Code would send that key
+along to the endpoint. Clearing does not undo itself, so the switch records
+its credential step before it, and the rollback writes the original
+credential back. That is the account's normal
 live state: its stored key is its credential, the identity in
 `~/.claude.json` names it, and the reporting reads it as an API key from the
 record (`AccountInfo.BaseURL`), not from the live credential. An API-key
 account without a URL is unchanged: its key is the managed key, as before.
 
-**The switch.** `switching.planProfile` decides, before the live login is
-touched, what the switch does to `settings.json`: the target's endpoint and
-key to apply; or, for any other target, the record to revert (whenever one
-exists, whatever the outgoing account) or, without one, the by-value cleanup
-when the file holds both keys. It refuses with nothing written when the
-stored URL no longer validates (a hand-edited roster), the stored key cannot
-be a header, `settings.json` is not a JSON object, the record does not parse,
-or an API-key account without a URL holds a key that is not an Anthropic key
-(written live, it would become an OAuth credential). It snapshots the record
+**The switch.** `switching.planProfile` decides, before anything is written
+(the outgoing backup included), what the switch does to `settings.json`: the
+target's endpoint and key to apply; or, for any other target, the record to
+revert (whenever one exists, whatever the outgoing account) or, without one,
+the by-value cleanup when the file holds both keys. It refuses with nothing
+written when the stored URL no longer validates (a hand-edited roster), the
+stored key cannot be a header, `settings.json` is a symbolic link or not a
+JSON object, the record does not parse, or an API-key account without a URL
+holds a key that is not an Anthropic key (written live, it would become an
+OAuth credential); a target with no stored credential keeps its existing
+error. It snapshots the record
 and both settings files byte for byte. Then, on every path that writes the
 live login — the normal switch, `--force` and the other direct activations,
 and the fresh machine — the credential step writes the target's stored
@@ -4779,7 +4800,13 @@ does the same where it used to write `""`. On the normal path an outgoing
 endpoint account is backed up config-only and never classified: nothing in
 the credential store is its own, and a login found there anyway (written by
 something that left its identity in place) is stashed as an alien
-credential, never stored over the key. The self-switch check reads the empty
+credential, never stored over the key; the account's own stored key found
+there (a URL added to the active plain-key account since) is its own. The
+outgoing account counts as one with a base URL when its record has one, or
+when the credential store is empty and the record names the live settings
+file (its URL removed by a refresh since). An empty store whose Keychain did
+not answer is refused as before: it may hold a login a rollback could not
+restore. The self-switch check reads the empty
 live credential as matching (`Already on`); `switch <n> --force` onto the
 active endpoint account re-applies it, which is how a refreshed key goes
 live. The by-value cleanup is best-effort; a failed revert of a record fails
@@ -4810,8 +4837,10 @@ with a URL is not on the frozen `tui.Facade` / `web.Facade` (A13): the TUI
 and the dashboard reach `AddAccountFromTokenWithBaseURL` by type assertion,
 and a facade without it is an error (`503` on the dashboard), never a dropped
 URL. The dashboard's auth-overrides notice (A27) leaves the two owned keys
-out while the record says the profile is in that settings file: they are the
-active account's login then, not something overriding it. `tycswap purge`
+out while the record says the profile is in that settings file and the active
+account is the one with a base URL: they are its login then. Under any other
+live login (a `/login` made while it was active) they override that login,
+and the notice lists them. `tycswap purge`
 leaves the live login as it always has, two settings keys included, but
 deletes the record, so while one exists it says so before it asks.
 
@@ -4837,35 +4866,49 @@ nothing ours is a no-op; the by-value revert of a known pair, and a foreign
 pair, a changed token or half a pair left alone; a corrupt record refused by
 `Apply`, `Revert` and `Check` and seen by `SidecarExists`; the recorded file
 reverted, another settings file reverting the first; the sidecar schema;
-numbers kept; the snapshot restoring bytes, mode and absence; invalid
-profiles writing nothing; the URL and key validation tables.
+numbers kept; the snapshot restoring bytes, mode, absence and a link; a
+symlinked settings file refused by `Apply` (before the record), `Check` and
+`Revert`, the link and its target unchanged; invalid profiles writing
+nothing; the URL and key validation tables.
 `internal/switching` (`endpoint_test.go`): from a subscription login onto the
 endpoint and back with the user editing `settings.json` meanwhile (the edits
 stay, the user's own `ANTHROPIC_BASE_URL` comes back, no `primaryApiKey`, no
 approval entry, the MCP login kept, both slots intact); endpoint → endpoint
 keeps the original record; a plain key → endpoint → the plain key live again;
 `--force` onto, onto the active endpoint after a key refresh, and away; the
-fresh machine; the rotation from an endpoint account; a corrupt record and an
-unparseable settings file stopping the switch with every file unchanged, and
+fresh machine; the rotation from an endpoint account; a corrupt record, an
+unparseable settings file and a symlinked one stopping the switch with every
+file unchanged, and
 a subscription switch ignoring an unparseable file; a lost record still
 coming out by value, a foreign endpoint left alone; an invalid stored URL, a
 stored key with a space and a gateway key without a URL refused with nothing
-written, with and without `--force`; the approval refusal and the follow-ups
-naming the change; and a switch whose `~/.claude.json` update fails after the
+written, with and without `--force`; a lost record not taken for the user's
+when another endpoint (or the same one, forced) is applied over it; a managed
+item that cannot be deleted failing the switch onto an endpoint and rolling
+back, from a plain key and from a login beside a stale key, with and without
+`--force`; the active account's URL removed or added by a refresh, and the
+switch away working from either without a stranger's stash; an unreadable
+Keychain refusing the switch away from an endpoint; the outgoing backup left
+alone by a refused switch; the approval refusal and the follow-ups naming the
+change; and a switch whose `~/.claude.json` update fails after the
 credential store and `settings.json` were written (a macOS Keychain whose
 managed-item delete breaks the file) leaving `settings.json`, the record, the
 credentials file and both Keychain items as they were — onto an endpoint, away
 from one with and without a seat-wide part, between two and from a plain key,
 on the normal path and with `--force`; each of the four rollback steps,
-removed, fails one of these. The macOS variant of the round trip, from a
-subscription login and from a plain key in the managed item.
+removed, fails one of these, and so does each guard above. The macOS
+variant of the round trip, from a subscription login and from a plain key in
+the managed item.
 `internal/credstore`: `ClearActive` on the file backend (a login with and
 without MCP logins, a managed key with and without a file, nothing) and on
-the Keychain. `internal/store`: `AccountBaseURL` for an `api_key` record only.
+the Keychain. `internal/ccsettings` also: a new record recording tycswap's
+own endpoint (the profile itself or a known one) as absent and the user's own
+as it is; the record naming an absolute path from a relative one. `internal/store`: `AccountBaseURL` for an `api_key` record only.
 `internal/lifecycle`: `add-token --base-url` stores the endpoint, a gateway
 key and the record's key order; the refusals before the prompt; the refresh
 setting or removing the URL; the cross-kind refusal of a gateway key without
-its URL; `--slot`; `purge` warning only with a record. `internal/reporting`:
+its URL; `--slot`; the hint after a refresh of the live account; `purge`
+warning only with a record. `internal/reporting`:
 list, status and the snapshot with the endpoint account inactive and active
 (`api_key`, `baseUrl`, the host only in human output, never `no
 credentials`). `internal/cli`: the flag's usage errors, and end to end the
@@ -4874,6 +4917,6 @@ add, `list --json`, `list`, the prompt naming the URL, the switch, `status`,
 focus ring, the call with and without a URL and on a facade without the
 method, the rows. `internal/web`: the add-token route with and without a URL
 and the `503`, the row's `baseUrl`, the overrides notice with and without the
-record and for another file. `internal/transfer`: export with the endpoint
+record, for another file, and with the endpoint account active or not. `internal/transfer`: export with the endpoint
 account live, import storing the URL after `kind` and `alias`, every import
 refusal writing nothing, and the round trip.
