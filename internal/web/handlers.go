@@ -51,6 +51,7 @@ func (s *Server) routes() http.Handler {
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/state", s.handleState)
 	api.HandleFunc("GET /api/events", s.handleEvents)
+	api.HandleFunc("POST /api/launch", s.handleLaunch)
 
 	// accounts
 	api.HandleFunc("POST /api/switch", s.handleSwitchStrategy)
@@ -190,19 +191,40 @@ func tokenEqual(a, b string) bool {
 	return len(a) == len(b) && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
+// hasBearer reports whether the request carries the remote token (A45):
+// "Authorization: Bearer <token>", constant-time compared. Always false
+// while no RemoteToken is configured, so the header is then simply ignored
+// and the cookie + CSRF rules decide alone, as before.
+func (s *Server) hasBearer(r *http.Request) bool {
+	if s.d.RemoteToken == "" {
+		return false
+	}
+	const scheme = "Bearer "
+	auth := r.Header.Get("Authorization")
+	if len(auth) <= len(scheme) || !strings.EqualFold(auth[:len(scheme)], scheme) {
+		return false
+	}
+	return tokenEqual(strings.TrimSpace(auth[len(scheme):]), s.d.RemoteToken)
+}
+
 // requireAuth enforces BOTH factors on every /api route — the session cookie
 // and the page's CSRF token (reads included, so a cookie leaked to another
 // loopback port cannot even read the state) — and, for non-safe methods, the
-// Origin / Sec-Fetch-Site same-origin rules on top.
+// Origin / Sec-Fetch-Site same-origin rules on top. The remote token (A45)
+// is both factors at once; a Go client sends neither Origin nor
+// Sec-Fetch-Site, so those rules do not fire for it, and nothing here ever
+// sets a cookie for a bearer.
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.hasCookie(r) {
-			writeError(w, http.StatusUnauthorized, "unauthorized: missing or invalid session cookie")
-			return
-		}
-		if !s.hasCSRF(r) {
-			writeError(w, http.StatusForbidden, "forbidden: missing or invalid CSRF token")
-			return
+		if !s.hasBearer(r) {
+			if !s.hasCookie(r) {
+				writeError(w, http.StatusUnauthorized, "unauthorized: missing or invalid session cookie")
+				return
+			}
+			if !s.hasCSRF(r) {
+				writeError(w, http.StatusForbidden, "forbidden: missing or invalid CSRF token")
+				return
+			}
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			if o := r.Header.Get("Origin"); o != "" && !strings.EqualFold(o, "http://"+r.Host) {
@@ -262,6 +284,26 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if err := s.index.Execute(w, map[string]string{"Name": b.Name, "DisplayName": b.DisplayName}); err != nil {
 		s.d.Logger("web: index: " + err.Error())
 	}
+}
+
+// handleLaunch mints — or hands out the still-unused — one-time dashboard
+// URL (LaunchURL), for a client that cannot open the page with its own
+// credentials: the remote tray's "Open dashboard" (A45). The URL redeems
+// once, like the one printed at start. Bearer only: a browser session
+// already has its cookie and gains nothing here but a way to transplant that
+// session into another profile or machine, so the cookie + CSRF pair that
+// opens every other route is refused on this one.
+func (s *Server) handleLaunch(w http.ResponseWriter, r *http.Request) {
+	if !s.hasBearer(r) {
+		writeError(w, http.StatusForbidden, "forbidden: remote token only")
+		return
+	}
+	u, err := s.LaunchURL()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"url": u})
 }
 
 func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
@@ -431,8 +473,15 @@ func (s *Server) handleDisable(disabled bool) http.HandlerFunc {
 	}
 }
 
+// handleAddCurrent is the dashboard's "Add current login".
 func (s *Server) handleAddCurrent(w http.ResponseWriter, r *http.Request) {
-	s.mutate(w, func() (map[string]any, error) { return nil, s.d.Facade.AddAccount(nil, true, nil) })
+	res, err := s.AddCurrentLogin()
+	if err != nil {
+		s.d.Logger("web: " + err.Error())
+		writeError(w, statusFor(err), err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": res})
 }
 
 type addTokenBody struct {

@@ -87,12 +87,12 @@ func (h *hub) wantsTokenStatus() bool {
 // asked for token status (when non-nil), plain to everyone else. seq orders
 // the documents by when their builds began; one older than the newest
 // already published is dropped, so a slow build never overtakes a newer
-// state on the stream.
-func (h *hub) publishState(seq uint64, plain, withTS []byte) {
+// state on the stream. It reports whether the document went out.
+func (h *hub) publishState(seq uint64, plain, withTS []byte) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if seq <= h.lastSeq {
-		return
+		return false
 	}
 	h.lastSeq = seq
 	for ch, s := range h.subs {
@@ -105,6 +105,7 @@ func (h *hub) publishState(seq uint64, plain, withTS []byte) {
 		default:
 		}
 	}
+	return true
 }
 
 // count returns the live subscriber count (tests assert cleanup with it).
