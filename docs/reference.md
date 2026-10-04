@@ -7,7 +7,7 @@ tycswap — multi-account switcher for Claude Code.
 ## SYNOPSIS
 
 ```
-tycswap                                       open the interactive dashboard (TTY only)
+tycswap                                       start the tray app in the background (TTY only)
 tycswap help                                  print the command list and options
 tycswap list [--json] [--token-status]        list managed accounts
 tycswap status [--json]                       show the active account
@@ -49,7 +49,13 @@ tycswap tui                                    interactive dashboard
 tycswap watch                                  interactive dashboard, live watch page
 tycswap web [--port N] [--no-open] [--interval SECONDS]
                                             browser dashboard on 127.0.0.1
-tycswap menubar                                macOS menu bar app (not available in this build)
+tycswap app [--open] [--headless] [--port N] [--interval SECONDS] [--no-update-check] [--detach]
+                                            the dashboard as a menu-bar / tray app
+tycswap app --remote URL [--token-file PATH] [--open] [--no-update-check] [--detach]
+                                            the tray for a dashboard in a WSL distro
+tycswap app [--remote URL --token-file PATH] --autostart on|off|status
+                                            start the tray app at login
+tycswap menubar                                macOS menu bar app (see tycswap app)
 tycswap upgrade                                self-upgrade to the latest release
 tycswap purge                                  remove all tycswap data (prompts to confirm)
 tycswap migrate [--dry-run] [--json]           copy the claude-swap store into tycswap's, once
@@ -1811,14 +1817,15 @@ Done: 0 imported, 0 overwritten, 1 skipped
 tycswap tui [--debug]
 ```
 
-Legacy: `tycswap --tui`. A bare `tycswap` in an interactive terminal opens the TUI.
+Legacy: `tycswap --tui`. A bare `tycswap` in an interactive terminal used to open
+the TUI; it starts the tray app in the background now (`tycswap app`).
 
 ### Description
 
 Opens the full-screen interactive dashboard (accounts, usage, live switching,
 an auto-switch screen). Requires an interactive terminal on both stdin and
 stdout; a bare `tycswap` invoked from a pipe or non-interactive context prints the
-`no command given` usage error instead of opening the dashboard.
+`no command given` usage error instead of starting anything.
 
 A keybinding bar at the bottom of each screen lists the keys available there:
 on the dashboard, `s` switch accounts, `w` watch, `c` settings, `q` quit; on
@@ -2546,6 +2553,14 @@ Content-Security-Policy (self only, no inline script or style),
 `Referrer-Policy: no-referrer` and `Cache-Control: no-store`. Credentials
 never appear in any response.
 
+**Remote token.** The dashboard of `tycswap app` (not `tycswap web`) also
+accepts `Authorization: Bearer <token>` with the token it wrote to
+`<backup_root>/remote.token` at start, in place of the cookie and CSRF pair on
+every `/api` route and the event stream; never on the page or its static
+files, and never with a cookie set in return. The `Origin` and
+`Sec-Fetch-Site` rules still apply when a request carries those headers. It
+is how `tycswap app --remote` drives the dashboard (DESIGN A45).
+
 **API.** All bodies are JSON; a success is `{"ok": true, "result": {...}}`
 and an error `{"error": "<message>"}` with the status below. An account
 `{key}` is the row's `key`, `<provider>:<ref>` (for example `claude:2`,
@@ -2565,6 +2580,7 @@ anything else `500`.
 |-------|------|------|----------------------|
 | `GET /api/state[?tokenStatus=1]` | | the state document | `200` |
 | `GET /api/events?csrf=<t>[&tokenStatus=1]` | | Server-Sent Events: `state` frames, `auto` frames (one engine event each), a `: ping` every 15 s | `200`, then a stream |
+| `POST /api/launch` | | a one-time dashboard URL, `{"url": "http://127.0.0.1:<port>/?token=<t>"}`: the unused start URL, else a fresh one; for a remote tray, with the bearer token only | `403` with the cookie and CSRF pair, or without a remote token configured |
 | `POST /api/switch` | `{"strategy": "best"\|"next-available", "models": [...]}` | `tycswap switch --strategy` | `400` missing or unknown strategy |
 | `POST /api/switch/{key}[?force=1][&confirmAuthChange=1]` | | `tycswap switch <id> [--force] [--yes]`; `confirmAuthChange=1` records the user's yes to a switch onto an API-key account, which the page asks for first (DESIGN A33) | `400` bare key or an API-key target without `confirmAuthChange`, `404` other provider, `503` `confirmAuthChange` without account operations |
 | `POST /api/accounts/add` | | `tycswap add` | |
@@ -2579,7 +2595,7 @@ anything else `500`.
 | `POST /api/auto/stop`, `/api/auto/wake` | | stop it (waits up to 2 s for its loop to end), poll now | `400` not running; stop `409` when the tick in flight outlasts the wait (the engine is stopping; Start refuses until it has) |
 | `POST /api/auto/threshold` | `{"threshold": 50-100}` | retarget the running engine's 7d bar; the bounds are `autoswitch.sevenDayThreshold`'s (DESIGN A34) | `400` missing, out of range, or not running |
 | `POST /api/auto/model` | `{"model": "all"\|"<names>"\|""}` | retarget the running engine's model windows | `400` missing (`""` is a value) or not running |
-| `POST /api/updates/check` | | check for a newer tycswap release and a newer Claude Code now, in the background; the result arrives with the state | `202` at once; `503` without the updates host |
+| `POST /api/updates/check` | | check for a newer tycswap release and a newer Claude Code now, in the background; the result arrives with the state (in `tycswap app` with a tray, the tray's checks, DESIGN A44) | `202` at once; `503` without the updates host |
 | `POST /api/updates/apply` | `{"target": "app"\|"claude-code"}` | run one update after the page asked: `tycswap upgrade`'s path, or Claude Code's own installer; answers `{"message", "output"}`, on failure `{"error", "output"}` | `400` missing or unknown target, nothing known to update, or the installer's refusal (its last line); `409` another update is still running |
 | `POST /api/ui/folded` | `{"card": "accounts-card"\|"updates-card", "folded": bool}` | remember a folded card in `ui_prefs.json`, then broadcast | `400` unknown card; `503` without view preferences |
 
@@ -2636,6 +2652,154 @@ fresh one-time URL), and the tray itself.
 
 ---
 
+## tycswap app
+
+### Synopsis
+
+```
+tycswap app [--open] [--headless] [--port N] [--interval SECONDS] [--no-update-check] [--debug] [--detach]
+tycswap app --remote URL [--token-file PATH] [--open] [--no-update-check] [--debug] [--detach]
+tycswap app [--remote URL --token-file PATH] --autostart on|off|status
+```
+
+A bare `tycswap` in an interactive terminal (or in Git Bash on Windows) is
+`tycswap app --detach`.
+
+### Options
+
+| Option | Meaning |
+|--------|---------|
+| `--open` | Also open the dashboard in the browser at start. |
+| `--headless` | No tray icon: serve the dashboard only, like `tycswap web --no-open`. Not with `--remote`. |
+| `--detach` | Start the app in the background with the other flags, its output appended to the app log, and return once it holds its lock. |
+| `--no-update-check` | Do not check for a newer tycswap (90 s after start, then every 6 h) or Claude Code (30 s after start, then every 6 h). |
+| `--port N` | Fixed dashboard port on `127.0.0.1` (0–65535; default `0`, any free port). Not with `--remote`. |
+| `--interval SECONDS` | Live-state poll interval (1 to 3600; default `5`). Not with `--remote`. |
+| `--debug` | Log errors to stderr; with `--remote`, every call's status and every end of the event stream. |
+| `--remote URL` | Be the tray for the dashboard at `URL`, which must be `http://127.0.0.1:<port>` or `http://localhost:<port>` and nothing else. |
+| `--token-file PATH` | The `remote.token` that dashboard's app wrote. Default `$TYCSWAP_REMOTE_TOKEN_FILE`; required with `--remote`, refused without it. |
+| `--autostart MODE` | `on` registers start at login, `off` removes it, `status` shows it; then exits. With `--remote` the entry carries the remote arguments. Not with `--detach`. |
+
+### Description
+
+Runs the dashboard of `tycswap web` as a menu-bar (macOS) or notification-area
+(Windows, Linux StatusNotifierItem) application that starts minimized. The
+icon's title (macOS) or tooltip is the active account and its fullest counted
+window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
+`⚠` while a remote engine is out of reach. The menu:
+
+- the product name, the version, auto-switch on or off and the installed
+  Claude Code; *Open dashboard*, which opens a one-time dashboard URL;
+- **Updates**, while one waits: *Install tycswap X…* (a dialog first; the app
+  restarts itself after the install) or, for a build the tray cannot upgrade,
+  *tycswap X is available…* with the command; *Update Claude Code X → Y…*;
+- **Accounts**: one row per account with its windows and a usage bar, the
+  active one marked; a click switches (an API-key account asks first); more
+  than ten accounts move into *All N accounts* ▸, beside the active one; *Add
+  current login* stores the login Claude Code has;
+- **Automation**: *Auto-switch* (on or off; on saves nothing but is resumed
+  at the app's next start); while it runs, *7d threshold* ▸ with 80, 85, 90,
+  95 and 97 %, which moves the running engine's 7d bar for this run as the
+  dashboard's slider does; *<window> limit*, which sets `autoswitch.model`
+  (`all` or unset) and retargets the running engine;
+- **App**: Claude Code's state when nothing is to update; *Start at login*;
+  *Check for updates…*; *Quit tycswap*.
+
+Notifications: a switch or quarantine by auto-switch, the active account
+reaching a window's threshold (once, again after it falls ten points below),
+a new release or Claude Code version (once per version), the outcome of every
+click. A badge on the icon (a dot on Windows and Linux, the count on macOS)
+means an update waits. On macOS the menu stays open after a click and shows
+the outcome in place; *Open dashboard* and *Quit* close it.
+
+The app holds `app.lock` for its lifetime: a second app exits 1 with `tycswap app
+is already running on this machine`, and `tycswap purge` refuses. Without a
+tray (`--headless`, a Linux session without a StatusNotifierWatcher, a macOS
+build without cgo) it serves the dashboard alone, prints `Remote token: <path>
+(for tycswap app --remote)` and checks for updates on the dashboard's own
+schedule unless `--no-update-check`. Auto-switch that was on when the app last
+quit (recorded in `ui_prefs.json`) is started again.
+
+**Remote mode.** With `--remote` the app is a tray for the dashboard of an app
+running elsewhere on the same machine — the one in a WSL distro, reached from
+Windows through WSL2's localhost forwarding. It sends `Authorization: Bearer
+<token>` with the token read from `--token-file` (read again after a 401),
+follows the dashboard's event stream (reconnecting with backoff from 1 s to
+30 s; silence for a minute counts as a dead stream), follows no redirect and
+uses no proxy. It stores nothing and runs no engine: switches, auto-switch,
+the threshold and the model limit act on the distro's engine; *Open dashboard*
+asks `POST /api/launch` for a one-time URL and opens it only when it is the
+engine's own loopback address. It has no Claude Code row and no *Add current
+login*, refuses a switch onto an API-key account (use the dashboard), and holds
+`remote.lock` instead of `app.lock`. Without a tray it exits 1.
+
+### Files
+
+| Path | Role |
+|------|------|
+| `<backup_root>/app.lock` | Held by the local app while it runs. |
+| `<backup_root>/remote.lock` | Held by a remote tray while it runs. |
+| `<backup_root>/remote.token` | The running app's token for a remote tray, 0600, written at start and removed at exit. |
+| `<backup_root>/ui_prefs.json` | `autoSwitch`: whether auto-switch was on when the app quit; `folded`: the dashboard's folded cards. |
+| `<backup_root>/app.log` | The background app's output (`~/Library/Logs/tycswap.log` on macOS), rotated to `.1` past 5 MiB. |
+| `~/Library/LaunchAgents/io.github.tyclab.tycswap.plist` | Start at login on macOS (`….remote.plist` for a remote tray). |
+| `${XDG_CONFIG_HOME:-~/.config}/autostart/io.github.tyclab.tycswap.desktop` | Start at login on Linux. |
+| `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value `io.github.tyclab.tycswap` | Start at login on Windows (`….remote` for a remote tray). |
+
+### Exit status
+
+`0` when the app is quit from its menu or stopped with Ctrl-C / SIGTERM, and
+for `--help`, `--autostart` and a `--detach` start that the child confirmed
+(or that is still starting after eight seconds); `1` when another app runs,
+the dashboard cannot start, a detached child dies at once, the update
+restart fails, or remote mode finds no tray; `2` on a usage error.
+
+### Output
+
+To stderr: `Dashboard: <url>` (the one-time URL), then `Running in the menu bar
+/ tray. Quit from its menu or press Ctrl-C.`, or, without a tray, `Running
+without a tray (--headless). Press Ctrl-C to stop.` / `No system tray is
+available here; running the dashboard server only. Press Ctrl-C to stop.` and
+`Remote token: <path> (for tycswap app --remote)`. With `--remote`: `Remote
+engine: <url> (token from <path>)`. With `--detach` and the bare command, to
+stdout: `tycswap is running in the background — its icon is in the menu bar /
+tray.` and `Log: <path>`. `--autostart`: `Start at login: on` or `off`.
+
+### Errors
+
+| Message | Condition | Exit |
+|---------|-----------|------|
+| `tycswap app is already running on this machine (its icon is in the menu bar / tray). Quit it first.` | Another app holds `app.lock`. | 1 |
+| `tycswap app --remote is already running on this machine …` | Another remote tray holds `remote.lock`. | 1 |
+| `remote mode needs a tray; run tycswap app in the distro instead` | `--remote` where no tray is available. | 1 |
+| `tycswap stopped right after starting (…).` and the end of the log | A `--detach` (or bare) child exited before taking its lock. | 1 |
+| `argument --remote: expected http://127.0.0.1:<port> or http://localhost:<port> …` | `--remote` is not plain http on loopback with a port. | 2 |
+| `argument --remote: not allowed with --headless (…)` | `--remote` with `--headless`, `--port` or `--interval`. | 2 |
+| `argument --remote: needs --token-file PATH or TYCSWAP_REMOTE_TOKEN_FILE …` | No token file. | 2 |
+| `argument --token-file: only meaningful with --remote` | `--token-file` without `--remote`. | 2 |
+| `argument --detach: not allowed with --autostart …` | Both given. | 2 |
+
+### Example
+
+```
+$ tycswap app --headless --port 7337 --detach
+tycswap is running in the background — its icon is in the menu bar / tray.
+Log: /home/me/.local/share/tycswap/app.log
+```
+
+On Windows, for that engine in the distro `Ubuntu`:
+
+```
+> tycswap.exe app --remote http://127.0.0.1:7337 --token-file \\wsl.localhost\Ubuntu\home\me\.local\share\tycswap\remote.token --autostart on
+Start at login: on
+```
+
+### See also
+
+`tycswap web`, `tycswap tui`, DESIGN A35–A45.
+
+---
+
 ## tycswap menubar
 
 ### Synopsis
@@ -2648,9 +2812,10 @@ Legacy: `tycswap --menubar`.
 
 ### Description
 
-The macOS menu bar app. It is not available in this build. On macOS the command
-reports that menu bar mode is not available; on every other platform it reports
-that the menu bar is macOS-only. Either way it exits 1.
+The Python tool's macOS menu bar app, which is not ported. The menu-bar / tray
+application is `tycswap app`; `menubar` is not an alias of it. On macOS the
+command says so; on every other platform it reports that the menu bar is
+macOS-only and names `tycswap app`. Either way it exits 1.
 
 ### Files
 
@@ -2662,28 +2827,28 @@ Always `1`.
 
 ### Output
 
-- macOS: `Menu bar mode is not available in this build.` (stderr)
-- Other platforms: `The menu bar is only available on macOS.` (stderr)
+- macOS: ``Menu bar mode is `tycswap app` in this build.`` (stderr)
+- Other platforms: ``The menu bar is only available on macOS; the tray app is `tycswap app`.`` (stderr)
 
 ### Errors
 
 | Message | Condition | Exit |
 |---------|-----------|------|
-| `Menu bar mode is not available in this build.` | Invoked on macOS. | 1 |
-| `The menu bar is only available on macOS.` | Invoked on any non-macOS platform. | 1 |
+| ``Menu bar mode is `tycswap app` in this build.`` | Invoked on macOS. | 1 |
+| ``The menu bar is only available on macOS; the tray app is `tycswap app`.`` | Invoked on any non-macOS platform. | 1 |
 
 ### Example
 
 ```
 $ tycswap menubar
-The menu bar is only available on macOS.
+The menu bar is only available on macOS; the tray app is `tycswap app`.
 $ echo $?
 1
 ```
 
 ### See also
 
-`tycswap tui`.
+`tycswap app`, `tycswap tui`.
 
 ---
 
@@ -4105,6 +4270,7 @@ usage: tycswap <command> [args] [options]
 Multi-Account Switcher for Claude Code
 
 Commands:
+  tycswap                            start the menu-bar/tray app in the background
   tycswap help                       show this help
   tycswap list                       list managed accounts
   ...
@@ -4134,6 +4300,9 @@ tycswap reads the following environment variables.
 | `NO_COLOR` | When present (even empty), disables ANSI color. Highest color precedence. |
 | `FORCE_COLOR` | When present, forces color on (unless `NO_COLOR` is also present). |
 | `TERM` | `TERM=dumb` disables color on a TTY. |
+| `TYCSWAP_REMOTE_TOKEN_FILE` | `tycswap app --remote`: the token file when `--token-file` is not given. |
+| `MSYSTEM` | On Windows, when set (Git Bash, MSYS2), a bare `tycswap` counts as typed in a terminal and starts the tray app. |
+| `XDG_CONFIG_HOME` | On Linux, where `tycswap app --autostart on` writes its `autostart/` entry (default `~/.config`). |
 | `CODEX_HOME` | The codex CLI's home, resolved as the codex CLI resolves it: the live login is `<CODEX_HOME>/auth.json` and codex-auth's registry `<CODEX_HOME>/accounts/registry.json`. Defaults to `~/.codex`. |
 | `GOBIN`, `GOPATH` | Consulted by `tycswap upgrade` and the passive update notice to detect a `go install` layout. |
 
@@ -4208,6 +4377,10 @@ Inside the backup root:
 | `codex/credentials/` | Per-account Codex `auth.json` snapshots, `<file key>.json`, mode 0600, keyed by account identity. macOS stores these in the Keychain under service `tycswap-codex` instead, except a snapshot too large to reach the `security` command over stdin, which stays in this file (mode 0600) rather than on a command line; reads and deletes cover both places. |
 | `codex/cache/` | The Codex usage cache (the same usage table format as `cache/usage.json`). |
 | `codex/.lock` | The Codex store's lock, separate from the Claude lock. |
+| `ui_prefs.json` | The dashboard's folded cards and, for `tycswap app`, whether auto-switch was on when it quit (`{"version": 1, "autoSwitch": true, "folded": {…}}`). |
+| `app.lock`, `remote.lock` | Held by `tycswap app` and by `tycswap app --remote` while they run; `tycswap purge` refuses while `app.lock` is held. |
+| `remote.token` | The running `tycswap app`'s token for a remote tray, 0600, removed when it stops. |
+| `app.log` | The output of `tycswap app` started in the background (on macOS `~/Library/Logs/tycswap.log`), rotated to `app.log.1` past 5 MiB. |
 | `.settings.lock`, `.mappings.lock` | Held while `settings.json` or `mappings.json` is read, changed and written back, so concurrent commands cannot lose an update. No data; skipped by `tycswap migrate`. |
 
 Claude Code's own files that tycswap reads and writes:
@@ -4412,7 +4585,9 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
 - This implementation defines these behaviors differently from claude-swap
   (Python):
   - It ships as a single static binary; there is no Python runtime.
-  - The macOS menu bar app is not included (`tycswap menubar` exits 1).
+  - The macOS menu bar app is not included (`tycswap menubar` exits 1); the
+    menu-bar / tray app is `tycswap app`, and a bare `tycswap` starts it
+    instead of the TUI (`tycswap tui`).
   - `tycswap upgrade` and the passive update notice use this repository's releases
     and `go install`, not PyPI/uv/pipx. Pre-release builds do receive update
     notices.
