@@ -3441,6 +3441,18 @@ program, and the passive notice announced upstream releases. Now:
 3. `SelfUpgrade` has no downgrade guard: it installs `@latest`, and the
    notice only fires when the latest tag is semver-greater.
 
+**Amended by A36:** a third build source, the release build (`release.yml`:
+no VCS stamp, `(devel)` main version, `-trimpath`, and a release version —
+semver without a pre-release part — linked into `internal/version`), is no
+longer taken for a checkout build. `SelfUpgrade` dispatches on the build and
+the binary's place: a checkout build is told the checkout's command; a binary
+in a Go bin directory gets `go install` (print-only on Windows); any other
+binary outside the Nix store whose directory this process can write is
+replaced by the newest release's build, downloaded over it; the rest (the Nix
+store, an unwritable directory) gets the releases page. Downloading has the
+downgrade guard `go install` lacks: nothing happens unless the latest tag is
+semver-greater than the running version.
+
 
 ---
 
@@ -4727,11 +4739,9 @@ square with the silhouette cut out and the eyes standing in the cut) exists
 for menu bars that recolour icons. The head is path data flattened and
 scan-converted with 4×4 supersampling, the arms are stroked centre lines;
 the drawing framework (paint, winding, flattening, compositing, the rounded
-square, ARGB32 and PNG output) is the reference's. The sizes the trays take
-are rendered ahead of time by `go generate ./internal/appicon` into embedded
-PNGs; a test renders them again and fails on any byte of difference, so the
-files cannot drift from the code, and a build with another accent draws at
-run time instead.
+square, ARGB32 and PNG output) is the reference's, and so is drawing the
+icons when the tray starts (the 128 px mark, which only macOS shows, on macOS
+alone); the badged icons are drawn once per count and kept.
 
 **The shell** (`internal/cli/appshell.go`) is the platform-independent
 behaviour, tested with a fake tray: title `#<slot> · <fullest counted
@@ -4800,12 +4810,24 @@ go-installed binary, A24) and notifies the outcome; a decline, or a platform
 without a dialog, leaves a notification and an *Install tycswap X…* row.
 Nothing is installed without the user's yes.
 
-**A build the tray cannot upgrade is told how.** The reference downloads the
-release binary over the running one; tycswap's upgrade stays A24's. A
-checkout build, a binary outside a Go bin directory and Windows (where
-`SelfUpgrade` prints the command, the running .exe being locked) get the
-command A27's card shows (`AppUpdateView.Hint`) in a notification instead of
-a dialog, and the row reads *tycswap X is available…*.
+**The install is `tycswap upgrade`'s own** (A24 as amended here), which now
+also downloads over the binary, as the reference does for every build that
+was not go-installed: for a release binary (or a copy outside a Go bin
+directory) outside the Nix store whose directory can be written, it reads the
+latest tag from the release endpoint, downloads that release's `SHA256SUMS`
+and `tycswap_<tag>_<goos>_<goarch>[.exe]` from `<ReleasesURL>/download/<tag>/`
+over https only (redirects included, at most 256 MiB) into a temporary file
+in the binary's directory, refuses the build unless `SHA256SUMS` has exactly
+one line for that file and its sha256 matches, marks it 0755 and renames it
+over the binary (`replaceBinary`). On Windows the running `.exe` is renamed to
+`.exe.old` first and put back if the second rename fails; the app (local and
+remote) removes the `.old` file at its next start (`RemoveStaleBinary`). A
+build the tray cannot upgrade — a checkout build, a go-installed binary on
+Windows (where `go install` cannot replace the running `.exe`), a binary in
+the Nix store or in an unwritable directory — is told how (the checkout's
+command, the `go install` line, the releases page: `AppUpdateView.Hint`) in a
+notification instead of a dialog, and the row reads *tycswap X is
+available…*; a release binary is never told `go install`.
 
 **Restart.** An install that replaced the running binary (its modification
 time changed) restarts the app by itself: the shell's `Restart` sets a flag
@@ -4838,10 +4860,11 @@ pill whether on or off). Windows and Linux menus only do text, so
 
 The menu: the brand row · *Open dashboard* · the Updates section (A44) ·
 **Accounts** (a gauge per account; with more than ten, the active one and
-*All N accounts* ▸; then *Add current login*) · **Automation** (*Auto-switch*
-with the bars in force; while it runs, *7d threshold: N% (this run)* ▸; the
-model-limit switch, A39) · **App** (the Claude Code row, A42; *Start at
-login*; *Check for updates…*; *Quit tycswap*).
+*All N accounts* ▸; then *Add current login*) · **Automation** (*Auto-switch*,
+its second line naming the bar of each window in force; the model-limit
+switch, A39) · **App** (the Claude Code row, A42; *Start at login*; *Check for
+updates…*; *Quit tycswap*). The bars are only named here: they are set where
+they were, in `tycswap config`, the TUI and the dashboard (A34).
 
 **The menu stays open** on macOS: every row is a view whose `mouseUp`
 reports the click without ending the menu's tracking, and `tray_menu_commit`
@@ -4856,14 +4879,6 @@ children (`walkMenu`), on every platform.
 own add, under its mutation lock — and notifies with the slot or "refreshed".
 Its second line comes from `state.currentLogin` (A27): the login that is not
 stored yet, else how to get another account there (`/login`, never `/logout`).
-
-**The 7d threshold submenu** is tycswap's: the reference's *Auto-switch* row
-only names the bars. Its rows (80, 85, 90, 95, 97 %, the bar in force checked)
-move the running engine's 7d bar for this run (`autoFacade.ApplyThreshold`;
-`POST /api/auto/threshold` from a remote tray), exactly as the TUI's `t` and
-the dashboard's slider do (A34), and like the slider it exists only while the
-engine runs. The saved bar stays `tycswap config set
-autoswitch.sevenDayThreshold`.
 
 A switch onto an API-key account asks first through the dialog and records
 the approval A33 requires (`ApproveAPIKeySwitch`); without a dialog the tray
@@ -4909,9 +4924,7 @@ rotated to `.1` past 5 MiB. The parent polls the single-instance lock (A38)
 and returns once the child holds it; a child that exits first is reported
 with the tail of its log and exit 1; one still starting after eight seconds
 is left running with a pointer to the log. An app that is already running is
-reported and nothing is spawned. `tycswap app --detach` does the same with
-the flags it was given (confirmed through `remote.lock` with `--remote`),
-which is how the distro side of A45 is started from a shell.
+reported and nothing is spawned.
 
 **A change of the CLI's surface, recorded here:** the bare command opened the
 TUI (spec 08§1 step 5), which is `tycswap tui` now. The TTY gate stays: a
@@ -4998,7 +5011,7 @@ Updates card follow from it.
   an eye. macOS shows the count beside the mark (`DrawCounted`: 62 % of the
   mark's height, 1–9 then "9+" in a pill, the image wider than tall), also
   clear of the eyes; the test checks every pixel an eye touches. The count is
-  one per update. Every icon is pre-rendered (A35); `SetIcon` is called only
+  one per update. Every icon is drawn once and kept; `SetIcon` is called only
   when the count changes, and the tooltip starts "tycswap · updates
   available — …".
 - **The menu.** While something waits, an Updates section headed "Update
@@ -5057,7 +5070,7 @@ dashboard URL (`LaunchURL`).
 PATH` (or `TYCSWAP_REMOTE_TOKEN_FILE`; `--remote` with `--headless`, `--port`
 or `--interval` is a usage error naming the flag) builds the same tray and
 shell over a client: `State`, `Switch` (the account's key, `claude:<slot>`,
-A26), `AutoStart`, `AutoStop`, `SetModel`, `SetThreshold`, `Launch`. A
+A26), `AutoStart`, `AutoStop`, `SetModel`, `Launch`. A
 mutation refreshes the cached state at once. It follows `GET /api/events`
 and reconnects with backoff (1 s doubling to 30 s); a stream silent for a
 minute is dead (the server pings every 15 s), and a line or a frame's data
@@ -5082,11 +5095,14 @@ app in the distro instead". *Start at login* registers `app --remote URL
 entry; the update restart re-runs `os.Args` and keeps the remote flags; the
 self-update, the release check and Quit are as local.
 
-**Setting a machine up.** In the distro: `tycswap app --headless --port 7337
---detach` (or the same without `--detach` in a user service). On Windows:
-`tycswap.exe app --remote http://127.0.0.1:7337 --token-file
-\\wsl.localhost\<distro>\home\<user>\.local\share\tycswap\remote.token
+**Setting a machine up.** In the distro: `tycswap app --headless --port 7337`
+kept running, as the reference leaves it to the machine — a systemd user
+service (`ExecStart=… app --headless --port 7337`, `Restart=on-failure`; the
+README gives the unit), or `setsid -f tycswap app --headless --port 7337` for
+a one-off start. On Windows: `tycswap.exe app --remote http://127.0.0.1:7337
+--token-file \\wsl.localhost\<distro>\home\<user>\.local\share\tycswap\remote.token
 --autostart on` (with `$XDG_DATA_HOME` set in the distro, the file is under
-`$XDG_DATA_HOME/tycswap/`), then start the same command without `--autostart`
-or sign in again. No shared secret to provision, no firewall rule, no second
-store.
+`$XDG_DATA_HOME/tycswap/`), then the same command without `--autostart`
+through `Start-Process`, which gives it a console of its own that the app
+frees (A41), or sign in again. No shared secret to provision, no firewall
+rule, no second store.

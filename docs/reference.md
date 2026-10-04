@@ -49,9 +49,9 @@ tycswap tui                                    interactive dashboard
 tycswap watch                                  interactive dashboard, live watch page
 tycswap web [--port N] [--no-open] [--interval SECONDS]
                                             browser dashboard on 127.0.0.1
-tycswap app [--open] [--headless] [--port N] [--interval SECONDS] [--no-update-check] [--detach]
+tycswap app [--open] [--headless] [--port N] [--interval SECONDS] [--no-update-check]
                                             the dashboard as a menu-bar / tray app
-tycswap app --remote URL [--token-file PATH] [--open] [--no-update-check] [--detach]
+tycswap app --remote URL [--token-file PATH] [--open] [--no-update-check]
                                             the tray for a dashboard in a WSL distro
 tycswap app [--remote URL --token-file PATH] --autostart on|off|status
                                             start the tray app at login
@@ -2476,8 +2476,9 @@ use `autoUpdatesChannel` from the user's `settings.json` under
 `CLAUDE_CONFIG_DIR` or `~/.claude` (`stable` or `latest`; absent means `latest`).
 Project and managed policies still apply in the installer. *Install
 update* runs `tycswap upgrade`'s own path (`go install` for a go-installed
-binary; a checkout build, an unknown layout or Windows is shown the command to
-type instead of a button); *Update Claude Code* runs the installer's own
+binary, the release downloaded over any other binary it can write; a checkout
+build, a go-installed binary on Windows, or one in the Nix store or an
+unwritable directory is shown how to upgrade instead of a button); *Update Claude Code* runs the installer's own
 command (`claude update`, `npm install -g @anthropic-ai/claude-code@latest`,
 `brew upgrade --cask <cask>`, `winget upgrade`). A missing Claude Code is
 named with the install line to type, never installed from the page. A check
@@ -2646,9 +2647,8 @@ Press Ctrl-C to stop.
 **Not yet in the dashboard** (follow-ups): Codex accounts (rows, actions and
 auto-switching; account routes already take provider keys), the Codex
 auto loop in the hosted engine, `add --login` and `codex login` as a
-cancellable job, `map`/`unmap`, a remote mode for a tray (a bearer token in
-place of the cookie and CSRF pair, and a route that hands such a client a
-fresh one-time URL), and the tray itself.
+cancellable job, and `map`/`unmap`. The tray is `tycswap app`, and its remote
+mode uses the bearer token and `POST /api/launch` above.
 
 ---
 
@@ -2657,13 +2657,16 @@ fresh one-time URL), and the tray itself.
 ### Synopsis
 
 ```
-tycswap app [--open] [--headless] [--port N] [--interval SECONDS] [--no-update-check] [--debug] [--detach]
-tycswap app --remote URL [--token-file PATH] [--open] [--no-update-check] [--debug] [--detach]
+tycswap app [--open] [--headless] [--port N] [--interval SECONDS] [--no-update-check] [--debug]
+tycswap app --remote URL [--token-file PATH] [--open] [--no-update-check] [--debug]
 tycswap app [--remote URL --token-file PATH] --autostart on|off|status
 ```
 
-A bare `tycswap` in an interactive terminal (or in Git Bash on Windows) is
-`tycswap app --detach`.
+A bare `tycswap` in an interactive terminal (or in Git Bash on Windows) starts
+`tycswap app` in the background: detached (its own session on Unix, no console
+on Windows), stdin on the null device, its output appended to the app log. It
+returns once the app holds its lock; `tycswap app` itself runs in the
+foreground.
 
 ### Options
 
@@ -2671,14 +2674,13 @@ A bare `tycswap` in an interactive terminal (or in Git Bash on Windows) is
 |--------|---------|
 | `--open` | Also open the dashboard in the browser at start. |
 | `--headless` | No tray icon: serve the dashboard only, like `tycswap web --no-open`. Not with `--remote`. |
-| `--detach` | Start the app in the background with the other flags, its output appended to the app log, and return once it holds its lock. |
 | `--no-update-check` | Do not check for a newer tycswap (90 s after start, then every 6 h) or Claude Code (30 s after start, then every 6 h). |
 | `--port N` | Fixed dashboard port on `127.0.0.1` (0–65535; default `0`, any free port). Not with `--remote`. |
 | `--interval SECONDS` | Live-state poll interval (1 to 3600; default `5`). Not with `--remote`. |
 | `--debug` | Log errors to stderr; with `--remote`, every call's status and every end of the event stream. |
 | `--remote URL` | Be the tray for the dashboard at `URL`, which must be `http://127.0.0.1:<port>` or `http://localhost:<port>` and nothing else. |
 | `--token-file PATH` | The `remote.token` that dashboard's app wrote. Default `$TYCSWAP_REMOTE_TOKEN_FILE`; required with `--remote`, refused without it. |
-| `--autostart MODE` | `on` registers start at login, `off` removes it, `status` shows it; then exits. With `--remote` the entry carries the remote arguments. Not with `--detach`. |
+| `--autostart MODE` | `on` registers start at login, `off` removes it, `status` shows it; then exits. With `--remote` the entry carries the remote arguments. |
 
 ### Description
 
@@ -2697,11 +2699,11 @@ window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
   active one marked; a click switches (an API-key account asks first); more
   than ten accounts move into *All N accounts* ▸, beside the active one; *Add
   current login* stores the login Claude Code has;
-- **Automation**: *Auto-switch* (on or off; on saves nothing but is resumed
-  at the app's next start); while it runs, *7d threshold* ▸ with 80, 85, 90,
-  95 and 97 %, which moves the running engine's 7d bar for this run as the
-  dashboard's slider does; *<window> limit*, which sets `autoswitch.model`
-  (`all` or unset) and retargets the running engine;
+- **Automation**: *Auto-switch* (on or off; its second line names the
+  threshold of each window; on is resumed at the app's next start);
+  *<window> limit*, which sets `autoswitch.model` (`all` or unset) and
+  retargets the running engine. The thresholds are set with `tycswap config`,
+  in the TUI and on the dashboard;
 - **App**: Claude Code's state when nothing is to update; *Start at login*;
   *Check for updates…*; *Quit tycswap*.
 
@@ -2726,8 +2728,8 @@ Windows through WSL2's localhost forwarding. It sends `Authorization: Bearer
 <token>` with the token read from `--token-file` (read again after a 401),
 follows the dashboard's event stream (reconnecting with backoff from 1 s to
 30 s; silence for a minute counts as a dead stream), follows no redirect and
-uses no proxy. It stores nothing and runs no engine: switches, auto-switch,
-the threshold and the model limit act on the distro's engine; *Open dashboard*
+uses no proxy. It stores nothing and runs no engine: switches, auto-switch
+and the model limit act on the distro's engine; *Open dashboard*
 asks `POST /api/launch` for a one-time URL and opens it only when it is the
 engine's own loopback address. It has no Claude Code row and no *Add current
 login*, refuses a switch onto an API-key account (use the dashboard), and holds
@@ -2748,11 +2750,14 @@ login*, refuses a switch onto an API-key account (use the dashboard), and holds
 
 ### Exit status
 
-`0` when the app is quit from its menu or stopped with Ctrl-C / SIGTERM, and
-for `--help`, `--autostart` and a `--detach` start that the child confirmed
-(or that is still starting after eight seconds); `1` when another app runs,
-the dashboard cannot start, a detached child dies at once, the update
-restart fails, or remote mode finds no tray; `2` on a usage error.
+`0` when the app is quit from its menu or stopped with Ctrl-C / SIGTERM, after
+an update restart handed over to the new binary, and for `--help` and
+`--autostart`; for the bare `tycswap`, when the background app took its lock,
+is still starting after eight seconds, or was already running. `1` when another
+app runs (`tycswap app`), `--autostart` cannot register, remove or read the
+entry, the dashboard cannot start, the bare start's child exits before taking
+its lock or cannot be spawned, the update restart fails, or remote mode finds
+no tray. `2` on a usage error.
 
 ### Output
 
@@ -2761,8 +2766,7 @@ To stderr: `Dashboard: <url>` (the one-time URL), then `Running in the menu bar
 without a tray (--headless). Press Ctrl-C to stop.` / `No system tray is
 available here; running the dashboard server only. Press Ctrl-C to stop.` and
 `Remote token: <path> (for tycswap app --remote)`. With `--remote`: `Remote
-engine: <url> (token from <path>)`. With `--detach` and the bare command, to
-stdout: `tycswap is running in the background — its icon is in the menu bar /
+engine: <url> (token from <path>)`. The bare `tycswap`, to stdout: `tycswap is running in the background — its icon is in the menu bar /
 tray.` and `Log: <path>`. `--autostart`: `Start at login: on` or `off`.
 
 ### Errors
@@ -2772,19 +2776,30 @@ tray.` and `Log: <path>`. `--autostart`: `Start at login: on` or `off`.
 | `tycswap app is already running on this machine (its icon is in the menu bar / tray). Quit it first.` | Another app holds `app.lock`. | 1 |
 | `tycswap app --remote is already running on this machine …` | Another remote tray holds `remote.lock`. | 1 |
 | `remote mode needs a tray; run tycswap app in the distro instead` | `--remote` where no tray is available. | 1 |
-| `tycswap stopped right after starting (…).` and the end of the log | A `--detach` (or bare) child exited before taking its lock. | 1 |
+| `tycswap is already running — its icon is in the menu bar / tray.` (stdout) | The bare `tycswap` while an app runs; nothing is started. | 0 |
+| `tycswap stopped right after starting (…).` and the end of the log | The bare `tycswap`'s child exited before taking its lock. | 1 |
+| `Error: …` | `--autostart` could not register, remove or read the entry. | 1 |
 | `argument --remote: expected http://127.0.0.1:<port> or http://localhost:<port> …` | `--remote` is not plain http on loopback with a port. | 2 |
 | `argument --remote: not allowed with --headless (…)` | `--remote` with `--headless`, `--port` or `--interval`. | 2 |
 | `argument --remote: needs --token-file PATH or TYCSWAP_REMOTE_TOKEN_FILE …` | No token file. | 2 |
 | `argument --token-file: only meaningful with --remote` | `--token-file` without `--remote`. | 2 |
-| `argument --detach: not allowed with --autostart …` | Both given. | 2 |
 
 ### Example
 
 ```
-$ tycswap app --headless --port 7337 --detach
+$ tycswap
 tycswap is running in the background — its icon is in the menu bar / tray.
 Log: /home/me/.local/share/tycswap/app.log
+```
+
+In a WSL distro, the engine for the Windows tray (a systemd user service
+running this command is the lasting way; see the README):
+
+```
+$ tycswap app --headless --port 7337
+Dashboard: http://127.0.0.1:7337/?token=<one-time token>
+Running without a tray (--headless). Press Ctrl-C to stop.
+Remote token: /home/me/.local/share/tycswap/remote.token (for tycswap app --remote)
 ```
 
 On Windows, for that engine in the distro `Ubuntu`:
@@ -2867,13 +2882,27 @@ Legacy: `tycswap --upgrade`. Alias: `tycswap update`.
 Self-upgrades to the latest tycswap release. It runs before the switcher is
 constructed, so upgrading never touches config or credentials. A binary built
 from a checkout (`make build`, `make install`, `go build` in a clone: its build
-info carries a VCS stamp or the `(devel)` version) is never re-installed from a
-remote; it prints `tycswap was built from a checkout: git pull && make install`
-and exits 1. A binary installed with `go install <module>@<version>` that lives
-in a Go-managed bin directory (`$GOBIN`, `$GOPATH/bin`, or `$HOME/go/bin`)
-re-runs `go install github.com/tyclab/tycswap/cmd/tycswap@latest`. Otherwise it
-prints manual upgrade guidance. On Windows the running executable is locked, so
-the command always prints the upgrade command rather than running it.
+info carries a VCS stamp, or the `(devel)` version without the release build's
+`-trimpath` and linked release version) is never re-installed from a remote;
+it prints `tycswap was built from a checkout: git pull && make install` and
+exits 1. A binary that lives in a Go-managed bin directory (`$GOBIN`,
+`$GOPATH/bin`, or `$HOME/go/bin`) re-runs `go install
+github.com/tyclab/tycswap/cmd/tycswap@latest`; on Windows the running
+executable is locked, so it prints that command rather than running it.
+
+Any other binary — a release download, or a copy outside a Go bin directory
+— is replaced by the newest release's build when it is outside the Nix store
+and its directory can be written: `upgrade` reads the latest release's tag from
+`Endpoint`, compares it with its own version (nothing to do when it is not
+newer), downloads `SHA256SUMS` and `tycswap_<tag>_<os>_<arch>[.exe]` from
+`<ReleasesURL>/download/<tag>/` over https only (redirects included; at most
+256 MiB) into a temporary file next to the binary, refuses the build unless
+`SHA256SUMS` has exactly one line for that file and its sha256 matches, marks
+it executable and renames it over the binary. On Windows the running `.exe`
+is first renamed to `<name>.exe.old` (and put back if the second rename
+fails); `tycswap app` removes the `.old` file when it next starts. A binary in
+the Nix store, or in a directory that cannot be written, gets manual
+guidance.
 
 Packagers can point both at another place at link time; the defaults are
 tycswap's own module and releases:
@@ -2882,7 +2911,7 @@ tycswap's own module and releases:
 |----------|---------|
 | `github.com/tyclab/tycswap/internal/update.ModulePath` | `github.com/tyclab/tycswap/cmd/tycswap` (what `go install …@latest` installs) |
 | `github.com/tyclab/tycswap/internal/update.Endpoint` | `https://api.github.com/repos/tyclab/tycswap/releases/latest` (the passive update notice's source; `tag_name` is read) |
-| `github.com/tyclab/tycswap/internal/update.ReleasesURL` | `https://github.com/tyclab/tycswap/releases` (shown in manual guidance) |
+| `github.com/tyclab/tycswap/internal/update.ReleasesURL` | `https://github.com/tyclab/tycswap/releases` (where a download upgrade fetches `download/<tag>/…`; shown in manual guidance) |
 
 ```
 go build -ldflags "-X github.com/tyclab/tycswap/internal/update.ModulePath=example.com/fork/cmd/tycswap \
@@ -2892,13 +2921,16 @@ go build -ldflags "-X github.com/tyclab/tycswap/internal/update.ModulePath=examp
 ### Files
 
 None of tycswap's data files. On a `go install` upgrade, the Go toolchain
-replaces the binary.
+replaces the binary; on a download upgrade, `upgrade` does (a temporary
+`.tycswap-upgrade-*` file next to it, and on Windows `<name>.exe.old`).
 
 ### Exit status
 
-The exit status of the `go install` subprocess on a `go install` layout; `1`
-when only guidance was printed (checkout build, unknown layout, Windows, `go`
-missing from PATH).
+The exit status of the `go install` subprocess on a `go install` layout; `0`
+after a download upgrade or when the newest release is not newer; `1` when
+only guidance was printed (checkout build, Nix store or unwritable directory,
+Windows with a `go install` layout, `go` missing from PATH) or a download
+upgrade was refused or failed (nothing is replaced then).
 
 ### Output
 
@@ -2908,14 +2940,16 @@ For a checkout build:
 tycswap was built from a checkout: git pull && make install
 ```
 
-On an unknown layout:
+After a download upgrade: `Updated tycswap <old> → <new> (<path>).`; when the
+newest release is not newer: `tycswap <version> is the latest version.`
+
+In the Nix store, or in a directory that cannot be written:
 
 ```
-Could not detect a `go install` layout (looked for $GOBIN, $GOPATH/bin, $HOME/go/bin).
+Could not upgrade this binary in place: it is not in a Go bin directory ($GOBIN, $GOPATH/bin, $HOME/go/bin)
+and its directory cannot be written (or it belongs to the Nix store).
   binary: <path>
-To upgrade manually, run:
-  go install github.com/tyclab/tycswap/cmd/tycswap@latest
-Or download a release from:
+To upgrade manually, download the build for this machine from:
   https://github.com/tyclab/tycswap/releases
 ```
 
@@ -2926,6 +2960,15 @@ On Windows: `To upgrade tycswap on Windows, run:` followed by the
 
 `Detected a go install layout but \`go\` is not on PATH. Run the upgrade
 manually from a shell where it is available.` (exit 1).
+
+A download upgrade that cannot go ahead says why, then `To upgrade manually,
+download the build for this machine from:` and the releases URL (exit 1):
+`Could not read the newest release: …`, `… SHA256SUMS has no line for <file>;
+refusing to install an unverifiable build.` (also for no `SHA256SUMS`, several
+lines or a malformed hash), `Checksum mismatch for <file> (got …, want …) —
+refusing to install it.`, `The release downloads at <url> are not https;
+refusing.`, `Download of <file> failed: …` (also for a non-https redirect and
+a file over 256 MiB), `Cannot write to <dir> (…).`
 
 ### Example
 
@@ -2960,6 +3003,11 @@ credential file. It never touches an old claude-swap store that
 confirmation (`[y/N]`) on an interactive terminal; any answer other than `y`
 cancels. The passive update notice is suppressed for this command.
 
+While `tycswap app` runs (it holds `<backup_root>/app.lock`; a lock that
+cannot be read counts as held), `purge` refuses before the prompt and deletes
+nothing: the tray would go on showing accounts that no longer exist. Quit the
+app from its menu first.
+
 Each account's email in `sequence.json` names the credential file to unlink
 (and, on macOS, the Keychain item to delete), so it must be one a file name
 can carry, the rule `add` applies (one `@`, at most 254 bytes, no whitespace,
@@ -2992,6 +3040,7 @@ A filesystem or Keychain removal failure surfaces as `Error: <message>`
 | Message | Meaning |
 |---------|---------|
 | `Live session-mode Claude instance(s) found: <dir> (PID <n>) …` | A session profile has a running instance; exit it first. |
+| `tycswap app is running; quit it from the menu bar / tray before purging` | The tray application holds `app.lock` (`ValidationError`); nothing was removed. |
 | `Slot <n> has an email that cannot name a store file: "<email>" …` | A `sequence.json` record's email would not be a safe file name (`ValidationError`); nothing was removed. |
 
 ### Example
@@ -3009,7 +3058,7 @@ Are you sure you want to purge all data? [y/N] Cancelled
 
 ### See also
 
-`tycswap remove`.
+`tycswap remove`, `tycswap app`.
 
 ---
 
