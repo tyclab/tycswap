@@ -343,7 +343,7 @@
       <article class="card guide-section" id="g-settings">
         <h2>Settings</h2>
         <p>The Settings tab lists every key of <code>settings.json</code> with its type, range, default and current value, and saves or resets one key at a time; it is <code>{{.Name}} config</code> in the browser. Every key is an <code>autoswitch.*</code> key today: the three thresholds, the poll interval, the cooldown, the hysteresis, the strategy, the model windows, how many failed polls make an account unhealthy, and the Codex engine's own switch and threshold.</p>
-        <p>A saved value is validated like <code>config set</code> (an out-of-range number is refused and nothing is written), and every row says when it takes effect. An auto-switch engine reads the settings when it starts (here, in <code>{{.Name}} tui</code> or in <code>{{.Name}} auto</code>), so a running one keeps what it started with; only <code>autoswitch.model</code> reaches a running engine on this page at once. The Codex keys are read when this page's engine or <code>{{.Name}} auto</code> starts.</p>
+        <p>A saved value is validated like <code>config set</code> (an out-of-range number is refused and nothing is written), and every row says when it takes effect. An auto-switch engine reads the settings when it starts (here, in <code>{{.Name}} tui</code> or in <code>{{.Name}} auto</code>), so a running one keeps what it started with; only <code>autoswitch.model</code> reaches a running engine on this page at once. The Codex keys are read when this page's engine (with Codex accounts) or <code>{{.Name}} auto</code> starts, never by the terminal dashboard's.</p>
       </article>
 
       <article class="card guide-section" id="g-sessions">

@@ -457,8 +457,13 @@ func (a *appShell) click(id string) {
 		}
 	case strings.HasPrefix(id, "switch:"):
 		provider, num := splitRowKey(strings.TrimPrefix(id, "switch:"))
-		if provider == reporting.ProviderCodex {
+		switch provider {
+		case reporting.ProviderCodex:
 			a.codexSwitchClick(num)
+			return
+		case reporting.ProviderClaude:
+		default:
+			a.notify("Switch failed", "No "+provider+" accounts here.")
 			return
 		}
 		// An API-key account changes HOW Claude Code authenticates, and a

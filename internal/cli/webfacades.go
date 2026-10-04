@@ -75,8 +75,36 @@ func (f settingsFacade) Unset(dotted string) (bool, error) {
 // ---- Codex accounts ----
 
 // codexOps is web.CodexOps over the Codex switcher: the verbs `tycswap codex`
-// and the terminal dashboard run, each under the Codex store's own lock.
+// and the terminal dashboard run, each holding the Codex store's lock from
+// start to end. SwitchTo and AddCurrent get that from the switcher, whose
+// switch and add take the lock themselves; SetAccountDisabled and
+// RemoveAccount take it here (lockedCodex).
 type codexOps struct{ sw *codexswitcher.Switcher }
+
+// codexOpsLockWait is how long a disable or remove waits for the Codex store
+// lock: the switcher's own wait. A var so tests can shorten it.
+var codexOpsLockWait = codexswitcher.DefaultLockTimeout
+
+// lockedCodex runs fn holding the Codex store lock. The store's own writes
+// (SetDisabled, RemoveSlot) skip the file lock while any goroutine of this
+// process holds it — the engine's switch holds it end to end — so without
+// this a remove could land between a Codex tick's capture and its write of
+// auth.json, leaving auth.json on the removed account (DESIGN A47). The lock
+// is per process and per file, so a call waits for a Codex tick here and for
+// another tycswap process alike; past codexOpsLockWait it is a lock error
+// (409 on the API).
+func (o codexOps) lockedCodex(fn func() error) error {
+	l := o.sw.Store().Lock()
+	ok, err := l.Acquire(codexOpsLockWait)
+	if err != nil {
+		return cerr.Lock("the Codex store is busy; try again").Wrap(err)
+	}
+	if !ok {
+		return cerr.Lock("the Codex store is busy (a Codex switch is running); try again")
+	}
+	defer func() { _ = l.Release() }()
+	return fn()
+}
 
 // newCodexOps is the dashboard's Codex façade; nil without a Codex switcher
 // (no Codex accounts at launch), so the Codex routes answer 503.
@@ -100,21 +128,25 @@ func (o codexOps) SwitchTo(id string) (map[string]any, error) {
 }
 
 func (o codexOps) SetAccountDisabled(id string, disabled bool) error {
-	_, err := o.sw.SetAccountDisabled(id, disabled)
-	return err
+	return o.lockedCodex(func() error {
+		_, err := o.sw.SetAccountDisabled(id, disabled)
+		return err
+	})
 }
 
 // RemoveAccount is `tycswap codex remove -y`. The switcher's warning about an
 // active slot goes to its discarded stdout: the page's modal has said it.
 func (o codexOps) RemoveAccount(id string) error {
-	removed, err := o.sw.Remove(id, true)
-	if err != nil {
-		return err
-	}
-	if !removed {
-		return cerr.AccountNotFound("Codex account %s was not removed: it is no longer stored", id)
-	}
-	return nil
+	return o.lockedCodex(func() error {
+		removed, err := o.sw.Remove(id, true)
+		if err != nil {
+			return err
+		}
+		if !removed {
+			return cerr.AccountNotFound("Codex account %s was not removed: it is no longer stored", id)
+		}
+		return nil
+	})
 }
 
 func (o codexOps) AddCurrent() (map[string]any, error) {

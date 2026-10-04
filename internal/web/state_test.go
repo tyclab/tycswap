@@ -55,16 +55,16 @@ func stripResetStrings(t *testing.T, win any) {
 	delete(m, "clock")
 }
 
-// TestState_ExactShape pins the whole document, on a Claude-only install
-// (auto.codex null, no Codex rows: the shape from before Codex) and with
-// Codex accounts (their rows after the Claude ones, the Codex engine under
-// auto.codex; DESIGN A47).
 // asSlice is v as a JSON array, or nil.
 func asSlice(v any) []any {
 	a, _ := v.([]any)
 	return a
 }
 
+// TestState_ExactShape pins the whole document, on a Claude-only install
+// (auto.codex null, no Codex rows: the shape from before Codex) and with
+// Codex accounts (their rows after the Claude ones, the Codex engine under
+// auto.codex; DESIGN A47).
 func TestState_ExactShape(t *testing.T) {
 	t.Run("claude-only", func(t *testing.T) { testStateExactShape(t, false) })
 	t.Run("with-codex", func(t *testing.T) { testStateExactShape(t, true) })

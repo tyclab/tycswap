@@ -840,15 +840,19 @@ func (s *Server) settingsViews() []SettingView {
 // ApplyModels change a running one. A save or reset of autoswitch.model
 // calls ApplyModels (applyModelSetting) on the engine this page hosts, never
 // on one in another process, and the at-limit marks re-read it for every
-// state document. Every other key, a new one included, waits for the next
-// engine start: the Codex keys too, which the host reads when it starts the
-// Codex engine beside the Claude one (A47).
+// state document. The Codex keys are read when a Codex engine starts: this
+// page's Start runs one beside the Claude engine when the dashboard started
+// with Codex accounts (A47), `tycswap auto` runs one, and the terminal
+// dashboard's engine never does. Every other key, a new one included, waits
+// for the next engine start.
 func settingApplies(key string) string {
 	switch key {
 	case modelSettingKey:
 		return "At once for the engine on the Auto tab: a save or reset retargets it while it runs, and the at-limit marks follow. An engine in the terminal dashboard or " + brand.Sanitized().Name + " auto keeps its value until it next starts."
 	case "autoswitch.sevenDayThreshold":
 		return "When an engine next starts. The Auto tab's slider changes the running engine's 7d threshold for this run only, without saving."
+	case "autoswitch.codexEnabled", "autoswitch.codexThreshold":
+		return "When the Codex engine next starts: on this page's Auto tab, when " + brand.Sanitized().Name + " web started with Codex accounts, or in " + brand.Sanitized().Name + " auto. The terminal dashboard's engine rotates Claude accounts only."
 	}
 	return "When an engine next starts (this page's Auto tab, the terminal dashboard or " + brand.Sanitized().Name + " auto); a running one keeps the value it started with."
 }

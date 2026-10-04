@@ -867,6 +867,7 @@ func TestShellSwitchClickCarriesKey(t *testing.T) {
 	sh.click("switch:codex:3")
 	codexErr = errors.New("Another tycswap process is using the Codex store; try again.")
 	sh.click("switch:codex:3")
+	sh.click("switch:gemini:1") // a provider the tray does not know reaches no switcher
 	if got := strings.Join(*calls, ","); got != "switch:claude:2,switch:codex:3,switch:codex:3,switch:codex:3" {
 		t.Errorf("calls = %s", got)
 	}
@@ -875,6 +876,7 @@ func TestShellSwitchClickCarriesKey(t *testing.T) {
 		"Switched Codex to account #3 | codex is running (pid 4242, 4343) — restart it for the new account to take effect.",
 		"Switched Codex to account #3 | The next codex session uses it.",
 		"Switch failed | Another tycswap process is using the Codex store; try again.",
+		"Switch failed | No gemini accounts here.",
 	}
 	if got := ft.notesNow(); strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("notes = %q\nwant %q", got, want)

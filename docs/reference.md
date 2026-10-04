@@ -2574,8 +2574,9 @@ tabs:
   restart; `autoswitch.sevenDayThreshold` and the other keys take effect when an
   engine next starts (the Auto tab's slider changes the running engine's
   7d threshold without saving); `autoswitch.codexEnabled` and
-  `codexThreshold` take effect when the Auto tab's engine or `tycswap auto`
-  next starts. The tab's badge counts
+  `codexThreshold` take effect when the Auto tab's engine (on a machine with
+  Codex accounts) or `tycswap auto` next starts; the TUI's engine never reads
+  them. The tab's badge counts
   the keys set away from their default.
 - **Guide**: what the tool is, slots and the active account, the 5h / 7d /
   model windows and their thresholds, getting started, switching by hand, Auto
@@ -2739,7 +2740,7 @@ anything else `500`.
 | `POST /api/switch/{key}[?force=1][&confirmAuthChange=1]` | | `tycswap switch <id> [--force] [--yes]`; `confirmAuthChange=1` records the user's yes to a switch onto an API-key account, which the page asks for first (DESIGN A33). A `codex:` key is `tycswap codex switch <id>` and answers `{"number", "email", "runningPids", "alreadyActive"}` | `400` bare key, an API-key target without `confirmAuthChange`, or `force` / `confirmAuthChange` with a `codex:` key; `404` unknown provider; `503` `confirmAuthChange` without account operations, or a `codex:` key without Codex accounts |
 | `POST /api/accounts/add` | `{"provider": "claude"\|"codex"}` (optional) | `tycswap add`; answers `{"ok": true, "result": {"number", "email", "refreshed"}}`, the account the live login is now (`refreshed`: it was that account already). The tray's *Add current login* is the same call. With `codex`, `tycswap codex add`, answering `{"number", "email"}` | `500` `Claude Code has no subscription login on this computer. …` when Claude Code has no live login, before anything is stored; `400` unknown provider; `503` `codex` without Codex accounts |
 | `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias", "baseUrl"}` | `tycswap add-token [--base-url]` (the token is never echoed or logged); `503` with a `baseUrl` when the facade cannot store one | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
-| `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y`; for a `codex:` key `tycswap codex enable`, `disable`, `remove -y` | `400` bare key, `404` unknown provider, `503` a `codex:` key without Codex accounts |
+| `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y`; for a `codex:` key `tycswap codex enable`, `disable`, `remove -y`, holding the Codex store lock throughout | `400` bare key, `404` unknown provider, `503` a `codex:` key without Codex accounts, `409` the Codex store stayed busy (a Codex switch held it) for 10 s |
 | `POST /api/accounts/{key}/alias` | `{"alias": "<name>"}` (empty unsets) | `tycswap alias` | `400` bare key, `404` a `codex:` key or an unknown provider |
 | `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` | `400` missing slot or bare key, `404` a `codex:` key or an unknown provider |
 | `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` | `400` missing or bare keys, `404` a `codex:` key or an unknown provider |

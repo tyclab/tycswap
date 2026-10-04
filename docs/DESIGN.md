@@ -3744,13 +3744,14 @@ another process and terminates hard, PIDs are reused quickly.
 colour come from `internal/brand`, overridable at link time and validated
 before use.
 
-**Follow-ups, deliberately not in this extension:** (the Codex rows, a
-Codex façade and the Codex auto loop in a host the dashboard shares are
-A47) `add --login` and `codex login` as a cancellable job streamed over SSE; `map`/`unmap` in the
-dashboard; a remote mode for a tray across a VM boundary, which re-adds a
-bearer token accepted in place of the cookie and CSRF pair and a route that
-mints a fresh one-time URL for such a client (nothing in `tycswap web`
-calls either today, so neither is built); the tray itself, which also
+**Follow-ups, deliberately not in this extension** (the Codex rows, a Codex
+façade and the Codex auto loop in a host the dashboard shares came with
+A47): `add --login` and `codex login` as a cancellable job streamed over SSE;
+`map`/`unmap` in the dashboard; a remote mode for a tray across a VM
+boundary, which re-adds a bearer token accepted in place of the cookie and
+CSRF pair and a route that mints a fresh one-time URL for such a client
+(nothing in `tycswap web` calls either today, so neither is built); the tray
+itself, which also
 brings back the brand vars it needs (a reverse-DNS identifier, an
 environment-variable prefix); and a short generic Guide tab: what the tool
 does, slots and the active account, the 5h/7d/model windows and the single
@@ -3882,7 +3883,7 @@ settings when it starts (`settings.Load` in the host's `Start`) and only
 |---|---|
 | `autoswitch.model` | at once for the engine this page hosts: a save or reset through the settings routes calls `ApplyModels` on it while it runs (A26; an engine in the TUI or `tycswap auto` keeps its value until it next starts), and the at-limit marks re-read it for every state document |
 | `autoswitch.sevenDayThreshold` (A34; `autoswitch.threshold` before it) | at the next engine start; the Auto tab's slider retargets the running engine's 7d bar for this run only, unsaved |
-| `autoswitch.codexEnabled`, `autoswitch.codexThreshold` | at the next start of the engine this page hosts, which runs the Codex engine beside it (A47), or of `tycswap auto` |
+| `autoswitch.codexEnabled`, `autoswitch.codexThreshold` | at the next start of a Codex engine: this page's, which runs beside the Claude one when the dashboard started with Codex accounts (A47), or `tycswap auto`'s; the TUI's engine never reads them |
 | every other key (`intervalSeconds`, `cooldownSeconds`, `hysteresisPct`, `strategy`, `unhealthyTicks`, and any key added later) | at the next engine start, here, in the TUI's Auto view or in `tycswap auto` |
 
 The TUI's Settings screen (A28) edits the same `settings.json` through the
@@ -5496,8 +5497,16 @@ switch, disable / enable and remove on a Codex row, and the page offers what
 it does plus storing the current Codex login, which `tycswap codex add`
 does. Without a Codex façade (no Codex accounts at launch) a Codex request
 answers 503. A Codex request passes the same authentication and origin
-checks as every other `/api` request, and a Codex call takes the Codex
-store's own lock, under the dashboard's mutation lock like every mutation.
+checks as every other `/api` request and runs under the dashboard's
+mutation lock like every mutation. Each Codex call also holds the Codex
+store's lock (`codex/.lock`) from start to end: the switcher's switch and add
+take it themselves, and `codexOps` takes it around disable and remove,
+because the store's own writes (`SetDisabled`, `RemoveSlot`) skip the file
+lock while any goroutine of the process holds it. Without that, a remove
+could land between a Codex tick's capture and its write of `auth.json` and
+leave `auth.json` on the removed account. A disable or remove that waits
+10 s for the lock answers 409; the switcher's own busy error on a switch or
+add stays a switch error (500).
 
 **One engine constructor.** The Codex engine's construction and loop live in
 `internal/cli/codexauto.go`, shared by both hosts: `newCodexAutoEngineFor(sw,
@@ -5516,8 +5525,9 @@ and waits for both within the one `autoStopWait` budget; past it Stop answers
 Claude loop. The slider retargets the Claude 7d bar only: the Codex bar is
 fixed for the run, as in `tycswap auto`, and the tile says so. There is no
 Codex model setting, quarantine or state file. `autoswitch.codexEnabled` and
-`codexThreshold` take effect when an engine next starts, like the other
-keys.
+`codexThreshold` take effect when a Codex engine next starts: this page's,
+when the dashboard started with Codex accounts, or `tycswap auto`'s. The
+TUI's engine never runs one, and the Settings row says so.
 
 **Wiring.** `newDashboard` decides Codex presence at launch, as the TUI does
 (`codexIsPresent`): with Codex accounts it builds the quiet Codex switcher
@@ -5539,9 +5549,12 @@ the log with a `codex` chip and `codex #n`. The header strip, the summary
 tiles and *Next best* stay on the Claude rows: they describe Claude Code's
 login and the Claude engine's ranking.
 
-**Two stores, two loops.** No goroutine holds both stores' locks. A Codex
-switch from the page and a Codex tick serialise on `codex/.lock` (the
-switcher waits 10 s, then answers its busy error). The state build every
+**Two stores, two loops.** No goroutine holds both stores' locks. Every
+Codex call from the page and a Codex tick's switch serialise on
+`codex/.lock` (above). A known gap remains in the TUI, which this amendment
+does not change: its Codex disable and remove call the switcher directly,
+so they can interleave with a refresh or switch that holds the lock in the
+same process. The state build every
 interval now takes the Codex snapshot too: network-free unless an entry is
 stale and due, but a token refresh of an inactive account takes the Codex
 lock and can delay one broadcast. The rows use the decision-grade value
@@ -5582,7 +5595,9 @@ views reading Claude rows. `internal/cli`: the shared constructor's checks;
 one Start running both engines and one Stop ending both; `codexEnabled` off
 building no engine, and no Codex view without Codex accounts; the event per
 outcome; Stop waiting for a Codex tick in flight and, past the wait, Start
-refusing until it returns; the Codex façade over a real Codex store; and the
+refusing until it returns; the Codex façade over a real Codex store, its
+disable and remove waiting for a holder of the Codex store lock and
+answering a lock error when it stays held; and the
 wired dashboard with and without Codex accounts (rows, `auto.codex`, a Codex
 switch with its PIDs, a refused Codex alias, the 503). The `tycswap auto`
 tests guard its output unchanged. The tray: the Codex rows under their own

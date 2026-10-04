@@ -236,9 +236,13 @@ type dashboard struct {
 // codex sessions still running on the old account.
 func (d *dashboard) switchTo(key string) ([]int, error) {
 	provider, ref := splitRowKey(key)
-	if provider != reporting.ProviderCodex {
+	switch provider {
+	case reporting.ProviderClaude:
 		_, err := d.sw.SwitchTo(ref, false)
 		return nil, err
+	case reporting.ProviderCodex:
+	default:
+		return nil, cerr.AccountNotFound("no %s accounts in this app: %s", provider, key)
 	}
 	if d.codex == nil {
 		return nil, cerr.AccountNotFound("no Codex accounts in this app: %s", key)

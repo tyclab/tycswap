@@ -145,9 +145,13 @@
     try { return new URL(u).host || u; } catch (e) { return u; }
   }
 
+  // toast shows a message: kind 'ok' (done), 'info' (something to act on
+  // that is not a failure, in the plain accent style) or anything else (an
+  // error).
   function toast(msg, kind) {
     var box = $('toasts');
-    var t = el('div', { class: 'toast ' + (kind === 'ok' ? 'toast-ok' : 'toast-err'), role: kind === 'ok' ? 'status' : 'alert', text: msg });
+    var info = kind === 'ok' || kind === 'info';
+    var t = el('div', { class: 'toast' + (kind === 'ok' ? ' toast-ok' : kind === 'info' ? '' : ' toast-err'), role: info ? 'status' : 'alert', text: msg });
     box.appendChild(t);
     setTimeout(function () { if (t.parentNode) { t.parentNode.removeChild(t); } }, kind === 'ok' ? 3500 : 7000);
   }
@@ -1045,7 +1049,7 @@
     clear(body);
     var list = claudeRows(st);
     var codex = codexRows(st);
-    $('accounts-empty').hidden = list.length > 0;
+    $('accounts-empty').hidden = list.length > 0 || codex.length > 0;
     // A login Claude Code has that is not stored yet is the next account to
     // add (A27): the callout says so, and the Add current login button in
     // the card's head is the main action either way.
@@ -1760,7 +1764,7 @@
   function codexRestartNote(res) {
     var r = res && res.result;
     if (r && Array.isArray(r.runningPids) && r.runningPids.length) {
-      toast('codex is running (pid ' + r.runningPids.join(', ') + ') \u2014 restart it for the new account to take effect.');
+      toast('codex is running (pid ' + r.runningPids.join(', ') + ') \u2014 restart it for the new account to take effect.', 'info');
     }
     return res;
   }

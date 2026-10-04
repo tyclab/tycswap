@@ -471,6 +471,10 @@ func TestStaticCodexRows(t *testing.T) {
 		"el('tr', { class: 'provider-head' }", "var codex = codexRows(st);", "'add-current-codex': function", "{ provider: 'codex' }",
 		"api('POST', url).then(codexRestartNote)", "if (a.codex) { tiles.appendChild(codexTile(a.codex)); }",
 		"ev.provider === 'codex'",
+		// Only Codex rows: no "No managed accounts yet" over them.
+		"$('accounts-empty').hidden = list.length > 0 || codex.length > 0;",
+		// The restart note is something to act on, not a failure.
+		"restart it for the new account to take effect.', 'info');",
 	} {
 		if !strings.Contains(js, want) {
 			t.Errorf("app.js lacks %q", want)
