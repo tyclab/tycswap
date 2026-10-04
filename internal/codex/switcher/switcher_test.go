@@ -385,7 +385,7 @@ func TestSwitchIsSerializedByTheStoreLock(t *testing.T) {
 	sw := f.seeded()
 	holdLock(t, sw)
 	_, err := sw.SwitchTo(ctx, "2")
-	wantErr(t, err, cerr.KindSwitch, "Another tycswap process")
+	wantErr(t, err, cerr.KindLock, "Another tycswap process")
 	if got := tokensOf(t, f.readLive())["account_id"]; got != acctA {
 		t.Errorf("live file changed under a held lock: %v", got)
 	}
@@ -773,7 +773,7 @@ func TestAddUnderAHeldLockFails(t *testing.T) {
 	sw := f.open()
 	holdLock(t, sw)
 	_, err := sw.Add(ctx, "")
-	wantErr(t, err, cerr.KindSwitch, "Another tycswap process")
+	wantErr(t, err, cerr.KindLock, "Another tycswap process")
 }
 
 func TestRemoveDropsTheSlotAndItsSnapshot(t *testing.T) {
@@ -1004,7 +1004,7 @@ func TestMoveUnderAHeldLockFails(t *testing.T) {
 	sw := f.seeded()
 	holdLock(t, sw)
 	_, _, _, err := sw.Move("1", "2")
-	wantErr(t, err, cerr.KindSwitch, "Another tycswap process")
+	wantErr(t, err, cerr.KindLock, "Another tycswap process")
 }
 
 func TestRotateCyclesThroughTheRotatableAccounts(t *testing.T) {
@@ -1183,5 +1183,66 @@ func TestNormalizeAlias(t *testing.T) {
 		if _, err := NormalizeAlias(in); cerr.TypeName(err) != string(cerr.KindValidation) {
 			t.Errorf("NormalizeAlias(%q) err = %v", in, err)
 		}
+	}
+}
+
+// Disable and remove hold the store lock like a switch does, so they wait for
+// a switch or a token refresh that holds it, in this process or another,
+// instead of writing between its steps (the store's own writes skip the file
+// lock while this process holds it), and a lock that stays held is a lock
+// error with nothing written (DESIGN A48).
+func TestDisableAndRemoveWaitForTheStoreLock(t *testing.T) {
+	f := newFixture(t)
+	sw := f.seeded()
+	// A second switcher over the same store that waits long enough for the
+	// release below; the fixture's own waits 100 ms.
+	patient := New(Options{
+		Root: f.root, Keychain: f.kc, Platform: platform.Linux, Clock: f.clk,
+		Client: f.client(), Stdout: f.out, LockTimeout: 5 * time.Second,
+	})
+	for _, tc := range []struct {
+		name string
+		call func() error
+		done func() bool
+	}{
+		{"disable", func() error { _, err := patient.SetAccountDisabled("2", true); return err }, func() bool { return sw.Store().Slots()[1].Disabled }},
+		{"remove", func() error { _, err := patient.Remove("2", true); return err }, func() bool { return len(sw.Store().Slots()) == 1 }},
+	} {
+		held := sw.Store().Lock()
+		if ok, err := held.Acquire(time.Second); !ok || err != nil {
+			t.Fatalf("%s: cannot take the lock: %v %v", tc.name, ok, err)
+		}
+		returned := make(chan error, 1)
+		go func() { returned <- tc.call() }()
+		select {
+		case err := <-returned:
+			_ = held.Release()
+			t.Fatalf("%s returned (%v) while another holder had the store lock", tc.name, err)
+		case <-time.After(100 * time.Millisecond):
+		}
+		if tc.done() {
+			t.Errorf("%s wrote while the lock was held", tc.name)
+		}
+		_ = held.Release()
+		select {
+		case err := <-returned:
+			if err != nil {
+				t.Fatalf("%s after the release: %v", tc.name, err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s did not finish after the lock was released", tc.name)
+		}
+		if !tc.done() {
+			t.Errorf("%s did not write after the release", tc.name)
+		}
+	}
+
+	holdLock(t, sw)
+	_, err := sw.SetAccountDisabled("1", true)
+	wantErr(t, err, cerr.KindLock, "Another tycswap process")
+	_, err = sw.Remove("1", true)
+	wantErr(t, err, cerr.KindLock, "Another tycswap process")
+	if slots := sw.Store().Slots(); len(slots) != 1 || slots[0].Disabled {
+		t.Errorf("a busy call wrote: %+v", slots)
 	}
 }

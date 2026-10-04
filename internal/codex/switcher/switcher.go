@@ -162,16 +162,17 @@ func (s *Switcher) Store() *store.Store { return s.st }
 // Cache returns the usage cache.
 func (s *Switcher) Cache() *usagecache.Cache { return s.cache }
 
-// acquire takes the store lock or returns the busy error. The returned release
-// func must be called exactly once.
+// acquire takes the store lock or returns the busy error: a lock error, like
+// the store's own and the Claude side's (409 on the dashboard's API, DESIGN
+// A48). The returned release func must be called exactly once.
 func (s *Switcher) acquire(timeout time.Duration) (func(), error) {
 	l := s.st.Lock()
 	ok, err := l.Acquire(timeout)
 	if err != nil {
-		return nil, cerr.Switch(busyMsg).Wrap(err)
+		return nil, cerr.Lock(busyMsg).Wrap(err)
 	}
 	if !ok {
-		return nil, cerr.Switch(busyMsg)
+		return nil, cerr.Lock(busyMsg)
 	}
 	return func() { _ = l.Release() }, nil
 }
@@ -483,7 +484,13 @@ func (s *Switcher) SwitchTo(ctx context.Context, identifier string) (SwitchResul
 
 // Remove forgets an account and deletes its stored credentials. It prompts on
 // Stdout/Stdin unless assumeYes. removed reports whether a removal happened: a
-// declined prompt prints "Cancelled" and returns (false, nil).
+// declined prompt prints "Cancelled" and returns (false, nil). The removal
+// holds the store lock, as a switch does: the store's own write skips the
+// file lock while this process holds it, so a remove during a token refresh
+// of the same account (refresh holds the lock around its network call) would
+// delete the slot and have the refresh write the new token back under the
+// removed account's key (DESIGN A48). The prompt is answered before the lock
+// is taken, so a question never holds the store.
 func (s *Switcher) Remove(identifier string, assumeYes bool) (removed bool, err error) {
 	slot, err := transfer.ResolveSlot(s.st, identifier)
 	if err != nil {
@@ -500,7 +507,12 @@ func (s *Switcher) Remove(identifier string, assumeYes bool) (removed bool, err 
 			return false, nil
 		}
 	}
-	return s.st.RemoveSlot(slot.AccountKey)
+	err = s.withLock(func() error {
+		var rerr error
+		removed, rerr = s.st.RemoveSlot(slot.AccountKey)
+		return rerr
+	})
+	return removed, err
 }
 
 // Alias sets an account's alias and returns (resolved number, normalized alias).
@@ -529,13 +541,19 @@ func (s *Switcher) UnsetAlias(identifier string) (string, error) {
 }
 
 // SetAccountDisabled holds an account out of (or returns it to) automatic
-// rotation and returns the resolved number.
+// rotation and returns the resolved number. It holds the store lock, as
+// Remove does (DESIGN A48).
 func (s *Switcher) SetAccountDisabled(identifier string, disabled bool) (string, error) {
-	slot, err := transfer.ResolveSlot(s.st, identifier)
-	if err != nil {
-		return "", err
-	}
-	return slot.Number, s.st.SetDisabled(slot.AccountKey, disabled)
+	var number string
+	err := s.withLock(func() error {
+		slot, err := transfer.ResolveSlot(s.st, identifier)
+		if err != nil {
+			return err
+		}
+		number = slot.Number
+		return s.st.SetDisabled(slot.AccountKey, disabled)
+	})
+	return number, err
 }
 
 // SwitchableAccountNumbers lists slots eligible for automatic rotation.

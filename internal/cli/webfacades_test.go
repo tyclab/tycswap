@@ -891,7 +891,7 @@ func TestCodexOpsAdapter(t *testing.T) {
 // end, so they wait for a Codex tick's switch instead of writing between its
 // steps (the store's own writes skip the file lock while this process holds
 // it), and a lock that stays held is a lock error with nothing written
-// (DESIGN A47).
+// (DESIGN A47; the switcher holds the lock since A48).
 func TestCodexOpsWaitForTheCodexStoreLock(t *testing.T) {
 	fixtureSwitcher(t)
 	ops := newCodexOps(fixtureCodex(t))
@@ -932,9 +932,8 @@ func TestCodexOpsWaitForTheCodexStoreLock(t *testing.T) {
 		}
 	}
 
-	prev := codexOpsLockWait
-	codexOpsLockWait = 50 * time.Millisecond
-	t.Cleanup(func() { codexOpsLockWait = prev })
+	// The same store through a switcher that waits 50 ms for the lock.
+	ops = newCodexOps(codexswitcher.New(codexswitcher.Options{Platform: platform.Linux, Stdout: io.Discard, LockTimeout: 50 * time.Millisecond}))
 	held := testStore().Lock()
 	if ok, err := held.Acquire(time.Second); !ok || err != nil {
 		t.Fatalf("cannot take the lock: %v %v", ok, err)
