@@ -3,6 +3,12 @@
 // two say the same about what happened.
 package web
 
+import "github.com/tyclab/tycswap/internal/cerr"
+
+// ErrNoLogin: Claude Code has no subscription login to store. The tray and
+// the dashboard both say it, before anything is tried.
+var ErrNoLogin = cerr.Config("Claude Code has no subscription login on this computer. In Claude Code, type /login, choose Claude.ai Subscription and sign in, then choose Add current login again.")
+
 // AddLoginResult is what AddCurrentLogin did. Number and Email are the
 // account the login is now; Refreshed: it was one already.
 type AddLoginResult struct {
@@ -16,8 +22,14 @@ var noFetch = map[string]bool{}
 
 // AddCurrentLogin stores the login Claude Code is signed in with (the CLI's
 // `add`) under the dashboard's mutation lock and broadcasts the new state.
+// Without a live login (Deps.CurrentLogin) it is ErrNoLogin.
 func (s *Server) AddCurrentLogin() (AddLoginResult, error) {
 	var res AddLoginResult
+	if s.d.CurrentLogin != nil {
+		if email, ok := s.d.CurrentLogin(); !ok || email == "" {
+			return res, ErrNoLogin
+		}
+	}
 	s.mutMu.Lock()
 	before := s.d.Facade.AccountsSnapshot(noFetch)
 	err := s.d.Facade.AddAccount(nil, true, nil)

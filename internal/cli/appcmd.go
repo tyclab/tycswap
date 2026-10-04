@@ -372,12 +372,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 			_, err := d.sw.SwitchTo(id, false)
 			return err
 		},
-		AddCurrent: func() (web.AddLoginResult, error) {
-			if email, _, ok := d.sw.GetCurrentAccount(); !ok || email == "" {
-				return web.AddLoginResult{}, errNoLogin
-			}
-			return srv.AddCurrentLogin()
-		},
+		AddCurrent:   func() (web.AddLoginResult, error) { return srv.AddCurrentLogin() },
 		AutoRunning:  func() bool { return d.auto.View().Running },
 		AutoStart:    func() error { return d.auto.Start(false) },
 		AutoStop:     func() error { return d.auto.Stop() },

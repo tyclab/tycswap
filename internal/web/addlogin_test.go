@@ -1,7 +1,9 @@
 package web
 
 import (
+	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -43,5 +45,25 @@ func TestAddCurrentLogin_Refreshed(t *testing.T) {
 	}
 	if !res.Refreshed || res.Number != active.Number || res.Email != active.Email {
 		t.Errorf("result %+v, want the active account %s %s refreshed", res, active.Number, active.Email)
+	}
+}
+
+// Without a live login there is nothing to add: the dashboard says what the
+// tray says, and nothing is tried.
+func TestAddCurrentLogin_NoLogin(t *testing.T) {
+	h := newHarness(t)
+	h.setLogin("", false)
+	resp := h.post("/api/accounts/add")
+	body := string(readBody(t, resp))
+	if resp.StatusCode != http.StatusInternalServerError || !strings.Contains(body, "Claude Code has no subscription login on this computer.") {
+		t.Errorf("status %d: %s", resp.StatusCode, body)
+	}
+	for _, c := range h.fa.Calls() {
+		if strings.HasPrefix(c, "AddAccount(") {
+			t.Errorf("AddAccount ran without a login: %v", h.fa.Calls())
+		}
+	}
+	if _, err := h.s.AddCurrentLogin(); !errors.Is(err, ErrNoLogin) {
+		t.Errorf("AddCurrentLogin = %v, want ErrNoLogin", err)
 	}
 }

@@ -99,7 +99,7 @@ func TestShellAddCurrentLogin(t *testing.T) {
 	sh.click("add-current")
 	next = answer{res: web.AddLoginResult{Number: "1", Email: "alice@example.com", Refreshed: true}}
 	sh.click("add-current")
-	next = answer{err: errNoLogin}
+	next = answer{err: web.ErrNoLogin}
 	sh.click("add-current")
 	if got := strings.Join(*calls, ","); got != "add,add,add" {
 		t.Errorf("calls = %s", got)

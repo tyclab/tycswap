@@ -328,9 +328,6 @@ func addCurrentItem(st web.State) tray.Item {
 	return it
 }
 
-// errNoLogin: Claude Code has no subscription login to store.
-var errNoLogin = cerr.Config("Claude Code has no subscription login on this computer. In Claude Code, type /login, choose Claude.ai Subscription and sign in, then choose Add current login again.")
-
 // addCurrentClick is "Add current login" (A37). The menu stays open and
 // shows the new account as soon as the dashboard's state carries it.
 func (a *appShell) addCurrentClick() {

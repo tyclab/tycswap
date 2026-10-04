@@ -4883,6 +4883,8 @@ children (`walkMenu`), on every platform.
 
 ***Add current login*** runs `web.Server.AddCurrentLogin` — the dashboard's
 own add, under its mutation lock — and notifies with the slot or "refreshed".
+Without a live login it is `web.ErrNoLogin` before anything is tried, on the
+dashboard as in the tray.
 Its second line comes from `state.currentLogin` (A27): the login that is not
 stored yet, else how to get another account there (`/login`, never `/logout`).
 
