@@ -4765,8 +4765,21 @@ amd64 on a macOS runner with cgo for the tray, each `-trimpath
 -buildvcs=false -ldflags "-s -w -X …/internal/version.Version=<tag>"` and
 named `tycswap_<tag>_<os>_<arch>[.exe]`, with `SHA256SUMS`, attached to that
 tag's GitHub release (a draft when the tag has none yet). Nothing is
-code-signed. CI runs the tests on Windows and macOS as well (`ci.yml`), the
-build-tagged ones included.
+code-signed.
+
+**CI on Windows and macOS** (`ci.yml`) vets and builds everything there —
+on macOS with cgo, so the Objective-C is compiled — and runs the tray
+application's packages (`tray`, `appicon`, `autostart`, `brand`, `web`) and
+its tests in `internal/cli` (`APP_TESTS`), the build-tagged ones included.
+Not the rest of the suite: it has only ever run on Linux and assumes it. On
+Windows, 318 tests and subtests in 24 packages fail, mostly because they isolate the home
+through `HOME`, which Windows ignores (`os.UserHomeDir` reads
+`USERPROFILE`), so they read and write the runner's real profile; others
+create symlinks. On macOS the store tests expect the Linux layout under
+`$XDG_DATA_HOME` (the macOS store is `~/.tycswap`) and two packages time out
+on the login Keychain. Making the suite portable is a change of its own; the
+one Windows-only difference in `internal/web` (the system serves `.js` as
+`application/javascript`) is skipped by name.
 
 **Corporate, not ported.** The reference's tray also carries its owner's
 branding item, the fetch of mandatory Claude Code settings, the plugin
@@ -4925,8 +4938,8 @@ URL to the default browser directly on Windows. A balloon holds 255 UTF-16
 units and a tooltip 127: notifications that would be cut drop their reasons
 rather than end mid-word, and the tooltip leads with what matters. The
 `windows-latest` CI job runs the build-tagged tests (the console hand-off
-for real, the detached start, the Run key); the tray itself is not
-exercised there.
+for real, the detached start, the menu plan); the tray's icon, menus and
+balloons, and the Run key itself, are not exercised there.
 
 ## A42. Claude Code in the tray
 
