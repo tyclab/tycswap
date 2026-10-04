@@ -10,6 +10,8 @@
 package tui
 
 import (
+	"errors"
+
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
@@ -31,6 +33,16 @@ type Facade interface {
 	SetPollPolicyInputs(threshold float64, models []string)
 	ClearPollPolicyInputs()
 }
+
+// baseURLAdder is add-token with a base URL (DESIGN A46). It is not on the
+// frozen Facade: the TUI asks for it by type assertion, and *core.Switcher
+// provides it.
+type baseURLAdder interface {
+	AddAccountFromTokenWithBaseURL(token, baseURL string, email, slotArg *string, assumeYes bool) error
+}
+
+// errNoBaseURL is the answer of a facade without baseURLAdder.
+var errNoBaseURL = errors.New("this build cannot store a base URL with a token")
 
 // snapshotSource takes one coherent snapshot per call; the store paces the
 // network (09§6.1). full is accepted for API stability but is no faster than a

@@ -71,6 +71,12 @@ func GetDefaultGlobalConfigPath() string {
 	return filepath.Join(home(), ".claude.json")
 }
 
+// GetClaudeSettingsPath returns <config_home>/settings.json, Claude Code's own
+// user settings (not tycswap's settings.json in the backup root).
+func GetClaudeSettingsPath() string {
+	return filepath.Join(GetClaudeConfigHome(), "settings.json")
+}
+
 // GetCredentialsPath returns <config_home>/.credentials.json.
 func GetCredentialsPath() string {
 	return filepath.Join(GetClaudeConfigHome(), ".credentials.json")

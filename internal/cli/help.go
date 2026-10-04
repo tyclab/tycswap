@@ -36,6 +36,7 @@ Commands:
   tycswap add --login [--switch]     log another account in beside the live one
                                    (claude auth login), then store it
   tycswap add-token [TOKEN|-]        register a setup-token or API key
+  tycswap add-token --base-url URL   register an API key for another endpoint
   tycswap remove <num|email>         remove an account
   tycswap disable <num|email>        hold an account out of auto-rotation
   tycswap enable <num|email>         return a disabled account to rotation
@@ -92,6 +93,9 @@ const mainEpilog = `Flags combine with subcommands:
   tycswap add --login --switch -- --email me@example.com
                                           # log in, store, make it live
   tycswap add-token --email me@example.com # prompts for the token (or pipe it: add-token -)
+  tycswap add-token --base-url https://gateway.example.com --email gw@example.com
+                                          # a gateway's key: a switch to it sets
+                                          # ANTHROPIC_BASE_URL in Claude Code's settings
   tycswap run 2 -- --resume                 # forward args after '--' to claude
   eval "$(tycswap env 2)"                   # pin THIS shell to account 2 (no claude launch)
   tycswap auto --once                       # single auto-switch tick (cron-friendly)
@@ -119,6 +123,9 @@ const visibleOptions = `options:
   --slot NUM            Specify slot number when adding account (use with 'add'
                         or 'add-token')
   --email EMAIL         Email address for the account (use with 'add-token')
+  --base-url URL        With 'add-token': the endpoint the API key is for; a
+                        switch to the account writes it and the key into
+                        Claude Code's settings.json, a switch away restores them
   --account NUM|EMAIL   Limit export to one account (use with 'export')
   --alias NAME          Set a short display alias for the account (use with
                         'add')

@@ -182,6 +182,40 @@ func TestApiKeyKindAndDisabled(t *testing.T) {
 	}
 }
 
+// TestAccountBaseURL: an API-key account's baseUrl is read back as stored
+// (DESIGN A46), a record of any other kind carries none even when the key is
+// there, and a missing slot or an absent field reads as "". The record keeps
+// the key through a backfill rewrite.
+func TestAccountBaseURL(t *testing.T) {
+	s := freshStore(t)
+	seq := `{
+  "activeAccountNumber": null,
+  "lastUpdated": "t",
+  "sequence": [1, 2, 3],
+  "accounts": {
+    "1": {"email": "gw@x.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "t", "kind": "api_key", "baseUrl": "https://gw.example.com/anthropic"},
+    "2": {"email": "k@x.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "t", "kind": "api_key"},
+    "3": {"email": "o@x.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "t", "baseUrl": "https://ignored.example"}
+  }
+}`
+	writeSequenceRaw(t, s, seq)
+	for num, want := range map[string]string{"1": "https://gw.example.com/anthropic", "2": "", "3": "", "9": ""} {
+		if got := s.AccountBaseURL(num); got != want {
+			t.Errorf("AccountBaseURL(%s) = %q, want %q", num, got, want)
+		}
+	}
+	data, err := s.SequenceMigrated()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := BaseURLFrom(data, "1"); got != "https://gw.example.com/anthropic" {
+		t.Errorf("BaseURLFrom after the migrated read = %q", got)
+	}
+	if got := BaseURLFrom(nil, "1"); got != "" {
+		t.Errorf("BaseURLFrom(nil) = %q", got)
+	}
+}
+
 // TestRotationEligible pins the one rule every automatic-selection surface asks
 // through (DESIGN A18): switchable AND not disabled. Slot 3 is non-switchable
 // with no backups at all, slot 4 with a credential backup but no config (the

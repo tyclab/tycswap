@@ -30,10 +30,12 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // TokenOnCommandLineWarning is printed when add-token is given the token as an
@@ -46,6 +48,26 @@ const TokenOnCommandLineWarning = "Warning: a token on the command line is visib
 // "-" reads one stdin line; "" prompts securely. email nil/"" defaults to a
 // slot-unique placeholder. slotArg nil auto-assigns.
 func AddAccountFromToken(s *store.Store, token string, email, slotArg *string, assumeYes bool) error {
+	return AddAccountFromTokenWithBaseURL(s, token, "", email, slotArg, assumeYes)
+}
+
+// AddAccountFromTokenWithBaseURL is AddAccountFromToken for a key used with an
+// endpoint other than Anthropic's (DESIGN A46). With a baseURL the token is
+// that endpoint's key: it is stored as an API-key account whatever its shape
+// (a gateway mints keys in its own format), and the record carries the URL,
+// which a switch onto the account writes into Claude Code's settings.json
+// beside the key. The URL is checked before the token is asked for. An empty
+// baseURL is today's add-token, unchanged; refreshing an account in place
+// (same email, no slot) sets the URL exactly as given, so a refresh without
+// one removes it.
+func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email, slotArg *string, assumeYes bool) error {
+	if baseURL != "" {
+		v, err := ccsettings.ValidateBaseURL(baseURL)
+		if err != nil {
+			return cerr.Validation("Invalid --base-url: %v", err)
+		}
+		baseURL = v
+	}
 	switch token {
 	case "-":
 		line, _ := ActivePrompter.StdinLine()
@@ -63,6 +85,16 @@ func AddAccountFromToken(s *store.Store, token string, email, slotArg *string, a
 	}
 
 	isAPIKey := credstore.LooksLikeAPIKey(token)
+	if baseURL != "" {
+		// The key for an endpoint: an API key whatever it looks like, and one
+		// that must survive being written into settings.json and sent as a
+		// header.
+		v, err := ccsettings.ValidateToken(token)
+		if err != nil {
+			return cerr.Validation("Invalid key for --base-url: %v", err)
+		}
+		token, isAPIKey = v, true
+	}
 
 	emailVal := ""
 	if email != nil {
@@ -148,7 +180,7 @@ func AddAccountFromToken(s *store.Store, token string, email, slotArg *string, a
 		// Refresh-in-place (§6.5): no slot and identity (email, "") exists.
 		if slotPtr == nil {
 			if accountNum := s.FindAccountSlot(data, emailVal, ""); accountNum != "" {
-				return addTokenRefreshInPlace(s, data, accountNum, emailVal, credentials, config, isAPIKey)
+				return addTokenRefreshInPlace(s, data, accountNum, emailVal, credentials, config, isAPIKey, baseURL)
 			}
 		}
 
@@ -228,6 +260,9 @@ func AddAccountFromToken(s *store.Store, token string, email, slotArg *string, a
 		if isAPIKey {
 			rec.set("kind", "api_key")
 		}
+		if baseURL != "" {
+			rec.set("baseUrl", baseURL)
+		}
 		if err := putRecord(data, accountNum, rec); err != nil {
 			return err
 		}
@@ -244,6 +279,9 @@ func AddAccountFromToken(s *store.Store, token string, email, slotArg *string, a
 		sourceLabel := "token"
 		if isAPIKey {
 			sourceLabel = "API key"
+		}
+		if baseURL != "" {
+			sourceLabel += " for " + termsafe.Strip(ccsettings.Host(baseURL))
 		}
 		if s.Log != nil {
 			s.Log.Infof("Added account %s from %s: %s", accountNum, sourceLabel, emailVal)
@@ -269,11 +307,15 @@ func tokenPlaceholderEmail(isAPIKey bool, slot int) string {
 	return fmt.Sprintf("%s-%d@token.local", label, slot)
 }
 
-// addTokenRefreshInPlace is spec 01§6.5.
-func addTokenRefreshInPlace(s *store.Store, data *store.SequenceData, accountNum, email, credentials, config string, isAPIKey bool) error {
-	if _, present := recordAt(data, accountNum); !present {
+// addTokenRefreshInPlace is spec 01§6.5. The record's baseUrl is set exactly
+// as given (DESIGN A46): the account is the key and the endpoint it was
+// re-added with, so a refresh without a URL removes one it had.
+func addTokenRefreshInPlace(s *store.Store, data *store.SequenceData, accountNum, email, credentials, config string, isAPIKey bool, baseURL string) error {
+	rec, present := recordAt(data, accountNum)
+	if !present {
 		return cerr.Config("Existing account metadata for %s is inconsistent", email)
 	}
+	hadBaseURL := rec.str("baseUrl") != ""
 	if err := s.WriteAccountCredentials(accountNum, email, credentials); err != nil {
 		return err
 	}
@@ -281,6 +323,16 @@ func addTokenRefreshInPlace(s *store.Store, data *store.SequenceData, accountNum
 		return err
 	}
 	clearDeadToken(s, accountNum, email, "")
+	if baseURL != "" {
+		rec.set("baseUrl", baseURL)
+	} else {
+		rec.del("baseUrl")
+	}
+	if baseURL != "" || hadBaseURL {
+		if err := putRecord(data, accountNum, rec); err != nil {
+			return err
+		}
+	}
 	data.LastUpdated = timestamp(s)
 	if err := s.WriteSequence(data); err != nil {
 		return err
@@ -289,10 +341,24 @@ func addTokenRefreshInPlace(s *store.Store, data *store.SequenceData, accountNum
 	if isAPIKey {
 		kindLabel = "API key"
 	}
+	endpointNote := ""
+	switch {
+	case baseURL != "":
+		endpointNote = " " + printer.Muted("(endpoint "+termsafe.Strip(ccsettings.Host(baseURL))+")")
+	case hadBaseURL:
+		endpointNote = " " + printer.Muted("(endpoint removed)")
+	}
 	if s.Log != nil {
 		s.Log.Infof("Updated %s for account %s: %s", kindLabel, accountNum, email)
 	}
-	emitLine(printer.Accent("Updated "+kindLabel) + " for Account " + accountNum + " (" + email + " " + printer.Muted("[personal]") + ").")
+	emitLine(printer.Accent("Updated "+kindLabel) + " for Account " + accountNum + " (" + email + " " + printer.Muted("[personal]") + ")." + endpointNote)
+	if cur, org, ok := s.GetCurrentAccount(); ok && s.FindAccountSlot(data, cur, org) == accountNum {
+		// The live login still has the old key (and endpoint): only a switch
+		// writes it, and a plain switch to the account in use is a no-op
+		// (DESIGN A46).
+		emitLine(printer.Dimmed("Account " + accountNum + " is the live login; activate the new " + kindLabel +
+			" with: tycswap switch " + accountNum + " --force"))
+	}
 	return nil
 }
 

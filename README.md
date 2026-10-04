@@ -175,6 +175,19 @@ $ pass show claude/bob-token | tycswap add-token - --email bob@example.com
 `--slot` is optional; without it the account lands in the next free slot.
 `--email` labels the account.
 
+An API key for another endpoint, such as an LLM gateway or proxy, takes `--base-url`. The key is then that endpoint's,
+whatever it looks like, and a switch to the account points Claude Code at it: tycswap writes the URL and the key into
+Claude Code's `settings.json` as `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN` and removes
+`env.ANTHROPIC_API_KEY` (Claude Code would send that key to the endpoint too), after recording what those keys held, and
+a switch to any other account puts exactly that back, leaving the rest of the file as it is. The switch warns when an
+`apiKeyHelper` or an `ANTHROPIC_API_KEY` in your environment would still send a second key. `list` and `status` show the
+endpoint's host; `--json` carries the whole URL as `baseUrl`.
+
+```
+$ pass show gateway/key | tycswap add-token - --base-url https://gateway.example.com --email gw@example.com
+Added Account 3: gw@example.com [personal] (from API key for gateway.example.com)
+```
+
 ### Switch accounts
 
 Rotate to the next account in slot order:

@@ -67,6 +67,7 @@ func BuildAccountsInfo(s *store.Store) []AccountInfo {
 			Creds:               creds,
 			Alias:               alias,
 			KeychainUnavailable: keychainUnavailable,
+			BaseURL:             store.BaseURLFrom(data, num),
 		})
 	}
 	return infos

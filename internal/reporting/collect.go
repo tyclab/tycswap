@@ -146,7 +146,10 @@ func UsageByAccount(s *store.Store) map[string]any {
 // call, or "" (spec 02§13 _static_usage_sentinel). Re-derived every pass so it
 // never outlives the condition that produced it.
 func staticUsageSentinel(s *store.Store, info AccountInfo) string {
-	if credstore.LooksLikeAPIKey(info.Creds) {
+	// An account with a base URL is an API key whatever its key looks like,
+	// and the active one has no credential in Claude Code's store at all: its
+	// key is in settings.json (DESIGN A46).
+	if credstore.LooksLikeAPIKey(info.Creds) || info.BaseURL != "" {
 		return jsonout.UsageAPIKey
 	}
 	if info.Creds == "" || oauth.ExtractAccessToken(info.Creds) == "" {

@@ -19,7 +19,7 @@ tycswap switch --strategy {best|next-available} [--model NAMES] [--json]
 tycswap add [--slot NUM] [--alias NAME]       snapshot the current login as an account
 tycswap add --login [--switch] [--slot NUM] [--alias NAME] [-- LOGIN-ARGS...]
                                             log another account in beside the live one and store it
-tycswap add-token [TOKEN|-] [--email EMAIL] [--slot NUM]
+tycswap add-token [TOKEN|-] [--email EMAIL] [--slot NUM] [--base-url URL]
                                             register a setup-token or API key
 tycswap remove <NUM|EMAIL|ALIAS>              remove an account (prompts to confirm)
 tycswap disable <NUM|EMAIL|ALIAS>             hold an account out of auto-rotation
@@ -129,7 +129,10 @@ organization tag (`[personal]` or the organization name), and status markers:
 of auto-rotation, and `at limit: <windows>` — the comma-separated labels of the
 limiting windows (for example `5h`, `7d`, or a per-model name such as
 `Fable 5`) — when a relevant rate-limit window is at or over its limit.
-Accounts registered from an API key show `API key (no quota)`. `--token-status` adds an OAuth token expiry line per account.
+Accounts registered from an API key show `API key (no quota)`; one that
+carries a base URL (`add-token --base-url`) shows `→ <host>` after its tag,
+the host of the endpoint its requests go to (the whole URL is in `--json`).
+`--token-status` adds an OAuth token expiry line per account.
 When usage cannot be fetched the row reads `usage unavailable (<reason>)` where
 `<reason>` is the last fetch error (for example `http-429`, `http-401`).
 
@@ -178,6 +181,7 @@ Present only when applicable (additive, schemaVersion 1):
 |-----|------|--------------|
 | `alias` | string | An alias is set. |
 | `disabled` | `true` | The account is disabled. |
+| `baseUrl` | string | An API-key account carries a base URL (DESIGN A46): the whole URL its requests go to. |
 | `atLimit` | `true` | A relevant window is at/over its limit. |
 | `limitingWindows` | array of string | Emitted with `atLimit`; the windows at/over limit, in relevant-window order. |
 | `usageFetchedAt` | string (ISO-8601 UTC) | `usage` is non-null and the measurement time is known. |
@@ -222,6 +226,9 @@ Accounts:
      usage unavailable (http-429)
 
   3: key@example.com [personal]
+     API key (no quota)
+
+  4: gw@example.com [personal] → gateway.example.com
      API key (no quota)
 
   5: carol@example.com [personal] (disabled)
@@ -282,8 +289,16 @@ The `<active-object>` always contains: `number` (int, or `null` for an
 unmanaged live account), `email`, `organizationName`, `organizationUuid`,
 `isOrganization`, `managed` (bool), `usageStatus` (same enum as `list`), and
 `usage` (object or `null`). The same additive keys `list` emits per row —
-`alias`, `atLimit`, `limitingWindows`, `usageFetchedAt`, `usageAgeSeconds` —
-appear here under the same conditions.
+`alias`, `baseUrl`, `atLimit`, `limitingWindows`, `usageFetchedAt`,
+`usageAgeSeconds` — appear here under the same conditions. While the active
+account carries a base URL, the human output adds `Endpoint: <host> (Claude
+Code's settings.json)` and its `usageStatus` is `api_key`. When tycswap's
+endpoint profile is still in Claude Code's `settings.json` under another login
+(a `/login` made while the endpoint account was active), the human output adds
+`Claude Code's settings.json still sends its requests to <host>
+(env.ANTHROPIC_BASE_URL, env.ANTHROPIC_AUTH_TOKEN), over this login; a switch
+to any account puts back what it held.`, managed or not: those keys take
+precedence over that login.
 
 ### Errors
 
@@ -383,6 +398,58 @@ an API-key account the follow-up note says `Restart your Claude Code sessions:
 one that is already running keeps its previous login until it is restarted.`
 Every other switch is unaffected.
 
+An API-key account that carries a **base URL** (`add-token --base-url`, DESIGN
+A46) asks the same question, and the notice also names the whole URL: `This
+account sends Claude Code's requests to <url>: the switch writes
+env.ANTHROPIC_BASE_URL and env.ANTHROPIC_AUTH_TOKEN into Claude Code's
+settings.json and removes env.ANTHROPIC_API_KEY, and a switch to another
+account puts back what they held.`, and in place of the restart sentence above
+it says `<n> Claude Code sessions are running; each takes the endpoint up when
+it re-reads settings.json (at once in a trusted workspace), or when it is
+restarted.` Its refusal without an approval reads
+`Account-<n> authenticates with an API key at <host>. …`. Such a switch stores
+no key in Claude Code's credential store (no `primaryApiKey`, no `Claude Code`
+Keychain item): every login leaves it, the seat-wide keys stay, and
+`<config home>/settings.json` (`~/.claude/` or `CLAUDE_CONFIG_DIR`) gets the
+endpoint as `env.ANTHROPIC_BASE_URL` and the key as `env.ANTHROPIC_AUTH_TOKEN`,
+and loses `env.ANTHROPIC_API_KEY`. Claude Code fills two headers
+independently: `Authorization: Bearer` from `ANTHROPIC_AUTH_TOKEN` (else
+`apiKeyHelper`), and `X-Api-Key` from `ANTHROPIC_API_KEY` (always with `-p`,
+interactively once approved), else `apiKeyHelper` or a key passed on a file
+descriptor (`CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR`), else a stored Console key;
+a key in that second slot goes to the endpoint beside the bearer token. So the
+switch empties the second slot where tycswap owns it and names it where it
+does not: when `settings.json` sets `apiKeyHelper`, or `ANTHROPIC_API_KEY` is
+set in the environment the switch runs in, it warns (printed, or as a
+`--json` warning; names only) that Claude Code sends that key as `X-Api-Key`
+to the endpoint, and leaves it alone. Before it writes, tycswap records what
+the three keys held (or that they were absent) in
+`<backup root>/claude-settings.prev.json`; a switch onto any other account,
+`--force` and the fresh-machine activation included, restores exactly those
+keys from the record and removes it, and leaves every other key of the file as
+it is now, including changes made while the endpoint was in use. A switch from
+one endpoint account to another keeps the first record, so the way back always
+lands on the settings from before the first. Without a record (it was removed
+by hand) a switch away still removes the two written keys when they hold
+exactly an endpoint account's URL and key, and leaves them otherwise; a switch
+onto an endpoint then does not record such a pair as the user's. A key or
+login that is still readable after the switch took them off (a Keychain item
+that cannot be deleted) fails the switch, which rolls back. Claude Code applies
+the `env` block when it starts and again when a running session sees the file
+change (in a trusted workspace), adding keys but never removing one, so the
+follow-up differs by direction: after a switch onto an endpoint, `… A Claude
+Code session that is already running takes this up when it re-reads
+settings.json (at once in a trusted workspace); restart one that does not.`;
+after a switch away, `Claude Code's settings.json no longer sends its requests
+to an API-key account's endpoint. Restart your Claude Code sessions: one that
+is already running keeps the endpoint and its key until it is restarted.` A
+`settings.json` that is not a JSON object or is a symbolic link, a record that
+is not one complete record (version 1, an entry for `env` and each of the
+three keys, nothing after it), a stored URL that no longer validates, or an
+API-key account without a base URL whose key is not an Anthropic key stops the
+switch before anything is written; a switch that fails after it wrote either
+file puts both back byte for byte (a link as the same link).
+
 A switch onto a subscription account never requires restarting Claude Code to
 be correct; the post-switch note is informational (see NOTES). The switch
 cooperates with Claude Code's own credential lock, so it never interleaves
@@ -411,14 +478,18 @@ backup, `add`, `export`, `list` and `status` alike); with no managed key
 behind it there is no live credential, and a switch away stops with
 `Current account credential is empty (Keychain unreadable?); refusing to
 overwrite its backup` instead of storing the file as the outgoing account's
-credential. A rollback restores the exact pre-switch credential (an API key
+credential. An account with a base URL is the exception: no credential is its
+normal state, its stored key is its credential, and the switch away backs up
+its config only. A rollback restores the exact pre-switch credential (an API key
 with the seat-wide keys left beside it).
 
 ### Files
 
 Reads and writes `sequence.json` (the active pointer), the live Claude Code
-config/credentials, and per-account `configs/`/`credentials/`. Acquires the
-backup-root and Claude Code credential locks.
+config/credentials, and per-account `configs/`/`credentials/`. A switch onto or
+away from an account with a base URL also writes Claude Code's
+`settings.json` (the two `env` keys only) and `claude-settings.prev.json` in the
+backup root. Acquires the backup-root and Claude Code credential locks.
 
 ### Exit status
 
@@ -465,6 +536,11 @@ A `<ref>` is `{"number": <int|null>, "email": "<string>"}`. `switched` is
 | ``Account-<n> authenticates with an API key. Switching to it changes how Claude Code authenticates, and every Claude Code session that is already running keeps its current login until you restart it. Confirm the switch to go ahead: `tycswap switch <n>` asks first.`` | `ValidationError`, exit 1: a switch onto an API-key account without an approval (`--json` without `--yes`) |
 | `Not a terminal — rerun with --yes to confirm the switch to API-key account #<n>.` | `ValidationError`, exit 1: stdin is not a terminal and `--yes` was not given |
 | `Cancelled: not switched to API-key account #<n>.` | `ValidationError`, exit 1: the prompt was answered with anything but `y` |
+| ``Account-<n> authenticates with an API key at <host>. Switching to it changes how Claude Code authenticates and where it sends its requests, …`` | `ValidationError`, exit 1: the same refusal for an account with a base URL |
+| `Account-<n> carries an invalid base URL (<why>). Re-add it with: tycswap add-token --base-url URL --slot <n>` | `SwitchError`, exit 1: the stored URL no longer validates; nothing written |
+| `Account-<n>'s stored key cannot be written for its endpoint (<why>). …` | `SwitchError`, exit 1: the stored key is not one header-safe string |
+| `Account-<n>'s key is not an Anthropic API key and the account has no base URL. …` | `SwitchError`, exit 1: an API-key account whose key would otherwise be written as an OAuth credential |
+| `Cannot update Claude Code's settings: <file> is not a JSON object; refusing to rewrite it …` / `… <record> is corrupt …` | `ConfigError`, exit 1: Claude Code's `settings.json` or tycswap's record cannot be read; nothing written |
 
 ### Example
 
@@ -632,7 +708,7 @@ Added Account 4: other@example.com [personal] (from login)
 ### Synopsis
 
 ```
-tycswap add-token [TOKEN|-] [--email EMAIL] [--slot NUM] [--debug]
+tycswap add-token [TOKEN|-] [--email EMAIL] [--slot NUM] [--base-url URL] [--debug]
 ```
 
 ### Options
@@ -642,6 +718,7 @@ tycswap add-token [TOKEN|-] [--email EMAIL] [--slot NUM] [--debug]
 | `TOKEN` | positional string | read interactively if omitted | A lone `-` reads the token from stdin. A token given here is visible to other local users through `ps` and kept in shell history; `add-token` prints a warning and still uses it. Prefer the prompt or `-`. |
 | `--email` | string | derived if possible | Only with `add-token`. |
 | `--slot` | int | next free slot | Only with `add` or `add-token`. |
+| `--base-url` | URL | none | Only with `add-token`; not empty. An absolute `https://` or `http://` URL with a host and no user info, query or fragment. |
 | `--debug` | flag | off | — |
 
 ### Description
@@ -649,6 +726,20 @@ tycswap add-token [TOKEN|-] [--email EMAIL] [--slot NUM] [--debug]
 Registers an account from a setup token (`sk-ant-oat01-...`) or an API key
 (`sk-ant-api03-...`) without an interactive Claude Code login. API-key accounts
 are marked `kind: api_key` and carry no OAuth quota.
+
+With `--base-url` the token is the API key of that endpoint (an LLM gateway or
+proxy) and is stored as an API-key account whatever its shape, as long as it is
+one run of printable ASCII; the record carries `baseUrl`. The URL is checked
+before the token is asked for. A switch onto the account writes the URL and the
+key into Claude Code's `settings.json` instead of storing the key as a managed
+key, and a switch away puts back what those two settings held (see `tycswap
+switch`). Re-adding the same email without `--slot` refreshes the key in place
+and sets the URL exactly as given, so a refresh without `--base-url` removes
+it; an endpoint key that is not shaped like an Anthropic key cannot be
+refreshed without its URL (the cross-kind guard refuses it as an OAuth token).
+A refresh changes the stored account only: for the account the live login
+belongs to it adds `Account <n> is the live login; activate the new API key
+with: tycswap switch <n> --force`.
 
 ### Files
 
@@ -660,7 +751,10 @@ Writes `sequence.json`, `configs/`, and `credentials/` (or the macOS Keychain).
 
 ### Output
 
-`Added Account <n>: <email> [<tag>] (from token)`.
+`Added Account <n>: <email> [<tag>] (from token)`; `(from API key for <host>)`
+with `--base-url`. A refresh in place says `Updated API key for Account <n>
+(…).`, followed by `(endpoint <host>)` or `(endpoint removed)` when the URL is
+set or dropped.
 
 ### Errors
 
@@ -674,6 +768,8 @@ Token:
 Added Account 6: me@example.com [personal] (from token)
 $ tycswap add-token - --email me@example.com < token.txt
 Added Account 7: me@example.com [personal] (from token)
+$ tycswap add-token - --base-url https://gateway.example.com --email gw@example.com < gw-key.txt
+Added Account 8: gw@example.com [personal] (from API key for gateway.example.com)
 ```
 
 ### See also
@@ -1660,7 +1756,9 @@ always fatal. Each account's credentials are exported without the seat-wide
 keys `mcpOAuth` and `mcpOAuthClientConfig` (Claude Code's MCP server logins and
 client secrets, which belong to the seat and never leave the machine). A live
 credentials file holding nothing but those keys is no login, so an active
-API-key account exports its managed key.
+API-key account exports its managed key. An account with a base URL is
+exported from its backup even while it is active (Claude Code's credential
+store holds nothing for it then), with its key and its `baseUrl`.
 
 ### Files
 
@@ -1685,13 +1783,13 @@ Reads `sequence.json`, `configs/`, `credentials/` (or Keychain). Writes the
   "activeAccountNumber": <int|null>,
   "accounts": [ { "number", "email", "uuid", "organizationUuid",
                   "organizationName", "added", "credentials", "config",
-                  "kind"?, "alias"? }, ... ]
+                  "kind"?, "alias"?, "baseUrl"? }, ... ]
 }
 ```
 
 `encrypted` is always `false`. `credentials` is an OAuth object or a raw
 API-key string; `config` is `{"oauthAccount": ...}` (default) or the full
-config (`--full`). `kind` and `alias` are omitted when empty.
+config (`--full`). `kind`, `alias` and `baseUrl` are omitted when empty.
 
 ### Errors
 
@@ -1756,6 +1854,15 @@ of the member that was validated, without the seat-wide keys `mcpOAuth` and
 `mcpOAuthClientConfig`: an older export may carry the exporting seat's MCP
 server logins and client secrets, and a member that does is stored re-encoded
 compact without them. Input over 8 MiB is refused before parsing.
+
+A `baseUrl` (DESIGN A46) is checked the way `add-token --base-url` checks it:
+a string, an absolute `https://` or `http://` URL with a host and no user
+info, query or fragment (`invalid baseUrl for <email>: …`). It needs API-key
+credentials (`baseUrl for <email> needs API-key credentials (a raw key
+string)`), which are then the endpoint's key whatever their shape, as long as
+they are one string of printable ASCII (`API-key credentials for <email> must
+be the endpoint's key as one string`). The record gets `baseUrl` after `kind`
+and `alias`. Every one of these refusals is made before anything is written.
 
 ### Files
 
@@ -2387,10 +2494,14 @@ tabs:
   (no backup), enable/disable, alias, move, swap and remove per row; a
   strategy switch (`best`, `next-available`), *Add current login* as the
   Accounts card's main button, *Add token* (a setup-token or API key; it is
-  sent once and never shown or logged), and an optional *Token status*
-  column. *Switch* onto an API-key account asks first, saying that it changes
-  how Claude Code authenticates, is billed per token, and that running
-  sessions keep their old login until restarted; the request then carries
+  sent once and never shown or logged; an optional *Base URL* makes it that
+  endpoint's key, as `add-token --base-url` does), and an optional *Token
+  status* column. An API-key row with a base URL shows `→ <host>`, and the
+  header chip and the red notice name the host while it is active. *Switch*
+  onto an API-key account asks first, saying that it changes how Claude Code
+  authenticates, is billed per token, and that running sessions keep their
+  old login until restarted (and, with a base URL, where the requests go and
+  which two settings carry them there); the request then carries
   `confirmAuthChange=1`. *Force switch* does not ask that and is refused for an
   API-key account. While an API-key account is active a red notice says
   auto-switch leaves it alone. When Claude Code is signed in with an account
@@ -2568,7 +2679,7 @@ anything else `500`.
 | `POST /api/switch` | `{"strategy": "best"\|"next-available", "models": [...]}` | `tycswap switch --strategy` | `400` missing or unknown strategy |
 | `POST /api/switch/{key}[?force=1][&confirmAuthChange=1]` | | `tycswap switch <id> [--force] [--yes]`; `confirmAuthChange=1` records the user's yes to a switch onto an API-key account, which the page asks for first (DESIGN A33) | `400` bare key or an API-key target without `confirmAuthChange`, `404` other provider, `503` `confirmAuthChange` without account operations |
 | `POST /api/accounts/add` | | `tycswap add` | |
-| `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias"}` | `tycswap add-token` (the token is never echoed or logged) | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
+| `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias", "baseUrl"}` | `tycswap add-token [--base-url]` (the token is never echoed or logged); `503` with a `baseUrl` when the facade cannot store one | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
 | `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y` | `400` bare key, `404` other provider |
 | `POST /api/accounts/{key}/alias` | `{"alias": "<name>"}` (empty unsets) | `tycswap alias` | `400` bare key, `404` other provider |
 | `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` | `400` missing slot or bare key, `404` other provider |
@@ -4194,8 +4305,9 @@ Inside the backup root:
 
 | Path | Contents |
 |------|----------|
-| `sequence.json` | The account registry: `activeAccountNumber`, `lastUpdated`, the `sequence` array of slot numbers, and an `accounts` map keyed by slot (`email`, `uuid`, `organizationUuid`, `organizationName`, `added`, and optional `alias`, `kind: "api_key"`, `disabled: true`). |
+| `sequence.json` | The account registry: `activeAccountNumber`, `lastUpdated`, the `sequence` array of slot numbers, and an `accounts` map keyed by slot (`email`, `uuid`, `organizationUuid`, `organizationName`, `added`, and optional `alias`, `kind: "api_key"`, `disabled: true`, and with `kind: "api_key"` a `baseUrl`, the endpoint the key is for). |
 | `settings.json` | Settings (see SETTINGS). |
+| `claude-settings.prev.json` | Present while an API-key account with a base URL is active (DESIGN A46): what the three keys of Claude Code's `settings.json` the switch owns, `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN` (written) and `env.ANTHROPIC_API_KEY` (removed), held before (`{"version": 1, "settingsPath", "keys": {"<key>": {"present", "value"?}}}`, including whether `env` existed), mode 0600. A switch onto any other account restores them from it and removes it; one that is not a complete record (version 1, an entry for `env` and each key, nothing after it) is corrupt and stops the switch. `tycswap purge` deletes it and says so first. |
 | `mappings.json` | Directory→account mappings (`schemaVersion`, `mappings` keyed by absolute path). |
 | `autoswitch_state.json` | `tycswap auto` cooldown / quarantine state, guarded by `.autoswitch_state.lock`. |
 | `configs/` | Per-account config snapshots, `.claude-config-<n>-<email>.json`. `<email>` is the account's email as `add` accepts it (one `@`, at most 254 bytes, no whitespace, control character, `/`, `\` or `< > : " | ? *`), so the name is a single path component. |
@@ -4216,6 +4328,7 @@ Claude Code's own files that tycswap reads and writes:
 |------|------|
 | `~/.claude.json` (or `<CLAUDE_CONFIG_DIR>/.claude.json`, or the legacy `<config_home>/.config.json` when present) | The global config; the active `oauthAccount` lives here. |
 | `~/.claude/.credentials.json` (file backend) | The active OAuth credentials, and the seat's MCP server logins and client secrets (`mcpOAuth`, `mcpOAuthClientConfig`), which it holds alone on an API-key seat. |
+| `~/.claude/settings.json` (or `<CLAUDE_CONFIG_DIR>/settings.json`) | Claude Code's own settings. While an API-key account with a base URL is active, tycswap writes two keys there, `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN`, and removes `env.ANTHROPIC_API_KEY`; it puts back what the three held when it is not. Every other key is left as it is; the file is written atomically and keeps its mode (a new one is 0600); one that is not a JSON object, or is a symbolic link (a dotfile manager's), is never rewritten: the switch onto such an account is refused instead. The dashboard reads it for the auth-overrides notice, which leaves the two written keys out while the record says they are tycswap's and their account is the active one. |
 
 The codex CLI's files that tycswap reads and writes:
 

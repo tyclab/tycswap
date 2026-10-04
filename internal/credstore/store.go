@@ -71,6 +71,10 @@ type Store interface {
 	// Keychain item while in use, else the plaintext file), "" when there is
 	// none. Unlike ReadActive it returns one holding seat-wide keys only.
 	ReadLiveOAuth() string
+	// ClearActive removes the managed key and the OAuth login, keeping the
+	// login's seat-wide part, and stores nothing in their place: the active
+	// account authenticates through Claude Code's settings.json (DESIGN A46).
+	ClearActive() error
 
 	// ReadBackup returns a slot's backup credential (.enc-wins), "" when missing;
 	// it never fails (all backend errors are swallowed with a warning log).
