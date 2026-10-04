@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/paths"
 )
 
@@ -53,7 +54,22 @@ var authOverrideSettings = []string{"apiKeyHelper", "env.ANTHROPIC_API_KEY", "en
 // the Deps.AuthOverrides default, over os.Getenv and the live config home's
 // settings.json.
 func DetectAuthOverrides(getenv func(string) string, settingsPath string) AuthOverridesView {
+	return detectAuthOverrides(getenv, settingsPath, "")
+}
+
+// detectAuthOverrides is DetectAuthOverrides that knows tycswap's own
+// endpoint profile (DESIGN A46): while the record at sidecarPath says the
+// profile is in settingsPath, its env.ANTHROPIC_BASE_URL and
+// env.ANTHROPIC_AUTH_TOKEN are the active account's login, not something that
+// overrides it, and are not listed.
+func detectAuthOverrides(getenv func(string) string, settingsPath, sidecarPath string) AuthOverridesView {
 	v := AuthOverridesView{Env: []string{}, Settings: []string{}, SettingsPath: settingsPath}
+	ours := map[string]bool{}
+	if sidecarPath != "" && ccsettings.IsApplied(sidecarPath) && ccsettings.RecordedSettingsPath(sidecarPath) == settingsPath {
+		for _, k := range ccsettings.OwnedKeys() {
+			ours[k] = true
+		}
+	}
 	if getenv != nil {
 		for _, k := range authOverrideEnv {
 			if strings.TrimSpace(getenv(k)) != "" {
@@ -70,6 +86,9 @@ func DetectAuthOverrides(getenv func(string) string, settingsPath string) AuthOv
 		return v
 	}
 	for _, k := range authOverrideSettings {
+		if ours[k] {
+			continue
+		}
 		if val, ok := lookup(root, k); ok && !blank(val) {
 			v.Settings = append(v.Settings, k)
 		}
@@ -103,7 +122,12 @@ func blank(v any) bool {
 	return ok && strings.TrimSpace(s) == ""
 }
 
-// defaultAuthOverrides is DetectAuthOverrides over this process.
-func defaultAuthOverrides() AuthOverridesView {
-	return DetectAuthOverrides(os.Getenv, filepath.Join(paths.GetClaudeConfigHome(), "settings.json"))
+// defaultAuthOverrides is DetectAuthOverrides over this process, with the
+// endpoint profile's record in the backup root backupDir ("" for none).
+func defaultAuthOverrides(backupDir string) AuthOverridesView {
+	sidecar := ""
+	if backupDir != "" {
+		sidecar = filepath.Join(backupDir, ccsettings.SidecarName)
+	}
+	return detectAuthOverrides(os.Getenv, paths.GetClaudeSettingsPath(), sidecar)
 }

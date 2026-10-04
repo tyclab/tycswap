@@ -169,6 +169,24 @@ func (f *fakeFacade) AddAccountFromToken(token string, email, slotArg *string, a
 	return f.errFor("AddAccountFromToken")
 }
 
+// AddAccountFromTokenWithBaseURL is the optional BaseURLAdder method
+// (DESIGN A46); withoutBaseURLAdder hides it.
+func (f *fakeFacade) AddAccountFromTokenWithBaseURL(token, baseURL string, email, slotArg *string, assumeYes bool) error {
+	e := "<nil>"
+	if email != nil {
+		e = *email
+	}
+	s := "<nil>"
+	if slotArg != nil {
+		s = *slotArg
+	}
+	f.mu.Lock()
+	f.lastToken = token
+	f.mu.Unlock()
+	f.record(fmt.Sprintf("AddAccountFromTokenWithBaseURL(<token>,%s,%s,%s,%v)", baseURL, e, s, assumeYes))
+	return f.errFor("AddAccountFromTokenWithBaseURL")
+}
+
 func (f *fakeFacade) BackupDir() string                                      { return "/tmp/backups" }
 func (f *fakeFacade) SetPollPolicyInputs(threshold float64, models []string) {}
 func (f *fakeFacade) ClearPollPolicyInputs()                                 {}
@@ -519,7 +537,13 @@ type harness struct {
 
 type option func(*harness, *Deps)
 
-func withNoAccounts() option   { return func(h *harness, d *Deps) { d.Accounts = nil } }
+func withNoAccounts() option { return func(h *harness, d *Deps) { d.Accounts = nil } }
+
+// withoutBaseURLAdder serves a facade that has only the frozen Facade
+// methods, as a build without add-token's base URL would.
+func withoutBaseURLAdder() option {
+	return func(h *harness, d *Deps) { d.Facade = struct{ Facade }{h.fa} }
+}
 func withNoSettings() option   { return func(h *harness, d *Deps) { d.Settings = nil } }
 func withNoAuto() option       { return func(h *harness, d *Deps) { d.Auto = nil } }
 func withNoAutoEvents() option { return func(h *harness, d *Deps) { d.AutoEvents = nil } }

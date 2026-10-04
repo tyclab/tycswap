@@ -136,6 +136,11 @@
     var parts = [a.alias, a.email].filter(Boolean);
     return '#' + a.number + (parts.length ? ' ' + parts.join(' \u00b7 ') : '');
   }
+  // hostOf is the host (and port) of an API-key account's base URL, which is
+  // what a row shows; the whole URL is in its tooltip (DESIGN A46).
+  function hostOf(u) {
+    try { return new URL(u).host || u; } catch (e) { return u; }
+  }
 
   function toast(msg, kind) {
     var box = $('toasts');
@@ -886,8 +891,9 @@
     var out = [];
     var active = claudeRows(st).filter(function (a) { return a.isActive; })[0];
     if (active && active.kind === 'api_key') {
+      var where = active.baseUrl ? 'Requests go to ' + hostOf(active.baseUrl) + '. ' : '';
       out.push(el('div', { class: 'notice notice-crit', role: 'alert' }, [
-        el('b', { text: 'Running on API-key account #' + active.number + ' — billed per token. ' }),
+        el('b', { text: 'Running on API-key account #' + active.number + ' — billed per token. ' + where }),
         el('span', { text: 'Auto-switch leaves this alone; switch back by hand, then restart your Claude Code sessions.' })
       ]));
     }
@@ -915,7 +921,11 @@
       el('span', { class: 'hdr-name ellipsis', text: accountName(active), title: active.email || '' })
     ]);
     if (active.atLimit) { who.appendChild(chip('at limit', 'crit')); }
-    if (active.kind === 'api_key') { who.appendChild(chip('API key · billed per token', 'crit', 'Claude Code is on a managed API-key account')); }
+    if (active.kind === 'api_key') {
+      who.appendChild(active.baseUrl
+        ? chip('API key · ' + hostOf(active.baseUrl), 'crit', 'Claude Code sends its requests to ' + active.baseUrl)
+        : chip('API key · billed per token', 'crit', 'Claude Code is on a managed API-key account'));
+    }
     box.appendChild(who);
     var u = active.usage || {};
     var meters = el('div', { class: 'hdr-meters' });
@@ -1011,6 +1021,7 @@
       acct.appendChild(nameRow);
       var meta = el('div', { class: 'acct-meta' });
       if (a.kind) { meta.appendChild(chip(a.kind === 'api_key' ? 'api key' : a.kind, 'kind')); }
+      if (a.baseUrl) { meta.appendChild(chip('\u2192 ' + hostOf(a.baseUrl), 'kind', 'Requests go to ' + a.baseUrl)); }
       if (a.alias && a.email) { meta.appendChild(el('span', { class: 'org', text: a.email, title: a.email })); }
       if (a.orgName) { meta.appendChild(el('span', { class: 'org', text: a.orgName, title: a.orgName })); }
       acct.appendChild(meta);
@@ -1031,6 +1042,7 @@
         sw.setAttribute('data-action', 'switch-api-key');
         sw.setAttribute('data-id', rowKey(a));
         sw.setAttribute('data-name', accountLabel(a));
+        if (a.baseUrl) { sw.setAttribute('data-endpoint', a.baseUrl); }
       } else {
         sw.setAttribute('data-post', '/api/switch/' + keyPath(a));
       }
@@ -1664,6 +1676,11 @@
   // account: it changes how Claude Code authenticates, so the server refuses
   // it unless the request carries the user's yes (DESIGN A33).
   var API_KEY_SWITCH_NOTE = 'This account authenticates with a key instead of a subscription login, and its usage is billed per token. Every Claude Code session that is already running keeps its current login until you restart it.';
+  // endpointNote is added for an account with a base URL (DESIGN A46): where
+  // the requests go, and the two settings that take them there and back.
+  function endpointNote(u) {
+    return ' This account sends Claude Code\'s requests to ' + u + ': the switch writes env.ANTHROPIC_BASE_URL and env.ANTHROPIC_AUTH_TOKEN into Claude Code\'s settings.json, and a switch to another account puts back what they held.';
+  }
 
   var ACTIONS = {
     'card-toggle': function (btn) {
@@ -1726,12 +1743,13 @@
     'add-token': function (btn) {
       return openModal({
         title: 'Add account from token',
-        message: 'Register a setup-token (sk-ant-oat01-…) or an API key (sk-ant-api…). The token is sent once and never shown again.',
+        message: 'Register a setup-token (sk-ant-oat01-…) or an API key (sk-ant-api…). With a base URL the token is that endpoint\'s API key, whatever it looks like. The token is sent once and never shown again.',
         fields: [
           { name: 'token', label: 'Token', type: 'password', required: true, placeholder: 'sk-ant-…' },
           { name: 'email', label: 'Email', type: 'email', placeholder: 'me@example.com', hint: 'Optional; identifies the account in lists.' },
           { name: 'slot', label: 'Slot', type: 'text', placeholder: 'next free', hint: 'Optional slot number.' },
-          { name: 'alias', label: 'Alias', type: 'text', placeholder: 'work', hint: 'Optional short name.' }
+          { name: 'alias', label: 'Alias', type: 'text', placeholder: 'work', hint: 'Optional short name.' },
+          { name: 'baseUrl', label: 'Base URL', type: 'text', placeholder: 'gateway URL (http or https)', hint: 'Optional: the endpoint the key is for. A switch to the account points Claude Code at it; a switch away puts its settings back.' }
         ],
         okLabel: 'Add'
       }).then(function (v) {
@@ -1740,12 +1758,14 @@
         if (v.email) { body.email = v.email; }
         if (v.slot) { body.slot = v.slot; }
         if (v.alias) { body.alias = v.alias; }
+        if (v.baseUrl) { body.baseUrl = v.baseUrl; }
         return run(btn, 'Add token', api('POST', '/api/accounts/add-token', body));
       });
     },
     'switch-api-key': function (btn) {
       var id = btn.getAttribute('data-id');
-      return confirmModal('Switch to API-key account ' + btn.getAttribute('data-name') + '?', API_KEY_SWITCH_NOTE, 'Switch').then(function (ok) {
+      var endpoint = btn.getAttribute('data-endpoint');
+      return confirmModal('Switch to API-key account ' + btn.getAttribute('data-name') + '?', API_KEY_SWITCH_NOTE + (endpoint ? endpointNote(endpoint) : ''), 'Switch').then(function (ok) {
         if (!ok) { return; }
         return run(btn, 'Switch', api('POST', '/api/switch/' + encodeURIComponent(id) + '?confirmAuthChange=1'));
       });

@@ -635,7 +635,14 @@ func (m *Model) runTokenForm(form *tokenForm) tea.Cmd {
 			slotArg = &s
 		}
 		return m.startAction("Add account from token", func() (map[string]any, error) {
-			return nil, m.facade.AddAccountFromToken(form.Token, form.Email, slotArg, true)
+			if form.BaseURL == "" {
+				return nil, m.facade.AddAccountFromToken(form.Token, form.Email, slotArg, true)
+			}
+			adder, ok := m.facade.(baseURLAdder)
+			if !ok {
+				return nil, errNoBaseURL
+			}
+			return nil, adder.AddAccountFromTokenWithBaseURL(form.Token, form.BaseURL, form.Email, slotArg, true)
 		}, true)
 	}
 	occupant := m.slotOccupant(form.Slot)

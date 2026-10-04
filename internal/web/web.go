@@ -66,6 +66,13 @@ type Facade interface {
 	ClearPollPolicyInputs()
 }
 
+// BaseURLAdder is add-token with a base URL (DESIGN A46). It is not on the
+// frozen Facade: the handler asks the facade for it by type assertion, and
+// *core.Switcher provides it.
+type BaseURLAdder interface {
+	AddAccountFromTokenWithBaseURL(token, baseURL string, email, slotArg *string, assumeYes bool) error
+}
+
 // AccountOps is the account lifecycle beyond Facade (alias, move, swap, force
 // switch, token-status listing, the API-key switch approval). *core.Switcher
 // satisfies it.
@@ -433,7 +440,11 @@ func New(d Deps) (*Server, error) {
 		}
 	}
 	if d.AuthOverrides == nil {
-		d.AuthOverrides = defaultAuthOverrides
+		backupDir := ""
+		if d.Facade != nil {
+			backupDir = d.Facade.BackupDir()
+		}
+		d.AuthOverrides = func() AuthOverridesView { return defaultAuthOverrides(backupDir) }
 	}
 	// Three independent secrets, in this order: the CSRF token (the redirect
 	// fragment), the session cookie value and the one-time launch token in

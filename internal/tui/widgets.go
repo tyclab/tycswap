@@ -14,6 +14,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/termsafe"
 )
@@ -155,6 +156,19 @@ func usageRows(lastGood map[string]any, now float64) []usageRow {
 	return rows
 }
 
+// sentinelText is the sentinel line a row shows in place of its windows: the
+// sentinel's label, with the endpoint's host after it for an API-key account
+// that carries a base URL (DESIGN A46), since that is where its requests go.
+func sentinelText(acc reporting.AccountSnapshot) string {
+	label := sentinelLabel(acc.Usage.Sentinel)
+	if acc.Usage.Sentinel == apiKeySentinel && acc.BaseURL != "" {
+		if host := termsafe.Strip(ccsettings.Host(acc.BaseURL)); host != "" {
+			label += " → " + host
+		}
+	}
+	return label
+}
+
 // identityText is an account's alias-first identity, "alias (email)" or the
 // bare email. The snapshot carries the stored strings, which come from
 // exports, APIs and other tools' files, so a terminal control sequence they
@@ -204,7 +218,7 @@ func accountCardText(acc reporting.AccountSnapshot, width int, threshold *float6
 			st = segStyle{Fg: colMuted}
 			marker = "·"
 		}
-		t.add(marker+" "+sentinelLabel(acc.Usage.Sentinel), st)
+		t.add(marker+" "+sentinelText(acc), st)
 		if acc.Usage.Sentinel != apiKeySentinel {
 			if ls := lastSeenNote(acc.Usage); ls != "" {
 				t.addPlain("\n    ")
@@ -294,7 +308,7 @@ func monitorRow(acc reporting.AccountSnapshot) tableRow {
 		if acc.Usage.Sentinel == apiKeySentinel {
 			fg = colMuted
 		}
-		return newSpanRow(acc.Number, label, sentinelLabel(acc.Usage.Sentinel), fg, stale)
+		return newSpanRow(acc.Number, label, sentinelText(acc), fg, stale)
 	}
 	windows := candidateWindows(acc.Usage.LastGood, nil)
 	if len(windows) == 0 {
@@ -359,7 +373,7 @@ func miniAccountPriced(acc reporting.AccountSnapshot, width int, clk renderClock
 		if acc.Usage.Sentinel == apiKeySentinel {
 			st = segStyle{Fg: colMuted}
 		}
-		t.spanWhole(sentinelLabel(acc.Usage.Sentinel), st)
+		t.spanWhole(sentinelText(acc), st)
 		return t.fit(width)
 	}
 

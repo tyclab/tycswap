@@ -306,7 +306,7 @@
           <li><strong>Pick the active one</strong> from the Dashboard (the row's <em>Switch</em>) or turn on Auto mode and let it decide.</li>
           <li><strong>Restart running Claude Code sessions</strong> after a switch (<code>claude --continue</code> picks up where you were). The Sessions tab shows what is running.</li>
         </ol>
-        <p class="muted">Have a setup token or an API key instead of a browser login? <em>Add token…</em> here, or <code>{{.Name}} add-token</code> in a terminal. API-key accounts have no usage windows, and neither Auto mode nor a rotation ever moves onto one: you switch to one by hand and confirm.</p>
+        <p class="muted">Have a setup token or an API key instead of a browser login? <em>Add token…</em> here, or <code>{{.Name}} add-token</code> in a terminal. API-key accounts have no usage windows, and neither Auto mode nor a rotation ever moves onto one: you switch to one by hand and confirm. An API-key account may carry a <strong>base URL</strong> (the field in <em>Add token…</em>, or <code>{{.Name}} add-token --base-url</code>): a switch to it writes the endpoint and the key into Claude Code's <code>settings.json</code> as <code>env.ANTHROPIC_BASE_URL</code> and <code>env.ANTHROPIC_AUTH_TOKEN</code>, and a switch to any other account puts back exactly what those two held.</p>
       </article>
 
       <article class="card guide-section" id="g-switch">

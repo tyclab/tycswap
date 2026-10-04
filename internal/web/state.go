@@ -225,6 +225,11 @@ func accountRow(a reporting.AccountSnapshot) map[string]any {
 	} else {
 		row["usage"] = usage
 	}
+	if a.BaseURL != "" {
+		// The endpoint an API-key account sends its requests to (DESIGN
+		// A46); the page shows its host.
+		row["baseUrl"] = a.BaseURL
+	}
 	for k, v := range jsonout.AtLimitFields(a.AtLimit, a.LimitingWindows) {
 		row[k] = v
 	}
