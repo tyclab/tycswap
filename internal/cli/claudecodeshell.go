@@ -15,14 +15,11 @@ import (
 	"github.com/tyclab/tycswap/internal/web"
 )
 
-// setClaudeCode takes a fresh Claude Code check and repaints the menu. A newly
-// available version is announced once per version; a missing Claude Code only
-// shows in the menu, so a machine that has its reasons is not told again at
-// every start.
-func (a *appShell) setClaudeCode(st ccversion.Status) { a.storeClaudeCode(st, true) }
-
-// storeClaudeCode is setClaudeCode; announce false only marks a new version
-// as announced, for a check whose caller reports the outcome itself (A44).
+// storeClaudeCode takes a fresh Claude Code check and repaints the menu. A
+// newly available version is announced once per version; a missing Claude
+// Code only shows in the menu, so a machine that has its reasons is not told
+// again at every start. announce false only marks a new version as
+// announced, for a check whose caller reports the outcome itself (A44).
 //
 // A check that could not learn the newest version keeps the one the check
 // before it learnt, as long as the same Claude Code is installed, and brings

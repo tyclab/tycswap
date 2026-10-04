@@ -58,7 +58,7 @@ func hasCall(calls []string, prefix string) bool {
 // then runs the installer's own upgrade and looks again.
 func TestClaudeCodeUpdateRow(t *testing.T) {
 	sh, ft, calls := claudeShell(t, true)
-	sh.setClaudeCode(brewSeat("2.1.280", "2.1.281"))
+	sh.storeClaudeCode(brewSeat("2.1.280", "2.1.281"), true)
 	it, ok := ft.item("claude-code")
 	if !ok || it.Title != "Update Claude Code 2.1.280 → 2.1.281…" || it.Disabled || it.Sub != "with Homebrew · running sessions keep the old one" {
 		t.Fatalf("row = %+v (present %v)", it, ok)
@@ -66,7 +66,7 @@ func TestClaudeCodeUpdateRow(t *testing.T) {
 	if len(ft.notes) != 1 || !strings.Contains(ft.notes[0], "Claude Code 2.1.281 is available") {
 		t.Errorf("notes = %v", ft.notes)
 	}
-	sh.setClaudeCode(brewSeat("2.1.280", "2.1.281")) // the next check: no second announcement
+	sh.storeClaudeCode(brewSeat("2.1.280", "2.1.281"), true) // the next check: no second announcement
 	if len(ft.notes) != 1 {
 		t.Errorf("announced twice: %v", ft.notes)
 	}
@@ -84,7 +84,7 @@ func TestClaudeCodeUpdateRow(t *testing.T) {
 // "Cancel" runs nothing.
 func TestClaudeCodeUpdateCancelled(t *testing.T) {
 	sh, _, calls := claudeShell(t, false)
-	sh.setClaudeCode(brewSeat("2.1.280", "2.1.281"))
+	sh.storeClaudeCode(brewSeat("2.1.280", "2.1.281"), true)
 	sh.click("claude-code")
 	if hasCall(*calls, "run:") {
 		t.Errorf("ran after Cancel: %v", *calls)
@@ -97,7 +97,7 @@ func TestClaudeCodeUpdateFails(t *testing.T) {
 	sh.act.RunClaudeCode = func(ccversion.Command, *ccversion.Installed) (string, error) {
 		return "Error: claude-code: Download failed\n", errors.New("exit status 1")
 	}
-	sh.setClaudeCode(brewSeat("2.1.280", "2.1.281"))
+	sh.storeClaudeCode(brewSeat("2.1.280", "2.1.281"), true)
 	sh.click("claude-code")
 	if last := ft.notes[len(ft.notes)-1]; !strings.Contains(last, "update failed | Error: claude-code: Download failed") {
 		t.Errorf("last note = %q", last)
@@ -109,7 +109,7 @@ func TestClaudeCodeUpdateFails(t *testing.T) {
 func TestClaudeCodeUpdateVerifiesTheVersion(t *testing.T) {
 	sh, ft, _ := claudeShell(t, true)
 	sh.act.CheckClaudeCode = func() ccversion.Status { return brewSeat("2.1.280", "2.1.281") }
-	sh.setClaudeCode(brewSeat("2.1.280", "2.1.281"))
+	sh.storeClaudeCode(brewSeat("2.1.280", "2.1.281"), true)
 	sh.click("claude-code")
 	if last := ft.notes[len(ft.notes)-1]; !strings.Contains(last, "update failed | the installer finished, but Claude Code is still at 2.1.280 (expected 2.1.281 or newer)") {
 		t.Errorf("last note = %q", last)
@@ -133,7 +133,7 @@ func TestClaudeCodeRowStates(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sh, ft, _ := claudeShell(t, true)
-			sh.setClaudeCode(tc.st)
+			sh.storeClaudeCode(tc.st, true)
 			it, ok := ft.item("claude-code")
 			if !ok || it.Title != tc.title || it.Disabled != tc.disabled {
 				t.Errorf("row = %+v (present %v), want %q disabled=%v", it, ok, tc.title, tc.disabled)
@@ -151,7 +151,7 @@ func TestClaudeCodeMissingShowsTheInstallLine(t *testing.T) {
 	sh, ft, calls := claudeShell(t, true)
 	st := brewSeat("", "")
 	st.Installed = nil
-	sh.setClaudeCode(st)
+	sh.storeClaudeCode(st, true)
 	sh.click("claude-code")
 	if hasCall(*calls, "run:") || hasCall(*calls, "ask:") {
 		t.Errorf("calls = %v", *calls)
@@ -169,7 +169,7 @@ func TestClaudeCodeRowHidden(t *testing.T) {
 	if _, ok := ft.item("claude-code"); ok {
 		t.Error("row shown before any check")
 	}
-	sh.setClaudeCode(brewSeat("2.1.280", "2.1.281"))
+	sh.storeClaudeCode(brewSeat("2.1.280", "2.1.281"), true)
 	if _, ok := ft.item("claude-code"); ok {
 		t.Error("row shown without RunClaudeCode")
 	}
@@ -205,7 +205,7 @@ func TestBrandRowNamesClaudeCode(t *testing.T) {
 		{brewSeat("2.1.281", "2.1.281"), "\nClaude Code 2.1.281 · latest"},
 		{brewSeat("2.1.281", ""), "\nClaude Code 2.1.281"},
 	} {
-		sh.setClaudeCode(tc.st)
+		sh.storeClaudeCode(tc.st, true)
 		if sub := brandSub(t, ft); !strings.HasSuffix(sub, tc.want) || !strings.Contains(sub, "auto-switch") {
 			t.Errorf("brand = %q, want suffix %q", sub, tc.want)
 		}

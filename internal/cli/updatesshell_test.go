@@ -138,8 +138,8 @@ func TestUpdateBadgeFollowsEachSource(t *testing.T) {
 			},
 			func(sh *appShell) { sh.click("install-update") }},
 		{"Claude Code",
-			func(sh *appShell) { sh.setClaudeCode(brewSeat("2.1.280", "2.1.281")) },
-			func(sh *appShell) { sh.setClaudeCode(brewSeat("2.1.281", "2.1.281")) }},
+			func(sh *appShell) { sh.storeClaudeCode(brewSeat("2.1.280", "2.1.281"), true) },
+			func(sh *appShell) { sh.storeClaudeCode(brewSeat("2.1.281", "2.1.281"), true) }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sh, ft, rig := updatesShell(t, true)
@@ -181,7 +181,7 @@ func TestUpdatesSectionRowsAndOrder(t *testing.T) {
 	sh, ft, _ := updatesShell(t, true)
 	sh.act.LatestVersion = func() (string, error) { return "v2.2.0", nil }
 	_, _ = sh.checkRelease()
-	sh.setClaudeCode(brewSeat("2.1.280", "2.1.281"))
+	sh.storeClaudeCode(brewSeat("2.1.280", "2.1.281"), true)
 
 	ids, headers := menuShape(ft)
 	if ids != "brand,open,install-update,claude-code,switch:1,switch:2,auto,autostart,update,quit" {
@@ -212,7 +212,7 @@ func TestUpdatesSectionRowsAndOrder(t *testing.T) {
 		}
 	}
 
-	sh.setClaudeCode(brewSeat("2.1.281", "2.1.281"))
+	sh.storeClaudeCode(brewSeat("2.1.281", "2.1.281"), true)
 	if ids, headers := menuShape(ft); ids != "brand,open,install-update,switch:1,switch:2,auto,claude-code,autostart,update,quit" || !strings.HasPrefix(headers, "Update available,") {
 		t.Errorf("latest Claude Code belongs to App: %s / %s", ids, headers)
 	}
@@ -313,7 +313,7 @@ func TestUpdatesFacadeView(t *testing.T) {
 	f.sh.Store(sh)
 	sh.act.LatestVersion = func() (string, error) { return "v2.2.0", nil }
 	_, _ = sh.checkRelease()
-	sh.setClaudeCode(brewSeat("2.1.280", "2.1.281"))
+	sh.storeClaudeCode(brewSeat("2.1.280", "2.1.281"), true)
 
 	v := f.View()
 	if !v.Available || v.Checking || v.CheckedAt == nil {
@@ -391,7 +391,7 @@ func TestUpdatesFacadeApply(t *testing.T) {
 	rig.mu.Lock()
 	rig.claude = brewSeat("2.1.280", "2.1.281")
 	rig.mu.Unlock()
-	sh.setClaudeCode(brewSeat("2.1.280", "2.1.281"))
+	sh.storeClaudeCode(brewSeat("2.1.280", "2.1.281"), true)
 	res, err = f.Apply("claude-code")
 	if err != nil || !strings.HasPrefix(res.Message, "Claude Code is updated.") || res.Output != "==> Upgrading claude-code" {
 		t.Errorf("claude-code: %+v, %v", res, err)
@@ -402,7 +402,7 @@ func TestUpdatesFacadeApply(t *testing.T) {
 	if sh.claudeCodeUpdate() {
 		t.Error("the update is still offered after the run")
 	}
-	sh.setClaudeCode(brewSeat("2.1.280", "2.1.281"))
+	sh.storeClaudeCode(brewSeat("2.1.280", "2.1.281"), true)
 	sh.act.RunClaudeCode = func(ccversion.Command, *ccversion.Installed) (string, error) {
 		return "==> Downloading claude-code\nError: Download failed\n", errors.New("exit status 1")
 	}
@@ -420,7 +420,7 @@ func TestUpdatesFacadeApply(t *testing.T) {
 	}
 
 	// One update at a time, whoever started the other.
-	sh.setClaudeCode(brewSeat("2.1.280", "2.1.281"))
+	sh.storeClaudeCode(brewSeat("2.1.280", "2.1.281"), true)
 	sh.act.LatestVersion = func() (string, error) { return "v2.3.0", nil }
 	_, _ = sh.checkRelease()
 	sh.applyMu.Lock()
@@ -536,10 +536,10 @@ func TestUpdatesViewCarriesEveryError(t *testing.T) {
 // the check before it found, with its error, so the row and the badge stay.
 func TestClaudeCodeFailedCheckKeepsTheUpdate(t *testing.T) {
 	sh, _, _ := updatesShell(t, true)
-	sh.setClaudeCode(brewSeat("2.1.280", "2.1.281"))
+	sh.storeClaudeCode(brewSeat("2.1.280", "2.1.281"), true)
 	offline := brewSeat("2.1.280", "")
 	offline.Err = errors.New("HTTP 502")
-	sh.setClaudeCode(offline)
+	sh.storeClaudeCode(offline, true)
 	if !sh.claudeCodeUpdate() || !sh.updateWaiting() {
 		t.Fatal("a failed check forgot the Claude Code update")
 	}
@@ -553,7 +553,7 @@ func TestClaudeCodeFailedCheckKeepsTheUpdate(t *testing.T) {
 	// Another Claude Code now: the old finding says nothing about it.
 	other := brewSeat("2.1.281", "")
 	other.Err = offline.Err
-	sh.setClaudeCode(other)
+	sh.storeClaudeCode(other, true)
 	if sh.claudeCodeUpdate() {
 		t.Error("the update was kept for a different version")
 	}
