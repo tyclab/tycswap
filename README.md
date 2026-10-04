@@ -633,8 +633,8 @@ $ tycswap upgrade
 tycswap was built from a checkout: git pull && make install
 ```
 
-Any other binary — a release download, or a copy outside a Go bin directory —
-is replaced by the newest release's build for this machine
+A release binary (the builds a release publishes) is replaced by the newest
+release's build for this machine
 (`tycswap_<version>_<os>_<arch>` from the
 [releases](https://github.com/tyclab/tycswap/releases)), downloaded over https
 next to it, checked against that release's `SHA256SUMS` (a build without
@@ -645,8 +645,12 @@ $ tycswap upgrade
 Updated tycswap 0.6.0 → 0.7.0 (/home/me/.local/bin/tycswap).
 ```
 
-A binary in the Nix store, or in a directory tycswap cannot write, is upgraded
-by hand: `tycswap upgrade` prints the releases URL. On Windows a go-installed
+A release binary that a package manager installed (in the Nix store, a
+Homebrew Cellar, Scoop's apps or WindowsApps, or started through a symbolic
+link) is left to that package manager, and `tycswap upgrade` says so; one in a
+directory or file tycswap cannot write is upgraded by hand from the releases
+URL it prints. A go-installed binary outside a Go bin directory is never
+downloaded over: `upgrade` prints the `go install` line. On Windows a go-installed
 `tycswap.exe` is not replaced while it runs; `upgrade` prints the `go install`
 command for the user to run. A downloaded `tycswap.exe` is replaced in place
 (the running file is moved aside to `tycswap.exe.old`, which goes at the next

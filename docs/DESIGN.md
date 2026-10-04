@@ -3441,17 +3441,45 @@ program, and the passive notice announced upstream releases. Now:
 3. `SelfUpgrade` has no downgrade guard: it installs `@latest`, and the
    notice only fires when the latest tag is semver-greater.
 
-**Amended by A36:** a third build source, the release build (`release.yml`:
-no VCS stamp, `(devel)` main version, `-trimpath`, and a release version —
-semver without a pre-release part — linked into `internal/version`), is no
-longer taken for a checkout build. `SelfUpgrade` dispatches on the build and
-the binary's place: a checkout build is told the checkout's command; a binary
-in a Go bin directory gets `go install` (print-only on Windows); any other
-binary outside the Nix store whose directory this process can write is
-replaced by the newest release's build, downloaded over it; the rest (the Nix
-store, an unwritable directory) gets the releases page. Downloading has the
-downgrade guard `go install` lacks: nothing happens unless the latest tag is
-semver-greater than the running version.
+**Amended by A36:** a third build source, the release build, is no longer
+taken for a checkout build, and `SelfUpgrade` follows one plan
+(`update.UpgradePlan`) for every caller. Before, every release binary — and a
+Nix or Windows one — was told "built from a checkout: git pull && make
+install" by `upgrade`, the passive notice, the dashboard's Updates card and
+the tray: the classification looked for the release build's `-ldflags` in
+the build info, which Go leaves out whenever `-trimpath` is set
+(`cmd/go/internal/load/pkg.go`; go.dev/issue/52372), and Go records no
+`-buildvcs` either. The decision now reads only what a build records for
+certain (`classifyBuildInfo(info, version.Version)`):
+
+1. any `vcs.*` setting → a checkout build (since Go 1.24 its module version
+   is a pseudo-version too) → "git pull && make install";
+2. else a module version that is valid semver and not a pseudo-version → a
+   module build (`go install …@<version>`; `internal/version` takes that
+   version) → `go install …@latest` in a Go bin directory (`$GOBIN`,
+   `$GOPATH/bin`, `$HOME/go/bin`; print-only on Windows), guidance elsewhere;
+   a module build never downloads;
+3. else no module version (`""` or `(devel)`) and a release tag linked into
+   `internal/version` (`vX.Y.Z`, or a pre-release such as `vX.Y.Z-rc.1`; not
+   the unlinked `v0.0.0-dev`, a pseudo-version, or a `git describe` shape
+   `-N-gHASH` / `-dirty`) → a release build. Its path resolved
+   (`filepath.EvalSymlinks(os.Executable())`): under `/nix/store/`, in a
+   package tree (`/Cellar/`, `/scoop/apps/`, `/WindowsApps/`) or started
+   through a symbolic link → the package manager's, and the hint names it
+   (never the releases page); else, when this process can write the directory
+   and the file and owns the file (on Windows: the file is not read-only) →
+   the newest release downloaded over it; else the releases page;
+4. else → a checkout build.
+
+`go build`, `make build` and a `-buildvcs=false` build are checkout builds,
+the release recipe a release build that downloads, `go install` a module
+build, a Nix store binary the package manager's, and a Windows release
+`.exe` downloads. Deciding writes nothing (stat and access checks only): the
+one temporary file is the download's own. A test builds `./cmd/tycswap` with
+`release.yml`'s flags and with a plain `go build`, installs a module build
+from a module proxy in a directory, and classifies each binary's real build
+info. Downloading has the downgrade guard `go install` lacks: nothing
+happens unless the latest tag is semver-greater than the running version.
 
 
 ---
@@ -4810,11 +4838,11 @@ go-installed binary, A24) and notifies the outcome; a decline, or a platform
 without a dialog, leaves a notification and an *Install tycswap X…* row.
 Nothing is installed without the user's yes.
 
-**The install is `tycswap upgrade`'s own** (A24 as amended here), which now
-also downloads over the binary, as the reference does for every build that
-was not go-installed: for a release binary (or a copy outside a Go bin
-directory) outside the Nix store whose directory can be written, it reads the
-latest tag from the release endpoint, downloads that release's `SHA256SUMS`
+**The install is `tycswap upgrade`'s own** (A24 as amended here, with its
+decision table), which now also downloads over the binary, as the reference
+does for every build that was not go-installed: for a release build this
+process can replace, outside a package manager's tree, it reads the latest
+tag from the release endpoint, downloads that release's `SHA256SUMS`
 and `tycswap_<tag>_<goos>_<goarch>[.exe]` from `<ReleasesURL>/download/<tag>/`
 over https only (redirects included, at most 256 MiB) into a temporary file
 in the binary's directory, refuses the build unless `SHA256SUMS` has exactly
@@ -4823,14 +4851,14 @@ over the binary (`replaceBinary`). On Windows the running `.exe` is renamed to
 `.exe.old` first and put back if the second rename fails; the app (local and
 remote) removes the `.old` file at its next start (`RemoveStaleBinary`). A
 build the tray cannot upgrade — a checkout build, a go-installed binary on
-Windows (where `go install` cannot replace the running `.exe`), a binary in
-the Nix store or in an unwritable directory — is told how (the checkout's
-command, the `go install` line, the releases page: `AppUpdateView.Hint`) in a
+Windows (where `go install` cannot replace the running `.exe`) or outside a
+Go bin directory, a package manager's binary, a release build it cannot
+replace — is told how (the checkout's command, the `go install` line, the
+package manager, the releases page: `AppUpdateView.Hint`) in a
 notification instead of a dialog, and the row reads *tycswap X is
-available…*; a release binary is never told `go install`. The app works the
-hint out once, at its start (it creates and removes a file in the binary's
-directory to learn whether it can write there), and the card carries it only
-while an update waits.
+available…*; a release binary is never told `go install`. The app decides
+the plan once, at its start, from stat and access checks (no file is written
+to learn it), and the card carries the hint only while an update waits.
 
 **Restart.** An install that replaced the running binary (its modification
 time changed) restarts the app by itself: the shell's `Restart` sets a flag

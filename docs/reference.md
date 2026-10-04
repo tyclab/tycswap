@@ -2587,9 +2587,11 @@ use `autoUpdatesChannel` from the user's `settings.json` under
 `CLAUDE_CONFIG_DIR` or `~/.claude` (`stable` or `latest`; absent means `latest`).
 Project and managed policies still apply in the installer. *Install
 update* runs `tycswap upgrade`'s own path (`go install` for a go-installed
-binary, the release downloaded over any other binary it can write; a checkout
-build, a go-installed binary on Windows, or one in the Nix store or an
-unwritable directory is shown how to upgrade instead of a button); *Update Claude Code* runs the installer's own
+binary in a Go bin directory, the next release downloaded over a release
+build it can replace; a checkout build, a go-installed binary on Windows or
+outside a Go bin directory, a package manager's binary, or a release build it
+cannot replace is shown how to upgrade instead of a button, decided once when
+the dashboard starts); *Update Claude Code* runs the installer's own
 command (`claude update`, `npm install -g @anthropic-ai/claude-code@latest`,
 `brew upgrade --cask <cask>`, `winget upgrade`). A missing Claude Code is
 named with the install line to type, never installed from the page. A check
@@ -2997,19 +2999,25 @@ Legacy: `tycswap --upgrade`. Alias: `tycswap update`.
 ### Description
 
 Self-upgrades to the latest tycswap release. It runs before the switcher is
-constructed, so upgrading never touches config or credentials. A binary built
-from a checkout (`make build`, `make install`, `go build` in a clone: its build
-info carries a VCS stamp, or the `(devel)` version without the release build's
-`-trimpath` and linked release version) is never re-installed from a remote;
-it prints `tycswap was built from a checkout: git pull && make install` and
-exits 1. A binary that lives in a Go-managed bin directory (`$GOBIN` when it
-is set, then `$GOPATH/bin`, then `$HOME/go/bin`) re-runs `go install
-github.com/tyclab/tycswap/cmd/tycswap@latest`; on Windows the running
-executable is locked, so it prints that command rather than running it.
+constructed, so upgrading never touches config or credentials. What it does
+depends on how the binary was built, read from its build info and the
+version linked into it (build flags play no part: Go does not record
+`-buildvcs` and drops `-ldflags` whenever `-trimpath` is set), and on where it
+is:
 
-Any other binary — a release download, or a copy outside a Go bin directory
-— is replaced by the newest release's build when it is outside the Nix store
-and its directory can be written: `upgrade` reads the latest release's tag from
+| Build | Recognised by | `upgrade` |
+|-------|---------------|-----------|
+| A checkout build (`make build`, `make install`, `go build` in a clone) | a VCS stamp in the build info; also anything that is none of the two below | prints `tycswap was built from a checkout: git pull && make install`, exits 1 |
+| `go install github.com/tyclab/tycswap/cmd/tycswap@<version>` | a module version that is not a pseudo-version, no VCS stamp | in a Go bin directory (`$GOBIN` when it is set, then `$GOPATH/bin`, then `$HOME/go/bin`) re-runs `go install …@latest` (on Windows, where the running executable is locked, prints that command); elsewhere prints how to upgrade by hand. Never downloads |
+| A release build (the binaries a release publishes) | no module version, no VCS stamp, and a release tag (`vX.Y.Z`, or a pre-release such as `vX.Y.Z-rc.1`) linked into `internal/version` | see below |
+
+A release build, its path resolved through symbolic links, is a package
+manager's when it lies in the Nix store, a Homebrew `Cellar`, Scoop's `apps`
+or `WindowsApps`, or was started through a symbolic link: `upgrade` says so
+and leaves it to the package manager. One this process can replace — it can
+write the directory and the file and owns the file (on Windows: the file is
+not read-only) — gets the newest release downloaded over it: `upgrade` reads
+the latest release's tag from
 `Endpoint`, compares it with its own version (nothing to do when it is not
 newer), downloads `SHA256SUMS` and `tycswap_<tag>_<os>_<arch>[.exe]` from
 `<ReleasesURL>/download/<tag>/` over https only (redirects included; at most
@@ -3017,9 +3025,9 @@ newer), downloads `SHA256SUMS` and `tycswap_<tag>_<os>_<arch>[.exe]` from
 `SHA256SUMS` has exactly one line for that file and its sha256 matches, marks
 it executable and renames it over the binary. On Windows the running `.exe`
 is first renamed to `<name>.exe.old` (and put back if the second rename
-fails); `tycswap app` removes the `.old` file when it next starts. A binary in
-the Nix store, or in a directory that cannot be written, gets manual
-guidance.
+fails); `tycswap app` removes the `.old` file when it next starts. Any other
+release build gets manual guidance. Deciding this writes nothing: it takes
+stat and access checks, not a probe file.
 
 Packagers can point both at another place at link time; the defaults are
 tycswap's own module and releases:
@@ -3045,9 +3053,10 @@ replaces the binary; on a download upgrade, `upgrade` does (a temporary
 
 The exit status of the `go install` subprocess on a `go install` layout; `0`
 after a download upgrade or when the newest release is not newer; `1` when
-only guidance was printed (checkout build, Nix store or unwritable directory,
-Windows with a `go install` layout, `go` missing from PATH) or a download
-upgrade was refused or failed (nothing is replaced then).
+only guidance was printed (checkout build, a package manager's binary, a
+binary this process cannot replace, a module build outside a Go bin
+directory, Windows with a `go install` layout, `go` missing from PATH) or a
+download upgrade was refused or failed (nothing is replaced then).
 
 ### Output
 
@@ -3060,13 +3069,34 @@ tycswap was built from a checkout: git pull && make install
 After a download upgrade: `Updated tycswap <old> → <new> (<path>).`; when the
 newest release is not newer: `tycswap <version> is the latest version.`
 
-In the Nix store, or in a directory that cannot be written:
+A release build a package manager installed (`<manager>` is `Nix (it is in
+the Nix store)`, `Homebrew, which installed it`, `Scoop, which installed it`,
+`the Microsoft Store, which installed it` or `the package manager that
+installed it`):
 
 ```
-Could not upgrade this binary in place: it is not in a Go bin directory ($GOBIN, $GOPATH/bin, $HOME/go/bin)
-and its directory cannot be written (or it belongs to the Nix store).
+This tycswap was installed by a package manager: update it with <manager>.
+  binary: <path>
+```
+
+A release build this process cannot replace:
+
+```
+Could not upgrade this binary in place: this process cannot replace it (its directory or the file
+cannot be written, or it belongs to another user).
   binary: <path>
 To upgrade manually, download the build for this machine from:
+  https://github.com/tyclab/tycswap/releases
+```
+
+A `go install` build outside a Go bin directory:
+
+```
+Could not detect a `go install` layout (looked for $GOBIN, $GOPATH/bin, $HOME/go/bin).
+  binary: <path>
+To upgrade manually, run:
+  go install github.com/tyclab/tycswap/cmd/tycswap@latest
+Or download a release from:
   https://github.com/tyclab/tycswap/releases
 ```
 
@@ -4843,8 +4873,10 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   event is then emitted.
 - **Passive update notice.** After most commands, a muted one-line update notice
   may be printed to stderr when a newer tycswap release (from
-  `update.Endpoint`, see `tycswap upgrade`) is known; a checkout build is told
-  to `git pull && make install` instead of `tycswap upgrade`. It is suppressed in
+  `update.Endpoint`, see `tycswap upgrade`) is known, with what `tycswap
+  upgrade` would do: a checkout build is told to `git pull && make install`, a
+  package manager's binary to update it with that package manager, any other
+  to run `tycswap upgrade`. It is suppressed in
   `--json` mode and after `purge` and `upgrade`, and it never affects the exit
   status.
 
