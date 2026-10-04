@@ -240,6 +240,18 @@ func (a *autoFacade) remember(on bool) {
 	}
 }
 
+// stopKeepingChoice ends a running engine as the app exits, the way `tycswap
+// web` does, without recording "off": quitting the app is not turning
+// auto-switch off, and the next start resumes it (A43).
+func (a *autoFacade) stopKeepingChoice() {
+	a.mu.Lock()
+	a.statePath = ""
+	a.mu.Unlock()
+	if a.View().Running {
+		_ = a.Stop()
+	}
+}
+
 // resume starts the engine when the user left it on (A43). started is false
 // when there was nothing to resume.
 func (a *autoFacade) resume() (started bool, err error) {

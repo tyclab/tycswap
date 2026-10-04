@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/ccversion"
-	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/update"
 	"github.com/tyclab/tycswap/internal/web"
 )
@@ -25,24 +24,6 @@ import (
 // checks, the tray shell and the app's dashboard server. Only the tray (a
 // recorder) and Claude Code (a script that does what `claude --version` and
 // `claude update` do) stand in.
-
-// noAccounts is the dashboard's account side: no switcher, so no keychain.
-type noAccounts struct{ dir string }
-
-func (n noAccounts) AccountsSnapshot(map[string]bool) *reporting.AccountsSnapshot {
-	return &reporting.AccountsSnapshot{}
-}
-func (noAccounts) SwitchTo(string, bool) (map[string]any, error) { return nil, nil }
-func (noAccounts) Switch(*string, bool, []string, *string) (map[string]any, error) {
-	return nil, nil
-}
-func (noAccounts) SetAccountDisabled(string, bool) error                    { return nil }
-func (noAccounts) RemoveAccount(string, bool) error                         { return nil }
-func (noAccounts) AddAccount(*int, bool, *string) error                     { return nil }
-func (noAccounts) AddAccountFromToken(string, *string, *string, bool) error { return nil }
-func (n noAccounts) BackupDir() string                                      { return n.dir }
-func (noAccounts) SetPollPolicyInputs(float64, []string)                    {}
-func (noAccounts) ClearPollPolicyInputs()                                   {}
 
 type e2e struct {
 	t            *testing.T
@@ -128,7 +109,7 @@ esac
 
 	updates := &updatesFacade{}
 	e.srv, err = web.New(web.Deps{
-		Facade:             noAccounts{dir: root},
+		Facade:             &fakeFacade{dir: root}, // no switcher, so no keychain
 		Updates:            updates,
 		UpdatesOwnSchedule: true,
 		Sessions:           func() web.SessionsView { return web.SessionsView{} },

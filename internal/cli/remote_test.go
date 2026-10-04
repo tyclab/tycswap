@@ -257,36 +257,41 @@ func TestHeadlessAppWritesTheRemoteToken(t *testing.T) {
 
 // -- a dashboard with fakes --------------------------------------------------
 
-// remoteFakeFacade is the least web.Facade a server needs: one roster.
-type remoteFakeFacade struct {
+// fakeFacade is the least web.Facade a dashboard server needs, for the
+// remote tray's server and the updates end to end: a roster (none unless
+// given), SwitchTo recorded and failing with switchErr, the backup
+// directory, and nothing else.
+type fakeFacade struct {
 	mu        sync.Mutex
 	calls     []string
 	switchErr error
+	accounts  []reporting.AccountSnapshot
+	dir       string
 }
 
-func (f *remoteFakeFacade) record(s string) {
+func (f *fakeFacade) record(s string) {
 	f.mu.Lock()
 	f.calls = append(f.calls, s)
 	f.mu.Unlock()
 }
 
-func (f *remoteFakeFacade) Calls() []string {
+func (f *fakeFacade) Calls() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.calls...)
 }
 
-func (f *remoteFakeFacade) AccountsSnapshot(map[string]bool) *reporting.AccountsSnapshot {
-	return &reporting.AccountsSnapshot{
-		ActiveNumber: "1",
-		Accounts: []reporting.AccountSnapshot{
-			{Number: "1", Email: "alice@example.com", Alias: "work", Kind: "oauth", IsActive: true, Switchable: true},
-			{Number: "2", Email: "bob@example.com", Kind: "oauth", Switchable: true},
-		},
+func (f *fakeFacade) AccountsSnapshot(map[string]bool) *reporting.AccountsSnapshot {
+	snap := &reporting.AccountsSnapshot{Accounts: f.accounts}
+	for _, a := range f.accounts {
+		if a.IsActive {
+			snap.ActiveNumber = a.Number
+		}
 	}
+	return snap
 }
 
-func (f *remoteFakeFacade) SwitchTo(id string, jsonOut bool) (map[string]any, error) {
+func (f *fakeFacade) SwitchTo(id string, jsonOut bool) (map[string]any, error) {
 	f.record("SwitchTo(" + id + ")")
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -296,16 +301,16 @@ func (f *remoteFakeFacade) SwitchTo(id string, jsonOut bool) (map[string]any, er
 	return map[string]any{"switched": true}, nil
 }
 
-func (f *remoteFakeFacade) Switch(*string, bool, []string, *string) (map[string]any, error) {
+func (f *fakeFacade) Switch(*string, bool, []string, *string) (map[string]any, error) {
 	return nil, errors.New("not in this test")
 }
-func (f *remoteFakeFacade) SetAccountDisabled(string, bool) error                    { return nil }
-func (f *remoteFakeFacade) RemoveAccount(string, bool) error                         { return nil }
-func (f *remoteFakeFacade) AddAccount(*int, bool, *string) error                     { return nil }
-func (f *remoteFakeFacade) AddAccountFromToken(string, *string, *string, bool) error { return nil }
-func (f *remoteFakeFacade) BackupDir() string                                        { return "/tmp/backups" }
-func (f *remoteFakeFacade) SetPollPolicyInputs(float64, []string)                    {}
-func (f *remoteFakeFacade) ClearPollPolicyInputs()                                   {}
+func (f *fakeFacade) SetAccountDisabled(string, bool) error                    { return nil }
+func (f *fakeFacade) RemoveAccount(string, bool) error                         { return nil }
+func (f *fakeFacade) AddAccount(*int, bool, *string) error                     { return nil }
+func (f *fakeFacade) AddAccountFromToken(string, *string, *string, bool) error { return nil }
+func (f *fakeFacade) BackupDir() string                                        { return f.dir }
+func (f *fakeFacade) SetPollPolicyInputs(float64, []string)                    {}
+func (f *fakeFacade) ClearPollPolicyInputs()                                   {}
 
 // remoteFakeAuto records engine calls and reports a settable running flag;
 // applyErr is what ApplyModels returns while running.
@@ -396,7 +401,7 @@ func (s *remoteFakeSettings) Unset(dotted string) (bool, error) {
 type remoteFixture struct {
 	srv    *web.Server
 	base   string
-	fa     *remoteFakeFacade
+	fa     *fakeFacade
 	auto   *remoteFakeAuto
 	set    *remoteFakeSettings
 	autoEv chan web.AutoEventView
@@ -410,7 +415,10 @@ type remoteFixture struct {
 func startRemoteServer(t *testing.T, token, addr string) *remoteFixture {
 	t.Helper()
 	fx := &remoteFixture{
-		fa:     &remoteFakeFacade{},
+		fa: &fakeFacade{dir: "/tmp/backups", accounts: []reporting.AccountSnapshot{
+			{Number: "1", Email: "alice@example.com", Alias: "work", Kind: "oauth", IsActive: true, Switchable: true},
+			{Number: "2", Email: "bob@example.com", Kind: "oauth", Switchable: true},
+		}},
 		auto:   &remoteFakeAuto{},
 		set:    &remoteFakeSettings{},
 		autoEv: make(chan web.AutoEventView),

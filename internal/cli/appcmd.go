@@ -321,7 +321,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		}
 		resumeAutoSwitch(d, s)
 		serveErr := srv.Serve(ctx)
-		stopEngineKeepingChoice(d.auto)
+		d.auto.stopKeepingChoice()
 		if serveErr != nil && !errors.Is(serveErr, context.Canceled) {
 			errorTo(s.err, "Error: "+serveErr.Error())
 			return 1
@@ -469,7 +469,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		errorTo(s.err, "Error: "+err.Error())
 		return 1
 	}
-	stopEngineKeepingChoice(d.auto)
+	d.auto.stopKeepingChoice()
 	if runErr != nil {
 		errorTo(s.err, "Error: "+runErr.Error())
 		return 1
@@ -510,18 +510,6 @@ func resumeAutoSwitch(d *dashboard, s ioStreams) {
 		fmt.Fprintln(s.err, "auto-switch was on when the app last ran, but could not resume: "+err.Error())
 	case started:
 		fmt.Fprintln(s.err, "Auto-switch resumed: it was on when the app last ran.")
-	}
-}
-
-// stopEngineKeepingChoice ends a running engine as the app exits, the way
-// `tycswap web` does, without recording "off": quitting the app is not
-// turning auto-switch off, and the next start resumes it (A43).
-func stopEngineKeepingChoice(a *autoFacade) {
-	a.mu.Lock()
-	a.statePath = ""
-	a.mu.Unlock()
-	if a.View().Running {
-		_ = a.Stop()
 	}
 }
 
