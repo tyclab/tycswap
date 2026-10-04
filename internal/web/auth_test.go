@@ -18,6 +18,7 @@ var allRoutes = []struct{ method, path string }{
 	{"GET", "/api/state"},
 	{"GET", "/api/state?tokenStatus=1"},
 	{"GET", "/api/events"},
+	{"POST", "/api/launch"},
 	{"POST", "/api/switch"},
 	{"POST", "/api/switch/claude:1"},
 	{"POST", "/api/switch/claude:1?force=1"},

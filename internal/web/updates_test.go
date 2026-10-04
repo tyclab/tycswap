@@ -145,6 +145,28 @@ func TestUpdatesNoFacadeNoTicker(t *testing.T) {
 	}
 }
 
+// A facade on a schedule of its own (the tray app's shell, DESIGN A44) is
+// never asked by the serve loop: no check at start, no update ticker. The
+// page's Check now still reaches it.
+func TestUpdatesOwnScheduleIsNotChecked(t *testing.T) {
+	built := false
+	h := newHarness(t, func(h *harness, d *Deps) {
+		d.UpdatesOwnSchedule = true
+		d.UpdateTicker = func(time.Duration) (<-chan time.Time, func()) { built = true; return h.updTick, func() {} }
+	})
+	h.fireTick()
+	h.fireTick()
+	if built || len(h.upd.Calls()) != 0 {
+		t.Fatalf("the serve loop checked a self-scheduled facade: ticker %v, calls %v", built, h.upd.Calls())
+	}
+	if resp := h.post("/api/updates/check"); resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("Check now: %d", resp.StatusCode)
+	}
+	if got := h.upd.Calls(); !reflect.DeepEqual(got, []string{"Check"}) {
+		t.Fatalf("Check now calls = %v", got)
+	}
+}
+
 // Each target reaches the facade as it is, and the answer is the facade's
 // UpdateResult itself (not wrapped), followed by a fresh state.
 func TestUpdatesApplyEachTarget(t *testing.T) {
@@ -279,6 +301,13 @@ func TestUpdatesRoutesArePostOnly(t *testing.T) {
 // Refresh pushes a state at once, coalesces a burst and never blocks.
 func TestRefreshBroadcasts(t *testing.T) {
 	h := newHarness(t)
+	seen := make(chan State, 8)
+	h.s.OnState(func(st State) {
+		select {
+		case seen <- st:
+		default:
+		}
+	})
 	sse := h.openSSE()
 	defer sse.close()
 	sse.nextState(t, updTimeout) // initial
@@ -295,6 +324,16 @@ func TestRefreshBroadcasts(t *testing.T) {
 	}
 	if doc.Updates == nil || !doc.Updates.Available {
 		t.Errorf("refreshed state: updates = %+v, want the new view", doc.Updates)
+	}
+	// The in-process observer (the tray, DESIGN A35) gets the same document.
+	deadline := time.After(updTimeout)
+	for got := false; !got; {
+		select {
+		case st := <-seen:
+			got = st.Updates != nil && st.Updates.Available
+		case <-deadline:
+			t.Fatal("OnState observer not called with the refreshed state")
+		}
 	}
 	done := make(chan struct{})
 	go func() {

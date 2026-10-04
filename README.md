@@ -9,8 +9,8 @@
 tycswap keeps every login you own for an agent CLI in a numbered slot, makes one
 of them live, switches to another in place, and does that by itself before the
 live one runs into its rate limit. It shows every account's usage windows in a
-list and in a full-screen dashboard, and runs a second account in its own
-terminal beside the live one. It works with the Claude Code CLI and the VS Code
+list, in a full-screen dashboard, in the browser and in a menu-bar / tray
+icon, and runs a second account in its own terminal beside the live one. It works with the Claude Code CLI and the VS Code
 extension, and ships as a single static Go binary for Linux, macOS and Windows.
 
 It began as a fork of [dpemmons/cswap](https://github.com/dpemmons/cswap), the
@@ -85,8 +85,9 @@ is read by the other, and the layout inside the backup store is the same. The
 store itself lives at its own path (see [Data locations](#data-locations)), so
 the two never share one; `tycswap migrate` copies an existing claude-swap store
 once. The command grammar,
-exit codes, and lock protocol are identical. The macOS menu bar application is
-not part of tycswap. The update mechanism, the `tycswap env` command, the
+exit codes, and lock protocol are identical. claude-swap's macOS menu bar
+application is not ported; tycswap's own tray application, `tycswap app`, works
+on macOS, Windows and Linux. The update mechanism, the `tycswap env` command, the
 at-limit markers, and the Codex provider are Go-only; where the Go binary and the Python reference
 diverge, the divergences are enumerated in [`docs/DESIGN.md`](docs/DESIGN.md)
 §6 and its Amendments.
@@ -95,7 +96,9 @@ diverge, the divergences are enumerated in [`docs/DESIGN.md`](docs/DESIGN.md)
 
 **Prerequisites.**
 
-- Go 1.25.5 or newer to build or `go install`. The CLI builds without cgo.
+- Go 1.25.5 or newer to build or `go install`. The CLI builds without cgo; on
+  macOS the menu-bar app needs cgo (the Command Line Tools: `xcode-select
+  --install`), and a build without it serves the tray app's dashboard alone.
 - The Claude Code CLI, for the accounts to run against.
 - macOS only: the `security` command, used to read and write the login Keychain.
 
@@ -109,7 +112,7 @@ make install    # go install with the version embedded
 ```
 
 The binary is named `tycswap` and `make install` places it in the Go install
-directory (`$GOBIN`, or `$GOPATH/bin`, or `~/go/bin`). Add that directory to
+directory (`$GOBIN` when it is set, else `$GOPATH/bin`, else `$HOME/go/bin`). Add that directory to
 `PATH`. `make help` lists every target.
 
 **With `go install`:**
@@ -117,6 +120,23 @@ directory (`$GOBIN`, or `$GOPATH/bin`, or `~/go/bin`). Add that directory to
 ```bash
 go install github.com/tyclab/tycswap/cmd/tycswap@latest
 ```
+
+**From a release.** Every release on
+[GitHub](https://github.com/tyclab/tycswap/releases) carries a binary for
+Linux (amd64, arm64), macOS (amd64, arm64) and Windows (amd64), named
+`tycswap_<version>_<os>_<arch>`, and a `SHA256SUMS` file:
+
+```bash
+sha256sum --check --ignore-missing SHA256SUMS
+chmod +x tycswap_<version>_linux_amd64 && mv tycswap_<version>_linux_amd64 ~/.local/bin/tycswap
+```
+
+The binaries are **not code-signed**. macOS quarantines a binary downloaded
+with a browser (`xattr -d com.apple.quarantine tycswap` lifts it, or download
+with `curl -LO`); Windows SmartScreen may warn the first time (*More info* →
+*Run anyway*). `go install` builds on your machine and avoids both. A release
+binary upgrades itself: `tycswap upgrade` and the tray download the next
+release over it after checking it against that release's `SHA256SUMS`.
 
 ## Tasks
 
@@ -292,8 +312,8 @@ $ tycswap status --json | jq -r '.active.email'
 alice@example.com
 ```
 
-The full-screen interactive dashboard is `tycswap` with no arguments (also
-`tycswap tui` and `tycswap watch`). It shows the same accounts with live usage and
+The full-screen interactive dashboard is `tycswap tui` (also `tycswap watch`;
+a bare `tycswap` starts the [tray application](#tray-application) instead). It shows the same accounts with live usage and
 refreshes on a timer. Its Settings screen (`c`, or the menu's "Settings…" row)
 lists every `settings.json` key with its value and help text and edits it in
 place — a bool toggles, a choice cycles, a number or string is typed and
@@ -613,11 +633,28 @@ $ tycswap upgrade
 tycswap was built from a checkout: git pull && make install
 ```
 
-When it cannot detect a `go install` layout, it prints the manual command and
-the releases URL (`https://github.com/tyclab/tycswap/releases`) instead.
+A release binary (the builds a release publishes) is replaced by the newest
+release's build for this machine
+(`tycswap_<version>_<os>_<arch>` from the
+[releases](https://github.com/tyclab/tycswap/releases)), downloaded over https
+next to it, checked against that release's `SHA256SUMS` (a build without
+exactly one matching line is refused) and renamed over the running file:
 
-On Windows, `tycswap upgrade` never self-replaces; it prints the upgrade command
-for the user to run.
+```
+$ tycswap upgrade
+Updated tycswap 0.6.0 → 0.7.0 (/home/me/.local/bin/tycswap).
+```
+
+A release binary that a package manager installed (in the Nix store, a
+Homebrew Cellar, Scoop's apps or WindowsApps, or started through a symbolic
+link) is left to that package manager, and `tycswap upgrade` says so; one in a
+directory or file tycswap cannot write is upgraded by hand from the releases
+URL it prints. A go-installed binary outside a Go bin directory is never
+downloaded over: `upgrade` prints the `go install` line. On Windows a go-installed
+`tycswap.exe` is not replaced while it runs; `upgrade` prints the `go install`
+command for the user to run. A downloaded `tycswap.exe` is replaced in place
+(the running file is moved aside to `tycswap.exe.old`, which goes at the next
+start of the tray application).
 
 ### Move over from claude-swap
 
@@ -705,6 +742,105 @@ tab runs the Codex engine beside the Claude one, as `tycswap auto` does;
 alias, move, swap, export and import of Codex accounts stay with `tycswap
 codex`. See `docs/reference.md`, `tycswap web`, for the API and the security
 model.
+
+### Tray application
+
+`tycswap app` is the dashboard as a menu-bar (macOS) or notification-area
+(Windows, Linux) icon. A bare `tycswap` in a terminal starts it in the
+background and gives the prompt back; the full-screen terminal dashboard is
+`tycswap tui`:
+
+```
+$ tycswap
+tycswap is running in the background — its icon is in the menu bar / tray.
+Log: ~/.local/share/tycswap/app.log
+```
+
+The icon's title is the active account and its fullest window (`#1 · 45%`,
+`⟳` in front while auto-switch runs). The menu switches accounts with one
+click (more than ten move into a submenu), adds the login Claude Code has
+(*Add current login*), turns auto-switch on and off (its row names the
+threshold of each window), counts or ignores the per-model windows, registers
+*Start at login*, checks for updates and opens the dashboard. The thresholds
+themselves are set in `tycswap config`, the TUI and the dashboard. Notifications say when auto-switch moved
+or quarantined an account and when the active account reaches a window's
+threshold. A badge on the icon — a dot on Windows and Linux, the number of
+updates on macOS — means a newer tycswap or Claude Code waits; the menu's
+Updates section installs it after asking, and tycswap restarts itself after
+its own update, as `tycswap upgrade` does it ([Upgrade](#upgrade)). A build
+the tray cannot upgrade (a checkout, a go-installed binary on Windows, one in
+the Nix store) is told how instead. Auto-switch that was on when the app quit
+is on again when it starts. The tray shows the dashboard's state, so it is
+Claude-only like the dashboard today: its accounts and its auto-switch are
+Claude's, and Codex accounts and the Codex engine reach the dashboard and the
+tray together in the next change.
+
+```
+tycswap app [--open] [--headless] [--port N] [--interval SECONDS] [--no-update-check] [--debug]
+tycswap app --autostart on|off|status
+```
+
+`tycswap app` runs in the foreground; the bare `tycswap` is the way to start it
+in the background. `--headless` runs the dashboard server without an icon
+(what Linux without a StatusNotifierWatcher gets anyway), `--interval` sets
+how often the live state is polled (default 5 seconds), `--debug` logs errors
+to stderr, `--autostart`
+registers start at login (a LaunchAgent, an XDG autostart entry, a `Run`
+value) and exits. One app runs
+per machine: a second one says it is already running, and `tycswap purge`
+refuses while one runs. The background app logs to
+`~/Library/Logs/tycswap.log` on macOS and to `app.log` in the backup store
+elsewhere.
+
+**WSL: the Windows tray for the engine in the distro.** Inside WSL there is no
+tray, so the app there runs headless and the Windows binary shows the icon. In
+the distro, keep the app running on a fixed port, best as a systemd user
+service (WSL runs systemd when `/etc/wsl.conf` has `[boot]` `systemd=true`):
+
+```ini
+# ~/.config/systemd/user/tycswap.service
+[Unit]
+Description=tycswap dashboard for the Windows tray
+
+[Service]
+# The path `command -v tycswap` prints.
+ExecStart=%h/go/bin/tycswap app --headless --port 7337
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now tycswap.service
+sudo loginctl enable-linger "$USER"
+```
+
+A user service starts with the user's first login to the distro;
+`loginctl enable-linger` starts it when the distro boots, so the Windows tray
+finds it without a shell open in WSL.
+
+For a one-off start without systemd: `setsid -f tycswap app --headless --port
+7337 >> ~/.local/share/tycswap/app.log 2>&1`. The app writes a per-start token
+to `~/.local/share/tycswap/remote.token` (`$XDG_DATA_HOME/tycswap/remote.token`
+when `XDG_DATA_HOME` is set) and removes it when it stops. On Windows, register
+the tray for that engine at login and start it now (`Start-Process` gives it a
+console of its own, which the app then closes):
+
+```powershell
+$token = '\\wsl.localhost\<distro>\home\<user>\.local\share\tycswap\remote.token'
+tycswap.exe app --remote http://127.0.0.1:7337 --token-file $token --autostart on
+Start-Process tycswap.exe -ArgumentList 'app', '--remote', 'http://127.0.0.1:7337', '--token-file', $token
+```
+
+Windows reaches the distro's `127.0.0.1:7337` through WSL2's localhost
+forwarding (on by default). The token is only accepted on loopback, the file
+is readable only by its owner in the distro, and a new start writes a new
+one, which the tray reads again by itself. The remote tray switches, toggles
+auto-switch and the model limit and opens the distro's dashboard; Claude
+Code's updates and *Add current login* stay on the distro's dashboard. Until
+the distro's app answers, the icon shows `⚠`.
 
 ### Codex (ChatGPT) accounts
 
@@ -861,6 +997,10 @@ Inside the backup store:
 | `cache/update_check.json` | Cached update-check result.                                  |
 | `sessions/`               | Session profiles for `tycswap run` and `tycswap env`.            |
 | `tycswap.log`             | The switch log; rotates at 1 MB, keeping 3 backups.          |
+| `ui_prefs.json`           | The dashboard's folded cards and whether auto-switch was on in the tray app. |
+| `app.lock`, `remote.lock` | Held while the tray app (or a remote tray) runs.              |
+| `remote.token`            | The running app's token for a remote tray; gone when it stops. |
+| `app.log`                 | The background tray app's output (macOS: `~/Library/Logs/tycswap.log`). |
 | `codex/`                  | The Codex store; see Codex accounts under Tasks.             |
 
 The full per-command contract — arguments, defaults, exit codes, JSON schemas,

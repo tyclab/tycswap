@@ -13,6 +13,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  # The tests of the tray application in internal/cli (DESIGN A35-A45): what
+  # the Windows and macOS jobs run of that package. Each one keeps its home in
+  # a temporary directory (HOME and USERPROFILE) or writes none; the older
+  # tests that set HOME alone would reach the runner's real profile on
+  # Windows, so a prefix here must not select them (`go test -list`).
+  APP_TESTS: '^Test(App|Bare(TTY|NonTTY|MSYS)|BadgeIcon|BrandRow|CheckForUpdates|CheckOutcome|ClaudeCode|DashboardCheck|Headless|InstallUpdate|OfferUpdate|OpenAppLog|OpenDashboardFailure|ParseAppArgs|PurgeRefused|ReleaseOwnConsole|Remote|SecondApp|Shell|SpawnDetached|UIPrefs|Update|AutoFacadeRemembers)'
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -25,3 +33,49 @@ jobs:
       - run: make fmt
       - run: make vet
       - run: make test
+      # The darwin and windows code compiles from Linux too: the tray, the
+      # autostart registry, the console hand-off (DESIGN A35, A41).
+      - run: GOOS=windows go vet ./...
+      - run: GOOS=darwin CGO_ENABLED=0 go vet ./...
+
+  # The Windows tray, the Run key, the detached start and the console hand-off
+  # run for real here; their tests are build-tagged (DESIGN A41). The rest of
+  # the suite predates this job and assumes a Unix machine: it isolates the
+  # home through HOME, which Windows ignores (os.UserHomeDir reads
+  # USERPROFILE), and it creates symlinks. Until that is fixed, this job runs
+  # the tray application's packages and tests (DESIGN A35), and the
+  # self-update's (internal/update: temporary directories and injected
+  # environment only), so the Windows `.old` swap runs on Windows.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test -count=1 ./internal/tray/... ./internal/appicon/... ./internal/autostart/... ./internal/brand/... ./internal/update/...
+      # Windows serves .js as application/javascript from its own registry,
+      # which the one static-asset test does not expect.
+      - run: go test -count=1 ./internal/web/... -skip '^TestStatic_ContentTypesAndCookieGated$'
+      - run: go test -count=1 -v ./internal/cli -run "$env:APP_TESTS"
+
+  # macOS builds internal/tray with cgo against Cocoa, the one place cgo is
+  # allowed (DESIGN A12, A35): this job compiles and tests the Objective-C,
+  # then the CGO_ENABLED=0 stub a machine without a C toolchain gets. As on
+  # Windows, the rest of the suite assumes Linux (the store under
+  # $XDG_DATA_HOME, no login Keychain), so this job runs the tray
+  # application's packages and tests.
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test -count=1 ./internal/tray/... ./internal/appicon/... ./internal/autostart/... ./internal/brand/... ./internal/web/... ./internal/update/...
+      - run: go test -count=1 -v ./internal/cli -run "$APP_TESTS"
+      - run: CGO_ENABLED=0 go build ./...

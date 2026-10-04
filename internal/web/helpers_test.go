@@ -61,6 +61,9 @@ type fakeFacade struct {
 	errs          map[string]error // by method name
 	lastToken     string           // AddAccountFromToken's token, kept out of calls
 	postAddSnap   *reporting.AccountsSnapshot
+	// afterAdd, when set, is the roster AddAccount leaves behind: the
+	// snapshot reads it from then on.
+	afterAdd *reporting.AccountsSnapshot
 	// gate, when non-nil, holds every AccountsSnapshot call until it is
 	// closed, so a test can keep the serve loop inside one state build.
 	gate chan struct{}
@@ -150,7 +153,15 @@ func (f *fakeFacade) AddAccount(slot *int, assumeYes bool, alias *string) error 
 		a = *alias
 	}
 	f.record(fmt.Sprintf("AddAccount(%s,%v,%s)", s, assumeYes, a))
-	return f.errFor("AddAccount")
+	if err := f.errFor("AddAccount"); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	if f.afterAdd != nil {
+		f.snap = f.afterAdd
+	}
+	f.mu.Unlock()
+	return nil
 }
 
 func (f *fakeFacade) AddAccountFromToken(token string, email, slotArg *string, assumeYes bool) error {

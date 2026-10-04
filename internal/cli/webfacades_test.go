@@ -393,10 +393,11 @@ func testNewDashboardServes(t *testing.T, codex bool) {
 		newQuietCodexSwitcher = func() *codexswitcher.Switcher { return codexSw }
 	}
 	var errBuf strings.Builder
-	srv, _, code := newDashboard(context.Background(), 5, false, ioStreams{out: io.Discard, err: &errBuf})
+	d, code := newDashboard(context.Background(), 5, false, ioStreams{out: io.Discard, err: &errBuf}, dashboardOptions{})
 	if code != 0 {
 		t.Fatalf("newDashboard: %d %s", code, errBuf.String())
 	}
+	srv := d.srv
 	launch, err := srv.Start("127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

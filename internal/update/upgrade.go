@@ -1,12 +1,12 @@
 // `tycswap upgrade` self-upgrade dispatch.
 //
 // Implements spec 08§13.4 (run_self_upgrade), redesigned per DESIGN.md §6
-// Deviation #2 and Amendment A6: there is no PyPI/uv/pipx for a Go binary, so
-// upgrading means re-running `go install <ModulePath>@latest` when the
-// running binary lives in a Go-managed bin dir, and printing manual guidance
-// otherwise. On Windows the running .exe is locked (same rationale as
-// Python's win32 branch, spec 08§13.4), so SelfUpgrade there always prints
-// the command instead of running it.
+// Deviation #2 and Amendments A6/A24/A36: there is no PyPI/uv/pipx for a Go
+// binary, so upgrading means re-running `go install <ModulePath>@latest` when
+// the running binary lives in a Go-managed bin dir (print-only on Windows,
+// where the running .exe is locked — Python's win32 rationale), downloading
+// the newest release over the binary when it sits anywhere else it can be
+// written (download.go), and printing manual guidance otherwise.
 package update
 
 import (
@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"strings"
@@ -64,6 +65,13 @@ type Upgrader struct {
 	// Stdout/Stderr receive guidance text and the subprocess's own output;
 	// nil -> os.Stdout / os.Stderr.
 	Stdout, Stderr io.Writer
+	// The download shape (download.go): Version is the running build's
+	// v-prefixed semver ("" → always install the newest); Arch overrides
+	// runtime.GOARCH; HTTPClient nil → http.DefaultClient. The release
+	// endpoint and downloads are the package's Endpoint and ReleasesURL.
+	Version    string
+	Arch       string
+	HTTPClient *http.Client
 }
 
 func (u Upgrader) getenv() func(string) string {
@@ -102,30 +110,38 @@ func (u Upgrader) stderr() io.Writer {
 	return os.Stderr
 }
 
-// SelfUpgrade runs the appropriate upgrade action for the running binary's
-// install shape and returns the process exit code (never an error — every
-// failure path prints guidance and returns 1, matching
-// run_self_upgrade's contract of "return an int, don't raise").
+// SelfUpgrade runs the upgrade UpgradePlan picks for the running binary and
+// returns the process exit code (never an error — every failure path prints
+// guidance and returns 1, matching run_self_upgrade's contract of "return an
+// int, don't raise").
 //
 // exePath is the running binary's path (symlink-resolved os.Executable());
 // plat gates the Windows print-only branch.
 func (u Upgrader) SelfUpgrade(exePath string, plat platform.Platform) int {
-	// A checkout build is never re-installed from a remote: `go install
-	// <ModulePath>@latest` would replace the user's own tree with whatever is
-	// published there (Amendment A24).
-	if DetectBuildSource() == SourceCheckout {
-		fmt.Fprintf(u.stdout(), "tycswap was %s\n", CheckoutHint)
-		return 1
-	}
-	shape := DetectInstallShape(exePath, u.getenv(), u.homeDir())
 	cmdArgs := []string{"install", ModulePath + "@latest"}
 	fullCmd := "go " + strings.Join(cmdArgs, " ")
-
-	if shape != ShapeGoInstall {
-		binary := exePath
-		if binary == "" {
-			binary = "(unknown)"
-		}
+	binary := exePath
+	if binary == "" {
+		binary = "(unknown)"
+	}
+	src := DetectBuildSource()
+	plan := UpgradePlan(src, exePath, u.getenv(), u.homeDir())
+	switch plan.Method {
+	case MethodCheckout:
+		// Never re-installed from a remote: `go install <ModulePath>@latest`
+		// would replace the user's own tree with whatever is published
+		// there (Amendment A24).
+		fmt.Fprintf(u.stdout(), "tycswap was %s\n", CheckoutHint)
+		return 1
+	case MethodDownload:
+		return u.downloadUpgrade(exePath, plat)
+	case MethodPackageManager:
+		fmt.Fprintf(u.stderr(),
+			"This tycswap was installed by a package manager: update it with %s.\n"+
+				"  binary: %s\n",
+			plan.Updater(), binary)
+		return 1
+	case MethodGoInstallElsewhere:
 		fmt.Fprintf(u.stderr(),
 			"Could not detect a `go install` layout (looked for $GOBIN, $GOPATH/bin, $HOME/go/bin).\n"+
 				"  binary: %s\n"+
@@ -134,6 +150,15 @@ func (u Upgrader) SelfUpgrade(exePath string, plat platform.Platform) int {
 				"Or download a release from:\n"+
 				"  %s\n",
 			binary, fullCmd, ReleasesURL)
+		return 1
+	case MethodManual:
+		fmt.Fprintf(u.stderr(),
+			"Could not upgrade this binary in place: this process cannot replace it (its directory or the file\n"+
+				"cannot be written, or it belongs to another user).\n"+
+				"  binary: %s\n"+
+				"To upgrade manually, download the build for this machine from:\n"+
+				"  %s\n",
+			binary, ReleasesURL)
 		return 1
 	}
 
