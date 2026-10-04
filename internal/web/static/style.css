@@ -380,6 +380,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 28px; }
 .acct-tbl tr.active-row, .acct-tbl tbody tr.active-row:hover { background: var(--accent-soft); }
 .acct-tbl tr.active-row td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .acct-tbl tr.disabled-row .acct-name, .acct-tbl tr.disabled-row .meter { opacity: .55; }
+.acct-tbl tbody tr.provider-head th { padding-top: var(--s3); border-bottom-color: var(--line); }
+.acct-tbl tbody tr.provider-head:hover { background: none; }
 .slot-chip { display: inline-grid; place-items: center; min-width: 32px; height: 24px; padding: 0 6px; border-radius: 7px; background: var(--neutral-soft); color: var(--fg-2); font-weight: 700; font-size: var(--t12); font-variant-numeric: tabular-nums; }
 tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); box-shadow: 0 1px 3px color-mix(in srgb, var(--accent) 35%, transparent); }
 .acct { display: grid; gap: 3px; min-width: 0; }

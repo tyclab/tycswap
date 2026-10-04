@@ -123,11 +123,14 @@
   }
 
   function accountName(a) { return a.alias || a.email || ('#' + a.number); }
-  // Every row is a Claude row today (the snapshot lists Claude accounts
-  // only); rows carry provider and key so another provider's rows, whose
-  // slot numbers overlap, could be told apart.
+  // Rows carry provider and key: the Claude rows come first, then, on a
+  // machine with Codex accounts, the Codex rows, whose slot numbers overlap
+  // the Claude ones (DESIGN A47). What is about Claude Code (the header
+  // strip, the summary, the Next best ranking) reads claudeRows; the account
+  // table lists both groups.
   function isClaude(a) { return (a.provider || 'claude') === 'claude'; }
   function claudeRows(st) { return ((st && st.accounts) || []).filter(isClaude); }
+  function codexRows(st) { return ((st && st.accounts) || []).filter(function (a) { return !isClaude(a); }); }
   // rowKey is the account's API address: every account route takes the row
   // key ("claude:2"), never a bare slot, because slot numbers are per provider.
   function rowKey(a) { return a.key || ((a.provider || 'claude') + ':' + a.number); }
@@ -968,7 +971,7 @@
     if (a.isActive) { out.push(chip('active', 'active')); }
     if (a.atLimit) { out.push(chip('at limit', 'crit', (a.limitingWindows || []).join(', ') || 'a window is at 100%')); }
     if (a.disabled) { out.push(chip('disabled', 'outline', 'held out of auto-rotation')); }
-    if (!a.switchable) { out.push(chip('not switchable', 'warn', 'missing stored credentials or config backup')); }
+    if (!a.switchable) { out.push(chip('not switchable', 'warn', isClaude(a) ? 'missing stored credentials or config backup' : 'a Codex API-key login cannot be switched to')); }
     if (a.usageStatus && SENTINEL_STATUSES[a.usageStatus] && a.usageStatus !== 'api_key') { out.push(chip(SENTINEL_STATUSES[a.usageStatus], 'serious')); }
     if (a.usageStatus === 'unavailable') { out.push(chip('usage unavailable', 'warn', 'the last measurement is stale or failed; the meters show the last good values')); }
     return out;
@@ -991,10 +994,57 @@
     return emptyMeter('model', size);
   }
 
+  // codexRow is one Codex account in the account table: what the terminal
+  // dashboard offers on a Codex row (switch, disable / enable, remove) and no
+  // more. Codex has no per-model windows, so the model cell stays empty, and
+  // no token status or base URL.
+  function codexRow(a) {
+    var k = rowKey(a);
+    var tr = el('tr', { class: (a.isActive ? 'active-row ' : '') + (a.disabled ? 'disabled-row' : ''), 'data-key': k });
+    tr.appendChild(el('td', { class: 'c-slot' }, [el('span', { class: 'slot-chip', text: '#' + a.number, 'aria-label': 'codex slot ' + a.number })]));
+
+    var acct = el('div', { class: 'acct' });
+    var nameRow = el('div', { class: 'acct-name' }, [el('span', { class: 'primary', text: a.alias || a.email || '(no email)', title: a.email || '' })]);
+    statusChips(a).forEach(function (c) { nameRow.appendChild(c); });
+    acct.appendChild(nameRow);
+    var meta = el('div', { class: 'acct-meta' }, [chip('codex', 'kind')]);
+    if (a.kind) { meta.appendChild(chip(a.kind === 'api_key' ? 'api key' : a.kind, 'kind')); }
+    if (a.alias && a.email) { meta.appendChild(el('span', { class: 'org', text: a.email, title: a.email })); }
+    if (a.orgName) { meta.appendChild(el('span', { class: 'org', text: a.orgName, title: a.orgName })); }
+    acct.appendChild(meta);
+    tr.appendChild(el('td', { class: 'c-acct' }, [acct]));
+
+    var u = a.usage || null;
+    tr.appendChild(el('td', { class: 'c-meter c-m5' }, [u && u.fiveHour ? meter({ label: '5h', pct: u.fiveHour.pct, resetsAt: u.fiveHour.resetsAt }) : emptyMeter('5h')]));
+    tr.appendChild(el('td', { class: 'c-meter c-m7' }, [u && u.sevenDay ? meter({ label: '7d', pct: u.sevenDay.pct, resetsAt: u.sevenDay.resetsAt }) : emptyMeter('7d')]));
+    tr.appendChild(el('td', { class: 'c-meter c-mm' }));
+    if (showTokenStatus) { tr.appendChild(el('td', { class: 'c-token token-cell', text: '—' })); }
+
+    var acts = el('div', { class: 'row-actions' });
+    var sw = el('button', { type: 'button', class: 'btn btn-sm btn-primary', 'data-post': '/api/switch/' + keyPath(a), 'data-label': 'Switch', 'aria-label': 'Switch to Codex account ' + a.number, text: a.isActive ? 'Active' : 'Switch' });
+    if (a.isActive || !a.switchable) { sw.disabled = true; }
+    acts.appendChild(sw);
+    var menu = el('details', { class: 'menu' });
+    menu.appendChild(el('summary', { class: 'btn btn-sm btn-icon', 'aria-label': 'More actions for Codex account ' + a.number, 'aria-haspopup': 'menu', text: '⋯' }));
+    var listEl = el('div', { class: 'menu-list', role: 'menu' });
+    if (a.disabled) {
+      listEl.appendChild(menuButton('Enable for rotation', { 'data-post': '/api/accounts/' + keyPath(a) + '/enable', 'data-label': 'Enable' }));
+    } else {
+      listEl.appendChild(menuButton('Disable (hold out of rotation)', { 'data-post': '/api/accounts/' + keyPath(a) + '/disable', 'data-label': 'Disable' }));
+    }
+    listEl.appendChild(el('div', { class: 'menu-sep' }));
+    listEl.appendChild(menuButton('Remove…', { 'data-action': 'remove', 'data-id': k, 'data-name': accountLabel(a), danger: true }));
+    menu.appendChild(listEl);
+    acts.appendChild(menu);
+    tr.appendChild(el('td', { class: 'c-actions td-actions' }, [acts]));
+    return tr;
+  }
+
   function renderAccounts(st) {
     var body = $('accounts-body');
     clear(body);
     var list = claudeRows(st);
+    var codex = codexRows(st);
     $('accounts-empty').hidden = list.length > 0;
     // A login Claude Code has that is not stored yet is the next account to
     // add (A27): the callout says so, and the Add current login button in
@@ -1004,8 +1054,12 @@
     $('add-callout').hidden = !unsaved;
     $('add-callout-email').textContent = unsaved ? cur.email : '';
     $('add-hint').hidden = unsaved || list.length === 0;
-    $('accounts-tbl').hidden = list.length === 0;
-    $('accounts-sub').textContent = list.length + (list.length === 1 ? ' account' : ' accounts') + (st.activeNumber !== null && st.activeNumber !== undefined ? ' · active #' + st.activeNumber : ' · none active');
+    $('accounts-tbl').hidden = list.length === 0 && codex.length === 0;
+    // Add current Codex login: on a machine with Codex accounts (the server
+    // then runs the Codex engine too).
+    $('add-current-codex').hidden = !((st.auto && st.auto.codex) || codex.length);
+    var count = codex.length ? list.length + ' Claude \u00b7 ' + codex.length + ' Codex' : list.length + (list.length === 1 ? ' account' : ' accounts');
+    $('accounts-sub').textContent = count + (st.activeNumber !== null && st.activeNumber !== undefined ? ' · active #' + st.activeNumber : ' · none active');
     var accIgnored = ignoredModelsNote(st, parseModelNames(settingValue(st, 'autoswitch.model')));
     if (accIgnored) { $('accounts-sub').appendChild(document.createTextNode(' · ')); $('accounts-sub').appendChild(accIgnored); }
     var tokenCol = document.querySelector('.col-token');
@@ -1071,6 +1125,10 @@
       tr.appendChild(el('td', { class: 'c-actions td-actions' }, [acts]));
       body.appendChild(tr);
     });
+    if (codex.length) {
+      body.appendChild(el('tr', { class: 'provider-head' }, [el('th', { colspan: '7', text: 'Codex' })]));
+      codex.forEach(function (a) { body.appendChild(codexRow(a)); });
+    }
   }
 
   document.addEventListener('click', function (ev) {
@@ -1248,6 +1306,7 @@
       tiles.appendChild(tile('7d threshold', Math.round(a.threshold * 10) / 10 + '%', ['the 5h and model windows have bars of their own']));
       tiles.appendChild(tile('Strategy', strat, [el('span', { class: 'ellipsis', text: countingNote(models), title: countingNote(models) })]));
       tiles.appendChild(tile('Started', a.startedAt ? el('span', { 'data-started': String(Math.round(a.startedAt * 1000)), text: fmtAgo(Date.now() - a.startedAt * 1000) }) : '—', [a.startedAt ? fmtUnix(a.startedAt) : 'not running']));
+      if (a.codex) { tiles.appendChild(codexTile(a.codex)); }
       body.appendChild(tiles);
       fallbackNotices(st).forEach(function (n) { body.appendChild(n); });
 
@@ -1345,6 +1404,15 @@
     renderAutoLog();
   }
 
+  // codexTile: the Codex engine that runs beside the Claude one (DESIGN A47).
+  // Its one bar is fixed when it starts: the slider moves the Claude 7d bar
+  // only.
+  function codexTile(c) {
+    var last = c.lastTick ? (c.lastTick.detail || c.lastTick.outcome) : 'no tick yet';
+    var sub = c.enabled || c.running ? 'bar ' + Math.round(c.threshold * 10) / 10 + '%, fixed at start \u00b7 last: ' + last : 'autoswitch.codexEnabled is off';
+    return tile('Codex engine', c.running ? 'running' : c.enabled ? 'stopped' : 'off', [el('span', { class: 'ellipsis', text: sub, title: sub })], c.running ? 'good' : '');
+  }
+
   // ---- event log -------------------------------------------------------------
 
   var EVENT_VARIANT = { 'switch': 'accent', 'error': 'warn', 'account-quarantined': 'warn', 'all-exhausted': 'crit', 'account-unquarantined': 'good' };
@@ -1389,10 +1457,11 @@
       if (logKindFilter && ev.kind !== logKindFilter) { return; }
       shown++;
       var variant = EVENT_VARIANT[ev.kind] || (QUIET_KINDS[ev.kind] ? 'outline' : '');
+      var codex = ev.provider === 'codex'; // a Codex engine tick (DESIGN A47)
       var li = el('li', {}, [
         el('span', { class: 'stamp', text: ev.at ? fmtClock(ev.at) : '' }),
-        el('span', {}, [chip(ev.kind || 'event', variant)]),
-        el('span', { class: 'msg' }, [ev.message || '', ev.account ? el('span', { class: 'acct-ref', text: ' · #' + ev.account }) : null])
+        el('span', {}, [chip(ev.kind || 'event', variant), codex ? chip('codex', 'kind') : null]),
+        el('span', { class: 'msg' }, [ev.message || '', ev.account ? el('span', { class: 'acct-ref', text: ' · ' + (codex ? 'codex #' : '#') + ev.account }) : null])
       ]);
       ul.appendChild(li);
     });
@@ -1651,7 +1720,7 @@
     renderGuarded('updates', 'updates', { updates: st.updates, applying: updApplying }, function () { renderUpdates(st); });
     renderGuarded('dashboard', 'accounts-card',
       { accounts: st.accounts, active: st.activeNumber, strategies: st.strategies, settings: st.settings, currentLogin: st.currentLogin,
-        auto: st.auto && { running: st.auto.running, threshold: st.auto.threshold, settings: st.auto.settings, quarantine: st.auto.quarantine } },
+        auto: st.auto && { running: st.auto.running, threshold: st.auto.threshold, settings: st.auto.settings, quarantine: st.auto.quarantine, codex: !!st.auto.codex } },
       function () { renderSummary(st); renderAccounts(st); });
     renderGuarded('auto', 'panel-auto',
       { auto: st.auto, accounts: st.accounts, active: st.activeNumber, settings: st.settings },
@@ -1665,7 +1734,7 @@
   // ---- actions (delegated) ---------------------------------------------------
 
   function findAccount(id) {
-    var list = claudeRows(state);
+    var list = (state && state.accounts) || [];
     for (var i = 0; i < list.length; i++) { if (rowKey(list[i]) === String(id)) { return list[i]; } }
     return null;
   }
@@ -1683,6 +1752,17 @@
   // re-reads settings.json rather than only after a restart.
   function endpointNote(u) {
     return API_KEY_NOTE + ' This account sends Claude Code\'s requests to ' + u + ': the switch writes env.ANTHROPIC_BASE_URL and env.ANTHROPIC_AUTH_TOKEN into Claude Code\'s settings.json and removes env.ANTHROPIC_API_KEY, and a switch to another account puts back what they held. A Claude Code session that is already running takes the endpoint up when it re-reads settings.json (at once in a trusted workspace), or when it is restarted.';
+  }
+
+  // codexRestartNote: a Codex switch leaves the codex sessions that are
+  // already running on the old account, and its result names them; the page
+  // says so as `codex switch` and the terminal dashboard do (DESIGN A47).
+  function codexRestartNote(res) {
+    var r = res && res.result;
+    if (r && Array.isArray(r.runningPids) && r.runningPids.length) {
+      toast('codex is running (pid ' + r.runningPids.join(', ') + ') \u2014 restart it for the new account to take effect.');
+    }
+    return res;
   }
 
   var ACTIONS = {
@@ -1742,6 +1822,10 @@
     // the click does.
     'add-current': function (btn) {
       return run(btn, 'Add current login', api('POST', '/api/accounts/add', {}));
+    },
+    // The codex CLI's login, as `codex add` stores it (DESIGN A47).
+    'add-current-codex': function (btn) {
+      return run(btn, 'Add current Codex login', api('POST', '/api/accounts/add', { provider: 'codex' }));
     },
     'add-token': function (btn) {
       return openModal({
@@ -1821,7 +1905,8 @@
     'remove': function (btn) {
       var id = btn.getAttribute('data-id');
       var a = findAccount(id);
-      return confirmModal('Remove account', 'Remove ' + btn.getAttribute('data-name') + ' and its stored credentials from ' + NAME + '? ' + (a && a.isActive ? 'This is the ACTIVE account. ' : '') + 'This cannot be undone.', 'Remove').then(function (ok) {
+      var who = (a && !isClaude(a) ? 'Codex account ' : '') + btn.getAttribute('data-name');
+      return confirmModal('Remove account', 'Remove ' + who + ' and its stored credentials from ' + NAME + '? ' + (a && a.isActive ? 'This is the ACTIVE account. ' : '') + 'This cannot be undone.', 'Remove').then(function (ok) {
         if (!ok) { return; }
         return run(btn, 'Remove', api('POST', '/api/accounts/' + encodeURIComponent(id) + '/remove'));
       });
@@ -1850,7 +1935,7 @@
     go.then(function (ok) {
       if (!ok) { return; }
       inflight[url] = true;
-      return run(btn, label, api('POST', url)).then(function () { delete inflight[url]; });
+      return run(btn, label, api('POST', url).then(codexRestartNote)).then(function () { delete inflight[url]; });
     });
   });
 

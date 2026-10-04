@@ -445,3 +445,44 @@ func TestStaticStreamStopsOnDeadSession(t *testing.T) {
 		t.Error("app.js still copies stale token status forward")
 	}
 }
+
+// The Codex rows (DESIGN A47): their own group after the Claude rows, with
+// what the terminal dashboard offers on one — switch, disable / enable,
+// remove — and nothing else; the add button for the codex CLI's login; the
+// restart warning after a Codex switch; the Codex engine's tile and its
+// events tagged in the log; and the Claude-only views reading Claude rows.
+func TestStaticCodexRows(t *testing.T) {
+	js, index := staticFile(t, "app.js"), staticFile(t, "index.html")
+	row := regexp.MustCompile(`function codexRow\(a\) \{[\s\S]*?\n  \}`).FindString(js)
+	if row == "" {
+		t.Fatal("no codexRow in app.js")
+	}
+	for _, want := range []string{"'/api/switch/' + keyPath(a)", "'/enable'", "'/disable'", "'data-action': 'remove'", "chip('codex', 'kind')", "a.isActive || !a.switchable"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("codexRow lacks %q", want)
+		}
+	}
+	for _, refused := range []string{"force-switch", "'alias'", "'move'", "'swap'", "switch-api-key", "baseUrl", "tokenStatus"} {
+		if strings.Contains(row, refused) {
+			t.Errorf("codexRow offers %q, which the terminal dashboard does not on a Codex row", refused)
+		}
+	}
+	for _, want := range []string{
+		"el('tr', { class: 'provider-head' }", "var codex = codexRows(st);", "'add-current-codex': function", "{ provider: 'codex' }",
+		"api('POST', url).then(codexRestartNote)", "if (a.codex) { tiles.appendChild(codexTile(a.codex)); }",
+		"ev.provider === 'codex'",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("app.js lacks %q", want)
+		}
+	}
+	for _, fn := range []string{"renderActiveStrip(st)", "renderSummary(st)", "rankCandidates(st)", "modelWindowNames(st)"} {
+		body := regexp.MustCompile(`function ` + regexp.QuoteMeta(fn) + ` \{[\s\S]*?\n  \}`).FindString(js)
+		if body == "" || !strings.Contains(body, "claudeRows(st)") || strings.Contains(body, "st.accounts") {
+			t.Errorf("%s does not read the Claude rows alone", fn)
+		}
+	}
+	if !regexp.MustCompile(`<button [^>]*id="add-current-codex"[^>]*data-action="add-current-codex"[^>]*hidden>`).MatchString(index) {
+		t.Error("index.html lacks the hidden Add current Codex login button")
+	}
+}

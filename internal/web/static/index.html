@@ -82,6 +82,7 @@
         <div class="head-r">
           <label class="switch" for="token-status-toggle"><input type="checkbox" id="token-status-toggle"> Token status</label>
           <button type="button" class="btn btn-primary" data-action="add-current" data-label="Add current login">+ Add current login</button>
+          <button type="button" class="btn" id="add-current-codex" data-action="add-current-codex" data-label="Add current Codex login" hidden>+ Add current Codex login</button>
         </div>
       </div>
       <!-- Add current login (DESIGN A27): Claude Code is signed in with an account that is not stored yet. -->
@@ -322,7 +323,7 @@
 
       <article class="card guide-section" id="g-auto">
         <h2>Auto mode</h2>
-        <p>The engine polls every account's usage, and when one of the active account's windows crosses its own bar it switches to the best candidate and logs why, naming the window (<code>5h</code>, <code>7d</code> or <code>model</code>). Start and stop it on the Auto tab; the tab badge shows a dot while it runs. The engine here runs inside <code>{{.Name}} web</code>; <code>{{.Name}} auto</code> runs the same engine in a terminal, and also rotates Codex accounts.</p>
+        <p>The engine polls every account's usage, and when one of the active account's windows crosses its own bar it switches to the best candidate and logs why, naming the window (<code>5h</code>, <code>7d</code> or <code>model</code>). Start and stop it on the Auto tab; the tab badge shows a dot while it runs. The engine here runs inside <code>{{.Name}} web</code>; <code>{{.Name}} auto</code> runs the same engine in a terminal. On a machine with Codex accounts both run the Codex engine beside it, which rotates Codex accounts on a bar of its own.</p>
         <h3>Settings that matter</h3>
         <dl class="guide-dl">
           <dt>5h threshold</dt><dd><code>autoswitch.fiveHourThreshold</code>, <strong>85 %</strong> by default: the lowest of the three bars, because this window <em>bursts</em>. A fan-out of parallel subagents can take it from 85 % to full between two polls, and hitting 100 % stops you mid-task. Raise it only if you work in small, predictable steps; lower it (or poll more often) if you run wide fan-outs.</dd>
@@ -342,7 +343,7 @@
       <article class="card guide-section" id="g-settings">
         <h2>Settings</h2>
         <p>The Settings tab lists every key of <code>settings.json</code> with its type, range, default and current value, and saves or resets one key at a time; it is <code>{{.Name}} config</code> in the browser. Every key is an <code>autoswitch.*</code> key today: the three thresholds, the poll interval, the cooldown, the hysteresis, the strategy, the model windows, how many failed polls make an account unhealthy, and the Codex engine's own switch and threshold.</p>
-        <p>A saved value is validated like <code>config set</code> (an out-of-range number is refused and nothing is written), and every row says when it takes effect. An auto-switch engine reads the settings when it starts (here, in <code>{{.Name}} tui</code> or in <code>{{.Name}} auto</code>), so a running one keeps what it started with; only <code>autoswitch.model</code> reaches a running engine on this page at once. The Codex keys are read by <code>{{.Name}} auto</code> only.</p>
+        <p>A saved value is validated like <code>config set</code> (an out-of-range number is refused and nothing is written), and every row says when it takes effect. An auto-switch engine reads the settings when it starts (here, in <code>{{.Name}} tui</code> or in <code>{{.Name}} auto</code>), so a running one keeps what it started with; only <code>autoswitch.model</code> reaches a running engine on this page at once. The Codex keys are read when this page's engine or <code>{{.Name}} auto</code> starts.</p>
       </article>
 
       <article class="card guide-section" id="g-sessions">
@@ -357,7 +358,7 @@
 
       <article class="card guide-section" id="g-codex">
         <h2>Codex accounts</h2>
-        <p>{{.Name}} switches Codex (ChatGPT) accounts too, under <code>{{.Name}} codex</code>: <code>list</code>, <code>status</code>, <code>switch</code>, <code>add</code>, <code>login</code>, <code>alias</code>, <code>export</code> and <code>import</code>. The terminal dashboard (<code>{{.Name}} tui</code>) shows them beside the Claude accounts, and <code>{{.Name}} auto</code> rotates them when <code>autoswitch.codexEnabled</code> is on (its own bar is <code>autoswitch.codexThreshold</code>; 0 means the Claude 7d threshold). This page shows and drives Claude accounts only.</p>
+        <p>{{.Name}} switches Codex (ChatGPT) accounts too, under <code>{{.Name}} codex</code>: <code>list</code>, <code>status</code>, <code>switch</code>, <code>add</code>, <code>login</code>, <code>alias</code>, <code>export</code> and <code>import</code>. The terminal dashboard (<code>{{.Name}} tui</code>) shows them beside the Claude accounts, and <code>{{.Name}} auto</code> rotates them when <code>autoswitch.codexEnabled</code> is on (its own bar is <code>autoswitch.codexThreshold</code>; 0 means the Claude 7d threshold). On this page the Codex accounts are listed under their own heading after the Claude ones, with <em>Switch</em>, <em>Disable</em> / <em>Enable</em> and <em>Remove</em>; <em>+ Add current Codex login</em> stores the account the codex CLI is signed in with, and the Auto tab's Start runs the Codex engine beside the Claude one, with its own tile and its ticks in the event log.</p>
       </article>
 
       <article class="card guide-section" id="g-cli">
