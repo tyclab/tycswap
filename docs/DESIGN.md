@@ -4704,7 +4704,9 @@ auth caches and applies the block again, adding keys but never removing one.
 It fills two headers independently: `Authorization: Bearer` from
 `ANTHROPIC_AUTH_TOKEN` (else `apiKeyHelper`), and `X-Api-Key` from
 `ANTHROPIC_API_KEY` (always with `-p`, interactively once approved), else
-`apiKeyHelper`, else a stored Console key (`primaryApiKey`). A key in the
+`apiKeyHelper` or a key passed on a file descriptor
+(`CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR`), else a stored Console key
+(`primaryApiKey`). A key in the
 second slot goes to the endpoint beside the bearer token, and Claude Code
 warns that both are set. So the endpoint's key goes in as
 `env.ANTHROPIC_AUTH_TOKEN` (the convention for an LLM gateway or proxy), the
@@ -4825,7 +4827,10 @@ approval applies unchanged; its refusal is `ErrEndpointNeedsApproval`
 (`… authenticates with an API key at <host>. Switching to it changes how
 Claude Code authenticates and where it sends its requests …`), and the CLI's
 and the dashboard's questions add `EndpointNotice`, which names the whole URL
-and the settings that take the requests there and back. The follow-up says
+and the settings that take the requests there and back; in place of A33's
+sentence that running sessions keep their login until restarted, they say
+that such a session takes the endpoint up when it re-reads `settings.json`
+(`EndpointSessionNotice`, with the session count on the command line). The follow-up says
 what a running session does, which differs by direction: after a switch onto
 an endpoint (`EndpointAppliedNote`) a session that is already running takes
 it up when it re-reads `settings.json`, at once in a trusted workspace, and
@@ -4867,7 +4872,10 @@ a copy, so the key stays in that session profile until the session is
 launched again. The key goes only as a bearer token; an Anthropic-key
 passthrough proxy that wants `x-api-key` would need `ANTHROPIC_API_KEY`
 instead, which is not offered. `apiKeyHelper` and an `ANTHROPIC_API_KEY` in
-the environment are named, not removed. `add` while an endpoint account is
+the environment are named, not removed. Only the user settings file is read
+and changed for this: an `env.ANTHROPIC_API_KEY` or `apiKeyHelper` in
+project, local or managed settings, or in the `env` block of
+`~/.claude.json`, is neither removed nor named. `add` while an endpoint account is
 live finds no credential and says so, as for any empty store.
 
 **Tests.** `internal/ccsettings` (the reference's tests under tycswap names):
@@ -4893,7 +4901,9 @@ revert and a new one 0600; the snapshot restoring bytes, mode, absence and a
 link; a symlinked settings file refused by `Apply` (before the record),
 `Check` and `Revert`, the link and its target unchanged; a new record
 recording tycswap's own endpoint (the profile itself or a known one) as
-absent and the user's own as it is; the record naming an absolute path from
+absent, the user's own pair and an `ANTHROPIC_API_KEY` beside a known pair as
+they are; `Competing` naming a non-blank helper and variable and nothing for
+a blank, null or non-string helper, a blank variable or an unreadable file; the record naming an absolute path from
 a relative one; invalid profiles writing nothing; the URL and key validation
 tables.
 `internal/switching` (`endpoint_test.go`): from a subscription login onto the
@@ -4939,7 +4949,8 @@ the snapshot with the endpoint account inactive and active (`api_key`,
 `baseUrl`, the host only in human output, never `no credentials`), and the
 `status` note under another login, managed or not, absent while the endpoint
 account is live. `internal/cli`: the flag's usage errors, and end to end the
-add, `list --json`, `list`, the prompt naming the URL, the switch, `status`,
+add, `list --json`, `list`, the prompt naming the URL with the endpoint's
+sentence about running sessions in place of A33's, the switch, `status`,
 `status --json` and the switch back. `internal/tui`: the modal's field and
 focus ring, the call with and without a URL and on a facade without the
 method, the rows. `internal/web`: the add-token route with and without a URL

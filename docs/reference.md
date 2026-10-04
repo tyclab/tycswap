@@ -403,8 +403,10 @@ A46) asks the same question, and the notice also names the whole URL: `This
 account sends Claude Code's requests to <url>: the switch writes
 env.ANTHROPIC_BASE_URL and env.ANTHROPIC_AUTH_TOKEN into Claude Code's
 settings.json and removes env.ANTHROPIC_API_KEY, and a switch to another
-account puts back what they held. A running session can take the endpoint up
-at once when it re-reads settings.json.` Its refusal without an approval reads
+account puts back what they held.`, and in place of the restart sentence above
+it says `<n> Claude Code sessions are running; each takes the endpoint up when
+it re-reads settings.json (at once in a trusted workspace), or when it is
+restarted.` Its refusal without an approval reads
 `Account-<n> authenticates with an API key at <host>. …`. Such a switch stores
 no key in Claude Code's credential store (no `primaryApiKey`, no `Claude Code`
 Keychain item): every login leaves it, the seat-wide keys stay, and
@@ -413,7 +415,8 @@ endpoint as `env.ANTHROPIC_BASE_URL` and the key as `env.ANTHROPIC_AUTH_TOKEN`,
 and loses `env.ANTHROPIC_API_KEY`. Claude Code fills two headers
 independently: `Authorization: Bearer` from `ANTHROPIC_AUTH_TOKEN` (else
 `apiKeyHelper`), and `X-Api-Key` from `ANTHROPIC_API_KEY` (always with `-p`,
-interactively once approved), else `apiKeyHelper`, else a stored Console key;
+interactively once approved), else `apiKeyHelper` or a key passed on a file
+descriptor (`CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR`), else a stored Console key;
 a key in that second slot goes to the endpoint beside the bearer token. So the
 switch empties the second slot where tycswap owns it and names it where it
 does not: when `settings.json` sets `apiKeyHelper`, or `ANTHROPIC_API_KEY` is
