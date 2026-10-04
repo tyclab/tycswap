@@ -6,7 +6,9 @@
 // run, so cli installs a notifier that REPRODUCES (never extends) Python's
 // semantics — print the cancelled note, route stderr-vs-stdout by JSON mode,
 // exit 130. Installed only from Main() (the real entry), so run()-driven tests
-// never trip it.
+// never trip it. `tycswap web` and `tycswap app` claim the signal while they
+// serve (claimSigint): their own signal context ends the serve loop, their
+// deferred cleanup runs and they return 0 (DESIGN A48).
 package cli
 
 import (
@@ -50,6 +52,27 @@ func setSigintCancelToStderr() { sigintCancelToStderr.Store(true) }
 
 func setSigintNote(note string) { sigintNote.Store(note) }
 
+// sigintCh is the notifier's channel: nil until installSigint ran, so in a
+// run()-driven test a claim is a no-op.
+var sigintCh chan os.Signal
+
+// claimSigint hands SIGINT to the calling command, which must already have
+// registered its own signal context (os.Interrupt), or a Ctrl-C in between
+// would take the default action. The claim stops the notifier's delivery
+// (signal.Stop), so a Ctrl-C while it stands reaches the command's context
+// alone, whenever the notifier's goroutine happens to run; the returned func
+// registers the notifier again. A command takes the claim before it serves
+// and defers the release before its cleanup defers, so a Ctrl-C during the
+// cleanup is still its own.
+func claimSigint() (release func()) {
+	ch := sigintCh
+	if ch == nil {
+		return func() {}
+	}
+	signal.Stop(ch)
+	return func() { signal.Notify(ch, syscall.SIGINT) }
+}
+
 func currentSigintNote() string {
 	if v, ok := sigintNote.Load().(string); ok && v != "" {
 		return v
@@ -60,15 +83,19 @@ func currentSigintNote() string {
 // installSigint wires SIGINT to the reproduced cancel-note + exit-130 path.
 func installSigint(s ioStreams) {
 	ch := make(chan os.Signal, 1)
+	sigintCh = ch
 	signal.Notify(ch, syscall.SIGINT)
 	go func() {
-		<-ch
-		// Restore any terminal state a live prompt left off (echo disabled by a
-		// no-echo Secret prompt); exiting from this goroutine skips the prompt's
-		// deferred restore, so run the registered cleanups first (spec 08§5).
-		lifecycle.RunCleanups()
-		writeSigintNote(s)
-		os.Exit(130)
+		// A loop: a server's claim stops delivery for a while and its release
+		// resumes it (claimSigint).
+		for range ch {
+			// Restore any terminal state a live prompt left off (echo disabled by a
+			// no-echo Secret prompt); exiting from this goroutine skips the prompt's
+			// deferred restore, so run the registered cleanups first (spec 08§5).
+			lifecycle.RunCleanups()
+			writeSigintNote(s)
+			os.Exit(130)
+		}
 	}()
 }
 

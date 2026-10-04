@@ -189,6 +189,12 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 	if code != 0 {
 		return code
 	}
+	// Ctrl-C and SIGTERM end the serve loop through ctx; Ctrl-C is claimed
+	// from the program-wide notifier's exit 130 before the server's own
+	// first line, so a Ctrl-C after it is always the server's (DESIGN A48).
+	ctx, stop := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	defer claimSigint()()
 	srv, auto := d.srv, d.auto
 	url, err := srv.Start(net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	if err != nil {
@@ -205,8 +211,6 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 		}
 	}
 	fmt.Fprintln(s.err, "Press Ctrl-C to stop.")
-	ctx, stop := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	serveErr := srv.Serve(ctx)
 	if auto.View().Running {
 		_ = auto.Stop()

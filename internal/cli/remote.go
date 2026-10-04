@@ -686,6 +686,7 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	}
 	ctx, cancel := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	defer claimSigint()() // the remote tray ends with 0 on Ctrl-C too (A48)
 
 	rc := newRemoteClient(o.remote, o.tokenFile)
 	if o.debug {
