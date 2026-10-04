@@ -141,18 +141,17 @@ func (u Upgrader) SelfUpgrade(exePath string, plat platform.Platform) int {
 				"  binary: %s\n",
 			plan.Updater(), binary)
 		return 1
+	case MethodGoInstallElsewhere:
+		fmt.Fprintf(u.stderr(),
+			"Could not detect a `go install` layout (looked for $GOBIN, $GOPATH/bin, $HOME/go/bin).\n"+
+				"  binary: %s\n"+
+				"To upgrade manually, run:\n"+
+				"  %s\n"+
+				"Or download a release from:\n"+
+				"  %s\n",
+			binary, fullCmd, ReleasesURL)
+		return 1
 	case MethodManual:
-		if src == SourceModule {
-			fmt.Fprintf(u.stderr(),
-				"Could not detect a `go install` layout (looked for $GOBIN, $GOPATH/bin, $HOME/go/bin).\n"+
-					"  binary: %s\n"+
-					"To upgrade manually, run:\n"+
-					"  %s\n"+
-					"Or download a release from:\n"+
-					"  %s\n",
-				binary, fullCmd, ReleasesURL)
-			return 1
-		}
 		fmt.Fprintf(u.stderr(),
 			"Could not upgrade this binary in place: this process cannot replace it (its directory or the file\n"+
 				"cannot be written, or it belongs to another user).\n"+

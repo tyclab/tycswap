@@ -499,7 +499,7 @@ func TestUpgradePlan(t *testing.T) {
 	}{
 		{"checkout, anywhere", SourceCheckout, writable, Plan{Method: MethodCheckout}},
 		{"module in a Go bin directory", SourceModule, goBin, Plan{Method: MethodGoInstall}},
-		{"module elsewhere never downloads", SourceModule, writable, Plan{Method: MethodManual}},
+		{"module elsewhere never downloads", SourceModule, writable, Plan{Method: MethodGoInstallElsewhere}},
 		{"release in a writable place", SourceRelease, writable, Plan{Method: MethodDownload}},
 		{"release in the Nix store", SourceRelease, "/nix/store/0000-tycswap/bin/tycswap", Plan{Method: MethodPackageManager, Manager: "Nix"}},
 		{"release in a Homebrew Cellar", SourceRelease, "/opt/homebrew/Cellar/tycswap/0.6.0/bin/tycswap", Plan{Method: MethodPackageManager, Manager: "Homebrew"}},

@@ -38,8 +38,8 @@ const BinaryName = "tycswap"
 type Method int
 
 const (
-	// MethodManual: by hand, from the releases page (a module build outside
-	// a Go bin directory, a release build this process cannot replace).
+	// MethodManual: by hand, from the releases page (a release build this
+	// process cannot replace).
 	MethodManual Method = iota
 	// MethodCheckout: a checkout build, upgraded in its checkout.
 	MethodCheckout
@@ -49,6 +49,10 @@ const (
 	MethodDownload
 	// MethodPackageManager: a package manager installed it and updates it.
 	MethodPackageManager
+	// MethodGoInstallElsewhere: a module build outside a Go bin directory,
+	// upgraded by hand with `go install <ModulePath>@latest`; never a
+	// download.
+	MethodGoInstallElsewhere
 )
 
 // Plan is how SelfUpgrade upgrades the running binary (DESIGN A36).
@@ -78,8 +82,8 @@ func (p Plan) Updater() string {
 //
 //   - a checkout build is upgraded in its checkout;
 //   - a module build (`go install <module>@<version>`) is upgraded with `go
-//     install` in a Go bin directory and by hand anywhere else; it never
-//     downloads;
+//     install` in a Go bin directory, and told that command anywhere else;
+//     it never downloads;
 //   - a release build in a package manager's tree (the Nix store, a Homebrew
 //     Cellar, Scoop's apps, WindowsApps) or started through a symbolic link
 //     is the package manager's; one this process can replace (replaceable)
@@ -93,7 +97,7 @@ func UpgradePlan(src BuildSource, exePath string, getenv func(string) string, ho
 		if DetectInstallShape(exePath, getenv, homeDir) == ShapeGoInstall {
 			return Plan{Method: MethodGoInstall}
 		}
-		return Plan{Method: MethodManual}
+		return Plan{Method: MethodGoInstallElsewhere}
 	}
 	if exePath == "" {
 		return Plan{Method: MethodManual}

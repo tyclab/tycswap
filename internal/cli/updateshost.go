@@ -113,18 +113,21 @@ func upgradePlan(exe string) update.Plan {
 	return update.UpgradePlan(buildSource(), exe, os.Getenv, home)
 }
 
-// methodHint says how to update a build of plan p by hand: a checkout build
-// the checkout's command, a go-installed binary on Windows (the running .exe
-// is locked) the `go install` line, a package manager's binary the package
-// manager, and one that can be neither reinstalled nor downloaded over the
-// releases page. "" for `go install` elsewhere and the release download.
+// methodHint says how to update a build of plan p by hand, as `tycswap
+// upgrade` says it: a checkout build the checkout's command, a go-installed
+// binary on Windows (the running .exe is locked) or outside a Go bin
+// directory the `go install` line, a package manager's binary the package
+// manager, and a release build this process cannot replace the releases
+// page. "" when SelfUpgrade upgrades the binary itself: `go install` in a Go
+// bin directory off Windows, or the release download.
 func methodHint(p update.Plan, plat platform.Platform) string {
 	switch {
 	case p.Method == update.MethodCheckout:
 		return checkoutCommand
 	case p.Method == update.MethodPackageManager:
 		return p.Updater()
-	case p.Method == update.MethodGoInstall && plat == platform.Windows:
+	case p.Method == update.MethodGoInstall && plat == platform.Windows,
+		p.Method == update.MethodGoInstallElsewhere:
 		return "go install " + update.ModulePath + "@latest"
 	case p.Method == update.MethodGoInstall, p.Method == update.MethodDownload:
 		return ""

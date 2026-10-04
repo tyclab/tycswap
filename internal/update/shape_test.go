@@ -120,6 +120,7 @@ func TestUpgradeHint(t *testing.T) {
 		{"checkout", Plan{Method: MethodCheckout}, platform.Linux, "This binary was built from a checkout: git pull && make install."},
 		{"Nix", Plan{Method: MethodPackageManager, Manager: "Nix"}, platform.Linux,
 			"It was installed by a package manager: update it with Nix (it is in the Nix store)."},
+		{"go install by hand", Plan{Method: MethodGoInstallElsewhere}, platform.Linux, "Run `tycswap upgrade` for upgrade instructions."},
 		{"manual, linux", Plan{Method: MethodManual}, platform.Linux, "Run `tycswap upgrade` for upgrade instructions."},
 		{"manual, windows", Plan{Method: MethodManual}, platform.Windows, "Run `tycswap upgrade` for upgrade instructions."},
 	}

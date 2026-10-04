@@ -353,6 +353,8 @@ func TestUpgradeHintAndViewHelpers(t *testing.T) {
 		{update.Plan{Method: update.MethodDownload}, platform.Windows, ""},
 		{update.Plan{Method: update.MethodPackageManager, Manager: "Nix"}, platform.Linux, "Nix (it is in the Nix store)"},
 		{update.Plan{Method: update.MethodPackageManager}, platform.MacOS, "the package manager that installed it"},
+		{update.Plan{Method: update.MethodGoInstallElsewhere}, platform.Linux, goInstall},
+		{update.Plan{Method: update.MethodGoInstallElsewhere}, platform.Windows, goInstall},
 		{update.Plan{Method: update.MethodManual}, platform.Linux, releases},
 		{update.Plan{Method: update.MethodManual}, platform.Windows, releases},
 	} {
@@ -367,7 +369,8 @@ func TestUpgradeHintAndViewHelpers(t *testing.T) {
 }
 
 // The plan reads the build and the real environment, as SelfUpgrade does: a
-// module build in $HOME/go/bin is a go install, a release build in a
+// module build in $HOME/go/bin is a go install and one elsewhere is told the
+// `go install` line, a release build in a
 // writable directory gets the next release downloaded over it, one in the
 // Nix store is the package manager's, and a checkout build is the checkout's
 // wherever it is.
@@ -389,6 +392,7 @@ func TestUpgradePlanReadsTheEnvironment(t *testing.T) {
 		want update.Method
 	}{
 		{update.SourceModule, filepath.Join(home, "go", "bin", "tycswap"), update.MethodGoInstall},
+		{update.SourceModule, writable, update.MethodGoInstallElsewhere},
 		{update.SourceRelease, writable, update.MethodDownload},
 		{update.SourceRelease, "/nix/store/0000-tycswap/bin/tycswap", update.MethodPackageManager},
 		{update.SourceCheckout, writable, update.MethodCheckout},
@@ -397,5 +401,12 @@ func TestUpgradePlanReadsTheEnvironment(t *testing.T) {
 		if got := upgradePlan(c.exe); got.Method != c.want {
 			t.Errorf("%v at %s: %+v, want method %v", c.src, c.exe, got, c.want)
 		}
+	}
+	// A module build outside a Go bin directory: the card and the tray name
+	// the `go install` line `tycswap upgrade` prints for it, not the
+	// releases page.
+	buildSource = func() update.BuildSource { return update.SourceModule }
+	if got, want := upgradeHint(writable, platform.Linux), "go install "+update.ModulePath+"@latest"; got != want {
+		t.Errorf("module build outside a Go bin directory: hint %q, want %q", got, want)
 	}
 }
