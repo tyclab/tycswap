@@ -185,7 +185,7 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 	// Bounds the Codex rows' usage requests; they end with the server.
 	rowsCtx, cancelRows := context.WithCancel(context.Background())
 	defer cancelRows()
-	d, code := newDashboard(rowsCtx, interval, debug, s, dashboardOptions{})
+	d, code := newDashboard(rowsCtx, interval, debug, s, webOptions)
 	if code != 0 {
 		return code
 	}
@@ -215,9 +215,8 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 		errorTo(s.err, "Error: "+serveErr.Error())
 		return 1
 	}
-	if ctx.Err() != nil {
-		return 130
-	}
+	// A stop by Ctrl-C or SIGTERM ends with 0, as `tycswap app` does: it is
+	// how the server is asked to end, not a failure (DESIGN A48).
 	return 0
 }
 
@@ -254,6 +253,10 @@ func (d *dashboard) switchTo(key string) ([]int, error) {
 	pids, _ := res["runningPids"].([]int)
 	return pids, nil
 }
+
+// webOptions are `tycswap web`'s dashboard options: none. A var so a test can
+// keep the server from checking for updates on its own.
+var webOptions dashboardOptions
 
 // dashboardOptions are what `tycswap app` adds to the dashboard `tycswap web`
 // serves (DESIGN A35, A45).

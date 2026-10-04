@@ -5500,13 +5500,14 @@ answers 503. A Codex request passes the same authentication and origin
 checks as every other `/api` request and runs under the dashboard's
 mutation lock like every mutation. Each Codex call also holds the Codex
 store's lock (`codex/.lock`) from start to end: the switcher's switch and add
-take it themselves, and `codexOps` takes it around disable and remove,
-because the store's own writes (`SetDisabled`, `RemoveSlot`) skip the file
-lock while any goroutine of the process holds it. Without that, a remove
-could land between a Codex tick's capture and its write of `auth.json` and
-leave `auth.json` on the removed account. A disable or remove that waits
-10 s for the lock answers 409; the switcher's own busy error on a switch or
-add stays a switch error (500).
+take it themselves, and `codexOps` took it around disable and remove (since
+A48 the switcher does, for every caller), because the store's own writes
+(`SetDisabled`, `RemoveSlot`) skip the file lock while any goroutine of the
+process holds it. Without that, a remove could land between a Codex tick's
+capture and its write of `auth.json` and leave `auth.json` on the removed
+account. A disable or remove that waits 10 s for the lock answers 409; the
+switcher's own busy error on a switch or add was a switch error (500) until
+A48 made it a lock error (409).
 
 **One engine constructor.** The Codex engine's construction and loop live in
 `internal/cli/codexauto.go`, shared by both hosts: `newCodexAutoEngineFor(sw,
@@ -5551,10 +5552,10 @@ login and the Claude engine's ranking.
 
 **Two stores, two loops.** No goroutine holds both stores' locks. Every
 Codex call from the page and a Codex tick's switch serialise on
-`codex/.lock` (above). A known gap remains in the TUI, which this amendment
-does not change: its Codex disable and remove call the switcher directly,
-so they can interleave with a refresh or switch that holds the lock in the
-same process. The state build every
+`codex/.lock` (above). The TUI's Codex disable and remove called the
+switcher directly and could interleave with a refresh or switch holding the
+lock in the same process; A48 moved the lock into the switcher, so they
+serialise too. The state build every
 interval now takes the Codex snapshot too: network-free unless an entry is
 stale and due, but a token refresh of an inactive account takes the Codex
 lock and can delay one broadcast. The rows use the decision-grade value
@@ -5608,3 +5609,44 @@ with the Codex notification and its running PIDs; the Codex engine's switch
 notification; the remote tray posting the key verbatim; the app's switch
 dispatch; and the app resuming with both engines (`TestAppResumeStartsBothEngines`,
 a fake Codex source through the `newCodexAutoEngineFor` seam).
+
+## A48. The Codex store lock lives in the switcher; `tycswap web` ends with 0 when stopped
+
+Three small fixes the reviews of A47 found, together because two share a
+cause.
+
+**Disable and remove hold the Codex store lock.** `Switcher.SetAccountDisabled`
+and `Switcher.Remove` write through the store, whose writes take the file lock
+themselves unless this process already holds it (A47, "Two stores, two
+loops"). The Codex usage refresh holds that lock around its network call (it
+must be able to persist a rotated token before it asks for one), and the TUI
+runs that refresh in its own process. So a remove from the TUI during a
+refresh of the same account skipped the file lock, deleted the slot and its
+credentials, and the refresh then wrote the new token back under the removed
+account's key: a live credential file for an account that no longer existed.
+The dashboard had the same exposure through its refresh and its engine, and
+A47 closed it there alone, in `codexOps`. The lock now sits where every caller
+passes: both verbs take it through `withLock` like switch, add and move, so
+`tycswap codex disable|enable|remove`, the TUI and the dashboard wait up to
+10 s for a holder in this process or another and refuse when it stays held;
+`codexOps`'s own wrapper is gone. `Remove` asks its question before it takes
+the lock, so a prompt never holds the store.
+
+**A busy store is a lock error.** The switcher's `acquire` reported a held
+lock as a switch error, while the store's own `With` and the Claude side's
+lock (port-spec 01, `LockError`) report a lock error; the dashboard maps the
+kinds to 500 and 409. Every Codex verb now reports `LockError` with the
+unchanged message, so a busy store answers 409 on switch and add as it did on
+disable and remove, and `--json` carries `"type": "LockError"`.
+
+**`tycswap web` ends with 0 when stopped.** It returned 130 after Ctrl-C and
+SIGTERM alike, as the reference does, while `tycswap app` (A45) returns 0 on
+both because `systemctl --user stop` sends SIGTERM and a stop it was asked
+for is not a failure; a service manager reads 130 as one. Both commands now
+end with 0; a usage error stays 2 and a server that cannot start stays 1.
+
+**Tests.** The switcher: disable and remove wait for a holder of the lock and
+write once it is released, and report a lock error with nothing written when
+it stays held; the three busy assertions name the lock kind. `internal/cli`:
+the Codex façade's lock test runs against the switcher's lock; `tycswap web`
+exits 0 through the notify-context seam, offline.
