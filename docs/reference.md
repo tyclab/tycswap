@@ -2996,8 +2996,8 @@ from a checkout (`make build`, `make install`, `go build` in a clone: its build
 info carries a VCS stamp, or the `(devel)` version without the release build's
 `-trimpath` and linked release version) is never re-installed from a remote;
 it prints `tycswap was built from a checkout: git pull && make install` and
-exits 1. A binary that lives in a Go-managed bin directory (`$GOBIN`,
-`$GOPATH/bin`, or `$HOME/go/bin`) re-runs `go install
+exits 1. A binary that lives in a Go-managed bin directory (`$GOPATH/bin`,
+`$HOME/go/bin`, or the bin directory Go's environment names) re-runs `go install
 github.com/tyclab/tycswap/cmd/tycswap@latest`; on Windows the running
 executable is locked, so it prints that command rather than running it.
 
@@ -3057,7 +3057,7 @@ newest release is not newer: `tycswap <version> is the latest version.`
 In the Nix store, or in a directory that cannot be written:
 
 ```
-Could not upgrade this binary in place: it is not in a Go bin directory ($GOBIN, $GOPATH/bin, $HOME/go/bin)
+Could not upgrade this binary in place: it is not in a Go bin directory ($GOPATH/bin, $HOME/go/bin, Go's own)
 and its directory cannot be written (or it belongs to the Nix store).
   binary: <path>
 To upgrade manually, download the build for this machine from:

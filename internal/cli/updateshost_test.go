@@ -17,6 +17,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/ccversion"
 	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/testutil"
 	"github.com/tyclab/tycswap/internal/update"
 )
 
@@ -361,14 +362,16 @@ func TestUpgradeHintAndViewHelpers(t *testing.T) {
 }
 
 // The layout is read from the real environment, as SelfUpgrade reads it: a
-// binary in $GOBIN is a go install, one in a writable directory elsewhere
-// gets the release downloaded over it, one in the Nix store is upgraded by
-// hand.
+// binary in $HOME/go/bin is a go install, one in a writable directory
+// elsewhere gets the release downloaded over it, one in the Nix store is
+// upgraded by hand.
 func TestUpgradeMethodReadsTheEnvironment(t *testing.T) {
-	gobin := t.TempDir()
-	t.Setenv("GOBIN", gobin)
-	if got := upgradeMethod(filepath.Join(gobin, "tycswap")); got != update.MethodGoInstall {
-		t.Errorf("binary in $GOBIN: %v, want go install", got)
+	home := t.TempDir()
+	testutil.Setenv(t, "HOME", home)
+	testutil.Setenv(t, "USERPROFILE", home)
+	testutil.Unsetenv(t, "GOPATH")
+	if got := upgradeMethod(filepath.Join(home, "go", "bin", "tycswap")); got != update.MethodGoInstall {
+		t.Errorf("binary in $HOME/go/bin: %v, want go install", got)
 	}
 	if got := upgradeMethod(filepath.Join(t.TempDir(), "tycswap")); got != update.MethodDownload {
 		t.Errorf("binary in a writable directory: %v, want download", got)

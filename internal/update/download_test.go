@@ -357,8 +357,8 @@ func TestRemoveStaleBinary(t *testing.T) {
 func TestUpgradeMethod(t *testing.T) {
 	home := t.TempDir()
 	getenv := func(string) string { return "" }
-	gobin := filepath.Join(home, "go", "bin")
-	if got := UpgradeMethod(filepath.Join(gobin, "tycswap"), getenv, home); got != MethodGoInstall {
+	binDir := filepath.Join(home, "go", "bin")
+	if got := UpgradeMethod(filepath.Join(binDir, "tycswap"), getenv, home); got != MethodGoInstall {
 		t.Errorf("Go bin directory: %v", got)
 	}
 	if got := UpgradeMethod(filepath.Join(t.TempDir(), "tycswap"), getenv, home); got != MethodDownload {
