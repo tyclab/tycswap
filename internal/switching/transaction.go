@@ -15,10 +15,17 @@ type switchTransaction struct {
 	originalAccountNum  string
 	originalEmail       string
 	completedSteps      []string
+	// restoreClear: nothing at all was in Claude Code's credential store (an
+	// account with a base URL was active, DESIGN A46), so the credential
+	// rollback clears the store instead of writing originalCredentials.
+	restoreClear bool
+	// plan is what the switch does to Claude Code's settings.json; its
+	// snapshot is what profile_written rolls back to.
+	plan *profilePlan
 }
 
-// recordStep marks a completed step (credentials_written / config_written /
-// sequence_updated).
+// recordStep marks a completed step (credentials_written / profile_written /
+// config_written / sequence_updated).
 func (t *switchTransaction) recordStep(step string) {
 	t.completedSteps = append(t.completedSteps, step)
 }
@@ -48,7 +55,12 @@ func (t *switchTransaction) rollback(s *store.Store) bool {
 func (t *switchTransaction) rollbackStep(s *store.Store, step string) error {
 	switch step {
 	case "credentials_written":
+		if t.restoreClear {
+			return s.Creds.ClearActive()
+		}
 		return s.Creds.WriteActive(t.originalCredentials)
+	case "profile_written":
+		return t.plan.restore()
 	case "config_written":
 		return writeConfigText(t.originalConfig)
 	case "sequence_updated":

@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"os"
 
+	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/platform"
@@ -59,6 +60,7 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 
 	var op switchOp
 	var targetEmail, targetOrg string
+	var plan *profilePlan
 	displayAfterLock := false
 
 	err := withTripleLock(s, func() error {
@@ -109,7 +111,11 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 		if !readOK {
 			return cerr.CredentialRead("Failed to read current credentials")
 		}
-		if originalCreds == "" {
+		// An account with a base URL keeps no credential in Claude Code's
+		// store: its key is in settings.json (DESIGN A46), so an empty read
+		// is its normal state, not a Keychain that did not answer.
+		curEndpoint := store.BaseURLFrom(data, currentAccount) != ""
+		if originalCreds == "" && !curEndpoint {
 			return cerr.CredentialRead("Current account credential is empty (Keychain unreadable?); refusing to overwrite its backup")
 		}
 		cfgText, cfgExists, cfgErr := readConfigText()
@@ -127,8 +133,15 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 			originalAccountNum:  currentAccount,
 			originalEmail:       curEmail,
 		}
+		if originalCreds == "" {
+			// Nothing but a seat-wide part (or nothing at all) is in the
+			// store; that is what a rollback puts back.
+			tx.originalCredentials = s.Creds.ReadLiveOAuth()
+			tx.restoreClear = tx.originalCredentials == ""
+		}
 
-		commitErr := normalSwitchBody(s, data, tx, targetAccount, targetEmail, currentAccount, curEmail, originalCreds, originalConfig, prov, emitOutput, &warningsOut)
+		commitErr := normalSwitchBody(s, data, tx, targetAccount, targetEmail, currentAccount, curEmail, originalCreds, originalConfig, curEndpoint, prov, emitOutput, &warningsOut)
+		plan = tx.plan
 		if commitErr != nil {
 			if s.Log != nil {
 				s.Log.Errorf("Switch failed: %v, attempting rollback", commitErr)
@@ -168,7 +181,7 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 				}
 			}
 			printOut("")
-			printSwitchFollowup(s, targetAccount)
+			printSwitchFollowup(s, targetAccount, plan)
 			printOut("")
 		}
 		replanNewActive(s, targetAccount, targetEmail, targetOrg)
@@ -196,6 +209,12 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 	targetOAuth, oauthOK := oauthSection(targetConfigData)
 	if !oauthOK {
 		return switchOp{}, cerr.Switch("Invalid oauthAccount in backup")
+	}
+	// What the activation does to Claude Code's settings.json, decided (and
+	// refused) before anything is written; its snapshot is the rollback's.
+	plan, err := planProfile(s, data, targetAccount, targetCreds)
+	if err != nil {
+		return switchOp{}, err
 	}
 
 	// Snapshot live state for rollback (only when a live identity exists).
@@ -250,6 +269,7 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 	}
 
 	credsWritten := false
+	profileTouched := false
 	configWritten := false
 	commit := func() error {
 		// Read the live config before anything is written: a corrupt or
@@ -257,10 +277,16 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 		if _, err := readConfigForUpdate(); err != nil {
 			return err
 		}
-		if err := s.Creds.WriteActiveAccount(targetCreds); err != nil {
+		if err := writeActiveFor(s, plan, targetCreds); err != nil {
 			return err
 		}
 		credsWritten = true
+		// Marked before the write: a half-done one (the record written,
+		// settings.json not) is put back by the snapshot just the same.
+		profileTouched = plan.touches()
+		if err := plan.commit(s); err != nil {
+			return err
+		}
 		// Read it again, as the normal switch does: the credential write
 		// changes it too (a managed key and its approval are stored there, an
 		// OAuth write drops the key), so the copy read above would lose the new
@@ -292,8 +318,20 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 				s.Log.Errorf("Failed to rollback config: %v", rerr)
 			}
 		}
+		if profileTouched {
+			if rerr := plan.restore(); rerr != nil && s.Log != nil {
+				s.Log.Errorf("Failed to rollback Claude Code's settings: %v", rerr)
+			}
+		}
 		if credsWritten && haveRollbackCreds {
-			if rerr := s.Creds.WriteActive(restoreCreds); rerr != nil && s.Log != nil {
+			// With nothing at all live before (no login, no key, no
+			// seat-wide part) the store is cleared again rather than
+			// handed an empty credential.
+			restore := func() error { return s.Creds.WriteActive(restoreCreds) }
+			if restoreCreds == "" {
+				restore = s.Creds.ClearActive
+			}
+			if rerr := restore(); rerr != nil && s.Log != nil {
 				s.Log.Errorf("Failed to rollback credentials: %v", rerr)
 			}
 		}
@@ -310,7 +348,7 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 	if emitOutput {
 		printOut(printer.Accent("Activated") + " Account-" + targetAccount + " (" + targetEmail + ")")
 		printOut("")
-		printSwitchFollowup(s, targetAccount)
+		printSwitchFollowup(s, targetAccount, plan)
 		printOut("")
 	}
 	replanNewActive(s, targetAccount, targetEmail, targetOrg)
@@ -320,9 +358,23 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 // normalSwitchBody runs steps 1–5 of the normal switch under the lock, recording
 // each completed step on tx for reverse-order rollback. It returns the first
 // error (the caller decides rolled-back vs rollback-also-failed).
-func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransaction, targetAccount, targetEmail, currentAccount, currentEmail, originalCreds, originalConfig string, prov *Provenance, emitOutput bool, warningsOut *[]string) error {
+func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransaction, targetAccount, targetEmail, currentAccount, currentEmail, originalCreds, originalConfig string, curEndpoint bool, prov *Provenance, emitOutput bool, warningsOut *[]string) error {
 	// Step 1: back up the outgoing slot, classified by the ownership oracle.
-	kind, foreignSlot := classifyOutgoing(s, currentAccount, currentEmail, originalCreds, prov, data)
+	// An account with a base URL is not classified: its credential is the
+	// stored key, which the switch onto it wrote into settings.json, and
+	// nothing in Claude Code's credential store is its own (DESIGN A46).
+	var kind, foreignSlot string
+	switch {
+	case !curEndpoint:
+		kind, foreignSlot = classifyOutgoing(s, currentAccount, currentEmail, originalCreds, prov, data)
+	case originalCreds != "":
+		// A login written into the store meanwhile, by something that left
+		// the endpoint account's identity in place: not this account's, so
+		// it is preserved, never stored over the key.
+		kind = "alien"
+	default:
+		kind = "own-bytes"
+	}
 	switch kind {
 	case "foreign", "alien":
 		if _, err := stashLiveCredential(s, originalCreds, kind, currentAccount, prov.Resolved); err != nil {
@@ -397,15 +449,35 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 		return cerr.Switch("Account-%s has no stored config backup. Re-add with: tycswap --add-account --slot %s", targetAccount, targetAccount)
 	}
 
+	// What the switch does to Claude Code's settings.json (DESIGN A46),
+	// decided and refused before the live login is touched.
+	plan, err := planProfile(s, data, targetAccount, targetCreds)
+	if err != nil {
+		return err
+	}
+	tx.plan = plan
+
 	// Step 3: activate target credentials. The live seat-wide keys (the seat's
 	// MCP server logins and client secrets) ride over the stored account blob;
 	// rollback below restores the original bytes verbatim through WriteActive.
-	if err := s.Creds.WriteActiveAccount(targetCreds); err != nil {
+	// An account with a base URL stores nothing here: every login leaves the
+	// store, and its key goes into settings.json in step 3b.
+	if err := writeActiveFor(s, plan, targetCreds); err != nil {
 		return err
 	}
 	tx.recordStep("credentials_written")
 	if s.Log != nil {
 		s.Log.Infof("Wrote target credentials")
+	}
+
+	// Step 3b: write the endpoint into settings.json, or put back what it
+	// held before one was written. Recorded before the write, so a half-done
+	// write is rolled back from the snapshot too.
+	if plan.touches() {
+		tx.recordStep("profile_written")
+		if err := plan.commit(s); err != nil {
+			return err
+		}
 	}
 
 	// Step 4: splice the target oauthAccount into the live config.
@@ -490,9 +562,18 @@ func oauthSection(cfg map[string]any) (map[string]any, bool) {
 // printSwitchFollowup prints the post-switch note keyed to where the active
 // credential write landed (spec 02§8.4). A restart is never required, except
 // after a switch onto an API-key account: that changes how Claude Code
-// authenticates, and a running session keeps its old login (DESIGN A33).
-func printSwitchFollowup(s *store.Store, target string) {
-	if s.AccountKindFor(target) == "api_key" {
+// authenticates, and a running session keeps its old login (DESIGN A33). The
+// same holds whenever the switch rewrote Claude Code's settings.json (DESIGN
+// A46): a running session read its env block when it started.
+func printSwitchFollowup(s *store.Store, target string, plan *profilePlan) {
+	switch {
+	case plan != nil && plan.applied:
+		printOut(printer.Dimmed("Claude Code's settings.json now sends its requests to " + ccsettings.Host(plan.apply.BaseURL) +
+			" (env.ANTHROPIC_BASE_URL, env.ANTHROPIC_AUTH_TOKEN); a switch to another account puts back what it held."))
+	case plan != nil && plan.reverted:
+		printOut(printer.Dimmed("Claude Code's settings.json no longer sends its requests to an API-key account's endpoint."))
+	}
+	if s.AccountKindFor(target) == "api_key" || plan.changed() {
 		printOut(printer.Dimmed(APIKeyRestartNote))
 		return
 	}
