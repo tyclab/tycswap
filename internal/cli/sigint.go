@@ -52,17 +52,25 @@ func setSigintCancelToStderr() { sigintCancelToStderr.Store(true) }
 
 func setSigintNote(note string) { sigintNote.Store(note) }
 
-// sigintClaimed is set while a command handles SIGINT itself through its
-// signal context; the notifier then lets the signal pass.
-var sigintClaimed atomic.Bool
+// sigintCh is the notifier's channel: nil until installSigint ran, so in a
+// run()-driven test a claim is a no-op.
+var sigintCh chan os.Signal
 
 // claimSigint hands SIGINT to the calling command, which must already have
 // registered its own signal context (os.Interrupt), or a Ctrl-C in between
-// would be lost. The returned func gives the signal back to the notifier; the
-// command defers it, so run()-driven tests never see a leaked claim.
+// would take the default action. The claim stops the notifier's delivery
+// (signal.Stop), so a Ctrl-C while it stands reaches the command's context
+// alone, whenever the notifier's goroutine happens to run; the returned func
+// registers the notifier again. A command takes the claim before it serves
+// and defers the release before its cleanup defers, so a Ctrl-C during the
+// cleanup is still its own.
 func claimSigint() (release func()) {
-	sigintClaimed.Store(true)
-	return func() { sigintClaimed.Store(false) }
+	ch := sigintCh
+	if ch == nil {
+		return func() {}
+	}
+	signal.Stop(ch)
+	return func() { signal.Notify(ch, syscall.SIGINT) }
 }
 
 func currentSigintNote() string {
@@ -75,13 +83,12 @@ func currentSigintNote() string {
 // installSigint wires SIGINT to the reproduced cancel-note + exit-130 path.
 func installSigint(s ioStreams) {
 	ch := make(chan os.Signal, 1)
+	sigintCh = ch
 	signal.Notify(ch, syscall.SIGINT)
 	go func() {
+		// A loop: a server's claim stops delivery for a while and its release
+		// resumes it (claimSigint).
 		for range ch {
-			// A server that claimed the signal ends on its own context.
-			if sigintClaimed.Load() {
-				continue
-			}
 			// Restore any terminal state a live prompt left off (echo disabled by a
 			// no-echo Secret prompt); exiting from this goroutine skips the prompt's
 			// deferred restore, so run the registered cleanups first (spec 08§5).

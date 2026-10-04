@@ -5649,12 +5649,15 @@ Dropping `web`'s 130 branch (#22) fixed SIGTERM alone: the program-wide SIGINT
 notifier (A7), which prints the cancellation note and exits 130 for every
 other command, receives Ctrl-C beside the server's signal context and wins,
 for `web` and for `app`, whose deferred token removal and engine stop it
-skipped. The two servers now claim SIGINT once their context is registered
-(`claimSigint`): the notifier lets the signal pass while the claim stands,
-the serve loop ends on the context, the defers run and the command returns
-0. The claim is released when the command returns, so nothing changes for any
-other command or for `run()`-driven tests. A usage error stays 2 and a server
-that cannot start stays 1.
+skipped. The two servers (the remote tray included) now claim SIGINT once
+their context is registered and before they print or serve anything
+(`claimSigint`): the claim stops the notifier's delivery (`signal.Stop`), so
+the outcome does not depend on when the notifier's goroutine runs; the serve
+loop ends on the context, the defers run and the command returns 0. The
+release, deferred before the cleanup defers, registers the notifier again when
+the command returns, so nothing changes for any other command or for
+`run()`-driven tests, where the notifier is not installed and a claim is a
+no-op. A usage error stays 2 and a server that cannot start stays 1.
 
 **Tests.** The switcher: disable and remove wait for a holder of the lock and
 write once it is released, and report a lock error with nothing written when
@@ -5662,4 +5665,5 @@ it stays held; the three busy assertions name the lock kind. `internal/cli`:
 the Codex façade's lock test runs against the switcher's lock; `tycswap web`
 exits 0 through the notify-context seam, offline; with the A7 notifier
 installed, a real SIGINT ends `tycswap web` with 0 and the headless app with 0
-and no token file (Linux and macOS).
+and no token file (Linux; the file compiles on macOS, whose CI runs the tray
+scope only).

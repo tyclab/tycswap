@@ -31,7 +31,8 @@ func ctrlC(t *testing.T) {
 // `tycswap web` ends with 0 on a real Ctrl-C with the program-wide notifier
 // installed: the server claims the signal, its context ends the serve loop
 // and the command returns (DESIGN A48). Before the claim the notifier's exit
-// 130 won.
+// 130 won. Both commands claim before their first line, so a signal sent
+// after the awaited line is always theirs.
 func TestCtrlCEndsWebWithZero(t *testing.T) {
 	appTestHome(t)
 	installTestSigint()

@@ -280,6 +280,15 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	if code != 0 {
 		return code
 	}
+	// Ctrl-C and SIGTERM alike: the distro side runs as a user service
+	// (A45), and `systemctl --user stop` sends SIGTERM, which would
+	// otherwise end the process without the deferred token removal. Ctrl-C
+	// is claimed from the program-wide notifier for the same reason, here
+	// before the token exists and anything is printed, so the claim's
+	// release (deferred first) runs after the token's removal (A48).
+	ctx, cancel := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	defer claimSigint()()
 	// The app — and only the app — remembers whether auto-switch was on (A43).
 	d.auto.statePath = appStatePath(d.sw.BackupDir())
 	// The token file lives exactly as long as the process that honours the
@@ -304,14 +313,6 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		return 1
 	}
 	fmt.Fprintf(s.err, "Dashboard: %s\n", url)
-
-	// Ctrl-C and SIGTERM alike: the distro side runs as a user service
-	// (A45), and `systemctl --user stop` sends SIGTERM, which would
-	// otherwise end the process without the deferred token removal. Ctrl-C
-	// is claimed from the program-wide notifier for the same reason (A48).
-	ctx, cancel := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-	defer claimSigint()()
 
 	if t == nil {
 		if o.headless {
