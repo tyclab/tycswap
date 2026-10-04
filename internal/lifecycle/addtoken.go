@@ -352,6 +352,13 @@ func addTokenRefreshInPlace(s *store.Store, data *store.SequenceData, accountNum
 		s.Log.Infof("Updated %s for account %s: %s", kindLabel, accountNum, email)
 	}
 	emitLine(printer.Accent("Updated "+kindLabel) + " for Account " + accountNum + " (" + email + " " + printer.Muted("[personal]") + ")." + endpointNote)
+	if cur, org, ok := s.GetCurrentAccount(); ok && s.FindAccountSlot(data, cur, org) == accountNum {
+		// The live login still has the old key (and endpoint): only a switch
+		// writes it, and a plain switch to the account in use is a no-op
+		// (DESIGN A46).
+		emitLine(printer.Dimmed("Account " + accountNum + " is the live login; activate the new " + kindLabel +
+			" with: tycswap switch " + accountNum + " --force"))
+	}
 	return nil
 }
 

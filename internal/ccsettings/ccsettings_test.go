@@ -62,7 +62,7 @@ func TestApplyWritesProfile(t *testing.T) {
 		"apiKeyHelper": "/opt/me/helper",
 		"env":          map[string]any{"FOO": "bar", "ANTHROPIC_AUTH_TOKEN": "mine", "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"},
 	})
-	if err := Apply(s, sc, gw); err != nil {
+	if err := Apply(s, sc, gw, nil); err != nil {
 		t.Fatal(err)
 	}
 	got := readJSON(t, s)
@@ -118,7 +118,7 @@ func TestApplyOnlyTouchesTheAllowlist(t *testing.T) {
 		"includeCoAuthoredBy": false,
 	}
 	writeJSON(t, s, before)
-	if err := Apply(s, sc, gw); err != nil {
+	if err := Apply(s, sc, gw, nil); err != nil {
 		t.Fatal(err)
 	}
 	after := readJSON(t, s)
@@ -139,7 +139,7 @@ func TestApplyOnlyTouchesTheAllowlist(t *testing.T) {
 func TestApplyMissingRefusesCorrupt(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		s, sc := paths(t)
-		if err := Apply(s, sc, gw); err != nil {
+		if err := Apply(s, sc, gw, nil); err != nil {
 			t.Fatal(err)
 		}
 		if got := env(readJSON(t, s))["ANTHROPIC_BASE_URL"]; got != gw.BaseURL {
@@ -160,7 +160,7 @@ func TestApplyMissingRefusesCorrupt(t *testing.T) {
 			if err := os.WriteFile(s, []byte(tc.content), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			err := Apply(s, sc, gw)
+			err := Apply(s, sc, gw, nil)
 			if err == nil || !strings.Contains(err.Error(), "refusing to rewrite") || !strings.Contains(err.Error(), s) {
 				t.Fatalf("Apply err = %v, want a refusal naming the file", err)
 			}
@@ -208,7 +208,7 @@ func TestRevertRestoresExactly(t *testing.T) {
 			"OTHER":                "x",
 		},
 	})
-	if err := Apply(s, sc, gw); err != nil {
+	if err := Apply(s, sc, gw, nil); err != nil {
 		t.Fatal(err)
 	}
 	m := readJSON(t, s)
@@ -249,7 +249,7 @@ func TestRevertRemovesCreatedEnvContainer(t *testing.T) {
 	t.Run("empty after revert", func(t *testing.T) {
 		s, sc := paths(t)
 		writeJSON(t, s, map[string]any{"theme": "dark"})
-		if err := Apply(s, sc, gw); err != nil {
+		if err := Apply(s, sc, gw, nil); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := Revert(s, sc, nil); err != nil {
@@ -262,7 +262,7 @@ func TestRevertRemovesCreatedEnvContainer(t *testing.T) {
 	t.Run("user key keeps container", func(t *testing.T) {
 		s, sc := paths(t)
 		writeJSON(t, s, map[string]any{})
-		if err := Apply(s, sc, gw); err != nil {
+		if err := Apply(s, sc, gw, nil); err != nil {
 			t.Fatal(err)
 		}
 		m := readJSON(t, s)
@@ -278,7 +278,7 @@ func TestRevertRemovesCreatedEnvContainer(t *testing.T) {
 	t.Run("non-object env is put back", func(t *testing.T) {
 		s, sc := paths(t)
 		writeJSON(t, s, map[string]any{"env": "weird"})
-		if err := Apply(s, sc, gw); err != nil {
+		if err := Apply(s, sc, gw, nil); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := Revert(s, sc, nil); err != nil {
@@ -295,11 +295,11 @@ func TestRevertRemovesCreatedEnvContainer(t *testing.T) {
 func TestDoubleApplyKeepsOriginalPrior(t *testing.T) {
 	s, sc := paths(t)
 	writeJSON(t, s, map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": "https://orig.example"}})
-	if err := Apply(s, sc, gw); err != nil {
+	if err := Apply(s, sc, gw, nil); err != nil {
 		t.Fatal(err)
 	}
 	second := Profile{BaseURL: "https://two.example", Token: "two-key"}
-	if err := Apply(s, sc, second); err != nil {
+	if err := Apply(s, sc, second, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := env(readJSON(t, s)); got["ANTHROPIC_BASE_URL"] != second.BaseURL || got["ANTHROPIC_AUTH_TOKEN"] != second.Token {
@@ -318,12 +318,12 @@ func TestDoubleApplyKeepsOriginalPrior(t *testing.T) {
 func TestApplyIsIdempotent(t *testing.T) {
 	s, sc := paths(t)
 	writeJSON(t, s, map[string]any{"theme": "dark", "env": map[string]any{"A": "b"}})
-	if err := Apply(s, sc, gw); err != nil {
+	if err := Apply(s, sc, gw, nil); err != nil {
 		t.Fatal(err)
 	}
 	s1, _ := os.ReadFile(s)
 	c1, _ := os.ReadFile(sc)
-	if err := Apply(s, sc, gw); err != nil {
+	if err := Apply(s, sc, gw, nil); err != nil {
 		t.Fatal(err)
 	}
 	s2, _ := os.ReadFile(s)
@@ -360,7 +360,7 @@ func TestRevertByValue(t *testing.T) {
 	t.Run("known pair", func(t *testing.T) {
 		s, sc := paths(t)
 		writeJSON(t, s, map[string]any{"theme": "dark"})
-		if err := Apply(s, sc, gw); err != nil {
+		if err := Apply(s, sc, gw, nil); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.Remove(sc); err != nil {
@@ -410,7 +410,7 @@ func TestCorruptSidecarIsAnError(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, _ := os.ReadFile(s)
-	if err := Apply(s, sc, gw); err == nil || !strings.Contains(err.Error(), "corrupt") || !strings.Contains(err.Error(), sc) {
+	if err := Apply(s, sc, gw, nil); err == nil || !strings.Contains(err.Error(), "corrupt") || !strings.Contains(err.Error(), sc) {
 		t.Errorf("Apply err = %v, want a corrupt-sidecar error naming it", err)
 	}
 	if _, err := Revert(s, sc, []Profile{gw}); err == nil {
@@ -435,7 +435,7 @@ func TestCorruptSidecarIsAnError(t *testing.T) {
 func TestRevertUsesTheRecordedFile(t *testing.T) {
 	s, sc := paths(t)
 	writeJSON(t, s, map[string]any{"k": "v"})
-	if err := Apply(s, sc, gw); err != nil {
+	if err := Apply(s, sc, gw, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := RecordedSettingsPath(sc); got != s {
@@ -461,13 +461,13 @@ func TestApplyToAnotherFileRevertsTheFirst(t *testing.T) {
 	s2 := filepath.Join(t.TempDir(), "other", "settings.json")
 	writeJSON(t, s1, map[string]any{"one": true})
 	writeJSON(t, s2, map[string]any{"two": true})
-	if err := Apply(s1, sc, gw); err != nil {
+	if err := Apply(s1, sc, gw, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := Check(s2, sc); err != nil {
 		t.Fatal(err)
 	}
-	if err := Apply(s2, sc, gw); err != nil {
+	if err := Apply(s2, sc, gw, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := readJSON(t, s1); !reflect.DeepEqual(got, map[string]any{"one": true}) {
@@ -489,7 +489,7 @@ func TestApplyToAnotherFileRevertsTheFirst(t *testing.T) {
 func TestSidecarShape(t *testing.T) {
 	s, sc := paths(t)
 	writeJSON(t, s, map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": "https://before.example"}})
-	if err := Apply(s, sc, gw); err != nil {
+	if err := Apply(s, sc, gw, nil); err != nil {
 		t.Fatal(err)
 	}
 	raw := readJSON(t, sc)
@@ -522,7 +522,7 @@ func TestNumbersSurviveARewrite(t *testing.T) {
 	if err := os.WriteFile(s, []byte(`{"big": 12345678901234567890, "f": 1.50}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := Apply(s, sc, gw); err != nil {
+	if err := Apply(s, sc, gw, nil); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(s)
@@ -544,7 +544,7 @@ func TestLive(t *testing.T) {
 	if got := Live(s); got != (Profile{}) {
 		t.Errorf("Live(missing) = %v", got)
 	}
-	if err := Apply(s, sc, gw); err != nil {
+	if err := Apply(s, sc, gw, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := Live(s); got != gw {
@@ -568,7 +568,7 @@ func TestSnapshotRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := Apply(s, sc, gw); err != nil {
+	if err := Apply(s, sc, gw, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := snap.Restore(); err != nil {
@@ -601,7 +601,7 @@ func TestApplyRefusesAnInvalidProfile(t *testing.T) {
 		{BaseURL: gw.BaseURL, Token: "two words"},
 	} {
 		s, sc := paths(t)
-		if err := Apply(s, sc, p); err == nil {
+		if err := Apply(s, sc, p, nil); err == nil {
 			t.Errorf("Apply(%+v) succeeded", p)
 		}
 		if _, err := os.Stat(s); !errors.Is(err, os.ErrNotExist) {
@@ -610,5 +610,152 @@ func TestApplyRefusesAnInvalidProfile(t *testing.T) {
 		if SidecarExists(sc) {
 			t.Errorf("Apply(%+v) wrote a record", p)
 		}
+	}
+}
+
+// TestASymlinkedSettingsFileIsNeverWritten: a settings.json that is a link (a
+// dotfile manager's) is refused by Apply before the record is written, by
+// Check, and by Revert, and the link stays a link pointing where it did.
+func TestASymlinkedSettingsFileIsNeverWritten(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	s, sc := paths(t)
+	target := filepath.Join(t.TempDir(), "dotfiles", "settings.json")
+	writeJSON(t, target, map[string]any{"theme": "dark"})
+	if err := os.MkdirAll(filepath.Dir(s), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, s); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(target)
+	if err := Apply(s, sc, gw, nil); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+		t.Fatalf("Apply err = %v, want the symlink refusal", err)
+	}
+	if SidecarExists(sc) {
+		t.Error("Apply wrote a record before refusing")
+	}
+	if err := Check(s, sc); err == nil {
+		t.Error("Check passed a symlinked settings file")
+	}
+	if out, err := Revert(s, sc, []Profile{gw}); err != nil || out != RevertedNothing {
+		t.Errorf("Revert without a match = %v, %v", out, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(sc), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sc, []byte(`{"version":1,"settingsPath":`+jsonString(s)+`,"keys":{"env.ANTHROPIC_BASE_URL":{"present":false}}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Revert(s, sc, nil); err == nil {
+		t.Error("Revert wrote over a symlink")
+	}
+	if link, err := os.Readlink(s); err != nil || link != target {
+		t.Errorf("settings.json is no longer the link: %q, %v", link, err)
+	}
+	if after, _ := os.ReadFile(target); !bytes.Equal(before, after) {
+		t.Errorf("the link's target changed: %s", after)
+	}
+}
+
+// TestSnapshotRestoresALink: a link replaced after the snapshot is a link
+// again after Restore, pointing where it did; one left alone is not touched.
+func TestSnapshotRestoresALink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	s, _ := paths(t)
+	target := filepath.Join(t.TempDir(), "settings.json")
+	writeJSON(t, target, map[string]any{"theme": "dark"})
+	if err := os.MkdirAll(filepath.Dir(s), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, s); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := Take(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := snap.Restore(); err != nil {
+		t.Fatal(err)
+	}
+	if link, err := os.Readlink(s); err != nil || link != target {
+		t.Fatalf("an untouched link changed: %q, %v", link, err)
+	}
+	if err := os.Remove(s); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(s, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := snap.Restore(); err != nil {
+		t.Fatal(err)
+	}
+	if link, err := os.Readlink(s); err != nil || link != target {
+		t.Errorf("Restore left %q, %v; want the link to %s", link, err, target)
+	}
+}
+
+// TestANewRecordDoesNotTakeOurEndpointForTheUsers: without a record, two keys
+// that hold exactly the profile being applied or a known endpoint are
+// recorded as absent (and an env holding nothing else as absent too), so the
+// revert removes them; anything else is recorded as it is.
+func TestANewRecordDoesNotTakeOurEndpointForTheUsers(t *testing.T) {
+	second := Profile{BaseURL: "https://two.example", Token: "two-key"}
+	for _, tc := range []struct {
+		name   string
+		before map[string]any
+		apply  Profile
+		known  []Profile
+		want   map[string]any
+	}{
+		{"a known endpoint", map[string]any{"theme": "dark", "env": map[string]any{"ANTHROPIC_BASE_URL": gw.BaseURL, "ANTHROPIC_AUTH_TOKEN": gw.Token}},
+			second, []Profile{gw}, map[string]any{"theme": "dark"}},
+		{"the profile itself", map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": gw.BaseURL, "ANTHROPIC_AUTH_TOKEN": gw.Token, "MINE": "1"}},
+			gw, nil, map[string]any{"env": map[string]any{"MINE": "1"}}},
+		{"the user's own", map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": gw.BaseURL, "ANTHROPIC_AUTH_TOKEN": "theirs"}},
+			second, []Profile{gw}, map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": gw.BaseURL, "ANTHROPIC_AUTH_TOKEN": "theirs"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, sc := paths(t)
+			writeJSON(t, s, tc.before)
+			if err := Apply(s, sc, tc.apply, tc.known); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Revert("", sc, nil); err != nil {
+				t.Fatal(err)
+			}
+			if got := readJSON(t, s); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("after revert = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestTheRecordNamesAnAbsolutePath: a relative settings path (a relative
+// CLAUDE_CONFIG_DIR) is recorded absolute, so a revert from another working
+// directory writes the same file.
+func TestTheRecordNamesAnAbsolutePath(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	sc := filepath.Join(dir, "store", SidecarName)
+	if err := Apply(filepath.Join("cfg", "settings.json"), sc, gw, nil); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dir, "cfg", "settings.json")
+	if got := RecordedSettingsPath(sc); got != want {
+		t.Errorf("recorded %q, want %q", got, want)
+	}
+	if !RecordsFile(sc, filepath.Join("cfg", "settings.json")) || !RecordsFile(sc, want) {
+		t.Error("RecordsFile does not match the file by either name")
+	}
+	t.Chdir(t.TempDir())
+	if _, err := Revert("", sc, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := readJSON(t, want); len(got) != 0 {
+		t.Errorf("the recorded file = %v after the revert, want {}", got)
 	}
 }

@@ -15,6 +15,7 @@ package switching
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/cerr"
@@ -26,6 +27,15 @@ import (
 // claudeSettingsPath is Claude Code's own settings.json under the live config
 // home, the one a switch writes the endpoint into.
 func claudeSettingsPath() string { return paths.GetClaudeSettingsPath() }
+
+// endpointIsLive reports whether Claude Code's settings.json carries
+// tycswap's endpoint profile: the record exists and names the live settings
+// file. With nothing in the credential store, that is the state a switch onto
+// an account with a base URL leaves, whatever the account's record says now
+// (its URL may have been removed by a refresh since).
+func endpointIsLive(s *store.Store) bool {
+	return ccsettings.RecordsFile(ProfileSidecarPath(s), claudeSettingsPath())
+}
 
 // ProfileSidecarPath is where the record of what settings.json held before an
 // endpoint was written lives: <backup root>/claude-settings.prev.json.
@@ -58,8 +68,10 @@ type profilePlan struct {
 	apply *ccsettings.Profile
 	// revert: a record exists, so the priors go back.
 	revert bool
-	// known are the endpoint accounts' URLs and keys, for the revert of a
-	// profile whose record was lost; nil when settings.json carries none.
+	// known are the endpoint accounts' URLs and keys when there is no record
+	// and settings.json carries both keys: the revert of a profile whose
+	// record was lost removes them, and a new record does not take them for
+	// the user's own.
 	known []ccsettings.Profile
 	// snap is both files as they were, for the rollback; nil when the plan
 	// touches nothing.
@@ -86,6 +98,11 @@ func (p *profilePlan) changed() bool { return p != nil && (p.applied || p.revert
 // credential of it).
 func planProfile(s *store.Store, data *store.SequenceData, target, targetCreds string) (*profilePlan, error) {
 	p := &profilePlan{settingsPath: claudeSettingsPath(), sidecarPath: ProfileSidecarPath(s)}
+	if targetCreds == "" {
+		// Nothing to switch to: the switch stops at its own check for a
+		// stored credential, with that error, before it writes anything.
+		return p, nil
+	}
 	endpoint, err := endpointFor(data, target)
 	if err != nil {
 		return nil, err
@@ -100,19 +117,16 @@ func planProfile(s *store.Store, data *store.SequenceData, target, targetCreds s
 		return nil, cerr.Switch("Account-%s's key is not an Anthropic API key and the account has no base URL. Re-add it with: tycswap add-token --base-url URL --slot %s", target, target)
 	}
 
-	switch {
-	case p.apply != nil:
-	case ccsettings.SidecarExists(p.sidecarPath):
-		p.revert = true
-	default:
+	if ccsettings.SidecarExists(p.sidecarPath) {
+		p.revert = p.apply == nil
+	} else if live := ccsettings.Live(p.settingsPath); live.BaseURL != "" && live.Token != "" {
 		// No record. A profile left without one (its sidecar removed by
 		// hand) is still taken out when settings.json holds exactly an
-		// endpoint tycswap knows and its key. A file that cannot be read
-		// carries nothing here: it never stops a switch that would not
-		// otherwise write it.
-		if live := ccsettings.Live(p.settingsPath); live.BaseURL != "" && live.Token != "" {
-			p.known = knownProfiles(s, data)
-		}
+		// endpoint tycswap knows and its key, and is not recorded as the
+		// user's when another endpoint is written over it. A file that
+		// cannot be read carries nothing here: it never stops a switch that
+		// would not otherwise write it.
+		p.known = knownProfiles(s, data)
 	}
 	if !p.touches() {
 		return p, nil
@@ -154,6 +168,13 @@ func knownProfiles(s *store.Store, data *store.SequenceData) []ccsettings.Profil
 	return out
 }
 
+// ownStoredKey reports whether live, the credential found in Claude Code's
+// store, is the account's own stored one.
+func ownStoredKey(s *store.Store, num, email, live string) bool {
+	stored, _ := s.ReadAccountCredentials(num, email)
+	return stored != "" && strings.TrimSpace(stored) == strings.TrimSpace(live)
+}
+
 // writeActiveFor writes the target's credential into Claude Code's credential
 // store: the stored blob or key as always, or, for an endpoint account,
 // nothing at all (ClearActive), since its key goes into settings.json.
@@ -172,7 +193,7 @@ func (p *profilePlan) commit(s *store.Store) error {
 		return nil
 	}
 	if p.apply != nil {
-		if err := ccsettings.Apply(p.settingsPath, p.sidecarPath, *p.apply); err != nil {
+		if err := ccsettings.Apply(p.settingsPath, p.sidecarPath, *p.apply, p.known); err != nil {
 			return cerr.Config("Cannot write the endpoint into Claude Code's settings: %v", err).Wrap(err)
 		}
 		p.applied = true

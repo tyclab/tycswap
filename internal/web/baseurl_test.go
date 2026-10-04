@@ -84,11 +84,12 @@ func TestAuthOverridesLeaveTheEndpointProfileOut(t *testing.T) {
 	if err := os.WriteFile(settings, []byte(`{"apiKeyHelper": "/x"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := ccsettings.Apply(settings, sidecar, ccsettings.Profile{BaseURL: "https://gw.example.com", Token: "k"}); err != nil {
+	if err := ccsettings.Apply(settings, sidecar, ccsettings.Profile{BaseURL: "https://gw.example.com", Token: "k"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if v := detectAuthOverrides(nil, settings, sidecar); !reflect.DeepEqual(v.Settings, []string{"apiKeyHelper"}) {
-		t.Errorf("with the record: %v, want only the user's apiKeyHelper", v.Settings)
+	if v := detectAuthOverrides(nil, settings, sidecar); !reflect.DeepEqual(v.Settings, []string{"apiKeyHelper"}) ||
+		!reflect.DeepEqual(v.Profile, []string{"env.ANTHROPIC_AUTH_TOKEN", "env.ANTHROPIC_BASE_URL"}) {
+		t.Errorf("with the record: settings %v, profile %v; want only the user's apiKeyHelper, the two keys set aside", v.Settings, v.Profile)
 	}
 	want := []string{"apiKeyHelper", "env.ANTHROPIC_AUTH_TOKEN", "env.ANTHROPIC_BASE_URL"}
 	if v := detectAuthOverrides(nil, settings, ""); !reflect.DeepEqual(v.Settings, want) {
@@ -104,5 +105,35 @@ func TestAuthOverridesLeaveTheEndpointProfileOut(t *testing.T) {
 	}
 	if v := detectAuthOverrides(nil, other, sidecar); !reflect.DeepEqual(v.Settings, want) {
 		t.Errorf("another settings file: %v, want %v", v.Settings, want)
+	}
+}
+
+// TestStateListsTheProfileUnlessItsAccountIsActive: the profile's keys are
+// the login while the active account is the one with a base URL, and an
+// override under any other live login (a /login made meanwhile).
+func TestStateListsTheProfileUnlessItsAccountIsActive(t *testing.T) {
+	for _, activeEndpoint := range []bool{true, false} {
+		h := newHarness(t)
+		snap := sampleSnapshot()
+		if activeEndpoint {
+			snap.Accounts[0].Kind, snap.Accounts[0].BaseURL = "api_key", "https://gw.example.com"
+		}
+		h.fa.mu.Lock()
+		h.fa.snap = snap
+		h.fa.mu.Unlock()
+		h.setOverrides(AuthOverridesView{Env: []string{}, Settings: []string{"apiKeyHelper"},
+			Profile: []string{"env.ANTHROPIC_AUTH_TOKEN", "env.ANTHROPIC_BASE_URL"}, SettingsPath: "/home/t/.claude/settings.json"})
+		st := decodeJSON(t, h.get("/api/state"))
+		got, _ := st["authOverrides"].(map[string]any)["settings"].([]any)
+		want := []any{"apiKeyHelper"}
+		if !activeEndpoint {
+			want = []any{"apiKeyHelper", "env.ANTHROPIC_AUTH_TOKEN", "env.ANTHROPIC_BASE_URL"}
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("active endpoint %v: settings %v, want %v", activeEndpoint, got, want)
+		}
+		if _, present := st["authOverrides"].(map[string]any)["profile"]; present {
+			t.Error("the profile list is sent")
+		}
 	}
 }

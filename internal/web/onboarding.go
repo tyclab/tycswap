@@ -33,6 +33,11 @@ type AuthOverridesView struct {
 	Env          []string `json:"env"`      // never null
 	Settings     []string `json:"settings"` // never null; dotted keys
 	SettingsPath string   `json:"settingsPath"`
+	// Profile are the settings keys that are tycswap's own endpoint profile
+	// (DESIGN A46), set aside from Settings: they are the active account's
+	// login while an account with a base URL is active, and an override of
+	// whatever else is (buildState decides). Not sent.
+	Profile []string `json:"-"`
 }
 
 // Any reports whether something overrides the login.
@@ -60,12 +65,11 @@ func DetectAuthOverrides(getenv func(string) string, settingsPath string) AuthOv
 // detectAuthOverrides is DetectAuthOverrides that knows tycswap's own
 // endpoint profile (DESIGN A46): while the record at sidecarPath says the
 // profile is in settingsPath, its env.ANTHROPIC_BASE_URL and
-// env.ANTHROPIC_AUTH_TOKEN are the active account's login, not something that
-// overrides it, and are not listed.
+// env.ANTHROPIC_AUTH_TOKEN go to Profile instead of Settings.
 func detectAuthOverrides(getenv func(string) string, settingsPath, sidecarPath string) AuthOverridesView {
 	v := AuthOverridesView{Env: []string{}, Settings: []string{}, SettingsPath: settingsPath}
 	ours := map[string]bool{}
-	if sidecarPath != "" && ccsettings.IsApplied(sidecarPath) && ccsettings.RecordedSettingsPath(sidecarPath) == settingsPath {
+	if sidecarPath != "" && ccsettings.RecordsFile(sidecarPath, settingsPath) {
 		for _, k := range ccsettings.OwnedKeys() {
 			ours[k] = true
 		}
@@ -86,10 +90,11 @@ func detectAuthOverrides(getenv func(string) string, settingsPath, sidecarPath s
 		return v
 	}
 	for _, k := range authOverrideSettings {
-		if ours[k] {
-			continue
-		}
 		if val, ok := lookup(root, k); ok && !blank(val) {
+			if ours[k] {
+				v.Profile = append(v.Profile, k)
+				continue
+			}
 			v.Settings = append(v.Settings, k)
 		}
 	}

@@ -189,3 +189,32 @@ func TestPurgeWarnsAboutAnEndpointRecord(t *testing.T) {
 		}
 	}
 }
+
+// TestAddTokenRefreshOfTheLiveAccountSaysHowToActivateIt: refreshing the key
+// (or URL) of the account the live login belongs to changes only its backup,
+// and the output says that `switch <n> --force` makes it live.
+func TestAddTokenRefreshOfTheLiveAccountSaysHowToActivateIt(t *testing.T) {
+	s := newStore(t)
+	email := sp("gw@example.com")
+	if err := AddAccountFromTokenWithBaseURL(s, "sk-ant-api03-one", gwURL, email, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	out := captureOut(t)
+	if err := AddAccountFromTokenWithBaseURL(s, "sk-ant-api03-two", gwURL, email, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "--force") {
+		t.Errorf("a refresh of an account that is not live gave the hint:\n%s", out.String())
+	}
+	cfg := `{"oauthAccount": {"emailAddress": "gw@example.com", "organizationUuid": null}}`
+	if err := os.WriteFile(filepath.Join(s.Home, ".claude.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := AddAccountFromTokenWithBaseURL(s, "sk-ant-api03-three", "", email, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "tycswap switch 1 --force") {
+		t.Errorf("refresh of the live account:\n%s", out.String())
+	}
+}

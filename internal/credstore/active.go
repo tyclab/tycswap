@@ -167,11 +167,23 @@ func (s *FileKeychainStore) WriteActiveAccount(creds string) error {
 // Nothing is stored in their place, so ReadActive finds no credential. A
 // rollback onto a state that held no credential at all restores it with this
 // as well.
+//
+// The removals are best-effort one by one, as for any write that clears the
+// other axis, but the result is checked: a managed key or a login that is
+// still readable afterwards is an error, since Claude Code would send that
+// key along to the endpoint. The caller's rollback writes the original
+// credential back.
 func (s *FileKeychainStore) ClearActive() error {
 	if err := s.clearOAuthLogin(func() error { return nil }); err != nil {
 		return err
 	}
 	s.clearManagedKey()
+	if left, _, err := s.ReadActive(); err != nil || left != "" {
+		if err == nil {
+			err = errors.New("a login or a managed key is still readable")
+		}
+		return cerr.CredentialWrite("Could not take the login off Claude Code's credential store: %v", err).Wrap(err)
+	}
 	return nil
 }
 

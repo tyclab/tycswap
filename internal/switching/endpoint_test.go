@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -515,9 +516,17 @@ func TestASwitchStopsAtACorruptRecordOrSettingsFile(t *testing.T) {
 			t.Fatal(err)
 		}
 		before := seatFiles(t, s)
+		backupBefore, _ := s.ReadAccountConfig("3", gwEmail)
+		if err := os.WriteFile(filepath.Join(s.Home, ".claude.json"), []byte(`{"oauthAccount":{"emailAddress":"`+gwEmail+`","organizationUuid":""},"changed":"since the switch"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
 		_, err := SwitchTo(s, "1", true, false)
 		if err == nil || !strings.Contains(err.Error(), "corrupt") {
 			t.Fatalf("err = %v, want the corrupt-record refusal", err)
+		}
+		// Refused before step 1: not even the outgoing backup was written.
+		if got, _ := s.ReadAccountConfig("3", gwEmail); got != backupBefore {
+			t.Errorf("the outgoing backup was rewritten by a refused switch: %s", got)
 		}
 		for p, b := range before {
 			if got := seatFiles(t, s)[p]; got != b {
@@ -547,6 +556,34 @@ func TestASwitchStopsAtACorruptRecordOrSettingsFile(t *testing.T) {
 		}
 		if got := activeNum(t, s); got != 1 {
 			t.Errorf("active = %d, want 1", got)
+		}
+	})
+	t.Run("symlinked settings", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("symlinks need privileges on Windows")
+		}
+		s := newTestStore(t, nil)
+		endpointSeat(t, s)
+		target := filepath.Join(t.TempDir(), "dotfiles-settings.json")
+		if err := os.Rename(settingsPath(s), target); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, settingsPath(s)); err != nil {
+			t.Fatal(err)
+		}
+		before := seatFiles(t, s)
+		ApproveAPIKeySwitch("3")
+		_, err := SwitchTo(s, "3", true, false)
+		if err == nil || !strings.Contains(err.Error(), "symbolic link") {
+			t.Fatalf("err = %v, want the symlink refusal", err)
+		}
+		for p, b := range before {
+			if got := seatFiles(t, s)[p]; got != b {
+				t.Errorf("%s changed: %s", filepath.Base(p), got)
+			}
+		}
+		if link, err := os.Readlink(settingsPath(s)); err != nil || link != target {
+			t.Errorf("settings.json is no longer the link: %q, %v", link, err)
 		}
 	})
 	t.Run("subscription switch ignores an unparseable settings file", func(t *testing.T) {
@@ -719,5 +756,184 @@ func TestSwitchOntoAnEndpoint_macOS(t *testing.T) {
 				t.Errorf("OAuth Keychain item = %q, %v; want slot 1's login", item, ok)
 			}
 		})
+	}
+}
+
+// TestALostRecordIsNotTakenForTheUsersSettings: with the record removed by
+// hand while an endpoint is in place, a switch onto another endpoint does not
+// record the first one as what the user had, so the way back removes both
+// instead of putting the first endpoint back. --force onto the same account
+// re-applies it the same way.
+func TestALostRecordIsNotTakenForTheUsersSettings(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		then string
+	}{
+		{"onto another endpoint", "4"},
+		{"--force onto the same one", "3"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTestStore(t, nil)
+			endpointSeat(t, s)
+			writeSettings(t, s, map[string]any{"theme": "dark"})
+			switchTo(t, s, "3", false)
+			if err := os.Remove(ProfileSidecarPath(s)); err != nil {
+				t.Fatal(err)
+			}
+			switchTo(t, s, tc.then, tc.then == "3")
+			switchTo(t, s, "1", false)
+			if got := readSettings(t, s); !reflect.DeepEqual(got, map[string]any{"theme": "dark"}) {
+				t.Errorf("settings.json = %v, want no endpoint left", got)
+			}
+		})
+	}
+}
+
+// managedDeleteFails is a Keychain whose managed-key item cannot be deleted.
+type managedDeleteFails struct{ *keychain.Fake }
+
+func (k managedDeleteFails) Delete(service, account string) error {
+	if service == managedKeychainService {
+		return &keychain.KeychainError{Msg: "delete refused"}
+	}
+	return k.Fake.Delete(service, account)
+}
+
+// TestASwitchOntoAnEndpointStopsWhenAKeyStaysLive_macOS: when a managed
+// Keychain item cannot be removed, Claude Code would send that key along to
+// the endpoint, so the switch fails and rolls back: from the plain-key
+// account its key is live as before; from a subscription login beside a
+// stale item, the login the clearing had already taken off is put back.
+// settings.json and the record are untouched either way.
+func TestASwitchOntoAnEndpointStopsWhenAKeyStaysLive_macOS(t *testing.T) {
+	login := withMCPOAuth(t, oauthCreds("acc-a", "ref-a"), "srv|1111", "mcp-live")
+	for _, tc := range []struct {
+		name, from, stale, wantLive string
+		active                      int
+	}{
+		{"from the plain-key account", "2", "", apiKeySeatKey, 2},
+		{"from a login beside a stale key", "", "sk-ant-api03-stale-0000", login, 1},
+	} {
+		for _, force := range []bool{false, true} {
+			name := tc.name
+			if force {
+				name += " with --force"
+			}
+			t.Run(name, func(t *testing.T) {
+				s := newTestStore(t, nil)
+				endpointSeat(t, s)
+				kc := managedDeleteFails{keychain.NewFake()}
+				kc.Seed(oauthKeychainService, keychain.AccountName(), login)
+				if tc.stale != "" {
+					kc.Seed(managedKeychainService, keychain.AccountName(), tc.stale)
+				}
+				s.Creds = credstore.New(credstore.Config{Platform: platform.MacOS, CredentialsDir: s.CredentialsDir}, kc, s.Clk, s.Log)
+				if tc.from != "" {
+					switchTo(t, s, tc.from, false)
+				}
+				before := seatFiles(t, s)
+				itemsBefore := keychainItems(kc)
+
+				ApproveAPIKeySwitch("3")
+				if _, err := SwitchTo(s, "3", true, force); err == nil || !strings.Contains(err.Error(), "still readable") {
+					t.Fatalf("err = %v, want the switch to stop at the key left live", err)
+				}
+				if got := readActiveCreds(t, s); got != tc.wantLive {
+					t.Errorf("live credential = %q, want %q", got, tc.wantLive)
+				}
+				if got := keychainItems(kc); got != itemsBefore {
+					t.Errorf("Keychain items = %q, want %q", got, itemsBefore)
+				}
+				for p, b := range before {
+					if got := seatFiles(t, s)[p]; got != b {
+						t.Errorf("%s changed: %s", filepath.Base(p), got)
+					}
+				}
+				if got := activeNum(t, s); got != tc.active {
+					t.Errorf("active = %d, want %d", got, tc.active)
+				}
+			})
+		}
+	}
+}
+
+// TestChangingTheActiveAccountsURL: a refresh that removes the URL of the
+// active endpoint account, or adds one to the active plain-key account,
+// leaves the live state as the last switch made it. The switch away still
+// works from either: the profile is reverted from its record, and the plain
+// key is the account's own, not a stranger's credential to preserve. The
+// refresh says how to make the change live.
+func TestChangingTheActiveAccountsURL(t *testing.T) {
+	t.Run("URL removed from the active endpoint account", func(t *testing.T) {
+		s := newTestStore(t, nil)
+		endpointSeat(t, s)
+		switchTo(t, s, "3", false)
+		data, _ := s.ReadSequence()
+		data.Accounts["3"] = record(map[string]any{"email": gwEmail, "organizationUuid": "", "kind": "api_key"})
+		writeSeq(t, s, data)
+		if err := s.WriteAccountCredentials("3", gwEmail, "sk-ant-api03-now-plain"); err != nil {
+			t.Fatal(err)
+		}
+		switchTo(t, s, "1", false)
+		assertOnSubscription(t, s, userSettings())
+	})
+	t.Run("URL added to the active plain-key account", func(t *testing.T) {
+		s := newTestStore(t, nil)
+		endpointSeat(t, s)
+		switchTo(t, s, "2", false)
+		data, _ := s.ReadSequence()
+		data.Accounts["2"] = record(map[string]any{"email": apiKeySeatEmail, "organizationUuid": "", "kind": "api_key", "baseUrl": gwURL})
+		writeSeq(t, s, data)
+		out := captureStdout(t, func() {
+			ApproveAPIKeySwitch("1")
+			if _, err := SwitchTo(s, "1", false, false); err != nil {
+				t.Fatal(err)
+			}
+		})
+		if strings.Contains(out, "does not match") || strings.Contains(out, "preserved") {
+			t.Errorf("the account's own key was treated as a stranger's:\n%s", out)
+		}
+		if unclaimed, _ := s.Creds.ListUnclaimed(); len(unclaimed) != 0 {
+			t.Errorf("the account's own key was stashed: %v", unclaimed)
+		}
+		assertOnSubscription(t, s, userSettings())
+		if got, _ := s.ReadAccountCredentials("2", apiKeySeatEmail); got != apiKeySeatKey {
+			t.Errorf("slot 2 = %q, want its key", got)
+		}
+	})
+}
+
+// oauthReadFails is a Keychain whose OAuth item cannot be read.
+type oauthReadFails struct{ *keychain.Fake }
+
+func (k oauthReadFails) Get(service, account string) (string, bool, error) {
+	if service == oauthKeychainService {
+		return "", false, &keychain.KeychainError{Msg: "read refused"}
+	}
+	return k.Fake.Get(service, account)
+}
+
+// TestASwitchAwayFromAnEndpointNeedsAReadableKeychain_macOS: on an endpoint
+// account an empty credential store is normal, but one whose Keychain did
+// not answer may hold the seat's MCP logins, which a rollback could not put
+// back: the switch away is refused as for any unreadable credential.
+func TestASwitchAwayFromAnEndpointNeedsAReadableKeychain_macOS(t *testing.T) {
+	s := newTestStore(t, nil)
+	endpointSeat(t, s)
+	fake := keychain.NewFake()
+	s.Creds = credstore.New(credstore.Config{Platform: platform.MacOS, CredentialsDir: s.CredentialsDir}, fake, s.Clk, s.Log)
+	switchTo(t, s, "3", false)
+	if err := os.Remove(liveCredentialsPath(s)); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	s.Creds = credstore.New(credstore.Config{Platform: platform.MacOS, CredentialsDir: s.CredentialsDir}, oauthReadFails{fake}, s.Clk, s.Log)
+	before := seatFiles(t, s)
+	if _, err := SwitchTo(s, "1", true, false); err == nil || !strings.Contains(err.Error(), "Keychain unreadable") {
+		t.Fatalf("err = %v, want the unreadable-credential refusal", err)
+	}
+	for p, b := range before {
+		if got := seatFiles(t, s)[p]; got != b {
+			t.Errorf("%s changed: %s", filepath.Base(p), got)
+		}
 	}
 }

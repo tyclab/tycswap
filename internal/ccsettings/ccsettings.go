@@ -89,14 +89,24 @@ type sidecar struct {
 // sidecar recorded for a different settings file (CLAUDE_CONFIG_DIR changed in
 // between) is reverted there first, so one record always describes one file.
 //
+// A new record never takes tycswap's own endpoint for the user's: when there
+// is no record (it was removed by hand) and the two keys hold exactly p or one
+// of known (the endpoint accounts tycswap holds), they are recorded as absent,
+// so the way back removes them instead of putting that endpoint back.
+//
 // A missing settings file is {}; an unparseable one is an error and is left
-// untouched, as is a corrupt sidecar.
-func Apply(settingsPath, sidecarPath string, p Profile) error {
+// untouched, as is a corrupt sidecar. The record names the settings file by
+// its absolute path.
+func Apply(settingsPath, sidecarPath string, p Profile, known []Profile) error {
 	if _, err := ValidateBaseURL(p.BaseURL); err != nil {
 		return err
 	}
 	if _, err := ValidateToken(p.Token); err != nil {
 		return err
+	}
+	settingsPath = absPath(settingsPath)
+	if err := refuseSymlink(settingsPath); err != nil {
+		return err // before the record is written: nothing changes
 	}
 	sc, err := loadSidecar(sidecarPath)
 	if err != nil {
@@ -112,12 +122,17 @@ func Apply(settingsPath, sidecarPath string, p Profile) error {
 	if err != nil {
 		return err
 	}
+	ours := false
 	if sc == nil {
 		sc = &sidecar{Version: SidecarVersion, SettingsPath: settingsPath, Keys: map[string]prior{}}
+		ours = holdsKnown(root, append([]Profile{p}, known...))
 	}
 	envVal, envPresent := root[envContainerKey]
 	if _, recorded := sc.Keys[envContainerKey]; !recorded {
 		pr := prior{Present: envPresent}
+		if env, isMap := envVal.(map[string]any); ours && isMap && len(env) == len(ownedKeys) {
+			pr.Present = false // the container holds nothing but tycswap's own two keys
+		}
 		if _, isMap := envVal.(map[string]any); envPresent && !isMap {
 			pr.Value = envVal // a non-object env is replaced by set(); keep it for Revert
 		}
@@ -128,6 +143,9 @@ func Apply(settingsPath, sidecarPath string, p Profile) error {
 			continue
 		}
 		v, present := get(root, k)
+		if ours {
+			v, present = nil, false
+		}
 		sc.Keys[k] = prior{Present: present, Value: v}
 	}
 	if err := atomicfile.WriteJSON(sidecarPath, sc, atomicfile.Opts{FileMode: 0o600, DirMode: 0o700}); err != nil {
@@ -221,21 +239,7 @@ func revertByValue(settingsPath string, known []Profile) (RevertOutcome, error) 
 	if err != nil {
 		return RevertedNothing, err
 	}
-	base, okBase := get(root, KeyBaseURL)
-	token, okToken := get(root, KeyAuthToken)
-	if !okBase || !okToken {
-		return RevertedNothing, nil
-	}
-	b, _ := base.(string)
-	t, _ := token.(string)
-	match := false
-	for _, p := range known {
-		if b != "" && t != "" && b == strings.TrimSpace(p.BaseURL) && t == strings.TrimSpace(p.Token) {
-			match = true
-			break
-		}
-	}
-	if !match {
+	if !holdsKnown(root, known) {
 		return RevertedNothing, nil
 	}
 	del(root, KeyBaseURL)
@@ -247,6 +251,40 @@ func revertByValue(settingsPath string, known []Profile) (RevertOutcome, error) 
 		return RevertedNothing, err
 	}
 	return RevertedByValue, nil
+}
+
+// holdsKnown reports whether root's two owned keys hold exactly one of known:
+// an endpoint and its key that tycswap wrote.
+func holdsKnown(root map[string]any, known []Profile) bool {
+	base, okBase := get(root, KeyBaseURL)
+	token, okToken := get(root, KeyAuthToken)
+	if !okBase || !okToken {
+		return false
+	}
+	b, _ := base.(string)
+	t, _ := token.(string)
+	if b == "" || t == "" {
+		return false
+	}
+	for _, p := range known {
+		if b == strings.TrimSpace(p.BaseURL) && t == strings.TrimSpace(p.Token) {
+			return true
+		}
+	}
+	return false
+}
+
+// absPath is path made absolute, or path itself when that fails: a relative
+// CLAUDE_CONFIG_DIR would otherwise name a different file from another
+// working directory.
+func absPath(path string) string {
+	if path == "" {
+		return path
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
 }
 
 // IsApplied reports whether a readable sidecar exists, i.e. the profile is in
@@ -269,7 +307,8 @@ func SidecarExists(sidecarPath string) bool {
 // corrupt sidecar. A switch calls it before it writes anything, so such a
 // file stops the switch while the credential is still the old one.
 func Check(settingsPath, sidecarPath string) error {
-	if _, err := readSettings(settingsPath); err != nil {
+	settingsPath = absPath(settingsPath)
+	if err := checkWritable(settingsPath); err != nil {
 		return err
 	}
 	sc, err := loadSidecar(sidecarPath)
@@ -277,11 +316,35 @@ func Check(settingsPath, sidecarPath string) error {
 		return err
 	}
 	if sc != nil && sc.SettingsPath != "" && sc.SettingsPath != settingsPath {
-		if _, err := readSettings(sc.SettingsPath); err != nil {
+		if err := checkWritable(sc.SettingsPath); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// checkWritable answers what writeSettings would: the file parses (or is
+// absent), and it is not a symlink.
+func checkWritable(path string) error {
+	if err := refuseSymlink(path); err != nil {
+		return err
+	}
+	_, err := readSettings(path)
+	return err
+}
+
+// refuseSymlink refuses a settings file that is a symbolic link. A dotfile
+// manager links it into a repository or a read-only store: replacing the link
+// with a regular file would break that management, and writing through it
+// would put a key into a file that is tracked or shared. Neither is undone by
+// a revert, so the endpoint is not written at all.
+func refuseSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&fs.ModeSymlink == 0 {
+		return nil
+	}
+	target, _ := os.Readlink(path)
+	return fmt.Errorf("%s is a symbolic link (to %s); refusing to write an API key over or through it. Make it a regular file to use an API-key account with a base URL", path, target)
 }
 
 // RecordedSettingsPath is the settings file the sidecar records, "" when there
@@ -292,6 +355,13 @@ func RecordedSettingsPath(sidecarPath string) string {
 		return ""
 	}
 	return sc.SettingsPath
+}
+
+// RecordsFile reports whether a readable record exists and names
+// settingsPath, i.e. whether the profile is in place in that file.
+func RecordsFile(sidecarPath, settingsPath string) bool {
+	sc, err := loadSidecar(sidecarPath)
+	return err == nil && sc != nil && sc.SettingsPath == absPath(settingsPath)
 }
 
 // Live returns the endpoint and key settingsPath currently carries in the two
@@ -326,6 +396,9 @@ type fileState struct {
 	present bool
 	data    []byte
 	mode    os.FileMode
+	// link is the target when the path was a symbolic link; such a path is
+	// put back as that link, never as a copy of what it pointed to.
+	link string
 }
 
 // Take records the current state of each path ("" entries and duplicates are
@@ -340,11 +413,17 @@ func Take(paths ...string) (*Snapshot, error) {
 		}
 		seen[p] = true
 		fsState := fileState{path: p}
-		info, err := os.Stat(p)
+		info, err := os.Lstat(p)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 		case err != nil:
 			return nil, err
+		case info.Mode()&fs.ModeSymlink != 0:
+			target, err := os.Readlink(p)
+			if err != nil {
+				return nil, err
+			}
+			fsState.present, fsState.link = true, target
 		default:
 			data, err := os.ReadFile(p)
 			if err != nil {
@@ -365,6 +444,19 @@ func (s *Snapshot) Restore() error {
 	}
 	var errs []error
 	for _, f := range s.files {
+		if f.link != "" {
+			if cur, err := os.Readlink(f.path); err == nil && cur == f.link {
+				continue // still the same link: nothing was written over it
+			}
+			if err := os.Remove(f.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				errs = append(errs, err)
+				continue
+			}
+			if err := os.Symlink(f.link, f.path); err != nil {
+				errs = append(errs, err)
+			}
+			continue
+		}
 		if !f.present {
 			if err := os.Remove(f.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 				errs = append(errs, err)
@@ -408,6 +500,9 @@ func readSettings(path string) (map[string]any, error) {
 // writeSettings writes root as 2-space-indented JSON, atomically, mode 0600:
 // the file now holds a key.
 func writeSettings(path string, root map[string]any) error {
+	if err := refuseSymlink(path); err != nil {
+		return err
+	}
 	var b bytes.Buffer
 	enc := json.NewEncoder(&b)
 	enc.SetEscapeHTML(false)
