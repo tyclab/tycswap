@@ -292,6 +292,7 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 		codexSw = newQuietCodexSwitcher()
 	}
 	auto := newAutoFacade(sw, codexSw)
+	codex := newCodexOps(codexSw)
 	var host *updatesHost
 	updates := o.updates
 	if updates == nil {
@@ -302,7 +303,7 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 		Facade:             sw,
 		Snapshot:           providers.NewMultiSnapshotSource(ctx, sw, codexSw),
 		Accounts:           sw,
-		Codex:              newCodexOps(codexSw),
+		Codex:              codex,
 		Settings:           settingsFacade{root: sw.BackupDir()},
 		Auto:               auto,
 		AutoEvents:         auto.Events(),
@@ -333,7 +334,7 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 	if host != nil {
 		host.onChange = srv.Refresh
 	}
-	return &dashboard{sw: sw, srv: srv, auto: auto, codex: newCodexOps(codexSw)}, 0
+	return &dashboard{sw: sw, srv: srv, auto: auto, codex: codex}, 0
 }
 
 func renderWebHelp(prog string, out io.Writer) int {

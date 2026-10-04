@@ -2008,7 +2008,8 @@ Codex switch, a second warning lists them: `codex is running (pid <pid>[,
 <pid>...]) — restart it for the new account to take effect.` Adding an account
 stays Claude-only (use `tycswap codex add` or `tycswap codex login`). The
 auto-switch screen's candidate list shows Claude rows only, since that engine
-switches Claude; the Codex engine runs inside `tycswap auto`.
+switches Claude; the Codex engine runs inside `tycswap auto` and in `tycswap
+web`'s Auto tab.
 
 The dashboard's menu nests: "Add account…", "Disable / enable account…" and
 "Remove account…" each open a submenu, and `esc` or `←` returns to the
