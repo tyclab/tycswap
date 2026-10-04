@@ -2807,8 +2807,10 @@ window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
   restarts itself after the install) or, for a build the tray cannot upgrade,
   *tycswap X is available…* with the command; *Update Claude Code X → Y…*;
 - **Accounts**: one row per account with its windows and a usage bar, the
-  active one marked; a click switches (an API-key account asks first); more
-  than ten accounts move into *All N accounts* ▸, beside the active one; *Add
+  active one marked; a click switches (an API-key account asks first; one
+  with a base URL shows `→ <host>`, and the question names the whole URL,
+  DESIGN A46); more than ten accounts move into *All N accounts* ▸, beside
+  the active one; *Add
   current login* stores the login Claude Code has;
 - **Automation**: *Auto-switch* (on or off; its second line names the
   threshold of each window; on is resumed at the app's next start);

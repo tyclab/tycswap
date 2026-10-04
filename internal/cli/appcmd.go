@@ -33,6 +33,7 @@ import (
 	"github.com/tyclab/tycswap/internal/ccversion"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/tray"
 	"github.com/tyclab/tycswap/internal/update"
 	"github.com/tyclab/tycswap/internal/version"
@@ -405,6 +406,9 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		},
 		ApproveAPIKey: d.sw.ApproveAPIKeySwitch,
 		RestartNotice: restartNotice,
+		EndpointSessionNotice: func() string {
+			return switching.EndpointSessionNotice(runningSessions())
+		},
 		RunClaudeCode: func(c ccversion.Command, in *ccversion.Installed) (string, error) {
 			rctx, rcancel := context.WithTimeout(ctx, updateApplyTimeout) // brew may update itself first
 			defer rcancel()

@@ -22,8 +22,11 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/tyclab/tycswap/internal/brand"
+	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/ccversion"
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/switching"
+	"github.com/tyclab/tycswap/internal/termsafe"
 	"github.com/tyclab/tycswap/internal/tray"
 	"github.com/tyclab/tycswap/internal/usage"
 	"github.com/tyclab/tycswap/internal/version"
@@ -71,6 +74,10 @@ type shellActions struct {
 	// to do it instead.
 	ApproveAPIKey func(num string)
 	RestartNotice func() string
+	// EndpointSessionNotice replaces RestartNotice for an API-key account
+	// with a base URL (A46): a running session takes the endpoint up when it
+	// re-reads settings.json. nil → the sentence without a session count.
+	EndpointSessionNotice func() string
 	// RunClaudeCode runs a Claude Code upgrade command (A42). nil hides the
 	// Claude Code row.
 	RunClaudeCode func(c ccversion.Command, in *ccversion.Installed) (string, error)
@@ -260,6 +267,11 @@ func (a *appShell) accountRows(st web.State, withModels bool) []tray.Item {
 		if kind, _ := r["kind"].(string); kind == "api_key" {
 			flags = append(flags, "API key · billed per token")
 		}
+		if base := rowBaseURL(r); base != "" {
+			// Where the account's requests go (A46), as the list and the
+			// dashboard's chip say it.
+			flags = append(flags, "→ "+endpointHost(base))
+		}
 		if boolOf(r["disabled"]) {
 			flags = append(flags, "disabled")
 		} else if !boolOf(r["switchable"]) {
@@ -335,19 +347,35 @@ func (a *appShell) addCurrentClick() {
 	a.notify("Added account #"+num, email+" is account #"+num+" now. To add another, /login with it in Claude Code (never /logout: that ends the stored login), then choose Add current login again.")
 }
 
-// isAPIKeyAccount reports whether slot num is an API-key account, from the
-// last state document the shell painted.
-func (a *appShell) isAPIKeyAccount(num string) bool {
+// apiKeyAccount reports whether slot num is an API-key account, and the base
+// URL its requests go to ("" for none, A46), from the last state document the
+// shell painted.
+func (a *appShell) apiKeyAccount(num string) (apiKey bool, baseURL string) {
 	a.mu.Lock()
 	st := a.last
 	a.mu.Unlock()
 	for _, r := range st.Accounts {
 		if rowNumber(r) == num {
 			kind, _ := r["kind"].(string)
-			return kind == "api_key"
+			return kind == "api_key", rowBaseURL(r)
 		}
 	}
-	return false
+	return false, ""
+}
+
+// rowBaseURL is a state row's baseUrl, stripped of terminal control
+// sequences: it is shown in the menu, a dialog and a notification.
+func rowBaseURL(r map[string]any) string {
+	base, _ := r["baseUrl"].(string)
+	return termsafe.Strip(base)
+}
+
+// endpointHost is the host of a base URL, the URL itself when it has none.
+func endpointHost(base string) string {
+	if h := ccsettings.Host(base); h != "" {
+		return h
+	}
+	return base
 }
 
 // thresholdLabel names every bar in force, because there is one per window:
@@ -378,14 +406,21 @@ func (a *appShell) click(id string) {
 		num := strings.TrimPrefix(id, "switch:")
 		// An API-key account changes HOW Claude Code authenticates, and a
 		// running session cannot pick that up — so it is never one click (A33).
-		if a.isAPIKeyAccount(num) {
+		// One with a base URL also changes where the requests go, which a
+		// running session takes up when it re-reads settings.json (A46).
+		apiKey, base := a.apiKeyAccount(num)
+		if apiKey {
 			if a.act.ApproveAPIKey == nil || a.act.Ask == nil {
 				a.notify("Switch needs confirmation", "Account #"+num+" uses an API key. Switch to it from the dashboard or the command line, where it can ask you first.")
 				return
 			}
-			ok, err := a.act.Ask("Switch to API-key account #"+num+"?",
-				"This account authenticates with a token instead of a subscription login, and its usage is billed per token. "+a.act.RestartNotice(),
-				"Switch", "Cancel")
+			detail := "This account authenticates with a token instead of a subscription login, and its usage is billed per token. "
+			if base != "" {
+				detail += switching.EndpointNotice(base) + " " + a.endpointSessionNotice()
+			} else {
+				detail += a.act.RestartNotice()
+			}
+			ok, err := a.act.Ask("Switch to API-key account #"+num+"?", detail, "Switch", "Cancel")
 			if err != nil || !ok {
 				return
 			}
@@ -398,6 +433,10 @@ func (a *appShell) click(id string) {
 		// The menu stays open (A37): it shows the new active account now,
 		// not at the dashboard's next poll.
 		a.dashboardChanged()
+		if base != "" {
+			a.notify("Switched to account #"+num, switching.EndpointAppliedNote(endpointHost(base)))
+			return
+		}
 		a.notify("Switched to account #"+num, "Restart running Claude Code sessions to pick it up.")
 	case id == "auto":
 		var err error
@@ -449,6 +488,15 @@ func (a *appShell) click(id string) {
 	case id == "quit":
 		a.act.Quit()
 	}
+}
+
+// endpointSessionNotice is the EndpointSessionNotice hook with nil meaning
+// the sentence without a session count.
+func (a *appShell) endpointSessionNotice() string {
+	if a.act.EndpointSessionNotice == nil {
+		return switching.EndpointSessionNotice(0)
+	}
+	return a.act.EndpointSessionNotice()
 }
 
 // repaint redraws title, tooltip and menu from the last state now, so a

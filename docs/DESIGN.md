@@ -4881,7 +4881,9 @@ stored yet, else how to get another account there (`/login`, never `/logout`).
 
 A switch onto an API-key account asks first through the dialog and records
 the approval A33 requires (`ApproveAPIKeySwitch`); without a dialog the tray
-refuses and points at the dashboard or the command line.
+refuses and points at the dashboard or the command line. For an account with
+a base URL the row, the question and the notification after the switch are
+A46's.
 
 ## A38. One app per machine
 
@@ -5263,12 +5265,13 @@ is best-effort; a failed revert of a record fails the switch.
 **Approval and notes.** An endpoint account is an API-key account, so A33's
 approval applies unchanged; its refusal is `ErrEndpointNeedsApproval`
 (`… authenticates with an API key at <host>. Switching to it changes how
-Claude Code authenticates and where it sends its requests …`), and the CLI's
-and the dashboard's questions add `EndpointNotice`, which names the whole URL
+Claude Code authenticates and where it sends its requests …`), and the CLI's,
+the dashboard's and the tray's questions add `EndpointNotice`, which names the whole URL
 and the settings that take the requests there and back; in place of A33's
 sentence that running sessions keep their login until restarted, they say
 that such a session takes the endpoint up when it re-reads `settings.json`
-(`EndpointSessionNotice`, with the session count on the command line). The follow-up says
+(`EndpointSessionNotice`, with the session count on the command line and
+in the tray). The follow-up says
 what a running session does, which differs by direction: after a switch onto
 an endpoint (`EndpointAppliedNote`) a session that is already running takes
 it up when it re-reads `settings.json`, at once in a trusted workspace, and
@@ -5284,7 +5287,9 @@ Code's settings.json)`; JSON: `baseUrl`, the whole URL), the snapshot
 modal; `API key (no quota) → <host>` on the card, the per-row line and the
 monitor span), the dashboard (the add-token form's `baseUrl`, the rows'
 `baseUrl` and `→ <host>` chip, the header chip and the red notice, the switch
-confirmation, the Guide), `export` (`baseUrl` beside `kind` and `alias`; an
+confirmation, the Guide), the tray (`→ <host>` on the account's row, the
+switch confirmation, `EndpointAppliedNote` as the notification after it),
+`export` (`baseUrl` beside `kind` and `alias`; an
 endpoint account is exported from its backup even while active) and `import`
 (`baseUrl` checked as `add-token` checks it, only with API-key credentials,
 which are then taken as the endpoint's key; every refusal before any write).

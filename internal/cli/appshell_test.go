@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/tray"
 	"github.com/tyclab/tycswap/internal/web"
 )
@@ -404,23 +405,32 @@ func TestShellSwitchNotifications(t *testing.T) {
 
 // An API-key account changes how Claude Code authenticates: the tray asks
 // first, or, without a way to ask, refuses and says where to switch (A33).
+// One with a base URL (A46): the row names where its requests go, the dialog
+// says it in the words every front-end uses and replaces the restart sentence
+// with the endpoint's, and the notification after the switch is the one the
+// CLI prints.
 func TestShellAPIKeySwitchAsksFirst(t *testing.T) {
 	sh, ft, calls := newTestShell(t)
 	st := sampleState()
 	key := acct(3, "key@example.com", "", false, nil, nil, "", nil)
 	key["kind"] = "api_key"
-	st.Accounts = append(st.Accounts, key)
+	gw := acct(4, "gw@example.com", "", false, nil, nil, "", nil)
+	gw["kind"] = "api_key"
+	gw["baseUrl"] = "https://gateway.example/v1\x07"
+	st.Accounts = append(st.Accounts, key, gw)
 	sh.update(st)
 	sh.click("switch:3")
 	if len(*calls) != 0 || len(ft.notes) != 1 || !strings.HasPrefix(ft.notes[0], "Switch needs confirmation |") {
 		t.Fatalf("calls = %v, notes = %v", *calls, ft.notes)
 	}
 	var approved []string
+	var asked string
 	answer := false
 	sh.act.ApproveAPIKey = func(num string) { approved = append(approved, num) }
 	sh.act.RestartNotice = func() string { return "2 Claude Code sessions are running." }
 	sh.act.Ask = func(title, body, ok, cancel string) (bool, error) {
 		*calls = append(*calls, "ask:"+title)
+		asked = body
 		return answer, nil
 	}
 	sh.click("switch:3")
@@ -431,6 +441,38 @@ func TestShellAPIKeySwitchAsksFirst(t *testing.T) {
 	sh.click("switch:3")
 	if len(approved) != 1 || approved[0] != "3" || !strings.HasSuffix(strings.Join(*calls, ","), "ask:Switch to API-key account #3?,switch:3") {
 		t.Errorf("calls %v, approved %v", *calls, approved)
+	}
+	if !strings.Contains(asked, "2 Claude Code sessions are running.") || strings.Contains(asked, "ANTHROPIC_BASE_URL") {
+		t.Errorf("dialog without a base URL = %q", asked)
+	}
+	if notes := ft.notesNow(); !strings.HasSuffix(notes[len(notes)-1], "Restart running Claude Code sessions to pick it up.") {
+		t.Errorf("notes = %v", notes)
+	}
+
+	// A46: the account with a base URL.
+	row, ok := ft.item("switch:4")
+	if !ok || !strings.Contains(row.Sub, "API key · billed per token · → gateway.example") || strings.Contains(row.Sub, "\x07") {
+		t.Fatalf("row = %+v", row)
+	}
+	sh.act.EndpointSessionNotice = func() string { return switching.EndpointSessionNotice(2) }
+	sh.click("switch:4")
+	if !strings.Contains(asked, switching.EndpointNotice("https://gateway.example/v1")) ||
+		!strings.Contains(asked, switching.EndpointSessionNotice(2)) ||
+		strings.Contains(asked, "2 Claude Code sessions are running.") || strings.Contains(asked, "\x07") {
+		t.Errorf("dialog = %q", asked)
+	}
+	if len(approved) != 2 || approved[1] != "4" || !strings.HasSuffix(strings.Join(*calls, ","), "ask:Switch to API-key account #4?,switch:4") {
+		t.Errorf("calls %v, approved %v", *calls, approved)
+	}
+	want := "Switched to account #4 | " + switching.EndpointAppliedNote("gateway.example")
+	if notes := ft.notesNow(); notes[len(notes)-1] != want {
+		t.Errorf("notes = %v\nwant %q", notes, want)
+	}
+	// Without the hook the endpoint's sentence still replaces the restart one.
+	sh.act.EndpointSessionNotice = nil
+	sh.click("switch:4")
+	if !strings.Contains(asked, switching.EndpointSessionNotice(0)) || strings.Contains(asked, "2 Claude Code sessions are running.") {
+		t.Errorf("dialog without the hook = %q", asked)
 	}
 }
 
