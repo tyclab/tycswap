@@ -1,0 +1,93 @@
+// codexauto.go — the Codex auto-switch engine's construction and loop, shared
+// by its two hosts: `tycswap auto` (auto.go) and the dashboard's engine host
+// (webfacades.go, DESIGN A47). One constructor and one loop, so the dashboard
+// rotates Codex accounts exactly as `tycswap auto` does: the same enabled /
+// present checks, the same bar, the same cadence.
+package cli
+
+import (
+	"context"
+	"time"
+
+	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
+	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
+	"github.com/tyclab/tycswap/internal/settings"
+)
+
+// newCodexAutoEngine returns the Codex auto-switcher, or nil when
+// autoswitch.codexEnabled is off or this machine has no Codex accounts (cli.py
+// _codex_auto_engine). It is newCodexAutoEngineFor over the command's own
+// Codex switcher.
+func newCodexAutoEngine(merged settings.AutoSwitchSettings, s ioStreams) *codexauto.AutoSwitcher {
+	return newCodexAutoEngineFor(newCodexSwitcher(s), merged)
+}
+
+// newCodexAutoEngineFor returns the Codex auto-switcher over sw, or nil when
+// sw is nil, autoswitch.codexEnabled is off or this machine has no Codex
+// accounts. The threshold is autoswitch.codexThreshold, or the effective
+// Claude 7d bar when that is 0 (codexThreshold). A broken Codex store must
+// never stop the Claude loop starting, so a panic here is a nil engine.
+func newCodexAutoEngineFor(sw *codexswitcher.Switcher, merged settings.AutoSwitchSettings) (eng *codexauto.AutoSwitcher) {
+	if sw == nil || !merged.CodexEnabled {
+		return nil
+	}
+	defer func() {
+		if recover() != nil {
+			eng = nil
+		}
+	}()
+	if !codexIsPresent() {
+		return nil
+	}
+	return codexauto.New(sw, codexThreshold(merged), merged.HysteresisPct)
+}
+
+// codexThreshold is the Codex engine's one bar: autoswitch.codexThreshold, or
+// the Claude 7d bar when that is 0. The 7d bar is the one a pre-A34
+// autoswitch.threshold seeds, so a migrated settings file keeps its Codex
+// behaviour (DESIGN A34).
+func codexThreshold(merged settings.AutoSwitchSettings) float64 {
+	if merged.CodexThreshold != 0 {
+		return merged.CodexThreshold
+	}
+	return merged.SevenDayThreshold
+}
+
+// startCodexLoop runs tick on its own goroutine — once immediately, then every
+// interval — until the returned stop is called (deviation 7: #252's thread
+// waited one interval first). A separate goroutine rather than a hook in the
+// Claude engine: a slow Codex fetch never delays a Claude switch, and a Codex
+// panic never takes down `tycswap auto`. stop cancels an in-flight tick and then
+// waits for the goroutine to return, so the process never exits in the middle
+// of a Codex switch and no Codex line is printed after the loop has stopped.
+func startCodexLoop(enabled bool, interval time.Duration, tick func(context.Context)) (stop func()) {
+	if !enabled {
+		return func() {}
+	}
+	if interval <= 0 {
+		interval = time.Second
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	safeTick := func() {
+		defer func() { _ = recover() }()
+		tick(ctx)
+	}
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			safeTick()
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
+}

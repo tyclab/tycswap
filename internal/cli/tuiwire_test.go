@@ -56,10 +56,10 @@ type tuiProvidersCapture struct {
 func stubTUIProviders(t *testing.T, present bool, codexSw *switcher.Switcher) *tuiProvidersCapture {
 	t.Helper()
 	c := &tuiProvidersCapture{}
-	origPresent, origNew, origWith := codexIsPresent, newTUICodexSwitcher, withTUIProviders
-	t.Cleanup(func() { codexIsPresent, newTUICodexSwitcher, withTUIProviders = origPresent, origNew, origWith })
+	origPresent, origNew, origWith := codexIsPresent, newQuietCodexSwitcher, withTUIProviders
+	t.Cleanup(func() { codexIsPresent, newQuietCodexSwitcher, withTUIProviders = origPresent, origNew, origWith })
 	codexIsPresent = func() bool { return present }
-	newTUICodexSwitcher = func() *switcher.Switcher { c.built++; return codexSw }
+	newQuietCodexSwitcher = func() *switcher.Switcher { c.built++; return codexSw }
 	withTUIProviders = func(ctx context.Context, src tui.ProviderSource, codex tui.CodexActions) tui.Option {
 		c.calls++
 		c.src, c.codex = src, codex

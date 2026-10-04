@@ -3,10 +3,12 @@ package cli
 
 import (
 	"context"
+	"io"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/settings"
 )
 
@@ -65,5 +67,40 @@ func TestCodexThresholdFallsBackToTheSevenDayBar(t *testing.T) {
 	s.CodexThreshold = 88
 	if got := codexThreshold(s); got != 88 {
 		t.Errorf("codexThreshold 88: bar %v, want 88", got)
+	}
+}
+
+// TestNewCodexAutoEngineForChecksSwitcherSettingAndPresence: the constructor
+// both hosts share (`tycswap auto`, the dashboard) builds no engine without a
+// Codex switcher, with autoswitch.codexEnabled off, or on a machine without
+// Codex accounts; otherwise its bar is codexThreshold and its margin the
+// Claude hysteresis.
+func TestNewCodexAutoEngineForChecksSwitcherSettingAndPresence(t *testing.T) {
+	prev := codexIsPresent
+	t.Cleanup(func() { codexIsPresent = prev })
+	present := true
+	codexIsPresent = func() bool { return present }
+	sw := codexswitcher.New(codexswitcher.Options{Root: t.TempDir(), Stdout: io.Discard})
+	s := settings.Default()
+	s.SevenDayThreshold, s.HysteresisPct = 93, 7
+
+	if eng := newCodexAutoEngineFor(nil, s); eng != nil {
+		t.Error("an engine without a Codex switcher")
+	}
+	eng := newCodexAutoEngineFor(sw, s)
+	if eng == nil || eng.Threshold != 93 || eng.Hysteresis != 7 {
+		t.Fatalf("engine = %+v, want the 7d bar 93 and hysteresis 7", eng)
+	}
+	s.CodexEnabled = false
+	if eng := newCodexAutoEngineFor(sw, s); eng != nil {
+		t.Error("an engine with autoswitch.codexEnabled off")
+	}
+	s.CodexEnabled, present = true, false
+	if eng := newCodexAutoEngineFor(sw, s); eng != nil {
+		t.Error("an engine on a machine without Codex accounts")
+	}
+	codexIsPresent = func() bool { panic("broken store") }
+	if eng := newCodexAutoEngineFor(sw, s); eng != nil {
+		t.Error("a panicking presence check still built an engine")
 	}
 }

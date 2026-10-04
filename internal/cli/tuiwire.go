@@ -52,21 +52,24 @@ func tuiOptions(ctx context.Context, sw *core.Switcher) []tui.Option {
 	if !codexIsPresent() {
 		return opts
 	}
-	codexSw := newTUICodexSwitcher()
+	codexSw := newQuietCodexSwitcher()
 	src := providers.NewMultiSnapshotSource(ctx, sw, codexSw)
 	return append(opts, withTUIProviders(ctx, src, codexSw))
 }
 
-// codexIsPresent, newTUICodexSwitcher and withTUIProviders are the wiring seams
-// tests replace.
+// codexIsPresent, newQuietCodexSwitcher and withTUIProviders are the wiring seams
+// tests replace. The Codex auto engine's constructor asks codexIsPresent too
+// (codexauto.go).
 var (
 	codexIsPresent = providers.CodexIsPresent
 
-	// newTUICodexSwitcher discards the switcher's stdout: Remove warns there
-	// about an active slot even when assumeYes is set, and a write to stdout
-	// under the alt screen corrupts the display. The confirmation modal has
-	// already said what the warning would.
-	newTUICodexSwitcher = func() *switcher.Switcher {
+	// newQuietCodexSwitcher is the Codex switcher of a surface that draws its
+	// own screen, the TUI and the dashboard. It discards the switcher's
+	// stdout: Remove warns there about an active slot even when assumeYes is
+	// set, a write to stdout under the alt screen corrupts the display, and
+	// the dashboard's terminal is not where its user looks. The confirmation
+	// modal has already said what the warning would.
+	newQuietCodexSwitcher = func() *switcher.Switcher {
 		return switcher.New(switcher.Options{Stdout: io.Discard})
 	}
 
