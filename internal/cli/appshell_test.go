@@ -205,7 +205,7 @@ func TestShellShowsAutoModeInTitleAndMenu(t *testing.T) {
 	if ft.title != "⟳ #1 · 45%" || !strings.Contains(ft.tooltip, "auto-switch on") {
 		t.Errorf("on: title=%q tooltip=%q", ft.title, ft.tooltip)
 	}
-	if it, _ := ft.item("auto"); !it.Checked || !strings.Contains(it.Sub, "5h 85% · 7d 97%") {
+	if it, _ := ft.item("auto"); !it.Checked || !strings.HasPrefix(it.Sub, "rotates Claude accounts near the limit (") || !strings.Contains(it.Sub, "5h 85% · 7d 97%") {
 		t.Errorf("on: item=%+v", it)
 	}
 	sh.click("auto")

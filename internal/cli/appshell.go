@@ -212,7 +212,8 @@ func (a *appShell) menu(st web.State) []tray.Item {
 	items = append(items, tray.Separator(), tray.Header("Accounts"))
 	items = append(items, a.accountRows(st, withModels)...)
 	items = append(items, tray.Separator(), tray.Header("Automation"))
-	autoSub := "rotates accounts near the limit (" + a.thresholdLabel(st) + ")"
+	// The dashboard's engine: Claude accounts only, as the dashboard's state.
+	autoSub := "rotates Claude accounts near the limit (" + a.thresholdLabel(st) + ")"
 	if !running {
 		autoSub = "off — switch accounts by hand or turn on"
 	}
@@ -451,9 +452,9 @@ func (a *appShell) click(id string) {
 			return
 		}
 		if wasRunning {
-			a.notify("Auto-switch off", "Accounts are no longer rotated automatically.")
+			a.notify("Auto-switch off", "Claude accounts are no longer rotated automatically.")
 		} else {
-			a.notify("Auto-switch on", "Accounts rotate automatically near the limit.")
+			a.notify("Auto-switch on", "Claude accounts rotate automatically near the limit.")
 		}
 		a.repaint()
 	case id == "model-limits":

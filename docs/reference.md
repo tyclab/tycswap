@@ -2820,6 +2820,10 @@ window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
 - **App**: Claude Code's state when nothing is to update; *Start at login*;
   *Check for updates…*; *Quit tycswap*.
 
+The tray shows the dashboard's state and drives the dashboard's auto-switch
+engine, so it is Claude-only like the dashboard today: Codex accounts and the
+Codex engine reach the dashboard and the tray together in the next change.
+
 Notifications: a switch or quarantine by auto-switch, the active account
 reaching a window's threshold (once, again after it falls ten points below),
 a new release or Claude Code version (once per version), the outcome of every

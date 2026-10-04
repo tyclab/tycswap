@@ -4749,7 +4749,10 @@ window, the menu of A37, notifications on engine `switch` and
 `account-quarantined` events, and once when a window of the active account
 reaches its own bar (A34), re-armed when every window is ten points below
 its bar. It only ever renders `web.State` and acts through `shellActions`,
-which is what makes the remote tray of A45 a second set of hooks. `web.Server`
+which is what makes the remote tray of A45 a second set of hooks. So the tray
+is Claude-only, like the dashboard today: Codex accounts and the Codex
+engine reach the dashboard and the tray together, through that state, in the
+next change. `web.Server`
 gained `LaunchURL` (the unused start URL, else a fresh single-use token per
 "Open dashboard"), `Snapshot`, `OnState`, `OnAuto` and `AddCurrentLogin`;
 in-process observers receive only state documents the hub published, so a
@@ -4866,7 +4869,10 @@ The menu: the brand row · *Open dashboard* · the Updates section (A44) ·
 its second line naming the bar of each window in force; the model-limit
 switch, A39) · **App** (the Claude Code row, A42; *Start at login*; *Check for
 updates…*; *Quit tycswap*). The bars are only named here: they are set where
-they were, in `tycswap config`, the TUI and the dashboard (A34).
+they were, in `tycswap config`, the TUI and the dashboard (A34). The accounts
+are the dashboard's Claude accounts and *Auto-switch* is the dashboard's
+engine, which rotates Claude accounts only (its second line says so); Codex
+reaches both with the dashboard (A35).
 
 **The menu stays open** on macOS: every row is a view whose `mouseUp`
 reports the click without ending the menu's tracking, and `tray_menu_commit`

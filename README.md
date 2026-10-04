@@ -762,7 +762,10 @@ Updates section installs it after asking, and tycswap restarts itself after
 its own update, as `tycswap upgrade` does it ([Upgrade](#upgrade)). A build
 the tray cannot upgrade (a checkout, a go-installed binary on Windows, one in
 the Nix store) is told how instead. Auto-switch that was on when the app quit
-is on again when it starts.
+is on again when it starts. The tray shows the dashboard's state, so it is
+Claude-only like the dashboard today: its accounts and its auto-switch are
+Claude's, and Codex accounts and the Codex engine reach the dashboard and the
+tray together in the next change.
 
 ```
 tycswap app [--open] [--headless] [--port N] [--interval SECONDS] [--no-update-check] [--debug]
