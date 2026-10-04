@@ -27,7 +27,7 @@ over once by [`tycswap migrate`](#move-over-from-claude-swap).
 |---|---|---|
 | store a login, switch in place, alias, disable | yes | yes |
 | usage windows in list and dashboard | 5h, 7d, per model | 5h, weekly |
-| auto-switch before a limit | yes | yes, same `tycswap auto` loop |
+| auto-switch before a limit | yes | yes, same `tycswap auto` loop and dashboard Auto tab |
 | second account in its own terminal | `run`, `env` | no: a switch lists the `codex` processes still on the old token |
 | take over an existing switcher's registry | — | yes, from codex-auth |
 | export, import, purge | yes | yes |
@@ -698,9 +698,13 @@ in it works once, the server listens on loopback only, and every API call
 needs the session cookie and a per-launch CSRF token the tab received from
 the launch URL alone (a new tab needs a fresh URL). On WSL the browser opens on
 the Windows side through `wslview` or an `xdg-open` that translates Linux
-paths. The dashboard drives Claude accounts; Codex accounts stay with
-`tycswap codex`. See `docs/reference.md`, `tycswap web`, for the API and the
-security model.
+paths. On a machine with Codex accounts the dashboard lists them under their
+own heading after the Claude accounts, with switch, disable / enable and
+remove, *+ Add current Codex login* stores the codex CLI's login, and the Auto
+tab runs the Codex engine beside the Claude one, as `tycswap auto` does;
+alias, move, swap, export and import of Codex accounts stay with `tycswap
+codex`. See `docs/reference.md`, `tycswap web`, for the API and the security
+model.
 
 ### Codex (ChatGPT) accounts
 
@@ -767,10 +771,12 @@ the import by hand with `tycswap codex import-codex-auth`.
 > only the next session started. For switching without a restart, see the
 > [`codext`](https://github.com/Loongphy/codext) fork of the Codex CLI.
 
-Codex accounts appear in the dashboard after the Claude ones, each tagged
-`⟨codex⟩`. Switch, disable / enable and remove act on the selected row's own
-provider; adding an account from the dashboard stays Claude-only. After a Codex
-switch the dashboard warns with the PIDs of any codex sessions still running.
+Codex accounts appear in the terminal dashboard (`tycswap tui`) after the
+Claude ones, each tagged `⟨codex⟩`. Switch, disable / enable and remove act on
+the selected row's own provider; adding an account from the terminal dashboard
+stays Claude-only (`tycswap web` has *+ Add current Codex login*). After a
+Codex switch both dashboards warn with the PIDs of any codex sessions still
+running.
 
 `tycswap auto` rotates both providers in one process. With `--once` the Codex tick
 runs after the Claude one; in the loop the Codex engine ticks at once and then
