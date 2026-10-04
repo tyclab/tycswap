@@ -765,13 +765,15 @@ the Nix store) is told how instead. Auto-switch that was on when the app quit
 is on again when it starts.
 
 ```
-tycswap app [--open] [--headless] [--port N] [--no-update-check]
+tycswap app [--open] [--headless] [--port N] [--interval SECONDS] [--no-update-check] [--debug]
 tycswap app --autostart on|off|status
 ```
 
 `tycswap app` runs in the foreground; the bare `tycswap` is the way to start it
 in the background. `--headless` runs the dashboard server without an icon
-(what Linux without a StatusNotifierWatcher gets anyway), `--autostart`
+(what Linux without a StatusNotifierWatcher gets anyway), `--interval` sets
+how often the live state is polled (default 5 seconds), `--debug` logs errors
+to stderr, `--autostart`
 registers start at login (a LaunchAgent, an XDG autostart entry, a `Run`
 value) and exits. One app runs
 per machine: a second one says it is already running, and `tycswap purge`
@@ -801,7 +803,12 @@ WantedBy=default.target
 ```bash
 systemctl --user daemon-reload
 systemctl --user enable --now tycswap.service
+sudo loginctl enable-linger "$USER"
 ```
+
+A user service starts with the user's first login to the distro;
+`loginctl enable-linger` starts it when the distro boots, so the Windows tray
+finds it without a shell open in WSL.
 
 For a one-off start without systemd: `setsid -f tycswap app --headless --port
 7337 >> ~/.local/share/tycswap/app.log 2>&1`. The app writes a per-start token
