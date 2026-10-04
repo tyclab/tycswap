@@ -3,6 +3,7 @@ package update
 import (
 	"bytes"
 	"context"
+	"debug/buildinfo"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,9 @@ import (
 	"runtime/debug"
 	"strings"
 	"testing"
+
+	"golang.org/x/mod/module"
+	modzip "golang.org/x/mod/zip"
 
 	"github.com/tyclab/tycswap/internal/platform"
 )
@@ -53,42 +57,64 @@ func withBuild(t *testing.T, f func() (*debug.BuildInfo, bool)) {
 	t.Cleanup(func() { readBuildInfo = prev })
 }
 
+// withLinkedVersion makes v the version linked into internal/version.
+func withLinkedVersion(t *testing.T, v string) {
+	t.Helper()
+	prev := linkedVersion
+	linkedVersion = func() string { return v }
+	t.Cleanup(func() { linkedVersion = prev })
+}
+
+// DESIGN A36's decision table: a VCS stamp, then the module version, then
+// the version linked into internal/version. Build flags play no part.
 func TestClassifyBuildInfo(t *testing.T) {
+	build := func(version string, settings ...debug.BuildSetting) *debug.BuildInfo {
+		return &debug.BuildInfo{
+			Path:     "github.com/tyclab/tycswap/cmd/tycswap",
+			Main:     debug.Module{Path: "github.com/tyclab/tycswap", Version: version},
+			Settings: settings,
+		}
+	}
+	vcs := []debug.BuildSetting{{Key: "vcs", Value: "git"}, {Key: "vcs.revision", Value: "abcdef123456"}, {Key: "vcs.modified", Value: "false"}}
+	trimpath := debug.BuildSetting{Key: "-trimpath", Value: "true"}
 	cases := []struct {
-		name string
-		info func() (*debug.BuildInfo, bool)
-		want BuildSource
+		name   string
+		info   *debug.BuildInfo
+		linked string
+		want   BuildSource
 	}{
-		{"module cache", moduleBuild, SourceModule},
-		{"checkout with vcs stamp", checkoutBuild, SourceCheckout},
-		{"devel, -buildvcs=false", func() (*debug.BuildInfo, bool) {
-			return &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}}, true
-		}, SourceCheckout},
-		{"no build info", func() (*debug.BuildInfo, bool) { return nil, false }, SourceCheckout},
-		{"the release workflow", releaseBuild, SourceRelease},
-		{"release flags with a pre-release version", func() (*debug.BuildInfo, bool) {
-			info, _ := releaseBuild()
-			info.Settings[1].Value = "-X github.com/tyclab/tycswap/internal/version.Version=v0.6.0-3-gabcdef"
-			return info, true
-		}, SourceCheckout},
-		{"no -trimpath", func() (*debug.BuildInfo, bool) {
-			info, _ := releaseBuild()
-			info.Settings = info.Settings[:2]
-			return info, true
-		}, SourceCheckout},
-		{"release flags in a checkout with a vcs stamp", func() (*debug.BuildInfo, bool) {
-			info, _ := releaseBuild()
-			info.Settings = append(info.Settings, debug.BuildSetting{Key: "vcs.revision", Value: "abc"})
-			return info, true
-		}, SourceCheckout},
+		{"go install m@v1.2.3", build("v1.2.3"), "v1.2.3", SourceModule},
+		{"a module version with build metadata", build("v1.2.3+incompatible"), unlinkedVersion, SourceModule},
+		{"checkout with a vcs stamp", build("(devel)", vcs...), unlinkedVersion, SourceCheckout},
+		{"Go 1.26 checkout: pseudo-version and vcs stamp", build("v0.6.1-0.20261004120000-abcdef123456+dirty", vcs...), unlinkedVersion, SourceCheckout},
+		{"a vcs stamp beats a release tag", build("(devel)", append(vcs, trimpath)...), "v0.6.0", SourceCheckout},
+		{"pseudo-version without a stamp", build("v0.0.0-20261001120000-abcdef123456"), unlinkedVersion, SourceCheckout},
+		{"-buildvcs=false, nothing linked", build("(devel)"), unlinkedVersion, SourceCheckout},
+		{"the release workflow", build("(devel)", trimpath), "v0.6.0", SourceRelease},
+		{"a release tag without -trimpath", build("(devel)"), "v0.6.0", SourceRelease},
+		{"no module version at all", build(""), "v0.6.0", SourceRelease},
+		{"a release candidate", build("(devel)", trimpath), "v0.7.0-rc.1", SourceRelease},
+		{"git describe between tags", build("(devel)", trimpath), "v0.6.0-3-gabcdef1", SourceCheckout},
+		{"git describe, dirty", build("(devel)"), "v0.6.0-3-gabcdef1-dirty", SourceCheckout},
+		{"a dirty tag", build("(devel)"), "v0.6.0-dirty", SourceCheckout},
+		{"a pseudo-version linked", build("(devel)"), "v0.0.0-20261001120000-abcdef123456", SourceCheckout},
+		{"a bare hash linked", build("(devel)"), "abcdef1", SourceCheckout},
+		{"not semver", build("(devel)"), "0.6.0", SourceCheckout},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			withBuild(t, tc.info)
-			if got := DetectBuildSource(); got != tc.want {
-				t.Errorf("DetectBuildSource = %v, want %v", got, tc.want)
-			}
-		})
+		if got := classifyBuildInfo(tc.info, tc.linked); got != tc.want {
+			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)
+		}
+	}
+	// DetectBuildSource reads the seams; no build info is a checkout build.
+	withBuild(t, releaseBuild)
+	withLinkedVersion(t, "v0.6.0")
+	if got := DetectBuildSource(); got != SourceRelease {
+		t.Errorf("DetectBuildSource = %v, want release", got)
+	}
+	withBuild(t, func() (*debug.BuildInfo, bool) { return nil, false })
+	if got := DetectBuildSource(); got != SourceCheckout {
+		t.Errorf("no build info: %v, want checkout", got)
 	}
 }
 
@@ -191,4 +217,116 @@ func TestLdflagsOverride(t *testing.T) {
 	if string(got) != want {
 		t.Errorf("printvars = %q, want %q", got, want)
 	}
+}
+
+// TestClassifyRealBuilds builds tycswap the ways it is built and classifies
+// what each binary's build info really records: the release workflow's flags
+// (a release: the info has no VCS stamp and no module version, and the -X
+// that links the tag is not in it), a plain `go build` in the checkout (a
+// checkout build), and `go install <module>@<version>` from a module proxy —
+// a directory holding this checkout as v0.6.0, the dependencies coming from
+// the local module cache (a module build). A fake build info cannot stand in
+// here: what a real build records is the point.
+func TestClassifyRealBuilds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds binaries")
+	}
+	gobin, err := exec.LookPath("go")
+	if err != nil {
+		t.Skip("go not on PATH")
+	}
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	gocmd := func(wd string, env []string, args ...string) string {
+		t.Helper()
+		cmd := exec.CommandContext(context.Background(), gobin, args...)
+		cmd.Dir = wd
+		cmd.Env = append(os.Environ(), env...)
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("go %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
+		}
+		return strings.TrimSpace(string(out))
+	}
+	classify := func(bin, linked string) BuildSource {
+		t.Helper()
+		info, err := buildinfo.ReadFile(bin)
+		if err != nil {
+			t.Fatalf("%s: %v", bin, err)
+		}
+		return classifyBuildInfo(info, linked)
+	}
+
+	// .github/workflows/release.yml, for linux and windows.
+	release := filepath.Join(dir, "release")
+	gocmd(root, []string{"CGO_ENABLED=0"}, "build", "-trimpath", "-buildvcs=false",
+		"-ldflags", "-s -w -X github.com/tyclab/tycswap/internal/version.Version=v0.6.0",
+		"-o", release, "./cmd/tycswap")
+	if got := classify(release, "v0.6.0"); got != SourceRelease {
+		t.Errorf("release workflow build: %v, want release", got)
+	}
+
+	plain := filepath.Join(dir, "plain")
+	gocmd(root, nil, "build", "-o", plain, "./cmd/tycswap")
+	if got := classify(plain, unlinkedVersion); got != SourceCheckout {
+		t.Errorf("plain go build: %v, want checkout", got)
+	}
+
+	const modPath, modVersion = "github.com/tyclab/tycswap", "v0.6.0"
+	at := filepath.Join(dir, "proxy", filepath.FromSlash(modPath), "@v")
+	if err := os.MkdirAll(at, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gomod, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{
+		"list":               []byte(modVersion + "\n"),
+		modVersion + ".info": []byte(`{"Version":"` + modVersion + `"}`),
+		modVersion + ".mod":  gomod,
+	} {
+		if err := os.WriteFile(filepath.Join(at, name), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	zf, err := os.Create(filepath.Join(at, modVersion+".zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := modzip.CreateFromDir(zf, module.Version{Path: modPath, Version: modVersion}, root); err != nil {
+		zf.Close()
+		t.Fatal(err)
+	}
+	if err := zf.Close(); err != nil {
+		t.Fatal(err)
+	}
+	modcache := gocmd(root, nil, "env", "GOMODCACHE")
+	installed := filepath.Join(dir, "gobin")
+	gocmd(dir, []string{
+		"GOENV=off", "GOWORK=off", "GOFLAGS=-modcacherw", "GOTOOLCHAIN=local", "GOSUMDB=off",
+		"GOPROXY=" + fileURL(filepath.Join(dir, "proxy")) + "," + fileURL(filepath.Join(modcache, "cache", "download")),
+		"GOMODCACHE=" + filepath.Join(dir, "modcache"), "GOBIN=" + installed,
+	}, "install", modPath+"/internal/update/testdata/printvars@"+modVersion)
+	bin := filepath.Join(installed, "printvars")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	if got := classify(bin, unlinkedVersion); got != SourceModule {
+		t.Errorf("go install %s@%s: %v, want module", modPath, modVersion, got)
+	}
+}
+
+// fileURL is the file:// URL GOPROXY takes for a local directory.
+func fileURL(dir string) string {
+	p := filepath.ToSlash(dir)
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p // C:/… on Windows
+	}
+	return "file://" + p
 }

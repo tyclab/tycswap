@@ -83,7 +83,7 @@ func newUpdatesHost(backupDir string) *updatesHost {
 		runClaude: func(ctx context.Context, c ccversion.Command, in *ccversion.Installed) (string, error) {
 			return ccversion.Run(ctx, env, c, in)
 		},
-		hint:    func() string { return upgradeHint(exePath(), plat) },
+		hint:    func() string { return appUpgradeHint() },
 		current: version.Version,
 		now:     time.Now,
 	}
@@ -95,33 +95,38 @@ func newUpdatesHost(backupDir string) *updatesHost {
 var checkoutCommand = strings.TrimPrefix(update.CheckoutHint, "built from a checkout: ")
 
 // upgradeHint is what a build the dashboard or the tray cannot upgrade is
-// told: a checkout build the checkout's command, a go-installed binary on
-// Windows (the running .exe is locked) the `go install` line, and a binary
-// that can be neither reinstalled nor downloaded over (the Nix store, a
-// directory this process cannot write) the releases page. "" means
-// SelfUpgrade upgrades this binary itself: `go install`, or the release
-// downloaded over it (A36).
+// told (methodHint of its plan); "" means SelfUpgrade upgrades it itself
+// (A36). The app asks once (appUpgradeHint).
 func upgradeHint(exe string, plat platform.Platform) string {
-	if update.DetectBuildSource() == update.SourceCheckout {
-		return checkoutCommand
-	}
-	return methodHint(upgradeMethod(exe), plat)
+	return methodHint(upgradePlan(exe), plat)
 }
 
-// upgradeMethod reads the layout from the environment and home directory
-// SelfUpgrade reads (Upgrader's defaults), so the card offers the button
-// exactly when the apply would upgrade.
-func upgradeMethod(exe string) update.Method {
+// buildSource is update.DetectBuildSource, the seam tests swap: this test
+// binary is a checkout build.
+var buildSource = update.DetectBuildSource
+
+// upgradePlan reads the build, the binary's place, the environment and the
+// home directory as SelfUpgrade does (Upgrader's defaults), so the card
+// offers the button exactly when the apply would upgrade.
+func upgradePlan(exe string) update.Plan {
 	home, _ := os.UserHomeDir()
-	return update.UpgradeMethod(exe, os.Getenv, home)
+	return update.UpgradePlan(buildSource(), exe, os.Getenv, home)
 }
 
-// methodHint is upgradeHint past the checkout test.
-func methodHint(m update.Method, plat platform.Platform) string {
+// methodHint says how to update a build of plan p by hand: a checkout build
+// the checkout's command, a go-installed binary on Windows (the running .exe
+// is locked) the `go install` line, a package manager's binary the package
+// manager, and one that can be neither reinstalled nor downloaded over the
+// releases page. "" for `go install` elsewhere and the release download.
+func methodHint(p update.Plan, plat platform.Platform) string {
 	switch {
-	case m == update.MethodGoInstall && plat == platform.Windows:
+	case p.Method == update.MethodCheckout:
+		return checkoutCommand
+	case p.Method == update.MethodPackageManager:
+		return p.Updater()
+	case p.Method == update.MethodGoInstall && plat == platform.Windows:
 		return "go install " + update.ModulePath + "@latest"
-	case m == update.MethodGoInstall, m == update.MethodDownload:
+	case p.Method == update.MethodGoInstall, p.Method == update.MethodDownload:
 		return ""
 	}
 	return "download it from " + update.ReleasesURL

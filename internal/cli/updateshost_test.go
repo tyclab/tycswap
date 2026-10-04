@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -332,27 +333,31 @@ func TestUpgradeHintAndViewHelpers(t *testing.T) {
 	if got := upgradeHint("/anywhere/tycswap", 0); got != "git pull && make install" {
 		t.Errorf("upgradeHint = %q", got)
 	}
-	// Past the checkout test: the button for a binary SelfUpgrade upgrades
-	// itself (go install off Windows, or the release downloaded over it), the
-	// line to type for a go-installed binary on Windows, and the releases page
-	// for one that can be neither — never `go install` for a release binary.
+	// The button for a binary SelfUpgrade upgrades itself (go install off
+	// Windows, or the release downloaded over it), the line to type for a
+	// go-installed binary on Windows, the package manager for its binary, and
+	// the releases page for one that can be neither — never `go install` for
+	// a release binary.
 	goInstall := "go install " + update.ModulePath + "@latest"
 	releases := "download it from " + update.ReleasesURL
 	for _, c := range []struct {
-		method update.Method
-		plat   platform.Platform
-		want   string
+		plan update.Plan
+		plat platform.Platform
+		want string
 	}{
-		{update.MethodGoInstall, platform.Linux, ""},
-		{update.MethodGoInstall, platform.MacOS, ""},
-		{update.MethodGoInstall, platform.Windows, goInstall},
-		{update.MethodDownload, platform.Linux, ""},
-		{update.MethodDownload, platform.Windows, ""},
-		{update.MethodManual, platform.Linux, releases},
-		{update.MethodManual, platform.Windows, releases},
+		{update.Plan{Method: update.MethodCheckout}, platform.Linux, "git pull && make install"},
+		{update.Plan{Method: update.MethodGoInstall}, platform.Linux, ""},
+		{update.Plan{Method: update.MethodGoInstall}, platform.MacOS, ""},
+		{update.Plan{Method: update.MethodGoInstall}, platform.Windows, goInstall},
+		{update.Plan{Method: update.MethodDownload}, platform.Linux, ""},
+		{update.Plan{Method: update.MethodDownload}, platform.Windows, ""},
+		{update.Plan{Method: update.MethodPackageManager, Manager: "Nix"}, platform.Linux, "Nix (it is in the Nix store)"},
+		{update.Plan{Method: update.MethodPackageManager}, platform.MacOS, "the package manager that installed it"},
+		{update.Plan{Method: update.MethodManual}, platform.Linux, releases},
+		{update.Plan{Method: update.MethodManual}, platform.Windows, releases},
 	} {
-		if got := methodHint(c.method, c.plat); got != c.want {
-			t.Errorf("methodHint(%v, %v) = %q, want %q", c.method, c.plat, got, c.want)
+		if got := methodHint(c.plan, c.plat); got != c.want {
+			t.Errorf("methodHint(%+v, %v) = %q, want %q", c.plan, c.plat, got, c.want)
 		}
 	}
 	v := claudeCodeView(ccversion.Status{Checked: true, Installed: &ccversion.Installed{Version: "", Method: ccversion.Unknown}})
@@ -361,22 +366,36 @@ func TestUpgradeHintAndViewHelpers(t *testing.T) {
 	}
 }
 
-// The layout is read from the real environment, as SelfUpgrade reads it: a
-// binary in $HOME/go/bin is a go install, one in a writable directory
-// elsewhere gets the release downloaded over it, one in the Nix store is
-// upgraded by hand.
-func TestUpgradeMethodReadsTheEnvironment(t *testing.T) {
+// The plan reads the build and the real environment, as SelfUpgrade does: a
+// module build in $HOME/go/bin is a go install, a release build in a
+// writable directory gets the next release downloaded over it, one in the
+// Nix store is the package manager's, and a checkout build is the checkout's
+// wherever it is.
+func TestUpgradePlanReadsTheEnvironment(t *testing.T) {
 	home := t.TempDir()
 	testutil.Setenv(t, "HOME", home)
 	testutil.Setenv(t, "USERPROFILE", home)
 	testutil.Unsetenv(t, "GOPATH")
-	if got := upgradeMethod(filepath.Join(home, "go", "bin", "tycswap")); got != update.MethodGoInstall {
-		t.Errorf("binary in $HOME/go/bin: %v, want go install", got)
+	testutil.Unsetenv(t, "GOBIN")
+	prev := buildSource
+	t.Cleanup(func() { buildSource = prev })
+	writable := filepath.Join(t.TempDir(), "tycswap")
+	if err := os.WriteFile(writable, []byte("old build"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if got := upgradeMethod(filepath.Join(t.TempDir(), "tycswap")); got != update.MethodDownload {
-		t.Errorf("binary in a writable directory: %v, want download", got)
-	}
-	if got := upgradeMethod("/nix/store/0000-tycswap/bin/tycswap"); got != update.MethodManual {
-		t.Errorf("binary in the Nix store: %v, want manual", got)
+	for _, c := range []struct {
+		src  update.BuildSource
+		exe  string
+		want update.Method
+	}{
+		{update.SourceModule, filepath.Join(home, "go", "bin", "tycswap"), update.MethodGoInstall},
+		{update.SourceRelease, writable, update.MethodDownload},
+		{update.SourceRelease, "/nix/store/0000-tycswap/bin/tycswap", update.MethodPackageManager},
+		{update.SourceCheckout, writable, update.MethodCheckout},
+	} {
+		buildSource = func() update.BuildSource { return c.src }
+		if got := upgradePlan(c.exe); got.Method != c.want {
+			t.Errorf("%v at %s: %+v, want method %v", c.src, c.exe, got, c.want)
+		}
 	}
 }

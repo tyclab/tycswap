@@ -34,52 +34,132 @@ var DownloadTimeout = 5 * time.Minute
 // BinaryName is the release asset stem.
 const BinaryName = "tycswap"
 
-// Method is how SelfUpgrade upgrades a binary that is not a checkout build.
+// Method is how SelfUpgrade upgrades the running binary.
 type Method int
 
 const (
-	// MethodManual: the binary is upgraded by hand (it lives in the Nix
-	// store, or in a directory this process cannot write).
+	// MethodManual: by hand, from the releases page (a module build outside
+	// a Go bin directory, a release build this process cannot replace).
 	MethodManual Method = iota
+	// MethodCheckout: a checkout build, upgraded in its checkout.
+	MethodCheckout
 	// MethodGoInstall: `go install <ModulePath>@latest` (print-only on Windows).
 	MethodGoInstall
 	// MethodDownload: the release asset downloaded over the running binary.
 	MethodDownload
+	// MethodPackageManager: a package manager installed it and updates it.
+	MethodPackageManager
 )
 
-// UpgradeMethod is how SelfUpgrade upgrades exePath, the checkout test aside:
-// `go install` in a Go bin directory; else a download over the binary when
-// it sits outside the Nix store in a directory this process can write; else
-// by hand.
-func UpgradeMethod(exePath string, getenv func(string) string, homeDir string) Method {
-	if DetectInstallShape(exePath, getenv, homeDir) == ShapeGoInstall {
-		return MethodGoInstall
+// Plan is how SelfUpgrade upgrades the running binary (DESIGN A36).
+type Plan struct {
+	Method Method
+	// Manager names the package manager of a MethodPackageManager plan
+	// ("Nix", "Homebrew", "Scoop", "the Microsoft Store"); "" when it is
+	// not known which one.
+	Manager string
+}
+
+// Updater is what updates a MethodPackageManager plan's binary, for "update
+// it with …".
+func (p Plan) Updater() string {
+	switch p.Manager {
+	case "":
+		return "the package manager that installed it"
+	case "Nix":
+		return "Nix (it is in the Nix store)"
 	}
-	if Downloadable(exePath) {
-		return MethodDownload
+	return p.Manager + ", which installed it"
+}
+
+// UpgradePlan is DESIGN A36's decision for a binary of build source src at
+// exePath. It reads and writes nothing but the file system's answers to
+// stat and access checks:
+//
+//   - a checkout build is upgraded in its checkout;
+//   - a module build (`go install <module>@<version>`) is upgraded with `go
+//     install` in a Go bin directory and by hand anywhere else; it never
+//     downloads;
+//   - a release build in a package manager's tree (the Nix store, a Homebrew
+//     Cellar, Scoop's apps, WindowsApps) or started through a symbolic link
+//     is the package manager's; one this process can replace (replaceable)
+//     gets the next release downloaded over it; any other is upgraded by
+//     hand.
+func UpgradePlan(src BuildSource, exePath string, getenv func(string) string, homeDir string) Plan {
+	switch src {
+	case SourceCheckout:
+		return Plan{Method: MethodCheckout}
+	case SourceModule:
+		if DetectInstallShape(exePath, getenv, homeDir) == ShapeGoInstall {
+			return Plan{Method: MethodGoInstall}
+		}
+		return Plan{Method: MethodManual}
 	}
-	return MethodManual
+	if exePath == "" {
+		return Plan{Method: MethodManual}
+	}
+	real, linked := resolveExe(exePath)
+	if manager, ok := packageManager(real, linked); ok {
+		return Plan{Method: MethodPackageManager, Manager: manager}
+	}
+	if replaceable(real) {
+		return Plan{Method: MethodDownload}
+	}
+	return Plan{Method: MethodManual}
+}
+
+// executable is os.Executable, the seam tests swap.
+var executable = os.Executable
+
+// resolveExe is exe with its symbolic links resolved, and whether the binary
+// was started through a link: exe is one, or the running executable's path
+// as the OS gives it is one that resolves to exe. (Linux gives the resolved
+// path, so there only exe itself can tell.)
+func resolveExe(exe string) (real string, linked bool) {
+	real = exe
+	if r, err := filepath.EvalSymlinks(exe); err == nil {
+		real = r
+	}
+	if fi, err := os.Lstat(exe); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return real, true
+	}
+	if raw, err := executable(); err == nil && raw != exe {
+		if fi, err := os.Lstat(raw); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			if r, err := filepath.EvalSymlinks(raw); err == nil && r == real {
+				return real, true
+			}
+		}
+	}
+	return real, false
 }
 
 // nixStore is the Nix store's prefix; a variable so a test can put a
 // directory it can write in its place.
 var nixStore = "/nix/store/"
 
-// Downloadable reports whether a release may be downloaded over exePath: a
-// known path outside the Nix store (a store path is read-only and belongs to
-// the package manager) in a directory this process can create a file in.
-func Downloadable(exePath string) bool {
-	if exePath == "" || strings.HasPrefix(filepath.ToSlash(exePath), nixStore) {
-		return false
+// packageTrees are path parts of the trees package managers own, matched
+// without regard to case (Windows and macOS file systems ignore it).
+var packageTrees = []struct{ part, manager string }{
+	{"/cellar/", "Homebrew"},
+	{"/scoop/apps/", "Scoop"},
+	{"/windowsapps/", "the Microsoft Store"},
+}
+
+// packageManager reports whether a package manager owns the binary at real
+// (symlinks resolved), and which one when it can tell: one started through a
+// symbolic link is taken for a package manager's too.
+func packageManager(real string, linked bool) (manager string, ok bool) {
+	p := filepath.ToSlash(real)
+	if strings.HasPrefix(p, nixStore) {
+		return "Nix", true
 	}
-	f, err := os.CreateTemp(filepath.Dir(exePath), "."+BinaryName+"-write-test-*")
-	if err != nil {
-		return false
+	lower := strings.ToLower(p)
+	for _, t := range packageTrees {
+		if strings.Contains(lower, t.part) {
+			return t.manager, true
+		}
 	}
-	name := f.Name()
-	_ = f.Close()
-	_ = os.Remove(name)
-	return true
+	return "", linked
 }
 
 // AssetName is the release asset for tag on plat/arch, as the release

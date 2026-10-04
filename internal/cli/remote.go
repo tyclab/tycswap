@@ -707,8 +707,8 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	var restartTag atomic.Pointer[string]
 	cfg := autostartConfig(o)
 	update.RemoveStaleBinary(exePath()) // a Windows upgrade's leftover from last time
-	// How this build is upgraded, worked out once: it probes the binary's
-	// directory with a file, and the menu, the card and every check ask.
+	// How this build is upgraded, decided at the start: the menu, the card
+	// and every check ask, and the answer does not change while it runs.
 	buildHint := appUpgradeHint()
 	sh = newAppShell(t, shellActions{
 		OpenDashboard:  openDashboard,

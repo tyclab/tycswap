@@ -83,7 +83,7 @@ func (c Checker) homeDir() string {
 // currentVersion is the running build's v-prefixed semver string (Amendment
 // A5, e.g. version.Version — NOT version.Display()'s stripped form; the
 // comparator needs the "v" prefix). exePath is the running binary's path,
-// used only for the install-shape hint (see DetectInstallShape/UpgradeHint).
+// used only for the hint (see UpgradePlan/UpgradeHint).
 func (c Checker) CheckForUpdate(exePath, currentVersion string, plat platform.Platform) string {
 	cachePath := filepath.Join(c.CacheDir, "update_check.json")
 	now := clock.Seconds(c.clock())
@@ -111,8 +111,7 @@ func (c Checker) CheckForUpdate(exePath, currentVersion string, plat platform.Pl
 		return ""
 	}
 
-	shape := DetectInstallShape(exePath, c.getenv(), c.homeDir())
-	hint := UpgradeHint(shape, plat)
+	hint := UpgradeHint(UpgradePlan(DetectBuildSource(), exePath, c.getenv(), c.homeDir()), plat)
 	return fmt.Sprintf(
 		"A newer version of tycswap is available (%s). You are using %s. %s",
 		strings.TrimPrefix(latest, "v"), strings.TrimPrefix(currentVersion, "v"), hint,

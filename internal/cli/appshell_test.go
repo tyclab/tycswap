@@ -587,8 +587,8 @@ func TestOfferUpdateTellsTheCommandWhenTheTrayCannotInstall(t *testing.T) {
 	}
 }
 
-// The card asks for the hint only while an update waits: the hint probes the
-// binary's directory with a file, and the card is drawn on every poll.
+// The card asks for the hint only while an update waits: there is nothing to
+// say about installing otherwise, and the card is drawn on every poll.
 func TestUpdatesViewAsksForTheHintOnlyWhenAnUpdateWaits(t *testing.T) {
 	for _, latest := range []string{"v2.1.0", "v2.2.0"} {
 		sh, _, _ := updateShell(t, latest, nil)

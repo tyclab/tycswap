@@ -107,22 +107,26 @@ func TestInstallShapeString(t *testing.T) {
 
 func TestUpgradeHint(t *testing.T) {
 	cases := []struct {
-		name  string
-		shape InstallShape
-		plat  platform.Platform
-		want  string
+		name string
+		plan Plan
+		plat platform.Platform
+		want string
 	}{
-		{"go-install, linux", ShapeGoInstall, platform.Linux, "Run `tycswap upgrade` to update."},
-		{"go-install, macos", ShapeGoInstall, platform.MacOS, "Run `tycswap upgrade` to update."},
-		{"go-install, windows", ShapeGoInstall, platform.Windows,
+		{"go-install, linux", Plan{Method: MethodGoInstall}, platform.Linux, "Run `tycswap upgrade` to update."},
+		{"go-install, macos", Plan{Method: MethodGoInstall}, platform.MacOS, "Run `tycswap upgrade` to update."},
+		{"go-install, windows", Plan{Method: MethodGoInstall}, platform.Windows,
 			"Run `go install " + ModulePath + "@latest` to update."},
-		{"unknown, linux", ShapeUnknown, platform.Linux, "Run `tycswap upgrade` for upgrade instructions."},
-		{"unknown, windows", ShapeUnknown, platform.Windows, "Run `tycswap upgrade` for upgrade instructions."},
+		{"download, windows", Plan{Method: MethodDownload}, platform.Windows, "Run `tycswap upgrade` to update."},
+		{"checkout", Plan{Method: MethodCheckout}, platform.Linux, "This binary was built from a checkout: git pull && make install."},
+		{"Nix", Plan{Method: MethodPackageManager, Manager: "Nix"}, platform.Linux,
+			"It was installed by a package manager: update it with Nix (it is in the Nix store)."},
+		{"manual, linux", Plan{Method: MethodManual}, platform.Linux, "Run `tycswap upgrade` for upgrade instructions."},
+		{"manual, windows", Plan{Method: MethodManual}, platform.Windows, "Run `tycswap upgrade` for upgrade instructions."},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := UpgradeHint(tc.shape, tc.plat); got != tc.want {
-				t.Errorf("UpgradeHint(%v, %v) = %q, want %q", tc.shape, tc.plat, got, tc.want)
+			if got := UpgradeHint(tc.plan, tc.plat); got != tc.want {
+				t.Errorf("UpgradeHint(%+v, %v) = %q, want %q", tc.plan, tc.plat, got, tc.want)
 			}
 		})
 	}

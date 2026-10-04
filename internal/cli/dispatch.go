@@ -24,12 +24,16 @@ import (
 	"github.com/tyclab/tycswap/internal/version"
 )
 
-// exePath resolves the running binary path (install-shape detection input);
-// overridable in tests. Any error yields "".
+// exePath is the running binary's path with symbolic links resolved (the
+// upgrade plan's input, the file an update replaces); overridable in tests.
+// Any error yields "".
 var exePath = func() string {
 	p, err := os.Executable()
 	if err != nil {
 		return ""
+	}
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
 	}
 	return p
 }

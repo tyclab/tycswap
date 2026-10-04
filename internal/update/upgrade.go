@@ -112,36 +112,52 @@ func (u Upgrader) stderr() io.Writer {
 	return os.Stderr
 }
 
-// SelfUpgrade runs the appropriate upgrade action for the running binary's
-// install shape and returns the process exit code (never an error — every
-// failure path prints guidance and returns 1, matching
-// run_self_upgrade's contract of "return an int, don't raise").
+// SelfUpgrade runs the upgrade UpgradePlan picks for the running binary and
+// returns the process exit code (never an error — every failure path prints
+// guidance and returns 1, matching run_self_upgrade's contract of "return an
+// int, don't raise").
 //
 // exePath is the running binary's path (symlink-resolved os.Executable());
 // plat gates the Windows print-only branch.
 func (u Upgrader) SelfUpgrade(exePath string, plat platform.Platform) int {
-	// A checkout build is never re-installed from a remote: `go install
-	// <ModulePath>@latest` would replace the user's own tree with whatever is
-	// published there (Amendment A24).
-	if DetectBuildSource() == SourceCheckout {
-		fmt.Fprintf(u.stdout(), "tycswap was %s\n", CheckoutHint)
-		return 1
-	}
-	method := UpgradeMethod(exePath, u.getenv(), u.homeDir())
-	if method == MethodDownload {
-		return u.downloadUpgrade(exePath, plat)
-	}
 	cmdArgs := []string{"install", ModulePath + "@latest"}
 	fullCmd := "go " + strings.Join(cmdArgs, " ")
-
-	if method != MethodGoInstall {
-		binary := exePath
-		if binary == "" {
-			binary = "(unknown)"
+	binary := exePath
+	if binary == "" {
+		binary = "(unknown)"
+	}
+	src := DetectBuildSource()
+	plan := UpgradePlan(src, exePath, u.getenv(), u.homeDir())
+	switch plan.Method {
+	case MethodCheckout:
+		// Never re-installed from a remote: `go install <ModulePath>@latest`
+		// would replace the user's own tree with whatever is published
+		// there (Amendment A24).
+		fmt.Fprintf(u.stdout(), "tycswap was %s\n", CheckoutHint)
+		return 1
+	case MethodDownload:
+		return u.downloadUpgrade(exePath, plat)
+	case MethodPackageManager:
+		fmt.Fprintf(u.stderr(),
+			"This tycswap was installed by a package manager: update it with %s.\n"+
+				"  binary: %s\n",
+			plan.Updater(), binary)
+		return 1
+	case MethodManual:
+		if src == SourceModule {
+			fmt.Fprintf(u.stderr(),
+				"Could not detect a `go install` layout (looked for $GOBIN, $GOPATH/bin, $HOME/go/bin).\n"+
+					"  binary: %s\n"+
+					"To upgrade manually, run:\n"+
+					"  %s\n"+
+					"Or download a release from:\n"+
+					"  %s\n",
+				binary, fullCmd, u.releasesURL())
+			return 1
 		}
 		fmt.Fprintf(u.stderr(),
-			"Could not upgrade this binary in place: it is not in a Go bin directory ($GOBIN, $GOPATH/bin, $HOME/go/bin)\n"+
-				"and its directory cannot be written (or it belongs to the Nix store).\n"+
+			"Could not upgrade this binary in place: this process cannot replace it (its directory or the file\n"+
+				"cannot be written, or it belongs to another user).\n"+
 				"  binary: %s\n"+
 				"To upgrade manually, download the build for this machine from:\n"+
 				"  %s\n",

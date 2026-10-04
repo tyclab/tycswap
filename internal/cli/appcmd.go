@@ -53,7 +53,9 @@ var releaseAppConsole = releaseOwnConsole
 // update→restart path without installing anything.
 var (
 	upgradeForShell = runUpgradeForShell
-	appUpgradeHint  = func() string { return upgradeHint(exePath(), platform.Detect()) }
+	// How this build is upgraded is decided once per process: the build and
+	// the binary's place do not change while it runs.
+	appUpgradeHint = sync.OnceValue(func() string { return upgradeHint(exePath(), platform.Detect()) })
 )
 
 type appOptions struct {
@@ -363,8 +365,8 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		}
 	}
 	update.RemoveStaleBinary(exePath()) // a Windows upgrade's leftover from last time
-	// How this build is upgraded, worked out once: it probes the binary's
-	// directory with a file, and the menu, the card and every check ask.
+	// How this build is upgraded, decided at the start: the menu, the card
+	// and every check ask, and the answer does not change while it runs.
 	buildHint := appUpgradeHint()
 	sh = newAppShell(t, shellActions{
 		OpenDashboard: openDashboard,
@@ -628,7 +630,7 @@ func runUpgradeForShell() (string, error) {
 	if code != 0 {
 		// The download says why on its first line (the rest is the way to
 		// finish by hand); `go install` says it last.
-		if upgradeMethod(exe) == update.MethodDownload && first != "" {
+		if upgradePlan(exe).Method == update.MethodDownload && first != "" {
 			return "", errors.New(first)
 		}
 		return "", errors.New(lastOutputLine(text, "the upgrade did not complete"))

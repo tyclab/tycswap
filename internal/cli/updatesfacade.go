@@ -89,7 +89,6 @@ func (a *appShell) updatesView() web.UpdatesView {
 	}
 	v.App = &web.AppUpdateView{Current: a.act.Current, Latest: latest, Available: pending != ""}
 	if pending != "" {
-		// Only then: the hint probes the binary's directory with a file.
 		v.App.Hint = a.upgradeHint()
 	}
 	if releaseErr != nil {

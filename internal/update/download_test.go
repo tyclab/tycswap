@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -69,10 +70,12 @@ func newDownloadServer(t *testing.T, tag string, assets map[string][]byte, sums 
 	return rs
 }
 
-// installedBinary writes a fake current binary into a fresh, writable
-// directory that is not a Go bin directory: the download shape.
+// installedBinary makes the running binary a release build (withRelease)
+// and writes a fake copy of it into a fresh, writable directory that is not
+// a Go bin directory: the download shape.
 func installedBinary(t *testing.T, name string) (dir, exe string) {
 	t.Helper()
+	withRelease(t)
 	dir = t.TempDir()
 	exe = filepath.Join(dir, name)
 	if err := os.WriteFile(exe, []byte("old build"), 0o755); err != nil {
@@ -386,17 +389,19 @@ func TestDownloadUpgrade_RedirectCap(t *testing.T) {
 func TestDownloadUpgrade_NixStoreGuard(t *testing.T) {
 	rs := newDownloadServer(t, "v0.7.0", map[string][]byte{"tycswap_v0.7.0_linux_amd64": []byte("new build")}, nil)
 	dir, exe := installedBinary(t, "tycswap")
-	if !Downloadable(exe) {
-		t.Fatal("a writable directory outside the store is not downloadable")
+	noEnv := func(string) string { return "" }
+	if p := UpgradePlan(SourceRelease, exe, noEnv, t.TempDir()); p.Method != MethodDownload {
+		t.Fatalf("a writable directory outside the store: %+v", p)
 	}
 	prev := nixStore
 	nixStore = filepath.ToSlash(dir) + "/"
 	t.Cleanup(func() { nixStore = prev })
-	if Downloadable(exe) {
-		t.Error("a binary in the store is downloadable")
+	if p := UpgradePlan(SourceRelease, exe, noEnv, t.TempDir()); p.Method != MethodPackageManager || p.Manager != "Nix" {
+		t.Errorf("a binary in the store: %+v", p)
 	}
 	u, _, stderr := downloadUpgrader(rs, "v0.6.0")
-	if code := u.SelfUpgrade(exe, platform.Linux); code != 1 || !strings.Contains(stderr.String(), "Could not upgrade this binary in place") {
+	if code := u.SelfUpgrade(exe, platform.Linux); code != 1 || !strings.Contains(stderr.String(), "update it with Nix (it is in the Nix store)") ||
+		strings.Contains(stderr.String(), ReleasesURL) {
 		t.Errorf("exit %d, stderr %q", code, stderr.String())
 	}
 	if got, _ := os.ReadFile(exe); string(got) != "old build" || rs.hits.Load() != 0 {
@@ -461,52 +466,110 @@ func TestRemoveStaleBinary(t *testing.T) {
 	RemoveStaleBinary("") // no path, nothing to do
 }
 
-func TestUpgradeMethod(t *testing.T) {
+// DESIGN A36's plan for each build source and place.
+func TestUpgradePlan(t *testing.T) {
 	home := t.TempDir()
 	getenv := func(string) string { return "" }
-	binDir := filepath.Join(home, "go", "bin")
-	if got := UpgradeMethod(filepath.Join(binDir, "tycswap"), getenv, home); got != MethodGoInstall {
-		t.Errorf("Go bin directory: %v", got)
+	goBin := filepath.Join(home, "go", "bin", "tycswap")
+	_, writable := installedBinary(t, "tycswap")
+	cases := []struct {
+		name string
+		src  BuildSource
+		exe  string
+		want Plan
+	}{
+		{"checkout, anywhere", SourceCheckout, writable, Plan{Method: MethodCheckout}},
+		{"module in a Go bin directory", SourceModule, goBin, Plan{Method: MethodGoInstall}},
+		{"module elsewhere never downloads", SourceModule, writable, Plan{Method: MethodManual}},
+		{"release in a writable place", SourceRelease, writable, Plan{Method: MethodDownload}},
+		{"release in the Nix store", SourceRelease, "/nix/store/0000-tycswap/bin/tycswap", Plan{Method: MethodPackageManager, Manager: "Nix"}},
+		{"release in a Homebrew Cellar", SourceRelease, "/opt/homebrew/Cellar/tycswap/0.6.0/bin/tycswap", Plan{Method: MethodPackageManager, Manager: "Homebrew"}},
+		{"release in Scoop's apps", SourceRelease, `C:/Users/u/scoop/apps/tycswap/current/tycswap.exe`, Plan{Method: MethodPackageManager, Manager: "Scoop"}},
+		{"release from the Microsoft Store", SourceRelease, `C:/Program Files/WindowsApps/tycswap/tycswap.exe`, Plan{Method: MethodPackageManager, Manager: "the Microsoft Store"}},
+		{"release with no path", SourceRelease, "", Plan{Method: MethodManual}},
+		{"release that is not there", SourceRelease, filepath.Join(home, "missing", "tycswap"), Plan{Method: MethodManual}},
 	}
-	if got := UpgradeMethod(filepath.Join(t.TempDir(), "tycswap"), getenv, home); got != MethodDownload {
-		t.Errorf("writable directory: %v", got)
+	for _, c := range cases {
+		if got := UpgradePlan(c.src, c.exe, getenv, home); got != c.want {
+			t.Errorf("%s: %+v, want %+v", c.name, got, c.want)
+		}
 	}
-	for _, exe := range []string{"/nix/store/0000-tycswap/bin/tycswap", "", filepath.Join(home, "missing", "tycswap")} {
-		if got := UpgradeMethod(exe, getenv, home); got != MethodManual {
-			t.Errorf("%q: %v, want manual", exe, got)
+	if runtime.GOOS != "windows" {
+		// A release started through a symbolic link is a package manager's.
+		link := filepath.Join(t.TempDir(), "tycswap")
+		if err := os.Symlink(writable, link); err != nil {
+			t.Fatal(err)
+		}
+		if got := UpgradePlan(SourceRelease, link, getenv, home); got != (Plan{Method: MethodPackageManager}) {
+			t.Errorf("symlinked release: %+v", got)
 		}
 	}
 	if os.Geteuid() > 0 {
+		// Without write access to the directory or the file, by hand.
 		dir := t.TempDir()
+		exe := filepath.Join(dir, "tycswap")
+		if err := os.WriteFile(exe, []byte("old build"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.Chmod(dir, 0o555); err != nil {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
-		if got := UpgradeMethod(filepath.Join(dir, "tycswap"), getenv, home); got != MethodManual {
-			t.Errorf("read-only directory: %v, want manual", got)
+		if got := UpgradePlan(SourceRelease, exe, getenv, home); got.Method != MethodManual {
+			t.Errorf("read-only directory: %+v, want manual", got)
+		}
+		ro := filepath.Join(t.TempDir(), "tycswap")
+		if err := os.WriteFile(ro, []byte("old build"), 0o555); err != nil {
+			t.Fatal(err)
+		}
+		if got := UpgradePlan(SourceRelease, ro, getenv, home); got.Method != MethodManual {
+			t.Errorf("read-only file: %+v, want manual", got)
+		}
+		if entries, _ := os.ReadDir(filepath.Dir(writable)); len(entries) != 1 {
+			t.Errorf("deciding the plan wrote into the binary's directory: %v", entries)
 		}
 	}
 }
 
-// releaseBuild is what the release workflow stamps: no VCS, -trimpath, and
-// the tag linked into internal/version.
+// What a package manager's binary is told to update with.
+func TestPlanUpdater(t *testing.T) {
+	for manager, want := range map[string]string{
+		"":         "the package manager that installed it",
+		"Nix":      "Nix (it is in the Nix store)",
+		"Homebrew": "Homebrew, which installed it",
+	} {
+		if got := (Plan{Method: MethodPackageManager, Manager: manager}).Updater(); got != want {
+			t.Errorf("%q: %q, want %q", manager, got, want)
+		}
+	}
+}
+
+// releaseBuild is what the release workflow stamps: no VCS stamp and no
+// module version. The tag it links into internal/version is not in the
+// build info (Go leaves -ldflags out whenever -trimpath is set,
+// go.dev/issue/52372): withRelease links it.
 func releaseBuild() (*debug.BuildInfo, bool) {
 	return &debug.BuildInfo{
 		Path: "github.com/tyclab/tycswap/cmd/tycswap",
 		Main: debug.Module{Path: "github.com/tyclab/tycswap", Version: "(devel)"},
 		Settings: []debug.BuildSetting{
 			{Key: "-buildmode", Value: "exe"},
-			{Key: "-ldflags", Value: "-s -w -X github.com/tyclab/tycswap/internal/version.Version=v0.6.0"},
 			{Key: "-trimpath", Value: "true"},
 			{Key: "CGO_ENABLED", Value: "0"},
 		},
 	}, true
 }
 
+// withRelease makes the running binary a release build of v0.6.0.
+func withRelease(t *testing.T) {
+	t.Helper()
+	withBuild(t, releaseBuild)
+	withLinkedVersion(t, "v0.6.0")
+}
+
 // A release binary is upgraded by downloading the next release over it, not
 // told to `go install` and not taken for a checkout build.
 func TestSelfUpgrade_ReleaseBuildDownloads(t *testing.T) {
-	withBuild(t, releaseBuild)
 	rs := newDownloadServer(t, "v0.7.0", map[string][]byte{"tycswap_v0.7.0_linux_amd64": []byte("next release")}, nil)
 	_, exe := installedBinary(t, "tycswap")
 	u, stdout, stderr := downloadUpgrader(rs, "v0.6.0")

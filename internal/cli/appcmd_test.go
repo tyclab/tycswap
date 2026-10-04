@@ -197,8 +197,8 @@ func TestAppRestartHandOverReleasesTheLockOnce(t *testing.T) {
 	if !(*free)[0] {
 		t.Error("the successor would have found app.lock still held")
 	}
-	// The hint probes the binary's directory: once, at the start, however
-	// often the check, the menu and the card ask.
+	// The upgrade plan is decided once, at the start, however often the
+	// check, the menu and the card ask.
 	if n := hints.Load(); n != 1 {
 		t.Errorf("the upgrade hint was worked out %d times, want once", n)
 	}
