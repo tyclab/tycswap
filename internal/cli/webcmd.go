@@ -190,8 +190,8 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 		return code
 	}
 	// Ctrl-C and SIGTERM end the serve loop through ctx; Ctrl-C is claimed
-	// from the program-wide notifier's exit 130 before anything is printed,
-	// so a Ctrl-C after the first line is always the server's (DESIGN A48).
+	// from the program-wide notifier's exit 130 before the server's own
+	// first line, so a Ctrl-C after it is always the server's (DESIGN A48).
 	ctx, stop := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	defer claimSigint()()

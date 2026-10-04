@@ -5650,8 +5650,10 @@ notifier (A7), which prints the cancellation note and exits 130 for every
 other command, receives Ctrl-C beside the server's signal context and wins,
 for `web` and for `app`, whose deferred token removal and engine stop it
 skipped. The two servers (the remote tray included) now claim SIGINT once
-their context is registered and before they print or serve anything
-(`claimSigint`): the claim stops the notifier's delivery (`signal.Stop`), so
+their context is registered and before their own first line and the token
+file (`claimSigint`; a Ctrl-C during the store's start-up notices, before the
+claim, is still the notifier's): the claim stops the notifier's delivery
+(`signal.Stop`), so
 the outcome does not depend on when the notifier's goroutine runs; the serve
 loop ends on the context, the defers run and the command returns 0. The
 release, deferred before the cleanup defers, registers the notifier again when

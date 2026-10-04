@@ -284,8 +284,8 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	// (A45), and `systemctl --user stop` sends SIGTERM, which would
 	// otherwise end the process without the deferred token removal. Ctrl-C
 	// is claimed from the program-wide notifier for the same reason, here
-	// before the token exists and anything is printed, so the claim's
-	// release (deferred first) runs after the token's removal (A48).
+	// before the token exists and before the app's own first line, so the
+	// claim's release (deferred first) runs after the token's removal (A48).
 	ctx, cancel := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	defer claimSigint()()
