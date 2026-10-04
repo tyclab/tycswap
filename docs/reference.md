@@ -2741,7 +2741,7 @@ anything else `500`.
 | `POST /api/switch/{key}[?force=1][&confirmAuthChange=1]` | | `tycswap switch <id> [--force] [--yes]`; `confirmAuthChange=1` records the user's yes to a switch onto an API-key account, which the page asks for first (DESIGN A33). A `codex:` key is `tycswap codex switch <id>` and answers `{"number", "email", "runningPids", "alreadyActive"}` | `400` bare key, an API-key target without `confirmAuthChange`, or `force` / `confirmAuthChange` with a `codex:` key; `404` unknown provider; `503` `confirmAuthChange` without account operations, or a `codex:` key without Codex accounts; `409` a `codex:` key while the Codex store stays busy for 10 s |
 | `POST /api/accounts/add` | `{"provider": "claude"\|"codex"}` (optional) | `tycswap add`; answers `{"ok": true, "result": {"number", "email", "refreshed"}}`, the account the live login is now (`refreshed`: it was that account already). The tray's *Add current login* is the same call. With `codex`, `tycswap codex add`, answering `{"number", "email"}` | `500` `Claude Code has no subscription login on this computer. …` when Claude Code has no live login, before anything is stored; `400` unknown provider; `503` `codex` without Codex accounts; `409` `codex` while the Codex store stays busy for 10 s |
 | `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias", "baseUrl"}` | `tycswap add-token [--base-url]` (the token is never echoed or logged); `503` with a `baseUrl` when the facade cannot store one | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
-| `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y`; for a `codex:` key `tycswap codex enable`, `disable`, `remove -y`, holding the Codex store lock throughout | `400` bare key, `404` unknown provider, `503` a `codex:` key without Codex accounts, `409` the Codex store stayed busy (a Codex switch held it) for 10 s |
+| `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y`; for a `codex:` key `tycswap codex enable`, `disable`, `remove -y`, holding the Codex store lock throughout | `400` bare key, `404` unknown provider, `503` a `codex:` key without Codex accounts, `409` the Codex store stayed busy (a Codex switch or a token refresh held it) for 10 s |
 | `POST /api/accounts/{key}/alias` | `{"alias": "<name>"}` (empty unsets) | `tycswap alias` | `400` bare key, `404` a `codex:` key or an unknown provider |
 | `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` | `400` missing slot or bare key, `404` a `codex:` key or an unknown provider |
 | `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` | `400` missing or bare keys, `404` a `codex:` key or an unknown provider |
@@ -3934,7 +3934,7 @@ the account was removed. A declined prompt prints `Cancelled` and nothing else.
 
 ### Errors
 
-`No Codex account matches '<id>'`, exit 1.
+`No Codex account matches '<id>'`, exit 1. `Another tycswap process is using the Codex store; try again.`, exit 1, when the Codex store lock is held for 10 s (a Codex switch or a token refresh, in this or another process; DESIGN A48).
 
 ### Example
 
@@ -4036,7 +4036,7 @@ Writes `codex/sequence.json`.
 
 ### Errors
 
-`No Codex account matches '<id>'`, exit 1.
+`No Codex account matches '<id>'`, exit 1. `Another tycswap process is using the Codex store; try again.`, exit 1, when the Codex store lock is held for 10 s (a Codex switch or a token refresh, in this or another process; DESIGN A48).
 
 ### Example
 
@@ -4083,7 +4083,7 @@ Writes `codex/sequence.json`.
 
 ### Errors
 
-`No Codex account matches '<id>'`, exit 1.
+`No Codex account matches '<id>'`, exit 1. `Another tycswap process is using the Codex store; try again.`, exit 1, when the Codex store lock is held for 10 s (a Codex switch or a token refresh, in this or another process; DESIGN A48).
 
 ### Example
 
@@ -4812,8 +4812,8 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
 
 | Signal | Effect |
 |--------|--------|
-| `SIGINT` (Ctrl-C) | Prints a dimmed cancellation note (to stderr under `--json`, otherwise stdout) and exits `130`. During `tycswap auto` the note reads `Auto-switch stopped`; elsewhere `Operation cancelled`. |
-| `SIGTERM` | During the `tycswap auto` loop, stops the loop cleanly and exits `0` (the systemd-stop path). Other commands take the default action. |
+| `SIGINT` (Ctrl-C) | Prints a dimmed cancellation note (to stderr under `--json`, otherwise stdout) and exits `130`. During `tycswap auto` the note reads `Auto-switch stopped`; elsewhere `Operation cancelled`. `tycswap web` and `tycswap app` take the signal over: the server stops, the deferred cleanup runs and they exit `0` without a note (DESIGN A48). |
+| `SIGTERM` | During the `tycswap auto` loop, stops the loop cleanly and exits `0` (the systemd-stop path). `tycswap web` and `tycswap app` stop their server and exit `0` the same way. Other commands take the default action. |
 
 ## COMPATIBILITY
 

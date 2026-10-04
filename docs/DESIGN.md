@@ -5636,17 +5636,30 @@ the lock, so a prompt never holds the store.
 lock as a switch error, while the store's own `With` and the Claude side's
 lock (port-spec 01, `LockError`) report a lock error; the dashboard maps the
 kinds to 500 and 409. Every Codex verb now reports `LockError` with the
-unchanged message, so a busy store answers 409 on switch and add as it did on
-disable and remove, and `--json` carries `"type": "LockError"`.
+switcher's message (disable, enable and remove used to surface the store's own
+`Failed to acquire lock` line), so a busy store answers 409 on switch and add
+as it did on disable and remove. No Codex verb that can meet the lock takes
+`--json`, so no error envelope changes.
 
-**`tycswap web` ends with 0 when stopped.** It returned 130 after Ctrl-C and
-SIGTERM alike, as the reference does, while `tycswap app` (A45) returns 0 on
-both because `systemctl --user stop` sends SIGTERM and a stop it was asked
-for is not a failure; a service manager reads 130 as one. Both commands now
-end with 0; a usage error stays 2 and a server that cannot start stays 1.
+**`tycswap web` and `tycswap app` end with 0 when stopped.** `web` returned
+130 after Ctrl-C and SIGTERM alike, as the reference does, while `app` (A45)
+means to return 0 on both because `systemctl --user stop` sends SIGTERM and a
+stop it was asked for is not a failure; a service manager reads 130 as one.
+Dropping `web`'s 130 branch (#22) fixed SIGTERM alone: the program-wide SIGINT
+notifier (A7), which prints the cancellation note and exits 130 for every
+other command, receives Ctrl-C beside the server's signal context and wins,
+for `web` and for `app`, whose deferred token removal and engine stop it
+skipped. The two servers now claim SIGINT once their context is registered
+(`claimSigint`): the notifier lets the signal pass while the claim stands,
+the serve loop ends on the context, the defers run and the command returns
+0. The claim is released when the command returns, so nothing changes for any
+other command or for `run()`-driven tests. A usage error stays 2 and a server
+that cannot start stays 1.
 
 **Tests.** The switcher: disable and remove wait for a holder of the lock and
 write once it is released, and report a lock error with nothing written when
 it stays held; the three busy assertions name the lock kind. `internal/cli`:
 the Codex façade's lock test runs against the switcher's lock; `tycswap web`
-exits 0 through the notify-context seam, offline.
+exits 0 through the notify-context seam, offline; with the A7 notifier
+installed, a real SIGINT ends `tycswap web` with 0 and the headless app with 0
+and no token file (Linux and macOS).

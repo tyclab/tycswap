@@ -6,7 +6,9 @@
 // run, so cli installs a notifier that REPRODUCES (never extends) Python's
 // semantics — print the cancelled note, route stderr-vs-stdout by JSON mode,
 // exit 130. Installed only from Main() (the real entry), so run()-driven tests
-// never trip it.
+// never trip it. `tycswap web` and `tycswap app` claim the signal while they
+// serve (claimSigint): their own signal context ends the serve loop, their
+// deferred cleanup runs and they return 0 (DESIGN A48).
 package cli
 
 import (
@@ -50,6 +52,19 @@ func setSigintCancelToStderr() { sigintCancelToStderr.Store(true) }
 
 func setSigintNote(note string) { sigintNote.Store(note) }
 
+// sigintClaimed is set while a command handles SIGINT itself through its
+// signal context; the notifier then lets the signal pass.
+var sigintClaimed atomic.Bool
+
+// claimSigint hands SIGINT to the calling command, which must already have
+// registered its own signal context (os.Interrupt), or a Ctrl-C in between
+// would be lost. The returned func gives the signal back to the notifier; the
+// command defers it, so run()-driven tests never see a leaked claim.
+func claimSigint() (release func()) {
+	sigintClaimed.Store(true)
+	return func() { sigintClaimed.Store(false) }
+}
+
 func currentSigintNote() string {
 	if v, ok := sigintNote.Load().(string); ok && v != "" {
 		return v
@@ -62,13 +77,18 @@ func installSigint(s ioStreams) {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGINT)
 	go func() {
-		<-ch
-		// Restore any terminal state a live prompt left off (echo disabled by a
-		// no-echo Secret prompt); exiting from this goroutine skips the prompt's
-		// deferred restore, so run the registered cleanups first (spec 08§5).
-		lifecycle.RunCleanups()
-		writeSigintNote(s)
-		os.Exit(130)
+		for range ch {
+			// A server that claimed the signal ends on its own context.
+			if sigintClaimed.Load() {
+				continue
+			}
+			// Restore any terminal state a live prompt left off (echo disabled by a
+			// no-echo Secret prompt); exiting from this goroutine skips the prompt's
+			// deferred restore, so run the registered cleanups first (spec 08§5).
+			lifecycle.RunCleanups()
+			writeSigintNote(s)
+			os.Exit(130)
+		}
 	}()
 }
 

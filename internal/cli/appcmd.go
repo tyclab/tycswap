@@ -307,9 +307,11 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 
 	// Ctrl-C and SIGTERM alike: the distro side runs as a user service
 	// (A45), and `systemctl --user stop` sends SIGTERM, which would
-	// otherwise end the process without the deferred token removal.
+	// otherwise end the process without the deferred token removal. Ctrl-C
+	// is claimed from the program-wide notifier for the same reason (A48).
 	ctx, cancel := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
+	defer claimSigint()()
 
 	if t == nil {
 		if o.headless {

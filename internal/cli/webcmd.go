@@ -207,6 +207,9 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 	fmt.Fprintln(s.err, "Press Ctrl-C to stop.")
 	ctx, stop := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// Ctrl-C ends the serve loop through ctx, not through the program-wide
+	// notifier's exit 130 (DESIGN A48).
+	defer claimSigint()()
 	serveErr := srv.Serve(ctx)
 	if auto.View().Running {
 		_ = auto.Stop()
