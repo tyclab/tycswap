@@ -78,7 +78,7 @@ func fakeSwitcher(t *testing.T) {
 
 func TestAddTokenBaseURLEndToEnd(t *testing.T) {
 	fakeSwitcher(t)
-	withRunningSessions(t, 0)
+	withRunningSessions(t, 2)
 	withStdinTerminal(t, false)
 	const url = "https://gw.example.com/anthropic"
 
@@ -118,10 +118,17 @@ func TestAddTokenBaseURLEndToEnd(t *testing.T) {
 		t.Errorf("human list shows not just the host:\n%s", out)
 	}
 
-	// The switch asks, and the question names the whole URL.
+	// The switch asks, and the question names the whole URL. The sentence
+	// about running sessions is the endpoint's: they take it up when they
+	// re-read settings.json, not only when restarted (A33's sentence for a
+	// managed key would contradict that).
 	code, out, errStr = runHuman(t, "switch", "1")
 	if code != 1 || !strings.Contains(errStr, "Not a terminal") || !strings.Contains(out, "sends Claude Code's requests to "+url) {
 		t.Fatalf("switch 1 without a terminal: exit %d, stdout %q, stderr %q", code, out, errStr)
+	}
+	if !strings.Contains(out, "2 Claude Code sessions are running; each takes the endpoint up when it re-reads settings.json") ||
+		strings.Contains(out, "keep their current login") || strings.Contains(out, "keeps its current login") {
+		t.Errorf("the prompt's sentence about running sessions:\n%s", out)
 	}
 	if code, out, errStr = runHuman(t, "switch", "1", "--yes"); code != 0 {
 		t.Fatalf("switch 1 --yes: exit %d, stdout %q, stderr %q", code, out, errStr)

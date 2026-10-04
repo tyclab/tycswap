@@ -61,8 +61,15 @@ const (
 // this is exactly the operation that must not happen by accident. On a
 // terminal only "y" approves; anything else, end of input included, declines.
 func confirmAuthModeChange(out io.Writer, question, detail string, assumeYes bool) int {
+	return confirmAuthModeChangeWith(out, question, detail, restartNotice(), assumeYes)
+}
+
+// confirmAuthModeChangeWith is confirmAuthModeChange with the sentence about
+// running sessions given: a switch onto an account with a base URL says what
+// such a session does with settings.json instead (DESIGN A46).
+func confirmAuthModeChangeWith(out io.Writer, question, detail, notice string, assumeYes bool) int {
 	fmt.Fprintln(out, detail)
-	fmt.Fprintln(out, restartNotice())
+	fmt.Fprintln(out, notice)
 	if assumeYes {
 		return authModeApproved
 	}
@@ -103,14 +110,19 @@ func confirmSwitchToAPIKey(out io.Writer, identifier string, sw *core.Switcher, 
 		return nil
 	}
 	detail := "An API-key account authenticates with a key instead of a subscription login, and its usage is billed per token."
+	notice := restartNotice()
 	if base := sw.Store.AccountBaseURL(num); base != "" {
 		// Where the requests go is the part of this switch worth reading
-		// twice, so the prompt names the whole URL (DESIGN A46).
+		// twice, so the prompt names the whole URL; and a running session
+		// takes it up when it re-reads settings.json, not only after a
+		// restart (DESIGN A46).
 		detail += "\n" + switching.EndpointNotice(termsafe.Strip(base))
+		notice = switching.EndpointSessionNotice(runningSessions())
 	}
-	switch confirmAuthModeChange(out,
+	switch confirmAuthModeChangeWith(out,
 		"Switch to API-key account #"+num+"?",
 		detail,
+		notice,
 		assumeYes) {
 	case authModeApproved:
 		switching.ApproveAPIKeySwitch(num)

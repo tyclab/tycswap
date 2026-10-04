@@ -733,6 +733,10 @@ func TestANewRecordDoesNotTakeOurEndpointForTheUsers(t *testing.T) {
 			gw, nil, map[string]any{"env": map[string]any{"MINE": "1"}}},
 		{"the user's own", map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": gw.BaseURL, "ANTHROPIC_AUTH_TOKEN": "theirs"}},
 			second, []Profile{gw}, map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": gw.BaseURL, "ANTHROPIC_AUTH_TOKEN": "theirs"}}},
+		// Only the two written keys are tycswap's: an ANTHROPIC_API_KEY beside a
+		// known pair is the user's, recorded as it is and put back.
+		{"a known endpoint beside the user's API key", map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": gw.BaseURL, "ANTHROPIC_AUTH_TOKEN": gw.Token, "ANTHROPIC_API_KEY": "sk-ant-api03-mine"}},
+			second, []Profile{gw}, map[string]any{"env": map[string]any{"ANTHROPIC_API_KEY": "sk-ant-api03-mine"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, sc := paths(t)
@@ -907,5 +911,50 @@ func TestRevertKeepsTheFileMode(t *testing.T) {
 	}
 	if info, _ := os.Stat(s2); info.Mode().Perm() != 0o600 {
 		t.Errorf("mode of a new file = %o, want 600", info.Mode().Perm())
+	}
+}
+
+// TestCompeting names what would send a second key — a non-blank
+// apiKeyHelper string in settings.json, a non-blank ANTHROPIC_API_KEY in the
+// environment — and nothing for a blank, null or non-string helper, a blank
+// variable, or a file that cannot be read.
+func TestCompeting(t *testing.T) {
+	getenv := func(v string) func(string) string {
+		return func(k string) string {
+			if k == "ANTHROPIC_API_KEY" {
+				return v
+			}
+			return ""
+		}
+	}
+	for _, tc := range []struct {
+		name     string
+		settings string
+		env      string
+		want     []string
+	}{
+		{"helper and variable", `{"apiKeyHelper": "/opt/me/helper"}`, "sk-ant-api03-x", []string{CompetingHelper, CompetingEnvKey}},
+		{"blank helper", `{"apiKeyHelper": "   "}`, "", nil},
+		{"empty helper", `{"apiKeyHelper": ""}`, "", nil},
+		{"null helper", `{"apiKeyHelper": null}`, "", nil},
+		{"non-string helper", `{"apiKeyHelper": 7}`, "", nil},
+		{"blank variable", `{}`, "  ", nil},
+		{"unreadable file", `{not json`, "", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _ := paths(t)
+			if err := os.MkdirAll(filepath.Dir(s), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(s, []byte(tc.settings), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if got := Competing(s, getenv(tc.env)); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("Competing = %v, want %v", got, tc.want)
+			}
+		})
+	}
+	if got := Competing(filepath.Join(t.TempDir(), "absent.json"), nil); got != nil {
+		t.Errorf("Competing(absent, nil getenv) = %v", got)
 	}
 }

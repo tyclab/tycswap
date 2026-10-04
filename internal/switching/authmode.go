@@ -108,7 +108,24 @@ func ErrEndpointNeedsApproval(num, host string) error {
 func EndpointNotice(baseURL string) string {
 	return "This account sends Claude Code's requests to " + baseURL + ": the switch writes env.ANTHROPIC_BASE_URL and " +
 		"env.ANTHROPIC_AUTH_TOKEN into Claude Code's settings.json and removes env.ANTHROPIC_API_KEY, and a switch to another " +
-		"account puts back what they held. A running session can take the endpoint up at once when it re-reads settings.json."
+		"account puts back what they held."
+}
+
+// EndpointSessionNotice is RestartNotice for a switch onto an account with a
+// base URL (DESIGN A46): a running session re-reads settings.json and takes
+// the endpoint up then (at once in a trusted workspace), so it does not keep
+// its login until a restart the way A33's notice says for a managed key.
+// running counts the sessions, as there.
+func EndpointSessionNotice(running int) string {
+	const when = "when it re-reads settings.json (at once in a trusted workspace), or when it is restarted."
+	switch {
+	case running == 1:
+		return "1 Claude Code session is running; it takes the endpoint up " + when
+	case running > 1:
+		return fmt.Sprintf("%d Claude Code sessions are running; each takes the endpoint up ", running) + when
+	default:
+		return "A Claude Code session that is already running takes the endpoint up " + when
+	}
 }
 
 // EndpointAppliedNote follows a switch that wrote an endpoint into Claude

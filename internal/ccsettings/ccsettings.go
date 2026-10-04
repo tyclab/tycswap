@@ -11,9 +11,10 @@
 // `env.ANTHROPIC_BASE_URL` and the key as `env.ANTHROPIC_AUTH_TOKEN`, which
 // Claude Code sends as `Authorization: Bearer` (what a gateway or proxy
 // expects). Claude Code fills `X-Api-Key` independently, from
-// `ANTHROPIC_API_KEY`, else `apiKeyHelper`, else a stored Console key, and a
-// key there goes to the endpoint beside the bearer token; so the profile also
-// deletes `env.ANTHROPIC_API_KEY`. A switch to any other account puts all
+// `ANTHROPIC_API_KEY`, else `apiKeyHelper` or a key passed on a file
+// descriptor, else a stored Console key, and a key there goes to the
+// endpoint beside the bearer token; so the profile also deletes
+// `env.ANTHROPIC_API_KEY`. A switch to any other account puts all
 // three back.
 //
 // The one thing that makes this a switchable login rather than a one-way

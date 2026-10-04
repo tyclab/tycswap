@@ -1675,11 +1675,14 @@
   // API_KEY_SWITCH_NOTE is what the page says before a switch onto an API-key
   // account: it changes how Claude Code authenticates, so the server refuses
   // it unless the request carries the user's yes (DESIGN A33).
-  var API_KEY_SWITCH_NOTE = 'This account authenticates with a key instead of a subscription login, and its usage is billed per token. Every Claude Code session that is already running keeps its current login until you restart it.';
-  // endpointNote is added for an account with a base URL (DESIGN A46): where
-  // the requests go, and the two settings that take them there and back.
+  var API_KEY_NOTE = 'This account authenticates with a key instead of a subscription login, and its usage is billed per token.';
+  var API_KEY_SWITCH_NOTE = API_KEY_NOTE + ' Every Claude Code session that is already running keeps its current login until you restart it.';
+  // endpointNote replaces the restart sentence for an account with a base URL
+  // (DESIGN A46): where the requests go, the settings that take them there
+  // and back, and that a running session takes the endpoint up when it
+  // re-reads settings.json rather than only after a restart.
   function endpointNote(u) {
-    return ' This account sends Claude Code\'s requests to ' + u + ': the switch writes env.ANTHROPIC_BASE_URL and env.ANTHROPIC_AUTH_TOKEN into Claude Code\'s settings.json and removes env.ANTHROPIC_API_KEY, and a switch to another account puts back what they held. A running session can take the endpoint up at once when it re-reads settings.json.';
+    return API_KEY_NOTE + ' This account sends Claude Code\'s requests to ' + u + ': the switch writes env.ANTHROPIC_BASE_URL and env.ANTHROPIC_AUTH_TOKEN into Claude Code\'s settings.json and removes env.ANTHROPIC_API_KEY, and a switch to another account puts back what they held. A Claude Code session that is already running takes the endpoint up when it re-reads settings.json (at once in a trusted workspace), or when it is restarted.';
   }
 
   var ACTIONS = {
@@ -1765,7 +1768,7 @@
     'switch-api-key': function (btn) {
       var id = btn.getAttribute('data-id');
       var endpoint = btn.getAttribute('data-endpoint');
-      return confirmModal('Switch to API-key account ' + btn.getAttribute('data-name') + '?', API_KEY_SWITCH_NOTE + (endpoint ? endpointNote(endpoint) : ''), 'Switch').then(function (ok) {
+      return confirmModal('Switch to API-key account ' + btn.getAttribute('data-name') + '?', (endpoint ? endpointNote(endpoint) : API_KEY_SWITCH_NOTE), 'Switch').then(function (ok) {
         if (!ok) { return; }
         return run(btn, 'Switch', api('POST', '/api/switch/' + encodeURIComponent(id) + '?confirmAuthChange=1'));
       });
