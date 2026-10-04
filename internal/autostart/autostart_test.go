@@ -27,7 +27,7 @@ func TestLaunchAgentEnableDisable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"<key>Label</key>", "<string>" + Label + "</string>", "<string>/Users/me/go/bin/tycswap</string>", "<string>app</string>", "<key>RunAtLoad</key>\n\t<true/>", "<key>KeepAlive</key>\n\t<false/>", "Library/Logs/tycswap.log"} {
+	for _, want := range []string{"<key>Label</key>", "<string>" + Label + "</string>", "<string>/Users/me/go/bin/tycswap</string>", "<string>app</string>", "<key>RunAtLoad</key>\n\t<true/>", "<key>KeepAlive</key>\n\t<false/>", LogPath(home)} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("plist lacks %q:\n%s", want, body)
 		}
