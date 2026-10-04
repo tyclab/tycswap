@@ -4781,13 +4781,13 @@ code-signed.
 
 **CI on Windows and macOS** (`ci.yml`) vets and builds everything there —
 on macOS with cgo, so the Objective-C is compiled — and runs the tray
-application's packages (`tray`, `appicon`, `autostart`, `brand`, `web`) and
-its tests in `internal/cli` (`APP_TESTS`), the build-tagged ones included.
-Not the rest of the suite: it has only ever run on Linux and assumes it. On
-Windows, 318 tests and subtests in 24 packages fail, mostly because they isolate the home
+application's packages (`tray`, `appicon`, `autostart`, `brand`, `web`,
+`update`) and its tests in `internal/cli` (`APP_TESTS`), the build-tagged
+ones included. Not the rest of the suite: it has only ever run on Linux and
+assumes it. On Windows much of it fails, mostly because it isolates the home
 through `HOME`, which Windows ignores (`os.UserHomeDir` reads
-`USERPROFILE`), so they read and write the runner's real profile; others
-create symlinks. On macOS the store tests expect the Linux layout under
+`USERPROFILE`), so those tests read and write the runner's real profile;
+others create symlinks. On macOS the store tests expect the Linux layout under
 `$XDG_DATA_HOME` (the macOS store is `~/.tycswap`) and two packages time out
 on the login Keychain. Making the suite portable is a change of its own; the
 one Windows-only difference in `internal/web` (the system serves `.js` as
@@ -4956,7 +4956,10 @@ current process, so the background start (A40) and the update restart (A36)
 are given NUL and the log, and the restart starts `DETACHED_PROCESS`, or a
 tray without a console would open a console window after every update. Git
 Bash counts as a terminal for the bare command (`MSYSTEM` set: mintty hands
-programs pipes). The dashboard opens through A26's opener, which hands the
+programs pipes). That is the reference's rule, and its limit: any Windows
+process with `MSYSTEM` set counts, so `x=$(tycswap)` or `tycswap | …` in Git
+Bash or under GitHub's `shell: bash` on Windows starts the resident app too.
+The dashboard opens through A26's opener, which hands the
 URL to the default browser directly on Windows. A balloon holds 255 UTF-16
 units and a tooltip 127: notifications that would be cut drop their reasons
 rather than end mid-word, and the tooltip leads with what matters. The
@@ -5105,17 +5108,8 @@ app in the distro instead". *Start at login* registers `app --remote URL
 entry; the update restart re-runs `os.Args` and keeps the remote flags; the
 self-update, the release check and Quit are as local.
 
-**Setting a machine up.** In the distro: `tycswap app --headless --port 7337`
-kept running, as the reference leaves it to the machine — a systemd user
-service (`ExecStart=… app --headless --port 7337`, `Restart=on-failure`; the
-README gives the unit), or `setsid -f tycswap app --headless --port 7337` for
-a one-off start. On Windows: `tycswap.exe app --remote http://127.0.0.1:7337
---token-file \\wsl.localhost\<distro>\home\<user>\.local\share\tycswap\remote.token
---autostart on` (with `$XDG_DATA_HOME` set in the distro, the file is under
-`$XDG_DATA_HOME/tycswap/`), then the same command without `--autostart`
-through `Start-Process`, which gives it a console of its own that the app
-frees (A41), or sign in again. No shared secret to provision, no firewall
-rule, no second store.
+**Setting a machine up** is the README's WSL recipe: no shared secret to
+provision, no firewall rule, no second store.
 
 ## A46. An API-key account may carry a base URL (Go-side additive extension)
 
