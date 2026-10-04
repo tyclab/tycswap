@@ -41,6 +41,9 @@ type exportEntry struct {
 	Config           any    `json:"config"`
 	Kind             string `json:"kind,omitempty"`
 	Alias            string `json:"alias,omitempty"`
+	// BaseURL is the endpoint an API-key account carries (DESIGN A46),
+	// omitted when there is none.
+	BaseURL string `json:"baseUrl,omitempty"`
 }
 
 // exportEnvelope is the whole .tycswap document (spec 07§1.1). activeAccountNumber
@@ -90,8 +93,15 @@ func Export(acc Accounts, destination, account string, full bool) error {
 		record := decodeRecord(data.Accounts[num])
 		email := strOrEmpty(record["email"])
 		orgUUID := strOrEmpty(record["organizationUuid"])
+		baseURL := ""
+		if strOrEmpty(record["kind"]) == "api_key" {
+			baseURL = strOrEmpty(record["baseUrl"])
+		}
 
-		isActive := curOK && curEmail == email && curOrg == orgUUID
+		// An account with a base URL keeps nothing in Claude Code's credential
+		// store, even while it is active: its stored key is the credential
+		// (DESIGN A46), so it is exported from the backup like any other.
+		isActive := curOK && curEmail == email && curOrg == orgUUID && baseURL == ""
 
 		var credsText, configText string
 		if isActive {
@@ -142,7 +152,7 @@ func Export(acc Accounts, destination, account string, full bool) error {
 			configOut = slim
 		}
 
-		isAPIKey := credstore.LooksLikeAPIKey(credsText)
+		isAPIKey := credstore.LooksLikeAPIKey(credsText) || baseURL != ""
 		var credsOut any
 		if isAPIKey {
 			credsOut = strings.TrimSpace(credsText)
@@ -174,6 +184,7 @@ func Export(acc Accounts, destination, account string, full bool) error {
 		if a := strOrEmpty(record["alias"]); a != "" {
 			entry.Alias = a
 		}
+		entry.BaseURL = baseURL
 		payload = append(payload, entry)
 	}
 
