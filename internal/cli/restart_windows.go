@@ -21,7 +21,7 @@ var restartSelf = func(installedTag string) error {
 			return err
 		}
 	}
-	p, err := startDetachedProcess(exe, os.Args, append(os.Environ(), justInstalledEnv()+"="+installedTag), appLogPath())
+	p, err := startDetached(exe, os.Args, append(os.Environ(), justInstalledEnv()+"="+installedTag), appLogPath())
 	if err != nil {
 		return err
 	}

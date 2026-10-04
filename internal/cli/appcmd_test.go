@@ -139,7 +139,11 @@ func stubRestart(t *testing.T, lockPath string) (tags *[]string, lockFree *[]boo
 		mu.Lock()
 		defer mu.Unlock()
 		got = append(got, tag)
-		free = append(free, !lockHeld(lockPath))
+		l, held, err := acquireLockAt(lockPath)
+		free = append(free, err == nil && held)
+		if held {
+			_ = l.Release()
+		}
 		return nil
 	}
 	t.Cleanup(func() { restartSelf = prev })

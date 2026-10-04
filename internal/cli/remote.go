@@ -45,6 +45,7 @@ import (
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/tray"
+	"github.com/tyclab/tycswap/internal/update"
 	"github.com/tyclab/tycswap/internal/version"
 	"github.com/tyclab/tycswap/internal/web"
 )
@@ -404,12 +405,6 @@ func (c *remoteClient) SetModel(on bool) error {
 	return nil
 }
 
-// SetThreshold is POST /api/auto/threshold: the running engine's 7d bar for
-// this run, as the local tray's submenu moves it (A34, A37).
-func (c *remoteClient) SetThreshold(pct float64) error {
-	return c.mutate("/api/auto/threshold", map[string]any{"threshold": pct})
-}
-
 // Launch is POST /api/launch: the one-time dashboard URL, checked and
 // rebuilt before it is returned — see checkLaunchURL.
 func (c *remoteClient) Launch() (string, error) {
@@ -632,7 +627,7 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	case lerr != nil:
 		fmt.Fprintln(s.err, "could not take the single-instance lock: "+lerr.Error())
 	case !got:
-		errorTo(s.err, appName()+" app --remote is already running on this machine (its icon is in the menu bar / tray). Quit it first.")
+		errorTo(s.err, brandName()+" app --remote is already running on this machine (its icon is in the menu bar / tray). Quit it first.")
 		return 1
 	default:
 		// Released early on a restart hand-over (lock = nil below), so the
@@ -646,7 +641,7 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 
 	var sh *appShell
 	t, err := newTray(plainTrayIcon(), tray.Options{
-		Tooltip: appName(),
+		Tooltip: brandName(),
 		OnClick: func(id string) {
 			if sh != nil {
 				sh.click(id)
@@ -661,7 +656,7 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	if errors.Is(err, tray.ErrUnsupported) || (err == nil && t == nil) {
 		// A remote without a tray is pointless: the dashboard it would show
 		// is already reachable in the browser from the distro's URL.
-		errorTo(s.err, "remote mode needs a tray; run "+appName()+" app in the distro instead")
+		errorTo(s.err, "remote mode needs a tray; run "+brandName()+" app in the distro instead")
 		return 1
 	}
 	if err != nil {
@@ -684,7 +679,7 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 
 	outputPlace := appLogPath()
 	if f, ok := s.err.(*os.File); ok && isTTY(f) {
-		outputPlace = "the terminal running " + appName() + " app"
+		outputPlace = "the terminal running " + brandName() + " app"
 	}
 	openDashboard := func() error {
 		u, err := rc.Launch()
@@ -702,19 +697,18 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	var restart atomic.Bool
 	var restartTag atomic.Pointer[string]
 	cfg := autostartConfig(o)
+	update.RemoveStaleBinary(exePath()) // a Windows upgrade's leftover from last time
 	sh = newAppShell(t, shellActions{
-		OpenDashboard: openDashboard,
-		SwitchTo:      rc.Switch,
-		AutoRunning:   rc.AutoRunning,
-		AutoStart:     rc.AutoStart,
-		AutoStop:      rc.AutoStop,
-		Upgrade:       func() (string, error) { return upgradeForShell() },
-		UpgradeHint:   func() string { return appUpgradeHint() },
-		Autostart:     func() (bool, error) { return autostart.Enabled(cfg) },
-		SetAutostart:  func(on bool) error { return setAutostart(cfg, on) },
-		// The 7d bar and the model limit act on the distro's engine.
+		OpenDashboard:  openDashboard,
+		SwitchTo:       rc.Switch,
+		AutoRunning:    rc.AutoRunning,
+		AutoStart:      rc.AutoStart,
+		AutoStop:       rc.AutoStop,
+		Upgrade:        func() (string, error) { return upgradeForShell() },
+		UpgradeHint:    func() string { return appUpgradeHint() },
+		Autostart:      func() (bool, error) { return autostart.Enabled(cfg) },
+		SetAutostart:   func(on bool) error { return setAutostart(cfg, on) },
 		SetModelLimits: rc.SetModel,
-		SetThreshold:   rc.SetThreshold,
 		// ApproveAPIKey / RestartNotice stay nil: the tray refuses an API-key
 		// switch and points at the dashboard (A33). RunClaudeCode and
 		// CheckClaudeCode stay nil: Claude Code lives in the distro, not here
@@ -734,11 +728,11 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	go rc.run(ctx, sh.update, sh.autoEvent, func(up bool) {
 		switch {
 		case up:
-			sh.notify("WSL engine reachable again", appName()+" at "+o.remote+" answers; the tray is live.")
+			sh.notify("WSL engine reachable again", brandName()+" at "+o.remote+" answers; the tray is live.")
 		case rc.tokenRefused():
-			sh.notify("WSL engine refused the token", appName()+" at "+o.remote+" does not accept the token in "+o.tokenFile+"; is it the remote.token of the app running in the distro?")
+			sh.notify("WSL engine refused the token", brandName()+" at "+o.remote+" does not accept the token in "+o.tokenFile+"; is it the remote.token of the app running in the distro?")
 		default:
-			sh.notify("WSL engine unreachable", "WSL engine unreachable at "+o.remote+"; is "+appName()+" app running in the distro?")
+			sh.notify("WSL engine unreachable", "WSL engine unreachable at "+o.remote+"; is "+brandName()+" app running in the distro?")
 		}
 		sh.repaint()
 	})
@@ -773,7 +767,7 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 			tag = *p
 		}
 		if err := restartSelf(tag); err != nil {
-			errorTo(s.err, "Could not restart automatically ("+err.Error()+"); start "+appName()+" app again.")
+			errorTo(s.err, "Could not restart automatically ("+err.Error()+"); start "+brandName()+" app again.")
 			return 1
 		}
 	}

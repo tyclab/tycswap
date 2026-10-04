@@ -1,6 +1,5 @@
 // background.go — bare `tycswap` starts the menu-bar / tray app in the
-// background and gives the terminal back (DESIGN A40), and `tycswap app
-// --detach` does the same with the flags it was given.
+// background and gives the terminal back (DESIGN A40).
 //
 // The app is what people want when they type the command, and holding a
 // terminal open for a menu-bar icon is not. So the bare command spawns
@@ -22,7 +21,6 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/autostart"
-	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/paths"
 )
 
@@ -32,13 +30,13 @@ type backgroundApp interface {
 	Exited() (bool, error)
 }
 
-// spawnBackgroundApp starts `<exe> <args…>` detached, with stdin on the null
+// spawnBackgroundApp starts `<exe> app` detached, with stdin on the null
 // device and stdout/stderr appended to logPath. A seam for tests.
 var spawnBackgroundApp = spawnDetachedApp
 
-// lockRunning is the single-instance probe startBackgroundApp polls, at the
-// lock the child takes; a seam for tests.
-var lockRunning = lockHeld
+// appRunning is the single-instance probe startBackgroundApp polls; a seam
+// for tests.
+var appRunning = appIsRunning
 
 // Timing of the start confirmation. The child takes the lock as the first
 // thing `app` does, so seconds are generous; a machine under heavy load gets
@@ -75,35 +73,27 @@ func openAppLog(logPath string) (*os.File, error) {
 	return os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 }
 
-// startBackgroundApp is bare `tycswap` in a terminal: `app` with no flags,
-// confirmed through app.lock.
+// startBackgroundApp is bare `tycswap` in a terminal.
 func startBackgroundApp(prog string, s ioStreams) int {
-	return startDetached(prog, []string{"app"}, appLockPath(), s)
-}
-
-// startDetached spawns `<exe> <args…>` detached and returns once the child
-// holds lockPath — app.lock for the local app, remote.lock for a remote
-// tray — or has exited, or is still starting after backgroundStartWait.
-func startDetached(prog string, args []string, lockPath string, s ioStreams) int {
-	name := brand.Sanitized().Name
-	if lockRunning(lockPath) {
+	name := brandName()
+	if appRunning() {
 		fmt.Fprintln(s.out, name+" is already running — its icon is in the menu bar / tray.")
 		return 0
 	}
 	exe := exePath()
 	if exe == "" {
-		errorTo(s.err, "Could not locate the "+name+" binary; start it with `"+prog+" "+strings.Join(args, " ")+"`.")
+		errorTo(s.err, "Could not locate the "+name+" binary; start it with `"+prog+" app`.")
 		return 1
 	}
 	logPath := appLogPath()
-	child, err := spawnBackgroundApp(exe, args, logPath)
+	child, err := spawnBackgroundApp(exe, logPath)
 	if err != nil {
-		errorTo(s.err, "Could not start "+name+" in the background: "+err.Error()+". Run `"+prog+" "+strings.Join(args, " ")+"` to see it in the foreground.")
+		errorTo(s.err, "Could not start "+name+" in the background: "+err.Error()+". Run `"+prog+" app` to see it in the foreground.")
 		return 1
 	}
 	deadline := time.Now().Add(backgroundStartWait)
 	for {
-		if lockRunning(lockPath) {
+		if appRunning() {
 			fmt.Fprintln(s.out, name+" is running in the background — its icon is in the menu bar / tray.")
 			fmt.Fprintln(s.out, "Log: "+logPath)
 			return 0

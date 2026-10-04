@@ -82,17 +82,17 @@ func (t *darwinTrayImpl) Run() error {
 	t.iconMu.Lock()
 	png, template := barImage(t.bar)
 	t.iconMu.Unlock()
-	brand := t.icon.LargePNG
-	if len(brand) == 0 {
-		brand = t.icon.PNG
+	mark := t.icon.LargePNG
+	if len(mark) == 0 {
+		mark = t.icon.PNG
 	}
-	var brandPtr unsafe.Pointer
-	if len(brand) > 0 {
-		brandPtr = unsafe.Pointer(&brand[0])
+	var markPtr unsafe.Pointer
+	if len(mark) > 0 {
+		markPtr = unsafe.Pointer(&mark[0])
 	}
 	tip := C.CString(t.opts.Tooltip)
 	defer C.free(unsafe.Pointer(tip))
-	C.tray_run(unsafe.Pointer(&png[0]), C.int(len(png)), C.int(template), brandPtr, C.int(len(brand)), tip)
+	C.tray_run(unsafe.Pointer(&png[0]), C.int(len(png)), C.int(template), markPtr, C.int(len(mark)), tip)
 	return nil
 }
 

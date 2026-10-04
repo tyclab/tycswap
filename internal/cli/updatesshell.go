@@ -80,11 +80,11 @@ func (a *appShell) updatesSection() []tray.Item {
 	if pending != "" {
 		shown, have := strings.TrimPrefix(pending, "v"), strings.TrimPrefix(a.act.Current, "v")
 		it := tray.Item{ID: "install-update", Kind: tray.KindUpdate,
-			Title: "Install " + appName() + " " + shown + "…",
+			Title: "Install " + brandName() + " " + shown + "…",
 			Sub:   "you have " + have + " · restarts by itself"}
 		if hint := a.upgradeHint(); hint != "" {
 			// The tray cannot install this build (A36): the row says how.
-			it.Title, it.Sub = appName()+" "+shown+" is available…", "you have "+have+" · update with "+hint
+			it.Title, it.Sub = brandName()+" "+shown+" is available…", "you have "+have+" · to update: "+hint
 		}
 		rows = append(rows, it)
 	}
@@ -179,8 +179,8 @@ func (a *appShell) checkEverything() (newer string, releaseErr error) {
 
 // releaseQuestion is the dialog that offers release latest.
 func (a *appShell) releaseQuestion(latest string) string {
-	return appName() + " " + strings.TrimPrefix(latest, "v") + " is available (you have " + strings.TrimPrefix(a.act.Current, "v") +
-		"). Install now? " + appName() + " restarts by itself once it is installed."
+	return brandName() + " " + strings.TrimPrefix(latest, "v") + " is available (you have " + strings.TrimPrefix(a.act.Current, "v") +
+		"). Install now? " + brandName() + " restarts by itself once it is installed."
 }
 
 // checkForUpdatesClick is "Check for updates…": everything at once, then a
@@ -190,7 +190,7 @@ func (a *appShell) releaseQuestion(latest string) string {
 func (a *appShell) checkForUpdatesClick() {
 	newer, releaseErr := a.checkEverything()
 	if newer != "" && a.act.Ask != nil && a.upgradeHint() == "" {
-		ok, err := a.act.Ask(appName()+" update", a.releaseQuestion(newer), "Install", "Later")
+		ok, err := a.act.Ask(brandName()+" update", a.releaseQuestion(newer), "Install", "Later")
 		if err == nil && ok {
 			a.installUpdate()
 			return
@@ -211,7 +211,7 @@ func (a *appShell) checkOutcome(releaseErr error) (title, body string) {
 	pending := a.pending
 	cc, ccKnown := a.claude, a.claudeKnown
 	a.mu.Unlock()
-	name := appName()
+	name := brandName()
 	var found, current, notes []string
 	var failed []unchecked
 	if pending != "" {

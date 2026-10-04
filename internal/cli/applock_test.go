@@ -63,7 +63,7 @@ func TestAppLockIsExclusive(t *testing.T) {
 // TestPurgeRefusedWhileAppRuns: purge must not delete the accounts under a
 // running tray (A38).
 func TestPurgeRefusedWhileAppRuns(t *testing.T) {
-	appLockHome(t)
+	appTestHome(t)
 	lock, got, err := acquireAppLock()
 	if err != nil || !got {
 		t.Fatalf("acquire = %v, %v", got, err)

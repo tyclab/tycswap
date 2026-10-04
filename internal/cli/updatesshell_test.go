@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -118,8 +119,8 @@ func TestBadgeIconIsTheMarkWithADot(t *testing.T) {
 	if bytes.Equal(badgeIcon.PNG, plainIcon.PNG) || bytes.Equal(badgeIcon.LargePNG, plainIcon.LargePNG) || bytes.Equal(badgeIcon.ARGB32, plainIcon.ARGB32) {
 		t.Error("the badge icon should differ from the plain one in every form")
 	}
-	if len(plainIcon.PNG) == 0 || len(plainIcon.LargePNG) == 0 || len(plainIcon.ARGB32) != plainIcon.Size*plainIcon.Size*4 {
-		t.Errorf("plain icon forms: %d, %d, %d bytes", len(plainIcon.PNG), len(plainIcon.LargePNG), len(plainIcon.ARGB32))
+	if len(plainIcon.PNG) == 0 || len(plainIcon.ARGB32) != plainIcon.Size*plainIcon.Size*4 || (runtime.GOOS == "darwin") != (len(plainIcon.LargePNG) > 0) {
+		t.Errorf("plain icon forms: %d, %d, %d bytes (the 128 px mark on macOS only)", len(plainIcon.PNG), len(plainIcon.LargePNG), len(plainIcon.ARGB32))
 	}
 }
 

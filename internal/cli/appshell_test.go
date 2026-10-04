@@ -285,67 +285,6 @@ func TestShellThresholdFollowsRunningEngine(t *testing.T) {
 	}
 }
 
-// The 7d threshold submenu (A37): shown while the engine runs, the bar in
-// force checked, a row moves the running engine's bar like the dashboard's
-// slider, and a failure is said.
-func TestShellThresholdSubmenu(t *testing.T) {
-	sh, ft, _ := newTestShell(t)
-	var set []float64
-	sh.act.SetThreshold = func(p float64) error { set = append(set, p); return nil }
-	sh.update(sampleState())
-	if _, ok := ft.item("threshold"); ok {
-		t.Fatal("the submenu is shown while auto-switch is off")
-	}
-	st := sampleState()
-	st.Auto = &web.AutoView{Running: true, Threshold: 97}
-	sh.act.AutoRunning = func() bool { return true }
-	sh.update(st)
-	sub, ok := ft.item("threshold")
-	if !ok || sub.Title != "7d threshold: 97% (this run)" || sub.Clickable() || len(sub.Children) != len(thresholdChoices) {
-		t.Fatalf("submenu = %+v (present %v)", sub, ok)
-	}
-	if ids, _ := menuShape(ft); !strings.Contains(ids, "auto,threshold,autostart") {
-		t.Errorf("menu order = %s", ids)
-	}
-	var rows []string
-	for _, c := range sub.Children {
-		rows = append(rows, c.ID+"|"+c.Title+"|"+c.Sub)
-		if c.Checked != (c.ID == "threshold:97") {
-			t.Errorf("%s checked = %v", c.ID, c.Checked)
-		}
-	}
-	if got := strings.Join(rows, ","); got != "threshold:80|80%|,threshold:85|85%|,threshold:90|90%|,threshold:95|95%|,threshold:97|97%|in effect" {
-		t.Errorf("rows = %s", got)
-	}
-	sh.click("threshold:90")
-	if len(set) != 1 || set[0] != 90 {
-		t.Fatalf("SetThreshold calls = %v", set)
-	}
-	if notes := strings.Join(ft.notesNow(), "\n"); !strings.Contains(notes, "7d threshold 90% | Auto-switch moves off an account at 90% of its week until it stops.") {
-		t.Errorf("notes = %s", notes)
-	}
-	// The next state carries the moved bar: the submenu and the auto row follow.
-	st.Auto.Threshold = 90
-	sh.update(st)
-	if sub, _ := ft.item("threshold"); sub.Title != "7d threshold: 90% (this run)" {
-		t.Errorf("after the move: %+v", sub)
-	}
-	if it, _ := ft.item("auto"); !strings.Contains(it.Sub, "7d 90%") {
-		t.Errorf("auto row = %+v", it)
-	}
-	sh.act.SetThreshold = func(float64) error { return errors.New("auto-switch is not running") }
-	sh.click("threshold:85")
-	if notes := ft.notesNow(); !strings.HasSuffix(notes[len(notes)-1], "7d threshold | Auto-switch is not running") {
-		t.Errorf("notes = %v", notes)
-	}
-	// Without the hook there is no submenu at all.
-	sh.act.SetThreshold = nil
-	sh.repaint()
-	if _, ok := ft.item("threshold"); ok {
-		t.Error("submenu shown without SetThreshold")
-	}
-}
-
 func TestShellAutoEvents(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
 	sh.autoEvent(web.AutoEventView{Kind: "poll", Message: "polled"})
@@ -416,17 +355,14 @@ func TestShellModelLimitSwitch(t *testing.T) {
 }
 
 func TestParseAppArgs(t *testing.T) {
-	o, err := parseAppArgs([]string{"--port", "7337", "--interval=2.5", "--open", "--headless", "--debug", "--detach"})
+	o, err := parseAppArgs([]string{"--port", "7337", "--interval=2.5", "--open", "--headless", "--debug"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if o.port != 7337 || o.interval != 2.5 || !o.open || !o.headless || !o.debug || !o.detach {
+	if o.port != 7337 || o.interval != 2.5 || !o.open || !o.headless || !o.debug {
 		t.Errorf("parsed = %+v", o)
 	}
-	if got := strings.Join(o.rest, " "); got != "--port 7337 --interval=2.5 --open --headless --debug" {
-		t.Errorf("rest = %q", got)
-	}
-	for _, argv := range [][]string{{"--port"}, {"--port", "70000"}, {"--interval", "0"}, {"--interval", "0.5"}, {"--autostart", "maybe"}, {"--bogus"}, {"--server", "https://x"}, {"--detach", "--autostart", "on"}} {
+	for _, argv := range [][]string{{"--port"}, {"--port", "70000"}, {"--interval", "0"}, {"--interval", "0.5"}, {"--autostart", "maybe"}, {"--bogus"}, {"--server", "https://x"}, {"--detach"}} {
 		if _, err := parseAppArgs(argv); err == nil {
 			t.Errorf("%v should be rejected", argv)
 		}
@@ -446,7 +382,7 @@ func TestAppHelpAndUsage(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("help exit = %d", code)
 	}
-	for _, flag := range []string{"--open", "--headless", "--detach", "--no-update-check", "--port", "--interval", "--debug", "--remote", "--token-file", "--autostart", "TYCSWAP_REMOTE_TOKEN_FILE"} {
+	for _, flag := range []string{"--open", "--headless", "--no-update-check", "--port", "--interval", "--debug", "--remote", "--token-file", "--autostart", "TYCSWAP_REMOTE_TOKEN_FILE"} {
 		if !strings.Contains(out, flag) {
 			t.Errorf("help lacks %s", flag)
 		}
@@ -578,9 +514,9 @@ func TestOfferUpdateWithoutDialogNotifiesAndOffersMenu(t *testing.T) {
 	}
 }
 
-// A build the tray cannot upgrade (a checkout, a binary outside a Go bin
-// directory, Windows) is never asked to install: it is told the command, and
-// the menu row says it too (A36).
+// A build the tray cannot upgrade (a checkout, a go-installed binary on
+// Windows, a binary it cannot write over) is never asked to install: it is
+// told how, and the menu row says it too (A36).
 func TestOfferUpdateTellsTheCommandWhenTheTrayCannotInstall(t *testing.T) {
 	asked := false
 	sh, ft, calls := updateShell(t, "v2.2.0", func(string, string, string, string) (bool, error) { asked = true; return true, nil })
@@ -589,12 +525,12 @@ func TestOfferUpdateTellsTheCommandWhenTheTrayCannotInstall(t *testing.T) {
 	if asked || strings.Contains(strings.Join(*calls, ","), "upgrade") {
 		t.Fatalf("asked %v, calls %v", asked, *calls)
 	}
-	want := "tycswap 2.2.0 is available | Update it with: go install github.com/tyclab/tycswap/cmd/tycswap@latest"
+	want := "tycswap 2.2.0 is available | To update: go install github.com/tyclab/tycswap/cmd/tycswap@latest"
 	if len(ft.notes) != 1 || ft.notes[0] != want {
 		t.Errorf("notes = %v", ft.notes)
 	}
 	it, has := ft.item("install-update")
-	if !has || it.Title != "tycswap 2.2.0 is available…" || !strings.Contains(it.Sub, "update with go install") {
+	if !has || it.Title != "tycswap 2.2.0 is available…" || !strings.Contains(it.Sub, "to update: go install") {
 		t.Errorf("row = %+v", it)
 	}
 	sh.click("install-update")

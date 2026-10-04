@@ -50,7 +50,7 @@ func TestSNISetIconSwapsThePixmapAndSignalsNewIcon(t *testing.T) {
 		t.Fatalf("plain pixmap = %v", got)
 	}
 
-	badge := Icon{ARGB32: bytes.Repeat([]byte{0xff, 0x1a, 0x73, 0xe8}, 9), Size: 3}
+	badge := Icon{ARGB32: bytes.Repeat([]byte{0xff, 0x24, 0x41, 0x66}, 9), Size: 3}
 	tr.SetIcon(badge)
 	select {
 	case m := <-signals:

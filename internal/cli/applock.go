@@ -48,16 +48,12 @@ func acquireLockAt(path string) (lock *filelock.FileLock, held bool, err error) 
 	return l, true, nil
 }
 
-// appIsRunning reports whether another process holds the app lock. Its
-// callers are `purge` and the background start, so an unreadable lock
-// answers TRUE: refusing to delete every account is the safe direction when
-// we cannot tell.
-func appIsRunning() bool { return lockHeld(appLockPath()) }
-
-// lockHeld reports whether another process holds the lock at path; an
-// unreadable lock counts as held.
-func lockHeld(path string) bool {
-	l := filelock.New(path, 50*time.Millisecond)
+// appIsRunning reports whether another process holds the app lock. `purge`
+// asks it before deleting every account and the bare start before spawning
+// a second app; an unreadable lock answers TRUE, because refusing is the
+// safe direction for both when we cannot tell.
+func appIsRunning() bool {
+	l := filelock.New(appLockPath(), 50*time.Millisecond)
 	ok, err := l.Acquire(50 * time.Millisecond)
 	if err != nil {
 		return true

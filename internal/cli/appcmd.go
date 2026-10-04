@@ -6,8 +6,7 @@
 // (a darwin build without cgo, a Linux session without a StatusNotifierWatcher,
 // --headless) it degrades to `web --no-open`. With --remote the tray drives a
 // dashboard in another process instead — the one in a WSL distro — over its
-// HTTP API (remote.go, DESIGN A45). With --detach it starts itself in the
-// background and gives the terminal back (A40).
+// HTTP API (remote.go, DESIGN A45).
 package cli
 
 import (
@@ -20,6 +19,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -61,7 +61,6 @@ type appOptions struct {
 	debug     bool
 	open      bool
 	headless  bool
-	detach    bool
 	autostart string // "", "on", "off", "status"
 	noUpdates bool
 	// remote is the engine's base URL (http://127.0.0.1:<port>, normalised)
@@ -69,8 +68,6 @@ type appOptions struct {
 	// tokenFile is where that dashboard wrote its remote.token.
 	remote    string
 	tokenFile string
-	// rest is argv without --detach: what the detached child is started with.
-	rest []string
 }
 
 // remoteTokenFileEnv names the token file when --token-file is not given,
@@ -82,7 +79,7 @@ func parseAppArgs(argv []string) (appOptions, error) {
 	o := appOptions{interval: 5}
 	var portSet, intervalSet bool
 	for i := 0; i < len(argv); i++ {
-		tok, start := argv[i], i
+		tok := argv[i]
 		val := func(name string) (string, bool) {
 			if strings.HasPrefix(tok, name+"=") {
 				return tok[len(name)+1:], true
@@ -101,8 +98,6 @@ func parseAppArgs(argv []string) (appOptions, error) {
 			o.open = true
 		case tok == "--headless":
 			o.headless = true
-		case tok == "--detach":
-			o.detach = true
 		case tok == "--no-update-check":
 			o.noUpdates = true
 		case tok == "--debug":
@@ -152,13 +147,6 @@ func parseAppArgs(argv []string) (appOptions, error) {
 		default:
 			return o, errors.New("unrecognized arguments: " + tok)
 		}
-		// The flag and the value val read with it, for the detached child.
-		if tok != "--detach" {
-			o.rest = append(o.rest, argv[start:i+1]...)
-		}
-	}
-	if o.detach && o.autostart != "" {
-		return o, errors.New("argument --detach: not allowed with --autostart (it registers the entry and exits)")
 	}
 	if o.remote == "" {
 		if o.tokenFile != "" {
@@ -206,15 +194,6 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	if o.autostart != "" {
 		return appAutostart(o.autostart, autostartConfig(o), s)
 	}
-	// In the background, with the same flags; confirmed through the lock the
-	// child takes (A40).
-	if o.detach {
-		lockPath := appLockPath()
-		if o.remote != "" {
-			lockPath = remoteLockPath()
-		}
-		return startDetached(prog, append([]string{"app"}, o.rest...), lockPath, s)
-	}
 	// A console window Windows opened only for this process (start at login,
 	// a double-click) would sit in the taskbar and end the app when closed;
 	// give it back and write to the log instead (A41). Not for --headless,
@@ -236,7 +215,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		// A filesystem problem here must not stop the app from starting.
 		fmt.Fprintln(s.err, "could not take the single-instance lock: "+lerr.Error())
 	case !got:
-		errorTo(s.err, appName()+" app is already running on this machine (its icon is in the menu bar / tray). Quit it first.")
+		errorTo(s.err, brandName()+" app is already running on this machine (its icon is in the menu bar / tray). Quit it first.")
 		return 1
 	default:
 		// Released early on a restart hand-over (lock = nil below), so the
@@ -257,7 +236,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	var t tray.Tray
 	if !o.headless {
 		t, err = newTray(plainTrayIcon(), tray.Options{
-			Tooltip: appName(),
+			Tooltip: brandName(),
 			OnClick: func(id string) {
 				if sh != nil {
 					sh.click(id)
@@ -334,7 +313,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		}
 		// Where a tray on the Windows side of a WSL boundary finds its way in (A45).
 		if tokenPath != "" {
-			fmt.Fprintf(s.err, "Remote token: %s (for %s app --remote)\n", tokenPath, appName())
+			fmt.Fprintf(s.err, "Remote token: %s (for %s app --remote)\n", tokenPath, brandName())
 		}
 		if o.open {
 			_ = openBrowser(url)
@@ -353,7 +332,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	// background or start-at-login app writes to.
 	outputPlace := appLogPath()
 	if f, ok := s.err.(*os.File); ok && isTTY(f) {
-		outputPlace = "the terminal running " + appName() + " app"
+		outputPlace = "the terminal running " + brandName() + " app"
 	}
 	openDashboard := func() error {
 		u, err := srv.LaunchURL()
@@ -382,6 +361,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 			sh.checkClaudeCode(true)
 		}
 	}
+	update.RemoveStaleBinary(exePath()) // a Windows upgrade's leftover from last time
 	sh = newAppShell(t, shellActions{
 		OpenDashboard: openDashboard,
 		SwitchTo: func(id string) error {
@@ -423,7 +403,6 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 			}
 			return nil
 		},
-		SetThreshold:  d.auto.ApplyThreshold,
 		ApproveAPIKey: d.sw.ApproveAPIKeySwitch,
 		RestartNotice: restartNotice,
 		RunClaudeCode: func(c ccversion.Command, in *ccversion.Installed) (string, error) {
@@ -507,7 +486,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 			tag = *p
 		}
 		if err := restartSelf(tag); err != nil {
-			errorTo(s.err, "Could not restart automatically ("+err.Error()+"); start "+appName()+" app again.")
+			errorTo(s.err, "Could not restart automatically ("+err.Error()+"); start "+brandName()+" app again.")
 			return 1
 		}
 		return 0
@@ -609,17 +588,20 @@ func askVia(t tray.Tray) func(title, body, ok, cancel string) (bool, error) {
 	return asker.Ask
 }
 
-// appIcon is the tray's images, all pre-rendered (appicon's embedded
-// files): the macOS menu bar and the menu's brand row show the coloured mark
-// at 128 px (tray.Icon.LargePNG), Windows the 32 px PNG, Linux the 22 px
-// pixmap.
+// appIcon renders the tray's images. The 128 px mark is only drawn on
+// macOS, the one tray that shows it (tray.Icon.LargePNG, the menu bar and the
+// menu's brand row): it costs more than the other two together, and on
+// Windows and Linux it would be rendered on every start for nobody.
 func appIcon() tray.Icon {
-	return tray.Icon{
-		PNG:      appicon.PNG(32, false),
-		LargePNG: appicon.PNG(128, false),
-		ARGB32:   appicon.ARGB32(22),
-		Size:     22,
+	ic := tray.Icon{
+		PNG:    appicon.PNG(32, false),
+		ARGB32: appicon.ARGB32(22),
+		Size:   22,
 	}
+	if runtime.GOOS == "darwin" {
+		ic.LargePNG = appicon.PNG(128, false)
+	}
+	return ic
 }
 
 // appIconBadge is appIcon with the badge (A44) for n things that wait: on
@@ -635,7 +617,8 @@ func appIconBadge(n int) tray.Icon {
 }
 
 // runUpgradeForShell runs the same self-upgrade as `tycswap upgrade` (`go
-// install` for a go-installed binary, A24) and says what it did in one line.
+// install` for a go-installed binary, else the release downloaded over the
+// binary, A24/A36) and says what it did in one line.
 // "Updated …" means the running binary was replaced, so the app can restart
 // into it; a `go install` that put the new build into another Go bin directory
 // says where to start it instead.
@@ -648,16 +631,28 @@ func runUpgradeForShell() (string, error) {
 	run := func(_ context.Context, name string, args []string, o, e io.Writer) (int, error) {
 		return update.RunCommand(ctx, name, args, o, e)
 	}
-	up := update.Upgrader{Stdout: &out, Stderr: &out, Run: run}
+	up := update.Upgrader{Stdout: &out, Stderr: &out, Run: run, Version: version.Version}
 	code := up.SelfUpgrade(exe, platform.Detect())
 	text := strings.TrimSpace(out.String())
+	first := strings.TrimSpace(strings.SplitN(text, "\n", 2)[0])
 	if code != 0 {
+		// The download says why on its first line (the rest is the way to
+		// finish by hand); `go install` says it last.
+		if upgradeMethod(exe) == update.MethodDownload && first != "" {
+			return "", errors.New(first)
+		}
 		return "", errors.New(lastOutputLine(text, "the upgrade did not complete"))
 	}
 	if after := modTime(exe); !after.IsZero() && !after.Equal(before) {
-		return "Updated " + appName() + ".", nil
+		if strings.HasPrefix(first, "Updated") {
+			return first, nil
+		}
+		return "Updated " + brandName() + ".", nil
 	}
-	return "Installed the new " + appName() + ", but not over " + exe + ". " + restartByHand(), nil
+	if strings.Contains(first, "is the latest version") {
+		return first, nil
+	}
+	return "Installed the new " + brandName() + ", but not over " + exe + ". " + restartByHand(), nil
 }
 
 // modTime is path's modification time, zero when it cannot be read.
@@ -716,20 +711,18 @@ func appAutostart(mode string, cfg autostart.Config, s ioStreams) int {
 }
 
 func renderAppHelp(prog string, out io.Writer) int {
-	fmt.Fprintf(out, `usage: %[1]s app [--open] [--headless] [--port N] [--interval SECONDS] [--no-update-check] [--debug] [--detach]
-       %[1]s app --remote URL [--token-file PATH] [--open] [--no-update-check] [--debug] [--detach]
+	fmt.Fprintf(out, `usage: %[1]s app [--open] [--headless] [--port N] [--interval SECONDS] [--no-update-check] [--debug]
+       %[1]s app --remote URL [--token-file PATH] [--open] [--no-update-check] [--debug]
        %[1]s app [--remote URL --token-file PATH] --autostart on|off|status
 
 Run the dashboard as a menu-bar / tray application. It starts minimized: the
 icon shows the active account and its fullest usage window, the menu switches
-accounts, toggles auto-switch, moves the 7d threshold while auto-switch runs
-and checks for updates, and notifications tell you about switches,
-quarantines and an account nearing its limit. A badge on the icon means an
+accounts, toggles auto-switch and checks for updates, and notifications tell
+you about switches, quarantines and an account nearing its limit. A badge on the icon means an
 update of %[1]s or Claude Code waits; the menu's Updates section installs it.
 
-This command runs in the foreground; --detach starts it in the background and
-gives the terminal back. Plain "%[1]s" in a terminal does the same as
-"%[1]s app --detach".
+This command runs in the foreground. Plain "%[1]s" starts it in the
+background instead and gives the terminal back.
 
 With --remote the tray drives a dashboard that runs in another process — the
 app inside a WSL distro, which has no tray of its own — over its HTTP API.
@@ -739,7 +732,6 @@ remote.token the app in the distro writes next to its data.
 options:
   --open              also open the dashboard window at start
   --headless          no tray; serve the dashboard only (like "web --no-open")
-  --detach            start in the background, output to the app log, and return
   --no-update-check   do not look for new releases of %[1]s or Claude Code (default:
                       90 s / 30 s after start, then every 6 h; asks before installing either)
   --port N            fixed dashboard port (default 0 = ephemeral)

@@ -48,7 +48,7 @@ func (a *appShell) storeClaudeCode(st ccversion.Status, announce bool) {
 	a.updatesChanged()
 	if fresh && announce {
 		a.notify("Claude Code "+st.Latest+" is available",
-			"You have "+st.Installed.Version+". Choose \"Update Claude Code\" in the "+appName()+" menu.")
+			"You have "+st.Installed.Version+". Choose \"Update Claude Code\" in the "+brandName()+" menu.")
 	}
 }
 

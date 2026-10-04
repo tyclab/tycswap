@@ -331,21 +331,27 @@ func TestUpgradeHintAndViewHelpers(t *testing.T) {
 	if got := upgradeHint("/anywhere/tycswap", 0); got != "git pull && make install" {
 		t.Errorf("upgradeHint = %q", got)
 	}
-	// Past the checkout test: the button for a go-installed binary off
-	// Windows, the line to type otherwise.
+	// Past the checkout test: the button for a binary SelfUpgrade upgrades
+	// itself (go install off Windows, or the release downloaded over it), the
+	// line to type for a go-installed binary on Windows, and the releases page
+	// for one that can be neither — never `go install` for a release binary.
 	goInstall := "go install " + update.ModulePath + "@latest"
+	releases := "download it from " + update.ReleasesURL
 	for _, c := range []struct {
-		shape update.InstallShape
-		plat  platform.Platform
-		want  string
+		method update.Method
+		plat   platform.Platform
+		want   string
 	}{
-		{update.ShapeGoInstall, platform.Linux, ""},
-		{update.ShapeGoInstall, platform.MacOS, ""},
-		{update.ShapeGoInstall, platform.Windows, goInstall},
-		{update.ShapeUnknown, platform.Linux, goInstall},
+		{update.MethodGoInstall, platform.Linux, ""},
+		{update.MethodGoInstall, platform.MacOS, ""},
+		{update.MethodGoInstall, platform.Windows, goInstall},
+		{update.MethodDownload, platform.Linux, ""},
+		{update.MethodDownload, platform.Windows, ""},
+		{update.MethodManual, platform.Linux, releases},
+		{update.MethodManual, platform.Windows, releases},
 	} {
-		if got := shapeHint(c.shape, c.plat); got != c.want {
-			t.Errorf("shapeHint(%v, %v) = %q, want %q", c.shape, c.plat, got, c.want)
+		if got := methodHint(c.method, c.plat); got != c.want {
+			t.Errorf("methodHint(%v, %v) = %q, want %q", c.method, c.plat, got, c.want)
 		}
 	}
 	v := claudeCodeView(ccversion.Status{Checked: true, Installed: &ccversion.Installed{Version: "", Method: ccversion.Unknown}})
@@ -355,14 +361,19 @@ func TestUpgradeHintAndViewHelpers(t *testing.T) {
 }
 
 // The layout is read from the real environment, as SelfUpgrade reads it: a
-// binary in $GOBIN is a go install, so the card offers the button.
-func TestInstallShapeReadsTheEnvironment(t *testing.T) {
+// binary in $GOBIN is a go install, one in a writable directory elsewhere
+// gets the release downloaded over it, one in the Nix store is upgraded by
+// hand.
+func TestUpgradeMethodReadsTheEnvironment(t *testing.T) {
 	gobin := t.TempDir()
 	t.Setenv("GOBIN", gobin)
-	if got := installShape(filepath.Join(gobin, "tycswap")); got != update.ShapeGoInstall {
-		t.Errorf("binary in $GOBIN: shape %v, want go install", got)
+	if got := upgradeMethod(filepath.Join(gobin, "tycswap")); got != update.MethodGoInstall {
+		t.Errorf("binary in $GOBIN: %v, want go install", got)
 	}
-	if got := installShape(filepath.Join(t.TempDir(), "tycswap")); got != update.ShapeUnknown {
-		t.Errorf("binary elsewhere: shape %v, want unknown", got)
+	if got := upgradeMethod(filepath.Join(t.TempDir(), "tycswap")); got != update.MethodDownload {
+		t.Errorf("binary in a writable directory: %v, want download", got)
+	}
+	if got := upgradeMethod("/nix/store/0000-tycswap/bin/tycswap"); got != update.MethodManual {
+		t.Errorf("binary in the Nix store: %v, want manual", got)
 	}
 }

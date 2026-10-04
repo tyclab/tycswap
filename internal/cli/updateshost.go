@@ -78,7 +78,7 @@ func newUpdatesHost(backupDir string) *updatesHost {
 			run := func(_ context.Context, name string, args []string, o, e io.Writer) (int, error) {
 				return update.RunCommand(ctx, name, args, o, e)
 			}
-			return update.Upgrader{Stdout: stdout, Stderr: stderr, Run: run}.SelfUpgrade(exePath(), plat)
+			return update.Upgrader{Stdout: stdout, Stderr: stderr, Run: run, Version: version.Version}.SelfUpgrade(exePath(), plat)
 		},
 		runClaude: func(ctx context.Context, c ccversion.Command, in *ccversion.Installed) (string, error) {
 			return ccversion.Run(ctx, env, c, in)
@@ -94,32 +94,37 @@ func newUpdatesHost(backupDir string) *updatesHost {
 // upgrade` says it.
 var checkoutCommand = strings.TrimPrefix(update.CheckoutHint, "built from a checkout: ")
 
-// upgradeHint is the command a build the dashboard cannot upgrade is told:
-// a checkout build (the checkout upgrades it), a binary outside a Go bin
-// directory (manual), Windows (the running .exe is locked). "" means
-// SelfUpgrade would run `go install` here.
+// upgradeHint is what a build the dashboard or the tray cannot upgrade is
+// told: a checkout build the checkout's command, a go-installed binary on
+// Windows (the running .exe is locked) the `go install` line, and a binary
+// that can be neither reinstalled nor downloaded over (the Nix store, a
+// directory this process cannot write) the releases page. "" means
+// SelfUpgrade upgrades this binary itself: `go install`, or the release
+// downloaded over it (A36).
 func upgradeHint(exe string, plat platform.Platform) string {
 	if update.DetectBuildSource() == update.SourceCheckout {
 		return checkoutCommand
 	}
-	return shapeHint(installShape(exe), plat)
+	return methodHint(upgradeMethod(exe), plat)
 }
 
-// installShape reads the layout from the environment and home directory
+// upgradeMethod reads the layout from the environment and home directory
 // SelfUpgrade reads (Upgrader's defaults), so the card offers the button
-// exactly when the apply would run `go install`.
-func installShape(exe string) update.InstallShape {
+// exactly when the apply would upgrade.
+func upgradeMethod(exe string) update.Method {
 	home, _ := os.UserHomeDir()
-	return update.DetectInstallShape(exe, os.Getenv, home)
+	return update.UpgradeMethod(exe, os.Getenv, home)
 }
 
-// shapeHint is upgradeHint past the checkout test: "" for a go-installed
-// binary off Windows, else the line to type.
-func shapeHint(shape update.InstallShape, plat platform.Platform) string {
-	if shape == update.ShapeGoInstall && plat != platform.Windows {
+// methodHint is upgradeHint past the checkout test.
+func methodHint(m update.Method, plat platform.Platform) string {
+	switch {
+	case m == update.MethodGoInstall && plat == platform.Windows:
+		return "go install " + update.ModulePath + "@latest"
+	case m == update.MethodGoInstall, m == update.MethodDownload:
 		return ""
 	}
-	return "go install " + update.ModulePath + "@latest"
+	return "download it from " + update.ReleasesURL
 }
 
 func (h *updatesHost) changed() {

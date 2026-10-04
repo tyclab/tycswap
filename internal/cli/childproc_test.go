@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,6 +34,13 @@ func TestMain(m *testing.M) {
 	// A Git Bash running the tests (MSYSTEM set) must not turn every bare
 	// invocation into a background start; the test of that rule sets it.
 	msysTerminal = func() bool { return false }
+	// The update restart re-runs os.Args detached: from a test binary that is
+	// the whole suite again. The tests that take the hand-over stub it with a
+	// recorder of their own; no other path may reach the real one.
+	restartSelf = func(string) error {
+		fmt.Fprintln(os.Stderr, "restartSelf called without a test stub; not restarting the test binary")
+		return errors.New("restartSelf is stubbed in tests")
+	}
 	os.Exit(m.Run())
 }
 
@@ -72,10 +80,9 @@ func waitExited(t *testing.T, c backgroundApp) {
 	t.Fatal("child did not exit")
 }
 
-// The real spawn the bare command and --detach use: a detached child with
-// stdin on the null device (EOF at once, never an error), both output streams
-// in the log, the arguments it was given — and, on Windows, no console of its
-// own (A40/A41). The child is this test binary in its child role, which
+// The real spawn the bare command uses: a detached child started as `app`,
+// with stdin on the null device (EOF at once, never an error), both output
+// streams in the log — and, on Windows, no console of its own (A40/A41). The child is this test binary in its child role, which
 // exits by itself: nothing is left running.
 func TestSpawnDetachedAppRealChild(t *testing.T) {
 	exe, err := os.Executable()
@@ -84,7 +91,7 @@ func TestSpawnDetachedAppRealChild(t *testing.T) {
 	}
 	t.Setenv(childRoleEnv, "detached")
 	logPath := filepath.Join(t.TempDir(), "logs", "app.log")
-	child, err := spawnDetachedApp(exe, []string{"app", "--headless", "--port", "7337"}, logPath)
+	child, err := spawnDetachedApp(exe, logPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +101,7 @@ func TestSpawnDetachedAppRealChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	log := string(raw)
-	for _, want := range []string{"stdout ok", "stderr ok", "stdin: n=0 err=EOF", "console: false", "args: app --headless --port 7337"} {
+	for _, want := range []string{"stdout ok", "stderr ok", "stdin: n=0 err=EOF", "console: false", "args: app"} {
 		if !strings.Contains(log, want) {
 			t.Errorf("child log lacks %q:\n%s", want, log)
 		}

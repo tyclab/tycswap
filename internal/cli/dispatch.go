@@ -40,7 +40,7 @@ func dispatchMain(prog string, p *parsed, s ioStreams) int {
 	// --upgrade runs first, before the switcher is constructed, so upgrading
 	// the tool never touches config/keychain (spec 08§5).
 	if p.upgrade {
-		up := update.Upgrader{Stdout: s.out, Stderr: s.err}
+		up := update.Upgrader{Stdout: s.out, Stderr: s.err, Version: version.Version}
 		return up.SelfUpgrade(exePath(), platform.Detect())
 	}
 
@@ -122,7 +122,7 @@ func runMainAction(p *parsed, sw *core.Switcher, payload *any) error {
 		// Deleting every account under a running dashboard would leave the
 		// tray showing state that no longer exists (A38).
 		if appIsRunning() {
-			return cerr.Validation("%s app is running; quit it from the menu bar / tray before purging", appName())
+			return cerr.Validation("%s app is running; quit it from the menu bar / tray before purging", brandName())
 		}
 		return sw.Purge()
 	case p.export != nil:
@@ -177,10 +177,10 @@ func runTUIOrNotice(sw *core.Switcher, start string, stderr io.Writer) int {
 // (A35), so both messages point there; both exit 1.
 func dispatchMenubar(stderr io.Writer) int {
 	if platform.Detect() != platform.MacOS {
-		errorTo(stderr, "The menu bar is only available on macOS; the tray app is `"+appName()+" app`.")
+		errorTo(stderr, "The menu bar is only available on macOS; the tray app is `"+brandName()+" app`.")
 		return 1
 	}
-	errorTo(stderr, "Menu bar mode is `"+appName()+" app` in this build.")
+	errorTo(stderr, "Menu bar mode is `"+brandName()+" app` in this build.")
 	return 1
 }
 

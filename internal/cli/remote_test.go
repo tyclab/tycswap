@@ -18,7 +18,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -191,7 +190,7 @@ func waitUntil(t *testing.T, what string, cond func() bool) {
 // Driven through the command, not the helpers: this is the seam the whole
 // feature hangs on.
 func TestHeadlessAppWritesTheRemoteToken(t *testing.T) {
-	home := appLockHome(t)
+	home := appTestHome(t)
 	stop := stopViaNotifyContext(t)
 	var out, errb syncBuffer
 	done := make(chan int, 1)
@@ -351,11 +350,8 @@ func (a *remoteFakeAuto) Stop() error {
 	return nil
 }
 
-func (a *remoteFakeAuto) Wake() error { a.record("Wake"); return nil }
-func (a *remoteFakeAuto) ApplyThreshold(t float64) error {
-	a.record("ApplyThreshold(" + strconv.FormatFloat(t, 'g', -1, 64) + ")")
-	return nil
-}
+func (a *remoteFakeAuto) Wake() error                  { a.record("Wake"); return nil }
+func (a *remoteFakeAuto) ApplyThreshold(float64) error { return nil }
 func (a *remoteFakeAuto) ApplyModels(model string) error {
 	a.record("ApplyModels(" + model + ")")
 	a.mu.Lock()
@@ -558,13 +554,6 @@ func TestRemoteClientCalls(t *testing.T) {
 	fx.auto.mu.Lock()
 	fx.auto.applyErr = nil
 	fx.auto.mu.Unlock()
-	// The tray's 7d threshold submenu moves the distro engine's bar (A34).
-	if err := rc.SetThreshold(90); err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.Join(fx.auto.Calls(), ","); !strings.HasSuffix(got, "ApplyThreshold(90)") {
-		t.Errorf("auto calls = %s", got)
-	}
 	// Launch hands back the server's own one-time URL, rebuilt from its
 	// checked parts.
 	u, err := rc.Launch()
@@ -1179,10 +1168,13 @@ func TestRemoteModeRunsTheTray(t *testing.T) {
 		done <- run("tycswap", []string{"app", "--remote", fx.base, "--token-file", path, "--no-update-check"},
 			ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
 	}()
-	waitUntil(t, "the engine's state in the title", func() bool {
+	// The shell sets the title before the menu: wait for both to show the
+	// engine, so the menu checked below is not the unreachable one.
+	waitUntil(t, "the engine's state in the title and the menu", func() bool {
 		ft.mu.Lock()
 		defer ft.mu.Unlock()
-		return strings.HasPrefix(ft.title, "#1")
+		_, offline := findItem(ft.menu, "offline")
+		return strings.HasPrefix(ft.title, "#1") && len(ft.menu) > 0 && !offline
 	})
 	ft.mu.Lock()
 	titles := append([]string(nil), ft.titles...)

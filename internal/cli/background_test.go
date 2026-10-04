@@ -20,7 +20,7 @@ func (c fakeChild) Exited() (bool, error) { return c.exited, c.err }
 
 // stubBackground replaces the binary path and the spawner for one test; spawn
 // is what the "child" does when started.
-func stubBackground(t *testing.T, spawn func(exe string, args []string, logPath string) (backgroundApp, error)) {
+func stubBackground(t *testing.T, spawn func(exe, logPath string) (backgroundApp, error)) {
 	t.Helper()
 	prevExe, prevSpawn := exePath, spawnBackgroundApp
 	prevWait, prevPoll := backgroundStartWait, backgroundPoll
@@ -45,9 +45,8 @@ func runBare(t *testing.T) (int, string, string) {
 func TestBareTTYStartsAppInBackground(t *testing.T) {
 	appLockHome(t)
 	var gotExe, gotLog string
-	var gotArgs []string
-	stubBackground(t, func(exe string, args []string, logPath string) (backgroundApp, error) {
-		gotExe, gotArgs, gotLog = exe, args, logPath
+	stubBackground(t, func(exe, logPath string) (backgroundApp, error) {
+		gotExe, gotLog = exe, logPath
 		lock, held, err := acquireAppLock() // what `app` does first
 		if err != nil || !held {
 			t.Fatalf("child lock = %v, %v", held, err)
@@ -59,8 +58,8 @@ func TestBareTTYStartsAppInBackground(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %q", code, errStr)
 	}
-	if gotExe != "/opt/tools/tycswap" || strings.Join(gotArgs, " ") != "app" || gotLog != appLogPath() {
-		t.Errorf("spawned %q %v logging to %q", gotExe, gotArgs, gotLog)
+	if gotExe != "/opt/tools/tycswap" || gotLog != appLogPath() {
+		t.Errorf("spawned %q logging to %q", gotExe, gotLog)
 	}
 	if !strings.Contains(out, "running in the background") || !strings.Contains(out, "Log: "+appLogPath()) {
 		t.Errorf("stdout = %q", out)
@@ -75,7 +74,7 @@ func TestBareTTYWhenAppAlreadyRuns(t *testing.T) {
 		t.Fatalf("acquire = %v, %v", held, err)
 	}
 	t.Cleanup(func() { _ = lock.Release() })
-	stubBackground(t, func(string, []string, string) (backgroundApp, error) {
+	stubBackground(t, func(string, string) (backgroundApp, error) {
 		t.Fatal("spawned although the app is running")
 		return nil, nil
 	})
@@ -89,7 +88,7 @@ func TestBareTTYWhenAppAlreadyRuns(t *testing.T) {
 // log, not as a success.
 func TestBareTTYReportsAChildThatDies(t *testing.T) {
 	appLockHome(t)
-	stubBackground(t, func(_ string, _ []string, logPath string) (backgroundApp, error) {
+	stubBackground(t, func(_, logPath string) (backgroundApp, error) {
 		if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -112,7 +111,7 @@ func TestBareTTYReportsAChildThatDies(t *testing.T) {
 // A spawn failure is an error that points at the foreground command.
 func TestBareTTYSpawnFailure(t *testing.T) {
 	appLockHome(t)
-	stubBackground(t, func(string, []string, string) (backgroundApp, error) {
+	stubBackground(t, func(string, string) (backgroundApp, error) {
 		return nil, errors.New("permission denied")
 	})
 	code, _, errStr := runBare(t)
@@ -125,51 +124,12 @@ func TestBareTTYSpawnFailure(t *testing.T) {
 // resident process nobody asked for (A40).
 func TestBareNonTTYSpawnsNothing(t *testing.T) {
 	appLockHome(t)
-	stubBackground(t, func(string, []string, string) (backgroundApp, error) {
+	stubBackground(t, func(string, string) (backgroundApp, error) {
 		t.Fatal("spawned from a pipe")
 		return nil, nil
 	})
 	if code, _, errStr := runCLI(t, []string{}, false, true); code != 2 || !strings.Contains(errStr, "no command given") {
 		t.Errorf("exit = %d, stderr = %q", code, errStr)
-	}
-}
-
-// `app --detach` starts the app in the background with its other flags, and
-// confirms through the lock that app (or a remote tray) takes (A40).
-func TestAppDetachStartsItselfWithItsFlags(t *testing.T) {
-	appLockHome(t)
-	var gotArgs []string
-	stubBackground(t, func(_ string, args []string, _ string) (backgroundApp, error) {
-		gotArgs = args
-		lock, held, err := acquireAppLock()
-		if err != nil || !held {
-			t.Fatalf("child lock = %v, %v", held, err)
-		}
-		t.Cleanup(func() { _ = lock.Release() })
-		return fakeChild{}, nil
-	})
-	code, out, errStr := runCLI(t, []string{"app", "--headless", "--detach", "--port", "7337", "--no-update-check"}, false, false)
-	if code != 0 || !strings.Contains(out, "running in the background") {
-		t.Fatalf("exit = %d, stdout = %q, stderr = %q", code, out, errStr)
-	}
-	if got := strings.Join(gotArgs, " "); got != "app --headless --port 7337 --no-update-check" {
-		t.Errorf("child args = %q", got)
-	}
-
-	// A remote tray is confirmed through remote.lock instead.
-	gotArgs = nil
-	stubBackground(t, func(_ string, args []string, _ string) (backgroundApp, error) {
-		gotArgs = args
-		lock, held, err := acquireRemoteLock()
-		if err != nil || !held {
-			t.Fatalf("child lock = %v, %v", held, err)
-		}
-		t.Cleanup(func() { _ = lock.Release() })
-		return fakeChild{}, nil
-	})
-	code, _, errStr = runCLI(t, []string{"app", "--detach", "--remote=http://127.0.0.1:7337", "--token-file", "/t/remote.token"}, false, false)
-	if code != 0 || strings.Join(gotArgs, " ") != "app --remote=http://127.0.0.1:7337 --token-file /t/remote.token" {
-		t.Errorf("exit = %d, args = %q, stderr = %q", code, gotArgs, errStr)
 	}
 }
 
@@ -203,7 +163,7 @@ func TestBareMSYSTerminalStartsApp(t *testing.T) {
 	msysTerminal = func() bool { return true }
 	t.Cleanup(func() { msysTerminal = prev })
 	spawned := false
-	stubBackground(t, func(string, []string, string) (backgroundApp, error) {
+	stubBackground(t, func(string, string) (backgroundApp, error) {
 		spawned = true
 		lock, held, err := acquireAppLock()
 		if err != nil || !held {

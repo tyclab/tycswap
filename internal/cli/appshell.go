@@ -46,8 +46,9 @@ type shellActions struct {
 	SetAutostart func(enable bool) error
 	Quit         func()
 	// UpgradeHint says how this build is upgraded when the tray cannot do it
-	// itself (a checkout build, a binary outside a Go bin directory, Windows):
-	// the command to type. "" or nil: Upgrade installs (A36).
+	// itself (a checkout build, a go-installed binary on Windows, a binary in
+	// the Nix store or in a directory it cannot write). "" or nil: Upgrade
+	// installs (A36).
 	UpgradeHint func() string
 	// LatestVersion returns the newest published tag (the release
 	// endpoint's tag_name); the periodic check compares it with Current.
@@ -64,10 +65,6 @@ type shellActions struct {
 	// autoswitch.model AND retargets a running engine, so the tray, the
 	// dashboard and the engine agree at once (A39). nil hides the switch.
 	SetModelLimits func(on bool) error
-	// SetThreshold moves the running engine's 7d bar for this run, as the
-	// TUI's adjustment and the dashboard's slider do (A34, A37). nil hides
-	// the submenu.
-	SetThreshold func(pct float64) error
 	// ApproveAPIKey records the user's approval for a switch onto an API-key
 	// account, and RestartNotice is the sentence naming how many sessions must
 	// be restarted (A33). Both nil → the tray refuses the switch and says where
@@ -146,9 +143,6 @@ func newAppShell(t tray.Tray, act shellActions) *appShell {
 	return sh
 }
 
-// appName is the program's name in the tray's words.
-func appName() string { return brand.Sanitized().Name }
-
 // update repaints title, tooltip and menu from a state document.
 func (a *appShell) update(st web.State) {
 	a.mu.Lock()
@@ -156,7 +150,7 @@ func (a *appShell) update(st web.State) {
 	a.mu.Unlock()
 	active, ok := activeAccount(st)
 	running := a.autoRunning()
-	head := appName()
+	head := brandName()
 	if a.updateWaiting() {
 		// Next to the name, before the per-window details: Windows cuts the
 		// tooltip at 127 characters (A41), and this is the part to keep (A44).
@@ -178,7 +172,7 @@ func (a *appShell) update(st web.State) {
 	}
 	// An engine out of reach outranks every figure: the figures are stale.
 	if down, why := a.offline(); down {
-		title, tooltip = "⚠", appName()+" — "+why
+		title, tooltip = "⚠", brandName()+" — "+why
 	}
 	a.tray.SetTitle(title)
 	a.tray.SetTooltip(tooltip)
@@ -216,9 +210,6 @@ func (a *appShell) menu(st web.State) []tray.Item {
 		autoSub = "off — switch accounts by hand or turn on"
 	}
 	items = append(items, tray.Item{ID: "auto", Kind: tray.KindToggle, Title: "Auto-switch", Sub: autoSub, Checked: running})
-	if it, ok := a.thresholdItem(st, running); ok {
-		items = append(items, it)
-	}
 	if a.act.SetModelLimits != nil {
 		// One switch for the per-model weekly windows: it decides what
 		// auto-switch counts AND what every percentage here reports, so the
@@ -241,31 +232,8 @@ func (a *appShell) menu(st web.State) []tray.Item {
 		items = append(items, tray.Item{ID: "autostart", Kind: tray.KindToggle, Title: "Start at login", Sub: "run in the menu bar from login on", Checked: on && err == nil, Disabled: err != nil})
 	}
 	items = append(items, tray.Item{ID: "update", Title: "Check for updates…"})
-	items = append(items, tray.Separator(), tray.Item{ID: "quit", Title: "Quit " + appName(), Dismiss: true})
+	items = append(items, tray.Separator(), tray.Item{ID: "quit", Title: "Quit " + brandName(), Dismiss: true})
 	return items
-}
-
-// thresholdChoices are the 7d bars the submenu offers (A37); the bar's spec
-// allows 50–100, and the dashboard's slider reaches every value in between.
-var thresholdChoices = []float64{80, 85, 90, 95, 97}
-
-// thresholdItem is the 7d threshold submenu: shown while the engine runs,
-// since the bar it moves is the running engine's, for this run only — the
-// dashboard's slider and the TUI's adjustment move the same one (A34).
-func (a *appShell) thresholdItem(st web.State, running bool) (tray.Item, bool) {
-	if a.act.SetThreshold == nil || !running {
-		return tray.Item{}, false
-	}
-	current := barsOf(st).sevenDay
-	var rows []tray.Item
-	for _, v := range thresholdChoices {
-		it := tray.Item{ID: "threshold:" + strconv.Itoa(int(v)), Title: fmtPctShort(v)}
-		if v == current {
-			it.Checked, it.Sub = true, "in effect"
-		}
-		rows = append(rows, it)
-	}
-	return tray.Item{ID: "threshold", Title: "7d threshold: " + fmtPctShort(current) + " (this run)", Children: rows}, true
 }
 
 // inlineAccounts is how many accounts the menu lists itself; beyond that they
@@ -348,7 +316,7 @@ func addCurrentItem(st web.State) tray.Item {
 }
 
 // errNoLogin: Claude Code has no subscription login to store.
-var errNoLogin = cerr.Config("Claude Code has no subscription login on this computer. In Claude Code, type /login and sign in, then choose Add current login again.")
+var errNoLogin = cerr.Config("Claude Code has no subscription login on this computer. In Claude Code, type /login, choose Claude.ai Subscription and sign in, then choose Add current login again.")
 
 // addCurrentClick is "Add current login" (A37). The menu stays open and
 // shows the new account as soon as the dashboard's state carries it.
@@ -449,8 +417,6 @@ func (a *appShell) click(id string) {
 			a.notify("Auto-switch on", "Accounts rotate automatically near the limit.")
 		}
 		a.repaint()
-	case strings.HasPrefix(id, "threshold:"):
-		a.thresholdClick(strings.TrimPrefix(id, "threshold:"))
 	case id == "model-limits":
 		a.mu.Lock()
 		st := a.last
@@ -483,23 +449,6 @@ func (a *appShell) click(id string) {
 	case id == "quit":
 		a.act.Quit()
 	}
-}
-
-// thresholdClick moves the running engine's 7d bar (A34): for this run, as
-// the dashboard's slider and the TUI's adjustment do; the saved setting is
-// `tycswap config set autoswitch.sevenDayThreshold`.
-func (a *appShell) thresholdClick(raw string) {
-	pct, err := strconv.ParseFloat(raw, 64)
-	if err != nil || a.act.SetThreshold == nil {
-		return
-	}
-	if err := a.act.SetThreshold(pct); err != nil {
-		a.notify("7d threshold", capitalizeFirst(err.Error()))
-		return
-	}
-	a.dashboardChanged()
-	a.notify("7d threshold "+fmtPctShort(pct), "Auto-switch moves off an account at "+fmtPctShort(pct)+" of its week until it stops. The saved setting is unchanged.")
-	a.repaint()
 }
 
 // repaint redraws title, tooltip and menu from the last state now, so a
@@ -538,7 +487,7 @@ func (a *appShell) installUpdate() {
 		a.mu.Lock()
 		pending := a.pending
 		a.mu.Unlock()
-		a.notify(releaseTitle(pending), "Update it with: "+hint)
+		a.notify(releaseTitle(pending), "To update: "+hint)
 		return
 	}
 	msg, restart, err := a.upgradeApp()
@@ -546,7 +495,7 @@ func (a *appShell) installUpdate() {
 		a.notify("Update failed", err.Error())
 		return
 	}
-	a.notify(appName()+" update", msg)
+	a.notify(brandName()+" update", msg)
 	if restart != nil {
 		restart()
 	}
@@ -556,9 +505,9 @@ func (a *appShell) installUpdate() {
 // release.
 func releaseTitle(tag string) string {
 	if tag == "" {
-		return appName() + " update"
+		return brandName() + " update"
 	}
-	return appName() + " " + strings.TrimPrefix(tag, "v") + " is available"
+	return brandName() + " " + strings.TrimPrefix(tag, "v") + " is available"
 }
 
 // upgradeApp runs the self-upgrade for the tray and for the dashboard (A44)
@@ -596,7 +545,7 @@ func (a *appShell) upgradeApp() (msg string, restart func(), err error) {
 // restartByHand is the sentence an upgrade ends with when nothing restarts
 // the app by itself.
 func restartByHand() string {
-	return "Quit and start " + appName() + " again to run the new version."
+	return "Quit and start " + brandName() + " again to run the new version."
 }
 
 // checkRelease asks for the newest release and records it: the dashboard and
@@ -659,21 +608,21 @@ func (a *appShell) offerUpdate() {
 func (a *appShell) askInstall(latest string) {
 	shown := strings.TrimPrefix(latest, "v")
 	if hint := a.upgradeHint(); hint != "" {
-		a.notify(releaseTitle(latest), "Update it with: "+hint)
+		a.notify(releaseTitle(latest), "To update: "+hint)
 		return
 	}
 	if a.act.Ask != nil {
-		ok, err := a.act.Ask(appName()+" update", a.releaseQuestion(latest), "Install", "Later")
+		ok, err := a.act.Ask(brandName()+" update", a.releaseQuestion(latest), "Install", "Later")
 		if err == nil {
 			if ok {
 				a.installUpdate()
 			} else {
-				a.notify(appName()+" update", "Later, then — \"Install "+appName()+" "+shown+"…\" stays in the menu.")
+				a.notify(brandName()+" update", "Later, then — \"Install "+brandName()+" "+shown+"…\" stays in the menu.")
 			}
 			return
 		}
 	}
-	a.notify(releaseTitle(latest), "Choose \"Install "+appName()+" "+shown+"…\" from the menu to install it.")
+	a.notify(releaseTitle(latest), "Choose \"Install "+brandName()+" "+shown+"…\" from the menu to install it.")
 }
 
 // autoEvent turns engine events the user should hear about into notifications.
@@ -980,8 +929,8 @@ type windowBars struct {
 
 // barsOf reads the three bars in force. The 7d one follows the running engine
 // when a session override has moved it (the TUI's adjustment, the dashboard
-// slider, the tray's submenu); the other two are settings only, so they
-// always come from the file.
+// slider); the other two are settings only, so they always come from the
+// file.
 func barsOf(st web.State) windowBars {
 	sevenDay := settingPct(st, "autoswitch.sevenDayThreshold", 97)
 	if st.Auto != nil && st.Auto.Running && st.Auto.Threshold > 0 {
