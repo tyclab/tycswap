@@ -18,6 +18,14 @@ func (sw *Switcher) AddAccountFromToken(token string, email, slotArg *string, as
 	return lifecycle.AddAccountFromToken(sw.Store, token, email, slotArg, assumeYes)
 }
 
+// AddAccountFromTokenWithBaseURL delegates to
+// lifecycle.AddAccountFromTokenWithBaseURL (DESIGN A46). It is not on the
+// frozen tui.Facade: the TUI and the dashboard reach it as an optional
+// method, so the pinned shape of AddAccountFromToken stays as it is.
+func (sw *Switcher) AddAccountFromTokenWithBaseURL(token, baseURL string, email, slotArg *string, assumeYes bool) error {
+	return lifecycle.AddAccountFromTokenWithBaseURL(sw.Store, token, baseURL, email, slotArg, assumeYes)
+}
+
 // RemoveAccount delegates to lifecycle.RemoveAccount (spec 01§ remove_account).
 func (sw *Switcher) RemoveAccount(id string, assumeYes bool) error {
 	return lifecycle.RemoveAccount(sw.Store, id, assumeYes)

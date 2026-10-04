@@ -6,7 +6,10 @@
 // the resolved prog and must never leak legacy flag names (spec 08§4.1, 08§14).
 package cli
 
-import "io"
+import (
+	"io"
+	"strings"
+)
 
 // crossFlagValidate runs the twelve cross-flag checks (spec 08§4), plus a
 // thirteenth for --yes (DESIGN A33). It returns done==true with code 2 on the
@@ -55,6 +58,14 @@ func crossFlagValidate(prog string, p *parsed, stderr io.Writer) parseResult {
 	// 8. --email without add-token.
 	if p.email != nil && p.addToken == nil {
 		return fail("--email can only be used with 'add-token'")
+	}
+
+	// 8b. --base-url without add-token, or given empty (DESIGN A46).
+	if p.baseURL != nil && p.addToken == nil {
+		return fail("--base-url can only be used with 'add-token'")
+	}
+	if p.baseURL != nil && strings.TrimSpace(*p.baseURL) == "" {
+		return fail("argument --base-url: expected a URL")
 	}
 
 	// 9. --account without export.

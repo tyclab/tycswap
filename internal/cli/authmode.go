@@ -22,6 +22,7 @@ import (
 	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/switching"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // stdinIsTerminal reports whether stdin can answer a prompt (a terminal, not
@@ -101,9 +102,15 @@ func confirmSwitchToAPIKey(out io.Writer, identifier string, sw *core.Switcher, 
 		}
 		return nil
 	}
+	detail := "An API-key account authenticates with a key instead of a subscription login, and its usage is billed per token."
+	if base := sw.Store.AccountBaseURL(num); base != "" {
+		// Where the requests go is the part of this switch worth reading
+		// twice, so the prompt names the whole URL (DESIGN A46).
+		detail += "\n" + switching.EndpointNotice(termsafe.Strip(base))
+	}
 	switch confirmAuthModeChange(out,
 		"Switch to API-key account #"+num+"?",
-		"An API-key account authenticates with a key instead of a subscription login, and its usage is billed per token.",
+		detail,
 		assumeYes) {
 	case authModeApproved:
 		switching.ApproveAPIKeySwitch(num)

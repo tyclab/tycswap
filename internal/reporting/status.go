@@ -15,6 +15,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/store"
@@ -55,7 +56,8 @@ func buildStatusPayload(s *store.Store) map[string]any {
 	recOrgUUID := recStr(rec, "organizationUuid")
 	alias := recStr(rec, "alias")
 
-	entry := activeAccountUsage(s, accountNum, email, recOrgUUID)
+	baseURL := store.BaseURLFrom(data, accountNum)
+	entry := activeAccountUsage(s, accountNum, email, recOrgUUID, baseURL)
 	status, usageJSON := jsonout.UsageFields(entry.DecisionValue())
 
 	n, _ := strconv.Atoi(accountNum)
@@ -75,6 +77,9 @@ func buildStatusPayload(s *store.Store) map[string]any {
 	}
 	if alias != "" {
 		active["alias"] = alias
+	}
+	if baseURL != "" {
+		active["baseUrl"] = baseURL
 	}
 	atLimit, limiting := atLimitFor(entry.DecisionValue(), configuredModels(s))
 	for k, v := range jsonout.AtLimitFields(atLimit, limiting) {
@@ -123,13 +128,18 @@ func renderStatus(w io.Writer, s *store.Store) {
 	rec, _ := recordFor(data, accountNum)
 	tag := termsafe.Strip(displayTag(recStr(rec, "organizationName")))
 	total := len(data.Accounts)
-	entry := activeAccountUsage(s, accountNum, email, orgUUID)
+	baseURL := store.BaseURLFrom(data, accountNum)
+	entry := activeAccountUsage(s, accountNum, email, orgUUID, baseURL)
 	marker := ""
 	if mk := atLimitMarker(entry.DecisionValue(), configuredModels(s)); mk != "" {
 		marker = " " + mk
 	}
 	fmt.Fprintf(w, "%s %s (%s %s)%s\n",
 		printer.Bolded("Status:"), printer.Accent("Account-"+accountNum), shown, printer.Muted("["+tag+"]"), marker)
+	if baseURL != "" {
+		// The host only; status --json carries the full URL (DESIGN A46).
+		fmt.Fprintf(w, "  %s\n", printer.Dimmed("Endpoint: "+termsafe.Strip(ccsettings.Host(baseURL))+" (Claude Code's settings.json)"))
+	}
 	fmt.Fprintf(w, "  %s\n", printer.Dimmed(fmt.Sprintf("Total managed accounts: %d", total)))
 	for _, line := range usageEntryLines(entry) {
 		fmt.Fprintf(w, "  %s\n", line)
@@ -139,7 +149,7 @@ func renderStatus(w io.Writer, s *store.Store) {
 // activeAccountUsage builds a single-account info row for the active slot and
 // runs it through the shared collector (spec 02§12 _active_account_usage), so
 // freshness/backoff/claim gating matches list exactly.
-func activeAccountUsage(s *store.Store, accountNum, email, orgUUID string) usage.UsageEntry {
+func activeAccountUsage(s *store.Store, accountNum, email, orgUUID, baseURL string) usage.UsageEntry {
 	val, kcUnavail, _ := s.Creds.ReadActive()
 	n, _ := strconv.Atoi(accountNum)
 	info := AccountInfo{
@@ -149,6 +159,7 @@ func activeAccountUsage(s *store.Store, accountNum, email, orgUUID string) usage
 		IsActive:            true,
 		Creds:               val,
 		KeychainUnavailable: kcUnavail,
+		BaseURL:             baseURL,
 	}
 	entries := CollectUsageEntries(s, []AccountInfo{info}, nil)
 	return entries[accountNum]

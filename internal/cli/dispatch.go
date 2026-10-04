@@ -84,7 +84,7 @@ func runMainAction(p *parsed, sw *core.Switcher, payload *any) error {
 	case p.addAccount:
 		return sw.AddAccount(p.slot, false, p.alias)
 	case p.addToken != nil:
-		return sw.AddAccountFromToken(*p.addToken, p.email, intToStrPtr(p.slot), false)
+		return sw.AddAccountFromTokenWithBaseURL(*p.addToken, derefStr(p.baseURL), p.email, intToStrPtr(p.slot), false)
 	case p.removeAccount != nil:
 		return sw.RemoveAccount(*p.removeAccount, false)
 	case p.disableAccount != nil:
