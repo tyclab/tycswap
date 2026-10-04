@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -294,6 +295,112 @@ func TestDownloadUpgrade_SizeCap(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
 		t.Errorf("temp download not cleaned up: %v", entries)
+	}
+}
+
+// A SHA256SUMS larger than its cap is refused, even with the asset's line in
+// it: the file is read into memory.
+func TestDownloadUpgrade_SumsSizeCap(t *testing.T) {
+	const asset = "tycswap_v0.7.0_linux_amd64"
+	body := []byte("new build")
+	sums := append(sumsFor(map[string][]byte{asset: body}), bytes.Repeat([]byte("#\n"), maxSumsBytes/2+1)...)
+	rs := newDownloadServer(t, "v0.7.0", map[string][]byte{asset: body}, sums)
+	dir, exe := installedBinary(t, "tycswap")
+	u, _, stderr := downloadUpgrader(rs, "v0.6.0")
+	if code := u.SelfUpgrade(exe, platform.Linux); code != 1 || !strings.Contains(stderr.String(), "SHA256SUMS could not be read (larger than "+strconv.Itoa(maxSumsBytes)+" bytes)") {
+		t.Errorf("exit %d, stderr %q", code, stderr.String())
+	}
+	if got, _ := os.ReadFile(exe); string(got) != "old build" {
+		t.Errorf("binary = %q", got)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("leftovers: %v", entries)
+	}
+}
+
+// A release whose tag is not a version is refused before anything is
+// downloaded: it would slip past the downgrade guard, and for a binary of an
+// unknown version it would be installed.
+func TestDownloadUpgrade_RefusesAnUnusableTag(t *testing.T) {
+	for _, current := range []string{"v0.6.0", "dev"} {
+		rs := newDownloadServer(t, "nightly", map[string][]byte{"tycswap_nightly_linux_amd64": []byte("nightly build")}, nil)
+		_, exe := installedBinary(t, "tycswap")
+		u, _, stderr := downloadUpgrader(rs, current)
+		if code := u.SelfUpgrade(exe, platform.Linux); code != 1 || !strings.Contains(stderr.String(), `unusable version "nightly"`) {
+			t.Errorf("running %s: exit %d, stderr %q", current, code, stderr.String())
+		}
+		if got, _ := os.ReadFile(exe); string(got) != "old build" {
+			t.Errorf("running %s: binary = %q", current, got)
+		}
+		if n := rs.hits.Load(); n != 1 {
+			t.Errorf("running %s: %d requests, want just the release lookup", current, n)
+		}
+	}
+}
+
+// A download follows at most nine redirects (ten requests, as Go's own
+// default): GitHub needs one, and a loop ends instead of running until the
+// timeout.
+func TestDownloadUpgrade_RedirectCap(t *testing.T) {
+	const asset = "tycswap_v0.7.0_linux_amd64"
+	body := []byte("new build")
+	for _, tc := range []struct {
+		redirects int
+		ok        bool
+	}{{9, true}, {10, false}} {
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.URL.Path == "/latest":
+				_, _ = io.WriteString(w, `{"tag_name":"v0.7.0"}`)
+			case r.URL.Path == "/download/v0.7.0/SHA256SUMS":
+				_, _ = w.Write(sumsFor(map[string][]byte{asset: body}))
+			case r.URL.Path == "/download/v0.7.0/"+asset:
+				http.Redirect(w, r, "/hop/1", http.StatusFound)
+			case strings.HasPrefix(r.URL.Path, "/hop/"):
+				n, _ := strconv.Atoi(strings.TrimPrefix(r.URL.Path, "/hop/"))
+				if n < tc.redirects {
+					http.Redirect(w, r, "/hop/"+strconv.Itoa(n+1), http.StatusFound)
+					return
+				}
+				_, _ = w.Write(body)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		t.Cleanup(srv.Close)
+		_, exe := installedBinary(t, "tycswap")
+		u, _, stderr := downloadUpgrader(&downloadServer{srv: srv, tag: "v0.7.0"}, "v0.6.0")
+		code := u.SelfUpgrade(exe, platform.Linux)
+		got, _ := os.ReadFile(exe)
+		switch {
+		case tc.ok && (code != 0 || string(got) != string(body)):
+			t.Errorf("%d redirects: exit %d, binary %q, stderr %q", tc.redirects, code, got, stderr.String())
+		case !tc.ok && (code != 1 || string(got) != "old build" || !strings.Contains(stderr.String(), "too many redirects")):
+			t.Errorf("%d redirects: exit %d, binary %q, stderr %q", tc.redirects, code, got, stderr.String())
+		}
+	}
+}
+
+// A binary in the Nix store is never downloaded over, even where this
+// process could write: the store belongs to the package manager.
+func TestDownloadUpgrade_NixStoreGuard(t *testing.T) {
+	rs := newDownloadServer(t, "v0.7.0", map[string][]byte{"tycswap_v0.7.0_linux_amd64": []byte("new build")}, nil)
+	dir, exe := installedBinary(t, "tycswap")
+	if !Downloadable(exe) {
+		t.Fatal("a writable directory outside the store is not downloadable")
+	}
+	prev := nixStore
+	nixStore = filepath.ToSlash(dir) + "/"
+	t.Cleanup(func() { nixStore = prev })
+	if Downloadable(exe) {
+		t.Error("a binary in the store is downloadable")
+	}
+	u, _, stderr := downloadUpgrader(rs, "v0.6.0")
+	if code := u.SelfUpgrade(exe, platform.Linux); code != 1 || !strings.Contains(stderr.String(), "Could not upgrade this binary in place") {
+		t.Errorf("exit %d, stderr %q", code, stderr.String())
+	}
+	if got, _ := os.ReadFile(exe); string(got) != "old build" || rs.hits.Load() != 0 {
+		t.Errorf("binary = %q after %d requests", got, rs.hits.Load())
 	}
 }
 

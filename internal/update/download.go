@@ -61,11 +61,15 @@ func UpgradeMethod(exePath string, getenv func(string) string, homeDir string) M
 	return MethodManual
 }
 
+// nixStore is the Nix store's prefix; a variable so a test can put a
+// directory it can write in its place.
+var nixStore = "/nix/store/"
+
 // Downloadable reports whether a release may be downloaded over exePath: a
 // known path outside the Nix store (a store path is read-only and belongs to
 // the package manager) in a directory this process can create a file in.
 func Downloadable(exePath string) bool {
-	if exePath == "" || strings.HasPrefix(filepath.ToSlash(exePath), "/nix/store/") {
+	if exePath == "" || strings.HasPrefix(filepath.ToSlash(exePath), nixStore) {
 		return false
 	}
 	f, err := os.CreateTemp(filepath.Dir(exePath), "."+BinaryName+"-write-test-*")
