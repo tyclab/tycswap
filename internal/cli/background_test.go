@@ -194,3 +194,26 @@ func TestOpenAppLogRotates(t *testing.T) {
 		t.Errorf("fresh log = %v, %v", fi, err)
 	}
 }
+
+// Git Bash hands programs pipes, not a console; a person typing the bare
+// command there still gets the background app, not "no command given" (A41).
+func TestBareMSYSTerminalStartsApp(t *testing.T) {
+	appLockHome(t)
+	prev := msysTerminal
+	msysTerminal = func() bool { return true }
+	t.Cleanup(func() { msysTerminal = prev })
+	spawned := false
+	stubBackground(t, func(string, []string, string) (backgroundApp, error) {
+		spawned = true
+		lock, held, err := acquireAppLock()
+		if err != nil || !held {
+			t.Fatalf("child lock = %v, %v", held, err)
+		}
+		t.Cleanup(func() { _ = lock.Release() })
+		return fakeChild{}, nil
+	})
+	code, _, errStr := runCLI(t, []string{}, false, false)
+	if code != 0 || !spawned {
+		t.Errorf("exit = %d, spawned = %v, stderr = %q", code, spawned, errStr)
+	}
+}

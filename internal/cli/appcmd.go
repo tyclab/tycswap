@@ -42,6 +42,11 @@ import (
 // newTray is the seam tests replace with a fake.
 var newTray = tray.New
 
+// releaseAppConsole is releaseOwnConsole behind a seam: a test that runs the
+// app through the command must not hand the test binary's console to the
+// app log (A41).
+var releaseAppConsole = releaseOwnConsole
+
 // The self-upgrade behind the tray's install row and how this build is
 // upgraded when the tray cannot do it: seams, so a test can take the
 // update→restart path without installing anything.
@@ -215,7 +220,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	// give it back and write to the log instead (A41). Not for --headless,
 	// which has no tray icon to quit it from.
 	if !o.headless {
-		s = releaseOwnConsole(s)
+		s = releaseAppConsole(s)
 	}
 	// The tray for an engine in another process: no dashboard, no store, no
 	// engine here (A45). Everything below is the local app.

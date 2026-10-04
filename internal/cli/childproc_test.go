@@ -26,6 +26,13 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "test binary started as an app child; refusing to run the tests")
 		os.Exit(3)
 	}
+	// The tests that run `app` through the command keep the test binary's
+	// console (and its output) where it is; the hand-off itself has tests
+	// of its own (console_windows_test.go, TestReleaseOwnConsoleForReal).
+	releaseAppConsole = func(s ioStreams) ioStreams { return s }
+	// A Git Bash running the tests (MSYSTEM set) must not turn every bare
+	// invocation into a background start; the test of that rule sets it.
+	msysTerminal = func() bool { return false }
 	os.Exit(m.Run())
 }
 
