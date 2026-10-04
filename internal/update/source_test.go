@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"testing"
@@ -173,6 +174,9 @@ func TestLdflagsOverride(t *testing.T) {
 		"-X " + pkg + ".ReleasesURL=https://example.com/releases",
 	}, " ")
 	out := filepath.Join(t.TempDir(), "printvars")
+	if runtime.GOOS == "windows" {
+		out += ".exe" // go build -o keeps the name; exec finds only .exe
+	}
 	build := exec.CommandContext(context.Background(), gobin, "build", "-ldflags", flags, "-o", out, "./testdata/printvars")
 	var stderr bytes.Buffer
 	build.Stderr = &stderr

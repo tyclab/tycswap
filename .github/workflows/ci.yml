@@ -16,7 +16,7 @@ concurrency:
 env:
   # The tests of the tray application in internal/cli (DESIGN A35-A45): what
   # the Windows and macOS jobs run of that package. Each one keeps its home in
-  # a temporary directory (HOME and USERPROFILE) or touches none; the older
+  # a temporary directory (HOME and USERPROFILE) or writes none; the older
   # tests that set HOME alone would reach the runner's real profile on
   # Windows, so a prefix here must not select them (`go test -list`).
   APP_TESTS: '^Test(App|Bare(TTY|NonTTY|MSYS)|BadgeIcon|BrandRow|CheckForUpdates|CheckOutcome|ClaudeCode|DashboardCheck|Headless|InstallUpdate|OfferUpdate|OpenAppLog|OpenDashboardFailure|ParseAppArgs|PurgeRefused|ReleaseOwnConsole|Remote|SecondApp|Shell|SpawnDetached|UIPrefs|Update|AutoFacadeRemembers)'
@@ -43,7 +43,9 @@ jobs:
   # the suite predates this job and assumes a Unix machine: it isolates the
   # home through HOME, which Windows ignores (os.UserHomeDir reads
   # USERPROFILE), and it creates symlinks. Until that is fixed, this job runs
-  # the tray application's packages and tests (DESIGN A35).
+  # the tray application's packages and tests (DESIGN A35), and the
+  # self-update's (internal/update: temporary directories and injected
+  # environment only), so the Windows `.old` swap runs on Windows.
   windows:
     runs-on: windows-latest
     steps:
@@ -53,7 +55,7 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: go build ./...
-      - run: go test -count=1 ./internal/tray/... ./internal/appicon/... ./internal/autostart/... ./internal/brand/...
+      - run: go test -count=1 ./internal/tray/... ./internal/appicon/... ./internal/autostart/... ./internal/brand/... ./internal/update/...
       # Windows serves .js as application/javascript from its own registry,
       # which the one static-asset test does not expect.
       - run: go test -count=1 ./internal/web/... -skip '^TestStatic_ContentTypesAndCookieGated$'
@@ -74,6 +76,6 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: go build ./...
-      - run: go test -count=1 ./internal/tray/... ./internal/appicon/... ./internal/autostart/... ./internal/brand/... ./internal/web/...
+      - run: go test -count=1 ./internal/tray/... ./internal/appicon/... ./internal/autostart/... ./internal/brand/... ./internal/web/... ./internal/update/...
       - run: go test -count=1 -v ./internal/cli -run "$APP_TESTS"
       - run: CGO_ENABLED=0 go build ./...
