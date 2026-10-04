@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/printer"
@@ -118,6 +119,11 @@ func runMainAction(p *parsed, sw *core.Switcher, payload *any) error {
 		}
 		return err
 	case p.purge:
+		// Deleting every account under a running dashboard would leave the
+		// tray showing state that no longer exists (A38).
+		if appIsRunning() {
+			return cerr.Validation("%s app is running; quit it from the menu bar / tray before purging", appName())
+		}
 		return sw.Purge()
 	case p.export != nil:
 		return transfer.Export(transferAdapter{sw}, *p.export, derefStr(p.account), p.full)
@@ -166,15 +172,15 @@ func runTUIOrNotice(sw *core.Switcher, start string, stderr io.Writer) int {
 	return RunTUI(sw, start)
 }
 
-// dispatchMenubar reproduces the menubar surface (DESIGN Deviation 5): non-macOS
-// gets the macOS-only message; macOS gets the "not in this build" notice; both
-// exit 1.
+// dispatchMenubar reproduces the menubar surface (DESIGN Deviation 5): the
+// Python menu bar is not ported, and the menu-bar / tray app is `app`
+// (A35), so both messages point there; both exit 1.
 func dispatchMenubar(stderr io.Writer) int {
 	if platform.Detect() != platform.MacOS {
-		errorTo(stderr, "The menu bar is only available on macOS.")
+		errorTo(stderr, "The menu bar is only available on macOS; the tray app is `"+appName()+" app`.")
 		return 1
 	}
-	errorTo(stderr, "Menu bar mode is not available in this build.")
+	errorTo(stderr, "Menu bar mode is `"+appName()+" app` in this build.")
 	return 1
 }
 

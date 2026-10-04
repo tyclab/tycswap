@@ -98,6 +98,9 @@ type autoFacade struct {
 	clk clock.Clock
 	// newEngine builds the engine; tests substitute one.
 	newEngine func(s settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool) autoEngine
+	// statePath is where the app records the user's on/off choice (DESIGN
+	// A43); "" in `web`, which neither records nor resumes.
+	statePath string
 
 	mu        sync.Mutex
 	engine    autoEngine
@@ -177,6 +180,9 @@ func (a *autoFacade) Start(dryRun bool) error {
 	now := clock.Seconds(a.clk)
 	done := make(chan struct{})
 	a.engine, a.done, a.running, a.dryRun, a.startedAt, a.threshold, a.settings = engine, done, true, dryRun, &now, s.SevenDayThreshold, s
+	if !dryRun {
+		a.remember(true)
+	}
 	go func() {
 		defer close(done)
 		engine.RunLoop()
@@ -209,6 +215,9 @@ func (a *autoFacade) Stop() error {
 	}
 	engine, done := a.engine, a.done
 	a.running, a.engine, a.startedAt = false, nil, nil
+	if !a.dryRun {
+		a.remember(false)
+	}
 	a.mu.Unlock()
 	engine.Stop()
 	select {
@@ -217,6 +226,30 @@ func (a *autoFacade) Stop() error {
 	case <-time.After(autoStopWait):
 		return cerr.Lock("auto-switch is stopping; its current tick has not finished yet — try again in a moment")
 	}
+}
+
+// remember records the user's choice for the next app start (A43). Called
+// with a.mu held, from Start and Stop only: an engine that ends by itself, or
+// a process that quits, leaves the choice as the user made it.
+func (a *autoFacade) remember(on bool) {
+	if a.statePath == "" {
+		return
+	}
+	if err := updateAppState(a.statePath, func(st *appState) { st.AutoSwitch = on }); err != nil && a.sw.Store != nil && a.sw.Log != nil {
+		a.sw.Log.Warning("could not record the auto-switch choice: " + err.Error())
+	}
+}
+
+// resume starts the engine when the user left it on (A43). started is false
+// when there was nothing to resume.
+func (a *autoFacade) resume() (started bool, err error) {
+	if a.statePath == "" || !loadAppState(a.statePath).AutoSwitch {
+		return false, nil
+	}
+	if err := a.Start(false); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (a *autoFacade) Wake() error {

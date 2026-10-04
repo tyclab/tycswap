@@ -91,15 +91,15 @@ func TestStatusJSONEndToEnd(t *testing.T) {
 	}
 }
 
-// TestBareTTYGateOpensTUI: an empty argv on a both-ends TTY routes to --tui;
-// with RunTUI unwired that prints the build notice and exits 1 (task mandate).
-func TestBareTTYGateOpensTUI(t *testing.T) {
+// TestTUIVerbOpensTUI: the TUI the bare command used to open is `tui` now
+// (DESIGN A40); with RunTUI unwired that prints the build notice and exits 1.
+func TestTUIVerbOpensTUI(t *testing.T) {
 	cleanHome(t)
 	prev := RunTUI
 	RunTUI = nil
 	t.Cleanup(func() { RunTUI = prev })
 	var out, errb bytes.Buffer
-	code := run("tycswap", []string{}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, true, true)
+	code := run("tycswap", []string{"tui"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, true, true)
 	if code != 1 {
 		t.Fatalf("exit = %d, want 1 (unwired TUI)", code)
 	}
@@ -108,9 +108,9 @@ func TestBareTTYGateOpensTUI(t *testing.T) {
 	}
 }
 
-// TestBareTTYGateWiredTUI: with RunTUI wired, the bare TTY gate hands it the
-// switcher and the dashboard start ("").
-func TestBareTTYGateWiredTUI(t *testing.T) {
+// TestTUIVerbWiredTUI: with RunTUI wired, `tui` hands it the switcher and the
+// dashboard start ("").
+func TestTUIVerbWiredTUI(t *testing.T) {
 	cleanHome(t)
 	var gotStart string
 	var gotFacade any
@@ -122,7 +122,7 @@ func TestBareTTYGateWiredTUI(t *testing.T) {
 	}
 	t.Cleanup(func() { RunTUI = prev })
 	var out, errb bytes.Buffer
-	code := run("tycswap", []string{}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, true, true)
+	code := run("tycswap", []string{"tui"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, true, true)
 	if code != 7 {
 		t.Fatalf("exit = %d, want 7 (RunTUI return, stderr=%q)", code, errb.String())
 	}
@@ -159,5 +159,8 @@ func TestMenubarNotAvailable(t *testing.T) {
 	}
 	if !strings.Contains(errb.String(), "menu bar") && !strings.Contains(errb.String(), "Menu bar") {
 		t.Errorf("stderr = %q, want a menu-bar message", errb.String())
+	}
+	if !strings.Contains(errb.String(), "tycswap app") {
+		t.Errorf("stderr = %q, want it to point at tycswap app", errb.String())
 	}
 }

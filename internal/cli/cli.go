@@ -1,7 +1,8 @@
 // cli.go — the two-layer front controller (spec 08§1, DESIGN §2.21).
 //
-// Implements spec 08§1 (main() entry order + pre-dispatch), the bare-tycswap TUI
-// gate, and the hand-off into the memorable-verb translation + main parser.
+// Implements spec 08§1 (main() entry order + pre-dispatch), the bare-tycswap
+// gate (the tray app in the background, DESIGN A40), and the hand-off into
+// the memorable-verb translation + main parser.
 // Main() is the process entry (cmd/tycswap calls os.Exit(cli.Main())); run() is
 // the injectable core the tests drive with explicit argv / streams / TTY state.
 package cli
@@ -10,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/printer"
@@ -92,6 +94,8 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 			return migrateCommand(prog, argv[1:], s)
 		case "web":
 			return webCommand(prog, argv[1:], s)
+		case "app":
+			return appCommand(prog, argv[1:], s)
 		}
 	}
 
@@ -103,10 +107,13 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 		}
 	}
 
-	// Bare `tycswap` in an interactive terminal opens the TUI (spec 08§1 step 5),
-	// TTY-gated on both ends so scripts/pipes still get the "no command" error.
-	if len(argv) == 0 && stdoutTTY && stdinTTY {
-		argv = []string{"--tui"}
+	// Bare `tycswap` in an interactive terminal starts the menu-bar / tray
+	// app in the background and returns the prompt (DESIGN A40; it used to
+	// open the TUI, spec 08§1 step 5, which is `tycswap tui` now). TTY-gated
+	// on both ends so scripts/pipes still get the "no command" error instead
+	// of a resident process.
+	if len(argv) == 0 && ((stdoutTTY && stdinTTY) || msysTerminal()) {
+		return startBackgroundApp(prog, s)
 	}
 
 	// Memorable verbs → legacy flags (spec 08§1 step 6, §2).
@@ -143,6 +150,14 @@ func neutralizePinnedSessionProfile(stderr io.Writer) {
 	}
 	_ = os.Unsetenv("CLAUDE_CONFIG_DIR")
 	io.WriteString(stderr, printer.Dimmed("This shell is pinned via tycswap env; operating on the default login.")+"\n")
+}
+
+// msysTerminal reports a Git Bash / MSYS2 terminal on Windows. mintty hands
+// programs pipes, not a console, so the TTY test calls a person typing the
+// bare command there a script; MSYSTEM is what those shells set (A41). A
+// seam for tests.
+var msysTerminal = func() bool {
+	return runtime.GOOS == "windows" && os.Getenv("MSYSTEM") != ""
 }
 
 // isTTY reports whether f is a character device (an interactive terminal).
