@@ -3,8 +3,12 @@
 package lifecycle
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tyclab/tycswap/internal/ccsettings"
 )
 
 const gwURL = "https://gw.example.com/anthropic"
@@ -160,5 +164,28 @@ func TestAddTokenBaseURLIntoASlot(t *testing.T) {
 	r := rec(t, readSeq(t, s), "4")
 	if r.str("email") != "api-key-4@token.local" || r.str("baseUrl") != gwURL {
 		t.Errorf("slot 4 record: email %q baseUrl %q", r.str("email"), r.str("baseUrl"))
+	}
+}
+
+// TestPurgeWarnsAboutAnEndpointRecord: with the record of an endpoint
+// profile in the store, purge says before it asks that it deletes the way
+// back; without one it says nothing of the kind.
+func TestPurgeWarnsAboutAnEndpointRecord(t *testing.T) {
+	for _, withRecord := range []bool{false, true} {
+		s := newStore(t)
+		seed(t, s, ip(1), switchable("1", "a@example.com"))
+		if withRecord {
+			if err := os.WriteFile(filepath.Join(s.BackupDir(), ccsettings.SidecarName), []byte(`{"version":1,"keys":{}}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		out := captureOut(t)
+		withPrompter(t, &fakePrompter{prompts: []promptResp{{val: "n", ok: true}}})
+		if err := Purge(s); err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(out.String(), "env.ANTHROPIC_BASE_URL"); got != withRecord {
+			t.Errorf("record %v: warning shown %v:\n%s", withRecord, got, out.String())
+		}
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/platform"
@@ -91,6 +92,15 @@ func Purge(s *store.Store) error {
 	}
 	emitLine("")
 	emitLine(printer.Dimmed("Note: This does NOT affect your current Claude Code login."))
+	if ccsettings.SidecarExists(filepath.Join(backupDir, ccsettings.SidecarName)) {
+		// The live login of an API-key account with a base URL is two keys
+		// in Claude Code's settings.json; purge leaves them like any live
+		// login, but deletes the record a switch puts them back from
+		// (DESIGN A46).
+		emitWarning("Claude Code's settings.json carries an API-key account's endpoint (env.ANTHROPIC_BASE_URL, " +
+			"env.ANTHROPIC_AUTH_TOKEN). Purge deletes the record that puts back what they held: switch to another " +
+			"account first, or remove the two keys by hand afterwards.")
+	}
 	emitLine("")
 
 	confirm, ok := ActivePrompter.Prompt("Are you sure you want to purge all data? [y/N] ")
