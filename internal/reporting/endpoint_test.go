@@ -8,8 +8,12 @@ package reporting
 import (
 	"bytes"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tyclab/tycswap/internal/ccsettings"
+	"github.com/tyclab/tycswap/internal/paths"
 )
 
 const (
@@ -87,5 +91,38 @@ func TestEndpointAccountInStatusListAndSnapshot(t *testing.T) {
 				t.Errorf("the active endpoint account reads as having no credentials:\n%s", status.String())
 			}
 		})
+	}
+}
+
+// TestStatusNamesAnEndpointOverAnotherLogin: after a /login made while an
+// endpoint account was active, the live login is another account but
+// tycswap's profile is still in settings.json and takes precedence over it;
+// status says so, managed or not, and says nothing while the endpoint
+// account itself is live.
+func TestStatusNamesAnEndpointOverAnotherLogin(t *testing.T) {
+	s := newStore(t, nil, nil)
+	writeSequenceRaw(t, s, `{"activeAccountNumber": 2, "lastUpdated": "2026-07-17T12:00:00Z", "sequence": [1, 2], "accounts": {`+
+		`"1": {"email": "a@x.com", "organizationUuid": "", "organizationName": ""},`+
+		`"2": {"email": "`+gwEmail+`", "organizationUuid": "", "organizationName": "", "kind": "api_key", "baseUrl": "`+gwURL+`"}}}`)
+	writeBackup(t, s, "2", gwEmail, "sk-gw-0123456789", `{"oauthAccount": {"emailAddress": "`+gwEmail+`", "organizationUuid": null}}`)
+	if err := ccsettings.Apply(paths.GetClaudeSettingsPath(), filepath.Join(s.BackupDir(), ccsettings.SidecarName),
+		ccsettings.Profile{BaseURL: gwURL, Token: "sk-gw-0123456789"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	const note = "still sends its requests to gw.example.com"
+	for _, tc := range []struct {
+		name, email string
+		want        bool
+	}{
+		{"the endpoint account", gwEmail, false},
+		{"a managed subscription login", "a@x.com", true},
+		{"a login not stored yet", "new@x.com", true},
+	} {
+		writeLiveConfig(t, s, tc.email, "")
+		var out bytes.Buffer
+		renderStatus(&out, s)
+		if got := strings.Contains(out.String(), note); got != tc.want {
+			t.Errorf("%s: note shown %v, want %v:\n%s", tc.name, got, tc.want, out.String())
+		}
 	}
 }

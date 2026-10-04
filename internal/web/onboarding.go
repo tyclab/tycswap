@@ -70,7 +70,7 @@ func detectAuthOverrides(getenv func(string) string, settingsPath, sidecarPath s
 	v := AuthOverridesView{Env: []string{}, Settings: []string{}, SettingsPath: settingsPath}
 	ours := map[string]bool{}
 	if sidecarPath != "" && ccsettings.RecordsFile(sidecarPath, settingsPath) {
-		for _, k := range ccsettings.OwnedKeys() {
+		for _, k := range ccsettings.ProfileKeys() {
 			ours[k] = true
 		}
 	}

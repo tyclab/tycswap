@@ -14,6 +14,7 @@
 package switching
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -22,7 +23,12 @@ import (
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
+
+// getenv reads the process environment for the second-key warning; tests
+// replace it.
+var getenv = os.Getenv
 
 // claudeSettingsPath is Claude Code's own settings.json under the live config
 // home, the one a switch writes the endpoint into.
@@ -78,6 +84,9 @@ type profilePlan struct {
 	snap *ccsettings.Snapshot
 	// applied / reverted say what commit did.
 	applied, reverted bool
+	// warnings name what would still send a second key to the endpoint
+	// (ccsettings.Competing); shown once the profile is applied.
+	warnings []string
 }
 
 // touches reports whether the plan writes settings.json at all.
@@ -113,6 +122,17 @@ func planProfile(s *store.Store, data *store.SequenceData, target, targetCreds s
 			return nil, cerr.Switch("Account-%s's stored key cannot be written for its endpoint (%v). Re-add it with: tycswap add-token --base-url URL --slot %s", target, err, target)
 		}
 		p.apply = &ccsettings.Profile{BaseURL: endpoint, Token: token}
+		host := termsafe.Strip(ccsettings.Host(endpoint))
+		for _, name := range ccsettings.Competing(p.settingsPath, getenv) {
+			switch name {
+			case ccsettings.CompetingHelper:
+				p.warnings = append(p.warnings, "Claude Code's settings.json sets apiKeyHelper: Claude Code sends its key as X-Api-Key to "+
+					host+" beside this account's key. Remove it while this account is active if that endpoint must not see it.")
+			case ccsettings.CompetingEnvKey:
+				p.warnings = append(p.warnings, "ANTHROPIC_API_KEY is set in this environment: a Claude Code started from it sends that key as X-Api-Key to "+
+					host+" beside this account's key. Unset it there if that endpoint must not see it.")
+			}
+		}
 	} else if s.AccountKindFor(target) == "api_key" && !credstore.LooksLikeAPIKey(targetCreds) {
 		return nil, cerr.Switch("Account-%s's key is not an Anthropic API key and the account has no base URL. Re-add it with: tycswap add-token --base-url URL --slot %s", target, target)
 	}
@@ -222,6 +242,21 @@ func (p *profilePlan) commit(s *store.Store) error {
 		}
 	}
 	return nil
+}
+
+// warn shows the plan's warnings: printed, or carried in the switch's JSON
+// warnings.
+func (p *profilePlan) warn(emitOutput bool, warningsOut *[]string) {
+	if p == nil || !p.applied {
+		return
+	}
+	for _, w := range p.warnings {
+		if emitOutput {
+			printWarning(w)
+		} else {
+			*warningsOut = append(*warningsOut, w)
+		}
+	}
 }
 
 // restore puts settings.json and the record back as they were before the

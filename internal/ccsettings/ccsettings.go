@@ -5,18 +5,24 @@
 // An API-key account may carry a base URL. Claude Code has no credential
 // store slot for "this key, at that endpoint": it reads both from its
 // environment, and the `env` block of `<config home>/settings.json` is
-// exported into that environment when Claude Code starts. A switch onto such
-// an account therefore writes two keys there, `env.ANTHROPIC_BASE_URL` and
-// the key as `env.ANTHROPIC_AUTH_TOKEN` (sent as a bearer token, which is
-// what a gateway or proxy expects, and ranked above every stored login), and
-// a switch to any other account puts them back.
+// applied to that environment when Claude Code starts, and again, adding
+// keys but never removing one, when a running Claude Code sees the file
+// change. A switch onto such an account therefore writes two keys there,
+// `env.ANTHROPIC_BASE_URL` and the key as `env.ANTHROPIC_AUTH_TOKEN`, which
+// Claude Code sends as `Authorization: Bearer` (what a gateway or proxy
+// expects). Claude Code fills `X-Api-Key` independently, from
+// `ANTHROPIC_API_KEY`, else `apiKeyHelper`, else a stored Console key, and a
+// key there goes to the endpoint beside the bearer token; so the profile also
+// deletes `env.ANTHROPIC_API_KEY`. A switch to any other account puts all
+// three back.
 //
 // The one thing that makes this a switchable login rather than a one-way
 // installer is the record: Apply writes the prior value (or absence) of every
 // key it touches to a sidecar file BEFORE it writes settings.json, and Revert
 // restores exactly those keys from it. Everything else in settings.json
 // (hooks, permissions, MCP servers, the user's own env keys) is read and
-// written back untouched; the two keys in OwnedKeys are the whole allowlist.
+// written back untouched; the three keys in OwnedKeys are the whole
+// allowlist.
 //
 // tycswap's internal/settings is tycswap's own settings.json in the backup
 // root; the two files never meet, and this package never reads that one.
@@ -27,6 +33,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -36,11 +43,12 @@ import (
 	"github.com/tyclab/tycswap/internal/platform"
 )
 
-// The two settings.json keys the profile owns. "env.X" addresses
-// settings["env"]["X"].
+// The settings.json keys the profile owns. "env.X" addresses
+// settings["env"]["X"]. The first two are written, the third deleted.
 const (
 	KeyBaseURL   = "env.ANTHROPIC_BASE_URL"
 	KeyAuthToken = "env.ANTHROPIC_AUTH_TOKEN"
+	KeyAPIKey    = "env.ANTHROPIC_API_KEY"
 )
 
 // SidecarName is the record's file name in tycswap's backup root.
@@ -49,13 +57,27 @@ const SidecarName = "claude-settings.prev.json"
 // SidecarVersion is the sidecar schema version.
 const SidecarVersion = 1
 
-// ownedKeys is the allowlist: the complete set of keys Apply may write and
-// Revert restores. Nothing outside it is ever changed, apart from the "env"
-// container Apply creates when there was none and Revert removes again.
-var ownedKeys = []string{KeyBaseURL, KeyAuthToken}
+// writtenKeys are the keys Apply sets; deletedKeys the keys it removes, so
+// that nothing sends a second key to the endpoint (Claude Code fills
+// X-Api-Key from env.ANTHROPIC_API_KEY beside the bearer token).
+var (
+	writtenKeys = []string{KeyBaseURL, KeyAuthToken}
+	deletedKeys = []string{KeyAPIKey}
+)
 
-// OwnedKeys returns a copy of the allowlist, in write order.
+// ownedKeys is the allowlist: the complete set of keys Apply may write or
+// delete and Revert restores. Nothing outside it is ever changed, apart from
+// the "env" container Apply creates when there was none and Revert removes
+// again.
+var ownedKeys = append(append([]string(nil), writtenKeys...), deletedKeys...)
+
+// OwnedKeys returns a copy of the allowlist: the written keys, then the
+// deleted one.
 func OwnedKeys() []string { return append([]string(nil), ownedKeys...) }
+
+// ProfileKeys returns the keys Apply writes: while the profile is in place,
+// they are the active account's login.
+func ProfileKeys() []string { return append([]string(nil), writtenKeys...) }
 
 // envContainerKey is the sidecar entry recording whether "env" existed
 // before the first Apply, so Revert can remove a container Apply created.
@@ -130,7 +152,7 @@ func Apply(settingsPath, sidecarPath string, p Profile, known []Profile) error {
 	envVal, envPresent := root[envContainerKey]
 	if _, recorded := sc.Keys[envContainerKey]; !recorded {
 		pr := prior{Present: envPresent}
-		if env, isMap := envVal.(map[string]any); ours && isMap && len(env) == len(ownedKeys) {
+		if env, isMap := envVal.(map[string]any); ours && isMap && len(env) == len(writtenKeys) {
 			pr.Present = false // the container holds nothing but tycswap's own two keys
 		}
 		if _, isMap := envVal.(map[string]any); envPresent && !isMap {
@@ -143,7 +165,7 @@ func Apply(settingsPath, sidecarPath string, p Profile, known []Profile) error {
 			continue
 		}
 		v, present := get(root, k)
-		if ours {
+		if ours && contains(writtenKeys, k) {
 			v, present = nil, false
 		}
 		sc.Keys[k] = prior{Present: present, Value: v}
@@ -154,6 +176,9 @@ func Apply(settingsPath, sidecarPath string, p Profile, known []Profile) error {
 
 	set(root, KeyBaseURL, strings.TrimSpace(p.BaseURL))
 	set(root, KeyAuthToken, strings.TrimSpace(p.Token))
+	for _, k := range deletedKeys {
+		del(root, k)
+	}
 	return writeSettings(settingsPath, root)
 }
 
@@ -364,6 +389,32 @@ func RecordsFile(sidecarPath, settingsPath string) bool {
 	return err == nil && sc != nil && sc.SettingsPath == absPath(settingsPath)
 }
 
+// Second-key sources Competing names: what Claude Code would still send as
+// X-Api-Key beside the profile's bearer token, which the profile does not
+// own and so does not touch.
+const (
+	CompetingHelper = "apiKeyHelper"
+	CompetingEnvKey = "ANTHROPIC_API_KEY"
+)
+
+// Competing names the sources of a second key Claude Code would send to the
+// endpoint beside the profile's bearer token: CompetingHelper when
+// settingsPath sets a non-blank apiKeyHelper, CompetingEnvKey when getenv
+// returns a non-blank ANTHROPIC_API_KEY. Names only, never a value. A file
+// that cannot be read names nothing.
+func Competing(settingsPath string, getenv func(string) string) []string {
+	var out []string
+	if root, err := readSettings(settingsPath); err == nil {
+		if v, ok := root[CompetingHelper].(string); ok && strings.TrimSpace(v) != "" {
+			out = append(out, CompetingHelper)
+		}
+	}
+	if getenv != nil && strings.TrimSpace(getenv(CompetingEnvKey)) != "" {
+		out = append(out, CompetingEnvKey)
+	}
+	return out
+}
+
 // Live returns the endpoint and key settingsPath currently carries in the two
 // owned keys ("" for one that is absent or not a string). A file that cannot
 // be read or parsed carries nothing.
@@ -491,17 +542,29 @@ func readSettings(path string) (map[string]any, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	var root map[string]any
-	if err := dec.Decode(&root); err != nil || root == nil || dec.More() {
+	if err := dec.Decode(&root); err != nil || root == nil || !atEOF(dec) {
 		return nil, fmt.Errorf("%s is not a JSON object; refusing to rewrite it (fix or move the file, then retry)", path)
 	}
 	return root, nil
 }
 
-// writeSettings writes root as 2-space-indented JSON, atomically, mode 0600:
-// the file now holds a key.
+// atEOF reports whether dec has nothing but whitespace left: one JSON value,
+// and no trailing data after it.
+func atEOF(dec *json.Decoder) bool {
+	_, err := dec.Token()
+	return errors.Is(err, io.EOF)
+}
+
+// writeSettings writes root as 2-space-indented JSON, atomically. An existing
+// file keeps its mode, so a revert leaves it as it was; a new one is 0600, as
+// it holds a key.
 func writeSettings(path string, root map[string]any) error {
 	if err := refuseSymlink(path); err != nil {
 		return err
+	}
+	mode := os.FileMode(0o600)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
 	}
 	var b bytes.Buffer
 	enc := json.NewEncoder(&b)
@@ -510,7 +573,7 @@ func writeSettings(path string, root map[string]any) error {
 	if err := enc.Encode(root); err != nil {
 		return err
 	}
-	return writeAtomic(path, bytes.TrimSuffix(b.Bytes(), []byte("\n")), 0o600)
+	return writeAtomic(path, bytes.TrimSuffix(b.Bytes(), []byte("\n")), mode)
 }
 
 // writeAtomic writes data to path through a temp sibling and a rename. A
@@ -556,9 +619,12 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 	return nil
 }
 
-// loadSidecar reads the record; nil when there is none. A sidecar that does
-// not parse is an error: guessing the priors would put back values nobody
-// had.
+// loadSidecar reads the record; nil when there is none. A sidecar that is not
+// a complete record is an error, never a record: one JSON object of version
+// 1, with an entry for the env container and for every owned key, and
+// nothing after it. Guessing the priors would put back values nobody had, and
+// taking a partial record for a whole one would report the endpoint gone
+// while it stays.
 func loadSidecar(path string) (*sidecar, error) {
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -567,16 +633,38 @@ func loadSidecar(path string) (*sidecar, error) {
 	if err != nil {
 		return nil, err
 	}
+	corrupt := func(why string) error {
+		return fmt.Errorf("%s is corrupt (%s); it records what Claude Code's settings.json held before an API-key account's endpoint was written there. Fix or remove it, then retry", path, why)
+	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
-	var sc sidecar
+	var sc *sidecar
 	if err := dec.Decode(&sc); err != nil {
-		return nil, fmt.Errorf("%s is corrupt (%v); it records what Claude Code's settings.json held before an API-key account's endpoint was written there. Fix or remove it, then retry", path, err)
+		return nil, corrupt(err.Error())
 	}
-	if sc.Keys == nil {
-		sc.Keys = map[string]prior{}
+	switch {
+	case !atEOF(dec):
+		return nil, corrupt("data after the record")
+	case sc == nil:
+		return nil, corrupt("not an object")
+	case sc.Version != SidecarVersion:
+		return nil, corrupt(fmt.Sprintf("version %d, want %d", sc.Version, SidecarVersion))
 	}
-	return &sc, nil
+	for _, k := range append([]string{envContainerKey}, ownedKeys...) {
+		if _, ok := sc.Keys[k]; !ok {
+			return nil, corrupt("no entry for " + k)
+		}
+	}
+	return sc, nil
+}
+
+func contains(xs []string, v string) bool {
+	for _, x := range xs {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- dotted-key access (one level: "env.X") ----

@@ -13,10 +13,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/termsafe"
@@ -117,11 +119,13 @@ func renderStatus(w io.Writer, s *store.Store) {
 	data, _ := s.SequenceMigrated()
 	if data == nil {
 		fmt.Fprintf(w, "%s %s %s\n", printer.Bolded("Status:"), shown, printer.Dimmed("(not managed)"))
+		printEndpointOverride(w, s)
 		return
 	}
 	accountNum := s.FindAccountSlot(data, email, orgUUID)
 	if accountNum == "" {
 		fmt.Fprintf(w, "%s %s %s\n", printer.Bolded("Status:"), shown, printer.Dimmed("(not managed)"))
+		printEndpointOverride(w, s)
 		return
 	}
 
@@ -139,11 +143,32 @@ func renderStatus(w io.Writer, s *store.Store) {
 	if baseURL != "" {
 		// The host only; status --json carries the full URL (DESIGN A46).
 		fmt.Fprintf(w, "  %s\n", printer.Dimmed("Endpoint: "+termsafe.Strip(ccsettings.Host(baseURL))+" (Claude Code's settings.json)"))
+	} else {
+		printEndpointOverride(w, s)
 	}
 	fmt.Fprintf(w, "  %s\n", printer.Dimmed(fmt.Sprintf("Total managed accounts: %d", total)))
 	for _, line := range usageEntryLines(entry) {
 		fmt.Fprintf(w, "  %s\n", line)
 	}
+}
+
+// printEndpointOverride says when tycswap's endpoint profile is still in
+// Claude Code's settings.json under a login that is not the endpoint
+// account's (a /login made while it was active): those two keys take
+// precedence over that login (DESIGN A46). The dashboard's auth-overrides
+// notice says the same.
+func printEndpointOverride(w io.Writer, s *store.Store) {
+	settings := paths.GetClaudeSettingsPath()
+	if !ccsettings.RecordsFile(filepath.Join(s.BackupDir(), ccsettings.SidecarName), settings) {
+		return
+	}
+	live := ccsettings.Live(settings)
+	if live.BaseURL == "" || live.Token == "" {
+		return
+	}
+	fmt.Fprintf(w, "  %s\n", printer.Yellowed("Claude Code's settings.json still sends its requests to "+
+		termsafe.Strip(ccsettings.Host(live.BaseURL))+" (env.ANTHROPIC_BASE_URL, env.ANTHROPIC_AUTH_TOKEN), over this login; "+
+		"a switch to any account puts back what it held."))
 }
 
 // activeAccountUsage builds a single-account info row for the active slot and

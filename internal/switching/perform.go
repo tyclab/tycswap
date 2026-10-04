@@ -344,6 +344,7 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 		return switchOp{}, err
 	}
 
+	plan.warn(emitOutput, &warningsOut)
 	if s.Log != nil {
 		if forceActivate && curOK {
 			s.Log.Infof("Activated account %s (forced, backup of current login skipped)", targetAccount)
@@ -499,6 +500,7 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 		if err := plan.commit(s); err != nil {
 			return err
 		}
+		plan.warn(emitOutput, warningsOut)
 	}
 
 	// Step 4: splice the target oauthAccount into the live config.
@@ -583,18 +585,21 @@ func oauthSection(cfg map[string]any) (map[string]any, bool) {
 // printSwitchFollowup prints the post-switch note keyed to where the active
 // credential write landed (spec 02§8.4). A restart is never required, except
 // after a switch onto an API-key account: that changes how Claude Code
-// authenticates, and a running session keeps its old login (DESIGN A33). The
-// same holds whenever the switch rewrote Claude Code's settings.json (DESIGN
-// A46): a running session read its env block when it started.
+// authenticates, and a running session keeps its old login (DESIGN A33). A
+// switch that rewrote Claude Code's settings.json says what a running session
+// does with that instead (DESIGN A46): it re-reads the file and adds what it
+// finds, so it can take up an endpoint at once but keeps one that was taken
+// out until it is restarted.
 func printSwitchFollowup(s *store.Store, target string, plan *profilePlan) {
 	switch {
 	case plan != nil && plan.applied:
-		printOut(printer.Dimmed("Claude Code's settings.json now sends its requests to " + ccsettings.Host(plan.apply.BaseURL) +
-			" (env.ANTHROPIC_BASE_URL, env.ANTHROPIC_AUTH_TOKEN); a switch to another account puts back what it held."))
+		printOut(printer.Dimmed(EndpointAppliedNote(ccsettings.Host(plan.apply.BaseURL))))
+		return
 	case plan != nil && plan.reverted:
-		printOut(printer.Dimmed("Claude Code's settings.json no longer sends its requests to an API-key account's endpoint."))
+		printOut(printer.Dimmed(EndpointRevertedNote))
+		return
 	}
-	if s.AccountKindFor(target) == "api_key" || plan.changed() {
+	if s.AccountKindFor(target) == "api_key" {
 		printOut(printer.Dimmed(APIKeyRestartNote))
 		return
 	}

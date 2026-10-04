@@ -98,7 +98,7 @@ func clearApprovals() {
 func ErrEndpointNeedsApproval(num, host string) error {
 	return cerr.Validation(
 		"Account-%s authenticates with an API key at %s. Switching to it changes how Claude Code authenticates "+
-			"and where it sends its requests, and every Claude Code session that is already running keeps its current login until you restart it. "+
+			"and where it sends its requests, also for a Claude Code session that is already running once it re-reads its settings. "+
 			"Confirm the switch to go ahead: `tycswap switch %s` asks first.", num, host, num)
 }
 
@@ -107,8 +107,27 @@ func ErrEndpointNeedsApproval(num, host string) error {
 // and which two settings carry it there and back.
 func EndpointNotice(baseURL string) string {
 	return "This account sends Claude Code's requests to " + baseURL + ": the switch writes env.ANTHROPIC_BASE_URL and " +
-		"env.ANTHROPIC_AUTH_TOKEN into Claude Code's settings.json, and a switch to another account puts back what they held."
+		"env.ANTHROPIC_AUTH_TOKEN into Claude Code's settings.json and removes env.ANTHROPIC_API_KEY, and a switch to another " +
+		"account puts back what they held. A running session can take the endpoint up at once when it re-reads settings.json."
 }
+
+// EndpointAppliedNote follows a switch that wrote an endpoint into Claude
+// Code's settings.json. Claude Code applies the file's env block when it
+// starts and again when a running session sees the file change (in a
+// trusted workspace), so a session that is already running can move to the
+// endpoint at once.
+func EndpointAppliedNote(host string) string {
+	return "Claude Code's settings.json now sends its requests to " + host + " (env.ANTHROPIC_BASE_URL, env.ANTHROPIC_AUTH_TOKEN); " +
+		"a switch to another account puts back what it held. A Claude Code session that is already running takes this up " +
+		"when it re-reads settings.json (at once in a trusted workspace); restart one that does not."
+}
+
+// EndpointRevertedNote follows a switch that took an endpoint back out of
+// Claude Code's settings.json. A running session re-applies the env block by
+// adding keys, never removing one, so it keeps the endpoint and its key until
+// it is restarted.
+const EndpointRevertedNote = "Claude Code's settings.json no longer sends its requests to an API-key account's endpoint. " +
+	"Restart your Claude Code sessions: one that is already running keeps the endpoint and its key until it is restarted."
 
 // guardAPIKeyTarget returns an error when num is an API-key account the user
 // has not approved switching to. approved is the approval SwitchTo took for

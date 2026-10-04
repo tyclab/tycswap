@@ -1679,7 +1679,7 @@
   // endpointNote is added for an account with a base URL (DESIGN A46): where
   // the requests go, and the two settings that take them there and back.
   function endpointNote(u) {
-    return ' This account sends Claude Code\'s requests to ' + u + ': the switch writes env.ANTHROPIC_BASE_URL and env.ANTHROPIC_AUTH_TOKEN into Claude Code\'s settings.json, and a switch to another account puts back what they held.';
+    return ' This account sends Claude Code\'s requests to ' + u + ': the switch writes env.ANTHROPIC_BASE_URL and env.ANTHROPIC_AUTH_TOKEN into Claude Code\'s settings.json and removes env.ANTHROPIC_API_KEY, and a switch to another account puts back what they held. A running session can take the endpoint up at once when it re-reads settings.json.';
   }
 
   var ACTIONS = {

@@ -49,9 +49,10 @@ func env(m map[string]any) map[string]any {
 
 var gw = Profile{BaseURL: "https://gw.example.com/anthropic", Token: "gw-key-0123456789"}
 
-// TestApplyWritesProfile: the two owned keys land with the account's values;
-// every other key — unrelated top-level settings, hooks, permissions, MCP
-// servers and the user's own env keys — is untouched.
+// TestApplyWritesProfile: the two written keys land with the account's
+// values and env.ANTHROPIC_API_KEY goes; every other key — unrelated
+// top-level settings, hooks, permissions, MCP servers and the user's own env
+// keys — is untouched, and the file keeps its mode (the record is 0600).
 func TestApplyWritesProfile(t *testing.T) {
 	s, sc := paths(t)
 	writeJSON(t, s, map[string]any{
@@ -60,7 +61,7 @@ func TestApplyWritesProfile(t *testing.T) {
 		"hooks":        map[string]any{"SessionStart": []any{}},
 		"mcpServers":   map[string]any{"x": map[string]any{"command": "x"}},
 		"apiKeyHelper": "/opt/me/helper",
-		"env":          map[string]any{"FOO": "bar", "ANTHROPIC_AUTH_TOKEN": "mine", "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"},
+		"env":          map[string]any{"FOO": "bar", "ANTHROPIC_AUTH_TOKEN": "mine", "ANTHROPIC_API_KEY": "sk-ant-api03-mine", "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"},
 	})
 	if err := Apply(s, sc, gw, nil); err != nil {
 		t.Fatal(err)
@@ -83,13 +84,13 @@ func TestApplyWritesProfile(t *testing.T) {
 		t.Errorf("settings after Apply:\n got %v\nwant %v", got, want)
 	}
 	if runtime.GOOS != "windows" {
-		for _, p := range []string{s, sc} {
+		for p, want := range map[string]os.FileMode{s: 0o644, sc: 0o600} {
 			info, err := os.Stat(p)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if info.Mode().Perm() != 0o600 {
-				t.Errorf("%s mode = %o, want 600", p, info.Mode().Perm())
+			if info.Mode().Perm() != want {
+				t.Errorf("%s mode = %o, want %o", p, info.Mode().Perm(), want)
 			}
 		}
 	}
@@ -99,12 +100,16 @@ func TestApplyWritesProfile(t *testing.T) {
 	}
 }
 
-// TestApplyOnlyTouchesTheAllowlist: the allowlist is exactly the two env keys,
-// and a settings file with every other kind of key comes out of Apply with
-// all of them byte-identical once the two are set aside.
+// TestApplyOnlyTouchesTheAllowlist: the allowlist is exactly the three env
+// keys (two written, one deleted), and a settings file with every other kind
+// of key comes out of Apply with all of them unchanged once the three are
+// set aside.
 func TestApplyOnlyTouchesTheAllowlist(t *testing.T) {
-	if got := OwnedKeys(); !reflect.DeepEqual(got, []string{"env.ANTHROPIC_BASE_URL", "env.ANTHROPIC_AUTH_TOKEN"}) {
+	if got := OwnedKeys(); !reflect.DeepEqual(got, []string{"env.ANTHROPIC_BASE_URL", "env.ANTHROPIC_AUTH_TOKEN", "env.ANTHROPIC_API_KEY"}) {
 		t.Fatalf("OwnedKeys = %v", got)
+	}
+	if got := ProfileKeys(); !reflect.DeepEqual(got, []string{"env.ANTHROPIC_BASE_URL", "env.ANTHROPIC_AUTH_TOKEN"}) {
+		t.Fatalf("ProfileKeys = %v", got)
 	}
 	s, sc := paths(t)
 	before := map[string]any{
@@ -128,6 +133,7 @@ func TestApplyOnlyTouchesTheAllowlist(t *testing.T) {
 	var wantRT map[string]any
 	b, _ := json.Marshal(before)
 	_ = json.Unmarshal(b, &wantRT)
+	delete(env(wantRT), "ANTHROPIC_API_KEY")
 	if !reflect.DeepEqual(after, wantRT) {
 		t.Errorf("keys outside the allowlist changed:\n got %v\nwant %v", after, wantRT)
 	}
@@ -177,7 +183,7 @@ func TestApplyMissingRefusesCorrupt(t *testing.T) {
 			if err := os.MkdirAll(filepath.Dir(sc), 0o700); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(sc, []byte(`{"version":1,"settingsPath":`+jsonString(s)+`,"keys":{}}`), 0o600); err != nil {
+			if err := os.WriteFile(sc, []byte(fullRecord(s)), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := Revert(s, sc, nil); err == nil {
@@ -188,6 +194,16 @@ func TestApplyMissingRefusesCorrupt(t *testing.T) {
 			}
 		})
 	}
+}
+
+// fullRecord is a complete, valid record for settings with every owned key
+// absent and the env container present.
+func fullRecord(settings string) string {
+	keys := `"env":{"present":true}`
+	for _, k := range OwnedKeys() {
+		keys += `,"` + k + `":{"present":false}`
+	}
+	return `{"version":1,"settingsPath":` + jsonString(settings) + `,"keys":{` + keys + `}}`
 }
 
 func jsonString(s string) string {
@@ -645,7 +661,7 @@ func TestASymlinkedSettingsFileIsNeverWritten(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(sc), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(sc, []byte(`{"version":1,"settingsPath":`+jsonString(s)+`,"keys":{"env.ANTHROPIC_BASE_URL":{"present":false}}}`), 0o600); err != nil {
+	if err := os.WriteFile(sc, []byte(fullRecord(s)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Revert(s, sc, nil); err == nil {
@@ -757,5 +773,139 @@ func TestTheRecordNamesAnAbsolutePath(t *testing.T) {
 	}
 	if got := readJSON(t, want); len(got) != 0 {
 		t.Errorf("the recorded file = %v after the revert, want {}", got)
+	}
+}
+
+// TestTheAPIKeyIsDeletedAndRestored: Apply removes env.ANTHROPIC_API_KEY
+// (Claude Code would send it as X-Api-Key beside the bearer token), records
+// it, and Revert puts it back; a second Apply keeps the original prior even
+// when another key was put there in between, and absent stays absent.
+func TestTheAPIKeyIsDeletedAndRestored(t *testing.T) {
+	t.Run("present before", func(t *testing.T) {
+		s, sc := paths(t)
+		writeJSON(t, s, map[string]any{"env": map[string]any{"ANTHROPIC_API_KEY": "sk-ant-api03-mine", "FOO": "bar"}})
+		if err := Apply(s, sc, gw, nil); err != nil {
+			t.Fatal(err)
+		}
+		if _, present := env(readJSON(t, s))["ANTHROPIC_API_KEY"]; present {
+			t.Fatal("env.ANTHROPIC_API_KEY survived Apply")
+		}
+		m := readJSON(t, s)
+		env(m)["ANTHROPIC_API_KEY"] = "sk-ant-api03-added-meanwhile"
+		writeJSON(t, s, m)
+		if err := Apply(s, sc, Profile{BaseURL: "https://two.example", Token: "two"}, nil); err != nil {
+			t.Fatal(err)
+		}
+		if _, present := env(readJSON(t, s))["ANTHROPIC_API_KEY"]; present {
+			t.Fatal("env.ANTHROPIC_API_KEY survived the second Apply")
+		}
+		if _, err := Revert("", sc, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := readJSON(t, s); !reflect.DeepEqual(got, map[string]any{"env": map[string]any{"ANTHROPIC_API_KEY": "sk-ant-api03-mine", "FOO": "bar"}}) {
+			t.Errorf("after revert = %v, want the original key back", got)
+		}
+	})
+	t.Run("absent before", func(t *testing.T) {
+		s, sc := paths(t)
+		writeJSON(t, s, map[string]any{"env": map[string]any{"FOO": "bar"}})
+		if err := Apply(s, sc, gw, nil); err != nil {
+			t.Fatal(err)
+		}
+		m := readJSON(t, s)
+		env(m)["ANTHROPIC_API_KEY"] = "sk-ant-api03-added-meanwhile"
+		writeJSON(t, s, m)
+		if _, err := Revert("", sc, nil); err != nil {
+			t.Fatal(err)
+		}
+		if got := readJSON(t, s); !reflect.DeepEqual(got, map[string]any{"env": map[string]any{"FOO": "bar"}}) {
+			t.Errorf("after revert = %v, want it absent again (the record wins)", got)
+		}
+	})
+}
+
+// TestAnIncompleteRecordIsCorrupt: a sidecar that is not one complete record
+// of version 1 — an empty object, null, an array, a header without keys, a
+// missing owned key or env entry, another version, or a valid record with
+// data after it — is refused like one that does not parse, so Revert never
+// reports a revert it did not make, and the settings file stays as it is.
+func TestAnIncompleteRecordIsCorrupt(t *testing.T) {
+	s, sc := paths(t)
+	full := fullRecord(s)
+	missing := func(k string) string {
+		return strings.Replace(full, `"`+k+`":{"present":false}`, `"x":{"present":false}`, 1)
+	}
+	for _, tc := range []struct{ name, content string }{
+		{"empty object", `{}`},
+		{"null", `null`},
+		{"array", `[]`},
+		{"header only", `{"version":1}`},
+		{"no env entry", strings.Replace(full, `"env":{"present":true}`, `"y":{"present":true}`, 1)},
+		{"no base URL entry", missing(KeyBaseURL)},
+		{"no token entry", missing(KeyAuthToken)},
+		{"no API key entry", missing(KeyAPIKey)},
+		{"version 2", strings.Replace(full, `"version":1`, `"version":2`, 1)},
+		{"trailing junk", full + ` junk`},
+		{"trailing object", full + ` {}`},
+		{"trailing brace", full + `}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			writeJSON(t, s, map[string]any{"env": map[string]any{"ANTHROPIC_BASE_URL": gw.BaseURL, "ANTHROPIC_AUTH_TOKEN": gw.Token}})
+			if err := os.MkdirAll(filepath.Dir(sc), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(sc, []byte(tc.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			before, _ := os.ReadFile(s)
+			if out, err := Revert(s, sc, []Profile{gw}); err == nil || !strings.Contains(err.Error(), "corrupt") {
+				t.Errorf("Revert = %v, %v; want the corrupt-record refusal", out, err)
+			}
+			if err := Apply(s, sc, gw, nil); err == nil {
+				t.Error("Apply accepted the record")
+			}
+			if IsApplied(sc) || RecordsFile(sc, s) {
+				t.Error("an incomplete record reads as applied")
+			}
+			if !SidecarExists(sc) {
+				t.Error("the record was removed")
+			}
+			if after, _ := os.ReadFile(s); !bytes.Equal(before, after) {
+				t.Errorf("settings changed: %s", after)
+			}
+		})
+	}
+	// The complete record itself is accepted.
+	if err := os.WriteFile(sc, []byte(full), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !IsApplied(sc) {
+		t.Error("a complete record is refused")
+	}
+}
+
+// TestRevertKeepsTheFileMode: a settings file that was 0644 before the
+// profile is 0644 after the revert; a file Apply creates is 0600.
+func TestRevertKeepsTheFileMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX modes")
+	}
+	s, sc := paths(t)
+	writeJSON(t, s, map[string]any{"theme": "dark"}) // 0644
+	if err := Apply(s, sc, gw, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Revert("", sc, nil); err != nil {
+		t.Fatal(err)
+	}
+	if info, _ := os.Stat(s); info.Mode().Perm() != 0o644 {
+		t.Errorf("mode after revert = %o, want 644", info.Mode().Perm())
+	}
+	s2, sc2 := paths(t)
+	if err := Apply(s2, sc2, gw, nil); err != nil {
+		t.Fatal(err)
+	}
+	if info, _ := os.Stat(s2); info.Mode().Perm() != 0o600 {
+		t.Errorf("mode of a new file = %o, want 600", info.Mode().Perm())
 	}
 }

@@ -36,14 +36,14 @@ const (
 )
 
 // userSettings is Claude Code's settings.json as the user keeps it before any
-// endpoint is written: a base URL of their own (a corporate proxy), an env key
-// beside it, hooks and permissions.
+// endpoint is written: a base URL and an Anthropic key of their own (a
+// proxy), an env key beside them, hooks and permissions.
 func userSettings() map[string]any {
 	return map[string]any{
 		"theme":       "dark",
 		"permissions": map[string]any{"allow": []any{"Bash(ls)"}},
 		"hooks":       map[string]any{"SessionStart": []any{}},
-		"env":         map[string]any{"ANTHROPIC_BASE_URL": "https://user-proxy.example", "FOO": "bar"},
+		"env":         map[string]any{"ANTHROPIC_BASE_URL": "https://user-proxy.example", "ANTHROPIC_API_KEY": "sk-ant-api03-users-own", "FOO": "bar"},
 	}
 }
 
@@ -123,15 +123,17 @@ func activeNum(t *testing.T, s *store.Store) int {
 }
 
 // assertOnEndpoint checks the seat is on the endpoint account email with
-// url/key: the two keys in settings.json beside every key of the user's, no
-// key and no login in Claude Code's credential store (the MCP login stays),
-// the account's identity live, a record of the prior settings.
+// url/key: the two keys in settings.json beside every key of the user's but
+// their ANTHROPIC_API_KEY (Claude Code would send it to the endpoint as
+// X-Api-Key), no key and no login in Claude Code's credential store (the MCP
+// login stays), the account's identity live, a record of the prior settings.
 func assertOnEndpoint(t *testing.T, s *store.Store, email, url, key string, slot int) {
 	t.Helper()
 	got := readSettings(t, s)
 	want := userSettings()
 	settingsEnv(want)["ANTHROPIC_BASE_URL"] = url
 	settingsEnv(want)["ANTHROPIC_AUTH_TOKEN"] = key
+	delete(settingsEnv(want), "ANTHROPIC_API_KEY")
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("settings.json on the endpoint:\n got %v\nwant %v", got, want)
 	}
@@ -696,7 +698,7 @@ func TestTheApprovalNamesTheEndpoint(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if !strings.Contains(out, "now sends its requests to gw.example.com") || !strings.Contains(out, APIKeyRestartNote) {
+	if !strings.Contains(out, EndpointAppliedNote("gw.example.com")) || strings.Contains(out, APIKeyRestartNote) {
 		t.Errorf("follow-up onto the endpoint:\n%s", out)
 	}
 	out = captureStdout(t, func() {
@@ -704,7 +706,7 @@ func TestTheApprovalNamesTheEndpoint(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if !strings.Contains(out, "no longer sends its requests") || !strings.Contains(out, APIKeyRestartNote) {
+	if !strings.Contains(out, EndpointRevertedNote) || strings.Contains(out, "no restart needed") {
 		t.Errorf("follow-up away from the endpoint:\n%s", out)
 	}
 }
@@ -935,5 +937,76 @@ func TestASwitchAwayFromAnEndpointNeedsAReadableKeychain_macOS(t *testing.T) {
 		if got := seatFiles(t, s)[p]; got != b {
 			t.Errorf("%s changed: %s", filepath.Base(p), got)
 		}
+	}
+}
+
+// TestASwitchOntoAnEndpointWarnsAboutASecondKey: apiKeyHelper in
+// settings.json and ANTHROPIC_API_KEY in the environment are not the
+// profile's to remove, and Claude Code sends either as X-Api-Key beside the
+// bearer token, so the switch names them: printed, or as JSON warnings.
+// Names only, never a value; nothing is said for a switch that applies no
+// endpoint.
+func TestASwitchOntoAnEndpointWarnsAboutASecondKey(t *testing.T) {
+	s := newTestStore(t, nil)
+	endpointSeat(t, s)
+	m := userSettings()
+	m["apiKeyHelper"] = "/opt/me/helper-secret-path"
+	writeSettings(t, s, m)
+	prev := getenv
+	getenv = func(k string) string {
+		if k == "ANTHROPIC_API_KEY" {
+			return "sk-ant-api03-from-env-secret"
+		}
+		return ""
+	}
+	t.Cleanup(func() { getenv = prev })
+
+	ApproveAPIKeySwitch("3")
+	res, err := SwitchTo(s, "3", true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(res)
+	for _, want := range []string{"sets apiKeyHelper", "ANTHROPIC_API_KEY is set in this environment", "X-Api-Key to gw.example.com"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("JSON result lacks %q: %s", want, b)
+		}
+	}
+	for _, secret := range []string{"helper-secret-path", "from-env-secret", gwKey} {
+		if strings.Contains(string(b), secret) {
+			t.Errorf("JSON result carries a value (%q): %s", secret, b)
+		}
+	}
+	if got := readSettings(t, s)["apiKeyHelper"]; got != "/opt/me/helper-secret-path" {
+		t.Errorf("apiKeyHelper = %v, want it left alone", got)
+	}
+
+	out := captureStdout(t, func() {
+		if _, err := SwitchTo(s, "1", false, false); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if strings.Contains(out, "X-Api-Key") {
+		t.Errorf("a switch away warned about a second key:\n%s", out)
+	}
+	ApproveAPIKeySwitch("3")
+	out = captureStdout(t, func() {
+		if _, err := SwitchTo(s, "3", false, false); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if !strings.Contains(out, "sets apiKeyHelper") || !strings.Contains(out, "ANTHROPIC_API_KEY is set") {
+		t.Errorf("human output lacks the warnings:\n%s", out)
+	}
+
+	// The direct activation warns the same way.
+	switchTo(t, s, "1", false)
+	ApproveAPIKeySwitch("3")
+	res, err = SwitchTo(s, "3", true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := json.Marshal(res); !strings.Contains(string(b), "sets apiKeyHelper") {
+		t.Errorf("--force result lacks the warning: %s", b)
 	}
 }

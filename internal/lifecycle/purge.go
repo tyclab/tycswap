@@ -98,8 +98,8 @@ func Purge(s *store.Store) error {
 		// login, but deletes the record a switch puts them back from
 		// (DESIGN A46).
 		emitWarning("Claude Code's settings.json carries an API-key account's endpoint (env.ANTHROPIC_BASE_URL, " +
-			"env.ANTHROPIC_AUTH_TOKEN). Purge deletes the record that puts back what they held: switch to another " +
-			"account first, or remove the two keys by hand afterwards.")
+			"env.ANTHROPIC_AUTH_TOKEN). Purge deletes the record that puts back what the switch changed there " +
+			"(env.ANTHROPIC_API_KEY included): switch to another account first, or remove the two keys by hand afterwards.")
 	}
 	emitLine("")
 

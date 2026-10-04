@@ -91,6 +91,19 @@ func TestAuthOverridesLeaveTheEndpointProfileOut(t *testing.T) {
 		!reflect.DeepEqual(v.Profile, []string{"env.ANTHROPIC_AUTH_TOKEN", "env.ANTHROPIC_BASE_URL"}) {
 		t.Errorf("with the record: settings %v, profile %v; want only the user's apiKeyHelper, the two keys set aside", v.Settings, v.Profile)
 	}
+	// An ANTHROPIC_API_KEY put back while the profile is in place is a second
+	// key Claude Code sends to the endpoint, not the profile's: listed.
+	orig, _ := os.ReadFile(settings)
+	withKey := strings.Replace(string(orig), `"env": {`, `"env": {"ANTHROPIC_API_KEY": "sk-ant-api03-x",`, 1)
+	if err := os.WriteFile(settings, []byte(withKey), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if v := detectAuthOverrides(nil, settings, sidecar); !reflect.DeepEqual(v.Settings, []string{"apiKeyHelper", "env.ANTHROPIC_API_KEY"}) {
+		t.Errorf("with a key put back: settings %v", v.Settings)
+	}
+	if err := os.WriteFile(settings, orig, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	want := []string{"apiKeyHelper", "env.ANTHROPIC_AUTH_TOKEN", "env.ANTHROPIC_BASE_URL"}
 	if v := detectAuthOverrides(nil, settings, ""); !reflect.DeepEqual(v.Settings, want) {
 		t.Errorf("without a record: %v, want %v", v.Settings, want)

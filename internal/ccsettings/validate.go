@@ -22,8 +22,7 @@ const (
 // in every listing and log line), no query and no fragment (Claude Code
 // appends its own paths to the base URL, so either would end up in the middle
 // of every request URL). Control characters and whitespace are refused too.
-// This is the generic part of the reference's origin rule; which hosts are
-// allowed is the user's call, not a list here.
+// Which hosts are allowed is the user's call, not a list here.
 func ValidateBaseURL(raw string) (string, error) {
 	v := strings.TrimSpace(raw)
 	if v == "" {
