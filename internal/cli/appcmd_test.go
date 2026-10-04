@@ -6,18 +6,26 @@
 package cli
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	codexapi "github.com/tyclab/tycswap/internal/codex/api"
+	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
+	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/testutil"
 	"github.com/tyclab/tycswap/internal/tray"
@@ -290,5 +298,52 @@ func TestAppRunsTheTray(t *testing.T) {
 	}
 	if appIsRunning() {
 		t.Error("app.lock is held after Quit")
+	}
+}
+
+// The app that quit with auto-switch on comes back with both engines (A43,
+// A47): the resumed Start runs the Claude engine and, on a machine with Codex
+// accounts, the Codex engine beside it, built by the constructor `tycswap
+// auto` uses over the Codex switcher the app's dashboard holds. The choice is
+// kept when the app quits.
+func TestAppResumeStartsBothEngines(t *testing.T) {
+	home := appTestHome(t)
+	testutil.Setenv(t, "CODEX_HOME", filepath.Join(home, ".codex"))
+	statePath := appStatePath(paths.GetBackupRoot())
+	if err := updateAppState(statePath, func(st *appState) { st.AutoSwitch = true }); err != nil {
+		t.Fatal(err)
+	}
+	prevPresent, prevQuiet, prevEngine := codexIsPresent, newQuietCodexSwitcher, newCodexAutoEngineFor
+	t.Cleanup(func() {
+		codexIsPresent, newQuietCodexSwitcher, newCodexAutoEngineFor = prevPresent, prevQuiet, prevEngine
+	})
+	codexIsPresent = func() bool { return true }
+	codexSw := codexswitcher.New(codexswitcher.Options{
+		Root: t.TempDir(), Platform: platform.Linux, Client: &codexapi.FakeClient{},
+		Stdout: io.Discard, RunningPIDs: func() []int { return nil },
+	})
+	newQuietCodexSwitcher = func() *codexswitcher.Switcher { return codexSw }
+	src := &fakeCodexSource{activePct: 50, accounts: 2}
+	var built atomic.Pointer[codexswitcher.Switcher]
+	newCodexAutoEngineFor = func(sw *codexswitcher.Switcher, s settings.AutoSwitchSettings) *codexauto.AutoSwitcher {
+		built.Store(sw)
+		return codexauto.New(src, codexThreshold(s), s.HysteresisPct)
+	}
+	stop := stopViaNotifyContext(t)
+	var errb syncBuffer
+	done := runApp([]string{"--headless", "--port", "0", "--no-update-check"}, &errb)
+	waitUntil(t, "the resumed auto-switch", func() bool {
+		return strings.Contains(errb.String(), "Auto-switch resumed: it was on when the app last ran.")
+	})
+	waitUntil(t, "a Codex engine tick", func() bool { return src.Snapshots() > 0 })
+	if built.Load() != codexSw {
+		t.Error("the Codex engine was not built over the dashboard's Codex switcher")
+	}
+	stop()
+	if code := waitExit(t, done, &errb); code != 0 {
+		t.Errorf("exit = %d, stderr = %q", code, errb.String())
+	}
+	if !loadAppState(statePath).AutoSwitch {
+		t.Error("quitting the app recorded auto-switch off")
 	}
 }

@@ -26,8 +26,10 @@ func newCodexAutoEngine(merged settings.AutoSwitchSettings, s ioStreams) *codexa
 // sw is nil, autoswitch.codexEnabled is off or this machine has no Codex
 // accounts. The threshold is autoswitch.codexThreshold, or the effective
 // Claude 7d bar when that is 0 (codexThreshold). A broken Codex store must
-// never stop the Claude loop starting, so a panic here is a nil engine.
-func newCodexAutoEngineFor(sw *codexswitcher.Switcher, merged settings.AutoSwitchSettings) (eng *codexauto.AutoSwitcher) {
+// never stop the Claude loop starting, so a panic here is a nil engine. A
+// package var: the app's tests hand its engine host a fake Codex source
+// through it.
+var newCodexAutoEngineFor = func(sw *codexswitcher.Switcher, merged settings.AutoSwitchSettings) (eng *codexauto.AutoSwitcher) {
 	if sw == nil || !merged.CodexEnabled {
 		return nil
 	}

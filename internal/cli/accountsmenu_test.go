@@ -27,7 +27,7 @@ func TestShellAccountsMoveIntoASubmenu(t *testing.T) {
 	if _, ok := ft.item("accounts"); ok {
 		t.Errorf("%d accounts fit the menu", inlineAccounts)
 	}
-	if _, ok := ft.item("switch:" + strconv.Itoa(inlineAccounts)); !ok {
+	if _, ok := ft.item("switch:claude:" + strconv.Itoa(inlineAccounts)); !ok {
 		t.Error("the last of ten accounts is missing")
 	}
 
@@ -37,22 +37,22 @@ func TestShellAccountsMoveIntoASubmenu(t *testing.T) {
 	if !ok || sub.Title != "All 12 accounts" || len(sub.Children) != 12 || sub.Clickable() {
 		t.Fatalf("submenu = %+v (present %v)", sub, ok)
 	}
-	if sub.Children[0].ID != "switch:1" || sub.Children[11].ID != "switch:12" || sub.Children[11].Dismiss {
+	if sub.Children[0].ID != "switch:claude:1" || sub.Children[11].ID != "switch:claude:12" || sub.Children[11].Dismiss {
 		t.Errorf("submenu rows = %+v … %+v", sub.Children[0], sub.Children[11])
 	}
 	// The active account stays in sight; the others are only in the submenu.
-	if a, ok := ft.item("switch:3"); !ok || !a.Checked {
+	if a, ok := ft.item("switch:claude:3"); !ok || !a.Checked {
 		t.Errorf("active row = %+v (present %v)", a, ok)
 	}
-	if _, ok := ft.item("switch:4"); ok {
+	if _, ok := ft.item("switch:claude:4"); ok {
 		t.Error("an inactive account is listed outside the submenu")
 	}
 	ids, _ := menuShape(ft)
-	if !strings.Contains(ids, "switch:3,accounts") {
+	if !strings.Contains(ids, "switch:claude:3,accounts") {
 		t.Errorf("menu order = %s", ids)
 	}
-	sh.click("switch:12")
-	if got := strings.Join(*calls, ","); got != "switch:12" {
+	sh.click("switch:claude:12")
+	if got := strings.Join(*calls, ","); got != "switch:claude:12" {
 		t.Errorf("calls = %s", got)
 	}
 }
@@ -127,7 +127,7 @@ func TestShellRowsThatCloseTheMenu(t *testing.T) {
 	sh.update(sampleState())
 	for id, want := range map[string]bool{
 		"open": true, "quit": true,
-		"switch:2": false, "auto": false, "autostart": false, "update": false, "add-current": false,
+		"switch:claude:2": false, "auto": false, "autostart": false, "update": false, "add-current": false,
 	} {
 		if it, ok := ft.item(id); !ok || it.Dismiss != want {
 			t.Errorf("%s: Dismiss %v (present %v), want %v", id, it.Dismiss, ok, want)

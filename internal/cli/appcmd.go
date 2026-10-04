@@ -373,9 +373,9 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	buildHint := appUpgradeHint()
 	sh = newAppShell(t, shellActions{
 		OpenDashboard: openDashboard,
-		SwitchTo: func(id string) error {
-			_, err := d.sw.SwitchTo(id, false)
-			return err
+		// A row key: the Claude switcher or the Codex one (A47).
+		SwitchTo: func(key string) ([]int, error) {
+			return d.switchTo(key)
 		},
 		AddCurrent:   func() (web.AddLoginResult, error) { return srv.AddCurrentLogin() },
 		AutoRunning:  func() bool { return d.auto.View().Running },

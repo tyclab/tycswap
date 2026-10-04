@@ -475,6 +475,12 @@ func testNewDashboardServes(t *testing.T, codex bool) {
 		if status, _ := call(http.MethodPost, "/api/switch/codex:1", ""); status != http.StatusServiceUnavailable {
 			t.Fatalf("codex switch without Codex: status %d, want 503", status)
 		}
+		// The tray's switch (the app builds this same dashboard): no Codex
+		// switcher to reach.
+		var ce *cerr.Error
+		if _, err := d.switchTo("codex:1"); !errors.As(err, &ce) || ce.Kind != cerr.KindAccountNotFound {
+			t.Fatalf("tray codex switch without Codex = %v", err)
+		}
 		return
 	}
 	if !reflect.DeepEqual(codexKeys, []string{"codex:1", "codex:2"}) || st.Auto.Codex == nil || st.Auto.Codex.Running {
@@ -486,6 +492,11 @@ func testNewDashboardServes(t *testing.T, codex bool) {
 	}
 	if status, _ := call(http.MethodPost, "/api/accounts/codex:1/alias", `{"alias":"x"}`); status != http.StatusNotFound {
 		t.Fatalf("codex alias: status %d, want 404", status)
+	}
+	// The tray's switch dispatches a row key the same way: the Codex
+	// switcher, with the running codex PIDs back for its notification.
+	if pids, err := d.switchTo("codex:1"); err != nil || !reflect.DeepEqual(pids, []int{999}) {
+		t.Fatalf("tray codex switch = %v, %v", pids, err)
 	}
 }
 
@@ -522,11 +533,13 @@ type fakeCodexSource struct {
 	switchErr error
 	entered   chan struct{} // receives once per switch that started
 	gate      chan struct{} // when non-nil, a switch waits for it to close
+	snapshots int           // passes taken: one per tick
 }
 
 func (f *fakeCodexSource) AccountsSnapshot(context.Context, map[string]bool) reporting.AccountsSnapshot {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.snapshots++
 	rows := []reporting.AccountSnapshot{
 		{Number: "1", IsActive: true, Switchable: true, Provider: reporting.ProviderCodex,
 			Usage: usage.UsageEntry{LastGood: map[string]any{"five_hour": map[string]any{"pct": f.activePct}}}},
@@ -559,6 +572,12 @@ func (f *fakeCodexSource) SwitchTo(_ context.Context, id string) (codexswitcher.
 	f.switched = append(f.switched, id)
 	f.mu.Unlock()
 	return codexswitcher.SwitchResult{Number: id, RunningPIDs: []int{777}}, nil
+}
+
+func (f *fakeCodexSource) Snapshots() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.snapshots
 }
 
 func (f *fakeCodexSource) Switched() []string {

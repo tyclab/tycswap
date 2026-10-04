@@ -24,10 +24,12 @@ import (
 
 	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/browser"
+	"github.com/tyclab/tycswap/internal/cerr"
 	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/providers"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/web"
 )
 
@@ -219,12 +221,34 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 	return 0
 }
 
-// dashboard is what newDashboard builds: the switcher, the unstarted server
-// and the auto-switch engine host.
+// dashboard is what newDashboard builds: the switcher, the unstarted server,
+// the auto-switch engine host, and the Codex façade (nil without Codex
+// accounts at launch, A47).
 type dashboard struct {
-	sw   *core.Switcher
-	srv  *web.Server
-	auto *autoFacade
+	sw    *core.Switcher
+	srv   *web.Server
+	auto  *autoFacade
+	codex web.CodexOps
+}
+
+// switchTo is the tray's switch (A35, A47): a row key's provider decides the
+// switcher, as on the dashboard's switch route. A Codex switch returns the
+// codex sessions still running on the old account.
+func (d *dashboard) switchTo(key string) ([]int, error) {
+	provider, ref := splitRowKey(key)
+	if provider != reporting.ProviderCodex {
+		_, err := d.sw.SwitchTo(ref, false)
+		return nil, err
+	}
+	if d.codex == nil {
+		return nil, cerr.AccountNotFound("no Codex accounts in this app: %s", key)
+	}
+	res, err := d.codex.SwitchTo(ref)
+	if err != nil {
+		return nil, err
+	}
+	pids, _ := res["runningPids"].([]int)
+	return pids, nil
 }
 
 // dashboardOptions are what `tycswap app` adds to the dashboard `tycswap web`
@@ -305,7 +329,7 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 	if host != nil {
 		host.onChange = srv.Refresh
 	}
-	return &dashboard{sw: sw, srv: srv, auto: auto}, 0
+	return &dashboard{sw: sw, srv: srv, auto: auto, codex: newCodexOps(codexSw)}, 0
 }
 
 func renderWebHelp(prog string, out io.Writer) int {

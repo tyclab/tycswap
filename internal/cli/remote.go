@@ -367,10 +367,22 @@ func (c *remoteClient) mutate(path string, body any) error {
 	return nil
 }
 
-// Switch is POST /api/switch/{key}: the shell names a Claude account by its
-// slot, the dashboard by its key ("claude:<slot>", A26).
-func (c *remoteClient) Switch(num string) error {
-	return c.mutate("/api/switch/"+neturl.PathEscape("claude:"+num), nil)
+// Switch is POST /api/switch/{key} with the row key the shell names the
+// account by ("claude:<slot>", "codex:<slot>"; A26, A47). It returns the
+// codex sessions a Codex switch left running, from the answer.
+func (c *remoteClient) Switch(key string) ([]int, error) {
+	var out struct {
+		Result json.RawMessage `json:"result"`
+	}
+	if err := c.call(http.MethodPost, "/api/switch/"+neturl.PathEscape(key), nil, &out); err != nil {
+		return nil, err
+	}
+	_, _ = c.State() // as mutate: the next paint sees the switch
+	var res struct {
+		RunningPIDs []int `json:"runningPids"`
+	}
+	_ = json.Unmarshal(out.Result, &res) // a Claude switch answers none
+	return res.RunningPIDs, nil
 }
 
 // AutoStart starts the engine for real (never a dry run from the tray).

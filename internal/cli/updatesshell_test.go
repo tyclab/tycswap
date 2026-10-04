@@ -184,7 +184,7 @@ func TestUpdatesSectionRowsAndOrder(t *testing.T) {
 	sh.storeClaudeCode(brewSeat("2.1.280", "2.1.281"), true)
 
 	ids, headers := menuShape(ft)
-	if ids != "brand,open,install-update,claude-code,switch:1,switch:2,auto,autostart,update,quit" {
+	if ids != "brand,open,install-update,claude-code,switch:claude:1,switch:claude:2,auto,autostart,update,quit" {
 		t.Errorf("menu = %s", ids)
 	}
 	if headers != "2 updates available,Accounts,Automation,App" {
@@ -213,7 +213,7 @@ func TestUpdatesSectionRowsAndOrder(t *testing.T) {
 	}
 
 	sh.storeClaudeCode(brewSeat("2.1.281", "2.1.281"), true)
-	if ids, headers := menuShape(ft); ids != "brand,open,install-update,switch:1,switch:2,auto,claude-code,autostart,update,quit" || !strings.HasPrefix(headers, "Update available,") {
+	if ids, headers := menuShape(ft); ids != "brand,open,install-update,switch:claude:1,switch:claude:2,auto,claude-code,autostart,update,quit" || !strings.HasPrefix(headers, "Update available,") {
 		t.Errorf("latest Claude Code belongs to App: %s / %s", ids, headers)
 	}
 }

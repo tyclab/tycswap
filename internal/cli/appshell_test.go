@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -73,6 +74,7 @@ func acct(num int, email, alias string, active bool, fiveH, sevenD any, model st
 	return map[string]any{
 		"number": num, "email": email, "alias": alias, "isActive": active,
 		"switchable": true, "disabled": false, "atLimit": false, "usage": usage,
+		"provider": "claude", "key": "claude:" + strconv.Itoa(num),
 	}
 }
 
@@ -98,7 +100,7 @@ func newTestShell(t *testing.T) (*appShell, *fakeTray, *[]string) {
 	running := false
 	act := shellActions{
 		OpenDashboard: func() error { calls = append(calls, "open"); return nil },
-		SwitchTo:      func(id string) error { calls = append(calls, "switch:"+id); return nil },
+		SwitchTo:      func(key string) ([]int, error) { calls = append(calls, "switch:"+key); return nil, nil },
 		AutoRunning:   func() bool { return running },
 		AutoStart:     func() error { running = true; calls = append(calls, "auto-start"); return nil },
 		AutoStop:      func() error { running = false; calls = append(calls, "auto-stop"); return nil },
@@ -127,16 +129,16 @@ func TestShellTitleTooltipAndMenu(t *testing.T) {
 		t.Errorf("tooltip = %q", ft.tooltip)
 	}
 	// accounts sorted by slot, active one checked and not clickable
-	a1, ok := ft.item("switch:1")
+	a1, ok := ft.item("switch:claude:1")
 	if !ok || !a1.Checked || !a1.Disabled || !strings.HasPrefix(a1.Title, "#1  work") {
 		t.Errorf("active row = %+v", a1)
 	}
-	a2, ok := ft.item("switch:2")
+	a2, ok := ft.item("switch:claude:2")
 	if !ok || a2.Checked || a2.Disabled || !strings.Contains(a2.Title, "bob@example.com") || !strings.Contains(a2.Sub, "5h 10%") || a2.Pct != 10 {
 		t.Errorf("other row = %+v", a2)
 	}
 	ids, headers := menuShape(ft)
-	if ids != "brand,open,switch:1,switch:2,auto,autostart,update,quit" {
+	if ids != "brand,open,switch:claude:1,switch:claude:2,auto,autostart,update,quit" {
 		t.Errorf("menu order = %v", ids)
 	}
 	if br := ft.menu[0]; br.Kind != tray.KindBrand || br.Title != "tycswap" || !strings.Contains(br.Sub, "auto-switch off") || br.Clickable() {
@@ -175,14 +177,14 @@ func TestShellClicks(t *testing.T) {
 	sh.update(sampleState())
 
 	sh.click("open")
-	sh.click("switch:2")
+	sh.click("switch:claude:2")
 	sh.click("auto")
 	sh.click("auto")
 	sh.click("autostart")
 	sh.click("install-update")
 	sh.click("quit")
 
-	want := "open,switch:2,auto-start,auto-stop,autostart:on,upgrade,quit"
+	want := "open,switch:claude:2,auto-start,auto-stop,autostart:on,upgrade,quit"
 	if got := strings.Join(*calls, ","); got != want {
 		t.Errorf("calls = %s, want %s", got, want)
 	}
@@ -216,9 +218,9 @@ func TestShellShowsAutoModeInTitleAndMenu(t *testing.T) {
 
 func TestShellClickErrorsBecomeNotifications(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
-	sh.act.SwitchTo = func(string) error { return errors.New("slot 9 does not exist") }
+	sh.act.SwitchTo = func(string) ([]int, error) { return nil, errors.New("slot 9 does not exist") }
 	sh.act.Upgrade = func() (string, error) { return "", errors.New("offline") }
-	sh.click("switch:9")
+	sh.click("switch:claude:9")
 	sh.click("install-update")
 	joined := strings.Join(ft.notes, "\n")
 	if !strings.Contains(joined, "Switch failed | slot 9 does not exist") || !strings.Contains(joined, "Update failed | offline") {
@@ -419,7 +421,7 @@ func TestShellAPIKeySwitchAsksFirst(t *testing.T) {
 	gw["baseUrl"] = "https://gateway.example/v1\x07"
 	st.Accounts = append(st.Accounts, key, gw)
 	sh.update(st)
-	sh.click("switch:3")
+	sh.click("switch:claude:3")
 	if len(*calls) != 0 || len(ft.notes) != 1 || !strings.HasPrefix(ft.notes[0], "Switch needs confirmation |") {
 		t.Fatalf("calls = %v, notes = %v", *calls, ft.notes)
 	}
@@ -433,13 +435,13 @@ func TestShellAPIKeySwitchAsksFirst(t *testing.T) {
 		asked = body
 		return answer, nil
 	}
-	sh.click("switch:3")
-	if len(approved) != 0 || strings.Contains(strings.Join(*calls, ","), "switch:3") {
+	sh.click("switch:claude:3")
+	if len(approved) != 0 || strings.Contains(strings.Join(*calls, ","), "switch:claude:3") {
 		t.Errorf("a cancelled ask switched: calls %v, approved %v", *calls, approved)
 	}
 	answer = true
-	sh.click("switch:3")
-	if len(approved) != 1 || approved[0] != "3" || !strings.HasSuffix(strings.Join(*calls, ","), "ask:Switch to API-key account #3?,switch:3") {
+	sh.click("switch:claude:3")
+	if len(approved) != 1 || approved[0] != "3" || !strings.HasSuffix(strings.Join(*calls, ","), "ask:Switch to API-key account #3?,switch:claude:3") {
 		t.Errorf("calls %v, approved %v", *calls, approved)
 	}
 	if !strings.Contains(asked, "2 Claude Code sessions are running.") || strings.Contains(asked, "ANTHROPIC_BASE_URL") {
@@ -450,18 +452,18 @@ func TestShellAPIKeySwitchAsksFirst(t *testing.T) {
 	}
 
 	// A46: the account with a base URL.
-	row, ok := ft.item("switch:4")
+	row, ok := ft.item("switch:claude:4")
 	if !ok || !strings.Contains(row.Sub, "API key · billed per token · → gateway.example") || strings.Contains(row.Sub, "\x07") {
 		t.Fatalf("row = %+v", row)
 	}
 	sh.act.EndpointSessionNotice = func() string { return switching.EndpointSessionNotice(2) }
-	sh.click("switch:4")
+	sh.click("switch:claude:4")
 	if !strings.Contains(asked, switching.EndpointNotice("https://gateway.example/v1")) ||
 		!strings.Contains(asked, switching.EndpointSessionNotice(2)) ||
 		strings.Contains(asked, "2 Claude Code sessions are running.") || strings.Contains(asked, "\x07") {
 		t.Errorf("dialog = %q", asked)
 	}
-	if len(approved) != 2 || approved[1] != "4" || !strings.HasSuffix(strings.Join(*calls, ","), "ask:Switch to API-key account #4?,switch:4") {
+	if len(approved) != 2 || approved[1] != "4" || !strings.HasSuffix(strings.Join(*calls, ","), "ask:Switch to API-key account #4?,switch:claude:4") {
 		t.Errorf("calls %v, approved %v", *calls, approved)
 	}
 	want := "Switched to account #4 | " + switching.EndpointAppliedNote("gateway.example")
@@ -470,7 +472,7 @@ func TestShellAPIKeySwitchAsksFirst(t *testing.T) {
 	}
 	// Without the hook the endpoint's sentence still replaces the restart one.
 	sh.act.EndpointSessionNotice = nil
-	sh.click("switch:4")
+	sh.click("switch:claude:4")
 	if !strings.Contains(asked, switching.EndpointSessionNotice(0)) || strings.Contains(asked, "2 Claude Code sessions are running.") {
 		t.Errorf("dialog without the hook = %q", asked)
 	}
@@ -712,7 +714,7 @@ func TestShellOfflineOutranksFigures(t *testing.T) {
 	if ft.menu[0].ID != "brand" || ft.menu[1].ID != "offline" || ft.menu[2].ID != "open" {
 		t.Errorf("menu should lead with brand, reason, open: %v %v %v", ft.menu[0].ID, ft.menu[1].ID, ft.menu[2].ID)
 	}
-	if _, has := ft.item("switch:2"); !has {
+	if _, has := ft.item("switch:claude:2"); !has {
 		t.Error("the last state's rows should stay in the menu")
 	}
 	down = false
@@ -722,5 +724,173 @@ func TestShellOfflineOutranksFigures(t *testing.T) {
 	}
 	if _, has := ft.item("offline"); has {
 		t.Error("reachable again: offline row should be gone")
+	}
+}
+
+// ---- Codex in the tray (DESIGN A47) ----
+
+// codexRow is a Codex account as the dashboard's state carries it.
+func codexRow(num int, email string, active bool, fiveH, sevenD any) map[string]any {
+	r := acct(num, email, "", active, fiveH, sevenD, "", nil)
+	r["provider"], r["key"] = "codex", "codex:"+strconv.Itoa(num)
+	return r
+}
+
+// codexState is sampleState plus three Codex accounts, out of slot order:
+// #1 active at 99% of its 5h window, #2 an API-key login (not switchable, no
+// usage), #3 at 5%; and the Codex engine beside the Claude one, bar 90%.
+func codexState() web.State {
+	st := sampleState()
+	key := codexRow(2, "erin@example.com", false, nil, nil)
+	key["kind"], key["switchable"], key["usage"] = "api_key", false, nil
+	st.Accounts = append(st.Accounts,
+		codexRow(3, "fay@example.com", false, 5.0, 2.0),
+		codexRow(1, "dana@example.com", true, 99.0, 40.0),
+		key)
+	st.Auto = &web.AutoView{Codex: &web.CodexAutoView{Enabled: true, Threshold: 90}}
+	return st
+}
+
+// The Codex accounts follow the Claude ones under a Codex heading, each row
+// addressed by its key; the title, the tooltip's lead and the threshold alert
+// stay Claude Code's account, the tooltip names the active Codex account,
+// and the auto-switch row names the Codex bar while the Codex engine is on.
+func TestShellCodexRowsUnderOwnHeader(t *testing.T) {
+	sh, ft, _ := newTestShell(t)
+	sh.update(codexState())
+	ids, headers := menuShape(ft)
+	if ids != "brand,open,switch:claude:1,switch:claude:2,switch:codex:1,switch:codex:2,switch:codex:3,auto,autostart,update,quit" {
+		t.Errorf("menu order = %s", ids)
+	}
+	if headers != "Accounts,Codex,Automation,App" {
+		t.Errorf("headers = %s", headers)
+	}
+	if r, _ := ft.item("switch:codex:1"); !r.Checked || !r.Disabled || r.Title != "#1  dana@example.com" || r.Pct != 99 || !strings.HasPrefix(r.Sub, "5h 99% · 7d 40%") {
+		t.Errorf("active codex row = %+v", r)
+	}
+	if r, _ := ft.item("switch:codex:2"); !r.Disabled || !strings.Contains(r.Sub, "API key") || !strings.Contains(r.Sub, "not switchable") {
+		t.Errorf("codex API-key row = %+v", r)
+	}
+	if r, _ := ft.item("switch:codex:3"); r.Disabled || r.Checked {
+		t.Errorf("codex row #3 = %+v", r)
+	}
+	if ft.title != "#1 · 45%" || !strings.Contains(ft.tooltip, "#1 work") ||
+		!strings.HasSuffix(ft.tooltip, " · auto-switch off · codex #1 dana@example.com · 5h 99% · 7d 40%") {
+		t.Errorf("title = %q, tooltip = %q", ft.title, ft.tooltip)
+	}
+	if len(ft.notes) != 0 {
+		t.Errorf("the Codex account at 99%% raised an alert: %v", ft.notes)
+	}
+	sh.click("auto")
+	if au, _ := ft.item("auto"); au.Sub != "rotates Claude and Codex accounts near the limit (5h 85% · 7d 97% · codex 90%)" {
+		t.Errorf("auto row = %q", au.Sub)
+	}
+	if notes := ft.notesNow(); notes[len(notes)-1] != "Auto-switch on | Claude and Codex accounts rotate automatically near the limit." {
+		t.Errorf("notes = %v", notes)
+	}
+	// The threshold alert is the Claude account's, remembered by its key.
+	st := codexState()
+	st.Accounts[1] = acct(1, "alice@example.com", "work", true, 45.0, 98.0, "", nil)
+	sh.update(st)
+	if notes := ft.notesNow(); !strings.HasPrefix(notes[len(notes)-1], "Account #1 has used 98% of its week") {
+		t.Errorf("notes = %v", notes)
+	}
+	sh.mu.Lock()
+	if len(sh.alerted) != 1 || !sh.alerted["claude:1"] {
+		t.Errorf("alerted = %v, want claude:1 alone", sh.alerted)
+	}
+	sh.mu.Unlock()
+	// More than inlineAccounts Codex accounts: their own submenu, the
+	// Claude rows still inline.
+	st = codexState()
+	st.Accounts = st.Accounts[:2]
+	for i := 1; i <= inlineAccounts+2; i++ {
+		st.Accounts = append(st.Accounts, codexRow(i, "c"+strconv.Itoa(i)+"@example.com", i == 4, 10.0, 5.0))
+	}
+	sh.update(st)
+	sub, ok := ft.item("codex-accounts")
+	if !ok || sub.Title != "All 12 Codex accounts" || len(sub.Children) != 12 || sub.Children[0].ID != "switch:codex:1" {
+		t.Fatalf("codex submenu = %+v (present %v)", sub, ok)
+	}
+	if ids, _ := menuShape(ft); !strings.Contains(ids, "switch:claude:1,switch:claude:2,switch:codex:4,codex-accounts,auto") {
+		t.Errorf("menu order = %s", ids)
+	}
+}
+
+// Without Codex accounts the menu is the one from before Codex: the same
+// rows, headers, auto-switch wording and notifications — also when the
+// engine host reports a Codex engine that is switched off.
+func TestShellClaudeOnlyMenuUnchanged(t *testing.T) {
+	off := sampleState()
+	off.Auto = &web.AutoView{Codex: &web.CodexAutoView{Enabled: false, Threshold: 97}}
+	for _, st := range []web.State{sampleState(), off} {
+		sh, ft, _ := newTestShell(t)
+		sh.update(st)
+		ids, headers := menuShape(ft)
+		if ids != "brand,open,switch:claude:1,switch:claude:2,auto,autostart,update,quit" || headers != "Accounts,Automation,App" {
+			t.Errorf("menu = %s / %s", ids, headers)
+		}
+		if strings.Contains(ft.tooltip, "codex") {
+			t.Errorf("tooltip = %q", ft.tooltip)
+		}
+		sh.click("auto")
+		if au, _ := ft.item("auto"); au.Sub != "rotates Claude accounts near the limit (5h 85% · 7d 97%)" {
+			t.Errorf("auto row = %q", au.Sub)
+		}
+		sh.click("auto")
+		if got := strings.Join(ft.notesNow(), "\n"); got != "Auto-switch on | Claude accounts rotate automatically near the limit.\nAuto-switch off | Claude accounts are no longer rotated automatically." {
+			t.Errorf("notes = %q", got)
+		}
+	}
+}
+
+// A click hands the row's key to SwitchTo, so a slot number shared by a
+// Claude and a Codex account never reaches the wrong one: a Claude switch is
+// told as before (and only a Claude row asks about an API key); a Codex
+// switch says the Codex account changed and which codex sessions still run.
+func TestShellSwitchClickCarriesKey(t *testing.T) {
+	sh, ft, calls := newTestShell(t)
+	var pids []int
+	var codexErr error
+	sh.act.SwitchTo = func(key string) ([]int, error) {
+		*calls = append(*calls, "switch:"+key)
+		if strings.HasPrefix(key, "codex:") {
+			return pids, codexErr
+		}
+		return nil, nil
+	}
+	sh.update(codexState()) // Claude #2 is OAuth, Codex #2 an API-key login
+	sh.click("switch:claude:2")
+	pids = []int{4242, 4343}
+	sh.click("switch:codex:3")
+	pids = nil
+	sh.click("switch:codex:3")
+	codexErr = errors.New("Another tycswap process is using the Codex store; try again.")
+	sh.click("switch:codex:3")
+	if got := strings.Join(*calls, ","); got != "switch:claude:2,switch:codex:3,switch:codex:3,switch:codex:3" {
+		t.Errorf("calls = %s", got)
+	}
+	want := []string{
+		"Switched to account #2 | Restart running Claude Code sessions to pick it up.",
+		"Switched Codex to account #3 | codex is running (pid 4242, 4343) — restart it for the new account to take effect.",
+		"Switched Codex to account #3 | The next codex session uses it.",
+		"Switch failed | Another tycswap process is using the Codex store; try again.",
+	}
+	if got := ft.notesNow(); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("notes = %q\nwant %q", got, want)
+	}
+}
+
+// The Codex engine's switch is told as a Codex one; its other ticks, like
+// the Claude engine's non-switch events, raise nothing.
+func TestShellCodexAutoSwitchNotification(t *testing.T) {
+	sh, ft, _ := newTestShell(t)
+	sh.autoEvent(web.AutoEventView{Kind: "switch", Provider: "codex", Account: "3", Message: "codex: switched 1 (99%) -> 3 (5%)"})
+	sh.autoEvent(web.AutoEventView{Kind: "error", Provider: "codex", Message: "codex: switch failed (busy)"})
+	sh.autoEvent(web.AutoEventView{Kind: "all-exhausted", Provider: "codex", Message: "codex: account 1 at 99% and no better candidate"})
+	sh.autoEvent(web.AutoEventView{Kind: "switch", Account: "2", Message: "7d window at 97%"})
+	want := "Auto-switched Codex to account #3 | codex: switched 1 (99%) -> 3 (5%)\nAuto-switched to account #2 | 7d window at 97%"
+	if got := strings.Join(ft.notesNow(), "\n"); got != want {
+		t.Errorf("notes = %q\nwant %q", got, want)
 	}
 }
