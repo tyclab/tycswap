@@ -25,3 +25,35 @@ jobs:
       - run: make fmt
       - run: make vet
       - run: make test
+      # The darwin and windows code compiles from Linux too: the tray, the
+      # autostart registry, the console hand-off (DESIGN A35, A41).
+      - run: GOOS=windows go vet ./...
+      - run: GOOS=darwin CGO_ENABLED=0 go vet ./...
+
+  # The Windows tray, the Run key, the detached start and the console hand-off
+  # run for real here; their tests are build-tagged (DESIGN A41).
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test -count=1 ./...
+
+  # macOS builds internal/tray with cgo against Cocoa, the one place cgo is
+  # allowed (DESIGN A12, A35): this job compiles and tests the Objective-C,
+  # then the CGO_ENABLED=0 stub a machine without a C toolchain gets.
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go test -count=1 ./...
+      - run: CGO_ENABLED=0 go build ./...
