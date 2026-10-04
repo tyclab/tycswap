@@ -4667,3 +4667,213 @@ edits the new keys. `internal/web`: the slider route's bounds and the settings
 notes. The dashboard's ranking script has no committed test (the node harness
 in `internal/web/testdata` covers tab routing only).
 
+
+## A46. An API-key account may carry a base URL (Go-side additive extension)
+
+The reference has a gateway account: a key minted by an LLM gateway, used
+against the gateway's base URL instead of Anthropic's API, and a profile in
+Claude Code's own `settings.json` that points Claude Code at it and takes it
+back out exactly. Most of what surrounds it there is that one gateway's
+machinery: a key helper that mints and caches keys, a licence and server
+flags, mandatory fleet settings, host suffix lists that recognise its URLs,
+separate activate/deactivate commands, a dashboard card, telemetry. None of
+that is ported. The generic core is: **an API-key account may carry a base
+URL**, a switch onto it points Claude Code at that endpoint, and a switch away
+restores the previous settings exactly. A key account with a URL is just an
+account; there is no separate gateway concept in tycswap. Go-only:
+`docs/port-spec/` is untouched.
+
+**The record.** An `api_key` record may carry `baseUrl` (after `kind` and
+`alias`); any other record's `baseUrl` is ignored (`store.AccountBaseURL`,
+`store.BaseURLFrom`). `ccsettings.ValidateBaseURL` is the reference's origin
+rule without its host list: an absolute `https` or `http` URL with a host and
+no user info (a password would land in every listing and log line), no query
+and no fragment (Claude Code appends its own paths to the base URL), no
+whitespace or control character, at most 2048 bytes; which hosts are allowed
+is the user's call. `add-token --base-url URL` checks the URL before the
+token is read; with one, the token is that endpoint's key and the account is
+`api_key` whatever its shape (a gateway mints keys in its own format), as
+long as `ccsettings.ValidateToken` passes it: one run of printable ASCII, at
+most 8192 bytes, not a JSON object, since it is written as an HTTP header. A
+refresh in place (same email, no slot) sets the URL exactly as given, so a
+refresh without `--base-url` removes it, and says which (`(endpoint <host>)`,
+`(endpoint removed)`). An endpoint key that is not shaped like an Anthropic
+key cannot be refreshed without its URL: the token then reads as a
+setup-token and the existing cross-kind guard refuses it.
+
+**The profile** (`internal/ccsettings`, the generic port of the reference's
+settings profile). Claude Code reads the `env` block of `<config
+home>/settings.json` into its environment when it starts, and ranks
+`ANTHROPIC_AUTH_TOKEN` (sent as `Authorization: Bearer`, the convention for an
+LLM gateway or proxy) above `ANTHROPIC_API_KEY`, `apiKeyHelper` and every
+stored login. `Apply` writes exactly two keys, `env.ANTHROPIC_BASE_URL` and the
+key as `env.ANTHROPIC_AUTH_TOKEN`; `OwnedKeys` is that allowlist, the
+complete set it may change, plus the `env` container it creates when there
+was none. Before `settings.json` is touched, the prior state of each owned
+key (present with its value, or absent) and of the container is written to
+`<backup root>/claude-settings.prev.json` (`{"version": 1, "settingsPath",
+"keys"}`, 0600, atomic). `Revert` restores exactly those keys from the record
+(absent → deleted, present → the old value; a container it created is removed
+again when nothing else moved in, a non-object `env` it replaced comes back),
+writes the file and removes the record. Every other key is read and written
+back untouched, including keys the user changed while the profile was in
+place; an owned key the user edited is still reverted (the record wins, as in
+the reference). A second `Apply` keeps the ORIGINAL priors, so endpoint A →
+endpoint B → subscription lands on the file from before A; a record for
+another settings file (`CLAUDE_CONFIG_DIR` changed in between) is reverted
+there first, so one record always describes one file, and `Revert` restores
+the file the record names. A missing settings file is `{}`; one that is not a
+JSON object, and a record that does not parse, are refused and never
+rewritten. Writes are a temp sibling and a rename, mode 0600 (the file now
+holds a key); an existing config home keeps its mode. Numbers are kept as
+written (`json.Number`), so a rewrite changes no value it does not own; key
+order is not kept, as in the reference.
+
+The reference's two other ways out are kept in their generic form. Its revert
+"by value" (A51 there: deactivate must always get you out, also when the
+record is gone) becomes: without a record, a switch away removes the two keys
+when they hold exactly one endpoint account's URL and stored key, and leaves
+them otherwise; what they replaced cannot come back, as there. Its "two env
+keys come back out" (A53 there) is about two flags its fleet profile once set
+and later removed; tycswap's profile never set them, and one of them is a flag
+users set on purpose for gateways that reject beta headers, so nothing removes
+them here. The lesson it records holds all the same: the profile sets nothing
+beyond what routing needs, which is why it is exactly two keys.
+
+**Which mechanism the key uses.** The reference's gateway profile does not
+store its key as a managed key; it writes the routing into `settings.json`
+and deletes `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_API_KEY` because its key
+comes from a helper. tycswap has no helper, so the key itself goes into the
+profile as `env.ANTHROPIC_AUTH_TOKEN`, and neither `primaryApiKey` nor the
+macOS `Claude Code` Keychain item is written for such an account. A switch
+onto one takes every login off Claude Code's credential store instead
+(`credstore.ClearActive`: the managed key from the Keychain item and
+`primaryApiKey`, the OAuth login cleared the way a switch onto a key clears
+it, keeping its seat-wide part, A29), so nothing there competes with the
+profile and `ReadActive` finds no credential. That is the account's normal
+live state: its stored key is its credential, the identity in
+`~/.claude.json` names it, and the reporting reads it as an API key from the
+record (`AccountInfo.BaseURL`), not from the live credential. An API-key
+account without a URL is unchanged: its key is the managed key, as before.
+
+**The switch.** `switching.planProfile` decides, before the live login is
+touched, what the switch does to `settings.json`: the target's endpoint and
+key to apply; or, for any other target, the record to revert (whenever one
+exists, whatever the outgoing account) or, without one, the by-value cleanup
+when the file holds both keys. It refuses with nothing written when the
+stored URL no longer validates (a hand-edited roster), the stored key cannot
+be a header, `settings.json` is not a JSON object, the record does not parse,
+or an API-key account without a URL holds a key that is not an Anthropic key
+(written live, it would become an OAuth credential). It snapshots the record
+and both settings files byte for byte. Then, on every path that writes the
+live login — the normal switch, `--force` and the other direct activations,
+and the fresh machine — the credential step writes the target's stored
+credential as always, or `ClearActive` for an endpoint target, and the profile
+step applies or reverts. A switch that fails afterwards rolls back in reverse:
+`~/.claude.json`, then both settings files from the snapshot (recorded before
+the write, so a half-done `Apply` is rolled back too), then the credential.
+With nothing at all in the credential store before (an endpoint account
+active without a seat-wide part), the credential rollback clears the store
+again instead of writing an empty credential; the direct activation's rollback
+does the same where it used to write `""`. On the normal path an outgoing
+endpoint account is backed up config-only and never classified: nothing in
+the credential store is its own, and a login found there anyway (written by
+something that left its identity in place) is stashed as an alien
+credential, never stored over the key. The self-switch check reads the empty
+live credential as matching (`Already on`); `switch <n> --force` onto the
+active endpoint account re-applies it, which is how a refreshed key goes
+live. The by-value cleanup is best-effort; a failed revert of a record fails
+the switch.
+
+**Approval and notes.** An endpoint account is an API-key account, so A33's
+approval applies unchanged; its refusal is `ErrEndpointNeedsApproval`
+(`… authenticates with an API key at <host>. Switching to it changes how
+Claude Code authenticates and where it sends its requests …`), and the CLI's
+and the dashboard's questions add `EndpointNotice`, which names the whole URL
+and the two settings that take the requests there and back. The follow-up
+after any switch that rewrote `settings.json` says what changed and to
+restart, in both directions: a running session read its `env` block when it
+started. Auto-switch never moves onto or off an API-key account (A33), so it
+never applies or reverts the profile either.
+
+**Surfaces.** `list`, `status` (human: `→ <host>`, `Endpoint: <host> (Claude
+Code's settings.json)`; JSON: `baseUrl`, the whole URL), the snapshot
+(`AccountSnapshot.BaseURL`), the TUI (a base URL field in the add-token modal;
+`API key (no quota) → <host>` on the card, the per-row line and the monitor
+span), the dashboard (the add-token form's `baseUrl`, the rows' `baseUrl` and
+`→ <host>` chip, the header chip and the red notice, the switch confirmation,
+the Guide), `export` (`baseUrl` beside `kind` and `alias`; an endpoint account
+is exported from its backup even while active) and `import` (`baseUrl` checked
+as `add-token` checks it, only with API-key credentials, which are then taken
+as the endpoint's key; every refusal before any write). The add-token method
+with a URL is not on the frozen `tui.Facade` / `web.Facade` (A13): the TUI
+and the dashboard reach `AddAccountFromTokenWithBaseURL` by type assertion,
+and a facade without it is an error (`503` on the dashboard), never a dropped
+URL. The dashboard's auth-overrides notice (A27) leaves the two owned keys
+out while the record says the profile is in that settings file: they are the
+active account's login then, not something overriding it. `tycswap purge`
+leaves the live login as it always has, two settings keys included, but
+deletes the record, so while one exists it says so before it asks.
+
+**Not done here.** A session started with `tycswap run --share` links
+`~/.claude/settings.json` into its profile (spec 06§2), so while an endpoint
+account is the default login such a session inherits the endpoint like any
+other `env` key in that file; `run` and `env` still refuse API-key accounts
+themselves. The key goes only as a bearer token; an Anthropic-key passthrough
+proxy that wants `x-api-key` would need `ANTHROPIC_API_KEY` instead, which is
+not offered. `add` while an endpoint account is live finds no credential and
+says so, as for any empty store.
+
+**Tests.** `internal/ccsettings` (the reference's tests under tycswap names):
+the profile write with every unrelated key, container and the user's own env
+keys untouched, 0600 files and 2-space indent; the allowlist is exactly the
+two keys and nothing else changes; a missing file is `{}` and a corrupt,
+array, `null` or two-value file is refused byte for byte by `Apply`, `Revert`
+and `Check`; the exact revert with the user's later edits kept and an edited
+owned key reverted; the created `env` container removed, kept with a user key,
+a non-object `env` put back; endpoint → endpoint → revert lands on the
+original; a second identical `Apply` changes neither file; no record and
+nothing ours is a no-op; the by-value revert of a known pair, and a foreign
+pair, a changed token or half a pair left alone; a corrupt record refused by
+`Apply`, `Revert` and `Check` and seen by `SidecarExists`; the recorded file
+reverted, another settings file reverting the first; the sidecar schema;
+numbers kept; the snapshot restoring bytes, mode and absence; invalid
+profiles writing nothing; the URL and key validation tables.
+`internal/switching` (`endpoint_test.go`): from a subscription login onto the
+endpoint and back with the user editing `settings.json` meanwhile (the edits
+stay, the user's own `ANTHROPIC_BASE_URL` comes back, no `primaryApiKey`, no
+approval entry, the MCP login kept, both slots intact); endpoint → endpoint
+keeps the original record; a plain key → endpoint → the plain key live again;
+`--force` onto, onto the active endpoint after a key refresh, and away; the
+fresh machine; the rotation from an endpoint account; a corrupt record and an
+unparseable settings file stopping the switch with every file unchanged, and
+a subscription switch ignoring an unparseable file; a lost record still
+coming out by value, a foreign endpoint left alone; an invalid stored URL, a
+stored key with a space and a gateway key without a URL refused with nothing
+written, with and without `--force`; the approval refusal and the follow-ups
+naming the change; and a switch whose `~/.claude.json` update fails after the
+credential store and `settings.json` were written (a macOS Keychain whose
+managed-item delete breaks the file) leaving `settings.json`, the record, the
+credentials file and both Keychain items as they were — onto an endpoint, away
+from one with and without a seat-wide part, between two and from a plain key,
+on the normal path and with `--force`; each of the four rollback steps,
+removed, fails one of these. The macOS variant of the round trip, from a
+subscription login and from a plain key in the managed item.
+`internal/credstore`: `ClearActive` on the file backend (a login with and
+without MCP logins, a managed key with and without a file, nothing) and on
+the Keychain. `internal/store`: `AccountBaseURL` for an `api_key` record only.
+`internal/lifecycle`: `add-token --base-url` stores the endpoint, a gateway
+key and the record's key order; the refusals before the prompt; the refresh
+setting or removing the URL; the cross-kind refusal of a gateway key without
+its URL; `--slot`; `purge` warning only with a record. `internal/reporting`:
+list, status and the snapshot with the endpoint account inactive and active
+(`api_key`, `baseUrl`, the host only in human output, never `no
+credentials`). `internal/cli`: the flag's usage errors, and end to end the
+add, `list --json`, `list`, the prompt naming the URL, the switch, `status`,
+`status --json` and the switch back. `internal/tui`: the modal's field and
+focus ring, the call with and without a URL and on a facade without the
+method, the rows. `internal/web`: the add-token route with and without a URL
+and the `503`, the row's `baseUrl`, the overrides notice with and without the
+record and for another file. `internal/transfer`: export with the endpoint
+account live, import storing the URL after `kind` and `alias`, every import
+refusal writing nothing, and the round trip.
