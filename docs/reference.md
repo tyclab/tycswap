@@ -2862,9 +2862,15 @@ window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
 - **App**: Claude Code's state when nothing is to update; *Start at login*;
   *Check for updates…*; *Quit tycswap*.
 
-The tray shows the dashboard's state and drives the dashboard's auto-switch
-engine, so it is Claude-only like the dashboard today: Codex accounts and the
-Codex engine reach the dashboard and the tray together in the next change.
+The tray shows the dashboard's state and drives its engines (DESIGN A47): on
+a machine with Codex accounts they follow under a **Codex** heading (more than
+ten in *All N Codex accounts* ▸), a click switches one by its key and the
+notification `Switched Codex to account #<n>` names the codex sessions still
+on the old account, the Codex engine's switch is `Auto-switched Codex to
+account #<n>`, *Auto-switch*'s second line adds `codex <bar>%`, and turning
+auto-switch on, or resuming it, starts the Codex engine beside the Claude
+one; the title, the icon and the threshold alert stay with the Claude
+account, and the tooltip adds the active Codex account.
 
 Notifications: a switch or quarantine by auto-switch, the active account
 reaching a window's threshold (once, again after it falls ten points below),

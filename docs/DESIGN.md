@@ -4772,10 +4772,9 @@ window, the menu of A37, notifications on engine `switch` and
 `account-quarantined` events, and once when a window of the active account
 reaches its own bar (A34), re-armed when every window is ten points below
 its bar. It only ever renders `web.State` and acts through `shellActions`,
-which is what makes the remote tray of A45 a second set of hooks. So the tray
-is Claude-only, like the dashboard today: Codex accounts and the Codex
-engine reach the dashboard and the tray together, through that state, in the
-next change. `web.Server`
+which is what makes the remote tray of A45 a second set of hooks. So the
+Codex accounts and the Codex engine reach the tray through that state, with
+the dashboard (A47). `web.Server`
 gained `LaunchURL` (the unused start URL, else a fresh single-use token per
 "Open dashboard"), `Snapshot`, `OnState`, `OnAuto` and `AddCurrentLogin`;
 in-process observers receive only state documents the hub published, so a
@@ -4893,9 +4892,10 @@ its second line naming the bar of each window in force; the model-limit
 switch, A39) · **App** (the Claude Code row, A42; *Start at login*; *Check for
 updates…*; *Quit tycswap*). The bars are only named here: they are set where
 they were, in `tycswap config`, the TUI and the dashboard (A34). The accounts
-are the dashboard's Claude accounts and *Auto-switch* is the dashboard's
-engine, which rotates Claude accounts only (its second line says so); Codex
-reaches both with the dashboard (A35).
+are the dashboard's accounts, the Codex ones under a *Codex* heading of
+their own, and *Auto-switch* is the dashboard's engine host, which rotates
+the Codex accounts too while it runs the Codex engine (its second line says
+so; A47).
 
 **The menu stays open** on macOS: every row is a view whose `mouseUp`
 reports the click without ending the menu's tracking, and `tray_menu_commit`
@@ -5548,9 +5548,25 @@ lock and can delay one broadcast. The rows use the decision-grade value
 (unavailable past 300 s) while the Codex engine decides on the last good
 measurement, as in `tycswap auto`.
 
-**The tray.** The tray application reads the same document through the same
-state path; its Codex rows (grouped by provider, addressed by key) land with
-it and need nothing beyond this amendment.
+**The tray.** The tray application (A35) renders the same document, so it
+needs no data of its own. Its menu groups the rows by provider: the Claude
+rows under *Accounts* as before, then a *Codex* heading and the Codex rows,
+each group in slot order and past ten rows in its own submenu (*All N Codex
+accounts*). Every row's id is `switch:` and its row key, and a click passes
+the key: the app's switch dispatches on the provider (the Claude switcher,
+or the dashboard's Codex façade), and the remote tray (A45) posts the key to
+`/api/switch/{key}` as it is. A Codex switch notifies *Switched Codex to
+account #n* with the codex sessions still running (or that the next codex
+session uses it), and a Codex engine switch *Auto-switched Codex to account
+#n*; the Codex engine's other ticks raise nothing, as the Claude engine's
+non-switch events do not. The title, the icon, the API-key confirmation
+(A33) and the threshold alert stay with the active Claude account (the alert
+is remembered by row key); the tooltip adds the active Codex account and its
+windows. The *Auto-switch* row's second line names the Codex bar (`codex
+X%`) and says it rotates the Codex accounts too while the Codex engine is
+enabled; its toggle is the same Start and Stop, so the A43 resume starts both
+engines. A Claude-only state gives A37's menu, wording and notifications
+unchanged; only the row ids now carry the provider (`switch:claude:2`).
 
 **Tests.** `internal/web`: the exact document without Codex (`auto.codex`
 null) and with it (the Codex rows, `auto.codex`); the Codex row's usage
@@ -5569,4 +5585,11 @@ outcome; Stop waiting for a Codex tick in flight and, past the wait, Start
 refusing until it returns; the Codex façade over a real Codex store; and the
 wired dashboard with and without Codex accounts (rows, `auto.codex`, a Codex
 switch with its PIDs, a refused Codex alias, the 503). The `tycswap auto`
-tests guard its output unchanged.
+tests guard its output unchanged. The tray: the Codex rows under their own
+heading and submenu, the title, tooltip and alert on the Claude account, the
+Codex bar on the auto-switch row; the Claude-only menu, wording and
+notifications unchanged; a click carrying the key to the right switcher,
+with the Codex notification and its running PIDs; the Codex engine's switch
+notification; the remote tray posting the key verbatim; the app's switch
+dispatch; and the app resuming with both engines (`TestAppResumeStartsBothEngines`,
+a fake Codex source through the `newCodexAutoEngineFor` seam).
