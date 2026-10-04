@@ -44,7 +44,7 @@ type darwinTrayImpl struct {
 }
 
 func newTray(icon Icon, opts Options) (Tray, error) {
-	if png, _ := barImage(icon); len(png) == 0 {
+	if len(barImage(icon)) == 0 {
 		return nil, ErrUnsupported
 	}
 	t := &darwinTrayImpl{icon: icon, bar: icon, opts: opts, done: make(chan struct{})}
