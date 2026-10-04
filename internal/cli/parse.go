@@ -59,6 +59,9 @@ type parsed struct {
 	export         *string
 	importPath     *string
 	addToken       *string
+	// baseURL is add-token's endpoint: the token is that endpoint's key, and
+	// a switch onto the account points Claude Code at it (DESIGN A46).
+	baseURL *string
 }
 
 // parseResult is the outcome of parseArgs: either a populated *parsed (done ==
@@ -209,6 +212,12 @@ func parseArgs(prog string, argv []string, stdout, stderr io.Writer) parseResult
 				return *ex
 			}
 			p.email = &v
+		case "--base-url":
+			v, ex := takeValue()
+			if ex != nil {
+				return *ex
+			}
+			p.baseURL = &v
 		case "--account":
 			v, ex := takeValue()
 			if ex != nil {

@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/printer"
@@ -90,6 +91,7 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 				Disabled:        recordDisabled(data, num),
 				AtLimit:         atLimit,
 				LimitingWindows: limiting,
+				BaseURL:         info.BaseURL,
 			},
 		)
 		if showTokenStatus {
@@ -138,6 +140,10 @@ func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries ma
 			label = printer.Accent(termsafe.Strip(info.Alias)) + " (" + label + ")"
 		}
 		markers := ""
+		if info.BaseURL != "" {
+			// The host only: the full URL is in --json (DESIGN A46).
+			markers += " " + printer.Muted("→ "+termsafe.Strip(ccsettings.Host(info.BaseURL)))
+		}
 		if info.IsActive {
 			markers += " " + printer.BoldAccent("(active)")
 		}

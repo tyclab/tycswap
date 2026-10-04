@@ -31,6 +31,9 @@ type AccountSnapshot struct {
 	OrgUUID  string
 	IsActive bool
 	Kind     string // "oauth" | "api_key"
+	// BaseURL is the endpoint an API-key account carries, "" for none
+	// (DESIGN A46). Surfaces show its host; JSON carries it whole.
+	BaseURL string
 	// Switchable reports that the slot has both a stored credential and a stored
 	// config backup, independent of the disabled flag (store.AccountIsSwitchable).
 	Switchable bool
@@ -137,6 +140,7 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 			OrgUUID:          info.OrgUUID,
 			IsActive:         info.IsActive,
 			Kind:             s.AccountKindFor(num),
+			BaseURL:          info.BaseURL,
 			Switchable:       switchable,
 			Usage:            entries[num],
 			Alias:            info.Alias,

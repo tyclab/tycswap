@@ -98,6 +98,9 @@ func (f *fakeAccounts) seedAccount(num, email, org string, opts recordOpts) {
 	if opts.disabled {
 		rec["disabled"] = true
 	}
+	if opts.baseURL != "" {
+		rec["baseUrl"] = opts.baseURL
+	}
 	b, _ := json.Marshal(rec)
 	f.seq.Accounts[num] = b
 	n := atoi(num)
@@ -121,6 +124,7 @@ type recordOpts struct {
 	kind, alias   string
 	disabled      bool
 	creds, config string
+	baseURL       string
 }
 
 func atoi(s string) int {

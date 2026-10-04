@@ -489,6 +489,8 @@ type addTokenBody struct {
 	Email string `json:"email"`
 	Slot  string `json:"slot"`
 	Alias string `json:"alias"`
+	// BaseURL is the endpoint the key is for (DESIGN A46), "" for none.
+	BaseURL string `json:"baseUrl"`
 }
 
 // handleAddToken registers a setup-token / API key. The token is input only:
@@ -513,6 +515,12 @@ func (s *Server) handleAddToken(w http.ResponseWriter, r *http.Request) {
 	if b.Alias != "" && unavailable(w, s.d.Accounts != nil, "account operations") {
 		return
 	}
+	b.BaseURL = strings.TrimSpace(b.BaseURL)
+	adder, hasAdder := s.d.Facade.(BaseURLAdder)
+	if b.BaseURL != "" && !hasAdder {
+		writeError(w, http.StatusServiceUnavailable, "this build cannot store a base URL with a token")
+		return
+	}
 	var email, slot *string
 	if b.Email != "" {
 		email = &b.Email
@@ -528,7 +536,13 @@ func (s *Server) handleAddToken(w http.ResponseWriter, r *http.Request) {
 		slot = &b.Slot
 	}
 	s.mutate(w, func() (map[string]any, error) {
-		if err := s.d.Facade.AddAccountFromToken(b.Token, email, slot, true); err != nil {
+		var err error
+		if b.BaseURL != "" {
+			err = adder.AddAccountFromTokenWithBaseURL(b.Token, b.BaseURL, email, slot, true)
+		} else {
+			err = s.d.Facade.AddAccountFromToken(b.Token, email, slot, true)
+		}
+		if err != nil {
 			return nil, err
 		}
 		res := map[string]any{"added": true}

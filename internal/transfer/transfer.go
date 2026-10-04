@@ -191,7 +191,7 @@ func nextAccountNumber(data *SequenceData) int {
 // non-empty (spec 07§3.4). Values are string-encoded with HTML escaping off so
 // <, >, & survive (Python json.dumps parity); a store adapter re-indents the raw
 // bytes via WriteSequence, so key order and value bytes are the load-bearing part.
-func buildRecord(email, uuid, orgUUID, orgName, added, kind, alias string) (json.RawMessage, error) {
+func buildRecord(email, uuid, orgUUID, orgName, added, kind, alias, baseURL string) (json.RawMessage, error) {
 	type kv struct {
 		k, v string
 	}
@@ -207,6 +207,9 @@ func buildRecord(email, uuid, orgUUID, orgName, added, kind, alias string) (json
 	}
 	if alias != "" {
 		pairs = append(pairs, kv{"alias", alias})
+	}
+	if kind == "api_key" && baseURL != "" {
+		pairs = append(pairs, kv{"baseUrl", baseURL})
 	}
 	var buf bytes.Buffer
 	buf.WriteByte('{')

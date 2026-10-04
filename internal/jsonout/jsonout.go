@@ -211,6 +211,9 @@ type RowOpts struct {
 	Disabled        bool
 	AtLimit         bool
 	LimitingWindows []string
+	// BaseURL is the endpoint an API-key account carries (DESIGN A46); the
+	// row has "baseUrl" only when it is set.
+	BaseURL string
 }
 
 // AccountRow builds the account row map. alias is present only when non-empty;
@@ -236,6 +239,9 @@ func AccountRow(number int, email, orgName, orgUUID string, active bool, usageEn
 	}
 	if opts.Disabled {
 		row["disabled"] = true
+	}
+	if opts.BaseURL != "" {
+		row["baseUrl"] = opts.BaseURL
 	}
 	for k, v := range AtLimitFields(opts.AtLimit, opts.LimitingWindows) {
 		row[k] = v

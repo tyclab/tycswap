@@ -35,6 +35,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/filelock"
@@ -63,6 +64,7 @@ type normalizedEntry struct {
 	added       string
 	kind        string // "api_key" | "oauth"
 	alias       string
+	baseURL     string // the endpoint an API-key account carries (DESIGN A46)
 	credsText   string
 	configText  string
 }
@@ -157,10 +159,30 @@ func Import(acc Accounts, source string, force bool) error {
 
 			_, credsIsString := credsObj.(string)
 			isAPIKey := m["kind"] == "api_key" || credsIsString
+			// A base URL is checked like add-token checks it, and makes the
+			// credential that endpoint's key, whatever its shape (DESIGN A46).
+			baseURL := strOrEmpty(m["baseUrl"])
+			if baseURL != "" {
+				if !isAPIKey {
+					return cerr.Transfer("baseUrl for %s needs API-key credentials (a raw key string)", email)
+				}
+				v, err := ccsettings.ValidateBaseURL(baseURL)
+				if err != nil {
+					return cerr.Transfer("invalid baseUrl for %s: %v", email, err)
+				}
+				baseURL = v
+			}
 			var credsText string
 			if isAPIKey {
 				s, isStr := credsObj.(string)
-				if !isStr || !credstore.LooksLikeAPIKey(s) {
+				switch {
+				case baseURL != "":
+					key, err := ccsettings.ValidateToken(strOrEmpty(credsObj))
+					if !isStr || err != nil {
+						return cerr.Transfer("API-key credentials for %s must be the endpoint's key as one string", email)
+					}
+					s = key
+				case !isStr || !credstore.LooksLikeAPIKey(s):
 					return cerr.Transfer("API-key credentials for %s must be a raw sk-ant-api… string", email)
 				}
 				credsText = strings.TrimSpace(s)
@@ -232,6 +254,7 @@ func Import(acc Accounts, source string, force bool) error {
 				added:       termsafe.Strip(added),
 				kind:        kind,
 				alias:       alias,
+				baseURL:     baseURL,
 				credsText:   credsText,
 				configText:  string(configBytes),
 			})
@@ -300,7 +323,7 @@ func Import(acc Accounts, source string, force bool) error {
 			}
 
 			rec, err := buildRecord(entry.email, entry.uuid, entry.orgUUID, entry.orgName,
-				entry.added, entry.kind, entry.alias)
+				entry.added, entry.kind, entry.alias, entry.baseURL)
 			if err != nil {
 				return err
 			}
@@ -564,7 +587,7 @@ func validateImportedAccount(raw any) (email, exportedNum string, err error) {
 
 	// Org/uuid/added/alias, when present and non-null, must be strings — a
 	// list/dict would break the composite-key matching and pollute sequence.json.
-	for _, field := range []string{"organizationUuid", "organizationName", "uuid", "added", "alias"} {
+	for _, field := range []string{"organizationUuid", "organizationName", "uuid", "added", "alias", "baseUrl"} {
 		v, present := m[field]
 		if present && v != nil {
 			if _, isStr := v.(string); !isStr {

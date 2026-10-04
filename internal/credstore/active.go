@@ -157,6 +157,36 @@ func (s *FileKeychainStore) WriteActiveAccount(creds string) error {
 	return s.WriteActive(merged)
 }
 
+// ClearActive takes every login off Claude Code's credential store for an
+// account that authenticates through Claude Code's settings.json instead: an
+// API-key account with a base URL, whose key goes there as
+// env.ANTHROPIC_AUTH_TOKEN (DESIGN A46). The managed key is removed (the
+// Keychain item and primaryApiKey, as an OAuth write removes it) and the
+// OAuth login is cleared the way a switch onto a key clears it, keeping its
+// seat-wide part, the MCP server logins and client secrets (DESIGN A29).
+// Nothing is stored in their place, so ReadActive finds no credential. A
+// rollback onto a state that held no credential at all restores it with this
+// as well.
+//
+// The removals are best-effort one by one, as for any write that clears the
+// other axis, but the result is checked: a managed key or a login that is
+// still readable afterwards is an error, since Claude Code would send that
+// key along to the endpoint. The caller's rollback writes the original
+// credential back.
+func (s *FileKeychainStore) ClearActive() error {
+	if err := s.clearOAuthLogin(func() error { return nil }); err != nil {
+		return err
+	}
+	s.clearManagedKey()
+	if left, _, err := s.ReadActive(); err != nil || left != "" {
+		if err == nil {
+			err = errors.New("a login or a managed key is still readable")
+		}
+		return cerr.CredentialWrite("Could not take the login off Claude Code's credential store: %v", err).Wrap(err)
+	}
+	return nil
+}
+
 // readLiveOAuth returns the live OAuth credential text for the carry-over: the
 // Keychain item while the Keychain is in use (bounded retry, then the file),
 // else the plaintext file; "" when neither holds one or the file read fails

@@ -21,6 +21,8 @@ type tokenForm struct {
 	Token string
 	Email *string
 	Slot  *int
+	// BaseURL is the endpoint the key is for, "" for none (DESIGN A46).
+	BaseURL string
 }
 
 // confirmModal is a yes/no confirmation (09§7.1). onDone receives the boolean
@@ -67,17 +69,24 @@ func (c *confirmModal) view(m *Model) string {
 	return modalBox(b.String(), false)
 }
 
-// addTokenModal collects a token, optional email, and optional slot (09§7.2).
+// addTokenModal collects a token, optional email, optional slot (09§7.2), and
+// an optional base URL (DESIGN A46).
 type addTokenModal struct {
 	token     string
 	email     string
 	slot      string
-	focus     int // 0 token, 1 email, 2 slot, 3 Add, 4 Cancel
+	baseURL   string
+	focus     int // 0 token, 1 email, 2 slot, 3 base URL, 4 Add, 5 Cancel
 	formError string
 	onDone    func(m *Model, form *tokenForm) tea.Cmd
 }
 
-const addTokenFields = 5
+// The focus ring: four fields, then the two buttons.
+const (
+	addTokenFields    = 6
+	addTokenAddBtn    = 4
+	addTokenCancelBtn = 5
+)
 
 func (a *addTokenModal) update(m *Model, msg tea.Msg) tea.Cmd {
 	key, ok := msg.(tea.KeyMsg)
@@ -94,17 +103,17 @@ func (a *addTokenModal) update(m *Model, msg tea.Msg) tea.Cmd {
 		a.focus = (a.focus - 1 + addTokenFields) % addTokenFields
 		return nil
 	case "left":
-		if a.focus >= 3 {
-			a.focus = 3
+		if a.focus >= addTokenAddBtn {
+			a.focus = addTokenAddBtn
 		}
 		return nil
 	case "right":
-		if a.focus >= 3 {
-			a.focus = 4
+		if a.focus >= addTokenAddBtn {
+			a.focus = addTokenCancelBtn
 		}
 		return nil
 	case "enter":
-		if a.focus == 4 {
+		if a.focus == addTokenCancelBtn {
 			return m.dismissModal(func(m *Model) tea.Cmd { return a.onDone(m, nil) })
 		}
 		return a.submit(m)
@@ -133,6 +142,8 @@ func (a *addTokenModal) editFocused(fn func(string) string) {
 		a.email = fn(a.email)
 	case 2:
 		a.slot = fn(a.slot)
+	case 3:
+		a.baseURL = fn(a.baseURL)
 	}
 }
 
@@ -161,7 +172,7 @@ func (a *addTokenModal) submit(m *Model) tea.Cmd {
 		}
 		slotPtr = &n
 	}
-	form := &tokenForm{Token: token, Email: emailPtr, Slot: slotPtr}
+	form := &tokenForm{Token: token, Email: emailPtr, Slot: slotPtr, BaseURL: strings.TrimSpace(a.baseURL)}
 	return m.dismissModal(func(m *Model) tea.Cmd { return a.onDone(m, form) })
 }
 
@@ -169,19 +180,22 @@ func (a *addTokenModal) view(m *Model) string {
 	var b strings.Builder
 	b.WriteString(modalTitleStyle.Render("Add account from token"))
 	b.WriteString("\n\n")
-	b.WriteString("OAuth setup-token (sk-ant-oat…) or managed API key (sk-ant-api…); the type is auto-detected.")
+	b.WriteString("OAuth setup-token (sk-ant-oat…) or managed API key (sk-ant-api…); the type is auto-detected.\n" +
+		"With a base URL the token is that endpoint's API key, whatever its shape.")
 	b.WriteString("\n\n")
 	b.WriteString(field("token (required)", strings.Repeat("•", len(a.token)), a.focus == 0))
 	b.WriteString("\n")
 	b.WriteString(field("email label (optional)", a.email, a.focus == 1))
 	b.WriteString("\n")
 	b.WriteString(field("slot number (optional)", a.slot, a.focus == 2))
+	b.WriteString("\n")
+	b.WriteString(field("base URL (optional)", a.baseURL, a.focus == 3))
 	if a.formError != "" {
 		b.WriteString("\n")
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(colSevCrit)).Render(a.formError))
 	}
 	b.WriteString("\n\n")
-	b.WriteString(button("Add", a.focus == 3) + "  " + button("Cancel", a.focus == 4))
+	b.WriteString(button("Add", a.focus == addTokenAddBtn) + "  " + button("Cancel", a.focus == addTokenCancelBtn))
 	b.WriteString("\n\n")
 	b.WriteString(modalHintStyle.Render("enter add  ·  tab next field  ·  esc cancel"))
 	return modalBox(b.String(), false)

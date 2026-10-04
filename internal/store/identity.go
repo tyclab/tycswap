@@ -316,6 +316,24 @@ func (s *Store) AccountKindFor(num string) string {
 	return "oauth"
 }
 
+// AccountBaseURL returns the base URL an API-key account carries (DESIGN A46),
+// "" when the slot has none. Only an api_key record's baseUrl counts: the key
+// is sent there instead of to Anthropic. The value is returned as stored; the
+// switch validates it before writing it anywhere.
+func (s *Store) AccountBaseURL(num string) string {
+	data, _ := s.ReadSequence()
+	return BaseURLFrom(data, num)
+}
+
+// BaseURLFrom is AccountBaseURL over already-loaded sequence data.
+func BaseURLFrom(data *SequenceData, num string) string {
+	rec, ok := recordFor(data, num)
+	if !ok || strField(rec, "kind") != "api_key" {
+		return ""
+	}
+	return strField(rec, "baseUrl")
+}
+
 // AccountEmail returns a slot's stored email, or "" (spec 01§8.5 account_email).
 func (s *Store) AccountEmail(num string) string {
 	data, _ := s.ReadSequence()

@@ -14,6 +14,7 @@ package web
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -119,6 +120,13 @@ func (s *Server) buildState(o stateOpts) State {
 		}
 	}
 	st.AuthOverrides = s.d.AuthOverrides()
+	// tycswap's endpoint profile is the login while the active account is the
+	// one with a base URL; under any other live login (a /login made while it
+	// was active, say) it overrides that login, and the notice says so.
+	if len(st.AuthOverrides.Profile) > 0 && !activeHasBaseURL(snap) {
+		st.AuthOverrides.Settings = append(append([]string(nil), st.AuthOverrides.Settings...), st.AuthOverrides.Profile...)
+		sort.Strings(st.AuthOverrides.Settings)
+	}
 	if st.AuthOverrides.Env == nil {
 		st.AuthOverrides.Env = []string{}
 	}
@@ -193,6 +201,20 @@ func (s *Server) enrichTokenStatus(rows []map[string]any) {
 	}
 }
 
+// activeHasBaseURL reports whether the snapshot's active account is an
+// API-key account with a base URL (DESIGN A46).
+func activeHasBaseURL(snap *reporting.AccountsSnapshot) bool {
+	if snap == nil {
+		return false
+	}
+	for _, a := range snap.Accounts {
+		if a.IsActive {
+			return a.BaseURL != ""
+		}
+	}
+	return false
+}
+
 // accountRow projects one AccountSnapshot. The usage value is the
 // decision-grade one (`DecisionValue`), so a measurement older than STALE_OK_S
 // reports "unavailable" exactly as `tycswap list --json` does. provider and
@@ -224,6 +246,11 @@ func accountRow(a reporting.AccountSnapshot) map[string]any {
 		row["usage"] = nil
 	} else {
 		row["usage"] = usage
+	}
+	if a.BaseURL != "" {
+		// The endpoint an API-key account sends its requests to (DESIGN
+		// A46); the page shows its host.
+		row["baseUrl"] = a.BaseURL
 	}
 	for k, v := range jsonout.AtLimitFields(a.AtLimit, a.LimitingWindows) {
 		row[k] = v

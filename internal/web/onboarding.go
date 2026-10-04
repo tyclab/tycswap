@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/paths"
 )
 
@@ -32,6 +33,11 @@ type AuthOverridesView struct {
 	Env          []string `json:"env"`      // never null
 	Settings     []string `json:"settings"` // never null; dotted keys
 	SettingsPath string   `json:"settingsPath"`
+	// Profile are the settings keys that are tycswap's own endpoint profile
+	// (DESIGN A46), set aside from Settings: they are the active account's
+	// login while an account with a base URL is active, and an override of
+	// whatever else is (buildState decides). Not sent.
+	Profile []string `json:"-"`
 }
 
 // Any reports whether something overrides the login.
@@ -53,7 +59,21 @@ var authOverrideSettings = []string{"apiKeyHelper", "env.ANTHROPIC_API_KEY", "en
 // the Deps.AuthOverrides default, over os.Getenv and the live config home's
 // settings.json.
 func DetectAuthOverrides(getenv func(string) string, settingsPath string) AuthOverridesView {
+	return detectAuthOverrides(getenv, settingsPath, "")
+}
+
+// detectAuthOverrides is DetectAuthOverrides that knows tycswap's own
+// endpoint profile (DESIGN A46): while the record at sidecarPath says the
+// profile is in settingsPath, its env.ANTHROPIC_BASE_URL and
+// env.ANTHROPIC_AUTH_TOKEN go to Profile instead of Settings.
+func detectAuthOverrides(getenv func(string) string, settingsPath, sidecarPath string) AuthOverridesView {
 	v := AuthOverridesView{Env: []string{}, Settings: []string{}, SettingsPath: settingsPath}
+	ours := map[string]bool{}
+	if sidecarPath != "" && ccsettings.RecordsFile(sidecarPath, settingsPath) {
+		for _, k := range ccsettings.ProfileKeys() {
+			ours[k] = true
+		}
+	}
 	if getenv != nil {
 		for _, k := range authOverrideEnv {
 			if strings.TrimSpace(getenv(k)) != "" {
@@ -71,6 +91,10 @@ func DetectAuthOverrides(getenv func(string) string, settingsPath string) AuthOv
 	}
 	for _, k := range authOverrideSettings {
 		if val, ok := lookup(root, k); ok && !blank(val) {
+			if ours[k] {
+				v.Profile = append(v.Profile, k)
+				continue
+			}
 			v.Settings = append(v.Settings, k)
 		}
 	}
@@ -103,7 +127,12 @@ func blank(v any) bool {
 	return ok && strings.TrimSpace(s) == ""
 }
 
-// defaultAuthOverrides is DetectAuthOverrides over this process.
-func defaultAuthOverrides() AuthOverridesView {
-	return DetectAuthOverrides(os.Getenv, filepath.Join(paths.GetClaudeConfigHome(), "settings.json"))
+// defaultAuthOverrides is DetectAuthOverrides over this process, with the
+// endpoint profile's record in the backup root backupDir ("" for none).
+func defaultAuthOverrides(backupDir string) AuthOverridesView {
+	sidecar := ""
+	if backupDir != "" {
+		sidecar = filepath.Join(backupDir, ccsettings.SidecarName)
+	}
+	return detectAuthOverrides(os.Getenv, paths.GetClaudeSettingsPath(), sidecar)
 }
