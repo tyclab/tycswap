@@ -260,16 +260,17 @@ func TestSettingSet_BroadcastsState(t *testing.T) {
 // Every key says when a saved value takes effect, worded from what the code
 // does (A27): autoswitch.model at once (the routes retarget a running
 // engine), the threshold at the next engine start with the slider for the
-// running one, the Codex keys at the next `tycswap auto`, and every other key,
-// a new one included, at the next engine start.
+// running one, the Codex keys at the next start of a Codex engine (the Auto
+// tab's with Codex accounts, `tycswap auto`; never the TUI's, A47), and every
+// other key, a new one included, at the next engine start.
 func TestSettingApplies(t *testing.T) {
 	cases := map[string]string{
 		"autoswitch.model":             "At once",
 		"autoswitch.sevenDayThreshold": "slider",
 		"autoswitch.fiveHourThreshold": "When an engine next starts",
 		"autoswitch.modelThreshold":    "When an engine next starts",
-		"autoswitch.codexEnabled":      "tycswap auto next starts",
-		"autoswitch.codexThreshold":    "tycswap auto next starts",
+		"autoswitch.codexEnabled":      "When the Codex engine next starts",
+		"autoswitch.codexThreshold":    "When the Codex engine next starts",
 		"autoswitch.intervalSeconds":   "When an engine next starts",
 		"autoswitch.cooldownSeconds":   "When an engine next starts",
 		"autoswitch.someFutureKey":     "When an engine next starts",
@@ -283,6 +284,13 @@ func TestSettingApplies(t *testing.T) {
 	// another process (the TUI, tycswap auto) keeps the value it started with.
 	if got := settingApplies("autoswitch.model"); !strings.Contains(got, "tycswap auto keeps its value until it next starts") {
 		t.Errorf("settingApplies(autoswitch.model) = %q, want it to name the engines it does not reach", got)
+	}
+	// The TUI's engine never runs the Codex engine, so the Codex keys do
+	// not claim it.
+	for _, key := range []string{"autoswitch.codexEnabled", "autoswitch.codexThreshold"} {
+		if got := settingApplies(key); !strings.Contains(got, "when the dashboard started with Codex accounts") || !strings.Contains(got, "tycswap auto") || !strings.Contains(got, "The terminal dashboard's engine rotates Claude accounts only.") {
+			t.Errorf("settingApplies(%s) = %q", key, got)
+		}
 	}
 }
 

@@ -55,8 +55,27 @@ func stripResetStrings(t *testing.T, win any) {
 	delete(m, "clock")
 }
 
+// asSlice is v as a JSON array, or nil.
+func asSlice(v any) []any {
+	a, _ := v.([]any)
+	return a
+}
+
+// TestState_ExactShape pins the whole document, on a Claude-only install
+// (auto.codex null, no Codex rows: the shape from before Codex) and with
+// Codex accounts (their rows after the Claude ones, the Codex engine under
+// auto.codex; DESIGN A47).
 func TestState_ExactShape(t *testing.T) {
-	h := newHarness(t)
+	t.Run("claude-only", func(t *testing.T) { testStateExactShape(t, false) })
+	t.Run("with-codex", func(t *testing.T) { testStateExactShape(t, true) })
+}
+
+func testStateExactShape(t *testing.T, codex bool) {
+	var opts []option
+	if codex {
+		opts = append(opts, withCodex())
+	}
+	h := newHarness(t, opts...)
 	resp := h.get("/api/state")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d", resp.StatusCode)
@@ -71,14 +90,20 @@ func TestState_ExactShape(t *testing.T) {
 	}
 
 	accounts := got["accounts"].([]any)
-	if len(accounts) != 3 {
-		t.Fatalf("accounts len %d", len(accounts))
+	wantRows := 3
+	if codex {
+		wantRows = 5
 	}
-	u := accounts[0].(map[string]any)["usage"].(map[string]any)
-	stripResetStrings(t, u["fiveHour"])
-	stripResetStrings(t, u["sevenDay"])
-	for _, w := range u["scoped"].([]any) {
-		stripResetStrings(t, w)
+	if len(accounts) != wantRows {
+		t.Fatalf("accounts len %d, want %d", len(accounts), wantRows)
+	}
+	for _, a := range accounts {
+		u, _ := a.(map[string]any)["usage"].(map[string]any)
+		stripResetStrings(t, u["fiveHour"])
+		stripResetStrings(t, u["sevenDay"])
+		for _, w := range asSlice(u["scoped"]) {
+			stripResetStrings(t, w)
+		}
 	}
 
 	want := map[string]any{
@@ -133,6 +158,7 @@ func TestState_ExactShape(t *testing.T) {
 				map[string]any{"at": 1758276002, "kind": "switch", "message": "switched to #2", "account": "2", "fields": map[string]any{"from": "1"}},
 			},
 			"quarantine": map[string]any{"quarantine": map[string]any{"3": map[string]any{"reason": "invalid_grant", "at": 1758275000}}},
+			"codex":      nil,
 		},
 		"strategies":    []any{"best", "next-available"},
 		"name":          "tycswap",
@@ -140,6 +166,31 @@ func TestState_ExactShape(t *testing.T) {
 		"authOverrides": map[string]any{"env": []any{}, "settings": []any{}, "settingsPath": "/home/t/.claude/settings.json"},
 		"updates":       map[string]any{"available": false, "checking": false, "app": map[string]any{"current": "v0.4.0", "available": false}, "claudeCode": map[string]any{"state": "checking", "available": false}},
 		"ui":            map[string]any{"folded": map[string]any{}},
+	}
+	if codex {
+		// The Codex rows: the Claude row shape, with only the 5h and 7d
+		// windows, never atLimit, tokenStatus or baseUrl.
+		want["accounts"] = append(want["accounts"].([]any),
+			map[string]any{
+				"number": 1, "email": "dana@example.com", "alias": "", "orgName": "Team",
+				"kind": "oauth", "isActive": true, "disabled": false, "switchable": true, "rotationEligible": true,
+				"usageStatus": "ok", "provider": "codex", "key": "codex:1",
+				"usage": map[string]any{
+					"fiveHour": map[string]any{"pct": 30, "resetsAt": "2026-09-19T13:00:00Z"},
+					"sevenDay": map[string]any{"pct": 55, "resetsAt": "2026-09-24T00:00:00Z"},
+				},
+				"usageFetchedAt": "2025-09-19T10:00:00Z", "usageAgeSeconds": 4,
+			},
+			map[string]any{
+				"number": 2, "email": "erin@example.com", "alias": "ci", "orgName": "",
+				"kind": "api_key", "isActive": false, "disabled": true, "switchable": false, "rotationEligible": false,
+				"usageStatus": "api_key", "usage": nil, "provider": "codex", "key": "codex:2",
+			},
+		)
+		want["auto"].(map[string]any)["codex"] = map[string]any{
+			"enabled": true, "running": true, "threshold": 97,
+			"lastTick": map[string]any{"at": 1758276003, "outcome": "switched", "detail": "switched 1 (98%) -> 2 (12%)", "switchedTo": "2", "runningPids": []any{777}},
+		}
 	}
 	if _, has := got["tokenStatus"]; has {
 		t.Error("tokenStatus present at top level")
@@ -396,6 +447,77 @@ func TestAccountRow_ParityWithListJSON(t *testing.T) {
 				t.Errorf("account %s key %q: %v != list --json %v", a.Number, k, gv, rv)
 			}
 		}
+	}
+}
+
+// A Codex row is projected by the same accountRow: its usage is what
+// `tycswap codex list --json` serialises for the account (jsonout.UsageToJSON
+// over the measurement), and the usage / freshness keys are those of a list
+// row; it never carries the at-limit keys, which are Claude's.
+func TestAccountRow_ParityWithListJSON_Codex(t *testing.T) {
+	for _, a := range sampleCodexRows() {
+		row := accountRow(a)
+		var codexList any
+		if a.Usage.LastGood != nil {
+			codexList = jsonout.UsageToJSON(a.Usage.LastGood)
+		}
+		if !reflect.DeepEqual(canon(t, row["usage"]), canon(t, codexList)) {
+			t.Errorf("codex %s usage %v != codex list --json %v", a.Number, row["usage"], codexList)
+		}
+		ref := jsonout.AccountRow(0, a.Email, a.OrgName, a.OrgUUID, a.IsActive, a.Usage.DecisionValue(), jsonout.RowOpts{
+			UsageFetchedAt: a.Usage.FetchedAt, UsageAgeS: a.Usage.AgeS, Alias: a.Alias, Disabled: a.Disabled,
+		})
+		for _, k := range []string{"usageStatus", "usage", "usageFetchedAt", "usageAgeSeconds"} {
+			gv, gok := row[k]
+			rv, rok := ref[k]
+			if gok != rok || (gok && !reflect.DeepEqual(canon(t, gv), canon(t, rv))) {
+				t.Errorf("codex %s key %q: %v (present %v), list row %v (present %v)", a.Number, k, gv, gok, rv, rok)
+			}
+		}
+		for _, k := range []string{"atLimit", "limitingWindows", "tokenStatus", "baseUrl"} {
+			if _, has := row[k]; has {
+				t.Errorf("codex %s row carries %q", a.Number, k)
+			}
+		}
+		if row["provider"] != "codex" || row["key"] != "codex:"+a.Number {
+			t.Errorf("codex %s: provider %v key %v", a.Number, row["provider"], row["key"])
+		}
+	}
+}
+
+// Token status is a Claude row's: with Codex rows listed, ?tokenStatus=1
+// enriches the Claude rows and leaves the Codex rows without the key.
+func TestState_TokenStatus_ClaudeRowsOnly(t *testing.T) {
+	h := newHarness(t, withCodex())
+	var got map[string]any
+	if err := json.Unmarshal(readBody(t, h.get("/api/state?tokenStatus=1")), &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range got["accounts"].([]any) {
+		row := r.(map[string]any)
+		_, has := row["tokenStatus"]
+		if want := row["provider"] == "claude"; has != want {
+			t.Errorf("row %v: tokenStatus present %v, want %v", row["key"], has, want)
+		}
+	}
+}
+
+// The endpoint profile is the login while the active CLAUDE account has the
+// base URL: an active Codex row, listed first here, says nothing about it.
+func TestState_ProfileFollowsTheClaudeActiveAccountOnly(t *testing.T) {
+	h := newHarness(t)
+	snap := sampleSnapshot()
+	snap.Accounts[0].Kind, snap.Accounts[0].BaseURL = "api_key", "https://gw.example.com"
+	codex := sampleCodexRows()
+	snap.Accounts = append([]reporting.AccountSnapshot{codex[0]}, snap.Accounts...)
+	h.fa.mu.Lock()
+	h.fa.snap = snap
+	h.fa.mu.Unlock()
+	h.setOverrides(AuthOverridesView{Env: []string{}, Settings: []string{},
+		Profile: []string{"env.ANTHROPIC_AUTH_TOKEN", "env.ANTHROPIC_BASE_URL"}, SettingsPath: "/home/t/.claude/settings.json"})
+	st := decodeJSON(t, h.get("/api/state"))
+	if got := st["authOverrides"].(map[string]any)["settings"].([]any); len(got) != 0 {
+		t.Errorf("settings overrides %v, want none while the Claude endpoint account is active", got)
 	}
 }
 

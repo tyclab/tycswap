@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -22,18 +23,29 @@ import (
 	"github.com/tyclab/tycswap/internal/procdetect"
 )
 
-// A key for another provider never reaches the Claude façade, a bare slot is
-// refused rather than guessed, and a Claude key reaches it with the bare
-// reference.
+// A codex: key reaches the Codex façade with the bare reference for the
+// operations the terminal dashboard offers on a Codex row (switch, disable,
+// enable, remove) and is refused for the rest (alias, move, swap: 404; the
+// Claude-only switch flags: 400); a bare slot is refused rather than guessed;
+// a Claude key reaches the Claude façade; no key ever reaches the other
+// provider's façade (DESIGN A47).
 func TestProviderKeyedRoutesNeverCrossProviders(t *testing.T) {
-	h := newHarness(t)
+	h := newHarness(t, withCodex())
 	for _, path := range []string{
-		"/api/switch/codex:1", "/api/switch/codex:1?force=1",
-		"/api/accounts/codex:1/disable", "/api/accounts/codex:1/enable",
-		"/api/accounts/codex:1/remove",
+		"/api/switch/codex:1", "/api/accounts/codex:2/disable", "/api/accounts/CODEX:2/enable",
+		"/api/accounts/codex:ci/remove",
 	} {
-		if resp := h.post(path); resp.StatusCode != http.StatusNotFound {
-			t.Errorf("%s: status %d, want 404", path, resp.StatusCode)
+		if resp := h.post(path); resp.StatusCode != http.StatusOK {
+			t.Errorf("%s: status %d, want 200", path, resp.StatusCode)
+		}
+	}
+	want := []string{"SwitchTo(1)", "SetAccountDisabled(2,true)", "SetAccountDisabled(2,false)", "RemoveAccount(ci)"}
+	if got := h.codex.Calls(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("codex calls %v, want %v", got, want)
+	}
+	for _, path := range []string{"/api/switch/codex:1?force=1", "/api/switch/codex:2?confirmAuthChange=1"} {
+		if resp := h.post(path); resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400", path, resp.StatusCode)
 		}
 	}
 	for _, tc := range []struct{ path, body string }{
@@ -41,12 +53,14 @@ func TestProviderKeyedRoutesNeverCrossProviders(t *testing.T) {
 		{"/api/accounts/codex:1/move", `{"slot":"2"}`},
 		{"/api/accounts/swap", `{"a":"claude:1","b":"codex:2"}`},
 		{"/api/accounts/swap", `{"a":"codex:1","b":"claude:2"}`},
+		{"/api/accounts/swap", `{"a":"codex:1","b":"codex:2"}`},
+		{"/api/accounts/gemini:1/remove", ``},
 	} {
 		if resp := h.postJSON(tc.path, tc.body); resp.StatusCode != http.StatusNotFound {
 			t.Errorf("%s %s: status %d, want 404", tc.path, tc.body, resp.StatusCode)
 		}
 	}
-	for _, path := range []string{"/api/switch/1", "/api/accounts/1/disable", "/api/switch/:1", "/api/switch/claude:"} {
+	for _, path := range []string{"/api/switch/1", "/api/accounts/1/disable", "/api/switch/:1", "/api/switch/claude:", "/api/switch/codex:"} {
 		if resp := h.post(path); resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("%s: status %d, want 400", path, resp.StatusCode)
 		}
@@ -55,7 +69,10 @@ func TestProviderKeyedRoutesNeverCrossProviders(t *testing.T) {
 		t.Errorf("bare swap: status %d, want 400", resp.StatusCode)
 	}
 	if got := append(h.fa.Calls(), h.ops.Calls()...); len(got) != 0 {
-		t.Fatalf("a façade was reached through a foreign or bare key: %v", got)
+		t.Fatalf("a Claude façade was reached through a Codex, foreign or bare key: %v", got)
+	}
+	if got := h.codex.Calls(); len(got) != len(want) {
+		t.Fatalf("the Codex façade was reached through a refused route: %v", got)
 	}
 	if resp := h.post("/api/switch/claude:2"); resp.StatusCode != http.StatusOK {
 		t.Fatalf("claude key: status %d", resp.StatusCode)
@@ -69,9 +86,31 @@ func TestProviderKeyedRoutesNeverCrossProviders(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, row := range st.Accounts {
-		if row["provider"] != "claude" || row["key"] != "claude:"+strconv.Itoa(int(row["number"].(float64))) {
+		p, _ := row["provider"].(string)
+		if (p != "claude" && p != "codex") || row["key"] != p+":"+strconv.Itoa(int(row["number"].(float64))) {
 			t.Errorf("row %v lacks provider/key", row)
 		}
+	}
+}
+
+// Without Codex accounts at launch there is no Codex façade: every route
+// given a codex: key, and the add route asked for the Codex login, answers
+// 503 and reaches nothing.
+func TestCodexOps_Nil503(t *testing.T) {
+	h := newHarness(t)
+	for _, path := range []string{
+		"/api/switch/codex:1", "/api/accounts/codex:1/disable", "/api/accounts/codex:1/enable",
+		"/api/accounts/codex:1/remove",
+	} {
+		if resp := h.post(path); resp.StatusCode != http.StatusServiceUnavailable {
+			t.Errorf("%s: status %d, want 503", path, resp.StatusCode)
+		}
+	}
+	if resp := h.postJSON("/api/accounts/add", map[string]any{"provider": "codex"}); resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("add codex: status %d, want 503", resp.StatusCode)
+	}
+	if got := append(append(h.fa.Calls(), h.ops.Calls()...), h.codex.Calls()...); len(got) != 0 {
+		t.Fatalf("a façade was reached: %v", got)
 	}
 }
 
@@ -404,5 +443,50 @@ func TestStaticStreamStopsOnDeadSession(t *testing.T) {
 	}
 	if strings.Contains(js, "prev[String(a.number)] = a.tokenStatus") {
 		t.Error("app.js still copies stale token status forward")
+	}
+}
+
+// The Codex rows (DESIGN A47): their own group after the Claude rows, with
+// what the terminal dashboard offers on one — switch, disable / enable,
+// remove — and nothing else; the add button for the codex CLI's login; the
+// restart warning after a Codex switch; the Codex engine's tile and its
+// events tagged in the log; and the Claude-only views reading Claude rows.
+func TestStaticCodexRows(t *testing.T) {
+	js, index := staticFile(t, "app.js"), staticFile(t, "index.html")
+	row := regexp.MustCompile(`function codexRow\(a\) \{[\s\S]*?\n  \}`).FindString(js)
+	if row == "" {
+		t.Fatal("no codexRow in app.js")
+	}
+	for _, want := range []string{"'/api/switch/' + keyPath(a)", "'/enable'", "'/disable'", "'data-action': 'remove'", "chip('codex', 'kind')", "a.isActive || !a.switchable"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("codexRow lacks %q", want)
+		}
+	}
+	for _, refused := range []string{"force-switch", "'alias'", "'move'", "'swap'", "switch-api-key", "baseUrl", "tokenStatus"} {
+		if strings.Contains(row, refused) {
+			t.Errorf("codexRow offers %q, which the terminal dashboard does not on a Codex row", refused)
+		}
+	}
+	for _, want := range []string{
+		"el('tr', { class: 'provider-head' }", "var codex = codexRows(st);", "'add-current-codex': function", "{ provider: 'codex' }",
+		"api('POST', url).then(codexRestartNote)", "if (a.codex) { tiles.appendChild(codexTile(a.codex)); }",
+		"ev.provider === 'codex'",
+		// Only Codex rows: no "No managed accounts yet" over them.
+		"$('accounts-empty').hidden = list.length > 0 || codex.length > 0;",
+		// The restart note is something to act on, not a failure.
+		"restart it for the new account to take effect.', 'info');",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("app.js lacks %q", want)
+		}
+	}
+	for _, fn := range []string{"renderActiveStrip(st)", "renderSummary(st)", "rankCandidates(st)", "modelWindowNames(st)"} {
+		body := regexp.MustCompile(`function ` + regexp.QuoteMeta(fn) + ` \{[\s\S]*?\n  \}`).FindString(js)
+		if body == "" || !strings.Contains(body, "claudeRows(st)") || strings.Contains(body, "st.accounts") {
+			t.Errorf("%s does not read the Claude rows alone", fn)
+		}
+	}
+	if !regexp.MustCompile(`<button [^>]*id="add-current-codex"[^>]*data-action="add-current-codex"[^>]*hidden>`).MatchString(index) {
+		t.Error("index.html lacks the hidden Add current Codex login button")
 	}
 }

@@ -93,7 +93,7 @@ func TestAppStateRoundTrip(t *testing.T) {
 // The facade records only where it was told to (the app), and only the
 // user's real choice.
 func TestAutoFacadeRemembers(t *testing.T) {
-	a := newAutoFacade(&core.Switcher{Store: &store.Store{}})
+	a := newAutoFacade(&core.Switcher{Store: &store.Store{}}, nil)
 	a.remember(true) // `web`: no state path, nothing written
 	a.statePath = appStatePath(t.TempDir())
 	a.remember(true)

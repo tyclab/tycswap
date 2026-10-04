@@ -26,7 +26,6 @@ import (
 	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/printer"
-	"github.com/tyclab/tycswap/internal/providers"
 	"github.com/tyclab/tycswap/internal/settings"
 )
 
@@ -158,7 +157,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 			return
 		}
 		tick := codexEngine.Tick(ctx, dryRun)
-		if tick.Outcome != codexauto.OutcomeSwitched && tick.Outcome != codexauto.OutcomeError && !dryRun {
+		if !codexTickShown(tick, dryRun) {
 			return
 		}
 		outMu.Lock()
@@ -197,99 +196,17 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	return code
 }
 
-// newCodexAutoEngine returns the Codex auto-switcher, or nil when
-// autoswitch.codexEnabled is off or this machine has no Codex accounts (cli.py
-// _codex_auto_engine). The threshold is autoswitch.codexThreshold, or the
-// effective Claude 7d bar when that is 0 (codexThreshold). A broken Codex store
-// must never stop the Claude loop starting, so a panic here is a nil engine.
-func newCodexAutoEngine(merged settings.AutoSwitchSettings, s ioStreams) (eng *codexauto.AutoSwitcher) {
-	if !merged.CodexEnabled {
-		return nil
-	}
-	defer func() {
-		if recover() != nil {
-			eng = nil
-		}
-	}()
-	if !providers.CodexIsPresent() {
-		return nil
-	}
-	return codexauto.New(newCodexSwitcher(s), codexThreshold(merged), merged.HysteresisPct)
-}
-
-// codexThreshold is the Codex engine's one bar: autoswitch.codexThreshold, or
-// the Claude 7d bar when that is 0. The 7d bar is the one a pre-A34
-// autoswitch.threshold seeds, so a migrated settings file keeps its Codex
-// behaviour (DESIGN A34).
-func codexThreshold(merged settings.AutoSwitchSettings) float64 {
-	if merged.CodexThreshold != 0 {
-		return merged.CodexThreshold
-	}
-	return merged.SevenDayThreshold
-}
-
-// startCodexLoop runs tick on its own goroutine — once immediately, then every
-// interval — until the returned stop is called (deviation 7: #252's thread
-// waited one interval first). A separate goroutine rather than a hook in the
-// Claude engine: a slow Codex fetch never delays a Claude switch, and a Codex
-// panic never takes down `tycswap auto`. stop cancels an in-flight tick and then
-// waits for the goroutine to return, so the process never exits in the middle
-// of a Codex switch and no Codex line is printed after the loop has stopped.
-func startCodexLoop(enabled bool, interval time.Duration, tick func(context.Context)) (stop func()) {
-	if !enabled {
-		return func() {}
-	}
-	if interval <= 0 {
-		interval = time.Second
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	safeTick := func() {
-		defer func() { _ = recover() }()
-		tick(ctx)
-	}
-	go func() {
-		defer close(done)
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			safeTick()
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-		}
-	}()
-	return func() {
-		cancel()
-		<-done
-	}
-}
-
 // emitCodexTick prints one Codex tick in the engine's event contract
 // (deviation 2): a compact JSONL object with schemaVersion/event/ts under
 // --json, else the same timestamped, kind-colored line the Claude events use.
 func emitCodexTick(out io.Writer, tick codexauto.Tick, jsonMode bool) {
 	now := time.Now()
 	if jsonMode {
-		var switchedTo any
-		if tick.SwitchedTo != "" {
-			switchedTo = tick.SwitchedTo
-		}
-		pids := tick.RunningPIDs
-		if pids == nil {
-			pids = []int{}
-		}
-		writeJSONCompact(out, map[string]any{
-			"schemaVersion": jsonout.SchemaVersion,
-			"event":         "codex",
-			"ts":            now.UTC().Format("2006-01-02T15:04:05Z"),
-			"outcome":       tick.Outcome,
-			"detail":        tick.Detail,
-			"switchedTo":    switchedTo,
-			"runningPids":   pids,
-		})
+		line := codexTickFields(tick)
+		line["schemaVersion"] = jsonout.SchemaVersion
+		line["event"] = "codex"
+		line["ts"] = now.UTC().Format("2006-01-02T15:04:05Z")
+		writeJSONCompact(out, line)
 		return
 	}
 	line := tick.Human()

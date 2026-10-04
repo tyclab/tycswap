@@ -2,10 +2,11 @@
 // separated from the platform tray so it can be tested with a fake one.
 //
 // The shell follows the same state documents the dashboard receives: the
-// title next to the icon is the active account and its fullest window, the
-// menu lists every account for one-click switching, and notifications fire
-// on engine switches, quarantines and when the active account crosses the
-// auto-switch threshold of a window.
+// title next to the icon is the active Claude account and its fullest window,
+// the menu lists every account for one-click switching — the Codex accounts
+// under their own heading when the dashboard has them (DESIGN A47) — and
+// notifications fire on engine switches, quarantines and when the active
+// account crosses the auto-switch threshold of a window.
 package cli
 
 import (
@@ -25,6 +26,7 @@ import (
 	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/ccversion"
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/termsafe"
 	"github.com/tyclab/tycswap/internal/tray"
@@ -37,7 +39,10 @@ import (
 // them to the switcher, the engine, the browser and the updater.
 type shellActions struct {
 	OpenDashboard func() error
-	SwitchTo      func(id string) error
+	// SwitchTo switches to the account a row key names ("claude:2",
+	// "codex:1", A47) and returns the codex sessions still running on the
+	// old Codex account (nil for a Claude switch).
+	SwitchTo func(key string) (runningPIDs []int, err error)
 	// AddCurrent stores the login Claude Code is signed in with as an
 	// account (A37; web.Server.AddCurrentLogin). nil hides the row.
 	AddCurrent   func() (web.AddLoginResult, error)
@@ -106,7 +111,7 @@ type appShell struct {
 	act     shellActions
 	notify  func(title, body string)
 	mu      sync.Mutex
-	alerted map[string]bool // account number → threshold alert already shown
+	alerted map[string]bool // Claude row key → threshold alert already shown
 	last    web.State
 	// pending is a newer release the user has not installed yet (menu item);
 	// offered is the last tag a dialog/notification was shown for.
@@ -177,6 +182,14 @@ func (a *appShell) update(st web.State) {
 	} else {
 		tooltip += " · auto-switch off"
 	}
+	// The title is Claude Code's account; the active Codex account, when
+	// there is one, follows in the tooltip (A47).
+	if cx, has := activeCodexAccount(st); has {
+		tooltip += " · codex #" + rowNumber(cx) + " " + rowName(cx)
+		if line := windowsLine(cx, false); line != "" {
+			tooltip += " · " + line
+		}
+	}
 	// An engine out of reach outranks every figure: the figures are stale.
 	if down, why := a.offline(); down {
 		title, tooltip = "⚠", brandName()+" — "+why
@@ -212,8 +225,9 @@ func (a *appShell) menu(st web.State) []tray.Item {
 	items = append(items, tray.Separator(), tray.Header("Accounts"))
 	items = append(items, a.accountRows(st, withModels)...)
 	items = append(items, tray.Separator(), tray.Header("Automation"))
-	// The dashboard's engine: Claude accounts only, as the dashboard's state.
-	autoSub := "rotates Claude accounts near the limit (" + a.thresholdLabel(st) + ")"
+	// The dashboard's engines: the Claude one, and the Codex one beside it
+	// when the dashboard has Codex accounts (A47).
+	autoSub := "rotates " + rotatedAccounts(st) + " near the limit (" + a.thresholdLabel(st) + ")"
 	if !running {
 		autoSub = "off — switch accounts by hand or turn on"
 	}
@@ -248,12 +262,45 @@ func (a *appShell) menu(st web.State) []tray.Item {
 // go into a submenu (A37), which keeps the menu on the screen.
 const inlineAccounts = 10
 
-// accountRows are the Accounts section: a gauge row per account, the active
-// one marked, or — with more than inlineAccounts — the active one and a
-// submenu with all of them; then "Add current login".
+// accountRows are the Accounts section: a gauge row per Claude account, the
+// active one marked, or — with more than inlineAccounts — the active one and a
+// submenu with all of them; then "Add current login". The Codex accounts
+// follow under a Codex heading by the same rule (A47). Every row's id is
+// "switch:" and its row key, since slot numbers repeat across providers.
 func (a *appShell) accountRows(st web.State, withModels bool) []tray.Item {
-	rows := append([]map[string]any(nil), st.Accounts...)
-	sort.SliceStable(rows, func(i, j int) bool { return rowNumberInt(rows[i]) < rowNumberInt(rows[j]) })
+	claude, codex := rowsByProvider(st.Accounts)
+	items := gaugeGroup(claude, withModels, "accounts", "All %d accounts")
+	if a.act.AddCurrent != nil {
+		items = append(items, addCurrentItem(st))
+	} else if len(st.Accounts) == 0 {
+		items = append(items, tray.Item{ID: "none", Title: "No accounts yet — open the dashboard to add one", Disabled: true})
+	}
+	if len(codex) > 0 {
+		items = append(items, tray.Header("Codex"))
+		items = append(items, gaugeGroup(codex, withModels, "codex-accounts", "All %d Codex accounts")...)
+	}
+	return items
+}
+
+// rowsByProvider splits the state's rows into the Claude rows and the Codex
+// rows, each in slot order.
+func rowsByProvider(all []map[string]any) (claude, codex []map[string]any) {
+	for _, r := range all {
+		if rowProvider(r) == reporting.ProviderClaude {
+			claude = append(claude, r)
+		} else {
+			codex = append(codex, r)
+		}
+	}
+	for _, rows := range [][]map[string]any{claude, codex} {
+		sort.SliceStable(rows, func(i, j int) bool { return rowNumberInt(rows[i]) < rowNumberInt(rows[j]) })
+	}
+	return claude, codex
+}
+
+// gaugeGroup is one provider's gauge rows: every row, or with more than
+// inlineAccounts the active one and a submenu (id, title format) with all.
+func gaugeGroup(rows []map[string]any, withModels bool, subID, subTitle string) []tray.Item {
 	var gauges, active []tray.Item
 	for _, r := range rows {
 		pct, has := maxWindowPct(r, withModels)
@@ -288,7 +335,7 @@ func (a *appShell) accountRows(st web.State, withModels bool) []tray.Item {
 			sub = "no usage data yet"
 		}
 		it := tray.Item{
-			ID:       "switch:" + rowNumber(r),
+			ID:       "switch:" + rowKey(r),
 			Kind:     tray.KindGauge,
 			Title:    "#" + rowNumber(r) + "  " + rowName(r),
 			Sub:      sub,
@@ -301,16 +348,10 @@ func (a *appShell) accountRows(st web.State, withModels bool) []tray.Item {
 			active = append(active, it)
 		}
 	}
-	items := gauges
 	if len(gauges) > inlineAccounts {
-		items = append(active, tray.Item{ID: "accounts", Title: "All " + strconv.Itoa(len(gauges)) + " accounts", Children: gauges})
+		return append(active, tray.Item{ID: subID, Title: fmt.Sprintf(subTitle, len(gauges)), Children: gauges})
 	}
-	if a.act.AddCurrent != nil {
-		items = append(items, addCurrentItem(st))
-	} else if len(rows) == 0 {
-		items = append(items, tray.Item{ID: "none", Title: "No accounts yet — open the dashboard to add one", Disabled: true})
-	}
-	return items
+	return gauges
 }
 
 // addCurrentItem is "Add current login": its second line says what a click
@@ -345,15 +386,16 @@ func (a *appShell) addCurrentClick() {
 	a.notify("Added account #"+num, email+" is account #"+num+" now. To add another, /login with it in Claude Code (never /logout: that ends the stored login), then choose Add current login again.")
 }
 
-// apiKeyAccount reports whether slot num is an API-key account, and the base
-// URL its requests go to ("" for none, A46), from the last state document the
-// shell painted.
+// apiKeyAccount reports whether Claude slot num is an API-key account, and
+// the base URL its requests go to ("" for none, A46), from the last state
+// document the shell painted. A Codex row with the same number is another
+// CLI's account.
 func (a *appShell) apiKeyAccount(num string) (apiKey bool, baseURL string) {
 	a.mu.Lock()
 	st := a.last
 	a.mu.Unlock()
 	for _, r := range st.Accounts {
-		if rowNumber(r) == num {
+		if rowProvider(r) == reporting.ProviderClaude && rowNumber(r) == num {
 			kind, _ := r["kind"].(string)
 			return kind == "api_key", rowBaseURL(r)
 		}
@@ -386,7 +428,20 @@ func (a *appShell) thresholdLabel(st web.State) string {
 	if countsModelLimits(st) {
 		label += " · " + modelWindowLabel(st) + " " + fmtPctShort(bars.model)
 	}
+	// The Codex engine's one bar, beside the Claude ones (A47).
+	if st.Auto != nil && st.Auto.Codex != nil && st.Auto.Codex.Enabled {
+		label += " · codex " + fmtPctShort(st.Auto.Codex.Threshold)
+	}
 	return label
+}
+
+// rotatedAccounts names what auto-switch rotates: the Claude accounts, and
+// the Codex accounts too while the dashboard runs the Codex engine (A47).
+func rotatedAccounts(st web.State) string {
+	if st.Auto != nil && st.Auto.Codex != nil && st.Auto.Codex.Enabled {
+		return "Claude and Codex accounts"
+	}
+	return "Claude accounts"
 }
 
 // click dispatches a menu choice. It runs off the UI thread.
@@ -401,7 +456,16 @@ func (a *appShell) click(id string) {
 			a.notify("Could not open the dashboard", capitalizeFirst(err.Error()))
 		}
 	case strings.HasPrefix(id, "switch:"):
-		num := strings.TrimPrefix(id, "switch:")
+		provider, num := splitRowKey(strings.TrimPrefix(id, "switch:"))
+		switch provider {
+		case reporting.ProviderCodex:
+			a.codexSwitchClick(num)
+			return
+		case reporting.ProviderClaude:
+		default:
+			a.notify("Switch failed", "No "+provider+" accounts here.")
+			return
+		}
 		// An API-key account changes HOW Claude Code authenticates, and a
 		// running session cannot pick that up — so it is never one click (A33).
 		// One with a base URL also changes where the requests go, which a
@@ -424,7 +488,7 @@ func (a *appShell) click(id string) {
 			}
 			a.act.ApproveAPIKey(num)
 		}
-		if err := a.act.SwitchTo(num); err != nil {
+		if _, err := a.act.SwitchTo(reporting.ProviderClaude + ":" + num); err != nil {
 			a.notify("Switch failed", err.Error())
 			return
 		}
@@ -448,10 +512,13 @@ func (a *appShell) click(id string) {
 			a.notify("Auto-switch", err.Error())
 			return
 		}
+		a.mu.Lock()
+		rotated := rotatedAccounts(a.last)
+		a.mu.Unlock()
 		if wasRunning {
-			a.notify("Auto-switch off", "Claude accounts are no longer rotated automatically.")
+			a.notify("Auto-switch off", capitalizeFirst(rotated)+" are no longer rotated automatically.")
 		} else {
-			a.notify("Auto-switch on", "Claude accounts rotate automatically near the limit.")
+			a.notify("Auto-switch on", capitalizeFirst(rotated)+" rotate automatically near the limit.")
 		}
 		a.repaint()
 	case id == "model-limits":
@@ -486,6 +553,33 @@ func (a *appShell) click(id string) {
 	case id == "quit":
 		a.act.Quit()
 	}
+}
+
+// codexSwitchClick switches to Codex slot num, as the dashboard's Codex row
+// and the terminal dashboard do, and says which codex sessions still run on
+// the old account (A47). A Codex API-key login is never switchable, so its
+// row is disabled and nothing here asks first.
+func (a *appShell) codexSwitchClick(num string) {
+	pids, err := a.act.SwitchTo(reporting.ProviderCodex + ":" + num)
+	if err != nil {
+		a.notify("Switch failed", err.Error())
+		return
+	}
+	a.dashboardChanged()
+	a.notify("Switched Codex to account #"+num, codexRestartSentence(pids))
+}
+
+// codexRestartSentence is what a Codex switch leaves to do: `codex switch`'s
+// warning naming the running sessions, or that the next one uses it.
+func codexRestartSentence(pids []int) string {
+	if len(pids) == 0 {
+		return "The next codex session uses it."
+	}
+	parts := make([]string, len(pids))
+	for i, p := range pids {
+		parts[i] = strconv.Itoa(p)
+	}
+	return "codex is running (pid " + strings.Join(parts, ", ") + ") — restart it for the new account to take effect."
 }
 
 // endpointSessionNotice is the EndpointSessionNotice hook with nil meaning
@@ -672,9 +766,18 @@ func (a *appShell) askInstall(latest string) {
 }
 
 // autoEvent turns engine events the user should hear about into notifications.
+// A Codex engine switch names its provider (A47).
 func (a *appShell) autoEvent(ev web.AutoEventView) {
 	switch ev.Kind {
 	case "switch":
+		if ev.Provider == reporting.ProviderCodex {
+			title := "Auto-switched Codex"
+			if ev.Account != "" {
+				title = "Auto-switched Codex to account #" + ev.Account
+			}
+			a.notify(title, ev.Message)
+			return
+		}
 		title := "Auto-switched"
 		if ev.Account != "" {
 			title = "Auto-switched to account #" + ev.Account
@@ -699,7 +802,7 @@ func (a *appShell) thresholdAlert(st web.State, active map[string]any, ok bool) 
 	if !ok {
 		return
 	}
-	num := rowNumber(active)
+	num, key := rowNumber(active), rowKey(active)
 	bars := barsOf(st)
 	pcts := classPcts(active, countsModelLimits(st))
 	// Costliest first: losing the week costs days across every model, a model's
@@ -729,24 +832,63 @@ func (a *appShell) thresholdAlert(st web.State, active map[string]any, ok bool) 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	switch {
-	case over != nil && !a.alerted[num]:
-		a.alerted[num] = true
+	case over != nil && !a.alerted[key]:
+		a.alerted[key] = true
 		a.notify(fmt.Sprintf("Account #%s has used %s %s", num, fmtPctShort(*over, true), subject),
 			windowsLine(active, countsModelLimits(st))+" — the dashboard shows the next best account.")
-	case clear && a.alerted[num]:
-		delete(a.alerted, num)
+	case clear && a.alerted[key]:
+		delete(a.alerted, key)
 	}
 }
 
 // ── state helpers (the same JSON-ish rows the dashboard renders) ───────────
 
+// activeAccount is the active Claude account: the one the title, the
+// threshold alert and the icon are about (A47).
 func activeAccount(st web.State) (map[string]any, bool) {
+	return activeRow(st, reporting.ProviderClaude)
+}
+
+// activeCodexAccount is the active Codex account, when the dashboard lists
+// Codex accounts.
+func activeCodexAccount(st web.State) (map[string]any, bool) {
+	return activeRow(st, reporting.ProviderCodex)
+}
+
+func activeRow(st web.State, provider string) (map[string]any, bool) {
 	for _, r := range st.Accounts {
-		if boolOf(r["isActive"]) {
+		if rowProvider(r) == provider && boolOf(r["isActive"]) {
 			return r, true
 		}
 	}
 	return nil, false
+}
+
+// rowProvider is a state row's provider; a row without one is Claude's, as
+// on the server (reporting.AccountSnapshot.ProviderName).
+func rowProvider(r map[string]any) string {
+	if p, _ := r["provider"].(string); p != "" {
+		return p
+	}
+	return reporting.ProviderClaude
+}
+
+// rowKey is a state row's key ("claude:2", "codex:1"), what the dashboard's
+// account routes take.
+func rowKey(r map[string]any) string {
+	if k, _ := r["key"].(string); k != "" {
+		return k
+	}
+	return rowProvider(r) + ":" + rowNumber(r)
+}
+
+// splitRowKey reads a row key back into provider and slot; a bare slot is
+// Claude's, as the terminal dashboard reads its row ids.
+func splitRowKey(key string) (provider, num string) {
+	if p, n, ok := strings.Cut(key, ":"); ok {
+		return p, n
+	}
+	return reporting.ProviderClaude, key
 }
 
 func rowNumber(r map[string]any) string {

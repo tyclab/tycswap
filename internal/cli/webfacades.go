@@ -1,21 +1,25 @@
 // webfacades.go — the façades `tycswap web` hands the dashboard (DESIGN A26):
-// settings, the hosted auto-switch engine, and the account operations beyond
-// the frozen Facade.
+// settings, the hosted auto-switch engines, the account operations beyond
+// the frozen Facade, and the Codex account operations (A47).
 //
 // internal/web owns the consumer interfaces and plain view structs; this file
 // binds them to the same packages the CLI commands use (settings, autoswitch
-// via autoswitchAdapter), so the dashboard and `tycswap config|auto` cannot
-// drift apart.
+// via autoswitchAdapter, the Codex switcher and engine constructor), so the
+// dashboard and `tycswap config|auto|codex` cannot drift apart.
 package cli
 
 import (
+	"context"
 	"sync"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/clock"
+	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
+	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/web"
 )
@@ -68,6 +72,91 @@ func (f settingsFacade) Unset(dotted string) (bool, error) {
 	return settings.UnsetSetting(f.root, dotted)
 }
 
+// ---- Codex accounts ----
+
+// codexOps is web.CodexOps over the Codex switcher: the verbs `tycswap codex`
+// and the terminal dashboard run, each holding the Codex store's lock from
+// start to end. SwitchTo and AddCurrent get that from the switcher, whose
+// switch and add take the lock themselves; SetAccountDisabled and
+// RemoveAccount take it here (lockedCodex).
+type codexOps struct{ sw *codexswitcher.Switcher }
+
+// codexOpsLockWait is how long a disable or remove waits for the Codex store
+// lock: the switcher's own wait. A var so tests can shorten it.
+var codexOpsLockWait = codexswitcher.DefaultLockTimeout
+
+// lockedCodex runs fn holding the Codex store lock. The store's own writes
+// (SetDisabled, RemoveSlot) skip the file lock while any goroutine of this
+// process holds it — the engine's switch holds it end to end — so without
+// this a remove could land between a Codex tick's capture and its write of
+// auth.json, leaving auth.json on the removed account (DESIGN A47). The lock
+// is per process and per file, so a call waits for a Codex tick here and for
+// another tycswap process alike; past codexOpsLockWait it is a lock error
+// (409 on the API).
+func (o codexOps) lockedCodex(fn func() error) error {
+	l := o.sw.Store().Lock()
+	ok, err := l.Acquire(codexOpsLockWait)
+	if err != nil {
+		return cerr.Lock("the Codex store is busy; try again").Wrap(err)
+	}
+	if !ok {
+		return cerr.Lock("the Codex store is busy (a Codex switch is running); try again")
+	}
+	defer func() { _ = l.Release() }()
+	return fn()
+}
+
+// newCodexOps is the dashboard's Codex façade; nil without a Codex switcher
+// (no Codex accounts at launch), so the Codex routes answer 503.
+func newCodexOps(sw *codexswitcher.Switcher) web.CodexOps {
+	if sw == nil {
+		return nil
+	}
+	return codexOps{sw}
+}
+
+func (o codexOps) SwitchTo(id string) (map[string]any, error) {
+	res, err := o.sw.SwitchTo(context.Background(), id)
+	if err != nil {
+		return nil, err
+	}
+	pids := res.RunningPIDs
+	if pids == nil {
+		pids = []int{}
+	}
+	return map[string]any{"number": res.Number, "email": res.Email, "runningPids": pids, "alreadyActive": res.AlreadyActive}, nil
+}
+
+func (o codexOps) SetAccountDisabled(id string, disabled bool) error {
+	return o.lockedCodex(func() error {
+		_, err := o.sw.SetAccountDisabled(id, disabled)
+		return err
+	})
+}
+
+// RemoveAccount is `tycswap codex remove -y`. The switcher's warning about an
+// active slot goes to its discarded stdout: the page's modal has said it.
+func (o codexOps) RemoveAccount(id string) error {
+	return o.lockedCodex(func() error {
+		removed, err := o.sw.Remove(id, true)
+		if err != nil {
+			return err
+		}
+		if !removed {
+			return cerr.AccountNotFound("Codex account %s was not removed: it is no longer stored", id)
+		}
+		return nil
+	})
+}
+
+func (o codexOps) AddCurrent() (map[string]any, error) {
+	slot, err := o.sw.Add(context.Background(), "")
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"number": slot.Number, "email": slot.Email}, nil
+}
+
 // ---- auto-switch engine host ----
 
 // autoEventRing caps the retained event log.
@@ -92,12 +181,21 @@ type autoEngine interface {
 }
 
 // autoFacade hosts one autoswitch engine inside the dashboard process, the
-// way the TUI's Auto screen does, and streams its events.
+// way the TUI's Auto screen does, and streams its events. Beside it runs the
+// Codex engine when this machine has Codex accounts, as in `tycswap auto`
+// (DESIGN A47): one Start and one Stop drive both, and both feed one event
+// log.
 type autoFacade struct {
 	sw  *core.Switcher
 	clk clock.Clock
+	// codexSw is the Codex switcher; nil on an install that had no Codex
+	// accounts at launch, which then hosts the Claude engine alone.
+	codexSw *codexswitcher.Switcher
 	// newEngine builds the engine; tests substitute one.
 	newEngine func(s settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool) autoEngine
+	// newCodexEngine builds the Codex engine at Start, nil for none: the
+	// constructor `tycswap auto` uses. Tests substitute one.
+	newCodexEngine func(s settings.AutoSwitchSettings) *codexauto.AutoSwitcher
 	// statePath is where the app records the user's on/off choice (DESIGN
 	// A43); "" in `web`, which neither records nor resumes.
 	statePath string
@@ -112,15 +210,25 @@ type autoFacade struct {
 	settings  settings.AutoSwitchSettings
 	events    []web.AutoEventView
 	stream    chan web.AutoEventView
+
+	codexEngine *codexauto.AutoSwitcher // this run's Codex engine; nil when none runs
+	stopCodex   func()                  // cancels the Codex loop and waits for it
+	codexDone   chan struct{}           // closed when a stopped Codex loop has returned
+	codexLast   *web.CodexTickView      // the Codex engine's last tick, kept across runs
 }
 
-// newAutoFacade builds the host over sw. The engine comes from newAutoEngine,
-// the seam the TUI's Auto screen uses too (tuiwire.go), so both hosts wire the
-// switcher's OAuth client, logger and clock the same way.
-func newAutoFacade(sw *core.Switcher) *autoFacade {
-	a := &autoFacade{sw: sw, clk: sw.Clk, stream: make(chan web.AutoEventView, 64)}
+// newAutoFacade builds the host over sw and codexSw (nil without Codex
+// accounts). The engine comes from newAutoEngine, the seam the TUI's Auto
+// screen uses too (tuiwire.go), so both hosts wire the switcher's OAuth
+// client, logger and clock the same way; the Codex engine from
+// newCodexAutoEngineFor, as `tycswap auto` builds it.
+func newAutoFacade(sw *core.Switcher, codexSw *codexswitcher.Switcher) *autoFacade {
+	a := &autoFacade{sw: sw, clk: sw.Clk, codexSw: codexSw, stream: make(chan web.AutoEventView, 64)}
 	a.newEngine = func(s settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool) autoEngine {
 		return newAutoEngine(sw, s, onEvent, dryRun, sw.OAuth)
+	}
+	a.newCodexEngine = func(s settings.AutoSwitchSettings) *codexauto.AutoSwitcher {
+		return newCodexAutoEngineFor(codexSw, s)
 	}
 	return a
 }
@@ -149,7 +257,7 @@ func (a *autoFacade) View() web.AutoView {
 	}
 	events := make([]web.AutoEventView, len(a.events)) // never nil: the UI wants []
 	copy(events, a.events)
-	return web.AutoView{
+	v := web.AutoView{
 		Available:  true,
 		Running:    a.running,
 		DryRun:     a.dryRun,
@@ -159,6 +267,17 @@ func (a *autoFacade) View() web.AutoView {
 		Events:     events,
 		Quarantine: quarantine,
 	}
+	if a.codexSw != nil {
+		// The Codex bar is the one the engine started with (or would start
+		// with): the slider moves the Claude 7d bar only.
+		v.Codex = &web.CodexAutoView{
+			Enabled:   s.CodexEnabled,
+			Running:   a.running && a.codexEngine != nil,
+			Threshold: codexThreshold(s),
+			LastTick:  a.codexLast,
+		}
+	}
+	return v
 }
 
 func (a *autoFacade) Start(dryRun bool) error {
@@ -167,13 +286,9 @@ func (a *autoFacade) Start(dryRun bool) error {
 	if a.running {
 		return cerr.Validation("auto-switch is already running")
 	}
-	if a.done != nil {
-		select {
-		case <-a.done:
-		default:
-			// A Stop timed out waiting: never run two engines side by side.
-			return cerr.Validation("auto-switch is still stopping; try again in a moment")
-		}
+	if stillRunning(a.done) || stillRunning(a.codexDone) {
+		// A Stop timed out waiting: never run two engines side by side.
+		return cerr.Validation("auto-switch is still stopping; try again in a moment")
 	}
 	s := settings.Load(a.sw.BackupDir())
 	engine := a.newEngine(s, a.onEvent, dryRun)
@@ -199,33 +314,63 @@ func (a *autoFacade) Start(dryRun bool) error {
 		// goroutine closes done.
 		a.sw.ClearPollPolicyInputs()
 	}()
+	// The Codex engine rides beside it as in `tycswap auto`: the same
+	// constructor, a tick at once and then every interval on its own
+	// goroutine, its bar fixed for this run.
+	codexEngine := a.newCodexEngine(s)
+	a.codexEngine, a.codexDone = codexEngine, nil
+	a.stopCodex = startCodexLoop(codexEngine != nil, time.Duration(s.IntervalSeconds*float64(time.Second)), func(ctx context.Context) {
+		a.codexTick(ctx, codexEngine, dryRun)
+	})
 	return nil
 }
 
-// Stop asks the engine to stop and waits (up to autoStopWait) for its loop
-// to return, so a Start right after it can never overlap two engines. When
-// a tick in flight outlasts the wait, the engine is stopping all the same:
-// Stop reports it with a lock-kind error (409) and Start refuses until the
-// loop has returned.
+// stillRunning reports whether done is a loop's channel not yet closed.
+func stillRunning(done chan struct{}) bool {
+	if done == nil {
+		return false
+	}
+	select {
+	case <-done:
+		return false
+	default:
+		return true
+	}
+}
+
+// Stop asks the engine to stop, cancels the Codex loop, and waits (up to
+// autoStopWait for both) for the loops to return, so a Start right after it
+// can never overlap two engines. When a tick in flight outlasts the wait,
+// the engines are stopping all the same: Stop reports it with a lock-kind
+// error (409) and Start refuses until both loops have returned.
 func (a *autoFacade) Stop() error {
 	a.mu.Lock()
 	if !a.running || a.engine == nil {
 		a.mu.Unlock()
 		return cerr.Validation("auto-switch is not running")
 	}
-	engine, done := a.engine, a.done
+	engine, done, stopCodex := a.engine, a.done, a.stopCodex
+	codexDone := make(chan struct{})
 	a.running, a.engine, a.startedAt = false, nil, nil
+	a.codexEngine, a.stopCodex, a.codexDone = nil, nil, codexDone
 	if !a.dryRun {
 		a.remember(false)
 	}
 	a.mu.Unlock()
 	engine.Stop()
-	select {
-	case <-done:
-		return nil
-	case <-time.After(autoStopWait):
-		return cerr.Lock("auto-switch is stopping; its current tick has not finished yet — try again in a moment")
+	go func() {
+		defer close(codexDone)
+		stopCodex()
+	}()
+	wait := time.After(autoStopWait)
+	for _, loop := range []chan struct{}{done, codexDone} {
+		select {
+		case <-loop:
+		case <-wait:
+			return cerr.Lock("auto-switch is stopping; its current tick has not finished yet — try again in a moment")
+		}
 	}
+	return nil
 }
 
 // remember records the user's choice for the next app start (A43). Called
@@ -326,6 +471,54 @@ func (a *autoFacade) onEvent(ev autoswitch.Event) {
 			break
 		}
 	}
+	a.publish(view)
+}
+
+// codexTick runs one Codex tick and records it as the engine's last. Like
+// `tycswap auto`, only a switch or an error reaches the event log, and every
+// tick under dry-run (codexTickShown).
+func (a *autoFacade) codexTick(ctx context.Context, eng *codexauto.AutoSwitcher, dryRun bool) {
+	tick := eng.Tick(ctx, dryRun)
+	at := clock.Seconds(a.clk)
+	last := &web.CodexTickView{At: at, Outcome: tick.Outcome, Detail: tick.Detail, RunningPIDs: tick.RunningPIDs}
+	if last.RunningPIDs == nil {
+		last.RunningPIDs = []int{}
+	}
+	if tick.SwitchedTo != "" {
+		to := tick.SwitchedTo
+		last.SwitchedTo = &to
+	}
+	a.mu.Lock()
+	a.codexLast = last
+	a.mu.Unlock()
+	if codexTickShown(tick, dryRun) {
+		a.publish(codexEvent(at, tick))
+	}
+}
+
+// codexEvent is a Codex tick as an engine event: the Claude engine's kind
+// for the outcome, so the page colours and filters it as it does those
+// (switched → switch, error → error, blocked → all-exhausted, else
+// no-switch), Tick.Human as the message, and the `auto --json` fields.
+func codexEvent(at float64, tick codexauto.Tick) web.AutoEventView {
+	kind := "no-switch"
+	switch tick.Outcome {
+	case codexauto.OutcomeSwitched:
+		kind = "switch"
+	case codexauto.OutcomeError:
+		kind = "error"
+	case codexauto.OutcomeBlocked:
+		kind = "all-exhausted"
+	}
+	return web.AutoEventView{
+		At: at, Kind: kind, Message: tick.Human(), Account: tick.SwitchedTo,
+		Fields: codexTickFields(tick), Provider: reporting.ProviderCodex,
+	}
+}
+
+// publish ring-buffers an event and offers it to the stream without ever
+// blocking the engine goroutine that produced it.
+func (a *autoFacade) publish(view web.AutoEventView) {
 	a.mu.Lock()
 	a.events = append(a.events, view)
 	if len(a.events) > autoEventRing {
@@ -341,6 +534,7 @@ func (a *autoFacade) onEvent(ev autoswitch.Event) {
 var (
 	_ web.Facade         = (*core.Switcher)(nil)
 	_ web.AccountOps     = (*core.Switcher)(nil)
+	_ web.CodexOps       = codexOps{}
 	_ web.SettingsFacade = settingsFacade{}
 	_ web.AutoFacade     = (*autoFacade)(nil)
 	_ autoEngine         = (*autoswitch.Engine)(nil)

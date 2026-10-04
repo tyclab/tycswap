@@ -17,6 +17,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -396,12 +397,40 @@ func (s *remoteFakeSettings) Unset(dotted string) (bool, error) {
 	return true, nil
 }
 
+// remoteFakeCodex is the dashboard's Codex façade (A47): a recorded switch
+// that reports codex pid 4242 still running.
+type remoteFakeCodex struct {
+	mu    sync.Mutex
+	calls []string
+}
+
+func (c *remoteFakeCodex) record(s string) {
+	c.mu.Lock()
+	c.calls = append(c.calls, s)
+	c.mu.Unlock()
+}
+
+func (c *remoteFakeCodex) Calls() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.calls...)
+}
+
+func (c *remoteFakeCodex) SwitchTo(id string) (map[string]any, error) {
+	c.record("SwitchTo(" + id + ")")
+	return map[string]any{"number": id, "email": "dana@example.com", "runningPids": []int{4242}, "alreadyActive": false}, nil
+}
+func (c *remoteFakeCodex) SetAccountDisabled(string, bool) error { return nil }
+func (c *remoteFakeCodex) RemoveAccount(string) error            { return nil }
+func (c *remoteFakeCodex) AddCurrent() (map[string]any, error)   { return nil, nil }
+
 // remoteFixture is a real web.Server over the fakes, serving on loopback with
 // the remote token, exactly what the app in the distro runs.
 type remoteFixture struct {
 	srv    *web.Server
 	base   string
 	fa     *fakeFacade
+	codex  *remoteFakeCodex
 	auto   *remoteFakeAuto
 	set    *remoteFakeSettings
 	autoEv chan web.AutoEventView
@@ -419,6 +448,7 @@ func startRemoteServer(t *testing.T, token, addr string) *remoteFixture {
 			{Number: "1", Email: "alice@example.com", Alias: "work", Kind: "oauth", IsActive: true, Switchable: true},
 			{Number: "2", Email: "bob@example.com", Kind: "oauth", Switchable: true},
 		}},
+		codex:  &remoteFakeCodex{},
 		auto:   &remoteFakeAuto{},
 		set:    &remoteFakeSettings{},
 		autoEv: make(chan web.AutoEventView),
@@ -426,6 +456,7 @@ func startRemoteServer(t *testing.T, token, addr string) *remoteFixture {
 	}
 	srv, err := web.New(web.Deps{
 		Facade:      fx.fa,
+		Codex:       fx.codex,
 		Auto:        fx.auto,
 		AutoEvents:  fx.autoEv,
 		Settings:    fx.set,
@@ -509,7 +540,7 @@ func TestRemoteClientCalls(t *testing.T) {
 	if rc.AutoRunning() {
 		t.Error("AutoRunning before the engine started")
 	}
-	if err := rc.Switch("2"); err != nil {
+	if _, err := rc.Switch("claude:2"); err != nil {
 		t.Fatal(err)
 	}
 	if calls := fx.fa.Calls(); len(calls) != 1 || calls[0] != "SwitchTo(2)" {
@@ -572,7 +603,7 @@ func TestRemoteClientCalls(t *testing.T) {
 	fx.fa.mu.Lock()
 	fx.fa.switchErr = cerr.AccountNotFound("Account 9 not found")
 	fx.fa.mu.Unlock()
-	if err := rc.Switch("9"); err == nil || err.Error() != "Account 9 not found" {
+	if _, err := rc.Switch("claude:9"); err == nil || err.Error() != "Account 9 not found" {
 		t.Errorf("Switch(9) = %v, want the server's message", err)
 	}
 }
@@ -1204,7 +1235,7 @@ func TestRemoteModeRunsTheTray(t *testing.T) {
 	if o == nil || o.OnClick == nil {
 		t.Fatal("the tray was built without a click handler")
 	}
-	o.OnClick("switch:2")
+	o.OnClick("switch:claude:2")
 	if calls := fx.fa.Calls(); len(calls) != 1 || calls[0] != "SwitchTo(2)" {
 		t.Errorf("facade calls = %v", calls)
 	}
@@ -1237,4 +1268,29 @@ func TestRemoteModeRunsTheTray(t *testing.T) {
 		t.Fatalf("remote lock after the exit: %v, %v", held, err)
 	}
 	_ = lock.Release()
+}
+
+// The remote tray posts the row key it was given, verbatim: a Codex key
+// reaches the engine's Codex façade, whose running PIDs come back for the
+// notification, and a Claude key the Claude one, which has none (A47).
+func TestRemoteSwitchPostsRowKey(t *testing.T) {
+	fx := startRemoteServer(t, testRemoteToken, "127.0.0.1:0")
+	rc := newTestRemoteClient(t, fx, testRemoteToken)
+	pids, err := rc.Switch("codex:2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(pids, []int{4242}) || !reflect.DeepEqual(fx.codex.Calls(), []string{"SwitchTo(2)"}) || len(fx.fa.Calls()) != 0 {
+		t.Errorf("codex switch: pids %v, codex calls %v, claude calls %v", pids, fx.codex.Calls(), fx.fa.Calls())
+	}
+	pids, err = rc.Switch("claude:2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pids != nil || !reflect.DeepEqual(fx.fa.Calls(), []string{"SwitchTo(2)"}) || len(fx.codex.Calls()) != 1 {
+		t.Errorf("claude switch: pids %v, claude calls %v, codex calls %v", pids, fx.fa.Calls(), fx.codex.Calls())
+	}
+	if _, err := rc.Switch("2"); err == nil {
+		t.Error("a bare slot was taken for a key")
+	}
 }

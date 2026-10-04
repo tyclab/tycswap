@@ -1,7 +1,8 @@
 // webcmd.go — `tycswap web`: wire the dashboard's façades, bind loopback,
 // print the one-time URL, open the browser, serve until SIGINT/SIGTERM
 // (DESIGN A26; the updates host, the view preferences and the live login
-// seam are A27). `tycswap app` builds the same dashboard (newDashboard, A35).
+// seam are A27; the Codex rows and engine A47). `tycswap app` builds the same
+// dashboard (newDashboard, A35).
 package cli
 
 import (
@@ -23,8 +24,12 @@ import (
 
 	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/browser"
+	"github.com/tyclab/tycswap/internal/cerr"
+	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/providers"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/web"
 )
 
@@ -177,7 +182,10 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 			return subError(wprog, s.err, "unrecognized arguments: "+tok)
 		}
 	}
-	d, code := newDashboard(interval, debug, s, dashboardOptions{})
+	// Bounds the Codex rows' usage requests; they end with the server.
+	rowsCtx, cancelRows := context.WithCancel(context.Background())
+	defer cancelRows()
+	d, code := newDashboard(rowsCtx, interval, debug, s, dashboardOptions{})
 	if code != 0 {
 		return code
 	}
@@ -213,12 +221,38 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 	return 0
 }
 
-// dashboard is what newDashboard builds: the switcher, the unstarted server
-// and the auto-switch engine host.
+// dashboard is what newDashboard builds: the switcher, the unstarted server,
+// the auto-switch engine host, and the Codex façade (nil without Codex
+// accounts at launch, A47).
 type dashboard struct {
-	sw   *core.Switcher
-	srv  *web.Server
-	auto *autoFacade
+	sw    *core.Switcher
+	srv   *web.Server
+	auto  *autoFacade
+	codex web.CodexOps
+}
+
+// switchTo is the tray's switch (A35, A47): a row key's provider decides the
+// switcher, as on the dashboard's switch route. A Codex switch returns the
+// codex sessions still running on the old account.
+func (d *dashboard) switchTo(key string) ([]int, error) {
+	provider, ref := splitRowKey(key)
+	switch provider {
+	case reporting.ProviderClaude:
+		_, err := d.sw.SwitchTo(ref, false)
+		return nil, err
+	case reporting.ProviderCodex:
+	default:
+		return nil, cerr.AccountNotFound("no %s accounts in this app: %s", provider, key)
+	}
+	if d.codex == nil {
+		return nil, cerr.AccountNotFound("no Codex accounts in this app: %s", key)
+	}
+	res, err := d.codex.SwitchTo(ref)
+	if err != nil {
+		return nil, err
+	}
+	pids, _ := res["runningPids"].([]int)
+	return pids, nil
 }
 
 // dashboardOptions are what `tycswap app` adds to the dashboard `tycswap web`
@@ -236,8 +270,15 @@ type dashboardOptions struct {
 
 // newDashboard constructs the switcher and every façade the dashboard needs
 // and returns the unstarted server. A non-zero code means the error was
-// already reported on s.err.
-func newDashboard(interval float64, debug bool, s ioStreams, o dashboardOptions) (*dashboard, int) {
+// already reported on s.err. ctx bounds the Codex rows' usage requests.
+//
+// When this machine has Codex accounts — decided at launch, as in the TUI —
+// the rows come from the merged Claude + Codex snapshot, the Codex rows'
+// actions go to the Codex switcher, and the engine host runs the Codex
+// engine beside the Claude one (DESIGN A47); without them the Codex parts
+// are nil and the dashboard is the Claude one. `tycswap web` and `tycswap
+// app` both build their dashboard here.
+func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams, o dashboardOptions) (*dashboard, int) {
 	sw, err := constructSwitcher(debug, s.err)
 	if err != nil {
 		errorTo(s.err, "Error: "+err.Error())
@@ -246,7 +287,12 @@ func newDashboard(interval float64, debug bool, s ioStreams, o dashboardOptions)
 	if code, blocked := guardRoot(s.err); blocked {
 		return nil, code
 	}
-	auto := newAutoFacade(sw)
+	var codexSw *codexswitcher.Switcher
+	if codexIsPresent() {
+		codexSw = newQuietCodexSwitcher()
+	}
+	auto := newAutoFacade(sw, codexSw)
+	codex := newCodexOps(codexSw)
 	var host *updatesHost
 	updates := o.updates
 	if updates == nil {
@@ -255,7 +301,9 @@ func newDashboard(interval float64, debug bool, s ioStreams, o dashboardOptions)
 	}
 	srv, err := web.New(web.Deps{
 		Facade:             sw,
+		Snapshot:           providers.NewMultiSnapshotSource(ctx, sw, codexSw),
 		Accounts:           sw,
+		Codex:              codex,
 		Settings:           settingsFacade{root: sw.BackupDir()},
 		Auto:               auto,
 		AutoEvents:         auto.Events(),
@@ -286,7 +334,7 @@ func newDashboard(interval float64, debug bool, s ioStreams, o dashboardOptions)
 	if host != nil {
 		host.onChange = srv.Refresh
 	}
-	return &dashboard{sw: sw, srv: srv, auto: auto}, 0
+	return &dashboard{sw: sw, srv: srv, auto: auto, codex: codex}, 0
 }
 
 func renderWebHelp(prog string, out io.Writer) int {

@@ -96,6 +96,23 @@ type AccountOps interface {
 	ListAccounts(showTokenStatus, jsonOut bool, fetch map[string]bool) (any, error)
 }
 
+// CodexOps is the Codex account surface the dashboard drives (DESIGN A47):
+// what the terminal dashboard does with a Codex row, plus storing the login
+// the codex CLI has, as `tycswap codex add` does. It is its own narrow seam
+// because the Claude signatures do not fit: a Codex switch reports the codex
+// sessions still running on the old account. id is a Codex account reference
+// (slot number, email or alias); every call takes the Codex store's own lock.
+type CodexOps interface {
+	// SwitchTo activates the account and answers {"number", "email",
+	// "runningPids": [...], "alreadyActive"}.
+	SwitchTo(id string) (map[string]any, error)
+	SetAccountDisabled(id string, disabled bool) error
+	// RemoveAccount forgets the account without a prompt (`codex remove -y`).
+	RemoveAccount(id string) error
+	// AddCurrent stores the current Codex login and answers {"number", "email"}.
+	AddCurrent() (map[string]any, error)
+}
+
 // SettingView is one effective setting (`tycswap config`).
 type SettingView struct {
 	Key         string   `json:"key"`   // dotted, e.g. "autoswitch.sevenDayThreshold"
@@ -119,13 +136,16 @@ type SettingsFacade interface {
 	Unset(dotted string) (bool, error)
 }
 
-// AutoEventView is one auto-switch engine event.
+// AutoEventView is one auto-switch engine event. Provider is "" for the
+// Claude engine's events, so their JSON is unchanged, and "codex" for a
+// Codex tick, whose Kind is one of the Claude engine's kinds (DESIGN A47).
 type AutoEventView struct {
-	At      float64        `json:"at"`
-	Kind    string         `json:"kind"`
-	Message string         `json:"message"`
-	Account string         `json:"account,omitempty"`
-	Fields  map[string]any `json:"fields,omitempty"`
+	At       float64        `json:"at"`
+	Kind     string         `json:"kind"`
+	Message  string         `json:"message"`
+	Account  string         `json:"account,omitempty"`
+	Fields   map[string]any `json:"fields,omitempty"`
+	Provider string         `json:"provider,omitempty"`
 }
 
 // AutoView is the auto-switch engine's state as the dashboard shows it.
@@ -138,6 +158,29 @@ type AutoView struct {
 	Settings   map[string]any  `json:"settings"`   // effective autoswitch settings the engine started with
 	Events     []AutoEventView `json:"events"`     // most recent last, ring of <= 200
 	Quarantine map[string]any  `json:"quarantine"` // contents of autoswitch_state.json (may be nil)
+	// Codex is the Codex engine that runs beside the Claude one; null on an
+	// install without Codex accounts (DESIGN A47).
+	Codex *CodexAutoView `json:"codex"`
+}
+
+// CodexAutoView is the Codex auto-switch engine as the dashboard shows it.
+// Threshold is its one bar (autoswitch.codexThreshold, or the 7d bar when
+// that is 0), fixed when the engine starts: the slider never moves it.
+type CodexAutoView struct {
+	Enabled   bool           `json:"enabled"` // autoswitch.codexEnabled
+	Running   bool           `json:"running"`
+	Threshold float64        `json:"threshold"`
+	LastTick  *CodexTickView `json:"lastTick"` // null before the first tick
+}
+
+// CodexTickView is one Codex engine tick, in the names of `tycswap auto
+// --json`'s codex line.
+type CodexTickView struct {
+	At          float64 `json:"at"`
+	Outcome     string  `json:"outcome"` // ok | switched | blocked | no-accounts | error
+	Detail      string  `json:"detail"`
+	SwitchedTo  *string `json:"switchedTo"` // null unless outcome is switched
+	RunningPIDs []int   `json:"runningPids"`
 }
 
 // AutoFacade drives the hosted auto-switch engine.
@@ -301,10 +344,21 @@ func DefaultKill(pid int, startedAt int64) error {
 	return terminateVerified(pid, time.UnixMilli(startedAt))
 }
 
+// SnapshotSource is the read model the state document is built from: the
+// Facade's own, or a merged one over every provider (providers.
+// MultiSnapshotSource) whose rows carry provider and key.
+type SnapshotSource interface {
+	AccountsSnapshot(fetch map[string]bool) *reporting.AccountsSnapshot
+}
+
 // Deps are the server's injectable seams. Facade is required; every other
 // field has a production default (see New) or is optional.
 type Deps struct {
-	Facade   Facade
+	Facade Facade
+	// Snapshot is what the account rows are read from; nil → Facade. A
+	// merged source lists the Codex rows after the Claude ones, and its
+	// ActiveNumber stays the Claude active slot (DESIGN A47).
+	Snapshot SnapshotSource
 	Sessions func() SessionsView
 	// SessionTitle names a running session from its transcript under the
 	// config directory it was found in; nil → DefaultSessionTitle.
@@ -324,6 +378,9 @@ type Deps struct {
 	// Optional surfaces: nil → the section is null in the state document and
 	// its routes answer 503.
 	Accounts AccountOps
+	// Codex drives the Codex rows; nil (no Codex accounts at launch) makes
+	// every route given a codex: key answer 503 (DESIGN A47).
+	Codex    CodexOps
 	Settings SettingsFacade
 	Auto     AutoFacade
 	// AutoEvents, when non-nil, is fanned out as SSE `auto` events; each one
@@ -424,6 +481,9 @@ const (
 func New(d Deps) (*Server, error) {
 	if d.Facade == nil {
 		return nil, errors.New("web: Deps.Facade is required")
+	}
+	if d.Snapshot == nil {
+		d.Snapshot = d.Facade
 	}
 	if d.Clock == nil {
 		d.Clock = clock.System{}

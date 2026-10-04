@@ -1542,6 +1542,9 @@ account with no measurement is never switched away from. Cooldown, quarantine
 and `--model` apply to Claude only; Codex API-key accounts are never targets,
 as Claude ones are not. `--dry-run` applies to both engines.
 
+The dashboard's Auto tab (`tycswap web`) runs the same Codex engine beside its
+Claude one (DESIGN A47).
+
 With `--once`, the Codex tick runs after the Claude tick, and the exit status
 is the Claude tick's outcome. In loop mode the Codex engine ticks on its own
 goroutine, once at launch and then every interval, so a slow Codex fetch never
@@ -2005,7 +2008,8 @@ Codex switch, a second warning lists them: `codex is running (pid <pid>[,
 <pid>...]) — restart it for the new account to take effect.` Adding an account
 stays Claude-only (use `tycswap codex add` or `tycswap codex login`). The
 auto-switch screen's candidate list shows Claude rows only, since that engine
-switches Claude; the Codex engine runs inside `tycswap auto`.
+switches Claude; the Codex engine runs inside `tycswap auto` and in `tycswap
+web`'s Auto tab.
 
 The dashboard's menu nests: "Add account…", "Disable / enable account…" and
 "Remove account…" each open a submenu, and `esc` or `←` returns to the
@@ -2528,7 +2532,19 @@ tabs:
   not read; the header carries a pill with the count on every tab while
   something waits. The server checks at start and every six hours; *Check
   now* checks again. The Accounts and the Updates card fold to their heading;
-  the choice is remembered in `ui_prefs.json` under the backup root.
+  the choice is remembered in `ui_prefs.json` under the backup root. When
+  `tycswap web` starts on a machine with Codex accounts (a slot in the Codex
+  store, or a codex-auth registry not yet imported), the table lists them
+  under a *Codex* heading after the Claude rows: slot, a `codex` chip, name,
+  email and workspace, the 5h and 7d windows (no model window), *Switch*
+  (disabled on the active row and on an API-key login) and a menu with
+  *Disable* / *Enable* and *Remove* — the terminal dashboard's actions on a
+  Codex row. A Codex switch that leaves codex sessions running says `codex is
+  running (pid <pid>[, <pid>...]) — restart it for the new account to take
+  effect.` *+ Add current Codex login* stores the account the codex CLI is
+  signed in with, as `tycswap codex add` does, and the card counts `<n>
+  Claude · <m> Codex`. The header, the summary tiles and *Next best* stay on
+  the Claude accounts.
 - **Auto**: an auto-switch engine hosted in the `web` process: start, start
   as a dry run, stop, wake; a slider that sets the 7d threshold of the running
   engine (50–100; not saved; enabled only while it runs; the 5h and model bars
@@ -2538,8 +2554,13 @@ tabs:
   has reached its own bar, ranks `best` by the weekly figure, and names the
   bars in force (`switch at 5h 85% · 7d 97%`, plus the model bar while model
   windows count); the quarantine; a link to the Settings tab;
-  and the engine's event log. The hosted engine switches Claude accounts
-  only; Codex auto-switching stays with `tycswap auto`.
+  and the engine's event log. With Codex accounts, Start also runs the Codex
+  engine beside it, built and ticking as in `tycswap auto` (its bar,
+  `autoswitch.codexThreshold` or the 7d threshold when that is 0, is fixed
+  at start; the slider leaves it), and Stop ends both: a *Codex engine* tile
+  shows it (running, stopped or off, the bar, the last tick), and its
+  switches and errors, every tick under dry-run, appear in the event log
+  tagged `codex`.
 - **Settings**: every `settings.json` key `tycswap config` knows
   (`autoswitch.fiveHourThreshold`, `sevenDayThreshold`, `modelThreshold`,
   `intervalSeconds`, `codexEnabled`, `codexThreshold`, `cooldownSeconds`,
@@ -2554,7 +2575,9 @@ tabs:
   restart; `autoswitch.sevenDayThreshold` and the other keys take effect when an
   engine next starts (the Auto tab's slider changes the running engine's
   7d threshold without saving); `autoswitch.codexEnabled` and
-  `codexThreshold` are read by `tycswap auto` only. The tab's badge counts
+  `codexThreshold` take effect when the Auto tab's engine (on a machine with
+  Codex accounts) or `tycswap auto` next starts; the TUI's engine never reads
+  them. The tab's badge counts
   the keys set away from their default.
 - **Guide**: what the tool is, slots and the active account, the 5h / 7d /
   model windows and their thresholds, getting started, switching by hand, Auto
@@ -2617,8 +2640,23 @@ only), `updates` (`available`, `checking`, `checkedAt`, `app` with `current`,
 `latest`, `available`, `installed`, `hint`, `error`; `claudeCode` with
 `installed`, `latest`, `state` = `checking` | `missing` | `update` | `latest`
 | `unknown`, `method`, `command`, `detail`, `available`, `error`) and `ui`
-(`{"folded": {"<card>": true}}`). The dashboard shows and drives
-Claude accounts only; Codex accounts are managed with `tycswap codex`.
+(`{"folded": {"<card>": true}}`). A Codex account's row (DESIGN A47) has
+the same fields with `provider` `codex` and `key` `codex:<n>`: `orgName` is
+its workspace, `usage` holds `fiveHour` and `sevenDay` only, an API-key login
+is `switchable: false`, and it never carries `atLimit`, `baseUrl` or
+`tokenStatus`; the Codex rows follow the Claude rows, and `activeNumber` and
+`currentLogin` stay Claude's. `auto.codex` is the Codex engine, null on a
+machine that had no Codex accounts when `tycswap web` started:
+`{"enabled", "running", "threshold", "lastTick"}`, `lastTick` being null or
+`{"at", "outcome", "detail", "switchedTo", "runningPids"}` (`outcome` `ok`,
+`switched`, `blocked`, `no-accounts` or `error`; `switchedTo` null unless it
+switched). An engine event is `{"at", "kind", "message", "account",
+"fields"}`; a Codex tick's also carries `"provider": "codex"` (the Claude
+engine's carry no `provider`), its `kind` is `switch`, `error`,
+`all-exhausted` or `no-switch` for the outcomes switched, error, blocked and
+the rest, and its `fields` are `tycswap auto --json`'s (`outcome`, `detail`,
+`switchedTo`, `runningPids`). Alias, move, swap, export and import of Codex
+accounts stay with `tycswap codex`.
 
 The URL printed at start carries a one-time token. On macOS and Linux,
 WSL included, the browser is handed a `file://` URL of a 0600 redirect page
@@ -2678,8 +2716,12 @@ is how `tycswap app --remote` drives the dashboard (DESIGN A45).
 **API.** All bodies are JSON; a success is `{"ok": true, "result": {...}}`
 and an error `{"error": "<message>"}` with the status below. An account
 `{key}` is the row's `key`, `<provider>:<ref>` (for example `claude:2`,
-`claude:work`, `claude:me@example.com`); a bare slot is refused with 400, and
-a key of another provider answers 404, because slot numbers are per provider.
+`claude:work`, `claude:me@example.com`, `codex:1`); a bare slot is refused
+with 400, because slot numbers are per provider. A `codex:` key reaches the
+Codex accounts on the routes that take one (switch, enable, disable, remove)
+and answers 503 when `tycswap web` started without Codex accounts; the other
+account routes take Claude keys only and answer 404 for a `codex:` key, as
+for an unknown provider.
 
 Statuses every route shares: `401` without the session cookie; `403` without
 the CSRF token, with `?csrf=` anywhere but the event stream, or with a
@@ -2693,20 +2735,20 @@ anything else `500`.
 | Route | Body | Does | Route's own statuses |
 |-------|------|------|----------------------|
 | `GET /api/state[?tokenStatus=1]` | | the state document | `200` |
-| `GET /api/events?csrf=<t>[&tokenStatus=1]` | | Server-Sent Events: `state` frames, `auto` frames (one engine event each), a `: ping` every 15 s | `200`, then a stream |
+| `GET /api/events?csrf=<t>[&tokenStatus=1]` | | Server-Sent Events: `state` frames, `auto` frames (one engine event each; a Codex tick's carries `"provider": "codex"`), a `: ping` every 15 s | `200`, then a stream |
 | `POST /api/launch` | | a one-time dashboard URL, `{"url": "http://127.0.0.1:<port>/?token=<t>"}`: the unused start URL, else a fresh one; for a remote tray, with the bearer token only | `403` with the cookie and CSRF pair, or without a remote token configured |
 | `POST /api/switch` | `{"strategy": "best"\|"next-available", "models": [...]}` | `tycswap switch --strategy` | `400` missing or unknown strategy |
-| `POST /api/switch/{key}[?force=1][&confirmAuthChange=1]` | | `tycswap switch <id> [--force] [--yes]`; `confirmAuthChange=1` records the user's yes to a switch onto an API-key account, which the page asks for first (DESIGN A33) | `400` bare key or an API-key target without `confirmAuthChange`, `404` other provider, `503` `confirmAuthChange` without account operations |
-| `POST /api/accounts/add` | | `tycswap add`; answers `{"ok": true, "result": {"number", "email", "refreshed"}}`, the account the live login is now (`refreshed`: it was that account already). The tray's *Add current login* is the same call | `500` `Claude Code has no subscription login on this computer. …` when Claude Code has no live login, before anything is stored |
+| `POST /api/switch/{key}[?force=1][&confirmAuthChange=1]` | | `tycswap switch <id> [--force] [--yes]`; `confirmAuthChange=1` records the user's yes to a switch onto an API-key account, which the page asks for first (DESIGN A33). A `codex:` key is `tycswap codex switch <id>` and answers `{"number", "email", "runningPids", "alreadyActive"}` | `400` bare key, an API-key target without `confirmAuthChange`, or `force` / `confirmAuthChange` with a `codex:` key; `404` unknown provider; `503` `confirmAuthChange` without account operations, or a `codex:` key without Codex accounts |
+| `POST /api/accounts/add` | `{"provider": "claude"\|"codex"}` (optional) | `tycswap add`; answers `{"ok": true, "result": {"number", "email", "refreshed"}}`, the account the live login is now (`refreshed`: it was that account already). The tray's *Add current login* is the same call. With `codex`, `tycswap codex add`, answering `{"number", "email"}` | `500` `Claude Code has no subscription login on this computer. …` when Claude Code has no live login, before anything is stored; `400` unknown provider; `503` `codex` without Codex accounts |
 | `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias", "baseUrl"}` | `tycswap add-token [--base-url]` (the token is never echoed or logged); `503` with a `baseUrl` when the facade cannot store one | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
-| `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y` | `400` bare key, `404` other provider |
-| `POST /api/accounts/{key}/alias` | `{"alias": "<name>"}` (empty unsets) | `tycswap alias` | `400` bare key, `404` other provider |
-| `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` | `400` missing slot or bare key, `404` other provider |
-| `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` | `400` missing or bare keys, `404` other provider |
+| `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y`; for a `codex:` key `tycswap codex enable`, `disable`, `remove -y`, holding the Codex store lock throughout | `400` bare key, `404` unknown provider, `503` a `codex:` key without Codex accounts, `409` the Codex store stayed busy (a Codex switch held it) for 10 s |
+| `POST /api/accounts/{key}/alias` | `{"alias": "<name>"}` (empty unsets) | `tycswap alias` | `400` bare key, `404` a `codex:` key or an unknown provider |
+| `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` | `400` missing slot or bare key, `404` a `codex:` key or an unknown provider |
+| `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` | `400` missing or bare keys, `404` a `codex:` key or an unknown provider |
 | `POST /api/sessions/{pid}/stop` | | stop a listed Claude Code session, after verifying the process start time | `400` bad pid, `404` not listed (or gone before the lock), `409` the pid now belongs to another process or cannot be verified, `500` the signal failed |
 | `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset`; each listed key carries `applies`, a sentence saying when a saved value takes effect; saving or unsetting `autoswitch.model` also retargets a running engine (`"applied": true` in the result) | `400` unknown key, value out of range, or missing value; the engine's own error when the retarget fails after the save |
-| `POST /api/auto/start` | `{"dryRun": bool}` | start the hosted engine | `400` already running or still stopping |
-| `POST /api/auto/stop`, `/api/auto/wake` | | stop it (waits up to 2 s for its loop to end), poll now | `400` not running; stop `409` when the tick in flight outlasts the wait (the engine is stopping; Start refuses until it has) |
+| `POST /api/auto/start` | `{"dryRun": bool}` | start the hosted engine, and the Codex engine beside it on a machine with Codex accounts | `400` already running or still stopping |
+| `POST /api/auto/stop`, `/api/auto/wake` | | stop them (waits up to 2 s for both loops to end), poll now (the Claude engine) | `400` not running; stop `409` when a tick in flight outlasts the wait (the engines are stopping; Start refuses until both have) |
 | `POST /api/auto/threshold` | `{"threshold": 50-100}` | retarget the running engine's 7d bar; the bounds are `autoswitch.sevenDayThreshold`'s (DESIGN A34) | `400` missing, out of range, or not running |
 | `POST /api/auto/model` | `{"model": "all"\|"<names>"\|""}` | retarget the running engine's model windows | `400` missing (`""` is a value) or not running |
 | `POST /api/updates/check` | | check for a newer tycswap release and a newer Claude Code now, in the background; the result arrives with the state (in `tycswap app` with a tray, the tray's checks, DESIGN A44) | `202` at once; `503` without the updates host |
@@ -2717,7 +2759,9 @@ anything else `500`.
 
 Reads and writes what the CLI commands behind each action do (the backup
 root's `sequence.json`, `settings.json`, `autoswitch_state.json`, the
-credential stores, Claude Code's files). Reads and writes the backup root's
+credential stores, Claude Code's files; with Codex accounts, the Codex store
+under `<backup root>/codex/` and the codex CLI's `auth.json`, as `tycswap
+codex` does). Reads and writes the backup root's
 `ui_prefs.json` (the folded cards) and `cache/update_check.json` (the release
 check's cache, shared with the passive notice); reads Claude Code's
 `settings.json` for the auth overrides and runs `claude --version`. Writes a 0600
@@ -2757,11 +2801,9 @@ Press Ctrl-C to stop.
 
 `tycswap tui`, `tycswap auto`, `tycswap config`.
 
-**Not yet in the dashboard** (follow-ups): Codex accounts (rows, actions and
-auto-switching; account routes already take provider keys), the Codex
-auto loop in the hosted engine, `add --login` and `codex login` as a
-cancellable job, and `map`/`unmap`. The tray is `tycswap app`, and its remote
-mode uses the bearer token and `POST /api/launch` above.
+**Not yet in the dashboard** (follow-ups): `add --login` and `codex login` as
+a cancellable job, and `map`/`unmap`. The tray is `tycswap app`, and its
+remote mode uses the bearer token and `POST /api/launch` above.
 
 ---
 
@@ -2822,9 +2864,15 @@ window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
 - **App**: Claude Code's state when nothing is to update; *Start at login*;
   *Check for updates…*; *Quit tycswap*.
 
-The tray shows the dashboard's state and drives the dashboard's auto-switch
-engine, so it is Claude-only like the dashboard today: Codex accounts and the
-Codex engine reach the dashboard and the tray together in the next change.
+The tray shows the dashboard's state and drives its engines (DESIGN A47): on
+a machine with Codex accounts they follow under a **Codex** heading (more than
+ten in *All N Codex accounts* ▸), a click switches one by its key and the
+notification `Switched Codex to account #<n>` names the codex sessions still
+on the old account, the Codex engine's switch is `Auto-switched Codex to
+account #<n>`, *Auto-switch*'s second line adds `codex <bar>%`, and turning
+auto-switch on, or resuming it, starts the Codex engine beside the Claude
+one; the title, the icon and the threshold alert stay with the Claude
+account, and the tooltip adds the active Codex account.
 
 Notifications: a switch or quarantine by auto-switch, the active account
 reaching a window's threshold (once, again after it falls ten points below),

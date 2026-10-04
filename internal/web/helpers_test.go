@@ -281,6 +281,51 @@ func (o *fakeOps) ListAccounts(showTokenStatus, jsonOut bool, fetch map[string]b
 	return o.listPayload, o.listErr
 }
 
+// fakeCodexOps is the CodexOps seam: recorded calls, an error per method
+// and the running codex PIDs a switch reports.
+type fakeCodexOps struct {
+	mu    sync.Mutex
+	calls []string
+	errs  map[string]error
+	pids  []int
+}
+
+func (c *fakeCodexOps) record(s string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.calls = append(c.calls, s)
+	return c.errs[strings.SplitN(s, "(", 2)[0]]
+}
+
+func (c *fakeCodexOps) Calls() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.calls...)
+}
+
+func (c *fakeCodexOps) SwitchTo(id string) (map[string]any, error) {
+	if err := c.record("SwitchTo(" + id + ")"); err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	pids := append([]int{}, c.pids...)
+	c.mu.Unlock()
+	return map[string]any{"number": id, "email": "dana@example.com", "runningPids": pids, "alreadyActive": false}, nil
+}
+
+func (c *fakeCodexOps) SetAccountDisabled(id string, disabled bool) error {
+	return c.record(fmt.Sprintf("SetAccountDisabled(%s,%v)", id, disabled))
+}
+
+func (c *fakeCodexOps) RemoveAccount(id string) error { return c.record("RemoveAccount(" + id + ")") }
+
+func (c *fakeCodexOps) AddCurrent() (map[string]any, error) {
+	if err := c.record("AddCurrent()"); err != nil {
+		return nil, err
+	}
+	return map[string]any{"number": "3", "email": "fay@example.com"}, nil
+}
+
 type fakeSettings struct {
 	mu       sync.Mutex
 	views    []SettingView
@@ -481,6 +526,58 @@ func sampleSnapshot() *reporting.AccountsSnapshot {
 	}
 }
 
+// sampleCodexRows are the rows a merged source lists after the Claude ones:
+// the active ChatGPT login with usage, and a disabled API-key login, which is
+// not switchable and has no usage.
+func sampleCodexRows() []reporting.AccountSnapshot {
+	return []reporting.AccountSnapshot{
+		{
+			Number: "1", Email: "dana@example.com", OrgName: "Team", IsActive: true, Kind: "oauth",
+			Switchable: true, RotationEligible: true, Provider: reporting.ProviderCodex,
+			Usage: usage.UsageEntry{
+				LastGood: map[string]any{
+					"five_hour": map[string]any{"pct": 30, "resets_at": "2026-09-19T13:00:00Z"},
+					"seven_day": map[string]any{"pct": 55, "resets_at": "2026-09-24T00:00:00Z"},
+					"plan":      "pro",
+				},
+				FetchedAt: f64(1758276000),
+				AgeS:      f64(4),
+			},
+		},
+		{
+			Number: "2", Email: "erin@example.com", Alias: "ci", Kind: "api_key", Disabled: true,
+			Provider: reporting.ProviderCodex, Usage: usage.UsageEntry{Sentinel: "api key"},
+		},
+	}
+}
+
+// sampleCodexAuto is a running Codex engine whose last tick switched.
+func sampleCodexAuto() *CodexAutoView {
+	to := "2"
+	return &CodexAutoView{
+		Enabled: true, Running: true, Threshold: 97,
+		LastTick: &CodexTickView{At: 1758276003, Outcome: "switched", Detail: "switched 1 (98%) -> 2 (12%)", SwitchedTo: &to, RunningPIDs: []int{777}},
+	}
+}
+
+// fakeMulti is a merged source the way providers.MultiSnapshotSource builds
+// one: the facade's Claude snapshot, then the Codex rows, with the Claude
+// active slot as ActiveNumber.
+type fakeMulti struct {
+	fa    *fakeFacade
+	codex []reporting.AccountSnapshot
+}
+
+func (m fakeMulti) AccountsSnapshot(fetch map[string]bool) *reporting.AccountsSnapshot {
+	out := reporting.AccountsSnapshot{Provider: "multi"}
+	if snap := m.fa.AccountsSnapshot(fetch); snap != nil {
+		out.ActiveNumber, out.TakenAt = snap.ActiveNumber, snap.TakenAt
+		out.Accounts = append(out.Accounts, snap.Accounts...)
+	}
+	out.Accounts = append(out.Accounts, m.codex...)
+	return &out
+}
+
 func sampleSessions() SessionsView {
 	return SessionsView{
 		Claude: []procdetect.ClaudeSession{
@@ -521,6 +618,7 @@ type harness struct {
 	s       *Server
 	fa      *fakeFacade
 	ops     *fakeOps
+	codex   *fakeCodexOps // wired by withCodex only
 	set     *fakeSettings
 	auto    *fakeAuto
 	upd     *fakeUpdates
@@ -563,6 +661,17 @@ func withNoUIPrefs() option    { return func(h *harness, d *Deps) { d.UIPrefs = 
 func withNoCurrentLogin() option {
 	return func(h *harness, d *Deps) { d.CurrentLogin = nil }
 }
+
+// withCodex serves an install with Codex accounts: the merged snapshot, the
+// Codex account operations and the Codex engine beside the Claude one.
+func withCodex() option {
+	return func(h *harness, d *Deps) {
+		d.Snapshot = fakeMulti{fa: h.fa, codex: sampleCodexRows()}
+		d.Codex = h.codex
+		h.auto.view.Codex = sampleCodexAuto()
+	}
+}
+
 func withRand(r io.Reader) option {
 	return func(h *harness, d *Deps) { d.Rand = r }
 }
@@ -590,6 +699,7 @@ func newHarness(t *testing.T, opts ...option) *harness {
 				map[string]any{"number": 2, "email": "bob@example.com"},
 			},
 		}},
+		codex:    &fakeCodexOps{errs: map[string]error{}},
 		set:      &fakeSettings{views: sampleSettings(), unsetOK: true},
 		auto:     &fakeAuto{view: sampleAuto(), errs: map[string]error{}},
 		upd:      &fakeUpdates{view: sampleUpdates()},

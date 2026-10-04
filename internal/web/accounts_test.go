@@ -202,6 +202,72 @@ func TestAddCurrent_CallsFacade(t *testing.T) {
 	}
 }
 
+// {"provider":"codex"} stores the codex CLI's login through the Codex
+// façade and answers its slot; no provider or "claude" is Claude Code's, and
+// any other provider is refused before a façade is reached.
+func TestAddCurrent_ProviderCodex(t *testing.T) {
+	h := newHarness(t, withCodex())
+	resp := h.postJSON("/api/accounts/add", map[string]any{"provider": "codex"})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+	body := decodeJSON(t, resp)
+	if res, _ := body["result"].(map[string]any); res["number"] != "3" || res["email"] != "fay@example.com" {
+		t.Errorf("result %v, want the stored slot", body["result"])
+	}
+	if got := h.codex.Calls(); !reflect.DeepEqual(got, []string{"AddCurrent()"}) {
+		t.Fatalf("codex calls %v", got)
+	}
+	if got := h.fa.Calls(); len(got) != 0 {
+		t.Fatalf("the Claude façade was reached: %v", got)
+	}
+	if resp := h.postJSON("/api/accounts/add", map[string]any{"provider": "claude"}); resp.StatusCode != http.StatusOK {
+		t.Fatalf("claude: status %d", resp.StatusCode)
+	}
+	if got := h.fa.Calls(); !reflect.DeepEqual(got, []string{"AddAccount(<nil>,true,<nil>)"}) {
+		t.Fatalf("claude calls %v", got)
+	}
+	for _, body := range []any{map[string]any{"provider": "gemini"}, `{"provider":`} {
+		if resp := h.postJSON("/api/accounts/add", body); resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("body %v: status %d, want 400", body, resp.StatusCode)
+		}
+	}
+	h.codex.mu.Lock()
+	h.codex.errs["AddCurrent"] = cerr.Switch("No Codex login found.")
+	h.codex.mu.Unlock()
+	if resp := h.postJSON("/api/accounts/add", map[string]any{"provider": "codex"}); resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("codex add error: status %d, want 500", resp.StatusCode)
+	} else if msg := decodeError(t, resp); msg != "No Codex login found." {
+		t.Errorf("error %q", msg)
+	}
+	if len(h.fa.Calls())+len(h.codex.Calls()) != 3 {
+		t.Fatalf("calls claude %v codex %v", h.fa.Calls(), h.codex.Calls())
+	}
+}
+
+// A Codex switch answers what the switch did, the codex sessions still
+// running on the old account included, for the page's restart warning.
+func TestSwitch_Codex_ReturnsRunningPids(t *testing.T) {
+	h := newHarness(t, withCodex())
+	h.codex.mu.Lock()
+	h.codex.pids = []int{4242, 4343}
+	h.codex.mu.Unlock()
+	resp := h.post("/api/switch/codex:2")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+	res, _ := decodeJSON(t, resp)["result"].(map[string]any)
+	if !reflect.DeepEqual(canon(t, res), canon(t, map[string]any{"number": "2", "email": "dana@example.com", "runningPids": []int{4242, 4343}, "alreadyActive": false})) {
+		t.Fatalf("result %v", res)
+	}
+	h.codex.mu.Lock()
+	h.codex.errs["SwitchTo"] = cerr.AccountNotFound("No Codex account matches '9'")
+	h.codex.mu.Unlock()
+	if resp := h.post("/api/switch/codex:9"); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("unknown codex account: status %d, want 404", resp.StatusCode)
+	}
+}
+
 func TestAddCurrent_ErrorMapping(t *testing.T) {
 	h := newHarness(t)
 	h.fa.mu.Lock()
@@ -364,6 +430,19 @@ func TestAddToken_AliasLookupByEmail(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no store-only snapshot taken: %v", h.fa.fetchArgs)
+	}
+}
+
+// The alias lookup by email reads the merged snapshot's Claude rows only: a
+// Codex account with the same email is another CLI's and never aliased.
+func TestAddToken_AliasLookupSkipsCodexRows(t *testing.T) {
+	h := newHarness(t, withCodex())
+	resp := h.postJSON("/api/accounts/add-token", map[string]any{"token": secretSetupToken, "email": "dana@example.com", "alias": "x"})
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+	if got := h.ops.Calls(); len(got) != 0 {
+		t.Fatalf("ops calls %v, want none", got)
 	}
 }
 
