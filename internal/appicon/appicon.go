@@ -1,6 +1,6 @@
 // Package appicon draws the tycswap tray mark — an octopus, head, eyes and
 // four arms, on a rounded square — at any size, so the tray and the menu need
-// no image assets beyond what this package renders itself: macOS and Windows
+// no image assets: macOS and Windows
 // get a coloured PNG, Linux a coloured ARGB bitmap, and a monochrome template
 // variant exists for menu bars that want one. Stdlib only (image, image/png):
 // the head is SVG path data flattened and scan-converted here with 4×4
@@ -9,12 +9,8 @@
 // Every colour comes from brand.AccentColor: the square is a darker shade of
 // it, the octopus the accent itself with a lighter shade as a highlight, the
 // eyes white with dark pupils, and the update badge an accent disc in a white
-// ring. The sizes the trays use are rendered ahead of time by `go generate`
-// (gen/) and embedded (rendered/); a build whose accent differs from the
-// default draws at run time instead.
+// ring. The icons are drawn when the tray starts.
 package appicon
-
-//go:generate go run ./gen
 
 import (
 	"bytes"
@@ -43,7 +39,8 @@ type Palette struct {
 	Ring  color.NRGBA
 }
 
-// DefaultAccent is the accent the embedded renderings were drawn with.
+// DefaultAccent is the palette's accent when brand.AccentColor is not a
+// #rrggbb colour.
 const DefaultAccent = "#5aa2ff"
 
 // PaletteFor derives the palette from a #rrggbb accent; anything else is the
@@ -223,37 +220,21 @@ func (e eye) has(x, y float64) bool {
 	return dx*dx+dy*dy <= 1
 }
 
-// PNG encodes Draw(size, template); the sizes the trays use come from the
-// embedded renderings.
-func PNG(size int, template bool) []byte {
-	name := "mark-" + strconv.Itoa(size) + ".png"
-	if template {
-		name = "template-" + strconv.Itoa(size) + ".png"
-	}
-	if b, ok := prerendered(name); ok {
-		return b
-	}
-	return encode(Draw(size, template))
-}
+// PNG encodes Draw(size, template).
+func PNG(size int, template bool) []byte { return encode(Draw(size, template)) }
 
 // ARGB32 returns Draw(size, false) as network-order ARGB rows, the pixmap
 // format the StatusNotifierItem D-Bus interface expects: size²·4 bytes (sizes
 // below 8 are drawn at 8, as in Draw).
-func ARGB32(size int) []byte {
-	if img, ok := prerenderedImage("mark-" + strconv.Itoa(size) + ".png"); ok {
-		return argb(img)
-	}
-	return argb(Draw(size, false))
-}
+func ARGB32(size int) []byte { return argb(Draw(size, false)) }
 
 // DrawBadge renders the coloured mark with the update badge: an accent disc
 // in a white ring, flush with the top-right corner. The badge covers the
 // square's corner and the top of the head, never an eye, and the ring keeps
 // the disc apart from the octopus of the same colour at 16 px as well as on a
 // dark menu bar, where the corner outside the rounded square is the bar.
-func DrawBadge(size int) *image.NRGBA { return drawBadgeWith(size, Colors()) }
-
-func drawBadgeWith(size int, p Palette) *image.NRGBA {
+func DrawBadge(size int) *image.NRGBA {
+	p := Colors()
 	img := drawWith(size, false, p)
 	s := float64(img.Bounds().Dx()) // Draw clamps tiny sizes
 	outer := s * badgeShare / 2
@@ -276,20 +257,10 @@ func drawBadgeWith(size int, p Palette) *image.NRGBA {
 }
 
 // PNGBadge encodes DrawBadge(size).
-func PNGBadge(size int) []byte {
-	if b, ok := prerendered("badge-" + strconv.Itoa(size) + ".png"); ok {
-		return b
-	}
-	return encode(DrawBadge(size))
-}
+func PNGBadge(size int) []byte { return encode(DrawBadge(size)) }
 
 // ARGB32Badge is DrawBadge(size) in the StatusNotifierItem pixmap format.
-func ARGB32Badge(size int) []byte {
-	if img, ok := prerenderedImage("badge-" + strconv.Itoa(size) + ".png"); ok {
-		return argb(img)
-	}
-	return argb(DrawBadge(size))
-}
+func ARGB32Badge(size int) []byte { return argb(DrawBadge(size)) }
 
 func encode(img image.Image) []byte {
 	var buf bytes.Buffer

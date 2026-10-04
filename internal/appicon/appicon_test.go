@@ -70,16 +70,15 @@ func TestPaletteIsDerivedFromTheAccent(t *testing.T) {
 	}
 }
 
-// A build with another accent draws its icons at run time: the embedded
-// files are in the default palette.
-func TestAnotherAccentIsDrawnNotEmbedded(t *testing.T) {
+// A build with another accent draws its icons in that accent's palette.
+func TestAnotherAccentIsDrawnInItsPalette(t *testing.T) {
 	saved := brand.AccentColor
 	t.Cleanup(func() { brand.AccentColor = saved })
-	embedded := PNG(32, false)
+	plain := PNG(32, false)
 	brand.AccentColor = "#ff0000"
 	got := PNG(32, false)
-	if bytes.Equal(got, embedded) {
-		t.Fatal("the embedded default-accent icon was served for another accent")
+	if bytes.Equal(got, plain) {
+		t.Fatal("the default-accent icon was drawn for another accent")
 	}
 	img, err := png.Decode(bytes.NewReader(got))
 	if err != nil {
@@ -167,10 +166,6 @@ func TestARGB32Layout(t *testing.T) {
 		if b[0] != 0 {
 			t.Errorf("size %d: corner alpha = %x, want transparent", size, b[0])
 		}
-	}
-	// The embedded pixmap and the drawn one agree.
-	if !bytes.Equal(ARGB32(22), argb(Draw(22, false))) {
-		t.Error("the 22 px pixmap differs from the drawing")
 	}
 }
 
@@ -305,9 +300,6 @@ func TestBadgePNGAndARGB32(t *testing.T) {
 	i = ((size/2)*size + 1) * 4
 	if got := [4]byte{b[i], b[i+1], b[i+2], b[i+3]}; got != [4]byte{0xff, p.Tile.R, p.Tile.G, p.Tile.B} {
 		t.Errorf("ARGB at the left edge = % x, want the tile", got)
-	}
-	if !bytes.Equal(b, argb(DrawBadge(size))) {
-		t.Error("the embedded badge pixmap differs from the drawing")
 	}
 	if got := DrawBadge(1).Bounds().Dx(); got != 8 {
 		t.Errorf("min badge size = %d, want 8", got)

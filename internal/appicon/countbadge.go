@@ -68,9 +68,8 @@ func countGeometry(s float64, label string) (cx, cy, outer, inner, straight floa
 // at its top-right corner. The image is wider than tall: the badge reaches
 // past the square, so it is as large as the menu bar allows without covering
 // an eye. n below 1 is drawn as 1, above 9 as "9+".
-func DrawCounted(height, n int) *image.NRGBA { return drawCountedWith(height, n, Colors()) }
-
-func drawCountedWith(height, n int, p Palette) *image.NRGBA {
+func DrawCounted(height, n int) *image.NRGBA {
+	p := Colors()
 	mark := drawWith(height, false, p)
 	s := float64(mark.Bounds().Dy()) // Draw clamps tiny sizes
 	label := countLabel(n)
@@ -118,20 +117,7 @@ func drawCountedWith(height, n int, p Palette) *image.NRGBA {
 }
 
 // PNGCounted encodes DrawCounted(height, n).
-func PNGCounted(height, n int) []byte {
-	if b, ok := prerendered("count-" + strconv.Itoa(height) + "-" + countLabelName(n) + ".png"); ok {
-		return b
-	}
-	return encode(DrawCounted(height, n))
-}
-
-// countLabelName is countLabel as a file name part ("9plus" for "9+").
-func countLabelName(n int) string {
-	if l := countLabel(n); l != "9+" {
-		return l
-	}
-	return "9plus"
-}
+func PNGCounted(height, n int) []byte { return encode(DrawCounted(height, n)) }
 
 // nearStroke reports whether (x, y) lies within half of any polyline.
 func nearStroke(lines [][]point, x, y, half float64) bool {
