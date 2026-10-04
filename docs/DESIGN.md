@@ -4733,9 +4733,7 @@ implementations and no third-party code:
 scene: a rounded square in a darker shade of the accent, the octopus — head
 and four arms — in the accent itself with a lighter shade as the shine on its
 head, white eyes with dark pupils. Every colour is derived from
-`brand.AccentColor` (`PaletteFor`); a monochrome template variant (a black
-square with the silhouette cut out and the eyes standing in the cut) exists
-for menu bars that recolour icons. The head is path data flattened and
+`brand.AccentColor` (`PaletteFor`). The head is path data flattened and
 scan-converted with 4×4 supersampling, the arms are stroked centre lines;
 the drawing framework (paint, winding, flattening, compositing, the rounded
 square, ARGB32 and PNG output) is the reference's, and so is drawing the

@@ -65,22 +65,18 @@ func accentRGB(hex string) (r, g, b float64) {
 	return float64(v>>16&0xff) / 255, float64(v>>8&0xff) / 255, float64(v&0xff) / 255
 }
 
-// barImage picks the status-bar rendition: the template when there is one,
-// else the coloured mark (the large rendition so Retina bars get a crisp
-// 18 pt image). template is 1 for a template image.
-func barImage(icon Icon) (png []byte, template int) {
-	if len(icon.TemplatePNG) > 0 {
-		return icon.TemplatePNG, 1
-	}
+// barImage picks the status-bar rendition of the coloured mark: the large
+// one when there is one, so Retina bars get a crisp 18 pt image.
+func barImage(icon Icon) []byte {
 	if len(icon.LargePNG) > 0 {
-		return icon.LargePNG, 0
+		return icon.LargePNG
 	}
-	return icon.PNG, 0
+	return icon.PNG
 }
 
 func (t *darwinTrayImpl) Run() error {
 	t.iconMu.Lock()
-	png, template := barImage(t.bar)
+	png := barImage(t.bar)
 	t.iconMu.Unlock()
 	mark := t.icon.LargePNG
 	if len(mark) == 0 {
@@ -92,7 +88,7 @@ func (t *darwinTrayImpl) Run() error {
 	}
 	tip := C.CString(t.opts.Tooltip)
 	defer C.free(unsafe.Pointer(tip))
-	C.tray_run(unsafe.Pointer(&png[0]), C.int(len(png)), C.int(template), markPtr, C.int(len(mark)), tip)
+	C.tray_run(unsafe.Pointer(&png[0]), C.int(len(png)), markPtr, C.int(len(mark)), tip)
 	return nil
 }
 
@@ -114,14 +110,14 @@ func (t *darwinTrayImpl) SetTooltip(s string) {
 // keeps t.icon. Before Run the status item does not exist yet and the C side
 // does nothing: Run then shows t.bar.
 func (t *darwinTrayImpl) SetIcon(icon Icon) {
-	png, template := barImage(icon)
+	png := barImage(icon)
 	if len(png) == 0 {
 		return
 	}
 	t.iconMu.Lock()
 	defer t.iconMu.Unlock()
 	t.bar = icon
-	C.tray_set_icon(unsafe.Pointer(&png[0]), C.int(len(png)), C.int(template))
+	C.tray_set_icon(unsafe.Pointer(&png[0]), C.int(len(png)))
 }
 
 // SetMenu writes the menu, the open one included (A37); an unchanged menu is

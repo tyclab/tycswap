@@ -1,8 +1,7 @@
 // Package appicon draws the tycswap tray mark — an octopus, head, eyes and
 // four arms, on a rounded square — at any size, so the tray and the menu need
 // no image assets: macOS and Windows
-// get a coloured PNG, Linux a coloured ARGB bitmap, and a monochrome template
-// variant exists for menu bars that want one. Stdlib only (image, image/png):
+// get a coloured PNG, Linux a coloured ARGB bitmap. Stdlib only (image, image/png):
 // the head is SVG path data flattened and scan-converted here with 4×4
 // supersampling, the arms are stroked centre lines.
 //
@@ -144,15 +143,11 @@ var (
 )
 
 // Draw renders the mark at size×size pixels in this build's palette.
-// template=false is the coloured icon. template=true is the monochrome form
-// for menu bars that recolour icons: an opaque black square with the octopus
-// cut out and its eyes left standing in the cut, so the bar shows through the
-// silhouette.
-func Draw(size int, template bool) *image.NRGBA {
-	return drawWith(size, template, Colors())
+func Draw(size int) *image.NRGBA {
+	return drawWith(size, Colors())
 }
 
-func drawWith(size int, template bool, p Palette) *image.NRGBA {
+func drawWith(size int, p Palette) *image.NRGBA {
 	if size < 8 {
 		size = 8
 	}
@@ -160,13 +155,8 @@ func drawWith(size int, template bool, p Palette) *image.NRGBA {
 	s := float64(size)
 	k := s / unit // pixels per box unit
 	radius := s * cornerShare
-	black := color.NRGBA{A: 0xff}
-	tile := p.Tile
-	if template {
-		tile = black
-	}
 	paint(img, func(x, y float64) bool { return inRoundedRect(x, y, s, radius) }, func(x, y int, cov float64) {
-		img.SetNRGBA(x, y, withAlpha(tile, cov))
+		img.SetNRGBA(x, y, withAlpha(p.Tile, cov))
 	})
 	body := func(x, y float64) bool {
 		px, py := x/k, y/k
@@ -177,24 +167,6 @@ func drawWith(size int, template bool, p Palette) *image.NRGBA {
 	}
 	in := func(e eye) func(x, y float64) bool {
 		return func(x, y float64) bool { return e.has(x/k, y/k) }
-	}
-	if template {
-		cut := func(x, y int, cov float64) {
-			c := img.NRGBAAt(x, y)
-			c.A = uint8(float64(c.A)*(1-cov) + 0.5)
-			img.SetNRGBA(x, y, c)
-		}
-		fill := func(x, y int, cov float64) {
-			img.SetNRGBA(x, y, over(black, img.NRGBAAt(x, y), cov))
-		}
-		paintIn(img, bodyBox, k, body, cut)
-		for _, e := range eyes {
-			paintIn(img, e.box(), k, in(e), fill)
-		}
-		for _, e := range pupils {
-			paintIn(img, e.box(), k, in(e), cut)
-		}
-		return img
 	}
 	layer := func(c color.NRGBA) func(x, y int, cov float64) {
 		return func(x, y int, cov float64) { img.SetNRGBA(x, y, over(c, img.NRGBAAt(x, y), cov)) }
@@ -220,13 +192,13 @@ func (e eye) has(x, y float64) bool {
 	return dx*dx+dy*dy <= 1
 }
 
-// PNG encodes Draw(size, template).
-func PNG(size int, template bool) []byte { return encode(Draw(size, template)) }
+// PNG encodes Draw(size).
+func PNG(size int) []byte { return encode(Draw(size)) }
 
-// ARGB32 returns Draw(size, false) as network-order ARGB rows, the pixmap
+// ARGB32 returns Draw(size) as network-order ARGB rows, the pixmap
 // format the StatusNotifierItem D-Bus interface expects: size²·4 bytes (sizes
 // below 8 are drawn at 8, as in Draw).
-func ARGB32(size int) []byte { return argb(Draw(size, false)) }
+func ARGB32(size int) []byte { return argb(Draw(size)) }
 
 // DrawBadge renders the coloured mark with the update badge: an accent disc
 // in a white ring, flush with the top-right corner. The badge covers the
@@ -235,7 +207,7 @@ func ARGB32(size int) []byte { return argb(Draw(size, false)) }
 // dark menu bar, where the corner outside the rounded square is the bar.
 func DrawBadge(size int) *image.NRGBA {
 	p := Colors()
-	img := drawWith(size, false, p)
+	img := drawWith(size, p)
 	s := float64(img.Bounds().Dx()) // Draw clamps tiny sizes
 	outer := s * badgeShare / 2
 	inner := outer - s*ringShare

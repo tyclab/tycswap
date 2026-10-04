@@ -16,7 +16,7 @@ func at64(u float64) int { return int(u) }
 
 func TestDrawIsAnOctopusOnTheTile(t *testing.T) {
 	p := Colors()
-	img := Draw(64, false)
+	img := Draw(64)
 	for _, c := range [][2]int{{0, 0}, {63, 0}, {0, 63}, {63, 63}} {
 		if a := img.NRGBAAt(c[0], c[1]).A; a != 0 {
 			t.Errorf("corner %v should be transparent (rounded), alpha %d", c, a)
@@ -74,9 +74,9 @@ func TestPaletteIsDerivedFromTheAccent(t *testing.T) {
 func TestAnotherAccentIsDrawnInItsPalette(t *testing.T) {
 	saved := brand.AccentColor
 	t.Cleanup(func() { brand.AccentColor = saved })
-	plain := PNG(32, false)
+	plain := PNG(32)
 	brand.AccentColor = "#ff0000"
-	got := PNG(32, false)
+	got := PNG(32)
 	if bytes.Equal(got, plain) {
 		t.Fatal("the default-accent icon was drawn for another accent")
 	}
@@ -89,38 +89,8 @@ func TestAnotherAccentIsDrawnInItsPalette(t *testing.T) {
 	}
 }
 
-// The template is monochrome: every pixel black, only the alpha draws.
-func TestTemplateHasNoColour(t *testing.T) {
-	for _, size := range []int{16, 22, 36, 64} {
-		img := Draw(size, true)
-		for y := 0; y < size; y++ {
-			for x := 0; x < size; x++ {
-				if c := img.NRGBAAt(x, y); c.R != 0 || c.G != 0 || c.B != 0 {
-					t.Fatalf("size %d: colour at (%d,%d): %+v", size, x, y, c)
-				}
-			}
-		}
-	}
-	img := Draw(64, true)
-	if c := img.NRGBAAt(0, 0); c.A != 0 {
-		t.Errorf("corner transparent, got %+v", c)
-	}
-	if c := img.NRGBAAt(3, 32); c.A != 0xff {
-		t.Errorf("the square should be opaque, got %+v", c)
-	}
-	if c := img.NRGBAAt(at64(40), at64(14)); c.A != 0 {
-		t.Errorf("the head is cut out of a template, got %+v", c)
-	}
-	if c := img.NRGBAAt(at64(eyes[0].cx), at64(eyes[0].cy-eyes[0].ry+1.5)); c.A != 0xff {
-		t.Errorf("the eyes stand in the cut, got %+v", c)
-	}
-	if c := img.NRGBAAt(at64(pupils[0].cx), at64(pupils[0].cy)); c.A != 0 {
-		t.Errorf("the pupils are cut out of the eyes, got %+v", c)
-	}
-}
-
 func TestEdgesAreAntialiased(t *testing.T) {
-	img := Draw(64, false)
+	img := Draw(64)
 	partial := 0
 	for x := 0; x < 64; x++ {
 		if a := img.NRGBAAt(x, 2).A; a > 0 && a < 0xff {
@@ -138,17 +108,15 @@ func TestEdgesAreAntialiased(t *testing.T) {
 
 func TestPNGDecodes(t *testing.T) {
 	for _, size := range []int{16, 22, 32, 64, 128} {
-		for _, template := range []bool{false, true} {
-			img, err := png.Decode(bytes.NewReader(PNG(size, template)))
-			if err != nil {
-				t.Fatalf("size %d: %v", size, err)
-			}
-			if img.Bounds().Dx() != size || img.Bounds().Dy() != size {
-				t.Errorf("size %d: bounds %v", size, img.Bounds())
-			}
-			if _, _, _, a := img.At(0, 0).RGBA(); a != 0 {
-				t.Errorf("size %d: corner alpha %d, want transparent", size, a)
-			}
+		img, err := png.Decode(bytes.NewReader(PNG(size)))
+		if err != nil {
+			t.Fatalf("size %d: %v", size, err)
+		}
+		if img.Bounds().Dx() != size || img.Bounds().Dy() != size {
+			t.Errorf("size %d: bounds %v", size, img.Bounds())
+		}
+		if _, _, _, a := img.At(0, 0).RGBA(); a != 0 {
+			t.Errorf("size %d: corner alpha %d, want transparent", size, a)
 		}
 	}
 }
@@ -170,7 +138,7 @@ func TestARGB32Layout(t *testing.T) {
 }
 
 func TestTinySizeClamped(t *testing.T) {
-	if got := Draw(1, false).Bounds().Dx(); got != 8 {
+	if got := Draw(1).Bounds().Dx(); got != 8 {
 		t.Errorf("min size = %d, want 8", got)
 	}
 }
@@ -249,7 +217,7 @@ func TestBadgeIsAnAccentDiscInAWhiteRing(t *testing.T) {
 // touches: the octopus must still look out of a badged icon.
 func TestBadgeNeverCoversAnEye(t *testing.T) {
 	for _, size := range []int{16, 22, 32, 36, 64, 128} {
-		plain, badged := Draw(size, false), DrawBadge(size)
+		plain, badged := Draw(size), DrawBadge(size)
 		cx, cy, outer, _ := badgeGeometry(size)
 		changed := 0
 		for y := 0; y < size; y++ {

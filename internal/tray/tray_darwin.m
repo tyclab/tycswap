@@ -448,24 +448,23 @@ static NSMenuItem *headerRow(NSString *title) {
 
 // barImage: the status-bar rendition of a PNG, 18 pt high whatever its pixel
 // size (a 128 px mark stays crisp on Retina) and as wide as its aspect says
-// (the count badge reaches past the square, A44), a template when asked.
-static NSImage *barImage(NSData *data, int isTemplate) {
+// (the count badge reaches past the square, A44).
+static NSImage *barImage(NSData *data) {
     NSImage *image = [[NSImage alloc] initWithData:data];
     NSImageRep *rep = image.representations.firstObject;
     CGFloat aspect = rep && rep.pixelsHigh > 0 ? (CGFloat)rep.pixelsWide / (CGFloat)rep.pixelsHigh : 1;
     [image setSize:NSMakeSize(18 * aspect, 18)];
-    [image setTemplate:isTemplate ? YES : NO];
     return image;
 }
 
-void tray_run(const void *png, int pngLen, int isTemplate, const void *brandPng, int brandLen, const char *tooltip) {
+void tray_run(const void *png, int pngLen, const void *brandPng, int brandLen, const char *tooltip) {
     @autoreleasepool {
         [NSApplication sharedApplication];
         // Accessory: no Dock icon, no menu bar takeover — a background helper
         // that lives in the status bar.
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
         statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength:NSVariableStatusItemLength];
-        statusItem.button.image = barImage([NSData dataWithBytes:png length:pngLen], isTemplate);
+        statusItem.button.image = barImage([NSData dataWithBytes:png length:pngLen]);
         statusItem.button.imagePosition = NSImageLeft;
         if (brandPng && brandLen > 0) {
             brandImage = [[NSImage alloc] initWithData:[NSData dataWithBytes:brandPng length:brandLen]];
@@ -508,13 +507,13 @@ void tray_set_tooltip(const char *tooltip) {
     onMain(^{ if (statusItem) { statusItem.button.toolTip = s; } });
 }
 
-void tray_set_icon(const void *png, int pngLen, int isTemplate) {
+void tray_set_icon(const void *png, int pngLen) {
     // Copy now: png is Go memory, only valid for the duration of this call.
     NSData *data = [NSData dataWithBytes:png length:pngLen];
     onMain(^{
         if (!statusItem) { return; }
         // A PNG AppKit cannot decode keeps the icon that is there.
-        NSImage *image = barImage(data, isTemplate);
+        NSImage *image = barImage(data);
         if (image) { statusItem.button.image = image; }
     });
 }

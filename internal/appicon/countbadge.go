@@ -70,7 +70,7 @@ func countGeometry(s float64, label string) (cx, cy, outer, inner, straight floa
 // an eye. n below 1 is drawn as 1, above 9 as "9+".
 func DrawCounted(height, n int) *image.NRGBA {
 	p := Colors()
-	mark := drawWith(height, false, p)
+	mark := drawWith(height, p)
 	s := float64(mark.Bounds().Dy()) // Draw clamps tiny sizes
 	label := countLabel(n)
 	cx, cy, outer, inner, straight, width := countGeometry(s, label)

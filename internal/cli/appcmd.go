@@ -601,12 +601,12 @@ func askVia(t tray.Tray) func(title, body, ok, cancel string) (bool, error) {
 // Windows and Linux it would be rendered on every start for nobody.
 func appIcon() tray.Icon {
 	ic := tray.Icon{
-		PNG:    appicon.PNG(32, false),
+		PNG:    appicon.PNG(32),
 		ARGB32: appicon.ARGB32(22),
 		Size:   22,
 	}
 	if runtime.GOOS == "darwin" {
-		ic.LargePNG = appicon.PNG(128, false)
+		ic.LargePNG = appicon.PNG(128)
 	}
 	return ic
 }

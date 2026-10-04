@@ -24,7 +24,7 @@ func TestCountLabel(t *testing.T) {
 func TestCountedBadgeBesideTheMark(t *testing.T) {
 	p := Colors()
 	for _, h := range []int{18, 36, 128} {
-		plain := Draw(h, false)
+		plain := Draw(h)
 		one, many := DrawCounted(h, 3), DrawCounted(h, 12)
 		if one.Bounds().Dy() != h || one.Bounds().Dx() <= h || many.Bounds().Dx() <= one.Bounds().Dx() {
 			t.Fatalf("height %d: bounds %v and %v (the 9+ pill must be wider)", h, one.Bounds(), many.Bounds())

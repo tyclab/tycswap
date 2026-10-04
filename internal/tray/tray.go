@@ -152,9 +152,6 @@ func itoa(n int) string {
 type Icon struct {
 	// PNG is the coloured icon (Windows, and the fallback everywhere).
 	PNG []byte
-	// TemplatePNG is black-on-transparent for the macOS menu bar. When it is
-	// empty and LargePNG is set, macOS shows the coloured mark instead.
-	TemplatePNG []byte
 	// LargePNG is the coloured mark at ≥ 64 px: the macOS menu bar (scaled
 	// to 18 pt, crisp on Retina) and the menu's brand row.
 	LargePNG []byte
@@ -183,7 +180,7 @@ type Tray interface {
 	// SetIcon replaces the status-bar / notification-area icon, for the
 	// update badge (DESIGN A44). Only the icon changes: the macOS menu's brand
 	// row keeps the mark New was given. An icon without the form the platform
-	// draws (TemplatePNG/LargePNG/PNG on macOS, PNG on Windows, ARGB32 on
+	// draws (LargePNG/PNG on macOS, PNG on Windows, ARGB32 on
 	// Linux) is ignored. Before Run it sets the icon Run shows.
 	SetIcon(Icon)
 	// SetMenu replaces the whole menu.
