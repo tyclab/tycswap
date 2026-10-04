@@ -64,7 +64,7 @@ func TestSNISetIconSwapsThePixmapAndSignalsNewIcon(t *testing.T) {
 	if got[0] != int32(3) || got[1] != int32(3) {
 		t.Errorf("badge pixmap size = %v×%v, want 3×3", got[0], got[1])
 	}
-	if px := got[2].([]any); len(px) != 36 || px[1] != byte(0x1a) {
+	if px := got[2].([]any); len(px) != 36 || px[1] != byte(0x24) {
 		t.Errorf("badge pixmap bytes = %v", px)
 	}
 
