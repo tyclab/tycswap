@@ -1,7 +1,7 @@
 // webcmd.go — `tycswap web`: wire the dashboard's façades, bind loopback,
 // print the one-time URL, open the browser, serve until SIGINT/SIGTERM
 // (DESIGN A26; the updates host, the view preferences and the live login
-// seam are A27).
+// seam are A27; the Codex rows and engine A47).
 package cli
 
 import (
@@ -23,7 +23,9 @@ import (
 
 	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/browser"
+	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/providers"
 	"github.com/tyclab/tycswap/internal/web"
 )
 
@@ -176,7 +178,10 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 			return subError(wprog, s.err, "unrecognized arguments: "+tok)
 		}
 	}
-	srv, auto, code := newDashboard(interval, debug, s)
+	// Bounds the Codex rows' usage requests; they end with the server.
+	rowsCtx, cancelRows := context.WithCancel(context.Background())
+	defer cancelRows()
+	srv, auto, code := newDashboard(rowsCtx, interval, debug, s)
 	if code != 0 {
 		return code
 	}
@@ -213,8 +218,14 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 
 // newDashboard constructs the switcher and every façade the dashboard needs
 // and returns the unstarted server. A non-zero code means the error was
-// already reported on s.err.
-func newDashboard(interval float64, debug bool, s ioStreams) (*web.Server, *autoFacade, int) {
+// already reported on s.err. ctx bounds the Codex rows' usage requests.
+//
+// When this machine has Codex accounts — decided at launch, as in the TUI —
+// the rows come from the merged Claude + Codex snapshot, the Codex rows'
+// actions go to the Codex switcher, and the engine host runs the Codex
+// engine beside the Claude one (DESIGN A47); without them the Codex parts
+// are nil and the dashboard is the Claude one.
+func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams) (*web.Server, *autoFacade, int) {
 	sw, err := constructSwitcher(debug, s.err)
 	if err != nil {
 		errorTo(s.err, "Error: "+err.Error())
@@ -223,11 +234,17 @@ func newDashboard(interval float64, debug bool, s ioStreams) (*web.Server, *auto
 	if code, blocked := guardRoot(s.err); blocked {
 		return nil, nil, code
 	}
-	auto := newAutoFacade(sw)
+	var codexSw *codexswitcher.Switcher
+	if codexIsPresent() {
+		codexSw = newQuietCodexSwitcher()
+	}
+	auto := newAutoFacade(sw, codexSw)
 	updates := newUpdatesHost(sw.BackupDir())
 	srv, err := web.New(web.Deps{
 		Facade:     sw,
+		Snapshot:   providers.NewMultiSnapshotSource(ctx, sw, codexSw),
 		Accounts:   sw,
+		Codex:      newCodexOps(codexSw),
 		Settings:   settingsFacade{root: sw.BackupDir()},
 		Auto:       auto,
 		AutoEvents: auto.Events(),

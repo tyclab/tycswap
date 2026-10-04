@@ -157,7 +157,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 			return
 		}
 		tick := codexEngine.Tick(ctx, dryRun)
-		if tick.Outcome != codexauto.OutcomeSwitched && tick.Outcome != codexauto.OutcomeError && !dryRun {
+		if !codexTickShown(tick, dryRun) {
 			return
 		}
 		outMu.Lock()
@@ -202,23 +202,11 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 func emitCodexTick(out io.Writer, tick codexauto.Tick, jsonMode bool) {
 	now := time.Now()
 	if jsonMode {
-		var switchedTo any
-		if tick.SwitchedTo != "" {
-			switchedTo = tick.SwitchedTo
-		}
-		pids := tick.RunningPIDs
-		if pids == nil {
-			pids = []int{}
-		}
-		writeJSONCompact(out, map[string]any{
-			"schemaVersion": jsonout.SchemaVersion,
-			"event":         "codex",
-			"ts":            now.UTC().Format("2006-01-02T15:04:05Z"),
-			"outcome":       tick.Outcome,
-			"detail":        tick.Detail,
-			"switchedTo":    switchedTo,
-			"runningPids":   pids,
-		})
+		line := codexTickFields(tick)
+		line["schemaVersion"] = jsonout.SchemaVersion
+		line["event"] = "codex"
+		line["ts"] = now.UTC().Format("2006-01-02T15:04:05Z")
+		writeJSONCompact(out, line)
 		return
 	}
 	line := tick.Human()

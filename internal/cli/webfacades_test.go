@@ -17,14 +17,19 @@ import (
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/cerr"
+	codexapi "github.com/tyclab/tycswap/internal/codex/api"
+	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
+	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/usage"
 	"github.com/tyclab/tycswap/internal/web"
 	"github.com/tyclab/tycswap/internal/wincred"
 )
@@ -128,7 +133,7 @@ func TestSettingsFacade(t *testing.T) {
 
 func TestAutoFacade(t *testing.T) {
 	sw := fixtureSwitcher(t)
-	a := newAutoFacade(sw)
+	a := newAutoFacade(sw, nil)
 	t.Cleanup(func() {
 		_ = a.Stop()
 		if !a.waitStopped(10 * time.Second) {
@@ -216,7 +221,7 @@ func TestAutoFacadeQuarantineCarriesReasonAndTime(t *testing.T) {
 	if err := os.WriteFile(autoswitch.StatePath(sw.BackupDir()), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	q := newAutoFacade(sw).View().Quarantine
+	q := newAutoFacade(sw, nil).View().Quarantine
 	want := map[string]any{
 		"3": map[string]any{"reason": "invalid_grant", "at": "2026-09-19T10:00:00Z"},
 		"4": map[string]any{"reason": ""},
@@ -230,17 +235,20 @@ func TestAutoFacadeQuarantineCarriesReasonAndTime(t *testing.T) {
 // returned, or the timeout passes, so no tick can outlive a test's temp dir.
 func (a *autoFacade) waitStopped(timeout time.Duration) bool {
 	a.mu.Lock()
-	done := a.done
+	done, codexDone := a.done, a.codexDone
 	a.mu.Unlock()
-	if done == nil {
-		return true
+	deadline := time.After(timeout)
+	for _, loop := range []chan struct{}{done, codexDone} {
+		if loop == nil {
+			continue
+		}
+		select {
+		case <-loop:
+		case <-deadline:
+			return false
+		}
 	}
-	select {
-	case <-done:
-		return true
-	case <-time.After(timeout):
-		return false
-	}
+	return true
 }
 
 // fakeEngine records whether two engines ever run at once.
@@ -283,7 +291,7 @@ func (e *fakeEngine) ApplyModels(string)     {}
 // until the loop has returned, so two engines never run side by side.
 func TestAutoFacadeStopThenStartNeverOverlaps(t *testing.T) {
 	sw := fixtureSwitcher(t)
-	a := newAutoFacade(sw)
+	a := newAutoFacade(sw, nil)
 	prevWait := autoStopWait
 	autoStopWait = 50 * time.Millisecond
 	t.Cleanup(func() { autoStopWait = prevWait })
@@ -332,7 +340,7 @@ func TestAutoFacadeStopThenStartNeverOverlaps(t *testing.T) {
 // most recent events; the stream never blocks the engine.
 func TestAutoEventRingCaps(t *testing.T) {
 	sw := fixtureSwitcher(t)
-	a := newAutoFacade(sw)
+	a := newAutoFacade(sw, nil)
 	for i := 0; i < autoEventRing+25; i++ {
 		a.onEvent(fakeAutoEvent{kind: "tick", human: "tick", fields: map[string]any{"n": i, "to": "2"}})
 	}
@@ -362,14 +370,30 @@ func (e fakeAutoEvent) Human() string        { return e.human }
 
 // The wired dashboard serves: the launch URL sets the port-scoped cookie and
 // redirects to /#csrf=<token>, the page itself carries no token, and
-// /api/state lists the fixture's accounts with provider keys.
+// /api/state lists the fixture's accounts with provider keys. With Codex
+// accounts at launch the Codex rows follow (without token status), the
+// Codex engine is in the auto section, and a Codex row's switch works while
+// its alias is refused; without them auto.codex is null and a Codex route
+// answers 503 (DESIGN A47).
 func TestNewDashboardServes(t *testing.T) {
+	t.Run("claude-only", func(t *testing.T) { testNewDashboardServes(t, false) })
+	t.Run("with-codex", func(t *testing.T) { testNewDashboardServes(t, true) })
+}
+
+func testNewDashboardServes(t *testing.T, codex bool) {
 	sw := fixtureSwitcher(t)
 	prev := newSwitcher
 	newSwitcher = func(store.Options) (*core.Switcher, error) { return sw, nil }
 	t.Cleanup(func() { newSwitcher = prev })
+	prevPresent, prevQuiet := codexIsPresent, newQuietCodexSwitcher
+	t.Cleanup(func() { codexIsPresent, newQuietCodexSwitcher = prevPresent, prevQuiet })
+	codexIsPresent = func() bool { return codex }
+	if codex {
+		codexSw := fixtureCodex(t)
+		newQuietCodexSwitcher = func() *codexswitcher.Switcher { return codexSw }
+	}
 	var errBuf strings.Builder
-	srv, _, code := newDashboard(5, false, ioStreams{out: io.Discard, err: &errBuf})
+	srv, _, code := newDashboard(context.Background(), 5, false, ioStreams{out: io.Discard, err: &errBuf})
 	if code != 0 {
 		t.Fatalf("newDashboard: %d %s", code, errBuf.String())
 	}
@@ -400,6 +424,19 @@ func TestNewDashboardServes(t *testing.T) {
 		t.Fatalf("redirect landed on fragment %q, want csrf=<token>", got)
 	}
 	base := launch[:strings.Index(launch, "/?token=")]
+	call := func(method, path, body string) (int, map[string]any) {
+		t.Helper()
+		req, _ := http.NewRequest(method, base+path, strings.NewReader(body))
+		req.Header.Set("X-CSRF-Token", srv.Token())
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var out map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out
+	}
 	req, _ := http.NewRequest(http.MethodGet, base+"/api/state?tokenStatus=1", nil)
 	req.Header.Set("X-CSRF-Token", srv.Token())
 	resp, err = c.Do(req)
@@ -412,12 +449,416 @@ func TestNewDashboardServes(t *testing.T) {
 	if err != nil || resp.StatusCode != http.StatusOK || len(st.Accounts) == 0 || st.Settings == nil || st.Auto == nil {
 		t.Fatalf("state %d %v: %+v", resp.StatusCode, err, st)
 	}
+	var codexKeys []string
 	for _, row := range st.Accounts {
-		if !strings.HasPrefix(row["key"].(string), "claude:") {
+		key := row["key"].(string)
+		_, hasTS := row["tokenStatus"].(string)
+		switch {
+		case strings.HasPrefix(key, "claude:"):
+			if !hasTS {
+				t.Errorf("row %v lacks tokenStatus", row["number"])
+			}
+		case strings.HasPrefix(key, "codex:"):
+			codexKeys = append(codexKeys, key)
+			if hasTS {
+				t.Errorf("codex row %v carries tokenStatus", key)
+			}
+		default:
 			t.Errorf("row key %v", row["key"])
 		}
-		if _, ok := row["tokenStatus"].(string); !ok {
-			t.Errorf("row %v lacks tokenStatus", row["number"])
+	}
+	if !codex {
+		if len(codexKeys) != 0 || st.Auto.Codex != nil {
+			t.Fatalf("Claude-only dashboard lists codex rows %v, auto.codex %+v", codexKeys, st.Auto.Codex)
 		}
+		if status, _ := call(http.MethodPost, "/api/switch/codex:1", ""); status != http.StatusServiceUnavailable {
+			t.Fatalf("codex switch without Codex: status %d, want 503", status)
+		}
+		return
+	}
+	if !reflect.DeepEqual(codexKeys, []string{"codex:1", "codex:2"}) || st.Auto.Codex == nil || st.Auto.Codex.Running {
+		t.Fatalf("codex rows %v, auto.codex %+v", codexKeys, st.Auto.Codex)
+	}
+	status, body := call(http.MethodPost, "/api/switch/codex:2", "")
+	if res, _ := body["result"].(map[string]any); status != http.StatusOK || res["number"] != "2" || !reflect.DeepEqual(res["runningPids"], []any{float64(999)}) {
+		t.Fatalf("codex switch: %d %v", status, body)
+	}
+	if status, _ := call(http.MethodPost, "/api/accounts/codex:1/alias", `{"alias":"x"}`); status != http.StatusNotFound {
+		t.Fatalf("codex alias: status %d, want 404", status)
+	}
+}
+
+// ---- Codex in the dashboard (DESIGN A47) ----
+
+// fixtureCodex adds Codex accounts to the fixture home: a@ (slot 1, the live
+// login) and b@ (slot 2) in the Codex store under the backup root, and an
+// offline Codex switcher over it whose usage is 10% for every account and
+// whose switch reports codex running as pid 999.
+func fixtureCodex(t *testing.T) *codexswitcher.Switcher {
+	t.Helper()
+	home := t.TempDir()
+	testutil.Setenv(t, "CODEX_HOME", home)
+	writeLiveAuth(t, seedOne(t))
+	seedCodex(t, testAcctB, testUserB, "b@example.com")
+	return codexswitcher.New(codexswitcher.Options{
+		Platform: platform.Linux,
+		Client: &codexapi.FakeClient{UsageFn: func(context.Context, string, string) codexapi.UsageFetch {
+			return codexapi.UsageFetch{Usage: map[string]any{"five_hour": map[string]any{"pct": 10.0}, "plan": "pro"}}
+		}},
+		Stdout:      io.Discard,
+		RunningPIDs: func() []int { return []int{999} },
+	})
+}
+
+// fakeCodexSource is the Codex engine's Source: two accounts, the active one
+// at activePct and the other at 12%, a switch that reports codex pid 777 or
+// fails, and an optional gate that holds a switch in flight.
+type fakeCodexSource struct {
+	mu        sync.Mutex
+	activePct float64
+	accounts  int
+	switched  []string
+	switchErr error
+	entered   chan struct{} // receives once per switch that started
+	gate      chan struct{} // when non-nil, a switch waits for it to close
+}
+
+func (f *fakeCodexSource) AccountsSnapshot(context.Context, map[string]bool) reporting.AccountsSnapshot {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rows := []reporting.AccountSnapshot{
+		{Number: "1", IsActive: true, Switchable: true, Provider: reporting.ProviderCodex,
+			Usage: usage.UsageEntry{LastGood: map[string]any{"five_hour": map[string]any{"pct": f.activePct}}}},
+		{Number: "2", Switchable: true, Provider: reporting.ProviderCodex,
+			Usage: usage.UsageEntry{LastGood: map[string]any{"five_hour": map[string]any{"pct": 12.0}}}},
+	}
+	return reporting.AccountsSnapshot{ActiveNumber: "1", Accounts: rows[:f.accounts], Provider: reporting.ProviderCodex}
+}
+
+func (f *fakeCodexSource) SwitchableAccountNumbers() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return []string{"1", "2"}[:f.accounts]
+}
+
+func (f *fakeCodexSource) SwitchTo(_ context.Context, id string) (codexswitcher.SwitchResult, error) {
+	f.mu.Lock()
+	entered, gate, err := f.entered, f.gate, f.switchErr
+	f.mu.Unlock()
+	if entered != nil {
+		entered <- struct{}{}
+	}
+	if gate != nil {
+		<-gate
+	}
+	if err != nil {
+		return codexswitcher.SwitchResult{}, err
+	}
+	f.mu.Lock()
+	f.switched = append(f.switched, id)
+	f.mu.Unlock()
+	return codexswitcher.SwitchResult{Number: id, RunningPIDs: []int{777}}, nil
+}
+
+func (f *fakeCodexSource) Switched() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.switched...)
+}
+
+// codexFacade is the engine host over the fixture with a fake Claude engine
+// (its loop returns once stopped) and the Codex engine over src, built by the
+// host's seam with the bar and margin the settings give it.
+func codexFacade(t *testing.T, src *fakeCodexSource) (*autoFacade, *int32Counter) {
+	t.Helper()
+	sw := fixtureSwitcher(t)
+	a := newAutoFacade(sw, fixtureCodex(t))
+	live := &int32Counter{}
+	released := make(chan struct{})
+	close(released)
+	a.newEngine = func(settings.AutoSwitchSettings, func(autoswitch.Event), bool) autoEngine {
+		return &fakeEngine{stop: make(chan struct{}), live: live, release: released}
+	}
+	a.newCodexEngine = func(s settings.AutoSwitchSettings) *codexauto.AutoSwitcher {
+		return codexauto.New(src, codexThreshold(s), s.HysteresisPct)
+	}
+	t.Cleanup(func() {
+		_ = a.Stop()
+		if !a.waitStopped(10 * time.Second) {
+			t.Error("an engine goroutine still running at cleanup")
+		}
+	})
+	return a, live
+}
+
+// nextCodexEvent waits for the next Codex event on the host's stream.
+func nextCodexEvent(t *testing.T, a *autoFacade) web.AutoEventView {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case ev := <-a.Events():
+			if ev.Provider == reporting.ProviderCodex {
+				return ev
+			}
+		case <-deadline:
+			t.Fatal("no Codex event within 5s")
+		}
+	}
+}
+
+// One Start runs both engines, as `tycswap auto` does: the Claude one and
+// beside it the Codex one, which ticks at once; its switch reaches the event
+// log as a provider-tagged switch event, and the view shows it running with
+// its last tick. One Stop ends both.
+func TestAutoFacade_StartsBothEngines(t *testing.T) {
+	src := &fakeCodexSource{activePct: 98, accounts: 2}
+	a, live := codexFacade(t, src)
+	loaded := settings.Load(a.sw.BackupDir())
+	if v := a.View().Codex; v == nil || v.Running || v.LastTick != nil || v.Enabled != loaded.CodexEnabled || v.Threshold != codexThreshold(loaded) {
+		t.Fatalf("idle codex view = %+v", v)
+	}
+	if err := a.Start(false); err != nil {
+		t.Fatal(err)
+	}
+	ev := nextCodexEvent(t, a)
+	if ev.Kind != "switch" || ev.Account != "2" || !strings.HasPrefix(ev.Message, "codex: switched 1 (98%) -> 2 (12%)") ||
+		!reflect.DeepEqual(ev.Fields, map[string]any{"outcome": "switched", "detail": "switched 1 (98%) -> 2 (12%)", "switchedTo": "2", "runningPids": []int{777}}) {
+		t.Fatalf("codex event = %+v", ev)
+	}
+	v := a.View()
+	if !v.Running || v.Codex == nil || !v.Codex.Running || v.Codex.LastTick == nil || v.Codex.LastTick.Outcome != "switched" ||
+		v.Codex.LastTick.SwitchedTo == nil || *v.Codex.LastTick.SwitchedTo != "2" {
+		t.Fatalf("running view = %+v codex %+v", v, v.Codex)
+	}
+	live.mu.Lock()
+	claudeLive := live.cur
+	live.mu.Unlock()
+	if claudeLive != 1 || !reflect.DeepEqual(src.Switched(), []string{"2"}) {
+		t.Fatalf("claude engines live %d, codex switches %v", claudeLive, src.Switched())
+	}
+	if err := a.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if v := a.View(); v.Running || v.Codex.Running || v.Codex.LastTick == nil {
+		t.Fatalf("stopped view = %+v codex %+v, want both stopped and the last tick kept", v, v.Codex)
+	}
+}
+
+// autoswitch.codexEnabled off: Start builds no Codex engine (the shared
+// constructor's rule, with Codex present), so nothing ticks; the view says
+// the engine is off. On an install without Codex accounts at launch there is
+// no Codex view at all.
+func TestAutoFacade_CodexDisabledNoLoop(t *testing.T) {
+	sw := fixtureSwitcher(t)
+	if _, err := settings.SetSetting(sw.BackupDir(), "autoswitch.codexEnabled", "false"); err != nil {
+		t.Fatal(err)
+	}
+	prev := codexIsPresent
+	t.Cleanup(func() { codexIsPresent = prev })
+	codexIsPresent = func() bool { return true }
+	for _, codexSw := range []*codexswitcher.Switcher{fixtureCodex(t), nil} {
+		a := newAutoFacade(sw, codexSw)
+		a.newEngine = func(settings.AutoSwitchSettings, func(autoswitch.Event), bool) autoEngine {
+			released := make(chan struct{})
+			close(released)
+			return &fakeEngine{stop: make(chan struct{}), live: &int32Counter{}, release: released}
+		}
+		if err := a.Start(false); err != nil {
+			t.Fatal(err)
+		}
+		a.mu.Lock()
+		eng := a.codexEngine
+		a.mu.Unlock()
+		if eng != nil {
+			t.Errorf("codex switcher %v: a Codex engine runs with autoswitch.codexEnabled off", codexSw != nil)
+		}
+		v := a.View().Codex
+		if codexSw == nil && v != nil {
+			t.Errorf("a Codex view without Codex accounts: %+v", v)
+		}
+		if codexSw != nil && (v == nil || v.Enabled || v.Running || v.LastTick != nil) {
+			t.Errorf("codex view = %+v, want off, not running, no tick", v)
+		}
+		if err := a.Stop(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Only a switch or an error reaches the event log, as `tycswap auto` prints
+// them, and under dry-run every tick does; each outcome takes the Claude
+// engine's kind for it. Every tick is the view's last tick.
+func TestAutoFacade_CodexEventsSwitchedAndErrorOnly(t *testing.T) {
+	src := &fakeCodexSource{accounts: 2}
+	a, _ := codexFacade(t, src)
+	eng := codexauto.New(src, 90, 10)
+	cases := []struct {
+		name      string
+		activePct float64
+		accounts  int
+		switchErr error
+		dryRun    bool
+		kind      string // "" = no event
+		outcome   string
+	}{
+		{"below the bar", 50, 2, nil, false, "", "ok"},
+		{"no rotatable account", 98, 0, nil, false, "", "no-accounts"},
+		{"blocked", 98, 2, nil, false, "", "blocked"},
+		{"switched", 98, 2, nil, false, "switch", "switched"},
+		{"error", 98, 2, cerr.Switch("busy"), false, "error", "error"},
+		{"dry-run below the bar", 50, 2, nil, true, "no-switch", "ok"},
+	}
+	for _, tc := range cases {
+		src.mu.Lock()
+		src.activePct, src.accounts, src.switchErr = tc.activePct, tc.accounts, tc.switchErr
+		src.mu.Unlock()
+		if tc.name == "blocked" {
+			src.mu.Lock()
+			src.activePct = 15 // the other account at 12% is not 10 points better
+			src.mu.Unlock()
+			eng.Threshold = 14
+		} else {
+			eng.Threshold = 90
+		}
+		before := len(a.View().Events)
+		a.codexTick(context.Background(), eng, tc.dryRun)
+		v := a.View()
+		if v.Codex.LastTick == nil || v.Codex.LastTick.Outcome != tc.outcome {
+			t.Errorf("%s: last tick %+v, want outcome %s", tc.name, v.Codex.LastTick, tc.outcome)
+		}
+		added := v.Events[before:]
+		if tc.kind == "" {
+			if len(added) != 0 {
+				t.Errorf("%s: events %+v, want none", tc.name, added)
+			}
+			continue
+		}
+		if len(added) != 1 || added[0].Kind != tc.kind || added[0].Provider != "codex" || added[0].Fields["outcome"] != tc.outcome {
+			t.Errorf("%s: events %+v, want one %s", tc.name, added, tc.kind)
+		}
+	}
+	// A blocked tick under dry-run reads as the Claude engine's all-exhausted.
+	src.mu.Lock()
+	src.activePct, src.accounts, src.switchErr = 15, 2, nil
+	src.mu.Unlock()
+	eng.Threshold = 14
+	a.codexTick(context.Background(), eng, true)
+	if evs := a.View().Events; evs[len(evs)-1].Kind != "all-exhausted" {
+		t.Errorf("blocked dry-run tick = %+v", evs[len(evs)-1])
+	}
+}
+
+// Stop must not return while a Codex tick is in flight (mirroring
+// TestStopCodexLoopWaitsForAnInFlightTick): a tick that ends within the
+// wait is waited for; one that outlasts it makes Stop report a lock-kind
+// error, and Start refuses until that loop has returned, so two Codex
+// engines never run side by side.
+func TestAutoFacade_StopWaitsForCodexTick(t *testing.T) {
+	prevWait := autoStopWait
+	t.Cleanup(func() { autoStopWait = prevWait })
+	src := &fakeCodexSource{activePct: 98, accounts: 2, entered: make(chan struct{}, 1), gate: make(chan struct{})}
+	a, _ := codexFacade(t, src)
+
+	autoStopWait = 5 * time.Second
+	if err := a.Start(false); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-src.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the Codex loop did not tick")
+	}
+	stopped := make(chan error, 1)
+	go func() { stopped <- a.Stop() }()
+	select {
+	case err := <-stopped:
+		t.Fatalf("Stop returned (%v) while a Codex tick was still running", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(src.gate)
+	select {
+	case err := <-stopped:
+		if err != nil {
+			t.Fatalf("Stop after the tick finished = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop did not return after the tick finished")
+	}
+	if got := src.Switched(); len(got) != 1 {
+		t.Fatalf("switches %v, want the in-flight one finished", got)
+	}
+
+	autoStopWait = 50 * time.Millisecond
+	src.mu.Lock()
+	src.gate = make(chan struct{})
+	gate := src.gate
+	src.mu.Unlock()
+	if err := a.Start(false); err != nil {
+		t.Fatal(err)
+	}
+	<-src.entered
+	err := a.Stop()
+	var ce *cerr.Error
+	if !errors.As(err, &ce) || ce.Kind != cerr.KindLock || !strings.Contains(err.Error(), "stopping") {
+		t.Fatalf("Stop with the Codex tick still running = %v, want a lock-kind \"stopping\" error", err)
+	}
+	if err := a.Start(false); err == nil || !strings.Contains(err.Error(), "still stopping") {
+		t.Fatalf("Start while the Codex loop finishes = %v, want \"still stopping\"", err)
+	}
+	close(gate)
+	if !a.waitStopped(5 * time.Second) {
+		t.Fatal("the released Codex loop never returned")
+	}
+	src.mu.Lock()
+	src.gate = nil
+	src.mu.Unlock()
+	if err := a.Start(false); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Stop(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// codexOps is `tycswap codex switch|disable|enable|remove -y|add` over the
+// Codex switcher: a switch answers the running codex PIDs, and an unknown
+// account is the switcher's not-found error (404 on the API).
+func TestCodexOpsAdapter(t *testing.T) {
+	fixtureSwitcher(t)
+	ops := newCodexOps(fixtureCodex(t))
+	res, err := ops.SwitchTo("2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(res, map[string]any{"number": "2", "email": "b@example.com", "runningPids": []int{999}, "alreadyActive": false}) {
+		t.Fatalf("switch result %v", res)
+	}
+	if res, err := ops.SwitchTo("b@example.com"); err != nil || res["alreadyActive"] != true {
+		t.Fatalf("switch to the live account = %v, %v", res, err)
+	}
+	if err := ops.SetAccountDisabled("1", true); err != nil {
+		t.Fatal(err)
+	}
+	if slots := testStore().Slots(); !slots[0].Disabled {
+		t.Fatalf("slot 1 not disabled: %+v", slots[0])
+	}
+	if err := ops.RemoveAccount("1"); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(testStore().Slots()); n != 1 {
+		t.Fatalf("%d slots after remove, want 1", n)
+	}
+	var ce *cerr.Error
+	if _, err := ops.SwitchTo("9"); !errors.As(err, &ce) || ce.Kind != cerr.KindAccountNotFound {
+		t.Fatalf("unknown account = %v, want not found", err)
+	}
+	writeLiveAuth(t, makeCodexAuth(t, "acct-c", "user-c", "c@example.com", time.Now().Unix()+3600))
+	res, err = ops.AddCurrent()
+	if err != nil || res["email"] != "c@example.com" || res["number"] == "" {
+		t.Fatalf("add current = %v, %v", res, err)
+	}
+	if newCodexOps(nil) != nil {
+		t.Error("a Codex façade without a Codex switcher")
 	}
 }

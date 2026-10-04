@@ -53,6 +53,32 @@ func codexThreshold(merged settings.AutoSwitchSettings) float64 {
 	return merged.SevenDayThreshold
 }
 
+// codexTickShown is which Codex ticks a host reports: a switch or an error,
+// and every tick under dry-run, which exists to show what would happen.
+func codexTickShown(tick codexauto.Tick, dryRun bool) bool {
+	return dryRun || tick.Outcome == codexauto.OutcomeSwitched || tick.Outcome == codexauto.OutcomeError
+}
+
+// codexTickFields are a tick's fields under the names of `tycswap auto
+// --json`'s codex line: switchedTo is null unless the tick switched, and
+// runningPids is never null.
+func codexTickFields(tick codexauto.Tick) map[string]any {
+	var switchedTo any
+	if tick.SwitchedTo != "" {
+		switchedTo = tick.SwitchedTo
+	}
+	pids := tick.RunningPIDs
+	if pids == nil {
+		pids = []int{}
+	}
+	return map[string]any{
+		"outcome":     tick.Outcome,
+		"detail":      tick.Detail,
+		"switchedTo":  switchedTo,
+		"runningPids": pids,
+	}
+}
+
 // startCodexLoop runs tick on its own goroutine — once immediately, then every
 // interval — until the returned stop is called (deviation 7: #252's thread
 // waited one interval first). A separate goroutine rather than a hook in the
