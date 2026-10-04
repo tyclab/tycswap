@@ -5,13 +5,15 @@ A full-fidelity Go port of `claude-swap`, grounded in the behavioral specs in
 
 - Module: `github.com/tyclab/tycswap` · Go 1.25 · single binary `tycswap`
   (also installed as `claude-swap`).
-- No cgo. macOS Keychain via the `security` subprocess exactly as Python.
+- No cgo, except `internal/tray` on darwin (A12 as amended by A35). macOS
+  Keychain via the `security` subprocess exactly as Python.
 - TUI: bubbletea v1.3 + lipgloss v1.1 + bubbles v1.0. HTTP: stdlib `net/http`.
   Extra deps limited to `golang.org/x/sys` (flock/`LockFileEx`, Windows PID
   probe, console VT) and `golang.org/x/text/unicode/norm` (NFC for
   `slugify_email` / keychain service hashing). No other third-party deps.
 - Out of scope: the rumps macOS menu bar (`menubar.py`, spec 09 §10). The
-  update-check/upgrade subsystem is redesigned for Go (§6, §7 below).
+  update-check/upgrade subsystem is redesigned for Go (§6, §7 below). The
+  menu-bar / tray app of A35 is a Go-side addition, not a port of it.
 
 The 4,840-line `switcher.py` is **decomposed**, not transliterated. The
 "switcher" becomes a thin façade (`core.Switcher`) over a shared substrate
@@ -693,8 +695,9 @@ committed under `testdata/` to enforce data compatibility.
    workaround is unnecessary (08§15). Action item: verify inactive-account refresh
    against `platform.claude.com` on Windows before finalizing.
 5. **macOS menu bar excluded** (task-mandated; spec 09 §10). `tycswap --menubar` on any
-   platform prints a "not available in this build" message and exits 1 (macOS text
-   preserved for parity where reasonable).
+   platform prints a message and exits 1 (macOS text preserved for parity where
+   reasonable). Since A35 both messages name `tycswap app`, the tray application
+   that took the menu bar's place; `menubar` is not an alias of it.
 6. **Four atomic-write helpers unified into one** `atomicfile` (07§9), keeping the
    JSON round-trip validation only where Python had it (`sequence.json`, via
    `WriteJSONValidated`). Same observable outcome; less code.
@@ -955,6 +958,15 @@ Allowed third-party deps, already in `go.mod`:
 dependencies or edit `go.mod`/`go.sum`. `internal/deps/deps.go` blank-imports
 the charm stack until the TUI lands (keeps `go mod tidy` from pruning); it is
 deleted in the final integration pass.
+
+**Amended by A35:** cgo against Apple system frameworks (Cocoa) on darwin is
+permitted for `internal/tray` alone, behind `//go:build darwin && cgo` with a
+stub for every other build. No dependency is added: the Windows tray is
+`golang.org/x/sys` syscalls and the Linux one a D-Bus client of its own. The
+darwin release binaries are therefore built on a macOS runner, Linux and
+Windows stay CGO-free cross-builds, and a darwin build with `CGO_ENABLED=0`
+(a `go install` without the Command Line Tools) has no tray and serves the
+dashboard alone.
 
 ## A13. Pinned cross-package interfaces
 
@@ -3429,6 +3441,46 @@ program, and the passive notice announced upstream releases. Now:
 3. `SelfUpgrade` has no downgrade guard: it installs `@latest`, and the
    notice only fires when the latest tag is semver-greater.
 
+**Amended by A36:** a third build source, the release build, is no longer
+taken for a checkout build, and `SelfUpgrade` follows one plan
+(`update.UpgradePlan`) for every caller. Before, every release binary — and a
+Nix or Windows one — was told "built from a checkout: git pull && make
+install" by `upgrade`, the passive notice, the dashboard's Updates card and
+the tray: the classification looked for the release build's `-ldflags` in
+the build info, which Go leaves out whenever `-trimpath` is set
+(`cmd/go/internal/load/pkg.go`; go.dev/issue/52372), and Go records no
+`-buildvcs` either. The decision now reads only what a build records for
+certain (`classifyBuildInfo(info, version.Version)`):
+
+1. any `vcs.*` setting → a checkout build (since Go 1.24 its module version
+   is a pseudo-version too) → "git pull && make install";
+2. else a module version that is valid semver and not a pseudo-version → a
+   module build (`go install …@<version>`; `internal/version` takes that
+   version) → `go install …@latest` in a Go bin directory (`$GOBIN`,
+   `$GOPATH/bin`, `$HOME/go/bin`; print-only on Windows), guidance elsewhere;
+   a module build never downloads;
+3. else no module version (`""` or `(devel)`) and a release tag linked into
+   `internal/version` (`vX.Y.Z`, or a pre-release such as `vX.Y.Z-rc.1`; not
+   the unlinked `v0.0.0-dev`, a pseudo-version, or a `git describe` shape
+   `-N-gHASH` / `-dirty`) → a release build. Its path resolved
+   (`filepath.EvalSymlinks(os.Executable())`): under `/nix/store/`, in a
+   package tree (`/Cellar/`, `/scoop/apps/`, `/WindowsApps/`) or started
+   through a symbolic link → the package manager's, and the hint names it
+   (never the releases page); else, when this process can write the directory
+   and the file and owns the file (on Windows: the file is not read-only) →
+   the newest release downloaded over it; else the releases page;
+4. else → a checkout build.
+
+`go build`, `make build` and a `-buildvcs=false` build are checkout builds,
+the release recipe a release build that downloads, `go install` a module
+build, a Nix store binary the package manager's, and a Windows release
+`.exe` downloads. Deciding writes nothing (stat and access checks only): the
+one temporary file is the download's own. A test builds `./cmd/tycswap` with
+`release.yml`'s flags and with a plain `go build`, installs a module build
+from a module proxy in a directory, and classifies each binary's real build
+info. Downloading has the downgrade guard `go install` lacks: nothing
+happens unless the latest tag is semver-greater than the running version.
+
 
 ---
 
@@ -3708,6 +3760,10 @@ does, slots and the active account, the 5h/7d/model windows and the single
 threshold, getting started, manual switching, Auto, Sessions, a command
 cheat-sheet and where the data lives.
 
+*Superseded in part:* the tray, its brand vars (`brand.Identifier`,
+`brand.EnvPrefix`), the bearer token and the launch route are built (A35,
+A45); the Guide came with A27.
+
 ## A27. Dashboard parity: updates, a Settings tab, a Guide, folding cards, the live login and the auth overrides (Go-side additive extension)
 
 A26 shipped the dashboard with three tabs and listed what it still lacked.
@@ -3718,7 +3774,7 @@ remembered, a callout for a login Claude Code has that is not stored yet, and
 a notice for the authentication overrides that make Claude Code ignore the
 stored login. What is not generic stays out: no telemetry, no gateway, no
 plugin marketplace, plugin updates or plugin cards, and no launch route (that
-belongs to a tray, a separate stage). `internal/web` keeps A26's rule:
+belongs to a tray, a separate stage; built since, A45). `internal/web` keeps A26's rule:
 consumer-defined seams only, no import of core, tui or cli, and the page
 renders API data as text.
 
@@ -3911,8 +3967,9 @@ run from the page except through the apply route's two fixed targets.
 
 **Follow-ups, deliberately not here:** everything A26 listed that this
 amendment does not cover (Codex rows, `add --login` as a streamed job,
-`map`/`unmap`, the remote mode and the tray), and no marketplace, plugin or
-telemetry surface: tycswap has none of those.
+`map`/`unmap`, the remote mode and the tray — the last two built since, A35
+to A45), and no marketplace, plugin or telemetry surface: tycswap has none of
+those.
 ## A28. TUI Settings screen: `settings.json` edited from the dashboard (Go-side additive extension)
 
 `tycswap tui` gains a Settings screen (`internal/tui/settingsscreen.go`),
@@ -4667,6 +4724,423 @@ edits the new keys. `internal/web`: the slider route's bounds and the settings
 notes. The dashboard's ranking script has no committed test (the node harness
 in `internal/web/testdata` covers tab routing only).
 
+## A35. `tycswap app`: the menu-bar / tray application (Go-side additive extension)
+
+A26 and A27 named the tray and its remote mode as follow-ups. A35 to A45 add
+them, ported from the reference's tray application with tycswap's names, its
+own icon and the corporate parts left out (the last paragraph says which). The
+port-spec is untouched: this is a Go-only addition, like the dashboard.
+
+`tycswap app` is the dashboard as a resident application that starts
+minimized. `internal/tray` is a small platform abstraction (title, tooltip, a
+menu, notifications, an optional yes/no dialog, Run, Quit) with three
+implementations and no third-party code:
+
+- **macOS** — `NSStatusItem` and `NSMenu` in Objective-C compiled by cgo
+  against Cocoa only (`tray_darwin.m`; its classes carry the `TS` prefix and
+  its export is `tycTrayClicked`). The main goroutine is
+  locked to the main thread and `[NSApp run]` owns it; the process is an
+  accessory app (no Dock icon). Notifications and the dialog go through
+  `osascript`, because a bare binary has no bundle identifier. The switches,
+  the active-account dot and the update rows take `brand.AccentColor`
+  (`tray_set_accent`). A darwin build without cgo compiles to a stub that
+  reports `ErrUnsupported`.
+- **Windows** — `Shell_NotifyIconW`, a message-only window of the class
+  `<Name>Tray` (`TycswapTray`) and a `GetMessage` loop through
+  `golang.org/x/sys/windows`, on one locked OS thread; the icon comes from a
+  PNG via `CreateIconFromResourceEx`, notifications are `NIF_INFO` balloons,
+  the dialog is `MessageBoxW`.
+- **Linux** — the StatusNotifierItem and `com.canonical.dbusmenu` interfaces
+  over a purpose-built D-Bus client (`dbus_linux.go`: EXTERNAL auth,
+  little-endian marshalling, calls, returns and signals) plus
+  `org.freedesktop.Notifications`; `zenity` or `kdialog` for the dialog.
+  Without a session bus or a `StatusNotifierWatcher` (WSL, a console session)
+  the tray is `ErrUnsupported`.
+
+**The icon** (`internal/appicon`) is tycswap's octopus, not the logo's full
+scene: a rounded square in a darker shade of the accent, the octopus — head
+and four arms — in the accent itself with a lighter shade as the shine on its
+head, white eyes with dark pupils. Every colour is derived from
+`brand.AccentColor` (`PaletteFor`). The head is path data flattened and
+scan-converted with 4×4 supersampling, the arms are stroked centre lines;
+the drawing framework (paint, winding, flattening, compositing, the rounded
+square, ARGB32 and PNG output) is the reference's, and so is drawing the
+icons when the tray starts (the 128 px mark, which only macOS shows, on macOS
+alone); the badged icons are drawn once per count and kept.
+
+**The shell** (`internal/cli/appshell.go`) is the platform-independent
+behaviour, tested with a fake tray: title `#<slot> · <fullest counted
+window %>` (`⟳` in front while auto-switch runs), a tooltip with every
+window, the menu of A37, notifications on engine `switch` and
+`account-quarantined` events, and once when a window of the active account
+reaches its own bar (A34), re-armed when every window is ten points below
+its bar. It only ever renders `web.State` and acts through `shellActions`,
+which is what makes the remote tray of A45 a second set of hooks. So the tray
+is Claude-only, like the dashboard today: Codex accounts and the Codex
+engine reach the dashboard and the tray together, through that state, in the
+next change. `web.Server`
+gained `LaunchURL` (the unused start URL, else a fresh single-use token per
+"Open dashboard"), `Snapshot`, `OnState`, `OnAuto` and `AddCurrentLogin`;
+in-process observers receive only state documents the hub published, so a
+slow build never repaints the tray with an older state.
+
+**Start at login** (`internal/autostart`): a LaunchAgent on macOS, an XDG
+autostart `.desktop` entry on Linux, a HKCU `Run` value on Windows, each named
+`brand.Identifier` (`io.github.tyclab.tycswap`); `app --autostart
+on|off|status` and the menu's *Start at login* drive it. `internal/brand`
+gained `Identifier` and `EnvPrefix` (`TYCSWAP`, for `TYCSWAP_REMOTE_TOKEN_FILE`
+and the restart's `TYCSWAP_JUST_INSTALLED`), validated like the other vars.
+
+**Without a tray** (`--headless`, or `ErrUnsupported`) the app is `web
+--no-open` with the A38 lock, the A43 resume and the A45 token. Its Updates
+card is A27's host, as `tycswap web` has it; with a tray the card reads the
+shell (A44). The reference's headless app has no card at all: its `web` has
+none either, and tycswap's has.
+
+**Releases.** A `v*` tag builds the binaries the README lists (`release.yml`):
+Linux amd64/arm64 and Windows amd64 with `CGO_ENABLED=0`, darwin arm64 and
+amd64 on a macOS runner with cgo for the tray, each `-trimpath
+-buildvcs=false -ldflags "-s -w -X …/internal/version.Version=<tag>"` and
+named `tycswap_<tag>_<os>_<arch>[.exe]`, with `SHA256SUMS`, attached to that
+tag's GitHub release (a draft when the tag has none yet). Nothing is
+code-signed.
+
+**CI on Windows and macOS** (`ci.yml`) vets and builds everything there —
+on macOS with cgo, so the Objective-C is compiled — and runs the tray
+application's packages (`tray`, `appicon`, `autostart`, `brand`, `web`,
+`update`) and its tests in `internal/cli` (`APP_TESTS`), the build-tagged
+ones included. Not the rest of the suite: it has only ever run on Linux and
+assumes it. On Windows much of it fails, mostly because it isolates the home
+through `HOME`, which Windows ignores (`os.UserHomeDir` reads
+`USERPROFILE`), so those tests read and write the runner's real profile;
+others create symlinks. On macOS the store tests expect the Linux layout under
+`$XDG_DATA_HOME` (the macOS store is `~/.tycswap`) and two packages time out
+on the login Keychain. Making the suite portable is a change of its own; the
+one Windows-only difference in `internal/web` (the system serves `.js` as
+`application/javascript`) is skipped by name.
+
+**Corporate, not ported.** The reference's tray also carries its owner's
+branding item, the fetch of mandatory Claude Code settings, the plugin
+marketplace, plugin update and recommended-plugin items with their rows,
+cards, checks and sign-in, the gateway login and its notices, and a
+telemetry reporter. None of it is generic, and none of it is here — no hook,
+no stub, no menu id.
+
+## A36. The app checks for updates and asks before installing
+
+`tycswap app` runs `offerUpdate` 90 s after start and every 6 h
+(`--no-update-check` disables it): it asks the release endpoint `tycswap
+upgrade` uses (`update.Checker.Latest`, which also refreshes the passive
+notice's cache), compares the tag with `version.Version` by semver and, when
+newer, asks **once per version** through `tray.Asker` with *Install* /
+*Later*. Approval runs `tycswap upgrade`'s own path (`go install` for a
+go-installed binary, A24) and notifies the outcome; a decline, or a platform
+without a dialog, leaves a notification and an *Install tycswap X…* row.
+Nothing is installed without the user's yes.
+
+**The install is `tycswap upgrade`'s own** (A24 as amended here, with its
+decision table), which now also downloads over the binary, as the reference
+does for every build that was not go-installed: for a release build this
+process can replace, outside a package manager's tree, it reads the latest
+tag from the release endpoint, downloads that release's `SHA256SUMS`
+and `tycswap_<tag>_<goos>_<goarch>[.exe]` from `<ReleasesURL>/download/<tag>/`
+over https only (redirects included, at most 256 MiB) into a temporary file
+in the binary's directory, refuses the build unless `SHA256SUMS` has exactly
+one line for that file and its sha256 matches, marks it 0755 and renames it
+over the binary (`replaceBinary`). On Windows the running `.exe` is renamed to
+`.exe.old` first and put back if the second rename fails; the app (local and
+remote) removes the `.old` file at its next start (`RemoveStaleBinary`). A
+build the tray cannot upgrade — a checkout build, a go-installed binary on
+Windows (where `go install` cannot replace the running `.exe`) or outside a
+Go bin directory, a package manager's binary, a release build it cannot
+replace — is told how (the checkout's command, the `go install` line, the
+package manager, the releases page: `AppUpdateView.Hint`) in a
+notification instead of a dialog, and the row reads *tycswap X is
+available…*; a release binary is never told `go install`. The app decides
+the plan once, at its start, from stat and access checks (no file is written
+to learn it), and the card carries the hint only while an update waits.
+
+**Restart.** An install that replaced the running binary (its modification
+time changed) restarts the app by itself: the shell's `Restart` sets a flag
+and quits the tray; once the server is down, `restartSelf` starts the binary
+as a new detached process (own session) with the same arguments and
+environment plus `TYCSWAP_JUST_INSTALLED=<tag>`, and the process exits. Not
+`execve` in place: after an exec the Cocoa status item never comes back,
+because LaunchServices keeps the PID bound to the old image. The child never
+offers the tag it was just updated to. Before `restartSelf` the app releases
+its single-instance lock (A38) and removes its remote token (A45), so the
+successor finds both free; the deferred release then skips the lock it handed
+over — the reference had a nil-pointer panic there at the end of every update
+restart, and the test that takes the hand-over with `restartSelf` stubbed
+guards against it, for the local app and the remote tray alike. A `go install`
+that put the new build into another Go bin directory says so instead of
+restarting the old one.
+
+## A37. Tray dropdown components, a menu that stays open, many accounts
+
+`tray.Item` has a `Kind`: `KindGauge` (title, second line, 0–100 % bar,
+active marker; the whole row clicks), `KindToggle` (a switch), `KindHeader`
+(section label), `KindBrand` (the mark, the product name, version and state
+lines) and `KindUpdate` (A44), besides plain commands; `Children` make a row a
+submenu. On macOS these are `NSMenuItem` custom views (`TSRowView` with hover,
+press and spinner; `TSBarView` coloured by band; `TSSwitchView`, drawn because
+an `NSSwitch` in an accessory app's menu renders in its inactive look, a pale
+pill whether on or off). Windows and Linux menus only do text, so
+`Item.FallbackTitle` renders a toggle as "Name: On/Off" and a gauge as
+"title  ▰▰▱▱▱ 45%  —  sub".
+
+The menu: the brand row · *Open dashboard* · the Updates section (A44) ·
+**Accounts** (a gauge per account; with more than ten, the active one and
+*All N accounts* ▸; then *Add current login*) · **Automation** (*Auto-switch*,
+its second line naming the bar of each window in force; the model-limit
+switch, A39) · **App** (the Claude Code row, A42; *Start at login*; *Check for
+updates…*; *Quit tycswap*). The bars are only named here: they are set where
+they were, in `tycswap config`, the TUI and the dashboard (A34). The accounts
+are the dashboard's Claude accounts and *Auto-switch* is the dashboard's
+engine, which rotates Claude accounts only (its second line says so); Codex
+reaches both with the dashboard (A35).
+
+**The menu stays open** on macOS: every row is a view whose `mouseUp`
+reports the click without ending the menu's tracking, and `tray_menu_commit`
+writes the new rows into the open menu (`syncMenu`), so a switch or a toggle
+shows what it did in place and an open submenu stays open; an unchanged menu
+is not touched. *Open dashboard* and *Quit* set `Dismiss` and close it; a row
+that asks closes it before the dialog. Windows and Linux close their menus on
+every click. Tags number the rows depth-first, a submenu's row before its
+children (`walkMenu`), on every platform.
+
+***Add current login*** runs `web.Server.AddCurrentLogin` — the dashboard's
+own add, under its mutation lock — and notifies with the slot or "refreshed".
+Without a live login it is `web.ErrNoLogin` before anything is tried, on the
+dashboard as in the tray.
+Its second line comes from `state.currentLogin` (A27): the login that is not
+stored yet, else how to get another account there (`/login`, never `/logout`).
+
+A switch onto an API-key account asks first through the dialog and records
+the approval A33 requires (`ApproveAPIKeySwitch`); without a dialog the tray
+refuses and points at the dashboard or the command line. For an account with
+a base URL the row, the question and the notification after the switch are
+A46's.
+
+## A38. One app per machine
+
+`tycswap app` holds an exclusive advisory lock on `<backup_root>/app.lock`
+for its lifetime, taken before anything else. A second `app` exits with
+"already running" instead of adding a second icon to the menu bar, and
+`purge` refuses while the lock is held rather than deleting the accounts
+under a live dashboard; a lock that cannot be read counts as held for
+`purge`. The OS releases the lock when the process dies, so a crash leaves
+nothing to clean up. A starting app waits two seconds for the lock, the
+window the update restart's successor needs (A36). `app --remote` holds
+`remote.lock` instead and does not exclude a local app (A45); it checks that
+lock before it builds its tray and takes it after, so a refusal (another
+remote tray, no tray here) creates no lock file. Asking whether an app runs
+(`purge`, the bare start) creates nothing either: no lock file means no app.
+
+## A39. One switch for the model limit, in the tray as well
+
+The per-model weekly windows decide two things that must not disagree:
+whether the engine counts them (`autoswitch.model`) and the percentage the
+tray shows. The menu's **`<window> limit`** switch, named after the window
+the accounts report ("Fable limit"), writes `autoswitch.model` (`all`, or
+unset) and retargets the running engine in the same click (`ApplyModels`,
+as the dashboard's *Count model limits* does, A26). Every figure the shell
+shows — the title, each account's bar, the threshold alert — counts exactly
+the windows the engine counts, read from the running engine's live settings
+first and the saved setting otherwise. A window that does not count is still
+shown, marked `(not counted)`.
+
+## A40. Bare `tycswap` starts the app in the background
+
+What people want when they type the command is the menu-bar / tray app, and
+holding a terminal open for an icon is not. A bare `tycswap` in an
+interactive terminal (both ends a TTY, or a Git Bash / MSYS2 terminal on
+Windows, A41) therefore spawns `tycswap app` detached — its own session on
+Unix (closing the terminal does not SIGHUP it, and a new session is what
+gives a Cocoa status item its icon), `DETACHED_PROCESS |
+CREATE_NEW_PROCESS_GROUP` on Windows — with stdin on the null device and
+stdout and stderr appended to a log: `~/Library/Logs/tycswap.log` on macOS,
+the file the LaunchAgent writes, and `<backup_root>/app.log` elsewhere,
+rotated to `.1` past 5 MiB. The parent polls the single-instance lock (A38)
+and returns once the child holds it; a child that exits first is reported
+with the tail of its log and exit 1; one still starting after eight seconds
+is left running with a pointer to the log. An app that is already running is
+reported and nothing is spawned.
+
+**A change of the CLI's surface, recorded here:** the bare command opened the
+TUI (spec 08§1 step 5), which is `tycswap tui` now. The TTY gate stays: a
+bare invocation from a script or pipe is still the `no command given` usage
+error, not a resident process nobody asked for. `tycswap app` itself stays a
+foreground command: start-at-login entries and debugging run it that way.
+
+## A41. Windows: the app behaves like a Windows app
+
+`tycswap.exe` is a console program — it is also the CLI — so Explorer (the
+start-at-login Run entry, a double-click) gives `app` a console window of its
+own, which would sit in the taskbar and end the app when closed. `app`
+recognises that console (this process is its only one,
+`GetConsoleProcessList`), moves its output to the log and calls
+`FreeConsole`; a console shared with a shell stays, and so does `--headless`'s,
+which has no tray icon to quit from. Children get real handles: a nil
+`*os.File` becomes `INVALID_HANDLE_VALUE`, also the pseudo-handle of the
+current process, so the background start (A40) and the update restart (A36)
+are given NUL and the log, and the restart starts `DETACHED_PROCESS`, or a
+tray without a console would open a console window after every update. Git
+Bash counts as a terminal for the bare command (`MSYSTEM` set: mintty hands
+programs pipes). That is the reference's rule, and its limit: any Windows
+process with `MSYSTEM` set counts, so `x=$(tycswap)` or `tycswap | …` in Git
+Bash or under GitHub's `shell: bash` on Windows starts the resident app too.
+The dashboard opens through A26's opener, which hands the
+URL to the default browser directly on Windows. A balloon holds 255 UTF-16
+units and a tooltip 127: notifications that would be cut drop their reasons
+rather than end mid-word, and the tooltip leads with what matters. The
+`windows-latest` CI job runs the build-tagged tests (the console hand-off
+for real, the detached start, the menu plan); the tray's icon, menus and
+balloons, and the Run key itself, are not exercised there.
+
+## A42. Claude Code in the tray
+
+The tray shows and updates Claude Code by A27's rules, which the dashboard's
+Updates card already follows: the newest version is what the install's own
+installer offers on its own channel (`internal/ccversion`), an update runs
+that installer's command, success is the version verified afterwards, and a
+missing Claude Code is said with the line to type, never installed. The app
+looks at Claude Code without the network right after the first paint (also
+with `--no-update-check`), so the brand row names the version at once, then
+checks 30 s after start and every 6 h. Rows: *Update Claude Code X → Y…* in
+the Updates section (it asks, with the command and that running sessions keep
+the old version, runs, checks again and reports); *Claude Code X — latest*
+and *… — could not check for updates* as information; *Claude Code is not
+installed — how to install…*, which shows the line. A new version is
+announced once per version; a check that cannot learn the newest version
+keeps the one learnt before for the same installed Claude Code.
+
+The reference recommends one install per operating system, installs a
+missing Claude Code from the tray and offers to move an install to the
+recommended one; tycswap keeps A27's rule that each install follows its own
+installer and nothing installs Claude Code on the user's behalf. A remote
+tray (A45) has no Claude Code row: Claude Code lives in the distro.
+
+## A43. Auto-switch survives an app restart
+
+Auto-switch runs inside the app process, so quitting it, logging in again or
+the restart after an update (A36) used to come back with auto-switch off. The
+app records the choice in `<backup_root>/ui_prefs.json`, the file A27's
+folded cards live in, now `{"version": 1, "autoSwitch": true, "folded":
+{…}}` (0600, atomic, one process-wide lock for both keys), and resumes it at
+start:
+
+- **Recorded:** `Start(false)` and `Stop()` on the app's facade — the tray
+  toggle and the app's dashboard both go through them. A dry run is not a
+  choice and is not recorded; `tycswap web`'s facade has no state path and
+  records nothing.
+- **Not recorded:** an engine that ends by itself, and quitting: the app
+  stops its engine on the way out as `tycswap web` does, without writing
+  "off", since quitting is not turning auto-switch off.
+- **Resumed:** right after the tray listens for engine events and before its
+  first paint, so the icon shows `⟳` at once; in `--headless` before the
+  server starts. A resume that fails is said on the app's output and leaves
+  auto-switch off. A missing or unreadable file means off.
+
+## A44. Updates in the tray: one answer, a badge with a count, rows that show
+
+`appShell.updateWaiting` decides whether an update waits — a newer tycswap
+release (A36), or a Claude Code update the app can run (A42) — and the icon's
+badge, the tooltip, the menu's Updates section and the app dashboard's
+Updates card follow from it.
+
+- **The badge.** Windows (16–32 px) and Linux (22 px) show a dot: an accent
+  disc in a white ring at the square's top-right corner, 36 % of the square
+  with a 6 % ring, so it covers the corner and the top of the head and never
+  an eye. macOS shows the count beside the mark (`DrawCounted`: 62 % of the
+  mark's height, 1–9 then "9+" in a pill, the image wider than tall), also
+  clear of the eyes; the test checks every pixel an eye touches. The count is
+  one per update. Every icon is drawn once and kept; `SetIcon` is called only
+  when the count changes, and the tooltip starts "tycswap · updates
+  available — …".
+- **The menu.** While something waits, an Updates section headed "Update
+  available" / "N updates available" follows *Open dashboard*, with
+  `KindUpdate` rows (on macOS an accent arrow disc on a tinted row, a second
+  line with what the update brings).
+- ***Check for updates…*** runs both checks at once, offers a newer release
+  in the A36 dialog, and ends with one notification: what can be updated,
+  else what is up to date, and what could not be checked — with the reasons
+  while they fit a notification, else pointing at the dashboard. A release
+  found before is named even when the re-check failed.
+- **A failed check forgets nothing:** a pending release stays pending, a
+  Claude Code update learnt before stays for the same install, and the error
+  comes along; "checked" is the last check that reached the network.
+- **The dashboard.** With a tray, the app's dashboard gets `updatesFacade`,
+  which reads the shell, and `Deps.UpdatesOwnSchedule`: the shell's clocks
+  check, the server's does not. *Check now* starts both checks and answers
+  202 with "Checking…"; an apply runs the tray's run without the tray's
+  dialog, since the page asked. One update runs at a time whichever side
+  started it (`errUpdateRunning`, 409). Every change calls `Server.Refresh`.
+- **Clicks that show** (macOS): a press turns the row the accent colour, a
+  switch flips at once, any other row that stays open shows a spinner until
+  the menu brings the outcome or four seconds pass, and a row that closes
+  the menu blinks first; after every click the menu is written again, so a
+  click that changed nothing ends its spinner.
+
+## A45. A tray for a WSL engine: `app --remote`
+
+On a WSL machine Claude Code and tycswap run inside the distro, which has no
+StatusNotifierWatcher, so `app` there is headless (A35) and the machine has no
+tray. The Windows binary has a complete tray and reaches the distro's
+dashboard on `127.0.0.1:<port>` through WSL2's localhost forwarding. The shell
+only renders `web.State` and acts through `shellActions`, so a tray for the
+distro's engine is a second set of those hooks over the dashboard's HTTP API.
+
+**The token.** The app in the distro mints a 128-bit token per start, hands
+it to its server as `web.Deps.RemoteToken` and writes it to
+`<backup_root>/remote.token` (0600 under the 0700 root, a temp file renamed
+into place), removed when the app exits — on Ctrl-C and on SIGTERM — and
+before an update restart's successor writes its own. The headless app prints
+`Remote token: <path> (for tycswap app --remote)`. The server accepts
+`Authorization: Bearer <token>` (constant-time compare) as both factors,
+cookie and CSRF, on every `/api` route and the event stream, never on the
+page or the static assets, and never sets a cookie for it; the Host check
+stays, and the Origin / `Sec-Fetch-Site` rules apply to any request that
+carries those headers. An empty `RemoteToken` turns bearer auth off: `tycswap
+web` passes none. A26 insisted on two factors; a bearer is acceptable here
+because the URL is loopback only and the command refuses anything else, the
+file is 0600 inside the distro and read over `\\wsl.localhost\<distro>\…`
+where the distro's permissions apply, and a token dies with the process that
+honours it — a remote that gets 401 re-reads the file. `POST /api/launch`,
+bearer only (the cookie and CSRF pair gets 403), hands out the one-time
+dashboard URL (`LaunchURL`).
+
+**The client.** `tycswap app --remote http://127.0.0.1:<port> --token-file
+PATH` (or `TYCSWAP_REMOTE_TOKEN_FILE`; `--remote` with `--headless`, `--port`
+or `--interval` is a usage error naming the flag) builds the same tray and
+shell over a client: `State`, `Switch` (the account's key, `claude:<slot>`,
+A26), `AutoStart`, `AutoStop`, `SetModel`, `Launch`. A
+mutation refreshes the cached state at once. It follows `GET /api/events`
+and reconnects with backoff (1 s doubling to 30 s); a stream silent for a
+minute is dead (the server pings every 15 s), and a line or a frame's data
+over 4 MiB ends it. While the engine is out of reach the shell's `Offline`
+hook makes the title `⚠` and the tooltip and the menu's first row say why
+("engine unreachable at <url>", or that the engine refused the token in the
+named file); the tray notifies once per outage and once when the link is
+back, and not for a first failure (the Run key starts the tray before the
+distro's app is up). The client holds the token, so it uses no proxy,
+follows no redirect, and checks the launch URL before it goes to the browser
+opener: http, loopback, the engine's port, `/` and a 32-hex token, rebuilt
+from those parts.
+
+**What remote mode does not do:** no dashboard, no store lock (it holds
+`remote.lock` beside `app.lock`: two remote trays refuse each other, a remote
+tray and a local app do not), no auto-switch resume, no Claude Code row, no
+*Add current login* (the login is the distro's; the distro's dashboard has the
+button), no app state, and an API-key switch is refused with a pointer to the
+dashboard. Without a tray it exits 1: "remote mode needs a tray; run tycswap
+app in the distro instead". *Start at login* registers `app --remote URL
+--token-file PATH` under `<Identifier>.remote`, apart from the local app's
+entry; the update restart re-runs `os.Args` and keeps the remote flags; the
+self-update, the release check and Quit are as local.
+
+**Setting a machine up** is the README's WSL recipe: no shared secret to
+provision, no firewall rule, no second store.
 
 ## A46. An API-key account may carry a base URL (Go-side additive extension)
 
@@ -4825,12 +5299,13 @@ is best-effort; a failed revert of a record fails the switch.
 **Approval and notes.** An endpoint account is an API-key account, so A33's
 approval applies unchanged; its refusal is `ErrEndpointNeedsApproval`
 (`… authenticates with an API key at <host>. Switching to it changes how
-Claude Code authenticates and where it sends its requests …`), and the CLI's
-and the dashboard's questions add `EndpointNotice`, which names the whole URL
+Claude Code authenticates and where it sends its requests …`), and the CLI's,
+the dashboard's and the tray's questions add `EndpointNotice`, which names the whole URL
 and the settings that take the requests there and back; in place of A33's
 sentence that running sessions keep their login until restarted, they say
 that such a session takes the endpoint up when it re-reads `settings.json`
-(`EndpointSessionNotice`, with the session count on the command line). The follow-up says
+(`EndpointSessionNotice`, with the session count on the command line and
+in the tray). The follow-up says
 what a running session does, which differs by direction: after a switch onto
 an endpoint (`EndpointAppliedNote`) a session that is already running takes
 it up when it re-reads `settings.json`, at once in a trusted workspace, and
@@ -4846,7 +5321,9 @@ Code's settings.json)`; JSON: `baseUrl`, the whole URL), the snapshot
 modal; `API key (no quota) → <host>` on the card, the per-row line and the
 monitor span), the dashboard (the add-token form's `baseUrl`, the rows'
 `baseUrl` and `→ <host>` chip, the header chip and the red notice, the switch
-confirmation, the Guide), `export` (`baseUrl` beside `kind` and `alias`; an
+confirmation, the Guide), the tray (`→ <host>` on the account's row, the
+switch confirmation, `EndpointAppliedNote` as the notification after it),
+`export` (`baseUrl` beside `kind` and `alias`; an
 endpoint account is exported from its backup even while active) and `import`
 (`baseUrl` checked as `add-token` checks it, only with API-key credentials,
 which are then taken as the endpoint's key; every refusal before any write).

@@ -45,35 +45,66 @@ func goInstallUpgrader(t *testing.T, run CommandRunner) (u Upgrader, exePath str
 	return u, exePath, stdout, stderr
 }
 
+// What SelfUpgrade prints for a binary it upgrades by hand, and installs
+// nothing: a module build outside a Go bin directory gets main's guidance
+// (`go install` or the releases page), a release build in the Nix store the
+// package manager, and one this process cannot replace the releases page —
+// neither of the release builds `go install`.
 func TestSelfUpgrade_UnknownShapePrintsGuidance(t *testing.T) {
 	var gotName string
 	var gotArgs []string
-	run := fakeRunner(&gotName, &gotArgs, 0, nil)
-
-	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
-	u := Upgrader{
-		Getenv:  func(string) string { return "" },
-		HomeDir: t.TempDir(),
-		Run:     run,
-		Stdout:  stdout,
-		Stderr:  stderr,
+	upgrader := func() (Upgrader, *bytes.Buffer, *bytes.Buffer) {
+		stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+		return Upgrader{
+			Getenv:  func(string) string { return "" },
+			HomeDir: t.TempDir(),
+			Run:     fakeRunner(&gotName, &gotArgs, 0, nil),
+			Stdout:  stdout,
+			Stderr:  stderr,
+		}, stdout, stderr
 	}
-	code := u.SelfUpgrade("/usr/bin/tycswap", platform.Linux)
-
-	if code != 1 {
-		t.Errorf("exit code = %d, want 1", code)
+	unwritable := filepath.Join(t.TempDir(), "missing", "tycswap")
+	cases := []struct {
+		name    string
+		release bool
+		exe     string
+		want    []string
+		not     []string
+	}{
+		{"module outside a Go bin directory", false, unwritable,
+			[]string{"Could not detect a `go install` layout", "go install " + ModulePath + "@latest", ReleasesURL}, nil},
+		{"release in the Nix store", true, "/nix/store/0000-tycswap/bin/tycswap",
+			[]string{"installed by a package manager: update it with Nix (it is in the Nix store)"}, []string{ReleasesURL, "go install", "git pull"}},
+		{"release this process cannot replace", true, unwritable,
+			[]string{"Could not upgrade this binary in place", ReleasesURL}, []string{"go install", "git pull"}},
 	}
-	if gotName != "" {
-		t.Error("subprocess should not run when the install shape is unknown")
-	}
-	if !strings.Contains(stderr.String(), "Could not detect a `go install` layout") {
-		t.Errorf("stderr = %q, missing guidance", stderr.String())
-	}
-	if !strings.Contains(stderr.String(), ModulePath) {
-		t.Errorf("stderr = %q, missing module path", stderr.String())
-	}
-	if stdout.Len() != 0 {
-		t.Errorf("stdout should be empty, got %q", stdout.String())
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.release {
+				withRelease(t)
+			}
+			gotName = ""
+			u, stdout, stderr := upgrader()
+			if code := u.SelfUpgrade(tc.exe, platform.Linux); code != 1 {
+				t.Errorf("exit code = %d, want 1", code)
+			}
+			if gotName != "" {
+				t.Errorf("ran %s %v; a binary upgraded by hand installs nothing", gotName, gotArgs)
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(stderr.String(), w) {
+					t.Errorf("stderr = %q, missing %q", stderr.String(), w)
+				}
+			}
+			for _, n := range tc.not {
+				if strings.Contains(stderr.String(), n) {
+					t.Errorf("stderr = %q, must not say %q", stderr.String(), n)
+				}
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("stdout should be empty, got %q", stdout.String())
+			}
+		})
 	}
 }
 

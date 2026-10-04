@@ -83,7 +83,7 @@ func (c Checker) homeDir() string {
 // currentVersion is the running build's v-prefixed semver string (Amendment
 // A5, e.g. version.Version — NOT version.Display()'s stripped form; the
 // comparator needs the "v" prefix). exePath is the running binary's path,
-// used only for the install-shape hint (see DetectInstallShape/UpgradeHint).
+// used only for the hint (see UpgradePlan/UpgradeHint).
 func (c Checker) CheckForUpdate(exePath, currentVersion string, plat platform.Platform) string {
 	cachePath := filepath.Join(c.CacheDir, "update_check.json")
 	now := clock.Seconds(c.clock())
@@ -111,8 +111,7 @@ func (c Checker) CheckForUpdate(exePath, currentVersion string, plat platform.Pl
 		return ""
 	}
 
-	shape := DetectInstallShape(exePath, c.getenv(), c.homeDir())
-	hint := UpgradeHint(shape, plat)
+	hint := UpgradeHint(UpgradePlan(DetectBuildSource(), exePath, c.getenv(), c.homeDir()), plat)
 	return fmt.Sprintf(
 		"A newer version of tycswap is available (%s). You are using %s. %s",
 		strings.TrimPrefix(latest, "v"), strings.TrimPrefix(currentVersion, "v"), hint,
@@ -158,25 +157,31 @@ func (c Checker) Latest(ctx context.Context) (string, error) {
 
 // latestTag is the one request both Latest and fetchLatestTag make.
 func (c Checker) latestTag(ctx context.Context) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, Endpoint, nil)
+	return fetchLatestTag(ctx, c.client(), Endpoint)
+}
+
+// fetchLatestTag asks endpoint, a GitHub releases API URL, for the latest
+// release's tag; the download shape of SelfUpgrade asks the same.
+func fetchLatestTag(ctx context.Context, client *http.Client, endpoint string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	resp, err := c.client().Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("%s: HTTP %d", Endpoint, resp.StatusCode)
+		return "", fmt.Errorf("%s: HTTP %d", endpoint, resp.StatusCode)
 	}
 	var rel releaseResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&rel); err != nil {
-		return "", fmt.Errorf("%s: %w", Endpoint, err)
+		return "", fmt.Errorf("%s: %w", endpoint, err)
 	}
 	if rel.TagName == "" {
-		return "", fmt.Errorf("%s: no tag_name in the release", Endpoint)
+		return "", fmt.Errorf("%s: no tag_name in the release", endpoint)
 	}
 	return rel.TagName, nil
 }

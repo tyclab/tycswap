@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/printer"
@@ -23,12 +24,16 @@ import (
 	"github.com/tyclab/tycswap/internal/version"
 )
 
-// exePath resolves the running binary path (install-shape detection input);
-// overridable in tests. Any error yields "".
+// exePath is the running binary's path with symbolic links resolved (the
+// upgrade plan's input, the file an update replaces); overridable in tests.
+// Any error yields "".
 var exePath = func() string {
 	p, err := os.Executable()
 	if err != nil {
 		return ""
+	}
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
 	}
 	return p
 }
@@ -39,7 +44,7 @@ func dispatchMain(prog string, p *parsed, s ioStreams) int {
 	// --upgrade runs first, before the switcher is constructed, so upgrading
 	// the tool never touches config/keychain (spec 08§5).
 	if p.upgrade {
-		up := update.Upgrader{Stdout: s.out, Stderr: s.err}
+		up := update.Upgrader{Stdout: s.out, Stderr: s.err, Version: version.Version}
 		return up.SelfUpgrade(exePath(), platform.Detect())
 	}
 
@@ -118,6 +123,11 @@ func runMainAction(p *parsed, sw *core.Switcher, payload *any) error {
 		}
 		return err
 	case p.purge:
+		// Deleting every account under a running dashboard would leave the
+		// tray showing state that no longer exists (A38).
+		if appIsRunning() {
+			return cerr.Validation("%s app is running; quit it from the menu bar / tray before purging", brandName())
+		}
 		return sw.Purge()
 	case p.export != nil:
 		return transfer.Export(transferAdapter{sw}, *p.export, derefStr(p.account), p.full)
@@ -166,15 +176,15 @@ func runTUIOrNotice(sw *core.Switcher, start string, stderr io.Writer) int {
 	return RunTUI(sw, start)
 }
 
-// dispatchMenubar reproduces the menubar surface (DESIGN Deviation 5): non-macOS
-// gets the macOS-only message; macOS gets the "not in this build" notice; both
-// exit 1.
+// dispatchMenubar reproduces the menubar surface (DESIGN Deviation 5): the
+// Python menu bar is not ported, and the menu-bar / tray app is `app`
+// (A35), so both messages point there; both exit 1.
 func dispatchMenubar(stderr io.Writer) int {
 	if platform.Detect() != platform.MacOS {
-		errorTo(stderr, "The menu bar is only available on macOS.")
+		errorTo(stderr, "The menu bar is only available on macOS; the tray app is `"+brandName()+" app`.")
 		return 1
 	}
-	errorTo(stderr, "Menu bar mode is not available in this build.")
+	errorTo(stderr, "Menu bar mode is `"+brandName()+" app` in this build.")
 	return 1
 }
 

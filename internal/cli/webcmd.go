@@ -1,7 +1,7 @@
 // webcmd.go — `tycswap web`: wire the dashboard's façades, bind loopback,
 // print the one-time URL, open the browser, serve until SIGINT/SIGTERM
 // (DESIGN A26; the updates host, the view preferences and the live login
-// seam are A27).
+// seam are A27). `tycswap app` builds the same dashboard (newDashboard, A35).
 package cli
 
 import (
@@ -23,6 +23,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/browser"
+	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/web"
 )
@@ -176,10 +177,11 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 			return subError(wprog, s.err, "unrecognized arguments: "+tok)
 		}
 	}
-	srv, auto, code := newDashboard(interval, debug, s)
+	d, code := newDashboard(interval, debug, s, dashboardOptions{})
 	if code != 0 {
 		return code
 	}
+	srv, auto := d.srv, d.auto
 	url, err := srv.Start(net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	if err != nil {
 		errorTo(s.err, "Error: "+err.Error())
@@ -211,28 +213,56 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 	return 0
 }
 
+// dashboard is what newDashboard builds: the switcher, the unstarted server
+// and the auto-switch engine host.
+type dashboard struct {
+	sw   *core.Switcher
+	srv  *web.Server
+	auto *autoFacade
+}
+
+// dashboardOptions are what `tycswap app` adds to the dashboard `tycswap web`
+// serves (DESIGN A35, A45).
+type dashboardOptions struct {
+	// remoteToken is the bearer a remote tray presents (A45); "" for none.
+	remoteToken string
+	// updates replaces the updates host (A27) with the tray shell's facade,
+	// which checks on its own schedule (A44); nil keeps the host.
+	updates web.UpdatesFacade
+	// noUpdateSchedule: the server never checks by itself, only the page's
+	// Check now does (`app --no-update-check`).
+	noUpdateSchedule bool
+}
+
 // newDashboard constructs the switcher and every façade the dashboard needs
 // and returns the unstarted server. A non-zero code means the error was
 // already reported on s.err.
-func newDashboard(interval float64, debug bool, s ioStreams) (*web.Server, *autoFacade, int) {
+func newDashboard(interval float64, debug bool, s ioStreams, o dashboardOptions) (*dashboard, int) {
 	sw, err := constructSwitcher(debug, s.err)
 	if err != nil {
 		errorTo(s.err, "Error: "+err.Error())
-		return nil, nil, 1
+		return nil, 1
 	}
 	if code, blocked := guardRoot(s.err); blocked {
-		return nil, nil, code
+		return nil, code
 	}
 	auto := newAutoFacade(sw)
-	updates := newUpdatesHost(sw.BackupDir())
+	var host *updatesHost
+	updates := o.updates
+	if updates == nil {
+		host = newUpdatesHost(sw.BackupDir())
+		updates = host
+	}
 	srv, err := web.New(web.Deps{
-		Facade:     sw,
-		Accounts:   sw,
-		Settings:   settingsFacade{root: sw.BackupDir()},
-		Auto:       auto,
-		AutoEvents: auto.Events(),
-		Updates:    updates,
-		UIPrefs:    uiPrefs{path: uiPrefsPath(sw.BackupDir())},
+		Facade:             sw,
+		Accounts:           sw,
+		Settings:           settingsFacade{root: sw.BackupDir()},
+		Auto:               auto,
+		AutoEvents:         auto.Events(),
+		Updates:            updates,
+		UpdatesOwnSchedule: host == nil || o.noUpdateSchedule,
+		RemoteToken:        o.remoteToken,
+		UIPrefs:            uiPrefs{path: appStatePath(sw.BackupDir())},
 		// The live login's email, for the "Add your current login" callout
 		// (A27); the store reads it from Claude Code's config file.
 		CurrentLogin: func() (string, bool) {
@@ -250,11 +280,13 @@ func newDashboard(interval float64, debug bool, s ioStreams) (*web.Server, *auto
 	})
 	if err != nil {
 		errorTo(s.err, "Error: "+err.Error())
-		return nil, nil, 1
+		return nil, 1
 	}
 	// A check that learns something pushes a fresh state at once.
-	updates.onChange = srv.Refresh
-	return srv, auto, 0
+	if host != nil {
+		host.onChange = srv.Refresh
+	}
+	return &dashboard{sw: sw, srv: srv, auto: auto}, 0
 }
 
 func renderWebHelp(prog string, out io.Writer) int {

@@ -18,7 +18,10 @@
 // Sec-Fetch-Site header that is absent or same-origin. The server binds
 // loopback only and answers 421 to any Host header other than
 // 127.0.0.1:<port> / localhost:<port>. Credential material is never
-// serialised.
+// serialised. With Deps.RemoteToken set, a client holding that token may
+// present it as "Authorization: Bearer <token>" in place of the cookie and
+// CSRF pair (DESIGN A45: a tray on the other side of a WSL boundary); nothing
+// else changes for it, and no cookie is ever set for it.
 package web
 
 import (
@@ -348,6 +351,19 @@ type Deps struct {
 	// (A27); nil → DetectAuthOverrides over this process's environment and
 	// the live config home's settings.json.
 	AuthOverrides func() AuthOverridesView
+	// UpdatesOwnSchedule: Updates checks on a clock of its own (the tray
+	// app's shell, DESIGN A44), so Serve never asks it to; only the page's
+	// Check now does. false: Serve asks at start and every UpdateInterval.
+	UpdatesOwnSchedule bool
+
+	// RemoteToken, when non-empty, is a bearer token that counts as BOTH
+	// factors — cookie and CSRF — on every /api route, not on the static
+	// assets (those stay cookie-only), for a client that is not a browser:
+	// the tray that drives this dashboard from the other side of a WSL
+	// boundary (DESIGN A45). The Host check stays, and the Origin /
+	// Sec-Fetch-Site rules still apply when a request carries those headers.
+	// Empty means bearer auth is off and an Authorization header is ignored.
+	RemoteToken string
 }
 
 // Server is one dashboard instance. Construct with New, bind with Start, run
@@ -383,6 +399,12 @@ type Server struct {
 	refresh chan struct{}
 	// applying: one update apply runs at a time (handleUpdatesApply).
 	applying atomic.Bool
+
+	// obsMu guards the in-process observers OnState and OnAuto register
+	// (the tray app's shell, DESIGN A35).
+	obsMu    sync.Mutex
+	stateObs []func(State)
+	autoObs  []func(AutoEventView)
 
 	mu   sync.Mutex
 	ln   net.Listener
@@ -498,6 +520,48 @@ func (s *Server) consumeLaunch(t string) bool {
 	return true
 }
 
+// LaunchURL returns a URL carrying a one-time bootstrap token: the current
+// one while it is still unused (so the URL printed at start stays valid until
+// somebody opens it), a freshly minted one once it has been redeemed. The
+// tray's "Open dashboard" calls this per click (DESIGN A35), and POST
+// /api/launch hands it to a remote tray (A45).
+func (s *Server) LaunchURL() (string, error) {
+	s.launchMu.Lock()
+	used := s.launchUsed
+	s.launchMu.Unlock()
+	if !used {
+		return s.URL(), nil
+	}
+	buf := make([]byte, tokenBytes)
+	if _, err := io.ReadFull(s.d.Rand, buf); err != nil {
+		return "", fmt.Errorf("web: minting launch token: %w", err)
+	}
+	s.launchMu.Lock()
+	s.launch = hex.EncodeToString(buf)
+	s.launchUsed = false
+	s.launchMu.Unlock()
+	return s.URL(), nil
+}
+
+// Snapshot builds the state document the dashboard would receive now.
+func (s *Server) Snapshot() State { return s.buildState(stateOpts{}) }
+
+// OnState registers fn to receive every state document the server publishes
+// (the poll tick, a mutation, Refresh, an engine event). fn runs on the
+// goroutine that built the document; keep it quick.
+func (s *Server) OnState(fn func(State)) {
+	s.obsMu.Lock()
+	s.stateObs = append(s.stateObs, fn)
+	s.obsMu.Unlock()
+}
+
+// OnAuto registers fn to receive every auto-switch engine event.
+func (s *Server) OnAuto(fn func(AutoEventView)) {
+	s.obsMu.Lock()
+	s.autoObs = append(s.autoObs, fn)
+	s.obsMu.Unlock()
+}
+
 func launchURL(port int, token string) string {
 	return "http://127.0.0.1:" + strconv.Itoa(port) + "/?token=" + token
 }
@@ -589,7 +653,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	// and then every UpdateInterval; the facade checks in the background
 	// and calls Refresh when it has learnt something.
 	var updTick <-chan time.Time
-	if s.d.Updates != nil {
+	if s.d.Updates != nil && !s.d.UpdatesOwnSchedule {
 		var stopUpd func()
 		updTick, stopUpd = s.d.UpdateTicker(s.d.UpdateInterval)
 		defer stopUpd()
@@ -680,7 +744,16 @@ func (s *Server) broadcast() {
 		s.d.Logger("web: state: " + err.Error())
 		return
 	}
-	s.hub.publishState(seq, body, withTS)
+	if !s.hub.publishState(seq, body, withTS) {
+		return // a newer document went out first; observers got that one
+	}
+	s.obsMu.Lock()
+	obs := make([]func(State), len(s.stateObs))
+	copy(obs, s.stateObs)
+	s.obsMu.Unlock()
+	for _, fn := range obs {
+		fn(st)
+	}
 }
 
 // publishAuto fans one engine event out as an `auto` SSE event. The caller
@@ -692,4 +765,11 @@ func (s *Server) publishAuto(ev AutoEventView) {
 		return
 	}
 	s.hub.publish("auto", body)
+	s.obsMu.Lock()
+	obs := make([]func(AutoEventView), len(s.autoObs))
+	copy(obs, s.autoObs)
+	s.obsMu.Unlock()
+	for _, fn := range obs {
+		fn(ev)
+	}
 }

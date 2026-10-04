@@ -369,10 +369,11 @@ func TestNewDashboardServes(t *testing.T) {
 	newSwitcher = func(store.Options) (*core.Switcher, error) { return sw, nil }
 	t.Cleanup(func() { newSwitcher = prev })
 	var errBuf strings.Builder
-	srv, _, code := newDashboard(5, false, ioStreams{out: io.Discard, err: &errBuf})
+	d, code := newDashboard(5, false, ioStreams{out: io.Discard, err: &errBuf}, dashboardOptions{})
 	if code != 0 {
 		t.Fatalf("newDashboard: %d %s", code, errBuf.String())
 	}
+	srv := d.srv
 	launch, err := srv.Start("127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

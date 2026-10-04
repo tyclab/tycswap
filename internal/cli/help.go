@@ -27,6 +27,7 @@ func usageLine(prog string) string {
 const mainDescription = `Multi-Account Switcher for Claude Code
 
 Commands:
+  tycswap                            start the menu-bar/tray app in the background
   tycswap help                       show this help
   tycswap list                       list managed accounts
   tycswap status                     show current account
@@ -55,10 +56,11 @@ Commands:
   tycswap config [set KEY VALUE]     show or change settings (settings.json)
   tycswap export <path>              export accounts
   tycswap import <path>              import accounts
-  tycswap tui                        interactive dashboard (also: bare tycswap)
+  tycswap tui                        interactive dashboard in the terminal
   tycswap watch                      dashboard, opened on the live watch page
   tycswap web                        browser dashboard on 127.0.0.1
-  tycswap menubar                    macOS menu bar app
+  tycswap app                        the same dashboard as a menu-bar/tray app, in the foreground
+  tycswap menubar                    macOS menu bar app (see tycswap app)
   tycswap upgrade                    self-upgrade to latest
   tycswap purge                      remove all tycswap data
   tycswap migrate [--dry-run]        copy the claude-swap store into this one, once
