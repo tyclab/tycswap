@@ -406,8 +406,14 @@ func TestDownloadUpgrade_NixStoreGuard(t *testing.T) {
 	if p := UpgradePlan(SourceRelease, exe, noEnv, t.TempDir()); p.Method != MethodDownload {
 		t.Fatalf("a writable directory outside the store: %+v", p)
 	}
+	// The plan compares the resolved path: a temporary directory is behind a
+	// link on macOS (/var → /private/var) and a short name on Windows.
+	store, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	prev := nixStore
-	nixStore = filepath.ToSlash(dir) + "/"
+	nixStore = filepath.ToSlash(store) + "/"
 	t.Cleanup(func() { nixStore = prev })
 	if p := UpgradePlan(SourceRelease, exe, noEnv, t.TempDir()); p.Method != MethodPackageManager || p.Manager != "Nix" {
 		t.Errorf("a binary in the store: %+v", p)
