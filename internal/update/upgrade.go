@@ -140,7 +140,7 @@ func (u Upgrader) SelfUpgrade(exePath string, plat platform.Platform) int {
 			binary = "(unknown)"
 		}
 		fmt.Fprintf(u.stderr(),
-			"Could not upgrade this binary in place: it is not in a Go bin directory ($GOPATH/bin, $HOME/go/bin, Go's own)\n"+
+			"Could not upgrade this binary in place: it is not in a Go bin directory ($GOBIN, $GOPATH/bin, $HOME/go/bin)\n"+
 				"and its directory cannot be written (or it belongs to the Nix store).\n"+
 				"  binary: %s\n"+
 				"To upgrade manually, download the build for this machine from:\n"+

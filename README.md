@@ -112,7 +112,7 @@ make install    # go install with the version embedded
 ```
 
 The binary is named `tycswap` and `make install` places it in the Go install
-directory (`$GOBIN`, or `$GOPATH/bin`, or `~/go/bin`). Add that directory to
+directory (`$GOBIN` when it is set, else `$GOPATH/bin`, else `$HOME/go/bin`). Add that directory to
 `PATH`. `make help` lists every target.
 
 **With `go install`:**
