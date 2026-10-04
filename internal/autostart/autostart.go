@@ -27,8 +27,8 @@ type Config struct {
 	// Args are appended to Exe; default {"app"}.
 	Args []string
 	// Label names the entry (the LaunchAgent label, the .desktop file, the
-	// Run value); default Label. A remote tray (A45) uses its own, so a seat
-	// that also runs the local app keeps both entries.
+	// Run value); default Label. A remote tray (A45) uses its own, so a
+	// machine that also runs the local app keeps both entries.
 	Label string
 	// Run executes launchctl on macOS; tests replace it. nil → exec.Command.
 	Run func(name string, args ...string) error
