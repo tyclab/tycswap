@@ -52,7 +52,7 @@ func SetAlias(s *store.Store, identifier, alias string) (num, normalized string,
 	// renumbered by a concurrent move or swap before the write commits, putting the
 	// alias on an account the user never named.
 	err = s.WithRosterLocked(func(data *store.SequenceData) error {
-		resolved, _, _, e := s.ResolveAccount(identifier)
+		resolved, _, _, e := s.ResolveAccountFrom(data, identifier)
 		if e != nil {
 			return e
 		}
@@ -85,7 +85,7 @@ func UnsetAlias(s *store.Store, identifier string) (num string, err error) {
 	}
 	// One locked span, one classified read inside it — see SetAlias.
 	err = s.WithRosterLocked(func(data *store.SequenceData) error {
-		resolved, _, _, e := s.ResolveAccount(identifier)
+		resolved, _, _, e := s.ResolveAccountFrom(data, identifier)
 		if e != nil {
 			return e
 		}

@@ -80,9 +80,8 @@ type Options struct {
 // that one account (Skipped), never the whole import. The returned error is
 // only ever a store lock or write failure.
 //
-// The whole pass holds the store lock (st.WithLock, which is a no-op when this
-// process already holds it), so OnlyIfEmpty's check and the writes it guards
-// cannot interleave with an add in another tycswap process.
+// The whole pass uses the transaction-scoped view supplied by st.WithLock,
+// so OnlyIfEmpty's check and its writes cannot interleave with another writer.
 //
 // Hardening over the Python: a row whose snapshot decodes to an identity with
 // a different account_key is skipped (the registry key is not trusted to name
@@ -105,7 +104,7 @@ func Import(st *store.Store, opts Options) (Result, error) {
 		return Result{}, nil
 	}
 	var res Result
-	err := st.WithLock(func() error {
+	err := st.WithLock(func(st *store.Store) error {
 		var err error
 		res, err = importLocked(st, opts)
 		return err

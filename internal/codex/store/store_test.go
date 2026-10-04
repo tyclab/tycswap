@@ -962,7 +962,7 @@ func TestPathsFollowRoot(t *testing.T) {
 	if got, want := s.credentialsDir(), filepath.Join(root, "credentials"); got != want {
 		t.Fatalf("credentialsDir = %q, want %q", got, want)
 	}
-	err := s.Lock().With(func() error {
+	err := s.Lock().With(func(*Store) error {
 		_, err := os.Stat(filepath.Join(root, ".lock"))
 		return err
 	})

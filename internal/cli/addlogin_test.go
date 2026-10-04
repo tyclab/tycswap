@@ -200,7 +200,7 @@ func TestAddLoginStoresTheNewAccountAndLeavesTheLiveOneAlone(t *testing.T) {
 	if !strings.Contains(out, "Added Account 2: b@example.com [personal] (from login)") {
 		t.Errorf("output = %q", out)
 	}
-	if got := f.loginArgs(t); strings.Join(got, " ") != "--email b@example.com --sso" {
+	if got := f.loginArgs(t); strings.Join(got, " ") != "--claudeai --email b@example.com --sso" {
 		t.Errorf("claude auth login got passthrough %v", got)
 	}
 	if dir := f.loginDirArg(t); filepath.Dir(dir) != paths.GetBackupRoot() || !strings.HasPrefix(filepath.Base(dir), "login.") {

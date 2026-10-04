@@ -193,9 +193,22 @@ func (s *Store) classifiedRoster() (*SequenceData, error) {
 //     revert what the backfill just persisted.
 //
 // SequenceMigrated owns both steps (it classifies, then re-reads once the
-// backfill has run), so this adds only the writer's reading of absence.
+// backfill has run), so this adds only the writer's reading of absence. This
+// is an advisory read: for a subsequent write use WithRosterLocked or the
+// Locked variant while holding the lock across the whole operation.
 func (s *Store) MigratedSequenceForUpdate() (*SequenceData, error) {
 	data, err := s.SequenceMigrated()
+	return s.rosterForUpdate(data, err)
+}
+
+// MigratedSequenceForUpdateLocked is for callers already holding the store
+// lock, including import's write pass. It must not acquire it again.
+func (s *Store) MigratedSequenceForUpdateLocked() (*SequenceData, error) {
+	data, err := s.sequenceMigratedLocked()
+	return s.rosterForUpdate(data, err)
+}
+
+func (s *Store) rosterForUpdate(data *SequenceData, err error) (*SequenceData, error) {
 	if err != nil {
 		return nil, err
 	}

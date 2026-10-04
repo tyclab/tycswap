@@ -51,7 +51,7 @@ func MoveAccount(s *store.Store, account, target string) (srcNum, tgtNum string,
 	// roster refuses before any of that, from this read or from ResolveAccount's
 	// own classified one; neither reports it as a missing account.
 	err = s.WithRosterLocked(func(data *store.SequenceData) error {
-		numSrc, _, _, e := s.ResolveAccount(account)
+		numSrc, _, _, e := s.ResolveAccountFrom(data, account)
 		if e != nil {
 			return e
 		}
@@ -193,11 +193,11 @@ func relocateLocked(s *store.Store, data *store.SequenceData, numSrc, target str
 // run the org backfill, and passes the roster it read under the lock (never
 // nil), which this mutates and commits (spec 01§10.5).
 func swapAccountsLocked(s *store.Store, data *store.SequenceData, first, second string) (string, string, error) {
-	numA, _, _, err := s.ResolveAccount(first)
+	numA, _, _, err := s.ResolveAccountFrom(data, first)
 	if err != nil {
 		return "", "", swapResolveErr(err, first)
 	}
-	numB, _, _, err := s.ResolveAccount(second)
+	numB, _, _, err := s.ResolveAccountFrom(data, second)
 	if err != nil {
 		return "", "", swapResolveErr(err, second)
 	}

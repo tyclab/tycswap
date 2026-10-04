@@ -65,15 +65,15 @@ func TestAHolderOfLockCanStillMutate(t *testing.T) {
 		t.Fatalf("Acquire = (%v, %v)", ok, err)
 	}
 	start := time.Now()
-	mustUpsert(t, s, keyA, "a@example.com", "pro")
-	if err := s.SetActive(keyA); err != nil {
+	tx := l.Store()
+	mustUpsert(t, tx, keyA, "a@example.com", "pro")
+	if err := tx.SetActive(keyA); err != nil {
 		t.Fatal(err)
 	}
-	// A second Store over the same root sees the same in-process marker.
-	if err := f.open().SetAlias(keyA, "work"); err != nil {
+	if err := tx.SetAlias(keyA, "work"); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.WithLock(func() error { return s.SetDisabled(keyA, true) }); err != nil {
+	if err := tx.WithLock(func(tx *Store) error { return tx.SetDisabled(keyA, true) }); err != nil {
 		t.Fatal(err)
 	}
 	if d := time.Since(start); d > 3*time.Second {

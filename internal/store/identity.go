@@ -41,7 +41,22 @@ func (s *Store) SequenceMigrated() (*SequenceData, error) {
 	if !needsOrgBackfill(data) {
 		return data, nil
 	}
-	if err := s.migrateOrgFields(); err != nil {
+	var migrated *SequenceData
+	err = s.Lock.With(func() error {
+		var err error
+		migrated, err = s.sequenceMigratedLocked()
+		return err
+	})
+	return migrated, err
+}
+
+// sequenceMigratedLocked re-reads after acquisition; callers own s.Lock.
+func (s *Store) sequenceMigratedLocked() (*SequenceData, error) {
+	data, err := s.classifiedRoster()
+	if err != nil || data == nil || !needsOrgBackfill(data) {
+		return data, err
+	}
+	if err := s.migrateOrgFieldsLocked(); err != nil {
 		return nil, err
 	}
 	return s.classifiedRoster()
@@ -77,6 +92,10 @@ func needsOrgBackfill(data *SequenceData) bool {
 // unreadable between the two reads must refuse, not migrate what it could not
 // read and not hand back a raw OS error.
 func (s *Store) migrateOrgFields() error {
+	return s.Lock.With(s.migrateOrgFieldsLocked)
+}
+
+func (s *Store) migrateOrgFieldsLocked() error {
 	data, err := s.classifiedRoster()
 	if err != nil {
 		return err
@@ -178,13 +197,15 @@ func (s *Store) AccountExists(email, orgUUID string) bool {
 // resolve_account). Ambiguity is a hard ConfigError, not a prompt; an unknown
 // identifier or a resolved-but-missing record is an AccountNotFoundError.
 func (s *Store) ResolveAccount(identifier string) (num, email, orgUUID string, err error) {
-	if _, err = s.SequenceMigrated(); err != nil {
-		return "", "", "", err
-	}
-	data, err := s.ReadSequence()
+	data, err := s.SequenceMigrated()
 	if err != nil {
 		return "", "", "", err
 	}
+	return s.ResolveAccountFrom(data, identifier)
+}
+
+// ResolveAccountFrom resolves against the caller's roster without I/O or locking.
+func (s *Store) ResolveAccountFrom(data *SequenceData, identifier string) (num, email, orgUUID string, err error) {
 	num, err = resolveIdentifier(data, identifier)
 	if err != nil {
 		return "", "", "", err
