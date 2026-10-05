@@ -11,6 +11,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // --- SlugifyEmail (spec 06§1.5, DESIGN §5 WP4: NFC rune-by-rune) ---
@@ -183,9 +184,12 @@ func TestLiveSessionPIDs_ReturnsAlivePID(t *testing.T) {
 	}
 }
 
-// --- DeleteMacOSKeychainEntry (no-op off macOS, exercised on this Linux host) ---
+// --- DeleteMacOSKeychainEntry (deletes on macOS, a no-op elsewhere) ---
 
-func TestDeleteMacOSKeychainEntry_NoopOffMacOS(t *testing.T) {
+// TestDeleteMacOSKeychainEntry_OnlyOnMacOS: the profile's hashed Keychain
+// entry is deleted on macOS, where Claude Code keeps it; on any other
+// platform the call is a true no-op and the entry survives.
+func TestDeleteMacOSKeychainEntry_OnlyOnMacOS(t *testing.T) {
 	fake := keychain.NewFake()
 	dir := t.TempDir()
 	svc := KeychainServiceName(dir)
@@ -195,8 +199,11 @@ func TestDeleteMacOSKeychainEntry_NoopOffMacOS(t *testing.T) {
 
 	DeleteMacOSKeychainEntry(fake, dir)
 
-	// On non-macOS platforms this must be a true no-op: the entry survives.
-	if _, found, _ := fake.Get(svc, keychain.AccountName()); !found {
+	_, found, _ := fake.Get(svc, keychain.AccountName())
+	switch macOS := platform.Detect() == platform.MacOS; {
+	case macOS && found:
+		t.Error("DeleteMacOSKeychainEntry left the entry on macOS")
+	case !macOS && !found:
 		t.Error("DeleteMacOSKeychainEntry must be a no-op off macOS, but the entry was deleted")
 	}
 }
