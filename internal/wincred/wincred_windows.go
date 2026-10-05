@@ -27,8 +27,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// errInTests is Get's and Delete's answer inside a test binary, before any
-// call: a test never reads or deletes a user's credentials.
+// errInTests is credRead's and credDelete's answer inside a test binary,
+// before any call: a test never reads or deletes a user's credentials.
 var errInTests = errors.New("wincred: the real Windows Credential Manager is not reachable from tests; give the test a fake (wincred.NewFake)")
 
 const credTypeGeneric = 1 // CRED_TYPE_GENERIC
@@ -66,8 +66,11 @@ func New() Real { return Real{} }
 
 // credRead reads one CRED_TYPE_GENERIC entry by exact target name. found is
 // false (nil error) only for ERROR_NOT_FOUND; any other failure is a real
-// error.
-func credRead(target string) (value string, username string, found bool, err error) {
+// error. A variable so a test can stand in for the Credential Manager.
+var credRead = func(target string) (value string, username string, found bool, err error) {
+	if testing.Testing() {
+		return "", "", false, errInTests
+	}
 	targetPtr, err := windows.UTF16PtrFromString(target)
 	if err != nil {
 		return "", "", false, err
@@ -100,8 +103,12 @@ func credRead(target string) (value string, username string, found bool, err err
 }
 
 // credDelete deletes one CRED_TYPE_GENERIC entry by exact target name. A
-// missing entry is treated as a successful no-op (rc-44 parity).
-func credDelete(target string) error {
+// missing entry is treated as a successful no-op (rc-44 parity). A variable
+// so a test can stand in for the Credential Manager.
+var credDelete = func(target string) error {
+	if testing.Testing() {
+		return errInTests
+	}
 	targetPtr, err := windows.UTF16PtrFromString(target)
 	if err != nil {
 		return err
@@ -137,9 +144,6 @@ func compoundName(service, account string) string { return account + "@" + servi
 // account (the "first account under this service" case); otherwise fall back
 // to the compound "{account}@{service}" name.
 func (Real) Get(service, account string) (string, bool, error) {
-	if testing.Testing() {
-		return "", false, errInTests
-	}
 	value, username, found, err := credRead(service)
 	if err != nil {
 		return "", false, err
@@ -161,9 +165,6 @@ func (Real) Get(service, account string) (string, bool, error) {
 // holds account's entry (mirroring Get's resolution), best-effort against
 // each individually.
 func (Real) Delete(service, account string) error {
-	if testing.Testing() {
-		return errInTests
-	}
 	_, username, found, err := credRead(service)
 	if err != nil {
 		return err
