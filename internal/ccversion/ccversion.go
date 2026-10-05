@@ -32,6 +32,8 @@ import (
 	"time"
 
 	"golang.org/x/mod/semver"
+
+	"github.com/tyclab/tycswap/internal/session"
 )
 
 // Method is how a Claude Code install got onto the machine.
@@ -501,7 +503,7 @@ func Run(ctx context.Context, e Env, c Command, in *Installed) (string, error) {
 
 // runOutput runs argv and returns its combined output.
 func runOutput(ctx context.Context, argv []string) (string, error) {
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd := session.CLICommand(ctx, argv[0], argv[1:]...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
