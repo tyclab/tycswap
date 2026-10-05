@@ -52,7 +52,7 @@ func (osRunner) LookPath(name string) (string, error) { return exec.LookPath(nam
 func (osRunner) Probe(argv, env []string, timeout time.Duration) (string, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd := CLICommand(ctx, argv[0], argv[1:]...)
 	cmd.Env = env
 	cmd.WaitDelay = probeWaitDelay // don't let a leaked pipe outlive the deadline
 	var out bytes.Buffer

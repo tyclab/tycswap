@@ -7,7 +7,17 @@
 // Implements spec 06§1.8 (_exec POSIX branch).
 package session
 
-import "syscall"
+import (
+	"context"
+	"os/exec"
+	"syscall"
+)
+
+// CLICommand is exec.CommandContext(ctx, bin, args...); Windows runs a .cmd
+// or .bat differently (exec_windows.go).
+func CLICommand(ctx context.Context, bin string, args ...string) *exec.Cmd {
+	return exec.CommandContext(ctx, bin, args...)
+}
 
 // Exec replaces the current process image with claude. It returns only if the
 // exec syscall itself fails; on success control never comes back.
