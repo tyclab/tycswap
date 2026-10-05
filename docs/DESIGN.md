@@ -4812,10 +4812,10 @@ temporary directory (`testutil.IsolateHome` sets `USERPROFILE`, which
 `os.UserHomeDir` reads there, beside `HOME`). A test that needs POSIX mode
 bits skips there, as chmod sets none: the mode checks, and the tests that
 make a file or directory unreadable or read-only with chmod. macOS runs the
-tray application's
-packages (`tray`, `appicon`, `autostart`, `brand`, `web`, `update`) and its
-tests in `internal/cli` (`APP_TESTS`): the rest of the suite does not hold
-there yet (the store under `~/.tycswap`, the login Keychain).
+tray application's packages (`tray`, `appicon`, `autostart`, `brand`, `web`,
+`update`) and its tests in `internal/cli` (`APP_TESTS`): the rest of the
+suite does not hold there yet (the store under `~/.tycswap`, the login
+Keychain).
 
 **Corporate, not ported.** The reference's tray also carries its owner's
 branding item, the fetch of mandatory Claude Code settings, the plugin
