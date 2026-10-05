@@ -338,10 +338,10 @@ func lifecycleOps() []struct {
 // TestLockedSpansNeverReacquireTheStoreLock is the deadlock guard. Every locked
 // span is run end to end — including the credential and config writes, the
 // dead-token clear (which takes a DIFFERENT lock file) and the session-profile
-// work. A callee that re-acquires the same *FileLock hangs forever and trips
-// the bound; one that opens a second FileLock on the same path waits out that
-// lock's timeout, at least filelock.DefaultTimeout, and returns a LockError
-// or, swallowing it, returns that late. Below that, time is the disk's.
+// work. A callee that re-acquires the same *FileLock hangs past the deadline;
+// one that opens a second FileLock on the same path waits out that lock's
+// timeout, at least filelock.DefaultTimeout, and returns a LockError or,
+// swallowing it, returns that late. Below that, time is the disk's.
 func TestLockedSpansNeverReacquireTheStoreLock(t *testing.T) {
 	for _, op := range lifecycleOps() {
 		t.Run(op.name, func(t *testing.T) {
@@ -357,7 +357,7 @@ func TestLockedSpansNeverReacquireTheStoreLock(t *testing.T) {
 				if elapsed := time.Since(start); elapsed >= filelock.DefaultTimeout {
 					t.Errorf("%s took %s — long enough to have waited out a second lock on the store", op.name, elapsed)
 				}
-			case <-time.After(10 * time.Second):
+			case <-time.After(2 * filelock.DefaultTimeout):
 				t.Fatalf("%s never returned: the store lock was re-acquired inside its own span", op.name)
 			}
 		})
