@@ -6,13 +6,15 @@ import (
 )
 
 // TestRealRefusesInTests: inside a test binary the real Credential Manager
-// calls answer errInTests before reaching it, so Get and Delete do too.
+// calls answer errInTests before reaching it, so Get and Delete do too. A
+// wrapper that answers otherwise stops the test before Get and Delete reach
+// the real claude-code target.
 func TestRealRefusesInTests(t *testing.T) {
 	if _, _, _, err := credRead("wincred-test-target"); !errors.Is(err, errInTests) {
-		t.Errorf("credRead = %v, want errInTests", err)
+		t.Fatalf("credRead = %v, want errInTests", err)
 	}
 	if err := credDelete("wincred-test-target"); !errors.Is(err, errInTests) {
-		t.Errorf("credDelete = %v, want errInTests", err)
+		t.Fatalf("credDelete = %v, want errInTests", err)
 	}
 	if _, _, err := New().Get("claude-code", "account-1-a@x.com"); !errors.Is(err, errInTests) {
 		t.Errorf("Get = %v, want errInTests", err)
