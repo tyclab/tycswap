@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- CI runs the whole suite on macOS, not only the tray application's tests. The `internal/cli` tests that need Keychain state across commands get a fake one per home. Tests that assumed the Linux store layout or the file backend now ask the platform or pin it (DESIGN A35).
+- CI runs the whole suite on macOS, not only the tray application's tests. In a test binary the real Keychain client and `launchctl` refuse to run; the `internal/cli` tests that need Keychain state across commands get a fake one per home. Tests that assumed the Linux store layout or the file backend now ask the platform or pin it (DESIGN A35).
 - **Fixed:** with the tray app and a command logging at once, one no longer writes into the log file the other rotated away, and on Windows the open log no longer blocks its rotation or deleting the store. A shell pinned to a removed session profile is unpinned also when the store's path runs through a symlink or a Windows short name. The dashboard serves its script, stylesheet and icon with fixed content types, not the ones the Windows registry records.
 - **Fixed:** the Windows tray icon comes back after Explorer restarts. Explorer recreates the taskbar empty and asks every program to add its icon again; the tray added its icon only at start, so after an Explorer restart it was gone until the app restarted, while the app kept running unseen. It now adds the icon again with its current tooltip and icon (DESIGN A52).
 - Complete the model-window controls on Auto and Settings: Off/All/Selected, stable drafts and focus, empty-selection Reset, and stale-state rejection across saves. Tray percentages now honor selected model names instead of counting every model window.

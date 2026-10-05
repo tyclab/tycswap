@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"os/user"
 	"strings"
+	"testing"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -184,11 +185,18 @@ func (s Security) budget() time.Duration {
 	return timeout
 }
 
+// errInTests is the real security binary's answer inside a test binary,
+// before it starts: a test never reads or changes the runner's login Keychain.
+var errInTests = errors.New("keychain: the real login Keychain is not reachable from tests; give the test a fake (keychain.NewFake)")
+
 // call runs a security invocation, converting a start failure or timeout into a
 // KeychainError.
 func (s Security) call(argv []string, stdin string) (execResult, error) {
 	runner := s.Exec
 	if runner == nil {
+		if testing.Testing() && s.bin() == securityBin {
+			return execResult{}, errInTests
+		}
 		runner = realExec
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), s.budget())

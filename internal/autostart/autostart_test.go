@@ -179,3 +179,12 @@ func TestEntriesCarryTheBrand(t *testing.T) {
 		t.Errorf("LogPath = %q", got)
 	}
 }
+
+// TestLaunchctlRefusesInTests: the default Run is the real launchctl, which
+// in a test binary refuses before starting anything.
+func TestLaunchctlRefusesInTests(t *testing.T) {
+	err := Config{}.withDefaults().Run("launchctl", "version")
+	if err == nil || !strings.Contains(err.Error(), "not reachable from tests") {
+		t.Fatalf("Run = %v, want the refusal", err)
+	}
+}

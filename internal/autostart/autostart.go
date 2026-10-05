@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"testing"
 
 	"github.com/tyclab/tycswap/internal/brand"
 )
@@ -30,7 +31,8 @@ type Config struct {
 	// Run value); default Label. A remote tray (A45) uses its own, so a
 	// machine that also runs the local app keeps both entries.
 	Label string
-	// Run executes launchctl on macOS; tests replace it. nil → exec.Command.
+	// Run executes launchctl on macOS; tests replace it. nil → exec.Command,
+	// which refuses to run in a test binary.
 	Run func(name string, args ...string) error
 	// GOOS overrides runtime.GOOS (tests only).
 	GOOS string
@@ -51,6 +53,9 @@ func (c Config) withDefaults() Config {
 	}
 	if c.Run == nil {
 		c.Run = func(name string, args ...string) error {
+			if testing.Testing() {
+				return errors.New("autostart: the real launchctl is not reachable from tests; give the test a Config.Run")
+			}
 			cmd := exec.Command(name, args...)
 			cmd.Stdout, cmd.Stderr = nil, nil
 			return cmd.Run()

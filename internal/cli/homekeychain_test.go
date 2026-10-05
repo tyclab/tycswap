@@ -10,11 +10,10 @@ import (
 )
 
 // homeKeychains stands in for the login Keychain of each test's home. The
-// cli builds the real client, keychain.Security, which on macOS runs
-// /usr/bin/security against the login Keychain of whoever runs the tests.
-// The tests get a keychain.Fake instead, one per home, so an item one command
-// stores is there for the next command of the same test, as in a real
-// Keychain, and no item outlives the test's home.
+// cli builds the real client, keychain.Security, which refuses to run in a
+// test binary. The tests get a keychain.Fake instead, one per home, so an
+// item one command stores is there for the next command of the same test, as
+// in a real Keychain, and no item outlives the test's home.
 var homeKeychains = struct {
 	sync.Mutex
 	byHome map[string]*keychain.Fake
@@ -33,10 +32,11 @@ func homeKeychain() *keychain.Fake {
 	return kc
 }
 
-// useHomeKeychains puts homeKeychain where the cli builds a real Keychain
-// client: the switcher's (constructSwitcher) and the scratch login's
-// (loginKeychain, which has none off macOS and still has none). TestMain
-// calls it once; a test that replaces either seam restores this one after.
+// useHomeKeychains puts homeKeychain where the cli tests need Keychain state
+// across commands: the switcher's client (constructSwitcher) and the scratch
+// login's (loginKeychain, which has none off macOS and still has none).
+// TestMain calls it once; a test that replaces either seam restores this one
+// after.
 func useHomeKeychains() {
 	buildSwitcher, buildLoginKeychain := newSwitcher, loginKeychain
 	newSwitcher = func(opts store.Options) (*core.Switcher, error) {
