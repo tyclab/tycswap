@@ -3,17 +3,18 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/ccversion"
+	"github.com/tyclab/tycswap/internal/testutil"
 	"github.com/tyclab/tycswap/internal/update"
 	"github.com/tyclab/tycswap/internal/web"
 )
@@ -22,8 +23,8 @@ import (
 // the user sees: a release endpoint, Claude Code's own release channel and a
 // `claude` binary in a temporary home, the real release and Claude Code
 // checks, the tray shell and the app's dashboard server. Only the tray (a
-// recorder) and Claude Code (a script that does what `claude --version` and
-// `claude update` do) stand in.
+// recorder) and Claude Code (fakeClaudeUpdater, which does what `claude
+// --version` and `claude update` do) stand in.
 
 type e2e struct {
 	t            *testing.T
@@ -45,11 +46,42 @@ func writeTestFile(t *testing.T, path, content string, mode os.FileMode) {
 	}
 }
 
+// fakeClaudeUpdater stands in for Claude Code (installFakeClaude's
+// "claude-update" role) as far as `--version` and `update` go: the version
+// lives in FAKE_CLAUDE_VERSION_FILE, which the update rewrites, and every
+// command line is appended to FAKE_CLAUDE_CALLS.
+func fakeClaudeUpdater(args []string) int {
+	cmdline := strings.Join(args, " ")
+	calls, err := os.OpenFile(os.Getenv("FAKE_CLAUDE_CALLS"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return 70
+	}
+	_, err = fmt.Fprintln(calls, cmdline)
+	if cerr := calls.Close(); err != nil || cerr != nil {
+		return 70
+	}
+	versionFile := os.Getenv("FAKE_CLAUDE_VERSION_FILE")
+	switch cmdline {
+	case "--version":
+		v, err := os.ReadFile(versionFile)
+		if err != nil {
+			return 70
+		}
+		fmt.Printf("%s (Claude Code)\n", strings.TrimSpace(string(v)))
+	case "update":
+		fmt.Println("Updating Claude Code to 2.1.281")
+		if os.WriteFile(versionFile, []byte("2.1.281\n"), 0o644) != nil {
+			return 70
+		}
+	default:
+		fmt.Fprintln(os.Stderr, "unexpected:", cmdline)
+		return 1
+	}
+	return 0
+}
+
 func newE2E(t *testing.T) *e2e {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the stand-in for claude is a shell script")
-	}
 	root := t.TempDir()
 	e := &e2e{t: t, claudeLog: filepath.Join(root, "claude.log")}
 
@@ -75,15 +107,9 @@ func newE2E(t *testing.T) *e2e {
 	// a file the update rewrites.
 	versionFile := filepath.Join(root, "claude.version")
 	writeTestFile(t, versionFile, "2.1.280\n", 0o644)
-	claude := filepath.Join(root, "bin", "claude")
-	writeTestFile(t, claude, `#!/bin/sh
-echo "$*" >> '`+e.claudeLog+`'
-case "$1" in
---version) echo "$(cat '`+versionFile+`') (Claude Code)" ;;
-update) echo "Updating Claude Code to 2.1.281"; echo 2.1.281 > '`+versionFile+`' ;;
-*) echo "unexpected: $*" >&2; exit 1 ;;
-esac
-`, 0o755)
+	testutil.Setenv(t, "FAKE_CLAUDE_VERSION_FILE", versionFile)
+	testutil.Setenv(t, "FAKE_CLAUDE_CALLS", e.claudeLog)
+	claude := installFakeClaude(t, filepath.Join(root, "bin"), "claude-update")
 	env := ccversion.DefaultEnv()
 	env.Home = filepath.Join(root, "home")
 	env.Getenv = func(string) string { return "" }

@@ -3,10 +3,12 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"github.com/tyclab/tycswap/internal/session"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -19,52 +21,60 @@ import (
 	"github.com/tyclab/tycswap/internal/testutil"
 )
 
-// fakeClaudeScript stands in for Claude Code. It refuses anything but
-// `auth login`, records its arguments and the CLAUDE_CONFIG_DIR it was given,
-// and then — per FAKE_CLAUDE_MODE — writes a subscription login, writes an
-// API-key login, or fails having written nothing.
-const fakeClaudeScript = `#!/bin/sh
-[ "$1" = auth ] && [ "$2" = login ] || exit 64
-shift 2
-printf '%s\n' "$@" > "$FAKE_CLAUDE_LOG.args"
-printf '%s' "$CLAUDE_CONFIG_DIR" > "$FAKE_CLAUDE_LOG.dir"
-case "$FAKE_CLAUDE_MODE" in
-fail)
-	exit 1 ;;
-keychain)
-	# macOS: the credential goes to the Keychain, not a file.
-	printf '{"oauthAccount":{"emailAddress":"%s","organizationUuid":"","accountUuid":"uuid-%s"}}' "$FAKE_CLAUDE_EMAIL" "$FAKE_CLAUDE_EMAIL" > "$CLAUDE_CONFIG_DIR/.claude.json" ;;
-apikey)
-	printf '{"oauthAccount":{"emailAddress":"%s","organizationUuid":"","accountUuid":"uuid-%s"}}' "$FAKE_CLAUDE_EMAIL" "$FAKE_CLAUDE_EMAIL" > "$CLAUDE_CONFIG_DIR/.claude.json"
-	printf 'sk-ant-api03-test-key-1' > "$CLAUDE_CONFIG_DIR/.credentials.json" ;;
-*)
-	printf '{"oauthAccount":{"emailAddress":"%s","organizationUuid":"%s","organizationName":"%s","accountUuid":"uuid-%s"}}' "$FAKE_CLAUDE_EMAIL" "$FAKE_CLAUDE_ORG" "$FAKE_CLAUDE_ORGNAME" "$FAKE_CLAUDE_EMAIL" > "$CLAUDE_CONFIG_DIR/.claude.json"
-	printf '{"claudeAiOauth":{"accessToken":"%s","refreshToken":"%s","expiresAt":4102444800000,"scopes":["user:inference"]}}' "$FAKE_CLAUDE_TOKEN" "$FAKE_CLAUDE_REFRESH" > "$CLAUDE_CONFIG_DIR/.credentials.json" ;;
-esac
-`
+// fakeClaudeLogin stands in for Claude Code (installFakeClaude's
+// "claude-login" role). It refuses anything but `auth login`, records its
+// arguments (one per line) and the CLAUDE_CONFIG_DIR it was given, and then —
+// per FAKE_CLAUDE_MODE — writes a subscription login, writes an API-key login,
+// or fails having written nothing.
+func fakeClaudeLogin(args []string) int {
+	if len(args) < 2 || args[0] != "auth" || args[1] != "login" {
+		return 64
+	}
+	log, dir := os.Getenv("FAKE_CLAUDE_LOG"), os.Getenv("CLAUDE_CONFIG_DIR")
+	write := func(path, content string) bool { return os.WriteFile(path, []byte(content), 0o600) == nil }
+	if !write(log+".args", strings.Join(args[2:], "\n")) || !write(log+".dir", dir) {
+		return 70
+	}
+	email := os.Getenv("FAKE_CLAUDE_EMAIL")
+	account := fmt.Sprintf(`{"oauthAccount":{"emailAddress":"%s","organizationUuid":"","accountUuid":"uuid-%s"}}`, email, email)
+	creds := ""
+	switch os.Getenv("FAKE_CLAUDE_MODE") {
+	case "fail":
+		return 1
+	case "keychain":
+		// macOS: the credential goes to the Keychain, not a file.
+	case "apikey":
+		creds = "sk-ant-api03-test-key-1"
+	default:
+		account = fmt.Sprintf(`{"oauthAccount":{"emailAddress":"%s","organizationUuid":"%s","organizationName":"%s","accountUuid":"uuid-%s"}}`,
+			email, os.Getenv("FAKE_CLAUDE_ORG"), os.Getenv("FAKE_CLAUDE_ORGNAME"), email)
+		creds = fmt.Sprintf(`{"claudeAiOauth":{"accessToken":"%s","refreshToken":"%s","expiresAt":4102444800000,"scopes":["user:inference"]}}`,
+			os.Getenv("FAKE_CLAUDE_TOKEN"), os.Getenv("FAKE_CLAUDE_REFRESH"))
+	}
+	if !write(filepath.Join(dir, ".claude.json"), account) {
+		return 70
+	}
+	if creds != "" && !write(filepath.Join(dir, ".credentials.json"), creds) {
+		return 70
+	}
+	return 0
+}
 
 // loginFixture is a home with one managed, live account (a@example.com in
-// slot 1) and a fake claude first on PATH that logs in as b@example.com.
+// slot 1) and a fake claude first on PATH, in bin, that logs in as
+// b@example.com.
 type loginFixture struct {
-	home, log string
-	out       *bytes.Buffer
+	home, log, bin string
+	out            *bytes.Buffer
 }
 
 func newLoginFixture(t *testing.T) *loginFixture {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("the fake claude is a shell script")
-	}
 	cleanHome(t)
 	home := os.Getenv("HOME")
 
 	bin := filepath.Join(t.TempDir(), "bin")
-	if err := os.MkdirAll(bin, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(fakeClaudeScript), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	installFakeClaude(t, bin, "claude-login")
 	testutil.Setenv(t, "PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	log := filepath.Join(t.TempDir(), "claude")
 	testutil.Setenv(t, "FAKE_CLAUDE_LOG", log)
@@ -89,7 +99,7 @@ func newLoginFixture(t *testing.T) *loginFixture {
 	lifecycle.Output = out
 	t.Cleanup(func() { lifecycle.Output = prevOut })
 
-	f := &loginFixture{home: home, log: log, out: out}
+	f := &loginFixture{home: home, log: log, bin: bin, out: out}
 	f.writeLive(t, "a@example.com", "sk-ant-oat01-test-token-1", "refresh-token-1")
 	if code, _, errb := f.run(t, "add"); code != 0 {
 		t.Fatalf("seeding add: exit %d, stderr %q", code, errb)
@@ -178,7 +188,7 @@ func (f *loginFixture) loginArgs(t *testing.T) []string {
 	if err != nil {
 		t.Fatalf("fake claude never ran: %v", err)
 	}
-	return strings.Fields(string(raw))
+	return strings.Split(string(raw), "\n")
 }
 
 // assertNoScratch fails if any login.* scratch profile survived.
@@ -194,15 +204,15 @@ func TestAddLoginStoresTheNewAccountAndLeavesTheLiveOneAlone(t *testing.T) {
 	f := newLoginFixture(t)
 	liveBefore := f.liveCreds(t)
 
-	code, out, errb := f.run(t, "add", "--login", "--", "--email", "b@example.com", "--sso")
+	code, out, errb := f.run(t, "add", "--login", "--", "--email", "b@example.com", "--sso", "two words")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, errb)
 	}
 	if !strings.Contains(out, "Added Account 2: b@example.com [personal] (from login)") {
 		t.Errorf("output = %q", out)
 	}
-	if got := f.loginArgs(t); strings.Join(got, " ") != "--claudeai --email b@example.com --sso" {
-		t.Errorf("claude auth login got passthrough %v", got)
+	if got, want := f.loginArgs(t), []string{"--claudeai", "--email", "b@example.com", "--sso", "two words"}; !slices.Equal(got, want) {
+		t.Errorf("claude auth login got passthrough %q, want %q", got, want)
 	}
 	if dir := f.loginDirArg(t); filepath.Dir(dir) != paths.GetBackupRoot() || !strings.HasPrefix(filepath.Base(dir), "login.") {
 		t.Errorf("login ran with CLAUDE_CONFIG_DIR=%q, want a login.* scratch under %q", dir, paths.GetBackupRoot())
