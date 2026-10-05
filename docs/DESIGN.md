@@ -537,7 +537,9 @@ contracts (03§2.3).
 ### 3.6 Logging — see `logging` (§2.6)
 Named `"tycswap"`, file `tycswap.log` (A23); **lazy** dir creation on first write (a no-op run must not
 materialize `cache/` or the log under the XDG path — would trip the migration
-collision check). Rotating 1 MB × 3. Console handler (stderr) only with `--debug`.
+collision check). Rotating 1 MB × 3, by the file's own size: each record opens, appends and
+closes the file, so processes that log at once (the tray app and a command) share one log and
+one rotation. Console handler (stderr) only with `--debug`.
 Paste-safe invariant preserved (never log email in usage-failure WARNING; 04§1.17).
 
 ---
@@ -4803,18 +4805,15 @@ tag's GitHub release (a draft when the tag has none yet). Nothing is
 code-signed.
 
 **CI on Windows and macOS** (`ci.yml`) vets and builds everything there —
-on macOS with cgo, so the Objective-C is compiled — and runs the tray
-application's packages (`tray`, `appicon`, `autostart`, `brand`, `web`,
-`update`) and its tests in `internal/cli` (`APP_TESTS`), the build-tagged
-ones included. Not the rest of the suite: it has only ever run on Linux and
-assumes it. On Windows much of it fails, mostly because it isolates the home
-through `HOME`, which Windows ignores (`os.UserHomeDir` reads
-`USERPROFILE`), so those tests read and write the runner's real profile;
-others create symlinks. On macOS the store tests expect the Linux layout under
-`$XDG_DATA_HOME` (the macOS store is `~/.tycswap`) and two packages time out
-on the login Keychain. Making the suite portable is a change of its own; the
-one Windows-only difference in `internal/web` (the system serves `.js` as
-`application/javascript`) is skipped by name.
+on macOS with cgo, so the Objective-C is compiled. Windows runs the whole
+suite, the build-tagged tests included: every test keeps its home in a
+temporary directory (`testutil.IsolateHome` sets `USERPROFILE`, which
+`os.UserHomeDir` reads there, beside `HOME`), and a test of a behaviour
+Windows lacks (POSIX modes, a file made unreadable with chmod, the container
+file probes) skips with that reason. macOS runs the tray application's
+packages (`tray`, `appicon`, `autostart`, `brand`, `web`, `update`) and its
+tests in `internal/cli` (`APP_TESTS`): the rest of the suite does not hold
+there yet (the store under `~/.tycswap`, the login Keychain).
 
 **Corporate, not ported.** The reference's tray also carries its owner's
 branding item, the fetch of mandatory Claude Code settings, the plugin
