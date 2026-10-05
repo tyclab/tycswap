@@ -3252,10 +3252,11 @@ another's slot. Beyond the switch, every read-modify-write of
 `codex/sequence.json` (`UpsertSlot`, `RemoveSlot`, `Renumber`, `SetActive`,
 alias, disabled, workspace name) takes the lock itself, so a background
 `tycswap auto` writing workspace names cannot interleave with `tycswap codex add`
-in another terminal and drop the new slot; a caller already holding
-`Store.Lock()` is not blocked (in-process ownership is tracked per root, the
-flock is never taken twice). A `sequence.json` that no longer parses is never
-overwritten by a mutation (`ErrCorruptRegistry`); listing reads treat it as
+in another terminal and drop the new slot; a caller holding `Store.Lock()`
+writes through that transaction's own view, which reuses the lock, while
+every other store value in the process takes it again (A50; until then
+in-process ownership was tracked per root). A `sequence.json` that no longer
+parses is never overwritten by a mutation (`ErrCorruptRegistry`); listing reads treat it as
 empty. `export` and `purge` take no store lock, as in the PR and as the Claude
 transfer verbs do; both importers run their writes under it because their
 check-then-act (`--force`, `OnlyIfEmpty`) would otherwise race the same way.
@@ -5502,12 +5503,13 @@ mutation lock like every mutation. Each Codex call also holds the Codex
 store's lock (`codex/.lock`) from start to end: the switcher's switch and add
 take it themselves, and `codexOps` took it around disable and remove (since
 A48 the switcher does, for every caller), because the store's own writes
-(`SetDisabled`, `RemoveSlot`) skip the file lock while any goroutine of the
-process holds it. Without that, a remove could land between a Codex tick's
-capture and its write of `auth.json` and leave `auth.json` on the removed
-account. A disable or remove that waits 10 s for the lock answers 409; the
-switcher's own busy error on a switch or add was a switch error (500) until
-A48 made it a lock error (409).
+(`SetDisabled`, `RemoveSlot`) skipped the file lock while any goroutine of the
+process held it, until A50 made every ordinary store write take the lock and
+let only a transaction's own view reuse it. Without the lock around the whole
+call, a remove could land between a Codex tick's capture and its write of
+`auth.json` and leave `auth.json` on the removed account. A disable or remove
+that waits 10 s for the lock answers 409; the switcher's own busy error on a
+switch or add was a switch error (500) until A48 made it a lock error (409).
 
 **One engine constructor.** The Codex engine's construction and loop live in
 `internal/cli/codexauto.go`, shared by both hosts: `newCodexAutoEngineFor(sw,
@@ -5616,10 +5618,11 @@ Three small fixes the reviews of A47 found, together because two share a
 cause.
 
 **Disable and remove hold the Codex store lock.** `Switcher.SetAccountDisabled`
-and `Switcher.Remove` write through the store, whose writes take the file lock
-themselves unless this process already holds it (A47, "Two stores, two
-loops"). The Codex usage refresh holds that lock around its network call (it
-must be able to persist a rotated token before it asks for one), and the TUI
+and `Switcher.Remove` wrote through the store, whose writes then took the file
+lock themselves unless this process already held it (A47, "Two stores, two
+loops"; A50 replaced that rule with transaction-scoped views). The Codex
+usage refresh holds that lock around its network call (it must be able to
+persist a rotated token before it asks for one), and the TUI
 runs that refresh in its own process. So a remove from the TUI during a
 refresh of the same account skipped the file lock, deleted the slot and its
 credentials, and the refresh then wrote the new token back under the removed
