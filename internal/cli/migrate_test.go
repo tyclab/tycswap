@@ -26,10 +26,7 @@ func migrateHome(t *testing.T) (string, string) {
 	if runtime.GOOS != "linux" {
 		t.Skip("exercises the Linux/WSL store roots")
 	}
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
+	home := testutil.IsolateHome(t)
 	oldStoreHint = realOldStoreHint
 	t.Cleanup(func() { oldStoreHint = func() string { return "" } })
 	old := filepath.Join(home, ".local", "share", "claude-swap")

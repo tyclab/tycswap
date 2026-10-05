@@ -14,11 +14,7 @@ import (
 // appLockHome points the backup root at a temp dir so the lock file is ours.
 func appLockHome(t *testing.T) string {
 	t.Helper()
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Setenv(t, "USERPROFILE", home)
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
+	home := testutil.IsolateHome(t)
 	testutil.Setenv(t, "NO_COLOR", "1")
 	prev := geteuid
 	geteuid = func() int { return 1000 }
@@ -84,11 +80,7 @@ func TestPurgeRefusedWhileAppRuns(t *testing.T) {
 // Asking whether an app runs creates nothing: a purge, cancelled or not,
 // leaves no app.lock and no backup root behind (A38).
 func TestPurgeCreatesNoLock(t *testing.T) {
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Setenv(t, "USERPROFILE", home)
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
+	testutil.IsolateHome(t)
 	if appIsRunning() {
 		t.Fatal("no app has run here")
 	}
@@ -96,6 +88,7 @@ func TestPurgeCreatesNoLock(t *testing.T) {
 		t.Errorf("asking created the backup root: %v", err)
 	}
 	appLockHome(t)
+	withPrompter(t, &fakePrompter{answer: "n", ok: true}) // purge asks through the prompter, not s.in
 	var out, errb bytes.Buffer
 	_ = run("tycswap", []string{"purge"}, ioStreams{in: strings.NewReader("n\n"), out: &out, err: &errb}, false, false)
 	if _, err := os.Stat(appLockPath()); !errors.Is(err, os.ErrNotExist) {

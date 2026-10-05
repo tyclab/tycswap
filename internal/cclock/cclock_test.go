@@ -239,9 +239,7 @@ func TestConcurrentAcquirersExcludeEachOther(t *testing.T) {
 }
 
 func TestLockDirPaths_Default(t *testing.T) {
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
+	home := testutil.IsolateHome(t)
 
 	if got, want := cclock.CredentialsLockDir(), filepath.Join(home, ".claude.lock"); got != want {
 		t.Errorf("CredentialsLockDir = %q, want %q", got, want)
@@ -252,12 +250,11 @@ func TestLockDirPaths_Default(t *testing.T) {
 }
 
 func TestLockDirPaths_ClaudeConfigDir(t *testing.T) {
-	home := t.TempDir()
+	testutil.IsolateHome(t)
 	ccd := filepath.Join(t.TempDir(), "custom-claude")
 	if err := os.MkdirAll(ccd, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	testutil.Setenv(t, "HOME", home)
 	testutil.Setenv(t, "CLAUDE_CONFIG_DIR", ccd)
 
 	// credentials_lock_dir: <config_home>.lock at the CCD's parent.
@@ -273,9 +270,7 @@ func TestLockDirPaths_ClaudeConfigDir(t *testing.T) {
 // TestNamedLockDirsNest confirms the credentials lock is the outer dir and the
 // config lock the inner one, so callers can hold them in the documented order.
 func TestNamedLockDirsNest(t *testing.T) {
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
+	testutil.IsolateHome(t)
 
 	credH, err := cclock.Acquire(cclock.CredentialsLockDir(), cclock.DefaultTimeoutS, sys)
 	if err != nil {

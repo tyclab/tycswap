@@ -8,12 +8,14 @@ import (
 	"testing"
 )
 
-// isolate points HOME at a fresh temp dir and clears the two env vars that bypass
-// $HOME in path resolution.
+// isolate points HOME and USERPROFILE (os.UserHomeDir on Windows) at a fresh
+// temp dir and clears the two env vars that bypass the home in path
+// resolution. testutil.IsolateHome imports this package, so this is its copy.
 func isolate(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	unset(t, "CLAUDE_CONFIG_DIR")
 	unset(t, "XDG_DATA_HOME")
 	return home

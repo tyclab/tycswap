@@ -40,10 +40,9 @@ type env struct {
 
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	base := t.TempDir()
+	base := testutil.IsolateHome(t)
 	e := &env{t: t, dir: base, codexHome: filepath.Join(base, ".codex"),
 		root: filepath.Join(base, "backup", "codex"), kc: keychain.NewFake()}
-	testutil.Setenv(t, "HOME", base)
 	testutil.Setenv(t, "CODEX_HOME", e.codexHome)
 	return e
 }

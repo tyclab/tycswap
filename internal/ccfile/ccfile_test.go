@@ -17,15 +17,10 @@ import (
 	"github.com/tyclab/tycswap/internal/testutil"
 )
 
-// setHome points $HOME at a fresh temp dir and clears the env vars that bypass
-// it in path resolution.
+// setHome gives the test a fresh, isolated home (testutil.IsolateHome).
 func setHome(t *testing.T) string {
 	t.Helper()
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
-	return home
+	return testutil.IsolateHome(t)
 }
 
 func writeFile(t *testing.T, path, content string) {
@@ -425,11 +420,9 @@ func TestReadOAuthIdentity_Cases(t *testing.T) {
 }
 
 func TestCLAUDEConfigDirHonored(t *testing.T) {
-	home := t.TempDir()
+	home := testutil.IsolateHome(t)
 	ccd := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
 	testutil.Setenv(t, "CLAUDE_CONFIG_DIR", ccd)
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
 
 	// Config write lands at <CCD>/.claude.json, not $HOME/.claude.json.
 	if err := ccfile.UpdateGlobalConfig(func(cfg map[string]any) {

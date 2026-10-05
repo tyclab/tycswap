@@ -13,10 +13,12 @@ import (
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/session"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/wincred"
 )
 
 // ---- interface-satisfaction compile checks (DESIGN A2/A13) ------------------
@@ -45,13 +47,10 @@ var _ autoswitch.Switcher = autoswitchAdapter{}
 // clock, its backup directories created, and human output/prompts silenced.
 func newTestSwitcher(t *testing.T) *Switcher {
 	t.Helper()
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
+	testutil.IsolateHome(t)
 	testutil.Setenv(t, "NO_COLOR", "1")
 	clk := testutil.FixedClock(t, "2026-07-17T09:00:00Z")
-	sw, err := New(store.Options{Clock: clk, Stderr: &bytes.Buffer{}})
+	sw, err := New(store.Options{Clock: clk, Keychain: keychain.NewFake(), WinCred: wincred.NewFake(), Stderr: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatalf("core.New: %v", err)
 	}

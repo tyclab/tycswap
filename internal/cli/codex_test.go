@@ -182,6 +182,7 @@ func TestMainHelpAdvertisesTheCodexNamespace(t *testing.T) {
 }
 
 func TestCodexHelpListsVerbsCaveatAndSettings(t *testing.T) {
+	cleanHome(t)
 	for _, argv := range [][]string{{"codex", "--help"}, {"codex", "-h"}, {"codex", "--debug", "-h"}} {
 		code, out, _ := runCodex(t, "", argv...)
 		if code != 0 {
@@ -215,6 +216,7 @@ func TestCodexUsageErrorsExit2(t *testing.T) {
 }
 
 func TestCodexVerbHelp(t *testing.T) {
+	cleanHome(t)
 	code, out, _ := runCodex(t, "", "codex", "switch", "-h")
 	if code != 0 || !strings.Contains(out, "usage: tycswap codex switch") {
 		t.Errorf("switch -h = %d %q", code, out)

@@ -12,7 +12,9 @@ import (
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/wincred"
 )
 
 // newFixtureStore builds a Store rooted at a materialized Python-fixture $HOME
@@ -21,7 +23,7 @@ func newFixtureStore(t *testing.T) (*Store, testutil.FixtureHome) {
 	t.Helper()
 	fh := testutil.BuildFixtureHome(t)
 	clk := testutil.FixedClock(t, "2026-07-17T09:00:00Z")
-	s, err := New(Options{Clock: clk, Stderr: &bytes.Buffer{}})
+	s, err := New(Options{Clock: clk, Keychain: keychain.NewFake(), WinCred: wincred.NewFake(), Stderr: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -138,13 +140,10 @@ func TestSequenceOptionalKeyOmissionAfterMutate(t *testing.T) {
 // Python's _init_sequence_file: null active, empty sequence array, empty
 // accounts object, indent 2 (spec 01§2.1).
 func TestInitSequenceFileShape(t *testing.T) {
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
+	testutil.IsolateHome(t)
 
 	clk := testutil.FixedClock(t, "2026-07-17T09:00:00Z")
-	s, err := New(Options{Clock: clk, Stderr: &bytes.Buffer{}})
+	s, err := New(Options{Clock: clk, Keychain: keychain.NewFake(), WinCred: wincred.NewFake(), Stderr: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

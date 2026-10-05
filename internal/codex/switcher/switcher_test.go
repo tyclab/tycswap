@@ -60,8 +60,7 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
+	home := testutil.IsolateHome(t)
 	codexHome := filepath.Join(home, ".codex")
 	testutil.Setenv(t, "CODEX_HOME", codexHome)
 	testutil.Setenv(t, "XDG_DATA_HOME", filepath.Join(home, "xdg"))

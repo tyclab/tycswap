@@ -455,16 +455,18 @@ func startRemoteServer(t *testing.T, token, addr string) *remoteFixture {
 		served: make(chan error, 1),
 	}
 	srv, err := web.New(web.Deps{
-		Facade:      fx.fa,
-		Codex:       fx.codex,
-		Auto:        fx.auto,
-		AutoEvents:  fx.autoEv,
-		Settings:    fx.set,
-		Sessions:    func() web.SessionsView { return web.SessionsView{} },
-		Kill:        func(int, int64) error { return nil },
-		Interval:    time.Hour,
-		Ticker:      func(time.Duration) (<-chan time.Time, func()) { return make(chan time.Time), func() {} },
-		RemoteToken: token,
+		Facade:     fx.fa,
+		Codex:      fx.codex,
+		Auto:       fx.auto,
+		AutoEvents: fx.autoEv,
+		Settings:   fx.set,
+		Sessions:   func() web.SessionsView { return web.SessionsView{} },
+		// Not this process's environment and ~/.claude/settings.json.
+		AuthOverrides: func() web.AuthOverridesView { return web.AuthOverridesView{} },
+		Kill:          func(int, int64) error { return nil },
+		Interval:      time.Hour,
+		Ticker:        func(time.Duration) (<-chan time.Time, func()) { return make(chan time.Time), func() {} },
+		RemoteToken:   token,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1143,6 +1145,7 @@ func TestRemoteModeIsSingleInstance(t *testing.T) {
 
 // Usage errors from the remote flags exit 2 through the command.
 func TestRemoteModeUsageErrors(t *testing.T) {
+	cleanHome(t)
 	testutil.Unsetenv(t, remoteTokenFileEnv())
 	code, _, errStr := runCLI(t, []string{"app", "--remote", "http://127.0.0.1:7337"}, false, false)
 	if code != 2 || !strings.Contains(errStr, "--token-file") {

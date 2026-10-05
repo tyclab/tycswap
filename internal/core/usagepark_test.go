@@ -14,18 +14,17 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
+	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/testutil"
 	"github.com/tyclab/tycswap/internal/usage"
+	"github.com/tyclab/tycswap/internal/wincred"
 )
 
 func TestEngineKeepsAnAtLimitCandidateTrusted(t *testing.T) {
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
+	testutil.IsolateHome(t)
 	testutil.Setenv(t, "NO_COLOR", "1")
 	clk := testutil.FixedClock(t, "2026-07-17T09:00:00Z")
 	start := clk.Now()
@@ -56,7 +55,7 @@ func TestEngineKeepsAnAtLimitCandidateTrusted(t *testing.T) {
 		}, nil
 	}}
 
-	sw, err := New(store.Options{Clock: clk, OAuth: fc, Stderr: &bytes.Buffer{}})
+	sw, err := New(store.Options{Clock: clk, OAuth: fc, Keychain: keychain.NewFake(), WinCred: wincred.NewFake(), Stderr: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatalf("core.New: %v", err)
 	}

@@ -109,10 +109,7 @@ func TestNormalizePath_AllowsNonexistentPath(t *testing.T) {
 }
 
 func TestNormalizePath_ExpandsTilde(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("no home dir available")
-	}
+	home := testutil.IsolateHome(t)
 	got := NormalizePath("~")
 	want := NormalizePath(home)
 	if got != want {

@@ -20,6 +20,7 @@ import (
 )
 
 func TestBaseURLFlagGrammar(t *testing.T) {
+	cleanHome(t)
 	for _, tc := range []struct {
 		name string
 		argv []string

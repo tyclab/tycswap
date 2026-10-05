@@ -21,6 +21,7 @@ import (
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/codex/authfile"
 	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/testutil"
 )
@@ -928,19 +929,15 @@ func TestWritingLeavesNoTempFileBehind(t *testing.T) {
 // ---- construction and paths ---------------------------------------------
 
 func TestNewDefaultsAndPaths(t *testing.T) {
-	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
-		t.Skip("default root resolution is exercised via XDG_DATA_HOME on Linux")
-	}
-	xdg := t.TempDir()
-	testutil.Setenv(t, "HOME", t.TempDir())
-	testutil.Setenv(t, "XDG_DATA_HOME", xdg)
+	testutil.IsolateHome(t)
+	testutil.Setenv(t, "XDG_DATA_HOME", t.TempDir())
 	testutil.Unsetenv(t, "WSL_DISTRO_NAME")
 	s := New(Options{})
-	if want := filepath.Join(xdg, "tycswap", "codex"); s.Root() != want || s.Root() != authfile.StoreRoot() {
+	if want := filepath.Join(paths.GetBackupRoot(), "codex"); s.Root() != want || s.Root() != authfile.StoreRoot() {
 		t.Fatalf("Root = %q, want %q", s.Root(), want)
 	}
-	if s.platform != platform.Linux {
-		t.Fatalf("platform = %v, want detected linux", s.platform)
+	if s.platform != platform.Detect() {
+		t.Fatalf("platform = %v, want detected %v", s.platform, platform.Detect())
 	}
 	if _, ok := s.kc.(keychain.Security); !ok {
 		t.Fatalf("keychain = %T, want keychain.Security", s.kc)

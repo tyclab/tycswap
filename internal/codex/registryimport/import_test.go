@@ -40,7 +40,7 @@ type env struct {
 // file-backed store under its own temp root.
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	base := t.TempDir()
+	base := testutil.IsolateHome(t)
 	e := &env{
 		t:         t,
 		codexHome: filepath.Join(base, ".codex"),
@@ -48,7 +48,6 @@ func newEnv(t *testing.T) *env {
 		kc:        keychain.NewFake(),
 	}
 	e.accounts = filepath.Join(e.codexHome, "accounts")
-	testutil.Setenv(t, "HOME", base)
 	testutil.Setenv(t, "CODEX_HOME", e.codexHome)
 	return e
 }

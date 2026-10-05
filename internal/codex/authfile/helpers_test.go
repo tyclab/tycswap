@@ -23,14 +23,12 @@ const (
 )
 
 // isolate redirects every root this package resolves into a fresh temp home
-// and returns it. CODEX_HOME is unset so Home() falls back to <home>/.codex.
+// and returns it. CODEX_HOME is unset (testutil.IsolateHome), so Home() falls
+// back to <home>/.codex.
 func isolate(t *testing.T) string {
 	t.Helper()
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Setenv(t, "USERPROFILE", home)
+	home := testutil.IsolateHome(t)
 	testutil.Setenv(t, "XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
-	testutil.Unsetenv(t, "CODEX_HOME")
 	return home
 }
 

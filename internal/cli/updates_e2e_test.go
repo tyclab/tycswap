@@ -113,6 +113,7 @@ esac
 		Updates:            updates,
 		UpdatesOwnSchedule: true,
 		Sessions:           func() web.SessionsView { return web.SessionsView{} },
+		AuthOverrides:      func() web.AuthOverridesView { return web.AuthOverridesView{} },
 		Interval:           time.Hour,
 	})
 	if err != nil {

@@ -17,10 +17,12 @@ import (
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/wincred"
 )
 
 const fixedNow = "2026-07-17T12:00:00Z"
@@ -30,14 +32,11 @@ const fixedNow = "2026-07-17T12:00:00Z"
 // backup directories.
 func newStore(t *testing.T, clk clock.Clock, oc oauth.Client) *store.Store {
 	t.Helper()
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
+	testutil.IsolateHome(t)
 	if clk == nil {
 		clk = testutil.FixedClock(t, fixedNow)
 	}
-	s, err := store.New(store.Options{Clock: clk, OAuth: oc, Stderr: &bytes.Buffer{}})
+	s, err := store.New(store.Options{Clock: clk, OAuth: oc, Keychain: keychain.NewFake(), WinCred: wincred.NewFake(), Stderr: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}

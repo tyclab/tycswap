@@ -19,18 +19,20 @@ import (
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/wincred"
 )
 
-// secondStore builds another *store.Store over the same $HOME as s — a second
-// process's view of one backup directory, with its own FileLock object.
-func secondStore(t *testing.T) *store.Store {
+// secondStore builds another *store.Store over the same $HOME and Keychain
+// as s — a second process's view of one backup directory, with its own
+// FileLock object.
+func secondStore(t *testing.T, s *store.Store) *store.Store {
 	t.Helper()
 	clk := testutil.FixedClock(t, "2026-07-17T09:00:00Z")
-	s, err := store.New(store.Options{Clock: clk, Stderr: &bytes.Buffer{}})
+	s2, err := store.New(store.Options{Clock: clk, Keychain: s.Keychain(), WinCred: wincred.NewFake(), Stderr: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatalf("store.New (second view): %v", err)
 	}
-	return s
+	return s2
 }
 
 // syncOutput points the human-output seam at a mutex-guarded buffer for the
@@ -82,7 +84,7 @@ func runBoth(t *testing.T, bound time.Duration, a, b func() error) (errA, errB e
 // Under the lock the loser reads the winner's roster and appends to it.
 func TestConcurrentAddTokensBothLand(t *testing.T) {
 	s1 := newStore(t)
-	s2 := secondStore(t)
+	s2 := secondStore(t, s1)
 	syncOutput(t)
 
 	errA, errB := runBoth(t, 30*time.Second,
@@ -109,7 +111,7 @@ func TestConcurrentAddAndAddTokenBothLand(t *testing.T) {
 	s1 := newStore(t)
 	seed(t, s1, ip(1), acct{num: "1", email: "a@example.com", uuid: "uuid-a", creds: "c1", config: "g1"})
 	seedLiveLogin(t, s1, "live@example.com", "", "", "uuid-l", oauthBlob)
-	s2 := secondStore(t)
+	s2 := secondStore(t, s1)
 	syncOutput(t)
 
 	errA, errB := runBoth(t, 30*time.Second,
@@ -142,7 +144,7 @@ func TestConcurrentRemoveAndAddTokenBothLand(t *testing.T) {
 		acct{num: "1", email: "gone@example.com", uuid: "uuid-g", creds: "c1", config: "g1"},
 		acct{num: "2", email: "keep@example.com", uuid: "uuid-k", creds: "c2", config: "g2"},
 	)
-	s2 := secondStore(t)
+	s2 := secondStore(t, s1)
 	syncOutput(t)
 
 	errA, errB := runBoth(t, 30*time.Second,

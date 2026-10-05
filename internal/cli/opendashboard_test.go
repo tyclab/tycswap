@@ -190,6 +190,7 @@ func TestFileURL(t *testing.T) {
 }
 
 func TestWebCommandFlags(t *testing.T) {
+	cleanHome(t)
 	for _, tc := range []struct {
 		argv []string
 		want string

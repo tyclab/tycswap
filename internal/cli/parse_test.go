@@ -21,6 +21,7 @@ func runCLI(t *testing.T, argv []string, stdinTTY, stdoutTTY bool) (int, string,
 // TestNoCommandNonTTY: bare invocation in a non-TTY exits 2 with the clean
 // message and never leaks legacy flag names (spec 08§4.1/§14).
 func TestNoCommandNonTTY(t *testing.T) {
+	cleanHome(t)
 	code, _, errStr := runCLI(t, []string{}, false, false)
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2", code)
@@ -40,6 +41,7 @@ func TestNoCommandNonTTY(t *testing.T) {
 
 // TestCrossFlagValidation pins every exit-2 message (spec 08§4, in order).
 func TestCrossFlagValidation(t *testing.T) {
+	cleanHome(t)
 	cases := []struct {
 		name string
 		argv []string
@@ -72,6 +74,7 @@ func TestCrossFlagValidation(t *testing.T) {
 
 // TestMutuallyExclusiveGroup: two legacy flags → argparse "not allowed" (08§3.2).
 func TestMutuallyExclusiveGroup(t *testing.T) {
+	cleanHome(t)
 	code, _, errStr := runCLI(t, []string{"--export", "/p", "--import", "/q"}, false, false)
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2", code)
@@ -84,6 +87,7 @@ func TestMutuallyExclusiveGroup(t *testing.T) {
 // TestStrategyInvalidChoice: an out-of-set --strategy value is an exit-2 choice
 // error (spec 08§14).
 func TestStrategyInvalidChoice(t *testing.T) {
+	cleanHome(t)
 	code, _, errStr := runCLI(t, []string{"--switch", "--strategy", "bogus"}, false, false)
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2", code)
@@ -95,6 +99,7 @@ func TestStrategyInvalidChoice(t *testing.T) {
 
 // TestSlotInvalidInt: a non-integer --slot is an exit-2 error.
 func TestSlotInvalidInt(t *testing.T) {
+	cleanHome(t)
 	code, _, errStr := runCLI(t, []string{"--add-account", "--slot", "abc"}, false, false)
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2", code)
@@ -110,6 +115,7 @@ func TestSlotInvalidInt(t *testing.T) {
 // (spec 08§15). A "-1.5" still fails the int parse — but as "invalid int value",
 // not "expected one argument", proving it was consumed as the value.
 func TestNegativeNumberValues(t *testing.T) {
+	cleanHome(t) // the commands build a switcher over the store
 	// --slot -1.5 is consumed then rejected by strconv.Atoi.
 	code, _, errStr := runCLI(t, []string{"--add-account", "--slot", "-1.5"}, false, false)
 	if code != 2 {

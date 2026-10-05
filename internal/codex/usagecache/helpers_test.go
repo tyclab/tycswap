@@ -32,8 +32,7 @@ type env struct {
 // root even through a default path.
 func newEnv(t *testing.T) *env {
 	t.Helper()
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
+	home := testutil.IsolateHome(t)
 	testutil.Setenv(t, "CODEX_HOME", filepath.Join(home, ".codex"))
 	testutil.Setenv(t, "XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
 	return &env{

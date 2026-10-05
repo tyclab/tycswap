@@ -19,6 +19,7 @@ import (
 	"github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/providers"
 	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // fakeCodex records every Codex action the dashboard routes to it.
@@ -209,8 +210,7 @@ func TestACodexKeyResolvesToTheCodexProvider(t *testing.T) {
 }
 
 func TestTheOwnersMapIsAuthoritative(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	dir := testutil.IsolateHome(t)
 	t.Setenv("CODEX_HOME", dir+"/.codex")
 	t.Setenv("XDG_DATA_HOME", dir+"/data")
 	m, _, _, _ := twoProviders(t)

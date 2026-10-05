@@ -15,11 +15,9 @@ import (
 // privateRootHome gives the test a store root at mode 0777 under a temp HOME.
 func privateRootHome(t *testing.T) string {
 	t.Helper()
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
+	home := testutil.IsolateHome(t)
 	xdg := filepath.Join(home, "data")
 	testutil.Setenv(t, "XDG_DATA_HOME", xdg)
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
 	root := filepath.Join(xdg, "tycswap")
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)

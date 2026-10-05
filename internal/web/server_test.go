@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 func TestNew_RequiresFacade(t *testing.T) {
@@ -117,6 +118,7 @@ func TestServe_BeforeStartErrors(t *testing.T) {
 }
 
 func TestServe_StopsOnCancelAndBroadcastsOnDefaultTicker(t *testing.T) {
+	testutil.IsolateHome(t) // the default sessions source reads ~/.claude
 	// Real time.Ticker seam with a short interval: the loop must broadcast on
 	// its own and Serve must return nil once the context is cancelled.
 	s, err := New(Deps{Facade: &fakeFacade{snap: sampleSnapshot()}, Interval: 10 * time.Millisecond, Clock: clock.NewFake(testNow)})

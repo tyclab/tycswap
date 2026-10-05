@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/wincred"
 )
 
 func mustParse(t *testing.T, rfc3339 string) time.Time {
@@ -25,12 +27,9 @@ func mustParse(t *testing.T, rfc3339 string) time.Time {
 // with a fixed clock and buffered stderr, and returns it plus the backup root.
 func freshStore(t *testing.T) *Store {
 	t.Helper()
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
+	testutil.IsolateHome(t)
 	clk := testutil.FixedClock(t, "2026-07-17T09:00:00Z")
-	s, err := New(Options{Clock: clk, Stderr: &bytes.Buffer{}})
+	s, err := New(Options{Clock: clk, Keychain: keychain.NewFake(), WinCred: wincred.NewFake(), Stderr: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

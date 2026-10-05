@@ -12,6 +12,7 @@ import (
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // fakeAccount is one stored account in the fake Accounts store.
@@ -239,20 +240,15 @@ func envValue(env []string, key string) string {
 	return ""
 }
 
-// setupHome creates a fresh $HOME (with .claude), points HOME at it, and unsets
-// CLAUDE_CONFIG_DIR / XDG_DATA_HOME so paths resolve under the fake home.
+// setupHome creates a fresh, isolated home (testutil.IsolateHome) with .claude
+// in it, so paths resolve under the fake home.
 func setupHome(t *testing.T) (home, claudeHome string) {
 	t.Helper()
-	home = t.TempDir()
+	home = testutil.IsolateHome(t)
 	claudeHome = filepath.Join(home, ".claude")
 	if err := os.MkdirAll(claudeHome, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HOME", home)
-	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	_ = os.Unsetenv("CLAUDE_CONFIG_DIR")
-	t.Setenv("XDG_DATA_HOME", "")
-	_ = os.Unsetenv("XDG_DATA_HOME")
 	return home, claudeHome
 }
 

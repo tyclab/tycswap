@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/paths"
 )
 
 // RepoRoot walks up from this source file to the module root (the directory
@@ -42,14 +43,35 @@ func FixturesDir(t *testing.T) string {
 	return filepath.Join(RepoRoot(t), "testdata", "python-fixtures")
 }
 
+// IsolateHome points the test at a fresh, empty home on every platform and
+// returns it: HOME and USERPROFILE (os.UserHomeDir off and on Windows), and
+// APPDATA and LOCALAPPDATA under it (os.UserConfigDir and os.UserCacheDir on
+// Windows). It unsets the variables that would send a lookup past that home:
+// CLAUDE_CONFIG_DIR, CODEX_HOME, XDG_DATA_HOME, XDG_CONFIG_HOME,
+// XDG_CACHE_HOME and XDG_RUNTIME_DIR. Every per-user path then resolves
+// under it: Claude Code's files, the store, the Codex files, the autostart
+// entry. All are restored when the test ends.
+func IsolateHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	Setenv(t, "HOME", home)
+	Setenv(t, "USERPROFILE", home)
+	Setenv(t, "APPDATA", filepath.Join(home, "AppData", "Roaming"))
+	Setenv(t, "LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
+	for _, key := range []string{"CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR"} {
+		Unsetenv(t, key)
+	}
+	return home
+}
+
 // FixtureHome describes a materialized fake home built from the Python fixtures.
 type FixtureHome struct {
 	// Home is the fake $HOME.
 	Home string
 	// ClaudeHome is <Home>/.claude.
 	ClaudeHome string
-	// BackupRoot is <Home>/.local/share/tycswap (the XDG default on Linux),
-	// where claude-swap-data was materialized.
+	// BackupRoot is the store root under Home (paths.GetBackupRoot), where
+	// claude-swap-data was materialized.
 	BackupRoot string
 	// GlobalConfig is <Home>/.claude.json.
 	GlobalConfig string
@@ -57,19 +79,19 @@ type FixtureHome struct {
 	CredentialsFile string
 }
 
-// BuildFixtureHome materializes testdata/python-fixtures into a fresh temp $HOME
-// with the correct dotfile names, points HOME at it, and unsets CLAUDE_CONFIG_DIR
-// and XDG_DATA_HOME (both bypass $HOME in path resolution) for the test's
-// duration. It mirrors the conftest _isolate_real_home fixture.
+// BuildFixtureHome materializes testdata/python-fixtures into a fresh home
+// isolated by IsolateHome, with the correct dotfile names. It mirrors the
+// conftest _isolate_real_home fixture.
 //
 // Mapping:
 //   - claude-home/dot-claude.json       → <Home>/.claude.json
 //   - claude-home/dot-credentials.json  → <Home>/.claude/.credentials.json
-//   - claude-swap-data/*                → <Home>/.local/share/tycswap/*
+//   - claude-swap-data/*                → <store root>/* (paths.GetBackupRoot:
+//     <Home>/.local/share/tycswap on Linux, <Home>/.tycswap elsewhere)
 func BuildFixtureHome(t *testing.T) FixtureHome {
 	t.Helper()
 	fixtures := FixturesDir(t)
-	home := t.TempDir()
+	home := IsolateHome(t)
 
 	claudeHome := filepath.Join(home, ".claude")
 	if err := os.MkdirAll(claudeHome, 0o755); err != nil {
@@ -81,12 +103,8 @@ func BuildFixtureHome(t *testing.T) FixtureHome {
 	copyFile(t, filepath.Join(fixtures, "claude-home", "dot-credentials.json"),
 		filepath.Join(claudeHome, ".credentials.json"))
 
-	backupRoot := filepath.Join(home, ".local", "share", "tycswap")
+	backupRoot := paths.GetBackupRoot()
 	copyDir(t, filepath.Join(fixtures, "claude-swap-data"), backupRoot)
-
-	Setenv(t, "HOME", home)
-	Unsetenv(t, "CLAUDE_CONFIG_DIR")
-	Unsetenv(t, "XDG_DATA_HOME")
 
 	return FixtureHome{
 		Home:            home,
