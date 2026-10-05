@@ -8,13 +8,16 @@
 package session
 
 import (
+	"context"
 	"os/exec"
 	"syscall"
 )
 
-// ClaudeCommand is exec.Command(bin, args...); Windows runs a .cmd or .bat
-// differently (exec_windows.go).
-func ClaudeCommand(bin string, args ...string) *exec.Cmd { return exec.Command(bin, args...) }
+// CLICommand is exec.CommandContext(ctx, bin, args...); Windows runs a .cmd
+// or .bat differently (exec_windows.go).
+func CLICommand(ctx context.Context, bin string, args ...string) *exec.Cmd {
+	return exec.CommandContext(ctx, bin, args...)
+}
 
 // Exec replaces the current process image with claude. It returns only if the
 // exec syscall itself fails; on success control never comes back.

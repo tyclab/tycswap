@@ -14,6 +14,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -40,7 +41,7 @@ var runClaudeLogin = func(binary string, args, env []string, s ioStreams) (int, 
 	if err := session.CheckCmdShimArgs(binary, args); err != nil {
 		return 1, err
 	}
-	cmd := session.ClaudeCommand(binary, args...)
+	cmd := session.CLICommand(context.Background(), binary, args...)
 	cmd.Env = env
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.in, s.out, s.err
 	err := cmd.Run()

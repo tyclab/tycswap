@@ -9,6 +9,7 @@
 package session
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -18,16 +19,19 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// ClaudeCommand is exec.Command(bin, args...), except that a .cmd or .bat file
-// (npm's claude.cmd) runs as cmd.exe /s /c "<command line>". Started directly,
-// a batch file gets cmd.exe /c with Go's command line as it is, and cmd.exe
-// strips the first and the last quote of a line that holds more than two: a
-// shim on a path with a space, given an argument that holds one, would run its
-// path only up to that space. /s strips just the pair added here. The
-// arguments hold no quote or other cmd.exe metacharacter (CheckCmdShimArgs).
-func ClaudeCommand(bin string, args ...string) *exec.Cmd {
+// CLICommand is exec.CommandContext(ctx, bin, args...), except that a .cmd or
+// .bat file (npm's claude.cmd or codex.cmd) runs as cmd.exe /s /c "<command
+// line>", its path always quoted. Started directly, a batch file gets cmd.exe
+// /c with Go's command line as it is, which quotes the path only when it holds
+// a space, and cmd.exe strips the line's first and last quote when it holds
+// more than two quotes, or one of &<>()@^| between them. A shim on a path with
+// a space, given an argument that holds one, or on a path with an ampersand,
+// would have that path cut at the space or the ampersand. /s strips just the
+// pair added here. An argument cmd.exe would act on is refused through
+// cmd.Err (CheckCmdShimArgs).
+func CLICommand(ctx context.Context, bin string, args ...string) *exec.Cmd {
 	if !isCmdShim(bin) {
-		return exec.Command(bin, args...)
+		return exec.CommandContext(ctx, bin, args...)
 	}
 	line := `"` + bin + `"`
 	for _, a := range args {
@@ -35,7 +39,10 @@ func ClaudeCommand(bin string, args ...string) *exec.Cmd {
 	}
 	system, err := windows.GetSystemDirectory()
 	comspec := filepath.Join(system, "cmd.exe")
-	cmd := exec.Command(comspec)
+	cmd := exec.CommandContext(ctx, comspec)
+	if aerr := CheckCmdShimArgs(bin, args); aerr != nil {
+		err = aerr
+	}
 	if err != nil {
 		cmd.Err = err
 	}
@@ -46,7 +53,7 @@ func ClaudeCommand(bin string, args ...string) *exec.Cmd {
 // Exec spawns claude, waits, and exits with its return code. It never returns
 // on success.
 func (osRunner) Exec(bin string, argv, env []string) error {
-	cmd := ClaudeCommand(bin, argv[1:]...)
+	cmd := CLICommand(context.Background(), bin, argv[1:]...)
 	cmd.Env = env
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
