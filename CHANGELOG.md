@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Fixed:** the Windows tray icon comes back after Explorer restarts. Explorer recreates the taskbar empty and asks every program to add its icon again; the tray added its icon only at start, so after an Explorer restart it was gone until the app restarted, while the app kept running unseen. It now adds the icon again with its current tooltip and icon (DESIGN A52).
 - Complete the model-window controls on Auto and Settings: Off/All/Selected, stable drafts and focus, empty-selection Reset, and stale-state rejection across saves. Tray percentages now honor selected model names instead of counting every model window.
 - `TYCSWAP_AUTO_MANAGED_BY` protects externally scheduled auto-switch: the dashboard server rejects hosted-engine starts and remembered resume, and dashboard/tray controls show the owner and disable startup.
 

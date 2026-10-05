@@ -5785,3 +5785,25 @@ route returns 409, and both dashboard and remote tray disable Start. The
 one-shot CLI is unaffected. Flakelab sets this owner on its dashboard service
 whenever its autoswitch timer is configured. Disabling a UI control alone
 would not protect old remote clients, direct requests, or app auto-resume.
+
+## A52. The Windows tray adds its icon again after Explorer restarts
+
+When Explorer restarts (a crash, a sign-out of the shell, `taskkill` and a
+restart, some Windows updates) it recreates the taskbar empty and broadcasts
+the registered window message `TaskbarCreated` to every top-level window; a
+program that wants its notification icon back adds it again. The Windows
+tray added its icon once, in `Run`, and ignored the broadcast, so the icon
+was gone until the app restarted while the app kept running unseen. The
+reference does the same.
+
+`Run` now registers `TaskbarCreated` before it creates the window, and the
+window procedure answers it with the same add the start makes (`addIcon`):
+the current icon, tooltip and click callback. The hidden window is a
+top-level window, not a message-only one, which is what lets the broadcast
+reach it; the file's comments said message-only and now say why it must not
+be. Every `Shell_NotifyIconW` call goes through one function variable, so the
+test can see what the tray asks the shell for.
+
+**Tests.** On Windows: the registered `TaskbarCreated` message makes the
+window procedure add the icon once with the current tooltip, icon and
+callback; a tooltip update adds nothing.

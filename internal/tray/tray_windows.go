@@ -14,9 +14,12 @@ import (
 	"github.com/tyclab/tycswap/internal/brand"
 )
 
-// Win32 shell notification icon, driven through a message-only window and a
-// classic GetMessage loop. Everything the shell needs (Shell_NotifyIconW,
-// popup menus, icon creation from PNG) is reached by syscall; no cgo.
+// Win32 shell notification icon, driven through a hidden top-level window and
+// a classic GetMessage loop. Everything the shell needs (Shell_NotifyIconW,
+// popup menus, icon creation from PNG) is reached by syscall; no cgo. The
+// window must stay top-level, not message-only: only top-level windows get
+// the "TaskbarCreated" broadcast that says Explorer restarted and the icon
+// has to be added again (DESIGN A52).
 
 var (
 	user32   = windows.NewLazySystemDLL("user32.dll")
@@ -24,6 +27,7 @@ var (
 	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
 
 	pRegisterClassExW         = user32.NewProc("RegisterClassExW")
+	pRegisterWindowMessageW   = user32.NewProc("RegisterWindowMessageW")
 	pCreateWindowExW          = user32.NewProc("CreateWindowExW")
 	pDefWindowProcW           = user32.NewProc("DefWindowProcW")
 	pDestroyWindow            = user32.NewProc("DestroyWindow")
@@ -147,6 +151,20 @@ var (
 	winTray *windowsTray
 )
 
+// wmTaskbarCreated is the message Explorer broadcasts to every top-level
+// window when the taskbar is (re)created, after an Explorer crash or restart:
+// every notification icon is gone then and must be added again. Registered by
+// Run before the window exists; 0 until then, and when the registration
+// failed, so it never matches.
+var wmTaskbarCreated uint32
+
+// shellNotifyIcon is Shell_NotifyIconW; a var so a test can see what the tray
+// asks the shell for.
+var shellNotifyIcon = func(op uintptr, nid *notifyIconData) bool {
+	ok, _, _ := pShellNotifyIconW.Call(op, uintptr(unsafe.Pointer(nid)))
+	return ok != 0
+}
+
 func newTray(icon Icon, opts Options) (Tray, error) {
 	if len(icon.PNG) == 0 {
 		return nil, ErrUnsupported
@@ -171,7 +189,7 @@ func copyUTF16(dst []uint16, s string) {
 	}
 }
 
-// windowClass names the message-only window's class after the program:
+// windowClass names the hidden window's class after the program:
 // "TycswapTray" for tycswap.
 func windowClass() string {
 	n := brand.Sanitized().Name
@@ -202,6 +220,9 @@ func (t *windowsTray) Run() error {
 	if atom, _, err := pRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc))); atom == 0 {
 		return errors.New("tray: RegisterClassEx: " + err.Error())
 	}
+	if m, _, _ := pRegisterWindowMessageW.Call(uintptr(unsafe.Pointer(utf16z("TaskbarCreated")))); m != 0 {
+		wmTaskbarCreated = uint32(m)
+	}
 	hwnd, _, err := pCreateWindowExW.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(utf16z(brand.Sanitized().Name))),
 		0, 0, 0, 0, 0, 0, 0, hInst, 0)
 	if hwnd == 0 {
@@ -218,13 +239,8 @@ func (t *windowsTray) Run() error {
 	}
 	t.hicon = hicon
 
-	nid := t.baseNID()
-	nid.uFlags = nifMessage | nifIcon | nifTip
-	nid.uCallbackMessage = wmTrayIcon
-	nid.hIcon = t.hicon
-	copyUTF16(nid.szTip[:], t.tooltip)
-	if ok, _, err := pShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&nid))); ok == 0 {
-		return errors.New("tray: Shell_NotifyIcon(NIM_ADD): " + err.Error())
+	if !t.addIcon() {
+		return errors.New("tray: Shell_NotifyIcon(NIM_ADD) failed")
 	}
 
 	var m msg
@@ -237,9 +253,24 @@ func (t *windowsTray) Run() error {
 		pDispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))
 	}
 	del := t.baseNID()
-	pShellNotifyIconW.Call(nimDelete, uintptr(unsafe.Pointer(&del)))
+	shellNotifyIcon(nimDelete, &del)
 	pDestroyIcon.Call(uintptr(t.hicon))
 	return t.err
+}
+
+// addIcon puts the icon in the notification area with the current icon and
+// tooltip and the click callback: at start, and again whenever Explorer
+// recreated the taskbar (wmTaskbarCreated). UI thread only.
+func (t *windowsTray) addIcon() bool {
+	t.mu.Lock()
+	tip := t.tooltip
+	t.mu.Unlock()
+	nid := t.baseNID()
+	nid.uFlags = nifMessage | nifIcon | nifTip
+	nid.uCallbackMessage = wmTrayIcon
+	nid.hIcon = t.hicon
+	copyUTF16(nid.szTip[:], tip)
+	return shellNotifyIcon(nimAdd, &nid)
 }
 
 // iconFromPNG builds an HICON: CreateIconFromResourceEx understands PNG
@@ -328,7 +359,7 @@ func (t *windowsTray) applyTooltip() {
 	nid := t.baseNID()
 	nid.uFlags = nifTip
 	copyUTF16(nid.szTip[:], tip)
-	pShellNotifyIconW.Call(nimModify, uintptr(unsafe.Pointer(&nid)))
+	shellNotifyIcon(nimModify, &nid)
 }
 
 // applyIcon hands the shell a new HICON (NIM_MODIFY) and only then destroys
@@ -345,7 +376,7 @@ func (t *windowsTray) applyIcon() {
 	nid := t.baseNID()
 	nid.uFlags = nifIcon
 	nid.hIcon = hicon
-	if ok, _, _ := pShellNotifyIconW.Call(nimModify, uintptr(unsafe.Pointer(&nid))); ok == 0 {
+	if !shellNotifyIcon(nimModify, &nid) {
 		pDestroyIcon.Call(uintptr(hicon))
 		return
 	}
@@ -363,7 +394,7 @@ func (t *windowsTray) showNotification() {
 	nid.dwInfoFlags = niifInfo
 	copyUTF16(nid.szInfoTitle[:], title)
 	copyUTF16(nid.szInfo[:], body)
-	pShellNotifyIconW.Call(nimModify, uintptr(unsafe.Pointer(&nid)))
+	shellNotifyIcon(nimModify, &nid)
 }
 
 // menuStep is one instruction for building the popup menu: append a row or
@@ -494,6 +525,12 @@ func trayWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uint
 	if t == nil {
 		r, _, _ := pDefWindowProcW.Call(uintptr(hwnd), uintptr(message), wParam, lParam)
 		return r
+	}
+	// Explorer restarted: the icon it had is gone. Not a constant, so not a
+	// case of the switch below.
+	if wmTaskbarCreated != 0 && message == wmTaskbarCreated {
+		t.addIcon()
+		return 0
 	}
 	switch message {
 	case wmTrayIcon:
