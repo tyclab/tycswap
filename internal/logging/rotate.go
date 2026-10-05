@@ -5,7 +5,7 @@
 // it to or past maxBytes, appends and closes it, so no handle outlives a
 // record and the size is the file's own. The parent dir and the file are
 // created on the first write. Two writers that reach the limit at once may
-// both roll over and drop the oldest backup early, as the reference does.
+// both roll over and lose a backup, as the reference's handlers can.
 
 package logging
 

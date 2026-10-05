@@ -92,11 +92,11 @@ func SessionDirFor(backupDir, accountNum, email string) string {
 // pinned via `tycswap env` (whose CLAUDE_CONFIG_DIR points at such a profile) so
 // non-env/run commands can fall back to the default login (D2 / FINDING 2).
 //
-// Both paths are symlink-resolved as far as they exist, so a symlinked backup
-// root still matches, for a profile not created yet or removed too. An empty
-// configDir or backupRoot never matches, and the sessions/ directory itself
-// (the boundary, not a profile) does not match — only a strict descendant
-// does.
+// Both paths are symlink-resolved as far as they exist (a symlinked backup
+// root still matches, a profile not created yet or removed included). An
+// empty configDir or backupRoot never matches, and the sessions/ directory
+// itself (the boundary, not a profile) does not match — only a strict
+// descendant does.
 func IsSessionProfileDir(backupRoot, configDir string) bool {
 	if backupRoot == "" || configDir == "" {
 		return false
@@ -113,13 +113,12 @@ func IsSessionProfileDir(backupRoot, configDir string) bool {
 	return true
 }
 
-// resolveProfilePath returns p's canonical form for containment comparison.
-// A path that exists is symlink-resolved whole, so a ".." after a symlink
-// leaves the symlink's target, not the directory holding it. For a path that
-// does not exist (yet, or any more), its longest existing prefix is resolved
-// and the rest joined on lexically, so it compares like an existing one even
-// when an ancestor is a symlink (macOS /var is /private/var) or, on Windows,
-// a short (8.3) name.
+// resolveProfilePath returns p's canonical form for containment comparison:
+// EvalSymlinks when it resolves (a ".." after a symlink then leaves the
+// symlink's target), else its longest existing prefix symlink-resolved, with
+// the rest of the path joined on lexically. A path that does not exist (yet,
+// or any more) then compares like an existing one even when an ancestor is a
+// symlink (macOS /var is /private/var) or, on Windows, a short (8.3) name.
 func resolveProfilePath(p string) string {
 	if resolved, err := filepath.EvalSymlinks(p); err == nil {
 		return resolved

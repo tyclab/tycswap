@@ -290,7 +290,7 @@ func TestGetRunningInstancesErr_UnreadableParentSurfacesError(t *testing.T) {
 		t.Skip("root bypasses directory search-permission checks; EACCES not reproducible")
 	}
 	if runtime.GOOS == "windows" {
-		t.Skip("chmod denies no lookup on Windows; the surfacing is platform-independent and covered on Linux and macOS (TestIgnoreStatError covers the Windows codes)")
+		t.Skip("chmod denies no lookup on Windows; the surfacing is platform-independent and covered on Linux and macOS")
 	}
 	dir := t.TempDir()
 	sessionsDir := filepath.Join(dir, "sessions")

@@ -4812,10 +4812,10 @@ temporary directory (`testutil.IsolateHome` sets `USERPROFILE`, which
 `os.UserHomeDir` reads there, beside `HOME`). A test that needs POSIX mode
 bits skips there, as chmod sets none: the mode checks, and the tests that
 make a file or directory unreadable or read-only with chmod, whose error
-paths do not depend on the platform and run off Windows. Where a directory
-in a file's place gives the same read error (the credentials file, the
-roster), Windows runs that case. On Windows `RunningInContainer` is checked
-to read none of its file probes. macOS runs the tray application's
+paths do not depend on the platform and run off Windows; where a directory
+in a file's place gives the same read error (the roster), Windows runs that
+case. On Windows `RunningInContainer` is checked to read none of its file
+probes. macOS runs the tray application's
 packages (`tray`, `appicon`, `autostart`, `brand`, `web`, `update`) and its
 tests in `internal/cli` (`APP_TESTS`): the rest of the suite does not hold
 there yet (the store under `~/.tycswap`, the login Keychain).
@@ -5824,9 +5824,9 @@ callback and an icon built from the PNG; a tooltip update adds nothing.
 ## A53. The log is opened for each record
 
 The reference's `RotatingFileHandler` opens its file on the first record,
-keeps it open and counts the bytes it wrote, and one process wrote the
-reference's log. tycswap's is written by the tray app (A35) and any command
-run beside it, and a handle kept per process went wrong in two ways: after
+keeps it open and counts the bytes it wrote. tycswap's log is written by the
+tray app (A35) and any command run beside it, and a handle kept per process
+went wrong in two ways: after
 one process rotated `tycswap.log`, the other wrote on into the file it held,
 now `tycswap.log.1`, and rotated by its own count rather than the file's
 size; and on Windows, where Go opens files without `FILE_SHARE_DELETE`, the
@@ -5837,8 +5837,8 @@ So each record opens the log, rolls it over first when the record would
 bring the file to 1 MB, by the file's own size whoever wrote it, appends and
 closes it: no handle outlives a record. The format, the limit, the three
 backups, the rollover order and the lazy directory are unchanged. Two
-writers that reach the limit at the same moment may both roll over and drop
-the oldest backup early, as two of the reference's handlers do.
+writers that reach the limit at the same moment may both roll over and lose
+a backup, as two of the reference's handlers can.
 
 **Tests.** After one writer rotates the log, another's record lands in the
 new log, and the size that triggers a rotation counts both writers' records

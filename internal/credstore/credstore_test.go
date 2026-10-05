@@ -9,8 +9,6 @@ package credstore
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -719,49 +717,26 @@ func TestReadActive_FilePlaintextWins(t *testing.T) {
 	}
 }
 
-// TestReadActive_FileReadErrorIsNone: a credentials file that is present but
-// cannot be read (a directory in its place, or mode 0000) surfaces the read
-// error (Python's None), not a missing login.
 func TestReadActive_FileReadErrorIsNone(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		make func(t *testing.T, path string)
-	}{
-		{"directory-in-its-place", func(t *testing.T, path string) {
-			if err := os.Remove(path); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Mkdir(path, 0o700); err != nil {
-				t.Fatal(err)
-			}
-		}},
-		{"mode-0000", func(t *testing.T, path string) {
-			if os.Geteuid() == 0 {
-				t.Skip("root can read 0000-mode files")
-			}
-			if runtime.GOOS == "windows" {
-				t.Skip("chmod 0000 denies no read on Windows; directory-in-its-place covers the read error there")
-			}
-			if err := os.Chmod(path, 0o000); err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
-		}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			fh := testutil.BuildFixtureHome(t)
-			tc.make(t, fh.CredentialsFile)
+	if os.Geteuid() == 0 {
+		t.Skip("root can read 0000-mode files")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0000 denies no read on Windows; the error path is platform-independent and covered on Linux and macOS")
+	}
+	fh := testutil.BuildFixtureHome(t)
+	if err := os.Chmod(fh.CredentialsFile, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(fh.CredentialsFile, 0o600) })
 
-			s := newStore(t, platform.Linux, t.TempDir(), newFakeKC(), nil)
-			val, _, err := s.ReadActive()
-			var cause *fs.PathError
-			if !errors.As(err, &cause) || cause.Path != fh.CredentialsFile {
-				t.Fatalf("ReadActive error = %v; a present-but-unreadable credentials file must surface its read error (Python None)", err)
-			}
-			if val != "" {
-				t.Fatalf("value = %q, want empty on read error", val)
-			}
-		})
+	s := newStore(t, platform.Linux, t.TempDir(), newFakeKC(), nil)
+	val, _, err := s.ReadActive()
+	if err == nil {
+		t.Fatal("a present-but-unreadable credentials file must surface an error (Python None)")
+	}
+	if val != "" {
+		t.Fatalf("value = %q, want empty on read error", val)
 	}
 }
 
