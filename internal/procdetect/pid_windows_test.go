@@ -17,9 +17,9 @@ func TestIgnoreStatError(t *testing.T) {
 		return &fs.PathError{Op: "GetFileAttributesEx", Path: `C:\x\sessions`, Err: err}
 	}
 	for _, errno := range []syscall.Errno{
-		windows.ERROR_FILE_NOT_FOUND, windows.ERROR_PATH_NOT_FOUND,
+		windows.ERROR_FILE_NOT_FOUND, windows.ERROR_PATH_NOT_FOUND, // syscall.ENOENT and ENOTDIR on Windows
 		windows.ERROR_NOT_READY, windows.ERROR_INVALID_NAME, windows.ERROR_CANT_RESOLVE_FILENAME,
-		syscall.ENOENT, syscall.ENOTDIR, syscall.EBADF, syscall.ELOOP,
+		syscall.EBADF, syscall.ELOOP,
 	} {
 		if !ignoreStatError(stat(errno)) {
 			t.Errorf("%v (%d) surfaced; want it read as absent", errno, uint32(errno))
