@@ -75,10 +75,11 @@ func newLoginFixture(t *testing.T) *loginFixture {
 	testutil.Setenv(t, "FAKE_CLAUDE_TOKEN", "sk-ant-oat01-test-token-2")
 	testutil.Setenv(t, "FAKE_CLAUDE_REFRESH", "refresh-token-2")
 
-	// No network: the switcher gets no OAuth client.
+	// No network: the switcher gets no OAuth client, and the home's fake
+	// Keychain.
 	prevNew := newSwitcher
 	newSwitcher = func(opts store.Options) (*core.Switcher, error) {
-		opts.OAuth = nil
+		opts.OAuth, opts.Keychain = nil, homeKeychain()
 		return core.New(opts)
 	}
 	t.Cleanup(func() { newSwitcher = prevNew })
@@ -141,7 +142,7 @@ func (f *loginFixture) sequence(t *testing.T) sequence {
 
 func (f *loginFixture) storedCreds(t *testing.T, num, email string) string {
 	t.Helper()
-	sw, err := core.New(store.Options{})
+	sw, err := core.New(store.Options{Keychain: homeKeychain()})
 	if err != nil {
 		t.Fatal(err)
 	}

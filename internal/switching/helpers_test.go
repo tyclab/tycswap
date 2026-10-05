@@ -11,8 +11,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/testutil"
 	"github.com/tyclab/tycswap/internal/wincred"
@@ -21,6 +23,14 @@ import (
 // newTestStore builds a Store rooted at a fresh empty $HOME with a fixed clock,
 // an optional OAuth fake, and the backup dirs created. Seams (UsageProvider,
 // PostSwitchList, AutoAddCurrent, Prompt) are reset so tests start clean.
+//
+// Its credentials are on the file backend on every host. The tests are
+// written on that backend (the plaintext credentials file, primaryApiKey, the
+// no-restart note), and a test of the Keychain builds its own macOS
+// credential store over a fake after seeding through this one. store.New
+// picks the backend from the host, so on macOS it would put every credential
+// in the Keychain fake instead: the seeded backups would then vanish with
+// the store a Keychain test replaces.
 func newTestStore(t *testing.T, oauthClient oauth.Client) *store.Store {
 	t.Helper()
 	testutil.IsolateHome(t)
@@ -33,6 +43,9 @@ func newTestStore(t *testing.T, oauthClient oauth.Client) *store.Store {
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}
+	// Any platform but macOS: the credential store's one platform branch is
+	// the Keychain.
+	s.Creds = credstore.New(credstore.Config{Platform: platform.Linux, CredentialsDir: s.CredentialsDir}, s.Keychain(), clk, s.Log)
 	if err := s.SetupDirectories(); err != nil {
 		t.Fatalf("SetupDirectories: %v", err)
 	}

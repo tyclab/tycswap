@@ -4,7 +4,6 @@ package cli
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,13 +11,12 @@ import (
 	"github.com/tyclab/tycswap/internal/testutil"
 )
 
-// privateRootHome gives the test a store root at mode 0777 under a temp HOME.
+// privateRootHome gives the test a store root at mode 0777 under a temp HOME,
+// where the platform keeps it (paths.GetBackupRoot: ~/.tycswap on macOS).
 func privateRootHome(t *testing.T) string {
 	t.Helper()
-	home := testutil.IsolateHome(t)
-	xdg := filepath.Join(home, "data")
-	testutil.Setenv(t, "XDG_DATA_HOME", xdg)
-	root := filepath.Join(xdg, "tycswap")
+	testutil.IsolateHome(t)
+	root := paths.GetBackupRoot()
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
 	}

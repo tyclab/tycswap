@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/credstore"
@@ -99,6 +100,9 @@ func TestFailedSwitchOntoAnAPIKeyLeavesTheKeychainAsItWas_macOS(t *testing.T) {
 				}
 				if err.Error() == ErrAPIKeyNeedsApproval("2").Error() {
 					t.Fatal("refused for want of an approval, not by the failed write")
+				}
+				if !strings.Contains(err.Error(), "Failed to write managed API key") {
+					t.Fatalf("err = %v, want the failed write after the key reached the Keychain", err)
 				}
 				item, present, _ := kc.Get(managedKeychainService, keychain.AccountName())
 				switch {
@@ -205,6 +209,13 @@ func TestRollbackOntoAnAPIKeyKeepsItLive_macOS(t *testing.T) {
 				}
 				if err.Error() == ErrAPIKeyNeedsApproval("2").Error() {
 					t.Fatal("refused for want of an approval, not by the failed write")
+				}
+				want := "Cannot update the Claude config" // what brk leaves after the credential write
+				if mode == "a read-only home" {
+					want = "permission denied"
+				}
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("err = %v, want the ~/.claude.json failure after the credential write", err)
 				}
 				if item, _, _ := kc.Get(managedKeychainService, keychain.AccountName()); item != prevKey {
 					t.Errorf("managed Keychain item = %q after the rollback, want slot 1's key", item)

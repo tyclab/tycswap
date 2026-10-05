@@ -10,7 +10,6 @@ import (
 
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/core"
-	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/store"
@@ -307,7 +306,7 @@ func TestSwitchJSONOntoAnAPIKeyEndToEnd(t *testing.T) {
 	apiKeySwitcher(t) // builds the fixture home in $HOME
 	prev := newSwitcher
 	newSwitcher = func(opts store.Options) (*core.Switcher, error) {
-		opts.Keychain, opts.OAuth, opts.WinCred, opts.Stderr = keychain.NewFake(), &oauth.FakeClient{}, wincred.NewFake(), io.Discard
+		opts.Keychain, opts.OAuth, opts.WinCred, opts.Stderr = homeKeychain(), &oauth.FakeClient{}, wincred.NewFake(), io.Discard
 		return core.New(opts)
 	}
 	t.Cleanup(func() { newSwitcher = prev })

@@ -92,8 +92,10 @@ func TestPurgeRefusesTraversalEmail(t *testing.T) {
 	if _, err := os.Stat(s.BackupDir()); err != nil {
 		t.Errorf("the store was removed despite the refusal: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(s.CredentialsDir, storenames.CredsFile("1", "a@example.com"))); err != nil {
-		t.Errorf("slot 1's credential file was removed: %v", err)
+	// Through the store, which reads the backup wherever the platform keeps
+	// it: a file, or on macOS a Keychain item.
+	if got, _ := s.ReadAccountCredentials("1", "a@example.com"); got != switchable("1", "a@example.com").creds {
+		t.Errorf("slot 1's credential was removed: %q", got)
 	}
 }
 

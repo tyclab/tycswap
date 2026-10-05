@@ -284,3 +284,12 @@ func TestSecurityRefusesControlCharacterNames(t *testing.T) {
 		t.Errorf("a printable name was refused: %v", err)
 	}
 }
+
+// TestSecurityRefusesInTests: without an Exec, Security runs /usr/bin/security
+// against the login Keychain of whoever runs the tests; in a test binary it
+// answers errInTests before starting anything.
+func TestSecurityRefusesInTests(t *testing.T) {
+	if _, _, err := (Security{}).Get("tycswap-test-guard", "nobody"); !errors.Is(err, errInTests) {
+		t.Fatalf("Get = %v, want errInTests", err)
+	}
+}
