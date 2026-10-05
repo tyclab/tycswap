@@ -406,7 +406,7 @@ func TestLoad_PythonFixture(t *testing.T) {
 		t.Fatalf("got %d mappings, want 1", len(m))
 	}
 	for key, entry := range m {
-		if !strings.Contains(key, filepath.Join("work", "client-app")) {
+		if !strings.Contains(key, "work/client-app") { // the fixture's POSIX path, verbatim
 			t.Errorf("key = %q, want it to contain work/client-app", key)
 		}
 		if entry.Email != "bob@example.com" {

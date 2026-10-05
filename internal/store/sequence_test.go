@@ -7,8 +7,8 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/cerr"
@@ -277,8 +277,10 @@ func TestSequenceForUpdateRefusesUnreadableFile(t *testing.T) {
 					t.Errorf("refusal message is missing %q: %s", want, err)
 				}
 			}
-			// The cause survives for a caller that wants to inspect it.
-			if !errors.Is(err, fs.ErrPermission) && !errors.Is(err, syscall.EISDIR) {
+			// The cause, the OS error (EISDIR, EACCES; "Incorrect function" on
+			// Windows), survives for a caller that wants to inspect it.
+			var cause *fs.PathError
+			if !errors.As(err, &cause) {
 				t.Errorf("refusal dropped its cause: %v", err)
 			}
 			// ReadSequence still raises, as Python does.
@@ -532,6 +534,9 @@ func unreadableRosterCases() []struct {
 			skip: func() string {
 				if os.Geteuid() == 0 {
 					return "root reads a mode-0000 file regardless"
+				}
+				if runtime.GOOS == "windows" {
+					return "Windows has no POSIX read permission for chmod 0000 to remove"
 				}
 				return ""
 			},

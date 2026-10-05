@@ -42,6 +42,9 @@ func TestRunningInContainerEnvShortCircuit(t *testing.T) {
 }
 
 func TestRunningInContainerFileProbes(t *testing.T) {
+	if IsWindows() {
+		t.Skip("Windows has no /.dockerenv or /proc probes: RunningInContainer skips them there")
+	}
 	dir := t.TempDir()
 	write := func(name, content string) string {
 		p := filepath.Join(dir, name)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -287,6 +288,9 @@ func TestGetRunningInstances_EmptyWhenNoDirs(t *testing.T) {
 func TestGetRunningInstancesErr_UnreadableParentSurfacesError(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses directory search-permission checks; EACCES not reproducible")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no POSIX directory search permission for chmod to clear")
 	}
 	dir := t.TempDir()
 	sessionsDir := filepath.Join(dir, "sessions")

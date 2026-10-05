@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/credstore"
@@ -164,6 +165,9 @@ func TestRollbackOntoAnAPIKeyKeepsItLive_macOS(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				if mode == "a read-only home" && os.Geteuid() == 0 {
 					t.Skip("root writes into a read-only directory")
+				}
+				if mode == "a read-only home" && runtime.GOOS == "windows" {
+					t.Skip("Windows ignores a directory's POSIX write permission (chmod 0500)")
 				}
 				s := newTestStore(t, nil)
 				writeSeq(t, s, seqData(ptrInt(1), []int{1, 2}, map[string]json.RawMessage{

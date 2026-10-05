@@ -3,6 +3,7 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -56,6 +57,9 @@ func TestMergeCollisionKeepsTarget(t *testing.T) {
 }
 
 func TestSeededSourceHasClaudeCodeModes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX modes: Windows has none to set")
+	}
 	m, claudeHome, sessionDir, _ := newShareManager(t, platform.Linux)
 	// No source history at all — it gets seeded with Claude Code's modes.
 	m.syncSharing(sessionDir, false, true)

@@ -7,7 +7,10 @@
 // notes); this file only covers what actually runs on this platform.
 package wincred
 
-import "testing"
+import (
+	"runtime"
+	"testing"
+)
 
 func TestFakeGetSetDeleteRoundTrip(t *testing.T) {
 	f := NewFake()
@@ -42,6 +45,9 @@ func TestFakeGetSetDeleteRoundTrip(t *testing.T) {
 }
 
 func TestNonWindowsStubAlwaysReportsNotFound(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stub is the off-Windows build; on Windows Real is the Credential Manager itself")
+	}
 	r := New()
 
 	v, found, err := r.Get("claude-code", "account-1-a@x.com")
