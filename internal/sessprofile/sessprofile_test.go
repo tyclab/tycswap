@@ -435,6 +435,30 @@ func TestIsSessionProfileDir_SymlinkedBackupRoot(t *testing.T) {
 	}
 }
 
+// TestIsSessionProfileDir_DotDotAfterASymlink: a ".." after a symlink leaves
+// the symlink's target, as filepath.EvalSymlinks resolves it, not the
+// directory holding the symlink: <sessions>/link/../x with link pointing out
+// of the store names a directory out of it, and is no profile. Cleaning the
+// path before resolving it would make it <sessions>/x.
+func TestIsSessionProfileDir_DotDotAfterASymlink(t *testing.T) {
+	backup := t.TempDir()
+	elsewhere := t.TempDir()
+	for _, dir := range []string{filepath.Join(backup, "sessions"), filepath.Join(elsewhere, "dir"), filepath.Join(elsewhere, "x")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(backup, "sessions", "link")
+	if err := os.Symlink(filepath.Join(elsewhere, "dir"), link); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	sep := string(filepath.Separator)
+	configDir := link + sep + ".." + sep + "x" // not filepath.Join, which cleans the ".." away
+	if IsSessionProfileDir(backup, configDir) {
+		t.Errorf("IsSessionProfileDir(%q, %q) = true, want false: the path is %s", backup, configDir, filepath.Join(elsewhere, "x"))
+	}
+}
+
 // TestIsSessionProfileDir_MissingProfileUnderASymlink: a profile that does not
 // exist (removed, or not created yet) under a backup root reached through a
 // symlink still matches, as a shell pinned to it must be neutralized: the
