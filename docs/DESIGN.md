@@ -5749,3 +5749,39 @@ Console refusal before subprocess launch, failed deletion followed by retry,
 shared-key and active-profile preservation, and reporting a cleanup failure
 after a successful save. Existing import, switch, login and lock tests remain
 in force.
+
+
+## A51 — Persistent model controls and scheduler ownership
+
+The Auto tab's Count model limits control replaces the boolean shortcut
+with Off, All models, and Selected models plus Save. Both tabs use the same
+editor and settings routes; Off or an empty selection unsets the override.
+Reported names and unreported saved names are offered without case-sensitive
+duplicates. Other names can be entered before usage has been fetched.
+
+The Auto editor lives in static markup outside renderAuto's replaced nodes.
+A focused editor, dirty draft, or pending mutation cannot have its options
+or values repainted. Options rebuild only when names change. The Settings
+model row retains its draft even after focus leaves and reported windows
+change. Checkbox focus also participates in the settings render guard.
+
+Every state build, GET and broadcast alike, allocates its sequence before
+reading the snapshot. A completed mutation advances that same counter and
+returns stateSequence. Clients discard older documents. The pending editor
+remains protected through its confirming GET, with failed requests retaining
+the attempted choice for retry. Sequence numbers are local to one server;
+the existing session expiry/reload boundary handles server restarts.
+
+Tray gauges, notifications, tooltips and account rows pass the actual model
+names through their window calculations. They prefer the running engine's
+model setting and match the names case-insensitively, including the all
+sentinel. Excluded windows stay visible and are marked not counted.
+
+TYCSWAP_AUTO_MANAGED_BY declares external scheduler ownership in the host's
+environment. This is explicit configuration rather than platform-specific
+process guessing. The facade refuses every Start, including remembered
+startup and dry runs, and exposes the owner with Available=false. The HTTP
+route returns 409, and both dashboard and remote tray disable Start. The
+one-shot CLI is unaffected. Flakelab sets this owner on its dashboard service
+whenever its autoswitch timer is configured. Disabling a UI control alone
+would not protect old remote clients, direct requests, or app auto-resume.

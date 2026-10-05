@@ -322,7 +322,7 @@ func TestIndexHTML_DesignSystemMarkup(t *testing.T) {
 		`id="summary-tiles"`, `id="badge-dashboard"`, `id="badge-sessions"`, `id="badge-auto"`, `id="conn-age"`,
 		`id="sess-filter"`, `id="sess-status"`, `id="sess-sort"`, `id="sessions-groups"`, `id="ide-tbl"`,
 		`id="log-kind"`, `id="log-follow"`, `id="log-clear"`, `id="nextbest-tbl"`, `id="auto-settings"`,
-		`id="model-limits-toggle"`, // the bool for autoswitch.model = all / unset
+		`id="model-limits-toggle"`, // persistent Off / All / Selected model control
 		`class="empty-state"`, `<datalist id="threshold-ticks">`,
 	} {
 		if !strings.Contains(index, needle) {

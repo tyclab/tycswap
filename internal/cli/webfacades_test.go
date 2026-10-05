@@ -949,3 +949,24 @@ func TestCodexOpsWaitForTheCodexStoreLock(t *testing.T) {
 		t.Errorf("a busy call wrote: %+v", slots)
 	}
 }
+
+func TestAutoFacadeManagedOwnerBlocksStartAndResume(t *testing.T) {
+	a := newAutoFacade(fixtureSwitcher(t), nil)
+	a.managedBy = "flakelab-tycswap-autoswitch.timer"
+	a.statePath = appStatePath(t.TempDir())
+	if err := saveAppState(a.statePath, appState{AutoSwitch: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, dry := range []bool{false, true} {
+		if err := a.Start(dry); err == nil || !strings.Contains(err.Error(), a.managedBy) {
+			t.Fatalf("managed start: %v", err)
+		}
+	}
+	if started, err := a.resume(); started || err == nil {
+		t.Fatalf("managed resume = %v, %v", started, err)
+	}
+	v := a.View()
+	if v.Available || v.Running || v.ManagedBy != a.managedBy {
+		t.Fatalf("managed view: %+v", v)
+	}
+}

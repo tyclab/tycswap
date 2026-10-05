@@ -200,6 +200,10 @@ func testStateExactShape(t *testing.T, codex bool) {
 			t.Error("tokenStatus present without ?tokenStatus=1")
 		}
 	}
+	if seq, ok := got["sequence"].(float64); !ok || seq <= 0 {
+		t.Fatalf("missing state sequence: %v", got["sequence"])
+	}
+	delete(got, "sequence")
 	if !reflect.DeepEqual(canon(t, got), canon(t, want)) {
 		gb, _ := json.MarshalIndent(canon(t, got), "", "  ")
 		wb, _ := json.MarshalIndent(canon(t, want), "", "  ")

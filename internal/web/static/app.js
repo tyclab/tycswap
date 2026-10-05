@@ -33,6 +33,9 @@
   var NAME = (document.querySelector('meta[name="app-name"]') || {}).content || 'tycswap';
   var $ = function (id) { return document.getElementById(id); };
   var state = null;
+  var minimumStateSequence = 0;
+  var autoModelPicker = null;
+  var modelSettingRow = null;
   var lastStateAt = 0;
   var inflight = {};
   var showTokenStatus = false;
@@ -180,6 +183,7 @@
           if (data && data.output) { e.output = data.output; } // what an update's commands printed
           throw e;
         }
+        if (data && data.stateSequence) { minimumStateSequence = Math.max(minimumStateSequence, data.stateSequence); }
         return data;
       });
     });
@@ -624,7 +628,7 @@
     if (models.length) { return null; }
     var names = modelWindowNames(st);
     if (!names.length) { return null; }
-    return el('span', { class: 'chip chip-warn', title: 'Turn on "Count model limits" on the Auto tab, or tick the windows of autoswitch.model on the Settings tab', text: names.join(', ') + ' limits ignored' });
+    return el('span', { class: 'chip chip-warn', title: 'Choose and save windows under "Count model limits" on the Auto tab, or autoswitch.model on the Settings tab', text: names.join(', ') + ' limits ignored' });
   }
 
   // ---- header + summary ------------------------------------------------------
@@ -1301,12 +1305,12 @@
       slider.disabled = true;
     } else {
       actions.hidden = false;
-      if (!a.available) { badge.textContent = 'engine unavailable'; badge.className = 'chip chip-warn'; }
+      if (!a.available) { badge.textContent = a.managedBy ? 'managed by ' + a.managedBy : 'engine unavailable'; badge.className = 'chip chip-warn'; }
       else if (a.running) { badge.textContent = a.dryRun ? 'running · dry-run' : 'running'; badge.className = 'chip ' + (a.dryRun ? 'chip-warn' : 'chip-good'); }
       else { badge.textContent = 'stopped'; badge.className = 'chip chip-outline'; }
 
       var tiles = el('div', { class: 'tiles' });
-      tiles.appendChild(tile('State', a.running ? (a.dryRun ? 'dry-run' : 'running') : 'stopped', [a.running ? (a.dryRun ? 'decides, never switches' : 'switches near the limit') : 'not polling'], a.running ? (a.dryRun ? 'warn' : 'good') : ''));
+      tiles.appendChild(tile('State', a.managedBy ? 'managed externally' : a.running ? (a.dryRun ? 'dry-run' : 'running') : 'stopped', [a.running ? (a.dryRun ? 'decides, never switches' : 'switches near the limit') : a.managedBy ? a.managedBy : 'not polling'], a.running ? (a.dryRun ? 'warn' : 'good') : ''));
       tiles.appendChild(tile('7d threshold', Math.round(a.threshold * 10) / 10 + '%', ['the 5h and model windows have bars of their own']));
       tiles.appendChild(tile('Strategy', strat, [el('span', { class: 'ellipsis', text: countingNote(models), title: countingNote(models) })]));
       tiles.appendChild(tile('Started', a.startedAt ? el('span', { 'data-started': String(Math.round(a.startedAt * 1000)), text: fmtAgo(Date.now() - a.startedAt * 1000) }) : '—', [a.startedAt ? fmtUnix(a.startedAt) : 'not running']));
@@ -1357,9 +1361,6 @@
       nbSub.appendChild(document.createTextNode(' \u00b7 '));
       nbSub.appendChild(chip('running engine: ' + countingNote(res.models), 'outline', 'The running engine counts a different set than the saved setting; save autoswitch.model again to retarget it'));
     }
-    var mlt = $('model-limits-toggle');
-    if (mlt && document.activeElement !== mlt) { mlt.checked = savedModels.length > 0; }
-    $('model-limits-which').textContent = savedModels.length ? '(' + (savedModels.indexOf('all') >= 0 ? 'all' : savedModels.join(', ')) + ')' : '';
     $('nextbest-empty').hidden = res.ranked.length > 0;
     $('nextbest-tbl').hidden = res.ranked.length === 0;
     res.ranked.forEach(function (r, idx) {
@@ -1565,29 +1566,95 @@
     return '';
   }
 
-  // modelPicker: autoswitch.model as a box per model window with "All models"
-  // first, instead of a text field to type names into (DESIGN A49); null when
-  // there is nothing to tick yet, and the row keeps the text field. Ticking
-  // All greys the named boxes, since every window counts then.
-  // pickerValue() is what Save sends.
-  function modelPicker(sv, id, reported) {
-    var pick = modelPickerOptions(sv.value, reported);
-    if (!pick.options.length) { return null; }
-    var box = el('div', { class: 'model-picker', id: id, role: 'group' });
-    var allBox = el('input', { type: 'checkbox', checked: pick.all, 'aria-label': 'Count every model window' });
-    box.appendChild(el('label', { class: 'switch', title: 'Count every per-model weekly window the accounts report, now and later (saved as all)' }, [allBox, 'All models']));
-    var named = pick.options.map(function (o) {
-      var cb = el('input', { type: 'checkbox', checked: o.checked, disabled: pick.all, 'aria-label': 'Count the ' + o.name + ' window' });
-      box.appendChild(el('label', { class: 'switch' }, [cb, el('bdi', { text: o.name })]));
-      return { name: o.name, input: cb };
-    });
-    allBox.addEventListener('change', function () {
-      named.forEach(function (n) { n.input.disabled = allBox.checked; });
-    });
+  // Persistent editor: state refreshes never replace an open control, an
+  // unsaved draft, or a choice whose save is still in flight.
+  function modelPicker(sv, id, reported, existing) {
+    var box = existing || el('div', { class: 'model-picker', id: id, role: 'group' });
+    var mode = box.querySelector('select');
+    if (!mode) {
+      mode = el('select', { 'aria-label': 'Count model limits' }, [
+        el('option', { value: 'off', text: 'Off' }), el('option', { value: 'all', text: 'All models' }),
+        el('option', { value: 'selected', text: 'Selected models' })
+      ]);
+      box.appendChild(mode);
+    }
+    var names = box.querySelector('.model-names') || el('div', { class: 'model-names' });
+    if (!names.parentNode) { box.appendChild(names); }
+    var signature = null;
+    var named = [];
+    var extra = null;
+    function showNames() { names.hidden = mode.value !== 'selected'; }
+    function changed() { box.modelDirty = true; showNames(); }
+    box.addEventListener('change', changed);
+    box.addEventListener('input', changed);
     box.pickerValue = function () {
-      return modelPickerValue(allBox.checked, named.filter(function (n) { return n.input.checked; }).map(function (n) { return n.name; }));
+      if (mode.value === 'off') { return null; }
+      if (mode.value === 'all') { return 'all'; }
+      var picked = named.filter(function (n) { return n.input.checked; }).map(function (n) { return n.name; });
+      if (extra) { picked = picked.concat(extra.value.split(',').map(function (n) { return n.trim(); }).filter(Boolean)); }
+      return modelPickerValue(false, picked);
     };
+    box.sync = function (value, windows) {
+      if (box.modelDirty || box.modelPending || box.contains(document.activeElement)) { return; }
+      var pick = modelPickerOptions(value, windows);
+      var next = JSON.stringify(pick.options.map(function (o) { return o.name; }));
+      if (next !== signature) {
+        clear(names);
+        named = pick.options.map(function (o) {
+          var cb = el('input', { type: 'checkbox', 'aria-label': 'Count the ' + o.name + ' window' });
+          names.appendChild(el('label', { class: 'switch' }, [cb, el('bdi', { text: o.name })]));
+          return { name: o.name, input: cb };
+        });
+        extra = el('input', { type: 'text', placeholder: 'Other model names, separated by commas', 'aria-label': 'Other model names' });
+        names.appendChild(extra);
+        signature = next;
+      }
+      named.forEach(function (n, i) { n.input.checked = pick.options[i].checked; });
+      extra.value = '';
+      mode.value = pick.all ? 'all' : pick.options.some(function (o) { return o.checked; }) ? 'selected' : 'off';
+      showNames();
+    };
+    box.sync(sv.value, reported);
     return box;
+  }
+
+  function saveModelEditor(box, value, button) {
+    if (box.modelPending) { return Promise.resolve(); }
+    box.modelPending = true;
+    var controls = Array.prototype.slice.call(box.querySelectorAll('input, select, button'));
+    if (button && controls.indexOf(button) < 0) { controls.push(button); }
+    controls.forEach(function (c) { c.disabled = true; });
+    var url = '/api/settings/' + encodeURIComponent('autoswitch.model');
+    return (value === null ? api('DELETE', url) : api('POST', url, { value: value })).then(function () {
+      return api('GET', '/api/state' + (showTokenStatus ? '?tokenStatus=1' : ''));
+    }).then(function (fresh) {
+      box.modelDirty = false;
+      box.modelPending = false;
+      if (box.contains(document.activeElement) || document.activeElement === button) { document.activeElement.blur(); }
+      delete renderSigs.settings;
+      render(fresh);
+      toast('Model windows saved.', 'ok');
+    }).catch(function (err) {
+      // Keep the attempted choice available for retry, including when the
+      // save succeeded but the confirming read failed.
+      box.modelDirty = true;
+      toast(err.message);
+    }).then(function () {
+      box.modelPending = false;
+      controls.forEach(function (c) { c.disabled = false; });
+    });
+  }
+
+  function renderModelPicker(st) {
+    var saved = settingValue(st, 'autoswitch.model');
+    if (!autoModelPicker) {
+      autoModelPicker = modelPicker({ value: saved }, 'auto-model-picker', modelWindowNames(st), $('auto-model-picker'));
+      $('model-limits-save').addEventListener('click', function () {
+        saveModelEditor(autoModelPicker, autoModelPicker.pickerValue(), this);
+      });
+    }
+    autoModelPicker.sync(saved, modelWindowNames(st));
+    $('model-limits-which').textContent = countingNote(parseModelNames(saved));
   }
 
   function settingControl(sv, reported) {
@@ -1617,6 +1684,7 @@
     if (input.pickerValue) { return input.pickerValue(); }
     if (sv.kind === 'bool') { return input.checked; }
     if (sv.kind === 'int' || sv.kind === 'float') { var n = parseFloat(input.value); return isNaN(n) ? input.value : n; }
+    if (sv.key === 'autoswitch.model' && !input.value.trim()) { return null; }
     return input.value;
   }
 
@@ -1631,6 +1699,10 @@
   // (sv.applies, which the server words from what the code does), the
   // control, the value in effect and the default, Save and Reset.
   function settingRow(sv, reported) {
+    if (sv.key === 'autoswitch.model' && modelSettingRow) {
+      var editor = modelSettingRow.querySelector('.model-picker');
+      if (editor.modelDirty || editor.modelPending || modelSettingRow.contains(document.activeElement)) { return modelSettingRow; }
+    }
     var row = el('div', { class: 'setting-row', role: 'group', 'aria-label': sv.key });
     var idc = el('div', { class: 'setting-id' }, [
       el('div', { class: 'label-row' }, [el('span', { class: 'label', text: humanLabel(sv.key) }), el('span', { class: 'key', text: sv.key, title: sv.key })]),
@@ -1655,13 +1727,15 @@
     var save = el('button', { type: 'button', class: 'btn btn-sm btn-primary', text: 'Save', 'aria-label': 'Save ' + sv.key });
     save.addEventListener('click', function () {
       var v = controlValue(input, sv);
+      if (sv.key === 'autoswitch.model') { saveModelEditor(input, v, save); return; }
       var url = '/api/settings/' + encodeURIComponent(sv.key);
       run(save, 'Save ' + humanLabel(sv.key), v === null ? api('DELETE', url) : api('POST', url, { value: v }));
     });
     input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); save.click(); } });
     var reset = el('button', { type: 'button', class: 'btn btn-sm btn-ghost', text: 'Reset', 'aria-label': 'Reset ' + sv.key + ' to default', disabled: !!sv.isDefault, title: 'Remove the override and fall back to the default' });
-    reset.addEventListener('click', function () { run(reset, 'Reset ' + humanLabel(sv.key), api('DELETE', '/api/settings/' + encodeURIComponent(sv.key))); });
+    reset.addEventListener('click', function () { if (sv.key === 'autoswitch.model') { saveModelEditor(input, null, reset); return; } run(reset, 'Reset ' + humanLabel(sv.key), api('DELETE', '/api/settings/' + encodeURIComponent(sv.key))); });
     row.appendChild(el('div', { class: 'setting-actions' }, [save, reset]));
+    if (sv.key === 'autoswitch.model') { modelSettingRow = row; }
     return row;
   }
 
@@ -1703,8 +1777,8 @@
   var renderSigs = {};
   var pendingRenders = {};
 
-  // editingInside: a text-entry control (not a checkbox, radio or range — those
-  // never lose typed state) or a BUTTON has focus inside the container, or a
+  // editingInside: a text-entry control, a form checkbox/radio, or a BUTTON
+  // has focus inside the container, or a
   // row menu is open. Buttons count because a mouse-down on Save moves focus
   // from the input to the button; repainting at that instant destroys the
   // button under the pointer and the typed value with it.
@@ -1723,6 +1797,7 @@
       if ((tag === 'SELECT' || tag === 'BUTTON') && inForm) { return true; }
       if (tag === 'INPUT') {
         var t = (a.getAttribute('type') || 'text').toLowerCase();
+        if (inForm && (t === 'checkbox' || t === 'radio')) { return true; }
         if (t !== 'checkbox' && t !== 'radio' && t !== 'range' && t !== 'button' && t !== 'submit') { return true; }
       }
     }
@@ -1781,15 +1856,18 @@
       reopenDetails(container, open);
     });
   }
-  document.addEventListener('focusout', function () { setTimeout(flushPendingRenders, 120); });
+  document.addEventListener('focusout', function () { setTimeout(function () { flushPendingRenders(); if (state) { renderModelPicker(state); } }, 120); });
   document.addEventListener('click', function () { setTimeout(flushPendingRenders, 120); });
   document.addEventListener('toggle', function () { setTimeout(flushPendingRenders, 0); }, true);
 
   var pendingState = null;
   function render(st) {
+    if (st.sequence && st.sequence < minimumStateSequence) { return; }
+    minimumStateSequence = Math.max(minimumStateSequence, st.sequence || 0);
     if (document.hidden) { pendingState = st; state = st; lastStateAt = Date.now(); return; } // paint once on return
     state = st;
     lastStateAt = Date.now();
+    renderModelPicker(st);
     renderHeader(st);
     renderOnboarding(st);
     renderGuarded('updates', 'updates', { updates: st.updates, applying: updApplying }, function () { renderUpdates(st); });
@@ -2012,20 +2090,6 @@
       inflight[url] = true;
       return run(btn, label, api('POST', url).then(codexRestartNote)).then(function () { delete inflight[url]; });
     });
-  });
-
-  // Count model limits: on -> autoswitch.model = "all" (every per-model weekly
-  // window counts towards headroom and at-limit), off -> unset (5h + 7d only).
-  // Naming specific models is still possible on the Settings tab. The
-  // server retargets a running engine on every save or unset of
-  // autoswitch.model — this toggle and the grid's Save alike — so Next best
-  // changes at once instead of after a restart.
-  $('model-limits-toggle').addEventListener('change', function (ev) {
-    var on = !!ev.target.checked;
-    var req = on ? api('POST', '/api/settings/' + encodeURIComponent('autoswitch.model'), { value: 'all' })
-                 : api('DELETE', '/api/settings/' + encodeURIComponent('autoswitch.model'));
-    ev.target.blur(); // let the next render set the checkbox from the saved setting
-    run(ev.target, on ? 'Count model limits' : 'Ignore model limits', req).then(function () { return loadOnce(); }).catch(function () {});
   });
 
   $('token-status-toggle').addEventListener('change', function (ev) {

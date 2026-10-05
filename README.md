@@ -799,6 +799,21 @@ refuses while one runs. The background app logs to
 `~/Library/Logs/tycswap.log` on macOS and to `app.log` in the backup store
 elsewhere.
 
+**When a timer owns auto-switch.** Set
+`TYCSWAP_AUTO_MANAGED_BY=flakelab-tycswap-autoswitch.timer` in the dashboard
+service environment (or name your scheduler). The dashboard and remote tray
+show that owner and disable their hosted-engine start controls. The server
+also rejects start requests, including dry runs and remembered app startup,
+so a second engine cannot be started through those controls. The timer's
+`tycswap auto --once` keeps working. This declares ownership; it does not
+probe whether the named scheduler is currently active.
+
+**Model windows.** The Auto and Settings tabs offer Off, All models, and
+Selected models with Save. Named windows match case-insensitively; saved
+names remain available even before accounts report them. Drafts survive
+usage refreshes, and the tray's percentages count exactly the selected
+windows while still showing the excluded ones as not counted.
+
 **WSL: the Windows tray for the engine in the distro.** Inside WSL there is no
 tray, so the app there runs headless and the Windows binary shows the icon. In
 the distro, keep the app running on a fixed port, best as a systemd user
