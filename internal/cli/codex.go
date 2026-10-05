@@ -15,8 +15,8 @@
 // and camelCase usage and errors under --json use the ErrorEnvelope (1);
 // remove reports only a removal that happened (3); messages name the resolved
 // slot number (4); import-codex-auth warns on an unsupported schema (5); the
-// namespace accepts --debug (6). Export/import/purge run without the store
-// lock, as the Python does and as the Claude transfer verbs do.
+// namespace accepts --debug (6). Export and purge run without the store lock,
+// as the Python does; both importers run their writes under it (DESIGN A22).
 package cli
 
 import (

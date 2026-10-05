@@ -3255,8 +3255,8 @@ alias, disabled, workspace name) takes the lock itself, so a background
 in another terminal and drop the new slot; a caller holding `Store.Lock()`
 writes through that transaction's own view, which reuses the lock, while
 every other store value in the process takes it again (A50; until then
-in-process ownership was tracked per root). A `sequence.json` that no longer parses is never
-overwritten by a mutation (`ErrCorruptRegistry`); listing reads treat it as
+in-process ownership was tracked per root). A `sequence.json` that no longer
+parses is never overwritten by a mutation (`ErrCorruptRegistry`); listing reads treat it as
 empty. `export` and `purge` take no store lock, as in the PR and as the Claude
 transfer verbs do; both importers run their writes under it because their
 check-then-act (`--force`, `OnlyIfEmpty`) would otherwise race the same way.
@@ -5508,9 +5508,8 @@ process held it, until A50 made every ordinary store write take the lock and
 let only a transaction's own view reuse it. Without the lock around the whole
 call, a remove could land between a Codex tick's capture and its write of
 `auth.json` and leave `auth.json` on the removed account. A disable or remove
-that waits 10 s for the lock answers 409; the
-switcher's own busy error on a switch or add was a switch error (500) until
-A48 made it a lock error (409).
+that waits 10 s for the lock answers 409; the switcher's own busy error on a
+switch or add was a switch error (500) until A48 made it a lock error (409).
 
 **One engine constructor.** The Codex engine's construction and loop live in
 `internal/cli/codexauto.go`, shared by both hosts: `newCodexAutoEngineFor(sw,
