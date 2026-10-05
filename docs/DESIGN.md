@@ -5672,8 +5672,10 @@ write once it is released, and report a lock error with nothing written when
 it stays held; the three busy assertions name the lock kind. `internal/cli`:
 the Codex façade's lock test runs against the switcher's lock; `tycswap web`
 exits 0 through the notify-context seam, offline; with the A7 notifier
-installed, a real SIGINT ends `tycswap web` with 0 and the headless app with 0
-and no token file (Linux and macOS; the file is not built on Windows).
+installed, a real SIGINT ends `tycswap web` with 0, the headless app with 0
+and no token file, and `app --remote`, sent as its fake tray's `Run` starts,
+with 0 and `remote.lock` free (Linux and macOS; the file is not built on
+Windows).
 
 ## A49. The model windows sit beside their bar, picked from the reported windows
 
@@ -5816,9 +5818,24 @@ a terminal, and is not changed for that. Every `Shell_NotifyIconW` call goes
 through one function variable, which returns the call's error, so a failed
 start names it again and the test can see what the tray asks the shell for.
 
+**A `Quit` before the window.** `Quit` did nothing while there was no window
+yet. The app and the remote tray turn a Ctrl-C into a `Quit` from their SIGINT
+claim on (A48), before `Run` makes the window: a Ctrl-C in between was lost,
+and the tray kept running and swallowed every later one. `Quit` now sets a
+flag and reads the window handle under the tray's lock; `Run` sets the handle
+under it and posts the quit when the flag is set, so none is lost or posted
+twice. The Linux and macOS trays already kept a `Quit` from before `Run`.
+
+**A failed re-add** destroyed the old HICON, which the shell may still show
+(any process can broadcast `TaskbarCreated`). It now keeps it and frees the
+new one. The add is not retried: a refused icon stays away until the next
+`TaskbarCreated` or a restart of the app.
+
 **Tests.** On Windows: `TaskbarCreated`, registered as `Run` registers it,
 makes the window procedure add the icon once with the current tooltip and
-callback and an icon built from the PNG; a tooltip update adds nothing.
+callback and an icon built from the PNG; a tooltip update adds nothing. A
+`Quit` before `Run` ends it within 5 s; a refused re-add keeps the shown icon
+and frees the new one.
 
 ## A53. The log is opened for each record
 

@@ -2,10 +2,13 @@ package tray
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/png"
 	"reflect"
 	"testing"
+	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -72,12 +75,8 @@ func TestTaskbarCreatedAddsTheIconAgain(t *testing.T) {
 		calls = append(calls, call{op, nid.uFlags, nid.uCallbackMessage, nid.hIcon, windows.UTF16ToString(nid.szTip[:])})
 		return nil
 	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 16, 16))); err != nil {
-		t.Fatal(err)
-	}
 	// No HICON yet, so an add that reused the old one would carry 0.
-	tr := &windowsTray{tooltip: "first", iconPNG: buf.Bytes()}
+	tr := &windowsTray{tooltip: "first", iconPNG: testPNG(t)}
 	winMu.Lock()
 	prevTray := winTray
 	winTray = tr
@@ -113,5 +112,86 @@ func TestTaskbarCreatedAddsTheIconAgain(t *testing.T) {
 		if c.op == nimAdd {
 			t.Errorf("a tooltip update added the icon: %+v", calls)
 		}
+	}
+}
+
+func testPNG(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 16, 16))); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// A Quit before Run has its window ends Run. The app and the remote tray
+// turn a Ctrl-C into a Quit from their SIGINT claim on, which is before Run
+// (DESIGN A48, A52); that Quit used to be dropped, and the tray kept running.
+func TestQuitBeforeRunEndsRun(t *testing.T) {
+	prevShell := shellNotifyIcon
+	shellNotifyIcon = func(uintptr, *notifyIconData) error { return nil } // no icon in the real taskbar
+	winMu.Lock()
+	prevTray := winTray
+	winMu.Unlock()
+	t.Cleanup(func() {
+		shellNotifyIcon = prevShell
+		winMu.Lock()
+		winTray = prevTray
+		winMu.Unlock()
+	})
+	tr, err := newTray(Icon{PNG: testPNG(t)}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr.Quit()
+	done := make(chan error, 1)
+	go func() { done <- tr.Run() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after a Quit that came before it")
+	}
+	// Run registered the window class; free it so the next Run in this
+	// process (-count=2) can register it again.
+	hInst, _, _ := pGetModuleHandleW.Call(0)
+	unregister := user32.NewProc("UnregisterClassW")
+	if ok, _, err := unregister.Call(uintptr(unsafe.Pointer(utf16z(windowClass()))), hInst); ok == 0 {
+		t.Errorf("UnregisterClass: %v", err)
+	}
+}
+
+// A re-add the shell refuses keeps the icon there was, which the shell may
+// still be showing (any process can broadcast TaskbarCreated), and frees the
+// new one the shell never took (DESIGN A52). The shown icon used to be
+// destroyed regardless.
+func TestFailedReaddKeepsTheShownIcon(t *testing.T) {
+	prevShell := shellNotifyIcon
+	var offered windows.Handle
+	shellNotifyIcon = func(_ uintptr, nid *notifyIconData) error {
+		offered = nid.hIcon
+		return errors.New("refused")
+	}
+	t.Cleanup(func() { shellNotifyIcon = prevShell })
+	png := testPNG(t)
+	shown, err := iconFromPNG(png)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := &windowsTray{iconPNG: png, hicon: shown}
+	tr.readdIcon()
+	if tr.hicon != shown {
+		t.Errorf("current icon = %#x, want the shown %#x", tr.hicon, shown)
+	}
+	if ok, _, _ := pDestroyIcon.Call(uintptr(shown)); ok == 0 {
+		t.Error("the shown icon was destroyed")
+	}
+	if offered == 0 || offered == shown {
+		t.Fatalf("the re-add offered %#x, want a new icon", offered)
+	}
+	if ok, _, _ := pDestroyIcon.Call(uintptr(offered)); ok != 0 {
+		t.Error("the icon the shell refused was not freed")
 	}
 }

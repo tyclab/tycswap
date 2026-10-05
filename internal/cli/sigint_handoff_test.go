@@ -10,6 +10,9 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"time"
+
+	"github.com/tyclab/tycswap/internal/tray"
 )
 
 // The program-wide SIGINT notifier Main installs, once for the test binary.
@@ -83,4 +86,49 @@ func TestCtrlCEndsHeadlessAppWithZeroAndRemovesTheToken(t *testing.T) {
 	if appIsRunning() {
 		t.Error("app.lock is still held after Ctrl-C")
 	}
+}
+
+// ctrlCTray sends the process a real Ctrl-C as Run starts and returns once
+// Quit comes, or with an error after five seconds rather than hang.
+type ctrlCTray struct {
+	fakeTray
+	quit chan struct{}
+	once sync.Once
+}
+
+func (e *ctrlCTray) Run() error {
+	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+		return err
+	}
+	select {
+	case <-e.quit:
+		return nil
+	case <-time.After(5 * time.Second):
+		return errors.New("no Quit after the Ctrl-C")
+	}
+}
+
+func (e *ctrlCTray) Quit() { e.once.Do(func() { close(e.quit) }) }
+
+// The remote tray (`app --remote`) on a real Ctrl-C, sent as its tray's Run
+// starts: the claim hands the signal to the command's context, whose end
+// quits the tray, and the command exits 0 with remote.lock free (A48).
+// Without the claim the notifier's exit 130 ends the test binary.
+func TestCtrlCEndsRemoteTrayWithZero(t *testing.T) {
+	appLockHome(t)
+	installTestSigint()
+	ft := &ctrlCTray{quit: make(chan struct{})}
+	prev := newTray
+	newTray = func(tray.Icon, tray.Options) (tray.Tray, error) { return ft, nil }
+	t.Cleanup(func() { newTray = prev })
+	var errb syncBuffer
+	done := runApp([]string{"--remote", "http://127.0.0.1:1", "--token-file", tokenFile(t, testRemoteToken), "--no-update-check"}, &errb)
+	if code := waitExit(t, done, &errb); code != 0 {
+		t.Errorf("exit = %d, stderr = %q", code, errb.String())
+	}
+	lock, held, err := acquireRemoteLock()
+	if err != nil || !held {
+		t.Fatalf("remote lock after the exit: %v, %v", held, err)
+	}
+	_ = lock.Release()
 }
