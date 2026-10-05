@@ -4744,8 +4744,8 @@ implementations and no third-party code:
   the active-account dot and the update rows take `brand.AccentColor`
   (`tray_set_accent`). A darwin build without cgo compiles to a stub that
   reports `ErrUnsupported`.
-- **Windows** — `Shell_NotifyIconW`, a message-only window of the class
-  `<Name>Tray` (`TycswapTray`) and a `GetMessage` loop through
+- **Windows** — `Shell_NotifyIconW`, a hidden top-level window (A52) of the
+  class `<Name>Tray` (`TycswapTray`) and a `GetMessage` loop through
   `golang.org/x/sys/windows`, on one locked OS thread; the icon comes from a
   PNG via `CreateIconFromResourceEx`, notifications are `NIF_INFO` balloons,
   the dialog is `MessageBoxW`.
@@ -5788,3 +5788,32 @@ route returns 409, and both dashboard and remote tray disable Start. The
 one-shot CLI is unaffected. Flakelab sets this owner on its dashboard service
 whenever its autoswitch timer is configured. Disabling a UI control alone
 would not protect old remote clients, direct requests, or app auto-resume.
+
+## A52. The Windows tray adds its icon again after Explorer restarts
+
+When Explorer restarts (a crash, ending it from Task Manager, some Windows
+updates) it recreates the taskbar empty and broadcasts the registered window
+message `TaskbarCreated` to every top-level window; a program that wants its
+notification icon back adds it again. The Windows tray added its icon once,
+in `Run`, and ignored the broadcast, so the icon was gone until the app
+restarted while the app kept running unseen. The reference has no Windows
+tray.
+
+`Run` now registers `TaskbarCreated` before it creates the window, and the
+window procedure answers it with the same add the start makes (`addIcon`),
+with the current tooltip and click callback and an icon built again from the
+latest PNG asked for: a `SetIcon` while Explorer was down (the update badge,
+A44) failed its `NIM_MODIFY` and kept the older icon, which the re-add would
+otherwise bring back. When that build fails, the icon there was is added.
+The hidden window is a top-level window, not a message-only one, which is
+what lets the broadcast reach it; the file's comments and A35 said
+message-only and now say why it must not be. An elevated instance would not
+get the broadcast (User Interface Privilege Isolation filters it without
+`ChangeWindowMessageFilterEx`); the app runs unelevated, from the Run key or
+a terminal, and is not changed for that. Every `Shell_NotifyIconW` call goes
+through one function variable, which returns the call's error, so a failed
+start names it again and the test can see what the tray asks the shell for.
+
+**Tests.** On Windows: `TaskbarCreated`, registered as `Run` registers it,
+makes the window procedure add the icon once with the current tooltip and
+callback and an icon built from the PNG; a tooltip update adds nothing.
