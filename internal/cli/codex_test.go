@@ -18,6 +18,8 @@ import (
 
 	"github.com/tyclab/tycswap/internal/codex/api"
 	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/procdetect"
+	"github.com/tyclab/tycswap/internal/codex/registryimport"
 	codexstore "github.com/tyclab/tycswap/internal/codex/store"
 	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/paths"
@@ -224,6 +226,10 @@ func TestCodexVerbHelp(t *testing.T) {
 }
 
 func TestCodexAcceptsDebug(t *testing.T) {
+	// --debug points these loggers at this test's home for the rest of the
+	// process, and a later test logging through them recreates the removed home.
+	apiLog, procLog, importLog := api.Log, procdetect.Log, registryimport.Log
+	t.Cleanup(func() { api.Log, procdetect.Log, registryimport.Log = apiLog, procLog, importLog })
 	codexHome(t, nil, offlineUsage(t))
 	seedOne(t)
 	for _, argv := range [][]string{{"codex", "--debug", "list", "--skip-api"}, {"codex", "list", "--debug", "--skip-api"}} {
