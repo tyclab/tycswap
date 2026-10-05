@@ -1187,9 +1187,8 @@ func TestNormalizeAlias(t *testing.T) {
 
 // Disable and remove hold the store lock like a switch does, so they wait for
 // a switch or a token refresh that holds it, in this process or another,
-// instead of writing between its steps (the store's own writes skip the file
-// lock while this process holds it), and a lock that stays held is a lock
-// error with nothing written (DESIGN A48).
+// instead of writing between its steps, and a lock that stays held is a lock
+// error with nothing written (DESIGN A48, A50).
 func TestDisableAndRemoveWaitForTheStoreLock(t *testing.T) {
 	f := newFixture(t)
 	sw := f.seeded()

@@ -3470,8 +3470,9 @@ written 0600 with an existing file's group and world bits dropped, inside a
 `~/.codex` created 0700 when it does not exist yet. Reads
 codex-auth's `~/.codex/accounts/` during the import and never writes it.
 Mutations run under `<backup_root>/codex/.lock`, which is separate from the
-Claude lock, so a Codex operation never blocks a Claude one. `export`,
-`import`, and `purge` take no store lock, like the Claude transfer verbs.
+Claude lock, so a Codex operation never blocks a Claude one. `export` and
+`purge` take no store lock, like the Claude ones; `import` runs its writes
+under it, as the Claude `import` does (DESIGN A22).
 
 ### Exit status
 

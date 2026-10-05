@@ -3254,10 +3254,11 @@ another's slot. Beyond the switch, every read-modify-write of
 `codex/sequence.json` (`UpsertSlot`, `RemoveSlot`, `Renumber`, `SetActive`,
 alias, disabled, workspace name) takes the lock itself, so a background
 `tycswap auto` writing workspace names cannot interleave with `tycswap codex add`
-in another terminal and drop the new slot; a caller already holding
-`Store.Lock()` is not blocked (in-process ownership is tracked per root, the
-flock is never taken twice). A `sequence.json` that no longer parses is never
-overwritten by a mutation (`ErrCorruptRegistry`); listing reads treat it as
+in another terminal and drop the new slot; a caller holding `Store.Lock()`
+writes through that transaction's own view, which reuses the lock, while
+every other store value in the process takes it again (A50; until then
+in-process ownership was tracked per root). A `sequence.json` that no longer
+parses is never overwritten by a mutation (`ErrCorruptRegistry`); listing reads treat it as
 empty. `export` and `purge` take no store lock, as in the PR and as the Claude
 transfer verbs do; both importers run their writes under it because their
 check-then-act (`--force`, `OnlyIfEmpty`) would otherwise race the same way.
@@ -4745,8 +4746,8 @@ implementations and no third-party code:
   the active-account dot and the update rows take `brand.AccentColor`
   (`tray_set_accent`). A darwin build without cgo compiles to a stub that
   reports `ErrUnsupported`.
-- **Windows** — `Shell_NotifyIconW`, a message-only window of the class
-  `<Name>Tray` (`TycswapTray`) and a `GetMessage` loop through
+- **Windows** — `Shell_NotifyIconW`, a hidden top-level window (A52) of the
+  class `<Name>Tray` (`TycswapTray`) and a `GetMessage` loop through
   `golang.org/x/sys/windows`, on one locked OS thread; the icon comes from a
   PNG via `CreateIconFromResourceEx`, notifications are `NIF_INFO` balloons,
   the dialog is `MessageBoxW`.
@@ -5501,12 +5502,13 @@ mutation lock like every mutation. Each Codex call also holds the Codex
 store's lock (`codex/.lock`) from start to end: the switcher's switch and add
 take it themselves, and `codexOps` took it around disable and remove (since
 A48 the switcher does, for every caller), because the store's own writes
-(`SetDisabled`, `RemoveSlot`) skip the file lock while any goroutine of the
-process holds it. Without that, a remove could land between a Codex tick's
-capture and its write of `auth.json` and leave `auth.json` on the removed
-account. A disable or remove that waits 10 s for the lock answers 409; the
-switcher's own busy error on a switch or add was a switch error (500) until
-A48 made it a lock error (409).
+(`SetDisabled`, `RemoveSlot`) skipped the file lock while any goroutine of the
+process held it, until A50 made every ordinary store write take the lock and
+let only a transaction's own view reuse it. Without the lock around the whole
+call, a remove could land between a Codex tick's capture and its write of
+`auth.json` and leave `auth.json` on the removed account. A disable or remove
+that waits 10 s for the lock answers 409; the switcher's own busy error on a
+switch or add was a switch error (500) until A48 made it a lock error (409).
 
 **One engine constructor.** The Codex engine's construction and loop live in
 `internal/cli/codexauto.go`, shared by both hosts: `newCodexAutoEngineFor(sw,
@@ -5615,10 +5617,11 @@ Three small fixes the reviews of A47 found, together because two share a
 cause.
 
 **Disable and remove hold the Codex store lock.** `Switcher.SetAccountDisabled`
-and `Switcher.Remove` write through the store, whose writes take the file lock
-themselves unless this process already holds it (A47, "Two stores, two
-loops"). The Codex usage refresh holds that lock around its network call (it
-must be able to persist a rotated token before it asks for one), and the TUI
+and `Switcher.Remove` wrote through the store, whose writes then took the file
+lock themselves unless this process already held it (A47, "Two stores, two
+loops"; A50 replaced that rule with transaction-scoped views). The Codex
+usage refresh holds that lock around its network call (it must be able to
+persist a rotated token before it asks for one), and the TUI
 runs that refresh in its own process. So a remove from the TUI during a
 refresh of the same account skipped the file lock, deleted the slot and its
 credentials, and the refresh then wrote the new token back under the removed
@@ -5784,3 +5787,32 @@ route returns 409, and both dashboard and remote tray disable Start. The
 one-shot CLI is unaffected. Flakelab sets this owner on its dashboard service
 whenever its autoswitch timer is configured. Disabling a UI control alone
 would not protect old remote clients, direct requests, or app auto-resume.
+
+## A52. The Windows tray adds its icon again after Explorer restarts
+
+When Explorer restarts (a crash, ending it from Task Manager, some Windows
+updates) it recreates the taskbar empty and broadcasts the registered window
+message `TaskbarCreated` to every top-level window; a program that wants its
+notification icon back adds it again. The Windows tray added its icon once,
+in `Run`, and ignored the broadcast, so the icon was gone until the app
+restarted while the app kept running unseen. The reference has no Windows
+tray.
+
+`Run` now registers `TaskbarCreated` before it creates the window, and the
+window procedure answers it with the same add the start makes (`addIcon`),
+with the current tooltip and click callback and an icon built again from the
+latest PNG asked for: a `SetIcon` while Explorer was down (the update badge,
+A44) failed its `NIM_MODIFY` and kept the older icon, which the re-add would
+otherwise bring back. When that build fails, the icon there was is added.
+The hidden window is a top-level window, not a message-only one, which is
+what lets the broadcast reach it; the file's comments and A35 said
+message-only and now say why it must not be. An elevated instance would not
+get the broadcast (User Interface Privilege Isolation filters it without
+`ChangeWindowMessageFilterEx`); the app runs unelevated, from the Run key or
+a terminal, and is not changed for that. Every `Shell_NotifyIconW` call goes
+through one function variable, which returns the call's error, so a failed
+start names it again and the test can see what the tray asks the shell for.
+
+**Tests.** On Windows: `TaskbarCreated`, registered as `Run` registers it,
+makes the window procedure add the icon once with the current tooltip and
+callback and an icon built from the PNG; a tooltip update adds nothing.
