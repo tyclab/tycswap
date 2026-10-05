@@ -1,9 +1,11 @@
 package tray
 
 import (
+	"bytes"
+	"image"
+	"image/png"
 	"reflect"
 	"testing"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -48,12 +50,14 @@ func TestMenuPlanNestsSubmenusAndNumbersByTag(t *testing.T) {
 }
 
 // When Explorer restarts it broadcasts "TaskbarCreated" and every icon is
-// gone; the tray adds its icon again, with the current tooltip, icon and
-// click callback (DESIGN A52). Before, the icon stayed away until the app
-// restarted. Other messages add nothing.
+// gone; the tray adds its icon again, with the current tooltip and click
+// callback and an icon built from the latest PNG asked for, since a SetIcon
+// while Explorer was down kept the older icon (DESIGN A52). Before, the icon
+// stayed away until the app restarted. Other messages add nothing.
 func TestTaskbarCreatedAddsTheIconAgain(t *testing.T) {
-	m, _, _ := pRegisterWindowMessageW.Call(uintptr(unsafe.Pointer(utf16z("TaskbarCreated"))))
-	if m == 0 {
+	prevShell, prevMsg := shellNotifyIcon, wmTaskbarCreated
+	registerTaskbarCreated() // what Run does before it creates the window
+	if wmTaskbarCreated == 0 {
 		t.Fatal("RegisterWindowMessage(TaskbarCreated) failed")
 	}
 	type call struct {
@@ -64,13 +68,16 @@ func TestTaskbarCreatedAddsTheIconAgain(t *testing.T) {
 		tip      string
 	}
 	var calls []call
-	prevShell, prevMsg := shellNotifyIcon, wmTaskbarCreated
-	shellNotifyIcon = func(op uintptr, nid *notifyIconData) bool {
+	shellNotifyIcon = func(op uintptr, nid *notifyIconData) error {
 		calls = append(calls, call{op, nid.uFlags, nid.uCallbackMessage, nid.hIcon, windows.UTF16ToString(nid.szTip[:])})
-		return true
+		return nil
 	}
-	wmTaskbarCreated = uint32(m)
-	tr := &windowsTray{tooltip: "first", hicon: windows.Handle(7)}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 16, 16))); err != nil {
+		t.Fatal(err)
+	}
+	// No HICON yet, so an add that reused the old one would carry 0.
+	tr := &windowsTray{tooltip: "first", iconPNG: buf.Bytes()}
 	winMu.Lock()
 	prevTray := winTray
 	winTray = tr
@@ -80,15 +87,21 @@ func TestTaskbarCreatedAddsTheIconAgain(t *testing.T) {
 		winMu.Lock()
 		winTray = prevTray
 		winMu.Unlock()
+		if tr.hicon != 0 {
+			pDestroyIcon.Call(uintptr(tr.hicon))
+		}
 	})
 
 	tr.mu.Lock()
 	tr.tooltip = "Account-2 · 5h 41%"
 	tr.mu.Unlock()
-	if r := trayWndProc(0, uint32(m), 0, 0); r != 0 {
+	if r := trayWndProc(0, wmTaskbarCreated, 0, 0); r != 0 {
 		t.Errorf("TaskbarCreated returned %d, want 0", r)
 	}
-	want := call{nimAdd, nifMessage | nifIcon | nifTip, wmTrayIcon, windows.Handle(7), "Account-2 · 5h 41%"}
+	if tr.hicon == 0 {
+		t.Fatal("no icon was built from the PNG")
+	}
+	want := call{nimAdd, nifMessage | nifIcon | nifTip, wmTrayIcon, tr.hicon, "Account-2 · 5h 41%"}
 	if len(calls) != 1 || calls[0] != want {
 		t.Fatalf("shell calls = %+v, want one %+v", calls, want)
 	}

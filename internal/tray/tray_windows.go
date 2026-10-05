@@ -158,11 +158,21 @@ var (
 // failed, so it never matches.
 var wmTaskbarCreated uint32
 
-// shellNotifyIcon is Shell_NotifyIconW; a var so a test can see what the tray
-// asks the shell for.
-var shellNotifyIcon = func(op uintptr, nid *notifyIconData) bool {
-	ok, _, _ := pShellNotifyIconW.Call(op, uintptr(unsafe.Pointer(nid)))
-	return ok != 0
+// shellNotifyIcon is Shell_NotifyIconW, nil on success and the call's error
+// otherwise; a var so a test can see what the tray asks the shell for.
+var shellNotifyIcon = func(op uintptr, nid *notifyIconData) error {
+	if ok, _, err := pShellNotifyIconW.Call(op, uintptr(unsafe.Pointer(nid))); ok == 0 {
+		return err
+	}
+	return nil
+}
+
+// registerTaskbarCreated registers the "TaskbarCreated" message into
+// wmTaskbarCreated (unchanged when the registration fails).
+func registerTaskbarCreated() {
+	if m, _, _ := pRegisterWindowMessageW.Call(uintptr(unsafe.Pointer(utf16z("TaskbarCreated")))); m != 0 {
+		wmTaskbarCreated = uint32(m)
+	}
 }
 
 func newTray(icon Icon, opts Options) (Tray, error) {
@@ -220,9 +230,7 @@ func (t *windowsTray) Run() error {
 	if atom, _, err := pRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc))); atom == 0 {
 		return errors.New("tray: RegisterClassEx: " + err.Error())
 	}
-	if m, _, _ := pRegisterWindowMessageW.Call(uintptr(unsafe.Pointer(utf16z("TaskbarCreated")))); m != 0 {
-		wmTaskbarCreated = uint32(m)
-	}
+	registerTaskbarCreated()
 	hwnd, _, err := pCreateWindowExW.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(utf16z(brand.Sanitized().Name))),
 		0, 0, 0, 0, 0, 0, 0, hInst, 0)
 	if hwnd == 0 {
@@ -239,8 +247,8 @@ func (t *windowsTray) Run() error {
 	}
 	t.hicon = hicon
 
-	if !t.addIcon() {
-		return errors.New("tray: Shell_NotifyIcon(NIM_ADD) failed")
+	if err := t.addIcon(); err != nil {
+		return errors.New("tray: Shell_NotifyIcon(NIM_ADD): " + err.Error())
 	}
 
 	var m msg
@@ -258,10 +266,9 @@ func (t *windowsTray) Run() error {
 	return t.err
 }
 
-// addIcon puts the icon in the notification area with the current icon and
-// tooltip and the click callback: at start, and again whenever Explorer
-// recreated the taskbar (wmTaskbarCreated). UI thread only.
-func (t *windowsTray) addIcon() bool {
+// addIcon puts the icon in the notification area with t.hicon, the current
+// tooltip and the click callback, at start and on readdIcon. UI thread only.
+func (t *windowsTray) addIcon() error {
 	t.mu.Lock()
 	tip := t.tooltip
 	t.mu.Unlock()
@@ -271,6 +278,25 @@ func (t *windowsTray) addIcon() bool {
 	nid.hIcon = t.hicon
 	copyUTF16(nid.szTip[:], tip)
 	return shellNotifyIcon(nimAdd, &nid)
+}
+
+// readdIcon answers wmTaskbarCreated: Explorer recreated the taskbar and the
+// icon is gone. The HICON is built again from the latest PNG asked for, since
+// a SetIcon while Explorer was down failed its NIM_MODIFY and kept the older
+// icon (the update badge would otherwise stay missing); when that build fails
+// the icon there was is added. UI thread only.
+func (t *windowsTray) readdIcon() {
+	t.mu.Lock()
+	png := t.iconPNG
+	t.mu.Unlock()
+	if hicon, err := iconFromPNG(png); err == nil {
+		old := t.hicon
+		t.hicon = hicon
+		if old != 0 {
+			pDestroyIcon.Call(uintptr(old))
+		}
+	}
+	_ = t.addIcon()
 }
 
 // iconFromPNG builds an HICON: CreateIconFromResourceEx understands PNG
@@ -376,7 +402,7 @@ func (t *windowsTray) applyIcon() {
 	nid := t.baseNID()
 	nid.uFlags = nifIcon
 	nid.hIcon = hicon
-	if !shellNotifyIcon(nimModify, &nid) {
+	if shellNotifyIcon(nimModify, &nid) != nil {
 		pDestroyIcon.Call(uintptr(hicon))
 		return
 	}
@@ -529,7 +555,7 @@ func trayWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uint
 	// Explorer restarted: the icon it had is gone. Not a constant, so not a
 	// case of the switch below.
 	if wmTaskbarCreated != 0 && message == wmTaskbarCreated {
-		t.addIcon()
+		t.readdIcon()
 		return 0
 	}
 	switch message {
