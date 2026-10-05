@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -22,9 +23,9 @@ import (
 
 // fakeClaudeLogin stands in for Claude Code (installFakeClaude's
 // "claude-login" role). It refuses anything but `auth login`, records its
-// arguments and the CLAUDE_CONFIG_DIR it was given, and then — per
-// FAKE_CLAUDE_MODE — writes a subscription login, writes an API-key login, or
-// fails having written nothing.
+// arguments (one per line) and the CLAUDE_CONFIG_DIR it was given, and then —
+// per FAKE_CLAUDE_MODE — writes a subscription login, writes an API-key login,
+// or fails having written nothing.
 func fakeClaudeLogin(args []string) int {
 	if len(args) < 2 || args[0] != "auth" || args[1] != "login" {
 		return 64
@@ -187,7 +188,7 @@ func (f *loginFixture) loginArgs(t *testing.T) []string {
 	if err != nil {
 		t.Fatalf("fake claude never ran: %v", err)
 	}
-	return strings.Fields(string(raw))
+	return strings.Split(string(raw), "\n")
 }
 
 // assertNoScratch fails if any login.* scratch profile survived.
@@ -203,15 +204,15 @@ func TestAddLoginStoresTheNewAccountAndLeavesTheLiveOneAlone(t *testing.T) {
 	f := newLoginFixture(t)
 	liveBefore := f.liveCreds(t)
 
-	code, out, errb := f.run(t, "add", "--login", "--", "--email", "b@example.com", "--sso")
+	code, out, errb := f.run(t, "add", "--login", "--", "--email", "b@example.com", "--sso", "two words")
 	if code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, errb)
 	}
 	if !strings.Contains(out, "Added Account 2: b@example.com [personal] (from login)") {
 		t.Errorf("output = %q", out)
 	}
-	if got := f.loginArgs(t); strings.Join(got, " ") != "--claudeai --email b@example.com --sso" {
-		t.Errorf("claude auth login got passthrough %v", got)
+	if got, want := f.loginArgs(t), []string{"--claudeai", "--email", "b@example.com", "--sso", "two words"}; !slices.Equal(got, want) {
+		t.Errorf("claude auth login got passthrough %q, want %q", got, want)
 	}
 	if dir := f.loginDirArg(t); filepath.Dir(dir) != paths.GetBackupRoot() || !strings.HasPrefix(filepath.Base(dir), "login.") {
 		t.Errorf("login ran with CLAUDE_CONFIG_DIR=%q, want a login.* scratch under %q", dir, paths.GetBackupRoot())
