@@ -41,10 +41,9 @@ func TestRunningInContainerEnvShortCircuit(t *testing.T) {
 	}
 }
 
+// TestRunningInContainerFileProbes: off Windows each file probe decides; on
+// Windows none is read, so every case is false, a present probe included.
 func TestRunningInContainerFileProbes(t *testing.T) {
-	if IsWindows() {
-		t.Skip("Windows has no /.dockerenv or /proc probes: RunningInContainer skips them there")
-	}
 	dir := t.TempDir()
 	write := func(name, content string) string {
 		p := filepath.Join(dir, name)
@@ -83,8 +82,9 @@ func TestRunningInContainerFileProbes(t *testing.T) {
 				mi = write("mountinfo", tt.mountBody)
 			}
 			withProbePaths(t, tt.dockerenv, cg, mi)
-			if got := RunningInContainer(); got != tt.want {
-				t.Errorf("RunningInContainer() = %v, want %v", got, tt.want)
+			want := tt.want && !IsWindows()
+			if got := RunningInContainer(); got != want {
+				t.Errorf("RunningInContainer() = %v, want %v", got, want)
 			}
 		})
 	}

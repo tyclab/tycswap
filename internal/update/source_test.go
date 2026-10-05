@@ -204,6 +204,7 @@ func TestLdflagsOverride(t *testing.T) {
 		out += ".exe" // go build -o keeps the name; exec finds only .exe
 	}
 	build := exec.CommandContext(context.Background(), gobin, "build", "-ldflags", flags, "-o", out, "./testdata/printvars")
+	build.Env = append(os.Environ(), noGitConfig...)
 	var stderr bytes.Buffer
 	build.Stderr = &stderr
 	if err := build.Run(); err != nil {
@@ -244,7 +245,7 @@ func TestClassifyRealBuilds(t *testing.T) {
 		t.Helper()
 		cmd := exec.CommandContext(context.Background(), gobin, args...)
 		cmd.Dir = wd
-		cmd.Env = append(os.Environ(), env...)
+		cmd.Env = append(append(os.Environ(), noGitConfig...), env...)
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		out, err := cmd.Output()
@@ -321,6 +322,11 @@ func TestClassifyRealBuilds(t *testing.T) {
 		t.Errorf("go install %s@%s: %v, want module", modPath, modVersion, got)
 	}
 }
+
+// noGitConfig keeps the git a build in the checkout runs for its VCS stamp
+// away from the user's and the system's git config. HOME stays: GOCACHE and
+// GOENV are found through it.
+var noGitConfig = []string{"GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_CONFIG_NOSYSTEM=1"}
 
 // fileURL is the file:// URL GOPROXY takes for a local directory.
 func fileURL(dir string) string {

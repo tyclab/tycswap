@@ -176,7 +176,7 @@ func TestCollect_UnreadableSessionsDirFailsClosedNoRefresh(t *testing.T) {
 		t.Skip("root bypasses directory permissions; cannot simulate an unreadable sessions dir")
 	}
 	if runtime.GOOS == "windows" {
-		t.Skip("Windows has no POSIX read permission for chmod 0000 to remove")
+		t.Skip("chmod 0000 denies no read on Windows; the fail-closed probe is platform-independent and covered on Linux and macOS")
 	}
 	clk := testutil.FixedClock(t, fixedNow)
 	now := clock.Seconds(clk)

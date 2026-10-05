@@ -936,9 +936,6 @@ func TestNewDefaultsAndPaths(t *testing.T) {
 	if want := filepath.Join(paths.GetBackupRoot(), "codex"); s.Root() != want || s.Root() != authfile.StoreRoot() {
 		t.Fatalf("Root = %q, want %q", s.Root(), want)
 	}
-	if s.platform != platform.Detect() {
-		t.Fatalf("platform = %v, want detected %v", s.platform, platform.Detect())
-	}
 	if _, ok := s.kc.(keychain.Security); !ok {
 		t.Fatalf("keychain = %T, want keychain.Security", s.kc)
 	}

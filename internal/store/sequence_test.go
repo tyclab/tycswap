@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/cerr"
@@ -277,11 +278,14 @@ func TestSequenceForUpdateRefusesUnreadableFile(t *testing.T) {
 					t.Errorf("refusal message is missing %q: %s", want, err)
 				}
 			}
-			// The cause, the OS error (EISDIR, EACCES; "Incorrect function" on
-			// Windows), survives for a caller that wants to inspect it.
+			// The cause, the OS error on the roster itself, survives for a
+			// caller that wants to inspect it: EISDIR or EACCES (for a
+			// directory, Windows reports "Incorrect function").
 			var cause *fs.PathError
-			if !errors.As(err, &cause) {
-				t.Errorf("refusal dropped its cause: %v", err)
+			if !errors.As(err, &cause) || cause.Path != s.SequenceFile {
+				t.Errorf("refusal dropped its cause, the read of %s: %v", s.SequenceFile, err)
+			} else if runtime.GOOS != "windows" && !errors.Is(err, fs.ErrPermission) && !errors.Is(err, syscall.EISDIR) {
+				t.Errorf("refusal's cause is %v, want EACCES or EISDIR", cause.Err)
 			}
 			// ReadSequence still raises, as Python does.
 			if _, rerr := s.ReadSequence(); rerr == nil {

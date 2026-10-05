@@ -1,16 +1,11 @@
 // Tests for the portable pieces of internal/wincred (spec 07§5.3, DESIGN A9):
-// the in-memory Fake used by internal/migrations' Windows-migration tests, and
-// the always-not-found stub Real that every non-Windows build actually links
-// and runs. The real Windows Credential Manager backend (wincred_windows.go)
-// cannot be exercised here — no Windows host — and is instead checked for
-// validity via `GOOS=windows go build ./internal/wincred/...` (see the task
-// notes); this file only covers what actually runs on this platform.
+// the in-memory Fake used by internal/migrations' Windows-migration tests.
+// The always-not-found stub Real that every non-Windows build links is tested
+// in wincred_stub_test.go; no test drives the real Windows Credential Manager
+// backend (wincred_windows.go).
 package wincred
 
-import (
-	"runtime"
-	"testing"
-)
+import "testing"
 
 func TestFakeGetSetDeleteRoundTrip(t *testing.T) {
 	f := NewFake()
@@ -41,20 +36,5 @@ func TestFakeGetSetDeleteRoundTrip(t *testing.T) {
 	// Delete of an absent key is a no-op success (rc-44 parity), not an error.
 	if err := f.Delete("claude-code", "account-1-a@x.com"); err != nil {
 		t.Fatalf("Delete of absent entry: %v", err)
-	}
-}
-
-func TestNonWindowsStubAlwaysReportsNotFound(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("the stub is the off-Windows build; on Windows Real is the Credential Manager itself")
-	}
-	r := New()
-
-	v, found, err := r.Get("claude-code", "account-1-a@x.com")
-	if v != "" || found || err != nil {
-		t.Fatalf("stub Get = (%q, %v, %v), want (\"\", false, nil)", v, found, err)
-	}
-	if err := r.Delete("claude-code", "account-1-a@x.com"); err != nil {
-		t.Fatalf("stub Delete = %v, want nil (no-op success)", err)
 	}
 }
