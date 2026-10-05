@@ -156,8 +156,9 @@ type autoEngine interface {
 // (DESIGN A47): one Start and one Stop drive both, and both feed one event
 // log.
 type autoFacade struct {
-	sw  *core.Switcher
-	clk clock.Clock
+	managedBy string // immutable owner configured before the dashboard starts
+	sw        *core.Switcher
+	clk       clock.Clock
 	// codexSw is the Codex switcher; nil on an install that had no Codex
 	// accounts at launch, which then hosts the Claude engine alone.
 	codexSw *codexswitcher.Switcher
@@ -228,7 +229,8 @@ func (a *autoFacade) View() web.AutoView {
 	events := make([]web.AutoEventView, len(a.events)) // never nil: the UI wants []
 	copy(events, a.events)
 	v := web.AutoView{
-		Available:  true,
+		Available:  a.managedBy == "",
+		ManagedBy:  a.managedBy,
 		Running:    a.running,
 		DryRun:     a.dryRun,
 		StartedAt:  a.startedAt,
@@ -251,6 +253,9 @@ func (a *autoFacade) View() web.AutoView {
 }
 
 func (a *autoFacade) Start(dryRun bool) error {
+	if a.managedBy != "" {
+		return cerr.Validation("auto-switch is managed by %s", a.managedBy)
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.running {

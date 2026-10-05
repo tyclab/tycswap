@@ -334,6 +334,8 @@ func isTruthy(v string) bool {
 func (s *Server) mutate(w http.ResponseWriter, fn func() (map[string]any, error)) {
 	s.mutMu.Lock()
 	payload, err := fn()
+	// Invalidate documents whose builds began before this mutation finished.
+	seq := s.stateSeq.Add(1)
 	s.mutMu.Unlock()
 	s.broadcast()
 	if err != nil {
@@ -341,7 +343,7 @@ func (s *Server) mutate(w http.ResponseWriter, fn func() (map[string]any, error)
 		writeError(w, statusFor(err), err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": payload})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": payload, "stateSequence": seq})
 }
 
 // decodeBody reads an optional JSON object body into v. An empty body is
@@ -955,6 +957,10 @@ func (s *Server) handleSettingUnset(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAutoStart(w http.ResponseWriter, r *http.Request) {
 	if unavailable(w, s.d.Auto != nil, "auto-switch") {
+		return
+	}
+	if owner := s.d.Auto.View().ManagedBy; owner != "" {
+		writeError(w, http.StatusConflict, "auto-switch is managed by "+owner)
 		return
 	}
 	var b struct {

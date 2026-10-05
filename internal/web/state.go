@@ -31,6 +31,7 @@ const stateSchemaVersion = 1
 // State is the document GET /api/state returns and every SSE state event
 // carries.
 type State struct {
+	Sequence      uint64           `json:"sequence"`
 	SchemaVersion int              `json:"schemaVersion"`
 	ServerTime    string           `json:"serverTime"`
 	Version       string           `json:"version"`
@@ -92,8 +93,10 @@ type stateOpts struct {
 // and assembles the document. With a merged source the Codex rows follow the
 // Claude rows; activeNumber, currentLogin and the token status stay Claude's.
 func (s *Server) buildState(o stateOpts) State {
+	seq := s.stateSeq.Add(1)
 	snap := s.d.Snapshot.AccountsSnapshot(nil)
 	st := State{
+		Sequence:      seq,
 		SchemaVersion: stateSchemaVersion,
 		ServerTime:    s.d.Clock.Now().UTC().Format(time.RFC3339),
 		Version:       version.Display(),

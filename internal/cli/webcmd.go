@@ -299,6 +299,7 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 		codexSw = newQuietCodexSwitcher()
 	}
 	auto := newAutoFacade(sw, codexSw)
+	auto.managedBy = strings.TrimSpace(os.Getenv(brand.Sanitized().EnvPrefix + "_AUTO_MANAGED_BY"))
 	codex := newCodexOps(codexSw)
 	var host *updatesHost
 	updates := o.updates

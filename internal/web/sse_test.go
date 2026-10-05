@@ -243,8 +243,8 @@ func TestBroadcast_SequencesEveryDocument(t *testing.T) {
 	st.nextState(t, timeout)
 	h.post("/api/accounts/claude:2/enable") // a mutation broadcasts too
 	st.nextState(t, timeout)
-	if got := h.s.stateSeq.Load(); got != before+2 {
-		t.Fatalf("sequence advanced %d for two broadcasts, want 2", got-before)
+	if got := h.s.stateSeq.Load(); got != before+3 {
+		t.Fatalf("sequence advanced %d for two broadcasts and one mutation barrier, want 3", got-before)
 	}
 }
 

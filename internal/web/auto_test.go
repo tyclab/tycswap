@@ -321,3 +321,32 @@ func TestAutoModelAppliesLive(t *testing.T) {
 		t.Errorf("nothing should reach the engine on a bad request: %v", h.auto.calls)
 	}
 }
+
+func TestAutoStart_ManagedExternally(t *testing.T) {
+	h := newHarness(t)
+	h.auto.mu.Lock()
+	h.auto.view.ManagedBy = "flakelab-tycswap-autoswitch.timer"
+	h.auto.view.Available = false
+	h.auto.mu.Unlock()
+	for _, dry := range []bool{false, true} {
+		resp := h.postJSON("/api/auto/start", map[string]any{"dryRun": dry})
+		if resp.StatusCode != http.StatusConflict {
+			t.Fatalf("managed start = %d: %s", resp.StatusCode, readBody(t, resp))
+		}
+		resp.Body.Close()
+	}
+	if len(h.auto.Calls()) != 0 {
+		t.Fatal("managed engine reached Start")
+	}
+}
+
+func TestMutationStateBarrier(t *testing.T) {
+	h := newHarness(t)
+	before := decodeJSON(t, h.get("/api/state"))["sequence"].(float64)
+	reply := decodeJSON(t, h.postJSON("/api/settings/autoswitch.model", map[string]any{"value": "Opus"}))
+	barrier := reply["stateSequence"].(float64)
+	after := decodeJSON(t, h.get("/api/state"))["sequence"].(float64)
+	if !(before < barrier && barrier < after) {
+		t.Fatalf("state barrier: %v < %v < %v", before, barrier, after)
+	}
+}

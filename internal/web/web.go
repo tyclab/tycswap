@@ -150,6 +150,7 @@ type AutoEventView struct {
 
 // AutoView is the auto-switch engine's state as the dashboard shows it.
 type AutoView struct {
+	ManagedBy  string          `json:"managedBy,omitempty"`
 	Available  bool            `json:"available"`
 	Running    bool            `json:"running"`
 	DryRun     bool            `json:"dryRun"`
@@ -786,7 +787,6 @@ func (s *Server) Serve(ctx context.Context) error {
 // so every document takes a sequence number before its build starts and the
 // hub drops any document older than the newest it has published.
 func (s *Server) broadcast() {
-	seq := s.stateSeq.Add(1)
 	wantTS := s.hub.wantsTokenStatus()
 	st := s.buildState(stateOpts{tokenStatus: wantTS})
 	var withTS []byte
@@ -804,7 +804,7 @@ func (s *Server) broadcast() {
 		s.d.Logger("web: state: " + err.Error())
 		return
 	}
-	if !s.hub.publishState(seq, body, withTS) {
+	if !s.hub.publishState(st.Sequence, body, withTS) {
 		return // a newer document went out first; observers got that one
 	}
 	s.obsMu.Lock()

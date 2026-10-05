@@ -27,6 +27,7 @@ import (
 	"github.com/tyclab/tycswap/internal/ccversion"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/termsafe"
 	"github.com/tyclab/tycswap/internal/tray"
@@ -170,7 +171,7 @@ func (a *appShell) update(st web.State) {
 	}
 	title, tooltip := "", head+" — no active account"
 	if ok {
-		models := countsModelLimits(st)
+		models := countedModels(st)
 		title = fmt.Sprintf("#%s · %s", rowNumber(active), fmtPctShort(maxWindowPct(active, models)))
 		tooltip = head + " — #" + rowNumber(active) + " " + rowName(active) + " · " + windowsLine(active, models)
 	}
@@ -179,6 +180,8 @@ func (a *appShell) update(st web.State) {
 	if running {
 		title = strings.TrimSpace("⟳ " + title)
 		tooltip += " · auto-switch on"
+	} else if st.Auto != nil && st.Auto.ManagedBy != "" {
+		tooltip += " · managed by " + st.Auto.ManagedBy
 	} else {
 		tooltip += " · auto-switch off"
 	}
@@ -186,7 +189,7 @@ func (a *appShell) update(st web.State) {
 	// there is one, follows in the tooltip (A47).
 	if cx, has := activeCodexAccount(st); has {
 		tooltip += " · codex #" + rowNumber(cx) + " " + rowName(cx)
-		if line := windowsLine(cx, false); line != "" {
+		if line := windowsLine(cx, nil); line != "" {
 			tooltip += " · " + line
 		}
 	}
@@ -209,8 +212,10 @@ func (a *appShell) menu(st web.State) []tray.Item {
 	state := "auto-switch off"
 	if running {
 		state = "auto-switch on"
+	} else if st.Auto != nil && st.Auto.ManagedBy != "" {
+		state = "auto-switch managed externally"
 	}
-	withModels := countsModelLimits(st)
+	withModels := countedModels(st)
 	sub := strings.TrimPrefix(version.Version, "v") + " · " + state
 	if line := a.claudeCodeLine(); line != "" {
 		sub += "\n" + line
@@ -231,17 +236,21 @@ func (a *appShell) menu(st web.State) []tray.Item {
 	if !running {
 		autoSub = "off — switch accounts by hand or turn on"
 	}
-	items = append(items, tray.Item{ID: "auto", Kind: tray.KindToggle, Title: "Auto-switch", Sub: autoSub, Checked: running})
+	managed := st.Auto != nil && st.Auto.ManagedBy != ""
+	if managed {
+		autoSub = "Managed by " + st.Auto.ManagedBy
+	}
+	items = append(items, tray.Item{Disabled: managed, ID: "auto", Kind: tray.KindToggle, Title: "Auto-switch", Sub: autoSub, Checked: running})
 	if a.act.SetModelLimits != nil {
 		// One switch for the per-model weekly windows: it decides what
 		// auto-switch counts AND what every percentage here reports, so the
 		// two can never tell different stories (A39).
 		name := modelWindowLabel(st)
 		sub := "off — 5h and 7d only, " + name + " ignored"
-		if withModels {
-			sub = "on — " + name + " counts towards the percentage and the switch"
+		if len(withModels) > 0 {
+			sub = "counting " + strings.Join(withModels, ", ") + " — applies to percentages and switching"
 		}
-		items = append(items, tray.Item{ID: "model-limits", Kind: tray.KindToggle, Title: name + " limit", Sub: sub, Checked: withModels})
+		items = append(items, tray.Item{ID: "model-limits", Kind: tray.KindToggle, Title: "Model limits", Sub: sub, Checked: len(withModels) > 0})
 	}
 	items = append(items, tray.Separator(), tray.Header("App"))
 	// An update of Claude Code sits in the Updates section; its other states
@@ -267,7 +276,7 @@ const inlineAccounts = 10
 // submenu with all of them; then "Add current login". The Codex accounts
 // follow under a Codex heading by the same rule (A47). Every row's id is
 // "switch:" and its row key, since slot numbers repeat across providers.
-func (a *appShell) accountRows(st web.State, withModels bool) []tray.Item {
+func (a *appShell) accountRows(st web.State, withModels []string) []tray.Item {
 	claude, codex := rowsByProvider(st.Accounts)
 	items := gaugeGroup(claude, withModels, "accounts", "All %d accounts")
 	if a.act.AddCurrent != nil {
@@ -300,7 +309,7 @@ func rowsByProvider(all []map[string]any) (claude, codex []map[string]any) {
 
 // gaugeGroup is one provider's gauge rows: every row, or with more than
 // inlineAccounts the active one and a submenu (id, title format) with all.
-func gaugeGroup(rows []map[string]any, withModels bool, subID, subTitle string) []tray.Item {
+func gaugeGroup(rows []map[string]any, withModels []string, subID, subTitle string) []tray.Item {
 	var gauges, active []tray.Item
 	for _, r := range rows {
 		pct, has := maxWindowPct(r, withModels)
@@ -501,6 +510,12 @@ func (a *appShell) click(id string) {
 		}
 		a.notify("Switched to account #"+num, "Restart running Claude Code sessions to pick it up.")
 	case id == "auto":
+		a.mu.Lock()
+		managed := a.last.Auto != nil && a.last.Auto.ManagedBy != ""
+		a.mu.Unlock()
+		if managed {
+			return
+		}
 		var err error
 		wasRunning := a.autoRunning()
 		if wasRunning {
@@ -534,7 +549,7 @@ func (a *appShell) click(id string) {
 		if on {
 			a.notify(name+" limit off", "Auto-switch and every percentage now count the 5h and 7d windows only.")
 		} else {
-			a.notify(name+" limit on", "Auto-switch and every percentage now count the "+name+" weekly window too.")
+			a.notify("Model limits on", "Auto-switch and every percentage now count all per-model weekly windows too.")
 		}
 		a.repaint()
 	case id == "autostart":
@@ -804,7 +819,7 @@ func (a *appShell) thresholdAlert(st web.State, active map[string]any, ok bool) 
 	}
 	num, key := rowNumber(active), rowKey(active)
 	bars := barsOf(st)
-	pcts := classPcts(active, countsModelLimits(st))
+	pcts := classPcts(active, countedModels(st))
 	// Costliest first: losing the week costs days across every model, a model's
 	// week costs days for that model, the 5h window costs a wait.
 	axes := []struct {
@@ -835,7 +850,7 @@ func (a *appShell) thresholdAlert(st web.State, active map[string]any, ok bool) 
 	case over != nil && !a.alerted[key]:
 		a.alerted[key] = true
 		a.notify(fmt.Sprintf("Account #%s has used %s %s", num, fmtPctShort(*over, true), subject),
-			windowsLine(active, countsModelLimits(st))+" — the dashboard shows the next best account.")
+			windowsLine(active, countedModels(st))+" — the dashboard shows the next best account.")
 	case clear && a.alerted[key]:
 		delete(a.alerted, key)
 	}
@@ -950,25 +965,31 @@ type windowPct struct {
 // towards the figures this shell shows — the same `autoswitch.model` setting
 // the engine decides with, preferring the running engine's live value so the
 // tray and the engine can never disagree (A39).
-func countsModelLimits(st web.State) bool {
+func countsModelLimits(st web.State) bool { return len(countedModels(st)) > 0 }
+
+func countedModels(st web.State) []string {
 	if st.Auto != nil && st.Auto.Running && st.Auto.Settings != nil {
 		if v, present := st.Auto.Settings["autoswitch.model"]; present {
 			sv, _ := v.(string)
-			return strings.TrimSpace(sv) != ""
+			return settings.ParseModelNames(&sv)
 		}
 	}
 	for _, sv := range st.Settings {
 		if sv.Key == "autoswitch.model" {
 			s, _ := sv.Value.(string)
-			return strings.TrimSpace(s) != ""
+			return settings.ParseModelNames(&s)
 		}
 	}
-	return false
+	return nil
 }
 
 // modelWindowLabel names the per-model window the accounts actually report,
 // so the switch that counts it can say so. Falls back to "model".
 func modelWindowLabel(st web.State) string {
+	models := countedModels(st)
+	if len(models) > 0 && !countsWindow(models, "all") {
+		return strings.Join(models, ", ")
+	}
 	for _, r := range st.Accounts {
 		usage, _ := r["usage"].(map[string]any)
 		if usage == nil {
@@ -988,7 +1009,16 @@ func modelWindowLabel(st web.State) string {
 
 // windowsOf lists the 5h, 7d and — when they count — the model windows that
 // have a value.
-func windowsOf(r map[string]any, withModels bool) []windowPct {
+func countsWindow(models []string, name string) bool {
+	for _, model := range models {
+		if strings.EqualFold(model, "all") || strings.EqualFold(model, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func windowsOf(r map[string]any, withModels []string) []windowPct {
 	usage, _ := r["usage"].(map[string]any)
 	if usage == nil {
 		return nil
@@ -1011,13 +1041,13 @@ func windowsOf(r map[string]any, withModels bool) []windowPct {
 				continue
 			}
 			if p, ok := pctOf(w["pct"]); ok {
-				out = append(out, windowPct{scopedName(w), p, withModels})
+				out = append(out, windowPct{scopedName(w), p, countsWindow(withModels, scopedName(w))})
 			}
 		}
 	} else if scoped, _ := usage["scoped"].([]map[string]any); scoped != nil {
 		for _, w := range scoped {
 			if p, ok := pctOf(w["pct"]); ok {
-				out = append(out, windowPct{scopedName(w), p, withModels})
+				out = append(out, windowPct{scopedName(w), p, countsWindow(withModels, scopedName(w))})
 			}
 		}
 	}
@@ -1033,7 +1063,7 @@ func scopedName(w map[string]any) string {
 
 // maxWindowPct is the fullest window that COUNTS — the number the tray title
 // shows.
-func maxWindowPct(r map[string]any, withModels bool) (float64, bool) {
+func maxWindowPct(r map[string]any, withModels []string) (float64, bool) {
 	var m float64
 	var has bool
 	for _, w := range windowsOf(r, withModels) {
@@ -1061,7 +1091,7 @@ type windowClassPcts struct {
 // Each is governed by a threshold of its own, so anything that JUDGES an
 // account — rather than merely reporting how full it is — needs them apart
 // (DESIGN A34).
-func classPcts(r map[string]any, withModels bool) windowClassPcts {
+func classPcts(r map[string]any, withModels []string) windowClassPcts {
 	var out windowClassPcts
 	for _, w := range windowsOf(r, withModels) {
 		if !w.counted {
@@ -1086,7 +1116,7 @@ func classPcts(r map[string]any, withModels bool) windowClassPcts {
 // is still shown — hiding the model figure would answer one question by
 // removing another — but it is marked, so the line explains the percentage
 // next to it rather than contradicting it (A39).
-func windowsLine(r map[string]any, withModels bool) string {
+func windowsLine(r map[string]any, withModels []string) string {
 	wins := windowsOf(r, withModels)
 	parts := make([]string, 0, len(wins))
 	for _, w := range wins {

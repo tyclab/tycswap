@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Complete the model-window controls on Auto and Settings: Off/All/Selected, stable drafts and focus, empty-selection Reset, and stale-state rejection across saves. Tray percentages now honor selected model names instead of counting every model window.
+- `TYCSWAP_AUTO_MANAGED_BY` protects externally scheduled auto-switch: the dashboard server rejects hosted-engine starts and remembered resume, and dashboard/tray controls show the owner and disable startup.
+
+
 - Fixed storage transaction isolation: Claude's lazy roster migration now takes the writer lock and re-reads after acquisition; Codex registry and snapshot writes reuse a lock only through an explicit transaction view, never because another goroutine holds it.
 - `add --login` selects subscription mode and refuses `--console` before launch. Failed scratch-Keychain cleanup is reported and retried on the next login; shared Console keys and live credentials remain untouched.
 

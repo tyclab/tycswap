@@ -300,21 +300,21 @@ func TestShellAutoEvents(t *testing.T) {
 
 func TestShellPctParsing(t *testing.T) {
 	r := acct(1, "a@x", "", true, "88%", 12, "Fable", "100")
-	if p, ok := maxWindowPct(r, true); !ok || p != 100 {
+	if p, ok := maxWindowPct(r, []string{"all"}); !ok || p != 100 {
 		t.Errorf("maxWindowPct = %v,%v", p, ok)
 	}
-	if got := windowsLine(r, true); got != "5h 88% · 7d 12% · Fable 100%" {
+	if got := windowsLine(r, []string{"all"}); got != "5h 88% · 7d 12% · Fable 100%" {
 		t.Errorf("windowsLine = %q", got)
 	}
-	if _, ok := maxWindowPct(map[string]any{"usage": nil}, true); ok {
+	if _, ok := maxWindowPct(map[string]any{"usage": nil}, []string{"all"}); ok {
 		t.Error("no usage → no pct")
 	}
 	// A39: with the model limit switched off, the model window is not part of
 	// any figure the tray shows — the percentage is the worst of 5h and 7d.
-	if p, ok := maxWindowPct(r, false); !ok || p != 88 {
+	if p, ok := maxWindowPct(r, nil); !ok || p != 88 {
 		t.Errorf("maxWindowPct without models = %v,%v, want 88", p, ok)
 	}
-	if got := windowsLine(r, false); got != "5h 88% · 7d 12% · Fable 100% (not counted)" {
+	if got := windowsLine(r, nil); got != "5h 88% · 7d 12% · Fable 100% (not counted)" {
 		t.Errorf("windowsLine without models = %q", got)
 	}
 }
@@ -332,7 +332,7 @@ func TestShellModelLimitSwitch(t *testing.T) {
 		t.Errorf("off: title = %q, want the worst of 5h/7d", ft.title)
 	}
 	it, ok := ft.item("model-limits")
-	if !ok || it.Checked || it.Title != "Fable limit" || !strings.Contains(it.Sub, "ignored") {
+	if !ok || it.Checked || it.Title != "Model limits" || !strings.Contains(it.Sub, "ignored") {
 		t.Errorf("off: switch = %+v (ok=%v)", it, ok)
 	}
 
@@ -349,10 +349,10 @@ func TestShellModelLimitSwitch(t *testing.T) {
 	if ft.title != "#1 · 97%" {
 		t.Errorf("on: title = %q, want the model window to count", ft.title)
 	}
-	if it, _ := ft.item("model-limits"); !it.Checked || !strings.Contains(it.Sub, "counts towards") {
+	if it, _ := ft.item("model-limits"); !it.Checked || !strings.Contains(it.Sub, "counting all") {
 		t.Errorf("on: switch = %+v", it)
 	}
-	if !strings.Contains(strings.Join(ft.notes, "\n"), "Fable limit on") {
+	if !strings.Contains(strings.Join(ft.notes, "\n"), "Model limits on") {
 		t.Errorf("notes = %v", ft.notes)
 	}
 }
@@ -894,5 +894,47 @@ func TestShellCodexAutoSwitchNotification(t *testing.T) {
 	want := "Auto-switched Codex to account #3 | codex: switched 1 (99%) -> 3 (5%)\nAuto-switched to account #2 | 7d window at 97%"
 	if got := strings.Join(ft.notesNow(), "\n"); got != want {
 		t.Errorf("notes = %q\nwant %q", got, want)
+	}
+}
+
+func TestTrayCountsOnlySelectedModels(t *testing.T) {
+	st := sampleState()
+	st.Settings = append(st.Settings, web.SettingView{Key: "autoswitch.model", Value: "fAbLe"})
+	r := acct(1, "a@example.com", "", true, 15.0, 20.0, "Fable", 30.0)
+	r["usage"].(map[string]any)["scoped"] = []any{map[string]any{"name": "Fable", "pct": 30.0}, map[string]any{"name": "Opus", "pct": 99.0}}
+	models := countedModels(st)
+	if p, _ := maxWindowPct(r, models); p != 30 {
+		t.Fatalf("selected max = %v", p)
+	}
+	if p := classPcts(r, models).model; p == nil || *p != 30 {
+		t.Fatalf("selected threshold utilization = %v", p)
+	}
+	if !strings.Contains(windowsLine(r, models), "Opus 99% (not counted)") {
+		t.Fatal("uncounted window disappeared or counted")
+	}
+	st.Auto = &web.AutoView{Running: true, Settings: map[string]any{"autoswitch.model": "OPUS"}}
+	if p, _ := maxWindowPct(r, countedModels(st)); p != 99 {
+		t.Fatalf("live model must win: %v", p)
+	}
+	st.Auto.Settings["autoswitch.model"] = ""
+	if p, _ := maxWindowPct(r, countedModels(st)); p != 20 {
+		t.Fatalf("live Off must win: %v", p)
+	}
+}
+
+func TestTrayManagedAutoCannotStart(t *testing.T) {
+	ft := &fakeTray{}
+	calls := 0
+	sh := newAppShell(ft, shellActions{AutoStart: func() error { calls++; return nil }})
+	st := sampleState()
+	st.Auto = &web.AutoView{ManagedBy: "flakelab-tycswap-autoswitch.timer"}
+	sh.update(st)
+	item, ok := ft.item("auto")
+	if !ok || !item.Disabled || !strings.Contains(item.Sub, st.Auto.ManagedBy) {
+		t.Fatalf("managed item: %+v", item)
+	}
+	sh.click("auto")
+	if calls != 0 {
+		t.Fatal("disabled tray action started an engine")
 	}
 }

@@ -2556,7 +2556,7 @@ tabs:
   as a dry run, stop, wake; a slider that sets the 7d threshold of the running
   engine (50–100; not saved; enabled only while it runs; the 5h and model bars
   are settings only, DESIGN A34); *Count model limits*, which saves
-  `autoswitch.model` as `all` (or unsets it); the *Next best* ranking with each
+  `autoswitch.model` as `all`, selected model names, or unset (Off), using Save; the *Next best* ranking with each
   account's verdict, which marks a row *at threshold* when any of its windows
   has reached its own bar, ranks `best` by the weekly figure, and names the
   bars in force (`switch at 5h 85% · 7d 97%`, plus the model bar while model
@@ -2866,7 +2866,7 @@ window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
   current login* stores the login Claude Code has;
 - **Automation**: *Auto-switch* (on or off; its second line names the
   threshold of each window; on is resumed at the app's next start);
-  *<window> limit*, which sets `autoswitch.model` (`all` or unset) and
+  *Model limits*, which sets `autoswitch.model` (`all` or unset) and
   retargets the running engine. The thresholds are set with `tycswap config`,
   in the TUI and on the dashboard;
 - **App**: Claude Code's state when nothing is to update; *Start at login*;
@@ -4965,3 +4965,17 @@ digits, spaces, `.` and `-`; `SessionCookie` letters, digits and `_`;
 
 Project overview: `README.md`. Architecture and design decisions:
 `docs/DESIGN.md`.
+
+### Externally managed dashboard auto-switch
+
+`TYCSWAP_AUTO_MANAGED_BY` declares the scheduler that owns auto-switch for
+`web` or `app`. With a non-empty owner, `auto.managedBy` names it,
+`auto.available` is false, and `POST /api/auto/start` returns 409 (including
+`dryRun: true`). The engine facade also refuses remembered startup. The
+remote tray disables its toggle from that state. `auto --once` is unaffected.
+
+State documents carry a process-local monotonic `sequence`. Successful
+mutations carry `stateSequence`: documents with a lower sequence began
+before the mutation completed and must not replace the resulting choice.
+The browser holds model drafts during the request and confirms saves with
+GET /api/state; errors leave the draft available to retry.
