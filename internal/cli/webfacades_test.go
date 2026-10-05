@@ -393,9 +393,7 @@ func testNewDashboardServes(t *testing.T, codex bool) {
 		newQuietCodexSwitcher = func() *codexswitcher.Switcher { return codexSw }
 	}
 	var errBuf strings.Builder
-	// No update schedule: the server's own check would run the Claude Code
-	// on PATH and ask the network for releases.
-	d, code := newDashboard(context.Background(), 5, false, ioStreams{out: io.Discard, err: &errBuf}, dashboardOptions{noUpdateSchedule: true})
+	d, code := newDashboard(context.Background(), 5, false, ioStreams{out: io.Discard, err: &errBuf}, dashboardOptions{})
 	if code != 0 {
 		t.Fatalf("newDashboard: %d %s", code, errBuf.String())
 	}
