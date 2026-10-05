@@ -38,7 +38,7 @@ func newStoreOpts(t *testing.T, opts store.Options) *store.Store {
 		opts.Clock = testutil.FixedClock(t, "2026-07-17T09:00:00Z")
 	}
 	if opts.Keychain == nil {
-		opts.Keychain = &listingKeychain{Fake: keychain.NewFake()}
+		opts.Keychain = &listingKeychain{Fake: keychain.NewFake(), names: map[[2]string]bool{}}
 	}
 	if opts.WinCred == nil {
 		opts.WinCred = wincred.NewFake()
@@ -440,8 +440,9 @@ func truncateSequence(t *testing.T, s *store.Store, n int) []byte {
 }
 
 // listingKeychain is newStore's Keychain: a keychain.Fake that remembers the
-// name of every item set, so snapshotStore can read back all it holds. On
-// macOS the credential backups are Keychain items, and a Fake has no list.
+// name of every item set through it, so snapshotStore can read those items
+// back (an item put in with Seed is not seen). On macOS the credential
+// backups are Keychain items, and a Fake has no list.
 type listingKeychain struct {
 	*keychain.Fake
 	mu    sync.Mutex
@@ -450,18 +451,16 @@ type listingKeychain struct {
 
 func (k *listingKeychain) Set(service, account, password string) error {
 	k.mu.Lock()
-	if k.names == nil {
-		k.names = map[[2]string]bool{}
-	}
 	k.names[[2]string{service, account}] = true
 	k.mu.Unlock()
 	return k.Fake.Set(service, account, password)
 }
 
 // snapshotStore records the exact bytes of sequence.json, of every credential
-// and config backup file and of every item in newStore's Keychain — the state
-// a refusal must leave untouched. The log file is deliberately outside the
-// snapshot: a refusal is expected to log.
+// and config backup file and of every item set through newStore's Keychain (an
+// item put in with Seed is not seen) — the state a refusal must leave
+// untouched. The log file is deliberately outside the snapshot: a refusal is
+// expected to log.
 func snapshotStore(t *testing.T, s *store.Store) map[string][]byte {
 	t.Helper()
 	out := map[string][]byte{}
