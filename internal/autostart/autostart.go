@@ -31,8 +31,8 @@ type Config struct {
 	// Run value); default Label. A remote tray (A45) uses its own, so a
 	// machine that also runs the local app keeps both entries.
 	Label string
-	// Run executes launchctl on macOS; tests replace it. nil → exec.Command,
-	// which refuses to run in a test binary.
+	// Run executes launchctl on macOS; tests replace it. nil → exec.Command;
+	// refused in a test binary.
 	Run func(name string, args ...string) error
 	// GOOS overrides runtime.GOOS (tests only).
 	GOOS string

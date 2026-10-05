@@ -4815,10 +4815,10 @@ make a file or directory unreadable or read-only with chmod. macOS runs the
 whole suite too. In a test binary (`testing.Testing()`) the real Keychain
 client and `launchctl` refuse to run and ask for a fake: the store helpers
 inject a `keychain.Fake`, and the `internal/cli` tests that need Keychain
-state across commands get one per home. The tests that failed on macOS for assuming the Linux layout ask the
-platform instead (`paths.GetBackupRoot`, the store's reads), and the
-`switching` tests, written on the file backend, pin it: the credential store
-picks the Keychain on macOS.
+state across commands get one per home. The tests that failed on macOS for
+assuming the Linux layout ask the platform instead (`paths.GetBackupRoot`,
+the store's reads), and the `switching` tests, written on the file backend,
+pin it: the credential store picks the Keychain on macOS.
 
 **Corporate, not ported.** The reference's tray also carries its owner's
 branding item, the fetch of mandatory Claude Code settings, the plugin
