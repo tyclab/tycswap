@@ -38,9 +38,6 @@ var claudeLookPath = exec.LookPath
 // never chose — with env as its whole environment and the terminal inherited,
 // so the user can finish the browser flow. It returns the exit status.
 var runClaudeLogin = func(binary string, args, env []string, s ioStreams) (int, error) {
-	if err := session.CheckCmdShimArgs(binary, args); err != nil {
-		return 1, err
-	}
 	cmd := session.CLICommand(context.Background(), binary, args...)
 	cmd.Env = env
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.in, s.out, s.err

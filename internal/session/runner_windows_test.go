@@ -7,10 +7,9 @@ import (
 	"time"
 )
 
-// TestProbeRunsACmdShimFromPathsCmdExeParses: the session probe runs npm's
-// claude.cmd from paths with characters cmd.exe acts on: Program Files (x86),
-// where a 32-bit Node.js puts it, and user profiles with an ampersand, with
-// and without a space.
+// TestProbeRunsACmdShimFromPathsCmdExeParses: the session probe runs a
+// claude.cmd shim from paths with characters cmd.exe acts on: Program Files
+// (x86), and user profiles with an ampersand, with and without a space.
 func TestProbeRunsACmdShimFromPathsCmdExeParses(t *testing.T) {
 	exe, err := os.Executable()
 	if err != nil {

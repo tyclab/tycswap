@@ -24,11 +24,11 @@ import (
 // line>", its path always quoted. Started directly, a batch file gets cmd.exe
 // /c with Go's command line as it is, which quotes the path only when it holds
 // a space, and cmd.exe strips the line's first and last quote when it holds
-// more than two quotes, or one of &<>()@^| between them. A shim on a path with
-// a space, given an argument that holds one, or on a path with an ampersand,
-// would have that path cut at the space or the ampersand. /s strips just the
-// pair added here. An argument cmd.exe would act on is refused through
-// cmd.Err (CheckCmdShimArgs).
+// more than two quotes or, by the rule cmd /? documents, one of &<>()@^|
+// between them. A shim on a path with a space, given an argument that holds
+// one, or on a path with an ampersand, would have that path cut at the space
+// or the ampersand. /s strips just the pair added here. An argument cmd.exe
+// would act on is refused through cmd.Err (CheckCmdShimArgs).
 func CLICommand(ctx context.Context, bin string, args ...string) *exec.Cmd {
 	if !isCmdShim(bin) {
 		return exec.CommandContext(ctx, bin, args...)
