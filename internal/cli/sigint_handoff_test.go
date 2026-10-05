@@ -10,6 +10,9 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"time"
+
+	"github.com/tyclab/tycswap/internal/tray"
 )
 
 // The program-wide SIGINT notifier Main installs, once for the test binary.
@@ -83,4 +86,51 @@ func TestCtrlCEndsHeadlessAppWithZeroAndRemovesTheToken(t *testing.T) {
 	if appIsRunning() {
 		t.Error("app.lock is still held after Ctrl-C")
 	}
+}
+
+// earlyCtrlCTray is a tray that gets a real Ctrl-C at the start of Run,
+// before its window would exist, and holds to the contract the Windows tray
+// keeps since A52: a Quit that comes before the window still ends Run. It
+// gives up after five seconds rather than hang.
+type earlyCtrlCTray struct {
+	fakeTray
+	quit chan struct{}
+	once sync.Once
+}
+
+func (e *earlyCtrlCTray) Run() error {
+	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+		return err
+	}
+	select {
+	case <-e.quit:
+		return nil
+	case <-time.After(5 * time.Second):
+		return errors.New("no Quit after the Ctrl-C")
+	}
+}
+
+func (e *earlyCtrlCTray) Quit() { e.once.Do(func() { close(e.quit) }) }
+
+// The remote tray (`app --remote`) on a Ctrl-C before its tray has a window:
+// its claim hands the signal to its context, which quits the tray, and it
+// exits 0 with remote.lock free (A48, A52). Without the claim the notifier's
+// exit 130 ends the test binary.
+func TestEarlyCtrlCEndsRemoteTrayWithZero(t *testing.T) {
+	appLockHome(t)
+	installTestSigint()
+	ft := &earlyCtrlCTray{quit: make(chan struct{})}
+	prev := newTray
+	newTray = func(tray.Icon, tray.Options) (tray.Tray, error) { return ft, nil }
+	t.Cleanup(func() { newTray = prev })
+	var errb syncBuffer
+	done := runApp([]string{"--remote", "http://127.0.0.1:1", "--token-file", tokenFile(t, testRemoteToken), "--no-update-check"}, &errb)
+	if code := waitExit(t, done, &errb); code != 0 {
+		t.Errorf("exit = %d, stderr = %q", code, errb.String())
+	}
+	lock, held, err := acquireRemoteLock()
+	if err != nil || !held {
+		t.Fatalf("remote lock after the exit: %v, %v", held, err)
+	}
+	_ = lock.Release()
 }

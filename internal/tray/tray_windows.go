@@ -140,7 +140,8 @@ type windowsTray struct {
 	pendingN [2]string
 	iconPNG  []byte // the notification-area icon: New's PNG until SetIcon
 
-	hwnd  windows.HWND
+	hwnd  windows.HWND   // set by Run under mu; read under mu off the UI thread
+	quit  bool           // under mu: Quit was called
 	hicon windows.Handle // UI thread only
 	ready chan struct{}
 	err   error
@@ -236,11 +237,15 @@ func (t *windowsTray) Run() error {
 	if hwnd == 0 {
 		return errors.New("tray: CreateWindowEx: " + err.Error())
 	}
-	t.hwnd = windows.HWND(hwnd)
-
+	// Set under mu, where Quit reads it: a Quit from before the window is
+	// posted here and a later one posts itself, so each is posted once (A52).
 	t.mu.Lock()
-	png := t.iconPNG
+	t.hwnd = windows.HWND(hwnd)
+	quit, png := t.quit, t.iconPNG
 	t.mu.Unlock()
+	if quit {
+		pPostMessageW.Call(hwnd, wmTrayQuit, 0, 0)
+	}
 	hicon, err := iconFromPNG(png)
 	if err != nil {
 		return err
@@ -284,9 +289,10 @@ func (t *windowsTray) addIcon() error {
 // icon is gone. The HICON is built again from the latest PNG asked for, since
 // a SetIcon while Explorer was down failed its NIM_MODIFY and kept the older
 // icon (the update badge would otherwise stay missing); when that build fails
-// the icon there was is added. The old HICON goes only after the add, as in
-// applyIcon: any process can broadcast the message, so the shell may still
-// be showing it. UI thread only.
+// the icon there was is added. The old HICON goes only after a successful
+// add, as in applyIcon: any process can broadcast the message, so the shell
+// may still be showing it. A failed add keeps the old HICON and frees the
+// new one, which the shell never took; it is not retried. UI thread only.
 func (t *windowsTray) readdIcon() {
 	t.mu.Lock()
 	png := t.iconPNG
@@ -295,7 +301,9 @@ func (t *windowsTray) readdIcon() {
 	if hicon, err := iconFromPNG(png); err == nil {
 		t.hicon = hicon
 	}
-	_ = t.addIcon()
+	if t.addIcon() != nil {
+		old, t.hicon = t.hicon, old // free the new one below, keep the old
+	}
 	if old != 0 && old != t.hicon {
 		pDestroyIcon.Call(uintptr(old))
 	}
@@ -318,9 +326,15 @@ func (t *windowsTray) baseNID() notifyIconData {
 	return notifyIconData{cbSize: uint32(unsafe.Sizeof(notifyIconData{})), hWnd: t.hwnd, uID: 1}
 }
 
+// Quit before Run has its window is kept, and Run posts it then: the app's
+// SIGINT claim turns a Ctrl-C into a Quit before Run starts (DESIGN A48, A52).
 func (t *windowsTray) Quit() {
-	if t.hwnd != 0 {
-		pPostMessageW.Call(uintptr(t.hwnd), wmTrayQuit, 0, 0)
+	t.mu.Lock()
+	t.quit = true
+	hwnd := t.hwnd
+	t.mu.Unlock()
+	if hwnd != 0 {
+		pPostMessageW.Call(uintptr(hwnd), wmTrayQuit, 0, 0)
 	}
 }
 
@@ -330,9 +344,10 @@ func (t *windowsTray) SetTitle(s string) { t.SetTooltip(s) }
 func (t *windowsTray) SetTooltip(s string) {
 	t.mu.Lock()
 	t.tooltip = s
+	hwnd := t.hwnd
 	t.mu.Unlock()
-	if t.hwnd != 0 {
-		pPostMessageW.Call(uintptr(t.hwnd), wmTrayUpdate, 0, 0)
+	if hwnd != 0 {
+		pPostMessageW.Call(uintptr(hwnd), wmTrayUpdate, 0, 0)
 	}
 }
 
@@ -344,9 +359,10 @@ func (t *windowsTray) SetIcon(icon Icon) {
 	}
 	t.mu.Lock()
 	t.iconPNG = icon.PNG
+	hwnd := t.hwnd
 	t.mu.Unlock()
-	if t.hwnd != 0 {
-		pPostMessageW.Call(uintptr(t.hwnd), wmTraySetIcon, 0, 0)
+	if hwnd != 0 {
+		pPostMessageW.Call(uintptr(hwnd), wmTraySetIcon, 0, 0)
 	}
 }
 
@@ -359,11 +375,12 @@ func (t *windowsTray) SetMenu(items []Item) {
 func (t *windowsTray) Notify(title, body string) error {
 	t.mu.Lock()
 	t.pendingN = [2]string{title, body}
+	hwnd := t.hwnd
 	t.mu.Unlock()
-	if t.hwnd == 0 {
+	if hwnd == 0 {
 		return errors.New("tray: not running")
 	}
-	pPostMessageW.Call(uintptr(t.hwnd), wmTrayNotify, 0, 0)
+	pPostMessageW.Call(uintptr(hwnd), wmTrayNotify, 0, 0)
 	return nil
 }
 

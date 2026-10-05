@@ -5661,7 +5661,9 @@ file (`claimSigint`; a Ctrl-C during the store's start-up notices, before the
 claim, is still the notifier's): the claim stops the notifier's delivery
 (`signal.Stop`), so
 the outcome does not depend on when the notifier's goroutine runs; the serve
-loop ends on the context, the defers run and the command returns 0. The
+loop ends on the context, the defers run and the command returns 0. With a
+tray the context's end is a `Quit`, which can come before `Run` has made its
+window; the Windows tray kept such a `Quit` only from A52 on. The
 release, deferred before the cleanup defers, registers the notifier again when
 the command returns, so nothing changes for any other command or for
 `run()`-driven tests, where the notifier is not installed and a claim is a
@@ -5816,9 +5818,27 @@ a terminal, and is not changed for that. Every `Shell_NotifyIconW` call goes
 through one function variable, which returns the call's error, so a failed
 start names it again and the test can see what the tray asks the shell for.
 
+**A `Quit` before the window.** `Quit` did nothing while there was no window
+yet. The app and the remote tray turn a Ctrl-C into a `Quit` from their SIGINT
+claim on (A48), before `Run` makes the window: a Ctrl-C in between was lost,
+and the tray kept running and swallowed every later one. `Quit` now sets a
+flag and reads the window handle under the tray's lock; `Run` sets the handle
+under it and posts the quit when the flag is set, so each `Quit` is posted
+once. `SetTooltip`, `SetIcon` and `Notify`, which raced on the handle, read it
+under the lock too. The Linux and macOS trays already kept a `Quit` from
+before `Run`.
+
+**A failed re-add** destroyed the old HICON, which the shell may still show
+(any process can broadcast `TaskbarCreated`). It now keeps it and frees the
+new one. The add is not retried: a refused icon stays away until the next
+`TaskbarCreated` or a restart of the app.
+
 **Tests.** On Windows: `TaskbarCreated`, registered as `Run` registers it,
 makes the window procedure add the icon once with the current tooltip and
-callback and an icon built from the PNG; a tooltip update adds nothing.
+callback and an icon built from the PNG; a tooltip update adds nothing. A
+`Quit` before `Run` ends it within 5 s; a refused re-add keeps the shown icon
+and frees the new one. On Linux and macOS, `app --remote` over a fake tray
+that sends a real SIGINT as `Run` starts exits 0 and frees `remote.lock`.
 
 ## A53. The log is opened for each record
 
