@@ -1,7 +1,11 @@
-// Implements spec 08§12 rotation: RotatingFileHandler(maxBytes=1MB,
-// backupCount=3, delay=True) with a lazy-dir _open override. The parent dir and
-// file are created on the first write, and a record that would push the file to
-// or past maxBytes triggers a rollover before it is written.
+// Implements spec 08§12 rotation (maxBytes=1MB, backupCount=3, lazy dir) for
+// a log the tray app and commands write at once (DESIGN A53). The reference's
+// RotatingFileHandler keeps its file open and counts the bytes it wrote; here
+// each record opens the file, rolls it over first when the record would push
+// it to or past maxBytes, appends and closes it, so no handle outlives a
+// record and the size is the file's own. The parent dir and the file are
+// created on the first write. Two writers that reach the limit at once may
+// both roll over and drop the oldest backup early, as the reference does.
 
 package logging
 

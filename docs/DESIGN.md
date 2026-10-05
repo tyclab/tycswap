@@ -538,8 +538,8 @@ contracts (03§2.3).
 Named `"tycswap"`, file `tycswap.log` (A23); **lazy** dir creation on first write (a no-op run must not
 materialize `cache/` or the log under the XDG path — would trip the migration
 collision check). Rotating 1 MB × 3, by the file's own size: each record opens, appends and
-closes the file, so processes that log at once (the tray app and a command) share one log and
-one rotation. Console handler (stderr) only with `--debug`.
+closes the file, so processes that log at once (the tray app and a command) write one log
+(A53). Console handler (stderr) only with `--debug`.
 Paste-safe invariant preserved (never log email in usage-failure WARNING; 04§1.17).
 
 ---
@@ -4809,9 +4809,13 @@ code-signed.
 on macOS with cgo, so the Objective-C is compiled. Windows runs the whole
 suite, the build-tagged tests included: every test keeps its home in a
 temporary directory (`testutil.IsolateHome` sets `USERPROFILE`, which
-`os.UserHomeDir` reads there, beside `HOME`), and a test of a behaviour
-Windows lacks (POSIX modes, a file made unreadable with chmod, the container
-file probes) skips with that reason. macOS runs the tray application's
+`os.UserHomeDir` reads there, beside `HOME`). A test that needs POSIX mode
+bits skips there, as chmod sets none: the mode checks, and the tests that
+make a file or directory unreadable or read-only with chmod, whose error
+paths do not depend on the platform and run off Windows. Where a directory
+in a file's place gives the same read error (the credentials file, the
+roster), Windows runs that case. On Windows `RunningInContainer` is checked
+to read none of its file probes. macOS runs the tray application's
 packages (`tray`, `appicon`, `autostart`, `brand`, `web`, `update`) and its
 tests in `internal/cli` (`APP_TESTS`): the rest of the suite does not hold
 there yet (the store under `~/.tycswap`, the login Keychain).
@@ -5816,3 +5820,27 @@ start names it again and the test can see what the tray asks the shell for.
 **Tests.** On Windows: `TaskbarCreated`, registered as `Run` registers it,
 makes the window procedure add the icon once with the current tooltip and
 callback and an icon built from the PNG; a tooltip update adds nothing.
+
+## A53. The log is opened for each record
+
+The reference's `RotatingFileHandler` opens its file on the first record,
+keeps it open and counts the bytes it wrote, and one process wrote the
+reference's log. tycswap's is written by the tray app (A35) and any command
+run beside it, and a handle kept per process went wrong in two ways: after
+one process rotated `tycswap.log`, the other wrote on into the file it held,
+now `tycswap.log.1`, and rotated by its own count rather than the file's
+size; and on Windows, where Go opens files without `FILE_SHARE_DELETE`, the
+held handle blocked the other process's rename and any delete of the log or
+of the store directory (purge, a test's temporary home).
+
+So each record opens the log, rolls it over first when the record would
+bring the file to 1 MB, by the file's own size whoever wrote it, appends and
+closes it: no handle outlives a record. The format, the limit, the three
+backups, the rollover order and the lazy directory are unchanged. Two
+writers that reach the limit at the same moment may both roll over and drop
+the oldest backup early, as two of the reference's handlers do.
+
+**Tests.** After one writer rotates the log, another's record lands in the
+new log, and the size that triggers a rotation counts both writers' records
+(`TestRotationByAnotherWriter`); the log's directory can be removed right
+after a record (`TestLogHoldsNoHandle`).
