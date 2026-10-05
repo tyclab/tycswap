@@ -44,6 +44,9 @@ func TestOversizedBackupNeverReachesSecurityArgv(t *testing.T) {
 		t.Fatalf("no .enc fallback file: %v", err)
 	}
 	logged, _ := os.ReadFile(argvLog)
+	if !strings.Contains(string(logged), "find-generic-password") {
+		t.Fatalf("the stand-in security never ran (argv log %q): the real exec path was not driven", logged)
+	}
 	for _, line := range strings.Split(string(logged), "\n") {
 		if strings.Contains(line, "-X") || strings.Contains(line, "add-generic-password") {
 			t.Fatalf("security was given the secret on its command line: %.80q", line)
