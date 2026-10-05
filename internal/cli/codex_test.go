@@ -58,6 +58,10 @@ func codexHome(t *testing.T, pids []int, usageFn func(ctx context.Context, at, a
 	t.Cleanup(func() { newCodexSwitcher = prev })
 	// `tycswap auto` sets a process-wide cancel note; later tests expect the default.
 	t.Cleanup(func() { setSigintNote("") })
+	// `codex --debug` points these loggers at this home for the rest of the
+	// process; a later test logging through them would recreate it once removed.
+	apiLog, procLog, importLog := api.Log, procdetect.Log, registryimport.Log
+	t.Cleanup(func() { api.Log, procdetect.Log, registryimport.Log = apiLog, procLog, importLog })
 	return home
 }
 
@@ -226,10 +230,6 @@ func TestCodexVerbHelp(t *testing.T) {
 }
 
 func TestCodexAcceptsDebug(t *testing.T) {
-	// --debug points these loggers at this test's home for the rest of the
-	// process, and a later test logging through them recreates the removed home.
-	apiLog, procLog, importLog := api.Log, procdetect.Log, registryimport.Log
-	t.Cleanup(func() { api.Log, procdetect.Log, registryimport.Log = apiLog, procLog, importLog })
 	codexHome(t, nil, offlineUsage(t))
 	seedOne(t)
 	for _, argv := range [][]string{{"codex", "--debug", "list", "--skip-api"}, {"codex", "list", "--debug", "--skip-api"}} {
