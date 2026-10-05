@@ -19,11 +19,13 @@ func TestAddRefusesUnsafeEmail(t *testing.T) {
 		t.Run("live "+email, func(t *testing.T) {
 			s := newStore(t)
 			seedLiveLogin(t, s, email, "", "", "uuid", oauthBlob)
+			before := snapshotStore(t, s)
 			err := AddAccount(s, nil, true, nil)
 			if err == nil || !strings.Contains(err.Error(), "cannot name a store file") {
 				t.Fatalf("AddAccount = %v, want the email refusal", err)
 			}
 			assertNoBackups(t, s.ConfigsDir, s.CredentialsDir)
+			assertStoreUnchanged(t, s, before, "a refused add")
 			if _, err := os.Stat(filepath.Join(filepath.Dir(s.BackupDir()), "x.json")); err == nil {
 				t.Error("a file was written outside the store")
 			}
@@ -40,11 +42,13 @@ func TestAddRefusesUnsafeEmail(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, ".credentials.json"), []byte(oauthBlob), 0o600); err != nil {
 				t.Fatal(err)
 			}
+			before := snapshotStore(t, s)
 			_, err := AddAccountFrom(s, LoginDir(dir, kc), nil, true, nil)
 			if err == nil || !strings.Contains(err.Error(), "cannot name a store file") {
 				t.Fatalf("AddAccountFrom = %v, want the email refusal", err)
 			}
 			assertNoBackups(t, s.ConfigsDir, s.CredentialsDir)
+			assertStoreUnchanged(t, s, before, "a refused add")
 		})
 	}
 }
