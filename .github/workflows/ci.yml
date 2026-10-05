@@ -13,12 +13,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  # The tests of the tray application in internal/cli (DESIGN A35-A45): what
-  # the macOS job runs of that package until the rest of the suite holds on
-  # macOS too (the store under ~/.tycswap, the login Keychain).
-  APP_TESTS: '^Test(App|Bare(TTY|NonTTY|MSYS)|BadgeIcon|BrandRow|CheckForUpdates|CheckOutcome|ClaudeCode|DashboardCheck|Headless|InstallUpdate|OfferUpdate|OpenAppLog|OpenDashboardFailure|ParseAppArgs|PurgeRefused|ReleaseOwnConsole|Remote|SecondApp|Shell|SpawnDetached|UIPrefs|Update|AutoFacadeRemembers)'
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -52,11 +46,9 @@ jobs:
       - run: go test -count=1 ./...
 
   # macOS builds internal/tray with cgo against Cocoa, the one place cgo is
-  # allowed (DESIGN A12, A35): this job compiles and tests the Objective-C,
-  # then the CGO_ENABLED=0 stub a machine without a C toolchain gets. The rest
-  # of the suite does not hold on macOS yet (the store under ~/.tycswap, the
-  # login Keychain), so this job runs the tray application's packages and
-  # tests.
+  # allowed (DESIGN A12, A35): this job compiles and tests the Objective-C
+  # with the whole suite, then the CGO_ENABLED=0 stub a machine without a C
+  # toolchain gets.
   macos:
     runs-on: macos-latest
     steps:
@@ -66,6 +58,5 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: go build ./...
-      - run: go test -count=1 ./internal/tray/... ./internal/appicon/... ./internal/autostart/... ./internal/brand/... ./internal/web/... ./internal/update/...
-      - run: go test -count=1 -v ./internal/cli -run "$APP_TESTS"
+      - run: go test -count=1 ./...
       - run: CGO_ENABLED=0 go build ./...

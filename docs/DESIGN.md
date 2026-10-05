@@ -4812,10 +4812,12 @@ temporary directory (`testutil.IsolateHome` sets `USERPROFILE`, which
 `os.UserHomeDir` reads there, beside `HOME`). A test that needs POSIX mode
 bits skips there, as chmod sets none: the mode checks, and the tests that
 make a file or directory unreadable or read-only with chmod. macOS runs the
-tray application's packages (`tray`, `appicon`, `autostart`, `brand`, `web`,
-`update`) and its tests in `internal/cli` (`APP_TESTS`): the rest of the
-suite does not hold there yet (the store under `~/.tycswap`, the login
-Keychain).
+whole suite too: the store helpers inject a `keychain.Fake`, and the
+`internal/cli` tests that need Keychain state across commands get one per
+home. The tests that failed on macOS for assuming the Linux layout ask the
+platform instead (`paths.GetBackupRoot`, the store's reads), and the
+`switching` tests, written on the file backend, pin it: the credential store
+picks the Keychain on macOS.
 
 **Corporate, not ported.** The reference's tray also carries its owner's
 branding item, the fetch of mandatory Claude Code settings, the plugin
@@ -5670,8 +5672,7 @@ it stays held; the three busy assertions name the lock kind. `internal/cli`:
 the Codex façade's lock test runs against the switcher's lock; `tycswap web`
 exits 0 through the notify-context seam, offline; with the A7 notifier
 installed, a real SIGINT ends `tycswap web` with 0 and the headless app with 0
-and no token file (Linux; the file compiles on macOS, whose CI runs the tray
-scope only).
+and no token file (Linux and macOS; the file is not built on Windows).
 
 ## A49. The model windows sit beside their bar, picked from the reported windows
 
