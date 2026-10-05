@@ -43,14 +43,9 @@ func FixturesDir(t *testing.T) string {
 	return filepath.Join(RepoRoot(t), "testdata", "python-fixtures")
 }
 
-// IsolateHome points the test at a fresh, empty home on every platform and
-// returns it: HOME and USERPROFILE (os.UserHomeDir off and on Windows), and
-// APPDATA and LOCALAPPDATA under it (os.UserConfigDir and os.UserCacheDir on
-// Windows). It unsets the variables that would send a lookup past that home:
-// CLAUDE_CONFIG_DIR, CODEX_HOME, XDG_DATA_HOME, XDG_CONFIG_HOME,
-// XDG_CACHE_HOME and XDG_RUNTIME_DIR. Every per-user path then resolves
-// under it: Claude Code's files, the store, the Codex files, the autostart
-// entry. All are restored when the test ends.
+// IsolateHome points every per-user path at a fresh, empty home on every
+// platform and returns it: the home variables are set to it and those that
+// would lead past it are unset, until the test ends.
 func IsolateHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()

@@ -1,11 +1,6 @@
-// Implements spec 08§12 rotation (maxBytes=1MB, backupCount=3, lazy dir) for
-// a log the tray app and commands write at once (DESIGN A53). The reference's
-// RotatingFileHandler keeps its file open and counts the bytes it wrote; here
-// each record opens the file, rolls it over first when the record would push
-// it to or past maxBytes, appends and closes it, so no handle outlives a
-// record and the size is the file's own. The parent dir and the file are
-// created on the first write. Two writers that reach the limit at once may
-// both roll over and lose a backup, as the reference's handlers can.
+// Implements spec 08§12 rotation (maxBytes=1MB, backupCount=3, lazy dir),
+// with the file opened per record (DESIGN A53). Two writers that reach the
+// limit at once may both roll over and lose a backup, possibly the newest.
 
 package logging
 
@@ -27,11 +22,8 @@ func newRotatingWriter(path string, maxBytes int64, backups int) *rotatingWriter
 	return &rotatingWriter{path: path, maxBytes: maxBytes, backups: backups}
 }
 
-// write appends p to the log, creating the parent dir lazily. The file is
-// opened for each record and closed after it, and the size that decides a
-// rollover is the file's own: the tray app and a command log to the same
-// file at once, and a handle kept open would go on writing to the file the
-// other process rotated away (on Windows, block its rename and any delete).
+// write appends p to the log, creating the parent dir lazily, after a
+// rollover when p would push the file's own size to or past maxBytes.
 func (w *rotatingWriter) write(p []byte) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()

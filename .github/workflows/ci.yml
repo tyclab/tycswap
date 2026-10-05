@@ -36,8 +36,8 @@ jobs:
       - run: GOOS=windows go vet ./...
       - run: GOOS=darwin CGO_ENABLED=0 go vet ./...
 
-  # The Windows tray, the Run key, the detached start and the console hand-off
-  # run for real here; their tests are build-tagged (DESIGN A41). The whole
+  # The Windows tray, the detached start and the console hand-off run for
+  # real here; their tests are build-tagged (DESIGN A41). The whole
   # suite runs: every test keeps its home in a temporary directory
   # (testutil.IsolateHome sets USERPROFILE, which os.UserHomeDir reads here).
   windows:

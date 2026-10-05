@@ -435,11 +435,10 @@ func TestIsSessionProfileDir_SymlinkedBackupRoot(t *testing.T) {
 	}
 }
 
-// TestIsSessionProfileDir_DotDotAfterASymlink: a ".." after a symlink leaves
-// the symlink's target, as filepath.EvalSymlinks resolves it, not the
-// directory holding the symlink: <sessions>/link/../x with link pointing out
-// of the store names a directory out of it, and is no profile. Cleaning the
-// path before resolving it would make it <sessions>/x.
+// TestIsSessionProfileDir_DotDotAfterASymlink: <sessions>/link/../x, with
+// link pointing out of the store, is no profile: filepath.EvalSymlinks takes
+// the ".." from the link's target, as a POSIX lookup does (Windows itself
+// applies it lexically). Cleaning the path first made it <sessions>/x.
 func TestIsSessionProfileDir_DotDotAfterASymlink(t *testing.T) {
 	backup := t.TempDir()
 	elsewhere := t.TempDir()

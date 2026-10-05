@@ -16,10 +16,6 @@
 // compound name. Get reproduces this exact two-step resolution: try the plain
 // TargetName first and accept it only if its stored UserName field matches the
 // requested account; otherwise try the compound name.
-//
-// No test drives the Credential Manager itself: inside a test binary Get and
-// Delete refuse before any call into it (errInTests), so a test that reaches
-// them by mistake fails instead of reading or deleting a user's credentials.
 package wincred
 
 import (
@@ -31,7 +27,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// errInTests is Get's and Delete's answer inside a test binary.
+// errInTests is Get's and Delete's answer inside a test binary, before any
+// call: a test never reads or deletes a user's credentials.
 var errInTests = errors.New("wincred: the real Windows Credential Manager is not reachable from tests; give the test a fake (wincred.NewFake)")
 
 const credTypeGeneric = 1 // CRED_TYPE_GENERIC
