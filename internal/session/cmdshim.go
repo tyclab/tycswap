@@ -17,15 +17,20 @@ const cmdMetachars = "&|<>^%!\"()\r\n"
 // `|` in an argument passed through `tycswap run -- …` would run a second
 // command. Any other target is started directly and needs no check.
 func CheckCmdShimArgs(bin string, args []string) error {
-	ext := strings.ToLower(filepath.Ext(bin))
-	if ext != ".cmd" && ext != ".bat" {
+	if !isCmdShim(bin) {
 		return nil
 	}
 	for _, a := range args {
 		if i := strings.IndexAny(a, cmdMetachars); i >= 0 {
 			return cerr.Validation("refusing to pass %q to %s: %s scripts are run through cmd.exe, which would interpret %q; "+
-				"drop the character, or install claude's native executable", a, filepath.Base(bin), ext, a[i:i+1])
+				"drop the character, or install claude's native executable", a, filepath.Base(bin), strings.ToLower(filepath.Ext(bin)), a[i:i+1])
 		}
 	}
 	return nil
+}
+
+// isCmdShim reports whether bin is a .cmd or .bat file.
+func isCmdShim(bin string) bool {
+	ext := strings.ToLower(filepath.Ext(bin))
+	return ext == ".cmd" || ext == ".bat"
 }

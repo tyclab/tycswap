@@ -40,7 +40,7 @@ var runClaudeLogin = func(binary string, args, env []string, s ioStreams) (int, 
 	if err := session.CheckCmdShimArgs(binary, args); err != nil {
 		return 1, err
 	}
-	cmd := exec.Command(binary, args...)
+	cmd := session.ClaudeCommand(binary, args...)
 	cmd.Env = env
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.in, s.out, s.err
 	err := cmd.Run()

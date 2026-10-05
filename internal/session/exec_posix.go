@@ -7,7 +7,14 @@
 // Implements spec 06§1.8 (_exec POSIX branch).
 package session
 
-import "syscall"
+import (
+	"os/exec"
+	"syscall"
+)
+
+// ClaudeCommand is exec.Command(bin, args...); Windows runs a .cmd or .bat
+// differently (exec_windows.go).
+func ClaudeCommand(bin string, args ...string) *exec.Cmd { return exec.Command(bin, args...) }
 
 // Exec replaces the current process image with claude. It returns only if the
 // exec syscall itself fails; on success control never comes back.
