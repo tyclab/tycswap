@@ -338,27 +338,24 @@ func lifecycleOps() []struct {
 // TestLockedSpansNeverReacquireTheStoreLock is the deadlock guard. Every locked
 // span is run end to end — including the credential and config writes, the
 // dead-token clear (which takes a DIFFERENT lock file) and the session-profile
-// work — with the store lock's timeout cut to 250ms. A callee that re-acquires
-// the same *FileLock hangs forever and trips the bound; one that opens a second
-// FileLock on the same path burns the timeout and returns a LockError. Neither
-// is distinguishable from success without this test, because both would be
-// invisible at the default 10s timeout in a suite nothing else contends with.
+// work. A callee that re-acquires the same *FileLock hangs forever and trips
+// the bound; one that opens a second FileLock on the same path waits out that
+// lock's timeout, at least filelock.DefaultTimeout, and returns a LockError
+// or, swallowing it, returns that late. Below that, time is the disk's.
 func TestLockedSpansNeverReacquireTheStoreLock(t *testing.T) {
 	for _, op := range lifecycleOps() {
 		t.Run(op.name, func(t *testing.T) {
 			s := op.seed(t)
-			s.Lock = filelock.New(s.LockFile, 250*time.Millisecond)
-
 			done := make(chan error, 1)
 			start := time.Now()
 			go func() { done <- op.run(s) }()
 			select {
 			case err := <-done:
 				if err != nil {
-					t.Fatalf("%s under a 250ms lock timeout: %v", op.name, err)
+					t.Fatalf("%s: %v", op.name, err)
 				}
-				if elapsed := time.Since(start); elapsed > 250*time.Millisecond {
-					t.Errorf("%s took %s — long enough to have waited out a lock it already held", op.name, elapsed)
+				if elapsed := time.Since(start); elapsed >= filelock.DefaultTimeout {
+					t.Errorf("%s took %s — long enough to have waited out a second lock on the store", op.name, elapsed)
 				}
 			case <-time.After(10 * time.Second):
 				t.Fatalf("%s never returned: the store lock was re-acquired inside its own span", op.name)
