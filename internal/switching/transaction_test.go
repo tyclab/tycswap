@@ -97,12 +97,14 @@ func TestRollbackReportsFailure(t *testing.T) {
 		originalAccountNum:  "1",
 	}
 	tx.recordStep("config_written")
-	// Make ~/.claude.json's parent ($HOME) unusable by pointing HOME at a file.
+	// Make ~/.claude.json's parent unusable by pointing the home (HOME, and
+	// USERPROFILE on Windows) at a file.
 	badHome := filepath.Join(t.TempDir(), "not-a-dir")
 	if err := os.WriteFile(badHome, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", badHome)
+	t.Setenv("USERPROFILE", badHome)
 	if ok := tx.rollback(s); ok {
 		t.Fatalf("rollback returned true, want false on unwritable config path")
 	}

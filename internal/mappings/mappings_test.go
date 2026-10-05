@@ -109,10 +109,7 @@ func TestNormalizePath_AllowsNonexistentPath(t *testing.T) {
 }
 
 func TestNormalizePath_ExpandsTilde(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("no home dir available")
-	}
+	home := testutil.IsolateHome(t)
 	got := NormalizePath("~")
 	want := NormalizePath(home)
 	if got != want {
@@ -409,7 +406,7 @@ func TestLoad_PythonFixture(t *testing.T) {
 		t.Fatalf("got %d mappings, want 1", len(m))
 	}
 	for key, entry := range m {
-		if !strings.Contains(key, filepath.Join("work", "client-app")) {
+		if !strings.Contains(key, "work/client-app") { // the fixture's POSIX path, verbatim
 			t.Errorf("key = %q, want it to contain work/client-app", key)
 		}
 		if entry.Email != "bob@example.com" {

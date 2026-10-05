@@ -381,6 +381,7 @@ func TestParseAppArgs(t *testing.T) {
 
 // The command's usage errors exit 2, and its help names every flag.
 func TestAppHelpAndUsage(t *testing.T) {
+	cleanHome(t)
 	code, out, _ := runCLI(t, []string{"app", "--help"}, false, false)
 	if code != 0 {
 		t.Fatalf("help exit = %d", code)

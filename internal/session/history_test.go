@@ -3,6 +3,7 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -65,7 +66,7 @@ func TestSeededSourceHasClaudeCodeModes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("projects not seeded: %v", err)
 	}
-	if fi.Mode().Perm() != 0o700 {
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o700 { // no POSIX modes on Windows
 		t.Errorf("projects mode = %o, want 700", fi.Mode().Perm())
 	}
 	histFile := filepath.Join(claudeHome, "history.jsonl")
@@ -73,7 +74,7 @@ func TestSeededSourceHasClaudeCodeModes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("history.jsonl not seeded: %v", err)
 	}
-	if fi.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Errorf("history.jsonl mode = %o, want 600", fi.Mode().Perm())
 	}
 }

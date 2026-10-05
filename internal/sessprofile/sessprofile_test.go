@@ -3,6 +3,7 @@ package sessprofile
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -431,5 +432,76 @@ func TestIsSessionProfileDir_SymlinkedBackupRoot(t *testing.T) {
 	viaLink := SessionDirFor(link, "2", "user@example.com")
 	if !IsSessionProfileDir(real, viaLink) {
 		t.Errorf("symlinked profile path %q not detected under real root %q", viaLink, real)
+	}
+}
+
+// TestIsSessionProfileDir_DotDotAfterASymlink: <sessions>/link/../x, with
+// link pointing out of the store, is no profile: filepath.EvalSymlinks takes
+// the ".." from the link's target, as a POSIX lookup does (Windows itself
+// applies it lexically). Cleaning the path first made it <sessions>/x.
+func TestIsSessionProfileDir_DotDotAfterASymlink(t *testing.T) {
+	backup := t.TempDir()
+	elsewhere := t.TempDir()
+	for _, dir := range []string{filepath.Join(backup, "sessions"), filepath.Join(elsewhere, "dir"), filepath.Join(elsewhere, "x")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(backup, "sessions", "link")
+	if err := os.Symlink(filepath.Join(elsewhere, "dir"), link); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	sep := string(filepath.Separator)
+	configDir := link + sep + ".." + sep + "x" // not filepath.Join, which cleans the ".." away
+	if IsSessionProfileDir(backup, configDir) {
+		t.Errorf("IsSessionProfileDir(%q, %q) = true, want false: the path is %s", backup, configDir, filepath.Join(elsewhere, "x"))
+	}
+}
+
+// TestIsSessionProfileDir_MissingProfileUnderASymlink: a profile that does not
+// exist (removed, or not created yet) under a backup root reached through a
+// symlink still matches, as a shell pinned to it must be neutralized: the
+// existing sessions dir resolves, so the missing profile's path must too.
+func TestIsSessionProfileDir_MissingProfileUnderASymlink(t *testing.T) {
+	real := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(real, "sessions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "backup-link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	for _, tc := range []struct{ backup, configDir string }{
+		{link, SessionDirFor(link, "5", "gone@example.com")},
+		{real, SessionDirFor(link, "5", "gone@example.com")},
+		{link, filepath.Join(SessionDirFor(real, "5", "gone@example.com"), "sessions")},
+	} {
+		if !IsSessionProfileDir(tc.backup, tc.configDir) {
+			t.Errorf("IsSessionProfileDir(%q, %q) = false, want true", tc.backup, tc.configDir)
+		}
+	}
+}
+
+// TestIsSessionProfileDir_WindowsSpelling: a Windows path names the same
+// directory in any case and with either separator, so a profile that exists
+// and one that does not match however the config dir spells them.
+func TestIsSessionProfileDir_WindowsSpelling(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("only Windows paths are case-insensitive and take / for \\")
+	}
+	backup := t.TempDir()
+	existing := SessionDirFor(backup, "2", "user@example.com")
+	if err := os.MkdirAll(existing, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, profile := range []string{existing, SessionDirFor(backup, "5", "gone@example.com")} {
+		for _, tc := range []struct{ backup, configDir string }{
+			{backup, filepath.ToSlash(strings.ToUpper(profile))},
+			{strings.ToLower(backup), profile},
+		} {
+			if !IsSessionProfileDir(tc.backup, tc.configDir) {
+				t.Errorf("IsSessionProfileDir(%q, %q) = false, want true", tc.backup, tc.configDir)
+			}
+		}
 	}
 }

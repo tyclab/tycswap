@@ -14,8 +14,10 @@ import (
 
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/wincred"
 )
 
 // newStore builds a Store rooted at a fresh empty $HOME with a fixed clock and
@@ -30,12 +32,15 @@ func newStore(t *testing.T) *store.Store {
 // the clock and stderr sink are filled in when unset.
 func newStoreOpts(t *testing.T, opts store.Options) *store.Store {
 	t.Helper()
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
+	testutil.IsolateHome(t)
 	if opts.Clock == nil {
 		opts.Clock = testutil.FixedClock(t, "2026-07-17T09:00:00Z")
+	}
+	if opts.Keychain == nil {
+		opts.Keychain = keychain.NewFake()
+	}
+	if opts.WinCred == nil {
+		opts.WinCred = wincred.NewFake()
 	}
 	if opts.Stderr == nil {
 		opts.Stderr = &bytes.Buffer{}

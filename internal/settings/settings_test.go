@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -168,7 +169,7 @@ func TestSave_UnknownKeysSurvive(t *testing.T) {
 }
 
 func TestSave_FileMode0600(t *testing.T) {
-	if os.Getenv("GOOS") == "windows" {
+	if runtime.GOOS == "windows" {
 		t.Skip("POSIX file modes")
 	}
 	root := t.TempDir()

@@ -9,6 +9,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -173,6 +174,9 @@ func TestCollect_UnreadableSessionsDirFailsClosedNoRefresh(t *testing.T) {
 	// as "no owner" and rotate the credential.
 	if os.Geteuid() == 0 {
 		t.Skip("root bypasses directory permissions; cannot simulate an unreadable sessions dir")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0000 denies no read on Windows; the fail-closed probe is platform-independent and covered on Linux and macOS")
 	}
 	clk := testutil.FixedClock(t, fixedNow)
 	now := clock.Seconds(clk)

@@ -12,6 +12,7 @@ package credstore
 import (
 	"errors"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -165,6 +166,9 @@ func TestWriteActiveAccount_ManagedKeyFallbackConfigFailureRestoresTheKeychain_m
 func TestWriteActiveAccount_ManagedKeyFallbackConfigFailureKeepsAConfigKeyLive_macOS(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root writes into a read-only directory")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows ignores a directory's POSIX write permission (chmod 0500)")
 	}
 	fh := testutil.BuildFixtureHome(t)
 	rest := largeSeatRemainder()

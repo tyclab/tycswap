@@ -11,7 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/wincred"
 )
 
 // TestNew_NoOpDoesNotMaterializeBackupDir: constructing against a fresh $HOME
@@ -19,12 +21,9 @@ import (
 // __init__ — spec 07§5.5). Materializing it would trip the migration collision
 // check on a later run.
 func TestNew_NoOpDoesNotMaterializeBackupDir(t *testing.T) {
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
+	testutil.IsolateHome(t)
 
-	s, err := New(Options{Clock: testutil.FixedClock(t, "2026-07-17T09:00:00Z"), Stderr: &bytes.Buffer{}})
+	s, err := New(Options{Clock: testutil.FixedClock(t, "2026-07-17T09:00:00Z"), Keychain: keychain.NewFake(), WinCred: wincred.NewFake(), Stderr: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -37,10 +36,7 @@ func TestNew_NoOpDoesNotMaterializeBackupDir(t *testing.T) {
 // stores this fork came from (DESIGN A23): both old roots keep their data and
 // the store resolves to tycswap's own root, with no notice printed.
 func TestNew_NeverTouchesOldStores(t *testing.T) {
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
+	home := testutil.IsolateHome(t)
 
 	olds := []string{filepath.Join(home, ".claude-swap-backup"), filepath.Join(home, ".local", "share", "claude-swap")}
 	for _, d := range olds {
@@ -53,7 +49,7 @@ func TestNew_NeverTouchesOldStores(t *testing.T) {
 	}
 
 	var stderr bytes.Buffer
-	s, err := New(Options{Clock: testutil.FixedClock(t, "2026-07-17T09:00:00Z"), Stderr: &stderr})
+	s, err := New(Options{Clock: testutil.FixedClock(t, "2026-07-17T09:00:00Z"), Keychain: keychain.NewFake(), WinCred: wincred.NewFake(), Stderr: &stderr})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

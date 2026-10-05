@@ -11,13 +11,11 @@ import (
 	"github.com/tyclab/tycswap/internal/testutil"
 )
 
-// cleanHome points $HOME at a fresh temp dir with a fixed non-root uid and
-// colors disabled, so switcher construction is deterministic and offline.
+// cleanHome isolates the home (testutil.IsolateHome) with a fixed non-root
+// uid and colors disabled, so switcher construction is deterministic and offline.
 func cleanHome(t *testing.T) {
 	t.Helper()
-	testutil.Setenv(t, "HOME", t.TempDir())
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
+	testutil.IsolateHome(t)
 	testutil.Setenv(t, "NO_COLOR", "1")
 	prev := geteuid
 	geteuid = func() int { return 1000 }
@@ -27,6 +25,7 @@ func cleanHome(t *testing.T) {
 // TestUpgradeDoesNotConstructSwitcher: --upgrade runs self-upgrade before the
 // switcher is built (spec 08§5, test_upgrade_dispatches_without_constructing).
 func TestUpgradeDoesNotConstructSwitcher(t *testing.T) {
+	cleanHome(t)
 	testutil.Setenv(t, "NO_COLOR", "1")
 	constructed := false
 	prevNew := newSwitcher

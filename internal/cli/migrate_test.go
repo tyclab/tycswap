@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
-	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/storemigrate"
 )
 
 // realOldStoreHint is the production hint; every other test in this package
@@ -19,27 +20,37 @@ var realOldStoreHint = oldStoreHint
 
 func init() { oldStoreHint = func() string { return "" } }
 
-// migrateHome points HOME at a temp dir holding an old store at the Linux
-// default and returns (old root, new root).
+// migrateHome gives the test a temp home holding an old store at this
+// platform's first old root and returns (old root, new root), both from the
+// path helpers.
 func migrateHome(t *testing.T) (string, string) {
 	t.Helper()
-	if runtime.GOOS != "linux" {
-		t.Skip("exercises the Linux/WSL store roots")
-	}
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
+	migrateIsolated(t)
 	oldStoreHint = realOldStoreHint
 	t.Cleanup(func() { oldStoreHint = func() string { return "" } })
-	old := filepath.Join(home, ".local", "share", "claude-swap")
+	old := paths.OldBackupRoots()[0]
 	if err := os.MkdirAll(filepath.Join(old, "configs"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(old, "sequence.json"), []byte(`{"accounts":{},"sequence":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return old, filepath.Join(home, ".local", "share", "tycswap")
+	return old, paths.GetBackupRoot()
+}
+
+// migrateIsolated gives the test a temp home (cleanHome) and runs its migrate
+// commands against a fake Keychain: the copy's Keychain step (macOS) must
+// never read the login Keychain.
+func migrateIsolated(t *testing.T) {
+	t.Helper()
+	cleanHome(t)
+	kc := keychain.NewFake()
+	prev := runMigrate
+	runMigrate = func(o storemigrate.Options) (storemigrate.Report, error) {
+		o.Keychain = kc
+		return prev(o)
+	}
+	t.Cleanup(func() { runMigrate = prev })
 }
 
 func runMig(t *testing.T, argv ...string) (int, string, string) {
@@ -118,11 +129,7 @@ func TestMigrateCommandCopiesThenRefuses(t *testing.T) {
 }
 
 func TestMigrateCommandNothingToCopy(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("exercises the Linux/WSL store roots")
-	}
-	testutil.Setenv(t, "HOME", t.TempDir())
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
+	migrateIsolated(t)
 	code, out, _ := runMig(t, "migrate", "--json")
 	if code != 1 || !strings.Contains(out, `"MigrationError"`) {
 		t.Errorf("= %d, %q; want a MigrationError envelope", code, out)

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -166,8 +167,10 @@ func TestMacOSRelocation_TooLargeItemGoesToTheFile(t *testing.T) {
 		t.Fatalf("ReadBackup = %d bytes, %v; want the legacy value", len(got), err)
 	}
 	encPath := filepath.Join(host.credentialsDir, ".creds-1-alice@x.com.enc")
-	if fi, err := os.Stat(encPath); err != nil || fi.Mode().Perm() != 0o600 {
-		t.Errorf(".enc file: %v, mode %v; want present and 0600", err, fi.Mode().Perm())
+	if fi, err := os.Stat(encPath); err != nil {
+		t.Errorf(".enc file: %v; want present", err)
+	} else if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 { // no POSIX modes on Windows
+		t.Errorf(".enc file mode %v; want 0600", fi.Mode().Perm())
 	}
 	if kc.Exists(securityService, "account-1-alice@x.com") {
 		t.Error("an oversized item was stored in the Keychain")
@@ -258,7 +261,7 @@ func TestWindowsRelocation_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o700 {
+	if perm := info.Mode().Perm(); runtime.GOOS != "windows" && perm != 0o700 { // no POSIX modes on Windows
 		t.Fatalf("credentials dir mode = %o, want 0700 (spec 07§5.3 explicit chmod)", perm)
 	}
 }

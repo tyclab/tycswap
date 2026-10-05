@@ -51,6 +51,7 @@ func TestEnvGetwdErrorSurfaced(t *testing.T) {
 // not routed through memorable-verb translation. --help returns 0 with the
 // env-specific usage and never touches the switcher.
 func TestEnvPreDispatchRegistered(t *testing.T) {
+	cleanHome(t)
 	code, out, errStr := runSub(t, "env", "--help")
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0 (stderr=%q)", code, errStr)
@@ -80,8 +81,10 @@ func TestEnvInHelpList(t *testing.T) {
 }
 
 // TestEnvUnsetForms: --unset prints only the CLAUDE_CONFIG_DIR unset line for the
-// chosen shell, on stdout, with nothing on stderr — and needs no switcher/home.
+// chosen shell, on stdout, with nothing on stderr — and needs no switcher (run
+// still checks the store root, so the home is a temp one).
 func TestEnvUnsetForms(t *testing.T) {
+	cleanHome(t)
 	cases := []struct {
 		shell string
 		want  string
@@ -111,8 +114,9 @@ func TestEnvUnsetForms(t *testing.T) {
 }
 
 // TestEnvUsageErrors: the exit-2 usage errors, all firing before switcher
-// construction (no home needed).
+// construction (run still checks the store root, so the home is a temp one).
 func TestEnvUsageErrors(t *testing.T) {
+	cleanHome(t)
 	cases := []struct {
 		name string
 		argv []string

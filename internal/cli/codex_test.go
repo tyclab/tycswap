@@ -182,6 +182,7 @@ func TestMainHelpAdvertisesTheCodexNamespace(t *testing.T) {
 }
 
 func TestCodexHelpListsVerbsCaveatAndSettings(t *testing.T) {
+	cleanHome(t)
 	for _, argv := range [][]string{{"codex", "--help"}, {"codex", "-h"}, {"codex", "--debug", "-h"}} {
 		code, out, _ := runCodex(t, "", argv...)
 		if code != 0 {
@@ -215,6 +216,7 @@ func TestCodexUsageErrorsExit2(t *testing.T) {
 }
 
 func TestCodexVerbHelp(t *testing.T) {
+	cleanHome(t)
 	code, out, _ := runCodex(t, "", "codex", "switch", "-h")
 	if code != 0 || !strings.Contains(out, "usage: tycswap codex switch") {
 		t.Errorf("switch -h = %d %q", code, out)
@@ -704,7 +706,8 @@ func TestCodexLoginRunsTheResolvedBinaryAndStoresTheAccount(t *testing.T) {
 	codexHome(t, nil, nil)
 	var gotBin string
 	var gotArgs []string
-	stubLogin(t, "/usr/local/bin/codex", nil, 0, func(bin string, args []string) {
+	codexBin := filepath.Join(t.TempDir(), "bin", "codex") // absolute on every platform
+	stubLogin(t, codexBin, nil, 0, func(bin string, args []string) {
 		gotBin, gotArgs = bin, args
 		writeLiveAuth(t, makeCodexAuth(t, testAcctA, testUserA, "a@example.com", time.Now().Unix()+3600))
 	})
@@ -712,7 +715,7 @@ func TestCodexLoginRunsTheResolvedBinaryAndStoresTheAccount(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "Added Codex account 1: a@example.com") {
 		t.Fatalf("exit %d out %q err %q", code, out, errb)
 	}
-	if gotBin != "/usr/local/bin/codex" || len(gotArgs) != 2 || gotArgs[0] != "login" || gotArgs[1] != "--device-auth" {
+	if gotBin != codexBin || len(gotArgs) != 2 || gotArgs[0] != "login" || gotArgs[1] != "--device-auth" {
 		t.Errorf("ran %q %v", gotBin, gotArgs)
 	}
 	slots := testStore().Slots()

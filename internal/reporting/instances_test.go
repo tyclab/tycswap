@@ -18,9 +18,7 @@ func TestRunningInstancesHeadingNeedsAGroup(t *testing.T) {
 		`{"pid": PID, "ideName": "VS Code"}`,
 		`{"pid": PID, "ideName": "VS Code", "workspaceFolders": []}`,
 	} {
-		home := t.TempDir()
-		testutil.Setenv(t, "HOME", home)
-		testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
+		home := testutil.IsolateHome(t)
 		ideDir := filepath.Join(home, ".claude", "ide")
 		if err := os.MkdirAll(ideDir, 0o700); err != nil {
 			t.Fatal(err)

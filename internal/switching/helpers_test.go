@@ -11,9 +11,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/wincred"
 )
 
 // newTestStore builds a Store rooted at a fresh empty $HOME with a fixed clock,
@@ -21,16 +23,13 @@ import (
 // PostSwitchList, AutoAddCurrent, Prompt) are reset so tests start clean.
 func newTestStore(t *testing.T, oauthClient oauth.Client) *store.Store {
 	t.Helper()
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
+	testutil.IsolateHome(t)
 	testutil.Setenv(t, "NO_COLOR", "1") // deterministic, style-free output
 	clk := testutil.FixedClock(t, "2026-07-17T09:00:00Z")
 
 	resetSeams(t)
 
-	s, err := store.New(store.Options{Clock: clk, OAuth: oauthClient, Stderr: &bytes.Buffer{}})
+	s, err := store.New(store.Options{Clock: clk, OAuth: oauthClient, Keychain: keychain.NewFake(), WinCred: wincred.NewFake(), Stderr: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatalf("store.New: %v", err)
 	}

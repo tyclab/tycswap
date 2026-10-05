@@ -92,10 +92,10 @@ func SessionDirFor(backupDir, accountNum, email string) string {
 // pinned via `tycswap env` (whose CLAUDE_CONFIG_DIR points at such a profile) so
 // non-env/run commands can fall back to the default login (D2 / FINDING 2).
 //
-// Both paths are symlink-resolved when they exist (a symlinked backup root
-// still matches), falling back to a lexical absolute-clean when resolution
-// fails. An empty configDir or backupRoot never matches, and the sessions/
-// directory itself (the boundary, not a profile) does not match — only a strict
+// Both paths are symlink-resolved as far as they exist (a symlinked backup
+// root still matches, a profile not created yet or removed included). An
+// empty configDir or backupRoot never matches, and the sessions/ directory
+// itself (the boundary, not a profile) does not match — only a strict
 // descendant does.
 func IsSessionProfileDir(backupRoot, configDir string) bool {
 	if backupRoot == "" || configDir == "" {
@@ -114,16 +114,29 @@ func IsSessionProfileDir(backupRoot, configDir string) bool {
 }
 
 // resolveProfilePath returns p's canonical form for containment comparison:
-// EvalSymlinks when it resolves, else a lexical absolute-clean (so a
-// not-yet-created path still compares correctly).
+// EvalSymlinks when it resolves (a ".." after a symlink then leaves the
+// symlink's target), else its longest existing prefix symlink-resolved, with
+// the rest of the path joined on lexically. A path that does not exist (yet,
+// or any more) then compares like an existing one even when an ancestor is a
+// symlink (macOS /var is /private/var) or, on Windows, a short (8.3) name.
 func resolveProfilePath(p string) string {
 	if resolved, err := filepath.EvalSymlinks(p); err == nil {
 		return resolved
 	}
-	if abs, err := filepath.Abs(p); err == nil {
-		return abs
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		abs = filepath.Clean(p)
 	}
-	return filepath.Clean(p)
+	rest := ""
+	for dir := abs; ; dir = filepath.Dir(dir) {
+		if resolved, err := filepath.EvalSymlinks(dir); err == nil {
+			return filepath.Join(resolved, rest)
+		}
+		if filepath.Dir(dir) == dir {
+			return abs
+		}
+		rest = filepath.Join(filepath.Base(dir), rest)
+	}
 }
 
 // KeychainServiceName returns the Keychain service name Claude Code derives

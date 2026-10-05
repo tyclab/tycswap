@@ -163,6 +163,7 @@ func TestParseAcceptsYesForSwitch(t *testing.T) {
 // TestYesOnlyWithSwitchTo: --yes answers the API-key confirmation and nothing
 // else, so anywhere else it is a usage error rather than silently ignored.
 func TestYesOnlyWithSwitchTo(t *testing.T) {
+	cleanHome(t)
 	for _, argv := range [][]string{{"list", "--yes"}, {"switch", "--yes"}, {"remove", "2", "-y"}} {
 		code, _, errStr := runCLI(t, argv, false, false)
 		if code != 2 || !strings.Contains(errStr, "--yes can only be used with 'switch <num|email>'") {

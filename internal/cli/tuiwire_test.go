@@ -13,6 +13,7 @@ import (
 	"github.com/tyclab/tycswap/internal/providers"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/testutil"
 	"github.com/tyclab/tycswap/internal/tui"
 )
 
@@ -83,8 +84,7 @@ func TestTUIWiringIsClaudeOnlyWithoutCodex(t *testing.T) {
 // a merged Claude + Codex source over the Claude switcher and the Codex one,
 // and the same Codex switcher as the action router.
 func TestTUIWiringAddsCodexRowsWhenCodexIsPresent(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HOME", dir)
+	dir := testutil.IsolateHome(t)
 	t.Setenv("CODEX_HOME", dir+"/.codex")
 	t.Setenv("XDG_DATA_HOME", dir+"/data")
 	codexSw := switcher.New(switcher.Options{Stdout: io.Discard})

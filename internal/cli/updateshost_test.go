@@ -375,9 +375,7 @@ func TestUpgradeHintAndViewHelpers(t *testing.T) {
 // Nix store is the package manager's, and a checkout build is the checkout's
 // wherever it is.
 func TestUpgradePlanReadsTheEnvironment(t *testing.T) {
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Setenv(t, "USERPROFILE", home)
+	home := testutil.IsolateHome(t)
 	testutil.Unsetenv(t, "GOPATH")
 	testutil.Unsetenv(t, "GOBIN")
 	prev := buildSource

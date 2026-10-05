@@ -261,8 +261,7 @@ func TestMultiSnapshotSourceWithoutCodexIsClaudeOnly(t *testing.T) {
 
 func isolate(t *testing.T) string {
 	t.Helper()
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
+	home := testutil.IsolateHome(t)
 	testutil.Setenv(t, "CODEX_HOME", filepath.Join(home, ".codex"))
 	testutil.Setenv(t, "XDG_DATA_HOME", filepath.Join(home, "xdg"))
 	return home

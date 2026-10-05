@@ -1,0 +1,3 @@
+# The fixtures are byte-exact contracts (golden round trips): no line-ending
+# conversion on checkout, so a Windows clone tests the same bytes.
+testdata/** -text

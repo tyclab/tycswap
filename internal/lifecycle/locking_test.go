@@ -19,18 +19,20 @@ import (
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/wincred"
 )
 
-// secondStore builds another *store.Store over the same $HOME as s — a second
-// process's view of one backup directory, with its own FileLock object.
-func secondStore(t *testing.T) *store.Store {
+// secondStore builds another *store.Store over the same $HOME and Keychain
+// as s — a second process's view of one backup directory, with its own
+// FileLock object.
+func secondStore(t *testing.T, s *store.Store) *store.Store {
 	t.Helper()
 	clk := testutil.FixedClock(t, "2026-07-17T09:00:00Z")
-	s, err := store.New(store.Options{Clock: clk, Stderr: &bytes.Buffer{}})
+	s2, err := store.New(store.Options{Clock: clk, Keychain: s.Keychain(), WinCred: wincred.NewFake(), Stderr: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatalf("store.New (second view): %v", err)
 	}
-	return s
+	return s2
 }
 
 // syncOutput points the human-output seam at a mutex-guarded buffer for the
@@ -82,7 +84,7 @@ func runBoth(t *testing.T, bound time.Duration, a, b func() error) (errA, errB e
 // Under the lock the loser reads the winner's roster and appends to it.
 func TestConcurrentAddTokensBothLand(t *testing.T) {
 	s1 := newStore(t)
-	s2 := secondStore(t)
+	s2 := secondStore(t, s1)
 	syncOutput(t)
 
 	errA, errB := runBoth(t, 30*time.Second,
@@ -109,7 +111,7 @@ func TestConcurrentAddAndAddTokenBothLand(t *testing.T) {
 	s1 := newStore(t)
 	seed(t, s1, ip(1), acct{num: "1", email: "a@example.com", uuid: "uuid-a", creds: "c1", config: "g1"})
 	seedLiveLogin(t, s1, "live@example.com", "", "", "uuid-l", oauthBlob)
-	s2 := secondStore(t)
+	s2 := secondStore(t, s1)
 	syncOutput(t)
 
 	errA, errB := runBoth(t, 30*time.Second,
@@ -142,7 +144,7 @@ func TestConcurrentRemoveAndAddTokenBothLand(t *testing.T) {
 		acct{num: "1", email: "gone@example.com", uuid: "uuid-g", creds: "c1", config: "g1"},
 		acct{num: "2", email: "keep@example.com", uuid: "uuid-k", creds: "c2", config: "g2"},
 	)
-	s2 := secondStore(t)
+	s2 := secondStore(t, s1)
 	syncOutput(t)
 
 	errA, errB := runBoth(t, 30*time.Second,
@@ -336,29 +338,26 @@ func lifecycleOps() []struct {
 // TestLockedSpansNeverReacquireTheStoreLock is the deadlock guard. Every locked
 // span is run end to end — including the credential and config writes, the
 // dead-token clear (which takes a DIFFERENT lock file) and the session-profile
-// work — with the store lock's timeout cut to 250ms. A callee that re-acquires
-// the same *FileLock hangs forever and trips the bound; one that opens a second
-// FileLock on the same path burns the timeout and returns a LockError. Neither
-// is distinguishable from success without this test, because both would be
-// invisible at the default 10s timeout in a suite nothing else contends with.
+// work. A callee that re-acquires the same *FileLock hangs past the deadline;
+// one that opens a second FileLock on the same path waits out that lock's
+// timeout, at least filelock.DefaultTimeout, and returns a LockError or,
+// swallowing it, returns that late. Below that, time is the disk's.
 func TestLockedSpansNeverReacquireTheStoreLock(t *testing.T) {
 	for _, op := range lifecycleOps() {
 		t.Run(op.name, func(t *testing.T) {
 			s := op.seed(t)
-			s.Lock = filelock.New(s.LockFile, 250*time.Millisecond)
-
 			done := make(chan error, 1)
 			start := time.Now()
 			go func() { done <- op.run(s) }()
 			select {
 			case err := <-done:
 				if err != nil {
-					t.Fatalf("%s under a 250ms lock timeout: %v", op.name, err)
+					t.Fatalf("%s: %v", op.name, err)
 				}
-				if elapsed := time.Since(start); elapsed > 250*time.Millisecond {
-					t.Errorf("%s took %s — long enough to have waited out a lock it already held", op.name, elapsed)
+				if elapsed := time.Since(start); elapsed >= filelock.DefaultTimeout {
+					t.Errorf("%s took %s — long enough to have waited out a second lock on the store", op.name, elapsed)
 				}
-			case <-time.After(10 * time.Second):
+			case <-time.After(2 * filelock.DefaultTimeout):
 				t.Fatalf("%s never returned: the store lock was re-acquired inside its own span", op.name)
 			}
 		})

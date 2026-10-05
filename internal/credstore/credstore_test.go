@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -638,14 +639,17 @@ func TestWriteUnclaimed_EntryWrittenBeforeManifest(t *testing.T) {
 	s := newStore(t, platform.Linux, credDir, newFakeKC(), clk)
 
 	// Make the manifest write fail while entry writes still succeed: the manifest
-	// path is a directory (rename-over fails), and the corrupt-aside target is a
-	// regular file (so the aside move also fails and can't clear it).
+	// path is a non-empty directory (no rename can replace it), and so is the
+	// corrupt-aside target (so the aside move also fails and can't clear it).
+	// A regular file there would not do on Windows, where a rename replaces it.
 	manifest := filepath.Join(credDir, ".unclaimed-manifest.json")
-	if err := os.Mkdir(manifest, 0o700); err != nil {
-		t.Fatal(err)
-	}
 	aside := manifest + ".corrupt-" + itoa(clk.Now().Unix())
-	writeFile(t, aside, "blocker")
+	for _, dir := range []string{manifest, aside} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(dir, "blocker"), "blocker")
+	}
 
 	_, err := s.WriteUnclaimed("orphan-creds", nil)
 	if err == nil {
@@ -716,6 +720,9 @@ func TestReadActive_FilePlaintextWins(t *testing.T) {
 func TestReadActive_FileReadErrorIsNone(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can read 0000-mode files")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0000 denies no read on Windows; the error path is platform-independent and covered on Linux and macOS")
 	}
 	fh := testutil.BuildFixtureHome(t)
 	if err := os.Chmod(fh.CredentialsFile, 0o000); err != nil {

@@ -336,8 +336,7 @@ func makeJWT(t *testing.T, claims map[string]any) string {
 // TestRepeatedTicksDoNotRePollTheAPI pins that fetch=nil ("every account
 // eligible") on every tick costs one round on a cold cache and nothing after.
 func TestRepeatedTicksDoNotRePollTheAPI(t *testing.T) {
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
+	home := testutil.IsolateHome(t)
 	testutil.Setenv(t, "CODEX_HOME", filepath.Join(home, ".codex"))
 	testutil.Setenv(t, "XDG_DATA_HOME", filepath.Join(home, "xdg"))
 	clk := testutil.FixedClock(t, "2026-09-30T12:00:00Z")

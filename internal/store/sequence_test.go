@@ -7,12 +7,15 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/wincred"
 )
 
 // newFixtureStore builds a Store rooted at a materialized Python-fixture $HOME
@@ -21,7 +24,7 @@ func newFixtureStore(t *testing.T) (*Store, testutil.FixtureHome) {
 	t.Helper()
 	fh := testutil.BuildFixtureHome(t)
 	clk := testutil.FixedClock(t, "2026-07-17T09:00:00Z")
-	s, err := New(Options{Clock: clk, Stderr: &bytes.Buffer{}})
+	s, err := New(Options{Clock: clk, Keychain: keychain.NewFake(), WinCred: wincred.NewFake(), Stderr: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -138,13 +141,10 @@ func TestSequenceOptionalKeyOmissionAfterMutate(t *testing.T) {
 // Python's _init_sequence_file: null active, empty sequence array, empty
 // accounts object, indent 2 (spec 01§2.1).
 func TestInitSequenceFileShape(t *testing.T) {
-	home := t.TempDir()
-	testutil.Setenv(t, "HOME", home)
-	testutil.Unsetenv(t, "CLAUDE_CONFIG_DIR")
-	testutil.Unsetenv(t, "XDG_DATA_HOME")
+	testutil.IsolateHome(t)
 
 	clk := testutil.FixedClock(t, "2026-07-17T09:00:00Z")
-	s, err := New(Options{Clock: clk, Stderr: &bytes.Buffer{}})
+	s, err := New(Options{Clock: clk, Keychain: keychain.NewFake(), WinCred: wincred.NewFake(), Stderr: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -278,9 +278,14 @@ func TestSequenceForUpdateRefusesUnreadableFile(t *testing.T) {
 					t.Errorf("refusal message is missing %q: %s", want, err)
 				}
 			}
-			// The cause survives for a caller that wants to inspect it.
-			if !errors.Is(err, fs.ErrPermission) && !errors.Is(err, syscall.EISDIR) {
-				t.Errorf("refusal dropped its cause: %v", err)
+			// The cause, the OS error on the roster itself, survives for a
+			// caller that wants to inspect it: EISDIR or EACCES (for a
+			// directory, Windows reports "Incorrect function").
+			var cause *fs.PathError
+			if !errors.As(err, &cause) || cause.Path != s.SequenceFile {
+				t.Errorf("refusal dropped its cause, the read of %s: %v", s.SequenceFile, err)
+			} else if runtime.GOOS != "windows" && !errors.Is(err, fs.ErrPermission) && !errors.Is(err, syscall.EISDIR) {
+				t.Errorf("refusal's cause is %v, want EACCES or EISDIR", cause.Err)
 			}
 			// ReadSequence still raises, as Python does.
 			if _, rerr := s.ReadSequence(); rerr == nil {
@@ -533,6 +538,9 @@ func unreadableRosterCases() []struct {
 			skip: func() string {
 				if os.Geteuid() == 0 {
 					return "root reads a mode-0000 file regardless"
+				}
+				if runtime.GOOS == "windows" {
+					return "Windows has no POSIX read permission for chmod 0000 to remove"
 				}
 				return ""
 			},

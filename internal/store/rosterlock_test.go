@@ -259,7 +259,7 @@ func TestWithRosterLockedSerializesConcurrentSpans(t *testing.T) {
 // other process's view, with its own FileLock object on the same path.
 func freshStoreSharing(t *testing.T, s *Store) *Store {
 	t.Helper()
-	other, err := New(Options{Clock: s.Clk, Stderr: &bytes.Buffer{}})
+	other, err := New(Options{Clock: s.Clk, Keychain: s.kc, WinCred: s.wc, Stderr: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatalf("New (second view): %v", err)
 	}

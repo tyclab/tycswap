@@ -14,8 +14,10 @@ func runSub(t *testing.T, argv ...string) (int, string, string) {
 }
 
 // TestAliasArgValidation pins the three exit-2 argument errors (spec 08§7.4).
-// These fire before switcher construction, so no home is needed.
+// These fire before switcher construction; run still checks the store root,
+// so the home is a temp one.
 func TestAliasArgValidation(t *testing.T) {
+	cleanHome(t)
 	cases := []struct {
 		name string
 		argv []string
@@ -41,6 +43,7 @@ func TestAliasArgValidation(t *testing.T) {
 // TestSwapMissingArgs: swap requires two positionals (exit 2). The message lists
 // only the still-missing metavars, mirroring argparse (spec 08§7.5).
 func TestSwapMissingArgs(t *testing.T) {
+	cleanHome(t)
 	cases := []struct {
 		name string
 		argv []string
@@ -66,6 +69,7 @@ func TestSwapMissingArgs(t *testing.T) {
 // the metavars NUM|EMAIL|ALIAS / SLOT and lists only the still-missing ones,
 // mirroring argparse (spec 08§7.6).
 func TestMoveMissingArgs(t *testing.T) {
+	cleanHome(t)
 	cases := []struct {
 		name string
 		argv []string
@@ -115,6 +119,7 @@ func TestRunExtraPositional(t *testing.T) {
 // TestAutoBadValue: a non-numeric --seven-day-threshold is an exit-2 error (before the
 // switcher is built).
 func TestAutoBadThreshold(t *testing.T) {
+	cleanHome(t)
 	code, _, errStr := runSub(t, "auto", "--seven-day-threshold", "high")
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2 (stderr=%q)", code, errStr)
@@ -127,6 +132,7 @@ func TestAutoBadThreshold(t *testing.T) {
 // TestAutoIncludeAPIKeyFlagsAreGone: the --include-api-key-accounts pair went
 // with its setting (DESIGN A33); either spelling is an unrecognized argument.
 func TestAutoIncludeAPIKeyFlagsAreGone(t *testing.T) {
+	cleanHome(t)
 	for _, flag := range []string{"--include-api-key-accounts", "--no-include-api-key-accounts"} {
 		code, _, errStr := runSub(t, "auto", flag)
 		if code != 2 || !strings.Contains(errStr, "unrecognized arguments: "+flag) {
@@ -142,6 +148,7 @@ func TestAutoIncludeAPIKeyFlagsAreGone(t *testing.T) {
 // TestAutoThresholdFlagsPerWindow: one flag per bar (DESIGN A34); each takes
 // a number, and the single --threshold is gone.
 func TestAutoThresholdFlagsPerWindow(t *testing.T) {
+	cleanHome(t)
 	for _, flag := range []string{"--five-hour-threshold", "--seven-day-threshold", "--model-threshold"} {
 		code, _, errStr := runSub(t, "auto", flag, "high")
 		if code != 2 || !strings.Contains(errStr, "argument "+flag+": invalid float value: 'high'") {
@@ -166,6 +173,7 @@ func TestAutoThresholdFlagsPerWindow(t *testing.T) {
 
 // TestAutoUnknownFlag: an unknown auto flag is an exit-2 error.
 func TestAutoUnknownFlag(t *testing.T) {
+	cleanHome(t)
 	code, _, errStr := runSub(t, "auto", "--bogus")
 	if code != 2 {
 		t.Fatalf("exit = %d, want 2 (stderr=%q)", code, errStr)

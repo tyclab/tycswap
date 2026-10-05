@@ -537,7 +537,9 @@ contracts (03§2.3).
 ### 3.6 Logging — see `logging` (§2.6)
 Named `"tycswap"`, file `tycswap.log` (A23); **lazy** dir creation on first write (a no-op run must not
 materialize `cache/` or the log under the XDG path — would trip the migration
-collision check). Rotating 1 MB × 3. Console handler (stderr) only with `--debug`.
+collision check). Rotating 1 MB × 3, by the file's own size: each record opens, appends and
+closes the file, so processes that log at once (the tray app and a command) write one log
+(A53). Console handler (stderr) only with `--debug`.
 Paste-safe invariant preserved (never log email in usage-failure WARNING; 04§1.17).
 
 ---
@@ -4804,18 +4806,16 @@ tag's GitHub release (a draft when the tag has none yet). Nothing is
 code-signed.
 
 **CI on Windows and macOS** (`ci.yml`) vets and builds everything there —
-on macOS with cgo, so the Objective-C is compiled — and runs the tray
-application's packages (`tray`, `appicon`, `autostart`, `brand`, `web`,
-`update`) and its tests in `internal/cli` (`APP_TESTS`), the build-tagged
-ones included. Not the rest of the suite: it has only ever run on Linux and
-assumes it. On Windows much of it fails, mostly because it isolates the home
-through `HOME`, which Windows ignores (`os.UserHomeDir` reads
-`USERPROFILE`), so those tests read and write the runner's real profile;
-others create symlinks. On macOS the store tests expect the Linux layout under
-`$XDG_DATA_HOME` (the macOS store is `~/.tycswap`) and two packages time out
-on the login Keychain. Making the suite portable is a change of its own; the
-one Windows-only difference in `internal/web` (the system serves `.js` as
-`application/javascript`) is skipped by name.
+on macOS with cgo, so the Objective-C is compiled. Windows runs the whole
+suite, the build-tagged tests included: every test keeps its home in a
+temporary directory (`testutil.IsolateHome` sets `USERPROFILE`, which
+`os.UserHomeDir` reads there, beside `HOME`). A test that needs POSIX mode
+bits skips there, as chmod sets none: the mode checks, and the tests that
+make a file or directory unreadable or read-only with chmod. macOS runs the
+tray application's packages (`tray`, `appicon`, `autostart`, `brand`, `web`,
+`update`) and its tests in `internal/cli` (`APP_TESTS`): the rest of the
+suite does not hold there yet (the store under `~/.tycswap`, the login
+Keychain).
 
 **Corporate, not ported.** The reference's tray also carries its owner's
 branding item, the fetch of mandatory Claude Code settings, the plugin
@@ -5817,3 +5817,21 @@ start names it again and the test can see what the tray asks the shell for.
 **Tests.** On Windows: `TaskbarCreated`, registered as `Run` registers it,
 makes the window procedure add the icon once with the current tooltip and
 callback and an icon built from the PNG; a tooltip update adds nothing.
+
+## A53. The log is opened for each record
+
+The reference's `RotatingFileHandler` keeps its file open. tycswap's log is
+written by the tray app (A35) and any command beside it, and the port's
+handle per process went wrong twice: after one process rotated
+`tycswap.log`, the other wrote on into the file it held, now
+`tycswap.log.1`, and rotated by its own byte count; and on Windows, where Go
+opens files without `FILE_SHARE_DELETE`, the held handle blocked the other's
+rename and any delete of the log or the store directory.
+
+Each record now opens the log, rolls it over first when the record would
+bring the file's own size to 1 MB, appends and closes it. Format, limit,
+backups, rollover order and lazy directory are unchanged. Two writers that
+reach the limit at the same moment may both roll over and lose a backup,
+possibly the newest.
+
+**Tests.** `TestRotationByAnotherWriter`, `TestLogHoldsNoHandle`.

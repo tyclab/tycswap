@@ -393,7 +393,8 @@ func testNewDashboardServes(t *testing.T, codex bool) {
 		newQuietCodexSwitcher = func() *codexswitcher.Switcher { return codexSw }
 	}
 	var errBuf strings.Builder
-	d, code := newDashboard(context.Background(), 5, false, ioStreams{out: io.Discard, err: &errBuf}, dashboardOptions{})
+	// No update schedule: its check outlives the test and writes into the home.
+	d, code := newDashboard(context.Background(), 5, false, ioStreams{out: io.Discard, err: &errBuf}, dashboardOptions{noUpdateSchedule: true})
 	if code != 0 {
 		t.Fatalf("newDashboard: %d %s", code, errBuf.String())
 	}
