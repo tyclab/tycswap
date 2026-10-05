@@ -5,16 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/brand"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 // childRoleEnv makes the test binary play a child process instead of running
-// tests, for the tests that need a real one: the detached start (A40/A41)
-// and, on Windows, the console hand-off.
+// tests, for the tests that need a real one: the detached start (A40/A41),
+// Claude Code (installFakeClaude) and, on Windows, the console hand-off.
 var childRoleEnv = brand.Sanitized().EnvPrefix + "_TEST_CHILD"
 
 func TestMain(m *testing.M) {
@@ -63,8 +65,41 @@ func runTestChild(role string) int {
 		s := releaseOwnConsole(ioStreams{in: os.Stdin, out: os.Stdout, err: os.Stderr})
 		fmt.Fprintf(s.err, "count before: %d\nreleased\nconsole: %v\n", before, hasConsole())
 		return 0
+	case "claude-login":
+		return fakeClaudeLogin(os.Args[1:])
+	case "claude-update":
+		return fakeClaudeUpdater(os.Args[1:])
 	}
 	return 2
+}
+
+// installFakeClaude puts this test binary in dir as claude (claude.exe on
+// Windows), playing role when it runs, and returns its path.
+func installFakeClaude(t *testing.T, dir, role string) string {
+	t.Helper()
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	claude := filepath.Join(dir, "claude")
+	if runtime.GOOS == "windows" {
+		// A symlink needs a privilege on Windows: copy instead.
+		claude += ".exe"
+		var raw []byte
+		if raw, err = os.ReadFile(exe); err == nil {
+			err = os.WriteFile(claude, raw, 0o755)
+		}
+	} else {
+		err = os.Symlink(exe, claude)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	testutil.Setenv(t, childRoleEnv, role)
+	return claude
 }
 
 // waitExited polls a spawned child until it has exited.
