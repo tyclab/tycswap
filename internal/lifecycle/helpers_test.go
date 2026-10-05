@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/cerr"
@@ -37,7 +38,7 @@ func newStoreOpts(t *testing.T, opts store.Options) *store.Store {
 		opts.Clock = testutil.FixedClock(t, "2026-07-17T09:00:00Z")
 	}
 	if opts.Keychain == nil {
-		opts.Keychain = keychain.NewFake()
+		opts.Keychain = &listingKeychain{Fake: keychain.NewFake(), names: map[[2]string]bool{}}
 	}
 	if opts.WinCred == nil {
 		opts.WinCred = wincred.NewFake()
@@ -438,9 +439,28 @@ func truncateSequence(t *testing.T, s *store.Store, n int) []byte {
 	return cut
 }
 
-// snapshotStore records the exact bytes of sequence.json and of every credential
-// and config backup — the state a refusal must leave untouched. The log file is
-// deliberately outside the snapshot: a refusal is expected to log.
+// listingKeychain is newStore's Keychain: a keychain.Fake that remembers the
+// name of every item set through it, so snapshotStore can read those items
+// back (an item put in with Seed is not seen). On macOS the credential
+// backups are Keychain items, and a Fake has no list.
+type listingKeychain struct {
+	*keychain.Fake
+	mu    sync.Mutex
+	names map[[2]string]bool
+}
+
+func (k *listingKeychain) Set(service, account, password string) error {
+	k.mu.Lock()
+	k.names[[2]string{service, account}] = true
+	k.mu.Unlock()
+	return k.Fake.Set(service, account, password)
+}
+
+// snapshotStore records the exact bytes of sequence.json, of every credential
+// and config backup file and of every item set through newStore's Keychain (an
+// item put in with Seed is not seen) — the state a refusal must leave
+// untouched. The log file is deliberately outside the snapshot: a refusal is
+// expected to log.
 func snapshotStore(t *testing.T, s *store.Store) map[string][]byte {
 	t.Helper()
 	out := map[string][]byte{}
@@ -458,6 +478,15 @@ func snapshotStore(t *testing.T, s *store.Store) map[string][]byte {
 		})
 		if err != nil {
 			t.Fatalf("snapshot %s: %v", root, err)
+		}
+	}
+	if kc, ok := s.Keychain().(*listingKeychain); ok {
+		kc.mu.Lock()
+		defer kc.mu.Unlock()
+		for name := range kc.names {
+			if v, found, _ := kc.Get(name[0], name[1]); found {
+				out["Keychain item "+name[0]+"/"+name[1]] = []byte(v)
+			}
 		}
 	}
 	return out

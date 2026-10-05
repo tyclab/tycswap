@@ -18,6 +18,8 @@ import (
 
 	"github.com/tyclab/tycswap/internal/codex/api"
 	"github.com/tyclab/tycswap/internal/codex/authfile"
+	"github.com/tyclab/tycswap/internal/codex/procdetect"
+	"github.com/tyclab/tycswap/internal/codex/registryimport"
 	codexstore "github.com/tyclab/tycswap/internal/codex/store"
 	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/paths"
@@ -56,6 +58,10 @@ func codexHome(t *testing.T, pids []int, usageFn func(ctx context.Context, at, a
 	t.Cleanup(func() { newCodexSwitcher = prev })
 	// `tycswap auto` sets a process-wide cancel note; later tests expect the default.
 	t.Cleanup(func() { setSigintNote("") })
+	// `codex --debug` points these loggers at this home for the rest of the
+	// process; a later test logging through them would recreate it once removed.
+	apiLog, procLog, importLog := api.Log, procdetect.Log, registryimport.Log
+	t.Cleanup(func() { api.Log, procdetect.Log, registryimport.Log = apiLog, procLog, importLog })
 	return home
 }
 

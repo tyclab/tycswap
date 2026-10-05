@@ -19,9 +19,13 @@ var homeKeychains = struct {
 	byHome map[string]*keychain.Fake
 }{byHome: map[string]*keychain.Fake{}}
 
-// homeKeychain returns the fake login Keychain of the current home.
+// homeKeychain returns the fake login Keychain of the current home. Without
+// a home every such test would share one fake, so it panics instead.
 func homeKeychain() *keychain.Fake {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		panic("homeKeychain: " + err.Error())
+	}
 	homeKeychains.Lock()
 	defer homeKeychains.Unlock()
 	kc, ok := homeKeychains.byHome[home]
