@@ -20,6 +20,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 
@@ -44,7 +45,7 @@ func (s *Server) routes() http.Handler {
 	// Static assets need the session cookie (not the CSRF header: <script>
 	// and <link> cannot send one). Unauthenticated, they would let any page
 	// fingerprint the dashboard's port by loading /static/app.js.
-	mux.Handle("GET /static/", s.requireCookie(http.StripPrefix("/static/", noDirListing(http.FileServerFS(sub)))))
+	mux.Handle("GET /static/", s.requireCookie(http.StripPrefix("/static/", noDirListing(staticTypes(http.FileServerFS(sub))))))
 	mux.Handle("GET /static/accent.css", s.requireCookie(http.HandlerFunc(s.handleAccent)))
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 
@@ -136,6 +137,28 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// staticContentTypes are the content types of the embedded assets. The file
+// server would look them up with mime.TypeByExtension, which on Windows reads
+// the host's registry: a host may record another type there (text/plain or
+// application/x-pointplus for .css), and under nosniff the browser refuses a
+// stylesheet or a script that does not carry its own type.
+var staticContentTypes = map[string]string{
+	".js":  "text/javascript; charset=utf-8",
+	".css": "text/css; charset=utf-8",
+	".svg": "image/svg+xml",
+}
+
+// staticTypes sets the Content-Type of an embedded asset from
+// staticContentTypes before the file server sees the request.
+func staticTypes(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ct, ok := staticContentTypes[path.Ext(r.URL.Path)]; ok {
+			w.Header().Set("Content-Type", ct)
+		}
 		next.ServeHTTP(w, r)
 	})
 }

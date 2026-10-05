@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -184,6 +185,30 @@ func TestStatic_ContentTypesAndCookieGated(t *testing.T) {
 		}
 		if resp.Header.Get("X-Content-Type-Options") != "nosniff" {
 			t.Errorf("%s: missing nosniff", tc.path)
+		}
+	}
+}
+
+// TestStatic_ContentTypesIgnoreTheHostTable: the assets' types are the
+// server's own, not the host's extension table (the registry on Windows),
+// which may record another type that nosniff makes the browser refuse.
+func TestStatic_ContentTypesIgnoreTheHostTable(t *testing.T) {
+	for ext := range staticContentTypes {
+		prev := mime.TypeByExtension(ext)
+		if err := mime.AddExtensionType(ext, "text/plain"); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = mime.AddExtensionType(ext, prev) })
+	}
+	h := newHarness(t)
+	for p, want := range map[string]string{
+		"/static/app.js":    "text/javascript; charset=utf-8",
+		"/static/style.css": "text/css; charset=utf-8",
+		"/static/icon.svg":  "image/svg+xml",
+	} {
+		resp := h.do(h.withCookie(h.newReq(http.MethodGet, p, nil)))
+		if ct := resp.Header.Get("Content-Type"); resp.StatusCode != http.StatusOK || ct != want {
+			t.Errorf("%s: status %d, content-type %q; want 200, %q", p, resp.StatusCode, ct, want)
 		}
 	}
 }
