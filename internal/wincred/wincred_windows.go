@@ -17,17 +17,22 @@
 // TargetName first and accept it only if its stored UserName field matches the
 // requested account; otherwise try the compound name.
 //
-// This file cannot be exercised on this Linux dev host — no test drives it —
-// but is checked for validity via `GOOS=windows go build ./internal/wincred/...`.
+// No test drives the Credential Manager itself: inside a test binary Get and
+// Delete refuse before any call into it (errInTests), so a test that reaches
+// them by mistake fails instead of reading or deleting a user's credentials.
 package wincred
 
 import (
 	"errors"
 	"fmt"
+	"testing"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
+
+// errInTests is Get's and Delete's answer inside a test binary.
+var errInTests = errors.New("wincred: the real Windows Credential Manager is not reachable from tests; give the test a fake (wincred.NewFake)")
 
 const credTypeGeneric = 1 // CRED_TYPE_GENERIC
 
@@ -135,6 +140,9 @@ func compoundName(service, account string) string { return account + "@" + servi
 // account (the "first account under this service" case); otherwise fall back
 // to the compound "{account}@{service}" name.
 func (Real) Get(service, account string) (string, bool, error) {
+	if testing.Testing() {
+		return "", false, errInTests
+	}
 	value, username, found, err := credRead(service)
 	if err != nil {
 		return "", false, err
@@ -156,6 +164,9 @@ func (Real) Get(service, account string) (string, bool, error) {
 // holds account's entry (mirroring Get's resolution), best-effort against
 // each individually.
 func (Real) Delete(service, account string) error {
+	if testing.Testing() {
+		return errInTests
+	}
 	_, username, found, err := credRead(service)
 	if err != nil {
 		return err
