@@ -284,19 +284,21 @@ func (t *windowsTray) addIcon() error {
 // icon is gone. The HICON is built again from the latest PNG asked for, since
 // a SetIcon while Explorer was down failed its NIM_MODIFY and kept the older
 // icon (the update badge would otherwise stay missing); when that build fails
-// the icon there was is added. UI thread only.
+// the icon there was is added. The old HICON goes only after the add, as in
+// applyIcon: any process can broadcast the message, so the shell may still
+// be showing it. UI thread only.
 func (t *windowsTray) readdIcon() {
 	t.mu.Lock()
 	png := t.iconPNG
 	t.mu.Unlock()
+	old := t.hicon
 	if hicon, err := iconFromPNG(png); err == nil {
-		old := t.hicon
 		t.hicon = hicon
-		if old != 0 {
-			pDestroyIcon.Call(uintptr(old))
-		}
 	}
 	_ = t.addIcon()
+	if old != 0 && old != t.hicon {
+		pDestroyIcon.Call(uintptr(old))
+	}
 }
 
 // iconFromPNG builds an HICON: CreateIconFromResourceEx understands PNG

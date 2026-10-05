@@ -4743,8 +4743,8 @@ implementations and no third-party code:
   the active-account dot and the update rows take `brand.AccentColor`
   (`tray_set_accent`). A darwin build without cgo compiles to a stub that
   reports `ErrUnsupported`.
-- **Windows** — `Shell_NotifyIconW`, a hidden top-level window (A52) of the class
-  `<Name>Tray` (`TycswapTray`) and a `GetMessage` loop through
+- **Windows** — `Shell_NotifyIconW`, a hidden top-level window (A52) of the
+  class `<Name>Tray` (`TycswapTray`) and a `GetMessage` loop through
   `golang.org/x/sys/windows`, on one locked OS thread; the icon comes from a
   PNG via `CreateIconFromResourceEx`, notifications are `NIF_INFO` balloons,
   the dialog is `MessageBoxW`.
