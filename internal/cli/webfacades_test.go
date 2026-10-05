@@ -889,9 +889,8 @@ func TestCodexOpsAdapter(t *testing.T) {
 
 // Disable and remove hold the Codex store lock, as a Codex switch does end to
 // end, so they wait for a Codex tick's switch instead of writing between its
-// steps (the store's own writes skip the file lock while this process holds
-// it), and a lock that stays held is a lock error with nothing written
-// (DESIGN A47; the switcher holds the lock since A48).
+// steps, and a lock that stays held is a lock error with nothing written
+// (DESIGN A47; the switcher holds the lock since A48, A50).
 func TestCodexOpsWaitForTheCodexStoreLock(t *testing.T) {
 	fixtureSwitcher(t)
 	ops := newCodexOps(fixtureCodex(t))

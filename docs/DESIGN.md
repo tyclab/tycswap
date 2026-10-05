@@ -3252,9 +3252,10 @@ another's slot. Beyond the switch, every read-modify-write of
 `codex/sequence.json` (`UpsertSlot`, `RemoveSlot`, `Renumber`, `SetActive`,
 alias, disabled, workspace name) takes the lock itself, so a background
 `tycswap auto` writing workspace names cannot interleave with `tycswap codex add`
-in another terminal and drop the new slot; a caller already holding
-`Store.Lock()` is not blocked (in-process ownership is tracked per root, the
-flock is never taken twice). A `sequence.json` that no longer parses is never
+in another terminal and drop the new slot; a caller holding `Store.Lock()`
+writes through that transaction's own view, which reuses the lock, while
+every other store value in the process takes it again (A50; until then
+in-process ownership was tracked per root). A `sequence.json` that no longer parses is never
 overwritten by a mutation (`ErrCorruptRegistry`); listing reads treat it as
 empty. `export` and `purge` take no store lock, as in the PR and as the Claude
 transfer verbs do; both importers run their writes under it because their
@@ -5504,10 +5505,10 @@ take it themselves, and `codexOps` took it around disable and remove (since
 A48 the switcher does, for every caller), because the store's own writes
 (`SetDisabled`, `RemoveSlot`) skipped the file lock while any goroutine of the
 process held it, until A50 made every ordinary store write take the lock and
-let only a transaction's own view reuse it. Without that, a remove could land
-between a Codex tick's
-capture and its write of `auth.json` and leave `auth.json` on the removed
-account. A disable or remove that waits 10 s for the lock answers 409; the
+let only a transaction's own view reuse it. Without the lock around the whole
+call, a remove could land between a Codex tick's capture and its write of
+`auth.json` and leave `auth.json` on the removed account. A disable or remove
+that waits 10 s for the lock answers 409; the
 switcher's own busy error on a switch or add was a switch error (500) until
 A48 made it a lock error (409).
 
@@ -5620,9 +5621,9 @@ cause.
 **Disable and remove hold the Codex store lock.** `Switcher.SetAccountDisabled`
 and `Switcher.Remove` wrote through the store, whose writes then took the file
 lock themselves unless this process already held it (A47, "Two stores, two
-loops"; A50 replaced that rule with transaction-scoped views). The Codex usage
-refresh holds that lock around its network call (it
-must be able to persist a rotated token before it asks for one), and the TUI
+loops"; A50 replaced that rule with transaction-scoped views). The Codex
+usage refresh holds that lock around its network call (it must be able to
+persist a rotated token before it asks for one), and the TUI
 runs that refresh in its own process. So a remove from the TUI during a
 refresh of the same account skipped the file lock, deleted the slot and its
 credentials, and the refresh then wrote the new token back under the removed
