@@ -21,7 +21,6 @@ import (
 	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
 	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/core"
-	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
@@ -42,7 +41,7 @@ func appTestHome(t *testing.T) string {
 	testutil.Setenv(t, "XDG_RUNTIME_DIR", t.TempDir())
 	prev := newSwitcher
 	newSwitcher = func(opts store.Options) (*core.Switcher, error) {
-		opts.Keychain = keychain.NewFake()
+		opts.Keychain = homeKeychain()
 		opts.OAuth = &oauth.FakeClient{}
 		opts.WinCred = wincred.NewFake()
 		return core.New(opts)

@@ -41,6 +41,9 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "restartSelf called without a test stub; not restarting the test binary")
 		return errors.New("restartSelf is stubbed in tests")
 	}
+	// Every switcher and scratch login gets its home's fake Keychain, never
+	// the real login Keychain (homekeychain_test.go).
+	useHomeKeychains()
 	os.Exit(m.Run())
 }
 
