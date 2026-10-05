@@ -75,12 +75,8 @@ func TestTaskbarCreatedAddsTheIconAgain(t *testing.T) {
 		calls = append(calls, call{op, nid.uFlags, nid.uCallbackMessage, nid.hIcon, windows.UTF16ToString(nid.szTip[:])})
 		return nil
 	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 16, 16))); err != nil {
-		t.Fatal(err)
-	}
 	// No HICON yet, so an add that reused the old one would carry 0.
-	tr := &windowsTray{tooltip: "first", iconPNG: buf.Bytes()}
+	tr := &windowsTray{tooltip: "first", iconPNG: testPNG(t)}
 	winMu.Lock()
 	prevTray := winTray
 	winTray = tr
@@ -128,10 +124,9 @@ func testPNG(t *testing.T) []byte {
 	return buf.Bytes()
 }
 
-// A Quit before Run has its window ends Run. The app, the headless app and
-// the remote tray turn a Ctrl-C into a Quit from their SIGINT claim on, which
-// is before Run (DESIGN A48, A52); that Quit used to be dropped, and the tray
-// kept running.
+// A Quit before Run has its window ends Run. The app and the remote tray
+// turn a Ctrl-C into a Quit from their SIGINT claim on, which is before Run
+// (DESIGN A48, A52); that Quit used to be dropped, and the tray kept running.
 func TestQuitBeforeRunEndsRun(t *testing.T) {
 	prevShell := shellNotifyIcon
 	shellNotifyIcon = func(uintptr, *notifyIconData) error { return nil } // no icon in the real taskbar

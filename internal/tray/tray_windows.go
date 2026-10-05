@@ -238,7 +238,8 @@ func (t *windowsTray) Run() error {
 		return errors.New("tray: CreateWindowEx: " + err.Error())
 	}
 	// Set under mu, where Quit reads it: a Quit from before the window is
-	// posted here and a later one posts itself, so each is posted once (A52).
+	// posted here and a later one posts itself, so none is lost or posted
+	// twice (A52).
 	t.mu.Lock()
 	t.hwnd = windows.HWND(hwnd)
 	quit, png := t.quit, t.iconPNG

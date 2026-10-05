@@ -88,17 +88,15 @@ func TestCtrlCEndsHeadlessAppWithZeroAndRemovesTheToken(t *testing.T) {
 	}
 }
 
-// earlyCtrlCTray is a tray that gets a real Ctrl-C at the start of Run,
-// before its window would exist, and holds to the contract the Windows tray
-// keeps since A52: a Quit that comes before the window still ends Run. It
-// gives up after five seconds rather than hang.
-type earlyCtrlCTray struct {
+// ctrlCTray sends the process a real Ctrl-C as Run starts and returns once
+// Quit comes, or with an error after five seconds rather than hang.
+type ctrlCTray struct {
 	fakeTray
 	quit chan struct{}
 	once sync.Once
 }
 
-func (e *earlyCtrlCTray) Run() error {
+func (e *ctrlCTray) Run() error {
 	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
 		return err
 	}
@@ -110,16 +108,16 @@ func (e *earlyCtrlCTray) Run() error {
 	}
 }
 
-func (e *earlyCtrlCTray) Quit() { e.once.Do(func() { close(e.quit) }) }
+func (e *ctrlCTray) Quit() { e.once.Do(func() { close(e.quit) }) }
 
-// The remote tray (`app --remote`) on a Ctrl-C before its tray has a window:
-// its claim hands the signal to its context, which quits the tray, and it
-// exits 0 with remote.lock free (A48, A52). Without the claim the notifier's
-// exit 130 ends the test binary.
-func TestEarlyCtrlCEndsRemoteTrayWithZero(t *testing.T) {
+// The remote tray (`app --remote`) on a real Ctrl-C, sent as its tray's Run
+// starts: the claim hands the signal to the command's context, whose end
+// quits the tray, and the command exits 0 with remote.lock free (A48).
+// Without the claim the notifier's exit 130 ends the test binary.
+func TestCtrlCEndsRemoteTrayWithZero(t *testing.T) {
 	appLockHome(t)
 	installTestSigint()
-	ft := &earlyCtrlCTray{quit: make(chan struct{})}
+	ft := &ctrlCTray{quit: make(chan struct{})}
 	prev := newTray
 	newTray = func(tray.Icon, tray.Options) (tray.Tray, error) { return ft, nil }
 	t.Cleanup(func() { newTray = prev })
