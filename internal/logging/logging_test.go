@@ -2,6 +2,7 @@ package logging
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -133,6 +134,40 @@ func TestRotation(t *testing.T) {
 	// Never more backups than backupCount.
 	if _, err := os.Stat(path + ".4"); err == nil {
 		t.Errorf("backup .4 exists but backupCount is 3")
+	}
+}
+
+// TestLogHoldsNoHandle: nothing keeps the log open between records, so its
+// directory can be removed right after one (a purge, a test's cleanup), on
+// Windows too, where an open file cannot be deleted.
+func TestLogHoldsNoHandle(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "store")
+	NewWithClock(dir, false, clock.NewFake(time.Unix(0, 0).UTC())).Info("a record")
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("remove the log's directory after a record: %v", err)
+	}
+}
+
+// TestRotationByAnotherWriter: two writers on one log, as the tray app and a
+// command are. When one rotates the log, the other's next record lands in the
+// fresh log, not in the file rotated away, and the size that triggers a
+// rotation counts both writers' records.
+func TestRotationByAnotherWriter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "tycswap.log")
+	a, b := newRotatingWriter(path, 64, 3), newRotatingWriter(path, 64, 3)
+	rec := func(name string) string { return fmt.Sprintf("%-26s\n", name) } // 27 bytes
+	for _, step := range []struct {
+		w    *rotatingWriter
+		name string
+	}{{a, "a1"}, {b, "b1"}, {b, "b2"}, {a, "a2"}} {
+		if err := step.w.write([]byte(rec(step.name))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for p, want := range map[string]string{path: rec("b2") + rec("a2"), path + ".1": rec("a1") + rec("b1")} {
+		if got, err := os.ReadFile(p); err != nil || string(got) != want {
+			t.Errorf("%s = %q, %v; want %q", filepath.Base(p), got, err, want)
+		}
 	}
 }
 
