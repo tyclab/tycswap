@@ -36,6 +36,10 @@ var AuthOverrideEnvVars = []string{
 	"CLAUDE_CODE_OAUTH_TOKEN",
 	"CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
 	"CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR",
+	// Not an auth override, but Claude Code keeps its credentials under this
+	// dir instead of the session profile's, and in the default ~/.claude
+	// storage when it is set but empty: the live login's (DESIGN A56).
+	"CLAUDE_SECURESTORAGE_CONFIG_DIR",
 }
 
 // authStatusTimeout bounds the `claude auth status --json` probe (a local check
@@ -299,9 +303,13 @@ func errShareHistoryWindows() error {
 // scrubbedPresent returns the AUTH_OVERRIDE_ENV_VARS that are currently set
 // (non-empty), in declaration order.
 func (m *Manager) scrubbedPresent() []string {
+	set := make(map[string]bool)
+	for _, e := range m.environ() {
+		set[envKey(e)] = true
+	}
 	var out []string
 	for _, v := range AuthOverrideEnvVars {
-		if m.getenv(v) != "" {
+		if set[v] { // set at all: an empty value still counts (see the list)
 			out = append(out, v)
 		}
 	}
