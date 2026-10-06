@@ -25,13 +25,14 @@ func newManager(t *testing.T, accts *fakeAccounts, opts Options) (*Manager, *byt
 	return NewManager(accts, opts), buf
 }
 
-func TestAuthOverrideEnvVarsExact5Tuple(t *testing.T) {
+func TestAuthOverrideEnvVarsExactList(t *testing.T) {
 	want := []string{
 		"ANTHROPIC_API_KEY",
 		"ANTHROPIC_AUTH_TOKEN",
 		"CLAUDE_CODE_OAUTH_TOKEN",
 		"CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
 		"CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR",
+		"CLAUDE_SECURESTORAGE_CONFIG_DIR",
 	}
 	if len(AuthOverrideEnvVars) != len(want) {
 		t.Fatalf("AuthOverrideEnvVars = %v, want %v", AuthOverrideEnvVars, want)

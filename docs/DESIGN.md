@@ -5936,6 +5936,8 @@ A login-directory add leaves `activeAccountNumber` on the live login, but a
 follow the live identity when a migration moved it, and clears it when a
 displacement deleted it, so it never names a slot now holding another account.
 
+`tycswap run` and `tycswap env` drop the same variable for a pinned session (it is in `AuthOverrideEnvVars`), and `env` counts it as set even when empty.
+
 ## A57. `status` and `list` report a busy store lock
 
 A roster with a record that lacks `organizationUuid` needs the org-field

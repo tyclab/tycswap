@@ -215,3 +215,34 @@ func TestSetupEnvClaudeNotFound(t *testing.T) {
 		t.Fatalf("SetupEnv err = %v, want claude-not-found", err)
 	}
 }
+
+// A set-but-empty CLAUDE_SECURESTORAGE_CONFIG_DIR points Claude Code's
+// credentials at the default ~/.claude storage, the live login's: env unsets
+// it and run drops it, whatever its value.
+func TestSecureStorageDirNeverReachesASession(t *testing.T) {
+	setupHome(t)
+	backup := t.TempDir()
+	accts := newFakeAccounts(backup, platform.Linux)
+	accts.add("2", "user@example.com", "", oauthCreds)
+	seedProfile(t, sessionDirFor(t, backup, "2", "user@example.com"), "user@example.com", "", oauthCreds, nil)
+	env := []string{"PATH=/usr/bin", "CLAUDE_SECURESTORAGE_CONFIG_DIR="}
+
+	runner := &fakeRunner{probeFn: profileProbe}
+	m, _ := newManager(t, accts, Options{Runner: runner, Environ: func() []string { return env }})
+	res, err := m.SetupEnv("2", false, false)
+	if err != nil {
+		t.Fatalf("SetupEnv: %v", err)
+	}
+	if !reflect.DeepEqual(res.Scrubbed, []string{"CLAUDE_SECURESTORAGE_CONFIG_DIR"}) {
+		t.Errorf("env Scrubbed = %v, want the secure-storage dir", res.Scrubbed)
+	}
+
+	if err := m.Run("2", nil, false, false); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, kv := range runner.execCalls[0].env {
+		if strings.HasPrefix(kv, "CLAUDE_SECURESTORAGE_CONFIG_DIR=") {
+			t.Errorf("run passed %q to the session", kv)
+		}
+	}
+}
