@@ -54,6 +54,10 @@ const (
 	sequenceFile  = "sequence.json"
 	cacheDir      = "cache"
 	migrationsLog = ".migrations.json"
+	// statuslineFile is derived state each store's owner rebuilds from its
+	// own roster and cache (DESIGN A54): the old store's (another tool's) is
+	// never copied, and the new store's own never makes it non-empty.
+	statuslineFile = "statusline.json"
 )
 
 // ErrNoOldStore is returned when no old store with data exists.
@@ -161,7 +165,7 @@ func onlyThrowaway(dir string, top bool) bool {
 			continue
 		case top && (strings.HasPrefix(name, newLogName) || strings.HasPrefix(name, oldLogName)):
 			continue
-		case top && name == migrationsLog:
+		case top && (name == migrationsLog || name == statuslineFile):
 			continue
 		case top && name == codexDir && e.IsDir():
 			if onlyThrowaway(filepath.Join(dir, name), false) {
@@ -365,6 +369,12 @@ func copyTree(src, dst string, inFiles map[string]bool, dryRun bool, rep *Report
 				rep.Skipped = append(rep.Skipped, rel)
 				return nil
 			}
+			if toRel == statuslineFile {
+				// The old producer's derived state (DESIGN A54); tycswap
+				// publishes its own on its next write.
+				rep.Skipped = append(rep.Skipped, rel)
+				return nil
+			}
 			if inFiles[toRel] {
 				rep.Skipped = append(rep.Skipped, rel)
 				return nil
@@ -446,6 +456,8 @@ func planTree(src string) (map[string]planned, error) {
 			plan[toRel] = planned{p, "symlink"}
 		case d.IsDir():
 			plan[toRel] = planned{p, "dir"}
+		case toRel == statuslineFile:
+			// Not copied (see statuslineFile).
 		case d.Type().IsRegular() && !isLockFile(d.Name()):
 			plan[toRel] = planned{p, "file"}
 		}
@@ -479,7 +491,7 @@ func checkResumable(newRoot string, plan map[string]planned, removeTemps bool) e
 			return filepath.SkipDir
 		case isLockFile(name):
 			return nil
-		case top && (name == migrationsLog || strings.HasPrefix(name, newLogName)):
+		case top && (name == migrationsLog || name == statuslineFile || strings.HasPrefix(name, newLogName)):
 			return nil
 		case strings.HasPrefix(name, ".tycswap-migrate-") && strings.HasSuffix(name, ".tmp"):
 			if removeTemps {

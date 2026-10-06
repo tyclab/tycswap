@@ -4625,6 +4625,8 @@ Inside the backup root:
 | `credentials/` | Per-account credential files, `.creds-<n>-<email>.enc` and the retained previous generation `.creds-<n>-<email>.enc.prev` (file backend; `<email>` as for `configs/`). macOS stores these in the Keychain instead, except a credential too large to reach the `security` command over stdin (a command line over 4032 bytes, so a credential over about 2 KB, for example one carrying many `mcpOAuth` tokens), which stays in this file (mode 0600) rather than on a command line. The live Claude Code credential falls back to `.credentials.json` the same way. |
 | `sessions/` | Per-account session-mode profiles, `<n>-<email>` (the `@` in the email replaced by `_`), created by `tycswap run` / `tycswap env`. |
 | `cache/usage.json` | Cached usage measurements. |
+| `statusline.json` | Label and quota per account for Claude Code status lines (see STATUS LINE STATE). Derived: never copied by `tycswap migrate`. |
+| `.statusline.lock` | Held while `statusline.json` is rebuilt. No data. |
 | `cache/update_check.json` | Last passive update-check result (`{"timestamp": <epoch-seconds>, "data": <latest-version>}`). |
 | `tycswap.log` | Rotating log file, 1 MB per file, 3 backups (`tycswap.log.1`, `.2`, `.3`). `tycswap migrate` copies an old `claude-swap.log*` under this name. |
 | `codex/sequence.json` | The Codex slot registry: `accounts` keyed by slot (`account_key`, `email`, `plan`, `workspaceName`, `alias`, `added`, `disabled`, `authMode`), `activeAccountKey`, `lastUpdated`. No secrets. |
@@ -4651,6 +4653,34 @@ The codex CLI's files that tycswap reads and writes:
 |------|------|
 | `~/.codex/auth.json` (or `<CODEX_HOME>/auth.json`) | The live Codex login; it decides which Codex account is active. `tycswap codex switch` rewrites it. |
 | `~/.codex/accounts/` | codex-auth's registry and snapshots; read during the import, never written. |
+
+## STATUS LINE STATE
+
+`<backup root>/statusline.json` lets a Claude Code status line show the live
+account's label and quota without running tycswap (DESIGN A54). It is rebuilt
+whole, atomically and mode 0600 (not on Windows), after every `sequence.json`
+write (switches included) and every usage merge or poll-plan change. A failure
+to write it is logged and never fails the operation.
+
+```json
+{"schemaVersion": 1, "producer": "tycswap", "producerVersion": "0.7.8", "writtenAt": 1784278800,
+ "accounts": {"a@x.com|org-b": {"slot": 2, "label": "team",
+   "usage": {"fetchedAt": 1784278700, "pollIntervalS": 180,
+             "fiveHour": {"pct": 6, "resetsAt": 1784291400},
+             "sevenDay": {"pct": 88, "resetsAt": 1784505600},
+             "scoped": [{"name": "Fable", "pct": 12, "resetsAt": 1784448000}]}}}}
+```
+
+- **Key.** `<emailAddress>|<organizationUuid>` from the session's
+  `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json` `oauthAccount`, a null
+  organization as `""`. API-key accounts are found under `<email>|`.
+- **Accounts.** One per identity (the lower slot on a duplicate). `label` is
+  the alias, else the organization name, else the email, control characters
+  stripped. No key, token or credential is ever written.
+- **Usage.** null until measured. Every time is an integer epoch; a window or
+  `resetsAt` not reported is null. `pollIntervalS` is 600 when no poll is
+  planned; treat the data as stale when `now - fetchedAt >= 2 * pollIntervalS`.
+- **Compatibility.** Ignore the file when `schemaVersion` is not 1.
 
 ## SETTINGS
 

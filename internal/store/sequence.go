@@ -270,7 +270,18 @@ func (s *Store) emptySequence() *SequenceData {
 // a non-round-tripping result with ConfigError("Generated invalid JSON"), then
 // writes it atomically (temp-in-dir → chmod 0600 → rename; parent chmod 0700 on
 // non-Windows). Mirrors _write_json (spec 01§2.3).
+//
+// Every committed write (a switch's commit and rollback included) then
+// rebuilds statusline.json, best-effort (DESIGN A54).
 func (s *Store) WriteSequence(data *SequenceData) error {
+	if err := s.writeSequenceFile(data); err != nil {
+		return err
+	}
+	s.PublishStatusline()
+	return nil
+}
+
+func (s *Store) writeSequenceFile(data *SequenceData) error {
 	encoded, err := marshalIndent2(data)
 	if err != nil {
 		return err

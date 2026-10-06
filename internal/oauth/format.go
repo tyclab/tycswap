@@ -46,6 +46,13 @@ func FormatReset(resetsAt string, now time.Time) (countdown, clock string, ok bo
 	return cd, ck, true
 }
 
+// ResetEpoch is resetsAt (any form FormatReset accepts) in whole epoch seconds;
+// ok=false when it is empty or unparseable (DESIGN A54).
+func ResetEpoch(resetsAt string) (int64, bool) {
+	t, ok := parseResetTime(resetsAt)
+	return t.Unix(), ok
+}
+
 // formatResetAt is the parse-free core: countdown + local clock for a resolved
 // reset time relative to now.
 func formatResetAt(reset, now time.Time) (countdown, clock string) {

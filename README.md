@@ -864,6 +864,29 @@ auto-switch and the model limit and opens the distro's dashboard; Claude
 Code's updates and *Add current login* stay on the distro's dashboard. Until
 the distro's app answers, the icon shows `⚠`.
 
+### Status line integration
+
+tycswap keeps `statusline.json` in the backup store (see Data locations)
+current for Claude Code status lines: it is rebuilt after every switch, roster
+change and usage poll, so a status line reads one file instead of running
+tycswap. Accounts are keyed by `<emailAddress>|<organizationUuid>` from
+`~/.claude.json`'s `oauthAccount` (a null organization is empty), so take the
+key from your session's live config. Each entry has `slot`, `label` (alias,
+else organization name, else email) and `usage`, null until measured, with
+`fetchedAt`, `pollIntervalS`, `fiveHour`/`sevenDay` `{pct, resetsAt}` and
+`scoped` per-model windows; every time is an integer epoch. Treat usage as
+stale when `now - fetchedAt >= 2 * pollIntervalS`. No key or token is ever in
+the file. One `jq` call prints the live account (on macOS and Windows the file
+is `~/.tycswap/statusline.json`):
+
+```sh
+jq -r --arg k "$(jq -r '.oauthAccount | "\(.emailAddress)|\(.organizationUuid // "")"' "${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json")" \
+  '.accounts[$k] // empty | "\(.label) 5h \(.usage.fiveHour.pct // "-")% 7d \(.usage.sevenDay.pct // "-")%"' \
+  "${XDG_DATA_HOME:-$HOME/.local/share}/tycswap/statusline.json"
+```
+
+The schema is under STATUS LINE STATE in [`docs/reference.md`](docs/reference.md).
+
 ### Codex (ChatGPT) accounts
 
 tycswap also switches [Codex](https://github.com/openai/codex) accounts, under a
@@ -1017,6 +1040,7 @@ Inside the backup store:
 | `mappings.json`           | Directory-to-account mappings (`tycswap map`).                  |
 | `cache/usage.json`        | Cached usage fetches.                                         |
 | `cache/update_check.json` | Cached update-check result.                                  |
+| `statusline.json`         | Label and quota per account for status lines (see Status line integration). |
 | `sessions/`               | Session profiles for `tycswap run` and `tycswap env`.            |
 | `tycswap.log`             | The switch log; rotates at 1 MB, keeping 3 backups.          |
 | `ui_prefs.json`           | The dashboard's folded cards and whether auto-switch was on in the tray app. |
