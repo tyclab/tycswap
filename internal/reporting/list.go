@@ -51,6 +51,9 @@ func ListAccounts(s *store.Store, showTokenStatus, jsonOut bool, fetch map[strin
 		return nil, nil
 	}
 
+	if err := backfillLockError(s); err != nil {
+		return nil, err
+	}
 	infos := BuildAccountsInfo(s)
 	entries := CollectUsageEntries(s, infos, fetch)
 
