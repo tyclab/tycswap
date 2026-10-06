@@ -5917,3 +5917,23 @@ Ctrl-C exits from the SIGINT goroutine past every deferred `Release`. cclock
 records held handles; the handler runs `lifecycle.RunCleanups` and then
 `cclock.ReleaseAll`, last, so no lock directory outlives the process
 (`sigintCleanup`). Claimed paths (`web`, `app`) unwind through their defers.
+
+## A56. `add --login`: the scratch login's storage and the active slot
+
+Claude Code names its credential storage, the Keychain items on macOS and
+`.credentials.json` elsewhere, after `CLAUDE_SECURESTORAGE_CONFIG_DIR` when it
+is set, in place of `CLAUDE_CONFIG_DIR`, and after the default `~/.claude`
+storage (the unhashed items) when it is set but empty. `loginEnv` therefore
+drops it beside the replaced config dir, so a scratch login can only write the
+scratch profile's storage.
+
+`--claudeai` and the `--console` refusal (A50) do not override a managed
+`forceLoginMethod` of `console`, which still makes an API key, kept on macOS
+in `Claude Code-<hash>` beside the login's `Claude Code-credentials-<hash>`.
+Cleanup deletes both items hashed from the scratch path, and still never the
+seat's unhashed ones. This amends A50's "only the OAuth item".
+
+A login-directory add leaves `activeAccountNumber` on the live login, but a
+`--slot` add can move or delete the record it names. `keepActive` makes it
+follow the live identity when a migration moved it, and clears it when a
+displacement deleted it, so it never names a slot now holding another account.

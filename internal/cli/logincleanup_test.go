@@ -59,6 +59,11 @@ func TestLoginCleanupFailureRetriedWithoutDeletingSharedKey(t *testing.T) {
 	if err := kc.Set("Claude Code", account, "shared-fixture"); err != nil {
 		t.Fatal(err)
 	}
+	// The API key a managed forceLoginMethod "console" still makes.
+	consoleKey := "Claude Code-" + strings.TrimPrefix(service, "Claude Code-credentials-")
+	if err := kc.Set(consoleKey, account, "scratch-console-fixture"); err != nil {
+		t.Fatal(err)
+	}
 	if err := remove(); err == nil || !strings.Contains(err.Error(), "retained for retry") || strings.Contains(err.Error(), "secret-like") {
 		t.Fatalf("cleanup error: %v", err)
 	}
@@ -77,7 +82,7 @@ func TestLoginCleanupFailureRetriedWithoutDeletingSharedKey(t *testing.T) {
 	if err := retryLoginCleanups(root, kc); err != nil {
 		t.Fatal(err)
 	}
-	if kc.Exists(service, account) {
+	if kc.Exists(service, account) || kc.Exists(consoleKey, account) {
 		t.Fatal("scratch key survived retry")
 	}
 	if !kc.Exists("Claude Code", account) {

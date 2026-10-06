@@ -388,7 +388,10 @@ func TestAddLoginKeepsAddsFlagRefusals(t *testing.T) {
 }
 
 func TestLoginEnvReplacesConfigDir(t *testing.T) {
-	got := loginEnv([]string{"A=1", "CLAUDE_CONFIG_DIR=/pinned", "B=2"}, "/scratch")
+	// Claude Code names its credential storage after a set
+	// CLAUDE_SECURESTORAGE_CONFIG_DIR; an empty one names the default,
+	// unhashed storage.
+	got := loginEnv([]string{"A=1", "CLAUDE_CONFIG_DIR=/pinned", "CLAUDE_SECURESTORAGE_CONFIG_DIR=", "B=2"}, "/scratch")
 	want := []string{"A=1", "B=2", "CLAUDE_CONFIG_DIR=/scratch"}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("loginEnv = %v, want %v", got, want)
@@ -503,7 +506,7 @@ func TestAddLoginKeychainFailuresStoreNothingAndDeleteTheItem(t *testing.T) {
 }
 
 // TestLoginScratchCleanupOnInterrupt: the SIGINT path (lifecycle.RunCleanups)
-// deletes the scratch's Keychain item and the directory, and a later remove
+// deletes the scratch's Keychain items and the directory, and a later remove
 // does neither again.
 func TestLoginScratchCleanupOnInterrupt(t *testing.T) {
 	root := t.TempDir()
@@ -519,11 +522,13 @@ func TestLoginScratchCleanupOnInterrupt(t *testing.T) {
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Errorf("scratch survived the interrupt cleanup: %v", err)
 	}
-	if got := kc.deleted(); len(got) != 1 || got[0] != lifecycle.LoginKeychainService(dir) {
-		t.Errorf("Keychain deletes = %v", got)
+	login := lifecycle.LoginKeychainService(dir)
+	want := login + " Claude Code-" + strings.TrimPrefix(login, "Claude Code-credentials-")
+	if got := kc.deleted(); strings.Join(got, " ") != want {
+		t.Errorf("Keychain deletes = %v, want %s", got, want)
 	}
 	remove()
-	if got := kc.deleted(); len(got) != 1 {
+	if got := kc.deleted(); len(got) != 2 {
 		t.Errorf("remove after the cleanup deleted again: %v", got)
 	}
 }

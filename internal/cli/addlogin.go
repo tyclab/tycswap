@@ -205,16 +205,25 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 // loginEnv is the parent environment with CLAUDE_CONFIG_DIR pointing at the
 // scratch profile. Any CLAUDE_CONFIG_DIR already set — a custom one, or the
 // session profile of a `tycswap env`-pinned shell — is replaced, so the login
-// can never land in a live profile.
+// can never land in a live profile. CLAUDE_SECURESTORAGE_CONFIG_DIR is dropped
+// too: Claude Code names its credential storage after it in place of the
+// config dir, and after the default `~/.claude` storage (the unhashed items)
+// when it is set but empty (DESIGN A56).
 func loginEnv(parent []string, scratch string) []string {
 	const key = "CLAUDE_CONFIG_DIR"
 	env := make([]string, 0, len(parent)+1)
 	for _, kv := range parent {
 		name, _, _ := strings.Cut(kv, "=")
-		if name == key || (runtime.GOOS == "windows" && strings.EqualFold(name, key)) {
+		if loginDirVar(name, key) || loginDirVar(name, "CLAUDE_SECURESTORAGE_CONFIG_DIR") {
 			continue
 		}
 		env = append(env, kv)
 	}
 	return append(env, key+"="+scratch)
+}
+
+// loginDirVar reports whether the variable name is want, case-insensitively on
+// Windows.
+func loginDirVar(name, want string) bool {
+	return name == want || (runtime.GOOS == "windows" && strings.EqualFold(name, want))
 }

@@ -118,10 +118,16 @@ func cleanupLoginDir(root, dir string, kc keychain.KeychainClient, mark bool) er
 			if kc == nil {
 				return fmt.Errorf("Keychain is unavailable")
 			}
-			// Only the OAuth item derived from this scratch directory is ours.
-			// Never delete the shared Console/API-key item or the live login.
-			if err := kc.Delete(lifecycle.LoginKeychainService(dir), keychain.AccountName()); err != nil {
-				return fmt.Errorf("scratch Keychain item could not be deleted")
+			// Only the items hashed from this scratch directory are ours: its
+			// login, "Claude Code-credentials-<hash>", and the API key a managed
+			// forceLoginMethod "console" still makes, "Claude Code-<hash>". Never
+			// the seat's unhashed items or the live login (DESIGN A56).
+			login := lifecycle.LoginKeychainService(dir)
+			apiKey := "Claude Code-" + strings.TrimPrefix(login, "Claude Code-credentials-")
+			for _, service := range []string{login, apiKey} {
+				if err := kc.Delete(service, keychain.AccountName()); err != nil {
+					return fmt.Errorf("scratch Keychain item could not be deleted")
+				}
 			}
 		case "file":
 		default:

@@ -131,3 +131,43 @@ func TestLoginDirMaterialStoresTheAccountOnly(t *testing.T) {
 		t.Errorf("config = %q, want verbatim", gotCfg)
 	}
 }
+
+// TestLoginDirAddKeepsActiveOnTheLiveLogin: alice is live in slot 1. An add
+// --login that moves alice to slot 3 moves the active slot with her; one that
+// puts bob over slot 1 leaves the live login unmanaged, with no active slot.
+func TestLoginDirAddKeepsActiveOnTheLiveLogin(t *testing.T) {
+	for _, tc := range []struct {
+		name, email string
+		slot        int
+		want        *int
+	}{
+		{"migrated", "alice@example.com", 3, ip(3)},
+		{"displaced", "bob@example.com", 1, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newStore(t)
+			seed(t, s, ip(1), switchable("1", "alice@example.com"))
+			dir := t.TempDir()
+			cfg := `{"oauthAccount":{"emailAddress":"` + tc.email + `","organizationUuid":""}}`
+			for name, body := range map[string]string{".claude.json": cfg, ".credentials.json": oauthBlob} {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := AddAccountFrom(s, LoginDir(dir, nil), &tc.slot, true, nil); err != nil {
+				t.Fatalf("AddAccountFrom: %v", err)
+			}
+			got := readSeq(t, s).ActiveAccountNumber
+			if (got == nil) != (tc.want == nil) || (got != nil && *got != *tc.want) {
+				t.Errorf("activeAccountNumber = %v, want %v", deref(got), deref(tc.want))
+			}
+		})
+	}
+}
+
+func deref(p *int) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}

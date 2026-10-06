@@ -632,12 +632,15 @@ With `--login`, `add` stores a login the live one never sees. It creates a
 private scratch profile (`login.*`, mode 0700) under the backup root and runs
 `claude auth login [LOGIN-ARGS...]` with `CLAUDE_CONFIG_DIR` pointing at it,
 replacing any `CLAUDE_CONFIG_DIR` the shell already carries (including a
-`tycswap env` pin). The terminal is handed to the login so the browser flow can be
-completed; no store or roster lock is held while it runs. When it exits, the
+`tycswap env` pin) and dropping any `CLAUDE_SECURESTORAGE_CONFIG_DIR`. The
+terminal is handed to the login so the browser flow can be completed; no store
+or roster lock is held while it runs. When it exits, the
 `.claude.json` and `.credentials.json` it wrote are stored exactly as `add`
 stores the live login: an identity already managed is refreshed in place,
 otherwise the account takes `--slot` or the next free slot, with `--alias`
-applied. The live login is untouched and `activeAccountNumber` is unchanged.
+applied. The live login is untouched and `activeAccountNumber` stays on it: it
+follows that account when `--slot` moves it, and is cleared when `--slot`
+overwrites its record.
 With `--switch`, `add` then switches to the new account through the same path
 as `tycswap switch <n>`, so the outgoing account's credentials are written back
 as on any switch. Scratch cleanup runs on every exit path, including a failed
@@ -657,9 +660,11 @@ keeps a login's credential in the Keychain rather than in
 `.credentials.json`, `--login` reads it from the item Claude Code creates for
 the scratch directory (`Claude Code-credentials-<first 8 hex of the
 directory's SHA-256>`) and deletes that item before removing the directory, on
-success, failure and Ctrl-C alike. Only that scratch OAuth item is deleted;
-shared Console keys and the live login are untouched. Cleanup attempts serialize
-on `<backup root>/.login-cleanup.lock`.
+success, failure and Ctrl-C alike, together with the API-key item
+`Claude Code-<same hex>` that a managed `forceLoginMethod` of `console` can
+still create. Only those two scratch items are deleted; shared Console keys and
+the live login are untouched. Cleanup attempts serialize on
+`<backup root>/.login-cleanup.lock`.
 
 ### Exit status
 
