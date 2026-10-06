@@ -4563,6 +4563,8 @@ tycswap reads the following environment variables.
 | `XDG_CONFIG_HOME` | On Linux, where `tycswap app --autostart on` writes its `autostart/` entry (default `~/.config`). |
 | `CODEX_HOME` | The codex CLI's home, resolved as the codex CLI resolves it: the live login is `<CODEX_HOME>/auth.json` and codex-auth's registry `<CODEX_HOME>/accounts/registry.json`. Defaults to `~/.codex`. |
 | `GOBIN`, `GOPATH` | Consulted by `tycswap upgrade` and the passive update notice to detect a `go install` layout: a binary in `$GOBIN` (checked first, when set), `$GOPATH/bin` or `$HOME/go/bin`. |
+| `HTTPS_PROXY`, `HTTP_PROXY` (and lowercase) | The proxy for OAuth, usage, Codex and update requests, as Go reads them. When neither is set, the system's proxy is used instead: `scutil --proxy` on macOS, the user's Internet Settings on Windows (a PAC script is not evaluated). Loopback is never proxied. |
+| `NO_PROXY` (and `no_proxy`) | Hosts that go direct, comma-separated, as Go reads them. With the system's proxy it also accepts `<local>`, globs such as `*.example.com` and CIDR blocks, and an entry covers the host itself as well as its subdomains. |
 
 Color precedence: `NO_COLOR` present → off; else `FORCE_COLOR` present → on;
 else non-TTY → off; else `TERM=dumb` → off; else on. The result is computed once

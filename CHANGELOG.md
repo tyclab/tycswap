@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Fixed:** with no `HTTPS_PROXY` or `HTTP_PROXY` set, as for `tycswap app` started at login, OAuth, usage, Codex and update requests use the system proxy (macOS `scutil --proxy`, Windows Internet Settings) with its bypass list, instead of going direct and failing behind a proxy set by a configuration profile or group policy; `NO_PROXY` applies to it too and loopback is never proxied (DESIGN A58).
 - **Fixed:** on Windows, taking a Claude Code lock right after another process released it no longer fails with "Access is denied": a lock directory pending delete counts as held and is retried.
 - **Fixed:** `status` and `list` report a busy store lock. On a roster that still needed the organization backfill, they read a store another tycswap process held as empty, showing the live account as "(not managed)" and listing no accounts (DESIGN A57).
 - **Fixed:** on Windows, replacing a store file while another reader of it is open (the status-line rebuild reads `sequence.json` while a roster write replaces it) no longer fails with "Access is denied": the atomic rename is retried for about half a second.
