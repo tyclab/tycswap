@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Fixed:** a slot backup no longer keeps the MCP server logins (`mcpOAuth`, `mcpOAuthClientConfig`) of the live file it was taken from. A slot stored before they were split off kept them, an inactive account's token refresh wrote them back, and `tycswap run` seeded them into its session profile; every backup write now stores the account part and every read sets them aside (DESIGN A59).
 - **Fixed:** with no `HTTPS_PROXY` or `HTTP_PROXY` set, as for `tycswap app` started at login, OAuth, usage, Codex and update requests use the system proxy (macOS `scutil --proxy`, Windows Internet Settings) with its bypass list, instead of going direct and failing behind a proxy set by a configuration profile or group policy; `NO_PROXY` applies to it too and loopback is never proxied (DESIGN A58).
 - **Fixed:** on Windows, taking a Claude Code lock right after another process released it no longer fails with "Access is denied": a lock directory pending delete counts as held and is retried.
 - **Fixed:** `status` and `list` report a busy store lock. On a roster that still needed the organization backfill, they read a store another tycswap process held as empty, showing the live account as "(not managed)" and listing no accounts (DESIGN A57).
