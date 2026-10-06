@@ -26,6 +26,7 @@ type Store struct {
 	path     string
 	lockPath string
 	clk      clock.Clock
+	onChange func()
 }
 
 // PollPlan is a scheduler's per-slot (nextPollAt, pollIntervalS). Nil pointers
@@ -45,6 +46,18 @@ func NewStore(cacheDir string, clk clock.Clock) *Store {
 }
 
 func (s *Store) now() float64 { return clock.Seconds(s.clk) }
+
+// SetOnChange installs fn to run after every committed Record or SetPollPlan,
+// once the usage lock is released (store wires it to the statusline.json
+// rebuild, DESIGN A54). Set it once, before the store is used.
+func (s *Store) SetOnChange(fn func()) { s.onChange = fn }
+
+func (s *Store) changed(err error) error {
+	if err == nil && s.onChange != nil {
+		s.onChange()
+	}
+	return err
+}
 
 // -- raw I/O ---------------------------------------------------------------
 
@@ -240,7 +253,7 @@ func (s *Store) Record(outcomes map[string]FetchRecord, ids map[string]Identity)
 	for n := range effective {
 		nums = append(nums, n)
 	}
-	return s.mutate(ids, nums, func(num string, row map[string]any) {
+	return s.changed(s.mutate(ids, nums, func(num string, row map[string]any) {
 		rec := effective[num]
 		row["lastAttemptAt"] = now
 		if rec.Error == "" {
@@ -264,7 +277,7 @@ func (s *Store) Record(outcomes map[string]FetchRecord, ids map[string]Identity)
 				row["authDeadStrikes"] = intOf(row["authDeadStrikes"]) + 1
 			}
 		}
-	})
+	}))
 }
 
 // SetPollPlan persists the scheduler's per-slot (nextPollAt, pollIntervalS)
@@ -277,11 +290,11 @@ func (s *Store) SetPollPlan(plans map[string]PollPlan, ids map[string]Identity) 
 	for n := range plans {
 		nums = append(nums, n)
 	}
-	return s.mutate(ids, nums, func(num string, row map[string]any) {
+	return s.changed(s.mutate(ids, nums, func(num string, row map[string]any) {
 		p := plans[num]
 		row["nextPollAt"] = ptrVal(p.NextPollAt)
 		row["pollIntervalS"] = ptrVal(p.IntervalS)
-	})
+	}))
 }
 
 // ClearDeadToken lifts the dead-token quarantine for slots whose credential was

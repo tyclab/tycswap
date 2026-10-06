@@ -616,3 +616,30 @@ func TestKeychainReadErrorOnTheNewServiceStopsTheCopy(t *testing.T) {
 		t.Errorf("the unreadable item was overwritten: %q", v)
 	}
 }
+
+// statusline.json is each store owner's derived state (DESIGN A54): the old
+// store's is another tool's and is never copied, the new store's own does not
+// make the store non-empty, and a resumed copy keeps it.
+func TestStatuslineStateIsNeverCopiedAndNeverBlocks(t *testing.T) {
+	old := oldStore(t)
+	write(t, filepath.Join(old, statuslineFile), `{"producer":"other-tool"}`, 0o600)
+	newRoot := filepath.Join(t.TempDir(), "tycswap")
+	write(t, filepath.Join(newRoot, statuslineFile), `{"producer":"tycswap"}`, 0o600)
+	if !IsEmpty(newRoot) {
+		t.Fatal("a store holding only its own statusline.json counts as empty")
+	}
+	linux := platform.Linux
+	rep, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !containsPath(rep.Skipped, statuslineFile) {
+		t.Errorf("skipped = %v, want the old statusline.json reported as skipped", rep.Skipped)
+	}
+	if b, _ := os.ReadFile(filepath.Join(newRoot, statuslineFile)); string(b) != `{"producer":"tycswap"}` {
+		t.Errorf("new store's statusline.json = %q, want its own kept", b)
+	}
+	if _, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &linux}); err != nil {
+		t.Errorf("rerun over a complete copy plus statusline.json: %v", err)
+	}
+}

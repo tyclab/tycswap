@@ -168,6 +168,9 @@ func New(opts Options) (*Store, error) {
 		wc:             wc,
 	}
 
+	// Usage-table writes rebuild statusline.json (DESIGN A54).
+	usageStore.SetOnChange(s.PublishStatusline)
+
 	// (7) registry migrations — self-contained, never abort construction. Every
 	// error is logged (via the Host's Logger) and left for retry; only the
 	// user-facing progress notices come back for relaying to stderr.

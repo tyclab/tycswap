@@ -5854,3 +5854,42 @@ reach the limit at the same moment may both roll over and lose a backup,
 possibly the newest.
 
 **Tests.** `TestRotationByAnotherWriter`, `TestLogHoldsNoHandle`.
+
+## A54. A state file for status lines (Go-side additive extension)
+
+A Claude Code status line wants the live account's label and quota on every
+render; running tycswap there costs a process start, and reading
+`sequence.json` plus `cache/usage.json` means joining two slot-keyed files
+whose identity guard lives in Go. tycswap therefore publishes
+`<store root>/statusline.json`. The reference has no counterpart; there is no
+command for it.
+
+**Schema.** `{schemaVersion: 1, producer, producerVersion, writtenAt,
+accounts: {"<email>|<organizationUuid>": {slot, label, usage | null}}}`, with
+`usage` `{fetchedAt, pollIntervalS, fiveHour, sevenDay, scoped[{name, pct,
+resetsAt}]}`, windows `{pct, resetsAt}`. Times are integer epochs. Windows come
+through `oauth.NewUsage`, like every other surface. `pollIntervalS` defaults to
+`usage.CandidateMaxIntervalS` when no plan exists. The label is alias >
+organization name > email, stripped of control characters.
+
+**Key.** `email|organizationUuid`, as `~/.claude.json`'s `oauthAccount` holds
+them (null organization = ""); email alone is ambiguous across organizations.
+A switch onto an API-key account writes that `oauthAccount` with a null
+organization, so the reader's one rule finds it. No credential is an input to
+the builder, so none can be published.
+
+**Rebuilt, never patched.** The usage table and the roster are written under
+different locks, so every write rebuilds the whole file from both sources
+(`statusline.Publish`) under `<root>/.statusline.lock` and never reads it
+back. That lock is always taken last and nothing is acquired under it; the
+source reads are lock-free because both files are replaced by rename. Each
+writer commits its source before publishing, so the last rebuild carries every
+committed change. Write points: every `Store.WriteSequence` (roster changes, a
+switch's commit and rollback) and `usage.Store`'s `SetOnChange` hook after
+`Record` and `SetPollPlan`, outside the usage lock.
+
+**Best-effort.** `Store.PublishStatusline` logs a failure or panic and
+returns nothing. A write lost to a Windows sharing violation or a busy lock
+heals on the next rebuild. An unreadable roster keeps the last file.
+`tycswap migrate` neither copies an old store's file nor counts the new
+store's own as content.
