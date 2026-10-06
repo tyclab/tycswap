@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 )
@@ -258,5 +259,29 @@ func assertNoCleanups(t *testing.T) {
 	cleanupMu.Unlock()
 	if n != 0 {
 		t.Errorf("cleanup registry not empty: %d entries", n)
+	}
+}
+
+// The real check asks stdin itself, so /dev/null and a pipe can never answer
+// a prompt, whatever shell the process was started from.
+func TestStdinIsTerminalRefusesDevNullAndAPipe(t *testing.T) {
+	t.Setenv("MSYSTEM", "MINGW64")
+	null, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer null.Close()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	defer w.Close()
+	defer func(prev *os.File) { os.Stdin = prev }(os.Stdin)
+	for name, f := range map[string]*os.File{"/dev/null": null, "a pipe": r} {
+		os.Stdin = f
+		if StdinIsTerminal() {
+			t.Errorf("StdinIsTerminal() with %s on stdin = true", name)
+		}
 	}
 }

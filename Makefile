@@ -26,7 +26,7 @@ fmt: ## gofmt all source (fails if anything was unformatted)
 	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "unformatted:"; echo "$$out"; gofmt -w .; exit 1; fi
 
 vuln: ## Scan for known vulnerabilities (govulncheck, fetched by go run)
-	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
 clean: ## Remove built binary
 	rm -f tycswap

@@ -403,6 +403,7 @@
         <details class="guide-faq"><summary>“Not switchable” on an account</summary><p>Its stored credential or config backup is missing, typically after Claude Code changed its file layout. Re-add the account.</p></details>
         <details class="guide-faq"><summary>The Updates card says it could not check</summary><p>The release endpoint or Claude Code's source could not be read (offline, a proxy, a rate limit). What the last successful check found still shows, and <em>Check now</em> asks again. <code>{{.Name}} upgrade</code> in a terminal says the same for this program.</p></details>
         <details class="guide-faq"><summary>The dashboard lost its connection</summary><p>The dashboard only ever listens on this machine (127.0.0.1). If the process was stopped, run <code>{{.Name}} web</code> again and open the URL it prints: the old page's tokens are dead, so the page says “session ended” rather than retrying.</p></details>
+        <details class="guide-faq"><summary>macOS refuses to run a downloaded release (“cannot be opened”)</summary><p>The release binaries are not code-signed, so macOS quarantines one downloaded with a browser. <code>xattr -d com.apple.quarantine {{.Name}}</code> lifts it; downloading with <code>curl -LO</code>, <code>go install</code> and <code>{{.Name}} upgrade</code> avoid it.</p></details>
       </article>
 
       <article class="card guide-section" id="g-privacy">
