@@ -5954,3 +5954,26 @@ is a `cerr.KindLock`, which the command reports like any other lock error.
 Other errors keep their old handling, and a roster that needs no backfill
 takes no lock, so the guard adds only one roster read. `statusline.json` (A54)
 reads the roster without a lock and is unaffected.
+
+## A58. The system proxy when the environment names none (Go-side additive extension)
+
+`http.DefaultTransport` reads only `HTTPS_PROXY`/`HTTP_PROXY`/`NO_PROXY`; a
+`tycswap app` started at login by launchd or the Run key has none, so behind a
+proxy from a configuration profile or group policy every OAuth, usage, Codex
+and update request went direct and failed. `internal/netproxy.Install`, called
+first in `main`, sets the default transport's `Proxy`:
+
+1. Either proxy variable set: `http.ProxyFromEnvironment`, unchanged. Its error
+   quotes the raw value, password included, so it is replaced by one that
+   does not.
+2. Otherwise the system's settings, read once per process:
+   `/usr/sbin/scutil --proxy` on macOS (absolute, so PATH cannot substitute
+   it), HKCU `Internet Settings` on Windows, nothing elsewhere. Its bypass list
+   and `NO_PROXY` both apply (host with subdomains, `.suffix`, glob, `<local>`,
+   CIDR); loopback is never proxied; a malformed value means direct, never an
+   error that echoes it. Nothing logs the proxy URL. Only the top-level
+   `scutil` dictionary counts, not the per-interface copies under
+   `__SCOPED__`. A running `tycswap app` keeps the setting it first read.
+
+PAC scripts are not evaluated. The dashboard client (`cli/remote.go`) keeps its
+own transport with `Proxy: nil`.
