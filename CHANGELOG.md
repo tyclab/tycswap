@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Fixed:** `tycswap run` refuses an argument a Windows `claude.cmd` shim cannot take before preparing the session profile.
+- **Fixed:** on Windows, the Claude Code version check and update no longer open a console window when the tray application runs them.
+- **Fixed:** in Git Bash (mintty), the API-key switch prompt reads the answer typed in the terminal instead of refusing it as "Not a terminal"; a pipe or `/dev/null` is still refused.
 - **Fixed:** a live credential that differs from its slot backup only in JSON encoding or MCP server logins no longer reads as a different credential, so the active usage fetch stops warning "provenance unknown" for setup-token accounts.
 - **Fixed:** `tycswap run` and `tycswap env` drop `CLAUDE_SECURESTORAGE_CONFIG_DIR`, as `add --login` already did: Claude Code keeps credentials under that dir instead of the session profile, and in the live login's default storage when it is set but empty, so a pinned session could read or overwrite the live account's login. `env` now unsets it even when it is empty.
 - **Fixed:** a slot backup no longer keeps the MCP server logins (`mcpOAuth`, `mcpOAuthClientConfig`) of the live file it was taken from. A slot stored before they were split off kept them, an inactive account's token refresh wrote them back, and `tycswap run` seeded them into its session profile; every backup write now stores the account part and every read sets them aside (DESIGN A59).
