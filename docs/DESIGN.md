@@ -5937,3 +5937,20 @@ A login-directory add leaves `activeAccountNumber` on the live login, but a
 `--slot` add can move or delete the record it names. `keepActive` makes it
 follow the live identity when a migration moved it, and clears it when a
 displacement deleted it, so it never names a slot now holding another account.
+
+## A57. `status` and `list` report a busy store lock
+
+A roster with a record that lacks `organizationUuid` needs the org-field
+backfill, and `SequenceMigrated` runs it under the store lock (e0eebfb). The
+roster reads behind `status` and `list` (`buildStatusPayload`, `renderStatus`,
+`BuildAccountsInfo`) discard that call's error, so when another tycswap held
+the lock past its timeout they read the roster as absent: the live account
+showed as "(not managed)" and `list` printed no accounts, in human and JSON
+mode alike.
+
+`reporting.Status` and `reporting.ListAccounts` now run `backfillLockError`
+first: it calls `SequenceMigrated` and returns its error only when that error
+is a `cerr.KindLock`, which the command reports like any other lock error.
+Other errors keep their old handling, and a roster that needs no backfill
+takes no lock, so the guard adds only one roster read. `statusline.json` (A54)
+reads the roster without a lock and is unaffected.

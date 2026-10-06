@@ -17,6 +17,7 @@ import (
 	"strconv"
 
 	"github.com/tyclab/tycswap/internal/ccsettings"
+	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/printer"
@@ -29,11 +30,24 @@ import (
 // returns the schema-v1 payload; in human mode it prints to stdout and returns
 // nil.
 func Status(s *store.Store, jsonOut bool) (any, error) {
+	if err := backfillLockError(s); err != nil {
+		return nil, err
+	}
 	if jsonOut {
 		return buildStatusPayload(s), nil
 	}
 	renderStatus(os.Stdout, s)
 	return nil, nil
+}
+
+// backfillLockError is the lock error of an org backfill that could not get the
+// store lock. The roster reads below discard their error and would read such a
+// roster as absent, so status and list report it first (DESIGN A57).
+func backfillLockError(s *store.Store) error {
+	if _, err := s.SequenceMigrated(); cerr.TypeName(err) == string(cerr.KindLock) {
+		return err
+	}
+	return nil
 }
 
 // buildStatusPayload assembles the --status --json payload (spec 02§10.2): no

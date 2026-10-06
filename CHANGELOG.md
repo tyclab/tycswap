@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Fixed:** `status` and `list` report a busy store lock. On a roster that still needed the organization backfill, they read a store another tycswap process held as empty, showing the live account as "(not managed)" and listing no accounts (DESIGN A57).
 - **Fixed:** on Windows, replacing a store file while another reader of it is open (the status-line rebuild reads `sequence.json` while a roster write replaces it) no longer fails with "Access is denied": the atomic rename is retried for about half a second.
 - **Fixed:** `add --login` no longer passes `CLAUDE_SECURESTORAGE_CONFIG_DIR` to the login, which could store it into the live login's Keychain item or credential file, and its cleanup also deletes the scratch profile's API-key Keychain item that a managed `forceLoginMethod` of `console` creates. When `--slot` moves the live account or overwrites its record, `activeAccountNumber` follows it or is cleared instead of naming a deleted slot (DESIGN A56).
 - **Fixed:** a switch holds Claude Code's storage-write lock (`.storage-write.lock` in the config home, or in `CLAUDE_SECURESTORAGE_CONFIG_DIR` when set, where the credential-refresh lock now follows too), so an MCP login Claude Code saves mid-switch is no longer lost or written back over the new account; Claude Code's credential-refresh lock is taken over only after 60 s (storage-write 15 s, config 10 s), not after 10 s while Claude Code may still hold it; and Ctrl-C releases the Claude Code locks the process holds instead of leaving them for Claude Code to wait out (DESIGN A55).
