@@ -124,7 +124,7 @@ func prefetchLiveIdentity(s *store.Store) *Provenance {
 // never carries them and the live file may, so a plain byte compare would
 // read every MCP server login as a changed credential.
 func sameAccountBytes(a, b string) bool {
-	return a == b || oauth.AccountOnly(a) == oauth.AccountOnly(b)
+	return oauth.SameAccountBlock(a, b)
 }
 
 // fingerprintEqual reports whether two credentials share a fingerprint,

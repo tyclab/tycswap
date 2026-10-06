@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/ccfile"
@@ -77,6 +78,22 @@ func AccountOnly(creds string) string {
 		return creds
 	}
 	return string(bytes.TrimSuffix(buf.Bytes(), []byte("\n")))
+}
+
+// SameAccountBlock reports whether a and b hold the same account part: equal
+// once the seat-wide keys are set aside, whatever their key order or
+// whitespace. Texts that are not JSON objects compare as bytes.
+func SameAccountBlock(a, b string) bool {
+	ma, okA := decodeCredsMap(a)
+	mb, okB := decodeCredsMap(b)
+	if !okA || !okB {
+		return a == b
+	}
+	for _, key := range ccfile.SeatWideKeys {
+		delete(ma, key)
+		delete(mb, key)
+	}
+	return reflect.DeepEqual(ma, mb)
 }
 
 // ExtractAccessToken returns the OAuth access token from a credentials JSON

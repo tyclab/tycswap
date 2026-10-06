@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -427,5 +428,18 @@ func TestCollect_InactiveFetchPersistsBackupOnRefresh(t *testing.T) {
 	backup, _ := s.ReadAccountCredentials("1", "a@example.com")
 	if backup != rotated {
 		t.Errorf("rotated credential was not persisted to backup;\n got %q\nwant %q", backup, rotated)
+	}
+}
+
+func TestFetchActiveUsage_ReencodedBackupIsAttributed(t *testing.T) {
+	calls := 0
+	s := newStore(t, nil, recordingUsage(&calls, nil))
+	if err := s.Creds.WriteBackup("1", "a@example.com", `{"claudeAiOauth": {"accessToken": "setup-a"}}`); err != nil {
+		t.Fatal(err)
+	}
+	fetchActiveUsage(s, "1", "a@example.com", `{"claudeAiOauth":{"accessToken":"setup-a"},"mcpOAuth":{"srv":{}}}`)
+	b, _ := os.ReadFile(filepath.Join(s.BackupDir(), "tycswap.log"))
+	if strings.Contains(string(b), "provenance unknown") {
+		t.Errorf("the same account block in another encoding read as unattributed; log:\n%s", b)
 	}
 }
