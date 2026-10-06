@@ -11,8 +11,12 @@ package atomicfile
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/platform"
@@ -80,7 +84,7 @@ func Write(path string, data []byte, o Opts) error {
 			return err
 		}
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := rename(tmpName, path); err != nil {
 		return err
 	}
 	SyncDir(filepath.Dir(path))
@@ -176,10 +180,29 @@ func WriteJSONValidated(path string, v any, o Opts) error {
 			return err
 		}
 	}
-	if err := os.Rename(tmpName, path); err != nil {
+	if err := rename(tmpName, path); err != nil {
 		return err
 	}
 	SyncDir(filepath.Dir(path))
 	committed = true
 	return nil
+}
+
+// rename moves tmp over path. On Windows a reader holding path open without
+// FILE_SHARE_DELETE (every Go os.Open) makes the replace fail with access
+// denied or a sharing violation until it closes, so retry for about half a
+// second; other errors and other platforms fail at once.
+func rename(tmp, path string) error {
+	err := os.Rename(tmp, path)
+	for i := 1; err != nil && platform.IsWindows() && renameBusy(err) && i <= 10; i++ {
+		time.Sleep(time.Duration(i) * 10 * time.Millisecond)
+		err = os.Rename(tmp, path)
+	}
+	return err
+}
+
+// renameBusy reports access denied or ERROR_SHARING_VIOLATION (32).
+func renameBusy(err error) bool {
+	var errno syscall.Errno
+	return errors.Is(err, fs.ErrPermission) || (errors.As(err, &errno) && errno == 32)
 }
