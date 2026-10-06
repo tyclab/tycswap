@@ -3603,10 +3603,8 @@ writes the blob verbatim when that read fails or does not parse); a capture —
 write-back, `export` — stores `oauth.AccountOnly(blob)`, the blob minus that
 key; the ownership classifier compares account bytes, so an MCP login never
 reads as a changed credential. Rollback and the refresh write-back keep
-`WriteActive` verbatim. `import` writes what it is given; a stale `mcpOAuth`
-in an old backup or export loses to the live one whenever the seat has MCP
-logins, and is written as it is only when the live file has none (Claude Code
-then re-prompts, as before) — the next capture of that slot drops it.
+`WriteActive` verbatim. A59 strips every backup read and write; A29 keeps a
+stored copy out of the live file.
 
 **Not done here.** Windows has no owner-only DACL on `credentials/`, exports
 and the store root (`CheckPrivateRoot` is a no-op there); a follow-up.
@@ -5977,3 +5975,15 @@ first in `main`, sets the default transport's `Proxy`:
 
 PAC scripts are not evaluated. The dashboard client (`cli/remote.go`) keeps its
 own transport with `Proxy: nil`.
+
+## A59. A slot backup holds the account part only
+
+A slot stored before the A25 item 9 split kept the seat-wide keys
+(`ccfile.SeatWideKeys`); the inactive refresh wrote them back and the `run`
+bootstrap seeded them into its profile.
+
+`credstore.WriteBackup` and `ReadBackup` now apply `oauth.AccountOnly`: every
+slot write stores the account part, and a legacy slot read hands out the
+account part while its stored bytes stay until the slot's next write. A blob
+without seat-wide keys, and an API key, pass byte for byte. `.prev` is not
+stripped on read; `KCReadBackup`/`KCWriteBackup` (migrations) stay verbatim.

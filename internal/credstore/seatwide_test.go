@@ -6,6 +6,7 @@ package credstore
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/ccfile"
@@ -206,5 +207,60 @@ func TestWriteActive_APIKeyKeychainWriteFailsKeepsTheSeatWidePartInTheFile_macOS
 	}
 	if got, _, _ := s.ReadActive(); got != seatKey {
 		t.Fatalf("ReadActive = %q, want the managed key", got)
+	}
+}
+
+// -- a slot backup holds the account part only (DESIGN A59) -------------------
+
+func assertAccountOnly(t *testing.T, what, text string) {
+	t.Helper()
+	if strings.Contains(text, "mcpOAuth") || !strings.Contains(text, `"refreshToken":"live-refresh"`) {
+		t.Fatalf("%s = %s, want the account part without seat-wide keys", what, text)
+	}
+}
+
+func TestWriteBackup_StoresTheAccountPartOnly(t *testing.T) {
+	s := newStore(t, platform.Linux, t.TempDir(), newFakeKC(), nil)
+	if err := s.WriteBackup("2", "bob@e.com", loginBesideMCP); err != nil {
+		t.Fatal(err)
+	}
+	raw, ok := s.decodeEnc(s.backupEncPath("2", "bob@e.com"), "read")
+	if !ok {
+		t.Fatal("no .enc written")
+	}
+	assertAccountOnly(t, "stored .enc", raw)
+}
+
+// TestReadBackup_SetsALegacySlotsSeatWideKeysAside: a slot stored before the
+// split reads as its account part from the .enc and the macOS Keychain alike,
+// and its stored bytes stay until the slot's next write.
+func TestReadBackup_SetsALegacySlotsSeatWideKeysAside(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		plat platform.Platform
+	}{{".enc", platform.Linux}, {"Keychain", platform.MacOS}} {
+		t.Run(tc.name, func(t *testing.T) {
+			kc := newFakeKC()
+			s := newStore(t, tc.plat, t.TempDir(), kc, nil)
+			user, path := s.backupUsername("2", "bob@e.com"), s.backupEncPath("2", "bob@e.com")
+			if tc.plat == platform.MacOS {
+				kc.put(securityService, user, loginBesideMCP)
+			} else {
+				if err := os.MkdirAll(s.credentialsDir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, path, b64(loginBesideMCP))
+			}
+			got, err := s.ReadBackup("2", "bob@e.com")
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertAccountOnly(t, "ReadBackup", got)
+			item, _ := kc.peek(securityService, user)
+			onDisk, _ := os.ReadFile(path)
+			if item != loginBesideMCP && string(onDisk) != b64(loginBesideMCP) {
+				t.Fatal("ReadBackup rewrote the slot; it must leave the bytes until the next write")
+			}
+		})
 	}
 }

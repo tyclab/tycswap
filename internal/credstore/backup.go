@@ -20,6 +20,7 @@ import (
 	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/storenames"
 )
@@ -118,11 +119,17 @@ func (s *FileKeychainStore) decodeEnc(path, logMsg string) (string, bool) {
 // ReadBackup returns a slot's backup credential, "" when missing. macOS is
 // .enc-wins: only an absent, unreadable, corrupt, or empty .enc falls through to
 // the Keychain (spec 03§5.7). It never surfaces an error.
+//
+// It returns the account part only (oauth.AccountOnly, DESIGN A59): a slot
+// written before the seat-wide split may still hold the MCP server logins of
+// the live file it was taken from. They are set aside here, so no refresh
+// write-back or `run` profile picks them up; the stored bytes stay until the
+// slot's next write.
 func (s *FileKeychainStore) ReadBackup(num, email string) (string, error) {
 	encPath := s.backupEncPath(num, email)
 	if s.encPresent(encPath) {
 		if decoded, ok := s.decodeEnc(encPath, "Failed to read credentials file"); ok {
-			return decoded, nil
+			return oauth.AccountOnly(decoded), nil
 		}
 	}
 	if s.macOS() {
@@ -131,7 +138,7 @@ func (s *FileKeychainStore) ReadBackup(num, email string) (string, error) {
 			s.log.Warningf("Failed to read credentials from Keychain: %v", err)
 			return "", nil
 		}
-		return v, nil
+		return oauth.AccountOnly(v), nil
 	}
 	return "", nil
 }
@@ -140,8 +147,10 @@ func (s *FileKeychainStore) ReadBackup(num, email string) (string, error) {
 // generation as .prev, then writes the Keychain (macOS, usable) reconciling the
 // .enc away, else the .enc file (best-effort dropping the stale Keychain copy).
 // A file-write failure is raised before returning so the switcher wrapper runs
-// its post-write hook exactly once.
+// its post-write hook exactly once. A slot stores the account part only
+// (DESIGN A59): this is the one place every slot write passes.
 func (s *FileKeychainStore) WriteBackup(num, email, creds string) error {
+	creds = oauth.AccountOnly(creds)
 	s.retainPreviousBackup(num, email, creds)
 	if s.useKeychain() {
 		err := s.kcWriteBackup(num, email, creds)

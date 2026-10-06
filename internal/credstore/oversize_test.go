@@ -31,7 +31,7 @@ func TestOversizedBackupNeverReachesSecurityArgv(t *testing.T) {
 	credDir := filepath.Join(dir, "credentials")
 	s := newStore(t, platform.MacOS, credDir, keychain.Security{Path: script}, nil)
 
-	big := `{"claudeAiOauth": {"accessToken": "a", "refreshToken": "r"}, "mcpOAuth": {"pad": "` +
+	big := `{"claudeAiOauth": {"accessToken": "a", "refreshToken": "r", "pad": "` +
 		strings.Repeat("s", keychain.SecurityStdinLineLimit) + `"}}`
 	if err := s.WriteBackup("1", "a@example.com", big); err != nil {
 		t.Fatalf("WriteBackup: %v", err)
