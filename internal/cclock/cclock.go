@@ -26,6 +26,7 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/platform"
 )
 
 // Timing constants, matching claude_locks.py verbatim. proper-lockfile defaults
@@ -122,7 +123,7 @@ func acquire(lockDir string, staleness, timeout time.Duration, clk clock.Clock) 
 		if err == nil {
 			break // acquired
 		}
-		if !errors.Is(err, fs.ErrExist) {
+		if !errors.Is(err, fs.ErrExist) && !pendingDelete(err) {
 			// Python catches only FileExistsError; any other mkdir error propagates.
 			return nil, err
 		}
@@ -135,6 +136,10 @@ func acquire(lockDir string, staleness, timeout time.Duration, clk clock.Clock) 
 		if statErr != nil {
 			if errors.Is(statErr, fs.ErrNotExist) {
 				continue // holder released between mkdir and stat; retry now
+			}
+			if pendingDelete(statErr) {
+				time.Sleep(jitterBackoff())
+				continue
 			}
 			return nil, statErr
 		}
@@ -267,3 +272,10 @@ func renameIfAbsent(oldpath, newpath string) error {
 
 // staleSeq makes each breakStale attempt's aside name unique in the process.
 var staleSeq atomic.Int64
+
+// pendingDelete reports Windows' answer for a lock directory another process
+// has just removed but whose delete is still pending: access denied, until the
+// last handle closes. The lock is effectively held; retry like ErrExist.
+func pendingDelete(err error) bool {
+	return platform.IsWindows() && errors.Is(err, fs.ErrPermission)
+}

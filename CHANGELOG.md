@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Fixed:** on Windows, taking a Claude Code lock right after another process released it no longer fails with "Access is denied": a lock directory pending delete counts as held and is retried.
 - **Fixed:** `status` and `list` report a busy store lock. On a roster that still needed the organization backfill, they read a store another tycswap process held as empty, showing the live account as "(not managed)" and listing no accounts (DESIGN A57).
 - **Fixed:** on Windows, replacing a store file while another reader of it is open (the status-line rebuild reads `sequence.json` while a roster write replaces it) no longer fails with "Access is denied": the atomic rename is retried for about half a second.
 - **Fixed:** `add --login` no longer passes `CLAUDE_SECURESTORAGE_CONFIG_DIR` to the login, which could store it into the live login's Keychain item or credential file, and its cleanup also deletes the scratch profile's API-key Keychain item that a managed `forceLoginMethod` of `console` creates. When `--slot` moves the live account or overwrites its record, `activeAccountNumber` follows it or is cleared instead of naming a deleted slot (DESIGN A56).
