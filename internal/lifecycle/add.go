@@ -248,6 +248,8 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		}
 		if !src.isLoginDir() {
 			setActive(data, slotInt)
+		} else {
+			keepActive(data, displaceSlot, migrateFrom, slotInt)
 		}
 		data.LastUpdated = timestamp(s)
 		if err := s.WriteSequence(data); err != nil {
@@ -273,6 +275,23 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		emitLine(line)
 		return nil
 	})
+}
+
+// keepActive keeps activeAccountNumber on the live login after a login-directory
+// add, which did not change that login: it follows the live identity when a
+// migration moved it to slotInt, and is cleared when a displacement deleted the
+// record it named, leaving the live login unmanaged (DESIGN A56).
+func keepActive(data *store.SequenceData, displaced *displaceInfo, migrateFrom string, slotInt int) {
+	if data.ActiveAccountNumber == nil {
+		return
+	}
+	active := strconv.Itoa(*data.ActiveAccountNumber)
+	switch {
+	case active == migrateFrom:
+		setActive(data, slotInt)
+	case displaced != nil && active == displaced.num:
+		data.ActiveAccountNumber = nil
+	}
 }
 
 // confirmDisplacement asks "Overwrite slot N?" when --slot names a slot a
