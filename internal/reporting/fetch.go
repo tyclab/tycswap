@@ -199,7 +199,7 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 // FileLock is non-reentrant, so callers must not already hold it.
 func withTripleLock(s *store.Store, fn func() error) error {
 	return s.Lock.With(func() error {
-		credLock, err := cclock.Acquire(cclock.CredentialsLockDir(), 0, s.Clk)
+		credLock, err := cclock.AcquireCredentials(0, s.Clk)
 		if err != nil {
 			return err
 		}

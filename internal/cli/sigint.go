@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"github.com/tyclab/tycswap/internal/cclock"
 	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/printer"
 )
@@ -89,14 +90,21 @@ func installSigint(s ioStreams) {
 		// A loop: a server's claim stops delivery for a while and its release
 		// resumes it (claimSigint).
 		for range ch {
-			// Restore any terminal state a live prompt left off (echo disabled by a
-			// no-echo Secret prompt); exiting from this goroutine skips the prompt's
-			// deferred restore, so run the registered cleanups first (spec 08§5).
-			lifecycle.RunCleanups()
+			sigintCleanup()
 			writeSigintNote(s)
 			os.Exit(130)
 		}
 	}()
+}
+
+// sigintCleanup runs what exiting from the SIGINT goroutine skips. The
+// registered cleanups restore any terminal state a live prompt left off (echo
+// disabled by a no-echo Secret prompt), whose deferred restore never runs
+// (spec 08§5). Then, last, the Claude Code locks the process holds are
+// released, whose deferred releases never run either (DESIGN A55).
+func sigintCleanup() {
+	lifecycle.RunCleanups()
+	cclock.ReleaseAll()
 }
 
 // writeSigintNote writes the cancel note to the stream the active command's

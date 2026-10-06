@@ -53,7 +53,7 @@ func IsolateHome(t *testing.T) string {
 	Setenv(t, "USERPROFILE", home)
 	Setenv(t, "APPDATA", filepath.Join(home, "AppData", "Roaming"))
 	Setenv(t, "LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
-	for _, key := range []string{"CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR"} {
+	for _, key := range []string{"CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR", "CODEX_HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_RUNTIME_DIR"} {
 		Unsetenv(t, key)
 	}
 	return home

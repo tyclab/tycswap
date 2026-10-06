@@ -64,6 +64,27 @@ func TestGetGlobalConfigPathRespectsCCD(t *testing.T) {
 	}
 }
 
+// TestGetSecureStorageHome: Claude Code's KS is CLAUDE_SECURESTORAGE_CONFIG_DIR
+// when set, ~/.claude when set but empty (not CLAUDE_CONFIG_DIR), else the
+// config home.
+func TestGetSecureStorageHome(t *testing.T) {
+	home := isolate(t)
+	ccd := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", ccd)
+	unset(t, "CLAUDE_SECURESTORAGE_CONFIG_DIR")
+	if got := GetSecureStorageHome(); got != ccd {
+		t.Errorf("unset: %q, want %q", got, ccd)
+	}
+	t.Setenv("CLAUDE_SECURESTORAGE_CONFIG_DIR", "")
+	if got, want := GetSecureStorageHome(), filepath.Join(home, ".claude"); got != want {
+		t.Errorf("empty: %q, want %q", got, want)
+	}
+	t.Setenv("CLAUDE_SECURESTORAGE_CONFIG_DIR", "/ks")
+	if got := GetSecureStorageHome(); got != "/ks" {
+		t.Errorf("set: %q, want /ks", got)
+	}
+}
+
 func TestGetBackupRootXDG(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("XDG layout is the Linux/WSL store root")
