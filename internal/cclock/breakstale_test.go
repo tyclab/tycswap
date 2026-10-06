@@ -21,20 +21,44 @@ func TestBreakStaleNeverRemovesAFreshLock(t *testing.T) {
 	if err := os.Mkdir(lock, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	breakStale(lock, clk) // fresh mtime: the first waiter's new lock
+	breakStale(lock, StalenessS, clk) // fresh mtime: the first waiter's new lock
 	if fi, err := os.Stat(lock); err != nil || !fi.IsDir() {
 		t.Fatalf("a fresh lock was removed: %v", err)
 	}
 
-	old := time.Now().Add(-time.Minute)
-	if err := os.Chtimes(lock, old, old); err != nil {
+	// 30s old is fresh by the credentials lock's own 60s staleness.
+	date := func(age time.Duration) {
+		if then := time.Now().Add(-age); os.Chtimes(lock, then, then) != nil {
+			t.Fatal("could not date the lock")
+		}
+	}
+	date(30 * time.Second)
+	breakStale(lock, CredentialsStalenessS, clk)
+	if _, err := os.Stat(lock); err != nil {
+		t.Fatalf("a lock fresh by its own staleness was removed: %v", err)
+	}
+
+	// 12s old is fresh by storage-write's 15s, 16s old is not.
+	date(12 * time.Second)
+	breakStale(lock, StorageWriteStalenessS, clk)
+	if _, err := os.Stat(lock); err != nil {
+		t.Fatalf("a storage-write lock 12s old was removed: %v", err)
+	}
+	date(16 * time.Second)
+	breakStale(lock, StorageWriteStalenessS, clk)
+	if _, err := os.Stat(lock); !os.IsNotExist(err) {
+		t.Fatalf("a storage-write lock 16s old was kept: %v", err)
+	}
+	if err := os.Mkdir(lock, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	breakStale(lock, clk)
+
+	date(time.Minute)
+	breakStale(lock, StalenessS, clk)
 	if _, err := os.Stat(lock); !os.IsNotExist(err) {
 		t.Fatalf("stale lock not removed: %v", err)
 	}
-	breakStale(lock, clk) // already gone: a no-op
+	breakStale(lock, StalenessS, clk) // already gone: a no-op
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 0 {
 		t.Fatalf("left behind: %v", entries)

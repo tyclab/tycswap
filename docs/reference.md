@@ -4611,6 +4611,11 @@ modes. The store lock `.lock` (and `codex/.lock`) is opened without following
 a symlink and without truncation, created 0600. A stale Claude Code
 credential or config lock directory is broken by renaming it aside and
 re-checking its age before it is removed, so two waiters cannot both take it.
+A lock counts as stale after Claude Code's own staleness for it: 60 s for the
+credential-refresh lock, 15 s for the storage-write lock a switch also holds
+(`.storage-write.lock` under `CLAUDE_SECURESTORAGE_CONFIG_DIR`, else the config
+home; the credential-refresh lock is that directory plus `.lock`), 10 s for the
+config lock. Ctrl-C releases every one the process holds.
 
 Inside the backup root:
 

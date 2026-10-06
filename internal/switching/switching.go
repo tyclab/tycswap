@@ -108,7 +108,9 @@ func nilNumRef(email string) map[string]any {
 
 // withTripleLock runs fn under the switch lock stack in the mandated order
 // (spec 03§7.4): tycswap FileLock, then Claude Code credentials lock, then Claude
-// Code config lock — released in reverse via defers. A FileLock timeout is a
+// Code config lock, then, innermost, Claude Code's storage-write lock, under
+// which Claude Code read-modify-writes the credential store a switch rewrites
+// (DESIGN A55) — released in reverse via defers. A FileLock timeout is a
 // LockError; a Claude Code lock timeout is a ClaudeCodeLockTimeout. Nothing is
 // mutated when acquisition fails. The FileLock is non-reentrant, so no network
 // I/O may run inside fn.
@@ -122,7 +124,7 @@ func withTripleLock(s *store.Store, fn func() error) error {
 	}
 	defer s.Lock.Release()
 
-	credH, err := cclock.Acquire(cclock.CredentialsLockDir(), 0, s.Clk)
+	credH, err := cclock.AcquireCredentials(0, s.Clk)
 	if err != nil {
 		return err
 	}
@@ -133,6 +135,12 @@ func withTripleLock(s *store.Store, fn func() error) error {
 		return err
 	}
 	defer cfgH.Release()
+
+	storeH, err := cclock.AcquireStorageWrite(0, s.Clk)
+	if err != nil {
+		return err
+	}
+	defer storeH.Release()
 
 	return fn()
 }

@@ -5,8 +5,9 @@
 // Implements spec 03§6 (claude_locks.py) and DESIGN §2.7, §4 row 1. The protocol
 // (npm proper-lockfile) is external contract and must match byte-for-byte: the
 // lock is a directory at <target>.lock whose mkdir atomicity is the mutex; a
-// lock is stale when its mtime is older than 10s (compared against the WALL
-// clock); a live holder touches the mtime every 3s to prove liveness; the
+// lock is stale when its mtime is older than the staleness Claude Code gives
+// that lock, 10s unless it says otherwise (compared against the WALL clock,
+// DESIGN A55); a live holder touches the mtime every 3s to prove liveness; the
 // acquire timeout is measured MONOTONICALLY; a stale lock is removed and taken
 // over; and the acquire backoff is jittered uniformly in [0.25, 0.50)s.
 package cclock
@@ -38,12 +39,20 @@ const (
 	TouchIntervalS = 3 * time.Second
 	// DefaultTimeoutS is the default maximum wait to acquire.
 	DefaultTimeoutS = 9 * time.Second
+	// CredentialsStalenessS and StorageWriteStalenessS are the staleness Claude
+	// Code gives its credential-refresh lock (60s) and its storage-write lock
+	// (15s). Taking either over after StalenessS would take a lock Claude Code
+	// may still hold (DESIGN A55).
+	CredentialsStalenessS  = 60 * time.Second
+	StorageWriteStalenessS = 15 * time.Second
 )
 
 // CredentialsLockDir returns Claude Code's credential-refresh lock directory,
-// <config_home>.lock (default ~/.claude.lock, honoring CLAUDE_CONFIG_DIR).
+// <secure storage home>.lock (default ~/.claude.lock, honoring
+// CLAUDE_CONFIG_DIR and CLAUDE_SECURESTORAGE_CONFIG_DIR like
+// StorageWriteLockDir, DESIGN A55).
 func CredentialsLockDir() string {
-	home := paths.GetClaudeConfigHome()
+	home := paths.GetSecureStorageHome()
 	return filepath.Join(filepath.Dir(home), filepath.Base(home)+".lock")
 }
 
@@ -53,6 +62,13 @@ func CredentialsLockDir() string {
 func ConfigLockDir() string {
 	path := paths.GetGlobalConfigPath()
 	return filepath.Join(filepath.Dir(path), filepath.Base(path)+".lock")
+}
+
+// StorageWriteLockDir returns the lock directory under which Claude Code
+// read-modify-writes its credential store (the credentials file or the macOS
+// Keychain item): <secure storage home>/.storage-write.lock (DESIGN A55).
+func StorageWriteLockDir() string {
+	return filepath.Join(paths.GetSecureStorageHome(), ".storage-write.lock")
 }
 
 // Handle is a held proper-lockfile lock. Release stops its toucher goroutine and
@@ -75,6 +91,23 @@ type Handle struct {
 // past timeout; nothing is mutated in that case, so the operation is safe to
 // retry.
 func Acquire(lockDir string, timeout time.Duration, clk clock.Clock) (*Handle, error) {
+	return acquire(lockDir, StalenessS, timeout, clk)
+}
+
+// AcquireCredentials takes Claude Code's credential-refresh lock,
+// CredentialsLockDir, stale only after CredentialsStalenessS.
+func AcquireCredentials(timeout time.Duration, clk clock.Clock) (*Handle, error) {
+	return acquire(CredentialsLockDir(), CredentialsStalenessS, timeout, clk)
+}
+
+// AcquireStorageWrite takes Claude Code's storage-write lock,
+// StorageWriteLockDir, stale only after StorageWriteStalenessS.
+func AcquireStorageWrite(timeout time.Duration, clk clock.Clock) (*Handle, error) {
+	return acquire(StorageWriteLockDir(), StorageWriteStalenessS, timeout, clk)
+}
+
+// acquire is Acquire with the lock's own staleness.
+func acquire(lockDir string, staleness, timeout time.Duration, clk clock.Clock) (*Handle, error) {
 	if timeout <= 0 {
 		timeout = DefaultTimeoutS
 	}
@@ -105,9 +138,9 @@ func Acquire(lockDir string, timeout time.Duration, clk clock.Clock) (*Handle, e
 			}
 			return nil, statErr
 		}
-		if clk.Now().Sub(fi.ModTime()) > StalenessS {
+		if clk.Now().Sub(fi.ModTime()) > staleness {
 			// Dead holder per the protocol: break it and retake.
-			breakStale(lockDir, clk)
+			breakStale(lockDir, staleness, clk)
 			continue
 		}
 		time.Sleep(jitterBackoff())
@@ -119,8 +152,32 @@ func Acquire(lockDir string, timeout time.Duration, clk clock.Clock) (*Handle, e
 		stop: make(chan struct{}),
 		done: make(chan struct{}),
 	}
+	heldMu.Lock()
+	held[h] = struct{}{}
+	heldMu.Unlock()
 	go h.touchLoop()
 	return h, nil
+}
+
+// held is every lock this process holds, for ReleaseAll.
+var (
+	heldMu sync.Mutex
+	held   = map[*Handle]struct{}{}
+)
+
+// ReleaseAll releases every lock this process holds. Ctrl-C exits from the
+// SIGINT goroutine past the holders' deferred releases, and Claude Code would
+// wait out a directory left behind until its staleness (DESIGN A55).
+func ReleaseAll() {
+	heldMu.Lock()
+	hs := make([]*Handle, 0, len(held))
+	for h := range held {
+		hs = append(hs, h)
+	}
+	heldMu.Unlock()
+	for _, h := range hs {
+		h.Release()
+	}
 }
 
 // touchLoop bumps the lock dir's mtime every TouchIntervalS while held, stopping
@@ -147,6 +204,9 @@ func (h *Handle) touchLoop() {
 // or replaced): no error escapes.
 func (h *Handle) Release() {
 	h.once.Do(func() {
+		heldMu.Lock()
+		delete(held, h)
+		heldMu.Unlock()
 		close(h.stop)
 		select {
 		case <-h.done:
@@ -175,8 +235,9 @@ func jitterBackoff() time.Duration {
 // it is put back where it was, by a rename that fails when the name has been
 // taken since (renameNoReplace: rename(2) alone would replace an empty
 // directory, that is, the lock a third waiter just made). Taken: it is
-// dropped; the protocol has then moved on without it.
-func breakStale(lockDir string, clk clock.Clock) {
+// dropped; the protocol has then moved on without it. staleness is the lock's
+// own, the one the caller judged it by.
+func breakStale(lockDir string, staleness time.Duration, clk clock.Clock) {
 	aside := fmt.Sprintf("%s.stale-%d-%d", lockDir, os.Getpid(), staleSeq.Add(1))
 	if err := os.Rename(lockDir, aside); err != nil {
 		// Gone already (another waiter broke it) or not renamable: loop.
@@ -184,7 +245,7 @@ func breakStale(lockDir string, clk clock.Clock) {
 		return
 	}
 	fi, err := os.Stat(aside)
-	if err == nil && clk.Now().Sub(fi.ModTime()) <= StalenessS {
+	if err == nil && clk.Now().Sub(fi.ModTime()) <= staleness {
 		if renameNoReplace(aside, lockDir) == nil {
 			return
 		}

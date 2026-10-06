@@ -46,6 +46,20 @@ func GetClaudeConfigHome() string {
 	return filepath.Join(home(), ".claude")
 }
 
+// GetSecureStorageHome returns the directory Claude Code resolves its secure
+// storage under (its storage-write and credential-refresh locks among them):
+// CLAUDE_SECURESTORAGE_CONFIG_DIR when set, ~/.claude when set but empty, else
+// the config home.
+func GetSecureStorageHome() string {
+	if env, ok := os.LookupEnv("CLAUDE_SECURESTORAGE_CONFIG_DIR"); ok {
+		if env == "" {
+			return filepath.Join(home(), ".claude")
+		}
+		return env
+	}
+	return GetClaudeConfigHome()
+}
+
 // GetGlobalConfigPath returns the legacy <config_home>/.config.json if it exists,
 // else (CLAUDE_CONFIG_DIR || $HOME)/.claude.json. Note the asymmetry: by default
 // .claude.json sits at the home dir, not inside .claude/.

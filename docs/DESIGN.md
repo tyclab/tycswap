@@ -215,7 +215,7 @@ func (h *Handle) Release()                               // stop toucher (join �
 func CredentialsLockDir() string; func ConfigLockDir() string
 ```
 `Acquire` spawns the touch goroutine (`time.Ticker(3s)`, `stop chan`, stops on first
-`Chtimes` error). Staleness = `time.Now().Sub(fi.ModTime()) > 10s`; acquire timeout
+`Chtimes` error). Staleness = `time.Now().Sub(fi.ModTime()) > 10s` (per lock since A55); acquire timeout
 monotonic. Jitter `0.25 + rand*0.25`.
 
 ### 2.8 `filelock` — 03§7
@@ -5893,3 +5893,27 @@ returns nothing. A write lost to a Windows sharing violation or a busy lock
 heals on the next rebuild. An unreadable roster keeps the last file.
 `tycswap migrate` neither copies an old store's file nor counts the new
 store's own as content.
+
+## A55. Claude Code lock parity: storage-write lock, per-lock staleness, Ctrl-C
+
+Claude Code read-modify-writes its credential store (the credentials file or
+the macOS Keychain item) under `<KS>/.storage-write.lock`, where KS is
+`CLAUDE_SECURESTORAGE_CONFIG_DIR` when set (`~/.claude` when set but empty),
+else the config home (`paths.GetSecureStorageHome`). Its credential-refresh
+lock is `<KS>.lock`, so `CredentialsLockDir` follows KS too. An MCP token save
+or a client registration landing mid-switch was lost, or wrote the previous
+account back. A switch's
+`withTripleLock` now takes that lock innermost, after the credentials and
+config locks; both switch paths and their rollbacks run inside it.
+
+Staleness is each lock's own, as Claude Code sets it: 60 s for the
+credential-refresh lock (`AcquireCredentials`, a switch and the usage fetch),
+15 s for storage-write (`AcquireStorageWrite`), 10 s for the config lock
+(`Acquire`). At a flat 10 s tycswap took over a refresh lock Claude Code still
+held, and both wrote `.credentials.json`. `breakStale` re-checks with the same
+staleness the caller judged the lock by.
+
+Ctrl-C exits from the SIGINT goroutine past every deferred `Release`. cclock
+records held handles; the handler runs `lifecycle.RunCleanups` and then
+`cclock.ReleaseAll`, last, so no lock directory outlives the process
+(`sigintCleanup`). Claimed paths (`web`, `app`) unwind through their defers.
