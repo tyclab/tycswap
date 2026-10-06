@@ -25,6 +25,7 @@ jobs:
       - run: make fmt
       - run: make vet
       - run: make test
+      - run: make vuln
       # The darwin and windows code compiles from Linux too: the tray, the
       # autostart registry, the console hand-off (DESIGN A35, A41).
       - run: GOOS=windows go vet ./...

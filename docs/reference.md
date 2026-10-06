@@ -4808,7 +4808,7 @@ of the match, the same as any other exhausted window (above).
 | `1` | A handled domain error (a `ClaudeSwitchError`: config, switch, session, credential, lock, transfer, or migration). Also printed for guidance-only `upgrade`. |
 | `2` | A usage error: an unknown flag, a bad value, a missing required argument, or an illegal flag combination (the argument-parser surface). |
 | `3` | `tycswap auto --once` only: blocked — a switch was wanted but no viable target exists / all accounts exhausted. |
-| `130` | Interrupted by SIGINT (Ctrl-C). |
+| `130` | Interrupted by SIGINT (Ctrl-C). `tycswap web` and `tycswap app` exit `0` instead (see [SIGNALS](#signals)). |
 
 For `tycswap auto --once` the status is the tick outcome: `0` switched, `1` error,
 `2` no action, `3` blocked. `tycswap run` on success is replaced by the launched

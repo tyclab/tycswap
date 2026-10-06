@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -621,23 +620,38 @@ func TestOfferUpdateIgnoresOlderEqualAndErrors(t *testing.T) {
 	}
 }
 
+// A timer never fires early, so each check comes at least its interval after the one before.
 func TestUpdateCheckLoopCadence(t *testing.T) {
 	oldFirst, oldEvery := updateCheckFirst, updateCheckEvery
-	updateCheckFirst, updateCheckEvery = 5*time.Millisecond, 10*time.Millisecond
 	defer func() { updateCheckFirst, updateCheckEvery = oldFirst, oldEvery }()
-	var n atomic.Int32
+	first, every := 20*time.Millisecond, 5*time.Millisecond
+	updateCheckFirst, updateCheckEvery = first, every
+	calls := make(chan time.Time, 3)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	go func() { updateCheckLoop(ctx, func() { n.Add(1) }); close(done) }()
-	deadline := time.Now().Add(5 * time.Second)
-	for n.Load() < 3 && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
+	prev, gap := time.Now(), first
+	go func() {
+		updateCheckLoop(ctx, func() {
+			select {
+			case calls <- time.Now():
+			default:
+			}
+		})
+		close(done)
+	}()
+	for i := 1; i <= 3; i++ {
+		select {
+		case at := <-calls:
+			if d := at.Sub(prev); d < gap {
+				t.Errorf("check %d came %v after the one before, want at least %v", i, d, gap)
+			}
+			prev, gap = at, every
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%d of 3 checks within 5s", i-1)
+		}
 	}
 	cancel()
 	<-done
-	if c := n.Load(); c < 3 {
-		t.Errorf("check ran %d times with a 5ms/10ms cadence", c)
-	}
 }
 
 func TestInstallUpdateRestartsAfterSuccess(t *testing.T) {

@@ -17,6 +17,7 @@ import (
 	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/session"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/testutil"
 	"github.com/tyclab/tycswap/internal/wincred"
 )
@@ -526,5 +527,39 @@ func TestPurge(t *testing.T) {
 	}
 	if _, err := os.Stat(sw.BackupDir()); !os.IsNotExist(err) {
 		t.Fatalf("backup dir still present after Purge: err=%v", err)
+	}
+}
+
+// An approval names the account the way a switch does: an id that resolves to
+// no account records nothing, and an alias approves the slot it names.
+func TestApproveAPIKeySwitchResolvesTheID(t *testing.T) {
+	sw := newTestSwitcher(t)
+	seedManaged(t, sw, "1", "a@x.com", oauthCreds("tok-a"))
+	seedLive(t, sw, "a@x.com", oauthCreds("tok-a"))
+	writeSeqDirect(t, sw, ptrInt(1), []int{1}, map[string]json.RawMessage{
+		"1": rawRecord(map[string]any{"email": "a@x.com", "organizationUuid": ""}),
+	})
+
+	sw.ApproveAPIKeySwitch("4")
+	if _, err := sw.SwitchTo("4", true); err == nil {
+		t.Fatal("SwitchTo(4) with no slot 4 succeeded")
+	}
+	email, slot := "key@x.com", "4"
+	if err := sw.AddAccountFromToken("sk-ant-api03-fixture", &email, &slot, true); err != nil {
+		t.Fatalf("add-token into slot 4: %v", err)
+	}
+	if _, err := sw.SwitchTo("4", true); err == nil || err.Error() != switching.ErrAPIKeyNeedsApproval("4").Error() {
+		t.Fatalf("SwitchTo(4) onto the new API key = %v, want the approval refusal", err)
+	}
+
+	if _, _, err := sw.SetAlias("4", "key"); err != nil {
+		t.Fatalf("SetAlias: %v", err)
+	}
+	sw.ApproveAPIKeySwitch("key")
+	if _, err := sw.SwitchTo("key", true); err != nil {
+		t.Fatalf("SwitchTo(key) after approving by alias: %v", err)
+	}
+	if n := sw.CurrentAccountNumber(); n == nil || *n != "4" {
+		t.Errorf("active account = %v, want 4", n)
 	}
 }

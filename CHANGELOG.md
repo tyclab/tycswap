@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The dashboard guide says why macOS refuses a release binary downloaded in a browser and how to lift the quarantine.
+- `docs/reference.md`: the exit-status table no longer says Ctrl-C always exits `130`; `web` and `app` exit `0`.
 - **Fixed:** `tycswap run` refuses an argument a Windows `claude.cmd` shim cannot take before preparing the session profile.
 - **Fixed:** on Windows, the Claude Code version check and update no longer open a console window when the tray application runs them.
 - **Fixed:** in Git Bash (mintty), the API-key switch prompt reads the answer typed in the terminal instead of refusing it as "Not a terminal"; a pipe or `/dev/null` is still refused.
