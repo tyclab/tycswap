@@ -31,6 +31,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/mattn/go-isatty"
+
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/paths"
@@ -134,9 +136,11 @@ type terminalControl interface {
 var activeTerminal terminalControl = stdTerminal{}
 
 // StdinIsTerminal reports whether stdin is a terminal that can answer a
-// prompt (termios on unix, the console mode on Windows), so /dev/null and a
-// pipe are not.
-func StdinIsTerminal() bool { return stdTerminal{}.isTerminal() }
+// prompt (termios on unix, the console mode or a mintty pty on Windows), so
+// /dev/null and a pipe are not.
+func StdinIsTerminal() bool {
+	return stdTerminal{}.isTerminal() || isatty.IsCygwinTerminal(os.Stdin.Fd())
+}
 
 func (StdPrompter) Secret(message string) (string, bool) {
 	fmt.Fprint(Output, message)

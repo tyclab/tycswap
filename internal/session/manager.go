@@ -179,10 +179,13 @@ var (
 // and env no-ops (D1 / FINDING 1). sameActive reports that second case; the
 // caller owns the exec-vs-no-op decision, and the note has already been printed.
 // Nothing here bootstraps a profile.
-func (m *Manager) setupPreamble(identifier string, shareHistory bool, mode setupMode) (claudeBin, accountNum, email string, sameActive bool, err error) {
+func (m *Manager) setupPreamble(identifier string, claudeArgs []string, shareHistory bool, mode setupMode) (claudeBin, accountNum, email string, sameActive bool, err error) {
 	bin, lookErr := m.runner.LookPath("claude")
 	if lookErr != nil || bin == "" {
 		return "", "", "", false, errClaudeNotFound()
+	}
+	if err := CheckCmdShimArgs(bin, claudeArgs); err != nil {
+		return "", "", "", false, err
 	}
 	if shareHistory && m.accounts.Platform() == platform.Windows {
 		return "", "", "", false, errShareHistoryWindows()
@@ -232,7 +235,7 @@ func (m *Manager) setupBootstrap(identifier string, share, shareHistory bool, mo
 // POSIX it execs and never returns on success; with a mocked runner it returns
 // nil after recording the exec.
 func (m *Manager) Run(identifier string, claudeArgs []string, share, shareHistory bool) error {
-	claudeBin, _, _, sameActive, err := m.setupPreamble(identifier, shareHistory, runMode)
+	claudeBin, _, _, sameActive, err := m.setupPreamble(identifier, claudeArgs, shareHistory, runMode)
 	if err != nil {
 		return err
 	}

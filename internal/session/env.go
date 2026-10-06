@@ -41,7 +41,7 @@ type EnvResult struct {
 // bootstrap/refresh warnings, the "Prepared … [session mode]" line) go to the
 // Manager's Stdout sink, which env routes to stderr.
 func (m *Manager) SetupEnv(identifier string, share, shareHistory bool) (EnvResult, error) {
-	_, accountNum, email, sameActive, err := m.setupPreamble(identifier, shareHistory, envMode)
+	_, accountNum, email, sameActive, err := m.setupPreamble(identifier, nil, shareHistory, envMode)
 	if err != nil {
 		return EnvResult{}, err
 	}

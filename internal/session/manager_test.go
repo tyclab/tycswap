@@ -296,3 +296,19 @@ func assertSessionError(t *testing.T, err error, wantSubstr string) {
 		t.Errorf("error = %q, want substring %q", err.Error(), wantSubstr)
 	}
 }
+
+func TestRunRefusesCmdShimArgsBeforeSetup(t *testing.T) {
+	setupHome(t)
+	accts := newFakeAccounts(t.TempDir(), platform.Windows)
+	accts.add("2", "user@example.com", "", oauthCreds)
+	runner := &fakeRunner{lookPathFn: func(string) (string, error) { return `C:\npm\claude.cmd`, nil }}
+	m, buf := newManager(t, accts, Options{Runner: runner, Environ: func() []string { return nil }})
+
+	err := m.Run("2", []string{"x & calc"}, false, false)
+	if err == nil || !strings.Contains(err.Error(), "refusing to pass") {
+		t.Fatalf("Run = %v, want the cmd-shim refusal", err)
+	}
+	if buf.Len() != 0 || len(runner.execCalls) != 0 {
+		t.Errorf("printed %q and exec'd %d times before refusing", buf.String(), len(runner.execCalls))
+	}
+}

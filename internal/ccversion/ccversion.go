@@ -504,6 +504,7 @@ func Run(ctx context.Context, e Env, c Command, in *Installed) (string, error) {
 // runOutput runs argv and returns its combined output.
 func runOutput(ctx context.Context, argv []string) (string, error) {
 	cmd := session.CLICommand(ctx, argv[0], argv[1:]...)
+	hideWindow(cmd)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
