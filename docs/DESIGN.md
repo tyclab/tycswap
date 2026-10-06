@@ -3601,7 +3601,8 @@ the account's. A switch writes the stored account blob with the live
 writes the blob verbatim when that read fails or does not parse); a capture —
 `add`, `add --login`, the switch-time backup and stash, the active refresh
 write-back, `export` — stores `oauth.AccountOnly(blob)`, the blob minus that
-key; the ownership classifier compares account bytes, so an MCP login never
+key; the ownership classifier, the provenance check and the active usage
+guard compare account blocks whatever their encoding, so an MCP login never
 reads as a changed credential. Rollback and the refresh write-back keep
 `WriteActive` verbatim. A59 strips every backup read and write; A29 keeps a
 stored copy out of the live file.

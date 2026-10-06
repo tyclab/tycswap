@@ -25,7 +25,7 @@ import (
 func classifyOutgoing(s *store.Store, currentAccount, currentEmail, originalCreds string, prov *Provenance, data *store.SequenceData) (string, string) {
 	backup, _ := s.ReadAccountCredentials(currentAccount, currentEmail)
 
-	// 1. Byte-identical to the slot's stored backup — modulo the seat-wide
+	// 1. Same account block as the slot's stored backup — modulo the seat-wide
 	//    keys, which a backup never carries and the live file may: an MCP
 	//    server login is not a change of account.
 	if backup != "" && sameAccountBytes(backup, originalCreds) {

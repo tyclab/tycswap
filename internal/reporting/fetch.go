@@ -102,7 +102,7 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 	unattributed := false
 	if !owned {
 		backup, _ := s.ReadAccountCredentials(accountNum, email)
-		unattributed = creds != backup && !fingerprintsEqual(creds, backup)
+		unattributed = !oauth.SameAccountBlock(creds, backup) && !fingerprintsEqual(creds, backup)
 		if unattributed && s.Log != nil {
 			s.Log.Warningf("Active credential does not match Account-%s's stored backup; skipping its refresh (provenance unknown).", accountNum)
 		}
