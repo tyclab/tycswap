@@ -146,7 +146,11 @@ func (m *Manager) syncMCPServers(sessionDir string, share bool) {
 // target alone" (Python None). Always reads the real default-home path, ignoring
 // CLAUDE_CONFIG_DIR.
 func (m *Manager) readMCPSource() (map[string]any, bool) {
-	config, ok := loadJSONObject(paths.GetDefaultGlobalConfigPath())
+	path := paths.GetDefaultGlobalConfigPath()
+	if provider, ok := m.accounts.(groupStoreProvider); ok {
+		path = provider.GroupStore().DefaultConfigPath()
+	}
+	config, ok := loadJSONObject(path)
 	if !ok {
 		return nil, false
 	}

@@ -27,6 +27,7 @@ package switching
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strconv"
 
 	"github.com/tyclab/tycswap/internal/cclock"
@@ -115,6 +116,10 @@ func nilNumRef(email string) map[string]any {
 // mutated when acquisition fails. The FileLock is non-reentrant, so no network
 // I/O may run inside fn.
 func withTripleLock(s *store.Store, fn func() error) error {
+	return withTripleLockTarget(s, "", fn)
+}
+
+func withTripleLockTarget(s *store.Store, target string, fn func() error) error {
 	ok, err := s.Lock.Acquire(0)
 	if err != nil {
 		return err
@@ -123,20 +128,68 @@ func withTripleLock(s *store.Store, fn func() error) error {
 		return cerr.Lock("Failed to acquire lock - another instance may be running")
 	}
 	defer s.Lock.Release()
+	if s.GroupID() != "" {
+		source, err := legacyHandoffProfile(s, target)
+		if err != nil {
+			return err
+		}
+		if source != "" {
+			cred, err := cclock.AcquireProfileCredentials(source, 0, s.Clk)
+			if err != nil {
+				return err
+			}
+			defer cred.Release()
+			config, err := cclock.Acquire(filepath.Join(source, ".claude.json")+".lock", 0, s.Clk)
+			if err != nil {
+				return err
+			}
+			defer config.Release()
+			storage, err := cclock.AcquireProfileStorageWrite(source, 0, s.Clk)
+			if err != nil {
+				return err
+			}
+			defer storage.Release()
+		}
+	}
+	if s.GroupID() != "" && defaultHandoffRequired(s, target) {
+		cred, err := cclock.AcquireProfileCredentials(s.DefaultProfileDir(), 0, s.Clk)
+		if err != nil {
+			return err
+		}
+		defer cred.Release()
+		config, err := cclock.Acquire(s.DefaultConfigPath()+".lock", 0, s.Clk)
+		if err != nil {
+			return err
+		}
+		defer config.Release()
+		storage, err := cclock.AcquireProfileStorageWrite(s.DefaultProfileDir(), 0, s.Clk)
+		if err != nil {
+			return err
+		}
+		defer storage.Release()
+	}
 
-	credH, err := cclock.AcquireCredentials(0, s.Clk)
+	acquireCred := func() (*cclock.Handle, error) { return cclock.AcquireCredentials(0, s.Clk) }
+	acquireStorage := func() (*cclock.Handle, error) { return cclock.AcquireStorageWrite(0, s.Clk) }
+	configLock := cclock.ConfigLockDir()
+	if s.GroupID() != "" {
+		acquireCred = func() (*cclock.Handle, error) { return cclock.AcquireProfileCredentials(s.ProfileDir(), 0, s.Clk) }
+		acquireStorage = func() (*cclock.Handle, error) { return cclock.AcquireProfileStorageWrite(s.ProfileDir(), 0, s.Clk) }
+		configLock = s.GlobalConfigPath() + ".lock"
+	}
+	credH, err := acquireCred()
 	if err != nil {
 		return err
 	}
 	defer credH.Release()
 
-	cfgH, err := cclock.Acquire(cclock.ConfigLockDir(), 0, s.Clk)
+	cfgH, err := cclock.Acquire(configLock, 0, s.Clk)
 	if err != nil {
 		return err
 	}
 	defer cfgH.Release()
 
-	storeH, err := cclock.AcquireStorageWrite(0, s.Clk)
+	storeH, err := acquireStorage()
 	if err != nil {
 		return err
 	}

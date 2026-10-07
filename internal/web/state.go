@@ -38,6 +38,8 @@ type State struct {
 	ActiveNumber  any              `json:"activeNumber"` // int, or nil when no managed account is active
 	Accounts      []map[string]any `json:"accounts"`
 	Sessions      SessionsJSON     `json:"sessions"`
+	Groups        []GroupView      `json:"groups,omitempty"`
+	Recovery      *RecoveryView    `json:"recovery,omitempty"`
 	Settings      []SettingView    `json:"settings"` // null when no SettingsFacade
 	Auto          *AutoView        `json:"auto"`     // null when no AutoFacade
 	Strategies    []string         `json:"strategies"`
@@ -71,6 +73,8 @@ type ClaudeSessionJSON struct {
 	Status     *string `json:"status"`
 	Title      string  `json:"title"`   // from the transcript; "" when none yet
 	Profile    string  `json:"profile"` // slot of the `run`/`env` session profile; "" for the default login
+	Group      string  `json:"group,omitempty"`
+	Model      string  `json:"model,omitempty"`
 }
 
 // IdeInstanceJSON is one running IDE instance.
@@ -147,6 +151,13 @@ func (s *Server) buildState(o stateOpts) State {
 	if s.d.Settings != nil {
 		st.Settings = s.settingsViews()
 	}
+	if s.d.Groups != nil {
+		st.Groups = s.d.Groups.Views()
+	}
+	if s.d.Recovery != nil && snap != nil {
+		v := s.d.Recovery.View(*snap)
+		st.Recovery = &v
+	}
 	if s.d.Auto != nil {
 		v := s.d.Auto.View()
 		if v.Events == nil {
@@ -156,7 +167,11 @@ func (s *Server) buildState(o stateOpts) State {
 	}
 	sv := s.d.Sessions()
 	for _, c := range sv.Claude {
-		st.Sessions.Claude = append(st.Sessions.Claude, s.claudeSessionJSON(c, sv.ConfigDir[c.PID], sv.Profile[c.PID]))
+		item := s.claudeSessionJSON(c, sv.ConfigDir[c.PID], sv.Profile[c.PID])
+		if st.Recovery != nil {
+			item.Model = st.Recovery.SessionModels[c.SessionID]
+		}
+		st.Sessions.Claude = append(st.Sessions.Claude, item)
 	}
 	for _, i := range sv.IDE {
 		folders := i.WorkspaceFolders
@@ -286,6 +301,10 @@ func accountRow(a reporting.AccountSnapshot) map[string]any {
 }
 
 func (s *Server) claudeSessionJSON(c procdetect.ClaudeSession, configDir, profile string) ClaudeSessionJSON {
+	group := ""
+	if profile == "fable" || profile == "opus" {
+		group, profile = profile, ""
+	}
 	return ClaudeSessionJSON{
 		PID:        c.PID,
 		SessionID:  c.SessionID,
@@ -296,6 +315,7 @@ func (s *Server) claudeSessionJSON(c procdetect.ClaudeSession, configDir, profil
 		Status:     c.Status,
 		Title:      s.d.SessionTitle(configDir, c.CWD, c.SessionID),
 		Profile:    profile,
+		Group:      group,
 	}
 }
 

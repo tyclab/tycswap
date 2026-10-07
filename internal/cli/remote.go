@@ -724,8 +724,11 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	// and every check ask, and the answer does not change while it runs.
 	buildHint := appUpgradeHint()
 	sh = newAppShell(t, shellActions{
-		OpenDashboard:  openDashboard,
-		SwitchTo:       rc.Switch,
+		OpenDashboard: openDashboard,
+		SwitchTo:      rc.Switch,
+		SwitchGroup: func(group, account string) error {
+			return rc.call("POST", "/api/groups/"+neturl.PathEscape(group)+"/switch/"+neturl.PathEscape(account), nil, nil)
+		},
 		AutoRunning:    rc.AutoRunning,
 		AutoStart:      rc.AutoStart,
 		AutoStop:       rc.AutoStop,

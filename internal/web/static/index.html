@@ -76,6 +76,16 @@
       </div>
     </div>
 
+    <div class="card" id="recovery-card" hidden aria-live="polite">
+      <div class="card-head"><h2>Continue after a limit</h2><span id="recovery-wait" class="card-sub"></span></div>
+      <div id="recovery-list" class="recovery-list"></div>
+    </div>
+    <div class="toolbar group-toolbar">
+      <label for="account-group">Claude sessions</label>
+      <select id="account-group"><option value="">Existing / default</option><option value="fable">Fable</option><option value="opus">Opus / other</option></select>
+      <span id="account-group-note" class="muted">Choose a group when starting or resuming a session.</span>
+      <a href="#guide" class="btn btn-sm">How to use groups</a>
+    </div>
     <div class="tiles" id="summary-tiles" aria-label="Summary"></div>
     <div class="card" id="accounts-card">
       <div class="card-head">
@@ -108,17 +118,18 @@
       <table class="tbl acct-tbl" id="accounts-tbl">
         <thead>
           <tr>
-            <th scope="col" class="c-slot">Slot</th>
+            <th scope="col" class="c-slot"><button class="sort-heading" data-sort="number">Slot</button></th>
             <th scope="col" class="c-acct">Account</th>
-            <th scope="col" class="c-meter">5h window</th>
-            <th scope="col" class="c-meter">7d window</th>
-            <th scope="col" class="c-meter">Model</th>
+            <th scope="col" class="c-meter"><button class="sort-heading" data-sort="fiveHour">5-hour</button></th>
+            <th scope="col" class="c-meter"><button class="sort-heading" data-sort="sevenDay">Weekly</button></th>
+            <th scope="col" class="c-meter c-mm"><button class="sort-heading" data-sort="model">Model limits</button></th>
             <th scope="col" class="c-token col-token" hidden>Token</th>
             <th scope="col" class="c-actions"><span class="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody id="accounts-body"></tbody>
       </table>
+      <p class="sort-note"><button class="sort-heading" data-sort="best">Next best</button> <span id="sort-note">Click a limit heading to sort. Display order does not change automatic switching.</span></p>
       <div id="accounts-empty" class="empty-state" hidden>
         <span class="title">No managed accounts yet</span>
         <span>Sign in to Claude Code (<code>/login</code>), then click <strong>Add current login</strong>; or register a setup-token.</span>
@@ -363,7 +374,14 @@
 
       <article class="card guide-section" id="g-sessions">
         <h2>Sessions</h2>
-        <p>Every running Claude Code process on this machine, grouped by project directory, with its state (idle, busy, waiting for you), the IDE it belongs to, and the slot it runs as when it was started with <code>{{.Name}} run</code> or <code>{{.Name}} env</code>. Use it to see what a switch would interrupt, and <em>Stop</em> a session you forgot about. A running session keeps its current account until it is restarted; <code>claude --continue</code> resumes it.</p>
+        <p>The session list shows each Claude conversation's project, state, group and captured model. Existing sessions keep their current profiles. Choose a group when you next start or resume: <code>{{.Name}} run --group fable</code> or <code>{{.Name}} run --group opus</code>. Sessions in one group share an account and rotate together; the other group keeps its own account.</p>
+        <p>To continue an existing conversation, use <code>{{.Name}} run --group opus --resume SESSION_ID</code> (or <code>fable</code>). Its first move into a group forks the native conversation and records the new ID, preserving the original transcript. Later resumes use the group's saved ID. Keep one editing session responsible for a workspace.</p>
+        <p>Fable startup and continuation are separate capabilities. Start on a compatible Max account. A Business account may be recorded as continuation-capable with <code>{{.Name}} groups capability ACCOUNT continue true</code> after verifying it works. Then <code>{{.Name}} groups switch fable ACCOUNT</code> moves the Fable group. Pro accounts remain excluded. A quota bar alone does not establish model access.</p>
+        <p>Choose Fable or Opus / other above the accounts. A full Fable window does not block Opus. Click Weekly, 5-hour or Fable to sort the same list; click again to reverse. <em>Next best</em> restores availability ordering. Display sorting does not change automatic rotation.</p>
+        <h3>Continue in the other tool</h3>
+        <p>After a captured, corroborated limit, tycswap first tries a compatible account. If none is expected within 30 minutes and the other provider can run, a recovery card offers <em>Continue in Codex / Claude</em> or <em>Wait</em>. Set <code>autoswitch.handoverWaitMinutes</code> to 15 for an earlier offer. Unknown or stale resets remain unknown; overload and network failures alone do not trigger it.</p>
+        <p>Review the saved context and omissions, confirm no source command is still editing, then start the continuation. It receives recent messages, saved notes and workspace information in a new conversation with its own permissions. The source conversation is preserved. The Flakelab launcher pauses managed source editing for that workspace; after stopping the destination, use <code>{{.Name}} recovery reclaim --cwd /path/to/work --confirm-no-background-tools</code> to return editing to the source. An uncertain launch stays reserved until its destination can be verified.</p>
+        <p>Managed Claude sessions install lifecycle hooks at launch. Existing sessions require a restart for automatic detection. Unmanaged source sessions must exit before transfer. Codex automatic detection requires an observed typed app-server stream with account and process identity; ordinary Codex terminal error text alone is insufficient. A Codex account switch requires restart/resume. Without the supported launcher, stop the source before using the manual terminal plan. Use <code>{{.Name}} recovery prepare --help</code> for saved transcript preparation. Group profiles remain local; Flakelab's existing cross-machine backup and transcript sync do not include them.</p>
       </article>
 
       <article class="card guide-section" id="g-updates">
@@ -404,7 +422,7 @@
 
       <article class="card guide-section" id="g-trouble">
         <h2>When something looks wrong</h2>
-        <details class="guide-faq"><summary>A switch happened but Claude Code still uses the old account</summary><p>Running sessions keep the credentials they started with. Restart them (<code>claude --continue</code>). The Sessions tab lists what is still running.</p></details>
+        <details class="guide-faq"><summary>A switch happened but Claude Code still uses the old account</summary><p>A group switch affects sessions launched in that group, on their next request. Default and other profiles keep their own login. Check the session's group and any authentication overrides before restarting it.</p></details>
         <details class="guide-faq"><summary>Claude Code ignores the stored login altogether</summary><p>An <code>ANTHROPIC_API_KEY</code>, <code>ANTHROPIC_AUTH_TOKEN</code>, <code>CLAUDE_CODE_OAUTH_TOKEN</code> or <code>ANTHROPIC_BASE_URL</code> in the environment, or in the <code>env</code> block of Claude Code's <code>settings.json</code>, takes the place of the login. The Dashboard says so above the accounts when it sees one; unset the variable or remove the key.</p></details>
         <details class="guide-faq"><summary>An account says “re-login needed” or “token expired”</summary><p>Its refresh token was revoked or expired. Run <code>{{.Name}} add --login</code> in a terminal and sign in as that account; the slot keeps its number and alias, and the live login is untouched. If it is the live account, signing in again in Claude Code and <em>Add current login</em> does the same.</p></details>
         <details class="guide-faq"><summary>“Usage unavailable”</summary><p>The last usage read failed or is stale (offline, or the usage endpoint hiccuped). The meters keep the last good values; they refresh on the next poll.</p></details>
@@ -420,7 +438,7 @@
         <ul>
           <li><strong>Accounts</strong> are stored under your user profile: <code>~/.local/share/{{.Name}}</code> on Linux and WSL (<code>$XDG_DATA_HOME/{{.Name}}</code> when that is set), <code>~/.{{.Name}}</code> on macOS and Windows. Each account's credential goes to the macOS Keychain where available, otherwise to a file only you can read; the roster (<code>sequence.json</code>), the config snapshots, <code>settings.json</code> and the usage cache sit next to them, and <code>{{.Name}} config path</code> prints where.</li>
           <li><strong>The dashboard</strong> binds to 127.0.0.1 only and requires the per-launch secrets its URL carries; nothing is reachable from the network, and no credential ever leaves the process.</li>
-          <li><strong>Usage numbers</strong> come from the usage endpoint of each stored account; nothing about your conversations is read or sent anywhere.</li>
+          <li><strong>Usage numbers</strong> come from the usage endpoint of each stored account. A handover reads saved conversation text locally and shows the selected context before you send it to the other provider. Credentials and pending approvals are omitted.</li>
           <li><strong>Exports</strong> (<code>{{.Name}} export</code>) hold live credentials in plain text: treat the file like a password.</li>
           <li><strong>Nothing is reported anywhere.</strong> There is no telemetry; the update check reads a release endpoint and Claude Code's installer source, and sends nothing but the request.</li>
         </ul>

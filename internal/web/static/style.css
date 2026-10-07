@@ -697,3 +697,17 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 
 /* Explicit light must also reset native form controls from the OS scheme. */
 :root[data-theme="light"] { color-scheme: light; }
+ .sort-heading { border: 0; padding: .3rem 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+ .sort-heading.selected { color: var(--accent); font-weight: 700; }
+ .sort-heading:hover { text-decoration: underline; }
+ .sort-heading:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+ .sort-note { padding: 0 1rem; color: var(--muted); font-size: .8rem; }
+ .group-toolbar { border-radius: .6rem; margin-bottom: 1rem; flex-wrap: wrap; }
+ .group-toolbar select { width: auto; min-width: 160px; }
+ .group-toolbar label, .group-toolbar .muted { font-size: var(--t13); }
+ .group-toolbar .muted { flex: 1; }
+ .acct-tbl.no-model-column .c-mm { display: none; }
+ .recovery-list { padding: 0 1rem 1rem; }
+ .recovery-row + .recovery-row { margin-top: 1rem; }
+ .recovery-row .btn + .btn { margin-left: .5rem; }
+ .handover-preview { max-height: 40vh; overflow: auto; white-space: pre-wrap; font-size: .8rem; text-align: left; }

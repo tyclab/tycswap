@@ -502,6 +502,54 @@ Arguments after `--` are forwarded to `claude`. When the requested account is
 already the active default login, `tycswap run` launches `claude` directly rather
 than preparing a session profile.
 
+**Independent session groups.** Choose a group when starting or resuming Claude:
+
+```sh
+tycswap run --group fable
+tycswap run --group opus --resume SESSION_ID
+tycswap groups switch fable ACCOUNT
+tycswap groups --json
+```
+
+Fable sessions share one account; Opus/other sessions share another. A group
+switch reaches its sessions on subsequent requests and leaves the other group
+and default login alone. Existing sessions keep running until you choose to
+restart them. The first move across profiles forks the native conversation;
+the original history remains intact, and later resumes use the group's saved ID.
+Accounts already owned by another profile cannot be selected concurrently.
+
+Fable startup requires a compatible account. A verified Business continuation
+can be recorded with `tycswap groups capability ACCOUNT continue true`; it does
+not authorize a new Fable startup. Pro accounts remain excluded. Model access
+and available quota are separate checks. Unknown ownership or compatibility
+holds rotation and shows the reason. `groups reconcile fable|opus` checks an
+interrupted switch before another launch. Per-group overrides use
+`tycswap groups config opus autoswitch.sevenDayThreshold 97`; other settings
+inherit the default policy and counted models follow the group's sessions.
+
+The dashboard has one account-group selector. Click a quota heading to choose
+the primary sort; ties use the other applicable limits. **Next best** restores
+availability ordering. Sorting changes the view, independently of rotation.
+
+Managed Claude sessions can offer **Continue in Codex** after a corroborated
+limit, once compatible account rotation is exhausted and the known wait exceeds
+30 minutes (`autoswitch.handoverWaitMinutes`, minimum 15). Review saved context
+and omissions before explicitly starting a new conversation. Unfinished tools,
+unknown source state and another busy editor in the same worktree block launch.
+The Flakelab launcher reserves editing ownership and preserves source history;
+stop the destination before using `tycswap recovery reclaim --cwd /path/to/work
+--confirm-no-background-tools` to return editing to the source.
+
+Existing unmanaged sources must exit before transfer. Codex automatic recovery
+requires typed app-server events with account and process identity from the
+owning host; ordinary terminal error text is insufficient. A Codex account
+switch still requires restarting/resuming Codex. Without the supported launcher,
+the dashboard provides a manual plan; stop the source before running it.
+`tycswap recovery prepare --help` explains saved-context preparation without a
+model request. Group histories remain local and are not included in Flakelab's
+cross-machine transcript sync. The dashboard's **Guide → Sessions** covers the
+workflow, including Flakelab start/resume integration.
+
 **Directory mappings.** Map a directory to an account so a bare `tycswap run` in
 that directory resolves to it:
 

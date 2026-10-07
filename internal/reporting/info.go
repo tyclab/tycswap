@@ -10,6 +10,7 @@ package reporting
 import (
 	"strconv"
 
+	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
@@ -54,8 +55,17 @@ func BuildAccountsInfo(s *store.Store) []AccountInfo {
 			val, kcUnavail, _ := s.Creds.ReadActive()
 			creds = val
 			keychainUnavailable = kcUnavail
+			if s.GroupID() == "" && paths.GetClaudeConfigHome() != s.ProfileDir() {
+				creds, _ = s.ReadOwnedCredentials(num, email)
+				keychainUnavailable = false
+			}
 		} else {
 			creds, _ = s.ReadAccountCredentials(num, email)
+			if owner, err := s.CredentialOwner(num); err != nil {
+				creds = ""
+			} else if owner.Scope != "" {
+				creds, _ = s.ReadOwnedCredentials(num, email)
+			}
 		}
 
 		infos = append(infos, AccountInfo{

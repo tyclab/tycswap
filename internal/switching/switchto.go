@@ -24,6 +24,9 @@ var emailPattern = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-
 
 // SwitchTo switches to a specific account (spec 02§6).
 func SwitchTo(s *store.Store, identifier string, jsonOut, force bool) (any, error) {
+	if s.GroupID() != "" {
+		return switchGroupTo(s, identifier, jsonOut, force)
+	}
 	if _, err := os.Stat(s.SequenceFile); err != nil {
 		return nil, cerr.Config("No accounts are managed yet")
 	}

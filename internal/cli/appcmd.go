@@ -380,6 +380,11 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		SwitchTo: func(key string) ([]int, error) {
 			return d.switchTo(key)
 		},
+		SwitchGroup: func(group, account string) error {
+			_, err := (groupFacade{d.sw}).Switch(group, account)
+			srv.Refresh()
+			return err
+		},
 		AddCurrent:   func() (web.AddLoginResult, error) { return srv.AddCurrentLogin() },
 		AutoRunning:  func() bool { return d.auto.View().Running },
 		AutoStart:    func() error { return d.auto.Start(false) },

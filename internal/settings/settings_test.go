@@ -24,6 +24,18 @@ func writeSettingsJSON(t *testing.T, root, content string) {
 
 func strp(s string) *string { return &s }
 
+func TestGroupOverridesInheritUnspecifiedSettings(t *testing.T) {
+	root := t.TempDir()
+	base := Default()
+	base.SevenDayThreshold = 99
+	base.HandoverWaitMinutes = 15
+	writeSettingsJSON(t, root, `{"autoswitch":{"fiveHourThreshold":90}}`)
+	got := LoadOver(root, base)
+	if got.FiveHourThreshold != 90 || got.SevenDayThreshold != 99 || got.HandoverWaitMinutes != 15 {
+		t.Fatalf("group overrides replaced inherited settings: %+v", got)
+	}
+}
+
 // --- Load: missing/corrupt/non-object handling ---
 
 func TestLoad_MissingFileGivesDefaults(t *testing.T) {
@@ -124,6 +136,7 @@ func TestSave_Roundtrip(t *testing.T) {
 		IntervalSeconds: 60.0, CodexEnabled: false,
 		CodexThreshold: 75.0, CooldownSeconds: 60.0, HysteresisPct: 10.0, Strategy: "best",
 		UnhealthyTicks: 3, Model: nil,
+		HandoverWaitMinutes: 30,
 	}
 	if err := Save(root, custom); err != nil {
 		t.Fatal(err)
@@ -194,6 +207,7 @@ func TestSettingSpecs_CoversEveryField(t *testing.T) {
 		"CodexThreshold": true, "CooldownSeconds": true,
 		"HysteresisPct": true, "Strategy": true,
 		"UnhealthyTicks": true, "Model": true,
+		"HandoverWaitMinutes": true,
 	}
 	got := map[string]bool{}
 	for _, s := range SettingSpecs {

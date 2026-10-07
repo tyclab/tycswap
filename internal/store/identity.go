@@ -16,7 +16,8 @@ import (
 
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/cerr"
-	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/groups"
+	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/slotkey"
 )
 
@@ -154,7 +155,7 @@ func (s *Store) migrateOrgFieldsLocked() error {
 // live ~/.claude.json oauthAccount, swallowing every failure to blanks (Python
 // _migrate_org_fields' try/except: pass). null org fields coerce to "".
 func (s *Store) liveOAuthAccount() (email, orgUUID, orgName string) {
-	raw, err := os.ReadFile(paths.GetGlobalConfigPath())
+	raw, err := os.ReadFile(s.GlobalConfigPath())
 	if err != nil {
 		return "", "", ""
 	}
@@ -300,12 +301,12 @@ func (s *Store) AliasInUse(data *SequenceData, alias, excludeNum string) string 
 // the file is absent/unparseable or emailAddress is blank; org is "" for
 // personal accounts.
 func (s *Store) GetCurrentAccount() (email, orgUUID string, ok bool) {
-	return ccfile.ReadOAuthIdentity()
+	return ccfile.ReadOAuthIdentityFrom(s.GlobalConfigPath())
 }
 
 // HasLiveLogin reports whether ~/.claude.json carries any live identity.
 func (s *Store) HasLiveLogin() bool {
-	_, _, ok := ccfile.ReadOAuthIdentity()
+	_, _, ok := s.GetCurrentAccount()
 	return ok
 }
 
@@ -313,7 +314,7 @@ func (s *Store) HasLiveLogin() bool {
 // there is no live login or it is unmanaged (spec: current_account_number —
 // deliberately no fallback to the recorded activeAccountNumber).
 func (s *Store) CurrentAccountNumber() *string {
-	email, orgUUID, ok := ccfile.ReadOAuthIdentity()
+	email, orgUUID, ok := s.GetCurrentAccount()
 	if !ok {
 		return nil
 	}
@@ -448,7 +449,21 @@ func (s *Store) RotationEligible(data *SequenceData, num string) bool {
 	if data == nil {
 		return false
 	}
-	return s.AccountIsSwitchable(num) && !disabledFromData(data, num) && s.AccountKindFor(num) != "api_key"
+	if !s.AccountIsSwitchable(num) || disabledFromData(data, num) || s.AccountKindFor(num) == "api_key" {
+		return false
+	}
+	if err := s.EnsureAccountAvailable(num); err != nil {
+		return false
+	}
+	if s.group != "" {
+		intent := groups.Start
+		if len(sessprofile.LiveSessionPIDs(s.ProfileDir())) > 0 {
+			intent = groups.Continue
+		}
+		compatible := s.GroupCompatibility(num, intent)
+		return compatible.Known && compatible.Allowed
+	}
+	return true
 }
 
 // SwitchableAccountNumbers returns the rotation-eligible slots in sequence order

@@ -7,9 +7,60 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/sessprofile"
 )
+
+func TestManagedProfileRestoresCustomDefault(t *testing.T) {
+	cleanHome(t)
+	t.Setenv("TYCSWAP_DEFAULT_PROFILE_UNPINNED", "false")
+	profile := groups.ProfileDir(paths.GetBackupRoot(), groups.Fable)
+	custom := filepath.Join(t.TempDir(), "custom-claude")
+	for _, original := range []string{custom, "relative", groups.ProfileDir(paths.GetBackupRoot(), groups.Opus)} {
+		t.Setenv("CLAUDE_CONFIG_DIR", profile)
+		t.Setenv("TYCSWAP_DEFAULT_PROFILE_DIR", original)
+		var errb bytes.Buffer
+		neutralizePinnedSessionProfile(&errb)
+		want := ""
+		if original == custom {
+			want = custom
+		}
+		if got := os.Getenv("CLAUDE_CONFIG_DIR"); got != want {
+			t.Fatalf("default profile = %q, want %q", got, want)
+		}
+	}
+}
+
+func TestManagedProfileRestoresUnpinnedDefault(t *testing.T) {
+	cleanHome(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", groups.ProfileDir(paths.GetBackupRoot(), groups.Fable))
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TYCSWAP_DEFAULT_PROFILE_DIR", filepath.Join(home, ".claude"))
+	t.Setenv("TYCSWAP_DEFAULT_PROFILE_UNPINNED", "true")
+	var errb bytes.Buffer
+	neutralizePinnedSessionProfile(&errb)
+	if os.Getenv("CLAUDE_CONFIG_DIR") != "" {
+		t.Fatal("unpinned default became a custom profile")
+	}
+}
+
+func TestGroupGuardKeepsProfileAndStaysQuiet(t *testing.T) {
+	cleanHome(t)
+	profile := groups.ProfileDir(paths.GetBackupRoot(), groups.Fable)
+	t.Setenv("CLAUDE_CONFIG_DIR", profile)
+	var out, errb bytes.Buffer
+	code := run("tycswap", []string{"groups", "guard", "--group", "fable"}, ioStreams{strings.NewReader(`{"to_model":"fable"}`), &out, &errb}, false, false)
+	if code != 0 || out.Len() != 0 || errb.Len() != 0 {
+		t.Fatalf("guard = %d, stdout %q, stderr %q", code, out.String(), errb.String())
+	}
+	if os.Getenv("CLAUDE_CONFIG_DIR") != profile {
+		t.Fatal("guard changed the session's profile")
+	}
+}
 
 // makeSessionProfile creates a tycswap session profile dir under the current
 // backup root and returns its path (the value a `tycswap env`-pinned shell carries

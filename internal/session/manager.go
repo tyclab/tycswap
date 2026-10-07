@@ -61,10 +61,11 @@ type Manager struct {
 	stdout   io.Writer
 	runner   Runner
 
-	getenv      func(string) string
-	environ     func() []string
-	lockConfig  func(lockDir string) (func(), error)
-	lockTimeout time.Duration
+	getenv         func(string) string
+	environ        func() []string
+	lockConfig     func(lockDir string) (func(), error)
+	lockTimeout    time.Duration
+	hookExecutable string
 }
 
 // Options configures a Manager. Every field is optional except a working
@@ -92,23 +93,25 @@ type Options struct {
 	// returning a release closure. Default is cclock-backed.
 	LockConfig func(lockDir string) (func(), error)
 	// LockTimeout overrides the bootstrap FileLock acquire budget (default 30s).
-	LockTimeout time.Duration
+	LockTimeout    time.Duration
+	HookExecutable string
 }
 
 // NewManager builds a Manager over the given account store and options.
 func NewManager(accounts Accounts, opts Options) *Manager {
 	m := &Manager{
-		accounts:    accounts,
-		oauth:       opts.OAuth,
-		kc:          opts.Keychain,
-		clk:         opts.Clock,
-		log:         opts.Logger,
-		stdout:      opts.Stdout,
-		runner:      opts.Runner,
-		getenv:      opts.Getenv,
-		environ:     opts.Environ,
-		lockConfig:  opts.LockConfig,
-		lockTimeout: opts.LockTimeout,
+		accounts:       accounts,
+		oauth:          opts.OAuth,
+		kc:             opts.Keychain,
+		clk:            opts.Clock,
+		log:            opts.Logger,
+		stdout:         opts.Stdout,
+		runner:         opts.Runner,
+		getenv:         opts.Getenv,
+		environ:        opts.Environ,
+		lockConfig:     opts.LockConfig,
+		lockTimeout:    opts.LockTimeout,
+		hookExecutable: opts.HookExecutable,
 	}
 	if m.kc == nil {
 		m.kc = keychain.NewFake()

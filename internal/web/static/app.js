@@ -40,6 +40,9 @@
   var inflight = {};
   var showTokenStatus = false;
   var strategy = 'best';
+  var accountGroup = '';
+  var accountOrder = { key: 'best', direction: 1 };
+  try { accountGroup = sessionStorage.getItem('accountGroup') || ''; } catch (e) {}
   var autoLog = [];      // ring of AutoEventView, oldest first
   var autoLogLastAt = 0;
   var LOG_RING = 200;
@@ -363,6 +366,7 @@
       $('modal-error').textContent = '';
       var fields = $('modal-fields');
       clear(fields);
+      if (opts.preview) { fields.appendChild(el('pre', { class: 'handover-preview', text: opts.preview, tabindex: '0' })); }
       (opts.fields || []).forEach(function (f) {
         var input;
         if (f.type === 'select') {
@@ -434,6 +438,79 @@
     var s = (a.running && a.settings) || {};
     if (s[key] !== undefined && s[key] !== null && s[key] !== '') { return s[key]; }
     return settingValue(st, key);
+  }
+
+  function groupModels(st, id) {
+    var group = (st.groups || []).filter(function (g) { return g.id === id; })[0];
+    if (group && group.settings) { return parseModelNames(group.settings['autoswitch.model']); }
+    if (id === 'opus') { return []; }
+    return modelWindowNames(st).filter(function (name) { return /fable/i.test(name); });
+  }
+
+  function groupState(st, id) {
+    if (!id) {
+      var owners = {};
+      (st.groups || []).forEach(function (g) { if (g.activeNumber) { owners[String(g.activeNumber)] = g.label || g.id; } });
+      return Object.assign({}, st, { accounts: (st.accounts || []).map(function (a) {
+        var owner = isClaude(a) && owners[String(a.number)];
+        return owner ? Object.assign({}, a, { groupBlocker: 'in use by ' + owner, rotationEligible: false }) : a;
+      }) });
+    }
+    var group = (st.groups || []).filter(function (g) { return g.id === id; })[0] || {};
+    var models = groupModels(st, id);
+    if (id === 'fable' && !models.length) { models = ['Fable']; }
+    models = models.map(function (name) { return name.toLowerCase(); });
+    var view = Object.assign({}, st, { activeNumber: group.activeNumber || null, groupId: id });
+    view.settings = (st.settings || []).map(function (s) {
+      if (s.key === 'autoswitch.model') { return Object.assign({}, s, { value: models.join(',') }); }
+      return group.settings && Object.prototype.hasOwnProperty.call(group.settings, s.key) ? Object.assign({}, s, { value: group.settings[s.key] }) : s;
+    });
+    if (!view.settings.some(function (s) { return s.key === 'autoswitch.model'; })) {
+      view.settings.push({ key: 'autoswitch.model', value: models.join(',') });
+    }
+    view.auto = Object.assign({}, st.auto || {}, group.auto || {});
+    view.auto.settings = Object.assign({}, view.auto.settings || {}, group.settings || {}, { 'autoswitch.model': models.join(',') });
+    view.accounts = (st.accounts || []).map(function (a) {
+      if (!isClaude(a)) { return a; }
+      var wins = relevantWindows(a.usage, models.map(function (m) { return m.toLowerCase(); }));
+      var blocked = group.accountBlockers && group.accountBlockers[String(a.number)];
+      var visibleUsage = a.usage && Object.assign({}, a.usage, { scoped: (a.usage.scoped || []).filter(function (w) { return models.indexOf(String(w.name || '').toLowerCase()) >= 0; }) });
+      return Object.assign({}, a, { isActive: String(a.number) === String(group.activeNumber || ''),
+        usage: visibleUsage,
+        atLimit: wins.some(function (w) { return w.pct >= 100; }),
+        limitingWindows: wins.filter(function (w) { return w.pct >= 100; }).map(function (w) { return w.label; }),
+        groupBlocker: blocked || '', rotationEligible: a.rotationEligible && !blocked });
+    });
+    return view;
+  }
+
+  function displayAccounts(st, ordering) {
+    var list = claudeRows(st).slice();
+    var ranked = rankCandidates(st).ranked;
+    var ranks = {};
+    ranked.forEach(function (r, i) { ranks[r.number] = i; });
+    var models = parseModelNames(engineSetting(st, 'autoswitch.model'));
+    function values(a) {
+      var cls = classPcts(relevantWindows(a.usage, models));
+      var model = bindingPct(((a.usage || {}).scoped || []).map(function (w) { return { pct: pctNum(w.pct) }; }).filter(function (w) { return w.pct !== null; }));
+      return { fiveHour: cls.fiveHour, sevenDay: cls.sevenDay, model: ordering.key === 'model' ? model : cls.model };
+    }
+    return list.sort(function (a, b) {
+      if (ordering.key === 'best') {
+        if (a.isActive !== b.isActive) { return a.isActive ? -1 : 1; }
+        var ra = ranks[String(a.number)], rb = ranks[String(b.number)];
+        return (ra === undefined ? 100000 : ra) - (rb === undefined ? 100000 : rb) || Number(a.number) - Number(b.number);
+      }
+      if (ordering.key === 'number') { return (Number(a.number) - Number(b.number)) * ordering.direction; }
+      var av = values(a), bv = values(b);
+      var keys = [ordering.key].concat(['sevenDay', 'model', 'fiveHour'].filter(function (k) { return k !== ordering.key; }));
+      for (var i = 0; i < keys.length; i++) {
+        var x = av[keys[i]], y = bv[keys[i]];
+        if (x === null || y === null) { if (x !== y) { return x === null ? 1 : -1; } }
+        else if (x !== y) { return (x - y) * ordering.direction; }
+      }
+      return Number(a.number) - Number(b.number);
+    });
   }
 
   // parseModelNames mirrors settings.ParseModelNames: COMMA-separated, never
@@ -1012,7 +1089,7 @@
     meters.appendChild(u.sevenDay ? meter({ label: '7d', pct: u.sevenDay.pct, resetsAt: u.sevenDay.resetsAt, size: 'compact' }) : emptyMeter('7d', 'compact'));
     var scoped = (u.scoped || []).slice();
     var top = scoped.sort(function (x, y) { return (pctNum(y.pct) || 0) - (pctNum(x.pct) || 0); })[0];
-    meters.appendChild(top ? meter({ label: top.name || 'model', pct: top.pct, resetsAt: top.resetsAt, size: 'compact' }) : emptyMeter('model', 'compact'));
+    if (top || !st.groupId) { meters.appendChild(top ? meter({ label: top.name || 'model', pct: top.pct, resetsAt: top.resetsAt, size: 'compact' }) : emptyMeter('model', 'compact')); }
     box.appendChild(meters);
   }
 
@@ -1047,6 +1124,7 @@
     if (a.isActive) { out.push(chip('active', 'active')); }
     if (a.atLimit) { out.push(chip('at limit', 'crit', (a.limitingWindows || []).join(', ') || 'a window is at 100%')); }
     if (a.disabled) { out.push(chip('disabled', 'outline', 'held out of auto-rotation')); }
+    if (a.groupBlocker) { out.push(chip(a.groupBlocker, 'outline')); }
     if (!a.switchable) { out.push(chip('not switchable', 'warn', isClaude(a) ? 'missing stored credentials or config backup' : 'a Codex API-key login cannot be switched to')); }
     if (a.usageStatus && SENTINEL_STATUSES[a.usageStatus] && a.usageStatus !== 'api_key') { out.push(chip(SENTINEL_STATUSES[a.usageStatus], 'serious')); }
     if (a.usageStatus === 'unavailable') { out.push(chip('usage unavailable', 'warn', 'the last measurement is stale or failed; the meters show the last good values')); }
@@ -1133,8 +1211,9 @@
   function renderAccounts(st) {
     var body = $('accounts-body');
     clear(body);
-    var list = claudeRows(st);
+    var list = displayAccounts(st, accountOrder);
     var codex = codexRows(st);
+    $('accounts-tbl').classList.toggle('no-model-column', st.groupId === 'opus' && !groupModels(st, 'opus').length);
     $('accounts-empty').hidden = list.length > 0 || codex.length > 0;
     // A login Claude Code has that is not stored yet is the next account to
     // add (A27): the callout says so, and the Add current login button in
@@ -1150,7 +1229,7 @@
     $('add-current-codex').hidden = !((st.auto && st.auto.codex) || codex.length);
     var count = codex.length ? list.length + ' Claude \u00b7 ' + codex.length + ' Codex' : list.length + (list.length === 1 ? ' account' : ' accounts');
     $('accounts-sub').textContent = count + (st.activeNumber !== null && st.activeNumber !== undefined ? ' · active #' + st.activeNumber : ' · none active');
-    var accIgnored = ignoredModelsNote(st, parseModelNames(settingValue(st, 'autoswitch.model')));
+    var accIgnored = accountGroup ? null : ignoredModelsNote(st, parseModelNames(settingValue(st, 'autoswitch.model')));
     if (accIgnored) { $('accounts-sub').appendChild(document.createTextNode(' · ')); $('accounts-sub').appendChild(accIgnored); }
     var tokenCol = document.querySelector('.col-token');
     if (tokenCol) { tokenCol.hidden = !showTokenStatus; }
@@ -1190,16 +1269,16 @@
         sw.setAttribute('data-name', accountLabel(a));
         if (a.baseUrl) { sw.setAttribute('data-endpoint', a.baseUrl); }
       } else {
-        sw.setAttribute('data-post', '/api/switch/' + keyPath(a));
+        sw.setAttribute('data-post', accountGroup ? '/api/groups/' + accountGroup + '/switch/' + encodeURIComponent(a.number) : '/api/switch/' + keyPath(a));
       }
-      if (a.isActive || !a.switchable) { sw.disabled = true; }
+      if (a.isActive || !a.switchable || a.groupBlocker) { sw.disabled = true; }
       acts.appendChild(sw);
 
       var menu = el('details', { class: 'menu' });
       menu.appendChild(el('summary', { class: 'btn btn-sm btn-icon', 'aria-label': 'More actions for account ' + a.number, 'aria-haspopup': 'menu', text: '⋯' }));
       var listEl = el('div', { class: 'menu-list', role: 'menu' });
       var k = rowKey(a);
-      listEl.appendChild(menuButton('Force switch (no backup)', { 'data-action': 'force-switch', 'data-id': k, 'data-name': accountLabel(a), disabled: a.isActive }));
+      if (!accountGroup) { listEl.appendChild(menuButton('Force switch (no backup)', { 'data-action': 'force-switch', 'data-id': k, 'data-name': accountLabel(a), disabled: a.isActive })); }
       if (a.disabled) {
         listEl.appendChild(menuButton('Enable for rotation', { 'data-post': '/api/accounts/' + keyPath(a) + '/enable', 'data-label': 'Enable' }));
       } else {
@@ -1222,6 +1301,45 @@
       codex.forEach(function (a) { body.appendChild(codexRow(a)); });
     }
   }
+
+  function renderGroupChoice(st) {
+    var control = $('account-group');
+    if (!control) { return; }
+    if (accountGroup !== 'fable' && accountGroup !== 'opus') { accountGroup = ''; }
+    control.value = accountGroup;
+    var g = (st.groups || []).filter(function (v) { return v.id === accountGroup; })[0];
+    $('account-group-note').textContent = g
+      ? (g.blocker || ((g.liveSessions || 0) + (g.liveSessions === 1 ? ' session · ' : ' sessions · ') + (g.activeNumber ? 'account #' + g.activeNumber : 'choose an account when starting a session')))
+      : 'Existing sessions keep their current profile. Choose a group on restart or resume.';
+    document.querySelectorAll('[data-action="switch-strategy"]').forEach(function (b) { b.disabled = !!accountGroup; });
+    document.querySelectorAll('[data-sort]').forEach(function (b) {
+      var active = b.getAttribute('data-sort') === accountOrder.key;
+      var label = b.getAttribute('data-label') || b.textContent;
+      if (b.getAttribute('data-sort') === 'model') {
+        var names = accountGroup ? groupModels(st, accountGroup) : modelWindowNames(st);
+        label = names.length === 1 ? names[0].charAt(0).toUpperCase() + names[0].slice(1) : 'Model limits';
+      }
+      b.setAttribute('data-label', label);
+      b.textContent = label + (active ? (accountOrder.direction === 1 ? ' ↑' : ' ↓') : '');
+      b.classList.toggle('selected', active);
+      if (b.parentNode.tagName === 'TH') { b.parentNode.setAttribute('aria-sort', active ? (accountOrder.direction === 1 ? 'ascending' : 'descending') : 'none'); }
+    });
+  }
+  if ($('account-group')) {
+    $('account-group').addEventListener('change', function (ev) {
+      accountGroup = ev.target.value;
+      if (accountOrder.key === 'model' && accountGroup === 'opus' && !groupModels(state, 'opus').length) { accountOrder = { key: 'best', direction: 1 }; }
+      try { sessionStorage.setItem('accountGroup', accountGroup); } catch (e) {}
+      if (state) { render(state); }
+    });
+  }
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-sort]');
+    if (!b) { return; }
+    var key = b.getAttribute('data-sort');
+    accountOrder = { key: key, direction: key !== 'best' && accountOrder.key === key ? -accountOrder.direction : 1 };
+    if (state) { render(state); }
+  });
 
   document.addEventListener('click', function (ev) {
     document.querySelectorAll('details.menu[open]').forEach(function (d) {
@@ -1262,14 +1380,17 @@
     tr.appendChild(el('td', { class: 'c-title' }, [
       el('span', { class: 'title ellipsis', text: c.title || (shortId ? 'session ' + shortId : '—'), title: c.title || c.sessionId || '' }),
       c.title && shortId ? el('span', { class: 'cell-sub mono', text: shortId }) : null,
-      c.profile ? chip('run as #' + c.profile, 'accent', 'started with ' + NAME + ' run / env in the session profile of account #' + c.profile) : null
+      c.group ? chip(c.group === 'fable' ? 'Fable' : 'Opus / other', 'accent', 'Sessions in this group switch accounts together') :
+        c.profile ? chip('run as #' + c.profile, 'accent') : chip('default login', 'outline'),
+      c.model ? el('span', { class: 'cell-sub', text: c.model }) : null
     ]));
     tr.appendChild(el('td', { class: 'c-pid num mono', text: String(c.pid) }));
     tr.appendChild(el('td', { class: 'c-kind' }, [el('span', { text: c.kind || '—' }), c.entrypoint ? el('span', { class: 'cell-sub', text: ' · ' + c.entrypoint }) : null]));
     tr.appendChild(el('td', { class: 'c-status' }, [statusChip(c.status)]));
     tr.appendChild(el('td', { class: 'c-started cell-sub' }, [el('span', { 'data-started': String(c.startedAt || 0), text: '' })]));
     var stop = el('button', { type: 'button', class: 'btn btn-sm btn-danger', 'data-post': '/api/sessions/' + encodeURIComponent(c.pid) + '/stop', 'data-label': 'Stop', 'data-confirm': 'Stop Claude Code session ' + c.pid + (c.cwd ? ' in ' + c.cwd : '') + '? `claude --continue` in that directory resumes it.', 'aria-label': 'Stop session ' + c.pid, text: 'Stop' });
-    tr.appendChild(el('td', { class: 'c-actions td-actions' }, [stop]));
+    var handover = el('button', { type: 'button', class: 'btn btn-sm', 'data-action': 'recovery-prepare', 'data-session': c.sessionId, 'data-provider': 'claude', text: 'Continue in Codex…', disabled: c.status === 'busy' || !c.sessionId });
+    tr.appendChild(el('td', { class: 'c-actions td-actions' }, [handover, stop]));
     return tr;
   }
 
@@ -1945,20 +2066,89 @@
   document.addEventListener('toggle', function () { setTimeout(flushPendingRenders, 0); }, true);
 
   var pendingState = null;
+
+  function renderRecovery(st) {
+    var card = $('recovery-card');
+    if (!card) { return; }
+    var recovery = st.recovery || {};
+    var incidents = (recovery.incidents || []).filter(function (x) { return x.decision.action !== 'ignore'; });
+    var handovers = Object.keys(recovery.handovers || {}).map(function (key) { return recovery.handovers[key]; }).filter(function (x) { return x.status !== 'reclaimed'; });
+    card.hidden = !incidents.length && !handovers.length && !recovery.error;
+    $('recovery-wait').textContent = 'Offer handover when the wait exceeds ' + (recovery.waitMinutes || 30) + ' minutes';
+    var box = $('recovery-list'); clear(box);
+    if (recovery.error) { box.appendChild(el('p', { text: recovery.error })); }
+    handovers.forEach(function (item) {
+      var row = el('div', { class: 'recovery-row' });
+      row.appendChild(el('strong', { text: lastSegment(item.cwd) + ' · continuing in ' + (item.destination.provider === 'codex' ? 'Codex' : 'Claude') }));
+      row.appendChild(el('p', { text: item.destination_session_id ? 'Continuation started. The source conversation is preserved; its managed editing prompts are paused for this workspace.' : 'Waiting for the destination session to appear. This workspace stays reserved; another continuation will not be started.' }));
+      box.appendChild(row);
+    });
+    incidents.forEach(function (item) {
+      var event = item.event, decision = item.decision;
+      var row = el('div', { class: 'recovery-row' });
+      row.appendChild(el('strong', { text: (event.group === 'fable' ? 'Fable' : event.provider === 'codex' ? 'Codex' : 'Opus / other') + ' · ' + lastSegment(event.cwd) }));
+      row.appendChild(el('p', { text: decision.reason }));
+      if (decision.ready_at && Date.parse(decision.ready_at) > Date.now()) { row.appendChild(el('p', { text: 'Next known availability: ' + new Date(decision.ready_at).toLocaleString() })); }
+      if (decision.action === 'offer') {
+        row.appendChild(el('button', { type: 'button', class: 'btn btn-primary', 'data-action': 'recovery-prepare', 'data-session': event.session_id, 'data-provider': event.provider, text: 'Continue in ' + (event.provider === 'claude' ? 'Codex' : 'Claude') + '…' }));
+        row.appendChild(el('button', { type: 'button', class: 'btn', 'data-action': 'recovery-dismiss', 'data-session': event.session_id, 'data-incident': event.incident_id, text: 'Wait' }));
+      }
+      box.appendChild(row);
+    });
+  }
+
+  function prepareHandover(btn) {
+    var id = btn.getAttribute('data-session'), provider = btn.getAttribute('data-provider');
+    return openModal({ title: 'Prepare handover', message: 'The other tool starts a new conversation in the same workspace. The original session stays available.', okLabel: 'Review context', fields: [
+      { name: 'objective', label: 'What should it continue?', hint: 'Optional. Saved recent messages and workspace changes are included.' },
+      { name: 'constraints', label: 'Constraints or next steps' }
+    ] }).then(function (values) {
+      if (!values) { return null; }
+      return api('POST', '/api/recovery/prepare', { sessionId: id, context: { objective: values.objective, constraints: values.constraints ? [values.constraints] : [] } });
+    }).then(function (response) {
+      if (!response) { return; }
+      var packet = response.packet;
+      var fields = [];
+      if (provider === 'codex') { fields.push({ name: 'group', label: 'Claude group', type: 'select', value: 'opus', options: [{ value: 'opus', label: 'Opus / other' }, { value: 'fable', label: 'Fable' }] }); }
+      fields.push({ name: 'pending', type: 'checkbox', label: 'I confirm the source is idle and no background command is still editing this workspace.', required: true });
+      return openModal({ title: 'Review and continue in ' + (provider === 'claude' ? 'Codex' : 'Claude'),
+        message: packet.omissions && packet.omissions.length ? 'Omitted: ' + packet.omissions.join(' · ') : 'Review the saved context below. The destination uses its own permissions.',
+        preview: JSON.stringify(packet.source, null, 2), fields: fields, okLabel: 'Start continuation' }).then(function (choice) {
+        if (!choice) { return; }
+        var dest = provider === 'claude' ? { provider: 'codex', group: 'codex', model: '' } : { provider: 'claude', group: choice.group, model: choice.group };
+        return api('POST', '/api/recovery/start', { packet: packet, destination: dest, reviewedDigest: packet.digest, explicit: true, pendingConfirmed: choice.pending }).then(function (result) {
+          if (result.started) { toast(result.message, 'ok'); }
+          else { return openModal({ title: 'Continue from a terminal', message: result.message, preview: JSON.stringify(result.plan, null, 2), okLabel: 'Close' }); }
+        });
+      });
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-action="recovery-prepare"], [data-action="recovery-dismiss"]');
+    if (!btn) { return; }
+    var operation = btn.getAttribute('data-action') === 'recovery-prepare' ? prepareHandover(btn) :
+      api('POST', '/api/recovery/dismiss', { sessionId: btn.getAttribute('data-session'), incidentId: btn.getAttribute('data-incident') });
+    operation.catch(function (err) { toast(err.message); });
+  });
+
   function render(st) {
     if (st.sequence && st.sequence < minimumStateSequence) { return; }
     minimumStateSequence = Math.max(minimumStateSequence, st.sequence || 0);
     if (document.hidden) { pendingState = st; state = st; lastStateAt = Date.now(); return; } // paint once on return
     state = st;
     lastStateAt = Date.now();
+    renderRecovery(st);
+    renderGroupChoice(st);
+    var accountView = groupState(st, accountGroup);
     renderModelPicker(st);
-    renderHeader(st);
+    renderHeader(accountView);
     renderOnboarding(st);
     renderGuarded('updates', 'updates', { updates: st.updates, applying: updApplying }, function () { renderUpdates(st); });
     renderGuarded('dashboard', 'accounts-card',
-      { accounts: st.accounts, active: st.activeNumber, strategies: st.strategies, settings: st.settings, currentLogin: st.currentLogin,
+      { accounts: accountView.accounts, active: accountView.activeNumber, group: accountGroup, order: accountOrder, strategies: st.strategies, settings: st.settings, currentLogin: st.currentLogin,
         auto: st.auto && { running: st.auto.running, threshold: st.auto.threshold, settings: st.auto.settings, quarantine: st.auto.quarantine, codex: !!st.auto.codex } },
-      function () { renderSummary(st); renderAccounts(st); });
+      function () { renderSummary(accountView); renderAccounts(accountView); });
     renderGuarded('auto', 'panel-auto',
       { auto: st.auto, accounts: st.accounts, active: st.activeNumber, settings: st.settings },
       function () { renderAuto(st); });

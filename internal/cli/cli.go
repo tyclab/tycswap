@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 
 	"github.com/tyclab/tycswap/internal/paths"
@@ -45,7 +46,8 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 	// pointing at a tycswap session profile. Every command EXCEPT `env`/`run`
 	// (which own their own preset handling) should operate on the DEFAULT login,
 	// not the pinned profile, so neutralize the pin here BEFORE any dispatch.
-	if len(argv) == 0 || (argv[0] != "run" && argv[0] != "env") {
+	hook := len(argv) > 1 && ((argv[0] == "groups" && argv[1] == "guard") || (argv[0] == "recovery" && argv[1] == "record"))
+	if !hook && (len(argv) == 0 || (argv[0] != "run" && argv[0] != "env")) {
 		neutralizePinnedSessionProfile(s.err)
 	}
 
@@ -72,6 +74,10 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 		switch argv[0] {
 		case "run":
 			return runCommand(prog, argv[1:], s)
+		case "groups":
+			return groupsCommand(prog, argv[1:], s)
+		case "recovery":
+			return recoveryCommand(prog, argv[1:], s)
 		case "env":
 			return envCommand(prog, argv[1:], s)
 		case "auto":
@@ -131,15 +137,7 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 	return dispatchMain(prog, pr.p, s)
 }
 
-// neutralizePinnedSessionProfile implements D2 (FINDING 2): when the process's
-// CLAUDE_CONFIG_DIR points at a tycswap session profile (a shell pinned via
-// `tycswap env`), clear it from the process environment so paths.GetClaudeConfigHome
-// resolves the DEFAULT config home everywhere downstream — no flag threading —
-// and print exactly one note. Unsetting the env var is the cleanest mechanism:
-// it makes the whole live-login surface (list/status/switch/…) operate on the
-// default login without touching every path resolver. A custom (non-tycswap)
-// CLAUDE_CONFIG_DIR is left honored (Python parity). Callers skip this for
-// `env`/`run`, which keep their own preset handling.
+// Restore the launching shell's default profile for commands outside a group.
 func neutralizePinnedSessionProfile(stderr io.Writer) {
 	cfg := os.Getenv("CLAUDE_CONFIG_DIR")
 	if cfg == "" {
@@ -149,6 +147,9 @@ func neutralizePinnedSessionProfile(stderr io.Writer) {
 		return
 	}
 	_ = os.Unsetenv("CLAUDE_CONFIG_DIR")
+	if original := os.Getenv("TYCSWAP_DEFAULT_PROFILE_DIR"); os.Getenv("TYCSWAP_DEFAULT_PROFILE_UNPINNED") != "true" && filepath.IsAbs(original) && !sessprofile.IsSessionProfileDir(paths.GetBackupRoot(), original) {
+		_ = os.Setenv("CLAUDE_CONFIG_DIR", original)
+	}
 	io.WriteString(stderr, printer.Dimmed("This shell is pinned via tycswap env; operating on the default login.")+"\n")
 }
 

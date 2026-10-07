@@ -101,6 +101,11 @@ func IsSessionProfileDir(backupRoot, configDir string) bool {
 	if backupRoot == "" || configDir == "" {
 		return false
 	}
+	for _, group := range []string{"fable", "opus"} {
+		if resolveProfilePath(configDir) == resolveProfilePath(filepath.Join(backupRoot, "groups", group, "profile")) {
+			return true
+		}
+	}
 	sessionsRoot := resolveProfilePath(filepath.Join(backupRoot, "sessions"))
 	target := resolveProfilePath(configDir)
 	rel, err := filepath.Rel(sessionsRoot, target)
