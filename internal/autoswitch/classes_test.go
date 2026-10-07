@@ -277,10 +277,8 @@ func TestHeadroomByClassSplitsTheAxes(t *testing.T) {
 	}
 }
 
-// A model-driven move must not be blocked by a candidate that simply reports
-// no window for that model: unknown is not a disqualification when the
-// account's week plainly has room (DESIGN A34).
-func TestModelMoveAcceptsACandidateWithoutThatWindow(t *testing.T) {
+// Missing model data must not silently downgrade a running session.
+func TestModelMoveRejectsACandidateWithoutThatWindow(t *testing.T) {
 	f := newFake()
 	f.current = strp("1")
 	f.switchable = []string{"1", "2"}
@@ -298,11 +296,11 @@ func TestModelMoveAcceptsACandidateWithoutThatWindow(t *testing.T) {
 	rec := &recorder{}
 	e := build(t, f, s, rec, newClk(), true)
 
-	if got := e.Tick(); got != Switched {
-		t.Fatalf("outcome = %v, want Switched (kinds=%v)", got, rec.kinds())
+	if got := e.Tick(); got != Blocked {
+		t.Fatalf("outcome = %v, want Blocked (kinds=%v)", got, rec.kinds())
 	}
-	if got := switchTarget(t, rec); got != 2 {
-		t.Errorf("switched to %v, want 2", got)
+	if got := reasonOf(t, rec.last("no-switch")); got != "no-compatible-model-target" {
+		t.Fatalf("reason %s", got)
 	}
 }
 

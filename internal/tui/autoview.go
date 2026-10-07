@@ -389,6 +389,13 @@ func (a *autoScreen) candidatesText(snap *reporting.AccountsSnapshot, width int,
 		width = 80
 	}
 	models := settings.ParseModelNames(a.settings.Model)
+	values := map[string]any{}
+	for _, acc := range snap.Accounts {
+		if acc.ProviderName() == reporting.ProviderClaude {
+			values[acc.Number] = acc.Usage.DecisionValue()
+		}
+	}
+	required := autoswitch.RequiredModels(models, values)
 	// The ± keys move the 7d bar only — the account's whole budget; the 5h and
 	// per-model bars are settings (DESIGN A34). All three are needed here, because a
 	// row is "at threshold" when ANY window has reached the bar that governs
@@ -419,6 +426,9 @@ func (a *autoScreen) candidatesText(snap *reporting.AccountsSnapshot, width int,
 			ranked = append(ranked, candidateRank{number: acc.Number, bestKey: 997.0, tier: 4})
 		case acc.Usage.Sentinel != "":
 			entry.label, entry.color = sentinelLabel(acc.Usage.Sentinel), colMuted
+			ranked = append(ranked, candidateRank{number: acc.Number, bestKey: 998.0, tier: 5})
+		case !autoswitch.HasRequiredModels(values[acc.Number], required):
+			entry.label, entry.color = "model usage missing", colSevWarn
 			ranked = append(ranked, candidateRank{number: acc.Number, bestKey: 998.0, tier: 5})
 		case pct == nil:
 			entry.label, entry.color = "usage unknown", colMuted

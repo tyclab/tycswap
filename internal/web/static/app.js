@@ -533,10 +533,29 @@
   // rankCandidates mirrors tui/autoview.go candidatesText: each window against
   // its own bar (DESIGN A34). The panel compares 7d, model and 5h
   // hierarchically rather than collapsing the windows into one percentage.
+  function requiredModelWindows(st, models) {
+    var names = models.filter(function (name) { return name !== 'all'; });
+    if (models.indexOf('all') >= 0) {
+      claudeRows(st).forEach(function (a) {
+        ((a.usage || {}).scoped || []).forEach(function (w) {
+          var name = String(w.name || '').toLowerCase();
+          if (name && pctNum(w.pct) !== null && names.indexOf(name) < 0) { names.push(name); }
+        });
+      });
+      if (!names.length) { names.push('all'); }
+    }
+    return names;
+  }
+  function missingModelWindows(usage, required) {
+    var reported = ((usage || {}).scoped || []).filter(function (w) { return pctNum(w.pct) !== null; }).map(function (w) { return String(w.name || '').toLowerCase(); });
+    return required.filter(function (name) { return reported.indexOf(name) < 0; });
+  }
+
   function rankCandidates(st) {
     var now = Date.now() / 1000;
     var auto = st.auto || {};
     var models = parseModelNames(engineSetting(st, 'autoswitch.model'));
+    var required = requiredModelWindows(st, models);
     var strat = engineSetting(st, 'autoswitch.strategy') || 'soonest-reset';
     // One bar per window. The 7d one follows the running engine when the
     // slider has moved it; the other two are settings only.
@@ -559,6 +578,8 @@
         r.bestKey = 997; r.tier = 4;
       } else if (a.usageStatus && a.usageStatus !== 'ok' && SENTINEL_STATUSES[a.usageStatus]) {
         r.label = SENTINEL_STATUSES[a.usageStatus]; r.bestKey = 998; r.tier = 5;
+      } else if (a.usage && missingModelWindows(a.usage, required).length) {
+        r.label = 'model usage missing: ' + missingModelWindows(a.usage, required).join(', '); r.bestKey = 998; r.tier = 5;
       } else {
         var wins = relevantWindows(a.usage, models);
         var pct = bindingPct(wins);

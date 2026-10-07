@@ -286,8 +286,14 @@ func (e *Engine) selectCandidates(
 	}
 
 	var qualifying []qual
+	required := RequiredModels(e.models, usageMap)
+	modelRejected := false
 	activeAxis := activeByClass.Axis(axis)
 	for _, num := range oauthCandidates {
+		if !HasRequiredModels(usageMap[num], required) {
+			modelRejected = true
+			continue
+		}
 		h := headroom[num]
 		if h == nil {
 			continue
@@ -303,10 +309,6 @@ func (e *Engine) selectCandidates(
 			// that one (DESIGN A34).
 			ch := cand.Axis(axis)
 			if ch == nil {
-				// The candidate reports no window of that class (an account
-				// that has never used the model whose week the active one is
-				// leaving, say): judge it on its weekly budget rather than
-				// let "unknown" disqualify an account that plainly has room.
 				ch = cand.Weekly()
 			}
 			if ch == nil {
@@ -331,6 +333,11 @@ func (e *Engine) selectCandidates(
 			renewal: renewalTS(usageDict(usageMap[num]), e.models),
 			num:     num,
 		})
+	}
+	if len(qualifying) == 0 && modelRejected {
+		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-compatible-model-target", Detail: "no qualifying target with reported " + strings.Join(required, ", ") + " usage; keeping the current account"})
+		b := Blocked
+		return nil, oauthCandidates, anyKnown, &b
 	}
 	sortQualifying(qualifying, s.Strategy)
 	for _, q := range qualifying {
