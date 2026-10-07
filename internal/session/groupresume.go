@@ -68,8 +68,16 @@ func (m *Manager) prepareGroupResume(s *store.Store, launch *GroupLaunch, resume
 		return err
 	}
 	var linked []migrationRecord
+	resumePath := ""
+	if !validSessionID(resume) {
+		var err error
+		resumePath, err = filepath.Abs(resume)
+		if err != nil {
+			return err
+		}
+	}
 	for _, link := range links {
-		if resume == link.SourceSessionID || resume == link.SourceTranscript || resume == link.DestinationSessionID {
+		if resume == link.SourceSessionID || resume == link.DestinationSessionID || resumePath != "" && samePath(resumePath, link.SourceTranscript) {
 			linked = append(linked, link)
 		}
 	}

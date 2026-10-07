@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -230,6 +231,56 @@ func TestMigrationRejectsSourceChangesAndLiveSource(t *testing.T) {
 	}
 	if err := session.RecordGroupSession(sw.SharedRoot(), groups.Fable, launch.LaunchID, "12345678-90ab-4cde-8123-456789abcdef", cwd); err == nil {
 		t.Fatal("changed source gained a migration mapping")
+	}
+}
+
+func TestMigratedResumeReusesNativeIDThroughSourcePathAlias(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows short-path aliases are covered by the native resume regression")
+	}
+	sw, manager, _, cwd := sessionFixture(t)
+	sourceID := "01234567-89ab-4cde-8012-3456789abcde"
+	destinationID := "12345678-90ab-4cde-8123-456789abcdef"
+	source := transcript(t, sw.DefaultProfileDir(), sourceID, cwd)
+	before, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "default-alias")
+	if err := os.Symlink(sw.DefaultProfileDir(), alias); err != nil {
+		t.Fatal(err)
+	}
+	aliasedSource := filepath.Join(alias, "projects", "fixture-project", sourceID+".jsonl")
+	current, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relativeAlias, err := filepath.Rel(current, aliasedSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launch, err := manager.PrepareGroup("fable", "1", "fable", aliasedSource, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !launch.Migrating {
+		t.Fatal("first alias resume did not fork the source")
+	}
+	if err := session.RecordGroupSession(sw.SharedRoot(), groups.Fable, launch.LaunchID, destinationID, cwd); err != nil {
+		t.Fatal(err)
+	}
+	transcript(t, launch.ProfileDir, destinationID, cwd)
+	for _, resume := range []string{aliasedSource, relativeAlias, source, sourceID} {
+		next, err := manager.PrepareGroup("fable", "1", "fable", resume, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if next.Migrating || next.SessionID != destinationID || strings.Contains(strings.Join(next.Args, " "), "--fork-session") {
+			t.Fatalf("alias resume forked again: migrating=%t sessionID=%q", next.Migrating, next.SessionID)
+		}
+	}
+	if after, err := os.ReadFile(source); err != nil || string(after) != string(before) {
+		t.Fatal("alias resume changed the original transcript")
 	}
 }
 
