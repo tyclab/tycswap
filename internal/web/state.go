@@ -152,7 +152,10 @@ func (s *Server) buildState(o stateOpts) State {
 		st.Settings = s.settingsViews()
 	}
 	if s.d.Groups != nil {
-		st.Groups = s.d.Groups.Views()
+		st.Groups = append([]GroupView(nil), s.d.Groups.Views()...)
+		for i := range st.Groups {
+			st.Groups[i].SettingViews = s.groupSettingViews(st.Groups[i].SettingViews)
+		}
 	}
 	if s.d.Recovery != nil && snap != nil {
 		v := s.d.Recovery.View(*snap)

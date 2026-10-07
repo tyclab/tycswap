@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Changed:** the Windows tray opens a compact Accounts / Settings panel. Each account appears once with separate quota columns, clickable sorting, focused reset details and an explicit destination for switching. Active accounts retain bold blue text and an aligned checkmark in either app theme.
+- **Added:** tray and dashboard settings share the same validated settings API, with shared defaults, Fable and Opus/other scopes. Reset removes a group override; model limits follow the group's sessions. Flakelab-managed automation is labelled as managed, with its timer cadence distinguished from tycswap's continuous-loop interval.
+- **Fixed:** group target previews apply startup compatibility when no sessions are running, matching the switch guard. Accounts excluded only from automatic rotation remain available for explicit manual switches.
+
 - **Added:** independent Fable and Opus/other session groups, shared-account rotation within each group, explicit restart/resume migration preserving native history, and credential ownership guards across group, default and legacy profiles.
 - **Added:** one dashboard group selector, clickable quota sorting, labelled compact tray accounts, and a session guide. Group-specific model limits also govern shared usage polling.
 - **Added:** reviewed Claude/Codex saved-context handover after confirmed limits, compatible rotation and a configurable wait (30 minutes by default). Managed hooks, workspace editing ownership and uncertain-launch reconciliation protect the transfer; ordinary Codex terminal errors alone do not support automatic detection.

@@ -1749,6 +1749,27 @@
 
   // ---- settings (shared row renderer) ---------------------------------------
 
+  var settingsScope = '';
+
+  function settingsEndpoint(scope, key) {
+    return (scope ? '/api/groups/' + encodeURIComponent(scope) : '/api') + '/settings/' + encodeURIComponent(key);
+  }
+
+  function settingsForScope(st, scope) {
+    if (!scope) { return st.settings; }
+    var group = (st.groups || []).filter(function (g) { return g.id === scope; })[0];
+    return group && group.settingViews;
+  }
+
+  if ($('settings-scope')) {
+    $('settings-scope').addEventListener('change', function (ev) {
+      settingsScope = ev.target.value;
+      modelSettingRow = null;
+      delete renderSigs.settings;
+      if (state) { renderSettings(state); }
+    });
+  }
+
   var SETTING_LABELS = {
     'autoswitch.fiveHourThreshold': '5h threshold', 'autoswitch.sevenDayThreshold': '7d threshold',
     'autoswitch.modelThreshold': 'Model threshold', 'autoswitch.intervalSeconds': 'Poll interval',
@@ -1902,19 +1923,25 @@
 
   // settingRow: the key, what it does and when a saved value takes effect
   // (sv.applies, which the server words from what the code does), the
-  // control, the value in effect and the default, Save and Reset.
-  function settingRow(sv, reported) {
-    if (sv.key === 'autoswitch.model' && modelSettingRow) {
+  // control, configured value and default, Save and Reset.
+  function settingRow(sv, reported, scope) {
+    if (!scope && sv.key === 'autoswitch.model' && modelSettingRow) {
       var editor = modelSettingRow.querySelector('.model-picker');
       if (editor.modelDirty || editor.modelPending || modelSettingRow.contains(document.activeElement)) { return modelSettingRow; }
     }
     var row = el('div', { class: 'setting-row', role: 'group', 'aria-label': sv.key });
     var idc = el('div', { class: 'setting-id' }, [
-      el('div', { class: 'label-row' }, [el('span', { class: 'label', text: humanLabel(sv.key) }), el('span', { class: 'key', text: sv.key, title: sv.key })]),
+      el('div', { class: 'label-row' }, [el('span', { class: 'label', text: sv.label || humanLabel(sv.key) }), el('span', { class: 'key', text: sv.key, title: sv.key })]),
       sv.description ? el('div', { class: 'desc', text: sv.description }) : null,
       sv.applies ? el('div', { class: 'applies', text: sv.applies }) : null
     ]);
     row.appendChild(idc);
+    if (sv.readOnly) {
+      row.appendChild(el('div', { class: 'setting-ctl', text: fmtSetting(sv.value, sv.key) }));
+      row.appendChild(el('div', { class: 'setting-default' }, [chip(sv.source === 'session' ? 'live sessions' : 'managed', 'outline')]));
+      row.appendChild(el('div', { class: 'setting-actions muted', text: sv.readOnly }));
+      return row;
+    }
     var input = settingControl(sv, reported);
     var ctl = el('div', { class: 'setting-ctl' }, [input]);
     var unit = unitFor(sv.key);
@@ -1925,22 +1952,22 @@
     }
     row.appendChild(ctl);
     row.appendChild(el('div', { class: 'setting-default' }, [
-      sv.isDefault ? chip('default', 'outline') : chip('custom', 'accent'),
-      el('span', { class: 'eff', text: 'in effect ' + fmtSetting(sv.value, sv.key), title: 'the value in effect' }),
+      sv.isDefault ? chip(scope ? 'shared default' : 'default', 'outline') : chip(scope ? 'group override' : 'custom', 'accent'),
+      el('span', { class: 'eff', text: 'configured ' + fmtSetting(sv.value, sv.key), title: 'configured value; application timing is described above' }),
       sv.isDefault ? null : el('span', { class: 'def', text: 'default ' + fmtDefault(sv), title: 'default value' })
     ]));
     var save = el('button', { type: 'button', class: 'btn btn-sm btn-primary', text: 'Save', 'aria-label': 'Save ' + sv.key });
     save.addEventListener('click', function () {
       var v = controlValue(input, sv);
       if (sv.key === 'autoswitch.model') { saveModelEditor(input, v, save); return; }
-      var url = '/api/settings/' + encodeURIComponent(sv.key);
+      var url = settingsEndpoint(scope, sv.key);
       run(save, 'Save ' + humanLabel(sv.key), v === null ? api('DELETE', url) : api('POST', url, { value: v }));
     });
     input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); save.click(); } });
     var reset = el('button', { type: 'button', class: 'btn btn-sm btn-ghost', text: 'Reset', 'aria-label': 'Reset ' + sv.key + ' to default', disabled: !!sv.isDefault, title: 'Remove the override and fall back to the default' });
-    reset.addEventListener('click', function () { if (sv.key === 'autoswitch.model') { saveModelEditor(input, null, reset); return; } run(reset, 'Reset ' + humanLabel(sv.key), api('DELETE', '/api/settings/' + encodeURIComponent(sv.key))); });
+    reset.addEventListener('click', function () { if (sv.key === 'autoswitch.model') { saveModelEditor(input, null, reset); return; } run(reset, 'Reset ' + humanLabel(sv.key), api('DELETE', settingsEndpoint(scope, sv.key))); });
     row.appendChild(el('div', { class: 'setting-actions' }, [save, reset]));
-    if (sv.key === 'autoswitch.model') { modelSettingRow = row; }
+    if (!scope && sv.key === 'autoswitch.model') { modelSettingRow = row; }
     return row;
   }
 
@@ -1952,7 +1979,7 @@
   function renderSettings(st) {
     var body = $('settings-grid');
     clear(body);
-    var list = st.settings;
+    var list = settingsForScope(st, settingsScope);
     var avail = Array.isArray(list);
     $('settings-empty').hidden = avail;
     $('settings-sub').textContent = avail ? list.length + ' keys · ' + list.filter(function (sv) { return !sv.isDefault; }).length + ' changed' : '';
@@ -1967,7 +1994,7 @@
     });
     order.forEach(function (sec) {
       if (order.length > 1) { body.appendChild(el('h3', { class: 'settings-section-title', text: sec })); }
-      sections[sec].forEach(function (sv) { body.appendChild(settingRow(sv, reported)); });
+      sections[sec].forEach(function (sv) { body.appendChild(settingRow(sv, reported, settingsScope)); });
     });
   }
 
@@ -2152,7 +2179,7 @@
     renderGuarded('auto', 'panel-auto',
       { auto: st.auto, accounts: st.accounts, active: st.activeNumber, settings: st.settings },
       function () { renderAuto(st); });
-    renderGuarded('settings', 'panel-settings', { settings: st.settings, models: modelWindowNames(st) }, function () { renderSettings(st); });
+    renderGuarded('settings', 'panel-settings', { settings: settingsForScope(st, settingsScope), scope: settingsScope, models: modelWindowNames(st) }, function () { renderSettings(st); });
     renderGuarded('sessions', 'panel-sessions', st.sessions, function () { renderSessions(st.sessions); });
     applyFolds(st);
     tickCountdowns();

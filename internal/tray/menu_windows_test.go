@@ -8,7 +8,7 @@ import (
 // Exercise native menu state and GDI output: active rows must remain inert
 // while their text is rendered in the shared accent even when disabled.
 func TestActiveMenuAccent(t *testing.T) {
-	items := []Item{{ID: "active", Title: "Active account", Kind: KindGauge, Checked: true, Disabled: true}}
+	items := []Item{{ID: "active", Title: "Active account", Kind: KindPlain, Active: true, Disabled: true}}
 	plan := menuPlan(items)
 	menu := buildMenu(plan)
 	if menu == 0 {
@@ -77,10 +77,13 @@ func TestActiveMenuAccent(t *testing.T) {
 }
 
 func TestDarkMenuRenderingAndNavigation(t *testing.T) {
-	items := []Item{{ID: "open", Title: "Open dashboard"}, {ID: "active", Title: "Active account", Kind: KindGauge, Checked: true, Disabled: true}, Header("Accounts"), Separator(), {ID: "toggle", Title: "Model limits", Checked: true}, {Title: "More", Children: []Item{{ID: "child", Title: "Child"}}}}
+	items := []Item{{ID: "open", Title: "Open dashboard"}, {ID: "active", Title: "Active account", Active: true, Disabled: true}, Header("Accounts"), Separator(), {ID: "toggle", Kind: KindToggle, Title: "Model limits", Checked: true}, {Title: "More", Children: []Item{{ID: "child", Title: "Child"}}}}
 	plan := themedMenuPlan(menuPlan(items), menuDark)
 	p := newMenuPainter(plan, menuDark)
 	defer p.close()
+	if p.rowFont(plan[1]) != p.font || p.rowFont(plan[4]) == p.font {
+		t.Fatal("active account and checked toggle must use different font weights")
+	}
 	menu := buildMenu(plan)
 	if menu == 0 {
 		t.Fatal("menu build failed")
@@ -133,6 +136,35 @@ func TestDarkMenuRenderingAndNavigation(t *testing.T) {
 	for _, step := range themedMenuPlan(menuPlan(items), menuHighContrast) {
 		if step.flags&mfOwnerDraw != 0 {
 			t.Fatal("high contrast must use native colors")
+		}
+	}
+}
+
+func TestMenuActiveAccountIndependentOfKindAndToggle(t *testing.T) {
+	items := []Item{
+		{ID: "default", Title: "Default", Active: true, Disabled: true},
+		{Title: "Fable", Children: []Item{{ID: "group:fable:1", Title: "Group account", Active: true, Disabled: true}}},
+		{ID: "gauge", Title: "Gauge", Kind: KindGauge, Pct: -1, Active: true, Disabled: true},
+		{ID: "auto", Title: "Auto-switch", Kind: KindToggle, Checked: true},
+		{ID: "checked", Title: "Checked", Checked: true},
+	}
+	for _, theme := range []menuTheme{menuLight, menuDark, menuHighContrast} {
+		plan := themedMenuPlan(menuPlan(items), theme)
+		for _, step := range plan {
+			if step.op != opRow {
+				continue
+			}
+			account := step.title == "Default" || step.title == "Group account" || step.title == "Gauge"
+			if step.active != account || step.flags&mfChecked == 0 {
+				t.Fatalf("theme %d row %s lost distinct active/check state", theme, step.title)
+			}
+			if account && step.flags&mfGrayed == 0 {
+				t.Fatalf("theme %d active account became executable", theme)
+			}
+			ownerDraw := theme == menuDark || theme == menuLight && account
+			if (step.flags&mfOwnerDraw != 0) != ownerDraw {
+				t.Fatalf("theme %d row %s owner drawing mismatch", theme, step.title)
+			}
 		}
 	}
 }

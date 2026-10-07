@@ -6027,3 +6027,32 @@ session is restarted. The operator must keep the session's model counted.
 
 The terminal candidate preview still ranks reported windows without this
 compatibility label; its engine enforces the guard before any switch.
+
+## A62. Compact Windows overview and shared scoped settings
+
+The Windows tray opens a native Accounts / Settings popup on its existing UI
+thread. A provider account appears once; shared and model quota columns stay
+independent. Row focus reveals reset and freshness details. Sorting and focus
+never switch an account. Switching requires a destination and an explicit
+action; changing rows preserves that destination, including its blocker.
+Active styling is independent of menu item kind and toggle state.
+
+The CLI shell builds the panel from the dashboard state. Local and remote
+setting edits use the same serialized server mutation path as the browser.
+Only an empty scope edits shared defaults; group routes validate a named
+group before dispatch. Reset removes an override and restores inheritance.
+Group model policy is read-only and follows confirmed sessions. Metadata
+names each setting's source, runtime applicability and read-only reason.
+An edit never migrates or restarts a session.
+
+The popup retains row identity, destination, scope and field drafts through
+polls and sorting. Typed values are checked before submission and again on
+the server. Successful saves reconcile with refreshed state; failures retain
+the draft and show the error. The Windows app theme, system high contrast,
+monitor work area and DPI govern native rendering without a browser runtime.
+macOS and Linux keep their platform menus and use the dashboard for the form.
+
+Flakelab owns scheduling, not policy values. Its one-shot checks reload shared
+settings; continuous runners reload group overrides but take shared defaults
+at startup. The group failed-poll counter currently starts anew each check,
+so that ineffective override is excluded from group settings.

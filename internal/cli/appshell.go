@@ -45,6 +45,7 @@ type shellActions struct {
 	// old Codex account (nil for a Claude switch).
 	SwitchTo    func(key string) (runningPIDs []int, err error)
 	SwitchGroup func(group, account string) error
+	SaveSetting func(scope, key string, value *string) error
 	// AddCurrent stores the login Claude Code is signed in with as an
 	// account (A37; web.Server.AddCurrentLogin). nil hides the row.
 	AddCurrent   func() (web.AddLoginResult, error)
@@ -116,6 +117,8 @@ type appShell struct {
 	alerted         map[string]bool // Claude row key → threshold alert already shown
 	recoveryAlerted map[string]bool
 	last            web.State
+	panelOrder      string
+	panelDescending bool
 	// pending is a newer release the user has not installed yet (menu item);
 	// offered is the last tag a dialog/notification was shown for.
 	pending string
@@ -202,6 +205,9 @@ func (a *appShell) update(st web.State) {
 	a.tray.SetTitle(title)
 	a.tray.SetTooltip(tooltip)
 	a.tray.SetMenu(a.menu(st))
+	if panel, ok := a.tray.(tray.PanelTray); ok {
+		panel.SetPanel(a.panel(st))
+	}
 	a.syncIcon()
 	a.thresholdAlert(st, active, ok)
 	a.recoveryAlert(st)
@@ -358,6 +364,7 @@ func gaugeGroup(rows []map[string]any, withModels []string, subID, subTitle stri
 			Sub:      sub,
 			Pct:      -1,
 			Checked:  boolOf(r["isActive"]),
+			Active:   boolOf(r["isActive"]),
 			Disabled: boolOf(r["isActive"]) || !boolOf(r["switchable"]) || boolOf(r["disabled"]),
 		}
 		gauges = append(gauges, it)
@@ -386,7 +393,7 @@ func (a *appShell) groupRows(st web.State) []tray.Item {
 			if reason != "" {
 				sub = reason
 			}
-			children = append(children, tray.Item{ID: "group:" + group.ID + ":" + num, Title: "#" + num + "  " + rowName(row), Sub: sub, Checked: group.ActiveNumber == num,
+			children = append(children, tray.Item{ID: "group:" + group.ID + ":" + num, Title: "#" + num + "  " + rowName(row), Sub: sub, Checked: group.ActiveNumber == num, Active: group.ActiveNumber == num,
 				Disabled: group.ActiveNumber == num || reason != "" || !boolOf(row["switchable"]) || boolOf(row["disabled"])})
 		}
 		title := group.Label

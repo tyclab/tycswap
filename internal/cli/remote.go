@@ -395,6 +395,17 @@ func (c *remoteClient) AutoStop() error {
 	return c.mutate("/api/auto/stop", nil)
 }
 
+func (c *remoteClient) SaveSetting(scope, key string, value *string) error {
+	path := "/api/settings/" + neturl.PathEscape(key)
+	if scope != "" {
+		path = "/api/groups/" + neturl.PathEscape(scope) + "/settings/" + neturl.PathEscape(key)
+	}
+	if value == nil {
+		return c.mutate(path+"/unset", nil)
+	}
+	return c.mutate(path, map[string]any{"value": *value})
+}
+
 // SetModel mirrors the local SetModelLimits (appcmd.go, A39): write the
 // autoswitch.model setting, then retarget a running engine. The retarget's
 // error only matters while the engine runs; otherwise the server says
@@ -653,6 +664,12 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 				sh.click(id)
 			}
 		},
+		OnPanelAction: func(action tray.PanelAction) error {
+			if sh != nil {
+				return sh.panelAction(action)
+			}
+			return nil
+		},
 		OnActivate: func() {
 			if sh != nil {
 				sh.click("open")
@@ -725,6 +742,7 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	buildHint := appUpgradeHint()
 	sh = newAppShell(t, shellActions{
 		OpenDashboard: openDashboard,
+		SaveSetting:   rc.SaveSetting,
 		SwitchTo:      rc.Switch,
 		SwitchGroup: func(group, account string) error {
 			return rc.call("POST", "/api/groups/"+neturl.PathEscape(group)+"/switch/"+neturl.PathEscape(account), nil, nil)

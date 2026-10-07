@@ -44,8 +44,11 @@ func (a *appShell) storeClaudeCode(st ccversion.Status, announce bool) {
 	a.mu.Unlock()
 	a.updatesChanged()
 	if fresh && announce {
-		a.notify("Claude Code "+st.Latest+" is available",
-			"You have "+st.Installed.Version+". Choose \"Update Claude Code\" in the "+brandName()+" menu.")
+		next := "Choose \"Update Claude Code\" in the " + brandName() + " menu."
+		if _, panel := a.tray.(tray.PanelTray); panel {
+			next = "Choose Update Claude in the tray panel."
+		}
+		a.notify("Claude Code "+st.Latest+" is available", "You have "+st.Installed.Version+". "+next)
 	}
 }
 

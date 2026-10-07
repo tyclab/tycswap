@@ -269,9 +269,9 @@
     <div class="card" id="settings-card">
       <div class="card-head">
         <div class="head-l"><h2>Settings</h2><span id="settings-sub" class="card-sub"></span></div>
-        <span class="card-sub">settings.json · <code>{{.Name}} config set &lt;key&gt; &lt;value&gt;</code> · <code>{{.Name}} config unset &lt;key&gt;</code></span>
+        <label for="settings-scope">Apply to <select id="settings-scope"><option value="">Shared defaults</option><option value="fable">Fable</option><option value="opus">Opus / other</option></select></label>
       </div>
-      <p class="muted settings-intro">Every key <code>{{.Name}} config</code> knows, with its type, range, default and the value in effect. <strong>Save</strong> writes one key to <code>settings.json</code> after validating it; <strong>Reset</strong> removes the override so the default applies again. Each key says when a saved value takes effect: an engine reads the settings when it starts, so most keys wait for the next start; <code>autoswitch.model</code> also reaches the Auto tab's running engine at once, and the Auto tab's slider changes the running engine's threshold without saving it.</p>
+      <p class="muted settings-intro">Tray and dashboard edit the same settings. Shared defaults apply to both session groups unless a group has its own override. <strong>Reset</strong> removes that override. A group's model limits follow its sessions. Each setting says when a change takes effect.</p>
       <div class="settings-grid" id="settings-grid"></div>
       <div id="settings-empty" class="empty-state" hidden>
         <span class="title">Settings are not available in this build</span>
@@ -375,6 +375,7 @@
       <article class="card guide-section" id="g-sessions">
         <h2>Sessions</h2>
         <p>The session list shows each Claude conversation's project, state, group and captured model. Existing sessions keep their current profiles. Choose a group when you next start or resume: <code>{{.Name}} run --group fable</code> or <code>{{.Name}} run --group opus</code>. Sessions in one group share an account and rotate together; the other group keeps its own account.</p>
+        <p>The Windows tray opens an account table. Each percentage names its limit; 100% in Fable does not mean the shared weekly limit is full. Focus a row for reset times and freshness, or click a column to sort. Switching requires choosing the group and using the account explicitly. Settings in the tray and here share the same values: choose Shared defaults, Fable or Opus / other. Resetting a group override restores the shared value. Selecting a view or settings scope does not move running sessions.</p>
         <p>To continue an existing conversation, use <code>{{.Name}} run --group opus --resume SESSION_ID</code> (or <code>fable</code>). Its first move into a group forks the native conversation and records the new ID, preserving the original transcript. Later resumes use the group's saved ID. Keep one editing session responsible for a workspace.</p>
         <p>Fable startup and continuation are separate capabilities. Start on a compatible Max account. A Business account may be recorded as continuation-capable with <code>{{.Name}} groups capability ACCOUNT continue true</code> after verifying it works. Then <code>{{.Name}} groups switch fable ACCOUNT</code> moves the Fable group. Pro accounts remain excluded. A quota bar alone does not establish model access.</p>
         <p>Choose Fable or Opus / other above the accounts. A full Fable window does not block Opus. Click Weekly, 5-hour or Fable to sort the same list; click again to reverse. <em>Next best</em> restores availability ordering. Display sorting does not change automatic rotation.</p>

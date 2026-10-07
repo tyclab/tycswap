@@ -245,6 +245,12 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 					sh.click(id)
 				}
 			},
+			OnPanelAction: func(action tray.PanelAction) error {
+				if sh != nil {
+					return sh.panelAction(action)
+				}
+				return nil
+			},
 			OnActivate: func() {
 				if sh != nil {
 					sh.click("open")
@@ -376,6 +382,10 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	buildHint := appUpgradeHint()
 	sh = newAppShell(t, shellActions{
 		OpenDashboard: openDashboard,
+		SaveSetting: func(scope, key string, value *string) error {
+			_, err := srv.SaveSetting(scope, key, value)
+			return err
+		},
 		// A row key: the Claude switcher or the Codex one (A47).
 		SwitchTo: func(key string) ([]int, error) {
 			return d.switchTo(key)

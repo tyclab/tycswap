@@ -16,6 +16,7 @@
 
 static const CGFloat kRowWidth = 312;
 static const CGFloat kPad = 14;
+static const CGFloat kCheckWidth = 15;
 
 // The accent colour (brand.AccentColor, set by tray_set_accent before
 // tray_run): the switches, the active marker, the update rows and their arrow
@@ -39,10 +40,15 @@ void tray_set_light_accent(double r, double g, double b) {
 }
 
 static NSColor *activeAccent(void) {
-    NSString *appearance = [NSApp.effectiveAppearance bestMatchFromAppearancesWithNames:
-        @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
-    if ([appearance isEqualToString:NSAppearanceNameDarkAqua]) return accent();
-    return [NSColor colorWithSRGBRed:lightR green:lightG blue:lightB alpha:1];
+    return [NSColor colorWithName:nil dynamicProvider:^NSColor *(NSAppearance *appearance) {
+        NSString *name = [appearance bestMatchFromAppearancesWithNames:
+            @[NSAppearanceNameAccessibilityHighContrastAqua, NSAppearanceNameAccessibilityHighContrastDarkAqua,
+              NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
+        if ([name isEqualToString:NSAppearanceNameAccessibilityHighContrastAqua] ||
+            [name isEqualToString:NSAppearanceNameAccessibilityHighContrastDarkAqua]) return [NSColor labelColor];
+        if ([name isEqualToString:NSAppearanceNameDarkAqua]) return accent();
+        return [NSColor colorWithSRGBRed:lightR green:lightG blue:lightB alpha:1];
+    }];
 }
 
 // TSBarView: a rounded usage bar coloured by band (green < 70, amber < 90, red).
@@ -100,18 +106,6 @@ static NSColor *activeAccent(void) {
     [(self.enabled ? [NSColor whiteColor] : [[NSColor whiteColor] colorWithAlphaComponent:0.6]) setFill];
     [[NSBezierPath bezierPathWithOvalInRect:knob] fill];
     [NSGraphicsContext restoreGraphicsState];
-}
-@end
-
-// TSDotView: a small filled circle (the "active" marker).
-@interface TSDotView : NSView
-@property (nonatomic, strong) NSColor *color;
-@end
-
-@implementation TSDotView
-- (void)drawRect:(NSRect)dirty {
-    [self.color setFill];
-    [[NSBezierPath bezierPathWithOvalInRect:self.bounds] fill];
 }
 @end
 
@@ -300,6 +294,17 @@ static NSTextField *label(NSString *text, CGFloat size, BOOL secondary, NSRect f
     return l;
 }
 
+static void accountLabel(NSTextField *title, BOOL active, BOOL disabled) {
+    title.font = [NSFont systemFontOfSize:13 weight:active ? NSFontWeightBold : NSFontWeightRegular];
+    title.textColor = active ? activeAccent() : (disabled ? [NSColor tertiaryLabelColor] : [NSColor labelColor]);
+}
+
+static void accountCheck(NSView *view, CGFloat y, BOOL active, BOOL disabled) {
+    NSTextField *check = label(@"✓", 13, NO, NSMakeRect(kPad, y, kCheckWidth, 18));
+    accountLabel(check, active, disabled);
+    [view addSubview:check];
+}
+
 static NSMenuItem *viewItem(NSView *v, NSString *title, BOOL enabled) {
     NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:nil keyEquivalent:@""];
     item.view = v;
@@ -336,25 +341,26 @@ static NSMenuItem *brandRow(NSString *title, NSString *sub) {
 }
 
 // plainRow: a command, with an optional secondary line under its title.
-static NSMenuItem *plainRow(int tag, NSString *title, NSString *sub, BOOL disabled, BOOL dismiss) {
+static NSMenuItem *plainRow(int tag, NSString *title, NSString *sub, BOOL checked, BOOL active, BOOL disabled, BOOL dismiss) {
     CGFloat h = sub.length ? 40 : 24;
     TSRowView *v = [[TSRowView alloc] initWithFrame:NSMakeRect(0, 0, kRowWidth, h)];
     v.tag_ = tag;
     v.enabled = !disabled;
     v.dismiss = dismiss;
     v.spinnerFrame = NSMakeRect(kRowWidth - kPad - 16, (h - 16) / 2, 16, 16);
-    CGFloat textW = kRowWidth - 2 * kPad - 20; // room for the spinner
+    CGFloat x = kPad + kCheckWidth;
+    CGFloat textW = kRowWidth - x - kPad - 20; // room for the spinner
     NSTextField *t;
     if (sub.length) {
-        t = label(title, 13, NO, NSMakeRect(kPad, 19, textW, 18));
-        NSTextField *s = label(sub, 11, YES, NSMakeRect(kPad, 4, textW, 15));
-        if (disabled) { s.textColor = [NSColor tertiaryLabelColor]; }
+        t = label(title, 13, NO, NSMakeRect(x, 19, textW, 18));
+        NSTextField *s = label(sub, 11, YES, NSMakeRect(x, 4, textW, 15));
+        if (disabled && !active) { s.textColor = [NSColor tertiaryLabelColor]; }
         [v addSubview:s];
     } else {
-        t = label(title, 13, NO, NSMakeRect(kPad, (h - 18) / 2, textW, 18));
+        t = label(title, 13, NO, NSMakeRect(x, (h - 18) / 2, textW, 18));
     }
-    t.font = [NSFont systemFontOfSize:13 weight:NSFontWeightRegular];
-    if (disabled) { t.textColor = [NSColor tertiaryLabelColor]; }
+    accountLabel(t, active, disabled);
+    if (checked || active) { accountCheck(v, NSMinY(t.frame), active, disabled); }
     [v addSubview:t];
     return viewItem(v, title, !disabled);
 }
@@ -416,23 +422,17 @@ static NSMenuItem *toggleRow(int tag, NSString *title, NSString *sub, BOOL on, B
     return viewItem(v, title, !disabled);
 }
 
-static NSMenuItem *gaugeRow(int tag, NSString *title, NSString *sub, double pct, BOOL on, BOOL disabled, BOOL dismiss) {
+static NSMenuItem *gaugeRow(int tag, NSString *title, NSString *sub, double pct, BOOL checked, BOOL active, BOOL disabled, BOOL dismiss) {
     CGFloat h = 50;
     TSRowView *v = [[TSRowView alloc] initWithFrame:NSMakeRect(0, 0, kRowWidth, h)];
     v.tag_ = tag;
     v.enabled = !disabled;
     v.dismiss = dismiss;
-    // active marker column: an accent dot for the account Claude Code is on
-    if (on) {
-        TSDotView *dot = [[TSDotView alloc] initWithFrame:NSMakeRect(kPad, 33, 7, 7)];
-        dot.color = activeAccent();
-        [v addSubview:dot];
-    }
-    CGFloat x = kPad + 15;
+    if (checked || active) { accountCheck(v, 27, active, disabled); }
+    CGFloat x = kPad + kCheckWidth;
     CGFloat textW = kRowWidth - x - kPad - 46;
     NSTextField *t = label(title, 13, NO, NSMakeRect(x, 27, textW, 18));
-    if (on) { t.font = [NSFont systemFontOfSize:13 weight:NSFontWeightBold]; t.textColor = activeAccent(); }
-    if (disabled && !on) { t.textColor = [NSColor tertiaryLabelColor]; }
+    accountLabel(t, active, disabled);
     [v addSubview:t];
     NSString *pctText = pct < 0 ? @"—" : [NSString stringWithFormat:@"%.0f%%", pct];
     NSTextField *p = label(pctText, 12, YES, NSMakeRect(kRowWidth - kPad - 42, 27, 42, 18));
@@ -577,7 +577,7 @@ void tray_menu_begin(void) {
     });
 }
 
-void tray_menu_add(int tag, const char *title, const char *sub, int kind, double pct, int checked, int disabled, int separator, int dismiss) {
+void tray_menu_add(int tag, const char *title, const char *sub, int kind, double pct, int checked, int active, int disabled, int separator, int dismiss) {
     NSString *s = title ? [NSString stringWithUTF8String:title] : @"";
     NSString *subS = sub ? [NSString stringWithUTF8String:sub] : @"";
     onMain(^{
@@ -592,7 +592,7 @@ void tray_menu_add(int tag, const char *title, const char *sub, int kind, double
             [menu addItem:toggleRow(tag, s, subS, checked != 0, disabled != 0, dismiss != 0)];
             return;
         case 2:
-            [menu addItem:gaugeRow(tag, s, subS, pct, checked != 0, disabled != 0, dismiss != 0)];
+            [menu addItem:gaugeRow(tag, s, subS, pct, checked != 0, active != 0, disabled != 0, dismiss != 0)];
             return;
         case 3:
             [menu addItem:headerRow(s)];
@@ -604,7 +604,7 @@ void tray_menu_add(int tag, const char *title, const char *sub, int kind, double
             [menu addItem:updateRow(tag, s, subS, disabled != 0, dismiss != 0)];
             return;
         }
-        [menu addItem:plainRow(tag, s, subS, disabled != 0, dismiss != 0)];
+        [menu addItem:plainRow(tag, s, subS, checked != 0, active != 0, disabled != 0, dismiss != 0)];
     });
 }
 

@@ -354,7 +354,7 @@ func TestAppJS_ModelPicker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("model picker failed: %v\n%s", err, out)
 	}
-	if !strings.Contains(string(src), "renderGuarded('settings', 'panel-settings', { settings: st.settings, models: modelWindowNames(st) },") {
+	if !strings.Contains(string(src), "renderGuarded('settings', 'panel-settings', { settings: settingsForScope(st, settingsScope), scope: settingsScope, models: modelWindowNames(st) },") {
 		t.Fatal("the Settings tab does not repaint when the reported model windows change")
 	}
 }

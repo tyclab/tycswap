@@ -62,6 +62,8 @@ const (
 	wmTrayNotify  = wmApp + 3
 	wmTrayQuit    = wmApp + 4
 	wmTraySetIcon = wmApp + 5
+	wmPanelUpdate = wmApp + 6
+	wmPanelResult = wmApp + 7
 
 	nimAdd     = 0
 	nimModify  = 1
@@ -134,16 +136,20 @@ type windowsTray struct {
 	icon Icon
 	opts Options
 
-	mu       sync.Mutex
-	menu     menuModel
-	tooltip  string
-	pendingN [2]string
-	iconPNG  []byte // the notification-area icon: New's PNG until SetIcon
+	mu           sync.Mutex
+	menu         menuModel
+	tooltip      string
+	pendingN     [2]string
+	iconPNG      []byte // the notification-area icon: New's PNG until SetIcon
+	panelData    Panel
+	panelSet     bool
+	panelResults []panelActionResult
 
 	hwnd    windows.HWND       // set by Run under mu; read under mu off the UI thread
 	quit    bool               // under mu: Quit was called
 	hicon   windows.Handle     // UI thread only
 	painter *activeMenuPainter // UI thread only, bound to the open menu snapshot
+	panel   *windowsPanel
 	ready   chan struct{}
 	err     error
 }
@@ -220,6 +226,7 @@ func (t *windowsTray) Run() error {
 	// the message loop to NIM_DELETE, until Run returns.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	setPanelDPIAware()
 
 	className := utf16z(windowClass())
 	hInst, _, _ := pGetModuleHandleW.Call(0)
@@ -264,10 +271,16 @@ func (t *windowsTray) Run() error {
 		if int32(r) <= 0 {
 			break
 		}
+		if t.panel != nil && t.panel.dialogMessage(&m) {
+			continue
+		}
 		pTranslateMessage.Call(uintptr(unsafe.Pointer(&m)))
 		pDispatchMessageW.Call(uintptr(unsafe.Pointer(&m)))
 	}
 	del := t.baseNID()
+	if t.panel != nil {
+		t.panel.close()
+	}
 	shellNotifyIcon(nimDelete, &del)
 	pDestroyIcon.Call(uintptr(t.hicon))
 	return t.err
@@ -476,16 +489,16 @@ func menuPlan(items []Item) []menuStep {
 			return
 		}
 		flags := uintptr(mfString)
-		if it.Kind == KindGauge && it.Checked {
+		if it.Active {
 			flags |= mfOwnerDraw
 		}
-		if it.Checked {
+		if it.Checked || it.Active {
 			flags |= mfChecked
 		}
 		if it.Disabled || it.Kind == KindHeader {
 			flags |= mfGrayed
 		}
-		plan = append(plan, menuStep{op: opRow, flags: flags, cmd: uintptr(tag + 1), title: it.FallbackTitle(), active: it.Kind == KindGauge && it.Checked})
+		plan = append(plan, menuStep{op: opRow, flags: flags, cmd: uintptr(tag + 1), title: it.FallbackTitle(), active: it.Active})
 	}, func(_ int, it Item) {
 		flags := uintptr(mfString | mfPopup)
 		if it.Disabled {
@@ -609,6 +622,9 @@ func trayWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uint
 		if t.painter != nil && t.painter.theme != readMenuTheme() {
 			endThemedMenu()
 		}
+		if t.panel != nil {
+			t.panel.refreshTheme()
+		}
 		return 0
 	case 0x0120:
 		if t.painter != nil && t.painter.theme == menuDark {
@@ -632,7 +648,9 @@ func trayWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uint
 	case wmTrayIcon:
 		switch uint32(lParam & 0xffff) {
 		case wmLButtonUp, wmRButtonUp, wmContextMenu:
-			t.showMenu()
+			if !t.showPanel() {
+				t.showMenu()
+			}
 		}
 		return 0
 	case wmTrayUpdate:
@@ -643,6 +661,14 @@ func trayWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uint
 		return 0
 	case wmTraySetIcon:
 		t.applyIcon()
+		return 0
+	case wmPanelUpdate:
+		if t.panel != nil {
+			t.panel.update()
+		}
+		return 0
+	case wmPanelResult:
+		t.applyPanelResults()
 		return 0
 	case wmTrayQuit:
 		pDestroyWindow.Call(uintptr(hwnd))

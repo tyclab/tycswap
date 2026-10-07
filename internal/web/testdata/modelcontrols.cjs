@@ -39,7 +39,7 @@ function block(start,end) { const a=js.indexOf(start),b=js.indexOf(end,a); asser
 block('  var UNSAFE_ATTR', '  function fmtDur');
 block('  function api(', '  // run wraps');
 block('  // ---- model picker ', '  // ---- end model picker');
-block('  var SETTING_LABELS', '  // ---- guarded section rendering');
+block('  var settingsScope', '  // ---- guarded section rendering');
 block('  function editingInside(', '  // sigOf:');
 block('  function render(st)', '  // ---- actions');
 const productionRender = ctx.render;
@@ -94,7 +94,30 @@ const sv = {key:'autoswitch.model',value:'Fable',kind:'string',isDefault:false};
   ctx.renderSettings({settings:[sv],models:['Fable','Opus','New']});
   assert.equal(ctx.modelSettingRow,row,'unsaved settings model row survives repaint after blur');
   assert.equal(editor.pickerValue(),null);
+  ctx.settingsScope='fable';
+  ctx.renderSettings({settings:[sv],groups:[{id:'fable',settingViews:[
+    {key:'autoswitch.model',kind:'string',value:'Fable',readOnly:'Follows live sessions',source:'session'},
+    {key:'autoswitch.fiveHourThreshold',kind:'float',value:90,default:85,isDefault:false,source:'group'}
+  ]}]});
+  const groupRows=ids['settings-grid'].children;
+  assert.equal(groupRows[0].querySelectorAll('button').length,0,'session model policy has no edit or reset control');
+  assert.equal(groupRows[1].querySelector('input').value,'90','group override is displayed rather than shared value');
+  ctx.run=(button,label,promise)=>promise;
+  const groupRequests=[];
+  ctx.fetch=(url,opts)=>{groupRequests.push([opts.method,url,opts.body]);return Promise.resolve({ok:true,text:()=>Promise.resolve('{"ok":true}')});};
+  groupRows[1].querySelector('input').value='92';
+  groupRows[1].querySelectorAll('button')[0].click();
+  groupRows[1].querySelectorAll('button')[1].click();
+  await new Promise(setImmediate);
+  assert.deepEqual(groupRequests.map(r=>r.slice(0,2)),[
+    ['POST','/api/groups/fable/settings/autoswitch.fiveHourThreshold'],
+    ['DELETE','/api/groups/fable/settings/autoswitch.fiveHourThreshold']
+  ],'group changes cannot mutate shared defaults');
+  assert.equal(JSON.parse(groupRequests[0][2]).value,92);
+  ctx.settingsScope='opus';
+  ctx.renderSettings({settings:[sv],groups:[{id:'opus',settingViews:[]}]});
+  assert.equal(ids['settings-grid'].children.length,0,'switching scopes removes previous group fields');
   assert.ok(html.indexOf('id="auto-model-picker"') < html.indexOf('id="auto-body"'),'Auto editor lives outside repaintable body');
   assert.match(html,/<select id="model-limits-toggle"/);
-  console.log('model controls: focus, drafts, pending requests, ordering, failures and empty/reset paths passed');
+  console.log('model controls: drafts, ordering, failures, resets and isolated group settings passed');
 })().catch(e=>{ console.error(e); process.exitCode=1; });

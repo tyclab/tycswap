@@ -164,6 +164,36 @@ type Spec struct {
 // Dotted returns "section.jsonKey", e.g. "autoswitch.sevenDayThreshold".
 func (s Spec) Dotted() string { return s.Section + "." + s.JSONKey }
 
+func (s Spec) Label() string {
+	switch s.Field {
+	case "FiveHourThreshold":
+		return "5-hour threshold"
+	case "SevenDayThreshold":
+		return "Weekly threshold"
+	case "Model":
+		return "Count model limits"
+	case "ModelThreshold":
+		return "Model threshold"
+	case "IntervalSeconds":
+		return "Poll interval"
+	case "CodexEnabled":
+		return "Codex auto-switch"
+	case "CodexThreshold":
+		return "Codex threshold"
+	case "CooldownSeconds":
+		return "Switch cooldown"
+	case "HysteresisPct":
+		return "Minimum improvement"
+	case "Strategy":
+		return "Account order"
+	case "UnhealthyTicks":
+		return "Failed polls"
+	case "HandoverWaitMinutes":
+		return "Handover wait"
+	}
+	return s.Dotted()
+}
+
 // SettingSpecs is the single source of truth for every settings.json key, in
 // registry order: the order `tycswap config`, the TUI's Settings screen and
 // the dashboard's Settings tab list them, so the bars come first and the
