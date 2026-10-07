@@ -94,6 +94,7 @@ func newActiveMenuPainter(plan []menuStep) *activeMenuPainter {
 	var metrics menuNonClientMetrics
 	metrics.size = uint32(unsafe.Sizeof(metrics))
 	if ok, _, _ := menuSystemParameters.Call(0x29, uintptr(metrics.size), uintptr(unsafe.Pointer(&metrics)), 0); ok != 0 {
+		metrics.menuFont.weight = 700 // FW_BOLD: keep the system face and size.
 		p.font, _, _ = menuCreateFont.Call(uintptr(unsafe.Pointer(&metrics.menuFont)))
 		p.ownsFont = p.font != 0
 	}
@@ -110,14 +111,21 @@ func (p *activeMenuPainter) close() {
 }
 
 func menuAccentColor() uintptr {
-	rgb, _ := strconv.ParseUint(brand.Sanitized().AccentColor[1:], 16, 32)
+	accent := brand.Sanitized().AccentColor
+	background, _, _ := user32.NewProc("GetSysColor").Call(4) // COLOR_MENU
+	r, g, b := background&255, (background>>8)&255, (background>>16)&255
+	if 299*r+587*g+114*b >= 128000 {
+		accent = brand.LightAccent(accent)
+	}
+	rgb, _ := strconv.ParseUint(accent[1:], 16, 32)
 	// GDI COLORREF is 0x00bbggrr; CSS is #rrggbb.
 	return uintptr((rgb&0xff)<<16 | rgb&0xff00 | (rgb>>16)&0xff)
 }
 
 func menuGutter() int32 {
 	width, _, _ := menuMetrics.Call(71) // SM_CXMENUCHECK
-	return int32(width) + 12
+	// Native popup labels include a small gap after the check column.
+	return int32(width) + 5
 }
 
 func (p *activeMenuPainter) measure(hwnd uintptr, m *measureMenuItem) bool {
