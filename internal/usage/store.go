@@ -201,7 +201,7 @@ func (s *Store) Claim(nums []string, ids map[string]Identity) error {
 // Reserve atomically wins the right to fetch: it re-checks eligibility and
 // stamps lastAttemptAt in one locked pass, returning only the slots won
 // (04§2.5). An identity-mismatch slot is replaced and won immediately.
-// respectPlans=true is the on-demand rule (stale AND (poll-due OR no plan));
+// respectPlans=true requires stale data and a due, missing or overlong plan;
 // respectPlans=false is the auto engine's (poll-due OR stale).
 func (s *Store) Reserve(nums []string, ids map[string]Identity, respectPlans bool) ([]string, error) {
 	if len(nums) == 0 {
@@ -329,7 +329,10 @@ func rowEligible(row map[string]any, now float64, respectPlans bool) bool {
 	nextPollAt := numPtr(row["nextPollAt"])
 	pollDue := nextPollAt != nil && now >= *nextPollAt
 	if respectPlans {
-		return stale && (pollDue || nextPollAt == nil)
+		// Old versions parked exhausted accounts until their reset, possibly
+		// days away. Recover those persisted plans before their measurement
+		// becomes unusable; backoff, quarantine and claims still win above.
+		return stale && (pollDue || nextPollAt == nil || fetchedAt == nil || now-*fetchedAt >= ParkCapS)
 	}
 	return pollDue || stale
 }

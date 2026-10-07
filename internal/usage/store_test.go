@@ -399,3 +399,48 @@ func TestWriteRoundTrip(t *testing.T) {
 		t.Errorf("round-trip lost scoped: %v", e.LastGood)
 	}
 }
+
+func TestLegacyParkRecoversWithoutBypassingFetchGuards(t *testing.T) {
+	const now = 500000.0
+	ids := map[string]Identity{"1": {Email: "a@x.com"}}
+	for _, tc := range []struct {
+		name  string
+		field string
+		value any
+		want  bool
+	}{
+		{name: "old reset plan", want: true},
+		{name: "recent measurement", field: "fetchedAt", value: now - ParkCapS + 1},
+		{name: "cap reached", field: "fetchedAt", value: now - ParkCapS, want: true},
+		{name: "backoff", field: "backoffUntil", value: now + 60},
+		{name: "in-flight", field: "lastAttemptAt", value: now - 1},
+		{name: "quarantined", field: "authDeadStrikes", value: AuthDeadStrikes},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, dir := storeAt(t, now)
+			row := map[string]any{"email": "a@x.com", "organizationUuid": "", "fetchedAt": now - 4*86400, "lastAttemptAt": now - 4*86400, "nextPollAt": now + 86400}
+			if tc.field != "" {
+				row[tc.field] = tc.value
+			}
+			raw, err := json.Marshal(map[string]any{"schemaVersion": 2, "accounts": map[string]any{"1": row}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeUsageFile(t, dir, string(raw))
+			candidate := DueCandidate([]string{"1"}, s.Entries(ids), now)
+			if tc.name != "in-flight" && (candidate == "1") != tc.want {
+				t.Fatalf("candidate = %q, want eligible %v", candidate, tc.want)
+			}
+			won, err := s.Reserve([]string{"1"}, ids, true)
+			if err != nil || (len(won) == 1) != tc.want {
+				t.Fatalf("reserve = %v, %v; want eligible %v", won, err, tc.want)
+			}
+			if tc.want {
+				won, err = s.Reserve([]string{"1"}, ids, true)
+				if err != nil || len(won) != 0 {
+					t.Fatalf("second collector won %v: %v", won, err)
+				}
+			}
+		})
+	}
+}

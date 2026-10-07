@@ -368,3 +368,69 @@ func TestRefreshOfNoSlotsIsANoop(t *testing.T) {
 		t.Fatalf("calls = %d, want 0", f.uc.count())
 	}
 }
+
+func TestRefreshCurrentOverridesFreshPlanButHonorsGuards(t *testing.T) {
+	for _, guard := range []string{"none", "claim", "backoff", "quarantine"} {
+		t.Run(guard, func(t *testing.T) {
+			f := newCacheFixture(t)
+			f.refresh(f.slots[:1])
+			f.clk.Advance(20 * time.Second)
+			ids := f.cache.Identities(f.slots[:1])
+			switch guard {
+			case "claim":
+				if err := f.cache.usage.Claim([]string{"1"}, ids); err != nil {
+					t.Fatal(err)
+				}
+			case "backoff", "quarantine":
+				count := 1
+				if guard == "quarantine" {
+					count = usage.AuthDeadStrikes
+				}
+				for range count {
+					if err := f.cache.usage.Record(map[string]usage.FetchRecord{"1": {Error: "http-401"}}, ids); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			f.uc.set(api.UsageFetch{Usage: map[string]any{"seven_day": map[string]any{"pct": 0.0}}})
+			if err := f.cache.RefreshCurrent(context.Background(), f.slots[0], f.payloadFor, 100); err != nil {
+				t.Fatal(err)
+			}
+			want := 1
+			if guard == "none" {
+				want = 2
+			}
+			if got := f.uc.count(); got != want {
+				t.Fatalf("requests = %d, want %d", got, want)
+			}
+			if guard == "none" {
+				e := f.cache.Entries(f.slots[:1])["1"]
+				if e.AgeS == nil || *e.AgeS != 0 || e.LastGood["five_hour"] != nil {
+					t.Fatalf("usage not replaced: %+v", e)
+				}
+			}
+		})
+	}
+}
+
+func TestLegacyMultiDayPlanFetchesAndReplans(t *testing.T) {
+	f := newCacheFixture(t)
+	f.uc.set(api.UsageFetch{Usage: map[string]any{"seven_day": map[string]any{"pct": 100.0}}})
+	f.refresh(f.slots[:1])
+	next := clock.Seconds(f.clk) + 5*86400
+	if err := f.cache.usage.SetPollPlan(map[string]usage.PollPlan{"1": {NextPollAt: &next}}, f.cache.Identities(f.slots[:1])); err != nil {
+		t.Fatal(err)
+	}
+	f.clk.Advance(4 * 24 * time.Hour)
+	f.uc.set(api.UsageFetch{Usage: map[string]any{"seven_day": map[string]any{"pct": 0.0}}})
+	e := f.refresh(f.slots[:1])["1"]
+	if f.uc.count() != 2 || e.AgeS == nil || *e.AgeS != 0 {
+		t.Fatalf("old plan not recovered: requests %d, entry %+v", f.uc.count(), e)
+	}
+	if e.NextPollAt == nil || *e.NextPollAt > clock.Seconds(f.clk)+usage.ParkCapS {
+		t.Fatalf("bad replacement plan: %+v", e)
+	}
+	if !reflect.DeepEqual(e.LastGood, map[string]any{"seven_day": map[string]any{"pct": 0.0}}) {
+		t.Fatalf("old measurement retained: %v", e.LastGood)
+	}
+}

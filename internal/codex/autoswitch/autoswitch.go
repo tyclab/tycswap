@@ -139,7 +139,7 @@ func (a *AutoSwitcher) Tick(ctx context.Context, dryRun bool) Tick {
 		return Tick{Outcome: OutcomeOK, Detail: "no managed account active"}
 	}
 
-	activePct := BindingPct(active.Usage.LastGood)
+	activePct := switcher.DecisionPct(active.Usage)
 	if activePct == nil {
 		// No measurement is not the same as no usage: switching on unknown data
 		// would move the user for no established reason.
@@ -155,7 +155,7 @@ func (a *AutoSwitcher) Tick(ctx context.Context, dryRun bool) Tick {
 		if c.Number == active.Number {
 			continue
 		}
-		pct := BindingPct(c.Usage.LastGood)
+		pct := switcher.DecisionPct(c.Usage)
 		if pct == nil || *pct >= a.Threshold {
 			continue
 		}

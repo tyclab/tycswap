@@ -419,6 +419,9 @@ func (s *Switcher) Add(ctx context.Context, alias string) (store.Slot, error) {
 	if err != nil {
 		return store.Slot{}, err
 	}
+	if err := s.cache.RefreshCurrent(ctx, slot, func(store.Slot) map[string]any { return payload }, usageThreshold); err != nil {
+		return slot, cerr.Switch("Codex account saved, but usage refresh could not be scheduled: %v", err).Wrap(err)
+	}
 	return slot, nil
 }
 
@@ -803,7 +806,7 @@ func (s *Switcher) SwitchBest(ctx context.Context) (SwitchResult, error) {
 		if !rotatable[a.Number] || a.Number == active {
 			continue
 		}
-		pct := BindingPct(a.Usage.LastGood)
+		pct := DecisionPct(a.Usage)
 		if pct == nil {
 			continue
 		}
@@ -815,6 +818,12 @@ func (s *Switcher) SwitchBest(ctx context.Context) (SwitchResult, error) {
 		return SwitchResult{}, cerr.Switch("No Codex account with a known measurement to switch to")
 	}
 	return s.SwitchTo(ctx, best)
+}
+
+// DecisionPct excludes measurements too old to trust and error sentinels.
+func DecisionPct(entry usage.UsageEntry) *float64 {
+	u, _ := entry.DecisionValue().(map[string]any)
+	return BindingPct(u)
 }
 
 // BindingPct is the utilization that decides an account's fate: the worst of

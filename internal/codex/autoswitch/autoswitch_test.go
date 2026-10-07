@@ -51,7 +51,7 @@ func acc(number string, pct *float64, o accOpt) reporting.AccountSnapshot {
 	}
 	return reporting.AccountSnapshot{
 		Number: number, Email: number + "@x", IsActive: o.active, Kind: "oauth", Switchable: true,
-		Usage: usage.UsageEntry{LastGood: u}, Disabled: o.disabled, Provider: reporting.ProviderCodex,
+		Usage: usage.UsageEntry{LastGood: u, AgeS: f(0)}, Disabled: o.disabled, Provider: reporting.ProviderCodex,
 	}
 }
 
@@ -378,5 +378,19 @@ func TestRepeatedTicksDoNotRePollTheAPI(t *testing.T) {
 	}
 	if got := calls.Load(); got != first {
 		t.Errorf("two later ticks added %d requests", got-first)
+	}
+}
+
+func TestExpiredMeasurementsCannotTriggerOrReceiveASwitch(t *testing.T) {
+	for _, stale := range []int{0, 1} {
+		fake := &fakeSwitcher{accounts: []reporting.AccountSnapshot{acc("1", f(100), accOpt{active: true}), acc("2", f(0), accOpt{})}}
+		fake.accounts[stale].Usage.AgeS = f(usage.TrustMaxAgeS + 1)
+		tick := auto(fake, 90).Tick(ctx, false)
+		if len(fake.switched) != 0 || tick.Outcome == OutcomeSwitched {
+			t.Fatalf("stale account %d: %+v", stale, tick)
+		}
+		if stale == 0 && !strings.Contains(tick.Detail, "usage unknown") {
+			t.Fatalf("stale active usage: %+v", tick)
+		}
 	}
 }
