@@ -68,3 +68,8 @@ assert.match(cached.text, /Usage checked .*refresh rate-limited.*next attempt/);
 assert.equal(cached.class, 'chip chip-warn');
 assert.match(ctx.usageFreshness({usageRefresh:{error:'network'}}).text, /refresh failed/);
 assert.doesNotMatch(ctx.usageFreshness({usageFetchedAt:stamp,usageRefresh:{nextAt:reset(1)}}).text, /failed|limited/);
+
+const missing=account(1,0,0,0);delete missing.usage.scoped;
+assert.deepEqual(order([missing,account(2,40,20,20)],'all'),['2','1']);
+assert.equal(rank([missing],'Fable')[0].label,'model usage missing: fable');
+assert.deepEqual(order([missing,account(2,40,20,20)],''),['1','2']);

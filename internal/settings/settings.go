@@ -177,7 +177,7 @@ var SettingSpecs = []Spec{
 		Help: "Switch when the 7d window reaches this pct. It creeps rather than bursts, so it can run close to full"},
 	{Section: "autoswitch", JSONKey: "model", Field: "Model", Kind: KindString,
 		Default: nil,
-		Help:    "Also switch on these models' weekly limits (e.g. Fable, Fable,Opus, or all)"},
+		Help:    "Count model limits (e.g. Fable or all); automatic targets must report these windows"},
 	{Section: "autoswitch", JSONKey: "modelThreshold", Field: "ModelThreshold", Kind: KindFloat,
 		Lo: 50.0, Hi: 100.0, Default: 95.0,
 		Help: "Switch when a per-model weekly window reaches this pct; only for the models autoswitch.model counts"},

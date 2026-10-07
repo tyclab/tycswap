@@ -6010,3 +6010,20 @@ the cached error classification and the later of the poll plan and failure
 backoff. Retained usage can remain decision-grade after a failed fetch; the
 page shows that failure beside its timestamp. This does not change quota,
 rotation, retry delays, or the A31 polling policy.
+
+## A61. Counted models must be reported by automatic targets
+
+A target with no Fable window previously inherited its ordinary weekly
+headroom, even when the active account exhausted Fable. The same target could
+win on a 5h trigger or failover. Candidate qualification now requires numeric
+usage for every configured model. `all` resolves to the union of reported model
+names; without any names it fails closed. Turning model counting off retains
+the ordinary quota policy. This overrides A34's missing-model fallback.
+
+The guard applies before strategy ordering and proactive/at-limit/failover
+selection. No qualifying compatible target means no switch. The dashboard identifies missing model data. This is conservative evidence of quota,
+not a promise of entitlement: no session model is changed or discovered and no
+session is restarted. The operator must keep the session's model counted.
+
+The terminal candidate preview still ranks reported windows without this
+compatibility label; its engine enforces the guard before any switch.

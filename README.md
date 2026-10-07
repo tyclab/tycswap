@@ -1092,3 +1092,11 @@ MIT. Behavioral design and CLI surface derived from claude-swap, © Onur
 Cetinkol, MIT.
 </content>
 </invoke>
+
+When model limits are counted, automatic rotation requires a reported usage
+window for each selected model on its target. `all` requires every model
+reported across the current account measurements. If no compatible account has
+quota, the engine keeps the current account instead of selecting a target with
+missing model data. This is a conservative quota check, not a model-entitlement
+probe. Keep Fable counted while using it; the switcher does not detect or change
+the selected model inside a running session, or restart sessions.
