@@ -13,7 +13,7 @@ import (
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/recovery"
-	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/web"
 )
 
@@ -44,7 +44,7 @@ func groupsCommand(prog string, args []string, streams ioStreams) int {
 		return 0
 	}
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintf(streams.out, "usage: %s groups [--json]\n       %s groups switch fable|opus ACCOUNT\n       %s groups config fable|opus KEY VALUE\n       %s groups reconcile fable|opus\n       %s groups capability ACCOUNT start|continue true|false\n", prog, prog, prog, prog, prog)
+		fmt.Fprintf(streams.out, "usage: %s groups [--json]\n       %s groups switch fable|opus ACCOUNT\n       %s groups config fable|opus [KEY VALUE | --unset KEY]\n       %s groups reconcile fable|opus\n       %s groups capability ACCOUNT start|continue true|false\n", prog, prog, prog, prog, prog)
 		return 0
 	}
 	sw, err := constructSwitcher(false, streams.err)
@@ -55,6 +55,20 @@ func groupsCommand(prog string, args []string, streams ioStreams) int {
 		return code
 	}
 	switch {
+	case len(args) == 2 && args[0] == "config":
+		views, err := (groupFacade{sw}).Settings(args[1])
+		if err != nil {
+			return renderDomainError(err, true, streams.out, streams.err)
+		}
+		writeJSONIndent(streams.out, views)
+		return 0
+	case len(args) == 4 && args[0] == "config" && args[2] == "--unset":
+		removed, err := (groupFacade{sw}).UnsetSetting(args[1], args[3])
+		if err != nil {
+			return renderDomainError(err, true, streams.out, streams.err)
+		}
+		writeJSONIndent(streams.out, map[string]any{"removed": removed})
+		return 0
 	case len(args) == 2 && args[0] == "reconcile":
 		if err := (groupFacade{sw}).Reconcile(args[1]); err != nil {
 			return renderDomainError(err, true, streams.out, streams.err)
@@ -65,10 +79,7 @@ func groupsCommand(prog string, args []string, streams ioStreams) int {
 		if err != nil {
 			return subError(prog+" groups", streams.err, err.Error())
 		}
-		if args[2] == "autoswitch.model" {
-			return subError(prog+" groups", streams.err, "group model limits follow its live sessions")
-		}
-		result, err := (settingsFacade{root: groups.ScopeDir(sw.BackupDir(), id)}).Set(args[2], args[3])
+		result, err := (groupFacade{sw}).SetSetting(string(id), args[2], args[3])
 		if err != nil {
 			return renderDomainError(err, true, streams.out, streams.err)
 		}
@@ -127,7 +138,11 @@ func (f groupFacade) Views() []web.GroupView {
 			views = append(views, v)
 			continue
 		}
-		v.Settings = settings.ValuesOf(groupSettings(scope, settings.Load(f.sw.BackupDir())))
+		v.SettingViews, _ = f.Settings(string(status.ID))
+		v.Settings = make(map[string]any, len(v.SettingViews))
+		for _, setting := range v.SettingViews {
+			v.Settings[setting.Key] = setting.Value
+		}
 		if status.LiveSessions > 0 && v.Blocker == "" {
 			if observeErr != nil {
 				v.Blocker = "session model record is unreadable"
@@ -140,10 +155,14 @@ func (f groupFacade) Views() []web.GroupView {
 			views = append(views, v)
 			continue
 		}
+		intent := groups.Start
+		if len(sessprofile.LiveSessionPIDs(scope.ProfileDir())) > 0 {
+			intent = groups.Continue
+		}
 		for _, number := range roster.Sequence {
 			num := strconv.Itoa(number)
 			owner, err := f.sw.CredentialOwner(num)
-			compat := scope.GroupCompatibility(num, groups.Continue)
+			compat := scope.GroupCompatibility(num, intent)
 			switch {
 			case err != nil:
 				v.AccountBlockers[num] = "ownership unknown"

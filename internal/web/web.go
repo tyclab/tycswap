@@ -115,7 +115,11 @@ type CodexOps interface {
 
 // SettingView is one effective setting (`tycswap config`).
 type SettingView struct {
-	Key         string   `json:"key"`   // dotted, e.g. "autoswitch.sevenDayThreshold"
+	Key         string   `json:"key"` // dotted, e.g. "autoswitch.sevenDayThreshold"
+	Label       string   `json:"label,omitempty"`
+	Scope       string   `json:"scope,omitempty"`
+	Source      string   `json:"source,omitempty"`
+	ReadOnly    string   `json:"readOnly,omitempty"`
 	Kind        string   `json:"kind"`  // "float"|"int"|"bool"|"choice"|"string"
 	Value       any      `json:"value"` // effective value
 	Default     any      `json:"default"`

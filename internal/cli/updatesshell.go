@@ -264,6 +264,9 @@ func (a *appShell) checkOutcome(releaseErr error) (title, body string) {
 	switch {
 	case len(found) > 0:
 		title, body = "Updates available", strings.Join(found, ", ")+". Choose them under Updates in the "+name+" menu."
+		if _, panel := a.tray.(tray.PanelTray); panel {
+			body = strings.Join(found, ", ") + ". Use the update buttons in the tray panel."
+		}
 	case len(failed) > 0:
 		title, body = "Could not check for every update", upToDate(current)
 	case len(notes) > 0:

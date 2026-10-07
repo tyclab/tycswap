@@ -35,6 +35,7 @@ func (f settingsFacade) Effective() []web.SettingView {
 	for _, e := range eff {
 		v := web.SettingView{
 			Key:         e.Spec.Dotted(),
+			Label:       e.Spec.Label(),
 			Kind:        string(e.Spec.Kind),
 			Value:       e.Value,
 			Default:     e.Spec.Default,

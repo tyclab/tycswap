@@ -358,7 +358,7 @@ func (t *sniTray) itemProps(e *enc, it Item) {
 	if isSubmenu(it) {
 		e.dictEntry("children-display", func() { e.variantString("submenu") })
 	}
-	if it.Checked {
+	if it.Checked || it.Active {
 		e.dictEntry("toggle-type", func() { e.variantString("checkmark") })
 		e.dictEntry("toggle-state", func() { e.variantInt32(1) })
 	}

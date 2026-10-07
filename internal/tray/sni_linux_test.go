@@ -86,6 +86,25 @@ func TestSNISetIconSwapsThePixmapAndSignalsNewIcon(t *testing.T) {
 // children nested under it; GetLayout serves any subtree to any depth,
 // GetGroupProperties finds nested ids, and a click on a nested id reaches
 // OnClick with the child's ID. An unchanged SetMenu emits no LayoutUpdated.
+func TestSNIActiveAccountIsMarkedAndInert(t *testing.T) {
+	for _, it := range []Item{
+		{ID: "switch:1", Title: "Default account", Active: true, Disabled: true},
+		{ID: "group:fable:1", Title: "Group account", Active: true, Disabled: true},
+	} {
+		e := &enc{}
+		(&sniTray{}).itemProps(e, it)
+		d := &dec{b: e.b}
+		value, _ := d.value("a{sv}")
+		if d.err != nil {
+			t.Fatal(d.err)
+		}
+		props := value.(map[string]any)
+		if props["enabled"] != false || props["toggle-type"] != "checkmark" || props["toggle-state"] != int32(1) {
+			t.Fatalf("active account properties: %v", props)
+		}
+	}
+}
+
 func TestSNISubmenuLayout(t *testing.T) {
 	ours, host := net.Pipe()
 	defer ours.Close()

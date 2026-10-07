@@ -24,7 +24,7 @@ void tray_menu_begin(void);
 // kind: 0 plain (title, optional sub line), 1 toggle (a drawn switch), 2 gauge (title, sub line, bar at pct 0-100;
 // pct<0 unknown), 3 header, 4 brand (icon, product name, version/state line), 5 update (title, sub line, an
 // accent arrow disc on a tinted row). dismiss: a click closes the menu.
-void tray_menu_add(int tag, const char *title, const char *sub, int kind, double pct, int checked, int disabled, int separator, int dismiss);
+void tray_menu_add(int tag, const char *title, const char *sub, int kind, double pct, int checked, int active, int disabled, int separator, int dismiss);
 // A submenu row titled title; the rows added until tray_menu_pop go into it.
 void tray_menu_push(const char *title);
 void tray_menu_pop(void);

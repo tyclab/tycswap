@@ -69,6 +69,10 @@ func (s *Server) routes() http.Handler {
 	// sessions
 	api.HandleFunc("POST /api/sessions/{pid}/stop", s.handleStop)
 	api.HandleFunc("POST /api/groups/{group}/switch/{id}", s.handleGroupSwitch)
+	api.HandleFunc("GET /api/groups/{group}/settings", s.handleGroupSettings)
+	api.HandleFunc("POST /api/groups/{group}/settings/{key}", s.handleGroupSettingSet)
+	api.HandleFunc("DELETE /api/groups/{group}/settings/{key}", s.handleGroupSettingUnset)
+	api.HandleFunc("POST /api/groups/{group}/settings/{key}/unset", s.handleGroupSettingUnset)
 	api.HandleFunc("POST /api/recovery/prepare", s.handleRecoveryPrepare)
 	api.HandleFunc("POST /api/recovery/dismiss", s.handleRecoveryDismiss)
 	api.HandleFunc("POST /api/recovery/start", s.handleRecoveryStart)
@@ -359,18 +363,23 @@ func isTruthy(v string) bool {
 // resulting state either way. The result payload is returned as
 // {"ok":true,"result":<payload>}.
 func (s *Server) mutate(w http.ResponseWriter, fn func() (map[string]any, error)) {
-	s.mutMu.Lock()
-	payload, err := fn()
-	// Invalidate documents whose builds began before this mutation finished.
-	seq := s.stateSeq.Add(1)
-	s.mutMu.Unlock()
-	s.broadcast()
+	payload, seq, err := s.runMutation(fn)
 	if err != nil {
 		s.d.Logger("web: " + err.Error())
 		writeError(w, statusFor(err), err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": payload, "stateSequence": seq})
+}
+
+func (s *Server) runMutation(fn func() (map[string]any, error)) (map[string]any, uint64, error) {
+	s.mutMu.Lock()
+	payload, err := fn()
+	// Invalidate documents whose builds began before this mutation finished.
+	seq := s.stateSeq.Add(1)
+	s.mutMu.Unlock()
+	s.broadcast()
+	return payload, seq, err
 }
 
 // decodeBody reads an optional JSON object body into v. An empty body is
@@ -857,8 +866,18 @@ func (s *Server) settingsViews() []SettingView {
 	eff := s.d.Settings.Effective()
 	list := make([]SettingView, len(eff))
 	copy(list, eff)
+	managed := s.d.Auto != nil && s.d.Auto.View().ManagedBy != ""
 	for i := range list {
 		list[i].Applies = settingApplies(list[i].Key)
+		if managed {
+			switch list[i].Key {
+			case "autoswitch.handoverWaitMinutes":
+			case "autoswitch.intervalSeconds":
+				list[i].Applies = "The external scheduler controls its cadence. This interval applies to a continuous tycswap auto loop."
+			default:
+				list[i].Applies = "At the external scheduler's next rotation check. Its auto --once run reloads saved policy."
+			}
+		}
 	}
 	return list
 }
@@ -896,33 +915,7 @@ func (s *Server) handleSettingSet(w http.ResponseWriter, r *http.Request) {
 	if unavailable(w, s.d.Settings != nil, "settings") {
 		return
 	}
-	var b struct {
-		Value any `json:"value"`
-	}
-	if !decodeBody(w, r, &b) {
-		return
-	}
-	if b.Value == nil {
-		writeError(w, http.StatusBadRequest, "value is required")
-		return
-	}
-	raw := valueString(b.Value)
-	key := r.PathValue("key")
-	s.mutate(w, func() (map[string]any, error) {
-		v, err := s.d.Settings.Set(key, raw)
-		if err != nil {
-			return nil, err
-		}
-		res := map[string]any{"key": key, "value": v}
-		applied, err := s.applyModelSetting(key, raw)
-		if err != nil {
-			return nil, err
-		}
-		if applied {
-			res["applied"] = true
-		}
-		return res, nil
-	})
+	s.handleSettingSave(w, r, "", false)
 }
 
 // modelSettingKey is the one setting whose save must also reach a running
@@ -964,22 +957,7 @@ func (s *Server) handleSettingUnset(w http.ResponseWriter, r *http.Request) {
 	if unavailable(w, s.d.Settings != nil, "settings") {
 		return
 	}
-	key := r.PathValue("key")
-	s.mutate(w, func() (map[string]any, error) {
-		removed, err := s.d.Settings.Unset(key)
-		if err != nil {
-			return nil, err
-		}
-		res := map[string]any{"key": key, "removed": removed}
-		applied, err := s.applyModelSetting(key, "")
-		if err != nil {
-			return nil, err
-		}
-		if applied {
-			res["applied"] = true
-		}
-		return res, nil
-	})
+	s.handleSettingSave(w, r, "", true)
 }
 
 // -- auto-switch --------------------------------------------------------------

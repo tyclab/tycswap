@@ -807,7 +807,7 @@ trusted measurement visible and waits for its retry delay.
 
 The Windows tray follows **Windows Settings → Personalization → Colors →
 Choose your default app mode**, including changes while the app is running.
-High contrast uses Windows' native menu colors.
+High contrast uses Windows' system colors.
 
 `tycswap app` is the dashboard as a menu-bar (macOS) or notification-area
 (Windows, Linux) icon. A bare `tycswap` in a terminal starts it in the
@@ -820,25 +820,29 @@ tycswap is running in the background — its icon is in the menu bar / tray.
 Log: ~/.local/share/tycswap/app.log
 ```
 
-The icon's title is the active account and its fullest window (`#1 · 45%`,
-`⟳` in front while auto-switch runs). The menu switches accounts with one
-click (more than ten move into a submenu), adds the login Claude Code has
-(*Add current login*), turns auto-switch on and off (its row names the
-threshold of each window), counts or ignores the per-model windows, registers
-*Start at login*, checks for updates and opens the dashboard. The thresholds
-themselves are set in `tycswap config`, the TUI and the dashboard. Notifications say when auto-switch moved
-or quarantined an account and when the active account reaches a window's
-threshold. A badge on the icon — a dot on Windows and Linux, the number of
-updates on macOS — means a newer tycswap or Claude Code waits; the menu's
-Updates section installs it after asking, and tycswap restarts itself after
-its own update, as `tycswap upgrade` does it ([Upgrade](#upgrade)). A build
-the tray cannot upgrade (a checkout, a go-installed binary on Windows, one in
-the Nix store) is told how instead. Auto-switch that was on when the app quit
-is on again when it starts. The tray shows the dashboard's state: on a
-machine with Codex accounts they follow under a *Codex* heading, a click
-switches one (the notification names the codex sessions still on the old
-account), and auto-switch runs the Codex engine beside the Claude one, its
-row naming the Codex bar.
+On Windows, clicking the icon opens a compact **Accounts / Settings** panel.
+Each account appears once, with separate 5-hour, weekly and reported model
+columns. Percentages are **used quota**; `—` means no measurement was reported.
+Fable at 100% does not mean the shared weekly limit is exhausted. Active
+accounts are bold blue, and **Used by** identifies their session groups.
+Focus a row to inspect reset times and freshness. Clicking a column sorts
+the table; it does not change which models an engine counts. To switch,
+choose the destination group and explicitly use the selected account.
+
+**Settings** in the tray and dashboard edit the same store. Choose **Shared
+defaults**, **Fable**, or **Opus / other**. Group overrides apply only to that
+group; Reset makes it inherit the shared value again. Group model limits
+follow confirmed session models and cannot be edited independently. Existing
+sessions stay in their current profiles; choose a group on their next start
+or resume. Start at login is local to the tray's device.
+
+macOS and Linux retain their platform menus; Linux's host menu protocol does
+not support the native table and form controls. The dashboard provides the
+same group settings on those platforms. The icon's title reports the active
+account and its fullest counted window (`#1 · 45%`, with `⟳` while the hosted
+engine runs). Notifications report switches, quarantines and thresholds.
+Update checks and installation retain the normal release checks and restart
+behavior ([Upgrade](#upgrade)). Builds managed by Nix show their upgrade path.
 
 ```
 tycswap app [--open] [--headless] [--port N] [--interval SECONDS] [--no-update-check] [--debug]
@@ -866,11 +870,20 @@ so a second engine cannot be started through those controls. The timer's
 `tycswap auto --once` keeps working. This declares ownership; it does not
 probe whether the named scheduler is currently active.
 
+Flakelab manages the package, service and timer without overwriting saved
+tycswap policy settings. Its `auto --once` checks reload those values each
+time. The external timer controls cadence; `autoswitch.intervalSeconds`
+only controls a continuous tycswap loop. Continuous runners load shared
+defaults at startup, while explicit group overrides reload each group check.
+Grouped engines currently recreate their failed-poll counter each check,
+so the failed-poll threshold is not offered as a group override.
+
 **Model windows.** The Auto and Settings tabs offer Off, All models, and
 Selected models with Save. Named windows match case-insensitively; saved
 names remain available even before accounts report them. Drafts survive
-usage refreshes, and the tray's percentages count exactly the selected
-windows while still showing the excluded ones as not counted.
+usage refreshes. The Windows table shows each reported limit independently;
+the icon's summary counts only the selected windows. Group model selection
+follows the group's confirmed sessions.
 
 **WSL: the Windows tray for the engine in the distro.** Inside WSL there is no
 tray, so the app there runs headless and the Windows binary shows the icon. In

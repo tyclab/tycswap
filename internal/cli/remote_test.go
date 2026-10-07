@@ -441,7 +441,7 @@ type remoteFixture struct {
 // startRemoteServer binds addr ("127.0.0.1:0" for any port) and serves until
 // stop. The poll ticker never fires: every state the client sees is the
 // initial SSE frame or one a mutation broadcast.
-func startRemoteServer(t *testing.T, token, addr string) *remoteFixture {
+func startRemoteServer(t *testing.T, token, addr string, configure ...func(*web.Deps)) *remoteFixture {
 	t.Helper()
 	fx := &remoteFixture{
 		fa: &fakeFacade{dir: "/tmp/backups", accounts: []reporting.AccountSnapshot{
@@ -454,7 +454,7 @@ func startRemoteServer(t *testing.T, token, addr string) *remoteFixture {
 		autoEv: make(chan web.AutoEventView),
 		served: make(chan error, 1),
 	}
-	srv, err := web.New(web.Deps{
+	deps := web.Deps{
 		Facade:     fx.fa,
 		Codex:      fx.codex,
 		Auto:       fx.auto,
@@ -467,7 +467,11 @@ func startRemoteServer(t *testing.T, token, addr string) *remoteFixture {
 		Interval:      time.Hour,
 		Ticker:        func(time.Duration) (<-chan time.Time, func()) { return make(chan time.Time), func() {} },
 		RemoteToken:   token,
-	})
+	}
+	for _, apply := range configure {
+		apply(&deps)
+	}
+	srv, err := web.New(deps)
 	if err != nil {
 		t.Fatal(err)
 	}

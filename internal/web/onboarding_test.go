@@ -193,7 +193,7 @@ func TestIndexHTML_SettingsTab(t *testing.T) {
 		t.Error("no settings tab badge")
 	}
 	js := staticFile(t, "app.js")
-	for _, needle := range []string{"$('settings-grid')", "$('settings-empty')", "renderGuarded('settings', 'panel-settings'", "function settingRow(", "function settingControl(", "'badge-settings'", "sv.applies", "'in effect '"} {
+	for _, needle := range []string{"$('settings-grid')", "$('settings-empty')", "renderGuarded('settings', 'panel-settings'", "function settingRow(", "function settingControl(", "'badge-settings'", "sv.applies", "'configured '"} {
 		if !strings.Contains(js, needle) {
 			t.Errorf("app.js lacks %q", needle)
 		}

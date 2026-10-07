@@ -149,7 +149,7 @@ func (t *darwinTrayImpl) commit(items []Item, force bool) {
 	walkMenu(items, func(tag int, it Item) {
 		title := C.CString(it.Title)
 		sub := C.CString(it.Sub)
-		C.tray_menu_add(C.int(tag), title, sub, C.int(it.Kind), C.double(it.Pct), boolInt(it.Checked), boolInt(it.Disabled), boolInt(it.Separator), boolInt(it.Dismiss))
+		C.tray_menu_add(C.int(tag), title, sub, C.int(it.Kind), C.double(it.Pct), boolInt(it.Checked), boolInt(it.Active), boolInt(it.Disabled), boolInt(it.Separator), boolInt(it.Dismiss))
 		C.free(unsafe.Pointer(title))
 		C.free(unsafe.Pointer(sub))
 	}, func(_ int, it Item) {

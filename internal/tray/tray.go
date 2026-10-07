@@ -53,6 +53,7 @@ type Item struct {
 	Kind      ItemKind
 	Pct       float64 // KindGauge: 0–100, or negative when unknown
 	Checked   bool
+	Active    bool // active account emphasis, independent of toggle state and clickability
 	Disabled  bool
 	Separator bool
 	// Children make the row a submenu with Title as its label (DESIGN A37):
@@ -165,7 +166,8 @@ type Options struct {
 	// Tooltip is the initial hover text (also the accessibility label).
 	Tooltip string
 	// OnClick receives the ID of the menu item the user chose.
-	OnClick func(id string)
+	OnClick       func(id string)
+	OnPanelAction func(PanelAction) error
 	// OnActivate runs on a primary click where the platform has one that does
 	// not open the menu (Linux StatusNotifierItem); macOS and Windows open the
 	// menu on every click and never call it.

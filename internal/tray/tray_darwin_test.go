@@ -4,8 +4,25 @@ package tray
 
 import (
 	"bytes"
+	"os/exec"
+	"path/filepath"
 	"testing"
 )
+
+func TestNativeAccountAppearanceAndAlignment(t *testing.T) {
+	include, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(t.TempDir(), "active-rows")
+	build := exec.Command("clang", "-fobjc-arc", "-fmodules", "-I", include, "-framework", "Cocoa", "testdata/active_rows_darwin.m", "-o", binary)
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build native row test: %v\n%s", err, out)
+	}
+	if out, err := exec.Command(binary).CombinedOutput(); err != nil {
+		t.Fatalf("native row appearance: %v\n%s", err, out)
+	}
+}
 
 // barImage is the one place Run and SetIcon pick the status-bar rendition
 // (DESIGN A44: the badge swaps it with the same sizing rules).
