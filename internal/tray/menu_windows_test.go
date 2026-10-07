@@ -75,3 +75,88 @@ func TestActiveMenuAccent(t *testing.T) {
 		t.Fatal("accessible menu label missing")
 	}
 }
+
+func TestDarkMenuRenderingAndNavigation(t *testing.T) {
+	items := []Item{{ID: "open", Title: "Open dashboard"}, {ID: "active", Title: "Active account", Kind: KindGauge, Checked: true, Disabled: true}, Header("Accounts"), Separator(), {ID: "toggle", Title: "Model limits", Checked: true}, {Title: "More", Children: []Item{{ID: "child", Title: "Child"}}}}
+	plan := themedMenuPlan(menuPlan(items), menuDark)
+	p := newMenuPainter(plan, menuDark)
+	defer p.close()
+	menu := buildMenu(plan)
+	if menu == 0 {
+		t.Fatal("menu build failed")
+	}
+	defer pDestroyMenu.Call(menu)
+	setMenuBackground(menu, p.background)
+	info := popupMenuInfo{mask: 2}
+	info.size = uint32(unsafe.Sizeof(info))
+	ok, _, _ := user32.NewProc("GetMenuInfo").Call(menu, uintptr(unsafe.Pointer(&info)))
+	if ok == 0 || info.background != p.background {
+		t.Fatal("native menu background not themed")
+	}
+	if got := p.menuChar(menu, 'o'); got != 2<<16 {
+		t.Fatalf("Open keyboard action: %#x", got)
+	}
+	if got := p.menuChar(menu, 'a'); got != 0 {
+		t.Fatalf("disabled account/header executable: %#x", got)
+	}
+	dc, _, _ := menuGetDC.Call(0)
+	defer menuReleaseDC.Call(0, dc)
+	mem, _, _ := menuGDI.NewProc("CreateCompatibleDC").Call(dc)
+	defer menuGDI.NewProc("DeleteDC").Call(mem)
+	bmp, _, _ := menuGDI.NewProc("CreateCompatibleBitmap").Call(dc, 800, 60)
+	defer menuDeleteObject.Call(bmp)
+	old, _, _ := menuSelectObject.Call(mem, bmp)
+	defer menuSelectObject.Call(mem, old)
+	for _, step := range plan {
+		if step.op == opOpen {
+			continue
+		}
+		m := measureMenuItem{ctlType: odtMenu, itemData: step.cmd}
+		if !p.measure(0, &m) || m.itemHeight == 0 {
+			t.Fatalf("unmeasured %+v", step)
+		}
+		for _, selected := range []uint32{0, 1} {
+			d := drawMenuItem{ctlType: odtMenu, itemData: step.cmd, itemState: selected, hdc: mem, rect: menuRect{right: 800, bottom: 60}}
+			if !p.draw(&d) {
+				t.Fatalf("unpainted %+v", step)
+			}
+			pixel, _, _ := menuGDI.NewProc("GetPixel").Call(mem, 1, 1)
+			want := uintptr(0x202020)
+			if selected != 0 && step.flags&mfGrayed == 0 {
+				want = 0x383838
+			}
+			if pixel != want {
+				t.Fatalf("row %s background %#x want %#x", step.title, pixel, want)
+			}
+		}
+	}
+	for _, step := range themedMenuPlan(menuPlan(items), menuHighContrast) {
+		if step.flags&mfOwnerDraw != 0 {
+			t.Fatal("high contrast must use native colors")
+		}
+	}
+}
+
+func TestDeviceThemeChangeClosesStaleMenu(t *testing.T) {
+	oldReader, oldEnd, oldTray := readMenuTheme, endThemedMenu, winTray
+	defer func() { readMenuTheme, endThemedMenu, winTray = oldReader, oldEnd, oldTray }()
+	current := menuLight
+	readMenuTheme = func() menuTheme { return current }
+	closed := 0
+	endThemedMenu = func() { closed++ }
+	winTray = &windowsTray{painter: &activeMenuPainter{theme: menuLight}}
+	trayWndProc(0, 0x001a, 0, 0)
+	if closed != 0 {
+		t.Fatal("unchanged theme closed menu")
+	}
+	current = menuDark
+	trayWndProc(0, 0x001a, 0, 0)
+	if closed != 1 {
+		t.Fatal("open menu kept stale theme")
+	}
+	winTray.painter = nil
+	trayWndProc(0, 0x001a, 0, 0)
+	if closed != 1 {
+		t.Fatal("closed menu should not be touched")
+	}
+}

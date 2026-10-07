@@ -448,10 +448,11 @@ func (t *windowsTray) showNotification() {
 // a separator to the menu being built, open a submenu (later rows go into
 // it), or close it and attach it to its parent under title.
 type menuStep struct {
-	op    menuOp
-	flags uintptr
-	cmd   uintptr // command ID: the menuModel tag + 1 (0 means "no choice")
-	title string
+	op     menuOp
+	flags  uintptr
+	cmd    uintptr // command ID: the menuModel tag + 1 (0 means "no choice")
+	title  string
+	active bool
 }
 
 type menuOp int
@@ -484,7 +485,7 @@ func menuPlan(items []Item) []menuStep {
 		if it.Disabled || it.Kind == KindHeader {
 			flags |= mfGrayed
 		}
-		plan = append(plan, menuStep{op: opRow, flags: flags, cmd: uintptr(tag + 1), title: it.FallbackTitle()})
+		plan = append(plan, menuStep{op: opRow, flags: flags, cmd: uintptr(tag + 1), title: it.FallbackTitle(), active: it.Kind == KindGauge && it.Checked})
 	}, func(_ int, it Item) {
 		flags := uintptr(mfString | mfPopup)
 		if it.Disabled {
@@ -522,7 +523,7 @@ func buildMenu(plan []menuStep) uintptr {
 		cur := stack[len(stack)-1]
 		switch st.op {
 		case opSeparator:
-			pAppendMenuW.Call(cur, st.flags, 0, 0)
+			pAppendMenuW.Call(cur, st.flags, st.cmd, st.cmd)
 		case opRow:
 			if st.flags&mfOwnerDraw != 0 {
 				pAppendMenuW.Call(cur, st.flags, st.cmd, st.cmd)
@@ -539,9 +540,18 @@ func buildMenu(plan []menuStep) uintptr {
 		case opClose:
 			stack = stack[:len(stack)-1]
 			parent := stack[len(stack)-1]
-			if ok, _, _ := pAppendMenuW.Call(parent, st.flags, cur, uintptr(unsafe.Pointer(utf16z(st.title)))); ok == 0 {
+			var ok uintptr
+			if st.flags&mfOwnerDraw != 0 {
+				ok, _, _ = pAppendMenuW.Call(parent, st.flags, cur, st.cmd)
+			} else {
+				ok, _, _ = pAppendMenuW.Call(parent, st.flags, cur, uintptr(unsafe.Pointer(utf16z(st.title))))
+			}
+			if ok == 0 {
 				pDestroyMenu.Call(cur) // not attached, so the root would not free it
 				return fail()
+			}
+			if st.flags&mfOwnerDraw != 0 {
+				setOwnerDrawTitleAtEnd(parent, st.title)
 			}
 		}
 	}
@@ -555,12 +565,16 @@ func (t *windowsTray) showMenu() {
 	t.mu.Lock()
 	snap := t.menu // set replaces items and flat, never mutates them
 	t.mu.Unlock()
-	plan := menuPlan(snap.items)
-	t.painter = newActiveMenuPainter(plan)
+	theme := readMenuTheme()
+	plan := themedMenuPlan(menuPlan(snap.items), theme)
+	t.painter = newMenuPainter(plan, theme)
 	defer func() { t.painter.close(); t.painter = nil }()
 	hmenu := buildMenu(plan)
 	if hmenu == 0 {
 		return
+	}
+	if theme == menuDark {
+		setMenuBackground(hmenu, t.painter.background)
 	}
 	defer pDestroyMenu.Call(hmenu) // frees the attached submenus as well
 	var pt point
@@ -591,6 +605,15 @@ func trayWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uint
 		return 0
 	}
 	switch message {
+	case 0x001a, 0x0015, 0x031a: // settings, system colors, visual theme
+		if t.painter != nil && t.painter.theme != readMenuTheme() {
+			endThemedMenu()
+		}
+		return 0
+	case 0x0120:
+		if t.painter != nil && t.painter.theme == menuDark {
+			return t.painter.menuChar(lParam, rune(wParam&0xffff))
+		}
 	case wmMeasureItem:
 		if lParam != 0 && t.painter.measure(uintptr(hwnd), *(**measureMenuItem)(unsafe.Pointer(&lParam))) {
 			return 1

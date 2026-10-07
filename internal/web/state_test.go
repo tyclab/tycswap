@@ -559,3 +559,32 @@ func TestStatusFor(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountRowRefreshSchedule(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		next, backoff *float64
+		want          string
+	}{
+		{"planned", f64(1000), nil, "1970-01-01T00:16:40Z"},
+		{"rate limited", f64(1000), f64(1500), "1970-01-01T00:25:00Z"},
+		{"later plan", f64(2000), f64(1500), "1970-01-01T00:33:20Z"},
+		{"failure without plan", nil, f64(1500), "1970-01-01T00:25:00Z"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			row := accountRow(reporting.AccountSnapshot{Number: "3", Usage: usage.UsageEntry{
+				LastGood:  map[string]any{"five_hour": map[string]any{"pct": 42}},
+				FetchedAt: f64(1), AgeS: f64(900), TrustExtended: true,
+				LastError: "http-429", NextPollAt: tc.next, BackoffUntil: tc.backoff,
+			}})
+			refresh := row["usageRefresh"].(map[string]any)
+			if refresh["error"] != "http-429" || refresh["nextAt"] != tc.want || row["usage"] == nil {
+				t.Fatalf("cached usage lost or failure hidden: %#v", row)
+			}
+		})
+	}
+	row := accountRow(reporting.AccountSnapshot{})
+	if _, ok := row["usageRefresh"]; ok {
+		t.Fatal("invented refresh state")
+	}
+}

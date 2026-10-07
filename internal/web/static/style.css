@@ -694,3 +694,6 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 /* Model controls live outside repaintable usage tiles. */
 #auto-model-picker { padding: var(--s3) var(--s4); }
 .model-names:not([hidden]) { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); align-items: center; }
+
+/* Explicit light must also reset native form controls from the OS scheme. */
+:root[data-theme="light"] { color-scheme: light; }

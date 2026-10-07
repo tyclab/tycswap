@@ -5990,3 +5990,23 @@ slot write stores the account part, and a legacy slot read hands out the
 account part while its stored bytes stay until the slot's next write. A blob
 without seat-wide keys, and an API key, pass byte for byte. `.prev` is not
 stripped on read; `KCReadBackup`/`KCWriteBackup` (migrations) stay verbatim.
+
+
+## A60. Device appearance and visible usage freshness
+
+The Windows tray reads `AppsUseLightTheme` whenever it opens. Dark menus draw
+all rows against the same dark background; active accounts retain the brand
+accent and bold system menu font. Settings/theme notifications close an open
+menu whose mode changed. High contrast uses native menu rendering. Owner-drawn
+rows retain their native labels and character navigation.
+
+The dashboard defaults to CSS `prefers-color-scheme`. Settings offers explicit
+Light and Dark overrides, saved in the non-secret `<brand>_appearance` cookie;
+Auto clears it. A small same-origin script applies the choice before CSS loads.
+This cookie carries no authentication data and grants no access.
+
+Account rows expose usage fetch and next-attempt times. `usageRefresh` reports
+the cached error classification and the later of the poll plan and failure
+backoff. Retained usage can remain decision-grade after a failed fetch; the
+page shows that failure beside its timestamp. This does not change quota,
+rotation, retry delays, or the A31 polling policy.

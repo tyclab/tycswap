@@ -268,6 +268,20 @@ func accountRow(a reporting.AccountSnapshot) map[string]any {
 			row[k] = v
 		}
 	}
+	refresh := map[string]any{}
+	if a.Usage.LastError != "" {
+		refresh["error"] = a.Usage.LastError
+	}
+	next := a.Usage.NextPollAt
+	if a.Usage.BackoffUntil != nil && (next == nil || *a.Usage.BackoffUntil > *next) {
+		next = a.Usage.BackoffUntil
+	}
+	if next != nil {
+		refresh["nextAt"] = time.Unix(int64(*next), 0).UTC().Format(time.RFC3339)
+	}
+	if len(refresh) > 0 {
+		row["usageRefresh"] = refresh
+	}
 	return row
 }
 

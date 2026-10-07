@@ -1032,6 +1032,18 @@
     return out;
   }
 
+  function usageFreshness(a) {
+    if (!a.usageFetchedAt && !a.usageRefresh) { return null; }
+    var refresh = a.usageRefresh || {};
+    var parts = [];
+    if (a.usageFetchedAt) { parts.push('Usage checked ' + new Date(a.usageFetchedAt).toLocaleTimeString()); }
+    if (refresh.error) {
+      parts.push(/429/.test(refresh.error) ? 'refresh rate-limited' : 'refresh failed');
+    }
+    if (refresh.nextAt) { parts.push('next attempt ' + new Date(refresh.nextAt).toLocaleTimeString()); }
+    return el('span', { class: refresh.error ? 'chip chip-warn' : 'org', text: parts.join(' · '), title: 'Usage is cached between requests. Reloading the page respects the polling schedule and retry delay.' });
+  }
+
   function menuButton(label, attrs) {
     var a = { type: 'button', class: 'btn btn-sm' + (attrs.danger ? ' btn-danger' : ''), text: label, role: 'menuitem' };
     Object.keys(attrs).forEach(function (k) { if (k !== 'danger') { a[k] = attrs[k]; } });
@@ -1066,6 +1078,8 @@
     if (a.kind) { meta.appendChild(chip(a.kind === 'api_key' ? 'api key' : a.kind, 'kind')); }
     if (a.alias && a.email) { meta.appendChild(el('span', { class: 'org', text: a.email, title: a.email })); }
     if (a.orgName) { meta.appendChild(el('span', { class: 'org', text: a.orgName, title: a.orgName })); }
+    var freshness = usageFreshness(a);
+    if (freshness) { meta.appendChild(freshness); }
     acct.appendChild(meta);
     tr.appendChild(el('td', { class: 'c-acct' }, [acct]));
 
@@ -1133,6 +1147,8 @@
       if (a.baseUrl) { meta.appendChild(chip('\u2192 ' + hostOf(a.baseUrl), 'kind', 'Requests go to ' + a.baseUrl)); }
       if (a.alias && a.email) { meta.appendChild(el('span', { class: 'org', text: a.email, title: a.email })); }
       if (a.orgName) { meta.appendChild(el('span', { class: 'org', text: a.orgName, title: a.orgName })); }
+      var freshness = usageFreshness(a);
+      if (freshness) { meta.appendChild(freshness); }
       acct.appendChild(meta);
       tr.appendChild(el('td', { class: 'c-acct' }, [acct]));
 
@@ -1855,7 +1871,7 @@
   // without changing what is painted (usage freshness, server time, the event
   // ring the log consumes on its own path) are dropped, otherwise the guard
   // would repaint on every poll and defeat its purpose.
-  var VOLATILE = { usageAgeSeconds: true, usageFetchedAt: true, serverTime: true, events: true };
+  var VOLATILE = { usageAgeSeconds: true, serverTime: true, events: true };
   function sigOf(data) {
     return JSON.stringify(data === undefined ? null : data, function (k, v) { return VOLATILE[k] ? undefined : v; });
   }

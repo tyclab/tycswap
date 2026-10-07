@@ -58,3 +58,13 @@ console.log('hierarchical ranking and soon-reset groups passed');
 
 const justSoon=account(1,100,0,0,5-1/3600);
 assert.equal(rank([justSoon])[0].soonReset,true);
+
+ctx.el = (tag, attrs) => attrs;
+vm.runInNewContext(block('  function usageFreshness(', '  function menuButton('), ctx);
+assert.equal(ctx.usageFreshness({}), null);
+const stamp = reset(-0.2);
+const cached = ctx.usageFreshness({usageFetchedAt:stamp, usageRefresh:{error:'http-429',nextAt:reset(0.1)}});
+assert.match(cached.text, /Usage checked .*refresh rate-limited.*next attempt/);
+assert.equal(cached.class, 'chip chip-warn');
+assert.match(ctx.usageFreshness({usageRefresh:{error:'network'}}).text, /refresh failed/);
+assert.doesNotMatch(ctx.usageFreshness({usageFetchedAt:stamp,usageRefresh:{nextAt:reset(1)}}).text, /failed|limited/);

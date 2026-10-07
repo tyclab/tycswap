@@ -751,6 +751,16 @@ model.
 
 ### Tray application
 
+Dashboard **Settings → Appearance** offers Auto, Light and Dark. Auto follows
+the browser's device-theme preference; Firefox can override that preference.
+The choice is saved in a non-secret cookie. Account rows show when usage was
+fetched and the next scheduled attempt; a rate-limited refresh keeps the last
+trusted measurement visible and waits for its retry delay.
+
+The Windows tray follows **Windows Settings → Personalization → Colors →
+Choose your default app mode**, including changes while the app is running.
+High contrast uses Windows' native menu colors.
+
 `tycswap app` is the dashboard as a menu-bar (macOS) or notification-area
 (Windows, Linux) icon. A bare `tycswap` in a terminal starts it in the
 background and gives the prompt back; the full-screen terminal dashboard is
