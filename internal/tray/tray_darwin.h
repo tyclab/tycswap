@@ -11,6 +11,7 @@
 // The accent colour (sRGB components 0-1) for the switches, the active marker
 // and the update rows; call before tray_run.
 void tray_set_accent(double r, double g, double b);
+void tray_set_light_accent(double r, double g, double b);
 void tray_run(const void *png, int pngLen, const void *brandPng, int brandLen, const char *tooltip);
 void tray_quit(void);
 void tray_set_title(const char *title);

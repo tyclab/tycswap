@@ -26,6 +26,11 @@ func TestActiveMenuAccent(t *testing.T) {
 	}
 	p := newActiveMenuPainter(plan)
 	defer p.close()
+	var font menuLogFont
+	got, _, _ := menuGDI.NewProc("GetObjectW").Call(p.font, unsafe.Sizeof(font), uintptr(unsafe.Pointer(&font)))
+	if got == 0 || font.weight < 700 {
+		t.Fatalf("active account font is not bold: %d", font.weight)
+	}
 	m := measureMenuItem{ctlType: odtMenu, itemData: plan[0].cmd}
 	if !p.measure(0, &m) || m.itemWidth < 50 || m.itemHeight < 10 {
 		t.Fatalf("invalid measurement: %+v", m)

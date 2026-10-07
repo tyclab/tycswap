@@ -32,6 +32,19 @@ void tray_set_accent(double r, double g, double b) {
     accentB = b;
 }
 
+static double lightR = 0x12 / 255.0, lightG = 0x35 / 255.0, lightB = 0x6f / 255.0;
+
+void tray_set_light_accent(double r, double g, double b) {
+    lightR = r; lightG = g; lightB = b;
+}
+
+static NSColor *activeAccent(void) {
+    NSString *appearance = [NSApp.effectiveAppearance bestMatchFromAppearancesWithNames:
+        @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
+    if ([appearance isEqualToString:NSAppearanceNameDarkAqua]) return accent();
+    return [NSColor colorWithSRGBRed:lightR green:lightG blue:lightB alpha:1];
+}
+
 // TSBarView: a rounded usage bar coloured by band (green < 70, amber < 90, red).
 @interface TSBarView : NSView
 @property (nonatomic) double pct; // < 0: unknown
@@ -412,13 +425,13 @@ static NSMenuItem *gaugeRow(int tag, NSString *title, NSString *sub, double pct,
     // active marker column: an accent dot for the account Claude Code is on
     if (on) {
         TSDotView *dot = [[TSDotView alloc] initWithFrame:NSMakeRect(kPad, 33, 7, 7)];
-        dot.color = accent();
+        dot.color = activeAccent();
         [v addSubview:dot];
     }
     CGFloat x = kPad + 15;
     CGFloat textW = kRowWidth - x - kPad - 46;
     NSTextField *t = label(title, 13, NO, NSMakeRect(x, 27, textW, 18));
-    if (on) { t.font = [NSFont systemFontOfSize:13 weight:NSFontWeightSemibold]; t.textColor = accent(); }
+    if (on) { t.font = [NSFont systemFontOfSize:13 weight:NSFontWeightBold]; t.textColor = activeAccent(); }
     if (disabled && !on) { t.textColor = [NSColor tertiaryLabelColor]; }
     [v addSubview:t];
     NSString *pctText = pct < 0 ? @"—" : [NSString stringWithFormat:@"%.0f%%", pct];

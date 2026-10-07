@@ -50,6 +50,8 @@ func newTray(icon Icon, opts Options) (Tray, error) {
 	t := &darwinTrayImpl{icon: icon, bar: icon, opts: opts, done: make(chan struct{})}
 	r, g, b := accentRGB(brand.Sanitized().AccentColor)
 	C.tray_set_accent(C.double(r), C.double(g), C.double(b))
+	r, g, b = accentRGB(brand.LightAccent(brand.Sanitized().AccentColor))
+	C.tray_set_light_accent(C.double(r), C.double(g), C.double(b))
 	darwinMu.Lock()
 	darwinTray = t
 	darwinMu.Unlock()
