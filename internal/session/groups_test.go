@@ -158,15 +158,30 @@ func TestFirstResumeForksSourceAndRecordsActualNativeID(t *testing.T) {
 	sourceID := "01234567-89ab-4cde-8012-3456789abcde"
 	destinationID := "12345678-90ab-4cde-8123-456789abcdef"
 	source := transcript(t, sw.DefaultProfileDir(), sourceID, cwd)
+	canonicalSource, err := filepath.EvalSymlinks(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalCWD, err := filepath.EvalSymlinks(cwd)
+	if err != nil {
+		t.Fatal(err)
+	}
 	before, _ := os.ReadFile(source)
 	launch, err := manager.PrepareGroup("fable", "1", "fable", sourceID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !launch.Migrating || launch.SessionID != "" || launch.SourceTranscript != source || launch.CWD != cwd {
-		t.Fatalf("unexpected migration launch: %+v", launch)
+	if !launch.Migrating || launch.SessionID != "" {
+		t.Fatalf("unexpected migration state: migrating=%t sessionID=%q", launch.Migrating, launch.SessionID)
 	}
-	if strings.Join(launch.Args, " ") != "--model fable --resume "+source+" --fork-session" {
+	if launch.SourceTranscript != canonicalSource {
+		t.Fatalf("migration source=%q, want %q", launch.SourceTranscript, canonicalSource)
+	}
+	launchCWD, err := filepath.EvalSymlinks(launch.CWD)
+	if err != nil || launchCWD != canonicalCWD {
+		t.Fatalf("migration cwd=%q, want %q (resolve error: %v)", launch.CWD, canonicalCWD, err)
+	}
+	if strings.Join(launch.Args, " ") != "--model fable --resume "+canonicalSource+" --fork-session" {
 		t.Fatalf("unsafe resume args: %v", launch.Args)
 	}
 	if err := session.RecordGroupSession(sw.SharedRoot(), groups.Fable, launch.LaunchID, destinationID, cwd); err != nil {
@@ -179,7 +194,7 @@ func TestFirstResumeForksSourceAndRecordsActualNativeID(t *testing.T) {
 			t.Fatal(err)
 		}
 		if next.Migrating || next.SessionID != destinationID || strings.Contains(strings.Join(next.Args, " "), "--fork-session") {
-			t.Fatalf("second resume did not stay in group: %+v", next)
+			t.Fatalf("second resume did not stay in group: migrating=%t sessionID=%q args=%v", next.Migrating, next.SessionID, next.Args)
 		}
 	}
 	if after, _ := os.ReadFile(source); string(after) != string(before) {
