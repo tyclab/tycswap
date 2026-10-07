@@ -323,6 +323,7 @@ func TestAutoFacadeStopThenStartNeverOverlaps(t *testing.T) {
 	if !a.waitStopped(5 * time.Second) {
 		t.Fatal("the released loop never returned")
 	}
+	autoStopWait = prevWait
 	for i := 0; i < 5; i++ {
 		if err := a.Start(true); err != nil {
 			t.Fatal(err)

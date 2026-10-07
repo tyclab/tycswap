@@ -39,19 +39,22 @@ void tray_set_light_accent(double r, double g, double b) {
     lightR = r; lightG = g; lightB = b;
 }
 
+static BOOL workspaceIncreaseContrast(void) {
+    return [NSWorkspace sharedWorkspace].accessibilityDisplayShouldIncreaseContrast;
+}
+
+static BOOL (*increaseContrast)(void) = workspaceIncreaseContrast;
+
 static NSColor *activeAccent(void) {
     return [NSColor colorWithName:nil dynamicProvider:^NSColor *(NSAppearance *appearance) {
-        NSString *name = [appearance bestMatchFromAppearancesWithNames:
-            @[NSAppearanceNameAccessibilityHighContrastAqua, NSAppearanceNameAccessibilityHighContrastDarkAqua,
-              NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
-        if ([name isEqualToString:NSAppearanceNameAccessibilityHighContrastAqua] ||
-            [name isEqualToString:NSAppearanceNameAccessibilityHighContrastDarkAqua]) {
+        if (increaseContrast()) {
             __block NSColor *text;
             [appearance performAsCurrentDrawingAppearance:^{
                 text = [[NSColor labelColor] colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
             }];
             return text ?: [NSColor labelColor];
         }
+        NSString *name = [appearance bestMatchFromAppearancesWithNames:@[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
         if ([name isEqualToString:NSAppearanceNameDarkAqua]) return accent();
         return [NSColor colorWithSRGBRed:lightR green:lightG blue:lightB alpha:1];
     }];
@@ -300,9 +303,31 @@ static NSTextField *label(NSString *text, CGFloat size, BOOL secondary, NSRect f
     return l;
 }
 
+static NSHashTable<NSTextField *> *activeLabels;
+static id displayOptionsObserver;
+
+static void trackActiveLabel(NSTextField *title) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        activeLabels = [NSHashTable weakObjectsHashTable];
+        displayOptionsObserver = [[NSWorkspace sharedWorkspace].notificationCenter
+            addObserverForName:NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification object:nil queue:nil
+            usingBlock:^(NSNotification *notification) {
+                onMain(^{
+                    for (NSTextField *label in activeLabels) {
+                        label.textColor = activeAccent();
+                        label.needsDisplay = YES;
+                    }
+                });
+            }];
+    });
+    [activeLabels addObject:title];
+}
+
 static void accountLabel(NSTextField *title, BOOL active, BOOL disabled) {
     title.font = [NSFont systemFontOfSize:13 weight:active ? NSFontWeightBold : NSFontWeightRegular];
     title.textColor = active ? activeAccent() : (disabled ? [NSColor tertiaryLabelColor] : [NSColor labelColor]);
+    if (active) { trackActiveLabel(title); }
 }
 
 static void accountCheck(NSView *view, CGFloat y, BOOL active, BOOL disabled) {
