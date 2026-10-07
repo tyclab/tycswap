@@ -152,7 +152,7 @@ func TestCodexErrorRequiresTurnCompletion(t *testing.T) {
 
 func TestFailureRetainsTurnAccountDespiteLaterAccountRotation(t *testing.T) {
 	store := NewStore(t.TempDir())
-	start := Event{Provider: "claude", SessionID: "s", Kind: "UserPromptSubmit", AccountID: "a", AccountIdentity: "identity-a", Model: "opus", CWD: "/tmp/work", At: epoch}
+	start := Event{Provider: "claude", SessionID: "s", Kind: "UserPromptSubmit", AccountID: "a", AccountIdentity: "identity-a", Model: "opus", CWD: t.TempDir(), At: epoch}
 	if _, err := store.Record(start); err != nil {
 		t.Fatal(err)
 	}

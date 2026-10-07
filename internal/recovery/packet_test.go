@@ -8,12 +8,13 @@ import (
 	"testing"
 )
 
-func source() Source {
-	return Source{Provider: "claude", SessionID: "source", Group: "opus", CWD: "/tmp/work", Worktree: "/tmp/work", Branch: "feature", Objective: "Fix intermittent retries", Constraints: []string{"Preserve public API"}, Checkpoint: "Completed parser change", ChangedFiles: []string{"parser.go"}, Tests: []string{"go test ./internal/parser passed"}, PendingWork: []string{"Review cancellation"}}
+func source(t *testing.T) Source {
+	cwd := t.TempDir()
+	return Source{Provider: "claude", SessionID: "source", Group: "opus", CWD: cwd, Worktree: cwd, Branch: "feature", Objective: "Fix intermittent retries", Constraints: []string{"Preserve public API"}, Checkpoint: "Completed parser change", ChangedFiles: []string{"parser.go"}, Tests: []string{"go test ./internal/parser passed"}, PendingWork: []string{"Review cancellation"}}
 }
 
 func TestPacketBoundedAndSensitiveContextExcluded(t *testing.T) {
-	s := source()
+	s := source(t)
 	for i := 0; i < 30; i++ {
 		s.Messages = append(s.Messages, Message{Role: "user", Text: "Investigate retries"})
 	}
@@ -38,7 +39,7 @@ func TestPacketBoundedAndSensitiveContextExcluded(t *testing.T) {
 }
 
 func TestPacketLargeHistoryAndCheckpointLimits(t *testing.T) {
-	s := source()
+	s := source(t)
 	s.Messages = []Message{{Role: "user", Text: strings.Repeat("x", MaxPacketBytes)}}
 	p, err := Prepare(s)
 	if err != nil {
@@ -55,7 +56,7 @@ func TestPacketLargeHistoryAndCheckpointLimits(t *testing.T) {
 }
 
 func TestHandoverRequiresExplicitReviewedIdleSourceAndDestination(t *testing.T) {
-	p, err := Prepare(source())
+	p, err := Prepare(source(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +85,7 @@ func TestHandoverRequiresExplicitReviewedIdleSourceAndDestination(t *testing.T) 
 	if _, err := Plan(p, dest, request); err == nil {
 		t.Fatal("blocked destination")
 	}
-	reverse := source()
+	reverse := source(t)
 	reverse.Provider = "codex"
 	p, _ = Prepare(reverse)
 	request.ReviewedDigest = p.Digest

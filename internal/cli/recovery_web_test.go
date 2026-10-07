@@ -60,11 +60,10 @@ func TestRecoveryUnavailableTerminalReturnsActionablePlanWithoutReservation(t *t
 
 func TestRecoveryFixtureTerminalRetainsUncertainNativeIDWithoutGuessing(t *testing.T) {
 	runtime, request := reviewedStart(t)
-	script := filepath.Join(t.TempDir(), "fixture-terminal")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nif [ \"$2\" = \"--json\" ]; then printf '[]\\n'; fi\nexit 0\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	facade := &recoveryWeb{runtime: runtime, lookPath: func(string) (string, error) { return script, nil }, command: exec.CommandContext}
+	t.Setenv("TYCSWAP_RECOVERY_FIXTURE_PROCESS", "1")
+	facade := &recoveryWeb{runtime: runtime, lookPath: func(string) (string, error) { return "fixture", nil }, command: func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+		return exec.CommandContext(ctx, os.Args[0], "-test.run=^TestRecoveryFixtureProcess$")
+	}}
 	result, err := facade.Start(request)
 	if err != nil || !result.Started {
 		t.Fatalf("%#v %v", result, err)
@@ -156,4 +155,12 @@ func TestRecoveryExactTokenNeverConfirmsOriginalSourceOrWrongPair(t *testing.T) 
 	if state.Handovers[leaseWorkspace(plan.CWD)].Status != "prepared" || state.Handovers[leaseWorkspace(plan.CWD)].DestinationSessionID != "" {
 		t.Fatal("unknown launch changed ownership")
 	}
+}
+
+func TestRecoveryFixtureProcess(t *testing.T) {
+	if os.Getenv("TYCSWAP_RECOVERY_FIXTURE_PROCESS") != "1" {
+		return
+	}
+	os.Stdout.WriteString("[]\n")
+	os.Exit(0)
 }

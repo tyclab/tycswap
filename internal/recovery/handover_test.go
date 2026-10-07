@@ -8,13 +8,14 @@ import (
 )
 
 func TestDurableHandoverReservationAndConfirmedDestinationLink(t *testing.T) {
+	cwd := t.TempDir()
 	root := t.TempDir()
 	s := NewStore(root)
-	event := Event{SessionID: "source", IncidentID: "turn", Provider: "claude", Kind: "StopFailure", Error: "rate_limit", Stopped: true, At: epoch, CWD: "/tmp/work"}
+	event := Event{SessionID: "source", IncidentID: "turn", Provider: "claude", Kind: "StopFailure", Error: "rate_limit", Stopped: true, At: epoch, CWD: cwd}
 	if _, err := s.Record(event); err != nil {
 		t.Fatal(err)
 	}
-	plan := LaunchPlan{SourceSessionID: "source", CWD: "/tmp/work", PacketDigest: "reviewed", Destination: Destination{Provider: "codex", Usable: true}}
+	plan := LaunchPlan{SourceSessionID: "source", CWD: cwd, PacketDigest: "reviewed", Destination: Destination{Provider: "codex", Usable: true}}
 	if err := s.BeginHandover(plan, "turn"); err != nil {
 		t.Fatal(err)
 	}
@@ -38,8 +39,9 @@ func TestDurableHandoverReservationAndConfirmedDestinationLink(t *testing.T) {
 }
 
 func TestChangedSourceInvalidatesReservation(t *testing.T) {
+	cwd := t.TempDir()
 	s := NewStore(t.TempDir())
-	event := Event{SessionID: "source", IncidentID: "turn", Provider: "claude", Kind: "StopFailure", Stopped: true, At: epoch, CWD: "/tmp/work"}
+	event := Event{SessionID: "source", IncidentID: "turn", Provider: "claude", Kind: "StopFailure", Stopped: true, At: epoch, CWD: cwd}
 	if _, err := s.Record(event); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +50,7 @@ func TestChangedSourceInvalidatesReservation(t *testing.T) {
 	if _, err := s.Record(event); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.BeginHandover(LaunchPlan{SourceSessionID: "source", CWD: "/tmp/work", PacketDigest: "review"}, "turn"); err == nil {
+	if err := s.BeginHandover(LaunchPlan{SourceSessionID: "source", CWD: cwd, PacketDigest: "review"}, "turn"); err == nil {
 		t.Fatal("busy source accepted")
 	}
 }
@@ -78,12 +80,13 @@ func TestInspectToolsFindsPendingCallsAndBackgroundUncertainty(t *testing.T) {
 }
 
 func TestDestinationConfirmationRequiresExactTokenAndProvider(t *testing.T) {
+	cwd := t.TempDir()
 	s := NewStore(t.TempDir())
-	event := Event{SessionID: "source", IncidentID: "turn", Provider: "claude", Kind: "StopFailure", Stopped: true, At: epoch, CWD: "/tmp/work"}
+	event := Event{SessionID: "source", IncidentID: "turn", Provider: "claude", Kind: "StopFailure", Stopped: true, At: epoch, CWD: cwd}
 	if _, err := s.Record(event); err != nil {
 		t.Fatal(err)
 	}
-	plan := LaunchPlan{SourceSessionID: "source", CWD: "/tmp/work", PacketDigest: "digest", Destination: Destination{Provider: "codex"}}
+	plan := LaunchPlan{SourceSessionID: "source", CWD: cwd, PacketDigest: "digest", Destination: Destination{Provider: "codex"}}
 	if err := s.BeginHandover(plan, "turn"); err != nil {
 		t.Fatal(err)
 	}

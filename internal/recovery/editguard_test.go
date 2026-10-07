@@ -8,12 +8,13 @@ import (
 )
 
 func TestTransferredEditorBlockedUntilDestinationStoppedAndReclaimed(t *testing.T) {
+	cwd := t.TempDir()
 	store := NewStore(t.TempDir())
-	source := Event{Provider: "claude", SessionID: "source", IncidentID: "turn", CWD: "/tmp/work", Kind: "StopFailure", Stopped: true, At: epoch}
+	source := Event{Provider: "claude", SessionID: "source", IncidentID: "turn", CWD: cwd, Kind: "StopFailure", Stopped: true, At: epoch}
 	if _, err := store.Record(source); err != nil {
 		t.Fatal(err)
 	}
-	plan := LaunchPlan{SourceSessionID: "source", CWD: "/tmp/work", PacketDigest: "review", Destination: Destination{Provider: "codex"}}
+	plan := LaunchPlan{SourceSessionID: "source", CWD: cwd, PacketDigest: "review", Destination: Destination{Provider: "codex"}}
 	if err := store.BeginHandover(plan, "turn"); err != nil {
 		t.Fatal(err)
 	}
@@ -91,5 +92,24 @@ func TestAtomicReservationRejectsPeerPromptStartedAfterPlanning(t *testing.T) {
 	}
 	if err := store.BeginHandover(LaunchPlan{SourceSessionID: "source", CWD: cwd, PacketDigest: "review", Destination: Destination{Provider: "codex"}}, "turn"); err == nil {
 		t.Fatal("peer started before reservation but was ignored")
+	}
+}
+
+func TestWorkspaceKeyCanonicalizesParentOfMissingDirectory(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Skipf("symlink fixture unavailable: %v", err)
+	}
+	want, err := WorkspaceKey(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := WorkspaceKey(filepath.Join(alias, "not-created-yet"))
+	if err != nil || got != want {
+		t.Fatalf("missing child escaped workspace ownership: %q != %q (%v)", got, want, err)
 	}
 }

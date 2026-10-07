@@ -62,7 +62,7 @@ func TestRecoveryRuntimeCompatibleRotationIsFirstAndDurable(t *testing.T) {
 		}
 		return nil
 	})
-	event := recovery.Event{Provider: "codex", AccountID: "1", AccountIdentity: recovery.IdentityKey("source@example.com", ""), SessionID: "source", IncidentID: "turn", Group: "codex", Model: "gpt-5", CWD: "/tmp/work", Kind: "turn/completed", Error: "usage_limit", Stopped: true, At: time.Now()}
+	event := recovery.Event{Provider: "codex", AccountID: "1", AccountIdentity: recovery.IdentityKey("source@example.com", ""), SessionID: "source", IncidentID: "turn", Group: "codex", Model: "gpt-5", CWD: t.TempDir(), Kind: "turn/completed", Error: "usage_limit", Stopped: true, At: time.Now()}
 	if _, err := runtime.store.Record(event); err != nil {
 		t.Fatal(err)
 	}

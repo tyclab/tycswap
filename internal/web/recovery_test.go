@@ -14,6 +14,7 @@ import (
 )
 
 type fakeRecovery struct {
+	cwd     string
 	mu      sync.Mutex
 	starts  int
 	request RecoveryStartRequest
@@ -25,7 +26,7 @@ func (f *fakeRecovery) View(reporting.AccountsSnapshot) RecoveryView {
 func (f *fakeRecovery) Prepare(id string, src recovery.Source) (recovery.Packet, error) {
 	src.SessionID = id
 	src.Provider = "claude"
-	src.CWD = "/tmp/work"
+	src.CWD = f.cwd
 	return recovery.Prepare(src)
 }
 func (f *fakeRecovery) Dismiss(id, incident string) error {
@@ -46,7 +47,7 @@ func (f *fakeRecovery) Start(request RecoveryStartRequest) (RecoveryStartResult,
 }
 
 func TestRecoveryRoutesPreserveExplicitReviewAndNilSurface(t *testing.T) {
-	f := &fakeRecovery{}
+	f := &fakeRecovery{cwd: t.TempDir()}
 	server, err := New(Deps{Facade: &fakeFacade{snap: sampleSnapshot()}, Recovery: f, Sessions: func() SessionsView { return SessionsView{} }, AuthOverrides: func() AuthOverridesView { return AuthOverridesView{} }})
 	if err != nil {
 		t.Fatal(err)

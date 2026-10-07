@@ -12,7 +12,7 @@ import (
 )
 
 func TestRecoveryHookFailsOpenAndPersistsSafeLifecycle(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	cleanHome(t)
 	var out, errs bytes.Buffer
 	streams := ioStreams{in: strings.NewReader(`{"hook_event_name":"StopFailure","session_id":"s","error":"rate_limit","permission_mode":"danger","last_assistant_message":"Bearer secret"}`), out: &out, err: &errs}
 	if code := recoveryCommand("tycswap", []string{"record", "--group", "opus", "--model", "opus"}, streams); code != 0 {
@@ -35,8 +35,8 @@ func TestRecoveryHookFailsOpenAndPersistsSafeLifecycle(t *testing.T) {
 }
 
 func TestRecoveryPlanHasNoImplicitLaunch(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	packet, err := recovery.Prepare(recovery.Source{Provider: "claude", SessionID: "s", CWD: "/tmp/work", Objective: "Continue tests"})
+	cleanHome(t)
+	packet, err := recovery.Prepare(recovery.Source{Provider: "claude", SessionID: "s", CWD: t.TempDir(), Objective: "Continue tests"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,13 +54,13 @@ func TestRecoveryPlanHasNoImplicitLaunch(t *testing.T) {
 }
 
 func TestRecoveryExplicitSavedTranscriptPrepareWithoutHook(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	cleanHome(t)
 	path := filepath.Join(t.TempDir(), "rollout.jsonl")
 	if err := os.WriteFile(path, []byte(`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Complete parser"}]}}`+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var out, errs bytes.Buffer
-	code := recoveryCommand("tycswap", []string{"prepare", "--provider", "codex", "--session", "source", "--cwd", "/tmp/work", "--transcript", path}, ioStreams{in: strings.NewReader(""), out: &out, err: &errs})
+	code := recoveryCommand("tycswap", []string{"prepare", "--provider", "codex", "--session", "source", "--cwd", t.TempDir(), "--transcript", path}, ioStreams{in: strings.NewReader(""), out: &out, err: &errs})
 	if code != 0 {
 		t.Fatalf("%d %s", code, errs.String())
 	}
