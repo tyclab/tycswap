@@ -84,9 +84,10 @@ type AutoSwitchSettings struct {
 	// mid-task. SevenDayThreshold gates the week, which creeps, so it can be
 	// squeezed close to full before moving; ModelThreshold gates the per-model
 	// weekly windows, which count only when Model names them.
-	FiveHourThreshold float64
-	SevenDayThreshold float64
-	ModelThreshold    float64
+	FiveHourThreshold   float64
+	SevenDayThreshold   float64
+	ModelThreshold      float64
+	HandoverWaitMinutes int
 
 	IntervalSeconds float64
 	// CodexEnabled: Codex rides in the same `tycswap auto` process as its own
@@ -118,17 +119,18 @@ type AutoSwitchSettings struct {
 // (DESIGN A33): auto-switch never moves onto an API-key account.
 func Default() AutoSwitchSettings {
 	return AutoSwitchSettings{
-		FiveHourThreshold: 85.0,
-		SevenDayThreshold: 97.0,
-		ModelThreshold:    95.0,
-		IntervalSeconds:   60.0,
-		CodexEnabled:      true,
-		CodexThreshold:    0.0,
-		CooldownSeconds:   300.0,
-		HysteresisPct:     10.0,
-		Strategy:          "soonest-reset",
-		UnhealthyTicks:    3,
-		Model:             nil,
+		FiveHourThreshold:   85.0,
+		SevenDayThreshold:   97.0,
+		ModelThreshold:      95.0,
+		HandoverWaitMinutes: 30,
+		IntervalSeconds:     60.0,
+		CodexEnabled:        true,
+		CodexThreshold:      0.0,
+		CooldownSeconds:     300.0,
+		HysteresisPct:       10.0,
+		Strategy:            "soonest-reset",
+		UnhealthyTicks:      3,
+		Model:               nil,
 	}
 }
 
@@ -202,6 +204,9 @@ var SettingSpecs = []Spec{
 	{Section: "autoswitch", JSONKey: "unhealthyTicks", Field: "UnhealthyTicks", Kind: KindInt,
 		Lo: 1, Hi: 100, Default: 3,
 		Help: "Consecutive failed polls before an account is unhealthy"},
+	{Section: "autoswitch", JSONKey: "handoverWaitMinutes", Field: "HandoverWaitMinutes", Kind: KindInt,
+		Lo: 15, Hi: 1440, Default: 30,
+		Help: "Offer a reviewed handover after a corroborated limit when no compatible account is expected within this many minutes"},
 }
 
 // SpecFor looks up a spec by dotted key; an unknown key returns a
@@ -289,6 +294,21 @@ func Load(root string) AutoSwitchSettings {
 	if _, present := fields["SevenDayThreshold"]; !present {
 		if v, legacy := section[LegacyThresholdKey]; legacy {
 			fields["SevenDayThreshold"] = v
+		}
+	}
+	return clamp(fields)
+}
+
+func LoadOver(root string, base AutoSwitchSettings) AutoSwitchSettings {
+	raw := readRaw(SettingsPath(root))
+	section, ok := raw["autoswitch"].(map[string]any)
+	if !ok {
+		return base
+	}
+	fields := fieldsOf(base)
+	for _, spec := range SettingSpecs {
+		if value, exists := section[spec.JSONKey]; exists {
+			fields[spec.Field] = value
 		}
 	}
 	return clamp(fields)
@@ -398,6 +418,8 @@ func applyField(out *AutoSwitchSettings, field string, value any) {
 		out.SevenDayThreshold = value.(float64)
 	case "ModelThreshold":
 		out.ModelThreshold = value.(float64)
+	case "HandoverWaitMinutes":
+		out.HandoverWaitMinutes = value.(int)
 	case "IntervalSeconds":
 		out.IntervalSeconds = value.(float64)
 	case "CodexEnabled":
@@ -430,17 +452,18 @@ func fieldsOf(s AutoSwitchSettings) map[string]any {
 		model = *s.Model
 	}
 	return map[string]any{
-		"FiveHourThreshold": s.FiveHourThreshold,
-		"SevenDayThreshold": s.SevenDayThreshold,
-		"ModelThreshold":    s.ModelThreshold,
-		"IntervalSeconds":   s.IntervalSeconds,
-		"CodexEnabled":      s.CodexEnabled,
-		"CodexThreshold":    s.CodexThreshold,
-		"CooldownSeconds":   s.CooldownSeconds,
-		"HysteresisPct":     s.HysteresisPct,
-		"Strategy":          s.Strategy,
-		"UnhealthyTicks":    s.UnhealthyTicks,
-		"Model":             model,
+		"FiveHourThreshold":   s.FiveHourThreshold,
+		"SevenDayThreshold":   s.SevenDayThreshold,
+		"ModelThreshold":      s.ModelThreshold,
+		"HandoverWaitMinutes": s.HandoverWaitMinutes,
+		"IntervalSeconds":     s.IntervalSeconds,
+		"CodexEnabled":        s.CodexEnabled,
+		"CodexThreshold":      s.CodexThreshold,
+		"CooldownSeconds":     s.CooldownSeconds,
+		"HysteresisPct":       s.HysteresisPct,
+		"Strategy":            s.Strategy,
+		"UnhealthyTicks":      s.UnhealthyTicks,
+		"Model":               model,
 	}
 }
 

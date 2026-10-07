@@ -32,12 +32,14 @@ import (
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/migrations"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/usage"
 	"github.com/tyclab/tycswap/internal/wincred"
 )
@@ -64,9 +66,16 @@ type Store struct {
 	Log   *logging.Logger
 	Clk   clock.Clock
 
-	backupDir string
-	kc        keychain.KeychainClient
-	wc        wincred.Client
+	backupDir              string
+	kc                     keychain.KeychainClient
+	wc                     wincred.Client
+	group                  groups.ID
+	groupIntent            groups.Intent
+	groupHandoff           bool
+	sharedCreds            credstore.Store
+	defaultProfileDir      string
+	defaultUnpinned        bool
+	defaultKeychainService string
 }
 
 // Options carries the injectable seams for New. All are optional: a zero
@@ -90,7 +99,8 @@ type Options struct {
 	// move and registry-migration progress); default os.Stderr. Python prints
 	// these directly to sys.stderr, bypassing the JSON envelope, because they
 	// fire before the CLI knows --json (spec 07§5.6, WP12 note on Run's return).
-	Stderr io.Writer
+	Stderr            io.Writer
+	DefaultProfileDir string
 }
 
 // New reproduces ClaudeAccountSwitcher.__init__ exactly (spec 07§5.6, DESIGN
@@ -123,6 +133,28 @@ func New(opts Options) (*Store, error) {
 
 	// (2) backup root.
 	backupDir := paths.GetBackupRoot()
+	defaultProfileDir := opts.DefaultProfileDir
+	defaultUnpinned := opts.DefaultProfileDir == "" && os.Getenv("CLAUDE_CONFIG_DIR") == ""
+	if defaultProfileDir == "" {
+		defaultProfileDir = paths.GetClaudeConfigHome()
+		if sessprofile.IsSessionProfileDir(backupDir, defaultProfileDir) {
+			defaultProfileDir = os.Getenv("TYCSWAP_DEFAULT_PROFILE_DIR")
+			defaultUnpinned = os.Getenv("TYCSWAP_DEFAULT_PROFILE_UNPINNED") == "true" || defaultProfileDir == ""
+			if defaultProfileDir == "" || sessprofile.IsSessionProfileDir(backupDir, defaultProfileDir) {
+				defaultProfileDir = filepath.Join(home, ".claude")
+			}
+		}
+	}
+	defaultKeychainService := "Claude Code-credentials"
+	if !defaultUnpinned {
+		defaultKeychainService = sessprofile.KeychainServiceName(defaultProfileDir)
+	}
+	if inherited := os.Getenv("TYCSWAP_DEFAULT_KEYCHAIN_SERVICE"); os.Getenv("TYCSWAP_DEFAULT_PROFILE_DIR") == defaultProfileDir && (inherited == "Claude Code-credentials" || validDefaultService(inherited)) {
+		defaultKeychainService = inherited
+	}
+	if absolute, err := filepath.Abs(defaultProfileDir); err == nil {
+		defaultProfileDir = absolute
+	}
 
 	// (3) no legacy-dir move any more (DESIGN Amendment A23): an old store
 	// is only ever copied, by `tycswap migrate`, and never touched here.
@@ -151,21 +183,24 @@ func New(opts Options) (*Store, error) {
 	creds := credstore.New(credstore.Config{Platform: plat, CredentialsDir: credentialsDir}, kc, clk, log)
 
 	s := &Store{
-		Home:           home,
-		SequenceFile:   sequenceFile,
-		ConfigsDir:     configsDir,
-		CredentialsDir: credentialsDir,
-		LockFile:       lockFile,
-		Platform:       plat,
-		Creds:          creds,
-		Usage:          usageStore,
-		Lock:           filelock.New(lockFile, 0),
-		OAuth:          opts.OAuth,
-		Log:            log,
-		Clk:            clk,
-		backupDir:      backupDir,
-		kc:             kc,
-		wc:             wc,
+		Home:                   home,
+		SequenceFile:           sequenceFile,
+		ConfigsDir:             configsDir,
+		CredentialsDir:         credentialsDir,
+		LockFile:               lockFile,
+		Platform:               plat,
+		Creds:                  creds,
+		Usage:                  usageStore,
+		Lock:                   filelock.New(lockFile, 0),
+		OAuth:                  opts.OAuth,
+		Log:                    log,
+		Clk:                    clk,
+		backupDir:              backupDir,
+		kc:                     kc,
+		wc:                     wc,
+		defaultProfileDir:      defaultProfileDir,
+		defaultUnpinned:        defaultUnpinned,
+		defaultKeychainService: defaultKeychainService,
 	}
 
 	// Usage-table writes rebuild statusline.json (DESIGN A54).

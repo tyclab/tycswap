@@ -37,6 +37,10 @@ const GuardedRefreshTimeout = 5 * time.Second
 func (s *Store) RefreshBackupGuarded(ctx context.Context, c oauth.Client, num, email, held string) oauth.RefreshOutcome {
 	out := oauth.RefreshOutcome{Error: RefreshDeclined}
 	err := s.Lock.With(func() error {
+		owner, err := s.CredentialOwner(num)
+		if err != nil || owner.Scope != "" {
+			return nil
+		}
 		if cur := s.CurrentAccountNumber(); cur != nil && *cur == num {
 			return nil // became the live login: Claude Code owns its token now
 		}

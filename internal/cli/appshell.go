@@ -43,7 +43,8 @@ type shellActions struct {
 	// SwitchTo switches to the account a row key names ("claude:2",
 	// "codex:1", A47) and returns the codex sessions still running on the
 	// old Codex account (nil for a Claude switch).
-	SwitchTo func(key string) (runningPIDs []int, err error)
+	SwitchTo    func(key string) (runningPIDs []int, err error)
+	SwitchGroup func(group, account string) error
 	// AddCurrent stores the login Claude Code is signed in with as an
 	// account (A37; web.Server.AddCurrentLogin). nil hides the row.
 	AddCurrent   func() (web.AddLoginResult, error)
@@ -108,12 +109,13 @@ type shellActions struct {
 }
 
 type appShell struct {
-	tray    tray.Tray
-	act     shellActions
-	notify  func(title, body string)
-	mu      sync.Mutex
-	alerted map[string]bool // Claude row key → threshold alert already shown
-	last    web.State
+	tray            tray.Tray
+	act             shellActions
+	notify          func(title, body string)
+	mu              sync.Mutex
+	alerted         map[string]bool // Claude row key → threshold alert already shown
+	recoveryAlerted map[string]bool
+	last            web.State
 	// pending is a newer release the user has not installed yet (menu item);
 	// offered is the last tag a dialog/notification was shown for.
 	pending string
@@ -202,6 +204,7 @@ func (a *appShell) update(st web.State) {
 	a.tray.SetMenu(a.menu(st))
 	a.syncIcon()
 	a.thresholdAlert(st, active, ok)
+	a.recoveryAlert(st)
 }
 
 // menu lays out the dropdown (A37): a gauge row per account (usage bar, the
@@ -225,9 +228,18 @@ func (a *appShell) menu(st web.State) []tray.Item {
 		items = append(items, tray.Item{ID: "offline", Title: capitalizeFirst(why), Disabled: true})
 	}
 	items = append(items, tray.Item{ID: "open", Title: "Open dashboard", Dismiss: true})
+	if st.Recovery != nil {
+		for _, incident := range st.Recovery.Incidents {
+			if incident.Decision.Action == "offer" && !incident.Dismissed {
+				items = append(items, tray.Item{ID: "recovery-open", Title: "Session at limit · review handover…", Dismiss: true})
+				break
+			}
+		}
+	}
 	// What can be updated comes first, where it is seen (A44).
 	items = append(items, a.updatesSection()...)
 	items = append(items, tray.Separator(), tray.Header("Accounts"))
+	items = append(items, a.groupRows(st)...)
 	items = append(items, a.accountRows(st, withModels)...)
 	items = append(items, tray.Separator(), tray.Header("Automation"))
 	// The dashboard's engines: the Claude one, and the Codex one beside it
@@ -312,11 +324,7 @@ func rowsByProvider(all []map[string]any) (claude, codex []map[string]any) {
 func gaugeGroup(rows []map[string]any, withModels []string, subID, subTitle string) []tray.Item {
 	var gauges, active []tray.Item
 	for _, r := range rows {
-		pct, has := maxWindowPct(r, withModels)
-		if !has {
-			pct = -1
-		}
-		sub := windowsLine(r, withModels)
+		sub := windowsLine(r, []string{"all"})
 		var flags []string
 		if boolOf(r["atLimit"]) {
 			flags = append(flags, "at limit")
@@ -345,10 +353,10 @@ func gaugeGroup(rows []map[string]any, withModels []string, subID, subTitle stri
 		}
 		it := tray.Item{
 			ID:       "switch:" + rowKey(r),
-			Kind:     tray.KindGauge,
+			Kind:     tray.KindPlain,
 			Title:    "#" + rowNumber(r) + "  " + rowName(r),
 			Sub:      sub,
-			Pct:      pct,
+			Pct:      -1,
 			Checked:  boolOf(r["isActive"]),
 			Disabled: boolOf(r["isActive"]) || !boolOf(r["switchable"]) || boolOf(r["disabled"]),
 		}
@@ -361,6 +369,33 @@ func gaugeGroup(rows []map[string]any, withModels []string, subID, subTitle stri
 		return append(active, tray.Item{ID: subID, Title: fmt.Sprintf(subTitle, len(gauges)), Children: gauges})
 	}
 	return gauges
+}
+
+func (a *appShell) groupRows(st web.State) []tray.Item {
+	if a.act.SwitchGroup == nil {
+		return nil
+	}
+	var out []tray.Item
+	rows, _ := rowsByProvider(st.Accounts)
+	for _, group := range st.Groups {
+		var children []tray.Item
+		for _, row := range rows {
+			num := rowNumber(row)
+			reason := group.AccountBlockers[num]
+			sub := windowsLine(row, []string{"all"})
+			if reason != "" {
+				sub = reason
+			}
+			children = append(children, tray.Item{ID: "group:" + group.ID + ":" + num, Title: "#" + num + "  " + rowName(row), Sub: sub, Checked: group.ActiveNumber == num,
+				Disabled: group.ActiveNumber == num || reason != "" || !boolOf(row["switchable"]) || boolOf(row["disabled"])})
+		}
+		title := group.Label
+		if group.ActiveNumber != "" {
+			title += " · #" + group.ActiveNumber
+		}
+		out = append(out, tray.Item{ID: "group:" + group.ID, Title: title, Sub: group.Blocker, Children: children})
+	}
+	return out
 }
 
 // addCurrentItem is "Add current login": its second line says what a click
@@ -456,11 +491,19 @@ func rotatedAccounts(st web.State) string {
 // click dispatches a menu choice. It runs off the UI thread.
 func (a *appShell) click(id string) {
 	switch {
+	case strings.HasPrefix(id, "group:"):
+		parts := strings.Split(id, ":")
+		if len(parts) != 3 || a.act.SwitchGroup == nil {
+			return
+		}
+		if err := a.act.SwitchGroup(parts[1], parts[2]); err != nil {
+			a.notify("Group switch failed", err.Error())
+		}
 	case id == "claude-code":
 		a.claudeCodeClick()
 	case id == "add-current":
 		a.addCurrentClick()
-	case id == "open":
+	case id == "open" || id == "recovery-open":
 		if err := a.act.OpenDashboard(); err != nil {
 			a.notify("Could not open the dashboard", capitalizeFirst(err.Error()))
 		}
@@ -804,6 +847,33 @@ func (a *appShell) autoEvent(ev web.AutoEventView) {
 			title = "Account #" + ev.Account + " quarantined"
 		}
 		a.notify(title, ev.Message)
+	}
+}
+
+func (a *appShell) recoveryAlert(st web.State) {
+	if st.Recovery == nil {
+		return
+	}
+	for _, incident := range st.Recovery.Incidents {
+		if incident.Dismissed || incident.Decision.Action != "offer" || !incident.Decision.NewlyOffered {
+			continue
+		}
+		key := incident.Event.SessionID + ":" + incident.Event.IncidentID
+		a.mu.Lock()
+		if a.recoveryAlerted == nil {
+			a.recoveryAlerted = map[string]bool{}
+		}
+		seen := a.recoveryAlerted[key]
+		a.recoveryAlerted[key] = true
+		a.mu.Unlock()
+		if seen {
+			continue
+		}
+		destination := "Codex"
+		if incident.Event.Provider == "codex" {
+			destination = "Claude"
+		}
+		a.notify("Session at limit", "Continue in "+destination+"? Open the dashboard to review the saved context.")
 	}
 }
 

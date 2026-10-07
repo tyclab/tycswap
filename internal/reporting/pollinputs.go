@@ -1,26 +1,13 @@
-// pollinputs.go — the threshold/model poll-planning keys that steer usage
-// cadence (spec 02§13 _poll_policy_inputs / set_poll_policy_inputs /
-// clear_poll_policy_inputs, feeding _persist_poll_plans).
-//
-// Python holds this state on the switcher instance: an optional override pinned
-// by a hosting auto engine (so cadence follows its effective, CLI-merged
-// settings) plus an mtime-cached read of settings.json otherwise. In the Go
-// decomposition the collectors are free functions over *store.Store that cannot
-// carry per-instance state, and the frozen autoswitch.Switcher / tui.Facade
-// interfaces (DESIGN A13) put SetPollPolicyInputs/ClearPollPolicyInputs on
-// *core.Switcher. This file is the package-level seam those methods drive,
-// mirroring the established jsonout.ResetStrings / oauth.Log package seams: a
-// single process ever hosts one switcher, so a package-level override is
-// faithful. The Python mtime cache is dropped — settings.Load is a forgiving
-// read run once per collect pass; the extra stat is not observable (only cadence
-// jitter and the urgent-escalation band depend on these inputs, and only after a
-// successful fetch).
+// Poll policies are scoped to their store and engine. The shared collector
+// uses the earliest required poll across active groups.
 package reporting
 
 import (
 	"math"
+	"slices"
 	"sync"
 
+	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 )
@@ -33,7 +20,66 @@ type pollInputs struct {
 var (
 	pollInputsMu       sync.Mutex
 	pollInputsOverride *pollInputs
+	pollInputsByRoot   = map[string]map[string]pollInputs{}
 )
+
+func SetScopedPollInputs(root, scope string, threshold float64, models []string) bool {
+	pollInputsMu.Lock()
+	defer pollInputsMu.Unlock()
+	if pollInputsByRoot[root] == nil {
+		pollInputsByRoot[root] = map[string]pollInputs{}
+	}
+	old, exists := pollInputsByRoot[root][scope]
+	pollInputsByRoot[root][scope] = pollInputs{threshold, append([]string(nil), models...)}
+	return !exists || old.threshold != threshold || !slices.Equal(old.models, models)
+}
+
+func ClearScopedPollInputs(root, scope string) {
+	pollInputsMu.Lock()
+	defer pollInputsMu.Unlock()
+	delete(pollInputsByRoot[root], scope)
+	if len(pollInputsByRoot[root]) == 0 {
+		delete(pollInputsByRoot, root)
+	}
+}
+
+func resolvePollPolicies(s *store.Store) []pollInputs {
+	pollInputsMu.Lock()
+	byScope := map[string]pollInputs{}
+	for scope, p := range pollInputsByRoot[s.BackupDir()] {
+		byScope[scope] = pollInputs{p.threshold, append([]string(nil), p.models...)}
+	}
+	if _, pinned := byScope[s.BackupDir()]; !pinned && pollInputsOverride != nil {
+		byScope[s.BackupDir()] = pollInputs{pollInputsOverride.threshold, append([]string(nil), pollInputsOverride.models...)}
+	}
+	pollInputsMu.Unlock()
+	if _, pinned := byScope[s.BackupDir()]; !pinned {
+		loaded := settings.Load(s.BackupDir())
+		models := settings.ParseModelNames(loaded.Model)
+		byScope[s.BackupDir()] = pollInputs{lowestBar(loaded, models), models}
+	}
+	for _, id := range groups.All() {
+		scope := groups.ScopeDir(s.BackupDir(), id)
+		if _, pinned := byScope[scope]; pinned {
+			continue
+		}
+		if active, err := groups.LoadActive(s.BackupDir(), id); err != nil || active == nil {
+			continue
+		}
+		group, err := s.ForGroup(id)
+		if err != nil {
+			continue
+		}
+		loaded := GroupSettings(group, settings.Load(s.BackupDir()))
+		models := settings.ParseModelNames(loaded.Model)
+		byScope[scope] = pollInputs{lowestBar(loaded, models), models}
+	}
+	var out []pollInputs
+	for _, p := range byScope {
+		out = append(out, p)
+	}
+	return out
+}
 
 // SetPollPolicyInputs pins the (threshold, models) poll-planning keys, so a
 // hosting auto engine's effective settings steer usage cadence instead of the
@@ -74,6 +120,9 @@ func PollPolicyInputs() (threshold float64, models []string, pinned bool) {
 func resolvePollInputs(s *store.Store) (float64, []string) {
 	pollInputsMu.Lock()
 	o := pollInputsOverride
+	if p, ok := pollInputsByRoot[s.BackupDir()][s.ScopeRoot()]; ok {
+		o = &p
+	}
 	pollInputsMu.Unlock()
 	if o != nil {
 		return o.threshold, append([]string(nil), o.models...)

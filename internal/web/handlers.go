@@ -68,6 +68,10 @@ func (s *Server) routes() http.Handler {
 
 	// sessions
 	api.HandleFunc("POST /api/sessions/{pid}/stop", s.handleStop)
+	api.HandleFunc("POST /api/groups/{group}/switch/{id}", s.handleGroupSwitch)
+	api.HandleFunc("POST /api/recovery/prepare", s.handleRecoveryPrepare)
+	api.HandleFunc("POST /api/recovery/dismiss", s.handleRecoveryDismiss)
+	api.HandleFunc("POST /api/recovery/start", s.handleRecoveryStart)
 
 	// settings
 	api.HandleFunc("GET /api/settings", s.handleSettingsList)
@@ -872,6 +876,8 @@ func (s *Server) settingsViews() []SettingView {
 // for the next engine start.
 func settingApplies(key string) string {
 	switch key {
+	case "autoswitch.handoverWaitMinutes":
+		return "At the next usage update. A stopped session offers handover when compatible resources will take longer than this to become available."
 	case modelSettingKey:
 		return "At once for the engine on the Auto tab: a save or reset retargets it while it runs, and the at-limit marks follow. An engine in the terminal dashboard or " + brand.Sanitized().Name + " auto keeps its value until it next starts."
 	case "autoswitch.sevenDayThreshold":

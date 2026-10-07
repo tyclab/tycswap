@@ -9,10 +9,36 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/recovery"
 	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/tray"
 	"github.com/tyclab/tycswap/internal/web"
 )
+
+func TestRecoveryOfferNotifiesOnceAndOpensReview(t *testing.T) {
+	tray := &fakeTray{}
+	opened := 0
+	shell := newAppShell(tray, shellActions{OpenDashboard: func() error { opened++; return nil }})
+	st := sampleState()
+	st.Recovery = &web.RecoveryView{Incidents: []recovery.Incident{{Event: recovery.Event{Provider: "claude", SessionID: "s", IncidentID: "one"}, Decision: recovery.Decision{Action: "offer", NewlyOffered: true}}}}
+	shell.update(st)
+	shell.update(st)
+	if notes := tray.notesNow(); len(notes) != 1 || !strings.Contains(notes[0], "Continue in Codex?") {
+		t.Fatalf("recovery notifications: %v", notes)
+	}
+	if _, ok := tray.item("recovery-open"); !ok {
+		t.Fatal("handover review missing from tray")
+	}
+	shell.click("recovery-open")
+	if opened != 1 {
+		t.Fatal("handover click did not open review")
+	}
+	st.Recovery.Incidents[0].Dismissed = true
+	shell.update(st)
+	if _, ok := tray.item("recovery-open"); ok {
+		t.Fatal("dismissed offer stayed in tray")
+	}
+}
 
 type fakeTray struct {
 	mu      sync.Mutex
@@ -133,7 +159,7 @@ func TestShellTitleTooltipAndMenu(t *testing.T) {
 		t.Errorf("active row = %+v", a1)
 	}
 	a2, ok := ft.item("switch:claude:2")
-	if !ok || a2.Checked || a2.Disabled || !strings.Contains(a2.Title, "bob@example.com") || !strings.Contains(a2.Sub, "5h 10%") || a2.Pct != 10 {
+	if !ok || a2.Checked || a2.Disabled || !strings.Contains(a2.Title, "bob@example.com") || !strings.Contains(a2.Sub, "5h 10%") || a2.Pct != -1 {
 		t.Errorf("other row = %+v", a2)
 	}
 	ids, headers := menuShape(ft)
@@ -146,7 +172,7 @@ func TestShellTitleTooltipAndMenu(t *testing.T) {
 	if headers != "Accounts,Automation,App" {
 		t.Errorf("headers = %v", headers)
 	}
-	if a1.Kind != tray.KindGauge || a1.Pct != 45 || !strings.Contains(a1.Sub, "5h 45%") {
+	if a1.Kind != tray.KindPlain || a1.Pct != -1 || !strings.Contains(a1.Sub, "5h 45%") {
 		t.Errorf("active gauge = %+v", a1)
 	}
 	if au, _ := ft.item("auto"); au.Kind != tray.KindToggle {
@@ -780,7 +806,7 @@ func TestShellCodexRowsUnderOwnHeader(t *testing.T) {
 	if headers != "Accounts,Codex,Automation,App" {
 		t.Errorf("headers = %s", headers)
 	}
-	if r, _ := ft.item("switch:codex:1"); !r.Checked || !r.Disabled || r.Title != "#1  dana@example.com" || r.Pct != 99 || !strings.HasPrefix(r.Sub, "5h 99% · 7d 40%") {
+	if r, _ := ft.item("switch:codex:1"); !r.Checked || !r.Disabled || r.Title != "#1  dana@example.com" || r.Pct != -1 || !strings.HasPrefix(r.Sub, "5h 99% · 7d 40%") {
 		t.Errorf("active codex row = %+v", r)
 	}
 	if r, _ := ft.item("switch:codex:2"); !r.Disabled || !strings.Contains(r.Sub, "API key") || !strings.Contains(r.Sub, "not switchable") {

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Added:** independent Fable and Opus/other session groups, shared-account rotation within each group, explicit restart/resume migration preserving native history, and credential ownership guards across group, default and legacy profiles.
+- **Added:** one dashboard group selector, clickable quota sorting, labelled compact tray accounts, and a session guide. Group-specific model limits also govern shared usage polling.
+- **Added:** reviewed Claude/Codex saved-context handover after confirmed limits, compatible rotation and a configurable wait (30 minutes by default). Managed hooks, workspace editing ownership and uncertain-launch reconciliation protect the transfer; ordinary Codex terminal errors alone do not support automatic detection.
+
 - **Fixed:** the Windows tray follows the Windows app theme, updates after theme changes, and preserves native high-contrast rendering. The dashboard adds Auto, Light and Dark appearance choices.
 - **Fixed:** dashboard account rows show the usage fetch time, next scheduled attempt, and failed or rate-limited refreshes alongside retained measurements.
 

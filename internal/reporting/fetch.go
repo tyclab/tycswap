@@ -19,6 +19,7 @@ import (
 	"github.com/tyclab/tycswap/internal/cclock"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/usage"
@@ -30,6 +31,20 @@ import (
 // falling back to its backup.
 func fetchAccountUsage(s *store.Store, info AccountInfo) usage.FetchRecord {
 	num := strconv.Itoa(info.Number)
+	owner, err := s.CredentialOwner(num)
+	if err != nil || owner.Uncertain {
+		return usage.FetchRecord{Sentinel: jsonout.UsageNoCredentials}
+	}
+	if owner.Scope != "" && (owner.Scope != "default" || s.GroupID() != "" || paths.GetClaudeConfigHome() != s.ProfileDir()) {
+		creds, err := s.ReadOwnedCredentials(num, info.Email)
+		if err != nil || oauth.ExtractAccessToken(creds) == "" {
+			return usage.FetchRecord{Sentinel: jsonout.UsageNoCredentials}
+		}
+		if oauth.IsOAuthTokenExpired(oauth.ExtractOAuthData(creds)["expiresAt"], s.Clk.Now()) {
+			return usage.FetchRecord{Sentinel: jsonout.UsageTokenExpired}
+		}
+		return recordFromOutcome(oauth.TryFetchUsageForAccount(backgroundCtx(), s.OAuth, num, info.Email, creds, true, nil))
+	}
 	if info.IsActive {
 		return fetchActiveUsage(s, num, info.Email, info.Creds)
 	}

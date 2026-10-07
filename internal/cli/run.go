@@ -33,11 +33,25 @@ func runCommand(prog string, argv []string, s ioStreams) int {
 	}
 
 	var account *string
+	var group, model, resume string
 	var noShare, debug bool
 	shareHistory := false
 	for i := 0; i < len(head); i++ {
 		tok := head[i]
 		switch {
+		case tok == "--group" || tok == "--model" || tok == "--resume":
+			if i+1 >= len(head) {
+				return subError(runProg, s.err, "argument "+tok+": expected one argument")
+			}
+			i++
+			switch tok {
+			case "--group":
+				group = head[i]
+			case "--model":
+				model = head[i]
+			case "--resume":
+				resume = head[i]
+			}
 		case tok == "--no-share":
 			noShare = true
 		case tok == "--share-history":
@@ -59,6 +73,9 @@ func runCommand(prog string, argv []string, s ioStreams) int {
 			account = &v
 		}
 	}
+	if group == "" && (model != "" || resume != "") {
+		return subError(runProg, s.err, "--model and --resume before -- require --group; pass ordinary Claude arguments after --")
+	}
 
 	sw, err := constructSwitcher(debug, s.err)
 	if err != nil {
@@ -77,6 +94,16 @@ func runCommand(prog string, argv []string, s ioStreams) int {
 		Logger:   sw.Log,
 		Stdout:   s.out,
 	})
+	if group != "" {
+		if noShare || shareHistory {
+			return subError(runProg, s.err, "group profiles own their history; use --resume to continue an existing conversation")
+		}
+		if err := manager.RunGroup(group, derefStr(account), model, resume, "", tail); err != nil {
+			errorTo(s.err, "Error: "+err.Error())
+			return 1
+		}
+		return 0
+	}
 
 	if account != nil {
 		if err := manager.Run(*account, tail, !noShare, shareHistory); err != nil {
@@ -113,7 +140,8 @@ func runCommand(prog string, argv []string, s ioStreams) int {
 }
 
 func renderRunHelp(prog string, out io.Writer) int {
-	fmt.Fprintf(out, "usage: %s run [-h] [--no-share] [--share-history | --no-share-history] [--debug] [NUM|EMAIL] [-- ...]\n", prog)
+	fmt.Fprintf(out, "usage: %s run [-h] [--group fable|opus] [--model MODEL] [--resume ID|PATH] [--no-share] [--share-history | --no-share-history] [--debug] [NUM|EMAIL] [-- ...]\n", prog)
+	fmt.Fprintln(out, "Groups rotate independently. Sessions in one group switch together. Choose a group on restart/resume; existing sessions keep running.")
 	fmt.Fprintln(out, "\n[EXPERIMENTAL] Launch Claude Code as a stored account in this terminal only.")
 	return 0
 }

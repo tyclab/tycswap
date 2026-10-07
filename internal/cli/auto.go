@@ -168,6 +168,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	if once {
 		// Claude first, then Codex; the exit status is the Claude outcome.
 		code := int(engine.Tick())
+		tickGroupScopes(sw, merged, onEvent, dryRun)
 		runCodexTick(context.Background())
 		return code
 	}
@@ -189,8 +190,11 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 			pctText(merged.FiveHourThreshold), pctText(merged.SevenDayThreshold), pctText(merged.ModelThreshold),
 			merged.IntervalSeconds, dry)))
 	}
-	stopCodex := startCodexLoop(codexEngine != nil,
-		time.Duration(merged.IntervalSeconds*float64(time.Second)), runCodexTick)
+	stopCodex := startCodexLoop(true,
+		time.Duration(merged.IntervalSeconds*float64(time.Second)), func(ctx context.Context) {
+			tickGroupScopes(sw, merged, onEvent, dryRun)
+			runCodexTick(ctx)
+		})
 	code := engine.RunLoop()
 	stopCodex()
 	return code

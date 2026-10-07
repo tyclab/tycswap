@@ -28,6 +28,9 @@ import (
 // the op's Warnings. forceActivate routes through the direct-activation path
 // even with a managed live login. prov may be nil (resolved here).
 func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActivate bool, prov *Provenance) (switchOp, error) {
+	if s.GroupID() != "" {
+		return performGroupSwitch(s, targetAccount, emitOutput, forceActivate, prov)
+	}
 	warningsOut := []string{}
 
 	// Session-mode drift warning (warn, never block).
@@ -64,6 +67,9 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 	displayAfterLock := false
 
 	err := withTripleLock(s, func() error {
+		if err := s.EnsureAccountAvailable(targetAccount); err != nil {
+			return err
+		}
 		data, err := s.ReadSequence()
 		if err != nil {
 			return err

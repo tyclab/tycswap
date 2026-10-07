@@ -236,9 +236,16 @@ func SessionsIn(backupDir string) func() SessionsView {
 		if backupDir == "" {
 			return v
 		}
-		entries, err := os.ReadDir(filepath.Join(backupDir, "sessions"))
-		if err != nil {
-			return v
+		entries, _ := os.ReadDir(filepath.Join(backupDir, "sessions"))
+		profiles := map[string]string{}
+		for _, e := range entries {
+			if e.IsDir() {
+				slot, _, _ := strings.Cut(e.Name(), "-")
+				profiles[filepath.Join(backupDir, "sessions", e.Name())] = slot
+			}
+		}
+		for _, id := range []string{"fable", "opus"} {
+			profiles[filepath.Join(backupDir, "groups", id, "profile")] = id
 		}
 		seen := map[int]bool{}
 		for _, c := range v.Claude {
@@ -248,12 +255,8 @@ func SessionsIn(backupDir string) func() SessionsView {
 		for _, i := range v.IDE {
 			seenIDE[[2]int{i.PID, i.Port}] = true
 		}
-		for _, e := range entries {
-			if !e.IsDir() {
-				continue
-			}
-			slot, _, _ := strings.Cut(e.Name(), "-")
-			p := probeSessions(filepath.Join(backupDir, "sessions", e.Name()), slot)
+		for dir, slot := range profiles {
+			p := probeSessions(dir, slot)
 			for _, c := range p.Claude {
 				if seen[c.PID] {
 					continue
@@ -379,6 +382,8 @@ type Deps struct {
 	// Optional surfaces: nil → the section is null in the state document and
 	// its routes answer 503.
 	Accounts AccountOps
+	Groups   GroupFacade
+	Recovery RecoveryFacade
 	// Codex drives the Codex rows; nil (no Codex accounts at launch) makes
 	// every route given a codex: key answer 503 (DESIGN A47).
 	Codex    CodexOps

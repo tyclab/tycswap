@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/ccfile"
+	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/mappings"
 	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/storenames"
@@ -117,6 +118,19 @@ func (s *Store) DeleteAccountFiles(num, email string) error {
 		return err
 	}
 	s.DeleteSessionProfile(num, email)
+	registry, err := groups.LoadRegistry(s.backupDir)
+	if err != nil {
+		return err
+	}
+	if owner, claimed := registry.Claims[num]; claimed && owner.Scope == "legacy:"+num {
+		if _, err := os.Stat(owner.ProfileDir); !os.IsNotExist(err) {
+			return errors.New("the legacy profile could not be fully removed; its credential claim remains held")
+		}
+		delete(registry.Claims, num)
+		if err := registry.Save(s.backupDir); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -132,6 +146,13 @@ func (s *Store) PruneMappings(email, orgUUID string) (int, error) {
 // The caller must NOT already hold the FileLock (it is non-reentrant).
 func (s *Store) PersistBackupCredentials(num, email, creds string) error {
 	return s.Lock.With(func() error {
+		owner, err := s.CredentialOwner(num)
+		if err != nil {
+			return err
+		}
+		if owner.Scope != "" {
+			return errors.New("cannot overwrite the credential backup while a profile owns the account")
+		}
 		return s.WriteAccountCredentials(num, email, creds)
 	})
 }

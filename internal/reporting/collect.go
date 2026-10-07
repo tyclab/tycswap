@@ -20,6 +20,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/procdetect"
@@ -85,6 +86,15 @@ func CollectUsageEntries(s *store.Store, infos []AccountInfo, fetch map[string]b
 			requested = append(requested, num)
 		}
 	}
+	if len(requested) > 0 {
+		for _, id := range groups.All() {
+			if active, err := groups.LoadActive(s.BackupDir(), id); err == nil && active != nil {
+				ReplanCachedUsage(s)
+				entries = st.Entries(identities)
+				break
+			}
+		}
+	}
 
 	// The network client is nil in store-only contexts (a bare store built with
 	// no oauth.Client); skip the reserve/fetch pass entirely rather than claim
@@ -140,6 +150,37 @@ func UsageByAccount(s *store.Store) map[string]any {
 		out[num] = e.DecisionValue()
 	}
 	return out
+}
+
+func ReplanCachedUsage(s *store.Store) {
+	infos := BuildAccountsInfo(s)
+	ids := map[string]usage.Identity{}
+	for _, info := range infos {
+		ids[strconv.Itoa(info.Number)] = usage.Identity{Email: info.Email, OrgUUID: info.OrgUUID}
+	}
+	entries := s.Usage.Entries(ids)
+	policies := resolvePollPolicies(s)
+	plans := map[string]usage.PollPlan{}
+	for _, info := range infos {
+		num := strconv.Itoa(info.Number)
+		e := entries[num]
+		if e.FetchedAt == nil || e.NextPollAt == nil || e.LastGood == nil {
+			continue
+		}
+		for _, policy := range policies {
+			at, every := usage.PlanAfterFetch(usage.PlanInput{PrevIntervalS: e.PollIntervalS, PrevUsage: e.LastGood, NewUsage: e.LastGood,
+				IsActive: info.IsActive, Threshold: policy.threshold, Models: policy.models, Now: *e.FetchedAt,
+				Recent429: e.Last429At != nil && clock.Seconds(s.Clk)-*e.Last429At < usage.Recent429WindowS})
+			if at < *e.NextPollAt {
+				if current, exists := plans[num]; !exists || at < *current.NextPollAt {
+					plans[num] = usage.PollPlan{NextPollAt: &at, IntervalS: &every}
+				}
+			}
+		}
+	}
+	if len(plans) > 0 {
+		_ = s.Usage.SetPollPlan(plans, ids)
+	}
 }
 
 // staticUsageSentinel returns the sentinel state derivable without a network
@@ -208,7 +249,7 @@ func persistPollPlans(
 	identities map[string]usage.Identity,
 ) {
 	now := clock.Seconds(s.Clk)
-	threshold, models := resolvePollInputs(s)
+	policies := resolvePollPolicies(s)
 	plans := make(map[string]usage.PollPlan, len(records))
 	for num, rec := range records {
 		if rec.Sentinel != "" || rec.Error != "" {
@@ -220,16 +261,22 @@ func persistPollPlans(
 		}
 		before := pre[num]
 		recent429 := before.Last429At != nil && (now-*before.Last429At) < usage.Recent429WindowS
-		nextPoll, interval := usage.PlanAfterFetch(usage.PlanInput{
-			PrevIntervalS: before.PollIntervalS,
-			PrevUsage:     before.LastGood,
-			NewUsage:      after.LastGood,
-			IsActive:      infoByNum[num].IsActive,
-			Threshold:     threshold,
-			Models:        models,
-			Recent429:     recent429,
-			Now:           now,
-		})
+		var nextPoll, interval float64
+		for i, policy := range policies {
+			at, every := usage.PlanAfterFetch(usage.PlanInput{
+				PrevIntervalS: before.PollIntervalS,
+				PrevUsage:     before.LastGood,
+				NewUsage:      after.LastGood,
+				IsActive:      infoByNum[num].IsActive,
+				Threshold:     policy.threshold,
+				Models:        policy.models,
+				Recent429:     recent429,
+				Now:           now,
+			})
+			if i == 0 || at < nextPoll {
+				nextPoll, interval = at, every
+			}
+		}
 		np, iv := nextPoll, interval
 		plans[num] = usage.PollPlan{NextPollAt: &np, IntervalS: &iv}
 	}
@@ -245,7 +292,7 @@ func persistPollPlans(
 // may exist so we never refresh the live credential out from under a running
 // Claude Code. Only a probe that completes and finds nothing returns false.
 func activeCCRunning(s *store.Store) bool {
-	sessions, ides, err := procdetect.GetRunningInstancesErr(procdetect.GetClaudeDir())
+	sessions, ides, err := procdetect.GetRunningInstancesErr(s.ProfileDir())
 	if err != nil {
 		return true
 	}

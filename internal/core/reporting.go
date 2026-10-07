@@ -58,20 +58,18 @@ func (sw *Switcher) UsageEntriesByAccount(fetch map[string]bool) map[string]usag
 	return reporting.UsageEntriesByAccount(sw.Store, fetch)
 }
 
-// SetPollPolicyInputs delegates to reporting.SetPollPolicyInputs (spec 02§13
-// set_poll_policy_inputs). Both the frozen autoswitch.Switcher (§2.18) and
-// tui.Facade (§2.20) pin exactly this method; reporting's own doc comment
-// explains why it is a package-level seam rather than store-scoped state (a
-// single process ever hosts one switcher).
+// SetPollPolicyInputs pins this engine without replacing another group.
 func (sw *Switcher) SetPollPolicyInputs(threshold float64, models []string) {
-	reporting.SetPollPolicyInputs(threshold, models)
+	if reporting.SetScopedPollInputs(sw.BackupDir(), sw.ScopeRoot(), threshold, models) {
+		reporting.ReplanCachedUsage(sw.Store)
+	}
 }
 
 // ClearPollPolicyInputs delegates to reporting.ClearPollPolicyInputs (spec
 // 02§13 clear_poll_policy_inputs). Pinned by both frozen interfaces, same as
 // SetPollPolicyInputs above.
 func (sw *Switcher) ClearPollPolicyInputs() {
-	reporting.ClearPollPolicyInputs()
+	reporting.ClearScopedPollInputs(sw.BackupDir(), sw.ScopeRoot())
 }
 
 // firstRunSetup wires reporting.FirstRunSetup (spec 02§11 _first_run_setup):

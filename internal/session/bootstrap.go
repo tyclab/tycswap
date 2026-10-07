@@ -31,11 +31,15 @@ func (m *Manager) SetupSession(identifier string, share, shareHistory bool) (str
 		return "", "", "", err
 	}
 	sessionDir := sessprofile.SessionDirFor(m.accounts.BackupDir(), accountNum, email)
+	owner, checksOwnership := m.accounts.(interface {
+		EnsureSessionAccountAvailable(string, string) error
+		ClaimLegacyProfile(string, string, string) error
+	})
 
 	// Deferred invalidation: honored only when no session is live — a second
 	// `tycswap run` joining a live session must not invalidate under the running
 	// claude (the marker survives for later).
-	if !m.staleApplies(sessionDir) && m.isSessionValid(sessionDir, email, orgUUID) {
+	if !checksOwnership && !m.staleApplies(sessionDir) && m.isSessionValid(sessionDir, email, orgUUID) {
 		// Cheap reuse check without the lock: most launches hit this.
 		m.syncSharing(sessionDir, share, shareHistory)
 		return sessionDir, accountNum, email, nil
@@ -51,6 +55,11 @@ func (m *Manager) SetupSession(identifier string, share, shareHistory bool) (str
 		return "", "", "", cerr.Lock("Failed to acquire lock - another instance may be running")
 	}
 	defer lock.Release()
+	if checksOwnership {
+		if err := owner.EnsureSessionAccountAvailable(accountNum, sessionDir); err != nil {
+			return "", "", "", err
+		}
+	}
 
 	// Re-evaluate the marker under the lock, then re-check validity: another
 	// `tycswap run` may have bootstrapped while we waited.
@@ -62,6 +71,11 @@ func (m *Manager) SetupSession(identifier string, share, shareHistory bool) (str
 		_ = sessprofile.ClearStaleMarker(sessionDir)
 	}
 	if m.isSessionValid(sessionDir, email, orgUUID) {
+		if checksOwnership {
+			if err := owner.ClaimLegacyProfile(accountNum, email, sessionDir); err != nil {
+				return "", "", "", err
+			}
+		}
 		m.syncSharing(sessionDir, share, shareHistory)
 		return sessionDir, accountNum, email, nil
 	}
@@ -77,6 +91,11 @@ func (m *Manager) SetupSession(identifier string, share, shareHistory bool) (str
 			"Session profile for Account-%s (%s) failed validation. Log in with "+
 				"that account and re-add it: tycswap --add-account --slot %s",
 			accountNum, email, accountNum)
+	}
+	if checksOwnership {
+		if err := owner.ClaimLegacyProfile(accountNum, email, sessionDir); err != nil {
+			return "", "", "", err
+		}
 	}
 	// Lock released by defer, before any exec.
 	return sessionDir, accountNum, email, nil
