@@ -1,9 +1,3 @@
-// Package cerr is the typed error set mirroring the Python exception hierarchy.
-//
-// Implements spec 08§11 (exceptions & exit-code mapping) and 02§18. Each Kind
-// string is byte-identical to the Python class name because it is the external
-// contract for the JSON error envelope's error.type field. Error() returns the
-// message alone (matching Python str(exc)); wrapped errors travel via Unwrap.
 package cerr
 
 import (
@@ -11,10 +5,8 @@ import (
 	"fmt"
 )
 
-// Kind is the error's type tag; its string value equals the Python class name.
 type Kind string
 
-// Kind values, one per Python exception class.
 const (
 	KindConfig                Kind = "ConfigError"
 	KindSwitch                Kind = "SwitchError"
@@ -44,8 +36,6 @@ func (e *Error) Error() string { return e.Msg }
 // Unwrap returns the wrapped cause, if any.
 func (e *Error) Unwrap() error { return e.wrapped }
 
-// Wrap attaches an underlying cause and returns the receiver for chaining, e.g.
-// cerr.Config("Generated invalid JSON").Wrap(jsonErr).
 func (e *Error) Wrap(cause error) *Error {
 	e.wrapped = cause
 	return e
@@ -105,15 +95,11 @@ func MigrationIncomplete(format string, a ...any) *Error {
 	return newError(KindMigrationIncomplete, format, a...)
 }
 
-// IsClaudeSwitchError reports whether err is (or wraps) any *Error, mirroring an
-// isinstance check against the ClaudeSwitchError base class.
 func IsClaudeSwitchError(err error) bool {
 	var e *Error
 	return errors.As(err, &e)
 }
 
-// TypeName returns the Kind string for the first *Error in err's chain (the
-// JSON error.type), or "" if err is not a domain error.
 func TypeName(err error) string {
 	var e *Error
 	if errors.As(err, &e) {

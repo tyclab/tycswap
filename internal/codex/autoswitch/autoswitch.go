@@ -26,7 +26,6 @@ import (
 	"github.com/tyclab/tycswap/internal/reporting"
 )
 
-// Tick outcomes (codex/autoswitch.py CodexTick.outcome).
 const (
 	OutcomeOK         = "ok"
 	OutcomeSwitched   = "switched"
@@ -50,9 +49,6 @@ type Tick struct {
 	RunningPIDs []int
 }
 
-// Human is the event-stream line. It always names the provider — two engines
-// share one stream — and, when codex sessions were running at switch time,
-// tells the user to restart them.
 func (t Tick) Human() string {
 	base := "codex: " + t.Outcome
 	if t.Detail != "" {
@@ -68,8 +64,6 @@ func (t Tick) Human() string {
 	return base
 }
 
-// Source is what the engine needs from a switcher; *switcher.Switcher
-// satisfies it, and tests substitute a fake as the Python tests do.
 type Source interface {
 	AccountsSnapshot(ctx context.Context, fetch map[string]bool) reporting.AccountsSnapshot
 	SwitchableAccountNumbers() []string
@@ -85,8 +79,6 @@ type AutoSwitcher struct {
 	Hysteresis float64
 }
 
-// New returns an engine over sw; a nil sw is a default switcher.
-// codex/autoswitch.py defaults are threshold 90 and hysteresis 10.
 func New(sw Source, threshold, hysteresis float64) *AutoSwitcher {
 	if sw == nil {
 		sw = switcher.New(switcher.Options{})
@@ -107,8 +99,6 @@ func (a *AutoSwitcher) snapshot(ctx context.Context) (snap reporting.AccountsSna
 // Tick runs one decision pass. It never panics or returns an error; failures
 // are OutcomeError ticks.
 func (a *AutoSwitcher) Tick(ctx context.Context, dryRun bool) Tick {
-	// fetch=nil: every account eligible; the usage cache's poll plan is what
-	// keeps a tick per interval from becoming a request per account.
 	snap, err := a.snapshot(ctx)
 	if err != nil {
 		return Tick{Outcome: OutcomeError, Detail: fmt.Sprintf("snapshot failed (%v)", err)}
@@ -141,8 +131,6 @@ func (a *AutoSwitcher) Tick(ctx context.Context, dryRun bool) Tick {
 
 	activePct := switcher.DecisionPct(active.Usage)
 	if activePct == nil {
-		// No measurement is not the same as no usage: switching on unknown data
-		// would move the user for no established reason.
 		return Tick{Outcome: OutcomeOK, Detail: fmt.Sprintf("account %s usage unknown", active.Number)}
 	}
 	if *activePct < a.Threshold {

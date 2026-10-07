@@ -51,15 +51,6 @@ func AddAccountFromToken(s *store.Store, token string, email, slotArg *string, a
 	return AddAccountFromTokenWithBaseURL(s, token, "", email, slotArg, assumeYes)
 }
 
-// AddAccountFromTokenWithBaseURL is AddAccountFromToken for a key used with an
-// endpoint other than Anthropic's (DESIGN A46). With a baseURL the token is
-// that endpoint's key: it is stored as an API-key account whatever its shape
-// (a gateway mints keys in its own format), and the record carries the URL,
-// which a switch onto the account writes into Claude Code's settings.json
-// beside the key. The URL is checked before the token is asked for. An empty
-// baseURL is today's add-token, unchanged; refreshing an account in place
-// (same email, no slot) sets the URL exactly as given, so a refresh without
-// one removes it.
 func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email, slotArg *string, assumeYes bool) error {
 	if baseURL != "" {
 		v, err := ccsettings.ValidateBaseURL(baseURL)
@@ -295,10 +286,6 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 	})
 }
 
-// tokenPlaceholderEmail is the §6.2 default identity for a token account added
-// with no --email: <label>-<slot>@token.local. It is a pure function of the slot
-// and the token kind, which is what lets the overwrite confirmation run before
-// the roster read on the --slot path.
 func tokenPlaceholderEmail(isAPIKey bool, slot int) string {
 	label := "setup-token"
 	if isAPIKey {
@@ -380,11 +367,6 @@ func rejectCrossKindCollisionEarly(s *store.Store, email string, isAPIKey bool) 
 	return rejectCrossKindCollision(s, advisory, email, isAPIKey)
 }
 
-// rejectCrossKindCollision is _reject_cross_kind_collision (spec 01§6.3): the
-// guard that keeps an OAuth token from landing on an API-key slot, or the
-// reverse. It answers from the caller's entry roster — the same roster the
-// refresh-in-place lookup and the record write use — so the slot it inspects for
-// a kind and the slot the caller would then overwrite are always the same slot.
 func rejectCrossKindCollision(s *store.Store, data *store.SequenceData, email string, isAPIKey bool) error {
 	slot := s.FindAccountSlot(data, email, "")
 	if slot == "" {

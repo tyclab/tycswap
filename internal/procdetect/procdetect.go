@@ -49,12 +49,6 @@ func GetClaudeDir() string {
 	return paths.GetClaudeConfigHome()
 }
 
-// IsPIDAlive reports whether a process with the given PID is running.
-//
-// pid<=1 (covers 0, negative PIDs, and PID 1/init) is always false regardless
-// of platform. Otherwise POSIX uses kill(pid,0) — EPERM (process exists but
-// owned by another user) counts as alive; Windows uses OpenProcess. See
-// isPIDAliveNative in the platform-specific files.
 func IsPIDAlive(pid int) bool {
 	if pid <= 1 {
 		return false

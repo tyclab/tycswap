@@ -16,10 +16,6 @@ import (
 	"strings"
 )
 
-// Open launches url in the user's default browser without waiting for it.
-// It refuses URLs containing characters outside the RFC 3986 set or that a
-// command interpreter treats specially: the Windows `cmd /c start` fallback
-// re-parses its command line, and refusing them everywhere keeps one rule.
 func Open(url string) error {
 	if !urlShellSafe(url) {
 		return errors.New("refusing to open a URL with shell-significant characters")
@@ -33,9 +29,6 @@ type opener struct {
 	open func(url string) error
 }
 
-// openChain tries each opener in order and stops at the first that works.
-// When every one fails, the error names each attempt and why, so a user (or
-// a log line) sees more than the last fallback's complaint.
 func openChain(url string, steps []opener) error {
 	var why []string
 	for _, s := range steps {
@@ -51,9 +44,6 @@ func openChain(url string, steps []opener) error {
 	return errors.New("could not open a browser (" + strings.Join(why, "; ") + ")")
 }
 
-// launchers names the unix launcher binaries for a GOOS, in the order they
-// are tried; split out so every platform's chain is unit-tested on every
-// platform. Windows has its own chain (browser_windows.go).
 func launchers(goos string) []string {
 	if goos == "darwin" {
 		return []string{"open"}
@@ -61,9 +51,6 @@ func launchers(goos string) []string {
 	return []string{"wslview", "xdg-open", "sensible-browser"}
 }
 
-// launcherOpeners builds the opener chain for the unix launchers: each one is
-// resolved on PATH (a missing binary is that step's failure, and the chain
-// moves on) and started detached with the URL as its only argument.
 func launcherOpeners(goos string) []opener {
 	var steps []opener
 	for _, bin := range launchers(goos) {
@@ -98,9 +85,6 @@ func cmdStartArgs(url string) []string {
 	return []string{"/c", "start", "", strings.ReplaceAll(url, "&", "^&")}
 }
 
-// urlShellSafe reports whether every byte of url is in the RFC 3986 unreserved
-// / reserved / percent set, less the characters a command interpreter treats
-// specially. A url.Values-encoded query always passes.
 func urlShellSafe(url string) bool {
 	if url == "" {
 		return false

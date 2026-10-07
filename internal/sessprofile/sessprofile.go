@@ -1,16 +1,3 @@
-// Package sessprofile is the session-profile leaf: everything both internal
-// store (WP6) and internal session (WP9) need to know about a `tycswap run`
-// session profile's identity and on-disk location, without pulling in
-// session's heavier bootstrap/exec/sharing machinery — this is what breaks
-// the store↔session import cycle (DESIGN §1 / §2.19).
-//
-// Implements spec 06§1.5 (session profile directory naming: slugify_email,
-// session_dir_for, keychain_service_name), 06§1.6 step 1 and 06§1.9
-// (delete_macos_keychain_entry, read_session_identity,
-// session_identity_drifted), and the invalidation/stale-marker/delete
-// helpers switcher.py calls before session.py's heavier machinery
-// (_invalidate_session_credentials, _delete_session_profile,
-// _live_session_pids via process_detection.py).
 package sessprofile
 
 import (
@@ -41,13 +28,6 @@ const StaleMarkerName = ".tycswap-stale-credentials"
 // additionally shadows it with a hashed Keychain entry once Claude writes one).
 const CredentialsFileName = ".credentials.json"
 
-// SlugifyEmail returns a filesystem-safe slug for an email address.
-//
-// The email is NFC-normalized first, then each rune is kept if it is ASCII
-// and either alphanumeric or one of "._-"; anything else (including every
-// byte of a multi-byte rune) becomes a single "_". Uniqueness comes from the
-// "<num>-" slot prefix on the session dir (SessionDirFor), so this only needs
-// to be filesystem-safe (incl. Windows-forbidden characters), not injective.
 func SlugifyEmail(email string) string {
 	normalized := norm.NFC.String(email)
 	out := make([]rune, 0, len(normalized))
@@ -75,13 +55,6 @@ func isSlugSafe(ch rune) bool {
 	return false
 }
 
-// SessionDirFor returns the session profile directory for an account:
-// <backupDir>/sessions/<accountNum>-<slugify_email(email)>.
-//
-// Note: Claude Code itself writes its own PID files at
-// <profile>/sessions/<pid>.json, so a full real path looks like
-// <backup>/sessions/2-user_x.com/sessions/1234.json — the double "sessions/"
-// nesting is intentional, not a bug.
 func SessionDirFor(backupDir, accountNum, email string) string {
 	return filepath.Join(backupDir, "sessions", accountNum+"-"+SlugifyEmail(email))
 }
@@ -160,10 +133,6 @@ func StaleMarkerPath(sessionDir string) string {
 	return filepath.Join(sessionDir, StaleMarkerName)
 }
 
-// MarkStale flags a live session profile for re-bootstrap once it exits.
-// Best-effort: any failure to create the marker is swallowed (worst case the
-// old reuse behavior applies), mirroring mark_session_stale's bare `except
-// OSError: pass`.
 func MarkStale(sessionDir string) {
 	f, err := os.OpenFile(StaleMarkerPath(sessionDir), os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -178,9 +147,6 @@ func IsStale(sessionDir string) bool {
 	return err == nil
 }
 
-// ClearStaleMarker removes the stale marker if present. A missing marker is
-// not an error (mirrors Path.unlink(missing_ok=True)); any other removal
-// failure is propagated.
 func ClearStaleMarker(sessionDir string) error {
 	err := os.Remove(StaleMarkerPath(sessionDir))
 	if err != nil && !os.IsNotExist(err) {
@@ -189,8 +155,6 @@ func ClearStaleMarker(sessionDir string) error {
 	return nil
 }
 
-// LiveSessionPIDs returns the PIDs of Claude instances currently running
-// against an account's session profile (live_sessions_for + pid projection).
 func LiveSessionPIDs(sessionDir string) []int {
 	sessions := procdetect.ListSessions(sessionDir)
 	pids := make([]int, 0, len(sessions))
@@ -200,12 +164,6 @@ func LiveSessionPIDs(sessionDir string) []int {
 	return pids
 }
 
-// DeleteMacOSKeychainEntry best-effort deletes a session profile's hashed
-// Keychain entry. No-op off macOS. Needed before seeding (Claude reads the
-// Keychain before the plaintext file, so a stale entry would shadow a fresh
-// seed) and on profile removal (once the dir is gone the hashed name is
-// unrecoverable). Any Delete failure (including "not usable") is swallowed —
-// an absent entry (rc 44) is already success.
 func DeleteMacOSKeychainEntry(kc keychain.KeychainClient, sessionDir string) {
 	if platform.Detect() != platform.MacOS {
 		return
@@ -234,11 +192,6 @@ func InvalidateSessionCredentials(kc keychain.KeychainClient, sessionDir string)
 	return true, nil
 }
 
-// DeleteSessionProfile removes an account's session profile directory and
-// its Keychain entry. Keychain first: the hashed service name is derived
-// from the directory path and can't be recomputed once the directory is
-// gone. Best-effort throughout (mirrors shutil.rmtree(..., ignore_errors=True));
-// a missing profile is a silent no-op.
 func DeleteSessionProfile(kc keychain.KeychainClient, sessionDir string) {
 	if _, err := os.Stat(sessionDir); err != nil {
 		return
@@ -247,11 +200,6 @@ func DeleteSessionProfile(kc keychain.KeychainClient, sessionDir string) {
 	_ = os.RemoveAll(sessionDir)
 }
 
-// ReadSessionIdentity is a best-effort read of the account identity a
-// session profile is logged in as: <sessionDir>/.claude.json's
-// oauthAccount.emailAddress / organizationUuid (Claude rewrites this key on
-// every login). Returns ok=false when the dir/file/field is missing, the
-// JSON is invalid, the bytes are undecodable, or the email is empty.
 func ReadSessionIdentity(sessionDir string) (email, orgUUID string, ok bool) {
 	data, err := os.ReadFile(filepath.Join(sessionDir, ".claude.json"))
 	if err != nil {

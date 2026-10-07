@@ -1,11 +1,3 @@
-// warnings.go — the offline duplicate-credential and lockstep-usage warnings
-// surfaced in the JSON --list payload and the human list (spec 02§10.1 / 02§11).
-//
-// Implements spec 02§13 (_duplicate_account_warnings, _lockstep_usage_warnings).
-// Duplicates are provable offline (identical fingerprint, or identical non-empty
-// uuid+org across two slots — issue #117's end state); lockstep is a heuristic
-// for two live generations of the same account (identical 5h AND 7d pct + reset
-// timestamps) that carry different fingerprints and untouched identities.
 package reporting
 
 import (

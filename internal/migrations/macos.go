@@ -1,22 +1,3 @@
-// migrate_macos_keyring_to_security (spec 07§5.4): relocates any pre-existing
-// macOS `keyring`-library backup-credential entries (legacy service
-// "claude-code") to the security-CLI-backed "tycswap" Keychain service —
-// a *different* service in the same Keychain, so source and destination
-// coexist safely during write → verify → delete, identical in shape to the
-// Windows migration.
-//
-// DESIGN Amendment A9 simplifies the Go port relative to Python here: Python
-// prefers the third-party `keyring` library for legacy reads and only falls
-// back to shelling out to `security` when `keyring` itself is unusable
-// (NoKeyringError/InitError) — a distinction that exists because Python has
-// two genuinely different backends. A from-scratch Go binary has only one:
-// `internal/keychain`'s /usr/bin/security wrapper, used for *both* the legacy
-// "claude-code" service and the new "tycswap" service (the legacy read
-// simply targets the old service string). There is therefore no
-// keyring-unavailable/security-fallback branch to reproduce — every Keychain
-// failure here is uniformly a hard failure that retries next run, which is
-// exactly Python's behavior for a locked/denied Keychain (the one case that
-// was never eligible for its fallback in the first place).
 package migrations
 
 import (
@@ -65,15 +46,6 @@ func migrateMacOSKeyringToSecurity(host Host) (completed bool, notices []string,
 
 	store := host.Creds()
 
-	// Pre-check: anything already in the security service is done. New
-	// installs and already-migrated users have every account here, so they
-	// never touch the legacy Keychain service at all. Read the security
-	// service *directly* (KCReadBackup, not the transparent .enc-wins
-	// ReadBackup) — this migration's job is the Keychain specifically, so a
-	// fallback .enc must never be mistaken for "already migrated". Any
-	// failure here means the Keychain itself is unusable (locked/denied/
-	// missing) — not "nothing to migrate" — so it defers via
-	// MigrationIncomplete rather than skipping real entries.
 	pending := map[string]string{}
 	for num, email := range accounts {
 		v, err := store.KCReadBackup(num, email)
@@ -138,12 +110,6 @@ func migrateMacOSKeyringToSecurity(host Host) (completed bool, notices []string,
 			}
 		},
 		afterSuccess: func(num, email, sourceUsername string) {
-			// keyring's PasswordDeleteError is raised both for "entry
-			// doesn't exist" and for "user denied the delete prompt" —
-			// indistinguishable without this explicit follow-up. The item
-			// itself already succeeded (in the new service) and is
-			// authoritative either way; a leftover here is harmless cruft
-			// (purge mops it up).
 			if kc.Exists(legacyKeyringService, sourceUsername) {
 				host.Logger().Warningf(
 					"macos_keyring_to_security: legacy keyring entry %s was left behind (delete failed or was denied); harmless — remove manually or via purge",

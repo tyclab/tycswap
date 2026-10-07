@@ -1,9 +1,5 @@
 //go:build windows
 
-// hidewindow_windows.go — keep tasklist from flashing a console window.
-// Implements the creationflags=CREATE_NO_WINDOW argument of claude-swap PR
-// #252 codex/processes.py's win32 branch.
-
 package procdetect
 
 import (

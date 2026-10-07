@@ -31,17 +31,11 @@ import (
 	"github.com/tyclab/tycswap/internal/logging"
 )
 
-// Timeouts per request class. The refresh gets the longer budget because a
-// refresh that times out after the server rotated the token is the expensive
-// failure; usage and accounts are read-only and cheap to retry.
 const (
 	refreshTimeout = 10 * time.Second
 	fetchTimeout   = 5 * time.Second
 )
 
-// Body-size ceilings. Error bodies are only mined for an error code; success
-// bodies are small JSON documents. Both are bounded so a misbehaving proxy
-// cannot make tycswap buffer without limit.
 const (
 	maxErrorBody   = 1 << 16
 	maxSuccessBody = 1 << 20
@@ -104,11 +98,6 @@ func (e *StatusError) Error() string { return "http " + strconv.Itoa(e.Code) }
 // errBadResponse marks a 2xx whose body was unreadable or not JSON.
 var errBadResponse = errors.New("bad response")
 
-// getJSON performs one authenticated GET against a chatgpt.com backend
-// endpoint and decodes the JSON body (json.Number preserved, so an integer
-// percentage stays an integer across the usage.json round trip). Both headers
-// are required by the endpoint: the bearer token names the user, the
-// ChatGPT-Account-Id names which of the user's workspaces is asking.
 func (c *HTTPClient) getJSON(ctx context.Context, url, accessToken, accountID string) (any, error) {
 	reqCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()
@@ -136,9 +125,6 @@ func (c *HTTPClient) getJSON(ctx context.Context, url, accessToken, accountID st
 	return data, nil
 }
 
-// decodeJSON decodes one JSON value of any type with json.Number numbers.
-// Python's json.loads accepts any top-level value, and so does this: a string
-// or list body is a well-formed response that simply fails the shape checks.
 func decodeJSON(r io.Reader) (any, error) {
 	dec := json.NewDecoder(r)
 	dec.UseNumber()
@@ -176,10 +162,6 @@ func debugf(format string, a ...any) {
 	}
 }
 
-// FakeClient is an in-memory Client for tests and downstream fakes. Unset
-// function fields fall back to benign failures (refresh -> transient, usage ->
-// the "network" sentinel, accounts -> no workspaces), so a test that forgets a
-// field sees an account that degrades rather than one that silently succeeds.
 type FakeClient struct {
 	RefreshFn  func(ctx context.Context, payload map[string]any) RefreshOutcome
 	UsageFn    func(ctx context.Context, accessToken, accountID string) UsageFetch

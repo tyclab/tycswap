@@ -1,24 +1,7 @@
-// switching.go — thin delegations to internal/switching: the plain
-// rotation / usage-aware strategies (Switch) and the by-identifier switch
-// (SwitchTo). Both frozen consumer interfaces — autoswitch.Switcher (§2.18)
-// and tui.Facade (§2.20) — pin SwitchTo(id string, jsonOut bool)
-// (map[string]any, error), two arguments only; switching.SwitchTo's `force`
-// parameter (DESIGN §2.15) has no frozen-interface slot, so it is exposed
-// under the distinct name SwitchToForce for cli's `--switch-to --force` path
-// (interfaceChanges: DESIGN §2.17's illustrative sketch showed a 3-arg
-// SwitchTo before A13 froze the 2-arg shape used here).
-//
-// switching.Switch/SwitchTo return `any` (concretely nil or map[string]any —
-// nil only in human, non-JSON mode); the frozen interfaces want
-// map[string]any, so these wrappers type-assert with a safe zero-value
-// fallback.
-//
-// Implements DESIGN §2.15/§2.17/§2.18/§2.20.
 package core
 
 import "github.com/tyclab/tycswap/internal/switching"
 
-// Switch delegates to switching.Switch (spec 02§4).
 func (sw *Switcher) Switch(strategy *string, jsonOut bool, models []string, modelSrc *string) (map[string]any, error) {
 	result, err := switching.Switch(sw.Store, strategy, jsonOut, models, modelSrc)
 	if err != nil {
@@ -28,12 +11,6 @@ func (sw *Switcher) Switch(strategy *string, jsonOut bool, models []string, mode
 	return m, nil
 }
 
-// ApproveAPIKeySwitch records the user's approval for switching onto the
-// API-key account id names (a slot number, email or alias). The switch layer
-// refuses such a target without one, because it changes how Claude Code
-// authenticates and every session already running keeps its old login until it
-// is restarted (DESIGN A33). An id that resolves to no account records nothing:
-// the switch it was given for fails on the same lookup.
 func (sw *Switcher) ApproveAPIKeySwitch(id string) {
 	num, _, _, err := sw.Store.ResolveAccount(id)
 	if err != nil || num == "" {

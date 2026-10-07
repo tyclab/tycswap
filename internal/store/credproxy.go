@@ -1,12 +1,3 @@
-// credproxy.go — the credential/config backup proxies plus the
-// _post_backup_write session-invalidation chokepoint.
-//
-// Implements spec 01§3 / 03§5.2–5.5 (backup credential + config I/O delegated to
-// credstore, with the switcher wrapper running _post_backup_write exactly once
-// after a successful write), spec 01§7 (_delete_account_files, _prune_mappings),
-// and the persist/backfill helpers taken under the account FileLock (spec
-// 01§10.1, non-reentrant). The store performs the pure write and raises on
-// failure BEFORE returning, so _post_backup_write only ever runs after success.
 package store
 
 import (
@@ -24,19 +15,10 @@ import (
 	"github.com/tyclab/tycswap/internal/storenames"
 )
 
-// configBackupPath is configs/.claude-config-{num}-{email}.json (email raw,
-// unslugified; spec 01§1.2), built by storenames so store, credstore and purge
-// share one scheme. The email has passed storenames.ValidEmail at the store's
-// entry points, which is what keeps the name a single path component.
 func (s *Store) configBackupPath(num, email string) string {
 	return filepath.Join(s.ConfigsDir, storenames.ConfigFile(num, email))
 }
 
-// ReadAccountCredentials returns a slot's backup credential (.enc-wins), "" when
-// missing (spec 03§5.3, via credstore). A stored credential holding nothing but
-// seat-wide keys ({} included, ccfile.SeatWideOnly) is no credential and reads
-// as missing too, so every switch path refuses the slot instead of writing no
-// login live over the managed key (DESIGN A30).
 func (s *Store) ReadAccountCredentials(num, email string) (string, error) {
 	creds, err := s.Creds.ReadBackup(num, email)
 	if ccfile.SeatWideOnly(creds) {
@@ -45,8 +27,6 @@ func (s *Store) ReadAccountCredentials(num, email string) (string, error) {
 	return creds, err
 }
 
-// ReadAccountConfig returns a slot's backup config text, or "" when absent (spec
-// 01§ _read_account_config). A non-NotExist read failure propagates.
 func (s *Store) ReadAccountConfig(num, email string) (string, error) {
 	data, err := os.ReadFile(s.configBackupPath(num, email))
 	if err != nil {
@@ -58,8 +38,6 @@ func (s *Store) ReadAccountConfig(num, email string) (string, error) {
 	return string(data), nil
 }
 
-// WriteAccountConfig writes a slot's backup config, chmod 0600 on non-Windows
-// (spec 01§ _write_account_config). The config directory is created if needed.
 func (s *Store) WriteAccountConfig(num, email, config string) error {
 	// Atomic (temp file, fsync, rename): a crash mid-write must not leave an
 	// empty config backup, which would make the slot unswitchable.

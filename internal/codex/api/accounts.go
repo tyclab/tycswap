@@ -24,24 +24,12 @@ import (
 	"github.com/tyclab/tycswap/internal/codex/authfile"
 )
 
-// ErrMissingAuth is returned when there is no access token or account id to
-// ask with; no request is made.
 var ErrMissingAuth = errors.New("codex accounts: MissingAuth")
 
-// Workspace is one named row of /backend-api/accounts. AccountID is the
-// item's "id" (a chatgpt_account_id); Name its non-empty "name". Plan is the
-// item's plan_type normalized through authfile.NormalizePlan when the row
-// carries one, else "" — codex/workspaces.py does not read it, and nothing
-// here depends on it.
 type Workspace struct {
 	AccountID, Name, Plan string
 }
 
-// FetchAccounts asks /backend-api/accounts for the calling user's workspaces.
-// Rows with a null or empty name are omitted rather than returned as "", so a
-// later successful fetch can still fill them in (storing "" would look like a
-// real answer). A duplicated id keeps its position and takes the last name, as
-// the Python dict it ports would.
 func (c *HTTPClient) FetchAccounts(ctx context.Context, accessToken, accountID string) ([]Workspace, error) {
 	if accessToken == "" || accountID == "" {
 		return nil, ErrMissingAuth
@@ -66,9 +54,6 @@ func (c *HTTPClient) FetchAccounts(ctx context.Context, accessToken, accountID s
 	return ws, nil
 }
 
-// parseAccounts reads {"items": [{"id", "name", ...}]} into workspaces. A body
-// without an items list is a bad response; items that are not objects, or lack
-// a truthy id or a non-empty string name, are skipped.
 func parseAccounts(data any) ([]Workspace, error) {
 	doc, _ := data.(map[string]any)
 	items, ok := doc["items"].([]any)

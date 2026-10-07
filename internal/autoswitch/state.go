@@ -86,12 +86,6 @@ func ReadQuarantineEntries(statePath string) map[string]QuarantineEntry {
 	return out
 }
 
-// ReadQuarantine is ReadQuarantineEntries reduced to slot number → reason (""
-// when the entry carries no readable reason string).
-//
-// This is the read seam the TUI's Auto "next best" panel uses to label the
-// quarantined slots the engine excludes from its candidate set but that would
-// otherwise rank as viable targets (DESIGN A18).
 func ReadQuarantine(statePath string) map[string]string {
 	entries := ReadQuarantineEntries(statePath)
 	out := make(map[string]string, len(entries))

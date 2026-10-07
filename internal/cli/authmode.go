@@ -1,15 +1,3 @@
-// authmode.go — one explicit approval in front of a switch onto an API-key
-// account, the one switch that changes HOW Claude Code authenticates (DESIGN
-// A33).
-//
-// Switching which subscription account is active is cheap and reversible: the
-// credential is rewritten and a running session picks it up on its own.
-// Moving onto an API-key account is not: it replaces the subscription login
-// with a managed key billed per token, and a Claude Code session that is
-// already running keeps the login it started with until it is restarted. The
-// switch layer refuses such a target without an approval
-// (switching.ApproveAPIKeySwitch); this file is where the command line asks
-// for one, naming the sessions the user will have to restart.
 package cli
 
 import (
@@ -25,26 +13,16 @@ import (
 	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
-// stdinIsTerminal reports whether stdin can answer a prompt (a terminal, not
-// /dev/null or a pipe); tests replace it.
 var stdinIsTerminal = lifecycle.StdinIsTerminal
 
-// runningSessions counts the Claude Code sessions alive under the default
-// Claude config directory, the login a switch rewrites. A detection failure
-// counts as zero: the notice is advisory, and a wrong zero is better than
-// refusing the operation.
 var runningSessions = func() int {
 	return len(procdetect.ListSessions(procdetect.GetClaudeDir()))
 }
 
-// restartNotice is the sentence every auth-mode change ends with. It names the
-// number of sessions because "restart Claude Code" reads as optional until you
-// know how many are affected.
 func restartNotice() string {
 	return switching.RestartNotice(runningSessions())
 }
 
-// Why confirmAuthModeChange said no.
 const (
 	authModeApproved = iota
 	authModeNotATerminal
@@ -64,9 +42,6 @@ func confirmAuthModeChange(out io.Writer, question, detail string, assumeYes boo
 	return confirmAuthModeChangeWith(out, question, detail, restartNotice(), assumeYes)
 }
 
-// confirmAuthModeChangeWith is confirmAuthModeChange with the sentence about
-// running sessions given: a switch onto an account with a base URL says what
-// such a session does with settings.json instead (DESIGN A46).
 func confirmAuthModeChangeWith(out io.Writer, question, detail, notice string, assumeYes bool) int {
 	fmt.Fprintln(out, detail)
 	fmt.Fprintln(out, notice)
@@ -112,10 +87,6 @@ func confirmSwitchToAPIKey(out io.Writer, identifier string, sw *core.Switcher, 
 	detail := "An API-key account authenticates with a key instead of a subscription login, and its usage is billed per token."
 	notice := restartNotice()
 	if base := sw.Store.AccountBaseURL(num); base != "" {
-		// Where the requests go is the part of this switch worth reading
-		// twice, so the prompt names the whole URL; and a running session
-		// takes it up when it re-reads settings.json, not only after a
-		// restart (DESIGN A46).
 		detail += "\n" + switching.EndpointNotice(termsafe.Strip(base))
 		notice = switching.EndpointSessionNotice(runningSessions())
 	}
@@ -134,7 +105,6 @@ func confirmSwitchToAPIKey(out io.Writer, identifier string, sw *core.Switcher, 
 	}
 }
 
-// activeSlot is the slot the live login belongs to, or "".
 func activeSlot(sw *core.Switcher) string {
 	email, orgUUID, ok := sw.Store.GetCurrentAccount()
 	if !ok {

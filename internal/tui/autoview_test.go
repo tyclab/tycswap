@@ -100,11 +100,6 @@ func TestCandidatesTextSoonestResetOrder(t *testing.T) {
 	a.settings = settings.Default()
 	a.settings.Strategy = "soonest-reset"
 	out := a.candidatesText(candidatesSnapshot(), 0, testNow).plain()
-	// Every headroom account here is below the threshold, so: tier 0
-	// (below-threshold, known renewal), renewal asc: 3 (07-19) before 2 (07-20);
-	// tier 1 (below-threshold, unknown renewal): 4; tier 3 (at limit), known
-	// renewal first: 5 (07-18) before unknown 6; tier 4 sentinel: 7; tier 5
-	// unknown: 8. Tier 2 (over-threshold, below-limit) is empty in this snapshot.
 	assertOrder(t, out, []string{"acc3@x", "acc2@x", "acc4@x", "acc5@x", "acc6@x", "acc7@x", "acc8@x"})
 }
 
@@ -315,15 +310,6 @@ func assertQuarantineWarn(t *testing.T, rt richText) {
 	t.Fatalf("no quarantine marker segment in %q", rt.plain())
 }
 
-// -- per-window candidate cells, per-row FALLBACK layout (DESIGN A18) --------
-//
-// Everything from here to the "every row shape fits the width" section pins the
-// per-row layout candidatesText falls back to when the shared window table
-// cannot fit the terminal: its cell grammar ("5h 12% · 7d 88%"), its three
-// emphasis levels, its countdown parentheticals and its width ladder. The rows
-// are rendered through oneRowFallback* rather than through candidatesText, so
-// each contract stays pinned at every width instead of only below the flip.
-
 // scopedWindow is one scoped per-model weekly window in a fixture's last_good.
 type scopedWindow struct {
 	name string
@@ -365,15 +351,6 @@ func oneRowPanel(t *testing.T, lastGood map[string]any, model *string, width int
 	}, width, testNow)
 }
 
-// -- the per-row FALLBACK layout ---------------------------------------------
-//
-// candidatesText lays its rows out with the shared window table (table.go)
-// wherever the table fits, and drops the WHOLE panel to the per-row layout
-// (candidateRow / candidateLabelRow) when it does not — the layout that narrows
-// all the way down to a bare slot number. The helpers below render that
-// fallback shape directly, so the cell grammar and the width ladder that belong
-// to it stay pinned at every width rather than only below the flip.
-
 // oneRowFallback renders one candidate's per-row fallback row (slot 2,
 // "acc2@x"), headed by the panel header the real panel puts above it, so the
 // cell helpers read it exactly as they read a panel.
@@ -402,13 +379,6 @@ func oneRowFallbackAt(t *testing.T, email string, lastGood map[string]any, model
 	return out
 }
 
-// cellEmphasis classifies how a row rendered one window cell, by the styling
-// candidateRow gives each emphasis level: "binding" (severity-colored + bold),
-// "counted" (muted label + severity-colored pct, NOT bold — color states what
-// the figure means, bold states which one is acted on), "uncounted" (muted +
-// dim), or "" when the cell is not on the row at all. Any other styling is
-// reported verbatim so a botched level fails loudly instead of silently
-// matching.
 func cellEmphasis(t *testing.T, rt richText, label string) string {
 	t.Helper()
 	for i, s := range rt.segs {
@@ -447,11 +417,6 @@ func cellPct(t *testing.T, cell string) float64 {
 	return pct
 }
 
-// TestCandidateRowEmphasisPerWindow fixes the row contract of DESIGN A18: every
-// window the account reports is listed and labeled in RelevantWindows order, the
-// BINDING window (the counted maximum, first winning a tie) is severity-colored
-// and bold, other COUNTED windows stay readable, and scoped windows
-// autoswitch.model does not match are listed but de-emphasized.
 func TestCandidateRowEmphasisPerWindow(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -875,11 +840,6 @@ func TestCandidateRowClipsEmailToTheEllipsis(t *testing.T) {
 	}
 }
 
-// TestCandidateRowDropOrder pins the direction of the within-class scan
-// dropCandidateCell documents: the RIGHTMOST uncounted cell goes first, then the
-// next rightmost, and only then the rightmost non-binding counted cell. A row
-// with several droppable cells of each class is the only fixture that can tell a
-// rightmost-first scan from a leftmost-first one.
 func TestCandidateRowDropOrder(t *testing.T) {
 	// autoswitch.model = Opus: 5h/7d/Opus count, Fable and Haiku do not, and Opus
 	// (the highest counted pct) binds. Full row is 61 columns:
@@ -924,11 +884,6 @@ func TestCandidateRowDropOrder(t *testing.T) {
 	}
 }
 
-// TestCandidateCountdownDropOrder pins the direction of the within-class scan for
-// countdowns, the half TestCandidateRowDropOrder cannot see: with TWO droppable
-// cells in each class, the RIGHTMOST cell of a class loses its countdown first,
-// and a class gives up every one of its countdowns before it gives up a single
-// cell.
 func TestCandidateCountdownDropOrder(t *testing.T) {
 	// autoswitch.model = Opus: 5h/7d/Opus count, Fable and Haiku do not, and Opus
 	// (the highest counted pct) binds. Full row is 121 columns.
@@ -965,18 +920,6 @@ func TestCandidateCountdownDropOrder(t *testing.T) {
 	}
 }
 
-// TestCandidateRowWidthLadderWithCountdowns fixes the full width ladder now that
-// a cell carries a countdown: countdowns are supporting detail, so each class
-// loses its countdowns before it loses its cells, and the whole ladder runs
-// least-informative first —
-//
-//	(a) uncounted countdowns, (b) uncounted cells, (c) counted countdowns,
-//	(d) counted non-binding cells, (e) the binding countdown, (f) the email,
-//	(g) the whole-line guard
-//
-// — rightmost first within each class, one step at a time, so a row only ever
-// gives up as much as the width demands. The binding cell's label+pct is the
-// ranking key and is on no rung of the ladder.
 func TestCandidateRowWidthLadderWithCountdowns(t *testing.T) {
 	lg := resetRow(t)
 	const email = "a@x"
@@ -1395,12 +1338,6 @@ func accountWindows(fiveHour, sevenDay float64, resetsAt string) map[string]any 
 	return map[string]any{"five_hour": map[string]any{"pct": fiveHour}, "seven_day": sd}
 }
 
-// TestCandidatesPanelJudgesEachWindowAgainstItsOwnBar: the panel ranks the
-// way the engine decides (DESIGN A34). A row is "at threshold" (tier 2) when
-// ANY window reached the bar that governs it: a 5h window at 90 % is over the
-// 85 % 5h bar although it is far below the 97 % 7d bar, so its early renewal
-// does not put it first. "best" ranks by WEEKLY room, not by the binding
-// figure.
 func TestCandidatesPanelJudgesEachWindowAgainstItsOwnBar(t *testing.T) {
 	snap := &reporting.AccountsSnapshot{
 		ActiveNumber: "1",

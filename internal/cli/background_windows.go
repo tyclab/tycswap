@@ -25,11 +25,6 @@ func spawnDetachedApp(exe, logPath string) (backgroundApp, error) {
 	return watchProcess(p), nil
 }
 
-// startDetached starts argv without a console (A41): stdin on NUL,
-// stdout and stderr appended to logPath. Every handle is a real file: a nil
-// *os.File becomes INVALID_HANDLE_VALUE, which is also the pseudo-handle for
-// the current process, so os.StartProcess would hand the child a handle to
-// its parent process as stdin instead of nothing.
 func startDetached(exe string, argv, env []string, logPath string) (*os.Process, error) {
 	null, err := os.OpenFile(os.DevNull, os.O_RDONLY, 0)
 	if err != nil {

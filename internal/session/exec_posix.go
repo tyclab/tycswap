@@ -1,10 +1,5 @@
 //go:build !windows
 
-// POSIX terminal handoff: syscall.Exec replaces the tycswap process image
-// entirely (same as execvpe) — the FileLock is already released, so an exec'd
-// claude never inherits a held flock.
-//
-// Implements spec 06§1.8 (_exec POSIX branch).
 package session
 
 import (
@@ -13,8 +8,6 @@ import (
 	"syscall"
 )
 
-// CLICommand is exec.CommandContext(ctx, bin, args...); Windows runs a .cmd
-// or .bat differently (exec_windows.go).
 func CLICommand(ctx context.Context, bin string, args ...string) *exec.Cmd {
 	return exec.CommandContext(ctx, bin, args...)
 }

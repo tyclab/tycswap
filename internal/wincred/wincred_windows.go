@@ -1,21 +1,5 @@
 //go:build windows
 
-// Real Windows Credential Manager access (spec 07§5.3, DESIGN Amendment A9):
-// wraps advapi32.dll's CredReadW/CredDeleteW for CRED_TYPE_GENERIC entries.
-//
-// The third-party Python `keyring` library's WinVaultKeyring backend does not
-// store (service, username) as a compound Credential Manager key directly —
-// Windows Credential Manager has exactly one entry per TargetName, with the
-// username living inside that entry as a separate field. `keyring` stores the
-// first password for a given service under the plain TargetName == service;
-// a second, different username under the same service collides, so `keyring`
-// falls back to storing (and later resolving) it under the compound TargetName
-// "{username}@{service}". Since claude-swap's legacy accounts share one service
-// ("claude-code") with a distinct username per account
-// ("account-{num}-{email}"), most entries beyond the first live under the
-// compound name. Get reproduces this exact two-step resolution: try the plain
-// TargetName first and accept it only if its stored UserName field matches the
-// requested account; otherwise try the compound name.
 package wincred
 
 import (
@@ -127,8 +111,6 @@ var credDelete = func(target string) error {
 	return nil
 }
 
-// utf16BytesToString decodes a little-endian UTF-16 byte blob (no NUL
-// assumption beyond what's present) to a Go string.
 func utf16BytesToString(b []byte) string {
 	u16 := make([]uint16, len(b)/2)
 	for i := range u16 {
@@ -139,10 +121,6 @@ func utf16BytesToString(b []byte) string {
 
 func compoundName(service, account string) string { return account + "@" + service }
 
-// Get reproduces keyring's WinVaultKeyring.get_password resolution: try the
-// plain service name first, accepting it only when the stored username matches
-// account (the "first account under this service" case); otherwise fall back
-// to the compound "{account}@{service}" name.
 func (Real) Get(service, account string) (string, bool, error) {
 	value, username, found, err := credRead(service)
 	if err != nil {
@@ -161,9 +139,6 @@ func (Real) Get(service, account string) (string, bool, error) {
 	return value, true, nil
 }
 
-// Delete removes whichever of the plain or compound target names currently
-// holds account's entry (mirroring Get's resolution), best-effort against
-// each individually.
 func (Real) Delete(service, account string) error {
 	_, username, found, err := credRead(service)
 	if err != nil {

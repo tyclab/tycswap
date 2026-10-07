@@ -1,11 +1,3 @@
-// Usage-fetch orchestration: proactive/reactive refresh, the 401-retry path,
-// paste-safe failure logging, and the persist callback.
-//
-// Implements spec 04§1.17 (_log_usage_failure), 04§1.22 (fetch_usage),
-// 04§1.23 (try_fetch_usage_for_account), 04§1.24 (fetch_usage_for_account),
-// 04§1.25 (_persist). The paste-safe invariant (04§1.17) is load-bearing: the
-// WARNING context carries the account number only, never the email.
-
 package oauth
 
 import (
@@ -131,8 +123,6 @@ func TryFetchUsageGuarded(
 
 	working := creds
 
-	// Proactive refresh: inactive accounts with a refresh token and an expired
-	// access token only.
 	if !isActive && oauth != nil && truthyStr(oauth["refreshToken"]) &&
 		IsOAuthTokenExpired(oauth["expiresAt"], time.Now().UTC()) {
 		refresh := refreshFn(ctx, working)
@@ -145,12 +135,8 @@ func TryFetchUsageGuarded(
 				accessToken = at
 			}
 		} else if refresh.Error == ErrInvalidGrant {
-			// Dead lineage: don't add a 401/429 to a lost cause; report the
-			// permanent failure distinctly so the store can quarantine.
 			return UsageOutcome{Error: ErrInvalidGrant}
 		}
-		// A transient refresh failure falls through to try the expired token;
-		// the 401 path below retries the refresh.
 	}
 
 	raw, err := c.Usage(ctx, accessToken)
@@ -165,7 +151,6 @@ func TryFetchUsageGuarded(
 			logUsageFailure(logCtx, err, kind, retryAfter)
 			return UsageOutcome{Error: kind, RetryAfterS: retryAfter}
 		}
-		// Inactive account, 401, has refresh token: retry once after refresh.
 		refresh := refreshFn(ctx, working)
 		if refresh.Credentials == "" {
 			logUsageFailure(logCtx, err, kind, nil)
@@ -191,14 +176,11 @@ func TryFetchUsageGuarded(
 		return UsageOutcome{Error: kind2, RetryAfterS: retryAfter2}
 	}
 
-	// Any other error: timeout, network, bad-response.
 	kind, retryAfter := classifyUsageError(err)
 	logUsageFailure(logCtx, err, kind, retryAfter)
 	return UsageOutcome{Error: kind, RetryAfterS: retryAfter}
 }
 
-// FetchUsageForAccount is the usage-map-or-nil wrapper over
-// TryFetchUsageForAccount (04§1.24).
 func FetchUsageForAccount(
 	ctx context.Context,
 	c Client,
@@ -209,8 +191,6 @@ func FetchUsageForAccount(
 	return TryFetchUsageForAccount(ctx, c, num, email, creds, isActive, persist).Usage
 }
 
-// FetchUsage fetches and normalizes usage for a bare access token, or nil on
-// any failure (04§1.22). Logs the failure with empty context.
 func FetchUsage(ctx context.Context, c Client, accessToken string) map[string]any {
 	raw, err := c.Usage(ctx, accessToken)
 	if err != nil {

@@ -23,8 +23,6 @@
 // its snapshot". Keeping it a callback means this package never needs to know
 // that rule, and the rule stays in one place.
 
-// Package usagecache is the Codex adapter over the shared usage.Store: which
-// slots to fetch, how to record them, and the workspace-name refresh.
 package usagecache
 
 import (
@@ -57,8 +55,6 @@ var nonFailureSentinels = map[string]bool{
 // never-refresh-the-active-account rule.
 type PayloadFor func(s store.Slot) map[string]any
 
-// Cache decides which Codex slots need a request, fetches those, and records
-// them in the shared usage table under the store's cache directory.
 type Cache struct {
 	st     *store.Store
 	client api.Client
@@ -74,8 +70,6 @@ func New(st *store.Store, client api.Client, clk clock.Clock) *Cache {
 	return &Cache{st: st, client: client, clk: clk, usage: usage.NewStore(st.CacheDir(), clk)}
 }
 
-// accountID is the chatgpt_account_id half of an account key (the part after
-// the last "::", Python's rpartition).
 func accountID(key string) string {
 	if i := strings.LastIndex(key, "::"); i >= 0 {
 		return key[i+2:]
@@ -83,8 +77,6 @@ func accountID(key string) string {
 	return key
 }
 
-// userID is the chatgpt_user_id half of an account key (Python's partition:
-// everything before the first "::", or the whole key when there is none).
 func userID(key string) string {
 	if i := strings.Index(key, "::"); i >= 0 {
 		return key[:i]
@@ -112,19 +104,10 @@ func (c *Cache) Entries(slots []store.Slot) map[string]usage.UsageEntry {
 	return c.usage.Entries(c.Identities(slots))
 }
 
-// Refresh fetches whichever of slots is genuinely due, then returns entries
-// for them all. A slot that is fresh, in backoff, or already reserved by
-// another process is served from cache without a request — that is the entire
-// point.
-//
-// threshold feeds the poll planner's escalation band (Python's default is
-// 100); activeNumber marks the live slot for its faster cadence.
 func (c *Cache) Refresh(ctx context.Context, slots []store.Slot, payloadFor PayloadFor, threshold float64, activeNumber string) map[string]usage.UsageEntry {
 	return c.refresh(ctx, slots, payloadFor, threshold, activeNumber, true)
 }
 
-// RefreshCurrent requests a measurement after an explicit add, even if the
-// cached one is fresh. Backoff and in-flight claims still prevent requests.
 func (c *Cache) RefreshCurrent(ctx context.Context, slot store.Slot, payloadFor PayloadFor, threshold float64) error {
 	slots := []store.Slot{slot}
 	now := clock.Seconds(c.clk)
@@ -150,10 +133,6 @@ func (c *Cache) refresh(ctx context.Context, slots []store.Slot, payloadFor Payl
 	}
 	identities := c.Identities(slots)
 
-	// respectPlans=true: the on-demand caller contract. Fetch only when the
-	// entry is both stale and poll-due, so a second `tycswap codex list` seconds
-	// after the first costs nothing. A reserve error claims nothing, which
-	// degrades to serving the cache.
 	claims, _ := c.usage.Reserve(numbers, identities, respectPlans)
 
 	sentinels := map[string]string{}
@@ -175,16 +154,9 @@ func (c *Cache) refresh(ctx context.Context, slots []store.Slot, payloadFor Payl
 			}
 		}
 
-		// Record then replan, as the Claude collector does; this store version
-		// has no single-transaction plan argument. Write errors are non-fatal:
-		// the next pass simply fetches again.
 		_ = c.usage.Record(outcomes, identities)
 		_ = c.usage.SetPollPlan(plans, identities)
 
-		// A sentinel is a live overlay, re-derived every pass and never
-		// persisted (see usage.UsageEntry). The store therefore cannot hand it
-		// back, so this pass's sentinels are laid over the read here —
-		// otherwise "api key" or a 401 would render as a blank row.
 		for num, rec := range outcomes {
 			if rec.Sentinel != "" {
 				sentinels[num] = rec.Sentinel
@@ -201,8 +173,6 @@ func (c *Cache) refresh(ctx context.Context, slots []store.Slot, payloadFor Payl
 	return entries
 }
 
-// fetchOne performs one account's fetch and returns it as a record the store
-// can merge, plus the poll plan for a success (nil otherwise).
 func (c *Cache) fetchOne(ctx context.Context, slot store.Slot, payload map[string]any, prev usage.UsageEntry, threshold float64, isActive bool) (usage.FetchRecord, *usage.PollPlan) {
 	if slot.AuthMode == "apikey" {
 		return usage.FetchRecord{Sentinel: SentinelAPIKey}, nil

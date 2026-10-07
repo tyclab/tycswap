@@ -10,11 +10,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// replaceable reports whether this process may rename a new build over exe:
-// it can write the directory and the file, and it owns the file (in a
-// directory without the sticky bit, writing the directory is enough to
-// replace a binary someone else owns). Access checks only: nothing is
-// created.
 func replaceable(exe string) bool {
 	if unix.Access(filepath.Dir(exe), unix.W_OK) != nil || unix.Access(exe, unix.W_OK) != nil {
 		return false

@@ -1,7 +1,3 @@
-// accent.go — GET /static/accent.css: the build's brand accent as CSS custom
-// properties. The page's CSP forbids inline style, so the one value a build
-// may override (brand.AccentColor) is served as a tiny stylesheet of its own
-// instead of being templated into the page.
 package web
 
 import (

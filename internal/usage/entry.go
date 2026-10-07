@@ -15,10 +15,6 @@ type Identity struct {
 	OrgUUID string
 }
 
-// FetchRecord is the outcome of one fetch attempt handed to Store.Record
-// (04§2.3). Exactly one of three shapes: success (Error and Sentinel empty;
-// Usage may be nil), failure (Error set, optional RetryAfterS), or sentinel
-// (Sentinel set — recorded as a no-op). An empty string means Python's None.
 type FetchRecord struct {
 	Usage       map[string]any
 	Error       string
@@ -92,11 +88,6 @@ func WithSentinel(entry UsageEntry, sentinel string) UsageEntry {
 	return entry
 }
 
-// DueCandidate returns the due candidate with the stalest data, or "" for none
-// (04§2.7). A candidate with no entry in the map (present=false) or a
-// never-fetched entry ranks most-due (rank 0); sentinel, dead, in-backoff, and
-// not-yet-due candidates are skipped. Among fetched entries the smallest
-// fetchedAt wins, ties break lexicographically by slot number.
 func DueCandidate(candidates []string, entries map[string]UsageEntry, now float64) string {
 	type dueRow struct {
 		rank      int

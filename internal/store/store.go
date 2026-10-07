@@ -1,26 +1,3 @@
-// Package store is the account-store substrate the whole switcher sits on:
-// sequence.json's model and read/write discipline, the backup-directory path
-// wiring, the credential/config backup proxies (with the _post_backup_write
-// session-invalidation chokepoint), identifier resolution, the on-read
-// org-field backfill, the live-session guards, and the FileLock / UsageStore /
-// CredentialStore handles. lifecycle/switching/reporting operate on it as free
-// functions; core.Switcher composes it.
-//
-// Implements spec 01 (account store & lifecycle store-side primitives) and the
-// 03 credential/lock wiring, plus the parity-critical construction order of
-// ClaudeAccountSwitcher.__init__ (spec 07§5.6, DESIGN Appendix): (1) home +
-// platform, (2) backup root, (3) legacy-dir migration — the ONE fallible
-// construction step that may abort with a MigrationError, (4) derive paths,
-// (5) lazy logging + UsageStore, (6) CredentialStore, (7) registry
-// migrations.Run — which must NEVER abort construction. Construction does NOT
-// create the backup directory: a no-op run must not materialize it (spec
-// 07§5.5).
-//
-// The migrations→store cycle is broken via an in-package adapter satisfying
-// migrations.Host (DESIGN Amendment A3); the persisted account records are
-// modeled as map[string]json.RawMessage so the ABSENCE of the optional
-// alias/kind/disabled keys survives a read/mutate/rewrite unchanged (DESIGN
-// Amendment A1's sibling risk, spec 01§2.2 / risk 3).
 package store
 
 import (
@@ -44,13 +21,6 @@ import (
 	"github.com/tyclab/tycswap/internal/wincred"
 )
 
-// Store is the shared substrate. Home/SequenceFile/ConfigsDir/CredentialsDir/
-// LockFile/Platform are read directly by the behavior packages; Creds/Usage/
-// Lock/OAuth/Log/Clk are the injected collaborators. BackupDir is exposed as a
-// method (not a field) so *core.Switcher can embed *Store and still satisfy the
-// frozen autoswitch.Switcher / tui.Facade BackupDir() contract (DESIGN A13) —
-// a promoted exported field of the same name would make that method
-// unimplementable.
 type Store struct {
 	Home           string
 	SequenceFile   string
@@ -83,22 +53,15 @@ type Store struct {
 // /usr/bin/security, real Windows Credential Manager stub, notices to
 // os.Stderr, no OAuth network client). Tests inject fakes.
 type Options struct {
-	// Debug enables the logging console handler on stderr (spec 08§12).
 	Debug bool
 	// Clock is the wall clock for timestamps and cooldowns; default clock.System.
 	Clock clock.Clock
 	// Keychain is the macOS Keychain client; default keychain.Security{}.
 	Keychain keychain.KeychainClient
-	// OAuth is the network client for usage/refresh (used by higher tiers); may
-	// be nil in store-only contexts.
-	OAuth oauth.Client
+	OAuth    oauth.Client
 	// WinCred is the legacy Windows Credential Manager reader; default
 	// wincred.New() (the always-not-found stub off Windows).
-	WinCred wincred.Client
-	// Stderr receives the two construction-time migration notices (legacy-dir
-	// move and registry-migration progress); default os.Stderr. Python prints
-	// these directly to sys.stderr, bypassing the JSON envelope, because they
-	// fire before the CLI knows --json (spec 07§5.6, WP12 note on Run's return).
+	WinCred           wincred.Client
 	Stderr            io.Writer
 	DefaultProfileDir string
 }
@@ -124,14 +87,12 @@ func New(opts Options) (*Store, error) {
 		stderr = os.Stderr
 	}
 
-	// (1) home + platform.
 	home, err := os.UserHomeDir()
 	if err != nil {
 		home = ""
 	}
 	plat := platform.Detect()
 
-	// (2) backup root.
 	backupDir := paths.GetBackupRoot()
 	defaultProfileDir := opts.DefaultProfileDir
 	defaultUnpinned := opts.DefaultProfileDir == "" && os.Getenv("CLAUDE_CONFIG_DIR") == ""
@@ -159,7 +120,6 @@ func New(opts Options) (*Store, error) {
 	// (3) no legacy-dir move any more (DESIGN Amendment A23): an old store
 	// is only ever copied, by `tycswap migrate`, and never touched here.
 
-	// (4) derive paths.
 	sequenceFile := filepath.Join(backupDir, "sequence.json")
 	configsDir := filepath.Join(backupDir, "configs")
 	credentialsDir := filepath.Join(backupDir, "credentials")
@@ -203,7 +163,6 @@ func New(opts Options) (*Store, error) {
 		defaultKeychainService: defaultKeychainService,
 	}
 
-	// Usage-table writes rebuild statusline.json (DESIGN A54).
 	usageStore.SetOnChange(s.PublishStatusline)
 
 	// (7) registry migrations — self-contained, never abort construction. Every
@@ -225,8 +184,6 @@ func (s *Store) BackupDir() string { return s.backupDir }
 // (Options.Keychain; keychain.Security by default).
 func (s *Store) Keychain() keychain.KeychainClient { return s.kc }
 
-// timestamp is get_timestamp(): the current wall time in UTC, seconds
-// precision, Z-suffixed (spec 01§2.1, models.get_timestamp).
 func (s *Store) timestamp() string {
 	return s.Clk.Now().UTC().Format("2006-01-02T15:04:05Z")
 }

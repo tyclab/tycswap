@@ -93,10 +93,6 @@ type Scoped struct {
 	ResetsAt *int64  `json:"resetsAt"`
 }
 
-// Build makes the document from in, without I/O. A record without an email is
-// skipped; two records with one identity publish the lower slot. The label is
-// the alias, else the organization name, else the email, with terminal control
-// characters stripped.
 func Build(in Input) Document {
 	doc := Document{
 		SchemaVersion:   SchemaVersion,

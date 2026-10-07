@@ -1,16 +1,3 @@
-// Package ccfile is Claude Code's own file I/O: the global config
-// (~/.claude.json) and the active-credentials file (~/.claude/.credentials.json).
-//
-// Implements spec 03§3 (external Claude Code storage), 03§5.5 (writing the
-// active credential and the key-scoped ~/.claude.json RMW). All paths resolve
-// through the paths package, so CLAUDE_CONFIG_DIR is honored transparently.
-//
-// The atomic writers here deliberately do NOT reuse internal/atomicfile: that
-// helper chmods the parent directory to 0700, but Python's
-// _update_global_config / _write_active_credentials_file only chmod the file
-// (0600) and never touch the parent — critical for ~/.claude.json, whose parent
-// is the user's $HOME. This package mirrors Python exactly: mkdir the parent
-// (0700 when it is created; an existing one keeps its mode), write a temp sibling, rename, then chmod the file (non-Windows).
 package ccfile
 
 import (
@@ -83,9 +70,6 @@ func UpdateGlobalConfig(mutate func(map[string]any)) error {
 // not a JSON object. Callers must not treat it as empty.
 var ErrUnusableConfig = errors.New("config file exists but is unreadable or not a JSON object")
 
-// ReadGlobalConfigStrict reads the config at path for a read-modify-write. It
-// returns (nil, nil) only when the file is absent, blank, or the literal null;
-// any other failure wraps ErrUnusableConfig and names the path.
 func ReadGlobalConfigStrict(path string) (map[string]any, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -138,21 +122,6 @@ func WriteCredentialsFile(raw string) error {
 // with the account until it is known to be the seat's.
 var SeatWideKeys = []string{"mcpOAuth", "mcpOAuthClientConfig"}
 
-// SpliceCredentials returns the credential text a switch writes live: stored
-// (an account's backup blob) with live's SeatWideKeys carried over it. It is a
-// pure function over the two texts.
-//
-// A stored blob's own copy of a seat-wide key never survives, whether live has
-// one to replace it or not: a slot captured before a key was known to be the
-// seat's, or an imported one, would otherwise put back logins or secrets the
-// seat has since changed. The stored text is returned verbatim, with a nil
-// error, when nothing changes: it holds no seat-wide key and live has none to
-// carry (live blank, or a JSON object without one), so the bytes a slot holds
-// are written exactly. A live text that is not a JSON object (malformed, or an
-// API-key string) carries nothing and a stored one that is not cannot carry
-// anything: the stored text comes back with its seat-wide keys dropped where
-// it has any, together with a non-nil error naming why no carry-over happened,
-// so the caller can log it and still write.
 func SpliceCredentials(stored, live string) (string, error) {
 	carried, err := seatWideOf(live)
 	storedObj, ok := decodeObject(stored)
@@ -210,8 +179,6 @@ func SeatWidePart(creds string) (string, bool) {
 	return string(encoded), true
 }
 
-// seatWideOf returns the SeatWideKeys present in creds. Blank text holds none;
-// text that is not a JSON object holds none and is an error.
 func seatWideOf(creds string) (map[string]any, error) {
 	if strings.TrimSpace(creds) == "" {
 		return nil, nil
@@ -229,7 +196,6 @@ func seatWideOf(creds string) (map[string]any, error) {
 	return part, nil
 }
 
-// dropSeatWide deletes SeatWideKeys from obj, reporting whether it held any.
 func dropSeatWide(obj map[string]any) bool {
 	dropped := false
 	for _, key := range SeatWideKeys {
@@ -241,9 +207,6 @@ func dropSeatWide(obj map[string]any) bool {
 	return dropped
 }
 
-// decodeObject parses text into a JSON object, keeping numbers as json.Number
-// so a re-encode reproduces them (expiresAt is an epoch-millisecond integer).
-// ok is false for malformed text and for any non-object top level.
 func decodeObject(text string) (map[string]any, bool) {
 	dec := json.NewDecoder(strings.NewReader(text))
 	dec.UseNumber()
@@ -278,8 +241,6 @@ func marshalCompact(v any) ([]byte, error) {
 func SpliceOAuthAccount(configText string, oauth map[string]any) (string, error) {
 	data := map[string]any{}
 	if strings.TrimSpace(configText) != "" {
-		// A non-object top level leaves data as the empty object we started with
-		// (json.Unmarshal of e.g. "null" is a no-op for a map target).
 		if err := json.Unmarshal([]byte(configText), &data); err != nil {
 			return "", err
 		}
@@ -295,24 +256,15 @@ func SpliceOAuthAccount(configText string, oauth map[string]any) (string, error)
 	return string(encoded), nil
 }
 
-// ReadOAuthIdentity reads the active login identity from ~/.claude.json's
-// oauthAccount. ok is false when the file is absent/unparseable, the
-// oauthAccount is missing, or emailAddress is blank. A null or missing
-// organizationUuid yields "" (personal account), mirroring Python's
-// `oauth.get("organizationUuid", "") or ""`.
 func ReadOAuthIdentity() (email, orgUUID string, ok bool) {
 	return ReadOAuthIdentityFrom(paths.GetGlobalConfigPath())
 }
 
-// ReadOAuthIdentityFrom is ReadOAuthIdentity over an explicit config file — a
-// .claude.json outside the live config home, such as the one a scratch-profile
-// login writes.
 func ReadOAuthIdentityFrom(configPath string) (email, orgUUID string, ok bool) {
 	m := readLenient(configPath)
 	if m == nil {
 		return "", "", false
 	}
-	// A nil map (missing/typed-wrong oauthAccount) reads as zero values below.
 	oauth, _ := m["oauthAccount"].(map[string]any)
 	email, _ = oauth["emailAddress"].(string)
 	if email == "" {
@@ -322,9 +274,6 @@ func ReadOAuthIdentityFrom(configPath string) (email, orgUUID string, ok bool) {
 	return email, orgUUID, true
 }
 
-// readLenient reads and parses path into a JSON object, returning nil on any
-// failure (absent, unreadable, malformed, or a non-object top level). It mirrors
-// Python _read_json / _read_global_config, which swallow every error to None.
 func readLenient(path string) map[string]any {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -337,11 +286,6 @@ func readLenient(path string) map[string]any {
 	return m
 }
 
-// marshalIndent2 renders v as two-space-indented JSON with no trailing newline,
-// matching Python's json.dumps(data, indent=2). HTML escaping is disabled so
-// characters like <, >, & survive as themselves rather than <-style escapes
-// (Python does not HTML-escape). Non-ASCII is emitted as UTF-8 rather than
-// Python's \uXXXX form; both parse back identically.
 func marshalIndent2(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)

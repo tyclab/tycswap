@@ -1,11 +1,3 @@
-// identity.go — identifier resolution, the composite-identity slot lookup, the
-// read-only account accessors, and the on-read org-field backfill.
-//
-// Implements spec 01§8.2 (_resolve_account_identifier, precedence number →
-// alias → email with a hard ConfigError on ambiguity), 01§2.2 (_find_account_
-// slot on the composite (email, organizationUuid) key), 01§8.4–8.5 (disabled /
-// switchable / kind accessors), and spec 07§6.1 / 01§9 (the lazy
-// _migrate_org_fields backfill re-evaluated on every read via SequenceMigrated).
 package store
 
 import (
@@ -63,11 +55,6 @@ func (s *Store) sequenceMigratedLocked() (*SequenceData, error) {
 	return s.classifiedRoster()
 }
 
-// needsOrgBackfill reports whether any record is missing the organizationUuid
-// KEY — presence, not value, so a record already carrying "" is migrated (spec
-// 07§6.1). Bytes that do not decode into an object probe at all are no evidence
-// either way and do not fire the backfill by themselves; the literal null does
-// decode (to nothing), so it counts as missing the key.
 func needsOrgBackfill(data *SequenceData) bool {
 	for _, raw := range data.Accounts {
 		var probe map[string]json.RawMessage
@@ -169,10 +156,6 @@ func (s *Store) liveOAuthAccount() (email, orgUUID, orgName string) {
 		strOrEmpty(oauth["organizationName"])
 }
 
-// FindAccountSlot returns the slot key of the account matching the composite
-// identity (email, organizationUuid), or "" when none matches. A missing
-// organizationUuid on a record compares equal to "" (spec 01§2.2). Slots are
-// scanned in ascending numeric order for determinism.
 func (s *Store) FindAccountSlot(data *SequenceData, email, orgUUID string) string {
 	if data == nil {
 		return ""
@@ -193,10 +176,6 @@ func (s *Store) AccountExists(email, orgUUID string) bool {
 	return s.FindAccountSlot(data, email, orgUUID) != ""
 }
 
-// ResolveAccount resolves NUM|ALIAS|EMAIL to (accountNum, email,
-// organizationUuid), running the org-field backfill first (spec 01§8.2
-// resolve_account). Ambiguity is a hard ConfigError, not a prompt; an unknown
-// identifier or a resolved-but-missing record is an AccountNotFoundError.
 func (s *Store) ResolveAccount(identifier string) (num, email, orgUUID string, err error) {
 	data, err := s.SequenceMigrated()
 	if err != nil {
@@ -221,11 +200,6 @@ func (s *Store) ResolveAccountFrom(data *SequenceData, identifier string) (num, 
 	return num, strField(rec, "email"), strField(rec, "organizationUuid"), nil
 }
 
-// resolveIdentifier applies the precedence number → alias → email (spec 01§8.2).
-// A digit string returns unchanged (numbers always win, even over an alias);
-// otherwise an alias match wins; otherwise an exact email match is required.
-// Zero email matches → ""; one → that slot; ≥2 → a ConfigError naming each
-// candidate's org tag.
 func resolveIdentifier(data *SequenceData, identifier string) (string, error) {
 	if isDigits(identifier) {
 		return identifier, nil
@@ -296,10 +270,6 @@ func (s *Store) AliasInUse(data *SequenceData, alias, excludeNum string) string 
 	return s.aliasInUse(data, alias, excludeNum)
 }
 
-// GetCurrentAccount returns the live login identity (email, organizationUuid,
-// ok) from ~/.claude.json (spec 01§5.4 _get_current_account). ok is false when
-// the file is absent/unparseable or emailAddress is blank; org is "" for
-// personal accounts.
 func (s *Store) GetCurrentAccount() (email, orgUUID string, ok bool) {
 	return ccfile.ReadOAuthIdentityFrom(s.GlobalConfigPath())
 }

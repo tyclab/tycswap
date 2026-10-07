@@ -79,28 +79,16 @@ func RedirectOutput(w io.Writer) (restore func()) {
 	return func() { outputSeam.swap(prev) }
 }
 
-// Prompter is the interactive-prompt seam. The CLI wires a real stdin/stdout
-// implementation; tests inject scripted answers. Prompt returns ok=false on
-// EOF/interrupt (Python EOFError/KeyboardInterrupt); Secret reads without echo
-// (getpass); StdinLine reads one raw line (add-token "-").
 type Prompter interface {
 	Prompt(message string) (line string, ok bool)
 	Secret(message string) (line string, ok bool)
 	StdinLine() (line string, ok bool)
 }
 
-// ActivePrompter is the seam callers/tests swap. Defaults to a real stdin/stdout
-// prompter.
 var ActivePrompter Prompter = StdPrompter{}
 
-// stdinReader is a shared buffered reader so successive prompts (e.g. remove's
-// ambiguous-email flow) don't drop buffered bytes.
 var stdinReader = bufio.NewReader(os.Stdin)
 
-// StdPrompter is the production Prompter over os.Stdin/Output. Secret suppresses
-// echo when stdin is a terminal via termios/console-mode (getpass parity, spec
-// 01§6.1), through the terminalControl seam below; non-terminal stdin (a pipe)
-// falls back to a plain line read exactly like getpass does.
 type StdPrompter struct{}
 
 // stripInputNewline mirrors Python's universal-newline input(): drop the trailing
@@ -121,31 +109,20 @@ func (StdPrompter) Prompt(message string) (string, bool) {
 	return stripInputNewline(line), true
 }
 
-// terminalControl abstracts terminal echo control so Secret can be unit-tested
-// without a real pty. The production value (stdTerminal, defined per-platform)
-// drives os.Stdin via termios (unix) / console mode (windows); tests inject a
-// fake through activeTerminal.
 type terminalControl interface {
 	isTerminal() bool
-	// disableEcho turns off input echo and returns a restore closure. It is
-	// called only when isTerminal() reports true.
 	disableEcho() (restore func() error, err error)
 }
 
 // activeTerminal is the terminalControl seam; tests swap it.
 var activeTerminal terminalControl = stdTerminal{}
 
-// StdinIsTerminal reports whether stdin is a terminal that can answer a
-// prompt (termios on unix, the console mode or a mintty pty on Windows), so
-// /dev/null and a pipe are not.
 func StdinIsTerminal() bool {
 	return stdTerminal{}.isTerminal() || isatty.IsCygwinTerminal(os.Stdin.Fd())
 }
 
 func (StdPrompter) Secret(message string) (string, bool) {
 	fmt.Fprint(Output, message)
-	// Non-terminal stdin (pipe/redirect): getpass falls back to a plain read
-	// with no suppressed-echo newline to restore.
 	if !activeTerminal.isTerminal() {
 		return readLineFallback()
 	}
@@ -162,8 +139,6 @@ func (StdPrompter) Secret(message string) (string, bool) {
 	// and never runs the deferred restore below, leaving the terminal with ECHO
 	// off (Python getpass restores termios in a finally on KeyboardInterrupt).
 	id := RegisterCleanup(func() { _ = restore() })
-	// Restore echo and print the newline the suppressed Enter-echo swallowed on
-	// every return path, including read-error/interrupt (getpass finally).
 	defer func() {
 		Unregister(id)
 		_ = restore()
@@ -175,16 +150,6 @@ func (StdPrompter) Secret(message string) (string, bool) {
 	}
 	return stripInputNewline(line), true
 }
-
-// ---- terminal-cleanup registry -----------------------------------------------
-//
-// Restore closures for in-flight terminal state (echo turned off during a
-// Secret prompt) live here so cli's SIGINT handler can run them before
-// os.Exit(130). Default SIGINT delivery would otherwise exit from the signal
-// goroutine without unwinding Secret's deferred restore, stranding the shell
-// with ECHO off. Python's getpass restores termios in a finally clause that the
-// KeyboardInterrupt still runs; this registry is the Go equivalent for the
-// process-exit path.
 
 var (
 	cleanupMu   sync.Mutex
@@ -202,17 +167,12 @@ func RegisterCleanup(fn func()) uint64 {
 	return id
 }
 
-// Unregister drops the cleanup previously registered under id (no-op if absent,
-// e.g. RunCleanups already fired it). Threadsafe.
 func Unregister(id uint64) {
 	cleanupMu.Lock()
 	defer cleanupMu.Unlock()
 	delete(cleanups, id)
 }
 
-// RunCleanups runs every registered cleanup once and clears the registry. cli's
-// SIGINT handler calls this before os.Exit so a Ctrl-C during the no-echo Secret
-// prompt still restores terminal echo. Threadsafe.
 func RunCleanups() {
 	cleanupMu.Lock()
 	fns := make([]func(), 0, len(cleanups))
@@ -226,8 +186,6 @@ func RunCleanups() {
 	}
 }
 
-// readLineFallback reads one line from stdinReader with no echo handling and no
-// trailing newline (getpass's non-tty / echo-unavailable fallback).
 func readLineFallback() (string, bool) {
 	line, err := stdinReader.ReadString('\n')
 	if line == "" && err != nil {
@@ -268,8 +226,6 @@ func logWarningf(s *store.Store, format string, a ...any) {
 	}
 }
 
-// timestamp is get_timestamp(): current wall time, UTC, seconds precision,
-// Z-suffixed (spec 01§2.1).
 func timestamp(s *store.Store) string {
 	return s.Clk.Now().UTC().Format("2006-01-02T15:04:05Z")
 }
@@ -290,9 +246,6 @@ func validateEmail(email string) bool { return storenames.ValidEmail(email) }
 
 var aliasRE = regexp.MustCompile(`^[a-z0-9_.-]+$`)
 
-// normalizeAlias mirrors models.normalize_alias (spec 01§8.1): strip+lower,
-// reject empty / purely-numeric / leading-"-" / out-of-charset. Returns the
-// normalized alias or a plain error the caller wraps as a ValidationError.
 func normalizeAlias(name string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(name))
 	if normalized == "" {
@@ -310,8 +263,6 @@ func normalizeAlias(name string) (string, error) {
 	return normalized, nil
 }
 
-// isDigits reports whether s is non-empty and all ASCII digits (Python
-// str.isdigit for the identifiers this package resolves).
 func isDigits(s string) bool {
 	if s == "" {
 		return false
@@ -339,8 +290,6 @@ func readActiveCredential(s *store.Store) (string, error) {
 	return value, nil
 }
 
-// rejectLiveAPIKeyCapture is _reject_live_api_key_capture (spec 01§5.1 step 4):
-// refuse to snapshot a live managed key as a kindless OAuth account.
 func rejectLiveAPIKeyCapture(creds string) error {
 	if credstore.LooksLikeAPIKey(creds) {
 		return cerr.Validation("Active login is an API-key account. Add it with 'tycswap --add-token sk-ant-api...' instead of --add-account.")

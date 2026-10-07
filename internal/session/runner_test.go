@@ -24,9 +24,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// runTestChild plays a probe's child: "hello" prints hello; "hold-stdout"
-// starts a "sleep" grandchild that inherits its stdout, writes the
-// grandchild's pid to os.Args[1], prints ready and exits at once.
 func runTestChild(role string) int {
 	switch role {
 	case "hello":
@@ -114,9 +111,6 @@ func TestClassifyProbeSuccessAtDeadline(t *testing.T) {
 	}
 }
 
-// TestClassifyProbeErrWaitDelay pins the FINDING 3 fix: ErrWaitDelay (raised only
-// on a successful exit whose pipes stayed open) is a success carrying the
-// captured output, not a timeout.
 func TestClassifyProbeErrWaitDelay(t *testing.T) {
 	stdout, rc, err := classifyProbe("ready\n", exec.ErrWaitDelay, nil)
 	if err != nil || rc != 0 || stdout != "ready\n" {

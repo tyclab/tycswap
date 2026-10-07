@@ -1,6 +1,3 @@
-// validate.go — what an endpoint account may carry: a base URL and a key that
-// are safe to write into Claude Code's settings.json and to send as a header
-// (DESIGN A46).
 package ccsettings
 
 import (
@@ -9,8 +6,6 @@ import (
 	"strings"
 )
 
-// MaxBaseURLLen and MaxTokenLen bound what is stored and written. Real values
-// are a fraction of either.
 const (
 	MaxBaseURLLen = 2048
 	MaxTokenLen   = 8192

@@ -1,12 +1,3 @@
-// notices.go — the threadsafe bridge that carries the oauth persist-failure
-// warning from the seam it is written to (potentially off the Update goroutine,
-// e.g. the auto-switch engine's refresh) into the TUI's toast/notice model.
-//
-// FINDING 6: while the TUI holds the alt-screen, oauth.Output is pointed at a
-// noticeCollector instead of io.Discard, because the persist-failure warning is
-// the only user-visible surface for a lost-refresh-token condition (04§1.25).
-// The Update goroutine drains the collector on each poll tick and after each
-// mutating action, turning each collected line into a warning toast.
 package tui
 
 import (
@@ -20,9 +11,6 @@ import (
 // (which applies its own severity colour).
 var ansiSeq = regexp.MustCompile("\x1b\\[[0-9;]*m")
 
-// noticeCollector is an io.Writer that accumulates whole lines written to it and
-// hands them to the Update goroutine on drain. Every method is safe to call from
-// any goroutine.
 type noticeCollector struct {
 	mu    sync.Mutex
 	lines []string
@@ -44,7 +32,6 @@ func (c *noticeCollector) Write(p []byte) (int, error) {
 	return n, nil
 }
 
-// drain returns and clears the collected lines.
 func (c *noticeCollector) drain() []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()

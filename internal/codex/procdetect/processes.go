@@ -38,28 +38,18 @@ type Proc struct {
 	Command string
 }
 
-// codexExecutables are the executable names that mean "a Codex session is
-// running". codext is the seamless-switching fork; it is still a session
-// worth reporting.
 var codexExecutables = map[string]bool{"codex": true, "codext": true}
 
 // listTimeout bounds the process listing: it is advisory, and a switch must
 // not stall on it.
 const listTimeout = 5 * time.Second
 
-// Log is the package logger seam; when nil, the debug line recording a failed
-// listing is dropped.
 var Log *logging.Logger
 
-// ListProcesses is the injectable process lister (ps -axo pid=,comm= on POSIX,
-// tasklist /FO CSV /NH on Windows); tests replace it.
 var ListProcesses = func() ([]Proc, error) {
 	return listProcesses(platform.IsWindows())
 }
 
-// runCommand runs argv with the listing timeout and returns its stdout. It is
-// a seam so the ps/tasklist parsers are tested against real captured output
-// without shelling out.
 var runCommand = func(argv ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), listTimeout)
 	defer cancel()
@@ -69,8 +59,6 @@ var runCommand = func(argv ...string) (string, error) {
 	return string(out), err
 }
 
-// listProcesses lists processes with the platform's tool. The OS is a
-// parameter so both branches are testable on either host.
 func listProcesses(windows bool) ([]Proc, error) {
 	if windows {
 		out, err := runCommand("tasklist", "/FO", "CSV", "/NH")
@@ -86,8 +74,6 @@ func listProcesses(windows bool) ([]Proc, error) {
 	return parsePS(out), nil
 }
 
-// parseTasklist reads `tasklist /FO CSV /NH` rows: "image","pid",... . Rows
-// whose second field is not all digits are skipped.
 func parseTasklist(out string) []Proc {
 	var rows []Proc
 	for _, line := range splitLines(out) {
@@ -104,8 +90,6 @@ func parseTasklist(out string) []Proc {
 	return rows
 }
 
-// parsePS reads `ps -axo pid=,comm=` rows: a right-aligned PID, one space,
-// then the command (which may itself contain spaces).
 func parsePS(out string) []Proc {
 	var rows []Proc
 	for _, line := range splitLines(out) {

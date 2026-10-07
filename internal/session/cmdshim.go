@@ -11,11 +11,6 @@ import (
 // command line of a .cmd or .bat file, plus the line breaks that end it.
 const cmdMetachars = "&|<>^%!\"()\r\n"
 
-// CheckCmdShimArgs refuses arguments that cmd.exe would interpret when bin is
-// a .cmd or .bat file (an npm shim for claude on Windows). Go starts such a
-// file through cmd.exe, which re-parses the whole command line, so a `&` or
-// `|` in an argument passed through `tycswap run -- …` would run a second
-// command. Any other target is started directly and needs no check.
 func CheckCmdShimArgs(bin string, args []string) error {
 	if !isCmdShim(bin) {
 		return nil

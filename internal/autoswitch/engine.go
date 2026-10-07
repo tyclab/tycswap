@@ -1,14 +1,3 @@
-// Engine construction, lifecycle (stop/wake/apply-threshold), and the shared
-// clock/emit helpers.
-//
-// Implements spec 05§1-2 (construction, settings/models), 05§8 (apply_threshold),
-// and DESIGN §4 rows 2-3 (the stop/wake channel discipline). settings live
-// behind an atomic.Pointer so a mid-tick apply_threshold is consistent (each
-// tick snapshots once); the model set the tick goroutine counts is retargeted
-// through the same pointer plus a queue (models.go). The state path defaults to
-// <BackupDir>/autoswitch_state.json with its own .autoswitch_state.lock beside
-// it.
-
 package autoswitch
 
 import (
@@ -25,11 +14,8 @@ import (
 	"github.com/tyclab/tycswap/internal/settings"
 )
 
-// TickOutcome is the result of one evaluation tick; its int value doubles as the
-// `tycswap auto --once` process exit code (05§4).
 type TickOutcome int
 
-// Tick outcomes / --once exit codes (05§4).
 const (
 	Switched TickOutcome = 0 // a switch happened (or would, in dry-run)
 	Error    TickOutcome = 1 // network trouble, lock contention, transient freshen failure
@@ -49,13 +35,10 @@ type realSleeper struct{}
 
 func (realSleeper) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
-// Engine is the threshold-policy auto-switcher over a Switcher.
 type Engine struct {
-	sw       Switcher
-	settings atomic.Pointer[settings.AutoSwitchSettings]
-	models   []string
-	// pendingModels is a model set ApplyModels queued for the tick goroutine,
-	// which adopts it at the start of its next tick (models.go).
+	sw            Switcher
+	settings      atomic.Pointer[settings.AutoSwitchSettings]
+	models        []string
 	pendingModels atomic.Pointer[[]string]
 	onEvent       func(Event)
 	dryRun        bool
@@ -72,8 +55,6 @@ type Engine struct {
 	stopOnce sync.Once
 	wakeCh   chan struct{}
 
-	// Per-tick / cross-tick engine state. Touched only from the single tick
-	// goroutine (RunLoop is sequential; --once is synchronous).
 	unhealthyTicks  int
 	sleepUntilTS    *float64
 	blockedWaitLong bool
@@ -96,19 +77,14 @@ func WithClock(c clock.Clock) Option { return func(e *Engine) { e.clk = c } }
 // WithSleeper injects the inter-tick timer seam (default a blocking time.After).
 func WithSleeper(s Sleeper) Option { return func(e *Engine) { e.sleeper = s } }
 
-// WithRNG injects the ±10% jitter source for _next_delay (default rand.Float64).
 func WithRNG(rng func() float64) Option { return func(e *Engine) { e.rng = rng } }
 
-// WithOAuthClient injects the token-refresh client used by _freshen_target
-// (default oauth.NewHTTPClient()).
 func WithOAuthClient(c oauth.Client) Option { return func(e *Engine) { e.oauth = c } }
 
 // WithLogger injects the logger for the idle-hold-exceeded warning and the
 // uuid-backfill debug line (default nil = no-op).
 func WithLogger(l *logging.Logger) Option { return func(e *Engine) { e.log = l } }
 
-// WithStatePath overrides the persisted state file path (default
-// <BackupDir>/autoswitch_state.json).
 func WithStatePath(path string) Option { return func(e *Engine) { e.statePath = path } }
 
 // NewEngine builds an engine. settings is the frozen policy value; models are
@@ -140,25 +116,14 @@ func NewEngine(sw Switcher, s settings.AutoSwitchSettings, onEvent func(Event), 
 	e.lockPath = filepath.Join(filepath.Dir(e.statePath), ".autoswitch_state.lock")
 	// Poll plans must key on the same bars/models the engine decides with.
 	sw.SetPollPolicyInputs(pollThreshold(s, e.models), e.models)
-	// One-shot model typo guard: done immediately when no model filter is set.
 	e.modelCheckDone = len(e.models) == 0
 	return e
 }
 
-// currentSettings snapshots the settings pointer once (05§8 mid-tick safety).
 func (e *Engine) currentSettings() settings.AutoSwitchSettings {
 	return *e.settings.Load()
 }
 
-// ApplyThreshold retargets the trigger and poll cadence mid-run (TUI session
-// override, the dashboard slider). It moves the 7d bar, the account's whole
-// budget, and nothing else; the 5h and per-model bars are settings only
-// (DESIGN A34). Safe to call from any goroutine: the poll plan is re-pinned
-// with the model set parsed from the current settings, never from e.models,
-// which only the tick goroutine reads and writes (adoptPendingModels). The
-// settings already carry whatever ApplyModels requested last, so a threshold
-// change right after a model change pins the new set, not the one still
-// counted until the next tick.
 func (e *Engine) ApplyThreshold(threshold float64) {
 	s := e.currentSettings()
 	s.SevenDayThreshold = threshold
@@ -167,11 +132,6 @@ func (e *Engine) ApplyThreshold(threshold float64) {
 	e.sw.SetPollPolicyInputs(pollThreshold(s, models), models)
 }
 
-// pollThreshold is the single figure the poll planner escalates on. The
-// planner compares it against the BINDING headroom, so the lowest bar in
-// force is the honest one to hand it: whichever window is closest to making
-// the engine act decides how often it looks. The per-model bar counts only
-// while models names a window for it to govern (DESIGN A34).
 func pollThreshold(s settings.AutoSwitchSettings, models []string) float64 {
 	lowest := math.Min(s.SevenDayThreshold, s.FiveHourThreshold)
 	if len(models) > 0 {
@@ -180,9 +140,6 @@ func pollThreshold(s settings.AutoSwitchSettings, models []string) float64 {
 	return lowest
 }
 
-// Stop asks RunLoop to exit and wakes it from any sleep. Latching and
-// idempotent: safe to call before the loop starts (the loop then exits without
-// a tick) and more than once (DESIGN §4 row 2).
 func (e *Engine) Stop() {
 	e.stopOnce.Do(func() { close(e.stopCh) })
 	// Non-blocking wake so a sleeping loop returns immediately.
@@ -192,8 +149,6 @@ func (e *Engine) Stop() {
 	}
 }
 
-// Wake cuts the current inter-tick sleep short and ticks now (05§15). A Wake
-// after Stop is a harmless no-op.
 func (e *Engine) Wake() {
 	select {
 	case e.wakeCh <- struct{}{}:
@@ -201,8 +156,6 @@ func (e *Engine) Wake() {
 	}
 }
 
-// emit hands an event to the callback (exceptions from it are not caught: a
-// broken frontend should fail loudly).
 func (e *Engine) emit(ev Event) { e.onEvent(ev) }
 
 // nowSeconds returns wall time as fractional Unix seconds (Python self.clock()).

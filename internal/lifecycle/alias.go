@@ -1,8 +1,3 @@
-// alias.go — SetAlias / UnsetAlias / ListAliases.
-//
-// Implements spec 01§8.3 (the alias command): set (or rename) with a
-// case-insensitive conflict check, idempotent unset, and the slot-number-ordered
-// listing of truthy aliases.
 package lifecycle
 
 import (
@@ -19,9 +14,6 @@ type AliasRow struct {
 	Email string
 }
 
-// SetAlias sets or renames the alias for the account matching identifier (spec
-// 01§8.3). identifier may itself be an existing alias (rename). Returns the
-// resolved slot and the normalized alias.
 func SetAlias(s *store.Store, identifier, alias string) (num, normalized string, err error) {
 	normalized, nerr := normalizeAlias(alias)
 	if nerr != nil {
@@ -77,8 +69,6 @@ func SetAlias(s *store.Store, identifier, alias string) (num, normalized string,
 	return num, normalized, nil
 }
 
-// UnsetAlias clears the alias for the account matching identifier (spec 01§8.3).
-// Idempotent: an already-unset alias succeeds silently without writing.
 func UnsetAlias(s *store.Store, identifier string) (num string, err error) {
 	if !sequenceFileExists(s) {
 		return "", cerr.Config("No accounts are managed yet")
@@ -110,8 +100,6 @@ func UnsetAlias(s *store.Store, identifier string) (num string, err error) {
 	return num, nil
 }
 
-// ListAliases returns every set alias as (num, alias, email), slot-number order
-// (spec 01§8.3 list_aliases).
 func ListAliases(s *store.Store) ([]AliasRow, error) {
 	data, err := s.SequenceMigrated()
 	if err != nil {

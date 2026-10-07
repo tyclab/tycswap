@@ -1,10 +1,3 @@
-// info.go — _build_accounts_info: the single place the active slot is detected
-// and every slot's credentials are read (spec 02§13).
-//
-// Implements spec 02§13 (_build_accounts_info): the active account's credential
-// comes from Claude Code's live store (with the OAuth-Keychain-unavailable flag
-// captured for the static sentinel), every other slot reads its backup copy;
-// the org-field backfill runs first via SequenceMigrated.
 package reporting
 
 import (
@@ -36,8 +29,6 @@ func BuildAccountsInfo(s *store.Store) []AccountInfo {
 		num := strconv.Itoa(n)
 		rec, _ := recordFor(data, num)
 
-		// account.get("email", "unknown"): absent → "unknown"; present (even
-		// non-string/null) → the value coerced to a string ("").
 		email := "unknown"
 		if v, present := rec["email"]; present {
 			email, _ = v.(string)

@@ -1,12 +1,3 @@
-// widgets.go — usage bars, account cards, and the accounts panel.
-//
-// Implements spec 09§5: bar_cells/usage_bar (§5.1), _reset_parts/usage_rows
-// (§5.2/§5.3), account_card_text (§5.4), mini_account_text (§5.5), and the
-// AccountsPanel monitor render (§5.6). Custom renderers (not a stock progress
-// bar) because a severity color ramp, an optional threshold tick, and
-// stale-measurement dimming are all required. Rendering builds a richText
-// (styled segments) so the exact glyphs/labels/rows stay testable in plain
-// text.
 package tui
 
 import (
@@ -19,7 +10,6 @@ import (
 	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
-// Bar glyphs (09§5.1).
 const (
 	barFilled = "━"
 	barHalf   = "╸"
@@ -27,10 +17,6 @@ const (
 	barTick   = "┃"
 )
 
-// barCells renders just the bar glyphs: severity-colored fill, track, optional
-// threshold tick (09§5.1). pct nil → an all-empty track. The tick is drawn
-// unconditionally at its computed cell (even inside the filled region) and is
-// always SEV_WARN; stale dims the fill color only (not track or tick).
 func barCells(pct *float64, width int, stale bool, threshold *float64) richText {
 	var t richText
 	if pct == nil {
@@ -67,8 +53,6 @@ func barCells(pct *float64, width int, stale bool, threshold *float64) richText 
 	return t
 }
 
-// usageBar renders one full bar line: label + bar + pct/usage-unknown + suffix
-// (09§5.1). suffix "" is dropped.
 func usageBar(label string, pct *float64, suffix string, width int, stale bool, threshold *float64) richText {
 	var t richText
 	t.addFg(label+" ", colMuted)
@@ -98,7 +82,6 @@ func resetParts(window map[string]any, now float64) (reset, resetFull string) {
 	return reset, reset
 }
 
-// usageRow is one (label, pct, suffix, suffix_full) usage row (09§5.3).
 type usageRow struct {
 	Label      string
 	Pct        float64
@@ -106,9 +89,6 @@ type usageRow struct {
 	SuffixFull string
 }
 
-// usageRows mirrors the CLI's _format_usage_lines (09§5.3): spend, 5h, 7d, then
-// each scoped window, in that order. A window key absent from lastGood produces
-// no row. nil/empty lastGood → nil.
 func usageRows(lastGood map[string]any, now float64) []usageRow {
 	if lastGood == nil {
 		return nil
@@ -156,9 +136,6 @@ func usageRows(lastGood map[string]any, now float64) []usageRow {
 	return rows
 }
 
-// sentinelText is the sentinel line a row shows in place of its windows: the
-// sentinel's label, with the endpoint's host after it for an API-key account
-// that carries a base URL (DESIGN A46), since that is where its requests go.
 func sentinelText(acc reporting.AccountSnapshot) string {
 	label := sentinelLabel(acc.Usage.Sentinel)
 	if acc.Usage.Sentinel == apiKeySentinel && acc.BaseURL != "" {
@@ -169,10 +146,6 @@ func sentinelText(acc reporting.AccountSnapshot) string {
 	return label
 }
 
-// identityText is an account's alias-first identity, "alias (email)" or the
-// bare email. The snapshot carries the stored strings, which come from
-// exports, APIs and other tools' files, so a terminal control sequence they
-// hold is removed here, where they are drawn.
 func identityText(acc reporting.AccountSnapshot) richText {
 	var t richText
 	email := termsafe.Strip(acc.Email)
@@ -185,8 +158,6 @@ func identityText(acc reporting.AccountSnapshot) richText {
 	return t
 }
 
-// accountCardText renders the full account card: header + per-window bar rows
-// (09§5.4). threshold draws the tick; now is fractional Unix seconds.
 func accountCardText(acc reporting.AccountSnapshot, width int, threshold *float64, now float64) richText {
 	var t richText
 	t.add(fmt.Sprintf("%2s  ", acc.Number), segStyle{Fg: colForeground, Bold: true})
@@ -199,8 +170,6 @@ func accountCardText(acc reporting.AccountSnapshot, width int, threshold *float6
 		t.add("   ● active", segStyle{Fg: colAccent, Bold: true})
 	}
 	if acc.Disabled {
-		// Amber, not muted: a disabled account is held out of auto-rotation, a
-		// state worth surfacing (Go-side deviation, DESIGN A18).
 		t.addFg("   (disabled)", colSevWarn)
 	}
 	if acc.AtLimit {
@@ -380,10 +349,6 @@ func miniAccountPriced(acc reporting.AccountSnapshot, width int, clk renderClock
 	stale := staleEntry(acc.Usage)
 	parts := 0
 	for _, w := range candidateWindows(acc.Usage.LastGood, nil) {
-		// The two account-wide windows count on the empty axis this surface reads,
-		// every per-model window does not — and an uncounted window is named here
-		// only once it has RUN OUT, which is the one thing about it this line has
-		// ever said.
 		if !w.Counted {
 			if !w.Exhausted {
 				continue
@@ -400,9 +365,6 @@ func miniAccountPriced(acc reporting.AccountSnapshot, width int, clk renderClock
 		}
 		t.chrome(w.Label+" ", segStyle{Fg: colMuted})
 		t.figure(pctText(w.Pct), segStyle{Fg: severityColorF(w.Pct), Dim: stale})
-		// A window at its limit states WHEN it frees up, always: on this surface the
-		// reset is the whole of what a reader can do about an exhausted account, and
-		// it is the one countdown the shared table therefore sheds last (I6).
 		if w.Exhausted {
 			if reset := clk.resetText(w.ResetsAt); reset != "" {
 				t.countdown(" ("+reset+")", segStyle{Fg: colMuted})
@@ -411,27 +373,11 @@ func miniAccountPriced(acc reporting.AccountSnapshot, width int, clk renderClock
 		parts++
 	}
 	if parts == 0 {
-		// Priced as CHROME, not as a reason. On this surface "usage unknown" is what
-		// the LINE says when its own axis left it nothing to print — an account
-		// reporting only per-model windows still short of their limits reaches it
-		// with every one of its figures intact — so it is a statement about this
-		// layout and not about the account. The shared table states those figures,
-		// and charging it for a phrase that stands in for their absence would refuse
-		// it exactly where it says more (layoutScore). A row the PROJECTION found no
-		// window at all for is a span row on both layouts and is priced as one there.
 		t.chrome("usage unknown", segStyle{Fg: colMuted})
 	}
 	return t.fit(width)
 }
 
-// monitorAccounts is the number of accounts a monitor render displays as its
-// own group — every account in the snapshot, since the cap always renders with
-// minis on.
-//
-// The nil case is a live path, not defensive padding: the dashboard caps its
-// monitor on every frame, including the ones before the first poll returns,
-// where monitorPanelText renders "loading…" from no snapshot at all and
-// fitMonitor still has to say how many accounts that bought (none).
 func monitorAccounts(snap *reporting.AccountsSnapshot) int {
 	if snap == nil {
 		return 0
@@ -439,37 +385,7 @@ func monitorAccounts(snap *reporting.AccountsSnapshot) int {
 	return len(snap.Accounts)
 }
 
-// monitorLayout builds the monitor's blocks grouped into the units the height
-// cap admits or drops WHOLE, one group per account, in snapshot order. The
-// active account is a group of one (its full card, unchanged); every non-active
-// account is one line of the shared window table (table.go), and the table's
-// column header rides in the same group as the FIRST such row — so the header
-// is never dropped while rows below it remain, and never survives alone. It is
-// returned rendered as well, so accountsMonitorCapped can recognize it.
-//
-// The table is laid out ONCE across every non-active account, so the columns
-// line up even when the active card sits between two of them and splits the
-// table in two on screen. When the table is not the layout the monitor draws the
-// whole set falls back to miniAccountText, per row — never a table for some
-// accounts and a mini line for others.
-//
-// allowTable false lays every non-active account out through miniAccountText
-// even where the shared table would have won. Only the height cap asks for that,
-// and only to buy back the line the column header costs it
-// (accountsMonitorCapped).
-//
-// width IS the content budget, in full. Every line this builds is fitted to it
-// and no caller draws a frame, a border or a margin around them: the dashboard
-// passes the terminal width and joins the monitor's lines with its own
-// full-width menu rows (dashboard.go), and the auto screen passes panelWidth(m),
-// which is the same terminal width. Budgeting the content two columns narrower
-// than that was inherited from a time when the number was a soft desire nothing
-// enforced; now that it is a hard clip, it costs the monitor two real columns
-// per line and, through the pricing, whole columns of the table.
 func monitorLayout(snap *reporting.AccountsSnapshot, width int, showMinis bool, threshold *float64, now float64, allowTable bool) (groups [][]richText, header string) {
-	// The per-row layout, built once for every non-active account: it is what the
-	// monitor draws when the table is not worth its columns, and it is also the
-	// bar the table has to clear (pickWindowTable).
 	var minis []richText
 	if showMinis {
 		for _, acc := range snap.Accounts {
@@ -482,9 +398,6 @@ func monitorLayout(snap *reporting.AccountsSnapshot, width int, showMinis bool, 
 	var table windowTable
 	tabled := false
 	if allowTable && showMinis {
-		// Priced only when it can be used: the height cap renders the same monitor
-		// in both layouts on every frame, and a table it has already decided
-		// against is four wasted layouts a frame.
 		var rows []tableRow
 		for _, acc := range snap.Accounts {
 			if !acc.IsActive {
@@ -569,8 +482,6 @@ func accountsPanelText(snap *reporting.AccountsSnapshot, width int, showMinis bo
 	return monitorPanelText(snap, width, showMinis, threshold, now, true)
 }
 
-// monitorPanelText is accountsPanelText with the table made optional, so the
-// height cap can price the same monitor in both layouts (accountsMonitorCapped).
 func monitorPanelText(snap *reporting.AccountsSnapshot, width int, showMinis bool, threshold *float64, now float64, allowTable bool) richText {
 	var t richText
 	if snap == nil {
@@ -632,20 +543,12 @@ func accountsMonitorCapped(snap *reporting.AccountsSnapshot, width int, threshol
 	return tabled.lines
 }
 
-// monitorFit is what one budget bought in one layout: the lines to print, how
-// many accounts they show, and whether the "· N more accounts" indicator
-// survived (vacuously true when nothing was elided).
 type monitorFit struct {
 	lines     []string
 	shown     int
 	indicated bool
 }
 
-// beats reports whether f says strictly more than other at the same budget:
-// more accounts on screen, or as many accounts plus the elision count other
-// lost. Ties go to OTHER, which the caller prices first and is always the
-// table: where both layouts say the same thing, the aligned columns are free,
-// and flipping to the per-row layout would cost them for no gain.
 func (f monitorFit) beats(other monitorFit) bool {
 	if f.shown != other.shown {
 		return f.shown > other.shown
@@ -665,12 +568,7 @@ func fitMonitor(snap *reporting.AccountsSnapshot, width int, threshold *float64,
 	return cappedMonitor(snap, width, threshold, now, budget, allowTable)
 }
 
-// cappedMonitor renders the monitor into at most budget lines in the given
-// layout (allowTable false forces the per-row one) and reports what fitted.
 func cappedMonitor(snap *reporting.AccountsSnapshot, width int, threshold *float64, now float64, budget int, allowTable bool) monitorFit {
-	// Rebuild account-by-account, stopping before the joined group would exceed
-	// budget-1 (reserving one row for the indicator), but always showing at
-	// least the first (active) account.
 	groups, header := monitorLayout(snap, width, true, threshold, now, allowTable)
 	var acc richText
 	prevMultiline := false
@@ -701,9 +599,6 @@ func cappedMonitor(snap *reporting.AccountsSnapshot, width int, threshold *float
 	lines := strings.Split(acc.render(), "\n")
 	indicated := true
 	if hidden := len(groups) - shown; hidden > 0 {
-		// Fitted to the width like every other line the monitor emits: this one is
-		// built here rather than by monitorLayout, and a count appended raw is a
-		// count that wraps the panel on the narrow terminals the cap exists for.
 		lines = append(lines, mutedLine(clipText(
 			fmt.Sprintf("· %d more account%s", hidden, plural(hidden)), width)))
 		indicated = len(lines) <= budget // else the slice below clips it away
@@ -711,17 +606,12 @@ func cappedMonitor(snap *reporting.AccountsSnapshot, width int, threshold *float
 	if len(lines) > budget {
 		lines = lines[:budget]
 	}
-	// A one-line budget can clip the always-shown first account down to nothing
-	// but its column header; show that account's row instead — a header with no
-	// row under it says nothing at all.
 	if header != "" && len(lines) == 1 && lines[0] == header && len(groups[0]) > 1 {
 		lines[0] = groups[0][1].render()
 	}
 	return monitorFit{lines: lines, shown: shown, indicated: indicated}
 }
 
-// formatMoney formats a value with comma thousands separators and 2 decimals
-// (Python f"{v:,.2f}"), used for the spend row amounts (09§5.3).
 func formatMoney(v float64) string {
 	neg := v < 0
 	if neg {
@@ -745,7 +635,6 @@ func formatMoney(v float64) string {
 	return out
 }
 
-// padRight left-justifies s into width columns (rich f"{label:<{w}}").
 func padRight(s string, width int) string {
 	if len(s) >= width {
 		return s
@@ -753,7 +642,6 @@ func padRight(s string, width int) string {
 	return s + strings.Repeat(" ", width-len(s))
 }
 
-// asFloatOr coerces a JSON numeric to float64, or returns def.
 func asFloatOr(v any, def float64) float64 {
 	if p := numericPct(v); p != nil {
 		return *p

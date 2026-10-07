@@ -28,8 +28,6 @@ import (
 
 func TestSwitchTargetRendersAccountRefNumber(t *testing.T) {
 	n := 4
-	// A real switch's from/to come from jsonout.AccountRef, whose number is a
-	// *int; the old local helper rendered it via %v as a pointer address.
 	payload := map[string]any{"switched": true, "to": jsonout.AccountRef(&n, "")}
 	if got := switchTarget(payload); got != "account 4" {
 		t.Fatalf("switchTarget = %q, want 'account 4' (must not print a *int pointer address)", got)
@@ -48,8 +46,6 @@ func TestSwitchTargetRendersAccountRefNumber(t *testing.T) {
 
 // -- FINDING 4: human-output seams silenced under the TUI --------------------
 
-// printingFacade is a fakeFacade whose mutating op prints human text to the
-// package output seams, exactly as the real lifecycle/oauth code does.
 type printingFacade struct {
 	*fakeFacade
 }
@@ -70,8 +66,6 @@ func TestActionOutputDoesNotReachStdout(t *testing.T) {
 	os.Stdout = w
 	defer func() { os.Stdout = origStdout }()
 
-	// Capture the seams (as the TUI's redirect does, but into a buffer so we can
-	// prove the action actually wrote there and not to os.Stdout).
 	var seam bytes.Buffer
 	restoreL := lifecycle.RedirectOutput(&seam)
 	restoreO := oauth.RedirectOutput(&seam)

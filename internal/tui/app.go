@@ -1,13 +1,3 @@
-// app.go — the bubbletea application shell: the snapshot poll loop, the
-// single-flight mutating-action pipeline, the screen stack, and toasts.
-//
-// Implements spec 09§1 (entry: run/start), 09§2 (app shell: POLL_INTERVAL_S,
-// snapshot poll single-flight, worker error routing, mutating actions and
-// their exact _action_done dispatch order, account operations, navigation) and
-// the concurrency mapping of DESIGN §4 / 09§11.1 (Textual workers → tea.Cmd
-// typed messages; single-flight = plain bool fields mutated only on the Update
-// goroutine). Deviation #7: mutating ops use structured results, not ANSI
-// capture.
 package tui
 
 import (
@@ -461,15 +451,6 @@ func (m *Model) actionDone(msg actionDoneMsg) tea.Cmd {
 			cmds = append(cmds, m.notify(w, "", "warning"))
 		}
 	} else {
-		// Deviation #7 for showOutput: no captured stdout to display, so a plain
-		// completion toast built from the structured result stands in for an output
-		// modal over empty text.
-		//
-		// The same toast now also covers the silent case, which is remove and disable:
-		// neither carries a switch payload, neither asks for output, and runAction
-		// returns an empty message on success, so both used to succeed with no
-		// acknowledgement at all. The list they act on refreshing one poll later is
-		// not an acknowledgement — it is a second thing to interpret (issue #3).
 		cmds = append(cmds, m.notify(msg.label+" completed", "", ""))
 	}
 	return tea.Batch(cmds...)

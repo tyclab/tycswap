@@ -29,10 +29,6 @@ func TestSortedTotalOrder(t *testing.T) {
 	}
 }
 
-// TestIntransitivityCycle exercises the exact three-element cycle that a naive
-// comparator produced, asserting Less is a consistent strict weak order: for the
-// three keys, exactly one direction holds per pair and the ordering is
-// transitive (num < num by value, all numerics before non-numerics).
 func TestIntransitivityCycle(t *testing.T) {
 	// Under a total order: "3" < "15" (value), "3" < "2abc" and "15" < "2abc"
 	// (numerics before non-numerics). The old code had "2abc" < "3" and

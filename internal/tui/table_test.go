@@ -1,11 +1,3 @@
-// table_test.go — the shared window table (table.go) and its adoption by BOTH
-// surfaces: the auto screen's ranked "Next best" panel and the dashboard
-// accounts monitor.
-//
-// Everything about width, alignment and shedding is asserted on the RENDERED
-// lines (renderedLines / assertNoWrap), by INDEX into those lines — a column
-// only lines up if the terminal receives it lined up, and richText.plain()
-// cannot see the padding lipgloss adds around a styled segment.
 package tui
 
 import (
@@ -23,15 +15,6 @@ import (
 
 // -- fixtures ----------------------------------------------------------------
 
-// heteroSnapshot spans the shapes one table has to lay out at once: two rows
-// whose scoped windows differ (so the column union is wider than either row),
-// one row with no 5h window at all (the em dash lands in a column it never
-// reports), and one row of each SPAN shape — quarantined (slot 3, labeled by
-// tablePanelQ), sentinel, usage-unknown.
-//
-// The union follows the order the rows are HANDED to the table, which for the
-// panel is its ranking; the percentages here rank the Fable row (30%) ahead of
-// the Opus row (88%), so Fable is the first scoped column either way.
 func heteroSnapshot(t *testing.T) *reporting.AccountsSnapshot {
 	t.Helper()
 	fable := windows(12, 30, scopedWindow{"Fable", 40})
@@ -90,15 +73,6 @@ func panelHeaderRow(t *testing.T, rt richText) string {
 	return lines[1]
 }
 
-// columnOf reports the [start, end) columns the first occurrence of text spans
-// in a rendered line, or -1 when absent.
-//
-// text is what the line REALLY carries, not what it stands for: a header names
-// its column at whatever abbreviation level the width ladder is holding
-// (headerLadders), so a caller that hands this function a full model name is
-// asking where that spelling sits and will rightly get -1 at any width the
-// spelling was not used at. headerNamesLabel is the predicate for "some header
-// names this label".
 func columnOf(line, text string) (int, int) {
 	i := strings.Index(line, text)
 	if i < 0 {
@@ -492,17 +466,6 @@ func monitorOf(width int, accs ...reporting.AccountSnapshot) richText {
 		width, true, nil, testNow)
 }
 
-// TestCountedFigureCarriesItsOwnSeverity fixes the emphasis rule on BOTH
-// surfaces at once: a COUNTED figure is colored by its OWN severity whether or
-// not it binds, and the binding figure is told apart by BOLD alone. Colour says
-// what the figure means; weight says which figure the ranking and the engine
-// act on; neither substitutes for the other.
-//
-// A 5h window at 99% under an exhausted 7d window is the case that tells them
-// apart: it is not the row's ranking key, and it is one point from unusable, so
-// a plain-foreground cell would report a nearly spent window as unremarkable —
-// which is exactly what every other surface (the card's bars, the mini account
-// line, tycswap list) refuses to do.
 func TestCountedFigureCarriesItsOwnSeverity(t *testing.T) {
 	const email = "nearly@dpemmons.com"
 	lg := windows(99, 100)
@@ -592,36 +555,6 @@ func TestWindowTableHeaderDimExactlyWhenUncounted(t *testing.T) {
 
 // -- the width ladder and the flip -------------------------------------------
 
-// TestWindowTableShedLadder fixes the order the table gives ground in, one rung
-// at a time, rightmost column first within a rung:
-//
-//	(a) the HEADER TEXT, every column at once
-//	(b) countdowns of UNCOUNTED columns  (c) countdowns of COUNTED non-binding
-//	(d) the BINDING cell's countdown     (e) the label cell, toward an ellipsis
-//	(f) an EXHAUSTED column's countdown  (g) whole LABEL GROUPS, fewest-reported
-//
-// and below the last of those no table exists at all. It drives the TABLE, not
-// the panel: the ladder is the table's own, while which of the two layouts the
-// panel draws at a width is priced per render against candidateRow and asserted
-// where that choice is the subject.
-//
-// NAMING is the cheapest thing on the row and goes FIRST: a column's figures are
-// on the screen whatever its header is spelled at, while a countdown is the only
-// cell that says when a window frees up. Every countdown on this account
-// therefore survives the two widths where the headers pay instead — which is the
-// whole point, since with real model names the header term is what makes a
-// column dear at every ordinary terminal size.
-//
-// IDENTITY still outranks NAMING (the label narrows only once the ladder is
-// spent) and DATA outranks identity: every figure survives the label's narrowing
-// all the way down to the bare ellipsis, and only past that does a column go. A
-// PINNED column is on no rung at all — every counted one, and the column holding
-// each row's protected cell — because dropping it would hide the very figure the
-// row is ranked and decided by.
-//
-// (d) is the panel's own rung: candidateRow holds the binding cell's countdown
-// back to its last step, so the table it replaces does too. There is no (f) here
-// — no window on this account has run out, and the panel pins none if one had.
 func TestWindowTableShedLadder(t *testing.T) {
 	// autoswitch.model = Opus, so 5h/7d/Opus count and Fable/Haiku do not.
 	lg := windows(10, 20, scopedWindow{"Fable", 50}, scopedWindow{"Opus", 90}, scopedWindow{"Haiku", 60})
@@ -1382,27 +1315,6 @@ func TestWindowTableSpanRowAlwaysStatesItsReason(t *testing.T) {
 	}
 }
 
-// TestWindowTableSpanPrecedence fixes the order a SPAN row gives ground in, and
-// it is TWO orders, over two different cells:
-//
-//   - THIS ROW's own identity cell, which it spends on its own message exactly
-//     as the per-row layout it replaces spends it (candidateLabelRow: "clip to
-//     the ellipsis; the label outranks the email"). A span row lays no figure
-//     into any column, so its identity is aligned with nothing and costs no other
-//     account a column — and the slot number still names the account.
-//   - the SHARED label column, which is not a span row's to spend: it narrows on
-//     the row's behalf only as far as the message's FLOOR asks — the stub the row
-//     is guaranteed, "quarantined" plus the marker — because every column taken
-//     there comes out of every healthy account's email. The re-login sentinel's
-//     note is 82 columns; measured at its full width it would erase them all.
-//
-// The widths are arithmetic: slot cell (6) + identity (30) + gutter (2) + the
-// 26-column message = 64 for the whole row; the row's own identity begins to
-// clip one column below that, at 63, and is down to its bare ellipsis at 35,
-// with the message still whole; the message itself begins to clip at 34; the
-// SHARED column begins to narrow at 6+30+2+12 = 50, the width at which the
-// message's floor no longer fits beside a full-width identity; and the table
-// flips at 6+1+2+12 = 21, the shared column at its own bare ellipsis.
 func TestWindowTableSpanPrecedence(t *testing.T) {
 	const email = "quarantined.person@example.com"
 	const other = "window.person@example.com"
@@ -1506,20 +1418,6 @@ func TestWindowTableCountdownsSurviveALongSpanMessage(t *testing.T) {
 	}
 }
 
-// TestWindowTableSpanOverflowNeverCostsAColumn is the other half of that
-// contract, one rung further down the ladder: rung (e) drops whole columns, and
-// it too is walked only while the WINDOW rows overflow (windowRowsWidth). A
-// column is a place a window row lays a figure; a SPAN row lays none there, so
-// dropping one buys its message nothing — measure the drop against the whole
-// table instead and a wide message silently costs every window row a figure.
-//
-// The arithmetic at 62 columns of terminal (60 of table): slot cell 4 + label
-// 19 ("w@x.com  [personal]") + 5h 11 (3+2+6) + 7d 10 (3+2+5) + Fable 9 (5+2+2),
-// each behind its two-space gutter — 59, which fits, so no countdown is shed
-// and rung (d) narrows nothing (the sentinel's floor, 4+19+2+9 = 34, is well
-// inside the 60). Rung (d) has nothing to do; measured against the span row's
-// message at its full width — 4+19+2+82 = 107 — it would drop the uncounted
-// Fable column, and the account's per-model window with it.
 func TestWindowTableSpanOverflowNeverCostsAColumn(t *testing.T) {
 	lg := windows(42, 63, scopedWindow{"Fable", 50})
 	withReset(t, lg, "five_hour", timeAheadISO(testNow, 3*3600+20*60))
@@ -1552,16 +1450,6 @@ func TestWindowTableSpanOverflowNeverCostsAColumn(t *testing.T) {
 	}
 }
 
-// TestWindowTableBoundaryShapes fixes two contracts of the shared renderer that
-// neither surface reaches today but both depend on holding: a table of NO rows
-// fits trivially (it is not a failure that would flip a surface with nothing to
-// lay out), and a table whose rows carry no label spends no column on one — the
-// label cell's floor is the bare ellipsis only when there is something to
-// elide.
-//
-// The width is arithmetic: slot cell (4) + no label + gutter (2) + the floor of
-// "usage unknown" ("usage" plus the marker, 6) = 12. A label cell forced to one
-// column there would take the message below its floor and flip the table.
 func TestWindowTableBoundaryShapes(t *testing.T) {
 	if table, ok := renderWindowTable(nil, 40, testNow, monitorTableOpts); !ok || len(table.Lines) != 0 {
 		t.Errorf("renderWindowTable(no rows) = %+v, %v; want an empty table that fits", table, ok)
@@ -1701,16 +1589,6 @@ func reloginSnapshot() *reporting.AccountsSnapshot {
 	}
 }
 
-// TestPanelKeepsEmailsBesideAReloginSlot states the same contract as widths, on
-// the surface, over the fixture the regression was found on: three healthy
-// accounts and one re-login slot.
-//
-// Slot cell 6 + label 18 + a 5h and a 7d column behind their gutters (5 each) =
-// 34, and the sentinel's floor asks one column more (6+18+2+9 = 35), so all
-// three healthy emails are whole at every width from 35 up, and the table flips
-// at 18. Measured at the message's full width instead they would be whole only
-// from 108 up, and a bare ellipsis at every width through 91 — which is to say
-// at every terminal anyone uses.
 func TestPanelKeepsEmailsBesideAReloginSlot(t *testing.T) {
 	snap := reloginSnapshot()
 	emails := map[string]string{"2": "dpemmons@gmail.com", "3": "ge@dpemmons.com", "4": "de@dpemmons.com"}
@@ -1750,15 +1628,6 @@ func TestPanelKeepsEmailsBesideAReloginSlot(t *testing.T) {
 	}
 }
 
-// TestMonitorKeepsEmailsBesideAReloginSlot is the same statement on the other
-// surface. The monitor's label cell carries more than an email — the org tag,
-// the alias, the "(disabled)" marker — so it has more to lose, and the monitor
-// is the surface a re-login slot sits on for days at a time.
-//
-// The arithmetic: slot cell 4 + label 30 ("dpemmons@gmail.com  [personal]") + a
-// 5h and a 7d column behind their gutters (5 each) = 44, the sentinel's floor
-// asking one more (4+30+2+9 = 45), laid out inside the monitor's inner width —
-// so 47 columns of terminal.
 func TestMonitorKeepsEmailsBesideAReloginSlot(t *testing.T) {
 	snap := &reporting.AccountsSnapshot{
 		ActiveNumber: "",
@@ -1859,15 +1728,6 @@ func headerLabels(header string) []string {
 	return strings.Fields(header)
 }
 
-// TestWindowTableColumnOrderIsCanonicalNotRowOrder fixes that the column order
-// is a property of the WINDOWS, not of the rows: 5h first, then 7d, then the
-// scoped columns by name. Built by first appearance across rows instead, the
-// order becomes a function of ROW order — and on the panel row order is the live
-// ranking, so the header would reorder itself as accounts re-rank, disagreeing
-// with the account card, the mini account line and tycswap list, all of which read
-// 5h before 7d, always. Ordering the scoped columns by first appearance left
-// exactly that defect standing behind the two fixed heads: two accounts
-// reporting different models swapped their columns as they re-ranked.
 func TestWindowTableColumnOrderIsCanonicalNotRowOrder(t *testing.T) {
 	sevenOnly := map[string]any{"seven_day": map[string]any{"pct": 72.0}}
 	scopedOnly := map[string]any{"scoped": []any{map[string]any{"name": "Sonnet", "pct": 44.0}}}
@@ -1930,16 +1790,6 @@ func TestWindowTableColumnOrderIsCanonicalNotRowOrder(t *testing.T) {
 
 // -- pins --------------------------------------------------------------------
 
-// TestLayoutScoreIsDominanceOnEveryDataAxis pins the comparison the choice is
-// made on: the table is drawn only when it is no worse on EVERY data axis, ties
-// go to the table, and identity is not one of the axes.
-//
-// A sum would be the tempting shortcut and it is the wrong shape: the axes do
-// not convert, so "three more figures for one fewer countdown" has no true
-// answer, and any exchange rate written here would be one this codebase invented.
-// Identity is left out for the opposite reason — it has an answer, and it is
-// that a shared-column table buys its alignment out of the email while the slot
-// number names the account either way.
 func TestLayoutScoreIsDominanceOnEveryDataAxis(t *testing.T) {
 	base := layoutScore{figures: 6, countdowns: 2, spanChars: 19, identChars: 30}
 	for _, c := range []struct {
@@ -1969,16 +1819,6 @@ func TestLayoutScoreIsDominanceOnEveryDataAxis(t *testing.T) {
 	}
 }
 
-// TestPricedTextCountsOnlyWhatTheFitLeaves pins the primitive both layouts are
-// priced with: a score is what a line DISPLAYS, so the width clip is part of the
-// measurement and not something applied after it.
-//
-//   - a figure or a countdown counts only when the WHOLE of it survives; half a
-//     percentage ("12" out of "125%") is not a percentage, and a layout that was
-//     credited for one would win a comparison by drawing a lie;
-//   - a message and an identity count by the columns of them that survive, less
-//     the marker standing for the cut — the marker says something is missing
-//     rather than saying anything itself.
 func TestPricedTextCountsOnlyWhatTheFitLeaves(t *testing.T) {
 	build := func() pricedText {
 		var p pricedText

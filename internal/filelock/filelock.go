@@ -15,23 +15,11 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 )
 
-// pollInterval matches Python's time.sleep(0.1).
 const pollInterval = 100 * time.Millisecond
 
 // DefaultTimeout matches Python FileLock(timeout=10.0).
 const DefaultTimeout = 10 * time.Second
 
-// FileLock is a cross-process advisory file lock.
-//
-// A single *FileLock may be shared across goroutines within one process (e.g.
-// store.Lock, reused by parallel usage-fetch persist callbacks). The `hold`
-// mutex is held for the entire span a goroutine owns the lock (from a
-// successful Acquire until Release), so a second in-process caller blocks on it
-// rather than opening a second file descriptor and clobbering the file/locked
-// fields — which would leak the first holder's flock and spuriously time the
-// second caller out. This mirrors Python's fresh-FileLock-per-with-site
-// behavior, where concurrent holders serialize at the OS flock level and each
-// releases its own descriptor. `mu` guards the file/locked fields.
 type FileLock struct {
 	path    string
 	timeout time.Duration

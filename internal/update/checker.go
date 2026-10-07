@@ -1,11 +1,3 @@
-// The passive update check: query the release endpoint (through a 24h TTL
-// cache), compare against the running build's version with real semver, and
-// compose the human-readable notice string cli prints muted to stderr.
-//
-// Implements spec 08§13.2 (check_for_update), redesigned per DESIGN.md §6
-// Deviations 1–2 and Amendment A6 (Forgejo releases endpoint, tag_name field,
-// 3s timeout, any-error→no-notice, negative-result caching, {timestamp,data}
-// 24h-TTL cache at <backup_root>/cache/update_check.json).
 package update
 
 import (
@@ -30,16 +22,11 @@ import (
 // real wall clock and OS environment. Tests override every seam (CacheDir is
 // mandatory — there is no sane default).
 type Checker struct {
-	// CacheDir is <backup_root>/cache — the same directory usage.NewStore uses
-	// for cache/usage.json (spec 04§2.5); this checker stores
-	// cache/update_check.json alongside it.
 	CacheDir string
 	// HTTPClient issues the releases-endpoint request; nil -> http.DefaultClient.
 	HTTPClient *http.Client
 	// Clk supplies the cache read/write timestamp; nil -> clock.System{}.
-	Clk clock.Clock
-	// Getenv looks up GOBIN/GOPATH for install-shape detection (feeds the
-	// notice's hint); nil -> os.Getenv.
+	Clk    clock.Clock
 	Getenv func(string) string
 	// HomeDir is $HOME for install-shape detection; "" -> os.UserHomeDir().
 	HomeDir string
@@ -90,8 +77,6 @@ func (c Checker) CheckForUpdate(exePath, currentVersion string, plat platform.Pl
 
 	var latest string
 	if cached, ok := usage.ReadCache(cachePath, CacheTTL.Seconds(), now); ok {
-		// A cached nil (a previously failed/empty fetch, negative-cached per
-		// Amendment A6) type-asserts to "" here — correctly "no notice".
 		latest, _ = cached.(string)
 	} else {
 		latest = c.fetchLatestTag()
@@ -124,9 +109,6 @@ type releaseResponse struct {
 	TagName string `json:"tag_name"`
 }
 
-// fetchLatestTag queries Endpoint for the latest release's tag_name. Any
-// error (build, network, non-200, decode) returns "" — the "any error → no
-// notification" contract (spec 08§13.2).
 func (c Checker) fetchLatestTag() string {
 	ctx, cancel := context.WithTimeout(context.Background(), FetchTimeout)
 	defer cancel()

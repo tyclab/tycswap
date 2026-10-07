@@ -415,13 +415,6 @@ func TestRemoveActiveWarns(t *testing.T) {
 	}
 }
 
-// TestRemoveDisambiguationTagsComeFromTheBackfilledRoster: the multi-match list
-// is the one screen whose entire purpose is telling same-email accounts apart,
-// and it is shown immediately before a destructive choice. On a pre-v0.6.0
-// roster the org names exist only in each slot's backup config until the lazy
-// backfill lifts them into the records, so a list rendered from an un-backfilled
-// roster tags every candidate [personal] — offering the user two identical lines
-// and asking which account to destroy.
 func TestRemoveDisambiguationTagsComeFromTheBackfilledRoster(t *testing.T) {
 	s := newStore(t)
 	seedLegacy(t, s, ip(1),
@@ -492,12 +485,6 @@ func TestRemoveRefusesWhenTheSlotWasRelocatedDuringThePrompt(t *testing.T) {
 	assertBackupsReachable(t, s, [4]string{"9", "three@example.com", "c3", "g3"})
 }
 
-// TestRemoveTreatsARivalsCompletedRemovalAsDone is the other interleaving, and
-// the reason the relocation refusal has to key on the IDENTITY rather than on
-// the slot key alone: when the account really is gone from the roster, the
-// outcome the user asked for is the outcome they have. There is nothing left to
-// delete and nothing to commit, and an error here would be a lie about the end
-// state in the opposite direction.
 func TestRemoveTreatsARivalsCompletedRemovalAsDone(t *testing.T) {
 	s := newStore(t)
 	seedThreeSlots(t, s)

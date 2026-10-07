@@ -36,11 +36,6 @@ func homeKeychain() *keychain.Fake {
 	return kc
 }
 
-// useHomeKeychains puts homeKeychain where the cli tests need Keychain state
-// across commands: the switcher's client (constructSwitcher) and the scratch
-// login's (loginKeychain, which has none off macOS and still has none).
-// TestMain calls it once; a test that replaces either seam restores this one
-// after.
 func useHomeKeychains() {
 	buildSwitcher, buildLoginKeychain := newSwitcher, loginKeychain
 	newSwitcher = func(opts store.Options) (*core.Switcher, error) {

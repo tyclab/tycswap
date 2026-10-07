@@ -22,9 +22,6 @@ const (
 	DotStoreDirname = ".tycswap"
 )
 
-// Directory names of the store tycswap was forked from. Only `tycswap migrate`
-// and its one-line hint read them, and nothing ever writes there: that store may
-// still belong to another installed tool.
 const (
 	OldStoreDirname    = "claude-swap"
 	OldDotStoreDirname = ".claude-swap-backup"
@@ -96,13 +93,6 @@ func GetCredentialsPath() string {
 	return filepath.Join(GetClaudeConfigHome(), ".credentials.json")
 }
 
-// GetBackupRoot returns the tycswap store root for the current platform.
-//
-// Linux/WSL: $XDG_DATA_HOME/tycswap (default ~/.local/share/tycswap).
-// macOS/Windows/unknown: ~/.tycswap.
-//
-// Per the XDG spec, $XDG_DATA_HOME is ignored when unset, empty, or non-absolute;
-// a leading ~ is expanded so unexpanded values from unit files/Dockerfiles work.
 func GetBackupRoot() string {
 	switch platform.Detect() {
 	case platform.Linux, platform.WSL:
@@ -115,11 +105,6 @@ func GetBackupRoot() string {
 	}
 }
 
-// OldBackupRoots returns, in preference order, where the store this fork came
-// from lives on the current platform: $XDG_DATA_HOME/claude-swap when that is
-// set, else ~/.local/share/claude-swap, then the pre-XDG ~/.claude-swap-backup
-// on Linux/WSL; ~/.claude-swap-backup on macOS/Windows. `tycswap migrate`
-// copies the first one that exists; nothing reads or writes them otherwise.
 func OldBackupRoots() []string {
 	legacy := filepath.Join(home(), OldDotStoreDirname)
 	switch platform.Detect() {

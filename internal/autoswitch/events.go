@@ -184,14 +184,6 @@ func (e PollEvent) Human() string {
 	)
 }
 
-// AccountNumberStr renders an account-ref "number" payload back to its slot
-// string for human display. The payload shape varies by producer: dry-run refs
-// carry a plain int (refOf), but a real switch's from/to come from
-// jsonout.AccountRef, whose number is a *int (nil for an unmanaged live
-// account). A nil *int renders "None" to match Python's f"{None}" (an
-// account ref .get('number') of None). This is the shared renderer the TUI
-// toast (tui/app.go) should adopt so it too handles the *int shape rather than
-// printing a pointer address.
 func AccountNumberStr(v any) string {
 	switch n := v.(type) {
 	case int:

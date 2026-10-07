@@ -15,20 +15,17 @@ import (
 	"sync"
 )
 
-// Fake is an in-memory KeychainClient for tests on any platform.
 type Fake struct {
 	mu sync.Mutex
 	m  map[[2]string]string
 }
 
-// NewFake returns an empty Fake.
 func NewFake() *Fake {
 	return &Fake{m: make(map[[2]string]string)}
 }
 
 func key(service, account string) [2]string { return [2]string{service, account} }
 
-// Get returns the stored value, or ("", false, nil) when absent.
 func (f *Fake) Get(service, account string) (string, bool, error) {
 	if err := ValidateName(service, account); err != nil {
 		return "", false, err

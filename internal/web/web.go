@@ -76,23 +76,13 @@ type BaseURLAdder interface {
 	AddAccountFromTokenWithBaseURL(token, baseURL string, email, slotArg *string, assumeYes bool) error
 }
 
-// AccountOps is the account lifecycle beyond Facade (alias, move, swap, force
-// switch, token-status listing, the API-key switch approval). *core.Switcher
-// satisfies it.
 type AccountOps interface {
 	SetAlias(id, alias string) (num, normalized string, err error)
 	UnsetAlias(id string) (num string, err error)
 	MoveAccount(account, target string) (srcNum, tgtNum string, swapped bool, err error)
 	SwapAccounts(first, second string) (numA, numB string, err error)
 	SwitchToForce(id string, jsonOut, force bool) (map[string]any, error)
-	// ApproveAPIKeySwitch records the user's explicit yes to switching onto
-	// the API-key account id names: a change of how Claude Code
-	// authenticates that a running session does not pick up, so the switch
-	// layer refuses it without one (DESIGN A33).
 	ApproveAPIKeySwitch(id string)
-	// ListAccounts with showTokenStatus=true, jsonOut=true yields the
-	// `tycswap list --token-status --json` payload; /api/state?tokenStatus=1
-	// lifts each row's "tokenStatus" string from it.
 	ListAccounts(showTokenStatus, jsonOut bool, fetch map[string]bool) (any, error)
 }
 
@@ -103,8 +93,6 @@ type AccountOps interface {
 // sessions still running on the old account. id is a Codex account reference
 // (slot number, email or alias); every call takes the Codex store's own lock.
 type CodexOps interface {
-	// SwitchTo activates the account and answers {"number", "email",
-	// "runningPids": [...], "alreadyActive"}.
 	SwitchTo(id string) (map[string]any, error)
 	SetAccountDisabled(id string, disabled bool) error
 	// RemoveAccount forgets the account without a prompt (`codex remove -y`).
@@ -128,9 +116,7 @@ type SettingView struct {
 	Description string   `json:"description"`
 	Min         *float64 `json:"min,omitempty"`
 	Max         *float64 `json:"max,omitempty"`
-	// Applies says when a saved value takes effect for this dashboard. The
-	// server sets it (settingApplies, A27); a facade's value is replaced.
-	Applies string `json:"applies"`
+	Applies     string   `json:"applies"`
 }
 
 // SettingsFacade is the settings.json surface.
@@ -140,9 +126,6 @@ type SettingsFacade interface {
 	Unset(dotted string) (bool, error)
 }
 
-// AutoEventView is one auto-switch engine event. Provider is "" for the
-// Claude engine's events, so their JSON is unchanged, and "codex" for a
-// Codex tick, whose Kind is one of the Claude engine's kinds (DESIGN A47).
 type AutoEventView struct {
 	At       float64        `json:"at"`
 	Kind     string         `json:"kind"`
@@ -163,9 +146,7 @@ type AutoView struct {
 	Settings   map[string]any  `json:"settings"`   // effective autoswitch settings the engine started with
 	Events     []AutoEventView `json:"events"`     // most recent last, ring of <= 200
 	Quarantine map[string]any  `json:"quarantine"` // contents of autoswitch_state.json (may be nil)
-	// Codex is the Codex engine that runs beside the Claude one; null on an
-	// install without Codex accounts (DESIGN A47).
-	Codex *CodexAutoView `json:"codex"`
+	Codex      *CodexAutoView  `json:"codex"`
 }
 
 // CodexAutoView is the Codex auto-switch engine as the dashboard shows it.
@@ -178,8 +159,6 @@ type CodexAutoView struct {
 	LastTick  *CodexTickView `json:"lastTick"` // null before the first tick
 }
 
-// CodexTickView is one Codex engine tick, in the names of `tycswap auto
-// --json`'s codex line.
 type CodexTickView struct {
 	At          float64 `json:"at"`
 	Outcome     string  `json:"outcome"` // ok | switched | blocked | no-accounts | error
@@ -195,23 +174,11 @@ type AutoFacade interface {
 	Stop() error
 	Wake() error
 	ApplyThreshold(threshold float64) error // the 7d bar, within the autoswitch.sevenDayThreshold bounds (50–100)
-	// ApplyModels retargets which per-model weekly windows the RUNNING engine
-	// counts ("all", a comma-separated list, or "" for 5h + 7d only).
 	ApplyModels(model string) error
 }
 
-// Strategies are the manual `switch --strategy` choices the UI offers.
-// "soonest-reset" is deliberately NOT here: switching.Switch treats any
-// string outside this set as plain rotation (next slot, usage ignored), and
-// soonest-reset exists only as the AUTO-switch ordering (autoswitch.strategy,
-// DESIGN A17), so offering it would rotate without looking at usage.
 var Strategies = []string{"best", "next-available"}
 
-// SessionsView is one probe of procdetect's running Claude Code sessions and
-// IDE instances. ConfigDir and Profile are keyed by PID: the Claude config
-// directory the session was found in (its transcripts live there too) and,
-// for a session started with `tycswap run` / `tycswap env`, the slot of the
-// account its session profile belongs to ("" for the default login).
 type SessionsView struct {
 	Claude    []procdetect.ClaudeSession
 	IDE       []procdetect.IdeInstance
@@ -219,9 +186,6 @@ type SessionsView struct {
 	Profile   map[int]string
 }
 
-// DefaultSessions probes procdetect's on-disk state under the default Claude
-// config directory only. It is the Deps.Sessions default; SessionsIn also
-// covers the session profiles.
 func DefaultSessions() SessionsView {
 	return probeSessions(procdetect.GetClaudeDir(), "")
 }
@@ -301,9 +265,6 @@ func probeSessions(dir, slot string) SessionsView {
 	return v
 }
 
-// DefaultSessionTitle reads the title from the transcript under claudeDir
-// (the default Claude config directory when ""). It is the Deps.SessionTitle
-// default.
 func DefaultSessionTitle(claudeDir, cwd, sessionID string) string {
 	if claudeDir == "" {
 		claudeDir = procdetect.GetClaudeDir()
@@ -311,11 +272,6 @@ func DefaultSessionTitle(claudeDir, cwd, sessionID string) string {
 	return SessionTitle(claudeDir, cwd, sessionID)
 }
 
-// ErrNotTheProcess reports that the process holding a listed PID is not the
-// one the session file describes — its start time disagrees with the file's
-// startedAt, or cannot be read — so nothing was signalled. A session file
-// left behind by a crash names a PID the system may since have given to an
-// unrelated process.
 var ErrNotTheProcess = errors.New("the pid now belongs to another process, or its start time cannot be verified")
 
 // startTolerance is how far the process start time read from the system may
@@ -326,9 +282,6 @@ var ErrNotTheProcess = errors.New("the pid now belongs to another process, or it
 // lifetime.
 const startTolerance = 20 * time.Second
 
-// startMatches is the decision: recorded (the session file's startedAt) and
-// actual (the process's start time from the system) within startTolerance of
-// each other.
 func startMatches(recorded, actual time.Time) bool {
 	d := recorded.Sub(actual)
 	if d < 0 {
@@ -352,36 +305,21 @@ func DefaultKill(pid int, startedAt int64) error {
 	return terminateVerified(pid, time.UnixMilli(startedAt))
 }
 
-// SnapshotSource is the read model the state document is built from: the
-// Facade's own, or a merged one over every provider (providers.
-// MultiSnapshotSource) whose rows carry provider and key.
 type SnapshotSource interface {
 	AccountsSnapshot(fetch map[string]bool) *reporting.AccountsSnapshot
 }
 
-// Deps are the server's injectable seams. Facade is required; every other
-// field has a production default (see New) or is optional.
 type Deps struct {
-	Facade Facade
-	// Snapshot is what the account rows are read from; nil → Facade. A
-	// merged source lists the Codex rows after the Claude ones, and its
-	// ActiveNumber stays the Claude active slot (DESIGN A47).
-	Snapshot SnapshotSource
-	Sessions func() SessionsView
-	// SessionTitle names a running session from its transcript under the
-	// config directory it was found in; nil → DefaultSessionTitle.
+	Facade       Facade
+	Snapshot     SnapshotSource
+	Sessions     func() SessionsView
 	SessionTitle func(claudeDir, cwd, sessionID string) string
-	// Kill stops the Claude Code session with this pid, which the session
-	// file says started at startedAt (epoch milliseconds); nil →
-	// DefaultKill, which verifies the process's start time first.
-	Kill     func(pid int, startedAt int64) error
-	Clock    clock.Clock
-	Rand     io.Reader     // token entropy; default crypto/rand
-	Interval time.Duration // poll tick; default 5 s
-	Logger   func(string)  // default discards
-	// Ticker builds the poll ticker; default time.NewTicker. Tests inject a
-	// channel they drive by hand.
-	Ticker func(d time.Duration) (<-chan time.Time, func())
+	Kill         func(pid int, startedAt int64) error
+	Clock        clock.Clock
+	Rand         io.Reader     // token entropy; default crypto/rand
+	Interval     time.Duration // poll tick; default 5 s
+	Logger       func(string)  // default discards
+	Ticker       func(d time.Duration) (<-chan time.Time, func())
 
 	// Optional surfaces: nil → the section is null in the state document and
 	// its routes answer 503.
@@ -397,9 +335,6 @@ type Deps struct {
 	// also triggers a state broadcast. A closed channel ends the auto stream.
 	AutoEvents <-chan AutoEventView
 
-	// Updates is what the host found to update (A27). nil: state.updates is
-	// null and the update routes answer 503. With one, Serve asks it to
-	// check at start and every UpdateInterval.
 	Updates UpdatesFacade
 	// UpdateInterval is how often Serve asks Updates to check again;
 	// default six hours.
@@ -409,27 +344,14 @@ type Deps struct {
 	UpdateTicker func(d time.Duration) (<-chan time.Time, func())
 	// UIPrefs keeps the page's view choices for the machine (A27); nil: the
 	// page keeps them for its own lifetime only and state.ui is null.
-	UIPrefs UIPrefs
-	// CurrentLogin is the account Claude Code is signed in with (the email
-	// of its OAuth identity); false when there is none. nil leaves
-	// state.currentLogin null (A27).
-	CurrentLogin func() (email string, ok bool)
-	// AuthOverrides lists what makes Claude Code ignore its stored login
-	// (A27); nil → DetectAuthOverrides over this process's environment and
-	// the live config home's settings.json.
+	UIPrefs       UIPrefs
+	CurrentLogin  func() (email string, ok bool)
 	AuthOverrides func() AuthOverridesView
 	// UpdatesOwnSchedule: Updates checks on a clock of its own (the tray
 	// app's shell, DESIGN A44), so Serve never asks it to; only the page's
 	// Check now does. false: Serve asks at start and every UpdateInterval.
 	UpdatesOwnSchedule bool
 
-	// RemoteToken, when non-empty, is a bearer token that counts as BOTH
-	// factors — cookie and CSRF — on every /api route, not on the static
-	// assets (those stay cookie-only), for a client that is not a browser:
-	// the tray that drives this dashboard from the other side of a WSL
-	// boundary (DESIGN A45). The Host check stays, and the Origin /
-	// Sec-Fetch-Site rules still apply when a request carries those headers.
-	// Empty means bearer auth is off and an Authorization header is ignored.
 	RemoteToken string
 }
 
@@ -441,9 +363,6 @@ type Server struct {
 	cookie string // session cookie value: distinct from token, so a cookie leaked
 	//                 to another 127.0.0.1 port (cookies are not port-scoped) is useless alone
 	cookieBase string // brand.SessionCookie, validated; the port is appended once bound
-	// launchMu guards launch and launchUsed together: the check and the
-	// redemption are one critical section, so concurrent redeem attempts
-	// agree on exactly one winner.
 	launchMu   sync.Mutex
 	launch     string // one-time bootstrap token carried in the printed URL
 	launchUsed bool
@@ -456,9 +375,6 @@ type Server struct {
 
 	mutMu sync.Mutex // serialises façade (store) mutations
 
-	// stateSeq numbers the state documents in the order their builds began;
-	// the hub drops a document older than the newest one it has published
-	// (see broadcast).
 	stateSeq atomic.Uint64
 
 	// refresh carries Refresh requests to the serve loop; one slot, so a
@@ -590,11 +506,6 @@ func (s *Server) consumeLaunch(t string) bool {
 	return true
 }
 
-// LaunchURL returns a URL carrying a one-time bootstrap token: the current
-// one while it is still unused (so the URL printed at start stays valid until
-// somebody opens it), a freshly minted one once it has been redeemed. The
-// tray's "Open dashboard" calls this per click (DESIGN A35), and POST
-// /api/launch hands it to a remote tray (A45).
 func (s *Server) LaunchURL() (string, error) {
 	s.launchMu.Lock()
 	used := s.launchUsed
@@ -616,9 +527,6 @@ func (s *Server) LaunchURL() (string, error) {
 // Snapshot builds the state document the dashboard would receive now.
 func (s *Server) Snapshot() State { return s.buildState(stateOpts{}) }
 
-// OnState registers fn to receive every state document the server publishes
-// (the poll tick, a mutation, Refresh, an engine event). fn runs on the
-// goroutine that built the document; keep it quick.
 func (s *Server) OnState(fn func(State)) {
 	s.obsMu.Lock()
 	s.stateObs = append(s.stateObs, fn)
@@ -636,9 +544,6 @@ func launchURL(port int, token string) string {
 	return "http://127.0.0.1:" + strconv.Itoa(port) + "/?token=" + token
 }
 
-// cookieName is the session cookie's name: brand.SessionCookie plus the bound
-// port. Cookies are not port-scoped, so with one name a second dashboard on
-// another port would overwrite the first one's cookie and log it out.
 func (s *Server) cookieName() string {
 	if p := s.Port(); p != 0 {
 		return s.cookieBase + "_" + strconv.Itoa(p)

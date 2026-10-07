@@ -1,16 +1,3 @@
-// console_windows.go — the tray app gives back a console window Windows
-// opened only for it (DESIGN A41).
-//
-// tycswap.exe is a console program: it is also the CLI, and a GUI-
-// subsystem build would lose every command's output. So when Explorer starts
-// it — the start-at-login Run entry, a double-click, a shortcut — Windows
-// creates a console window for it, and `app` then sits in the taskbar as an
-// empty terminal whose close button ends the app. That console is recognisable:
-// this process is the only one attached to it. A shell's console (a terminal
-// the user typed `tycswap app` into) has the shell attached as well and
-// is left alone, and a process started detached (the bare command's
-// background start, A40) has no console at all.
-
 //go:build windows
 
 package cli

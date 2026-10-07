@@ -31,9 +31,6 @@ type envPreparer interface {
 	SetupEnv(identifier string, share, shareHistory bool) (session.EnvResult, error)
 }
 
-// newEnvPreparer builds the SessionManager `tycswap env` prepares the profile
-// with, routing its human notices to out (env passes stderr) so stdout stays a
-// pure eval stream. A package var so tests can substitute a fake.
 var newEnvPreparer = func(sw *core.Switcher, out io.Writer) envPreparer {
 	return session.NewManager(sw, session.Options{
 		OAuth:    sw.OAuth,
@@ -93,9 +90,6 @@ func envCommand(prog string, argv []string, s ioStreams) int {
 			"argument --shell: invalid choice: '"+shell+"' (choose from "+strings.Join(envShellChoices, ", ")+")")
 	}
 
-	// --unset: skip account resolution / bootstrap entirely; print only the
-	// CLAUDE_CONFIG_DIR unset line for the chosen shell. --unset with an account
-	// argument is a usage error (exit 2).
 	if unset {
 		if account != nil {
 			return subError(envProg, s.err, "--unset does not take a NUM|EMAIL|ALIAS argument")
@@ -117,9 +111,6 @@ func envCommand(prog string, argv []string, s ioStreams) int {
 	// (never stdout) so it can't corrupt the `eval "$(tycswap env)"` (FINDING 9).
 	setSigintCancelToStderr()
 
-	// Account resolution identical to run: explicit NUM|EMAIL|ALIAS, else the
-	// cwd's directory mapping, else error — env has no "default login" fallback
-	// (an unset CLAUDE_CONFIG_DIR IS the default; we suggest --unset).
 	identifier, code, done := resolveEnvAccount(sw, account, s)
 	if done {
 		return code
@@ -133,10 +124,6 @@ func envCommand(prog string, argv []string, s ioStreams) int {
 		return 1
 	}
 
-	// D1 (FINDING 1): the requested account is already the active default login
-	// and no CLAUDE_CONFIG_DIR is preset. An unpinned shell already uses it, so
-	// nothing is exported — the informational note SetupEnv wrote to stderr is
-	// the only output.
 	if res.NoOp {
 		return 0
 	}
@@ -254,10 +241,6 @@ var pwshQuoteEscaper = strings.NewReplacer(
 	"\u201b", "\u201b\u201b",
 )
 
-// pwshQuote wraps s in a PowerShell single-quoted string. PowerShell ends such
-// a string at any of ' and U+2018–U+201B (the typographic single quotes), so
-// each is doubled, which PowerShell reads as one literal character of the
-// same kind.
 func pwshQuote(s string) string {
 	return "'" + pwshQuoteEscaper.Replace(s) + "'"
 }

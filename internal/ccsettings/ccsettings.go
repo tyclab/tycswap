@@ -58,18 +58,11 @@ const SidecarName = "claude-settings.prev.json"
 // SidecarVersion is the sidecar schema version.
 const SidecarVersion = 1
 
-// writtenKeys are the keys Apply sets; deletedKeys the keys it removes, so
-// that nothing sends a second key to the endpoint (Claude Code fills
-// X-Api-Key from env.ANTHROPIC_API_KEY beside the bearer token).
 var (
 	writtenKeys = []string{KeyBaseURL, KeyAuthToken}
 	deletedKeys = []string{KeyAPIKey}
 )
 
-// ownedKeys is the allowlist: the complete set of keys Apply may write or
-// delete and Revert restores. Nothing outside it is ever changed, apart from
-// the "env" container Apply creates when there was none and Revert removes
-// again.
 var ownedKeys = append(append([]string(nil), writtenKeys...), deletedKeys...)
 
 // OwnedKeys returns a copy of the allowlist: the written keys, then the
@@ -191,22 +184,9 @@ const (
 	RevertedNothing RevertOutcome = iota
 	// RevertedFromRecord: the sidecar's priors were restored exactly.
 	RevertedFromRecord
-	// RevertedByValue: no sidecar, but settings.json held exactly one known
-	// endpoint and its key, and both were removed. What they replaced cannot
-	// be brought back this way: there is no record of it.
 	RevertedByValue
 )
 
-// Revert restores every recorded key to its recorded state and removes the
-// sidecar. Keys the user changed after Apply are still reverted (the sidecar
-// wins); every other key is left as it is now. The settings file is the one
-// the sidecar records; settingsPath is used when the record names none.
-//
-// Without a sidecar it does not simply give up: a profile whose record was
-// lost would otherwise keep Claude Code on the endpoint with no way off. When
-// settingsPath holds env.ANTHROPIC_BASE_URL and env.ANTHROPIC_AUTH_TOKEN
-// equal to one of known (the endpoint accounts tycswap holds), both are
-// removed; anything else is the user's and stays.
 func Revert(settingsPath, sidecarPath string, known []Profile) (RevertOutcome, error) {
 	sc, err := loadSidecar(sidecarPath)
 	if err != nil {
@@ -254,9 +234,6 @@ func Revert(settingsPath, sidecarPath string, known []Profile) (RevertOutcome, e
 	return RevertedFromRecord, nil
 }
 
-// revertByValue removes an endpoint profile that has no sidecar to restore
-// from, and only one that is recognisably tycswap's: both owned keys present
-// and equal to one known endpoint and its key.
 func revertByValue(settingsPath string, known []Profile) (RevertOutcome, error) {
 	if settingsPath == "" || len(known) == 0 {
 		return RevertedNothing, nil
@@ -300,9 +277,6 @@ func holdsKnown(root map[string]any, known []Profile) bool {
 	return false
 }
 
-// absPath is path made absolute, or path itself when that fails: a relative
-// CLAUDE_CONFIG_DIR would otherwise name a different file from another
-// working directory.
 func absPath(path string) string {
 	if path == "" {
 		return path
@@ -390,9 +364,6 @@ func RecordsFile(sidecarPath, settingsPath string) bool {
 	return err == nil && sc != nil && sc.SettingsPath == absPath(settingsPath)
 }
 
-// Second-key sources Competing names: what Claude Code would still send as
-// X-Api-Key beside the profile's bearer token, which the profile does not
-// own and so does not touch.
 const (
 	CompetingHelper = "apiKeyHelper"
 	CompetingEnvKey = "ANTHROPIC_API_KEY"

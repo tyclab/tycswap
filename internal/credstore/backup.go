@@ -143,12 +143,6 @@ func (s *FileKeychainStore) ReadBackup(num, email string) (string, error) {
 	return "", nil
 }
 
-// WriteBackup persists a slot backup (spec 03§5.7). It retains the prior
-// generation as .prev, then writes the Keychain (macOS, usable) reconciling the
-// .enc away, else the .enc file (best-effort dropping the stale Keychain copy).
-// A file-write failure is raised before returning so the switcher wrapper runs
-// its post-write hook exactly once. A slot stores the account part only
-// (DESIGN A59): this is the one place every slot write passes.
 func (s *FileKeychainStore) WriteBackup(num, email, creds string) error {
 	creds = oauth.AccountOnly(creds)
 	s.retainPreviousBackup(num, email, creds)
@@ -189,9 +183,6 @@ func (s *FileKeychainStore) reconcileEncAfterKeychainWrite(num, email, creds str
 	return s.writeBackupEnc(num, email, creds)
 }
 
-// DeleteBackup is the best-effort backup sweep (spec 03§5.7). It removes the
-// .enc (and the legacy account-None alias), the macOS Keychain item, and the
-// .prev generation for each; every failure is logged, none is raised.
 func (s *FileKeychainStore) DeleteBackup(num, email string) error {
 	nums := []string{num}
 	if num != "None" {

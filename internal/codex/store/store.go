@@ -306,9 +306,6 @@ func (s *Store) read() *seqDoc {
 	return d
 }
 
-// readDoc loads sequence.json for a read-modify-write. A missing or
-// zero-length file is fresh; an unreadable file, or one that is not a single
-// JSON object, is an error, so nothing is written over it.
 func (s *Store) readDoc() (*seqDoc, error) {
 	b, err := os.ReadFile(s.sequencePath())
 	if errors.Is(err, os.ErrNotExist) {
@@ -584,9 +581,6 @@ func (s *Store) upsertIn(d *seqDoc, accountKey string, u Upsert) (Slot, error) {
 	return sl, nil
 }
 
-// RemoveSlot forgets a slot and its snapshot, reporting whether anything was
-// removed. The active marker is cleared when it named the removed account.
-// The number is not reused by any other slot until the next add.
 func (s *Store) RemoveSlot(accountKey string) (bool, error) {
 	removed := false
 	err := s.update(func(d *seqDoc) error {

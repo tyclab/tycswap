@@ -1,22 +1,3 @@
-// viewport.go — height-aware rendering helpers shared by the primary screens.
-//
-// Fixes a layout-overflow bug class touching spec 09§4 (the Auto view's event
-// log), §3.6/§3.7 (the Switch/Watch account lists) and §3 (the dashboard's
-// monitor panel + menu): a screen body taller than the terminal makes the alt-
-// screen show only its bottom, so the pinned header/status scrolls off the top.
-// Each screen now keeps its header/status pinned and lets exactly one region
-// flex — mirroring which widget the Python/Textual original scrolls:
-//   - Auto: the RichLog event log tail-follows; the active card, badge/summary
-//     and candidates stay put (09§4 layout — RichLog is the one scrollable
-//     region, everything above it is fixed chrome).
-//   - Switch/Watch: the account list windows around the cursor so the selected
-//     card is always visible; monitor-mode Watch pans by a scroll offset
-//     (09§3.7 "scroll the viewport instead").
-//   - Dashboard: the interactive menu (with its cursor) stays visible while the
-//     accounts monitor (a panel) truncates with an overflow indicator.
-//
-// All budgets derive from Model.contentHeight (terminal height minus the
-// footer/toast chrome the app shell reserves in View, 09§2/§8.2).
 package tui
 
 import (

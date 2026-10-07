@@ -1,11 +1,3 @@
-// The foreground polling loop and adaptive inter-tick timing.
-//
-// Implements spec 05§15 (run_loop + _next_delay). The loop clears the wake
-// signal at the TOP (a wake racing a timeout is never lost), checks stop, ticks,
-// then waits delay OR wake OR stop. A SleepEvent is emitted only when the chosen
-// delay exceeds interval * 1.5. DESIGN §4 row 2: stopCh is latching; a wake
-// after stop is a harmless no-op.
-
 package autoswitch
 
 import (

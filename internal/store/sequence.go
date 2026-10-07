@@ -1,22 +1,3 @@
-// sequence.go — the sequence.json model and its read/write discipline.
-//
-// Implements spec 01§2 (account metadata format) and 01§2.3 (_write_json). The
-// top-level schema is a fixed four-key struct; each account RECORD is kept as a
-// json.RawMessage so unknown keys and — critically — the absence of the
-// optional alias/kind/disabled keys survive a read/mutate/rewrite byte-for-byte
-// (spec 01§2.2 additivity rule, risk 3). Writes go through a Python-parity
-// json.dumps(indent=2) rendering (two-space indent, no trailing newline, no
-// HTML escaping) with a re-parse validation guard that maps to ConfigError
-// "Generated invalid JSON".
-//
-// Two reads, one file: ReadSequence keeps Python's contract (absent and
-// unreadable alike are None) for the many callers that only display or inspect;
-// SequenceForUpdate keeps them apart for the callers that are about to write,
-// because an empty roster is the truth for one and destroys the user's data for
-// the other. Every operation that can end in a write begins with exactly one
-// classified read (SequenceForUpdate / MigratedSequenceForUpdate) and threads
-// that roster through its own writes: a re-fetch mid-operation can only
-// introduce disagreement with the roster its decisions were made against.
 package store
 
 import (
@@ -30,11 +11,6 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 )
 
-// SequenceData is sequence.json. Field order matches Python's write order so a
-// re-serialization is byte-identical to the Python file (spec 01§2.1).
-// ActiveAccountNumber is a *int so JSON null (no recorded active slot)
-// round-trips as nil rather than 0. Accounts values are json.RawMessage to
-// preserve each record's exact bytes and optional-key presence/absence.
 type SequenceData struct {
 	ActiveAccountNumber *int                       `json:"activeAccountNumber"`
 	LastUpdated         string                     `json:"lastUpdated"`
@@ -56,8 +32,6 @@ func (s *Store) ReadSequence() (*SequenceData, error) {
 	return data, err
 }
 
-// sequenceState is WHY a roster read produced no data — the distinction
-// ReadSequence deliberately collapses into Python's None.
 type sequenceState int
 
 const (
@@ -66,24 +40,6 @@ const (
 	seqUnreadable                      // the file is there but yields no roster: corruption
 )
 
-// readSequenceState is the single read ReadSequence and SequenceForUpdate are
-// both views of: one os.ReadFile plus one Unmarshal, and the reason a nil roster
-// is nil. Classifying from THAT read rather than from a follow-up os.Stat is
-// what makes the answer trustworthy — a file created or removed between two
-// syscalls could otherwise be reported as the opposite case, and this
-// classification decides whether the user's records are overwritten.
-//
-// Only fs.ErrNotExist is a fresh install. Every other read failure (a directory
-// in the file's place, mode 0000, an I/O error) means the file IS there and its
-// bytes went unread, which for a writer is corruption, not an empty roster; the
-// raw error travels alongside for ReadSequence, which still propagates it.
-//
-// The diagnosis is this read's own finding about THESE bytes, phrased as the
-// clause corruptSequenceError renders after the path. It is produced here
-// because only here is the cause still known: the three ways a present file
-// fails to be a roster are distinguished by which branch below fires, and by the
-// time the refusal is built they are indistinguishable. It is "" for the two
-// states that are not corruption.
 func (s *Store) readSequenceState() (*SequenceData, sequenceState, string, error) {
 	raw, err := os.ReadFile(s.SequenceFile)
 	if err != nil {
@@ -109,9 +65,6 @@ func (s *Store) readSequenceState() (*SequenceData, sequenceState, string, error
 	return sd, seqParsed, "", nil
 }
 
-// readFailureDetail is an unobtainable file's OS error in its own words, with
-// the path dropped when the error carries one — the refusal already names the
-// file, and repeating it inside the parenthesis reads as two different files.
 func readFailureDetail(err error) string {
 	var pe *fs.PathError
 	if errors.As(err, &pe) {
@@ -128,28 +81,6 @@ func (s *Store) warnf(format string, a ...any) {
 	}
 }
 
-// SequenceForUpdate is the roster read an operation that may WRITE sequence.json
-// must start from. It resolves the two causes ReadSequence collapses, because
-// they demand opposite answers:
-//
-//   - ABSENT — a fresh install (or a post-purge tree). An empty roster is the
-//     truth, so one is returned and the caller's write creates the file.
-//   - PRESENT BUT NOT A ROSTER — corruption: bytes that do not parse, a
-//     document that is not an object (including the literal null), or a file
-//     whose bytes cannot be read at all. The account records (emails, aliases,
-//     uuids, orgs, slot mapping) may still be hand-repairable text, and every
-//     credential and config backup on disk is intact but referenced ONLY from
-//     this file. Substituting an empty roster here would rename a freshly-built
-//     file over those records, orphaning the backups irreversibly and silently,
-//     so it refuses with a ConfigError naming the path and the remedy.
-//
-// Refusing costs the user one command and is fully recoverable; overwriting is
-// neither.
-//
-// A parsed object is handed back normalized (see normalizeRoster): every write
-// path assigns into Accounts, and a roster whose map is nil would panic mid-
-// operation — after the new slot's credential and config backups were already
-// written.
 func (s *Store) SequenceForUpdate() (*SequenceData, error) {
 	data, err := s.classifiedRoster()
 	if err != nil {
@@ -178,24 +109,6 @@ func (s *Store) classifiedRoster() (*SequenceData, error) {
 	return data, nil
 }
 
-// MigratedSequenceForUpdate is the entry read for an operation that may write
-// sequence.json and needs the org-field backfill applied first. Order is
-// classify → backfill → use, and both halves are load-bearing:
-//
-//   - classification comes FIRST because the backfill is itself a write to
-//     sequence.json. An unreadable roster reached through the backfill would
-//     surface the raw OS error of its read ("read <path>: is a directory") in
-//     place of the refusal that tells the user their credential and config
-//     backups are intact and how to repair the file.
-//   - the roster the operation threads onward is the one taken AFTER the
-//     backfill ran, because the backfill rewrites records; a roster read before
-//     it would carry the pre-backfill bytes, and the operation's own write would
-//     revert what the backfill just persisted.
-//
-// SequenceMigrated owns both steps (it classifies, then re-reads once the
-// backfill has run), so this adds only the writer's reading of absence. This
-// is an advisory read: for a subsequent write use WithRosterLocked or the
-// Locked variant while holding the lock across the whole operation.
 func (s *Store) MigratedSequenceForUpdate() (*SequenceData, error) {
 	data, err := s.SequenceMigrated()
 	return s.rosterForUpdate(data, err)
@@ -255,8 +168,6 @@ func (s *Store) corruptSequenceError(diagnosis string, cause error) error {
 	return err
 }
 
-// emptySequence is the roster of a store with no sequence.json yet: no active
-// slot, no rotation order, no accounts (spec 01§2.1).
 func (s *Store) emptySequence() *SequenceData {
 	return &SequenceData{
 		ActiveAccountNumber: nil,
@@ -293,9 +204,6 @@ func (s *Store) writeSequenceFile(data *SequenceData) error {
 	return atomicfile.Write(s.SequenceFile, encoded, atomicfile.Opts{})
 }
 
-// InitSequenceFile writes the initial empty sequence.json only if the file does
-// not exist (spec 01§2.1 _init_sequence_file): activeAccountNumber null, an
-// empty sequence, and an empty accounts map.
 func (s *Store) InitSequenceFile() error {
 	if _, err := os.Stat(s.SequenceFile); err == nil {
 		return nil
@@ -305,16 +213,6 @@ func (s *Store) InitSequenceFile() error {
 	return s.WriteSequence(s.emptySequence())
 }
 
-// NextAccountNumberFrom is max(int slot keys in data, default 0) + 1, or 1 for
-// an empty/nil roster (spec 01§5.2 _get_next_account_number) — the slot a new
-// account takes in THAT roster.
-//
-// A caller that already holds the roster it will write the new record into must
-// use this form. NextAccountNumber below answers from its own independent read,
-// and the two rosters can disagree: if the file changed (or went unreadable, so
-// the caller kept the copy it already had) between the reads, the slot chosen
-// from the file can be occupied in the roster actually written, silently
-// replacing a live account's record and orphaning its backups.
 func (s *Store) NextAccountNumberFrom(data *SequenceData) int {
 	if data == nil || len(data.Accounts) == 0 {
 		return 1
@@ -328,21 +226,11 @@ func (s *Store) NextAccountNumberFrom(data *SequenceData) int {
 	return max + 1
 }
 
-// NextAccountNumber answers from a fresh read of sequence.json, for callers that
-// hold no roster of their own. An unreadable file reads as "no accounts" and
-// yields 1.
 func (s *Store) NextAccountNumber() int {
 	data, _ := s.ReadSequence()
 	return s.NextAccountNumberFrom(data)
 }
 
-// marshalIndent2 renders v the way Python's json.dumps(v, indent=2) does: a
-// two-space indent, a space after each colon, no trailing newline. HTML escaping
-// is disabled so <, >, & survive as themselves (Python does not HTML-escape);
-// non-ASCII is emitted as UTF-8 rather than Python's \uXXXX form — both parse
-// back identically, and no sequence.json fixture contains such characters, so
-// the byte-golden round-trip holds. A json.RawMessage account record is
-// re-indented consistently while its key order and scalar bytes are preserved.
 func marshalIndent2(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
@@ -373,12 +261,6 @@ func decodeRecord(raw json.RawMessage) map[string]any {
 	return m
 }
 
-// encodeRecord re-marshals an edited record back to a compact RawMessage with
-// HTML escaping disabled (so <, >, & survive, matching Python), which
-// marshalIndent2 then re-indents. Key order follows Go's map ordering
-// (alphabetical) rather than the original insertion order, so a record is only
-// ever re-encoded when its data actually changed (org backfill, uuid backfill);
-// untouched records keep their original bytes.
 func encodeRecord(rec map[string]any) (json.RawMessage, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
@@ -389,7 +271,6 @@ func encodeRecord(rec map[string]any) (json.RawMessage, error) {
 	return json.RawMessage(bytes.TrimRight(buf.Bytes(), "\n")), nil
 }
 
-// recordFor returns the decoded record for a slot key and whether it exists.
 func recordFor(data *SequenceData, num string) (map[string]any, bool) {
 	if data == nil {
 		return nil, false
@@ -401,7 +282,6 @@ func recordFor(data *SequenceData, num string) (map[string]any, bool) {
 	return decodeRecord(raw), true
 }
 
-// strField returns rec[key] as a string, or "" when absent or not a string.
 func strField(rec map[string]any, key string) string {
 	if v, ok := rec[key].(string); ok {
 		return v
@@ -409,8 +289,6 @@ func strField(rec map[string]any, key string) string {
 	return ""
 }
 
-// strOrEmpty coerces a JSON value to string, mapping null / non-string / absent
-// to "" (Python's `x.get(k, "") or ""` idiom).
 func strOrEmpty(v any) string {
 	if s, ok := v.(string); ok {
 		return s
@@ -418,9 +296,6 @@ func strOrEmpty(v any) string {
 	return ""
 }
 
-// atoiSlot parses a decimal slot key. It returns ok=false for non-digit input
-// (mirroring the int(k) over digit keys usage; callers already work with digit
-// keys, this guards a defensively malformed table).
 func atoiSlot(s string) (int, bool) {
 	if s == "" {
 		return 0, false
@@ -435,8 +310,6 @@ func atoiSlot(s string) (int, bool) {
 	return n, true
 }
 
-// isDigits reports whether s is non-empty and all ASCII digits (Python
-// str.isdigit for the identifiers tycswap resolves).
 func isDigits(s string) bool {
 	if s == "" {
 		return false

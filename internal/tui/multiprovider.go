@@ -35,15 +35,10 @@ import (
 	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
-// ProviderSource takes one merged, provider-major snapshot pass plus the owners
-// map from row key ("claude:3", "codex:1") to the provider that produced the
-// row. full and storeOnly carry the same meaning as snapshotSource.take.
 type ProviderSource interface {
 	Take(full, storeOnly bool) (reporting.AccountsSnapshot, map[string]providers.Provider)
 }
 
-// CodexActions is the Codex account surface the dashboard drives. Add stays
-// Claude-only, as in PR #252.
 type CodexActions interface {
 	SwitchTo(ctx context.Context, identifier string) (switcher.SwitchResult, error)
 	SetAccountDisabled(identifier string, disabled bool) (number string, err error)
@@ -89,9 +84,6 @@ func WithProviders(ctx context.Context, src ProviderSource, codex CodexActions) 
 	}
 }
 
-// multiRefreshCmd is refreshCmd over the ProviderSource, or nil when none is
-// wired. The fetch rule is the source's own: storeOnly → no network, else every
-// stale row eligible.
 func (m *Model) multiRefreshCmd(full, storeOnly bool) tea.Cmd {
 	src := m.multi.src
 	if src == nil {
@@ -103,9 +95,6 @@ func (m *Model) multiRefreshCmd(full, storeOnly bool) tea.Cmd {
 	}
 }
 
-// rowID is a row's action id (dashboard.py _row_action_id): Claude rows keep
-// the historical bare number, so a Claude-only install and every test written
-// against it are untouched; other providers use the composite key.
 func rowID(acc reporting.AccountSnapshot) string {
 	if acc.ProviderName() == reporting.ProviderClaude {
 		return acc.Number
@@ -140,11 +129,6 @@ type rowTarget struct {
 	codex    CodexActions
 }
 
-// resolveRow maps a row id to the provider that owns it (app.py _resolve_row).
-// The owners map is authoritative; a key it does not hold falls back on the
-// key's provider prefix, and a provider that has since gone away falls back on
-// the Claude Facade — better a no-op on the default provider than a panic in
-// the event loop.
 func (m *Model) resolveRow(id string) rowTarget {
 	pid, number := splitRowID(id)
 	if owner := m.multi.owners[pid+":"+number]; owner != nil {
@@ -203,10 +187,6 @@ func (m *Model) startMessageAction(label string, fn func() (msg, warn string, er
 	}
 }
 
-// codexSwitch switches a Codex row (app.py do_switch for a non-Claude
-// provider). The toast names the resolved slot, and running codex sessions are
-// reported exactly as `tycswap codex switch` reports them: they keep the old
-// account until restarted.
 func (m *Model) codexSwitch(t rowTarget) tea.Cmd {
 	ctx, codex, number := m.multi.ctx, t.codex, t.number
 	if ctx == nil {
@@ -255,9 +235,6 @@ func (m *Model) codexToggleDisabled(t rowTarget, target bool) tea.Cmd {
 	})
 }
 
-// codexConfirmRemove is confirmRemove for a Codex row (app.py confirm_remove /
-// _on_remove_confirm by key), with the same identity re-check the Claude path
-// makes before it fires.
 func (m *Model) codexConfirmRemove(t rowTarget, id string, acc reporting.AccountSnapshot) tea.Cmd {
 	codex, number, email, orgUUID := t.codex, t.number, acc.Email, acc.OrgUUID
 	return m.pushScreen(&confirmModal{

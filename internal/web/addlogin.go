@@ -1,6 +1,3 @@
-// addlogin.go — "Add current login": store the login Claude Code has. The
-// dashboard's button and the tray's row both come here (DESIGN A37), so the
-// two say the same about what happened.
 package web
 
 import "github.com/tyclab/tycswap/internal/cerr"

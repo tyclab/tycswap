@@ -9,9 +9,6 @@ package oauth
 
 import "encoding/json"
 
-// numFloat reports whether v is a JSON number (json.Number) or a native Go
-// numeric type, returning its float64 value. Matches Python isinstance(v,
-// (int, float)) — strings and bools are rejected.
 func numFloat(v any) (float64, bool) {
 	switch n := v.(type) {
 	case json.Number:
@@ -40,8 +37,6 @@ func isNumber(v any) bool {
 	return ok
 }
 
-// truthyStr reports whether v is a non-empty string (Python truthiness for the
-// string-typed fields this package reads: refreshToken, resets_at, scope).
 func truthyStr(v any) bool {
 	s, ok := v.(string)
 	return ok && s != ""

@@ -1,9 +1,3 @@
-// The download shape of `tycswap upgrade` (DESIGN A24, A36): a binary that
-// was not installed with `go install` and is not a checkout build — a release
-// binary, or one copied out of a Go bin directory — is upgraded by
-// downloading the newest release's build for this OS and architecture,
-// checking it against that release's SHA256SUMS and renaming it over the
-// running file.
 package update
 
 import (

@@ -43,24 +43,11 @@ import (
 	"github.com/tyclab/tycswap/internal/storenames"
 )
 
-// AddAccount adds the current live Claude account to the managed set (spec
-// 01§5). slot nil auto-assigns the next number; a set slot may displace a
-// different occupant (after confirmation, unless assumeYes) or migrate the same
-// identity from another slot. alias nil preserves any existing alias; a set
-// alias replaces it.
 func AddAccount(s *store.Store, slot *int, assumeYes bool, alias *string) error {
 	_, err := AddAccountFrom(s, LiveLogin, slot, assumeYes, alias)
 	return err
 }
 
-// AddAccountFrom is AddAccount with the login it stores named explicitly: the
-// live login (LiveLogin) or a Claude config directory a login was just made in
-// (LoginDir). It returns the slot the account landed on.
-//
-// The two sources differ in one rule besides where the bytes are read: a live
-// add records the stored slot as the active account, because it IS the live
-// login; a login-directory add leaves activeAccountNumber alone, because the
-// live login has not changed.
 func AddAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, alias *string) (string, error) {
 	var accountNum string
 	err := addAccountFrom(s, src, slot, assumeYes, alias, &accountNum)
@@ -88,9 +75,6 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		}
 		return cerr.Config("No active Claude account found. Please log in first.")
 	}
-	// The email names the account's backup files and Keychain items. It comes
-	// from a .claude.json (the live one or a scratch login's), which is not
-	// tycswap's to trust: refuse anything a file name cannot carry.
 	if !validateEmail(email) {
 		return cerr.Validation("The logged-in account's email cannot name a store file: %s. It needs %s.", strconv.Quote(email), storenames.EmailRule)
 	}
@@ -110,7 +94,6 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 	}
 
 	return s.WithRosterLocked(func(data *store.SequenceData) error {
-		// Refresh-in-place: no slot given and the identity is already managed.
 		if slot == nil {
 			if existing := s.FindAccountSlot(data, email, orgUUID); existing != "" {
 				*landed = existing
@@ -150,8 +133,6 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 			accountNum = strconv.Itoa(s.NextAccountNumberFrom(data))
 		}
 
-		// Alias carry-forward from the prior occupant of the same identity, or
-		// from the migrate-from record (which takes precedence when set).
 		existingAlias := ""
 		if slot != nil {
 			if rec, present := recordAt(data, accountNum); present {
@@ -277,10 +258,6 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 	})
 }
 
-// keepActive keeps activeAccountNumber on the live login after a login-directory
-// add, which did not change that login: it follows the live identity when a
-// migration moved it to slotInt, and is cleared when a displacement deleted the
-// record it named, leaving the live login unmanaged (DESIGN A56).
 func keepActive(data *store.SequenceData, displaced *displaceInfo, migrateFrom string, slotInt int) {
 	if data.ActiveAccountNumber == nil {
 		return
@@ -371,10 +348,6 @@ func revalidateDisplacement(data *store.SequenceData, accountNum, email, orgUUID
 	}
 }
 
-// slotOccupant is the record standing in accountNum when it is NOT the identity
-// being added — the record a displacement would destroy. A free slot, or one
-// already holding this same (email, org), yields nil: nothing to confirm and
-// nothing to delete.
 func slotOccupant(data *store.SequenceData, accountNum, email, orgUUID string) *displaceInfo {
 	rec, present := recordAt(data, accountNum)
 	if !present {
@@ -391,8 +364,6 @@ func slotOccupant(data *store.SequenceData, accountNum, email, orgUUID string) *
 	}
 }
 
-// emitSlotOccupied is the two-line occupancy notice that precedes an overwrite:
-// which slot, and who is in it.
 func emitSlotOccupied(occ *displaceInfo) {
 	emitWarning("Slot " + occ.num + " already occupied")
 	emitLine(occ.email + " " + printer.Muted("["+displayTag(occ.orgName)+"]"))
@@ -449,9 +420,6 @@ func addRefreshInPlace(s *store.Store, src AddSource, data *store.SequenceData, 
 	return nil
 }
 
-// displaceInfo is the occupant of a slot an add would displace: the identity
-// (num, email, org) the destructive branch keys on, plus the org name only the
-// occupancy notice displays.
 type displaceInfo struct{ num, email, org, orgName string }
 
 // sameIdentity reports whether two occupancy observations describe the same
@@ -462,10 +430,6 @@ func (d *displaceInfo) sameIdentity(o *displaceInfo) bool {
 	return d != nil && o != nil && d.num == o.num && d.email == o.email && d.org == o.org
 }
 
-// parseOAuthConfig extracts accountUuid / organizationUuid / organizationName
-// from a live config's oauthAccount, coercing null/absent to "". A parse failure
-// yields empties (Python would read them via _read_json; a healthy live config
-// always parses).
 func parseOAuthConfig(configText string) (uuid, org, orgName string) {
 	var m map[string]any
 	if json.Unmarshal([]byte(configText), &m) != nil {

@@ -1,10 +1,3 @@
-// Runner: the process seam — PATH resolution (shutil.which), the auth-status
-// probe (subprocess.run capture_output+timeout), and the terminal handoff
-// (execvpe on POSIX / subprocess+exit on Windows), all mockable for tests.
-//
-// Implements spec 06§1.7 (_is_session_valid probe invocation) and 06§1.8
-// (_exec). LookPath and Probe are platform-independent; the exec image swap is
-// in exec_posix.go / exec_windows.go.
 package session
 
 import (
@@ -19,13 +12,8 @@ import (
 	"github.com/tyclab/tycswap/internal/clock"
 )
 
-// probeWaitDelay bounds how long Probe blocks after the deadline fires (or the
-// child exits) waiting on captured pipes that a grandchild may still hold open.
-// Without it cmd.Run reads the stdout/stderr pipes until EOF and can outlive the
-// timeout indefinitely when an orphaned subprocess keeps a descriptor.
 const probeWaitDelay = 2 * time.Second
 
-// Runner abstracts process discovery and execution.
 type Runner interface {
 	// LookPath resolves a binary on PATH (shutil.which). Returns a non-nil
 	// error when the binary is not found. On Windows this must consult PATHEXT
@@ -35,20 +23,13 @@ type Runner interface {
 	// (stdout, exitCode, err); err is non-nil only on a spawn failure or
 	// timeout (Python OSError / TimeoutExpired), never for a non-zero exit.
 	Probe(argv, env []string, timeout time.Duration) (stdout string, rc int, err error)
-	// Exec hands the terminal to the child. POSIX replaces the process image
-	// (returns only on exec failure); Windows spawns, waits, and exits with the
-	// child's code (Ctrl+C → 130).
 	Exec(bin string, argv, env []string) error
 }
 
-// osRunner is the production Runner.
 type osRunner struct{}
 
-// LookPath resolves name on PATH.
 func (osRunner) LookPath(name string) (string, error) { return exec.LookPath(name) }
 
-// Probe runs argv (capturing stdout only) with a hard timeout, mirroring
-// subprocess.run(..., capture_output=True, text=True, timeout=...).
 func (osRunner) Probe(argv, env []string, timeout time.Duration) (string, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -62,18 +43,8 @@ func (osRunner) Probe(argv, env []string, timeout time.Duration) (string, int, e
 	return classifyProbe(out.String(), err, ctx.Err())
 }
 
-// classifyProbe maps a cmd.Run() result to the (stdout, rc, err) probe contract,
-// mirroring Python's subprocess.run: a TimeoutExpired fires only when the
-// process is actually killed by the deadline, never when the process completed
-// and produced a result. Kept as a pure seam so the classification is
-// unit-testable (see classify-at-deadline coverage in runner_test.go).
 func classifyProbe(out string, runErr error, ctxErr error) (string, int, error) {
 	if errors.Is(runErr, exec.ErrWaitDelay) {
-		// The child exited with a successful status but a grandchild held a
-		// captured pipe past the grace window, so WaitDelay force-closed the
-		// pipe. stdout was flushed before the child exited, making the capture
-		// complete and valid — treat it as success with the captured output
-		// rather than a timeout that would delete freshly built profiles.
 		return out, 0, nil
 	}
 	if runErr == nil {

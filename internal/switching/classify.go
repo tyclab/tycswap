@@ -19,9 +19,6 @@ import (
 	"github.com/tyclab/tycswap/internal/store"
 )
 
-// classifyOutgoing returns (kind, foreignSlot) per spec 02§9. kind ∈
-// {own-bytes, own-family, own-rotated, foreign, foreign-synced, alien,
-// unresolved}. foreignSlot is set only for foreign / foreign-synced.
 func classifyOutgoing(s *store.Store, currentAccount, currentEmail, originalCreds string, prov *Provenance, data *store.SequenceData) (string, string) {
 	backup, _ := s.ReadAccountCredentials(currentAccount, currentEmail)
 
@@ -111,13 +108,6 @@ func classifyOutgoing(s *store.Store, currentAccount, currentEmail, originalCred
 	return "foreign", slot
 }
 
-// orgPresent reports whether the resolved identity carries an organization,
-// standing in for Python's `resolved.get("organizationUuid") is not None`. The
-// projection collapses Python's None and "" into "", so a personal login (org
-// None → "") reads as absent — which matches Python's None case falling through
-// to "unresolved". (A profile literally returning an empty-string org — never
-// observed — would be "alien" in Python but "unresolved" here; a documented,
-// unreachable edge.)
 func orgPresent(id *oauth.Identity) bool {
 	return id != nil && id.OrgUUID != ""
 }
@@ -137,9 +127,6 @@ func sortedAccountKeys(data *store.SequenceData) []string {
 			seen[k] = true
 		}
 	}
-	// Include any accounts not present in sequence (defensive), lexically last.
-	// Map iteration order is nondeterministic, so sort the tail before appending
-	// to keep the fallback scan reproducible across runs.
 	tail := make([]string, 0, len(data.Accounts))
 	for k := range data.Accounts {
 		if !seen[k] {

@@ -1,9 +1,3 @@
-// Package platform detects the host OS family and container status.
-//
-// Implements spec 03§1 (Platform detection), 08§15 (root-guard container
-// probes) and audit 10 Gap 3 (the distinct /proc/1/cgroup vs
-// /proc/self/mountinfo substring sets). Mirrors models.Platform.detect and
-// switcher._is_running_in_container.
 package platform
 
 import (
@@ -28,10 +22,6 @@ const (
 	Unknown
 )
 
-// Detect returns the current platform. It mirrors Python's
-// models.Platform.detect: darwin→MacOS, windows→Windows, linux→(WSL when
-// WSL_DISTRO_NAME is non-empty else Linux), anything else→Unknown. It never
-// calls platform.system()/uname (no WMI hang risk in Go; noted for parity).
 func Detect() Platform {
 	switch {
 	case runtime.GOOS == "darwin":
@@ -64,8 +54,6 @@ func (p Platform) String() string {
 	}
 }
 
-// IsWindows reports whether the host is Windows. Every chmod in the codebase
-// is gated on !IsWindows().
 func IsWindows() bool {
 	return runtime.GOOS == "windows"
 }

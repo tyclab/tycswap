@@ -12,13 +12,6 @@ import (
 // stopSignalName is what handleStop reports it sent.
 const stopSignalName = "terminate"
 
-// terminateVerified opens the process, compares its creation time
-// (GetProcessTimes) with the session file's startedAt, and terminates it
-// through that same handle, so the process checked is the process ended
-// even if the PID is reused in between. Windows has no SIGTERM for another
-// process, so TerminateProcess is the stop that exists; Claude Code writes
-// its transcript as it goes, so `claude --continue` in that directory resumes
-// the session. A disagreement is ErrNotTheProcess and nothing is terminated.
 func terminateVerified(pid int, recorded time.Time) error {
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_TERMINATE, false, uint32(pid))
 	if err != nil {

@@ -32,11 +32,6 @@ import (
 
 var procShellExecuteW = windows.NewLazySystemDLL("shell32.dll").NewProc("ShellExecuteW")
 
-// shellExecuteWait bounds the wait for ShellExecuteW. It normally returns in
-// milliseconds; one that has not returned by then is still handing the URL
-// over (a cold browser start, a slow shell extension), and falling through to
-// the next way would open a second tab — which, for a single-use dashboard
-// token, is a tab that fails.
 const shellExecuteWait = 20 * time.Second
 
 func detach(cmd *exec.Cmd) {

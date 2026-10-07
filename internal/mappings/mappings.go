@@ -97,9 +97,6 @@ func (s *Store) Load() map[string]Entry {
 	for key, v := range mmap {
 		entryMap, ok := v.(map[string]any)
 		if !ok {
-			// A malformed individual entry (not itself an object) is skipped
-			// rather than failing the whole load; Python's untyped dict access
-			// has no direct equivalent here, and no fixture exercises this.
 			continue
 		}
 		result[key] = Entry{
@@ -217,9 +214,6 @@ func (s *Store) write(m map[string]Entry) error {
 	return atomicfile.WriteJSON(s.path, mappingsFile{SchemaVersion: SchemaVersion, Mappings: m}, atomicfile.Opts{})
 }
 
-// isAncestor reports whether candidate is a proper filesystem ancestor of
-// target (component-wise, mirroring Python's `candidate in target.parents`),
-// walking from target's parent up to the filesystem root.
 func isAncestor(candidate, target string) bool {
 	dir := filepath.Dir(target)
 	for {
