@@ -62,7 +62,7 @@ func TestRecoveryFixtureTerminalRetainsUncertainNativeIDWithoutGuessing(t *testi
 	runtime, request := reviewedStart(t)
 	t.Setenv("TYCSWAP_RECOVERY_FIXTURE_PROCESS", "1")
 	facade := &recoveryWeb{runtime: runtime, lookPath: func(string) (string, error) { return "fixture", nil }, command: func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
-		return exec.CommandContext(ctx, os.Args[0], "-test.run=^TestRecoveryFixtureProcess$")
+		return recoveryFixtureCommand(t, ctx, "")
 	}}
 	result, err := facade.Start(request)
 	if err != nil || !result.Started {
@@ -98,7 +98,7 @@ func TestRecoveryViewReconcilesDelayedNativeIDWithoutBlockingOrDuplicateWorkers(
 		calls.Add(1)
 		entered <- struct{}{}
 		<-release
-		return exec.CommandContext(ctx, "cat", responseFile)
+		return recoveryFixtureCommand(t, ctx, responseFile)
 	}}
 	before := time.Now()
 	view := facade.View(runtime.snapshot)
@@ -146,7 +146,7 @@ func TestRecoveryExactTokenNeverConfirmsOriginalSourceOrWrongPair(t *testing.T) 
 		}
 		return plan.CWD, "wrong", nil
 	}, command: func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
-		return exec.CommandContext(ctx, "cat", responseFile)
+		return recoveryFixtureCommand(t, ctx, responseFile)
 	}}
 	if facade.confirmDestination("fixture", plan) {
 		t.Fatal("source or wrong-token process became destination")
@@ -161,6 +161,30 @@ func TestRecoveryFixtureProcess(t *testing.T) {
 	if os.Getenv("TYCSWAP_RECOVERY_FIXTURE_PROCESS") != "1" {
 		return
 	}
-	os.Stdout.WriteString("[]\n")
+	data := []byte("[]\n")
+	if len(os.Args) == 4 && os.Args[2] == "--" {
+		var err error
+		data, err = os.ReadFile(os.Args[3])
+		if err != nil {
+			os.Exit(1)
+		}
+	}
+	os.Stdout.Write(data)
 	os.Exit(0)
+}
+
+func recoveryFixtureCommand(t *testing.T, ctx context.Context, path string) *exec.Cmd {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := []string{"-test.run=^TestRecoveryFixtureProcess$"}
+	if path != "" {
+		args = append(args, "--", path)
+	}
+	cmd := exec.CommandContext(ctx, executable, args...)
+	// The fixture has no concurrent work; a race-runtime exit sleep would consume the command timeout.
+	cmd.Env = append(os.Environ(), "TYCSWAP_RECOVERY_FIXTURE_PROCESS=1", "GORACE="+os.Getenv("GORACE")+" atexit_sleep_ms=0")
+	return cmd
 }
