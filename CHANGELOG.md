@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Fixed:** the Windows tray follows the Windows app theme, updates after theme changes, and preserves native high-contrast rendering. The dashboard adds Auto, Light and Dark appearance choices.
+- **Fixed:** dashboard account rows show the usage fetch time, next scheduled attempt, and failed or rate-limited refreshes alongside retained measurements.
+
 - **Changed:** active account rows in the Windows tray use bold text and the dashboard's theme-appropriate blue accent instead of disabled gray, while remaining non-clickable and aligned with the other account rows. The macOS tray's active account title is also bold with the same accent.
 - **Changed:** the dashboard's Next best panel compares weekly, counted model-weekly, then 5-hour usage before account number. Only enabled model limits count. Full accounts stay below usable ones, with those whose full windows reset within five hours first among blocked accounts and clearly labelled. Soonest-reset mode retains its reset-time priority.
 
