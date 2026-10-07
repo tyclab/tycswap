@@ -140,11 +140,12 @@ type windowsTray struct {
 	pendingN [2]string
 	iconPNG  []byte // the notification-area icon: New's PNG until SetIcon
 
-	hwnd  windows.HWND   // set by Run under mu; read under mu off the UI thread
-	quit  bool           // under mu: Quit was called
-	hicon windows.Handle // UI thread only
-	ready chan struct{}
-	err   error
+	hwnd    windows.HWND       // set by Run under mu; read under mu off the UI thread
+	quit    bool               // under mu: Quit was called
+	hicon   windows.Handle     // UI thread only
+	painter *activeMenuPainter // UI thread only, bound to the open menu snapshot
+	ready   chan struct{}
+	err     error
 }
 
 var (
@@ -474,6 +475,9 @@ func menuPlan(items []Item) []menuStep {
 			return
 		}
 		flags := uintptr(mfString)
+		if it.Kind == KindGauge && it.Checked {
+			flags |= mfOwnerDraw
+		}
 		if it.Checked {
 			flags |= mfChecked
 		}
@@ -520,7 +524,12 @@ func buildMenu(plan []menuStep) uintptr {
 		case opSeparator:
 			pAppendMenuW.Call(cur, st.flags, 0, 0)
 		case opRow:
-			pAppendMenuW.Call(cur, st.flags, st.cmd, uintptr(unsafe.Pointer(utf16z(st.title))))
+			if st.flags&mfOwnerDraw != 0 {
+				pAppendMenuW.Call(cur, st.flags, st.cmd, st.cmd)
+				setOwnerDrawTitle(cur, st.cmd, st.title)
+			} else {
+				pAppendMenuW.Call(cur, st.flags, st.cmd, uintptr(unsafe.Pointer(utf16z(st.title))))
+			}
 		case opOpen:
 			sub, _, _ := pCreatePopupMenu.Call()
 			if sub == 0 {
@@ -546,7 +555,10 @@ func (t *windowsTray) showMenu() {
 	t.mu.Lock()
 	snap := t.menu // set replaces items and flat, never mutates them
 	t.mu.Unlock()
-	hmenu := buildMenu(menuPlan(snap.items))
+	plan := menuPlan(snap.items)
+	t.painter = newActiveMenuPainter(plan)
+	defer func() { t.painter.close(); t.painter = nil }()
+	hmenu := buildMenu(plan)
 	if hmenu == 0 {
 		return
 	}
@@ -579,6 +591,14 @@ func trayWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uint
 		return 0
 	}
 	switch message {
+	case wmMeasureItem:
+		if lParam != 0 && t.painter.measure(uintptr(hwnd), *(**measureMenuItem)(unsafe.Pointer(&lParam))) {
+			return 1
+		}
+	case wmDrawItem:
+		if lParam != 0 && t.painter.draw(*(**drawMenuItem)(unsafe.Pointer(&lParam))) {
+			return 1
+		}
 	case wmTrayIcon:
 		switch uint32(lParam & 0xffff) {
 		case wmLButtonUp, wmRButtonUp, wmContextMenu:

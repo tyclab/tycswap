@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Changed:** active account rows in the Windows tray use the dashboard's blue accent instead of disabled gray, while remaining non-clickable. The macOS tray's active account title uses the same accent.
+- **Changed:** the dashboard's Next best panel compares weekly, counted model-weekly, then 5-hour usage before account number. Only enabled model limits count. Full accounts stay below usable ones, with those whose full windows reset within five hours first among blocked accounts and clearly labelled. Soonest-reset mode retains its reset-time priority.
+
 - **Fixed:** Codex usage stuck after an upgrade now recovers without clearing the cache: old schedules that deferred polling until a reset days away are retried within the cache trust window. “Add current Codex login” requests fresh usage while preserving request backoff and in-flight claims. Codex automatic and best-account switching no longer rank expired measurements.
 
 - The dashboard guide says why macOS refuses a release binary downloaded in a browser and how to lift the quarantine.
