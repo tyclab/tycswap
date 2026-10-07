@@ -11,13 +11,25 @@ static NSTextField *findLabel(NSMenuItem *item, NSString *text) {
     return nil;
 }
 
-static BOOL sameColor(NSColor *a, NSColor *b, NSAppearance *appearance) {
+static BOOL sameColor(NSColor *a, NSColor *b, NSAppearance *appearance, BOOL diagnose) {
+    if (!appearance) {
+        if (diagnose) fprintf(stderr, "appearance=nil actual=unresolved expected=unresolved\n");
+        return NO;
+    }
     __block BOOL equal = NO;
     [appearance performAsCurrentDrawingAppearance:^{
         NSColor *first = [a colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
         NSColor *second = [b colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
         equal = first && second && fabs(first.redComponent - second.redComponent) < 0.001 &&
             fabs(first.greenComponent - second.greenComponent) < 0.001 && fabs(first.blueComponent - second.blueComponent) < 0.001;
+        if (!equal && diagnose) {
+            NSString *match = [appearance bestMatchFromAppearancesWithNames:
+                @[NSAppearanceNameAccessibilityHighContrastAqua, NSAppearanceNameAccessibilityHighContrastDarkAqua,
+                  NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
+            fprintf(stderr, "appearance=%s bestMatch=%s actual=%s expected=%s\n",
+                (appearance.name ?: @"nil").UTF8String, (match ?: @"nil").UTF8String,
+                (first.description ?: @"nil").UTF8String, (second.description ?: @"nil").UTF8String);
+        }
     }];
     return equal;
 }
@@ -45,13 +57,13 @@ int main(void) {
             NSColor *expected = i == 0 ? [NSColor colorWithSRGBRed:lightR green:lightG blue:lightB alpha:1] :
                 (i == 1 ? accent() : [NSColor labelColor]);
             for (NSMenuItem *item in @[active, group, gauge]) {
-                if (!sameColor(findLabel(item, @"Account").textColor, expected, appearance) ||
-                    !sameColor(findLabel(item, @"✓").textColor, expected, appearance)) {
+                if (!sameColor(findLabel(item, @"Account").textColor, expected, appearance, YES) ||
+                    !sameColor(findLabel(item, @"✓").textColor, expected, appearance, YES)) {
                     fprintf(stderr, "active color failed for appearance %lu\n", (unsigned long)i);
                     return 4;
                 }
             }
-            if (sameColor(findLabel(toggle, @"Model limits").textColor, accent(), appearance)) return 5;
+            if (sameColor(findLabel(toggle, @"Model limits").textColor, accent(), appearance, NO)) return 5;
         }
     }
     return 0;

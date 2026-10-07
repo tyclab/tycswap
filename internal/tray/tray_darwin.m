@@ -45,7 +45,13 @@ static NSColor *activeAccent(void) {
             @[NSAppearanceNameAccessibilityHighContrastAqua, NSAppearanceNameAccessibilityHighContrastDarkAqua,
               NSAppearanceNameAqua, NSAppearanceNameDarkAqua]];
         if ([name isEqualToString:NSAppearanceNameAccessibilityHighContrastAqua] ||
-            [name isEqualToString:NSAppearanceNameAccessibilityHighContrastDarkAqua]) return [NSColor labelColor];
+            [name isEqualToString:NSAppearanceNameAccessibilityHighContrastDarkAqua]) {
+            __block NSColor *text;
+            [appearance performAsCurrentDrawingAppearance:^{
+                text = [[NSColor labelColor] colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
+            }];
+            return text ?: [NSColor labelColor];
+        }
         if ([name isEqualToString:NSAppearanceNameDarkAqua]) return accent();
         return [NSColor colorWithSRGBRed:lightR green:lightG blue:lightB alpha:1];
     }];
