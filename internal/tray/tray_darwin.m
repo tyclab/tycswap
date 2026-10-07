@@ -418,7 +418,7 @@ static NSMenuItem *gaugeRow(int tag, NSString *title, NSString *sub, double pct,
     CGFloat x = kPad + 15;
     CGFloat textW = kRowWidth - x - kPad - 46;
     NSTextField *t = label(title, 13, NO, NSMakeRect(x, 27, textW, 18));
-    if (on) { t.font = [NSFont systemFontOfSize:13 weight:NSFontWeightSemibold]; }
+    if (on) { t.font = [NSFont systemFontOfSize:13 weight:NSFontWeightSemibold]; t.textColor = accent(); }
     if (disabled && !on) { t.textColor = [NSColor tertiaryLabelColor]; }
     [v addSubview:t];
     NSString *pctText = pct < 0 ? @"—" : [NSString stringWithFormat:@"%.0f%%", pct];

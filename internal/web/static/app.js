@@ -4,8 +4,8 @@
 // URL), fetch /api/state once, then follow /api/events (SSE) with the
 // browser's built-in reconnect. Countdowns are recomputed client-side every second from
 // the server's resets_at / expiresAt / startedAt values. The Auto tab ranks
-// "Next best" candidates client-side with the same keys tui/autoview.go uses
-// (candidateLessBest / candidateLessSoonest) and colours engine events like
+// "Next best" candidates client-side by availability, reset time and all
+// counted usage windows, and colours engine events like
 // tui eventColor. Components: tile(), meter(), chip() — one implementation
 // each, reused on every tab. DESIGN A27 adds the Updates card and header
 // indicator, the Settings tab, the foldable cards, the add-current-login
@@ -531,8 +531,10 @@
   var SENTINEL_STATUSES = { token_expired: 'token expired', api_key: 'api key', keychain_unavailable: 'keychain unavailable', relogin_required: 're-login needed', no_credentials: 'no credentials' };
 
   // rankCandidates mirrors tui/autoview.go candidatesText: each window against
-  // its own bar (DESIGN A34), ranked on the weekly figure.
+  // its own bar (DESIGN A34). The panel compares 7d, model and 5h
+  // hierarchically rather than collapsing the windows into one percentage.
   function rankCandidates(st) {
+    var now = Date.now() / 1000;
     var auto = st.auto || {};
     var models = parseModelNames(engineSetting(st, 'autoswitch.model'));
     var strat = engineSetting(st, 'autoswitch.strategy') || 'soonest-reset';
@@ -550,7 +552,7 @@
     claudeRows(st).forEach(function (a) {
       if (a.isActive || !a.rotationEligible) { return; }
       var num = String(a.number);
-      var r = { account: a, number: num, bestKey: 0, tier: 0, pct: 0, renewal: null, label: '', windows: [] };
+      var r = { account: a, number: num, bestKey: 0, tier: 0, pct: 0, renewal: null, label: '', windows: [], order: [], readyAt: null, soonReset: false };
       if (Object.prototype.hasOwnProperty.call(quarantine, num)) {
         var reason = quarantineReason(quarantine[num]);
         r.label = reason ? 'quarantined (' + reason + ')' : 'quarantined';
@@ -563,14 +565,21 @@
         if (pct === null) {
           r.label = 'usage unknown'; r.bestKey = 999; r.tier = 6;
         } else {
-          // Rank on the weekly figure and judge each window against its own
-          // bar, the way the engine picks; an account reporting no weekly
-          // window falls back to the binding figure.
+          // Judge each window against its own bar. Weekly headroom is
+          // displayed separately from the hierarchical sorting keys; missing
+          // weekly data falls back to the binding figure.
           var cls = classPcts(wins);
           var weekly = weeklyPct(cls);
           var key = weekly === null ? pct : weekly;
+          r.order = [cls.sevenDay === null ? key : cls.sevenDay,
+                     cls.model === null ? 0 : cls.model,
+                     cls.fiveHour === null ? 0 : cls.fiveHour];
           r.windows = wins; r.bestKey = key; r.pct = key; r.renewal = renewalTS(wins);
-          if (pct >= 100) { r.tier = 3; }
+          if (pct >= 100) {
+            r.tier = 3;
+            r.readyAt = limitingReset(wins, now);
+            r.soonReset = r.readyAt !== null && r.readyAt - now < 5 * 3600;
+          }
           else if (overAnyBar(cls, bars)) { r.tier = 2; }
           else if (r.renewal !== null) { r.tier = 0; }
           else { r.tier = 1; }
@@ -585,21 +594,59 @@
 
   function numLess(a, b) { var x = parseInt(a, 10), y = parseInt(b, 10); if (!isNaN(x) && !isNaN(y)) { return x < y; } return a < b; }
 
+  // An exhausted account is only available soon when EVERY counted full
+  // window resets soon. Missing or elapsed reset stamps cannot prove that.
+  function limitingReset(wins, now) {
+    var full = wins.filter(function (w) { return w.pct >= 100; });
+    var latest = null;
+    for (var i = 0; i < full.length; i++) {
+      var at = Date.parse(full[i].resetsAt) / 1000;
+      if (!isFinite(at) || at <= now) { return null; }
+      latest = latest === null ? at : Math.max(latest, at);
+    }
+    return latest;
+  }
+
+  function candidateGroup(r, best) {
+    if (best && r.tier < 2) { return 0; }
+    if (r.tier === 3) { return r.soonReset ? 3 : 4; }
+    return r.tier >= 4 ? r.tier + 1 : r.tier;
+  }
+
+  // Lower usage wins at the first differing window; account number only
+  // breaks a complete tie. An unreported model or burst limit adds no limit.
+  function compareWindows(a, b) {
+    for (var i = 0; i < a.order.length; i++) {
+      if (a.order[i] !== b.order[i]) { return a.order[i] - b.order[i]; }
+    }
+    return 0;
+  }
+
   function lessBest(a, b) {
-    if (a.bestKey !== b.bestKey) { return a.bestKey < b.bestKey; }
+    var groupA = candidateGroup(a, true), groupB = candidateGroup(b, true);
+    if (groupA !== groupB) { return groupA < groupB; }
+    if (a.soonReset && b.soonReset && a.readyAt !== b.readyAt) { return a.readyAt < b.readyAt; }
+    // Keep unavailable rows at the end, in their existing reason order.
+    if (a.tier >= 4 || b.tier >= 4) {
+      if (a.bestKey !== b.bestKey) { return a.bestKey < b.bestKey; }
+    } else {
+      var cmp = compareWindows(a, b);
+      if (cmp) { return cmp < 0; }
+    }
     return numLess(a.number, b.number);
   }
 
   function lessSoonest(a, b) {
-    if (a.tier !== b.tier) { return a.tier < b.tier; }
-    switch (a.tier) {
-      case 0: if (a.renewal !== b.renewal) { return a.renewal < b.renewal; } break;
-      case 1: case 2: if (a.pct !== b.pct) { return a.pct < b.pct; } break;
-      case 3:
-        if ((a.renewal !== null) !== (b.renewal !== null)) { return a.renewal !== null; }
-        if (a.renewal !== null && b.renewal !== null && a.renewal !== b.renewal) { return a.renewal < b.renewal; }
-        if (a.pct !== b.pct) { return a.pct < b.pct; }
-        break;
+    var groupA = candidateGroup(a, false), groupB = candidateGroup(b, false);
+    if (groupA !== groupB) { return groupA < groupB; }
+    if (a.soonReset && b.soonReset && a.readyAt !== b.readyAt) { return a.readyAt < b.readyAt; }
+    if (a.tier === 0 || a.tier === 3) {
+      if ((a.renewal !== null) !== (b.renewal !== null)) { return a.renewal !== null; }
+      if (a.renewal !== null && b.renewal !== null && a.renewal !== b.renewal) { return a.renewal < b.renewal; }
+    }
+    if (a.tier < 4) {
+      var cmp = compareWindows(a, b);
+      if (cmp) { return cmp < 0; }
     }
     return numLess(a.number, b.number);
   }
@@ -1352,7 +1399,7 @@
     clear(tb);
     var barNote = '5h ' + Math.round(res.bars.fiveHour * 10) / 10 + '% · 7d ' + Math.round(res.bars.sevenDay * 10) / 10 + '%';
     if (res.models.length) { barNote += ' · model ' + Math.round(res.bars.model * 10) / 10 + '%'; }
-    $('nextbest-sub').textContent = countingNote(res.models) + ' · ' + res.strategy + ' · switch at ' + barNote;
+    $('nextbest-sub').textContent = countingNote(res.models) + ' · ' + res.strategy + ' · ' + (res.models.length ? '7d → model → 5h' : '7d → 5h') + ' · switch at ' + barNote;
     var nbSub = $('nextbest-sub');
     var savedModels = parseModelNames(settingValue(st, 'autoswitch.model'));
     var ignored = ignoredModelsNote(st, savedModels);
@@ -1376,7 +1423,7 @@
       if (r.tier === 4) { verdict = chip(r.label, 'warn'); }
       else if (r.tier === 5) { verdict = chip(r.label, 'serious'); }
       else if (r.tier === 6) { verdict = chip('usage unknown', 'outline'); }
-      else if (r.tier === 3) { verdict = chip('at limit', 'crit'); }
+      else if (r.tier === 3) { verdict = chip(r.soonReset ? 'at limit · resets <5h' : 'at limit', r.soonReset ? 'accent' : 'crit', r.soonReset ? 'All counted full windows reset within five hours; not available yet' : ''); }
       else if (r.tier === 2) { verdict = chip('at threshold', 'warn'); }
       else { verdict = chip(idx === 0 ? 'next pick' : 'eligible', idx === 0 ? 'good' : 'outline'); }
       var inline = el('div', { class: 'nb-inline cell-sub' }, [verdict.cloneNode(true), el('span', { text: r.label ? '' : (inlineParts.length ? inlineParts.join(' · ') : 'no usage data') })]);

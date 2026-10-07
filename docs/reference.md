@@ -2563,9 +2563,13 @@ tabs:
   are settings only, DESIGN A34); *Count model limits*, which saves
   `autoswitch.model` as `all`, selected model names, or unset (Off), using Save; the *Next best* ranking with each
   account's verdict, which marks a row *at threshold* when any of its windows
-  has reached its own bar, ranks `best` by the weekly figure, and names the
-  bars in force (`switch at 5h 85% · 7d 97%`, plus the model bar while model
-  windows count); the quarantine; a link to the Settings tab;
+  has reached its own bar, ranks `best` hierarchically by weekly, enabled
+  model-weekly, then 5-hour usage, and names the bars in force (`switch at 5h 85% · 7d 97%`, plus the model bar while model
+  windows count). Full accounts follow usable accounts; those whose counted
+  full windows all reset in less than five hours lead the blocked group.
+  `soonest-reset` retains reset-time priority within availability groups.
+  This dashboard order does not change the automatic selection policy.
+  The quarantine; a link to the Settings tab;
   and the engine's event log. With Codex accounts, Start also runs the Codex
   engine beside it, built and ticking as in `tycswap auto` (its bar,
   `autoswitch.codexThreshold` or the 7d threshold when that is 0, is fixed
