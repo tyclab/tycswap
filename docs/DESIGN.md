@@ -6021,7 +6021,9 @@ names; without any names it fails closed. Turning model counting off retains
 the ordinary quota policy. This overrides A34's missing-model fallback.
 
 The guard applies before strategy ordering and proactive/at-limit/failover
-selection. No qualifying compatible target means no switch. Both candidate
-views identify missing model data. This is conservative evidence of quota,
+selection. No qualifying compatible target means no switch. The dashboard identifies missing model data. This is conservative evidence of quota,
 not a promise of entitlement: no session model is changed or discovered and no
 session is restarted. The operator must keep the session's model counted.
+
+The terminal candidate preview still ranks reported windows without this
+compatibility label; its engine enforces the guard before any switch.

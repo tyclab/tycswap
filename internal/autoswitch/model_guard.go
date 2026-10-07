@@ -17,8 +17,7 @@ func reportedModels(value any) map[string]bool {
 	return names
 }
 
-// RequiredModels resolves configured names against reported quota windows.
-func RequiredModels(models []string, values map[string]any) []string {
+func requiredModels(models []string, values map[string]any) []string {
 	names := map[string]bool{}
 	all := false
 	for _, model := range models {
@@ -47,8 +46,7 @@ func RequiredModels(models []string, values map[string]any) []string {
 	return result
 }
 
-// HasRequiredModels rejects targets whose counted model usage is unknown.
-func HasRequiredModels(value any, required []string) bool {
+func hasRequiredModels(value any, required []string) bool {
 	present := reportedModels(value)
 	for _, name := range required {
 		if !present[name] {

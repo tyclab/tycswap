@@ -619,8 +619,15 @@ func trayWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uint
 			return 1
 		}
 	case wmDrawItem:
-		if lParam != 0 && t.painter.draw(*(**drawMenuItem)(unsafe.Pointer(&lParam))) {
-			return 1
+		if lParam != 0 {
+			d := *(**drawMenuItem)(unsafe.Pointer(&lParam))
+			if t.painter.draw(d) {
+				if t.painter.theme == menuDark && t.painter.steps[d.itemData].op == opClose {
+					// Windows adds its own arrow after WM_DRAWITEM; this row is complete.
+					menuGDI.NewProc("ExcludeClipRect").Call(d.hdc, uintptr(d.rect.left), uintptr(d.rect.top), uintptr(d.rect.right+menuGutter()), uintptr(d.rect.bottom))
+				}
+				return 1
+			}
 		}
 	case wmTrayIcon:
 		switch uint32(lParam & 0xffff) {

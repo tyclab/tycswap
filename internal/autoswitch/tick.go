@@ -286,11 +286,11 @@ func (e *Engine) selectCandidates(
 	}
 
 	var qualifying []qual
-	required := RequiredModels(e.models, usageMap)
+	required := requiredModels(e.models, usageMap)
 	modelRejected := false
 	activeAxis := activeByClass.Axis(axis)
 	for _, num := range oauthCandidates {
-		if !HasRequiredModels(usageMap[num], required) {
+		if !hasRequiredModels(usageMap[num], required) {
 			modelRejected = true
 			continue
 		}
