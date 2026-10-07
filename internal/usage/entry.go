@@ -119,7 +119,8 @@ func DueCandidate(candidates []string, entries map[string]UsageEntry, now float6
 		if entry.InBackoff(now) {
 			continue
 		}
-		if entry.NextPollAt != nil && now < *entry.NextPollAt {
+		if entry.NextPollAt != nil && now < *entry.NextPollAt &&
+			entry.FetchedAt != nil && now-*entry.FetchedAt < ParkCapS {
 			continue
 		}
 		if entry.FetchedAt == nil {

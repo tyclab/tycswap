@@ -120,6 +120,22 @@ func (c *Cache) Entries(slots []store.Slot) map[string]usage.UsageEntry {
 // threshold feeds the poll planner's escalation band (Python's default is
 // 100); activeNumber marks the live slot for its faster cadence.
 func (c *Cache) Refresh(ctx context.Context, slots []store.Slot, payloadFor PayloadFor, threshold float64, activeNumber string) map[string]usage.UsageEntry {
+	return c.refresh(ctx, slots, payloadFor, threshold, activeNumber, true)
+}
+
+// RefreshCurrent requests a measurement after an explicit add, even if the
+// cached one is fresh. Backoff and in-flight claims still prevent requests.
+func (c *Cache) RefreshCurrent(ctx context.Context, slot store.Slot, payloadFor PayloadFor, threshold float64) error {
+	slots := []store.Slot{slot}
+	now := clock.Seconds(c.clk)
+	if err := c.usage.SetPollPlan(map[string]usage.PollPlan{slot.Number: {NextPollAt: &now}}, c.Identities(slots)); err != nil {
+		return err
+	}
+	c.refresh(ctx, slots, payloadFor, threshold, slot.Number, false)
+	return nil
+}
+
+func (c *Cache) refresh(ctx context.Context, slots []store.Slot, payloadFor PayloadFor, threshold float64, activeNumber string, respectPlans bool) map[string]usage.UsageEntry {
 	if len(slots) == 0 {
 		return map[string]usage.UsageEntry{}
 	}
@@ -138,7 +154,7 @@ func (c *Cache) Refresh(ctx context.Context, slots []store.Slot, payloadFor Payl
 	// entry is both stale and poll-due, so a second `tycswap codex list` seconds
 	// after the first costs nothing. A reserve error claims nothing, which
 	// degrades to serving the cache.
-	claims, _ := c.usage.Reserve(numbers, identities, true)
+	claims, _ := c.usage.Reserve(numbers, identities, respectPlans)
 
 	sentinels := map[string]string{}
 	if len(claims) > 0 {

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Fixed:** Codex usage stuck after an upgrade now recovers without clearing the cache: old schedules that deferred polling until a reset days away are retried within the cache trust window. “Add current Codex login” requests fresh usage while preserving request backoff and in-flight claims. Codex automatic and best-account switching no longer rank expired measurements.
+
 - The dashboard guide says why macOS refuses a release binary downloaded in a browser and how to lift the quarantine.
 - `docs/reference.md`: the exit-status table no longer says Ctrl-C always exits `130`; `web` and `app` exit `0`.
 - **Fixed:** `tycswap run` refuses an argument a Windows `claude.cmd` shim cannot take before preparing the session profile.

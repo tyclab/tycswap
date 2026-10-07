@@ -543,11 +543,12 @@ func (f *fakeCodexSource) AccountsSnapshot(context.Context, map[string]bool) rep
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.snapshots++
+	age := 0.0
 	rows := []reporting.AccountSnapshot{
 		{Number: "1", IsActive: true, Switchable: true, Provider: reporting.ProviderCodex,
-			Usage: usage.UsageEntry{LastGood: map[string]any{"five_hour": map[string]any{"pct": f.activePct}}}},
+			Usage: usage.UsageEntry{AgeS: &age, LastGood: map[string]any{"five_hour": map[string]any{"pct": f.activePct}}}},
 		{Number: "2", Switchable: true, Provider: reporting.ProviderCodex,
-			Usage: usage.UsageEntry{LastGood: map[string]any{"five_hour": map[string]any{"pct": 12.0}}}},
+			Usage: usage.UsageEntry{AgeS: &age, LastGood: map[string]any{"five_hour": map[string]any{"pct": 12.0}}}},
 	}
 	return reporting.AccountsSnapshot{ActiveNumber: "1", Accounts: rows[:f.accounts], Provider: reporting.ProviderCodex}
 }

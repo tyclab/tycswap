@@ -1244,3 +1244,38 @@ func TestDisableAndRemoveWaitForTheStoreLock(t *testing.T) {
 		t.Errorf("a busy call wrote: %+v", slots)
 	}
 }
+
+func TestAddCurrentRefreshesUsageOfExistingSlot(t *testing.T) {
+	f := newFixture(t)
+	sw := f.seeded()
+	sw.AccountsSnapshot(ctx, map[string]bool{"1": true})
+	f.clk.Advance(20 * time.Second)
+	f.usageFn = func(string) api.UsageFetch {
+		return api.UsageFetch{Usage: map[string]any{"seven_day": map[string]any{"pct": 0.0}}}
+	}
+	slot, err := sw.Add(ctx, "")
+	if err != nil || slot.Number != "1" {
+		t.Fatalf("add = %+v, %v", slot, err)
+	}
+	if f.usageCalls.Load() != 2 {
+		t.Fatalf("requests = %d, want 2", f.usageCalls.Load())
+	}
+	snap := f.open().AccountsSnapshot(ctx, map[string]bool{})
+	if pct := DecisionPct(snap.Accounts[0].Usage); pct == nil || *pct != 0 {
+		t.Fatalf("usage = %+v", snap.Accounts[0].Usage)
+	}
+}
+
+func TestSwitchBestRejectsExpiredCandidateAfterFetchFailure(t *testing.T) {
+	f := newFixture(t)
+	sw := f.seeded()
+	sw.AccountsSnapshot(ctx, nil)
+	f.clk.Advance(2 * time.Hour)
+	f.usageFn = func(string) api.UsageFetch { return api.UsageFetch{Sentinel: "timeout"} }
+	if _, err := sw.SwitchBest(ctx); err == nil {
+		t.Fatal("switched using an expired candidate")
+	}
+	if sw.CurrentAccountNumber() != "1" {
+		t.Fatal("live account changed")
+	}
+}
