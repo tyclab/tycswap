@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -81,12 +82,32 @@ func SafePath(path string) error {
 			return err
 		}
 		if err == nil && info.Mode()&os.ModeSymlink != 0 {
+			if darwinSystemAlias(p) {
+				continue
+			}
 			return fmt.Errorf("refusing session-group I/O through symlink %s", p)
 		}
 		if filepath.Dir(p) == p {
 			return nil
 		}
 	}
+}
+
+func darwinSystemAlias(path string) bool {
+	if runtime.GOOS != "darwin" {
+		return false
+	}
+	target := ""
+	switch path {
+	case "/var":
+		target = "/private/var"
+	case "/tmp":
+		target = "/private/tmp"
+	default:
+		return false
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	return err == nil && resolved == target
 }
 
 type Snapshot struct {
