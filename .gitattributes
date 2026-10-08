@@ -1,1 +1,2 @@
+# Fixtures are byte-exact golden round trips: no line-ending conversion, so a Windows clone tests the same bytes.
 testdata/** -text
