@@ -1,11 +1,3 @@
-// Usage-fetch error classification into stable string tokens.
-//
-// Implements spec 04§1.16 (_classify_usage_error). The precedence is
-// HTTPError → timeout → network(URLError) → bad-response(JSONDecodeError) →
-// type-name fallback (04§1.16 ordering note). Retry-After is parsed on the
-// HTTPError path only: seconds form, negatives clamp to 0, HTTP-date form ->
-// nil (04§1.16 / §7.5).
-
 package oauth
 
 import (
@@ -18,10 +10,7 @@ import (
 	"strings"
 )
 
-// HTTPError is returned by Client.Usage for a non-2xx final response. It carries
-// the status code, the (bounded) body, and the raw Retry-After header value so
-// callers can classify and quarantine. Exported so fakes and tests can
-// construct the 401/429 paths.
+// Precedence: HTTPError, timeout, network, bad-response, type name (04§1.16). Retry-After: seconds only, negatives clamp to 0, HTTP-date is nil.
 type HTTPError struct {
 	Code       int
 	Body       []byte

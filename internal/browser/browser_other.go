@@ -1,6 +1,3 @@
-// browser_other.go — no process detachment on platforms without setsid or
-// Windows creation flags; the child is still started without waiting.
-
 //go:build !unix && !windows
 
 package browser

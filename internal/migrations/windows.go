@@ -19,12 +19,6 @@ import (
 // Keychain via `keyring`, spec 07§5.4).
 const legacyKeyringService = "claude-code"
 
-// migrateWindowsKeyringToFiles returns (completed, notices, err) per the
-// package doc's migrationFunc contract. completed=true only once every
-// account's legacy entry (if any) has been safely relocated or was never
-// present; err is a *cerr.Error(KindMigrationIncomplete) when any account
-// could not be safely relocated, so the runner retries next launch rather
-// than marking it done.
 func migrateWindowsKeyringToFiles(host Host) (completed bool, notices []string, err error) {
 	if host.Platform() != platform.Windows {
 		return false, nil, nil

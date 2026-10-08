@@ -1,33 +1,14 @@
-// oauth.go — refreshing Codex access tokens. Ports claude-swap PR #252
-// codex/oauth.py.
+// oauth.go — refreshing Codex access tokens (claude-swap PR #252 codex/oauth.py). codex-auth leaves refresh to the codex CLI;
+// tycswap refreshes because autoswitch compares accounts nobody opened in hours, and a stale token answers 401.
 //
-// codex-auth does not do this: it leaves refresh to the codex CLI and renders
-// the resulting HTTP status in its usage column. tycswap refreshes, because
-// autoswitch has to compare accounts nobody has opened in hours, and a stale
-// token answers 401 instead of a percentage.
+// Established against the live endpoint with an invalid refresh token (2026-08-16): POST takes a JSON body; failures answer 401
+// with a nested {"error": {"code": "token_expired"}}, not RFC 6749's flat {"error": "invalid_grant"}; both shapes are parsed.
+// client_id app_EMoamEEZ73f0CkXaXp7hrann is the public client shipped in the codex binary, not a secret. The binary also
+// carries app_69a1d78e929881919bba0dbda1f6436d, which this endpoint rejects with invalid_client: do not "fix" the id back.
+// Nothing here is documented, so every failure degrades: the account shows its status and drops out of autoswitch.
 //
-// Endpoint, client id and error shape were established empirically against the
-// live endpoint with a deliberately invalid refresh token (2026-08-16):
-//
-//   - POST https://auth.openai.com/oauth/token accepts a JSON body.
-//   - client_id app_EMoamEEZ73f0CkXaXp7hrann is the public OAuth client shipped
-//     inside the publicly distributed codex binary. It identifies the app, it
-//     does not authenticate it, and it is not a secret. (The binary also carries
-//     app_69a1d78e929881919bba0dbda1f6436d, which this endpoint rejects with
-//     invalid_client; it belongs to something else. Do not "fix" the id back.)
-//   - Failures answer 401, not 400, and the body is nested —
-//     {"error": {"code": "token_expired", ...}} — not RFC 6749's flat
-//     {"error": "invalid_grant"}. Both shapes are parsed, since the flat one is
-//     what the standard specifies and this endpoint is undocumented.
-//
-// Because nothing here is documented, every failure mode degrades rather than
-// raises: the account renders its status and drops out of autoswitch
-// candidacy, and the rest of tycswap keeps working.
-//
-// The active account is never refreshed from a stored snapshot. The codex CLI
-// holds its own copy of that refresh token and keeps auth.json current;
-// refreshing our copy in parallel risks invalidating whichever token the server
-// rotates away from, and that is a logout. Callers pass the LIVE payload for
+// The active account is never refreshed from a stored snapshot: the codex CLI holds that refresh token, and a parallel
+// refresh can invalidate the one the server rotates away from, which is a logout. Callers pass the LIVE payload for it.
 // the active account and snapshots only for inactive ones.
 
 package api
@@ -43,31 +24,19 @@ import (
 	"github.com/tyclab/tycswap/internal/codex/authfile"
 )
 
-// Endpoints, the public client, and the shared tuning constants.
 const (
 	OAuthTokenURL = "https://auth.openai.com/oauth/token"
-	// OAuthClientID is the Codex CLI's public OAuth client, verified against
-	// the live endpoint — read the file header before changing it.
+	// Verified against the live endpoint; read the file header before changing it.
 	OAuthClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
 	OAuthScope    = "openid profile email offline_access"
 	UsageURL      = "https://chatgpt.com/backend-api/wham/usage"
 	AccountsURL   = "https://chatgpt.com/backend-api/accounts"
-	// UserAgent stays upstream's: the endpoints accept it, and a name of
-	// tycswap's own would buy nothing.
-	UserAgent = "claude-swap/1.0"
-	// ExpiryMarginS refreshes this far before nominal expiry: a token that
-	// expires mid-request is indistinguishable from a revoked one at the call
-	// site.
-	ExpiryMarginS = 120.0
-	// WeeklyWindowMinS is the length at or above which a rate-limit window is
-	// tycswap's weekly (seven_day) window; anything shorter is the 5-hour one. One
-	// day is a wide moat between the two real values (5 h and 7 d).
+	UserAgent     = "claude-swap/1.0"
+	// A token expiring mid-request is indistinguishable from a revoked one at the call site.
+	ExpiryMarginS    = 120.0
 	WeeklyWindowMinS = 86400
 )
 
-// Refresh outcome kinds. "" (KindOK) is success; KindTransient means try again
-// later; everything else is a verdict about this account that will not improve
-// by retrying.
 const (
 	KindOK             = ""
 	KindTransient      = "transient"
@@ -75,31 +44,23 @@ const (
 	KindNoRefreshToken = "no_refresh_token"
 	KindInvalidGrant   = "invalid_grant"
 	KindInvalidClient  = "invalid_client"
-	// KindTokenExpired is this endpoint's wording for a dead REFRESH token: the
-	// account needs a fresh login.
+	// This endpoint's wording for a dead refresh token: the account needs a fresh login.
 	KindTokenExpired = "token_expired"
 )
 
-// permanentErrors are the server verdicts that will not improve by retrying.
-// Anything not listed stays transient: a misclassified transient costs one
-// retry, a misclassified permanent quarantines a live account.
+// Unlisted codes stay transient: a misclassified transient costs one retry, a misclassified permanent quarantines a live account.
 var permanentErrors = map[string]bool{
 	KindInvalidGrant:  true,
 	KindInvalidClient: true,
 	KindTokenExpired:  true,
 }
 
-// RefreshOutcome is the result of one refresh attempt. Payload is the updated
-// auth.json payload on success (Kind == ""), else nil.
 type RefreshOutcome struct {
 	Payload map[string]any
 	Kind    string
 }
 
-// NeedsRefresh reports whether payload's access token is expired or within
-// ExpiryMarginS of expiring at now (POSIX seconds). An unreadable expiry
-// counts as needing refresh: a pointless refresh costs one request, a skipped
-// one costs a blank usage row.
+// An unreadable expiry counts as needing refresh: a pointless refresh costs one request, a skipped one a blank usage row.
 func NeedsRefresh(payload any, now float64) bool {
 	exp := authfile.AccessTokenExpiry(payload)
 	if exp == nil {
@@ -108,10 +69,6 @@ func NeedsRefresh(payload any, now float64) bool {
 	return *exp-now <= ExpiryMarginS
 }
 
-// errorCode extracts the server's error code from either body shape: this
-// endpoint nests it ({"error": {"code": ...}}, falling back to "type"), RFC
-// 6749 puts a bare string there. Undocumented endpoints change, so both are
-// read. Returns "" when the body carries neither.
 func errorCode(body []byte) string {
 	var doc map[string]any
 	if err := json.Unmarshal(body, &doc); err != nil {
@@ -152,8 +109,6 @@ func (c *HTTPClient) TryRefresh(ctx context.Context, payload map[string]any) Ref
 		return RefreshOutcome{Kind: KindNoRefreshToken}
 	}
 
-	// The verified request: JSON body, public client id, and the scope the
-	// codex CLI itself asks for.
 	body, err := json.Marshal(map[string]any{
 		"grant_type":    "refresh_token",
 		"refresh_token": refreshToken,
@@ -184,8 +139,7 @@ func (c *HTTPClient) TryRefresh(ctx context.Context, payload map[string]any) Ref
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		// Status and the server's code only: the request carries a refresh
-		// token and the response can echo request context.
+		// Status and code only: the request carries a refresh token and the response can echo request context.
 		code := errorCode(raw)
 		shown := code
 		if shown == "" {
@@ -208,19 +162,14 @@ func (c *HTTPClient) TryRefresh(ctx context.Context, payload map[string]any) Ref
 	}
 	data, ok := decoded.(map[string]any)
 	if !ok || !truthy(data["access_token"]) {
-		// A 200 that carries no token is not a success: treating it as one
-		// would persist a stale access token beside a possibly-spent refresh
-		// token.
+		// A 200 without a token is no success: persisting it would keep a stale access token beside a possibly spent refresh token.
 		debugf("Codex token refresh failed: response carried no access token")
 		return RefreshOutcome{Kind: KindTransient}
 	}
 	return RefreshOutcome{Payload: applyRefresh(payload, tokens, data, time.Now().UTC())}
 }
 
-// applyRefresh builds the updated payload from a successful token response,
-// copying rather than mutating the caller's maps. An absent refresh_token
-// means "keep using the one you have" (RFC 6749 §6): overwriting it with null
-// would destroy the account's only way back.
+// An absent refresh_token means keep the old one (RFC 6749 §6): overwriting it with null destroys the only way back.
 func applyRefresh(payload, tokens, data map[string]any, now time.Time) map[string]any {
 	updated := make(map[string]any, len(payload)+1)
 	for k, v := range payload {

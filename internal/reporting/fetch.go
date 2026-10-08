@@ -1,14 +1,3 @@
-// fetch.go — per-account usage-fetch routing: the owner-aware active path (which
-// refreshes the live credential only when no Claude Code/session owns it, then
-// persists the rotation to both the active store and the backup under a re-
-// acquired triple lock) and the session-profile-first inactive path (spec
-// 02§13).
-//
-// Implements spec 02§13 (_fetch_account_usage, _fetch_active_usage) and the
-// issue #62/#117 provenance guards. Never holds the tycswap FileLock across the
-// network refresh: FileLock is non-reentrant, so the persist callback re-
-// acquires FileLock → Claude credentials lock → Claude config lock and re-checks
-// owner/refresh-token lineage before writing.
 package reporting
 
 import (
@@ -51,10 +40,7 @@ func fetchAccountUsage(s *store.Store, info AccountInfo) usage.FetchRecord {
 
 	hasLiveSession := len(s.LiveSessionPidsFor(num, info.Email)) > 0
 
-	// A session profile that has run holds the newest generation of this
-	// account's token family (claude rotates in place, nothing syncs back). Read
-	// it strictly read-only; rotating its family would log the next `tycswap run`
-	// out the same way the backup's consumed generation would 401 forever.
+	// A run profile holds the newest token generation; read it strictly read-only, rotating it would log the next `tycswap run` out.
 	sessionDir := s.SessionDir(num, info.Email)
 	sessionCreds, sessOK := sessprofile.ReadSessionCredentials(reportKC, sessionDir)
 	if sessOK && sessprofile.SessionIdentityDrifted(sessionDir, info.Email, info.OrgUUID) {
@@ -75,8 +61,7 @@ func fetchAccountUsage(s *store.Store, info AccountInfo) usage.FetchRecord {
 				return recordFromOutcome(outcome)
 			}
 			if hasLiveSession {
-				// The live claude refreshes lazily on its next API call;
-				// requesting now would just 401.
+				// The live claude refreshes lazily on its next call; requesting now would just 401.
 				return usage.FetchRecord{Sentinel: jsonout.UsageTokenExpired}
 			}
 			// Expired profile credential and no live session: fall through to the
@@ -148,12 +133,7 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 	}
 
 	persist := oauth.PersistFn(func(n, acctEmail, newCreds string) error {
-		// withTripleLock returns without running its inner fn when a lock cannot be
-		// acquired (tycswap FileLock contended, or a Claude Code cred/config lock
-		// times out). That means the rotated credential was NOT persisted, so mark
-		// it skipped — mirroring Python's `except Exception: persist_skipped=True`
-		// around the whole `with FileLock, ...:` block. markSkipped is idempotent,
-		// so inner write-error paths that also mark skipped are harmless.
+		// withTripleLock skips fn when a lock cannot be taken: nothing was persisted, so that path marks skipped too.
 		err := withTripleLock(s, func() error {
 			live, _, _ := s.Creds.ReadActive()
 			liveRefresh := ""
@@ -179,8 +159,7 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 				markSkipped()
 				return err
 			}
-			// The backup takes the account part only; the live file keeps the
-			// seat-wide keys the refresh preserved.
+			// The backup takes the account part only; the live file keeps the seat-wide keys.
 			if err := s.WriteAccountCredentials(n, acctEmail, oauth.AccountOnly(newCreds)); err != nil {
 				markSkipped()
 				return err
@@ -228,12 +207,10 @@ func withTripleLock(s *store.Store, fn func() error) error {
 	})
 }
 
-// recordFromOutcome projects a usage outcome into a FetchRecord.
 func recordFromOutcome(outcome oauth.UsageOutcome) usage.FetchRecord {
 	return usage.FetchRecord{Usage: outcome.Usage, Error: outcome.Error, RetryAfterS: outcome.RetryAfterS}
 }
 
-// accessTokenOf / stringOf read a string field, "" when absent or non-string.
 func accessTokenOf(oauthData map[string]any) string {
 	s, _ := oauthData["accessToken"].(string)
 	return s

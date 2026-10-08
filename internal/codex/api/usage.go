@@ -1,36 +1,7 @@
-// usage.go — fetching ChatGPT usage and shaping it the way the rest of tycswap
-// already reads. Ports claude-swap PR #252 codex/usage.py.
-//
-// The whole point of this file is the mapping. tycswap's renderers, its pace
-// calculation, its JSON output and its autoswitch comparison all consume a map
-// with five_hour/seven_day windows of {"pct", "resets_at", "countdown",
-// "clock"} (internal/oauth BuildUsageResult, jsonout.UsageToJSON). Producing
-// exactly that shape from the ChatGPT response is what lets every Claude-side
-// consumer handle a Codex account with no branching at all.
-//
-// The wire shape was read off the live endpoint (2026-08-16), not inferred from
-// codex-auth, whose registry.json stores its own normalized primary/secondary
-// view — the API does not return that. The response is:
-//
-//	plan_type: str
-//	rate_limit:
-//	  allowed, limit_reached: bool
-//	  primary_window:   {used_percent, limit_window_seconds, reset_after_seconds, reset_at}
-//	  secondary_window: {same} | null
-//	credits: {has_credits, unlimited, overage_limit_reached, balance, ...}
-//
-// Four conversions matter and each is easy to get wrong: the windows are
-// nested under rate_limit; ChatGPT's used_percent is tycswap's pct; reset_at is
-// epoch seconds while pace parses an ISO string (a raw epoch would silently
-// disable pace for every Codex row); and primary_window is NOT necessarily the
-// 5-hour window. Its length is data, carried in limit_window_seconds, and live
-// Plus accounts report a primary_window of 604800 s with no secondary. Mapping
-// by position would label weekly usage 5-hourly and pace would never fire, so
-// windows are classified by declared length, never by key name.
-//
-// An absent window is normal and stays absent — never 0% used. Failure is
-// reported, never raised: a broken account shows its status in the usage
-// column (codex-auth's wording) and drops out of autoswitch candidacy.
+// usage.go maps the ChatGPT usage response onto tycswap's five_hour/seven_day window shape so Claude-side consumers need no branching.
+// Wire shape read off the live endpoint (2026-08-16): windows nest under rate_limit, used_percent is pct, reset_at is epoch seconds
+// (pace parses ISO). primary_window is not necessarily 5-hour: Plus reports 604800 s, so windows are classified by limit_window_seconds.
+// An absent window stays absent, never 0% used.
 
 package api
 
@@ -47,33 +18,23 @@ import (
 	"github.com/tyclab/tycswap/internal/oauth"
 )
 
-// Usage sentinels. SentinelMissingAuth is codex-auth's wording, kept so a user
-// who knows one tool reads the other's output without translation. An HTTP
-// failure is "http <status>".
 const (
+	// codex-auth's wording, so users of either tool read the other's output; an HTTP failure is "http <status>".
 	SentinelMissingAuth = "MissingAuth"
 	SentinelNetwork     = "network"
 	SentinelBadResponse = "bad-response"
 )
 
-// UsageFetch is one usage fetch: either a usage map, or a sentinel explaining
-// why not. RetryAfterS is the server's Retry-After in seconds when it sent a
-// usable one — honouring it is the difference between backing off and being
-// rate-limited harder.
+// RetryAfterS is the server's Retry-After in seconds; honouring it avoids being rate-limited harder.
 type UsageFetch struct {
 	Usage       map[string]any
 	Sentinel    string
 	RetryAfterS *float64
 }
 
-// maxISOEpoch is 9999-12-31T23:59:59Z, the largest instant Python's datetime
-// can represent; beyond it fromtimestamp overflows and _iso yields None.
 const maxISOEpoch = 253402300799
 
-// isoFromEpoch converts epoch seconds to Python's datetime.isoformat() form in
-// UTC ("2027-01-15T08:00:00+00:00", microseconds only when non-zero), or ""
-// when epoch is not a positive in-range number. The "+00:00" offset (not "Z")
-// keeps the string byte-identical to what claude-swap persists.
+// "+00:00" (not "Z") keeps the string byte-identical to what claude-swap persists.
 func isoFromEpoch(epoch any) string {
 	f, ok := number(epoch)
 	if !ok || f <= 0 || math.IsNaN(f) || math.IsInf(f, 0) || f > maxISOEpoch {
@@ -93,10 +54,6 @@ func isoFromEpoch(epoch any) string {
 	return s + "+00:00"
 }
 
-// window maps one ChatGPT rate-limit window onto tycswap's window shape, or nil
-// when it carries no numeric used_percent. pct passes through as decoded
-// (json.Number keeps int vs float), matching the Claude side's uncoerced pct.
-// A window with no reset keeps its percentage and simply omits the rest.
 func window(raw any, now time.Time) map[string]any {
 	m, ok := raw.(map[string]any)
 	if !ok {
@@ -124,7 +81,6 @@ func BuildUsageResult(data any) map[string]any {
 	return buildUsageResult(data, time.Now().UTC())
 }
 
-// buildUsageResult is the now-injectable core of BuildUsageResult.
 func buildUsageResult(data any, now time.Time) map[string]any {
 	d, ok := data.(map[string]any)
 	if !ok {
@@ -151,7 +107,6 @@ func buildUsageResult(data any, now time.Time) map[string]any {
 					slot = "five_hour"
 				}
 			} else if key == "primary_window" {
-				// No declared length: fall back to the conventional positions.
 				slot = "five_hour"
 			} else {
 				slot = "seven_day"
@@ -162,9 +117,7 @@ func buildUsageResult(data any, now time.Time) map[string]any {
 		}
 	}
 
-	// No window at all is not usable usage: every consumer needs one, and a
-	// plan-only map renders as a blank row with no explanation — which is
-	// exactly how the first live run failed.
+	// A plan-only map renders as a blank row with no explanation; that is how the first live run failed.
 	if len(result) == 0 {
 		return nil
 	}
@@ -182,10 +135,7 @@ func buildUsageResult(data any, now time.Time) map[string]any {
 	return result
 }
 
-// retryAfterSeconds parses a Retry-After header, delta-seconds form only. RFC
-// 9110 also permits an HTTP-date, but this endpoint has only ever sent seconds,
-// and a misparsed date yielding a huge backoff would silently park an account
-// for hours. Negative and NaN values are ignored.
+// Delta-seconds only: the endpoint only sends seconds, and a misparsed HTTP-date could park an account for hours.
 func retryAfterSeconds(raw string) *float64 {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

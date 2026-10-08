@@ -1,12 +1,3 @@
-// styled.go — a small rich.Text analog: an ordered run of styled text segments.
-//
-// Implements the rendering substrate spec 09§5 describes as rich.Text
-// (append(text, style)). Keeping styling as data (not pre-rendered ANSI) makes
-// the widget renderers in widgets.go fully testable in plain text while still
-// producing lipgloss-styled output at View() time. Deviation #7 (structured
-// results, no ANSI capture) already frees the TUI from byte-identical output,
-// so this segment model is the port's own faithful-but-testable substitute for
-// Rich's Text.
 package tui
 
 import (

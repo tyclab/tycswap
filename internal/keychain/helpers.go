@@ -1,5 +1,3 @@
-// Implements spec 03§4 helpers: $USER lookup and hex encoding for -X.
-
 package keychain
 
 import (

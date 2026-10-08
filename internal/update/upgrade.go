@@ -23,15 +23,8 @@ import (
 	"github.com/tyclab/tycswap/internal/printer"
 )
 
-// CommandRunner executes a subprocess and reports its exit code. A non-nil
-// err means the process could not be started at all (e.g. the binary is
-// missing from PATH — check with IsNotFound); a completed process's nonzero
-// exit is reported via exitCode with err == nil, mirroring Python's
-// subprocess.run(check=False).
 type CommandRunner func(ctx context.Context, name string, args []string, stdout, stderr io.Writer) (exitCode int, err error)
 
-// RunCommand is the real CommandRunner: os/exec with no timeout, matching
-// Python's un-timed subprocess.run for the upgrade command.
 func RunCommand(ctx context.Context, name string, args []string, stdout, stderr io.Writer) (int, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Stdout = stdout
@@ -65,13 +58,9 @@ type Upgrader struct {
 	// Stdout/Stderr receive guidance text and the subprocess's own output;
 	// nil -> os.Stdout / os.Stderr.
 	Stdout, Stderr io.Writer
-	// The download shape (download.go): Version is the running build's
-	// v-prefixed semver ("" → always install the newest); Arch overrides
-	// runtime.GOARCH; HTTPClient nil → http.DefaultClient. The release
-	// endpoint and downloads are the package's Endpoint and ReleasesURL.
-	Version    string
-	Arch       string
-	HTTPClient *http.Client
+	Version        string
+	Arch           string
+	HTTPClient     *http.Client
 }
 
 func (u Upgrader) getenv() func(string) string {

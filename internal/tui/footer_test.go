@@ -83,8 +83,6 @@ func TestFooterAutoStateDependence(t *testing.T) {
 	m := newTestModel(&fakeFacade{})
 	a := newAutoScreen()
 
-	// Not adjusting: l/t/back show; the threshold_step arrows and adjust_done
-	// Enter are hidden (check_action).
 	idle := footerText(a.footerBindings(m), wideFooter).plain()
 	mustContain(t, idle, "l Go live / dry-run", "t Threshold", "esc Back")
 	mustOmit(t, idle, "-1%", "+1%", "Done")
@@ -100,8 +98,6 @@ func TestFooterAutoStateDependence(t *testing.T) {
 func TestFooterTruncatesNarrowWidth(t *testing.T) {
 	m := newTestModel(&fakeFacade{})
 	d := m.top().(*dashboardScreen)
-	// Width 22 fits only "s Switch accounts" (17) plus the ellipsis; the later
-	// bindings drop out.
 	got := footerText(d.footerBindings(m), 22).plain()
 	mustContain(t, got, "Switch accounts", footerEllipse)
 	mustOmit(t, got, "Watch", "Quit")

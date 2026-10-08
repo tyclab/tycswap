@@ -276,16 +276,7 @@ type dashboardOptions struct {
 	noUpdateSchedule bool
 }
 
-// newDashboard constructs the switcher and every façade the dashboard needs
-// and returns the unstarted server. A non-zero code means the error was
-// already reported on s.err. ctx bounds the Codex rows' usage requests.
-//
-// When this machine has Codex accounts — decided at launch, as in the TUI —
-// the rows come from the merged Claude + Codex snapshot, the Codex rows'
-// actions go to the Codex switcher, and the engine host runs the Codex
-// engine beside the Claude one (DESIGN A47); without them the Codex parts
-// are nil and the dashboard is the Claude one. `tycswap web` and `tycswap
-// app` both build their dashboard here.
+// `tycswap web` and `tycswap app` both build their dashboard here; Codex presence is decided at launch (DESIGN A47).
 func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams, o dashboardOptions) (*dashboard, int) {
 	sw, err := constructSwitcher(debug, s.err)
 	if err != nil {

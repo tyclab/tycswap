@@ -1,16 +1,6 @@
-// endpoint.go — what a switch does to Claude Code's settings.json (DESIGN
-// A46).
-//
-// An API-key account may carry a base URL. A switch onto such an account
-// stores no key in Claude Code's credential store (no primaryApiKey, no
-// managed Keychain item): it takes every login off that store and writes the
-// endpoint and the key into settings.json as env.ANTHROPIC_BASE_URL and
-// env.ANTHROPIC_AUTH_TOKEN, through ccsettings, which records what those two
-// keys held first. A switch onto any other account puts them back from that
-// record. Every path that writes the live login does this — the normal
-// switch, --force and the other direct activations, the fresh machine — and a
-// switch that fails after either file was written puts both back byte for
-// byte from a snapshot taken before.
+// endpoint.go: a switch onto an API-key account with a base URL stores no key in Claude Code's credential store; endpoint and key
+// go into settings.json via ccsettings (DESIGN A46). Every live-login path does this, and a failed switch restores both files.
+
 package switching
 
 import (
@@ -30,8 +20,6 @@ import (
 // replace it.
 var getenv = os.Getenv
 
-// claudeSettingsPath is Claude Code's own settings.json under the live config
-// home, the one a switch writes the endpoint into.
 func claudeSettingsPath() string { return paths.GetClaudeSettingsPath() }
 
 // endpointIsLive reports whether Claude Code's settings.json carries
@@ -43,16 +31,11 @@ func endpointIsLive(s *store.Store) bool {
 	return ccsettings.RecordsFile(ProfileSidecarPath(s), claudeSettingsPath())
 }
 
-// ProfileSidecarPath is where the record of what settings.json held before an
-// endpoint was written lives: <backup root>/claude-settings.prev.json.
 func ProfileSidecarPath(s *store.Store) string {
 	return filepath.Join(s.BackupDir(), ccsettings.SidecarName)
 }
 
-// endpointFor returns the validated base URL slot num carries in data, "" for
-// none. A stored URL that no longer validates (a hand-edited roster) stops
-// the switch: writing it would point Claude Code somewhere nobody checked,
-// and ignoring it would send the endpoint's key to Anthropic.
+// A stored URL that no longer validates stops the switch: writing it points somewhere unchecked, ignoring it sends the key to Anthropic.
 func endpointFor(data *store.SequenceData, num string) (string, error) {
 	raw := store.BaseURLFrom(data, num)
 	if raw == "" {
@@ -65,38 +48,26 @@ func endpointFor(data *store.SequenceData, num string) (string, error) {
 	return v, nil
 }
 
-// profilePlan is what a switch will do to settings.json, decided before
-// anything is written.
 type profilePlan struct {
 	settingsPath string
 	sidecarPath  string
-	// apply is the endpoint to write, nil for a target without one.
-	apply *ccsettings.Profile
-	// revert: a record exists, so the priors go back.
-	revert bool
-	// known are the endpoint accounts' URLs and keys when there is no record
-	// and settings.json carries both keys: the revert of a profile whose
-	// record was lost removes them, and a new record does not take them for
-	// the user's own.
+	apply        *ccsettings.Profile
+	revert       bool
+	// known: without a record, a revert removes these and a new record does not take them for the user's own.
 	known []ccsettings.Profile
 	// snap is both files as they were, for the rollback; nil when the plan
 	// touches nothing.
-	snap *ccsettings.Snapshot
-	// applied / reverted say what commit did.
+	snap              *ccsettings.Snapshot
 	applied, reverted bool
 	// warnings name what would still send a second key to the endpoint
 	// (ccsettings.Competing); shown once the profile is applied.
 	warnings []string
 }
 
-// touches reports whether the plan writes settings.json at all.
 func (p *profilePlan) touches() bool {
 	return p != nil && (p.apply != nil || p.revert || len(p.known) > 0)
 }
 
-// changed reports whether commit rewrote settings.json, i.e. whether Claude
-// Code sessions that are already running authenticate differently from new
-// ones now.
 func (p *profilePlan) changed() bool { return p != nil && (p.applied || p.reverted) }
 
 // planProfile decides what a switch onto target does to settings.json, and
@@ -168,7 +139,6 @@ func planProfile(s *store.Store, data *store.SequenceData, target, targetCreds s
 	return p, nil
 }
 
-// knownProfiles lists every endpoint account's URL and stored key.
 func knownProfiles(s *store.Store, data *store.SequenceData) []ccsettings.Profile {
 	if data == nil {
 		return nil
@@ -205,9 +175,7 @@ func writeActiveFor(s *store.Store, p *profilePlan, targetCreds string) error {
 	return s.Creds.WriteActiveAccount(targetCreds)
 }
 
-// commit writes settings.json as planned. A failed revert of a record is an
-// error (the switch rolls back); the by-value cleanup of a profile without a
-// record is best-effort and only logged.
+// A failed revert of a record is an error (the switch rolls back); the by-value cleanup is best-effort.
 func (p *profilePlan) commit(s *store.Store) error {
 	if !p.touches() {
 		return nil
@@ -259,8 +227,6 @@ func (p *profilePlan) warn(emitOutput bool, warningsOut *[]string) {
 	}
 }
 
-// restore puts settings.json and the record back as they were before the
-// switch.
 func (p *profilePlan) restore() error {
 	if p == nil || p.snap == nil {
 		return nil

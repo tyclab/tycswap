@@ -1,10 +1,3 @@
-// theme.go — the "tycswap-dark" color palette and severity ramp.
-//
-// Implements spec 09§8.1 (theme.py color constants + severity_color) and the
-// numeric bands in 09§11.8. The hex values are the single source of truth
-// (widgets build lipgloss styles from them, matching Python where widgets
-// import the constants directly for Rich renderables). ACCENT is xterm-173,
-// the same terracotta printer._ACCENT uses for the CLI.
 package tui
 
 // Core palette (09§8.1).

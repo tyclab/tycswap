@@ -1,10 +1,3 @@
-// cli.go — the two-layer front controller (spec 08§1, DESIGN §2.21).
-//
-// Implements spec 08§1 (main() entry order + pre-dispatch), the bare-tycswap
-// gate (the tray app in the background, DESIGN A40), and the hand-off into
-// the memorable-verb translation + main parser.
-// Main() is the process entry (cmd/tycswap calls os.Exit(cli.Main())); run() is
-// the injectable core the tests drive with explicit argv / streams / TTY state.
 package cli
 
 import (
@@ -113,11 +106,7 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 		}
 	}
 
-	// Bare `tycswap` in an interactive terminal starts the menu-bar / tray
-	// app in the background and returns the prompt (DESIGN A40; it used to
-	// open the TUI, spec 08§1 step 5, which is `tycswap tui` now). TTY-gated
-	// on both ends so scripts/pipes still get the "no command" error instead
-	// of a resident process.
+	// TTY-gated on both ends so scripts and pipes get the no-command error, not a resident tray app (DESIGN A40).
 	if len(argv) == 0 && ((stdoutTTY && stdinTTY) || msysTerminal()) {
 		return startBackgroundApp(prog, s)
 	}

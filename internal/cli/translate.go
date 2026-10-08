@@ -8,8 +8,6 @@
 // pre-dispatched (spec 08§1) and never reach translation.
 package cli
 
-// subcommandFlags maps each memorable verb to the legacy flag it expands to
-// (spec 08§2 _SUBCOMMAND_FLAGS). "switch" is special-cased in translateSubcommand.
 var subcommandFlags = map[string]string{
 	"help":      "--help",
 	"list":      "--list",
@@ -31,8 +29,6 @@ var subcommandFlags = map[string]string{
 	"menubar":   "--menubar",
 }
 
-// translateSubcommand rewrites a leading memorable verb into the equivalent
-// flag argv (spec 08§2). argv is the args after the program name.
 func translateSubcommand(argv []string) []string {
 	if len(argv) == 0 {
 		return argv
@@ -53,9 +49,6 @@ func translateSubcommand(argv []string) []string {
 	return argv
 }
 
-// startsWithDash reports whether a token begins with '-' (an option-like token
-// in argparse's sense). A lone "-" starts with a dash for this test — matching
-// Python's `rest[0].startswith("-")`.
 func startsWithDash(s string) bool {
 	return len(s) > 0 && s[0] == '-'
 }

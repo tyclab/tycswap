@@ -48,14 +48,7 @@ func ExtractOAuthData(creds string) map[string]any {
 	return oauth
 }
 
-// AccountOnly returns creds without its seat-wide remainder: the keys
-// ccfile.SeatWideKeys names (the MCP server logins and client secrets), which
-// belong to the seat and not to the account (DESIGN A25 item 9, A29). It is
-// what a capture stores and what leaves the machine. A blob without any of
-// them, an API key, and anything that is not a JSON object come back byte for
-// byte, so a credential that never carried one compares and stores exactly as
-// before; a blob that did is re-encoded compact, as Claude Code writes the
-// file.
+// AccountOnly drops the seat-wide keys (DESIGN A25 item 9, A29); a blob without any returns byte for byte, else re-encoded compact as Claude Code writes it.
 func AccountOnly(creds string) string {
 	m, ok := decodeCredsMap(creds)
 	if !ok {
@@ -108,9 +101,7 @@ func ExtractAccessToken(creds string) string {
 	return tok
 }
 
-// IsOAuthTokenExpired reports whether a token expires within the next 5 minutes.
-// expiresAt is epoch milliseconds; a non-numeric value is treated as
-// not-expired (unknown expiry), matching 04§1.6. now is injected for testing.
+// expiresAt is epoch milliseconds; a non-numeric value counts as not expired (04§1.6).
 func IsOAuthTokenExpired(expiresAt any, now time.Time) bool {
 	ms, ok := numFloat(expiresAt)
 	if !ok {

@@ -15,10 +15,7 @@ import (
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
-// collectScheduledUsage returns (entries, usage, headroom) for the tick. usage
-// carries decision values (dict | sentinel string | nil); headroom the derived
-// per-account headroom (nil = unknown). threshold is the tick-snapshot value so
-// fetch and decision agree even if ApplyThreshold lands mid-tick (05§22).
+// threshold is the tick snapshot, so fetch and decision agree if ApplyThreshold lands mid-tick (05§22).
 func (e *Engine) collectScheduledUsage(current string, quarantined map[string]bool, threshold float64) (
 	map[string]usage.UsageEntry, map[string]any, map[string]*float64,
 ) {
@@ -83,9 +80,6 @@ func (e *Engine) collectScheduledUsage(current string, quarantined map[string]bo
 	return entries, usageMap, headroom
 }
 
-// headroomByClass is the per-axis view of one account: the 5h rate limit, the
-// week and the counted per-model weeks kept apart, because each has a bar of
-// its own (DESIGN A34).
 func (e *Engine) headroomByClass(value any) usage.Headroom {
 	return usage.AccountHeadroomByClass(usageDict(value), e.models)
 }

@@ -51,10 +51,6 @@ func (w winSpec) String() string {
 	return fmt.Sprintf("%s:%g@%ds", w.label, w.pct, w.reset)
 }
 
-// labelShape is one shape of the identity cell every row shares. The two
-// surfaces build it differently — the panel prints the account email alone, the
-// monitor prints miniLabelCell's alias/email/org-tag composition — so a shape
-// names the ACCOUNT fields and each surface derives its own cell from them.
 type labelShape int
 
 const (
@@ -98,10 +94,6 @@ func (s labelShape) email() string {
 // firstWord is the whole of it (data.go's fallback returns the raw string).
 const unmappedSentinel = "usage_probe_failed_no_such_store_state"
 
-// spanShape is one shape of the SPAN row: the reason an account states instead
-// of figures. spanQuarantined exists on the PANEL only — the monitor has no
-// quarantine set to read — where it renders as a window row or "usage unknown"
-// exactly as monitorRow would build it.
 type spanShape int
 
 const (
@@ -143,10 +135,6 @@ func (s spanShape) sentinel() string {
 	return ""
 }
 
-// rowSpec is one account line: its identity shape, the windows it reports, the
-// reason it states instead (span shapes other than spanNone take precedence over
-// the windows on the surface that recognises them), and whether its measurement
-// is stale.
 type rowSpec struct {
 	label   labelShape
 	windows []winSpec
@@ -414,11 +402,6 @@ func tableFits(t *testing.T, r rosterSpec, s tableSurface, width int) bool {
 	return ok
 }
 
-// surfaceTabled reports whether the surface DRAWS the shared table at this
-// TERMINAL width, as opposed to its own per-row layout — one predicate for both
-// surfaces, over the same projections each surface drives. A table is drawn only
-// where it exists AND clears the release bar; that the predicate really is what
-// each surface does is asserted end-to-end (TestSurfaceFlipIsTotal).
 func surfaceTabled(t *testing.T, r rosterSpec, s tableSurface, width int) bool {
 	t.Helper()
 	key := fmt.Sprintf("%s|%s|%d", r.name, s.name, width)
@@ -513,11 +496,6 @@ func rosterColumns(rows []tableRow) []tcol {
 	return cols
 }
 
-// rosterPins derives, independently of pinTableColumns, the set of column KEYS
-// no width may drop: every counted column, every column holding a row's
-// protected cell (its binding figure, or its highest one when it has no counted
-// cell at all), every column a row has run out in where the surface states so,
-// and then the whole LABEL GROUP of each.
 func rosterPins(rows []tableRow, cols []tcol, policy tablePolicy) map[string]bool {
 	pinned := map[string]bool{}
 	keyOf := func(label string, occ int) string { return fmt.Sprintf("%s#%d", label, occ) }
@@ -578,17 +556,6 @@ func groupReports(cols []tcol, label string) int {
 	return len(rows)
 }
 
-// tableGeometry reports, per canonical column, the display column its
-// percentage sub-cell ENDS at and the name the header row spells it with — or
-// -1 and "" for a column the width ladder dropped.
-//
-// Taken from the measured layout rather than by searching the rendered header
-// for the column's label: once headers abbreviate, the label is not the string
-// on the line, and a text search would read every abbreviated column as a
-// dropped one. What the layout claims is then checked against the drawn header
-// (assertHeaderMatchesGeometry) and its column IDENTITIES against an independent
-// derivation from the rows (assertColumnIdentity), so nothing downstream rests
-// on the layout's word alone.
 func tableGeometry(lay tableLayout) (ends []int, names []string) {
 	at := lay.slotW + lay.labelW
 	for _, c := range lay.cols {
@@ -644,11 +611,6 @@ func assertHeaderMatchesGeometry(t *testing.T, header string, ends []int, names 
 	}
 }
 
-// abbreviatesLabel reports whether a rendered header names label: the label
-// itself, or runs of it kept in order with the ellipsis marking each cut. It is
-// the oracle a test uses to find a column by name once headers abbreviate —
-// deliberately loose about WHICH runs survive, so it tests nothing about the
-// ladder's choices, only that a header is made of the label it names.
 func abbreviatesLabel(text, label string) bool {
 	if lipgloss.Width(text) > lipgloss.Width(label) {
 		return false
@@ -684,14 +646,6 @@ type figureKey struct {
 	col string
 }
 
-// figuresOf extracts every percentage the table rendered, keyed by row and by
-// COLUMN IDENTITY rather than by position, so the same figure is comparable
-// across widths at which different columns survive.
-//
-// A figure is read from the display column its column's sub-cell ends at: the
-// percentage is right-aligned there, so the figure is the run of
-// digit/percent/em-dash glyphs ending exactly at that column. spanRows are
-// skipped — a message is not a grid of cells.
 func figuresOf(ends []int, lines []string, cols []tcol, spanRow map[int]bool) map[figureKey]string {
 	out := map[figureKey]string{}
 	for i, line := range lines {
@@ -736,12 +690,6 @@ func figureAt(line string, end int) string {
 	return string(rs[j+1 : i+1])
 }
 
-// isFigureRune reports whether r can be part of a rendered percentage or of the
-// em dash a missing window renders. A figure may carry a sign (a negative stored
-// utilization is passed through, not dropped) and the elision marker of a figure
-// past the cap this package spells in either direction (">999%", "<-999%"); a
-// cell is always preceded by at least the gutter's two spaces, so scanning
-// leftward over these cannot run into the identity cell.
 func isFigureRune(r rune) bool {
 	return (r >= '0' && r <= '9') || r == '%' || r == '.' || r == '-' ||
 		r == '>' || r == '<' || string(r) == tableMissing
@@ -967,11 +915,6 @@ func tableCorpus() []rosterSpec {
 			{label: labelShort, windows: []winSpec{
 				{windowLabel5h, 12, resetNone}, {windowLabel7d, 33, resetNone}, {"Common", 43, resetNone}}},
 		}},
-		// A row whose only windows are two of the SAME model: the label group is
-		// PARTIALLY protected, since one occurrence is the figure the row is read by
-		// and the other is not. It is the shape that separates "pin the column" from
-		// "pin the label group" — dropping the group for the sake of its unprotected
-		// half would take the protected half with it.
 		rosterSpec{name: "dup-scopedonly", rows: []rowSpec{
 			{label: labelShort, windows: []winSpec{{"Fable", 40, resetNone}, {"Fable", 70, 12 * 60}}},
 			{label: labelShort, windows: rowWindows("5h7d", shortModelNames, 0)},

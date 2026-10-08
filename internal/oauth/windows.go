@@ -181,14 +181,8 @@ func RelevantWindows(u *Usage, models []string) []RelevantWindow {
 	return out
 }
 
-// Window-class labels. The 5h window is a RATE limit that bursts: it can fill
-// between two polls, and it refills within hours. The 7d window is the
-// account's BUDGET: it creeps, and it is days-long when spent. A per-model
-// weekly window is a budget too, but only for that model, and only when
-// autoswitch.model counts it. Each is judged against a bar of its own (DESIGN
-// A34); usage.FiveHourLabel / SevenDayLabel are the same constants on the
-// engine's side of the split.
 const (
+	// usage.FiveHourLabel / SevenDayLabel are the same constants on the engine side (DESIGN A34).
 	FiveHourLabel = "5h"
 	SevenDayLabel = "7d"
 )
@@ -233,12 +227,6 @@ func AccountHeadroom(u *Usage, models []string) *float64 {
 	return &h
 }
 
-// RenewalTS returns the account's weekly-scope renewal time in epoch seconds:
-// the LATEST parseable resets_at among the weekly-scope relevant windows — the
-// 7d window plus every scoped per-model window matched by models, i.e. every
-// RelevantWindows entry except the one labeled "5h". Absent/unparseable
-// resets_at entries are skipped; nil when no weekly-scope window carries a
-// parseable reset (and nil for nil usage). Go-side extension (DESIGN A17).
 func RenewalTS(u *Usage, models []string) *float64 {
 	var latest *float64
 	for _, w := range RelevantWindows(u, models) {

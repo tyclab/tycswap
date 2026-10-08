@@ -1,7 +1,3 @@
-// onboarding.go — two things the first page says before the account table
-// (DESIGN A27): the login Claude Code has that is not stored yet ("Add your
-// current login"), and the authentication overrides that would make Claude
-// Code ignore the stored login altogether.
 package web
 
 import (
@@ -33,31 +29,19 @@ type AuthOverridesView struct {
 	Env          []string `json:"env"`      // never null
 	Settings     []string `json:"settings"` // never null; dotted keys
 	SettingsPath string   `json:"settingsPath"`
-	// Profile are the settings keys that are tycswap's own endpoint profile
-	// (DESIGN A46), set aside from Settings: they are the active account's
-	// login while an account with a base URL is active, and an override of
-	// whatever else is (buildState decides). Not sent.
+	// tycswap's own endpoint profile keys, set aside from Settings: the login while a base-URL account is active (A46).
 	Profile []string `json:"-"`
 }
 
 // Any reports whether something overrides the login.
 func (v AuthOverridesView) Any() bool { return len(v.Env) > 0 || len(v.Settings) > 0 }
 
-// authOverrideEnv are the environment variables Claude Code takes over the
-// stored login: a key or token in place of OAuth (CLAUDE_CODE_OAUTH_TOKEN,
-// a setup-token, among them, as session.AuthOverrideEnvVars has it), and a
-// base URL that sends the requests elsewhere (verified against Claude Code's
-// documented settings).
+// session.AuthOverrideEnvVars plus ANTHROPIC_BASE_URL, which sends requests elsewhere.
 var authOverrideEnv = []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL"}
 
 // authOverrideSettings are the settings.json keys with the same effect.
 var authOverrideSettings = []string{"apiKeyHelper", "env.ANTHROPIC_API_KEY", "env.ANTHROPIC_AUTH_TOKEN", "env.CLAUDE_CODE_OAUTH_TOKEN", "env.ANTHROPIC_BASE_URL"}
 
-// DetectAuthOverrides reads the overrides from getenv and from the Claude
-// Code settings file at settingsPath. An empty value selects nothing; a
-// settings file that is missing or does not parse declares nothing. It is
-// the Deps.AuthOverrides default, over os.Getenv and the live config home's
-// settings.json.
 func DetectAuthOverrides(getenv func(string) string, settingsPath string) AuthOverridesView {
 	return detectAuthOverrides(getenv, settingsPath, "")
 }

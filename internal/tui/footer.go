@@ -21,9 +21,6 @@ type footerBinding struct {
 	label string
 }
 
-// footerScreen is a primary screen that publishes its footer-visible bindings.
-// Modals do not implement it: they carry their own inline hint lines (09§7) and
-// cover the footer, exactly as a Textual ModalScreen does.
 type footerScreen interface {
 	footerBindings(m *Model) []footerBinding
 }
@@ -33,11 +30,6 @@ const (
 	footerEllipse = "…"   // graceful "more, truncated" marker
 )
 
-// footerText builds the styled footer richText for a set of bindings, keeping
-// styling as data so the plain text stays testable. Entries are appended while
-// they fit within width (display width, arrow glyphs included); once one would
-// overflow, the remainder is dropped and an ellipsis is appended. Width math
-// uses lipgloss.Width so multi-byte key glyphs (← →) count as one cell.
 func footerText(bindings []footerBinding, width int) richText {
 	var t richText
 	if width <= 0 {
@@ -65,9 +57,6 @@ func footerText(bindings []footerBinding, width int) richText {
 	return t
 }
 
-// renderFooter styles the footer bar for View(), hard-capping the result to the
-// terminal width as a final guard so a single over-wide binding can never
-// overflow the row (lipgloss MaxWidth is ANSI-aware).
 func (m *Model) renderFooter(bindings []footerBinding) string {
 	width := m.width
 	if width <= 0 {

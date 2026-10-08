@@ -45,12 +45,7 @@ var (
 // eprint writes one line to Stderr (transfer.py::_eprint).
 func eprint(msg string) { io.WriteString(Stderr, msg+"\n") }
 
-// SequenceData is a store-agnostic view of sequence.json. Its fields and JSON
-// tags mirror store.SequenceData exactly so a core adapter converts field-for-
-// field; the account records stay json.RawMessage so unknown keys and the
-// ABSENCE of the optional alias/kind/disabled keys survive a read/mutate/rewrite
-// (spec 01§2.2 / risk 3). Defined here (not imported from store) so this package
-// stays decoupled per DESIGN A2 and testable against a fake.
+// Mirrors store.SequenceData field for field; defined here so transfer stays decoupled (DESIGN A2).
 type SequenceData struct {
 	ActiveAccountNumber *int                       `json:"activeAccountNumber"`
 	LastUpdated         string                     `json:"lastUpdated"`
@@ -90,10 +85,6 @@ func hasSpaceOrControl(s string) bool {
 
 var aliasRE = regexp.MustCompile(`^[a-z0-9_.-]+$`)
 
-// normalizeAlias mirrors models.normalize_alias (spec 01§8.1): strip+lower, then
-// reject empty / purely-numeric / leading-"-" / out-of-charset. The returned
-// error text matches Python's ValueError message so the wrapped TransferError
-// reads identically ("invalid alias for {email}: {e}").
 func normalizeAlias(name string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(name))
 	if normalized == "" {
@@ -149,10 +140,6 @@ func decodeRecord(raw json.RawMessage) map[string]any {
 	return m
 }
 
-// findAccountSlot returns the slot key matching the composite identity (email,
-// organizationUuid), or "" (spec 07§3.4, _find_account_slot). A record missing
-// organizationUuid compares equal to "". Iteration order is Go-map order, which
-// is fine: at most one slot can match a composite identity.
 func findAccountSlot(data *SequenceData, email, orgUUID string) string {
 	if data == nil {
 		return ""
@@ -185,12 +172,7 @@ func nextAccountNumber(data *SequenceData) int {
 	return max + 1
 }
 
-// buildRecord assembles an imported account's sequence.json record in Python's
-// key order (email, uuid, organizationUuid, organizationName, added, then the
-// optional kind and alias). kind is written only for API keys; alias only when
-// non-empty (spec 07§3.4). Values are string-encoded with HTML escaping off so
-// <, >, & survive (Python json.dumps parity); a store adapter re-indents the raw
-// bytes via WriteSequence, so key order and value bytes are the load-bearing part.
+// Python key order (email, uuid, organizationUuid, organizationName, added, kind, alias): key order and bytes are load-bearing.
 func buildRecord(email, uuid, orgUUID, orgName, added, kind, alias, baseURL string) (json.RawMessage, error) {
 	type kv struct {
 		k, v string

@@ -11,13 +11,9 @@ import (
 	"strings"
 )
 
-// crossFlagValidate runs the twelve cross-flag checks (spec 08§4), plus a
-// thirteenth for --yes (DESIGN A33). It returns done==true with code 2 on the
-// first failure, else a zero parseResult.
 func crossFlagValidate(prog string, p *parsed, stderr io.Writer) parseResult {
 	fail := func(msg string) parseResult { return argError(prog, stderr, msg) }
 
-	// 1. No command selected (spec 08§4.1).
 	if !(p.addAccount || p.list || p.switchFlag || p.status || p.purge ||
 		p.tui || p.watch || p.menubar || p.upgrade ||
 		p.removeAccount != nil || p.disableAccount != nil || p.enableAccount != nil ||
@@ -25,22 +21,18 @@ func crossFlagValidate(prog string, p *parsed, stderr io.Writer) parseResult {
 		return fail("no command given — try '" + prog + " help'")
 	}
 
-	// 2. --token-status without --list.
 	if p.tokenStatus && !p.list {
 		return fail("--token-status can only be used with 'list'")
 	}
 
-	// 3. --json without list|status|switch|switch-to.
 	if p.json && !(p.list || p.status || p.switchFlag || p.switchTo != nil) {
 		return fail("--json can only be used with 'list', 'status', or 'switch'")
 	}
 
-	// 4. --json with --token-status.
 	if p.json && p.tokenStatus {
 		return fail("--token-status cannot be combined with --json")
 	}
 
-	// 5. --strategy without --switch.
 	if p.strategy != nil && !p.switchFlag {
 		return fail("--strategy can only be used with bare 'switch'")
 	}
@@ -88,8 +80,6 @@ func crossFlagValidate(prog string, p *parsed, stderr io.Writer) parseResult {
 		return fail("--full can only be used with 'export'")
 	}
 
-	// 13. --yes without switch-to: it answers the API-key confirmation and
-	// nothing else (DESIGN A33).
 	if p.yes && p.switchTo == nil {
 		return fail("--yes can only be used with 'switch <num|email>'")
 	}

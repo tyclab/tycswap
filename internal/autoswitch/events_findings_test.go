@@ -6,46 +6,17 @@ import (
 	"github.com/tyclab/tycswap/internal/jsonout"
 )
 
-// TestFormatRecoveryISORoundsMicroseconds pins Finding 15: formatRecoveryISO
-// must round the sub-second remainder to the nearest microsecond, matching
-// Python's datetime.fromtimestamp(ts, utc).isoformat(). The old code truncated
-// epoch*1e9 to nanoseconds and then to microseconds, under-reporting by ~1µs.
-//
-// Ground truth (python3):
-//
-//	>>> from datetime import datetime, timezone
-//	>>> datetime.fromtimestamp(1700000000.8474338, timezone.utc).isoformat().replace('+00:00','Z')
-//	'2023-11-14T22:13:20.847434Z'
-//
-// ns-truncation would yield ...847433Z (off by one µs); µs-rounding yields ...847434Z.
+// Finding 15: round to the nearest µs like Python datetime.fromtimestamp; ns truncation under-reported by ~1µs.
 func TestFormatRecoveryISORoundsMicroseconds(t *testing.T) {
 	if got, want := formatRecoveryISO(1700000000.8474338), "2023-11-14T22:13:20.847434Z"; got != want {
 		t.Errorf("formatRecoveryISO = %q, want %q", got, want)
 	}
-	// Whole-second epoch keeps the seconds-only form.
 	if got, want := formatRecoveryISO(1700000000.0), "2023-11-14T22:13:20Z"; got != want {
 		t.Errorf("formatRecoveryISO(whole) = %q, want %q", got, want)
 	}
 }
 
-// TestFormatRecoveryISOBankersRounding pins Finding 12: CPython's
-// datetime.fromtimestamp rounds the microsecond conversion round-half-to-even
-// (banker's rounding on the exact binary value), not half-away-from-zero
-// (math.Round). Two exact-tie cases straddle the even/odd boundary and one
-// non-tie case is a control.
-//
-// Ground truth (python3):
-//
-//	>>> from datetime import datetime, timezone
-//	>>> f = lambda ts: datetime.fromtimestamp(ts, timezone.utc).isoformat().replace('+00:00','Z')
-//	>>> f(1700000000.0078125)   # 0.0078125*1e6 == 7812.5  exactly -> even 7812
-//	'2023-11-14T22:13:20.007812Z'
-//	>>> f(1700000000.0234375)   # 0.0234375*1e6 == 23437.5 exactly -> even 23438
-//	'2023-11-14T22:13:20.023438Z'
-//	>>> f(1700000000.1234567)   # non-tie control
-//	'2023-11-14T22:13:20.123457Z'
-//
-// math.Round would give ...007813Z (up from the .5 tie) instead of ...007812Z.
+// Finding 12: CPython rounds µs half-to-even on the exact binary value, not like math.Round.
 func TestFormatRecoveryISOBankersRounding(t *testing.T) {
 	cases := []struct {
 		epoch float64

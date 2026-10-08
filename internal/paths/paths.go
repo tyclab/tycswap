@@ -1,10 +1,5 @@
-// Package paths resolves Claude Code config/credential paths and tycswap's own
-// store root, plus the old store roots `tycswap migrate` copies from.
-//
-// Implements spec 03§2 (paths.py). Mirrors claude-code's own resolution so tycswap
-// reads and writes the same files: the .claude.json home-root asymmetry and the
-// legacy .config.json precedence are external Claude Code contracts. GetBackupRoot
-// follows XDG on Linux/WSL and ~/.tycswap elsewhere.
+// Package paths resolves Claude Code config/credential paths, tycswap's store root and the old roots `tycswap migrate` copies from.
+// It mirrors Claude Code's own resolution (the .claude.json home-root asymmetry, legacy .config.json precedence): external contracts.
 package paths
 
 import (
@@ -22,10 +17,8 @@ const (
 	DotStoreDirname = ".tycswap"
 )
 
-// Directory names of the store tycswap was forked from. Only `tycswap migrate`
-// and its one-line hint read them, and nothing ever writes there: that store may
-// still belong to another installed tool.
 const (
+	// Only `tycswap migrate` and its hint read these; nothing writes there, since another installed tool may own that store.
 	OldStoreDirname    = "claude-swap"
 	OldDotStoreDirname = ".claude-swap-backup"
 )
@@ -96,13 +89,7 @@ func GetCredentialsPath() string {
 	return filepath.Join(GetClaudeConfigHome(), ".credentials.json")
 }
 
-// GetBackupRoot returns the tycswap store root for the current platform.
-//
-// Linux/WSL: $XDG_DATA_HOME/tycswap (default ~/.local/share/tycswap).
-// macOS/Windows/unknown: ~/.tycswap.
-//
-// Per the XDG spec, $XDG_DATA_HOME is ignored when unset, empty, or non-absolute;
-// a leading ~ is expanded so unexpanded values from unit files/Dockerfiles work.
+// Linux/WSL: $XDG_DATA_HOME/tycswap (default ~/.local/share/tycswap), else ~/.tycswap; a non-absolute XDG value is ignored, ~ expanded.
 func GetBackupRoot() string {
 	switch platform.Detect() {
 	case platform.Linux, platform.WSL:
@@ -115,11 +102,7 @@ func GetBackupRoot() string {
 	}
 }
 
-// OldBackupRoots returns, in preference order, where the store this fork came
-// from lives on the current platform: $XDG_DATA_HOME/claude-swap when that is
-// set, else ~/.local/share/claude-swap, then the pre-XDG ~/.claude-swap-backup
-// on Linux/WSL; ~/.claude-swap-backup on macOS/Windows. `tycswap migrate`
-// copies the first one that exists; nothing reads or writes them otherwise.
+// `tycswap migrate` copies the first that exists; nothing else reads or writes them.
 func OldBackupRoots() []string {
 	legacy := filepath.Join(home(), OldDotStoreDirname)
 	switch platform.Detect() {

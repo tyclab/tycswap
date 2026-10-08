@@ -29,17 +29,11 @@ import (
 	"github.com/tyclab/tycswap/internal/reporting"
 )
 
-// Provider is what a surface needs to drive one provider's account list: its
-// id (reporting.ProviderClaude / ProviderCodex) and one snapshot pass. fetch
-// has the Claude side's semantics: nil makes every account eligible, an empty
-// set means no network.
 type Provider interface {
 	ID() string
 	Snapshot(fetch map[string]bool) (*reporting.AccountsSnapshot, error)
 }
 
-// SnapshotSource is the Claude side's read model, as tui.Facade and
-// *core.Switcher expose it.
 type SnapshotSource interface {
 	AccountsSnapshot(fetch map[string]bool) *reporting.AccountsSnapshot
 }
@@ -74,8 +68,6 @@ func (p codexProvider) Snapshot(fetch map[string]bool) (*reporting.AccountsSnaps
 	return &snap, nil
 }
 
-// Switcher returns the Codex switcher behind p, or nil when p is not Codex, so
-// a shell can send a keystroke back to the switcher that owns a row.
 func Switcher(p Provider) *switcher.Switcher {
 	if c, ok := p.(codexProvider); ok {
 		return c.sw
@@ -85,10 +77,7 @@ func Switcher(p Provider) *switcher.Switcher {
 
 // ---- registry ----------------------------------------------------------------
 
-// CodexIsPresent reports whether this machine has any Codex accounts tycswap
-// knows or could import: a slot in the Codex store, or a codex-auth registry
-// not yet imported, so the provider shows up on the first run rather than only
-// after a `tycswap codex` command. It never panics.
+// CodexIsPresent: a slot in the Codex store or a not yet imported codex-auth registry, so the provider shows on the first run.
 func CodexIsPresent() (present bool) {
 	defer func() {
 		if recover() != nil {
@@ -102,9 +91,7 @@ func CodexIsPresent() (present bool) {
 	return err == nil
 }
 
-// AvailableProviders is every provider worth showing, Claude first. claude is
-// passed in rather than constructed: building the Claude switcher runs
-// migrations, and the callers already hold one.
+// claude is passed in, not built: building the Claude switcher runs migrations, and callers already hold one.
 func AvailableProviders(ctx context.Context, claude Provider) []Provider {
 	out := []Provider{claude}
 	if CodexIsPresent() {
@@ -169,9 +156,6 @@ func merge(snaps []*reporting.AccountsSnapshot, owners []Provider) (reporting.Ac
 	return out, byKey
 }
 
-// MergedSnapshot runs every provider's pass and returns the merged snapshot
-// plus the row key -> owning provider map. A provider whose pass fails is
-// dropped; the survivors still render.
 func MergedSnapshot(providers []Provider, fetch map[string]bool) (reporting.AccountsSnapshot, map[string]Provider) {
 	snaps := make([]*reporting.AccountsSnapshot, len(providers))
 	for i, p := range providers {
@@ -235,9 +219,6 @@ func ProviderLabel(id string) string {
 	return id
 }
 
-// MultiSnapshotSource is the TUI's snapshot source over several providers,
-// merged into one view. Each provider is read on its own, so any per-account
-// comparison against a previous pass sees that provider's rows only.
 type MultiSnapshotSource struct {
 	providers []Provider
 }

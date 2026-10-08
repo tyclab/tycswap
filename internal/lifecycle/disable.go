@@ -16,27 +16,11 @@ import (
 	"github.com/tyclab/tycswap/internal/store"
 )
 
-// SetAccountDisabled disables (disabled=true) or re-enables a managed slot (spec
-// 01§8.4). Disabling only affects automatic selection; the slot stays a valid
-// explicit switch target.
 func SetAccountDisabled(s *store.Store, identifier string, disabled bool) error {
 	if !sequenceFileExists(s) {
 		return cerr.Config("No accounts are managed yet")
 	}
 
-	// The whole read-decide-write span runs under the store lock, with the one
-	// classified read taken inside it: the roster this call commits is the bytes
-	// on disk, so a record another tycswap commits meanwhile cannot be renamed away
-	// by the disabled-flag write.
-	//
-	// The entry read comes before store.ResolveAccount (see SetAlias): resolving
-	// fires the org backfill, which WRITES a backfilled roster, and the entry read
-	// runs that backfill ahead of itself so this call's commit carries it instead
-	// of reverting it. A corrupt roster refuses from whichever read reaches it
-	// first — ResolveAccount classifies its own read — and the refusal, not a
-	// missing-account error, is what tells the user the records are recoverable.
-	// Resolving stays inside the span so the slot the write lands on cannot be
-	// renumbered between the resolve and the commit.
 	return s.WithRosterLocked(func(data *store.SequenceData) error {
 		accountNum, email, _, err := s.ResolveAccountFrom(data, identifier)
 		if err != nil {
@@ -96,7 +80,6 @@ func SetAccountDisabled(s *store.Store, identifier string, disabled bool) error 
 	})
 }
 
-// sequenceFileExists reports whether sequence.json is present.
 func sequenceFileExists(s *store.Store) bool {
 	_, err := os.Stat(s.SequenceFile)
 	return err == nil || !errors.Is(err, fs.ErrNotExist)

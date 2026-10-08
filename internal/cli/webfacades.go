@@ -282,12 +282,7 @@ func (a *autoFacade) Start(dryRun bool) error {
 			a.running, a.engine, a.startedAt = false, nil, nil
 		}
 		a.mu.Unlock()
-		// The engine pinned the usage poll plan to its threshold and models
-		// (NewEngine, ApplyThreshold, ApplyModels). Un-pin once its loop has
-		// returned, as the TUI's Auto screen does on exit, or the stopped
-		// engine's policy would keep steering the dashboard's polling. No
-		// newer engine can have pinned its own yet: Start refuses until this
-		// goroutine closes done.
+		// Un-pin once the loop returned, or the stopped engine keeps steering polling; Start refuses until done closes.
 		a.sw.ClearPollPolicyInputs()
 	}()
 	// The Codex engine rides beside it as in `tycswap auto`: the same

@@ -10,12 +10,6 @@ import (
 	"strings"
 )
 
-// progName computes the command name shown in usage/help from argv[0].
-//
-// Mirrors Python _prog_name (spec 08§1): basename(argv0), strip a trailing
-// ".exe"/".pyw"/".py" (case-insensitive, first match), and map an empty or
-// launcher-shim name ("__main__"/"python"/"python3"/"py") to the literal
-// "tycswap".
 func progName(argv0 string) string {
 	name := filepath.Base(argv0)
 	if name == "." || name == string(filepath.Separator) {

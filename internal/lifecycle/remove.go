@@ -1,16 +1,3 @@
-// remove.go — RemoveAccount: permanently remove a managed slot.
-//
-// Implements spec 01§10.2 (remove_account): the identifier gate (digit / alias /
-// format-valid email, with interactive disambiguation of a multi-match email),
-// the live-session refusal before the prompt, the active-slot warning, the
-// confirmation, and the delete + sequence prune + mapping prune.
-//
-// The confirmation is a human pause, so it runs before the store lock; the
-// delete and the roster commit run inside it, against a roster read there, and
-// the slot is RE-RESOLVED under the lock before anything is deleted — a
-// concurrent move or swap can renumber a slot, and a concurrent remove can
-// retire it entirely, so the identity the user confirmed has to still be the one
-// standing in that slot.
 package lifecycle
 
 import (
@@ -23,30 +10,11 @@ import (
 	"github.com/tyclab/tycswap/internal/store"
 )
 
-// RemoveAccount removes the account matching identifier (spec 01§10.2).
-// assumeYes skips the confirmation prompt.
 func RemoveAccount(s *store.Store, identifier string, assumeYes bool) error {
 	if !sequenceFileExists(s) {
 		return cerr.Config("No accounts are managed yet")
 	}
 
-	// The advisory read, taken before the lock because everything it feeds is a
-	// question rather than a write: the identifier gate, the multi-match
-	// disambiguation, and the active-slot warning. It both CLASSIFIES and
-	// BACKFILLS, and needs both halves.
-	//
-	//   - classified: the file exists (checked above), so an unparseable one is
-	//     corruption, not an empty roster, and refusing here beats writing "no
-	//     accounts" over records that are still repairable.
-	//   - backfilled: on a pre-v0.6.0 roster the org fields live only in each
-	//     slot's backup config until the lazy backfill lifts them into the
-	//     records, and the disambiguation list below renders its tags from these
-	//     records. Un-backfilled, every same-email candidate prints [personal] —
-	//     on the one screen whose whole purpose is telling them apart, immediately
-	//     before a destructive choice.
-	//
-	// What this roster decides is re-validated under the lock below, before
-	// anything is deleted.
 	data, err := s.MigratedSequenceForUpdate()
 	if err != nil {
 		return err
@@ -87,18 +55,11 @@ func RemoveAccount(s *store.Store, identifier string, assumeYes bool) error {
 	if err != nil {
 		return err
 	}
-	// The org NAME of the account the question is about, taken from the roster the
-	// question is asked against. Display material for the re-validation message
-	// below — the identity comparison itself is the composite (email,
-	// organizationUuid) — but the message is the one place two same-email accounts
-	// have to be told apart in words, and the email alone cannot do it.
 	confirmedOrgName := ""
 	if rec, ok := recordAt(data, accountNum); ok {
 		confirmedOrgName = rec.str("organizationName")
 	}
 
-	// Refuse while a live session holds the slot — before the prompt (the
-	// chokepoint in DeleteAccountFiles re-checks as a safety net).
 	if err := s.EnsureNoLiveSession(accountNum, email, "--remove-account"); err != nil {
 		return err
 	}
@@ -132,22 +93,11 @@ func RemoveAccount(s *store.Store, identifier string, assumeYes bool) error {
 	if err := s.WithRosterLocked(func(data *store.SequenceData) error {
 		rec, present := recordAt(data, accountNum)
 		if !present {
-			// An empty slot key is not by itself a removal: a concurrent move or
-			// swap empties one too, and there the account is alive under a new
-			// number with every backup intact. So the identity the user confirmed
-			// is looked for across the whole roster — the same composite (email,
-			// organizationUuid) the store matches on everywhere — before the
-			// absence is read as a retirement. Reporting a removal that did not
-			// happen is the one wrong answer that cannot be noticed.
 			if moved := s.FindAccountSlot(data, email, org); moved != "" {
 				return cerr.Config(
 					"Account-%s (%s) moved to slot %s while the confirmation was open, so nothing was removed. Re-run the command against slot %s to remove it there.",
 					accountNum, email, moved, moved)
 			}
-			// Another tycswap retired the slot while the question was open. Its
-			// backups went with it; there is nothing here to delete and nothing to
-			// commit, and reporting an error for an outcome the user asked for
-			// would be a lie about the end state.
 			emitLine(printer.Dimmed("Account-" + accountNum + " (" + email + ") was already removed by another tycswap; nothing to do"))
 			return nil
 		}
@@ -209,7 +159,6 @@ func taggedIdentity(email, orgName string) string {
 	return email + " [" + displayTag(orgName) + "]"
 }
 
-// sortedSlots returns account slot keys in ascending numeric order.
 func sortedSlots(data *store.SequenceData) []string {
 	keys := make([]string, 0, len(data.Accounts))
 	for k := range data.Accounts {

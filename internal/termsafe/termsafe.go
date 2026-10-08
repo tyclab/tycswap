@@ -14,10 +14,7 @@ func IsControl(r rune) bool {
 	return r < 0x20 || (r >= 0x7f && r <= 0x9f)
 }
 
-// Strip returns s without C0, DEL and C1 control characters, with invalid
-// UTF-8 replaced by U+FFFD (a lone 0x9b byte is CSI to some terminals). An ESC
-// is dropped and the rest of its sequence stays as plain text, which no
-// terminal acts on. A string with nothing to remove is returned as is.
+// Invalid UTF-8 becomes U+FFFD (a lone 0x9b is CSI to some terminals); an ESC is dropped and its sequence stays inert text.
 func Strip(s string) string {
 	clean := true
 	for i := 0; i < len(s); {

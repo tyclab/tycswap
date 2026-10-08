@@ -1,11 +1,6 @@
-// Trivial TTL JSON cache helper.
-//
-// Implements spec 04§4 (cache.py). On-disk format:
-// {"timestamp": <epoch seconds float>, "data": <any JSON>}. The (value, ok)
-// return distinguishes a genuine cached null from a miss (Python's MISSING
-// sentinel). Per Amendment A8 the writer is DELIBERATELY non-atomic and
-// non-chmod'd (a plain write, NOT routed through atomicfile) — this is the one
-// low-value cache in the codebase.
+// cache.go: {"timestamp", "data"}; (value, ok) tells a cached null from a miss. The writer is deliberately non-atomic and
+// not chmod'ed (Amendment A8): this is the one low-value cache.
+
 package usage
 
 import (

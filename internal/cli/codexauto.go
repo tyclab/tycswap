@@ -1,8 +1,3 @@
-// codexauto.go — the Codex auto-switch engine's construction and loop, shared
-// by its two hosts: `tycswap auto` (auto.go) and the dashboard's engine host
-// (webfacades.go, DESIGN A47). One constructor and one loop, so the dashboard
-// rotates Codex accounts exactly as `tycswap auto` does: the same enabled /
-// present checks, the same bar, the same cadence.
 package cli
 
 import (
@@ -14,10 +9,6 @@ import (
 	"github.com/tyclab/tycswap/internal/settings"
 )
 
-// newCodexAutoEngine returns the Codex auto-switcher, or nil when
-// autoswitch.codexEnabled is off or this machine has no Codex accounts (cli.py
-// _codex_auto_engine). It is newCodexAutoEngineFor over the command's own
-// Codex switcher.
 func newCodexAutoEngine(merged settings.AutoSwitchSettings, s ioStreams) *codexauto.AutoSwitcher {
 	return newCodexAutoEngineFor(newCodexSwitcher(s), merged)
 }
@@ -44,10 +35,7 @@ var newCodexAutoEngineFor = func(sw *codexswitcher.Switcher, merged settings.Aut
 	return codexauto.New(sw, codexThreshold(merged), merged.HysteresisPct)
 }
 
-// codexThreshold is the Codex engine's one bar: autoswitch.codexThreshold, or
-// the Claude 7d bar when that is 0. The 7d bar is the one a pre-A34
-// autoswitch.threshold seeds, so a migrated settings file keeps its Codex
-// behaviour (DESIGN A34).
+// Falls back to the 7d bar a pre-A34 autoswitch.threshold seeds, so a migrated settings file keeps its Codex behaviour.
 func codexThreshold(merged settings.AutoSwitchSettings) float64 {
 	if merged.CodexThreshold != 0 {
 		return merged.CodexThreshold

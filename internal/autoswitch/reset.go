@@ -1,12 +1,3 @@
-// Window/headroom projection helpers and the all-exhausted recovery-time math.
-//
-// Implements spec 05§8 (binding window / headroom / relevant_windows via the
-// oauth typed projection) and 05§11 (_earliest_recovery: per-account latest
-// reset among its ≥100% windows, minimum across accounts, unprovable → None).
-// The map-based reset helpers mirror poll_policy.limiting_reset_ts /
-// parse_reset_ts (usage keeps them private, so they are reimplemented here on
-// the oauth projection).
-
 package autoswitch
 
 import (
@@ -17,15 +8,11 @@ import (
 	"github.com/tyclab/tycswap/internal/oauth"
 )
 
-// usageDict returns the decision value as a usage map, or nil when it is a
-// sentinel string / absent (the isinstance(value, dict) guard).
 func usageDict(value any) map[string]any {
 	m, _ := value.(map[string]any)
 	return m
 }
 
-// accountHeadroom is 100 - max(pct over relevant windows), or nil when unknown
-// (05§8, via the oauth read-only projection).
 func accountHeadroom(value map[string]any, models []string) *float64 {
 	return oauth.AccountHeadroom(oauth.NewUsage(value), models)
 }
@@ -40,9 +27,6 @@ func bindingPct(value map[string]any, models []string) *float64 {
 	return &v
 }
 
-// renewalTS is the account's weekly-scope renewal epoch (latest parseable
-// weekly reset among the 7d + matched scoped windows), or nil when unknown, via
-// the oauth projection. Go-side extension (DESIGN A17).
 func renewalTS(value map[string]any, models []string) *float64 {
 	return oauth.RenewalTS(oauth.NewUsage(value), models)
 }
@@ -121,22 +105,8 @@ func (e *Engine) earliestRecovery(usage map[string]any) *float64 {
 	return earliest
 }
 
-// formatRecoveryISO renders an epoch (seconds) as Python's
-// datetime.fromtimestamp(ts, utc).isoformat().replace("+00:00","Z"): RFC3339
-// seconds (or microseconds when non-zero) with a Z suffix.
 func formatRecoveryISO(epoch float64) string {
-	// Python's datetime.fromtimestamp rounds the sub-second remainder to the
-	// nearest microsecond (round(frac * 1e6)); truncating epoch*1e9 to
-	// nanoseconds and then to microseconds under-reports by up to ~1µs. Split
-	// off the integer seconds first so the round happens on the small
-	// fractional part (full precision), then let time.Unix carry a 1000000µs
-	// round-up into the next second.
-	//
-	// CPython's round() is banker's rounding (round-half-to-even) on the exact
-	// binary value, not half-away-from-zero (math.Round): e.g. 0.0078125*1e6 is
-	// exactly 7812.5 and rounds to 7812, not 7813. Mirror jsonout.round1 —
-	// strconv.FormatFloat with 'f'/prec 0 performs the identical
-	// correctly-rounded, round-half-to-even conversion on the exact value.
+	// Round µs half-to-even on the fractional part like CPython; truncating epoch*1e9 under-reports by ~1µs.
 	sec := math.Floor(epoch)
 	usRounded, _ := strconv.ParseFloat(strconv.FormatFloat((epoch-sec)*1e6, 'f', 0, 64), 64)
 	us := int64(usRounded)

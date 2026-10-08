@@ -1,27 +1,14 @@
-// Install-shape detection: does the running binary live in a Go-managed bin
-// directory (and can therefore self-upgrade via `go install`), or not.
-//
-// Implements the "SelfUpgrade install-shape detection" half of Amendment A6,
-// replacing Python's _detect_install_method (uv/pipx sys.prefix sniffing,
-// spec 08§13.3) — there is no uv/pipx equivalent for a Go binary.
 package update
 
 import "path/filepath"
 
-// InstallShape classifies how the running binary was installed, driving both
-// the update-notice hint (UpgradeHint) and SelfUpgrade's behavior.
 type InstallShape int
 
 const (
-	// ShapeUnknown means the binary's directory isn't a recognized Go bin dir;
-	// SelfUpgrade falls back to printing manual guidance.
 	ShapeUnknown InstallShape = iota
-	// ShapeGoInstall means the binary resolves inside $GOBIN, $GOPATH/bin, or
-	// $HOME/go/bin; SelfUpgrade can run `go install <ModulePath>@latest`.
 	ShapeGoInstall
 )
 
-// String returns a short label for the shape (used in guidance text/logs).
 func (s InstallShape) String() string {
 	if s == ShapeGoInstall {
 		return "go-install"
@@ -55,8 +42,6 @@ func DetectInstallShape(exePath string, getenv func(string) string, homeDir stri
 	return ShapeUnknown
 }
 
-// goBinDirs returns the candidate Go-managed bin directories, in the order
-// Amendment A6 lists them.
 func goBinDirs(getenv func(string) string, homeDir string) []string {
 	var dirs []string
 	if gobin := getenv("GOBIN"); gobin != "" {

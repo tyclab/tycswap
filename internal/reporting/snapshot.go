@@ -1,11 +1,3 @@
-// snapshot.go — the coherent one-pass AccountsSnapshot the TUI/menubar consume
-// through tui.Facade (spec 09§6.1, DESIGN A11), plus the pure usage-fetch-stamp
-// read the watch view diffs to flash refreshed rows.
-//
-// Implements spec 02§13 / models.py (accounts_snapshot, AccountSnapshot,
-// AccountsSnapshot, usage_fetch_stamps): metadata, active detection, and usage
-// entries all come from a single BuildAccountsInfo + CollectUsageEntries pass so
-// a consumer never sees a list and usage table that disagree.
 package reporting
 
 import (
@@ -16,14 +8,7 @@ import (
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
-// AccountSnapshot is one managed account as seen by interactive UIs (spec
-// models.py AccountSnapshot). Usage is the store-backed read model: display code
-// reads Usage.LastGood/AgeS directly (may show old data, age-annotated), while
-// Usage.Sentinel carries derived states that replace the bars entirely.
-//
-// Email, OrgName and Alias are the stored values, so a JSON consumer sees
-// what the store holds; a text renderer passes them through termsafe.Strip,
-// since they come from exports, APIs and other tools' files.
+// Email, OrgName and Alias are stored values from exports, APIs and other tools' files: text renderers must termsafe.Strip them.
 type AccountSnapshot struct {
 	Number   string
 	Email    string
@@ -31,50 +16,26 @@ type AccountSnapshot struct {
 	OrgUUID  string
 	IsActive bool
 	Kind     string // "oauth" | "api_key"
-	// BaseURL is the endpoint an API-key account carries, "" for none
-	// (DESIGN A46). Surfaces show its host; JSON carries it whole.
-	BaseURL string
+	BaseURL  string
 	// Switchable reports that the slot has both a stored credential and a stored
 	// config backup, independent of the disabled flag (store.AccountIsSwitchable).
 	Switchable bool
 	Usage      usage.UsageEntry
 	Alias      string
 	Disabled   bool // held out of auto-rotation (still a valid explicit target)
-	// RotationEligible is store.RotationEligible's rule — Switchable && !Disabled
-	// and not an API-key account (DESIGN A33), and false outright when the
-	// roster could not be read (see rotationEligible).
-	// The snapshot carries all three so no consumer has to re-derive or re-AND
-	// them (DESIGN A18); the two inputs are not otherwise recoverable from the
-	// conjunction. It is eligibility for AUTOMATIC selection only, and it does NOT
-	// account for the auto-switch engine's transient quarantine (that lives in
-	// autoswitch_state.json): it is necessary but not sufficient for "the engine
-	// could pick this slot now". The per-reason skip warnings that distinguish
-	// "(disabled)" from "no stored credentials/config" are produced in
-	// switching/switch.go, which reads the store directly rather than this
-	// snapshot.
+	// Excludes the engine's transient quarantine: necessary, not sufficient, for an automatic pick.
 	RotationEligible bool
-	// AtLimit is set when the account's decision-grade usage sits at/over a rate
-	// limit, folding in the per-model weekly windows configured via
-	// autoswitch.model; LimitingWindows names the limiting windows in
-	// RelevantWindows order (Go-side additive extension, DESIGN A15).
-	AtLimit         bool
-	LimitingWindows []string
-	// Provider names the CLI this account belongs to: ProviderClaude or
-	// ProviderCodex (claude-swap PR #252 models.py). The zero value "" means
-	// ProviderClaude, so every existing construction site — and every test that
-	// builds a snapshot literal — keeps working untouched; only multi-provider
-	// consumers (the TUI grouping, the auto loop) ever read it, and they go
-	// through ProviderName or Key rather than the raw field.
+	AtLimit          bool
+	LimitingWindows  []string
+	// "" means ProviderClaude so existing literals keep working; read it through ProviderName or Key.
 	Provider string
 }
 
-// Provider names carried by AccountSnapshot.Provider and AccountsSnapshot.Provider.
 const (
 	ProviderClaude = "claude"
 	ProviderCodex  = "codex"
 )
 
-// providerOrDefault maps the zero value to ProviderClaude.
 func providerOrDefault(p string) string {
 	if p == "" {
 		return ProviderClaude
@@ -82,7 +43,6 @@ func providerOrDefault(p string) string {
 	return p
 }
 
-// ProviderName returns the account's provider, treating "" as ProviderClaude.
 func (a AccountSnapshot) ProviderName() string { return providerOrDefault(a.Provider) }
 
 // Key returns "<provider>:<number>", the identity that stays unique once more
@@ -93,7 +53,6 @@ func (a AccountSnapshot) ProviderName() string { return providerOrDefault(a.Prov
 // at one provider lands on the other.
 func (a AccountSnapshot) Key() string { return a.ProviderName() + ":" + a.Number }
 
-// DisplayTag returns the org tag for display: the org name, or "personal".
 func (a AccountSnapshot) DisplayTag() string { return displayTag(a.OrgName) }
 
 // AccountsSnapshot is the coherent one-pass view of every managed account (spec
@@ -105,12 +64,9 @@ type AccountsSnapshot struct {
 	ActiveNumber string
 	Accounts     []AccountSnapshot
 	TakenAt      float64
-	// Provider names whose accounts these are (claude-swap PR #252 models.py);
-	// "" means ProviderClaude, as on AccountSnapshot.
-	Provider string
+	Provider     string
 }
 
-// ProviderName returns the snapshot's provider, treating "" as ProviderClaude.
 func (s AccountsSnapshot) ProviderName() string { return providerOrDefault(s.Provider) }
 
 // Snapshot takes one coherent snapshot of every managed account (spec 02§13
@@ -159,18 +115,7 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 	}
 }
 
-// rotationEligible is store.RotationEligible's rule spelled out over values the
-// one-pass snapshot already holds, so the field costs no second credential and
-// config read per account (DESIGN A19 names this the one inlined derivation).
-// Being a copy, it fails closed on the same input the owner does: data is the
-// ONLY source for the disabled half, so a nil roster carries no disabled
-// information at all — it is not "nothing is disabled" — and no slot is
-// eligible. The two halves do not come from one read (switchable is answered by
-// a per-account re-read inside store.AccountIsSwitchable, disabled from the one
-// roster in hand), and rows are already in hand from BuildAccountsInfo's earlier
-// read, so a nil roster here is reachable while the other half still answers
-// yes. ANDing a fresh answer with a blind one would rank a slot the user
-// deliberately held out of rotation.
+// A nil roster carries no disabled information, so no slot is eligible: fail closed like store.RotationEligible (DESIGN A19).
 func rotationEligible(data *store.SequenceData, switchable, disabled bool, kind string) bool {
 	return data != nil && switchable && !disabled && kind != "api_key"
 }

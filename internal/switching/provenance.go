@@ -1,9 +1,5 @@
-// provenance.go — the self-switch provenance oracle helpers (spec 02§7).
-//
-// These establish, BEFORE any lock is taken (network allowed here, forbidden
-// under the FileLock), whether the live credential provably belongs to a slot's
-// stored lineage, and if it has diverged, whose token it is. The oracle is
-// strictly advisory: every failure is swallowed so it can never fail a switch.
+// provenance.go runs before any lock (network is forbidden under the FileLock) and is strictly advisory: failures are swallowed.
+
 package switching
 
 import (
@@ -11,11 +7,7 @@ import (
 	"github.com/tyclab/tycswap/internal/store"
 )
 
-// Provenance mirrors Python's {"live": str|None, "resolved": dict|None}. Live is
-// the pre-lock live-credential bytes (nil when unread/unreadable); Resolved is
-// the profile-resolved owner identity (nil when unresolved). Trustworthy only
-// while the live bytes have not moved — the under-lock classifier re-checks byte
-// equality before using Resolved.
+// Resolved is trustworthy only while the live bytes have not moved; the under-lock classifier re-checks byte equality.
 type Provenance struct {
 	Live     *string
 	Resolved *oauth.Identity
@@ -52,14 +44,6 @@ func liveMatchesSlotBackup(s *store.Store, slot, email string) bool {
 	return sameAccountBytes(live, backup) || fingerprintEqual(live, backup)
 }
 
-// selfSwitchAction decides how to treat a switch targeting the already-active
-// slot (spec 02§7 _self_switch_action):
-//
-//   - "noop"          — live matches the slot's backup; nothing to do.
-//   - "reconcile"     — live diverged and its owner resolved: run the full switch
-//     so classifyOutgoing can classify/preserve.
-//   - "noop-diverged" — live diverged but could not be classified (offline /
-//     endpoint failure / no profile access): the exact pre-fix silent no-op.
 func selfSwitchAction(s *store.Store, slot, email string) (string, *Provenance) {
 	if liveMatchesSlotBackup(s, slot, email) {
 		return "noop", nil
@@ -127,11 +111,7 @@ func sameAccountBytes(a, b string) bool {
 	return oauth.SameAccountBlock(a, b)
 }
 
-// fingerprintEqual reports whether two credentials share a fingerprint,
-// mirroring Python's credential_fingerprint(a) == credential_fingerprint(b):
-// two empty inputs both fingerprint to nil and compare equal (None == None).
-// Every call site here guards against empty inputs first, so this only ever
-// compares real bytes.
+// fingerprintEqual mirrors Python credential_fingerprint(a) == credential_fingerprint(b); callers guard empty inputs first.
 func fingerprintEqual(a, b string) bool {
 	fa := oauth.CredentialFingerprint(a)
 	fb := oauth.CredentialFingerprint(b)

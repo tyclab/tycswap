@@ -1,5 +1,3 @@
-// util.go — small formatting helpers shared across the store package
-// (spec 01§7: the ", "-joined PID list in the live-session error message).
 package store
 
 import (

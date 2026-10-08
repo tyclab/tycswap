@@ -20,30 +20,24 @@ import (
 	"unicode/utf8"
 )
 
-// Constants mirroring macos_keychain.py.
 const (
 	// SecurityStdinLineLimit is security -i's fgets buffer minus 64 bytes of
 	// headroom (4096-64). Set refuses a longer command (TooLarge).
 	SecurityStdinLineLimit = 4096 - 64
-	// notFoundRC is errSecItemNotFound from find/delete-generic-password.
-	notFoundRC = 44
+	notFoundRC             = 44
 	// timeout bounds every security spawn.
 	timeout = 5 * time.Second
 	// securityBin is the pinned absolute path to Apple's system binary.
 	securityBin = "/usr/bin/security"
 )
 
-// Keychain services tycswap's own items live under: per-account Claude backups
-// and Codex snapshots. Claude Code's own services are named by the callers.
 const (
 	BackupService = "tycswap"
 	CodexService  = "tycswap-codex"
 )
 
-// The services the store this fork came from used. Only `tycswap migrate` reads
-// them, to copy their items to the services above; nothing writes or deletes
-// them, because another installed tool may still own them.
 const (
+	// The old tool's services: only `tycswap migrate` reads them; nothing writes or deletes them, another tool may own them.
 	OldBackupService = "claude-swap"
 	OldCodexService  = "claude-swap-codex"
 )
@@ -54,8 +48,6 @@ const (
 // call refuses such a name before spawning anything.
 var ErrInvalidName = errors.New("keychain item name contains a control character")
 
-// ValidateName refuses a service or account name containing any control
-// character (C0 including \r and \n, DEL, C1) or invalid UTF-8.
 func ValidateName(service, account string) error {
 	for _, f := range [...]struct{ what, v string }{{"service", service}, {"account", account}} {
 		if !utf8.ValidString(f.v) {
@@ -72,12 +64,8 @@ func ValidateName(service, account string) error {
 
 // KeychainClient is the seam every credential store uses.
 type KeychainClient interface {
-	// Get returns (value, found, err). rc 0 → (value, true, nil); rc 44 →
-	// ("", false, nil); any other failure → ("", false, err).
 	Get(service, account string) (string, bool, error)
-	// Set creates or updates the item.
 	Set(service, account, password string) error
-	// Delete removes the item; rc 0 and rc 44 both succeed.
 	Delete(service, account string) error
 	// Exists reports whether the item exists without decrypting it; never errors.
 	Exists(service, account string) bool
@@ -129,9 +117,7 @@ func IsTooLarge(err error) bool {
 	return errors.As(err, &ke) && ke.TooLarge
 }
 
-// AccountName mirrors Claude Code's getUsername: $USER, then the OS username,
-// then the stable fallback "claude-code-user". Matching this keys the same
-// Keychain item Claude Code uses on headless hosts where $USER is unset.
+// AccountName mirrors Claude Code getUsername ($USER, OS user, "claude-code-user") to key its item on headless hosts too.
 func AccountName() string {
 	if u := getenv("USER"); u != "" {
 		return u
@@ -157,18 +143,14 @@ type execResult struct {
 	rc     int
 }
 
-// execFunc runs argv (argv[0] is the binary) with optional stdin, returning the
-// result. A non-nil error means the process could not be run or timed out.
 type execFunc func(ctx context.Context, argv []string, stdin string) (execResult, error)
 
 // Security is the real KeychainClient. Zero value is usable; Exec is a test seam.
 type Security struct {
 	// Path overrides the security binary path (default /usr/bin/security).
-	Path string
-	// Timeout overrides the per-spawn timeout (default 5s).
+	Path    string
 	Timeout time.Duration
-	// Exec overrides the subprocess runner (default: real exec).
-	Exec execFunc
+	Exec    execFunc
 }
 
 func (s Security) bin() string {
@@ -202,12 +184,8 @@ func (s Security) call(argv []string, stdin string) (execResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.budget())
 	defer cancel()
 	res, err := runner(ctx, argv, stdin)
-	// Classify by the command's actual outcome, mirroring Python's
-	// subprocess.run: TimeoutExpired fires only when the process is killed by
-	// the deadline, never when the process completed and produced a result. A
-	// non-nil error means the process could not be run or was killed; only then
-	// can the deadline have discarded output. A result completing at ~the
-	// deadline (nil err) is honored even if ctx has since expired.
+	// Classify like Python subprocess.run: TimeoutExpired only when the deadline killed the process;
+	// a result completing near the deadline (nil err) is honored even if ctx has since expired.
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return execResult{}, keychainErrorf("security %s timed out after %s", commandName(argv), s.budget())
@@ -224,8 +202,7 @@ func commandName(argv []string) string {
 	return "security"
 }
 
-// Get reads a password via find-generic-password -a … -w -s …. It strips exactly
-// one trailing newline (TrimSuffix, not TrimSpace).
+// Get strips exactly one trailing newline (TrimSuffix, not TrimSpace).
 func (s Security) Get(service, account string) (string, bool, error) {
 	if err := ValidateName(service, account); err != nil {
 		return "", false, err
@@ -328,11 +305,6 @@ func realExec(ctx context.Context, argv []string, stdin string) (execResult, err
 	err := cmd.Run()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
-			// A process the deadline killed is terminated by signal, so it never
-			// exited cleanly: surface a DeadlineExceeded error rather than its
-			// synthetic rc (-1) so call() classifies it as a timeout. A process
-			// that exited on its own — any rc — is honored, even if the deadline
-			// then fired (matches Python's TimeoutExpired-on-kill-only semantics).
 			if ctx.Err() == context.DeadlineExceeded && !ee.Exited() {
 				return execResult{}, ctx.Err()
 			}

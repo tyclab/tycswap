@@ -156,10 +156,6 @@ func (s *settingsScreen) updateEditing(m *Model, key tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// edit acts on the highlighted key with the control its kind calls for: a
-// bool toggles and a choice cycles to the next value, both saved at once; an
-// int, float or string opens the inline input over the current value (empty
-// for an unset string, whose "(none)" is a marker, not a value).
 func (s *settingsScreen) edit(m *Model) tea.Cmd {
 	row, ok := s.current()
 	if !ok {
@@ -258,10 +254,6 @@ func (s *settingsScreen) reset(m *Model) tea.Cmd {
 	})
 }
 
-// footerBindings are the screen's footer-visible bindings: enter's label names
-// what it does to the highlighted key's kind (toggle, next choice, edit); u
-// resets; esc goes back. While typing, enter saves and esc cancels, and the
-// rest are inert, as a check_action gate would make them.
 func (s *settingsScreen) footerBindings(m *Model) []footerBinding {
 	if s.editing {
 		return []footerBinding{{"enter", "Save"}, {"esc", "Cancel"}}
@@ -368,12 +360,6 @@ func (s *settingsScreen) rowText(r settings.Effective, selected bool, keyW, valW
 	return clipRichLines(t, width).render()
 }
 
-// detailLines describe the highlighted key: its dotted name and help text, its
-// kind with range or choices, its default and when the engine applies it, and
-// a last line for the refused value's message or the typing hint. The first
-// two parts wrap between words onto up to detailWrapLines lines each, so a
-// long help or choice list is read whole at 80 columns; the last line is
-// always there, so the layout does not jump when editing starts.
 func (s *settingsScreen) detailLines(width int) []string {
 	r, ok := s.current()
 	if !ok {

@@ -11,9 +11,6 @@ import (
 	"syscall"
 )
 
-// PrivateRootStat and PrivateRootChmod are the calls CheckPrivateRoot makes.
-// Tests replace them to stand in for a filesystem whose modes chmod cannot
-// change.
 var (
 	PrivateRootStat  = os.Stat
 	PrivateRootChmod = os.Chmod
@@ -51,7 +48,6 @@ func CheckPrivateRoot(root string) (warning string, err error) {
 	if perm&0o022 == 0 {
 		return "", nil
 	}
-	// The chmod's own result does not matter: only the mode it leaves does.
 	_ = PrivateRootChmod(root, 0o700)
 	fi, err = PrivateRootStat(root)
 	if err != nil {

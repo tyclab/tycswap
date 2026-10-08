@@ -1,27 +1,3 @@
-// identity.go — read and write ~/.codex/auth.json, and derive an account
-// identity from it. Implements claude-swap PR #252 codex/auth_file.py.
-//
-// The live file is the authority on which Codex account is active. The codex
-// CLI refreshes its own tokens and writes them back here, so a session still
-// open on account A can overwrite this file after tycswap has switched to B. Any
-// "which account is active" answer derived from tycswap's own registry alone
-// would therefore be wrong; it is derived from this file instead, and the
-// mismatch is what capture-on-switch repairs.
-//
-// Identity resolution follows codex-auth's rules so imported records and
-// tycswap-captured records key identically:
-//
-//  1. tokens.account_id when present — the value the codex CLI itself uses.
-//  2. else the JWT's chatgpt_account_id.
-//  3. else an organization id from the JWT's organizations[], preferring
-//     is_default, falling back to the first non-empty id. Phone-login auth
-//     files carry only this.
-//
-// Nothing here verifies a token's signature: that is the server's job, and
-// tycswap only needs the claims to know whose token it is holding. Field lookups
-// follow Python truthiness (an empty string, 0, false, null, {} or [] counts as
-// absent) because the resolution chain above is written as `a or b or c`.
-
 package authfile
 
 import (
@@ -60,10 +36,7 @@ func (i Identity) AccountKey() string {
 	return AccountKey(i.UserID, i.AccountID)
 }
 
-// Identifiable reports whether this identity can be matched to a stored slot.
-// An API-key login, or a payload whose account context could not be resolved
-// at all, has no key to match on — it is a real login but not a managed one
-// until it is explicitly added.
+// An API-key login or an unresolvable payload is a real login but not a managed one until explicitly added.
 func (i Identity) Identifiable() bool {
 	return i.AccountID != ""
 }
@@ -219,6 +192,7 @@ func firstTruthy(vs ...any) any {
 // ParseIdentity derives an Identity from an auth.json payload. It returns nil
 // when payload is not an object, or when it carries tokens whose JWTs cannot
 // be decoded.
+// Resolution follows codex-auth (tokens.account_id, JWT chatgpt_account_id, default org) so imported and captured records key alike.
 func ParseIdentity(payload any) *Identity {
 	p, ok := payload.(map[string]any)
 	if !ok {
@@ -285,6 +259,7 @@ func ReadLivePayload() map[string]any {
 
 // ReadLiveIdentity returns the identity of whoever is currently logged in to
 // the codex CLI, or nil.
+// The live file, not tycswap's registry, is the authority: codex rewrites it on refresh, even after a switch away.
 func ReadLiveIdentity() *Identity {
 	payload := ReadLivePayload()
 	if payload == nil {

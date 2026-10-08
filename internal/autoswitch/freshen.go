@@ -1,14 +1,3 @@
-// Target freshening and opportunistic token-identity verification.
-//
-// Implements spec 05§12 (_freshen_target: ensure a candidate's stored token
-// outlives Claude Code's 5-min refresh buffer before activation, touching only
-// the slot's backup store) and _note_token_identity (org-first conflict check,
-// blank-uuid backfill only when no org conflict). The refresh itself is the
-// Switcher's guarded refresh (DESIGN A25 item 4): it runs under the store
-// lock, after the slot and its backup have been re-checked, and the rotated
-// credential is persisted before it is returned, so a concurrent write-back
-// is never overwritten and its token never consumed.
-
 package autoswitch
 
 import (
@@ -18,8 +7,8 @@ import (
 	"github.com/tyclab/tycswap/internal/oauth"
 )
 
-// freshenTarget returns one of "ok", "invalid_grant", "identity-conflict",
-// "transient", "skip-live-session" (05§12).
+// freshenTarget returns "ok", "invalid_grant", "identity-conflict", "transient" or "skip-live-session" (05§12).
+// The refresh runs under the store lock after a re-check, so a concurrent write-back is never overwritten (DESIGN A25 item 4).
 func (e *Engine) freshenTarget(number, email string) string {
 	if e.sw.AccountKindFor(number) == "api_key" {
 		return "ok" // API keys don't expire/refresh

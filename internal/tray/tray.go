@@ -15,13 +15,8 @@ import (
 	"strings"
 )
 
-// ErrUnsupported is returned by New when this build has no tray: a darwin
-// binary compiled without cgo, or a platform without an implementation.
 var ErrUnsupported = errors.New("tray: no system tray in this build")
 
-// ItemKind selects the row component. Platforms with custom menu views (macOS)
-// render switches, gauges and section headers natively; the others fall back
-// to text (see Item.FallbackTitle) plus a checkmark.
 type ItemKind int
 
 const (
@@ -29,8 +24,6 @@ const (
 	KindPlain ItemKind = iota
 	// KindToggle is an on/off switch; Checked is its state, a click flips it.
 	KindToggle
-	// KindGauge is a row with a title, a Sub line and a 0–100 % bar (Pct;
-	// negative = unknown). Clickable unless Disabled.
 	KindGauge
 	// KindHeader is a non-clickable section label.
 	KindHeader
@@ -39,9 +32,6 @@ const (
 	// between them. Never clickable; platforms without custom views show it
 	// as one disabled line.
 	KindBrand
-	// KindUpdate is a row that offers an update (DESIGN A44): Title and Sub
-	// as on a plain row, drawn to stand out on macOS (an accent arrow disc on a
-	// tinted row); elsewhere it is a plain row showing its Title.
 	KindUpdate
 )
 
@@ -56,14 +46,8 @@ type Item struct {
 	Active    bool // active account emphasis, independent of toggle state and clickability
 	Disabled  bool
 	Separator bool
-	// Children make the row a submenu with Title as its label (DESIGN A37):
-	// the row opens them and is not clickable itself.
-	Children []Item
-	// Dismiss closes the menu on a click. Every other row leaves it open on
-	// macOS, so a switch or a toggle shows what it did in place (A37); the
-	// rows that hand over to another window (the browser, a dialog) or end
-	// the app set it. Windows and Linux close the menu on every click: the
-	// menu there is the system's.
+	Children  []Item
+	// Other rows keep the macOS menu open so a click shows its effect in place (A37); Windows and Linux always close it.
 	Dismiss bool
 }
 
@@ -83,8 +67,6 @@ func (it Item) Clickable() bool {
 	return !it.Separator && it.Kind != KindHeader && !it.Disabled && it.ID != "" && len(it.Children) == 0
 }
 
-// FallbackTitle renders the row as one line for menus that only do text: a
-// toggle shows its state, a gauge shows a five-cell bar and the percentage.
 func (it Item) FallbackTitle() string {
 	switch it.Kind {
 	case KindToggle:
@@ -152,9 +134,7 @@ func itoa(n int) string {
 // Icon carries the mark in the forms the platforms want.
 type Icon struct {
 	// PNG is the coloured icon (Windows, and the fallback everywhere).
-	PNG []byte
-	// LargePNG is the coloured mark at ≥ 64 px: the macOS menu bar (scaled
-	// to 18 pt, crisp on Retina) and the menu's brand row.
+	PNG      []byte
 	LargePNG []byte
 	// ARGB32 is the coloured pixmap for StatusNotifierItem (Linux), Size²·4 bytes.
 	ARGB32 []byte
@@ -179,11 +159,6 @@ type Tray interface {
 	// SetTitle puts text next to the icon (macOS); elsewhere it becomes the tooltip.
 	SetTitle(string)
 	SetTooltip(string)
-	// SetIcon replaces the status-bar / notification-area icon, for the
-	// update badge (DESIGN A44). Only the icon changes: the macOS menu's brand
-	// row keeps the mark New was given. An icon without the form the platform
-	// draws (LargePNG/PNG on macOS, PNG on Windows, ARGB32 on
-	// Linux) is ignored. Before Run it sets the icon Run shows.
 	SetIcon(Icon)
 	// SetMenu replaces the whole menu.
 	SetMenu([]Item)
@@ -206,18 +181,12 @@ func New(icon Icon, opts Options) (Tray, error) {
 	return newTray(icon, opts)
 }
 
-// menuModel is the platform-independent part: the current items, and the
-// mapping from a platform's integer tag back to an item ID. A row's tag is
-// its index in flat, the menu depth-first with a submenu's row before its
-// children: the order walkMenu visits them in.
 type menuModel struct {
 	items []Item
 	flat  []Item
 }
 
-// set takes a new menu and reports whether it differs from the one before,
-// so a platform can leave an unchanged menu alone: rebuilding an open menu
-// every poll tick would flicker under the pointer.
+// An unchanged menu is left alone: rebuilding an open menu every poll tick flickers under the pointer.
 func (m *menuModel) set(items []Item) (changed bool) {
 	if m.flat != nil && reflect.DeepEqual(m.items, items) {
 		return false
@@ -236,9 +205,6 @@ func (m *menuModel) idAt(i int) (string, bool) {
 	return m.flat[i].ID, true
 }
 
-// walkMenu visits items depth-first and numbers them with the tags idAt
-// takes: row for a row without children, enter for a submenu's row before
-// its children, leave after them.
 func walkMenu(items []Item, row func(tag int, it Item), enter func(tag int, it Item), leave func()) {
 	tag := 0
 	var walk func([]Item)

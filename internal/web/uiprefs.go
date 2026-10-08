@@ -1,8 +1,5 @@
-// uiprefs.go — the page's view choices for the machine (DESIGN A27): which
-// cards are folded. The dashboard's port is ephemeral and browser storage is
-// kept per origin, port included, so the server keeps them under the store;
-// the page shows them from the state and changes them through POST
-// /api/ui/folded, and every open page follows the broadcast.
+// uiprefs.go: the dashboard port changes each start and browser storage is per origin, so the server keeps folded cards.
+
 package web
 
 import "net/http"

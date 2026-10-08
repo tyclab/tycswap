@@ -1,35 +1,7 @@
-// Run (spec 07§5.2, §5.5): the migration registry and its runner. Order
-// matters only if migrations ever depend on each other — today they're
-// platform-disjoint and independent, so registry order is arbitrary but fixed
-// for determinism.
-//
-// Run never returns an error and never panics out to its caller: every
-// migration's failure (a returned error, or — belt-and-suspenders beyond
-// Python's blanket `except Exception` — a recovered panic) is logged via
-// host.Logger() and left unmarked so the next launch retries it. A migration
-// that reports "skip" (completed=false, err=nil) is recorded nowhere, silently,
-// exactly like Python's runner: only a *completed* migration ever gets a
-// .migrations.json entry.
-//
-// Construction-order note (spec 07§5.6/§9, DESIGN Appendix): store.New must
-// call Run as its LAST construction step, after the credential-store
-// abstraction is built (the macOS migration performs storage ops through it)
-// and after every other fallible/non-fallible setup step — and Run itself
-// must never be allowed to abort construction. Swapping that ordering, or
-// making Run fallible, would be an observable regression this package cannot
-// itself guard against — it's store.New's responsibility to call Run in the
-// right place.
 package migrations
 
 import "fmt"
 
-// migrationFunc is one registry entry's shape: completed reports whether the
-// runner should record it as applied; notices are user-facing progress lines
-// (spec 07§5.3/§5.4's stderr "tycswap: migrated N ..." messages) Run
-// returns to its caller to print wherever it prints such things — this
-// package never writes to stdout/stderr itself, keeping it free of any
-// printer/cli dependency. err non-nil means "partially failed, retry next
-// run" (Python's MigrationIncomplete, or any other exception).
 type migrationFunc func(host Host) (completed bool, notices []string, err error)
 
 type migrationEntry struct {
@@ -46,21 +18,7 @@ var registry = []migrationEntry{
 	{"macos_keyring_to_security", migrateMacOSKeyringToSecurity},
 }
 
-// Run applies every not-yet-applied migration in host's backup dir, in
-// registry order, and returns the accumulated user-facing progress notices
-// (possibly empty/nil). It is a total no-op — including never constructing
-// any backend or touching .migrations.json — when host.BackupDir() doesn't
-// exist yet (spec 07§5.5's lazy-dir invariant: a no-op run must not
-// materialize anything).
-//
-// Idempotency is enforced here, at the runner, by the applied-map
-// short-circuit BEFORE a migration function is ever called — not by each
-// migration function re-checking its own state (spec 07§8's explicit
-// distinction; contrast with the macOS migration's own pending-accounts
-// pre-check, which is a first-run optimization for mixed old/new installs,
-// orthogonal to this short-circuit). A second Run call after a fully applied
-// first pass therefore makes zero additional calls into Creds/Keychain/
-// WinCred/SequenceAccounts for any already-applied migration id.
+// Run never errors or panics out: a failed migration stays unmarked and retries next launch. store.New calls it last; it must never abort construction.
 func Run(host Host) []string {
 	if !dirExists(host.BackupDir()) {
 		return nil

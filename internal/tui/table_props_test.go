@@ -674,24 +674,7 @@ func TestPanelHeaderAgreesWithItsCountingNote(t *testing.T) {
 
 // -- I6: exhausted visibility, per surface ------------------------------------
 
-// TestMonitorAlwaysStatesAnExhaustedWindow is I6 on the MONITOR, where
-// miniAccountText states every window at or over 100% unconditionally
-// ("Fable (!)", "5h 100% (resets 12m)").
-//
-// THE FIGURE is unconditional: at every width the table renders, an exhausted
-// cell shows its percentage. Its column is pinned here, so nothing can take it.
-//
-// THE COUNTDOWN is the LAST detail the table gives up before it starts dropping
-// figures, and that — not parity at every width — is what a shared grid can
-// promise. The per-row layout states one account's reset out of that account's
-// own row; the table states it out of a grid every account pays for, so a roster
-// carrying six models can be too narrow for the reset while one row's mini line
-// would have fitted (measured: the six-model rosters, monitor, widths 50..~76).
-// What is asserted instead is exactly what rung (f) buys, and it is the whole of
-// what D2 asks for: when an exhausted reset is missing, no other countdown is
-// standing anywhere in the table and the shared identity cell is already at its
-// floor. Shed any sooner — as rightmost-first did — and the monitor spends a
-// reset it alone reports to keep an email or another window's countdown.
+// The figure is unconditional; the countdown is the last detail shed, not parity at every width (measured: six-model rosters).
 func TestMonitorAlwaysStatesAnExhaustedWindow(t *testing.T) {
 	figures, countdowns, parity := 0, 0, 0
 	for _, r := range tableCorpus() {
@@ -885,16 +868,6 @@ func TestSpanRowAlwaysStatesItsReason(t *testing.T) {
 	}
 }
 
-// TestRealSentinelFloorsAreBounded is I7's standing assertion over the real
-// message set, and it is what makes the shared identity cell's tax a number this
-// package chose.
-//
-// Every message the codebase can produce insists on at most spanTokenFloor
-// columns — the PHRASED ones because their classification word is this package's
-// own wording, the single-token ones because spanFloor bounds them there — so no
-// store-supplied string can widen the cell every account pays for. spanHardCap,
-// the designed backstop above that, is therefore provably a no-op: a phrased
-// message reaching it would be a DATA bug, not a layout one.
 func TestRealSentinelFloorsAreBounded(t *testing.T) {
 	var msgs []string
 	for _, note := range sentinelNotes {
@@ -2318,16 +2291,6 @@ func TestPerRowLayoutIsPricedOnTheLineItDraws(t *testing.T) {
 	}
 }
 
-// TestIdentityIsReallyMeasured pins the one quantity a score reports and never
-// compares. identChars is deliberately outside atLeast — a shared grid buys its
-// alignment out of the identity cell — but it is the number every statement about
-// what the choice gives up is read off, and a measurement nothing asserts is a
-// number that can quietly become zero.
-//
-// So it is pinned at both ends and in between: whole where every row states its
-// whole identity, NOTHING at the floor — where the cell is the bare ellipsis,
-// which stands for what was cut and says nothing itself — and a partial count at
-// the widths between.
 func TestIdentityIsReallyMeasured(t *testing.T) {
 	rows := reloginRows(sentinelLabel(jsonout.UsageReloginRequired))
 	whole := 0
@@ -2361,17 +2324,6 @@ func TestIdentityIsReallyMeasured(t *testing.T) {
 	}
 }
 
-// TestIdentityIsTheOneQuantityTheChoiceMayTakeBack is the documented
-// NON-GUARANTEE, measured rather than argued: at the width where a surface
-// starts drawing the table it may show LESS of each account's identity than the
-// per-row layout showed one column narrower, because the table spends those
-// columns on figures the per-row layout was not stating.
-//
-// It is priced that way on purpose (layoutScore.identChars is not a data axis),
-// and the same discontinuity exists at the pre-pricing flip. What is asserted is
-// that it can happen ONLY at that one boundary: inside either layout, identity is
-// monotone in the width (I8b), so an identity that shrinks anywhere else is a
-// defect.
 func TestIdentityIsTheOneQuantityTheChoiceMayTakeBack(t *testing.T) {
 	var atBoundary []string
 	for _, r := range tableCorpus() {
@@ -2771,16 +2723,7 @@ func fallbackLabels(r rosterSpec, s tableSurface, i, width int) []string {
 	return out
 }
 
-// TestFallbackStatesOnlyProjectedWindows is I13's premise, asserted rather than
-// assumed: the per-row layout the table is compared against states exactly the
-// windows the shared projection says the account has, and states them at the
-// projection's own figures.
-//
-// Without it a fallback that read the stored map directly could claim a window
-// the projection rejects ("5h NaN%") or a figure it caps ("5h 1000000000%"), and
-// the table would then be measured against a layout stating something untrue —
-// I13 would read as a table shortfall where it is a fallback falsehood, and the
-// two surfaces would disagree about which windows an account even has.
+// Without it a fallback reading the stored map could claim "5h NaN%", and I13 would misread that as a table shortfall.
 func TestFallbackStatesOnlyProjectedWindows(t *testing.T) {
 	checked := 0
 	for _, r := range tableCorpus() {
@@ -2971,18 +2914,7 @@ const tableFirstFitBaseline = `
 	scoped-ladder 17 20 17 22
 `
 
-// i15MarkerAllowance is the one place the migration bound is deliberately
-// exceeded, and by exactly how much: pct-unusable, one column, on the monitor.
-//
-// That roster stores a pct of 1e9. The pre-change renderer respelled it as the
-// display cap, "999%" — four columns, and a measurement the store never
-// reported, while the account card and tycswap list printed the real number from
-// the same entry. It is now ELIDED instead, ">999%", which is true of every
-// value above the cap and is five columns wide; the column is exhausted, so the
-// monitor pins it, and the floor rises by that one column. No roster carrying a
-// figure a terminal could actually show is affected — the marker appears only
-// past 999% — and the alternative, spelling the figure in full, would cost this
-// roster's monitor eleven columns instead of one.
+// pct-unusable stores 1e9, now elided as ">999%" (five columns, was a false "999%"), so its monitor floor rises by one.
 var i15MarkerAllowance = map[string]int{"pct-unusable": 1}
 
 // TestMinWidthNeverOverReserves is I15: the floor is exactly the pinned number,

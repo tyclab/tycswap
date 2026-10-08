@@ -1,9 +1,4 @@
 // Package platform detects the host OS family and container status.
-//
-// Implements spec 03§1 (Platform detection), 08§15 (root-guard container
-// probes) and audit 10 Gap 3 (the distinct /proc/1/cgroup vs
-// /proc/self/mountinfo substring sets). Mirrors models.Platform.detect and
-// switcher._is_running_in_container.
 package platform
 
 import (
@@ -28,10 +23,7 @@ const (
 	Unknown
 )
 
-// Detect returns the current platform. It mirrors Python's
-// models.Platform.detect: darwin→MacOS, windows→Windows, linux→(WSL when
-// WSL_DISTRO_NAME is non-empty else Linux), anything else→Unknown. It never
-// calls platform.system()/uname (no WMI hang risk in Go; noted for parity).
+// Detect returns WSL on linux when WSL_DISTRO_NAME is non-empty; it never shells out to uname.
 func Detect() Platform {
 	switch {
 	case runtime.GOOS == "darwin":
@@ -64,8 +56,7 @@ func (p Platform) String() string {
 	}
 }
 
-// IsWindows reports whether the host is Windows. Every chmod in the codebase
-// is gated on !IsWindows().
+// Every chmod in the codebase is gated on !IsWindows().
 func IsWindows() bool {
 	return runtime.GOOS == "windows"
 }
@@ -85,18 +76,9 @@ var (
 	mountinfoSubstrings = []string{"docker", "overlay"}
 )
 
-// RunningInContainer reports whether the process is inside a container, using
-// the same probe order as switcher._is_running_in_container:
-//
-//  1. env CONTAINER or container non-empty → true (all platforms).
-//  2. Windows → false (skips the file probes).
-//  3. /.dockerenv exists → true.
-//  4. /proc/1/cgroup contains docker|lxc|containerd|kubepods → true.
-//  5. /proc/self/mountinfo contains docker|overlay → true.
-//  6. else false.
-//
-// Read errors (permission denied, missing file) are treated as "no match",
-// mirroring the Python PermissionError swallow.
+// RunningInContainer probes like switcher._is_running_in_container: CONTAINER/container env (all platforms), then, off Windows,
+// /.dockerenv, /proc/1/cgroup (docker|lxc|containerd|kubepods) and /proc/self/mountinfo (docker|overlay).
+// Read errors count as no match, mirroring the Python PermissionError swallow.
 func RunningInContainer() bool {
 	if os.Getenv("CONTAINER") != "" || os.Getenv("container") != "" {
 		return true

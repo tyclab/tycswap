@@ -33,7 +33,6 @@ func TestFakeGetSetDeleteRoundTrip(t *testing.T) {
 		t.Fatal("entry survived Delete")
 	}
 
-	// Delete of an absent key is a no-op success (rc-44 parity), not an error.
 	if err := f.Delete("claude-code", "account-1-a@x.com"); err != nil {
 		t.Fatalf("Delete of absent entry: %v", err)
 	}

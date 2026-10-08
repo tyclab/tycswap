@@ -1,11 +1,3 @@
-// reporting.go — thin delegations to internal/reporting: the list/status
-// renderers, the AccountsSnapshot the frozen tui.Facade pins (DESIGN §2.20,
-// A11), the decision-grade usage projection, and the poll-policy-inputs pins
-// both autoswitch.Switcher and tui.Facade pin. Also wires reporting's
-// first-run-setup seam (spec 02§11 _first_run_setup), the one piece of prompt
-// composition reporting's own doc comment assigns to WP10/WP15.
-//
-// Implements DESIGN §2.16/§2.17/§2.18/§2.20.
 package core
 
 import (
@@ -20,12 +12,10 @@ import (
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
-// ListAccounts delegates to reporting.ListAccounts (spec 02§11).
 func (sw *Switcher) ListAccounts(showTokenStatus, jsonOut bool, fetch map[string]bool) (any, error) {
 	return reporting.ListAccounts(sw.Store, showTokenStatus, jsonOut, fetch)
 }
 
-// Status delegates to reporting.Status (spec 02§12).
 func (sw *Switcher) Status(jsonOut bool) (any, error) {
 	return reporting.Status(sw.Store, jsonOut)
 }
@@ -44,10 +34,6 @@ func (sw *Switcher) UsageFetchStamps() map[string]*float64 {
 	return reporting.UsageFetchStamps(sw.Store)
 }
 
-// UsageByAccount delegates to reporting.UsageByAccount: the decision-grade
-// usage map keyed by account number (spec 02§13 _usage_by_account) the
-// switching strategies read via the UsageProvider seam this package wires in
-// core.go's init().
 func (sw *Switcher) UsageByAccount() map[string]any {
 	return reporting.UsageByAccount(sw.Store)
 }
@@ -58,7 +44,6 @@ func (sw *Switcher) UsageEntriesByAccount(fetch map[string]bool) map[string]usag
 	return reporting.UsageEntriesByAccount(sw.Store, fetch)
 }
 
-// SetPollPolicyInputs pins this engine without replacing another group.
 func (sw *Switcher) SetPollPolicyInputs(threshold float64, models []string) {
 	if reporting.SetScopedPollInputs(sw.BackupDir(), sw.ScopeRoot(), threshold, models) {
 		reporting.ReplanCachedUsage(sw.Store)
@@ -72,14 +57,6 @@ func (sw *Switcher) ClearPollPolicyInputs() {
 	reporting.ClearScopedPollInputs(sw.BackupDir(), sw.ScopeRoot())
 }
 
-// firstRunSetup wires reporting.FirstRunSetup (spec 02§11 _first_run_setup):
-// when list_accounts finds no managed accounts yet, offer to add the current
-// live login. Transliterated line-for-line from switcher.py's
-// _first_run_setup (a bare "No active Claude account" notice when there is no
-// live login; otherwise a yes/no prompt defaulting to yes, then
-// add_account()); this is composition of already-built primitives (
-// store.GetCurrentAccount, lifecycle.ActivePrompter, lifecycle.AddAccount),
-// not new business logic.
 func firstRunSetup(s *store.Store) error {
 	email, _, ok := s.GetCurrentAccount()
 	if !ok {

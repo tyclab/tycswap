@@ -1,12 +1,4 @@
-// Package settings is the `<backup_root>/settings.json` config store: the
-// autoswitch policy knobs (AutoSwitchSettings) and the `tycswap config`
-// get/set/unset machinery.
-//
-// Implements spec 08§8 (settings.py) and 05§2 (AutoSwitchSettings as consumed
-// by the autoswitch engine): SETTING_SPECS as the single source of truth for
-// bounds/choices/defaults (used by both the lenient clamp on load and the
-// strict tycswap-config-set validation), forgiving reads, strict writes,
-// merged_with_cli, and parse_model_names.
+// Package settings is <backup_root>/settings.json; SETTING_SPECS bounds both the lenient clamp on load and strict `tycswap config set`.
 package settings
 
 import (

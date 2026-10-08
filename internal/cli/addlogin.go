@@ -71,9 +71,6 @@ const (
 	errTailWithoutLogin   = "arguments after -- go with --login: they are claude's login arguments"
 )
 
-// addArgs is `tycswap add`'s argv split into the parts --login owns and the rest,
-// which the main parser still reads (--slot, --alias, --debug, --help, and the
-// usual refusals for flags add does not take).
 type addArgs struct {
 	login, switchAfter bool
 	rest               []string // add's own flags, for the main parser

@@ -1,7 +1,3 @@
-// refresh.go — the guarded refresh of an inactive slot's backup credential:
-// the one way a token that is not the live login's is refreshed (DESIGN A25
-// item 4). The usage fetch (reporting) and the auto-switch freshen (autoswitch)
-// both go through it.
 package store
 
 import (
@@ -22,18 +18,8 @@ const RefreshDeclined = "refresh_declined"
 // up.
 const GuardedRefreshTimeout = 5 * time.Second
 
-// RefreshBackupGuarded refreshes slot num's backup credential with c, under
-// the store lock, and persists the result before returning it; held is the
-// credential the caller read before (modelled on the Codex switcher). A
-// rotated refresh token may die the moment the response is issued, so a
-// refresh that cannot be persisted must not be performed: the lock is taken
-// BEFORE the refresh, not around the persist alone. Under the lock everything
-// read earlier is re-checked: the slot must still be inactive with no live
-// session, and the backup is re-read. If its refresh token is no longer
-// held's, another process refreshed it (or a switch wrote it back) and that
-// newer credential is returned as stored, with no refresh; only an unchanged
-// lineage is refreshed and written back. Whatever comes back in Credentials
-// is already in the store.
+// The lock is taken BEFORE the refresh: a rotated refresh token may die once issued, so an unpersistable refresh must not run.
+// Under it the slot is re-checked and the backup re-read; a lineage that moved on is returned as stored, unrefreshed.
 func (s *Store) RefreshBackupGuarded(ctx context.Context, c oauth.Client, num, email, held string) oauth.RefreshOutcome {
 	out := oauth.RefreshOutcome{Error: RefreshDeclined}
 	err := s.Lock.With(func() error {
@@ -69,7 +55,6 @@ func (s *Store) RefreshBackupGuarded(ctx context.Context, c oauth.Client, num, e
 			if s.Log != nil {
 				s.Log.Warningf("Refreshed the token for account %s but could not store it: %v", num, werr)
 			}
-			// Serve nothing the store does not hold.
 			out = oauth.RefreshOutcome{Error: oauth.ErrRefreshFailed}
 		}
 		return nil

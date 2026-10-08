@@ -152,10 +152,7 @@ var (
 	remoteMaxFrame = 4 << 20
 )
 
-// errRemoteRefused is a 401 on the stream after the token was re-read: the
-// file does not hold the token the engine honours. Told apart from a
-// connection error so the tray says which file to check instead of asking
-// whether the distro's app runs — it does.
+// A 401 after re-reading the token, told apart so the tray names the token file instead of the connection.
 var errRemoteRefused = errors.New("the engine refused the token")
 
 // remoteClient drives one dashboard over its HTTP API with the remote token.
@@ -172,17 +169,12 @@ type remoteClient struct {
 	token   string
 	last    web.State
 	hasLast bool
-	// down and why are what the shell's Offline hook reports; refused says
-	// why is the token, not the connection. outage says an outage has been
-	// announced and not yet taken back, so each outage is notified once on
-	// the way out and once on the way back; everUp gates the first
-	// announcement, because an engine that is not up yet when the tray
-	// starts at login is no outage — only a link that worked and broke is.
 	down    bool
 	why     string
 	refused bool
 	outage  bool
-	everUp  bool
+	// everUp gates the first outage notice: an engine not yet up when the tray starts at login is no outage.
+	everUp bool
 }
 
 // newRemoteClient builds the client; the token is read with loadToken.
@@ -352,13 +344,7 @@ func (c *remoteClient) State() (web.State, error) {
 	return st, nil
 }
 
-// mutate sends one state-changing call and, when it succeeded, refreshes the
-// cached state at once. The shell repaints right after a click and reads
-// AutoRunning from that cache; the server's broadcast of the new state
-// reaches the stream a moment later, which is a moment too late for that
-// paint — and for a second quick click, which would act on the old state.
-// A refresh that fails leaves the cache to the stream: the mutation itself
-// went through.
+// mutate refreshes the cached state at once: the shell repaints from it before the stream's broadcast arrives.
 func (c *remoteClient) mutate(path string, body any) error {
 	if err := c.call(http.MethodPost, path, body, nil); err != nil {
 		return err
@@ -406,10 +392,6 @@ func (c *remoteClient) SaveSetting(scope, key string, value *string) error {
 	return c.mutate(path, map[string]any{"value": *value})
 }
 
-// SetModel mirrors the local SetModelLimits (appcmd.go, A39): write the
-// autoswitch.model setting, then retarget a running engine. The retarget's
-// error only matters while the engine runs; otherwise the server says
-// "not running", which is no failure of the switch.
 func (c *remoteClient) SetModel(on bool) error {
 	model := ""
 	var err error

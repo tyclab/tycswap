@@ -33,10 +33,7 @@ import (
 // (spec 02§2).
 const FetchStaggerInterval = 250 * time.Millisecond
 
-// staggerSleep delays a parallel fetch's start. It is a package seam so tests
-// pace deterministically; production sleeps real wall time, matching Python's
-// time.sleep in _run_usage_fetches (unrelated to the injected wall clock, which
-// times persisted state only).
+// staggerSleep is a test seam; production sleeps wall time like Python's time.sleep, unrelated to the injected clock.
 var staggerSleep = func(d time.Duration) { time.Sleep(d) }
 
 // CollectUsageEntries runs the store-backed usage collection for the given
@@ -96,9 +93,7 @@ func CollectUsageEntries(s *store.Store, infos []AccountInfo, fetch map[string]b
 		}
 	}
 
-	// The network client is nil in store-only contexts (a bare store built with
-	// no oauth.Client); skip the reserve/fetch pass entirely rather than claim
-	// slots we cannot fetch. Python always has the oauth module available.
+	// No client in store-only contexts: skip reserve/fetch rather than claim slots that cannot be fetched.
 	if s.OAuth != nil && len(requested) > 0 {
 		toFetch, _ := st.Reserve(requested, identities, fetch == nil)
 		if len(toFetch) > 0 {
@@ -140,9 +135,6 @@ func UsageEntriesByAccount(s *store.Store, fetch map[string]bool) map[string]usa
 	return CollectUsageEntries(s, BuildAccountsInfo(s), fetch)
 }
 
-// UsageByAccount maps each managed slot to its decision-grade usage value —
-// a usage map (last-good while trusted), a sentinel string, or nil — used by the
-// switch strategies (spec 02§13 _usage_by_account).
 func UsageByAccount(s *store.Store) map[string]any {
 	entries := CollectUsageEntries(s, BuildAccountsInfo(s), nil)
 	out := make(map[string]any, len(entries))
@@ -237,10 +229,6 @@ func runUsageFetches(s *store.Store, infos []AccountInfo) map[string]usage.Fetch
 	return results
 }
 
-// persistPollPlans adapts and persists the cadence of every slot just fetched
-// successfully, so the next collector inherits the plan (spec 02§13
-// _persist_poll_plans). Failures are paced by the store's backoff instead and
-// keep their now-past-due plan for when the backoff lifts.
 func persistPollPlans(
 	s *store.Store,
 	records map[string]usage.FetchRecord,

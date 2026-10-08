@@ -1,14 +1,8 @@
-// transaction.go — SwitchTransaction: the rollback ledger for the normal switch
-// path (spec 02§8.2, models.SwitchTransaction). Completed steps are replayed in
-// REVERSE order on failure: restore credentials, then config text (+chmod 0600),
-// then the sequence's activeAccountNumber. Each step is best-effort; rollback
-// reports overall success so the caller can pick the right SwitchError message.
 package switching
 
 import "github.com/tyclab/tycswap/internal/store"
 
-// switchTransaction captures the pre-switch state and the steps that completed,
-// so a mid-switch failure can be undone.
+// Completed steps replay in REVERSE on failure (credentials, config +0600, activeAccountNumber), each best-effort.
 type switchTransaction struct {
 	originalCredentials string
 	originalConfig      string
@@ -19,9 +13,7 @@ type switchTransaction struct {
 	// account with a base URL was active, DESIGN A46), so the credential
 	// rollback clears the store instead of writing originalCredentials.
 	restoreClear bool
-	// plan is what the switch does to Claude Code's settings.json; its
-	// snapshot is what profile_written rolls back to.
-	plan *profilePlan
+	plan         *profilePlan
 }
 
 // recordStep marks a completed step (credentials_written / profile_written /

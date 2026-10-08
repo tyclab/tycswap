@@ -1,10 +1,3 @@
-// Manager: the SessionManager port — run/exec-default control flow, the
-// same-account fast path, AUTH_OVERRIDE_ENV_VARS scrubbing, api-key rejection,
-// and the terminal handoff dispatch.
-//
-// Implements spec 06§1.1–1.3, 06§1.8 (session.py SessionManager.run /
-// exec_default / _exec / _ensure_not_api_key and the AUTH_OVERRIDE_ENV_VARS
-// contract).
 package session
 
 import (
@@ -26,10 +19,7 @@ import (
 	"github.com/tyclab/tycswap/internal/printer"
 )
 
-// AuthOverrideEnvVars are the env vars that make claude bypass account OAuth
-// entirely (verified against claude 2.1.175). They are scrubbed from the
-// session launch env and the auth-status probe env, but NOT from the
-// same-account fast path or exec_default (both "just run plain claude").
+// These make claude bypass account OAuth (verified against claude 2.1.175); scrubbed from launch and probe env, not the fast path.
 var AuthOverrideEnvVars = []string{
 	"ANTHROPIC_API_KEY",
 	"ANTHROPIC_AUTH_TOKEN",
@@ -215,11 +205,6 @@ func (m *Manager) setupPreamble(identifier string, claudeArgs []string, shareHis
 	return bin, num, mail, false, nil
 }
 
-// setupBootstrap runs the shared scrub-warn → SetupSession → status-notice tail
-// both Run and SetupEnv execute once past the preamble's same-active-default
-// branch. It returns the prepared profile dir, the resolved identity, and the
-// AUTH_OVERRIDE_ENV_VARS that were present (for env's unset lines; Run scrubs
-// them from the launch env directly).
 func (m *Manager) setupBootstrap(identifier string, share, shareHistory bool, mode setupMode) (sessionDir, accountNum, email string, scrubbed []string, err error) {
 	scrubbed = m.scrubbedPresent()
 	if len(scrubbed) > 0 {

@@ -1,30 +1,9 @@
-// cache.go — Codex usage fetching behind the same cache the Claude side uses.
-// Implements claude-swap PR #252 codex/usage_cache.py.
-//
-// A live fetch on every call costs one request per account per `tycswap codex
-// list`: fine for a human at a terminal, unacceptable for an auto loop that
-// ticks every few minutes. This package puts Codex behind usage.Store and the
-// poll policy, which already implement — and have tests for — the serve TTL,
-// cross-process fetch reservation, failure backoff, 429 handling with
-// Retry-After, and an adaptive cadence that speeds up when usage is moving.
-//
-// None of that is reimplemented here. usage.Store keeps an opaque lastGood map
-// guarded by an identity pair, so it was already provider-neutral; Cache is the
-// adapter that decides which slots need a request, performs those, and records
-// the outcomes.
-//
-// Identity for Codex is (email, chatgpt_account_id). The store's guard exists
-// so a slot reused for a different account never serves its predecessor's
-// usage; the account id is exactly what distinguishes two workspaces of one
-// user, so it takes the OrgUUID position the Claude side uses.
-//
-// The active-account rule lives in the caller. PayloadFor is supplied by the
-// Codex switcher, which is what enforces "never refresh the active account from
-// its snapshot". Keeping it a callback means this package never needs to know
-// that rule, and the rule stays in one place.
+// cache.go — Codex usage behind the Claude side's usage.Store and poll policy (claude-swap PR #252 codex/usage_cache.py), so an auto
+// loop does not cost a request per account per tick: serve TTL, fetch reservation, backoff and Retry-After are not reimplemented.
+// Codex identity is (email, chatgpt_account_id): the account id takes the OrgUUID position, telling a user's workspaces apart.
+// The never-refresh-the-active-account rule stays in the Codex switcher, which supplies PayloadFor.
 
-// Package usagecache is the Codex adapter over the shared usage.Store: which
-// slots to fetch, how to record them, and the workspace-name refresh.
+// Package usagecache is the Codex adapter over the shared usage.Store: which slots to fetch, how to record them, workspace names.
 package usagecache
 
 import (
@@ -57,8 +36,6 @@ var nonFailureSentinels = map[string]bool{
 // never-refresh-the-active-account rule.
 type PayloadFor func(s store.Slot) map[string]any
 
-// Cache decides which Codex slots need a request, fetches those, and records
-// them in the shared usage table under the store's cache directory.
 type Cache struct {
 	st     *store.Store
 	client api.Client
@@ -74,8 +51,6 @@ func New(st *store.Store, client api.Client, clk clock.Clock) *Cache {
 	return &Cache{st: st, client: client, clk: clk, usage: usage.NewStore(st.CacheDir(), clk)}
 }
 
-// accountID is the chatgpt_account_id half of an account key (the part after
-// the last "::", Python's rpartition).
 func accountID(key string) string {
 	if i := strings.LastIndex(key, "::"); i >= 0 {
 		return key[i+2:]
@@ -83,8 +58,6 @@ func accountID(key string) string {
 	return key
 }
 
-// userID is the chatgpt_user_id half of an account key (Python's partition:
-// everything before the first "::", or the whole key when there is none).
 func userID(key string) string {
 	if i := strings.Index(key, "::"); i >= 0 {
 		return key[:i]
@@ -112,19 +85,10 @@ func (c *Cache) Entries(slots []store.Slot) map[string]usage.UsageEntry {
 	return c.usage.Entries(c.Identities(slots))
 }
 
-// Refresh fetches whichever of slots is genuinely due, then returns entries
-// for them all. A slot that is fresh, in backoff, or already reserved by
-// another process is served from cache without a request — that is the entire
-// point.
-//
-// threshold feeds the poll planner's escalation band (Python's default is
-// 100); activeNumber marks the live slot for its faster cadence.
 func (c *Cache) Refresh(ctx context.Context, slots []store.Slot, payloadFor PayloadFor, threshold float64, activeNumber string) map[string]usage.UsageEntry {
 	return c.refresh(ctx, slots, payloadFor, threshold, activeNumber, true)
 }
 
-// RefreshCurrent requests a measurement after an explicit add, even if the
-// cached one is fresh. Backoff and in-flight claims still prevent requests.
 func (c *Cache) RefreshCurrent(ctx context.Context, slot store.Slot, payloadFor PayloadFor, threshold float64) error {
 	slots := []store.Slot{slot}
 	now := clock.Seconds(c.clk)
@@ -150,10 +114,7 @@ func (c *Cache) refresh(ctx context.Context, slots []store.Slot, payloadFor Payl
 	}
 	identities := c.Identities(slots)
 
-	// respectPlans=true: the on-demand caller contract. Fetch only when the
-	// entry is both stale and poll-due, so a second `tycswap codex list` seconds
-	// after the first costs nothing. A reserve error claims nothing, which
-	// degrades to serving the cache.
+	// Fetch only when stale and poll-due, so a second `tycswap codex list` seconds later costs nothing.
 	claims, _ := c.usage.Reserve(numbers, identities, respectPlans)
 
 	sentinels := map[string]string{}
@@ -175,16 +136,10 @@ func (c *Cache) refresh(ctx context.Context, slots []store.Slot, payloadFor Payl
 			}
 		}
 
-		// Record then replan, as the Claude collector does; this store version
-		// has no single-transaction plan argument. Write errors are non-fatal:
-		// the next pass simply fetches again.
 		_ = c.usage.Record(outcomes, identities)
 		_ = c.usage.SetPollPlan(plans, identities)
 
-		// A sentinel is a live overlay, re-derived every pass and never
-		// persisted (see usage.UsageEntry). The store therefore cannot hand it
-		// back, so this pass's sentinels are laid over the read here —
-		// otherwise "api key" or a 401 would render as a blank row.
+		// Sentinels are never persisted, so the store cannot hand them back; without this overlay a 401 renders as a blank row.
 		for num, rec := range outcomes {
 			if rec.Sentinel != "" {
 				sentinels[num] = rec.Sentinel
@@ -201,8 +156,6 @@ func (c *Cache) refresh(ctx context.Context, slots []store.Slot, payloadFor Payl
 	return entries
 }
 
-// fetchOne performs one account's fetch and returns it as a record the store
-// can merge, plus the poll plan for a success (nil otherwise).
 func (c *Cache) fetchOne(ctx context.Context, slot store.Slot, payload map[string]any, prev usage.UsageEntry, threshold float64, isActive bool) (usage.FetchRecord, *usage.PollPlan) {
 	if slot.AuthMode == "apikey" {
 		return usage.FetchRecord{Sentinel: SentinelAPIKey}, nil

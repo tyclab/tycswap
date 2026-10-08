@@ -1,6 +1,3 @@
-// addsource.go — where an add reads the login it stores: the live login, or a
-// Claude config directory a fresh `claude auth login` was run in (`tycswap add
-// --login`), and the check that decides whether such a login completed.
 package lifecycle
 
 import (
@@ -29,7 +26,6 @@ type AddSource struct {
 	kc        keychain.KeychainClient
 }
 
-// LiveLogin is the live Claude Code login — what plain `tycswap add` stores.
 var LiveLogin = AddSource{}
 
 // LoginDir is the login a `claude auth login` run with CLAUDE_CONFIG_DIR=dir
@@ -124,14 +120,10 @@ func errLoginIncomplete() error {
 	return cerr.Config("claude's login did not complete; nothing stored, the live login untouched")
 }
 
-// errLoginAPIKey refuses a console login: it yields an API key, which tycswap
-// manages on the --add-token axis, not as an OAuth slot.
 func errLoginAPIKey() error {
 	return cerr.Validation("claude's login made an API key, which is a different auth axis: use tycswap --add-token")
 }
 
-// ErrLoginIncomplete is errLoginIncomplete for callers that observe the failure
-// before reading the directory (the login's own non-zero exit).
 func ErrLoginIncomplete() error { return errLoginIncomplete() }
 
 // CheckLogin decides whether the `claude auth login` a LoginDir source names

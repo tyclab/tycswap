@@ -13,9 +13,6 @@ import (
 	"time"
 )
 
-// resetLayouts are the ISO-8601 forms accepted for a resets_at value. The API
-// sends a trailing Z; test fixtures use offset form (+00:00). RFC3339Nano
-// covers both Z and numeric offsets with optional fractional seconds.
 var resetLayouts = []string{
 	time.RFC3339Nano,
 	time.RFC3339,
@@ -23,8 +20,6 @@ var resetLayouts = []string{
 	"2006-01-02 15:04:05-07:00",
 }
 
-// parseResetTime parses an ISO-8601 reset timestamp, or ok=false when
-// unparseable (04§1.14 — format_reset raises ValueError, callers fall through).
 func parseResetTime(resetsAt string) (time.Time, bool) {
 	for _, layout := range resetLayouts {
 		if t, err := time.Parse(layout, resetsAt); err == nil {
@@ -46,8 +41,6 @@ func FormatReset(resetsAt string, now time.Time) (countdown, clock string, ok bo
 	return cd, ck, true
 }
 
-// ResetEpoch is resetsAt (any form FormatReset accepts) in whole epoch seconds;
-// ok=false when it is empty or unparseable (DESIGN A54).
 func ResetEpoch(resetsAt string) (int64, bool) {
 	t, ok := parseResetTime(resetsAt)
 	return t.Unix(), ok
@@ -115,8 +108,6 @@ func FreshResetStrings(window map[string]any) (countdown, clock string, ok bool)
 	return "", "", false
 }
 
-// splitScopes splits a space-delimited scope string into a list, matching
-// Python str.split() (whitespace-delimited, no empty fields).
 func splitScopes(scope string) []any {
 	fields := strings.Fields(scope)
 	out := make([]any, len(fields))

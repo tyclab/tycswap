@@ -118,12 +118,8 @@ func Import(acc Accounts, source string, force bool) error {
 	// SetupDirectories from inside the lock.
 	lock := filelock.New(filepath.Join(acc.BackupDir(), ".lock"), importLockTimeout)
 	writeErr := lock.With(func() error {
-		// Pass 1 — validate everything before any write. This classified read is
-		// the operation's ONE roster read: the same in-memory roster answers the
-		// alias collision check here, every slot decision in pass 2, and every
-		// write, so no write can land in a roster other than the one it was
-		// planned against.
 		var err error
+		// The ONE roster read: every check, slot decision and write in this pass uses it.
 		data, err = rosterForUpdate(acc)
 		if err != nil {
 			return err
@@ -148,10 +144,7 @@ func Import(acc Accounts, source string, force bool) error {
 			if !ok {
 				return cerr.Transfer("config for %s must be a JSON object", email)
 			}
-			// Only the account identity is imported. A config is spliced into the
-			// live ~/.claude.json on a switch, so mcpServers,
-			// projects.*.allowedTools, hooks or any other key an export carried
-			// would otherwise configure commands on this machine.
+			// Only the identity is imported: mcpServers, allowedTools or hooks from an export would configure commands on this machine.
 			configObj, err = importedConfig(configObj, email)
 			if err != nil {
 				return err
@@ -351,10 +344,6 @@ func Import(acc Accounts, source string, force bool) error {
 			}
 		}
 
-		// Seed activeAccountNumber only when the destination had no prior
-		// preference (None or the literal 0), from the *resolved* local slot. The
-		// roster in hand is the one every write above went out with, so it needs
-		// no re-read to be current.
 		if (data.ActiveAccountNumber == nil || *data.ActiveAccountNumber == 0) &&
 			resolvedActiveSlot != "" {
 			n, _ := strconv.Atoi(resolvedActiveSlot)
@@ -408,12 +397,6 @@ func rosterForUpdate(acc Accounts) (*SequenceData, error) {
 	return data, nil
 }
 
-// readSource reads the import text from stdin ("-") or a file (spec 07§3.1).
-//
-// Any file name is read: tycswap writes its exports as .tycswap, and an old
-// .cswap export from the tool it was forked from carries the same envelope.
-// Reading such a file is migration of the user's data, not a compatibility
-// promise for the old name (DESIGN Amendment A23).
 func readSource(source string) (string, error) {
 	var (
 		b   []byte

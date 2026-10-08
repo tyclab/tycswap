@@ -1161,3 +1161,18 @@ quota, the engine keeps the current account instead of selecting a target with
 missing model data. This is a conservative quota check, not a model-entitlement
 probe. Keep Fable counted while using it; the switcher does not detect or change
 the selected model inside a running session, or restart sessions.
+
+## Process and logic
+
+```mermaid
+flowchart LR
+    A["CLI / dashboard / tray / web"] --> B["Claude or Codex provider"]
+    B --> C["Locked account store and session groups"]
+    C --> D["Ownership-checked switch / refresh"]
+    D --> E["Active CLI or group credentials"]
+    F["Usage polling"] --> G["Auto-switch policy"]
+    G --> D
+    H["Reviewed recovery handover"] --> C
+```
+
+Repository instructions: [AGENTS.md](AGENTS.md).

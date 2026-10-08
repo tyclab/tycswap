@@ -1,9 +1,4 @@
-// Stable credential identity fingerprint.
-//
-// Implements spec 04§1.5 (credential_fingerprint): a refresh-token hash
-// (sha256:) survives access-token rotation so two generations of the same OAuth
-// lineage compare equal; a full-content hash (sha256-full:) identifies API keys
-// and setup-tokens. The two prefixes never collide. None only for empty input.
+// fingerprint.go: sha256: hashes the refresh token so access-token rotation compares equal; sha256-full: hashes API keys and setup tokens.
 
 package oauth
 

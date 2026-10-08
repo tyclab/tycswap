@@ -1,9 +1,5 @@
 //go:build windows
 
-// Implements spec 08§10.2/§10.4 and 08§15 Windows console setup: enable VT
-// processing on the stdout handle and set the output code page to UTF-8. Not
-// exercised by CI on this host.
-
 package printer
 
 import "golang.org/x/sys/windows"

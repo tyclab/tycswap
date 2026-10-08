@@ -1,16 +1,3 @@
-// adapters.go — the integration-layer adapters that let *core.Switcher satisfy
-// the consumer interfaces the auto engine and transfer define (DESIGN A2/A13).
-//
-// Implements the two adapter types DESIGN anticipates cli owns:
-//   - autoswitchAdapter resolves the documented ReadAccountCredentials
-//     signature collision between autoswitch.Switcher (no error) and
-//     session.Accounts (error) — see internal/core/autoswitch_adapters.go.
-//   - transferAdapter supplies the transfer.Accounts methods core does not
-//     promote (sequence-type conversion, active-credential/config reads,
-//     dead-token guard, timestamp) over the exported *store.Store — the
-//     "WP10/WP15 TODO" the transfer package's accounts.go documents.
-//
-// The compile assertions DESIGN A13/A2 place in cli live here.
 package cli
 
 import (
@@ -26,8 +13,6 @@ import (
 	"github.com/tyclab/tycswap/internal/transfer"
 	"github.com/tyclab/tycswap/internal/usage"
 )
-
-// ---- session.Accounts: *core.Switcher satisfies it directly (DESIGN A2) ----
 
 var _ session.Accounts = (*core.Switcher)(nil)
 
@@ -49,8 +34,6 @@ func (a autoswitchAdapter) ReadAccountCredentials(num, email string) string {
 
 var _ autoswitch.Switcher = autoswitchAdapter{}
 
-// ---- transfer.Accounts (DESIGN A2) -----------------------------------------
-
 // transferAdapter provides the transfer.Accounts surface over *core.Switcher.
 // Methods core already promotes with the exact frozen shape (ResolveAccount's
 // siblings ReadAccountCredentials/WriteAccountCredentials/WriteAccountConfig,
@@ -61,9 +44,6 @@ type transferAdapter struct{ *core.Switcher }
 
 var _ transfer.Accounts = transferAdapter{}
 
-// toStoreSeq / fromStoreSeq convert between transfer's and store's identically
-// shaped SequenceData (the RawMessage records copy directly, preserving byte
-// fidelity and optional-key absence).
 func fromStoreSeq(d *store.SequenceData) *transfer.SequenceData {
 	if d == nil {
 		return nil
@@ -115,8 +95,6 @@ func (t transferAdapter) WriteSequence(data *transfer.SequenceData) error {
 	return t.Store.WriteSequence(toStoreSeq(data))
 }
 
-// ResolveSlot maps an identifier to a slot key, folding AccountNotFound to
-// ("", nil) and surfacing an ambiguity ConfigError (spec 07§2, transfer note).
 func (t transferAdapter) ResolveSlot(id string) (string, error) {
 	num, _, _, err := t.Store.ResolveAccount(id)
 	if err != nil {
@@ -139,8 +117,6 @@ func (t transferAdapter) ReadActiveCredentials() (string, error) {
 	return v, err
 }
 
-// ReadActiveConfig reads ~/.claude.json text; found=false when it is absent
-// (spec 07§3 == _get_claude_config_path().exists()/read_text).
 func (t transferAdapter) ReadActiveConfig() (string, bool, error) {
 	b, err := os.ReadFile(paths.GetGlobalConfigPath())
 	if err != nil {
@@ -152,8 +128,6 @@ func (t transferAdapter) ReadActiveConfig() (string, bool, error) {
 	return string(b), true, nil
 }
 
-// ReadAccountConfig shadows core's map-returning method with transfer's raw-text
-// form (spec 07§3 == _read_account_config → store.ReadAccountConfig).
 func (t transferAdapter) ReadAccountConfig(num, email string) (string, error) {
 	return t.Store.ReadAccountConfig(num, email)
 }
@@ -169,18 +143,13 @@ func (t transferAdapter) TokenDead(num, email, orgUUID string) bool {
 	return t.Store.Usage.Entries(ids)[num].TokenDead()
 }
 
-// ClearDeadToken lifts any dead-token quarantine on a slot, identity-guarded
-// (spec 07§3 == usage.clear_dead_token).
 func (t transferAdapter) ClearDeadToken(num, email, orgUUID string) error {
 	ids := t.usageIdentity(num, email, orgUUID)
 	return t.Store.Usage.ClearDeadToken([]string{num}, ids)
 }
 
-// Timestamp is get_timestamp(): wall time in UTC, seconds precision, Z-suffixed
-// (mirrors store's private timestamp()).
 func (t transferAdapter) Timestamp() string {
 	return t.Store.Clk.Now().UTC().Format("2006-01-02T15:04:05Z")
 }
 
-// Platform drives the export envelope's exportedFrom tag.
 func (t transferAdapter) Platform() platform.Platform { return t.Store.Platform }

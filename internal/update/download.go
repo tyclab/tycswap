@@ -1,9 +1,6 @@
-// The download shape of `tycswap upgrade` (DESIGN A24, A36): a binary that
-// was not installed with `go install` and is not a checkout build — a release
-// binary, or one copied out of a Go bin directory — is upgraded by
-// downloading the newest release's build for this OS and architecture,
-// checking it against that release's SHA256SUMS and renaming it over the
-// running file.
+// download.go: a release binary is upgraded by downloading this OS/arch build, checking it against SHA256SUMS and renaming
+// it over the running file (DESIGN A24, A36).
+
 package update
 
 import (
@@ -287,9 +284,7 @@ func (u Upgrader) downloadUpgrade(exePath string, plat platform.Platform) int {
 	return 0
 }
 
-// maxAssetBytes bounds one release download. The binary is about 10 MB;
-// 256 MiB is generous and still refuses an endless stream before it fills
-// the filesystem that holds the binary.
+// maxAssetBytes: the binary is about 10 MB; 256 MiB still refuses an endless stream before it fills the disk.
 var maxAssetBytes int64 = 256 << 20
 
 // maxSumsBytes bounds the SHA256SUMS file.

@@ -1,30 +1,9 @@
-// import.go — one-time import of codex-auth's accounts into tycswap's own Codex
-// store. Implements claude-swap PR #252 codex/registry_import.py.
-//
-// Read-only against ~/.codex/accounts/: tycswap never writes that tree. The user
-// keeps a working codex-auth install and can go back to it — the price is that
-// the two stores diverge after the import, which is the accepted cost of
-// owning our own format.
-//
-// Schema support mirrors codex-auth's own history. `version = 2` is
-// email-keyed and has no account_key: there is nothing to key a snapshot by,
-// so its rows are counted as skipped rather than guessed at — a guessed key
-// would file one account's tokens under another's identity. `schema_version`
-// 3 and 4 are record-key based with an identical account layout; v4 renamed
-// the plan tiers, and v3 rows are normalised to v4 semantics on the way in so
-// a Business account does not display as Enterprise.
-//
-// An unknown, newer schema is refused outright. Misreading a format we do not
-// know would corrupt the user's account list; reporting "too new" costs them
-// nothing but an upgrade.
-//
-// Deviation from the Python: registry_import.py runs normalize_plan over every
-// row whatever the schema, which would relabel a v4 "business" row (already
-// final semantics) as "enterprise". The module docstring says v3 rows are the
-// ones normalised, so this port normalises rows of schema < 4 only.
+// import.go — one-time, read-only import of codex-auth's accounts (claude-swap PR #252 codex/registry_import.py); ~/.codex/accounts/ is never written.
+// Schema 2 is email-keyed with no account_key: its rows are skipped, since a guessed key would file tokens under another identity.
+// Schemas 3 and 4 share a layout; v4 renamed the plan tiers. An unknown newer schema is refused: misreading it would corrupt the list.
+// Deviation: Python normalize_plan runs on every row and would relabel a v4 "business" as "enterprise"; only schema < 4 is normalised.
 
-// Package registryimport imports codex-auth's registry.json and auth snapshots
-// into tycswap's Codex store, once and read-only.
+// Package registryimport imports codex-auth's registry.json and auth snapshots into tycswap's Codex store, once and read-only.
 package registryimport
 
 import (
@@ -48,9 +27,6 @@ const MaxSchema = 4
 // "schema too new" warning is dropped; the Result still carries it.
 var Log *logging.Logger
 
-// Result is what one import pass did, exactly as the CLI prints it.
-// Source is "" when nothing was read (Python's None); UnsupportedSchema is set
-// only when the registry declared an integer schema newer than MaxSchema.
 type Result struct {
 	Imported          int
 	Skipped           int
@@ -63,9 +39,7 @@ func (r Result) DidAnything() bool { return r.Imported > 0 }
 
 // Options configures Import. Empty paths default to the authfile locations.
 type Options struct {
-	// OnlyIfEmpty is what the automatic first-run path passes: the call is a
-	// no-op once tycswap has any Codex slot of its own, so an import can never
-	// overwrite accounts the user has since added or renamed here.
+	// No-op once any Codex slot exists, so an import never overwrites accounts added or renamed here since.
 	OnlyIfEmpty bool
 	// RegistryPath defaults to authfile.AuthRegistryPath().
 	RegistryPath string
@@ -132,8 +106,6 @@ func importLocked(st *store.Store, opts Options) (Result, error) {
 		return Result{}, nil
 	}
 
-	// `schema_version or version or 2`: Python's `or` falls through falsy
-	// values (absent, null, 0, false, "", [] and {}), not just missing keys.
 	schemaRaw := json.RawMessage("2")
 	if v, has := data["schema_version"]; has && truthy(v) {
 		schemaRaw = v
@@ -202,9 +174,7 @@ func importLocked(st *store.Store, opts Options) (Result, error) {
 		imported++
 	}
 
-	// Only point the active marker at a slot that actually made it in: an
-	// active key naming a skipped row would make every later status read
-	// resolve to nothing.
+	// Only a slot that made it in: an active key naming a skipped row would make every status read resolve to nothing.
 	var active string
 	if json.Unmarshal(data["active_account_key"], &active) == nil && active != "" && st.SlotForKey(active) != nil {
 		if err := st.SetActive(active); err != nil {
@@ -229,9 +199,6 @@ func loadRegistry(path string) (map[string]json.RawMessage, bool) {
 	return data, true
 }
 
-// rows normalises the accounts container to row objects in file order: v3/v4
-// store a list, the v2 loader an email-keyed object. Non-object members are
-// dropped (they are neither imported nor counted).
 func rows(raw json.RawMessage) []map[string]json.RawMessage {
 	var members []json.RawMessage
 	trimmed := bytes.TrimSpace(raw)
@@ -286,9 +253,7 @@ func objectValues(b []byte) []json.RawMessage {
 	return out
 }
 
-// readSnapshot reads one codex-auth snapshot verbatim: numbers are kept as
-// their JSON literals (json.Number) so the stored copy is the same document,
-// not a float64 approximation of it.
+// json.Number keeps the stored copy the same document, not a float64 approximation.
 func readSnapshot(path string) (map[string]any, bool) {
 	b, err := os.ReadFile(path)
 	if err != nil {

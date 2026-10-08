@@ -1,14 +1,3 @@
-// autoview.go — the live auto-switch screen: the real AutoSwitchEngine hosted
-// as a goroutine, its typed events rendered, dry-run/live toggle, session-only
-// threshold adjustment, and the ranked "next best" candidates panel.
-//
-// Implements spec 09§4: opens in dry-run (§4 preamble), lifecycle mount/unmount
-// (§4.2), engine hosting + the two-guard cross-thread event delivery (§4.3),
-// event-log styling (§4.4), session-only threshold adjust that is NEVER
-// persisted (§4.5), poll-policy pinning via set/clear_poll_policy_inputs (§4.6),
-// and the candidates ranking on the same model axis the engine decides with
-// (§4.7). DESIGN §4/§11.2: engine as a long-lived goroutine draining onto a
-// channel re-armed by a tea.Cmd; stop/wake preserved exactly.
 package tui
 
 import (
@@ -72,9 +61,6 @@ type autoScreen struct {
 
 func newAutoScreen() *autoScreen { return &autoScreen{} }
 
-// onMount runs the mount sequence (09§4.2): store-only poller, a fresh settings
-// load, sync the app-wide threshold tick to the file value, then start a
-// dry-run engine.
 func (a *autoScreen) onMount(m *Model) tea.Cmd {
 	a.loaded = true
 	cmds := []tea.Cmd{m.setStoreOnly(true)}
@@ -88,17 +74,10 @@ func (a *autoScreen) onMount(m *Model) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// refreshQuarantine reloads the engine's quarantine set from the persisted
-// state file (<BackupDir>/autoswitch_state.json) so the candidates panel can
-// label the slots the engine excludes from its own candidate set (DESIGN A18).
-// Tolerant like every other state read: any read/parse problem leaves an empty
-// map, so a panel with a missing or unreadable state file labels nothing.
 func (a *autoScreen) refreshQuarantine(m *Model) {
 	a.quarantined = autoswitch.ReadQuarantine(autoswitch.StatePath(m.facade.BackupDir()))
 }
 
-// onExit runs the unmount sequence (09§4.2): stop the engine, un-pin the poll
-// planner, restore the pre-screen threshold tick, restore network eligibility.
 func (a *autoScreen) onExit(m *Model) tea.Cmd {
 	if a.engine != nil {
 		a.engine.Stop()
@@ -110,19 +89,13 @@ func (a *autoScreen) onExit(m *Model) tea.Cmd {
 	return m.setStoreOnly(false)
 }
 
-// onSnapshot re-reads the quarantine set (09§4.7). The quarantine refresh rides
-// the same cadence as the snapshot so a slot the engine quarantines mid-session
-// is labeled on the next poll. The ranked panel itself is not cached — view()
-// builds it from the current snapshot and the current clock on every render, so
-// its live reset countdowns are never staler than the frame they appear in
-// (DESIGN A18).
+// onSnapshot re-reads the quarantine set on the snapshot cadence (09§4.7); the panel is rebuilt every render, so its
+// countdowns are never staler than the frame (DESIGN A18).
 func (a *autoScreen) onSnapshot(m *Model) tea.Cmd {
 	a.refreshQuarantine(m)
 	return nil
 }
 
-// panelWidth is the column budget the auto screen lays its chrome out at: the
-// terminal width, or the 80-column fallback while the size is still unknown.
 func panelWidth(m *Model) int {
 	if m.width <= 0 {
 		return 80
@@ -166,9 +139,6 @@ func (a *autoScreen) back(m *Model) tea.Cmd {
 
 // -- engine hosting (09§4.3) -------------------------------------------------
 
-// startEngine builds and runs an engine in a goroutine, streaming events onto a
-// channel drained by the returned tea.Cmd (DESIGN §4/§11.2). A nil factory logs
-// that the engine is unavailable and no goroutine is started.
 func (a *autoScreen) startEngine(m *Model, dryRun bool) tea.Cmd {
 	a.dryRun = dryRun
 	mode := "DRY-RUN (watching only)"
@@ -214,8 +184,6 @@ func drainCmd(ch chan tea.Msg) tea.Cmd {
 	return func() tea.Msg { return <-ch }
 }
 
-// onEngineMsg handles an engine event or stop signal (09§4.3, two-guard: a
-// mismatched generation is a stale engine whose events are dropped).
 func (a *autoScreen) onEngineMsg(m *Model, msg tea.Msg) tea.Cmd {
 	switch e := msg.(type) {
 	case engineEventMsg:
@@ -263,9 +231,6 @@ func (a *autoScreen) toggleLive(m *Model) tea.Cmd {
 	return a.restartEngine(m, true)
 }
 
-// restartEngine stops the current engine and starts a fresh one from
-// a.settings, which carries any in-flight session threshold override (09§4.3,
-// dry↔live carry-forward).
 func (a *autoScreen) restartEngine(m *Model, dryRun bool) tea.Cmd {
 	if a.engine != nil {
 		a.engine.Stop()
@@ -302,9 +267,7 @@ func (a *autoScreen) thresholdStep(m *Model, delta float64) tea.Cmd {
 	return nil
 }
 
-// setThreshold retargets the running engine's decision and poll-planning
-// threshold immediately and moves the bar tick everywhere (09§4.5). No-op when
-// unchanged.
+// Session only: the adjusted threshold is never persisted (09§4.5).
 func (a *autoScreen) setThreshold(m *Model, value float64) {
 	if value == a.settings.SevenDayThreshold {
 		return
@@ -348,39 +311,17 @@ func (a *autoScreen) endAdjust(m *Model) {
 // is labeled with why (quarantined / sentinel / usage-unknown), the one exception
 // being disabled rows, which are dropped from the panel entirely.
 type candidateRank struct {
-	number string
-	// bestKey is the "best"-mode key: weekly pct, falling back to the binding
-	// pct for an account reporting no weekly window | 997 quarantined |
-	// 998 sentinel | 999 unknown (DESIGN A34).
+	number  string
 	bestKey float64
 	tier    int      // "soonest-reset" tier 0..6
 	pct     float64  // the same weekly figure (within-tier tiebreak; 0 when not applicable)
 	renewal *float64 // weekly renewal epoch (tiers 0/3; nil = unknown)
 }
 
-// candidatesText ranks switch targets on the same model axis the engine decides
-// with (09§4.7): remaining headroom for "best", or the tiered soonest-weekly-
-// renewal order for "soonest-reset" (Go-side extension, DESIGN A17). Quarantined
-// slots — which the engine excludes from its own candidate set — are kept in the
-// panel but labeled and ranked into the non-viable tail (above sentinel and
-// usage-unknown rows), so a row shown as a viable target is always one the engine
-// could pick this tick apart from freshness (panel contract, DESIGN A18).
-//
-// A readable row shows every window the account reports rather than one bare
-// number, so the reason a candidate ranks where it does is on the row (DESIGN
-// A18): the binding window is emphasized, the other counted windows stay
-// readable, and scoped windows autoswitch.model does not match are muted
-// information. The rows are laid out by the shared window table (table.go) —
-// column headers naming each window once, one line per candidate — which the
-// dashboard accounts monitor uses too, so a window reads the same way on both
-// surfaces. When the table cannot fit the terminal, the whole panel drops to
-// the per-row layout (candidateRow / candidateLabelRow), which narrows down to
-// a bare slot number at any width. width is the column budget a row must fit in
-// (a row never wraps); width <= 0 falls back to 80 columns, as footerText does.
-// now is the render clock in fractional Unix seconds, from which each window
-// cell's reset countdown is derived live (never a stored countdown string, 09§12).
-// A nil snapshot (nothing polled yet) renders nothing — the accounts panel above
-// already says "loading…".
+// candidatesText ranks targets on the engine's own model axis: headroom for "best", tiered soonest weekly renewal for
+// "soonest-reset" (DESIGN A17). Quarantined slots stay but are labeled into the non-viable tail, so a row shown as viable is one
+// the engine could pick this tick (DESIGN A18). Rows use the shared window table, or all drop to the per-row layout when it
+// cannot fit; rows never wrap; width <= 0 means 80; countdowns derive live from now (09§12); a nil snapshot renders nothing.
 func (a *autoScreen) candidatesText(snap *reporting.AccountsSnapshot, width int, now float64) richText {
 	if snap == nil {
 		return richText{}
@@ -425,12 +366,7 @@ func (a *autoScreen) candidatesText(snap *reporting.AccountsSnapshot, width int,
 			ranked = append(ranked, candidateRank{number: acc.Number, bestKey: 999.0, tier: 6})
 		default:
 			entry.windows = candidateWindows(acc.Usage.LastGood, models)
-			// Rank on the WEEKLY axis and judge each axis against its own bar,
-			// exactly as the engine does: ordering by the binding figure would
-			// send work to whichever account happens to be resting its 5h
-			// window, not to the one with budget to spare (DESIGN A34). An
-			// account reporting no weekly window at all falls back to the
-			// binding figure, as sortQualifying does.
+			// Rank on the WEEKLY axis like the engine: the binding figure would favour an account resting its 5h window (DESIGN A34).
 			pcts := classPcts(acc.Usage.LastGood, models)
 			key := *pct
 			if w := pcts.weekly(); w != nil {
@@ -473,19 +409,6 @@ func (a *autoScreen) candidatesText(snap *reporting.AccountsSnapshot, width int,
 		ordered = append(ordered, entries[r.number])
 	}
 
-	// Ranked rows, laid out by the shared window table (table.go) — the same
-	// layout the accounts monitor uses, so a window reads the same way on both
-	// surfaces. Ranking, order, the header note and every label are unchanged;
-	// only the layout is shared.
-	//
-	// BOTH layouts are built at this width and PRICED, and the panel draws the one
-	// that displays more (pickWindowTable): the table's columns are the union
-	// across candidates, so on a roster whose accounts report different scoped
-	// models it can state the same figures in strictly more columns and pay for
-	// them with the countdowns candidateRow still affords. Where it does, the
-	// per-row layout is drawn instead. The choice is TOTAL — a table for some rows
-	// and per-row layout for others would be worse than either — and it subsumes
-	// the width below which no table exists at all.
 	rows := make([]richText, 0, len(ordered))
 	for _, e := range ordered {
 		rows = append(rows, e.rowText(width, now))
@@ -518,10 +441,6 @@ func (a *autoScreen) candidatesText(snap *reporting.AccountsSnapshot, width int,
 	return out
 }
 
-// candidateEntry is one ranked row's content, independent of how it is laid
-// out: the shared table renders it as a WINDOW row (windows) or a SPAN row
-// (label), and the per-row fallback renders exactly the same content through
-// candidateRow / candidateLabelRow.
 type candidateEntry struct {
 	number  string
 	email   string
@@ -530,17 +449,6 @@ type candidateEntry struct {
 	color   string
 }
 
-// candidateTableOpts is the panel's slot-cell chrome: rows indented two columns
-// (candidateNumber's margin) and the slot number in the plain foreground. Its
-// headers keep a whole syllable (headerFloor), because this panel's own per-row
-// fallback prints every model name in full — a header cut below that would name
-// a window less well here than the layout it replaces.
-//
-// Its policy is this panel's own per-row layout, which is the bar the table is
-// held to: candidateRow holds the BINDING cell's countdown back to its last rung
-// (candidateShedSteps), so the table does too; and it DISCARDS an exhausted
-// uncounted figure at every width, so pinning one here would spend the whole
-// panel's table protecting a figure the layout it replaces throws away.
 var candidateTableOpts = tableOpts{
 	indent: 2, slotStyle: segStyle{Fg: colForeground}, headerFloor: 4,
 	policy: tablePolicy{PinExhausted: false, KeepBindingCountdown: true},
@@ -572,10 +480,6 @@ func (e candidateEntry) rowText(width int, now float64) richText {
 	return line
 }
 
-// rowPriced is rowText with what the row DISPLAYS, which is what the panel holds
-// the shared table against at the same width (layoutScore). clk spells the
-// countdowns: live for the line that is drawn, widest for the bar, which a
-// labeled row is indifferent to — it states a reason and no reset at all.
 func (e candidateEntry) rowPriced(width int, clk renderClock) (richText, layoutScore) {
 	if e.label != "" {
 		return candidateLabelRowPriced(e.number, e.email, e.label, e.color, width)
@@ -583,12 +487,6 @@ func (e candidateEntry) rowPriced(width int, clk renderClock) (richText, layoutS
 	return candidateRowPriced(e.number, e.email, e.windows, width, clk)
 }
 
-// countingNote names the decision axis the panel ranks on, once, in the header,
-// so the muted cells on a row read as deliberate rather than mysterious: the
-// counted windows are always 5h and 7d, plus each scoped per-model weekly window
-// autoswitch.model names (the "all" sentinel counts every one of them, and
-// subsumes any name listed with it). Model names appear exactly as
-// settings.ParseModelNames yields them (Go-side extension, DESIGN A18).
 func countingNote(models []string) string {
 	parts := []string{"5h", "7d"}
 	for _, name := range models {
@@ -601,9 +499,6 @@ func countingNote(models []string) string {
 	return "counting " + strings.Join(parts, ", ")
 }
 
-// Candidate-row layout (09§4.7). The cell separator borrows the mini account
-// row's grammar (09§5.5: "5h 12% · 7d 88%") so one usage vocabulary runs through
-// the whole TUI.
 const (
 	candidateGap = "  "  // email → first window cell, or → the label
 	candidateSep = " · " // between window cells
@@ -613,27 +508,13 @@ const (
 // width and free of the row break, so the row's width math can measure it.
 func candidateNumber(number string) string { return fmt.Sprintf("  %2s  ", number) }
 
-// candidateRowText begins a panel row: the row break as its own UNSTYLED
-// segment, then the body fitted to width.
-//
-// No STYLED segment may ever carry a newline. richText.render styles each
-// segment on its own, and lipgloss returns a style-less segment verbatim but
-// left-aligns a styled one by padding every line out to the widest — so a styled
-// segment holding "\n" + a cell renders its blank first line as that many spaces
-// appended to the END of the previous row, pushing it past the width and
-// wrapping it. Every row shape starts here, so the break stays outside every
-// styled cell (DESIGN A18).
+// No STYLED segment may carry a newline: lipgloss pads styled multi-line segments, pushing the previous row past the width.
 func candidateRowText(body richText, width int) richText {
 	var t richText
 	t.addPlain("\n")
 	return *t.addText(truncRich(body, width))
 }
 
-// pricedRowText is candidateRowText over a PRICED body: the same row break and
-// the same fit to width, reporting what survived that fit (layoutScore). The
-// panel prices its per-row layout on the clipped line and not on the one it
-// meant to draw, because a figure the last-resort clip took away is one this
-// layout does not display either.
 func pricedRowText(body pricedText, width int) (richText, layoutScore) {
 	fitted, score := body.fit(width)
 	var t richText
@@ -654,10 +535,6 @@ func candidateLabelRow(number, email, label, color string, width int) richText {
 	return line
 }
 
-// candidateLabelRowPriced is candidateLabelRow with what the row DISPLAYS: the
-// columns of the reason that survived, and the columns of the email — the same
-// two quantities the shared table's SPAN row is priced on, so the panel can hold
-// one layout against the other at the same width.
 func candidateLabelRowPriced(number, email, label, color string, width int) (richText, layoutScore) {
 	head := candidateNumber(number)
 	fixed := lipgloss.Width(head) + lipgloss.Width(candidateGap)
@@ -716,10 +593,6 @@ func candidateRow(number, email string, windows []candidateWindow, width int, no
 	return line
 }
 
-// candidateRowPriced is candidateRow with what the row DISPLAYS: how many window
-// figures and how many reset countdowns survived its width ladder and the final
-// clip, and how much of the email. It is the bar the shared table is held to at
-// the same width (layoutScore.atLeast).
 func candidateRowPriced(number, email string, windows []candidateWindow, width int, clk renderClock) (richText, layoutScore) {
 	head := candidateNumber(number)
 	cells := candidateCells(windows, clk)
@@ -770,9 +643,6 @@ func candidateRowPriced(number, email string, windows []candidateWindow, width i
 	return pricedRowText(body, width)
 }
 
-// candidateCell is one window cell as a row lays it out: the window itself, the
-// live countdown resolved once for this render, and the two width-ladder flags
-// (whether the cell shows at all, and whether it still shows its countdown).
 type candidateCell struct {
 	win       candidateWindow
 	countdown string // "" when the window carries no parseable resets_at
@@ -835,21 +705,6 @@ func addCandidateCell(t *pricedText, cell candidateCell) {
 	}
 }
 
-// candidateShedSteps is the candidate row's width ladder, in the exact order a
-// row gives ground (DESIGN A18). A countdown is supporting detail, so it always
-// goes before the cell carrying it, and a whole class goes before the next more
-// informative one:
-//
-//	(a) countdowns of UNCOUNTED cells        (b) UNCOUNTED cells
-//	(c) countdowns of COUNTED NON-BINDING    (d) COUNTED non-binding cells
-//	(e) the BINDING cell's countdown
-//
-// (c) reaches only non-binding cells — the binding cell is itself a counted one,
-// and its countdown is held back to (e), the last rung.
-//
-// The binding cell's label+pct is deliberately absent: it is the ranking key and
-// survives every step (a row too narrow even for it clips the email, then falls
-// through to the whole-line truncRich guard).
 var candidateShedSteps = []struct {
 	binding   bool // the step touches the binding cell (else a non-binding one)
 	counted   bool // ... of this class, when not the binding cell
@@ -912,10 +767,6 @@ func clipText(s string, width int) string {
 	return b.String() + footerEllipse
 }
 
-// truncRich cuts a single-line richText to at most width display columns,
-// preserving each surviving segment's styling and marking the cut with a muted
-// ellipsis. Fits the panel header, and is the last-resort guard against a row
-// wide enough to wrap.
 func truncRich(t richText, width int) richText {
 	if width <= 0 {
 		return richText{}
@@ -978,17 +829,11 @@ func clipRichLines(t richText, width int) richText {
 	return out
 }
 
-// isQuarantined reports whether a slot is in the engine's persisted quarantine
-// set. Membership, not the reason string, is the test: a quarantined entry may
-// carry an empty reason. Reads a nil map safely (nothing quarantined).
 func (a *autoScreen) isQuarantined(number string) bool {
 	_, ok := a.quarantined[number]
 	return ok
 }
 
-// quarantineLabel is the candidates-panel marker for a slot the engine has
-// quarantined: "quarantined (<reason>)", or a bare "quarantined" when the state
-// entry carried no readable reason (DESIGN A18).
 func quarantineLabel(reason string) string {
 	if reason == "" {
 		return "quarantined"
@@ -996,9 +841,6 @@ func quarantineLabel(reason string) string {
 	return "quarantined (" + reason + ")"
 }
 
-// candidateLessBest is the "best" panel order: weekly pct ascending (quarantined
-// 997, sentinel 998, usage-unknown 999 sort last), ties by account number
-// ascending.
 func candidateLessBest(a, b candidateRank) bool {
 	if a.bestKey != b.bestKey {
 		return a.bestKey < b.bestKey
@@ -1043,10 +885,6 @@ func candidateLessSoonest(a, b candidateRank) bool {
 	return a.number < b.number
 }
 
-// footerBindings are the Auto screen's footer-visible bindings (09§4.1): l
-// ("Go live / dry-run"), t ("Threshold") and back always show; the
-// threshold_step arrows and adjust_done Enter are gated by check_action and
-// appear only while adjusting the threshold.
 func (a *autoScreen) footerBindings(m *Model) []footerBinding {
 	bindings := []footerBinding{
 		{"l", "Go live / dry-run"},
@@ -1066,16 +904,10 @@ func (a *autoScreen) footerBindings(m *Model) []footerBinding {
 
 func (a *autoScreen) view(m *Model) string {
 	inner := panelWidth(m)
-	// Pinned chrome: the active account card, the mode badge + summary line, and
-	// the ranked candidates. Only the event log below flexes (09§4: the RichLog
-	// is the screen's one scrollable region; everything above it stays put).
 	var chrome richText
 	now := m.nowSeconds()
 	chrome.addText(accountsPanelText(m.snapshot, inner, false, m.thresholdPct, now))
 	chrome.addPlain("\n\n")
-	// The badge and the summary share one line, fitted to the width like every
-	// other line this package returns: a line wider than the terminal would
-	// wrap and throw the viewport's line count off (DESIGN A28).
 	var status richText
 	if a.dryRun || a.engine == nil {
 		status.add(" DRY-RUN ", segStyle{Fg: colSevWarn, Bold: true})
@@ -1147,14 +979,6 @@ func (a *autoScreen) view(m *Model) string {
 	return strings.Join(append(out, tail...), "\n")
 }
 
-// summaryText builds the #auto-summary line exactly (09§4.5), less the
-// adjusting hint the spec appends: view puts that on its own line (adjustHint,
-// DESIGN A28).
-//
-// Each window has a bar of its own (DESIGN A34), so the line names them:
-// "switch at 5h 85% · 7d 97%", plus the model bar while autoswitch.model
-// counts a window. The 7d bar is the one the threshold adjustment moves, so it
-// carries the adjusting color and the "(session)" mark.
 func (a *autoScreen) summaryText() richText {
 	var t richText
 	t.addPlain("auto-switch · switch at ")
@@ -1177,10 +1001,6 @@ func (a *autoScreen) summaryText() richText {
 	return t
 }
 
-// adjustHint is the line view shows under the summary while the threshold is
-// being adjusted: the keys (09§4.5's "← → adjust · enter done"), then that the
-// adjustment is session-only by contract (09§4.5, §11.6) and where a
-// persistent change is made (DESIGN A28).
 const adjustHint = "← → adjust · enter done · session only — Settings persists"
 
 func (a *autoScreen) appendEvent(ev autoswitch.Event) {
@@ -1200,9 +1020,6 @@ func loadThreshold(backupDir string) *float64 {
 	return &t
 }
 
-// thresholdBounds returns the [lo, hi] clamp for the bar the ± keys move —
-// autoswitch.sevenDayThreshold, the account's whole budget — from the single
-// settings-spec source of truth (09§4.5; DESIGN A34).
 func thresholdBounds() (lo, hi float64) {
 	for _, spec := range settings.SettingSpecs {
 		if spec.Section == "autoswitch" && spec.JSONKey == "sevenDayThreshold" {
