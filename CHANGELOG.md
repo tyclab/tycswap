@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Changed:** in the Windows tray, double-click an account (or press Enter) to switch: a confirmation lists each destination (default login, Fable, Opus/other), and blocked destinations show why. The Switch group list and the Use this account button are gone.
+- **Changed:** the Windows tray panel fits its content. Columns size to their longest text, so account names are no longer cut off, and tables are as tall as their rows.
+- **Fixed:** the Windows tray's Settings tab opens with the selected setting in view, and moving the selection no longer leaves stale highlight fragments in a row.
+
 - **Changed:** the Windows tray opens a compact Accounts / Settings panel. Each account appears once with separate quota columns, clickable sorting, focused reset details and an explicit destination for switching. Active accounts retain bold blue text and an aligned checkmark in either app theme.
 - **Added:** tray and dashboard settings share the same validated settings API, with shared defaults, Fable and Opus/other scopes. Reset removes a group override; model limits follow the group's sessions. Flakelab-managed automation is labelled as managed, with its timer cadence distinguished from tycswap's continuous-loop interval.
 - **Fixed:** group target previews apply startup compatibility when no sessions are running, matching the switch guard. Accounts excluded only from automatic rotation remain available for explicit manual switches.

@@ -6033,9 +6033,13 @@ compatibility label; its engine enforces the guard before any switch.
 The Windows tray opens a native Accounts / Settings popup on its existing UI
 thread. A provider account appears once; shared and model quota columns stay
 independent. Row focus reveals reset and freshness details. Sorting and focus
-never switch an account. Switching requires a destination and an explicit
-action; changing rows preserves that destination, including its blocker.
-Active styling is independent of menu item kind and toggle state.
+never switch an account. Switching requires an explicit activation
+(double-click or Enter) and a destination chosen in a modal confirmation
+that lists every destination, blocked ones disabled with their reason.
+Nothing is preselected, so row navigation cannot carry a destination along.
+Active styling is independent of menu item kind and toggle state. Columns
+fit their widest text and the popup fits its columns and rows; the last
+column runs to the list edge so a moved highlight repaints whole.
 
 The CLI shell builds the panel from the dashboard state. Local and remote
 setting edits use the same serialized server mutation path as the browser.
@@ -6045,7 +6049,7 @@ Group model policy is read-only and follows confirmed sessions. Metadata
 names each setting's source, runtime applicability and read-only reason.
 An edit never migrates or restarts a session.
 
-The popup retains row identity, destination, scope and field drafts through
+The popup retains row identity, scope and field drafts through
 polls and sorting. Typed values are checked before submission and again on
 the server. Successful saves reconcile with refreshed state; failures retain
 the draft and show the error. The Windows app theme, system high contrast,

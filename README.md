@@ -827,7 +827,10 @@ Fable at 100% does not mean the shared weekly limit is exhausted. Active
 accounts are bold blue, and **Used by** identifies their session groups.
 Focus a row to inspect reset times and freshness. Clicking a column sorts
 the table; it does not change which models an engine counts. To switch,
-choose the destination group and explicitly use the selected account.
+double-click a row (or press Enter) and choose the destination: the default
+login or a session group. A destination that cannot take the account stays
+listed, disabled, with the reason. The panel sizes itself to its content:
+full account names, and tables as tall as their rows.
 
 **Settings** in the tray and dashboard edit the same store. Choose **Shared
 defaults**, **Fable**, or **Opus / other**. Group overrides apply only to that

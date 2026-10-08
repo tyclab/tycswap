@@ -141,7 +141,9 @@ func (p *windowsPanel) refreshTheme() {
 		}
 	}
 	p.columnsFor(panelAccounts, p.model.panel.Columns)
-	p.columnsFor(panelFields, []Column{{Label: "Setting", Width: 238}, {Label: "Value", Width: 96}, {Label: "Source", Width: 210}})
+	p.columnsFor(panelFields, panelFieldColumns)
+	p.fitColumns(panelAccounts, p.accountWidths())
+	p.fitColumns(panelFields, p.fieldWidths())
 	panelInvalidate.Call(p.hwnd, 0, 1)
 	p.layout()
 }
@@ -155,8 +157,11 @@ func clampPanelRect(anchor point, work menuRect, width, height int32) menuRect {
 }
 
 func (p *windowsPanel) position() {
-	var anchor point
-	pGetCursorPos.Call(uintptr(unsafe.Pointer(&anchor)))
+	if p.anchor == nil {
+		p.anchor = new(point)
+		pGetCursorPos.Call(uintptr(unsafe.Pointer(p.anchor)))
+	}
+	anchor := *p.anchor
 	monitor, _, _ := user32.NewProc("MonitorFromPoint").Call(uintptr(uint64(uint32(anchor.x))|uint64(uint32(anchor.y))<<32), 2)
 	info := panelMonitor{size: uint32(unsafe.Sizeof(panelMonitor{}))}
 	if monitor == 0 || func() bool {
@@ -165,15 +170,13 @@ func (p *windowsPanel) position() {
 	}() {
 		info.work = menuRect{0, 0, 1920, 1080}
 	}
-	width := 32
-	for _, column := range p.model.panel.Columns {
-		width += column.Width
-	}
-	width = max(620, min(width, 800))
-	detail := p.detailHeight()
-	_, footerHeight := panelFooterLayout(p.model.panel.Actions, width-32, p.model.settings)
-	height := max(440, min(100+30+len(p.model.panel.Rows)*26+detail+footerHeight+8, 600))
-	rect := clampPanelRect(anchor, info.work, int32(p.scale(width)), int32(p.scale(height)))
+	width, height := p.contentSize()
+	var window, client menuRect
+	user32.NewProc("GetWindowRect").Call(p.hwnd, uintptr(unsafe.Pointer(&window)))
+	panelGetClient.Call(p.hwnd, uintptr(unsafe.Pointer(&client)))
+	width += int(window.right - window.left - client.right)
+	height += int(window.bottom - window.top - client.bottom)
+	rect := clampPanelRect(anchor, info.work, int32(width), int32(height))
 	user32.NewProc("SetWindowPos").Call(p.hwnd, 0, uintptr(rect.left), uintptr(rect.top), uintptr(rect.right-rect.left), uintptr(rect.bottom-rect.top), 0x14)
 	panelInvalidate.Call(p.hwnd, 0, 1)
 }
@@ -191,8 +194,8 @@ func (p *windowsPanel) layout() {
 			panelMove.Call(control, uintptr(x), uintptr(y), uintptr(max(1, w)), uintptr(max(1, h)), 1)
 		}
 	}
-	move(100, pad, p.scale(14), width-p.scale(224), p.scale(22))
-	move(101, p.scale(150), p.scale(16), width-p.scale(360), p.scale(18))
+	move(100, pad, p.scale(14), p.scale(130), p.scale(22))
+	move(101, p.scale(150), p.scale(16), width-p.scale(314), p.scale(18))
 	move(panelDashboard, width-pad-p.scale(140), p.scale(10), p.scale(140), p.scale(30))
 	move(panelAccountTab, pad, p.scale(50), p.scale(104), p.scale(34))
 	move(panelSettingsTab, pad+p.scale(112), p.scale(50), p.scale(104), p.scale(34))
@@ -225,7 +228,7 @@ func (p *windowsPanel) layout() {
 		move(id, pad+p.scale(button.x), footer+p.scale(button.y), p.scale(button.width), p.scale(28))
 		panelShow.Call(p.controls[id], 5)
 	}
-	for _, id := range []int{panelAccounts, 220, 221, 222, 223, panelTargets, panelUse} {
+	for _, id := range []int{panelAccounts, 220, 221, 222} {
 		panelShow.Call(p.controls[id], uintptr(boolValue(!p.model.settings))*5)
 	}
 	for _, id := range []int{224, panelScopes, panelFields, 225, 226, panelEdit, panelChoice, panelSave, panelReset, 227} {
@@ -236,6 +239,7 @@ func (p *windowsPanel) layout() {
 		move(panelScopes, pad+p.scale(74), p.scale(98), p.scale(220), p.scale(160))
 		detail := footer - p.scale(144)
 		move(panelFields, pad, p.scale(136), width-2*pad, detail-p.scale(144))
+		p.fillLastColumn(panelFields)
 		if p.revealPending[panelFields] {
 			p.revealSelection(panelFields)
 		}
@@ -251,30 +255,31 @@ func (p *windowsPanel) layout() {
 		p.rendering = false
 	} else {
 		detail := footer - p.scale(p.detailHeight())
-		lines := p.scale(p.detailHeight() - 84)
+		lines := p.scale(p.detailLines()*18 + 4)
 		move(panelAccounts, pad, p.scale(98), width-2*pad, detail-p.scale(106))
+		p.fillLastColumn(panelAccounts)
 		if p.revealPending[panelAccounts] {
 			p.revealSelection(panelAccounts)
 		}
 		move(220, pad, detail, width-2*pad, p.scale(20))
 		move(221, pad, detail+p.scale(22), width-2*pad, lines)
-		actions := detail + p.scale(30) + lines
-		move(223, pad, actions+p.scale(6), p.scale(90), p.scale(22))
-		move(panelTargets, pad+p.scale(98), actions, width-2*pad-p.scale(256), p.scale(150))
-		move(panelUse, width-pad-p.scale(150), actions, p.scale(150), p.scale(28))
-		move(222, pad, actions+p.scale(34), width-2*pad, p.scale(18))
+		p.fitScroll(221)
+		move(222, pad, detail+p.scale(28)+lines, width-2*pad, p.scale(18))
 	}
 	panelInvalidate.Call(p.controls[panelAccountTab], 0, 1)
 	panelInvalidate.Call(p.controls[panelSettingsTab], 0, 1)
 }
 
-func (p *windowsPanel) detailHeight() int {
+// Sized for the longest row so moving the selection never resizes the table.
+func (p *windowsPanel) detailLines() int {
 	lines := 1
-	if row := p.model.row(); row != nil {
-		lines = max(1, len(row.Details))
+	for _, row := range p.model.panel.Rows {
+		lines = max(lines, len(row.Details))
 	}
-	return 84 + min(lines, 7)*18
+	return min(lines, 7)
 }
+
+func (p *windowsPanel) detailHeight() int { return 60 + p.detailLines()*18 }
 
 func (p *windowsPanel) paint() uintptr {
 	var paint panelPaint
@@ -298,7 +303,7 @@ func (p *windowsPanel) paint() uintptr {
 func (p *windowsPanel) colorControl(dc, control uintptr) uintptr {
 	color := p.palette.text
 	id, _, _ := user32.NewProc("GetDlgCtrlID").Call(control)
-	if id == 101 || id == 221 || id == 222 || id == 223 || id == 224 || id == 226 || id == 227 || id == 228 {
+	if id == 101 || id == 221 || id == 222 || id == 224 || id == 226 || id == 227 || id == 228 {
 		color = p.palette.muted
 	}
 	menuTextColor.Call(dc, color)
@@ -312,7 +317,7 @@ func (p *windowsPanel) drawButton(draw *drawMenuItem) bool {
 	}
 	id := int(draw.ctlID)
 	selectedTab := id == panelAccountTab && !p.model.settings || id == panelSettingsTab && p.model.settings
-	primary := id == panelUse || id == panelSave
+	primary := id == panelSave
 	brush, color, font := p.background, p.palette.text, p.font
 	if selectedTab || id == panelDashboard {
 		color, font = p.palette.accent, p.bold

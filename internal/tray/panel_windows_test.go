@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 	"unsafe"
+
+	"golang.org/x/sys/windows"
 )
 
 func nativePanelFixture(t *testing.T, onAction func(PanelAction) error) *windowsTray {
@@ -333,7 +335,18 @@ func TestNativePanelOfflinePreservesLocalDeviceCommands(t *testing.T) {
 		nativePanelResult(t, tr)
 	}
 	p.command(p.actionControls["auto"], 0)
-	p.command(panelUse, 0)
+	p.confirmSwitch(1)
+	if p.confirm == nil {
+		t.Fatal("offline activation did not explain why switching is unavailable")
+	}
+	for i := range p.confirm.targets {
+		button := nativeConfirmButton(p, panelConfirmTarget+i)
+		if enabled, _, _ := user32.NewProc("IsWindowEnabled").Call(button); enabled != 0 || !strings.Contains(panelControlText(button), "Reconnect") {
+			t.Fatalf("offline destination %d is usable: %q", i, panelControlText(button))
+		}
+		p.confirmCommand(panelConfirmTarget + i)
+	}
+	p.closeConfirm()
 	p.command(panelSave, 0)
 	select {
 	case action := <-actions:
@@ -362,5 +375,98 @@ func TestNativePanelSettingsOpensWithSelectionVisible(t *testing.T) {
 	page, _, _ := panelSend.Call(list, panelListBase+40, 0, 0)
 	if selected != 0 || top > selected || selected >= top+page {
 		t.Fatalf("selected setting %d outside view top=%d page=%d", selected, top, page)
+	}
+}
+
+func nativeConfirmButton(p *windowsPanel, id int) uintptr {
+	button, _, _ := user32.NewProc("GetDlgItem").Call(p.confirm.hwnd, uintptr(id))
+	return button
+}
+
+func TestNativePanelActivationConfirmsDestination(t *testing.T) {
+	actions := make(chan PanelAction, 8)
+	tr := nativePanelFixture(t, func(action PanelAction) error { actions <- action; return nil })
+	value := clonePanel(tr.panelData)
+	value.Rows[1].Targets = []Target{{ID: "switch:claude:2", Label: "Existing / default"}, {ID: "group:fable:2", Label: "Fable"},
+		{ID: "group:opus:2", Label: "Opus / other", Disabled: true, Reason: "In use by Fable"}}
+	tr.SetPanel(value)
+	p := tr.panel
+	p.update()
+	list := p.controls[panelAccounts]
+	nativeSelectPanelRow(list, 1)
+	panelSend.Call(list, 0x100, 0x0d, 0)
+	if p.confirm == nil || len(p.confirm.targets) != 3 {
+		t.Fatal("Enter on an account did not open the switch confirmation")
+	}
+	if enabled, _, _ := user32.NewProc("IsWindowEnabled").Call(p.hwnd); enabled != 0 {
+		t.Fatal("panel stays usable behind the confirmation")
+	}
+	blocked := nativeConfirmButton(p, panelConfirmTarget+2)
+	if enabled, _, _ := user32.NewProc("IsWindowEnabled").Call(blocked); enabled != 0 || panelControlText(blocked) != "Opus / other (In use by Fable)" {
+		t.Fatalf("blocked destination shown as %q", panelControlText(blocked))
+	}
+	p.confirmCommand(panelConfirmTarget + 2)
+	escape := msg{hwnd: windows.HWND(p.confirm.hwnd), message: 0x100, wParam: 0x1b}
+	if !p.dialogMessage(&escape) || p.confirm != nil {
+		t.Fatal("Escape did not cancel the confirmation")
+	}
+	if enabled, _, _ := user32.NewProc("IsWindowEnabled").Call(p.hwnd); enabled == 0 {
+		t.Fatal("cancel left the panel disabled")
+	}
+	select {
+	case action := <-actions:
+		t.Fatalf("blocked or cancelled destination sent %+v", action)
+	default:
+	}
+	p.confirmSwitch(1)
+	panelSend.Call(nativeConfirmButton(p, panelConfirmTarget+1), 0xf5, 0, 0)
+	select {
+	case action := <-actions:
+		if action.Kind != "command" || action.Key != "group:fable:2" {
+			t.Fatalf("destination sent %+v", action)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("chosen destination did not switch")
+	}
+	nativePanelResult(t, tr)
+	if p.confirm != nil {
+		t.Fatal("confirmation stayed open after switching")
+	}
+}
+
+func TestNativePanelFitsColumnsAndRows(t *testing.T) {
+	tr := nativePanelFixture(t, func(PanelAction) error { return nil })
+	value := clonePanel(tr.panelData)
+	value.Rows[1].Title = "#2 tycho.schottdorf-secondary-2@obi.de"
+	value.Rows[1].Cells[0] = value.Rows[1].Title
+	tr.SetPanel(value)
+	p := tr.panel
+	p.update()
+	p.position()
+	list := p.controls[panelAccounts]
+	var client menuRect
+	panelGetClient.Call(list, uintptr(unsafe.Pointer(&client)))
+	total := 0
+	for i := range value.Columns {
+		width, _, _ := panelSend.Call(list, panelListBase+29, uintptr(i), 0)
+		total += int(width)
+	}
+	if total != int(client.right) {
+		t.Fatalf("columns cover %d of %d px: highlight leaves dead space", total, client.right)
+	}
+	name, _, _ := panelSend.Call(list, panelListBase+29, 0, 0)
+	if need := p.textWidth(p.font, value.Rows[1].Title) + p.scale(30); int(name) < need {
+		t.Fatalf("account column %d px truncates a %d px name", name, need)
+	}
+	if page, _, _ := panelSend.Call(list, panelListBase+40, 0, 0); int(page) < len(value.Rows) {
+		t.Fatalf("table shows %d of %d rows", page, len(value.Rows))
+	}
+	var window menuRect
+	user32.NewProc("GetWindowRect").Call(p.hwnd, uintptr(unsafe.Pointer(&window)))
+	if width := int(window.right - window.left); width >= p.scale(620) {
+		t.Fatalf("panel %d px wide for two short columns", width)
+	}
+	if height := int(window.bottom - window.top); height >= p.scale(440) {
+		t.Fatalf("panel %d px tall for two rows", height)
 	}
 }
