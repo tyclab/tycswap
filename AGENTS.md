@@ -22,6 +22,10 @@ temporary stores and fake providers rather than the operator's active logins.
 
 - README files and agent instruction files are exempt from the comment limit
   by design. The limit applies to code and configuration files.
+- Outside the limit (operator, 2026-10-08): vendored third-party code and
+  third-party build output (kept byte-identical to upstream), Hugo site
+  functional files, translation files, and approved runtime text such as MCP
+  tool docstrings. Output of our own generators is inside it: fix the generator.
 - Keep code-file comments at or below 20% of nonblank lines. Only the operator
   may grant a documented, file-specific exception; do not silently exempt files.
 - Preserve licenses, tool directives, runtime strings, and behavior. If the limit
