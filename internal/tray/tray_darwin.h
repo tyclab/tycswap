@@ -3,10 +3,10 @@
 
 #include <stdint.h>
 
-// UI work uses the main queue; tray_run must block the main thread until tray_quit.
-// Set accents before tray_run; tray_set_icon copies PNG bytes; brandPng may be NULL.
-// Menu kinds: 0 plain, 1 toggle, 2 gauge (pct<0 unknown), 3 header, 4 brand, 5 update.
-// push/pop nest rows; commit replaces the live menu; tycTrayClicked returns the chosen tag.
+// tray_darwin.m: callable from any thread, UI work goes to the main queue; tray_run runs on the main thread until tray_quit.
+// Accents (sRGB 0-1) before tray_run; tray_set_icon copies the PNG and keeps a wide image's aspect (count badge); brandPng may be NULL.
+// Menu kinds: 0 plain, 1 toggle, 2 gauge (pct 0-100, <0 unknown), 3 header, 4 brand, 5 update; dismiss closes the menu on click.
+// push/pop nest rows in a submenu; commit shows them, open menu too; tycTrayClicked (Go export) receives the chosen tag.
 
 void tray_set_accent(double r, double g, double b);
 void tray_set_light_accent(double r, double g, double b);

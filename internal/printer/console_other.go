@@ -1,5 +1,7 @@
 //go:build !windows
 
+// Spec 08§10.2/§10.4 console setup: VT is always available and UTF-8 is native off Windows.
+
 package printer
 
 func isWindows() bool { return false }
