@@ -140,7 +140,7 @@ func openOwnTray() bool {
 func fixture() tray.Panel {
 	lo, hi := 0.0, 100.0
 	p := tray.Panel{Title: "tycswap preview", Version: "Synthetic data", Status: "Synthetic fixture · connected",
-		Columns: []tray.Column{{ID: "account", Label: "Account", Width: 182}, {ID: "fiveHour", Label: "5-hour", Width: 60}, {ID: "weekly", Label: "Weekly", Width: 60}, {ID: "fable", Label: "Fable", Width: 62}, {ID: "owner", Label: "Used by", Width: 158}},
+		Columns: []tray.Column{{ID: "account", Label: "Account"}, {ID: "fiveHour", Label: "5-hour"}, {ID: "weekly", Label: "Weekly"}, {ID: "fable", Label: "Fable"}, {ID: "owner", Label: "Used by"}},
 		Actions: []tray.Item{{ID: "open", Title: "Open dashboard"}, {ID: "update", Title: "Check for updates"},
 			{ID: "install-update", Title: "Update tycswap", Kind: tray.KindUpdate}, {ID: "claude-code", Title: "Update Claude", Kind: tray.KindUpdate},
 			{ID: "quit", Title: "Quit"}, {ID: "auto", Title: "Auto-switch", Kind: tray.KindToggle}, {ID: "autostart", Title: "Start at login", Kind: tray.KindToggle, Checked: true}},

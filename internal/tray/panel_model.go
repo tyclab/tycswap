@@ -10,16 +10,14 @@ import (
 type panelFieldID struct{ scope, key string }
 
 type panelModel struct {
-	panel       Panel
-	rowID       string
-	targetID    string
-	targetScope string
-	scopeID     string
-	fieldKey    string
-	settings    bool
-	drafts      map[panelFieldID]string
-	saves       map[panelFieldID]string
-	resets      map[panelFieldID]string
+	panel    Panel
+	rowID    string
+	scopeID  string
+	fieldKey string
+	settings bool
+	drafts   map[panelFieldID]string
+	saves    map[panelFieldID]string
+	resets   map[panelFieldID]string
 }
 
 func clonePanel(p Panel) Panel {
@@ -63,7 +61,6 @@ func (m *panelModel) update(p Panel) {
 			}
 		}
 	}
-	m.selectTarget()
 	if m.scope() == nil && len(p.Settings) > 0 {
 		m.scopeID = p.Settings[0].ID
 	}
@@ -99,41 +96,6 @@ func (m *panelModel) row() *PanelRow {
 	}
 	return nil
 }
-
-func (m *panelModel) target() *Target {
-	if row := m.row(); row != nil {
-		for i := range row.Targets {
-			if row.Targets[i].ID == m.targetID {
-				return &row.Targets[i]
-			}
-		}
-	}
-	return nil
-}
-
-func (m *panelModel) selectTarget() {
-	if m.target() != nil {
-		return
-	}
-	m.targetID = ""
-	if row := m.row(); row != nil {
-		for _, target := range row.Targets {
-			if m.targetScope == "" || targetScope(target.ID) == m.targetScope {
-				m.chooseTarget(target.ID)
-				return
-			}
-		}
-	}
-}
-
-func targetScope(id string) string {
-	if i := strings.LastIndex(id, ":"); i >= 0 {
-		return id[:i]
-	}
-	return id
-}
-
-func (m *panelModel) chooseTarget(id string) { m.targetID, m.targetScope = id, targetScope(id) }
 
 func samePanelValue(field PanelSetting, a, b string) bool {
 	if a == b {

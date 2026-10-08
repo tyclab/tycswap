@@ -4,7 +4,7 @@ import "testing"
 
 func panelFixture() Panel {
 	lo, hi := 0.0, 100.0
-	return Panel{Columns: []Column{{ID: "account", Label: "Account", Width: 180}, {ID: "weekly", Label: "Weekly", Width: 70}},
+	return Panel{Columns: []Column{{ID: "account", Label: "Account"}, {ID: "weekly", Label: "Weekly"}},
 		Rows: []PanelRow{
 			{ID: "claude:1", Title: "Account 1", Active: true, Cells: []string{"Account 1", "42%"}, Targets: []Target{{ID: "group:fable:1", Label: "Fable", Disabled: true, Reason: "already active"}}},
 			{ID: "claude:2", Title: "Account 2", Cells: []string{"Account 2", "15%"}, Targets: []Target{{ID: "group:fable:2", Label: "Fable"}}},
@@ -22,12 +22,11 @@ func TestPanelLiveUpdatePreservesDraftAndIdentity(t *testing.T) {
 	p := panelFixture()
 	m.update(p)
 	m.rowID, m.scopeID, m.fieldKey = "claude:2", "fable", "threshold"
-	m.selectTarget()
 	m.edit("93")
 	p.Rows[0], p.Rows[1] = p.Rows[1], p.Rows[0]
 	p.Rows[0].Cells[1] = "16%"
 	m.update(p)
-	if m.rowID != "claude:2" || m.targetID != "group:fable:2" || m.value() != "93" {
+	if m.rowID != "claude:2" || m.value() != "93" {
 		t.Fatal("live update changed selection or unsaved setting")
 	}
 	action, err := m.mutation("setting-set")
@@ -80,26 +79,6 @@ func TestPanelCopyIsIndependentOfProducer(t *testing.T) {
 	if copy.Rows[0].Cells[1] != "42%" || copy.Rows[0].Targets[0].Reason != "already active" ||
 		copy.Settings[0].Settings[0].Value != "85" || *copy.Settings[0].Settings[0].Max != 100 {
 		t.Fatal("panel retained mutable producer data")
-	}
-}
-
-func TestPanelTargetScopeDoesNotChangeOnRowNavigation(t *testing.T) {
-	p := panelFixture()
-	p.Rows[0].Targets = append([]Target{{ID: "switch:claude:1", Label: "Default"}}, p.Rows[0].Targets...)
-	p.Rows[1].Targets = append([]Target{{ID: "switch:claude:2", Label: "Default"}}, p.Rows[1].Targets...)
-	p.Rows[1].Targets[1].Disabled, p.Rows[1].Targets[1].Reason = true, "Fable start unavailable"
-	m := &panelModel{}
-	m.update(p)
-	m.chooseTarget("group:fable:1")
-	m.rowID = "claude:2"
-	m.selectTarget()
-	if m.targetID != "group:fable:2" || m.target() == nil || !m.target().Disabled {
-		t.Fatal("navigation silently changed destination scope")
-	}
-	p.Rows[1].Targets = p.Rows[1].Targets[:1]
-	m.update(p)
-	if m.target() != nil || m.targetScope != "group:fable" {
-		t.Fatal("missing destination silently fell back to default")
 	}
 }
 

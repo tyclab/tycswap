@@ -42,8 +42,6 @@ const (
 	panelAccountTab   = 201
 	panelSettingsTab  = 202
 	panelAccounts     = 203
-	panelTargets      = 204
-	panelUse          = 205
 	panelScopes       = 206
 	panelFields       = 207
 	panelEdit         = 208
@@ -120,6 +118,10 @@ type windowsPanel struct {
 	nextAction     int
 	columnCache    map[int]panelColumnsCache
 	rowCache       map[int]panelRowsCache
+	revealPending  map[int]bool
+	fittedWidths   map[int][]int
+	anchor         *point
+	confirm        *panelConfirm
 }
 
 func nativePanelStruct[T any](value uintptr) *T { return *(**T)(unsafe.Pointer(&value)) }
@@ -154,6 +156,7 @@ func (t *windowsTray) showPanel() bool {
 			return false
 		}
 	}
+	t.panel.anchor = nil
 	t.panel.update()
 	t.panel.position()
 	panelShow.Call(t.panel.hwnd, 5)
@@ -198,7 +201,6 @@ func (t *windowsTray) createPanel() error {
 		{panelAccountTab, "BUTTON", "Accounts", panelTabStop | 0xb}, {panelSettingsTab, "BUTTON", "Settings", panelTabStop | 0xb},
 		{panelAccounts, "SysListView32", "Accounts", panelTabStop | 1 | 4 | 8 | 0x40 | 0x100000 | 0x200000},
 		{220, "STATIC", "", 0}, {221, "EDIT", "", 4 | 0x40 | 0x800 | 0x200000}, {222, "STATIC", "", 0},
-		{223, "STATIC", "Switch group", 0}, {panelTargets, "COMBOBOX", "", panelTabStop | 3 | 0x10 | 0x200 | 0x200000}, {panelUse, "BUTTON", "Use this account", panelTabStop | 0xb},
 		{224, "STATIC", "Apply to", 0}, {panelScopes, "COMBOBOX", "", panelTabStop | 3 | 0x10 | 0x200 | 0x200000},
 		{panelFields, "SysListView32", "Settings", panelTabStop | 1 | 4 | 8 | 0x40 | 0x100000 | 0x200000},
 		{225, "STATIC", "", 0}, {226, "EDIT", "", 4 | 0x40 | 0x800 | 0x200000},
@@ -222,7 +224,7 @@ func (t *windowsTray) createPanel() error {
 		header, _, _ := panelSend.Call(p.controls[id], panelListBase+31, 0, 0)
 		panelSubclass.Call(header, windows.NewCallback(panelHeaderSubclass), 2, 0)
 	}
-	for _, id := range []int{panelTargets, panelScopes, panelChoice} {
+	for _, id := range []int{panelScopes, panelChoice} {
 		panelSubclass.Call(p.controls[id], windows.NewCallback(panelComboSubclass), 3, 0)
 	}
 	for _, id := range []int{221, 226} {
@@ -234,6 +236,7 @@ func (t *windowsTray) createPanel() error {
 }
 
 func (p *windowsPanel) close() {
+	p.closeConfirm()
 	if p.hwnd != 0 {
 		pDestroyWindow.Call(p.hwnd)
 		p.hwnd = 0
@@ -242,6 +245,9 @@ func (p *windowsPanel) close() {
 }
 
 func (p *windowsPanel) dialogMessage(message *msg) bool {
+	if p.confirm != nil {
+		return p.confirmMessage(message)
+	}
 	visible, _, _ := user32.NewProc("IsWindowVisible").Call(p.hwnd)
 	if visible == 0 {
 		return false
@@ -320,10 +326,11 @@ func (p *windowsPanel) columnsFor(control int, columns []Column) {
 		if control == panelAccounts && i > 0 && column.ID != "owner" {
 			format = 1
 		}
-		item := panelListColumn{mask: 1 | 2 | 4, format: format, width: int32(p.scale(column.Width)), text: utf16z(column.Label)}
+		item := panelListColumn{mask: 1 | 2 | 4, format: format, text: utf16z(column.Label)}
 		panelSend.Call(hwnd, panelListBase+97, uintptr(i), uintptr(unsafe.Pointer(&item)))
 	}
 	p.columnCache[control] = panelColumnsCache{append([]Column(nil), columns...), p.dpi}
+	delete(p.fittedWidths, control)
 }
 
 func panelSendColumnCount(hwnd uintptr) int {
@@ -391,11 +398,29 @@ func (p *windowsPanel) listRows(id int, keys []string, rows [][]string, selected
 		}
 	}
 	if selectedChanged {
-		panelSend.Call(hwnd, panelListBase+19, uintptr(selected), 0)
+		p.revealSelection(id)
 	}
 	panelSend.Call(hwnd, 0xb, 1, 0)
 	panelInvalidate.Call(hwnd, 0, 1)
 	p.rowCache[id] = panelRowsCache{append([]string(nil), keys...), rows}
+}
+
+// A list on a page that was never laid out has no visible rows, and scrolling
+// it would leave the selection off-screen once it is sized. Defer to layout.
+func (p *windowsPanel) revealSelection(id int) {
+	hwnd := p.controls[id]
+	page, _, _ := panelSend.Call(hwnd, panelListBase+40, 0, 0)
+	if page == 0 {
+		if p.revealPending == nil {
+			p.revealPending = make(map[int]bool)
+		}
+		p.revealPending[id] = true
+		return
+	}
+	delete(p.revealPending, id)
+	if selected, _, _ := panelSend.Call(hwnd, panelListBase+12, ^uintptr(0), 2); int(selected) >= 0 {
+		panelSend.Call(hwnd, panelListBase+19, selected, 0)
+	}
 }
 
 func (p *windowsPanel) renderAccounts() {
@@ -422,6 +447,7 @@ func (p *windowsPanel) renderAccounts() {
 		}
 	}
 	p.listRows(panelAccounts, keys, rows, selected)
+	p.fitColumns(panelAccounts, p.accountWidths())
 	header, _, _ := panelSend.Call(p.controls[panelAccounts], panelListBase+31, 0, 0)
 	panelInvalidate.Call(header, 0, 1)
 	p.renderDetails()
@@ -458,33 +484,20 @@ func (p *windowsPanel) combo(id int, labels []string, selected int) {
 }
 
 func (p *windowsPanel) renderDetails() {
-	row := p.model.row()
-	var labels []string
-	selected := -1
-	if row == nil {
+	hint := "Double-click or press Enter to switch."
+	if row := p.model.row(); row == nil {
 		p.setText(220, "No accounts")
 		p.setText(221, "Open the dashboard to add an account.")
+		hint = ""
 	} else {
 		p.setText(220, row.Title)
 		p.setText(221, strings.Join(row.Details, "\r\n"))
-		for i, target := range row.Targets {
-			labels = append(labels, target.Label)
-			if target.ID == p.model.targetID {
-				selected = i
-			}
-		}
-	}
-	p.combo(panelTargets, labels, selected)
-	reason, enabled := "", false
-	if target := p.model.target(); target != nil {
-		reason, enabled = target.Reason, !target.Disabled
 	}
 	if p.model.panel.Offline {
-		reason, enabled = "Reconnect before switching accounts.", false
+		hint = "Reconnect before switching accounts."
 	}
-	p.setText(222, reason)
-	p.enable(panelUse, enabled)
-	p.enable(panelTargets, len(labels) > 0)
+	p.setText(222, hint)
+	p.fitScroll(221)
 }
 
 func (p *windowsPanel) renderScopes() {
@@ -500,7 +513,7 @@ func (p *windowsPanel) renderScopes() {
 }
 
 func (p *windowsPanel) renderFields() {
-	p.columnsFor(panelFields, []Column{{Label: "Setting", Width: 238}, {Label: "Value", Width: 96}, {Label: "Source", Width: 210}})
+	p.columnsFor(panelFields, panelFieldColumns)
 	var rows [][]string
 	var keys []string
 	selected := -1
@@ -514,6 +527,7 @@ func (p *windowsPanel) renderFields() {
 		}
 	}
 	p.listRows(panelFields, keys, rows, selected)
+	p.fitColumns(panelFields, p.fieldWidths())
 	p.renderEditor()
 }
 
@@ -538,6 +552,7 @@ func (p *windowsPanel) renderEditor() {
 	} else {
 		p.setText(225, field.Label)
 		p.setText(226, field.Description+"\r\n"+field.Applies+" · "+field.Source)
+		p.fitScroll(226)
 		choice = field.Kind == "bool" || field.Kind == "choice"
 		p.choiceValues = append([]string(nil), field.Choices...)
 		if field.Kind == "bool" {
@@ -629,7 +644,7 @@ func (p *windowsPanel) command(id int, notification int) {
 	if p.rendering {
 		return
 	}
-	if id != panelTargets && id != panelScopes && id != panelEdit && id != panelChoice && notification != 0 {
+	if id != panelScopes && id != panelEdit && id != panelChoice && notification != 0 {
 		return
 	}
 	switch id {
@@ -637,6 +652,7 @@ func (p *windowsPanel) command(id int, notification int) {
 		p.captureEdit()
 		p.switchingPage = true
 		p.model.settings = id == panelSettingsTab
+		p.position()
 		p.layout()
 		panelShow.Call(p.hwnd, 5)
 		pSetForegroundWindow.Call(p.hwnd)
@@ -646,21 +662,6 @@ func (p *windowsPanel) command(id int, notification int) {
 		}
 		panelSetFocus.Call(p.controls[focus])
 		p.switchingPage = false
-	case panelTargets:
-		if notification != 1 {
-			return
-		}
-		selected, _, _ := panelSend.Call(p.controls[id], panelComboCurrent, 0, 0)
-		if row := p.model.row(); row != nil && int(selected) >= 0 && int(selected) < len(row.Targets) {
-			p.model.chooseTarget(row.Targets[selected].ID)
-			p.rendering = true
-			p.renderDetails()
-			p.rendering = false
-		}
-	case panelUse:
-		if target := p.model.target(); target != nil && !target.Disabled && !p.model.panel.Offline {
-			p.dispatch(PanelAction{Kind: "command", Key: target.ID})
-		}
 	case panelScopes:
 		if notification != 1 {
 			return
@@ -804,7 +805,6 @@ func (p *windowsPanel) notification(pointer uintptr) uintptr {
 		p.captureEdit()
 		if header.hwnd == p.controls[panelAccounts] && int(note.item) < len(p.model.panel.Rows) {
 			p.model.rowID = p.model.panel.Rows[note.item].ID
-			p.model.selectTarget()
 			p.rendering = true
 			p.renderDetails()
 			p.rendering = false
@@ -814,6 +814,9 @@ func (p *windowsPanel) notification(pointer uintptr) uintptr {
 				p.updateEditorButtons()
 			}
 		}
+	} else if header.code == 0xffffff8e && header.hwnd == p.controls[panelAccounts] {
+		note := nativePanelStruct[panelListNotification](pointer)
+		p.confirmSwitch(int(note.item))
 	} else if header.code == 0xffffff94 && header.hwnd == p.controls[panelAccounts] {
 		note := nativePanelStruct[panelListNotification](pointer)
 		if note.subItem >= 0 && int(note.subItem) < len(p.model.panel.Columns) {
@@ -837,7 +840,7 @@ func panelWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uin
 		panelShow.Call(uintptr(hwnd), 0)
 		return 0
 	case 0x0006:
-		if wParam&0xffff == 0 && !p.switchingPage {
+		if wParam&0xffff == 0 && !p.switchingPage && (p.confirm == nil || lParam != p.confirm.hwnd) {
 			panelShow.Call(uintptr(hwnd), 0)
 		}
 		return 0
@@ -874,7 +877,8 @@ func panelWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uin
 		if lParam != 0 {
 			measure := nativePanelStruct[measureMenuItem](lParam)
 			if measure.ctlType == 3 {
-				measure.itemHeight = uint32(p.scale(24))
+				m := p.metrics()
+				measure.itemHeight = uint32(m.line + m.unit - 1)
 				return 1
 			}
 		}

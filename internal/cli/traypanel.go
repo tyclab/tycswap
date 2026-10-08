@@ -30,12 +30,12 @@ func (a *appShell) panel(st web.State) tray.Panel {
 	if down, why := a.offline(); down {
 		p.Offline, p.Status = true, capitalizeFirst(why)
 	}
-	p.Columns = []tray.Column{{ID: "account", Label: "Account", Width: 182}, {ID: "fiveHour", Label: "5-hour", Width: 60}, {ID: "sevenDay", Label: "Weekly", Width: 60}}
+	p.Columns = []tray.Column{{ID: "account", Label: "Account"}, {ID: "fiveHour", Label: "5-hour"}, {ID: "sevenDay", Label: "Weekly"}}
 	models := panelModels(st)
 	for _, name := range models {
-		p.Columns = append(p.Columns, tray.Column{ID: "model:" + name, Label: name, Width: 62})
+		p.Columns = append(p.Columns, tray.Column{ID: "model:" + name, Label: name})
 	}
-	p.Columns = append(p.Columns, tray.Column{ID: "owner", Label: "Used by", Width: 138})
+	p.Columns = append(p.Columns, tray.Column{ID: "owner", Label: "Used by"})
 	claude, codex := rowsByProvider(st.Accounts)
 	for _, row := range append(claude, codex...) {
 		windows := panelWindows(row)

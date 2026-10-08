@@ -13,7 +13,6 @@ type Panel struct {
 
 type Column struct {
 	ID, Label string
-	Width     int
 }
 
 type PanelRow struct {
