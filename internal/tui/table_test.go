@@ -102,8 +102,8 @@ func cellText(line string, start, end int) string {
 // -- columns: union, order, headers, the em dash -----------------------------
 
 // TestWindowTableColumnUnionAndOrder fixes the column contract: the columns are
-// the UNION of the window labels the rows report, ordered by first appearance in
-// oauth.RelevantWindows order (5h, then 7d, then scoped) — so one row's scoped
+// the UNION of the window labels the rows report, in canonical order (5h, 7d,
+// then scoped windows by name; see tableColumnRank) — so one row's scoped
 // window gets a column even though the other rows never report it — the header
 // names each column, and a row missing a column renders an em dash IN that
 // column rather than shifting its neighbours left.
@@ -111,8 +111,8 @@ func TestWindowTableColumnUnionAndOrder(t *testing.T) {
 	rt := tablePanelQ(t, heteroSnapshot(t), nil, 120)
 	header := panelHeaderRow(t, rt)
 
-	// Union, in first-appearance RelevantWindows order: 5h, 7d, then Fable (slot
-	// 2's scoped window) before Opus (slot 4's).
+	// Union in canonical order: 5h, 7d, then scoped windows by name, so Fable
+	// before Opus.
 	var at []int
 	for _, label := range []string{"5h", "7d", "Fable", "Opus"} {
 		start, _ := columnOf(header, label)
@@ -123,7 +123,7 @@ func TestWindowTableColumnUnionAndOrder(t *testing.T) {
 	}
 	for i := 1; i < len(at); i++ {
 		if at[i] <= at[i-1] {
-			t.Fatalf("header %q: columns out of RelevantWindows order (5h, 7d, Fable, Opus)", header)
+			t.Fatalf("header %q: columns out of canonical order (5h, 7d, Fable, Opus)", header)
 		}
 	}
 
