@@ -21,12 +21,12 @@ const panelMaxRows = 12
 // Every size derives from the body font, as a web page derives from its root
 // font: line is the font's line height and unit half of it. Only the two font
 // sizes are fixed, scaled for the monitor's DPI.
-type panelMetrics struct{ line, unit, pad, control, row, inset int }
+type panelMetrics struct{ line, unit, pad, control, row, inset, box int }
 
 func (p *windowsPanel) metrics() panelMetrics {
 	line := max(2, p.lineHeight(p.font))
 	unit := line / 2
-	return panelMetrics{line: line, unit: unit, pad: 2 * unit, control: line + unit + 2, row: line + unit + 1, inset: unit + unit/2}
+	return panelMetrics{line: line, unit: unit, pad: 2 * unit, control: line + unit + 2, row: line + unit + 1, inset: unit + unit/2, box: unit/2 + 1}
 }
 
 func (p *windowsPanel) buttonWidth(m panelMetrics, font uintptr, text string) int {
@@ -51,14 +51,14 @@ func (p *windowsPanel) footer(m panelMetrics, width int) ([]panelFooterButton, i
 	return buttons, m.unit + rows + m.line + m.unit
 }
 
-// Below the accounts table: title, details, hint.
+// Below the accounts table: title, framed details, hint.
 func (p *windowsPanel) accountDetail(m panelMetrics) int {
-	return m.line + m.unit/4 + p.detailLines()*m.line + 4 + m.unit/2 + m.line + m.unit
+	return m.line + m.unit/4 + p.detailLines()*m.line + 4 + 2*m.box + m.unit/2 + m.line + m.unit
 }
 
-// Below the settings table: title, description, editor row, error.
+// Below the settings table: title, framed description, editor row, error.
 func (p *windowsPanel) settingDetail(m panelMetrics) int {
-	return m.line + m.unit/4 + 3*m.line + 4 + m.unit/2 + m.control + m.unit/2 + m.line + m.unit
+	return m.line + m.unit/4 + 3*m.line + 4 + 2*m.box + m.unit/2 + m.control + m.unit/2 + m.line + m.unit
 }
 
 func (p *windowsPanel) scopeWidth(m panelMetrics) int {

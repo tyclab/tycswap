@@ -470,3 +470,36 @@ func TestNativePanelFitsColumnsAndRows(t *testing.T) {
 		t.Fatalf("panel %d px tall for two rows", height)
 	}
 }
+
+func TestNativePanelSeparatesTableFromFramedDetails(t *testing.T) {
+	tr := nativePanelFixture(t, func(PanelAction) error { return nil })
+	p := tr.panel
+	p.update()
+	p.position()
+	client := func(id int) menuRect {
+		var r menuRect
+		user32.NewProc("GetWindowRect").Call(p.controls[id], uintptr(unsafe.Pointer(&r)))
+		user32.NewProc("MapWindowPoints").Call(0, p.hwnd, uintptr(unsafe.Pointer(&r)), 2)
+		return r
+	}
+	for _, page := range []struct {
+		tab, list, title, box int
+	}{{panelAccountTab, panelAccounts, 220, 221}, {panelSettingsTab, panelFields, 225, 226}} {
+		p.command(page.tab, 0)
+		list, title, box := client(page.list), client(page.title), client(page.box)
+		divided := false
+		for _, y := range p.rules {
+			divided = divided || int32(y) >= list.bottom && int32(y) < title.top
+		}
+		if !divided {
+			t.Fatalf("tab %d: no rule between table bottom %d and details %d: %v", page.tab, list.bottom, title.top, p.rules)
+		}
+		framed := false
+		for _, f := range p.frames {
+			framed = framed || f.left < box.left && f.top < box.top && f.right > box.right && f.bottom > box.bottom
+		}
+		if !framed {
+			t.Fatalf("tab %d: text box %+v has no frame around it: %+v", page.tab, box, p.frames)
+		}
+	}
+}

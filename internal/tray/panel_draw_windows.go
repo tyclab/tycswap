@@ -2,7 +2,10 @@
 
 package tray
 
-import "unsafe"
+import (
+	"slices"
+	"unsafe"
+)
 
 type panelColors struct{ background, header, text, muted, line, selection, selectedText, accent uintptr }
 type panelCustomDraw struct {
@@ -207,6 +210,12 @@ func (p *windowsPanel) layout() {
 	move(panelSettingsTab, pad+accounts+m.unit/2, head.tabs, p.buttonWidth(m, p.bold, "Settings"), m.control)
 	buttons, footerHeight := p.footer(m, width)
 	footer := height - footerHeight
+	rules := []int{head.rule, footer}
+	var frames []menuRect
+	framed := func(id, x, y, w, h int) {
+		frames = append(frames, menuRect{int32(x), int32(y), int32(x + w), int32(y + h + 2*m.box)})
+		move(id, x+m.box, y+m.box, w-2*m.box, h)
+	}
 	status := footer + footerHeight - m.unit - m.line
 	move(228, pad, status, inner, m.line)
 	if p.controls[228] == 0 {
@@ -248,17 +257,18 @@ func (p *windowsPanel) layout() {
 		detail := footer - p.settingDetail(m)
 		top := head.content + m.control + m.unit
 		move(panelFields, pad, top, inner, detail-m.unit-top)
+		rules = append(rules, detail-m.unit/2)
 		p.fillLastColumn(panelFields)
 		if p.revealPending[panelFields] {
 			p.revealSelection(panelFields)
 		}
 		description := detail + m.line + m.unit/4
-		editor := description + 3*m.line + 4 + m.unit/2
+		editor := description + 3*m.line + 4 + 2*m.box + m.unit/2
 		reset := p.buttonWidth(m, p.font, "Reset")
 		save := p.buttonWidth(m, p.bold, "Save")
 		saveX := width - pad - reset - m.unit*3/4 - save
 		move(225, pad, detail, inner, m.line)
-		move(226, pad, description, inner, 3*m.line+4)
+		framed(226, pad, description, inner, 3*m.line+4)
 		move(panelEdit, pad, editor, saveX-m.unit-pad, m.control)
 		move(panelChoice, pad, editor, saveX-m.unit-pad, p.dropHeight(m, len(p.choiceValues)))
 		move(panelSave, saveX, editor, save, m.control)
@@ -271,14 +281,19 @@ func (p *windowsPanel) layout() {
 		detail := footer - p.accountDetail(m)
 		lines := p.detailLines()*m.line + 4
 		move(panelAccounts, pad, head.content, inner, detail-m.unit-head.content)
+		rules = append(rules, detail-m.unit/2)
 		p.fillLastColumn(panelAccounts)
 		if p.revealPending[panelAccounts] {
 			p.revealSelection(panelAccounts)
 		}
 		move(220, pad, detail, inner, m.line)
-		move(221, pad, detail+m.line+m.unit/4, inner, lines)
+		framed(221, pad, detail+m.line+m.unit/4, inner, lines)
 		p.fitScroll(221)
-		move(222, pad, detail+m.line+m.unit/4+lines+m.unit/2, inner, m.line)
+		move(222, pad, detail+m.line+m.unit/4+lines+2*m.box+m.unit/2, inner, m.line)
+	}
+	if !slices.Equal(rules, p.rules) || !slices.Equal(frames, p.frames) {
+		p.rules, p.frames = rules, frames
+		panelInvalidate.Call(p.hwnd, 0, 1)
 	}
 	panelInvalidate.Call(p.controls[panelAccountTab], 0, 1)
 	panelInvalidate.Call(p.controls[panelSettingsTab], 0, 1)
@@ -300,14 +315,14 @@ func (p *windowsPanel) paint() uintptr {
 		menuFillRect.Call(dc, uintptr(unsafe.Pointer(&paint.rect)), p.background)
 		var rect menuRect
 		panelGetClient.Call(p.hwnd, uintptr(unsafe.Pointer(&rect)))
-		m := p.metrics()
-		rule := int32(p.head(m).rule)
-		line := menuRect{0, rule, rect.right, rule + 1}
 		brush, _, _ := menuGDI.NewProc("CreateSolidBrush").Call(p.palette.line)
-		menuFillRect.Call(dc, uintptr(unsafe.Pointer(&line)), brush)
-		_, footerHeight := p.footer(m, int(rect.right))
-		line.top, line.bottom = rect.bottom-int32(footerHeight), rect.bottom-int32(footerHeight)+1
-		menuFillRect.Call(dc, uintptr(unsafe.Pointer(&line)), brush)
+		for _, y := range p.rules {
+			line := menuRect{0, int32(y), rect.right, int32(y) + 1}
+			menuFillRect.Call(dc, uintptr(unsafe.Pointer(&line)), brush)
+		}
+		for _, frame := range p.frames {
+			user32.NewProc("FrameRect").Call(dc, uintptr(unsafe.Pointer(&frame)), brush)
+		}
 		menuDeleteObject.Call(brush)
 	}
 	user32.NewProc("EndPaint").Call(p.hwnd, uintptr(unsafe.Pointer(&paint)))
