@@ -341,3 +341,26 @@ func TestNativePanelOfflinePreservesLocalDeviceCommands(t *testing.T) {
 	default:
 	}
 }
+
+func TestNativePanelSettingsOpensWithSelectionVisible(t *testing.T) {
+	tr := nativePanelFixture(t, func(PanelAction) error { return nil })
+	value := clonePanel(tr.panelData)
+	value.Settings[0].Settings = nil
+	for i := 0; i < 20; i++ {
+		value.Settings[0].Settings = append(value.Settings[0].Settings, PanelSetting{Key: fmt.Sprintf("key%d", i), Label: fmt.Sprintf("Setting %d", i), Kind: "string", Value: "x"})
+	}
+	tr.panel.close()
+	tr.SetPanel(value)
+	if err := tr.createPanel(); err != nil {
+		t.Fatal(err)
+	}
+	p := tr.panel
+	p.command(panelSettingsTab, 0)
+	list := p.controls[panelFields]
+	selected, _, _ := panelSend.Call(list, panelListBase+12, ^uintptr(0), 2)
+	top, _, _ := panelSend.Call(list, panelListBase+39, 0, 0)
+	page, _, _ := panelSend.Call(list, panelListBase+40, 0, 0)
+	if selected != 0 || top > selected || selected >= top+page {
+		t.Fatalf("selected setting %d outside view top=%d page=%d", selected, top, page)
+	}
+}

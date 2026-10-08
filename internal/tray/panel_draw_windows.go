@@ -236,6 +236,9 @@ func (p *windowsPanel) layout() {
 		move(panelScopes, pad+p.scale(74), p.scale(98), p.scale(220), p.scale(160))
 		detail := footer - p.scale(144)
 		move(panelFields, pad, p.scale(136), width-2*pad, detail-p.scale(144))
+		if p.revealPending[panelFields] {
+			p.revealSelection(panelFields)
+		}
 		move(225, pad, detail, width-2*pad, p.scale(20))
 		move(226, pad, detail+p.scale(22), width-2*pad, p.scale(52))
 		move(panelEdit, pad, detail+p.scale(78), width-2*pad-p.scale(176), p.scale(28))
@@ -250,6 +253,9 @@ func (p *windowsPanel) layout() {
 		detail := footer - p.scale(p.detailHeight())
 		lines := p.scale(p.detailHeight() - 84)
 		move(panelAccounts, pad, p.scale(98), width-2*pad, detail-p.scale(106))
+		if p.revealPending[panelAccounts] {
+			p.revealSelection(panelAccounts)
+		}
 		move(220, pad, detail, width-2*pad, p.scale(20))
 		move(221, pad, detail+p.scale(22), width-2*pad, lines)
 		actions := detail + p.scale(30) + lines

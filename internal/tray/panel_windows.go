@@ -120,6 +120,7 @@ type windowsPanel struct {
 	nextAction     int
 	columnCache    map[int]panelColumnsCache
 	rowCache       map[int]panelRowsCache
+	revealPending  map[int]bool
 }
 
 func nativePanelStruct[T any](value uintptr) *T { return *(**T)(unsafe.Pointer(&value)) }
@@ -391,11 +392,29 @@ func (p *windowsPanel) listRows(id int, keys []string, rows [][]string, selected
 		}
 	}
 	if selectedChanged {
-		panelSend.Call(hwnd, panelListBase+19, uintptr(selected), 0)
+		p.revealSelection(id)
 	}
 	panelSend.Call(hwnd, 0xb, 1, 0)
 	panelInvalidate.Call(hwnd, 0, 1)
 	p.rowCache[id] = panelRowsCache{append([]string(nil), keys...), rows}
+}
+
+// A list on a page that was never laid out has no visible rows, and scrolling
+// it would leave the selection off-screen once it is sized. Defer to layout.
+func (p *windowsPanel) revealSelection(id int) {
+	hwnd := p.controls[id]
+	page, _, _ := panelSend.Call(hwnd, panelListBase+40, 0, 0)
+	if page == 0 {
+		if p.revealPending == nil {
+			p.revealPending = make(map[int]bool)
+		}
+		p.revealPending[id] = true
+		return
+	}
+	delete(p.revealPending, id)
+	if selected, _, _ := panelSend.Call(hwnd, panelListBase+12, ^uintptr(0), 2); int(selected) >= 0 {
+		panelSend.Call(hwnd, panelListBase+19, selected, 0)
+	}
 }
 
 func (p *windowsPanel) renderAccounts() {
