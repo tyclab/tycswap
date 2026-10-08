@@ -6,6 +6,7 @@ import (
 	"github.com/tyclab/tycswap/internal/slotkey"
 )
 
+// relocate writes, reads back to verify byte-identity, and only then deletes the legacy entry: no unsafe window.
 type relocateConfig struct {
 	// label prefixes every warning this relocation logs (matches Python's
 	// f"{context}: ..." messages, e.g. "windows_keyring_to_files").
@@ -14,10 +15,7 @@ type relocateConfig struct {
 	// (the macOS migration pre-filters this to slots not yet in the security
 	// service; the Windows migration passes every managed account).
 	pending map[string]string
-	// allAccounts is every managed account (not just pending), used to
-	// compute the email-uniqueness count the account-None fallback is gated
-	// on — always the full set, even when pending is a strict subset (spec
-	// 07§5.4's pre-check narrowing must not change who "unique email" means).
+	// allAccounts is every managed account: the account-None fallback's email-uniqueness count always uses the full set.
 	allAccounts map[string]string
 
 	readLegacy func(username string) (string, error)

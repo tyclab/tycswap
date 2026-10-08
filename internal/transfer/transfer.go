@@ -45,6 +45,7 @@ var (
 // eprint writes one line to Stderr (transfer.py::_eprint).
 func eprint(msg string) { io.WriteString(Stderr, msg+"\n") }
 
+// Mirrors store.SequenceData field for field; defined here so transfer stays decoupled (DESIGN A2).
 type SequenceData struct {
 	ActiveAccountNumber *int                       `json:"activeAccountNumber"`
 	LastUpdated         string                     `json:"lastUpdated"`
@@ -171,6 +172,7 @@ func nextAccountNumber(data *SequenceData) int {
 	return max + 1
 }
 
+// Python key order (email, uuid, organizationUuid, organizationName, added, kind, alias): key order and bytes are load-bearing.
 func buildRecord(email, uuid, orgUUID, orgName, added, kind, alias, baseURL string) (json.RawMessage, error) {
 	type kv struct {
 		k, v string

@@ -1,3 +1,8 @@
+// usage.go maps the ChatGPT usage response onto tycswap's five_hour/seven_day window shape so Claude-side consumers need no branching.
+// Wire shape read off the live endpoint (2026-08-16): windows nest under rate_limit, used_percent is pct, reset_at is epoch seconds
+// (pace parses ISO). primary_window is not necessarily 5-hour: Plus reports 604800 s, so windows are classified by limit_window_seconds.
+// An absent window stays absent, never 0% used.
+
 package api
 
 import (
@@ -14,11 +19,13 @@ import (
 )
 
 const (
+	// codex-auth's wording, so users of either tool read the other's output; an HTTP failure is "http <status>".
 	SentinelMissingAuth = "MissingAuth"
 	SentinelNetwork     = "network"
 	SentinelBadResponse = "bad-response"
 )
 
+// RetryAfterS is the server's Retry-After in seconds; honouring it avoids being rate-limited harder.
 type UsageFetch struct {
 	Usage       map[string]any
 	Sentinel    string
@@ -27,6 +34,7 @@ type UsageFetch struct {
 
 const maxISOEpoch = 253402300799
 
+// "+00:00" (not "Z") keeps the string byte-identical to what claude-swap persists.
 func isoFromEpoch(epoch any) string {
 	f, ok := number(epoch)
 	if !ok || f <= 0 || math.IsNaN(f) || math.IsInf(f, 0) || f > maxISOEpoch {
@@ -109,6 +117,7 @@ func buildUsageResult(data any, now time.Time) map[string]any {
 		}
 	}
 
+	// A plan-only map renders as a blank row with no explanation; that is how the first live run failed.
 	if len(result) == 0 {
 		return nil
 	}
@@ -126,6 +135,7 @@ func buildUsageResult(data any, now time.Time) map[string]any {
 	return result
 }
 
+// Delta-seconds only: the endpoint only sends seconds, and a misparsed HTTP-date could park an account for hours.
 func retryAfterSeconds(raw string) *float64 {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

@@ -1,3 +1,4 @@
+// Package cclock holds Claude Code's own npm proper-lockfile locks; the protocol is an external contract and must match exactly.
 package cclock
 
 import (
@@ -17,10 +18,7 @@ import (
 	"github.com/tyclab/tycswap/internal/platform"
 )
 
-// Timing constants, matching claude_locks.py verbatim. proper-lockfile defaults
-// Claude Code runs with: stale after 10s, holder touches every stale/2 = 5s;
-// tycswap touches faster (3s) for margin. 9s of bounded waiting comfortably
-// outlasts a sub-second-to-few-second credential/config hold.
+// Timing matches claude_locks.py: Claude Code's proper-lockfile goes stale after 10s and touches every 5s; tycswap touches every 3s for margin.
 const (
 	// StalenessS is the age past which a held lock is considered stale.
 	StalenessS = 10 * time.Second
@@ -203,6 +201,7 @@ func jitterBackoff() time.Duration {
 	return time.Duration((0.25 + rand.Float64()*0.25) * float64(time.Second))
 }
 
+// breakStale renames the dir aside before removing it: a plain Remove by two waiters can delete a freshly retaken lock.
 func breakStale(lockDir string, staleness time.Duration, clk clock.Clock) {
 	aside := fmt.Sprintf("%s.stale-%d-%d", lockDir, os.Getpid(), staleSeq.Add(1))
 	if err := os.Rename(lockDir, aside); err != nil {

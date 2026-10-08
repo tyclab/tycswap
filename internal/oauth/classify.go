@@ -10,6 +10,7 @@ import (
 	"strings"
 )
 
+// Precedence: HTTPError, timeout, network, bad-response, type name (04§1.16). Retry-After: seconds only, negatives clamp to 0, HTTP-date is nil.
 type HTTPError struct {
 	Code       int
 	Body       []byte

@@ -12,12 +12,11 @@ import (
 	"github.com/tyclab/tycswap/internal/clock"
 )
 
+// Without it cmd.Run reads captured pipes to EOF and can outlive the timeout while an orphaned grandchild holds one.
 const probeWaitDelay = 2 * time.Second
 
 type Runner interface {
-	// LookPath resolves a binary on PATH (shutil.which). Returns a non-nil
-	// error when the binary is not found. On Windows this must consult PATHEXT
-	// so a `claude.cmd` shim resolves.
+	// LookPath resolves a binary on PATH (shutil.which); on Windows it must consult PATHEXT so a `claude.cmd` shim resolves.
 	LookPath(name string) (string, error)
 	// Probe runs argv with env, capturing stdout, up to timeout. It returns
 	// (stdout, exitCode, err); err is non-nil only on a spawn failure or
@@ -45,6 +44,7 @@ func (osRunner) Probe(argv, env []string, timeout time.Duration) (string, int, e
 
 func classifyProbe(out string, runErr error, ctxErr error) (string, int, error) {
 	if errors.Is(runErr, exec.ErrWaitDelay) {
+		// A grandchild held the pipe past a successful exit; stdout is complete, so this is success, not a timeout that deletes fresh profiles.
 		return out, 0, nil
 	}
 	if runErr == nil {
@@ -53,9 +53,7 @@ func classifyProbe(out string, runErr error, ctxErr error) (string, int, error) 
 		return out, 0, nil
 	}
 	if ee, ok := runErr.(*exec.ExitError); ok {
-		// A process the deadline killed dies via signal (never Exited): surface
-		// TimeoutExpired parity → validation fails. A process that exited on its
-		// own — any rc — is honored even if the deadline then fired.
+		// Killed by the deadline (signal, never Exited) is a timeout; a process that exited on its own keeps its rc.
 		if ctxErr == context.DeadlineExceeded && !ee.Exited() {
 			return "", 0, context.DeadlineExceeded
 		}

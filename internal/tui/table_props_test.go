@@ -674,6 +674,7 @@ func TestPanelHeaderAgreesWithItsCountingNote(t *testing.T) {
 
 // -- I6: exhausted visibility, per surface ------------------------------------
 
+// The figure is unconditional; the countdown is the last detail shed, not parity at every width (measured: six-model rosters).
 func TestMonitorAlwaysStatesAnExhaustedWindow(t *testing.T) {
 	figures, countdowns, parity := 0, 0, 0
 	for _, r := range tableCorpus() {
@@ -2722,6 +2723,7 @@ func fallbackLabels(r rosterSpec, s tableSurface, i, width int) []string {
 	return out
 }
 
+// Without it a fallback reading the stored map could claim "5h NaN%", and I13 would misread that as a table shortfall.
 func TestFallbackStatesOnlyProjectedWindows(t *testing.T) {
 	checked := 0
 	for _, r := range tableCorpus() {
@@ -2912,6 +2914,7 @@ const tableFirstFitBaseline = `
 	scoped-ladder 17 20 17 22
 `
 
+// pct-unusable stores 1e9, now elided as ">999%" (five columns, was a false "999%"), so its monitor floor rises by one.
 var i15MarkerAllowance = map[string]int{"pct-unusable": 1}
 
 // TestMinWidthNeverOverReserves is I15: the floor is exactly the pinned number,

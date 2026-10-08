@@ -6,6 +6,7 @@ import (
 	"github.com/tyclab/tycswap/internal/jsonout"
 )
 
+// Finding 15: round to the nearest µs like Python datetime.fromtimestamp; ns truncation under-reported by ~1µs.
 func TestFormatRecoveryISORoundsMicroseconds(t *testing.T) {
 	if got, want := formatRecoveryISO(1700000000.8474338), "2023-11-14T22:13:20.847434Z"; got != want {
 		t.Errorf("formatRecoveryISO = %q, want %q", got, want)
@@ -15,6 +16,7 @@ func TestFormatRecoveryISORoundsMicroseconds(t *testing.T) {
 	}
 }
 
+// Finding 12: CPython rounds µs half-to-even on the exact binary value, not like math.Round.
 func TestFormatRecoveryISOBankersRounding(t *testing.T) {
 	cases := []struct {
 		epoch float64

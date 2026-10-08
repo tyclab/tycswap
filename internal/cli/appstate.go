@@ -12,12 +12,14 @@ import (
 
 const appStateVersion = 1
 
+// Only the app resumes auto-switch at start; `tycswap web` never starts an engine, or two processes would rotate the same accounts.
 type appState struct {
 	Version    int             `json:"version"`
 	AutoSwitch bool            `json:"autoSwitch,omitempty"`
 	Folded     map[string]bool `json:"folded,omitempty"`
 }
 
+// Orders the read-modify-write: concurrent fold and auto-switch writes must not drop each other.
 var appStateMu sync.Mutex
 
 func updateAppState(path string, change func(*appState)) error {

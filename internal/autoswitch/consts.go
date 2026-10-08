@@ -1,3 +1,4 @@
+// Package autoswitch is the UI-agnostic threshold-policy auto-switch engine.
 package autoswitch
 
 const (
@@ -6,9 +7,9 @@ const (
 )
 
 const (
-	FreshenBufferMS = 10 * 60 * 1000
-	MaxSleepS       = 6 * 3600.0
-	// NoResetFallbackS: blocked/idle-hold cadence when no reset time is known.
+	// Twice Claude Code's own 5-minute refresh buffer.
+	FreshenBufferMS  = 10 * 60 * 1000
+	MaxSleepS        = 6 * 3600.0
 	NoResetFallbackS = 300.0
 	IdleHoldMaxS     = 30 * 60.0
 )

@@ -2,6 +2,7 @@ package update
 
 import "github.com/tyclab/tycswap/internal/platform"
 
+// A go-installed binary on Windows gets the literal command: SelfUpgrade there is print-only, the running .exe is locked.
 func UpgradeHint(p Plan, plat platform.Platform) string {
 	switch {
 	case p.Method == MethodCheckout:

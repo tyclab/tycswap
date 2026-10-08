@@ -18,6 +18,8 @@ const RefreshDeclined = "refresh_declined"
 // up.
 const GuardedRefreshTimeout = 5 * time.Second
 
+// The lock is taken BEFORE the refresh: a rotated refresh token may die once issued, so an unpersistable refresh must not run.
+// Under it the slot is re-checked and the backup re-read; a lineage that moved on is returned as stored, unrefreshed.
 func (s *Store) RefreshBackupGuarded(ctx context.Context, c oauth.Client, num, email, held string) oauth.RefreshOutcome {
 	out := oauth.RefreshOutcome{Error: RefreshDeclined}
 	err := s.Lock.With(func() error {

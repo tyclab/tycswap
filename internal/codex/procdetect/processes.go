@@ -38,6 +38,7 @@ type Proc struct {
 	Command string
 }
 
+// codext is the seamless-switching fork; its sessions count too.
 var codexExecutables = map[string]bool{"codex": true, "codext": true}
 
 // listTimeout bounds the process listing: it is advisory, and a switch must

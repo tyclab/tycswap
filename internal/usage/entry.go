@@ -15,6 +15,7 @@ type Identity struct {
 	OrgUUID string
 }
 
+// Exactly one shape: success (Usage may be nil), failure (Error, optional RetryAfterS) or sentinel (recorded as a no-op).
 type FetchRecord struct {
 	Usage       map[string]any
 	Error       string

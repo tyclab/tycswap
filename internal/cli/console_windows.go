@@ -23,10 +23,8 @@ var consoleProcessCount = func() int {
 	return int(n)
 }
 
-// releaseOwnConsole moves the app's output to its log and frees a console
-// that exists only for this process; any other case returns s unchanged. If
-// the log cannot be opened the window stays: a visible console beats output
-// that goes nowhere.
+// releaseOwnConsole frees a console only this process is attached to (Explorer started the console-subsystem exe); a shell's console stays.
+// Output moves to the log; if the log cannot be opened the window stays.
 func releaseOwnConsole(s ioStreams) ioStreams {
 	if consoleProcessCount() != 1 {
 		return s

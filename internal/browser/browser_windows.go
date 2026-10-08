@@ -32,6 +32,7 @@ import (
 
 var procShellExecuteW = windows.NewLazySystemDLL("shell32.dll").NewProc("ShellExecuteW")
 
+// Falling through to the next opener early opens a second tab, which fails for a single-use dashboard token.
 const shellExecuteWait = 20 * time.Second
 
 func detach(cmd *exec.Cmd) {

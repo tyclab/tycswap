@@ -1,3 +1,4 @@
+// Package credstore routes credentials between the macOS Keychain and files: .enc backups, .prev retention and the unclaimed stash.
 package credstore
 
 import (
@@ -11,6 +12,7 @@ import (
 )
 
 const (
+	// Distinct from the active-credential and old keyring services so migration items coexist.
 	securityService = keychain.BackupService
 	// claudeCodeKeychainService is Claude Code's active OAuth credential service.
 	claudeCodeKeychainService = "Claude Code-credentials"
@@ -74,9 +76,7 @@ type FileKeychainStore struct {
 	clk            clock.Clock
 	log            *logging.Logger
 
-	// State guarded by mu (spec 03§5.3): the tri-state usability cache
-	// (nil = unprobed), the monotonic-ish re-probe deadline (zero = none), and
-	// where the last active-credential write landed.
+	// Guarded by mu: the tri-state usability cache (nil = unprobed), the re-probe deadline and the last write's backend.
 	mu                sync.Mutex
 	cache             *bool
 	disabledUntil     time.Time

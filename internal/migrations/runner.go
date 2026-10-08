@@ -18,6 +18,7 @@ var registry = []migrationEntry{
 	{"macos_keyring_to_security", migrateMacOSKeyringToSecurity},
 }
 
+// Run never errors or panics out: a failed migration stays unmarked and retries next launch. store.New calls it last; it must never abort construction.
 func Run(host Host) []string {
 	if !dirExists(host.BackupDir()) {
 		return nil

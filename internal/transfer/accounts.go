@@ -3,7 +3,9 @@ package transfer
 import "github.com/tyclab/tycswap/internal/platform"
 
 type Accounts interface {
+	// No path that can end in WriteSequence may start here: absent and corrupt both read nil.
 	MigratedSequence() (*SequenceData, error)
+	// Called inside Import's write-pass FileLock, so it must not take that lock itself (non-reentrant).
 	MigratedSequenceForUpdate() (*SequenceData, error)
 	Sequence() (*SequenceData, error)
 	WriteSequence(data *SequenceData) error
@@ -23,13 +25,11 @@ type Accounts interface {
 	TokenDead(num, email, orgUUID string) bool
 	ClearDeadToken(num, email, orgUUID string) error
 
-	// SetupDirectories creates the backup/configs/credentials dirs (0700 on
-	// non-Windows) (== _setup_directories). → store.SetupDirectories.
+	// SetupDirectories creates the backup/configs/credentials dirs, 0700 off Windows.
 	SetupDirectories() error
 	InitSequenceFile() error
 
-	// Timestamp is get_timestamp(): the current wall time in UTC, seconds
-	// precision, Z-suffixed. → an adapter over the store's clock.
+	// Timestamp is get_timestamp(): UTC, seconds precision, Z-suffixed.
 	Timestamp() string
 	Platform() platform.Platform
 	// BackupDir is the tycswap backup root; the import write-pass FileLock lives at

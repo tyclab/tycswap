@@ -2,6 +2,7 @@ package switching
 
 import "github.com/tyclab/tycswap/internal/store"
 
+// Completed steps replay in REVERSE on failure (credentials, config +0600, activeAccountNumber), each best-effort.
 type switchTransaction struct {
 	originalCredentials string
 	originalConfig      string

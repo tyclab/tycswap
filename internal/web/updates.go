@@ -1,3 +1,5 @@
+// updates.go never runs go install, claude update or release requests itself (A26: consumer-defined seams only).
+
 package web
 
 import (
@@ -55,6 +57,7 @@ type UpdatesFacade interface {
 
 var updateTargets = []string{"app", "claude-code"}
 
+// Six hours: the CLI notice cache lasts a day, but Claude Code releases more often.
 const defaultUpdateInterval = 6 * time.Hour
 
 // applyWriteDeadline bounds how long one apply response may take. The server
@@ -147,6 +150,7 @@ func (s *Server) handleUpdatesApply(w http.ResponseWriter, r *http.Request) {
 	s.broadcast()
 	if err != nil {
 		status := statusFor(err)
+		// Target and status only: installer output is for the page, not the log.
 		s.d.Logger("web: update " + target + " failed (HTTP " + strconv.Itoa(status) + ")")
 		body := map[string]any{"error": err.Error()}
 		if res.Output != "" {

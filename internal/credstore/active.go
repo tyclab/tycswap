@@ -21,6 +21,8 @@ import (
 	"github.com/tyclab/tycswap/internal/paths"
 )
 
+// OAuth (Keychain, then file) is tried fully first so a Keychain-empty file login is never misread as an API key.
+// Seat-wide-only items read as absent (DESIGN A29). Every live-login decision reads through here so they all agree.
 func (s *FileKeychainStore) ReadActive() (string, bool, error) {
 	keychainFailed := false
 	if s.useKeychain() {
@@ -30,6 +32,7 @@ func (s *FileKeychainStore) ReadActive() (string, bool, error) {
 			return val, false, nil
 		}
 	} else if s.macOS() {
+		// Keychain known unusable this process: absence below means unavailable, not empty.
 		keychainFailed = true
 	}
 
@@ -131,6 +134,7 @@ func (s *FileKeychainStore) WriteActiveAccount(creds string) error {
 	return s.WriteActive(merged)
 }
 
+// ClearActive keeps the login's seat-wide part; a key or login still readable afterwards is an error, as Claude Code would send it.
 func (s *FileKeychainStore) ClearActive() error {
 	if err := s.clearOAuthLogin(func() error { return nil }); err != nil {
 		return err
@@ -298,6 +302,7 @@ func (s *FileKeychainStore) writeManagedCredentials(apiKey string, undo bool) er
 		return managedWriteFailed(cerr.CredentialWrite("Failed to write managed API key: %v", err), restoreKeychain, "")
 	}
 
+	// Drop the OAuth login so it cannot shadow the key; the seat's MCP logins and client secrets stay.
 	if err := s.clearOAuthLogin(func() error {
 		if wroteToKeychain {
 			// Keeping the remainder can pin file mode (for example, MCP
@@ -315,6 +320,7 @@ func (s *FileKeychainStore) writeManagedCredentials(apiKey string, undo bool) er
 		return managedWriteFailed(err, restoreKeychain, dropped)
 	}
 	if s.macOS() && !wroteToKeychain {
+		// A stale "Claude Code" Keychain item may remain and is read first; pin so a re-probe cannot read it over the fallback.
 		s.pinFileMode()
 	}
 	if wroteToKeychain {
@@ -325,6 +331,7 @@ func (s *FileKeychainStore) writeManagedCredentials(apiKey string, undo bool) er
 	return nil
 }
 
+// Only the last attempt reaches the usability cache, so a failure the retry overcomes keeps the Keychain on.
 func (s *FileKeychainStore) readManagedKeychainItem() (string, bool, error) {
 	var err error
 	for attempt := 0; attempt < activeReadAttempts; attempt++ {
@@ -407,6 +414,7 @@ func (s *FileKeychainStore) clearOAuthLogin(beforeFile func() error) error {
 		}
 		s.log.Warningf("Could not keep the MCP server logins beside the API key; clearing them with the OAuth login: %v", err)
 	}
+	// Reading the old OAuth item can disable the Keychain too: commit the managed fallback before clearing the login.
 	if !s.useKeychain() {
 		if err := beforeFile(); err != nil {
 			return err
@@ -428,6 +436,7 @@ func (s *FileKeychainStore) clearOAuthCredential() {
 	}
 }
 
+// Claude Code's Keychain-first read would resurrect a stale entry after a file fallback (#30337).
 func (s *FileKeychainStore) deleteActiveKeychainEntry() {
 	if !s.macOS() {
 		return

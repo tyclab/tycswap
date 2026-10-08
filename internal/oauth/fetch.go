@@ -1,3 +1,5 @@
+// fetch.go: paste-safe logging is load-bearing (04§1.17): the WARNING context carries the account number only, never the email.
+
 package oauth
 
 import (
@@ -137,6 +139,7 @@ func TryFetchUsageGuarded(
 		} else if refresh.Error == ErrInvalidGrant {
 			return UsageOutcome{Error: ErrInvalidGrant}
 		}
+		// A transient refresh failure falls through to the expired token; the 401 path below retries the refresh.
 	}
 
 	raw, err := c.Usage(ctx, accessToken)

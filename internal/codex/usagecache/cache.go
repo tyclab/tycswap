@@ -1,28 +1,9 @@
-// cache.go — Codex usage fetching behind the same cache the Claude side uses.
-// Implements claude-swap PR #252 codex/usage_cache.py.
-//
-// A live fetch on every call costs one request per account per `tycswap codex
-// list`: fine for a human at a terminal, unacceptable for an auto loop that
-// ticks every few minutes. This package puts Codex behind usage.Store and the
-// poll policy, which already implement — and have tests for — the serve TTL,
-// cross-process fetch reservation, failure backoff, 429 handling with
-// Retry-After, and an adaptive cadence that speeds up when usage is moving.
-//
-// None of that is reimplemented here. usage.Store keeps an opaque lastGood map
-// guarded by an identity pair, so it was already provider-neutral; Cache is the
-// adapter that decides which slots need a request, performs those, and records
-// the outcomes.
-//
-// Identity for Codex is (email, chatgpt_account_id). The store's guard exists
-// so a slot reused for a different account never serves its predecessor's
-// usage; the account id is exactly what distinguishes two workspaces of one
-// user, so it takes the OrgUUID position the Claude side uses.
-//
-// The active-account rule lives in the caller. PayloadFor is supplied by the
-// Codex switcher, which is what enforces "never refresh the active account from
-// its snapshot". Keeping it a callback means this package never needs to know
-// that rule, and the rule stays in one place.
+// cache.go — Codex usage behind the Claude side's usage.Store and poll policy (claude-swap PR #252 codex/usage_cache.py), so an auto
+// loop does not cost a request per account per tick: serve TTL, fetch reservation, backoff and Retry-After are not reimplemented.
+// Codex identity is (email, chatgpt_account_id): the account id takes the OrgUUID position, telling a user's workspaces apart.
+// The never-refresh-the-active-account rule stays in the Codex switcher, which supplies PayloadFor.
 
+// Package usagecache is the Codex adapter over the shared usage.Store: which slots to fetch, how to record them, workspace names.
 package usagecache
 
 import (
@@ -133,6 +114,7 @@ func (c *Cache) refresh(ctx context.Context, slots []store.Slot, payloadFor Payl
 	}
 	identities := c.Identities(slots)
 
+	// Fetch only when stale and poll-due, so a second `tycswap codex list` seconds later costs nothing.
 	claims, _ := c.usage.Reserve(numbers, identities, respectPlans)
 
 	sentinels := map[string]string{}
@@ -157,6 +139,7 @@ func (c *Cache) refresh(ctx context.Context, slots []store.Slot, payloadFor Payl
 		_ = c.usage.Record(outcomes, identities)
 		_ = c.usage.SetPollPlan(plans, identities)
 
+		// Sentinels are never persisted, so the store cannot hand them back; without this overlay a 401 renders as a blank row.
 		for num, rec := range outcomes {
 			if rec.Sentinel != "" {
 				sentinels[num] = rec.Sentinel

@@ -1,3 +1,5 @@
+// addlogin.go: the dashboard button and the tray row both come here (DESIGN A37), so they report the same outcome.
+
 package web
 
 import "github.com/tyclab/tycswap/internal/cerr"

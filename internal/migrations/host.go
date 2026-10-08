@@ -1,3 +1,4 @@
+// Package migrations holds one-time, self-guarded migrations that rescue legacy backup credentials, tracked in .migrations.json.
 package migrations
 
 import (
@@ -11,19 +12,19 @@ import (
 
 const StateFilename = ".migrations.json"
 
+// Host lives here, not in store, to break the store→migrations→store cycle (DESIGN A3).
 type Host interface {
+	// Run never touches disk when BackupDir is absent: a fresh install must not materialize it.
 	BackupDir() string
 	CredentialsDir() string
 	StateFilePath() string
 	Platform() platform.Platform
-	// Clock supplies .migrations.json's "applied" timestamp (get_timestamp
-	// parity, spec 07§5.1): clock.System in production, clock.Fake in tests.
 	Clock() clock.Clock
-	// Logger receives every warning a migration logs. Run never raises
-	// through this (spec 07§5.5) — every failure is logged here instead.
 	Logger() *logging.Logger
+	// The macOS migration uses the Keychain-only KC ops so a fallback .enc never counts as migrated.
 	Creds() credstore.Store
 	Keychain() keychain.KeychainClient
 	WinCred() wincred.Client
+	// ok=false (absent or corrupt) skips without marking applied, so a later repair still migrates.
 	SequenceAccounts() (accounts map[string]string, ok bool)
 }

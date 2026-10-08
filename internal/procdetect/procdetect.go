@@ -49,6 +49,7 @@ func GetClaudeDir() string {
 	return paths.GetClaudeConfigHome()
 }
 
+// pid<=1 is never alive; POSIX kill(pid,0) counts EPERM (another user's process) as alive.
 func IsPIDAlive(pid int) bool {
 	if pid <= 1 {
 		return false

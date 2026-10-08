@@ -25,6 +25,7 @@ func spawnDetachedApp(exe, logPath string) (backgroundApp, error) {
 	return watchProcess(p), nil
 }
 
+// Every handle must be a real file: a nil *os.File becomes INVALID_HANDLE_VALUE, the current-process pseudo-handle.
 func startDetached(exe string, argv, env []string, logPath string) (*os.Process, error) {
 	null, err := os.OpenFile(os.DevNull, os.O_RDONLY, 0)
 	if err != nil {

@@ -1,3 +1,4 @@
+// Package cerr is the typed error set; each Kind string equals the Python class name, the JSON error.type contract.
 package cerr
 
 import (
@@ -78,8 +79,7 @@ func CredentialWrite(format string, a ...any) *Error {
 // Lock builds a LockError.
 func Lock(format string, a ...any) *Error { return newError(KindLock, format, a...) }
 
-// ClaudeCodeLockTimeout builds a ClaudeCodeLockTimeout (a LockError subtype in
-// Python; a distinct Kind here). Nothing has been mutated when it is raised.
+// ClaudeCodeLockTimeout is a LockError subtype in Python; nothing has been mutated when it is raised.
 func ClaudeCodeLockTimeout(format string, a ...any) *Error {
 	return newError(KindClaudeCodeLockTimeout, format, a...)
 }

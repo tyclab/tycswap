@@ -51,6 +51,7 @@ func AddAccountFromToken(s *store.Store, token string, email, slotArg *string, a
 	return AddAccountFromTokenWithBaseURL(s, token, "", email, slotArg, assumeYes)
 }
 
+// With a baseURL the token is an API key whatever its shape (gateways mint their own); a refresh without a URL removes it (DESIGN A46).
 func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email, slotArg *string, assumeYes bool) error {
 	if baseURL != "" {
 		v, err := ccsettings.ValidateBaseURL(baseURL)
@@ -125,15 +126,8 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 		confirmEmail = tokenPlaceholderEmail(isAPIKey, *slotPtr)
 	}
 
-	// The cross-kind collision is settled BEFORE the question is asked. Once it
-	// holds the add can never succeed, so prompting first would ask the user to
-	// authorize destroying a slot's occupant for an outcome that is already
-	// refused. This answer is advisory only — the roster can change between here
-	// and the commit span — so it fails fast and nothing more; the check inside
-	// the locked span below is the guarantee. It runs exactly where a question
-	// can be asked (confirmDisplacement's own precondition: a named slot, no
-	// assume-yes), which is also where the identity is known without consulting
-	// the roster.
+	// The cross-kind collision is settled before the question, so the user is never asked to authorize an already refused add.
+	// Advisory only: the check inside the locked span below is the guarantee.
 	if slotPtr != nil && !assumeYes {
 		if err := rejectCrossKindCollisionEarly(s, confirmEmail, isAPIKey); err != nil {
 			return err
@@ -367,6 +361,7 @@ func rejectCrossKindCollisionEarly(s *store.Store, email string, isAPIKey bool) 
 	return rejectCrossKindCollision(s, advisory, email, isAPIKey)
 }
 
+// Answers from the caller's roster, so the slot inspected for a kind is the slot then overwritten.
 func rejectCrossKindCollision(s *store.Store, data *store.SequenceData, email string, isAPIKey bool) error {
 	slot := s.FindAccountSlot(data, email, "")
 	if slot == "" {

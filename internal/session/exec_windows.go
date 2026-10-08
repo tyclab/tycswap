@@ -1,11 +1,6 @@
 //go:build windows
 
-// Windows terminal handoff: os.exec* detaches from the console confusingly, so
-// tycswap stays resident as a thin wrapper subprocess and exits with claude's own
-// return code. Ctrl+C while waiting mirrors to exit code 130.
-//
-// Implements spec 06§1.8 (_exec Windows branch). Not compiled/vetted on the
-// Linux build host; provided for parity (mirrors WP0's Windows-tagged files).
+// Windows handoff: tycswap stays resident as a thin wrapper and exits with claude's return code; Ctrl+C maps to 130 (spec 06§1.8).
 package session
 
 import (
@@ -19,6 +14,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// CLICommand runs a .cmd/.bat shim as cmd.exe /s /c "<line>" with its path always quoted: started directly, cmd.exe strips the
+// first and last quote and cuts a path at a space or &. /s strips only the added pair; risky arguments fail via CheckCmdShimArgs.
 func CLICommand(ctx context.Context, bin string, args ...string) *exec.Cmd {
 	if !isCmdShim(bin) {
 		return exec.CommandContext(ctx, bin, args...)

@@ -12,14 +12,8 @@
 // composite key ("codex:1") for any other provider — and every action resolves
 // that id back to the provider that owns the row.
 //
-// The frozen Facade (A13) is untouched: the multi-provider path is additive.
-// WithProviders swaps the refresh source for a ProviderSource (satisfied by
-// *providers.MultiSnapshotSource) and names a CodexActions router (satisfied by
-// *switcher.Switcher). Without it the Model reads the Facade exactly as it
-// always has, so a Claude-only install renders byte-for-byte as before; with
-// it, Claude rows still keep their bare-number ids and carry no badge, and
-// only the other provider's rows differ. Dropping a provider whose snapshot
-// fails or panics is the providers package's job, not this one's.
+// The frozen Facade (A13) is untouched: WithProviders is additive, and without it a Claude-only install renders byte for byte
+// as before. Dropping a failing provider is the providers package's job.
 package tui
 
 import (
@@ -129,6 +123,7 @@ type rowTarget struct {
 	codex    CodexActions
 }
 
+// A key missing from owners falls back on its prefix, a vanished provider on the Facade: a no-op beats a panic in the event loop.
 func (m *Model) resolveRow(id string) rowTarget {
 	pid, number := splitRowID(id)
 	if owner := m.multi.owners[pid+":"+number]; owner != nil {

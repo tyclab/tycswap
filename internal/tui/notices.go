@@ -1,3 +1,6 @@
+// notices.go (FINDING 6): under the alt-screen oauth.Output goes to a collector, not io.Discard: the persist-failure warning is
+// the only surface for a lost refresh token (04§1.25). The Update goroutine drains it into warning toasts.
+
 package tui
 
 import (

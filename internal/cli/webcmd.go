@@ -276,6 +276,7 @@ type dashboardOptions struct {
 	noUpdateSchedule bool
 }
 
+// `tycswap web` and `tycswap app` both build their dashboard here; Codex presence is decided at launch (DESIGN A47).
 func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams, o dashboardOptions) (*dashboard, int) {
 	sw, err := constructSwitcher(debug, s.err)
 	if err != nil {

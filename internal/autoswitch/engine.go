@@ -55,6 +55,7 @@ type Engine struct {
 	stopOnce sync.Once
 	wakeCh   chan struct{}
 
+	// Touched only from the single tick goroutine.
 	unhealthyTicks  int
 	sleepUntilTS    *float64
 	blockedWaitLong bool
@@ -124,6 +125,7 @@ func (e *Engine) currentSettings() settings.AutoSwitchSettings {
 	return *e.settings.Load()
 }
 
+// ApplyThreshold moves only the 7d bar (DESIGN A34); it pins models from settings, never e.models (tick goroutine only).
 func (e *Engine) ApplyThreshold(threshold float64) {
 	s := e.currentSettings()
 	s.SevenDayThreshold = threshold
@@ -132,6 +134,7 @@ func (e *Engine) ApplyThreshold(threshold float64) {
 	e.sw.SetPollPolicyInputs(pollThreshold(s, models), models)
 }
 
+// pollThreshold is the lowest bar in force: the planner compares it against the binding headroom.
 func pollThreshold(s settings.AutoSwitchSettings, models []string) float64 {
 	lowest := math.Min(s.SevenDayThreshold, s.FiveHourThreshold)
 	if len(models) > 0 {
@@ -140,6 +143,7 @@ func pollThreshold(s settings.AutoSwitchSettings, models []string) float64 {
 	return lowest
 }
 
+// Stop is latching and idempotent: safe before the loop starts and more than once (DESIGN §4 row 2).
 func (e *Engine) Stop() {
 	e.stopOnce.Do(func() { close(e.stopCh) })
 	// Non-blocking wake so a sleeping loop returns immediately.
@@ -156,6 +160,7 @@ func (e *Engine) Wake() {
 	}
 }
 
+// emit does not recover callback panics: a broken frontend should fail loudly.
 func (e *Engine) emit(ev Event) { e.onEvent(ev) }
 
 // nowSeconds returns wall time as fractional Unix seconds (Python self.clock()).

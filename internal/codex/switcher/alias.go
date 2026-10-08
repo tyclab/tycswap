@@ -9,6 +9,7 @@ import (
 
 var aliasRE = regexp.MustCompile(`^[a-z0-9_.-]+$`)
 
+// Same rule and messages as the Claude side's normalizeAlias, byte-identical; numeric aliases are reserved for slots, a leading "-" parses as a flag.
 func NormalizeAlias(name string) (string, error) {
 	normalized := strings.ToLower(strings.TrimSpace(name))
 	switch {

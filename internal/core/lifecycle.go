@@ -52,6 +52,7 @@ func (sw *Switcher) Purge() error {
 	return lifecycle.Purge(sw.Store)
 }
 
+// AddAccountFromLogin stores a scratch-profile login without touching the live login or the recorded active account.
 func (sw *Switcher) AddAccountFromLogin(src lifecycle.AddSource, slot *int, assumeYes bool, alias *string) (string, error) {
 	return lifecycle.AddAccountFrom(sw.Store, src, slot, assumeYes, alias)
 }

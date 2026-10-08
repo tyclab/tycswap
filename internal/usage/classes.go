@@ -1,3 +1,6 @@
+// classes.go: the 5h window is a bursting RATE limit, 7d the slowly creeping BUDGET, a per-model weekly window a narrower budget.
+// One max(pct) bar cannot suit both, so each class has its own threshold (DESIGN A34).
+
 package usage
 
 type Class int
@@ -69,6 +72,7 @@ func least(a, b *float64) *float64 {
 	}
 }
 
+// Ranking compares the weekly budget: 5h room refills within hours.
 func (h Headroom) Weekly() *float64 { return least(h.Week, h.Model) }
 
 func (h Headroom) Binding() *float64 { return least(h.Session, h.Weekly()) }

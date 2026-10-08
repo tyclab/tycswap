@@ -1,3 +1,4 @@
+// Package storenames builds the per-account backup file names and holds the store's two email checks.
 package storenames
 
 import (
@@ -14,6 +15,7 @@ const EmailRule = "one @ between a non-empty local part and domain, at most 254 
 
 const forbiddenInName = `/\<>:"|?*`
 
+// The path-safety rule every name builder relies on; one scheme serves store, credstore and purge (DESIGN A23).
 func ValidEmail(email string) bool {
 	if email == "" || len(email) > MaxEmailLen || !utf8.ValidString(email) {
 		return false
@@ -32,6 +34,7 @@ func ValidEmail(email string) bool {
 
 var strictEmailRE = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 
+// The import contract: claude-swap's _validate_email, ASCII only, admitting nothing ValidEmail refuses.
 func StrictEmail(email string) bool {
 	return len(email) <= MaxEmailLen && strictEmailRE.MatchString(email)
 }

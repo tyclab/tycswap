@@ -32,6 +32,7 @@ import (
 )
 
 const (
+	// Refresh gets the longer budget: timing out after the server rotated the token is the expensive failure.
 	refreshTimeout = 10 * time.Second
 	fetchTimeout   = 5 * time.Second
 )
@@ -98,6 +99,7 @@ func (e *StatusError) Error() string { return "http " + strconv.Itoa(e.Code) }
 // errBadResponse marks a 2xx whose body was unreadable or not JSON.
 var errBadResponse = errors.New("bad response")
 
+// Both headers are required: the bearer names the user, ChatGPT-Account-Id the workspace; json.Number keeps integer pct integer.
 func (c *HTTPClient) getJSON(ctx context.Context, url, accessToken, accountID string) (any, error) {
 	reqCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
 	defer cancel()

@@ -75,13 +75,12 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		}
 		return cerr.Config("No active Claude account found. Please log in first.")
 	}
+	// The email names backup files and Keychain items and comes from a .claude.json not ours to trust.
 	if !validateEmail(email) {
 		return cerr.Validation("The logged-in account's email cannot name a store file: %s. It needs %s.", strconv.Quote(email), storenames.EmailRule)
 	}
 
-	// The slot number is a pure argument check, so it is settled before anything
-	// is asked: the locked body rejects it too, but prompting first would ask the
-	// user to authorize overwriting a slot the command is about to refuse.
+	// Settled before asking: prompting first would ask to authorize overwriting a slot the command is about to refuse.
 	if slot != nil && *slot < 1 {
 		return cerr.Config("Slot number must be >= 1")
 	}
@@ -258,6 +257,7 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 	})
 }
 
+// keepActive follows the live identity on a migration and clears when a displacement deleted its record (DESIGN A56).
 func keepActive(data *store.SequenceData, displaced *displaceInfo, migrateFrom string, slotInt int) {
 	if data.ActiveAccountNumber == nil {
 		return

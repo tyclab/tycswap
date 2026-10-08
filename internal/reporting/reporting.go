@@ -1,3 +1,4 @@
+// Package reporting is the switcher's read surface: list/status renderers and --json payloads, the usage collector, warnings, AccountsSnapshot.
 package reporting
 
 import (
@@ -18,6 +19,7 @@ func init() {
 	jsonout.ResetStrings = oauth.FreshResetStrings
 }
 
+// KeychainUnavailable is set only for the active slot, telling USAGE_KEYCHAIN_UNAVAILABLE from USAGE_NO_CREDENTIALS.
 type AccountInfo struct {
 	Number              int
 	Email               string
@@ -33,8 +35,10 @@ type AccountInfo struct {
 	BaseURL string
 }
 
+// A nil-safe seam so reporting need not import lifecycle; core wires it.
 var FirstRunSetup func(s *store.Store) error
 
+// Consulted on macOS only; Security{} equals the store's production client, which free functions cannot reach.
 var reportKC keychain.KeychainClient = keychain.Security{}
 
 func decodeRecord(raw json.RawMessage) map[string]any {

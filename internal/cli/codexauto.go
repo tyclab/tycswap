@@ -35,6 +35,7 @@ var newCodexAutoEngineFor = func(sw *codexswitcher.Switcher, merged settings.Aut
 	return codexauto.New(sw, codexThreshold(merged), merged.HysteresisPct)
 }
 
+// Falls back to the 7d bar a pre-A34 autoswitch.threshold seeds, so a migrated settings file keeps its Codex behaviour.
 func codexThreshold(merged settings.AutoSwitchSettings) float64 {
 	if merged.CodexThreshold != 0 {
 		return merged.CodexThreshold

@@ -1,3 +1,5 @@
+// uiprefs.go: the dashboard port changes each start and browser storage is per origin, so the server keeps folded cards.
+
 package web
 
 import "net/http"

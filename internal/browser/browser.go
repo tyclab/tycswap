@@ -16,6 +16,7 @@ import (
 	"strings"
 )
 
+// Open refuses shell-significant URLs because the Windows `cmd /c start` fallback re-parses its command line.
 func Open(url string) error {
 	if !urlShellSafe(url) {
 		return errors.New("refusing to open a URL with shell-significant characters")

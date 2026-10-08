@@ -28,6 +28,7 @@ func isPIDAliveNative(pid int) bool {
 	return false
 }
 
+// Mirrors pathlib _IGNORED_ERRNOS (ENOENT/ENOTDIR/EBADF/ELOOP); EACCES surfaces, and an error without errno fails closed.
 func ignoreStatError(err error) bool {
 	var errno syscall.Errno
 	if !errors.As(err, &errno) {

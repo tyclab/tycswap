@@ -9,8 +9,11 @@ The Windows overview panel lives in `internal/tray/panel*` and
 `internal/web/settingsmutation.go`. The contracts live in `docs/reference.md`
 and `docs/DESIGN.md`.
 
-Use the Go version required by `go.mod`. Validate with `go test ./...` and
-`go vet ./...`; use `make build` for a versioned local binary. Preserve file-lock,
+Use the Go version required by `go.mod`. Validate with `make fmt`, `go test ./...`,
+`go vet ./...` and, as CI does, `GOOS=windows go vet ./...` and
+`GOOS=darwin CGO_ENABLED=0 go vet ./...`; use `make build` for a versioned local binary.
+`testdata/**` is byte-exact golden fixtures (`-text` in `.gitattributes`): never let
+line endings or formatting tools rewrite them. Preserve file-lock,
 atomic-write, credential ownership, JSON, exit-code, and migration contracts.
 Keep `//go:build`, `//go:embed`, cgo preambles, and licensing intact. Tests must use
 temporary stores and fake providers rather than the operator's active logins.

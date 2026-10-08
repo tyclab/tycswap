@@ -1,3 +1,4 @@
+// Package authfile reads and writes the codex CLI's live auth.json, derives its account identity and resolves every Codex path.
 package authfile
 
 import (
@@ -15,6 +16,7 @@ func userHome() string {
 	return h
 }
 
+// $CODEX_HOME is resolved as codex does, so both agree on the live file; tycswap writes only auth.json there.
 func Home() string {
 	if env := os.Getenv("CODEX_HOME"); env != "" {
 		return env
@@ -36,6 +38,7 @@ func AuthAccountsDir() string {
 	return filepath.Join(Home(), "accounts")
 }
 
+// Under the backup root so purge, backup-root migration and test isolation cover Codex data too.
 func StoreRoot() string {
 	return filepath.Join(paths.GetBackupRoot(), "codex")
 }

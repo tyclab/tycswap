@@ -36,6 +36,7 @@ func (i Identity) AccountKey() string {
 	return AccountKey(i.UserID, i.AccountID)
 }
 
+// An API-key login or an unresolvable payload is a real login but not a managed one until explicitly added.
 func (i Identity) Identifiable() bool {
 	return i.AccountID != ""
 }
@@ -191,6 +192,7 @@ func firstTruthy(vs ...any) any {
 // ParseIdentity derives an Identity from an auth.json payload. It returns nil
 // when payload is not an object, or when it carries tokens whose JWTs cannot
 // be decoded.
+// Resolution follows codex-auth (tokens.account_id, JWT chatgpt_account_id, default org) so imported and captured records key alike.
 func ParseIdentity(payload any) *Identity {
 	p, ok := payload.(map[string]any)
 	if !ok {
@@ -257,6 +259,7 @@ func ReadLivePayload() map[string]any {
 
 // ReadLiveIdentity returns the identity of whoever is currently logged in to
 // the codex CLI, or nil.
+// The live file, not tycswap's registry, is the authority: codex rewrites it on refresh, even after a switch away.
 func ReadLiveIdentity() *Identity {
 	payload := ReadLivePayload()
 	if payload == nil {

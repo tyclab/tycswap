@@ -1,16 +1,6 @@
-// authmode.go — moving Claude Code onto an API-key account changes HOW it
-// authenticates, and this package refuses to make that change unless the
-// caller says the user approved it (DESIGN A33).
-//
-// Switching between subscription accounts rewrites a credential, and a running
-// Claude Code session picks that up by itself. An API-key account instead
-// replaces the subscription login with a managed key billed per token, and a
-// Claude Code session that is already running keeps the login it started with
-// until it is restarted. So this must never happen as a side effect of a
-// rotation, an engine tick or an HTTP call that nobody confirmed.
-//
-// The guard lives here, at the one place every front-end funnels through, so
-// refusing is the default and an approval has to be supplied on purpose.
+// authmode.go — switching onto an API-key account changes HOW Claude Code authenticates, and running sessions keep their old login
+// until restarted, so it must never happen as a side effect of a rotation, a tick or an unconfirmed HTTP call (DESIGN A33).
+// The guard sits where every front-end funnels through: refusing is the default and an approval must be supplied on purpose.
 package switching
 
 import (
@@ -43,11 +33,13 @@ func RestartNotice(running int) string {
 	}
 }
 
+// Explicit state, not a parameter: SwitchTo's two-argument shape is pinned by autoswitch.Switcher and tui.Facade.
 var approval struct {
 	sync.Mutex
 	targets map[string]bool
 }
 
+// The approval is consumed by the next switch to that slot and by nothing else.
 func ApproveAPIKeySwitch(num string) {
 	approval.Lock()
 	defer approval.Unlock()
@@ -86,6 +78,7 @@ func EndpointNotice(baseURL string) string {
 		"account puts back what they held."
 }
 
+// A running session re-reads settings.json and takes the endpoint up then, unlike A33's managed key (DESIGN A46).
 func EndpointSessionNotice(running int) string {
 	const when = "when it re-reads settings.json (at once in a trusted workspace), or when it is restarted."
 	switch {

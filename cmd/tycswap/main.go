@@ -1,3 +1,4 @@
+// Command tycswap is the multi-account switcher for Claude Code and Codex (also installed as claude-swap).
 package main
 
 import (

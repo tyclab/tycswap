@@ -19,6 +19,7 @@ import (
 	"github.com/tyclab/tycswap/internal/printer"
 )
 
+// These make claude bypass account OAuth (verified against claude 2.1.175); scrubbed from launch and probe env, not the fast path.
 var AuthOverrideEnvVars = []string{
 	"ANTHROPIC_API_KEY",
 	"ANTHROPIC_AUTH_TOKEN",

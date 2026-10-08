@@ -1,45 +1,10 @@
-// store.go — tycswap's own Codex account store: the slot registry plus the
-// credential snapshots. Implements claude-swap PR #252 codex/store.py.
-//
-// Two pieces with different lifetimes and different security postures.
-// sequence.json holds non-secret metadata (slot number, email, plan, alias,
-// workspace name, disabled flag, auth mode) keyed by slot number, each row
-// naming its account_key. The snapshot store holds one auth.json payload per
-// account, keyed by account_key, in the macOS Keychain (service
-// "tycswap-codex", account = authfile.FileKey(key)) or in 0600 files under
-// a 0700 credentials/ directory everywhere else.
-//
-// Snapshots are keyed by account_key rather than slot number on purpose. Slot
-// numbers are a presentation concern that `tycswap codex swap`/`move` renumber;
-// the account key never changes. Keying secrets by a mutable number would turn
-// that feature into a data migration, so Renumber only ever rewrites
-// sequence.json and never touches a secret.
-//
-// Slot numbers are not compacted when an account is removed: renumbering would
-// silently repoint every alias and every number a user has memorised. The gap
-// is left, and the next add reuses the lowest free number — the same rule the
-// Claude side follows.
-//
-// sequence.json is byte-compatible with the Python writer: two-space indent,
-// no trailing newline, rows in to_dict key order, and a read-modify-write that
-// keeps the file's own key order and any keys this port does not know about
-// (the Python round-trips a plain dict, so it does the same). A missing, torn
-// or non-object file degrades to "no accounts" rather than making every tycswap
-// command fail; lastUpdated is stamped on every write in get_timestamp's
-// seconds-precision, Z-suffixed UTC form.
-//
-// The Store holds no in-memory state: every call re-reads the file, exactly
-// like CodexStore. Every read-modify-write of sequence.json holds the store's
-// file lock for the whole operation, so a background `tycswap auto` recording a
-// workspace name cannot interleave with an add in another terminal and drop
-// its slot. A transaction supplies a scoped Store view that may reuse its
-// non-reentrant lock. Ordinary Store values always acquire a lock, even when
-// another goroutine in this process has a transaction open.
-//
-// Deviation from the Python: a sequence.json that exists but does not parse
-// is never overwritten. Listing reads still treat it as "no accounts", but a
-// mutation fails with ErrCorruptRegistry instead of replacing the registry
-// with an empty one. A zero-length file is read as fresh.
+// store.go — tycswap's own Codex store (claude-swap PR #252 codex/store.py): sequence.json holds non-secret slot metadata;
+// one auth.json snapshot per account sits in the macOS Keychain ("tycswap-codex") or in 0600 files under a 0700 credentials/.
+// Snapshots are keyed by account_key, not slot number, so swap/move renumbering never touches a secret.
+// Removed slot numbers are not compacted (aliases and memorised numbers would repoint); the next add reuses the lowest free one.
+// sequence.json is byte-compatible with the Python writer: two-space indent, no trailing newline, key order and unknown keys kept.
+// Every read-modify-write holds the store file lock; a transaction's scoped view may reuse its non-reentrant lock, nothing else may.
+// Deviation: a sequence.json that exists but does not parse is never overwritten; mutations fail with ErrCorruptRegistry.
 
 // Package store is tycswap's Codex slot registry and credential snapshot store.
 package store
@@ -306,6 +271,7 @@ func (s *Store) read() *seqDoc {
 	return d
 }
 
+// readDoc treats a missing or zero-length file as fresh; anything unparseable is an error, so nothing is written over it.
 func (s *Store) readDoc() (*seqDoc, error) {
 	b, err := os.ReadFile(s.sequencePath())
 	if errors.Is(err, os.ErrNotExist) {
@@ -581,6 +547,7 @@ func (s *Store) upsertIn(d *seqDoc, accountKey string, u Upsert) (Slot, error) {
 	return sl, nil
 }
 
+// RemoveSlot clears the active marker when it named the removed account; the number is not reused until the next add.
 func (s *Store) RemoveSlot(accountKey string) (bool, error) {
 	removed := false
 	err := s.update(func(d *seqDoc) error {

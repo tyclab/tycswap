@@ -30,6 +30,7 @@ type Workspace struct {
 	AccountID, Name, Plan string
 }
 
+// Null or empty names are omitted, not stored as "", so a later fetch can still fill them in.
 func (c *HTTPClient) FetchAccounts(ctx context.Context, accessToken, accountID string) ([]Workspace, error) {
 	if accessToken == "" || accountID == "" {
 		return nil, ErrMissingAuth

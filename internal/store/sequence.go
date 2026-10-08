@@ -11,6 +11,7 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 )
 
+// Field order matches Python's write order; *int round-trips null; RawMessage records keep their bytes and optional-key absence.
 type SequenceData struct {
 	ActiveAccountNumber *int                       `json:"activeAccountNumber"`
 	LastUpdated         string                     `json:"lastUpdated"`
@@ -40,6 +41,7 @@ const (
 	seqUnreadable                      // the file is there but yields no roster: corruption
 )
 
+// Classified from this one read, not a later Stat: a file created or removed in between would flip the answer.
 func (s *Store) readSequenceState() (*SequenceData, sequenceState, string, error) {
 	raw, err := os.ReadFile(s.SequenceFile)
 	if err != nil {
@@ -81,6 +83,7 @@ func (s *Store) warnf(format string, a ...any) {
 	}
 }
 
+// Absent is a fresh install; present but unparseable refuses: an empty roster would orphan backups only this file names.
 func (s *Store) SequenceForUpdate() (*SequenceData, error) {
 	data, err := s.classifiedRoster()
 	if err != nil {
@@ -109,6 +112,7 @@ func (s *Store) classifiedRoster() (*SequenceData, error) {
 	return data, nil
 }
 
+// Classify before the backfill (which writes) and use the roster read after it, or this write reverts the backfill.
 func (s *Store) MigratedSequenceForUpdate() (*SequenceData, error) {
 	data, err := s.SequenceMigrated()
 	return s.rosterForUpdate(data, err)
@@ -213,6 +217,7 @@ func (s *Store) InitSequenceFile() error {
 	return s.WriteSequence(s.emptySequence())
 }
 
+// Use the roster the record goes into: NextAccountNumber's own read may disagree and overwrite a live record.
 func (s *Store) NextAccountNumberFrom(data *SequenceData) int {
 	if data == nil || len(data.Accounts) == 0 {
 		return 1
@@ -231,6 +236,7 @@ func (s *Store) NextAccountNumber() int {
 	return s.NextAccountNumberFrom(data)
 }
 
+// json.dumps(indent=2) parity: no trailing newline, no HTML escaping; non-ASCII as UTF-8, not \uXXXX, parses back the same.
 func marshalIndent2(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
@@ -261,6 +267,7 @@ func decodeRecord(raw json.RawMessage) map[string]any {
 	return m
 }
 
+// Go map order is alphabetical, so only records whose data changed are re-encoded.
 func encodeRecord(rec map[string]any) (json.RawMessage, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)

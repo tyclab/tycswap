@@ -1,3 +1,5 @@
+// accent.go: the page's CSP forbids inline style, so the overridable brand.AccentColor is served as its own stylesheet.
+
 package web
 
 import (

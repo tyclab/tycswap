@@ -93,6 +93,7 @@ type Scoped struct {
 	ResetsAt *int64  `json:"resetsAt"`
 }
 
+// Two records with one identity publish the lower slot; labels are stripped of terminal control characters.
 func Build(in Input) Document {
 	doc := Document{
 		SchemaVersion:   SchemaVersion,

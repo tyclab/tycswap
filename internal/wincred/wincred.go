@@ -1,3 +1,4 @@
+// Package wincred reads and deletes legacy claude-swap backups in Windows Credential Manager for the one-time migration (A9).
 package wincred
 
 import "sync"

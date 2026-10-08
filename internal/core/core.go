@@ -1,3 +1,4 @@
+// Package core is the thin Switcher façade over store, lifecycle, switching and reporting; it carries no business logic.
 package core
 
 import (
@@ -22,6 +23,7 @@ func New(opts store.Options) (*Switcher, error) {
 }
 
 func init() {
+	// Process-wide seams: a process hosts one switcher.
 	switching.UsageProvider = reporting.UsageByAccount
 	switching.PostSwitchList = postSwitchList
 	switching.AutoAddCurrent = autoAddCurrent

@@ -1,3 +1,4 @@
+// Package slotkey is the total order over slot keys: numerics by value (ties lexicographic), then non-numerics lexicographically.
 package slotkey
 
 import (
@@ -5,6 +6,7 @@ import (
 	"strconv"
 )
 
+// A naive numeric-or-lexicographic comparator is intransitive on "15"/"3"/"2abc", which sort.Slice may resolve nondeterministically.
 func Less(a, b string) bool {
 	na, aerr := strconv.Atoi(a)
 	nb, berr := strconv.Atoi(b)

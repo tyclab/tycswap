@@ -146,6 +146,7 @@ func sentinelText(acc reporting.AccountSnapshot) string {
 	return label
 }
 
+// Stored strings come from exports, APIs and other tools' files: control sequences are stripped here, where drawn.
 func identityText(acc reporting.AccountSnapshot) richText {
 	var t richText
 	email := termsafe.Strip(acc.Email)
@@ -385,6 +386,8 @@ func monitorAccounts(snap *reporting.AccountsSnapshot) int {
 	return len(snap.Accounts)
 }
 
+// The table is laid out once across all non-active accounts; otherwise all fall back to mini lines, never mixed.
+// width is the whole content budget: no caller draws a frame around these lines.
 func monitorLayout(snap *reporting.AccountsSnapshot, width int, showMinis bool, threshold *float64, now float64, allowTable bool) (groups [][]richText, header string) {
 	var minis []richText
 	if showMinis {
@@ -549,6 +552,7 @@ type monitorFit struct {
 	indicated bool
 }
 
+// Ties go to other, priced first and always the table: equal content keeps the aligned columns.
 func (f monitorFit) beats(other monitorFit) bool {
 	if f.shown != other.shown {
 		return f.shown > other.shown

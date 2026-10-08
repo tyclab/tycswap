@@ -1,3 +1,6 @@
+// warnings.go: duplicates are provable offline (same fingerprint, or same uuid+org, issue #117); lockstep is a heuristic for two live
+// generations of one account (identical 5h and 7d pct and resets with different fingerprints).
+
 package reporting
 
 import (

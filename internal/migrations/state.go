@@ -10,6 +10,7 @@ import (
 
 const stateVersion = 1
 
+// Applied values stay RawMessage so a foreign writer's entries survive a rewrite byte for byte.
 type stateFile struct {
 	Version int                        `json:"version"`
 	Applied map[string]json.RawMessage `json:"applied"`
@@ -23,6 +24,7 @@ func loadApplied(path string) map[string]json.RawMessage {
 	if err != nil {
 		return map[string]json.RawMessage{}
 	}
+	// "version" is ignored, as in Python: a corrupt version must not discard an intact applied map; a corrupt file reads as nothing applied.
 	var parsed struct {
 		Applied map[string]json.RawMessage `json:"applied"`
 	}
@@ -35,6 +37,7 @@ func loadApplied(path string) map[string]json.RawMessage {
 	return parsed.Applied
 }
 
+// markApplied re-loads first, so entries recorded by a newer claude-swap survive.
 func markApplied(path string, clk clock.Clock, migrationID string) error {
 	applied := loadApplied(path)
 	ts, err := json.Marshal(clk.Now().UTC().Format("2006-01-02T15:04:05Z"))

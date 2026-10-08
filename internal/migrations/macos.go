@@ -1,3 +1,5 @@
+// One Go Keychain backend serves both services, so every Keychain failure is hard and retries next run (DESIGN A9).
+
 package migrations
 
 import (
@@ -46,6 +48,7 @@ func migrateMacOSKeyringToSecurity(host Host) (completed bool, notices []string,
 
 	store := host.Creds()
 
+	// Read the Keychain directly (KCReadBackup): a fallback .enc must never count as migrated; a failure defers via MigrationIncomplete.
 	pending := map[string]string{}
 	for num, email := range accounts {
 		v, err := store.KCReadBackup(num, email)
@@ -110,6 +113,7 @@ func migrateMacOSKeyringToSecurity(host Host) (completed bool, notices []string,
 			}
 		},
 		afterSuccess: func(num, email, sourceUsername string) {
+			// keyring's PasswordDeleteError covers both not-found and a denied prompt, so check explicitly.
 			if kc.Exists(legacyKeyringService, sourceUsername) {
 				host.Logger().Warningf(
 					"macos_keyring_to_security: legacy keyring entry %s was left behind (delete failed or was denied); harmless — remove manually or via purge",

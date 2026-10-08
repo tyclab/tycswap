@@ -1,5 +1,8 @@
 //go:build windows
 
+// keyring stores the first username under TargetName == service and later ones under "{username}@{service}"; Get tries the
+// plain name (only if its UserName matches), then the compound one.
+
 package wincred
 
 import (

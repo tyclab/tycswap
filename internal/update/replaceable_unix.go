@@ -10,6 +10,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// Owning the file is checked too: without a sticky bit, a writable directory alone replaces someone else's binary.
 func replaceable(exe string) bool {
 	if unix.Access(filepath.Dir(exe), unix.W_OK) != nil || unix.Access(exe, unix.W_OK) != nil {
 		return false

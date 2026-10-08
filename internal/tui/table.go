@@ -1,3 +1,11 @@
+// table.go: one window table for the auto panel and the dashboard monitor. Columns are the union of WINDOW rows' labels in a
+// canonical order (5h, 7d, scoped by name), keyed by (label, occurrence) so a repeated label never overwrites a cell. Counted
+// figures carry their severity colour, the binding one bold; only uncounted, unexhausted cells are muted and dim (DESIGN A18).
+// The table never wraps: it sheds headers, then countdowns, then label width, then whole label groups (renderWindowTable).
+// Pinned columns (counted, protected, exhausted per policy) never drop; below minTableWidth no table exists and the surface
+// draws its per-row layout for every row. The draw choice is priced with countdowns at their widest, so it reads no clock
+// and stays monotone in the width (releaseBar).
+
 package tui
 
 import (
@@ -98,17 +106,8 @@ type tablePolicy struct {
 	KeepBindingCountdown bool
 }
 
-// tableOpts is the per-surface chrome of the slot cell: the panel indents its
-// rows by two columns and prints the slot in the plain foreground, the accounts
-// monitor starts at column 0 and prints it bold muted. Everything else about
-// the layout is shared.
-//
-// headerFloor is the narrowest a column header may be ABBREVIATED to on this
-// surface (never below headerHardFloor). The panel keeps a whole syllable: its
-// own per-row fallback prints the model name in full, so a one-letter header
-// there would name a window less well than the layout it replaced. The monitor's
-// fallback names a scoped window only when it is exhausted, so it takes the
-// ladder's own floor and buys the figures with the columns.
+// tableOpts is the per-surface slot-cell chrome. headerFloor: the panel keeps a whole syllable (its fallback prints full
+// model names); the monitor takes the ladder's own floor.
 type tableOpts struct {
 	indent      int
 	slotStyle   segStyle
@@ -125,13 +124,7 @@ type windowTable struct {
 // occurrence of that name it carries, whether the window counts on the current
 // model axis, what the rows lay into it, and the width ladder's state for it.
 //
-// A column is sized from its DATA, never from its name. pctW covers the
-// percentages the column carries and nothing else; the header is fitted over
-// that sub-cell and widens it only while a wider header is still affordable
-// (bodyW). Seeding the width from the label instead made a column cost whatever
-// the model was called — the same three accounts cost 32 columns under
-// "Fable" and 71 under "claude-opus-4-5-20251101", though not one figure
-// differed — and a name is not data.
+// A column is sized from its DATA, never its name: pctW covers its percentages, and the header fits over that (bodyW).
 type windowColumn struct {
 	label     string
 	occ       int      // which occurrence of label within a row this column is
@@ -339,6 +332,7 @@ func shownContent(full, shown int) int {
 	return 0
 }
 
+// A TEST SEAM: surfaces call pickWindowTable, since a table drawn on existence alone may lose to the per-row layout.
 func renderWindowTable(rows []tableRow, width int, now float64, opts tableOpts) (windowTable, bool) {
 	tbl, _, ok := priceWindowTable(rows, width, now, opts)
 	return tbl, ok
@@ -1007,6 +1001,7 @@ func measureSpans(rows []tableRow) tableSpans {
 	return sp
 }
 
+// Backstop only: a standing test proves every real message floor is below it.
 const spanHardCap = 24
 
 func spanMin(msg string) int {

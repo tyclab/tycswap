@@ -48,6 +48,7 @@ func ExtractOAuthData(creds string) map[string]any {
 	return oauth
 }
 
+// AccountOnly drops the seat-wide keys (DESIGN A25 item 9, A29); a blob without any returns byte for byte, else re-encoded compact as Claude Code writes it.
 func AccountOnly(creds string) string {
 	m, ok := decodeCredsMap(creds)
 	if !ok {
@@ -100,6 +101,7 @@ func ExtractAccessToken(creds string) string {
 	return tok
 }
 
+// expiresAt is epoch milliseconds; a non-numeric value counts as not expired (04§1.6).
 func IsOAuthTokenExpired(expiresAt any, now time.Time) bool {
 	ms, ok := numFloat(expiresAt)
 	if !ok {

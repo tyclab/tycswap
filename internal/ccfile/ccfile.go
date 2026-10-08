@@ -1,3 +1,4 @@
+// Package ccfile reads and writes Claude Code's own ~/.claude.json and ~/.claude/.credentials.json.
 package ccfile
 
 import (
@@ -15,14 +16,8 @@ import (
 	"github.com/tyclab/tycswap/internal/platform"
 )
 
-// ReadGlobalConfig reads and parses ~/.claude.json (paths.GetGlobalConfigPath),
-// preserving every key. It returns (nil, nil) when the file is absent (and when
-// its content is the JSON literal null, mirroring Python's isinstance(dict)
-// guard), (nil, err) on a read failure or when the content is not a JSON object.
-//
-// Python's _read_global_config swallows those errors to None with a warning log;
-// that log+swallow is the caller's job (credstore), so this primitive surfaces
-// the error and lets the caller decide.
+// ReadGlobalConfig reads ~/.claude.json keeping every key: (nil, nil) when absent or the literal null, (nil, err) on a read
+// failure or a non-object. Python swallows those to None with a warning; here that is the caller's (credstore) job.
 func ReadGlobalConfig() (map[string]any, error) {
 	path := paths.GetGlobalConfigPath()
 	data, err := os.ReadFile(path)
@@ -122,6 +117,7 @@ func WriteCredentialsFile(raw string) error {
 // with the account until it is known to be the seat's.
 var SeatWideKeys = []string{"mcpOAuth", "mcpOAuthClientConfig"}
 
+// SpliceCredentials carries live's SeatWideKeys over stored; stored's own seat-wide keys never survive.
 func SpliceCredentials(stored, live string) (string, error) {
 	carried, err := seatWideOf(live)
 	storedObj, ok := decodeObject(stored)
@@ -207,6 +203,7 @@ func dropSeatWide(obj map[string]any) bool {
 	return dropped
 }
 
+// json.Number keeps expiresAt (epoch ms) byte-identical on re-encode.
 func decodeObject(text string) (map[string]any, bool) {
 	dec := json.NewDecoder(strings.NewReader(text))
 	dec.UseNumber()
@@ -286,6 +283,7 @@ func readLenient(path string) map[string]any {
 	return m
 }
 
+// Matches Python json.dumps(indent=2) with HTML escaping off.
 func marshalIndent2(v any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)

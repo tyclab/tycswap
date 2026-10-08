@@ -177,6 +177,7 @@ type AutoFacade interface {
 	ApplyModels(model string) error
 }
 
+// soonest-reset is deliberately absent: switching.Switch treats unknown strings as plain rotation; it is auto-only (A17).
 var Strategies = []string{"best", "next-available"}
 
 type SessionsView struct {
@@ -190,14 +191,8 @@ func DefaultSessions() SessionsView {
 	return probeSessions(procdetect.GetClaudeDir(), "")
 }
 
-// SessionsIn returns a Deps.Sessions probe over the default Claude config
-// directory AND every session profile under <backupDir>/sessions/ (the
-// CLAUDE_CONFIG_DIR of `tycswap run` and `tycswap env`), so a session started
-// as another account is listed and can be stopped. Profile directories are
-// named <slot>-<email slug> (sessprofile.SessionDirFor). A session PID seen
-// twice is listed once, and so is an IDE instance (its lock file names a
-// port and carries a PID) found under more than one directory; the default
-// directory wins.
+// SessionsIn probes the default Claude config directory AND every session profile under <backupDir>/sessions/, so a session
+// started as another account is listed and can be stopped. Duplicate PIDs and IDE instances are listed once; default wins.
 func SessionsIn(backupDir string) func() SessionsView {
 	return func() SessionsView {
 		v := probeSessions(procdetect.GetClaudeDir(), "")
@@ -272,6 +267,7 @@ func DefaultSessionTitle(claudeDir, cwd, sessionID string) string {
 	return SessionTitle(claudeDir, cwd, sessionID)
 }
 
+// A session file left by a crash may name a PID since reused by an unrelated process.
 var ErrNotTheProcess = errors.New("the pid now belongs to another process, or its start time cannot be verified")
 
 // startTolerance is how far the process start time read from the system may
@@ -363,6 +359,7 @@ type Server struct {
 	cookie string // session cookie value: distinct from token, so a cookie leaked
 	//                 to another 127.0.0.1 port (cookies are not port-scoped) is useless alone
 	cookieBase string // brand.SessionCookie, validated; the port is appended once bound
+	// Check and redemption form one critical section, so concurrent redeems agree on one winner.
 	launchMu   sync.Mutex
 	launch     string // one-time bootstrap token carried in the printed URL
 	launchUsed bool
@@ -375,6 +372,7 @@ type Server struct {
 
 	mutMu sync.Mutex // serialises façade (store) mutations
 
+	// The hub drops a document older than the newest it published.
 	stateSeq atomic.Uint64
 
 	// refresh carries Refresh requests to the serve loop; one slot, so a
@@ -544,6 +542,7 @@ func launchURL(port int, token string) string {
 	return "http://127.0.0.1:" + strconv.Itoa(port) + "/?token=" + token
 }
 
+// Cookies are not port-scoped: the bound port in the name keeps two dashboards from logging each other out.
 func (s *Server) cookieName() string {
 	if p := s.Port(); p != 0 {
 		return s.cookieBase + "_" + strconv.Itoa(p)

@@ -108,6 +108,7 @@ func classifyOutgoing(s *store.Store, currentAccount, currentEmail, originalCred
 	return "foreign", slot
 }
 
+// Python None and "" collapse to "": a literal "" org would be alien in Python but unresolved here (never observed).
 func orgPresent(id *oauth.Identity) bool {
 	return id != nil && id.OrgUUID != ""
 }

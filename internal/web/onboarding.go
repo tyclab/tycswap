@@ -29,12 +29,14 @@ type AuthOverridesView struct {
 	Env          []string `json:"env"`      // never null
 	Settings     []string `json:"settings"` // never null; dotted keys
 	SettingsPath string   `json:"settingsPath"`
-	Profile      []string `json:"-"`
+	// tycswap's own endpoint profile keys, set aside from Settings: the login while a base-URL account is active (A46).
+	Profile []string `json:"-"`
 }
 
 // Any reports whether something overrides the login.
 func (v AuthOverridesView) Any() bool { return len(v.Env) > 0 || len(v.Settings) > 0 }
 
+// session.AuthOverrideEnvVars plus ANTHROPIC_BASE_URL, which sends requests elsewhere.
 var authOverrideEnv = []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL"}
 
 // authOverrideSettings are the settings.json keys with the same effect.

@@ -1,3 +1,4 @@
+// Package clock provides wall-clock and sleeper seams; persisted state and lock staleness use the wall clock, timeouts time.Since.
 package clock
 
 import (

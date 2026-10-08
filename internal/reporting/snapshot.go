@@ -8,6 +8,7 @@ import (
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
+// Email, OrgName and Alias are stored values from exports, APIs and other tools' files: text renderers must termsafe.Strip them.
 type AccountSnapshot struct {
 	Number   string
 	Email    string
@@ -18,14 +19,16 @@ type AccountSnapshot struct {
 	BaseURL  string
 	// Switchable reports that the slot has both a stored credential and a stored
 	// config backup, independent of the disabled flag (store.AccountIsSwitchable).
-	Switchable       bool
-	Usage            usage.UsageEntry
-	Alias            string
-	Disabled         bool // held out of auto-rotation (still a valid explicit target)
+	Switchable bool
+	Usage      usage.UsageEntry
+	Alias      string
+	Disabled   bool // held out of auto-rotation (still a valid explicit target)
+	// Excludes the engine's transient quarantine: necessary, not sufficient, for an automatic pick.
 	RotationEligible bool
 	AtLimit          bool
 	LimitingWindows  []string
-	Provider         string
+	// "" means ProviderClaude so existing literals keep working; read it through ProviderName or Key.
+	Provider string
 }
 
 const (
@@ -112,6 +115,7 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 	}
 }
 
+// A nil roster carries no disabled information, so no slot is eligible: fail closed like store.RotationEligible (DESIGN A19).
 func rotationEligible(data *store.SequenceData, switchable, disabled bool, kind string) bool {
 	return data != nil && switchable && !disabled && kind != "api_key"
 }

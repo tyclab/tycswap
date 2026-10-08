@@ -1,16 +1,5 @@
-// envcmd.go — the `tycswap env` pre-dispatched subcommand (Go-side extension,
-// DESIGN A16; no Python counterpart).
-//
-// `tycswap env [NUM|EMAIL|ALIAS]` prints shell-evalable env lines that pin the
-// CURRENT shell to a stored account's persistent session profile —
-// `eval "$(tycswap env 2)"` — after preparing that profile through the exact
-// SessionManager bootstrap path `tycswap run` uses, WITHOUT exec'ing claude.
-//
-// Output discipline (critical): stdout carries ONLY the eval-able lines; every
-// notice/warning goes to stderr. The SessionManager's Stdout sink is wired to
-// stderr (via newEnvPreparer) so its bootstrap/scrub/prepared notices never
-// pollute the eval stream; the cli layer writes just the unset/export lines to
-// stdout.
+// envcmd.go: `tycswap env` prints eval-able lines pinning the shell to a stored account's session profile (DESIGN A16).
+// stdout carries only those lines; every notice goes to stderr (newEnvPreparer wires the SessionManager's Stdout there).
 package cli
 
 import (

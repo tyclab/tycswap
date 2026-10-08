@@ -7,6 +7,8 @@ import (
 	"github.com/tyclab/tycswap/internal/codex/store"
 )
 
+// Lives here, not in the switcher, so export --account avoids an import cycle; the switcher reuses this one rule.
+// An empty identifier never matches: it would match the empty alias every slot starts with.
 func ResolveSlot(st *store.Store, identifier string) (store.Slot, error) {
 	needle := strings.ToLower(strings.TrimSpace(identifier))
 	if needle != "" {

@@ -1,3 +1,5 @@
+// Package oauth is tycswap's bridge to Anthropic's OAuth and usage APIs. Every URL, header, constant and error token is load-bearing:
+// callers branch on the exact tokens, and usage.json persists the normalized dict verbatim, pct uncoerced (Amendment A1).
 package oauth
 
 const (
@@ -6,6 +8,7 @@ const (
 	OAuthTokenURL       = "https://platform.claude.com/v1/oauth/token"
 	OAuthClientID       = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 
+	// Stays upstream's: the endpoints accept it.
 	userAgent = "claude-swap/1.0"
 )
 

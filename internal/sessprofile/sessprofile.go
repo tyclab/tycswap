@@ -1,3 +1,4 @@
+// Package sessprofile is the session-profile leaf (identity, location, stale marker); it breaks the store↔session import cycle.
 package sessprofile
 
 import (
@@ -28,6 +29,7 @@ const StaleMarkerName = ".tycswap-stale-credentials"
 // additionally shadows it with a hashed Keychain entry once Claude writes one).
 const CredentialsFileName = ".credentials.json"
 
+// Only filesystem-safe (Windows-forbidden characters included), not injective: the "<num>-" prefix makes session dirs unique.
 func SlugifyEmail(email string) string {
 	normalized := norm.NFC.String(email)
 	out := make([]rune, 0, len(normalized))
@@ -55,21 +57,13 @@ func isSlugSafe(ch rune) bool {
 	return false
 }
 
+// Claude Code writes <profile>/sessions/<pid>.json, so the double "sessions/" nesting is intentional.
 func SessionDirFor(backupDir, accountNum, email string) string {
 	return filepath.Join(backupDir, "sessions", accountNum+"-"+SlugifyEmail(email))
 }
 
-// IsSessionProfileDir reports whether configDir is a `tycswap env`/`tycswap run`
-// session profile — i.e. it resolves to a path strictly inside
-// <backupRoot>/sessions/. The cli front controller uses it to detect a shell
-// pinned via `tycswap env` (whose CLAUDE_CONFIG_DIR points at such a profile) so
-// non-env/run commands can fall back to the default login (D2 / FINDING 2).
-//
-// Both paths are symlink-resolved as far as they exist (a symlinked backup
-// root still matches, a profile not created yet or removed included). An
-// empty configDir or backupRoot never matches, and the sessions/ directory
-// itself (the boundary, not a profile) does not match — only a strict
-// descendant does.
+// IsSessionProfileDir reports whether configDir is strictly inside <backupRoot>/sessions/ (both symlink-resolved as far as they
+// exist), so commands other than env/run fall back to the default login in a pinned shell (D2 / FINDING 2).
 func IsSessionProfileDir(backupRoot, configDir string) bool {
 	if backupRoot == "" || configDir == "" {
 		return false
@@ -164,6 +158,7 @@ func LiveSessionPIDs(sessionDir string) []int {
 	return pids
 }
 
+// Needed before seeding (Claude reads the Keychain before the file) and on removal (the hashed name dies with the dir).
 func DeleteMacOSKeychainEntry(kc keychain.KeychainClient, sessionDir string) {
 	if platform.Detect() != platform.MacOS {
 		return
@@ -171,13 +166,8 @@ func DeleteMacOSKeychainEntry(kc keychain.KeychainClient, sessionDir string) {
 	_ = kc.Delete(KeychainServiceName(sessionDir), keychain.AccountName())
 }
 
-// InvalidateSessionCredentials drops a session profile's credential material
-// while keeping its history: the next `tycswap run` fails the reuse check and
-// re-bootstraps from backup (bootstrap merges .claude.json, so the profile's
-// own projects/history survive). Used when backup credentials change under
-// an existing profile (e.g. --import --force). Returns existed=false with a
-// nil error when the profile directory doesn't exist (a no-op, matching
-// Python's early return).
+// InvalidateSessionCredentials drops a profile's credentials but keeps its history, so the next run re-bootstraps from backup
+// (e.g. after --import --force). A missing profile is a no-op (existed=false, nil error).
 func InvalidateSessionCredentials(kc keychain.KeychainClient, sessionDir string) (existed bool, err error) {
 	if _, statErr := os.Stat(sessionDir); statErr != nil {
 		return false, nil
@@ -192,6 +182,7 @@ func InvalidateSessionCredentials(kc keychain.KeychainClient, sessionDir string)
 	return true, nil
 }
 
+// Keychain first: its hashed service name cannot be recomputed once the directory is gone.
 func DeleteSessionProfile(kc keychain.KeychainClient, sessionDir string) {
 	if _, err := os.Stat(sessionDir); err != nil {
 		return
@@ -242,13 +233,8 @@ func SessionIdentityDrifted(sessionDir, email, orgUUID string) bool {
 	return profileOrg != "" && orgUUID != "" && profileOrg != orgUUID
 }
 
-// ReadSessionCredentials is a best-effort read of a session profile's
-// *current* credential JSON. On macOS it prefers the hashed Keychain entry
-// (Claude migrates the plaintext seed into it on first write and only
-// updates it there afterward) over the plaintext file; elsewhere, or when no
-// Keychain entry is present, it falls back to .credentials.json. Returns
-// ok=false when the profile has no readable credential material, including a
-// byte-corrupt (non-UTF-8) plaintext file.
+// ReadSessionCredentials reads the profile's current credential: on macOS the hashed Keychain entry first (Claude migrates the seed
+// there on first write), else .credentials.json; ok=false when nothing readable, including a non-UTF-8 file.
 func ReadSessionCredentials(kc keychain.KeychainClient, sessionDir string) (creds string, ok bool) {
 	if _, err := os.Stat(sessionDir); err != nil {
 		return "", false

@@ -37,6 +37,7 @@ const (
 )
 
 const (
+	// The old tool's services: only `tycswap migrate` reads them; nothing writes or deletes them, another tool may own them.
 	OldBackupService = "claude-swap"
 	OldCodexService  = "claude-swap-codex"
 )
@@ -116,6 +117,7 @@ func IsTooLarge(err error) bool {
 	return errors.As(err, &ke) && ke.TooLarge
 }
 
+// AccountName mirrors Claude Code getUsername ($USER, OS user, "claude-code-user") to key its item on headless hosts too.
 func AccountName() string {
 	if u := getenv("USER"); u != "" {
 		return u
@@ -182,12 +184,8 @@ func (s Security) call(argv []string, stdin string) (execResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.budget())
 	defer cancel()
 	res, err := runner(ctx, argv, stdin)
-	// Classify by the command's actual outcome, mirroring Python's
-	// subprocess.run: TimeoutExpired fires only when the process is killed by
-	// the deadline, never when the process completed and produced a result. A
-	// non-nil error means the process could not be run or was killed; only then
-	// can the deadline have discarded output. A result completing at ~the
-	// deadline (nil err) is honored even if ctx has since expired.
+	// Classify like Python subprocess.run: TimeoutExpired only when the deadline killed the process;
+	// a result completing near the deadline (nil err) is honored even if ctx has since expired.
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return execResult{}, keychainErrorf("security %s timed out after %s", commandName(argv), s.budget())
@@ -204,6 +202,7 @@ func commandName(argv []string) string {
 	return "security"
 }
 
+// Get strips exactly one trailing newline (TrimSuffix, not TrimSpace).
 func (s Security) Get(service, account string) (string, bool, error) {
 	if err := ValidateName(service, account); err != nil {
 		return "", false, err

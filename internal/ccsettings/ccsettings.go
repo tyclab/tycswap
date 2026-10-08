@@ -187,6 +187,7 @@ const (
 	RevertedByValue
 )
 
+// Revert without a sidecar removes only a known endpoint+key pair, so a lost record cannot strand Claude Code on the endpoint.
 func Revert(settingsPath, sidecarPath string, known []Profile) (RevertOutcome, error) {
 	sc, err := loadSidecar(sidecarPath)
 	if err != nil {
@@ -277,6 +278,7 @@ func holdsKnown(root map[string]any, known []Profile) bool {
 	return false
 }
 
+// A relative CLAUDE_CONFIG_DIR would name a different file from another working directory.
 func absPath(path string) string {
 	if path == "" {
 		return path

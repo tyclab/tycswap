@@ -12,6 +12,8 @@ import (
 // stopSignalName is what handleStop reports it sent.
 const stopSignalName = "terminate"
 
+// Checks the creation time and terminates through the same handle, so a reused PID is never ended; Windows has no SIGTERM
+// for another process, and Claude Code writes its transcript as it goes, so `claude --continue` resumes the session.
 func terminateVerified(pid int, recorded time.Time) error {
 	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_TERMINATE, false, uint32(pid))
 	if err != nil {

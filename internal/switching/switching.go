@@ -1,3 +1,5 @@
+// Package switching performs switches: rotation, switch_to, usage-aware strategies, the transaction rollback, the #117 oracle.
+// Network refresh and identity prefetch never run under the non-reentrant FileLock; locks go FileLock, credentials, config.
 package switching
 
 import (

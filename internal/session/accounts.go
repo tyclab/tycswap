@@ -1,3 +1,4 @@
+// Package session implements `tycswap run`: Claude Code as a stored account in a persistent profile under <backup_dir>/sessions/.
 package session
 
 import "github.com/tyclab/tycswap/internal/platform"
@@ -9,8 +10,7 @@ type Accounts interface {
 	ReadAccountConfig(num, email string) (map[string]any, error)
 	AccountKindFor(num string) string
 	CurrentAccountNumber() *string
-	// LiveCredentials returns the live default login's credential, "" when
-	// there is none or it cannot be read. Bootstrap compares lineages with it.
+	// LiveCredentials is the live default login's credential ("" when none or unreadable), for lineage comparison.
 	LiveCredentials() string
 	// BackupDir is the tycswap backup root; the FileLock lives at <BackupDir>/.lock.
 	BackupDir() string

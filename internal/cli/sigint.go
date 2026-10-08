@@ -16,17 +16,10 @@ var sigintJSON atomic.Bool
 
 var sigintNote atomic.Value // string
 
-// sigintCancelToStderr, when true, forces the cancel note to stderr regardless
-// of JSON mode — the per-command stream selector `tycswap env` sets because its
-// stdout is a pure eval stream (a cancel note on stdout would corrupt the
-// `eval "$(tycswap env)"` the user runs). It is a separate flag from JSON mode so
-// the JSON-vs-plain routing every other command relies on is untouched.
+// sigintCancelToStderr forces the cancel note to stderr for `tycswap env`, whose stdout is an eval stream; separate from JSON mode.
 var sigintCancelToStderr atomic.Bool
 
-// setSigintJSON records JSON mode AND clears the per-command stderr override, so
-// the override never leaks across commands (run() drives many commands per
-// process in tests). Every command calls this; `tycswap env` re-asserts the
-// override with setSigintCancelToStderr immediately after.
+// setSigintJSON records JSON mode and clears the stderr override so it never leaks across commands; env re-asserts it after.
 func setSigintJSON(v bool) {
 	sigintJSON.Store(v)
 	sigintCancelToStderr.Store(false)
@@ -38,6 +31,7 @@ func setSigintNote(note string) { sigintNote.Store(note) }
 
 var sigintCh chan os.Signal
 
+// claimSigint stops the notifier; the caller must already have its own signal context, or a Ctrl-C in between takes the default action.
 func claimSigint() (release func()) {
 	ch := sigintCh
 	if ch == nil {
@@ -54,6 +48,7 @@ func currentSigintNote() string {
 	return "Operation cancelled"
 }
 
+// Default SIGINT kills before the cancel note runs, so cli reproduces Python's note and exit 130 (DESIGN A7).
 func installSigint(s ioStreams) {
 	ch := make(chan os.Signal, 1)
 	sigintCh = ch

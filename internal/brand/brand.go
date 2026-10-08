@@ -1,3 +1,4 @@
+// Package brand holds the names and accent colour tycswap shows; vars, not consts, so a packager can rebrand with -ldflags -X.
 package brand
 
 import "regexp"
@@ -8,8 +9,9 @@ var (
 	SessionCookie      = "tycswap_session"
 	RedirectFilePrefix = "tycswap-dashboard-"
 	AccentColor        = "#5aa2ff"
-	Identifier         = "io.github.tyclab.tycswap"
-	EnvPrefix          = "TYCSWAP"
+	// LaunchAgent label on macOS, XDG autostart file name on Linux, HKCU Run value name on Windows.
+	Identifier = "io.github.tyclab.tycswap"
+	EnvPrefix  = "TYCSWAP"
 )
 
 const (
@@ -42,6 +44,7 @@ type Values struct {
 	EnvPrefix          string
 }
 
+// Sanitized falls back per value so a bad link-time override never reaches a cookie header, stylesheet, title, file name or env lookup.
 func Sanitized() Values {
 	pick := func(v string, re *regexp.Regexp, def string) string {
 		if re.MatchString(v) {

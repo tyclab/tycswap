@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// Finding 11: the old comparator was intransitive on "15"/"3"/"2abc"; random map order exercises it repeatedly.
 func TestSortedSlotKeysTotalOrder(t *testing.T) {
 	want := []string{"3", "15", "2abc"}
 	for iter := 0; iter < 50; iter++ {

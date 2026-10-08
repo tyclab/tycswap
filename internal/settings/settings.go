@@ -1,3 +1,4 @@
+// Package settings is <backup_root>/settings.json; SETTING_SPECS bounds both the lenient clamp on load and strict `tycswap config set`.
 package settings
 
 import (

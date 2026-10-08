@@ -47,7 +47,8 @@ type Item struct {
 	Disabled  bool
 	Separator bool
 	Children  []Item
-	Dismiss   bool
+	// Other rows keep the macOS menu open so a click shows its effect in place (A37); Windows and Linux always close it.
+	Dismiss bool
 }
 
 // Separator is the menu divider.
@@ -185,6 +186,7 @@ type menuModel struct {
 	flat  []Item
 }
 
+// An unchanged menu is left alone: rebuilding an open menu every poll tick flickers under the pointer.
 func (m *menuModel) set(items []Item) (changed bool) {
 	if m.flat != nil && reflect.DeepEqual(m.items, items) {
 		return false

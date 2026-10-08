@@ -106,6 +106,7 @@ func (e *Engine) earliestRecovery(usage map[string]any) *float64 {
 }
 
 func formatRecoveryISO(epoch float64) string {
+	// Round µs half-to-even on the fractional part like CPython; truncating epoch*1e9 under-reports by ~1µs.
 	sec := math.Floor(epoch)
 	usRounded, _ := strconv.ParseFloat(strconv.FormatFloat((epoch-sec)*1e6, 'f', 0, 64), 64)
 	us := int64(usRounded)

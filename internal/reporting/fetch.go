@@ -40,6 +40,7 @@ func fetchAccountUsage(s *store.Store, info AccountInfo) usage.FetchRecord {
 
 	hasLiveSession := len(s.LiveSessionPidsFor(num, info.Email)) > 0
 
+	// A run profile holds the newest token generation; read it strictly read-only, rotating it would log the next `tycswap run` out.
 	sessionDir := s.SessionDir(num, info.Email)
 	sessionCreds, sessOK := sessprofile.ReadSessionCredentials(reportKC, sessionDir)
 	if sessOK && sessprofile.SessionIdentityDrifted(sessionDir, info.Email, info.OrgUUID) {
@@ -60,6 +61,7 @@ func fetchAccountUsage(s *store.Store, info AccountInfo) usage.FetchRecord {
 				return recordFromOutcome(outcome)
 			}
 			if hasLiveSession {
+				// The live claude refreshes lazily on its next call; requesting now would just 401.
 				return usage.FetchRecord{Sentinel: jsonout.UsageTokenExpired}
 			}
 			// Expired profile credential and no live session: fall through to the
@@ -131,6 +133,7 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 	}
 
 	persist := oauth.PersistFn(func(n, acctEmail, newCreds string) error {
+		// withTripleLock skips fn when a lock cannot be taken: nothing was persisted, so that path marks skipped too.
 		err := withTripleLock(s, func() error {
 			live, _, _ := s.Creds.ReadActive()
 			liveRefresh := ""
@@ -156,6 +159,7 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 				markSkipped()
 				return err
 			}
+			// The backup takes the account part only; the live file keeps the seat-wide keys.
 			if err := s.WriteAccountCredentials(n, acctEmail, oauth.AccountOnly(newCreds)); err != nil {
 				markSkipped()
 				return err

@@ -1,10 +1,11 @@
+// Package usage is the identity-guarded usage table, the adaptive poll policy and the TTL JSON cache.
 package usage
 
-// SchemaVersion is the on-disk usage.json schema tag (04§2.2). A missing,
-// corrupt, or mismatching version reads as an empty table.
+// SchemaVersion: a missing, corrupt or mismatching version reads as an empty table (04§2.2).
 const SchemaVersion = 2
 
 const (
+	// lastGood younger than StaleOKS is trusted for switch decisions.
 	StaleOKS            = 300.0
 	ClaimTTLS           = 10.0
 	TrustMaxAgeS        = 3600.0
@@ -14,9 +15,7 @@ const (
 	AuthDeadStrikes     = 1
 )
 
-// permanentAuthErrors are the fetch errors that prove the stored credential is
-// permanently unusable and advance the dead-token strike count (04§2.2:
-// PERMANENT_AUTH_ERRORS).
+// permanentAuthErrors advance the dead-token strike count (PERMANENT_AUTH_ERRORS).
 var permanentAuthErrors = map[string]bool{"invalid_grant": true}
 
 const (
@@ -34,5 +33,6 @@ const (
 	EscalationMarginPct       = 15.0
 	// ResetSlackS: never schedule past a window reset + this.
 	ResetSlackS = 60.0
-	ParkCapS    = TrustMaxAgeS - ServeTTLS
+	// Re-poll an at-limit account before it leaves the trust ceiling; the planner jitters this downward only (DESIGN A31).
+	ParkCapS = TrustMaxAgeS - ServeTTLS
 )

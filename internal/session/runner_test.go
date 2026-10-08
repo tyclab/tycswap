@@ -111,6 +111,7 @@ func TestClassifyProbeSuccessAtDeadline(t *testing.T) {
 	}
 }
 
+// FINDING 3: ErrWaitDelay after a successful exit is a success with the captured output, not a timeout.
 func TestClassifyProbeErrWaitDelay(t *testing.T) {
 	stdout, rc, err := classifyProbe("ready\n", exec.ErrWaitDelay, nil)
 	if err != nil || rc != 0 || stdout != "ready\n" {

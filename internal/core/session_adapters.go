@@ -35,6 +35,7 @@ func (sw *Switcher) LiveCredentials() string {
 	return creds
 }
 
+// store.Store.Platform is a field, so this method shadows it for session.Accounts.
 func (sw *Switcher) Platform() platform.Platform { return sw.Store.Platform }
 
 func (sw *Switcher) SlotForDirectory(dir string) (slot *string, email *string, err error) {

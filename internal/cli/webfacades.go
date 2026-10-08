@@ -282,6 +282,7 @@ func (a *autoFacade) Start(dryRun bool) error {
 			a.running, a.engine, a.startedAt = false, nil, nil
 		}
 		a.mu.Unlock()
+		// Un-pin once the loop returned, or the stopped engine keeps steering polling; Start refuses until done closes.
 		a.sw.ClearPollPolicyInputs()
 	}()
 	// The Codex engine rides beside it as in `tycswap auto`: the same

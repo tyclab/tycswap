@@ -14,6 +14,7 @@ import (
 // appLockPath is the lock file the running app holds.
 func appLockPath() string { return filepath.Join(paths.GetBackupRoot(), "app.lock") }
 
+// Not zero: after an update the app respawns itself detached and exits, so both briefly exist.
 const startGrace = 2 * time.Second
 
 // acquireAppLock takes the lock for this process. held is false when another
@@ -37,15 +38,13 @@ func acquireLockAt(path string) (lock *filelock.FileLock, held bool, err error) 
 	return l, true, nil
 }
 
+// appIsRunning answers true for an unreadable lock: refusing is the safe direction for purge and a second start.
 func appIsRunning() bool {
 	held, err := lockHeldAt(appLockPath(), 50*time.Millisecond)
 	return held || err != nil
 }
 
-// lockHeldAt reports whether another process holds the lock at path, waiting
-// up to wait for it to come free. It creates nothing: without the file no
-// process holds the lock, so asking (a cancelled purge, a refused start)
-// leaves no lock file and no backup root behind.
+// lockHeldAt waits up to wait for the lock at path; it creates nothing, so asking leaves no lock file or backup root behind.
 func lockHeldAt(path string, wait time.Duration) (bool, error) {
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 		return false, nil

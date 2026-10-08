@@ -7,6 +7,8 @@ import (
 	"github.com/tyclab/tycswap/internal/oauth"
 )
 
+// freshenTarget returns "ok", "invalid_grant", "identity-conflict", "transient" or "skip-live-session" (05§12).
+// The refresh runs under the store lock after a re-check, so a concurrent write-back is never overwritten (DESIGN A25 item 4).
 func (e *Engine) freshenTarget(number, email string) string {
 	if e.sw.AccountKindFor(number) == "api_key" {
 		return "ok" // API keys don't expire/refresh

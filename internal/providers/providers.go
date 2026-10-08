@@ -77,10 +77,7 @@ func Switcher(p Provider) *switcher.Switcher {
 
 // ---- registry ----------------------------------------------------------------
 
-// CodexIsPresent reports whether this machine has any Codex accounts tycswap
-// knows or could import: a slot in the Codex store, or a codex-auth registry
-// not yet imported, so the provider shows up on the first run rather than only
-// after a `tycswap codex` command. It never panics.
+// CodexIsPresent: a slot in the Codex store or a not yet imported codex-auth registry, so the provider shows on the first run.
 func CodexIsPresent() (present bool) {
 	defer func() {
 		if recover() != nil {
@@ -94,6 +91,7 @@ func CodexIsPresent() (present bool) {
 	return err == nil
 }
 
+// claude is passed in, not built: building the Claude switcher runs migrations, and callers already hold one.
 func AvailableProviders(ctx context.Context, claude Provider) []Provider {
 	out := []Provider{claude}
 	if CodexIsPresent() {

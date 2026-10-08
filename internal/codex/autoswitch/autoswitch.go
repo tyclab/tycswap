@@ -1,20 +1,6 @@
-// autoswitch.go — threshold rotation for Codex accounts, run alongside the
-// Claude engine by `tycswap auto`. Port of claude-swap PR #252
-// codex/autoswitch.py (binding_pct, CodexTick, CodexAutoSwitcher).
-//
-// Deliberately not a genericized Claude engine: that engine is built around
-// Claude specifics (per-model scoped windows, setup tokens, credential
-// quarantine, the consume gate), and abstracting it for a provider that needs
-// almost none of it would be a rewrite of the most load-bearing code in the
-// project. What Codex needs is small: read every account's usage, and if the
-// active one is at or over the threshold, move to whichever candidate has the
-// most headroom by at least the hysteresis margin. Cadence, backoff and
-// freshness are already the usage cache's job.
-//
-// The honest caveat, surfaced rather than hidden: a Codex switch rewrites
-// ~/.codex/auth.json, but a codex session already running holds its tokens in
-// memory and keeps using the old account until restarted. So a tick that
-// switches while codex processes run reports their PIDs, and Human says so.
+// autoswitch.go — threshold rotation for Codex accounts beside the Claude engine (claude-swap PR #252 codex/autoswitch.py).
+// Deliberately not a genericized Claude engine: Codex needs only usage, a threshold and hysteresis; cadence is the usage cache's job.
+// A switch rewrites ~/.codex/auth.json, but a running codex session keeps the old account until restarted, so ticks report its PIDs.
 package autoswitch
 
 import (
@@ -49,6 +35,7 @@ type Tick struct {
 	RunningPIDs []int
 }
 
+// Human always names the provider: two engines share one event stream.
 func (t Tick) Human() string {
 	base := "codex: " + t.Outcome
 	if t.Detail != "" {
@@ -79,6 +66,7 @@ type AutoSwitcher struct {
 	Hysteresis float64
 }
 
+// codex/autoswitch.py defaults are threshold 90 and hysteresis 10.
 func New(sw Source, threshold, hysteresis float64) *AutoSwitcher {
 	if sw == nil {
 		sw = switcher.New(switcher.Options{})
@@ -99,6 +87,7 @@ func (a *AutoSwitcher) snapshot(ctx context.Context) (snap reporting.AccountsSna
 // Tick runs one decision pass. It never panics or returns an error; failures
 // are OutcomeError ticks.
 func (a *AutoSwitcher) Tick(ctx context.Context, dryRun bool) Tick {
+	// fetch=nil: every account eligible; the usage cache's poll plan keeps this from a request per account.
 	snap, err := a.snapshot(ctx)
 	if err != nil {
 		return Tick{Outcome: OutcomeError, Detail: fmt.Sprintf("snapshot failed (%v)", err)}
@@ -131,6 +120,7 @@ func (a *AutoSwitcher) Tick(ctx context.Context, dryRun bool) Tick {
 
 	activePct := switcher.DecisionPct(active.Usage)
 	if activePct == nil {
+		// No measurement is not no usage: switching on unknown data would move the user for no reason.
 		return Tick{Outcome: OutcomeOK, Detail: fmt.Sprintf("account %s usage unknown", active.Number)}
 	}
 	if *activePct < a.Threshold {

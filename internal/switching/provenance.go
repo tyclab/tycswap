@@ -1,3 +1,5 @@
+// provenance.go runs before any lock (network is forbidden under the FileLock) and is strictly advisory: failures are swallowed.
+
 package switching
 
 import (
@@ -5,6 +7,7 @@ import (
 	"github.com/tyclab/tycswap/internal/store"
 )
 
+// Resolved is trustworthy only while the live bytes have not moved; the under-lock classifier re-checks byte equality.
 type Provenance struct {
 	Live     *string
 	Resolved *oauth.Identity
@@ -108,11 +111,7 @@ func sameAccountBytes(a, b string) bool {
 	return oauth.SameAccountBlock(a, b)
 }
 
-// fingerprintEqual reports whether two credentials share a fingerprint,
-// mirroring Python's credential_fingerprint(a) == credential_fingerprint(b):
-// two empty inputs both fingerprint to nil and compare equal (None == None).
-// Every call site here guards against empty inputs first, so this only ever
-// compares real bytes.
+// fingerprintEqual mirrors Python credential_fingerprint(a) == credential_fingerprint(b); callers guard empty inputs first.
 func fingerprintEqual(a, b string) bool {
 	fa := oauth.CredentialFingerprint(a)
 	fb := oauth.CredentialFingerprint(b)

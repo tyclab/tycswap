@@ -87,6 +87,7 @@ type Prompter interface {
 
 var ActivePrompter Prompter = StdPrompter{}
 
+// Shared so successive prompts do not drop buffered bytes.
 var stdinReader = bufio.NewReader(os.Stdin)
 
 type StdPrompter struct{}
@@ -134,10 +135,7 @@ func (StdPrompter) Secret(message string) (string, bool) {
 		fmt.Fprintln(Output, "Warning: Password input may be echoed.")
 		return readLineFallback()
 	}
-	// Echo is now off. Register the restore so cli's SIGINT handler can run it
-	// before os.Exit(130) — a Ctrl-C mid-read exits from the signal goroutine
-	// and never runs the deferred restore below, leaving the terminal with ECHO
-	// off (Python getpass restores termios in a finally on KeyboardInterrupt).
+	// Registered so cli's SIGINT handler restores echo before os.Exit(130); the deferred restore never runs on that path.
 	id := RegisterCleanup(func() { _ = restore() })
 	defer func() {
 		Unregister(id)

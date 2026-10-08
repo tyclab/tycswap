@@ -119,6 +119,7 @@ func Import(acc Accounts, source string, force bool) error {
 	lock := filelock.New(filepath.Join(acc.BackupDir(), ".lock"), importLockTimeout)
 	writeErr := lock.With(func() error {
 		var err error
+		// The ONE roster read: every check, slot decision and write in this pass uses it.
 		data, err = rosterForUpdate(acc)
 		if err != nil {
 			return err
@@ -143,6 +144,7 @@ func Import(acc Accounts, source string, force bool) error {
 			if !ok {
 				return cerr.Transfer("config for %s must be a JSON object", email)
 			}
+			// Only the identity is imported: mcpServers, allowedTools or hooks from an export would configure commands on this machine.
 			configObj, err = importedConfig(configObj, email)
 			if err != nil {
 				return err

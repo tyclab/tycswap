@@ -182,6 +182,7 @@ func RelevantWindows(u *Usage, models []string) []RelevantWindow {
 }
 
 const (
+	// usage.FiveHourLabel / SevenDayLabel are the same constants on the engine side (DESIGN A34).
 	FiveHourLabel = "5h"
 	SevenDayLabel = "7d"
 )

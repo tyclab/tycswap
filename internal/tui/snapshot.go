@@ -102,6 +102,7 @@ type flashClearMsg struct {
 
 type toastExpireMsg struct{ id int }
 
+// Exported because Go func types are invariant: cli's EngineFactory literal must name it as its return type.
 type AutoEngine interface {
 	RunLoop() int
 	Stop()

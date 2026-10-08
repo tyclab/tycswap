@@ -184,6 +184,7 @@ func (e PollEvent) Human() string {
 	)
 }
 
+// AccountNumberStr takes an int (dry-run) or a *int from jsonout.AccountRef; nil renders "None" as Python does.
 func AccountNumberStr(v any) string {
 	switch n := v.(type) {
 	case int:

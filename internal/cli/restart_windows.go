@@ -6,6 +6,7 @@ import (
 	"os"
 )
 
+// Windows has no exec-in-place; DETACHED_PROCESS keeps a console-less tray app from getting a new console after each update.
 var restartSelf = func(installedTag string) error {
 	exe := exePath()
 	if exe == "" {

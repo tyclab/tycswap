@@ -1,3 +1,4 @@
+// Package store is the account-store substrate: sequence.json, backup paths, credential/config proxies, identity resolution, locks.
 package store
 
 import (
@@ -61,7 +62,8 @@ type Options struct {
 	OAuth    oauth.Client
 	// WinCred is the legacy Windows Credential Manager reader; default
 	// wincred.New() (the always-not-found stub off Windows).
-	WinCred           wincred.Client
+	WinCred wincred.Client
+	// Migration notices fire before the CLI knows --json, so they go straight to stderr.
 	Stderr            io.Writer
 	DefaultProfileDir string
 }
@@ -129,12 +131,7 @@ func New(opts Options) (*Store, error) {
 	// directory until the first write, and usage.NewStore does not touch disk —
 	// so a no-op run never materializes backupDir.
 	log := logging.NewWithClock(backupDir, opts.Debug, clk)
-	// Install the store's logger into the oauth package seam so oauth's
-	// WARNING/DEBUG lines (spec 04§1.17 paste-safe usage-failure warnings,
-	// refresh/profile warnings, persist-failure log) land in the log file the
-	// doc comment on oauth.Log promises. oauth.Log is a package-global: with two
-	// stores in-process the last constructed wins, which is benign — both stores
-	// share the same on-disk backup root and therefore the same log file.
+	// Route oauth's paste-safe WARNING/DEBUG lines into this store's log; with two stores the last wins, which is benign (same root).
 	oauth.Log = log
 	usageStore := usage.NewStore(filepath.Join(backupDir, "cache"), clk)
 

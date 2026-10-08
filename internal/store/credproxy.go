@@ -15,10 +15,12 @@ import (
 	"github.com/tyclab/tycswap/internal/storenames"
 )
 
+// The email passed storenames.ValidEmail at the entry points, which keeps the name a single path component.
 func (s *Store) configBackupPath(num, email string) string {
 	return filepath.Join(s.ConfigsDir, storenames.ConfigFile(num, email))
 }
 
+// A seat-wide-only credential reads as missing, so a switch refuses the slot instead of writing no login live (DESIGN A30).
 func (s *Store) ReadAccountCredentials(num, email string) (string, error) {
 	creds, err := s.Creds.ReadBackup(num, email)
 	if ccfile.SeatWideOnly(creds) {

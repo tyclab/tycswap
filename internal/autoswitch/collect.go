@@ -15,6 +15,7 @@ import (
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
+// threshold is the tick snapshot, so fetch and decision agree if ApplyThreshold lands mid-tick (05§22).
 func (e *Engine) collectScheduledUsage(current string, quarantined map[string]bool, threshold float64) (
 	map[string]usage.UsageEntry, map[string]any, map[string]*float64,
 ) {

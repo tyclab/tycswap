@@ -1,3 +1,6 @@
+// cache.go: {"timestamp", "data"}; (value, ok) tells a cached null from a miss. The writer is deliberately non-atomic and
+// not chmod'ed (Amendment A8): this is the one low-value cache.
+
 package usage
 
 import (

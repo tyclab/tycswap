@@ -55,6 +55,7 @@ func (s *Store) sequenceMigratedLocked() (*SequenceData, error) {
 	return s.classifiedRoster()
 }
 
+// Key presence, not value: "" is migrated, the literal null is missing (spec 07§6.1).
 func needsOrgBackfill(data *SequenceData) bool {
 	for _, raw := range data.Accounts {
 		var probe map[string]json.RawMessage
@@ -156,6 +157,7 @@ func (s *Store) liveOAuthAccount() (email, orgUUID, orgName string) {
 		strOrEmpty(oauth["organizationName"])
 }
 
+// A record without organizationUuid compares equal to "" (spec 01§2.2).
 func (s *Store) FindAccountSlot(data *SequenceData, email, orgUUID string) string {
 	if data == nil {
 		return ""
@@ -200,6 +202,7 @@ func (s *Store) ResolveAccountFrom(data *SequenceData, identifier string) (num, 
 	return num, strField(rec, "email"), strField(rec, "organizationUuid"), nil
 }
 
+// Precedence number → alias → email: digits always win, even over an alias; several email matches are a ConfigError.
 func resolveIdentifier(data *SequenceData, identifier string) (string, error) {
 	if isDigits(identifier) {
 		return identifier, nil

@@ -1,3 +1,5 @@
+// checker.go: any error means no notice; negative results are cached too, in the 24h cache/update_check.json (Amendment A6).
+
 package update
 
 import (
@@ -61,16 +63,8 @@ func (c Checker) homeDir() string {
 	return h
 }
 
-// CheckForUpdate mirrors update_check.check_for_update: it returns a
-// human-readable notice if a newer version is available, or "" otherwise.
-// Every failure path (cache I/O, network, malformed JSON/version) is folded
-// into "" — this never fails the caller, matching Python's blanket
-// try/except → None (spec 08§13.2).
-//
-// currentVersion is the running build's v-prefixed semver string (Amendment
-// A5, e.g. version.Version — NOT version.Display()'s stripped form; the
-// comparator needs the "v" prefix). exePath is the running binary's path,
-// used only for the hint (see UpgradePlan/UpgradeHint).
+// CheckForUpdate returns a notice when a newer version exists, else ""; every failure folds into "" (spec 08§13.2).
+// currentVersion keeps its "v" prefix (version.Version, not Display()): the semver comparator needs it.
 func (c Checker) CheckForUpdate(exePath, currentVersion string, plat platform.Platform) string {
 	cachePath := filepath.Join(c.CacheDir, "update_check.json")
 	now := clock.Seconds(c.clock())

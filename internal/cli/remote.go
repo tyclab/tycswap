@@ -152,6 +152,7 @@ var (
 	remoteMaxFrame = 4 << 20
 )
 
+// A 401 after re-reading the token, told apart so the tray names the token file instead of the connection.
 var errRemoteRefused = errors.New("the engine refused the token")
 
 // remoteClient drives one dashboard over its HTTP API with the remote token.
@@ -172,7 +173,8 @@ type remoteClient struct {
 	why     string
 	refused bool
 	outage  bool
-	everUp  bool
+	// everUp gates the first outage notice: an engine not yet up when the tray starts at login is no outage.
+	everUp bool
 }
 
 // newRemoteClient builds the client; the token is read with loadToken.
@@ -342,6 +344,7 @@ func (c *remoteClient) State() (web.State, error) {
 	return st, nil
 }
 
+// mutate refreshes the cached state at once: the shell repaints from it before the stream's broadcast arrives.
 func (c *remoteClient) mutate(path string, body any) error {
 	if err := c.call(http.MethodPost, path, body, nil); err != nil {
 		return err

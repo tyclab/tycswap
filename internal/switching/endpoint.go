@@ -1,3 +1,6 @@
+// endpoint.go: a switch onto an API-key account with a base URL stores no key in Claude Code's credential store; endpoint and key
+// go into settings.json via ccsettings (DESIGN A46). Every live-login path does this, and a failed switch restores both files.
+
 package switching
 
 import (
@@ -32,6 +35,7 @@ func ProfileSidecarPath(s *store.Store) string {
 	return filepath.Join(s.BackupDir(), ccsettings.SidecarName)
 }
 
+// A stored URL that no longer validates stops the switch: writing it points somewhere unchecked, ignoring it sends the key to Anthropic.
 func endpointFor(data *store.SequenceData, num string) (string, error) {
 	raw := store.BaseURLFrom(data, num)
 	if raw == "" {
@@ -49,7 +53,8 @@ type profilePlan struct {
 	sidecarPath  string
 	apply        *ccsettings.Profile
 	revert       bool
-	known        []ccsettings.Profile
+	// known: without a record, a revert removes these and a new record does not take them for the user's own.
+	known []ccsettings.Profile
 	// snap is both files as they were, for the rollback; nil when the plan
 	// touches nothing.
 	snap              *ccsettings.Snapshot
@@ -170,6 +175,7 @@ func writeActiveFor(s *store.Store, p *profilePlan, targetCreds string) error {
 	return s.Creds.WriteActiveAccount(targetCreds)
 }
 
+// A failed revert of a record is an error (the switch rolls back); the by-value cleanup is best-effort.
 func (p *profilePlan) commit(s *store.Store) error {
 	if !p.touches() {
 		return nil

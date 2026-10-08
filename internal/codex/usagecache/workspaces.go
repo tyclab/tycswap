@@ -1,3 +1,7 @@
+// workspaces.go follows codex-auth's grouped-scope rules (docs/api.md) so listings do not add a request per scope forever:
+// one request per chatgpt_user_id scope, only with >1 record, a workspace plan and an unnamed one. The server's names overwrite;
+// a workspace not returned is cleared. Any failure leaves names untouched: a missing name is cosmetic and must never fail a listing.
+
 package usagecache
 
 import (
@@ -35,6 +39,7 @@ func ScopeNeedsRefresh(scope []store.Slot) bool {
 	return false
 }
 
+// payloadFor is the usage cache's callback, so this obeys the never-refresh-the-active-account rule.
 func RefreshWorkspaceNames(ctx context.Context, st *store.Store, client api.Client, payloadFor PayloadFor) int {
 	scopes := map[string][]store.Slot{}
 	var order []string

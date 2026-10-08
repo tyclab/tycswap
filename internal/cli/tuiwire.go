@@ -52,6 +52,7 @@ var (
 	withTUIProviders = tui.WithProviders
 )
 
+// Forwards sw.OAuth, not a fresh oauth.NewHTTPClient(), which would ignore the client the switcher was built with.
 func engineFactoryFor(sw *core.Switcher) tui.EngineFactory {
 	return func(s settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool) tui.AutoEngine {
 		return newAutoEngine(sw, s, onEvent, dryRun, sw.OAuth)

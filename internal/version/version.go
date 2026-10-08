@@ -15,6 +15,7 @@ var Version = unset
 
 func init() { Version = fromBuildInfo(Version, debug.ReadBuildInfo) }
 
+// A module-cache build takes its module version so update notices do not offer the release already installed.
 func fromBuildInfo(v string, read func() (*debug.BuildInfo, bool)) string {
 	if v != unset {
 		return v
@@ -31,6 +32,7 @@ func fromBuildInfo(v string, read func() (*debug.BuildInfo, bool)) string {
 	return info.Main.Version
 }
 
+// The form --version prints and the export envelope's swapVersion carries.
 func Display() string {
 	return strings.TrimPrefix(Version, "v")
 }

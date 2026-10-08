@@ -451,6 +451,7 @@ func (m *Model) actionDone(msg actionDoneMsg) tea.Cmd {
 			cmds = append(cmds, m.notify(w, "", "warning"))
 		}
 	} else {
+		// Remove and disable carry no payload and an empty message, so they get this toast too (issue #3).
 		cmds = append(cmds, m.notify(msg.label+" completed", "", ""))
 	}
 	return tea.Batch(cmds...)

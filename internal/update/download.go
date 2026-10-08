@@ -1,3 +1,6 @@
+// download.go: a release binary is upgraded by downloading this OS/arch build, checking it against SHA256SUMS and renaming
+// it over the running file (DESIGN A24, A36).
+
 package update
 
 import (
@@ -281,9 +284,7 @@ func (u Upgrader) downloadUpgrade(exePath string, plat platform.Platform) int {
 	return 0
 }
 
-// maxAssetBytes bounds one release download. The binary is about 10 MB;
-// 256 MiB is generous and still refuses an endless stream before it fills
-// the filesystem that holds the binary.
+// maxAssetBytes: the binary is about 10 MB; 256 MiB still refuses an endless stream before it fills the disk.
 var maxAssetBytes int64 = 256 << 20
 
 // maxSumsBytes bounds the SHA256SUMS file.

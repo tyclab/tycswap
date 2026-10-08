@@ -1,3 +1,5 @@
+// fingerprint.go: sha256: hashes the refresh token so access-token rotation compares equal; sha256-full: hashes API keys and setup tokens.
+
 package oauth
 
 import (

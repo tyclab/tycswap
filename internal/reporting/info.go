@@ -29,6 +29,7 @@ func BuildAccountsInfo(s *store.Store) []AccountInfo {
 		num := strconv.Itoa(n)
 		rec, _ := recordFor(data, num)
 
+		// account.get("email", "unknown"): absent is "unknown", present but non-string is "".
 		email := "unknown"
 		if v, present := rec["email"]; present {
 			email, _ = v.(string)

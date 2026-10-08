@@ -28,8 +28,10 @@ const serveTTLS = usage.ServeTTLS
 
 const staleOKS = usage.StaleOKS
 
+// Spelled as a literal in each package that matches it (04§1.19).
 const allModelsSentinel = "all"
 
+// Byte-identical to reporting's map so every surface states a sentinel the same; unmapped states print verbatim.
 var sentinelNotes = map[string]string{
 	jsonout.UsageTokenExpired:        "token expired — Claude Code refreshes the active account",
 	jsonout.UsageAPIKey:              "API key (no quota)",
@@ -126,6 +128,7 @@ func (c classUtilization) overAnyBar(s settings.AutoSwitchSettings) bool {
 
 const exhaustedPct = 100.0
 
+// A store-supplied pct sizes a shared column, so both tails are bounded; past the cap it is elided (">999%"), never rewritten.
 const displayPctCap = 999.0
 
 func pctText(pct float64) string {
@@ -147,6 +150,7 @@ type candidateWindow struct {
 	Exhausted bool
 }
 
+// Both lists come from oauth.RelevantWindows, so the panel never disagrees with the engine; exhaustion is decided here, once.
 func candidateWindows(lastGood map[string]any, models []string) []candidateWindow {
 	u := oauth.NewUsage(lastGood)
 	all := oauth.RelevantWindows(u, []string{allModelsSentinel})
@@ -204,10 +208,12 @@ func resetText(window map[string]any, now float64) string {
 	return "resets " + formatDuration(ts-now)
 }
 
+// Bounds the store-supplied resets_at so countdownWidest is a real bound; ten days covers 5h/7d/weekly with skew; past it ">9d".
 const displayResetCap = 10 * 24 * 3600
 
 const displayResetOver = ">9d"
 
+// The cap test is NOT(r < cap) so NaN lands on the marker, not formatDuration's undefined int() conversion.
 func countdownSpelling(remaining float64) string {
 	if remaining <= 0 {
 		return "now"
@@ -246,26 +252,12 @@ func resetKnown(resetsAt string) bool {
 	return ok
 }
 
+// A tight bound over every float64 remaining (23h 59m), valid only because displayResetCap keeps days to one digit.
 const countdownWidest = "23h 59m"
 
-// renderClock is what a layout spells its reset countdowns against, and the one
-// place the difference between DRAWING and PRICING a layout lives.
-//
-// A countdown's spelling narrows as it ticks — "2h 13m" is four columns wider
-// than "9m" — so a layout measured against the live clock is a different width
-// on every frame. That is harmless while it only decides how much a layout
-// SHOWS, and it is not harmless when it decides WHICH layout a surface draws:
-// the panel would flip between the table and the per-row layout between frames at
-// a fixed terminal width, losing figures with no resize.
-//
-// So the two readings are separated. A PRICED layout spells every countdown at
-// countdownWidest, whatever the hour, which makes a score — and therefore the
-// choice between two layouts — a pure function of the rows, the width and the
-// surface. A DRAWN layout spells them live, so the terminal shows the real
-// figure and the columns a short countdown frees are spent on real detail. The
-// drawn layout is never narrower per countdown than the priced one, so it
-// displays at least what it was priced at and often more, which is the safe
-// direction: the bar it cleared is a lower bound.
+// renderClock separates DRAWING from PRICING a layout. A countdown narrows as it ticks, so pricing against the live clock
+// would flip the table/per-row choice between frames at a fixed width. Priced layouts spell every countdown at countdownWidest
+// (a pure function of rows, width and surface); drawn layouts spell them live and are never wider, so they show at least the price.
 type renderClock struct {
 	now    float64
 	widest bool

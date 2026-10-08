@@ -7,6 +7,7 @@ import (
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
+// Switcher is FROZEN (Amendment A13): *core.Switcher implements it and cli carries the compile assertion.
 type Switcher interface {
 	CurrentAccountNumber() *string
 	HasLiveLogin() bool
@@ -20,6 +21,7 @@ type Switcher interface {
 	// PersistBackupCredentials writes a rotated credential to the slot's backup
 	// store under the store lock (05§12).
 	PersistBackupCredentials(num, email, creds string) error
+	// RefreshBackupGuarded refreshes and persists under the store lock; a lineage that moved on is returned unrefreshed (DESIGN A25 item 4).
 	RefreshBackupGuarded(ctx context.Context, c oauth.Client, num, email, held string) oauth.RefreshOutcome
 	BackfillAccountUUID(num, uuid string)
 	UsageEntriesByAccount(fetch map[string]bool) map[string]usage.UsageEntry

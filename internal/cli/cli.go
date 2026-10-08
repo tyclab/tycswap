@@ -106,6 +106,7 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 		}
 	}
 
+	// TTY-gated on both ends so scripts and pipes get the no-command error, not a resident tray app (DESIGN A40).
 	if len(argv) == 0 && ((stdoutTTY && stdinTTY) || msysTerminal()) {
 		return startBackgroundApp(prog, s)
 	}
