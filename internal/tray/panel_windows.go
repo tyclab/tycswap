@@ -120,6 +120,8 @@ type windowsPanel struct {
 	rowCache       map[int]panelRowsCache
 	revealPending  map[int]bool
 	fittedWidths   map[int][]int
+	rules          []int
+	frames         []menuRect
 	anchor         *point
 	confirm        *panelConfirm
 }
