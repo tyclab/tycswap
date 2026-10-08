@@ -830,7 +830,8 @@ the table; it does not change which models an engine counts. To switch,
 double-click a row (or press Enter) and choose the destination: the default
 login or a session group. A destination that cannot take the account stays
 listed, disabled, with the reason. The panel sizes itself to its content:
-full account names, and tables as tall as their rows.
+buttons and columns fit their text, full account names show, and tables are
+as tall as their rows.
 
 **Settings** in the tray and dashboard edit the same store. Choose **Shared
 defaults**, **Fable**, or **Opus / other**. Group overrides apply only to that

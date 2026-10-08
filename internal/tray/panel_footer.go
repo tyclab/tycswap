@@ -19,7 +19,9 @@ func panelCommandEnabled(panel Panel, action Item) bool {
 	return false
 }
 
-func panelFooterLayout(actions []Item, width int, settings bool) ([]panelFooterButton, int) {
+// panelFooterLayout wraps the footer buttons into rows of width pixels and
+// returns the height the rows take. measure gives each button's width.
+func panelFooterLayout(actions []Item, width, height, gap int, settings bool, measure func(Item) int) ([]panelFooterButton, int) {
 	width = max(1, width)
 	x, y := 0, 0
 	var buttons []panelFooterButton
@@ -27,22 +29,15 @@ func panelFooterLayout(actions []Item, width int, settings bool) ([]panelFooterB
 		if action.ID == "open" || action.Kind == KindToggle && !settings {
 			continue
 		}
-		buttonWidth := 96
-		if action.ID == "update" {
-			buttonWidth = 140
-		}
-		if action.Kind == KindToggle {
-			buttonWidth = 160
-		}
-		if action.Kind == KindUpdate {
-			buttonWidth = 136
-		}
-		buttonWidth = min(buttonWidth, width)
+		buttonWidth := min(measure(action), width)
 		if x > 0 && x+buttonWidth > width {
-			x, y = 0, y+34
+			x, y = 0, y+height+gap
 		}
 		buttons = append(buttons, panelFooterButton{action.ID, x, y, buttonWidth})
-		x += buttonWidth + 6
+		x += buttonWidth + gap
 	}
-	return buttons, y + 58
+	if len(buttons) == 0 {
+		return nil, 0
+	}
+	return buttons, y + height
 }

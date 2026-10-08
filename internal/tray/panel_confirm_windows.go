@@ -46,9 +46,23 @@ func (p *windowsPanel) confirmSwitch(index int) {
 		return
 	}
 	title := "Switch to " + row.Title + "?"
-	pad, buttonHeight := p.scale(16), p.scale(30)
-	width := min(max(p.scale(340), p.textWidth(p.bold, title)+2*pad), p.scale(560))
-	height := p.scale(48) + len(row.Targets)*(buttonHeight+p.scale(6)) + p.scale(10+28) + pad
+	m := p.metrics()
+	labels := make([]string, len(row.Targets))
+	for i, target := range row.Targets {
+		labels[i] = target.Label
+		reason := target.Reason
+		if p.model.panel.Offline {
+			reason = "Reconnect before switching accounts."
+		}
+		if (target.Disabled || p.model.panel.Offline) && reason != "" {
+			labels[i] += " (" + reason + ")"
+		}
+	}
+	pad, gap := m.pad, m.unit*3/4
+	cancelWidth := p.buttonWidth(m, p.font, "Cancel")
+	width := max(p.textWidth(p.bold, title), p.textWidth(p.font, labels...)+2*m.inset, cancelWidth) + 2*pad
+	top := pad + m.line + m.unit
+	height := top + len(labels)*(m.control+gap) + m.unit + m.control + pad
 	var owner menuRect
 	user32.NewProc("GetWindowRect").Call(p.hwnd, uintptr(unsafe.Pointer(&owner)))
 	x := int(owner.left+owner.right)/2 - width/2
@@ -65,27 +79,18 @@ func (p *windowsPanel) confirmSwitch(index int) {
 		panelSend.Call(control, panelSetFont, font, 1)
 		return control
 	}
-	child(panelConfirmTitle, "STATIC", title, 0x80, pad, pad, width-2*pad, p.scale(20), p.bold)
+	child(panelConfirmTitle, "STATIC", title, 0x80, pad, pad, width-2*pad, m.line, p.bold)
 	focus := uintptr(0)
-	top := p.scale(48)
 	for i, target := range row.Targets {
-		label := target.Label
-		reason := target.Reason
-		if p.model.panel.Offline {
-			reason = "Reconnect before switching accounts."
-		}
 		disabled := target.Disabled || p.model.panel.Offline
-		if disabled && reason != "" {
-			label += " (" + reason + ")"
-		}
-		button := child(panelConfirmTarget+i, "BUTTON", label, panelTabStop|0xb, pad, top, width-2*pad, buttonHeight, p.font)
+		button := child(panelConfirmTarget+i, "BUTTON", labels[i], panelTabStop|0xb, pad, top, width-2*pad, m.control, p.font)
 		panelEnable.Call(button, uintptr(boolValue(!disabled)))
 		if !disabled && focus == 0 {
 			focus = button
 		}
-		top += buttonHeight + p.scale(6)
+		top += m.control + gap
 	}
-	cancel := child(panelConfirmCancel, "BUTTON", "Cancel", panelTabStop|0xb, width-pad-p.scale(96), top+p.scale(10), p.scale(96), p.scale(28), p.font)
+	cancel := child(panelConfirmCancel, "BUTTON", "Cancel", panelTabStop|0xb, width-pad-cancelWidth, top+m.unit, cancelWidth, m.control, p.font)
 	if focus == 0 {
 		focus = cancel
 	}

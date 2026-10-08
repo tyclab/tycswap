@@ -123,7 +123,7 @@ func (p *windowsPanel) refreshTheme() {
 	p.background, _, _ = brush.Call(p.palette.background)
 	p.headerBrush, _, _ = brush.Call(p.palette.header)
 	p.selectionBrush, _, _ = brush.Call(p.palette.selection)
-	p.imageList, _, _ = panelControls.NewProc("ImageList_Create").Call(1, uintptr(p.scale(26)), 0x20, 0, 1)
+	p.imageList, _, _ = panelControls.NewProc("ImageList_Create").Call(1, uintptr(p.metrics().row), 0x20, 0, 1)
 	for id, control := range p.controls {
 		font := p.font
 		if id == 100 {
@@ -188,32 +188,39 @@ func (p *windowsPanel) layout() {
 	var rect menuRect
 	panelGetClient.Call(p.hwnd, uintptr(unsafe.Pointer(&rect)))
 	width, height := int(rect.right), int(rect.bottom)
-	pad := p.scale(16)
+	m := p.metrics()
+	pad, inner := m.pad, width-2*m.pad
 	move := func(id, x, y, w, h int) {
 		if control := p.controls[id]; control != 0 {
 			panelMove.Call(control, uintptr(x), uintptr(y), uintptr(max(1, w)), uintptr(max(1, h)), 1)
 		}
 	}
-	move(100, pad, p.scale(14), p.scale(130), p.scale(22))
-	move(101, p.scale(150), p.scale(16), width-p.scale(314), p.scale(18))
-	move(panelDashboard, width-pad-p.scale(140), p.scale(10), p.scale(140), p.scale(30))
-	move(panelAccountTab, pad, p.scale(50), p.scale(104), p.scale(34))
-	move(panelSettingsTab, pad+p.scale(112), p.scale(50), p.scale(104), p.scale(34))
-	buttons, footerHeight := panelFooterLayout(p.model.panel.Actions, (width-2*pad)*96/p.dpi, p.model.settings)
-	footer := height - p.scale(footerHeight)
-	move(228, pad, footer+p.scale(footerHeight-24), width-2*pad, p.scale(20))
+	head := p.head(m)
+	title := p.lineHeight(p.titleFont)
+	titleWidth := p.textWidth(p.titleFont, panelControlText(p.controls[100]))
+	versionWidth := p.textWidth(p.font, panelControlText(p.controls[101]))
+	move(100, pad, head.row+(m.control-title)/2, titleWidth+2, title)
+	move(101, pad+titleWidth+m.unit, head.row+(m.control-m.line)/2, versionWidth+2, m.line)
+	move(panelDashboard, pad+titleWidth+3*m.unit+versionWidth, head.row, p.buttonWidth(m, p.bold, panelControlText(p.controls[panelDashboard])), m.control)
+	accounts := p.buttonWidth(m, p.bold, "Accounts")
+	move(panelAccountTab, pad, head.tabs, accounts, m.control)
+	move(panelSettingsTab, pad+accounts+m.unit/2, head.tabs, p.buttonWidth(m, p.bold, "Settings"), m.control)
+	buttons, footerHeight := p.footer(m, width)
+	footer := height - footerHeight
+	status := footer + footerHeight - m.unit - m.line
+	move(228, pad, status, inner, m.line)
 	if p.controls[228] == 0 {
 		instance, _, _ := pGetModuleHandleW.Call(0)
 		control, _, _ := pCreateWindowExW.Call(0, uintptr(unsafe.Pointer(utf16z("STATIC"))), uintptr(unsafe.Pointer(utf16z(""))), panelChild|panelVisible,
-			uintptr(pad), uintptr(footer+p.scale(footerHeight-24)), uintptr(width-2*pad), uintptr(p.scale(20)), p.hwnd, 228, instance, 0)
+			uintptr(pad), uintptr(status), uintptr(inner), uintptr(m.line), p.hwnd, 228, instance, 0)
 		p.controls[228] = control
 		panelSend.Call(control, panelSetFont, p.font, 1)
 	}
-	status := p.model.panel.Status
+	text := p.model.panel.Status
 	if p.errorText != "" {
-		status = p.errorText
+		text = p.errorText
 	}
-	p.setText(228, status)
+	p.setText(228, text)
 	shown := make(map[string]bool)
 	for _, button := range buttons {
 		shown[button.id] = true
@@ -225,7 +232,7 @@ func (p *windowsPanel) layout() {
 	}
 	for _, button := range buttons {
 		id := p.actionControls[button.id]
-		move(id, pad+p.scale(button.x), footer+p.scale(button.y), p.scale(button.width), p.scale(28))
+		move(id, pad+button.x, footer+m.unit+button.y, button.width, m.control)
 		panelShow.Call(p.controls[id], 5)
 	}
 	for _, id := range []int{panelAccounts, 220, 221, 222} {
@@ -235,36 +242,43 @@ func (p *windowsPanel) layout() {
 		panelShow.Call(p.controls[id], uintptr(boolValue(p.model.settings))*5)
 	}
 	if p.model.settings {
-		move(224, pad, p.scale(104), p.scale(66), p.scale(20))
-		move(panelScopes, pad+p.scale(74), p.scale(98), p.scale(220), p.scale(160))
-		detail := footer - p.scale(144)
-		move(panelFields, pad, p.scale(136), width-2*pad, detail-p.scale(144))
+		label := p.textWidth(p.font, panelControlText(p.controls[224]))
+		move(224, pad, head.content+(m.control-m.line)/2, label+2, m.line)
+		move(panelScopes, pad+label+m.unit, head.content, p.scopeWidth(m), p.dropHeight(m, len(p.model.panel.Settings)))
+		detail := footer - p.settingDetail(m)
+		top := head.content + m.control + m.unit
+		move(panelFields, pad, top, inner, detail-m.unit-top)
 		p.fillLastColumn(panelFields)
 		if p.revealPending[panelFields] {
 			p.revealSelection(panelFields)
 		}
-		move(225, pad, detail, width-2*pad, p.scale(20))
-		move(226, pad, detail+p.scale(22), width-2*pad, p.scale(52))
-		move(panelEdit, pad, detail+p.scale(78), width-2*pad-p.scale(176), p.scale(28))
-		move(panelChoice, pad, detail+p.scale(78), width-2*pad-p.scale(176), p.scale(180))
-		move(panelSave, width-pad-p.scale(168), detail+p.scale(78), p.scale(78), p.scale(28))
-		move(panelReset, width-pad-p.scale(82), detail+p.scale(78), p.scale(82), p.scale(28))
-		move(227, pad, detail+p.scale(110), width-2*pad, p.scale(28))
+		description := detail + m.line + m.unit/4
+		editor := description + 3*m.line + 4 + m.unit/2
+		reset := p.buttonWidth(m, p.font, "Reset")
+		save := p.buttonWidth(m, p.bold, "Save")
+		saveX := width - pad - reset - m.unit*3/4 - save
+		move(225, pad, detail, inner, m.line)
+		move(226, pad, description, inner, 3*m.line+4)
+		move(panelEdit, pad, editor, saveX-m.unit-pad, m.control)
+		move(panelChoice, pad, editor, saveX-m.unit-pad, p.dropHeight(m, len(p.choiceValues)))
+		move(panelSave, saveX, editor, save, m.control)
+		move(panelReset, width-pad-reset, editor, reset, m.control)
+		move(227, pad, editor+m.control+m.unit/2, inner, m.line)
 		p.rendering = true
 		p.renderEditor()
 		p.rendering = false
 	} else {
-		detail := footer - p.scale(p.detailHeight())
-		lines := p.scale(p.detailLines()*18 + 4)
-		move(panelAccounts, pad, p.scale(98), width-2*pad, detail-p.scale(106))
+		detail := footer - p.accountDetail(m)
+		lines := p.detailLines()*m.line + 4
+		move(panelAccounts, pad, head.content, inner, detail-m.unit-head.content)
 		p.fillLastColumn(panelAccounts)
 		if p.revealPending[panelAccounts] {
 			p.revealSelection(panelAccounts)
 		}
-		move(220, pad, detail, width-2*pad, p.scale(20))
-		move(221, pad, detail+p.scale(22), width-2*pad, lines)
+		move(220, pad, detail, inner, m.line)
+		move(221, pad, detail+m.line+m.unit/4, inner, lines)
 		p.fitScroll(221)
-		move(222, pad, detail+p.scale(28)+lines, width-2*pad, p.scale(18))
+		move(222, pad, detail+m.line+m.unit/4+lines+m.unit/2, inner, m.line)
 	}
 	panelInvalidate.Call(p.controls[panelAccountTab], 0, 1)
 	panelInvalidate.Call(p.controls[panelSettingsTab], 0, 1)
@@ -279,8 +293,6 @@ func (p *windowsPanel) detailLines() int {
 	return min(lines, 7)
 }
 
-func (p *windowsPanel) detailHeight() int { return 60 + p.detailLines()*18 }
-
 func (p *windowsPanel) paint() uintptr {
 	var paint panelPaint
 	dc, _, _ := user32.NewProc("BeginPaint").Call(p.hwnd, uintptr(unsafe.Pointer(&paint)))
@@ -288,11 +300,13 @@ func (p *windowsPanel) paint() uintptr {
 		menuFillRect.Call(dc, uintptr(unsafe.Pointer(&paint.rect)), p.background)
 		var rect menuRect
 		panelGetClient.Call(p.hwnd, uintptr(unsafe.Pointer(&rect)))
-		line := menuRect{0, int32(p.scale(84)), rect.right, int32(p.scale(85))}
+		m := p.metrics()
+		rule := int32(p.head(m).rule)
+		line := menuRect{0, rule, rect.right, rule + 1}
 		brush, _, _ := menuGDI.NewProc("CreateSolidBrush").Call(p.palette.line)
 		menuFillRect.Call(dc, uintptr(unsafe.Pointer(&line)), brush)
-		_, footerHeight := panelFooterLayout(p.model.panel.Actions, (int(rect.right)-2*p.scale(16))*96/p.dpi, p.model.settings)
-		line.top, line.bottom = rect.bottom-int32(p.scale(footerHeight+4)), rect.bottom-int32(p.scale(footerHeight+3))
+		_, footerHeight := p.footer(m, int(rect.right))
+		line.top, line.bottom = rect.bottom-int32(footerHeight), rect.bottom-int32(footerHeight)+1
 		menuFillRect.Call(dc, uintptr(unsafe.Pointer(&line)), brush)
 		menuDeleteObject.Call(brush)
 	}
@@ -348,7 +362,7 @@ func (p *windowsPanel) drawButton(draw *drawMenuItem) bool {
 	rect := draw.rect
 	menuDrawText.Call(draw.hdc, uintptr(unsafe.Pointer(utf16z(text))), ^uintptr(0), uintptr(unsafe.Pointer(&rect)), dtSingleLine|dtVCenter|dtNoPrefix|1|0x8000)
 	if selectedTab {
-		line := menuRect{rect.left, rect.bottom - int32(p.scale(2)), rect.right, rect.bottom}
+		line := menuRect{rect.left, rect.bottom - int32(max(2, p.metrics().line/8)), rect.right, rect.bottom}
 		accent, _, _ := menuGDI.NewProc("CreateSolidBrush").Call(p.palette.accent)
 		menuFillRect.Call(draw.hdc, uintptr(unsafe.Pointer(&line)), accent)
 		menuDeleteObject.Call(accent)
@@ -382,8 +396,9 @@ func (p *windowsPanel) drawCombo(draw *drawMenuItem) bool {
 	menuBkMode.Call(draw.hdc, 1)
 	menuTextColor.Call(draw.hdc, color)
 	rect := draw.rect
-	rect.left += int32(p.scale(5))
-	rect.right -= int32(p.scale(3))
+	m := p.metrics()
+	rect.left += int32(m.unit * 5 / 8)
+	rect.right -= int32(m.unit * 3 / 8)
 	menuDrawText.Call(draw.hdc, uintptr(unsafe.Pointer(utf16z(text))), ^uintptr(0), uintptr(unsafe.Pointer(&rect)), dtSingleLine|dtVCenter|dtNoPrefix|0x8000)
 	if draw.itemState&0x10 != 0 {
 		user32.NewProc("DrawFocusRect").Call(draw.hdc, uintptr(unsafe.Pointer(&rect)))
@@ -482,18 +497,19 @@ func (p *windowsPanel) drawCell(hwnd uintptr, index, column int, dc uintptr) {
 	menuSelectObject.Call(dc, font)
 	menuBkMode.Call(dc, 1)
 	menuTextColor.Call(dc, color)
+	m := p.metrics()
 	if column == 0 && hwnd == p.controls[panelAccounts] {
 		if active {
 			check := rect
-			check.left += int32(p.scale(4))
-			check.right = check.left + int32(p.scale(16))
+			check.left += int32(m.unit / 2)
+			check.right = check.left + int32(2*m.unit)
 			menuDrawText.Call(dc, uintptr(unsafe.Pointer(utf16z("✓"))), ^uintptr(0), uintptr(unsafe.Pointer(&check)), dtSingleLine|dtVCenter|dtNoPrefix)
 		}
-		rect.left += int32(p.scale(24))
+		rect.left += int32(3 * m.unit)
 	} else {
-		rect.left += int32(p.scale(8))
+		rect.left += int32(m.unit)
 	}
-	rect.right -= int32(p.scale(6))
+	rect.right -= int32(m.unit * 3 / 4)
 	menuDrawText.Call(dc, uintptr(unsafe.Pointer(utf16z(text))), ^uintptr(0), uintptr(unsafe.Pointer(&rect)), dtSingleLine|dtVCenter|dtNoPrefix|format|0x8000)
 }
 
@@ -531,11 +547,12 @@ func (p *windowsPanel) drawHeader(draw *panelCustomDraw) uintptr {
 	menuSelectObject.Call(draw.dc, p.font)
 	menuBkMode.Call(draw.dc, 1)
 	menuTextColor.Call(draw.dc, p.palette.muted)
+	m := p.metrics()
 	rect := draw.rect
-	rect.left += int32(p.scale(8))
-	rect.right -= int32(p.scale(6))
+	rect.left += int32(m.unit)
+	rect.right -= int32(m.unit * 3 / 4)
 	if parent == p.controls[panelAccounts] && index == 0 {
-		rect.left += int32(p.scale(16))
+		rect.left += int32(2 * m.unit)
 	}
 	menuDrawText.Call(draw.dc, uintptr(unsafe.Pointer(utf16z(labels[index]))), ^uintptr(0), uintptr(unsafe.Pointer(&rect)), dtSingleLine|dtVCenter|dtNoPrefix|format|0x8000)
 	return 4

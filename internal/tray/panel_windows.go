@@ -877,7 +877,8 @@ func panelWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uin
 		if lParam != 0 {
 			measure := nativePanelStruct[measureMenuItem](lParam)
 			if measure.ctlType == 3 {
-				measure.itemHeight = uint32(p.scale(24))
+				m := p.metrics()
+				measure.itemHeight = uint32(m.line + m.unit - 1)
 				return 1
 			}
 		}

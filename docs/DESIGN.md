@@ -6037,9 +6037,11 @@ never switch an account. Switching requires an explicit activation
 (double-click or Enter) and a destination chosen in a modal confirmation
 that lists every destination, blocked ones disabled with their reason.
 Nothing is preselected, so row navigation cannot carry a destination along.
-Active styling is independent of menu item kind and toggle state. Columns
-fit their widest text and the popup fits its columns and rows; the last
-column runs to the list edge so a moved highlight repaints whole.
+Active styling is independent of menu item kind and toggle state. Only the
+two font sizes are fixed (scaled for DPI); every other size derives from the
+body font's line height or from measured text, so columns, buttons and tabs
+fit their labels and the popup fits its columns and rows. The last column
+runs to the list edge so a moved highlight repaints whole.
 
 The CLI shell builds the panel from the dashboard state. Local and remote
 setting edits use the same serialized server mutation path as the browser.

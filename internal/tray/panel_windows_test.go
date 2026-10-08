@@ -264,8 +264,8 @@ func TestNativePanelWrapsAvailableUpdateAndToggleActions(t *testing.T) {
 		if bounds.left < window.left || bounds.top < window.top || bounds.right > window.right || bounds.bottom > window.bottom {
 			t.Fatalf("action %s outside popup bounds: %+v", action.ID, bounds)
 		}
-		if bounds.right-bounds.left < int32(p.scale(90)) {
-			t.Fatalf("action %s crushed below readable width", action.ID)
+		if label := panelControlText(control); int(bounds.right-bounds.left) < p.textWidth(p.font, label)+2*p.metrics().inset {
+			t.Fatalf("action %s narrower than its label %q", action.ID, label)
 		}
 		tops[bounds.top] = true
 	}

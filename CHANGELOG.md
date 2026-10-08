@@ -3,7 +3,7 @@
 ## Unreleased
 
 - **Changed:** in the Windows tray, double-click an account (or press Enter) to switch: a confirmation lists each destination (default login, Fable, Opus/other), and blocked destinations show why. The Switch group list and the Use this account button are gone.
-- **Changed:** the Windows tray panel fits its content. Columns size to their longest text, so account names are no longer cut off, and tables are as tall as their rows.
+- **Changed:** the Windows tray panel fits its content. Every size derives from the font, as on a web page: columns, buttons, tabs and the settings selector fit their text, spacing follows the line height, account names are no longer cut off, and tables are as tall as their rows. Open dashboard sits beside the version.
 - **Fixed:** the Windows tray's Settings tab opens with the selected setting in view, and moving the selection no longer leaves stale highlight fragments in a row.
 
 - **Changed:** the Windows tray opens a compact Accounts / Settings panel. Each account appears once with separate quota columns, clickable sorting, focused reset details and an explicit destination for switching. Active accounts retain bold blue text and an aligned checkmark in either app theme.
