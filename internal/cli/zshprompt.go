@@ -18,19 +18,23 @@ var flakelabPrompts string
 var flakelabPromptLicense string
 
 var promptLookPath = exec.LookPath
+var promptPending string
 
 const zshPromptAdapter = `
-mode="$1"; question="$2"; initial="$3"; shift 3
+mode="$1"; question="$2"; initial="$3"; _PC_PENDING="$4"; shift 4
+result=0; answer=""
 case "$mode" in
   choose)
-    prompt_choose "$question" "$@" || exit 130
-    print -rn -- "$PROMPT_INDEX"
+    prompt_choose "$question" "$@" || result=130
+    answer="$PROMPT_INDEX"
     ;;
   input)
-    prompt_input "$question" "$initial" || exit 130
-    print -rn -- "$PROMPT_TEXT"
+    prompt_input "$question" "$initial" || result=130
+    answer="$PROMPT_TEXT"
     ;;
 esac
+print -rn -- "$_PC_PENDING"$'\0'"$answer"
+exit "$result"
 `
 
 func zshPromptScript(body string) string {
@@ -46,23 +50,33 @@ func askTerminal(s ioStreams, title string, choices []string, initial string) (i
 	if choices != nil {
 		mode = "choose"
 	}
-	args := []string{"-f", "-c", zshPromptScript(zshPromptAdapter), "tycswap-prompt", mode, termsafe.Strip(title), termsafe.Strip(initial)}
+	args := []string{"-f", "-c", zshPromptScript(zshPromptAdapter), "tycswap-prompt", mode, termsafe.Strip(title), termsafe.Strip(initial), promptPending}
 	for _, choice := range choices {
 		args = append(args, termsafe.Strip(choice))
 	}
 	var answer bytes.Buffer
 	cmd := exec.Command(zsh, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.in, &answer, s.err
-	if err := cmd.Run(); err != nil {
+	err = cmd.Run()
+	pending, value, valid := strings.Cut(answer.String(), "\x00")
+	promptPending = ""
+	if valid && pending == "\x1b" {
+		promptPending = pending
+	}
+	if err != nil {
 		if e, ok := err.(*exec.ExitError); !ok || e.ExitCode() != 130 {
 			fmt.Fprintf(s.err, "Terminal prompt failed: %v\n", err)
 		}
 		return 0, "", false
 	}
-	if choices == nil {
-		return 0, termsafe.Strip(answer.String()), true
+	if !valid {
+		fmt.Fprintln(s.err, "Terminal prompt returned an invalid answer.")
+		return 0, "", false
 	}
-	index, err := strconv.Atoi(answer.String())
+	if choices == nil {
+		return 0, termsafe.Strip(value), true
+	}
+	index, err := strconv.Atoi(value)
 	if err != nil || index < 1 || index > len(choices) {
 		fmt.Fprintln(s.err, "Terminal prompt returned an invalid selection.")
 		return 0, "", false

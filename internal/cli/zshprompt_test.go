@@ -73,3 +73,19 @@ func TestPromptLabelsAndCommandEchoNeverExecuteInput(t *testing.T) {
 		t.Fatalf("prompt executed user input: %v", err)
 	}
 }
+
+func TestZshDoubleEscapeBacksOutOfTwoMenus(t *testing.T) {
+	if _, err := exec.LookPath("zsh"); err != nil {
+		t.Skip("zsh is not installed")
+	}
+	t.Cleanup(func() { promptPending = "" })
+	var stderr bytes.Buffer
+	s := ioStreams{in: strings.NewReader("\x1b\x1b"), err: &stderr}
+	if _, _, ok := askTerminal(s, "Child menu", []string{"action"}, ""); ok || promptPending != "\x1b" {
+		t.Fatalf("second Escape was lost: pending=%q stderr=%q", promptPending, stderr.String())
+	}
+	s.in = strings.NewReader("\n")
+	if _, _, ok := askTerminal(s, "Parent menu", []string{"action"}, ""); ok || promptPending != "" {
+		t.Fatalf("second Escape selected the parent action: pending=%q", promptPending)
+	}
+}
