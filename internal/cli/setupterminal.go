@@ -47,9 +47,6 @@ func accountSetupCommand(goos, distro, exe string) (*exec.Cmd, error) {
 	}
 	if distro != "" {
 		args := append([]string{"--distribution", distro, "--exec"}, setupLoginArgs(exe)...)
-		if wt, err := setupLookPath("wt.exe"); err == nil {
-			return exec.Command(wt, append([]string{"new-tab", "wsl.exe"}, args...)...), nil
-		}
 		if ps, err := setupLookPath("powershell.exe"); err == nil {
 			quoted := make([]string, len(args))
 			for i, arg := range args {
@@ -58,7 +55,7 @@ func accountSetupCommand(goos, distro, exe string) (*exec.Cmd, error) {
 			script := "Start-Process -FilePath wsl.exe -ArgumentList '" + strings.ReplaceAll(strings.Join(quoted, " "), "'", "''") + "'"
 			return exec.Command(ps, "-NoProfile", "-NonInteractive", "-Command", script), nil
 		}
-		return nil, fmt.Errorf("Windows Terminal is unavailable; open a WSL terminal and run tycswap menu add")
+		return nil, fmt.Errorf("Windows console launcher is unavailable; open a WSL terminal and run tycswap menu add")
 	}
 	if goos == "darwin" {
 		command := shellWord(exe) + " menu add"
@@ -90,9 +87,6 @@ func openRemoteAccountSetup(tokenFile string, fallback func() error) error {
 		return fallback()
 	}
 	args := append([]string{"--distribution", distro, "--exec"}, setupLoginArgs("tycswap")...)
-	if wt, err := setupLookPath("wt.exe"); err == nil {
-		return setupStart(exec.Command(wt, append([]string{"new-tab", "wsl.exe"}, args...)...))
-	}
 	cmd := windowsSetupCommand("wsl.exe")
 	cmd.Args = append([]string{"wsl.exe"}, args...)
 	return setupStart(cmd)

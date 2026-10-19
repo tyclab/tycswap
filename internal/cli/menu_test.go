@@ -146,7 +146,7 @@ func TestMenuPromptFilteringAndCancellation(t *testing.T) {
 func TestAccountSetupLaunchers(t *testing.T) {
 	old := setupLookPath
 	t.Cleanup(func() { setupLookPath = old })
-	for _, tool := range []string{"wt.exe", "powershell.exe", "x-terminal-emulator"} {
+	for _, tool := range []string{"powershell.exe", "x-terminal-emulator"} {
 		t.Run(tool, func(t *testing.T) {
 			setupLookPath = func(name string) (string, error) {
 				if name == tool {

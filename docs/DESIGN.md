@@ -6093,6 +6093,8 @@ WSL and Linux setup terminals load the user's configured login shell before
 executing the menu. The fixed setup command quotes its executable path; provider
 login still resolves and runs the provider binary directly. This preserves the
 user's installation PATH when setup starts outside their usual terminal.
+Windows opens WSL in a new native console. WSL callers use PowerShell's
+Start-Process with quoted arguments, avoiding Windows Terminal's extra parsing.
 
 The Windows tuning tab is Advanced. Setting descriptions and applicability notes
 are concise; the source is shown once in its column. Defaults, including the 85%
