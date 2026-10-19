@@ -3609,7 +3609,7 @@ stored copy out of the live file.
 
 **Not done here.** Windows has no owner-only DACL on `credentials/`, exports
 and the store root (`CheckPrivateRoot` is a no-op there); a follow-up.
-Dependencies: `go.mod` pins `toolchain go1.25.14`; `make vuln` runs
+Dependencies: `go.mod` pins `toolchain go1.26.9`; `make vuln` runs
 govulncheck.
 ## A26. `internal/web` — the browser dashboard and its security model (Go-side additive extension)
 

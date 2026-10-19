@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Fixed:** release builds use Go 1.26.9, including the HTTP/2 security fix required by the vulnerability check.
 - **Added:** a searchable human action menu on bare `tycswap`, also available as `tycswap menu`, with browser sign-in, account management and settings. It works while the tray runs; scripts and explicit CLI commands retain their existing behavior.
 - **Added:** Add account in the web dashboard and tray opens guided setup. The Windows tray targets its WSL distro and can receive a setup request from the web page. First-time Codex accounts appear without restarting the dashboard.
 - **Changed:** tray rotation tuning is under Advanced, with concise setting help and no duplicate source text. Switching thresholds are unchanged.
