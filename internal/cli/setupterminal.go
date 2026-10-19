@@ -26,6 +26,15 @@ func setupLoginArgs(exe string) []string {
 	return []string{"/bin/sh", "-lc", `exec "${SHELL:-/bin/sh}" -lc "$1"`, "tycswap-setup", "exec " + shellWord(exe) + " menu add"}
 }
 
+func powershellSetupCommand(ps, exe string, args ...string) *exec.Cmd {
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		quoted[i] = windowsArgument(arg)
+	}
+	script := "Start-Process -ErrorAction Stop -WindowStyle Normal -FilePath '" + strings.ReplaceAll(exe, "'", "''") + "' -ArgumentList '" + strings.ReplaceAll(strings.Join(quoted, " "), "'", "''") + "'"
+	return exec.Command(ps, "-NoProfile", "-NonInteractive", "-Command", script)
+}
+
 func openAccountSetup() error {
 	if platform.Detect() == platform.WSL && os.Getenv("WSL_DISTRO_NAME") == "" {
 		return fmt.Errorf("this background service has no desktop session; choose Add account in the Windows tray, or run tycswap in a WSL terminal")
@@ -43,17 +52,12 @@ func openAccountSetup() error {
 
 func accountSetupCommand(goos, distro, exe string) (*exec.Cmd, error) {
 	if goos == "windows" {
-		return windowsSetupCommand(exe), nil
+		return windowsSetupCommand(exe, "menu", "add"), nil
 	}
 	if distro != "" {
 		args := append([]string{"--distribution", distro, "--exec"}, setupLoginArgs(exe)...)
 		if ps, err := setupLookPath("powershell.exe"); err == nil {
-			quoted := make([]string, len(args))
-			for i, arg := range args {
-				quoted[i] = windowsArgument(arg)
-			}
-			script := "Start-Process -FilePath wsl.exe -ArgumentList '" + strings.ReplaceAll(strings.Join(quoted, " "), "'", "''") + "'"
-			return exec.Command(ps, "-NoProfile", "-NonInteractive", "-Command", script), nil
+			return powershellSetupCommand(ps, "wsl.exe", args...), nil
 		}
 		return nil, fmt.Errorf("Windows console launcher is unavailable; open a WSL terminal and run tycswap menu add")
 	}
@@ -87,9 +91,7 @@ func openRemoteAccountSetup(tokenFile string, fallback func() error) error {
 		return fallback()
 	}
 	args := append([]string{"--distribution", distro, "--exec"}, setupLoginArgs("tycswap")...)
-	cmd := windowsSetupCommand("wsl.exe")
-	cmd.Args = append([]string{"wsl.exe"}, args...)
-	return setupStart(cmd)
+	return setupStart(windowsSetupCommand("wsl.exe", args...))
 }
 
 func canOpenRemoteSetup(tokenFile string) bool {
