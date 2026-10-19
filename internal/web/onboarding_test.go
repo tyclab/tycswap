@@ -115,15 +115,15 @@ func TestIndexHTML_OnboardingMarkup(t *testing.T) {
 	// Add current login is the Accounts card's main button: a primary button
 	// in the card head, and the callout's big one; no longer in the toolbar.
 	head := regexp.MustCompile(`(?s)<div class="card" id="accounts-card">.*?<div class="toolbar"`).FindString(index)
-	if head == "" || !strings.Contains(head, `class="btn btn-primary" data-action="add-current"`) {
-		t.Error("the Accounts card head lacks the primary Add current login button")
+	if head == "" || !strings.Contains(head, `class="btn btn-primary" data-action="account-setup"`) {
+		t.Error("the Accounts card head lacks the primary Add account button")
 	}
 	toolbar := regexp.MustCompile(`(?s)<div class="toolbar".*?</div>`).FindString(index)
 	if strings.Contains(toolbar, `data-action="add-current"`) {
 		t.Error("Add current login is still a toolbar button")
 	}
-	if !strings.Contains(index, "Do not type <code>/logout</code> first") {
-		t.Error("the add hint does not warn against /logout")
+	if !strings.Contains(index, "opens guided setup in a terminal") {
+		t.Error("the add hint does not explain guided setup")
 	}
 	js := staticFile(t, "app.js")
 	for _, needle := range []string{"function renderOnboarding(", "st.currentLogin", "add-callout-email", "auth-overrides-env-keys", "auth-overrides-settings-keys"} {
@@ -152,7 +152,7 @@ func TestIndexHTML_GuideTab(t *testing.T) {
 			t.Errorf("guide contents do not link #%s", id)
 		}
 	}
-	for _, needle := range []string{"{{.Name}} config", "{{.Name}} upgrade", "{{.Name}} codex", "add --login", "/logout", "autoswitch.sevenDayThreshold", "autoswitch.model", "5-hour", "7-day", "sessions", "127.0.0.1"} {
+	for _, needle := range []string{"{{.Name}} config", "{{.Name}} upgrade", "{{.Name}} codex", "add --login", "Add account…", "autoswitch.sevenDayThreshold", "autoswitch.model", "5-hour", "7-day", "sessions", "127.0.0.1"} {
 		if !strings.Contains(guide, needle) {
 			t.Errorf("guide lacks %q", needle)
 		}

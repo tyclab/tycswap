@@ -4953,6 +4953,8 @@ shown, marked `(not counted)`.
 
 ## A40. Bare `tycswap` starts the app in the background
 
+Superseded by A63 for bare invocation; the menu retains the background launcher.
+
 What people want when they type the command is the menu-bar / tray app, and
 holding a terminal open for an icon is not. A bare `tycswap` in an
 interactive terminal (both ends a TTY, or a Git Bash / MSYS2 terminal on
@@ -6064,3 +6066,28 @@ Flakelab owns scheduling, not policy values. Its one-shot checks reload shared
 settings; continuous runners reload group overrides but take shared defaults
 at startup. The group failed-poll counter currently starts anew each check,
 so that ineffective override is excluded from group settings.
+
+## A63. Human action menu and account setup
+
+Bare invocation in a human terminal opens a searchable action menu, independently
+of the tray process. `menu add` goes directly to provider setup. Agent shells,
+pipes and explicit CLI commands retain their existing noninteractive behavior.
+TTY detection includes Cygwin terminals and rejects redirected MSYS pipes.
+
+Menu actions execute the existing commands as child processes, returning terminal
+ownership before browser sign-in or secret input. No credential is passed as a
+command argument by the menu. The account roster is reread after selection and
+identity changes refuse the action. Existing store locking and confirmations apply.
+
+The web and tray Add account action opens that setup. A remote Windows tray targets
+the WSL distro from its configured token-file UNC path. It can receive a fixed
+account-setup event from the authenticated dashboard stream: only bearer-authenticated
+subscribers may advertise the capability, one subscriber receives a request, and
+reconnections do not replay requests. This allows a headless WSL service's browser
+page to reach the Windows desktop. Without that bridge, the service reports the
+missing desktop rather than claiming setup opened. New Codex accounts become
+visible without restarting the dashboard.
+
+The Windows tuning tab is Advanced. Setting descriptions and applicability notes
+are concise; the source is shown once in its column. Defaults, including the 85%
+5-hour switching threshold, are unchanged.

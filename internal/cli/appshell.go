@@ -40,6 +40,7 @@ import (
 // them to the switcher, the engine, the browser and the updater.
 type shellActions struct {
 	OpenDashboard func() error
+	AccountSetup  func() error
 	// SwitchTo switches to the account a row key names ("claude:2",
 	// "codex:1", A47) and returns the codex sessions still running on the
 	// old Codex account (nil for a Claude switch).
@@ -297,6 +298,9 @@ const inlineAccounts = 10
 func (a *appShell) accountRows(st web.State, withModels []string) []tray.Item {
 	claude, codex := rowsByProvider(st.Accounts)
 	items := gaugeGroup(claude, withModels, "accounts", "All %d accounts")
+	if a.act.AccountSetup != nil {
+		items = append(items, tray.Item{ID: "account-setup", Title: "Add account…", Dismiss: true})
+	}
 	if a.act.AddCurrent != nil {
 		items = append(items, addCurrentItem(st))
 	} else if len(st.Accounts) == 0 {
@@ -413,9 +417,9 @@ func addCurrentItem(st web.State) tray.Item {
 	case cur != nil && !cur.Saved:
 		it.Sub = cur.Email + " · not stored yet"
 	case cur == nil && len(st.Accounts) == 0:
-		it.Sub = "sign in to Claude Code first (/login)"
+		it.Sub = "No current Claude login"
 	default:
-		it.Sub = "for another account: /login with it, never /logout"
+		it.Sub = "Save the current Claude login"
 	}
 	return it
 }
@@ -431,10 +435,10 @@ func (a *appShell) addCurrentClick() {
 	a.dashboardChanged()
 	num, email := res.Number, res.Email
 	if res.Refreshed {
-		a.notify("Account #"+num+" refreshed", email+" was account #"+num+" already. To add another account, /login with it in Claude Code; don't /logout first, that ends this stored login.")
+		a.notify("Account #"+num+" refreshed", email)
 		return
 	}
-	a.notify("Added account #"+num, email+" is account #"+num+" now. To add another, /login with it in Claude Code (never /logout: that ends the stored login), then choose Add current login again.")
+	a.notify("Added account #"+num, email)
 }
 
 // apiKeyAccount reports whether Claude slot num is an API-key account, and
@@ -498,6 +502,12 @@ func rotatedAccounts(st web.State) string {
 // click dispatches a menu choice. It runs off the UI thread.
 func (a *appShell) click(id string) {
 	switch {
+	case id == "account-setup":
+		if a.act.AccountSetup != nil {
+			if err := a.act.AccountSetup(); err != nil {
+				a.notify("Could not open account setup", err.Error())
+			}
+		}
 	case strings.HasPrefix(id, "group:"):
 		parts := strings.Split(id, ":")
 		if len(parts) != 3 || a.act.SwitchGroup == nil {

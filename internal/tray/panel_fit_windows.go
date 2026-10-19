@@ -261,7 +261,7 @@ func (p *windowsPanel) contentSize() (int, int) {
 	}
 	header := p.textWidth(p.titleFont, p.model.panel.Title) + m.unit + p.textWidth(p.font, p.model.panel.Version) + 2*m.unit +
 		p.buttonWidth(m, p.bold, panelControlText(p.controls[panelDashboard]))
-	tabs := p.buttonWidth(m, p.bold, "Accounts") + m.unit/2 + p.buttonWidth(m, p.bold, "Settings")
+	tabs := p.buttonWidth(m, p.bold, "Accounts") + m.unit/2 + p.buttonWidth(m, p.bold, "Advanced")
 	scope := p.textWidth(p.font, panelControlText(p.controls[224])) + m.unit + p.scopeWidth(m)
 	editor := 8*m.line + m.unit + p.buttonWidth(m, p.bold, "Save") + m.unit*3/4 + p.buttonWidth(m, p.font, "Reset")
 	buttons := 0

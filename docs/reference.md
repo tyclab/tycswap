@@ -7,7 +7,8 @@ tycswap — multi-account switcher for Claude Code.
 ## SYNOPSIS
 
 ```
-tycswap                                       start the tray app in the background (TTY only)
+tycswap                                       interactive action menu (human terminal only)
+tycswap menu [add]                            open the menu or account setup
 tycswap help                                  print the command list and options
 tycswap list [--json] [--token-status]        list managed accounts
 tycswap status [--json]                       show the active account
@@ -1931,6 +1932,28 @@ Done: 0 imported, 0 overwritten, 1 skipped
 
 ---
 
+## tycswap menu
+
+`tycswap menu [add]` opens the guided action menu or account setup directly.
+Bare `tycswap` opens the same menu when stdin and stdout are terminals,
+`TERM` is not `dumb`, and `TYCSWAP_NO_PROMPT`, `CLAUDECODE` and
+`CODEX_THREAD_ID` are unset. Scripts retain the no-command usage error.
+Explicit commands and their JSON output retain their existing behavior.
+
+Type to filter choices; arrows move; Enter selects; Escape returns. The menu
+supports browser sign-in for Claude and Codex, saving either provider's current
+login, Claude token entry, switching, aliases, disable/enable, moving and removal.
+The selected account's identity is checked again before dispatching an action.
+Advanced settings use the shared setting definitions and validation. The tray
+can remain running; closing the menu never stops it. Its Start tray app action
+retains the background launcher and single-instance checks.
+
+`POST /api/accounts/setup` takes an empty JSON object and uses the same API
+authentication, CSRF and origin checks as account mutations. It sends a fixed
+setup request to one connected Windows tray advertising that capability, or
+opens a local desktop terminal. No executable, arguments or credentials are
+accepted from the request. A missing desktop is reported as unavailable.
+
 ## tycswap tui
 
 ### Synopsis
@@ -1939,8 +1962,8 @@ Done: 0 imported, 0 overwritten, 1 skipped
 tycswap tui [--debug]
 ```
 
-Legacy: `tycswap --tui`. A bare `tycswap` in an interactive terminal used to open
-the TUI; it starts the tray app in the background now (`tycswap app`).
+Legacy: `tycswap --tui`. A bare `tycswap` opens the interactive action menu;
+`tycswap tui` opens this live dashboard.
 
 ### Description
 
@@ -2430,7 +2453,7 @@ Full-screen terminal UI (no JSON). `--json` does not apply.
 | Message | Condition | Exit |
 |---------|-----------|------|
 | (terminal error, no dashboard opened) | stdin or stdout is not an interactive terminal (`tycswap tui` from a pipe or redirect). | 1 |
-| `no command given — try 'tycswap help'` | A bare `tycswap` (which would open the TUI) in a non-interactive context. | 2 |
+| `no command given — try 'tycswap help'` | A bare `tycswap` (which would open the action menu) in a non-interactive context. | 2 |
 
 ### Example (illustrative — requires an interactive terminal)
 
@@ -2834,11 +2857,14 @@ tycswap app --remote URL [--token-file PATH] [--open] [--no-update-check] [--deb
 tycswap app [--remote URL --token-file PATH] --autostart on|off|status
 ```
 
-A bare `tycswap` in an interactive terminal (or in Git Bash on Windows) starts
-`tycswap app` in the background: detached (its own session on Unix, no console
-on Windows), stdin on the null device, its output appended to the app log. It
-returns once the app holds its lock; `tycswap app` itself runs in the
-foreground.
+A bare `tycswap` opens the interactive action menu, including when the tray
+is already running. Its **Start tray app** action starts `tycswap app` detached,
+with output appended to the app log. `tycswap app` itself runs in the foreground.
+The Windows panel has **Accounts** and **Advanced** tabs and an **Add account…**
+action. Browser setup opens a terminal and uses the existing provider login
+flow. Remote Windows trays use the distro in their WSL token-file path;
+a web setup request can be delivered to one connected tray over authenticated
+SSE. Requests are not replayed after reconnection.
 
 ### Options
 
@@ -2936,10 +2962,10 @@ login*, refuses a switch onto an API-key account (use the dashboard), and holds
 
 `0` when the app is quit from its menu or stopped with Ctrl-C / SIGTERM, after
 an update restart handed over to the new binary, and for `--help` and
-`--autostart`; for the bare `tycswap`, when the background app took its lock,
+`--autostart`; for **Start tray app**, when the background app took its lock,
 is still starting after eight seconds, or was already running. `1` when another
 app runs (`tycswap app`), `--autostart` cannot register, remove or read the
-entry, the dashboard cannot start, the bare start's child exits before taking
+entry, the dashboard cannot start, the background start's child exits before taking
 its lock or cannot be spawned, the update restart fails, or remote mode finds
 no tray. `2` on a usage error.
 
@@ -2950,7 +2976,7 @@ To stderr: `Dashboard: <url>` (the one-time URL), then `Running in the menu bar
 without a tray (--headless). Press Ctrl-C to stop.` / `No system tray is
 available here; running the dashboard server only. Press Ctrl-C to stop.` and
 `Remote token: <path> (for tycswap app --remote)`. With `--remote`: `Remote
-engine: <url> (token from <path>)`. The bare `tycswap`, to stdout: `tycswap is running in the background — its icon is in the menu bar /
+engine: <url> (token from <path>)`. The menu’s **Start tray app** action, to stdout: `tycswap is running in the background — its icon is in the menu bar /
 tray.` and `Log: <path>`. `--autostart`: `Start at login: on` or `off`.
 
 ### Errors
@@ -2960,8 +2986,8 @@ tray.` and `Log: <path>`. `--autostart`: `Start at login: on` or `off`.
 | `tycswap app is already running on this machine (its icon is in the menu bar / tray). Quit it first.` | Another app holds `app.lock`. | 1 |
 | `tycswap app --remote is already running on this machine …` | Another remote tray holds `remote.lock`. | 1 |
 | `remote mode needs a tray; run tycswap app in the distro instead` | `--remote` where no tray is available. | 1 |
-| `tycswap is already running — its icon is in the menu bar / tray.` (stdout) | The bare `tycswap` while an app runs; nothing is started. | 0 |
-| `tycswap stopped right after starting (…).` and the end of the log | The bare `tycswap`'s child exited before taking its lock. | 1 |
+| `tycswap is already running — its icon is in the menu bar / tray.` (stdout) | Start tray app while an app runs; nothing is started. | 0 |
+| `tycswap stopped right after starting (…).` and the end of the log | The background child exited before taking its lock. | 1 |
 | `Error: …` | `--autostart` could not register, remove or read the entry. | 1 |
 | `argument --remote: expected http://127.0.0.1:<port> or http://localhost:<port> …` | `--remote` is not plain http on loopback with a port. | 2 |
 | `argument --remote: not allowed with --headless (…)` | `--remote` with `--headless`, `--port` or `--interval`. | 2 |
@@ -2971,7 +2997,8 @@ tray.` and `Log: <path>`. `--autostart`: `Start at login: on` or `off`.
 ### Example
 
 ```
-$ tycswap
+$ tycswap menu
+# Choose Start tray app
 tycswap is running in the background — its icon is in the menu bar / tray.
 Log: /home/me/.local/share/tycswap/app.log
 ```
@@ -4563,7 +4590,6 @@ tycswap reads the following environment variables.
 | `FORCE_COLOR` | When present, forces color on (unless `NO_COLOR` is also present). |
 | `TERM` | `TERM=dumb` disables color on a TTY. |
 | `TYCSWAP_REMOTE_TOKEN_FILE` | `tycswap app --remote`: the token file when `--token-file` is not given. |
-| `MSYSTEM` | On Windows, when set (Git Bash, MSYS2), a bare `tycswap` counts as typed in a terminal and starts the tray app. |
 | `XDG_CONFIG_HOME` | On Linux, where `tycswap app --autostart on` writes its `autostart/` entry (default `~/.config`). |
 | `CODEX_HOME` | The codex CLI's home, resolved as the codex CLI resolves it: the live login is `<CODEX_HOME>/auth.json` and codex-auth's registry `<CODEX_HOME>/accounts/registry.json`. Defaults to `~/.codex`. |
 | `GOBIN`, `GOPATH` | Consulted by `tycswap upgrade` and the passive update notice to detect a `go install` layout: a binary in `$GOBIN` (checked first, when set), `$GOPATH/bin` or `$HOME/go/bin`. |
@@ -4887,8 +4913,8 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   (Python):
   - It ships as a single static binary; there is no Python runtime.
   - The macOS menu bar app is not included (`tycswap menubar` exits 1); the
-    menu-bar / tray app is `tycswap app`, and a bare `tycswap` starts it
-    instead of the TUI (`tycswap tui`).
+    menu-bar / tray app is `tycswap app`; a bare `tycswap` opens the action
+    menu, and `tycswap tui` opens the live dashboard.
   - `tycswap upgrade` and the passive update notice use this repository's releases
     and `go install`, not PyPI/uv/pipx. Pre-release builds do receive update
     notices.

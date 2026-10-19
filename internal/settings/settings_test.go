@@ -446,7 +446,7 @@ func TestDefault_CodexKnobs(t *testing.T) {
 		kind      Kind
 	}{
 		{"autoswitch.codexEnabled", "Also auto-switch Codex accounts in the tycswap auto loop", KindBool},
-		{"autoswitch.codexThreshold", "Codex-only switch threshold (0 = use autoswitch.sevenDayThreshold)", KindFloat},
+		{"autoswitch.codexThreshold", "Codex switch threshold (%); 0 uses the weekly threshold", KindFloat},
 	} {
 		spec, err := SpecFor(tc.key)
 		if err != nil {

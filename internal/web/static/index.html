@@ -92,7 +92,8 @@
         <div class="head-l"><h2><button type="button" class="card-toggle" data-action="card-toggle" data-card="accounts-card" aria-expanded="true"><span class="chev" aria-hidden="true"></span>Accounts</button></h2><span id="accounts-sub" class="card-sub"></span></div>
         <div class="head-r">
           <label class="switch" for="token-status-toggle"><input type="checkbox" id="token-status-toggle"> Token status</label>
-          <button type="button" class="btn btn-primary" data-action="add-current" data-label="Add current login">+ Add current login</button>
+          <button type="button" class="btn btn-primary" data-action="account-setup" data-label="Add account">+ Add account…</button>
+          <button type="button" class="btn" data-action="add-current" data-label="Save current login">Save current login</button>
           <button type="button" class="btn" id="add-current-codex" data-action="add-current-codex" data-label="Add current Codex login" hidden>+ Add current Codex login</button>
         </div>
       </div>
@@ -132,10 +133,9 @@
       <p class="sort-note"><button class="sort-heading" data-sort="best">Next best</button> <span id="sort-note">Click a limit heading to sort. Display order does not change automatic switching.</span></p>
       <div id="accounts-empty" class="empty-state" hidden>
         <span class="title">No managed accounts yet</span>
-        <span>Sign in to Claude Code (<code>/login</code>), then click <strong>Add current login</strong>; or register a setup-token.</span>
-        <code>{{.Name}} add</code>
+        <span>Choose <strong>Add account…</strong> to sign in with Claude or Codex.</span>
       </div>
-      <p class="add-hint" id="add-hint" hidden>To add another account: in Claude Code type <code>/login</code> and sign in with that account, then click <strong>Add current login</strong>. <strong>Do not type <code>/logout</code> first:</strong> logging out ends the login stored here, and that account stops working. From a terminal, <code>{{.Name}} add --login</code> signs the next account in without touching the live one.</p>
+      <p class="add-hint" id="add-hint" hidden><strong>Add account…</strong> opens guided setup in a terminal. Claude sign-in keeps your current account active.</p>
     </div>
   </section>
 
@@ -327,9 +327,9 @@
       <article class="card guide-section" id="g-start">
         <h2>Getting started in 3 minutes</h2>
         <ol class="guide-steps">
-          <li><strong>Sign in to Claude Code</strong> with your first account: start <code>claude</code>, type <code>/login</code> and sign in in the browser.</li>
-          <li><strong>Store it here.</strong> Dashboard → <em>Add current login</em>. The account appears as <code>#1</code>. Give it an alias from its row menu if you like.</li>
-          <li><strong>Repeat for every account:</strong> in Claude Code type <code>/login</code> and sign in with the next one, then <em>Add current login</em> again. Each becomes the next slot. <strong>Never <code>/logout</code> in between:</strong> logging out ends the login you just stored, and that account stops working. From a terminal, <code>{{.Name}} add --login</code> does the same without touching the live login: it signs in with the next account in the browser and stores it as the next slot; add <code>--switch</code> to make it active at once.</li>
+          <li><strong>Choose Add account…</strong> here or in the tray. Guided setup opens in a terminal.</li>
+          <li><strong>Choose Claude or Codex</strong> and complete browser sign-in. The account is saved automatically.</li>
+          <li><strong>Repeat to add another account.</strong> Claude sign-in leaves your current login active. Codex sign-in saves the outgoing login, then changes the current account.</li>
           <li><strong>Pick the active one</strong> from the Dashboard (the row's <em>Switch</em>) or turn on Auto mode and let it decide.</li>
           <li><strong>Restart running Claude Code sessions</strong> after a switch (<code>claude --continue</code> picks up where you were). The Sessions tab shows what is running.</li>
         </ol>
@@ -362,7 +362,7 @@
           <dt>Dry run</dt><dd>Starts the engine so it logs what it <em>would</em> do without switching. Good for a first day.</dd>
         </dl>
         <h3>Quarantine</h3>
-        <p>An account whose credentials stop working (expired refresh token, re-login required) is quarantined: the engine stops trying it and lists the reason. Run <code>{{.Name}} add --login</code> in a terminal and sign in as that account to refresh it; the live login is untouched.</p>
+        <p>An account whose credentials stop working (expired refresh token, re-login required) is quarantined: the engine stops trying it and lists the reason. Choose <strong>Add account…</strong> and sign in as that Claude account to refresh it; the live login is untouched.</p>
         <p class="muted">The <em>Next best</em> panel compares weekly, counted model-weekly, then 5-hour usage, with lower usage first. Soonest-reset mode keeps reset time first within each availability tier. Full accounts stay below usable ones; those whose counted full windows all reset within five hours lead the blocked group and are marked “at limit · resets &lt;5h”. Model limits affect ranking only when enabled. Each row shows why it is available or blocked.</p>
       </article>
 
@@ -425,7 +425,7 @@
         <h2>When something looks wrong</h2>
         <details class="guide-faq"><summary>A switch happened but Claude Code still uses the old account</summary><p>A group switch affects sessions launched in that group, on their next request. Default and other profiles keep their own login. Check the session's group and any authentication overrides before restarting it.</p></details>
         <details class="guide-faq"><summary>Claude Code ignores the stored login altogether</summary><p>An <code>ANTHROPIC_API_KEY</code>, <code>ANTHROPIC_AUTH_TOKEN</code>, <code>CLAUDE_CODE_OAUTH_TOKEN</code> or <code>ANTHROPIC_BASE_URL</code> in the environment, or in the <code>env</code> block of Claude Code's <code>settings.json</code>, takes the place of the login. The Dashboard says so above the accounts when it sees one; unset the variable or remove the key.</p></details>
-        <details class="guide-faq"><summary>An account says “re-login needed” or “token expired”</summary><p>Its refresh token was revoked or expired. Run <code>{{.Name}} add --login</code> in a terminal and sign in as that account; the slot keeps its number and alias, and the live login is untouched. If it is the live account, signing in again in Claude Code and <em>Add current login</em> does the same.</p></details>
+        <details class="guide-faq"><summary>An account says “re-login needed” or “token expired”</summary><p>Its refresh token was revoked or expired. Choose <strong>Add account…</strong> and sign in as that Claude account; its slot and alias stay the same. If it is the live account, signing in again in Claude Code and <em>Add current login</em> does the same.</p></details>
         <details class="guide-faq"><summary>“Usage unavailable”</summary><p>The last usage read failed or is stale (offline, or the usage endpoint hiccuped). The meters keep the last good values; they refresh on the next poll.</p></details>
         <details class="guide-faq"><summary>Auto mode switched to an account I did not expect</summary><p>Open the Auto tab: <em>Next best</em> shows candidates and their limits, and the event log records every decision. Usually the answer is a per-model window: choose and save the windows under <em>Count model limits</em> if you care about a model's weekly headroom.</p></details>
         <details class="guide-faq"><summary>“Not switchable” on an account</summary><p>Its stored credential or config backup is missing, typically after Claude Code changed its file layout. Re-add the account.</p></details>

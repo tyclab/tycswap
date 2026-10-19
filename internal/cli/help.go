@@ -27,7 +27,8 @@ func usageLine(prog string) string {
 const mainDescription = `Multi-Account Switcher for Claude Code
 
 Commands:
-  tycswap                            start the menu-bar/tray app in the background
+  tycswap                            interactive menu (the tray can stay open)
+  tycswap menu                       add and manage accounts interactively
   tycswap help                       show this help
   tycswap list                       list managed accounts
   tycswap status                     show current account

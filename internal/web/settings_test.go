@@ -269,15 +269,15 @@ func TestSettingSet_BroadcastsState(t *testing.T) {
 // other key, a new one included, at the next engine start.
 func TestSettingApplies(t *testing.T) {
 	cases := map[string]string{
-		"autoswitch.model":             "At once",
-		"autoswitch.sevenDayThreshold": "slider",
-		"autoswitch.fiveHourThreshold": "When an engine next starts",
-		"autoswitch.modelThreshold":    "When an engine next starts",
-		"autoswitch.codexEnabled":      "When the Codex engine next starts",
-		"autoswitch.codexThreshold":    "When the Codex engine next starts",
-		"autoswitch.intervalSeconds":   "When an engine next starts",
-		"autoswitch.cooldownSeconds":   "When an engine next starts",
-		"autoswitch.someFutureKey":     "When an engine next starts",
+		"autoswitch.model":             "Applies now",
+		"autoswitch.sevenDayThreshold": "Applies when auto-switch restarts",
+		"autoswitch.fiveHourThreshold": "Applies when auto-switch restarts",
+		"autoswitch.modelThreshold":    "Applies when auto-switch restarts",
+		"autoswitch.codexEnabled":      "Applies when Codex auto-switch restarts",
+		"autoswitch.codexThreshold":    "Applies when Codex auto-switch restarts",
+		"autoswitch.intervalSeconds":   "Applies when auto-switch restarts",
+		"autoswitch.cooldownSeconds":   "Applies when auto-switch restarts",
+		"autoswitch.someFutureKey":     "Applies when auto-switch restarts",
 	}
 	for key, want := range cases {
 		if got := settingApplies(key); !strings.Contains(got, want) {
@@ -286,16 +286,10 @@ func TestSettingApplies(t *testing.T) {
 	}
 	// The routes retarget the engine this page hosts only: an engine in
 	// another process (the TUI, tycswap auto) keeps the value it started with.
-	if got := settingApplies("autoswitch.model"); !strings.Contains(got, "tycswap auto keeps its value until it next starts") {
+	if got := settingApplies("autoswitch.model"); !strings.Contains(got, "other auto-switch processes must restart") {
 		t.Errorf("settingApplies(autoswitch.model) = %q, want it to name the engines it does not reach", got)
 	}
-	// The TUI's engine never runs the Codex engine, so the Codex keys do
-	// not claim it.
-	for _, key := range []string{"autoswitch.codexEnabled", "autoswitch.codexThreshold"} {
-		if got := settingApplies(key); !strings.Contains(got, "when the dashboard started with Codex accounts") || !strings.Contains(got, "tycswap auto") || !strings.Contains(got, "The terminal dashboard's engine rotates Claude accounts only.") {
-			t.Errorf("settingApplies(%s) = %q", key, got)
-		}
-	}
+
 }
 
 // The note reaches both the list route and the state, and annotating never

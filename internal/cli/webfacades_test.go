@@ -374,8 +374,7 @@ func (e fakeAutoEvent) Human() string        { return e.human }
 // /api/state lists the fixture's accounts with provider keys. With Codex
 // accounts at launch the Codex rows follow (without token status), the
 // Codex engine is in the auto section, and a Codex row's switch works while
-// its alias is refused; without them auto.codex is null and a Codex route
-// answers 503 (DESIGN A47).
+// its alias is refused; without them auto.codex is null until the first account is saved.
 func TestNewDashboardServes(t *testing.T) {
 	t.Run("claude-only", func(t *testing.T) { testNewDashboardServes(t, false) })
 	t.Run("with-codex", func(t *testing.T) { testNewDashboardServes(t, true) })
@@ -391,6 +390,13 @@ func testNewDashboardServes(t *testing.T, codex bool) {
 	codexIsPresent = func() bool { return codex }
 	if codex {
 		codexSw := fixtureCodex(t)
+		newQuietCodexSwitcher = func() *codexswitcher.Switcher { return codexSw }
+	} else {
+		t.Setenv("CODEX_HOME", t.TempDir())
+		codexSw := codexswitcher.New(codexswitcher.Options{
+			Platform: platform.Linux, Client: &codexapi.FakeClient{}, Stdout: io.Discard,
+			RunningPIDs: func() []int { return nil },
+		})
 		newQuietCodexSwitcher = func() *codexswitcher.Switcher { return codexSw }
 	}
 	var errBuf strings.Builder
@@ -474,16 +480,30 @@ func testNewDashboardServes(t *testing.T, codex bool) {
 		if len(codexKeys) != 0 || st.Auto.Codex != nil {
 			t.Fatalf("Claude-only dashboard lists codex rows %v, auto.codex %+v", codexKeys, st.Auto.Codex)
 		}
-		if status, _ := call(http.MethodPost, "/api/switch/codex:1", ""); status != http.StatusServiceUnavailable {
-			t.Fatalf("codex switch without Codex: status %d, want 503", status)
+		if status, _ := call(http.MethodPost, "/api/switch/codex:1", ""); status != http.StatusNotFound {
+			t.Fatalf("codex switch without accounts: status %d, want 404", status)
 		}
-		// The tray's switch (the app builds this same dashboard): no Codex
-		// switcher to reach.
 		var ce *cerr.Error
 		for _, key := range []string{"codex:1", "gemini:1"} {
 			if _, err := d.switchTo(key); !errors.As(err, &ce) || ce.Kind != cerr.KindAccountNotFound {
 				t.Fatalf("tray switch to %s without its accounts = %v", key, err)
 			}
+		}
+		writeLiveAuth(t, makeCodexAuth(t, testAcctA, testUserA, "new@example.com", time.Now().Unix()+3600))
+		if status, body := call(http.MethodPost, "/api/accounts/add", `{"provider":"codex"}`); status != http.StatusOK {
+			t.Fatalf("save first Codex login: %d %v", status, body)
+		}
+		status, state := call(http.MethodGet, "/api/state", "")
+		if status != http.StatusOK {
+			t.Fatalf("state after onboarding: %d", status)
+		}
+		found := false
+		for _, row := range state["accounts"].([]any) {
+			account := row.(map[string]any)
+			found = found || account["key"] == "codex:1" && account["email"] == "new@example.com"
+		}
+		if !found || state["auto"].(map[string]any)["codex"] == nil {
+			t.Fatal("first Codex account did not appear without a restart")
 		}
 		return
 	}

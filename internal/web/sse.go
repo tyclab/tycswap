@@ -27,7 +27,8 @@ type event struct {
 
 // sub is one subscriber: its channel and whether it asked for token status.
 type sub struct {
-	tokenStatus bool
+	tokenStatus  bool
+	accountSetup bool
 }
 
 type hub struct {
@@ -43,10 +44,10 @@ func newHub() *hub { return &hub{subs: map[chan event]sub{}} }
 // subscribe registers a new subscriber and returns its channel plus the
 // unsubscribe func (idempotent). tokenStatus subscribers receive the state
 // documents enriched with each row's token status.
-func (h *hub) subscribe(tokenStatus bool) (<-chan event, func()) {
+func (h *hub) subscribe(tokenStatus bool, accountSetup ...bool) (<-chan event, func()) {
 	ch := make(chan event, subBuffer)
 	h.mu.Lock()
-	h.subs[ch] = sub{tokenStatus: tokenStatus}
+	h.subs[ch] = sub{tokenStatus: tokenStatus, accountSetup: len(accountSetup) > 0 && accountSetup[0]}
 	h.mu.Unlock()
 	var once sync.Once
 	return ch, func() {
@@ -131,7 +132,8 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	wantTS := isTruthy(r.URL.Query().Get("tokenStatus"))
-	ch, unsubscribe := s.hub.subscribe(wantTS)
+	setup := s.hasBearer(r) && isTruthy(r.URL.Query().Get("accountSetup"))
+	ch, unsubscribe := s.hub.subscribe(wantTS, setup)
 	defer unsubscribe()
 
 	// Initial state so a fresh subscriber never waits for a tick.
