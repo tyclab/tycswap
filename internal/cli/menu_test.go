@@ -190,7 +190,7 @@ func TestRemoteSetupUsesTokenFileDistro(t *testing.T) {
 	}
 	c := newRemoteClient("http://127.0.0.1:1234", "unused")
 	called := 0
-	c.accountSetup = func() { called++ }
+	c.accountSetup = func(string) { called++ }
 	c.dispatch("account-setup", []byte(`{}`), nil, nil, nil)
 	if called != 1 {
 		t.Fatal(called)

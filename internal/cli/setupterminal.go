@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/web"
 )
 
 var setupLookPath = exec.LookPath
@@ -22,8 +23,12 @@ var setupStart = func(cmd *exec.Cmd) error {
 
 func shellWord(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 
-func setupLoginArgs(exe string) []string {
-	return []string{"/bin/sh", "-lc", `exec "${SHELL:-/bin/sh}" -lc "$1"`, "tycswap-setup", "exec " + shellWord(exe) + " menu add"}
+func setupLoginArgs(exe string, sections ...string) []string {
+	section := "add"
+	if len(sections) > 0 {
+		section = sections[0]
+	}
+	return []string{"/bin/sh", "-lc", `exec "${SHELL:-/bin/sh}" -lc "$1"`, "tycswap-setup", "exec " + shellWord(exe) + " menu " + shellWord(section)}
 }
 
 func powershellSetupCommand(ps, exe string, args ...string) *exec.Cmd {
@@ -35,7 +40,10 @@ func powershellSetupCommand(ps, exe string, args ...string) *exec.Cmd {
 	return exec.Command(ps, "-NoProfile", "-NonInteractive", "-Command", script)
 }
 
-func openAccountSetup() error {
+func openAccountSetup(section string) error {
+	if !web.ValidMenuSection(section) {
+		return fmt.Errorf("unknown menu section")
+	}
 	if platform.Detect() == platform.WSL && os.Getenv("WSL_DISTRO_NAME") == "" {
 		return fmt.Errorf("this background service has no desktop session; choose Add account in the Windows tray, or run tycswap in a WSL terminal")
 	}
@@ -43,33 +51,40 @@ func openAccountSetup() error {
 	if exe == "" {
 		return fmt.Errorf("cannot locate tycswap; open a terminal and run tycswap menu add")
 	}
-	cmd, err := accountSetupCommand(runtime.GOOS, os.Getenv("WSL_DISTRO_NAME"), exe)
+	cmd, err := accountSetupCommand(runtime.GOOS, os.Getenv("WSL_DISTRO_NAME"), exe, section)
 	if err != nil {
 		return err
 	}
 	return setupStart(cmd)
 }
 
-func accountSetupCommand(goos, distro, exe string) (*exec.Cmd, error) {
+func accountSetupCommand(goos, distro, exe string, sections ...string) (*exec.Cmd, error) {
+	section := "add"
+	if len(sections) > 0 {
+		section = sections[0]
+	}
+	if !web.ValidMenuSection(section) {
+		return nil, fmt.Errorf("unknown menu section")
+	}
 	if goos == "windows" {
-		return windowsSetupCommand(exe, "menu", "add"), nil
+		return windowsSetupCommand(exe, "menu", section), nil
 	}
 	if distro != "" {
-		args := append([]string{"--distribution", distro, "--exec"}, setupLoginArgs(exe)...)
+		args := append([]string{"--distribution", distro, "--exec"}, setupLoginArgs(exe, section)...)
 		if ps, err := setupLookPath("powershell.exe"); err == nil {
 			return powershellSetupCommand(ps, "wsl.exe", args...), nil
 		}
 		return nil, fmt.Errorf("Windows console launcher is unavailable; open a WSL terminal and run tycswap menu add")
 	}
 	if goos == "darwin" {
-		command := shellWord(exe) + " menu add"
+		command := shellWord(exe) + " menu " + shellWord(section)
 		return exec.Command("osascript", "-e", "tell application \"Terminal\" to do script "+strconv.Quote(command), "-e", "tell application \"Terminal\" to activate"), nil
 	}
 	for _, candidate := range []struct{ name, flag string }{
 		{"x-terminal-emulator", "-e"}, {"gnome-terminal", "--"}, {"konsole", "-e"}, {"xterm", "-e"},
 	} {
 		if binary, err := setupLookPath(candidate.name); err == nil {
-			return exec.Command(binary, append([]string{candidate.flag}, setupLoginArgs(exe)...)...), nil
+			return exec.Command(binary, append([]string{candidate.flag}, setupLoginArgs(exe, section)...)...), nil
 		}
 	}
 	return nil, fmt.Errorf("no desktop terminal is available; run tycswap menu add in a terminal on this computer")
@@ -85,12 +100,19 @@ func remoteSetupDistro(tokenFile string) string {
 	return parts[3]
 }
 
-func openRemoteAccountSetup(tokenFile string, fallback func() error) error {
+func openRemoteAccountSetup(tokenFile string, fallback func() error, sections ...string) error {
+	section := "add"
+	if len(sections) > 0 {
+		section = sections[0]
+	}
+	if !web.ValidMenuSection(section) {
+		return fmt.Errorf("unknown menu section")
+	}
 	distro := remoteSetupDistro(tokenFile)
 	if runtime.GOOS != "windows" || distro == "" {
 		return fallback()
 	}
-	args := append([]string{"--distribution", distro, "--exec"}, setupLoginArgs("tycswap")...)
+	args := append([]string{"--distribution", distro, "--exec"}, setupLoginArgs("tycswap", section)...)
 	return setupStart(windowsSetupCommand("wsl.exe", args...))
 }
 

@@ -309,6 +309,24 @@ func TestAddLoginRefreshesAnAlreadyStoredIdentity(t *testing.T) {
 	assertNoScratch(t)
 }
 
+func TestAddLoginSwitchReplacesTheActiveAccountsOldCredential(t *testing.T) {
+	f := newLoginFixture(t)
+	t.Setenv("FAKE_CLAUDE_EMAIL", "a@example.com")
+	t.Setenv("FAKE_CLAUDE_TOKEN", "new-login-token")
+	t.Setenv("FAKE_CLAUDE_REFRESH", "new-login-refresh")
+	code, _, errb := f.run(t, "add", "--login", "--switch")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errb)
+	}
+	if !strings.Contains(f.liveCreds(t), "new-login-token") || !strings.Contains(f.storedCreds(t, "1", "a@example.com"), "new-login-token") {
+		t.Fatal("renewing the active account did not activate the new login")
+	}
+	if seq := f.sequence(t); len(seq.Sequence) != 1 || seq.Active == nil || *seq.Active != 1 {
+		t.Fatal("renewing the login changed the account roster")
+	}
+	assertNoScratch(t)
+}
+
 func TestAddLoginAppliesAliasAndSlot(t *testing.T) {
 	f := newLoginFixture(t)
 

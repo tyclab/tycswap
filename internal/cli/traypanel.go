@@ -92,7 +92,7 @@ func (a *appShell) panel(st web.State) tray.Panel {
 	}
 	p.Actions = []tray.Item{{ID: "open", Title: "Open dashboard"}, {ID: "update", Title: "Check for updates"}}
 	if a.act.AccountSetup != nil {
-		p.Actions = append([]tray.Item{{ID: "account-setup", Title: "Add account…"}}, p.Actions...)
+		p.Actions = append([]tray.Item{{ID: "account-setup", Title: "Add account…"}, {ID: "menu:main", Title: "Interactive menu…"}}, p.Actions...)
 	}
 	for _, action := range a.updatesSection() {
 		switch action.ID {

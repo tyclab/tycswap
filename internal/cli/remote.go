@@ -161,7 +161,7 @@ type remoteClient struct {
 	tokenFile    string
 	calls        *http.Client // bounded: every call but the stream
 	stream       *http.Client // unbounded body: the SSE stream
-	accountSetup func()
+	accountSetup func(string)
 
 	// debug, when set, logs every answer and every stream end (--debug).
 	debug func(format string, args ...any)
@@ -606,8 +606,17 @@ func (c *remoteClient) follow(ctx context.Context, onState func(web.State), onAu
 func (c *remoteClient) dispatch(name string, data []byte, onState func(web.State), onAuto func(web.AutoEventView), onLink func(up bool)) {
 	switch name {
 	case "account-setup":
-		if c.accountSetup != nil {
-			c.accountSetup()
+		var body struct {
+			Section string `json:"section"`
+		}
+		if json.Unmarshal(data, &body) != nil {
+			return
+		}
+		if body.Section == "" {
+			body.Section = "add"
+		}
+		if c.accountSetup != nil && web.ValidMenuSection(body.Section) {
+			c.accountSetup(body.Section)
 		}
 	case "state":
 		var st web.State
@@ -697,6 +706,15 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	defer claimSigint()() // the remote tray ends with 0 on Ctrl-C too (A48)
 
 	rc := newRemoteClient(o.remote, o.tokenFile)
+	removeConnection := func() {}
+	if lock != nil {
+		if cleanup, err := publishDashboardConnection(o.remote, o.tokenFile, true); err != nil {
+			fmt.Fprintln(s.err, "dashboard connection: "+err.Error())
+		} else {
+			removeConnection = cleanup
+		}
+	}
+	defer removeConnection()
 	if o.debug {
 		rc.debug = func(format string, args ...any) { fmt.Fprintf(s.err, "remote: "+format+"\n", args...) }
 	}
@@ -733,8 +751,8 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	buildHint := appUpgradeHint()
 	sh = newAppShell(t, shellActions{
 		OpenDashboard: openDashboard,
-		AccountSetup: func() error {
-			return openRemoteAccountSetup(o.tokenFile, func() error { return rc.call("POST", "/api/accounts/setup", map[string]any{}, nil) })
+		AccountSetup: func(section string) error {
+			return openRemoteAccountSetup(o.tokenFile, func() error { return rc.call("POST", "/api/accounts/setup", map[string]any{"section": section}, nil) }, section)
 		},
 		SaveSetting: rc.SaveSetting,
 		SwitchTo:    rc.Switch,
@@ -766,7 +784,7 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	// distro is up.
 	sh.update(web.State{})
 	if canOpenRemoteSetup(o.tokenFile) {
-		rc.accountSetup = func() { sh.click("account-setup") }
+		rc.accountSetup = func(section string) { sh.click("menu:" + section) }
 	}
 	go rc.run(ctx, sh.update, sh.autoEvent, func(up bool) {
 		switch {
@@ -799,6 +817,7 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 		return 1
 	}
 	if restart.Load() {
+		removeConnection()
 		// Hand the single-instance lock over to the successor (A38), which
 		// comes back with the same arguments — the remote flags included.
 		if lock != nil {

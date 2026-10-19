@@ -349,7 +349,7 @@ type Deps struct {
 	UpdatesOwnSchedule bool
 
 	RemoteToken  string
-	AccountSetup func() error
+	AccountSetup func(string) error
 }
 
 // Server is one dashboard instance. Construct with New, bind with Start, run

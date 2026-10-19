@@ -301,11 +301,13 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	// token. A write failure is said and not fatal, like the lock: the
 	// local app works without a remote.
 	tokenPath := remoteTokenPath(d.sw.BackupDir())
+	removeConnection := func() {}
 	if err := writeRemoteToken(tokenPath, opts.remoteToken); err != nil {
 		fmt.Fprintln(s.err, "remote token: "+err.Error())
 		tokenPath = ""
 	}
 	removeToken := func() {
+		removeConnection()
 		if tokenPath != "" {
 			removeRemoteToken(tokenPath)
 			tokenPath = ""
@@ -317,6 +319,13 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	if err != nil {
 		errorTo(s.err, "Error: "+err.Error())
 		return 1
+	}
+	if lock != nil && tokenPath != "" {
+		if cleanup, err := publishDashboardConnection(url, tokenPath, false); err != nil {
+			fmt.Fprintln(s.err, "dashboard connection: "+err.Error())
+		} else {
+			removeConnection = cleanup
+		}
 	}
 	fmt.Fprintf(s.err, "Dashboard: %s\n", url)
 

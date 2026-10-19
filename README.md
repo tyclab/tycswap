@@ -145,7 +145,12 @@ Run `tycswap` to open the interactive menu, even while the tray is running.
 Type to filter, use the arrow keys to choose, and press Escape to go back.
 **Add account…** signs in with Claude or Codex through your browser, saves an
 existing login, or adds a token. **Manage accounts…** switches, renames,
-enables/disables, moves, or removes an account. Closing the menu leaves the tray running.
+enables/disables, moves, or removes an account. It also offers **Sign in again…**
+and **Use saved login** for Claude; renewing the active account activates its new login.
+**Session groups…** guides account switching, starting/resuming sessions, settings,
+and ownership reconciliation. **Import / export…** guides Claude and Codex file transfers.
+**Open web dashboard** reuses the running app, starting it in the background if needed.
+Closing the menu leaves the tray running.
 
 The menu uses flakelab's zsh prompts: searchable choices, editable input, and
 the answered question left on screen. Each action shows its command for reuse.
@@ -158,7 +163,8 @@ asks for the destination slot. `tycswap config set` asks for the setting and
 value. Complete commands, existing defaults, scripts and JSON calls keep their
 behavior; `TYCSWAP_NO_PROMPT=1` disables automatic prompts.
 
-The dashboard and tray also have **Add account…**. They open guided setup in
+The dashboard and tray also have **Add account…** and **Interactive menu…**.
+The latter opens all account, group and transfer actions. They open guided setup in
 a terminal; no command needs to be copied. A Windows tray connected to WSL
 opens setup in the distro named by its token file. The web dashboard can send
 that request through the connected Windows tray, even when the WSL service
@@ -813,7 +819,7 @@ run`) and can stop one; *Settings* edits every `settings.json` key with its
 type, range and default, the same keys as `tycswap config`, and picks the
 counted model windows from the ones the accounts report; *Guide* explains
 the tool. The Accounts and Updates cards fold, and the choice is remembered.
-Export and import stay on the command line.
+Choose **Interactive menu… → Import / export…** to transfer accounts through a terminal launched from the dashboard or tray. Files contain account tokens; the guided export asks before writing and requires a new destination.
 
 Only the browser tab that opens the printed URL can use the page: the token
 in it works once, the server listens on loopback only, and every API call
@@ -824,8 +830,7 @@ paths. On a machine with Codex accounts the dashboard lists them under their
 own heading after the Claude accounts, with switch, disable / enable and
 remove, *+ Add current Codex login* stores the codex CLI's login, and the Auto
 tab runs the Codex engine beside the Claude one, as `tycswap auto` does;
-alias, move, swap, export and import of Codex accounts stay with `tycswap
-codex`. See `docs/reference.md`, `tycswap web`, for the API and the security
+alias, move, swap, export and import of Codex accounts are available through the interactive menu or `tycswap codex`. See `docs/reference.md`, `tycswap web`, for the API and the security
 model.
 
 ### Tray application
@@ -1194,7 +1199,8 @@ the selected model inside a running session, or restart sessions.
 
 ```mermaid
 flowchart LR
-    A["CLI / zsh menu / dashboard / tray / web"] --> B["Claude or Codex provider"]
+    A["CLI / zsh menu / dashboard / tray / web"] --> M["Accounts / session groups / import-export"]
+    M --> B["Claude or Codex provider"]
     A --> I["Guided account setup → browser sign-in"]
     I --> B
     B --> C["Locked account store and session groups"]
