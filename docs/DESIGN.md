@@ -6118,3 +6118,22 @@ Selection filters by provider and rereads the selected identity before dispatch.
 The resulting command runs through the existing CLI with automatic prompting
 disabled, preserving store locks, validation, confirmation and exit codes.
 Cancelling before dispatch exits 130; no account or setting mutation occurs.
+
+## A65. Complete guided workflows and dashboard reuse
+
+The shared zsh menu exposes group operations and Claude/Codex import/export through
+existing CLI commands. Provider-filtered account selections are checked again before
+mutation; export paths resolve to files and existing destinations are refused.
+The authenticated setup API accepts only fixed menu section names (main, add, manage,
+groups, transfer), never shell commands. The tray receives that section in the existing
+one-recipient, non-replayed setup event.
+
+A running app publishes its loopback base URL and token-file path in a private
+connection file, removed before restart. Dashboard reuse requires the matching app
+lock to be held, validates the base URL, and uses the existing bearer-only launch API
+and browser opener. Stale files do not count as a running app; connection failures
+never start a duplicate server. The remote tray publishes separate connection metadata.
+
+An explicit `add --login --switch` onto the current account uses the existing locked
+activation path, so its new credential becomes live instead of returning already-active.
+Plain `add --login` continues to leave the live login untouched.

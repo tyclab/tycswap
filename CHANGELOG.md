@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Added:** guided session-group management and Claude/Codex import/export in the shared zsh menu, accessible through **Interactive menu…** in the web dashboard and tray.
+- **Fixed:** opening the web dashboard from the menu reuses the running app; `web --reuse` offers the same behavior without holding the terminal open.
+- **Fixed:** signing in again with `add --login --switch` activates new credentials for an already-active account. Account management exposes sign-in renewal and saved-login activation.
+
 - **Fixed:** Windows account setup receives real console input/output, so its interactive menu stays open when launched from the tray or web dashboard.
 
 - **Fixed:** tray-launched account setup loads the user's login shell on WSL and Linux, so native Claude installations and user-installed Codex remain on PATH. Expired group credentials stay visible between polls; the dashboard no longer promises retries for expired logins, rejected refresh tokens, or past retry timestamps.

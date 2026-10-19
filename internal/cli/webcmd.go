@@ -131,6 +131,9 @@ var notifyContext = signal.NotifyContext
 
 // webCommand handles `tycswap web [--port N] [--no-open] [--interval SECONDS] [--debug]`.
 func webCommand(prog string, argv []string, s ioStreams) int {
+	if len(argv) == 1 && argv[0] == "--reuse" {
+		return menuOpenDashboard(prog, s)
+	}
 	wprog := prog + " web"
 	port := 0
 	interval := 5.0
@@ -357,12 +360,14 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 
 func renderWebHelp(prog string, out io.Writer) int {
 	fmt.Fprintf(out, `usage: %[1]s web [-h] [--port N] [--no-open] [--interval SECONDS] [--debug]
+       %[1]s web --reuse
 
 Serve the local dashboard on 127.0.0.1 and open it in the browser. The URL
 carries a one-time token; only the browser that opens it can drive the page.
 
 options:
   --port N          fixed port (default 0 = any free port)
+  --reuse           open the running app dashboard; start the app if needed
   --no-open         print the URL only
   --interval S      live-state poll interval in seconds (1-3600, default 5)
   --debug           log errors to stderr

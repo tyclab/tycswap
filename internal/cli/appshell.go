@@ -40,7 +40,7 @@ import (
 // them to the switcher, the engine, the browser and the updater.
 type shellActions struct {
 	OpenDashboard func() error
-	AccountSetup  func() error
+	AccountSetup  func(string) error
 	// SwitchTo switches to the account a row key names ("claude:2",
 	// "codex:1", A47) and returns the codex sessions still running on the
 	// old Codex account (nil for a Claude switch).
@@ -299,7 +299,7 @@ func (a *appShell) accountRows(st web.State, withModels []string) []tray.Item {
 	claude, codex := rowsByProvider(st.Accounts)
 	items := gaugeGroup(claude, withModels, "accounts", "All %d accounts")
 	if a.act.AccountSetup != nil {
-		items = append(items, tray.Item{ID: "account-setup", Title: "Add account…", Dismiss: true})
+		items = append(items, tray.Item{ID: "account-setup", Title: "Add account…", Dismiss: true}, tray.Item{ID: "menu:main", Title: "Interactive menu…", Dismiss: true})
 	}
 	if a.act.AddCurrent != nil {
 		items = append(items, addCurrentItem(st))
@@ -502,9 +502,16 @@ func rotatedAccounts(st web.State) string {
 // click dispatches a menu choice. It runs off the UI thread.
 func (a *appShell) click(id string) {
 	switch {
-	case id == "account-setup":
+	case id == "account-setup" || strings.HasPrefix(id, "menu:"):
+		section := "add"
+		if id != "account-setup" {
+			section = strings.TrimPrefix(id, "menu:")
+		}
+		if !web.ValidMenuSection(section) {
+			return
+		}
 		if a.act.AccountSetup != nil {
-			if err := a.act.AccountSetup(); err != nil {
+			if err := a.act.AccountSetup(section); err != nil {
 				a.notify("Could not open account setup", err.Error())
 			}
 		}

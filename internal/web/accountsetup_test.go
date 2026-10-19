@@ -8,7 +8,7 @@ import (
 
 func TestAccountSetupUsesAuthenticatedFixedAction(t *testing.T) {
 	calls := 0
-	h := newHarness(t, func(_ *harness, d *Deps) { d.AccountSetup = func() error { calls++; return nil } })
+	h := newHarness(t, func(_ *harness, d *Deps) { d.AccountSetup = func(string) error { calls++; return nil } })
 	resp := h.postJSON("/api/accounts/setup", map[string]any{})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("%d: %s", resp.StatusCode, readBody(t, resp))
@@ -28,16 +28,37 @@ func TestAccountSetupUsesAuthenticatedFixedAction(t *testing.T) {
 }
 
 func TestAccountSetupReportsUnavailableDesktop(t *testing.T) {
-	h := newHarness(t, func(_ *harness, d *Deps) { d.AccountSetup = func() error { return fmt.Errorf("no desktop terminal") } })
+	h := newHarness(t, func(_ *harness, d *Deps) {
+		d.AccountSetup = func(string) error { return fmt.Errorf("no desktop terminal") }
+	})
 	resp := h.postJSON("/api/accounts/setup", map[string]any{})
 	if resp.StatusCode != http.StatusServiceUnavailable || decodeError(t, resp) != "no desktop terminal" {
 		t.Fatal("missing terminal was not reported")
 	}
 }
 
+func TestAccountSetupOnlyAcceptsFixedMenuSections(t *testing.T) {
+	var got string
+	h := newHarness(t, func(_ *harness, d *Deps) {
+		d.AccountSetup = func(section string) error { got = section; return nil }
+	})
+	for _, section := range []string{"main", "add", "manage", "groups", "transfer", "", "main; echo unsafe", "--help"} {
+		got = ""
+		resp := h.postJSON("/api/accounts/setup", map[string]any{"section": section})
+		resp.Body.Close()
+		if ValidMenuSection(section) {
+			if resp.StatusCode != http.StatusOK || got != section {
+				t.Fatalf("%q did not reach menu: %d %q", section, resp.StatusCode, got)
+			}
+		} else if resp.StatusCode != http.StatusBadRequest || got != "" {
+			t.Fatalf("invalid section reached launcher: %q", section)
+		}
+	}
+}
+
 func TestAccountSetupTargetsOneDesktopAndDoesNotReplay(t *testing.T) {
 	h := newHarness(t, func(_ *harness, d *Deps) {
-		d.AccountSetup = func() error { t.Error("launched on headless server"); return nil }
+		d.AccountSetup = func(string) error { t.Error("launched on headless server"); return nil }
 	})
 	browser, stopBrowser := h.s.hub.subscribe(false)
 	defer stopBrowser()

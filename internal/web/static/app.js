@@ -1286,7 +1286,7 @@
       menu.appendChild(el('summary', { class: 'btn btn-sm btn-icon', 'aria-label': 'More actions for account ' + a.number, 'aria-haspopup': 'menu', text: '⋯' }));
       var listEl = el('div', { class: 'menu-list', role: 'menu' });
       var k = rowKey(a);
-      if (!accountGroup) { listEl.appendChild(menuButton('Force switch (no backup)', { 'data-action': 'force-switch', 'data-id': k, 'data-name': accountLabel(a), disabled: a.isActive })); }
+      if (!accountGroup) { listEl.appendChild(menuButton('Use saved login…', { 'data-action': 'force-switch', 'data-id': k, 'data-name': accountLabel(a) })); }
       if (a.disabled) {
         listEl.appendChild(menuButton('Enable for rotation', { 'data-post': '/api/accounts/' + keyPath(a) + '/enable', 'data-label': 'Enable' }));
       } else {
@@ -2283,7 +2283,7 @@
     // nothing else, and the callout above the table has already said what
     // the click does.
     'account-setup': function (btn) {
-      return run(btn, 'Account setup', api('POST', '/api/accounts/setup', {}));
+      return run(btn, 'Account setup', api('POST', '/api/accounts/setup', { section: btn.getAttribute('data-section') || 'add' }));
     },
     'add-current': function (btn) {
       return run(btn, 'Add current login', api('POST', '/api/accounts/add', {}));
@@ -2324,9 +2324,9 @@
     },
     'force-switch': function (btn) {
       var id = btn.getAttribute('data-id');
-      return confirmModal('Force switch', 'Switch to ' + btn.getAttribute('data-name') + ' WITHOUT backing up the current login first? Unsaved changes to the active login are lost.', 'Force switch').then(function (ok) {
+      return confirmModal('Use saved login', 'Replace the current Claude login with the saved login for ' + btn.getAttribute('data-name') + '? Unsaved changes to the current login are lost.', 'Use saved login').then(function (ok) {
         if (!ok) { return; }
-        return run(btn, 'Force switch', api('POST', '/api/switch/' + encodeURIComponent(id) + '?force=1'));
+        return run(btn, 'Use saved login', api('POST', '/api/switch/' + encodeURIComponent(id) + '?force=1'));
       });
     },
     'alias': function (btn) {

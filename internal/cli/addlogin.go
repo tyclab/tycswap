@@ -191,7 +191,13 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 	_ = removeScratch()
 
 	if a.switchAfter {
-		if _, err := sw.SwitchToForce(num, false, false); err != nil {
+		data, err := sw.ReadSequence()
+		if err != nil {
+			return renderDomainError(err, false, s.out, s.err)
+		}
+		email, org, active := sw.GetCurrentAccount()
+		replaceActive := active && sw.FindAccountSlot(data, email, org) == num
+		if _, err := sw.SwitchToForce(num, false, replaceActive); err != nil {
 			return renderDomainError(err, false, s.out, s.err)
 		}
 	}

@@ -8,7 +8,7 @@ tycswap — multi-account switcher for Claude Code.
 
 ```
 tycswap                                       interactive action menu (human terminal only)
-tycswap menu [add]                            open the menu or account setup
+tycswap menu [add|manage|groups|transfer]      open a guided menu
 tycswap help                                  print the command list and options
 tycswap list [--json] [--token-status]        list managed accounts
 tycswap status [--json]                       show the active account
@@ -48,6 +48,7 @@ tycswap export <PATH> [--account NUM|EMAIL] [--full]
 tycswap import <PATH> [--force]               import accounts from a file ("-" = stdin)
 tycswap tui                                    interactive dashboard
 tycswap watch                                  interactive dashboard, live watch page
+tycswap web --reuse                         open the running app dashboard
 tycswap web [--port N] [--no-open] [--interval SECONDS]
                                             browser dashboard on 127.0.0.1
 tycswap app [--open] [--headless] [--port N] [--interval SECONDS] [--no-update-check]
@@ -2656,8 +2657,8 @@ tabs:
   another process answers 409 and is not signalled. `claude --continue` in
   that directory resumes the session. IDE instances are listed below.
 
-Export and import stay on the command line (`tycswap export`, `tycswap
-import`): the dashboard never writes credentials to a file or reads one.
+Choose **Interactive menu… → Import / export…** to transfer accounts. The dashboard
+opens a terminal menu; the existing export/import commands read and write local files.
 
 The update check compares the running version with the latest release at the
 endpoint `tycswap upgrade` uses (`update.Endpoint`), and the installed Claude
@@ -5072,3 +5073,11 @@ mutations carry `stateSequence`: documents with a lower sequence began
 before the mutation completed and must not replace the resulting choice.
 The browser holds model drafts during the request and confirms saves with
 GET /api/state; errors leave the draft available to retry.
+
+Interactive menus also expose session-group switching, launching/resuming sessions,
+group settings, ownership reconciliation and capability records. Import/export guides
+provider, account scope and file selection; exports require a new file and a token
+warning confirmation. The web/tray Interactive menu action opens this same menu.
+`web --reuse` opens the running local or remote tray dashboard through its authenticated
+launch API; it starts a background app only if no app holds the relevant lock.
+`add --login --switch` activates a renewed login even when that account is already active.

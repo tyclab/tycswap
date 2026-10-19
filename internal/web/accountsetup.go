@@ -10,26 +10,44 @@ func (s *Server) handleAccountSetup(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	if len(body) != 0 {
-		writeError(w, http.StatusBadRequest, "account setup takes no arguments")
+	section := "add"
+	if raw, ok := body["section"]; ok {
+		section = ""
+		if json.Unmarshal(raw, &section) != nil {
+			writeError(w, http.StatusBadRequest, "invalid menu section")
+			return
+		}
+		delete(body, "section")
+	}
+	if len(body) != 0 || !ValidMenuSection(section) {
+		writeError(w, http.StatusBadRequest, "choose add, manage, groups, transfer, or main")
 		return
 	}
-	if s.hub.requestAccountSetup() {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Setup requested in the Windows tray. Complete sign-in in the terminal window."})
+	if s.hub.requestAccountSetup(section) {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Menu requested in the tray. Continue in the terminal window."})
 		return
 	}
 	if unavailable(w, s.d.AccountSetup != nil, "account setup") {
 		return
 	}
-	if err := s.d.AccountSetup(); err != nil {
+	if err := s.d.AccountSetup(section); err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Account setup opened in a terminal. Choose Claude or Codex, then sign in with your browser."})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": "Interactive menu opened in a terminal."})
+}
+
+func ValidMenuSection(section string) bool {
+	switch section {
+	case "main", "add", "manage", "groups", "transfer":
+		return true
+	}
+	return false
 }
 
 // One connected desktop receives the request; reconnects never replay it.
-func (h *hub) requestAccountSetup() bool {
+func (h *hub) requestAccountSetup(section string) bool {
+	data, _ := json.Marshal(map[string]string{"section": section})
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for ch, subscriber := range h.subs {
@@ -37,7 +55,7 @@ func (h *hub) requestAccountSetup() bool {
 			continue
 		}
 		select {
-		case ch <- event{name: "account-setup", data: []byte(`{}`)}:
+		case ch <- event{name: "account-setup", data: data}:
 			return true
 		default:
 		}
