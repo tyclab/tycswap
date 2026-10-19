@@ -28,7 +28,7 @@ func TestSetupLoadsLoginEnvironmentAndQuotesExecutable(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write(filepath.Join(root, ".zshenv"), "export PATH="+shellWord(bin)+":$PATH\n")
+	write(filepath.Join(root, ".zprofile"), "export PATH="+shellWord(bin)+":$PATH\n")
 	write(filepath.Join(bin, "claude"), "#!/bin/sh\nexit 0\n")
 	exe := filepath.Join(bin, "tycswap")
 	write(exe, "#!/bin/sh\ncommand -v claude\nprintf '%s\\n' \"$@\"\n")
