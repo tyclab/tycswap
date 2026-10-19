@@ -7,8 +7,8 @@ import (
 	"syscall"
 )
 
-func windowsSetupCommand(exe string) *exec.Cmd {
-	cmd := exec.Command(exe, "menu", "add")
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010}
+func windowsSetupCommand(exe string, args ...string) *exec.Cmd {
+	cmd := powershellSetupCommand("powershell.exe", exe, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	return cmd
 }
