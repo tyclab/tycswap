@@ -162,7 +162,8 @@ The dashboard and tray also have **Add account…**. They open guided setup in
 a terminal; no command needs to be copied. A Windows tray connected to WSL
 opens setup in the distro named by its token file. The web dashboard can send
 that request through the connected Windows tray, even when the WSL service
-has no desktop session. Without a desktop or connected tray, use the menu in
+has no desktop session. Setup loads your configured login shell so Claude and
+Codex installed in your user directories remain available. Without a desktop or connected tray, use the menu in
 your existing terminal. `tycswap menu add` opens setup directly.
 
 

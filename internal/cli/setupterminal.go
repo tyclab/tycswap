@@ -22,6 +22,10 @@ var setupStart = func(cmd *exec.Cmd) error {
 
 func shellWord(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
 
+func setupLoginArgs(exe string) []string {
+	return []string{"/bin/sh", "-lc", `exec "${SHELL:-/bin/sh}" -lc "$1"`, "tycswap-setup", "exec " + shellWord(exe) + " menu add"}
+}
+
 func openAccountSetup() error {
 	if platform.Detect() == platform.WSL && os.Getenv("WSL_DISTRO_NAME") == "" {
 		return fmt.Errorf("this background service has no desktop session; choose Add account in the Windows tray, or run tycswap in a WSL terminal")
@@ -42,16 +46,16 @@ func accountSetupCommand(goos, distro, exe string) (*exec.Cmd, error) {
 		return windowsSetupCommand(exe), nil
 	}
 	if distro != "" {
-		if wt, err := setupLookPath("wt.exe"); err == nil {
-			return exec.Command(wt, "new-tab", "wsl.exe", "--distribution", distro, "--exec", exe, "menu", "add"), nil
-		}
+		args := append([]string{"--distribution", distro, "--exec"}, setupLoginArgs(exe)...)
 		if ps, err := setupLookPath("powershell.exe"); err == nil {
-			// A quoted PowerShell literal contains one Windows command line; no shell reads the Linux executable path.
-			args := "--distribution " + windowsArgument(distro) + " --exec " + windowsArgument(exe) + " menu add"
-			script := "Start-Process -FilePath wsl.exe -ArgumentList '" + strings.ReplaceAll(args, "'", "''") + "'"
+			quoted := make([]string, len(args))
+			for i, arg := range args {
+				quoted[i] = windowsArgument(arg)
+			}
+			script := "Start-Process -FilePath wsl.exe -ArgumentList '" + strings.ReplaceAll(strings.Join(quoted, " "), "'", "''") + "'"
 			return exec.Command(ps, "-NoProfile", "-NonInteractive", "-Command", script), nil
 		}
-		return nil, fmt.Errorf("Windows Terminal is unavailable; open a WSL terminal and run tycswap menu add")
+		return nil, fmt.Errorf("Windows console launcher is unavailable; open a WSL terminal and run tycswap menu add")
 	}
 	if goos == "darwin" {
 		command := shellWord(exe) + " menu add"
@@ -61,7 +65,7 @@ func accountSetupCommand(goos, distro, exe string) (*exec.Cmd, error) {
 		{"x-terminal-emulator", "-e"}, {"gnome-terminal", "--"}, {"konsole", "-e"}, {"xterm", "-e"},
 	} {
 		if binary, err := setupLookPath(candidate.name); err == nil {
-			return exec.Command(binary, candidate.flag, exe, "menu", "add"), nil
+			return exec.Command(binary, append([]string{candidate.flag}, setupLoginArgs(exe)...)...), nil
 		}
 	}
 	return nil, fmt.Errorf("no desktop terminal is available; run tycswap menu add in a terminal on this computer")
@@ -82,10 +86,7 @@ func openRemoteAccountSetup(tokenFile string, fallback func() error) error {
 	if runtime.GOOS != "windows" || distro == "" {
 		return fallback()
 	}
-	args := []string{"--distribution", distro, "--exec", "/bin/sh", "-lc", "exec tycswap menu add"}
-	if wt, err := setupLookPath("wt.exe"); err == nil {
-		return setupStart(exec.Command(wt, append([]string{"new-tab", "wsl.exe"}, args...)...))
-	}
+	args := append([]string{"--distribution", distro, "--exec"}, setupLoginArgs("tycswap")...)
 	cmd := windowsSetupCommand("wsl.exe")
 	cmd.Args = append([]string{"wsl.exe"}, args...)
 	return setupStart(cmd)

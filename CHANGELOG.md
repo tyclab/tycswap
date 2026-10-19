@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Fixed:** tray-launched account setup loads the user's login shell on WSL and Linux, so native Claude installations and user-installed Codex remain on PATH. Expired group credentials stay visible between polls; the dashboard no longer promises retries for expired logins, rejected refresh tokens, or past retry timestamps.
+
 - **Changed:** terminal menus reuse flakelab's zsh prompt library, including filtering, editable input, visible answers and copyable commands. The Go renderer remains a fallback when zsh is unavailable.
 - **Added:** incomplete account-management and config commands ask for missing arguments at a human terminal. Scripts, JSON, complete commands and existing defaults retain their behavior.
 

@@ -1136,10 +1136,18 @@
     var refresh = a.usageRefresh || {};
     var parts = [];
     if (a.usageFetchedAt) { parts.push('Usage checked ' + new Date(a.usageFetchedAt).toLocaleTimeString()); }
-    if (refresh.error) {
+    if (a.usageStatus === 'relogin_required' || refresh.error === 'invalid_grant') {
+      parts.push('Sign in again to restore usage');
+    } else if (a.usageStatus === 'token_expired') {
+      parts.push('Waiting for Claude to refresh its login');
+    } else if (refresh.error) {
       parts.push(/429/.test(refresh.error) ? 'refresh rate-limited' : 'refresh failed');
     }
-    if (refresh.nextAt) { parts.push('next attempt ' + new Date(refresh.nextAt).toLocaleTimeString()); }
+    var paused = a.usageStatus && a.usageStatus !== 'ok' && a.usageStatus !== 'unavailable';
+    if (!paused && refresh.error !== 'invalid_grant' && Date.parse(refresh.nextAt) > Date.now()) {
+      parts.push('next attempt ' + new Date(refresh.nextAt).toLocaleTimeString());
+    }
+    if (!parts.length) { return null; }
     return el('span', { class: refresh.error ? 'chip chip-warn' : 'org', text: parts.join(' · '), title: 'Usage is cached between requests. Reloading the page respects the polling schedule and retry delay.' });
   }
 
