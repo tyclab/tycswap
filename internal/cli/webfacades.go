@@ -240,7 +240,7 @@ func (a *autoFacade) View() web.AutoView {
 		Events:     events,
 		Quarantine: quarantine,
 	}
-	if a.codexSw != nil {
+	if a.codexSw != nil && len(a.codexSw.Store().Slots()) > 0 {
 		// The Codex bar is the one the engine started with (or would start
 		// with): the slider moves the Claude 7d bar only.
 		v.Codex = &web.CodexAutoView{

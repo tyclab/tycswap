@@ -47,9 +47,9 @@ func (s *Server) groupSettingViews(views []SettingView) []SettingView {
 		if list[i].Source != "default" || list[i].ReadOnly != "" {
 			continue
 		}
-		list[i].Applies = "Inherited Default policy loads when a continuous rotation runner starts. Group overrides reload at each group rotation check."
+		list[i].Applies = "Inherited settings apply when auto-switch restarts."
 		if managed {
-			list[i].Applies = "Inherited from Default at the external scheduler's next group rotation check."
+			list[i].Applies = "Applies at the next scheduled group check."
 		}
 	}
 	return list

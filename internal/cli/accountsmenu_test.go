@@ -85,10 +85,10 @@ func TestShellAddCurrentLogin(t *testing.T) {
 		t.Errorf("unsaved: %q", got)
 	}
 	st.CurrentLogin.Saved = true
-	if got := sub(st); got != "for another account: /login with it, never /logout" {
+	if got := sub(st); got != "Save the current Claude login" {
 		t.Errorf("saved: %q", got)
 	}
-	if got := sub(web.State{}); got != "sign in to Claude Code first (/login)" {
+	if got := sub(web.State{}); got != "No current Claude login" {
 		t.Errorf("no accounts, no login: %q", got)
 	}
 	if _, ok := ft.item("none"); ok {
@@ -106,8 +106,8 @@ func TestShellAddCurrentLogin(t *testing.T) {
 	}
 	notes := strings.Join(ft.notesNow(), "\n")
 	for _, want := range []string{
-		"Added account #3 | dave@example.com is account #3 now.",
-		"Account #1 refreshed | alice@example.com was account #1 already",
+		"Added account #3 | dave@example.com",
+		"Account #1 refreshed | alice@example.com",
 		"Login not added | Claude Code has no subscription login on this computer.",
 	} {
 		if !strings.Contains(notes, want) {

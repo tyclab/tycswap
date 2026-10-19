@@ -207,7 +207,7 @@ func (p *windowsPanel) layout() {
 	move(panelDashboard, pad+titleWidth+3*m.unit+versionWidth, head.row, p.buttonWidth(m, p.bold, panelControlText(p.controls[panelDashboard])), m.control)
 	accounts := p.buttonWidth(m, p.bold, "Accounts")
 	move(panelAccountTab, pad, head.tabs, accounts, m.control)
-	move(panelSettingsTab, pad+accounts+m.unit/2, head.tabs, p.buttonWidth(m, p.bold, "Settings"), m.control)
+	move(panelSettingsTab, pad+accounts+m.unit/2, head.tabs, p.buttonWidth(m, p.bold, "Advanced"), m.control)
 	buttons, footerHeight := p.footer(m, width)
 	footer := height - footerHeight
 	rules := []int{head.rule, footer}

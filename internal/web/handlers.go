@@ -51,6 +51,7 @@ func (s *Server) routes() http.Handler {
 
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/state", s.handleState)
+	api.HandleFunc("POST /api/accounts/setup", s.handleAccountSetup)
 	api.HandleFunc("GET /api/events", s.handleEvents)
 	api.HandleFunc("POST /api/launch", s.handleLaunch)
 
@@ -873,9 +874,9 @@ func (s *Server) settingsViews() []SettingView {
 			switch list[i].Key {
 			case "autoswitch.handoverWaitMinutes":
 			case "autoswitch.intervalSeconds":
-				list[i].Applies = "The external scheduler controls its cadence. This interval applies to a continuous tycswap auto loop."
+				list[i].Applies = "The scheduler sets the check interval; this value only affects a continuous loop."
 			default:
-				list[i].Applies = "At the external scheduler's next rotation check. Its auto --once run reloads saved policy."
+				list[i].Applies = "Applies at the next scheduled check."
 			}
 		}
 	}
@@ -896,15 +897,15 @@ func (s *Server) settingsViews() []SettingView {
 func settingApplies(key string) string {
 	switch key {
 	case "autoswitch.handoverWaitMinutes":
-		return "At the next usage update. A stopped session offers handover when compatible resources will take longer than this to become available."
+		return "Applies at the next usage update."
 	case modelSettingKey:
-		return "At once for the engine on the Auto tab: a save or reset retargets it while it runs, and the at-limit marks follow. An engine in the terminal dashboard or " + brand.Sanitized().Name + " auto keeps its value until it next starts."
+		return "Applies now to this dashboard; other auto-switch processes must restart."
 	case "autoswitch.sevenDayThreshold":
-		return "When an engine next starts. The Auto tab's slider changes the running engine's 7d threshold for this run only, without saving."
+		return "Applies when auto-switch restarts."
 	case "autoswitch.codexEnabled", "autoswitch.codexThreshold":
-		return "When the Codex engine next starts: on this page's Auto tab, when the dashboard started with Codex accounts, or in " + brand.Sanitized().Name + " auto. The terminal dashboard's engine rotates Claude accounts only."
+		return "Applies when Codex auto-switch restarts."
 	}
-	return "When an engine next starts (this page's Auto tab, the terminal dashboard or " + brand.Sanitized().Name + " auto); a running one keeps the value it started with."
+	return "Applies when auto-switch restarts."
 }
 
 // handleSettingSet accepts {"value": <string|number|bool>}; non-strings are

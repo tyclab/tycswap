@@ -96,7 +96,8 @@ diverge, the divergences are enumerated in [`docs/DESIGN.md`](docs/DESIGN.md)
 
 **Prerequisites.**
 
-- Go 1.25.5 or newer to build or `go install`. The CLI builds without cgo; on
+- Go 1.25.5 or newer to build or `go install`; Go selects the patched 1.26.9
+  toolchain from `go.mod`. The CLI builds without cgo; on
   macOS the menu-bar app needs cgo (the Command Line Tools: `xcode-select
   --install`), and a build without it serves the tray app's dashboard alone.
 - The Claude Code CLI, for the accounts to run against.
@@ -139,6 +140,20 @@ binary upgrades itself: `tycswap upgrade` and the tray download the next
 release over it after checking it against that release's `SHA256SUMS`.
 
 ## Tasks
+
+Run `tycswap` to open the interactive menu, even while the tray is running.
+Type to filter, use the arrow keys to choose, and press Escape to go back.
+**Add account…** signs in with Claude or Codex through your browser, saves an
+existing login, or adds a token. **Manage accounts…** switches, renames,
+enables/disables, moves, or removes an account. Closing the menu leaves the tray running.
+
+The dashboard and tray also have **Add account…**. They open guided setup in
+a terminal; no command needs to be copied. A Windows tray connected to WSL
+opens setup in the distro named by its token file. The web dashboard can send
+that request through the connected Windows tray, even when the WSL service
+has no desktop session. Without a desktop or connected tray, use the menu in
+your existing terminal. `tycswap menu add` opens setup directly.
+
 
 The tasks below follow the order in which a user meets them. Each transcript is
 complete. Prompt lines begin with `$`; all other lines are program output.
@@ -318,7 +333,7 @@ alice@example.com
 ```
 
 The full-screen interactive dashboard is `tycswap tui` (also `tycswap watch`;
-a bare `tycswap` starts the [tray application](#tray-application) instead). It shows the same accounts with live usage and
+a bare `tycswap` opens the action menu). It shows the same accounts with live usage and
 refreshes on a timer. Its Settings screen (`c`, or the menu's "Settings…" row)
 lists every `settings.json` key with its value and help text and edits it in
 place — a bool toggles, a choice cycles, a number or string is typed and
@@ -642,6 +657,10 @@ given, which overwrites it. Import rejects any file marked `encrypted: true`.
 
 ### Configure settings
 
+The tray keeps rotation tuning under **Advanced**. The 5-hour threshold is
+85% by default: a 15% reserve before the provider's limit, not a provider
+requirement. Changing presentation does not change the saved policy.
+
 `tycswap config` prints the settings and their values, marking each unchanged one
 `(default)`:
 
@@ -810,17 +829,10 @@ Choose your default app mode**, including changes while the app is running.
 High contrast uses Windows' system colors.
 
 `tycswap app` is the dashboard as a menu-bar (macOS) or notification-area
-(Windows, Linux) icon. A bare `tycswap` in a terminal starts it in the
-background and gives the prompt back; the full-screen terminal dashboard is
-`tycswap tui`:
+(Windows, Linux) icon. Choose **Start tray app** in the `tycswap` menu to start
+it in the background. `tycswap app` runs it in the foreground.
 
-```
-$ tycswap
-tycswap is running in the background — its icon is in the menu bar / tray.
-Log: ~/.local/share/tycswap/app.log
-```
-
-On Windows, clicking the icon opens a compact **Accounts / Settings** panel.
+On Windows, clicking the icon opens a compact **Accounts / Advanced** panel.
 Each account appears once, with separate 5-hour, weekly and reported model
 columns. Percentages are **used quota**; `—` means no measurement was reported.
 Fable at 100% does not mean the shared weekly limit is exhausted. Active
@@ -853,8 +865,8 @@ tycswap app [--open] [--headless] [--port N] [--interval SECONDS] [--no-update-c
 tycswap app --autostart on|off|status
 ```
 
-`tycswap app` runs in the foreground; the bare `tycswap` is the way to start it
-in the background. `--headless` runs the dashboard server without an icon
+`tycswap app` runs in the foreground; choose **Start tray app** in the menu
+to start it in the background. `--headless` runs the dashboard server without an icon
 (what Linux without a StatusNotifierWatcher gets anyway), `--interval` sets
 how often the live state is polled (default 5 seconds), `--debug` logs errors
 to stderr, `--autostart`
@@ -1170,7 +1182,9 @@ the selected model inside a running session, or restart sessions.
 
 ```mermaid
 flowchart LR
-    A["CLI / dashboard / tray / web"] --> B["Claude or Codex provider"]
+    A["CLI / menu / dashboard / tray / web"] --> B["Claude or Codex provider"]
+    A --> I["Guided account setup → browser sign-in"]
+    I --> B
     B --> C["Locked account store and session groups"]
     C --> D["Ownership-checked switch / refresh"]
     D --> E["Active CLI or group credentials"]

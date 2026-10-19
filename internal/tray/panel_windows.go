@@ -200,11 +200,11 @@ func (t *windowsTray) createPanel() error {
 	}{
 		{100, "STATIC", "", 0}, {101, "STATIC", "", 0},
 		{panelDashboard, "BUTTON", "Open dashboard", panelTabStop | 0xb},
-		{panelAccountTab, "BUTTON", "Accounts", panelTabStop | 0xb}, {panelSettingsTab, "BUTTON", "Settings", panelTabStop | 0xb},
+		{panelAccountTab, "BUTTON", "Accounts", panelTabStop | 0xb}, {panelSettingsTab, "BUTTON", "Advanced", panelTabStop | 0xb},
 		{panelAccounts, "SysListView32", "Accounts", panelTabStop | 1 | 4 | 8 | 0x40 | 0x100000 | 0x200000},
 		{220, "STATIC", "", 0}, {221, "EDIT", "", 4 | 0x40 | 0x800 | 0x200000}, {222, "STATIC", "", 0},
 		{224, "STATIC", "Apply to", 0}, {panelScopes, "COMBOBOX", "", panelTabStop | 3 | 0x10 | 0x200 | 0x200000},
-		{panelFields, "SysListView32", "Settings", panelTabStop | 1 | 4 | 8 | 0x40 | 0x100000 | 0x200000},
+		{panelFields, "SysListView32", "Advanced", panelTabStop | 1 | 4 | 8 | 0x40 | 0x100000 | 0x200000},
 		{225, "STATIC", "", 0}, {226, "EDIT", "", 4 | 0x40 | 0x800 | 0x200000},
 		{panelEdit, "EDIT", "", panelTabStop | panelBorder | 0x80}, {panelChoice, "COMBOBOX", "", panelTabStop | 3 | 0x10 | 0x200 | 0x200000},
 		{panelSave, "BUTTON", "Save", panelTabStop | 0xb}, {panelReset, "BUTTON", "Reset", panelTabStop | 0xb},
@@ -553,7 +553,7 @@ func (p *windowsPanel) renderEditor() {
 		p.setText(226, "")
 	} else {
 		p.setText(225, field.Label)
-		p.setText(226, field.Description+"\r\n"+field.Applies+" · "+field.Source)
+		p.setText(226, field.Description+"\r\n"+field.Applies)
 		p.fitScroll(226)
 		choice = field.Kind == "bool" || field.Kind == "choice"
 		p.choiceValues = append([]string(nil), field.Choices...)

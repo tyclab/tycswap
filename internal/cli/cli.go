@@ -5,7 +5,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
+
+	"github.com/mattn/go-isatty"
 
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/printer"
@@ -65,6 +66,8 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 	// first argument (DESIGN Deviation 10): `tycswap --debug run 2` is unsupported.
 	if len(argv) > 0 {
 		switch argv[0] {
+		case "menu":
+			return menuCommand(prog, argv[1:], s, stdinTTY && stdoutTTY)
 		case "run":
 			return runCommand(prog, argv[1:], s)
 		case "groups":
@@ -106,9 +109,8 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 		}
 	}
 
-	// TTY-gated on both ends so scripts and pipes get the no-command error, not a resident tray app (DESIGN A40).
-	if len(argv) == 0 && ((stdoutTTY && stdinTTY) || msysTerminal()) {
-		return startBackgroundApp(prog, s)
+	if len(argv) == 0 && humanTerminal(stdinTTY, stdoutTTY) {
+		return runHumanMenu(prog, "", s)
 	}
 
 	// Memorable verbs → legacy flags (spec 08§1 step 6, §2).
@@ -142,22 +144,8 @@ func neutralizePinnedSessionProfile(stderr io.Writer) {
 	io.WriteString(stderr, printer.Dimmed("This shell is pinned via tycswap env; operating on the default login.")+"\n")
 }
 
-// msysTerminal reports a Git Bash / MSYS2 terminal on Windows. mintty hands
-// programs pipes, not a console, so the TTY test calls a person typing the
-// bare command there a script; MSYSTEM is what those shells set (A41). A
-// seam for tests.
-var msysTerminal = func() bool {
-	return runtime.GOOS == "windows" && os.Getenv("MSYSTEM") != ""
-}
-
-// isTTY reports whether f is a character device (an interactive terminal).
-// Uses stdlib os.FileInfo (no x/term dependency).
 func isTTY(f *os.File) bool {
-	fi, err := f.Stat()
-	if err != nil {
-		return false
-	}
-	return fi.Mode()&os.ModeCharDevice != 0
+	return isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
 }
 
 // isHelpOrVersion reports whether argv only asks for help or the version,

@@ -91,6 +91,9 @@ func (a *appShell) panel(st web.State) tray.Panel {
 		p.Settings = append(p.Settings, tray.SettingScope{ID: group.ID, Label: group.Label, Settings: panelSettings(group.SettingViews)})
 	}
 	p.Actions = []tray.Item{{ID: "open", Title: "Open dashboard"}, {ID: "update", Title: "Check for updates"}}
+	if a.act.AccountSetup != nil {
+		p.Actions = append([]tray.Item{{ID: "account-setup", Title: "Add account…"}}, p.Actions...)
+	}
 	for _, action := range a.updatesSection() {
 		switch action.ID {
 		case "install-update":

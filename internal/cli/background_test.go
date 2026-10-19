@@ -33,16 +33,15 @@ func stubBackground(t *testing.T, spawn func(exe, logPath string) (backgroundApp
 	})
 }
 
-func runBare(t *testing.T) (int, string, string) {
+func runBackground(t *testing.T) (int, string, string) {
 	t.Helper()
 	var out, errb bytes.Buffer
-	code := run("tycswap", []string{}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, true, true)
+	code := startBackgroundApp("tycswap", ioStreams{in: strings.NewReader(""), out: &out, err: &errb})
 	return code, out.String(), errb.String()
 }
 
-// Bare tycswap in a terminal starts `app` detached and returns as soon as the
-// child holds the single-instance lock (A40).
-func TestBareTTYStartsAppInBackground(t *testing.T) {
+// Start tray app returns once the detached child holds its lock.
+func TestBackgroundStartsAppInBackground(t *testing.T) {
 	appLockHome(t)
 	var gotExe, gotLog string
 	stubBackground(t, func(exe, logPath string) (backgroundApp, error) {
@@ -54,7 +53,7 @@ func TestBareTTYStartsAppInBackground(t *testing.T) {
 		t.Cleanup(func() { _ = lock.Release() })
 		return fakeChild{}, nil
 	})
-	code, out, errStr := runBare(t)
+	code, out, errStr := runBackground(t)
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %q", code, errStr)
 	}
@@ -66,8 +65,8 @@ func TestBareTTYStartsAppInBackground(t *testing.T) {
 	}
 }
 
-// A second bare start finds the app running and starts nothing (A38).
-func TestBareTTYWhenAppAlreadyRuns(t *testing.T) {
+// Starting the tray again does not create a second instance.
+func TestBackgroundWhenAppAlreadyRuns(t *testing.T) {
 	appLockHome(t)
 	lock, held, err := acquireAppLock()
 	if err != nil || !held {
@@ -78,7 +77,7 @@ func TestBareTTYWhenAppAlreadyRuns(t *testing.T) {
 		t.Fatal("spawned although the app is running")
 		return nil, nil
 	})
-	code, out, _ := runBare(t)
+	code, out, _ := runBackground(t)
 	if code != 0 || !strings.Contains(out, "already running") {
 		t.Errorf("exit = %d, stdout = %q", code, out)
 	}
@@ -86,7 +85,7 @@ func TestBareTTYWhenAppAlreadyRuns(t *testing.T) {
 
 // A child that dies before taking the lock is reported with the end of its
 // log, not as a success.
-func TestBareTTYReportsAChildThatDies(t *testing.T) {
+func TestBackgroundReportsAChildThatDies(t *testing.T) {
 	appLockHome(t)
 	stubBackground(t, func(_, logPath string) (backgroundApp, error) {
 		if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err != nil {
@@ -97,7 +96,7 @@ func TestBareTTYReportsAChildThatDies(t *testing.T) {
 		}
 		return fakeChild{exited: true, err: errors.New("exit status 1")}, nil
 	})
-	code, _, errStr := runBare(t)
+	code, _, errStr := runBackground(t)
 	if code != 1 {
 		t.Fatalf("exit = %d, want 1", code)
 	}
@@ -109,12 +108,12 @@ func TestBareTTYReportsAChildThatDies(t *testing.T) {
 }
 
 // A spawn failure is an error that points at the foreground command.
-func TestBareTTYSpawnFailure(t *testing.T) {
+func TestBackgroundSpawnFailure(t *testing.T) {
 	appLockHome(t)
 	stubBackground(t, func(string, string) (backgroundApp, error) {
 		return nil, errors.New("permission denied")
 	})
-	code, _, errStr := runBare(t)
+	code, _, errStr := runBackground(t)
 	if code != 1 || !strings.Contains(errStr, "permission denied") || !strings.Contains(errStr, "tycswap app") {
 		t.Errorf("exit = %d, stderr = %q", code, errStr)
 	}
@@ -152,28 +151,5 @@ func TestOpenAppLogRotates(t *testing.T) {
 	}
 	if fi, err := os.Stat(p); err != nil || fi.Size() != 0 {
 		t.Errorf("fresh log = %v, %v", fi, err)
-	}
-}
-
-// Git Bash hands programs pipes, not a console; a person typing the bare
-// command there still gets the background app, not "no command given" (A41).
-func TestBareMSYSTerminalStartsApp(t *testing.T) {
-	appLockHome(t)
-	prev := msysTerminal
-	msysTerminal = func() bool { return true }
-	t.Cleanup(func() { msysTerminal = prev })
-	spawned := false
-	stubBackground(t, func(string, string) (backgroundApp, error) {
-		spawned = true
-		lock, held, err := acquireAppLock()
-		if err != nil || !held {
-			t.Fatalf("child lock = %v, %v", held, err)
-		}
-		t.Cleanup(func() { _ = lock.Release() })
-		return fakeChild{}, nil
-	})
-	code, _, errStr := runCLI(t, []string{}, false, false)
-	if code != 0 || !spawned {
-		t.Errorf("exit = %d, spawned = %v, stderr = %q", code, spawned, errStr)
 	}
 }

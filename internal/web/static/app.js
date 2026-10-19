@@ -193,10 +193,10 @@
   }
 
   // run wraps a button-triggered request: disables the button, toasts.
-  function run(btn, label, promise) {
+  function run(btn, label, promise, successMessage) {
     if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
-    return promise.then(function () {
-      toast(label + ' done.', 'ok');
+    return promise.then(function (response) {
+      toast(successMessage || (response && response.message) || label + ' done.', 'ok');
     }).catch(function (err) {
       toast(err && err.message ? err.message : String(err));
     }).then(function () {
@@ -2274,6 +2274,9 @@
     // No confirmation (A27): storing the login Claude Code has changes
     // nothing else, and the callout above the table has already said what
     // the click does.
+    'account-setup': function (btn) {
+      return run(btn, 'Account setup', api('POST', '/api/accounts/setup', {}));
+    },
     'add-current': function (btn) {
       return run(btn, 'Add current login', api('POST', '/api/accounts/add', {}));
     },

@@ -33,9 +33,6 @@ func TestMain(m *testing.M) {
 	// console (and its output) where it is; the hand-off itself has tests
 	// of its own (console_windows_test.go, TestReleaseOwnConsoleForReal).
 	releaseAppConsole = func(s ioStreams) ioStreams { return s }
-	// A Git Bash running the tests (MSYSTEM set) must not turn every bare
-	// invocation into a background start; the test of that rule sets it.
-	msysTerminal = func() bool { return false }
 	// The update restart re-runs os.Args detached: from a test binary that is
 	// the whole suite again. The tests that take the hand-over stub it with a
 	// recorder of their own; no other path may reach the real one.

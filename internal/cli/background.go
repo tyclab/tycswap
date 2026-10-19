@@ -1,13 +1,4 @@
-// background.go — bare `tycswap` starts the menu-bar / tray app in the
-// background and gives the terminal back (DESIGN A40).
-//
-// The app is what people want when they type the command, and holding a
-// terminal open for a menu-bar icon is not. So the bare command spawns
-// `tycswap app` as a detached process — its own session on Unix, no console
-// on Windows — with its output appended to a log file, waits until that
-// process holds the single-instance lock (A38), and exits. `app` itself
-// still runs in the foreground: start-at-login entries and anyone debugging
-// run it that way. The terminal UI stays reachable as `tycswap tui`.
+// The interactive menu can start the tray without keeping the terminal open.
 package cli
 
 import (
@@ -73,7 +64,7 @@ func openAppLog(logPath string) (*os.File, error) {
 	return os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 }
 
-// startBackgroundApp is bare `tycswap` in a terminal.
+// startBackgroundApp handles the menu's Start tray app action.
 func startBackgroundApp(prog string, s ioStreams) int {
 	name := brandName()
 	if appRunning() {

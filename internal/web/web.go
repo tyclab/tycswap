@@ -348,7 +348,8 @@ type Deps struct {
 	// Check now does. false: Serve asks at start and every UpdateInterval.
 	UpdatesOwnSchedule bool
 
-	RemoteToken string
+	RemoteToken  string
+	AccountSetup func() error
 }
 
 // Server is one dashboard instance. Construct with New, bind with Start, run

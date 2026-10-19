@@ -382,6 +382,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	buildHint := appUpgradeHint()
 	sh = newAppShell(t, shellActions{
 		OpenDashboard: openDashboard,
+		AccountSetup:  openAccountSetup,
 		SaveSetting: func(scope, key string, value *string) error {
 			_, err := srv.SaveSetting(scope, key, value)
 			return err

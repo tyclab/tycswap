@@ -157,10 +157,11 @@ var errRemoteRefused = errors.New("the engine refused the token")
 
 // remoteClient drives one dashboard over its HTTP API with the remote token.
 type remoteClient struct {
-	base      string // http://127.0.0.1:<port>
-	tokenFile string
-	calls     *http.Client // bounded: every call but the stream
-	stream    *http.Client // unbounded body: the SSE stream
+	base         string // http://127.0.0.1:<port>
+	tokenFile    string
+	calls        *http.Client // bounded: every call but the stream
+	stream       *http.Client // unbounded body: the SSE stream
+	accountSetup func()
 
 	// debug, when set, logs every answer and every stream end (--debug).
 	debug func(format string, args ...any)
@@ -534,7 +535,11 @@ func (c *remoteClient) tokenRefused() bool {
 func (c *remoteClient) follow(ctx context.Context, onState func(web.State), onAuto func(web.AutoEventView), onLink func(up bool)) (got bool, err error) {
 	sctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	resp, err := c.send(sctx, c.stream, http.MethodGet, "/api/events", nil)
+	path := "/api/events"
+	if c.accountSetup != nil {
+		path += "?accountSetup=1"
+	}
+	resp, err := c.send(sctx, c.stream, http.MethodGet, path, nil)
 	if err != nil {
 		return false, err
 	}
@@ -600,6 +605,10 @@ func (c *remoteClient) follow(ctx context.Context, onState func(web.State), onAu
 // reachable.
 func (c *remoteClient) dispatch(name string, data []byte, onState func(web.State), onAuto func(web.AutoEventView), onLink func(up bool)) {
 	switch name {
+	case "account-setup":
+		if c.accountSetup != nil {
+			c.accountSetup()
+		}
 	case "state":
 		var st web.State
 		if json.Unmarshal(data, &st) != nil {
@@ -724,8 +733,11 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	buildHint := appUpgradeHint()
 	sh = newAppShell(t, shellActions{
 		OpenDashboard: openDashboard,
-		SaveSetting:   rc.SaveSetting,
-		SwitchTo:      rc.Switch,
+		AccountSetup: func() error {
+			return openRemoteAccountSetup(o.tokenFile, func() error { return rc.call("POST", "/api/accounts/setup", map[string]any{}, nil) })
+		},
+		SaveSetting: rc.SaveSetting,
+		SwitchTo:    rc.Switch,
 		SwitchGroup: func(group, account string) error {
 			return rc.call("POST", "/api/groups/"+neturl.PathEscape(group)+"/switch/"+neturl.PathEscape(account), nil, nil)
 		},
@@ -753,6 +765,9 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	// until the first state frame, which follows within the moment when the
 	// distro is up.
 	sh.update(web.State{})
+	if canOpenRemoteSetup(o.tokenFile) {
+		rc.accountSetup = func() { sh.click("account-setup") }
+	}
 	go rc.run(ctx, sh.update, sh.autoEvent, func(up bool) {
 		switch {
 		case up:

@@ -151,7 +151,7 @@ func TestManagedSettingMetadataUsesNextCheckAndPreservesFacadeViews(t *testing.T
 	if err := json.Unmarshal(readBody(t, h.get("/api/settings")), &shared); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(shared.Settings[0].Applies, "next rotation check") || !strings.Contains(shared.Settings[1].Applies, "external scheduler controls") || !strings.Contains(shared.Settings[2].Applies, "next usage update") {
+	if !strings.Contains(shared.Settings[0].Applies, "next scheduled check") || !strings.Contains(shared.Settings[1].Applies, "scheduler sets") || !strings.Contains(shared.Settings[2].Applies, "next usage update") {
 		t.Fatalf("managed applicability %+v", shared.Settings)
 	}
 	var group struct {
@@ -160,7 +160,7 @@ func TestManagedSettingMetadataUsesNextCheckAndPreservesFacadeViews(t *testing.T
 	if err := json.Unmarshal(readBody(t, h.get("/api/groups/fable/settings")), &group); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(group.Settings[0].Applies, "next group rotation check") || fixture.views[0].Applies != "original" {
+	if !strings.Contains(group.Settings[0].Applies, "next scheduled group check") || fixture.views[0].Applies != "original" {
 		t.Fatalf("inherited applicability %+v original %+v", group.Settings, fixture.views)
 	}
 	if response := newHarness(t).get("/api/groups/fable/settings"); response.StatusCode != http.StatusServiceUnavailable {

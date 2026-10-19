@@ -25,7 +25,6 @@ import (
 	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/browser"
 	"github.com/tyclab/tycswap/internal/cerr"
-	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/printer"
@@ -276,7 +275,7 @@ type dashboardOptions struct {
 	noUpdateSchedule bool
 }
 
-// `tycswap web` and `tycswap app` both build their dashboard here; Codex presence is decided at launch (DESIGN A47).
+// Keep both providers ready so a first account appears without restarting the dashboard.
 func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams, o dashboardOptions) (*dashboard, int) {
 	sw, err := constructSwitcher(debug, s.err)
 	if err != nil {
@@ -286,10 +285,7 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 	if code, blocked := guardRoot(s.err); blocked {
 		return nil, code
 	}
-	var codexSw *codexswitcher.Switcher
-	if codexIsPresent() {
-		codexSw = newQuietCodexSwitcher()
-	}
+	codexSw := newQuietCodexSwitcher()
 	auto := newAutoFacade(sw, codexSw)
 	auto.managedBy = strings.TrimSpace(os.Getenv(brand.Sanitized().EnvPrefix + "_AUTO_MANAGED_BY"))
 	codex := newCodexOps(codexSw)
@@ -331,6 +327,7 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 		Updates:            updates,
 		UpdatesOwnSchedule: host == nil || o.noUpdateSchedule,
 		RemoteToken:        o.remoteToken,
+		AccountSetup:       openAccountSetup,
 		UIPrefs:            uiPrefs{path: appStatePath(sw.BackupDir())},
 		// The live login's email, for the "Add your current login" callout
 		// (A27); the store reads it from Claude Code's config file.
