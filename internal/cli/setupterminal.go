@@ -99,6 +99,9 @@ func canOpenRemoteSetup(tokenFile string) bool {
 }
 
 func windowsArgument(s string) string {
+	if s != "" && !strings.ContainsAny(s, " \t\"") {
+		return s
+	}
 	var b strings.Builder
 	b.WriteByte('"')
 	slashes := 0

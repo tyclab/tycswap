@@ -9,6 +9,14 @@ import (
 	"testing"
 )
 
+func TestSetupKeepsWSLOptionNamesUnquoted(t *testing.T) {
+	cmd := powershellSetupCommand("powershell.exe", "wsl.exe", "--distribution", "Nix Dev", "--exec", "/bin/sh", "-lc", "exec tycswap menu add")
+	want := `-ArgumentList '--distribution "Nix Dev" --exec /bin/sh -lc "exec tycswap menu add"'`
+	if !strings.Contains(cmd.Args[len(cmd.Args)-1], want) {
+		t.Fatal(cmd.Args)
+	}
+}
+
 func TestSetupLoadsLoginEnvironmentAndQuotesExecutable(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix login shell")
