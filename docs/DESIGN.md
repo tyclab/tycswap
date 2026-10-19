@@ -6089,6 +6089,11 @@ page to reach the Windows desktop. Without that bridge, the service reports the
 missing desktop rather than claiming setup opened. New Codex accounts become
 visible without restarting the dashboard.
 
+WSL and Linux setup terminals load the user's configured login shell before
+executing the menu. The fixed setup command quotes its executable path; provider
+login still resolves and runs the provider binary directly. This preserves the
+user's installation PATH when setup starts outside their usual terminal.
+
 The Windows tuning tab is Advanced. Setting descriptions and applicability notes
 are concise; the source is shown once in its column. Defaults, including the 85%
 5-hour switching threshold, are unchanged.

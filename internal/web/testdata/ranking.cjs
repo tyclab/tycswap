@@ -68,6 +68,12 @@ assert.match(cached.text, /Usage checked .*refresh rate-limited.*next attempt/);
 assert.equal(cached.class, 'chip chip-warn');
 assert.match(ctx.usageFreshness({usageRefresh:{error:'network'}}).text, /refresh failed/);
 assert.doesNotMatch(ctx.usageFreshness({usageFetchedAt:stamp,usageRefresh:{nextAt:reset(1)}}).text, /failed|limited/);
+assert.equal(ctx.usageFreshness({usageRefresh:{nextAt:reset(-240)}}),null);
+assert.doesNotMatch(ctx.usageFreshness({usageRefresh:{error:'network',nextAt:reset(-1)}}).text,/next attempt/);
+assert.match(ctx.usageFreshness({usageStatus:'token_expired',usageRefresh:{nextAt:reset(1)}}).text,/Waiting for Claude/);
+assert.doesNotMatch(ctx.usageFreshness({usageStatus:'token_expired',usageRefresh:{nextAt:reset(1)}}).text,/next attempt/);
+assert.match(ctx.usageFreshness({usageStatus:'relogin_required',usageRefresh:{error:'invalid_grant',nextAt:reset(1)}}).text,/Sign in again/);
+assert.doesNotMatch(ctx.usageFreshness({usageStatus:'relogin_required',usageRefresh:{error:'invalid_grant',nextAt:reset(1)}}).text,/next attempt/);
 
 const missing=account(1,0,0,0);delete missing.usage.scoped;
 assert.deepEqual(order([missing,account(2,40,20,20)],'all'),['2','1']);

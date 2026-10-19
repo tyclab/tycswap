@@ -162,7 +162,8 @@ func TestAccountSetupLaunchers(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if tool != "powershell.exe" && !reflect.DeepEqual(cmd.Args[len(cmd.Args)-3:], []string{"/opt/my tools/tycswap", "menu", "add"}) {
+			want := setupLoginArgs("/opt/my tools/tycswap")
+			if tool != "powershell.exe" && !reflect.DeepEqual(cmd.Args[len(cmd.Args)-len(want):], want) {
 				t.Fatal(cmd.Args)
 			}
 			if tool == "powershell.exe" && !strings.Contains(cmd.Args[len(cmd.Args)-1], `"Nix Dev''s box"`) {

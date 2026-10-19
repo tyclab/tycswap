@@ -191,6 +191,15 @@ func staticUsageSentinel(s *store.Store, info AccountInfo) string {
 		}
 		return jsonout.UsageNoCredentials
 	}
+	if !info.IsActive {
+		data := oauth.ExtractOAuthData(info.Creds)
+		if data != nil && oauth.IsOAuthTokenExpired(data["expiresAt"], s.Clk.Now()) {
+			owner, err := s.CredentialOwner(strconv.Itoa(info.Number))
+			if err == nil && owner.Scope != "" && !owner.Uncertain {
+				return jsonout.UsageTokenExpired
+			}
+		}
+	}
 	if info.IsActive {
 		// Owned + locally expired must stay visible even when the fetch is gated:
 		// only an owner (Claude Code / live session) may refresh this credential,

@@ -1971,6 +1971,8 @@ authentication, CSRF and origin checks as account mutations. It sends a fixed
 setup request to one connected Windows tray advertising that capability, or
 opens a local desktop terminal. No executable, arguments or credentials are
 accepted from the request. A missing desktop is reported as unavailable.
+On WSL and Linux, the terminal starts the configured login shell before the
+menu so provider executables installed in user directories remain on PATH.
 
 ## tycswap tui
 
