@@ -6071,8 +6071,9 @@ so that ineffective override is excluded from group settings.
 
 Bare invocation in a human terminal opens a searchable action menu, independently
 of the tray process. `menu add` goes directly to provider setup. Agent shells,
-pipes and explicit CLI commands retain their existing noninteractive behavior.
+pipes and complete CLI commands retain their existing noninteractive behavior.
 TTY detection includes Cygwin terminals and rejects redirected MSYS pipes.
+Automatic prompts require stdin, stdout and stderr to be terminals.
 
 Menu actions execute the existing commands as child processes, returning terminal
 ownership before browser sign-in or secret input. No credential is passed as a
@@ -6091,3 +6092,21 @@ visible without restarting the dashboard.
 The Windows tuning tab is Advanced. Setting descriptions and applicability notes
 are concise; the source is shown once in its column. Defaults, including the 85%
 5-hour switching threshold, are unchanged.
+
+## A64. Flakelab terminal prompts and incomplete commands
+
+The action menu uses flakelab's pure-zsh `prompt_choose`, `prompt_input` and
+`prompt_ran`, vendored byte-identically with provenance and its MIT license under
+`internal/cli/promptzsh`. Both library and license are embedded in release binaries.
+The adapter passes labels as arguments, captures only the answer on stdout, and
+leaves the prompt on stderr. No user input becomes shell source. The existing
+Go renderer remains the compatibility path when zsh is unavailable.
+
+Before dispatch, a human terminal may complete missing required arguments for
+account management and config commands. Only recognized incomplete grammars
+enter this path; help, JSON, invalid flags and complete commands reach the
+existing parsers. Existing argument-free defaults still execute normally.
+Selection filters by provider and rereads the selected identity before dispatch.
+The resulting command runs through the existing CLI with automatic prompting
+disabled, preserving store locks, validation, confirmation and exit codes.
+Cancelling before dispatch exits 130; no account or setting mutation occurs.

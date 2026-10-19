@@ -95,7 +95,9 @@ func (m menuPrompt) View() string {
 	return b.String()
 }
 
-var askMenu = func(s ioStreams, title string, choices []string, initial string) (int, string, bool) {
+var askMenu = askTerminal
+
+func askGoMenu(s ioStreams, title string, choices []string, initial string) (int, string, bool) {
 	m := menuPrompt{title: title, choices: choices, text: termsafe.Strip(initial), width: 80, height: 24}
 	result, err := tea.NewProgram(m, tea.WithInput(s.in), tea.WithOutput(s.err)).Run()
 	if err != nil {
@@ -104,10 +106,14 @@ var askMenu = func(s ioStreams, title string, choices []string, initial string) 
 	}
 	m = result.(menuPrompt)
 	if !m.accepted {
+		fmt.Fprintf(s.err, "? %s › cancelled\n", termsafe.Strip(title))
 		return 0, "", false
 	}
 	if choices != nil {
-		return m.matches()[m.index], "", true
+		i := m.matches()[m.index]
+		fmt.Fprintf(s.err, "? %s › %s\n", termsafe.Strip(title), termsafe.Strip(choices[i]))
+		return i, "", true
 	}
+	fmt.Fprintf(s.err, "? %s › %s\n", termsafe.Strip(title), m.text)
 	return 0, m.text, true
 }

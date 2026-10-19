@@ -1935,10 +1935,28 @@ Done: 0 imported, 0 overwritten, 1 skipped
 ## tycswap menu
 
 `tycswap menu [add]` opens the guided action menu or account setup directly.
-Bare `tycswap` opens the same menu when stdin and stdout are terminals,
+Bare `tycswap` opens the same menu when stdin, stdout and stderr are terminals,
 `TERM` is not `dumb`, and `TYCSWAP_NO_PROMPT`, `CLAUDECODE` and
 `CODEX_THREAD_ID` are unset. Scripts retain the no-command usage error.
-Explicit commands and their JSON output retain their existing behavior.
+Complete commands, existing defaults and JSON output retain their behavior.
+
+The terminal menu uses flakelab's pure-zsh prompt library, embedded in the
+binary with its license. With zsh on PATH, choices and editable input use that
+library; installations without zsh use the Go renderer. Answers remain visible,
+and an action prints its shell-quoted command on stderr before executing it.
+Tokens still use the existing hidden-input prompt and are never echoed as arguments.
+
+The same human-terminal gate enables questions for missing arguments in
+`remove`/`rm`, `disable`, `enable`, `swap`, `move`, `alias --unset`, and
+`alias ACCOUNT`; the Codex account commands also prompt for missing required
+arguments. `config get`, `config set` and `config unset` ask for a missing key
+and, for `set`, value. Account choices are restricted to the command's provider
+and checked again before execution. Escape cancels a choice; Ctrl-C cancels
+line input; cancellation exits 130 without executing the command.
+Help, unknown flags, JSON, agent shells and redirected invocations do not enter
+these prompts. Bare `add` still saves the current login, bare `switch` still
+rotates, bare Claude `alias` still lists aliases, and `codex alias ACCOUNT`
+still clears that alias. Explicit arguments remain the unattended interface.
 
 Type to filter choices; arrows move; Enter selects; Escape returns. The menu
 supports browser sign-in for Claude and Codex, saving either provider's current
@@ -4559,7 +4577,7 @@ usage: tycswap <command> [args] [options]
 Multi-Account Switcher for Claude Code
 
 Commands:
-  tycswap                            start the menu-bar/tray app in the background
+  tycswap                            open the interactive action menu
   tycswap help                       show this help
   tycswap list                       list managed accounts
   ...

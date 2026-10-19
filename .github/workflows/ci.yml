@@ -21,6 +21,8 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - name: Install terminal prompt runtime
+        run: sudo apt-get update && sudo apt-get install -y zsh
       # The Makefile targets, so CI and a developer's machine run the same commands.
       - run: make fmt
       - run: make vet
