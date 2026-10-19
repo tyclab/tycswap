@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Changed:** terminal menus reuse flakelab's zsh prompt library, including filtering, editable input, visible answers and copyable commands. The Go renderer remains a fallback when zsh is unavailable.
+- **Added:** incomplete account-management and config commands ask for missing arguments at a human terminal. Scripts, JSON, complete commands and existing defaults retain their behavior.
+
 - **Fixed:** release builds use Go 1.26.9, including the HTTP/2 security fix required by the vulnerability check.
 - **Added:** a searchable human action menu on bare `tycswap`, also available as `tycswap menu`, with browser sign-in, account management and settings. It works while the tray runs; scripts and explicit CLI commands retain their existing behavior.
 - **Added:** Add account in the web dashboard and tray opens guided setup. The Windows tray targets its WSL distro and can receive a setup request from the web page. First-time Codex accounts appear without restarting the dashboard.

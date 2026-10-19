@@ -147,6 +147,17 @@ Type to filter, use the arrow keys to choose, and press Escape to go back.
 existing login, or adds a token. **Manage accounts…** switches, renames,
 enables/disables, moves, or removes an account. Closing the menu leaves the tray running.
 
+The menu uses flakelab's zsh prompts: searchable choices, editable input, and
+the answered question left on screen. Each action shows its command for reuse.
+Release binaries include the prompt library; install `zsh` to use it. The Go
+renderer remains available automatically when zsh is absent, including on Windows.
+
+Incomplete account commands guide you too: `tycswap remove` asks for a Claude
+account, `tycswap codex remove` asks for a Codex account, and `tycswap move 2`
+asks for the destination slot. `tycswap config set` asks for the setting and
+value. Complete commands, existing defaults, scripts and JSON calls keep their
+behavior; `TYCSWAP_NO_PROMPT=1` disables automatic prompts.
+
 The dashboard and tray also have **Add account…**. They open guided setup in
 a terminal; no command needs to be copied. A Windows tray connected to WSL
 opens setup in the distro named by its token file. The web dashboard can send
@@ -1182,7 +1193,7 @@ the selected model inside a running session, or restart sessions.
 
 ```mermaid
 flowchart LR
-    A["CLI / menu / dashboard / tray / web"] --> B["Claude or Codex provider"]
+    A["CLI / zsh menu / dashboard / tray / web"] --> B["Claude or Codex provider"]
     A --> I["Guided account setup → browser sign-in"]
     I --> B
     B --> C["Locked account store and session groups"]

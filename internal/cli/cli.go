@@ -31,7 +31,7 @@ func Main() int {
 	prog := progName(os.Args[0])
 	streams := ioStreams{in: os.Stdin, out: os.Stdout, err: os.Stderr}
 	installSigint(streams)
-	return run(prog, os.Args[1:], streams, isTTY(os.Stdin), isTTY(os.Stdout))
+	return run(prog, os.Args[1:], streams, isTTY(os.Stdin), isTTY(os.Stdout) && isTTY(os.Stderr))
 }
 
 // run is the testable front controller. argv excludes the program name.
@@ -59,6 +59,12 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 		}
 		if warning != "" {
 			fmt.Fprintln(s.err, printer.Yellowed("warning: "+warning))
+		}
+	}
+
+	if humanTerminal(stdinTTY, stdoutTTY) {
+		if code, handled := promptMissingArguments(argv, s); handled {
+			return code
 		}
 	}
 

@@ -20,6 +20,7 @@ func humanTerminal(stdinTTY, stdoutTTY bool) bool {
 }
 
 var menuExecute = func(s ioStreams, args ...string) int {
+	showMenuCommand(s, args)
 	cmd := exec.Command(exePath(), args...)
 	cmd.Env = append(os.Environ(), "TYCSWAP_NO_PROMPT=1")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.in, s.out, s.err
@@ -100,8 +101,8 @@ func humanMenu(prog, start string, s ioStreams) int {
 
 func menuAdd(s ioStreams) {
 	i, _, ok := askMenu(s, "Add account", []string{
-		"Claude — sign in with the browser", "Codex — sign in with the browser",
-		"Save current Claude login", "Save current Codex login", "Claude — setup token or API key",
+		"add --login    Sign in with Claude", "codex login    Sign in with Codex",
+		"add            Save current Claude login", "codex add      Save current Codex login", "add-token      Claude setup token or API key",
 	}, "")
 	if !ok {
 		return
@@ -144,14 +145,28 @@ func menuConfirm(s ioStreams, question string) bool {
 }
 
 func pickMenuAccount(s ioStreams, title string) (reporting.AccountSnapshot, bool) {
+	a, code := selectProviderAccount(s, title, "")
+	return a, code == 0
+}
+
+func selectProviderAccount(s ioStreams, title, provider string) (reporting.AccountSnapshot, int) {
 	accounts, err := menuAccounts(s)
 	if err != nil {
 		fmt.Fprintln(s.err, err)
-		return reporting.AccountSnapshot{}, false
+		return reporting.AccountSnapshot{}, 1
+	}
+	if provider != "" {
+		filtered := make([]reporting.AccountSnapshot, 0, len(accounts))
+		for _, account := range accounts {
+			if account.ProviderName() == provider {
+				filtered = append(filtered, account)
+			}
+		}
+		accounts = filtered
 	}
 	if len(accounts) == 0 {
-		fmt.Fprintln(s.err, "No accounts yet. Choose Add account to sign in.")
-		return reporting.AccountSnapshot{}, false
+		fmt.Fprintln(s.err, "No matching accounts. Run tycswap menu add to sign in.")
+		return reporting.AccountSnapshot{}, 1
 	}
 	labels := make([]string, len(accounts))
 	for i, a := range accounts {
@@ -172,9 +187,9 @@ func pickMenuAccount(s ioStreams, title string) (reporting.AccountSnapshot, bool
 	}
 	i, _, ok := askMenu(s, title, labels, "")
 	if !ok {
-		return reporting.AccountSnapshot{}, false
+		return reporting.AccountSnapshot{}, 130
 	}
-	return accounts[i], true
+	return accounts[i], 0
 }
 
 func menuAccountCurrent(s ioStreams, selected reporting.AccountSnapshot) bool {
