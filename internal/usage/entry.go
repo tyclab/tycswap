@@ -15,12 +15,13 @@ type Identity struct {
 	OrgUUID string
 }
 
-// Exactly one shape: success (Usage may be nil), failure (Error, optional RetryAfterS) or sentinel (recorded as a no-op).
+// Exactly one shape: success (Usage may be nil), failure (Error, optional RetryAfterS) or skip (Sentinel and/or SkipReason; only the reason is persisted).
 type FetchRecord struct {
 	Usage       map[string]any
 	Error       string
 	RetryAfterS *float64
 	Sentinel    string
+	SkipReason  string
 }
 
 // UsageEntry is the read model of one account's usage state at collect time
@@ -41,6 +42,8 @@ type UsageEntry struct {
 	Last429At           *float64
 	AuthDeadStrikes     int
 	TrustExtended       bool
+	SkipReason          string
+	SkipAt              *float64
 }
 
 // Fresh reports whether lastGood is younger than ttl (04§2.4). Callers pass

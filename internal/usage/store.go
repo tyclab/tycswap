@@ -148,6 +148,7 @@ func (s *Store) Entries(ids map[string]Identity) map[string]UsageEntry {
 				(nextPollAt != nil && now < *nextPollAt) ||
 				(lastAttemptAt != nil && (now-*lastAttemptAt) < ClaimTTLS))
 		lastError, _ := m["lastError"].(string)
+		skipReason, _ := m["skipReason"].(string)
 		out[num] = UsageEntry{
 			LastGood:            lastGood,
 			FetchedAt:           fetchedAt,
@@ -161,6 +162,8 @@ func (s *Store) Entries(ids map[string]Identity) map[string]UsageEntry {
 			Last429At:           numPtr(m["last429At"]),
 			AuthDeadStrikes:     intOf(m["authDeadStrikes"]),
 			TrustExtended:       trustExtended,
+			SkipReason:          skipReason,
+			SkipAt:              numPtr(m["skipAt"]),
 		}
 	}
 	return out
@@ -236,12 +239,13 @@ func (s *Store) Reserve(nums []string, ids map[string]Identity, respectPlans boo
 }
 
 // Record merges fetch outcomes (04§2.5). Success and failure are mutually
-// exclusive writers: success resets the failure fields, failure never touches
-// lastGood/fetchedAt (stale-on-error). Sentinel records are no-ops.
+// exclusive writers: success resets the failure fields and the skip reason,
+// failure never touches lastGood/fetchedAt (stale-on-error). A skip writes only
+// skipReason/skipAt; a sentinel without a reason is a no-op.
 func (s *Store) Record(outcomes map[string]FetchRecord, ids map[string]Identity) error {
 	effective := make(map[string]FetchRecord, len(outcomes))
 	for n, r := range outcomes {
-		if r.Sentinel == "" {
+		if r.SkipReason != "" || r.Sentinel == "" {
 			effective[n] = r
 		}
 	}
@@ -255,8 +259,15 @@ func (s *Store) Record(outcomes map[string]FetchRecord, ids map[string]Identity)
 	}
 	return s.changed(s.mutate(ids, nums, func(num string, row map[string]any) {
 		rec := effective[num]
+		if rec.SkipReason != "" {
+			row["skipReason"] = rec.SkipReason
+			row["skipAt"] = now
+			return
+		}
 		row["lastAttemptAt"] = now
 		if rec.Error == "" {
+			delete(row, "skipReason")
+			delete(row, "skipAt")
 			row["lastGood"] = rec.Usage
 			row["fetchedAt"] = now
 			row["consecutiveFailures"] = 0

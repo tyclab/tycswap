@@ -83,6 +83,22 @@ func inactiveRefresh(s *store.Store, num, email string) oauth.GuardedRefresh {
 	}
 }
 
+// Skip reasons the usage row records when the active account goes unfetched.
+const (
+	skipOwnerExpired  = "owner holds an expired token; Claude Code refreshes it on next use"
+	skipNoCredential  = "no credential in the live store"
+	skipOwnerAppeared = "refresh discarded: an owner appeared mid-refresh"
+	skipLiveChanged   = "refresh discarded: live credential changed mid-refresh"
+)
+
+func skipBackupMismatch(num string) string {
+	return "live credential does not match slot " + num + "'s backup; refresh skipped"
+}
+
+func expiredSkip(reason string) usage.FetchRecord {
+	return usage.FetchRecord{Sentinel: jsonout.UsageTokenExpired, SkipReason: reason}
+}
+
 // fetchActiveUsage fetches usage for the active/default account, refreshing its
 // token only when no owner is detected (spec 02§13 _fetch_active_usage). With an
 // owner present (or an unattributed live credential) and an expired token it
@@ -90,7 +106,7 @@ func inactiveRefresh(s *store.Store, num, email string) oauth.GuardedRefresh {
 func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.FetchRecord {
 	oauthData := oauth.ExtractOAuthData(creds)
 	if oauthData == nil || accessTokenOf(oauthData) == "" {
-		return usage.FetchRecord{Sentinel: jsonout.UsageNoCredentials}
+		return usage.FetchRecord{Sentinel: jsonout.UsageNoCredentials, SkipReason: skipNoCredential}
 	}
 
 	owned := activeCCRunning(s) || len(s.LiveSessionPidsFor(accountNum, email)) > 0
@@ -109,12 +125,16 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 	}
 
 	if owned || unattributed {
+		reason := skipOwnerExpired
+		if !owned {
+			reason = skipBackupMismatch(accountNum)
+		}
 		if oauth.IsOAuthTokenExpired(oauthData["expiresAt"], s.Clk.Now()) {
-			return usage.FetchRecord{Sentinel: jsonout.UsageTokenExpired}
+			return expiredSkip(reason)
 		}
 		outcome := oauth.TryFetchUsageForAccount(backgroundCtx(), s.OAuth, accountNum, email, creds, true, nil)
 		if outcome.Usage == nil && oauth.IsOAuthTokenExpired(oauthData["expiresAt"], s.Clk.Now()) {
-			return usage.FetchRecord{Sentinel: jsonout.UsageTokenExpired}
+			return expiredSkip(reason)
 		}
 		return recordFromOutcome(outcome)
 	}
@@ -125,10 +145,13 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 	// re-checks owners + refresh-token lineage before writing.
 	originalRefresh := stringOf(oauthData["refreshToken"])
 	var mu sync.Mutex
-	persistSkipped := false
-	markSkipped := func() {
+	skipReason := ""
+	// A 401 can refresh a second time after the proactive one; the first reason wins.
+	markSkipped := func(reason string) {
 		mu.Lock()
-		persistSkipped = true
+		if skipReason == "" {
+			skipReason = reason
+		}
 		mu.Unlock()
 	}
 
@@ -145,29 +168,29 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 			// Re-check owners + refresh-token lineage under the lock: if a Claude
 			// Code/session appeared or an external write replaced the credential,
 			// skip rather than clobber a live process's newer credential.
-			if activeCCRunning(s) || len(s.LiveSessionPidsFor(n, acctEmail)) > 0 || liveRefresh != originalRefresh {
-				markSkipped()
+			ownerAppeared := activeCCRunning(s) || len(s.LiveSessionPidsFor(n, acctEmail)) > 0
+			if ownerAppeared || liveRefresh != originalRefresh {
+				if ownerAppeared {
+					markSkipped(skipOwnerAppeared)
+				} else {
+					markSkipped(skipLiveChanged)
+				}
 				if s.Log != nil {
 					s.Log.Warningf("Active-account refresh for %s (%s): owner appeared or refresh token changed mid-refresh; discarding rotated credential.", n, acctEmail)
 				}
 				return nil
 			}
 			// A write failure leaves the live store holding the consumed original
-			// refresh token, so mark skipped and surface the error (oauth's
+			// refresh token; the error marks skipped below and surfaces (oauth's
 			// persist path logs its "failed to persist" warning).
 			if err := s.Creds.WriteActive(newCreds); err != nil {
-				markSkipped()
 				return err
 			}
 			// The backup takes the account part only; the live file keeps the seat-wide keys.
-			if err := s.WriteAccountCredentials(n, acctEmail, oauth.AccountOnly(newCreds)); err != nil {
-				markSkipped()
-				return err
-			}
-			return nil
+			return s.WriteAccountCredentials(n, acctEmail, oauth.AccountOnly(newCreds))
 		})
 		if err != nil {
-			markSkipped()
+			markSkipped("refresh discarded: " + err.Error())
 		}
 		return err
 	})
@@ -175,15 +198,19 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 	outcome := oauth.TryFetchUsageForAccount(backgroundCtx(), s.OAuth, accountNum, email, creds, false, persist)
 
 	mu.Lock()
-	skipped := persistSkipped
+	skipped := skipReason
 	mu.Unlock()
-	if skipped {
+	if skipped != "" {
 		// Never show usage for a credential we didn't keep — surface the expired
 		// state and let Claude Code settle it.
-		return usage.FetchRecord{Sentinel: jsonout.UsageTokenExpired}
+		return expiredSkip(skipped)
 	}
 	if outcome.Usage == nil && oauth.IsOAuthTokenExpired(oauthData["expiresAt"], s.Clk.Now()) {
-		return usage.FetchRecord{Sentinel: jsonout.UsageTokenExpired}
+		reason := "expired token could not be refreshed"
+		if outcome.Error != "" {
+			reason += ": " + outcome.Error
+		}
+		return expiredSkip(reason)
 	}
 	return recordFromOutcome(outcome)
 }
