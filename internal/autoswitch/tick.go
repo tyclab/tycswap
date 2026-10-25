@@ -67,8 +67,8 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		return NoAction, nil
 	}
 	cur := *current
-	loaded := activeMemoryOf(state, cur)
-	e.unhealthyTicks, e.idleHoldSince = loaded.UnhealthyTicks, loaded.IdleHoldSince
+	loaded := e.memoryFor(state, cur)
+	e.memorySlot, e.unhealthyTicks, e.idleHoldSince = cur, loaded.UnhealthyTicks, loaded.IdleHoldSince
 	currentEmail := e.sw.AccountEmail(cur)
 	activeRef := refOf(cur, currentEmail)
 

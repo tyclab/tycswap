@@ -61,6 +61,7 @@ type Engine struct {
 	idleHoldSlow    bool
 	modelCheckDone  bool
 	// The tick's working copy of the state file's active memory, loaded every tick (DESIGN A66).
+	memorySlot     string
 	unhealthyTicks int
 	idleHoldSince  *float64
 }

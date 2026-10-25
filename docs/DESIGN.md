@@ -6152,8 +6152,8 @@ null}`. The key is additive; `schemaVersion` stays 1.
 
 - **Read:** at tick start, lock-free like the rest of the file. Anything but
   an object whose `number` is the live slot's, as a string, is no memory. A
-  count that is not a non-negative number reads as zero, and an idle-hold
-  stamp in the future restarts the hold.
+  count that is not a number from 0 to 2147483647 (`math.MaxInt32`) reads as
+  zero, and an idle-hold stamp in the future restarts the hold.
 - **Written:** when the active account's usage is unknown, as a
   read-modify-write under the state lock, before the `no-switch` event, so its
   `n/3` is the persisted count and two engines ticking at once each add their
@@ -6163,7 +6163,12 @@ null}`. The key is additive; `schemaVersion` stays 1.
   switch path's lock mutation that records `lastSwitchAt`, so a new active
   account starts at zero.
 - **Dry run:** reads the memory, so it reports the real count and reaches the
-  failover decision a real run would, but never writes it.
+  failover decision a real run would, but never writes it. A long-running dry
+  run (`auto --dry-run`, the TUI's) keeps its own copy in memory: while the
+  live slot is the one it last ticked on, each tick steps from the higher of
+  the persisted count and its own, and the hold stamp stays in memory. It
+  therefore counts on to a would-be failover, and its idle hold expires, as a
+  real loop's would.
 
 Loop mode uses the same object and reloads it every tick, so an engine
 restarted mid-outage continues counting. `idleHoldSlow`, `blockedWaitLong`,

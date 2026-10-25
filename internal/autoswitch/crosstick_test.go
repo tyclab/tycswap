@@ -231,3 +231,72 @@ func TestFutureIdleHoldRestartsNow(t *testing.T) {
 	out, rec = tickOnce(t, f, clk, statePath, false)
 	wantNoSwitch(t, out, rec, "active-usage-unknown", "1/3 before failover")
 }
+
+func wantDryFailover(t *testing.T, out TickOutcome, rec *recorder) {
+	t.Helper()
+	if out != Switched {
+		t.Fatalf("outcome = %v, want Switched (kinds=%v)", out, rec.kinds())
+	}
+	sw, ok := rec.last("switch").(SwitchEvent)
+	if !ok || !sw.DryRun || sw.Trigger != "failover" {
+		t.Fatalf("switch event = %+v, want a dry-run failover", rec.last("switch"))
+	}
+}
+
+func TestLoopDryRunCountsInMemory(t *testing.T) {
+	clk := newClk()
+	f := unknownActive(clk)
+	statePath := sharedStatePath(t)
+	rec := &recorder{}
+	e := onceEngine(t, f, rec, clk, statePath, true)
+	for _, want := range []string{"1/3 before failover", "2/3 before failover"} {
+		rec.reset()
+		wantNoSwitch(t, e.Tick(), rec, "active-usage-unknown", want)
+		clk.Advance(2 * time.Minute)
+	}
+	for i := 3; i <= 4; i++ {
+		rec.reset()
+		wantDryFailover(t, e.Tick(), rec)
+		clk.Advance(2 * time.Minute)
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Errorf("dry run created the state file (stat err %v)", err)
+	}
+	if deref(f.current) != "1" {
+		t.Errorf("dry run switched to %q", deref(f.current))
+	}
+}
+
+func TestLoopDryRunIdleHoldExpires(t *testing.T) {
+	clk := newClk()
+	f := twoAccounts(clk, sentinelEntry(jsonout.UsageTokenExpired), dictEntry(usageOf(10, 0)))
+	f.liveSessions["1"] = []int{1}
+	statePath := sharedStatePath(t)
+	rec := &recorder{}
+	e := onceEngine(t, f, rec, clk, statePath, true)
+	wantNoSwitch(t, e.Tick(), rec, "active-idle", "")
+
+	clk.Set(baseTime.Add(time.Duration(IdleHoldMaxS+1) * time.Second))
+	rec.reset()
+	wantNoSwitch(t, e.Tick(), rec, "active-usage-unknown", "1/3 before failover")
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Errorf("dry run created the state file (stat err %v)", err)
+	}
+}
+
+func TestLoopDryRunFollowsHigherPersistedCount(t *testing.T) {
+	clk := newClk()
+	f := unknownActive(clk)
+	statePath := sharedStatePath(t)
+	rec := &recorder{}
+	dry := onceEngine(t, f, rec, clk, statePath, true)
+	wantNoSwitch(t, dry.Tick(), rec, "active-usage-unknown", "1/3 before failover")
+	tickOnce(t, f, clk, statePath, false)
+	tickOnce(t, f, clk, statePath, false)
+
+	rec.reset()
+	wantDryFailover(t, dry.Tick(), rec)
+	if got := activeMemoryOf(readStateFile(statePath), "1").UnhealthyTicks; got != 2 {
+		t.Errorf("persisted count = %d, want 2", got)
+	}
+}
