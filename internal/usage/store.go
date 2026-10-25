@@ -258,10 +258,10 @@ func (s *Store) Reserve(nums []string, ids map[string]Identity, respectPlans boo
 }
 
 // Record merges fetch outcomes (04§2.5). Success and failure are mutually
-// exclusive writers: success resets the failure fields and the skip reason,
-// failure never touches lastGood/fetchedAt (stale-on-error). A skip writes only
-// skipReason/skipAt, and only when the reason changed, so skipAt reads "skipped
-// since"; a sentinel without a reason is a no-op.
+// exclusive writers: success resets the failure fields, failure never touches
+// lastGood/fetchedAt (stale-on-error), and either clears the skip reason. A skip
+// writes only skipReason/skipAt, and only when the reason changed, so skipAt
+// reads "skipped since"; a sentinel without a reason is a no-op.
 func (s *Store) Record(outcomes map[string]FetchRecord, ids map[string]Identity) error {
 	effective := make(map[string]FetchRecord, len(outcomes))
 	for n, r := range outcomes {
@@ -288,9 +288,9 @@ func (s *Store) Record(outcomes map[string]FetchRecord, ids map[string]Identity)
 			return true
 		}
 		row["lastAttemptAt"] = now
+		delete(row, "skipReason")
+		delete(row, "skipAt")
 		if rec.Error == "" {
-			delete(row, "skipReason")
-			delete(row, "skipAt")
 			row["lastGood"] = rec.Usage
 			row["fetchedAt"] = now
 			row["consecutiveFailures"] = 0

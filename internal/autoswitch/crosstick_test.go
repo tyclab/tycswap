@@ -322,3 +322,11 @@ func TestUnknownDetailCarriesSkipReason(t *testing.T) {
 	out, rec = tickOnce(t, f, clk, statePath, false)
 	wantNoSwitch(t, out, rec, "active-usage-unknown", "1/3 before failover · "+owned)
 }
+
+func TestUnknownDetailIgnoresOtherAccountsSkipReason(t *testing.T) {
+	cand := dictEntry(usageOf(10, 0))
+	cand.SkipReason = "live credential does not match slot 2's backup; refresh skipped"
+	clk := newClk()
+	out, rec := tickOnce(t, twoAccounts(clk, nilEntry(), cand), clk, sharedStatePath(t), false)
+	wantNoSwitch(t, out, rec, "active-usage-unknown", "1/3 before failover")
+}

@@ -6174,3 +6174,52 @@ Loop mode uses the same object and reloads it every tick, so an engine
 restarted mid-outage continues counting. `idleHoldSlow`, `blockedWaitLong`,
 `sleepUntilTS` and `modelCheckDone` stay in memory: they only shape the next
 sleep or a one-time warning.
+
+## A67. A skipped usage fetch says why
+
+When the active account's usage was not fetched, nothing recorded why: the
+engine reported the account's usage as unknown for hours and no surface named
+a cause. Every path in the active account's usage collection that returns
+without a network request, and every path that discards a refresh result, now
+writes a reason into the account's row in `cache/usage.json`. The row is read
+by every process, so a reason recorded by the engine is the one the app and
+`list --json` show.
+
+The row gains `skipReason` (a sentence for humans, not a code) and `skipAt`
+(epoch seconds). A skip writes them only when the reason changed, so `skipAt`
+reads "skipped since" and an unchanged skip rewrites nothing.
+The reasons:
+
+- `owner holds an expired token; Claude Code refreshes it on next use`
+- `live credential does not match slot N's backup; refresh skipped`
+- `refresh discarded: an owner appeared mid-refresh`
+- `refresh discarded: live credential changed mid-refresh`
+- `refresh discarded: <error>` when persisting the refreshed credential failed
+  under the lock
+- `no credential in the live store`
+- `credential owner unknown: <detail>`
+- `expired token could not be refreshed` or `expired token could not be
+  refreshed: <error>`
+- the existing sentinel text, `keychain unavailable` or `re-login needed`, when
+  the Keychain cannot be read or the token is quarantined as dead
+
+Only the active account's skips are recorded; an inactive slot's skip stays
+unrecorded. Any attempted fetch, successful or failed, removes both keys:
+`skipReason` says why no request was made and `lastError` says why a request
+failed, so the two never describe the same moment.
+
+The log records each change, never every tick: a WARNING `Usage for account N
+not fetched: <reason>` when a reason is set or changes, and an INFO `Usage for
+account N fetches again` when an attempt clears one.
+
+The surfaces, all additive:
+
+- `list --json` and `/api/state` account rows carry `usageRefresh.skipReason`
+  and `usageRefresh.skipAt` (ISO-8601 UTC), each only when set.
+- The tray's account details line reads `Usage: <status> · <reason>`; it is
+  still shown only when the status is not `ok`.
+- The dashboard's usage chip shows the reason in place of its generic
+  expired-login or sign-in text, and its tooltip starts with the full reason.
+- The engine's `no-switch` details under `active-usage-unknown` and
+  `active-idle` end in ` · <reason>` while the active account's row carries
+  one, for example `1/3 before failover · owner holds an expired token; …`.

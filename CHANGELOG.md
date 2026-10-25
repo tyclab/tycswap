@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Fixed:** when the active account's usage is not fetched, the tray, dashboard, `list --json` and the engine's events say why, and the log records each change of reason.
 - **Fixed:** `auto --once` counts failover ticks and the idle hold across runs, so a timer-driven engine fails over instead of reporting 1/3 forever.
 
 - **Added:** guided session-group management and Claude/Codex import/export in the shared zsh menu, accessible through **Interactive menu…** in the web dashboard and tray.

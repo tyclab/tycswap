@@ -202,7 +202,7 @@ func recordUsage(s *store.Store, records map[string]usage.FetchRecord, before ma
 		prev := before[num].SkipReason
 		if rec.SkipReason != "" && rec.SkipReason != prev {
 			s.Log.Warningf("Usage for account %s not fetched: %s", num, rec.SkipReason)
-		} else if prev != "" && rec.SkipReason == "" && rec.Sentinel == "" && rec.Error == "" {
+		} else if prev != "" && rec.SkipReason == "" && rec.Sentinel == "" {
 			s.Log.Infof("Usage for account %s fetches again", num)
 		}
 	}

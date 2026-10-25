@@ -269,6 +269,30 @@ func TestCollectSkipReason_RecordedLoggedOnceAndCleared(t *testing.T) {
 	}
 }
 
+func TestCollectSkipReason_FailedFetchClearsAndLogs(t *testing.T) {
+	failing := &oauth.FakeClient{UsageFn: func(_ context.Context, _ string) (map[string]any, error) {
+		return nil, &oauth.HTTPError{Code: 500}
+	}}
+	s := newStore(t, nil, failing)
+	makeLiveSession(t, s, "1", skipEmail)
+	CollectUsageEntries(s, []AccountInfo{{Number: 1, Email: skipEmail, IsActive: true, Creds: expiredByClock(s)}}, nil)
+	if err := os.RemoveAll(sessprofile.SessionDirFor(s.BackupDir(), "1", skipEmail)); err != nil {
+		t.Fatal(err)
+	}
+	valid := oauthCreds("at", "rt", 0)
+	if err := s.Creds.WriteBackup("1", skipEmail, valid); err != nil {
+		t.Fatal(err)
+	}
+	CollectUsageEntries(s, []AccountInfo{{Number: 1, Email: skipEmail, IsActive: true, Creds: valid}}, nil)
+	row := usageRow(t, s, "1")
+	if _, present := row["skipReason"]; present || row["lastError"] == nil {
+		t.Errorf("a failed attempt must replace the skip reason with its error, row = %v", row)
+	}
+	if n := logCount(t, s, logging.LevelInfo, "Usage for account 1 fetches again"); n != 1 {
+		t.Errorf("fetches-again logged %d times after a failed attempt, want 1", n)
+	}
+}
+
 func TestCollectSkipReason_ChangedReasonWarnsAgain(t *testing.T) {
 	calls := 0
 	s := newStore(t, nil, recordingUsage(&calls, nil))

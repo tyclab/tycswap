@@ -194,7 +194,7 @@ Present only when applicable (additive, schemaVersion 1):
 | `limitingWindows` | array of string | Emitted with `atLimit`; the windows at/over limit, in relevant-window order. |
 | `usageFetchedAt` | string (ISO-8601 UTC) | `usage` is non-null and the measurement time is known. |
 | `usageAgeSeconds` | number | Emitted with `usageFetchedAt`. |
-| `usageRefresh` | object | The account's last usage fetch was skipped: `skipReason` (string) says why, for example `owner holds an expired token; Claude Code refreshes it on next use`, and `skipAt` (string, ISO-8601 UTC, seconds) since when. The next successful fetch removes both. |
+| `usageRefresh` | object | A usage fetch was skipped and none has been attempted since: `skipReason` (string) says why, for example `owner holds an expired token; Claude Code refreshes it on next use`, and `skipAt` (string, ISO-8601 UTC, seconds) since when. The next attempted fetch, successful or failed, removes both. |
 
 The `usageStatus` enumeration:
 

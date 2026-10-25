@@ -1136,7 +1136,9 @@
     var refresh = a.usageRefresh || {};
     var parts = [];
     if (a.usageFetchedAt) { parts.push('Usage checked ' + new Date(a.usageFetchedAt).toLocaleTimeString()); }
-    if (a.usageStatus === 'relogin_required' || refresh.error === 'invalid_grant') {
+    if (refresh.skipReason) {
+      parts.push(refresh.skipReason);
+    } else if (a.usageStatus === 'relogin_required' || refresh.error === 'invalid_grant') {
       parts.push('Sign in again to restore usage');
     } else if (a.usageStatus === 'token_expired') {
       parts.push('Waiting for Claude to refresh its login');
@@ -1148,7 +1150,8 @@
       parts.push('next attempt ' + new Date(refresh.nextAt).toLocaleTimeString());
     }
     if (!parts.length) { return null; }
-    return el('span', { class: refresh.error ? 'chip chip-warn' : 'org', text: parts.join(' · '), title: 'Usage is cached between requests. Reloading the page respects the polling schedule and retry delay.' });
+    var tip = 'Usage is cached between requests. Reloading the page respects the polling schedule and retry delay.';
+    return el('span', { class: refresh.error ? 'chip chip-warn' : 'org', text: parts.join(' · '), title: refresh.skipReason ? refresh.skipReason + '. ' + tip : tip });
   }
 
   function menuButton(label, attrs) {

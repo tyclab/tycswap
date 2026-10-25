@@ -511,12 +511,6 @@ func TestRecordSuccessClearsSkipReason(t *testing.T) {
 	if err := s.Record(map[string]FetchRecord{"5": {Sentinel: "token expired", SkipReason: ownerExpired}}, ids); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Record(map[string]FetchRecord{"5": {Error: "timeout"}}, ids); err != nil {
-		t.Fatal(err)
-	}
-	if e := s.Entries(ids)["5"]; e.SkipReason != ownerExpired || e.SkipAt == nil {
-		t.Errorf("a failed fetch must keep the skip reason, got %q/%v", e.SkipReason, ptrVal(e.SkipAt))
-	}
 	if err := s.Record(map[string]FetchRecord{"5": {Usage: map[string]any{"five_hour": map[string]any{"pct": 3.0}}}}, ids); err != nil {
 		t.Fatal(err)
 	}
@@ -525,6 +519,26 @@ func TestRecordSuccessClearsSkipReason(t *testing.T) {
 		if _, present := row[key]; present {
 			t.Errorf("a success must delete %s, row = %v", key, row)
 		}
+	}
+}
+
+func TestRecordFailureClearsSkipReason(t *testing.T) {
+	ids := map[string]Identity{"5": {Email: "e@x.com"}}
+	s, dir := storeAt(t, 1000)
+	if err := s.Record(map[string]FetchRecord{"5": {Sentinel: "token expired", SkipReason: ownerExpired}}, ids); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Record(map[string]FetchRecord{"5": {Error: "timeout"}}, ids); err != nil {
+		t.Fatal(err)
+	}
+	row := readRow(t, dir, "5")
+	for _, key := range []string{"skipReason", "skipAt"} {
+		if _, present := row[key]; present {
+			t.Errorf("an attempted fetch that failed must delete %s, row = %v", key, row)
+		}
+	}
+	if row["lastError"] != "timeout" || row["consecutiveFailures"] != 1.0 {
+		t.Errorf("the failure itself was not recorded, row = %v", row)
 	}
 }
 
