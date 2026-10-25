@@ -129,8 +129,11 @@ func (s *Store) ClearDefaultForGroup(journal *groups.Journal) error {
 	if config == nil {
 		config = map[string]any{}
 	}
-	email, org, ok := ccfile.ReadOAuthIdentityFrom(s.DefaultConfigPath())
-	if ok && (email != journal.Target.Email || org != journal.Target.OrgUUID) {
+	moved, err := s.defaultMovedFrom(journal)
+	if err != nil {
+		return err
+	}
+	if moved {
 		return fmt.Errorf("the default login changed during group handoff; both credential claims remain held")
 	}
 	current, err := s.ReadDefaultCredentials()
@@ -156,8 +159,11 @@ func (s *Store) restoreDefaultHandoff(journal *groups.Journal) error {
 	if err != nil || len(pids) > 0 {
 		return fmt.Errorf("default Claude sessions are running; account claims remain held until handoff recovery can be verified")
 	}
-	email, org, ok := ccfile.ReadOAuthIdentityFrom(s.DefaultConfigPath())
-	if ok && (email != journal.Target.Email || org != journal.Target.OrgUUID) {
+	moved, err := s.defaultMovedFrom(journal)
+	if err != nil {
+		return err
+	}
+	if moved {
 		return fmt.Errorf("default identity changed; account claims remain held")
 	}
 	current, err := s.ReadDefaultCredentials()
@@ -171,6 +177,22 @@ func (s *Store) restoreDefaultHandoff(journal *groups.Journal) error {
 		return err
 	}
 	return restoreDefaultConfig(s.DefaultConfigPath(), journal.DefaultConfig)
+}
+
+// defaultMovedFrom: the default config names a login that, read with the
+// credential the handoff took, is not the target's (DESIGN A68). A config
+// without an identity has moved nowhere.
+func (s *Store) defaultMovedFrom(journal *groups.Journal) (bool, error) {
+	email, org, ok := ccfile.ReadOAuthIdentityFrom(s.DefaultConfigPath())
+	if !ok {
+		return false, nil
+	}
+	data, err := s.classifiedRoster()
+	if err != nil {
+		return false, err
+	}
+	creds := journal.DefaultCredential.Text
+	return s.liveSlotFor(data, email, org, func() string { return creds }).Slot != journal.Target.Number, nil
 }
 
 func writeDefaultConfig(path string, value any) error {

@@ -6290,9 +6290,18 @@ line, because nothing switched. The repair passes the ordinary ownership gate,
 because the default login's claim on Y is certain. A group or session profile
 that claims Y as well still refuses it, as conflicting owners.
 
+The default-to-group handoff follows the same rule. Committing or rolling back
+a handoff checks that the default config, read with the credential the handoff
+took, still resolves to the target slot. It used to compare the config identity
+with the target. Under a mismatch, a group can take Y from the default login:
+the default credential and identity are cleared, and the group's claim becomes
+certain. A rollback puts the default login back as it was, mismatch included.
+Before, both the commit and the rollback refused, which left the journal and an
+uncertain group claim behind. A group switch onto X is a plain switch from X's
+stored backup, because the default login does not hold X: no default handoff
+takes place, and the default login is left untouched.
+
 Unchanged on purpose: an unmanaged config identity resolves to no slot, so
 the unclaimed-credential and displaced-login capture keep working as before.
-The default-to-group handoff still compares the config identity with its
-target, so under a mismatch it refuses to hand Y over. The
-repair does not stop a running Claude Code from writing the old identity back.
-The next resolve warns again only in a new process.
+The repair does not stop a running Claude Code from writing the old identity
+back. The next resolve warns again only in a new process.

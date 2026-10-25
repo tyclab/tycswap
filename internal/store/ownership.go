@@ -320,11 +320,17 @@ func (s *Store) ReadOwnedCredentialsLocked(number, email string) (string, error)
 	}
 	if owner.Scope == "default" {
 		value, err := s.ReadDefaultCredentials()
-		data, rosterErr := s.classifiedRoster()
-		if rosterErr != nil || s.defaultLiveSlot(data, value).Slot != number {
+		if err != nil {
+			return "", err
+		}
+		data, err := s.classifiedRoster()
+		if err != nil {
+			return "", err
+		}
+		if s.defaultLiveSlot(data, value).Slot != number {
 			return "", fmt.Errorf("default account identity changed while reading its credential")
 		}
-		return value, err
+		return value, nil
 	}
 	value, ok, err := s.ReadProfileCredentials(owner.ProfileDir)
 	if err != nil {

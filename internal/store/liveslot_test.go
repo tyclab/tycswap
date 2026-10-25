@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/groups"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/storenames"
 )
 
@@ -292,5 +294,35 @@ func TestCredentialOwnerFollowsTheCredential(t *testing.T) {
 	}
 	if got, err := s.ReadOwnedCredentials("5", lineageEmail); err != nil || got != lineageCreds("at-5", "rt-5") {
 		t.Errorf("ReadOwnedCredentials(5) = %q, %v; want the live credential", got, err)
+	}
+}
+
+// lockingKeychain answers the default login's item once, then fails as a
+// Keychain locked between two reads would.
+type lockingKeychain struct {
+	keychain.KeychainClient
+	service string
+	reads   int
+}
+
+func (k *lockingKeychain) Get(service, account string) (string, bool, error) {
+	if service == k.service {
+		if k.reads++; k.reads > 1 {
+			return "", false, &keychain.KeychainError{Msg: "keychain locked"}
+		}
+	}
+	return k.KeychainClient.Get(service, account)
+}
+
+// A failed read of the default credential surfaces as itself, not as a
+// changed identity, even while the config names another slot.
+func TestReadOwnedCredentialsReportsTheReadError(t *testing.T) {
+	s := lineageFixture(t, "")
+	s.Platform = platform.MacOS
+	fake := keychain.NewFake()
+	fake.Seed(s.DefaultKeychainService(), keychain.AccountName(), lineageCreds("at-5", "rt-5"))
+	s.kc = &lockingKeychain{KeychainClient: fake, service: s.DefaultKeychainService()}
+	if _, err := s.ReadOwnedCredentials("5", lineageEmail); err == nil || err.Error() != "keychain locked" {
+		t.Fatalf("ReadOwnedCredentials(5) error = %v, want the Keychain's", err)
 	}
 }

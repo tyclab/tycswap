@@ -531,8 +531,12 @@ A `<ref>` is `{"number": <int|null>, "email": "<string>"}`. `switched` is
 (with `--force`), `config-repaired`, `unmanaged-account`, `only-one-account`,
 `candidates-exhausted`, `no-valid-target`, `usage-unavailable`, or
 `already-best`. `config-repaired` means the live credential already belonged to
-the target but `~/.claude.json` named another slot of the same login; only the
-config was rewritten, and `from` and `to` are both the target (DESIGN A68). A bare `switch --strategy` with
+the target but `~/.claude.json` named another slot of the same login. The live
+credential and Claude Code's `settings.json` are left alone. The target's
+identity is written into `~/.claude.json` and into the target's stored config.
+The target's stored credential is refreshed from the live one when only its
+access token has rotated, and `activeAccountNumber` becomes the target. `from`
+and `to` are both the target (DESIGN A68). A bare `switch --strategy` with
 `--model` additionally emits `models` (array of string) and `modelSource`
 (`cli` or `autoswitch.model`).
 
