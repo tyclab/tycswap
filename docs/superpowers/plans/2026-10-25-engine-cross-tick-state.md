@@ -230,3 +230,56 @@ func TestResolveLiveSlotWarnsOncePerPair(t *testing.T)
 - [ ] **Step 4: Run** `go test ./...`, `go vet ./...`, `GOOS=windows go vet ./...`, `GOOS=darwin CGO_ENABLED=0 go vet ./...`, `make fmt` — all clean.
 - [ ] **Step 5: Docs** as listed.
 - [ ] **Step 6: Commit** `fix(switch): repair the live config when the credential belongs to the target slot`.
+### Task 7: The engine owns no memory between ticks
+
+**Replaces the approach of Task 1 (commits effd937, e3a188f).** Task 1 moved two counters into the state file but left the engine with in-memory copies for loop mode and a dry-run "overlay" to reconcile them. The foundation is simpler: a tick is a function of the store on disk plus the clock; the state file is the only memory; loop mode, `--once`, the app's hosted engine and dry run are all the same tick.
+
+**Files:**
+- Modify: `internal/autoswitch/engine.go` (remove the cross-tick fields `unhealthyTicks`, `idleHoldSince`, `memorySlot`, `modelCheckDone`, and the per-tick output fields `sleepUntilTS`, `blockedWaitLong`, `idleHoldSlow`)
+- Modify: `internal/autoswitch/tick.go` (tick returns its outputs; no field writes; the unknown-usage branch reads, steps and persists through the state file only)
+- Modify: `internal/autoswitch/state.go` (delete `memoryFor`; `saveActiveMemory` in dry run steps the fresh read and returns it without writing; add `modelNamesChecked` persistence)
+- Modify: `internal/autoswitch/loop.go` (`RunLoop` consumes the tick result; `nextDelay(result)`)
+- Modify: `internal/autoswitch/models.go` (no `modelCheckDone`)
+- Test: `internal/autoswitch/crosstick_test.go` (rewrite the dry-run tests to the new rule; add the loop-restart and model-warning tests), `engine_test.go`/`extras_test.go` only where they touch removed fields
+- Docs: `docs/DESIGN.md` A66 rewritten to the new rule; `CHANGELOG.md` line for Part 1 reworded; `docs/reference.md` state-file description checked.
+
+**Interfaces:**
+- Produces: `type tickResult struct { Outcome TickOutcome; SleepUntil *float64; WaitLong bool; IdleSlow bool }`; `func (e *Engine) tick() tickResult` (internal); `Tick() TickOutcome` keeps its signature for `auto --once` and tests and wraps `tick()`; `func (e *Engine) nextDelay(r tickResult) float64`.
+- State file keys (all optional, malformed reads as absent): `active` as in Task 1; `modelNamesChecked` (string: the comma-joined lower-cased models list the name check last warned or verified for). The model-name warning is emitted when the check completes and the stored value differs from the current list; the value is then written (non-dry). A dry run never writes it.
+- Dry-run rule, exact: a dry run reads the state file and reports the decision a real tick would make now, including the count it would reach (persisted count + 1); it writes nothing and keeps nothing; it does not simulate a sequence of ticks. Two consecutive dry ticks over an unchanged file report the same count. This replaces the overlay.
+- `countUnknownTick` stays a pure function; `saveActiveMemory(number, step)` keeps the locked read-modify-write for real ticks.
+
+- [ ] **Step 1: Rewrite/add failing tests** in `crosstick_test.go`:
+
+```go
+func TestLoopEngineRestartContinuesCount(t *testing.T)
+// a loop-mode engine (build with the blockingSleeper) ticks twice with unknown
+// usage (1/3, 2/3), is stopped; a second engine over the same file ticks once
+// → failover switch.
+func TestDryRunReportsWhatARealTickWouldDo(t *testing.T)
+// file holds count 2 for the active slot; a dry tick emits the would-failover
+// decision; the file is byte-identical; a second dry tick emits the same.
+func TestDryRunOverUnchangedFileRepeatsCount(t *testing.T)
+// no file; two dry ticks both report "1/3 before failover"; no file created.
+func TestModelNameWarningOncePerStore(t *testing.T)
+// settings model "Fable"; usage reports no Fable window; engine A ticks →
+// one model-names warning event and modelNamesChecked written; engine B
+// (fresh process, same file) ticks → no warning; change the models to
+// "Opus" → warning again.
+func TestTickResultDrivesNextDelay(t *testing.T)
+// a Blocked tick with a known reset returns SleepUntil; nextDelay(result)
+// clamps as before (port the existing nextDelay assertions if any exist).
+```
+Delete `TestLoopDryRunCountsInMemory`, `TestLoopDryRunIdleHoldExpires`, `TestLoopDryRunFollowsHigherPersistedCount` (they pin the overlay). Keep every other Task 1 test; they must pass unchanged.
+
+- [ ] **Step 2: Run** `go test ./internal/autoswitch/ -run 'LoopEngineRestart|DryRunReports|DryRunOver|ModelNameWarningOnce|TickResult' -v` — expected: FAIL.
+
+- [ ] **Step 3: Implement.** Remove the seven fields; thread `tickResult` through `tickInner` (return it alongside the error), `perform`, `selectCandidates` (return the blocked result instead of setting fields); `RunLoop` calls `tick()`; `nextDelay` takes the result. `checkModelNames` takes the state map, compares `modelNamesChecked`, emits and (non-dry) writes via `mutateState`. Delete `memoryFor` and the overlay branch; `saveActiveMemory` in dry run: `m := activeMemoryOf(e.readState(), number); step(&m); return m, nil`.
+
+- [ ] **Step 4: Run** `go test ./internal/autoswitch/ ./internal/cli/ ./internal/tui/...` then the full suite and the three vets and `make fmt` — all clean; `grep -n 'unhealthyTicks\|idleHoldSince\|memorySlot\|modelCheckDone\|sleepUntilTS\|blockedWaitLong\|idleHoldSlow' internal/autoswitch/*.go` returns nothing outside `_test.go` and `tickResult`/`activeMemory` field names.
+
+- [ ] **Step 5: Docs.** DESIGN A66: rewrite to "the engine keeps nothing between ticks; the state file is the only memory; what it holds (active, modelNamesChecked); the dry-run rule; why (timer deployments, app restarts, one tick function for every mode)". CHANGELOG Part 1 line becomes: "**Fixed:** the auto-switch engine keeps nothing between ticks: failover counting, the idle hold and the model-name check live in the state file, so `auto --once` under a timer, the loop and the app's hosted engine behave the same and survive restarts." reference.md: confirm its two state-file sentences still hold.
+
+- [ ] **Step 6: Commit** `refactor(autoswitch): the engine keeps nothing between ticks`.
+
+---
