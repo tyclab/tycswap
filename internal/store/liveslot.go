@@ -17,7 +17,7 @@ type LiveSlot struct {
 // lineageWarned is shared by a Store and its scoped clones, so one process warns once per pair.
 type lineageWarned struct {
 	mu   sync.Mutex
-	last [2]string
+	seen map[[2]string]bool
 }
 
 // ResolveLiveSlot maps the live login to a slot. A running Claude Code
@@ -69,7 +69,7 @@ func (s *Store) holdsLineage(data *SequenceData, num, live string) bool {
 	if err != nil || backup == "" {
 		return false
 	}
-	return *oauth.CredentialFingerprint(backup) == *oauth.CredentialFingerprint(live) || oauth.SameAccountBlock(live, backup)
+	return fingerprintsEqual(backup, live) || oauth.SameAccountBlock(live, backup)
 }
 
 func (s *Store) warnLineage(ls LiveSlot, email, orgUUID string) {
@@ -80,10 +80,13 @@ func (s *Store) warnLineage(ls LiveSlot, email, orgUUID string) {
 		w.mu.Lock()
 		defer w.mu.Unlock()
 		pair := [2]string{ls.ConfigSlot, ls.Slot}
-		if w.last == pair {
+		if w.seen[pair] {
 			return
 		}
-		w.last = pair
+		if w.seen == nil {
+			w.seen = map[[2]string]bool{}
+		}
+		w.seen[pair] = true
 	}
 	s.Log.Warningf("live config names slot %s (%s, %s) but the live credential is slot %s's; using %s. A running Claude Code rewrote ~/.claude.json",
 		ls.ConfigSlot, email, orgUUID, ls.Slot, ls.Slot)

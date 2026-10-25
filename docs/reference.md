@@ -508,7 +508,8 @@ backup root. Acquires the backup-root and Claude Code credential locks.
 ### Output
 
 Human output is `Switched to Account-<n> (<email>)` (or `Already on ...`), then
-a refreshed account list and the post-switch note. With `--json`:
+a refreshed account list and the post-switch note. A config repair prints
+`Repaired the live config for Account-<n> (<email>)` alone. With `--json`:
 
 ```
 {
@@ -524,11 +525,14 @@ a refreshed account list and the post-switch note. With `--json`:
 ```
 
 A `<ref>` is `{"number": <int|null>, "email": "<string>"}`. `switched` is
-`true` when `from` and `to` differ. `strategy` is `direct` for a named target,
-`rotation` for a bare rotate, or `best` / `next-available`. `reason` is one of
-`switched`, `already-active`, `activated` (with `--force`), `unmanaged-account`,
-`only-one-account`, `candidates-exhausted`, `no-valid-target`,
-`usage-unavailable`, or `already-best`. A bare `switch --strategy` with
+`true` when `from` and `to` differ, and for a config repair. `strategy` is
+`direct` for a named target, `rotation` for a bare rotate, or `best` /
+`next-available`. `reason` is one of `switched`, `already-active`, `activated`
+(with `--force`), `config-repaired`, `unmanaged-account`, `only-one-account`,
+`candidates-exhausted`, `no-valid-target`, `usage-unavailable`, or
+`already-best`. `config-repaired` means the live credential already belonged to
+the target but `~/.claude.json` named another slot of the same login; only the
+config was rewritten, and `from` and `to` are both the target (DESIGN A68). A bare `switch --strategy` with
 `--model` additionally emits `models` (array of string) and `modelSource`
 (`cli` or `autoswitch.model`).
 

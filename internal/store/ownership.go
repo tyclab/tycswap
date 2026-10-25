@@ -224,9 +224,23 @@ func profilePIDs(dir string) ([]int, error) {
 func VerifyProfileState(dir string) error { _, err := profilePIDs(dir); return err }
 
 func (s *Store) EnsureAccountAvailable(number string) error {
+	return s.ensureAvailable(number, false)
+}
+
+// EnsureRepairAvailable gates a config repair (DESIGN A68): the default login
+// holds number's credential while ~/.claude.json names another slot, which
+// CredentialOwner reports as an uncertain default claim. Other owners refuse.
+func (s *Store) EnsureRepairAvailable(number string) error {
+	return s.ensureAvailable(number, true)
+}
+
+func (s *Store) ensureAvailable(number string, repair bool) error {
 	owner, err := s.CredentialOwner(number)
 	if err != nil {
 		return err
+	}
+	if repair && s.group == "" && owner.Scope == "default" {
+		return nil
 	}
 	scope := string(s.group)
 	if scope == "" {

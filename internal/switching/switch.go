@@ -268,9 +268,10 @@ func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, mod
 	}
 
 	// Self-switch guard (rotation anchored on a drifted active slot can land on
-	// the live slot).
+	// the live slot). A live slot found by its credential falls through to
+	// the config repair.
 	var prov *Provenance
-	if nextAccount == currentNum {
+	if nextAccount == currentNum && !live.ByLineage {
 		action, p := selfSwitchAction(s, nextAccount, email)
 		prov = p
 		if action != "reconcile" {

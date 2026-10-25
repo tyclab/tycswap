@@ -236,3 +236,36 @@ func TestResolveLiveSlotWarnsOncePerPair(t *testing.T) {
 		t.Fatalf("after a new pair: lineage warnings = %d, want 2", n)
 	}
 }
+
+func TestResolveLiveSlotWarnsOnceForAlternatingPairs(t *testing.T) {
+	s := lineageFixture(t, "")
+	writeSequenceRaw(t, s, threeSlotRoster)
+	if err := s.Creds.WriteBackup("7", lineageEmail, lineageCreds("at-7", "rt-7")); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		for _, org := range []string{"org-six", "org-seven"} {
+			writeLiveIdentity(t, s, lineageEmail, org)
+			if got := resolveLive(t, s); !got.ByLineage || got.Slot != "5" {
+				t.Fatalf("ResolveLiveSlot(%s) = %+v, want slot 5 by lineage", org, got)
+			}
+		}
+	}
+	if n := lineageWarnings(t, s); n != 2 {
+		t.Fatalf("after alternating pairs: lineage warnings = %d, want 2", n)
+	}
+}
+
+// Without a refresh token the fingerprint is the whole blob's hash, so a live
+// copy carrying the seat's MCP logins matches slot 5 by its account block only.
+func TestResolveLiveSlotMatchesByAccountBlockAlone(t *testing.T) {
+	s := lineageFixture(t, "")
+	backup := `{"claudeAiOauth":{"accessToken":"at-5","expiresAt":4102444800000}}`
+	if err := s.Creds.WriteBackup("5", lineageEmail, backup); err != nil {
+		t.Fatal(err)
+	}
+	writeLiveCreds(t, s, `{"claudeAiOauth":{"accessToken":"at-5","expiresAt":4102444800000},"mcpOAuth":{"srv":{"accessToken":"m"}}}`)
+	if got, want := resolveLive(t, s), (LiveSlot{Slot: "5", ConfigSlot: "6", ByLineage: true}); got != want {
+		t.Fatalf("ResolveLiveSlot = %+v, want %+v", got, want)
+	}
+}

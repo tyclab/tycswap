@@ -76,9 +76,14 @@ func SwitchTo(s *store.Store, identifier string, jsonOut, force bool) (any, erro
 	// A33).
 	approved := takeApproval(targetAccount)
 
-	// Already-active short-circuit (issue #79 / #117). --force skips it.
+	// Already-active short-circuit (issue #79 / #117). --force skips it, and so
+	// does a live slot found by its credential: its config needs the repair.
 	var prov *Provenance
-	if !force && data != nil && s.ResolveLiveSlot(data).Slot == targetAccount {
+	var live store.LiveSlot
+	if !force && data != nil {
+		live = s.ResolveLiveSlot(data)
+	}
+	if live.Slot == targetAccount && !live.ByLineage {
 		rec, _ := accountRec(data, targetAccount)
 		recEmail := recStr(rec, "email")
 		var action string

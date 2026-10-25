@@ -6223,3 +6223,63 @@ The surfaces, all additive:
 - The engine's `no-switch` details under `active-usage-unknown` and
   `active-idle` end in ` · <reason>` while the active account's row carries
   one, for example `1/3 before failover · owner holds an expired token; …`.
+
+## A68. The live slot follows the credential
+
+A running Claude Code rewrites `~/.claude.json` from memory. With two slots of
+one login in different organisations, a switch between them can leave the
+file naming the old organisation while the credential file holds the new
+slot's token, and every surface then showed the wrong account as live.
+
+`Store.ResolveLiveSlot` decides the live slot. It maps the config identity to
+slot X as before. When X is a managed OAuth slot and the live credential's
+lineage is held by exactly one other managed OAuth slot Y, the live slot is
+Y. A lineage is held when the slot's stored backup has the same refresh-token
+fingerprint as the live credential, or the same account block once the
+seat-wide keys are set aside. The config slot stays live when its own backup
+holds the lineage, when more than one other slot does (a copied backup is no
+evidence), when the credential or a backup cannot be read, and when either
+side is an API-key slot. A config identity that maps to no slot stays
+unmanaged whatever the credential is.
+
+Each time the resolver overrides the config it logs a WARNING: `live config
+names slot X (<email>, <org>) but the live credential is slot Y's; using Y. A
+running Claude Code rewrote ~/.claude.json`. A process logs it once per
+(X, Y) pair, however often it resolves or alternates between pairs.
+`CurrentAccountNumber`, `list`, `status`, the tray's active row, the engine,
+`switch`'s current slot and the switch-to already-active check all use the
+resolver.
+
+A normal switch backs up the resolved slot, not the config's. Taking the
+outgoing slot from the config hid the mismatch while destroying a backup: a
+switch onto X found a live credential that was not X's. When the profile
+endpoint could not say whose it was (no network, an expired live token, the
+bytes changing under the lock), the switch fell back to the pre-fix backup and
+wrote Y's credential into X's slot, then installed that copy. The live login
+stayed Y's, the config still named X, X's own credential survived only in
+`.prev`, and the result read `already-active`. Now the switch backs the live
+credential into Y, where it classifies as Y's own, and a switch onto X installs
+X's stored credential and identity. The config backed up for Y keeps Y's own
+`oauthAccount`, since the live config names X's. `switch --force` is
+unchanged: it activates the target directly, without backing up an outgoing
+slot.
+
+`switch Y` while the mismatch stands is a config repair. So is a rotation
+that lands on Y. Before, it reported "Already on" and left the config wrong.
+The repair runs the normal switch under the triple lock. Step 1 backs up Y as
+usual. The credential and Claude Code's `settings.json` are left alone, and
+Y's stored `oauthAccount` goes into `~/.claude.json`, which keeps every other
+key, and `activeAccountNumber` becomes Y. The human line is `Repaired the live
+config for Account-N (<email>)`. The JSON result is `switched: true`, `reason:
+config-repaired`, with `from` and `to` both Y. The log records `Repaired the
+live config for account Y (it named account X)` instead of the switch-history
+line, because nothing switched. While the config names X, the ownership check
+reads the default login's claim on Y as uncertain, so the repair's gate
+accepts that claim and nothing else. A group or session profile that claims Y
+as well still refuses it.
+
+Unchanged on purpose: an unmanaged config identity resolves to no slot, so
+the unclaimed-credential and displaced-login capture keep working as before.
+`switch --force Y` meets the ordinary ownership gate and is refused while the
+mismatch stands. The repair does not stop a running Claude Code from writing
+the old identity back. The next resolve warns again only in a new process.

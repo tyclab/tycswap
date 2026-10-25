@@ -77,15 +77,17 @@ func prefetchLiveIdentity(s *store.Store) *Provenance {
 	if live == "" {
 		return result
 	}
-	email, orgUUID, identOK := s.GetCurrentAccount()
+	email, _, identOK := s.GetCurrentAccount()
 	if !identOK {
 		return result
 	}
 	data, _ := s.ReadSequence()
-	slot := s.FindAccountSlot(data, email, orgUUID)
-	if slot == "" {
+	// A slot found by its lineage already proves the owner (DESIGN A68).
+	ls := s.ResolveLiveSlot(data)
+	if ls.Slot == "" || ls.ByLineage {
 		return result
 	}
+	slot := ls.Slot
 	backup, _ := s.ReadAccountCredentials(slot, email)
 	if sameAccountBytes(backup, live) || fingerprintEqual(backup, live) {
 		return result // provenance already established locally
