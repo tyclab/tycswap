@@ -8,21 +8,17 @@ import (
 )
 
 // BuildAccountsInfo builds the ordered per-account info rows (spec 02§13). Rows
-// follow sequence order. The active slot is found by the composite (email,
-// organizationUuid) identity of the live login; its credential and the
-// OAuth-Keychain-unavailable flag come from the active store, every other slot's
-// from its backup. Absence of a live login or a managed match leaves all rows
-// inactive.
+// follow sequence order. The active slot is the live login's slot
+// (store.ResolveLiveSlot); its credential and the OAuth-Keychain-unavailable
+// flag come from the active store, every other slot's from its backup. Absence
+// of a live login or a managed match leaves all rows inactive.
 func BuildAccountsInfo(s *store.Store) []AccountInfo {
 	data, _ := s.SequenceMigrated()
 	if data == nil {
 		return nil
 	}
 
-	var activeNum string
-	if email, org, ok := s.GetCurrentAccount(); ok {
-		activeNum = s.FindAccountSlot(data, email, org)
-	}
+	activeNum := s.ResolveLiveSlot(data).Slot
 
 	infos := make([]AccountInfo, 0, len(data.Sequence))
 	for _, n := range data.Sequence {

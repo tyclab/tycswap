@@ -283,20 +283,16 @@ func (s *Store) HasLiveLogin() bool {
 	return ok
 }
 
-// CurrentAccountNumber returns the managed slot of the live login, or nil when
-// there is no live login or it is unmanaged (spec: current_account_number —
-// deliberately no fallback to the recorded activeAccountNumber).
+// CurrentAccountNumber is ResolveLiveSlot's slot, or nil when there is no live
+// login or it is unmanaged (spec: current_account_number — deliberately no
+// fallback to the recorded activeAccountNumber).
 func (s *Store) CurrentAccountNumber() *string {
-	email, orgUUID, ok := s.GetCurrentAccount()
-	if !ok {
-		return nil
-	}
 	data, _ := s.ReadSequence()
-	slot := s.FindAccountSlot(data, email, orgUUID)
-	if slot == "" {
+	ls := s.ResolveLiveSlot(data)
+	if ls.Slot == "" {
 		return nil
 	}
-	return &slot
+	return &ls.Slot
 }
 
 // AccountKindFor returns "api_key" iff the slot's record carries kind ==
@@ -304,6 +300,10 @@ func (s *Store) CurrentAccountNumber() *string {
 // 01§8.5 _account_kind).
 func (s *Store) AccountKindFor(num string) string {
 	data, _ := s.ReadSequence()
+	return kindFrom(data, num)
+}
+
+func kindFrom(data *SequenceData, num string) string {
 	rec, ok := recordFor(data, num)
 	if ok && strField(rec, "kind") == "api_key" {
 		return "api_key"

@@ -54,7 +54,7 @@ func backfillLockError(s *store.Store) error {
 // active login → active null; live but unmanaged → active {email, managed:false};
 // managed → the full active object plus totalManagedAccounts.
 func buildStatusPayload(s *store.Store) map[string]any {
-	email, orgUUID, ok := s.GetCurrentAccount()
+	email, _, ok := s.GetCurrentAccount()
 	if !ok {
 		return map[string]any{"schemaVersion": jsonout.SchemaVersion, "active": nil}
 	}
@@ -62,12 +62,16 @@ func buildStatusPayload(s *store.Store) map[string]any {
 	if data == nil {
 		return unmanagedStatus(email)
 	}
-	accountNum := s.FindAccountSlot(data, email, orgUUID)
+	live := s.ResolveLiveSlot(data)
+	accountNum := live.Slot
 	if accountNum == "" {
 		return unmanagedStatus(email)
 	}
 
 	rec, _ := recordFor(data, accountNum)
+	if live.ByLineage {
+		email = recStr(rec, "email")
+	}
 	orgName := recStr(rec, "organizationName")
 	recOrgUUID := recStr(rec, "organizationUuid")
 	alias := recStr(rec, "alias")
@@ -136,7 +140,8 @@ func renderStatus(w io.Writer, s *store.Store) {
 		printEndpointOverride(w, s)
 		return
 	}
-	accountNum := s.FindAccountSlot(data, email, orgUUID)
+	live := s.ResolveLiveSlot(data)
+	accountNum := live.Slot
 	if accountNum == "" {
 		fmt.Fprintf(w, "%s %s %s\n", printer.Bolded("Status:"), shown, printer.Dimmed("(not managed)"))
 		printEndpointOverride(w, s)
@@ -144,6 +149,10 @@ func renderStatus(w io.Writer, s *store.Store) {
 	}
 
 	rec, _ := recordFor(data, accountNum)
+	if live.ByLineage {
+		email, orgUUID = recStr(rec, "email"), recStr(rec, "organizationUuid")
+		shown = termsafe.Strip(email)
+	}
 	tag := termsafe.Strip(displayTag(recStr(rec, "organizationName")))
 	total := len(data.Accounts)
 	baseURL := store.BaseURLFrom(data, accountNum)

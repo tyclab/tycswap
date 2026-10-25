@@ -113,7 +113,12 @@ func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, mod
 	}
 
 	activeAccount := data.ActiveAccountNumber
-	currentNum := s.FindAccountSlot(data, email, orgUUID)
+	live := s.ResolveLiveSlot(data)
+	currentNum := live.Slot
+	if live.ByLineage {
+		rec, _ := accountRec(data, currentNum)
+		email = recStr(rec, "email")
+	}
 	if currentNum == "" && activeAccount != nil {
 		currentNum = itoa(*activeAccount)
 	}
