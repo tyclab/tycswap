@@ -67,6 +67,9 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 	displayAfterLock := false
 
 	err := withTripleLock(s, func() error {
+		if err := s.EnsureAccountAvailable(targetAccount); err != nil {
+			return err
+		}
 		data, err := s.ReadSequence()
 		if err != nil {
 			return err
@@ -74,26 +77,6 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 		currentAccount := ""
 		if data.ActiveAccountNumber != nil {
 			currentAccount = itoa(*data.ActiveAccountNumber)
-		}
-		curEmail, curOrg, curOK := s.GetCurrentAccount()
-		if curOK {
-			currentAccount = s.FindAccountSlot(data, curEmail, curOrg)
-		}
-		// A normal switch backs up the slot whose credential is live, not the
-		// one a rewritten ~/.claude.json names (DESIGN A68).
-		configSlot := ""
-		if curOK && !forceActivate {
-			if live := s.ResolveLiveSlot(data); live.ByLineage {
-				rec, _ := accountRec(data, live.Slot)
-				configSlot, currentAccount, curEmail = currentAccount, live.Slot, recStr(rec, "email")
-			}
-		}
-		ensureAvailable := s.EnsureAccountAvailable
-		if repairsConfig(configSlot, currentAccount, targetAccount) {
-			ensureAvailable = s.EnsureRepairAvailable
-		}
-		if err := ensureAvailable(targetAccount); err != nil {
-			return err
 		}
 		tRec, ok := accountRec(data, targetAccount)
 		if !ok {
@@ -103,8 +86,24 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 		targetOrg = recStr(tRec, "organizationUuid")
 		toRef := numRef(targetAccount, targetEmail)
 
+		curEmail, curOrg, curOK := s.GetCurrentAccount()
+		if curOK {
+			currentAccount = s.FindAccountSlot(data, curEmail, curOrg)
+		}
+		// A switch backs up the slot whose credential is live, not the one a
+		// rewritten ~/.claude.json names; --force keeps the config's slot
+		// unless it targets the credential's, which is a repair (DESIGN A68).
+		configSlot := ""
+		if curOK {
+			if live := s.ResolveLiveSlot(data); live.ByLineage && (!forceActivate || live.Slot == targetAccount) {
+				rec, _ := accountRec(data, live.Slot)
+				configSlot, currentAccount, curEmail = currentAccount, live.Slot, recStr(rec, "email")
+			}
+		}
+		repair := repairsConfig(configSlot, currentAccount, targetAccount)
+
 		// Direct-activation path.
-		if forceActivate || !curOK || currentAccount == "" {
+		if (forceActivate && !repair) || !curOK || currentAccount == "" {
 			var fromRef map[string]any
 			switch {
 			case !curOK:
@@ -181,7 +180,7 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 			return commitErr
 		}
 
-		op = switchOp{From: fromRef, To: toRef, Warnings: warningsOut, Repaired: repairsConfig(configSlot, currentAccount, targetAccount)}
+		op = switchOp{From: fromRef, To: toRef, Warnings: warningsOut, Repaired: repair}
 		displayAfterLock = true
 		return nil
 	})

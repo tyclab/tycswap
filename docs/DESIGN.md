@@ -6250,6 +6250,18 @@ running Claude Code rewrote ~/.claude.json`. A process logs it once per
 `switch`'s current slot and the switch-to already-active check all use the
 resolver.
 
+Credential ownership follows the same rule. The default login owns the slot
+its credential's lineage names, and that claim is certain. It does not own
+the slot its config names, so that slot is free like any other inactive slot.
+The default profile's own config and credential drive the resolution, so a
+group-scoped store sees the same owner. While the config named X, the default
+claim on Y read as uncertain, so Y's usage was never fetched (`credential
+owner unknown`), and after three ticks the engine failed over from the
+account in use. Now Y's usage is fetched with its live credential as the
+active slot's, and refresh, list and recovery see Y as the default login's.
+Reading the owned credential re-checks that the default login still resolves
+to Y, where it used to compare the config identity.
+
 A normal switch backs up the resolved slot, not the config's. Taking the
 outgoing slot from the config hid the mismatch while destroying a backup: a
 switch onto X found a live credential that was not X's. When the profile
@@ -6260,12 +6272,13 @@ stayed Y's, the config still named X, X's own credential survived only in
 `.prev`, and the result read `already-active`. Now the switch backs the live
 credential into Y, where it classifies as Y's own, and a switch onto X installs
 X's stored credential and identity. The config backed up for Y keeps Y's own
-`oauthAccount`, since the live config names X's. `switch --force` is
-unchanged: it activates the target directly, without backing up an outgoing
-slot.
+`oauthAccount`, since the live config names X's. `switch --force X` is
+unchanged: it activates X directly, without backing up an outgoing slot.
 
-`switch Y` while the mismatch stands is a config repair. So is a rotation
-that lands on Y. Before, it reported "Already on" and left the config wrong.
+`switch Y` while the mismatch stands is a config repair, and so are `switch
+--force Y` and a rotation that lands on Y. Before, `switch Y` reported
+"Already on" and left the config wrong, and the ownership gate refused
+`--force Y`.
 The repair runs the normal switch under the triple lock. Step 1 backs up Y as
 usual. The credential and Claude Code's `settings.json` are left alone, and
 Y's stored `oauthAccount` goes into `~/.claude.json`, which keeps every other
@@ -6273,13 +6286,13 @@ key, and `activeAccountNumber` becomes Y. The human line is `Repaired the live
 config for Account-N (<email>)`. The JSON result is `switched: true`, `reason:
 config-repaired`, with `from` and `to` both Y. The log records `Repaired the
 live config for account Y (it named account X)` instead of the switch-history
-line, because nothing switched. While the config names X, the ownership check
-reads the default login's claim on Y as uncertain, so the repair's gate
-accepts that claim and nothing else. A group or session profile that claims Y
-as well still refuses it.
+line, because nothing switched. The repair passes the ordinary ownership gate,
+because the default login's claim on Y is certain. A group or session profile
+that claims Y as well still refuses it, as conflicting owners.
 
 Unchanged on purpose: an unmanaged config identity resolves to no slot, so
 the unclaimed-credential and displaced-login capture keep working as before.
-`switch --force Y` meets the ordinary ownership gate and is refused while the
-mismatch stands. The repair does not stop a running Claude Code from writing
-the old identity back. The next resolve warns again only in a new process.
+The default-to-group handoff still compares the config identity with its
+target, so under a mismatch it refuses to hand Y over. The
+repair does not stop a running Claude Code from writing the old identity back.
+The next resolve warns again only in a new process.

@@ -369,7 +369,7 @@ tycswap switch --strategy {best|next-available} [--model NAMES] [--json] [--debu
 | Option | Type | Default | Constraints |
 |--------|------|---------|-------------|
 | `--json` | flag | off | — |
-| `--force` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; activates without backing up the current login first. |
+| `--force` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; activates without backing up the current login first. When the live credential already belongs to the target while `~/.claude.json` names another slot, it repairs the config instead, as without `--force` (DESIGN A68). |
 | `--yes` / `-y` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; answers the API-key confirmation below, for scripts. |
 | `--strategy` | choice `best` \| `next-available` | unset | Only with bare `switch` (no target). |
 | `--model` | string (comma-separated names) | unset | Only with `switch --strategy`. |

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/storenames"
 )
 
@@ -267,5 +268,29 @@ func TestResolveLiveSlotMatchesByAccountBlockAlone(t *testing.T) {
 	writeLiveCreds(t, s, `{"claudeAiOauth":{"accessToken":"at-5","expiresAt":4102444800000},"mcpOAuth":{"srv":{"accessToken":"m"}}}`)
 	if got, want := resolveLive(t, s), (LiveSlot{Slot: "5", ConfigSlot: "6", ByLineage: true}); got != want {
 		t.Fatalf("ResolveLiveSlot = %+v, want %+v", got, want)
+	}
+}
+
+// Ownership is one more consumer of the credential rule: the default login
+// owns the slot whose credential it holds, not the one its config names.
+func TestCredentialOwnerFollowsTheCredential(t *testing.T) {
+	s := lineageFixture(t, "")
+	opus, err := s.ForGroup(groups.Opus)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, st := range map[string]*Store{"default": s, "group-scoped": opus} {
+		if owner, err := st.CredentialOwner("5"); err != nil || owner.Scope != "default" || owner.Uncertain {
+			t.Errorf("%s: CredentialOwner(5) = %+v, %v; want the default login, certain", name, owner, err)
+		}
+		if owner, err := st.CredentialOwner("6"); err != nil || owner.Scope != "" {
+			t.Errorf("%s: CredentialOwner(6) = %+v, %v; want no owner", name, owner, err)
+		}
+	}
+	if err := s.EnsureAccountAvailable("5"); err != nil {
+		t.Errorf("EnsureAccountAvailable(5) = %v, want nil", err)
+	}
+	if got, err := s.ReadOwnedCredentials("5", lineageEmail); err != nil || got != lineageCreds("at-5", "rt-5") {
+		t.Errorf("ReadOwnedCredentials(5) = %q, %v; want the live credential", got, err)
 	}
 }

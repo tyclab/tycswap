@@ -138,8 +138,18 @@ func (s *Store) credentialOwners(number string) ([]groups.Owner, error) {
 	if defaultErr != nil && len(pids) > 0 {
 		return nil, defaultErr
 	}
-	if ok && email == account.Email && org == account.OrgUUID || fingerprintsEqual(defaultCreds, backup) {
-		add(groups.Owner{Scope: "default", ProfileDir: defaultDir, Account: account, PIDs: pids, Uncertain: !ok || email != account.Email || org != account.OrgUUID})
+	certain := ok && email == account.Email && org == account.OrgUUID
+	claimed := certain || fingerprintsEqual(defaultCreds, backup)
+	// The default login holds the slot its credential's lineage names, not the
+	// one its config names (DESIGN A68).
+	if ok {
+		if live := s.liveSlotFor(data, email, org, func() string { return defaultCreds }); live.ByLineage {
+			certain = live.Slot == number
+			claimed = certain
+		}
+	}
+	if claimed {
+		add(groups.Owner{Scope: "default", ProfileDir: defaultDir, Account: account, PIDs: pids, Uncertain: !certain})
 	}
 	for _, slot := range sortedSlotKeys(data) {
 		legacy, err := s.accountFrom(data, slot)
@@ -224,23 +234,9 @@ func profilePIDs(dir string) ([]int, error) {
 func VerifyProfileState(dir string) error { _, err := profilePIDs(dir); return err }
 
 func (s *Store) EnsureAccountAvailable(number string) error {
-	return s.ensureAvailable(number, false)
-}
-
-// EnsureRepairAvailable gates a config repair (DESIGN A68): the default login
-// holds number's credential while ~/.claude.json names another slot, which
-// CredentialOwner reports as an uncertain default claim. Other owners refuse.
-func (s *Store) EnsureRepairAvailable(number string) error {
-	return s.ensureAvailable(number, true)
-}
-
-func (s *Store) ensureAvailable(number string, repair bool) error {
 	owner, err := s.CredentialOwner(number)
 	if err != nil {
 		return err
-	}
-	if repair && s.group == "" && owner.Scope == "default" {
-		return nil
 	}
 	scope := string(s.group)
 	if scope == "" {
@@ -324,8 +320,8 @@ func (s *Store) ReadOwnedCredentialsLocked(number, email string) (string, error)
 	}
 	if owner.Scope == "default" {
 		value, err := s.ReadDefaultCredentials()
-		profileEmail, profileOrg, ok := ccfile.ReadOAuthIdentityFrom(s.DefaultConfigPath())
-		if !ok || profileEmail != owner.Account.Email || profileOrg != owner.Account.OrgUUID {
+		data, rosterErr := s.classifiedRoster()
+		if rosterErr != nil || s.defaultLiveSlot(data, value).Slot != number {
 			return "", fmt.Errorf("default account identity changed while reading its credential")
 		}
 		return value, err

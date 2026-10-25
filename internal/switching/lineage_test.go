@@ -144,6 +144,7 @@ func TestSwitchRepairsConfigUnderLineageMismatch(t *testing.T) {
 		run            func(s *store.Store, jsonOut bool) (any, error)
 	}{
 		{"switch-to", "direct", func(s *store.Store, jsonOut bool) (any, error) { return SwitchTo(s, "5", jsonOut, false) }},
+		{"switch-to --force", "direct", func(s *store.Store, jsonOut bool) (any, error) { return SwitchTo(s, "5", jsonOut, true) }},
 		// Recorded active 6: the rotation lands on 5, the credential's slot.
 		{"rotation", "rotation", func(s *store.Store, jsonOut bool) (any, error) { return Switch(s, nil, jsonOut, nil, nil) }},
 	}
@@ -215,8 +216,9 @@ func TestSwitchRepairsConfigUnderLineageMismatch(t *testing.T) {
 	}
 }
 
-// The repair's ownership gate accepts only the default login's own claim: a
-// group claiming the slot as well still refuses it, and nothing is written.
+// The default login's claim on the credential's slot is certain, so the plain
+// ownership gate lets the repair through; a group claiming the slot as well
+// still refuses it, and nothing is written.
 func TestConfigRepairRefusesAnotherOwner(t *testing.T) {
 	s := lineageSeat(t, 6, lineageBackup5)
 	reg := &groups.Registry{Version: 1, Claims: map[string]groups.Owner{"5": {
@@ -233,5 +235,31 @@ func TestConfigRepairRefusesAnotherOwner(t *testing.T) {
 	}
 	if credentialsHash(t, s) != before || orgOf(liveConfig(t, s)) != "org-six" {
 		t.Fatalf("a refused repair wrote the credential or the config")
+	}
+}
+
+// --force onto the config's slot is unchanged: a direct activation from its
+// stored backup that backs nothing into the credential's slot.
+func TestForceSwitchToTheConfigSlotUnderLineageMismatchActivates(t *testing.T) {
+	for _, tc := range lineageLives {
+		t.Run(tc.name, func(t *testing.T) {
+			s := lineageSeat(t, 6, tc.live)
+			out, err := SwitchTo(s, "6", true, true)
+			if err != nil {
+				t.Fatalf("SwitchTo(6, --force): %v", err)
+			}
+			m := asMap(t, out)
+			if m["switched"] != false || m["reason"] != "activated" || refField(t, m, "from") != 6 || refField(t, m, "to") != 6 {
+				t.Fatalf("got switched=%v reason=%v from=%d to=%d, want activated 6", m["switched"], m["reason"], refField(t, m, "from"), refField(t, m, "to"))
+			}
+			if got := readActiveCreds(t, s); got != lineageBackup6 {
+				t.Errorf("live credential = %s, want Account-6's", got)
+			}
+			for num, want := range map[string]string{"5": lineageBackup5, "6": lineageBackup6} {
+				if got, _ := s.ReadAccountCredentials(num, lineageEmail); got != want {
+					t.Errorf("Account-%s backup = %s, want it untouched", num, got)
+				}
+			}
+		})
 	}
 }
