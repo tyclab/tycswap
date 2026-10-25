@@ -85,8 +85,9 @@ func CollectUsageEntries(s *store.Store, infos []AccountInfo, fetch map[string]b
 		num := strconv.Itoa(info.Number)
 		wanted := fetch == nil || fetch[num]
 		if _, has := sentinels[num]; has {
-			// Only a pass that could have fetched records why it did not; a store-only read writes nothing.
-			if wanted && s.OAuth != nil && reasons[num] != "" {
+			// Only a pass that could have fetched records why it did not, and only a new
+			// reason: a store-only read or an unchanged skip takes no lock and writes nothing.
+			if wanted && s.OAuth != nil && reasons[num] != "" && reasons[num] != entries[num].SkipReason {
 				skips[num] = usage.FetchRecord{Sentinel: sentinels[num], SkipReason: reasons[num]}
 			}
 			continue

@@ -496,7 +496,7 @@ func TestRecordSkipReasonLeavesFetchStateAlone(t *testing.T) {
 	}
 	e := s.Entries(ids)["5"]
 	if e.SkipReason != ownerExpired || e.SkipAt == nil || *e.SkipAt != 1000 {
-		t.Errorf("skip = %q/%v, want %q/1000", e.SkipReason, e.SkipAt, ownerExpired)
+		t.Errorf("skip = %q/%v, want %q/1000", e.SkipReason, ptrVal(e.SkipAt), ownerExpired)
 	}
 	if e.LastGood == nil || e.FetchedAt == nil || *e.FetchedAt != 900 || e.ConsecutiveFailures != 2 ||
 		e.LastError != "timeout" || e.BackoffUntil == nil || *e.BackoffUntil != 1100 ||
@@ -515,7 +515,7 @@ func TestRecordSuccessClearsSkipReason(t *testing.T) {
 		t.Fatal(err)
 	}
 	if e := s.Entries(ids)["5"]; e.SkipReason != ownerExpired || e.SkipAt == nil {
-		t.Errorf("a failed fetch must keep the skip reason, got %q/%v", e.SkipReason, e.SkipAt)
+		t.Errorf("a failed fetch must keep the skip reason, got %q/%v", e.SkipReason, ptrVal(e.SkipAt))
 	}
 	if err := s.Record(map[string]FetchRecord{"5": {Usage: map[string]any{"five_hour": map[string]any{"pct": 3.0}}}}, ids); err != nil {
 		t.Fatal(err)
@@ -536,9 +536,50 @@ func TestEntriesExposeSkipReason(t *testing.T) {
 	s := NewStore(dir, fakeAt(1000))
 	entries := s.Entries(map[string]Identity{"5": {Email: "e@x.com"}, "6": {Email: "f@x.com"}})
 	if e := entries["5"]; e.SkipReason != "no credential in the live store" || e.SkipAt == nil || *e.SkipAt != 990.5 {
-		t.Errorf("entry 5 skip = %q/%v, want the stored reason at 990.5", e.SkipReason, e.SkipAt)
+		t.Errorf("entry 5 skip = %q/%v, want the stored reason at 990.5", e.SkipReason, ptrVal(e.SkipAt))
 	}
 	if e := entries["6"]; e.SkipReason != "" || e.SkipAt != nil {
-		t.Errorf("a mismatched row must not leak its skip reason, got %q/%v", e.SkipReason, e.SkipAt)
+		t.Errorf("a mismatched row must not leak its skip reason, got %q/%v", e.SkipReason, ptrVal(e.SkipAt))
+	}
+}
+
+func TestRecordRepeatedSkipReasonChangesNothing(t *testing.T) {
+	ids := map[string]Identity{"5": {Email: "e@x.com"}}
+	dir := t.TempDir()
+	clk := fakeAt(1000)
+	s := NewStore(dir, clk)
+	changes := 0
+	s.SetOnChange(func() { changes++ })
+	skip := map[string]FetchRecord{"5": {Sentinel: "token expired", SkipReason: ownerExpired}}
+	if err := s.Record(skip, ids); err != nil {
+		t.Fatal(err)
+	}
+	first, err := os.ReadFile(filepath.Join(dir, "usage.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clk.Advance(60 * time.Second)
+	if err := s.Record(skip, ids); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := os.ReadFile(filepath.Join(dir, "usage.json"))
+	if string(again) != string(first) {
+		t.Errorf("a repeated reason rewrote the file:\n%s\nwant\n%s", again, first)
+	}
+	if e := s.Entries(ids)["5"]; e.SkipAt == nil || *e.SkipAt != 1000 {
+		t.Errorf("skipAt = %v, want 1000 (skipped since)", ptrVal(e.SkipAt))
+	}
+	if changes != 1 {
+		t.Errorf("onChange ran %d times, want 1", changes)
+	}
+
+	if err := s.Record(map[string]FetchRecord{"5": {Sentinel: "no credentials", SkipReason: "no credential in the live store"}}, ids); err != nil {
+		t.Fatal(err)
+	}
+	if e := s.Entries(ids)["5"]; e.SkipReason != "no credential in the live store" || e.SkipAt == nil || *e.SkipAt != 1060 {
+		t.Errorf("a changed reason = %q/%v, want the new reason since 1060", e.SkipReason, ptrVal(e.SkipAt))
+	}
+	if changes != 2 {
+		t.Errorf("onChange ran %d times after a changed reason, want 2", changes)
 	}
 }

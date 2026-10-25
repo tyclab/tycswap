@@ -22,15 +22,19 @@ func fetchAccountUsage(s *store.Store, info AccountInfo) usage.FetchRecord {
 	num := strconv.Itoa(info.Number)
 	owner, err := s.CredentialOwner(num)
 	if err != nil || owner.Uncertain {
-		return usage.FetchRecord{Sentinel: jsonout.UsageNoCredentials}
+		detail := "Account-" + num + " credential ownership is uncertain"
+		if err != nil {
+			detail = err.Error()
+		}
+		return usage.FetchRecord{Sentinel: jsonout.UsageNoCredentials, SkipReason: activeOnly(info, "credential owner unknown: "+detail)}
 	}
 	if owner.Scope != "" && (owner.Scope != "default" || s.GroupID() != "" || paths.GetClaudeConfigHome() != s.ProfileDir()) {
 		creds, err := s.ReadOwnedCredentials(num, info.Email)
 		if err != nil || oauth.ExtractAccessToken(creds) == "" {
-			return usage.FetchRecord{Sentinel: jsonout.UsageNoCredentials}
+			return usage.FetchRecord{Sentinel: jsonout.UsageNoCredentials, SkipReason: activeOnly(info, skipNoCredential)}
 		}
 		if oauth.IsOAuthTokenExpired(oauth.ExtractOAuthData(creds)["expiresAt"], s.Clk.Now()) {
-			return usage.FetchRecord{Sentinel: jsonout.UsageTokenExpired}
+			return expiredSkip(activeOnly(info, skipOwnerExpired))
 		}
 		return recordFromOutcome(oauth.TryFetchUsageForAccount(backgroundCtx(), s.OAuth, num, info.Email, creds, true, nil))
 	}
@@ -99,6 +103,14 @@ func expiredSkip(reason string) usage.FetchRecord {
 	return usage.FetchRecord{Sentinel: jsonout.UsageTokenExpired, SkipReason: reason}
 }
 
+// activeOnly keeps a reason for the active account; an inactive slot's skip stays unrecorded.
+func activeOnly(info AccountInfo, reason string) string {
+	if info.IsActive {
+		return reason
+	}
+	return ""
+}
+
 // fetchActiveUsage fetches usage for the active/default account, refreshing its
 // token only when no owner is detected (spec 02§13 _fetch_active_usage). With an
 // owner present (or an unattributed live credential) and an expired token it
@@ -146,6 +158,7 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 	originalRefresh := stringOf(oauthData["refreshToken"])
 	var mu sync.Mutex
 	skipReason := ""
+	kept := false
 	// A 401 can refresh a second time after the proactive one; the first reason wins.
 	markSkipped := func(reason string) {
 		mu.Lock()
@@ -187,7 +200,13 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 				return err
 			}
 			// The backup takes the account part only; the live file keeps the seat-wide keys.
-			return s.WriteAccountCredentials(n, acctEmail, oauth.AccountOnly(newCreds))
+			if err := s.WriteAccountCredentials(n, acctEmail, oauth.AccountOnly(newCreds)); err != nil {
+				return err
+			}
+			mu.Lock()
+			kept = true
+			mu.Unlock()
+			return nil
 		})
 		if err != nil {
 			markSkipped("refresh discarded: " + err.Error())
@@ -198,14 +217,15 @@ func fetchActiveUsage(s *store.Store, accountNum, email, creds string) usage.Fet
 	outcome := oauth.TryFetchUsageForAccount(backgroundCtx(), s.OAuth, accountNum, email, creds, false, persist)
 
 	mu.Lock()
-	skipped := skipReason
+	skipped, refreshed := skipReason, kept
 	mu.Unlock()
 	if skipped != "" {
 		// Never show usage for a credential we didn't keep — surface the expired
 		// state and let Claude Code settle it.
 		return expiredSkip(skipped)
 	}
-	if outcome.Usage == nil && oauth.IsOAuthTokenExpired(oauthData["expiresAt"], s.Clk.Now()) {
+	// A kept refresh means the token is no longer expired: a failed GET is then a plain failure.
+	if !refreshed && outcome.Usage == nil && oauth.IsOAuthTokenExpired(oauthData["expiresAt"], s.Clk.Now()) {
 		reason := "expired token could not be refreshed"
 		if outcome.Error != "" {
 			reason += ": " + outcome.Error
