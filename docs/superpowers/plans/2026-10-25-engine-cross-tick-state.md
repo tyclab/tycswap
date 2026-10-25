@@ -283,3 +283,56 @@ Delete `TestLoopDryRunCountsInMemory`, `TestLoopDryRunIdleHoldExpires`, `TestLoo
 - [ ] **Step 6: Commit** `refactor(autoswitch): the engine keeps nothing between ticks`.
 
 ---
+### Task 8: Lineage survives Claude Code's own token rotation
+
+**Why.** `ResolveLiveSlot` (Task 5) attributes the live credential by comparing it with each slot's stored backup (refresh-token fingerprint or account block). The moment a running Claude Code refreshes the live token itself, the refresh token rotates, the backup matches nothing, and the resolver falls back to the config slot: exactly the incident's conditions. The switch path already has the answer for this case (`classifyOutgoing` asks the Anthropic profile endpoint who the live token belongs to and calls it "own-rotated"). The resolver must have the same answer, and the answer must be remembered so it works offline and is asked once per rotation.
+
+**Files:**
+- Modify: `internal/store/liveslot.go` (resolution order below; `LiveSlot.Source`)
+- Create: `internal/store/livelineage.go` (the chain-of-custody record: read, write-on-change)
+- Create: `internal/store/slotidentity.go` (`SlotForIdentity`, moved from the mapping in `internal/switching/classify.go` ~lines 42-70 so both use one function; `classify.go` calls it)
+- Modify: `internal/reporting/collect.go` (harvest step in the periodic pass)
+- Test: `internal/store/liveslot_test.go` (add), `internal/store/livelineage_test.go` (new), `internal/reporting` (harvest test), `internal/switching` (classify still passes)
+- Docs: DESIGN A68 extended; CHANGELOG Part 3 line reworded; reference.md state/cache file list gains `live_lineage.json`.
+
+**Interfaces:**
+- `LiveSlot` gains `Source string`: one of `"config"`, `"backup"`, `"chain"`, `"profile"`.
+- Resolution order in `ResolveLiveSlot(data)`, after `ConfigSlot` is known and only for a managed OAuth config slot with a readable non-empty live credential:
+  1. backup match (existing rule, including the ambiguity and API-key exclusions) → `Source: "backup"`;
+  2. chain record: `live_lineage.json` holds `{"schemaVersion":1,"fingerprint":"<sha256>","slot":"5","identity":{"uuid":"…","email":"…","orgUuid":"…"},"seenAt":<float seconds>}`; if `fingerprint` equals the live credential's fingerprint and `slot` is still a managed OAuth slot whose roster record carries the same uuid and orgUuid → `Source: "chain"`;
+  3. profile oracle: when `s.OAuth != nil` and the live access token is non-empty, `id := s.OAuth.Profile(ctx, accessToken)`; `SlotForIdentity(data, id)` → the slot whose roster record matches uuid+orgUuid (fall back to email+orgUuid when the record has no uuid, as `classify.go` does today); on a hit write the chain record (atomic, 0600, write only when the content changes; no lock: it is tycswap's own cache, last writer wins) → `Source: "profile"`; the oracle is asked at most once per fingerprint per process (remember misses in memory for the process lifetime so an offline box does not call it every pass);
+  4. otherwise `Slot = ConfigSlot`, `Source: "config"`, `ByLineage false`, no warning.
+  `ByLineage = Slot != ConfigSlot`. The existing warning is logged for sources backup/chain/profile with the source named at the end: `… A running Claude Code rewrote ~/.claude.json (by <source>)`.
+  A chain record whose slot was removed or re-added (uuid/orgUuid mismatch) is ignored and overwritten on the next profile hit.
+- `func (s *Store) SlotForIdentity(data *SequenceData, id *oauth.Identity) string` in `slotidentity.go`; `classify.go` uses it (behaviour unchanged, its tests prove it).
+- Harvest, in `internal/reporting/collect.go` once per pass before usage collection: if `ResolveLiveSlot` gives `Source` chain or profile and the resolved slot's backup fingerprint differs from the live fingerprint, write `oauth.AccountOnly(live)` into that slot's backup with `WriteAccountCredentials` under the store `FileLock` plus the Claude credentials lock (the pair `withTripleLock` in `reporting/fetch.go` takes; reuse it), re-checking under the lock that the live credential is unchanged. Log INFO `Harvested the rotated live credential into Account-%s's backup`. Never touch the live file. After the harvest, step 1 attributes offline.
+- Dry runs and store-only reads never harvest and never write the chain record (pass a flag the way `fetch == nil || fetch[num]` gates recording today).
+
+- [ ] **Step 1: Failing tests.**
+
+```go
+// internal/store/liveslot_test.go — fixture: config names 6; backups 5 and 6 with
+// distinct tokens; live credential is 5's with a ROTATED refresh token.
+func TestResolveLiveSlotRotatedTokenViaProfile(t *testing.T)   // FakeClient.Profile → 5's identity; Slot "5", Source "profile", record written
+func TestResolveLiveSlotRotatedTokenViaChainOffline(t *testing.T) // record present, OAuth nil; Slot "5", Source "chain"
+func TestResolveLiveSlotProfileMissNoWarning(t *testing.T)       // OAuth nil, no record: Slot "6", Source "config", no warning
+func TestResolveLiveSlotProfileAskedOncePerFingerprint(t *testing.T)
+func TestResolveLiveSlotStaleChainRecordIgnored(t *testing.T)     // record slot re-added with a new uuid
+func TestResolveLiveSlotProfileIdentityUnmanaged(t *testing.T)    // identity maps to no slot: config
+// internal/store/livelineage_test.go
+func TestLiveLineageWriteOnChangeOnly(t *testing.T)
+func TestLiveLineageMalformedReadsAsAbsent(t *testing.T)
+// internal/reporting — harvest
+func TestCollectHarvestsRotatedLiveCredential(t *testing.T) // after one pass 5's backup fingerprint equals the live one; INFO logged; live file bytes unchanged; a second pass harvests nothing
+func TestCollectNeverHarvestsOnStoreOnlyRead(t *testing.T)
+// internal/switching — classify unchanged
+// existing classify tests pass with SlotForIdentity extracted
+```
+
+- [ ] **Step 2: Run** `go test ./internal/store/ ./internal/reporting/ -run 'Rotated|Chain|Profile|LiveLineage|Harvest' -v` — expected: FAIL.
+- [ ] **Step 3: Implement** as specified. Keep `ResolveLiveSlot` lock-free; the only write it may do is the chain record file.
+- [ ] **Step 4: Run** `go test ./...`, the three vets, `make fmt` — all clean; `testdata/**` untouched.
+- [ ] **Step 5: Docs.** A68: add the resolution order, the chain record, the harvest, and the dry-run/store-only exclusions. CHANGELOG Part 3 line becomes: "**Fixed:** two slots of one login in different organisations: the live slot is the one whose credential Claude Code holds, also after Claude Code refreshed that token itself or rewrote `~/.claude.json`; `switch` to that slot repairs the config." reference.md: list `live_lineage.json` with the other store files.
+- [ ] **Step 6: Commit** `fix(store): attribute a rotated live credential through the profile and a chain record`.
+
+---
