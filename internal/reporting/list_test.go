@@ -7,12 +7,14 @@ package reporting
 import (
 	"bytes"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // isoAt mirrors jsonout.isoUTCSeconds for building expected freshness strings.
@@ -219,5 +221,25 @@ func TestRenderAccounts_HumanColumnsAndMarkers(t *testing.T) {
 	// Bob has creds but no usage → "usage unavailable".
 	if !strings.Contains(out, "usage unavailable") {
 		t.Errorf("bob should show usage unavailable:\n%s", out)
+	}
+}
+
+func TestListPayloadCarriesSkipReason(t *testing.T) {
+	s := newStore(t, nil, nil)
+	writeSequenceRaw(t, s, `{"sequence": [1, 2], "accounts": {
+		"1": {"email": "a@example.com", "organizationUuid": ""},
+		"2": {"email": "b@example.com", "organizationUuid": ""}}}`)
+	const reason = "no credential in the live store"
+	at := 1792947619.0
+	infos := []AccountInfo{{Number: 1, Email: "a@example.com", IsActive: true}, {Number: 2, Email: "b@example.com"}}
+	entries := map[string]usage.UsageEntry{"1": {SkipReason: reason, SkipAt: &at}}
+
+	rows := buildListPayload(s, infos, entries, false)["accounts"].([]any)
+	got := rows[0].(map[string]any)["usageRefresh"]
+	if want := map[string]any{"skipReason": reason, "skipAt": "2026-10-25T17:00:19Z"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("active row usageRefresh = %#v, want %#v", got, want)
+	}
+	if _, ok := rows[1].(map[string]any)["usageRefresh"]; ok {
+		t.Errorf("row without a skip carries usageRefresh: %#v", rows[1])
 	}
 }

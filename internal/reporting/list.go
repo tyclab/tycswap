@@ -95,6 +95,8 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 				AtLimit:         atLimit,
 				LimitingWindows: limiting,
 				BaseURL:         info.BaseURL,
+				SkipReason:      entry.SkipReason,
+				SkipAt:          entry.SkipAt,
 			},
 		)
 		if showTokenStatus {

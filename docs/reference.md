@@ -194,6 +194,7 @@ Present only when applicable (additive, schemaVersion 1):
 | `limitingWindows` | array of string | Emitted with `atLimit`; the windows at/over limit, in relevant-window order. |
 | `usageFetchedAt` | string (ISO-8601 UTC) | `usage` is non-null and the measurement time is known. |
 | `usageAgeSeconds` | number | Emitted with `usageFetchedAt`. |
+| `usageRefresh` | object | The account's last usage fetch was skipped: `skipReason` (string) says why, for example `owner holds an expired token; Claude Code refreshes it on next use`, and `skipAt` (string, ISO-8601 UTC, seconds) since when. The next successful fetch removes both. |
 
 The `usageStatus` enumeration:
 
@@ -1598,7 +1599,7 @@ a `Z` suffix), plus per-kind fields:
 |---------|--------|
 | `poll` | `active` (`{number,email}` or null), `headroomPct` (`{num: float|null}`), `threshold` (float: the 7d bar), `fetchErrors` (`{num: msg}`, optional), `windowsPct` (`{num: {label: float}}`, optional) |
 | `switch` | `trigger` (`proactive`\|`at-limit`\|`failover`), `axis` (`5h`\|`7d`\|`model`: the window that made the tick move; empty under `failover`, where usage was unreadable), `from` (ref), `to` (ref), `warnings` (array), `dryRun` (bool) |
-| `no-switch` | `reason` (string), `detail` (string) |
+| `no-switch` | `reason` (string), `detail` (string); under `active-usage-unknown` and `active-idle`, `detail` ends in ` · <skip reason>` while the active account's `list --json` row carries `usageRefresh.skipReason` |
 | `account-quarantined` | `number`, `email`, `reason` |
 | `account-unquarantined` | `number`, `email`, `reason` |
 | `all-exhausted` | `earliestResetAt` (string or null) |
@@ -2691,7 +2692,11 @@ The page updates live: a state document arrives on connect, on every poll
 tick, after every action, after each batch of engine events and whenever an
 update check has learnt something. Each
 account row in it carries the fields of a `tycswap list --json` row plus
-`provider` and `key`; with `?tokenStatus=1` every row also carries
+`provider` and `key`; its `usageRefresh` object also carries `error` (the
+cached fetch-failure classification, for example `http-429`) and `nextAt`
+(ISO-8601 UTC, the later of the next planned poll and the failure backoff)
+beside `skipReason` and `skipAt`, each key only when set and the object only
+when one is; with `?tokenStatus=1` every row also carries
 `tokenStatus`, its own token-status string (`""` when there is none), and
 the document has no top-level `tokenStatus`. The document also carries
 `currentLogin` (`{"email", "saved"}` for the login Claude Code has; `saved`

@@ -206,3 +206,18 @@ func TestRound1BankersMatchesPython(t *testing.T) {
 		}
 	}
 }
+
+func TestAccountRowSkipReasonOnlyWhenSet(t *testing.T) {
+	const reason = "live credential does not match slot 5's backup; refresh skipped"
+	at := 1792947619.7
+	row := AccountRow(5, "a@b.com", "", "", true, nil, RowOpts{SkipReason: reason, SkipAt: &at})
+	want := map[string]any{"skipReason": reason, "skipAt": "2026-10-25T17:00:19Z"}
+	if !reflect.DeepEqual(row["usageRefresh"], want) {
+		t.Errorf("usageRefresh = %#v, want %#v", row["usageRefresh"], want)
+	}
+	for _, opts := range []RowOpts{{}, {SkipAt: &at}} {
+		if r := AccountRow(5, "a@b.com", "", "", true, nil, opts); r["usageRefresh"] != nil {
+			t.Errorf("opts %+v: usageRefresh = %#v, want no key", opts, r["usageRefresh"])
+		}
+	}
+}

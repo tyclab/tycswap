@@ -152,7 +152,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		if idle {
 			e.idleHoldSlow = true
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "active-idle",
-				Detail: "token expired while Claude Code is idle; resumes on next use"})
+				Detail: withSkipReason("token expired while Claude Code is idle; resumes on next use", entries[cur])})
 			return NoAction, nil
 		}
 		if expired && e.log != nil {
@@ -166,7 +166,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		}
 		if e.unhealthyTicks < s.UnhealthyTicks {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "active-usage-unknown",
-				Detail: fmt.Sprintf("%d/%d before failover", e.unhealthyTicks, s.UnhealthyTicks)})
+				Detail: withSkipReason(fmt.Sprintf("%d/%d before failover", e.unhealthyTicks, s.UnhealthyTicks), entries[cur])})
 			return NoAction, nil
 		}
 		trigger = "failover"
@@ -266,6 +266,14 @@ func countUnknownTick(m *activeMemory, expired bool, now float64) (idle bool) {
 	}
 	m.UnhealthyTicks++
 	return false
+}
+
+// withSkipReason appends why the entry's last fetch was skipped, when recorded.
+func withSkipReason(detail string, entry usage.UsageEntry) string {
+	if entry.SkipReason == "" {
+		return detail
+	}
+	return detail + " · " + entry.SkipReason
 }
 
 // axisLabel names the axis for the log ("5h", "7d" or "model"). A failover

@@ -588,3 +588,26 @@ func TestAccountRowRefreshSchedule(t *testing.T) {
 		t.Fatal("invented refresh state")
 	}
 }
+
+func TestStateRowCarriesSkipReason(t *testing.T) {
+	const reason = "owner holds an expired token; Claude Code refreshes it on next use"
+	entry := usage.UsageEntry{Sentinel: jsonout.UsageTokenExpired, SkipReason: reason, SkipAt: f64(1792947619)}
+	row := accountRow(reporting.AccountSnapshot{Number: "5", Usage: entry})
+	refresh, _ := row["usageRefresh"].(map[string]any)
+	want := map[string]any{"skipReason": reason, "skipAt": "2026-10-25T17:00:19Z"}
+	if !reflect.DeepEqual(refresh, want) {
+		t.Fatalf("usageRefresh = %#v, want %#v", row["usageRefresh"], want)
+	}
+	list := jsonout.AccountRow(5, "", "", "", false, entry.DecisionValue(), jsonout.RowOpts{SkipReason: entry.SkipReason, SkipAt: entry.SkipAt})
+	if !reflect.DeepEqual(list["usageRefresh"], row["usageRefresh"]) {
+		t.Errorf("list --json usageRefresh %#v != state %#v", list["usageRefresh"], row["usageRefresh"])
+	}
+
+	row = accountRow(reporting.AccountSnapshot{Number: "5", Usage: usage.UsageEntry{Sentinel: jsonout.UsageTokenExpired, LastError: "http-429"}})
+	refresh = row["usageRefresh"].(map[string]any)
+	for _, k := range []string{"skipReason", "skipAt"} {
+		if _, ok := refresh[k]; ok {
+			t.Errorf("usageRefresh carries %q without a skip: %#v", k, refresh)
+		}
+	}
+}

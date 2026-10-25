@@ -11,6 +11,7 @@ import (
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // onceEngine is one `auto --once` process: a fresh engine over a shared state file.
@@ -299,4 +300,25 @@ func TestLoopDryRunFollowsHigherPersistedCount(t *testing.T) {
 	if got := activeMemoryOf(readStateFile(statePath), "1").UnhealthyTicks; got != 2 {
 		t.Errorf("persisted count = %d, want 2", got)
 	}
+}
+
+func TestUnknownDetailCarriesSkipReason(t *testing.T) {
+	const mismatch = "live credential does not match slot 1's backup; refresh skipped"
+	const owned = "owner holds an expired token; Claude Code refreshes it on next use"
+	clk := newClk()
+	f := twoAccounts(clk, usage.UsageEntry{SkipReason: mismatch}, dictEntry(usageOf(10, 0)))
+	statePath := sharedStatePath(t)
+	out, rec := tickOnce(t, f, clk, statePath, false)
+	wantNoSwitch(t, out, rec, "active-usage-unknown", "1/3 before failover · "+mismatch)
+
+	f = twoAccounts(clk, usage.UsageEntry{Sentinel: jsonout.UsageTokenExpired, SkipReason: owned}, dictEntry(usageOf(10, 0)))
+	f.liveSessions["1"] = []int{1}
+	statePath = sharedStatePath(t)
+	idleStart := clk.Now()
+	out, rec = tickOnce(t, f, clk, statePath, false)
+	wantNoSwitch(t, out, rec, "active-idle", "token expired while Claude Code is idle; resumes on next use · "+owned)
+
+	clk.Set(idleStart.Add(time.Duration(IdleHoldMaxS+1) * time.Second))
+	out, rec = tickOnce(t, f, clk, statePath, false)
+	wantNoSwitch(t, out, rec, "active-usage-unknown", "1/3 before failover · "+owned)
 }
