@@ -56,12 +56,13 @@ type Engine struct {
 	wakeCh   chan struct{}
 
 	// Touched only from the single tick goroutine.
-	unhealthyTicks  int
 	sleepUntilTS    *float64
 	blockedWaitLong bool
-	idleHoldSince   *float64
 	idleHoldSlow    bool
 	modelCheckDone  bool
+	// The tick's working copy of the state file's active memory, loaded every tick (DESIGN A66).
+	unhealthyTicks int
+	idleHoldSince  *float64
 }
 
 // Option customizes engine construction (clock, sleeper, rng, oauth client,

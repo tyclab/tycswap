@@ -67,6 +67,8 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		return NoAction, nil
 	}
 	cur := *current
+	loaded := activeMemoryOf(state, cur)
+	e.unhealthyTicks, e.idleHoldSince = loaded.UnhealthyTicks, loaded.IdleHoldSince
 	currentEmail := e.sw.AccountEmail(cur)
 	activeRef := refOf(cur, currentEmail)
 
@@ -117,6 +119,11 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 	if activeHeadroom != nil {
 		e.unhealthyTicks = 0
 		e.idleHoldSince = nil
+		if _, had := state["active"]; had && !e.dryRun {
+			if _, err := e.mutateState(clearActiveMemory); err != nil {
+				return 0, err
+			}
+		}
 		hot, ok := hotAxis(activeByClass, s)
 		if !ok {
 			// No window is over its own bar. Name the one closest to its
@@ -134,34 +141,29 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 			trigger = "proactive"
 		}
 	} else {
-		if isTokenExpired(usageMap[cur]) {
-			// Expired while an owner holds the credential → Claude is idle;
-			// crawl instead of burning failover ticks (05§7).
-			now := e.nowSeconds()
-			if e.idleHoldSince == nil {
-				v := now
-				e.idleHoldSince = &v
-			}
-			if now-*e.idleHoldSince <= IdleHoldMaxS {
-				e.unhealthyTicks = 0
-				e.idleHoldSlow = true
-				e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "active-idle",
-					Detail: "token expired while Claude Code is idle; resumes on next use"})
-				return NoAction, nil
-			}
+		expired := isTokenExpired(usageMap[cur])
+		now := e.nowSeconds()
+		idle := false
+		mem, err := e.saveActiveMemory(cur, func(m *activeMemory) { idle = countUnknownTick(m, expired, now) })
+		if err != nil {
+			return 0, err
+		}
+		e.unhealthyTicks, e.idleHoldSince = mem.UnhealthyTicks, mem.IdleHoldSince
+		if idle {
+			e.idleHoldSlow = true
+			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "active-idle",
+				Detail: "token expired while Claude Code is idle; resumes on next use"})
+			return NoAction, nil
+		}
+		if expired && e.log != nil {
 			// Held far longer than any idle nap — likely a dead refresh token
 			// with an active user. Fall through to unhealthy counting.
-			if e.log != nil {
-				e.log.Warningf(
-					"Active token expired and owned for over %.0f minutes; "+
-						"resuming unhealthy counting (dead refresh token?)",
-					IdleHoldMaxS/60,
-				)
-			}
-		} else {
-			e.idleHoldSince = nil
+			e.log.Warningf(
+				"Active token expired and owned for over %.0f minutes; "+
+					"resuming unhealthy counting (dead refresh token?)",
+				IdleHoldMaxS/60,
+			)
 		}
-		e.unhealthyTicks++
 		if e.unhealthyTicks < s.UnhealthyTicks {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "active-usage-unknown",
 				Detail: fmt.Sprintf("%d/%d before failover", e.unhealthyTicks, s.UnhealthyTicks)})
@@ -242,6 +244,28 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 	}
 	e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-viable-target"})
 	return Blocked, nil
+}
+
+// countUnknownTick steps the memory for a tick with no readable usage and
+// reports whether the idle hold absorbs it. Expired while an owner holds the
+// credential means Claude is idle: crawl instead of burning failover ticks, for
+// at most IdleHoldMaxS (05§7). A hold stamped in the future restarts now.
+func countUnknownTick(m *activeMemory, expired bool, now float64) (idle bool) {
+	if !expired {
+		m.IdleHoldSince = nil
+		m.UnhealthyTicks++
+		return false
+	}
+	if m.IdleHoldSince == nil || *m.IdleHoldSince > now {
+		v := now
+		m.IdleHoldSince = &v
+	}
+	if now-*m.IdleHoldSince <= IdleHoldMaxS {
+		m.UnhealthyTicks = 0
+		return true
+	}
+	m.UnhealthyTicks++
+	return false
 }
 
 // axisLabel names the axis for the log ("5h", "7d" or "model"). A failover
@@ -519,6 +543,7 @@ func (e *Engine) perform(number, email, trigger, axis string) (TickOutcome, erro
 		state["schemaVersion"] = StateSchemaVersion
 		state["lastSwitchAt"] = e.nowSeconds()
 		state["lastSwitchTo"] = number
+		clearActiveMemory(state)
 		if err := e.writeState(state); err != nil {
 			return err
 		}

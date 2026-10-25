@@ -10,6 +10,7 @@ package autoswitch
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 
@@ -118,6 +119,61 @@ func (e *Engine) mutateState(mutator func(state map[string]any)) (map[string]any
 	})
 	return result, err
 }
+
+// activeMemory is the live slot's failover count and idle-hold start, kept in
+// the state file so separate `auto --once` runs count like one loop (DESIGN A66).
+type activeMemory struct {
+	Number         string
+	UnhealthyTicks int
+	IdleHoldSince  *float64
+}
+
+// activeMemoryOf reads state["active"] for number; another slot's or a
+// malformed object reads as no memory.
+func activeMemoryOf(state map[string]any, number string) activeMemory {
+	raw, ok := state["active"].(map[string]any)
+	if !ok {
+		return activeMemory{}
+	}
+	if n, ok := raw["number"].(string); !ok || n != number {
+		return activeMemory{}
+	}
+	m := activeMemory{Number: number}
+	if n, ok := numOfAny(raw["unhealthyTicks"]); ok && n >= 0 && n <= math.MaxInt32 {
+		m.UnhealthyTicks = int(n)
+	}
+	if since, ok := numOfAny(raw["idleHoldSince"]); ok {
+		m.IdleHoldSince = &since
+	}
+	return m
+}
+
+// saveActiveMemory applies step to number's persisted memory under the state
+// lock, so engines ticking at once each add their own strike. A dry run steps
+// a lock-free read and writes nothing.
+func (e *Engine) saveActiveMemory(number string, step func(m *activeMemory)) (activeMemory, error) {
+	next := func(state map[string]any) activeMemory {
+		m := activeMemoryOf(state, number)
+		m.Number = number
+		step(&m)
+		return m
+	}
+	if e.dryRun {
+		return next(e.readState()), nil
+	}
+	var m activeMemory
+	_, err := e.mutateState(func(state map[string]any) {
+		m = next(state)
+		var since any
+		if m.IdleHoldSince != nil {
+			since = *m.IdleHoldSince
+		}
+		state["active"] = map[string]any{"number": m.Number, "unhealthyTicks": m.UnhealthyTicks, "idleHoldSince": since}
+	})
+	return m, err
+}
+
+func clearActiveMemory(state map[string]any) { delete(state, "active") }
 
 // inCooldown reports whether the last real switch is within cooldown_seconds
 // (05§13). A missing / non-numeric lastSwitchAt is not a cooldown.

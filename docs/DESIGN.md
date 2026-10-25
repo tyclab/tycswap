@@ -6137,3 +6137,35 @@ never start a duplicate server. The remote tray publishes separate connection me
 An explicit `add --login --switch` onto the current account uses the existing locked
 activation path, so its new credential becomes live instead of returning already-active.
 Plain `add --login` continues to leave the live login untouched.
+
+## A66. Decision memory survives a process
+
+flakelab runs the engine as a systemd timer that starts `tycswap auto --once`
+every two minutes, so every tick is a new process. The failover strike count
+and the idle-hold start lived in process memory and began at zero each run:
+with the active account's usage unknown, every tick reported `1/3 before
+failover` and the engine never failed over.
+
+Both now live in `autoswitch_state.json` under one object, `"active":
+{"number": "<slot>", "unhealthyTicks": <n>, "idleHoldSince": <seconds> |
+null}`. The key is additive; `schemaVersion` stays 1.
+
+- **Read:** at tick start, lock-free like the rest of the file. Anything but
+  an object whose `number` is the live slot's, as a string, is no memory. A
+  count that is not a non-negative number reads as zero, and an idle-hold
+  stamp in the future restarts the hold.
+- **Written:** when the active account's usage is unknown, as a
+  read-modify-write under the state lock, before the `no-switch` event, so its
+  `n/3` is the persisted count and two engines ticking at once each add their
+  strike. On the token-expired branch the same write starts or keeps the idle
+  hold (05§7).
+- **Cleared:** when the active account's headroom is known, and inside the
+  switch path's lock mutation that records `lastSwitchAt`, so a new active
+  account starts at zero.
+- **Dry run:** reads the memory, so it reports the real count and reaches the
+  failover decision a real run would, but never writes it.
+
+Loop mode uses the same object and reloads it every tick, so an engine
+restarted mid-outage continues counting. `idleHoldSlow`, `blockedWaitLong`,
+`sleepUntilTS` and `modelCheckDone` stay in memory: they only shape the next
+sleep or a one-time warning.

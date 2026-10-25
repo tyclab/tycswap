@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Fixed:** `auto --once` counts failover ticks and the idle hold across runs, so a timer-driven engine fails over instead of reporting 1/3 forever.
+
 - **Added:** guided session-group management and Claude/Codex import/export in the shared zsh menu, accessible through **Interactive menu…** in the web dashboard and tray.
 - **Fixed:** opening the web dashboard from the menu reuses the running app; `web --reuse` offers the same behavior without holding the terminal open.
 - **Fixed:** signing in again with `add --login --switch` activates new credentials for an already-active account. Account management exposes sign-in renewal and saved-login activation.
