@@ -438,6 +438,34 @@ func TestAddTokenValidation(t *testing.T) {
 	}
 }
 
+// TestAddTokenTextInput: a field takes typed and pasted text, the space bar
+// and an AltGr character (Windows reports "@" on a German layout with Alt
+// set), ignores ctrl chords, and backspace removes one character, not one
+// byte of "ä" or "日".
+func TestAddTokenTextInput(t *testing.T) {
+	m := newTestModel(&fakeFacade{})
+	a := &addTokenModal{focus: 1, onDone: func(*Model, *tokenForm) tea.Cmd { return nil }}
+	for _, k := range []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune("ä")},
+		{Type: tea.KeyRunes, Runes: []rune("日")},
+		{Type: tea.KeySpace, Runes: []rune{' '}},
+		{Type: tea.KeyRunes, Runes: []rune("@"), Alt: true},
+		{Type: tea.KeyCtrlA},
+		{Type: tea.KeyRunes, Runes: []rune("é@x"), Paste: true},
+	} {
+		a.update(m, k)
+	}
+	if a.email != "ä日 @é@x" {
+		t.Fatalf("email = %q, want %q", a.email, "ä日 @é@x")
+	}
+	for _, want := range []string{"ä日 @é@", "ä日 @é", "ä日 @", "ä日 ", "ä日", "ä", "", ""} {
+		a.update(m, tea.KeyMsg{Type: tea.KeyBackspace})
+		if a.email != want {
+			t.Fatalf("after backspace email = %q, want %q", a.email, want)
+		}
+	}
+}
+
 func TestAddTokenOccupiedSlotConfirm(t *testing.T) {
 	f := &fakeFacade{snap: snapshotOf("1", acct("3", "occupant@x.com", false, nil))}
 	m := newTestModel(f)

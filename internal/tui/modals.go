@@ -11,6 +11,7 @@ package tui
 import (
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -118,11 +119,10 @@ func (a *addTokenModal) update(m *Model, msg tea.Msg) tea.Cmd {
 		}
 		return a.submit(m)
 	case "backspace":
+		// One character, not one byte: a field may hold "ä" or "日".
 		a.editFocused(func(s string) string {
-			if s == "" {
-				return s
-			}
-			return s[:len(s)-1]
+			_, size := utf8.DecodeLastRuneInString(s)
+			return s[:len(s)-size]
 		})
 		return nil
 	default:
