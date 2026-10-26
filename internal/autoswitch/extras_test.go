@@ -368,43 +368,39 @@ func TestNextDelayValues(t *testing.T) {
 
 	t.Run("jitter low bound", func(t *testing.T) {
 		e := build(t, f, settings.Default(), rec, clk, false, WithRNG(func() float64 { return 0 }))
-		if d := e.nextDelay(NoAction); d != 54 {
+		if d := e.nextDelay(tickResult{Outcome: NoAction}); d != 54 {
 			t.Errorf("delay = %v, want 54", d)
 		}
 	})
 	t.Run("blocked with reset clamps to range", func(t *testing.T) {
 		e := build(t, f, settings.Default(), rec, clk, false)
 		ts := e.nowSeconds() + 1800
-		e.sleepUntilTS = &ts
-		if d := e.nextDelay(Blocked); d != 1800 {
+		if d := e.nextDelay(tickResult{Outcome: Blocked, SleepUntil: &ts}); d != 1800 {
 			t.Errorf("delay = %v, want 1800", d)
 		}
 	})
 	t.Run("blocked with reset caps at 6h", func(t *testing.T) {
 		e := build(t, f, settings.Default(), rec, clk, false)
 		ts := e.nowSeconds() + 100000
-		e.sleepUntilTS = &ts
-		if d := e.nextDelay(Blocked); d != MaxSleepS {
+		if d := e.nextDelay(tickResult{Outcome: Blocked, SleepUntil: &ts}); d != MaxSleepS {
 			t.Errorf("delay = %v, want %v", d, MaxSleepS)
 		}
 	})
 	t.Run("blocked exhausted no reset", func(t *testing.T) {
 		e := build(t, f, settings.Default(), rec, clk, false)
-		e.blockedWaitLong = true
-		if d := e.nextDelay(Blocked); d != NoResetFallbackS {
+		if d := e.nextDelay(tickResult{Outcome: Blocked, WaitLong: true}); d != NoResetFallbackS {
 			t.Errorf("delay = %v, want %v", d, NoResetFallbackS)
 		}
 	})
 	t.Run("idle-hold crawl", func(t *testing.T) {
 		e := build(t, f, settings.Default(), rec, clk, false)
-		e.idleHoldSlow = true
-		if d := e.nextDelay(NoAction); d != NoResetFallbackS {
+		if d := e.nextDelay(tickResult{Outcome: NoAction, IdleSlow: true}); d != NoResetFallbackS {
 			t.Errorf("delay = %v, want %v", d, NoResetFallbackS)
 		}
 	})
 	t.Run("blocked resolvable keeps normal cadence", func(t *testing.T) {
 		e := build(t, f, settings.Default(), rec, clk, false, WithRNG(func() float64 { return 0.5 }))
-		if d := e.nextDelay(Blocked); d != 60 {
+		if d := e.nextDelay(tickResult{Outcome: Blocked}); d != 60 {
 			t.Errorf("delay = %v, want 60 (jittered normal)", d)
 		}
 	})

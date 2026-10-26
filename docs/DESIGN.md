@@ -3609,7 +3609,7 @@ stored copy out of the live file.
 
 **Not done here.** Windows has no owner-only DACL on `credentials/`, exports
 and the store root (`CheckPrivateRoot` is a no-op there); a follow-up.
-Dependencies: `go.mod` pins `toolchain go1.26.9`; `make vuln` runs
+Dependencies: `go.mod` pins `toolchain go1.26.10`; `make vuln` runs
 govulncheck.
 ## A26. `internal/web` — the browser dashboard and its security model (Go-side additive extension)
 
@@ -6137,3 +6137,293 @@ never start a duplicate server. The remote tray publishes separate connection me
 An explicit `add --login --switch` onto the current account uses the existing locked
 activation path, so its new credential becomes live instead of returning already-active.
 Plain `add --login` continues to leave the live login untouched.
+
+## A66. The engine keeps nothing between ticks
+
+flakelab runs the engine as a systemd timer that starts `tycswap auto --once`
+every two minutes, so every tick is a new process; the app hosts the engine in
+a loop that starts again with the app; `tycswap auto` and the TUI loop in one
+process. The failover strike count, the idle-hold start and the model-name
+check lived in process memory and began again with each process: with the
+active account's usage unknown, every timer tick reported `1/3 before
+failover` and the engine never failed over.
+
+A tick is a function of the store on disk and the clock. The engine keeps no
+decision state from one tick to the next: `autoswitch_state.json` is its only
+memory, and `--once`, the loop, the app's hosted engine and a dry run all run
+the same tick. What a tick tells the loop about the next wait (a reset to
+sleep until, the long blocked wait, the idle crawl) is returned with its
+outcome, not kept on the engine.
+
+Besides `lastSwitchAt`, `lastSwitchTo` and `quarantine`, the file holds two
+additive keys; `schemaVersion` stays 1 and a malformed value reads as absent.
+
+`"active": {"number": "<slot>", "unhealthyTicks": <n>, "idleHoldSince":
+<seconds> | null}` is the live slot's failover count and idle-hold start.
+
+- **Read:** at tick start, lock-free like the rest of the file. Anything but
+  an object whose `number` is the live slot's, as a string, is no memory. A
+  count that is not a number from 0 to 2147483647 (`math.MaxInt32`) reads as
+  zero, and an idle-hold stamp in the future restarts the hold. While a hold
+  is within `IdleHoldMaxS` no candidate is polled (05§9); an expired hold
+  keeps its stamp, and candidates are polled again so the failover it falls
+  through to has a target to compare.
+- **Written:** when the active account's usage is unknown, as a
+  read-modify-write under the state lock, before the `no-switch` event, so its
+  `n/3` is the persisted count and two engines ticking at once each add their
+  strike. On the token-expired branch the same write starts or keeps the idle
+  hold (05§7).
+- **Cleared:** when the active account's headroom is known, and inside the
+  switch path's lock mutation that records `lastSwitchAt`, so a new active
+  account starts at zero.
+
+`"modelNamesChecked": "<list>"` is the comma-joined, lower-cased
+`autoswitch.model` list the name check (05§18) last warned or verified for.
+The check completes on a tick where every switchable subscription account
+outside quarantine has readable usage. When the stored value differs from the
+current list, the completed check emits the `config-warning` if a name matches
+no window and then records the list, so each list warns once per store rather
+than once per process, and a changed list is checked again. The key is
+advisory: when it cannot be written, the tick logs a WARNING and still reaches
+its decision, and the check runs again next tick. An unchanged list
+is never re-checked: the key is never cleared, so clearing the list or setting
+`all` leaves it in place and restoring the same list later does not warn
+again, and a list that once checked clean is not re-checked when the accounts'
+window names change later. The compare reads the file lock-free at tick start,
+so two engines that complete the check at the same moment may both warn once.
+Two engines running with different lists overwrite each other's key, so each
+re-checks on every tick and repeats any warning; that needs diverging lists,
+for example a `--model` override on one of them, and is rare.
+
+**Dry run:** reads the file and reports the decision a real tick would make
+now, including the count it would reach (the persisted count plus one) and
+the model-name warning. It writes nothing and does not simulate a sequence of
+ticks: two dry ticks over an unchanged file report the same decision. Its one
+memory is the model list it last checked, clean or not, so a long-lived dry
+run (`auto --dry-run`, the TUI's) shows a list's warning once rather than on
+every tick, and again after another list was checked in between. That memory
+is presentation only: it never feeds a decision, which still comes from the
+file alone, and a real engine keeps no such memory. A session group's dry
+engine is built anew on every tick (`internal/cli/groupauto.go`), so it has
+no such memory and a group scope's dry model warning repeats on every tick
+(pre-existing).
+
+Why: a timer deployment starts a process per tick and the app's engine
+restarts with the app, so any memory outside the file is lost at the moment it
+matters; one tick function for every mode leaves nothing for the modes to
+disagree on.
+
+## A67. A skipped usage fetch says why
+
+When the active account's usage was not fetched, nothing recorded why: the
+engine reported the account's usage as unknown for hours and no surface named
+a cause. Every path in the active account's usage collection that returns
+without a network request, and every path that discards a refresh result, now
+writes a reason into the account's row in `cache/usage.json`. The row is read
+by every process, so a reason recorded by the engine is the one the app and
+`list --json` show.
+
+The row gains `skipReason` (a sentence for humans, not a code) and `skipAt`
+(epoch seconds). A skip writes them only when the reason changed, so `skipAt`
+reads "skipped since" and an unchanged skip rewrites nothing.
+The reasons:
+
+- `owner holds an expired token; Claude Code refreshes it on next use`
+- `live credential does not match slot N's backup; refresh skipped`
+- `refresh discarded: an owner appeared mid-refresh`
+- `refresh discarded: live credential changed mid-refresh`
+- `refresh discarded: <error>` when persisting the refreshed credential failed
+  under the lock
+- `no credential in the live store`
+- `credential owner unknown: <detail>`
+- `expired token could not be refreshed` or `expired token could not be
+  refreshed: <error>`
+- the existing sentinel text, `keychain unavailable` or `re-login needed`, when
+  the Keychain cannot be read or the token is quarantined as dead
+
+Only the active account's skips are recorded; an inactive slot's skip stays
+unrecorded. Any attempted fetch, successful or failed, removes both keys:
+`skipReason` says why no usage was recorded and `lastError` says why a request
+failed, so the two never describe the same moment.
+
+The log records each change, never every tick: a WARNING `Usage for account N
+not fetched: <reason>` when a reason is set or changes, and an INFO `Usage for
+account N fetches again` when an attempt clears one.
+
+The surfaces, all additive:
+
+- `list --json` and `/api/state` account rows carry `usageRefresh.skipReason`
+  and `usageRefresh.skipAt` (ISO-8601 UTC), each only when set.
+- The tray's account details line reads `Usage: <status> · <reason>`; it is
+  still shown only when the status is not `ok`.
+- The dashboard's usage chip shows the reason in place of the status text it
+  would show otherwise: `Sign in again to restore usage`, `Waiting for Claude
+  to refresh its login`, `refresh failed` or `refresh rate-limited`. The check
+  time before it and the next attempt after it stay, the chip keeps its
+  warning style while the row carries a `lastError`, and its tooltip starts
+  with the full reason.
+- The engine's `no-switch` details under `active-usage-unknown` and
+  `active-idle` end in ` · <reason>` while the active account's row carries
+  one, for example `1/3 before failover · owner holds an expired token; …`.
+
+## A68. The live slot follows the credential
+
+A running Claude Code rewrites `~/.claude.json` from memory. With two slots of
+one login in different organisations, a switch between them can leave the
+file naming the old organisation while the credential file holds the new
+slot's token, and every surface then showed the wrong account as live.
+
+`Store.ResolveLiveSlot` decides the live slot. It maps the config identity to
+slot X as before. A config identity that maps to no slot stays unmanaged
+whatever the credential is, and an API-key X stays live. When X is a managed
+OAuth slot and the live credential can be read, the first of these that
+answers names the live slot, and `LiveSlot.Source` says which one did:
+
+1. `backup`. A slot holds the live credential's lineage when its stored
+   backup has the same refresh-token fingerprint, or the same account block
+   once the seat-wide keys are set aside. X holding it keeps X; exactly one
+   other managed OAuth slot Y holding it makes Y live. More than one other
+   slot holding it (a copied backup) or an unreadable backup is no evidence.
+2. `chain`. The chain record `live_lineage.json` in the backup root
+   (`{"schemaVersion":1,"fingerprint":"<sha256>","slot":"5","identity":
+   {"uuid","email","orgUuid"},"seenAt":<seconds>}`, 0600) holds the profile
+   endpoint's last answer. It answers when its fingerprint is the live
+   credential's and the roster still maps its identity to its slot, as step 3
+   would. A slot removed or re-added under another uuid makes it stale: it is
+   ignored, and the next profile hit overwrites it. A missing or malformed
+   record is absent.
+3. `profile`. The live access token goes to the OAuth profile endpoint, and
+   `Store.SlotForIdentity` maps the identity it returns to a slot, the mapping
+   `classifyOutgoing` uses: email and organisation unless both sides carry
+   different uuids, else the organisation-scoped uuid. A managed OAuth slot
+   other than X needs the roster's uuid to agree, the switch path's cross-slot
+   rule. A hit is written to the chain record, atomically and only when the
+   record changes, without a lock: last writer wins. A process asks once per
+   live fingerprint, a miss included, so an offline box does not ask every
+   pass (a switch's provenance asks again after a miss, below). It never
+   asks while it holds the store lock, and never without an OAuth client; it
+   then uses an answer it already has.
+4. `config`. Otherwise X.
+
+The chain record is the default login's. Only a resolution of the default
+login reads or writes it: the default scope's `ResolveLiveSlot`, and the
+ownership and handoff checks of the default login from any scope. A group
+scope resolving its own login goes backup, profile, config, so its rotation
+never overwrites the default login's record; it asks the profile once per
+process until its own pass harvests the rotation.
+
+`LiveSlot.Identity` carries the account the chain record or the profile
+endpoint named, for those two sources, and nil otherwise.
+
+The backup step alone is the earlier rule. The other two exist because a
+running Claude Code also refreshes its token itself: the refresh token
+rotates, no backup holds the lineage any more, and the resolver fell back to
+X, the incident's conditions again. The chain record keeps the answer for
+other processes and offline runs.
+
+Each time the resolver overrides the config it logs a WARNING: `live config
+names slot X (<email>, <org>) but the live credential is slot Y's (by
+<source>); using Y. A running Claude Code may have rewritten ~/.claude.json`.
+It names no certain cause: a switch writes the credential before the config,
+and a resolve between the two writes sees the same mismatch. A process logs it
+once per (X, Y) pair, however often it resolves or alternates between pairs.
+
+A usage pass that may fetch the active slot (an OAuth client, and `fetch` nil
+or naming it) first harvests. When chain or profile named the live slot and
+that slot's backup has another fingerprint than the live credential, the live
+credential's account part is written into the backup, under the store lock and
+Claude Code's credential and config locks, after re-checking under them that
+the live credential and the slot's record are unchanged; a slot with an
+uncertain owner is left alone. It logs INFO `Harvested the rotated live
+credential into Account-N's backup`. The live credential is never written.
+From the next pass on, the backup step attributes the credential, offline too.
+The harvest takes the pass's resolution and the live credential read for it,
+so a pass reads the live credential once outside the lock, plus the re-check
+under it when it harvests.
+
+A dry-run engine (`auto --dry-run`, the TUI's and the dashboard's dry runs,
+and the group scopes a dry tick runs, whose statuses resolve the default login
+as well) and a store-only read (a fetch set that wants nothing: the engine's planning
+read, the menu's and the dashboard's snapshots) resolve the same way but never
+write the chain record and never harvest. They may still ask the profile
+endpoint, and keep its answer in memory only.
+`CurrentAccountNumber`, `list`, `status`, the tray's active row, the engine,
+`switch`'s current slot and the switch-to already-active check all use the
+resolver.
+
+Credential ownership follows the same rule. The default login owns the slot
+its credential's lineage names, and that claim is certain. It does not own
+the slot its config names, so that slot is free like any other inactive slot.
+The default profile's own config and credential drive the resolution, so a
+group-scoped store sees the same owner. While the config named X, the default
+claim on Y read as uncertain, so Y's usage was never fetched (`credential
+owner unknown`), and after three ticks the engine failed over from the
+account in use. Now Y's usage is fetched with its live credential as the
+active slot's, and refresh, list and recovery see Y as the default login's.
+Reading the owned credential re-checks that the default login still resolves
+to Y, where it used to compare the config identity.
+
+A normal switch backs up the resolved slot, not the config's. Taking the
+outgoing slot from the config hid the mismatch while destroying a backup: a
+switch onto X found a live credential that was not X's. When the profile
+endpoint could not say whose it was (no network, an expired live token, the
+bytes changing under the lock), the switch fell back to the pre-fix backup and
+wrote Y's credential into X's slot, then installed that copy. The live login
+stayed Y's, the config still named X, X's own credential survived only in
+`.prev`, and the result read `already-active`. Now the switch backs the live
+credential into Y, where it classifies as Y's own, and a switch onto X installs
+X's stored credential and identity. The config backed up for Y keeps Y's own
+`oauthAccount`, since the live config names X's. `switch --force X` still
+activates X directly, without backing up an outgoing slot, and writes what it
+wrote before. Its result now names the credential's slot: `from` is Y and
+`switched` is true, since the live credential moved from Y's to X's.
+A live credential the profile endpoint attributes to Y is Y's in the same way:
+where the switch used to stash it as foreign to X, it now backs it into Y. The
+foreign stash remains for credentials the resolver cannot attribute.
+
+The switch's pre-lock provenance takes `LiveSlot.Identity`. An outgoing slot
+the chain record or the profile attributed therefore classifies as
+`own-rotated` and logs `Backed up account N`, not the `ownership could not be
+verified — pre-fix backup` line. The provenance reuses the resolver's hit and
+does not ask again. The miss memo gates the resolver only: when the resolver
+named no account, the provenance asks the profile endpoint again before the
+lock unless the miss is younger than a minute, so one switch asks an
+unreachable endpoint once. One transient miss in a long-lived process would
+otherwise disable the foreign-credential guard for that fingerprint until the
+token rotated, and the switch would back the live credential into the
+config's slot as unresolved. A hit from that question replaces the miss in
+memory, and the next resolve records it in the chain record.
+`switch --force` runs the same pre-lock provenance. Under the lock the
+resolver asks no one, so without it a credential only the profile attributed
+read as X's, and `--force Y` activated Y's older backup over the live token.
+
+`switch Y` while the mismatch stands is a config repair, and so are `switch
+--force Y` and a rotation that lands on Y. Before, `switch Y` reported
+"Already on" and left the config wrong, and the ownership gate refused
+`--force Y`.
+The repair runs the normal switch under the triple lock. Step 1 backs up Y as
+usual. The credential and Claude Code's `settings.json` are left alone, and
+Y's stored `oauthAccount` goes into `~/.claude.json`, which keeps every other
+key, and `activeAccountNumber` becomes Y. The human line is `Repaired the live
+config for Account-N (<email>)`. The JSON result is `switched: true`, `reason:
+config-repaired`, with `from` and `to` both Y. The log records `Repaired the
+live config for account Y (it named account X)` instead of the switch-history
+line, because nothing switched. The repair passes the ordinary ownership gate,
+because the default login's claim on Y is certain. A group or session profile
+that claims Y as well still refuses it, as conflicting owners.
+
+The default-to-group handoff follows the same rule. Committing or rolling back
+a handoff checks that the default config, read with the credential the handoff
+took, still resolves to the target slot. It used to compare the config identity
+with the target. Under a mismatch, a group can take Y from the default login:
+the default credential and identity are cleared, and the group's claim becomes
+certain. A rollback puts the default login back as it was, mismatch included.
+Before, both the commit and the rollback refused, which left the journal and an
+uncertain group claim behind. A group switch onto X is a plain switch from X's
+stored backup, because the default login does not hold X: no default handoff
+takes place, and the default login is left untouched.
+
+Unchanged on purpose: an unmanaged config identity resolves to no slot, so
+the unclaimed-credential and displaced-login capture keep working as before.
+The repair does not stop a running Claude Code from writing the old identity
+back. The next resolve warns again only in a new process.

@@ -19,29 +19,38 @@ import (
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
-// Tick evaluates once: poll usage, maybe switch. It never panics out — a
-// returned domain error or a recovered panic becomes a transient ErrorEvent and
-// the ERROR outcome (05§6).
-func (e *Engine) Tick() (outcome TickOutcome) {
+// tickResult is one tick's outcome plus what it tells the loop about the next
+// wait. A tick keeps no decision state on the engine: the state file is its
+// only memory.
+type tickResult struct {
+	Outcome    TickOutcome
+	SleepUntil *float64
+	WaitLong   bool
+	IdleSlow   bool
+}
+
+// Tick evaluates once: poll usage, maybe switch. It never panics out.
+func (e *Engine) Tick() TickOutcome { return e.tick().Outcome }
+
+// tick never panics out — a returned domain error or a recovered panic becomes
+// a transient ErrorEvent and the ERROR outcome (05§6).
+func (e *Engine) tick() (result tickResult) {
 	defer func() {
 		if r := recover(); r != nil {
 			e.emit(ErrorEvent{Ts: e.nowISO(), Message: fmt.Sprintf("%v", r), Transient: true})
-			outcome = Error
+			result = tickResult{Outcome: Error}
 		}
 	}()
-	o, err := e.tickInner()
+	r, err := e.tickInner()
 	if err != nil {
 		e.emit(ErrorEvent{Ts: e.nowISO(), Message: err.Error(), Transient: true})
-		return Error
+		return tickResult{Outcome: Error}
 	}
-	return o
+	return r
 }
 
-func (e *Engine) tickInner() (TickOutcome, error) {
+func (e *Engine) tickInner() (tickResult, error) {
 	e.adoptPendingModels()
-	e.sleepUntilTS = nil
-	e.blockedWaitLong = false
-	e.idleHoldSlow = false
 	s := e.currentSettings()
 
 	state := e.readState()
@@ -51,7 +60,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		var err error
 		state, err = e.releaseRecoveredQuarantines(state)
 		if err != nil {
-			return 0, err
+			return tickResult{}, err
 		}
 	}
 	quarantined := quarantinedSet(state)
@@ -64,13 +73,15 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		} else {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-active-account", Detail: "log in and run 'tycswap --add-account' first"})
 		}
-		return NoAction, nil
+		return tickResult{Outcome: NoAction}, nil
 	}
 	cur := *current
 	currentEmail := e.sw.AccountEmail(cur)
 	activeRef := refOf(cur, currentEmail)
 
-	entries, usageMap, headroom := e.collectScheduledUsage(cur, quarantined, pollThreshold(s, e.models))
+	// An expired hold keeps its stamp but polls candidates: failover needs them.
+	idleHold := holdLive(activeMemoryOf(state, cur).IdleHoldSince, e.nowSeconds())
+	entries, usageMap, headroom := e.collectScheduledUsage(cur, quarantined, pollThreshold(s, e.models), idleHold)
 
 	fetchErrors := map[string]string{}
 	for num, entry := range entries {
@@ -94,9 +105,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		Windows:     windows,
 	})
 
-	if !e.modelCheckDone {
-		e.checkModelNames(quarantined, usageMap)
-	}
+	e.checkModelNames(state, quarantined, usageMap)
 
 	// An API-key account has no quota to watch, and the engine never moves on
 	// or off one by itself (DESIGN A33): that is a change of how Claude Code
@@ -104,7 +113,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 	// can decide to make it.
 	if e.sw.AccountKindFor(cur) == "api_key" {
 		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "active-api-key", Detail: "API-key accounts have no quota to watch"})
-		return NoAction, nil
+		return tickResult{Outcome: NoAction}, nil
 	}
 
 	activeHeadroom := headroom[cur]
@@ -115,8 +124,11 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 	axis := usage.ClassWeek
 	var trigger string
 	if activeHeadroom != nil {
-		e.unhealthyTicks = 0
-		e.idleHoldSince = nil
+		if _, had := state["active"]; had && !e.dryRun {
+			if _, err := e.mutateState(clearActiveMemory); err != nil {
+				return tickResult{}, err
+			}
+		}
 		hot, ok := hotAxis(activeByClass, s)
 		if !ok {
 			// No window is over its own bar. Name the one closest to its
@@ -125,7 +137,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 			util, _ := utilizationOver(activeByClass.Axis(near), 0)
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "below-threshold",
 				Detail: near.Name() + " " + pctLabel(util) + "% < " + pctLabel(axisThreshold(s, near)) + "%"})
-			return NoAction, nil
+			return tickResult{Outcome: NoAction}, nil
 		}
 		axis = hot
 		if *activeHeadroom <= 0 {
@@ -134,45 +146,38 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 			trigger = "proactive"
 		}
 	} else {
-		if isTokenExpired(usageMap[cur]) {
-			// Expired while an owner holds the credential → Claude is idle;
-			// crawl instead of burning failover ticks (05§7).
-			now := e.nowSeconds()
-			if e.idleHoldSince == nil {
-				v := now
-				e.idleHoldSince = &v
-			}
-			if now-*e.idleHoldSince <= IdleHoldMaxS {
-				e.unhealthyTicks = 0
-				e.idleHoldSlow = true
-				e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "active-idle",
-					Detail: "token expired while Claude Code is idle; resumes on next use"})
-				return NoAction, nil
-			}
+		expired := isTokenExpired(usageMap[cur])
+		now := e.nowSeconds()
+		idle := false
+		mem, err := e.saveActiveMemory(cur, func(m *activeMemory) { idle = countUnknownTick(m, expired, now) })
+		if err != nil {
+			return tickResult{}, err
+		}
+		if idle {
+			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "active-idle",
+				Detail: withSkipReason("token expired while Claude Code is idle; resumes on next use", entries[cur])})
+			return tickResult{Outcome: NoAction, IdleSlow: true}, nil
+		}
+		if expired && e.log != nil {
 			// Held far longer than any idle nap — likely a dead refresh token
 			// with an active user. Fall through to unhealthy counting.
-			if e.log != nil {
-				e.log.Warningf(
-					"Active token expired and owned for over %.0f minutes; "+
-						"resuming unhealthy counting (dead refresh token?)",
-					IdleHoldMaxS/60,
-				)
-			}
-		} else {
-			e.idleHoldSince = nil
+			e.log.Warningf(
+				"Active token expired and owned for over %.0f minutes; "+
+					"resuming unhealthy counting (dead refresh token?)",
+				IdleHoldMaxS/60,
+			)
 		}
-		e.unhealthyTicks++
-		if e.unhealthyTicks < s.UnhealthyTicks {
+		if mem.UnhealthyTicks < s.UnhealthyTicks {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "active-usage-unknown",
-				Detail: fmt.Sprintf("%d/%d before failover", e.unhealthyTicks, s.UnhealthyTicks)})
-			return NoAction, nil
+				Detail: withSkipReason(fmt.Sprintf("%d/%d before failover", mem.UnhealthyTicks, s.UnhealthyTicks), entries[cur])})
+			return tickResult{Outcome: NoAction}, nil
 		}
 		trigger = "failover"
 	}
 
 	if trigger == "proactive" && e.inCooldown(state) {
 		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "cooldown"})
-		return NoAction, nil
+		return tickResult{Outcome: NoAction}, nil
 	}
 
 	ordered, oauthCandidates, anyKnown, blk := e.selectCandidates(cur, quarantined, s, trigger, axis, activeByClass, headroom, usageMap)
@@ -183,7 +188,7 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 	if len(ordered) == 0 {
 		if !anyKnown {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-comparison", Detail: "no candidate has readable usage"})
-			return Blocked, nil
+			return tickResult{Outcome: Blocked}, nil
 		}
 		trulyExhausted := true
 		for _, n := range oauthCandidates {
@@ -196,18 +201,18 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		if !trulyExhausted {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-qualifying-candidate",
 				Detail: "no candidate is below the threshold and better than the active account by the hysteresis margin, or usage is unreadable this tick"})
-			return Blocked, nil
+			return tickResult{Outcome: Blocked}, nil
 		}
-		e.blockedWaitLong = true
+		blocked := tickResult{Outcome: Blocked, WaitLong: true}
 		var resetAt *string
 		if earliest := e.earliestRecovery(usageMap); earliest != nil {
 			slack := *earliest + usage.ResetSlackS
-			e.sleepUntilTS = &slack
+			blocked.SleepUntil = &slack
 			iso := formatRecoveryISO(*earliest)
 			resetAt = &iso
 		}
 		e.emit(AllExhaustedEvent{Ts: e.nowISO(), EarliestResetAt: resetAt})
-		return Blocked, nil
+		return blocked, nil
 	}
 
 	axisName := axisLabel(axis, trigger)
@@ -221,11 +226,11 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 		switch e.freshenTarget(num, email) {
 		case "identity-conflict":
 			if err := e.quarantine(num, email, "identity-conflict"); err != nil {
-				return 0, err
+				return tickResult{}, err
 			}
 		case "invalid_grant":
 			if err := e.quarantine(num, email, "invalid_grant"); err != nil {
-				return 0, err
+				return tickResult{}, err
 			}
 		case "transient":
 			transientFailure = true
@@ -238,10 +243,45 @@ func (e *Engine) tickInner() (TickOutcome, error) {
 
 	if transientFailure {
 		e.emit(ErrorEvent{Ts: e.nowISO(), Message: "could not freshen any candidate (network?)", Transient: true})
-		return Error, nil
+		return tickResult{Outcome: Error}, nil
 	}
 	e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-viable-target"})
-	return Blocked, nil
+	return tickResult{Outcome: Blocked}, nil
+}
+
+// countUnknownTick steps the memory for a tick with no readable usage and
+// reports whether the idle hold absorbs it. Expired while an owner holds the
+// credential means Claude is idle: crawl instead of burning failover ticks, for
+// at most IdleHoldMaxS (05§7). A hold stamped in the future restarts now.
+func countUnknownTick(m *activeMemory, expired bool, now float64) (idle bool) {
+	if !expired {
+		m.IdleHoldSince = nil
+		m.UnhealthyTicks++
+		return false
+	}
+	if m.IdleHoldSince == nil || *m.IdleHoldSince > now {
+		v := now
+		m.IdleHoldSince = &v
+	}
+	if holdLive(m.IdleHoldSince, now) {
+		m.UnhealthyTicks = 0
+		return true
+	}
+	m.UnhealthyTicks++
+	return false
+}
+
+// holdLive reports whether an idle hold started at since still absorbs ticks.
+func holdLive(since *float64, now float64) bool {
+	return since != nil && now-*since <= IdleHoldMaxS
+}
+
+// withSkipReason appends why the entry's last fetch was skipped, when recorded.
+func withSkipReason(detail string, entry usage.UsageEntry) string {
+	if entry.SkipReason == "" {
+		return detail
+	}
+	return detail + " · " + entry.SkipReason
 }
 
 // axisLabel names the axis for the log ("5h", "7d" or "model"). A failover
@@ -257,8 +297,8 @@ func axisLabel(axis usage.Class, trigger string) string {
 // selectCandidates builds the ordered target list from the switchable accounts
 // (05§10). It returns the ordered targets, the candidate list they were drawn
 // from, whether any candidate had readable usage, and a non-nil BLOCKED
-// outcome for the no-candidates early return. API-key accounts are never
-// candidates (DESIGN A33), not even as a last resort.
+// result for an early return. API-key accounts are never candidates (DESIGN
+// A33), not even as a last resort.
 // usageMap supplies the per-account decision values the soonest-reset strategy
 // needs to compute each candidate's weekly renewal; the qualification gates are
 // identical for every strategy — only the final ordering of the qualifying
@@ -266,7 +306,7 @@ func axisLabel(axis usage.Class, trigger string) string {
 func (e *Engine) selectCandidates(
 	cur string, quarantined map[string]bool, s settings.AutoSwitchSettings, trigger string,
 	axis usage.Class, activeByClass usage.Headroom, headroom map[string]*float64, usageMap map[string]any,
-) (ordered, oauthCandidates []string, anyKnown bool, blk *TickOutcome) {
+) (ordered, oauthCandidates []string, anyKnown bool, blk *tickResult) {
 	var candidates []string
 	for _, num := range e.sw.SwitchableAccountNumbers() {
 		if num != cur && !quarantined[num] {
@@ -279,10 +319,8 @@ func (e *Engine) selectCandidates(
 		}
 	}
 	if len(oauthCandidates) == 0 {
-		e.blockedWaitLong = true
 		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-candidates"})
-		b := Blocked
-		return nil, oauthCandidates, false, &b
+		return nil, oauthCandidates, false, &tickResult{Outcome: Blocked, WaitLong: true}
 	}
 
 	var qualifying []qual
@@ -336,8 +374,7 @@ func (e *Engine) selectCandidates(
 	}
 	if len(qualifying) == 0 && modelRejected {
 		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-compatible-model-target", Detail: "no qualifying target with reported " + strings.Join(required, ", ") + " usage; keeping the current account"})
-		b := Blocked
-		return nil, oauthCandidates, anyKnown, &b
+		return nil, oauthCandidates, anyKnown, &tickResult{Outcome: Blocked}
 	}
 	sortQualifying(qualifying, s.Strategy)
 	for _, q := range qualifying {
@@ -480,14 +517,14 @@ func sortQualifying(qualifying []qual, strategy string) {
 
 // perform runs (or, in dry-run, reports) the switch decision (05§12). axis is
 // the window that made the tick move ("" under failover, DESIGN A34).
-func (e *Engine) perform(number, email, trigger, axis string) (TickOutcome, error) {
+func (e *Engine) perform(number, email, trigger, axis string) (tickResult, error) {
 	if e.dryRun {
 		var from map[string]any
 		if current := e.sw.CurrentAccountNumber(); current != nil {
 			from = refOf(*current, e.sw.AccountEmail(*current))
 		}
 		e.emit(SwitchEvent{Ts: e.nowISO(), Trigger: trigger, Axis: axis, FromRef: from, ToRef: refOf(number, email), DryRun: true})
-		return Switched, nil
+		return tickResult{Outcome: Switched}, nil
 	}
 
 	// Hold the state lock across recheck → switch → record so two concurrent
@@ -519,6 +556,7 @@ func (e *Engine) perform(number, email, trigger, axis string) (TickOutcome, erro
 		state["schemaVersion"] = StateSchemaVersion
 		state["lastSwitchAt"] = e.nowSeconds()
 		state["lastSwitchTo"] = number
+		clearActiveMemory(state)
 		if err := e.writeState(state); err != nil {
 			return err
 		}
@@ -527,7 +565,7 @@ func (e *Engine) perform(number, email, trigger, axis string) (TickOutcome, erro
 		return nil
 	})
 	if err != nil {
-		return 0, err
+		return tickResult{}, err
 	}
 	if switched {
 		e.emit(SwitchEvent{
@@ -538,13 +576,16 @@ func (e *Engine) perform(number, email, trigger, axis string) (TickOutcome, erro
 			ToRef:    mapOf(result["to"]),
 			Warnings: sliceOf(result["warnings"]),
 		})
-		return Switched, nil
+		return tickResult{Outcome: Switched}, nil
 	}
-	return outcome, nil
+	return tickResult{Outcome: outcome}, nil
 }
 
-// checkModelNames is the one-shot autoswitch.model typo guard (05§18).
-func (e *Engine) checkModelNames(quarantined map[string]bool, usageMap map[string]any) {
+// checkModelNames is the autoswitch.model typo guard (05§18). Once every
+// account has been read, the list it checked goes into the state file's
+// modelNamesChecked, so a list warns once per store, not once per process.
+// The key is advisory: a failed write is logged and the tick goes on.
+func (e *Engine) checkModelNames(state map[string]any, quarantined map[string]bool, usageMap map[string]any) {
 	hasNamed := false
 	for _, m := range e.models {
 		if strings.ToLower(m) != "all" {
@@ -552,8 +593,9 @@ func (e *Engine) checkModelNames(quarantined map[string]bool, usageMap map[strin
 			break
 		}
 	}
-	if !hasNamed {
-		e.modelCheckDone = true // bare "all" needs no name match
+	key := strings.ToLower(strings.Join(e.models, ","))
+	checked, _ := state["modelNamesChecked"].(string)
+	if !hasNamed || checked == key || (e.dryRun && e.dryModelChecked == key) {
 		return
 	}
 	var relevant []string
@@ -590,7 +632,6 @@ func (e *Engine) checkModelNames(quarantined map[string]bool, usageMap map[strin
 			}
 		}
 	}
-	e.modelCheckDone = true
 	var missing []string
 	for _, m := range e.models {
 		low := strings.ToLower(m)
@@ -604,6 +645,13 @@ func (e *Engine) checkModelNames(quarantined map[string]bool, usageMap map[strin
 	if len(missing) > 0 {
 		e.emit(ConfigWarningEvent{Ts: e.nowISO(), Message: "autoswitch.model: " + strings.Join(missing, ", ") +
 			" matches no account's usage windows — only the 5h/7d limits are being watched for it (typo?)"})
+	}
+	if e.dryRun {
+		e.dryModelChecked = key
+		return
+	}
+	if _, err := e.mutateState(func(st map[string]any) { st["modelNamesChecked"] = key }); err != nil && e.log != nil {
+		e.log.Warningf("Model-name check not recorded: %v; it runs again next tick", err)
 	}
 }
 

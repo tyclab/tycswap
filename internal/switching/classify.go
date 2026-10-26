@@ -1,6 +1,5 @@
 // classify.go — the issue-#117 credential-ownership oracle
 // (_classify_outgoing_credential, spec 02§9) and the unclaimed-credential stash.
-//
 // classifyOutgoing decides what the switch-time backup may do with the live
 // credential when it no longer byte-matches the outgoing slot: back it up
 // (own family/rotation), leave it (own-bytes / foreign-synced), or preserve it
@@ -55,32 +54,8 @@ func classifyOutgoing(s *store.Store, currentAccount, currentEmail, originalCred
 		return "own-rotated", ""
 	}
 
-	// 5. Find slot by (resolved.email, resolved.org).
-	slot := ""
-	if rEmail != "" {
-		slot = s.FindAccountSlot(data, rEmail, rOrg)
-	}
-	if slot != "" && rUUID != "" {
-		// Both sides carry a uuid → it must agree: an email+org match with a
-		// conflicting uuid is a different account wearing a recycled email.
-		storedRec, _ := accountRec(data, slot)
-		storedUUID := strings.TrimSpace(recStr(storedRec, "uuid"))
-		if storedUUID != "" && storedUUID != rUUID {
-			slot = ""
-		}
-	}
-	if slot == "" && rUUID != "" {
-		// Fall back to the account uuid (org-scoped): the slot's stored email
-		// may be stale or an add-token placeholder.
-		for _, num := range sortedAccountKeys(data) {
-			rec, _ := accountRec(data, num)
-			if u := recStr(rec, "uuid"); u != "" && u == rUUID &&
-				recStr(rec, "organizationUuid") == rOrg {
-				slot = num
-				break
-			}
-		}
-	}
+	// 5. Find the slot the identity names, as the live-slot resolver does.
+	slot := s.SlotForIdentity(data, prov.Resolved)
 	if slot == currentAccount {
 		return "own-rotated", ""
 	}

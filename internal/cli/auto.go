@@ -142,7 +142,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		defer outMu.Unlock()
 		emitClaude(ev)
 	}
-	engine := autoswitch.NewEngine(autoswitchAdapter{sw}, merged, onEvent, dryRun,
+	engine := autoswitch.NewEngine(autoswitchAdapter{engineSwitcher(sw, dryRun)}, merged, onEvent, dryRun,
 		autoswitch.WithOAuthClient(sw.OAuth),
 		autoswitch.WithLogger(sw.Log),
 		autoswitch.WithClock(sw.Clk),

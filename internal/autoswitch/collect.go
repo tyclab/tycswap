@@ -16,7 +16,7 @@ import (
 )
 
 // threshold is the tick snapshot, so fetch and decision agree if ApplyThreshold lands mid-tick (05§22).
-func (e *Engine) collectScheduledUsage(current string, quarantined map[string]bool, threshold float64) (
+func (e *Engine) collectScheduledUsage(current string, quarantined map[string]bool, threshold float64, idleHold bool) (
 	map[string]usage.UsageEntry, map[string]any, map[string]*float64,
 ) {
 	now := e.nowSeconds()
@@ -50,7 +50,7 @@ func (e *Engine) collectScheduledUsage(current string, quarantined map[string]bo
 		plan[current] = true
 	}
 	// During an idle-hold no candidate is polled at all (slow crawl).
-	if e.idleHoldSince == nil {
+	if !idleHold {
 		if pick := usage.DueCandidate(candidates, pre, now); pick != "" {
 			plan[pick] = true
 		}

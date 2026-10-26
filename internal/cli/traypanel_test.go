@@ -160,3 +160,20 @@ func TestPanelResetDoesNotPromiseQuotaBeforeRefresh(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestTrayPanelUsageLineNamesSkipReason(t *testing.T) {
+	const reason = "owner holds an expired token; Claude Code refreshes it on next use"
+	sh, _, _ := newTestShell(t)
+	st := sampleState()
+	row := acct(1, "alice@example.com", "work", true, nil, nil, "", nil)
+	row["usageStatus"] = "token_expired"
+	row["usageRefresh"] = map[string]any{"skipReason": reason, "skipAt": "2026-10-25T17:00:19Z"}
+	st.Accounts = []map[string]any{row}
+	if details := sh.panel(st).Rows[0].Details; !slices.Contains(details, "Usage: token_expired · "+reason) {
+		t.Fatalf("details %q lack the skip reason", details)
+	}
+	delete(row, "usageRefresh")
+	if details := sh.panel(st).Rows[0].Details; !slices.Contains(details, "Usage: token_expired") {
+		t.Fatalf("details %q lost the plain status line", details)
+	}
+}

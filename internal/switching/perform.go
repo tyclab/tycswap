@@ -53,12 +53,10 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 	}
 
 	// Pre-lock identity resolution (may hit the network — before the locks).
+	// --force too: under the lock the resolver asks no one, so a credential
+	// only the profile attributes would read as the config's (DESIGN A68).
 	if prov == nil {
-		if forceActivate {
-			prov = &Provenance{}
-		} else {
-			prov = prefetchLiveIdentity(s)
-		}
+		prov = prefetchLiveIdentity(s)
 	}
 
 	var op switchOp
@@ -87,17 +85,32 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 		toRef := numRef(targetAccount, targetEmail)
 
 		curEmail, curOrg, curOK := s.GetCurrentAccount()
-		_ = curOrg
 		if curOK {
 			currentAccount = s.FindAccountSlot(data, curEmail, curOrg)
 		}
+		// A switch backs up the slot whose credential is live, not the one a
+		// rewritten ~/.claude.json names; --force keeps the config's slot
+		// unless it targets the credential's, which is a repair (DESIGN A68).
+		configSlot := ""
+		var live store.LiveSlot
+		if curOK {
+			if live = s.ResolveLiveSlot(data); live.ByLineage && (!forceActivate || live.Slot == targetAccount) {
+				rec, _ := accountRec(data, live.Slot)
+				configSlot, currentAccount, curEmail = currentAccount, live.Slot, recStr(rec, "email")
+			}
+		}
+		repair := repairsConfig(configSlot, currentAccount, targetAccount)
 
 		// Direct-activation path.
-		if forceActivate || !curOK || currentAccount == "" {
+		if (forceActivate && !repair) || !curOK || currentAccount == "" {
 			var fromRef map[string]any
 			switch {
 			case !curOK:
 				fromRef = nil
+			case live.ByLineage:
+				// The result names the credential's slot, which the activation replaced.
+				rec, _ := accountRec(data, live.Slot)
+				fromRef = numRef(live.Slot, recStr(rec, "email"))
 			case currentAccount == "":
 				fromRef = nilNumRef(curEmail)
 			default:
@@ -149,7 +162,7 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 			tx.restoreClear = tx.originalCredentials == ""
 		}
 
-		commitErr := normalSwitchBody(s, data, tx, targetAccount, targetEmail, currentAccount, curEmail, originalCreds, originalConfig, curEndpoint, prov, emitOutput, &warningsOut)
+		commitErr := normalSwitchBody(s, data, tx, targetAccount, targetEmail, currentAccount, curEmail, configSlot, originalCreds, originalConfig, curEndpoint, prov, emitOutput, &warningsOut)
 		plan = tx.plan
 		if commitErr != nil {
 			if s.Log != nil {
@@ -170,7 +183,7 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 			return commitErr
 		}
 
-		op = switchOp{From: fromRef, To: toRef, Warnings: warningsOut}
+		op = switchOp{From: fromRef, To: toRef, Warnings: warningsOut, Repaired: repair}
 		displayAfterLock = true
 		return nil
 	})
@@ -178,6 +191,12 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 		return switchOp{}, err
 	}
 
+	if displayAfterLock && op.Repaired {
+		if emitOutput {
+			printOut(printer.Accent("Repaired") + " the live config for Account-" + targetAccount + " (" + targetEmail + ")")
+		}
+		return op, nil
+	}
 	if displayAfterLock {
 		if emitOutput {
 			printOut(printer.Accent("Switched to") + " Account-" + targetAccount + " (" + targetEmail + ")")
@@ -370,8 +389,10 @@ func directActivate(s *store.Store, data *store.SequenceData, targetAccount, tar
 
 // normalSwitchBody runs steps 1–5 of the normal switch under the lock, recording
 // each completed step on tx for reverse-order rollback. It returns the first
-// error (the caller decides rolled-back vs rollback-also-failed).
-func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransaction, targetAccount, targetEmail, currentAccount, currentEmail, originalCreds, originalConfig string, curEndpoint bool, prov *Provenance, emitOutput bool, warningsOut *[]string) error {
+// error (the caller decides rolled-back vs rollback-also-failed). configSlot is
+// the slot the live config names when the outgoing slot came from the live
+// credential's lineage instead, else "".
+func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransaction, targetAccount, targetEmail, currentAccount, currentEmail, configSlot, originalCreds, originalConfig string, curEndpoint bool, prov *Provenance, emitOutput bool, warningsOut *[]string) error {
 	// What the switch does to Claude Code's settings.json (DESIGN A46),
 	// decided and refused before anything is written, the outgoing backup
 	// included. An endpoint target is never the outgoing slot (that one has
@@ -383,6 +404,14 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 		return err
 	}
 	tx.plan = plan
+	repair := repairsConfig(configSlot, currentAccount, targetAccount)
+	ownConfig, haveOwnConfig := outgoingConfig(s, currentAccount, currentEmail, originalConfig, configSlot)
+	writeOutgoingConfig := func() error {
+		if !haveOwnConfig {
+			return nil
+		}
+		return s.WriteAccountConfig(currentAccount, currentEmail, ownConfig)
+	}
 
 	// Step 1: back up the outgoing slot, classified by the ownership oracle.
 	// An account with a base URL is not classified: its credential is the
@@ -435,14 +464,14 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 		if err := s.WriteAccountCredentials(currentAccount, currentEmail, oauth.AccountOnly(originalCreds)); err != nil {
 			return err
 		}
-		if err := s.WriteAccountConfig(currentAccount, currentEmail, originalConfig); err != nil {
+		if err := writeOutgoingConfig(); err != nil {
 			return err
 		}
 		if s.Log != nil {
 			s.Log.Infof("Backed up account %s (lineage differs from the stored backup and ownership could not be verified — pre-fix backup)", currentAccount)
 		}
 	case "own-bytes":
-		if err := s.WriteAccountConfig(currentAccount, currentEmail, originalConfig); err != nil {
+		if err := writeOutgoingConfig(); err != nil {
 			return err
 		}
 		if s.Log != nil {
@@ -454,7 +483,7 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 		if err := s.WriteAccountCredentials(currentAccount, currentEmail, oauth.AccountOnly(originalCreds)); err != nil {
 			return err
 		}
-		if err := s.WriteAccountConfig(currentAccount, currentEmail, originalConfig); err != nil {
+		if err := writeOutgoingConfig(); err != nil {
 			return err
 		}
 		if kind == "own-rotated" && prov.Resolved != nil {
@@ -477,36 +506,12 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 		return cerr.Switch("Account-%s has no stored config backup. Re-add with: tycswap --add-account --slot %s", targetAccount, targetAccount)
 	}
 
-	// Step 3: activate target credentials. The live seat-wide keys (the seat's
-	// MCP server logins and client secrets) ride over the stored account blob;
-	// rollback below restores the original bytes verbatim through WriteActive.
-	// An account with a base URL stores nothing here: every login leaves the
-	// store, and its key goes into settings.json in step 3b. Clearing does
-	// not undo itself when it fails half-way, so its step is recorded first
-	// and the rollback writes the original credential back.
-	clearing := plan.apply != nil
-	if clearing {
-		tx.recordStep("credentials_written")
-	}
-	if err := writeActiveFor(s, plan, targetCreds); err != nil {
-		return err
-	}
-	if !clearing {
-		tx.recordStep("credentials_written")
-	}
-	if s.Log != nil {
-		s.Log.Infof("Wrote target credentials")
-	}
-
-	// Step 3b: write the endpoint into settings.json, or put back what it
-	// held before one was written. Recorded before the write, so a half-done
-	// write is rolled back from the snapshot too.
-	if plan.touches() {
-		tx.recordStep("profile_written")
-		if err := plan.commit(s); err != nil {
+	// Steps 3 and 3b; a repair leaves both alone, the live credential being
+	// the target's already.
+	if !repair {
+		if err := activateTarget(s, tx, plan, targetCreds, emitOutput, warningsOut); err != nil {
 			return err
 		}
-		plan.warn(emitOutput, warningsOut)
 	}
 
 	// Step 4: splice the target oauthAccount into the live config.
@@ -544,12 +549,81 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 		return err
 	}
 	tx.recordStep("sequence_updated")
-	if s.Log != nil {
+	if s.Log != nil && repair {
+		s.Log.Infof("Repaired the live config for account %s (it named account %s)", targetAccount, configSlot)
+	} else if s.Log != nil {
 		// The A4 switch-history INFO line — exact wording is a hard interop
 		// contract (the TUI history reader parses it).
 		s.Log.Infof("Switched from account %s to %s", currentAccount, targetAccount)
 	}
 	return nil
+}
+
+// activateTarget is steps 3 and 3b of the normal switch: the target's
+// credential into Claude Code's store and its endpoint into settings.json.
+func activateTarget(s *store.Store, tx *switchTransaction, plan *profilePlan, targetCreds string, emitOutput bool, warningsOut *[]string) error {
+	// Step 3: activate target credentials. The live seat-wide keys (the seat's
+	// MCP server logins and client secrets) ride over the stored account blob;
+	// the rollback restores the original bytes verbatim through WriteActive.
+	// An account with a base URL stores nothing here: every login leaves the
+	// store, and its key goes into settings.json in step 3b. Clearing does
+	// not undo itself when it fails half-way, so its step is recorded first
+	// and the rollback writes the original credential back.
+	clearing := plan.apply != nil
+	if clearing {
+		tx.recordStep("credentials_written")
+	}
+	if err := writeActiveFor(s, plan, targetCreds); err != nil {
+		return err
+	}
+	if !clearing {
+		tx.recordStep("credentials_written")
+	}
+	if s.Log != nil {
+		s.Log.Infof("Wrote target credentials")
+	}
+
+	// Step 3b: write the endpoint into settings.json, or put back what it
+	// held before one was written. Recorded before the write, so a half-done
+	// write is rolled back from the snapshot too.
+	if plan.touches() {
+		tx.recordStep("profile_written")
+		if err := plan.commit(s); err != nil {
+			return err
+		}
+		plan.warn(emitOutput, warningsOut)
+	}
+	return nil
+}
+
+// repairsConfig: the outgoing slot came from the live credential's lineage
+// and is the target, so only ~/.claude.json is wrong (DESIGN A68).
+func repairsConfig(configSlot, currentAccount, targetAccount string) bool {
+	return configSlot != "" && currentAccount == targetAccount
+}
+
+// outgoingConfig is the config step 1 backs up for the outgoing slot. When the
+// live config names configSlot instead, the slot's own stored oauthAccount
+// replaces that identity; ok is false when the slot has none to carry over.
+func outgoingConfig(s *store.Store, num, email, liveConfig, configSlot string) (string, bool) {
+	if configSlot == "" {
+		return liveConfig, true
+	}
+	stored, _ := s.ReadAccountConfig(num, email)
+	var storedCfg, cfg map[string]any
+	if json.Unmarshal([]byte(stored), &storedCfg) != nil || json.Unmarshal([]byte(liveConfig), &cfg) != nil || cfg == nil {
+		return "", false
+	}
+	own, ok := oauthSection(storedCfg)
+	if !ok {
+		return "", false
+	}
+	cfg["oauthAccount"] = own
+	encoded, err := marshalIndent2(cfg)
+	if err != nil {
+		return "", false
+	}
+	return string(encoded), true
 }
 
 // backfillUUIDInData sets a missing slot uuid from the resolved identity on the

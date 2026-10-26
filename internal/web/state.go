@@ -297,6 +297,9 @@ func accountRow(a reporting.AccountSnapshot) map[string]any {
 	if next != nil {
 		refresh["nextAt"] = time.Unix(int64(*next), 0).UTC().Format(time.RFC3339)
 	}
+	for k, v := range jsonout.SkipFields(a.Usage.SkipReason, a.Usage.SkipAt) {
+		refresh[k] = v
+	}
 	if len(refresh) > 0 {
 		row["usageRefresh"] = refresh
 	}

@@ -46,6 +46,9 @@ func groupModelBlocker(sw *core.Switcher, observed recovery.State) string {
 }
 
 func tickGroupScopes(root *core.Switcher, base settings.AutoSwitchSettings, emit func(autoswitch.Event), dry bool) {
+	// A dry tick resolves read-only from the root on: the statuses resolve the
+	// default login too, and ForGroup keeps the root's read-only view (DESIGN A68).
+	root = engineSwitcher(root, dry)
 	statuses, err := root.GroupStatuses()
 	if err != nil {
 		root.Log.Warningf("session groups: %v", err)

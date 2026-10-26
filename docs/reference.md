@@ -146,8 +146,11 @@ When usage cannot be fetched the row reads `usage unavailable (<reason>)` where
 
 ### Files
 
-Reads `sequence.json`, per-account `configs/` and `credentials/`, and
-`cache/usage.json` from the backup root. Writes nothing.
+Reads `sequence.json`, per-account `configs/` and `credentials/`,
+`live_lineage.json` and `cache/usage.json` from the backup root. Writes
+nothing, except `live_lineage.json` when the profile endpoint names the live
+credential's slot, and that slot's backup when it harvests a token Claude Code
+refreshed itself (DESIGN A68).
 
 ### Exit status
 
@@ -194,6 +197,7 @@ Present only when applicable (additive, schemaVersion 1):
 | `limitingWindows` | array of string | Emitted with `atLimit`; the windows at/over limit, in relevant-window order. |
 | `usageFetchedAt` | string (ISO-8601 UTC) | `usage` is non-null and the measurement time is known. |
 | `usageAgeSeconds` | number | Emitted with `usageFetchedAt`. |
+| `usageRefresh` | object | A usage fetch was skipped and none has been attempted since: `skipReason` (string) says why, for example `owner holds an expired token; Claude Code refreshes it on next use`, and `skipAt` (string, ISO-8601 UTC, seconds) since when. The next attempted fetch, successful or failed, removes both. |
 
 The `usageStatus` enumeration:
 
@@ -273,8 +277,9 @@ active record is reported as unmanaged.
 ### Files
 
 Reads `sequence.json`, the live `~/.claude.json` (or a custom `CLAUDE_CONFIG_DIR`
-equivalent; a tycswap session pin is ignored — see ENVIRONMENT), and
-`cache/usage.json`. Writes nothing.
+equivalent; a tycswap session pin is ignored — see ENVIRONMENT),
+`live_lineage.json` and `cache/usage.json`. Writes nothing, except
+`live_lineage.json` and the harvested backup as `list` does (DESIGN A68).
 
 ### Exit status
 
@@ -368,7 +373,7 @@ tycswap switch --strategy {best|next-available} [--model NAMES] [--json] [--debu
 | Option | Type | Default | Constraints |
 |--------|------|---------|-------------|
 | `--json` | flag | off | — |
-| `--force` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; activates without backing up the current login first. |
+| `--force` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; activates without backing up the current login first. When the live credential already belongs to the target while `~/.claude.json` names another slot, it repairs the config instead, as without `--force` (DESIGN A68). |
 | `--yes` / `-y` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; answers the API-key confirmation below, for scripts. |
 | `--strategy` | choice `best` \| `next-available` | unset | Only with bare `switch` (no target). |
 | `--model` | string (comma-separated names) | unset | Only with `switch --strategy`. |
@@ -494,7 +499,8 @@ with the seat-wide keys left beside it).
 ### Files
 
 Reads and writes `sequence.json` (the active pointer), the live Claude Code
-config/credentials, and per-account `configs/`/`credentials/`. A switch onto or
+config/credentials, per-account `configs/`/`credentials/`, and
+`live_lineage.json` (the live credential's attributed slot, DESIGN A68). A switch onto or
 away from an account with a base URL also writes Claude Code's
 `settings.json` (the two `env` keys only) and `claude-settings.prev.json` in the
 backup root. Acquires the backup-root and Claude Code credential locks.
@@ -507,7 +513,8 @@ backup root. Acquires the backup-root and Claude Code credential locks.
 ### Output
 
 Human output is `Switched to Account-<n> (<email>)` (or `Already on ...`), then
-a refreshed account list and the post-switch note. With `--json`:
+a refreshed account list and the post-switch note. A config repair prints
+`Repaired the live config for Account-<n> (<email>)` alone. With `--json`:
 
 ```
 {
@@ -522,12 +529,21 @@ a refreshed account list and the post-switch note. With `--json`:
 }
 ```
 
-A `<ref>` is `{"number": <int|null>, "email": "<string>"}`. `switched` is
-`true` when `from` and `to` differ. `strategy` is `direct` for a named target,
-`rotation` for a bare rotate, or `best` / `next-available`. `reason` is one of
-`switched`, `already-active`, `activated` (with `--force`), `unmanaged-account`,
-`only-one-account`, `candidates-exhausted`, `no-valid-target`,
-`usage-unavailable`, or `already-best`. A bare `switch --strategy` with
+A `<ref>` is `{"number": <int|null>, "email": "<string>"}`. `from` is the
+slot whose credential was live, also when `~/.claude.json` named another slot
+(DESIGN A68). `switched` is `true` when `from` and `to` differ, and for a
+config repair. `strategy` is `direct` for a named target, `rotation` for a
+bare rotate, or `best` / `next-available`. `reason` is one of `switched`,
+`already-active`, `activated`
+(with `--force`), `config-repaired`, `unmanaged-account`, `only-one-account`,
+`candidates-exhausted`, `no-valid-target`, `usage-unavailable`, or
+`already-best`. `config-repaired` means the live credential already belonged to
+the target but `~/.claude.json` named another slot of the same login. The live
+credential and Claude Code's `settings.json` are left alone. The target's
+identity is written into `~/.claude.json` and into the target's stored config.
+The target's stored credential is refreshed from the live one when only its
+access token has rotated, and `activeAccountNumber` becomes the target. `from`
+and `to` are both the target (DESIGN A68). A bare `switch --strategy` with
 `--model` additionally emits `models` (array of string) and `modelSource`
 (`cli` or `autoswitch.model`).
 
@@ -1569,9 +1585,14 @@ session started, not one already running.
 ### Files
 
 Reads `sequence.json`, `settings.json`, `cache/usage.json`. Reads and writes
-`autoswitch_state.json` (cooldown / quarantine state) under
-`.autoswitch_state.lock`. A real switch writes the same files `tycswap switch`
-does. The Codex engine reads and writes the files `tycswap codex switch` does.
+`autoswitch_state.json` (cooldown, quarantine, the active account's failover
+count and idle-hold start, and the last model-name check, DESIGN A66) under
+`.autoswitch_state.lock`.
+Reads and writes `live_lineage.json`, and harvests a token Claude Code
+refreshed itself into the live slot's backup, as `list` does; `--dry-run`
+writes neither (DESIGN A68).
+A real switch writes the same files `tycswap switch` does. The Codex engine
+reads and writes the files `tycswap codex switch` does.
 
 ### Exit status
 
@@ -1597,7 +1618,7 @@ a `Z` suffix), plus per-kind fields:
 |---------|--------|
 | `poll` | `active` (`{number,email}` or null), `headroomPct` (`{num: float|null}`), `threshold` (float: the 7d bar), `fetchErrors` (`{num: msg}`, optional), `windowsPct` (`{num: {label: float}}`, optional) |
 | `switch` | `trigger` (`proactive`\|`at-limit`\|`failover`), `axis` (`5h`\|`7d`\|`model`: the window that made the tick move; empty under `failover`, where usage was unreadable), `from` (ref), `to` (ref), `warnings` (array), `dryRun` (bool) |
-| `no-switch` | `reason` (string), `detail` (string) |
+| `no-switch` | `reason` (string), `detail` (string); under `active-usage-unknown` and `active-idle`, `detail` ends in ` · <skip reason>` while the active account's `list --json` row carries `usageRefresh.skipReason` |
 | `account-quarantined` | `number`, `email`, `reason` |
 | `account-unquarantined` | `number`, `email`, `reason` |
 | `all-exhausted` | `earliestResetAt` (string or null) |
@@ -2690,7 +2711,11 @@ The page updates live: a state document arrives on connect, on every poll
 tick, after every action, after each batch of engine events and whenever an
 update check has learnt something. Each
 account row in it carries the fields of a `tycswap list --json` row plus
-`provider` and `key`; with `?tokenStatus=1` every row also carries
+`provider` and `key`; its `usageRefresh` object also carries `error` (the
+cached fetch-failure classification, for example `http-429`) and `nextAt`
+(ISO-8601 UTC, the later of the next planned poll and the failure backoff)
+beside `skipReason` and `skipAt`, each key only when set and the object only
+when one is; with `?tokenStatus=1` every row also carries
 `tokenStatus`, its own token-status string (`""` when there is none), and
 the document has no top-level `tokenStatus`. The document also carries
 `currentLogin` (`{"email", "saved"}` for the login Claude Code has; `saved`
@@ -4683,11 +4708,12 @@ Inside the backup root:
 | `settings.json` | Settings (see SETTINGS). |
 | `claude-settings.prev.json` | Present while an API-key account with a base URL is active (DESIGN A46): what the three keys of Claude Code's `settings.json` the switch owns, `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN` (written) and `env.ANTHROPIC_API_KEY` (removed), held before (`{"version": 1, "settingsPath", "keys": {"<key>": {"present", "value"?}}}`, including whether `env` existed), mode 0600. A switch onto any other account restores them from it and removes it; one that is not a complete record (version 1, an entry for `env` and each key, nothing after it) is corrupt and stops the switch. `tycswap purge` deletes it and says so first. |
 | `mappings.json` | Directory→account mappings (`schemaVersion`, `mappings` keyed by absolute path). |
-| `autoswitch_state.json` | `tycswap auto` cooldown / quarantine state, guarded by `.autoswitch_state.lock`. |
+| `autoswitch_state.json` | `tycswap auto` cooldown, quarantine, failover-count, idle-hold and model-name-check state, guarded by `.autoswitch_state.lock`. |
 | `configs/` | Per-account config snapshots, `.claude-config-<n>-<email>.json`. `<email>` is the account's email as `add` accepts it (one `@`, at most 254 bytes, no whitespace, control character, `/`, `\` or `< > : " | ? *`), so the name is a single path component. |
 | `credentials/` | Per-account credential files, `.creds-<n>-<email>.enc` and the retained previous generation `.creds-<n>-<email>.enc.prev` (file backend; `<email>` as for `configs/`). macOS stores these in the Keychain instead, except a credential too large to reach the `security` command over stdin (a command line over 4032 bytes, so a credential over about 2 KB, for example one carrying many `mcpOAuth` tokens), which stays in this file (mode 0600) rather than on a command line. The live Claude Code credential falls back to `.credentials.json` the same way. |
 | `sessions/` | Per-account session-mode profiles, `<n>-<email>` (the `@` in the email replaced by `_`), created by `tycswap run` / `tycswap env`. |
 | `cache/usage.json` | Cached usage measurements. |
+| `live_lineage.json` | The chain record of the default login's live credential (DESIGN A68): `{"schemaVersion": 1, "fingerprint": "<sha256>", "slot": "<n>", "identity": {"uuid", "email", "orgUuid"}, "seenAt": <epoch-seconds>}`, mode 0600. Written without a lock (last writer wins) when the profile endpoint names the slot of the default login's live credential, and only when the record changes; a dry run or a store-only read never writes it, and a group scope's own login never reads or writes it. A derived cache: a missing or malformed file reads as absent, and a record whose slot the roster no longer maps to its identity is ignored. |
 | `statusline.json` | Label and quota per account for Claude Code status lines (see STATUS LINE STATE). Derived: never copied by `tycswap migrate`. |
 | `.statusline.lock` | Held while `statusline.json` is rebuilt. No data. |
 | `cache/update_check.json` | Last passive update-check result (`{"timestamp": <epoch-seconds>, "data": <latest-version>}`). |

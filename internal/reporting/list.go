@@ -54,6 +54,7 @@ func ListAccounts(s *store.Store, showTokenStatus, jsonOut bool, fetch map[strin
 	if err := backfillLockError(s); err != nil {
 		return nil, err
 	}
+	s = passStore(s, fetch)
 	infos := BuildAccountsInfo(s)
 	entries := CollectUsageEntries(s, infos, fetch)
 
@@ -95,6 +96,8 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 				AtLimit:         atLimit,
 				LimitingWindows: limiting,
 				BaseURL:         info.BaseURL,
+				SkipReason:      entry.SkipReason,
+				SkipAt:          entry.SkipAt,
 			},
 		)
 		if showTokenStatus {

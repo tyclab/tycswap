@@ -42,7 +42,8 @@ var staggerSleep = func(d time.Duration) { time.Sleep(d) }
 // snapshots) makes every account a candidate but respects persisted poll plans;
 // a non-nil set restricts which accounts may be fetched this pass (the auto
 // engine / TUI watch view). Final eligibility is decided atomically by
-// store.Usage.Reserve. Sentinels are re-derived every pass and never persisted.
+// store.Usage.Reserve. Sentinels are re-derived every pass and never persisted;
+// why a wanted active fetch was skipped persists as the row's skipReason.
 func CollectUsageEntries(s *store.Store, infos []AccountInfo, fetch map[string]bool) map[string]usage.UsageEntry {
 	st := s.Usage
 	identities := make(map[string]usage.Identity, len(infos))
@@ -51,13 +52,18 @@ func CollectUsageEntries(s *store.Store, infos []AccountInfo, fetch map[string]b
 		num := strconv.Itoa(info.Number)
 		identities[num] = usage.Identity{Email: info.Email, OrgUUID: info.OrgUUID}
 		infoByNum[num] = info
+		if info.IsActive && s.OAuth != nil && s.LineageWrites() && (fetch == nil || fetch[num]) {
+			harvestLiveCredential(s, info.live, info.liveCreds)
+		}
 	}
 
 	// Static sentinels: derivable without a network call.
 	sentinels := make(map[string]string, len(infos))
+	reasons := make(map[string]string, len(infos))
 	for _, info := range infos {
-		if sent := staticUsageSentinel(s, info); sent != "" {
+		if sent, reason := staticUsageSentinel(s, info); sent != "" {
 			sentinels[strconv.Itoa(info.Number)] = sent
+			reasons[strconv.Itoa(info.Number)] = reason
 		}
 	}
 
@@ -69,19 +75,33 @@ func CollectUsageEntries(s *store.Store, infos []AccountInfo, fetch map[string]b
 		num := strconv.Itoa(info.Number)
 		if _, has := sentinels[num]; !has && entries[num].TokenDead() {
 			sentinels[num] = jsonout.UsageReloginRequired
+			if info.IsActive {
+				reasons[num] = jsonout.UsageReloginRequired
+			}
 		}
 	}
 
 	// requested keeps sequence order so the fetch stagger indexes deterministically.
 	var requested []string
+	skips := map[string]usage.FetchRecord{}
 	for _, info := range infos {
 		num := strconv.Itoa(info.Number)
+		wanted := fetch == nil || fetch[num]
 		if _, has := sentinels[num]; has {
+			// Only a pass that could have fetched records why it did not, and only a new
+			// reason: a store-only read or an unchanged skip takes no lock and writes nothing.
+			if wanted && s.OAuth != nil && reasons[num] != "" && reasons[num] != entries[num].SkipReason {
+				skips[num] = usage.FetchRecord{Sentinel: sentinels[num], SkipReason: reasons[num]}
+			}
 			continue
 		}
-		if fetch == nil || fetch[num] {
+		if wanted {
 			requested = append(requested, num)
 		}
+	}
+	if len(skips) > 0 {
+		recordUsage(s, skips, entries, identities)
+		entries = st.Entries(identities)
 	}
 	if len(requested) > 0 {
 		for _, id := range groups.All() {
@@ -103,7 +123,7 @@ func CollectUsageEntries(s *store.Store, infos []AccountInfo, fetch map[string]b
 				fetchInfos = append(fetchInfos, infoByNum[num])
 			}
 			records := runUsageFetches(s, fetchInfos)
-			_ = st.Record(records, identities)
+			recordUsage(s, records, pre, identities)
 			for num, rec := range records {
 				if rec.Sentinel != "" {
 					sentinels[num] = rec.Sentinel
@@ -132,7 +152,62 @@ func CollectUsageEntries(s *store.Store, infos []AccountInfo, fetch map[string]b
 // UsageEntriesByAccount builds the info rows and collects usage in one pass,
 // the convenience *core.Switcher's frozen UsageEntriesByAccount delegates to.
 func UsageEntriesByAccount(s *store.Store, fetch map[string]bool) map[string]usage.UsageEntry {
+	s = passStore(s, fetch)
 	return CollectUsageEntries(s, BuildAccountsInfo(s), fetch)
+}
+
+// passStore is s for a pass that may fetch, else the store that never writes
+// the chain record: a store-only read writes nothing (DESIGN A68).
+func passStore(s *store.Store, fetch map[string]bool) *store.Store {
+	if fetch == nil {
+		return s
+	}
+	for _, wanted := range fetch {
+		if wanted {
+			return s
+		}
+	}
+	return s.WithoutLineageWrites()
+}
+
+// harvestLiveCredential stores a live credential Claude Code rotated itself in
+// the backup of the slot the chain record or the profile attributed it to, so
+// from the next pass on the backup alone attributes it, offline too. It takes
+// the pass's resolution and live bytes; the live credential is never written.
+func harvestLiveCredential(s *store.Store, ls store.LiveSlot, live string) {
+	if ls.Source != store.SourceChain && ls.Source != store.SourceProfile || live == "" {
+		return
+	}
+	data, _ := s.ReadSequence()
+	rec, _ := recordFor(data, ls.Slot)
+	email := recStr(rec, "email")
+	if backup, _ := s.ReadAccountCredentials(ls.Slot, email); fingerprintsEqual(backup, live) {
+		return
+	}
+	if owner, err := s.CredentialOwner(ls.Slot); err != nil || owner.Uncertain {
+		return
+	}
+	harvested := false
+	err := withTripleLock(s, func() error {
+		// Under the lock the credential and the slot must be the ones attributed.
+		now, _, err := s.Creds.ReadActive()
+		current, _ := s.ReadSequence()
+		if rec, ok := recordFor(current, ls.Slot); err != nil || now != live || !ok || recStr(rec, "email") != email {
+			return nil
+		}
+		if err := s.WriteAccountCredentials(ls.Slot, email, oauth.AccountOnly(live)); err != nil {
+			return err
+		}
+		harvested = true
+		return nil
+	})
+	switch {
+	case s.Log == nil:
+	case err != nil:
+		s.Log.Debugf("Skipped harvesting the rotated live credential into Account-%s: %v", ls.Slot, err)
+	case harvested:
+		s.Log.Infof("Harvested the rotated live credential into Account-%s's backup", ls.Slot)
+	}
 }
 
 func UsageByAccount(s *store.Store) map[string]any {
@@ -175,28 +250,48 @@ func ReplanCachedUsage(s *store.Store) {
 	}
 }
 
+// recordUsage records outcomes and logs a slot's skip reason only when it
+// changes, so a lasting skip warns once instead of every pass.
+func recordUsage(s *store.Store, records map[string]usage.FetchRecord, before map[string]usage.UsageEntry, ids map[string]usage.Identity) {
+	if err := s.Usage.Record(records, ids); err != nil || s.Log == nil {
+		return
+	}
+	for num, rec := range records {
+		prev := before[num].SkipReason
+		if rec.SkipReason != "" && rec.SkipReason != prev {
+			s.Log.Warningf("Usage for account %s not fetched: %s", num, rec.SkipReason)
+		} else if prev != "" && rec.SkipReason == "" && rec.Sentinel == "" {
+			s.Log.Infof("Usage for account %s fetches again", num)
+		}
+	}
+}
+
 // staticUsageSentinel returns the sentinel state derivable without a network
-// call, or "" (spec 02§13 _static_usage_sentinel). Re-derived every pass so it
-// never outlives the condition that produced it.
-func staticUsageSentinel(s *store.Store, info AccountInfo) string {
+// call, or "" (spec 02§13 _static_usage_sentinel), and for the active account
+// the reason its fetch is skipped. Re-derived every pass so it never outlives
+// the condition that produced it.
+func staticUsageSentinel(s *store.Store, info AccountInfo) (sentinel, reason string) {
 	// An account with a base URL is an API key whatever its key looks like,
 	// and the active one has no credential in Claude Code's store at all: its
 	// key is in settings.json (DESIGN A46).
 	if credstore.LooksLikeAPIKey(info.Creds) || info.BaseURL != "" {
-		return jsonout.UsageAPIKey
+		return jsonout.UsageAPIKey, ""
 	}
 	if info.Creds == "" || oauth.ExtractAccessToken(info.Creds) == "" {
-		if info.IsActive && info.KeychainUnavailable {
-			return jsonout.UsageKeychainUnavailable
+		if !info.IsActive {
+			return jsonout.UsageNoCredentials, ""
 		}
-		return jsonout.UsageNoCredentials
+		if info.KeychainUnavailable {
+			return jsonout.UsageKeychainUnavailable, jsonout.UsageKeychainUnavailable
+		}
+		return jsonout.UsageNoCredentials, skipNoCredential
 	}
 	if !info.IsActive {
 		data := oauth.ExtractOAuthData(info.Creds)
 		if data != nil && oauth.IsOAuthTokenExpired(data["expiresAt"], s.Clk.Now()) {
 			owner, err := s.CredentialOwner(strconv.Itoa(info.Number))
 			if err == nil && owner.Scope != "" && !owner.Uncertain {
-				return jsonout.UsageTokenExpired
+				return jsonout.UsageTokenExpired, ""
 			}
 		}
 	}
@@ -208,10 +303,10 @@ func staticUsageSentinel(s *store.Store, info AccountInfo) string {
 		oauthData := oauth.ExtractOAuthData(info.Creds)
 		if oauthData != nil && oauth.IsOAuthTokenExpired(oauthData["expiresAt"], s.Clk.Now()) &&
 			(activeCCRunning(s) || len(s.LiveSessionPidsFor(strconv.Itoa(info.Number), info.Email)) > 0) {
-			return jsonout.UsageTokenExpired
+			return jsonout.UsageTokenExpired, skipOwnerExpired
 		}
 	}
-	return ""
+	return "", ""
 }
 
 // runUsageFetches fetches the given accounts in parallel, staggering each start

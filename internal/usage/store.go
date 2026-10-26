@@ -148,6 +148,7 @@ func (s *Store) Entries(ids map[string]Identity) map[string]UsageEntry {
 				(nextPollAt != nil && now < *nextPollAt) ||
 				(lastAttemptAt != nil && (now-*lastAttemptAt) < ClaimTTLS))
 		lastError, _ := m["lastError"].(string)
+		skipReason, _ := m["skipReason"].(string)
 		out[num] = UsageEntry{
 			LastGood:            lastGood,
 			FetchedAt:           fetchedAt,
@@ -161,6 +162,8 @@ func (s *Store) Entries(ids map[string]Identity) map[string]UsageEntry {
 			Last429At:           numPtr(m["last429At"]),
 			AuthDeadStrikes:     intOf(m["authDeadStrikes"]),
 			TrustExtended:       trustExtended,
+			SkipReason:          skipReason,
+			SkipAt:              numPtr(m["skipAt"]),
 		}
 	}
 	return out
@@ -171,20 +174,39 @@ func (s *Store) Entries(ids map[string]Identity) map[string]UsageEntry {
 // mutate read-modify-writes rows for nums under the lock. A row whose stored
 // identity mismatches is replaced with a fresh one first (04§2.5 _mutate).
 func (s *Store) mutate(ids map[string]Identity, nums []string, mutator func(num string, row map[string]any)) error {
+	_, err := s.mutateIf(ids, nums, func(num string, row map[string]any) bool {
+		mutator(num, row)
+		return true
+	})
+	return err
+}
+
+// mutateIf is mutate whose mutator reports whether it changed the row; when no
+// row changed nothing is written and wrote is false.
+func (s *Store) mutateIf(ids map[string]Identity, nums []string, mutator func(num string, row map[string]any) bool) (wrote bool, err error) {
 	lock := filelock.New(s.lockPath, 0)
-	return lock.With(func() error {
+	err = lock.With(func() error {
 		rows := s.readRows()
+		changed := false
 		for _, num := range nums {
 			id := ids[num]
 			row, _ := rows[num].(map[string]any)
 			if !matches(rows[num], id) {
 				row = freshRow(id)
 				rows[num] = row
+				changed = true
 			}
-			mutator(num, row)
+			if mutator(num, row) {
+				changed = true
+			}
 		}
+		if !changed {
+			return nil
+		}
+		wrote = true
 		return s.writeRows(rows)
 	})
+	return wrote, err
 }
 
 // Claim stamps lastAttemptAt on the given slots (04§2.5). No-op for empty nums.
@@ -237,11 +259,13 @@ func (s *Store) Reserve(nums []string, ids map[string]Identity, respectPlans boo
 
 // Record merges fetch outcomes (04§2.5). Success and failure are mutually
 // exclusive writers: success resets the failure fields, failure never touches
-// lastGood/fetchedAt (stale-on-error). Sentinel records are no-ops.
+// lastGood/fetchedAt (stale-on-error), and either clears the skip reason. A skip
+// writes only skipReason/skipAt, and only when the reason changed, so skipAt
+// reads "skipped since"; a sentinel without a reason is a no-op.
 func (s *Store) Record(outcomes map[string]FetchRecord, ids map[string]Identity) error {
 	effective := make(map[string]FetchRecord, len(outcomes))
 	for n, r := range outcomes {
-		if r.Sentinel == "" {
+		if r.SkipReason != "" || r.Sentinel == "" {
 			effective[n] = r
 		}
 	}
@@ -253,9 +277,19 @@ func (s *Store) Record(outcomes map[string]FetchRecord, ids map[string]Identity)
 	for n := range effective {
 		nums = append(nums, n)
 	}
-	return s.changed(s.mutate(ids, nums, func(num string, row map[string]any) {
+	wrote, err := s.mutateIf(ids, nums, func(num string, row map[string]any) bool {
 		rec := effective[num]
+		if rec.SkipReason != "" {
+			if valEqStr(row["skipReason"], rec.SkipReason) {
+				return false
+			}
+			row["skipReason"] = rec.SkipReason
+			row["skipAt"] = now
+			return true
+		}
 		row["lastAttemptAt"] = now
+		delete(row, "skipReason")
+		delete(row, "skipAt")
 		if rec.Error == "" {
 			row["lastGood"] = rec.Usage
 			row["fetchedAt"] = now
@@ -277,7 +311,12 @@ func (s *Store) Record(outcomes map[string]FetchRecord, ids map[string]Identity)
 				row["authDeadStrikes"] = intOf(row["authDeadStrikes"]) + 1
 			}
 		}
-	}))
+		return true
+	})
+	if err != nil || !wrote {
+		return err
+	}
+	return s.changed(nil)
 }
 
 // SetPollPlan persists the scheduler's per-slot (nextPollAt, pollIntervalS)

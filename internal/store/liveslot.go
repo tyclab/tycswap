@@ -1,0 +1,337 @@
+package store
+
+import (
+	"context"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/tyclab/tycswap/internal/ccfile"
+	"github.com/tyclab/tycswap/internal/oauth"
+)
+
+// LiveSlot is the managed slot of the live default login. ConfigSlot is the
+// slot ~/.claude.json names; Slot differs from it only when ByLineage. Source
+// names the evidence that settled Slot; Identity is the account the chain
+// record or the profile endpoint named, for those two sources.
+type LiveSlot struct {
+	Slot       string
+	ConfigSlot string
+	ByLineage  bool
+	Source     string
+	Identity   *oauth.Identity
+}
+
+// LiveSlot.Source values, in resolution order (DESIGN A68).
+const (
+	SourceBackup  = "backup"
+	SourceChain   = "chain"
+	SourceProfile = "profile"
+	SourceConfig  = "config"
+)
+
+// lineageMemo is shared by a Store and its scoped clones, so one process warns
+// once per pair and asks the profile endpoint once per live fingerprint.
+type lineageMemo struct {
+	mu     sync.Mutex
+	warned map[[2]string]bool
+	asked  map[string]profileAnswer
+}
+
+// profileAnswer is one question to the profile endpoint: claimed, then done
+// with its identity (nil for a miss) at a time.
+type profileAnswer struct {
+	id   *oauth.Identity
+	done bool
+	at   time.Time
+}
+
+// profileMissReuse is how long a switch reuses a miss before asking again: one
+// command asks once, a later switch in a long-lived process asks anew.
+const profileMissReuse = time.Minute
+
+// WithoutLineageWrites is the store a dry run or a store-only read uses: it
+// resolves as s does but never writes the chain record, and collect never
+// harvests through it.
+func (s *Store) WithoutLineageWrites() *Store {
+	clone := *s
+	clone.lineageReadOnly = true
+	if clone.group != "" {
+		clone.Creds = &profileCredentials{Store: clone.sharedCreds, owner: &clone}
+	}
+	return &clone
+}
+
+// LineageWrites reports whether s may write the chain record and harvest.
+func (s *Store) LineageWrites() bool { return !s.lineageReadOnly }
+
+// ResolveLiveSlot maps the live login to a slot. A running Claude Code
+// rewrites ~/.claude.json from memory and refreshes its token itself, so when
+// the config names a managed OAuth slot the credential decides: a backup
+// holding its lineage, then the chain record, then the profile endpoint. An
+// unmanaged config identity stays unresolved whatever the credential is.
+func (s *Store) ResolveLiveSlot(data *SequenceData) LiveSlot {
+	return s.ResolveLiveSlotWith(data, func() string {
+		live, _, err := s.Creds.ReadActive()
+		if err != nil {
+			return ""
+		}
+		return live
+	})
+}
+
+// ResolveLiveSlotWith is ResolveLiveSlot reading the live credential through
+// readLive, so a caller that needs the bytes as well reads them once.
+func (s *Store) ResolveLiveSlotWith(data *SequenceData, readLive func() string) LiveSlot {
+	email, orgUUID, ok := s.GetCurrentAccount()
+	if !ok {
+		return LiveSlot{}
+	}
+	return s.liveSlotFor(data, email, orgUUID, s.group == "", readLive)
+}
+
+// defaultLiveSlot is ResolveLiveSlot for the default login, whatever the
+// store's scope, given the default profile's credential.
+func (s *Store) defaultLiveSlot(data *SequenceData, creds string) LiveSlot {
+	email, orgUUID, ok := ccfile.ReadOAuthIdentityFrom(s.DefaultConfigPath())
+	if !ok {
+		return LiveSlot{}
+	}
+	return s.liveSlotFor(data, email, orgUUID, true, func() string { return creds })
+}
+
+// liveSlotFor resolves a config identity; readLive is called only once the
+// config names a managed OAuth slot. The chain record is the default login's,
+// so only its resolution reads or writes it.
+func (s *Store) liveSlotFor(data *SequenceData, email, orgUUID string, defaultLogin bool, readLive func() string) LiveSlot {
+	ls := LiveSlot{ConfigSlot: s.FindAccountSlot(data, email, orgUUID)}
+	ls.Slot = ls.ConfigSlot
+	if ls.ConfigSlot == "" {
+		return ls
+	}
+	ls.Source = SourceConfig
+	if kindFrom(data, ls.ConfigSlot) != "oauth" {
+		return ls
+	}
+	live := readLive()
+	if live == "" {
+		return ls
+	}
+	if y, ok := s.lineageSlot(data, ls.ConfigSlot, live); ok {
+		ls.Slot, ls.Source = y, SourceBackup
+	} else if y, id := s.chainSlot(data, ls.ConfigSlot, live, defaultLogin); y != "" {
+		ls.Slot, ls.Source, ls.Identity = y, SourceChain, id
+	} else if y, id := s.profileSlot(data, ls.ConfigSlot, live, defaultLogin); y != "" {
+		ls.Slot, ls.Source, ls.Identity = y, SourceProfile, id
+	}
+	if ls.Slot != ls.ConfigSlot {
+		ls.ByLineage = true
+		s.warnLineage(ls, email, orgUUID)
+	}
+	return ls
+}
+
+// lineageSlot is the managed OAuth slot whose backup holds the live
+// credential's lineage: the config slot's own, else exactly one other's. A
+// copied backup matching twice is no evidence, so ok is false then.
+func (s *Store) lineageSlot(data *SequenceData, configSlot, live string) (string, bool) {
+	if s.holdsLineage(data, configSlot, live) {
+		return configSlot, true
+	}
+	match := ""
+	for _, num := range sortedSlotKeys(data) {
+		if num == configSlot || kindFrom(data, num) != "oauth" || !s.holdsLineage(data, num, live) {
+			continue
+		}
+		if match != "" {
+			return "", false
+		}
+		match = num
+	}
+	return match, match != ""
+}
+
+func (s *Store) holdsLineage(data *SequenceData, num, live string) bool {
+	rec, _ := recordFor(data, num)
+	backup, err := s.ReadAccountCredentials(num, strField(rec, "email"))
+	if err != nil || backup == "" {
+		return false
+	}
+	return fingerprintsEqual(backup, live) || oauth.SameAccountBlock(live, backup)
+}
+
+// chainSlot is the slot the chain record names for this very credential,
+// while the roster still maps the recorded identity to it.
+func (s *Store) chainSlot(data *SequenceData, configSlot, live string, defaultLogin bool) (string, *oauth.Identity) {
+	if !defaultLogin {
+		return "", nil
+	}
+	fp := oauth.CredentialFingerprint(live)
+	rec, ok := s.readLiveLineage()
+	if fp == nil || !ok || rec.Fingerprint != *fp {
+		return "", nil
+	}
+	id := rec.Identity.oauth()
+	if slot := s.identitySlot(data, configSlot, &id); slot != "" && slot == rec.Slot {
+		return slot, &id
+	}
+	return "", nil
+}
+
+// profileSlot is the slot the profile endpoint names for the live credential,
+// and records a hit for the default login in the chain record.
+func (s *Store) profileSlot(data *SequenceData, configSlot, live string, defaultLogin bool) (string, *oauth.Identity) {
+	fp := oauth.CredentialFingerprint(live)
+	if fp == nil {
+		return "", nil
+	}
+	id := s.profileIdentity(live)
+	if id == nil {
+		return "", nil
+	}
+	slot := s.identitySlot(data, configSlot, id)
+	if slot == "" {
+		return "", nil
+	}
+	if defaultLogin && s.LineageWrites() {
+		if err := s.writeLiveLineage(*fp, slot, id); err != nil && s.Log != nil {
+			s.Log.Debugf("Could not record the live credential's lineage: %v", err)
+		}
+	}
+	return slot, id
+}
+
+// profileIdentity is the profile endpoint's account for a credential, asked
+// once per fingerprint per process (a miss included) and never while this
+// process holds the store lock; nil when unknown.
+func (s *Store) profileIdentity(creds string) *oauth.Identity {
+	token := oauth.ExtractAccessToken(creds)
+	if token == "" {
+		return nil
+	}
+	fp := oauth.CredentialFingerprint(creds)
+	if fp != nil {
+		if id, known := s.lineage.answer(*fp); known {
+			return id
+		}
+	}
+	if s.OAuth == nil || (s.Lock != nil && s.Lock.Held()) {
+		return nil
+	}
+	if fp == nil {
+		return s.OAuth.Profile(context.Background(), token)
+	}
+	if !s.lineage.claim(*fp) {
+		return nil
+	}
+	id := s.OAuth.Profile(context.Background(), token)
+	s.lineage.remember(*fp, id, s.Clk.Now())
+	return id
+}
+
+// ReaskProfile is the profile endpoint's account for a credential the
+// resolver named no account for. A remembered hit is used, and so is a miss
+// younger than profileMissReuse; an older miss is asked again: the miss memo
+// gates the resolver only, so one transient miss cannot disable a switch's
+// foreign-credential guard. A hit replaces the miss, and the next resolve
+// records it. Never asked under the store lock.
+func (s *Store) ReaskProfile(creds string) *oauth.Identity {
+	token := oauth.ExtractAccessToken(creds)
+	fp := oauth.CredentialFingerprint(creds)
+	if token == "" {
+		return nil
+	}
+	if fp != nil {
+		if a := s.lineage.entry(*fp); a.done && (a.id != nil || s.Clk.Now().Sub(a.at) < profileMissReuse) {
+			return a.id
+		}
+	}
+	if s.OAuth == nil || (s.Lock != nil && s.Lock.Held()) {
+		return nil
+	}
+	id := s.OAuth.Profile(context.Background(), token)
+	if fp != nil {
+		s.lineage.remember(*fp, id, s.Clk.Now())
+	}
+	return id
+}
+
+// identitySlot is the managed OAuth slot an endpoint identity names, or "".
+// Another slot than the config's needs the roster's uuid to agree, as
+// classifyOutgoing's cross-slot rule does.
+func (s *Store) identitySlot(data *SequenceData, configSlot string, id *oauth.Identity) string {
+	slot := s.SlotForIdentity(data, id)
+	if slot == "" || kindFrom(data, slot) != "oauth" {
+		return ""
+	}
+	if slot != configSlot {
+		rec, _ := recordFor(data, slot)
+		if stored := strings.TrimSpace(strField(rec, "uuid")); stored == "" || stored != strings.TrimSpace(id.UUID) {
+			return ""
+		}
+	}
+	return slot
+}
+
+func (m *lineageMemo) answer(fp string) (*oauth.Identity, bool) {
+	a := m.entry(fp)
+	return a.id, a.done
+}
+
+func (m *lineageMemo) entry(fp string) profileAnswer {
+	if m == nil {
+		return profileAnswer{}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.asked[fp]
+}
+
+// claim reserves the one question for fp; false when it is already asked.
+func (m *lineageMemo) claim(fp string) bool {
+	if m == nil {
+		return true
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, asked := m.asked[fp]; asked {
+		return false
+	}
+	if m.asked == nil {
+		m.asked = map[string]profileAnswer{}
+	}
+	m.asked[fp] = profileAnswer{}
+	return true
+}
+
+func (m *lineageMemo) remember(fp string, id *oauth.Identity, at time.Time) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.asked == nil {
+		m.asked = map[string]profileAnswer{}
+	}
+	m.asked[fp] = profileAnswer{id: id, done: true, at: at}
+}
+
+func (s *Store) warnLineage(ls LiveSlot, email, orgUUID string) {
+	if s.Log == nil {
+		return
+	}
+	if m := s.lineage; m != nil {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		pair := [2]string{ls.ConfigSlot, ls.Slot}
+		if m.warned[pair] {
+			return
+		}
+		if m.warned == nil {
+			m.warned = map[[2]string]bool{}
+		}
+		m.warned[pair] = true
+	}
+	s.Log.Warningf("live config names slot %s (%s, %s) but the live credential is slot %s's (by %s); using %s. A running Claude Code may have rewritten ~/.claude.json",
+		ls.ConfigSlot, email, orgUUID, ls.Slot, ls.Source, ls.Slot)
+}

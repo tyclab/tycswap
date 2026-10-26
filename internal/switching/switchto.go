@@ -76,31 +76,30 @@ func SwitchTo(s *store.Store, identifier string, jsonOut, force bool) (any, erro
 	// A33).
 	approved := takeApproval(targetAccount)
 
-	// Already-active short-circuit (issue #79 / #117). --force skips it.
+	// Already-active short-circuit (issue #79 / #117). --force skips it, and so
+	// does a live slot found by its credential: its config needs the repair.
 	var prov *Provenance
+	var live store.LiveSlot
 	if !force && data != nil {
-		email, orgUUID, ok := s.GetCurrentAccount()
-		if ok {
-			curSlot := s.FindAccountSlot(data, email, orgUUID)
-			var action string
-			if curSlot == targetAccount {
-				action, prov = selfSwitchAction(s, targetAccount, email)
+		live = s.ResolveLiveSlot(data)
+	}
+	if live.Slot == targetAccount && !live.ByLineage {
+		rec, _ := accountRec(data, targetAccount)
+		recEmail := recStr(rec, "email")
+		var action string
+		action, prov = selfSwitchAction(s, targetAccount, recEmail)
+		if action != "reconcile" {
+			ref := numRef(targetAccount, recEmail)
+			if !jsonOut {
+				printOut(printer.Accent("Already on") + " Account-" + targetAccount + " (" + recEmail + ")")
+				printOut(printer.Dimmed("To rewrite the live login from the stored backup (e.g. after --import), run: tycswap --switch-to " + targetAccount + " --force"))
+				return nil, nil
 			}
-			if curSlot == targetAccount && action != "reconcile" {
-				rec, _ := accountRec(data, targetAccount)
-				recEmail := recStr(rec, "email")
-				ref := numRef(targetAccount, recEmail)
-				if !jsonOut {
-					printOut(printer.Accent("Already on") + " Account-" + targetAccount + " (" + recEmail + ")")
-					printOut(printer.Dimmed("To rewrite the live login from the stored backup (e.g. after --import), run: tycswap --switch-to " + targetAccount + " --force"))
-					return nil, nil
-				}
-				return switchNoop(noopArgs{
-					strategy: "direct", reason: "already-active",
-					fromRef: ref, toRef: ref,
-					message: "Already on Account-" + targetAccount + " (" + recEmail + ")",
-				}), nil
-			}
+			return switchNoop(noopArgs{
+				strategy: "direct", reason: "already-active",
+				fromRef: ref, toRef: ref,
+				message: "Already on Account-" + targetAccount + " (" + recEmail + ")",
+			}), nil
 		}
 	}
 

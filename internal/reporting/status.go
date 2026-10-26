@@ -54,7 +54,7 @@ func backfillLockError(s *store.Store) error {
 // active login → active null; live but unmanaged → active {email, managed:false};
 // managed → the full active object plus totalManagedAccounts.
 func buildStatusPayload(s *store.Store) map[string]any {
-	email, orgUUID, ok := s.GetCurrentAccount()
+	email, _, ok := s.GetCurrentAccount()
 	if !ok {
 		return map[string]any{"schemaVersion": jsonout.SchemaVersion, "active": nil}
 	}
@@ -62,18 +62,22 @@ func buildStatusPayload(s *store.Store) map[string]any {
 	if data == nil {
 		return unmanagedStatus(email)
 	}
-	accountNum := s.FindAccountSlot(data, email, orgUUID)
+	live := s.ResolveLiveSlot(data)
+	accountNum := live.Slot
 	if accountNum == "" {
 		return unmanagedStatus(email)
 	}
 
 	rec, _ := recordFor(data, accountNum)
+	if live.ByLineage {
+		email = recStr(rec, "email")
+	}
 	orgName := recStr(rec, "organizationName")
 	recOrgUUID := recStr(rec, "organizationUuid")
 	alias := recStr(rec, "alias")
 
 	baseURL := store.BaseURLFrom(data, accountNum)
-	entry := activeAccountUsage(s, accountNum, email, recOrgUUID, baseURL)
+	entry := activeAccountUsage(s, live, email, recOrgUUID, baseURL)
 	status, usageJSON := jsonout.UsageFields(entry.DecisionValue())
 
 	n, _ := strconv.Atoi(accountNum)
@@ -136,7 +140,8 @@ func renderStatus(w io.Writer, s *store.Store) {
 		printEndpointOverride(w, s)
 		return
 	}
-	accountNum := s.FindAccountSlot(data, email, orgUUID)
+	live := s.ResolveLiveSlot(data)
+	accountNum := live.Slot
 	if accountNum == "" {
 		fmt.Fprintf(w, "%s %s %s\n", printer.Bolded("Status:"), shown, printer.Dimmed("(not managed)"))
 		printEndpointOverride(w, s)
@@ -144,10 +149,14 @@ func renderStatus(w io.Writer, s *store.Store) {
 	}
 
 	rec, _ := recordFor(data, accountNum)
+	if live.ByLineage {
+		email, orgUUID = recStr(rec, "email"), recStr(rec, "organizationUuid")
+		shown = termsafe.Strip(email)
+	}
 	tag := termsafe.Strip(displayTag(recStr(rec, "organizationName")))
 	total := len(data.Accounts)
 	baseURL := store.BaseURLFrom(data, accountNum)
-	entry := activeAccountUsage(s, accountNum, email, orgUUID, baseURL)
+	entry := activeAccountUsage(s, live, email, orgUUID, baseURL)
 	marker := ""
 	if mk := atLimitMarker(entry.DecisionValue(), configuredModels(s)); mk != "" {
 		marker = " " + mk
@@ -188,8 +197,9 @@ func printEndpointOverride(w io.Writer, s *store.Store) {
 // activeAccountUsage builds a single-account info row for the active slot and
 // runs it through the shared collector (spec 02§12 _active_account_usage), so
 // freshness/backoff/claim gating matches list exactly.
-func activeAccountUsage(s *store.Store, accountNum, email, orgUUID, baseURL string) usage.UsageEntry {
-	val, kcUnavail, _ := s.Creds.ReadActive()
+func activeAccountUsage(s *store.Store, live store.LiveSlot, email, orgUUID, baseURL string) usage.UsageEntry {
+	accountNum := live.Slot
+	val, kcUnavail, err := s.Creds.ReadActive()
 	n, _ := strconv.Atoi(accountNum)
 	info := AccountInfo{
 		Number:              n,
@@ -199,6 +209,10 @@ func activeAccountUsage(s *store.Store, accountNum, email, orgUUID, baseURL stri
 		Creds:               val,
 		KeychainUnavailable: kcUnavail,
 		BaseURL:             baseURL,
+		live:                live,
+	}
+	if err == nil {
+		info.liveCreds = val
 	}
 	entries := CollectUsageEntries(s, []AccountInfo{info}, nil)
 	return entries[accountNum]

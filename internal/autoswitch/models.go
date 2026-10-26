@@ -25,5 +25,4 @@ func (e *Engine) adoptPendingModels() {
 		return
 	}
 	e.models = *p
-	e.modelCheckDone = len(e.models) == 0
 }

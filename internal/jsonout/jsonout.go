@@ -204,6 +204,9 @@ type RowOpts struct {
 	// BaseURL is the endpoint an API-key account carries (DESIGN A46); the
 	// row has "baseUrl" only when it is set.
 	BaseURL string
+	// SkipReason and SkipAt say why, and since when, the last fetch was skipped.
+	SkipReason string
+	SkipAt     *float64
 }
 
 // AccountRow builds the account row map. alias is present only when non-empty;
@@ -241,7 +244,24 @@ func AccountRow(number int, email, orgName, orgUUID string, active bool, usageEn
 			row[k] = v
 		}
 	}
+	if skip := SkipFields(opts.SkipReason, opts.SkipAt); len(skip) > 0 {
+		row["usageRefresh"] = skip
+	}
 	return row
+}
+
+// SkipFields is the usageRefresh part that names a skipped fetch: skipReason,
+// and skipAt (RFC3339 UTC) when known; empty when no reason is recorded.
+func SkipFields(reason string, at *float64) map[string]any {
+	out := map[string]any{}
+	if reason == "" {
+		return out
+	}
+	out["skipReason"] = reason
+	if at != nil {
+		out["skipAt"] = time.Unix(int64(*at), 0).UTC().Format(time.RFC3339)
+	}
+	return out
 }
 
 // ErrorEnvelope is the structured error payload emitted on a handled error. The

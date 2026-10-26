@@ -74,7 +74,12 @@ func (a *appShell) panel(st web.State) tray.Panel {
 			}
 		}
 		if status, _ := row["usageStatus"].(string); status != "" && status != "ok" {
-			r.Details = append(r.Details, "Usage: "+status)
+			line := "Usage: " + status
+			refresh, _ := row["usageRefresh"].(map[string]any)
+			if reason, _ := refresh["skipReason"].(string); reason != "" {
+				line += " · " + reason
+			}
+			r.Details = append(r.Details, line)
 		}
 		if boolOf(row["disabled"]) {
 			r.Details = append(r.Details, "Excluded from automatic rotation; manual switching is allowed.")

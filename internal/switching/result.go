@@ -3,17 +3,20 @@
 // Implements spec 02§8.6 (_switch_result_from_op / _switch_noop) and 02§10.3
 // (the switch/switch-to JSON schema). switched is identity-based (from != to),
 // covering recorded/live drift, not just the explicit already-active case; every
-// switched:false payload reports from == to.
+// switched:false payload reports from == to. The one switched:true payload with
+// from == to is a config repair (DESIGN A68).
 package switching
 
 import "github.com/tyclab/tycswap/internal/jsonout"
 
 // switchOp is the return of performSwitch: the left/landed identities captured
-// under the lock plus any warnings. From may be nil (fresh machine).
+// under the lock plus any warnings. From may be nil (fresh machine). Repaired:
+// only ~/.claude.json was rewritten, for the slot whose credential was live.
 type switchOp struct {
 	From     map[string]any
 	To       map[string]any
 	Warnings []string
+	Repaired bool
 }
 
 // switchResultFromOp builds a switch result payload from a performSwitch op
@@ -21,10 +24,14 @@ type switchOp struct {
 func switchResultFromOp(op switchOp, strategy string, extra []string) map[string]any {
 	switched := !refEqual(op.From, op.To)
 	var reason, message string
-	if switched {
+	switch {
+	case op.Repaired:
+		switched, reason = true, "config-repaired"
+		message = "Repaired the live config for Account-" + refNum(op.To) + " (" + refEmail(op.To) + ")"
+	case switched:
 		reason = "switched"
 		message = "Switched to Account-" + refNum(op.To) + " (" + refEmail(op.To) + ")"
-	} else {
+	default:
 		reason = "already-active"
 		message = "Already on Account-" + refNum(op.To) + " (" + refEmail(op.To) + ")"
 	}

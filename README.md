@@ -96,7 +96,7 @@ diverge, the divergences are enumerated in [`docs/DESIGN.md`](docs/DESIGN.md)
 
 **Prerequisites.**
 
-- Go 1.25.5 or newer to build or `go install`; Go selects the patched 1.26.9
+- Go 1.25.5 or newer to build or `go install`; Go selects the patched 1.26.10
   toolchain from `go.mod`. The CLI builds without cgo; on
   macOS the menu-bar app needs cgo (the Command Line Tools: `xcode-select
   --install`), and a build without it serves the tray app's dashboard alone.

@@ -97,12 +97,12 @@ func TestApplyModelsRetargetsAtNextTick(t *testing.T) {
 		t.Fatalf("poll inputs %+v, want threshold 85 models %v", last, want)
 	}
 	e.adoptPendingModels()
-	if want := settings.ParseModelNames(strp("Fable, Opus")); !reflect.DeepEqual(e.models, want) || e.modelCheckDone {
-		t.Fatalf("models %v (check done %v), want %v and a fresh name check", e.models, e.modelCheckDone, want)
+	if want := settings.ParseModelNames(strp("Fable, Opus")); !reflect.DeepEqual(e.models, want) {
+		t.Fatalf("models %v, want %v", e.models, want)
 	}
 	e.ApplyModels("")
 	e.adoptPendingModels()
-	if len(e.models) != 0 || !e.modelCheckDone || e.currentSettings().Model != nil {
+	if len(e.models) != 0 || e.currentSettings().Model != nil {
 		t.Fatalf("clearing: models %v model %v", e.models, e.currentSettings().Model)
 	}
 	e.adoptPendingModels() // nothing queued: no change
