@@ -669,3 +669,32 @@ func TestResolveLiveSlotCarriesTheIdentity(t *testing.T) {
 		t.Fatalf("by backup: %+v, want no identity", got)
 	}
 }
+
+// A switch's re-ask uses a remembered hit, asks again after a miss or when
+// nothing was asked yet, and a hit replaces the miss for the resolver.
+func TestReaskProfileAsksAgainOnlyAfterAMiss(t *testing.T) {
+	answer := false
+	s, calls := rotatedFixture(t, func(token string) *oauth.Identity {
+		if answer {
+			return profileOfFive(token)
+		}
+		return nil
+	})
+	if id := s.ReaskProfile(rotatedLive); id != nil || *calls != 1 {
+		t.Fatalf("first re-ask = %+v after %d calls, want a miss after one", id, *calls)
+	}
+	resolveLive(t, s)
+	answer = true
+	if id := s.ReaskProfile(rotatedLive); id == nil || *id != *identityFive || *calls != 3 {
+		t.Fatalf("re-ask after a miss = %+v after %d calls, want 5's identity after three", id, *calls)
+	}
+	if got := resolveLive(t, s); got.Slot != "5" || got.Source != SourceProfile || *calls != 3 {
+		t.Fatalf("resolve after the hit = %+v after %d calls, want slot 5 from memory", got, *calls)
+	}
+	if rec := lineageRecord(t, s); rec == nil || rec["slot"] != "5" {
+		t.Fatalf("live_lineage.json = %v, want the hit recorded", rec)
+	}
+	if id := s.ReaskProfile(rotatedLive); id == nil || *calls != 3 {
+		t.Fatalf("re-ask after a hit asked again: %d calls", *calls)
+	}
+}

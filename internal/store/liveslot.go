@@ -179,7 +179,7 @@ func (s *Store) profileSlot(data *SequenceData, configSlot, live string, default
 	if fp == nil {
 		return "", nil
 	}
-	id := s.ProfileIdentity(live)
+	id := s.profileIdentity(live)
 	if id == nil {
 		return "", nil
 	}
@@ -195,10 +195,10 @@ func (s *Store) profileSlot(data *SequenceData, configSlot, live string, default
 	return slot, id
 }
 
-// ProfileIdentity is the profile endpoint's account for a credential, asked
+// profileIdentity is the profile endpoint's account for a credential, asked
 // once per fingerprint per process (a miss included) and never while this
 // process holds the store lock; nil when unknown.
-func (s *Store) ProfileIdentity(creds string) *oauth.Identity {
+func (s *Store) profileIdentity(creds string) *oauth.Identity {
 	token := oauth.ExtractAccessToken(creds)
 	if token == "" {
 		return nil
@@ -220,6 +220,32 @@ func (s *Store) ProfileIdentity(creds string) *oauth.Identity {
 	}
 	id := s.OAuth.Profile(context.Background(), token)
 	s.lineage.remember(*fp, id)
+	return id
+}
+
+// ReaskProfile is the profile endpoint's account for a credential the
+// resolver named no account for. A remembered hit is used, but a miss is asked
+// again: the miss memo gates the resolver only, so one transient miss cannot
+// disable a switch's foreign-credential guard. A hit replaces the miss, and the
+// next resolve records it. Never asked under the store lock.
+func (s *Store) ReaskProfile(creds string) *oauth.Identity {
+	token := oauth.ExtractAccessToken(creds)
+	fp := oauth.CredentialFingerprint(creds)
+	if token == "" {
+		return nil
+	}
+	if fp != nil {
+		if id, _ := s.lineage.answer(*fp); id != nil {
+			return id
+		}
+	}
+	if s.OAuth == nil || (s.Lock != nil && s.Lock.Held()) {
+		return nil
+	}
+	id := s.OAuth.Profile(context.Background(), token)
+	if fp != nil && id != nil {
+		s.lineage.remember(*fp, id)
+	}
 	return id
 }
 
@@ -273,6 +299,9 @@ func (m *lineageMemo) remember(fp string, id *oauth.Identity) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.asked == nil {
+		m.asked = map[string]profileAnswer{}
+	}
 	m.asked[fp] = profileAnswer{id: id, done: true}
 }
 

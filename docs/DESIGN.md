@@ -6300,8 +6300,9 @@ answers names the live slot, and `LiveSlot.Source` says which one did:
    rule. A hit is written to the chain record, atomically and only when the
    record changes, without a lock: last writer wins. A process asks once per
    live fingerprint, a miss included, so an offline box does not ask every
-   pass. It never asks while it holds the store lock, and never without an
-   OAuth client; it then uses an answer it already has.
+   pass (a switch's provenance asks again after a miss, below). It never
+   asks while it holds the store lock, and never without an OAuth client; it
+   then uses an answer it already has.
 4. `config`. Otherwise X.
 
 The chain record is the default login's. Only a resolution of the default
@@ -6383,8 +6384,14 @@ foreign stash remains for credentials the resolver cannot attribute.
 The switch's pre-lock provenance takes `LiveSlot.Identity`. An outgoing slot
 the chain record or the profile attributed therefore classifies as
 `own-rotated` and logs `Backed up account N`, not the `ownership could not be
-verified — pre-fix backup` line. The profile endpoint is asked once per live
-credential: the provenance reuses the resolver's answer, a miss included.
+verified — pre-fix backup` line. The provenance reuses the resolver's hit and
+does not ask again. The miss memo gates the resolver only: when the resolver
+named no account, the provenance asks the profile endpoint again before the
+lock. One transient miss in a long-lived process would otherwise disable the
+foreign-credential guard for that fingerprint until the token rotated, and the
+switch would back the live credential into the config's slot as unresolved. A
+hit from that question replaces the miss in memory, and the next resolve
+records it in the chain record.
 `switch --force` runs the same pre-lock provenance. Under the lock the
 resolver asks no one, so without it a credential only the profile attributed
 read as X's, and `--force Y` activated Y's older backup over the live token.

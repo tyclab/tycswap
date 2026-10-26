@@ -112,3 +112,38 @@ func TestForceSwitchToAProfileAttributedSlotRepairsTheConfig(t *testing.T) {
 		t.Errorf("profile calls = %d, want 1", *calls)
 	}
 }
+
+// The miss memo gates the resolver only: a switch asks the profile again
+// before the lock, so one transient miss cannot disable the foreign-credential
+// guard and back slot 5's credential into the config's slot 6.
+func TestSwitchReasksTheProfileAfterAMiss(t *testing.T) {
+	live := oauthCreds("at-5-new", "rt-5-rotated")
+	s, _ := rotatedSeat(t, live, "5")
+	calls, answer := 0, false
+	s.OAuth = &oauth.FakeClient{ProfileFn: func(_ context.Context, token string) *oauth.Identity {
+		calls++
+		if answer && token == "at-5-new" {
+			return &oauth.Identity{UUID: "acct-obi", Email: lineageEmail, OrgUUID: "org-five"}
+		}
+		return nil
+	}}
+	data, _ := s.ReadSequence()
+	if got := s.ResolveLiveSlot(data); got.Slot != "6" || calls != 1 {
+		t.Fatalf("first resolve = %+v after %d calls, want the config slot after a miss", got, calls)
+	}
+	answer = true
+	out, err := SwitchTo(s, "5", true, false)
+	if err != nil {
+		t.Fatalf("SwitchTo(5): %v", err)
+	}
+	if m := asMap(t, out); m["reason"] != "config-repaired" || refField(t, m, "from") != 5 || refField(t, m, "to") != 5 {
+		t.Fatalf("got reason=%v from=%d to=%d, want the credential classified as 5's", m["reason"], refField(t, m, "from"), refField(t, m, "to"))
+	}
+	if calls != 2 {
+		t.Errorf("profile calls = %d, want 2: one more after the miss", calls)
+	}
+	if got, _ := s.ReadAccountCredentials("6", lineageEmail); got != lineageBackup6 {
+		t.Errorf("Account-6 backup = %s, want it untouched", got)
+	}
+	assertOwnRotatedBackup(t, s, "5", live)
+}

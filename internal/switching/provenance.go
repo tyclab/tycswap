@@ -95,7 +95,7 @@ func prefetchLiveIdentity(s *store.Store) *Provenance {
 	if sameAccountBytes(backup, live) || fingerprintEqual(backup, live) {
 		return result // provenance already established locally
 	}
-	result.Resolved = s.ProfileIdentity(live)
+	result.Resolved = s.ReaskProfile(live)
 	return result
 }
 
