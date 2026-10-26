@@ -5,15 +5,17 @@
 // The install method is read from where the binary really lives: Anthropic's
 // native installer (~/.local/bin/claude), npm (a node_modules path or the
 // legacy ~/.claude/local), a Homebrew cask (a Caskroom path) or WinGet. The
-// newest version is read from that method's own source — the native release
-// channel, npm's dist-tags, the cask's formula — so an update is only
-// announced where the same installer can deliver it, and the upgrade command
-// is that installer's own: `claude update` for a native install, `npm
-// install -g` for npm (`claude update` for the legacy ~/.claude/local, which
-// keeps a node_modules of its own), `brew upgrade --cask` for Homebrew,
-// `winget upgrade` for WinGet. A Claude Code installed some other way is
-// still compared against the native channel, and `claude update`, Claude
-// Code's own installer, is offered for it.
+// newest version is read from that method's own source on the user's update
+// channel (autoUpdatesChannel; a Homebrew cask is its own channel) — the
+// native release channel, npm's dist-tag of that name, the cask's formula —
+// so an update is only announced where the same installer can deliver it, and
+// never from a channel the user did not choose. The upgrade command is that
+// installer's own: `claude update` for a native install, `npm install -g
+// @anthropic-ai/claude-code@<channel>` for npm (`claude update` for the legacy
+// ~/.claude/local, which keeps a node_modules of its own), `brew upgrade
+// --cask` for Homebrew, `winget upgrade` for WinGet. A Claude Code installed
+// some other way is still compared against the native channel, and `claude
+// update`, Claude Code's own installer, is offered for it.
 package ccversion
 
 import (
@@ -63,8 +65,8 @@ func (m Method) Label() string {
 	return "an unknown installer"
 }
 
-// npmPackage is Claude Code's npm package, pinned to the latest tag.
-const npmPackage = "@anthropic-ai/claude-code@latest"
+// npmPackage is Claude Code's npm package; its dist-tags are the channels.
+const npmPackage = "@anthropic-ai/claude-code"
 
 // defaultCask is the Homebrew cask Claude Code's own instructions name.
 const defaultCask = "claude-code"
@@ -94,7 +96,7 @@ type Installed struct {
 	Version string // e.g. "2.1.280"; "" when --version said nothing usable
 	Method  Method
 	Cask    string // Homebrew: the cask token, e.g. "claude-code"
-	Channel string // native/unknown: the user's stable/latest update channel
+	Channel string // all but Homebrew: the user's stable/latest update channel
 }
 
 // Classify tells the method from where the binary really lives.
@@ -237,7 +239,7 @@ func Find(ctx context.Context, e Env) (*Installed, error) {
 	if in.Version == "" && err != nil {
 		return in, fmt.Errorf("claude --version: %w", err)
 	}
-	if in.Method == Native || in.Method == Unknown {
+	if in.Method != Homebrew {
 		in.Channel, err = userChannel(e)
 		if err != nil {
 			return in, err
@@ -291,19 +293,18 @@ func userChannel(e Env) (string, error) {
 }
 
 // Latest is the newest version the install's own method can deliver now: the
-// cask's version for Homebrew, npm's latest tag, or the native release
-// channel selected in user settings (also for an unknown install). WinGet
-// follows the native latest feed.
+// cask's version for Homebrew, else on the update channel selected in user
+// settings, npm's dist-tag of that name for npm and the native release channel
+// for the others (WinGet and an unknown install included).
 func Latest(ctx context.Context, e Env, in *Installed) (string, error) {
-	method, cask := Native, defaultCask
+	method, cask, channel := Native, defaultCask, ""
 	if in != nil {
-		method = in.Method
+		method, channel = in.Method, in.Channel
 		if in.Cask != "" {
 			cask = in.Cask
 		}
 	}
-	switch method {
-	case Homebrew:
+	if method == Homebrew {
 		var c struct {
 			Version string `json:"version"`
 		}
@@ -312,34 +313,25 @@ func Latest(ctx context.Context, e Env, in *Installed) (string, error) {
 		}
 		v, _, _ := strings.Cut(c.Version, ",") // casks may append a build id
 		return checkVersion(v)
-	case NPM:
+	}
+	if channel == "" {
+		var err error
+		if channel, err = userChannel(e); err != nil {
+			return "", err
+		}
+	}
+	if method == NPM {
 		var tags map[string]string
 		if err := getJSON(ctx, e.HTTP, e.Endpoints.NPM, &tags); err != nil {
 			return "", err
 		}
-		return checkVersion(tags["latest"])
-	default:
-		channel := "latest"
-		if method == Native || method == Unknown {
-			if in != nil {
-				channel = in.Channel
-			} else {
-				channel = ""
-			}
-			if channel == "" {
-				var err error
-				channel, err = userChannel(e)
-				if err != nil {
-					return "", err
-				}
-			}
-		}
-		body, err := get(ctx, e.HTTP, e.Endpoints.Downloads+"/"+channel)
-		if err != nil {
-			return "", err
-		}
-		return checkVersion(strings.TrimSpace(string(body)))
+		return checkVersion(tags[channel])
 	}
+	body, err := get(ctx, e.HTTP, e.Endpoints.Downloads+"/"+channel)
+	if err != nil {
+		return "", err
+	}
+	return checkVersion(strings.TrimSpace(string(body)))
 }
 
 func checkVersion(v string) (string, error) {
@@ -398,7 +390,11 @@ func UpgradeCommand(in *Installed) Command {
 		if legacyLocal(in.Real) {
 			return Command{Argv: []string{"claude", "update"}}
 		}
-		return Command{Argv: []string{"npm", "install", "-g", npmPackage}}
+		channel := in.Channel
+		if channel == "" {
+			channel = "latest"
+		}
+		return Command{Argv: []string{"npm", "install", "-g", npmPackage + "@" + channel}}
 	case Homebrew:
 		cask := in.Cask
 		if cask == "" {

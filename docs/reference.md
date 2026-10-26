@@ -2684,19 +2684,22 @@ opens a terminal menu; the existing export/import commands read and write local 
 The update check compares the running version with the latest release at the
 endpoint `tycswap upgrade` uses (`update.Endpoint`), and the installed Claude
 Code (`claude --version`, found on `PATH` or where its installers put it) with
-the release source for its installer: the native release channel for native
-or unknown installs, native latest for WinGet, npm's `dist-tags` for an npm
-install, and the cask's formula for Homebrew. Native and unknown installs
-use `autoUpdatesChannel` from the user's `settings.json` under
-`CLAUDE_CONFIG_DIR` or `~/.claude` (`stable` or `latest`; absent means `latest`).
-Project and managed policies still apply in the installer. *Install
-update* runs `tycswap upgrade`'s own path (`go install` for a go-installed
+the release source for its installer on the user's update channel: the native
+release channel for native, WinGet or unknown installs, npm's dist-tag of the
+channel's name for an npm install, and the cask's formula for Homebrew (the
+cask is its own channel). The channel is `autoUpdatesChannel` from the user's
+`settings.json` under `CLAUDE_CONFIG_DIR` or `~/.claude` (`stable` or
+`latest`; absent means `latest`; anything else, or a file that cannot be
+read, is a check error). A Claude Code at or ahead of its channel's version
+is current: the tray says *Claude Code X — up to date (stable)* on stable,
+*— latest* otherwise. Project and managed policies still apply in the
+installer. *Install update* runs `tycswap upgrade`'s own path (`go install` for a go-installed
 binary in a Go bin directory, the next release downloaded over a release
 build it can replace; a checkout build, a go-installed binary on Windows or
 outside a Go bin directory, a package manager's binary, or a release build it
 cannot replace is shown how to upgrade instead of a button, decided once when
 the dashboard starts); *Update Claude Code* runs the installer's own
-command (`claude update`, `npm install -g @anthropic-ai/claude-code@latest`,
+command (`claude update`, `npm install -g @anthropic-ai/claude-code@<channel>`,
 `brew upgrade --cask <cask>`, `winget upgrade`). A missing Claude Code is
 named with the install line to type, never installed from the page. A check
 that fails keeps what the check before it found and names the error; the

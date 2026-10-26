@@ -75,12 +75,16 @@ func TestUpgradeCommandPerMethod(t *testing.T) {
 		{nil, ""},
 		{&Installed{Method: Native}, "claude update"},
 		{&Installed{Method: Unknown}, "claude update"},
-		{&Installed{Method: NPM}, "npm install -g " + npmPackage},
+		{&Installed{Method: NPM}, "npm install -g @anthropic-ai/claude-code@latest"},
+		{&Installed{Method: NPM, Channel: "latest"}, "npm install -g @anthropic-ai/claude-code@latest"},
+		{&Installed{Method: NPM, Channel: "stable"}, "npm install -g @anthropic-ai/claude-code@stable"},
+		{&Installed{Method: Native, Channel: "stable"}, "claude update"},
 		// The legacy local install: npm -g would update another copy.
 		{&Installed{Method: NPM, Real: "/home/u/.claude/local/node_modules/@anthropic-ai/claude-code/cli.js"}, "claude update"},
 		{&Installed{Method: Homebrew, Cask: "claude-code@latest"}, "brew upgrade --cask claude-code@latest"},
 		{&Installed{Method: Homebrew}, "brew upgrade --cask claude-code"},
 		{&Installed{Method: WinGet}, "winget upgrade --id Anthropic.ClaudeCode --exact"},
+		{&Installed{Method: WinGet, Channel: "stable"}, "winget upgrade --id Anthropic.ClaudeCode --exact"},
 	} {
 		if got := UpgradeCommand(tc.in).String(); got != tc.want {
 			t.Errorf("UpgradeCommand(%+v) = %q, want %q", tc.in, got, tc.want)
@@ -150,7 +154,8 @@ func TestLocateAndFind(t *testing.T) {
 	}
 }
 
-// endpoints serves the three sources from one test server.
+// endpoints serves the three sources from one test server; the native stable
+// channel is 2.1.0.
 func endpoints(t *testing.T, downloads, cask, npm string) Endpoints {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -161,6 +166,8 @@ func endpoints(t *testing.T, downloads, cask, npm string) Endpoints {
 				return
 			}
 			_, _ = w.Write([]byte(downloads + "\n"))
+		case r.URL.Path == "/dl/stable":
+			_, _ = w.Write([]byte("2.1.0\n"))
 		case strings.HasPrefix(r.URL.Path, "/cask/"):
 			_, _ = w.Write([]byte(cask))
 		case r.URL.Path == "/npm":
@@ -174,7 +181,7 @@ func endpoints(t *testing.T, downloads, cask, npm string) Endpoints {
 }
 
 func TestLatestPerMethod(t *testing.T) {
-	e := Env{HTTP: http.DefaultClient, Endpoints: endpoints(t, "2.2.0", `{"version":"2.1.9,123"}`, `{"latest":"2.1.5"}`)}
+	e := Env{HTTP: http.DefaultClient, Endpoints: endpoints(t, "2.2.0", `{"version":"2.1.9,123"}`, `{"latest":"2.1.5","stable":"2.1.3"}`)}
 	ctx := context.Background()
 	for _, tc := range []struct {
 		in   *Installed
@@ -186,6 +193,11 @@ func TestLatestPerMethod(t *testing.T) {
 		{nil, "2.2.0"},
 		{&Installed{Method: Homebrew, Cask: "claude-code"}, "2.1.9"},
 		{&Installed{Method: NPM}, "2.1.5"},
+		{&Installed{Method: NPM, Channel: "stable"}, "2.1.3"},
+		{&Installed{Method: WinGet, Channel: "stable"}, "2.1.0"},
+		{&Installed{Method: Native, Channel: "stable"}, "2.1.0"},
+		// The cask is the channel: a stable setting does not change it.
+		{&Installed{Method: Homebrew, Cask: "claude-code", Channel: "stable"}, "2.1.9"},
 	} {
 		got, err := Latest(ctx, e, tc.in)
 		if err != nil || got != tc.want {
@@ -278,19 +290,79 @@ func TestCheckUsesNativeUserChannel(t *testing.T) {
 }
 
 func TestInvalidChannelSettingsDoNotRequestLatest(t *testing.T) {
-	for _, raw := range []string{`{`, `null`, `[]`, `{"autoUpdatesChannel":null}`, `{"autoUpdatesChannel":false}`, `{"autoUpdatesChannel":"preview"}`} {
-		t.Run(raw, func(t *testing.T) {
-			e := Env{Home: t.TempDir(), ReadFile: func(string) ([]byte, error) { return []byte(raw), nil }}
-			// No endpoint is configured: an invalid setting must fail before HTTP.
-			_, err := Latest(context.Background(), e, &Installed{Method: Native})
-			if err == nil || !strings.Contains(err.Error(), "update channel") {
-				t.Fatalf("Latest with %q: %v", raw, err)
+	for _, m := range []Method{Native, NPM, WinGet} {
+		t.Run(string(m), func(t *testing.T) {
+			for _, raw := range []string{`{`, `null`, `[]`, `{"autoUpdatesChannel":null}`, `{"autoUpdatesChannel":false}`, `{"autoUpdatesChannel":"preview"}`} {
+				e := Env{Home: t.TempDir(), ReadFile: func(string) ([]byte, error) { return []byte(raw), nil }}
+				// No endpoint is configured: an invalid setting must fail before HTTP.
+				_, err := Latest(context.Background(), e, &Installed{Method: m})
+				if err == nil || !strings.Contains(err.Error(), "update channel") {
+					t.Errorf("Latest with %q: %v", raw, err)
+				}
+			}
+			e := Env{Home: t.TempDir(), ReadFile: func(string) ([]byte, error) { return nil, os.ErrPermission }}
+			if _, err := Latest(context.Background(), e, &Installed{Method: m}); !errors.Is(err, os.ErrPermission) {
+				t.Errorf("unreadable channel: %v", err)
 			}
 		})
 	}
-	e := Env{Home: t.TempDir(), ReadFile: func(string) ([]byte, error) { return nil, os.ErrPermission }}
-	if _, err := Latest(context.Background(), e, &Installed{Method: Native}); !errors.Is(err, os.ErrPermission) {
-		t.Fatalf("unreadable channel: %v", err)
+}
+
+// Every installer but Homebrew, whose cask is its channel, follows the user's
+// update channel: npm reads the dist-tag of that name and installs from it,
+// WinGet and an unknown install read the native channel, and a Claude Code at
+// or ahead of its channel's version is current.
+func TestCheckFollowsTheUserChannelPerMethod(t *testing.T) {
+	const (
+		npmReal    = "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js"
+		wingetReal = `C:\Users\u\AppData\Local\Microsoft\WinGet\Packages\Anthropic.ClaudeCode\claude.exe`
+		caskReal   = "/opt/homebrew/Caskroom/claude-code@latest/2.1.0/claude"
+	)
+	for _, tc := range []struct {
+		name, real, setting, version string
+		method                       Method
+		channel, latest              string
+		state                        State
+		upgrade                      string
+	}{
+		{"npm without a setting", npmReal, "", "2.1.0", NPM, "latest", "2.2.0", UpdateAvailable, "npm install -g @anthropic-ai/claude-code@latest"},
+		{"npm on latest", npmReal, "latest", "2.1.0", NPM, "latest", "2.2.0", UpdateAvailable, "npm install -g @anthropic-ai/claude-code@latest"},
+		{"npm on stable", npmReal, "stable", "2.1.0", NPM, "stable", "2.1.0", UpToDate, "npm install -g @anthropic-ai/claude-code@stable"},
+		{"npm behind stable", npmReal, "stable", "2.0.9", NPM, "stable", "2.1.0", UpdateAvailable, "npm install -g @anthropic-ai/claude-code@stable"},
+		{"npm ahead of stable", npmReal, "stable", "2.1.5", NPM, "stable", "2.1.0", UpToDate, "npm install -g @anthropic-ai/claude-code@stable"},
+		{"winget on latest", wingetReal, "latest", "2.1.0", WinGet, "latest", "2.2.0", UpdateAvailable, "winget upgrade --id Anthropic.ClaudeCode --exact"},
+		{"winget on stable", wingetReal, "stable", "2.1.0", WinGet, "stable", "2.1.0", UpToDate, "winget upgrade --id Anthropic.ClaudeCode --exact"},
+		{"unknown on stable", "/usr/bin/claude", "stable", "2.1.0", Unknown, "stable", "2.1.0", UpToDate, "claude update"},
+		{"homebrew keeps its cask", caskReal, "stable", "2.1.0", Homebrew, "", "2.2.0", UpdateAvailable, "brew upgrade --cask claude-code@latest"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := fakeEnv(t, "", "", nil)
+			e.LookPath = func(string) (string, error) { return "/usr/local/bin/claude", nil }
+			e.Realpath = func(string) (string, error) { return tc.real, nil }
+			e.Run = func(context.Context, []string) (string, error) { return tc.version + " (Claude Code)", nil }
+			if tc.setting != "" {
+				dir := filepath.Join(e.Home, ".claude")
+				if err := os.MkdirAll(dir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				raw := `{"autoUpdatesChannel":"` + tc.setting + `"}`
+				if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(raw), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			e.HTTP = http.DefaultClient
+			e.Endpoints = endpoints(t, "2.2.0", `{"version":"2.2.0"}`, `{"latest":"2.2.0","stable":"2.1.0"}`)
+			st := Check(context.Background(), e)
+			if st.Err != nil || st.Installed == nil || st.Installed.Method != tc.method || st.Installed.Channel != tc.channel {
+				t.Fatalf("Check = %+v, installed %+v", st, st.Installed)
+			}
+			if st.Latest != tc.latest || st.State() != tc.state {
+				t.Errorf("latest %q state %v, want %q %v", st.Latest, st.State(), tc.latest, tc.state)
+			}
+			if got := UpgradeCommand(st.Installed).String(); got != tc.upgrade {
+				t.Errorf("upgrade = %q, want %q", got, tc.upgrade)
+			}
+		})
 	}
 }
 

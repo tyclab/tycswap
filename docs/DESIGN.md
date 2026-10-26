@@ -3807,16 +3807,17 @@ itself and Claude Code.
   `node_modules` path or the legacy `~/.claude/local`), a Homebrew cask, WinGet,
   else unknown. The newest version is read from that method's own source
   (the native release channel, npm's `dist-tags`, the cask's formula; WinGet
-  follows native latest). Native and unknown installs read `autoUpdatesChannel`
-  from the user's `settings.json` under `CLAUDE_CONFIG_DIR` or `~/.claude`:
-  `stable` or `latest`, defaulting to `latest` only when the file or key is
-  absent. Invalid or unreadable settings are a check error. A cached release
-  is not reused across channel changes. Project and managed policy remain
+  follows the native channel). Every install but Homebrew reads
+  `autoUpdatesChannel` (A70) from the user's `settings.json` under
+  `CLAUDE_CONFIG_DIR` or `~/.claude`: `stable` or `latest`, defaulting to
+  `latest` only when the file or key is absent. Invalid or unreadable
+  settings are a check error. A cached release is not reused across channel
+  changes. Project and managed policy remain
   the installer's responsibility; the host verifies the result of an apply.
   The apply is that installer's own command: `claude update` for a native
   or unknown install (and for the legacy `~/.claude/local`, whose own
   `node_modules` a global npm install would not touch), `npm install -g
-  @anthropic-ai/claude-code@latest`, `brew upgrade --cask <cask>`, `winget
+  @anthropic-ai/claude-code@<channel>`, `brew upgrade --cask <cask>`, `winget
   upgrade`. A missing Claude Code is said (with the install line to type),
   never run. Versions compare by semver; a version that does
   not parse is an error, never "newer".
@@ -6427,3 +6428,48 @@ Unchanged on purpose: an unmanaged config identity resolves to no slot, so
 the unclaimed-credential and displaced-login capture keep working as before.
 The repair does not stop a running Claude Code from writing the old identity
 back. The next resolve warns again only in a new process.
+
+## A70. Claude Code on the user's own channel, whatever installed it
+
+Claude Code's `autoUpdatesChannel` in `settings.json` picks the release
+channel its updater follows: `latest`, the default, or `stable`, which trails
+it. A27 read it for native and unknown installs only. An npm install was
+compared with npm's `latest` dist-tag and updated with `npm install -g
+@anthropic-ai/claude-code@latest`, and a WinGet install with the native
+`latest` feed, whatever the user had chosen. A user on stable was therefore
+always behind: the tray, the badge, a notification and the dashboard offered
+*Update Claude Code X → Y*, and with npm the update moved the install to
+latest.
+
+**The rule.** The channel is the user's. `ccversion.Find` reads it for every
+install but Homebrew, under A27's rules: `CLAUDE_CONFIG_DIR` or `~/.claude`,
+absent means `latest`, an invalid or unreadable file is a check error rather
+than an offer from the wrong channel. Then:
+
+| Installed with | Newest version | Update |
+|---|---|---|
+| native installer, or unknown | `<downloads>/<channel>` | `claude update` |
+| npm | dist-tag `<channel>` | `npm install -g @anthropic-ai/claude-code@<channel>` |
+| npm, legacy `~/.claude/local` | dist-tag `<channel>` | `claude update` |
+| WinGet | `<downloads>/<channel>` | `winget upgrade --id Anthropic.ClaudeCode --exact` |
+| Homebrew | the installed cask's formula | `brew upgrade --cask <cask>` |
+
+A Homebrew cask is its own channel (`claude-code` follows stable,
+`claude-code@latest` latest), so the setting does not change what a cask is
+compared with. WinGet has one package and no channel to pick: its install is
+compared with the user's channel, and its update stays WinGet's own.
+
+An update is offered only while the installed version is older (semver) than
+its channel's. A Claude Code at or newer than its channel's version is
+current: on stable the tray reads *Claude Code X — up to date (stable)* and
+the brand line *· up to date (stable)*, nothing badges and nothing is
+announced; a user on latest sees what they saw before. Nothing installs
+Claude Code on the user's behalf (A42).
+
+**Tests.** `internal/ccversion` (`TestCheckFollowsTheUserChannelPerMethod`,
+`TestLatestPerMethod`, `TestUpgradeCommandPerMethod`,
+`TestInvalidChannelSettingsDoNotRequestLatest`): each method's source and
+update per channel, an install ahead of stable current, Homebrew unchanged,
+and an invalid setting refused before any request for npm and WinGet as for
+native. `internal/cli` (`TestClaudeCodeRowStableChannel`): the row and the
+brand line on stable, and the npm update from the stable dist-tag.

@@ -145,6 +145,50 @@ func TestClaudeCodeRowStates(t *testing.T) {
 	}
 }
 
+// On the stable channel a Claude Code at or ahead of stable's version is up
+// to date, not "latest", in the row and on the brand line; an npm install
+// behind it is updated from npm's stable dist-tag.
+func TestClaudeCodeRowStableChannel(t *testing.T) {
+	npmSeat := func(version, latest string) ccversion.Status {
+		return ccversion.Status{
+			Installed: &ccversion.Installed{
+				Path: "/usr/local/bin/claude", Real: "/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js",
+				Version: version, Method: ccversion.NPM, Channel: "stable",
+			},
+			Latest:  latest,
+			Checked: true,
+		}
+	}
+	for _, tc := range []struct {
+		name, version, title, brand string
+	}{
+		{"at stable", "2.1.273", "Claude Code 2.1.273 — up to date (stable)", "\nClaude Code 2.1.273 · up to date (stable)"},
+		{"ahead of stable", "2.1.281", "Claude Code 2.1.281 — up to date (stable)", "\nClaude Code 2.1.281 · up to date (stable)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sh, ft, calls := claudeShell(t, true)
+			sh.storeClaudeCode(npmSeat(tc.version, "2.1.273"), true)
+			it, ok := ft.item("claude-code")
+			if !ok || it.Title != tc.title || !it.Disabled {
+				t.Errorf("row = %+v (present %v), want %q disabled", it, ok, tc.title)
+			}
+			if sub := brandSub(t, ft); !strings.HasSuffix(sub, tc.brand) {
+				t.Errorf("brand = %q, want suffix %q", sub, tc.brand)
+			}
+			sh.click("claude-code")
+			if hasCall(*calls, "run:") || len(ft.notes) != 0 {
+				t.Errorf("calls %v notes %v for a Claude Code current on stable", *calls, ft.notes)
+			}
+		})
+	}
+	sh, _, calls := claudeShell(t, true)
+	sh.storeClaudeCode(npmSeat("2.1.270", "2.1.273"), true)
+	sh.click("claude-code")
+	if !hasCall(*calls, "run:npm install -g @anthropic-ai/claude-code@stable") {
+		t.Errorf("calls = %v, want the stable dist-tag's install", *calls)
+	}
+}
+
 // A missing Claude Code is never installed from the tray (A27): the click
 // says the line to type and runs nothing.
 func TestClaudeCodeMissingShowsTheInstallLine(t *testing.T) {

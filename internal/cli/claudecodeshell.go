@@ -112,7 +112,8 @@ func (a *appShell) setClaudeCodeInstalled(in *ccversion.Installed) {
 }
 
 // claudeCodeLine is the brand row's second line: the installed Claude Code,
-// and after a full check whether it is the latest; "" before the app looked.
+// and after a full check whether it is current on its channel; "" before the
+// app looked.
 func (a *appShell) claudeCodeLine() string {
 	a.mu.Lock()
 	st, known := a.claude, a.claudeKnown
@@ -133,12 +134,21 @@ func (a *appShell) claudeCodeLine() string {
 	if known {
 		switch st.State() {
 		case ccversion.UpToDate:
-			line += " · latest"
+			line += " · " + currentLabel(in)
 		case ccversion.UpdateAvailable:
 			line += " · " + st.Latest + " available"
 		}
 	}
 	return line
+}
+
+// currentLabel says that Claude Code is current on its channel: "latest", or
+// "up to date (stable)", which a Claude Code newer than stable also is.
+func currentLabel(in *ccversion.Installed) string {
+	if in != nil && in.Channel == "stable" {
+		return "up to date (stable)"
+	}
+	return "latest"
 }
 
 // claudeCodeItem is the menu row; false while there is nothing to show (no
@@ -160,7 +170,7 @@ func (a *appShell) claudeCodeItem() (tray.Item, bool) {
 		return tray.Item{ID: "claude-code", Kind: tray.KindUpdate, Title: "Update Claude Code " + in.Version + " → " + st.Latest + "…",
 			Sub: "with " + in.Method.Label() + " · running sessions keep the old one"}, true
 	case ccversion.UpToDate:
-		return tray.Item{ID: "claude-code", Title: "Claude Code " + in.Version + " — latest", Disabled: true}, true
+		return tray.Item{ID: "claude-code", Title: "Claude Code " + in.Version + " — " + currentLabel(in), Disabled: true}, true
 	case ccversion.CannotCheck:
 		v := in.Version
 		if v == "" {
