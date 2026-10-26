@@ -24,13 +24,14 @@ const (
 	bobPrevItem   = bobItem + ".prev"
 )
 
-// busyKC times out every call while busy is set, every write of busySet's
-// items and every delete of busyDelete's. deletes counts Delete calls.
+// busyKC times out every call while busy is set, every read of busyGet's
+// items, every write of busySet's and every delete of busyDelete's. deletes
+// counts Delete calls.
 type busyKC struct {
 	*fakeKC
-	busy                bool
-	busySet, busyDelete string
-	deletes             int
+	busy                         bool
+	busyGet, busySet, busyDelete string
+	deletes                      int
 }
 
 func timedOut() error {
@@ -38,7 +39,7 @@ func timedOut() error {
 }
 
 func (k *busyKC) Get(service, account string) (string, bool, error) {
-	if k.busy {
+	if k.busy || service == k.busyGet {
 		return "", false, timedOut()
 	}
 	return k.fakeKC.Get(service, account)
@@ -235,5 +236,17 @@ func TestTimedOutClearActiveFails_macOS(t *testing.T) {
 	}
 	if got, _ := kc.peek(claudeCodeKeychainService, keychain.AccountName()); got != liveAlice {
 		t.Errorf("OAuth Keychain item = %q, want the login still there", got)
+	}
+}
+
+// TestTimedOutManagedKeyClearFailsClearActive_macOS: taking the login off
+// fails with the timeout when the managed key's delete timed out, also when
+// its read-back times out too and so finds no key.
+func TestTimedOutManagedKeyClearFailsClearActive_macOS(t *testing.T) {
+	s, kc, _ := busyStore(t)
+	kc.put(managedKeychainService, keychain.AccountName(), seatKey)
+	kc.busyGet, kc.busyDelete = managedKeychainService, managedKeychainService
+	if err := s.ClearActive(); !keychain.IsTimeout(err) {
+		t.Fatalf("ClearActive = %v, want the timeout", err)
 	}
 }

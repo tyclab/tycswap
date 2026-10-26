@@ -107,7 +107,7 @@ func (s *FileKeychainStore) WriteActive(creds string) error {
 	if err := s.writeOAuthCredentials(creds); err != nil {
 		return err
 	}
-	s.clearManagedKey()
+	_ = s.clearManagedKey()
 	return nil
 }
 
@@ -135,11 +135,14 @@ func (s *FileKeychainStore) WriteActiveAccount(creds string) error {
 }
 
 // ClearActive keeps the login's seat-wide part; a key or login still readable afterwards is an error, as Claude Code would send it.
+// A timed-out delete of the managed key fails it too: the read-back may time out as well and miss the key (A69).
 func (s *FileKeychainStore) ClearActive() error {
 	if err := s.clearOAuthLogin(func() error { return nil }); err != nil {
 		return err
 	}
-	s.clearManagedKey()
+	if err := s.clearManagedKey(); keychain.IsTimeout(err) {
+		return keychainBusy(err)
+	}
 	if left, _, err := s.ReadActive(); err != nil || left != "" {
 		if err == nil {
 			err = errors.New("a login or a managed key is still readable")
@@ -388,9 +391,11 @@ func managedWriteFailed(err error, restore func(dropped string) error, dropped s
 	return cerr.CredentialWrite("%v; %v", err, rerr).Wrap(errors.Join(err, rerr))
 }
 
-func (s *FileKeychainStore) clearManagedKey() {
+// clearManagedKey returns the Keychain delete's error; clearing primaryApiKey is best-effort.
+func (s *FileKeychainStore) clearManagedKey() error {
+	var err error
 	if s.macOS() {
-		_ = s.kc.Delete(managedKeychainService, keychain.AccountName())
+		err = s.kc.Delete(managedKeychainService, keychain.AccountName())
 	}
 	cfg := s.readGlobalConfig()
 	if cfg != nil {
@@ -400,6 +405,7 @@ func (s *FileKeychainStore) clearManagedKey() {
 			}
 		}
 	}
+	return err
 }
 
 // clearOAuthLogin clears the active OAuth login for a managed key and writes
