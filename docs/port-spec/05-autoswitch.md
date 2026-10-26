@@ -297,7 +297,7 @@ return `ERROR`. **`tick()` never raises.**
 6. Emit `PollEvent(active_ref, headroom, threshold, fetch_errors=..., windows=...)`
    (`fetch_errors` = accounts with `usage[num] is None` and non-empty `last_error`;
    `windows` = `_window_pcts(value, models)` per account with non-empty result).
-7. If `not self._model_check_done`: run `_check_model_names(quarantined, usage)` (§11).
+7. If `not self._model_check_done`: run `_check_model_names(quarantined, usage)` (§18).
 8. If active is an api-key account **and** `not include_api_key_accounts`:
    emit `NoSwitchEvent("active-api-key", "API-key accounts have no quota to watch")`,
    return `NO_ACTION`. Go: always for an active api-key account; the setting is

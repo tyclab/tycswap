@@ -209,6 +209,7 @@ DESIGN entry and CHANGELOG line. Parts 1 and 2 are independent of Part 3.
 ## Verification on the operator's box
 
 After release and the flakelab pin bump (out of scope here, operator's call):
-the journal lines of `flakelab-tycswap-autoswitch.service` must show
-`2/3` and `3/3` on consecutive ticks when the active account's usage is
-unknown, and the `detail` must name the skip reason.
+while the active account's usage is unknown, the journal lines of
+`flakelab-tycswap-autoswitch.service` must show `1/3` and `2/3 before
+failover` on consecutive ticks and then a failover switch, or a `Blocked`
+reason when no target qualifies, and the `detail` must name the skip reason.

@@ -6243,7 +6243,7 @@ The reasons:
 
 Only the active account's skips are recorded; an inactive slot's skip stays
 unrecorded. Any attempted fetch, successful or failed, removes both keys:
-`skipReason` says why no request was made and `lastError` says why a request
+`skipReason` says why no usage was recorded and `lastError` says why a request
 failed, so the two never describe the same moment.
 
 The log records each change, never every tick: a WARNING `Usage for account N
@@ -6256,8 +6256,12 @@ The surfaces, all additive:
   and `usageRefresh.skipAt` (ISO-8601 UTC), each only when set.
 - The tray's account details line reads `Usage: <status> · <reason>`; it is
   still shown only when the status is not `ok`.
-- The dashboard's usage chip shows the reason in place of its generic
-  expired-login or sign-in text, and its tooltip starts with the full reason.
+- The dashboard's usage chip shows the reason in place of the status text it
+  would show otherwise: `Sign in again to restore usage`, `Waiting for Claude
+  to refresh its login`, `refresh failed` or `refresh rate-limited`. The check
+  time before it and the next attempt after it stay, the chip keeps its
+  warning style while the row carries a `lastError`, and its tooltip starts
+  with the full reason.
 - The engine's `no-switch` details under `active-usage-unknown` and
   `active-idle` end in ` · <reason>` while the active account's row carries
   one, for example `1/3 before failover · owner holds an expired token; …`.
