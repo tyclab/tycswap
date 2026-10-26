@@ -6479,7 +6479,12 @@ the same way, before the shadow file is touched: the old login would
 otherwise stay in the item Claude Code reads first, and the write report the
 key as live. The failure puts the managed item back as any failure after the
 Keychain write does (A29). `ClearActive` takes the same path, so it fails
-rather than report a login gone that a busy Keychain still holds.
+rather than report a login gone that a busy Keychain still holds. It fails too
+when the delete of the managed key times out, since the read-back that would
+catch the key may time out as well. The read of the live login that comes
+first, for the MCP server logins a switch keeps (A29), fails the same way on
+a timeout, for an OAuth login, an API key and an endpoint alike: read as
+empty, it would write the new login without them or delete the item whole.
 
 Backup writes keep the fallback on a timeout: reads are `.enc`-wins, so the
 `.enc` serves the fresh value whatever the item holds, and the next Keychain
@@ -6533,8 +6538,9 @@ managed-key switch write that time out fail, write no file and no
 `primaryApiKey`, and leave the old login in the item; a managed-key write
 whose write-back of the MCP logins or whose delete of the OAuth item times
 out fails, leaves the login in the item and its file, and puts the managed
-item back; `ClearActive` fails on a timed-out delete; a timed-out backup
-write deletes nothing. `internal/store` (`TestMoveFileBackupsStopsAtFirstTimeout`):
+item back; `ClearActive` fails on a timed-out delete of either item; a
+switch whose read of the live login times out fails and keeps the item with
+its MCP logins; a timed-out backup write deletes nothing. `internal/store` (`TestMoveFileBackupsStopsAtFirstTimeout`):
 the start-up move ends at the first timeout and skips past other failures.
 `internal/credstore/filebackup_test.go`: a timed-out backup read fails and any
 other failure reads "", a Keychain `.prev` write drops the `.enc.prev`, an
