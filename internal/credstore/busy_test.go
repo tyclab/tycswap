@@ -250,3 +250,32 @@ func TestTimedOutManagedKeyClearFailsClearActive_macOS(t *testing.T) {
 		t.Fatalf("ClearActive = %v, want the timeout", err)
 	}
 }
+
+// TestTimedOutLiveReadKeepsMCPLogins_macOS: a switch onto an OAuth login, an
+// API key or an endpoint whose read of the live login timed out fails with
+// the timeout and leaves the item, the seat's MCP logins included. Before, the
+// read found nothing: the OAuth write dropped the MCP logins and the other two
+// deleted the item.
+func TestTimedOutLiveReadKeepsMCPLogins_macOS(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		write func(*FileKeychainStore) error
+	}{
+		{"OAuth login", func(s *FileKeychainStore) error { return s.WriteActiveAccount(storedBob) }},
+		{"API key", func(s *FileKeychainStore) error { return s.WriteActiveAccount(seatKey) }},
+		{"endpoint", (*FileKeychainStore).ClearActive},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, kc, _ := busyStore(t)
+			kc.put(claudeCodeKeychainService, keychain.AccountName(), loginBesideMCP)
+			kc.busyGet = claudeCodeKeychainService
+			if err := tc.write(s); !keychain.IsTimeout(err) {
+				t.Fatalf("write = %v, want the timeout", err)
+			}
+			if got, _ := kc.peek(claudeCodeKeychainService, keychain.AccountName()); got != loginBesideMCP {
+				t.Errorf("OAuth Keychain item = %q, want the live login and its MCP logins", got)
+			}
+			assertKeychainItem(t, kc.fakeKC, managedKeychainService, "")
+		})
+	}
+}

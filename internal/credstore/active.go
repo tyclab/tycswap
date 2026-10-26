@@ -26,8 +26,8 @@ import (
 func (s *FileKeychainStore) ReadActive() (string, bool, error) {
 	keychainFailed := false
 	if s.useKeychain() {
-		val, failed := s.readActiveOAuthKeychain()
-		keychainFailed = failed
+		val, err := s.readActiveOAuthKeychain()
+		keychainFailed = err != nil
 		if val != "" && !ccfile.SeatWideOnly(val) {
 			return val, false, nil
 		}
@@ -52,12 +52,12 @@ func (s *FileKeychainStore) ReadActive() (string, bool, error) {
 	return "", keychainFailed, nil
 }
 
-func (s *FileKeychainStore) readActiveOAuthKeychain() (string, bool) {
+func (s *FileKeychainStore) readActiveOAuthKeychain() (string, error) {
 	var lastErr error
 	for attempt := 0; attempt < activeReadAttempts; attempt++ {
 		v, _, err := s.kcGet(claudeCodeKeychainService, keychain.AccountName())
 		if err == nil {
-			return v, false
+			return v, nil
 		}
 		lastErr = err
 		if attempt+1 < activeReadAttempts {
@@ -65,7 +65,7 @@ func (s *FileKeychainStore) readActiveOAuthKeychain() (string, bool) {
 		}
 	}
 	s.log.Warningf("Keychain read failed after %d attempt(s), trying file: %v", activeReadAttempts, lastErr)
-	return "", true
+	return "", lastErr
 }
 
 func (s *FileKeychainStore) readManagedKey() string {
@@ -118,16 +118,21 @@ func (s *FileKeychainStore) WriteActive(creds string) error {
 // in use, else the plaintext file) and splices with ccfile.SpliceCredentials,
 // which drops the stored blob's own copy of those keys; a failed read or a
 // live file that does not parse writes the stored account part without a
-// carry-over, with a warning: the carry-over is best-effort and never stops a
-// switch. An API key takes WriteActive's managed path, except that a failure
-// after the key reached the Keychain puts the Keychain item back. WriteActive
-// itself stays verbatim: it is what rollback restores with, and what the
-// refresh write-back uses for a blob that already holds the live remainder.
+// carry-over, with a warning: the carry-over is best-effort, and only a
+// Keychain read that timed out stops the switch (A69). An API key takes
+// WriteActive's managed path, except that a failure after the key reached the
+// Keychain puts the Keychain item back. WriteActive itself stays verbatim: it
+// is what rollback restores with, and what the refresh write-back uses for a
+// blob that already holds the live remainder.
 func (s *FileKeychainStore) WriteActiveAccount(creds string) error {
 	if LooksLikeAPIKey(creds) {
 		return s.writeManagedCredentials(strings.TrimSpace(creds), true)
 	}
-	merged, err := ccfile.SpliceCredentials(creds, s.readLiveOAuth())
+	live, err := s.readLiveOAuth()
+	if err != nil {
+		return err
+	}
+	merged, err := ccfile.SpliceCredentials(creds, live)
 	if err != nil {
 		s.log.Warningf("Writing the stored credential without the live MCP server logins; they could not be carried over it: %v", err)
 	}
@@ -155,26 +160,35 @@ func (s *FileKeychainStore) ClearActive() error {
 // readLiveOAuth returns the live OAuth credential text for the carry-over: the
 // Keychain item while the Keychain is in use (bounded retry, then the file),
 // else the plaintext file; "" when neither holds one or the file read fails
-// (logged, so the caller writes verbatim). Unlike ReadActive it returns a
-// value holding seat-wide keys only, deliberately: that value is no login, but
-// it is exactly the remainder a switch carries over (DESIGN A29).
-func (s *FileKeychainStore) readLiveOAuth() string {
+// (logged, so the caller writes verbatim), plus keychainBusy when the Keychain
+// read timed out (A69). Unlike ReadActive it returns a value holding seat-wide
+// keys only, deliberately: that value is no login, but it is exactly the
+// remainder a switch carries over (DESIGN A29).
+func (s *FileKeychainStore) readLiveOAuth() (string, error) {
+	var busy error
 	if s.useKeychain() {
-		if v, _ := s.readActiveOAuthKeychain(); v != "" {
-			return v
+		v, err := s.readActiveOAuthKeychain()
+		if v != "" {
+			return v, nil
+		}
+		if keychain.IsTimeout(err) {
+			busy = keychainBusy(err)
 		}
 	}
 	raw, _, err := ccfile.ReadCredentialsFile()
 	if err != nil {
 		s.log.Warningf("Could not read the live credentials file; the live MCP server logins will not be carried over: %v", err)
-		return ""
+		return "", busy
 	}
-	return raw
+	return raw, busy
 }
 
 // ReadLiveOAuth is readLiveOAuth for a caller that must restore the live
 // credential exactly, a seat-wide-only one included (DESIGN A30).
-func (s *FileKeychainStore) ReadLiveOAuth() string { return s.readLiveOAuth() }
+func (s *FileKeychainStore) ReadLiveOAuth() string {
+	v, _ := s.readLiveOAuth()
+	return v
+}
 
 // writeOAuthCredentials writes Claude Code's active OAuth credential (spec
 // 03§5.5). macOS writes the Keychain when usable and bumps an already-present
@@ -418,9 +432,14 @@ func (s *FileKeychainStore) clearManagedKey() error {
 // whole (spec 03§5.6). beforeFile makes the managed key readable in file mode
 // before that fallback overwrites the original OAuth credential; its failure
 // propagates without clearing the original login. So does a Keychain timeout,
-// which would leave the login in the item Claude Code reads first (A69).
+// which would leave the login in the item Claude Code reads first or, on the
+// read, drop the seat's MCP logins (A69).
 func (s *FileKeychainStore) clearOAuthLogin(beforeFile func() error) error {
-	if rest, ok := ccfile.SeatWidePart(s.readLiveOAuth()); ok {
+	live, err := s.readLiveOAuth()
+	if err != nil {
+		return err
+	}
+	if rest, ok := ccfile.SeatWidePart(live); ok {
 		var fallbackErr error
 		err := s.writeOAuthCredentialsBeforeFile(rest, func() error {
 			fallbackErr = beforeFile()
