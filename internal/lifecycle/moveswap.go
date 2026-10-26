@@ -128,7 +128,12 @@ func relocateLocked(s *store.Store, data *store.SequenceData, numSrc, target str
 		return err
 	}
 
-	creds, _ := s.ReadAccountCredentials(numSrc, email)
+	// A busy Keychain must stop the move: read as "none stored", it would
+	// clear the target and the source of a login that exists (DESIGN A69).
+	creds, err := s.ReadAccountCredentials(numSrc, email)
+	if err != nil {
+		return err
+	}
 	config, _ := s.ReadAccountConfig(numSrc, email)
 
 	srcDir := s.SessionDir(numSrc, email)
@@ -223,8 +228,15 @@ func swapAccountsLocked(s *store.Store, data *store.SequenceData, first, second 
 		return "", "", err
 	}
 
-	credsA, _ := s.ReadAccountCredentials(numA, emailA)
-	credsB, _ := s.ReadAccountCredentials(numB, emailB)
+	// A busy Keychain stops the swap, as it does a move (DESIGN A69).
+	credsA, err := s.ReadAccountCredentials(numA, emailA)
+	if err != nil {
+		return "", "", err
+	}
+	credsB, err := s.ReadAccountCredentials(numB, emailB)
+	if err != nil {
+		return "", "", err
+	}
 	configA, _ := s.ReadAccountConfig(numA, emailA)
 	configB, _ := s.ReadAccountConfig(numB, emailB)
 

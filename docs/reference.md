@@ -5028,9 +5028,17 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   the active account's OAuth credential is retried briefly and, on continued
   failure, surfaces as `usageStatus: "keychain_unavailable"` (human line
   `keychain unavailable — locked or in use; try again`) rather than
-  `no_credentials`. Backup-store credential reads and writes fall back to
-  file-based storage for the rest of the process run, so a flaky Keychain never
-  blocks a switch.
+  `no_credentials`. A Keychain that reports an error sends credential writes
+  to file-based storage; a long-running process (`app`, `web`) checks it again
+  a minute later. A Keychain that only answers slowly, as on a Mac under heavy
+  load, gets 15 seconds per call and is asked again on the next one. A switch
+  whose write of the active login times out fails with `The Keychain did not
+  answer in time, so the login was not changed; try again in a moment` and
+  changes nothing. A switch, move or swap whose read of a stored login times
+  out stops the same way (`… the stored login of account N could not be
+  read; try again in a moment`) instead of treating the account as empty.
+  `tycswap app` moves backups a Keychain failure left in plaintext files
+  back into the Keychain when it starts.
 - **Auto-switch quarantine.** During a real (non-`--dry-run`) `tycswap auto` tick,
   a slot whose token cannot be freshened is quarantined: excluded from the
   auto-switch candidate pool until recovered. A quarantine is raised for

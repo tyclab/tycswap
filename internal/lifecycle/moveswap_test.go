@@ -7,6 +7,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
@@ -17,6 +18,15 @@ type fakeCreds struct {
 	credstore.Store
 	failStrict func(num, email string) bool
 	failWrite  func(num, email, creds string) bool
+	busyRead   func(num string) bool
+}
+
+// ReadBackup fails as a backup read on a Keychain too busy to answer does.
+func (f *fakeCreds) ReadBackup(num, email string) (string, error) {
+	if f.busyRead != nil && f.busyRead(num) {
+		return "", cerr.Credential("injected busy read for slot %s", num).Wrap(&keychain.KeychainError{Msg: "security timed out after 15s", Timeout: true})
+	}
+	return f.Store.ReadBackup(num, email)
 }
 
 func (f *fakeCreds) WriteBackup(num, email, creds string) error {
@@ -184,6 +194,41 @@ func TestMoveStrictClearFailsClosed(t *testing.T) {
 	}
 	if _, ok := data.Accounts["7"]; ok {
 		t.Error("account committed to target despite abort")
+	}
+}
+
+// TestMoveSwapStopOnBusyKeychain: a backup read the Keychain was too busy to
+// answer stops a move and a swap (DESIGN A69). Read as "none stored", it would
+// clear the target and remove the source of a login that exists.
+func TestMoveSwapStopOnBusyKeychain(t *testing.T) {
+	s := newStore(t)
+	seed(t, s, ip(1),
+		acct{num: "1", email: "a@example.com", creds: "C1", config: "G1"},
+		acct{num: "2", email: "b@example.com", creds: "C2", config: "G2"},
+	)
+	inner := s.Creds
+	s.Creds = &fakeCreds{Store: inner, busyRead: func(num string) bool { return num == "2" }}
+
+	for _, target := range []string{"7", "1"} { // free slot: relocate; occupied: swap
+		if _, _, _, err := MoveAccount(s, "2", target); !keychain.IsTimeout(err) {
+			t.Fatalf("move 2 → %s on a busy Keychain = %v, want the timeout", target, err)
+		}
+	}
+	if _, _, err := SwapAccounts(s, "1", "2"); !keychain.IsTimeout(err) {
+		t.Fatalf("swap on a busy Keychain = %v, want the timeout", err)
+	}
+	data := readSeq(t, s)
+	if rec(t, data, "1").str("email") != "a@example.com" || rec(t, data, "2").str("email") != "b@example.com" {
+		t.Error("records moved despite the busy Keychain")
+	}
+	if _, ok := data.Accounts["7"]; ok {
+		t.Error("account committed to slot 7 despite the busy Keychain")
+	}
+	for num, want := range map[string]string{"1": "C1", "2": "C2"} {
+		email := rec(t, data, num).str("email")
+		if v, _ := inner.ReadBackup(num, email); v != want {
+			t.Errorf("slot %s backup = %q, want %q", num, v, want)
+		}
 	}
 }
 

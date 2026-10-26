@@ -177,7 +177,7 @@ func (s *FileKeychainStore) ReadLiveOAuth() string { return s.readLiveOAuth() }
 // 03§5.5). macOS writes the Keychain when usable and bumps an already-present
 // shadow .credentials.json (#86 hot-reload); on failure or off macOS it writes
 // the plaintext file, best-effort clears any stale Keychain entry, and pins file
-// mode.
+// mode. A write that timed out fails instead (keychainBusy, DESIGN A69).
 func (s *FileKeychainStore) writeOAuthCredentials(creds string) error {
 	return s.writeOAuthCredentialsBeforeFile(creds, nil)
 }
@@ -192,6 +192,9 @@ func (s *FileKeychainStore) writeOAuthCredentialsBeforeFile(creds string, before
 			s.refreshStaleCredentialsFile(creds)
 			s.setBackend("keychain")
 			return nil
+		}
+		if keychain.IsTimeout(err) {
+			return keychainBusy(err)
 		}
 		if !keychain.IsUnusable(err) {
 			return err // a programming error propagates
@@ -214,6 +217,13 @@ func (s *FileKeychainStore) writeOAuthCredentialsBeforeFile(creds string, before
 	return nil
 }
 
+// keychainBusy fails an active write the deadline killed, with no file
+// fallback: Claude Code reads the item first, and on a busy Keychain the
+// clearing delete times out too and keeps the old login live (DESIGN A69).
+func keychainBusy(err error) error {
+	return cerr.CredentialWrite("The Keychain did not answer in time, so the login was not changed; try again in a moment: %v", err).Wrap(err)
+}
+
 // refreshStaleCredentialsFile bumps an already-present .credentials.json's mtime
 // after a Keychain write (rewrite-when-present / never-create, #86). Best-effort.
 func (s *FileKeychainStore) refreshStaleCredentialsFile(creds string) {
@@ -234,7 +244,8 @@ func (s *FileKeychainStore) refreshStaleCredentialsFile(creds string) {
 // the file backend the key and its approval are one config write, and a
 // failure after the Keychain write puts the managed Keychain item back
 // (DESIGN A29). Without it (WriteActive: the rollback itself) a key stored
-// before a later failure stays: it is the key the rollback restores.
+// before a later failure stays: it is the key the rollback restores. A
+// timeout fails without the primaryApiKey fallback (keychainBusy).
 func (s *FileKeychainStore) writeManagedCredentials(apiKey string, undo bool) error {
 	wroteToKeychain := false
 	var restoreKeychain func(dropped string) error
@@ -258,6 +269,8 @@ func (s *FileKeychainStore) writeManagedCredentials(apiKey string, undo bool) er
 					return s.restoreManagedKeychainItem(prev, hadPrev, dropped)
 				}
 			}
+		} else if keychain.IsTimeout(err) {
+			return keychainBusy(err)
 		} else if !keychain.IsUnusable(err) {
 			return err // a programming error propagates
 		} else {

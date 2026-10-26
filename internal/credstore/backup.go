@@ -1,5 +1,5 @@
 // Per-account backups: base64 .enc files everywhere plus the macOS Keychain (service "tycswap"). Reads are .enc-wins, so a Keychain
-// write reconciles the .enc away (correctness-critical). One .prev per slot. Only DeleteBackupStrict propagates errors (01§14).
+// write reconciles the .enc away (correctness-critical). One .prev per slot. Only DeleteBackupStrict propagates errors (01§14), and ReadBackup a Keychain timeout (A69).
 
 package credstore
 
@@ -75,6 +75,49 @@ func (s *FileKeychainStore) KCWriteBackup(num, email, creds string) error {
 	return s.kcWriteBackup(num, email, creds)
 }
 
+// MoveFileBackupToKeychain moves a slot's .enc backup, left by a spell in file
+// mode, into the Keychain and removes the file once the Keychain holds it
+// (DESIGN A69). A .enc.prev moves too when the Keychain has no .prev; beside
+// one it stays until the next retained generation replaces it, since nothing
+// says which of the two is newer. A value too large for security's stdin stays
+// in its file. moved reports whether the backup moved. Off macOS, or with the
+// Keychain not in use, it does nothing.
+func (s *FileKeychainStore) MoveFileBackupToKeychain(num, email string) (moved bool, err error) {
+	if !s.useKeychain() {
+		return false, nil
+	}
+	encPath := s.backupEncPath(num, email)
+	if s.encPresent(encPath) {
+		if v, ok := s.decodeEnc(encPath, "Failed to read credentials file"); ok && keychain.FitsStdin(securityService, s.backupUsername(num, email), v) {
+			if err := s.kcWriteBackup(num, email, v); err != nil {
+				return false, err
+			}
+			if err := s.reconcileEncAfterKeychainWrite(num, email, v); err != nil {
+				return false, err
+			}
+			moved = true
+		}
+	}
+	prevPath := s.prevBackupPath(num, email)
+	if exists(prevPath) {
+		if v, ok := s.decodeEnc(prevPath, "Failed to read .prev file"); ok && keychain.FitsStdin(securityService, s.prevBackupUsername(num, email), v) {
+			_, found, err := s.kcGet(securityService, s.prevBackupUsername(num, email))
+			if err != nil {
+				return moved, err
+			}
+			if !found {
+				if err := s.kcSet(securityService, s.prevBackupUsername(num, email), v); err != nil {
+					return moved, err
+				}
+				if err := removeMissingOK(prevPath); err != nil {
+					return moved, err
+				}
+			}
+		}
+	}
+	return moved, nil
+}
+
 // atomicB64Write base64-encodes credentials and atomically writes them to target
 // under credentialsDir (0600), mirroring _atomic_b64_write. It mkdirs the parent
 // 0700 when it has to create it, but never chmods an existing one (unlike atomicfile,
@@ -112,7 +155,9 @@ func (s *FileKeychainStore) decodeEnc(path, logMsg string) (string, bool) {
 
 // ReadBackup returns a slot's backup credential, "" when missing. macOS is
 // .enc-wins: only an absent, unreadable, corrupt, or empty .enc falls through to
-// the Keychain (spec 03§5.7). It never surfaces an error.
+// the Keychain (spec 03§5.7). The one error it surfaces is a Keychain read the
+// deadline killed (DESIGN A69); every other backend failure is logged and
+// reads as "".
 //
 // It returns the account part only (oauth.AccountOnly, DESIGN A59): a slot
 // written before the seat-wide split may still hold the MCP server logins of
@@ -130,11 +175,21 @@ func (s *FileKeychainStore) ReadBackup(num, email string) (string, error) {
 		v, err := s.kcReadBackup(num, email)
 		if err != nil {
 			s.log.Warningf("Failed to read credentials from Keychain: %v", err)
+			if keychain.IsTimeout(err) {
+				return "", keychainBusyRead(num, err)
+			}
 			return "", nil
 		}
 		return oauth.AccountOnly(v), nil
 	}
 	return "", nil
+}
+
+// keychainBusyRead is the error of a backup read the deadline killed (DESIGN
+// A69): the item may well hold a login, so a caller that would act on "none
+// stored" (a switch, a move) must stop instead.
+func keychainBusyRead(num string, err error) error {
+	return cerr.Credential("The Keychain did not answer in time, so the stored login of account %s could not be read; try again in a moment: %v", num, err).Wrap(err)
 }
 
 // A slot stores the account part only (DESIGN A59); every slot write passes here.
@@ -236,7 +291,13 @@ func (s *FileKeychainStore) retainPreviousBackup(num, email, newCreds string) {
 	var err error
 	if s.useKeychain() {
 		err = s.kcSet(securityService, s.prevBackupUsername(num, email), current)
-		if keychain.IsTooLarge(err) {
+		if err == nil {
+			// Reads are .enc.prev-wins: a .enc.prev left from a file-mode spell
+			// would shadow the generation just written (DESIGN A69).
+			if rerr := removeMissingOK(s.prevBackupPath(num, email)); rerr != nil {
+				s.log.Warningf("Failed to delete stale .prev file: %v", rerr)
+			}
+		} else if keychain.IsTooLarge(err) {
 			// Too large for security's stdin: keep it in the 0600 file
 			// instead (ReadPrev is .enc.prev-wins).
 			err = s.atomicB64Write(s.prevBackupPath(num, email), current)

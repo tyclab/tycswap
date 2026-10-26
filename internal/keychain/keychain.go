@@ -1,9 +1,10 @@
 // Package keychain wraps the macOS /usr/bin/security CLI for generic passwords.
 //
 // Implements spec 03§4 (macos_keychain.py). The exact argv, absolute binary
-// path, hex -X encoding, single trailing-\n strip, rc 44 handling and 5s timeout
-// are byte-compatibility contracts with Claude-Code-seeded items. A real Security
-// client (with an exec seam for tests) and an in-memory Fake are provided.
+// path, hex -X encoding, single trailing-\n strip and rc 44 handling are
+// byte-compatibility contracts with Claude-Code-seeded items; the timeout is
+// 15s, not the spec's 5s (DESIGN A69). A real Security client (with an exec
+// seam for tests) and an in-memory Fake are provided.
 package keychain
 
 import (
@@ -25,8 +26,8 @@ const (
 	// headroom (4096-64). Set refuses a longer command (TooLarge).
 	SecurityStdinLineLimit = 4096 - 64
 	notFoundRC             = 44
-	// timeout bounds every security spawn.
-	timeout = 5 * time.Second
+	// timeout bounds every security spawn; a loaded Mac takes seconds (DESIGN A69).
+	timeout = 15 * time.Second
 	// securityBin is the pinned absolute path to Apple's system binary.
 	securityBin = "/usr/bin/security"
 )
@@ -77,15 +78,27 @@ type KeychainClient interface {
 // TooLarge marks the one failure that says nothing about the Keychain itself:
 // a Set payload too large for `security -i`'s stdin line. Callers store such a
 // secret elsewhere, but must not conclude the Keychain is down (IsTooLarge).
+// Timeout marks a spawn the deadline killed, which IsTimeout reports.
 type KeychainError struct {
 	Msg      string
 	TooLarge bool
+	Timeout  bool
 }
 
 func (e *KeychainError) Error() string { return e.Msg }
 
 func keychainErrorf(format string, a ...any) *KeychainError {
 	return &KeychainError{Msg: fmt.Sprintf(format, a...)}
+}
+
+// IsTimeout reports a spawn the deadline killed: a busy Keychain, not a broken
+// one (DESIGN A69). IsUnusable is true for it as well.
+func IsTimeout(err error) bool {
+	var ke *KeychainError
+	if errors.As(err, &ke) && ke.Timeout {
+		return true
+	}
+	return errors.Is(err, context.DeadlineExceeded)
 }
 
 // IsUnusable reports whether err should route the caller to file storage rather
@@ -188,7 +201,9 @@ func (s Security) call(argv []string, stdin string) (execResult, error) {
 	// a result completing near the deadline (nil err) is honored even if ctx has since expired.
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return execResult{}, keychainErrorf("security %s timed out after %s", commandName(argv), s.budget())
+			ke := keychainErrorf("security %s timed out after %s", commandName(argv), s.budget())
+			ke.Timeout = true
+			return execResult{}, ke
 		}
 		return execResult{}, err
 	}

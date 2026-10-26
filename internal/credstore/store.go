@@ -38,7 +38,7 @@ type Store interface {
 	ClearActive() error
 
 	// ReadBackup returns a slot's backup credential (.enc-wins), "" when missing;
-	// it never fails (all backend errors are swallowed with a warning log).
+	// only a Keychain timeout fails it (DESIGN A69), other errors are logged.
 	ReadBackup(num, email string) (string, error)
 	WriteBackup(num, email, creds string) error
 	// DeleteBackup is the best-effort sweep (legacy account-None alias, .prev,
@@ -53,6 +53,7 @@ type Store interface {
 
 	KCReadBackup(num, email string) (string, error)
 	KCWriteBackup(num, email, creds string) error
+	MoveFileBackupToKeychain(num, email string) (moved bool, err error)
 
 	// WriteUnclaimed stashes credential bytes of unknown provenance (entry file
 	// written before the manifest) and returns the entry id.
@@ -116,8 +117,8 @@ func (s *FileKeychainStore) learn(err error) error {
 	if err != nil {
 		// A secret too large for security's stdin is a property of the
 		// payload, not of the Keychain: the caller stores it in a file, and the
-		// Keychain stays in use for everything else.
-		if keychain.IsUnusable(err) && !keychain.IsTooLarge(err) {
+		// Keychain stays in use for everything else, as after a timeout (A69).
+		if keychain.IsUnusable(err) && !keychain.IsTooLarge(err) && !keychain.IsTimeout(err) {
 			f := false
 			s.cache = &f
 			s.disabledUntil = s.clk.Now().Add(recheckCooldown)

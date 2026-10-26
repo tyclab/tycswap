@@ -328,6 +328,13 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		}
 	}
 	fmt.Fprintf(s.err, "Dashboard: %s\n", url)
+	// Backups a Keychain that failed once sent to plaintext files go back
+	// into the Keychain (DESIGN A69); the lock waits for any switch.
+	go func() {
+		if _, err := d.sw.Store.MoveFileBackupsToKeychain(); err != nil {
+			fmt.Fprintln(s.err, "moving file backups into the Keychain: "+err.Error())
+		}
+	}()
 
 	if t == nil {
 		if o.headless {

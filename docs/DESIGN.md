@@ -91,11 +91,11 @@ internal/codex/usagecache ──► internal/codex/store ──► internal/code
 | `printer` | ANSI styles, color detection precedence (`NO_COLOR`/`FORCE_COLOR`/TTY/Windows-VT/`TERM=dumb`) with first-call caching; `force_color` ctx; Windows console UTF-8 + VT; entrypoint/IDE labels, `abbreviate_path`, `format_age`. (02§11, 08§10) |
 | `jsonout` | schema-v1 envelope builders: `account_row`, `usage_to_json`, `error_envelope`, freshness fields, `usageStatus` mapping. camelCase, optional-key omission. (02§10, 08§9) |
 | `paths` | All path resolution: backup root (XDG/legacy), Claude config home/global/default-global/credentials, legacy backup dir + `MigrateLegacyBackupDir` protocol. (03§2) |
-| `keychain` | `/usr/bin/security` wrapper (get/set/delete/item_exists), exact argv, hex `-X`, single-`\n` strip, rc 44, 5s timeout; `KeychainClient` interface + real + in-memory fake; `IsUnusable(err)` = `KEYCHAIN_ERRORS`. (03§4) |
+| `keychain` | `/usr/bin/security` wrapper (get/set/delete/item_exists), exact argv, hex `-X`, single-`\n` strip, rc 44, 15s timeout (A69); `KeychainClient` interface + real + in-memory fake; `IsUnusable(err)` = `KEYCHAIN_ERRORS`, `IsTimeout(err)` (A69). (03§4) |
 | `ccfile` | Claude Code file I/O: read `~/.claude.json` as `map[string]any`, key-scoped atomic RMW preserving unknown keys, `oauthAccount` splice, raw `.credentials.json` read/write. (03§3, 03§5.5) |
 | `cclock` | proper-lockfile interop: directory `mkdir` mutex, 10s staleness (wall mtime), 3s touch goroutine, 9s acquire (monotonic), `[0.25,0.50)` jitter; `ClaudeCodeLockTimeout`. (03§6) |
 | `filelock` | tycswap's own advisory lock (`flock`/`LockFileEx`, 0.1s poll, 10s default), non-reentrant. `LockError`. (03§7) |
-| `credstore` | `Store` interface + `FileKeychainStore`: active OAuth/managed-key read/write, backup `.enc`/Keychain routing, usability cache (None/T/F + 60s monotonic cooldown + sticky pin), `.prev`, unclaimed stash, `looks_like_api_key`, `approved_form`. (03§5, 01§3) |
+| `credstore` | `Store` interface + `FileKeychainStore`: active OAuth/managed-key read/write, backup `.enc`/Keychain routing, usability cache (None/T/F + 60s monotonic cooldown + sticky pin; a timeout flips nothing, A69), `.prev`, unclaimed stash, `looks_like_api_key`, `approved_form`. (03§5, 01§3) |
 | `oauth` | Network client (`Client` interface + HTTP impl + fake): refresh/profile/usage, normalization (`build_usage_result`), classification tokens, `relevant_windows`, `account_headroom`, fingerprint, reset formatting. Owns the normalized `Usage` type. (04§1) |
 | `usage` | `UsageStore` (schema v2, identity-guarded, lock protocol), `UsageEntry`/`FetchRecord`, poll policy (`plan_after_fetch`, backoff, due-candidate), TTL `cache`. (04§2–4) |
 | `settings` | `settings.json` store, `SETTING_SPECS`, `AutoSwitchSettings` (frozen value), clamp, `config set/get/unset`, `merged_with_cli`, `parse_model_names`. (08§8, 05§2) |
@@ -188,13 +188,14 @@ type KeychainClient interface {
 }
 func AccountName() string                               // $USER → os/user → "claude-code-user"
 func IsUnusable(err error) bool                         // KeychainError | ctx-deadline | missing-binary (KEYCHAIN_ERRORS)
+func IsTimeout(err error) bool                          // a spawn the deadline killed (A69); IsUnusable too
 type Security struct{ Path string; Timeout time.Duration } // real: exec /usr/bin/security
 type Fake struct{ m map[[2]string]string }              // conftest block_real_keychain parity
 ```
 `Set` hex-encodes via `-X` on stdin `-i`; over the 4032-byte line limit it refuses with a
 `TooLarge` `KeychainError` (never argv; see Amendment on the security pass);
 `Get` uses `find-generic-password -a … -w -s …`, `strings.TrimSuffix(out,"\n")`
-(not TrimSpace). 5s `exec.CommandContext` timeout → `IsUnusable`-classified.
+(not TrimSpace). 15s `exec.CommandContext` timeout (A69) → `IsUnusable`- and `IsTimeout`-classified.
 
 ### 2.6 `ccfile` — 03§3, 03§5.5
 ```go
@@ -6427,3 +6428,96 @@ Unchanged on purpose: an unmanaged config identity resolves to no slot, so
 the unclaimed-credential and displaced-login capture keep working as before.
 The repair does not stop a running Claude Code from writing the old identity
 back. The next resolve warns again only in a new process.
+
+## A69. A busy Keychain is busy, not unusable
+
+On a Mac under heavy load a `security` spawn can take seconds, and lookups
+ran past the 5 s budget. The app and `web` read every slot's backup through
+the Keychain on every poll tick, so a loaded Mac produced timeouts all day.
+`learn` handled a timeout like any `KEYCHAIN_ERRORS` failure: the usability
+cache turned False for 60 s (03§5.3). For that minute a long-running process
+skipped the Keychain wherever the cache decides. The active read reported the
+active account as "keychain unavailable — locked or in use" when no
+`.credentials.json` covered it, and a switch refused with "Current account
+credential is empty (Keychain unreadable?)". Backup writes went to `.enc`
+files and removed the slot's Keychain item. An active write in that window
+went to `.credentials.json` and pinned file mode for the rest of the process.
+A slow Keychain was read as a missing one.
+
+`ReadBackup` swallowed every Keychain failure and returned "" (03§5.7), so a
+slot that held a login read as one that held none. A switch failed with
+"Account-N has no stored credentials" while the item was intact, and a move or
+a swap did worse: it carried "no credentials" to the target, which clears it
+(`DeleteBackupStrict`), and removed the source.
+
+**The rule.** `keychain` marks a spawn the deadline killed: a `KeychainError`
+with `Timeout` set, which `IsTimeout` reports. `IsUnusable` stays true for it.
+The budget is 15 s. In `credstore.learn` a timeout flips nothing, as a
+`TooLarge` refusal flips nothing (A25 item 2): the next call asks the Keychain again,
+and only a failure `security` itself reports (a locked Keychain, a missing
+binary) sends the process to files for the cooldown. The active read keeps its
+bounded retry, and "keychain unavailable" still means that both attempts
+failed.
+
+**Active writes.** A Keychain write of the active credential, the OAuth item
+or a managed key (with A29's read of the item before it), fails on a timeout
+with "The Keychain did not answer in time, so the login was not changed; try
+again in a moment" and takes no file fallback. That fallback is right only
+when the clearing delete of the Keychain item succeeds. Claude Code reads the
+item first, and on a busy Keychain the delete times out too, so the old login
+would stay live while the store records the new one. A write the deadline
+killed may also have landed. The switch fails before it records the write, so
+its rollback has nothing to undo, and the next switch's provenance check
+(02§7) sorts out whose login is live. Backup writes keep the fallback on a
+timeout: reads are `.enc`-wins, so the `.enc` serves the fresh value whatever
+the item holds, and the next Keychain write reconciles it away.
+
+**Backup reads.** A backup read the deadline killed fails with "The Keychain
+did not answer in time, so the stored login of account N could not be read;
+try again in a moment" (`keychain.IsTimeout` holds for it). Every other backend
+failure keeps the old contract: a warning and "". Callers that only display,
+rank or look for evidence (the snapshot, the switchable check, provenance, the
+live-slot resolver of A68) still read "" and move on. The switch stops on the
+error at each read of the target: the endpoint plan's (A46), the target
+retrieval, and `--force`'s direct activation. Move and swap stop before they
+change anything. `run`'s profile bootstrap and `export` already passed the
+error on, and now get the timeout instead of an empty slot.
+
+**Plaintext left behind.** A spell in file mode, which before this rule a
+single timeout started, wrote backups to `.enc` and previous generations to
+`.enc.prev`, and nothing moved them back. Two changes:
+
+- A generation retained in the Keychain removes the slot's `.enc.prev`. Reads
+  are `.enc.prev`-wins, so the leftover shadowed the newer Keychain `.prev`.
+- At start the app moves every slot's `.enc` backup into the Keychain under
+  the FileLock (`Store.MoveFileBackupsToKeychain`), on macOS with the Keychain
+  in use, the file going once the Keychain holds it. An `.enc.prev` moves when
+  the Keychain has no `.prev`. Beside one it stays, since nothing tells which
+  is newer, until the slot's next retained generation removes it. A value too
+  large for `security`'s stdin stays in its file, where A25 item 2 put it. A slot
+  that fails is logged and left for the next start.
+
+**The price.** A Keychain that hangs, rather than one that is slow, costs
+every call the full 15 s, where before one 5 s timeout bought a minute of
+file mode. A state snapshot then comes late, but every value in it was read.
+
+**Spec.** 03§4's 5 s timeout and 03§5.3's rule that every `KEYCHAIN_ERRORS`
+failure flips the cache stay as the spec wrote them; the deviation is recorded
+here.
+
+**Tests.** `internal/keychain`: a timeout is `IsTimeout`, rc 51 and a
+`TooLarge` refusal are not, and the default budget is 15 s.
+`internal/credstore/busy_test.go`: a timed-out backup read leaves the active
+read and the next backup write on the Keychain; a Keychain that times out on
+every attempt still reports the active login as unavailable; an OAuth and a
+managed-key switch write that time out fail, write no file and no
+`primaryApiKey`, and leave the old login in the item.
+`internal/credstore/filebackup_test.go`: a timed-out backup read fails and any
+other failure reads "", a Keychain `.prev` write drops the `.enc.prev`, an
+`.enc` backup and `.enc.prev` move into the Keychain and the files go, an
+`.enc.prev` beside a Keychain `.prev` stays, a value too large for stdin
+stays in its file, a move on a busy Keychain keeps the file, and off macOS
+nothing moves. `internal/switching` (`TestSwitchStopsOnBusyTargetRead`) and
+`internal/lifecycle` (`TestMoveSwapStopOnBusyKeychain`): a switch, with and
+without `--force`, a move and a swap stop with the timeout and change
+nothing; before, the move carried an empty slot to its target.

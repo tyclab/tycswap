@@ -193,6 +193,33 @@ func TestTimeoutClassifiedUnusable(t *testing.T) {
 	if err == nil || !IsUnusable(err) {
 		t.Errorf("timeout err = %v, want unusable", err)
 	}
+	if !IsTimeout(err) {
+		t.Errorf("timeout err = %v, want IsTimeout (A69)", err)
+	}
+}
+
+// TestOnlyTimeoutIsTimeout: a failure the security binary reported (a locked
+// Keychain, rc 51) or a payload too large for stdin is unusable but no
+// timeout; IsTimeout(nil) is false.
+func TestOnlyTimeoutIsTimeout(t *testing.T) {
+	s := Security{Exec: (&recordExec{res: execResult{rc: 51, stderr: "denied"}}).fn}
+	_, _, err := s.Get("svc", "acct")
+	if !IsUnusable(err) || IsTimeout(err) {
+		t.Errorf("rc=51 err = %v: IsUnusable %v, IsTimeout %v; want true, false", err, IsUnusable(err), IsTimeout(err))
+	}
+	big := Security{Exec: (&recordExec{}).fn}.Set("svc", "acct", strings.Repeat("x", SecurityStdinLineLimit))
+	if !IsTooLarge(big) || IsTimeout(big) {
+		t.Errorf("too-large err = %v: IsTooLarge %v, IsTimeout %v; want true, false", big, IsTooLarge(big), IsTimeout(big))
+	}
+	if IsTimeout(nil) {
+		t.Error("IsTimeout(nil) = true")
+	}
+}
+
+func TestDefaultTimeoutIsFifteenSeconds(t *testing.T) {
+	if got := (Security{}).budget(); got != 15*time.Second {
+		t.Errorf("default budget = %s, want 15s (A69)", got)
+	}
 }
 
 // TestSuccessAtDeadlineHonored pins the fix for the race where a subprocess

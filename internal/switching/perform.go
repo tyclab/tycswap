@@ -222,7 +222,10 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 // up the current one. It returns the op; the display and replan happen under the
 // lock here (Python returns inside the with-block on this path).
 func directActivate(s *store.Store, data *store.SequenceData, targetAccount, targetEmail, targetOrg string, fromRef, toRef map[string]any, curOK bool, curEmail, currentAccount string, forceActivate, emitOutput bool, warningsOut []string) (switchOp, error) {
-	targetCreds, _ := s.ReadAccountCredentials(targetAccount, targetEmail)
+	targetCreds, err := s.ReadAccountCredentials(targetAccount, targetEmail)
+	if err != nil {
+		return switchOp{}, err // a busy Keychain is no empty slot (DESIGN A69)
+	}
 	targetConfig, _ := s.ReadAccountConfig(targetAccount, targetEmail)
 	if targetCreds == "" {
 		return switchOp{}, cerr.Switch("Account-%s has no stored credentials. Re-add with: tycswap --add-account --slot %s", targetAccount, targetAccount)
@@ -398,7 +401,10 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 	// included. An endpoint target is never the outgoing slot (that one has
 	// nothing live, so a switch to it is "Already on"), so step 1 cannot
 	// change the key planned from.
-	plannedCreds, _ := s.ReadAccountCredentials(targetAccount, targetEmail)
+	plannedCreds, err := s.ReadAccountCredentials(targetAccount, targetEmail)
+	if err != nil {
+		return err // a busy Keychain is no empty slot (DESIGN A69)
+	}
 	plan, err := planProfile(s, data, targetAccount, plannedCreds)
 	if err != nil {
 		return err
@@ -497,7 +503,10 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 	}
 
 	// Step 2: retrieve target.
-	targetCreds, _ := s.ReadAccountCredentials(targetAccount, targetEmail)
+	targetCreds, err := s.ReadAccountCredentials(targetAccount, targetEmail)
+	if err != nil {
+		return err // a busy Keychain is no empty slot (DESIGN A69)
+	}
 	targetConfig, _ := s.ReadAccountConfig(targetAccount, targetEmail)
 	if targetCreds == "" {
 		return cerr.Switch("Account-%s has no stored credentials. Re-add with: tycswap --add-account --slot %s", targetAccount, targetAccount)
