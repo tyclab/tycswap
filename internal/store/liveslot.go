@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/oauth"
@@ -38,11 +39,16 @@ type lineageMemo struct {
 }
 
 // profileAnswer is one question to the profile endpoint: claimed, then done
-// with its identity (nil for a miss).
+// with its identity (nil for a miss) at a time.
 type profileAnswer struct {
 	id   *oauth.Identity
 	done bool
+	at   time.Time
 }
+
+// profileMissReuse is how long a switch reuses a miss before asking again: one
+// command asks once, a later switch in a long-lived process asks anew.
+const profileMissReuse = time.Minute
 
 // WithoutLineageWrites is the store a dry run or a store-only read uses: it
 // resolves as s does but never writes the chain record, and collect never
@@ -219,15 +225,16 @@ func (s *Store) profileIdentity(creds string) *oauth.Identity {
 		return nil
 	}
 	id := s.OAuth.Profile(context.Background(), token)
-	s.lineage.remember(*fp, id)
+	s.lineage.remember(*fp, id, s.Clk.Now())
 	return id
 }
 
 // ReaskProfile is the profile endpoint's account for a credential the
-// resolver named no account for. A remembered hit is used, but a miss is asked
-// again: the miss memo gates the resolver only, so one transient miss cannot
-// disable a switch's foreign-credential guard. A hit replaces the miss, and the
-// next resolve records it. Never asked under the store lock.
+// resolver named no account for. A remembered hit is used, and so is a miss
+// younger than profileMissReuse; an older miss is asked again: the miss memo
+// gates the resolver only, so one transient miss cannot disable a switch's
+// foreign-credential guard. A hit replaces the miss, and the next resolve
+// records it. Never asked under the store lock.
 func (s *Store) ReaskProfile(creds string) *oauth.Identity {
 	token := oauth.ExtractAccessToken(creds)
 	fp := oauth.CredentialFingerprint(creds)
@@ -235,16 +242,16 @@ func (s *Store) ReaskProfile(creds string) *oauth.Identity {
 		return nil
 	}
 	if fp != nil {
-		if id, _ := s.lineage.answer(*fp); id != nil {
-			return id
+		if a := s.lineage.entry(*fp); a.done && (a.id != nil || s.Clk.Now().Sub(a.at) < profileMissReuse) {
+			return a.id
 		}
 	}
 	if s.OAuth == nil || (s.Lock != nil && s.Lock.Held()) {
 		return nil
 	}
 	id := s.OAuth.Profile(context.Background(), token)
-	if fp != nil && id != nil {
-		s.lineage.remember(*fp, id)
+	if fp != nil {
+		s.lineage.remember(*fp, id, s.Clk.Now())
 	}
 	return id
 }
@@ -267,13 +274,17 @@ func (s *Store) identitySlot(data *SequenceData, configSlot string, id *oauth.Id
 }
 
 func (m *lineageMemo) answer(fp string) (*oauth.Identity, bool) {
+	a := m.entry(fp)
+	return a.id, a.done
+}
+
+func (m *lineageMemo) entry(fp string) profileAnswer {
 	if m == nil {
-		return nil, false
+		return profileAnswer{}
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	a := m.asked[fp]
-	return a.id, a.done
+	return m.asked[fp]
 }
 
 // claim reserves the one question for fp; false when it is already asked.
@@ -293,7 +304,7 @@ func (m *lineageMemo) claim(fp string) bool {
 	return true
 }
 
-func (m *lineageMemo) remember(fp string, id *oauth.Identity) {
+func (m *lineageMemo) remember(fp string, id *oauth.Identity, at time.Time) {
 	if m == nil {
 		return
 	}
@@ -302,7 +313,7 @@ func (m *lineageMemo) remember(fp string, id *oauth.Identity) {
 	if m.asked == nil {
 		m.asked = map[string]profileAnswer{}
 	}
-	m.asked[fp] = profileAnswer{id: id, done: true}
+	m.asked[fp] = profileAnswer{id: id, done: true, at: at}
 }
 
 func (s *Store) warnLineage(ls LiveSlot, email, orgUUID string) {

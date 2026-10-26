@@ -11,7 +11,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/store"
 )
@@ -131,6 +133,7 @@ func TestSwitchReasksTheProfileAfterAMiss(t *testing.T) {
 	if got := s.ResolveLiveSlot(data); got.Slot != "6" || calls != 1 {
 		t.Fatalf("first resolve = %+v after %d calls, want the config slot after a miss", got, calls)
 	}
+	s.Clk.(*clock.Fake).Advance(2 * time.Minute)
 	answer = true
 	out, err := SwitchTo(s, "5", true, false)
 	if err != nil {
@@ -146,4 +149,24 @@ func TestSwitchReasksTheProfileAfterAMiss(t *testing.T) {
 		t.Errorf("Account-6 backup = %s, want it untouched", got)
 	}
 	assertOwnRotatedBackup(t, s, "5", live)
+}
+
+// A miss is reused for a minute, so one switch asks an unreachable endpoint
+// once, --force included.
+func TestSwitchAsksAFreshMissOnce(t *testing.T) {
+	for _, force := range []bool{false, true} {
+		live := oauthCreds("at-5-new", "rt-5-rotated")
+		s, _ := rotatedSeat(t, live, "5")
+		calls := 0
+		s.OAuth = &oauth.FakeClient{ProfileFn: func(context.Context, string) *oauth.Identity {
+			calls++
+			return nil
+		}}
+		if _, err := SwitchTo(s, "5", true, force); err != nil {
+			t.Fatalf("SwitchTo(5, force=%v): %v", force, err)
+		}
+		if calls != 1 {
+			t.Errorf("force=%v: profile calls = %d, want 1", force, calls)
+		}
+	}
 }

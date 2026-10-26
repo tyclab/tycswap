@@ -6387,11 +6387,12 @@ the chain record or the profile attributed therefore classifies as
 verified — pre-fix backup` line. The provenance reuses the resolver's hit and
 does not ask again. The miss memo gates the resolver only: when the resolver
 named no account, the provenance asks the profile endpoint again before the
-lock. One transient miss in a long-lived process would otherwise disable the
-foreign-credential guard for that fingerprint until the token rotated, and the
-switch would back the live credential into the config's slot as unresolved. A
-hit from that question replaces the miss in memory, and the next resolve
-records it in the chain record.
+lock unless the miss is younger than a minute, so one switch asks an
+unreachable endpoint once. One transient miss in a long-lived process would
+otherwise disable the foreign-credential guard for that fingerprint until the
+token rotated, and the switch would back the live credential into the
+config's slot as unresolved. A hit from that question replaces the miss in
+memory, and the next resolve records it in the chain record.
 `switch --force` runs the same pre-lock provenance. Under the lock the
 resolver asks no one, so without it a credential only the profile attributed
 read as X's, and `--force Y` activated Y's older backup over the live token.
