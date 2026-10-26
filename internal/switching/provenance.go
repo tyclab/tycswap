@@ -63,10 +63,9 @@ func selfSwitchAction(s *store.Store, slot, email string) (string, *Provenance) 
 
 // prefetchLiveIdentity resolves the live credential's owner BEFORE the locks are
 // taken (spec 02§7 _prefetch_live_identity). Returns {live, resolved}; resolved
-// is filled only when the live bytes diverge from the slot backup AND the
-// chain record or the profile endpoint names an account. All failures are
-// swallowed (advisory oracle). May hit the network — never call it with any
-// lock held.
+// is filled only when the live bytes diverge from the slot backup AND the chain
+// record or the profile names an account. All failures are swallowed (advisory
+// oracle). May hit the network — never call it with any lock held.
 func prefetchLiveIdentity(s *store.Store) *Provenance {
 	result := &Provenance{}
 	live, ok := readActive(s)
@@ -83,8 +82,7 @@ func prefetchLiveIdentity(s *store.Store) *Provenance {
 		return result
 	}
 	data, _ := s.ReadSequence()
-	// The resolver's own evidence decides: the account the chain record or the
-	// profile named, or a backup holding the lineage (DESIGN A68).
+	// The resolver's chain record, profile answer or backup decides (DESIGN A68).
 	ls := s.ResolveLiveSlotWith(data, func() string { return live })
 	if ls.Identity != nil {
 		result.Resolved = ls.Identity
@@ -97,7 +95,6 @@ func prefetchLiveIdentity(s *store.Store) *Provenance {
 	if sameAccountBytes(backup, live) || fingerprintEqual(backup, live) {
 		return result // provenance already established locally
 	}
-	// Asked once per credential: the resolver's miss stands.
 	result.Resolved = s.ProfileIdentity(live)
 	return result
 }
