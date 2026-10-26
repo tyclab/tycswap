@@ -524,10 +524,12 @@ a refreshed account list and the post-switch note. A config repair prints
 }
 ```
 
-A `<ref>` is `{"number": <int|null>, "email": "<string>"}`. `switched` is
-`true` when `from` and `to` differ, and for a config repair. `strategy` is
-`direct` for a named target, `rotation` for a bare rotate, or `best` /
-`next-available`. `reason` is one of `switched`, `already-active`, `activated`
+A `<ref>` is `{"number": <int|null>, "email": "<string>"}`. `from` is the
+slot whose credential was live, also when `~/.claude.json` named another slot
+(DESIGN A68). `switched` is `true` when `from` and `to` differ, and for a
+config repair. `strategy` is `direct` for a named target, `rotation` for a
+bare rotate, or `best` / `next-available`. `reason` is one of `switched`,
+`already-active`, `activated`
 (with `--force`), `config-repaired`, `unmanaged-account`, `only-one-account`,
 `candidates-exhausted`, `no-valid-target`, `usage-unavailable`, or
 `already-best`. `config-repaired` means the live credential already belonged to

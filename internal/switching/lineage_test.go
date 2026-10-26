@@ -238,8 +238,9 @@ func TestConfigRepairRefusesAnotherOwner(t *testing.T) {
 	}
 }
 
-// --force onto the config's slot is unchanged: a direct activation from its
-// stored backup that backs nothing into the credential's slot.
+// --force onto the config's slot is a direct activation from its stored
+// backup that backs nothing into the credential's slot; the credential moved
+// from 5's to 6's, so the result reports a switch from 5.
 func TestForceSwitchToTheConfigSlotUnderLineageMismatchActivates(t *testing.T) {
 	for _, tc := range lineageLives {
 		t.Run(tc.name, func(t *testing.T) {
@@ -249,8 +250,11 @@ func TestForceSwitchToTheConfigSlotUnderLineageMismatchActivates(t *testing.T) {
 				t.Fatalf("SwitchTo(6, --force): %v", err)
 			}
 			m := asMap(t, out)
-			if m["switched"] != false || m["reason"] != "activated" || refField(t, m, "from") != 6 || refField(t, m, "to") != 6 {
-				t.Fatalf("got switched=%v reason=%v from=%d to=%d, want activated 6", m["switched"], m["reason"], refField(t, m, "from"), refField(t, m, "to"))
+			if m["switched"] != true || m["reason"] != "switched" || refField(t, m, "from") != 5 || refField(t, m, "to") != 6 {
+				t.Fatalf("got switched=%v reason=%v from=%d to=%d, want a switch from 5 to 6", m["switched"], m["reason"], refField(t, m, "from"), refField(t, m, "to"))
+			}
+			if from, _ := m["from"].(map[string]any); from["email"] != lineageEmail {
+				t.Errorf("from = %v, want Account-5's email", from)
 			}
 			if got := readActiveCreds(t, s); got != lineageBackup6 {
 				t.Errorf("live credential = %s, want Account-6's", got)

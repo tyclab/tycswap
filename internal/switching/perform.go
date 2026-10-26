@@ -94,8 +94,9 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 		// rewritten ~/.claude.json names; --force keeps the config's slot
 		// unless it targets the credential's, which is a repair (DESIGN A68).
 		configSlot := ""
+		var live store.LiveSlot
 		if curOK {
-			if live := s.ResolveLiveSlot(data); live.ByLineage && (!forceActivate || live.Slot == targetAccount) {
+			if live = s.ResolveLiveSlot(data); live.ByLineage && (!forceActivate || live.Slot == targetAccount) {
 				rec, _ := accountRec(data, live.Slot)
 				configSlot, currentAccount, curEmail = currentAccount, live.Slot, recStr(rec, "email")
 			}
@@ -108,6 +109,10 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 			switch {
 			case !curOK:
 				fromRef = nil
+			case live.ByLineage:
+				// The result names the credential's slot, which the activation replaced.
+				rec, _ := accountRec(data, live.Slot)
+				fromRef = numRef(live.Slot, recStr(rec, "email"))
 			case currentAccount == "":
 				fromRef = nilNumRef(curEmail)
 			default:
