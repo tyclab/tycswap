@@ -93,7 +93,7 @@ The engine's per-active-account decision memory moves into
   the state file (`modelNamesChecked`). An engine restart mid-outage continues
   counting instead of starting over. A dry run reads the file, reports what a
   real tick would do now and writes nothing; its only memory is the model list
-  it last warned about, for presentation (DESIGN A66).
+  it last checked, for presentation (DESIGN A66).
 
 Superseded by Task 7 on 2026-10-26: the engine keeps nothing between ticks.
 

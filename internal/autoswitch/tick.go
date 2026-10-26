@@ -595,7 +595,7 @@ func (e *Engine) checkModelNames(state map[string]any, quarantined map[string]bo
 	}
 	key := strings.ToLower(strings.Join(e.models, ","))
 	checked, _ := state["modelNamesChecked"].(string)
-	if !hasNamed || checked == key || (e.dryRun && e.dryModelWarned == key) {
+	if !hasNamed || checked == key || (e.dryRun && e.dryModelChecked == key) {
 		return
 	}
 	var relevant []string
@@ -647,9 +647,7 @@ func (e *Engine) checkModelNames(state map[string]any, quarantined map[string]bo
 			" matches no account's usage windows — only the 5h/7d limits are being watched for it (typo?)"})
 	}
 	if e.dryRun {
-		if len(missing) > 0 {
-			e.dryModelWarned = key
-		}
+		e.dryModelChecked = key
 		return
 	}
 	if _, err := e.mutateState(func(st map[string]any) { st["modelNamesChecked"] = key }); err != nil && e.log != nil {

@@ -6199,10 +6199,14 @@ for example a `--model` override on one of them, and is rare.
 now, including the count it would reach (the persisted count plus one) and
 the model-name warning. It writes nothing and does not simulate a sequence of
 ticks: two dry ticks over an unchanged file report the same decision. Its one
-memory is the model list it last warned about, so a long-lived dry run
-(`auto --dry-run`, the TUI's) shows that warning once per list rather than on
-every tick. That memory is presentation only: it never feeds a decision, which
-still comes from the file alone, and a real engine keeps no such memory.
+memory is the model list it last checked, clean or not, so a long-lived dry
+run (`auto --dry-run`, the TUI's) shows a list's warning once rather than on
+every tick, and again after another list was checked in between. That memory
+is presentation only: it never feeds a decision, which still comes from the
+file alone, and a real engine keeps no such memory. A session group's dry
+engine is built anew on every tick (`internal/cli/groupauto.go`), so it has
+no such memory and a group scope's dry model warning repeats on every tick
+(pre-existing).
 
 Why: a timer deployment starts a process per tick and the app's engine
 restarts with the app, so any memory outside the file is lost at the moment it

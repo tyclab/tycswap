@@ -760,7 +760,7 @@ empty. When a model filter is configured:
 - Go: no `_model_check_done`. The completed check records the lower-cased list
   in the state file's `modelNamesChecked` and runs again only when the list
   differs from it, so a list warns once per store; a dry run writes nothing
-  and remembers only the list it last warned about (DESIGN A66).
+  and remembers only the list it last checked (DESIGN A66).
 
 ---
 

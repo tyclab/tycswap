@@ -55,8 +55,8 @@ type Engine struct {
 	stopOnce sync.Once
 	wakeCh   chan struct{}
 
-	// The model list a dry run last warned about: presentation only, never decision state (DESIGN A66).
-	dryModelWarned string
+	// The model list a dry run last checked: presentation only, never decision state (DESIGN A66).
+	dryModelChecked string
 }
 
 // Option customizes engine construction (clock, sleeper, rng, oauth client,

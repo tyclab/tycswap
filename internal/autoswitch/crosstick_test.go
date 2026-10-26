@@ -534,6 +534,35 @@ func TestDryLoopModelWarningOncePerList(t *testing.T) {
 	}
 }
 
+// A dry engine remembers the last list it checked, clean or not, so a list
+// warns again after another list was checked in between.
+func TestDryModelCheckRemembersTheLastCheckedList(t *testing.T) {
+	clk := newClk()
+	opus := map[string]any{"five_hour": win(10, ""), "seven_day": win(0, ""), "scoped": []any{scopedWin("Opus", 10, "")}}
+	f := twoAccounts(clk, dictEntry(opus), dictEntry(opus))
+	statePath := sharedStatePath(t)
+	s := settings.Default()
+	s.Model = strp("Fable")
+	rec := &recorder{}
+	e := build(t, f, s, rec, clk, true, WithStatePath(statePath))
+	for i, step := range []struct {
+		model string
+		want  int
+	}{{"", 1}, {"Opus", 0}, {"Fable", 1}} {
+		if step.model != "" {
+			e.ApplyModels(step.model)
+		}
+		rec.reset()
+		e.Tick()
+		if n := rec.count("config-warning"); n != step.want {
+			t.Fatalf("dry tick %d (%q): config warnings = %d, want %d (kinds=%v)", i+1, step.model, n, step.want, rec.kinds())
+		}
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Errorf("dry run created the state file (stat err %v)", err)
+	}
+}
+
 // The model-name key is advisory: a state file that cannot be written logs a
 // warning and the tick still reaches its decision.
 func TestModelNameCheckWriteFailureKeepsTheDecision(t *testing.T) {
