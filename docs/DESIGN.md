@@ -6165,7 +6165,9 @@ additive keys; `schemaVersion` stays 1 and a malformed value reads as absent.
   an object whose `number` is the live slot's, as a string, is no memory. A
   count that is not a number from 0 to 2147483647 (`math.MaxInt32`) reads as
   zero, and an idle-hold stamp in the future restarts the hold. While a hold
-  is recorded no candidate is polled (05§9).
+  is within `IdleHoldMaxS` no candidate is polled (05§9); an expired hold
+  keeps its stamp, and candidates are polled again so the failover it falls
+  through to has a target to compare.
 - **Written:** when the active account's usage is unknown, as a
   read-modify-write under the state lock, before the `no-switch` event, so its
   `n/3` is the persisted count and two engines ticking at once each add their

@@ -26,6 +26,7 @@ type fakeSwitcher struct {
 	creds        map[string]string
 	liveSessions map[string][]int
 	entries      map[string]usage.UsageEntry
+	fetched      map[string]usage.UsageEntry // what a fetch of the slot stores
 	backupDir    string
 
 	// SwitchTo behavior. Default: set current=num, return a success payload.
@@ -125,8 +126,13 @@ func (f *fakeSwitcher) UsageEntriesByAccount(fetch map[string]bool) map[string]u
 	}
 	sort.Strings(keys)
 	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.fetchCalls = append(f.fetchCalls, keys)
-	f.mu.Unlock()
+	for _, k := range keys {
+		if v, ok := f.fetched[k]; ok {
+			f.entries[k] = v
+		}
+	}
 	out := make(map[string]usage.UsageEntry, len(f.entries))
 	for k, v := range f.entries {
 		out[k] = v

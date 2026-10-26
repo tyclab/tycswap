@@ -79,7 +79,8 @@ func (e *Engine) tickInner() (tickResult, error) {
 	currentEmail := e.sw.AccountEmail(cur)
 	activeRef := refOf(cur, currentEmail)
 
-	idleHold := activeMemoryOf(state, cur).IdleHoldSince != nil
+	// An expired hold keeps its stamp but polls candidates: failover needs them.
+	idleHold := holdLive(activeMemoryOf(state, cur).IdleHoldSince, e.nowSeconds())
 	entries, usageMap, headroom := e.collectScheduledUsage(cur, quarantined, pollThreshold(s, e.models), idleHold)
 
 	fetchErrors := map[string]string{}
@@ -264,12 +265,17 @@ func countUnknownTick(m *activeMemory, expired bool, now float64) (idle bool) {
 		v := now
 		m.IdleHoldSince = &v
 	}
-	if now-*m.IdleHoldSince <= IdleHoldMaxS {
+	if holdLive(m.IdleHoldSince, now) {
 		m.UnhealthyTicks = 0
 		return true
 	}
 	m.UnhealthyTicks++
 	return false
+}
+
+// holdLive reports whether an idle hold started at since still absorbs ticks.
+func holdLive(since *float64, now float64) bool {
+	return since != nil && now-*since <= IdleHoldMaxS
 }
 
 // withSkipReason appends why the entry's last fetch was skipped, when recorded.

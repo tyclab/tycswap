@@ -2,8 +2,10 @@ package autoswitch
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -126,6 +128,43 @@ func TestIdleHoldSpansProcesses(t *testing.T) {
 	clk.Set(baseTime.Add(time.Duration(IdleHoldMaxS+1) * time.Second))
 	out, rec = tickOnce(t, f, clk, statePath, false)
 	wantNoSwitch(t, out, rec, "active-usage-unknown", "1/3 before failover")
+}
+
+// Past IdleHoldMaxS the hold stamp stays but no longer holds: candidates are
+// polled again, so the fall-through failover has a target to compare.
+func TestExpiredIdleHoldPollsCandidates(t *testing.T) {
+	clk := newClk()
+	now := clock.Seconds(clk)
+	age := usage.StaleOKS + 60
+	fetchedAt := now - age
+	stale := usage.UsageEntry{LastGood: usageOf(10, 0), AgeS: &age, FetchedAt: &fetchedAt}
+	f := twoAccounts(clk, sentinelEntry(jsonout.UsageTokenExpired), stale)
+	f.liveSessions["1"] = []int{1}
+	f.fetched = map[string]usage.UsageEntry{"2": dictEntry(usageOf(10, 0))}
+	statePath := sharedStatePath(t)
+	raw := fmt.Sprintf(`{"schemaVersion": 1, "active": {"number": "1", "unhealthyTicks": 0, "idleHoldSince": %v}}`, now-IdleHoldMaxS-60)
+	if err := os.WriteFile(statePath, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, rec := tickOnce(t, f, clk, statePath, false)
+	wantNoSwitch(t, out, rec, "active-usage-unknown", "1/3 before failover")
+	polled := false
+	for _, call := range f.fetchCalls {
+		polled = polled || slices.Contains(call, "2")
+	}
+	if !polled {
+		t.Fatalf("candidate 2 not requested after the hold expired: calls=%v", f.fetchCalls)
+	}
+	out, rec = tickOnce(t, f, clk, statePath, false)
+	wantNoSwitch(t, out, rec, "active-usage-unknown", "2/3 before failover")
+	out, rec = tickOnce(t, f, clk, statePath, false)
+	if out != Switched {
+		t.Fatalf("third tick outcome = %v, want Switched (kinds=%v)", out, rec.kinds())
+	}
+	if sw := rec.last("switch").(SwitchEvent); sw.Trigger != "failover" || deref(f.current) != "2" {
+		t.Errorf("trigger = %q, current = %q; want a failover to 2", sw.Trigger, deref(f.current))
+	}
 }
 
 func TestMalformedActiveMemoryReadsAsAbsent(t *testing.T) {

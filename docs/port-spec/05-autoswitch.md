@@ -414,6 +414,8 @@ can't be targets).
    candidate via `due_candidate(candidates, pre, now)` (stalest-first —
    never-fetched before oldest-fetch) and add to `plan`. During an idle-hold,
    **no candidate is polled at all** (slow crawl for everything).
+   Go: only while the hold is within `IDLE_HOLD_MAX_S`; an expired hold polls
+   candidates again, so the §7 fall-through failover can compare (DESIGN A66).
 4. `entries = switcher.usage_entries_by_account(fetch=plan)`; `usage = {num: entry.decision_value()}`.
 
 **Phase B (escalation):** Compute `active_headroom` from `usage[current]`.
