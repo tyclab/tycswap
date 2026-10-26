@@ -95,8 +95,6 @@ The engine's per-active-account decision memory moves into
   real tick would do now and writes nothing; its only memory is the model list
   it last checked, for presentation (DESIGN A66).
 
-Superseded by Task 7 on 2026-10-26: the engine keeps nothing between ticks.
-
 ### Tests (engine package, fake clock, temp state path)
 
 - Three separate `Engine` values over one state file, each ticking once with
@@ -175,7 +173,8 @@ New rule, applied only when both candidates are managed OAuth slots:
    block matches (`oauth.SameAccountBlock`).
 3. If `Y` exists and `Y != X`: return `Y`. Log one WARNING per change:
    `live config names slot X (<email>, <org>) but the live credential is slot
-   Y's; using Y. A running Claude Code rewrote ~/.claude.json`.
+   Y's (by <source>); using Y. A running Claude Code may have rewritten
+   ~/.claude.json`.
 4. If no `Y`, or `Y == X`, behaviour is unchanged. If the config identity maps
    to no slot (unmanaged live login) behaviour is unchanged: the unclaimed and
    displaced-login machinery depends on that path and is out of scope.
