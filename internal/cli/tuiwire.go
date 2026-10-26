@@ -59,8 +59,17 @@ func engineFactoryFor(sw *core.Switcher) tui.EngineFactory {
 	}
 }
 
+// engineSwitcher is sw, or for a dry run the view of it that never records
+// the live credential's lineage nor harvests it (DESIGN A68).
+func engineSwitcher(sw *core.Switcher, dryRun bool) *core.Switcher {
+	if !dryRun {
+		return sw
+	}
+	return &core.Switcher{Store: sw.Store.WithoutLineageWrites()}
+}
+
 var newAutoEngine = func(sw *core.Switcher, s settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool, oc oauth.Client) *autoswitch.Engine {
-	return autoswitch.NewEngine(autoswitchAdapter{sw}, s, onEvent, dryRun,
+	return autoswitch.NewEngine(autoswitchAdapter{engineSwitcher(sw, dryRun)}, s, onEvent, dryRun,
 		autoswitch.WithOAuthClient(oc),
 		autoswitch.WithLogger(sw.Log),
 		autoswitch.WithClock(sw.Clk),

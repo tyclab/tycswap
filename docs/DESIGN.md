@@ -6274,20 +6274,64 @@ file naming the old organisation while the credential file holds the new
 slot's token, and every surface then showed the wrong account as live.
 
 `Store.ResolveLiveSlot` decides the live slot. It maps the config identity to
-slot X as before. When X is a managed OAuth slot and the live credential's
-lineage is held by exactly one other managed OAuth slot Y, the live slot is
-Y. A lineage is held when the slot's stored backup has the same refresh-token
-fingerprint as the live credential, or the same account block once the
-seat-wide keys are set aside. The config slot stays live when its own backup
-holds the lineage, when more than one other slot does (a copied backup is no
-evidence), when the credential or a backup cannot be read, and when either
-side is an API-key slot. A config identity that maps to no slot stays
-unmanaged whatever the credential is.
+slot X as before. A config identity that maps to no slot stays unmanaged
+whatever the credential is, and an API-key X stays live. When X is a managed
+OAuth slot and the live credential can be read, the first of these that
+answers names the live slot, and `LiveSlot.Source` says which one did:
+
+1. `backup`. A slot holds the live credential's lineage when its stored
+   backup has the same refresh-token fingerprint, or the same account block
+   once the seat-wide keys are set aside. X holding it keeps X; exactly one
+   other managed OAuth slot Y holding it makes Y live. More than one other
+   slot holding it (a copied backup) or an unreadable backup is no evidence.
+2. `chain`. The chain record `live_lineage.json` in the backup root
+   (`{"schemaVersion":1,"fingerprint":"<sha256>","slot":"5","identity":
+   {"uuid","email","orgUuid"},"seenAt":<seconds>}`, 0600) holds the profile
+   endpoint's last answer. It answers when its fingerprint is the live
+   credential's and the roster still maps its identity to its slot, as step 3
+   would. A slot removed or re-added under another uuid makes it stale: it is
+   ignored, and the next profile hit overwrites it. A missing or malformed
+   record is absent.
+3. `profile`. The live access token goes to the OAuth profile endpoint, and
+   `Store.SlotForIdentity` maps the identity it returns to a slot, the mapping
+   `classifyOutgoing` uses: email and organisation unless both sides carry
+   different uuids, else the organisation-scoped uuid. A managed OAuth slot
+   other than X needs the roster's uuid to agree, the switch path's cross-slot
+   rule. A hit is written to the chain record, atomically and only when the
+   record changes, without a lock: last writer wins. A process asks once per
+   live fingerprint, a miss included, so an offline box does not ask every
+   pass. It never asks while it holds the store lock, and never without an
+   OAuth client; it then uses an answer it already has.
+4. `config`. Otherwise X.
+
+The backup step alone is the earlier rule. The other two exist because a
+running Claude Code also refreshes its token itself: the refresh token
+rotates, no backup holds the lineage any more, and the resolver fell back to
+X, the incident's conditions again. The chain record keeps the answer for
+other processes and offline runs.
 
 Each time the resolver overrides the config it logs a WARNING: `live config
-names slot X (<email>, <org>) but the live credential is slot Y's; using Y. A
-running Claude Code rewrote ~/.claude.json`. A process logs it once per
-(X, Y) pair, however often it resolves or alternates between pairs.
+names slot X (<email>, <org>) but the live credential is slot Y's (by
+<source>); using Y. A running Claude Code may have rewritten ~/.claude.json`.
+It names no certain cause: a switch writes the credential before the config,
+and a resolve between the two writes sees the same mismatch. A process logs it
+once per (X, Y) pair, however often it resolves or alternates between pairs.
+
+A usage pass that may fetch the active slot (an OAuth client, and `fetch` nil
+or naming it) first harvests. When chain or profile named the live slot and
+that slot's backup has another fingerprint than the live credential, the live
+credential's account part is written into the backup, under the store lock and
+Claude Code's credential and config locks, after re-checking under them that
+the live credential and the slot's record are unchanged; a slot with an
+uncertain owner is left alone. It logs INFO `Harvested the rotated live
+credential into Account-N's backup`. The live credential is never written.
+From the next pass on, the backup step attributes the credential, offline too.
+
+A dry-run engine (`auto --dry-run`, the TUI's and the dashboard's dry runs)
+and a store-only read (a fetch set that wants nothing: the engine's planning
+read, the menu's and the dashboard's snapshots) resolve the same way but never
+write the chain record and never harvest. They may still ask the profile
+endpoint, and keep its answer in memory only.
 `CurrentAccountNumber`, `list`, `status`, the tray's active row, the engine,
 `switch`'s current slot and the switch-to already-active check all use the
 resolver.
@@ -6316,6 +6360,9 @@ credential into Y, where it classifies as Y's own, and a switch onto X installs
 X's stored credential and identity. The config backed up for Y keeps Y's own
 `oauthAccount`, since the live config names X's. `switch --force X` is
 unchanged: it activates X directly, without backing up an outgoing slot.
+A live credential the profile endpoint attributes to Y is Y's in the same way:
+where the switch used to stash it as foreign to X, it now backs it into Y. The
+foreign stash remains for credentials the resolver cannot attribute.
 
 `switch Y` while the mismatch stands is a config repair, and so are `switch
 --force Y` and a rotation that lands on Y. Before, `switch Y` reported

@@ -146,8 +146,11 @@ When usage cannot be fetched the row reads `usage unavailable (<reason>)` where
 
 ### Files
 
-Reads `sequence.json`, per-account `configs/` and `credentials/`, and
-`cache/usage.json` from the backup root. Writes nothing.
+Reads `sequence.json`, per-account `configs/` and `credentials/`,
+`live_lineage.json` and `cache/usage.json` from the backup root. Writes
+nothing, except `live_lineage.json` when the profile endpoint names the live
+credential's slot, and that slot's backup when it harvests a token Claude Code
+refreshed itself (DESIGN A68).
 
 ### Exit status
 
@@ -274,8 +277,9 @@ active record is reported as unmanaged.
 ### Files
 
 Reads `sequence.json`, the live `~/.claude.json` (or a custom `CLAUDE_CONFIG_DIR`
-equivalent; a tycswap session pin is ignored — see ENVIRONMENT), and
-`cache/usage.json`. Writes nothing.
+equivalent; a tycswap session pin is ignored — see ENVIRONMENT),
+`live_lineage.json` and `cache/usage.json`. Writes nothing, except
+`live_lineage.json` and the harvested backup as `list` does (DESIGN A68).
 
 ### Exit status
 
@@ -495,7 +499,8 @@ with the seat-wide keys left beside it).
 ### Files
 
 Reads and writes `sequence.json` (the active pointer), the live Claude Code
-config/credentials, and per-account `configs/`/`credentials/`. A switch onto or
+config/credentials, per-account `configs/`/`credentials/`, and
+`live_lineage.json` (the live credential's attributed slot, DESIGN A68). A switch onto or
 away from an account with a base URL also writes Claude Code's
 `settings.json` (the two `env` keys only) and `claude-settings.prev.json` in the
 backup root. Acquires the backup-root and Claude Code credential locks.
@@ -1583,6 +1588,9 @@ Reads `sequence.json`, `settings.json`, `cache/usage.json`. Reads and writes
 `autoswitch_state.json` (cooldown, quarantine, the active account's failover
 count and idle-hold start, and the last model-name check, DESIGN A66) under
 `.autoswitch_state.lock`.
+Reads and writes `live_lineage.json`, and harvests a token Claude Code
+refreshed itself into the live slot's backup, as `list` does; `--dry-run`
+writes neither (DESIGN A68).
 A real switch writes the same files `tycswap switch` does. The Codex engine
 reads and writes the files `tycswap codex switch` does.
 

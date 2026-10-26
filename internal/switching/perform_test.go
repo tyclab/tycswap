@@ -93,9 +93,10 @@ func TestSwitchEmptyCurrentCredsGuard(t *testing.T) {
 }
 
 // TestSwitchForeignCredentialPreserved: when the live credential resolves
-// (via the profile endpoint) to a DIFFERENT managed slot, the switch must not
-// write it into the outgoing slot — it is stashed, a warning rides back, and the
-// outgoing backup stays intact (issue #117).
+// (via the profile endpoint) to a DIFFERENT managed slot than the config
+// names, that slot is the live one (DESIGN A68): a rotation landing on it
+// repairs the config, the credential is backed into its own slot, and the
+// config's slot's backup stays intact (issue #117).
 func TestSwitchForeignCredentialPreserved(t *testing.T) {
 	fake := &oauth.FakeClient{
 		ProfileFn: func(_ context.Context, accessToken string) *oauth.Identity {
@@ -125,29 +126,25 @@ func TestSwitchForeignCredentialPreserved(t *testing.T) {
 		t.Fatalf("Switch: %v", err)
 	}
 	m := asMap(t, out)
-	warnings, _ := m["warnings"].([]string)
-	found := false
-	for _, w := range warnings {
-		if strings.Contains(w, "Credential ownership mismatch detected") && strings.Contains(w, "not written") {
-			found = true
-		}
+	if m["reason"] != "config-repaired" || refField(t, m, "from") != 2 || refField(t, m, "to") != 2 {
+		t.Fatalf("reason %v from %v to %v, want the config repaired for the credential's slot 2", m["reason"], m["from"], m["to"])
 	}
-	if !found {
-		t.Fatalf("expected a foreign-credential warning, got %v", warnings)
+	if acct, _ := liveConfig(t, s)["oauthAccount"].(map[string]any); acct["emailAddress"] != "b@x.com" {
+		t.Fatalf("live config names %v, want b@x.com", acct)
 	}
-	// The outgoing slot 1 backup is untouched (the foreign live bytes were NOT
-	// written into it).
+	// Slot 1's backup was never written with slot 2's credential.
 	if got, _ := s.ReadAccountCredentials("1", "a@x.com"); got != backup1 {
-		t.Fatalf("outgoing backup was poisoned with the foreign credential")
+		t.Fatalf("Account-1 backup was poisoned with the foreign credential")
 	}
-	// A safety stash was written.
-	stashed, _ := s.Creds.ListUnclaimed()
-	if len(stashed) == 0 {
-		t.Fatalf("expected the foreign credential to be stashed")
+	// The credential was preserved in its own slot, so nothing is stashed.
+	if got, _ := s.ReadAccountCredentials("2", "b@x.com"); got != liveCreds {
+		t.Fatalf("Account-2 backup = %s, want the live credential", got)
 	}
-	// The switch still completed onto account 2.
-	if got := readActiveCreds(t, s); got != backup2 {
-		t.Fatalf("switch did not activate account 2")
+	if stashed, _ := s.Creds.ListUnclaimed(); len(stashed) != 0 {
+		t.Fatalf("stashed %v, want nothing", stashed)
+	}
+	if got := readActiveCreds(t, s); got != liveCreds {
+		t.Fatalf("the live credential changed: %s", got)
 	}
 }
 

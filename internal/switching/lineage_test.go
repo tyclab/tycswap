@@ -191,7 +191,7 @@ func TestSwitchRepairsConfigUnderLineageMismatch(t *testing.T) {
 				if data.ActiveAccountNumber == nil || *data.ActiveAccountNumber != 5 {
 					t.Errorf("activeAccountNumber = %v, want 5", data.ActiveAccountNumber)
 				}
-				if got := s.ResolveLiveSlot(data); got != (store.LiveSlot{Slot: "5", ConfigSlot: "5"}) {
+				if got := s.ResolveLiveSlot(data); got != (store.LiveSlot{Slot: "5", ConfigSlot: "5", Source: store.SourceBackup}) {
 					t.Errorf("after the repair ResolveLiveSlot = %+v, want config and credential agreeing on 5", got)
 				}
 				log := logText(t, s)

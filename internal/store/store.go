@@ -47,7 +47,8 @@ type Store struct {
 	defaultProfileDir      string
 	defaultUnpinned        bool
 	defaultKeychainService string
-	lineageWarned          *lineageWarned
+	lineage                *lineageMemo
+	lineageReadOnly        bool
 }
 
 // Options carries the injectable seams for New. All are optional: a zero
@@ -159,7 +160,7 @@ func New(opts Options) (*Store, error) {
 		defaultProfileDir:      defaultProfileDir,
 		defaultUnpinned:        defaultUnpinned,
 		defaultKeychainService: defaultKeychainService,
-		lineageWarned:          &lineageWarned{},
+		lineage:                &lineageMemo{},
 	}
 
 	usageStore.SetOnChange(s.PublishStatusline)

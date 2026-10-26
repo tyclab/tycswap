@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Fixed:** two slots of one login in different organisations: the live slot is the one whose credential Claude Code holds, even after a running Claude Code rewrote `~/.claude.json`; `switch` to that slot repairs the config.
+- **Fixed:** two slots of one login in different organisations: the live slot is the one whose credential Claude Code holds, also after Claude Code refreshed that token itself or rewrote `~/.claude.json`; `switch` to that slot repairs the config.
 - **Fixed:** when the active account's usage is not fetched, the tray, dashboard, `list --json` and the engine's events say why, and the log records each change of reason.
 - **Fixed:** the auto-switch engine keeps nothing between ticks: failover counting, the idle hold and the model-name check live in the state file, so `auto --once` under a timer, the loop and the app's hosted engine behave the same and survive restarts. Once an idle hold has run out, candidates are polled again, so the failover it falls through to has a target.
 

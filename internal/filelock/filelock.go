@@ -104,6 +104,13 @@ func (l *FileLock) Release() error {
 	return err
 }
 
+// Held reports whether this process holds the lock, to keep network calls out from under it.
+func (l *FileLock) Held() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.locked
+}
+
 // With acquires the lock (default timeout), runs fn, then releases. If the lock
 // cannot be acquired it returns cerr.Lock without running fn.
 func (l *FileLock) With(fn func() error) error {

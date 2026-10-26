@@ -52,6 +52,9 @@ func CollectUsageEntries(s *store.Store, infos []AccountInfo, fetch map[string]b
 		num := strconv.Itoa(info.Number)
 		identities[num] = usage.Identity{Email: info.Email, OrgUUID: info.OrgUUID}
 		infoByNum[num] = info
+		if info.IsActive && s.OAuth != nil && s.LineageWrites() && (fetch == nil || fetch[num]) {
+			harvestLiveCredential(s)
+		}
 	}
 
 	// Static sentinels: derivable without a network call.
@@ -149,7 +152,67 @@ func CollectUsageEntries(s *store.Store, infos []AccountInfo, fetch map[string]b
 // UsageEntriesByAccount builds the info rows and collects usage in one pass,
 // the convenience *core.Switcher's frozen UsageEntriesByAccount delegates to.
 func UsageEntriesByAccount(s *store.Store, fetch map[string]bool) map[string]usage.UsageEntry {
+	s = passStore(s, fetch)
 	return CollectUsageEntries(s, BuildAccountsInfo(s), fetch)
+}
+
+// passStore is s for a pass that may fetch, else the store that never writes
+// the chain record: a store-only read writes nothing (DESIGN A68).
+func passStore(s *store.Store, fetch map[string]bool) *store.Store {
+	if fetch == nil {
+		return s
+	}
+	for _, wanted := range fetch {
+		if wanted {
+			return s
+		}
+	}
+	return s.WithoutLineageWrites()
+}
+
+// harvestLiveCredential stores a live credential Claude Code rotated itself in
+// the backup of the slot the chain record or the profile attributed it to, so
+// from the next pass on the backup alone attributes it, offline too. The live
+// credential itself is never written.
+func harvestLiveCredential(s *store.Store) {
+	data, _ := s.ReadSequence()
+	ls := s.ResolveLiveSlot(data)
+	if ls.Source != store.SourceChain && ls.Source != store.SourceProfile {
+		return
+	}
+	rec, _ := recordFor(data, ls.Slot)
+	email := recStr(rec, "email")
+	live, _, err := s.Creds.ReadActive()
+	if err != nil || live == "" {
+		return
+	}
+	if backup, _ := s.ReadAccountCredentials(ls.Slot, email); fingerprintsEqual(backup, live) {
+		return
+	}
+	if owner, err := s.CredentialOwner(ls.Slot); err != nil || owner.Uncertain {
+		return
+	}
+	harvested := false
+	err = withTripleLock(s, func() error {
+		// Under the lock the credential and the slot must be the ones attributed.
+		now, _, err := s.Creds.ReadActive()
+		current, _ := s.ReadSequence()
+		if rec, ok := recordFor(current, ls.Slot); err != nil || now != live || !ok || recStr(rec, "email") != email {
+			return nil
+		}
+		if err := s.WriteAccountCredentials(ls.Slot, email, oauth.AccountOnly(live)); err != nil {
+			return err
+		}
+		harvested = true
+		return nil
+	})
+	switch {
+	case s.Log == nil:
+	case err != nil:
+		s.Log.Debugf("Skipped harvesting the rotated live credential into Account-%s: %v", ls.Slot, err)
+	case harvested:
+		s.Log.Infof("Harvested the rotated live credential into Account-%s's backup", ls.Slot)
+	}
 }
 
 func UsageByAccount(s *store.Store) map[string]any {

@@ -74,6 +74,7 @@ func (s AccountsSnapshot) ProviderName() string { return providerOrDefault(s.Pro
 // stale account eligible; a set restricts which accounts may be fetched.
 // *core.Switcher's frozen AccountsSnapshot method delegates here.
 func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
+	s = passStore(s, fetch)
 	infos := BuildAccountsInfo(s)
 	entries := CollectUsageEntries(s, infos, fetch)
 	data, _ := s.ReadSequence()

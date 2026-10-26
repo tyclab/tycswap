@@ -47,6 +47,18 @@ func TestEngineFactoryForwardsSwitcherOAuthClient(t *testing.T) {
 	}
 }
 
+// A dry-run engine resolves through a store that never records the live
+// credential's lineage nor harvests it (DESIGN A68); a real engine uses sw.
+func TestEngineSwitcherDryRunWritesNoLineage(t *testing.T) {
+	sw := &core.Switcher{Store: &store.Store{}}
+	if got := engineSwitcher(sw, false); got != sw {
+		t.Fatalf("real engine switcher = %p, want sw %p", got, sw)
+	}
+	if dry := engineSwitcher(sw, true); dry.LineageWrites() || !sw.LineageWrites() {
+		t.Fatalf("dry-run writes lineage = %v, sw writes lineage = %v; want false, true", dry.LineageWrites(), sw.LineageWrites())
+	}
+}
+
 // tuiProvidersCapture records what tuiOptions handed tui.WithProviders.
 type tuiProvidersCapture struct {
 	built, calls int
