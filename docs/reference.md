@@ -1578,8 +1578,9 @@ session started, not one already running.
 ### Files
 
 Reads `sequence.json`, `settings.json`, `cache/usage.json`. Reads and writes
-`autoswitch_state.json` (cooldown, quarantine, and the active account's
-failover count and idle-hold start, DESIGN A66) under `.autoswitch_state.lock`.
+`autoswitch_state.json` (cooldown, quarantine, the active account's failover
+count and idle-hold start, and the last model-name check, DESIGN A66) under
+`.autoswitch_state.lock`.
 A real switch writes the same files `tycswap switch` does. The Codex engine
 reads and writes the files `tycswap codex switch` does.
 
@@ -4697,7 +4698,7 @@ Inside the backup root:
 | `settings.json` | Settings (see SETTINGS). |
 | `claude-settings.prev.json` | Present while an API-key account with a base URL is active (DESIGN A46): what the three keys of Claude Code's `settings.json` the switch owns, `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN` (written) and `env.ANTHROPIC_API_KEY` (removed), held before (`{"version": 1, "settingsPath", "keys": {"<key>": {"present", "value"?}}}`, including whether `env` existed), mode 0600. A switch onto any other account restores them from it and removes it; one that is not a complete record (version 1, an entry for `env` and each key, nothing after it) is corrupt and stops the switch. `tycswap purge` deletes it and says so first. |
 | `mappings.json` | Directory→account mappings (`schemaVersion`, `mappings` keyed by absolute path). |
-| `autoswitch_state.json` | `tycswap auto` cooldown, quarantine, failover-count and idle-hold state, guarded by `.autoswitch_state.lock`. |
+| `autoswitch_state.json` | `tycswap auto` cooldown, quarantine, failover-count, idle-hold and model-name-check state, guarded by `.autoswitch_state.lock`. |
 | `configs/` | Per-account config snapshots, `.claude-config-<n>-<email>.json`. `<email>` is the account's email as `add` accepts it (one `@`, at most 254 bytes, no whitespace, control character, `/`, `\` or `< > : " | ? *`), so the name is a single path component. |
 | `credentials/` | Per-account credential files, `.creds-<n>-<email>.enc` and the retained previous generation `.creds-<n>-<email>.enc.prev` (file backend; `<email>` as for `configs/`). macOS stores these in the Keychain instead, except a credential too large to reach the `security` command over stdin (a command line over 4032 bytes, so a credential over about 2 KB, for example one carrying many `mcpOAuth` tokens), which stays in this file (mode 0600) rather than on a command line. The live Claude Code credential falls back to `.credentials.json` the same way. |
 | `sessions/` | Per-account session-mode profiles, `<n>-<email>` (the `@` in the email replaced by `_`), created by `tycswap run` / `tycswap env`. |

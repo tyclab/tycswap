@@ -148,25 +148,12 @@ func activeMemoryOf(state map[string]any, number string) activeMemory {
 	return m
 }
 
-// memoryFor is number's persisted memory. A dry run, which never writes it,
-// overlays its own working copy for the same slot: the higher count and its own
-// hold stamp, so a long dry run still reaches failover and ends its idle hold.
-func (e *Engine) memoryFor(state map[string]any, number string) activeMemory {
-	m := activeMemoryOf(state, number)
-	if e.dryRun && e.memorySlot == number {
-		m.Number = number
-		m.UnhealthyTicks = max(m.UnhealthyTicks, e.unhealthyTicks)
-		m.IdleHoldSince = e.idleHoldSince
-	}
-	return m
-}
-
 // saveActiveMemory applies step to number's persisted memory under the state
 // lock, so engines ticking at once each add their own strike. A dry run steps
-// a lock-free read under its overlay and writes nothing.
+// a fresh read and writes nothing: it reports what a real tick would do now.
 func (e *Engine) saveActiveMemory(number string, step func(m *activeMemory)) (activeMemory, error) {
 	next := func(state map[string]any) activeMemory {
-		m := e.memoryFor(state, number)
+		m := activeMemoryOf(state, number)
 		m.Number = number
 		step(&m)
 		return m

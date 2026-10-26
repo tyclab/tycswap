@@ -244,64 +244,6 @@ func wantDryFailover(t *testing.T, out TickOutcome, rec *recorder) {
 	}
 }
 
-func TestLoopDryRunCountsInMemory(t *testing.T) {
-	clk := newClk()
-	f := unknownActive(clk)
-	statePath := sharedStatePath(t)
-	rec := &recorder{}
-	e := onceEngine(t, f, rec, clk, statePath, true)
-	for _, want := range []string{"1/3 before failover", "2/3 before failover"} {
-		rec.reset()
-		wantNoSwitch(t, e.Tick(), rec, "active-usage-unknown", want)
-		clk.Advance(2 * time.Minute)
-	}
-	for i := 3; i <= 4; i++ {
-		rec.reset()
-		wantDryFailover(t, e.Tick(), rec)
-		clk.Advance(2 * time.Minute)
-	}
-	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
-		t.Errorf("dry run created the state file (stat err %v)", err)
-	}
-	if deref(f.current) != "1" {
-		t.Errorf("dry run switched to %q", deref(f.current))
-	}
-}
-
-func TestLoopDryRunIdleHoldExpires(t *testing.T) {
-	clk := newClk()
-	f := twoAccounts(clk, sentinelEntry(jsonout.UsageTokenExpired), dictEntry(usageOf(10, 0)))
-	f.liveSessions["1"] = []int{1}
-	statePath := sharedStatePath(t)
-	rec := &recorder{}
-	e := onceEngine(t, f, rec, clk, statePath, true)
-	wantNoSwitch(t, e.Tick(), rec, "active-idle", "")
-
-	clk.Set(baseTime.Add(time.Duration(IdleHoldMaxS+1) * time.Second))
-	rec.reset()
-	wantNoSwitch(t, e.Tick(), rec, "active-usage-unknown", "1/3 before failover")
-	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
-		t.Errorf("dry run created the state file (stat err %v)", err)
-	}
-}
-
-func TestLoopDryRunFollowsHigherPersistedCount(t *testing.T) {
-	clk := newClk()
-	f := unknownActive(clk)
-	statePath := sharedStatePath(t)
-	rec := &recorder{}
-	dry := onceEngine(t, f, rec, clk, statePath, true)
-	wantNoSwitch(t, dry.Tick(), rec, "active-usage-unknown", "1/3 before failover")
-	tickOnce(t, f, clk, statePath, false)
-	tickOnce(t, f, clk, statePath, false)
-
-	rec.reset()
-	wantDryFailover(t, dry.Tick(), rec)
-	if got := activeMemoryOf(readStateFile(statePath), "1").UnhealthyTicks; got != 2 {
-		t.Errorf("persisted count = %d, want 2", got)
-	}
-}
-
 func TestUnknownDetailCarriesSkipReason(t *testing.T) {
 	const mismatch = "live credential does not match slot 1's backup; refresh skipped"
 	const owned = "owner holds an expired token; Claude Code refreshes it on next use"
@@ -329,4 +271,165 @@ func TestUnknownDetailIgnoresOtherAccountsSkipReason(t *testing.T) {
 	clk := newClk()
 	out, rec := tickOnce(t, twoAccounts(clk, nilEntry(), cand), clk, sharedStatePath(t), false)
 	wantNoSwitch(t, out, rec, "active-usage-unknown", "1/3 before failover")
+}
+
+func nextNoSwitch(t *testing.T, ch <-chan Event) NoSwitchEvent {
+	t.Helper()
+	for {
+		select {
+		case ev := <-ch:
+			if ns, ok := ev.(NoSwitchEvent); ok {
+				return ns
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("timeout waiting for no-switch")
+		}
+	}
+}
+
+func TestLoopEngineRestartContinuesCount(t *testing.T) {
+	clk := newClk()
+	f := unknownActive(clk)
+	statePath := sharedStatePath(t)
+	ch := make(chan Event, 100)
+	e := NewEngine(f, settings.Default(), func(ev Event) { ch <- ev }, false,
+		WithClock(clk), WithRNG(func() float64 { return 0.5 }),
+		WithStatePath(statePath), WithSleeper(&blockingSleeper{}))
+	done := make(chan int, 1)
+	go func() { done <- e.RunLoop() }()
+	for i, want := range []string{"1/3 before failover", "2/3 before failover"} {
+		if i > 0 {
+			e.Wake()
+		}
+		if ns := nextNoSwitch(t, ch); ns.Reason != "active-usage-unknown" || ns.Detail != want {
+			t.Fatalf("loop tick %d no-switch = %q %q, want %q", i+1, ns.Reason, ns.Detail, want)
+		}
+	}
+	e.Stop()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunLoop did not return after Stop")
+	}
+
+	out, rec := tickOnce(t, f, clk, statePath, false)
+	if out != Switched {
+		t.Fatalf("restarted engine outcome = %v, want Switched (kinds=%v)", out, rec.kinds())
+	}
+	if sw := rec.last("switch").(SwitchEvent); sw.Trigger != "failover" {
+		t.Errorf("trigger = %q, want failover", sw.Trigger)
+	}
+}
+
+func TestDryRunReportsWhatARealTickWouldDo(t *testing.T) {
+	clk := newClk()
+	f := unknownActive(clk)
+	statePath := sharedStatePath(t)
+	raw := []byte(`{"schemaVersion": 1, "active": {"number": "1", "unhealthyTicks": 2, "idleHoldSince": null}}`)
+	if err := os.WriteFile(statePath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rec := &recorder{}
+	e := onceEngine(t, f, rec, clk, statePath, true)
+	for i := 0; i < 2; i++ {
+		rec.reset()
+		wantDryFailover(t, e.Tick(), rec)
+		after, err := os.ReadFile(statePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(raw, after) {
+			t.Fatalf("dry tick %d rewrote the state file:\nbefore %s\nafter  %s", i+1, raw, after)
+		}
+		clk.Advance(2 * time.Minute)
+	}
+	if deref(f.current) != "1" {
+		t.Errorf("dry run switched to %q", deref(f.current))
+	}
+}
+
+func TestDryRunOverUnchangedFileRepeatsCount(t *testing.T) {
+	clk := newClk()
+	f := unknownActive(clk)
+	statePath := sharedStatePath(t)
+	rec := &recorder{}
+	e := onceEngine(t, f, rec, clk, statePath, true)
+	for i := 0; i < 2; i++ {
+		rec.reset()
+		wantNoSwitch(t, e.Tick(), rec, "active-usage-unknown", "1/3 before failover")
+		clk.Advance(2 * time.Minute)
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Errorf("dry run created the state file (stat err %v)", err)
+	}
+}
+
+func TestModelNameWarningOncePerStore(t *testing.T) {
+	clk := newClk()
+	f := twoAccounts(clk, dictEntry(usageOf(10, 0)), dictEntry(usageOf(10, 0)))
+	statePath := sharedStatePath(t)
+	s := settings.Default()
+	s.Model = strp("Fable")
+	engine := func(rec *recorder, dryRun bool) *Engine {
+		return build(t, f, s, rec, clk, dryRun, WithStatePath(statePath))
+	}
+	wantWarnings := func(rec *recorder, want int, checked any) {
+		t.Helper()
+		if n := rec.count("config-warning"); n != want {
+			t.Fatalf("config warnings = %d, want %d (kinds=%v)", n, want, rec.kinds())
+		}
+		if got := readStateFile(statePath)["modelNamesChecked"]; got != checked {
+			t.Fatalf("modelNamesChecked = %v, want %v", got, checked)
+		}
+	}
+
+	dry := &recorder{}
+	engine(dry, true).Tick()
+	wantWarnings(dry, 1, nil)
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Fatalf("dry run created the state file (stat err %v)", err)
+	}
+
+	a := &recorder{}
+	engine(a, false).Tick()
+	wantWarnings(a, 1, "fable")
+
+	b := &recorder{}
+	eb := engine(b, false)
+	eb.Tick()
+	wantWarnings(b, 0, "fable")
+	eb.ApplyModels("Opus")
+	eb.Tick()
+	wantWarnings(b, 1, "opus")
+
+	c := &recorder{}
+	s.Model = strp("Opus")
+	engine(c, false).Tick()
+	wantWarnings(c, 0, "opus")
+}
+
+func TestTickResultDrivesNextDelay(t *testing.T) {
+	clk := newClk()
+	exhausted := map[string]any{"five_hour": win(100, clk.Now().Add(30*time.Minute).Format(time.RFC3339)), "seven_day": win(10, "")}
+	e := build(t, twoAccounts(clk, dictEntry(exhausted), dictEntry(exhausted)), settings.Default(), &recorder{}, clk, false)
+	r := e.tick()
+	if r.Outcome != Blocked || r.SleepUntil == nil || !r.WaitLong {
+		t.Fatalf("result = %+v, want Blocked with a reset to sleep until", r)
+	}
+	if want := clock.Seconds(clk) + 1800 + usage.ResetSlackS; *r.SleepUntil != want {
+		t.Errorf("SleepUntil = %v, want %v", *r.SleepUntil, want)
+	}
+	if d := e.nextDelay(r); d != 1800+usage.ResetSlackS {
+		t.Errorf("nextDelay = %v, want %v", d, 1800+usage.ResetSlackS)
+	}
+
+	f := twoAccounts(clk, sentinelEntry(jsonout.UsageTokenExpired), dictEntry(usageOf(10, 0)))
+	f.liveSessions["1"] = []int{1}
+	e = build(t, f, settings.Default(), &recorder{}, clk, false)
+	if r = e.tick(); r.Outcome != NoAction || !r.IdleSlow || r.SleepUntil != nil || r.WaitLong {
+		t.Fatalf("idle result = %+v, want NoAction with the idle crawl only", r)
+	}
+	if d := e.nextDelay(r); d != NoResetFallbackS {
+		t.Errorf("idle nextDelay = %v, want %v", d, NoResetFallbackS)
+	}
 }

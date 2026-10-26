@@ -6138,22 +6138,34 @@ An explicit `add --login --switch` onto the current account uses the existing lo
 activation path, so its new credential becomes live instead of returning already-active.
 Plain `add --login` continues to leave the live login untouched.
 
-## A66. Decision memory survives a process
+## A66. The engine keeps nothing between ticks
 
 flakelab runs the engine as a systemd timer that starts `tycswap auto --once`
-every two minutes, so every tick is a new process. The failover strike count
-and the idle-hold start lived in process memory and began at zero each run:
-with the active account's usage unknown, every tick reported `1/3 before
+every two minutes, so every tick is a new process; the app hosts the engine in
+a loop that starts again with the app; `tycswap auto` and the TUI loop in one
+process. The failover strike count, the idle-hold start and the model-name
+check lived in process memory and began again with each process: with the
+active account's usage unknown, every timer tick reported `1/3 before
 failover` and the engine never failed over.
 
-Both now live in `autoswitch_state.json` under one object, `"active":
-{"number": "<slot>", "unhealthyTicks": <n>, "idleHoldSince": <seconds> |
-null}`. The key is additive; `schemaVersion` stays 1.
+A tick is a function of the store on disk and the clock. The engine keeps
+nothing from one tick to the next: `autoswitch_state.json` is its only memory,
+and `--once`, the loop, the app's hosted engine and a dry run all run the same
+tick. What a tick tells the loop about the next wait (a reset to sleep until,
+the long blocked wait, the idle crawl) is returned with its outcome, not kept
+on the engine.
+
+Besides `lastSwitchAt`, `lastSwitchTo` and `quarantine`, the file holds two
+additive keys; `schemaVersion` stays 1 and a malformed value reads as absent.
+
+`"active": {"number": "<slot>", "unhealthyTicks": <n>, "idleHoldSince":
+<seconds> | null}` is the live slot's failover count and idle-hold start.
 
 - **Read:** at tick start, lock-free like the rest of the file. Anything but
   an object whose `number` is the live slot's, as a string, is no memory. A
   count that is not a number from 0 to 2147483647 (`math.MaxInt32`) reads as
-  zero, and an idle-hold stamp in the future restarts the hold.
+  zero, and an idle-hold stamp in the future restarts the hold. While a hold
+  is recorded no candidate is polled (05§9).
 - **Written:** when the active account's usage is unknown, as a
   read-modify-write under the state lock, before the `no-switch` event, so its
   `n/3` is the persisted count and two engines ticking at once each add their
@@ -6162,18 +6174,24 @@ null}`. The key is additive; `schemaVersion` stays 1.
 - **Cleared:** when the active account's headroom is known, and inside the
   switch path's lock mutation that records `lastSwitchAt`, so a new active
   account starts at zero.
-- **Dry run:** reads the memory, so it reports the real count and reaches the
-  failover decision a real run would, but never writes it. A long-running dry
-  run (`auto --dry-run`, the TUI's) keeps its own copy in memory: while the
-  live slot is the one it last ticked on, each tick steps from the higher of
-  the persisted count and its own, and the hold stamp stays in memory. It
-  therefore counts on to a would-be failover, and its idle hold expires, as a
-  real loop's would.
 
-Loop mode uses the same object and reloads it every tick, so an engine
-restarted mid-outage continues counting. `idleHoldSlow`, `blockedWaitLong`,
-`sleepUntilTS` and `modelCheckDone` stay in memory: they only shape the next
-sleep or a one-time warning.
+`"modelNamesChecked": "<list>"` is the comma-joined, lower-cased
+`autoswitch.model` list the name check (05§18) last warned or verified for.
+The check completes on a tick where every switchable subscription account
+outside quarantine has readable usage. When the stored value differs from the
+current list, the completed check emits the `config-warning` if a name matches
+no window and then records the list, so each list warns once per store rather
+than once per process, and a changed list is checked again.
+
+**Dry run:** reads the file and reports the decision a real tick would make
+now, including the count it would reach (the persisted count plus one) and
+the model-name warning. It writes nothing, keeps nothing and does not simulate
+a sequence of ticks: two dry ticks over an unchanged file report the same.
+
+Why: a timer deployment starts a process per tick and the app's engine
+restarts with the app, so any memory outside the file is lost at the moment it
+matters; one tick function for every mode leaves nothing for the modes to
+disagree on.
 
 ## A67. A skipped usage fetch says why
 

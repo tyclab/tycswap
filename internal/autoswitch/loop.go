@@ -5,23 +5,23 @@ import (
 	"time"
 )
 
-// nextDelay chooses the inter-tick delay in seconds for the last outcome
+// nextDelay chooses the inter-tick delay in seconds for the last tick's result
 // (05§15): a known-reset sleep clamps to [interval, MAX_SLEEP_S]; a
 // truly-blocked / idle-hold cadence is max(interval, 300); everything else is
 // the ±10% jittered interval.
-func (e *Engine) nextDelay(outcome TickOutcome) float64 {
+func (e *Engine) nextDelay(r tickResult) float64 {
 	interval := e.currentSettings().IntervalSeconds
 	switch {
-	case outcome == Blocked:
-		if e.sleepUntilTS != nil {
-			delay := *e.sleepUntilTS - e.nowSeconds()
+	case r.Outcome == Blocked:
+		if r.SleepUntil != nil {
+			delay := *r.SleepUntil - e.nowSeconds()
 			return math.Min(math.Max(delay, interval), MaxSleepS)
 		}
-		if e.blockedWaitLong {
+		if r.WaitLong {
 			return math.Max(interval, NoResetFallbackS)
 		}
 		// Blocked on something resolvable — keep the normal jittered cadence.
-	case outcome == NoAction && e.idleHoldSlow:
+	case r.Outcome == NoAction && r.IdleSlow:
 		return math.Max(interval, NoResetFallbackS)
 	}
 	return interval * (0.9 + 0.2*e.rng())
@@ -39,8 +39,7 @@ func (e *Engine) RunLoop() int {
 		default:
 		}
 
-		outcome := e.Tick()
-		delay := e.nextDelay(outcome)
+		delay := e.nextDelay(e.tick())
 		if delay > e.currentSettings().IntervalSeconds*1.5 {
 			until := e.clk.Now().UTC().Add(secondsToDuration(delay))
 			e.emit(SleepEvent{Ts: e.nowISO(), Seconds: delay, Until: until.Format("2006-01-02T15:04:05") + "Z"})

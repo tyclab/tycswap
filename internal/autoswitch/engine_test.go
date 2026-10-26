@@ -125,15 +125,16 @@ func TestProactiveNeverLandsAtOrOver(t *testing.T) {
 	f := twoAccounts(clk, dictEntry(usageOf(0, 90)), dictEntry(usageOf(0, 85)))
 	rec := &recorder{}
 	e := build(t, f, s, rec, clk, false)
-	if got := e.Tick(); got != Blocked {
-		t.Fatalf("outcome = %v, want Blocked", got)
+	r := e.tick()
+	if r.Outcome != Blocked {
+		t.Fatalf("outcome = %v, want Blocked", r.Outcome)
 	}
 	if r := reasonOf(t, rec.last("no-switch")); r != "no-qualifying-candidate" {
 		t.Errorf("reason = %q, want no-qualifying-candidate", r)
 	}
 	// case 5 corollary: not truly-exhausted so no reset sleep, normal cadence.
-	if e.sleepUntilTS != nil {
-		t.Errorf("sleepUntilTS set; want nil (normal cadence)")
+	if r.SleepUntil != nil {
+		t.Errorf("SleepUntil set; want nil (normal cadence)")
 	}
 }
 
@@ -250,14 +251,14 @@ func TestHealthyReadResetsUnhealthyCounter(t *testing.T) {
 	e := build(t, f, s, rec, clk, false)
 
 	e.Tick() // unhealthy=1
-	if e.unhealthyTicks != 1 {
-		t.Fatalf("unhealthyTicks=%d want 1", e.unhealthyTicks)
+	if n := activeMemoryOf(e.readState(), "1").UnhealthyTicks; n != 1 {
+		t.Fatalf("unhealthyTicks=%d want 1", n)
 	}
 	// Healthy read resets the counter.
 	f.entries["1"] = dictEntry(usageOf(10, 0))
 	e.Tick()
-	if e.unhealthyTicks != 0 {
-		t.Errorf("unhealthyTicks=%d want 0 after healthy read", e.unhealthyTicks)
+	if n := activeMemoryOf(e.readState(), "1").UnhealthyTicks; n != 0 {
+		t.Errorf("unhealthyTicks=%d want 0 after healthy read", n)
 	}
 }
 
@@ -323,14 +324,15 @@ func TestMixedUnknownAndExhausted(t *testing.T) {
 	}
 	rec := &recorder{}
 	e := build(t, f, settings.Default(), rec, clk, false)
-	if got := e.Tick(); got != Blocked {
-		t.Fatalf("outcome = %v, want Blocked", got)
+	r := e.tick()
+	if r.Outcome != Blocked {
+		t.Fatalf("outcome = %v, want Blocked", r.Outcome)
 	}
 	if r := reasonOf(t, rec.last("no-switch")); r != "no-qualifying-candidate" {
 		t.Errorf("reason = %q, want no-qualifying-candidate", r)
 	}
-	if e.sleepUntilTS != nil {
-		t.Errorf("sleepUntilTS set; want nil (normal cadence)")
+	if r.SleepUntil != nil {
+		t.Errorf("SleepUntil set; want nil (normal cadence)")
 	}
 }
 
@@ -349,8 +351,9 @@ func TestAllExhaustedEarliestReset(t *testing.T) {
 	}
 	rec := &recorder{}
 	e := build(t, f, settings.Default(), rec, clk, false)
-	if got := e.Tick(); got != Blocked {
-		t.Fatalf("outcome = %v, want Blocked", got)
+	r := e.tick()
+	if r.Outcome != Blocked {
+		t.Fatalf("outcome = %v, want Blocked", r.Outcome)
 	}
 	ae, ok := rec.last("all-exhausted").(AllExhaustedEvent)
 	if !ok {
@@ -359,8 +362,8 @@ func TestAllExhaustedEarliestReset(t *testing.T) {
 	if ae.EarliestResetAt == nil || *ae.EarliestResetAt != "2026-07-03T10:30:00Z" {
 		t.Errorf("earliestResetAt = %v, want 2026-07-03T10:30:00Z", ae.EarliestResetAt)
 	}
-	if e.sleepUntilTS == nil {
-		t.Errorf("sleepUntilTS not set")
+	if r.SleepUntil == nil {
+		t.Errorf("SleepUntil not set")
 	}
 }
 
@@ -408,15 +411,15 @@ func TestUnknownRecoveryFallsBack(t *testing.T) {
 	}
 	rec := &recorder{}
 	e := build(t, f, settings.Default(), rec, clk, false)
-	e.Tick()
+	r := e.tick()
 	ae := rec.last("all-exhausted").(AllExhaustedEvent)
 	if ae.EarliestResetAt != nil {
 		t.Errorf("earliestResetAt = %v, want nil", ae.EarliestResetAt)
 	}
-	if e.sleepUntilTS != nil {
-		t.Errorf("sleepUntilTS set; want nil")
+	if r.SleepUntil != nil {
+		t.Errorf("SleepUntil set; want nil")
 	}
-	if d := e.nextDelay(Blocked); d != NoResetFallbackS {
+	if d := e.nextDelay(r); d != NoResetFallbackS {
 		t.Errorf("nextDelay = %v, want %v", d, NoResetFallbackS)
 	}
 }
@@ -626,19 +629,20 @@ func TestIdleHold(t *testing.T) {
 	rec := &recorder{}
 	e := build(t, f, s, rec, clk, false)
 
-	if got := e.Tick(); got != NoAction {
-		t.Fatalf("outcome = %v, want NoAction (idle-hold)", got)
+	r := e.tick()
+	if r.Outcome != NoAction {
+		t.Fatalf("outcome = %v, want NoAction (idle-hold)", r.Outcome)
 	}
 	if r := reasonOf(t, rec.last("no-switch")); r != "active-idle" {
 		t.Fatalf("reason = %q, want active-idle", r)
 	}
-	if e.unhealthyTicks != 0 {
-		t.Errorf("unhealthyTicks = %d, want 0 during idle-hold", e.unhealthyTicks)
+	if n := activeMemoryOf(e.readState(), "1").UnhealthyTicks; n != 0 {
+		t.Errorf("unhealthyTicks = %d, want 0 during idle-hold", n)
 	}
-	if !e.idleHoldSlow {
-		t.Errorf("idleHoldSlow not set")
+	if !r.IdleSlow {
+		t.Errorf("IdleSlow not set")
 	}
-	if d := e.nextDelay(NoAction); d < NoResetFallbackS {
+	if d := e.nextDelay(r); d < NoResetFallbackS {
 		t.Errorf("nextDelay = %v, want >= %v (crawl)", d, NoResetFallbackS)
 	}
 
@@ -680,10 +684,11 @@ func TestPlainFetchFailureCountsUnhealthy(t *testing.T) {
 	rec := &recorder{}
 	e := build(t, f, s, rec, clk, false)
 	e.Tick()
-	if e.unhealthyTicks != 1 {
-		t.Errorf("unhealthyTicks = %d, want 1", e.unhealthyTicks)
+	m := activeMemoryOf(e.readState(), "1")
+	if m.UnhealthyTicks != 1 {
+		t.Errorf("unhealthyTicks = %d, want 1", m.UnhealthyTicks)
 	}
-	if e.idleHoldSince != nil {
+	if m.IdleHoldSince != nil {
 		t.Errorf("idleHoldSince set; want nil for plain failure")
 	}
 }

@@ -54,16 +54,6 @@ type Engine struct {
 	stopCh   chan struct{}
 	stopOnce sync.Once
 	wakeCh   chan struct{}
-
-	// Touched only from the single tick goroutine.
-	sleepUntilTS    *float64
-	blockedWaitLong bool
-	idleHoldSlow    bool
-	modelCheckDone  bool
-	// The tick's working copy of the state file's active memory, loaded every tick (DESIGN A66).
-	memorySlot     string
-	unhealthyTicks int
-	idleHoldSince  *float64
 }
 
 // Option customizes engine construction (clock, sleeper, rng, oauth client,
@@ -119,7 +109,6 @@ func NewEngine(sw Switcher, s settings.AutoSwitchSettings, onEvent func(Event), 
 	e.lockPath = filepath.Join(filepath.Dir(e.statePath), ".autoswitch_state.lock")
 	// Poll plans must key on the same bars/models the engine decides with.
 	sw.SetPollPolicyInputs(pollThreshold(s, e.models), e.models)
-	e.modelCheckDone = len(e.models) == 0
 	return e
 }
 
