@@ -18,6 +18,11 @@ atomic-write, credential ownership, JSON, exit-code, and migration contracts.
 Keep `//go:build`, `//go:embed`, cgo preambles, and licensing intact. Tests must use
 temporary stores and fake providers rather than the operator's active logins.
 
+A login lives on one machine. Every OAuth refresh rotates the refresh token, so a copied
+store or an exported account survives one refresh: the machine that refreshes first keeps
+the login and the other shows `re-login needed — refresh token dead`. A second machine
+gets its own `tycswap add --login`; export/import moves a login, it does not share it.
+
 ## Maintenance policy
 
 - README files and agent instruction files are exempt from the comment limit
