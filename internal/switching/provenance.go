@@ -64,8 +64,9 @@ func selfSwitchAction(s *store.Store, slot, email string) (string, *Provenance) 
 // prefetchLiveIdentity resolves the live credential's owner BEFORE the locks are
 // taken (spec 02§7 _prefetch_live_identity). Returns {live, resolved}; resolved
 // is filled only when the live bytes diverge from the slot backup AND the
-// profile endpoint answers. All failures are swallowed (advisory oracle). May
-// hit the network — never call it with any lock held.
+// chain record or the profile endpoint names an account. All failures are
+// swallowed (advisory oracle). May hit the network — never call it with any
+// lock held.
 func prefetchLiveIdentity(s *store.Store) *Provenance {
 	result := &Provenance{}
 	live, ok := readActive(s)
@@ -82,26 +83,22 @@ func prefetchLiveIdentity(s *store.Store) *Provenance {
 		return result
 	}
 	data, _ := s.ReadSequence()
-	// A slot found by its lineage already proves the owner (DESIGN A68).
-	ls := s.ResolveLiveSlot(data)
+	// The resolver's own evidence decides: the account the chain record or the
+	// profile named, or a backup holding the lineage (DESIGN A68).
+	ls := s.ResolveLiveSlotWith(data, func() string { return live })
+	if ls.Identity != nil {
+		result.Resolved = ls.Identity
+		return result
+	}
 	if ls.Slot == "" || ls.ByLineage {
 		return result
 	}
-	slot := ls.Slot
-	backup, _ := s.ReadAccountCredentials(slot, email)
+	backup, _ := s.ReadAccountCredentials(ls.Slot, email)
 	if sameAccountBytes(backup, live) || fingerprintEqual(backup, live) {
 		return result // provenance already established locally
 	}
-	accessToken := oauth.ExtractAccessToken(live)
-	if accessToken == "" {
-		return result // raw API key / garbled JSON — nothing to resolve
-	}
-	if s.OAuth == nil {
-		return result
-	}
-	if id := s.OAuth.Profile(bgCtx(), accessToken); id != nil {
-		result.Resolved = id
-	}
+	// Asked once per credential: the resolver's miss stands.
+	result.Resolved = s.ProfileIdentity(live)
 	return result
 }
 

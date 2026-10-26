@@ -410,7 +410,7 @@ func mustRead(t *testing.T, path string) []byte {
 
 func TestResolveLiveSlotRotatedTokenViaProfile(t *testing.T) {
 	s, calls := rotatedFixture(t, profileOfFive)
-	if got, want := resolveLive(t, s), (LiveSlot{Slot: "5", ConfigSlot: "6", ByLineage: true, Source: SourceProfile}); got != want {
+	if got, want := resolveLive(t, s), (LiveSlot{Slot: "5", ConfigSlot: "6", ByLineage: true, Source: SourceProfile}); withoutIdentity(got) != want {
 		t.Fatalf("ResolveLiveSlot = %+v, want %+v", got, want)
 	}
 	if *calls != 1 {
@@ -446,7 +446,7 @@ func TestResolveLiveSlotRotatedTokenViaChainOffline(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(offline.BackupDir(), "live_lineage.json"), record, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := resolveLive(t, offline), (LiveSlot{Slot: "5", ConfigSlot: "6", ByLineage: true, Source: SourceChain}); got != want {
+	if got, want := resolveLive(t, offline), (LiveSlot{Slot: "5", ConfigSlot: "6", ByLineage: true, Source: SourceChain}); withoutIdentity(got) != want {
 		t.Fatalf("ResolveLiveSlot = %+v, want %+v", got, want)
 	}
 	if !strings.Contains(logText(t, offline), "but the live credential is slot 5's (by chain); using 5. A running Claude Code may have rewritten ~/.claude.json") {
@@ -522,7 +522,7 @@ func TestResolveLiveSlotStaleChainRecordIgnored(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(fresh.BackupDir(), "live_lineage.json"), record, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := resolveLive(t, fresh), (LiveSlot{Slot: "5", ConfigSlot: "6", ByLineage: true, Source: SourceProfile}); got != want {
+	if got, want := resolveLive(t, fresh), (LiveSlot{Slot: "5", ConfigSlot: "6", ByLineage: true, Source: SourceProfile}); withoutIdentity(got) != want {
 		t.Fatalf("after re-add: ResolveLiveSlot = %+v, want %+v", got, want)
 	}
 	if id, _ := lineageRecord(t, fresh)["identity"].(map[string]any); id["uuid"] != "acct-new" {
@@ -556,7 +556,7 @@ func TestResolveLiveSlotProfileCrossSlotNeedsUUID(t *testing.T) {
 		return &oauth.Identity{UUID: "acct-obi", Email: lineageEmail, OrgUUID: "org-six"}
 	})
 	writeSequenceRaw(t, own, noUUID)
-	if got, want := resolveLive(t, own), (LiveSlot{Slot: "6", ConfigSlot: "6", Source: SourceProfile}); got != want {
+	if got, want := resolveLive(t, own), (LiveSlot{Slot: "6", ConfigSlot: "6", Source: SourceProfile}); withoutIdentity(got) != want {
 		t.Fatalf("own slot: ResolveLiveSlot = %+v, want %+v", got, want)
 	}
 	if n := lineageWarnings(t, own); n != 0 {
@@ -639,5 +639,33 @@ func TestGroupScopedResolveNeverTouchesTheChainRecord(t *testing.T) {
 	data, _ := offline.ReadSequence()
 	if got := scopedOffline.defaultLiveSlot(data, rotatedLive); got.Slot != "5" || got.Source != SourceChain {
 		t.Fatalf("default login from the group scope = %+v, want slot 5 by chain", got)
+	}
+}
+
+func withoutIdentity(ls LiveSlot) LiveSlot {
+	ls.Identity = nil
+	return ls
+}
+
+// The chain record and the profile endpoint name an account, and the result
+// carries it so a switch need not ask again; a backup or the config names none.
+func TestResolveLiveSlotCarriesTheIdentity(t *testing.T) {
+	s, _ := rotatedFixture(t, profileOfFive)
+	if got := resolveLive(t, s); got.Source != SourceProfile || got.Identity == nil || *got.Identity != *identityFive {
+		t.Fatalf("by profile: %+v (identity %+v), want 5's identity", got, got.Identity)
+	}
+	record := mustRead(t, filepath.Join(s.BackupDir(), "live_lineage.json"))
+	offline, _ := rotatedFixture(t, nil)
+	if err := os.WriteFile(filepath.Join(offline.BackupDir(), "live_lineage.json"), record, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := resolveLive(t, offline); got.Source != SourceChain || got.Identity == nil || *got.Identity != *identityFive {
+		t.Fatalf("by chain: %+v (identity %+v), want the record's identity", got, got.Identity)
+	}
+	if got := resolveLive(t, offline.WithoutLineageWrites()); got.Source != SourceChain || got.Identity == nil {
+		t.Fatalf("read-only by chain: %+v, want the identity", got)
+	}
+	if got := resolveLive(t, lineageFixture(t, "")); got.Source != SourceBackup || got.Identity != nil {
+		t.Fatalf("by backup: %+v, want no identity", got)
 	}
 }

@@ -11,12 +11,14 @@ import (
 
 // LiveSlot is the managed slot of the live default login. ConfigSlot is the
 // slot ~/.claude.json names; Slot differs from it only when ByLineage. Source
-// names the evidence that settled Slot.
+// names the evidence that settled Slot; Identity is the account the chain
+// record or the profile endpoint named, for those two sources.
 type LiveSlot struct {
 	Slot       string
 	ConfigSlot string
 	ByLineage  bool
 	Source     string
+	Identity   *oauth.Identity
 }
 
 // LiveSlot.Source values, in resolution order (DESIGN A68).
@@ -63,17 +65,23 @@ func (s *Store) LineageWrites() bool { return !s.lineageReadOnly }
 // holding its lineage, then the chain record, then the profile endpoint. An
 // unmanaged config identity stays unresolved whatever the credential is.
 func (s *Store) ResolveLiveSlot(data *SequenceData) LiveSlot {
-	email, orgUUID, ok := s.GetCurrentAccount()
-	if !ok {
-		return LiveSlot{}
-	}
-	return s.liveSlotFor(data, email, orgUUID, s.group == "", func() string {
+	return s.ResolveLiveSlotWith(data, func() string {
 		live, _, err := s.Creds.ReadActive()
 		if err != nil {
 			return ""
 		}
 		return live
 	})
+}
+
+// ResolveLiveSlotWith is ResolveLiveSlot reading the live credential through
+// readLive, so a caller that needs the bytes as well reads them once.
+func (s *Store) ResolveLiveSlotWith(data *SequenceData, readLive func() string) LiveSlot {
+	email, orgUUID, ok := s.GetCurrentAccount()
+	if !ok {
+		return LiveSlot{}
+	}
+	return s.liveSlotFor(data, email, orgUUID, s.group == "", readLive)
 }
 
 // defaultLiveSlot is ResolveLiveSlot for the default login, whatever the
@@ -105,10 +113,10 @@ func (s *Store) liveSlotFor(data *SequenceData, email, orgUUID string, defaultLo
 	}
 	if y, ok := s.lineageSlot(data, ls.ConfigSlot, live); ok {
 		ls.Slot, ls.Source = y, SourceBackup
-	} else if y := s.chainSlot(data, ls.ConfigSlot, live, defaultLogin); y != "" {
-		ls.Slot, ls.Source = y, SourceChain
-	} else if y := s.profileSlot(data, ls.ConfigSlot, live, defaultLogin); y != "" {
-		ls.Slot, ls.Source = y, SourceProfile
+	} else if y, id := s.chainSlot(data, ls.ConfigSlot, live, defaultLogin); y != "" {
+		ls.Slot, ls.Source, ls.Identity = y, SourceChain, id
+	} else if y, id := s.profileSlot(data, ls.ConfigSlot, live, defaultLogin); y != "" {
+		ls.Slot, ls.Source, ls.Identity = y, SourceProfile, id
 	}
 	if ls.Slot != ls.ConfigSlot {
 		ls.ByLineage = true
@@ -148,49 +156,71 @@ func (s *Store) holdsLineage(data *SequenceData, num, live string) bool {
 
 // chainSlot is the slot the chain record names for this very credential,
 // while the roster still maps the recorded identity to it.
-func (s *Store) chainSlot(data *SequenceData, configSlot, live string, defaultLogin bool) string {
+func (s *Store) chainSlot(data *SequenceData, configSlot, live string, defaultLogin bool) (string, *oauth.Identity) {
 	if !defaultLogin {
-		return ""
+		return "", nil
 	}
 	fp := oauth.CredentialFingerprint(live)
 	rec, ok := s.readLiveLineage()
 	if fp == nil || !ok || rec.Fingerprint != *fp {
-		return ""
+		return "", nil
 	}
 	id := rec.Identity.oauth()
-	if slot := s.identitySlot(data, configSlot, &id); slot == rec.Slot {
-		return slot
+	if slot := s.identitySlot(data, configSlot, &id); slot != "" && slot == rec.Slot {
+		return slot, &id
 	}
-	return ""
+	return "", nil
 }
 
-// profileSlot asks the profile endpoint whose credential is live, once per
-// fingerprint per process and never while this process holds the store lock,
+// profileSlot is the slot the profile endpoint names for the live credential,
 // and records a hit for the default login in the chain record.
-func (s *Store) profileSlot(data *SequenceData, configSlot, live string, defaultLogin bool) string {
+func (s *Store) profileSlot(data *SequenceData, configSlot, live string, defaultLogin bool) (string, *oauth.Identity) {
 	fp := oauth.CredentialFingerprint(live)
-	token := oauth.ExtractAccessToken(live)
-	if fp == nil || token == "" {
-		return ""
+	if fp == nil {
+		return "", nil
 	}
-	id, known := s.lineage.answer(*fp)
-	if !known {
-		if s.OAuth == nil || (s.Lock != nil && s.Lock.Held()) || !s.lineage.claim(*fp) {
-			return ""
-		}
-		id = s.OAuth.Profile(context.Background(), token)
-		s.lineage.remember(*fp, id)
-	}
+	id := s.ProfileIdentity(live)
 	if id == nil {
-		return ""
+		return "", nil
 	}
 	slot := s.identitySlot(data, configSlot, id)
-	if slot != "" && defaultLogin && s.LineageWrites() {
+	if slot == "" {
+		return "", nil
+	}
+	if defaultLogin && s.LineageWrites() {
 		if err := s.writeLiveLineage(*fp, slot, id); err != nil && s.Log != nil {
 			s.Log.Debugf("Could not record the live credential's lineage: %v", err)
 		}
 	}
-	return slot
+	return slot, id
+}
+
+// ProfileIdentity is the profile endpoint's account for a credential, asked
+// once per fingerprint per process (a miss included) and never while this
+// process holds the store lock; nil when unknown.
+func (s *Store) ProfileIdentity(creds string) *oauth.Identity {
+	token := oauth.ExtractAccessToken(creds)
+	if token == "" {
+		return nil
+	}
+	fp := oauth.CredentialFingerprint(creds)
+	if fp != nil {
+		if id, known := s.lineage.answer(*fp); known {
+			return id
+		}
+	}
+	if s.OAuth == nil || (s.Lock != nil && s.Lock.Held()) {
+		return nil
+	}
+	if fp == nil {
+		return s.OAuth.Profile(context.Background(), token)
+	}
+	if !s.lineage.claim(*fp) {
+		return nil
+	}
+	id := s.OAuth.Profile(context.Background(), token)
+	s.lineage.remember(*fp, id)
+	return id
 }
 
 // identitySlot is the managed OAuth slot an endpoint identity names, or "".
