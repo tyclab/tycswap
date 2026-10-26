@@ -6304,6 +6304,16 @@ answers names the live slot, and `LiveSlot.Source` says which one did:
    OAuth client; it then uses an answer it already has.
 4. `config`. Otherwise X.
 
+The chain record is the default login's. Only a resolution of the default
+login reads or writes it: the default scope's `ResolveLiveSlot`, and the
+ownership and handoff checks of the default login from any scope. A group
+scope resolving its own login goes backup, profile, config, so its rotation
+never overwrites the default login's record; it asks the profile once per
+process until its own pass harvests the rotation.
+
+`LiveSlot.Identity` carries the account the chain record or the profile
+endpoint named, for those two sources, and nil otherwise.
+
 The backup step alone is the earlier rule. The other two exist because a
 running Claude Code also refreshes its token itself: the refresh token
 rotates, no backup holds the lineage any more, and the resolver fell back to
@@ -6326,9 +6336,13 @@ the live credential and the slot's record are unchanged; a slot with an
 uncertain owner is left alone. It logs INFO `Harvested the rotated live
 credential into Account-N's backup`. The live credential is never written.
 From the next pass on, the backup step attributes the credential, offline too.
+The harvest takes the pass's resolution and the live credential read for it,
+so a pass reads the live credential once outside the lock, plus the re-check
+under it when it harvests.
 
-A dry-run engine (`auto --dry-run`, the TUI's and the dashboard's dry runs)
-and a store-only read (a fetch set that wants nothing: the engine's planning
+A dry-run engine (`auto --dry-run`, the TUI's and the dashboard's dry runs,
+and the group scopes a dry tick runs, whose statuses resolve the default login
+as well) and a store-only read (a fetch set that wants nothing: the engine's planning
 read, the menu's and the dashboard's snapshots) resolve the same way but never
 write the chain record and never harvest. They may still ask the profile
 endpoint, and keep its answer in memory only.
@@ -6358,11 +6372,22 @@ stayed Y's, the config still named X, X's own credential survived only in
 `.prev`, and the result read `already-active`. Now the switch backs the live
 credential into Y, where it classifies as Y's own, and a switch onto X installs
 X's stored credential and identity. The config backed up for Y keeps Y's own
-`oauthAccount`, since the live config names X's. `switch --force X` is
-unchanged: it activates X directly, without backing up an outgoing slot.
+`oauthAccount`, since the live config names X's. `switch --force X` still
+activates X directly, without backing up an outgoing slot, and writes what it
+wrote before. Its result now names the credential's slot: `from` is Y and
+`switched` is true, since the live credential moved from Y's to X's.
 A live credential the profile endpoint attributes to Y is Y's in the same way:
 where the switch used to stash it as foreign to X, it now backs it into Y. The
 foreign stash remains for credentials the resolver cannot attribute.
+
+The switch's pre-lock provenance takes `LiveSlot.Identity`. An outgoing slot
+the chain record or the profile attributed therefore classifies as
+`own-rotated` and logs `Backed up account N`, not the `ownership could not be
+verified — pre-fix backup` line. The profile endpoint is asked once per live
+credential: the provenance reuses the resolver's answer, a miss included.
+`switch --force` runs the same pre-lock provenance. Under the lock the
+resolver asks no one, so without it a credential only the profile attributed
+read as X's, and `--force Y` activated Y's older backup over the live token.
 
 `switch Y` while the mismatch stands is a config repair, and so are `switch
 --force Y` and a rotation that lands on Y. Before, `switch Y` reported
