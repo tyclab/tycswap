@@ -10,6 +10,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/groups"
+	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/mappings"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/sessprofile"
@@ -124,8 +125,9 @@ func (s *Store) PruneMappings(email, orgUUID string) (int, error) {
 
 // MoveFileBackupsToKeychain moves every slot's backup that a spell in file mode
 // left in an .enc file into the Keychain, under the FileLock (DESIGN A69), and
-// returns how many moved. A slot that fails is logged and skipped. Off macOS
-// it does nothing.
+// returns how many moved. A slot that fails is logged and skipped; a Keychain
+// timeout ends the run, which would hold the lock a deadline per slot. Off
+// macOS it does nothing.
 func (s *Store) MoveFileBackupsToKeychain() (int, error) {
 	if s.Platform != platform.MacOS {
 		return 0, nil
@@ -142,6 +144,9 @@ func (s *Store) MoveFileBackupsToKeychain() (int, error) {
 				continue
 			}
 			did, err := s.Creds.MoveFileBackupToKeychain(num, strField(rec, "email"))
+			if keychain.IsTimeout(err) {
+				return err // the rest waits for the next start
+			}
 			if err != nil {
 				if s.Log != nil {
 					s.Log.Warningf("Could not move account %s's file backup into the Keychain: %v", num, err)

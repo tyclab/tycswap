@@ -5033,9 +5033,10 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   a minute later. A Keychain that only answers slowly, as on a Mac under heavy
   load, gets 15 seconds per call and is asked again on the next one. A switch
   whose write of the active login times out fails with `The Keychain did not
-  answer in time, so the login was not changed; try again in a moment` and
-  changes nothing. A switch, move or swap whose read of a stored login times
-  out stops the same way (`… the stored login of account N could not be
+  answer in time, so the login was not changed; try again in a moment`: the
+  old login stays active, and the outgoing account keeps the backup the switch
+  already took of it. A switch, move or swap whose read of a stored login
+  times out stops the same way (`… the stored login of account N could not be
   read; try again in a moment`) instead of treating the account as empty.
   `tycswap app` moves backups a Keychain failure left in plaintext files
   back into the Keychain when it starts.

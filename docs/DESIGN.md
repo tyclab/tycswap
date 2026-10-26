@@ -6468,16 +6468,32 @@ item first, and on a busy Keychain the delete times out too, so the old login
 would stay live while the store records the new one. A write the deadline
 killed may also have landed. The switch fails before it records the write, so
 its rollback has nothing to undo, and the next switch's provenance check
-(02§7) sorts out whose login is live. Backup writes keep the fallback on a
-timeout: reads are `.enc`-wins, so the `.enc` serves the fresh value whatever
-the item holds, and the next Keychain write reconciles it away.
+(02§7) sorts out whose login is live. The live login stays; what step 1
+already did stays as well, so the outgoing slot keeps the backup it took of
+the live login.
+
+A managed key whose Keychain write succeeded takes the OAuth login off
+`Claude Code-credentials` next, by writing the seat-wide part back in its
+place or by deleting the item (A29). Either one timing out fails the write
+the same way, before the shadow file is touched: the old login would
+otherwise stay in the item Claude Code reads first, and the write report the
+key as live. The failure puts the managed item back as any failure after the
+Keychain write does (A29). `ClearActive` takes the same path, so it fails
+rather than report a login gone that a busy Keychain still holds.
+
+Backup writes keep the fallback on a timeout: reads are `.enc`-wins, so the
+`.enc` serves the fresh value whatever the item holds, and the next Keychain
+write or the next start's move (below) reconciles it away. After a timed-out
+write the item is not deleted either: the delete would wait out a second
+deadline while the caller holds the store lock, and the `.enc` is read first.
 
 **Backup reads.** A backup read the deadline killed fails with "The Keychain
 did not answer in time, so the stored login of account N could not be read;
 try again in a moment" (`keychain.IsTimeout` holds for it). Every other backend
 failure keeps the old contract: a warning and "". Callers that only display,
 rank or look for evidence (the snapshot, the switchable check, provenance, the
-live-slot resolver of A68) still read "" and move on. The switch stops on the
+live-slot resolver of A68) still read "" and move on: the snapshot shows the
+slot without a credential until a later tick reads it. The switch stops on the
 error at each read of the target: the endpoint plan's (A46), the target
 retrieval, and `--force`'s direct activation. Move and swap stop before they
 change anything. `run`'s profile bootstrap and `export` already passed the
@@ -6495,11 +6511,14 @@ single timeout started, wrote backups to `.enc` and previous generations to
   the Keychain has no `.prev`. Beside one it stays, since nothing tells which
   is newer, until the slot's next retained generation removes it. A value too
   large for `security`'s stdin stays in its file, where A25 item 2 put it. A slot
-  that fails is logged and left for the next start.
+  that fails is logged and left for the next start. A timeout ends the run:
+  each slot would hold the lock for another deadline, longer than the 10 s a
+  switch waits for it, and the rest waits for the next start.
 
 **The price.** A Keychain that hangs, rather than one that is slow, costs
 every call the full 15 s, where before one 5 s timeout bought a minute of
-file mode. A state snapshot then comes late, but every value in it was read.
+file mode. A state snapshot then comes late, and a slot whose read timed out
+shows in it without a credential until a later tick reads it.
 
 **Spec.** 03§4's 5 s timeout and 03§5.3's rule that every `KEYCHAIN_ERRORS`
 failure flips the cache stay as the spec wrote them; the deviation is recorded
@@ -6511,13 +6530,19 @@ here.
 read and the next backup write on the Keychain; a Keychain that times out on
 every attempt still reports the active login as unavailable; an OAuth and a
 managed-key switch write that time out fail, write no file and no
-`primaryApiKey`, and leave the old login in the item.
+`primaryApiKey`, and leave the old login in the item; a managed-key write
+whose write-back of the MCP logins or whose delete of the OAuth item times
+out fails, leaves the login in the item and its file, and puts the managed
+item back; `ClearActive` fails on a timed-out delete; a timed-out backup
+write deletes nothing. `internal/store` (`TestMoveFileBackupsStopsAtFirstTimeout`):
+the start-up move ends at the first timeout and skips past other failures.
 `internal/credstore/filebackup_test.go`: a timed-out backup read fails and any
 other failure reads "", a Keychain `.prev` write drops the `.enc.prev`, an
 `.enc` backup and `.enc.prev` move into the Keychain and the files go, an
 `.enc.prev` beside a Keychain `.prev` stays, a value too large for stdin
 stays in its file, a move on a busy Keychain keeps the file, and off macOS
-nothing moves. `internal/switching` (`TestSwitchStopsOnBusyTargetRead`) and
+nothing moves. `internal/switching` (`TestSwitchStopsOnBusyTargetRead`,
+and `TestSwitchStopsOnBusyTargetReread` for the step-2 read on its own) and
 `internal/lifecycle` (`TestMoveSwapStopOnBusyKeychain`): a switch, with and
 without `--force`, a move and a swap stop with the timeout and change
 nothing; before, the move carried an empty slot to its target.

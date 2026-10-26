@@ -196,6 +196,7 @@ func keychainBusyRead(num string, err error) error {
 func (s *FileKeychainStore) WriteBackup(num, email, creds string) error {
 	creds = oauth.AccountOnly(creds)
 	s.retainPreviousBackup(num, email, creds)
+	timedOut := false
 	if s.useKeychain() {
 		err := s.kcWriteBackup(num, email, creds)
 		if err == nil {
@@ -204,6 +205,7 @@ func (s *FileKeychainStore) WriteBackup(num, email, creds string) error {
 		if !keychain.IsUnusable(err) {
 			return err // a programming error propagates
 		}
+		timedOut = keychain.IsTimeout(err)
 		s.log.Warningf("Keychain backup write failed, falling back to file: %v", err)
 		// fall through to file mode
 	}
@@ -211,7 +213,9 @@ func (s *FileKeychainStore) WriteBackup(num, email, creds string) error {
 		s.log.Warningf("Failed to write credentials file: %v", err)
 		return err
 	}
-	if s.macOS() {
+	// After a timeout the delete would wait out another deadline under the
+	// lock; the .enc is read first, so the item can wait for the next move.
+	if s.macOS() && !timedOut {
 		s.deleteBackupKeychainQuiet(num, email)
 	}
 	return nil

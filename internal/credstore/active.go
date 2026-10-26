@@ -209,7 +209,7 @@ func (s *FileKeychainStore) writeOAuthCredentialsBeforeFile(creds string, before
 	if err := ccfile.WriteCredentialsFile(creds); err != nil {
 		return cerr.CredentialWrite("Failed to write credentials: %v", err)
 	}
-	s.deleteActiveKeychainEntry()
+	_ = s.deleteActiveKeychainEntry()
 	if s.macOS() {
 		s.pinFileMode()
 	}
@@ -411,7 +411,8 @@ func (s *FileKeychainStore) clearManagedKey() {
 // seat-wide part, or when it cannot be written, the credential is cleared
 // whole (spec 03§5.6). beforeFile makes the managed key readable in file mode
 // before that fallback overwrites the original OAuth credential; its failure
-// propagates without clearing the original login.
+// propagates without clearing the original login. So does a Keychain timeout,
+// which would leave the login in the item Claude Code reads first (A69).
 func (s *FileKeychainStore) clearOAuthLogin(beforeFile func() error) error {
 	if rest, ok := ccfile.SeatWidePart(s.readLiveOAuth()); ok {
 		var fallbackErr error
@@ -422,8 +423,8 @@ func (s *FileKeychainStore) clearOAuthLogin(beforeFile func() error) error {
 		if fallbackErr != nil {
 			return fallbackErr
 		}
-		if err == nil {
-			return nil
+		if err == nil || keychain.IsTimeout(err) {
+			return err
 		}
 		s.log.Warningf("Could not keep the MCP server logins beside the API key; clearing them with the OAuth login: %v", err)
 	}
@@ -433,26 +434,29 @@ func (s *FileKeychainStore) clearOAuthLogin(beforeFile func() error) error {
 			return err
 		}
 	}
-	s.clearOAuthCredential()
-	return nil
+	return s.clearOAuthCredential()
 }
 
 // clearOAuthCredential clears the active OAuth credential — Keychain item and
-// plaintext file (best-effort, spec 03§5.6).
-func (s *FileKeychainStore) clearOAuthCredential() {
-	s.deleteActiveKeychainEntry()
+// plaintext file (best-effort, spec 03§5.6) — but fails, leaving both, when
+// the item's delete timed out (keychainBusy).
+func (s *FileKeychainStore) clearOAuthCredential() error {
+	if err := s.deleteActiveKeychainEntry(); keychain.IsTimeout(err) {
+		return keychainBusy(err)
+	}
 	p := paths.GetCredentialsPath()
 	if exists(p) {
 		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			s.log.Warningf("Failed to remove credentials file: %v", err)
 		}
 	}
+	return nil
 }
 
 // Claude Code's Keychain-first read would resurrect a stale entry after a file fallback (#30337).
-func (s *FileKeychainStore) deleteActiveKeychainEntry() {
+func (s *FileKeychainStore) deleteActiveKeychainEntry() error {
 	if !s.macOS() {
-		return
+		return nil
 	}
-	_ = s.kc.Delete(claudeCodeKeychainService, keychain.AccountName())
+	return s.kc.Delete(claudeCodeKeychainService, keychain.AccountName())
 }
