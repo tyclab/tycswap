@@ -184,6 +184,9 @@ func TestResolveLiveSlotUnreadableBackupFallsBack(t *testing.T) {
 		source string
 	}{
 		{"corrupt backup", func(t *testing.T, s *Store) {
+			if runtime.GOOS == "darwin" {
+				t.Skip("the macOS backup lives in the Keychain: a corrupt file falls through to it")
+			}
 			path := filepath.Join(s.CredentialsDir, storenames.CredsFile("5", lineageEmail))
 			if err := os.WriteFile(path, []byte("%%% not base64 %%%"), 0o600); err != nil {
 				t.Fatal(err)
