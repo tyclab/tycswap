@@ -1,43 +1,29 @@
 # AGENTS.md — tycswap
 
-Go CLI for Claude and Codex account slots. Entry: `cmd/tycswap`; commands:
-`internal/cli`; providers and credential stores: `internal/core`, `internal/store`,
-and `internal/codex`; session groups: `internal/groups`, `internal/session`;
-recovery: `internal/recovery`; interfaces: `internal/web`, `internal/tray`, and dashboard.
-The Windows overview panel lives in `internal/tray/panel*` and
-`internal/cli/traypanel.go`; shared web settings mutations live in
-`internal/web/settingsmutation.go`. The contracts live in `docs/reference.md`
-and `docs/DESIGN.md`.
+Go CLI for agent account slots. docs/reference.md and docs/DESIGN.md own the
+command, credential, session, recovery and UI contracts.
 
-Use the Go version required by `go.mod`. Validate with `make fmt`, `go test ./...`,
-`go vet ./...` and, as CI does, `GOOS=windows go vet ./...` and
-`GOOS=darwin CGO_ENABLED=0 go vet ./...`; use `make build` for a versioned local binary.
-`testdata/**` is byte-exact golden fixtures (`-text` in `.gitattributes`): never let
-line endings or formatting tools rewrite them. Preserve file-lock,
-atomic-write, credential ownership, JSON, exit-code, and migration contracts.
-Keep `//go:build`, `//go:embed`, cgo preambles, and licensing intact. Tests must use
-temporary stores and fake providers rather than the operator's active logins.
+- Preserve file locks, atomic writes, credential ownership, JSON/exit-code and
+  migration contracts. Tests use temporary stores and fake providers, never the
+  operator's active logins. Never log credentials or inline session tokens.
+- Never use /logout to switch accounts. Use tycswap switch; a new machine gets
+  its own login. Read [login ownership](docs/agents/login-ownership.md) before
+  export/import, account sharing, refresh or multi-machine recovery work.
+- testdata/** contains byte-exact golden fixtures (-text in .gitattributes):
+  formatters and line-ending conversion must not rewrite them. Preserve
+  go:build/go:embed directives, cgo preambles and licensing.
+- Follow go.mod's Go version. Validate with `make fmt`, `go test ./...`,
+  `go vet ./...`, `GOOS=windows go vet ./...`, and
+  `GOOS=darwin CGO_ENABLED=0 go vet ./...`. `make build` creates a versioned binary.
+- Inspect incoming branches and preserve concurrent work. Respect repository
+  hooks and merge defaults. Keep private addresses, personal/employer details and
+  credentials out of this public repo; use the repo-local identity or noreply email.
 
-A login lives on one machine. Every OAuth refresh rotates the refresh token, so a copied
-store or an exported account survives one refresh: the machine that refreshes first keeps
-the login and the other shows `re-login needed — refresh token dead`. A second machine
-gets its own `tycswap add --login`; export/import moves a login, it does not share it.
+Keep code/config comments at or below 20% of nonblank lines; preserve licenses,
+tool directives and runtime descriptions. Only the operator may grant a documented,
+file-specific exception. See the shared [maintenance policy](https://github.com/tyclab/flakelab/blob/main/docs/agents/maintenance.md)
+for exclusions and counting rules. Remove code only with evidence that behavior and
+callers are preserved; keep README commands and diagrams aligned with code.
 
-## Maintenance policy
-
-- README files and agent instruction files are exempt from the comment limit
-  by design. The limit applies to code and configuration files.
-- Outside the limit (operator, 2026-10-08): vendored third-party code and
-  third-party build output (kept byte-identical to upstream), Hugo site
-  functional files, translation files, example/template configs whose comments
-  document the schema, files under ten code lines, and approved runtime text
-  such as MCP tool docstrings. Output of our own generators is inside it: fix
-  the generator.
-- Keep code-file comments at or below 20% of nonblank lines. Only the operator
-  may grant a documented, file-specific exception; do not silently exempt files.
-- Preserve licenses, tool directives, runtime strings, and behavior. If the limit
-  conflicts with these, report the file for an operator decision.
-- Keep this file as the repository's single agent instruction source. Keep the
-  README and its process/logic diagram consistent with the implementation.
-- Remove unused files or features only with evidence that nothing depends on them.
-  Keep changes focused; do not add speculative features or abstractions.
+Keep repository-wide instructions here; put task-specific guidance in `docs/agents/`
+and link it from this file. README owns human setup and architecture; plans hold open work only.
