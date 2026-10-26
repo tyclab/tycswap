@@ -6,12 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/usage"
 )
@@ -529,6 +531,36 @@ func TestDryLoopModelWarningOncePerList(t *testing.T) {
 	}
 	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
 		t.Errorf("dry run created the state file (stat err %v)", err)
+	}
+}
+
+// The model-name key is advisory: a state file that cannot be written logs a
+// warning and the tick still reaches its decision.
+func TestModelNameCheckWriteFailureKeepsTheDecision(t *testing.T) {
+	clk := newClk()
+	statePath := sharedStatePath(t)
+	if err := os.Mkdir(statePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	logDir := t.TempDir()
+	s := settings.Default()
+	s.Model = strp("Fable")
+	rec := &recorder{}
+	f := twoAccounts(clk, dictEntry(usageOf(10, 0)), dictEntry(usageOf(10, 0)))
+	e := build(t, f, s, rec, clk, false, WithStatePath(statePath), WithLogger(logging.NewWithClock(logDir, false, clk)))
+	wantNoSwitch(t, e.Tick(), rec, "below-threshold", "")
+	if n := rec.count("error"); n != 0 {
+		t.Errorf("error events = %d, want 0 (kinds=%v)", n, rec.kinds())
+	}
+	if n := rec.count("config-warning"); n != 1 {
+		t.Errorf("config warnings = %d, want 1 (kinds=%v)", n, rec.kinds())
+	}
+	raw, err := os.ReadFile(filepath.Join(logDir, "tycswap.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(raw), "WARNING - Model-name check not recorded"); n != 1 {
+		t.Errorf("log has %d not-recorded warnings, want 1:\n%s", n, raw)
 	}
 }
 

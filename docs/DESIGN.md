@@ -6183,7 +6183,9 @@ The check completes on a tick where every switchable subscription account
 outside quarantine has readable usage. When the stored value differs from the
 current list, the completed check emits the `config-warning` if a name matches
 no window and then records the list, so each list warns once per store rather
-than once per process, and a changed list is checked again. An unchanged list
+than once per process, and a changed list is checked again. The key is
+advisory: when it cannot be written, the tick logs a WARNING and still reaches
+its decision, and the check runs again next tick. An unchanged list
 is never re-checked: the key is never cleared, so clearing the list or setting
 `all` leaves it in place and restoring the same list later does not warn
 again, and a list that once checked clean is not re-checked when the accounts'

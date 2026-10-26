@@ -105,9 +105,7 @@ func (e *Engine) tickInner() (tickResult, error) {
 		Windows:     windows,
 	})
 
-	if err := e.checkModelNames(state, quarantined, usageMap); err != nil {
-		return tickResult{}, err
-	}
+	e.checkModelNames(state, quarantined, usageMap)
 
 	// An API-key account has no quota to watch, and the engine never moves on
 	// or off one by itself (DESIGN A33): that is a change of how Claude Code
@@ -586,7 +584,8 @@ func (e *Engine) perform(number, email, trigger, axis string) (tickResult, error
 // checkModelNames is the autoswitch.model typo guard (05§18). Once every
 // account has been read, the list it checked goes into the state file's
 // modelNamesChecked, so a list warns once per store, not once per process.
-func (e *Engine) checkModelNames(state map[string]any, quarantined map[string]bool, usageMap map[string]any) error {
+// The key is advisory: a failed write is logged and the tick goes on.
+func (e *Engine) checkModelNames(state map[string]any, quarantined map[string]bool, usageMap map[string]any) {
 	hasNamed := false
 	for _, m := range e.models {
 		if strings.ToLower(m) != "all" {
@@ -597,7 +596,7 @@ func (e *Engine) checkModelNames(state map[string]any, quarantined map[string]bo
 	key := strings.ToLower(strings.Join(e.models, ","))
 	checked, _ := state["modelNamesChecked"].(string)
 	if !hasNamed || checked == key || (e.dryRun && e.dryModelWarned == key) {
-		return nil
+		return
 	}
 	var relevant []string
 	for _, n := range e.sw.SwitchableAccountNumbers() {
@@ -615,7 +614,7 @@ func (e *Engine) checkModelNames(state map[string]any, quarantined map[string]bo
 		}
 	}
 	if len(readable) == 0 || len(readable) != len(values) {
-		return nil // not every account observed yet — re-check next tick
+		return // not every account observed yet — re-check next tick
 	}
 	seen := map[string]bool{}
 	for _, v := range readable {
@@ -651,10 +650,11 @@ func (e *Engine) checkModelNames(state map[string]any, quarantined map[string]bo
 		if len(missing) > 0 {
 			e.dryModelWarned = key
 		}
-		return nil
+		return
 	}
-	_, err := e.mutateState(func(st map[string]any) { st["modelNamesChecked"] = key })
-	return err
+	if _, err := e.mutateState(func(st map[string]any) { st["modelNamesChecked"] = key }); err != nil && e.log != nil {
+		e.log.Warningf("Model-name check not recorded: %v; it runs again next tick", err)
+	}
 }
 
 // refOf builds an account ref {"number": int, "email": email} (05§12 _ref).
