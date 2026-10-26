@@ -18,7 +18,9 @@ func BuildAccountsInfo(s *store.Store) []AccountInfo {
 		return nil
 	}
 
-	activeNum := s.ResolveLiveSlot(data).Slot
+	live := &liveRead{s: s}
+	ls := s.ResolveLiveSlotWith(data, live.value)
+	activeNum := ls.Slot
 
 	infos := make([]AccountInfo, 0, len(data.Sequence))
 	for _, n := range data.Sequence {
@@ -40,9 +42,7 @@ func BuildAccountsInfo(s *store.Store) []AccountInfo {
 		if isActive {
 			// active.value or "" — a genuine read error degrades to "" for
 			// display, matching Python's _read_active_credentials contract.
-			val, kcUnavail, _ := s.Creds.ReadActive()
-			creds = val
-			keychainUnavailable = kcUnavail
+			creds, keychainUnavailable, _ = live.read()
 			if s.GroupID() == "" && paths.GetClaudeConfigHome() != s.ProfileDir() {
 				creds, _ = s.ReadOwnedCredentials(num, email)
 				keychainUnavailable = false
@@ -56,7 +56,7 @@ func BuildAccountsInfo(s *store.Store) []AccountInfo {
 			}
 		}
 
-		infos = append(infos, AccountInfo{
+		info := AccountInfo{
 			Number:              n,
 			Email:               email,
 			OrgName:             orgName,
@@ -66,7 +66,36 @@ func BuildAccountsInfo(s *store.Store) []AccountInfo {
 			Alias:               alias,
 			KeychainUnavailable: keychainUnavailable,
 			BaseURL:             store.BaseURLFrom(data, num),
-		})
+		}
+		if isActive {
+			info.live, info.liveCreds = ls, live.value()
+		}
+		infos = append(infos, info)
 	}
 	return infos
+}
+
+// liveRead reads the active store's credential at most once per pass.
+type liveRead struct {
+	s         *store.Store
+	done      bool
+	val       string
+	kcUnavail bool
+	err       error
+}
+
+func (r *liveRead) read() (string, bool, error) {
+	if !r.done {
+		r.val, r.kcUnavail, r.err = r.s.Creds.ReadActive()
+		r.done = true
+	}
+	return r.val, r.kcUnavail, r.err
+}
+
+// value is the credential as the resolver takes it: "" when the read failed.
+func (r *liveRead) value() string {
+	if val, _, err := r.read(); err == nil {
+		return val
+	}
+	return ""
 }

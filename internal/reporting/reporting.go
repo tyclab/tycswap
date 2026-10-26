@@ -33,6 +33,10 @@ type AccountInfo struct {
 	// for none. Such an account keeps no credential in Claude Code's store,
 	// so the active one reads as an API key from this, not from Creds.
 	BaseURL string
+	// live and liveCreds are the pass's live-slot resolution and the live
+	// credential it read, on the active row; the harvest reuses both.
+	live      store.LiveSlot
+	liveCreds string
 }
 
 // A nil-safe seam so reporting need not import lifecycle; core wires it.

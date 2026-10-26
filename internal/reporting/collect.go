@@ -53,7 +53,7 @@ func CollectUsageEntries(s *store.Store, infos []AccountInfo, fetch map[string]b
 		identities[num] = usage.Identity{Email: info.Email, OrgUUID: info.OrgUUID}
 		infoByNum[num] = info
 		if info.IsActive && s.OAuth != nil && s.LineageWrites() && (fetch == nil || fetch[num]) {
-			harvestLiveCredential(s)
+			harvestLiveCredential(s, info.live, info.liveCreds)
 		}
 	}
 
@@ -172,20 +172,15 @@ func passStore(s *store.Store, fetch map[string]bool) *store.Store {
 
 // harvestLiveCredential stores a live credential Claude Code rotated itself in
 // the backup of the slot the chain record or the profile attributed it to, so
-// from the next pass on the backup alone attributes it, offline too. The live
-// credential itself is never written.
-func harvestLiveCredential(s *store.Store) {
-	data, _ := s.ReadSequence()
-	ls := s.ResolveLiveSlot(data)
-	if ls.Source != store.SourceChain && ls.Source != store.SourceProfile {
+// from the next pass on the backup alone attributes it, offline too. It takes
+// the pass's resolution and live bytes; the live credential is never written.
+func harvestLiveCredential(s *store.Store, ls store.LiveSlot, live string) {
+	if ls.Source != store.SourceChain && ls.Source != store.SourceProfile || live == "" {
 		return
 	}
+	data, _ := s.ReadSequence()
 	rec, _ := recordFor(data, ls.Slot)
 	email := recStr(rec, "email")
-	live, _, err := s.Creds.ReadActive()
-	if err != nil || live == "" {
-		return
-	}
 	if backup, _ := s.ReadAccountCredentials(ls.Slot, email); fingerprintsEqual(backup, live) {
 		return
 	}
@@ -193,7 +188,7 @@ func harvestLiveCredential(s *store.Store) {
 		return
 	}
 	harvested := false
-	err = withTripleLock(s, func() error {
+	err := withTripleLock(s, func() error {
 		// Under the lock the credential and the slot must be the ones attributed.
 		now, _, err := s.Creds.ReadActive()
 		current, _ := s.ReadSequence()

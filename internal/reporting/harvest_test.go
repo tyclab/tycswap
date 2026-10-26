@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/store"
 )
@@ -159,4 +161,48 @@ func TestCollectNeverHarvestsOnStoreOnlyRead(t *testing.T) {
 		UsageEntriesByAccount(s, nil)
 		untouched(t, s, "a pass without a client")
 	})
+}
+
+// countingCreds counts the active store's credential reads, outside the store
+// lock and under it.
+type countingCreds struct {
+	credstore.Store
+	lock            *filelock.FileLock
+	outside, locked int
+}
+
+func (c *countingCreds) ReadActive() (string, bool, error) {
+	if c.lock != nil && c.lock.Held() {
+		c.locked++
+	} else {
+		c.outside++
+	}
+	return c.Store.ReadActive()
+}
+
+// A pass reads the live credential once outside the lock: the resolution and
+// the active row share the read, and the harvest reuses both; only the
+// harvest's re-check reads it again, under the lock.
+func TestCollectReadsTheLiveCredentialOncePerPass(t *testing.T) {
+	s, _ := harvestFixture(t)
+	counter := &countingCreds{Store: s.Creds, lock: s.Lock}
+	s.Creds = counter
+	UsageEntriesByAccount(s, nil)
+	if harvested := strings.Contains(storeLog(t, s), harvestLine); !harvested || counter.outside != 1 || counter.locked != 1 {
+		t.Fatalf("harvest pass: harvested %v, reads outside the lock %d, under it %d; want a harvest, 1 and 1", harvested, counter.outside, counter.locked)
+	}
+	counter.outside, counter.locked = 0, 0
+	UsageEntriesByAccount(s, nil)
+	if counter.outside != 1 || counter.locked != 0 {
+		t.Fatalf("steady pass: reads outside the lock %d, under it %d; want 1 and 0", counter.outside, counter.locked)
+	}
+}
+
+// The status line hands its own resolution to the harvest.
+func TestStatusHarvestsWithItsResolution(t *testing.T) {
+	s, _ := harvestFixture(t)
+	buildStatusPayload(s)
+	if got := backupOf(t, s, "5"); got != oauth.AccountOnly(harvestLive) {
+		t.Fatalf("Account-5 backup = %s, want the rotated live credential", got)
+	}
 }
