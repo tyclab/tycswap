@@ -259,6 +259,11 @@ Schema (all keys optional; unknown keys survive round-trips):
 `_mutate_state(mutator)` reads → sets schemaVersion → applies mutator → atomic
 write → returns new state. Must **never** be called while any other lock is held.
 
+Go: the file also holds `active` (`{number, unhealthyTicks, idleHoldSince}`,
+the live slot's failover count and idle-hold start) and `modelNamesChecked`
+(the lower-cased model list the name check last warned or verified for); the
+engine keeps nothing between ticks (DESIGN A66).
+
 ---
 
 ## 6. The tick algorithm (`_tick_inner`), step by step
@@ -272,6 +277,10 @@ return `ERROR`. **`tick()` never raises.**
 
 1. Reset per-tick fields: `_sleep_until_ts=None`, `_blocked_wait_long=False`,
    `_idle_hold_slow=False`. Snapshot `settings = self.settings` (frozen).
+   Go: no engine fields; the tick returns its outcome with `SleepUntil`,
+   `WaitLong` and `IdleSlow`, the step 9 and §7 counters live in the state
+   file's `active` object, and step 7 runs until the state file records the
+   list (DESIGN A66).
 2. `state = self._read_state()`. If **not** dry-run:
    `state = self._release_recovered_quarantines(state)` (dry-run never mutates
    state, so it never releases). Build `quarantined` set from
@@ -339,6 +348,11 @@ When `active_headroom is None`:
 **Key distinction:** the idle sentinel `USAGE_TOKEN_EXPIRED` resets the unhealthy
 counter and holds; a plain `None` increments it. A healthy reading resets both
 `_unhealthy_ticks` and `_idle_hold_since` (§6 step 9 known-branch).
+
+Go: `_unhealthy_ticks` and `_idle_hold_since` are the state file's
+`active.unhealthyTicks` and `active.idleHoldSince`, stepped under the state
+lock before the event and cleared on a known reading or inside the switch; a
+dry run steps a fresh read and writes nothing (DESIGN A66).
 
 ---
 
@@ -682,6 +696,8 @@ elif outcome is NO_ACTION and _idle_hold_slow:
     return max(interval, NO_RESET_FALLBACK_S)              # idle-hold crawl
 return interval * (0.9 + 0.2 * random.random())            # ±10% jitter
 ```
+Go: `nextDelay` takes the tick's result (`Outcome`, `SleepUntil`, `WaitLong`,
+`IdleSlow`) instead of reading engine fields (DESIGN A66).
 
 **Timing summary:**
 - Normal tick delay: `interval * U(0.9, 1.1)` (default 54–66 s).
@@ -739,6 +755,10 @@ empty. When a model filter is configured:
   if any missing, emit `ConfigWarningEvent("autoswitch.model: {names} matches no
   account's usage windows — only the 5h/7d limits are being watched for it (typo?)")`.
 - Warns **at most once per run**, never per tick; never triggers a forced refresh.
+- Go: no `_model_check_done`. The completed check records the lower-cased list
+  in the state file's `modelNamesChecked` and runs again only when the list
+  differs from it, so a list warns once per store; a dry run writes nothing
+  and remembers only the list it last warned about (DESIGN A66).
 
 ---
 

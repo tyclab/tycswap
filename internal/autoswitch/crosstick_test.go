@@ -433,3 +433,89 @@ func TestTickResultDrivesNextDelay(t *testing.T) {
 		t.Errorf("idle nextDelay = %v, want %v", d, NoResetFallbackS)
 	}
 }
+
+// warningsUntilNoSwitch counts config warnings up to the end of the next tick.
+func warningsUntilNoSwitch(t *testing.T, ch <-chan Event) int {
+	t.Helper()
+	n := 0
+	for {
+		select {
+		case ev := <-ch:
+			switch ev.(type) {
+			case ConfigWarningEvent:
+				n++
+			case NoSwitchEvent:
+				return n
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("timeout waiting for no-switch")
+		}
+	}
+}
+
+func TestDryLoopModelWarningOncePerList(t *testing.T) {
+	clk := newClk()
+	f := twoAccounts(clk, dictEntry(usageOf(10, 0)), dictEntry(usageOf(10, 0)))
+	statePath := sharedStatePath(t)
+	s := settings.Default()
+	s.Model = strp("Fable")
+	ch := make(chan Event, 100)
+	e := NewEngine(f, s, func(ev Event) { ch <- ev }, true,
+		WithClock(clk), WithRNG(func() float64 { return 0.5 }),
+		WithStatePath(statePath), WithSleeper(&blockingSleeper{}))
+	done := make(chan int, 1)
+	go func() { done <- e.RunLoop() }()
+	warnings := 0
+	for i := 0; i < 3; i++ {
+		if i > 0 {
+			e.Wake()
+		}
+		warnings += warningsUntilNoSwitch(t, ch)
+	}
+	if warnings != 1 {
+		t.Fatalf("warnings over three dry ticks = %d, want 1", warnings)
+	}
+	e.ApplyModels("Opus")
+	warnings += warningsUntilNoSwitch(t, ch)
+	e.Wake()
+	warnings += warningsUntilNoSwitch(t, ch)
+	e.Stop()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunLoop did not return after Stop")
+	}
+	if warnings != 2 {
+		t.Errorf("warnings after the list changed = %d, want 2", warnings)
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Errorf("dry run created the state file (stat err %v)", err)
+	}
+}
+
+func TestModelNameCheckRecordsOnlyACompletedCheck(t *testing.T) {
+	fable := map[string]any{"five_hour": win(10, ""), "seven_day": win(0, ""), "scoped": []any{scopedWin("Fable", 10, "")}}
+	cases := map[string]struct {
+		active, cand usage.UsageEntry
+		checked      any
+	}{
+		"clean check":     {dictEntry(fable), dictEntry(fable), "fable"},
+		"unreadable slot": {dictEntry(usageOf(10, 0)), nilEntry(), nil},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			clk := newClk()
+			statePath := sharedStatePath(t)
+			s := settings.Default()
+			s.Model = strp("Fable")
+			rec := &recorder{}
+			build(t, twoAccounts(clk, tc.active, tc.cand), s, rec, clk, false, WithStatePath(statePath)).Tick()
+			if n := rec.count("config-warning"); n != 0 {
+				t.Errorf("config warnings = %d, want 0 (kinds=%v)", n, rec.kinds())
+			}
+			if got := readStateFile(statePath)["modelNamesChecked"]; got != tc.checked {
+				t.Errorf("modelNamesChecked = %v, want %v", got, tc.checked)
+			}
+		})
+	}
+}

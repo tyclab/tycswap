@@ -86,10 +86,16 @@ The engine's per-active-account decision memory moves into
 - Writes go through `mutateState` (under the state lock). The tick reads state
   lock-free at start as today. The switch path already holds the lock across
   recheck → switch → record; clear the object inside that same mutation.
-- Loop mode uses the same persisted object. An engine restart mid-outage
-  continues counting instead of starting over. `idleHoldSlow`,
-  `blockedWaitLong`, `sleepUntilTS` and `modelCheckDone` stay in memory: they
-  only shape the next sleep or a one-time warning.
+- Loop mode uses the same persisted object, and the engine keeps no other
+  decision state between ticks: a tick is a function of the store on disk and
+  the clock. It returns the next-sleep hints (`SleepUntil`, `WaitLong`,
+  `IdleSlow`) with its outcome, and the model-name check records its list in
+  the state file (`modelNamesChecked`). An engine restart mid-outage continues
+  counting instead of starting over. A dry run reads the file, reports what a
+  real tick would do now and writes nothing; its only memory is the model list
+  it last warned about, for presentation (DESIGN A66).
+
+Superseded by Task 7 on 2026-10-26: the engine keeps nothing between ticks.
 
 ### Tests (engine package, fake clock, temp state path)
 

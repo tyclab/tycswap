@@ -129,8 +129,8 @@ func TestProactiveNeverLandsAtOrOver(t *testing.T) {
 	if r.Outcome != Blocked {
 		t.Fatalf("outcome = %v, want Blocked", r.Outcome)
 	}
-	if r := reasonOf(t, rec.last("no-switch")); r != "no-qualifying-candidate" {
-		t.Errorf("reason = %q, want no-qualifying-candidate", r)
+	if reason := reasonOf(t, rec.last("no-switch")); reason != "no-qualifying-candidate" {
+		t.Errorf("reason = %q, want no-qualifying-candidate", reason)
 	}
 	// case 5 corollary: not truly-exhausted so no reset sleep, normal cadence.
 	if r.SleepUntil != nil {
@@ -328,8 +328,8 @@ func TestMixedUnknownAndExhausted(t *testing.T) {
 	if r.Outcome != Blocked {
 		t.Fatalf("outcome = %v, want Blocked", r.Outcome)
 	}
-	if r := reasonOf(t, rec.last("no-switch")); r != "no-qualifying-candidate" {
-		t.Errorf("reason = %q, want no-qualifying-candidate", r)
+	if reason := reasonOf(t, rec.last("no-switch")); reason != "no-qualifying-candidate" {
+		t.Errorf("reason = %q, want no-qualifying-candidate", reason)
 	}
 	if r.SleepUntil != nil {
 		t.Errorf("SleepUntil set; want nil (normal cadence)")
@@ -633,8 +633,8 @@ func TestIdleHold(t *testing.T) {
 	if r.Outcome != NoAction {
 		t.Fatalf("outcome = %v, want NoAction (idle-hold)", r.Outcome)
 	}
-	if r := reasonOf(t, rec.last("no-switch")); r != "active-idle" {
-		t.Fatalf("reason = %q, want active-idle", r)
+	if reason := reasonOf(t, rec.last("no-switch")); reason != "active-idle" {
+		t.Fatalf("reason = %q, want active-idle", reason)
 	}
 	if n := activeMemoryOf(e.readState(), "1").UnhealthyTicks; n != 0 {
 		t.Errorf("unhealthyTicks = %d, want 0 during idle-hold", n)

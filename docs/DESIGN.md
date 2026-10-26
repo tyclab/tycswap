@@ -6148,12 +6148,12 @@ check lived in process memory and began again with each process: with the
 active account's usage unknown, every timer tick reported `1/3 before
 failover` and the engine never failed over.
 
-A tick is a function of the store on disk and the clock. The engine keeps
-nothing from one tick to the next: `autoswitch_state.json` is its only memory,
-and `--once`, the loop, the app's hosted engine and a dry run all run the same
-tick. What a tick tells the loop about the next wait (a reset to sleep until,
-the long blocked wait, the idle crawl) is returned with its outcome, not kept
-on the engine.
+A tick is a function of the store on disk and the clock. The engine keeps no
+decision state from one tick to the next: `autoswitch_state.json` is its only
+memory, and `--once`, the loop, the app's hosted engine and a dry run all run
+the same tick. What a tick tells the loop about the next wait (a reset to
+sleep until, the long blocked wait, the idle crawl) is returned with its
+outcome, not kept on the engine.
 
 Besides `lastSwitchAt`, `lastSwitchTo` and `quarantine`, the file holds two
 additive keys; `schemaVersion` stays 1 and a malformed value reads as absent.
@@ -6181,12 +6181,24 @@ The check completes on a tick where every switchable subscription account
 outside quarantine has readable usage. When the stored value differs from the
 current list, the completed check emits the `config-warning` if a name matches
 no window and then records the list, so each list warns once per store rather
-than once per process, and a changed list is checked again.
+than once per process, and a changed list is checked again. An unchanged list
+is never re-checked: the key is never cleared, so clearing the list or setting
+`all` leaves it in place and restoring the same list later does not warn
+again, and a list that once checked clean is not re-checked when the accounts'
+window names change later. The compare reads the file lock-free at tick start,
+so two engines that complete the check at the same moment may both warn once.
+Two engines running with different lists overwrite each other's key, so each
+re-checks on every tick and repeats any warning; that needs diverging lists,
+for example a `--model` override on one of them, and is rare.
 
 **Dry run:** reads the file and reports the decision a real tick would make
 now, including the count it would reach (the persisted count plus one) and
-the model-name warning. It writes nothing, keeps nothing and does not simulate
-a sequence of ticks: two dry ticks over an unchanged file report the same.
+the model-name warning. It writes nothing and does not simulate a sequence of
+ticks: two dry ticks over an unchanged file report the same decision. Its one
+memory is the model list it last warned about, so a long-lived dry run
+(`auto --dry-run`, the TUI's) shows that warning once per list rather than on
+every tick. That memory is presentation only: it never feeds a decision, which
+still comes from the file alone, and a real engine keeps no such memory.
 
 Why: a timer deployment starts a process per tick and the app's engine
 restarts with the app, so any memory outside the file is lost at the moment it

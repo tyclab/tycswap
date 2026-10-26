@@ -20,7 +20,8 @@ import (
 )
 
 // tickResult is one tick's outcome plus what it tells the loop about the next
-// wait. A tick keeps nothing on the engine: the state file is its only memory.
+// wait. A tick keeps no decision state on the engine: the state file is its
+// only memory.
 type tickResult struct {
 	Outcome    TickOutcome
 	SleepUntil *float64
@@ -588,7 +589,8 @@ func (e *Engine) checkModelNames(state map[string]any, quarantined map[string]bo
 		}
 	}
 	key := strings.ToLower(strings.Join(e.models, ","))
-	if checked, _ := state["modelNamesChecked"].(string); !hasNamed || checked == key {
+	checked, _ := state["modelNamesChecked"].(string)
+	if !hasNamed || checked == key || (e.dryRun && e.dryModelWarned == key) {
 		return nil
 	}
 	var relevant []string
@@ -640,6 +642,9 @@ func (e *Engine) checkModelNames(state map[string]any, quarantined map[string]bo
 			" matches no account's usage windows — only the 5h/7d limits are being watched for it (typo?)"})
 	}
 	if e.dryRun {
+		if len(missing) > 0 {
+			e.dryModelWarned = key
+		}
 		return nil
 	}
 	_, err := e.mutateState(func(st map[string]any) { st["modelNamesChecked"] = key })
