@@ -82,3 +82,33 @@ func TestSwitchAsksTheProfileOnceForTheConfigSlotsOwnRotation(t *testing.T) {
 		t.Errorf("live_lineage.json: %v, want the profile's answer recorded", err)
 	}
 }
+
+// Only the profile attributes the rotated credential to slot 5 and nothing
+// asks it under the lock, so --force onto 5 resolves first: a config repair
+// that keeps the live token, not an activation of 5's older backup over it.
+func TestForceSwitchToAProfileAttributedSlotRepairsTheConfig(t *testing.T) {
+	live := oauthCreds("at-5-new", "rt-5-rotated")
+	s, calls := rotatedSeat(t, live, "5")
+	before := credentialsHash(t, s)
+	out, err := SwitchTo(s, "5", true, true)
+	if err != nil {
+		t.Fatalf("SwitchTo(5, --force): %v", err)
+	}
+	m := asMap(t, out)
+	if m["switched"] != true || m["reason"] != "config-repaired" || refField(t, m, "from") != 5 || refField(t, m, "to") != 5 {
+		t.Fatalf("got switched=%v reason=%v from=%d to=%d, want the config repaired for 5", m["switched"], m["reason"], refField(t, m, "from"), refField(t, m, "to"))
+	}
+	if credentialsHash(t, s) != before {
+		t.Fatalf("live credential = %s, want the rotated token kept", readActiveCreds(t, s))
+	}
+	if got := orgOf(liveConfig(t, s)); got != "org-five" {
+		t.Errorf("live config names %v, want org-five", got)
+	}
+	assertOwnRotatedBackup(t, s, "5", live)
+	if got, _ := s.ReadAccountCredentials("6", lineageEmail); got != lineageBackup6 {
+		t.Errorf("Account-6 backup = %s, want it untouched", got)
+	}
+	if *calls != 1 {
+		t.Errorf("profile calls = %d, want 1", *calls)
+	}
+}

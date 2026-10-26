@@ -53,12 +53,10 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 	}
 
 	// Pre-lock identity resolution (may hit the network — before the locks).
+	// --force too: under the lock the resolver asks no one, so a credential
+	// only the profile attributes would read as the config's (DESIGN A68).
 	if prov == nil {
-		if forceActivate {
-			prov = &Provenance{}
-		} else {
-			prov = prefetchLiveIdentity(s)
-		}
+		prov = prefetchLiveIdentity(s)
 	}
 
 	var op switchOp
