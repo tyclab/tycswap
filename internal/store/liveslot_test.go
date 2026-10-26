@@ -590,3 +590,54 @@ func TestResolveLiveSlotProfileNeverUnderLockOrWritten(t *testing.T) {
 		t.Fatalf("under the lock after the answer: %+v after %d calls, want slot 5 from memory", locked, *calls)
 	}
 }
+
+// groupScopeHolding is s's Opus scope with its profile naming slot 6 and
+// holding creds.
+func groupScopeHolding(t *testing.T, s *Store, creds string) *Store {
+	t.Helper()
+	scoped, err := s.ForGroup(groups.Opus)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := scoped.ProfileDir()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `{"oauthAccount":{"emailAddress":"` + lineageEmail + `","organizationUuid":"org-six"}}`
+	for name, text := range map[string]string{".claude.json": cfg, ".credentials.json": creds} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return scoped
+}
+
+// The chain record is the default login's: a group scope resolving its own
+// login goes backup, profile, config and never writes or reads it; the
+// default login, resolved from any scope, still reads it.
+func TestGroupScopedResolveNeverTouchesTheChainRecord(t *testing.T) {
+	s, calls := rotatedFixture(t, profileOfFive)
+	scoped := groupScopeHolding(t, s, rotatedLive)
+	if got := resolveLive(t, scoped); got.Slot != "5" || got.Source != SourceProfile || *calls != 1 {
+		t.Fatalf("group resolve = %+v after %d calls, want slot 5 by profile after one", got, *calls)
+	}
+	if rec := lineageRecord(t, s); rec != nil {
+		t.Fatalf("a group-scoped resolve wrote live_lineage.json: %v", rec)
+	}
+
+	src, _ := rotatedFixture(t, profileOfFive)
+	resolveLive(t, src)
+	record := mustRead(t, filepath.Join(src.BackupDir(), "live_lineage.json"))
+	offline, _ := rotatedFixture(t, nil)
+	if err := os.WriteFile(filepath.Join(offline.BackupDir(), "live_lineage.json"), record, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scopedOffline := groupScopeHolding(t, offline, rotatedLive)
+	if got := resolveLive(t, scopedOffline); got.Slot != "6" || got.Source != SourceConfig {
+		t.Fatalf("offline group resolve = %+v, want the config slot: the record is not the group's", got)
+	}
+	data, _ := offline.ReadSequence()
+	if got := scopedOffline.defaultLiveSlot(data, rotatedLive); got.Slot != "5" || got.Source != SourceChain {
+		t.Fatalf("default login from the group scope = %+v, want slot 5 by chain", got)
+	}
+}

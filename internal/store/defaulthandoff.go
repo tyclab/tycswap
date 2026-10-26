@@ -192,7 +192,7 @@ func (s *Store) defaultMovedFrom(journal *groups.Journal) (bool, error) {
 		return false, err
 	}
 	creds := journal.DefaultCredential.Text
-	return s.liveSlotFor(data, email, org, func() string { return creds }).Slot != journal.Target.Number, nil
+	return s.liveSlotFor(data, email, org, true, func() string { return creds }).Slot != journal.Target.Number, nil
 }
 
 func writeDefaultConfig(path string, value any) error {

@@ -143,7 +143,7 @@ func (s *Store) credentialOwners(number string) ([]groups.Owner, error) {
 	// The default login holds the slot its credential's lineage names, not the
 	// one its config names (DESIGN A68).
 	if ok {
-		if live := s.liveSlotFor(data, email, org, func() string { return defaultCreds }); live.ByLineage {
+		if live := s.liveSlotFor(data, email, org, true, func() string { return defaultCreds }); live.ByLineage {
 			certain = live.Slot == number
 			claimed = certain
 		}

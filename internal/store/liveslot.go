@@ -67,7 +67,7 @@ func (s *Store) ResolveLiveSlot(data *SequenceData) LiveSlot {
 	if !ok {
 		return LiveSlot{}
 	}
-	return s.liveSlotFor(data, email, orgUUID, func() string {
+	return s.liveSlotFor(data, email, orgUUID, s.group == "", func() string {
 		live, _, err := s.Creds.ReadActive()
 		if err != nil {
 			return ""
@@ -83,12 +83,13 @@ func (s *Store) defaultLiveSlot(data *SequenceData, creds string) LiveSlot {
 	if !ok {
 		return LiveSlot{}
 	}
-	return s.liveSlotFor(data, email, orgUUID, func() string { return creds })
+	return s.liveSlotFor(data, email, orgUUID, true, func() string { return creds })
 }
 
 // liveSlotFor resolves a config identity; readLive is called only once the
-// config names a managed OAuth slot.
-func (s *Store) liveSlotFor(data *SequenceData, email, orgUUID string, readLive func() string) LiveSlot {
+// config names a managed OAuth slot. The chain record is the default login's,
+// so only its resolution reads or writes it.
+func (s *Store) liveSlotFor(data *SequenceData, email, orgUUID string, defaultLogin bool, readLive func() string) LiveSlot {
 	ls := LiveSlot{ConfigSlot: s.FindAccountSlot(data, email, orgUUID)}
 	ls.Slot = ls.ConfigSlot
 	if ls.ConfigSlot == "" {
@@ -104,9 +105,9 @@ func (s *Store) liveSlotFor(data *SequenceData, email, orgUUID string, readLive 
 	}
 	if y, ok := s.lineageSlot(data, ls.ConfigSlot, live); ok {
 		ls.Slot, ls.Source = y, SourceBackup
-	} else if y := s.chainSlot(data, ls.ConfigSlot, live); y != "" {
+	} else if y := s.chainSlot(data, ls.ConfigSlot, live, defaultLogin); y != "" {
 		ls.Slot, ls.Source = y, SourceChain
-	} else if y := s.profileSlot(data, ls.ConfigSlot, live); y != "" {
+	} else if y := s.profileSlot(data, ls.ConfigSlot, live, defaultLogin); y != "" {
 		ls.Slot, ls.Source = y, SourceProfile
 	}
 	if ls.Slot != ls.ConfigSlot {
@@ -147,7 +148,10 @@ func (s *Store) holdsLineage(data *SequenceData, num, live string) bool {
 
 // chainSlot is the slot the chain record names for this very credential,
 // while the roster still maps the recorded identity to it.
-func (s *Store) chainSlot(data *SequenceData, configSlot, live string) string {
+func (s *Store) chainSlot(data *SequenceData, configSlot, live string, defaultLogin bool) string {
+	if !defaultLogin {
+		return ""
+	}
 	fp := oauth.CredentialFingerprint(live)
 	rec, ok := s.readLiveLineage()
 	if fp == nil || !ok || rec.Fingerprint != *fp {
@@ -162,8 +166,8 @@ func (s *Store) chainSlot(data *SequenceData, configSlot, live string) string {
 
 // profileSlot asks the profile endpoint whose credential is live, once per
 // fingerprint per process and never while this process holds the store lock,
-// and records a hit in the chain record.
-func (s *Store) profileSlot(data *SequenceData, configSlot, live string) string {
+// and records a hit for the default login in the chain record.
+func (s *Store) profileSlot(data *SequenceData, configSlot, live string, defaultLogin bool) string {
 	fp := oauth.CredentialFingerprint(live)
 	token := oauth.ExtractAccessToken(live)
 	if fp == nil || token == "" {
@@ -181,7 +185,7 @@ func (s *Store) profileSlot(data *SequenceData, configSlot, live string) string 
 		return ""
 	}
 	slot := s.identitySlot(data, configSlot, id)
-	if slot != "" && s.LineageWrites() {
+	if slot != "" && defaultLogin && s.LineageWrites() {
 		if err := s.writeLiveLineage(*fp, slot, id); err != nil && s.Log != nil {
 			s.Log.Debugf("Could not record the live credential's lineage: %v", err)
 		}
