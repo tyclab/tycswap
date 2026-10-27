@@ -44,7 +44,7 @@ func groupsCommand(prog string, args []string, streams ioStreams) int {
 		return 0
 	}
 	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintf(streams.out, "usage: %s groups [--json]\n       %s groups switch fable|opus ACCOUNT\n       %s groups config fable|opus [KEY VALUE | --unset KEY]\n       %s groups reconcile fable|opus\n       %s groups capability ACCOUNT start|continue true|false\n", prog, prog, prog, prog, prog)
+		fmt.Fprintf(streams.out, "usage: %s groups [--json]\n       %s groups switch fable|opus ACCOUNT\n       %s groups config fable|opus [KEY VALUE | --unset KEY]\n       %s groups reconcile fable|opus\n       %s groups release fable|opus\n       %s groups capability ACCOUNT start|continue true|false\n", prog, prog, prog, prog, prog, prog)
 		return 0
 	}
 	sw, err := constructSwitcher(false, streams.err)
@@ -73,6 +73,13 @@ func groupsCommand(prog string, args []string, streams ioStreams) int {
 		if err := (groupFacade{sw}).Reconcile(args[1]); err != nil {
 			return renderDomainError(err, true, streams.out, streams.err)
 		}
+		return 0
+	case len(args) == 2 && args[0] == "release":
+		result, err := (groupFacade{sw}).Release(args[1])
+		if err != nil {
+			return renderDomainError(err, true, streams.out, streams.err)
+		}
+		writeJSONIndent(streams.out, result)
 		return 0
 	case len(args) == 4 && args[0] == "config":
 		id, err := groups.Parse(args[1])
@@ -113,7 +120,7 @@ func groupsCommand(prog string, args []string, streams ioStreams) int {
 		}
 		return 0
 	default:
-		return subError(prog+" groups", streams.err, "expected --json, switch GROUP ACCOUNT, or capability ACCOUNT start|continue true|false")
+		return subError(prog+" groups", streams.err, "expected --json, switch GROUP ACCOUNT, release GROUP, or capability ACCOUNT start|continue true|false")
 	}
 }
 
@@ -193,4 +200,16 @@ func (f groupFacade) Switch(group, account string) (map[string]any, error) {
 		return nil, cerr.Validation("choose an account")
 	}
 	return sw.SwitchTo(account, true)
+}
+
+func (f groupFacade) Release(group string) (map[string]any, error) {
+	id, err := groups.Parse(group)
+	if err != nil {
+		return nil, cerr.Validation("%s", err)
+	}
+	sw, err := f.sw.ForGroup(id)
+	if err != nil {
+		return nil, err
+	}
+	return sw.ReleaseGroup(false)
 }

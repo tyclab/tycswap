@@ -31,7 +31,7 @@ func (s *Store) BeginGroupSwitch(target groups.Account, targetCreds string) (*gr
 	if err != nil {
 		return nil, err
 	}
-	if previous == nil && value != "" {
+	if previous == nil && value != "" && !ccfile.SeatWideOnly(value) {
 		return nil, fmt.Errorf("the %s profile has credentials without an ownership record; reconcile before switching", s.group)
 	}
 	if previous != nil {

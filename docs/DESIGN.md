@@ -6427,3 +6427,25 @@ Unchanged on purpose: an unmanaged config identity resolves to no slot, so
 the unclaimed-credential and displaced-login capture keep working as before.
 The repair does not stop a running Claude Code from writing the old identity
 back. The next resolve warns again only in a new process.
+
+## A69. A group releases its account
+
+A group keeps its account in `groups/claims.json` and its `active.json` after
+its sessions end, so the default login's rotation and the other group skip
+it, even while the default account sits at its limit. `groups release
+fable|opus` ends that claim. Sharing one account between a running group and
+another profile stays refused: each refresh rotates the refresh token, and
+the profile that refreshes second loses the login.
+
+The release runs under the shared account lock and the group profile's
+Claude locks, after reconciling an unfinished switch. It refuses while the
+group's profile has live sessions, and while its config names an account
+other than the recorded one. The profile's credential must be the account's
+own lineage (`own-bytes`, `own-family` or `own-rotated`, as for an outgoing
+group switch); its account-only part replaces the backup. The profile keeps
+its MCP sign-ins (the seat-wide part) and loses `claudeAiOauth` and
+`oauthAccount`; the claim and `active.json` go last, so an interrupted
+release reruns to the same end. A group holding nothing reports
+`released: null`. A profile left with only seat-wide keys holds no login:
+neither the ownership scan nor the next group switch reads it as an
+unrecorded credential.

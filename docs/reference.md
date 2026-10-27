@@ -5101,7 +5101,11 @@ The browser holds model drafts during the request and confirms saves with
 GET /api/state; errors leave the draft available to retry.
 
 Interactive menus also expose session-group switching, launching/resuming sessions,
-group settings, ownership reconciliation and capability records. Import/export guides
+group settings, ownership reconciliation, account release and capability records.
+`groups release fable|opus` prints `{"group": "<id>", "released": {"number", "email"}}`
+(`released` is null when the group held no account). While the group has live
+sessions or its credential's lineage is unverified it prints the error envelope
+and exits 1, holding the claim (DESIGN A69). Import/export guides
 provider, account scope and file selection; exports require a new file and a token
 warning confirmation. The web/tray Interactive menu action opens this same menu.
 `web --reuse` opens the running local or remote tray dashboard through its authenticated

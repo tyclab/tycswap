@@ -96,7 +96,7 @@ func (s *Store) destructiveOwner(number, email string) (groups.Owner, error) {
 		if err != nil {
 			return groups.Owner{}, err
 		}
-		if ok && value != "" {
+		if ok && value != "" && !ccfile.SeatWideOnly(value) {
 			profileEmail, _, identityOK := sessprofile.ReadSessionIdentity(dir)
 			if !identityOK || profileEmail == email {
 				return groups.Owner{Scope: string(id), ProfileDir: dir, Uncertain: true}, nil

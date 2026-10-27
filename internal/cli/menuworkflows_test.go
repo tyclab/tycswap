@@ -121,6 +121,24 @@ func TestGroupMenuHonorsOwnershipBlockers(t *testing.T) {
 	}
 }
 
+func TestGroupMenuReleasesHeldAccount(t *testing.T) {
+	for _, view := range []web.GroupView{{ID: "opus", Label: "Opus", ActiveNumber: "2"}, {ID: "opus", Label: "Opus"}} {
+		old := menuGroupViews
+		t.Cleanup(func() { menuGroupViews = old })
+		menuGroupViews = func(ioStreams) ([]web.GroupView, error) { return []web.GroupView{view}, nil }
+		commands := workflowCommands(t)
+		workflowAnswers(t, menuAnswer{0, ""}, menuAnswer{5, ""}, menuAnswer{1, ""})
+		menuGroups(ioStreams{err: io.Discard})
+		var want [][]string
+		if view.ActiveNumber != "" {
+			want = [][]string{{"groups", "release", "opus"}}
+		}
+		if !reflect.DeepEqual(*commands, want) {
+			t.Fatalf("%+v: %v", view, *commands)
+		}
+	}
+}
+
 func TestGroupSettingsResetInheritsSharedValue(t *testing.T) {
 	commands := workflowCommands(t)
 	workflowAnswers(t, menuAnswer{0, ""}, menuAnswer{0, ""})
