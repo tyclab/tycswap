@@ -64,7 +64,7 @@ func menuGroups(s ioStreams) {
 	if g.Blocker != "" {
 		fmt.Fprintln(s.err, termsafe.Strip(g.Blocker))
 	}
-	choices := []string{"Switch account…", "Start session…", "Resume session…", "Group settings…", "Reconcile ownership"}
+	choices := []string{"Switch account…", "Start session…", "Resume session…", "Group settings…", "Reconcile ownership", "Release account"}
 	if g.ID == "fable" {
 		choices = append(choices, "Account compatibility…")
 	}
@@ -72,8 +72,8 @@ func menuGroups(s ioStreams) {
 	if !ok {
 		return
 	}
-	switch action {
-	case 0:
+	switch choices[action] {
+	case "Switch account…":
 		a, code := selectProviderAccount(s, "Account for "+g.Label, reporting.ProviderClaude)
 		if code != 0 {
 			return
@@ -85,13 +85,21 @@ func menuGroups(s ioStreams) {
 		if menuConfirm(s, "Switch "+g.Label+" to "+termsafe.Strip(a.Email)+"? Sessions in this group switch together.") && menuAccountCurrent(s, a) {
 			menuExecute(s, "groups", "switch", g.ID, a.Number)
 		}
-	case 1, 2:
+	case "Start session…", "Resume session…":
 		menuGroupSession(s, g, action == 2)
-	case 3:
+	case "Group settings…":
 		menuGroupSettings(s, g)
-	case 4:
+	case "Reconcile ownership":
 		menuExecute(s, "groups", "reconcile", g.ID)
-	case 5:
+	case "Release account":
+		if g.ActiveNumber == "" {
+			fmt.Fprintln(s.err, g.Label+" holds no account.")
+			return
+		}
+		if menuConfirm(s, "Release account #"+g.ActiveNumber+" from "+g.Label+"? The default login and the other group can use it; this group picks an account again on its next start.") {
+			menuExecute(s, "groups", "release", g.ID)
+		}
+	case "Account compatibility…":
 		a, code := selectProviderAccount(s, "Account compatibility", reporting.ProviderClaude)
 		if code != 0 {
 			return

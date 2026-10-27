@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Added:** `tycswap groups release fable|opus` (and **Release account** in the group menu) returns a group's account to the shared pool once its sessions have exited, so the default login and the other group can rotate onto it. The group's newest credential is saved first.
+
 - **Fixed:** backspace in the terminal dashboard's **Add account from token** form removes a whole character, so "ä" or "日" no longer leaves a broken byte behind.
 
 - **Fixed:** two slots of one login in different organisations: the live slot is the one whose credential Claude Code holds, also after Claude Code refreshed that token itself or rewrote `~/.claude.json`; `switch` to that slot repairs the config.

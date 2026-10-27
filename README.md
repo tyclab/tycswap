@@ -541,6 +541,7 @@ than preparing a session profile.
 tycswap run --group fable
 tycswap run --group opus --resume SESSION_ID
 tycswap groups switch fable ACCOUNT
+tycswap groups release opus
 tycswap groups --json
 ```
 
@@ -550,6 +551,10 @@ and default login alone. Existing sessions keep running until you choose to
 restart them. The first move across profiles forks the native conversation;
 the original history remains intact, and later resumes use the group's saved ID.
 Accounts already owned by another profile cannot be selected concurrently.
+A group keeps its account after its sessions end; `groups release opus` hands
+it back once they have exited, so the default login and the other group can
+rotate onto it. Its newest credential is saved first; the group picks an
+account again on its next start.
 
 Fable startup requires a compatible account. A verified Business continuation
 can be recorded with `tycswap groups capability ACCOUNT continue true`; it does

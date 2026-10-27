@@ -33,3 +33,7 @@ func (sw *Switcher) WithGroupHandoff() *Switcher {
 }
 
 func (sw *Switcher) ReconcileGroup() error { return switching.ReconcileGroup(sw.Store) }
+
+func (sw *Switcher) ReleaseGroup(emit bool) (map[string]any, error) {
+	return switching.ReleaseGroup(sw.Store, emit)
+}
