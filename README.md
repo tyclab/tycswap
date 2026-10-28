@@ -547,6 +547,8 @@ resume behavior and supported arguments.
 Routing runs while its Claude mod is loaded. If Claude unloads the Mods worker
 after a crash, the conversation can continue on its last account without routing.
 Exit and restart it with `tycswap claude` before continuing after such a failure.
+Other mods that change the requested model or replace request dispatch are
+unsupported alongside automatic routing. Regular plugins remain supported.
 
 `tycswap run` launches Claude Code as a chosen account in the current terminal
 only, using a session profile, without changing the machine-wide active login.

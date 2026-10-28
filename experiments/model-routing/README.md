@@ -33,6 +33,15 @@ the [native runtime documentation](https://code.claude.com/docs/en/plugins/mods/
 A hook error handler covers callback failures; it does not keep an unloaded
 module in the request path.
 
+A separate native 2.1.312 ordering probe loaded a command-line observer before
+an installed marketplace mod. The observer saw Fable before the installed mod
+rewrote it to Opus. An offline composition check with the production routing
+mod likewise acquired Fable while downstream received Opus. Command-line
+plugin placement therefore does not enforce innermost routing; model-rewriting
+and dispatch-replacing mods are unsupported alongside the router. The native
+[mod ordering contract](https://code.claude.com/docs/en/plugins/mods/events#the-order-mods-run-in)
+does not offer a user-mod priority that makes this combination safe.
+
 The coordinator tests cover overlapping requests, model restrictions for child
 requests, unavailable quota, and the selection-to-dispatch race without a
 reservation. Account preferences and quota are fixtures; account changes use the

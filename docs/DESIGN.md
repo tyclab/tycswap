@@ -6506,3 +6506,8 @@ after that event. The native crash characterization and production integration
 tests record these behaviors using synthetic credentials and a local fake API.
 A separate transport request gate remains a possible future extension; this
 implementation does not install one.
+
+The native runtime can run installed user mods after the command-line routing
+mod. Model-rewriting and dispatch-replacing mods are unsupported alongside this
+router: changing the request after acquisition invalidates its model/account
+check. Regular plugins and observational mods remain supported.

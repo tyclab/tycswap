@@ -1245,6 +1245,12 @@ running the routing callback. Stop and restart the conversation through
 `tycswap claude` after a worker-unload message. This is the
 [native runtime's unload behavior](https://code.claude.com/docs/en/plugins/mods/troubleshoot#it-crashed-the-hooks-worker).
 
+Other mods must not rewrite the requested model or replace model dispatch.
+Claude can run an installed mod after the routing mod, so such a rewrite can
+invalidate the account selection already made. These combinations are
+unsupported; regular plugins and observational mods remain supported. See
+[native mod ordering](https://code.claude.com/docs/en/plugins/mods/events#the-order-mods-run-in).
+
 ### Exit status
 
 The launched Claude process's exit status; `1` on a preparation failure. A
