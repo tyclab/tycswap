@@ -19,7 +19,7 @@ func claudeCommand(prog string, args []string, streams ioStreams) int {
 	if code, blocked := guardRoot(streams.err); blocked {
 		return code
 	}
-	manager := session.NewManager(sw, session.Options{OAuth: sw.OAuth, Keychain: sw.Keychain(), Clock: sw.Clk, Logger: sw.Log, Stdout: streams.out})
+	manager := session.NewManager(sw, session.Options{OAuth: sw.OAuth, Keychain: sw.Keychain(), Clock: sw.Clk, Logger: sw.Log, Stdout: streams.err})
 	if err := manager.RunManaged("", "", "", "", args); err != nil {
 		errorTo(streams.err, "Error: "+err.Error())
 		return 1
