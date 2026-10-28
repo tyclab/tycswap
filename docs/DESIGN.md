@@ -6449,3 +6449,65 @@ release reruns to the same end. A group holding nothing reports
 `released: null`. A profile left with only seat-wide keys holds no login:
 neither the ownership scan nor the next group switch reads it as an
 unrecorded credential.
+
+## A70. Automatic account routing for Claude model requests
+
+`tycswap claude` prepares a managed Claude process and loads its bundled Mods
+module. The initial model selects a Fable or Opus/other credential profile;
+subsequent model changes retain that profile and the running conversation.
+Separate profiles retain separate account ownership. A routed resume restores
+its saved profile and last successful main model unless a model is explicitly
+selected. Existing group resumes recognize routed histories.
+
+The launcher verifies the native version and runs the bundled offline mod
+checks in the target profile and working directory before claiming an account.
+Startup uses startup compatibility, including resumes that create a new native
+process. It records a launch reservation before executing Claude. The mod's
+`session.start` registers the actual conversation against that launch and
+consumes the startup request reservation. Registration is idempotent for the
+same process, launch and conversation; another conversation cannot replace an
+active one without unregistering it first.
+
+`routing.json` holds versioned `sessions`, `leases` and resume `history`, without
+credentials. `routing.lock` serializes registration, selection, account changes
+and request reservations. It precedes the shared account lock and the existing
+Claude credential/config/storage locks. Usage polling happens outside those
+locks; selection and dispatch revalidate ownership and liveness inside them.
+Atomic writes preserve complete state records. Dead processes are pruned; a
+live process's request reservation has no expiry timer.
+
+Before each `turn.step`, the mod acquires a unique request reservation through
+the internal JSON routing command. Selection requires fresh shared usage and
+the applicable model windows, compatibility with the profile's current models,
+and clear credential ownership. Ordinary accounts take precedence when Fable
+is unnecessary; quota headroom and configured hysteresis select within that
+class. An idle profile's account can be released and transferred through the
+existing ownership protocol. Unknown or unusable candidates stop dispatch.
+
+Concurrent requests share the held account when it remains eligible. A
+different account cannot replace it until the response streams finish and their
+reservations are released. Manual switching, automatic rotation and group
+release use the same guard. Failed release leaves the reservation in place and
+blocks further requests in that mod instance. Session changes cannot discard
+pending requests. Purge rechecks managed and native liveness after confirmation
+under the routing/account locks, and retains the empty lock files during
+deletion.
+
+Fable subagents require a Fable main model. Native team teammates, transparent
+fallback models, custom identity/plugin settings and routing-variable overrides
+are refused. A profile containing unmanaged live sessions or IDE instances
+cannot participate in automatic routing. Main/subagent requests still use the
+same physical credential profile.
+
+Callback errors block dispatch through the mod's error handler. Native worker
+unload is a separate boundary: Claude can continue on the last account without
+the mod after its worker is unloaded. Restart through the managed launcher
+after that event. The native crash characterization and production integration
+tests record these behaviors using synthetic credentials and a local fake API.
+A separate transport request gate remains a possible future extension; this
+implementation does not install one.
+
+The native runtime can run installed user mods after the command-line routing
+mod. Model-rewriting and dispatch-replacing mods are unsupported alongside this
+router: changing the request after acquisition invalidates its model/account
+check. Regular plugins and observational mods remain supported.

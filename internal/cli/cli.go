@@ -36,12 +36,9 @@ func Main() int {
 
 // run is the testable front controller. argv excludes the program name.
 func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int {
-	// D2 (FINDING 2): a shell pinned via `tycswap env` carries CLAUDE_CONFIG_DIR
-	// pointing at a tycswap session profile. Every command EXCEPT `env`/`run`
-	// (which own their own preset handling) should operate on the DEFAULT login,
-	// not the pinned profile, so neutralize the pin here BEFORE any dispatch.
+	// Profile-aware launchers and hooks retain the inherited Claude profile.
 	hook := len(argv) > 1 && ((argv[0] == "groups" && argv[1] == "guard") || (argv[0] == "recovery" && argv[1] == "record"))
-	if !hook && (len(argv) == 0 || (argv[0] != "run" && argv[0] != "env")) {
+	if !hook && (len(argv) == 0 || (argv[0] != "run" && argv[0] != "env" && argv[0] != "claude" && argv[0] != "routing")) {
 		neutralizePinnedSessionProfile(s.err)
 	}
 
@@ -76,6 +73,10 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 			return menuCommand(prog, argv[1:], s, stdinTTY && stdoutTTY)
 		case "run":
 			return runCommand(prog, argv[1:], s)
+		case "claude":
+			return claudeCommand(prog, argv[1:], s)
+		case "routing":
+			return routingCommand(prog, argv[1:], s)
 		case "groups":
 			return groupsCommand(prog, argv[1:], s)
 		case "recovery":
