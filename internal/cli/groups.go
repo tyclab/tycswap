@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -32,7 +33,11 @@ func groupsCommand(prog string, args []string, streams ioStreams) int {
 			err = json.NewDecoder(io.LimitReader(streams.in, 1<<20)).Decode(&event)
 		}
 		if err == nil {
-			err = groups.CheckModel(id, event.ToModel)
+			if os.Getenv("TYCSWAP_ROUTING") == "1" {
+				err = managedModelGuard(id, event.SessionID, event.ToModel)
+			} else {
+				err = groups.CheckModel(id, event.ToModel)
+			}
 		}
 		if err == nil && event.SessionID != "" {
 			err = recovery.NewStore(paths.GetBackupRoot()).ModelChange(event.SessionID, event.FromModel, event.ToModel, time.Now())

@@ -43,6 +43,8 @@ type Store struct {
 	group                  groups.ID
 	groupIntent            groups.Intent
 	groupHandoff           bool
+	routingModel           groups.ID
+	routingLockHeld        bool
 	sharedCreds            credstore.Store
 	defaultProfileDir      string
 	defaultUnpinned        bool

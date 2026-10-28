@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Added:** `tycswap claude` selects an account for each model request using compatibility and fresh quota, supports model changes within the running conversation, and keeps separate credential profiles for simultaneous conversations. Request reservations protect streamed responses and subagents from conflicting account switches.
+- **Fixed:** purge checks managed launches and native group sessions before and after confirmation, removes group Keychain credentials, and preserves coordination lock files during deletion.
+
 - **Added:** `tycswap groups release fable|opus` (and **Release account** in the group menu) returns a group's account to the shared pool once its sessions have exited, so the default login and the other group can rotate onto it. The group's newest credential is saved first.
 
 - **Fixed:** backspace in the terminal dashboard's **Add account from token** form removes a whole character, so "ä" or "日" no longer leaves a broken byte behind.

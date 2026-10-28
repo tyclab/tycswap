@@ -25,12 +25,34 @@ account stops dispatch. A second check holds two responses open simultaneously
 and verifies that isolated Fable and Opus profiles use different accounts. The
 checks do not test the interactive model picker.
 
+`TestNativeWorkerCrashBypassesModGuard` characterizes Claude Code 2.1.312's
+worker failure behavior. A hook that stops responding is unloaded after the
+worker heartbeat fails. Claude then sends a model request without acquiring the
+fixture's account reservation, despite the hook's error handler. This matches
+the [native runtime documentation](https://code.claude.com/docs/en/plugins/mods/troubleshoot#it-crashed-the-hooks-worker).
+A hook error handler covers callback failures; it does not keep an unloaded
+module in the request path.
+
 The coordinator tests cover overlapping requests, model restrictions for child
 requests, unavailable quota, and the selection-to-dispatch race without a
 reservation. Account preferences and quota are fixtures; account changes use the
 production `switching.SwitchTo` implementation.
 
-This is a test fixture, not an installable account-routing feature. Reservations
-are in memory and only coordinate participating requests. A production version
-still needs cancellation and crash recovery, integration with every account
-mutation path, runtime guard availability checks, and real quota selection.
+The production implementation has a separate native integration test:
+
+```sh
+TYCSWAP_ROUTING_NATIVE_TEST=1 go test -race ./internal/session -run TestNativeManagedRoutingUsesProductionCoordinator -v
+```
+
+It uses the embedded routing mod and production coordinator with synthetic
+accounts, fresh cached quota and a local fake API. It checks model changes,
+quota exhaustion, request release and switch protection during a streamed reply.
+
+This directory retains the original fixture with in-memory reservations and
+fixed candidate preferences. The production implementation uses durable session
+and request records, shared mutation guards, fresh usage and runtime readiness
+checks. Its command and runtime limits are described in
+[the command reference](../../docs/reference.md#tycswap-claude).
+
+[Codex applicability](codex.md) records a separate investigation and an isolated
+native probe of Codex 0.165.0's request hooks and credential reload behavior.

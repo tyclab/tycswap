@@ -30,10 +30,15 @@ type osRunner struct{}
 func (osRunner) LookPath(name string) (string, error) { return exec.LookPath(name) }
 
 func (osRunner) Probe(argv, env []string, timeout time.Duration) (string, int, error) {
+	return (osRunner{}).ProbeInDir(argv, env, timeout, "")
+}
+
+func (osRunner) ProbeInDir(argv, env []string, timeout time.Duration, cwd string) (string, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := CLICommand(ctx, argv[0], argv[1:]...)
 	cmd.Env = env
+	cmd.Dir = cwd
 	cmd.WaitDelay = probeWaitDelay // don't let a leaked pipe outlive the deadline
 	var out bytes.Buffer
 	cmd.Stdout = &out

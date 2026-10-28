@@ -430,7 +430,7 @@ func (s *Store) RotationEligible(data *SequenceData, num string) bool {
 	}
 	if s.group != "" {
 		intent := groups.Start
-		if len(sessprofile.LiveSessionPIDs(s.ProfileDir())) > 0 {
+		if s.GroupIntent() == groups.Continue || s.GroupIntent() != groups.Start && len(sessprofile.LiveSessionPIDs(s.ProfileDir())) > 0 {
 			intent = groups.Continue
 		}
 		compatible := s.GroupCompatibility(num, intent)
