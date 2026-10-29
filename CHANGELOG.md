@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Fixed:** the tray repaints one at a time, so after **Check for updates** the menu and panel show every update the checks found; before, the two checks' repaints could overlap and leave the older layout in place.
 - **Added:** `tycswap claude` selects an account for each model request using compatibility and fresh quota, supports model changes within the running conversation, and keeps separate credential profiles for simultaneous conversations. Request reservations protect streamed responses and subagents from conflicting account switches.
 - **Fixed:** purge checks managed launches and native group sessions before and after confirmation, removes group Keychain credentials, and preserves coordination lock files during deletion.
 

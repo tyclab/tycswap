@@ -177,3 +177,54 @@ func TestTrayPanelUsageLineNamesSkipReason(t *testing.T) {
 		t.Fatalf("details %q lost the plain status line", details)
 	}
 }
+
+// orderedPanelTray records every menu and panel it is given, in order: two
+// repaints overlapping show as a menu followed by another menu before its
+// panel.
+type orderedPanelTray struct {
+	*fakeTray
+	order []string
+	panel tray.Panel
+}
+
+func (t *orderedPanelTray) SetMenu(m []tray.Item) {
+	t.mu.Lock()
+	t.menu = m
+	t.order = append(t.order, "menu")
+	t.mu.Unlock()
+}
+
+func (t *orderedPanelTray) SetPanel(p tray.Panel) {
+	t.mu.Lock()
+	t.panel = p
+	t.order = append(t.order, "panel")
+	t.mu.Unlock()
+}
+
+func TestTrayPanelRepaintsDoNotInterleave(t *testing.T) {
+	sh, ft, rig := updatesShell(t, false)
+	pt := &orderedPanelTray{fakeTray: ft}
+	sh.tray = pt
+	// Autostart is read while the panel is laid out; a pause there is the
+	// window in which the other check's repaint could land first.
+	sh.act.Autostart = func() (bool, error) { time.Sleep(2 * time.Millisecond); return false, nil }
+	rig.latest = "v2.2.0"
+	rig.claude = brewSeat("2.1.280", "2.1.281")
+	sh.click("update")
+	pt.mu.Lock()
+	order, panel := pt.order, pt.panel
+	pt.mu.Unlock()
+	if len(order) < 4 {
+		t.Fatalf("expected a repaint per check, got %v", order)
+	}
+	for i, step := range order {
+		if want := []string{"menu", "panel"}[i%2]; step != want {
+			t.Fatalf("repaints interleaved: %v", order)
+		}
+	}
+	for _, id := range []string{"install-update", "claude-code"} {
+		if !slices.ContainsFunc(panel.Actions, func(a tray.Item) bool { return a.ID == id && !a.Disabled }) {
+			t.Fatalf("%s missing after both checks: %v", id, order)
+		}
+	}
+}
