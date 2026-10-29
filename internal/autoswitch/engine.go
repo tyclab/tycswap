@@ -43,9 +43,13 @@ type Engine struct {
 	onEvent       func(Event)
 	dryRun        bool
 
-	clk       clock.Clock
-	sleeper   Sleeper
-	rng       func() float64
+	clk     clock.Clock
+	sleeper Sleeper
+	rng     func() float64
+	// reserved names the accounts this profile leaves to Fable work: able to
+	// run Fable while the profile never needs it (DESIGN A71). nil reserves
+	// nothing.
+	reserved  func(num string) bool
 	oauth     oauth.Client
 	log       *logging.Logger
 	statePath string
@@ -74,6 +78,13 @@ func WithClock(c clock.Clock) Option { return func(e *Engine) { e.clk = c } }
 func WithSleeper(s Sleeper) Option { return func(e *Engine) { e.sleeper = s } }
 
 func WithRNG(rng func() float64) Option { return func(e *Engine) { e.rng = rng } }
+
+// WithReserved names the accounts the engine leaves to Fable work (DESIGN
+// A71): they rank after every other qualifying target, and an active one
+// hands over to an unreserved account that is below every bar.
+func WithReserved(reserved func(num string) bool) Option {
+	return func(e *Engine) { e.reserved = reserved }
+}
 
 func WithOAuthClient(c oauth.Client) Option { return func(e *Engine) { e.oauth = c } }
 
@@ -156,6 +167,9 @@ func (e *Engine) Wake() {
 
 // emit does not recover callback panics: a broken frontend should fail loudly.
 func (e *Engine) emit(ev Event) { e.onEvent(ev) }
+
+// isReserved reports whether the engine leaves num to Fable work (DESIGN A71).
+func (e *Engine) isReserved(num string) bool { return e.reserved != nil && e.reserved(num) }
 
 // nowSeconds returns wall time as fractional Unix seconds (Python self.clock()).
 func (e *Engine) nowSeconds() float64 { return clock.Seconds(e.clk) }

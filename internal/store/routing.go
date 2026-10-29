@@ -21,3 +21,15 @@ func (s *Store) WithRoutingLockHeld() *Store {
 }
 
 func (s *Store) RoutingLockHeld() bool { return s.routingLockHeld }
+
+// ReservedForFable reports whether this profile's rotation leaves the account
+// to Fable work: the Opus / other group never needs Fable, so an account that
+// can continue Fable sessions ranks after every account that cannot, and the
+// group hands such an account back as soon as one that cannot is below every
+// bar (DESIGN A71). The default login and the Fable group reserve nothing.
+func (s *Store) ReservedForFable(num string) bool {
+	if s.group != groups.Opus {
+		return false
+	}
+	return s.WithRoutingModel(groups.Fable).GroupCompatibility(num, groups.Continue).Allowed
+}

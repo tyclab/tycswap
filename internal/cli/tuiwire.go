@@ -74,5 +74,6 @@ var newAutoEngine = func(sw *core.Switcher, s settings.AutoSwitchSettings, onEve
 		autoswitch.WithLogger(sw.Log),
 		autoswitch.WithClock(sw.Clk),
 		autoswitch.WithStatePath(sw.StatePath()),
+		autoswitch.WithReserved(sw.ReservedForFable),
 	)
 }
