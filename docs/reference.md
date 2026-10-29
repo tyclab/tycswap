@@ -1650,6 +1650,19 @@ tried is governed by `autoswitch.strategy` — earliest weekly renewal first
 (`soonest-reset`, the default) or most headroom first (`best`). See
 [SETTINGS](#settings) for the ordering rules.
 
+**The Opus / other group leaves Fable-capable accounts to Fable work** (DESIGN
+A71). Its engine never needs Fable, so under either strategy an account that
+can continue Fable sessions sorts after every qualifying account that cannot,
+within the same bar tier; it is taken only when nothing else is left. When the
+group's active account can run Fable and every window is under its bar, the
+tick hands over to an account that cannot as soon as one is below every bar:
+the `switch` line names the `reserved` trigger and no window
+(`Switched Account-5 -> Account-2 (b@example.com) (reserved)`), the cooldown
+applies as to a proactive move, and with nothing to hand over to the tick
+reports `no-switch` with reason `reserved-no-target` and leaves the account in
+place. The default login and the Fable group reserve nothing; `tycswap claude`
+prefers the same accounts for its own selection.
+
 **Codex accounts.** When `autoswitch.codexEnabled` is true (the default) and
 tycswap holds Codex accounts, or an un-imported codex-auth registry exists, `tycswap
 auto` also runs a Codex engine in the same process. It is a second, small
@@ -1709,7 +1722,7 @@ a `Z` suffix), plus per-kind fields:
 | `event` | Fields |
 |---------|--------|
 | `poll` | `active` (`{number,email}` or null), `headroomPct` (`{num: float|null}`), `threshold` (float: the 7d bar), `fetchErrors` (`{num: msg}`, optional), `windowsPct` (`{num: {label: float}}`, optional) |
-| `switch` | `trigger` (`proactive`\|`at-limit`\|`failover`), `axis` (`5h`\|`7d`\|`model`: the window that made the tick move; empty under `failover`, where usage was unreadable), `from` (ref), `to` (ref), `warnings` (array), `dryRun` (bool) |
+| `switch` | `trigger` (`proactive`\|`at-limit`\|`failover`\|`reserved`), `axis` (`5h`\|`7d`\|`model`: the window that made the tick move; empty under `failover`, where usage was unreadable, and under `reserved`, where the account decided), `from` (ref), `to` (ref), `warnings` (array), `dryRun` (bool) |
 | `no-switch` | `reason` (string), `detail` (string); under `active-usage-unknown` and `active-idle`, `detail` ends in ` · <skip reason>` while the active account's `list --json` row carries `usageRefresh.skipReason` |
 | `account-quarantined` | `number`, `email`, `reason` |
 | `account-unquarantined` | `number`, `email`, `reason` |
