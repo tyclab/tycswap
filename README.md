@@ -404,6 +404,13 @@ Auto-switch running: 5h 85% · 7d 92% · model 95%, every 60s — Ctrl-C to stop
 
 Each window has a limit of its own, set by how fast that window fills:
 
+Ultra (formerly Max 20x) loses its five-hour limit as Anthropic verifies
+accounts during its staged rollout. tycswap follows the windows returned by
+Anthropic: an absent five-hour window does not block routing or recovery,
+and weekly and counted model limits still apply. A reported five-hour window
+continues to count, including on Ultra accounts awaiting verification. Max
+(formerly Max 5x) retains that window. No threshold changes are needed.
+
 | flag / setting | window | default |
 |---|---|---|
 | `--five-hour-threshold` / `autoswitch.fiveHourThreshold` | 5h | 85 % |

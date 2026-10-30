@@ -76,7 +76,7 @@ func recoveryAccount(row reporting.AccountSnapshot, model string) recovery.Accou
 		}
 	}
 	a.QuotaKnown = len(a.Windows) > 0 && (model != "fable" || scopedFound)
-	if row.ProviderName() == "claude" && (projected.FiveHour == nil || projected.SevenDay == nil) {
+	if row.ProviderName() == "claude" && !oauth.HasSharedQuota(row.Usage.LastGood) {
 		a.QuotaKnown = false
 	}
 	return a

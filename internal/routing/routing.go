@@ -394,15 +394,20 @@ func headroom(entry usage.UsageEntry, now float64, models map[string]bool, polic
 		return 0, false
 	}
 	u := oauth.NewUsage(entry.LastGood)
-	if u == nil || u.FiveHour == nil || u.SevenDay == nil || u.FiveHour.Pct < 0 || u.SevenDay.Pct < 0 {
+	if !oauth.HasSharedQuota(entry.LastGood) {
 		return 0, false
 	}
-	if u.FiveHour.Pct >= policy.FiveHourThreshold || u.SevenDay.Pct >= policy.SevenDayThreshold {
+	if u.SevenDay.Pct >= policy.SevenDayThreshold {
 		return 0, false
 	}
-	max := u.FiveHour.Pct
-	if u.SevenDay.Pct > max {
-		max = u.SevenDay.Pct
+	max := u.SevenDay.Pct
+	if w := u.FiveHour; w != nil {
+		if w.Pct >= policy.FiveHourThreshold {
+			return 0, false
+		}
+		if w.Pct > max {
+			max = w.Pct
+		}
 	}
 	fable := false
 	expected := 0

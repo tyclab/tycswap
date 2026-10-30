@@ -4,6 +4,20 @@ import (
 	"testing"
 )
 
+func TestUltraRetainsMaxEntitlement(t *testing.T) {
+	deny := false
+	for _, plan := range []string{"ultra", " Ultra ", "max", "max_5x", "max_20x"} {
+		for _, intent := range []Intent{Start, Continue} {
+			if d := Entitlement(Fable, intent, plan, nil, nil); !d.Known || !d.Allowed {
+				t.Fatalf("%s %s lost Fable access: %#v", plan, intent, d)
+			}
+			if d := Entitlement(Fable, intent, plan, &deny, &deny); !d.Known || d.Allowed {
+				t.Fatalf("%s %s ignored explicit denial: %#v", plan, intent, d)
+			}
+		}
+	}
+}
+
 func TestFableQuotaDoesNotGrantEntitlement(t *testing.T) {
 	allow := true
 	for _, plan := range []string{"pro", "free"} {
