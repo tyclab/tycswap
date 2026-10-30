@@ -1200,6 +1200,16 @@ must use an account compatible with all its selected models. Unknown models,
 missing usable quota, uncertain ownership and conflicting requests stop dispatch
 and report the problem. Routing does not substitute a different model.
 
+Ultra and legacy Max plans retain Fable compatibility, subject to recorded
+capability overrides. Shared Claude quota requires a usable weekly window;
+the five-hour window is optional, because verified Ultra accounts lose it in
+stages. Routing and recovery still reject a malformed reported five-hour
+window and enforce every reported limit. The plan name alone never disables
+a window. A successful usage refresh replaces the previous measurement,
+removing any old five-hour window; failed refreshes keep the existing stale
+data and freshness rules. JSON omits an absent `fiveHour`, and status-line
+state publishes it as null. No schema or settings migration is required.
+
 ### Options
 
 | Option | Meaning |

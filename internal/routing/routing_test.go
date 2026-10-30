@@ -13,6 +13,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/routingstate"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
@@ -192,6 +193,47 @@ func TestQuotaRejectsUnknownInvalidAndExhaustedWindows(t *testing.T) {
 			tc.edit(&entry)
 			if _, ok := headroom(entry, now, map[string]bool{"fable": true}, settings.Default()); ok {
 				t.Fatal("unsafe quota accepted")
+			}
+		})
+	}
+}
+
+func TestUltraRoutingUsesReportedWindows(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		five        any
+		week, model float64
+		want        bool
+	}{
+		{"removed", nil, 30, 40, true},
+		{"still-reported", map[string]any{"utilization": 50.0}, 30, 40, true},
+		{"session-full", map[string]any{"utilization": 100.0}, 30, 40, false},
+		{"session-invalid", map[string]any{"utilization": "unknown"}, 30, 40, false},
+		{"week-full", nil, 100, 40, false},
+		{"model-full", nil, 30, 100, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, request := fixture(t)
+			creds, err := c.Store.ReadAccountCredentials("2", "route2@example.invalid")
+			if err != nil {
+				t.Fatal(err)
+			}
+			creds = strings.ReplaceAll(creds, `"subscriptionType":"max"`, `"subscriptionType":"ultra"`)
+			if err := c.Store.WriteAccountCredentials("2", "route2@example.invalid", creds); err != nil {
+				t.Fatal(err)
+			}
+			data := oauth.BuildUsageResult(map[string]any{
+				"five_hour": tc.five,
+				"seven_day": map[string]any{"utilization": tc.week},
+				"limits":    []any{map[string]any{"percent": tc.model, "scope": map[string]any{"model": map[string]any{"display_name": "Fable"}}}},
+			})
+			if err := c.Store.Usage.Record(map[string]usage.FetchRecord{"2": {Usage: data}}, map[string]usage.Identity{"2": {Email: "route2@example.invalid"}}); err != nil {
+				t.Fatal(err)
+			}
+			request.ID = "ultra-request"
+			result, err := c.Acquire(request)
+			if tc.want && (err != nil || result.Account != "2") || !tc.want && err == nil {
+				t.Fatalf("acquire = %#v, %v; want usable %v", result, err, tc.want)
 			}
 		})
 	}

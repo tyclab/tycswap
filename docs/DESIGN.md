@@ -6542,3 +6542,26 @@ nothing, because every account it may use can run Fable; the group's first
 account is still chosen by hand (`groups switch`, the menu, the tray); and an
 account is never released from the group while a routed request holds it,
 since the hand-over is an ordinary group switch under the routing guard.
+
+## A72. Ultra and optional five-hour limits
+
+Anthropic renamed Max 20x to Ultra and Max 5x to Max on October 30, 2026.
+The [published plan](https://claude.com/pricing) removes the five-hour limit
+for verified Ultra accounts, with removal staged per account. Weekly usage
+and model entitlements remain. Plan names therefore establish Fable
+compatibility but never determine which usage windows count.
+
+Routing and recovery require usable weekly usage and validate a five-hour
+window only when reported. An omitted or null window is absent; a reported
+window with unusable utilization is unknown and cannot authorize dispatch.
+All reported windows retain their existing thresholds and model checks.
+`groups.Entitlement` recognizes `ultra` alongside the legacy Max identifiers,
+with recorded capability overrides retaining precedence.
+
+The normalizer preserves malformed non-null five-hour data as unknown instead
+of dropping it. Cache replacement, the auto-switch engine and rendered
+surfaces already support absent windows. A successful weekly-only refresh
+removes a cached five-hour window. Failed refreshes retain the previous
+measurement under the existing freshness policy. JSON continues to omit an
+absent window, while `statusline.json` publishes null; neither reports it as
+zero percent or promises unlimited weekly usage. Codex policy is unchanged.
