@@ -4,6 +4,7 @@ package tray
 
 import (
 	"errors"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -187,6 +188,12 @@ func newTray(icon Icon, opts Options) (Tray, error) {
 	if len(icon.PNG) == 0 {
 		return nil, ErrUnsupported
 	}
+	if opts.Identifier != "" && !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,100}$`).MatchString(opts.Identifier) {
+		return nil, errors.New("tray: invalid Windows class identifier")
+	}
+	if len(opts.Name) > 100 || strings.ContainsRune(opts.Name, 0) {
+		return nil, errors.New("tray: invalid window name")
+	}
 	t := &windowsTray{icon: icon, opts: opts, tooltip: opts.Tooltip, iconPNG: icon.PNG, ready: make(chan struct{})}
 	winMu.Lock()
 	winTray = t
@@ -228,7 +235,15 @@ func (t *windowsTray) Run() error {
 	defer runtime.UnlockOSThread()
 	setPanelDPIAware()
 
-	className := utf16z(windowClass())
+	class := windowClass()
+	if t.opts.Identifier != "" {
+		class = t.opts.Identifier
+	}
+	className := utf16z(class)
+	name := t.opts.Name
+	if name == "" {
+		name = brand.Sanitized().Name
+	}
 	hInst, _, _ := pGetModuleHandleW.Call(0)
 	wc := wndClassExW{
 		cbSize:        uint32(unsafe.Sizeof(wndClassExW{})),
@@ -240,10 +255,17 @@ func (t *windowsTray) Run() error {
 		return errors.New("tray: RegisterClassEx: " + err.Error())
 	}
 	registerTaskbarCreated()
-	hwnd, _, err := pCreateWindowExW.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(utf16z(brand.Sanitized().Name))),
+	hwnd, _, err := pCreateWindowExW.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(utf16z(name))),
 		0, 0, 0, 0, 0, 0, 0, hInst, 0)
 	if hwnd == 0 {
 		return errors.New("tray: CreateWindowEx: " + err.Error())
+	}
+	if t.opts.OnSystemEvent != nil {
+		if err := registerSessionEvents(hwnd); err != nil {
+			pDestroyWindow.Call(hwnd)
+			return err
+		}
+		defer unregisterSessionEvents(hwnd)
 	}
 	// Set under mu, where Quit reads it: a Quit from before the window is
 	// posted here and a later one posts itself, so none is lost or posted
@@ -618,6 +640,11 @@ func trayWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uint
 		return 0
 	}
 	switch message {
+	case 0x0218, 0x02b1, 0x007e:
+		if event := systemEvent(message, wParam); event != "" && t.opts.OnSystemEvent != nil {
+			t.opts.OnSystemEvent(event)
+		}
+		return 1
 	case 0x001a, 0x0015, 0x031a: // settings, system colors, visual theme
 		if t.painter != nil && t.painter.theme != readMenuTheme() {
 			endThemedMenu()

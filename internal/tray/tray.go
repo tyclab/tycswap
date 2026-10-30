@@ -143,6 +143,11 @@ type Icon struct {
 
 // Options wires the caller's reactions.
 type Options struct {
+	// Name and Identifier override only this tray's Windows title/class.
+	Name       string
+	Identifier string
+	// OnSystemEvent receives Windows power/session events on the UI thread; return promptly.
+	OnSystemEvent func(string)
 	// Tooltip is the initial hover text (also the accessibility label).
 	Tooltip string
 	// OnClick receives the ID of the menu item the user chose.

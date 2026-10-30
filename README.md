@@ -1250,3 +1250,18 @@ flowchart LR
 ```
 
 Repository instructions: [AGENTS.md](AGENTS.md).
+
+### Native tray adapter
+
+`github.com/tyclab/tycswap/desktop/tray` exposes the native icon, menu, tooltip
+and notification shell without account APIs. Pass a product icon, `Name`,
+`Identifier`, and command callback to `New`; call `Run` from the main goroutine.
+Only one tray may run in a process. Callbacks must return promptly. No account
+store, web dashboard or credential flow is started by this package.
+
+On Windows, optional `OnSystemEvent` reports `suspend`, `resume-automatic`,
+`resume` and `display-change`. Automatic wake does not prove user presence.
+The application owns its desired state, debounce, process ownership and recovery
+policy. Session registration errors are returned by `Run`; subscriptions are
+removed when it ends. `Name` and `Identifier` customize the Windows shell only;
+existing tycswap defaults remain unchanged.
