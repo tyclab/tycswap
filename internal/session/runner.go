@@ -30,11 +30,16 @@ type osRunner struct{}
 func (osRunner) LookPath(name string) (string, error) { return exec.LookPath(name) }
 
 func (osRunner) Probe(argv, env []string, timeout time.Duration) (string, int, error) {
+	return (osRunner{}).ProbeInDir(argv, env, timeout, "")
+}
+
+func (osRunner) ProbeInDir(argv, env []string, timeout time.Duration, cwd string) (string, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := CLICommand(ctx, argv[0], argv[1:]...)
 	cmd.Env = env
-	cmd.WaitDelay = probeWaitDelay // don't let a leaked pipe outlive the deadline
+	cmd.Dir = cwd
+	cmd.WaitDelay = probeWaitDelay
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = io.Discard
@@ -57,12 +62,12 @@ func classifyProbe(out string, runErr error, ctxErr error) (string, int, error) 
 		if ctxErr == context.DeadlineExceeded && !ee.Exited() {
 			return "", 0, context.DeadlineExceeded
 		}
-		return out, ee.ExitCode(), nil // non-zero rc is not an error
+		return out, ee.ExitCode(), nil
 	}
 	if ctxErr == context.DeadlineExceeded {
-		return "", 0, context.DeadlineExceeded // killed before start → timeout parity
+		return "", 0, context.DeadlineExceeded
 	}
-	return "", 0, runErr // OSError parity (could not spawn)
+	return "", 0, runErr
 }
 
 // clockLockConfig acquires Claude Code's <config>.lock via cclock and returns a

@@ -404,6 +404,13 @@ Auto-switch running: 5h 85% · 7d 92% · model 95%, every 60s — Ctrl-C to stop
 
 Each window has a limit of its own, set by how fast that window fills:
 
+Ultra (formerly Max 20x) loses its five-hour limit as Anthropic verifies
+accounts during its staged rollout. tycswap follows the windows returned by
+Anthropic: an absent five-hour window does not block routing or recovery,
+and weekly and counted model limits still apply. A reported five-hour window
+continues to count, including on Ultra accounts awaiting verification. Max
+(formerly Max 5x) retains that window. No threshold changes are needed.
+
 | flag / setting | window | default |
 |---|---|---|
 | `--five-hour-threshold` / `autoswitch.fiveHourThreshold` | 5h | 85 % |
@@ -520,6 +527,35 @@ TUI and the dashboard's *Force switch* do not ask and refuse, pointing at
 `tycswap switch <n>`.
 
 ### Run accounts in parallel
+
+For automatic account selection as you change models, start Claude with:
+
+```sh
+tycswap claude --model fable
+tycswap claude --model opus
+tycswap claude --model fable --resume SESSION_ID
+```
+
+The selected model determines the account requirements. Each model request uses
+fresh usage data to choose an eligible account, with preference for ordinary
+accounts when Fable is not needed. Changing models keeps the conversation and
+process running. Separate credential profiles let Fable and Opus conversations
+run at the same time. `--account ACCOUNT` chooses the initial account; subsequent
+requests use automatic selection.
+
+Concurrent requests in one profile share its account until they finish. A
+Fable subagent requires a Fable main model. Unknown compatibility, unavailable
+quota or a conflicting active request blocks the affected request. Existing
+`run`, `env` and group commands remain available. Automatic routing requires
+Claude Code 2.1.309 or later and a working Mods runtime, checked before launch.
+See [the command reference](docs/reference.md#tycswap-claude) for model defaults,
+resume behavior and supported arguments.
+
+Routing runs while its Claude mod is loaded. If Claude unloads the Mods worker
+after a crash, the conversation can continue on its last account without routing.
+Exit and restart it with `tycswap claude` before continuing after such a failure.
+Other mods that change the requested model or replace request dispatch are
+unsupported alongside automatic routing. Regular plugins remain supported.
 
 `tycswap run` launches Claude Code as a chosen account in the current terminal
 only, using a session profile, without changing the machine-wide active login.
@@ -784,16 +820,18 @@ credentials and configuration from the backup store. It prompts for
 confirmation first; any answer other than `y` cancels. `tycswap disable` (above)
 keeps the account but drops it from auto-rotation.
 
-`tycswap purge` removes all tycswap data. It states what it will delete and prompts
-for confirmation; any answer other than `y` cancels:
+`tycswap purge` removes all tycswap data, retaining empty coordination files in
+the store directory. Running session profiles and managed launches block purge;
+it checks again after confirmation. Any answer other than `y` cancels:
 
 ```
 $ tycswap purge
 This will remove ALL tycswap data from your system:
-  - Backup directory: ~/.local/share/tycswap
+  - Backup directory contents: ~/.local/share/tycswap
   - All stored account credential files
 
 Note: This does NOT affect your current Claude Code login.
+Empty coordination files remain in the backup directory.
 
 Are you sure you want to purge all data? [y/N] n
 Cancelled
@@ -1213,6 +1251,8 @@ flowchart LR
     D --> E["Active CLI or group credentials"]
     F["Usage polling"] --> G["Auto-switch policy"]
     G --> D
+    J["Managed Claude model request"] --> K["Compatibility / fresh quota / request reservation"]
+    K --> D
     H["Reviewed recovery handover"] --> C
 ```
 

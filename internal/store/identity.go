@@ -268,7 +268,6 @@ func (s *Store) aliasInUse(data *SequenceData, alias, excludeNum string) string 
 	return num
 }
 
-// AliasInUse is the exported form used by lifecycle's alias/add conflict checks.
 func (s *Store) AliasInUse(data *SequenceData, alias, excludeNum string) string {
 	return s.aliasInUse(data, alias, excludeNum)
 }
@@ -329,7 +328,6 @@ func BaseURLFrom(data *SequenceData, num string) string {
 	return strField(rec, "baseUrl")
 }
 
-// AccountEmail returns a slot's stored email, or "" (spec 01§8.5 account_email).
 func (s *Store) AccountEmail(num string) string {
 	data, _ := s.ReadSequence()
 	rec, _ := recordFor(data, num)
@@ -430,7 +428,7 @@ func (s *Store) RotationEligible(data *SequenceData, num string) bool {
 	}
 	if s.group != "" {
 		intent := groups.Start
-		if len(sessprofile.LiveSessionPIDs(s.ProfileDir())) > 0 {
+		if s.GroupIntent() == groups.Continue || s.GroupIntent() != groups.Start && len(sessprofile.LiveSessionPIDs(s.ProfileDir())) > 0 {
 			intent = groups.Continue
 		}
 		compatible := s.GroupCompatibility(num, intent)

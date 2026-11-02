@@ -125,7 +125,7 @@ func Entitlement(id ID, intent Intent, plan string, start, continuation *bool) C
 	if explicit != nil {
 		return Compatibility{Known: true, Allowed: *explicit, Reason: "recorded Fable " + string(intent) + " capability"}
 	}
-	if plan == "max" || strings.HasPrefix(plan, "max_") {
+	if plan == "ultra" || plan == "max" || strings.HasPrefix(plan, "max_") {
 		return Compatibility{Known: true, Allowed: true}
 	}
 	return Compatibility{Reason: "Fable " + string(intent) + " entitlement is unknown; quota alone does not establish permission"}

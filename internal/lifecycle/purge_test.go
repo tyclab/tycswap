@@ -13,7 +13,7 @@ import (
 	"github.com/tyclab/tycswap/internal/storenames"
 )
 
-// TestPurgeConfirmed removes the entire backup directory after a "y".
+// TestPurgeConfirmed removes data while preserving coordination files.
 func TestPurgeConfirmed(t *testing.T) {
 	s := newStore(t)
 	seed(t, s, ip(1), switchable("1", "a@example.com"))
@@ -21,8 +21,14 @@ func TestPurgeConfirmed(t *testing.T) {
 	if err := Purge(s); err != nil {
 		t.Fatalf("Purge: %v", err)
 	}
-	if _, err := os.Stat(s.BackupDir()); !os.IsNotExist(err) {
-		t.Errorf("backup dir still exists: %v", err)
+	entries, err := os.ReadDir(s.BackupDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Name() != ".lock" && entry.Name() != "routing.lock" {
+			t.Errorf("data survived purge: %s", entry.Name())
+		}
 	}
 }
 

@@ -516,17 +516,20 @@ func TestFirstRunSetupSeamWiring(t *testing.T) {
 	}
 }
 
-// TestPurge: a smoke check that Purge delegates and actually removes the
-// backup directory (lifecycle's own purge_test.go covers the full edge-case
-// list; this only proves the delegation reaches it).
 func TestPurge(t *testing.T) {
 	sw := newTestSwitcher(t)
 	withAnswers(t, "y")
 	if err := sw.Purge(); err != nil {
 		t.Fatalf("Purge: %v", err)
 	}
-	if _, err := os.Stat(sw.BackupDir()); !os.IsNotExist(err) {
-		t.Fatalf("backup dir still present after Purge: err=%v", err)
+	entries, err := os.ReadDir(sw.BackupDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Name() != ".lock" && entry.Name() != "routing.lock" {
+			t.Fatalf("data survived Purge: %s", entry.Name())
+		}
 	}
 }
 

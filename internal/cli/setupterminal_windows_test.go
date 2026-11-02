@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -38,23 +39,35 @@ func TestRemoteSetupStartsWSLInANativeConsole(t *testing.T) {
 
 func TestSetupConsoleHasInteractiveStreams(t *testing.T) {
 	report := filepath.Join(t.TempDir(), "console '$ result")
-	script := "[IO.File]::WriteAllText('" + strings.ReplaceAll(report, "'", "''") + "', [string](-not [Console]::IsInputRedirected -and -not [Console]::IsOutputRedirected))"
-	cmd := windowsSetupCommand("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := windowsSetupCommand(exe, "-test.run=^TestSetupConsoleProbe$", "--", report)
 	var output bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &output
 	cmd.WaitDelay = 5 * time.Second
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	timer := time.AfterFunc(20*time.Second, func() { _ = cmd.Process.Kill() })
+	timedOut := make(chan struct{})
+	timer := time.AfterFunc(20*time.Second, func() {
+		close(timedOut)
+		_ = cmd.Process.Kill()
+	})
 	defer timer.Stop()
 	if err := cmd.Wait(); err != nil {
+		select {
+		case <-timedOut:
+			t.Fatalf("console launcher timed out after 20 seconds: %s", output.String())
+		default:
+		}
 		t.Fatalf("console launch: %v: %s", err, output.String())
 	}
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if result, err := os.ReadFile(report); err == nil {
-			if string(result) != "True" {
+			if string(result) != "true" {
 				t.Fatalf("setup console: %s", result)
 			}
 			return
@@ -62,4 +75,18 @@ func TestSetupConsoleHasInteractiveStreams(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("setup console did not start")
+}
+
+func TestSetupConsoleProbe(t *testing.T) {
+	if len(os.Args) < 3 || os.Args[len(os.Args)-2] != "--" {
+		return
+	}
+	report := os.Args[len(os.Args)-1]
+	result := strconv.FormatBool(isTTY(os.Stdin) && isTTY(os.Stdout))
+	if err := os.WriteFile(report+".tmp", []byte(result), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(report+".tmp", report); err != nil {
+		t.Fatal(err)
+	}
 }

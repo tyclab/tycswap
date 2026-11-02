@@ -29,9 +29,23 @@ func TestRecoverySnapshotProjectsScopeAndRequiresCompleteClaudeQuota(t *testing.
 		t.Fatalf("Fable not blocked %#v", a)
 	}
 	delete(row.Usage.LastGood, "five_hour")
-	if a := recoveryAccount(row, "opus"); a.QuotaKnown {
-		t.Fatal("missing Claude shared quota considered usable")
+	if a := recoveryAccount(row, "opus"); !a.QuotaKnown || !usableAccount([]recovery.Account{a}, "1", "opus", now) {
+		t.Fatal("Claude without a session limit rejected")
 	}
+	if a := recoveryAccount(row, "fable"); !a.QuotaKnown || usableAccount([]recovery.Account{a}, "1", "fable", now) {
+		t.Fatal("Fable exhaustion ignored without a session limit")
+	}
+	row.Usage.LastGood["five_hour"] = map[string]any{"pct": "unknown"}
+	if a := recoveryAccount(row, "opus"); a.QuotaKnown {
+		t.Fatal("malformed session quota treated as absent")
+	}
+	delete(row.Usage.LastGood, "five_hour")
+	week := row.Usage.LastGood["seven_day"]
+	delete(row.Usage.LastGood, "seven_day")
+	if a := recoveryAccount(row, "opus"); a.QuotaKnown {
+		t.Fatal("missing weekly quota considered usable")
+	}
+	row.Usage.LastGood["seven_day"] = week
 	row.Provider = "codex"
 	if a := recoveryAccount(row, "codex"); !a.QuotaKnown {
 		t.Fatal("Codex one-window subscription rejected")

@@ -82,7 +82,7 @@ func performGroupSwitch(s *store.Store, number string, emit, force bool, prov *P
 			return err
 		}
 		intent := groups.Start
-		if len(sessprofile.LiveSessionPIDs(s.ProfileDir())) > 0 || s.GroupIntent() == groups.Continue {
+		if s.GroupIntent() == groups.Continue || s.GroupIntent() != groups.Start && len(sessprofile.LiveSessionPIDs(s.ProfileDir())) > 0 {
 			intent = groups.Continue
 		}
 		compatible := s.GroupCompatibility(number, intent)

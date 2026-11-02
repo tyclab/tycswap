@@ -233,6 +233,8 @@ func profilePIDs(dir string) ([]int, error) {
 
 func VerifyProfileState(dir string) error { _, err := profilePIDs(dir); return err }
 
+func LiveProfilePIDs(dir string) ([]int, error) { return profilePIDs(dir) }
+
 func (s *Store) EnsureAccountAvailable(number string) error {
 	owner, err := s.CredentialOwner(number)
 	if err != nil {
@@ -417,5 +419,9 @@ func (s *Store) GroupCompatibility(number string, intent groups.Intent) groups.C
 		}
 		return nil
 	}
-	return groups.Entitlement(s.group, intent, plan, boolPtr("fableStart"), boolPtr("fableContinue"))
+	family := s.group
+	if s.routingModel != "" {
+		family = s.routingModel
+	}
+	return groups.Entitlement(family, intent, plan, boolPtr("fableStart"), boolPtr("fableContinue"))
 }

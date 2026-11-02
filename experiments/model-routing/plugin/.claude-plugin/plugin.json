@@ -1,0 +1,6 @@
+{
+  "name": "tycswap-routing-probe",
+  "version": "0.0.0",
+  "description": "Experimental model routing against a local test coordinator",
+  "license": "MIT"
+}

@@ -150,6 +150,9 @@ type appShell struct {
 	// applyMu lets one update run at a time, whether the tray or the
 	// dashboard started it: two would race on the same files.
 	applyMu sync.Mutex
+	// paintMu lets one repaint run at a time: a menu and panel laid out
+	// from an older state then never land after a newer one.
+	paintMu sync.Mutex
 }
 
 // errUpdateRunning: an update is already running. A lock error, so the
@@ -162,11 +165,21 @@ func newAppShell(t tray.Tray, act shellActions) *appShell {
 	return sh
 }
 
-// update repaints title, tooltip and menu from a state document.
+// update repaints title, tooltip, menu and panel from a state document.
 func (a *appShell) update(st web.State) {
+	a.paintMu.Lock()
+	defer a.paintMu.Unlock()
 	a.mu.Lock()
 	a.last = st
 	a.mu.Unlock()
+	a.paint(st)
+}
+
+// paint lays out title, tooltip, menu and panel from st, under paintMu: the
+// checks behind "Check for updates…" each repaint from their own goroutine,
+// and without the lock a layout computed before one check stored its result
+// could be set after the layout that has it.
+func (a *appShell) paint(st web.State) {
 	active, ok := activeAccount(st)
 	running := a.autoRunning()
 	head := brandName()
@@ -675,11 +688,15 @@ func (a *appShell) endpointSessionNotice() string {
 
 // repaint redraws title, tooltip and menu from the last state now, so a
 // toggle follows the click instead of the next poll tick.
+// repaint lays out the last state again, after something other than the
+// state changed: an update check, a toggle, a tray-panel action.
 func (a *appShell) repaint() {
+	a.paintMu.Lock()
+	defer a.paintMu.Unlock()
 	a.mu.Lock()
 	st := a.last
 	a.mu.Unlock()
-	a.update(st)
+	a.paint(st)
 }
 
 func (a *appShell) autoRunning() bool {

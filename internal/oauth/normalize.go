@@ -27,6 +27,8 @@ func buildUsageResult(raw map[string]any, now time.Time) map[string]any {
 
 	if entry, ok := simpleWindow(raw["five_hour"], now); ok {
 		result["five_hour"] = entry
+	} else if raw["five_hour"] != nil {
+		result["five_hour"] = map[string]any{"pct": nil}
 	}
 	if entry, ok := simpleWindow(raw["seven_day"], now); ok {
 		result["seven_day"] = entry

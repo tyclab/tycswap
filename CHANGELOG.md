@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Fixed:** Ultra accounts (formerly Max 20x) remain eligible for Fable, model routing and recovery after Anthropic removes their five-hour limit. Decisions follow reported windows during the staged rollout; weekly, model and any remaining five-hour limits still apply.
+
+- **Changed:** the Opus / other group leaves Fable-capable accounts to Fable work. Its auto-switch ranks accounts that cannot run Fable first under either strategy, and when the group sits on an account that can, it hands over to one that cannot as soon as that one is below every bar (`switch` trigger `reserved`, `no-switch` reason `reserved-no-target`, both under the usual cooldown). The default login and the Fable group are unchanged; `tycswap claude` already preferred those accounts.
+- **Fixed:** the tray repaints one at a time, so after **Check for updates** the menu and panel show every update the checks found; before, the two checks' repaints could overlap and leave the older layout in place.
+- **Added:** `tycswap claude` selects an account for each model request using compatibility and fresh quota, supports model changes within the running conversation, and keeps separate credential profiles for simultaneous conversations. Request reservations protect streamed responses and subagents from conflicting account switches.
+- **Fixed:** purge checks managed launches and native group sessions before and after confirmation, removes group Keychain credentials, and preserves coordination lock files during deletion.
+
 - **Added:** `tycswap groups release fable|opus` (and **Release account** in the group menu) returns a group's account to the shared pool once its sessions have exited, so the default login and the other group can rotate onto it. The group's newest credential is saved first.
 
 - **Fixed:** backspace in the terminal dashboard's **Add account from token** form removes a whole character, so "ä" or "日" no longer leaves a broken byte behind.

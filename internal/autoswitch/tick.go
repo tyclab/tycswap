@@ -130,7 +130,17 @@ func (e *Engine) tickInner() (tickResult, error) {
 			}
 		}
 		hot, ok := hotAxis(activeByClass, s)
-		if !ok {
+		switch {
+		case ok && *activeHeadroom <= 0:
+			axis, trigger = hot, "at-limit"
+		case ok:
+			axis, trigger = hot, "proactive"
+		case e.isReserved(cur):
+			// Every window is under its bar, but the account can run Fable
+			// while this profile never needs it: an account that cannot,
+			// below every bar, takes over (DESIGN A71).
+			trigger = "reserved"
+		default:
 			// No window is over its own bar. Name the one closest to its
 			// bar, so the line says which window to watch.
 			near := nearestAxis(activeByClass, s)
@@ -138,12 +148,6 @@ func (e *Engine) tickInner() (tickResult, error) {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "below-threshold",
 				Detail: near.Name() + " " + pctLabel(util) + "% < " + pctLabel(axisThreshold(s, near)) + "%"})
 			return tickResult{Outcome: NoAction}, nil
-		}
-		axis = hot
-		if *activeHeadroom <= 0 {
-			trigger = "at-limit"
-		} else {
-			trigger = "proactive"
 		}
 	} else {
 		expired := isTokenExpired(usageMap[cur])
@@ -175,12 +179,19 @@ func (e *Engine) tickInner() (tickResult, error) {
 		trigger = "failover"
 	}
 
-	if trigger == "proactive" && e.inCooldown(state) {
+	if (trigger == "proactive" || trigger == "reserved") && e.inCooldown(state) {
 		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "cooldown"})
 		return tickResult{Outcome: NoAction}, nil
 	}
 
 	ordered, oauthCandidates, anyKnown, blk := e.selectCandidates(cur, quarantined, s, trigger, axis, activeByClass, headroom, usageMap)
+	if trigger == "reserved" && (blk != nil || len(ordered) == 0) {
+		// Nothing to hand over to: the account stays, as it would without
+		// the reservation (DESIGN A71).
+		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "reserved-no-target",
+			Detail: "the active account can run Fable; no account without Fable is below every bar"})
+		return tickResult{Outcome: NoAction}, nil
+	}
 	if blk != nil {
 		return *blk, nil
 	}
@@ -286,9 +297,9 @@ func withSkipReason(detail string, entry usage.UsageEntry) string {
 
 // axisLabel names the axis for the log ("5h", "7d" or "model"). A failover
 // tick had no readable usage, so no window decided it and the label is empty
-// (DESIGN A34).
+// (DESIGN A34); a reserved hand-over moved for the account, not a window.
 func axisLabel(axis usage.Class, trigger string) string {
-	if trigger == "failover" {
+	if trigger == "failover" || trigger == "reserved" {
 		return ""
 	}
 	return axis.Name()
@@ -319,7 +330,9 @@ func (e *Engine) selectCandidates(
 		}
 	}
 	if len(oauthCandidates) == 0 {
-		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-candidates"})
+		if trigger != "reserved" {
+			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-candidates"})
+		}
 		return nil, oauthCandidates, false, &tickResult{Outcome: Blocked, WaitLong: true}
 	}
 
@@ -364,16 +377,26 @@ func (e *Engine) selectCandidates(
 		if cand.WeeklyExhausted() {
 			continue
 		}
+		below := belowEveryBar(cand, s)
+		reserved := e.isReserved(num)
+		// A hand-over leaves a Fable-capable account only for one that is
+		// not, and only when that one is below every bar (DESIGN A71).
+		if trigger == "reserved" && (reserved || !below) {
+			continue
+		}
 		qualifying = append(qualifying, qual{
-			h:       *h,
-			weekly:  cand.Weekly(),
-			below:   belowEveryBar(cand, s),
-			renewal: renewalTS(usageDict(usageMap[num]), e.models),
-			num:     num,
+			h:        *h,
+			weekly:   cand.Weekly(),
+			below:    below,
+			reserved: reserved,
+			renewal:  renewalTS(usageDict(usageMap[num]), e.models),
+			num:      num,
 		})
 	}
 	if len(qualifying) == 0 && modelRejected {
-		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-compatible-model-target", Detail: "no qualifying target with reported " + strings.Join(required, ", ") + " usage; keeping the current account"})
+		if trigger != "reserved" {
+			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-compatible-model-target", Detail: "no qualifying target with reported " + strings.Join(required, ", ") + " usage; keeping the current account"})
+		}
 		return nil, oauthCandidates, anyKnown, &tickResult{Outcome: Blocked}
 	}
 	sortQualifying(qualifying, s.Strategy)
@@ -460,9 +483,12 @@ type qual struct {
 	weekly *float64
 	// below records whether every known axis sits under its own bar, which is
 	// what "below threshold" means once there is one per window (DESIGN A34).
-	below   bool
-	renewal *float64
-	num     string
+	below bool
+	// reserved marks an account this profile leaves to Fable work; it sorts
+	// after every unreserved account of its tier (DESIGN A71).
+	reserved bool
+	renewal  *float64
+	num      string
 }
 
 // sortQualifying orders the qualifying targets per autoswitch.strategy.
@@ -477,13 +503,19 @@ type qual struct {
 // trigger tier B holds only candidates over a bar OTHER than the triggering
 // one (the qualification gate excluded the rest); the tiering matters chiefly
 // for at-limit/failover (Go-side extension, DESIGN A17, A34). "best" is
-// weekly headroom descending, ties in sequence order.
+// weekly headroom descending, ties in sequence order. Under either strategy
+// an account reserved for Fable work sorts after every unreserved account of
+// its tier (DESIGN A71): a profile that never needs Fable takes a Fable-
+// capable account only when nothing else is left.
 func sortQualifying(qualifying []qual, strategy string) {
 	if strategy == "soonest-reset" {
 		sort.SliceStable(qualifying, func(i, j int) bool {
 			a, b := qualifying[i], qualifying[j]
 			if a.below != b.below {
 				return a.below // tier A (below every bar) before tier B
+			}
+			if a.reserved != b.reserved {
+				return !a.reserved // unreserved before reserved, within the tier
 			}
 			if !a.below {
 				return a.h > b.h // tier B: most headroom first (best-like last resort)
@@ -505,6 +537,9 @@ func sortQualifying(qualifying []qual, strategy string) {
 	// figure.
 	sort.SliceStable(qualifying, func(i, j int) bool {
 		a, b := qualifying[i], qualifying[j]
+		if a.reserved != b.reserved {
+			return !a.reserved
+		}
 		if a.weekly != nil && b.weekly != nil && *a.weekly != *b.weekly {
 			return *a.weekly > *b.weekly
 		}

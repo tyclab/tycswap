@@ -27,6 +27,7 @@ type fakeSwitcher struct {
 	liveSessions map[string][]int
 	entries      map[string]usage.UsageEntry
 	fetched      map[string]usage.UsageEntry // what a fetch of the slot stores
+	reserved     map[string]bool             // accounts left to Fable work (DESIGN A71)
 	backupDir    string
 
 	// SwitchTo behavior. Default: set current=num, return a success payload.
@@ -56,6 +57,7 @@ func newFake() *fakeSwitcher {
 		creds:        map[string]string{},
 		liveSessions: map[string][]int{},
 		entries:      map[string]usage.UsageEntry{},
+		reserved:     map[string]bool{},
 		backupDir:    "/tmp/does-not-matter",
 		persisted:    map[string]string{},
 		backfilled:   map[string]string{},

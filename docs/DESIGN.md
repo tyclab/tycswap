@@ -6449,3 +6449,119 @@ release reruns to the same end. A group holding nothing reports
 `released: null`. A profile left with only seat-wide keys holds no login:
 neither the ownership scan nor the next group switch reads it as an
 unrecorded credential.
+
+## A70. Automatic account routing for Claude model requests
+
+`tycswap claude` prepares a managed Claude process and loads its bundled Mods
+module. The initial model selects a Fable or Opus/other credential profile;
+subsequent model changes retain that profile and the running conversation.
+Separate profiles retain separate account ownership. A routed resume restores
+its saved profile and last successful main model unless a model is explicitly
+selected. Existing group resumes recognize routed histories.
+
+The launcher verifies the native version and runs the bundled offline mod
+checks in the target profile and working directory before claiming an account.
+Startup uses startup compatibility, including resumes that create a new native
+process. It records a launch reservation before executing Claude. The mod's
+`session.start` registers the actual conversation against that launch and
+consumes the startup request reservation. Registration is idempotent for the
+same process, launch and conversation; another conversation cannot replace an
+active one without unregistering it first.
+
+`routing.json` holds versioned `sessions`, `leases` and resume `history`, without
+credentials. `routing.lock` serializes registration, selection, account changes
+and request reservations. It precedes the shared account lock and the existing
+Claude credential/config/storage locks. Usage polling happens outside those
+locks; selection and dispatch revalidate ownership and liveness inside them.
+Atomic writes preserve complete state records. Dead processes are pruned; a
+live process's request reservation has no expiry timer.
+
+Before each `turn.step`, the mod acquires a unique request reservation through
+the internal JSON routing command. Selection requires fresh shared usage and
+the applicable model windows, compatibility with the profile's current models,
+and clear credential ownership. Ordinary accounts take precedence when Fable
+is unnecessary; quota headroom and configured hysteresis select within that
+class. An idle profile's account can be released and transferred through the
+existing ownership protocol. Unknown or unusable candidates stop dispatch.
+
+Concurrent requests share the held account when it remains eligible. A
+different account cannot replace it until the response streams finish and their
+reservations are released. Manual switching, automatic rotation and group
+release use the same guard. Failed release leaves the reservation in place and
+blocks further requests in that mod instance. Session changes cannot discard
+pending requests. Purge rechecks managed and native liveness after confirmation
+under the routing/account locks, and retains the empty lock files during
+deletion.
+
+Fable subagents require a Fable main model. Native team teammates, transparent
+fallback models, custom identity/plugin settings and routing-variable overrides
+are refused. A profile containing unmanaged live sessions or IDE instances
+cannot participate in automatic routing. Main/subagent requests still use the
+same physical credential profile.
+
+Callback errors block dispatch through the mod's error handler. Native worker
+unload is a separate boundary: Claude can continue on the last account without
+the mod after its worker is unloaded. Restart through the managed launcher
+after that event. The native crash characterization and production integration
+tests record these behaviors using synthetic credentials and a local fake API.
+A separate transport request gate remains a possible future extension; this
+implementation does not install one.
+
+The native runtime can run installed user mods after the command-line routing
+mod. Model-rewriting and dispatch-replacing mods are unsupported alongside this
+router: changing the request after acquisition invalidates its model/account
+check. Regular plugins and observational mods remain supported.
+
+## A71. The Opus / other group leaves Fable-capable accounts to Fable
+
+The Opus / other group never needs Fable, and Fable-capable accounts are the
+scarce ones: the Fable group and a Fable session on the default login can run
+nowhere else. The group's rotation (`tycswap auto`, the flakelab timer) ranked
+targets by their bars and headroom alone, so a failover from the group's
+account landed on whichever account had the most room, Fable-capable or not,
+and stayed there until that account hit a bar. `tycswap claude` already
+preferred accounts that cannot run Fable for Opus/other requests (A70); the
+rotation now does the same.
+
+The engine takes a reservation seam (`WithReserved`): the Opus / other group's
+store names every account whose recorded or plan-derived Fable `continue`
+entitlement allows it, the same test routing applies, and every other profile
+names none. A reserved account sorts after every unreserved account of its bar
+tier under both strategies, so it is taken only when nothing else qualifies.
+When the group's active account is reserved and every window is under its
+bar, the tick moves with the trigger `reserved` to an unreserved account that
+is below every bar, under the proactive cooldown, naming no window because
+the account decided, not a window; with no such account the tick reports
+`reserved-no-target` and stays, as it would without the reservation. At-limit
+and failover moves keep their triggers: the reservation changes their order,
+never their occurrence.
+
+Unchanged on purpose: the default login reserves nothing, because the
+operator's own session may need Fable there; the Fable group reserves
+nothing, because every account it may use can run Fable; the group's first
+account is still chosen by hand (`groups switch`, the menu, the tray); and an
+account is never released from the group while a routed request holds it,
+since the hand-over is an ordinary group switch under the routing guard.
+
+## A72. Ultra and optional five-hour limits
+
+Anthropic renamed Max 20x to Ultra and Max 5x to Max on October 30, 2026.
+The [published plan](https://claude.com/pricing) removes the five-hour limit
+for verified Ultra accounts, with removal staged per account. Weekly usage
+and model entitlements remain. Plan names therefore establish Fable
+compatibility but never determine which usage windows count.
+
+Routing and recovery require usable weekly usage and validate a five-hour
+window only when reported. An omitted or null window is absent; a reported
+window with unusable utilization is unknown and cannot authorize dispatch.
+All reported windows retain their existing thresholds and model checks.
+`groups.Entitlement` recognizes `ultra` alongside the legacy Max identifiers,
+with recorded capability overrides retaining precedence.
+
+The normalizer preserves malformed non-null five-hour data as unknown instead
+of dropping it. Cache replacement, the auto-switch engine and rendered
+surfaces already support absent windows. A successful weekly-only refresh
+removes a cached five-hour window. Failed refreshes retain the previous
+measurement under the existing freshness policy. JSON continues to omit an
+absent window, while `statusline.json` publishes null; neither reports it as
+zero percent or promises unlimited weekly usage. Codex policy is unchanged.

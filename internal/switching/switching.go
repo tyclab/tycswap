@@ -5,13 +5,16 @@ package switching
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strconv"
 
 	"github.com/tyclab/tycswap/internal/cclock"
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/routingstate"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
@@ -85,6 +88,39 @@ func withTripleLock(s *store.Store, fn func() error) error {
 }
 
 func withTripleLockTarget(s *store.Store, target string, fn func() error) error {
+	if !s.RoutingLockHeld() {
+		return routingstate.With(s.BackupDir(), func(state *routingstate.State) error {
+			if err := state.CheckSwitch(string(s.GroupID()), target); err != nil {
+				return err
+			}
+			if target != "" {
+				for _, session := range state.Sessions {
+					if session.Group != string(s.GroupID()) {
+						continue
+					}
+					family, err := routingstate.Family(session.Model)
+					if err != nil {
+						return err
+					}
+					if family == "fable" {
+						compat := s.WithRoutingModel(groups.Fable).GroupCompatibility(target, groups.Continue)
+						if !compat.Known || !compat.Allowed {
+							return fmt.Errorf("Account-%s cannot serve the profile's current models: %s", target, compat.Reason)
+						}
+					}
+				}
+			}
+			return withTripleLockTarget(s.WithRoutingLockHeld(), target, fn)
+		})
+	}
+	state, err := routingstate.Read(s.BackupDir())
+	if err != nil {
+		return err
+	}
+	state.Prune()
+	if err := state.CheckSwitch(string(s.GroupID()), target); err != nil {
+		return err
+	}
 	ok, err := s.Lock.Acquire(0)
 	if err != nil {
 		return err

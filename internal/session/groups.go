@@ -12,6 +12,7 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/routingstate"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/switching"
 )
@@ -30,11 +31,46 @@ type GroupLaunch struct {
 	SourceTranscript string    `json:"sourceTranscript,omitempty"`
 	Migrating        bool      `json:"migrating"`
 	Warnings         []string  `json:"warnings,omitempty"`
+	Routing          bool      `json:"routing,omitempty"`
 }
 
 type groupStoreProvider interface{ GroupStore() *store.Store }
 
 func (m *Manager) PrepareGroup(group, account, model, resume, cwd string) (*GroupLaunch, error) {
+	return m.prepareLegacyGroup(group, account, model, resume, cwd, false)
+}
+
+func (m *Manager) prepareLegacyGroup(group, account, model, resume, cwd string, reserve bool) (*GroupLaunch, error) {
+	id, err := groups.Parse(group)
+	if err != nil {
+		return nil, err
+	}
+	group = string(id)
+	provider, ok := m.accounts.(groupStoreProvider)
+	if !ok {
+		return nil, cerr.Session("this account store does not support session groups")
+	}
+	var launch *GroupLaunch
+	err = routingstate.With(provider.GroupStore().SharedRoot(), func(state *routingstate.State) error {
+		for _, active := range state.Sessions {
+			if active.Group == group && active.Launch != "" {
+				return cerr.Session("profile %s has a live automatically routed session", group)
+			}
+		}
+		var err error
+		launch, err = m.prepareGroup(group, account, model, resume, cwd, false)
+		if err != nil {
+			return err
+		}
+		if reserve {
+			state.Sessions[routingstate.Key(group, launch.LaunchID)] = routingstate.Session{Group: group, ID: launch.LaunchID, PID: os.Getpid(), Model: group}
+		}
+		return nil
+	})
+	return launch, err
+}
+
+func (m *Manager) prepareGroup(group, account, model, resume, cwd string, managed bool) (*GroupLaunch, error) {
 	id, err := groups.Parse(group)
 	if err != nil {
 		return nil, err
@@ -42,7 +78,11 @@ func (m *Manager) PrepareGroup(group, account, model, resume, cwd string) (*Grou
 	if model == "" {
 		model = string(id)
 	}
-	if err := groups.CheckModel(id, model); err != nil {
+	if managed {
+		if routedFamily(model) == "" {
+			return nil, cerr.Session("model %q has unknown routing compatibility", model)
+		}
+	} else if err := groups.CheckModel(id, model); err != nil {
 		return nil, err
 	}
 	provider, ok := m.accounts.(groupStoreProvider)
@@ -54,14 +94,17 @@ func (m *Manager) PrepareGroup(group, account, model, resume, cwd string) (*Grou
 		return nil, err
 	}
 	intent := groups.Start
-	if resume != "" {
+	if resume != "" && !managed {
 		intent = groups.Continue
 	}
-	s = s.WithGroupIntent(intent).WithGroupHandoff()
+	s = s.WithGroupIntent(intent).WithGroupHandoff().WithRoutingLockHeld()
+	if managed {
+		s = s.WithRoutingModel(routedFamily(model))
+	}
 	if err := switching.ReconcileGroup(s); err != nil {
 		return nil, err
 	}
-	launch := &GroupLaunch{Group: id, Model: model, ProfileDir: s.ProfileDir(), CWD: cwd}
+	launch := &GroupLaunch{Group: id, Model: model, ProfileDir: s.ProfileDir(), CWD: cwd, Routing: managed}
 	if err := m.prepareGroupResume(s, launch, resume); err != nil {
 		return nil, err
 	}
@@ -80,8 +123,11 @@ func (m *Manager) PrepareGroup(group, account, model, resume, cwd string) (*Grou
 	}
 	if account == "" {
 		if current := s.CurrentAccountNumber(); current != nil {
-			account = *current
-		} else {
+			if !managed || s.GroupCompatibility(*current, groups.Start).Allowed {
+				account = *current
+			}
+		}
+		if account == "" {
 			candidates := s.SwitchableAccountNumbers()
 			if len(candidates) == 0 {
 				return nil, cerr.Session("no compatible, unclaimed account can %s a session in the %s group; inspect tycswap groups and account capabilities", intent, id)
@@ -144,6 +190,11 @@ func (m *Manager) RunGroup(group, account, model, resume, cwd string, args []str
 	if err != nil {
 		return err
 	}
+	if saved, err := m.managedResume(group, resume); err != nil {
+		return err
+	} else if saved != nil {
+		return m.runManaged(saved.Group, account, model, resume, cwd, tail)
+	}
 	bin, err := m.runner.LookPath("claude")
 	if err != nil || bin == "" {
 		return errClaudeNotFound()
@@ -151,10 +202,16 @@ func (m *Manager) RunGroup(group, account, model, resume, cwd string, args []str
 	if err := CheckCmdShimArgs(bin, tail); err != nil {
 		return err
 	}
-	launch, err := m.PrepareGroup(group, account, model, resume, cwd)
+	launch, err := m.prepareLegacyGroup(group, account, model, resume, cwd, true)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		_ = routingstate.With(m.accounts.(groupStoreProvider).GroupStore().SharedRoot(), func(state *routingstate.State) error {
+			delete(state.Sessions, routingstate.Key(string(launch.Group), launch.LaunchID))
+			return nil
+		})
+	}()
 	launch.Args = append(launch.Args, tail...)
 	m.println(fmt.Sprintf("Launching %s group with Account-%s (%s).", launch.Group.Label(), launch.AccountNumber, launch.Model))
 	if launch.Migrating {
