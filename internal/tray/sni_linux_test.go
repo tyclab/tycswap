@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/tyclab/tycswap/internal/brand"
 )
 
 // SetIcon swaps what IconPixmap answers and emits the StatusNotifierItem
@@ -256,5 +258,58 @@ func TestSNISubmenuLayout(t *testing.T) {
 	case id := <-clicks:
 		t.Errorf("unexpected click %q", id)
 	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// Name and Identifier replace tycswap's brand in what the host shows and keys the item's settings by.
+func TestSNIUsesTheCallersNameAndIdentifier(t *testing.T) {
+	property := func(tr *sniTray, name string) any {
+		t.Helper()
+		e := &enc{}
+		if !tr.itemProperty(e, name) {
+			t.Fatalf("%s is not a property", name)
+		}
+		d := &dec{b: e.b}
+		v, _ := d.value(d.signature())
+		if d.err != nil {
+			t.Fatal(d.err)
+		}
+		return v
+	}
+	appName := func(tr *sniTray) string {
+		t.Helper()
+		ours, host := net.Pipe()
+		defer ours.Close()
+		defer host.Close()
+		tr.conn = &dbusConn{c: ours, done: make(chan struct{}), waiting: map[uint32]chan *message{}}
+		peer := &dbusConn{c: host, r: bufio.NewReader(host)}
+		go tr.Notify("title", "body")
+		m, err := peer.readMessage()
+		close(tr.conn.done)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return (&dec{b: m.Body}).string_()
+	}
+	own := &sniTray{opts: Options{Name: "Party Visuals", Identifier: "io.tyclab.partyvisuals.controller"}}
+	plain := &sniTray{}
+	brandName := brand.Sanitized().Name
+	for _, c := range []struct {
+		tr           *sniTray
+		id, title    string
+		notification string
+	}{{own, "io.tyclab.partyvisuals.controller", "Party Visuals", "Party Visuals"}, {plain, brandName, brandName, brandName}} {
+		if got := property(c.tr, "Id"); got != c.id {
+			t.Errorf("Id = %v, want %q", got, c.id)
+		}
+		if got := property(c.tr, "Title"); got != c.title {
+			t.Errorf("Title = %v, want %q", got, c.title)
+		}
+		if got := property(c.tr, "ToolTip").([]any)[2]; got != c.title {
+			t.Errorf("ToolTip title = %v, want %q", got, c.title)
+		}
+		if got := appName(c.tr); got != c.notification {
+			t.Errorf("notification app_name = %q, want %q", got, c.notification)
+		}
 	}
 }

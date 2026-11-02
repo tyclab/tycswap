@@ -145,7 +145,9 @@ type Icon struct {
 
 // Options wires the caller's reactions.
 type Options struct {
-	// Name and Identifier override only this tray's Windows title/class.
+	// Name replaces the brand name the shell shows: the Windows window title, the StatusNotifierItem title (until
+	// SetTitle) and notification app name; macOS has no such slot. Identifier is the Windows window class and the
+	// StatusNotifierItem Id. The menus' accent colour stays the brand's.
 	Name       string
 	Identifier string
 	// OnSystemEvent receives the Event names below (Windows only) on the UI thread; return promptly.
