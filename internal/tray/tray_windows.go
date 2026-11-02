@@ -152,7 +152,9 @@ type windowsTray struct {
 	painter *activeMenuPainter // UI thread only, bound to the open menu snapshot
 	panel   *windowsPanel
 	ready   chan struct{}
-	err     error
+	// wtsRegistered: UI thread only, set while WTS session notifications are registered.
+	wtsRegistered bool
+	err           error
 }
 
 var (
@@ -260,13 +262,6 @@ func (t *windowsTray) Run() error {
 	if hwnd == 0 {
 		return errors.New("tray: CreateWindowEx: " + err.Error())
 	}
-	if t.opts.OnSystemEvent != nil {
-		if err := registerSessionEvents(hwnd); err != nil {
-			pDestroyWindow.Call(hwnd)
-			return err
-		}
-		defer func() { _ = unregisterSessionEvents(hwnd) }()
-	}
 	// Set under mu, where Quit reads it: a Quit from before the window is
 	// posted here and a later one posts itself, so none is lost or posted
 	// twice (A52).
@@ -285,6 +280,14 @@ func (t *windowsTray) Run() error {
 
 	if err := t.addIcon(); err != nil {
 		return errors.New("tray: Shell_NotifyIcon(NIM_ADD): " + err.Error())
+	}
+	// Session events are optional: power events need no registration, so a failure only drops them.
+	if t.opts.OnSystemEvent != nil {
+		if registerSessionEvents(hwnd) == nil {
+			t.wtsRegistered = true
+		} else {
+			t.opts.OnSystemEvent(EventSessionEventsUnavailable)
+		}
 	}
 
 	var m msg
@@ -701,6 +704,10 @@ func trayWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uint
 		pDestroyWindow.Call(uintptr(hwnd))
 		return 0
 	case wmDestroy:
+		if t.wtsRegistered { // the window must still exist to unregister
+			t.wtsRegistered = false
+			_ = unregisterSessionEvents(uintptr(hwnd))
+		}
 		pPostQuitMessage.Call(0)
 		return 0
 	}

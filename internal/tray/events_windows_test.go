@@ -3,7 +3,10 @@
 package tray
 
 import (
+	"errors"
 	"testing"
+	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -56,5 +59,118 @@ func TestMissingSessionExportIsAnError(t *testing.T) {
 				t.Errorf("unregister through a missing %s succeeded", proc.Name)
 			}
 		}()
+	}
+}
+
+var pIsWindow = user32.NewProc("IsWindow")
+
+// stubSessionEvents stands in for wtsapi32 and the shell for one test.
+func stubSessionEvents(t *testing.T, register, unregister func(uintptr) error) {
+	prevRegister, prevUnregister, prevShell := registerSessionEvents, unregisterSessionEvents, shellNotifyIcon
+	registerSessionEvents, unregisterSessionEvents = register, unregister
+	shellNotifyIcon = func(uintptr, *notifyIconData) error { return nil }
+	winMu.Lock()
+	prevTray := winTray
+	winMu.Unlock()
+	t.Cleanup(func() {
+		registerSessionEvents, unregisterSessionEvents, shellNotifyIcon = prevRegister, prevUnregister, prevShell
+		winMu.Lock()
+		winTray = prevTray
+		winMu.Unlock()
+	})
+}
+
+// runTestTray starts Run and waits for its window; the cleanup quits it and frees the class.
+func runTestTray(t *testing.T, opts Options) (*windowsTray, uintptr, chan error) {
+	t.Helper()
+	opts.Identifier = "TycswapEventsTest"
+	tr, err := newTray(Icon{PNG: testPNG(t)}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := tr.(*windowsTray)
+	done := make(chan error, 1)
+	go func() { done <- w.Run() }()
+	t.Cleanup(func() {
+		w.Quit()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("Run did not end after Quit")
+		}
+		hInst, _, _ := pGetModuleHandleW.Call(0)
+		user32.NewProc("UnregisterClassW").Call(uintptr(unsafe.Pointer(utf16z(opts.Identifier))), hInst)
+	})
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		select {
+		case err := <-done:
+			done <- err
+			t.Fatalf("Run returned before its window was up: %v", err)
+		default:
+		}
+		w.mu.Lock()
+		hwnd := w.hwnd
+		w.mu.Unlock()
+		if hwnd != 0 {
+			return w, uintptr(hwnd), done
+		}
+	}
+	t.Fatal("Run created no window")
+	return nil, 0, nil
+}
+
+func TestSessionEventsUnregisterWhileTheWindowExists(t *testing.T) {
+	var registered, unregistered, alive uintptr
+	stubSessionEvents(t, func(hwnd uintptr) error { registered = hwnd; return nil }, func(hwnd uintptr) error {
+		unregistered = hwnd
+		alive, _, _ = pIsWindow.Call(hwnd)
+		return nil
+	})
+	tr, hwnd, done := runTestTray(t, Options{OnSystemEvent: func(string) {}})
+	tr.Quit()
+	select {
+	case err := <-done:
+		done <- err
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not end after Quit")
+	}
+	if registered != hwnd || unregistered != hwnd || alive == 0 {
+		t.Fatalf("registered %#x, unregistered %#x (window alive then: %v), want both %#x while it exists", registered, unregistered, alive != 0, hwnd)
+	}
+}
+
+// Registration can fail, e.g. RPC_S_INVALID_BINDING before Remote Desktop Services is up at logon:
+// the tray keeps running with power events and says session events are off.
+func TestFailedSessionRegistrationKeepsPowerEvents(t *testing.T) {
+	unregistered := 0
+	stubSessionEvents(t, func(uintptr) error { return errors.New("RPC_S_INVALID_BINDING") }, func(uintptr) error { unregistered++; return nil })
+	events := make(chan string, 4)
+	tr, hwnd, done := runTestTray(t, Options{OnSystemEvent: func(e string) { events <- e }})
+	pPostMessageW.Call(hwnd, wmPowerBroadcast, 4, 0)
+	for _, want := range []string{"session-events-unavailable", "suspend"} {
+		select {
+		case got := <-events:
+			if got != want {
+				t.Fatalf("event %q, want %q", got, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("no %q event", want)
+		}
+	}
+	tr.Quit()
+	select {
+	case err := <-done:
+		done <- err
+		if err != nil {
+			t.Fatalf("Run = %v, want nil after a degraded start", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not end after Quit")
+	}
+	if unregistered != 0 {
+		t.Errorf("unregistered %d times a subscription that never existed", unregistered)
 	}
 }

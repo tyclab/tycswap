@@ -159,8 +159,8 @@ type Options struct {
 	OnActivate func()
 }
 
-// OnSystemEvent's names. Every wake sends EventResumeAutomatic; EventResume follows only once the
-// user is present. The session events report this Windows session's WTS changes.
+// OnSystemEvent's names. Every wake sends EventResumeAutomatic, EventResume only once the user is present;
+// session events are this session's WTS changes, or EventSessionEventsUnavailable if Run could not register.
 const (
 	EventSuspend           = "suspend"
 	EventResumeAutomatic   = "resume-automatic"
@@ -175,6 +175,8 @@ const (
 	EventLock              = "lock"
 	EventUnlock            = "unlock"
 	EventRemoteControl     = "remote-control"
+
+	EventSessionEventsUnavailable = "session-events-unavailable"
 )
 
 // Tray is the live icon.

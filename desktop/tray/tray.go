@@ -33,6 +33,8 @@ const (
 	EventLock              = native.EventLock
 	EventUnlock            = native.EventUnlock
 	EventRemoteControl     = native.EventRemoteControl
+
+	EventSessionEventsUnavailable = native.EventSessionEventsUnavailable
 )
 
 func New(icon Icon, opts Options) (Tray, error) {

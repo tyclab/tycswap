@@ -11,8 +11,9 @@ var sessionDLL = windows.NewLazySystemDLL("wtsapi32.dll")
 var registerWTS = sessionDLL.NewProc("WTSRegisterSessionNotification")
 var unregisterWTS = sessionDLL.NewProc("WTSUnRegisterSessionNotification")
 
-func registerSessionEvents(hwnd uintptr) error   { return callWTS(registerWTS, hwnd, 0) }
-func unregisterSessionEvents(hwnd uintptr) error { return callWTS(unregisterWTS, hwnd) }
+// Vars so a test can stand in for wtsapi32. 0 is NOTIFY_FOR_THIS_SESSION.
+var registerSessionEvents = func(hwnd uintptr) error { return callWTS(registerWTS, hwnd, 0) }
+var unregisterSessionEvents = func(hwnd uintptr) error { return callWTS(unregisterWTS, hwnd) }
 
 // callWTS looks the export up first: LazyProc.Call panics when wtsapi32.dll or the export is missing.
 func callWTS(proc *windows.LazyProc, args ...uintptr) error {
