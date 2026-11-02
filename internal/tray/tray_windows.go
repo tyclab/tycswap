@@ -4,7 +4,6 @@ package tray
 
 import (
 	"errors"
-	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -190,12 +189,6 @@ func registerTaskbarCreated() {
 func newTray(icon Icon, opts Options) (Tray, error) {
 	if len(icon.PNG) == 0 {
 		return nil, ErrUnsupported
-	}
-	if opts.Identifier != "" && !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,100}$`).MatchString(opts.Identifier) {
-		return nil, errors.New("tray: invalid Windows class identifier")
-	}
-	if len(opts.Name) > 100 || strings.ContainsRune(opts.Name, 0) {
-		return nil, errors.New("tray: invalid window name")
 	}
 	t := &windowsTray{icon: icon, opts: opts, tooltip: opts.Tooltip, iconPNG: icon.PNG, ready: make(chan struct{})}
 	winMu.Lock()
