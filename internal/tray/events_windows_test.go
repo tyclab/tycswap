@@ -13,12 +13,18 @@ func TestPowerAndSessionEventsRemainDistinct(t *testing.T) {
 		message uint32
 		value   uintptr
 		want    string
-	}{{0x218, 4, "suspend"}, {0x218, 18, "resume-automatic"}, {0x218, 7, "resume"}, {0x2b1, 7, "suspend"}, {0x2b1, 8, "resume"}, {0x2b1, 3, "resume"}, {0x7e, 0, "display-change"}, {0x218, 10, ""}} {
+	}{
+		{0x218, 4, "suspend"}, {0x218, 18, "resume-automatic"}, {0x218, 7, "resume"}, {0x218, 10, ""},
+		{0x2b1, 1, "console-connect"}, {0x2b1, 2, "console-disconnect"}, {0x2b1, 3, "remote-connect"},
+		{0x2b1, 4, "remote-disconnect"}, {0x2b1, 5, "logon"}, {0x2b1, 6, "logoff"}, {0x2b1, 7, "lock"},
+		{0x2b1, 8, "unlock"}, {0x2b1, 9, "remote-control"}, {0x2b1, 10, ""}, {0x7e, 0, "display-change"},
+	} {
 		if got := systemEvent(v.message, v.value); got != v.want {
 			t.Errorf("%x/%d: %q, want %q", v.message, v.value, got, v.want)
 		}
 	}
 }
+
 func TestSystemEventsReachOnlyOptedInTray(t *testing.T) {
 	winMu.Lock()
 	old := winTray

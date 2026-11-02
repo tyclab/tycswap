@@ -146,7 +146,7 @@ type Options struct {
 	// Name and Identifier override only this tray's Windows title/class.
 	Name       string
 	Identifier string
-	// OnSystemEvent receives Windows power/session events on the UI thread; return promptly.
+	// OnSystemEvent receives the Event names below (Windows only) on the UI thread; return promptly.
 	OnSystemEvent func(string)
 	// Tooltip is the initial hover text (also the accessibility label).
 	Tooltip string
@@ -158,6 +158,24 @@ type Options struct {
 	// menu on every click and never call it.
 	OnActivate func()
 }
+
+// OnSystemEvent's names. Every wake sends EventResumeAutomatic; EventResume follows only once the
+// user is present. The session events report this Windows session's WTS changes.
+const (
+	EventSuspend           = "suspend"
+	EventResumeAutomatic   = "resume-automatic"
+	EventResume            = "resume"
+	EventDisplayChange     = "display-change"
+	EventConsoleConnect    = "console-connect"
+	EventConsoleDisconnect = "console-disconnect"
+	EventRemoteConnect     = "remote-connect"
+	EventRemoteDisconnect  = "remote-disconnect"
+	EventLogon             = "logon"
+	EventLogoff            = "logoff"
+	EventLock              = "lock"
+	EventUnlock            = "unlock"
+	EventRemoteControl     = "remote-control"
+)
 
 // Tray is the live icon.
 type Tray interface {

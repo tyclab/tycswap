@@ -24,26 +24,34 @@ func callWTS(proc *windows.LazyProc, args ...uintptr) error {
 	}
 	return nil
 }
+
+const (
+	wmPowerBroadcast   = 0x0218
+	wmWTSSessionChange = 0x02b1
+	wmDisplayChange    = 0x007e
+)
+
+// sessionEvents names WM_WTSSESSION_CHANGE's wParam, WTS_CONSOLE_CONNECT (1) to WTS_SESSION_REMOTE_CONTROL (9).
+var sessionEvents = [...]string{1: EventConsoleConnect, 2: EventConsoleDisconnect, 3: EventRemoteConnect, 4: EventRemoteDisconnect,
+	5: EventLogon, 6: EventLogoff, 7: EventLock, 8: EventUnlock, 9: EventRemoteControl}
+
 func systemEvent(message uint32, value uintptr) string {
 	switch message {
-	case 0x0218:
+	case wmPowerBroadcast:
 		switch value {
-		case 4:
-			return "suspend"
-		case 18:
-			return "resume-automatic"
-		case 7:
-			return "resume"
+		case 4: // PBT_APMSUSPEND
+			return EventSuspend
+		case 0x12: // PBT_APMRESUMEAUTOMATIC: every wake
+			return EventResumeAutomatic
+		case 7: // PBT_APMRESUMESUSPEND: the user is present
+			return EventResume
 		}
-	case 0x02b1:
-		switch value {
-		case 2, 4, 6, 7:
-			return "suspend"
-		case 1, 3, 8:
-			return "resume"
+	case wmWTSSessionChange:
+		if value < uintptr(len(sessionEvents)) {
+			return sessionEvents[value]
 		}
-	case 0x007e:
-		return "display-change"
+	case wmDisplayChange:
+		return EventDisplayChange
 	}
 	return ""
 }

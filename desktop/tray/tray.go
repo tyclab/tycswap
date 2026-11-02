@@ -18,6 +18,23 @@ type Options struct {
 
 var ErrUnsupported = native.ErrUnsupported
 
+// OnSystemEvent's names; see the README's "Native tray adapter".
+const (
+	EventSuspend           = native.EventSuspend
+	EventResumeAutomatic   = native.EventResumeAutomatic
+	EventResume            = native.EventResume
+	EventDisplayChange     = native.EventDisplayChange
+	EventConsoleConnect    = native.EventConsoleConnect
+	EventConsoleDisconnect = native.EventConsoleDisconnect
+	EventRemoteConnect     = native.EventRemoteConnect
+	EventRemoteDisconnect  = native.EventRemoteDisconnect
+	EventLogon             = native.EventLogon
+	EventLogoff            = native.EventLogoff
+	EventLock              = native.EventLock
+	EventUnlock            = native.EventUnlock
+	EventRemoteControl     = native.EventRemoteControl
+)
+
 func New(icon Icon, opts Options) (Tray, error) {
 	return native.New(icon, native.Options{Name: opts.Name, Identifier: opts.Identifier, Tooltip: opts.Tooltip, OnClick: opts.OnClick, OnSystemEvent: opts.OnSystemEvent})
 }
