@@ -1011,6 +1011,47 @@ auto-switch and the model limit and opens the distro's dashboard; Claude
 Code's updates and *Add current login* stay on the distro's dashboard. Until
 the distro's app answers, the icon shows `⚠`.
 
+### Native tray adapter
+
+`github.com/tyclab/tycswap/desktop/tray` exposes the native icon, menu, tooltip
+and notification shell to other Go programs. It starts no account store, web
+dashboard or credential flow. Pass a product icon, `Name`, `Identifier` and a
+command callback to `New`, then call `Run` from the main goroutine. Callbacks
+must return promptly.
+
+`New` checks the options on every platform: `Identifier` is a letter followed
+by up to 100 letters, digits, `_`, `.` or `-`; `Name` is at most 100 UTF-16
+units; neither `Name` nor `Tooltip` contains NUL. On Windows a process holds
+one tray at a time: a second `New` fails until the first tray's `Run` returns.
+
+`Name` and `Identifier` replace tycswap's name where the platform has a slot
+for it: the Windows window title and class, and the Linux StatusNotifierItem
+title (until `SetTitle`), notification app name and item `Id`. macOS has no
+such slot. The menu accent colour stays tycswap's on macOS and Windows.
+`OnActivate` runs when a Linux tray host sends the item a primary click
+instead of opening its menu.
+
+On Windows, `OnSystemEvent` receives these names (the package's `Event*`
+constants) on the UI thread:
+
+| Event | Windows source |
+|---|---|
+| `suspend` | `PBT_APMSUSPEND` |
+| `resume-automatic` | `PBT_APMRESUMEAUTOMATIC`: every wake; it does not prove a user is present |
+| `resume` | `PBT_APMRESUMESUSPEND`: after `resume-automatic`, once the user is present |
+| `display-change` | `WM_DISPLAYCHANGE` |
+| `console-connect`, `console-disconnect` | `WTS_CONSOLE_CONNECT`, `WTS_CONSOLE_DISCONNECT` |
+| `remote-connect`, `remote-disconnect` | `WTS_REMOTE_CONNECT`, `WTS_REMOTE_DISCONNECT` |
+| `logon`, `logoff` | `WTS_SESSION_LOGON`, `WTS_SESSION_LOGOFF` |
+| `lock`, `unlock` | `WTS_SESSION_LOCK`, `WTS_SESSION_UNLOCK` |
+| `remote-control` | `WTS_SESSION_REMOTE_CONTROL` |
+| `session-events-unavailable` | `Run` could not register for session notifications; power and display events still arrive |
+
+Session events report the tray's own Windows session. `Run` registers for
+them once the icon is shown and unregisters before its window is destroyed.
+The application owns its desired state, debounce, process ownership and
+recovery policy.
+
 ### Status line integration
 
 tycswap keeps `statusline.json` in the backup store (see Data locations)
@@ -1227,8 +1268,6 @@ along with the backup store.
 
 MIT. Behavioral design and CLI surface derived from claude-swap, © Onur
 Cetinkol, MIT.
-</content>
-</invoke>
 
 When model limits are counted, automatic rotation requires a reported usage
 window for each selected model on its target. `all` requires every model

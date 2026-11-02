@@ -130,9 +130,9 @@ func (t *sniTray) SetMenu(items []Item) {
 // Notify calls org.freedesktop.Notifications.Notify.
 func (t *sniTray) Notify(title, body string) error {
 	e := &enc{}
-	e.string_(brand.Sanitized().Name) // app_name
-	e.uint32(0)                       // replaces_id
-	e.string_("")                     // app_icon
+	e.string_(t.name()) // app_name
+	e.uint32(0)         // replaces_id
+	e.string_("")       // app_icon
 	e.string_(title)
 	e.string_(body)
 	done := e.array(4) // actions: as
@@ -168,6 +168,14 @@ func (t *sniTray) Ask(title, body, okLabel, cancelLabel string) (bool, error) {
 		return false, err
 	}
 	return false, ErrUnsupported
+}
+
+// name is the caller's Name, else the brand's: the title until SetTitle and the notifications' app name.
+func (t *sniTray) name() string {
+	if t.opts.Name != "" {
+		return t.opts.Name
+	}
+	return brand.Sanitized().Name
 }
 
 // ── incoming method calls ──────────────────────────────────────────────────
@@ -214,13 +222,17 @@ func (t *sniTray) itemProperty(e *enc, name string) bool {
 	title, tooltip, icon := t.title, t.tooltip, t.icon
 	t.mu.Unlock()
 	if title == "" {
-		title = brand.Sanitized().Name
+		title = t.name()
 	}
 	switch name {
 	case "Category":
 		e.variantString("ApplicationStatus")
 	case "Id":
-		e.variantString(brand.Sanitized().Name)
+		if t.opts.Identifier != "" {
+			e.variantString(t.opts.Identifier)
+		} else {
+			e.variantString(brand.Sanitized().Name)
+		}
 	case "Title":
 		e.variantString(title)
 	case "Status":

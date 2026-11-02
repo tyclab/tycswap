@@ -1,6 +1,10 @@
 package tray
 
-import "testing"
+import (
+	"errors"
+	"strings"
+	"testing"
+)
 
 func TestMenuModelIDs(t *testing.T) {
 	var m menuModel
@@ -61,5 +65,31 @@ func TestFallbackTitleAndClickable(t *testing.T) {
 	}
 	if _, ok := m.idAt(2); ok {
 		t.Error("disabled row must not resolve to an ID")
+	}
+}
+
+// Name is limited in UTF-16 units, as Windows counts it, not in bytes; NUL cuts a UTF-16 string short.
+func TestNewValidatesOptionsOnEveryPlatform(t *testing.T) {
+	for i, o := range []Options{
+		{},
+		{Name: "Party Visuals", Identifier: "io.tyclab.partyvisuals.controller", Tooltip: "Party Visuals"},
+		{Name: strings.Repeat("é", 100)},
+		{Identifier: "A" + strings.Repeat("b", 100)},
+	} {
+		if _, err := New(Icon{}, o); !errors.Is(err, ErrUnsupported) {
+			t.Errorf("valid options %d: %v, want only ErrUnsupported for the empty icon", i, err)
+		}
+	}
+	for i, o := range []Options{
+		{Identifier: "1x"},
+		{Identifier: "a b"},
+		{Identifier: "A" + strings.Repeat("b", 101)},
+		{Name: strings.Repeat("😀", 51)},
+		{Name: "a\x00b"},
+		{Tooltip: "a\x00b"},
+	} {
+		if _, err := New(Icon{}, o); err == nil || errors.Is(err, ErrUnsupported) {
+			t.Errorf("invalid options %d: %v, want a validation error", i, err)
+		}
 	}
 }

@@ -12,7 +12,9 @@ package tray
 import (
 	"errors"
 	"reflect"
+	"regexp"
 	"strings"
+	"unicode/utf16"
 )
 
 var ErrUnsupported = errors.New("tray: no system tray in this build")
@@ -143,6 +145,13 @@ type Icon struct {
 
 // Options wires the caller's reactions.
 type Options struct {
+	// Name replaces the brand name the shell shows: the Windows window title, the StatusNotifierItem title (until
+	// SetTitle) and notification app name; macOS has no such slot. Identifier is the Windows window class and the
+	// StatusNotifierItem Id. The menus' accent colour stays the brand's.
+	Name       string
+	Identifier string
+	// OnSystemEvent receives the Event names below (Windows only) on the UI thread; return promptly.
+	OnSystemEvent func(string)
 	// Tooltip is the initial hover text (also the accessibility label).
 	Tooltip string
 	// OnClick receives the ID of the menu item the user chose.
@@ -153,6 +162,26 @@ type Options struct {
 	// menu on every click and never call it.
 	OnActivate func()
 }
+
+// OnSystemEvent's names. Every wake sends EventResumeAutomatic, EventResume only once the user is present;
+// session events are this session's WTS changes, or EventSessionEventsUnavailable if Run could not register.
+const (
+	EventSuspend           = "suspend"
+	EventResumeAutomatic   = "resume-automatic"
+	EventResume            = "resume"
+	EventDisplayChange     = "display-change"
+	EventConsoleConnect    = "console-connect"
+	EventConsoleDisconnect = "console-disconnect"
+	EventRemoteConnect     = "remote-connect"
+	EventRemoteDisconnect  = "remote-disconnect"
+	EventLogon             = "logon"
+	EventLogoff            = "logoff"
+	EventLock              = "lock"
+	EventUnlock            = "unlock"
+	EventRemoteControl     = "remote-control"
+
+	EventSessionEventsUnavailable = "session-events-unavailable"
+)
 
 // Tray is the live icon.
 type Tray interface {
@@ -176,9 +205,32 @@ type Asker interface {
 	Ask(title, body, okLabel, cancelLabel string) (bool, error)
 }
 
+var identifierPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_.-]{0,100}$`)
+
 // New builds the platform tray or returns ErrUnsupported.
 func New(icon Icon, opts Options) (Tray, error) {
+	if err := validateOptions(opts); err != nil {
+		return nil, err
+	}
 	return newTray(icon, opts)
+}
+
+// validateOptions counts Name in UTF-16 units, as Windows does; a NUL would cut its UTF-16 copy short.
+func validateOptions(opts Options) error {
+	if opts.Identifier != "" && !identifierPattern.MatchString(opts.Identifier) {
+		return errors.New("tray: invalid Identifier: a letter, then up to 100 of A-Z a-z 0-9 _ . -")
+	}
+	units := 0
+	for _, r := range opts.Name {
+		units += utf16.RuneLen(r)
+	}
+	if units > 100 || strings.ContainsRune(opts.Name, 0) {
+		return errors.New("tray: invalid Name: at most 100 UTF-16 units, no NUL")
+	}
+	if strings.ContainsRune(opts.Tooltip, 0) {
+		return errors.New("tray: invalid Tooltip: contains NUL")
+	}
+	return nil
 }
 
 type menuModel struct {

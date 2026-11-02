@@ -27,6 +27,7 @@ var (
 	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
 
 	pRegisterClassExW         = user32.NewProc("RegisterClassExW")
+	pUnregisterClassW         = user32.NewProc("UnregisterClassW")
 	pRegisterWindowMessageW   = user32.NewProc("RegisterWindowMessageW")
 	pCreateWindowExW          = user32.NewProc("CreateWindowExW")
 	pDefWindowProcW           = user32.NewProc("DefWindowProcW")
@@ -151,7 +152,9 @@ type windowsTray struct {
 	painter *activeMenuPainter // UI thread only, bound to the open menu snapshot
 	panel   *windowsPanel
 	ready   chan struct{}
-	err     error
+	// wtsRegistered: UI thread only, set while WTS session notifications are registered.
+	wtsRegistered bool
+	err           error
 }
 
 var (
@@ -189,8 +192,11 @@ func newTray(icon Icon, opts Options) (Tray, error) {
 	}
 	t := &windowsTray{icon: icon, opts: opts, tooltip: opts.Tooltip, iconPNG: icon.PNG, ready: make(chan struct{})}
 	winMu.Lock()
+	defer winMu.Unlock()
+	if winTray != nil { // trayWndProc reaches the tray through winTray alone
+		return nil, errors.New("tray: this process already has a tray; a new one waits until its Run returns")
+	}
 	winTray = t
-	winMu.Unlock()
 	return t, nil
 }
 
@@ -226,9 +232,24 @@ func (t *windowsTray) Run() error {
 	// the message loop to NIM_DELETE, until Run returns.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	defer func() {
+		winMu.Lock()
+		if winTray == t {
+			winTray = nil
+		}
+		winMu.Unlock()
+	}()
 	setPanelDPIAware()
 
-	className := utf16z(windowClass())
+	class := windowClass()
+	if t.opts.Identifier != "" {
+		class = t.opts.Identifier
+	}
+	className := utf16z(class)
+	name := t.opts.Name
+	if name == "" {
+		name = brand.Sanitized().Name
+	}
 	hInst, _, _ := pGetModuleHandleW.Call(0)
 	wc := wndClassExW{
 		cbSize:        uint32(unsafe.Sizeof(wndClassExW{})),
@@ -239,8 +260,10 @@ func (t *windowsTray) Run() error {
 	if atom, _, err := pRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc))); atom == 0 {
 		return errors.New("tray: RegisterClassEx: " + err.Error())
 	}
+	// A closure keeps className alive to the call; it fails, harmlessly, while an early return leaves the window.
+	defer func() { pUnregisterClassW.Call(uintptr(unsafe.Pointer(className)), hInst) }()
 	registerTaskbarCreated()
-	hwnd, _, err := pCreateWindowExW.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(utf16z(brand.Sanitized().Name))),
+	hwnd, _, err := pCreateWindowExW.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(utf16z(name))),
 		0, 0, 0, 0, 0, 0, 0, hInst, 0)
 	if hwnd == 0 {
 		return errors.New("tray: CreateWindowEx: " + err.Error())
@@ -263,6 +286,14 @@ func (t *windowsTray) Run() error {
 
 	if err := t.addIcon(); err != nil {
 		return errors.New("tray: Shell_NotifyIcon(NIM_ADD): " + err.Error())
+	}
+	// Session events are optional: power events need no registration, so a failure only drops them.
+	if t.opts.OnSystemEvent != nil {
+		if registerSessionEvents(hwnd) == nil {
+			t.wtsRegistered = true
+		} else {
+			t.opts.OnSystemEvent(EventSessionEventsUnavailable)
+		}
 	}
 
 	var m msg
@@ -618,6 +649,17 @@ func trayWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uint
 		return 0
 	}
 	switch message {
+	case wmPowerBroadcast, wmWTSSessionChange, wmDisplayChange:
+		if t.opts.OnSystemEvent == nil {
+			break
+		}
+		if event := systemEvent(message, wParam); event != "" {
+			t.opts.OnSystemEvent(event)
+		}
+		if message == wmPowerBroadcast {
+			return 1 // TRUE: processed
+		}
+		return 0
 	case 0x001a, 0x0015, 0x031a: // settings, system colors, visual theme
 		if t.painter != nil && t.painter.theme != readMenuTheme() {
 			endThemedMenu()
@@ -674,6 +716,10 @@ func trayWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uint
 		pDestroyWindow.Call(uintptr(hwnd))
 		return 0
 	case wmDestroy:
+		if t.wtsRegistered { // the window must still exist to unregister
+			t.wtsRegistered = false
+			_ = unregisterSessionEvents(uintptr(hwnd))
+		}
 		pPostQuitMessage.Call(0)
 		return 0
 	}

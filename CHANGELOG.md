@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Added:** `github.com/tyclab/tycswap/desktop/tray` gives other Go programs the native tray (icon, menu, tooltip, notifications) without account APIs, with `Name` and `Identifier` for their own product and Windows power, display and session events through `OnSystemEvent`; see [Native tray adapter](README.md#native-tray-adapter).
+
 - **Fixed:** Ultra accounts (formerly Max 20x) remain eligible for Fable, model routing and recovery after Anthropic removes their five-hour limit. Decisions follow reported windows during the staged rollout; weekly, model and any remaining five-hour limits still apply.
 
 - **Changed:** the Opus / other group leaves Fable-capable accounts to Fable work. Its auto-switch ranks accounts that cannot run Fable first under either strategy, and when the group sits on an account that can, it hands over to one that cannot as soon as that one is below every bar (`switch` trigger `reserved`, `no-switch` reason `reserved-no-target`, both under the usual cooldown). The default login and the Fable group are unchanged; `tycswap claude` already preferred those accounts.
