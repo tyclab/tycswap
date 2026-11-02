@@ -260,7 +260,8 @@ func (t *windowsTray) Run() error {
 	if atom, _, err := pRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc))); atom == 0 {
 		return errors.New("tray: RegisterClassEx: " + err.Error())
 	}
-	defer pUnregisterClassW.Call(uintptr(unsafe.Pointer(className)), hInst) // fails, harmlessly, while a window is left
+	// A closure keeps className alive to the call; it fails, harmlessly, while an early return leaves the window.
+	defer func() { pUnregisterClassW.Call(uintptr(unsafe.Pointer(className)), hInst) }()
 	registerTaskbarCreated()
 	hwnd, _, err := pCreateWindowExW.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(utf16z(name))),
 		0, 0, 0, 0, 0, 0, 0, hInst, 0)
