@@ -28,6 +28,7 @@ var (
 	kernel32 = windows.NewLazySystemDLL("kernel32.dll")
 
 	pRegisterClassExW         = user32.NewProc("RegisterClassExW")
+	pUnregisterClassW         = user32.NewProc("UnregisterClassW")
 	pRegisterWindowMessageW   = user32.NewProc("RegisterWindowMessageW")
 	pCreateWindowExW          = user32.NewProc("CreateWindowExW")
 	pDefWindowProcW           = user32.NewProc("DefWindowProcW")
@@ -198,8 +199,11 @@ func newTray(icon Icon, opts Options) (Tray, error) {
 	}
 	t := &windowsTray{icon: icon, opts: opts, tooltip: opts.Tooltip, iconPNG: icon.PNG, ready: make(chan struct{})}
 	winMu.Lock()
+	defer winMu.Unlock()
+	if winTray != nil { // trayWndProc reaches the tray through winTray alone
+		return nil, errors.New("tray: this process already has a tray; a new one waits until its Run returns")
+	}
 	winTray = t
-	winMu.Unlock()
 	return t, nil
 }
 
@@ -235,6 +239,13 @@ func (t *windowsTray) Run() error {
 	// the message loop to NIM_DELETE, until Run returns.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	defer func() {
+		winMu.Lock()
+		if winTray == t {
+			winTray = nil
+		}
+		winMu.Unlock()
+	}()
 	setPanelDPIAware()
 
 	class := windowClass()
@@ -256,6 +267,7 @@ func (t *windowsTray) Run() error {
 	if atom, _, err := pRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc))); atom == 0 {
 		return errors.New("tray: RegisterClassEx: " + err.Error())
 	}
+	defer pUnregisterClassW.Call(uintptr(unsafe.Pointer(className)), hInst) // fails, harmlessly, while a window is left
 	registerTaskbarCreated()
 	hwnd, _, err := pCreateWindowExW.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(utf16z(name))),
 		0, 0, 0, 0, 0, 0, 0, hInst, 0)

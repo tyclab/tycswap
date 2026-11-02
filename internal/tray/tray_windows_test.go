@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"testing"
 	"time"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -154,13 +153,6 @@ func TestQuitBeforeRunEndsRun(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not return after a Quit that came before it")
 	}
-	// Run registered the window class; free it so the next Run in this
-	// process (-count=2) can register it again.
-	hInst, _, _ := pGetModuleHandleW.Call(0)
-	unregister := user32.NewProc("UnregisterClassW")
-	if ok, _, err := unregister.Call(uintptr(unsafe.Pointer(utf16z(windowClass()))), hInst); ok == 0 {
-		t.Errorf("UnregisterClass: %v", err)
-	}
 }
 
 // A re-add the shell refuses keeps the icon there was, which the shell may
@@ -194,4 +186,48 @@ func TestFailedReaddKeepsTheShownIcon(t *testing.T) {
 	if ok, _, _ := pDestroyIcon.Call(uintptr(offered)); ok != 0 {
 		t.Error("the icon the shell refused was not freed")
 	}
+}
+
+// trayWndProc finds the tray through the one winTray, so a second New would take over the first
+// tray's window. It is refused until the first Run has ended; then a new tray runs again.
+func TestSecondTrayWaitsForTheFirstRunToEnd(t *testing.T) {
+	prevShell := shellNotifyIcon
+	shellNotifyIcon = func(uintptr, *notifyIconData) error { return nil }
+	winMu.Lock()
+	prevTray := winTray
+	winTray = nil
+	winMu.Unlock()
+	t.Cleanup(func() {
+		shellNotifyIcon = prevShell
+		winMu.Lock()
+		winTray = prevTray
+		winMu.Unlock()
+	})
+	run := func(tr Tray) {
+		t.Helper()
+		tr.Quit()
+		done := make(chan error, 1)
+		go func() { done <- tr.Run() }()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("Run did not return after Quit")
+		}
+	}
+	first, err := newTray(Icon{PNG: testPNG(t)}, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newTray(Icon{PNG: testPNG(t)}, Options{}); err == nil {
+		t.Fatal("a second tray replaced the first")
+	}
+	run(first)
+	second, err := newTray(Icon{PNG: testPNG(t)}, Options{})
+	if err != nil {
+		t.Fatalf("a tray after the first Run ended: %v", err)
+	}
+	run(second)
 }

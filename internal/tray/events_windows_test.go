@@ -6,7 +6,6 @@ import (
 	"errors"
 	"testing"
 	"time"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -80,7 +79,7 @@ func stubSessionEvents(t *testing.T, register, unregister func(uintptr) error) {
 	})
 }
 
-// runTestTray starts Run and waits for its window; the cleanup quits it and frees the class.
+// runTestTray starts Run and waits for its window; the cleanup quits it.
 func runTestTray(t *testing.T, opts Options) (*windowsTray, uintptr, chan error) {
 	t.Helper()
 	opts.Identifier = "TycswapEventsTest"
@@ -98,8 +97,6 @@ func runTestTray(t *testing.T, opts Options) (*windowsTray, uintptr, chan error)
 		case <-time.After(5 * time.Second):
 			t.Error("Run did not end after Quit")
 		}
-		hInst, _, _ := pGetModuleHandleW.Call(0)
-		user32.NewProc("UnregisterClassW").Call(uintptr(unsafe.Pointer(utf16z(opts.Identifier))), hInst)
 	})
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
 		select {
