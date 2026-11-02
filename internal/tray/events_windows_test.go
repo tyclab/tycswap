@@ -174,3 +174,25 @@ func TestFailedSessionRegistrationKeepsPowerEvents(t *testing.T) {
 		t.Errorf("unregistered %d times a subscription that never existed", unregistered)
 	}
 }
+
+// Only WM_POWERBROADCAST wants TRUE; without a handler the messages are DefWindowProc's.
+func TestSystemMessagesAnswerAsDocumented(t *testing.T) {
+	winMu.Lock()
+	old := winTray
+	winMu.Unlock()
+	t.Cleanup(func() { winMu.Lock(); winTray = old; winMu.Unlock() })
+	use := func(tr *windowsTray) { winMu.Lock(); winTray = tr; winMu.Unlock() }
+	use(&windowsTray{opts: Options{OnSystemEvent: func(string) {}}})
+	for message, want := range map[uint32]uintptr{wmPowerBroadcast: 1, wmWTSSessionChange: 0, wmDisplayChange: 0} {
+		if got := trayWndProc(0, message, 7, 0); got != want {
+			t.Errorf("handled %#x returned %d, want %d", message, got, want)
+		}
+	}
+	use(&windowsTray{})
+	for _, message := range []uint32{wmPowerBroadcast, wmWTSSessionChange, wmDisplayChange} {
+		want, _, _ := pDefWindowProcW.Call(0, uintptr(message), 7, 0)
+		if got := trayWndProc(0, message, 7, 0); got != want {
+			t.Errorf("unhandled %#x returned %d, want DefWindowProc's %d", message, got, want)
+		}
+	}
+}

@@ -643,11 +643,17 @@ func trayWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uint
 		return 0
 	}
 	switch message {
-	case 0x0218, 0x02b1, 0x007e:
-		if event := systemEvent(message, wParam); event != "" && t.opts.OnSystemEvent != nil {
+	case wmPowerBroadcast, wmWTSSessionChange, wmDisplayChange:
+		if t.opts.OnSystemEvent == nil {
+			break
+		}
+		if event := systemEvent(message, wParam); event != "" {
 			t.opts.OnSystemEvent(event)
 		}
-		return 1
+		if message == wmPowerBroadcast {
+			return 1 // TRUE: processed
+		}
+		return 0
 	case 0x001a, 0x0015, 0x031a: // settings, system colors, visual theme
 		if t.painter != nil && t.painter.theme != readMenuTheme() {
 			endThemedMenu()
