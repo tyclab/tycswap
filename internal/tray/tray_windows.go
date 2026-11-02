@@ -265,7 +265,7 @@ func (t *windowsTray) Run() error {
 			pDestroyWindow.Call(hwnd)
 			return err
 		}
-		defer unregisterSessionEvents(hwnd)
+		defer func() { _ = unregisterSessionEvents(hwnd) }()
 	}
 	// Set under mu, where Quit reads it: a Quit from before the window is
 	// posted here and a later one posts itself, so none is lost or posted

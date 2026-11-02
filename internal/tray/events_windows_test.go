@@ -2,7 +2,11 @@
 
 package tray
 
-import "testing"
+import (
+	"testing"
+
+	"golang.org/x/sys/windows"
+)
 
 func TestPowerAndSessionEventsRemainDistinct(t *testing.T) {
 	for _, v := range []struct {
@@ -25,5 +29,26 @@ func TestSystemEventsReachOnlyOptedInTray(t *testing.T) {
 	trayWndProc(0, 0x218, 18, 0)
 	if seen != "resume-automatic" {
 		t.Fatal("automatic wake was lost or treated as user resume")
+	}
+}
+
+func TestMissingSessionExportIsAnError(t *testing.T) {
+	prevRegister, prevUnregister := registerWTS, unregisterWTS
+	t.Cleanup(func() { registerWTS, unregisterWTS = prevRegister, prevUnregister })
+	for _, proc := range []*windows.LazyProc{sessionDLL.NewProc("TycswapNoSuchExport"), windows.NewLazySystemDLL("tycswap-no-such.dll").NewProc("WTSRegisterSessionNotification")} {
+		registerWTS, unregisterWTS = proc, proc
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("%s panicked: %v", proc.Name, r)
+				}
+			}()
+			if err := registerSessionEvents(0); err == nil {
+				t.Errorf("register through a missing %s succeeded", proc.Name)
+			}
+			if err := unregisterSessionEvents(0); err == nil {
+				t.Errorf("unregister through a missing %s succeeded", proc.Name)
+			}
+		}()
 	}
 }
