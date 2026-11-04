@@ -147,8 +147,7 @@ Type to filter, use the arrow keys to choose, and press Escape to go back.
 existing login, or adds a token. **Manage accounts…** switches, renames,
 enables/disables, moves, or removes an account. It also offers **Sign in again…**
 and **Use saved login** for Claude; renewing the active account activates its new login.
-**Session groups…** guides account switching, starting/resuming sessions, settings,
-and ownership reconciliation. **Import / export…** guides Claude and Codex file transfers.
+**Import / export…** guides Claude and Codex file transfers.
 **Open web dashboard** reuses the running app, starting it in the background if needed.
 Closing the menu leaves the tray running.
 
@@ -164,7 +163,7 @@ value. Complete commands, existing defaults, scripts and JSON calls keep their
 behavior; `TYCSWAP_NO_PROMPT=1` disables automatic prompts.
 
 The dashboard and tray also have **Add account…** and **Interactive menu…**.
-The latter opens all account, group and transfer actions. They open guided setup in
+The latter opens all account and transfer actions. They open guided setup in
 a terminal; no command needs to be copied. A Windows tray connected to WSL
 opens setup in the distro named by its token file. The web dashboard can send
 that request through the connected Windows tray, even when the WSL service
@@ -406,7 +405,7 @@ Each window has a limit of its own, set by how fast that window fills:
 
 Ultra (formerly Max 20x) loses its five-hour limit as Anthropic verifies
 accounts during its staged rollout. tycswap follows the windows returned by
-Anthropic: an absent five-hour window does not block routing or recovery,
+Anthropic: an absent five-hour window does not block switching or recovery,
 and weekly and counted model limits still apply. A reported five-hour window
 continues to count, including on Ultra accounts awaiting verification. Max
 (formerly Max 5x) retains that window. No threshold changes are needed.
@@ -533,34 +532,11 @@ TUI and the dashboard's *Force switch* do not ask and refuse, pointing at
 
 ### Run accounts in parallel
 
-For automatic account selection as you change models, start Claude with:
-
-```sh
-tycswap claude --model fable
-tycswap claude --model opus
-tycswap claude --model fable --resume SESSION_ID
-```
-
-The selected model determines the account requirements. Each model request uses
-fresh usage data to choose an eligible account, with preference for ordinary
-accounts when Fable is not needed. Changing models keeps the conversation and
-process running. Separate credential profiles let Fable and Opus conversations
-run at the same time. `--account ACCOUNT` chooses the initial account; subsequent
-requests use automatic selection.
-
-Concurrent requests in one profile share its account until they finish. A
-Fable subagent requires a Fable main model. Unknown compatibility, unavailable
-quota or a conflicting active request blocks the affected request. Existing
-`run`, `env` and group commands remain available. Automatic routing requires
-Claude Code 2.1.309 or later and a working Mods runtime, checked before launch.
-See [the command reference](docs/reference.md#tycswap-claude) for model defaults,
-resume behavior and supported arguments.
-
-Routing runs while its Claude mod is loaded. If Claude unloads the Mods worker
-after a crash, the conversation can continue on its last account without routing.
-Exit and restart it with `tycswap claude` before continuing after such a failure.
-Other mods that change the requested model or replace request dispatch are
-unsupported alongside automatic routing. Regular plugins remain supported.
+Plain `claude` needs nothing from tycswap: every session runs on the default
+login, and auto-switch moves that login by the models the sessions run (see
+[Auto-switch before a limit](#auto-switch-before-a-limit)). All default
+sessions share one account at a time, and subagents run on their session's
+account. To run a second account beside it, pin a terminal to that account.
 
 `tycswap run` launches Claude Code as a chosen account in the current terminal
 only, using a session profile, without changing the machine-wide active login.
@@ -576,43 +552,17 @@ Arguments after `--` are forwarded to `claude`. When the requested account is
 already the active default login, `tycswap run` launches `claude` directly rather
 than preparing a session profile.
 
-**Independent session groups.** Choose a group when starting or resuming Claude:
+**Session groups are retired.** The Fable and Opus / other groups and
+`tycswap claude` are gone; plain `claude` follows the session's model on the
+default login instead. A former group hands its account back on the first
+auto-switch tick after its last session exits, and its conversations are
+copied into the default profile, so `claude --resume` continues them.
 
-```sh
-tycswap run --group fable
-tycswap run --group opus --resume SESSION_ID
-tycswap groups switch fable ACCOUNT
-tycswap groups release opus
-tycswap groups --json
-```
-
-Fable sessions share one account; Opus/other sessions share another. A group
-switch reaches its sessions on subsequent requests and leaves the other group
-and default login alone. Existing sessions keep running until you choose to
-restart them. The first move across profiles forks the native conversation;
-the original history remains intact, and later resumes use the group's saved ID.
-Accounts already owned by another profile cannot be selected concurrently.
-A group keeps its account after its sessions end; `groups release opus` hands
-it back once they have exited, so the default login and the other group can
-rotate onto it. Its newest credential is saved first; the group picks an
-account again on its next start.
-
-Fable startup requires a compatible account. A verified Business continuation
-can be recorded with `tycswap groups capability ACCOUNT continue true`; it does
-not authorize a new Fable startup. Pro accounts remain excluded. Model access
-and available quota are separate checks. Unknown ownership or compatibility
-holds rotation and shows the reason. `groups reconcile fable|opus` checks an
-interrupted switch before another launch. Per-group overrides use
-`tycswap groups config opus autoswitch.sevenDayThreshold 97`; other settings
-inherit the default policy and counted models follow the group's sessions.
-
-The dashboard has one account-group selector. Click a quota heading to choose
-the primary sort; ties use the other applicable limits. **Next best** restores
-availability ordering. Sorting changes the view, independently of rotation.
-
-Managed Claude sessions can offer **Continue in Codex** after a corroborated
-limit, once compatible account rotation is exhausted and the known wait exceeds
-30 minutes (`autoswitch.handoverWaitMinutes`, minimum 15). Review saved context
+A Claude session whose lifecycle hooks run `tycswap recovery record` can offer
+**Continue in Codex** after a corroborated limit, once compatible account
+rotation is exhausted and the known wait exceeds 30 minutes
+(`autoswitch.handoverWaitMinutes`, minimum 15); any other stopped session can be
+chosen in the dashboard for a manual plan. Review saved context
 and omissions before explicitly starting a new conversation. Unfinished tools,
 unknown source state and another busy editor in the same worktree block launch.
 The Flakelab launcher reserves editing ownership and preserves source history;
@@ -625,9 +575,8 @@ owning host; ordinary terminal error text is insufficient. A Codex account
 switch still requires restarting/resuming Codex. Without the supported launcher,
 the dashboard provides a manual plan; stop the source before running it.
 `tycswap recovery prepare --help` explains saved-context preparation without a
-model request. Group histories remain local and are not included in Flakelab's
-cross-machine transcript sync. The dashboard's **Guide → Sessions** covers the
-workflow, including Flakelab start/resume integration.
+model request. The dashboard's **Guide → Sessions** covers the workflow,
+including Flakelab start/resume integration.
 
 **Directory mappings.** Map a directory to an account so a bare `tycswap run` in
 that directory resolves to it:
@@ -901,25 +850,20 @@ On Windows, clicking the icon opens a compact **Accounts / Advanced** panel.
 Each account appears once, with separate 5-hour, weekly and reported model
 columns. Percentages are **used quota**; `—` means no measurement was reported.
 Fable at 100% does not mean the shared weekly limit is exhausted. Active
-accounts are bold blue, and **Used by** identifies their session groups.
+accounts are bold blue, and **Used by** names the default login.
 Focus a row to inspect reset times and freshness. Clicking a column sorts
 the table; it does not change which models an engine counts. To switch,
-double-click a row (or press Enter) and choose the destination: the default
-login or a session group. A destination that cannot take the account stays
-listed, disabled, with the reason. The panel sizes itself to its content:
+double-click a row (or press Enter) and confirm the default login's switch.
+An account that cannot be switched to stays listed, disabled, with the reason. The panel sizes itself to its content:
 buttons and columns fit their text, full account names show, and tables are
 as tall as their rows.
 
-**Settings** in the tray and dashboard edit the same store. Choose **Shared
-defaults**, **Fable**, or **Opus / other**. Group overrides apply only to that
-group; Reset makes it inherit the shared value again. Group model limits
-follow confirmed session models and cannot be edited independently. Existing
-sessions stay in their current profiles; choose a group on their next start
-or resume. Start at login is local to the tray's device.
+**Settings** in the tray and dashboard edit the same store; Reset restores a
+default. Start at login is local to the tray's device.
 
 macOS and Linux retain their platform menus; Linux's host menu protocol does
 not support the native table and form controls. The dashboard provides the
-same group settings on those platforms. The icon's title reports the active
+same settings on those platforms. The icon's title reports the active
 account and its fullest counted window (`#1 · 45%`, with `⟳` while the hosted
 engine runs). Notifications report switches, quarantines and thresholds.
 Update checks and installation retain the normal release checks and restart
@@ -1279,24 +1223,24 @@ window for each selected model on its target. `all` requires every model
 reported across the current account measurements. If no compatible account has
 quota, the engine keeps the current account instead of selecting a target with
 missing model data. This is a conservative quota check, not a model-entitlement
-probe. Keep Fable counted while using it; the switcher does not detect or change
-the selected model inside a running session, or restart sessions.
+probe. Without `autoswitch.model`, the models counted are the ones the default
+login's sessions report through their status lines; the switcher never changes
+the model inside a running session, or restarts sessions.
 
 ## Process and logic
 
 ```mermaid
 flowchart LR
-    A["CLI / zsh menu / dashboard / tray / web"] --> M["Accounts / session groups / import-export"]
+    A["CLI / zsh menu / dashboard / tray / web"] --> M["Accounts / import-export"]
     M --> B["Claude or Codex provider"]
     A --> I["Guided account setup → browser sign-in"]
     I --> B
-    B --> C["Locked account store and session groups"]
+    B --> C["Locked account store"]
     C --> D["Ownership-checked switch / refresh"]
-    D --> E["Active CLI or group credentials"]
+    D --> E["Default login credentials"]
     F["Usage polling"] --> G["Auto-switch policy"]
+    S["Session status lines → auto --observe"] --> G
     G --> D
-    J["Managed Claude model request"] --> K["Compatibility / fresh quota / request reservation"]
-    K --> D
     H["Reviewed recovery handover"] --> C
 ```
 

@@ -8,7 +8,7 @@ tycswap — multi-account switcher for Claude Code.
 
 ```
 tycswap                                       interactive action menu (human terminal only)
-tycswap menu [add|manage|groups|transfer]      open a guided menu
+tycswap menu [add|manage|transfer]             open a guided menu
 tycswap help                                  print the command list and options
 tycswap list [--json] [--token-status]        list managed accounts
 tycswap status [--json]                       show the active account
@@ -29,8 +29,6 @@ tycswap alias [<NUM|EMAIL|ALIAS> <NAME>]      set / list account aliases
 tycswap alias <NUM|EMAIL|ALIAS> --unset       remove an account's alias
 tycswap move <NUM|EMAIL|ALIAS> <SLOT>         assign an account to a slot (swaps if taken)
 tycswap swap <A> <B>                          exchange two accounts' slot numbers
-tycswap claude [--model MODEL] [--account ACCOUNT] [--resume ID|PATH] [CLAUDE-ARGS...]
-                                            select accounts automatically for Claude model requests
 tycswap run [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history|--no-share-history] [-- ARGS...]
                                             launch Claude Code as an account, this terminal only
 tycswap env [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history] [--shell {sh|fish|pwsh}] [--unset]
@@ -646,10 +644,10 @@ reports `Updated credentials for Account <n> (<email> [<tag>]).`. This is the
 supported way to repair an account whose refresh token has died (`usageStatus:
 relogin_required`): run `tycswap add --login` and sign in as that account, or
 log in with it in Claude Code and re-run `tycswap add`. The refresh also clears
-any `tycswap auto` quarantine on that slot. An account a session group holds is
-refused, naming the group: its stored login stays the group's until the group
-releases it, which an idle group does on its own a few minutes after its
-sessions end, or `tycswap groups release` (DESIGN A74).
+any `tycswap auto` quarantine on that slot. An account a retired session group
+still holds is refused, naming the group: its stored login stays the group's
+until the next auto-switch tick after its last session exits hands it back
+(DESIGN A74, A78).
 
 With `--login`, `add` stores a login the live one never sees. It creates a
 private scratch profile (`login.*`, mode 0700) under the backup root and runs
@@ -1175,106 +1173,6 @@ Swapped Account 1 and Account 2:
 
 ---
 
-## tycswap claude
-
-### Synopsis
-
-```sh
-tycswap claude [--model MODEL] [--account NUM|EMAIL|ALIAS] [--resume ID|PATH] [CLAUDE-ARGS...]
-```
-
-### Description
-
-Starts Claude Code with automatic account selection for model requests. The
-initial model selects a credential profile; model changes inside the conversation
-keep that profile and process. Fable and Opus/other profiles can run concurrently,
-subject to the existing rule that each login has one credential owner.
-
-Before dispatch, routing checks the requested model, active sessions, account
-compatibility and fresh usage. Eligible ordinary accounts are preferred when no
-Fable model is needed. Within that class, remaining quota and configured
-hysteresis determine the choice. An explicit `--account` selects the initial
-account only. The request remains on that profile's selected account until its
-response stream finishes; manual switches and automatic rotation cannot replace
-it during the request.
-
-Fable subagents require a Fable main model. Concurrent requests in a profile
-must use an account compatible with all its selected models. Unknown models,
-missing usable quota, uncertain ownership and conflicting requests stop dispatch
-and report the problem. Routing does not substitute a different model.
-
-Ultra and legacy Max plans retain Fable compatibility, subject to recorded
-capability overrides. Shared Claude quota requires a usable weekly window;
-the five-hour window is optional, because verified Ultra accounts lose it in
-stages. Routing and recovery still reject a malformed reported five-hour
-window and enforce every reported limit. The plan name alone never disables
-a window. A successful usage refresh replaces the previous measurement,
-removing any old five-hour window; failed refreshes keep the existing stale
-data and freshness rules. JSON omits an absent `fiveHour`, and status-line
-state publishes it as null. No schema or settings migration is required.
-
-### Options
-
-| Option | Meaning |
-|--------|---------|
-| `--model MODEL` | Initial Fable, Opus, Sonnet or Haiku model alias or canonical ID, optionally with `[1m]`. Unknown and conditional aliases are refused. |
-| `--account NUM\|EMAIL\|ALIAS` | Initial account; startup compatibility still applies. |
-| `--resume ID\|PATH`, `-r ID\|PATH` | Resume a specific conversation. Moving across profiles forks the original native history and records the destination ID for later resumes. |
-| Other Claude arguments | Forwarded after validation. |
-
-Resuming a routed conversation restores its physical profile and last successful
-main model when `--model` is omitted. `tycswap run --group GROUP --resume ID`
-also recognizes routed histories and restores their routing launcher.
-
-For a new conversation without `--model`, selection uses `ANTHROPIC_MODEL`, the
-default profile's `settings.json` model, `ANTHROPIC_DEFAULT_MODEL`, then `opus`,
-in that order.
-Use an explicit `--resume` value; `--continue` is unavailable. Custom settings,
-setting sources, plugin directories/URLs, safe/bare mode, explicit session IDs,
-`--fork-session` and `--fallback-model` are refused. Agent definitions remain
-supported and their requests pass through the same account checks. Ordinary
-subagents are supported; native agent-team teammates are unavailable with
-automatic routing.
-
-A profile containing a live session started outside automatic routing, or a
-live IDE instance, cannot start or dispatch routed requests. Exit those
-occupants before using the automatic launcher. Settings that disable the mod,
-set `fallbackModel`, or override `TYCSWAP_ROUTE_*`, `TYCSWAP_ROUTING`,
-`TYCSWAP_GROUP*` or `TYCSWAP_DEFAULT_*` in `env` are refused.
-
-### Requirements and files
-
-Requires Claude Code 2.1.309 or later with a working Mods runtime. The launcher
-checks the installed runtime before starting a conversation. It installs the
-bundled routing plugin under `<backup_root>/plugins/`, records managed sessions
-and active requests in `routing.json`, and serializes changes with `routing.lock`.
-Profiles and native histories remain under `groups/fable/profile` and
-`groups/opus/profile`. Exit the owning process to recover abandoned request
-reservations; a live process's unfinished request is not expired by a timer.
-
-The mod blocks requests when its routing callback fails. If Claude unloads the
-Mods worker itself, the session can continue using its last account without
-running the routing callback. Stop and restart the conversation through
-`tycswap claude` after a worker-unload message. This is the
-[native runtime's unload behavior](https://code.claude.com/docs/en/plugins/mods/troubleshoot#it-crashed-the-hooks-worker).
-
-Other mods must not rewrite the requested model or replace model dispatch.
-Claude can run an installed mod after the routing mod, so such a rewrite can
-invalidate the account selection already made. These combinations are
-unsupported; regular plugins and observational mods remain supported. See
-[native mod ordering](https://code.claude.com/docs/en/plugins/mods/events#the-order-mods-run-in).
-
-### Exit status
-
-The launched Claude process's exit status; `1` on a preparation failure. A
-request blocked after launch is reported in the conversation.
-
-### See also
-
-`tycswap run`, `tycswap groups`, `tycswap auto`.
-
----
-
 ## tycswap run
 
 ### Synopsis
@@ -1664,20 +1562,6 @@ tried is governed by `autoswitch.strategy` — earliest weekly renewal first
 (`soonest-reset`, the default) or most headroom first (`best`). See
 [SETTINGS](#settings) for the ordering rules.
 
-**The Opus / other group leaves Fable-capable accounts to Fable work** (DESIGN
-A71). Its engine never needs Fable, so under either strategy an account that
-can continue Fable sessions sorts after every qualifying account that cannot,
-within the same bar tier; it is taken only when nothing else is left. When the
-group's active account can run Fable and every window is under its bar, the
-tick hands over to an account that cannot as soon as one is below every bar:
-the `switch` line names the `reserved` trigger and no window
-(`Switched Account-5 -> Account-2 (b@example.com) (reserved)`), the cooldown
-applies as to a proactive move, and with nothing to hand over to the tick
-reports `no-switch` with reason `reserved-no-target` and leaves the account in
-place. The Fable group reserves nothing; the default login reserves while its
-live sessions run no Fable (below); `tycswap claude` prefers the same accounts
-for its own selection.
-
 **A login without a counted model's window hands over** (DESIGN A73). When the
 active account reports usage but no window for a model `autoswitch.model`
 counts, while another account reports one (a Pro login when Fable is counted),
@@ -1690,18 +1574,22 @@ cannot run at all until the login moves (DESIGN A77).
 **The default login follows its sessions' models** (DESIGN A76). While
 `autoswitch.model` is unset, a `--once` tick counts the per-model windows of
 the model families the default profile's live sessions run, as recorded by
-`--observe` from their status lines; a group's engine already counts its own
-sessions' models. A set `autoswitch.model` or `--model` always wins, and with
-no records nothing is counted. The loop and the dashboard's hosted engine keep
+`--observe` from their status lines. A set `autoswitch.model` or `--model`
+always wins, and with no records nothing is counted. The loop and the dashboard's hosted engine keep
 their configured models.
 
 **The default login leaves Fable-capable accounts to Fable work** (DESIGN
 A77). While `autoswitch.model` is unset and every live default session has a
-recorded model, none of them Fable, the scheduled tick treats an account that
-can continue Fable (its plan, or a recorded `continue` capability) as the Opus
-/ other group does (A71): it ranks after every other qualifying account, and an
-active one hands over (`reserved`) to an account that cannot run Fable and is
-below every bar. A live session without a recorded model (one that has not
+recorded model, none of them Fable, the scheduled tick reserves every account
+that can continue Fable (its plan, or a recorded `fableContinue` capability):
+under either strategy it sorts after every qualifying account that cannot,
+within the same bar tier, and is taken only when nothing else is left. When the
+active account is reserved and every window is under its bar, the tick hands
+over to an account that cannot run Fable as soon as one is below every bar:
+the `switch` line names the `reserved` trigger and no window
+(`Switched Account-5 -> Account-2 (b@example.com) (reserved)`), the cooldown
+applies as to a proactive move, and with nothing to hand over to the tick
+reports `no-switch` with reason `reserved-no-target` and stays. A live session without a recorded model (one that has not
 drawn its status line yet, or draws none, as a headless run) or a Fable
 session reserves nothing, and when a Fable session appears on a login without
 a Fable window the `model-missing` move follows at once. All default sessions
@@ -1709,12 +1597,16 @@ share one login: while one of them runs Fable, every one of them runs on a
 Fable-capable account. Subagents run on their main session's login, and only
 the main session's model is recorded.
 
-**Idle session groups give their account back** (DESIGN A74). A tick that is
-not a dry run releases an enabled group's account to the shared pool once the
-group has had no live or launching session for its `autoswitch.cooldownSeconds`
-(300), and reports it with the `group-release` event. A group login whose
-access token expired while no session ran is refreshed first, so its
-ownership can be verified.
+**Retired session groups give their account back** (DESIGN A78). Session
+groups and `tycswap claude` are gone. A tick that is not a dry run retires each
+former group once no session runs in its profile: its login goes back to the
+account's slot through the verified release (an unfinished group switch is
+reconciled first, and a login whose access token expired is refreshed first,
+so its ownership can be verified), its conversations are copied into the
+default profile where missing, so `claude --resume` continues them, and its
+control files go; the profile directory stays. A released account is reported
+with the `group-release` event. A login whose ownership cannot be verified
+keeps its claim, so no rotation takes it, and is retried on the next tick.
 
 **`--observe`** (DESIGN A75) is the status line's trigger. It reads the JSON
 Claude Code passes its status line. When a `rate_limits` five-hour or weekly
@@ -1728,8 +1620,8 @@ five-hour limit) never count. In the default profile it also records the model
 family the session runs, and when that is news (the session's first status
 line, or a model change) it runs one tick at once on the cached usage, without
 taking the 15-second slot, so the login follows the session's model before the
-next timer tick (DESIGN A77); in a group profile it marks that group's account
-instead. flakelab's status line command passes
+next timer tick (DESIGN A77); in a retired group's profile it marks that
+group's account instead. flakelab's status line command passes
 its input to `tycswap auto --observe` in the background.
 
 **Codex accounts.** When `autoswitch.codexEnabled` is true (the default) and
@@ -1792,7 +1684,7 @@ a `Z` suffix), plus per-kind fields:
 |---------|--------|
 | `poll` | `active` (`{number,email}` or null), `headroomPct` (`{num: float|null}`), `threshold` (float: the 7d bar), `fetchErrors` (`{num: msg}`, optional), `windowsPct` (`{num: {label: float}}`, optional) |
 | `switch` | `trigger` (`proactive`\|`at-limit`\|`failover`\|`reserved`\|`model-missing`), `axis` (`5h`\|`7d`\|`model`: the window that made the tick move; empty under `failover`, where usage was unreadable, and under `reserved` and `model-missing`, where the account decided), `from` (ref), `to` (ref), `warnings` (array), `dryRun` (bool) |
-| `group-release` | `group` (`fable`\|`opus`), `released` (`{number,email}`): an idle group's account returned to the shared pool |
+| `group-release` | `group` (`fable`\|`opus`), `released` (`{number,email}`): a retired group's account returned to its slot |
 | `no-switch` | `reason` (string), `detail` (string); under `active-usage-unknown` and `active-idle`, `detail` ends in ` · <skip reason>` while the active account's `list --json` row carries `usageRefresh.skipReason` |
 | `account-quarantined` | `number`, `email`, `reason` |
 | `account-unquarantined` | `number`, `email`, `reason` |
@@ -3458,8 +3350,8 @@ Legacy: `tycswap --purge`.
 ### Description
 
 Removes all tycswap data — the backup directory's contents and every stored account
-credential file. Empty `.lock` and `routing.lock` files remain in the directory
-so concurrent commands continue to share the same locks. It never touches an old claude-swap store that
+credential file. An empty `.lock` file remains in the directory so concurrent
+commands continue to share the same lock. It never touches an old claude-swap store that
 `tycswap migrate` copied from. It does not affect the current Claude Code login. Prompts for
 confirmation (`[y/N]`) on an interactive terminal; any answer other than `y`
 cancels. The passive update notice is suppressed for this command.
@@ -3469,10 +3361,10 @@ cannot be read counts as held), `purge` refuses before the prompt and deletes
 nothing: the tray would go on showing accounts that no longer exist. Quit the
 app from its menu first.
 
-Live managed launches and native sessions in legacy or group profiles also
-block purge. Unreadable process records are refused. The command checks these
-conditions again after confirmation, under the routing and roster locks, before
-deleting credentials or profiles.
+Live sessions in legacy or retired group profiles also block purge.
+Unreadable process records are refused. The command checks these conditions
+again after confirmation, under the account lock, before deleting credentials
+or profiles.
 
 Each account's email in `sequence.json` names the credential file to unlink
 (and, on macOS, the Keychain item to delete), so it must be one a file name
@@ -4894,8 +4786,9 @@ Inside the backup root:
 | `configs/` | Per-account config snapshots, `.claude-config-<n>-<email>.json`. `<email>` is the account's email as `add` accepts it (one `@`, at most 254 bytes, no whitespace, control character, `/`, `\` or `< > : " | ? *`), so the name is a single path component. |
 | `credentials/` | Per-account credential files, `.creds-<n>-<email>.enc` and the retained previous generation `.creds-<n>-<email>.enc.prev` (file backend; `<email>` as for `configs/`). macOS stores these in the Keychain instead, except a credential too large to reach the `security` command over stdin (a command line over 4032 bytes, so a credential over about 2 KB, for example one carrying many `mcpOAuth` tokens), which stays in this file (mode 0600) rather than on a command line. The live Claude Code credential falls back to `.credentials.json` the same way. |
 | `sessions/` | Per-account session-mode profiles, `<n>-<email>` (the `@` in the email replaced by `_`), created by `tycswap run` / `tycswap env`. |
-| `routing.json`, `routing.lock` | Managed Claude sessions, request reservations and routing resume metadata; the lock serializes account changes with dispatch. No credentials. |
-| `plugins/routing-*/` | Versioned bundled account-routing plugin and its runtime check. |
+| `default_models.json` | The model family each default-profile session runs, as `--observe` records it from the status line (DESIGN A76): `{"schemaVersion": 1, "sessions": {"<session id>": {"family", "seenAt"}}}`. Kept a day; no credentials. |
+| `observe_state.json` | The time of the last near-bar observation that ran a tick, for the 15-second slot (DESIGN A75). |
+| `groups/` | What retired session groups left (DESIGN A78): `claims.json` (also the legacy `run` profiles' claims), and per group a `profile/` directory kept for its history, plus `retired.json` once the group is retired. |
 | `cache/usage.json` | Cached usage measurements. |
 | `live_lineage.json` | The chain record of the default login's live credential (DESIGN A68): `{"schemaVersion": 1, "fingerprint": "<sha256>", "slot": "<n>", "identity": {"uuid", "email", "orgUuid"}, "seenAt": <epoch-seconds>}`, mode 0600. Written without a lock (last writer wins) when the profile endpoint names the slot of the default login's live credential, and only when the record changes; a dry run or a store-only read never writes it, and a group scope's own login never reads or writes it. A derived cache: a missing or malformed file reads as absent, and a record whose slot the roster no longer maps to its identity is ignored. |
 | `statusline.json` | Label and quota per account for Claude Code status lines (see STATUS LINE STATE). Derived: never copied by `tycswap migrate`. |
@@ -5284,13 +5177,9 @@ before the mutation completed and must not replace the resulting choice.
 The browser holds model drafts during the request and confirms saves with
 GET /api/state; errors leave the draft available to retry.
 
-Interactive menus also expose session-group switching, launching/resuming sessions,
-group settings, ownership reconciliation, account release and capability records.
-`groups release fable|opus` prints `{"group": "<id>", "released": {"number", "email"}}`
-(`released` is null when the group held no account). A group login whose
-access token expired while no session ran is refreshed first. While the group
-has live sessions or its credential's lineage is unverified it prints the error
-envelope and exits 1, holding the claim (DESIGN A69, A74). Import/export guides
+Session groups are retired (DESIGN A78): `tycswap groups` answers only the
+`guard` hook older group sessions call, and every other verb exits 1 saying so.
+Import/export guides
 provider, account scope and file selection; exports require a new file and a token
 warning confirmation. The web/tray Interactive menu action opens this same menu.
 `web --reuse` opens the running local or remote tray dashboard through its authenticated

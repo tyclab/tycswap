@@ -6696,3 +6696,54 @@ that draws no status line is never recorded and so holds the reservation off;
 the first request of a Fable session started on a login without Fable can
 race the tick its first status line runs; the loop and the dashboard's hosted
 engine keep their configured models and reserve nothing.
+
+## A78. Session groups and `tycswap claude` retire
+
+A76 and A77 made the default login follow the models its sessions run, so
+the operator starts plain `claude` and never picks an account. The Fable and
+Opus / other session groups (A42, A62, A69, A71, A74) and the Mods router
+(A70) existed to give Fable and Opus work different accounts by hand or per
+request. What they still added is two accounts in use at once (Fable on one,
+Opus on another) and per-request account choice with stream reservations; the
+operator gave both up for one automatic login. Total weekly quota is the same
+either way, since windows are per account; parallel throughput is what goes.
+
+Removed: `tycswap claude`, the internal `routing` command, `routing.json`,
+`routing.lock` and the bundled routing mod; `run --group`, the group launcher
+and its hooks; every `groups` verb (switch, release, reconcile, config,
+capability, list); group settings scopes, the group engine ticks and their
+poll policies; the menu, tray and dashboard group views and endpoints; group
+switching and its default and legacy handoffs. A switch no longer takes the
+routing lock. The `group-release` event stays for the retirement.
+
+Existing group state retires on its own. Each tick that is not a dry run
+(`auto --once`, the loop, the hosted engine) asks, per group, whether a claim
+or control files remain (`groups.Pending`). While a session runs in the
+group's profile it waits. Otherwise it runs the A69 release under the account
+lock and the profile's locks: an unfinished group switch is reconciled first,
+taking the default login's or a legacy profile's locks when its journal
+recorded a handoff from them; an expired group login is refreshed first
+(A74); the profile's credential must be the account's own lineage before it
+replaces the backup. Then the profile's `projects/` conversations are copied
+into the default profile where missing, nothing there replaced, and every file
+beside `profile/` goes, with `retired.json` left as the marker. The profile
+keeps its history and MCP sign-ins. Every step can rerun, so an interrupted
+retirement finishes on a later tick. A login that cannot be verified keeps
+its claim: the ownership scan still reads group claims, journals and profile
+credentials, so no rotation takes the account, and `add` still refuses it.
+
+Still-running group sessions keep working: `groups guard` (their
+PreModelSwitch hook) and `recovery record --group` (their lifecycle hooks)
+still answer, and their status lines mark the group's account due (A75).
+
+The Claude side of the Claude / Codex handover now uses the default login:
+its account checks follow the model class (`FableCapable` for Fable), a
+rotation switches the default login, and a Claude destination is plain
+`claude --model`. A recorded incident from a group session says the group is
+retired. Settings have one scope; a scoped save is refused.
+
+Kept on purpose: `groups/claims.json` also records the legacy `run` profiles'
+claims, so the registry, its validation and `SafePath` stay; a recorded
+`fableContinue` capability still counts for `FableCapable`. The retirement
+code, the group scope of the store and the ownership scan's group branches
+can go once no store can hold group state.
