@@ -8,7 +8,7 @@ import (
 const retiredMarker = "retired.json"
 
 // Pending reports whether a group still holds something to retire (DESIGN
-// A78): an account claim, or control files beside its profile.
+// A78): an account claim, or a scope directory not yet marked retired.
 func Pending(root string, id ID) (bool, error) {
 	registry, err := LoadRegistry(root)
 	if err != nil {
@@ -27,11 +27,11 @@ func Pending(root string, id ID) (bool, error) {
 		return false, err
 	}
 	for _, e := range entries {
-		if e.Name() != "profile" && e.Name() != retiredMarker {
-			return true, nil
+		if e.Name() == retiredMarker {
+			return false, nil
 		}
 	}
-	return false, nil
+	return len(entries) > 0, nil
 }
 
 // Retire removes a released group's control files, keeps its profile and

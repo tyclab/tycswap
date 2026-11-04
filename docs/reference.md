@@ -1598,15 +1598,18 @@ Fable-capable account. Subagents run on their main session's login, and only
 the main session's model is recorded.
 
 **Retired session groups give their account back** (DESIGN A78). Session
-groups and `tycswap claude` are gone. A tick that is not a dry run retires each
-former group once no session runs in its profile: its login goes back to the
-account's slot through the verified release (an unfinished group switch is
-reconciled first, and a login whose access token expired is refreshed first,
-so its ownership can be verified), its conversations are copied into the
-default profile where missing, so `claude --resume` continues them, and its
-control files go; the profile directory stays. A released account is reported
-with the `group-release` event. A login whose ownership cannot be verified
-keeps its claim, so no rotation takes it, and is retried on the next tick.
+groups and `tycswap claude` are gone. A scheduled tick that is not a dry run
+(not a status line's `--observe` tick) retires each former group once no
+session runs in its profile: its login goes back to the account's slot through
+the verified release (an unfinished group switch is reconciled first, and a
+login whose access token expired is refreshed on a later tick, so its
+ownership can be verified), its conversations are copied into the default
+profile where missing, so `claude --resume` continues them, and its control
+files go; the profile directory stays. A released account is reported with the
+`group-release` event. A login the server rejects (`invalid_grant`) is dead:
+it is dropped with its claim, and the account's stored login stays as it was.
+A login whose ownership cannot be verified otherwise keeps its claim, so no
+rotation takes it, and is retried on the next tick.
 
 **`--observe`** (DESIGN A75) is the status line's trigger. It reads the JSON
 Claude Code passes its status line. When a `rate_limits` five-hour or weekly

@@ -23,13 +23,22 @@ func releaseGroup(s *store.Store) (*groups.Account, error) {
 	if err := groups.SafePath(s.ProfileDir()); err != nil {
 		return nil, err
 	}
-	// A busy profile is refused below, under the locks, with its own message.
-	if err := refreshExpiredGroupLogin(s); err != nil && !errors.Is(err, ErrGroupBusy) {
+	// An unfinished switch is matched by its credential's refresh token, which
+	// a refresh rotates: reconcile it first, and refresh on a later tick.
+	journal, err := groups.LoadJournal(s.SharedRoot(), s.GroupID())
+	if err != nil {
 		return nil, err
+	}
+	dead := ""
+	if journal == nil {
+		// A busy profile is refused below, under the locks, with its own message.
+		if dead, err = refreshExpiredGroupLogin(s); err != nil && !errors.Is(err, ErrGroupBusy) {
+			return nil, err
+		}
 	}
 	prov := prefetchLiveIdentity(s)
 	var released *groups.Account
-	err := withTripleLock(s, func() error {
+	err = withTripleLock(s, func() error {
 		if pids, err := store.LiveProfilePIDs(s.ProfileDir()); err != nil || len(pids) > 0 {
 			return ErrGroupBusy
 		}
@@ -40,12 +49,20 @@ func releaseGroup(s *store.Store) (*groups.Account, error) {
 		if err != nil {
 			return err
 		}
-		released, err = s.ReleaseGroupAccount(func(active groups.Account, live string) error {
+		released, err = s.ReleaseGroupAccount(func(active groups.Account, live string) (bool, error) {
 			kind, _ := classifyOutgoing(s, active.Number, active.Email, live, prov, data)
-			if kind != "own-bytes" && kind != "own-family" && kind != "own-rotated" {
-				return cerr.Session("the %s profile's credential ownership is unverified (%s); the account claim remains held", s.GroupID(), kind)
+			if kind == "own-bytes" || kind == "own-family" || kind == "own-rotated" {
+				return true, nil
 			}
-			return nil
+			// A login whose refresh token the server rejected can never
+			// authenticate again: it is dropped, and the backup kept (A78).
+			if dead != "" && fingerprintEqual(live, dead) {
+				if s.Log != nil {
+					s.Log.Warningf("Group %s's login for Account-%s is dead (invalid_grant); dropped without touching the backup", s.GroupID(), active.Number)
+				}
+				return false, nil
+			}
+			return false, cerr.Session("the %s profile's credential ownership is unverified (%s); the account claim remains held", s.GroupID(), kind)
 		})
 		return err
 	})
@@ -56,10 +73,12 @@ func releaseGroup(s *store.Store) (*groups.Account, error) {
 // while no Claude process ran in its profile, so its identity can be verified
 // again (DESIGN A74). The refresh rotates the refresh token, so it runs under
 // the account lock and the profile's credential lock and is stored at once.
-func refreshExpiredGroupLogin(s *store.Store) error {
+// It returns a login the server rejected as invalid_grant.
+func refreshExpiredGroupLogin(s *store.Store) (string, error) {
 	if s.OAuth == nil {
-		return nil
+		return "", nil
 	}
+	dead := ""
 	err := s.Lock.With(func() error {
 		if pids, err := store.LiveProfilePIDs(s.ProfileDir()); err != nil || len(pids) > 0 {
 			return ErrGroupBusy
@@ -83,6 +102,9 @@ func refreshExpiredGroupLogin(s *store.Store) error {
 			if s.Log != nil {
 				s.Log.Warningf("Group %s's expired login did not refresh (%s)", s.GroupID(), out.Error)
 			}
+			if out.Error == oauth.ErrInvalidGrant {
+				dead = live
+			}
 			return nil
 		}
 		if err := s.Creds.WriteActive(out.Credentials); err != nil {
@@ -93,5 +115,5 @@ func refreshExpiredGroupLogin(s *store.Store) error {
 		}
 		return nil
 	})
-	return err
+	return dead, err
 }

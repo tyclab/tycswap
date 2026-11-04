@@ -6716,21 +6716,30 @@ poll policies; the menu, tray and dashboard group views and endpoints; group
 switching and its default and legacy handoffs. A switch no longer takes the
 routing lock. The `group-release` event stays for the retirement.
 
-Existing group state retires on its own. Each tick that is not a dry run
-(`auto --once`, the loop, the hosted engine) asks, per group, whether a claim
-or control files remain (`groups.Pending`). While a session runs in the
-group's profile it waits. Otherwise it runs the A69 release under the account
-lock and the profile's locks: an unfinished group switch is reconciled first,
-taking the default login's or a legacy profile's locks when its journal
-recorded a handoff from them; an expired group login is refreshed first
-(A74); the profile's credential must be the account's own lineage before it
-replaces the backup. Then the profile's `projects/` conversations are copied
-into the default profile where missing, nothing there replaced, and every file
+Existing group state retires on its own. Each scheduled tick that is not a
+dry run (`auto --once` from the timer or the quota hook, the loop, the hosted
+engine; not a status line's `--observe` tick, which is about latency) asks,
+per group, whether a claim remains or the group's directory is not yet marked
+retired (`groups.Pending`). While a session runs in the group's profile it
+waits. Otherwise it runs the A69 release under the account lock and the
+profile's locks. An unfinished group switch is reconciled first, taking the
+default login's or a legacy profile's locks when its journal recorded a
+handoff from them; its credential is matched by refresh token, so an expired
+login is refreshed (A74) only on a tick without a journal. The profile's
+credential must be the account's own lineage before it replaces the backup,
+with one exception: a login whose refresh the server rejects with
+`invalid_grant` can never authenticate again, so it is dropped with its claim
+and the backup keeps its own lineage. Then, with no session started since,
+the profile's `projects/` conversations are streamed into the default profile
+where missing, nothing there replaced and no symlink followed, and every file
 beside `profile/` goes, with `retired.json` left as the marker. The profile
 keeps its history and MCP sign-ins. Every step can rerun, so an interrupted
-retirement finishes on a later tick. A login that cannot be verified keeps
-its claim: the ownership scan still reads group claims, journals and profile
-credentials, so no rotation takes the account, and `add` still refuses it.
+retirement finishes on a later tick. A login that cannot be verified for any
+other reason (offline, an identity that does not resolve) keeps its claim: the
+ownership scan still reads group claims, journals and profile credentials, so
+no rotation takes the account, `add` still refuses it, and the warning names
+it on each scheduled tick. A journal that recorded a handoff from the default
+login reconciles only while no default session runs, as before.
 
 Still-running group sessions keep working: `groups guard` (their
 PreModelSwitch hook) and `recovery record --group` (their lifecycle hooks)

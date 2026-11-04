@@ -189,8 +189,10 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	if once {
 		// Claude first, then Codex; the exit status is the Claude outcome.
 		code := int(engine.Tick())
-		retireGroups(sw, onEvent, dryRun)
+		// A status line's tick is about latency; group retirement and Codex
+		// wait for the scheduled one (DESIGN A78).
 		if !observe {
+			retireGroups(sw, onEvent, dryRun)
 			runCodexTick(context.Background())
 		}
 		return code

@@ -9,7 +9,6 @@ package session
 
 import (
 	"encoding/json"
-	"github.com/tyclab/tycswap/internal/store"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -18,6 +17,7 @@ import (
 	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // MCP mirror constants (spec 06§3.1).
@@ -27,10 +27,10 @@ const (
 	mcpDisplacedStash = ".tycswap-mcp-displaced.json" // write-once stash
 )
 
-// mcpStash is the write-once stash of definitions the first mirror displaced.
 // storeProvider is the account source that knows the store's default profile.
 type storeProvider interface{ AccountStore() *store.Store }
 
+// mcpStash is the write-once stash of definitions the first mirror displaced.
 type mcpStash struct {
 	SchemaVersion int            `json:"schemaVersion"`
 	McpServers    map[string]any `json:"mcpServers"`

@@ -1,11 +1,11 @@
 package switching
 
 import (
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 
-	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/store"
 )
@@ -21,14 +21,19 @@ func RetireGroup(s *store.Store) (*groups.Account, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A session started by hand since the release would race the copy.
+	if pids, err := store.LiveProfilePIDs(s.ProfileDir()); err != nil || len(pids) > 0 {
+		return released, ErrGroupBusy
+	}
 	if err := copyHistory(filepath.Join(s.ProfileDir(), "projects"), filepath.Join(s.DefaultProfileDir(), "projects")); err != nil {
 		return released, err
 	}
 	return released, groups.Retire(s.SharedRoot(), s.GroupID())
 }
 
-// copyHistory copies every conversation file the destination lacks; nothing
-// in the destination is replaced.
+// copyHistory copies every conversation file the destination lacks, streamed
+// through a temporary file; nothing in the destination is replaced, and
+// symlinks in the group's profile are not followed.
 func copyHistory(from, to string) error {
 	if err := groups.SafePath(from); err != nil {
 		return err
@@ -48,13 +53,30 @@ func copyHistory(from, to string) error {
 		if _, err := os.Lstat(dest); err == nil || !os.IsNotExist(err) {
 			return err
 		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
 		if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 			return err
 		}
-		return atomicfile.Write(dest, data, atomicfile.Opts{})
+		return copyFile(path, dest)
 	})
+}
+
+func copyFile(from, to string) error {
+	in, err := os.Open(from)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	tmp, err := os.CreateTemp(filepath.Dir(to), ".tycswap-copy-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := io.Copy(tmp, in); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), to)
 }

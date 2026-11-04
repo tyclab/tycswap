@@ -295,19 +295,123 @@ func TestRetireRefreshesAnExpiredLogin(t *testing.T) {
 	}
 }
 
-func TestRetireKeepsADeadLoginHeld(t *testing.T) {
+// A login whose refresh token the server rejects can never run again: the
+// group drops it and its claim, and the backup keeps its own lineage (A78).
+func TestRetireDropsADeadLoginAndKeepsTheBackup(t *testing.T) {
 	s, opus, refreshes := heldAndDecayed(t, false)
-	if _, err := RetireGroup(opus); err == nil || !strings.Contains(err.Error(), "unverified") {
-		t.Fatalf("retire with a dead group login: %v", err)
+	released, err := RetireGroup(opus)
+	if err != nil || released == nil || released.Number != "1" {
+		t.Fatalf("retire with a dead group login = %+v, %v", released, err)
 	}
 	if *refreshes != 1 {
 		t.Fatalf("refreshes = %d, want 1", *refreshes)
 	}
 	if backup, _ := s.ReadAccountCredentials("1", "one@x.com"); oauth.ExtractAccessToken(backup) != "a1-default" {
-		t.Fatalf("refused retirement overwrote the backup: %s", backup)
+		t.Fatalf("a dead login overwrote the backup: %s", backup)
+	}
+	if live, _, _ := opus.Creds.ReadActive(); oauth.ExtractAccessToken(live) != "" {
+		t.Fatalf("the dead login stayed in the profile: %s", live)
+	}
+	if owner, err := s.CredentialOwner("1"); err != nil || owner.Scope != "" {
+		t.Fatalf("the dead login's account is still owned: %+v, %v", owner, err)
+	}
+}
+
+// A login the refresh cannot reach (no invalid_grant) stays held: only the
+// server's rejection proves a login dead.
+func TestRetireKeepsAnUnreachableLoginHeld(t *testing.T) {
+	client := &oauth.FakeClient{RefreshFn: func(context.Context, string) oauth.RefreshOutcome {
+		return oauth.RefreshOutcome{Error: "network"}
+	}}
+	s := groupFixtureWith(t, client)
+	opus := seedGroupHolding(t, s, groups.Opus, "1", expiredGroupCreds("a1-group", "r1-group"))
+	seedBackup(t, s, "1", "one@x.com", groupCreds("max", "a1-default", "r1-default"), "")
+	if _, err := RetireGroup(opus); err == nil || !strings.Contains(err.Error(), "unverified") {
+		t.Fatalf("retire with an unreachable group login: %v", err)
 	}
 	if live, _, _ := opus.Creds.ReadActive(); oauth.ExtractAccessToken(live) != "a1-group" {
-		t.Fatalf("failed refresh rewrote the group login: %s", live)
+		t.Fatalf("an unreachable login was dropped: %s", live)
+	}
+}
+
+// An unfinished group switch is matched by its credential's refresh token, so
+// the expired login is refreshed only once the journal is reconciled.
+func TestRetireReconcilesBeforeRefreshing(t *testing.T) {
+	client, refreshes := groupLoginClient(true)
+	s := groupFixtureWith(t, client)
+	opus := scope(t, s, groups.Opus)
+	creds := expiredGroupCreds("a1-group", "r1-group")
+	target := groups.Account{Number: "1", Email: "one@x.com"}
+	journal := groups.Journal{Version: 1, Group: groups.Opus, Target: target, TargetFingerprint: *oauth.CredentialFingerprint(creds)}
+	if err := groups.WriteJSON(groups.JournalPath(s.SharedRoot(), groups.Opus), journal); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := groups.LoadRegistry(s.SharedRoot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry.Claims["1"] = groups.Owner{Scope: string(groups.Opus), ProfileDir: opus.ProfileDir(), Account: target, Uncertain: true}
+	if err := registry.Save(s.SharedRoot()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(opus.ProfileDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := opus.Creds.WriteActive(creds); err != nil {
+		t.Fatal(err)
+	}
+	if err := groups.WriteJSON(opus.GlobalConfigPath(), map[string]any{"oauthAccount": map[string]any{"emailAddress": "one@x.com", "organizationUuid": ""}}); err != nil {
+		t.Fatal(err)
+	}
+	// First tick: the journal completes; the expired login is not refreshed.
+	if _, err := RetireGroup(opus); err == nil {
+		t.Fatal("an expired login was released unverified")
+	}
+	if j, _ := groups.LoadJournal(s.SharedRoot(), groups.Opus); j != nil || *refreshes != 0 {
+		t.Fatalf("journal left = %v, refreshes = %d; want reconciled before any refresh", j != nil, *refreshes)
+	}
+	// Next tick: refreshed, verified and released.
+	if released, err := RetireGroup(opus); err != nil || released == nil || *refreshes != 1 {
+		t.Fatalf("second retire = %+v, %v, refreshes %d", released, err, *refreshes)
+	}
+	if backup, _ := s.ReadAccountCredentials("1", "one@x.com"); oauth.ExtractAccessToken(backup) != "a1-fresh" {
+		t.Fatalf("backup did not take the refreshed login: %s", backup)
+	}
+}
+
+// A group left with only its profile is retired too, and links in its history
+// are not followed.
+func TestRetireCopiesAProfileOnlyGroupWithoutFollowingLinks(t *testing.T) {
+	s := groupFixture(t)
+	fable := scope(t, s, groups.Fable)
+	dir := filepath.Join(fable.ProfileDir(), "projects", "-work")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "kept.jsonl"), []byte("kept"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(outside, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "link.jsonl")); err != nil {
+		t.Skip("symlinks unavailable:", err)
+	}
+	if !pending(t, s, groups.Fable) {
+		t.Fatal("a group with only its profile is not pending")
+	}
+	if _, err := RetireGroup(fable); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(filepath.Join(s.DefaultProfileDir(), "projects", "-work", "kept.jsonl")); err != nil || string(got) != "kept" {
+		t.Fatalf("history not copied: %q, %v", got, err)
+	}
+	if _, err := os.Lstat(filepath.Join(s.DefaultProfileDir(), "projects", "-work", "link.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("a symlink in the group's history was followed: %v", err)
+	}
+	if pending(t, s, groups.Fable) {
+		t.Fatal("a retired group is still pending")
 	}
 }
 
