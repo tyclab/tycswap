@@ -68,12 +68,13 @@ func engineSwitcher(sw *core.Switcher, dryRun bool) *core.Switcher {
 	return &core.Switcher{Store: sw.Store.WithoutLineageWrites()}
 }
 
-var newAutoEngine = func(sw *core.Switcher, s settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool, oc oauth.Client) *autoswitch.Engine {
-	return autoswitch.NewEngine(autoswitchAdapter{engineSwitcher(sw, dryRun)}, s, onEvent, dryRun,
+var newAutoEngine = func(sw *core.Switcher, s settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool, oc oauth.Client, extra ...autoswitch.Option) *autoswitch.Engine {
+	opts := []autoswitch.Option{
 		autoswitch.WithOAuthClient(oc),
 		autoswitch.WithLogger(sw.Log),
 		autoswitch.WithClock(sw.Clk),
 		autoswitch.WithStatePath(sw.StatePath()),
 		autoswitch.WithReserved(sw.ReservedForFable),
-	)
+	}
+	return autoswitch.NewEngine(autoswitchAdapter{engineSwitcher(sw, dryRun)}, s, onEvent, dryRun, append(opts, extra...)...)
 }

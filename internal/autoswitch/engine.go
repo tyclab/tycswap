@@ -23,9 +23,7 @@ const (
 	Blocked  TickOutcome = 3 // wanted to switch but no viable target / all exhausted
 )
 
-// Sleeper is the timer seam for the inter-tick wait. clock.System and clock.Fake
-// both satisfy it, but the loop needs a truly blocking After, so tests inject
-// their own controllable sleeper.
+// Sleeper is the inter-tick wait seam: the loop needs a truly blocking After.
 type Sleeper interface {
 	After(d time.Duration) <-chan time.Time
 }
@@ -46,14 +44,14 @@ type Engine struct {
 	clk     clock.Clock
 	sleeper Sleeper
 	rng     func() float64
-	// reserved names the accounts this profile leaves to Fable work: able to
-	// run Fable while the profile never needs it (DESIGN A71). nil reserves
-	// nothing.
-	reserved  func(num string) bool
-	oauth     oauth.Client
-	log       *logging.Logger
-	statePath string
-	lockPath  string
+	// reserved: accounts this profile leaves to Fable work (DESIGN A71); nil reserves none.
+	reserved func(num string) bool
+	// freshActive: a session reported a bar near, fetch ahead of the plan (DESIGN A75).
+	freshActive bool
+	oauth       oauth.Client
+	log         *logging.Logger
+	statePath   string
+	lockPath    string
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -63,11 +61,8 @@ type Engine struct {
 	dryModelChecked string
 }
 
-// Option customizes engine construction (clock, sleeper, rng, oauth client,
-// logger, state path). The DESIGN §2.18 NewEngine positional prefix
-// (sw, settings, onEvent, dryRun) is preserved; these options carry the
-// injectable seams Python passed as __init__ keyword args (state_path, clock)
-// plus the oauth client and jitter rng the tests need.
+// Option customizes construction; NewEngine keeps the DESIGN §2.18 positional
+// prefix (sw, settings, onEvent, dryRun) and options carry the injectable seams.
 type Option func(*Engine)
 
 // WithClock injects the wall clock used for persisted lastSwitchAt/cooldown,
@@ -87,6 +82,9 @@ func WithReserved(reserved func(num string) bool) Option {
 }
 
 func WithOAuthClient(c oauth.Client) Option { return func(e *Engine) { e.oauth = c } }
+
+// WithFreshActive fetches the active account's usage ahead of its poll plan (DESIGN A75).
+func WithFreshActive() Option { return func(e *Engine) { e.freshActive = true } }
 
 // WithLogger injects the logger for the idle-hold-exceeded warning and the
 // uuid-backfill debug line (default nil = no-op).

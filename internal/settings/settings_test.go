@@ -777,6 +777,10 @@ func TestParseModelNames(t *testing.T) {
 		{"empty", strp(""), []string{}},
 		{"single", strp("Fable"), []string{"Fable"}},
 		{"dedupe_first_spelling_wins", strp("Opus, opus,Fable"), []string{"Opus", "Fable"}},
+		// The help shows the unset value as "(none)": a stored "none" counts nothing.
+		{"none_word", strp("none"), []string{}},
+		{"none_shown", strp("(none)"), []string{}},
+		{"none_beside_a_model", strp("None,Fable"), []string{"Fable"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -785,6 +789,23 @@ func TestParseModelNames(t *testing.T) {
 				t.Errorf("ParseModelNames(%v) = %v, want %v", derefOrNil(c.in), got, c.want)
 			}
 		})
+	}
+}
+
+// 2026-11-04: `config set autoswitch.model none` stored a model named "none",
+// which no target reports, so every automatic switch would have been refused.
+func TestSetModelNoneSaysHowToUnset(t *testing.T) {
+	spec, err := SpecFor("autoswitch.model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []string{"none", "(none)", "NONE"} {
+		if _, err := ParseSettingValue(spec, v); err == nil || !strings.Contains(err.Error(), "tycswap config unset autoswitch.model") {
+			t.Errorf("set %q = %v, want a pointer to unset", v, err)
+		}
+	}
+	if got, err := ParseSettingValue(spec, "Fable"); err != nil || got != "Fable" {
+		t.Errorf("set Fable = %v, %v", got, err)
 	}
 }
 

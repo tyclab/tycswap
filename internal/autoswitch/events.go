@@ -211,12 +211,12 @@ func numToStr(v any) string { return AccountNumberStr(v) }
 // SwitchEvent reports a switch (or, in dry-run, the switch that would happen).
 type SwitchEvent struct {
 	Ts      string
-	Trigger string // "proactive" | "at-limit" | "failover" | "reserved"
+	Trigger string // "proactive" | "at-limit" | "failover" | "reserved" | "model-missing"
 	// Axis is the window class that made the tick move, "5h", "7d" or
 	// "model" (DESIGN A34), which tells a reader whether the wait avoided was
 	// hours or days. Empty under "failover", where usage was unreadable and
-	// no window decided, and under "reserved", where the account itself did
-	// (DESIGN A71).
+	// no window decided, and under "reserved" and "model-missing", where the
+	// account itself did (DESIGN A71, A73).
 	Axis     string
 	FromRef  map[string]any
 	ToRef    map[string]any

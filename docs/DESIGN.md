@@ -6433,9 +6433,10 @@ back. The next resolve warns again only in a new process.
 A group keeps its account in `groups/claims.json` and its `active.json` after
 its sessions end, so the default login's rotation and the other group skip
 it, even while the default account sits at its limit. `groups release
-fable|opus` ends that claim. Sharing one account between a running group and
-another profile stays refused: each refresh rotates the refresh token, and
-the profile that refreshes second loses the login.
+fable|opus` ends that claim, and A74 ends an idle group's claim on its own.
+Sharing one account between a running group and another profile stays
+refused: each refresh rotates the refresh token, and the profile that
+refreshes second loses the login.
 
 The release runs under the shared account lock and the group profile's
 Claude locks, after reconciling an unfinished switch. It refuses while the
@@ -6565,3 +6566,92 @@ removes a cached five-hour window. Failed refreshes retain the previous
 measurement under the existing freshness policy. JSON continues to omit an
 absent window, while `statusline.json` publishes null; neither reports it as
 zero percent or promises unlimited weekly usage. Codex policy is unchanged.
+
+## A73. A login without a counted model's window hands over
+
+A61 made targets report every counted model, but the active account was still
+judged only on the windows it reports. A Pro login has no Fable window, so
+with `autoswitch.model Fable` it read as below every bar and the tick stayed,
+while the Fable sessions on it could not run (2026-11-04, account 2).
+
+When the active account reports usage but no window for a counted model that
+another account does report, the tick moves with the trigger `model-missing`.
+Like `reserved` (A71), it names no window, runs under the proactive cooldown,
+and lands only on an account that reports the model and is below every bar;
+without one it reports `model-missing-no-target` and stays. A counted name no
+account reports is a configuration problem, warned about by the model-name
+check, and changes nothing here. Unchanged: an active account that reports the
+model is judged on it as before, and `all` without reported names never
+triggers.
+
+## A74. An idle group gives its account back
+
+A69 kept a group's claim after its sessions ended until someone ran
+`groups release`. On 2026-11-04 the Opus / other group had held account 2 for
+six days. Nothing refreshes an idle group's login: tycswap's own refresh skips
+claimed accounts, and only a Claude process in the profile renews its token.
+Its access token expired on 2026-10-29, after which every ownership check got
+a 401. When the operator logged the same account into the default profile and
+added it, the account had two owners: usage was held, the engine skipped it,
+and `groups release` refused, because the group's credential matched neither
+the newly stored backup nor a resolvable identity.
+
+Three changes close that path. The scheduled group tick releases an enabled
+group with no live sessions once its files show no activity for the group's
+`autoswitch.cooldownSeconds` (session starts and exits, launches, switches and
+token refreshes all touch them). Under the routing lock it also requires no
+live or launching routed session, so a launch, which reserves its routing
+session under the same lock that hands the group its account, never loses the
+credential before Claude registers. Before verifying ownership, every release
+renews a group login whose access token has expired, under the account lock
+and the profile's credential lock, only while no Claude process runs in the
+profile, and stores the rotated credential at once; a refresh the server
+rejects leaves the login and the claim as they were. And `add`, from the live
+login or a login directory, refuses an account a group claims, naming the
+group, so a second login of that account can no longer replace the backup the
+group's lineage is verified against. Unchanged: a release still requires the
+group's own lineage, keeps its MCP sign-ins and drops the claim last; dry
+ticks release nothing; legacy `run` profiles keep their own claim rules.
+
+## A75. A session's status line can bring the next tick forward
+
+The engine samples: the flakelab timer ticks every two minutes and the active
+account's usage is fetched at most every three minutes outside the escalation
+band. On 2026-11-04 account 2's five-hour window went from 42% to 100% within
+356 seconds; the engine saw 42% twice (the second a cached reading) and 100%
+seven seconds after the operator had switched by hand.
+
+Claude Code passes the subscription's `rate_limits` to the status line after
+every response. `tycswap auto --observe` reads that JSON on stdin. When a
+five-hour or weekly window is within `EscalationMarginPct` (15 points) of its
+bar, it runs one `--once` tick whose engine fetches the active account's usage
+at once instead of waiting for its poll plan; a spend limit and an absent
+window (Ultra accounts have no five-hour one) never count. One observation per
+15 seconds passes across every session (a lock and a stamp in the backup
+root): at the measured burn of at least 9.8 points a minute that leaves at
+most 2.5 points between readings. The observation only triggers; the decision
+uses the fetched usage, so a status line still showing the previous account
+after a switch costs one fetch and no move. A fresh request never overrides a
+429 backoff. A status line running in a group profile freshens that group's
+engine instead. Codex is not ticked from a status line. The path below the
+margin parses and exits (12 ms measured).
+
+## A76. The default login counts the models its sessions run
+
+A group's model limits follow its live sessions; the default login counted
+only `autoswitch.model`, which the operator set by hand. Counting Fable there
+protects a Fable session but also refuses every target without Fable, so Opus
+sessions stop at a weekly limit while an account without Fable has room.
+
+`--observe` also records, for a status line in the default profile, the model
+family its session runs (`default_models.json`, rewritten at most once a
+minute per unchanged session, at once on a change, kept a day). A scheduled
+tick (`auto --once`, as the timer, the quota hook and `--observe` run it)
+counts, while `autoswitch.model` is unset, the reported per-model windows of
+the families its live sessions run, matched against the default profile's
+running session records, as `GroupSettings` does for a group. An explicit
+`autoswitch.model` or `--model` always wins, and without records nothing
+changes. A long-running `tycswap auto` loop and the dashboard's hosted engine
+keep their configured models. `config set autoswitch.model none` is refused
+with a pointer to `unset`, and a stored `none` or `(none)` counts nothing,
+since the help shows the unset value that way.

@@ -135,6 +135,10 @@ func (e *Engine) tickInner() (tickResult, error) {
 			axis, trigger = hot, "at-limit"
 		case ok:
 			axis, trigger = hot, "proactive"
+		case e.missesCountedModel(cur, usageMap):
+			// The login cannot serve a counted model it reports no window for:
+			// an account that reports one, below every bar, takes over (DESIGN A73).
+			trigger = "model-missing"
 		case e.isReserved(cur):
 			// Every window is under its bar, but the account can run Fable
 			// while this profile never needs it: an account that cannot,
@@ -179,17 +183,20 @@ func (e *Engine) tickInner() (tickResult, error) {
 		trigger = "failover"
 	}
 
-	if (trigger == "proactive" || trigger == "reserved") && e.inCooldown(state) {
+	if (trigger == "proactive" || isHandover(trigger)) && e.inCooldown(state) {
 		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "cooldown"})
 		return tickResult{Outcome: NoAction}, nil
 	}
 
 	ordered, oauthCandidates, anyKnown, blk := e.selectCandidates(cur, quarantined, s, trigger, axis, activeByClass, headroom, usageMap)
-	if trigger == "reserved" && (blk != nil || len(ordered) == 0) {
-		// Nothing to hand over to: the account stays, as it would without
-		// the reservation (DESIGN A71).
-		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "reserved-no-target",
-			Detail: "the active account can run Fable; no account without Fable is below every bar"})
+	if isHandover(trigger) && (blk != nil || len(ordered) == 0) {
+		// Nothing to hand over to: the account stays (DESIGN A71, A73).
+		detail := "the active account can run Fable; no account without Fable is below every bar"
+		if trigger == "model-missing" {
+			detail = "the active account reports no " + strings.Join(requiredModels(e.models, usageMap), ", ") +
+				" usage; no account that does is below every bar"
+		}
+		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: trigger + "-no-target", Detail: detail})
 		return tickResult{Outcome: NoAction}, nil
 	}
 	if blk != nil {
@@ -299,10 +306,28 @@ func withSkipReason(detail string, entry usage.UsageEntry) string {
 // tick had no readable usage, so no window decided it and the label is empty
 // (DESIGN A34); a reserved hand-over moved for the account, not a window.
 func axisLabel(axis usage.Class, trigger string) string {
-	if trigger == "failover" || trigger == "reserved" {
+	if trigger == "failover" || isHandover(trigger) {
 		return ""
 	}
 	return axis.Name()
+}
+
+// isHandover names the triggers where the account itself, not a window,
+// made the tick move; they land only below every bar (DESIGN A71, A73).
+func isHandover(trigger string) bool { return trigger == "reserved" || trigger == "model-missing" }
+
+func (e *Engine) missesCountedModel(cur string, usageMap map[string]any) bool {
+	required := requiredModels(e.models, usageMap)
+	if len(required) == 0 || len(required) == 1 && required[0] == "all" || hasRequiredModels(usageMap[cur], required) {
+		return false
+	}
+	// A name no account reports is a configuration problem, warned about elsewhere.
+	for num, value := range usageMap {
+		if num != cur && hasRequiredModels(value, required) {
+			return true
+		}
+	}
+	return false
 }
 
 // selectCandidates builds the ordered target list from the switchable accounts
@@ -330,7 +355,7 @@ func (e *Engine) selectCandidates(
 		}
 	}
 	if len(oauthCandidates) == 0 {
-		if trigger != "reserved" {
+		if !isHandover(trigger) {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-candidates"})
 		}
 		return nil, oauthCandidates, false, &tickResult{Outcome: Blocked, WaitLong: true}
@@ -381,7 +406,7 @@ func (e *Engine) selectCandidates(
 		reserved := e.isReserved(num)
 		// A hand-over leaves a Fable-capable account only for one that is
 		// not, and only when that one is below every bar (DESIGN A71).
-		if trigger == "reserved" && (reserved || !below) {
+		if trigger == "reserved" && (reserved || !below) || trigger == "model-missing" && !below {
 			continue
 		}
 		qualifying = append(qualifying, qual{
@@ -394,7 +419,7 @@ func (e *Engine) selectCandidates(
 		})
 	}
 	if len(qualifying) == 0 && modelRejected {
-		if trigger != "reserved" {
+		if !isHandover(trigger) {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-compatible-model-target", Detail: "no qualifying target with reported " + strings.Join(required, ", ") + " usage; keeping the current account"})
 		}
 		return nil, oauthCandidates, anyKnown, &tickResult{Outcome: Blocked}
