@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Fixed:** `tycswap auto --observe` really fetches the active account's usage near a bar: it marks the account's poll due in the usage store, whose fetch gate served the cached reading to v0.8.4's engine-side request. Backoff, a recent 429 and a dead token still hold.
+
 - **Fixed:** a session group gives its account back on its own once its sessions have been gone for its cooldown (5 minutes by default), and `groups release` refreshes a group login whose token expired while nothing ran, so an idle group can no longer hold an account for days and leave it with two owners when the same account is logged in again. `tycswap add` refuses an account a group holds instead of overwriting the login the group is verified against.
 - **Added:** `tycswap auto --observe` reads the usage Claude Code passes its status line and, near a 5-hour or weekly bar, runs one tick with a fresh usage fetch (at most every 15 seconds), so a fast-burning window is caught between timer ticks. flakelab's status line feeds it.
 - **Added:** while `autoswitch.model` is unset, the default login counts the model limits its live sessions run, as recorded from their status lines, the way a session group does; an explicit setting still wins.

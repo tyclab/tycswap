@@ -24,7 +24,6 @@ import (
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
-	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -135,12 +134,10 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		Model:             model,
 	})
 
-	var fresh []autoswitch.Option
-	freshGroup := groups.ID("")
 	if observe {
 		raw, _ := io.ReadAll(io.LimitReader(s.in, 1<<20))
-		freshGroup = observedGroup(sw.BackupDir())
-		if freshGroup == "" {
+		group := observedGroup(sw.BackupDir())
+		if group == "" {
 			session, model := observedSessionModel(raw)
 			if err := reporting.RecordDefaultSessionModel(sw.BackupDir(), session, model, sw.Clk.Now()); err != nil {
 				sw.Log.Debugf("Session model not recorded: %v", err)
@@ -149,9 +146,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		if !observedNearBar(raw, merged) || !claimObserveSlot(sw.BackupDir(), sw.Clk.Now()) {
 			return int(autoswitch.NoAction)
 		}
-		if freshGroup == "" {
-			fresh = append(fresh, autoswitch.WithFreshActive())
-		}
+		markObservedDue(sw, group)
 	}
 	// A scheduled tick counts the models the default login's live sessions
 	// run while autoswitch.model is unset (DESIGN A76).
@@ -174,11 +169,9 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		emitClaude(ev)
 	}
 	engine := autoswitch.NewEngine(autoswitchAdapter{engineSwitcher(sw, dryRun)}, defaultSettings, onEvent, dryRun,
-		append([]autoswitch.Option{
-			autoswitch.WithOAuthClient(sw.OAuth),
-			autoswitch.WithLogger(sw.Log),
-			autoswitch.WithClock(sw.Clk),
-		}, fresh...)...,
+		autoswitch.WithOAuthClient(sw.OAuth),
+		autoswitch.WithLogger(sw.Log),
+		autoswitch.WithClock(sw.Clk),
 	)
 
 	// Codex rides along in this process as its own small engine (claude-swap
@@ -201,7 +194,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	if once {
 		// Claude first, then Codex; the exit status is the Claude outcome.
 		code := int(engine.Tick())
-		tickGroupScopesFresh(sw, merged, onEvent, dryRun, freshGroup)
+		tickGroupScopes(sw, merged, onEvent, dryRun)
 		if !observe {
 			runCodexTick(context.Background())
 		}

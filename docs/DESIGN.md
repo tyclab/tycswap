@@ -6624,16 +6624,20 @@ seven seconds after the operator had switched by hand.
 Claude Code passes the subscription's `rate_limits` to the status line after
 every response. `tycswap auto --observe` reads that JSON on stdin. When a
 five-hour or weekly window is within `EscalationMarginPct` (15 points) of its
-bar, it runs one `--once` tick whose engine fetches the active account's usage
-at once instead of waiting for its poll plan; a spend limit and an absent
-window (Ultra accounts have no five-hour one) never count. One observation per
+bar, it marks the active account's usage poll due in the usage store and runs
+one `--once` tick, which fetches it at once instead of waiting for the plan; a
+spend limit and an absent window (Ultra accounts have no five-hour one) never
+count. The mark goes through the store, not the engine: the collector fetches
+only a row whose plan is due or whose reading is older than `ServeTTLS`, so
+v0.8.4's engine-side nomination served the cached reading (2026-11-04 12:54,
+a 137-second-old 91%), and a claimed fetch or a dead token still holds. One observation per
 15 seconds passes across every session (a lock and a stamp in the backup
 root): at the measured burn of at least 9.8 points a minute that leaves at
 most 2.5 points between readings. The observation only triggers; the decision
 uses the fetched usage, so a status line still showing the previous account
-after a switch costs one fetch and no move. A fresh request never overrides a
-429 backoff. A status line running in a group profile freshens that group's
-engine instead. Codex is not ticked from a status line. The path below the
+after a switch costs one fetch and no move. A backoff or a 429 within
+`Post429MinIntervalS` leaves the plan alone. A status line running in a group
+profile marks that group's account instead. Codex is not ticked from a status line. The path below the
 margin parses and exits (12 ms measured).
 
 ## A76. The default login counts the models its sessions run

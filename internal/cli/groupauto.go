@@ -50,12 +50,6 @@ func groupModelBlocker(sw *core.Switcher, observed recovery.State) string {
 }
 
 func tickGroupScopes(root *core.Switcher, base settings.AutoSwitchSettings, emit func(autoswitch.Event), dry bool) {
-	tickGroupScopesFresh(root, base, emit, dry, "")
-}
-
-// tickGroupScopesFresh is tickGroupScopes whose fresh group fetches its active
-// account's usage ahead of the poll plan (DESIGN A75).
-func tickGroupScopesFresh(root *core.Switcher, base settings.AutoSwitchSettings, emit func(autoswitch.Event), dry bool, fresh groups.ID) {
 	// A dry tick resolves read-only from the root on: the statuses resolve the
 	// default login too, and ForGroup keeps the root's read-only view (DESIGN A68).
 	root = engineSwitcher(root, dry)
@@ -100,11 +94,7 @@ func tickGroupScopesFresh(root *core.Switcher, base settings.AutoSwitchSettings,
 				emit(groupEvent{ev, id})
 			}
 		}
-		var extra []autoswitch.Option
-		if id == fresh {
-			extra = append(extra, autoswitch.WithFreshActive())
-		}
-		engine := newAutoEngine(sw, groupSettings(sw, base), onEvent, dry, sw.OAuth, extra...)
+		engine := newAutoEngine(sw, groupSettings(sw, base), onEvent, dry, sw.OAuth)
 		engines = append(engines, running{sw, engine})
 	}
 	for _, run := range engines {
