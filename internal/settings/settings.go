@@ -742,7 +742,7 @@ func ParseModelNames(v *string) []string {
 	seen := map[string]bool{}
 	for _, part := range strings.Split(*v, ",") {
 		name := strings.TrimSpace(part)
-		if name == "" {
+		if name == "" || noModelWord(name) {
 			continue
 		}
 		key := strings.ToLower(name)
@@ -752,6 +752,12 @@ func ParseModelNames(v *string) []string {
 		}
 	}
 	return out
+}
+
+// noModelWord is how the help and dashboard show an unset model list.
+func noModelWord(name string) bool {
+	n := strings.ToLower(strings.TrimSpace(name))
+	return n == "none" || n == "(none)"
 }
 
 // --- strict parsing for `tycswap config set` ------------------------------
@@ -785,6 +791,9 @@ func ParseSettingValue(spec Spec, rawValue string) (any, error) {
 		value := strings.TrimSpace(rawValue)
 		if value == "" {
 			return nil, cerr.Config("%s expects a non-empty value; use 'tycswap config unset %s' to clear it", spec.Dotted(), spec.Dotted())
+		}
+		if spec.Field == "Model" && noModelWord(value) {
+			return nil, cerr.Config("%s %q names no model; use 'tycswap config unset %s' to stop counting model limits", spec.Dotted(), value, spec.Dotted())
 		}
 		return value, nil
 	case KindInt:

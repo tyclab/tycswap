@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Fixed:** a session group gives its account back on its own once its sessions have been gone for its cooldown (5 minutes by default), and `groups release` refreshes a group login whose token expired while nothing ran, so an idle group can no longer hold an account for days and leave it with two owners when the same account is logged in again. `tycswap add` refuses an account a group holds instead of overwriting the login the group is verified against.
+- **Added:** `tycswap auto --observe` reads the usage Claude Code passes its status line and, near a 5-hour or weekly bar, runs one tick with a fresh usage fetch (at most every 15 seconds), so a fast-burning window is caught between timer ticks. flakelab's status line feeds it.
+- **Added:** while `autoswitch.model` is unset, the default login counts the model limits its live sessions run, as recorded from their status lines, the way a session group does; an explicit setting still wins.
+- **Fixed:** with a model counted, an active account that reports no window for it (a Pro login when Fable is counted) hands over to an account that does and is below every bar (`model-missing`).
+- **Fixed:** `tycswap config set autoswitch.model none` is refused with a pointer to `unset`, and a stored `none` counts nothing; before, it counted a model named "none" that no account reports, which blocked every automatic switch.
+
 - **Added:** `github.com/tyclab/tycswap/desktop/tray` gives other Go programs the native tray (icon, menu, tooltip, notifications) without account APIs, with `Name` and `Identifier` for their own product and Windows power, display and session events through `OnSystemEvent`; see [Native tray adapter](README.md#native-tray-adapter).
 
 - **Fixed:** Ultra accounts (formerly Max 20x) remain eligible for Fable, model routing and recovery after Anthropic removes their five-hour limit. Decisions follow reported windows during the staged rollout; weekly, model and any remaining five-hour limits still apply.

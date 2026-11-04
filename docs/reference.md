@@ -646,7 +646,10 @@ reports `Updated credentials for Account <n> (<email> [<tag>]).`. This is the
 supported way to repair an account whose refresh token has died (`usageStatus:
 relogin_required`): run `tycswap add --login` and sign in as that account, or
 log in with it in Claude Code and re-run `tycswap add`. The refresh also clears
-any `tycswap auto` quarantine on that slot.
+any `tycswap auto` quarantine on that slot. An account a session group holds is
+refused, naming the group: its stored login stays the group's until the group
+releases it, which an idle group does on its own a few minutes after its
+sessions end, or `tycswap groups release` (DESIGN A74).
 
 With `--login`, `add` stores a login the live one never sees. It creates a
 private scratch profile (`login.*`, mode 0700) under the backup root and runs
@@ -1595,7 +1598,7 @@ Unmapped ~/work/client-app
 ```
 tycswap auto [--once] [--json] [--interval SECONDS] [--five-hour-threshold PCT]
            [--seven-day-threshold PCT] [--model-threshold PCT] [--cooldown SECONDS]
-           [--model NAMES] [--dry-run] [--debug]
+           [--model NAMES] [--dry-run] [--debug] [--observe]
 ```
 
 ### Options
@@ -1612,6 +1615,7 @@ tycswap auto [--once] [--json] [--interval SECONDS] [--five-hour-threshold PCT]
 | `--model` | string (comma names) | `autoswitch.model` | Adds per-model weekly limits. |
 | `--dry-run` | flag | off | Evaluate and report but never switch. |
 | `--debug` | flag | off | — |
+| `--observe` | flag | off | Implies `--once`. Reads Claude Code's status line JSON on stdin; see below. |
 
 Command-line values override the corresponding `settings.json` values for this
 run only, then are re-clamped to the ranges above.
@@ -1673,6 +1677,40 @@ reports `no-switch` with reason `reserved-no-target` and leaves the account in
 place. The default login and the Fable group reserve nothing; `tycswap claude`
 prefers the same accounts for its own selection.
 
+**A login without a counted model's window hands over** (DESIGN A73). When the
+active account reports usage but no window for a model `autoswitch.model`
+counts, while another account reports one (a Pro login when Fable is counted),
+the tick moves to an account that reports it and is below every bar: the
+`switch` line names the `model-missing` trigger and no window, the cooldown
+applies as to a proactive move, and with no such account the tick reports
+`no-switch` with reason `model-missing-no-target` and stays.
+
+**The default login follows its sessions' models** (DESIGN A76). While
+`autoswitch.model` is unset, a `--once` tick counts the per-model windows of
+the model families the default profile's live sessions run, as recorded by
+`--observe` from their status lines; a group's engine already counts its own
+sessions' models. A set `autoswitch.model` or `--model` always wins, and with
+no records nothing is counted. The loop and the dashboard's hosted engine keep
+their configured models.
+
+**Idle session groups give their account back** (DESIGN A74). A tick that is
+not a dry run releases an enabled group's account to the shared pool once the
+group has had no live or launching session for its `autoswitch.cooldownSeconds`
+(300), and reports it with the `group-release` event. A group login whose
+access token expired while no session ran is refreshed first, so its
+ownership can be verified.
+
+**`--observe`** (DESIGN A75) is the status line's trigger. It reads the JSON
+Claude Code passes its status line. When a `rate_limits` five-hour or weekly
+window there is within 15 points of its bar, it runs one tick that fetches the
+active account's usage at once instead of on its poll plan; one observation
+per 15 seconds passes across every session, and a 429 backoff still holds.
+Below the margin it exits 2 without a tick. A spend limit and an absent window
+(Ultra accounts have no five-hour limit) never count. In the default profile it
+also records the model family the session runs; in a group profile it
+freshens that group's engine instead. flakelab's status line command passes
+its input to `tycswap auto --observe` in the background.
+
 **Codex accounts.** When `autoswitch.codexEnabled` is true (the default) and
 tycswap holds Codex accounts, or an un-imported codex-auth registry exists, `tycswap
 auto` also runs a Codex engine in the same process. It is a second, small
@@ -1732,7 +1770,8 @@ a `Z` suffix), plus per-kind fields:
 | `event` | Fields |
 |---------|--------|
 | `poll` | `active` (`{number,email}` or null), `headroomPct` (`{num: float|null}`), `threshold` (float: the 7d bar), `fetchErrors` (`{num: msg}`, optional), `windowsPct` (`{num: {label: float}}`, optional) |
-| `switch` | `trigger` (`proactive`\|`at-limit`\|`failover`\|`reserved`), `axis` (`5h`\|`7d`\|`model`: the window that made the tick move; empty under `failover`, where usage was unreadable, and under `reserved`, where the account decided), `from` (ref), `to` (ref), `warnings` (array), `dryRun` (bool) |
+| `switch` | `trigger` (`proactive`\|`at-limit`\|`failover`\|`reserved`\|`model-missing`), `axis` (`5h`\|`7d`\|`model`: the window that made the tick move; empty under `failover`, where usage was unreadable, and under `reserved` and `model-missing`, where the account decided), `from` (ref), `to` (ref), `warnings` (array), `dryRun` (bool) |
+| `group-release` | `group` (`fable`\|`opus`), `released` (`{number,email}`): an idle group's account returned to the shared pool |
 | `no-switch` | `reason` (string), `detail` (string); under `active-usage-unknown` and `active-idle`, `detail` ends in ` · <skip reason>` while the active account's `list --json` row carries `usageRefresh.skipReason` |
 | `account-quarantined` | `number`, `email`, `reason` |
 | `account-unquarantined` | `number`, `email`, `reason` |
@@ -4912,7 +4951,7 @@ Every key, with its type, range, default, and meaning:
 | `autoswitch.hysteresisPct` | float (percent) | 0–50 | 10 | A switch target must beat the active account by at least this many percent. |
 | `autoswitch.strategy` | choice | `best`, `soonest-reset` | `soonest-reset` | How auto-switch orders qualifying targets: `soonest-reset` (earliest weekly renewal) or `best` (most headroom). See below. |
 | `autoswitch.unhealthyTicks` | int | 1–100 | 3 | Consecutive failed polls before an account is treated as unhealthy. |
-| `autoswitch.model` | string | — | (none) | Also switch on these models' weekly limits (for example `Fable`, `Fable,Opus`, or `all`). |
+| `autoswitch.model` | string | — | (none) | Also switch on these models' weekly limits (for example `Fable`, `Fable,Opus`, or `all`). Unset, a scheduled tick counts the models the default login's live sessions run (DESIGN A76); `none` is refused: use `tycswap config unset autoswitch.model`. |
 
 Reads are forgiving: a missing file, a bad type, or an out-of-range value
 degrades to the (clamped) default without error, and a key tycswap does not
@@ -5227,9 +5266,10 @@ GET /api/state; errors leave the draft available to retry.
 Interactive menus also expose session-group switching, launching/resuming sessions,
 group settings, ownership reconciliation, account release and capability records.
 `groups release fable|opus` prints `{"group": "<id>", "released": {"number", "email"}}`
-(`released` is null when the group held no account). While the group has live
-sessions or its credential's lineage is unverified it prints the error envelope
-and exits 1, holding the claim (DESIGN A69). Import/export guides
+(`released` is null when the group held no account). A group login whose
+access token expired while no session ran is refreshed first. While the group
+has live sessions or its credential's lineage is unverified it prints the error
+envelope and exits 1, holding the claim (DESIGN A69, A74). Import/export guides
 provider, account scope and file selection; exports require a new file and a token
 warning confirmation. The web/tray Interactive menu action opens this same menu.
 `web --reuse` opens the running local or remote tray dashboard through its authenticated

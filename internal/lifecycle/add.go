@@ -38,6 +38,7 @@ import (
 	"strconv"
 
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/storenames"
@@ -95,6 +96,9 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 	return s.WithRosterLocked(func(data *store.SequenceData) error {
 		if slot == nil {
 			if existing := s.FindAccountSlot(data, email, orgUUID); existing != "" {
+				if err := refuseGroupHeld(s, existing); err != nil {
+					return err
+				}
 				*landed = existing
 				return addRefreshInPlace(s, src, data, existing, email, orgUUID, alias, normAlias)
 			}
@@ -117,6 +121,14 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 
 			if old := s.FindAccountSlot(data, email, orgUUID); old != "" && old != accountNum {
 				migrateFrom = old
+			}
+			for _, num := range []string{accountNum, migrateFrom} {
+				if num == "" {
+					continue
+				}
+				if err := refuseGroupHeld(s, num); err != nil {
+					return err
+				}
 			}
 
 			d, err := revalidateDisplacement(data, accountNum, email, orgUUID, confirmed, assumeYes)
@@ -418,6 +430,26 @@ func addRefreshInPlace(s *store.Store, src AddSource, data *store.SequenceData, 
 	}
 	emitLine(printer.Accent("Updated credentials") + " for Account " + accountNum + " (" + email + " " + printer.Muted("["+tag+"]") + ").")
 	return nil
+}
+
+// refuseGroupHeld keeps a group-held account's backup on that group's lineage
+// until the group lets the account go (DESIGN A74).
+func refuseGroupHeld(s *store.Store, num string) error {
+	registry, err := groups.LoadRegistry(s.BackupDir())
+	if err != nil {
+		return err
+	}
+	owner, held := registry.Claims[num]
+	if !held {
+		return nil
+	}
+	id, err := groups.Parse(owner.Scope)
+	if err != nil {
+		return nil
+	}
+	return cerr.Session("Account-%s (%s) is held by the %s group, whose login stays in that group's profile. "+
+		"Exit the group's sessions (tycswap releases an idle group's account a few minutes later) or run "+
+		"`tycswap groups release %s`, then add again", num, owner.Account.Email, id.Label(), id)
 }
 
 type displaceInfo struct{ num, email, org, orgName string }

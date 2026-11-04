@@ -12,6 +12,29 @@ import (
 	"github.com/tyclab/tycswap/internal/store"
 )
 
+// scopedNamesFor is every per-model window name an account reports for one of
+// the model families, sorted.
+func scopedNamesFor(s *store.Store, families map[string]bool) []string {
+	names := map[string]bool{}
+	for _, entry := range UsageEntriesByAccount(s, map[string]bool{}) {
+		if u := oauth.NewUsage(entry.LastGood); u != nil {
+			for _, w := range u.Scoped {
+				for family := range families {
+					if strings.Contains(strings.ToLower(w.Name), family) {
+						names[w.Name] = true
+					}
+				}
+			}
+		}
+	}
+	models := make([]string, 0, len(names))
+	for name := range names {
+		models = append(models, name)
+	}
+	sort.Strings(models)
+	return models
+}
+
 func GroupSettings(s *store.Store, base settings.AutoSwitchSettings) settings.AutoSwitchSettings {
 	base = settings.LoadOver(s.ScopeRoot(), base)
 	base.Model = nil
@@ -30,24 +53,7 @@ func GroupSettings(s *store.Store, base settings.AutoSwitchSettings) settings.Au
 	if len(families) == 0 {
 		families[string(s.GroupID())] = true
 	}
-	names := map[string]bool{}
-	for _, entry := range UsageEntriesByAccount(s, map[string]bool{}) {
-		if u := oauth.NewUsage(entry.LastGood); u != nil {
-			for _, w := range u.Scoped {
-				for family := range families {
-					if strings.Contains(strings.ToLower(w.Name), family) {
-						names[w.Name] = true
-					}
-				}
-			}
-		}
-	}
-	var models []string
-	for name := range names {
-		models = append(models, name)
-	}
-	sort.Strings(models)
-	model := strings.Join(models, ",")
+	model := strings.Join(scopedNamesFor(s, families), ",")
 	if model == "" && s.GroupID() == groups.Fable {
 		model = "Fable"
 	}

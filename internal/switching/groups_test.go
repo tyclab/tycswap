@@ -26,7 +26,12 @@ func groupCreds(plan, access, refresh string) string {
 
 func groupFixture(t *testing.T) *store.Store {
 	t.Helper()
-	s := newTestStore(t, nil)
+	return groupFixtureWith(t, nil)
+}
+
+func groupFixtureWith(t *testing.T, client oauth.Client) *store.Store {
+	t.Helper()
+	s := newTestStore(t, client)
 	writeSeq(t, s, seqData(ptrInt(3), []int{1, 2, 3, 4}, map[string]json.RawMessage{
 		"1": record(map[string]any{"email": "one@x.com", "organizationUuid": ""}),
 		"2": record(map[string]any{"email": "two@x.com", "organizationUuid": ""}),

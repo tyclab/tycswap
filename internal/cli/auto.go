@@ -24,8 +24,10 @@ import (
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
+	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
 )
 
@@ -33,7 +35,7 @@ const autoProg = "tycswap auto"
 
 // autoCommand handles `tycswap auto ...` (spec 08§7.7). argv excludes "auto".
 func autoCommand(_ string, argv []string, s ioStreams) int {
-	var once, jsonMode, dryRun, debug bool
+	var once, jsonMode, dryRun, debug, observe bool
 	var interval, cooldown *float64
 	// One flag per bar, named after the window it governs (DESIGN A34).
 	var fiveHour, sevenDay, modelBar *float64
@@ -57,6 +59,10 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 			jsonMode = true
 		case tok == "--dry-run":
 			dryRun = true
+		case tok == "--observe":
+			// One tick for a status line near a bar: reads Claude Code's
+			// statusline JSON on stdin (DESIGN A75).
+			observe, once = true, true
 		case tok == "--debug":
 			debug = true
 		case tok == "--interval":
@@ -129,6 +135,31 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		Model:             model,
 	})
 
+	var fresh []autoswitch.Option
+	freshGroup := groups.ID("")
+	if observe {
+		raw, _ := io.ReadAll(io.LimitReader(s.in, 1<<20))
+		freshGroup = observedGroup(sw.BackupDir())
+		if freshGroup == "" {
+			session, model := observedSessionModel(raw)
+			if err := reporting.RecordDefaultSessionModel(sw.BackupDir(), session, model, sw.Clk.Now()); err != nil {
+				sw.Log.Debugf("Session model not recorded: %v", err)
+			}
+		}
+		if !observedNearBar(raw, merged) || !claimObserveSlot(sw.BackupDir(), sw.Clk.Now()) {
+			return int(autoswitch.NoAction)
+		}
+		if freshGroup == "" {
+			fresh = append(fresh, autoswitch.WithFreshActive())
+		}
+	}
+	// A scheduled tick counts the models the default login's live sessions
+	// run while autoswitch.model is unset (DESIGN A76).
+	defaultSettings := merged
+	if once {
+		defaultSettings = reporting.DefaultSessionSettings(sw.Store, merged)
+	}
+
 	onEvent := humanEmit(s.out)
 	if jsonMode {
 		onEvent = jsonlEmit(s.out)
@@ -142,10 +173,12 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		defer outMu.Unlock()
 		emitClaude(ev)
 	}
-	engine := autoswitch.NewEngine(autoswitchAdapter{engineSwitcher(sw, dryRun)}, merged, onEvent, dryRun,
-		autoswitch.WithOAuthClient(sw.OAuth),
-		autoswitch.WithLogger(sw.Log),
-		autoswitch.WithClock(sw.Clk),
+	engine := autoswitch.NewEngine(autoswitchAdapter{engineSwitcher(sw, dryRun)}, defaultSettings, onEvent, dryRun,
+		append([]autoswitch.Option{
+			autoswitch.WithOAuthClient(sw.OAuth),
+			autoswitch.WithLogger(sw.Log),
+			autoswitch.WithClock(sw.Clk),
+		}, fresh...)...,
 	)
 
 	// Codex rides along in this process as its own small engine (claude-swap
@@ -168,8 +201,10 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	if once {
 		// Claude first, then Codex; the exit status is the Claude outcome.
 		code := int(engine.Tick())
-		tickGroupScopes(sw, merged, onEvent, dryRun)
-		runCodexTick(context.Background())
+		tickGroupScopesFresh(sw, merged, onEvent, dryRun, freshGroup)
+		if !observe {
+			runCodexTick(context.Background())
+		}
 		return code
 	}
 
@@ -263,11 +298,15 @@ func renderAutoHelp(out io.Writer) {
 	fmt.Fprintln(out, "usage: tycswap auto [-h] [--once] [--json] [--interval SECONDS]")
 	fmt.Fprintln(out, "                  [--five-hour-threshold PCT] [--seven-day-threshold PCT]")
 	fmt.Fprintln(out, "                  [--model-threshold PCT] [--cooldown SECONDS] [--model NAMES]")
-	fmt.Fprintln(out, "                  [--dry-run] [--debug]")
+	fmt.Fprintln(out, "                  [--dry-run] [--debug] [--observe]")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Each window has a bar of its own: the 5h window bursts and refills in hours,")
 	fmt.Fprintln(out, "the 7d one is the account's whole budget, and a per-model week counts only")
 	fmt.Fprintln(out, "with --model.")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "--observe reads the JSON Claude Code passes its status line on stdin and, when")
+	fmt.Fprintln(out, "a 5h or 7d window there is within 15 points of its bar, runs one tick that")
+	fmt.Fprintln(out, "fetches the active account's usage at once (at most once per 15 s).")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Auto-switch rotates between subscription accounts only: it never moves onto")
 	fmt.Fprintln(out, "or off an API-key account, since that changes how Claude Code authenticates.")

@@ -34,7 +34,7 @@ func TestEngineFactoryForwardsSwitcherOAuthClient(t *testing.T) {
 	var got oauth.Client
 	orig := newAutoEngine
 	t.Cleanup(func() { newAutoEngine = orig })
-	newAutoEngine = func(_ *core.Switcher, _ settings.AutoSwitchSettings, _ func(autoswitch.Event), _ bool, oc oauth.Client) *autoswitch.Engine {
+	newAutoEngine = func(_ *core.Switcher, _ settings.AutoSwitchSettings, _ func(autoswitch.Event), _ bool, oc oauth.Client, _ ...autoswitch.Option) *autoswitch.Engine {
 		got = oc
 		return nil
 	}
