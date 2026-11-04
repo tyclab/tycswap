@@ -4,35 +4,16 @@ import (
 	"net/http"
 
 	"github.com/tyclab/tycswap/internal/cerr"
-	"github.com/tyclab/tycswap/internal/groups"
 )
 
-// SaveSetting uses an empty scope for shared defaults; nil resets.
+// SaveSetting writes a shared setting; nil resets. Session groups and their
+// scoped settings are retired (DESIGN A78).
 func (s *Server) SaveSetting(scope, key string, value *string) (map[string]any, error) {
 	if scope != "" {
-		id, err := groups.Parse(scope)
-		if err != nil {
-			return nil, cerr.Validation("%s", err)
-		}
-		scope = string(id)
+		return nil, cerr.Validation("session groups are retired; settings have one scope")
 	}
 	result, sequence, err := s.runMutation(func() (map[string]any, error) {
 		result := map[string]any{"key": key}
-		if scope != "" {
-			facade, ok := s.d.Groups.(GroupSettingsFacade)
-			if !ok {
-				return nil, cerr.Validation("group settings are unavailable")
-			}
-			result["scope"] = scope
-			if value == nil {
-				removed, err := facade.UnsetSetting(scope, key)
-				result["removed"] = removed
-				return result, err
-			}
-			written, err := facade.SetSetting(scope, key, *value)
-			result["value"] = written
-			return result, err
-		}
 		if s.d.Settings == nil {
 			return nil, cerr.Validation("Default settings are unavailable")
 		}

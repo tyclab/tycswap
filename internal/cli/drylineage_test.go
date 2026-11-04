@@ -112,18 +112,11 @@ func TestDryTicksWriteNoLineage(t *testing.T) {
 			t.Fatalf("a dry engine tick harvested into Account-5: %s", got)
 		}
 	})
-	t.Run("group scopes", func(t *testing.T) {
+	t.Run("group retirement", func(t *testing.T) {
 		sw := rotatedSwitcher(t)
-		tickGroupScopes(sw, settings.Default(), nil, true)
+		retireGroups(sw, nil, true)
 		if chainRecordExists(t, sw) {
-			t.Fatal("a dry group tick wrote live_lineage.json")
-		}
-	})
-	t.Run("real group tick", func(t *testing.T) {
-		sw := rotatedSwitcher(t)
-		tickGroupScopes(sw, settings.Default(), nil, false)
-		if !chainRecordExists(t, sw) {
-			t.Fatal("a real group tick did not record the lineage: the fixture misses the write")
+			t.Fatal("a dry group retirement wrote live_lineage.json")
 		}
 	})
 }

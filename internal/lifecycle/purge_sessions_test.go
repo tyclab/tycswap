@@ -10,35 +10,16 @@ import (
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/platform"
-	"github.com/tyclab/tycswap/internal/routingstate"
 	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
-func TestPurgeRefusesManagedStartupBeforeNativeRegistry(t *testing.T) {
-	s := newStore(t)
-	seed(t, s, ip(1), switchable("1", "a@example.com"))
-	registerPurgeSession(t, s)
-	p := &countingPrompter{}
-	withPrompter(t, p)
-	if err := Purge(s); errKind(err) != "SessionError" {
-		t.Fatalf("purge during startup = %v", err)
-	}
-	if p.calls != 0 {
-		t.Fatal("prompted despite live managed startup")
-	}
-}
-
 func TestPurgeRechecksSessionAfterConfirmation(t *testing.T) {
-	for _, kind := range []string{"managed", "group", "legacy"} {
+	for _, kind := range []string{"group", "legacy"} {
 		t.Run(kind, func(t *testing.T) {
 			s := newStore(t)
 			seed(t, s, ip(1), switchable("1", "a@example.com"))
 			withPrompter(t, &racingPrompter{t: t, s: s, commit: func() {
-				if kind == "managed" {
-					registerPurgeSession(t, s)
-					return
-				}
 				profile := groups.ProfileDir(s.SharedRoot(), groups.Opus)
 				if kind == "legacy" {
 					profile = s.SessionDir("1", "a@example.com")
@@ -68,40 +49,33 @@ func TestPurgeRefusesGroupIDEAndUnknownState(t *testing.T) {
 	}
 }
 
-func TestPurgeKeepsLockInodesAndRemovesStaleRoutingState(t *testing.T) {
+// The account lock keeps its inode; what the retired router left behind goes.
+func TestPurgeKeepsLockInodeAndRemovesRoutingLeftovers(t *testing.T) {
 	s := newStore(t)
 	seed(t, s, ip(1), switchable("1", "a@example.com"))
-	if err := routingstate.With(s.SharedRoot(), func(state *routingstate.State) error { return nil }); err != nil {
-		t.Fatal(err)
-	}
 	if err := s.Lock.With(func() error { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	var before []os.FileInfo
-	for _, name := range []string{".lock", "routing.lock"} {
-		info, err := os.Stat(filepath.Join(s.SharedRoot(), name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		before = append(before, info)
+	before, err := os.Stat(filepath.Join(s.SharedRoot(), ".lock"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	withPrompter(t, &racingPrompter{t: t, s: s, commit: func() {
-		state := `{"version":1,"sessions":{"fable/dead":{"group":"fable","id":"dead","pid":2147483647,"model":"fable"}},"leases":{}}`
-		if err := os.WriteFile(filepath.Join(s.SharedRoot(), "routing.json"), []byte(state), 0o600); err != nil {
+	for _, name := range []string{"routing.json", "routing.lock"} {
+		if err := os.WriteFile(filepath.Join(s.SharedRoot(), name), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-	}})
+	}
+	answerYes(t)
 	if err := Purge(s); err != nil {
 		t.Fatal(err)
 	}
-	for i, name := range []string{".lock", "routing.lock"} {
-		after, err := os.Stat(filepath.Join(s.SharedRoot(), name))
-		if err != nil || !os.SameFile(before[i], after) {
-			t.Fatalf("coordination file replaced: %s (%v)", name, err)
-		}
+	if after, err := os.Stat(filepath.Join(s.SharedRoot(), ".lock")); err != nil || !os.SameFile(before, after) {
+		t.Fatalf("account lock replaced: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(s.SharedRoot(), "routing.json")); !os.IsNotExist(err) {
-		t.Fatalf("routing data survived purge: %v", err)
+	for _, name := range []string{"routing.json", "routing.lock"} {
+		if _, err := os.Stat(filepath.Join(s.SharedRoot(), name)); !os.IsNotExist(err) {
+			t.Fatalf("%s survived purge: %v", name, err)
+		}
 	}
 }
 
@@ -135,18 +109,6 @@ func TestPurgeRemovesGroupKeychainEntries(t *testing.T) {
 	}
 	if kc.Exists(service, keychain.AccountName()) {
 		t.Fatal("group credential survived purge")
-	}
-}
-
-func registerPurgeSession(t *testing.T, s *store.Store) {
-	t.Helper()
-	if err := routingstate.With(s.SharedRoot(), func(state *routingstate.State) error {
-		state.Sessions[routingstate.Key("fable", "starting")] = routingstate.Session{
-			Group: "fable", ID: "starting", PID: os.Getpid(), Model: "fable", Launch: "pending",
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
 	}
 }
 

@@ -45,7 +45,6 @@ type shellActions struct {
 	// "codex:1", A47) and returns the codex sessions still running on the
 	// old Codex account (nil for a Claude switch).
 	SwitchTo    func(key string) (runningPIDs []int, err error)
-	SwitchGroup func(group, account string) error
 	SaveSetting func(scope, key string, value *string) error
 	// AddCurrent stores the login Claude Code is signed in with as an
 	// account (A37; web.Server.AddCurrentLogin). nil hides the row.
@@ -259,7 +258,6 @@ func (a *appShell) menu(st web.State) []tray.Item {
 	// What can be updated comes first, where it is seen (A44).
 	items = append(items, a.updatesSection()...)
 	items = append(items, tray.Separator(), tray.Header("Accounts"))
-	items = append(items, a.groupRows(st)...)
 	items = append(items, a.accountRows(st, withModels)...)
 	items = append(items, tray.Separator(), tray.Header("Automation"))
 	// The dashboard's engines: the Claude one, and the Codex one beside it
@@ -395,33 +393,6 @@ func gaugeGroup(rows []map[string]any, withModels []string, subID, subTitle stri
 	return gauges
 }
 
-func (a *appShell) groupRows(st web.State) []tray.Item {
-	if a.act.SwitchGroup == nil {
-		return nil
-	}
-	var out []tray.Item
-	rows, _ := rowsByProvider(st.Accounts)
-	for _, group := range st.Groups {
-		var children []tray.Item
-		for _, row := range rows {
-			num := rowNumber(row)
-			reason := group.AccountBlockers[num]
-			sub := windowsLine(row, []string{"all"})
-			if reason != "" {
-				sub = reason
-			}
-			children = append(children, tray.Item{ID: "group:" + group.ID + ":" + num, Title: "#" + num + "  " + rowName(row), Sub: sub, Checked: group.ActiveNumber == num, Active: group.ActiveNumber == num,
-				Disabled: group.ActiveNumber == num || reason != "" || !boolOf(row["switchable"]) || boolOf(row["disabled"])})
-		}
-		title := group.Label
-		if group.ActiveNumber != "" {
-			title += " · #" + group.ActiveNumber
-		}
-		out = append(out, tray.Item{ID: "group:" + group.ID, Title: title, Sub: group.Blocker, Children: children})
-	}
-	return out
-}
-
 // addCurrentItem is "Add current login": its second line says what a click
 // does now — store the login Claude Code has, or how to get another one there.
 func addCurrentItem(st web.State) tray.Item {
@@ -527,14 +498,6 @@ func (a *appShell) click(id string) {
 			if err := a.act.AccountSetup(section); err != nil {
 				a.notify("Could not open account setup", err.Error())
 			}
-		}
-	case strings.HasPrefix(id, "group:"):
-		parts := strings.Split(id, ":")
-		if len(parts) != 3 || a.act.SwitchGroup == nil {
-			return
-		}
-		if err := a.act.SwitchGroup(parts[1], parts[2]); err != nil {
-			a.notify("Group switch failed", err.Error())
 		}
 	case id == "claude-code":
 		a.claudeCodeClick()

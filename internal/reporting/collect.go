@@ -20,7 +20,6 @@ import (
 
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/credstore"
-	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/procdetect"
@@ -102,15 +101,6 @@ func CollectUsageEntries(s *store.Store, infos []AccountInfo, fetch map[string]b
 	if len(skips) > 0 {
 		recordUsage(s, skips, entries, identities)
 		entries = st.Entries(identities)
-	}
-	if len(requested) > 0 {
-		for _, id := range groups.All() {
-			if active, err := groups.LoadActive(s.BackupDir(), id); err == nil && active != nil {
-				ReplanCachedUsage(s)
-				entries = st.Entries(identities)
-				break
-			}
-		}
 	}
 
 	// No client in store-only contexts: skip reserve/fetch rather than claim slots that cannot be fetched.

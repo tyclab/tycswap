@@ -92,9 +92,6 @@ func (a *appShell) panel(st web.State) tray.Panel {
 	}
 	sortPanelRows(&p)
 	p.Settings = []tray.SettingScope{{Label: "Shared defaults", Settings: panelSettings(st.Settings)}}
-	for _, group := range st.Groups {
-		p.Settings = append(p.Settings, tray.SettingScope{ID: group.ID, Label: group.Label, Settings: panelSettings(group.SettingViews)})
-	}
 	p.Actions = []tray.Item{{ID: "open", Title: "Open dashboard"}, {ID: "update", Title: "Check for updates"}}
 	if a.act.AccountSetup != nil {
 		p.Actions = append([]tray.Item{{ID: "account-setup", Title: "Add account…"}, {ID: "menu:main", Title: "Interactive menu…"}}, p.Actions...)
@@ -217,11 +214,6 @@ func panelOwners(st web.State, row map[string]any) []string {
 		}
 		return nil
 	}
-	for _, group := range st.Groups {
-		if group.ActiveNumber == rowNumber(row) {
-			out = append(out, fmt.Sprintf("%s · %d", group.Label, group.LiveSessions))
-		}
-	}
 	if boolOf(row["isActive"]) {
 		out = append(out, "Existing / default")
 	}
@@ -241,32 +233,8 @@ func panelTargets(st web.State, row map[string]any) []tray.Target {
 	if boolOf(row["isActive"]) {
 		root.Reason = "Already active"
 	}
-	if rowProvider(row) == "claude" {
-		for _, group := range st.Groups {
-			if group.ActiveNumber == rowNumber(row) {
-				root.Reason = "In use by " + group.Label
-			}
-		}
-	}
 	root.Disabled = root.Reason != ""
-	out := []tray.Target{root}
-	if rowProvider(row) != "claude" {
-		return out
-	}
-	for _, group := range st.Groups {
-		reason := common
-		if group.Blocker != "" {
-			reason = group.Blocker
-		}
-		if blocker := group.AccountBlockers[rowNumber(row)]; blocker != "" {
-			reason = blocker
-		}
-		if group.ActiveNumber == rowNumber(row) {
-			reason = "Already active for " + group.Label
-		}
-		out = append(out, tray.Target{ID: "group:" + group.ID + ":" + rowNumber(row), Label: group.Label, Reason: reason, Disabled: reason != ""})
-	}
-	return out
+	return []tray.Target{root}
 }
 
 func panelSettings(views []web.SettingView) []tray.PanelSetting {

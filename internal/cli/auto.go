@@ -189,7 +189,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	if once {
 		// Claude first, then Codex; the exit status is the Claude outcome.
 		code := int(engine.Tick())
-		tickGroupScopes(sw, merged, onEvent, dryRun)
+		retireGroups(sw, onEvent, dryRun)
 		if !observe {
 			runCodexTick(context.Background())
 		}
@@ -215,7 +215,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	}
 	stopCodex := startCodexLoop(true,
 		time.Duration(merged.IntervalSeconds*float64(time.Second)), func(ctx context.Context) {
-			tickGroupScopes(sw, merged, onEvent, dryRun)
+			retireGroups(sw, onEvent, dryRun)
 			runCodexTick(ctx)
 		})
 	code := engine.RunLoop()

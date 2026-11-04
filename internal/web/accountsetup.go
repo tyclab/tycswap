@@ -20,7 +20,7 @@ func (s *Server) handleAccountSetup(w http.ResponseWriter, r *http.Request) {
 		delete(body, "section")
 	}
 	if len(body) != 0 || !ValidMenuSection(section) {
-		writeError(w, http.StatusBadRequest, "choose add, manage, groups, transfer, or main")
+		writeError(w, http.StatusBadRequest, "choose add, manage, transfer, or main")
 		return
 	}
 	if s.hub.requestAccountSetup(section) {
@@ -39,7 +39,7 @@ func (s *Server) handleAccountSetup(w http.ResponseWriter, r *http.Request) {
 
 func ValidMenuSection(section string) bool {
 	switch section {
-	case "main", "add", "manage", "groups", "transfer":
+	case "main", "add", "manage", "transfer":
 		return true
 	}
 	return false

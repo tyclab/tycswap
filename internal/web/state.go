@@ -38,7 +38,6 @@ type State struct {
 	ActiveNumber  any              `json:"activeNumber"` // int, or nil when no managed account is active
 	Accounts      []map[string]any `json:"accounts"`
 	Sessions      SessionsJSON     `json:"sessions"`
-	Groups        []GroupView      `json:"groups,omitempty"`
 	Recovery      *RecoveryView    `json:"recovery,omitempty"`
 	Settings      []SettingView    `json:"settings"` // null when no SettingsFacade
 	Auto          *AutoView        `json:"auto"`     // null when no AutoFacade
@@ -150,12 +149,6 @@ func (s *Server) buildState(o stateOpts) State {
 
 	if s.d.Settings != nil {
 		st.Settings = s.settingsViews()
-	}
-	if s.d.Groups != nil {
-		st.Groups = append([]GroupView(nil), s.d.Groups.Views()...)
-		for i := range st.Groups {
-			st.Groups[i].SettingViews = s.groupSettingViews(st.Groups[i].SettingViews)
-		}
 	}
 	if s.d.Recovery != nil && snap != nil {
 		v := s.d.Recovery.View(*snap)

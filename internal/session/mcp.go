@@ -9,6 +9,7 @@ package session
 
 import (
 	"encoding/json"
+	"github.com/tyclab/tycswap/internal/store"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -27,6 +28,9 @@ const (
 )
 
 // mcpStash is the write-once stash of definitions the first mirror displaced.
+// storeProvider is the account source that knows the store's default profile.
+type storeProvider interface{ AccountStore() *store.Store }
+
 type mcpStash struct {
 	SchemaVersion int            `json:"schemaVersion"`
 	McpServers    map[string]any `json:"mcpServers"`
@@ -147,8 +151,8 @@ func (m *Manager) syncMCPServers(sessionDir string, share bool) {
 // CLAUDE_CONFIG_DIR.
 func (m *Manager) readMCPSource() (map[string]any, bool) {
 	path := paths.GetDefaultGlobalConfigPath()
-	if provider, ok := m.accounts.(groupStoreProvider); ok {
-		path = provider.GroupStore().DefaultConfigPath()
+	if provider, ok := m.accounts.(storeProvider); ok {
+		path = provider.AccountStore().DefaultConfigPath()
 	}
 	config, ok := loadJSONObject(path)
 	if !ok {

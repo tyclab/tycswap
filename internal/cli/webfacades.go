@@ -291,7 +291,7 @@ func (a *autoFacade) Start(dryRun bool) error {
 	codexEngine := a.newCodexEngine(s)
 	a.codexEngine, a.codexDone = codexEngine, nil
 	a.stopCodex = startCodexLoop(true, time.Duration(s.IntervalSeconds*float64(time.Second)), func(ctx context.Context) {
-		tickGroupScopes(a.sw, s, a.onEvent, dryRun)
+		retireGroups(a.sw, a.onEvent, dryRun)
 		a.codexTick(ctx, codexEngine, dryRun)
 	})
 	return nil

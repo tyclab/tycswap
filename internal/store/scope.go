@@ -29,25 +29,7 @@ func (s *Store) ForGroup(id groups.ID) (*Store, error) {
 	return &clone, nil
 }
 
-func (s *Store) GroupID() groups.ID         { return s.group }
-func (s *Store) GroupIntent() groups.Intent { return s.groupIntent }
-func (s *Store) GroupHandoff() bool         { return s.groupHandoff }
-func (s *Store) WithGroupHandoff() *Store {
-	clone := *s
-	clone.groupHandoff = true
-	if clone.group != "" {
-		clone.Creds = &profileCredentials{Store: clone.sharedCreds, owner: &clone}
-	}
-	return &clone
-}
-func (s *Store) WithGroupIntent(intent groups.Intent) *Store {
-	clone := *s
-	clone.groupIntent = intent
-	if clone.group != "" {
-		clone.Creds = &profileCredentials{Store: clone.sharedCreds, owner: &clone}
-	}
-	return &clone
-}
+func (s *Store) GroupID() groups.ID { return s.group }
 func (s *Store) SharedRoot() string { return s.backupDir }
 
 func (s *Store) ScopeRoot() string {

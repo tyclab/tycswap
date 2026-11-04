@@ -200,8 +200,8 @@ func Plan(p Packet, dest Destination, request StartRequest) (LaunchPlan, error) 
 	if dest.Provider != "claude" && dest.Provider != "codex" {
 		return LaunchPlan{}, errors.New("unsupported destination")
 	}
-	if dest.Provider == "claude" && (dest.Group != "fable" && dest.Group != "opus" || ModelClass(dest.Model) != dest.Group) {
-		return LaunchPlan{}, errors.New("choose a known compatible Claude model and group")
+	if dest.Provider == "claude" && ModelClass(dest.Model) != "fable" && ModelClass(dest.Model) != "opus" {
+		return LaunchPlan{}, errors.New("choose a known Claude model")
 	}
 	if dest.Provider == "codex" && dest.Model != "" && ModelClass(dest.Model) != "codex" {
 		return LaunchPlan{}, errors.New("unknown Codex model")

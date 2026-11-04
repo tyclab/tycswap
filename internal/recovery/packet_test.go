@@ -89,13 +89,15 @@ func TestHandoverRequiresExplicitReviewedIdleSourceAndDestination(t *testing.T) 
 	reverse.Provider = "codex"
 	p, _ = Prepare(reverse)
 	request.ReviewedDigest = p.Digest
-	dest = Destination{Provider: "claude", Group: "fable", Model: "opus", Usable: true}
+	dest = Destination{Provider: "claude", Model: "gpt-5", Usable: true}
 	if _, err := Plan(p, dest, request); err == nil {
-		t.Fatal("incompatible group model")
+		t.Fatal("a Claude destination took a model Claude cannot run")
 	}
-	dest.Model = "fable"
-	if plan, err := Plan(p, dest, request); err != nil || plan.Executable != "claude" {
-		t.Fatalf("%#v %v", plan, err)
+	for _, model := range []string{"fable", "opus"} {
+		dest.Model = model
+		if plan, err := Plan(p, dest, request); err != nil || plan.Executable != "claude" {
+			t.Fatalf("%s: %#v %v", model, plan, err)
+		}
 	}
 }
 

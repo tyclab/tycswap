@@ -35,9 +35,6 @@ func (id ID) Label() string {
 
 func ScopeDir(root string, id ID) string   { return filepath.Join(root, "groups", string(id)) }
 func ProfileDir(root string, id ID) string { return filepath.Join(ScopeDir(root, id), "profile") }
-func StatePath(root string, id ID) string {
-	return filepath.Join(ScopeDir(root, id), "autoswitch_state.json")
-}
 func ActivePath(root string, id ID) string { return filepath.Join(ScopeDir(root, id), "active.json") }
 func JournalPath(root string, id ID) string {
 	return filepath.Join(ScopeDir(root, id), "transaction.json")
@@ -81,18 +78,6 @@ type Owner struct {
 	Account    Account `json:"account"`
 	Uncertain  bool    `json:"uncertain,omitempty"`
 	PIDs       []int   `json:"pids,omitempty"`
-}
-
-type Status struct {
-	ID           ID      `json:"id"`
-	Label        string  `json:"label"`
-	ActiveNumber *string `json:"activeNumber"`
-	Email        string  `json:"email,omitempty"`
-	ProfileDir   string  `json:"profileDir"`
-	Enabled      bool    `json:"enabled"`
-	LiveSessions int     `json:"liveSessions"`
-	Pending      bool    `json:"pending"`
-	Blocker      string  `json:"blocker,omitempty"`
 }
 
 type Intent string

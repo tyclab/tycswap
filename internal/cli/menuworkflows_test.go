@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/reporting"
-	"github.com/tyclab/tycswap/internal/web"
 )
 
 type menuAnswer struct {
@@ -103,54 +101,6 @@ func TestImportMenuKeepsExistingUnlessExplicitlyReplaced(t *testing.T) {
 	}
 }
 
-func TestGroupMenuHonorsOwnershipBlockers(t *testing.T) {
-	oldGroups, oldAccounts := menuGroupViews, menuAccounts
-	t.Cleanup(func() { menuGroupViews, menuAccounts = oldGroups, oldAccounts })
-	menuGroupViews = func(ioStreams) ([]web.GroupView, error) {
-		return []web.GroupView{{ID: "opus", Label: "Opus", AccountBlockers: map[string]string{"1": "in use by default"}}}, nil
-	}
-	menuAccounts = func(ioStreams) ([]reporting.AccountSnapshot, error) {
-		return []reporting.AccountSnapshot{{Number: "1", Email: "a@example.com"}}, nil
-	}
-	commands := workflowCommands(t)
-	workflowAnswers(t, menuAnswer{0, ""}, menuAnswer{0, ""}, menuAnswer{0, ""})
-	var stderr bytes.Buffer
-	menuGroups(ioStreams{err: &stderr})
-	if len(*commands) != 0 || !strings.Contains(stderr.String(), "in use by default") {
-		t.Fatal("blocked group account was offered for switching")
-	}
-}
-
-func TestGroupMenuReleasesHeldAccount(t *testing.T) {
-	for _, view := range []web.GroupView{{ID: "opus", Label: "Opus", ActiveNumber: "2"}, {ID: "opus", Label: "Opus"}} {
-		old := menuGroupViews
-		t.Cleanup(func() { menuGroupViews = old })
-		menuGroupViews = func(ioStreams) ([]web.GroupView, error) { return []web.GroupView{view}, nil }
-		commands := workflowCommands(t)
-		workflowAnswers(t, menuAnswer{0, ""}, menuAnswer{5, ""}, menuAnswer{1, ""})
-		menuGroups(ioStreams{err: io.Discard})
-		var want [][]string
-		if view.ActiveNumber != "" {
-			want = [][]string{{"groups", "release", "opus"}}
-		}
-		if !reflect.DeepEqual(*commands, want) {
-			t.Fatalf("%+v: %v", view, *commands)
-		}
-	}
-}
-
-func TestGroupSettingsResetInheritsSharedValue(t *testing.T) {
-	commands := workflowCommands(t)
-	workflowAnswers(t, menuAnswer{0, ""}, menuAnswer{0, ""})
-	menuGroupSettings(ioStreams{}, web.GroupView{ID: "opus", Label: "Opus", SettingViews: []web.SettingView{
-		{Key: "autoswitch.model", ReadOnly: "follows sessions"},
-		{Key: "autoswitch.sevenDayThreshold", Label: "Weekly", Value: 97},
-	}})
-	if want := [][]string{{"groups", "config", "opus", "--unset", "autoswitch.sevenDayThreshold"}}; !reflect.DeepEqual(*commands, want) {
-		t.Fatal(*commands)
-	}
-}
-
 func TestMenuRenewActiveLoginRequestsActivation(t *testing.T) {
 	old := menuAccounts
 	t.Cleanup(func() { menuAccounts = old })
@@ -230,24 +180,7 @@ func TestRemoteMenuSectionsAreValidated(t *testing.T) {
 	for _, data := range []string{`{}`, `{"section":"groups"}`, `{"section":"transfer"}`, `{"section":"main; echo unsafe"}`, `not json`} {
 		c.dispatch("account-setup", []byte(data), nil, nil, nil)
 	}
-	if !reflect.DeepEqual(sections, []string{"add", "groups", "transfer"}) {
+	if !reflect.DeepEqual(sections, []string{"add", "transfer"}) {
 		t.Fatal(sections)
-	}
-}
-
-func TestGroupSessionUsesChosenProjectAndResume(t *testing.T) {
-	old := menuSessionExecute
-	t.Cleanup(func() { menuSessionExecute = old })
-	dir := t.TempDir()
-	var gotDir string
-	var gotArgs []string
-	menuSessionExecute = func(_ ioStreams, dir string, args ...string) int {
-		gotDir, gotArgs = dir, args
-		return 0
-	}
-	workflowAnswers(t, menuAnswer{1, ""}, menuAnswer{0, "session-id"}, menuAnswer{0, dir})
-	menuGroupSession(ioStreams{err: io.Discard}, web.GroupView{ID: "opus", ActiveNumber: "2"}, true)
-	if gotDir != dir || !reflect.DeepEqual(gotArgs, []string{"run", "--group", "opus", "--model", "sonnet", "--resume", "session-id"}) {
-		t.Fatalf("dir=%q args=%v", gotDir, gotArgs)
 	}
 }

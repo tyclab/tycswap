@@ -74,19 +74,7 @@ func (f *recoveryWeb) Start(request web.RecoveryStartRequest) (web.RecoveryStart
 	if err != nil {
 		return f.manualPlan(plan, "Flakelab terminal launcher is unavailable; run the reviewed managed command in a terminal."), nil
 	}
-	if plan.Destination.Provider == "claude" {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		data, err := f.command(ctx, path, "sessions", "--help").Output()
-		cancel()
-		if err != nil || !strings.Contains(string(data), "--group") {
-			return f.manualPlan(plan, "Installed Flakelab lacks session group support; run the reviewed managed command in a terminal."), nil
-		}
-	}
-	args := []string{"sessions", "--start", plan.Destination.Provider}
-	if plan.Destination.Provider == "claude" {
-		args = append(args, "--group", plan.Destination.Group)
-	}
-	args = append(args, plan.CWD, "--detach", "--")
+	args := []string{"sessions", "--start", plan.Destination.Provider, plan.CWD, "--detach", "--"}
 	args = append(args, plan.Args...)
 	if err := f.runtime.store.BeginHandover(plan, request.Packet.Source.IncidentID); err != nil {
 		return result, err
@@ -112,10 +100,6 @@ func (f *recoveryWeb) Start(request web.RecoveryStartRequest) (web.RecoveryStart
 }
 
 func (f *recoveryWeb) manualPlan(plan recovery.LaunchPlan, message string) web.RecoveryStartResult {
-	if plan.Destination.Provider == "claude" {
-		plan.Executable = "tycswap"
-		plan.Args = append([]string{"run", "--group", plan.Destination.Group, "--model", plan.Destination.Model, "--"}, plan.Args[len(plan.Args)-1])
-	}
 	return web.RecoveryStartResult{Plan: plan, Message: message}
 }
 

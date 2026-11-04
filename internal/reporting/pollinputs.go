@@ -1,5 +1,5 @@
 // Poll policies are scoped to their store and engine. The shared collector
-// uses the earliest required poll across active groups.
+// uses the earliest required poll across them.
 package reporting
 
 import (
@@ -7,7 +7,6 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 )
@@ -57,22 +56,6 @@ func resolvePollPolicies(s *store.Store) []pollInputs {
 		loaded := settings.Load(s.BackupDir())
 		models := settings.ParseModelNames(loaded.Model)
 		byScope[s.BackupDir()] = pollInputs{lowestBar(loaded, models), models}
-	}
-	for _, id := range groups.All() {
-		scope := groups.ScopeDir(s.BackupDir(), id)
-		if _, pinned := byScope[scope]; pinned {
-			continue
-		}
-		if active, err := groups.LoadActive(s.BackupDir(), id); err != nil || active == nil {
-			continue
-		}
-		group, err := s.ForGroup(id)
-		if err != nil {
-			continue
-		}
-		loaded := GroupSettings(group, settings.Load(s.BackupDir()))
-		models := settings.ParseModelNames(loaded.Model)
-		byScope[scope] = pollInputs{lowestBar(loaded, models), models}
 	}
 	var out []pollInputs
 	for _, p := range byScope {

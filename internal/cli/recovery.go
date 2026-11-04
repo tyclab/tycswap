@@ -9,11 +9,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/recovery"
-	"github.com/tyclab/tycswap/internal/session"
 )
 
 func recoveryCommand(prog string, argv []string, streams ioStreams) int {
@@ -73,15 +71,6 @@ func recoveryCommand(prog string, argv []string, streams ioStreams) int {
 			err = fmt.Errorf("unsupported provider %q", *provider)
 		}
 		if err == nil {
-			if event.Provider == "claude" && (event.Kind == "UserPromptSubmit" || event.Kind == "SessionStart") && event.Group != "" {
-				if event.Kind == "SessionStart" && os.Getenv("TYCSWAP_GROUP_LAUNCH_ID") != "" {
-					event.ModelObserved = true
-				}
-				if active, aerr := groups.LoadActive(paths.GetBackupRoot(), groups.ID(event.Group)); aerr == nil && active != nil {
-					event.AccountID = active.Number
-					event.AccountIdentity = recovery.IdentityKey(active.Email, active.OrgUUID)
-				}
-			}
 			if event.Provider == "codex" && (event.Kind == "turn/started" || event.Kind == "thread/started") {
 				event.AccountID = *accountID
 				event.AccountIdentity = *accountIdentity
@@ -99,9 +88,6 @@ func recoveryCommand(prog string, argv []string, streams ioStreams) int {
 		}
 		if err == nil {
 			event, err = store.Record(event)
-		}
-		if err == nil && event.Kind == "SessionStart" && event.Provider == "claude" && event.Group != "" {
-			err = session.RecordGroupSession(paths.GetBackupRoot(), groups.ID(event.Group), os.Getenv("TYCSWAP_GROUP_LAUNCH_ID"), event.SessionID, event.CWD)
 		}
 		if err == nil && (event.Kind == "SessionStart" || event.Kind == "thread/started") {
 			err = store.ConfirmDestination(event, os.Getenv("TYCSWAP_HANDOVER_CWD"), os.Getenv("TYCSWAP_HANDOVER_DIGEST"))
