@@ -43,22 +43,25 @@ func readDefaultSessionModels(root string) map[string]defaultSessionModel {
 }
 
 // RecordDefaultSessionModel remembers the model family a default-login session
-// runs, as its status line reports it (DESIGN A76). An unknown model or a busy
-// lock records nothing.
-func RecordDefaultSessionModel(root, sessionID, model string, now time.Time) error {
+// runs, as its status line reports it (DESIGN A76), and reports whether that
+// was news: a session seen for the first time or one that changed family
+// (A77). An unknown model or a busy lock records nothing.
+func RecordDefaultSessionModel(root, sessionID, model string, now time.Time) (bool, error) {
 	family, err := routingstate.Family(model)
 	if sessionID == "" || err != nil {
-		return nil
+		return false, nil
 	}
 	lock := filelock.New(filepath.Join(root, ".default_models.lock"), 50*time.Millisecond)
 	if ok, err := lock.Acquire(0); err != nil || !ok {
-		return err
+		return false, err
 	}
 	defer lock.Release()
 	sessions := readDefaultSessionModels(root)
 	at := float64(now.UnixNano()) / 1e9
-	if old, ok := sessions[sessionID]; ok && old.Family == family && at-old.SeenAt < defaultModelRefresh.Seconds() && at >= old.SeenAt {
-		return nil
+	old, seen := sessions[sessionID]
+	changed := !seen || old.Family != family
+	if !changed && at-old.SeenAt < defaultModelRefresh.Seconds() && at >= old.SeenAt {
+		return false, nil
 	}
 	sessions[sessionID] = defaultSessionModel{Family: family, SeenAt: at}
 	for id, rec := range sessions {
@@ -68,34 +71,44 @@ func RecordDefaultSessionModel(root, sessionID, model string, now time.Time) err
 	}
 	raw, err := json.Marshal(map[string]any{"schemaVersion": 1, "sessions": sessions})
 	if err != nil {
-		return err
+		return false, err
 	}
-	return atomicfile.Write(filepath.Join(root, defaultModelsFile), raw, atomicfile.Opts{})
+	return changed, atomicfile.Write(filepath.Join(root, defaultModelsFile), raw, atomicfile.Opts{})
 }
 
-// DefaultSessionSettings counts, for the default login, the model limits of
-// the families its live sessions run, when autoswitch.model is unset (DESIGN
-// A76). A set autoswitch.model always wins; no record counts nothing.
-func DefaultSessionSettings(s *store.Store, base settings.AutoSwitchSettings) settings.AutoSwitchSettings {
+// DefaultSessionPolicy counts, for the default login, the model limits of the
+// families its live sessions run when autoswitch.model is unset (DESIGN A76),
+// and names the accounts it leaves to Fable work (A77): while every live
+// session has a recorded model, none of them Fable, an account that can run
+// Fable ranks last and hands over to one that cannot. A set autoswitch.model
+// always wins; a live session of unknown model reserves nothing.
+func DefaultSessionPolicy(s *store.Store, base settings.AutoSwitchSettings) (settings.AutoSwitchSettings, func(num string) bool) {
 	if base.Model != nil {
-		return base
+		return base, nil
 	}
 	records := readDefaultSessionModels(s.BackupDir())
 	if len(records) == 0 {
-		return base
+		return base, nil
 	}
 	sessions, _, err := procdetect.GetRunningInstancesErr(s.DefaultProfileDir())
 	if err != nil {
-		return base
+		return base, nil
 	}
 	families := map[string]bool{}
+	allKnown := len(sessions) > 0
 	for _, session := range sessions {
-		if rec, ok := records[session.SessionID]; ok {
-			families[rec.Family] = true
+		rec, ok := records[session.SessionID]
+		if !ok {
+			allKnown = false
+			continue
 		}
+		families[rec.Family] = true
 	}
 	if model := strings.Join(scopedNamesFor(s, families), ","); model != "" {
 		base.Model = &model
 	}
-	return base
+	if !allKnown || families["fable"] {
+		return base, nil
+	}
+	return base, s.FableCapable
 }

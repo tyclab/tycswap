@@ -461,9 +461,14 @@ cron runs with a minimal `PATH`; the entry finds `tycswap` only if its install
 directory is on cron's `PATH` (set `PATH=` at the top of the crontab, or place
 `tycswap` in a directory cron already searches).
 
-**Per-model weekly limits.** By default auto-switch weighs only the account-wide
-5-hour and 7-day windows. To also count a model's per-model weekly window, set
-the model's display name in `autoswitch.model`:
+**Per-model weekly limits.** When the status line feeds `tycswap auto
+--observe` (see [`docs/reference.md`](docs/reference.md#tycswap-auto)), a
+scheduled tick counts the per-model weekly windows of the models the default
+login's live sessions run, and while none of them runs Fable it leaves
+Fable-capable accounts to Fable work; nothing needs setting. Without status
+line records auto-switch weighs only the account-wide 5-hour and 7-day windows.
+To pin the counted models instead, set the model's display name in
+`autoswitch.model`:
 
 ```
 $ tycswap config set autoswitch.model Fable

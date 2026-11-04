@@ -183,7 +183,7 @@ func (e *Engine) tickInner() (tickResult, error) {
 		trigger = "failover"
 	}
 
-	if (trigger == "proactive" || isHandover(trigger)) && e.inCooldown(state) {
+	if heldByCooldown(trigger) && e.inCooldown(state) {
 		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "cooldown"})
 		return tickResult{Outcome: NoAction}, nil
 	}
@@ -315,6 +315,11 @@ func axisLabel(axis usage.Class, trigger string) string {
 // isHandover names the triggers where the account itself, not a window,
 // made the tick move; they land only below every bar (DESIGN A71, A73).
 func isHandover(trigger string) bool { return trigger == "reserved" || trigger == "model-missing" }
+
+// heldByCooldown names the triggers a recent switch holds back. A login that
+// cannot serve a counted model moves at once: its sessions cannot run until
+// it does (DESIGN A77).
+func heldByCooldown(trigger string) bool { return trigger == "proactive" || trigger == "reserved" }
 
 func (e *Engine) missesCountedModel(cur string, usageMap map[string]any) bool {
 	required := requiredModels(e.models, usageMap)
@@ -595,7 +600,7 @@ func (e *Engine) perform(number, email, trigger, axis string) (tickResult, error
 	switched := false
 	err := lock.With(func() error {
 		state := e.readState()
-		if trigger == "proactive" && e.inCooldown(state) {
+		if heldByCooldown(trigger) && e.inCooldown(state) {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "cooldown"})
 			outcome = NoAction
 			return nil

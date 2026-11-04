@@ -6659,3 +6659,40 @@ changes. A long-running `tycswap auto` loop and the dashboard's hosted engine
 keep their configured models. `config set autoswitch.model none` is refused
 with a pointer to `unset`, and a stored `none` or `(none)` counts nothing,
 since the help shows the unset value that way.
+
+## A77. The default login follows Fable without being asked
+
+A71 reserved Fable-capable accounts only in the Opus / other group, and A73's
+hand-over waited out the cooldown. On the default login, where the operator
+runs every session, that left two manual steps: a Fable-capable account
+served Opus work until a bar moved it, and a Fable session started within five
+minutes of a switch onto a login without Fable could not run until the
+cooldown ended or the operator switched by hand.
+
+The scheduled tick (`auto --once`, as the timer, the quota hook and
+`--observe` run it) now builds the default engine with a reservation taken
+from the same records A76 counts. While `autoswitch.model` is unset and at
+least one default session runs, every live session has a recorded family and
+none of them is Fable, an account whose plan or recorded `continue`
+capability allows Fable (`Store.FableCapable`, the test A71 applies) is
+reserved: it ranks last, and an active one hands over with the `reserved`
+trigger, under the cooldown, to an account that cannot run Fable and is below
+every bar. A live session without a record or a Fable session clears the
+reservation, as does an explicit `autoswitch.model`; with no live session the
+login stays where it is, because nothing burns.
+
+`--observe` reports whether its record was news: a session's first status line
+or a change of family. News runs one tick at once on the cached usage, without
+the 15-second fetch slot, and `model-missing` is no longer held by the
+cooldown, since the sessions that run the model cannot run at all until the
+login moves. The two hand-overs cannot alternate: `reserved` needs no live
+Fable session and `model-missing` needs a counted one, and `reserved` keeps
+the cooldown.
+
+Limits, accepted: default sessions share one login, so one live Fable session
+keeps every default session on a Fable-capable account; subagents run on
+their main session's login and only the main model is recorded; a session
+that draws no status line is never recorded and so holds the reservation off;
+the first request of a Fable session started on a login without Fable can
+race the tick its first status line runs; the loop and the dashboard's hosted
+engine keep their configured models and reserve nothing.

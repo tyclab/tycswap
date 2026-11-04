@@ -48,6 +48,28 @@ func observedNearBar(raw []byte, s settings.AutoSwitchSettings) bool {
 	return false
 }
 
+// observeTicks records a default-login session's model and reports whether
+// the observation runs a tick: near a bar at most once per observeGap, with
+// the observed account's poll marked due (DESIGN A75), and at once when the
+// session's model is new or changed, on the usage already cached (A77).
+func observeTicks(sw *core.Switcher, raw []byte, s settings.AutoSwitchSettings) bool {
+	group := observedGroup(sw.BackupDir())
+	modelNews := false
+	if group == "" {
+		session, model := observedSessionModel(raw)
+		news, err := reporting.RecordDefaultSessionModel(sw.BackupDir(), session, model, sw.Clk.Now())
+		if err != nil {
+			sw.Log.Debugf("Session model not recorded: %v", err)
+		}
+		modelNews = news
+	}
+	if observedNearBar(raw, s) && claimObserveSlot(sw.BackupDir(), sw.Clk.Now()) {
+		markObservedDue(sw, group)
+		return true
+	}
+	return modelNews
+}
+
 // observedSessionModel is the session and the model id the status line reports.
 func observedSessionModel(raw []byte) (string, string) {
 	var in struct {

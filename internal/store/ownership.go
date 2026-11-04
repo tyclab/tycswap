@@ -397,6 +397,21 @@ func (s *Store) GroupCompatibility(number string, intent groups.Intent) groups.C
 	if s.group == "" {
 		return groups.Compatibility{Known: true, Allowed: true}
 	}
+	family := s.group
+	if s.routingModel != "" {
+		family = s.routingModel
+	}
+	return s.entitlement(number, family, intent)
+}
+
+// FableCapable reports whether the account can continue Fable sessions, by
+// its plan or its recorded capability, whichever profile asks (DESIGN A71,
+// A77). An unknown entitlement is no capability.
+func (s *Store) FableCapable(number string) bool {
+	return s.entitlement(number, groups.Fable, groups.Continue).Allowed
+}
+
+func (s *Store) entitlement(number string, family groups.ID, intent groups.Intent) groups.Compatibility {
 	data, err := s.ReadSequence()
 	if err != nil || data == nil {
 		return groups.Compatibility{Reason: "account roster is unreadable"}
@@ -418,10 +433,6 @@ func (s *Store) GroupCompatibility(number string, intent groups.Intent) groups.C
 			return &value
 		}
 		return nil
-	}
-	family := s.group
-	if s.routingModel != "" {
-		family = s.routingModel
 	}
 	return groups.Entitlement(family, intent, plan, boolPtr("fableStart"), boolPtr("fableContinue"))
 }

@@ -93,3 +93,24 @@ func TestMarkObservedDueReachesTheUsageStore(t *testing.T) {
 		t.Fatalf("Account-%s poll not due after an observation: %+v", *num, entry.NextPollAt)
 	}
 }
+
+// A session's first status line and a change of its model tick at once and
+// leave the fetch slot to the next near-bar observation; the rerenders in
+// between do not tick (DESIGN A77).
+func TestObserveTicksOnModelNews(t *testing.T) {
+	sw := rotatedSwitcher(t)
+	far := settings.Default()
+	opus := []byte(`{"session_id":"s1","model":{"id":"claude-opus-5-5"}}`)
+	fable := []byte(`{"session_id":"s1","model":{"id":"claude-fable-5-1"}}`)
+	for i, step := range []struct {
+		raw  []byte
+		want bool
+	}{{opus, true}, {opus, false}, {fable, true}, {fable, false}} {
+		if got := observeTicks(sw, step.raw, far); got != step.want {
+			t.Fatalf("observation %d ticks = %v, want %v", i, got, step.want)
+		}
+	}
+	if !claimObserveSlot(sw.BackupDir(), sw.Clk.Now()) {
+		t.Fatal("model news took the fetch slot")
+	}
+}

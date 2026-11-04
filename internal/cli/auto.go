@@ -136,23 +136,17 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 
 	if observe {
 		raw, _ := io.ReadAll(io.LimitReader(s.in, 1<<20))
-		group := observedGroup(sw.BackupDir())
-		if group == "" {
-			session, model := observedSessionModel(raw)
-			if err := reporting.RecordDefaultSessionModel(sw.BackupDir(), session, model, sw.Clk.Now()); err != nil {
-				sw.Log.Debugf("Session model not recorded: %v", err)
-			}
-		}
-		if !observedNearBar(raw, merged) || !claimObserveSlot(sw.BackupDir(), sw.Clk.Now()) {
+		if !observeTicks(sw, raw, merged) {
 			return int(autoswitch.NoAction)
 		}
-		markObservedDue(sw, group)
 	}
 	// A scheduled tick counts the models the default login's live sessions
-	// run while autoswitch.model is unset (DESIGN A76).
+	// run while autoswitch.model is unset, and leaves Fable-capable accounts
+	// to Fable while none of them runs it (DESIGN A76, A77).
 	defaultSettings := merged
+	var reserved func(string) bool
 	if once {
-		defaultSettings = reporting.DefaultSessionSettings(sw.Store, merged)
+		defaultSettings, reserved = reporting.DefaultSessionPolicy(sw.Store, merged)
 	}
 
 	onEvent := humanEmit(s.out)
@@ -172,6 +166,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		autoswitch.WithOAuthClient(sw.OAuth),
 		autoswitch.WithLogger(sw.Log),
 		autoswitch.WithClock(sw.Clk),
+		autoswitch.WithReserved(reserved),
 	)
 
 	// Codex rides along in this process as its own small engine (claude-swap

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Changed:** the default login leaves Fable-capable accounts to Fable work on its own. While none of its live sessions runs Fable (and each one's model is known from its status line), the scheduled tick ranks accounts that can run Fable last and hands over to one that cannot once it is below every bar (`reserved`). A Fable session clears that at once.
+- **Fixed:** a new session, or a model change, on the default login moves the login right away: `tycswap auto --observe` runs a tick on the session's first status line and on a model change, and a `model-missing` hand-over no longer waits out the 5-minute cooldown, so a Fable session started on a login without Fable no longer waits for the timer or a manual switch.
 - **Fixed:** `tycswap auto --observe` really fetches the active account's usage near a bar: it marks the account's poll due in the usage store, whose fetch gate served the cached reading to v0.8.4's engine-side request. Backoff, a recent 429 and a dead token still hold.
 
 - **Fixed:** a session group gives its account back on its own once its sessions have been gone for its cooldown (5 minutes by default), and `groups release` refreshes a group login whose token expired while nothing ran, so an idle group can no longer hold an account for days and leave it with two owners when the same account is logged in again. `tycswap add` refuses an account a group holds instead of overwriting the login the group is verified against.

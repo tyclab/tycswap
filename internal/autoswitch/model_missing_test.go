@@ -90,7 +90,9 @@ func TestModelMissingNeedsAReportedCountedModel(t *testing.T) {
 	}
 }
 
-func TestModelMissingRespectsCooldown(t *testing.T) {
+// A session that cannot run its model on the login does not wait out the
+// cooldown of the switch before (DESIGN A77).
+func TestModelMissingIgnoresCooldown(t *testing.T) {
 	clk := newClk()
 	f := twoAccounts(clk, dictEntry(usageOf(42, 20)), dictEntry(withFable(usageOf(10, 10), 20)))
 	rec := &recorder{}
@@ -98,11 +100,11 @@ func TestModelMissingRespectsCooldown(t *testing.T) {
 	if _, err := e.mutateState(func(st map[string]any) { st["lastSwitchAt"] = e.nowSeconds() }); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.Tick(); got != NoAction {
-		t.Fatalf("outcome = %v, want NoAction (kinds=%v)", got, rec.kinds())
+	if got := e.Tick(); got != Switched {
+		t.Fatalf("outcome = %v, want Switched (kinds=%v)", got, rec.kinds())
 	}
-	if got := reasonOf(t, rec.last("no-switch")); got != "cooldown" {
-		t.Fatalf("reason %s", got)
+	if ev := rec.last("switch").(SwitchEvent); ev.Trigger != "model-missing" || deref(f.current) != "2" {
+		t.Fatalf("trigger %q current %q", ev.Trigger, deref(f.current))
 	}
 }
 

@@ -1674,16 +1674,18 @@ the `switch` line names the `reserved` trigger and no window
 (`Switched Account-5 -> Account-2 (b@example.com) (reserved)`), the cooldown
 applies as to a proactive move, and with nothing to hand over to the tick
 reports `no-switch` with reason `reserved-no-target` and leaves the account in
-place. The default login and the Fable group reserve nothing; `tycswap claude`
-prefers the same accounts for its own selection.
+place. The Fable group reserves nothing; the default login reserves while its
+live sessions run no Fable (below); `tycswap claude` prefers the same accounts
+for its own selection.
 
 **A login without a counted model's window hands over** (DESIGN A73). When the
 active account reports usage but no window for a model `autoswitch.model`
 counts, while another account reports one (a Pro login when Fable is counted),
 the tick moves to an account that reports it and is below every bar: the
-`switch` line names the `model-missing` trigger and no window, the cooldown
-applies as to a proactive move, and with no such account the tick reports
-`no-switch` with reason `model-missing-no-target` and stays.
+`switch` line names the `model-missing` trigger and no window, and with no such
+account the tick reports `no-switch` with reason `model-missing-no-target` and
+stays. The cooldown does not hold this move: the sessions that run the model
+cannot run at all until the login moves (DESIGN A77).
 
 **The default login follows its sessions' models** (DESIGN A76). While
 `autoswitch.model` is unset, a `--once` tick counts the per-model windows of
@@ -1692,6 +1694,20 @@ the model families the default profile's live sessions run, as recorded by
 sessions' models. A set `autoswitch.model` or `--model` always wins, and with
 no records nothing is counted. The loop and the dashboard's hosted engine keep
 their configured models.
+
+**The default login leaves Fable-capable accounts to Fable work** (DESIGN
+A77). While `autoswitch.model` is unset and every live default session has a
+recorded model, none of them Fable, the scheduled tick treats an account that
+can continue Fable (its plan, or a recorded `continue` capability) as the Opus
+/ other group does (A71): it ranks after every other qualifying account, and an
+active one hands over (`reserved`) to an account that cannot run Fable and is
+below every bar. A live session without a recorded model (one that has not
+drawn its status line yet, or draws none, as a headless run) or a Fable
+session reserves nothing, and when a Fable session appears on a login without
+a Fable window the `model-missing` move follows at once. All default sessions
+share one login: while one of them runs Fable, every one of them runs on a
+Fable-capable account. Subagents run on their main session's login, and only
+the main session's model is recorded.
 
 **Idle session groups give their account back** (DESIGN A74). A tick that is
 not a dry run releases an enabled group's account to the shared pool once the
@@ -1706,10 +1722,14 @@ window there is within 15 points of its bar, it marks the active account's
 usage poll due and runs one tick, which fetches it at once instead of on its
 poll plan; one observation per 15 seconds passes across every session, and a
 backoff or a recent 429 still holds.
-Below the margin it exits 2 without a tick. A spend limit and an absent window
-(Ultra accounts have no five-hour limit) never count. In the default profile it
-also records the model family the session runs; in a group profile it marks
-that group's account instead. flakelab's status line command passes
+Below the margin it exits 2 without a tick, unless the session's model is new
+or changed (below). A spend limit and an absent window (Ultra accounts have no
+five-hour limit) never count. In the default profile it also records the model
+family the session runs, and when that is news (the session's first status
+line, or a model change) it runs one tick at once on the cached usage, without
+taking the 15-second slot, so the login follows the session's model before the
+next timer tick (DESIGN A77); in a group profile it marks that group's account
+instead. flakelab's status line command passes
 its input to `tycswap auto --observe` in the background.
 
 **Codex accounts.** When `autoswitch.codexEnabled` is true (the default) and
