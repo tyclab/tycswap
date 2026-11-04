@@ -15,12 +15,6 @@ import (
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
-// rateLimitedAt: a recent 429 or a scheduled retry outranks an observed window (DESIGN A75).
-func rateLimitedAt(entry usage.UsageEntry, now float64) bool {
-	return entry.BackoffUntil != nil && now < *entry.BackoffUntil ||
-		entry.Last429At != nil && now-*entry.Last429At < usage.Post429MinIntervalS
-}
-
 // threshold is the tick snapshot, so fetch and decision agree if ApplyThreshold lands mid-tick (05§22).
 func (e *Engine) collectScheduledUsage(current string, quarantined map[string]bool, threshold float64, idleHold bool) (
 	map[string]usage.UsageEntry, map[string]any, map[string]*float64,
@@ -50,7 +44,6 @@ func (e *Engine) collectScheduledUsage(current string, quarantined map[string]bo
 	nominate := !hasActivePre ||
 		activePre.AgeS == nil ||
 		staleCandidatePlan ||
-		e.freshActive && !rateLimitedAt(activePre, now) ||
 		(activePre.NextPollAt != nil && now >= *activePre.NextPollAt) ||
 		(activePre.NextPollAt == nil && activePre.AgeS != nil && *activePre.AgeS >= usage.MinIntervalS)
 	if nominate {

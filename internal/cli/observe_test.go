@@ -5,9 +5,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 func TestObserveNearBar(t *testing.T) {
@@ -73,5 +75,21 @@ func TestObservedGroupFollowsTheSessionProfile(t *testing.T) {
 				t.Fatalf("group = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// An observation makes the default login's account due for a fetch in the
+// usage store itself, where the collector's gate reads it (DESIGN A75).
+func TestMarkObservedDueReachesTheUsageStore(t *testing.T) {
+	sw := rotatedSwitcher(t)
+	num := sw.CurrentAccountNumber()
+	if num == nil {
+		t.Fatal("fixture has no live account")
+	}
+	markObservedDue(sw, "")
+	ids := map[string]usage.Identity{*num: {Email: dryEmail, OrgUUID: "org-five"}}
+	entry := sw.Usage.Entries(ids)[*num]
+	if entry.NextPollAt == nil || *entry.NextPollAt > clock.Seconds(sw.Clk) {
+		t.Fatalf("Account-%s poll not due after an observation: %+v", *num, entry.NextPollAt)
 	}
 }

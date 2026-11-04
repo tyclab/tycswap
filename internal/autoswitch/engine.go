@@ -45,13 +45,11 @@ type Engine struct {
 	sleeper Sleeper
 	rng     func() float64
 	// reserved: accounts this profile leaves to Fable work (DESIGN A71); nil reserves none.
-	reserved func(num string) bool
-	// freshActive: a session reported a bar near, fetch ahead of the plan (DESIGN A75).
-	freshActive bool
-	oauth       oauth.Client
-	log         *logging.Logger
-	statePath   string
-	lockPath    string
+	reserved  func(num string) bool
+	oauth     oauth.Client
+	log       *logging.Logger
+	statePath string
+	lockPath  string
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
@@ -82,9 +80,6 @@ func WithReserved(reserved func(num string) bool) Option {
 }
 
 func WithOAuthClient(c oauth.Client) Option { return func(e *Engine) { e.oauth = c } }
-
-// WithFreshActive fetches the active account's usage ahead of its poll plan (DESIGN A75).
-func WithFreshActive() Option { return func(e *Engine) { e.freshActive = true } }
 
 // WithLogger injects the logger for the idle-hold-exceeded warning and the
 // uuid-backfill debug line (default nil = no-op).

@@ -1702,13 +1702,14 @@ ownership can be verified.
 
 **`--observe`** (DESIGN A75) is the status line's trigger. It reads the JSON
 Claude Code passes its status line. When a `rate_limits` five-hour or weekly
-window there is within 15 points of its bar, it runs one tick that fetches the
-active account's usage at once instead of on its poll plan; one observation
-per 15 seconds passes across every session, and a 429 backoff still holds.
+window there is within 15 points of its bar, it marks the active account's
+usage poll due and runs one tick, which fetches it at once instead of on its
+poll plan; one observation per 15 seconds passes across every session, and a
+backoff or a recent 429 still holds.
 Below the margin it exits 2 without a tick. A spend limit and an absent window
 (Ultra accounts have no five-hour limit) never count. In the default profile it
-also records the model family the session runs; in a group profile it
-freshens that group's engine instead. flakelab's status line command passes
+also records the model family the session runs; in a group profile it marks
+that group's account instead. flakelab's status line command passes
 its input to `tycswap auto --observe` in the background.
 
 **Codex accounts.** When `autoswitch.codexEnabled` is true (the default) and

@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/groups"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/usage"
 )
@@ -82,6 +84,22 @@ func claimObserveSlot(dir string, now time.Time) bool {
 	state.LastAt = at
 	raw, _ := json.Marshal(state)
 	return atomicfile.Write(path, raw, atomicfile.Opts{}) == nil
+}
+
+// markObservedDue makes the observed profile's account due for a usage fetch,
+// so the tick that follows reads it fresh (DESIGN A75).
+func markObservedDue(sw *core.Switcher, group groups.ID) {
+	scope := sw
+	if group != "" {
+		g, err := sw.ForGroup(group)
+		if err != nil {
+			return
+		}
+		scope = g
+	}
+	if num := scope.CurrentAccountNumber(); num != nil {
+		reporting.MarkUsageDue(sw.Store, *num)
+	}
 }
 
 // observedGroup is the session group whose profile the status line runs in,
