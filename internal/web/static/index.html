@@ -80,12 +80,6 @@
       <div class="card-head"><h2>Continue after a limit</h2><span id="recovery-wait" class="card-sub"></span></div>
       <div id="recovery-list" class="recovery-list"></div>
     </div>
-    <div class="toolbar group-toolbar">
-      <label for="account-group">Claude sessions</label>
-      <select id="account-group"><option value="">Existing / default</option><option value="fable">Fable</option><option value="opus">Opus / other</option></select>
-      <span id="account-group-note" class="muted">Choose a group when starting or resuming a session.</span>
-      <a href="#guide" class="btn btn-sm">How to use groups</a>
-    </div>
     <div class="tiles" id="summary-tiles" aria-label="Summary"></div>
     <div class="card" id="accounts-card">
       <div class="card-head">
@@ -270,9 +264,8 @@
     <div class="card" id="settings-card">
       <div class="card-head">
         <div class="head-l"><h2>Settings</h2><span id="settings-sub" class="card-sub"></span></div>
-        <label for="settings-scope">Apply to <select id="settings-scope"><option value="">Shared defaults</option><option value="fable">Fable</option><option value="opus">Opus / other</option></select></label>
       </div>
-      <p class="muted settings-intro">Tray and dashboard edit the same settings. Shared defaults apply to both session groups unless a group has its own override. <strong>Reset</strong> removes that override. A group's model limits follow its sessions. Each setting says when a change takes effect.</p>
+      <p class="muted settings-intro">Tray and dashboard edit the same settings. <strong>Reset</strong> restores a default. The model limits follow the models your sessions run unless <code>autoswitch.model</code> is set. Each setting says when a change takes effect.</p>
       <div class="settings-grid" id="settings-grid"></div>
       <div id="settings-empty" class="empty-state" hidden>
         <span class="title">Settings are not available in this build</span>
@@ -375,15 +368,13 @@
 
       <article class="card guide-section" id="g-sessions">
         <h2>Sessions</h2>
-        <p>The session list shows each Claude conversation's project, state, group and captured model. Existing sessions keep their current profiles. Choose a group when you next start or resume: <code>{{.Name}} run --group fable</code> or <code>{{.Name}} run --group opus</code>. Sessions in one group share an account and rotate together; the other group keeps its own account.</p>
-        <p>The Windows tray opens an account table. Each percentage names its limit; 100% in Fable does not mean the shared weekly limit is full. Focus a row for reset times and freshness, or click a column to sort. Switching requires choosing the group and using the account explicitly. Settings in the tray and here share the same values: choose Shared defaults, Fable or Opus / other. Resetting a group override restores the shared value. Selecting a view or settings scope does not move running sessions.</p>
-        <p>To continue an existing conversation, use <code>{{.Name}} run --group opus --resume SESSION_ID</code> (or <code>fable</code>). Its first move into a group forks the native conversation and records the new ID, preserving the original transcript. Later resumes use the group's saved ID. Keep one editing session responsible for a workspace.</p>
-        <p>Fable startup and continuation are separate capabilities. Start on a compatible Max account. A Business account may be recorded as continuation-capable with <code>{{.Name}} groups capability ACCOUNT continue true</code> after verifying it works. Then <code>{{.Name}} groups switch fable ACCOUNT</code> moves the Fable group. Pro accounts remain excluded. A quota bar alone does not establish model access.</p>
-        <p>Choose Fable or Opus / other above the accounts. A full Fable window does not block Opus. Click Weekly, 5-hour or Fable to sort the same list; click again to reverse. <em>Next best</em> restores availability ordering. Display sorting does not change automatic rotation.</p>
+        <p>The session list shows each Claude conversation's project, state and captured model. Every session runs on the default login, and tycswap moves that login by itself: each session's status line tells it the model the session runs, so while a Fable session runs the login stays on an account that can run Fable, and while none does, Fable-capable accounts are kept for Fable work. Subagents run on their session's login.</p>
+        <p>The Windows tray opens an account table. Each percentage names its limit; 100% in Fable does not mean the shared weekly limit is full. Focus a row for reset times and freshness, or click a column to sort. Settings in the tray and here share the same values. Click Weekly, 5-hour or a model limit to sort; click again to reverse. <em>Next best</em> restores availability ordering. Display sorting does not change automatic rotation.</p>
+        <p>Session groups are retired. A former group hands its account back once its last session exits, and its conversations are copied into the default profile, so <code>claude --resume</code> continues them.</p>
         <h3>Continue in the other tool</h3>
         <p>After a captured, corroborated limit, tycswap first tries a compatible account. If none is expected within 30 minutes and the other provider can run, a recovery card offers <em>Continue in Codex / Claude</em> or <em>Wait</em>. Set <code>autoswitch.handoverWaitMinutes</code> to 15 for an earlier offer. Unknown or stale resets remain unknown; overload and network failures alone do not trigger it.</p>
         <p>Review the saved context and omissions, confirm no source command is still editing, then start the continuation. It receives recent messages, saved notes and workspace information in a new conversation with its own permissions. The source conversation is preserved. The Flakelab launcher pauses managed source editing for that workspace; after stopping the destination, use <code>{{.Name}} recovery reclaim --cwd /path/to/work --confirm-no-background-tools</code> to return editing to the source. An uncertain launch stays reserved until its destination can be verified.</p>
-        <p>Managed Claude sessions install lifecycle hooks at launch. Existing sessions require a restart for automatic detection. Unmanaged source sessions must exit before transfer. Codex automatic detection requires an observed typed app-server stream with account and process identity; ordinary Codex terminal error text alone is insufficient. A Codex account switch requires restart/resume. Without the supported launcher, stop the source before using the manual terminal plan. Use <code>{{.Name}} recovery prepare --help</code> for saved transcript preparation. Group profiles remain local; Flakelab's existing cross-machine backup and transcript sync do not include them.</p>
+        <p>Automatic detection needs a session that records its lifecycle hooks; without them, select the stopped source session for a manual plan. Unmanaged source sessions must exit before transfer. Codex automatic detection requires an observed typed app-server stream with account and process identity; ordinary Codex terminal error text alone is insufficient. A Codex account switch requires restart/resume. Without the supported launcher, stop the source before using the manual terminal plan. Use <code>{{.Name}} recovery prepare --help</code> for saved transcript preparation.</p>
       </article>
 
       <article class="card guide-section" id="g-updates">
@@ -425,7 +416,7 @@
 
       <article class="card guide-section" id="g-trouble">
         <h2>When something looks wrong</h2>
-        <details class="guide-faq"><summary>A switch happened but Claude Code still uses the old account</summary><p>A group switch affects sessions launched in that group, on their next request. Default and other profiles keep their own login. Check the session's group and any authentication overrides before restarting it.</p></details>
+        <details class="guide-faq"><summary>A switch happened but Claude Code still uses the old account</summary><p>A switch reaches running sessions on their next request; a session started as another account with <code>{{.Name}} run</code> keeps its own login. Check that session's profile and any authentication overrides before restarting it.</p></details>
         <details class="guide-faq"><summary>Claude Code ignores the stored login altogether</summary><p>An <code>ANTHROPIC_API_KEY</code>, <code>ANTHROPIC_AUTH_TOKEN</code>, <code>CLAUDE_CODE_OAUTH_TOKEN</code> or <code>ANTHROPIC_BASE_URL</code> in the environment, or in the <code>env</code> block of Claude Code's <code>settings.json</code>, takes the place of the login. The Dashboard says so above the accounts when it sees one; unset the variable or remove the key.</p></details>
         <details class="guide-faq"><summary>An account says “re-login needed” or “token expired”</summary><p>Its refresh token was revoked or expired. Choose <strong>Add account…</strong> and sign in as that Claude account; its slot and alias stay the same. If it is the live account, signing in again in Claude Code and <em>Add current login</em> does the same.</p></details>
         <details class="guide-faq"><summary>“Usage unavailable”</summary><p>The last usage read failed or is stale (offline, or the usage endpoint hiccuped). The meters keep the last good values; they refresh on the next poll.</p></details>

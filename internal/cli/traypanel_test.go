@@ -28,16 +28,14 @@ func TestTrayPanelSeparatesQuotaAndSessionOwnership(t *testing.T) {
 	sh.tray = pt
 	st := sampleState()
 	st.Accounts[1] = acct(1, "work@example.test", "Work", true, 0, 65, "Fable 5", 100)
-	st.Groups = []web.GroupView{{ID: "fable", Label: "Fable", ActiveNumber: "2", LiveSessions: 2,
-		AccountBlockers: map[string]string{"1": "Fable quota exhausted"}}, {ID: "opus", Label: "Opus / other"}}
 	st.Auto.ManagedBy = "flakelab-tycswap-autoswitch.timer"
 	sh.update(st)
 	p := pt.panel
 	if len(p.Rows) != 2 || p.Rows[0].Cells[1] != "0%" || p.Rows[0].Cells[2] != "65%" || p.Rows[0].Cells[3] != "100%" {
 		t.Fatalf("limits were collapsed or rows duplicated: %#v", p.Rows)
 	}
-	if !p.Rows[0].Active || !p.Rows[1].Active || !strings.Contains(p.Rows[1].Cells[4], "Fable") {
-		t.Fatalf("active profiles not visible: %#v", p.Rows)
+	if !p.Rows[0].Active || p.Rows[1].Active || !strings.Contains(p.Rows[0].Cells[4], "default") {
+		t.Fatalf("the default login's account is not the one active row: %#v", p.Rows)
 	}
 	if p.Rows[1].Cells[3] != "—" || !strings.Contains(p.Status, "managed by Flakelab") {
 		t.Fatalf("unknown quota or external automation misreported: %#v", p)
@@ -47,11 +45,13 @@ func TestTrayPanelSeparatesQuotaAndSessionOwnership(t *testing.T) {
 			t.Fatalf("columns misaligned: %#v", row)
 		}
 	}
-	if !p.Rows[1].Targets[0].Disabled || !strings.Contains(p.Rows[1].Targets[0].Reason, "Fable") {
-		t.Fatal("default target offered another group's account")
+	for _, row := range p.Rows {
+		if len(row.Targets) != 1 {
+			t.Fatalf("a row offers a destination besides the default login: %#v", row.Targets)
+		}
 	}
-	if !p.Rows[0].Targets[1].Disabled || p.Rows[0].Targets[1].Reason != "Fable quota exhausted" {
-		t.Fatal("group target lost its compatibility blocker")
+	if !p.Rows[0].Targets[0].Disabled || p.Rows[1].Targets[0].Disabled {
+		t.Fatalf("switch targets: %#v / %#v", p.Rows[0].Targets, p.Rows[1].Targets)
 	}
 	if len(*calls) != 0 {
 		t.Fatal("rendering performed an account mutation")
@@ -65,7 +65,7 @@ func TestTrayPanelSeparatesQuotaAndSessionOwnership(t *testing.T) {
 	}
 }
 
-func TestTrayPanelSettingsUseExplicitScopeAndPreserveReset(t *testing.T) {
+func TestTrayPanelSettingsPassTheirScopeAndPreserveReset(t *testing.T) {
 	sh, _, _ := newTestShell(t)
 	var calls []string
 	sh.act.SaveSetting = func(scope, key string, value *string) error {

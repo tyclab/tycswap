@@ -231,8 +231,6 @@ func profilePIDs(dir string) ([]int, error) {
 	return pids, nil
 }
 
-func VerifyProfileState(dir string) error { _, err := profilePIDs(dir); return err }
-
 func LiveProfilePIDs(dir string) ([]int, error) { return profilePIDs(dir) }
 
 func (s *Store) EnsureAccountAvailable(number string) error {
@@ -244,52 +242,10 @@ func (s *Store) EnsureAccountAvailable(number string) error {
 	if scope == "" {
 		scope = "default"
 	}
-	if s.group != "" && s.groupHandoff && owner.Scope == "default" && len(owner.PIDs) == 0 && !owner.Uncertain {
-		return nil
-	}
-	if s.group != "" && s.groupHandoff && strings.HasPrefix(owner.Scope, "legacy:") && len(owner.PIDs) == 0 && !owner.Uncertain {
-		return nil
-	}
 	if owner.Scope != "" && (owner.Scope != scope || owner.Uncertain) {
 		return cerr.Session("Account-%s is owned by %s%s; choose another account or reconcile that profile before switching", number, owner.Scope, uncertainSuffix(owner.Uncertain))
 	}
 	return nil
-}
-
-func (s *Store) SetGroupCapability(number string, intent groups.Intent, allowed bool) error {
-	if intent != groups.Start && intent != groups.Continue {
-		return fmt.Errorf("capability intent must be start or continue")
-	}
-	return s.Lock.With(func() error {
-		data, err := s.SequenceForUpdate()
-		if err != nil {
-			return err
-		}
-		num, _, _, err := s.ResolveAccountFrom(data, number)
-		if err != nil {
-			return err
-		}
-		rec, _ := recordFor(data, num)
-		if allowed {
-			creds, _ := s.ReadAccountCredentials(num, strField(rec, "email"))
-			plan, _ := oauth.ExtractOAuthData(creds)["subscriptionType"].(string)
-			if decision := groups.Entitlement(groups.Fable, intent, plan, nil, nil); decision.Known && !decision.Allowed {
-				return fmt.Errorf("Account-%s cannot be granted Fable capability: %s", num, decision.Reason)
-			}
-		}
-		key := "fableStart"
-		if intent == groups.Continue {
-			key = "fableContinue"
-		}
-		rec[key] = allowed
-		raw, err := encodeRecord(rec)
-		if err != nil {
-			return err
-		}
-		data.Accounts[num] = raw
-		data.LastUpdated = s.timestamp()
-		return s.WriteSequence(data)
-	})
 }
 
 func uncertainSuffix(uncertain bool) string {
@@ -348,80 +304,26 @@ func (s *Store) ReadOwnedCredentialsLocked(number, email string) (string, error)
 	return value, nil
 }
 
-func (s *Store) GroupStatuses() ([]groups.Status, error) {
-	out := make([]groups.Status, 0, 2)
-	registry, registryErr := groups.LoadRegistry(s.backupDir)
-	for _, id := range groups.All() {
-		status := groups.Status{ID: id, Label: id.Label(), ProfileDir: groups.ProfileDir(s.backupDir, id)}
-		if registryErr != nil {
-			status.Blocker = registryErr.Error()
-		}
-		active, err := groups.LoadActive(s.backupDir, id)
-		if err != nil {
-			status.Blocker = err.Error()
-		} else if active != nil {
-			status.ActiveNumber = &active.Number
-			status.Email = active.Email
-			status.Enabled = true
-			owner, oerr := s.CredentialOwner(active.Number)
-			if oerr != nil {
-				status.Blocker = oerr.Error()
-			} else if owner.Uncertain || owner.Scope != string(id) {
-				status.Blocker = "credential ownership needs reconciliation"
-			}
-		} else if registry != nil {
-			for _, owner := range registry.Claims {
-				if owner.Scope == string(id) {
-					status.Blocker = "credential claim has no group active state; ownership needs reconciliation"
-				}
-			}
-		}
-		journal, err := groups.LoadJournal(s.backupDir, id)
-		status.Pending = journal != nil || err != nil
-		if err != nil {
-			status.Blocker = err.Error()
-		} else if journal != nil {
-			status.Blocker = "unfinished account switch; reconcile before launch"
-		}
-		pids, err := profilePIDs(status.ProfileDir)
-		status.LiveSessions = len(pids)
-		if err != nil {
-			status.Blocker = err.Error()
-		}
-		out = append(out, status)
-	}
-	return out, nil
-}
-
-func (s *Store) GroupCompatibility(number string, intent groups.Intent) groups.Compatibility {
-	if s.group == "" {
-		return groups.Compatibility{Known: true, Allowed: true}
-	}
+// FableCapable reports whether the account can continue Fable sessions, by
+// its plan or a recorded fableContinue capability (DESIGN A71, A77). An API
+// key or an unknown entitlement is no capability.
+func (s *Store) FableCapable(number string) bool {
 	data, err := s.ReadSequence()
 	if err != nil || data == nil {
-		return groups.Compatibility{Reason: "account roster is unreadable"}
+		return false
 	}
 	rec, ok := recordFor(data, number)
-	if !ok {
-		return groups.Compatibility{Reason: "account is absent from the roster"}
-	}
-	if strField(rec, "kind") == "api_key" {
-		return groups.Compatibility{Known: true, Reason: "session groups require OAuth accounts"}
+	if !ok || strField(rec, "kind") == "api_key" {
+		return false
 	}
 	creds, _ := s.ReadAccountCredentials(number, strField(rec, "email"))
 	plan := strField(rec, "subscriptionType")
 	if value, ok := oauth.ExtractOAuthData(creds)["subscriptionType"].(string); ok {
 		plan = value
 	}
-	boolPtr := func(key string) *bool {
-		if value, ok := rec[key].(bool); ok {
-			return &value
-		}
-		return nil
+	var recorded *bool
+	if value, ok := rec["fableContinue"].(bool); ok {
+		recorded = &value
 	}
-	family := s.group
-	if s.routingModel != "" {
-		family = s.routingModel
-	}
-	return groups.Entitlement(family, intent, plan, boolPtr("fableStart"), boolPtr("fableContinue"))
+	return groups.Entitlement(groups.Fable, groups.Continue, plan, nil, recorded).Allowed
 }

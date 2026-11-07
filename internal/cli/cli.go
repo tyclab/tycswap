@@ -38,7 +38,7 @@ func Main() int {
 func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int {
 	// Profile-aware launchers and hooks retain the inherited Claude profile.
 	hook := len(argv) > 1 && ((argv[0] == "groups" && argv[1] == "guard") || (argv[0] == "recovery" && argv[1] == "record"))
-	if !hook && (len(argv) == 0 || (argv[0] != "run" && argv[0] != "env" && argv[0] != "claude" && argv[0] != "routing")) {
+	if !hook && (len(argv) == 0 || (argv[0] != "run" && argv[0] != "env")) {
 		neutralizePinnedSessionProfile(s.err)
 	}
 
@@ -73,10 +73,6 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 			return menuCommand(prog, argv[1:], s, stdinTTY && stdoutTTY)
 		case "run":
 			return runCommand(prog, argv[1:], s)
-		case "claude":
-			return claudeCommand(prog, argv[1:], s)
-		case "routing":
-			return routingCommand(prog, argv[1:], s)
 		case "groups":
 			return groupsCommand(prog, argv[1:], s)
 		case "recovery":

@@ -40,9 +40,7 @@
   var inflight = {};
   var showTokenStatus = false;
   var strategy = 'best';
-  var accountGroup = '';
   var accountOrder = { key: 'best', direction: 1 };
-  try { accountGroup = sessionStorage.getItem('accountGroup') || ''; } catch (e) {}
   var autoLog = [];      // ring of AutoEventView, oldest first
   var autoLogLastAt = 0;
   var LOG_RING = 200;
@@ -438,50 +436,6 @@
     var s = (a.running && a.settings) || {};
     if (s[key] !== undefined && s[key] !== null && s[key] !== '') { return s[key]; }
     return settingValue(st, key);
-  }
-
-  function groupModels(st, id) {
-    var group = (st.groups || []).filter(function (g) { return g.id === id; })[0];
-    if (group && group.settings) { return parseModelNames(group.settings['autoswitch.model']); }
-    if (id === 'opus') { return []; }
-    return modelWindowNames(st).filter(function (name) { return /fable/i.test(name); });
-  }
-
-  function groupState(st, id) {
-    if (!id) {
-      var owners = {};
-      (st.groups || []).forEach(function (g) { if (g.activeNumber) { owners[String(g.activeNumber)] = g.label || g.id; } });
-      return Object.assign({}, st, { accounts: (st.accounts || []).map(function (a) {
-        var owner = isClaude(a) && owners[String(a.number)];
-        return owner ? Object.assign({}, a, { groupBlocker: 'in use by ' + owner, rotationEligible: false }) : a;
-      }) });
-    }
-    var group = (st.groups || []).filter(function (g) { return g.id === id; })[0] || {};
-    var models = groupModels(st, id);
-    if (id === 'fable' && !models.length) { models = ['Fable']; }
-    models = models.map(function (name) { return name.toLowerCase(); });
-    var view = Object.assign({}, st, { activeNumber: group.activeNumber || null, groupId: id });
-    view.settings = (st.settings || []).map(function (s) {
-      if (s.key === 'autoswitch.model') { return Object.assign({}, s, { value: models.join(',') }); }
-      return group.settings && Object.prototype.hasOwnProperty.call(group.settings, s.key) ? Object.assign({}, s, { value: group.settings[s.key] }) : s;
-    });
-    if (!view.settings.some(function (s) { return s.key === 'autoswitch.model'; })) {
-      view.settings.push({ key: 'autoswitch.model', value: models.join(',') });
-    }
-    view.auto = Object.assign({}, st.auto || {}, group.auto || {});
-    view.auto.settings = Object.assign({}, view.auto.settings || {}, group.settings || {}, { 'autoswitch.model': models.join(',') });
-    view.accounts = (st.accounts || []).map(function (a) {
-      if (!isClaude(a)) { return a; }
-      var wins = relevantWindows(a.usage, models.map(function (m) { return m.toLowerCase(); }));
-      var blocked = group.accountBlockers && group.accountBlockers[String(a.number)];
-      var visibleUsage = a.usage && Object.assign({}, a.usage, { scoped: (a.usage.scoped || []).filter(function (w) { return models.indexOf(String(w.name || '').toLowerCase()) >= 0; }) });
-      return Object.assign({}, a, { isActive: String(a.number) === String(group.activeNumber || ''),
-        usage: visibleUsage,
-        atLimit: wins.some(function (w) { return w.pct >= 100; }),
-        limitingWindows: wins.filter(function (w) { return w.pct >= 100; }).map(function (w) { return w.label; }),
-        groupBlocker: blocked || '', rotationEligible: a.rotationEligible && !blocked });
-    });
-    return view;
   }
 
   function displayAccounts(st, ordering) {
@@ -1089,7 +1043,7 @@
     meters.appendChild(u.sevenDay ? meter({ label: '7d', pct: u.sevenDay.pct, resetsAt: u.sevenDay.resetsAt, size: 'compact' }) : emptyMeter('7d', 'compact'));
     var scoped = (u.scoped || []).slice();
     var top = scoped.sort(function (x, y) { return (pctNum(y.pct) || 0) - (pctNum(x.pct) || 0); })[0];
-    if (top || !st.groupId) { meters.appendChild(top ? meter({ label: top.name || 'model', pct: top.pct, resetsAt: top.resetsAt, size: 'compact' }) : emptyMeter('model', 'compact')); }
+    meters.appendChild(top ? meter({ label: top.name || 'model', pct: top.pct, resetsAt: top.resetsAt, size: 'compact' }) : emptyMeter('model', 'compact'));
     box.appendChild(meters);
   }
 
@@ -1124,7 +1078,6 @@
     if (a.isActive) { out.push(chip('active', 'active')); }
     if (a.atLimit) { out.push(chip('at limit', 'crit', (a.limitingWindows || []).join(', ') || 'a window is at 100%')); }
     if (a.disabled) { out.push(chip('disabled', 'outline', 'held out of auto-rotation')); }
-    if (a.groupBlocker) { out.push(chip(a.groupBlocker, 'outline')); }
     if (!a.switchable) { out.push(chip('not switchable', 'warn', isClaude(a) ? 'missing stored credentials or config backup' : 'a Codex API-key login cannot be switched to')); }
     if (a.usageStatus && SENTINEL_STATUSES[a.usageStatus] && a.usageStatus !== 'api_key') { out.push(chip(SENTINEL_STATUSES[a.usageStatus], 'serious')); }
     if (a.usageStatus === 'unavailable') { out.push(chip('usage unavailable', 'warn', 'the last measurement is stale or failed; the meters show the last good values')); }
@@ -1224,7 +1177,6 @@
     clear(body);
     var list = displayAccounts(st, accountOrder);
     var codex = codexRows(st);
-    $('accounts-tbl').classList.toggle('no-model-column', st.groupId === 'opus' && !groupModels(st, 'opus').length);
     $('accounts-empty').hidden = list.length > 0 || codex.length > 0;
     // A login Claude Code has that is not stored yet is the next account to
     // add (A27): the callout says so, and the Add current login button in
@@ -1240,7 +1192,7 @@
     $('add-current-codex').hidden = !((st.auto && st.auto.codex) || codex.length);
     var count = codex.length ? list.length + ' Claude \u00b7 ' + codex.length + ' Codex' : list.length + (list.length === 1 ? ' account' : ' accounts');
     $('accounts-sub').textContent = count + (st.activeNumber !== null && st.activeNumber !== undefined ? ' · active #' + st.activeNumber : ' · none active');
-    var accIgnored = accountGroup ? null : ignoredModelsNote(st, parseModelNames(settingValue(st, 'autoswitch.model')));
+    var accIgnored = ignoredModelsNote(st, parseModelNames(settingValue(st, 'autoswitch.model')));
     if (accIgnored) { $('accounts-sub').appendChild(document.createTextNode(' · ')); $('accounts-sub').appendChild(accIgnored); }
     var tokenCol = document.querySelector('.col-token');
     if (tokenCol) { tokenCol.hidden = !showTokenStatus; }
@@ -1280,16 +1232,16 @@
         sw.setAttribute('data-name', accountLabel(a));
         if (a.baseUrl) { sw.setAttribute('data-endpoint', a.baseUrl); }
       } else {
-        sw.setAttribute('data-post', accountGroup ? '/api/groups/' + accountGroup + '/switch/' + encodeURIComponent(a.number) : '/api/switch/' + keyPath(a));
+        sw.setAttribute('data-post', '/api/switch/' + keyPath(a));
       }
-      if (a.isActive || !a.switchable || a.groupBlocker) { sw.disabled = true; }
+      if (a.isActive || !a.switchable) { sw.disabled = true; }
       acts.appendChild(sw);
 
       var menu = el('details', { class: 'menu' });
       menu.appendChild(el('summary', { class: 'btn btn-sm btn-icon', 'aria-label': 'More actions for account ' + a.number, 'aria-haspopup': 'menu', text: '⋯' }));
       var listEl = el('div', { class: 'menu-list', role: 'menu' });
       var k = rowKey(a);
-      if (!accountGroup) { listEl.appendChild(menuButton('Use saved login…', { 'data-action': 'force-switch', 'data-id': k, 'data-name': accountLabel(a) })); }
+      listEl.appendChild(menuButton('Use saved login…', { 'data-action': 'force-switch', 'data-id': k, 'data-name': accountLabel(a) }));
       if (a.disabled) {
         listEl.appendChild(menuButton('Enable for rotation', { 'data-post': '/api/accounts/' + keyPath(a) + '/enable', 'data-label': 'Enable' }));
       } else {
@@ -1313,35 +1265,18 @@
     }
   }
 
-  function renderGroupChoice(st) {
-    var control = $('account-group');
-    if (!control) { return; }
-    if (accountGroup !== 'fable' && accountGroup !== 'opus') { accountGroup = ''; }
-    control.value = accountGroup;
-    var g = (st.groups || []).filter(function (v) { return v.id === accountGroup; })[0];
-    $('account-group-note').textContent = g
-      ? (g.blocker || ((g.liveSessions || 0) + (g.liveSessions === 1 ? ' session · ' : ' sessions · ') + (g.activeNumber ? 'account #' + g.activeNumber : 'choose an account when starting a session')))
-      : 'Existing sessions keep their current profile. Choose a group on restart or resume.';
-    document.querySelectorAll('[data-action="switch-strategy"]').forEach(function (b) { b.disabled = !!accountGroup; });
+  function renderSortHeaders(st) {
     document.querySelectorAll('[data-sort]').forEach(function (b) {
       var active = b.getAttribute('data-sort') === accountOrder.key;
       var label = b.getAttribute('data-label') || b.textContent;
       if (b.getAttribute('data-sort') === 'model') {
-        var names = accountGroup ? groupModels(st, accountGroup) : modelWindowNames(st);
+        var names = modelWindowNames(st);
         label = names.length === 1 ? names[0].charAt(0).toUpperCase() + names[0].slice(1) : 'Model limits';
       }
       b.setAttribute('data-label', label);
       b.textContent = label + (active ? (accountOrder.direction === 1 ? ' ↑' : ' ↓') : '');
       b.classList.toggle('selected', active);
       if (b.parentNode.tagName === 'TH') { b.parentNode.setAttribute('aria-sort', active ? (accountOrder.direction === 1 ? 'ascending' : 'descending') : 'none'); }
-    });
-  }
-  if ($('account-group')) {
-    $('account-group').addEventListener('change', function (ev) {
-      accountGroup = ev.target.value;
-      if (accountOrder.key === 'model' && accountGroup === 'opus' && !groupModels(state, 'opus').length) { accountOrder = { key: 'best', direction: 1 }; }
-      try { sessionStorage.setItem('accountGroup', accountGroup); } catch (e) {}
-      if (state) { render(state); }
     });
   }
   document.addEventListener('click', function (ev) {
@@ -1391,7 +1326,7 @@
     tr.appendChild(el('td', { class: 'c-title' }, [
       el('span', { class: 'title ellipsis', text: c.title || (shortId ? 'session ' + shortId : '—'), title: c.title || c.sessionId || '' }),
       c.title && shortId ? el('span', { class: 'cell-sub mono', text: shortId }) : null,
-      c.group ? chip(c.group === 'fable' ? 'Fable' : 'Opus / other', 'accent', 'Sessions in this group switch accounts together') :
+      c.group ? chip('retired group', 'outline', 'Started in a retired session group; resume it with plain claude --resume') :
         c.profile ? chip('run as #' + c.profile, 'accent') : chip('default login', 'outline'),
       c.model ? el('span', { class: 'cell-sub', text: c.model }) : null
     ]));
@@ -1760,26 +1695,10 @@
 
   // ---- settings (shared row renderer) ---------------------------------------
 
-  var settingsScope = '';
-
-  function settingsEndpoint(scope, key) {
-    return (scope ? '/api/groups/' + encodeURIComponent(scope) : '/api') + '/settings/' + encodeURIComponent(key);
+  function settingsEndpoint(key) {
+    return '/api/settings/' + encodeURIComponent(key);
   }
 
-  function settingsForScope(st, scope) {
-    if (!scope) { return st.settings; }
-    var group = (st.groups || []).filter(function (g) { return g.id === scope; })[0];
-    return group && group.settingViews;
-  }
-
-  if ($('settings-scope')) {
-    $('settings-scope').addEventListener('change', function (ev) {
-      settingsScope = ev.target.value;
-      modelSettingRow = null;
-      delete renderSigs.settings;
-      if (state) { renderSettings(state); }
-    });
-  }
 
   var SETTING_LABELS = {
     'autoswitch.fiveHourThreshold': '5h threshold', 'autoswitch.sevenDayThreshold': '7d threshold',
@@ -1935,8 +1854,8 @@
   // settingRow: the key, what it does and when a saved value takes effect
   // (sv.applies, which the server words from what the code does), the
   // control, configured value and default, Save and Reset.
-  function settingRow(sv, reported, scope) {
-    if (!scope && sv.key === 'autoswitch.model' && modelSettingRow) {
+  function settingRow(sv, reported) {
+    if (sv.key === 'autoswitch.model' && modelSettingRow) {
       var editor = modelSettingRow.querySelector('.model-picker');
       if (editor.modelDirty || editor.modelPending || modelSettingRow.contains(document.activeElement)) { return modelSettingRow; }
     }
@@ -1963,7 +1882,7 @@
     }
     row.appendChild(ctl);
     row.appendChild(el('div', { class: 'setting-default' }, [
-      sv.isDefault ? chip(scope ? 'shared default' : 'default', 'outline') : chip(scope ? 'group override' : 'custom', 'accent'),
+      sv.isDefault ? chip('default', 'outline') : chip('custom', 'accent'),
       el('span', { class: 'eff', text: 'configured ' + fmtSetting(sv.value, sv.key), title: 'configured value; application timing is described above' }),
       sv.isDefault ? null : el('span', { class: 'def', text: 'default ' + fmtDefault(sv), title: 'default value' })
     ]));
@@ -1971,14 +1890,14 @@
     save.addEventListener('click', function () {
       var v = controlValue(input, sv);
       if (sv.key === 'autoswitch.model') { saveModelEditor(input, v, save); return; }
-      var url = settingsEndpoint(scope, sv.key);
+      var url = settingsEndpoint(sv.key);
       run(save, 'Save ' + humanLabel(sv.key), v === null ? api('DELETE', url) : api('POST', url, { value: v }));
     });
     input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); save.click(); } });
     var reset = el('button', { type: 'button', class: 'btn btn-sm btn-ghost', text: 'Reset', 'aria-label': 'Reset ' + sv.key + ' to default', disabled: !!sv.isDefault, title: 'Remove the override and fall back to the default' });
-    reset.addEventListener('click', function () { if (sv.key === 'autoswitch.model') { saveModelEditor(input, null, reset); return; } run(reset, 'Reset ' + humanLabel(sv.key), api('DELETE', settingsEndpoint(scope, sv.key))); });
+    reset.addEventListener('click', function () { if (sv.key === 'autoswitch.model') { saveModelEditor(input, null, reset); return; } run(reset, 'Reset ' + humanLabel(sv.key), api('DELETE', settingsEndpoint(sv.key))); });
     row.appendChild(el('div', { class: 'setting-actions' }, [save, reset]));
-    if (!scope && sv.key === 'autoswitch.model') { modelSettingRow = row; }
+    if (sv.key === 'autoswitch.model') { modelSettingRow = row; }
     return row;
   }
 
@@ -1990,7 +1909,7 @@
   function renderSettings(st) {
     var body = $('settings-grid');
     clear(body);
-    var list = settingsForScope(st, settingsScope);
+    var list = st.settings;
     var avail = Array.isArray(list);
     $('settings-empty').hidden = avail;
     $('settings-sub').textContent = avail ? list.length + ' keys · ' + list.filter(function (sv) { return !sv.isDefault; }).length + ' changed' : '';
@@ -2005,7 +1924,7 @@
     });
     order.forEach(function (sec) {
       if (order.length > 1) { body.appendChild(el('h3', { class: 'settings-section-title', text: sec })); }
-      sections[sec].forEach(function (sv) { body.appendChild(settingRow(sv, reported, settingsScope)); });
+      sections[sec].forEach(function (sv) { body.appendChild(settingRow(sv, reported)); });
     });
   }
 
@@ -2124,7 +2043,7 @@
     incidents.forEach(function (item) {
       var event = item.event, decision = item.decision;
       var row = el('div', { class: 'recovery-row' });
-      row.appendChild(el('strong', { text: (event.group === 'fable' ? 'Fable' : event.provider === 'codex' ? 'Codex' : 'Opus / other') + ' · ' + lastSegment(event.cwd) }));
+      row.appendChild(el('strong', { text: (event.provider === 'codex' ? 'Codex' : 'Claude') + ' · ' + lastSegment(event.cwd) }));
       row.appendChild(el('p', { text: decision.reason }));
       if (decision.ready_at && Date.parse(decision.ready_at) > Date.now()) { row.appendChild(el('p', { text: 'Next known availability: ' + new Date(decision.ready_at).toLocaleString() })); }
       if (decision.action === 'offer') {
@@ -2147,13 +2066,13 @@
       if (!response) { return; }
       var packet = response.packet;
       var fields = [];
-      if (provider === 'codex') { fields.push({ name: 'group', label: 'Claude group', type: 'select', value: 'opus', options: [{ value: 'opus', label: 'Opus / other' }, { value: 'fable', label: 'Fable' }] }); }
+      if (provider === 'codex') { fields.push({ name: 'model', label: 'Claude model', type: 'select', value: 'opus', options: [{ value: 'opus', label: 'Opus' }, { value: 'fable', label: 'Fable' }] }); }
       fields.push({ name: 'pending', type: 'checkbox', label: 'I confirm the source is idle and no background command is still editing this workspace.', required: true });
       return openModal({ title: 'Review and continue in ' + (provider === 'claude' ? 'Codex' : 'Claude'),
         message: packet.omissions && packet.omissions.length ? 'Omitted: ' + packet.omissions.join(' · ') : 'Review the saved context below. The destination uses its own permissions.',
         preview: JSON.stringify(packet.source, null, 2), fields: fields, okLabel: 'Start continuation' }).then(function (choice) {
         if (!choice) { return; }
-        var dest = provider === 'claude' ? { provider: 'codex', group: 'codex', model: '' } : { provider: 'claude', group: choice.group, model: choice.group };
+        var dest = provider === 'claude' ? { provider: 'codex', model: '' } : { provider: 'claude', model: choice.model };
         return api('POST', '/api/recovery/start', { packet: packet, destination: dest, reviewedDigest: packet.digest, explicit: true, pendingConfirmed: choice.pending }).then(function (result) {
           if (result.started) { toast(result.message, 'ok'); }
           else { return openModal({ title: 'Continue from a terminal', message: result.message, preview: JSON.stringify(result.plan, null, 2), okLabel: 'Close' }); }
@@ -2177,20 +2096,20 @@
     state = st;
     lastStateAt = Date.now();
     renderRecovery(st);
-    renderGroupChoice(st);
-    var accountView = groupState(st, accountGroup);
+    renderSortHeaders(st);
+    var accountView = st;
     renderModelPicker(st);
     renderHeader(accountView);
     renderOnboarding(st);
     renderGuarded('updates', 'updates', { updates: st.updates, applying: updApplying }, function () { renderUpdates(st); });
     renderGuarded('dashboard', 'accounts-card',
-      { accounts: accountView.accounts, active: accountView.activeNumber, group: accountGroup, order: accountOrder, strategies: st.strategies, settings: st.settings, currentLogin: st.currentLogin,
+      { accounts: accountView.accounts, active: accountView.activeNumber, order: accountOrder, strategies: st.strategies, settings: st.settings, currentLogin: st.currentLogin,
         auto: st.auto && { running: st.auto.running, threshold: st.auto.threshold, settings: st.auto.settings, quarantine: st.auto.quarantine, codex: !!st.auto.codex } },
       function () { renderSummary(accountView); renderAccounts(accountView); });
     renderGuarded('auto', 'panel-auto',
       { auto: st.auto, accounts: st.accounts, active: st.activeNumber, settings: st.settings },
       function () { renderAuto(st); });
-    renderGuarded('settings', 'panel-settings', { settings: settingsForScope(st, settingsScope), scope: settingsScope, models: modelWindowNames(st) }, function () { renderSettings(st); });
+    renderGuarded('settings', 'panel-settings', { settings: st.settings, models: modelWindowNames(st) }, function () { renderSettings(st); });
     renderGuarded('sessions', 'panel-sessions', st.sessions, function () { renderSessions(st.sessions); });
     applyFolds(st);
     tickCountdowns();

@@ -433,7 +433,7 @@ func addRefreshInPlace(s *store.Store, src AddSource, data *store.SequenceData, 
 }
 
 // refuseGroupHeld keeps a group-held account's backup on that group's lineage
-// until the group lets the account go (DESIGN A74).
+// until the group's retirement lets the account go (DESIGN A74, A78).
 func refuseGroupHeld(s *store.Store, num string) error {
 	registry, err := groups.LoadRegistry(s.BackupDir())
 	if err != nil {
@@ -447,9 +447,8 @@ func refuseGroupHeld(s *store.Store, num string) error {
 	if err != nil {
 		return nil
 	}
-	return cerr.Session("Account-%s (%s) is held by the %s group, whose login stays in that group's profile. "+
-		"Exit the group's sessions (tycswap releases an idle group's account a few minutes later) or run "+
-		"`tycswap groups release %s`, then add again", num, owner.Account.Email, id.Label(), id)
+	return cerr.Session("Account-%s (%s) is held by the retired %s group, whose login stays in that group's profile. "+
+		"Exit the group's sessions; the next auto-switch tick hands the account back, then add again", num, owner.Account.Email, id.Label())
 }
 
 type displaceInfo struct{ num, email, org, orgName string }

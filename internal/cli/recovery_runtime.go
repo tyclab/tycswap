@@ -82,7 +82,10 @@ func recoveryAccount(row reporting.AccountSnapshot, model string) recovery.Accou
 	return a
 }
 
-func (r *recoveryRuntime) accounts(snapshot reporting.AccountsSnapshot, group string, intent groups.Intent) ([]recovery.Account, string, error) {
+// accounts lists the provider's accounts for a source or destination: Codex,
+// or the default Claude login, whose model class ("fable" or "opus") decides
+// which accounts can serve it (DESIGN A78).
+func (r *recoveryRuntime) accounts(snapshot reporting.AccountsSnapshot, group string) ([]recovery.Account, string, error) {
 	out := []recovery.Account{}
 	current := ""
 	if group == "codex" {
@@ -98,34 +101,22 @@ func (r *recoveryRuntime) accounts(snapshot reporting.AccountsSnapshot, group st
 		}
 		return out, current, nil
 	}
-	id, err := groups.Parse(group)
-	if err != nil {
-		return nil, "", err
+	if group != "fable" && group != "opus" {
+		return nil, "", fmt.Errorf("unknown Claude model class %q", group)
 	}
-	scoped, err := r.sw.Store.ForGroup(id)
-	if err != nil {
-		return nil, "", err
-	}
-	active, err := groups.LoadActive(r.sw.Store.SharedRoot(), id)
-	if err != nil {
-		return nil, "", err
-	}
-	if active != nil {
-		current = active.Number
+	if num := r.sw.CurrentAccountNumber(); num != nil {
+		current = *num
 	}
 	for _, row := range snapshot.Accounts {
 		if row.ProviderName() != "claude" {
 			continue
 		}
 		a := recoveryAccount(row, group)
-		compatibility := scoped.GroupCompatibility(row.Number, intent)
-		if !compatibility.Known {
-			a.OwnershipKnown = false
-		} else if !compatibility.Allowed {
+		if group == "fable" && !r.sw.Store.FableCapable(row.Number) {
 			a.Eligible = false
 		}
-		owner, err := scoped.CredentialOwner(row.Number)
-		applyRecoveryOwner(&a, owner, err, group)
+		owner, err := r.sw.CredentialOwner(row.Number)
+		applyRecoveryOwner(&a, owner, err, "default")
 		out = append(out, a)
 	}
 	return out, current, nil
@@ -159,7 +150,7 @@ func (r *recoveryRuntime) destinationUsable(snapshot reporting.AccountsSnapshot,
 		groupsToCheck = []string{"opus", "fable"}
 	}
 	for _, group := range groupsToCheck {
-		accounts, current, err := r.accounts(snapshot, group, groups.Start)
+		accounts, current, err := r.accounts(snapshot, group)
 		if err == nil && usableAccount(accounts, current, group, now) {
 			return true
 		}
@@ -189,7 +180,16 @@ func (r *recoveryRuntime) EvaluateSnapshot(snapshot reporting.AccountsSnapshot) 
 		if !ss.Idle || !e.Stopped {
 			continue
 		}
-		accounts, current, err := r.accounts(snapshot, e.Group, groups.Continue)
+		if e.Provider == "claude" && e.Group != "" {
+			out = append(out, recovery.Incident{Event: e, Decision: recovery.Decision{Action: "unknown",
+				Reason: "Session groups are retired; resume this conversation with plain claude --resume"}})
+			continue
+		}
+		class := e.Group
+		if e.Provider == "claude" {
+			class = recovery.ModelClass(e.Model)
+		}
+		accounts, current, err := r.accounts(snapshot, class)
 		if err != nil {
 			out = append(out, recovery.Incident{Event: e, Decision: recovery.Decision{Action: "unknown", Reason: err.Error()}})
 			continue
@@ -354,11 +354,11 @@ func (r *recoveryRuntime) PlanSession(packet recovery.Packet, dest recovery.Dest
 			return recovery.LaunchPlan{}, fmt.Errorf("source has %d unresolved saved tool calls", tools.Pending)
 		}
 	}
-	group := dest.Group
+	group := recovery.ModelClass(dest.Model)
 	if dest.Provider == "codex" {
 		group = "codex"
 	}
-	accounts, current, err := r.accounts(r.snapshot, group, groups.Start)
+	accounts, current, err := r.accounts(r.snapshot, group)
 	quotaModel := recovery.ModelFamily(dest.Model)
 	if quotaModel == "" {
 		quotaModel = group

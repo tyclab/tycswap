@@ -52,11 +52,11 @@ var runHumanMenu = humanMenu
 
 func menuCommand(prog string, args []string, s ioStreams, terminal bool) int {
 	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
-		fmt.Fprintf(s.out, "usage: %s menu [add|manage|groups|transfer]\n\nChoose an action interactively. Escape goes back; closing the menu leaves the tray running.\n", prog)
+		fmt.Fprintf(s.out, "usage: %s menu [add|manage|transfer]\n\nChoose an action interactively. Escape goes back; closing the menu leaves the tray running.\n", prog)
 		return 0
 	}
 	if len(args) > 1 || len(args) == 1 && !web.ValidMenuSection(args[0]) {
-		return subError(prog+" menu", s.err, "expected add, manage, groups, or transfer")
+		return subError(prog+" menu", s.err, "expected add, manage, or transfer")
 	}
 	if !terminal {
 		return subError(prog+" menu", s.err, "an interactive terminal is required")
@@ -77,17 +77,15 @@ func humanMenu(prog, start string, s ioStreams) int {
 		menuAdd(s)
 	case "manage":
 		menuManage(s)
-	case "groups":
-		menuGroups(s)
 	case "transfer":
 		menuTransfer(s)
 	}
 	for {
 		i, _, ok := askMenu(s, "tycswap", []string{
 			"Add account…", "Manage accounts…", "Live dashboard", "Open web dashboard",
-			"Session groups…", "Import / export…", "Advanced settings…", "Start tray app", "Close menu",
+			"Import / export…", "Advanced settings…", "Start tray app", "Close menu",
 		}, "")
-		if !ok || i == 8 {
+		if !ok || i == 7 {
 			return 0
 		}
 		switch i {
@@ -100,12 +98,10 @@ func humanMenu(prog, start string, s ioStreams) int {
 		case 3:
 			menuOpenDashboard(prog, s)
 		case 4:
-			menuGroups(s)
-		case 5:
 			menuTransfer(s)
-		case 6:
+		case 5:
 			menuSettings(s)
-		case 7:
+		case 6:
 			startBackgroundApp(prog, s)
 		}
 	}

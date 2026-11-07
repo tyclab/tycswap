@@ -26,8 +26,6 @@ func TestMain(m *testing.M) {
 
 func runTestChild(role string) int {
 	switch role {
-	case "routing-native":
-		return runNativeRoutingHelper()
 	case "hello":
 		fmt.Print("hello")
 		return 0

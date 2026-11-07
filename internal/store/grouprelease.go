@@ -10,10 +10,11 @@ import (
 )
 
 // ReleaseGroupAccount returns the group's account to the shared pool; verify
-// must prove the profile's credential is the account's own lineage. The shared
+// must prove the profile's credential is the account's own lineage, or report
+// that it is not worth saving (a dead login). The shared
 // account lock and this profile's Claude locks must be held. The steps run in
 // an order a rerun can finish: the claim and active record go last.
-func (s *Store) ReleaseGroupAccount(verify func(active groups.Account, live string) error) (*groups.Account, error) {
+func (s *Store) ReleaseGroupAccount(verify func(active groups.Account, live string) (save bool, err error)) (*groups.Account, error) {
 	if s.group == "" {
 		return nil, fmt.Errorf("a session group is required")
 	}
@@ -44,11 +45,14 @@ func (s *Store) ReleaseGroupAccount(verify func(active groups.Account, live stri
 		return nil, fmt.Errorf("the %s profile no longer matches its recorded account; hold until ownership is verified", s.group)
 	}
 	if login {
-		if err := verify(*active, live); err != nil {
+		save, err := verify(*active, live)
+		if err != nil {
 			return nil, err
 		}
-		if err := s.WriteAccountCredentials(active.Number, active.Email, oauth.AccountOnly(live)); err != nil {
-			return nil, err
+		if save {
+			if err := s.WriteAccountCredentials(active.Number, active.Email, oauth.AccountOnly(live)); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if remainder, ok := ccfile.SeatWidePart(live); ok {

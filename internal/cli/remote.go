@@ -383,10 +383,10 @@ func (c *remoteClient) AutoStop() error {
 }
 
 func (c *remoteClient) SaveSetting(scope, key string, value *string) error {
-	path := "/api/settings/" + neturl.PathEscape(key)
 	if scope != "" {
-		path = "/api/groups/" + neturl.PathEscape(scope) + "/settings/" + neturl.PathEscape(key)
+		return fmt.Errorf("session groups are retired; settings have one scope")
 	}
+	path := "/api/settings/" + neturl.PathEscape(key)
 	if value == nil {
 		return c.mutate(path+"/unset", nil)
 	}
@@ -754,11 +754,8 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 		AccountSetup: func(section string) error {
 			return openRemoteAccountSetup(o.tokenFile, func() error { return rc.call("POST", "/api/accounts/setup", map[string]any{"section": section}, nil) }, section)
 		},
-		SaveSetting: rc.SaveSetting,
-		SwitchTo:    rc.Switch,
-		SwitchGroup: func(group, account string) error {
-			return rc.call("POST", "/api/groups/"+neturl.PathEscape(group)+"/switch/"+neturl.PathEscape(account), nil, nil)
-		},
+		SaveSetting:    rc.SaveSetting,
+		SwitchTo:       rc.Switch,
 		AutoRunning:    rc.AutoRunning,
 		AutoStart:      rc.AutoStart,
 		AutoStop:       rc.AutoStop,

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/groups"
@@ -45,29 +44,6 @@ func (s *Store) ClaimLegacyProfile(number, email, profile string) error {
 	}
 	registry.Claims[number] = groups.Owner{Scope: "legacy:" + number, ProfileDir: profile, Account: account}
 	return registry.Save(s.backupDir)
-}
-
-func (s *Store) snapshotLegacyHandoff(journal *groups.Journal) error {
-	owner, err := s.CredentialOwner(journal.Target.Number)
-	if err != nil {
-		return err
-	}
-	if !strings.HasPrefix(owner.Scope, "legacy:") {
-		return nil
-	}
-	if !s.groupHandoff || owner.Uncertain || len(owner.PIDs) > 0 {
-		return fmt.Errorf("the legacy profile still owns this credential; exit it before opting into a group")
-	}
-	value, ok, err := s.ReadProfileCredentials(owner.ProfileDir)
-	if err != nil {
-		return err
-	}
-	if !ok || value == "" {
-		return fmt.Errorf("the legacy credential cannot be preserved before group handoff")
-	}
-	journal.SourceOwner = &owner
-	journal.SourceCredential = groups.Snapshot{Exists: true, Text: value}
-	return nil
 }
 
 func (s *Store) ClearLegacyForGroup(journal *groups.Journal) error {

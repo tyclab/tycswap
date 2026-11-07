@@ -8,8 +8,6 @@ import (
 
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/cerr"
-	"github.com/tyclab/tycswap/internal/groups"
-	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/slotkey"
 )
 
@@ -409,13 +407,9 @@ func (s *Store) AccountIsSwitchable(num string) bool {
 // so it is necessary but not sufficient for "the engine could pick this slot
 // now".
 //
-// data must be the caller's already-loaded sequence data and is the ONLY source
-// for the disabled half, while the switchable half re-reads the backups itself.
-// nil data therefore carries no disabled information at all — it is not "nothing
-// is disabled" — so it returns false. Fail-closed is the only safe direction
-// here: the false negative merely omits a slot from automatic selection, whereas
-// a false positive would let automatic selection pick a slot the user
-// deliberately held out of rotation.
+// data, the caller's loaded sequence, is the only source for the disabled half;
+// nil carries no disabled information, so it fails closed and returns false: a
+// slot the user held out of rotation must never be picked.
 func (s *Store) RotationEligible(data *SequenceData, num string) bool {
 	if data == nil {
 		return false
@@ -423,18 +417,7 @@ func (s *Store) RotationEligible(data *SequenceData, num string) bool {
 	if !s.AccountIsSwitchable(num) || disabledFromData(data, num) || s.AccountKindFor(num) == "api_key" {
 		return false
 	}
-	if err := s.EnsureAccountAvailable(num); err != nil {
-		return false
-	}
-	if s.group != "" {
-		intent := groups.Start
-		if s.GroupIntent() == groups.Continue || s.GroupIntent() != groups.Start && len(sessprofile.LiveSessionPIDs(s.ProfileDir())) > 0 {
-			intent = groups.Continue
-		}
-		compatible := s.GroupCompatibility(num, intent)
-		return compatible.Known && compatible.Allowed
-	}
-	return true
+	return s.EnsureAccountAvailable(num) == nil
 }
 
 // SwitchableAccountNumbers returns the rotation-eligible slots in sequence order

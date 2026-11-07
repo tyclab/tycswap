@@ -29,7 +29,7 @@ import (
 // even with a managed live login. prov may be nil (resolved here).
 func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActivate bool, prov *Provenance) (switchOp, error) {
 	if s.GroupID() != "" {
-		return performGroupSwitch(s, targetAccount, emitOutput, forceActivate, prov)
+		return switchOp{}, cerr.Session("session groups are retired; the default login switches by itself")
 	}
 	warningsOut := []string{}
 

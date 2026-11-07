@@ -6659,3 +6659,100 @@ changes. A long-running `tycswap auto` loop and the dashboard's hosted engine
 keep their configured models. `config set autoswitch.model none` is refused
 with a pointer to `unset`, and a stored `none` or `(none)` counts nothing,
 since the help shows the unset value that way.
+
+## A77. The default login follows Fable without being asked
+
+A71 reserved Fable-capable accounts only in the Opus / other group, and A73's
+hand-over waited out the cooldown. On the default login, where the operator
+runs every session, that left two manual steps: a Fable-capable account
+served Opus work until a bar moved it, and a Fable session started within five
+minutes of a switch onto a login without Fable could not run until the
+cooldown ended or the operator switched by hand.
+
+The scheduled tick (`auto --once`, as the timer, the quota hook and
+`--observe` run it) now builds the default engine with a reservation taken
+from the same records A76 counts. While `autoswitch.model` is unset and at
+least one default session runs, every live session has a recorded family and
+none of them is Fable, an account whose plan or recorded `continue`
+capability allows Fable (`Store.FableCapable`, the test A71 applies) is
+reserved: it ranks last, and an active one hands over with the `reserved`
+trigger, under the cooldown, to an account that cannot run Fable and is below
+every bar. A live session without a record or a Fable session clears the
+reservation, as does an explicit `autoswitch.model`; with no live session the
+login stays where it is, because nothing burns.
+
+`--observe` reports whether its record was news: a session's first status line
+or a change of family. News runs one tick at once on the cached usage, without
+the 15-second fetch slot, and `model-missing` is no longer held by the
+cooldown, since the sessions that run the model cannot run at all until the
+login moves. The two hand-overs cannot alternate: `reserved` needs no live
+Fable session and `model-missing` needs a counted one, and `reserved` keeps
+the cooldown.
+
+Limits, accepted: default sessions share one login, so one live Fable session
+keeps every default session on a Fable-capable account; subagents run on
+their main session's login and only the main model is recorded; a session
+that draws no status line is never recorded and so holds the reservation off;
+the first request of a Fable session started on a login without Fable can
+race the tick its first status line runs; the loop and the dashboard's hosted
+engine keep their configured models and reserve nothing.
+
+## A78. Session groups and `tycswap claude` retire
+
+A76 and A77 made the default login follow the models its sessions run, so
+the operator starts plain `claude` and never picks an account. The Fable and
+Opus / other session groups (A42, A62, A69, A71, A74) and the Mods router
+(A70) existed to give Fable and Opus work different accounts by hand or per
+request. What they still added is two accounts in use at once (Fable on one,
+Opus on another) and per-request account choice with stream reservations; the
+operator gave both up for one automatic login. Total weekly quota is the same
+either way, since windows are per account; parallel throughput is what goes.
+
+Removed: `tycswap claude`, the internal `routing` command, `routing.json`,
+`routing.lock` and the bundled routing mod; `run --group`, the group launcher
+and its hooks; every `groups` verb (switch, release, reconcile, config,
+capability, list); group settings scopes, the group engine ticks and their
+poll policies; the menu, tray and dashboard group views and endpoints; group
+switching and its default and legacy handoffs. A switch no longer takes the
+routing lock. The `group-release` event stays for the retirement.
+
+Existing group state retires on its own. Each scheduled tick that is not a
+dry run (`auto --once` from the timer or the quota hook, the loop, the hosted
+engine; not a status line's `--observe` tick, which is about latency) asks,
+per group, whether a claim remains or the group's directory is not yet marked
+retired (`groups.Pending`). While a session runs in the group's profile it
+waits. Otherwise it runs the A69 release under the account lock and the
+profile's locks. An unfinished group switch is reconciled first, taking the
+default login's or a legacy profile's locks when its journal recorded a
+handoff from them; its credential is matched by refresh token, so an expired
+login is refreshed (A74) only on a tick without a journal. The profile's
+credential must be the account's own lineage before it replaces the backup,
+with one exception: a login whose refresh the server rejects with
+`invalid_grant` can never authenticate again, so it is dropped with its claim
+and the backup keeps its own lineage. Then, with no session started since,
+the profile's `projects/` conversations are streamed into the default profile
+where missing, nothing there replaced and no symlink followed, and every file
+beside `profile/` goes, with `retired.json` left as the marker. The profile
+keeps its history and MCP sign-ins. Every step can rerun, so an interrupted
+retirement finishes on a later tick. A login that cannot be verified for any
+other reason (offline, an identity that does not resolve) keeps its claim: the
+ownership scan still reads group claims, journals and profile credentials, so
+no rotation takes the account, `add` still refuses it, and the warning names
+it on each scheduled tick. A journal that recorded a handoff from the default
+login reconciles only while no default session runs, as before.
+
+Still-running group sessions keep working: `groups guard` (their
+PreModelSwitch hook) and `recovery record --group` (their lifecycle hooks)
+still answer, and their status lines mark the group's account due (A75).
+
+The Claude side of the Claude / Codex handover now uses the default login:
+its account checks follow the model class (`FableCapable` for Fable), a
+rotation switches the default login, and a Claude destination is plain
+`claude --model`. A recorded incident from a group session says the group is
+retired. Settings have one scope; a scoped save is refused.
+
+Kept on purpose: `groups/claims.json` also records the legacy `run` profiles'
+claims, so the registry, its validation and `SafePath` stay; a recorded
+`fableContinue` capability still counts for `FableCapable`. The retirement
+code, the group scope of the store and the ownership scan's group branches
+can go once no store can hold group state.

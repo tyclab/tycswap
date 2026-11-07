@@ -4,85 +4,43 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"time"
 
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/cclock"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/oauth"
-	"github.com/tyclab/tycswap/internal/routingstate"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
-var errGroupBusy = errors.New("group profile is in use")
+// ErrGroupBusy: a session still runs in the group's profile.
+var ErrGroupBusy = errors.New("group profile is in use")
 
-// ReleaseGroup hands a session group's account back to the shared pool, its
-// newest credential written to the account's backup first.
-func ReleaseGroup(s *store.Store, emit bool) (map[string]any, error) {
-	released, err := releaseGroup(s, false)
-	if err != nil {
-		return nil, err
-	}
-	result := map[string]any{"group": s.GroupID(), "released": nil}
-	if released != nil {
-		result["released"] = numRef(released.Number, released.Email)
-	}
-	if emit {
-		if released == nil {
-			printOut("Group " + s.GroupID().Label() + " holds no account.")
-		} else {
-			printOut("Group " + s.GroupID().Label() + " released Account-" + released.Number + " (" + released.Email + ").")
-		}
-	}
-	return result, nil
-}
-
-// ReleaseIdleGroup releases the account of a group whose profile has shown no
-// activity for grace and has no live or launching session (DESIGN A74). It
-// returns nil without an error while the group is still in use.
-func ReleaseIdleGroup(s *store.Store, grace time.Duration) (*groups.Account, error) {
-	if s.GroupID() == "" {
-		return nil, fmt.Errorf("a session group is required")
-	}
-	if last := groupActivity(s); s.Clk.Now().Sub(last) < grace {
-		return nil, nil
-	}
-	released, err := releaseGroup(s, true)
-	if errors.Is(err, errGroupBusy) {
-		return nil, nil
-	}
-	return released, err
-}
-
-func releaseGroup(s *store.Store, idleOnly bool) (*groups.Account, error) {
+func releaseGroup(s *store.Store) (*groups.Account, error) {
 	if s.GroupID() == "" {
 		return nil, fmt.Errorf("a session group is required")
 	}
 	if err := groups.SafePath(s.ProfileDir()); err != nil {
 		return nil, err
 	}
-	// A busy profile is refused below, under the locks, with its own message.
-	if err := refreshExpiredGroupLogin(s); err != nil && !errors.Is(err, errGroupBusy) {
+	// An unfinished switch is matched by its credential's refresh token, which
+	// a refresh rotates: reconcile it first, and refresh on a later tick.
+	journal, err := groups.LoadJournal(s.SharedRoot(), s.GroupID())
+	if err != nil {
 		return nil, err
+	}
+	dead := ""
+	if journal == nil {
+		// A busy profile is refused below, under the locks, with its own message.
+		if dead, err = refreshExpiredGroupLogin(s); err != nil && !errors.Is(err, ErrGroupBusy) {
+			return nil, err
+		}
 	}
 	prov := prefetchLiveIdentity(s)
 	var released *groups.Account
-	err := withTripleLock(s, func() error {
-		if idleOnly {
-			state, err := routingstate.Read(s.SharedRoot())
-			if err != nil {
-				return err
-			}
-			state.Prune()
-			if state.CheckIdle(string(s.GroupID())) != nil {
-				return errGroupBusy
-			}
-			if pids, err := store.LiveProfilePIDs(s.ProfileDir()); err != nil || len(pids) > 0 {
-				return errGroupBusy
-			}
+	err = withTripleLock(s, func() error {
+		if pids, err := store.LiveProfilePIDs(s.ProfileDir()); err != nil || len(pids) > 0 {
+			return ErrGroupBusy
 		}
 		if err := s.ReconcileGroup(); err != nil {
 			return err
@@ -91,12 +49,20 @@ func releaseGroup(s *store.Store, idleOnly bool) (*groups.Account, error) {
 		if err != nil {
 			return err
 		}
-		released, err = s.ReleaseGroupAccount(func(active groups.Account, live string) error {
+		released, err = s.ReleaseGroupAccount(func(active groups.Account, live string) (bool, error) {
 			kind, _ := classifyOutgoing(s, active.Number, active.Email, live, prov, data)
-			if kind != "own-bytes" && kind != "own-family" && kind != "own-rotated" {
-				return cerr.Session("the %s profile's credential ownership is unverified (%s); the account claim remains held", s.GroupID(), kind)
+			if kind == "own-bytes" || kind == "own-family" || kind == "own-rotated" {
+				return true, nil
 			}
-			return nil
+			// A login whose refresh token the server rejected can never
+			// authenticate again: it is dropped, and the backup kept (A78).
+			if dead != "" && fingerprintEqual(live, dead) {
+				if s.Log != nil {
+					s.Log.Warningf("Group %s's login for Account-%s is dead (invalid_grant); dropped without touching the backup", s.GroupID(), active.Number)
+				}
+				return false, nil
+			}
+			return false, cerr.Session("the %s profile's credential ownership is unverified (%s); the account claim remains held", s.GroupID(), kind)
 		})
 		return err
 	})
@@ -107,13 +73,15 @@ func releaseGroup(s *store.Store, idleOnly bool) (*groups.Account, error) {
 // while no Claude process ran in its profile, so its identity can be verified
 // again (DESIGN A74). The refresh rotates the refresh token, so it runs under
 // the account lock and the profile's credential lock and is stored at once.
-func refreshExpiredGroupLogin(s *store.Store) error {
+// It returns a login the server rejected as invalid_grant.
+func refreshExpiredGroupLogin(s *store.Store) (string, error) {
 	if s.OAuth == nil {
-		return nil
+		return "", nil
 	}
+	dead := ""
 	err := s.Lock.With(func() error {
 		if pids, err := store.LiveProfilePIDs(s.ProfileDir()); err != nil || len(pids) > 0 {
-			return errGroupBusy
+			return ErrGroupBusy
 		}
 		live, _, err := s.Creds.ReadActive()
 		if err != nil || live == "" || ccfile.SeatWideOnly(live) {
@@ -124,7 +92,7 @@ func refreshExpiredGroupLogin(s *store.Store) error {
 		}
 		cred, err := cclock.AcquireProfileCredentials(s.ProfileDir(), 0, s.Clk)
 		if err != nil {
-			return errGroupBusy
+			return ErrGroupBusy
 		}
 		defer cred.Release()
 		ctx, cancel := context.WithTimeout(context.Background(), store.GuardedRefreshTimeout)
@@ -133,6 +101,9 @@ func refreshExpiredGroupLogin(s *store.Store) error {
 		if out.Credentials == "" {
 			if s.Log != nil {
 				s.Log.Warningf("Group %s's expired login did not refresh (%s)", s.GroupID(), out.Error)
+			}
+			if out.Error == oauth.ErrInvalidGrant {
+				dead = live
 			}
 			return nil
 		}
@@ -144,30 +115,5 @@ func refreshExpiredGroupLogin(s *store.Store) error {
 		}
 		return nil
 	})
-	return err
-}
-
-// groupActivity is the newest change a session start, exit, launch, switch or
-// token refresh leaves in the group's files.
-func groupActivity(s *store.Store) time.Time {
-	scope := groups.ScopeDir(s.SharedRoot(), s.GroupID())
-	paths := []string{
-		groups.ActivePath(s.SharedRoot(), s.GroupID()),
-		filepath.Join(s.ProfileDir(), ".credentials.json"),
-		filepath.Join(s.ProfileDir(), "sessions"),
-		filepath.Join(s.ProfileDir(), "ide"),
-		filepath.Join(scope, "launches"),
-	}
-	if entries, err := os.ReadDir(filepath.Join(scope, "launches")); err == nil {
-		for _, e := range entries {
-			paths = append(paths, filepath.Join(scope, "launches", e.Name()))
-		}
-	}
-	var last time.Time
-	for _, p := range paths {
-		if info, err := os.Stat(p); err == nil && info.ModTime().After(last) {
-			last = info.ModTime()
-		}
-	}
-	return last
+	return dead, err
 }

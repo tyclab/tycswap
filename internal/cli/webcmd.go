@@ -26,7 +26,6 @@ import (
 	"github.com/tyclab/tycswap/internal/browser"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/core"
-	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/providers"
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -300,15 +299,7 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 			_, err := codex.SwitchTo(account)
 			return err
 		}
-		id, err := groups.Parse(group)
-		if err != nil {
-			return err
-		}
-		scoped, err := sw.ForGroup(id)
-		if err != nil {
-			return err
-		}
-		_, err = scoped.WithGroupIntent(groups.Continue).SwitchTo(account, true)
+		_, err := sw.SwitchTo(account, true)
 		return err
 	}))
 	var host *updatesHost
@@ -321,7 +312,6 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 		Facade:             sw,
 		Snapshot:           providers.NewMultiSnapshotSource(ctx, sw, codexSw),
 		Accounts:           sw,
-		Groups:             groupFacade{sw},
 		Recovery:           recovery,
 		Codex:              codex,
 		Settings:           settingsFacade{root: sw.BackupDir()},

@@ -317,41 +317,36 @@ func assertClaims(t *testing.T, s *store.Store, want map[string]string) {
 	}
 }
 
-// The default login hands the credential it holds, slot 5's, to the group,
-// although its config names 6.
-func TestDefaultHandoffOfTheCredentialSlotUnderLineageMismatch(t *testing.T) {
-	s, live := groupLineageSeat(t)
-	opus := scope(t, s, groups.Opus).WithGroupHandoff()
-	if _, err := SwitchTo(opus, "5", true, false); err != nil {
-		t.Fatalf("handoff of Account-5: %v", err)
+// interruptedDefaultHandoff writes what a group switch taking the default
+// login's credential left when it stopped right after its journal: both
+// default files snapshotted and the target claimed as uncertain.
+func interruptedDefaultHandoff(t *testing.T, s *store.Store, id groups.ID, target groups.Account, targetCreds string) {
+	t.Helper()
+	creds, cfg := defaultFiles(t, s)
+	journal := groups.Journal{Version: 1, Group: id, Target: target, TargetFingerprint: *oauth.CredentialFingerprint(targetCreds),
+		DefaultHandoff: true, DefaultCredential: groups.Snapshot{Exists: true, Text: creds}, DefaultConfig: groups.Snapshot{Exists: true, Text: cfg}}
+	if err := groups.WriteJSON(groups.JournalPath(s.SharedRoot(), id), journal); err != nil {
+		t.Fatal(err)
 	}
-	if j, err := groups.LoadJournal(s.BackupDir(), groups.Opus); err != nil || j != nil {
-		t.Fatalf("journal = %v, %v; want it cleared", j != nil, err)
+	registry, err := groups.LoadRegistry(s.SharedRoot())
+	if err != nil {
+		t.Fatal(err)
 	}
-	assertClaims(t, s, map[string]string{"5": "opus"})
-	if owner, err := s.CredentialOwner("5"); err != nil || owner.Scope != "opus" || owner.Uncertain {
-		t.Fatalf("CredentialOwner(5) = %+v, %v; want the opus group, certain", owner, err)
-	}
-	if creds, cfg := defaultFiles(t, s); creds != "" || strings.Contains(cfg, "oauthAccount") {
-		t.Fatalf("default login kept credential %q / config %s after handing it over", creds, cfg)
-	}
-	if got, _, _ := opus.Creds.ReadActive(); oauth.AccountOnly(got) != live {
-		t.Fatalf("opus profile credential = %s, want Account-5's", got)
+	registry.Claims[target.Number] = groups.Owner{Scope: string(id), ProfileDir: groups.ProfileDir(s.SharedRoot(), id), Account: target, Uncertain: true}
+	if err := registry.Save(s.SharedRoot()); err != nil {
+		t.Fatal(err)
 	}
 }
 
-// A handoff interrupted after its journal was written rolls back on the next
-// reconcile and puts the default login back as it was, mismatch included.
+// A handoff interrupted after its journal was written rolls back when the
+// group retires and puts the default login back as it was, mismatch included.
 func TestInterruptedDefaultHandoffUnderLineageMismatchRollsBack(t *testing.T) {
 	s, live := groupLineageSeat(t)
 	credsBefore, cfgBefore := defaultFiles(t, s)
-	opus := scope(t, s, groups.Opus).WithGroupHandoff()
-	target := groups.Account{Number: "5", Email: lineageEmail, OrgUUID: "org-five"}
-	if _, err := opus.BeginGroupSwitch(target, live); err != nil {
-		t.Fatalf("BeginGroupSwitch: %v", err)
-	}
-	if err := ReconcileGroup(opus); err != nil {
-		t.Fatalf("ReconcileGroup: %v", err)
+	opus := scope(t, s, groups.Opus)
+	interruptedDefaultHandoff(t, s, groups.Opus, groups.Account{Number: "5", Email: lineageEmail, OrgUUID: "org-five"}, live)
+	if _, err := RetireGroup(opus); err != nil {
+		t.Fatalf("RetireGroup: %v", err)
 	}
 	if j, err := groups.LoadJournal(s.BackupDir(), groups.Opus); err != nil || j != nil {
 		t.Fatalf("journal = %v, %v; want it cleared", j != nil, err)
@@ -362,26 +357,5 @@ func TestInterruptedDefaultHandoffUnderLineageMismatchRollsBack(t *testing.T) {
 	}
 	if owner, err := s.CredentialOwner("5"); err != nil || owner.Scope != "default" || owner.Uncertain {
 		t.Fatalf("CredentialOwner(5) = %+v, %v; want the default login, certain", owner, err)
-	}
-}
-
-// The default login does not hold slot 6, so a group switch onto it is a plain
-// one from 6's backup: no default handoff, and the default login is untouched.
-func TestGroupSwitchToTheConfigSlotUnderLineageMismatchLeavesTheDefault(t *testing.T) {
-	s, _ := groupLineageSeat(t)
-	credsBefore, cfgBefore := defaultFiles(t, s)
-	opus := scope(t, s, groups.Opus).WithGroupHandoff()
-	if _, err := SwitchTo(opus, "6", true, false); err != nil {
-		t.Fatalf("group switch to Account-6: %v", err)
-	}
-	if creds, cfg := defaultFiles(t, s); creds != credsBefore || cfg != cfgBefore {
-		t.Fatalf("default login changed: %q / %s", creds, cfg)
-	}
-	assertClaims(t, s, map[string]string{"6": "opus"})
-	if owner, err := s.CredentialOwner("5"); err != nil || owner.Scope != "default" || owner.Uncertain {
-		t.Fatalf("CredentialOwner(5) = %+v, %v; want the default login, certain", owner, err)
-	}
-	if got, _, _ := opus.Creds.ReadActive(); oauth.AccountOnly(got) != groupCreds("max", "at-6", "rt-6") {
-		t.Fatalf("opus profile credential = %s, want Account-6's backup", got)
 	}
 }

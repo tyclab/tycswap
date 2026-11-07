@@ -69,11 +69,6 @@ func (s *Server) routes() http.Handler {
 
 	// sessions
 	api.HandleFunc("POST /api/sessions/{pid}/stop", s.handleStop)
-	api.HandleFunc("POST /api/groups/{group}/switch/{id}", s.handleGroupSwitch)
-	api.HandleFunc("GET /api/groups/{group}/settings", s.handleGroupSettings)
-	api.HandleFunc("POST /api/groups/{group}/settings/{key}", s.handleGroupSettingSet)
-	api.HandleFunc("DELETE /api/groups/{group}/settings/{key}", s.handleGroupSettingUnset)
-	api.HandleFunc("POST /api/groups/{group}/settings/{key}/unset", s.handleGroupSettingUnset)
 	api.HandleFunc("POST /api/recovery/prepare", s.handleRecoveryPrepare)
 	api.HandleFunc("POST /api/recovery/dismiss", s.handleRecoveryDismiss)
 	api.HandleFunc("POST /api/recovery/start", s.handleRecoveryStart)

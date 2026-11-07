@@ -81,20 +81,8 @@ assert.equal(rank([missing],'Fable')[0].label,'model usage missing: fable');
 assert.deepEqual(order([missing,account(2,40,20,20)],''),['1','2']);
 
 ctx.modelWindowNames = st => [...new Set(st.accounts.flatMap(a => (a.usage.scoped || []).map(w => w.name)))];
-const sharedState = {accounts:[account(1,20,100,20),account(2,50,20,10)], settings:[{key:'autoswitch.model',value:'all'}], groups:[
- {id:'fable',activeNumber:'2',accountBlockers:{'1':'in use by opus'}},
- {id:'opus',activeNumber:'1',accountBlockers:{'2':'in use by fable'}}
-]};
+const sharedState = {accounts:[account(1,20,100,20),account(2,50,20,10)], settings:[{key:'autoswitch.model',value:'all'}]};
 const originalState = JSON.stringify(sharedState);
-assert.equal(ctx.groupState(sharedState,'').accounts[0].rotationEligible,false);
-const opusView = ctx.groupState(sharedState,'opus');
-assert.equal(opusView.accounts[0].atLimit,false);
-assert.equal(opusView.accounts[0].usage.scoped.length,0);
-assert.equal(opusView.accounts[0].isActive,true);
-assert.equal(opusView.accounts[1].rotationEligible,false);
-assert.equal(ctx.groupState(sharedState,'fable').accounts[0].atLimit,true);
-assert.equal(ctx.groupState(sharedState,'fable').accounts[0].usage.scoped.length,1);
-assert.equal(JSON.stringify(sharedState),originalState);
 assert.deepEqual(Array.from(ctx.displayAccounts(sharedState,{key:'model',direction:1}),a=>a.number),[2,1]);
 assert.deepEqual(Array.from(ctx.displayAccounts(sharedState,{key:'model',direction:-1}),a=>a.number),[1,2]);
 const ties = {accounts:[account(1,40,30,60),account(2,40,30,10),account(3,40,20,70)],settings:sharedState.settings};

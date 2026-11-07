@@ -41,10 +41,6 @@ type Store struct {
 	kc                     keychain.KeychainClient
 	wc                     wincred.Client
 	group                  groups.ID
-	groupIntent            groups.Intent
-	groupHandoff           bool
-	routingModel           groups.ID
-	routingLockHeld        bool
 	sharedCreds            credstore.Store
 	defaultProfileDir      string
 	defaultUnpinned        bool

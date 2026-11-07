@@ -158,16 +158,8 @@ func TestMacKeychainReadFailureCannotTransferPlaintextShadow(t *testing.T) {
 	if value, _, err := s.ReadProfileCredentials(dir); err == nil || value != "" {
 		t.Fatal("Keychain failure returned an old plaintext credential")
 	}
-	group, err := s.ForGroup(groups.Fable)
-	if err != nil {
-		t.Fatal(err)
-	}
-	group = group.WithGroupHandoff()
-	if _, err := group.BeginGroupSwitch(groups.Account{Number: "1", Email: "one@example.test"}, shadow); err == nil {
-		t.Fatal("ownership transfer proceeded after Keychain failure")
-	}
 	if raw, _ := os.ReadFile(filepath.Join(dir, ".credentials.json")); string(raw) != shadow {
-		t.Fatal("failed handoff modified the shadow")
+		t.Fatal("failed read modified the shadow")
 	}
 }
 

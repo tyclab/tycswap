@@ -2,6 +2,7 @@ package cli
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,5 +92,39 @@ func TestMarkObservedDueReachesTheUsageStore(t *testing.T) {
 	entry := sw.Usage.Entries(ids)[*num]
 	if entry.NextPollAt == nil || *entry.NextPollAt > clock.Seconds(sw.Clk) {
 		t.Fatalf("Account-%s poll not due after an observation: %+v", *num, entry.NextPollAt)
+	}
+}
+
+// A session's first status line and a change of its model tick at once and
+// leave the fetch slot to the next near-bar observation; the rerenders in
+// between do not tick (DESIGN A77).
+func TestObserveTicksOnModelNews(t *testing.T) {
+	sw := rotatedSwitcher(t)
+	far := settings.Default()
+	opus := []byte(`{"session_id":"s1","model":{"id":"claude-opus-5-5"}}`)
+	fable := []byte(`{"session_id":"s1","model":{"id":"claude-fable-5-1"}}`)
+	for i, step := range []struct {
+		raw  []byte
+		want bool
+	}{{opus, true}, {opus, false}, {fable, true}, {fable, false}} {
+		if got := observeTicks(sw, step.raw, far); got != step.want {
+			t.Fatalf("observation %d ticks = %v, want %v", i, got, step.want)
+		}
+	}
+	if !claimObserveSlot(sw.BackupDir(), sw.Clk.Now()) {
+		t.Fatal("model news took the fetch slot")
+	}
+}
+
+// The retirement keeps the group-release event's JSON contract (DESIGN A78).
+func TestGroupReleaseEventJSON(t *testing.T) {
+	ev := groupEvent{releaseEvent{ts: "2026-11-04T18:00:00Z", account: groups.Account{Number: "2", Email: "b@example.com"}}, groups.Opus}
+	got := ev.JSON()
+	released, _ := got["released"].(map[string]any)
+	if got["event"] != "group-release" || got["group"] != "opus" || released["number"] != 2 || released["email"] != "b@example.com" {
+		t.Fatalf("group-release JSON = %v", got)
+	}
+	if !strings.Contains(ev.Human(), "Account-2") || !strings.Contains(ev.Human(), "Opus / other") {
+		t.Fatalf("group-release line = %q", ev.Human())
 	}
 }

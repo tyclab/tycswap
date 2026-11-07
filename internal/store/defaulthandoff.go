@@ -89,31 +89,6 @@ func (s *Store) writeDefaultCredentials(value string) error {
 	return atomicfile.Write(path, []byte(value), atomicfile.Opts{})
 }
 
-func (s *Store) snapshotDefaultHandoff(journal *groups.Journal) error {
-	owner, err := s.CredentialOwner(journal.Target.Number)
-	if err != nil {
-		return err
-	}
-	if owner.Scope != "default" {
-		return nil
-	}
-	if !s.groupHandoff || owner.Uncertain || len(owner.PIDs) > 0 {
-		return fmt.Errorf("the default login still owns Account-%s; stop its sessions before opting into a group", journal.Target.Number)
-	}
-	value, err := s.ReadDefaultCredentials()
-	if err != nil || value == "" {
-		return fmt.Errorf("cannot preserve the default credential before group handoff")
-	}
-	config, err := snapshotFile(s.DefaultConfigPath())
-	if err != nil || !config.Exists {
-		return fmt.Errorf("cannot preserve the default config before group handoff")
-	}
-	journal.DefaultHandoff = true
-	journal.DefaultCredential = groups.Snapshot{Exists: true, Text: value}
-	journal.DefaultConfig = config
-	return nil
-}
-
 func (s *Store) ClearDefaultForGroup(journal *groups.Journal) error {
 	if !journal.DefaultHandoff {
 		return nil

@@ -32,7 +32,7 @@ func TestAddRefusesAnAccountAGroupHolds(t *testing.T) {
 			claimForGroup(t, s, groups.Opus, "2", "b@example.com", "org-b")
 			seedLiveLogin(t, s, "b@example.com", "org-b", "B", "u-b", `{"claudeAiOauth": {"accessToken": "tok-new", "scopes": ["user:inference"]}}`)
 			err := AddAccount(s, slot, true, nil)
-			if err == nil || !strings.Contains(err.Error(), "held by the Opus / other group") || !strings.Contains(err.Error(), "tycswap groups release opus") {
+			if err == nil || !strings.Contains(err.Error(), "held by the retired Opus / other group") || !strings.Contains(err.Error(), "next auto-switch tick hands the account back") {
 				t.Fatalf("add into a group-held slot: %v", err)
 			}
 			if got, _ := s.ReadAccountCredentials("2", "b@example.com"); got != old {

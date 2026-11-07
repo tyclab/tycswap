@@ -1,7 +1,6 @@
 package lifecycle
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,7 +12,6 @@ import (
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/printer"
-	"github.com/tyclab/tycswap/internal/routingstate"
 	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/storenames"
@@ -23,15 +21,8 @@ const securityService = keychain.BackupService
 
 func Purge(s *store.Store) error {
 	backupDir := s.BackupDir()
-	var profiles []string
-	if err := routingstate.With(s.SharedRoot(), func(state *routingstate.State) error {
-		if err := state.CheckIdle(""); err != nil {
-			return cerr.Session("Cannot purge: %s. Exit managed Claude sessions first.", err)
-		}
-		var err error
-		profiles, err = purgeProfiles(backupDir)
-		return err
-	}); err != nil {
+	profiles, err := purgeProfiles(backupDir)
+	if err != nil {
 		return err
 	}
 	if _, _, err := purgeRoster(s); err != nil {
@@ -65,74 +56,64 @@ func Purge(s *store.Store) error {
 	}
 
 	var removed []string
-	complete := errors.New("purge completed")
-	err := routingstate.With(s.SharedRoot(), func(state *routingstate.State) error {
-		if err := state.CheckIdle(""); err != nil {
-			return cerr.Session("Cannot purge: %s. Exit managed Claude sessions first.", err)
-		}
-		if err := s.Lock.With(func() error {
-			var err error
-			profiles, err = purgeProfiles(backupDir)
-			if err != nil {
-				return err
-			}
-			data, slots, err := purgeRoster(s)
-			if err != nil {
-				return err
-			}
-			for _, num := range slots {
-				email := decodeRecord(data.Accounts[num]).str("email")
-				nums := []string{num}
-				if num != "None" {
-					nums = append(nums, "None")
-				}
-				for _, n := range nums {
-					credFile := filepath.Join(s.CredentialsDir, storenames.CredsFile(n, email))
-					if pathExists(credFile) {
-						if err := os.Remove(credFile); err == nil {
-							removed = append(removed, "Credential file: "+filepath.Base(credFile))
-						}
-					}
-				}
-				if s.Platform == platform.MacOS {
-					kc := s.Keychain()
-					for _, n := range nums {
-						for _, username := range []string{storenames.KeychainAccount(n, email), storenames.KeychainAccountPrev(n, email)} {
-							_ = kc.Delete(securityService, username)
-							removed = append(removed, "Credential: "+username)
-						}
-					}
-				}
-			}
-			if len(profiles) > 0 {
-				if s.Platform == platform.MacOS {
-					for _, profile := range profiles {
-						_ = s.Keychain().Delete(sessprofile.KeychainServiceName(profile), keychain.AccountName())
-					}
-				}
-				removed = append(removed, "Session profiles: "+strings.Join(profiles, ", "))
-			}
-			entries, err := os.ReadDir(backupDir)
-			if err != nil {
-				return err
-			}
-			for _, entry := range entries {
-				if entry.Name() == ".lock" || entry.Name() == "routing.lock" {
-					continue
-				}
-				if err := os.RemoveAll(filepath.Join(backupDir, entry.Name())); err != nil {
-					return err
-				}
-				removed = append(removed, "Store entry: "+entry.Name())
-			}
-			return nil
-		}); err != nil {
+	err = s.Lock.With(func() error {
+		var err error
+		profiles, err = purgeProfiles(backupDir)
+		if err != nil {
 			return err
 		}
-		// Keep the lock inodes stable and prevent pruned routing state being rewritten.
-		return complete
+		data, slots, err := purgeRoster(s)
+		if err != nil {
+			return err
+		}
+		for _, num := range slots {
+			email := decodeRecord(data.Accounts[num]).str("email")
+			nums := []string{num}
+			if num != "None" {
+				nums = append(nums, "None")
+			}
+			for _, n := range nums {
+				credFile := filepath.Join(s.CredentialsDir, storenames.CredsFile(n, email))
+				if pathExists(credFile) {
+					if err := os.Remove(credFile); err == nil {
+						removed = append(removed, "Credential file: "+filepath.Base(credFile))
+					}
+				}
+			}
+			if s.Platform == platform.MacOS {
+				kc := s.Keychain()
+				for _, n := range nums {
+					for _, username := range []string{storenames.KeychainAccount(n, email), storenames.KeychainAccountPrev(n, email)} {
+						_ = kc.Delete(securityService, username)
+						removed = append(removed, "Credential: "+username)
+					}
+				}
+			}
+		}
+		if len(profiles) > 0 {
+			if s.Platform == platform.MacOS {
+				for _, profile := range profiles {
+					_ = s.Keychain().Delete(sessprofile.KeychainServiceName(profile), keychain.AccountName())
+				}
+			}
+			removed = append(removed, "Session profiles: "+strings.Join(profiles, ", "))
+		}
+		entries, err := os.ReadDir(backupDir)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if entry.Name() == ".lock" {
+				continue
+			}
+			if err := os.RemoveAll(filepath.Join(backupDir, entry.Name())); err != nil {
+				return err
+			}
+			removed = append(removed, "Store entry: "+entry.Name())
+		}
+		return nil
 	})
-	if err != nil && !errors.Is(err, complete) {
+	if err != nil {
 		return err
 	}
 	if len(removed) > 0 {
