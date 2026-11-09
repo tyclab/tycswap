@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/store"
@@ -175,10 +176,11 @@ func emailMatches(data *store.SequenceData, identifier string) []string {
 	return out
 }
 
-// displayTag returns the org name for a record, or "personal" when blank
-// (_get_display_tag; the ambiguous-prompt line only needs the fallback form).
+// displayTag returns the org name for a record, or "personal" when blank or
+// Claude.ai's "<email>'s Organization" placeholder (_get_display_tag; the
+// ambiguous-prompt line only needs the fallback form).
 func displayTag(rec map[string]any) string {
-	if name := recStr(rec, "organizationName"); name != "" {
+	if name := ccfile.DisplayOrgName(recStr(rec, "email"), recStr(rec, "organizationName")); name != "" {
 		return name
 	}
 	return "personal"

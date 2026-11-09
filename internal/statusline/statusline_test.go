@@ -54,11 +54,13 @@ func TestBuildKeysAndLabels(t *testing.T) {
 		{Slot: 3, Email: "api-key-3@token.local"},
 		{Slot: 4, Email: "a@x.com", OrganizationUUID: "org-a", Alias: "dup"},
 		{Slot: 5},
+		{Slot: 6, Email: "c@x.com", OrganizationUUID: "org-c", OrgName: "c@x.com's Organization", Plan: "Ultra\x1b[0m"},
 	}})
 	want := map[string]Account{
 		"a@x.com|org-a":          {Slot: 1, Label: "work[31m"},
 		"a@x.com|org-b":          {Slot: 2, Label: "Org B"},
 		"api-key-3@token.local|": {Slot: 3, Label: "api-key-3@token.local"},
+		"c@x.com|org-c":          {Slot: 6, Label: "c@x.com", Plan: "Ultra[0m"},
 	}
 	if len(doc.Accounts) != len(want) {
 		t.Fatalf("accounts = %+v", doc.Accounts)

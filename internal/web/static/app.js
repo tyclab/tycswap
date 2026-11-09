@@ -260,6 +260,21 @@
 
   function emptyMeter(label, size) { return meter({ label: label, pct: null, size: size }); }
 
+  // windowCell renders one shared window: its meter; the dashed "no data"
+  // meter while usage is unknown; a muted dash when Anthropic reports no such
+  // window for the account (an Ultra login has no 5-hour limit, DESIGN A72).
+  function windowCell(u, key, label, size) {
+    if (!u) { return emptyMeter(label, size); }
+    if (!u[key]) { return absentWindow(label, size); }
+    return meter({ label: label, pct: u[key].pct, resetsAt: u[key].resetsAt, size: size });
+  }
+
+  function absentWindow(label, size) {
+    return el('div', { class: 'meter meter-absent' + (size ? ' ' + size : ''), title: 'Anthropic reports no ' + label + ' window for this account' }, [
+      el('div', { class: 'meter-head' }, [el('span', { class: 'meter-label', text: label }), el('span', { class: 'meter-val', text: '—' })])
+    ]);
+  }
+
   // countdownText renders "resets 2h 13m" (or the bare "2h 13m" in short form
   // for compact meters, where the column header already says what resets).
   function countdownText(iso, short) {
@@ -1139,6 +1154,7 @@
     acct.appendChild(nameRow);
     var meta = el('div', { class: 'acct-meta' }, [chip('codex', 'kind')]);
     if (a.kind) { meta.appendChild(chip(a.kind === 'api_key' ? 'api key' : a.kind, 'kind')); }
+    if (a.plan) { meta.appendChild(chip(a.plan, 'plan', 'Plan reported for this login')); }
     if (a.alias && a.email) { meta.appendChild(el('span', { class: 'org', text: a.email, title: a.email })); }
     if (a.orgName) { meta.appendChild(el('span', { class: 'org', text: a.orgName, title: a.orgName })); }
     var freshness = usageFreshness(a);
@@ -1147,8 +1163,8 @@
     tr.appendChild(el('td', { class: 'c-acct' }, [acct]));
 
     var u = a.usage || null;
-    tr.appendChild(el('td', { class: 'c-meter c-m5' }, [u && u.fiveHour ? meter({ label: '5h', pct: u.fiveHour.pct, resetsAt: u.fiveHour.resetsAt }) : emptyMeter('5h')]));
-    tr.appendChild(el('td', { class: 'c-meter c-m7' }, [u && u.sevenDay ? meter({ label: '7d', pct: u.sevenDay.pct, resetsAt: u.sevenDay.resetsAt }) : emptyMeter('7d')]));
+    tr.appendChild(el('td', { class: 'c-meter c-m5' }, [windowCell(u, 'fiveHour', '5h')]));
+    tr.appendChild(el('td', { class: 'c-meter c-m7' }, [windowCell(u, 'sevenDay', '7d')]));
     tr.appendChild(el('td', { class: 'c-meter c-mm' }));
     if (showTokenStatus) { tr.appendChild(el('td', { class: 'c-token token-cell', text: '—' })); }
 
@@ -1187,6 +1203,9 @@
     $('add-callout-email').textContent = unsaved ? cur.email : '';
     $('add-hint').hidden = unsaved || list.length === 0;
     $('accounts-tbl').hidden = list.length === 0 && codex.length === 0;
+    // The 5-hour column goes when no account with usage has that window (A72).
+    var measured = list.concat(codex).filter(function (a) { return !!a.usage; });
+    $('accounts-tbl').classList.toggle('no-5h-column', measured.length > 0 && !measured.some(function (a) { return !!a.usage.fiveHour; }));
     // Add current Codex login: on a machine with Codex accounts (the server
     // then runs the Codex engine too).
     $('add-current-codex').hidden = !((st.auto && st.auto.codex) || codex.length);
@@ -1207,6 +1226,7 @@
       acct.appendChild(nameRow);
       var meta = el('div', { class: 'acct-meta' });
       if (a.kind) { meta.appendChild(chip(a.kind === 'api_key' ? 'api key' : a.kind, 'kind')); }
+      if (a.plan) { meta.appendChild(chip(a.plan, 'plan', 'Plan Claude Code reports for this login')); }
       if (a.baseUrl) { meta.appendChild(chip('\u2192 ' + hostOf(a.baseUrl), 'kind', 'Requests go to ' + a.baseUrl)); }
       if (a.alias && a.email) { meta.appendChild(el('span', { class: 'org', text: a.email, title: a.email })); }
       if (a.orgName) { meta.appendChild(el('span', { class: 'org', text: a.orgName, title: a.orgName })); }
@@ -1216,8 +1236,8 @@
       tr.appendChild(el('td', { class: 'c-acct' }, [acct]));
 
       var u = a.usage || null;
-      tr.appendChild(el('td', { class: 'c-meter c-m5' }, [u && u.fiveHour ? meter({ label: '5h', pct: u.fiveHour.pct, resetsAt: u.fiveHour.resetsAt }) : emptyMeter('5h')]));
-      tr.appendChild(el('td', { class: 'c-meter c-m7' }, [u && u.sevenDay ? meter({ label: '7d', pct: u.sevenDay.pct, resetsAt: u.sevenDay.resetsAt }) : emptyMeter('7d')]));
+      tr.appendChild(el('td', { class: 'c-meter c-m5' }, [windowCell(u, 'fiveHour', '5h')]));
+      tr.appendChild(el('td', { class: 'c-meter c-m7' }, [windowCell(u, 'sevenDay', '7d')]));
       tr.appendChild(el('td', { class: 'c-meter c-mm' }, [modelMeter(u)]));
       if (showTokenStatus) {
         tr.appendChild(el('td', { class: 'c-token token-cell', text: a.tokenStatus || '—' }));
@@ -1535,9 +1555,8 @@
         el('div', { class: 'acct-name' }, [el('span', { class: 'slot-chip', text: '#' + acc.number }), el('span', { class: 'primary', text: accountName(acc), title: acc.email || '' })]),
         inline
       ])]));
-      function mini(label, w) { return w ? meter({ label: label, pct: w.pct, resetsAt: w.resetsAt, size: 'compact' }) : emptyMeter(label, 'compact'); }
-      tr.appendChild(el('td', { class: 'c-mini' }, [mini('5h', u && u.fiveHour)]));
-      tr.appendChild(el('td', { class: 'c-mini' }, [mini('7d', u && u.sevenDay)]));
+      tr.appendChild(el('td', { class: 'c-mini' }, [windowCell(u, 'fiveHour', '5h', 'compact')]));
+      tr.appendChild(el('td', { class: 'c-mini' }, [windowCell(u, 'sevenDay', '7d', 'compact')]));
       var scopedMatch = (u && u.scoped || []).filter(function (w) { return res.models.indexOf('all') >= 0 || res.models.indexOf(String(w.name || '').toLowerCase()) >= 0; });
       var top = scopedMatch.slice().sort(function (x, y) { return (pctNum(y.pct) || 0) - (pctNum(x.pct) || 0); })[0];
       var modelCell;

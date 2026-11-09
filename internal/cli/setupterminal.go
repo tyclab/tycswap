@@ -67,9 +67,15 @@ func accountSetupCommand(goos, distro, exe string, sections ...string) (*exec.Cm
 		return nil, fmt.Errorf("unknown menu section")
 	}
 	if goos == "windows" {
+		if wt, err := setupLookPath("wt.exe"); err == nil {
+			return windowsTerminalCommand(wt, exe, "menu", section), nil
+		}
 		return windowsSetupCommand(exe, "menu", section), nil
 	}
 	if distro != "" {
+		if wt, err := setupLookPath("wt.exe"); err == nil {
+			return windowsTerminalCommand(wt, "wsl.exe", wslLoginArgs(distro, exe, section)...), nil
+		}
 		args := append([]string{"--distribution", distro, "--exec"}, setupLoginArgs(exe, section)...)
 		if ps, err := setupLookPath("powershell.exe"); err == nil {
 			return powershellSetupCommand(ps, "wsl.exe", args...), nil
@@ -112,8 +118,27 @@ func openRemoteAccountSetup(tokenFile string, fallback func() error, sections ..
 	if runtime.GOOS != "windows" || distro == "" {
 		return fallback()
 	}
+	if wt, err := setupLookPath("wt.exe"); err == nil {
+		return setupStart(windowsTerminalCommand(wt, "wsl.exe", wslLoginArgs(distro, "tycswap", section)...))
+	}
 	args := append([]string{"--distribution", distro, "--exec"}, setupLoginArgs("tycswap", section)...)
 	return setupStart(windowsSetupCommand("wsl.exe", args...))
+}
+
+// windowsTerminalCommand opens the setup as a new tab of the current Windows
+// Terminal window (DESIGN A81); without an open window Windows Terminal
+// opens one. The tab runs exe with args under the default profile's look,
+// instead of the fresh console Start-Process allocates.
+func windowsTerminalCommand(wt, exe string, args ...string) *exec.Cmd {
+	return exec.Command(wt, append([]string{"-w", "0", "new-tab", "--title", brandName() + " setup", exe}, args...)...)
+}
+
+// wslLoginArgs runs the setup in the distro through wsl.exe's own login
+// shell. Windows Terminal splits every argument at ";" and cannot carry a
+// double quote, which rules out the sh wrapper of setupLoginArgs there.
+// wsl.exe quotes each word for that shell itself, so exe is passed as is.
+func wslLoginArgs(distro, exe, section string) []string {
+	return []string{"--distribution", distro, "--shell-type", "login", "--", exe, "menu", section}
 }
 
 func canOpenRemoteSetup(tokenFile string) bool {

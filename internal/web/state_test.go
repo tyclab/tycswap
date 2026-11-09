@@ -113,7 +113,7 @@ func testStateExactShape(t *testing.T, codex bool) {
 		"activeNumber":  1,
 		"accounts": []any{
 			map[string]any{
-				"number": 1, "email": "alice@example.com", "alias": "work", "orgName": "Acme",
+				"number": 1, "email": "alice@example.com", "alias": "work", "orgName": "Acme", "plan": "Ultra",
 				"kind": "oauth", "isActive": true, "disabled": false, "switchable": true, "rotationEligible": true,
 				"usageStatus": "ok", "provider": "claude", "key": "claude:1",
 				"usage": map[string]any{
@@ -172,7 +172,7 @@ func testStateExactShape(t *testing.T, codex bool) {
 		// windows, never atLimit, tokenStatus or baseUrl.
 		want["accounts"] = append(want["accounts"].([]any),
 			map[string]any{
-				"number": 1, "email": "dana@example.com", "alias": "", "orgName": "Team",
+				"number": 1, "email": "dana@example.com", "alias": "", "orgName": "Team", "plan": "pro",
 				"kind": "oauth", "isActive": true, "disabled": false, "switchable": true, "rotationEligible": true,
 				"usageStatus": "ok", "provider": "codex", "key": "codex:1",
 				"usage": map[string]any{

@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/oauth"
@@ -96,6 +97,7 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 				AtLimit:         atLimit,
 				LimitingWindows: limiting,
 				BaseURL:         info.BaseURL,
+				Plan:            info.Plan,
 				SkipReason:      entry.SkipReason,
 				SkipAt:          entry.SkipAt,
 			},
@@ -140,7 +142,10 @@ func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries ma
 		num := strconv.Itoa(info.Number)
 		// Display fields come from exports, APIs and other tools' files:
 		// never print a terminal control sequence they carry.
-		tag := termsafe.Strip(displayTag(info.OrgName))
+		tag := termsafe.Strip(displayTag(info.Email, info.OrgName))
+		if plan := termsafe.Strip(info.Plan); plan != "" {
+			tag += " · " + plan
+		}
 		label := termsafe.Strip(info.Email)
 		if info.Alias != "" {
 			label = printer.Accent(termsafe.Strip(info.Alias)) + " (" + label + ")"
@@ -250,10 +255,11 @@ func renderRunningInstances(w io.Writer) {
 }
 
 // displayTag returns an account's org tag for display: the org name, or
-// "personal" (spec 02§11 _get_display_tag).
-func displayTag(orgName string) string {
-	if orgName != "" {
-		return orgName
+// "personal" (spec 02§11 _get_display_tag); Claude.ai's "<email>'s
+// Organization" placeholder is personal (DESIGN A79).
+func displayTag(email, orgName string) string {
+	if name := ccfile.DisplayOrgName(email, orgName); name != "" {
+		return name
 	}
 	return "personal"
 }

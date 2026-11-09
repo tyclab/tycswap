@@ -164,7 +164,9 @@ behavior; `TYCSWAP_NO_PROMPT=1` disables automatic prompts.
 
 The dashboard and tray also have **Add account…** and **Interactive menu…**.
 The latter opens all account and transfer actions. They open guided setup in
-a terminal; no command needs to be copied. A Windows tray connected to WSL
+a terminal; no command needs to be copied. On Windows that is a new tab in
+your current Windows Terminal window when Windows Terminal is installed, else
+a console window. A Windows tray connected to WSL
 opens setup in the distro named by its token file. The web dashboard can send
 that request through the connected Windows tray, even when the WSL service
 has no desktop session. Setup loads your configured login shell so Claude and
@@ -318,7 +320,9 @@ Markers, per line:
 - The leading number is the slot.
 - `alias (email)` — when an account has an alias, the alias precedes the email
   in parentheses (slot 2 above).
-- `[personal]` or `[Organization Name]` — the account's organization label.
+- `[personal]` or `[Organization Name]` — the account's organization label;
+  the plan Claude Code reports follows it when known (`[personal · Ultra]`).
+  Claude.ai's placeholder "<email>'s Organization" counts as personal.
 - `(active)` — the currently active login.
 - `(disabled)` — held out of auto-rotation by `tycswap disable`.
 - `at limit: <windows>` — a relevant usage window is at or over its limit; the
@@ -848,10 +852,12 @@ it in the background. `tycswap app` runs it in the foreground.
 
 On Windows, clicking the icon opens a compact **Accounts / Advanced** panel.
 Each account appears once, with separate 5-hour, weekly and reported model
-columns. Percentages are **used quota**; `—` means no measurement was reported.
-Fable at 100% does not mean the shared weekly limit is exhausted. Active
-accounts are bold blue, and **Used by** names the default login.
-Focus a row to inspect reset times and freshness. Clicking a column sorts
+columns. Each cell shows the **used quota** and the time to that window's reset
+(`55% · 8m`); `—` means no window was reported, which is how a verified Ultra
+login's 5-hour column reads. Fable at 100% does not mean the shared weekly
+limit is exhausted. Active accounts are bold blue, the row title carries the
+plan Claude Code reports, and **Used by** names the default login.
+Focus a row for the full reset wording, fetch time and status. Clicking a column sorts
 the table; it does not change which models an engine counts. To switch,
 double-click a row (or press Enter) and confirm the default login's switch.
 An account that cannot be switched to stays listed, disabled, with the reason. The panel sizes itself to its content:
@@ -1009,7 +1015,8 @@ change and usage poll, so a status line reads one file instead of running
 tycswap. Accounts are keyed by `<emailAddress>|<organizationUuid>` from
 `~/.claude.json`'s `oauthAccount` (a null organization is empty), so take the
 key from your session's live config. Each entry has `slot`, `label` (alias,
-else organization name, else email) and `usage`, null until measured, with
+else organization name, else email; the placeholder "<email>'s Organization"
+counts as none), `plan` when Claude Code reported one, and `usage`, null until measured, with
 `fetchedAt`, `pollIntervalS`, `fiveHour`/`sevenDay` `{pct, resetsAt}` and
 `scoped` per-model windows; every time is an integer epoch. Treat usage as
 stale when `now - fetchedAt >= 2 * pollIntervalS`. No key or token is ever in

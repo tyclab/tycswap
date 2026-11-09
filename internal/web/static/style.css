@@ -288,6 +288,7 @@ p { margin: 0; }
 .chip-crit { background: var(--crit-soft); color: var(--crit-ink); }
 .chip-outline { background: transparent; border-color: var(--line); color: var(--muted); }
 .chip-kind { background: transparent; border-color: var(--line); color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 500; text-transform: lowercase; }
+.chip-plan { background: var(--accent-soft-2); border-color: transparent; color: var(--accent-ink); font-weight: 600; }
 .chips { display: inline-flex; gap: 4px; flex-wrap: wrap; align-items: center; }
 
 /* ---------- meters ---------- */
@@ -707,6 +708,8 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
  .group-toolbar label, .group-toolbar .muted { font-size: var(--t13); }
  .group-toolbar .muted { flex: 1; }
  .acct-tbl.no-model-column .c-mm { display: none; }
+ .acct-tbl.no-5h-column .c-m5, .acct-tbl.no-5h-column .col-5h { display: none; }
+ .meter-absent .meter-val { color: var(--muted); font-weight: 400; }
  .recovery-list { padding: 0 1rem 1rem; }
  .recovery-row + .recovery-row { margin-top: 1rem; }
  .recovery-row .btn + .btn { margin-left: .5rem; }

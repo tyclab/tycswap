@@ -7,20 +7,52 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestRemoteSetupStartsWSLInANativeConsole(t *testing.T) {
+// With Windows Terminal installed the remote setup is a tab in it, entered
+// through wsl.exe's own login shell: no shell text reaches wt.exe's command
+// parser, which splits at ";" and drops double quotes (DESIGN A81). Without
+// it, the PowerShell console path remains.
+func TestRemoteSetupOpensWindowsTerminalOrANativeConsole(t *testing.T) {
 	oldLookPath, oldStart := setupLookPath, setupStart
 	t.Cleanup(func() { setupLookPath, setupStart = oldLookPath, oldStart })
-	setupLookPath = func(string) (string, error) {
-		t.Fatal("remote setup must not pass shell text through a terminal command parser")
+	token := `\\wsl.localhost\Nix Dev\home\user\remote.token`
+	noStore := func() error {
+		t.Fatal("remote setup used the local account store")
+		return nil
+	}
+
+	setupLookPath = func(name string) (string, error) {
+		if name == "wt.exe" {
+			return `C:\Users\me\AppData\Local\Microsoft\WindowsApps\wt.exe`, nil
+		}
 		return "", exec.ErrNotFound
 	}
 	started := false
+	setupStart = func(cmd *exec.Cmd) error {
+		want := []string{"-w", "0", "new-tab", "--title", brandName() + " setup", "wsl.exe", "--distribution", "Nix Dev", "--shell-type", "login", "--", "tycswap", "menu", "add"}
+		if !strings.HasSuffix(cmd.Path, `\wt.exe`) || !slices.Equal(cmd.Args[1:], want) {
+			t.Fatalf("setup is not a Windows Terminal tab: %v", cmd.Args)
+		}
+		for _, arg := range cmd.Args {
+			if strings.ContainsAny(arg, `;"`) {
+				t.Fatalf("argument %q cannot pass through wt.exe", arg)
+			}
+		}
+		started = true
+		return nil
+	}
+	if err := openRemoteAccountSetup(token, noStore); err != nil || !started {
+		t.Fatalf("setup started=%v, error=%v", started, err)
+	}
+
+	setupLookPath = func(string) (string, error) { return "", exec.ErrNotFound }
+	started = false
 	setupStart = func(cmd *exec.Cmd) error {
 		if !strings.Contains(cmd.Args[len(cmd.Args)-1], "-FilePath 'wsl.exe'") {
 			t.Fatalf("setup does not open a WSL console: %v", cmd.Args)
@@ -28,11 +60,7 @@ func TestRemoteSetupStartsWSLInANativeConsole(t *testing.T) {
 		started = true
 		return nil
 	}
-	err := openRemoteAccountSetup(`\\wsl.localhost\Nix Dev\home\user\remote.token`, func() error {
-		t.Fatal("remote setup used the local account store")
-		return nil
-	})
-	if err != nil || !started {
+	if err := openRemoteAccountSetup(token, noStore); err != nil || !started {
 		t.Fatalf("setup started=%v, error=%v", started, err)
 	}
 }

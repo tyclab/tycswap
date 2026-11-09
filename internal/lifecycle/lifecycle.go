@@ -33,6 +33,7 @@ import (
 
 	"github.com/mattn/go-isatty"
 
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/paths"
@@ -228,10 +229,11 @@ func timestamp(s *store.Store) string {
 	return s.Clk.Now().UTC().Format("2006-01-02T15:04:05Z")
 }
 
-// displayTag is _get_display_tag: the org name if truthy, else "personal".
-func displayTag(orgName string) string {
-	if orgName != "" {
-		return orgName
+// displayTag is _get_display_tag: the org name if truthy, else "personal";
+// Claude.ai's "<email>'s Organization" placeholder is personal (DESIGN A79).
+func displayTag(email, orgName string) string {
+	if name := ccfile.DisplayOrgName(email, orgName); name != "" {
+		return name
 	}
 	return "personal"
 }

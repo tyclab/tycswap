@@ -98,6 +98,9 @@ func buildStatusPayload(s *store.Store) map[string]any {
 	if alias != "" {
 		active["alias"] = alias
 	}
+	if plan := s.RecordPlan(accountNum, rec); plan != "" {
+		active["plan"] = plan
+	}
 	if baseURL != "" {
 		active["baseUrl"] = baseURL
 	}
@@ -153,7 +156,7 @@ func renderStatus(w io.Writer, s *store.Store) {
 		email, orgUUID = recStr(rec, "email"), recStr(rec, "organizationUuid")
 		shown = termsafe.Strip(email)
 	}
-	tag := termsafe.Strip(displayTag(recStr(rec, "organizationName")))
+	tag := termsafe.Strip(displayTag(recStr(rec, "email"), recStr(rec, "organizationName")))
 	total := len(data.Accounts)
 	baseURL := store.BaseURLFrom(data, accountNum)
 	entry := activeAccountUsage(s, live, email, orgUUID, baseURL)

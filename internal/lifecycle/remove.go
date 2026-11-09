@@ -37,7 +37,7 @@ func RemoveAccount(s *store.Store, identifier string, assumeYes bool) error {
 				emitLine("Multiple accounts found for '" + identifier + "':")
 				for _, num := range matches {
 					rec := decodeRecord(data.Accounts[num])
-					tag := displayTag(rec.str("organizationName"))
+					tag := displayTag(rec.str("email"), rec.str("organizationName"))
 					emitLine("  " + num + ": " + identifier + " " + printer.Muted("["+tag+"]"))
 				}
 				choice, ok := ActivePrompter.Prompt("Enter account number to remove: ")
@@ -156,7 +156,7 @@ func RemoveAccount(s *store.Store, identifier string, assumeYes bool) error {
 // sharing an email. An account with no org reads as [personal], never as a bare
 // email, so the two sides of a comparison are always in the same shape.
 func taggedIdentity(email, orgName string) string {
-	return email + " [" + displayTag(orgName) + "]"
+	return email + " [" + displayTag(email, orgName) + "]"
 }
 
 func sortedSlots(data *store.SequenceData) []string {
