@@ -500,7 +500,7 @@ func sampleSnapshot() *reporting.AccountsSnapshot {
 		TakenAt:      float64(testNow.Unix()),
 		Accounts: []reporting.AccountSnapshot{
 			{
-				Number: "1", Email: "alice@example.com", Alias: "work", OrgName: "Acme", OrgUUID: "org-1",
+				Number: "1", Email: "alice@example.com", Alias: "work", OrgName: "Acme", OrgUUID: "org-1", Plan: "Ultra",
 				IsActive: true, Kind: "oauth", Switchable: true, RotationEligible: true,
 				AtLimit: true, LimitingWindows: []string{"seven_day"},
 				Usage: usage.UsageEntry{
@@ -520,7 +520,7 @@ func sampleSnapshot() *reporting.AccountsSnapshot {
 				Usage: usage.UsageEntry{Sentinel: "api key"},
 			},
 			{
-				Number: "3", Email: "carol@example.com", Kind: "oauth", Switchable: false,
+				Number: "3", Email: "carol@example.com", OrgName: "carol@example.com's Organization", Kind: "oauth", Switchable: false,
 			},
 		},
 	}

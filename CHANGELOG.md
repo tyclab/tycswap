@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Added:** the plan Claude Code reports for a login (`Ultra`, `Max`, `Pro`) is recorded at `add` and on every switch, and shown as a chip in the dashboard, in the tray panel's row title, after the organization tag in `tycswap list`, and as `plan` in `list --json`, `status --json` and `statusline.json`.
+- **Changed:** Claude.ai's placeholder organization "<email>'s Organization" counts as no organization: `list` tags the account `personal`, the dashboard shows the email alone and the status line label falls back to the email instead of repeating it.
+- **Changed:** the dashboard draws a window Anthropic does not report for an account (a verified Ultra login has no 5-hour limit) as a muted dash instead of a "no data" meter, and leaves the 5-hour column out while no measured account has one; the tray panel's cells carry the reset countdown (`55% · 8m`) without selecting the row.
+- **Changed:** **Add account…** and **Interactive menu…** open as a new tab in the current Windows Terminal window when `wt.exe` is installed, through `wsl.exe --shell-type login` for a WSL engine, instead of a fresh console; the PowerShell console path remains without it.
+- **Fixed:** `tycswap add --login` stores the account as soon as the login is complete and ends Claude Code's "Press Enter to continue…" prompt itself (SIGTERM; Windows still asks for Enter), so a sign-in window closed at that prompt no longer loses the login.
+
 - **Removed:** session groups and `tycswap claude`. Plain `claude` on the default login now follows the session's model by itself, so `run --group`, every `tycswap groups` verb (switch, release, reconcile, config, capability), group settings, the group views in the menu, tray and dashboard, the routing mod and `routing.json` are gone. Running two accounts at once is still `tycswap run ACCOUNT` / `tycswap env`.
 - **Changed:** existing session groups retire on their own: once no session runs in a group's profile, the next auto-switch tick hands its login back to the account's slot (after the usual ownership check), copies its conversations into the default profile so `claude --resume` continues them, and removes the group's control files. The `group-release` event reports it. A group session still running keeps working until it exits. A group login whose refresh token the server rejects is dropped instead of holding its account forever; the account keeps its stored login.
 - **Changed:** the Claude side of **Continue in Codex / Claude** uses the default login; a Claude destination is plain `claude --model`.

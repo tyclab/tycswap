@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/termsafe"
@@ -43,8 +44,8 @@ func Key(email, orgUUID string) string { return email + "|" + orgUUID }
 // Record is one roster account. It carries no credential, so none can be
 // published.
 type Record struct {
-	Slot                                    int
-	Email, OrganizationUUID, OrgName, Alias string
+	Slot                                          int
+	Email, OrganizationUUID, OrgName, Alias, Plan string
 }
 
 // Input is everything one rebuild is made from.
@@ -68,6 +69,7 @@ type Document struct {
 type Account struct {
 	Slot  int    `json:"slot"`
 	Label string `json:"label"`
+	Plan  string `json:"plan,omitempty"`
 	Usage *Usage `json:"usage"`
 }
 
@@ -109,8 +111,8 @@ func Build(in Input) Document {
 		if _, taken := doc.Accounts[key]; taken || r.Email == "" {
 			continue
 		}
-		acct := Account{Slot: r.Slot}
-		for _, v := range []string{r.Alias, r.OrgName, r.Email} {
+		acct := Account{Slot: r.Slot, Plan: termsafe.Strip(r.Plan)}
+		for _, v := range []string{r.Alias, ccfile.DisplayOrgName(r.Email, r.OrgName), r.Email} {
 			if acct.Label = termsafe.Strip(v); acct.Label != "" {
 				break
 			}

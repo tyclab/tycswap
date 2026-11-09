@@ -193,6 +193,7 @@ Present only when applicable (additive, schemaVersion 1):
 | `alias` | string | An alias is set. |
 | `disabled` | `true` | The account is disabled. |
 | `baseUrl` | string | An API-key account carries a base URL (DESIGN A46): the whole URL its requests go to. |
+| `plan` | string | Claude Code recorded a plan name for the login (DESIGN A79), for example `Ultra`. |
 | `atLimit` | `true` | A relevant window is at/over its limit. |
 | `limitingWindows` | array of string | Emitted with `atLimit`; the windows at/over limit, in relevant-window order. |
 | `usageFetchedAt` | string (ISO-8601 UTC) | `usage` is non-null and the measurement time is known. |
@@ -302,7 +303,7 @@ The `<active-object>` always contains: `number` (int, or `null` for an
 unmanaged live account), `email`, `organizationName`, `organizationUuid`,
 `isOrganization`, `managed` (bool), `usageStatus` (same enum as `list`), and
 `usage` (object or `null`). The same additive keys `list` emits per row —
-`alias`, `baseUrl`, `atLimit`, `limitingWindows`, `usageFetchedAt`,
+`alias`, `baseUrl`, `plan`, `atLimit`, `limitingWindows`, `usageFetchedAt`,
 `usageAgeSeconds` — appear here under the same conditions. While the active
 account carries a base URL, the human output adds `Endpoint: <host> (Claude
 Code's settings.json)` and its `usageStatus` is `api_key`. When tycswap's
@@ -655,7 +656,12 @@ private scratch profile (`login.*`, mode 0700) under the backup root and runs
 replacing any `CLAUDE_CONFIG_DIR` the shell already carries (including a
 `tycswap env` pin) and dropping any `CLAUDE_SECURESTORAGE_CONFIG_DIR`. The
 terminal is handed to the login so the browser flow can be completed; no store
-or roster lock is held while it runs. When it exits, the
+or roster lock is held while it runs. Claude Code ends its login with "Login
+successful. Press Enter to continue…" and keeps running until then; `add`
+checks the scratch profile twice a second and, as soon as it holds a complete
+login, stores it and ends the login process (SIGTERM; on Windows it asks for
+that Enter instead), so the window may close at any point after the browser
+flow (DESIGN A82). A login that exits first is stored from what it left. The
 `.claude.json` and `.credentials.json` it wrote are stored exactly as `add`
 stores the live login: an identity already managed is refreshed in place,
 otherwise the account takes `--slot` or the next free slot, with `--alias`
@@ -2978,7 +2984,10 @@ is already running. Its **Start tray app** action starts `tycswap app` detached,
 with output appended to the app log. `tycswap app` itself runs in the foreground.
 The Windows panel has **Accounts** and **Advanced** tabs and an **Add account…**
 action. Browser setup opens a terminal and uses the existing provider login
-flow. Remote Windows trays use the distro in their WSL token-file path;
+flow: a new tab in the current Windows Terminal window when `wt.exe` is on the
+PATH, else a console through PowerShell `Start-Process` (DESIGN A81). Each
+account cell shows the share used and the time to its reset; the row title
+carries the plan Claude Code reports. Remote Windows trays use the distro in their WSL token-file path;
 a web setup request can be delivered to one connected tray over authenticated
 SSE. Requests are not replayed after reconnection.
 
@@ -4781,7 +4790,7 @@ Inside the backup root:
 
 | Path | Contents |
 |------|----------|
-| `sequence.json` | The account registry: `activeAccountNumber`, `lastUpdated`, the `sequence` array of slot numbers, and an `accounts` map keyed by slot (`email`, `uuid`, `organizationUuid`, `organizationName`, `added`, and optional `alias`, `kind: "api_key"`, `disabled: true`, and with `kind: "api_key"` a `baseUrl`, the endpoint the key is for). |
+| `sequence.json` | The account registry: `activeAccountNumber`, `lastUpdated`, the `sequence` array of slot numbers, and an `accounts` map keyed by slot (`email`, `uuid`, `organizationUuid`, `organizationName`, `added`, and optional `alias`, `plan` (the plan name Claude Code recorded for the login, written by `add` and refreshed by a switch, DESIGN A79), `kind: "api_key"`, `disabled: true`, and with `kind: "api_key"` a `baseUrl`, the endpoint the key is for). |
 | `settings.json` | Settings (see SETTINGS). |
 | `claude-settings.prev.json` | Present while an API-key account with a base URL is active (DESIGN A46): what the three keys of Claude Code's `settings.json` the switch owns, `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN` (written) and `env.ANTHROPIC_API_KEY` (removed), held before (`{"version": 1, "settingsPath", "keys": {"<key>": {"present", "value"?}}}`, including whether `env` existed), mode 0600. A switch onto any other account restores them from it and removes it; one that is not a complete record (version 1, an entry for `env` and each key, nothing after it) is corrupt and stops the switch. `tycswap purge` deletes it and says so first. |
 | `mappings.json` | Directory→account mappings (`schemaVersion`, `mappings` keyed by absolute path). |
@@ -4845,7 +4854,10 @@ to write it is logged and never fails the operation.
   organization as `""`. API-key accounts are found under `<email>|`.
 - **Accounts.** One per identity (the lower slot on a duplicate). `label` is
   the alias, else the organization name, else the email, control characters
-  stripped. No key, token or credential is ever written.
+  stripped; Claude.ai's placeholder "<email>'s Organization" counts as no
+  organization name (DESIGN A79). `plan` is the plan name Claude Code
+  recorded for the login, present when known. No key, token or credential is
+  ever written.
 - **Usage.** null until measured. Every time is an integer epoch; a window or
   `resetsAt` not reported is null. `pollIntervalS` is 600 when no poll is
   planned; treat the data as stale when `now - fetchedAt >= 2 * pollIntervalS`.

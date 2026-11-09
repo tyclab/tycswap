@@ -37,6 +37,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/printer"
@@ -171,7 +172,7 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		if err != nil {
 			return err
 		}
-		accountUUID, cfgOrgUUID, cfgOrgName := parseOAuthConfig(configText)
+		accountUUID, cfgOrgUUID, cfgOrgName, cfgPlan := parseOAuthConfig(configText)
 
 		// Destructive cleanup is now safe (new account data is in memory). Each
 		// branch mutates and commits the locked roster: the occupancy it was
@@ -222,6 +223,7 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		rec.set("uuid", accountUUID)
 		rec.set("organizationUuid", cfgOrgUUID)
 		rec.set("organizationName", cfgOrgName)
+		rec.set("plan", cfgPlan)
 		rec.set("added", timestamp(s))
 		carriedAlias := existingAlias
 		if alias != nil {
@@ -249,7 +251,7 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		}
 		*landed = accountNum
 
-		tag := displayTag(cfgOrgName)
+		tag := displayTag(email, cfgOrgName)
 		if s.Log != nil {
 			org := cfgOrgUUID
 			if org == "" {
@@ -378,7 +380,7 @@ func slotOccupant(data *store.SequenceData, accountNum, email, orgUUID string) *
 
 func emitSlotOccupied(occ *displaceInfo) {
 	emitWarning("Slot " + occ.num + " already occupied")
-	emitLine(occ.email + " " + printer.Muted("["+displayTag(occ.orgName)+"]"))
+	emitLine(occ.email + " " + printer.Muted("["+displayTag(occ.email, occ.orgName)+"]"))
 }
 
 // addRefreshInPlace is spec 01§5.1: the identity is already managed and no slot
@@ -409,8 +411,12 @@ func addRefreshInPlace(s *store.Store, src AddSource, data *store.SequenceData, 
 	}
 	clearDeadToken(s, accountNum, email, orgUUID)
 
-	if alias != nil {
-		rec.set("alias", normAlias)
+	if rec != nil {
+		if alias != nil {
+			rec.set("alias", normAlias)
+		}
+		_, _, _, plan := parseOAuthConfig(configText)
+		rec.set("plan", plan)
 		if err := putRecord(data, accountNum, rec); err != nil {
 			return err
 		}
@@ -424,7 +430,7 @@ func addRefreshInPlace(s *store.Store, src AddSource, data *store.SequenceData, 
 		return err
 	}
 
-	tag := displayTag(matchedOrgName)
+	tag := displayTag(email, matchedOrgName)
 	if s.Log != nil {
 		s.Log.Infof("Updated credentials for account %s: %s", accountNum, email)
 	}
@@ -461,13 +467,14 @@ func (d *displaceInfo) sameIdentity(o *displaceInfo) bool {
 	return d != nil && o != nil && d.num == o.num && d.email == o.email && d.org == o.org
 }
 
-func parseOAuthConfig(configText string) (uuid, org, orgName string) {
+// parseOAuthConfig reads the login's identity and plan from a .claude.json text.
+func parseOAuthConfig(configText string) (uuid, org, orgName, plan string) {
 	var m map[string]any
 	if json.Unmarshal([]byte(configText), &m) != nil {
-		return "", "", ""
+		return "", "", "", ""
 	}
 	oauth, _ := m["oauthAccount"].(map[string]any)
-	return strOr(oauth["accountUuid"]), strOr(oauth["organizationUuid"]), strOr(oauth["organizationName"])
+	return strOr(oauth["accountUuid"]), strOr(oauth["organizationUuid"]), strOr(oauth["organizationName"]), ccfile.PlanDisplayName(configText)
 }
 
 func strOr(v any) string {

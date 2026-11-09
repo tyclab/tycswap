@@ -70,6 +70,7 @@ func (s *Store) statuslineInput() (statusline.Input, bool, error) {
 			OrganizationUUID: strField(rec, "organizationUuid"),
 			OrgName:          strField(rec, "organizationName"),
 			Alias:            strField(rec, "alias"),
+			Plan:             s.RecordPlan(num, rec),
 		}
 		in.Records = append(in.Records, r)
 		ids[num] = usage.Identity{Email: r.Email, OrgUUID: r.OrganizationUUID}

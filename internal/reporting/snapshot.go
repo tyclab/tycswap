@@ -22,7 +22,8 @@ type AccountSnapshot struct {
 	Switchable bool
 	Usage      usage.UsageEntry
 	Alias      string
-	Disabled   bool // held out of auto-rotation (still a valid explicit target)
+	Plan       string // plan name Claude Code reports for the login, "" when unknown
+	Disabled   bool   // held out of auto-rotation (still a valid explicit target)
 	// Excludes the engine's transient quarantine: necessary, not sufficient, for an automatic pick.
 	RotationEligible bool
 	AtLimit          bool
@@ -53,7 +54,7 @@ func (a AccountSnapshot) ProviderName() string { return providerOrDefault(a.Prov
 // at one provider lands on the other.
 func (a AccountSnapshot) Key() string { return a.ProviderName() + ":" + a.Number }
 
-func (a AccountSnapshot) DisplayTag() string { return displayTag(a.OrgName) }
+func (a AccountSnapshot) DisplayTag() string { return displayTag(a.Email, a.OrgName) }
 
 // AccountsSnapshot is the coherent one-pass view of every managed account (spec
 // models.py AccountsSnapshot). ActiveNumber is "" when there is no active
@@ -101,6 +102,7 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 			Switchable:       switchable,
 			Usage:            entries[num],
 			Alias:            info.Alias,
+			Plan:             info.Plan,
 			Disabled:         disabled,
 			RotationEligible: rotationEligible(data, switchable, disabled, s.AccountKindFor(num)),
 			AtLimit:          atLimit,

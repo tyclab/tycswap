@@ -14,8 +14,6 @@
 package cli
 
 import (
-	"context"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,28 +30,6 @@ import (
 // claudeLookPath resolves the claude binary the way `tycswap run` does
 // (shutil.which, so a Windows .cmd shim resolves). A seam for the tests.
 var claudeLookPath = exec.LookPath
-
-// runClaudeLogin runs the resolved claude binary directly — never through a
-// shell, so a shell function or alias named `claude` cannot add flags tycswap
-// never chose — with env as its whole environment and the terminal inherited,
-// so the user can finish the browser flow. It returns the exit status.
-var runClaudeLogin = func(binary string, args, env []string, s ioStreams) (int, error) {
-	cmd := session.CLICommand(context.Background(), binary, args...)
-	cmd.Env = env
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.in, s.out, s.err
-	err := cmd.Run()
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
-		if code := exitErr.ExitCode(); code > 0 {
-			return code, nil
-		}
-		return 1, nil
-	}
-	if err != nil {
-		return 1, err
-	}
-	return 0, nil
-}
 
 // loginKeychain is the Keychain a scratch login may write its credential to
 // instead of <scratch>/.credentials.json: Claude Code does on macOS, under an
@@ -173,16 +149,14 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 	}
 	// The auth override variables (ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN,
 	// …) make claude skip the account login; they are scrubbed as run/env do.
-	code, err := runClaudeLogin(binary, args, loginEnv(session.ScrubAuthOverrides(os.Environ()), scratch), s)
-	if err != nil || code != 0 {
+	login, err := startClaudeLogin(binary, args, loginEnv(session.ScrubAuthOverrides(os.Environ()), scratch), s)
+	if err != nil {
 		return renderDomainError(lifecycle.ErrLoginIncomplete(), false, s.out, s.err)
 	}
 	src := lifecycle.LoginDir(scratch, kc)
-	if err := lifecycle.CheckLogin(src); err != nil {
-		return renderDomainError(err, false, s.out, s.err)
-	}
-
-	num, err := sw.AddAccountFromLogin(src, p.slot, false, p.alias)
+	num, err := storeLoginWhenComplete(src, login, func() (string, error) {
+		return sw.AddAccountFromLogin(src, p.slot, false, p.alias)
+	}, s)
 	if err != nil {
 		return renderDomainError(err, false, s.out, s.err)
 	}

@@ -6756,3 +6756,90 @@ claims, so the registry, its validation and `SafePath` stay; a recorded
 `fableContinue` capability still counts for `FableCapable`. The retirement
 code, the group scope of the store and the ownership scan's group branches
 can go once no store can hold group state.
+
+## A79. Plan names, and the organization nobody named
+
+Nothing told the operator which plan a stored login is on: the dashboard,
+the panel and `list` showed `oauth` and the organization name, and on
+2026-11-09 the question whether an account "counts as Ultra" had no answer
+on any surface. Claude Code records the plan it was told at login in its
+config (`oauthAccount.planDisplayName`, "Ultra" for the account in question,
+whose credential still says `subscriptionType: max`). The plan name is the
+display truth; which windows apply still follows the reported usage (A72).
+
+`add` records `plan` on the roster record from the login's config, a refresh
+in place rewrites it, and a switch rewrites the outgoing account's from the
+config it backs up. A record from before the key read its config backup (the
+live config for the live login) on each read, and nothing writes the key
+outside those paths: a roster a no-op command touches stays byte-identical.
+`list --json` and `status --json` rows carry `plan` when it is known, the
+dashboard shows it as a chip beside `oauth` (a Codex row shows the plan its
+usage reports), the panel appends it to the row title, `list` appends it to
+the organization tag, and `statusline.json` publishes it as `plan`.
+
+Claude.ai names a personal account's organization "<email>'s Organization".
+Shown as an organization it is noise, and as the status line label it put
+the email in twice (`@you@example.com's Organization`). Every display
+treats that exact name (either apostrophe, any case) as no organization:
+the tag is `personal`, the dashboard row shows the email alone, and the
+status line label falls back to the email. `organizationName` in JSON and
+the roster keep the recorded value; identity and dedupe never changed.
+
+## A80. Windows at a glance
+
+Two rendering choices hid what A72 established. The dashboard drew the same
+dashed "no data" meter for a window Anthropic did not report as for usage it
+could not measure, so a verified Ultra login looked broken next to one still
+carrying a 5-hour limit. And the Windows panel showed percentages only; the
+reset countdown, the fetch time and the status sat in the details box under
+the selected row, so reading any account meant clicking it first.
+
+An absent window renders as a muted dash with its label and an explanation
+on hover; the "no data" meter remains for usage that is unknown or stale,
+and for a window reported without a usable share. The 5-hour column is left
+out while no listed account reports one, as the model column already is
+without counted models. Each panel cell carries the share and, when known,
+the short time to the reset ("55% · 8m", "15% · 5d 5h"); sorting compares
+the share before the dot, the details box keeps reset wording, fetch time
+and status.
+
+## A81. Setup opens in Windows Terminal
+
+**Add account…** and **Interactive menu…** opened the guided setup through a
+hidden PowerShell `Start-Process`, which allocates a fresh console. From the
+tray, started by the logon task, that console is the legacy console host even
+where Windows Terminal is the default terminal: the operator saw a cmd-style
+window every time (2026-11-09).
+
+When `wt.exe` is on the PATH, the setup runs `wt.exe -w 0 new-tab --title
+"<name> setup" <launcher> <args…>`: a new tab in the most recent Windows
+Terminal window, under the default profile's look, or a new window when none
+is open. Windows Terminal splits every argument at `;` and cannot carry an
+embedded double quote (measured 2026-11-09: the `sh -lc 'exec "$SHELL" -lc
+"$1"'` wrapper never ran), so the distro is entered through WSL's own login
+shell instead: `wsl.exe --distribution <distro> --shell-type login -- <exe>
+menu <section>`. wsl.exe quotes each of those words for the shell itself, so
+argument boundaries survive and a quote in a word arrives literally (also
+measured); the executable is therefore passed as is. On Windows itself the
+tab runs `<exe> menu <section>`. The Start-Process path with the sh wrapper
+remains for a machine without Windows Terminal. The tray's own hidden window
+is not involved.
+
+## A82. A login is stored when it is complete
+
+Claude Code ends `auth login` with "Login successful. Press Enter to
+continue…" and keeps running until that Enter. `add --login` stored the
+result only after the process exited, so an operator who closed the setup
+window at that prompt lost the login: both processes ended with the console
+and nothing was stored (2026-11-09; it "stuck" only when the menu was closed
+through its own Close entry, because that path had pressed Enter).
+
+While the login runs, `add --login` checks the scratch profile twice a second
+with the same completeness test as before (a subscription credential and the
+OAuth identity in the profile's config). As soon as it passes, the account is
+stored, and the login process is ended with SIGTERM, which Claude Code leaves
+on cleanly; `--switch` then switches at once, so the window can close at any
+point after the browser flow. Where a signal cannot be sent (Windows), the
+command says to press Enter and waits. A process that exits first is handled
+as before: its result is stored when complete, otherwise the login is
+reported incomplete. Scratch cleanup still runs on every exit path.

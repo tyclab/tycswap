@@ -28,6 +28,7 @@ type AccountInfo struct {
 	IsActive            bool
 	Creds               string
 	Alias               string
+	Plan                string // Claude Code's plan name for the login ("Ultra"), "" when unknown
 	KeychainUnavailable bool
 	// BaseURL is the endpoint an API-key account carries (DESIGN A46), ""
 	// for none. Such an account keeps no credential in Claude Code's store,

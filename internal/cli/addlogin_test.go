@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/keychain"
@@ -46,8 +47,8 @@ func fakeClaudeLogin(args []string) int {
 	case "apikey":
 		creds = "sk-ant-api03-test-key-1"
 	default:
-		account = fmt.Sprintf(`{"oauthAccount":{"emailAddress":"%s","organizationUuid":"%s","organizationName":"%s","accountUuid":"uuid-%s"}}`,
-			email, os.Getenv("FAKE_CLAUDE_ORG"), os.Getenv("FAKE_CLAUDE_ORGNAME"), email)
+		account = fmt.Sprintf(`{"oauthAccount":{"emailAddress":"%s","organizationUuid":"%s","organizationName":"%s","accountUuid":"uuid-%s","planDisplayName":"%s"}}`,
+			email, os.Getenv("FAKE_CLAUDE_ORG"), os.Getenv("FAKE_CLAUDE_ORGNAME"), email, os.Getenv("FAKE_CLAUDE_PLAN"))
 		creds = fmt.Sprintf(`{"claudeAiOauth":{"accessToken":"%s","refreshToken":"%s","expiresAt":4102444800000,"scopes":["user:inference"]}}`,
 			os.Getenv("FAKE_CLAUDE_TOKEN"), os.Getenv("FAKE_CLAUDE_REFRESH"))
 	}
@@ -56,6 +57,11 @@ func fakeClaudeLogin(args []string) int {
 	}
 	if creds != "" && !write(filepath.Join(dir, ".credentials.json"), creds) {
 		return 70
+	}
+	if os.Getenv("FAKE_CLAUDE_MODE") == "wait" {
+		// Claude Code's "Login successful. Press Enter to continue…": the
+		// process stays up, result written, until it is ended.
+		time.Sleep(20 * time.Second)
 	}
 	return 0
 }
@@ -82,6 +88,7 @@ func newLoginFixture(t *testing.T) *loginFixture {
 	testutil.Setenv(t, "FAKE_CLAUDE_EMAIL", "b@example.com")
 	testutil.Setenv(t, "FAKE_CLAUDE_ORG", "")
 	testutil.Setenv(t, "FAKE_CLAUDE_ORGNAME", "")
+	testutil.Setenv(t, "FAKE_CLAUDE_PLAN", "")
 	testutil.Setenv(t, "FAKE_CLAUDE_TOKEN", "sk-ant-oat01-test-token-2")
 	testutil.Setenv(t, "FAKE_CLAUDE_REFRESH", "refresh-token-2")
 

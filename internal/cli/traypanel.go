@@ -43,11 +43,15 @@ func (a *appShell) panel(st web.State) tray.Panel {
 		if rowProvider(row) == "codex" {
 			r.Title = "Codex " + r.Title
 		}
+		if plan, _ := row["plan"].(string); plan != "" {
+			r.Title += " · " + plan
+		}
 		owners := panelOwners(st, row)
 		r.Active = len(owners) > 0
-		r.Cells = []string{r.Title, panelPct(windows["fiveHour"]), panelPct(windows["sevenDay"])}
+		now := time.Now()
+		r.Cells = []string{r.Title, panelCell(windows["fiveHour"], now), panelCell(windows["sevenDay"], now)}
 		for _, model := range models {
-			r.Cells = append(r.Cells, panelPct(windows["model:"+model]))
+			r.Cells = append(r.Cells, panelCell(windows["model:"+model], now))
 		}
 		owner := strings.Join(owners, ", ")
 		if owner == "" {
@@ -61,7 +65,7 @@ func (a *appShell) panel(st web.State) tray.Panel {
 			}
 			line := col.Label + ": " + panelPct(w) + " used"
 			if reset, _ := w["resetsAt"].(string); reset != "" {
-				line += " · " + panelReset(reset, time.Now())
+				line += " · " + panelReset(reset, now)
 			}
 			r.Details = append(r.Details, line)
 		}
@@ -186,6 +190,45 @@ func panelWindows(row map[string]any) map[string]map[string]any {
 
 func panelPct(w map[string]any) string {
 	return fmtPctShort(pctOf(w["pct"]))
+}
+
+// panelCell shows a window at a glance (DESIGN A80): the share used and, when
+// known, the time to its reset, "55% · 8m"; "—" for an absent window.
+func panelCell(w map[string]any, now time.Time) string {
+	text := panelPct(w)
+	if w == nil {
+		return text
+	}
+	reset, _ := w["resetsAt"].(string)
+	if short := panelCountdown(reset, now); short != "" {
+		text += " · " + short
+	}
+	return text
+}
+
+// panelCountdown is the short time to a reset ("8m", "5h 2m", "5d 5h"); ""
+// when it is unknown or due.
+func panelCountdown(value string, now time.Time) string {
+	stamp, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return ""
+	}
+	d := stamp.Sub(now)
+	switch {
+	case d <= 0:
+		return ""
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", max(1, int(d.Minutes())))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
+	}
+	return fmt.Sprintf("%dd %dh", int(d.Hours())/24, int(d.Hours())%24)
+}
+
+// cellLead is the share before a cell's reset suffix, what sorting compares.
+func cellLead(cell string) string {
+	lead, _, _ := strings.Cut(cell, " · ")
+	return lead
 }
 
 func panelReset(value string, now time.Time) string {
@@ -324,8 +367,8 @@ func sortPanelRows(p *tray.Panel) {
 				return y == "—"
 			}
 			comparison := strings.Compare(strings.ToLower(x), strings.ToLower(y))
-			if xv, ok := pctOf(x); ok {
-				if yv, valid := pctOf(y); valid {
+			if xv, ok := pctOf(cellLead(x)); ok {
+				if yv, valid := pctOf(cellLead(y)); valid {
 					switch {
 					case xv < yv:
 						comparison = -1

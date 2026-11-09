@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/cclock"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/jsonout"
@@ -179,6 +180,23 @@ func accountRec(data *store.SequenceData, num string) (map[string]any, bool) {
 		return nil, false
 	}
 	return decodeRec(raw), true
+}
+
+// refreshPlan records the plan named by the outgoing login's config, when it
+// names one (DESIGN A79); the roster write that follows carries it.
+func refreshPlan(data *store.SequenceData, num, configText string) {
+	rec, ok := accountRec(data, num)
+	if !ok {
+		return
+	}
+	plan := ccfile.PlanDisplayName(configText)
+	if plan == "" || recStr(rec, "plan") == plan {
+		return
+	}
+	rec["plan"] = plan
+	if raw, err := json.Marshal(rec); err == nil {
+		data.Accounts[num] = raw
+	}
 }
 
 func disabledFromData(data *store.SequenceData, num string) bool {

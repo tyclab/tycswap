@@ -204,6 +204,9 @@ type RowOpts struct {
 	// BaseURL is the endpoint an API-key account carries (DESIGN A46); the
 	// row has "baseUrl" only when it is set.
 	BaseURL string
+	// Plan is Claude Code's plan name for the login (DESIGN A79); the row has
+	// "plan" only when it is known.
+	Plan string
 	// SkipReason and SkipAt say why, and since when, the last fetch was skipped.
 	SkipReason string
 	SkipAt     *float64
@@ -235,6 +238,9 @@ func AccountRow(number int, email, orgName, orgUUID string, active bool, usageEn
 	}
 	if opts.BaseURL != "" {
 		row["baseUrl"] = opts.BaseURL
+	}
+	if opts.Plan != "" {
+		row["plan"] = opts.Plan
 	}
 	for k, v := range AtLimitFields(opts.AtLimit, opts.LimitingWindows) {
 		row[k] = v

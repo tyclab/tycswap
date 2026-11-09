@@ -541,7 +541,10 @@ func normalSwitchBody(s *store.Store, data *store.SequenceData, tx *switchTransa
 		s.Log.Infof("Updated config file")
 	}
 
-	// Step 5: update sequence state.
+	// Step 5: update sequence state, with the plan the outgoing login named.
+	if haveOwnConfig {
+		refreshPlan(data, currentAccount, ownConfig)
+	}
 	targetInt, _ := parseInt(targetAccount)
 	data.ActiveAccountNumber = &targetInt
 	data.LastUpdated = storeTimestamp(s)

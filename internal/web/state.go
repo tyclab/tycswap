@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/brand"
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -240,6 +241,19 @@ func activeHasBaseURL(snap *reporting.AccountsSnapshot) bool {
 // key ("<provider>:<number>", AccountSnapshot.Key) tell rows of different
 // providers apart, whose slot numbers overlap; every account route addresses
 // a row by its key.
+// rowPlan is the plan name a row shows (DESIGN A79): the roster's plan for a
+// Claude account, the plan a Codex login reports with its usage.
+func rowPlan(a reporting.AccountSnapshot) string {
+	if a.Plan != "" {
+		return a.Plan
+	}
+	if a.Usage.LastGood != nil {
+		plan, _ := a.Usage.LastGood["plan"].(string)
+		return plan
+	}
+	return ""
+}
+
 func accountRow(a reporting.AccountSnapshot) map[string]any {
 	dv := a.Usage.DecisionValue()
 	status, usage := jsonout.UsageFields(dv)
@@ -251,7 +265,7 @@ func accountRow(a reporting.AccountSnapshot) map[string]any {
 		"number":           number,
 		"email":            a.Email,
 		"alias":            a.Alias,
-		"orgName":          a.OrgName,
+		"orgName":          ccfile.DisplayOrgName(a.Email, a.OrgName),
 		"kind":             a.Kind,
 		"isActive":         a.IsActive,
 		"disabled":         a.Disabled,
@@ -270,6 +284,9 @@ func accountRow(a reporting.AccountSnapshot) map[string]any {
 		// The endpoint an API-key account sends its requests to (DESIGN
 		// A46); the page shows its host.
 		row["baseUrl"] = a.BaseURL
+	}
+	if plan := rowPlan(a); plan != "" {
+		row["plan"] = plan
 	}
 	for k, v := range jsonout.AtLimitFields(a.AtLimit, a.LimitingWindows) {
 		row[k] = v

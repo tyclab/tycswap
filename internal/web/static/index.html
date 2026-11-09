@@ -116,7 +116,7 @@
           <tr>
             <th scope="col" class="c-slot"><button class="sort-heading" data-sort="number">Slot</button></th>
             <th scope="col" class="c-acct">Account</th>
-            <th scope="col" class="c-meter"><button class="sort-heading" data-sort="fiveHour">5-hour</button></th>
+            <th scope="col" class="c-meter col-5h"><button class="sort-heading" data-sort="fiveHour">5-hour</button></th>
             <th scope="col" class="c-meter"><button class="sort-heading" data-sort="sevenDay">Weekly</button></th>
             <th scope="col" class="c-meter c-mm"><button class="sort-heading" data-sort="model">Model limits</button></th>
             <th scope="col" class="c-token col-token" hidden>Token</th>
@@ -310,7 +310,7 @@
           <dt>Active account</dt>
           <dd>The one Claude Code is using right now. The header always shows it with its three meters. Changing it is what “switching” means.</dd>
           <dt>Windows: 5h, 7d, model</dt>
-          <dd>Anthropic limits each account per <strong>rolling 5-hour window</strong> and per <strong>7-day window</strong>, and some plans add a <strong>per-model weekly window</strong>. A meter shows the share used; the small text underneath says when that window resets. <span class="good">green</span> = plenty left, <span class="warn">amber</span> = getting close, <span class="crit">red</span> = at the limit.</dd>
+          <dd>Anthropic limits each account per <strong>rolling 5-hour window</strong> and per <strong>7-day window</strong>, and some plans add a <strong>per-model weekly window</strong>. A meter shows the share used; the small text underneath says when that window resets. <span class="good">green</span> = plenty left, <span class="warn">amber</span> = getting close, <span class="crit">red</span> = at the limit. A window Anthropic does not report for an account (a verified Ultra login has no 5-hour limit) shows a dash, and the 5-hour column is left out while no listed account has one. The plan chip next to <code>oauth</code> is the plan Claude Code reports for that login.</dd>
           <dt>At limit / eligible</dt>
           <dd>An account is <em>at limit</em> when any counted window is at 100 %. It is <em>eligible for rotation</em> when it is enabled, has stored credentials and is not the active one; those are the accounts Auto mode may pick.</dd>
           <dt>The thresholds</dt>
