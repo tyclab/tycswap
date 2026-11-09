@@ -6823,7 +6823,9 @@ argument boundaries survive and a quote in a word arrives literally (also
 measured); the executable is therefore passed as is. On Windows itself the
 tab runs `<exe> menu <section>`. The Start-Process path with the sh wrapper
 remains for a machine without Windows Terminal. The tray's own hidden window
-is not involved.
+is not involved. The earlier setup design chose Start-Process to keep shell
+text away from Windows Terminal's parser; the tab keeps that rule by handing
+wt.exe no shell text at all.
 
 ## A82. A login is stored when it is complete
 
