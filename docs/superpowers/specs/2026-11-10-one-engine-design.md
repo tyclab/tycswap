@@ -102,9 +102,10 @@ providers: `codexEnabled` stays the standing choice "rotate Codex too".
   `enabledChange: {at, by, to}` in `autoswitch_state.json` and appends an
   `auto-on` / `auto-off` line to the record (D7). `by` is the surface or
   `manual-switch`.
-- A disabled tick does nothing but stamp the heartbeat (D5): no usage
-  request, no switch, no Codex tick, no group retirement, exit status 2 with
-  one `no-switch` `disabled` event. A foreground `tycswap auto` (loop or
+- A disabled tick does nothing but stamp the heartbeat (D5) and retire a
+  former session group (that never moves the default login, and `add` tells
+  its user the next tick does it): no usage request, no switch, no Codex
+  tick, exit status 2 with one `no-switch` `disabled` event. A foreground `tycswap auto` (loop or
   `--once`) that finds it off says so on stderr and names `tycswap auto on`.
   `--dry-run` still decides.
 - Unreadable `settings.json`: defaults apply, so auto-switch is off; the tick

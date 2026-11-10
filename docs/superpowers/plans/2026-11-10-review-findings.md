@@ -26,6 +26,14 @@ evidence.
 - The tool's own log file and the output of the hook and status line ticks
   are not shipped anywhere; D5 (`--headless` prints every event) closes that.
 
+## From the review of the off-switch change (v0.10.0)
+
+| ID | Defect | Where | Verdict | Ev | Series |
+| --- | --- | --- | --- | --- | --- |
+| OFF-1 | a tick already past the gate can still switch after Stop or `auto off` | autoswitch/tick.go | FIX D2 (the guarded switch) |  | E |
+| OFF-2 | a tray click that only ends a dashboard dry run says "Auto-switch off" | cli/appshell.go, webfacades.go | FIX D5 (`SetEnabled`) |  | E |
+| OFF-3 | an unreadable `settings.json` reads as off with no stored warning; `auto on` fails on it | settings/settings.go | FIX D1 D7 |  | E |
+
 ## Engine lane
 
 | ID | Defect | Where | Verdict | Ev | Series |
