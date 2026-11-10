@@ -211,10 +211,11 @@ func (a *autoFacade) Events() <-chan web.AutoEventView { return a.stream }
 func (a *autoFacade) View() web.AutoView {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	fresh := settings.Load(a.sw.BackupDir())
 	s := a.settings
 	threshold := a.threshold
 	if !a.running {
-		s = settings.Load(a.sw.BackupDir())
+		s = fresh
 		threshold = s.SevenDayThreshold
 	}
 	// Each quarantine entry carries its reason and the engine's RFC3339 "at"
@@ -229,10 +230,12 @@ func (a *autoFacade) View() web.AutoView {
 	}
 	events := make([]web.AutoEventView, len(a.events)) // never nil: the UI wants []
 	copy(events, a.events)
-	// ManagedBy stays empty: older clients lock the toggle on it (DESIGN A83).
+	// An engine whose ticks all report disabled is not running to the user;
+	// ManagedBy stays empty, older clients lock the toggle on it (DESIGN A83).
+	hosted := a.running && (a.dryRun || fresh.Enabled)
 	v := web.AutoView{
 		Available:  true,
-		Running:    a.running || (a.managedBy != "" && s.Enabled),
+		Running:    hosted || (a.managedBy != "" && fresh.Enabled),
 		DryRun:     a.dryRun,
 		StartedAt:  a.startedAt,
 		Threshold:  threshold,
@@ -245,7 +248,7 @@ func (a *autoFacade) View() web.AutoView {
 		// with): the slider moves the Claude 7d bar only.
 		v.Codex = &web.CodexAutoView{
 			Enabled:   s.CodexEnabled,
-			Running:   a.running && a.codexEngine != nil,
+			Running:   hosted && a.codexEngine != nil,
 			Threshold: codexThreshold(s),
 			LastTick:  a.codexLast,
 		}
@@ -272,6 +275,9 @@ func (a *autoFacade) startHosted(dryRun bool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.running {
+		if !dryRun && !a.dryRun {
+			return nil // a real engine runs: turning the setting on was the start
+		}
 		return cerr.Validation("auto-switch is already running")
 	}
 	if stillRunning(a.done) || stillRunning(a.codexDone) {

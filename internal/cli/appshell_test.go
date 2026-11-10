@@ -1002,3 +1002,40 @@ func TestTrayManagedToggleWritesSetting(t *testing.T) {
 		t.Fatalf("notifications = %q", notes)
 	}
 }
+
+// TestTrayClickAfterCLIOffTurnsOn: `tycswap auto off` while the app hosts an
+// engine unchecks the tray item, and the next click turns auto-switch back on
+// instead of stopping the engine (DESIGN A83).
+func TestTrayClickAfterCLIOffTurnsOn(t *testing.T) {
+	a := newAutoFacade(fixtureSwitcher(t), nil)
+	engines := countingEngines(a)
+	t.Cleanup(func() { a.stopKeepingChoice() })
+	root := a.sw.BackupDir()
+	if err := a.Start(false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := settings.SetSetting(root, "autoswitch.enabled", "false"); err != nil {
+		t.Fatal(err)
+	}
+	ft := &fakeTray{}
+	sh := newAppShell(ft, shellActions{
+		AutoRunning: func() bool { return a.View().Running },
+		AutoStart:   func() error { return a.Start(false) },
+		AutoStop:    a.Stop,
+	})
+	st := sampleState()
+	v := a.View()
+	st.Auto = &v
+	sh.update(st)
+	if item, _ := ft.item("auto"); item.Checked {
+		t.Fatalf("item checked while the setting is off: %+v", item)
+	}
+	sh.click("auto")
+	item, _ := ft.item("auto")
+	if !settings.Load(root).Enabled || !item.Checked || engines.built() != 1 {
+		t.Fatalf("after the click: enabled %v, item %+v, %d engines", settings.Load(root).Enabled, item, engines.built())
+	}
+	if notes := strings.Join(ft.notesNow(), "\n"); !strings.Contains(notes, "Auto-switch on |") {
+		t.Fatalf("notifications = %q", notes)
+	}
+}

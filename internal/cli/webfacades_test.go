@@ -1130,6 +1130,44 @@ func TestFacadeResumeFollowsSetting(t *testing.T) {
 	}
 }
 
+// TestFacadeViewFollowsTheSetting: with no owner, `tycswap auto off` while
+// the app hosts an engine makes the view say stopped, Codex tile included,
+// since every tick now reports disabled; Start then turns the setting back on
+// without building a second engine. A dry run shows as running whatever the
+// setting, and a real Start beside it is still refused.
+func TestFacadeViewFollowsTheSetting(t *testing.T) {
+	a, _ := codexFacade(t, &fakeCodexSource{activePct: 10, accounts: 2})
+	engines := countingEngines(a)
+	root := a.sw.BackupDir()
+	if err := a.Start(false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := settings.SetSetting(root, "autoswitch.enabled", "false"); err != nil {
+		t.Fatal(err)
+	}
+	if v := a.View(); v.Running || v.Codex == nil || v.Codex.Running {
+		t.Fatalf("setting off with the engine hosted: running %v, codex %+v; want both stopped", v.Running, v.Codex)
+	}
+	if err := a.Start(false); err != nil {
+		t.Fatalf("Start with the engine hosted: %v", err)
+	}
+	if v := a.View(); !settings.Load(root).Enabled || !v.Running || !v.Codex.Running || engines.built() != 1 {
+		t.Fatalf("after Start: enabled %v, running %v, codex %+v, %d engines", settings.Load(root).Enabled, v.Running, v.Codex, engines.built())
+	}
+	if err := a.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Start(true); err != nil {
+		t.Fatal(err)
+	}
+	if v := a.View(); settings.Load(root).Enabled || !v.Running || !v.DryRun {
+		t.Fatalf("dry run with the setting off: enabled %v, view %+v", settings.Load(root).Enabled, v)
+	}
+	if err := a.Start(false); err == nil || !strings.Contains(err.Error(), "already running") {
+		t.Fatalf("Start beside a dry run = %v, want \"already running\"", err)
+	}
+}
+
 // TestCodexLoopSkipsWhileDisabled: the hosted Codex loop asks the setting on
 // every round, so `tycswap auto off` while the app runs stops Codex ticks
 // too; a dry run still decides, as the Claude engine's does.

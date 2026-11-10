@@ -887,10 +887,12 @@ func (s *Server) settingsViews() []SettingView {
 // state document. The Codex keys are read when a Codex engine starts: this
 // page's Start runs one beside the Claude engine when the dashboard started
 // with Codex accounts (A47), `tycswap auto` runs one, and the terminal
-// dashboard's engine never does. Every other key, a new one included, waits
-// for the next engine start.
+// dashboard's engine never does. autoswitch.enabled is read by every tick
+// (A83); every other key, a new one included, waits for the next engine start.
 func settingApplies(key string) string {
 	switch key {
+	case "autoswitch.enabled":
+		return "Applies at the next tick."
 	case "autoswitch.handoverWaitMinutes":
 		return "Applies at the next usage update."
 	case modelSettingKey:

@@ -6877,7 +6877,10 @@ The rule: one key, `autoswitch.enabled` in `settings.json`, default off
   with one INFO log line. A dry run writes nothing, and neither does its
   stop. Quitting the app or `tycswap web` stops the hosted engine without
   writing; the app starts it again at launch while the key is on, which is
-  A43's resume through the setting.
+  A43's resume through the setting. A hosted engine shows as running only
+  while the key is on (a dry run always), so `tycswap auto off` from a shell
+  unchecks the toggle, and a Start beside a running engine only turns the
+  key back on.
 - An external scheduler no longer locks the toggle. `TYCSWAP_AUTO_MANAGED_BY`
   now only means "do not host an engine here": Start and Stop write the key
   and start nothing, the view's `running` is the key, `available` is always

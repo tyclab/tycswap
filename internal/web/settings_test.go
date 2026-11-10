@@ -352,3 +352,57 @@ func TestAppJS_ModelPicker(t *testing.T) {
 		t.Fatal("the Settings tab does not repaint when the reported model windows change")
 	}
 }
+
+// autoswitch.enabled is read by every tick, so its row on the Settings tab
+// says a save applies at the next tick, not at a restart (DESIGN A83).
+func TestEnabledSettingAppliesAtTheNextTick(t *testing.T) {
+	h := newHarness(t)
+	h.set.mu.Lock()
+	h.set.views = append([]SettingView{{Key: "autoswitch.enabled", Kind: "bool", Value: false, Default: false}}, h.set.views...)
+	h.set.mu.Unlock()
+	var body struct {
+		Settings []SettingView `json:"settings"`
+	}
+	if err := json.Unmarshal(readBody(t, h.get("/api/settings")), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Settings) == 0 || body.Settings[0].Key != "autoswitch.enabled" || body.Settings[0].Applies != "Applies at the next tick." {
+		t.Fatalf("enabled row = %+v", body.Settings)
+	}
+}
+
+// The Settings tab names the on/off "Auto-switch", in its aria label and in
+// the Save / Reset toasts, not the key's leaf "Enabled".
+const settingLabelScript = `'use strict';
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const js = fs.readFileSync(process.argv[2], 'utf8');
+const a = js.indexOf('  var SETTING_LABELS = {'), b = js.indexOf('  function unitFor(', a);
+assert.ok(a >= 0 && b > a, 'label block');
+const ctx = {};
+vm.runInNewContext(js.slice(a, b), ctx);
+assert.equal(ctx.humanLabel('autoswitch.enabled'), 'Auto-switch');
+assert.equal(ctx.humanLabel('autoswitch.codexEnabled'), 'Codex auto-switch');
+`
+
+func TestAppJSSettingLabelNamesTheOnOff(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed; setting label test skipped")
+	}
+	src, err := staticFS.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	app, script := filepath.Join(dir, "app.js"), filepath.Join(dir, "settinglabel.cjs")
+	for path, body := range map[string][]byte{app: src, script: []byte(settingLabelScript)} {
+		if err := os.WriteFile(path, body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if out, err := exec.Command(node, script, app).CombinedOutput(); err != nil {
+		t.Fatalf("setting label: %v\n%s", err, out)
+	}
+}

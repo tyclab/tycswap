@@ -1720,6 +1720,7 @@
 
 
   var SETTING_LABELS = {
+    'autoswitch.enabled': 'Auto-switch',
     'autoswitch.fiveHourThreshold': '5h threshold', 'autoswitch.sevenDayThreshold': '7d threshold',
     'autoswitch.modelThreshold': 'Model threshold', 'autoswitch.intervalSeconds': 'Poll interval',
     'autoswitch.codexEnabled': 'Codex auto-switch', 'autoswitch.codexThreshold': 'Codex threshold',
