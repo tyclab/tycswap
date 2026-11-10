@@ -10,6 +10,7 @@ package cli
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
 
@@ -157,7 +158,9 @@ type autoEngine interface {
 // (DESIGN A47): one Start and one Stop drive both, and both feed one event
 // log.
 type autoFacade struct {
-	managedBy string // immutable owner configured before the dashboard starts
+	// managedBy names an external tick scheduler (TYCSWAP_AUTO_MANAGED_BY): this
+	// host then runs no real engine, and Start and Stop only write the setting (A83).
+	managedBy string
 	sw        *core.Switcher
 	clk       clock.Clock
 	// codexSw is the Codex switcher; nil on an install that had no Codex
@@ -168,9 +171,6 @@ type autoFacade struct {
 	// newCodexEngine builds the Codex engine at Start, nil for none: the
 	// constructor `tycswap auto` uses. Tests substitute one.
 	newCodexEngine func(s settings.AutoSwitchSettings) *codexauto.AutoSwitcher
-	// statePath is where the app records the user's on/off choice (DESIGN
-	// A43); "" in `web`, which neither records nor resumes.
-	statePath string
 
 	mu        sync.Mutex
 	engine    autoEngine
@@ -229,10 +229,10 @@ func (a *autoFacade) View() web.AutoView {
 	}
 	events := make([]web.AutoEventView, len(a.events)) // never nil: the UI wants []
 	copy(events, a.events)
+	// ManagedBy stays empty: older clients lock the toggle on it (DESIGN A83).
 	v := web.AutoView{
-		Available:  a.managedBy == "",
-		ManagedBy:  a.managedBy,
-		Running:    a.running,
+		Available:  true,
+		Running:    a.running || (a.managedBy != "" && s.Enabled),
 		DryRun:     a.dryRun,
 		StartedAt:  a.startedAt,
 		Threshold:  threshold,
@@ -253,10 +253,22 @@ func (a *autoFacade) View() web.AutoView {
 	return v
 }
 
+// Start turns auto-switch on and hosts the engines, unless an external
+// scheduler runs the ticks. A dry run writes nothing, owner or not.
 func (a *autoFacade) Start(dryRun bool) error {
-	if a.managedBy != "" {
-		return cerr.Validation("auto-switch is managed by %s", a.managedBy)
+	if !dryRun {
+		if err := a.setEnabled(true); err != nil {
+			return err
+		}
+		if a.managedBy != "" {
+			return nil
+		}
 	}
+	return a.startHosted(dryRun)
+}
+
+// startHosted runs the engines in this process; it never writes the setting.
+func (a *autoFacade) startHosted(dryRun bool) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.running {
@@ -271,9 +283,6 @@ func (a *autoFacade) Start(dryRun bool) error {
 	now := clock.Seconds(a.clk)
 	done := make(chan struct{})
 	a.engine, a.done, a.running, a.dryRun, a.startedAt, a.threshold, a.settings = engine, done, true, dryRun, &now, s.SevenDayThreshold, s
-	if !dryRun {
-		a.remember(true)
-	}
 	go func() {
 		defer close(done)
 		engine.RunLoop()
@@ -291,9 +300,30 @@ func (a *autoFacade) Start(dryRun bool) error {
 	codexEngine := a.newCodexEngine(s)
 	a.codexEngine, a.codexDone = codexEngine, nil
 	a.stopCodex = startCodexLoop(true, time.Duration(s.IntervalSeconds*float64(time.Second)), func(ctx context.Context) {
-		retireGroups(a.sw, a.onEvent, dryRun)
-		a.codexTick(ctx, codexEngine, dryRun)
+		a.codexRound(ctx, codexEngine, dryRun)
 	})
+	return nil
+}
+
+// codexRound is one round of the hosted Codex loop. It reads the setting
+// each time, as the Claude engine's tick does, so `tycswap auto off` holds
+// Codex too; a dry run still decides (DESIGN A83).
+func (a *autoFacade) codexRound(ctx context.Context, eng *codexauto.AutoSwitcher, dryRun bool) {
+	if !dryRun && !autoSwitchOn(a.sw.BackupDir()) {
+		return
+	}
+	retireGroups(a.sw, a.onEvent, dryRun)
+	a.codexTick(ctx, eng, dryRun)
+}
+
+// setEnabled writes and logs autoswitch.enabled, the on/off every tick reads.
+func (a *autoFacade) setEnabled(on bool) error {
+	if _, err := settings.SetSetting(a.sw.BackupDir(), "autoswitch.enabled", strconv.FormatBool(on)); err != nil {
+		return err
+	}
+	if a.sw.Log != nil {
+		a.sw.Log.Info("Auto-switch turned " + onOffWord(on) + " (app)")
+	}
 	return nil
 }
 
@@ -310,24 +340,39 @@ func stillRunning(done chan struct{}) bool {
 	}
 }
 
-// Stop asks the engine to stop, cancels the Codex loop, and waits (up to
-// autoStopWait for both) for the loops to return, so a Start right after it
-// can never overlap two engines. When a tick in flight outlasts the wait,
-// the engines are stopping all the same: Stop reports it with a lock-kind
-// error (409) and Start refuses until both loops have returned.
+// Stop turns auto-switch off, unless what it ends is a hosted dry run, which
+// never turned it on, then stops the hosted engines. With an external owner
+// and nothing hosted, writing the setting is the whole stop. The engines stop
+// even when the write fails, so an error never leaves one running.
 func (a *autoFacade) Stop() error {
 	a.mu.Lock()
-	if !a.running || a.engine == nil {
+	hosted := a.running && a.engine != nil
+	var werr error
+	if !hosted || !a.dryRun {
+		werr = a.setEnabled(false)
+	}
+	if !hosted {
 		a.mu.Unlock()
+		if werr != nil || a.managedBy != "" {
+			return werr
+		}
 		return cerr.Validation("auto-switch is not running")
 	}
+	if err := a.stopLocked(); err != nil {
+		return err
+	}
+	return werr
+}
+
+// stopLocked, called with a.mu held on a running engine, releases it, stops
+// both loops and waits (up to autoStopWait) for them, so a Start right after
+// it never overlaps two engines. A tick that outlasts the wait is a
+// lock-kind error (409); Start refuses until both loops have returned.
+func (a *autoFacade) stopLocked() error {
 	engine, done, stopCodex := a.engine, a.done, a.stopCodex
 	codexDone := make(chan struct{})
 	a.running, a.engine, a.startedAt = false, nil, nil
 	a.codexEngine, a.stopCodex, a.codexDone = nil, nil, codexDone
-	if !a.dryRun {
-		a.remember(false)
-	}
 	a.mu.Unlock()
 	engine.Stop()
 	go func() {
@@ -345,23 +390,29 @@ func (a *autoFacade) Stop() error {
 	return nil
 }
 
-// remember is a no-op: the on/off is autoswitch.enabled now; kept until its callers go.
-func (a *autoFacade) remember(bool) {}
-
-// stopKeepingChoice ends a running engine as the app exits, the way `tycswap
-// web` does, without recording "off": quitting the app is not turning
-// auto-switch off, and the next start resumes it (A43).
+// stopKeepingChoice ends the hosted engines as the app or `tycswap web`
+// exits, without writing "off": quitting is not turning auto-switch off, and
+// the next app start resumes it (A43, A83).
 func (a *autoFacade) stopKeepingChoice() {
 	a.mu.Lock()
-	a.statePath = ""
-	a.mu.Unlock()
-	if a.View().Running {
-		_ = a.Stop()
+	if !a.running || a.engine == nil {
+		a.mu.Unlock()
+		return
 	}
+	_ = a.stopLocked()
 }
 
-// resume is a no-op: the choice it read moved to autoswitch.enabled; kept until its caller goes.
-func (a *autoFacade) resume() (started bool, err error) { return false, nil }
+// resume starts the hosted engines when auto-switch is on and nobody else
+// schedules ticks, so it survives an app restart (A43, through A83).
+func (a *autoFacade) resume() (started bool, err error) {
+	if a.managedBy != "" || !autoSwitchOn(a.sw.BackupDir()) {
+		return false, nil
+	}
+	if err := a.startHosted(false); err != nil {
+		return false, err
+	}
+	return true, nil
+}
 
 func (a *autoFacade) Wake() error {
 	a.mu.Lock()

@@ -34,6 +34,9 @@ const autoProg = "tycswap auto"
 
 // autoCommand handles `tycswap auto ...` (spec 08§7.7). argv excludes "auto".
 func autoCommand(_ string, argv []string, s ioStreams) int {
+	if len(argv) > 0 && (argv[0] == "on" || argv[0] == "off" || argv[0] == "status") {
+		return autoOnOffCommand(argv[0], argv[1:], s)
+	}
 	var once, jsonMode, dryRun, debug, observe bool
 	var interval, cooldown *float64
 	// One flag per bar, named after the window it governs (DESIGN A34).
@@ -134,9 +137,20 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		Model:             model,
 	})
 
+	onEvent := humanEmit(s.out)
+	if jsonMode {
+		onEvent = jsonlEmit(s.out)
+	}
+	root := sw.BackupDir()
 	if observe {
 		raw, _ := io.ReadAll(io.LimitReader(s.in, 1<<20))
-		if !observeTicks(sw, raw, merged) {
+		on := autoSwitchOn(root)
+		if !observeTicks(sw, raw, merged, on) {
+			if !on {
+				// Said as a tick would say it, without building one (DESIGN A83).
+				onEvent(autoswitch.NoSwitchEvent{Ts: sw.Clk.Now().UTC().Format("2006-01-02T15:04:05") + "Z",
+					Reason: "disabled", Detail: autoswitch.DisabledDetail})
+			}
 			return int(autoswitch.NoAction)
 		}
 	}
@@ -149,10 +163,6 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		defaultSettings, reserved = reporting.DefaultSessionPolicy(sw.Store, merged)
 	}
 
-	onEvent := humanEmit(s.out)
-	if jsonMode {
-		onEvent = jsonlEmit(s.out)
-	}
 	// The Codex engine emits from its own goroutine in loop mode; one mutex
 	// keeps the two engines' lines whole on the shared stdout.
 	var outMu sync.Mutex
@@ -167,6 +177,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		autoswitch.WithLogger(sw.Log),
 		autoswitch.WithClock(sw.Clk),
 		autoswitch.WithReserved(reserved),
+		autoswitch.WithEnabled(func() bool { return autoSwitchOn(root) }),
 	)
 
 	// Codex rides along in this process as its own small engine (claude-swap
@@ -186,14 +197,22 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		emitCodexTick(s.out, tick, jsonMode)
 	}
 
+	// Codex and the group retirement follow the setting each round, as the
+	// Claude tick does; a dry run still decides (DESIGN A83).
+	codexRound := func(ctx context.Context) {
+		if !dryRun && !autoSwitchOn(root) {
+			return
+		}
+		retireGroups(sw, onEvent, dryRun)
+		runCodexTick(ctx)
+	}
 	if once {
 		// Claude first, then Codex; the exit status is the Claude outcome.
 		code := int(engine.Tick())
 		// A status line's tick is about latency; group retirement and Codex
 		// wait for the scheduled one (DESIGN A78).
 		if !observe {
-			retireGroups(sw, onEvent, dryRun)
-			runCodexTick(context.Background())
+			codexRound(context.Background())
 		}
 		return code
 	}
@@ -215,14 +234,74 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 			pctText(merged.FiveHourThreshold), pctText(merged.SevenDayThreshold), pctText(merged.ModelThreshold),
 			merged.IntervalSeconds, dry)))
 	}
-	stopCodex := startCodexLoop(true,
-		time.Duration(merged.IntervalSeconds*float64(time.Second)), func(ctx context.Context) {
-			retireGroups(sw, onEvent, dryRun)
-			runCodexTick(ctx)
-		})
+	stopCodex := startCodexLoop(true, time.Duration(merged.IntervalSeconds*float64(time.Second)), codexRound)
 	code := engine.RunLoop()
 	stopCodex()
 	return code
+}
+
+// autoSwitchOn is autoswitch.enabled, the one on/off every tick path reads
+// afresh (DESIGN A83).
+func autoSwitchOn(root string) bool { return settings.Load(root).Enabled }
+
+// autoOnOffCommand is `tycswap auto on [--if-unset] | off | status [--json]`
+// (DESIGN A83). The setting is written through settings, under its lock.
+func autoOnOffCommand(verb string, rest []string, s ioStreams) int {
+	var ifUnset, jsonMode bool
+	for _, tok := range rest {
+		switch {
+		case verb == "on" && tok == "--if-unset":
+			ifUnset = true
+		case verb == "status" && tok == "--json":
+			jsonMode = true
+		default:
+			return subError(autoProg, s.err, "unrecognized arguments: "+tok)
+		}
+	}
+	sw, err := constructSwitcher(false, s.err)
+	if err != nil {
+		return autoError(err, jsonMode, s)
+	}
+	if code, blocked := guardRoot(s.err); blocked {
+		return code
+	}
+	root := sw.BackupDir()
+	switch {
+	case verb == "status":
+		on := autoSwitchOn(root)
+		if jsonMode {
+			writeJSONCompact(s.out, struct {
+				SchemaVersion int  `json:"schemaVersion"`
+				Enabled       bool `json:"enabled"`
+			}{jsonout.SchemaVersion, on})
+			return 0
+		}
+		fmt.Fprintln(s.out, "Auto-switch: "+onOffWord(on))
+		return 0
+	case ifUnset:
+		seeded, err := settings.SeedSetting(root, "autoswitch.enabled", "true")
+		if err != nil {
+			return autoError(err, false, s)
+		}
+		if !seeded {
+			fmt.Fprintln(s.out, "Auto-switch left as it was: "+onOffWord(autoSwitchOn(root))+".")
+			return 0
+		}
+	default:
+		if _, err := settings.SetSetting(root, "autoswitch.enabled", strconv.FormatBool(verb == "on")); err != nil {
+			return autoError(err, false, s)
+		}
+	}
+	sw.Log.Info("Auto-switch turned " + verb + " (cli)")
+	fmt.Fprintln(s.out, "Auto-switch "+verb+".")
+	return 0
+}
+
+func onOffWord(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
 }
 
 // emitCodexTick prints one Codex tick in the engine's event contract
@@ -289,6 +368,14 @@ func renderAutoHelp(out io.Writer) {
 	fmt.Fprintln(out, "                  [--five-hour-threshold PCT] [--seven-day-threshold PCT]")
 	fmt.Fprintln(out, "                  [--model-threshold PCT] [--cooldown SECONDS] [--model NAMES]")
 	fmt.Fprintln(out, "                  [--dry-run] [--debug] [--observe]")
+	fmt.Fprintln(out, "       tycswap auto on [--if-unset]")
+	fmt.Fprintln(out, "       tycswap auto off")
+	fmt.Fprintln(out, "       tycswap auto status [--json]")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Auto-switch is off until `tycswap auto on` (autoswitch.enabled). Every tick")
+	fmt.Fprintln(out, "reads it first: off, a tick looks at no account and reports no-switch")
+	fmt.Fprintln(out, "\"disabled\" (exit 2 with --once); --dry-run still shows what it would do.")
+	fmt.Fprintln(out, "`on --if-unset` turns it on only when nothing has set it yet.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Each window has a bar of its own: the 5h window bursts and refills in hours,")
 	fmt.Fprintln(out, "the 7d one is the account's whole budget, and a per-model week counts only")
@@ -304,7 +391,7 @@ func renderAutoHelp(out io.Writer) {
 	fmt.Fprintln(out, "Exit codes with --once:")
 	fmt.Fprintln(out, "  0  switched to another account")
 	fmt.Fprintln(out, "  1  error (network trouble, lock contention, ...)")
-	fmt.Fprintln(out, "  2  no action needed")
+	fmt.Fprintln(out, "  2  no action needed, or auto-switch is off")
 	fmt.Fprintln(out, "  3  blocked: wanted to switch but no viable target / all exhausted")
 }
 

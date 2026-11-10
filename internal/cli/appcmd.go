@@ -295,8 +295,6 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	ctx, cancel := notifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	defer claimSigint()()
-	// The app — and only the app — remembers whether auto-switch was on (A43).
-	d.auto.statePath = appStatePath(d.sw.BackupDir())
 	// The token file lives exactly as long as the process that honours the
 	// token. A write failure is said and not fatal, like the lock: the
 	// local app works without a remote.
@@ -524,15 +522,15 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	return 0
 }
 
-// resumeAutoSwitch turns auto-switch back on when the user left it on (A43),
-// and says so on the app's output.
+// resumeAutoSwitch starts the engine when auto-switch is on (A43, A83), and
+// says so on the app's output.
 func resumeAutoSwitch(d *dashboard, s ioStreams) {
 	started, err := d.auto.resume()
 	switch {
 	case err != nil:
-		fmt.Fprintln(s.err, "auto-switch was on when the app last ran, but could not resume: "+err.Error())
+		fmt.Fprintln(s.err, "auto-switch is on, but could not start: "+err.Error())
 	case started:
-		fmt.Fprintln(s.err, "Auto-switch resumed: it was on when the app last ran.")
+		fmt.Fprintln(s.err, "Auto-switch resumed: it is on (tycswap auto off turns it off).")
 	}
 }
 

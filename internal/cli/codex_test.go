@@ -809,6 +809,10 @@ func TestAutoOnceQuietCodexTickPrintsNothing(t *testing.T) {
 		return api.UsageFetch{Usage: map[string]any{"five_hour": map[string]any{"pct": 10.0}, "plan": "pro"}}
 	})
 	writeLiveAuth(t, seedOne(t))
+	// On, or the Codex tick would not run at all (DESIGN A83).
+	if _, err := settings.SetSetting(paths.GetBackupRoot(), "autoswitch.enabled", "true"); err != nil {
+		t.Fatal(err)
+	}
 	_, out, _ := runCodex(t, "", "auto", "--once", "--json")
 	if strings.Contains(out, `"event":"codex"`) {
 		t.Errorf("an ok tick outside --dry-run was printed: %q", out)

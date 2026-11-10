@@ -214,9 +214,7 @@ func webCommand(prog string, argv []string, s ioStreams) int {
 	}
 	fmt.Fprintln(s.err, "Press Ctrl-C to stop.")
 	serveErr := srv.Serve(ctx)
-	if auto.View().Running {
-		_ = auto.Stop()
-	}
+	auto.stopKeepingChoice()
 	if serveErr != nil && !errors.Is(serveErr, context.Canceled) {
 		errorTo(s.err, "Error: "+serveErr.Error())
 		return 1

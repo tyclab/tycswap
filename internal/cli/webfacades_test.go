@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
+	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/cerr"
 	codexapi "github.com/tyclab/tycswap/internal/codex/api"
 	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
@@ -972,16 +973,252 @@ func TestCodexOpsWaitForTheCodexStoreLock(t *testing.T) {
 	}
 }
 
-func TestAutoFacadeManagedOwnerBlocksStart(t *testing.T) {
+// testOwner names an external scheduler, as TYCSWAP_AUTO_MANAGED_BY does.
+const testOwner = "tycswap-auto.timer"
+
+// engineCount counts the engines a facade's seam built.
+type engineCount struct {
+	mu sync.Mutex
+	n  int
+}
+
+func (c *engineCount) built() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.n
+}
+
+// countingEngines makes a's engine seam build fake engines whose loops
+// return once stopped, and counts them.
+func countingEngines(a *autoFacade) *engineCount {
+	count := &engineCount{}
+	released := make(chan struct{})
+	close(released)
+	a.newEngine = func(settings.AutoSwitchSettings, func(autoswitch.Event), bool) autoEngine {
+		count.mu.Lock()
+		count.n++
+		count.mu.Unlock()
+		return &fakeEngine{stop: make(chan struct{}), live: &int32Counter{}, release: released}
+	}
+	return count
+}
+
+// switchLogLines counts tycswap.log's lines that record a turn on or off.
+func switchLogLines(t *testing.T, root, surface string) (on, off int) {
+	t.Helper()
+	logged, _ := os.ReadFile(filepath.Join(root, "tycswap.log"))
+	return strings.Count(string(logged), "INFO - Auto-switch turned on ("+surface+")\n"),
+		strings.Count(string(logged), "INFO - Auto-switch turned off ("+surface+")\n")
+}
+
+// TestFacadeManagedToggleWritesSetting: with an external owner the toggle is
+// the setting (DESIGN A83): Start and Stop write it and host nothing, and the
+// view reports the setting as running. A dry run is still the dashboard's
+// own, and neither it nor its stop touches the setting.
+func TestFacadeManagedToggleWritesSetting(t *testing.T) {
 	a := newAutoFacade(fixtureSwitcher(t), nil)
-	a.managedBy = "flakelab-tycswap-autoswitch.timer"
-	for _, dry := range []bool{false, true} {
-		if err := a.Start(dry); err == nil || !strings.Contains(err.Error(), a.managedBy) {
-			t.Fatalf("managed start: %v", err)
+	a.managedBy = testOwner
+	engines := countingEngines(a)
+	t.Cleanup(func() { a.stopKeepingChoice() })
+	root := a.sw.BackupDir()
+	check := func(when string, running, enabled bool) {
+		t.Helper()
+		v := a.View()
+		if !v.Available || v.ManagedBy != "" || v.Running != running {
+			t.Fatalf("%s: view available %v managedBy %q running %v, want true \"\" %v", when, v.Available, v.ManagedBy, v.Running, running)
+		}
+		if got := settings.Load(root).Enabled; got != enabled {
+			t.Fatalf("%s: autoswitch.enabled = %v, want %v", when, got, enabled)
 		}
 	}
-	v := a.View()
-	if v.Available || v.Running || v.ManagedBy != a.managedBy {
-		t.Fatalf("managed view: %+v", v)
+	check("before", false, false)
+	if err := a.Start(false); err != nil {
+		t.Fatal(err)
+	}
+	check("started", true, true)
+	if err := a.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	check("stopped", false, false)
+	if n := engines.built(); n != 0 {
+		t.Fatalf("%d engines built under an external owner", n)
+	}
+	if on, off := switchLogLines(t, root, "app"); on != 1 || off != 1 {
+		t.Fatalf("log has %d on and %d off lines, want one each", on, off)
+	}
+
+	if err := a.Start(false); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Start(true); err != nil {
+		t.Fatalf("a dry run under an external owner: %v", err)
+	}
+	if v := a.View(); engines.built() != 1 || !v.Running || !v.DryRun {
+		t.Fatalf("dry run: %d engines, view %+v", engines.built(), v)
+	}
+	if err := a.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	check("dry run stopped", true, true)
+	if err := a.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	check("stopped again", false, false)
+}
+
+// TestFacadeStartStopWriteSetting: without an owner Start turns the setting
+// on and runs the hosted engine; Stop turns it off and stops the engine.
+func TestFacadeStartStopWriteSetting(t *testing.T) {
+	a := newAutoFacade(fixtureSwitcher(t), nil)
+	engines := countingEngines(a)
+	t.Cleanup(func() { a.stopKeepingChoice() })
+	root := a.sw.BackupDir()
+	if err := a.Start(false); err != nil {
+		t.Fatal(err)
+	}
+	a.mu.Lock()
+	hosted := a.running && a.engine != nil
+	a.mu.Unlock()
+	if !settings.Load(root).Enabled || !hosted || engines.built() != 1 || !a.View().Running {
+		t.Fatalf("after Start: enabled %v, hosted %v, %d engines", settings.Load(root).Enabled, hosted, engines.built())
+	}
+	if err := a.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if settings.Load(root).Enabled || a.View().Running {
+		t.Fatalf("after Stop: enabled %v, running %v", settings.Load(root).Enabled, a.View().Running)
+	}
+	if on, off := switchLogLines(t, root, "app"); on != 1 || off != 1 {
+		t.Fatalf("log has %d on and %d off lines, want one each", on, off)
+	}
+}
+
+// TestFacadeResumeFollowsSetting: the app starts its engine when the setting
+// is on and nobody else schedules ticks (DESIGN A43 through A83); quitting
+// stops it without turning auto-switch off.
+func TestFacadeResumeFollowsSetting(t *testing.T) {
+	sw := fixtureSwitcher(t)
+	root := sw.BackupDir()
+	for _, tc := range []struct {
+		name, enabled, owner string
+		want                 bool
+	}{
+		{"on", "true", "", true},
+		{"off", "false", "", false},
+		{"on with an owner", "true", testOwner, false},
+	} {
+		if _, err := settings.SetSetting(root, "autoswitch.enabled", tc.enabled); err != nil {
+			t.Fatal(err)
+		}
+		a := newAutoFacade(sw, nil)
+		a.managedBy = tc.owner
+		engines := countingEngines(a)
+		started, err := a.resume()
+		if err != nil || started != tc.want || engines.built() != map[bool]int{true: 1}[tc.want] {
+			t.Fatalf("%s: resume = %v, %v with %d engines, want started %v", tc.name, started, err, engines.built(), tc.want)
+		}
+		a.stopKeepingChoice()
+		if !a.waitStopped(5*time.Second) || a.View().Running != (tc.owner != "" && tc.enabled == "true") {
+			t.Fatalf("%s: still running after the app quit", tc.name)
+		}
+		if got := settings.Load(root).Enabled; got != (tc.enabled == "true") {
+			t.Fatalf("%s: quitting the app changed autoswitch.enabled to %v", tc.name, got)
+		}
+	}
+	if on, off := switchLogLines(t, root, "app"); on != 0 || off != 0 {
+		t.Fatalf("resume or quit logged %d on and %d off lines", on, off)
+	}
+}
+
+// TestCodexLoopSkipsWhileDisabled: the hosted Codex loop asks the setting on
+// every round, so `tycswap auto off` while the app runs stops Codex ticks
+// too; a dry run still decides, as the Claude engine's does.
+func TestCodexLoopSkipsWhileDisabled(t *testing.T) {
+	src := &fakeCodexSource{activePct: 98, accounts: 2}
+	a, _ := codexFacade(t, src)
+	eng := codexauto.New(src, 90, 10)
+	root := a.sw.BackupDir()
+	if _, err := settings.SetSetting(root, "autoswitch.enabled", "false"); err != nil {
+		t.Fatal(err)
+	}
+	a.codexRound(context.Background(), eng, false)
+	if n := src.Snapshots(); n != 0 || a.View().Codex.LastTick != nil {
+		t.Fatalf("off: the Codex engine ticked %d times, last tick %+v", n, a.View().Codex.LastTick)
+	}
+	a.codexRound(context.Background(), eng, true)
+	if n := src.Snapshots(); n != 1 {
+		t.Fatalf("off, dry run: %d Codex ticks, want 1", n)
+	}
+	if _, err := settings.SetSetting(root, "autoswitch.enabled", "true"); err != nil {
+		t.Fatal(err)
+	}
+	a.codexRound(context.Background(), eng, false)
+	if n := src.Snapshots(); n != 2 || a.View().Codex.LastTick == nil || a.View().Codex.LastTick.Outcome != "switched" {
+		t.Fatalf("on: %d Codex ticks, last tick %+v", n, a.View().Codex.LastTick)
+	}
+}
+
+// TestDashboardManagedStartStop: through the real dashboard with
+// TYCSWAP_AUTO_MANAGED_BY set, POST /api/auto/start and /api/auto/stop
+// answer 200 (no 409) and write the setting the scheduler's ticks read.
+func TestDashboardManagedStartStop(t *testing.T) {
+	sw := fixtureSwitcher(t)
+	t.Setenv(brand.Sanitized().EnvPrefix+"_AUTO_MANAGED_BY", testOwner)
+	useSwitcher(t, sw)
+	prevPresent, prevQuiet := codexIsPresent, newQuietCodexSwitcher
+	t.Cleanup(func() { codexIsPresent, newQuietCodexSwitcher = prevPresent, prevQuiet })
+	codexIsPresent = func() bool { return false }
+	t.Setenv("CODEX_HOME", t.TempDir())
+	codexSw := codexswitcher.New(codexswitcher.Options{Platform: platform.Linux, Client: &codexapi.FakeClient{}, Stdout: io.Discard})
+	newQuietCodexSwitcher = func() *codexswitcher.Switcher { return codexSw }
+	var errBuf strings.Builder
+	d, code := newDashboard(context.Background(), 5, false, ioStreams{out: io.Discard, err: &errBuf}, dashboardOptions{noUpdateSchedule: true})
+	if code != 0 {
+		t.Fatalf("newDashboard: %d %s", code, errBuf.String())
+	}
+	d.auto.newEngine = func(settings.AutoSwitchSettings, func(autoswitch.Event), bool) autoEngine {
+		t.Error("the dashboard built an engine under an external owner")
+		return nil
+	}
+	launch, err := d.srv.Start("127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	served := make(chan error, 1)
+	go func() { served <- d.srv.Serve(ctx) }()
+	defer func() { cancel(); <-served }()
+	jar, _ := cookiejar.New(nil)
+	c := &http.Client{Jar: jar}
+	if resp, err := c.Get(launch); err != nil {
+		t.Fatal(err)
+	} else {
+		resp.Body.Close()
+	}
+	base := launch[:strings.Index(launch, "/?token=")]
+	post := func(path, body string) int {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodPost, base+path, strings.NewReader(body))
+		req.Header.Set("X-CSRF-Token", d.srv.Token())
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	for _, step := range []struct {
+		path, body string
+		enabled    bool
+	}{{"/api/auto/start", `{"dryRun":false}`, true}, {"/api/auto/stop", "", false}} {
+		if status := post(step.path, step.body); status != http.StatusOK {
+			t.Fatalf("%s = %d, want 200", step.path, status)
+		}
+		if got := settings.Load(sw.BackupDir()).Enabled; got != step.enabled {
+			t.Fatalf("after %s: autoswitch.enabled = %v", step.path, got)
+		}
+		if v := d.auto.View(); v.Running != step.enabled || v.ManagedBy != "" || !v.Available {
+			t.Fatalf("after %s: view %+v", step.path, v)
+		}
 	}
 }

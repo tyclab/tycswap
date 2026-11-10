@@ -49,7 +49,20 @@ func (e *Engine) tick() (result tickResult) {
 	return r
 }
 
+// DisabledDetail is the detail of the no-switch "disabled" event a tick
+// emits while auto-switch is off; `auto --observe` says the same.
+const DisabledDetail = "auto-switch is off; tycswap auto on turns it on"
+
 func (e *Engine) tickInner() (tickResult, error) {
+	// The on/off comes before anything the tick could touch: off, it asks
+	// the switcher nothing and reads or writes no state (DESIGN A83).
+	if e.enabled != nil && !e.enabled() {
+		if !e.dryRun {
+			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "disabled", Detail: DisabledDetail})
+			return tickResult{Outcome: NoAction}, nil
+		}
+		e.emit(ConfigWarningEvent{Ts: e.nowISO(), Message: "auto-switch is off; this dry run shows what it would do"})
+	}
 	e.adoptPendingModels()
 	s := e.currentSettings()
 

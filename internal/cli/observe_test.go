@@ -107,7 +107,7 @@ func TestObserveTicksOnModelNews(t *testing.T) {
 		raw  []byte
 		want bool
 	}{{opus, true}, {opus, false}, {fable, true}, {fable, false}} {
-		if got := observeTicks(sw, step.raw, far); got != step.want {
+		if got := observeTicks(sw, step.raw, far, true); got != step.want {
 			t.Fatalf("observation %d ticks = %v, want %v", i, got, step.want)
 		}
 	}

@@ -1503,6 +1503,9 @@ Unmapped ~/work/client-app
 tycswap auto [--once] [--json] [--interval SECONDS] [--five-hour-threshold PCT]
            [--seven-day-threshold PCT] [--model-threshold PCT] [--cooldown SECONDS]
            [--model NAMES] [--dry-run] [--debug] [--observe]
+tycswap auto on [--if-unset]
+tycswap auto off
+tycswap auto status [--json]
 ```
 
 ### Options
@@ -1520,11 +1523,28 @@ tycswap auto [--once] [--json] [--interval SECONDS] [--five-hour-threshold PCT]
 | `--dry-run` | flag | off | Evaluate and report but never switch. |
 | `--debug` | flag | off | — |
 | `--observe` | flag | off | Implies `--once`. Reads Claude Code's status line JSON on stdin; see below. |
+| `on` / `off` | verb | — | First argument only. Turns auto-switch on or off: writes `autoswitch.enabled`, prints `Auto-switch on.` / `Auto-switch off.` and logs `Auto-switch turned on (cli)` / `off (cli)`; exit 0. |
+| `--if-unset` | flag | off | With `on` only: write the key only when `settings.json` does not set it yet. Prints `Auto-switch on.` when it wrote, else `Auto-switch left as it was: on.` / `off.`; exit 0 either way. |
+| `status` | verb | — | First argument only. Prints `Auto-switch: on` or `Auto-switch: off`; with `--json`, `{"schemaVersion":1,"enabled":true}`; exit 0. |
 
 Command-line values override the corresponding `settings.json` values for this
-run only, then are re-clamped to the ranges above.
+run only, then are re-clamped to the ranges above. After `on`, `off` or
+`status` only the arguments listed with them are accepted; anything else is a
+usage error.
 
 ### Description
+
+**On and off** (DESIGN A83). Auto-switch runs only while `autoswitch.enabled`
+is true, and it is false until something turns it on: `tycswap auto on`, the
+tray's or the dashboard's Start, or a provisioner's `tycswap auto on
+--if-unset`, which never overrides a choice already made. Every tick reads the
+key first, also in the loop and in the app's engine. While it is off, a tick
+asks for no usage and switches nothing, emits one `no-switch` event with reason
+`disabled` (`auto-switch is off; tycswap auto on turns it on`), and `--once`
+exits 2; the Codex tick and the group retirement do not run either. A
+`--dry-run` tick says `warning: auto-switch is off; this dry run shows what it
+would do` and then decides as usual, for both engines. `tycswap auto off`, the
+tray's toggle and the dashboard's Stop turn it off.
 
 Watches the active account's usage and proactively switches before one of its
 windows reaches its limit. In loop mode it polls every interval; in `--once` mode it
@@ -1631,11 +1651,13 @@ line, or a model change) it runs one tick at once on the cached usage, without
 taking the 15-second slot, so the login follows the session's model before the
 next timer tick (DESIGN A77); in a retired group's profile it marks that
 group's account instead. flakelab's status line command passes
-its input to `tycswap auto --observe` in the background.
+its input to `tycswap auto --observe` in the background. While auto-switch is
+off, `--observe` still records the session's model but marks no account due,
+runs no tick, prints the one `no-switch` `disabled` line and exits 2.
 
 **Codex accounts.** When `autoswitch.codexEnabled` is true (the default) and
 tycswap holds Codex accounts, or an un-imported codex-auth registry exists, `tycswap
-auto` also runs a Codex engine in the same process. It is a second, small
+auto` also runs a Codex engine in the same process, while auto-switch is on. It is a second, small
 engine, not a mode of the Claude one: each tick reads every Codex account's
 usage and, when the active account's worse window (5h or weekly) is at or above
 the Codex threshold, switches to the enabled OAuth account with the lowest
@@ -1659,7 +1681,9 @@ session started, not one already running.
 
 ### Files
 
-Reads `sequence.json`, `settings.json`, `cache/usage.json`. Reads and writes
+Reads `sequence.json`, `settings.json`, `cache/usage.json`. `on` and `off`
+write `autoswitch.enabled` in `settings.json` under `.settings.lock`, as
+`tycswap config set` does. Reads and writes
 `autoswitch_state.json` (cooldown, quarantine, the active account's failover
 count and idle-hold start, and the last model-name check, DESIGN A66) under
 `.autoswitch_state.lock`.
@@ -1677,7 +1701,7 @@ Loop mode returns `0` on a clean stop. `--once` returns the tick outcome:
 |------|---------|
 | `0` | Switched (or, in `--dry-run`, would have switched). |
 | `1` | Error (network trouble, lock contention, transient freshen failure). |
-| `2` | No action needed (below threshold, cooldown, idle). |
+| `2` | No action needed (below threshold, cooldown, idle), or auto-switch is off (`no-switch` `disabled`). |
 | `3` | Blocked: a switch was wanted but no viable target exists / all exhausted. |
 
 A construction or configuration error before the first tick exits `1`.
@@ -1694,7 +1718,7 @@ a `Z` suffix), plus per-kind fields:
 | `poll` | `active` (`{number,email}` or null), `headroomPct` (`{num: float|null}`), `threshold` (float: the 7d bar), `fetchErrors` (`{num: msg}`, optional), `windowsPct` (`{num: {label: float}}`, optional) |
 | `switch` | `trigger` (`proactive`\|`at-limit`\|`failover`\|`reserved`\|`model-missing`), `axis` (`5h`\|`7d`\|`model`: the window that made the tick move; empty under `failover`, where usage was unreadable, and under `reserved` and `model-missing`, where the account decided), `from` (ref), `to` (ref), `warnings` (array), `dryRun` (bool) |
 | `group-release` | `group` (`fable`\|`opus`), `released` (`{number,email}`): a retired group's account returned to its slot |
-| `no-switch` | `reason` (string), `detail` (string); under `active-usage-unknown` and `active-idle`, `detail` ends in ` · <skip reason>` while the active account's `list --json` row carries `usageRefresh.skipReason` |
+| `no-switch` | `reason` (string), `detail` (string); under `active-usage-unknown` and `active-idle`, `detail` ends in ` · <skip reason>` while the active account's `list --json` row carries `usageRefresh.skipReason`; `disabled` while auto-switch is off, then the tick's only event |
 | `account-quarantined` | `number`, `email`, `reason` |
 | `account-unquarantined` | `number`, `email`, `reason` |
 | `all-exhausted` | `earliestResetAt` (string or null) |
@@ -1726,7 +1750,7 @@ A handled error in `--json` mode is emitted as the compact error envelope
 |---------|------|
 | `argument --interval: invalid float value: '<v>'` (and each `--*-threshold`, `--cooldown`) | 2 |
 | `argument --interval: expected one argument` (and the others) | 2 |
-| `unrecognized arguments: <tok>` (including the removed `--threshold`) | 2 |
+| `unrecognized arguments: <tok>` (including the removed `--threshold`, and anything after `on`, `off` or `status` they do not take) | 2 |
 | A `ClaudeSwitchError` before the loop | 1 |
 
 ### Example
@@ -1739,7 +1763,8 @@ $ echo $?
 2
 ```
 
-A cron entry that checks every five minutes and appends output to a log:
+A cron entry that checks every five minutes and appends output to a log (it
+does nothing until `tycswap auto on` has run once):
 
 ```
 */5 * * * * tycswap auto --once --json >> tycswap-auto.log 2>&1
@@ -2699,7 +2724,8 @@ tabs:
   Claude · <m> Codex`. The header, the summary tiles and *Next best* stay on
   the Claude accounts.
 - **Auto**: an auto-switch engine hosted in the `web` process: start, start
-  as a dry run, stop, wake; a slider that sets the 7d threshold of the running
+  as a dry run, stop, wake (Start and Stop turn `autoswitch.enabled` on and
+  off, DESIGN A83; a dry run leaves it as it is); a slider that sets the 7d threshold of the running
   engine (50–100; not saved; enabled only while it runs; the 5h and model bars
   are settings only, DESIGN A34); *Count model limits*, which saves
   `autoswitch.model` as `all`, selected model names, or unset (Off), using Save; the *Next best* ranking with each
@@ -2908,8 +2934,8 @@ anything else `500`.
 | `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` | `400` missing or bare keys, `404` a `codex:` key or an unknown provider |
 | `POST /api/sessions/{pid}/stop` | | stop a listed Claude Code session, after verifying the process start time | `400` bad pid, `404` not listed (or gone before the lock), `409` the pid now belongs to another process or cannot be verified, `500` the signal failed |
 | `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset`; each listed key carries `applies`, a sentence saying when a saved value takes effect; saving or unsetting `autoswitch.model` also retargets a running engine (`"applied": true` in the result) | `400` unknown key, value out of range, or missing value; the engine's own error when the retarget fails after the save |
-| `POST /api/auto/start` | `{"dryRun": bool}` | start the hosted engine, and the Codex engine beside it on a machine with Codex accounts | `400` already running or still stopping |
-| `POST /api/auto/stop`, `/api/auto/wake` | | stop them (waits up to 2 s for both loops to end), poll now (the Claude engine) | `400` not running; stop `409` when a tick in flight outlasts the wait (the engines are stopping; Start refuses until both have) |
+| `POST /api/auto/start` | `{"dryRun": bool}` | turn `autoswitch.enabled` on unless `dryRun`, then start the hosted engine, and the Codex engine beside it on a machine with Codex accounts; with `TYCSWAP_AUTO_MANAGED_BY` set, a real start only writes the setting | `400` already running or still stopping |
+| `POST /api/auto/stop`, `/api/auto/wake` | | stop: turn `autoswitch.enabled` off (not when ending a dry run), then stop the engines (waits up to 2 s for both loops to end); wake: poll now (the Claude engine) | `400` not running (stop with an external scheduler only writes the setting); stop `409` when a tick in flight outlasts the wait (the engines are stopping; Start refuses until both have) |
 | `POST /api/auto/threshold` | `{"threshold": 50-100}` | retarget the running engine's 7d bar; the bounds are `autoswitch.sevenDayThreshold`'s (DESIGN A34) | `400` missing, out of range, or not running |
 | `POST /api/auto/model` | `{"model": "all"\|"<names>"\|""}` | retarget the running engine's model windows | `400` missing (`""` is a value) or not running |
 | `POST /api/updates/check` | | check for a newer tycswap release and a newer Claude Code now, in the background; the result arrives with the state (in `tycswap app` with a tray, the tray's checks, DESIGN A44) | `202` at once; `503` without the updates host |
@@ -3025,7 +3051,8 @@ window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
   the active one; *Add
   current login* stores the login Claude Code has;
 - **Automation**: *Auto-switch* (on or off; its second line names the
-  threshold of each window; on is resumed at the app's next start);
+  threshold of each window; it writes `autoswitch.enabled`, so it also turns
+  off a timer's ticks, and on is resumed at the app's next start);
   *Model limits*, which sets `autoswitch.model` (`all` or unset) and
   retargets the running engine. The thresholds are set with `tycswap config`,
   in the TUI and on the dashboard;
@@ -3054,8 +3081,9 @@ is already running on this machine`, and `tycswap purge` refuses. Without a
 tray (`--headless`, a Linux session without a StatusNotifierWatcher, a macOS
 build without cgo) it serves the dashboard alone, prints `Remote token: <path>
 (for tycswap app --remote)` and checks for updates on the dashboard's own
-schedule unless `--no-update-check`. Auto-switch that was on when the app last
-quit (recorded in `ui_prefs.json`) is started again.
+schedule unless `--no-update-check`. While `autoswitch.enabled` is on, the app
+starts its engine at launch (unless `TYCSWAP_AUTO_MANAGED_BY` names another
+scheduler); quitting stops it without turning auto-switch off.
 
 **Remote mode.** With `--remote` the app is a tray for the dashboard of an app
 running elsewhere on the same machine — the one in a WSL distro, reached from
@@ -3077,7 +3105,7 @@ login*, refuses a switch onto an API-key account (use the dashboard), and holds
 | `<backup_root>/app.lock` | Held by the local app while it runs. |
 | `<backup_root>/remote.lock` | Held by a remote tray while it runs. |
 | `<backup_root>/remote.token` | The running app's token for a remote tray, 0600, written at start and removed at exit. |
-| `<backup_root>/ui_prefs.json` | `autoSwitch`: whether auto-switch was on when the app quit; `folded`: the dashboard's folded cards. |
+| `<backup_root>/ui_prefs.json` | `folded`: the dashboard's folded cards. An `autoSwitch` key an older app left there seeds `autoswitch.enabled` once and is removed (DESIGN A83). |
 | `<backup_root>/app.log` | The background app's output (`~/Library/Logs/tycswap.log` on macOS), rotated to `.1` past 5 MiB. |
 | `~/Library/LaunchAgents/io.github.tyclab.tycswap.plist` | Start at login on macOS (`….remote.plist` for a remote tray). |
 | `${XDG_CONFIG_HOME:-~/.config}/autostart/io.github.tyclab.tycswap.desktop` | Start at login on Linux. |
@@ -4811,7 +4839,7 @@ Inside the backup root:
 | `codex/credentials/` | Per-account Codex `auth.json` snapshots, `<file key>.json`, mode 0600, keyed by account identity. macOS stores these in the Keychain under service `tycswap-codex` instead, except a snapshot too large to reach the `security` command over stdin, which stays in this file (mode 0600) rather than on a command line; reads and deletes cover both places. |
 | `codex/cache/` | The Codex usage cache (the same usage table format as `cache/usage.json`). |
 | `codex/.lock` | The Codex store's lock, separate from the Claude lock. |
-| `ui_prefs.json` | The dashboard's folded cards and, for `tycswap app`, whether auto-switch was on when it quit (`{"version": 1, "autoSwitch": true, "folded": {…}}`). |
+| `ui_prefs.json` | The dashboard's folded cards (`{"version": 1, "folded": {…}}`). An `autoSwitch` key an older `tycswap app` left there seeds `autoswitch.enabled` once and is removed (DESIGN A83). |
 | `app.lock`, `remote.lock` | Held by `tycswap app` and by `tycswap app --remote` while they run; `tycswap purge` refuses while `app.lock` is held. |
 | `remote.token` | The running `tycswap app`'s token for a remote tray, 0600, removed when it stops. |
 | `app.log` | The output of `tycswap app` started in the background (on macOS `~/Library/Logs/tycswap.log`), rotated to `app.log.1` past 5 MiB. |
@@ -4870,6 +4898,7 @@ Every key, with its type, range, default, and meaning:
 
 | Key | Type | Range | Default | Meaning |
 |-----|------|-------|---------|---------|
+| `autoswitch.enabled` | bool | — | false | Auto-switch on or off (DESIGN A83). Every tick reads it first; false, a tick looks at no account and reports `no-switch` `disabled` (`auto --once` exits 2). Written by `tycswap auto on` / `off`, the tray's toggle and the dashboard's Start and Stop; `tycswap auto on --if-unset` writes it only when absent. Seeded once from an older app's remembered choice. |
 | `autoswitch.fiveHourThreshold` | float (percent) | 50–100 | 85 | Switch when the **5h** window reaches this percent. The lowest bar on purpose: this window bursts (a fan-out of parallel subagents can fill it from 85 to 100 between two polls), and the margin is what lets the next poll act before it stops a task midway. |
 | `autoswitch.sevenDayThreshold` | float (percent) | 50–100 | 97 | Switch when the **7d** window reaches this percent: the account's whole budget. A week creeps rather than bursts, so it can be squeezed nearly full. The TUI's `t` adjustment and the dashboard slider move this bar for one run. A file that still carries the single `autoswitch.threshold` seeds it. |
 | `autoswitch.modelThreshold` | float (percent) | 50–100 | 95 | Switch when a **per-model weekly** window reaches this percent. Weekly too, so also high. Applies only to the windows `autoswitch.model` counts. |
@@ -5180,11 +5209,14 @@ Project overview: `README.md`. Architecture and design decisions:
 
 ### Externally managed dashboard auto-switch
 
-`TYCSWAP_AUTO_MANAGED_BY` declares the scheduler that owns auto-switch for
-`web` or `app`. With a non-empty owner, `auto.managedBy` names it,
-`auto.available` is false, and `POST /api/auto/start` returns 409 (including
-`dryRun: true`). The engine facade also refuses remembered startup. The
-remote tray disables its toggle from that state. `auto --once` is unaffected.
+`TYCSWAP_AUTO_MANAGED_BY` names an external scheduler of ticks (a systemd timer
+running `tycswap auto --once`) for `web` or `app`, and now only means "do not
+host an engine here" (DESIGN A83). Start (`POST /api/auto/start`, the tray's
+toggle) writes `autoswitch.enabled` on and starts nothing, since the
+scheduler's ticks now run; Stop writes it off. `auto.running` reports the
+setting, `auto.available` is always true and `auto.managedBy` is always empty
+(the field stays for older clients). A dry run is still hosted in the
+dashboard, and the app does not start an engine at launch.
 
 State documents carry a process-local monotonic `sequence`. Successful
 mutations carry `stateSequence`: documents with a lower sequence began

@@ -52,10 +52,8 @@ evidence.
 
 | ID | Defect | Where | Verdict | Ev | Series |
 | --- | --- | --- | --- | --- | --- |
-| HOST-1 | "off" exists only inside the app process | cli/appstate.go, webfacades.go, auto.go | FIX D1 | V | E |
 | HOST-2 | hosted engine lacks A75 to A77 | cli/tuiwire.go | DUP ENG-8 |  |  |
 | HOST-3 | Stop during a tick reports failure; the retry turns auto on | cli/webfacades.go Stop, appshell.go | FIX D5 | TV | E |
-| HOST-4 | remembered "on" survives a managed period and resumes unasked | cli/webfacades.go resume | FIX D1 D5 | T | E |
 | HOST-5 | exit gives a tick in flight 2 s | cli/webfacades.go stopKeepingChoice | FIX D5 | T | E |
 | HOST-6 | launch URL with its token printed to the service journal (local journal only: the central log store holds the line with the token redacted) | cli/appcmd.go, web/web.go | FIX D5 | VL | E |
 | HOST-7 | nil Codex engine logs an error every tick | cli/webfacades.go codexTick | FIX D5 | TV | E |

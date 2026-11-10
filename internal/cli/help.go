@@ -54,6 +54,7 @@ Commands:
   tycswap swap <a> <b>               exchange two accounts' slot numbers
   tycswap move <a> <slot>            assign an account to a slot (swaps if taken)
   tycswap auto                       auto-switch when nearing rate limits
+  tycswap auto on|off|status         turn auto-switch on or off, or show which
   tycswap config [set KEY VALUE]     show or change settings (settings.json)
   tycswap export <path>              export accounts
   tycswap import <path>              import accounts
@@ -101,6 +102,7 @@ const mainEpilog = `Flags combine with subcommands:
                                           # ANTHROPIC_BASE_URL in Claude Code's settings
   tycswap run 2 -- --resume                 # forward args after '--' to claude
   eval "$(tycswap env 2)"                   # pin THIS shell to account 2 (no claude launch)
+  tycswap auto on --if-unset                # turn auto-switch on unless already set
   tycswap auto --once                       # single auto-switch tick (cron-friendly)
   tycswap config set autoswitch.sevenDayThreshold 92
   tycswap codex list --token-status         # Codex token expiry (never the token)

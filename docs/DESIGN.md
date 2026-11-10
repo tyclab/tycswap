@@ -5045,6 +5045,8 @@ start:
   server starts. A resume that fails is said on the app's output and leaves
   auto-switch off. A missing or unreadable file means off.
 
+Superseded by A83: the choice is `autoswitch.enabled` in `settings.json`.
+
 ## A44. Updates in the tray: one answer, a badge with a count, rows that show
 
 `appShell.updateWaiting` decides whether an update waits — a newer tycswap
@@ -5793,6 +5795,8 @@ route returns 409, and both dashboard and remote tray disable Start. The
 one-shot CLI is unaffected. Flakelab sets this owner on its dashboard service
 whenever its autoswitch timer is configured. Disabling a UI control alone
 would not protect old remote clients, direct requests, or app auto-resume.
+
+Superseded by A83: Start under an external owner writes the setting instead.
 
 ## A52. The Windows tray adds its icon again after Explorer restarts
 
@@ -6845,3 +6849,41 @@ point after the browser flow. Where a signal cannot be sent (Windows), the
 command says to press Enter and waits. A process that exits first is handled
 as before: its result is stored when complete, otherwise the login is
 reported incomplete. Scratch cleanup still runs on every exit path.
+
+## A83. Auto-switch is a setting
+
+On/off used to mean "does a scheduler exist". The app remembered its own
+choice in `ui_prefs.json` (A43), which only the app read, and where an
+external timer runs `tycswap auto --once`, A51 refused every Start, so the
+tray and dashboard toggle was locked and nothing on disk could say off.
+
+The rule: one key, `autoswitch.enabled` in `settings.json`, default off
+(seeded once from the app's old remembered choice).
+
+- Every engine reads it at the start of every tick (the timer's `--once`,
+  the loop, the app's and the TUI's engine). Off, a tick asks the switcher
+  nothing, reads and writes no state and emits one `no-switch` `disabled`
+  event; `--once` exits 2. A dry run says it is off in a `config-warning`
+  and decides as usual.
+- The Codex tick and the group retirement run only while it is on, checked
+  on every round in `tycswap auto` and in the app's loop; a dry run still
+  ticks Codex.
+- `tycswap auto --observe` while off records the session's model (A77),
+  marks nothing due, runs no tick and exits 2 with the same `disabled` line.
+- `tycswap auto on|off` write it, `auto on --if-unset` writes only an absent
+  key (a provisioner's seed that never overrides a user's choice), and
+  `auto status [--json]` reads it.
+- The app's and the dashboard's Start writes on and Stop writes off, each
+  with one INFO log line. A dry run writes nothing, and neither does its
+  stop. Quitting the app or `tycswap web` stops the hosted engine without
+  writing; the app starts it again at launch while the key is on, which is
+  A43's resume through the setting.
+- An external scheduler no longer locks the toggle. `TYCSWAP_AUTO_MANAGED_BY`
+  now only means "do not host an engine here": Start and Stop write the key
+  and start nothing, the view's `running` is the key, `available` is always
+  true and `managedBy` always empty (kept for older clients). A dry run is
+  still hosted.
+
+Supersedes A43's `ui_prefs.json` choice and A51's refusal of Start under an
+external owner. Closes HOST-1 ("off" exists only inside the app process) and
+HOST-4 (a remembered "on" survives a managed period and resumes unasked).

@@ -45,7 +45,9 @@ type Engine struct {
 	sleeper Sleeper
 	rng     func() float64
 	// reserved: accounts this profile leaves to Fable work (DESIGN A71); nil reserves none.
-	reserved  func(num string) bool
+	reserved func(num string) bool
+	// enabled is autoswitch.enabled, read at every tick (DESIGN A83); nil means on.
+	enabled   func() bool
 	oauth     oauth.Client
 	log       *logging.Logger
 	statePath string
@@ -78,6 +80,9 @@ func WithRNG(rng func() float64) Option { return func(e *Engine) { e.rng = rng }
 func WithReserved(reserved func(num string) bool) Option {
 	return func(e *Engine) { e.reserved = reserved }
 }
+
+// WithEnabled is the on/off each tick reads first (DESIGN A83); nil means on.
+func WithEnabled(enabled func() bool) Option { return func(e *Engine) { e.enabled = enabled } }
 
 func WithOAuthClient(c oauth.Client) Option { return func(e *Engine) { e.oauth = c } }
 

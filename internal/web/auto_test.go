@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -322,21 +323,27 @@ func TestAutoModelAppliesLive(t *testing.T) {
 	}
 }
 
-func TestAutoStart_ManagedExternally(t *testing.T) {
+// An external scheduler no longer locks the toggle (DESIGN A83): the facade
+// reports such a host as available with no owner, so start and stop reach
+// it, which writes the setting the scheduler's ticks read. The cli package
+// runs the same requests through the real facade (TestDashboardManagedStartStop).
+func TestAutoStartStopWithAnExternalOwner(t *testing.T) {
 	h := newHarness(t)
 	h.auto.mu.Lock()
-	h.auto.view.ManagedBy = "flakelab-tycswap-autoswitch.timer"
-	h.auto.view.Available = false
+	h.auto.view = AutoView{Available: true, Running: true}
 	h.auto.mu.Unlock()
-	for _, dry := range []bool{false, true} {
-		resp := h.postJSON("/api/auto/start", map[string]any{"dryRun": dry})
-		if resp.StatusCode != http.StatusConflict {
-			t.Fatalf("managed start = %d: %s", resp.StatusCode, readBody(t, resp))
+	for _, req := range []struct {
+		path string
+		body any
+	}{{"/api/auto/stop", nil}, {"/api/auto/start", map[string]any{"dryRun": false}}, {"/api/auto/start", map[string]any{"dryRun": true}}} {
+		resp := h.postJSON(req.path, req.body)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s %v = %d: %s", req.path, req.body, resp.StatusCode, readBody(t, resp))
 		}
 		resp.Body.Close()
 	}
-	if len(h.auto.Calls()) != 0 {
-		t.Fatal("managed engine reached Start")
+	if got := strings.Join(h.auto.Calls(), ","); got != "Stop,Start(false),Start(true)" {
+		t.Fatalf("calls = %s", got)
 	}
 }
 
