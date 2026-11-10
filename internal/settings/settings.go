@@ -386,7 +386,11 @@ func clampValue(spec Spec, value any) any {
 		}
 		return clamped
 	case KindBool:
-		return truthy(value)
+		// Only a JSON bool: Python's bool() read a hand-edited "false" as on.
+		if b, ok := value.(bool); ok {
+			return b
+		}
+		return spec.Default
 	case KindString:
 		if s, ok := value.(string); ok && s != "" {
 			return s
@@ -417,28 +421,6 @@ func asNumber(v any) (float64, bool) {
 		return float64(t), true
 	default:
 		return 0, false
-	}
-}
-
-// truthy mirrors Python's bool(value) coercion for JSON-decoded types.
-func truthy(v any) bool {
-	switch t := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return t
-	case float64:
-		return t != 0
-	case int:
-		return t != 0
-	case string:
-		return t != ""
-	case []any:
-		return len(t) != 0
-	case map[string]any:
-		return len(t) != 0
-	default:
-		return true
 	}
 }
 
@@ -534,6 +516,21 @@ func SetSetting(root, dotted, raw string) (value any, err error) {
 	return value, err
 }
 
+// SeedSetting writes one key only when settings.json does not set it yet,
+// checking and writing under one lock hold, so a value set meanwhile (an
+// explicit false included) is never overwritten; seeded is false when it was
+// there. A corrupt file is SetSetting's strict error, not "unset".
+func SeedSetting(root, dotted, raw string) (seeded bool, err error) {
+	lerr := withLock(root, func() error {
+		_, seeded, err = writeSettingUnlocked(root, dotted, raw, true)
+		return nil
+	})
+	if lerr != nil {
+		return false, lerr
+	}
+	return seeded, err
+}
+
 // UnsetSetting is unsetSettingUnlocked under the settings lock.
 func UnsetSetting(root, dotted string) (removed bool, err error) {
 	lerr := withLock(root, func() error {
@@ -573,33 +570,52 @@ func saveUnlocked(root string, s AutoSwitchSettings) error {
 // freezes every other default into the file. Unknown keys/sections in the
 // file survive. Returns the parsed value.
 func setSettingUnlocked(root, dotted, raw string) (any, error) {
+	value, _, err := writeSettingUnlocked(root, dotted, raw, false)
+	return value, err
+}
+
+// writeSettingUnlocked is the write behind SetSetting and SeedSetting; with
+// onlyIfAbsent it leaves a file that already sets the key untouched.
+func writeSettingUnlocked(root, dotted, raw string, onlyIfAbsent bool) (value any, written bool, err error) {
 	spec, err := SpecFor(dotted)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	value, err := ParseSettingValue(spec, raw)
+	value, err = ParseSettingValue(spec, raw)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	path := SettingsPath(root)
 	data, err := readRawForWrite(path)
 	if err != nil {
-		return nil, err
-	}
-	if _, ok := data["schemaVersion"]; !ok {
-		data["schemaVersion"] = SchemaVersion
+		return nil, false, err
 	}
 	section, ok := data[spec.Section].(map[string]any)
 	if !ok {
 		section = map[string]any{}
 	}
+	if onlyIfAbsent && isSetIn(spec, section) {
+		return value, false, nil
+	}
+	if _, ok := data["schemaVersion"]; !ok {
+		data["schemaVersion"] = SchemaVersion
+	}
 	section[spec.JSONKey] = value
 	data[spec.Section] = section
 	coercePyFloats(data)
 	if err := atomicfile.WriteJSON(path, data, atomicfile.Opts{}); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return value, nil
+	return value, true, nil
+}
+
+// isSetIn: section carries spec's key; the legacy "threshold" sets the 7d bar (see Load).
+func isSetIn(spec Spec, section map[string]any) bool {
+	if _, ok := section[spec.JSONKey]; ok {
+		return true
+	}
+	_, legacy := section[LegacyThresholdKey]
+	return legacy && spec.Field == "SevenDayThreshold"
 }
 
 // UnsetSetting removes one key from settings.json; if its section becomes
@@ -670,16 +686,8 @@ func EffectiveSettings(root string) []Effective {
 	fields := fieldsOf(Load(root))
 	out := make([]Effective, 0, len(SettingSpecs))
 	for _, spec := range SettingSpecs {
-		isSet := false
-		if section, ok := raw[spec.Section].(map[string]any); ok {
-			_, isSet = section[spec.JSONKey]
-			if !isSet && spec.Field == "SevenDayThreshold" {
-				// The legacy "threshold" key still steers this bar (see
-				// Load), so a file carrying it has set this setting.
-				_, isSet = section[LegacyThresholdKey]
-			}
-		}
-		out = append(out, Effective{Spec: spec, Value: fields[spec.Field], IsSet: isSet})
+		section, _ := raw[spec.Section].(map[string]any)
+		out = append(out, Effective{Spec: spec, Value: fields[spec.Field], IsSet: isSetIn(spec, section)})
 	}
 	return out
 }

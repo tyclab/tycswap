@@ -112,8 +112,8 @@ func TestLoad_ClampTable(t *testing.T) {
 			func(s AutoSwitchSettings) bool { return s.CodexThreshold == 0.0 }, "codexThreshold=0.0 (default)"},
 		{"codexEnabled_false_is_false", `{"autoswitch":{"codexEnabled":false}}`,
 			func(s AutoSwitchSettings) bool { return !s.CodexEnabled }, "codexEnabled=false"},
-		{"codexEnabled_0_is_false", `{"autoswitch":{"codexEnabled":0}}`,
-			func(s AutoSwitchSettings) bool { return !s.CodexEnabled }, "codexEnabled=false"},
+		{"codexEnabled_0_falls_back_to_default", `{"autoswitch":{"codexEnabled":0}}`,
+			func(s AutoSwitchSettings) bool { return s.CodexEnabled }, "codexEnabled=true (default)"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -581,6 +581,74 @@ func TestEnabledSetUnset(t *testing.T) {
 	}
 	if Load(root).Enabled {
 		t.Error("Load().Enabled = true after unset, want default false")
+	}
+}
+
+// TestBoolSettingsFallBackOnABadType: a bool key takes only a JSON bool. A
+// hand-edited "false", 1 or null is a bad type and reads as the key's
+// default, as for every other kind; before, any non-empty string read as on,
+// and autoswitch.enabled gates the whole engine.
+func TestBoolSettingsFallBackOnABadType(t *testing.T) {
+	for _, tc := range []struct {
+		json string
+		want func(AutoSwitchSettings) bool
+	}{
+		{`{"autoswitch":{"enabled":"false"}}`, func(s AutoSwitchSettings) bool { return !s.Enabled }},
+		{`{"autoswitch":{"enabled":1}}`, func(s AutoSwitchSettings) bool { return !s.Enabled }},
+		{`{"autoswitch":{"enabled":null}}`, func(s AutoSwitchSettings) bool { return !s.Enabled }},
+		{`{"autoswitch":{"codexEnabled":"no"}}`, func(s AutoSwitchSettings) bool { return s.CodexEnabled }},
+		{`{"autoswitch":{"enabled":true,"codexEnabled":false}}`, func(s AutoSwitchSettings) bool { return s.Enabled && !s.CodexEnabled }},
+		{`{"autoswitch":{"enabled":false,"codexEnabled":true}}`, func(s AutoSwitchSettings) bool { return !s.Enabled && s.CodexEnabled }},
+	} {
+		root := t.TempDir()
+		writeSettingsJSON(t, root, tc.json)
+		if got := Load(root); !tc.want(got) {
+			t.Errorf("Load(%s): Enabled=%v CodexEnabled=%v", tc.json, got.Enabled, got.CodexEnabled)
+		}
+	}
+}
+
+// TestSeedSetting: a seed writes only a key settings.json does not carry,
+// deciding under the same lock hold as the write, so a value set meanwhile
+// (an explicit false included) is never overwritten. A corrupt file is the
+// strict reader's error, not "unset".
+func TestSeedSetting(t *testing.T) {
+	root := t.TempDir()
+	if seeded, err := SeedSetting(root, "autoswitch.enabled", "true"); err != nil || !seeded {
+		t.Fatalf("absent key: seeded=%v err=%v, want true, nil", seeded, err)
+	}
+	if !Load(root).Enabled {
+		t.Error("absent key: Enabled = false after the seed")
+	}
+
+	explicit := t.TempDir()
+	writeSettingsJSON(t, explicit, `{"schemaVersion":1,"autoswitch":{"enabled":false}}`)
+	before, _ := os.ReadFile(SettingsPath(explicit))
+	if seeded, err := SeedSetting(explicit, "autoswitch.enabled", "true"); err != nil || seeded {
+		t.Fatalf("present false: seeded=%v err=%v, want false, nil", seeded, err)
+	}
+	if after, _ := os.ReadFile(SettingsPath(explicit)); string(after) != string(before) || Load(explicit).Enabled {
+		t.Errorf("present false: file %s, want it untouched and off", after)
+	}
+
+	// The legacy key still steers the 7d bar (DESIGN A34), so it counts as set.
+	legacy := t.TempDir()
+	writeSettingsJSON(t, legacy, `{"autoswitch":{"threshold":72}}`)
+	if seeded, err := SeedSetting(legacy, "autoswitch.sevenDayThreshold", "80"); err != nil || seeded {
+		t.Errorf("legacy threshold: seeded=%v err=%v, want false, nil", seeded, err)
+	}
+
+	corrupt := t.TempDir()
+	writeSettingsJSON(t, corrupt, "{not json")
+	if seeded, err := SeedSetting(corrupt, "autoswitch.enabled", "true"); err == nil || seeded || !strings.Contains(err.Error(), "not valid JSON") {
+		t.Errorf("corrupt file: seeded=%v err=%v, want the strict reader's error", seeded, err)
+	}
+	if data, _ := os.ReadFile(SettingsPath(corrupt)); string(data) != "{not json" {
+		t.Errorf("corrupt file rewritten: %q", data)
+	}
+
+	if seeded, err := SeedSetting(t.TempDir(), "autoswitch.enabled", "maybe"); err == nil || seeded {
+		t.Errorf("bad value: seeded=%v err=%v, want the bool error", seeded, err)
 	}
 }
 
