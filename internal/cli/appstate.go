@@ -52,9 +52,9 @@ func readPrefs(path string) (map[string]json.RawMessage, error) {
 
 // editPrefs is every read-modify-write of ui_prefs.json: under the lock it
 // reads the file ({} when missing or corrupt), lets change edit the object,
-// and writes it back when change reports an edit. A file it cannot read is
-// an error, never overwritten.
-func editPrefs(path string, change func(doc map[string]json.RawMessage) bool) error {
+// and writes it back when change reports an edit. A file it cannot read, or
+// a change that fails, leaves the file as it was.
+func editPrefs(path string, change func(doc map[string]json.RawMessage) (bool, error)) error {
 	appStateMu.Lock()
 	defer appStateMu.Unlock()
 	return filelock.New(filepath.Join(filepath.Dir(path), prefsLockFilename), 0).With(func() error {
@@ -65,8 +65,8 @@ func editPrefs(path string, change func(doc map[string]json.RawMessage) bool) er
 		if doc == nil {
 			doc = map[string]json.RawMessage{}
 		}
-		if !change(doc) {
-			return nil
+		if edited, err := change(doc); err != nil || !edited {
+			return err
 		}
 		return atomicfile.WriteJSON(path, doc, atomicfile.Opts{FileMode: 0o600, DirMode: 0o700})
 	})
@@ -82,7 +82,7 @@ func stateOf(doc map[string]json.RawMessage) appState {
 }
 
 func updateAppState(path string, change func(*appState)) error {
-	return editPrefs(path, func(doc map[string]json.RawMessage) bool {
+	return editPrefs(path, func(doc map[string]json.RawMessage) (bool, error) {
 		st := stateOf(doc)
 		change(&st)
 		doc["version"] = json.RawMessage(strconv.Itoa(appStateVersion))
@@ -91,7 +91,7 @@ func updateAppState(path string, change func(*appState)) error {
 		} else {
 			doc["folded"], _ = json.Marshal(st.Folded)
 		}
-		return true
+		return true, nil
 	})
 }
 
@@ -135,25 +135,32 @@ const legacyAutoSwitchKey = "autoSwitch"
 // again instead of losing the choice. Any other key in ui_prefs.json stays.
 func migrateAutoSwitchChoice(root string) error {
 	path := appStatePath(root)
+	// Unlocked, only to keep the lock off every command once nothing is left.
 	doc, err := readPrefs(path)
 	if err != nil {
 		return err
 	}
-	choice, present := doc[legacyAutoSwitchKey]
-	if !present {
+	if _, present := doc[legacyAutoSwitchKey]; !present {
 		return nil // nothing remembered, a missing or corrupt file included
 	}
-	var on bool
-	if json.Unmarshal(choice, &on) == nil && on {
-		if _, err := seedEnabled(root); err != nil {
-			return err
+	beforePrefsLock()
+	// Decide again and seed under one hold of the lock: another process may
+	// have moved the choice since the read above and the user then unset the
+	// key, which a second seed would undo. The order .ui_prefs.lock, then
+	// .settings.lock has no reverse path: settings never calls back here.
+	return editPrefs(path, func(doc map[string]json.RawMessage) (bool, error) {
+		choice, present := doc[legacyAutoSwitchKey]
+		if !present {
+			return false, nil
 		}
-	}
-	// The file as it is now, not as read above: a fold saved meanwhile stays.
-	return editPrefs(path, func(doc map[string]json.RawMessage) bool {
-		_, had := doc[legacyAutoSwitchKey]
+		var on bool
+		if json.Unmarshal(choice, &on) == nil && on {
+			if _, err := seedEnabled(root); err != nil {
+				return false, err
+			}
+		}
 		delete(doc, legacyAutoSwitchKey)
-		return had
+		return true, nil
 	})
 }
 
@@ -162,3 +169,7 @@ func migrateAutoSwitchChoice(root string) error {
 var seedEnabled = func(root string) (bool, error) {
 	return settings.SeedSetting(root, "autoswitch.enabled", "true")
 }
+
+// beforePrefsLock runs between the unlocked check and the lock; a test lets
+// another writer in there.
+var beforePrefsLock = func() {}

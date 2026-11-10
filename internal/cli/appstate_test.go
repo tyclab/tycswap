@@ -12,7 +12,9 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/settings"
 )
@@ -141,6 +143,42 @@ func TestMigrateAutoSwitchChoice(t *testing.T) {
 		if _, err := os.Stat(settings.SettingsPath(root)); !os.IsNotExist(err) {
 			t.Errorf("settings.json written: %v", err)
 		}
+		// Every command runs this check: with nothing to move it takes no lock.
+		if _, err := os.Stat(filepath.Join(root, prefsLockFilename)); !os.IsNotExist(err) {
+			t.Errorf("%s created: %v", prefsLockFilename, err)
+		}
+	})
+
+	// This run saw autoSwitch, but before it takes the lock another process
+	// migrates the choice and the user unsets the key. Deciding again under
+	// the lock finds nothing to move, so the unset stands.
+	t.Run("a choice migrated and unset meanwhile is not seeded again", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestFile(t, appStatePath(root), prefs, 0o600)
+		prev := beforePrefsLock
+		t.Cleanup(func() { beforePrefsLock = prev })
+		other := true
+		beforePrefsLock = func() {
+			if !other {
+				return
+			}
+			other = false
+			if err := migrateAutoSwitchChoice(root); err != nil {
+				t.Fatal(err)
+			}
+			if removed, err := settings.UnsetSetting(root, "autoswitch.enabled"); err != nil || !removed {
+				t.Fatalf("the other process's unset: removed=%v err=%v", removed, err)
+			}
+		}
+		if err := migrateAutoSwitchChoice(root); err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range settings.EffectiveSettings(root) {
+			if e.Spec.Dotted() == "autoswitch.enabled" && e.IsSet {
+				t.Errorf("autoswitch.enabled = %v after the user unset it, want absent", e.Value)
+			}
+		}
+		keepsFoldsDropsChoice(t, root)
 	})
 
 	t.Run("a second run changes nothing", func(t *testing.T) {
@@ -218,24 +256,48 @@ func TestMigrateAutoSwitchChoice(t *testing.T) {
 		}
 	})
 
-	// Another process saves a fold while the seed writes settings.json: the
-	// rewrite that drops autoSwitch must start from that save, not from the
-	// file as the seed first read it.
-	t.Run("a fold saved during the seed stays", func(t *testing.T) {
+	// A fold saved after this run's unlocked check: the rewrite that drops
+	// autoSwitch starts from the file under the lock, not from that check.
+	// Once the lock is held no other writer gets in (next subtest).
+	t.Run("a fold saved before the lock stays", func(t *testing.T) {
 		root := t.TempDir()
 		writeTestFile(t, appStatePath(root), prefs, 0o600)
-		prev := seedEnabled
-		t.Cleanup(func() { seedEnabled = prev })
-		seedEnabled = func(root string) (bool, error) {
-			writeTestFile(t, appStatePath(root), `{"version":1,"autoSwitch":true,"folded":{"x":true,"y":true}}`, 0o600)
-			return prev(root)
+		prev := beforePrefsLock
+		t.Cleanup(func() { beforePrefsLock = prev })
+		beforePrefsLock = func() {
+			if err := (uiPrefs{path: appStatePath(root)}).SetFolded("y", true); err != nil {
+				t.Fatal(err)
+			}
 		}
 		if err := migrateAutoSwitchChoice(root); err != nil {
 			t.Fatal(err)
 		}
 		keepsFoldsDropsChoice(t, root)
 		if folded, _ := readPrefsFile(t, root)["folded"].(map[string]any); folded["y"] != true {
-			t.Errorf("the fold saved during the seed is gone: %v", folded)
+			t.Errorf("the fold saved before the lock is gone: %v", folded)
+		}
+		if !settings.Load(root).Enabled {
+			t.Error("Enabled = false, want the remembered true")
+		}
+	})
+
+	// The seed runs while this run holds .ui_prefs.lock: another holder of
+	// the same lock file cannot get it then.
+	t.Run("the seed runs under the prefs lock", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestFile(t, appStatePath(root), prefs, 0o600)
+		prev := seedEnabled
+		t.Cleanup(func() { seedEnabled = prev })
+		seedEnabled = func(root string) (bool, error) {
+			other := filelock.New(filepath.Join(root, prefsLockFilename), 0)
+			if got, err := other.Acquire(time.Millisecond); err != nil || got {
+				_ = other.Release()
+				t.Errorf("another holder got .ui_prefs.lock during the seed (err %v)", err)
+			}
+			return prev(root)
+		}
+		if err := migrateAutoSwitchChoice(root); err != nil {
+			t.Fatal(err)
 		}
 		if !settings.Load(root).Enabled {
 			t.Error("Enabled = false, want the remembered true")
