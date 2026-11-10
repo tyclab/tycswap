@@ -1481,7 +1481,8 @@
       else { badge.textContent = 'stopped'; badge.className = 'chip chip-outline'; }
 
       var tiles = el('div', { class: 'tiles' });
-      tiles.appendChild(tile('State', a.managedBy ? 'managed externally' : a.running ? (a.dryRun ? 'dry-run' : 'running') : 'stopped', [a.running ? (a.dryRun ? 'decides, never switches' : 'switches near the limit') : a.managedBy ? a.managedBy : 'not polling'], a.running ? (a.dryRun ? 'warn' : 'good') : ''));
+      var stateLine = a.running && a.dryRun ? 'decides, never switches' : a.owner ? 'scheduled by ' + a.owner : a.running ? 'switches near the limit' : a.managedBy ? a.managedBy : 'not polling';
+      tiles.appendChild(tile('State', a.managedBy ? 'managed externally' : a.running ? (a.dryRun ? 'dry-run' : 'running') : 'stopped', [stateLine], a.running ? (a.dryRun ? 'warn' : 'good') : ''));
       tiles.appendChild(tile('7d threshold', Math.round(a.threshold * 10) / 10 + '%', ['the 5h and model windows have bars of their own']));
       tiles.appendChild(tile('Strategy', strat, [el('span', { class: 'ellipsis', text: countingNote(models), title: countingNote(models) })]));
       tiles.appendChild(tile('Started', a.startedAt ? el('span', { 'data-started': String(Math.round(a.startedAt * 1000)), text: fmtAgo(Date.now() - a.startedAt * 1000) }) : '—', [a.startedAt ? fmtUnix(a.startedAt) : 'not running']));
@@ -1489,12 +1490,14 @@
       body.appendChild(tiles);
       fallbackNotices(st).forEach(function (n) { body.appendChild(n); });
 
-      actions.querySelectorAll('[data-action="auto-start"]').forEach(function (b) { b.disabled = !a.available || a.running; });
+      // Start is offered while off; a dry run also beside an external
+      // scheduler, whose ticks no engine here would double.
+      actions.querySelectorAll('[data-action="auto-start"]').forEach(function (b) { b.disabled = !a.available || (b.getAttribute('data-dry') === '1' ? a.hosted && a.running : a.running); });
       actions.querySelector('[data-post="/api/auto/stop"]').disabled = !a.running;
-      actions.querySelector('[data-post="/api/auto/wake"]').disabled = !a.running;
-      // The live threshold exists only while the engine runs; a stopped
-      // engine has nothing to apply it to (the server answers 400).
-      slider.disabled = !a.available || !a.running;
+      // Wake and the live threshold act on the engine hosted here; under an
+      // external scheduler there is none (the server says where to go).
+      actions.querySelector('[data-post="/api/auto/wake"]').disabled = !a.hosted;
+      slider.disabled = !a.available || !a.hosted;
       if (!sliderActive) {
         slider.value = String(Math.round(a.threshold));
         $('threshold-out').textContent = Math.round(a.threshold) + '%';
@@ -1720,6 +1723,7 @@
 
 
   var SETTING_LABELS = {
+    'autoswitch.enabled': 'Auto-switch',
     'autoswitch.fiveHourThreshold': '5h threshold', 'autoswitch.sevenDayThreshold': '7d threshold',
     'autoswitch.modelThreshold': 'Model threshold', 'autoswitch.intervalSeconds': 'Poll interval',
     'autoswitch.codexEnabled': 'Codex auto-switch', 'autoswitch.codexThreshold': 'Codex threshold',

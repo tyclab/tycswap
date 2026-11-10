@@ -112,8 +112,8 @@ func TestLoad_ClampTable(t *testing.T) {
 			func(s AutoSwitchSettings) bool { return s.CodexThreshold == 0.0 }, "codexThreshold=0.0 (default)"},
 		{"codexEnabled_false_is_false", `{"autoswitch":{"codexEnabled":false}}`,
 			func(s AutoSwitchSettings) bool { return !s.CodexEnabled }, "codexEnabled=false"},
-		{"codexEnabled_0_is_false", `{"autoswitch":{"codexEnabled":0}}`,
-			func(s AutoSwitchSettings) bool { return !s.CodexEnabled }, "codexEnabled=false"},
+		{"codexEnabled_0_falls_back_to_default", `{"autoswitch":{"codexEnabled":0}}`,
+			func(s AutoSwitchSettings) bool { return s.CodexEnabled }, "codexEnabled=true (default)"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -202,6 +202,7 @@ func TestSave_FileMode0600(t *testing.T) {
 
 func TestSettingSpecs_CoversEveryField(t *testing.T) {
 	want := map[string]bool{
+		"Enabled":           true,
 		"FiveHourThreshold": true, "SevenDayThreshold": true, "ModelThreshold": true,
 		"IntervalSeconds": true, "CodexEnabled": true,
 		"CodexThreshold": true, "CooldownSeconds": true,
@@ -228,13 +229,15 @@ func TestSettingSpecs_DefaultsMatchDataclass(t *testing.T) {
 	}
 }
 
-// The keys that decide when a window is full lead the registry, and the
-// model windows sit right before the model bar that applies only to them:
-// `tycswap config`, the TUI's Settings screen and the dashboard's Settings
-// tab list the keys in this order, and autoswitch.model last put the choice
-// of which model limits count at the bottom, away from its bar (DESIGN A49).
+// The on/off leads the registry, then the keys that decide when a window is
+// full, and the model windows sit right before the model bar that applies
+// only to them: `tycswap config`, the TUI's Settings screen and the
+// dashboard's Settings tab list the keys in this order, and autoswitch.model
+// last put the choice of which model limits count at the bottom, away from
+// its bar (DESIGN A49).
 func TestSettingSpecs_ModelWindowsBesideTheirBar(t *testing.T) {
 	want := []string{
+		"autoswitch.enabled",
 		"autoswitch.fiveHourThreshold", "autoswitch.sevenDayThreshold",
 		"autoswitch.model", "autoswitch.modelThreshold",
 	}
@@ -524,6 +527,128 @@ func TestSetSetting_CodexEnabledRoundTrips(t *testing.T) {
 	}
 	if !Load(root).CodexEnabled {
 		t.Error("Load().CodexEnabled = false after unset, want default true")
+	}
+}
+
+// TestEnabledDefaultsFalse: auto-switching is opt-in, so a store without the
+// key is off; the key is a bool listed first, before the bars.
+func TestEnabledDefaultsFalse(t *testing.T) {
+	if Load(t.TempDir()).Enabled {
+		t.Error("Load(empty root).Enabled = true, want false")
+	}
+	spec, err := SpecFor("autoswitch.enabled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Kind != KindBool || spec.Default != false || spec.Field != "Enabled" {
+		t.Errorf("spec = %+v, want a bool on Enabled defaulting to false", spec)
+	}
+	if want := "Switch accounts automatically before a limit (tycswap auto on|off)"; spec.Help != want {
+		t.Errorf("Help = %q, want %q", spec.Help, want)
+	}
+	if first := SettingSpecs[0].Dotted(); first != "autoswitch.enabled" {
+		t.Errorf("first spec = %s, want autoswitch.enabled", first)
+	}
+}
+
+// TestEnabledSetUnset: set persists through Load, a non-bool word is refused
+// with the same message codexEnabled gives and writes nothing, and unset
+// returns to the off default.
+func TestEnabledSetUnset(t *testing.T) {
+	root := t.TempDir()
+	if v, err := SetSetting(root, "autoswitch.enabled", "true"); err != nil || v != true {
+		t.Fatalf("set true: v=%v err=%v", v, err)
+	}
+	if !Load(root).Enabled {
+		t.Error("Load().Enabled = false after set true")
+	}
+
+	fresh := t.TempDir()
+	_, err := SetSetting(fresh, "autoswitch.enabled", "maybe")
+	_, codexErr := SetSetting(fresh, "autoswitch.codexEnabled", "maybe")
+	if err == nil || codexErr == nil {
+		t.Fatalf("maybe accepted: enabled err=%v, codexEnabled err=%v", err, codexErr)
+	}
+	if want := strings.Replace(codexErr.Error(), "codexEnabled", "enabled", 1); err.Error() != want {
+		t.Errorf("err = %q, want the bool message %q", err, want)
+	}
+	if _, statErr := os.Stat(SettingsPath(fresh)); !os.IsNotExist(statErr) {
+		t.Error("a refused value created settings.json")
+	}
+
+	if removed, err := UnsetSetting(root, "autoswitch.enabled"); err != nil || !removed {
+		t.Fatalf("unset: removed=%v err=%v", removed, err)
+	}
+	if Load(root).Enabled {
+		t.Error("Load().Enabled = true after unset, want default false")
+	}
+}
+
+// TestBoolSettingsFallBackOnABadType: a bool key takes only a JSON bool. A
+// hand-edited "false", 1 or null is a bad type and reads as the key's
+// default, as for every other kind; before, any non-empty string read as on,
+// and autoswitch.enabled gates the whole engine.
+func TestBoolSettingsFallBackOnABadType(t *testing.T) {
+	for _, tc := range []struct {
+		json string
+		want func(AutoSwitchSettings) bool
+	}{
+		{`{"autoswitch":{"enabled":"false"}}`, func(s AutoSwitchSettings) bool { return !s.Enabled }},
+		{`{"autoswitch":{"enabled":1}}`, func(s AutoSwitchSettings) bool { return !s.Enabled }},
+		{`{"autoswitch":{"enabled":null}}`, func(s AutoSwitchSettings) bool { return !s.Enabled }},
+		{`{"autoswitch":{"codexEnabled":"no"}}`, func(s AutoSwitchSettings) bool { return s.CodexEnabled }},
+		{`{"autoswitch":{"enabled":true,"codexEnabled":false}}`, func(s AutoSwitchSettings) bool { return s.Enabled && !s.CodexEnabled }},
+		{`{"autoswitch":{"enabled":false,"codexEnabled":true}}`, func(s AutoSwitchSettings) bool { return !s.Enabled && s.CodexEnabled }},
+	} {
+		root := t.TempDir()
+		writeSettingsJSON(t, root, tc.json)
+		if got := Load(root); !tc.want(got) {
+			t.Errorf("Load(%s): Enabled=%v CodexEnabled=%v", tc.json, got.Enabled, got.CodexEnabled)
+		}
+	}
+}
+
+// TestSeedSetting: a seed writes only a key settings.json does not carry,
+// deciding under the same lock hold as the write, so a value set meanwhile
+// (an explicit false included) is never overwritten. A corrupt file is the
+// strict reader's error, not "unset".
+func TestSeedSetting(t *testing.T) {
+	root := t.TempDir()
+	if seeded, err := SeedSetting(root, "autoswitch.enabled", "true"); err != nil || !seeded {
+		t.Fatalf("absent key: seeded=%v err=%v, want true, nil", seeded, err)
+	}
+	if !Load(root).Enabled {
+		t.Error("absent key: Enabled = false after the seed")
+	}
+
+	explicit := t.TempDir()
+	writeSettingsJSON(t, explicit, `{"schemaVersion":1,"autoswitch":{"enabled":false}}`)
+	before, _ := os.ReadFile(SettingsPath(explicit))
+	if seeded, err := SeedSetting(explicit, "autoswitch.enabled", "true"); err != nil || seeded {
+		t.Fatalf("present false: seeded=%v err=%v, want false, nil", seeded, err)
+	}
+	if after, _ := os.ReadFile(SettingsPath(explicit)); string(after) != string(before) || Load(explicit).Enabled {
+		t.Errorf("present false: file %s, want it untouched and off", after)
+	}
+
+	// The legacy key still steers the 7d bar (DESIGN A34), so it counts as set.
+	legacy := t.TempDir()
+	writeSettingsJSON(t, legacy, `{"autoswitch":{"threshold":72}}`)
+	if seeded, err := SeedSetting(legacy, "autoswitch.sevenDayThreshold", "80"); err != nil || seeded {
+		t.Errorf("legacy threshold: seeded=%v err=%v, want false, nil", seeded, err)
+	}
+
+	corrupt := t.TempDir()
+	writeSettingsJSON(t, corrupt, "{not json")
+	if seeded, err := SeedSetting(corrupt, "autoswitch.enabled", "true"); err == nil || seeded || !strings.Contains(err.Error(), "not valid JSON") {
+		t.Errorf("corrupt file: seeded=%v err=%v, want the strict reader's error", seeded, err)
+	}
+	if data, _ := os.ReadFile(SettingsPath(corrupt)); string(data) != "{not json" {
+		t.Errorf("corrupt file rewritten: %q", data)
+	}
+
+	if seeded, err := SeedSetting(t.TempDir(), "autoswitch.enabled", "maybe"); err == nil || seeded {
+		t.Errorf("bad value: seeded=%v err=%v, want the bool error", seeded, err)
 	}
 }
 

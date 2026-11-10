@@ -52,7 +52,8 @@ func observedNearBar(raw []byte, s settings.AutoSwitchSettings) bool {
 // the observation runs a tick: near a bar at most once per observeGap, with
 // the observed account's poll marked due (DESIGN A75), and at once when the
 // session's model is new or changed, on the usage already cached (A77).
-func observeTicks(sw *core.Switcher, raw []byte, s settings.AutoSwitchSettings) bool {
+// While auto-switch is off it only records the model (A83).
+func observeTicks(sw *core.Switcher, raw []byte, s settings.AutoSwitchSettings, enabled bool) bool {
 	group := observedGroup(sw.BackupDir())
 	modelNews := false
 	if group == "" {
@@ -62,6 +63,9 @@ func observeTicks(sw *core.Switcher, raw []byte, s settings.AutoSwitchSettings) 
 			sw.Log.Debugf("Session model not recorded: %v", err)
 		}
 		modelNews = news
+	}
+	if !enabled {
+		return false
 	}
 	if observedNearBar(raw, s) && claimObserveSlot(sw.BackupDir(), sw.Clk.Now()) {
 		markObservedDue(sw, group)

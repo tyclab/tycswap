@@ -313,30 +313,20 @@ func TestAutoModelAppliesLive(t *testing.T) {
 			t.Errorf("%s: calls %v, want [%s]", tc.body, h.auto.calls, tc.want)
 		}
 	}
+	// Nothing hosted here (an external scheduler's ticks, or no engine yet):
+	// the route answers and retargets nothing.
+	h.auto.mu.Lock()
+	h.auto.calls, h.auto.view.Hosted = nil, false
+	h.auto.mu.Unlock()
+	if resp := h.postJSON("/api/auto/model", `{"model":"all"}`); resp.StatusCode != http.StatusOK || len(h.auto.Calls()) != 0 {
+		t.Fatalf("nothing hosted: status %d, calls %v", resp.StatusCode, h.auto.Calls())
+	}
 	h.auto.calls = nil
 	if resp := h.postJSON("/api/auto/model", `{}`); resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("a missing model must be rejected: %d", resp.StatusCode)
 	}
 	if len(h.auto.calls) != 0 {
 		t.Errorf("nothing should reach the engine on a bad request: %v", h.auto.calls)
-	}
-}
-
-func TestAutoStart_ManagedExternally(t *testing.T) {
-	h := newHarness(t)
-	h.auto.mu.Lock()
-	h.auto.view.ManagedBy = "flakelab-tycswap-autoswitch.timer"
-	h.auto.view.Available = false
-	h.auto.mu.Unlock()
-	for _, dry := range []bool{false, true} {
-		resp := h.postJSON("/api/auto/start", map[string]any{"dryRun": dry})
-		if resp.StatusCode != http.StatusConflict {
-			t.Fatalf("managed start = %d: %s", resp.StatusCode, readBody(t, resp))
-		}
-		resp.Body.Close()
-	}
-	if len(h.auto.Calls()) != 0 {
-		t.Fatal("managed engine reached Start")
 	}
 }
 

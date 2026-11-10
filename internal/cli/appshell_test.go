@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/recovery"
+	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/tray"
 	"github.com/tyclab/tycswap/internal/web"
@@ -963,19 +965,77 @@ func TestTrayCountsOnlySelectedModels(t *testing.T) {
 	}
 }
 
-func TestTrayManagedAutoCannotStart(t *testing.T) {
+// TestTrayManagedToggleWritesSetting: with an external owner in the engine
+// host the tray's toggle works (DESIGN A83): a click turns autoswitch.enabled
+// off and unchecks the item, the next turns it on again.
+func TestTrayManagedToggleWritesSetting(t *testing.T) {
+	a := newAutoFacade(fixtureSwitcher(t), nil)
+	a.managedBy = testOwner
+	a.newEngine = func(settings.AutoSwitchSettings, func(autoswitch.Event), bool) autoEngine {
+		t.Fatal("the tray built an engine under an external owner")
+		return nil
+	}
+	root := a.sw.BackupDir()
+	if _, err := settings.SetSetting(root, "autoswitch.enabled", "true"); err != nil {
+		t.Fatal(err)
+	}
 	ft := &fakeTray{}
-	calls := 0
-	sh := newAppShell(ft, shellActions{AutoStart: func() error { calls++; return nil }})
+	sh := newAppShell(ft, shellActions{
+		AutoRunning: func() bool { return a.View().Running },
+		AutoStart:   func() error { return a.Start(false) },
+		AutoStop:    a.Stop,
+	})
 	st := sampleState()
-	st.Auto = &web.AutoView{ManagedBy: "flakelab-tycswap-autoswitch.timer"}
+	v := a.View()
+	st.Auto = &v
 	sh.update(st)
-	item, ok := ft.item("auto")
-	if !ok || !item.Disabled || !strings.Contains(item.Sub, st.Auto.ManagedBy) {
-		t.Fatalf("managed item: %+v", item)
+	for i, want := range []bool{true, false, true} {
+		if i > 0 {
+			sh.click("auto")
+		}
+		item, ok := ft.item("auto")
+		if !ok || item.Disabled || item.Checked != want || settings.Load(root).Enabled != want {
+			t.Fatalf("step %d: item %+v (present %v), enabled %v; want checked and enabled %v", i, item, ok, settings.Load(root).Enabled, want)
+		}
+	}
+	if notes := strings.Join(ft.notesNow(), "\n"); !strings.Contains(notes, "Auto-switch off |") || !strings.Contains(notes, "Auto-switch on |") {
+		t.Fatalf("notifications = %q", notes)
+	}
+}
+
+// TestTrayClickAfterCLIOffTurnsOn: `tycswap auto off` while the app hosts an
+// engine unchecks the tray item, and the next click turns auto-switch back on
+// instead of stopping the engine (DESIGN A83).
+func TestTrayClickAfterCLIOffTurnsOn(t *testing.T) {
+	a := newAutoFacade(fixtureSwitcher(t), nil)
+	engines := countingEngines(a)
+	t.Cleanup(func() { a.stopKeepingChoice() })
+	root := a.sw.BackupDir()
+	if err := a.Start(false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := settings.SetSetting(root, "autoswitch.enabled", "false"); err != nil {
+		t.Fatal(err)
+	}
+	ft := &fakeTray{}
+	sh := newAppShell(ft, shellActions{
+		AutoRunning: func() bool { return a.View().Running },
+		AutoStart:   func() error { return a.Start(false) },
+		AutoStop:    a.Stop,
+	})
+	st := sampleState()
+	v := a.View()
+	st.Auto = &v
+	sh.update(st)
+	if item, _ := ft.item("auto"); item.Checked {
+		t.Fatalf("item checked while the setting is off: %+v", item)
 	}
 	sh.click("auto")
-	if calls != 0 {
-		t.Fatal("disabled tray action started an engine")
+	item, _ := ft.item("auto")
+	if !settings.Load(root).Enabled || !item.Checked || engines.built() != 1 {
+		t.Fatalf("after the click: enabled %v, item %+v, %d engines", settings.Load(root).Enabled, item, engines.built())
+	}
+	if notes := strings.Join(ft.notesNow(), "\n"); !strings.Contains(notes, "Auto-switch on |") {
+		t.Fatalf("notifications = %q", notes)
 	}
 }

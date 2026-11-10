@@ -8,6 +8,7 @@ import (
 
 	"github.com/mattn/go-isatty"
 
+	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/sessprofile"
@@ -56,6 +57,12 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 		}
 		if warning != "" {
 			fmt.Fprintln(s.err, printer.Yellowed("warning: "+warning))
+		}
+		// The engine's on/off lives in settings.json, where every tick path
+		// reads it; a choice the app remembered elsewhere moves there before
+		// any command looks. Housekeeping, so it never fails the command.
+		if err := migrateAutoSwitchChoice(paths.GetBackupRoot()); err != nil {
+			logging.New(paths.GetBackupRoot(), debugRequested(argv)).Debugf("auto-switch choice not moved to settings.json: %v", err)
 		}
 	}
 
@@ -149,6 +156,20 @@ func neutralizePinnedSessionProfile(stderr io.Writer) {
 
 func isTTY(f *os.File) bool {
 	return isatty.IsTerminal(f.Fd()) || isatty.IsCygwinTerminal(f.Fd())
+}
+
+// debugRequested reports a --debug before any "--": run() needs it before the
+// command's own parser has read its flags.
+func debugRequested(argv []string) bool {
+	for _, tok := range argv {
+		if tok == "--" {
+			return false
+		}
+		if tok == "--debug" {
+			return true
+		}
+	}
+	return false
 }
 
 // isHelpOrVersion reports whether argv only asks for help or the version,

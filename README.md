@@ -395,6 +395,26 @@ Enabled Account-2 (bob@example.com).
 
 ### Auto-switch before a limit
 
+Auto-switch is off until you turn it on, from the CLI, the tray's
+**Auto-switch** toggle or the dashboard's Start:
+
+```
+$ tycswap auto on
+Auto-switch on.
+$ tycswap auto status
+Auto-switch: on
+```
+
+`tycswap auto off` turns it off again. The choice is one setting,
+`autoswitch.enabled`, and every tick reads it first: the loop below, a
+timer's `tycswap auto --once` and the app's engine alike. While it is off a
+tick switches nothing and says `no switch: disabled`, `--once` exits 2, and
+`tycswap auto` says once on stderr that it is off. The tray app keeps its
+engine for as long as it runs, idle while off, so `tycswap auto on` from a
+shell takes effect without touching the app.
+`tycswap auto on --if-unset` turns it on only when nothing has set it yet,
+for a provisioner that must not override a user's later "off".
+
 `tycswap auto` runs a foreground loop that polls usage and switches to another
 account before the active one reaches its rate limit:
 
@@ -451,7 +471,7 @@ The process exit code reports the outcome, so a scheduler can branch on it:
 |------|----------|-------------------------------------------------------------|
 | 0    | Switched | A switch happened.                                          |
 | 1    | Error    | Network trouble, lock contention, or a transient failure.  |
-| 2    | NoAction | Nothing to do — below threshold, in cooldown, or idle.     |
+| 2    | NoAction | Nothing to do — below threshold, in cooldown, idle, or auto-switch is off. |
 | 3    | Blocked  | A switch was wanted but no viable target remained.         |
 
 A crontab entry that ticks every five minutes and logs the result:
@@ -683,6 +703,7 @@ requirement. Changing presentation does not change the saved policy.
 
 ```
 $ tycswap config
+autoswitch.enabled            true
 autoswitch.fiveHourThreshold  85             (default)
 autoswitch.sevenDayThreshold  92
 autoswitch.model              Fable
@@ -894,12 +915,16 @@ elsewhere.
 
 **When a timer owns auto-switch.** Set
 `TYCSWAP_AUTO_MANAGED_BY=flakelab-tycswap-autoswitch.timer` in the dashboard
-service environment (or name your scheduler). The dashboard and remote tray
-show that owner and disable their hosted-engine start controls. The server
-also rejects start requests, including dry runs and remembered app startup,
-so a second engine cannot be started through those controls. The timer's
-`tycswap auto --once` keeps working. This declares ownership; it does not
-probe whether the named scheduler is currently active.
+service environment (or name your scheduler). It only means "do not host an
+engine here": the app starts no engine of its own, so a second engine never
+runs beside the timer's. The tray's toggle and the dashboard's Start and Stop
+still work: they turn `autoswitch.enabled` on and off, which the timer's
+`tycswap auto --once` reads on every tick, and they show that setting as
+running or stopped. The dashboard names the scheduler on its State tile and
+turns Wake and the live threshold slider off, since no engine runs there; a
+dry run is still offered. Seed the setting from the provisioner with
+`tycswap auto on --if-unset`. This declares ownership; it does not probe
+whether the named scheduler is currently active.
 
 Flakelab manages the package, service and timer without overwriting saved
 tycswap policy settings. Its `auto --once` checks reload those values each
@@ -1180,14 +1205,14 @@ Inside the backup store:
 | `sequence.json`           | The account roster: slot, email, alias, kind, disabled state. |
 | `credentials/`            | Each account's stored credential blob (`.enc`).               |
 | `configs/`                | Each account's configuration snapshot.                        |
-| `settings.json`           | Auto-switch settings (`tycswap config`).                        |
+| `settings.json`           | Auto-switch settings, the on/off among them (`tycswap config`, `tycswap auto on\|off`). |
 | `mappings.json`           | Directory-to-account mappings (`tycswap map`).                  |
 | `cache/usage.json`        | Cached usage fetches.                                         |
 | `cache/update_check.json` | Cached update-check result.                                  |
 | `statusline.json`         | Label and quota per account for status lines (see Status line integration). |
 | `sessions/`               | Session profiles for `tycswap run` and `tycswap env`.            |
 | `tycswap.log`             | The switch log; rotates at 1 MB, keeping 3 backups.          |
-| `ui_prefs.json`           | The dashboard's folded cards and whether auto-switch was on in the tray app. |
+| `ui_prefs.json`           | The dashboard's folded cards.                                  |
 | `app.lock`, `remote.lock` | Held while the tray app (or a remote tray) runs.              |
 | `remote.token`            | The running app's token for a remote tray; gone when it stops. |
 | `app.log`                 | The background tray app's output (macOS: `~/Library/Logs/tycswap.log`). |

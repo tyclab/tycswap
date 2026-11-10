@@ -601,7 +601,7 @@ func sampleSettings() []SettingView {
 
 func sampleAuto() AutoView {
 	return AutoView{
-		Available: true, Running: true, DryRun: true, StartedAt: f64(1758276000), Threshold: 85,
+		Available: true, Running: true, Hosted: true, DryRun: true, StartedAt: f64(1758276000), Threshold: 85,
 		Settings: map[string]any{"autoswitch.sevenDayThreshold": 85.0, "autoswitch.strategy": "soonest-reset", "autoswitch.codexEnabled": true},
 		Events: []AutoEventView{
 			{At: 1758276001, Kind: "poll", Message: "polled 3 accounts"},

@@ -862,7 +862,7 @@ func (s *Server) settingsViews() []SettingView {
 	eff := s.d.Settings.Effective()
 	list := make([]SettingView, len(eff))
 	copy(list, eff)
-	managed := s.d.Auto != nil && s.d.Auto.View().ManagedBy != ""
+	managed := s.d.Auto != nil && s.d.Auto.View().Owner != ""
 	for i := range list {
 		list[i].Applies = settingApplies(list[i].Key)
 		if managed {
@@ -887,10 +887,12 @@ func (s *Server) settingsViews() []SettingView {
 // state document. The Codex keys are read when a Codex engine starts: this
 // page's Start runs one beside the Claude engine when the dashboard started
 // with Codex accounts (A47), `tycswap auto` runs one, and the terminal
-// dashboard's engine never does. Every other key, a new one included, waits
-// for the next engine start.
+// dashboard's engine never does. autoswitch.enabled is read by every tick
+// (A83); every other key, a new one included, waits for the next engine start.
 func settingApplies(key string) string {
 	switch key {
+	case "autoswitch.enabled":
+		return "Applies at the next tick."
 	case "autoswitch.handoverWaitMinutes":
 		return "Applies at the next usage update."
 	case modelSettingKey:
@@ -926,7 +928,9 @@ const modelSettingKey = "autoswitch.model"
 // saved (value) or unset (""). Another key, a build without an engine, or an
 // engine that is not running leave it alone and report false.
 func (s *Server) applyModelSetting(key, value string) (bool, error) {
-	if key != modelSettingKey || s.d.Auto == nil || !s.d.Auto.View().Running {
+	// Only an engine hosted here can be retargeted; an external scheduler's
+	// ticks read the saved setting (DESIGN A83).
+	if key != modelSettingKey || s.d.Auto == nil || !s.d.Auto.View().Hosted {
 		return false, nil
 	}
 	if err := s.d.Auto.ApplyModels(strings.TrimSpace(value)); err != nil {
@@ -1052,6 +1056,9 @@ func (s *Server) handleAutoModel(w http.ResponseWriter, r *http.Request) {
 	}
 	model := strings.TrimSpace(*b.Model)
 	s.mutate(w, func() (map[string]any, error) {
+		if !s.d.Auto.View().Hosted {
+			return map[string]any{"model": model}, nil
+		}
 		if err := s.d.Auto.ApplyModels(model); err != nil {
 			return nil, err
 		}
