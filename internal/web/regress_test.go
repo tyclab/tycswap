@@ -425,10 +425,21 @@ func TestStaticElRefusesUnsafeAttributes(t *testing.T) {
 	}
 }
 
-// The live threshold slider is usable only while the engine runs.
-func TestStaticSliderGatedOnRunning(t *testing.T) {
-	if !strings.Contains(staticFile(t, "app.js"), "slider.disabled = !a.available || !a.running;") {
-		t.Fatal("the threshold slider is not disabled while the engine is stopped")
+// The live threshold slider and Wake act on an engine hosted in this
+// process, so they are off while none is (an external scheduler's ticks);
+// the State tile names that scheduler, and the dry-run Start is offered
+// whenever nothing is hosted (DESIGN A83).
+func TestStaticAutoControlsFollowHosted(t *testing.T) {
+	js := staticFile(t, "app.js")
+	for _, want := range []string{
+		"slider.disabled = !a.available || !a.hosted;",
+		"actions.querySelector('[data-post=\"/api/auto/wake\"]').disabled = !a.hosted;",
+		"b.disabled = !a.available || (b.getAttribute('data-dry') === '1' ? a.hosted : a.running);",
+		"'scheduled by ' + a.owner",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("app.js lacks %s", want)
+		}
 	}
 }
 

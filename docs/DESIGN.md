@@ -6865,27 +6865,43 @@ The rule: one key, `autoswitch.enabled` in `settings.json`, default off
   nothing, reads and writes no state and emits one `no-switch` `disabled`
   event; `--once` exits 2. A dry run says it is off in a `config-warning`
   and decides as usual.
-- The Codex tick and the group retirement run only while it is on, checked
-  on every round in `tycswap auto` and in the app's loop; a dry run still
-  ticks Codex.
+- A real `--once` that finds it off says so without building an engine: no
+  process scan for the session policy, no Codex engine. A foreground
+  `tycswap auto` (loop or `--once`) prints `Auto-switch is off; tycswap auto
+  on turns it on.` once on stderr, and the loop's banner shows only while it
+  is on.
+- The Codex tick runs only while it is on, checked on every round in
+  `tycswap auto` and in the app's loop; a dry run still ticks Codex.
+  Retiring a former session group (A78) never moves the default login, and
+  `add` tells its user the next tick does it, so it runs whatever the key.
 - `tycswap auto --observe` while off records the session's model (A77),
-  marks nothing due, runs no tick and exits 2 with the same `disabled` line.
+  marks nothing due, runs no tick and exits 2 with the same `disabled` line;
+  with `--dry-run` it decides as any dry run does.
 - `tycswap auto on|off` write it, `auto on --if-unset` writes only an absent
   key (a provisioner's seed that never overrides a user's choice), and
   `auto status [--json]` reads it.
-- The app's and the dashboard's Start writes on and Stop writes off, each
-  with one INFO log line. A dry run writes nothing, and neither does its
-  stop. Quitting the app or `tycswap web` stops the hosted engine without
-  writing; the app starts it again at launch while the key is on, which is
-  A43's resume through the setting. A hosted engine shows as running only
-  while the key is on (a dry run always), so `tycswap auto off` from a shell
-  unchecks the toggle, and a Start beside a running engine only turns the
-  key back on.
+- With no external scheduler, the app's engine is a host the key gates: the
+  app hosts it from launch whatever the key (it idles while off, every tick
+  reporting `disabled`), so a shell's `tycswap auto on` or a save in Settings
+  takes effect without the app. Start makes sure a real engine is hosted and
+  only then writes on, waking the engine so it ticks at once (the Codex loop
+  follows at its next round); Stop writes off and returns at once, leaving
+  the engine hosted. A dry run is hosted and stopped as before and writes
+  nothing; a Start beside it is refused. Each write is one INFO log line.
+  Quitting the app or `tycswap web` ends the hosted engine without writing.
+  The view's `running` is a hosted engine that is a dry run or has the key
+  on; `hosted` says an engine runs in this process, and model retargets
+  (a model save, the tray's Model limits) go to it whenever it is hosted.
 - An external scheduler no longer locks the toggle. `TYCSWAP_AUTO_MANAGED_BY`
   now only means "do not host an engine here": Start and Stop write the key
-  and start nothing, the view's `running` is the key, `available` is always
-  true and `managedBy` always empty (kept for older clients). A dry run is
-  still hosted.
+  and start nothing, the view's `running` is the key, its `owner` names the
+  scheduler, `hosted` is false, `available` is always true and `managedBy`
+  always empty (kept for older clients). The controls of a hosted engine do
+  not fail there: a model save has nothing to retarget, Wake nothing to
+  wake, and the live 7d bar says to change the saved setting; the page turns
+  Wake and the slider off, names the scheduler on the State tile, and keeps
+  the Settings tab's scheduler notes. A dry run is offered while nothing is
+  hosted.
 
 Supersedes A43's `ui_prefs.json` choice and A51's refusal of Start under an
 external owner. Closes HOST-1 ("off" exists only inside the app process) and

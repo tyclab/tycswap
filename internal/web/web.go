@@ -137,9 +137,11 @@ type AutoEventView struct {
 
 // AutoView is the auto-switch engine's state as the dashboard shows it.
 type AutoView struct {
-	ManagedBy  string          `json:"managedBy,omitempty"`
+	ManagedBy  string          `json:"managedBy,omitempty"` // always empty since DESIGN A83; older clients read it
+	Owner      string          `json:"owner,omitempty"`     // the external scheduler of ticks, when one is named
 	Available  bool            `json:"available"`
 	Running    bool            `json:"running"`
+	Hosted     bool            `json:"hosted"` // an engine runs inside this process
 	DryRun     bool            `json:"dryRun"`
 	StartedAt  *float64        `json:"startedAt"`
 	Threshold  float64         `json:"threshold"`  // live autoswitch.sevenDayThreshold, the 7d bar (ApplyThreshold-adjusted)

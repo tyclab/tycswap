@@ -142,15 +142,28 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		onEvent = jsonlEmit(s.out)
 	}
 	root := sw.BackupDir()
+	on := autoSwitchOn(root)
+	// Off, a real tick is said as a tick would say it, without building one:
+	// no process scan, no Codex engine (DESIGN A83).
+	sayDisabled := func() {
+		onEvent(autoswitch.NoSwitchEvent{Ts: sw.Clk.Now().UTC().Format("2006-01-02T15:04:05") + "Z",
+			Reason: "disabled", Detail: autoswitch.DisabledDetail})
+	}
 	if observe {
 		raw, _ := io.ReadAll(io.LimitReader(s.in, 1<<20))
-		on := autoSwitchOn(root)
-		if !observeTicks(sw, raw, merged, on) {
-			if !on {
-				// Said as a tick would say it, without building one (DESIGN A83).
-				onEvent(autoswitch.NoSwitchEvent{Ts: sw.Clk.Now().UTC().Format("2006-01-02T15:04:05") + "Z",
-					Reason: "disabled", Detail: autoswitch.DisabledDetail})
+		if !observeTicks(sw, raw, merged, on || dryRun) {
+			if !on && !dryRun {
+				sayDisabled()
 			}
+			return int(autoswitch.NoAction)
+		}
+	} else {
+		autoForegroundNotice(s, on, !once, jsonMode, dryRun, merged)
+		if once && !on && !dryRun {
+			sayDisabled()
+			// Retiring a former session group never moves the default login,
+			// and `add` tells its user the next tick does it (DESIGN A78).
+			retireGroups(sw, onEvent, false)
 			return int(autoswitch.NoAction)
 		}
 	}
@@ -160,7 +173,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	defaultSettings := merged
 	var reserved func(string) bool
 	if once {
-		defaultSettings, reserved = reporting.DefaultSessionPolicy(sw.Store, merged)
+		defaultSettings, reserved = defaultSessionPolicy(sw.Store, merged)
 	}
 
 	// The Codex engine emits from its own goroutine in loop mode; one mutex
@@ -197,14 +210,13 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		emitCodexTick(s.out, tick, jsonMode)
 	}
 
-	// Codex and the group retirement follow the setting each round, as the
-	// Claude tick does; a dry run still decides (DESIGN A83).
+	// The retirement runs whatever the setting; the Codex tick follows it
+	// each round, as the Claude tick does, and a dry run still decides (A83).
 	codexRound := func(ctx context.Context) {
-		if !dryRun && !autoSwitchOn(root) {
-			return
-		}
 		retireGroups(sw, onEvent, dryRun)
-		runCodexTick(ctx)
+		if dryRun || autoSwitchOn(root) {
+			runCodexTick(ctx)
+		}
 	}
 	if once {
 		// Claude first, then Codex; the exit status is the Claude outcome.
@@ -224,7 +236,20 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		<-sigterm
 		engine.Stop()
 	}()
-	if !jsonMode {
+	stopCodex := startCodexLoop(true, time.Duration(merged.IntervalSeconds*float64(time.Second)), codexRound)
+	code := engine.RunLoop()
+	stopCodex()
+	return code
+}
+
+// autoForegroundNotice says once what a foreground run finds: off, a stderr
+// line naming `tycswap auto on`; on, the loop's banner (DESIGN A83).
+func autoForegroundNotice(s ioStreams, on, loop, jsonMode, dryRun bool, merged settings.AutoSwitchSettings) {
+	if !on {
+		fmt.Fprintln(s.err, "Auto-switch is off; tycswap auto on turns it on.")
+		return
+	}
+	if loop && !jsonMode {
 		dry := ""
 		if dryRun {
 			dry = " (dry-run)"
@@ -234,11 +259,11 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 			pctText(merged.FiveHourThreshold), pctText(merged.SevenDayThreshold), pctText(merged.ModelThreshold),
 			merged.IntervalSeconds, dry)))
 	}
-	stopCodex := startCodexLoop(true, time.Duration(merged.IntervalSeconds*float64(time.Second)), codexRound)
-	code := engine.RunLoop()
-	stopCodex()
-	return code
 }
+
+// defaultSessionPolicy is the scheduled tick's session policy, which scans
+// the running processes; a variable so a test can see it was not asked.
+var defaultSessionPolicy = reporting.DefaultSessionPolicy
 
 // autoSwitchOn is autoswitch.enabled, the one on/off every tick path reads
 // afresh (DESIGN A83).

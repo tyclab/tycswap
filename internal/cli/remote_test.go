@@ -337,7 +337,7 @@ func (a *remoteFakeAuto) Calls() []string {
 func (a *remoteFakeAuto) View() web.AutoView {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return web.AutoView{Available: true, Running: a.running, Threshold: 97, Events: []web.AutoEventView{}}
+	return web.AutoView{Available: true, Running: a.running, Hosted: a.running, Threshold: 97, Events: []web.AutoEventView{}}
 }
 
 func (a *remoteFakeAuto) Start(dryRun bool) error {
@@ -570,7 +570,7 @@ func TestRemoteClientCalls(t *testing.T) {
 		t.Errorf("auto calls = %s", got)
 	}
 	// The model switch mirrors the local one: setting first, then the engine
-	// — whose "not running" is no failure while it is off.
+	// hosted there; with none hosted, nothing is retargeted (DESIGN A83).
 	if err := rc.SetModel(true); err != nil {
 		t.Fatal(err)
 	}
@@ -580,8 +580,8 @@ func TestRemoteClientCalls(t *testing.T) {
 	if got := strings.Join(fx.set.Calls(), ","); got != "Set(autoswitch.model,all),Unset(autoswitch.model)" {
 		t.Errorf("settings calls = %s", got)
 	}
-	if got := strings.Join(fx.auto.Calls(), ","); !strings.HasSuffix(got, "ApplyModels(all),ApplyModels()") {
-		t.Errorf("auto calls = %s", got)
+	if got := strings.Join(fx.auto.Calls(), ","); got != "Start(real),Stop" {
+		t.Errorf("auto calls = %s, want no retarget with nothing hosted", got)
 	}
 	// With the engine running, a failed retarget is reported.
 	if err := rc.AutoStart(); err != nil {

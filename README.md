@@ -408,7 +408,10 @@ Auto-switch: on
 `tycswap auto off` turns it off again. The choice is one setting,
 `autoswitch.enabled`, and every tick reads it first: the loop below, a
 timer's `tycswap auto --once` and the app's engine alike. While it is off a
-tick switches nothing and says `no switch: disabled`, and `--once` exits 2.
+tick switches nothing and says `no switch: disabled`, `--once` exits 2, and
+`tycswap auto` says once on stderr that it is off. The tray app keeps its
+engine for as long as it runs, idle while off, so `tycswap auto on` from a
+shell takes effect without touching the app.
 `tycswap auto on --if-unset` turns it on only when nothing has set it yet,
 for a provisioner that must not override a user's later "off".
 
@@ -917,9 +920,11 @@ engine here": the app starts no engine of its own, so a second engine never
 runs beside the timer's. The tray's toggle and the dashboard's Start and Stop
 still work: they turn `autoswitch.enabled` on and off, which the timer's
 `tycswap auto --once` reads on every tick, and they show that setting as
-running or stopped. A dry run in the dashboard is still allowed. Seed the
-setting from the provisioner with `tycswap auto on --if-unset`. This declares
-ownership; it does not probe whether the named scheduler is currently active.
+running or stopped. The dashboard names the scheduler on its State tile and
+turns Wake and the live threshold slider off, since no engine runs there; a
+dry run is still offered. Seed the setting from the provisioner with
+`tycswap auto on --if-unset`. This declares ownership; it does not probe
+whether the named scheduler is currently active.
 
 Flakelab manages the package, service and timer without overwriting saved
 tycswap policy settings. Its `auto --once` checks reload those values each

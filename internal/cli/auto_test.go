@@ -20,6 +20,7 @@ import (
 	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
 	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
@@ -191,24 +192,46 @@ func useSwitcher(t *testing.T, sw *core.Switcher) {
 	t.Cleanup(func() { newSwitcher = prev; setSigintNote(""); setSigintJSON(false) })
 }
 
-// useCodexSource makes `tycswap auto` tick Codex over src.
-func useCodexSource(t *testing.T, src *fakeCodexSource) {
+// useCodexSource makes `tycswap auto` tick Codex over src, and counts the
+// Codex engines it builds.
+func useCodexSource(t *testing.T, src *fakeCodexSource) *atomic.Int32 {
 	t.Helper()
+	var built atomic.Int32
 	prev := newCodexAutoEngineFor
 	newCodexAutoEngineFor = func(*codexswitcher.Switcher, settings.AutoSwitchSettings) *codexauto.AutoSwitcher {
+		built.Add(1)
 		return codexauto.New(src, 90, 10)
 	}
 	t.Cleanup(func() { newCodexAutoEngineFor = prev })
+	return &built
+}
+
+// countSessionPolicy counts the scheduled tick's session-policy reads, the
+// step that scans the running processes.
+func countSessionPolicy(t *testing.T) *atomic.Int32 {
+	t.Helper()
+	var calls atomic.Int32
+	prev := defaultSessionPolicy
+	defaultSessionPolicy = func(s *store.Store, base settings.AutoSwitchSettings) (settings.AutoSwitchSettings, func(string) bool) {
+		calls.Add(1)
+		return prev(s, base)
+	}
+	t.Cleanup(func() { defaultSessionPolicy = prev })
+	return &calls
 }
 
 // TestAutoOnceDisabledExits2: the timer's tick on a store that never turned
-// auto-switch on says so in one line and exits 2; neither engine looks at
-// an account. Turned on, the same store ticks both.
+// auto-switch on says so in one line (and once on stderr) and exits 2. It
+// still retires a former session group, which never moves the default login,
+// but returns before the session policy's process scan and before a Codex
+// engine is built. Turned on, the same store ticks both engines.
 func TestAutoOnceDisabledExits2(t *testing.T) {
 	sw := fixtureSwitcher(t)
 	useSwitcher(t, sw)
 	src := &fakeCodexSource{activePct: 98, accounts: 2}
-	useCodexSource(t, src)
+	codexBuilt := useCodexSource(t, src)
+	policy := countSessionPolicy(t)
+	pendingFableGroup(t, sw.BackupDir())
 
 	code, out, errb := runCodex(t, "", "auto", "--once", "--json")
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -219,20 +242,29 @@ func TestAutoOnceDisabledExits2(t *testing.T) {
 	if ev["event"] != "no-switch" || ev["reason"] != "disabled" || ev["detail"] != autoswitch.DisabledDetail {
 		t.Fatalf("event = %v", ev)
 	}
+	if n := strings.Count(errb, "Auto-switch is off; tycswap auto on turns it on.\n"); n != 1 {
+		t.Fatalf("stderr %q, want the off notice once", errb)
+	}
+	if pending, err := groups.Pending(sw.BackupDir(), groups.Fable); err != nil || pending {
+		t.Fatalf("the former group was not retired while off: pending %v, %v", pending, err)
+	}
 	code, out, _ = runCodex(t, "", "auto", "--once")
 	if code != 2 || strings.Count(out, "\n") != 1 || !strings.Contains(out, "no switch: disabled (auto-switch is off; tycswap auto on turns it on)") {
 		t.Fatalf("human: exit %d, stdout %q", code, out)
 	}
-	if n := src.Snapshots(); n != 0 {
-		t.Fatalf("the Codex engine ticked %d times while off", n)
+	if src.Snapshots() != 0 || codexBuilt.Load() != 0 || policy.Load() != 0 {
+		t.Fatalf("while off: %d Codex ticks, %d Codex engines built, %d session-policy scans; want none", src.Snapshots(), codexBuilt.Load(), policy.Load())
 	}
 
 	if _, err := settings.SetSetting(sw.BackupDir(), "autoswitch.enabled", "true"); err != nil {
 		t.Fatal(err)
 	}
-	_, out, _ = runCodex(t, "", "auto", "--once", "--json")
+	_, out, errb = runCodex(t, "", "auto", "--once", "--json")
 	if first := decodeJSON(t, strings.SplitN(out, "\n", 2)[0]); first["event"] != "poll" || src.Snapshots() != 1 || !strings.Contains(out, `"event":"codex"`) {
 		t.Fatalf("on: stdout %q, Codex ticks %d; want a poll first and one Codex tick", out, src.Snapshots())
+	}
+	if policy.Load() != 1 || strings.Contains(errb, "Auto-switch is off") {
+		t.Fatalf("on: %d session-policy scans, stderr %q", policy.Load(), errb)
 	}
 }
 
@@ -242,17 +274,17 @@ func TestAutoOnceDisabledExits2(t *testing.T) {
 func TestAutoObserveDisabledRecordsModelOnly(t *testing.T) {
 	sw := rotatedSwitcher(t)
 	useSwitcher(t, sw)
+	policy := countSessionPolicy(t)
 	num := sw.CurrentAccountNumber()
 	if num == nil {
 		t.Fatal("fixture has no live account")
 	}
 	ids := map[string]usage.Identity{*num: {Email: dryEmail, OrgUUID: "org-five"}}
 	before := sw.Usage.Entries(ids)[*num].NextPollAt
-	const line = `{"session_id":"s1","model":{"id":"claude-opus-5-5"},"rate_limits":{"five_hour":{"used_percentage":99,"resets_at":1}}}`
 
-	code, out, errb := runCodex(t, line, "auto", "--observe", "--json")
-	if code != 2 {
-		t.Fatalf("exit %d, stdout %q, stderr %q; want 2", code, out, errb)
+	code, out, errb := runCodex(t, nearBarLine, "auto", "--observe", "--json")
+	if code != 2 || errb != "" || policy.Load() != 0 {
+		t.Fatalf("exit %d, stdout %q, stderr %q, %d session-policy scans; want 2, a quiet stderr, no scan", code, out, errb, policy.Load())
 	}
 	if lines := strings.Split(strings.TrimSpace(out), "\n"); len(lines) != 1 || decodeJSON(t, lines[0])["reason"] != "disabled" {
 		t.Fatalf("stdout %q, want the one no-switch disabled line", out)
@@ -276,8 +308,45 @@ func TestAutoObserveDisabledRecordsModelOnly(t *testing.T) {
 	if _, err := settings.SetSetting(sw.BackupDir(), "autoswitch.enabled", "true"); err != nil {
 		t.Fatal(err)
 	}
-	_, out, _ = runCodex(t, line, "auto", "--observe", "--json")
+	_, out, _ = runCodex(t, nearBarLine, "auto", "--observe", "--json")
 	if _, err := os.Stat(filepath.Join(sw.BackupDir(), "observe_state.json")); err != nil || !strings.Contains(out, `"event":"poll"`) {
 		t.Fatalf("on: stdout %q, fetch slot %v; want the slot claimed and a tick", out, err)
+	}
+}
+
+// nearBarLine is a status line whose five-hour window is over its bar.
+const nearBarLine = `{"session_id":"s1","model":{"id":"claude-opus-5-5"},"rate_limits":{"five_hour":{"used_percentage":99,"resets_at":1}}}`
+
+// TestAutoObserveDryRunWhileOffDecides: a dry run decides while off, the
+// status line's included: it warns and ticks.
+func TestAutoObserveDryRunWhileOffDecides(t *testing.T) {
+	sw := rotatedSwitcher(t)
+	useSwitcher(t, sw)
+	_, out, errb := runCodex(t, nearBarLine, "auto", "--observe", "--dry-run", "--json")
+	if !strings.Contains(out, `"event":"config-warning"`) || !strings.Contains(out, `"event":"poll"`) || strings.Contains(out, `"reason":"disabled"`) {
+		t.Fatalf("stdout %q (stderr %q), want the dry run's warning and a tick", out, errb)
+	}
+}
+
+// TestAutoForegroundNotice: a foreground run says once on stderr that
+// auto-switch is off, and the loop's banner shows only while it is on.
+func TestAutoForegroundNotice(t *testing.T) {
+	merged := settings.Default()
+	for _, tc := range []struct {
+		name           string
+		on, loop, json bool
+		out, err       string
+	}{
+		{"loop off", false, true, false, "", "Auto-switch is off; tycswap auto on turns it on.\n"},
+		{"once off", false, false, false, "", "Auto-switch is off; tycswap auto on turns it on.\n"},
+		{"loop on", true, true, false, "Auto-switch running: 5h 85% · 7d 97% · model 95%, every 60s — Ctrl-C to stop\n", ""},
+		{"loop on json", true, true, true, "", ""},
+		{"once on", true, false, false, "", ""},
+	} {
+		var out, errb strings.Builder
+		autoForegroundNotice(ioStreams{out: &out, err: &errb}, tc.on, tc.loop, tc.json, false, merged)
+		if out.String() != tc.out || errb.String() != tc.err {
+			t.Errorf("%s: stdout %q stderr %q, want %q %q", tc.name, out.String(), errb.String(), tc.out, tc.err)
+		}
 	}
 }

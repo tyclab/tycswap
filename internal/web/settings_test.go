@@ -113,25 +113,29 @@ func TestSettingModel_AppliesToRunningEngine(t *testing.T) {
 		t.Fatalf("engine calls %v, want %v (the model saves, trimmed, and nothing else)", got, wantAuto)
 	}
 
-	// Stopped engine: the setting is saved, the engine is not touched.
-	h.auto.mu.Lock()
-	h.auto.view.Running = false
-	h.auto.mu.Unlock()
-	resp = h.postJSON("/api/settings/autoswitch.model", map[string]any{"value": "all"})
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("set while stopped: status %d", resp.StatusCode)
-	}
-	if res, _ := decodeJSON(t, resp)["result"].(map[string]any); res["applied"] != nil {
-		t.Fatalf("stopped engine reported applied: %v", res)
-	}
-	if got := h.auto.Calls(); len(got) != len(wantAuto) {
-		t.Fatalf("a stopped engine was retargeted: %v", got)
+	// Nothing hosted here: the setting is saved and no engine is touched,
+	// also while the view says running because an external scheduler's
+	// ticks read the setting (DESIGN A83).
+	for _, running := range []bool{false, true} {
+		h.auto.mu.Lock()
+		h.auto.view.Running, h.auto.view.Hosted = running, false
+		h.auto.mu.Unlock()
+		resp = h.postJSON("/api/settings/autoswitch.model", map[string]any{"value": "all"})
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("set with nothing hosted (running %v): status %d", running, resp.StatusCode)
+		}
+		if res, _ := decodeJSON(t, resp)["result"].(map[string]any); res["applied"] != nil {
+			t.Fatalf("nothing hosted (running %v), yet applied: %v", running, res)
+		}
+		if got := h.auto.Calls(); len(got) != len(wantAuto) {
+			t.Fatalf("nothing hosted (running %v), yet retargeted: %v", running, got)
+		}
 	}
 
 	// The engine refusing the retarget is the response's error; the save
 	// itself happened and the next state shows it.
 	h.auto.mu.Lock()
-	h.auto.view.Running = true
+	h.auto.view.Running, h.auto.view.Hosted = true, true
 	h.auto.errs[`ApplyModels("all")`] = cerr.Lock("engine busy")
 	h.auto.mu.Unlock()
 	if resp := h.postJSON("/api/settings/autoswitch.model", map[string]any{"value": "all"}); resp.StatusCode != http.StatusConflict {
@@ -404,5 +408,32 @@ func TestAppJSSettingLabelNamesTheOnOff(t *testing.T) {
 	}
 	if out, err := exec.Command(node, script, app).CombinedOutput(); err != nil {
 		t.Fatalf("setting label: %v\n%s", err, out)
+	}
+}
+
+// With an external scheduler named, the Settings tab says a saved value
+// applies at its next check and that it sets the interval (DESIGN A51, A83).
+func TestSettingsNotesForAnExternalScheduler(t *testing.T) {
+	h := newHarness(t)
+	h.auto.mu.Lock()
+	h.auto.view = AutoView{Available: true, Running: true, Owner: "tycswap-auto.timer"}
+	h.auto.mu.Unlock()
+	h.set.mu.Lock()
+	h.set.views = []SettingView{{Key: "autoswitch.fiveHourThreshold", Kind: "float"}, {Key: "autoswitch.intervalSeconds", Kind: "float"}}
+	h.set.mu.Unlock()
+	var body struct {
+		Settings []SettingView `json:"settings"`
+	}
+	if err := json.Unmarshal(readBody(t, h.get("/api/settings")), &body); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"autoswitch.fiveHourThreshold": "Applies at the next scheduled check.",
+		"autoswitch.intervalSeconds":   "The scheduler sets the check interval; this value only affects a continuous loop.",
+	}
+	for _, sv := range body.Settings {
+		if sv.Applies != want[sv.Key] {
+			t.Errorf("%s applies = %q, want %q", sv.Key, sv.Applies, want[sv.Key])
+		}
 	}
 }

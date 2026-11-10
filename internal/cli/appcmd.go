@@ -417,14 +417,15 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 			if err != nil {
 				return err
 			}
-			// Retarget the running engine too: leaving it on the models it
-			// started with is what made this switch look broken (A39).
+			// Retarget the engine hosted here too: leaving it on the models it
+			// started with is what made this switch look broken (A39). An
+			// external scheduler's ticks read the saved setting (A83).
 			model := ""
 			if on {
 				model = "all"
 			}
-			if aerr := d.auto.ApplyModels(model); aerr != nil && d.auto.View().Running {
-				return aerr
+			if d.auto.View().Hosted {
+				return d.auto.ApplyModels(model)
 			}
 			return nil
 		},
@@ -522,14 +523,14 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	return 0
 }
 
-// resumeAutoSwitch starts the engine when auto-switch is on (A43, A83), and
-// says so on the app's output.
+// resumeAutoSwitch hosts the engine for the app's lifetime (A43, A83), and
+// says on the app's output when that makes auto-switch run.
 func resumeAutoSwitch(d *dashboard, s ioStreams) {
 	started, err := d.auto.resume()
 	switch {
 	case err != nil:
-		fmt.Fprintln(s.err, "auto-switch is on, but could not start: "+err.Error())
-	case started:
+		fmt.Fprintln(s.err, "auto-switch engine could not start: "+err.Error())
+	case started && autoSwitchOn(d.sw.BackupDir()):
 		fmt.Fprintln(s.err, "Auto-switch resumed: it is on (tycswap auto off turns it off).")
 	}
 }

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -314,36 +313,20 @@ func TestAutoModelAppliesLive(t *testing.T) {
 			t.Errorf("%s: calls %v, want [%s]", tc.body, h.auto.calls, tc.want)
 		}
 	}
+	// Nothing hosted here (an external scheduler's ticks, or no engine yet):
+	// the route answers and retargets nothing.
+	h.auto.mu.Lock()
+	h.auto.calls, h.auto.view.Hosted = nil, false
+	h.auto.mu.Unlock()
+	if resp := h.postJSON("/api/auto/model", `{"model":"all"}`); resp.StatusCode != http.StatusOK || len(h.auto.Calls()) != 0 {
+		t.Fatalf("nothing hosted: status %d, calls %v", resp.StatusCode, h.auto.Calls())
+	}
 	h.auto.calls = nil
 	if resp := h.postJSON("/api/auto/model", `{}`); resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("a missing model must be rejected: %d", resp.StatusCode)
 	}
 	if len(h.auto.calls) != 0 {
 		t.Errorf("nothing should reach the engine on a bad request: %v", h.auto.calls)
-	}
-}
-
-// An external scheduler no longer locks the toggle (DESIGN A83): the facade
-// reports such a host as available with no owner, so start and stop reach
-// it, which writes the setting the scheduler's ticks read. The cli package
-// runs the same requests through the real facade (TestDashboardManagedStartStop).
-func TestAutoStartStopWithAnExternalOwner(t *testing.T) {
-	h := newHarness(t)
-	h.auto.mu.Lock()
-	h.auto.view = AutoView{Available: true, Running: true}
-	h.auto.mu.Unlock()
-	for _, req := range []struct {
-		path string
-		body any
-	}{{"/api/auto/stop", nil}, {"/api/auto/start", map[string]any{"dryRun": false}}, {"/api/auto/start", map[string]any{"dryRun": true}}} {
-		resp := h.postJSON(req.path, req.body)
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("%s %v = %d: %s", req.path, req.body, resp.StatusCode, readBody(t, resp))
-		}
-		resp.Body.Close()
-	}
-	if got := strings.Join(h.auto.Calls(), ","); got != "Stop,Start(false),Start(true)" {
-		t.Fatalf("calls = %s", got)
 	}
 }
 

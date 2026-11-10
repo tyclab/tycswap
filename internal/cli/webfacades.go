@@ -152,11 +152,11 @@ type autoEngine interface {
 	ApplyModels(string)
 }
 
-// autoFacade hosts one autoswitch engine inside the dashboard process, the
-// way the TUI's Auto screen does, and streams its events. Beside it runs the
-// Codex engine when this machine has Codex accounts, as in `tycswap auto`
-// (DESIGN A47): one Start and one Stop drive both, and both feed one event
-// log.
+// autoFacade hosts one autoswitch engine inside the dashboard process and
+// streams its events. Beside it runs the Codex engine when this machine has
+// Codex accounts, as in `tycswap auto` (DESIGN A47), and both feed one event
+// log. A real engine is a host the setting gates (A83): Start and Stop turn
+// autoswitch.enabled on and off, and the engine idles while it is off.
 type autoFacade struct {
 	// managedBy names an external tick scheduler (TYCSWAP_AUTO_MANAGED_BY): this
 	// host then runs no real engine, and Start and Stop only write the setting (A83).
@@ -232,10 +232,13 @@ func (a *autoFacade) View() web.AutoView {
 	copy(events, a.events)
 	// An engine whose ticks all report disabled is not running to the user;
 	// ManagedBy stays empty, older clients lock the toggle on it (DESIGN A83).
-	hosted := a.running && (a.dryRun || fresh.Enabled)
+	live := a.running && (a.dryRun || fresh.Enabled)
+	owned := a.managedBy != "" && fresh.Enabled
 	v := web.AutoView{
 		Available:  true,
-		Running:    hosted || (a.managedBy != "" && fresh.Enabled),
+		Owner:      a.managedBy,
+		Hosted:     a.running,
+		Running:    live || owned,
 		DryRun:     a.dryRun,
 		StartedAt:  a.startedAt,
 		Threshold:  threshold,
@@ -248,7 +251,7 @@ func (a *autoFacade) View() web.AutoView {
 		// with): the slider moves the Claude 7d bar only.
 		v.Codex = &web.CodexAutoView{
 			Enabled:   s.CodexEnabled,
-			Running:   hosted && a.codexEngine != nil,
+			Running:   (live && a.codexEngine != nil) || (owned && fresh.CodexEnabled),
 			Threshold: codexThreshold(s),
 			LastTick:  a.codexLast,
 		}
@@ -256,18 +259,27 @@ func (a *autoFacade) View() web.AutoView {
 	return v
 }
 
-// Start turns auto-switch on and hosts the engines, unless an external
-// scheduler runs the ticks. A dry run writes nothing, owner or not.
+// Start hosts a real engine unless an external scheduler runs the ticks, and
+// only then turns auto-switch on; a dry run is hosted and writes nothing.
 func (a *autoFacade) Start(dryRun bool) error {
-	if !dryRun {
-		if err := a.setEnabled(true); err != nil {
+	if dryRun {
+		return a.startHosted(true)
+	}
+	if a.managedBy == "" {
+		if err := a.startHosted(false); err != nil {
 			return err
 		}
-		if a.managedBy != "" {
-			return nil
-		}
 	}
-	return a.startHosted(dryRun)
+	if err := a.setEnabled(true); err != nil {
+		return err
+	}
+	// Tick now, not an interval later; the Codex loop follows at its next round.
+	a.mu.Lock()
+	if a.running && !a.dryRun && a.engine != nil {
+		a.engine.Wake()
+	}
+	a.mu.Unlock()
+	return nil
 }
 
 // startHosted runs the engines in this process; it never writes the setting.
@@ -276,7 +288,7 @@ func (a *autoFacade) startHosted(dryRun bool) error {
 	defer a.mu.Unlock()
 	if a.running {
 		if !dryRun && !a.dryRun {
-			return nil // a real engine runs: turning the setting on was the start
+			return nil // the real engine is hosted already
 		}
 		return cerr.Validation("auto-switch is already running")
 	}
@@ -311,15 +323,14 @@ func (a *autoFacade) startHosted(dryRun bool) error {
 	return nil
 }
 
-// codexRound is one round of the hosted Codex loop. It reads the setting
-// each time, as the Claude engine's tick does, so `tycswap auto off` holds
-// Codex too; a dry run still decides (DESIGN A83).
+// codexRound is one round of the hosted loop. Retiring a former session group
+// never moves the default login, so it runs whatever the setting; the Codex
+// tick reads the setting, as the Claude tick does (DESIGN A83).
 func (a *autoFacade) codexRound(ctx context.Context, eng *codexauto.AutoSwitcher, dryRun bool) {
-	if !dryRun && !autoSwitchOn(a.sw.BackupDir()) {
-		return
-	}
 	retireGroups(a.sw, a.onEvent, dryRun)
-	a.codexTick(ctx, eng, dryRun)
+	if dryRun || autoSwitchOn(a.sw.BackupDir()) {
+		a.codexTick(ctx, eng, dryRun)
+	}
 }
 
 // setEnabled writes and logs autoswitch.enabled, the on/off every tick reads.
@@ -346,28 +357,21 @@ func stillRunning(done chan struct{}) bool {
 	}
 }
 
-// Stop turns auto-switch off, unless what it ends is a hosted dry run, which
-// never turned it on, then stops the hosted engines. With an external owner
-// and nothing hosted, writing the setting is the whole stop. The engines stop
-// even when the write fails, so an error never leaves one running.
+// Stop turns auto-switch off and returns at once: a real engine stays hosted
+// and idles. A hosted dry run, which never turned it on, is stopped instead
+// and writes nothing. With nothing hosted and no owner, there is nothing to
+// stop once the setting is off already.
 func (a *autoFacade) Stop() error {
 	a.mu.Lock()
 	hosted := a.running && a.engine != nil
-	var werr error
-	if !hosted || !a.dryRun {
-		werr = a.setEnabled(false)
+	if hosted && a.dryRun {
+		return a.stopLocked()
 	}
-	if !hosted {
-		a.mu.Unlock()
-		if werr != nil || a.managedBy != "" {
-			return werr
-		}
+	a.mu.Unlock()
+	if !hosted && a.managedBy == "" && !autoSwitchOn(a.sw.BackupDir()) {
 		return cerr.Validation("auto-switch is not running")
 	}
-	if err := a.stopLocked(); err != nil {
-		return err
-	}
-	return werr
+	return a.setEnabled(false)
 }
 
 // stopLocked, called with a.mu held on a running engine, releases it, stops
@@ -399,19 +403,23 @@ func (a *autoFacade) stopLocked() error {
 // stopKeepingChoice ends the hosted engines as the app or `tycswap web`
 // exits, without writing "off": quitting is not turning auto-switch off, and
 // the next app start resumes it (A43, A83).
-func (a *autoFacade) stopKeepingChoice() {
+func (a *autoFacade) stopKeepingChoice() { _ = a.stopHosted() }
+
+// stopHosted ends the hosted engines without writing the setting.
+func (a *autoFacade) stopHosted() error {
 	a.mu.Lock()
 	if !a.running || a.engine == nil {
 		a.mu.Unlock()
-		return
+		return cerr.Validation("auto-switch is not running")
 	}
-	_ = a.stopLocked()
+	return a.stopLocked()
 }
 
-// resume starts the hosted engines when auto-switch is on and nobody else
-// schedules ticks, so it survives an app restart (A43, through A83).
+// resume hosts the engines from the app's start whatever the setting, so a
+// shell's `tycswap auto on` takes effect at once (A43, A83); an external
+// scheduler's ticks need no host here.
 func (a *autoFacade) resume() (started bool, err error) {
-	if a.managedBy != "" || !autoSwitchOn(a.sw.BackupDir()) {
+	if a.managedBy != "" {
 		return false, nil
 	}
 	if err := a.startHosted(false); err != nil {
@@ -420,10 +428,14 @@ func (a *autoFacade) resume() (started bool, err error) {
 	return true, nil
 }
 
+// Wake polls now; under an external scheduler nothing is hosted to wake.
 func (a *autoFacade) Wake() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.running || a.engine == nil {
+		if a.managedBy != "" {
+			return nil
+		}
 		return cerr.Validation("auto-switch is not running")
 	}
 	a.engine.Wake()
@@ -444,6 +456,9 @@ func (a *autoFacade) ApplyThreshold(t float64) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.running || a.engine == nil {
+		if a.managedBy != "" {
+			return cerr.Validation("the scheduler reads the saved setting; change autoswitch.sevenDayThreshold in Settings")
+		}
 		return cerr.Validation("auto-switch is not running")
 	}
 	a.engine.ApplyThreshold(t)
@@ -454,12 +469,12 @@ func (a *autoFacade) ApplyThreshold(t float64) error {
 // ApplyModels retargets the running engine's per-model windows. The
 // dashboard's "Count model limits" switch saves the setting AND calls this, so
 // headroom, the at-limit verdict and the ranking change at once instead of
-// waiting for a restart.
+// waiting for a restart. With nothing hosted, the saved setting is what counts.
 func (a *autoFacade) ApplyModels(model string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.running || a.engine == nil {
-		return cerr.Validation("auto-switch is not running")
+		return nil
 	}
 	a.engine.ApplyModels(model)
 	if model == "" {
