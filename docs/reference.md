@@ -2945,8 +2945,8 @@ anything else `500`.
 | `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` | `400` missing or bare keys, `404` a `codex:` key or an unknown provider |
 | `POST /api/sessions/{pid}/stop` | | stop a listed Claude Code session, after verifying the process start time | `400` bad pid, `404` not listed (or gone before the lock), `409` the pid now belongs to another process or cannot be verified, `500` the signal failed |
 | `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset`; each listed key carries `applies`, a sentence saying when a saved value takes effect; saving or unsetting `autoswitch.model` also retargets an engine hosted in this process, also one idling while auto-switch is off (`"applied": true` in the result) | `400` unknown key, value out of range, or missing value; the engine's own error when the retarget fails after the save |
-| `POST /api/auto/start` | `{"dryRun": bool}` | real: make sure an engine is hosted (and the Codex engine beside it on a machine with Codex accounts), then turn `autoswitch.enabled` on and wake the engine; with `TYCSWAP_AUTO_MANAGED_BY` set, only write the setting. Dry run: host a dry-run engine, write nothing | `400` beside a dry run already running, or still stopping |
-| `POST /api/auto/stop`, `/api/auto/wake` | | stop: turn `autoswitch.enabled` off and leave a real engine hosted; a dry run is stopped instead (waits up to 2 s for both loops to end) and writes nothing; wake: poll now (the Claude engine) | `400` nothing hosted and the setting already off (stop), or nothing hosted and no external scheduler (wake); stop `409` when a dry run's tick outlasts the wait (it is stopping; Start refuses until both loops have) |
+| `POST /api/auto/start` | `{"dryRun": bool}` | real: make sure an engine is hosted (and the Codex engine beside it on a machine with Codex accounts), then turn `autoswitch.enabled` on and wake the engine; with `TYCSWAP_AUTO_MANAGED_BY` set, only write the setting. Dry run: host a dry-run engine, write nothing; while the setting is off it takes the idle real engine's place | `400` beside a dry run already running or while auto-switch is on in this process, or still stopping |
+| `POST /api/auto/stop`, `/api/auto/wake` | | stop: turn `autoswitch.enabled` off and leave a real engine hosted; a dry run is stopped instead (waits up to 2 s for both loops to end), writes nothing and gives the host back to the real engine; wake: poll now (the Claude engine) | `400` nothing hosted and the setting already off (stop), or nothing hosted and no external scheduler (wake); stop `409` when a dry run's tick outlasts the wait (it is stopping; Start refuses until both loops have) |
 | `POST /api/auto/threshold` | `{"threshold": 50-100}` | retarget the hosted engine's 7d bar; the bounds are `autoswitch.sevenDayThreshold`'s (DESIGN A34) | `400` missing, out of range, or nothing hosted (with an external scheduler: `the scheduler reads the saved setting; change autoswitch.sevenDayThreshold in Settings`) |
 | `POST /api/auto/model` | `{"model": "all"\|"<names>"\|""}` | retarget the hosted engine's model windows; with nothing hosted, nothing to retarget | `400` missing (`""` is a value) |
 | `POST /api/updates/check` | | check for a newer tycswap release and a newer Claude Code now, in the background; the result arrives with the state (in `tycswap app` with a tray, the tray's checks, DESIGN A44) | `202` at once; `503` without the updates host |
@@ -5234,8 +5234,8 @@ to retarget, Wake answers at once and the live 7d threshold is refused with
 `the scheduler reads the saved setting; change autoswitch.sevenDayThreshold in
 Settings`; the page turns Wake and the slider off and names the scheduler on
 the State tile, and the Settings tab says a saved value applies at the next
-scheduled check. A dry run is offered while nothing is hosted, and the app
-does not start an engine at launch.
+scheduled check. A dry run is offered there beside the scheduler's ticks, and
+the app does not start an engine at launch.
 
 State documents carry a process-local monotonic `sequence`. Successful
 mutations carry `stateSequence`: documents with a lower sequence began

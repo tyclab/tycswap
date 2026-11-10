@@ -1490,8 +1490,9 @@
       body.appendChild(tiles);
       fallbackNotices(st).forEach(function (n) { body.appendChild(n); });
 
-      // Dry-run Start is offered while nothing is hosted here, Start while off.
-      actions.querySelectorAll('[data-action="auto-start"]').forEach(function (b) { b.disabled = !a.available || (b.getAttribute('data-dry') === '1' ? a.hosted : a.running); });
+      // Start is offered while off; a dry run also beside an external
+      // scheduler, whose ticks no engine here would double.
+      actions.querySelectorAll('[data-action="auto-start"]').forEach(function (b) { b.disabled = !a.available || (b.getAttribute('data-dry') === '1' ? a.hosted && a.running : a.running); });
       actions.querySelector('[data-post="/api/auto/stop"]').disabled = !a.running;
       // Wake and the live threshold act on the engine hosted here; under an
       // external scheduler there is none (the server says where to go).

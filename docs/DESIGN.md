@@ -6886,8 +6886,9 @@ The rule: one key, `autoswitch.enabled` in `settings.json`, default off
   takes effect without the app. Start makes sure a real engine is hosted and
   only then writes on, waking the engine so it ticks at once (the Codex loop
   follows at its next round); Stop writes off and returns at once, leaving
-  the engine hosted. A dry run is hosted and stopped as before and writes
-  nothing; a Start beside it is refused. Each write is one INFO log line.
+  the engine hosted. A dry run writes nothing: while the key is off it takes
+  the idle engine's place and Stop gives the host back; while the key is on
+  it is refused, and so is a Start beside it. Each write is one INFO log line.
   Quitting the app or `tycswap web` ends the hosted engine without writing.
   The view's `running` is a hosted engine that is a dry run or has the key
   on; `hosted` says an engine runs in this process, and model retargets
@@ -6900,8 +6901,8 @@ The rule: one key, `autoswitch.enabled` in `settings.json`, default off
   not fail there: a model save has nothing to retarget, Wake nothing to
   wake, and the live 7d bar says to change the saved setting; the page turns
   Wake and the slider off, names the scheduler on the State tile, and keeps
-  the Settings tab's scheduler notes. A dry run is offered while nothing is
-  hosted.
+  the Settings tab's scheduler notes. A dry run is offered there beside the
+  scheduler's ticks.
 
 Supersedes A43's `ui_prefs.json` choice and A51's refusal of Start under an
 external owner. Closes HOST-1 ("off" exists only inside the app process) and

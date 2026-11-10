@@ -263,7 +263,7 @@ func (a *autoFacade) View() web.AutoView {
 // only then turns auto-switch on; a dry run is hosted and writes nothing.
 func (a *autoFacade) Start(dryRun bool) error {
 	if dryRun {
-		return a.startHosted(true)
+		return a.startDryRun()
 	}
 	if a.managedBy == "" {
 		if err := a.startHosted(false); err != nil {
@@ -280,6 +280,25 @@ func (a *autoFacade) Start(dryRun bool) error {
 	}
 	a.mu.Unlock()
 	return nil
+}
+
+// startDryRun hosts a dry run. The real engine, idle while auto-switch is
+// off, gives way to it; stopping the dry run hosts the real one again.
+func (a *autoFacade) startDryRun() error {
+	a.mu.Lock()
+	idle := a.running && a.engine != nil && !a.dryRun && !autoSwitchOn(a.sw.BackupDir())
+	if !idle {
+		a.mu.Unlock()
+		return a.startHosted(true)
+	}
+	if err := a.stopLocked(); err != nil {
+		return err
+	}
+	err := a.startHosted(true)
+	if err != nil {
+		_ = a.startHosted(false)
+	}
+	return err
 }
 
 // startHosted runs the engines in this process; it never writes the setting.
@@ -358,14 +377,20 @@ func stillRunning(done chan struct{}) bool {
 }
 
 // Stop turns auto-switch off and returns at once: a real engine stays hosted
-// and idles. A hosted dry run, which never turned it on, is stopped instead
-// and writes nothing. With nothing hosted and no owner, there is nothing to
-// stop once the setting is off already.
+// and idles. A hosted dry run, which never turned it on, is stopped instead,
+// writes nothing and hands the host back to the real engine. With nothing
+// hosted and no owner, there is nothing to stop once the setting is off.
 func (a *autoFacade) Stop() error {
 	a.mu.Lock()
 	hosted := a.running && a.engine != nil
 	if hosted && a.dryRun {
-		return a.stopLocked()
+		err := a.stopLocked()
+		if a.managedBy == "" {
+			if herr := a.startHosted(false); err == nil {
+				err = herr
+			}
+		}
+		return err
 	}
 	a.mu.Unlock()
 	if !hosted && a.managedBy == "" && !autoSwitchOn(a.sw.BackupDir()) {

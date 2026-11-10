@@ -1266,6 +1266,42 @@ func TestFacadeViewFollowsTheSetting(t *testing.T) {
 	}
 }
 
+// TestFacadeDryRunBesideTheIdleHost: with auto-switch off, the app's idle
+// engine gives way to a dry run and comes back when the dry run is stopped;
+// neither step writes the setting. While auto-switch is on, a dry run is
+// refused as before.
+func TestFacadeDryRunBesideTheIdleHost(t *testing.T) {
+	a, _ := codexFacade(t, &fakeCodexSource{activePct: 10, accounts: 2})
+	engines := countingEngines(a)
+	root := a.sw.BackupDir()
+	if _, err := a.resume(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Start(true); err != nil {
+		t.Fatalf("dry run beside the idle engine: %v", err)
+	}
+	if v := a.View(); !v.Running || !v.DryRun || !v.Hosted || settings.Load(root).Enabled {
+		t.Fatalf("dry run: view %+v, enabled %v", v, settings.Load(root).Enabled)
+	}
+	if err := a.Stop(); err != nil {
+		t.Fatalf("Stop of the dry run: %v", err)
+	}
+	if v := a.View(); v.Running || v.DryRun || !v.Hosted || settings.Load(root).Enabled || engines.built() != 3 {
+		t.Fatalf("after the dry run: view %+v, enabled %v, %d engines; want the real engine hosted again",
+			v, settings.Load(root).Enabled, engines.built())
+	}
+	if err := a.Start(false); err != nil {
+		t.Fatal(err)
+	}
+	var ce *cerr.Error
+	if err := a.Start(true); !errors.As(err, &ce) || ce.Kind != cerr.KindValidation {
+		t.Fatalf("dry run while auto-switch is on = %v, want a validation error", err)
+	}
+	if v := a.View(); !v.Running || v.DryRun || engines.built() != 3 {
+		t.Fatalf("after the refused dry run: view %+v, %d engines", v, engines.built())
+	}
+}
+
 // TestFacadeOwnerControlsWithNothingHosted: under an external owner the view
 // says running and hosted false, and the controls that reach a hosted engine
 // do not fail: a model save has nothing to retarget, Wake has nothing to

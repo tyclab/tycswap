@@ -428,13 +428,13 @@ func TestStaticElRefusesUnsafeAttributes(t *testing.T) {
 // The live threshold slider and Wake act on an engine hosted in this
 // process, so they are off while none is (an external scheduler's ticks);
 // the State tile names that scheduler, and the dry-run Start is offered
-// whenever nothing is hosted (DESIGN A83).
+// unless an engine hosted here is live (DESIGN A83).
 func TestStaticAutoControlsFollowHosted(t *testing.T) {
 	js := staticFile(t, "app.js")
 	for _, want := range []string{
 		"slider.disabled = !a.available || !a.hosted;",
 		"actions.querySelector('[data-post=\"/api/auto/wake\"]').disabled = !a.hosted;",
-		"b.disabled = !a.available || (b.getAttribute('data-dry') === '1' ? a.hosted : a.running);",
+		"b.disabled = !a.available || (b.getAttribute('data-dry') === '1' ? a.hosted && a.running : a.running);",
 		"'scheduled by ' + a.owner",
 	} {
 		if !strings.Contains(js, want) {

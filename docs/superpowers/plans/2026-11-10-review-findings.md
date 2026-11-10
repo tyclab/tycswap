@@ -33,6 +33,8 @@ evidence.
 | OFF-1 | a tick already past the gate can still switch after Stop or `auto off` | autoswitch/tick.go | FIX D2 (the guarded switch) |  | E |
 | OFF-2 | a tray click that only ends a dashboard dry run says "Auto-switch off" | cli/appshell.go, webfacades.go | FIX D5 (`SetEnabled`) |  | E |
 | OFF-3 | an unreadable `settings.json` reads as off with no stored warning; `auto on` fails on it | settings/settings.go | FIX D1 D7 |  | E |
+| OFF-4 | the hosted Codex loop reacts up to one interval after Start or `auto on`; it has no wake | cli/codexauto.go, webfacades.go | FIX D3 (one tick) |  | E |
+| OFF-5 | saved bars other than the model reach the app's engine only at app start, since Stop no longer ends it | cli/webfacades.go | FIX D3 (settings read per tick) |  | E |
 
 ## Engine lane
 
