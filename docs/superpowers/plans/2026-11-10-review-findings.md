@@ -14,6 +14,18 @@ Each FIX row is closed test-first: the regression test fails on the parent
 commit for the stated reason, or the row is closed as not real with that
 evidence.
 
+## Evidence added after the review
+
+- Central log store, 7 days, both boxes: 12 `Dashboard:` start lines, none
+  with a token (HOST-6 is a local-journal exposure, not a remote one).
+- The second box's timer journal: 2,649 ticks, 5 switches, 5 `cooldown`
+  no-switch ticks (each means an engine switch less than a cooldown earlier
+  that the timer did not make). One switch moved between two slots that carry
+  the same email, so the same-email rows (STORE-7, STORE-16, WEB-9) describe a
+  roster that exists.
+- The tool's own log file and the output of the hook and status line ticks
+  are not shipped anywhere; D5 (`--headless` prints every event) closes that.
+
 ## Engine lane
 
 | ID | Defect | Where | Verdict | Ev | Series |
@@ -45,7 +57,7 @@ evidence.
 | HOST-3 | Stop during a tick reports failure; the retry turns auto on | cli/webfacades.go Stop, appshell.go | FIX D5 | TV | E |
 | HOST-4 | remembered "on" survives a managed period and resumes unasked | cli/webfacades.go resume | FIX D1 D5 | T | E |
 | HOST-5 | exit gives a tick in flight 2 s | cli/webfacades.go stopKeepingChoice | FIX D5 | T | E |
-| HOST-6 | launch URL with its token printed to the service journal | cli/appcmd.go, web/web.go | FIX D5 | VL | E |
+| HOST-6 | launch URL with its token printed to the service journal (local journal only: the central log store holds the line with the token redacted) | cli/appcmd.go, web/web.go | FIX D5 | VL | E |
 | HOST-7 | nil Codex engine logs an error every tick | cli/webfacades.go codexTick | FIX D5 | TV | E |
 | HOST-8 | handover rotation switches inside every state build | cli/recovery_runtime.go | CUT D10 |  | R |
 | HOST-9 | hosted loop asleep after all-exhausted | autoswitch/loop.go | DUP ENG-9 |  |  |
