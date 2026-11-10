@@ -345,17 +345,8 @@ func (a *autoFacade) Stop() error {
 	return nil
 }
 
-// remember records the user's choice for the next app start (A43). Called
-// with a.mu held, from Start and Stop only: an engine that ends by itself, or
-// a process that quits, leaves the choice as the user made it.
-func (a *autoFacade) remember(on bool) {
-	if a.statePath == "" {
-		return
-	}
-	if err := updateAppState(a.statePath, func(st *appState) { st.AutoSwitch = on }); err != nil && a.sw.Store != nil && a.sw.Log != nil {
-		a.sw.Log.Warning("could not record the auto-switch choice: " + err.Error())
-	}
-}
+// remember is a no-op: the on/off is autoswitch.enabled now; kept until its callers go.
+func (a *autoFacade) remember(bool) {}
 
 // stopKeepingChoice ends a running engine as the app exits, the way `tycswap
 // web` does, without recording "off": quitting the app is not turning
@@ -369,17 +360,8 @@ func (a *autoFacade) stopKeepingChoice() {
 	}
 }
 
-// resume starts the engine when the user left it on (A43). started is false
-// when there was nothing to resume.
-func (a *autoFacade) resume() (started bool, err error) {
-	if a.statePath == "" || !loadAppState(a.statePath).AutoSwitch {
-		return false, nil
-	}
-	if err := a.Start(false); err != nil {
-		return false, err
-	}
-	return true, nil
-}
+// resume is a no-op: the choice it read moved to autoswitch.enabled; kept until its caller goes.
+func (a *autoFacade) resume() (started bool, err error) { return false, nil }
 
 func (a *autoFacade) Wake() error {
 	a.mu.Lock()

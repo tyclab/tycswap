@@ -1,17 +1,20 @@
-// Tests for what the app and the dashboard remember on disk (DESIGN A27,
-// A43): the folded cards and the auto-switch choice, in one file.
+// Tests for what the dashboard remembers on disk (DESIGN A27): the folded
+// cards, and the one-time move of the app's auto-switch choice (A43) into
+// settings.json.
 package cli
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 
-	"github.com/tyclab/tycswap/internal/core"
-	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/settings"
 )
 
 func TestUIPrefsRoundTrip(t *testing.T) {
@@ -61,80 +64,133 @@ func TestUIPrefsRoundTrip(t *testing.T) {
 	}
 }
 
-// No file, an unreadable one or a corrupt one all mean "off": what the app
-// did before it remembered anything (A43).
-func TestAppStateDefaultsToOff(t *testing.T) {
-	dir := t.TempDir()
-	p := appStatePath(dir)
-	if loadAppState(p).AutoSwitch {
-		t.Error("missing file reads as on")
-	}
-	if err := os.WriteFile(p, []byte("{not json"), 0o600); err != nil {
+func readPrefsFile(t *testing.T, root string) map[string]any {
+	t.Helper()
+	raw, err := os.ReadFile(appStatePath(root))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if loadAppState(p).AutoSwitch {
-		t.Error("corrupt file reads as on")
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("ui_prefs.json = %s: %v", raw, err)
 	}
+	return doc
 }
 
-func TestAppStateRoundTrip(t *testing.T) {
-	p := appStatePath(filepath.Join(t.TempDir(), "backup"))
-	if err := saveAppState(p, appState{AutoSwitch: true}); err != nil {
-		t.Fatal(err)
+// TestMigrateAutoSwitchChoice: the choice the app remembered (A43) seeds
+// autoswitch.enabled once, only where settings.json has no such key; the old
+// key leaves ui_prefs.json either way and the folded cards stay.
+func TestMigrateAutoSwitchChoice(t *testing.T) {
+	const prefs = `{"version":1,"autoSwitch":true,"folded":{"x":true}}`
+	keepsFoldsDropsChoice := func(t *testing.T, root string) {
+		t.Helper()
+		doc := readPrefsFile(t, root)
+		if _, ok := doc["autoSwitch"]; ok {
+			t.Errorf("ui_prefs.json still has autoSwitch: %v", doc)
+		}
+		if folded, _ := doc["folded"].(map[string]any); folded["x"] != true {
+			t.Errorf("ui_prefs.json lost folded.x: %v", doc)
+		}
 	}
-	if st := loadAppState(p); !st.AutoSwitch || st.Version != appStateVersion {
-		t.Errorf("state = %+v", st)
-	}
-	if fi, err := os.Stat(p); err == nil && fi.Mode().Perm() != 0o600 && runtime.GOOS != "windows" {
-		t.Errorf("mode = %o, want 600", fi.Mode().Perm())
-	}
+
+	t.Run("seeds an absent key", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestFile(t, appStatePath(root), prefs, 0o600)
+		if err := migrateAutoSwitchChoice(root); err != nil {
+			t.Fatal(err)
+		}
+		if !settings.Load(root).Enabled {
+			t.Error("Enabled = false, want the remembered true")
+		}
+		keepsFoldsDropsChoice(t, root)
+	})
+
+	t.Run("keeps an explicit false", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestFile(t, settings.SettingsPath(root), `{"schemaVersion":1,"autoswitch":{"enabled":false}}`, 0o600)
+		writeTestFile(t, appStatePath(root), prefs, 0o600)
+		if err := migrateAutoSwitchChoice(root); err != nil {
+			t.Fatal(err)
+		}
+		if settings.Load(root).Enabled {
+			t.Error("Enabled = true, want the explicit false kept")
+		}
+		keepsFoldsDropsChoice(t, root)
+	})
+
+	t.Run("no prefs file writes nothing", func(t *testing.T) {
+		root := t.TempDir()
+		if err := migrateAutoSwitchChoice(root); err != nil {
+			t.Fatal(err)
+		}
+		if entries, _ := os.ReadDir(root); len(entries) != 0 {
+			t.Errorf("wrote %v", entries)
+		}
+	})
+
+	t.Run("no remembered choice writes nothing", func(t *testing.T) {
+		root := t.TempDir()
+		const plain = `{"version":1,"folded":{"x":true}}`
+		writeTestFile(t, appStatePath(root), plain, 0o600)
+		if err := migrateAutoSwitchChoice(root); err != nil {
+			t.Fatal(err)
+		}
+		if raw, _ := os.ReadFile(appStatePath(root)); string(raw) != plain {
+			t.Errorf("ui_prefs.json rewritten: %s", raw)
+		}
+		if _, err := os.Stat(settings.SettingsPath(root)); !os.IsNotExist(err) {
+			t.Errorf("settings.json written: %v", err)
+		}
+	})
+
+	t.Run("a second run changes nothing", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestFile(t, appStatePath(root), prefs, 0o600)
+		snapshot := func() [2][]byte {
+			if err := migrateAutoSwitchChoice(root); err != nil {
+				t.Fatal(err)
+			}
+			s, _ := os.ReadFile(settings.SettingsPath(root))
+			p, _ := os.ReadFile(appStatePath(root))
+			return [2][]byte{s, p}
+		}
+		first, second := snapshot(), snapshot()
+		if !bytes.Equal(first[0], second[0]) || !bytes.Equal(first[1], second[1]) {
+			t.Errorf("second run changed the files:\n%s\n%s\nthen\n%s\n%s", first[0], first[1], second[0], second[1])
+		}
+		if !settings.Load(root).Enabled {
+			t.Error("Enabled = false after two runs")
+		}
+		keepsFoldsDropsChoice(t, root)
+	})
 }
 
-// The facade records only where it was told to (the app), and only the
-// user's real choice.
-func TestAutoFacadeRemembers(t *testing.T) {
-	a := newAutoFacade(&core.Switcher{Store: &store.Store{}}, nil)
-	a.remember(true) // `web`: no state path, nothing written
-	a.statePath = appStatePath(t.TempDir())
-	a.remember(true)
-	if !loadAppState(a.statePath).AutoSwitch {
-		t.Fatal("on not recorded")
+// TestMigrateAutoSwitchChoiceBeforeEveryCommand: run() seeds the key before
+// the command reads it. A seed that fails (here on a corrupt settings.json)
+// is a debug line in the log, never the command's failure, and the old key
+// stays for the next run to try again.
+func TestMigrateAutoSwitchChoiceBeforeEveryCommand(t *testing.T) {
+	cleanHome(t)
+	root := paths.GetBackupRoot()
+	writeTestFile(t, appStatePath(root), `{"version":1,"autoSwitch":true}`, 0o600)
+	if code, out, errb := runConfig(t, "get", "autoswitch.enabled"); code != 0 || strings.TrimSpace(out) != "true" {
+		t.Fatalf("get = %d %q (stderr %q), want 0 true", code, out, errb)
 	}
-	a.remember(false)
-	if loadAppState(a.statePath).AutoSwitch {
-		t.Fatal("off not recorded")
-	}
-}
 
-// The folded cards share the file with the auto-switch choice (A43):
-// writing one keeps the other.
-func TestUIPrefsKeepTheAutoSwitchChoice(t *testing.T) {
-	path := appStatePath(t.TempDir())
-	if err := updateAppState(path, func(st *appState) { st.AutoSwitch = true }); err != nil {
-		t.Fatal(err)
+	writeTestFile(t, settings.SettingsPath(root), "{not json", 0o600)
+	writeTestFile(t, appStatePath(root), `{"version":1,"autoSwitch":true}`, 0o600)
+	if code, out, errb := runConfig(t, "--debug", "get", "autoswitch.enabled"); code != 0 || strings.TrimSpace(out) != "false" {
+		t.Fatalf("get over a corrupt settings.json = %d %q (stderr %q), want 0 false", code, out, errb)
 	}
-	p := uiPrefs{path: path}
-	if err := p.SetFolded("accounts-card", true); err != nil {
-		t.Fatal(err)
+	if _, ok := readPrefsFile(t, root)["autoSwitch"]; !ok {
+		t.Error("a failed seed dropped the remembered choice")
 	}
-	if err := p.SetFolded("updates-card", true); err != nil {
-		t.Fatal(err)
+	logged, _ := os.ReadFile(filepath.Join(root, "tycswap.log"))
+	found := false
+	for _, line := range strings.Split(string(logged), "\n") {
+		found = found || strings.Contains(line, " - DEBUG - ") && strings.Contains(line, "not valid JSON")
 	}
-	if err := p.SetFolded("updates-card", false); err != nil {
-		t.Fatal(err)
-	}
-	st := loadAppState(path)
-	if !st.AutoSwitch || !reflect.DeepEqual(st.Folded, map[string]bool{"accounts-card": true}) {
-		t.Errorf("state %+v", st)
-	}
-	if got := p.Folded(); !reflect.DeepEqual(got, map[string]bool{"accounts-card": true}) {
-		t.Errorf("Folded = %v", got)
-	}
-	// And the other way round: recording auto-switch keeps the folds.
-	if err := updateAppState(path, func(st *appState) { st.AutoSwitch = false }); err != nil {
-		t.Fatal(err)
-	}
-	if got := p.Folded(); !reflect.DeepEqual(got, map[string]bool{"accounts-card": true}) {
-		t.Errorf("Folded after the auto-switch write = %v", got)
+	if !found {
+		t.Errorf("tycswap.log lacks the debug line:\n%s", logged)
 	}
 }

@@ -202,6 +202,7 @@ func TestSave_FileMode0600(t *testing.T) {
 
 func TestSettingSpecs_CoversEveryField(t *testing.T) {
 	want := map[string]bool{
+		"Enabled":           true,
 		"FiveHourThreshold": true, "SevenDayThreshold": true, "ModelThreshold": true,
 		"IntervalSeconds": true, "CodexEnabled": true,
 		"CodexThreshold": true, "CooldownSeconds": true,
@@ -228,13 +229,15 @@ func TestSettingSpecs_DefaultsMatchDataclass(t *testing.T) {
 	}
 }
 
-// The keys that decide when a window is full lead the registry, and the
-// model windows sit right before the model bar that applies only to them:
-// `tycswap config`, the TUI's Settings screen and the dashboard's Settings
-// tab list the keys in this order, and autoswitch.model last put the choice
-// of which model limits count at the bottom, away from its bar (DESIGN A49).
+// The on/off leads the registry, then the keys that decide when a window is
+// full, and the model windows sit right before the model bar that applies
+// only to them: `tycswap config`, the TUI's Settings screen and the
+// dashboard's Settings tab list the keys in this order, and autoswitch.model
+// last put the choice of which model limits count at the bottom, away from
+// its bar (DESIGN A49).
 func TestSettingSpecs_ModelWindowsBesideTheirBar(t *testing.T) {
 	want := []string{
+		"autoswitch.enabled",
 		"autoswitch.fiveHourThreshold", "autoswitch.sevenDayThreshold",
 		"autoswitch.model", "autoswitch.modelThreshold",
 	}
@@ -524,6 +527,60 @@ func TestSetSetting_CodexEnabledRoundTrips(t *testing.T) {
 	}
 	if !Load(root).CodexEnabled {
 		t.Error("Load().CodexEnabled = false after unset, want default true")
+	}
+}
+
+// TestEnabledDefaultsFalse: auto-switching is opt-in, so a store without the
+// key is off; the key is a bool listed first, before the bars.
+func TestEnabledDefaultsFalse(t *testing.T) {
+	if Load(t.TempDir()).Enabled {
+		t.Error("Load(empty root).Enabled = true, want false")
+	}
+	spec, err := SpecFor("autoswitch.enabled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Kind != KindBool || spec.Default != false || spec.Field != "Enabled" {
+		t.Errorf("spec = %+v, want a bool on Enabled defaulting to false", spec)
+	}
+	if want := "Switch accounts automatically before a limit (tycswap auto on|off)"; spec.Help != want {
+		t.Errorf("Help = %q, want %q", spec.Help, want)
+	}
+	if first := SettingSpecs[0].Dotted(); first != "autoswitch.enabled" {
+		t.Errorf("first spec = %s, want autoswitch.enabled", first)
+	}
+}
+
+// TestEnabledSetUnset: set persists through Load, a non-bool word is refused
+// with the same message codexEnabled gives and writes nothing, and unset
+// returns to the off default.
+func TestEnabledSetUnset(t *testing.T) {
+	root := t.TempDir()
+	if v, err := SetSetting(root, "autoswitch.enabled", "true"); err != nil || v != true {
+		t.Fatalf("set true: v=%v err=%v", v, err)
+	}
+	if !Load(root).Enabled {
+		t.Error("Load().Enabled = false after set true")
+	}
+
+	fresh := t.TempDir()
+	_, err := SetSetting(fresh, "autoswitch.enabled", "maybe")
+	_, codexErr := SetSetting(fresh, "autoswitch.codexEnabled", "maybe")
+	if err == nil || codexErr == nil {
+		t.Fatalf("maybe accepted: enabled err=%v, codexEnabled err=%v", err, codexErr)
+	}
+	if want := strings.Replace(codexErr.Error(), "codexEnabled", "enabled", 1); err.Error() != want {
+		t.Errorf("err = %q, want the bool message %q", err, want)
+	}
+	if _, statErr := os.Stat(SettingsPath(fresh)); !os.IsNotExist(statErr) {
+		t.Error("a refused value created settings.json")
+	}
+
+	if removed, err := UnsetSetting(root, "autoswitch.enabled"); err != nil || !removed {
+		t.Fatalf("unset: removed=%v err=%v", removed, err)
+	}
+	if Load(root).Enabled {
+		t.Error("Load().Enabled = true after unset, want default false")
 	}
 }
 

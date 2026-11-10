@@ -69,6 +69,11 @@ const Filename = "settings.json"
 // engine (`tycswap auto`). See spec 08§8.2 / 05§2 for the field-by-field
 // rationale.
 type AutoSwitchSettings struct {
+	// Enabled is the engine's on/off, kept here rather than in one host's
+	// memory so every process that ticks reads the same answer. Off by
+	// default: switching accounts unasked is opt-in.
+	Enabled bool
+
 	// One bar per window, because an account's windows fill at very different
 	// rates (DESIGN A34). FiveHourThreshold gates the rolling 5h window and
 	// sits lowest: a burst of parallel subagents can take that window from
@@ -103,7 +108,7 @@ type AutoSwitchSettings struct {
 
 // Default returns the dataclass defaults, except the threshold, which is three
 // bars (DESIGN A34; the Python dataclass has one threshold, 90):
-// fiveHourThreshold 85, sevenDayThreshold 97, modelThreshold 95,
+// enabled false, fiveHourThreshold 85, sevenDayThreshold 97, modelThreshold 95,
 // intervalSeconds 60, codexEnabled true, codexThreshold 0, cooldownSeconds 300,
 // hysteresisPct 10,
 // strategy "soonest-reset" (DESIGN A32; the Python dataclass has "best"),
@@ -111,6 +116,7 @@ type AutoSwitchSettings struct {
 // (DESIGN A33): auto-switch never moves onto an API-key account.
 func Default() AutoSwitchSettings {
 	return AutoSwitchSettings{
+		Enabled:             false,
 		FiveHourThreshold:   85.0,
 		SevenDayThreshold:   97.0,
 		ModelThreshold:      95.0,
@@ -158,6 +164,8 @@ func (s Spec) Dotted() string { return s.Section + "." + s.JSONKey }
 
 func (s Spec) Label() string {
 	switch s.Field {
+	case "Enabled":
+		return "Auto-switch"
 	case "FiveHourThreshold":
 		return "5-hour threshold"
 	case "SevenDayThreshold":
@@ -188,11 +196,15 @@ func (s Spec) Label() string {
 
 // SettingSpecs is the single source of truth for every settings.json key, in
 // registry order: the order `tycswap config`, the TUI's Settings screen and
-// the dashboard's Settings tab list them, so the bars come first and the
-// model windows sit right before the model bar that applies to them (DESIGN
-// A49). It must cover every AutoSwitchSettings field, and each spec's Default
-// must equal Default()'s corresponding field (both enforced by tests).
+// the dashboard's Settings tab list them, so the on/off comes first, then the
+// bars, and the model windows sit right before the model bar that applies to
+// them (DESIGN A49). It must cover every AutoSwitchSettings field, and each
+// spec's Default must equal Default()'s corresponding field (both enforced by
+// tests).
 var SettingSpecs = []Spec{
+	{Section: "autoswitch", JSONKey: "enabled", Field: "Enabled", Kind: KindBool,
+		Default: false,
+		Help:    "Switch accounts automatically before a limit (tycswap auto on|off)"},
 	{Section: "autoswitch", JSONKey: "fiveHourThreshold", Field: "FiveHourThreshold", Kind: KindFloat,
 		Lo: 50.0, Hi: 100.0, Default: 85.0,
 		Help: "Switch at this 5-hour usage percentage"},
@@ -434,6 +446,8 @@ func truthy(v any) bool {
 // clampValue produces for each Kind.
 func applyField(out *AutoSwitchSettings, field string, value any) {
 	switch field {
+	case "Enabled":
+		out.Enabled = value.(bool)
 	case "FiveHourThreshold":
 		out.FiveHourThreshold = value.(float64)
 	case "SevenDayThreshold":
@@ -474,6 +488,7 @@ func fieldsOf(s AutoSwitchSettings) map[string]any {
 		model = *s.Model
 	}
 	return map[string]any{
+		"Enabled":             s.Enabled,
 		"FiveHourThreshold":   s.FiveHourThreshold,
 		"SevenDayThreshold":   s.SevenDayThreshold,
 		"ModelThreshold":      s.ModelThreshold,

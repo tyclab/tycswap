@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Added:** `autoswitch.enabled` (default `false`), auto-switch's on/off in `settings.json`, listed first by `tycswap config`, the TUI's Settings screen and the dashboard's Settings tab. **Breaking:** `ui_prefs.json` no longer holds `autoSwitch`, and the app no longer resumes auto-switch from it at start; the first command after the upgrade sets `autoswitch.enabled` to `true` when `autoSwitch` was `true` and the key is unset, then removes `autoSwitch`.
 - **Added:** the plan Claude Code reports for a login (`Ultra`, `Max`, `Pro`) is recorded at `add` and on every switch, and shown as a chip in the dashboard, in the tray panel's row title, after the organization tag in `tycswap list`, and as `plan` in `list --json`, `status --json` and `statusline.json`.
 - **Changed:** Claude.ai's placeholder organization "<email>'s Organization" counts as no organization: `list` tags the account `personal`, the dashboard shows the email alone and the status line label falls back to the email instead of repeating it.
 - **Changed:** the dashboard draws a window Anthropic does not report for an account (a verified Ultra login has no 5-hour limit) as a muted dash instead of a "no data" meter, and leaves the 5-hour column out while no measured account has one; the tray panel's cells carry the reset countdown (`55% · 8m`) without selecting the row.
