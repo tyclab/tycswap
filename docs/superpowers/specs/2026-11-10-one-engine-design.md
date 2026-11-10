@@ -307,8 +307,12 @@ operator's instruction.
   `TYCSWAP_DEFAULT_*` readers, the panel's scope selector and destination
   list, `routing.lock`.
 - The dead code each lane listed, each with its grep.
-- Open, the operator's: `tycswap run` / `env` session profiles and the
-  ownership registry that exists for them.
+- `tycswap run` / `env` session profiles (`internal/session`,
+  `internal/sessprofile`) and the parts of the ownership registry that exist
+  only for them: operator's decision 2026-11-10. Ten findings exist only
+  because of them, two of which lose a login; with D1 and D2, staying on one
+  account no longer needs a profile. The removal plan lists, with a grep
+  each, what only they read.
 
 ## Alternatives considered
 

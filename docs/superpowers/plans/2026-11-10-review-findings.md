@@ -4,7 +4,7 @@ Open work only: a row is deleted by the change that closes it. Design:
 `docs/superpowers/specs/2026-11-10-one-engine-design.md` (D-numbers below).
 
 Verdict: FIX, CUT (goes with a removal in D10), DUP (same defect, other
-lane), OPEN (waits on the operator), BY-DESIGN, PROVISIONER (fixed in
+lane), BY-DESIGN, PROVISIONER (fixed in
 flakelab). Evidence at review time: T repro test, V re-checked at the cited
 lines by the lead, L seen in a live log, P plausible (one fact unproven),
 blank is a file:line trace. Series: E engine, C credentials, U screens,
@@ -66,9 +66,9 @@ evidence.
 | CLI-4 | `--slot` overwrite prompt while the login owns the terminal | cli/loginwait.go | FIX | P | R |
 | CLI-5 | login stored before its organization name is written | cli/loginwait.go, lifecycle/addsource.go | FIX | P | R |
 | CLI-6 | `auto` usage error exits 2 | cli/config.go | DUP ENG-12 |  |  |
-| CLI-7 | pinned shell: other commands fall back to `~/.claude` | cli/cli.go neutralizePinnedSessionProfile | OPEN D10 | V |  |
+| CLI-7 | pinned shell: other commands fall back to `~/.claude` | cli/cli.go neutralizePinnedSessionProfile | CUT D10 | V | R |
 | CLI-8 | observe from a pinned profile booked to the default login | cli/observe.go | FIX D6 | T | E |
-| CLI-9 | `run` without an account in a pinned shell launches the pinned one | cli/run.go | OPEN D10 |  |  |
+| CLI-9 | `run` without an account in a pinned shell launches the pinned one | cli/run.go | CUT D10 |  | R |
 | CLI-10 | `config set autoswitch.model ","` accepted, disables the session policy | settings/settings.go ParseSettingValue | FIX | V | E |
 | CLI-11 | TUI add-token "slot occupied" matches a Codex number | tui/app.go slotOccupant | FIX | V | R |
 | CLI-12 | menu prefills "(none)", Enter fails | cli/menu.go, interactive.go | FIX |  | R |
@@ -132,12 +132,12 @@ evidence.
 | ID | Defect | Where | Verdict | Ev | Series |
 | --- | --- | --- | --- | --- | --- |
 | STORE-1 | `add` files the live credential under the account the config names | lifecycle/add.go, addsource.go | FIX D8 | TVL | C |
-| STORE-2 | `move`/`swap` deletes a stopped profile's newest token | lifecycle/moveswap.go, store/credproxy.go | OPEN D10 | TV |  |
+| STORE-2 | `move`/`swap` deletes a stopped profile's newest token | lifecycle/moveswap.go, store/credproxy.go | CUT D10 | TV | R |
 | STORE-3 | `add` reads identity before the lock, material after | lifecycle/add.go | FIX D8 | T | C |
 | STORE-4 | `export` writes the live credential into the config's entry | transfer/export.go | FIX D8 |  | C |
 | STORE-5 | `disable` does not hold the active account | autoswitch/tick.go | BY-DESIGN (upstream; need met by D1 D2) | V |  |
 | STORE-6 | symlink above the store root fails every ownership check | groups/registry.go SafePath | FIX | T | R |
-| STORE-7 | same-email swap strands a profile claim | lifecycle/moveswap.go | OPEN D10 | T |  |
+| STORE-7 | same-email swap strands a profile claim | lifecycle/moveswap.go | CUT D10 | T | R |
 | STORE-8 | `add` refreshes an API-key slot in place with an OAuth login | lifecycle/add.go | FIX | T | C |
 | STORE-9 | `add-token` placeholder email collision deletes an account | lifecycle/addtoken.go | FIX | T | C |
 | STORE-10 | re-adding in place drops `disabled` | lifecycle/add.go, addtoken.go, transfer/import.go | FIX | T | C |
@@ -145,7 +145,7 @@ evidence.
 | STORE-12 | active pointer left on a removed slot | lifecycle/remove.go, add.go | FIX D8 | T | C |
 | STORE-13 | macOS purge reports Keychain items removed unchecked | lifecycle/purge.go | FIX |  | R |
 | STORE-14 | scratch login directories never reclaimed | cli/logincleanup.go | DUP CLI-3 | L |  |
-| STORE-15 | snapshot `RotationEligible` omits ownership | reporting/snapshot.go | OPEN D10 |  |  |
+| STORE-15 | snapshot `RotationEligible` omits ownership | reporting/snapshot.go | CUT D10 |  | R |
 | STORE-16 | `RecordPlan` matches by email only | store/plan.go | FIX |  | R |
 | STORE-17 | macOS pinned config dir: two readers, two Keychain items | credstore/active.go, store/defaulthandoff.go | FIX | P | R |
 | STORE-18 | `add-token` secret echoed under mintty without a warning | lifecycle/lifecycle.go Secret | FIX | P | R |
@@ -155,15 +155,15 @@ evidence.
 
 | ID | Defect | Where | Verdict | Ev | Series |
 | --- | --- | --- | --- | --- | --- |
-| SES-1 | failed probe reseeds a profile from the stale backup, then deletes it | session/bootstrap.go | OPEN D10 | T |  |
-| SES-2 | every slot backup write deletes the profile's credential | store/credproxy.go postBackupWrite | OPEN D10 | TV |  |
+| SES-1 | failed probe reseeds a profile from the stale backup, then deletes it | session/bootstrap.go | CUT D10 | T | R |
+| SES-2 | every slot backup write deletes the profile's credential | store/credproxy.go postBackupWrite | CUT D10 | TV | R |
 | SES-3 | one unparsable session file vetoes every ownership check | store/ownership.go profilePIDs | FIX | T | R |
-| SES-4 | `env N` on the active account pins nothing, exits 0 | session/env.go | OPEN D10 | V |  |
+| SES-4 | `env N` on the active account pins nothing, exits 0 | session/env.go | CUT D10 | V | R |
 | SES-5 | pinned session's status line handled as default login | cli/observe.go | DUP CLI-8 | T |  |
 | SES-6 | stale session file counts as running once its PID is reused | procdetect/procdetect.go, store/ownership.go | FIX | TV | R |
-| SES-7 | an account once run in a profile is refused as a target for good | store/ownership.go | OPEN D10 | T |  |
+| SES-7 | an account once run in a profile is refused as a target for good | store/ownership.go | CUT D10 | T | R |
 | SES-8 | symlink above the store root | groups/registry.go | DUP STORE-6 | T |  |
-| SES-9 | `--share-history` deletes same-named profile memory files | session/history.go | OPEN D10 | T |  |
+| SES-9 | `--share-history` deletes same-named profile memory files | session/history.go | CUT D10 | T | R |
 | SES-10 | at-limit marker kept after the reset time passed | reporting/atlimit.go, render.go | FIX D4 | T | E |
 | SES-11 | unknown 5h utilization printed as 0 % | reporting/render.go | FIX | T | R |
 | SES-12 | at-limit marker ignores the session-model policy | reporting/atlimit.go | FIX D9 |  | E |
