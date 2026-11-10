@@ -295,6 +295,10 @@ FL-7, TRAY-7 (its managed row).
   mark is `AutoView.Enabled`; a click calls `SetEnabled(!enabled)` and
   notifies `Auto-switch on` / `Auto-switch off`. Remote: `AutoStart` /
   `AutoStop` keep their routes; `SetModel` saves the setting.
+- Page, Settings tab: `SETTING_LABELS` gets `autoswitch.enabled`
+  ("Auto-switch"), and the per-key "applies" note reads "Applies at the next
+  tick." for every `autoswitch.*` key (a tick loads settings; nothing
+  restarts).
 - Page: `run()` clears `aria-busy` and calls the section's render instead of
   forcing `disabled = false`; the Auto tab shows one On/Off control from
   `auto.enabled`, a "Check now" button, the last tick line, and when enabled
@@ -312,6 +316,10 @@ FL-7, TRAY-7 (its managed row).
     returns only after the tick is released (HOST-5).
   - `TestFacadeNilCodexQuiet`: Codex engine nil, three loop rounds: no event
     with provider `codex` (HOST-7).
+  - `TestFacadeCodexEngineOverDashboardSwitcher`: the hosted Codex engine is
+    built over the Codex switcher the facade was given (the assertion the
+    deleted `TestAppResumeStartsBothEngines` carried), through the production
+    constructor closure, not a replaced seam.
   - `TestHeadlessPrintsNoToken` (cli): the headless start output matches
     `Dashboard: http://127.0.0.1:\d+/\n` and holds no `token=` (HOST-6).
   - `TestAutoRoutesSetEnabled` (web): start → facade saw `SetEnabled(true)`;
@@ -450,8 +458,10 @@ Closes: CLI-1, CLI-2.
 **Files:**
 - Modify: `docs/DESIGN.md` (append A83 to A87; mark A43, A51 and the loop
   paragraphs of A66, A76, A77 as superseded with a pointer, do not rewrite
-  them), `docs/reference.md` (`auto`, the dashboard API, FILES, exit codes),
-  `README.md` (auto-switch, tray, the WSL service paragraph), `CHANGELOG.md`,
+  them), `docs/reference.md` (`auto`, the dashboard API, FILES, exit codes,
+  the SETTINGS table, every mention of `autoSwitch` in `ui_prefs.json`),
+  `README.md` (auto-switch, tray, the WSL service paragraph, the
+  `tycswap config` sample, the FILES row for `ui_prefs.json`), `CHANGELOG.md`,
   `docs/port-spec/05-autoswitch.md` and `09-tui-menubar.md` (deviation notes)
 
 - [ ] **Step 1: write** A83 "Auto-switch is a setting" (D1), A84 "Choosing an
