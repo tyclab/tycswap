@@ -6073,6 +6073,8 @@ settings; continuous runners reload group overrides but take shared defaults
 at startup. The group failed-poll counter currently starts anew each check,
 so that ineffective override is excluded from group settings.
 
+Superseded by A84: the Windows panel is one page with no tabs, settings, details, sorting or confirmation.
+
 ## A63. Human action menu and account setup
 
 Bare invocation in a human terminal opens a searchable action menu, independently
@@ -6106,6 +6108,8 @@ Terminal's extra parsing and Go's default null standard handles for a new proces
 The Windows tuning tab is Advanced. Setting descriptions and applicability notes
 are concise; the source is shown once in its column. Defaults, including the 85%
 5-hour switching threshold, are unchanged.
+
+Superseded by A84 for the Windows panel, which has no Advanced tab and no setup actions.
 
 ## A64. Flakelab terminal prompts and incomplete commands
 
@@ -6271,6 +6275,8 @@ The surfaces, all additive:
 - The engine's `no-switch` details under `active-usage-unknown` and
   `active-idle` end in ` · <reason>` while the active account's row carries
   one, for example `1/3 before failover · owner holds an expired token; …`.
+
+Superseded by A84 for the tray: the panel shows the status as the row's warning; the dashboard keeps the reason.
 
 ## A68. The live slot follows the credential
 
@@ -6809,6 +6815,8 @@ the short time to the reset ("55% · 8m", "15% · 5d 5h"); sorting compares
 the share before the dot, the details box keeps reset wording, fetch time
 and status.
 
+Superseded by A84 for the Windows panel: each limit's reset sits under its bar; no details box, no sorting.
+
 ## A81. Setup opens in Windows Terminal
 
 **Add account…** and **Interactive menu…** opened the guided setup through a
@@ -6909,6 +6917,102 @@ The rule: one key, `autoswitch.enabled` in `settings.json`, default off
 Supersedes A43's `ui_prefs.json` choice and A51's refusal of Start under an
 external owner. Closes HOST-1 ("off" exists only inside the app process) and
 HOST-4 (a remembered "on" survives a managed period and resumes unasked).
+
+## A84. The tray panel is the daily view
+
+On 2026-11-11 the operator could not find where to turn auto-switch off: the
+Windows panel's bottom line said "Auto-switch on" as plain text, and its two
+switches were drawn only on the Advanced tab. They do not want settings in
+the tray, and do not want to click an account to see when its limits reset.
+They approved this design from a picture.
+
+The rule: the Windows panel is one page.
+
+- A title, the brand name. A list with a header row: `Account`, `5-hour`,
+  `Weekly`, one column per model window any row reports (`Fable` first),
+  and an unlabeled action column. One row per account, Claude rows first,
+  then Codex, each in slot order.
+- The account cell has two lines: the name (`#2 name`, `Codex #1 name`),
+  semi-bold, cut with an ellipsis past the column's cap of 36 units (about
+  34 average characters); then the plan in an outlined label, `not
+  rotated` (muted) for an account excluded from rotation, and in the limit
+  colour, in the dashboard's words, a reading that failed (`token
+  expired`, `re-login needed`, `usage unavailable`, …; none for an API-key
+  account, which reports no usage by design).
+- A limit cell is the share and a thin bar, and small under them that
+  limit's own reset as clock time and time left: `15:04 · 3h 52m` for the
+  5-hour window, `Today 15:04`, `Mon 15:04` within six days and `Mon 2 Jan`
+  after that for the others (English names, local time). No reset known,
+  a window that has not started or a reset already past: no second line.
+  The share is in the text colour and the bar's fill in the accent; both
+  take the limit colour when the share as shown (`97%`) is at or over the
+  window's auto-switch bar (`autoswitch.fiveHourThreshold`,
+  `sevenDayThreshold`, `modelThreshold`; for a Codex row the Codex engine's
+  one bar). A muted dash stands where the
+  account reports no such window, and in `Fable` for a plan
+  `groups.Entitlement` knows cannot run it (Pro, free); an unknown plan
+  shows what is reported.
+- The action cell is a Switch button, disabled for an account that cannot
+  be switched to; the active account shows `In use` in the accent instead.
+- One note line under the list: the last panel action's result or error,
+  whichever button it was, or while the engine is out of reach why. Then
+  Switch and `Auto-switch` are disabled; `Start at login` and the updates
+  act on this machine and stay usable. Before the first state the list says
+  `No data yet`.
+- The footer, one row while the width holds it: `Quit` and, while one
+  waits, `Update <brand>` and `Update Claude` on the left; `Auto-switch`
+  and `Start at login` as switches (label, a pill filled with the knob
+  right when on, outlined with the knob left when off, the word) and `Open
+  dashboard` rightmost.
+- The popup is as wide as its content and its footer's one row, never wider
+  than the work area (the account column gives way first), and as tall as
+  its rows; past the work area the list scrolls and the title, the note and
+  the footer stay.
+- Every Switch, switch and footer command is a real owner-drawn button, so
+  Tab walks the Switch buttons top to bottom and then the footer, Space or
+  Enter press, Esc closes. The popup itself has the focus when it opens, so
+  a stray key presses nothing, and gets it back when the focused Switch
+  becomes `In use` (disabled) or goes. A Switch's window text is its row in words
+  (`Switch to #1 name, Ultra, Weekly 54%, Fable 50%`; `#5 name, in use,
+  …`), and a switch's says its state (`Auto-switch, on`), since painted text
+  is invisible to a screen reader.
+- The shell lays the panel out again when no state has come for a minute,
+  so an open panel's countdowns are never older: the app paints on every
+  poll, but `--interval` goes up to an hour and a remote tray hears nothing
+  while its engine is out of reach.
+
+A switch from any tray (`appShell.click`, so the Linux and macOS menus too)
+acts at once; only the API-key question (A33) stays, and its approval is
+recorded only right before the switch is made. When auto-switch is on and
+not a dry run (for a Codex row: and Codex rotation is on, since nothing else
+moves a Codex login), the click turns it off first and does not switch when
+that fails; a switch that then fails turns it on again. Switch clicks run
+one at a time, so a first that fails cannot turn auto-switch on behind a
+second. A tick already running when the click turns auto-switch off reads
+the setting again under the state lock before it switches, and stops with
+the `disabled` no-switch. The note reads
+`Switched to #N. Auto-switch is now off, so the login stays there.` (or
+`Switched to #N.`, `Switched to Codex #N…`) and the notification says so
+too; the next action's result replaces it and a click on either switch
+clears it. With auto-switch on, the next tick would move the login away
+from the account the user picked.
+
+The panel is Win32 through syscalls, as before: the popup paints the title,
+the labels, the rules and the note; a child viewport paints the rows and
+scrolls them with their buttons. Its geometry is a pure function, tested
+with a fake text measure. The preview tool's `-png` draws it outside every
+monitor, never activated and without a tray icon, and captures it with
+`PrintWindow`.
+
+Supersedes for the Windows panel: A62's Accounts / Settings popup, the
+details revealed by row focus, sorting, the confirmation listing every
+destination and the setting editor (settings live in the dashboard and
+`tycswap config`); A63's Advanced tab and Add account… / Interactive
+menu… (the dashboard and `tycswap add`, `tycswap menu`); A67's details line;
+A79's plan in the row title; A80's `55% · 8m` cells and details box; and
+the `Used by` column, Check for updates, the version text and the
+"Auto-switch managed by …" status, which A83 left with nothing to say.
+The Linux and macOS menus are unchanged (A37).
 
 ## A85. Start at login has one owner per box
 

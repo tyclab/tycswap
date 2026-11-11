@@ -155,8 +155,10 @@ type Options struct {
 	// Tooltip is the initial hover text (also the accessibility label).
 	Tooltip string
 	// OnClick receives the ID of the menu item the user chose.
-	OnClick       func(id string)
-	OnPanelAction func(PanelAction) error
+	OnClick func(id string)
+	// OnPanelAction receives the Windows panel's commands; their outcome
+	// comes back as the panel's note.
+	OnPanelAction func(PanelAction)
 	// OnActivate runs on a primary click where the platform has one that does
 	// not open the menu (Linux StatusNotifierItem); macOS and Windows open the
 	// menu on every click and never call it.

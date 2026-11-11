@@ -1,7 +1,6 @@
 package tray
 
 import (
-	"strconv"
 	"strings"
 	"unsafe"
 
@@ -137,8 +136,7 @@ func themeAccent(theme menuTheme) uintptr {
 	if theme != menuDark {
 		accent = brand.LightAccent(accent)
 	}
-	rgb, _ := strconv.ParseUint(accent[1:], 16, 32)
-	return uintptr((rgb&0xff)<<16 | rgb&0xff00 | (rgb>>16)&0xff)
+	return colorRef(accent)
 }
 
 func (p *activeMenuPainter) rowFont(step menuStep) uintptr {

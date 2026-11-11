@@ -22,7 +22,25 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Install terminal prompt runtime
-        run: sudo apt-get update && sudo apt-get install -y zsh
+        # Measured on 2026-11-11: the runner's resolver (Azure's) timed out for
+        # Ubuntu's three mirror names for an hour while public resolvers
+        # answered them, and `apt-get update` exits 0 even then. When the
+        # mirror does not resolve, public resolvers go in front of the
+        # runner's; the pair is retried for shorter faults.
+        run: |
+          link=$(ip route show default | awk '{print $5; exit}')
+          for attempt in 1 2 3; do
+            if ! timeout 15 getent hosts azure.archive.ubuntu.com >/dev/null; then
+              echo "::warning::the runner's resolver does not answer for the package mirror; adding public resolvers"
+              sudo resolvectl dns "$link" 1.1.1.1 9.9.9.9 168.63.129.16
+              sudo resolvectl flush-caches
+            fi
+            if sudo apt-get update && sudo apt-get install -y zsh; then
+              exit 0
+            fi
+            sleep 15
+          done
+          exit 1
       # The Makefile targets, so CI and a developer's machine run the same commands.
       - run: make fmt
       - run: make vet

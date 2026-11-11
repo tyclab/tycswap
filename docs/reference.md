@@ -3021,14 +3021,32 @@ tycswap app [--remote URL --token-file PATH] --autostart on|off|status
 A bare `tycswap` opens the interactive action menu, including when the tray
 is already running. Its **Start tray app** action starts `tycswap app` detached,
 with output appended to the app log. `tycswap app` itself runs in the foreground.
-The Windows panel has **Accounts** and **Advanced** tabs and an **Add account…**
-action. Browser setup opens a terminal and uses the existing provider login
-flow: a new tab in the current Windows Terminal window when `wt.exe` is on the
-PATH, else a console through PowerShell `Start-Process` (DESIGN A81). Each
-account cell shows the share used and the time to its reset; the row title
-carries the plan Claude Code reports. Remote Windows trays use the distro in their WSL token-file path;
-a web setup request can be delivered to one connected tray over authenticated
-SSE. Requests are not replayed after reconnection.
+On Windows a click on the icon opens the daily view (DESIGN A84) instead of
+the menu below. Under the brand name, a list: per account its name, the plan
+in a small label, `not rotated` for an account excluded from rotation and, in
+the dashboard's words, a reading that failed (`token expired`, …); one column
+per limit (5-hour, weekly, each reported model window) with the share and a
+bar, both in the limit colour when the share shown is at or over that
+window's auto-switch threshold (a Codex row's: the Codex engine's), and under
+it the reset as clock
+time and time left (`15:04 · 3h 52m` for the 5-hour window, `Today 15:04`,
+`Mon 15:04` or `Mon 2 Jan` for the others); `—` where the account reports no
+such window or its plan cannot run Fable; a **Switch** button, **In use** on
+the active account. One line under the list says what the last action did,
+or why the engine is out of reach, which disables Switch and Auto-switch;
+Start at login and the updates act on this machine and stay usable.
+The footer holds **Quit**, **Update tycswap** and **Update Claude** while
+one waits, the **Auto-switch** and **Start at login** switches and **Open
+dashboard**. Tab walks the Switch buttons, then the footer; Space or Enter
+presses; Esc closes. The panel has no settings and no Add account: those are
+in the dashboard and `tycswap config` / `tycswap add`. **Add account…** in
+the dashboard and the Linux and macOS menus opens browser setup in a
+terminal with the existing provider login flow: a new tab in the current
+Windows Terminal window when `wt.exe` is on the PATH, else a console through
+PowerShell `Start-Process` (DESIGN A81). Remote Windows trays use the distro
+in their WSL token-file path; a web setup request can be delivered to one
+connected tray over authenticated SSE. Requests are not replayed after
+reconnection.
 
 ### Options
 
@@ -3060,7 +3078,10 @@ window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
 - **Accounts**: one row per account with its windows and a usage bar, the
   active one marked; a click switches (an API-key account asks first; one
   with a base URL shows `→ <host>`, and the question names the whole URL,
-  DESIGN A46); more than ten accounts move into *All N accounts* ▸, beside
+  DESIGN A46) and, when auto-switch is on and not a dry run (a Codex row:
+  while Codex rotation is on), turns it off first, so the next tick, also
+  one already running, leaves the login there (turned on again if the
+  switch fails; the notification says it, A84); more than ten accounts move into *All N accounts* ▸, beside
   the active one; *Add
   current login* stores the login Claude Code has;
 - **Automation**: *Auto-switch* (on or off; its second line names the
@@ -5267,7 +5288,7 @@ Session groups are retired (DESIGN A78): `tycswap groups` answers only the
 `guard` hook older group sessions call, and every other verb exits 1 saying so.
 Import/export guides
 provider, account scope and file selection; exports require a new file and a token
-warning confirmation. The web/tray Interactive menu action opens this same menu.
+warning confirmation. The Interactive menu action of the dashboard and the Linux and macOS tray menus opens this same menu.
 `web --reuse` opens the running local or remote tray dashboard through its authenticated
 launch API; it starts a background app only if no app holds the relevant lock.
 `add --login --switch` activates a renewed login even when that account is already active.

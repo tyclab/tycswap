@@ -162,8 +162,8 @@ asks for the destination slot. `tycswap config set` asks for the setting and
 value. Complete commands, existing defaults, scripts and JSON calls keep their
 behavior; `TYCSWAP_NO_PROMPT=1` disables automatic prompts.
 
-The dashboard and tray also have **Add account…** and **Interactive menu…**.
-The latter opens all account and transfer actions. They open guided setup in
+The dashboard and the Linux and macOS tray menus also have **Add account…**
+and **Interactive menu…**. The latter opens all account and transfer actions. They open guided setup in
 a terminal; no command needs to be copied. On Windows that is a new tab in
 your current Windows Terminal window when Windows Terminal is installed, else
 a console window. A Windows tray connected to WSL
@@ -694,9 +694,10 @@ given, which overwrites it. Import rejects any file marked `encrypted: true`.
 
 ### Configure settings
 
-The tray keeps rotation tuning under **Advanced**. The 5-hour threshold is
-85% by default: a 15% reserve before the provider's limit, not a provider
-requirement. Changing presentation does not change the saved policy.
+Rotation tuning lives in the dashboard's **Settings** and `tycswap config`.
+The 5-hour threshold is 85% by default: a 15% reserve before the provider's
+limit, not a provider requirement. Changing presentation does not change the
+saved policy.
 
 `tycswap config` prints the settings and their values, marking each unchanged one
 `(default)`:
@@ -847,7 +848,7 @@ run`) and can stop one; *Settings* edits every `settings.json` key with its
 type, range and default, the same keys as `tycswap config`, and picks the
 counted model windows from the ones the accounts report; *Guide* explains
 the tool. The Accounts and Updates cards fold, and the choice is remembered.
-Choose **Interactive menu… → Import / export…** to transfer accounts through a terminal launched from the dashboard or tray. Files contain account tokens; the guided export asks before writing and requires a new destination.
+Choose **Interactive menu… → Import / export…** to transfer accounts through a terminal launched from the dashboard or the Linux and macOS tray menu. Files contain account tokens; the guided export asks before writing and requires a new destination.
 
 Only the browser tab that opens the printed URL can use the page: the token
 in it works once, the server listens on loopback only, and every API call
@@ -877,26 +878,26 @@ High contrast uses Windows' system colors.
 (Windows, Linux) icon. Choose **Start tray app** in the `tycswap` menu to start
 it in the background. `tycswap app` runs it in the foreground.
 
-On Windows, clicking the icon opens a compact **Accounts / Advanced** panel.
-Each account appears once, with separate 5-hour, weekly and reported model
-columns. Each cell shows the **used quota** and the time to that window's reset
-(`55% · 8m`); `—` means no window was reported, which is how a verified Ultra
-login's 5-hour column reads. Fable at 100% does not mean the shared weekly
-limit is exhausted. Active accounts are bold blue, the row title carries the
-plan Claude Code reports, and **Used by** names the default login.
-Focus a row for the full reset wording, fetch time and status. Clicking a column sorts
-the table; it does not change which models an engine counts. To switch,
-double-click a row (or press Enter) and confirm the default login's switch.
-An account that cannot be switched to stays listed, disabled, with the reason. The panel sizes itself to its content:
-buttons and columns fit their text, full account names show, and tables are
-as tall as their rows.
+On Windows, clicking the icon opens the daily view: one row per account with
+its name, the plan Claude Code reports under it, and a column for each limit
+(5-hour, weekly, each reported model window). A cell shows the **used quota**
+with a bar and, under it, when that limit resets and how long that is
+(`Sat 10:00 · 2d 22h`); the share and bar turn orange at the limit's
+auto-switch threshold. `—` means no such window was reported, which is how a verified
+Ultra login's 5-hour column reads, or that the plan cannot run Fable. Fable at
+100% does not mean the shared weekly limit is exhausted. **Switch** switches
+the default login at once and turns auto-switch off when it was on (for a
+Codex account, while Codex rotation is on), so the login stays where you put
+it; the line under the list says so, and the active
+account reads **In use**. The footer has **Quit**, the update buttons while an
+update waits, the **Auto-switch** and **Start at login** switches and **Open
+dashboard**. Tab moves through the buttons, Space or Enter presses one, Esc
+closes the panel. Settings and Add account are in the dashboard (and
+`tycswap config`, `tycswap add`). Start at login is local to the tray's
+device.
 
-**Settings** in the tray and dashboard edit the same store; Reset restores a
-default. Start at login is local to the tray's device.
-
-macOS and Linux retain their platform menus; Linux's host menu protocol does
-not support the native table and form controls. The dashboard provides the
-same settings on those platforms. The icon's title reports the active
+macOS and Linux retain their platform menus; there a switch from the menu
+turns auto-switch off the same way. The icon's title reports the active
 account and its fullest counted window (`#1 · 45%`, with `⟳` while the hosted
 engine runs). Notifications report switches, quarantines and thresholds.
 Update checks and installation retain the normal release checks and restart
