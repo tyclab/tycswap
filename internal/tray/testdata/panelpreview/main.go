@@ -4,6 +4,13 @@
 // draws the panel outside every monitor, without focus or a tray icon,
 // writes the picture and exits; without it, it runs a tray icon whose click
 // opens the panel.
+//
+// The picture checks drawing only. The fixture is a tray.Panel written by
+// hand, not one the app builds from a state, so the builder's rules (dashes,
+// clock texts, limit colours) are the cli tests' to check. The window takes
+// the DPI of the monitor nearest the left of the virtual screen, so on a
+// desktop whose monitors differ in DPI the picture's scale can differ from
+// the real panel's, which opens on the tray's monitor.
 package main
 
 import (
@@ -133,12 +140,12 @@ func interactive(model tray.Panel) {
 	var mu sync.Mutex
 	var shell tray.Tray
 	options := tray.Options{Tooltip: "Synthetic tray preview"}
-	options.OnPanelAction = func(action tray.PanelAction) error {
+	options.OnPanelAction = func(action tray.PanelAction) {
 		encoded, _ := json.Marshal(action)
 		fmt.Println(string(encoded))
 		if action.Key == "quit" {
 			shell.Quit()
-			return nil
+			return
 		}
 		mu.Lock()
 		defer mu.Unlock()
@@ -160,7 +167,6 @@ func interactive(model tray.Panel) {
 			}
 		}
 		shell.(tray.PanelTray).SetPanel(model)
-		return nil
 	}
 	var err error
 	shell, err = tray.New(tray.Icon{PNG: icon.Bytes()}, options)

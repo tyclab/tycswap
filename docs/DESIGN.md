@@ -6933,24 +6933,30 @@ The rule: the Windows panel is one page.
 - The account cell has two lines: the name (`#2 name`, `Codex #1 name`),
   semi-bold, cut with an ellipsis past the column's cap of 36 units (about
   34 average characters); then the plan in an outlined label, `not
-  rotated` (muted) for an account excluded from rotation, and the usage
-  status in the limit colour when it is not `ok`.
+  rotated` (muted) for an account excluded from rotation, and in the limit
+  colour, in the dashboard's words, a reading that failed (`token
+  expired`, `re-login needed`, `usage unavailable`, …; none for an API-key
+  account, which reports no usage by design).
 - A limit cell is the share and a thin bar, and small under them that
   limit's own reset as clock time and time left: `15:04 · 3h 52m` for the
   5-hour window, `Today 15:04`, `Mon 15:04` within six days and `Mon 2 Jan`
   after that for the others (English names, local time). No reset known,
   a window that has not started or a reset already past: no second line.
-  Share and bar take the limit colour at or over the window's auto-switch
-  bar (`autoswitch.fiveHourThreshold`, `sevenDayThreshold`,
-  `modelThreshold`), the accent otherwise. A muted dash stands where the
+  The share is in the text colour and the bar's fill in the accent; both
+  take the limit colour when the share as shown (`97%`) is at or over the
+  window's auto-switch bar (`autoswitch.fiveHourThreshold`,
+  `sevenDayThreshold`, `modelThreshold`; for a Codex row the Codex engine's
+  one bar). A muted dash stands where the
   account reports no such window, and in `Fable` for a plan
   `groups.Entitlement` knows cannot run it (Pro, free); an unknown plan
   shows what is reported.
 - The action cell is a Switch button, disabled for an account that cannot
   be switched to; the active account shows `In use` in the accent instead.
 - One note line under the list: the last panel action's result or error,
-  or while the engine is out of reach why, with Switch and both switches
-  disabled. Before the first state the list says `No data yet`.
+  whichever button it was, or while the engine is out of reach why. Then
+  Switch and `Auto-switch` are disabled; `Start at login` and the updates
+  act on this machine and stay usable. Before the first state the list says
+  `No data yet`.
 - The footer, one row while the width holds it: `Quit` and, while one
   waits, `Update <brand>` and `Update Claude` on the left; `Auto-switch`
   and `Start at login` as switches (label, a pill filled with the knob
@@ -6963,7 +6969,8 @@ The rule: the Windows panel is one page.
 - Every Switch, switch and footer command is a real owner-drawn button, so
   Tab walks the Switch buttons top to bottom and then the footer, Space or
   Enter press, Esc closes. The popup itself has the focus when it opens, so
-  a stray key presses nothing. A Switch's window text is its row in words
+  a stray key presses nothing, and gets it back when the focused Switch
+  becomes `In use` (disabled) or goes. A Switch's window text is its row in words
   (`Switch to #1 name, Ultra, Weekly 54%, Fable 50%`; `#5 name, in use,
   …`), and a switch's says its state (`Auto-switch, on`), since painted text
   is invisible to a screen reader.
@@ -6973,9 +6980,15 @@ The rule: the Windows panel is one page.
   while its engine is out of reach.
 
 A switch from any tray (`appShell.click`, so the Linux and macOS menus too)
-acts at once; only the API-key question (A33) stays. When auto-switch is on
-and not a dry run, the click turns it off first and does not switch when
-that fails; a switch that then fails turns it on again. The note reads
+acts at once; only the API-key question (A33) stays, and its approval is
+recorded only right before the switch is made. When auto-switch is on and
+not a dry run (for a Codex row: and Codex rotation is on, since nothing else
+moves a Codex login), the click turns it off first and does not switch when
+that fails; a switch that then fails turns it on again. Switch clicks run
+one at a time, so a first that fails cannot turn auto-switch on behind a
+second. A tick already running when the click turns auto-switch off reads
+the setting again under the state lock before it switches, and stops with
+the `disabled` no-switch. The note reads
 `Switched to #N. Auto-switch is now off, so the login stays there.` (or
 `Switched to #N.`, `Switched to Codex #N…`) and the notification says so
 too; the next action's result replaces it and a click on either switch

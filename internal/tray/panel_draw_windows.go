@@ -35,11 +35,13 @@ func panelSystemColor(index uintptr) uintptr {
 }
 
 // High contrast takes the system's colours; the limit state uses the
-// highlight colour, which every high-contrast scheme sets apart.
+// highlight colour, which every high-contrast scheme sets apart. The bar's
+// track is the grey text colour: window text and window frame are one
+// colour there, and a track in either would hide the share.
 func colorsForPanel(theme menuTheme) panelColors {
 	if theme == menuHighContrast {
 		window, face, text, gray, frame, highlight := panelSystemColor(5), panelSystemColor(15), panelSystemColor(8), panelSystemColor(17), panelSystemColor(6), panelSystemColor(13)
-		return panelColors{window, face, text, gray, frame, highlight, text, frame, highlight}
+		return panelColors{window, face, text, gray, frame, highlight, text, gray, highlight}
 	}
 	return panelPalette(theme == menuDark, themeAccent(theme))
 }
@@ -65,13 +67,13 @@ func (p *windowsPanel) scale(value int) int { return (value*p.dpi + 48) / 96 }
 func (p *windowsPanel) freeTheme() {
 	stock, _, _ := menuStockObject.Call(17)
 	seen := map[uintptr]bool{}
-	for _, object := range []uintptr{p.font, p.strong, p.small, p.titleFont, p.background} {
+	for _, object := range []uintptr{p.font, p.strong, p.small, p.titleFont} {
 		if object != 0 && object != stock && !seen[object] {
 			menuDeleteObject.Call(object)
 			seen[object] = true
 		}
 	}
-	p.font, p.strong, p.small, p.titleFont, p.background = 0, 0, 0, 0, 0
+	p.font, p.strong, p.small, p.titleFont = 0, 0, 0, 0
 }
 
 // refreshTheme rebuilds the fonts and colours for the current app mode and
@@ -104,7 +106,6 @@ func (p *windowsPanel) refreshTheme() {
 	p.strong = create(int32(p.scale(13)), 600)
 	p.small = create(int32(p.scale(11)), 400)
 	p.titleFont = create(int32(p.scale(16)), 700)
-	p.background, _, _ = panelCreateBrush.Call(p.palette.background)
 	p.position()
 	user32.NewProc("RedrawWindow").Call(p.hwnd, 0, 0, 0x1|0x4|0x80|0x400)
 }
@@ -186,9 +187,6 @@ func (p *windowsPanel) paint(dc uintptr) {
 	if p.panel.Alert {
 		color = p.palette.limit
 	}
-	if p.errorText != "" {
-		note, color = p.errorText, p.palette.limit
-	}
 	p.text(dc, p.font, color, panelBox(g.note), note, panelLine)
 	p.rule(dc, 0, int(client.right), g.footer)
 }
@@ -262,11 +260,11 @@ func (p *windowsPanel) paintRow(dc uintptr, row PanelRow, top int) {
 			p.text(dc, p.font, p.palette.muted, menuRect{left, int32(top), right, int32(top + g.row)}, "—", panelLine|dtCenter)
 			continue
 		}
-		color := p.palette.accent
+		share, fill := p.palette.text, p.palette.accent
 		if cell.Limit {
-			color = p.palette.limit
+			share, fill = p.palette.limit, p.palette.limit
 		}
-		p.text(dc, p.font, color, menuRect{left, first.top, left + int32(g.share), first.bottom}, cell.Share, panelLine|dtRight)
+		p.text(dc, p.font, share, menuRect{left, first.top, left + int32(g.share), first.bottom}, cell.Share, panelLine|dtRight)
 		height := max(2, unit/2)
 		bar := menuRect{left + int32(g.share+unit/2), (first.top+first.bottom)/2 - int32(height/2), right, 0}
 		bar.bottom = bar.top + int32(height)
@@ -274,14 +272,15 @@ func (p *windowsPanel) paintRow(dc uintptr, row PanelRow, top int) {
 		filled := bar
 		filled.right = bar.left + int32(float64(bar.right-bar.left)*min(100, max(0, cell.Pct))/100+0.5)
 		if filled.right > filled.left {
-			p.fill(dc, filled, color)
+			p.fill(dc, filled, fill)
 		}
 		p.text(dc, p.small, p.palette.muted, menuRect{left, second.top, right, second.bottom}, cell.Reset, panelLine)
 	}
 }
 
 // drawButton draws every control: a row's Switch or "In use", a switch as
-// label, pill and state, and the footer's commands as outlined buttons.
+// label, pill and state, and the footer's commands as plain outlined
+// buttons.
 func (p *windowsPanel) drawButton(draw *drawMenuItem) bool {
 	if draw.ctlType != 4 {
 		return false
@@ -293,7 +292,7 @@ func (p *windowsPanel) drawButton(draw *drawMenuItem) bool {
 	saved, _, _ := menuSaveDC.Call(dc)
 	defer menuRestoreDC.Call(dc, saved)
 	p.fill(dc, rect, p.palette.background)
-	label, font, color := "", p.font, p.palette.text
+	label, color := "", p.palette.text
 	if i, ok := p.rowFor(id); ok {
 		if p.panel.Rows[i].Active {
 			p.text(dc, p.strong, p.palette.accent, rect, "In use", panelLine|dtCenter)
@@ -309,9 +308,6 @@ func (p *windowsPanel) drawButton(draw *drawMenuItem) bool {
 			return true
 		}
 		label = action.Title
-		if action.ID == "open" {
-			font, color = p.strong, p.palette.accent
-		}
 	} else {
 		return false
 	}
@@ -322,7 +318,7 @@ func (p *windowsPanel) drawButton(draw *drawMenuItem) bool {
 		color = p.palette.muted
 	}
 	p.shape(dc, rect, p.geometry.metrics.unit/2, p.palette.line, 0, true, false)
-	p.text(dc, font, color, rect, label, panelLine|dtCenter)
+	p.text(dc, p.font, color, rect, label, panelLine|dtCenter)
 	if focused {
 		inner := menuRect{rect.left + 2, rect.top + 2, rect.right - 2, rect.bottom - 2}
 		panelFocusRect.Call(dc, uintptr(unsafe.Pointer(&inner)))

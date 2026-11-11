@@ -122,11 +122,7 @@ func panelFooterWidth(action Item, m panelMeasure, metrics panelMetrics) int {
 		state := max(m.textWidth(panelBody, "on"), m.textWidth(panelBody, "off"))
 		return m.textWidth(panelBody, action.Title) + metrics.unit/2 + pill + metrics.unit/2 + state + metrics.unit
 	}
-	font := panelBody
-	if action.ID == "open" {
-		font = panelStrong
-	}
-	return m.textWidth(font, action.Title) + 2*metrics.inset
+	return m.textWidth(panelBody, action.Title) + 2*metrics.inset
 }
 
 // panelFooterPlace puts the left buttons at the left and the right ones
@@ -346,19 +342,13 @@ func panelToggleText(action Item) string {
 	return action.Title + ", off"
 }
 
-// While the engine is out of reach only what works without it stays usable.
+// While the engine is out of reach only what works without it stays usable:
+// Start at login and the updates act on this machine.
 func panelCommandEnabled(panel Panel, action Item) bool {
 	if action.Disabled {
 		return false
 	}
-	if !panel.Offline {
-		return true
-	}
-	switch action.ID {
-	case "open", "quit", "install-update", "claude-code":
-		return true
-	}
-	return false
+	return !panel.Offline || action.ID != "auto"
 }
 
 func panelSwitchEnabled(panel Panel, row PanelRow) bool {
@@ -378,12 +368,13 @@ func clonePanel(p Panel) Panel {
 type panelColors struct{ background, header, text, muted, line, selection, accent, track, limit uintptr }
 
 // panelPalette is the panel's colours outside high contrast. Text, muted,
-// limit and accent keep 4.5:1 against the background.
+// limit and accent keep 4.5:1 against the background; the limit colour is
+// the approved picture's orange.
 func panelPalette(dark bool, accent uintptr) panelColors {
 	if dark {
-		return panelColors{0x202020, 0x292929, 0xf0f0f0, 0xb6b6b6, 0x424242, 0x493c33, accent, 0x404040, colorRef("#ff99a4")}
+		return panelColors{0x202020, 0x292929, 0xf0f0f0, 0xb6b6b6, 0x424242, 0x493c33, accent, 0x404040, colorRef("#ffb454")}
 	}
-	return panelColors{0xffffff, 0xf8f6f5, 0x222222, 0x666666, 0xe4dcd7, 0xfcf3ed, accent, 0xdedede, colorRef("#c42b1c")}
+	return panelColors{0xffffff, 0xf8f6f5, 0x222222, 0x666666, 0xe4dcd7, 0xfcf3ed, accent, 0xdedede, colorRef("#a84300")}
 }
 
 // colorRef turns "#rrggbb" into a Windows COLORREF (0x00bbggrr).

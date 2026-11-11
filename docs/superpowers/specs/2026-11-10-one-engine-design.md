@@ -63,9 +63,9 @@ behind the ones this design removes:
    over from a login that is merely idle.
 5. No path discards a rotated token, replaces a slot's only copy, or leaves a
    half-made switch unrepaired.
-6. The Windows tray panel shows every account's windows, resets and reading
-   age at once, and carries two switches (auto-switch, start at login) and no
-   settings editor.
+6. The Windows tray panel shows every account's limits and resets at once,
+   and a warning where a reading failed, without selecting a row. It carries
+   two switches (auto-switch, start at login) and no settings editor.
 7. Every screen states what the engine does, from the engine's own record.
 8. Less code: the engines, modes and features this supersedes are removed in
    the same series.

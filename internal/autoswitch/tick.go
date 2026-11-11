@@ -612,6 +612,13 @@ func (e *Engine) perform(number, email, trigger, axis string) (tickResult, error
 	outcome := NoAction
 	switched := false
 	err := lock.With(func() error {
+		// Off since the tick began (a switch by hand turns it off first,
+		// DESIGN A84): the user's pick stands.
+		if e.enabled != nil && !e.enabled() {
+			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "disabled", Detail: DisabledDetail})
+			outcome = NoAction
+			return nil
+		}
 		state := e.readState()
 		if heldByCooldown(trigger) && e.inCooldown(state) {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "cooldown"})

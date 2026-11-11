@@ -876,12 +876,13 @@ On Windows, clicking the icon opens the daily view: one row per account with
 its name, the plan Claude Code reports under it, and a column for each limit
 (5-hour, weekly, each reported model window). A cell shows the **used quota**
 with a bar and, under it, when that limit resets and how long that is
-(`Sat 10:00 · 2d 22h`); the bar turns red at the limit's auto-switch
-threshold. `—` means no such window was reported, which is how a verified
+(`Sat 10:00 · 2d 22h`); the share and bar turn orange at the limit's
+auto-switch threshold. `—` means no such window was reported, which is how a verified
 Ultra login's 5-hour column reads, or that the plan cannot run Fable. Fable at
 100% does not mean the shared weekly limit is exhausted. **Switch** switches
-the default login at once and turns auto-switch off when it was on, so the
-login stays where you put it; the line under the list says so, and the active
+the default login at once and turns auto-switch off when it was on (for a
+Codex account, while Codex rotation is on), so the login stays where you put
+it; the line under the list says so, and the active
 account reads **In use**. The footer has **Quit**, the update buttons while an
 update waits, the **Auto-switch** and **Start at login** switches and **Open
 dashboard**. Tab moves through the buttons, Space or Enter presses one, Esc

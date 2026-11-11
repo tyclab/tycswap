@@ -24,7 +24,6 @@ var (
 	panelGetText       = user32.NewProc("GetWindowTextW")
 	panelGetTextLength = user32.NewProc("GetWindowTextLengthW")
 	panelEnable        = user32.NewProc("EnableWindow")
-	panelIsEnabled     = user32.NewProc("IsWindowEnabled")
 	panelIsVisible     = user32.NewProc("IsWindowVisible")
 	panelIsChild       = user32.NewProc("IsChild")
 	panelGetClient     = user32.NewProc("GetClientRect")
@@ -50,11 +49,6 @@ const (
 	panelRowBase       = 1000
 )
 
-type panelActionResult struct {
-	action PanelAction
-	err    error
-}
-
 type windowsPanel struct {
 	tray     *windowsTray
 	hwnd     uintptr // the popup
@@ -65,10 +59,10 @@ type windowsPanel struct {
 	anchor   *point
 	picture  bool // drawn for a picture: outside every monitor, never activated
 
-	dpi                                        int
-	theme                                      menuTheme
-	palette                                    panelColors
-	font, strong, small, titleFont, background uintptr
+	dpi                            int
+	theme                          menuTheme
+	palette                        panelColors
+	font, strong, small, titleFont uintptr
 
 	controls  map[int]uintptr // control ID → window
 	keys      map[int]string  // control ID → row ID or action ID
@@ -76,7 +70,6 @@ type windowsPanel struct {
 	actionIDs map[string]int
 	nextRow   int
 	nextNamed int
-	errorText string
 }
 
 func nativePanelStruct[T any](value uintptr) *T { return *(**T)(unsafe.Pointer(&value)) }
@@ -252,14 +245,14 @@ func (p *windowsPanel) update() {
 	p.syncRows()
 	p.syncActions()
 	p.position()
-	// A Switch that just became "In use" is disabled; focus goes back to the
-	// popup rather than nowhere.
-	if focus, _, _ := panelGetFocus.Call(); focus != 0 && focus != p.hwnd {
-		inside, _, _ := panelIsChild.Call(p.hwnd, focus)
-		enabled, _, _ := panelIsEnabled.Call(focus)
-		if inside != 0 && enabled == 0 {
-			panelSetFocus.Call(p.hwnd)
-		}
+}
+
+// release hands the focus to the popup before control is disabled or
+// destroyed: Windows would leave it nowhere, and then the popup gets no
+// Tab or Esc (a Switch that succeeds becomes "In use" and is disabled).
+func (p *windowsPanel) release(control uintptr) {
+	if focus, _, _ := panelGetFocus.Call(); focus == control {
+		panelSetFocus.Call(p.hwnd)
 	}
 }
 
@@ -272,7 +265,7 @@ func (p *windowsPanel) button(parent uintptr, id int) uintptr {
 
 // syncControls keeps one control per key across updates, so a live update never
 // moves focus or changes a control's identity, and orders them for Tab.
-func (p *windowsPanel) syncControls(parent, after uintptr, keys []string, ids map[string]int, next *int, render func(i int, control uintptr)) {
+func (p *windowsPanel) syncControls(parent, after uintptr, keys []string, ids map[string]int, next *int, render func(i int) (string, bool)) {
 	keep := map[int]bool{}
 	for i, key := range keys {
 		id, ok := ids[key]
@@ -288,13 +281,19 @@ func (p *windowsPanel) syncControls(parent, after uintptr, keys []string, ids ma
 			p.controls[id] = control
 		}
 		keep[id] = true
-		render(i, control)
+		text, enabled := render(i)
+		p.setText(control, text)
+		if !enabled {
+			p.release(control)
+		}
+		panelEnable.Call(control, uintptr(boolValue(enabled)))
 		panelSetPos.Call(control, after, 0, 0, 0, 0, 0x1|0x2|0x10)
 		after = control
 		panelInvalidate.Call(control, 0, 1)
 	}
 	for key, id := range ids {
 		if !keep[id] {
+			p.release(p.controls[id])
 			pDestroyWindow.Call(p.controls[id])
 			delete(p.controls, id)
 			delete(p.keys, id)
@@ -308,10 +307,9 @@ func (p *windowsPanel) syncRows() {
 	for i, row := range p.panel.Rows {
 		keys[i] = row.ID
 	}
-	p.syncControls(p.list, 0, keys, p.rowIDs, &p.nextRow, func(i int, control uintptr) {
+	p.syncControls(p.list, 0, keys, p.rowIDs, &p.nextRow, func(i int) (string, bool) {
 		row := p.panel.Rows[i]
-		p.setText(control, panelSummary(p.panel.Columns, row))
-		panelEnable.Call(control, uintptr(boolValue(panelSwitchEnabled(p.panel, row))))
+		return panelSummary(p.panel.Columns, row), panelSwitchEnabled(p.panel, row)
 	})
 }
 
@@ -320,14 +318,13 @@ func (p *windowsPanel) syncActions() {
 	for i, action := range p.panel.Actions {
 		keys[i] = action.ID
 	}
-	p.syncControls(p.hwnd, p.list, keys, p.actionIDs, &p.nextNamed, func(i int, control uintptr) {
+	p.syncControls(p.hwnd, p.list, keys, p.actionIDs, &p.nextNamed, func(i int) (string, bool) {
 		action := p.panel.Actions[i]
 		text := action.Title
 		if action.Kind == KindToggle {
 			text = panelToggleText(action)
 		}
-		p.setText(control, text)
-		panelEnable.Call(control, uintptr(boolValue(panelCommandEnabled(p.panel, action))))
+		return text, panelCommandEnabled(p.panel, action)
 	})
 }
 
@@ -378,42 +375,15 @@ func (p *windowsPanel) dispatch(action PanelAction) {
 	if action.Key == "open" {
 		p.hide()
 	}
+	// Off the UI thread: a switch waits on locks and the engine. Its
+	// outcome comes back as the next panel's note.
 	go func() {
-		var err error
 		if p.tray.opts.OnPanelAction != nil {
-			err = p.tray.opts.OnPanelAction(action)
+			p.tray.opts.OnPanelAction(action)
 		} else if p.tray.opts.OnClick != nil {
 			p.tray.opts.OnClick(action.Key)
-		} else {
-			err = fmt.Errorf("this action is unavailable")
-		}
-		p.tray.mu.Lock()
-		p.tray.panelResults = append(p.tray.panelResults, panelActionResult{action, err})
-		hwnd := p.tray.hwnd
-		p.tray.mu.Unlock()
-		if hwnd != 0 {
-			pPostMessageW.Call(uintptr(hwnd), wmPanelResult, 0, 0)
 		}
 	}()
-}
-
-// applyPanelResults shows an action's error on the note line until the next
-// action succeeds; a result itself arrives as the note in the next panel.
-func (t *windowsTray) applyPanelResults() {
-	t.mu.Lock()
-	results := t.panelResults
-	t.panelResults = nil
-	t.mu.Unlock()
-	if t.panel == nil {
-		return
-	}
-	for _, result := range results {
-		t.panel.errorText = ""
-		if result.err != nil {
-			t.panel.errorText = result.err.Error()
-		}
-	}
-	panelInvalidate.Call(t.panel.hwnd, 0, 1)
 }
 
 // reveal scrolls a focused Switch into view.

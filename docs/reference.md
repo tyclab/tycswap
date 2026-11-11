@@ -3021,15 +3021,18 @@ is already running. Its **Start tray app** action starts `tycswap app` detached,
 with output appended to the app log. `tycswap app` itself runs in the foreground.
 On Windows a click on the icon opens the daily view (DESIGN A84) instead of
 the menu below. Under the brand name, a list: per account its name, the plan
-in a small label, `not rotated` for an account excluded from rotation and its
-usage status when that is not `ok`; one column per limit (5-hour, weekly,
-each reported model window) with the share, a bar in the limit colour at or
-over that window's auto-switch threshold, and under it the reset as clock
+in a small label, `not rotated` for an account excluded from rotation and, in
+the dashboard's words, a reading that failed (`token expired`, …); one column
+per limit (5-hour, weekly, each reported model window) with the share and a
+bar, both in the limit colour when the share shown is at or over that
+window's auto-switch threshold (a Codex row's: the Codex engine's), and under
+it the reset as clock
 time and time left (`15:04 · 3h 52m` for the 5-hour window, `Today 15:04`,
 `Mon 15:04` or `Mon 2 Jan` for the others); `—` where the account reports no
 such window or its plan cannot run Fable; a **Switch** button, **In use** on
 the active account. One line under the list says what the last action did,
-or why the engine is out of reach, which disables Switch and both switches.
+or why the engine is out of reach, which disables Switch and Auto-switch;
+Start at login and the updates act on this machine and stay usable.
 The footer holds **Quit**, **Update tycswap** and **Update Claude** while
 one waits, the **Auto-switch** and **Start at login** switches and **Open
 dashboard**. Tab walks the Switch buttons, then the footer; Space or Enter
@@ -3073,8 +3076,9 @@ window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
 - **Accounts**: one row per account with its windows and a usage bar, the
   active one marked; a click switches (an API-key account asks first; one
   with a base URL shows `→ <host>`, and the question names the whole URL,
-  DESIGN A46) and, when auto-switch is on and not a dry run, turns it off
-  first, so the next tick leaves the login there (turned on again if the
+  DESIGN A46) and, when auto-switch is on and not a dry run (a Codex row:
+  while Codex rotation is on), turns it off first, so the next tick, also
+  one already running, leaves the login there (turned on again if the
   switch fails; the notification says it, A84); more than ten accounts move into *All N accounts* ▸, beside
   the active one; *Add
   current login* stores the login Claude Code has;

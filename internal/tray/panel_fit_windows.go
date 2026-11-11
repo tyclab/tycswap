@@ -171,6 +171,10 @@ func (p *windowsPanel) scrollTo(y int) {
 	panelScrollInfo.Call(p.list, 1, uintptr(unsafe.Pointer(&info)), 1)
 	p.placeRows()
 	panelInvalidate.Call(p.list, 0, 1)
+	// SetScrollInfo has just drawn the light standard bar.
+	if p.theme == menuDark {
+		p.paintScrollbars(p.list)
+	}
 }
 
 func (p *windowsPanel) vscroll(wParam uintptr) {

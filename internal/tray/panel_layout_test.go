@@ -174,13 +174,17 @@ func TestPanelAccessibleTexts(t *testing.T) {
 	if panelToggleText(p.Actions[1]) != "Auto-switch, on" || panelToggleText(p.Actions[2]) != "Start at login, off" {
 		t.Fatal("switch texts")
 	}
+	m, metrics := fakeMeasure{}, panelMetricsOf(fakeMeasure{})
+	if got := panelFooterWidth(p.Actions[3], m, metrics); got != m.textWidth(panelBody, "Open dashboard")+2*metrics.inset {
+		t.Fatalf("Open dashboard is %d px, not a plain button", got)
+	}
 	if !panelSwitchEnabled(p, p.Rows[0]) || panelSwitchEnabled(p, p.Rows[1]) || panelSwitchEnabled(p, p.Rows[2]) {
 		t.Fatal("switch availability")
 	}
 	p.Offline = true
-	if panelSwitchEnabled(p, p.Rows[0]) || panelCommandEnabled(p, p.Actions[1]) || panelCommandEnabled(p, p.Actions[2]) ||
-		!panelCommandEnabled(p, p.Actions[0]) || !panelCommandEnabled(p, p.Actions[3]) {
-		t.Fatal("offline: Switch and the two switches must be off limits, Quit and Open dashboard not")
+	if panelSwitchEnabled(p, p.Rows[0]) || panelCommandEnabled(p, p.Actions[1]) ||
+		!panelCommandEnabled(p, p.Actions[0]) || !panelCommandEnabled(p, p.Actions[2]) || !panelCommandEnabled(p, p.Actions[3]) {
+		t.Fatal("offline: Switch and Auto-switch must be off limits; Quit, Start at login and Open dashboard not")
 	}
 }
 
@@ -228,6 +232,10 @@ func TestPanelPaletteContrast(t *testing.T) {
 		if c.track == c.background || c.line == c.background {
 			t.Errorf("dark=%v: bar track or rule invisible", dark)
 		}
+	}
+	// The approved picture's orange.
+	if panelPalette(true, 0).limit != colorRef("#ffb454") || panelPalette(false, 0).limit != colorRef("#a84300") {
+		t.Fatalf("limit colours %#06x / %#06x", panelPalette(true, 0).limit, panelPalette(false, 0).limit)
 	}
 	if colorRef("#5aa2ff") != 0xffa25a {
 		t.Fatalf("colorRef %#x", colorRef("#5aa2ff"))

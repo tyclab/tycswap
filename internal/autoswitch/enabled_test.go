@@ -89,3 +89,23 @@ func TestTickEnabledUnchanged(t *testing.T) {
 		t.Fatalf("the reference tick decided %v, want a switch", wantOutcome)
 	}
 }
+
+// A tick that started while auto-switch was on, then was turned off (a
+// switch by hand from the tray turns it off first, DESIGN A84), switches
+// nothing: the switch step reads the setting again under its lock.
+func TestTickTurnedOffBeforeTheSwitchDoesNotSwitch(t *testing.T) {
+	f, rec, clk := overBar()
+	reads := 0
+	turnedOff := func() bool { reads++; return reads == 1 }
+	e := build(t, f, settings.Default(), rec, clk, false, WithStatePath(filepath.Join(t.TempDir(), StateFilename)), WithEnabled(turnedOff))
+	if got := e.Tick(); got != NoAction {
+		t.Fatalf("outcome = %v, want NoAction (kinds %v)", got, rec.kinds())
+	}
+	if current := deref(f.current); current != "1" {
+		t.Fatalf("the tick moved the login to %s after auto-switch was turned off", current)
+	}
+	last, ok := rec.events[len(rec.events)-1].(NoSwitchEvent)
+	if !ok || last.Reason != "disabled" || last.Detail != DisabledDetail {
+		t.Fatalf("last event = %#v, want the disabled no-switch", rec.events[len(rec.events)-1])
+	}
+}

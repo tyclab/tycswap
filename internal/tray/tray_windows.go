@@ -64,7 +64,6 @@ const (
 	wmTrayQuit    = wmApp + 4
 	wmTraySetIcon = wmApp + 5
 	wmPanelUpdate = wmApp + 6
-	wmPanelResult = wmApp + 7
 
 	nimAdd     = 0
 	nimModify  = 1
@@ -137,14 +136,13 @@ type windowsTray struct {
 	icon Icon
 	opts Options
 
-	mu           sync.Mutex
-	menu         menuModel
-	tooltip      string
-	pendingN     [2]string
-	iconPNG      []byte // the notification-area icon: New's PNG until SetIcon
-	panelData    Panel
-	panelSet     bool
-	panelResults []panelActionResult
+	mu        sync.Mutex
+	menu      menuModel
+	tooltip   string
+	pendingN  [2]string
+	iconPNG   []byte // the notification-area icon: New's PNG until SetIcon
+	panelData Panel
+	panelSet  bool
 
 	hwnd    windows.HWND       // set by Run under mu; read under mu off the UI thread
 	quit    bool               // under mu: Quit was called
@@ -708,9 +706,6 @@ func trayWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uint
 		if t.panel != nil {
 			t.panel.update()
 		}
-		return 0
-	case wmPanelResult:
-		t.applyPanelResults()
 		return 0
 	case wmTrayQuit:
 		pDestroyWindow.Call(uintptr(hwnd))

@@ -47,16 +47,21 @@ func (a *appShell) panelAt(st web.State, now time.Time) tray.Panel {
 		if boolOf(row["disabled"]) {
 			r.Tag = "not rotated"
 		}
-		if status, _ := row["usageStatus"].(string); status != "" && status != "ok" {
-			r.Warning = status
-		}
+		status, _ := row["usageStatus"].(string)
+		r.Warning = panelWarning(status)
 		windows := panelWindows(row)
 		for _, column := range p.Columns[1:] {
 			bar := bars.model
-			switch column.ID {
-			case "fiveHour":
+			switch {
+			case rowProvider(row) == "codex" && st.Auto != nil && st.Auto.Codex != nil:
+				// The Codex engine has one bar for every window (A47).
+				bar = st.Auto.Codex.Threshold
+				if bar <= 0 {
+					bar = bars.sevenDay
+				}
+			case column.ID == "fiveHour":
 				bar = bars.fiveHour
-			case "sevenDay":
+			case column.ID == "sevenDay":
 				bar = bars.sevenDay
 			}
 			cell := panelLimit(windows[column.ID], column.ID == "fiveHour", bar, now)
@@ -84,10 +89,27 @@ func (a *appShell) panelAt(st web.State, now time.Time) tray.Panel {
 		Disabled: down || a.act.AutoStart == nil || a.act.AutoStop == nil})
 	if a.act.Autostart != nil {
 		on, err := a.act.Autostart()
-		p.Actions = append(p.Actions, tray.Item{ID: "autostart", Title: "Start at login", Kind: tray.KindToggle, Checked: on && err == nil, Disabled: down || err != nil})
+		// Start at login acts on this machine, so it works without the engine.
+		p.Actions = append(p.Actions, tray.Item{ID: "autostart", Title: "Start at login", Kind: tray.KindToggle, Checked: on && err == nil, Disabled: err != nil})
 	}
 	p.Actions = append(p.Actions, tray.Item{ID: "open", Title: "Open dashboard"})
 	return p
+}
+
+// panelWarning is a failed reading in the dashboard's words; an API-key
+// account reports no usage by design and gets none.
+func panelWarning(status string) string {
+	switch status {
+	case "", "ok", "api_key":
+		return ""
+	case "token_expired":
+		return "token expired"
+	case "relogin_required":
+		return "re-login needed"
+	case "unavailable":
+		return "usage unavailable"
+	}
+	return strings.ReplaceAll(status, "_", " ")
 }
 
 // panelRunsFable is false only for a plan known not to run Fable (Pro,
@@ -98,14 +120,16 @@ func panelRunsFable(plan string) bool {
 }
 
 // panelLimit is one window's cell: a dash when it is not reported, else its
-// share, a bar in the limit colour at or over bar, and its own reset.
+// share, a bar in the limit colour at or over bar, and its own reset. The
+// share is judged as it is shown, so "97%" is never drawn below a 97 bar.
 func panelLimit(w map[string]any, fiveHour bool, bar float64, now time.Time) tray.PanelCell {
 	pct, ok := pctOf(w["pct"])
 	if w == nil || !ok {
 		return tray.PanelCell{Absent: true}
 	}
 	reset, _ := w["resetsAt"].(string)
-	return tray.PanelCell{Share: fmtPctShort(pct), Pct: min(100, max(0, pct)), Limit: pct >= bar, Reset: panelResetLine(reset, fiveHour, now)}
+	shown := float64(int(pct + 0.5))
+	return tray.PanelCell{Share: fmtPctShort(pct), Pct: min(100, max(0, pct)), Limit: shown >= bar, Reset: panelResetLine(reset, fiveHour, now)}
 }
 
 func panelModels(st web.State) []string {
@@ -221,13 +245,12 @@ func panelCountdown(value string, now time.Time) string {
 	return fmt.Sprintf("%dd %dh", int(d.Hours())/24, int(d.Hours())%24)
 }
 
-// panelAction runs a command from the panel; the panel sends nothing else.
-func (a *appShell) panelAction(action tray.PanelAction) error {
-	if action.Kind != "command" {
-		return fmt.Errorf("unknown panel action %q", action.Kind)
+// panelAction runs a command from the panel, the one kind it sends; its
+// outcome reaches the panel as the note.
+func (a *appShell) panelAction(action tray.PanelAction) {
+	if action.Kind == "command" {
+		a.click(action.Key)
 	}
-	a.click(action.Key)
-	return nil
 }
 
 // setNote is the panel's line under the list: the last action's result.

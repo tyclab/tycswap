@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func nativePanelFixture(t *testing.T, onAction func(PanelAction) error) *windowsTray {
+func nativePanelFixture(t *testing.T, onAction func(PanelAction)) *windowsTray {
 	t.Helper()
 	runtime.LockOSThread()
 	winMu.Lock()
@@ -40,24 +40,8 @@ func nativePanelFixture(t *testing.T, onAction func(PanelAction) error) *windows
 	return tr
 }
 
-func nativePanelResult(t *testing.T, tr *windowsTray) {
-	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		tr.mu.Lock()
-		ready := len(tr.panelResults) > 0
-		tr.mu.Unlock()
-		if ready {
-			tr.applyPanelResults()
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("native panel callback did not finish")
-}
-
 func nativeEnabled(control uintptr) bool {
-	enabled, _, _ := panelIsEnabled.Call(control)
+	enabled, _, _ := user32.NewProc("IsWindowEnabled").Call(control)
 	return enabled != 0
 }
 
@@ -66,6 +50,17 @@ func nativeClick(control uintptr) {
 	parent, _, _ := user32.NewProc("GetParent").Call(control)
 	id, _, _ := panelControlID.Call(control)
 	panelSend.Call(parent, wmCommand, id, control)
+}
+
+// nativeNoAction waits for a dispatch that must not come: dispatch runs on
+// its own goroutine.
+func nativeNoAction(t *testing.T, actions chan PanelAction, what string) {
+	t.Helper()
+	select {
+	case action := <-actions:
+		t.Fatalf("%s dispatched %+v", what, action)
+	case <-time.After(100 * time.Millisecond):
+	}
 }
 
 func nativeAction(t *testing.T, actions chan PanelAction) PanelAction {
@@ -98,7 +93,7 @@ func nativeChildren(parent uintptr) map[uintptr]string {
 // dispatches the switch.
 func TestNativePanelSwitchButtonPerRow(t *testing.T) {
 	actions := make(chan PanelAction, 8)
-	tr := nativePanelFixture(t, func(action PanelAction) error { actions <- action; return nil })
+	tr := nativePanelFixture(t, func(action PanelAction) { actions <- action })
 	p := tr.panel
 	for _, row := range p.panel.Rows {
 		control := p.controls[p.rowIDs[row.ID]]
@@ -120,14 +115,43 @@ func TestNativePanelSwitchButtonPerRow(t *testing.T) {
 	if action := nativeAction(t, actions); action != (PanelAction{Kind: "command", Key: "switch:claude:1"}) {
 		t.Fatalf("switch dispatched %+v", action)
 	}
-	nativePanelResult(t, tr)
 	for _, id := range []string{"claude:2", "codex:1"} {
 		p.command(p.rowIDs[id], 0)
 	}
-	select {
-	case action := <-actions:
-		t.Fatalf("an active or unswitchable row dispatched %+v", action)
-	default:
+	nativeNoAction(t, actions, "an active or unswitchable row")
+}
+
+// A Switch that succeeds becomes "In use" and is disabled; the focus it had
+// goes to the popup, so Tab and Esc keep working (a disabled window cannot
+// hold the focus, and Windows would leave it nowhere).
+func TestNativePanelFocusStaysAfterASwitch(t *testing.T) {
+	tr := nativePanelFixture(t, func(PanelAction) {})
+	p := tr.panel
+	panelShow.Call(p.hwnd, 4)
+	button := p.controls[p.rowIDs["claude:1"]]
+	panelSetFocus.Call(button)
+	if focus, _, _ := panelGetFocus.Call(); focus != button {
+		t.Fatal("the fixture could not focus the Switch")
+	}
+	value := panelFixture()
+	value.Rows[0].Active, value.Rows[1].Active = true, false
+	tr.SetPanel(value)
+	p.update()
+	if focus, _, _ := panelGetFocus.Call(); focus != p.hwnd {
+		t.Fatalf("focus is %#x after the switch, want the popup %#x", focus, p.hwnd)
+	}
+	tab := msg{hwnd: windows.HWND(p.hwnd), message: 0x100, wParam: 0x09}
+	if !p.dialogMessage(&tab) {
+		t.Fatal("Tab was not handled after the switch")
+	}
+	if focus, _, _ := panelGetFocus.Call(); focus != p.controls[p.rowIDs["claude:2"]] {
+		t.Fatal("Tab did not reach the first usable Switch")
+	}
+	value.Rows = value.Rows[:1]
+	tr.SetPanel(value)
+	p.update()
+	if focus, _, _ := panelGetFocus.Call(); focus != p.hwnd {
+		t.Fatal("a removed row's Switch left the focus nowhere")
 	}
 }
 
@@ -135,7 +159,7 @@ func TestNativePanelSwitchButtonPerRow(t *testing.T) {
 // "auto" and "autostart"; no tab, list view, editor or combo box is left.
 func TestNativePanelSwitchesAndNoSettings(t *testing.T) {
 	actions := make(chan PanelAction, 8)
-	tr := nativePanelFixture(t, func(action PanelAction) error { actions <- action; return nil })
+	tr := nativePanelFixture(t, func(action PanelAction) { actions <- action })
 	p := tr.panel
 	for id, text := range map[string]string{"auto": "Auto-switch, on", "autostart": "Start at login, off", "quit": "Quit", "open": "Open dashboard"} {
 		if got := panelControlText(p.controls[p.actionIDs[id]]); got != text {
@@ -147,7 +171,6 @@ func TestNativePanelSwitchesAndNoSettings(t *testing.T) {
 		if action := nativeAction(t, actions); action != (PanelAction{Kind: "command", Key: id}) {
 			t.Fatalf("%s dispatched %+v", id, action)
 		}
-		nativePanelResult(t, tr)
 	}
 	for hwnd, class := range nativeChildren(p.hwnd) {
 		text := panelControlText(hwnd)
@@ -165,7 +188,7 @@ func TestNativePanelSwitchesAndNoSettings(t *testing.T) {
 // Tab walks the usable Switch buttons top to bottom, then the footer left to
 // right.
 func TestNativePanelTabOrder(t *testing.T) {
-	tr := nativePanelFixture(t, func(PanelAction) error { return nil })
+	tr := nativePanelFixture(t, func(PanelAction) {})
 	p := tr.panel
 	var got []uintptr
 	next := uintptr(0)
@@ -189,7 +212,7 @@ func TestNativePanelTabOrder(t *testing.T) {
 // an account did nothing).
 func TestNativePanelKeyboardPressesAndCloses(t *testing.T) {
 	actions := make(chan PanelAction, 8)
-	tr := nativePanelFixture(t, func(action PanelAction) error { actions <- action; return nil })
+	tr := nativePanelFixture(t, func(action PanelAction) { actions <- action })
 	p := tr.panel
 	panelShow.Call(p.hwnd, 4)
 	button := p.controls[p.rowIDs["claude:1"]]
@@ -201,7 +224,6 @@ func TestNativePanelKeyboardPressesAndCloses(t *testing.T) {
 	if action := nativeAction(t, actions); action != (PanelAction{Kind: "command", Key: "switch:claude:1"}) {
 		t.Fatalf("Enter dispatched %+v", action)
 	}
-	nativePanelResult(t, tr)
 	escape := msg{hwnd: windows.HWND(button), message: 0x100, wParam: 0x1b}
 	if !p.dialogMessage(&escape) {
 		t.Fatal("Esc was not handled")
@@ -211,13 +233,15 @@ func TestNativePanelKeyboardPressesAndCloses(t *testing.T) {
 	}
 }
 
-// Out of reach: no Switch and neither switch is usable; Quit and Open
-// dashboard still are.
-func TestNativePanelOffline(t *testing.T) {
+// Out of reach, what acts on this machine stays usable: Quit, the updates,
+// Start at login and Open dashboard. Switch and Auto-switch need the engine.
+func TestNativePanelOfflinePreservesLocalDeviceCommands(t *testing.T) {
 	actions := make(chan PanelAction, 8)
-	tr := nativePanelFixture(t, func(action PanelAction) error { actions <- action; return nil })
+	tr := nativePanelFixture(t, func(action PanelAction) { actions <- action })
 	value := panelFixture()
 	value.Offline, value.Note = true, "Engine unreachable"
+	value.Actions = []Item{{ID: "quit", Title: "Quit"}, {ID: "install-update", Title: "Update tycswap", Kind: KindUpdate}, {ID: "claude-code", Title: "Update Claude", Kind: KindUpdate},
+		{ID: "auto", Title: "Auto-switch", Kind: KindToggle, Checked: true}, {ID: "autostart", Title: "Start at login", Kind: KindToggle}, {ID: "open", Title: "Open dashboard"}}
 	tr.SetPanel(value)
 	p := tr.panel
 	p.update()
@@ -226,24 +250,27 @@ func TestNativePanelOffline(t *testing.T) {
 			t.Fatalf("offline Switch for %s is usable", row.ID)
 		}
 	}
-	for id, usable := range map[string]bool{"quit": true, "open": true, "auto": false, "autostart": false} {
-		if nativeEnabled(p.controls[p.actionIDs[id]]) != usable {
-			t.Fatalf("offline %s usable %v", id, !usable)
+	for _, key := range []string{"quit", "install-update", "claude-code", "autostart", "open"} {
+		if !nativeEnabled(p.controls[p.actionIDs[key]]) {
+			t.Fatalf("offline local command %s is disabled", key)
 		}
+		p.command(p.actionIDs[key], 0)
+		if action := nativeAction(t, actions); action.Key != key {
+			t.Fatalf("local command %s dispatched %+v", key, action)
+		}
+	}
+	if nativeEnabled(p.controls[p.actionIDs["auto"]]) {
+		t.Fatal("offline Auto-switch is usable")
 	}
 	p.command(p.actionIDs["auto"], 0)
 	p.command(p.rowIDs["claude:1"], 0)
-	select {
-	case action := <-actions:
-		t.Fatalf("offline panel dispatched %+v", action)
-	default:
-	}
+	nativeNoAction(t, actions, "the offline panel")
 }
 
 // A live update keeps every control and the focus, and a new account gets
 // its Switch in row order.
 func TestNativePanelUpdateKeepsControls(t *testing.T) {
-	tr := nativePanelFixture(t, func(PanelAction) error { return nil })
+	tr := nativePanelFixture(t, func(PanelAction) {})
 	p := tr.panel
 	first, quit := p.controls[p.rowIDs["claude:1"]], p.controls[p.actionIDs["quit"]]
 	panelSetFocus.Call(first)
@@ -270,7 +297,7 @@ func TestNativePanelUpdateKeepsControls(t *testing.T) {
 // The popup is as large as its content, every control inside it; past the
 // work area the list scrolls and the footer stays inside the popup.
 func TestNativePanelFitsAndScrolls(t *testing.T) {
-	tr := nativePanelFixture(t, func(PanelAction) error { return nil })
+	tr := nativePanelFixture(t, func(PanelAction) {})
 	p := tr.panel
 	var client menuRect
 	panelGetClient.Call(p.hwnd, uintptr(unsafe.Pointer(&client)))
@@ -324,7 +351,7 @@ func TestNativePanelFitsAndScrolls(t *testing.T) {
 // Each theme paints the rows on the panel background with the accent and
 // limit colours in their bars; high contrast uses the system's colours.
 func TestNativePanelThemes(t *testing.T) {
-	tr := nativePanelFixture(t, func(PanelAction) error { return nil })
+	tr := nativePanelFixture(t, func(PanelAction) {})
 	p := tr.panel
 	for _, theme := range []menuTheme{menuLight, menuDark, menuHighContrast} {
 		readMenuTheme = func() menuTheme { return theme }
@@ -332,6 +359,11 @@ func TestNativePanelThemes(t *testing.T) {
 		if theme == menuHighContrast {
 			if p.palette.accent != panelSystemColor(8) || p.palette.background != panelSystemColor(5) {
 				t.Fatal("high contrast used custom colours")
+			}
+			// Window text and window frame are one colour in the high-contrast
+			// schemes; a track in either would hide the share.
+			if p.palette.track == p.palette.accent || p.palette.track == panelSystemColor(6) || p.palette.track == p.palette.background {
+				t.Fatal("high contrast draws the bar's track like its fill or the background")
 			}
 			continue
 		}

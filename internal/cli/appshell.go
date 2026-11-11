@@ -120,6 +120,8 @@ type appShell struct {
 	// noteAlert draws it as a warning (DESIGN A84).
 	note      string
 	noteAlert bool
+	// switchMu lets one switch from the tray run at a time (DESIGN A84).
+	switchMu sync.Mutex
 	// refresh lays the panel out again when no state came for panelRefresh
 	// (the constant unless a test sets it), so its countdowns stay current.
 	refresh      *time.Timer
@@ -506,13 +508,20 @@ func (a *appShell) click(id string) {
 			}
 		}
 	case id == "claude-code":
-		a.claudeCodeClick()
+		if note, alert, done := a.claudeCodeClick(); done {
+			a.setNote(note, alert)
+			a.repaint()
+		}
 	case id == "add-current":
 		a.addCurrentClick()
 	case id == "open" || id == "recovery-open":
-		if err := a.act.OpenDashboard(); err != nil {
+		err := a.act.OpenDashboard()
+		a.setNote("", false)
+		if err != nil {
+			a.setNote("Could not open the dashboard: "+err.Error(), true)
 			a.notify("Could not open the dashboard", capitalizeFirst(err.Error()))
 		}
+		a.repaint()
 	case strings.HasPrefix(id, "switch:"):
 		a.switchClick(strings.TrimPrefix(id, "switch:"))
 	case id == "auto":
@@ -573,7 +582,8 @@ func (a *appShell) click(id string) {
 		}
 		a.repaint()
 	case id == "install-update":
-		a.installUpdate()
+		a.setNote(a.installUpdate())
+		a.repaint()
 	case id == "update":
 		a.checkForUpdatesClick()
 	case id == "quit":
@@ -590,25 +600,37 @@ func (a *appShell) click(id string) {
 // asks first.
 func (a *appShell) switchClick(key string) {
 	provider, num := splitRowKey(key)
-	base, label := "", "#"+num
+	base, label, approve := "", "#"+num, false
 	switch provider {
 	case reporting.ProviderCodex:
 		label = "Codex #" + num
 	case reporting.ProviderClaude:
-		if !a.approveClaudeSwitch(num) {
+		var ok bool
+		if approve, ok = a.askClaudeSwitch(num); !ok {
 			return
 		}
 		_, base = a.apiKeyAccount(num)
 	default:
+		a.setNote("Switch failed: no "+provider+" accounts here.", true)
 		a.notify("Switch failed", "No "+provider+" accounts here.")
+		a.repaint()
 		return
 	}
-	paused, err := a.pauseAuto()
+	// One switch at a time: a first that fails must not turn auto-switch
+	// back on behind a second that worked.
+	a.switchMu.Lock()
+	defer a.switchMu.Unlock()
+	paused, err := a.pauseAuto(provider)
 	if err != nil {
 		a.setNote("Not switched: auto-switch could not be turned off: "+err.Error(), true)
 		a.notify("Switch failed", "Auto-switch could not be turned off, so the login stays: "+err.Error())
 		a.repaint()
 		return
+	}
+	// Recorded only now: an approval left behind would let a later switch
+	// onto the slot through unasked (A33).
+	if approve {
+		a.act.ApproveAPIKey(num)
 	}
 	pids, err := a.act.SwitchTo(provider + ":" + num)
 	if err != nil {
@@ -644,19 +666,22 @@ func (a *appShell) switchClick(key string) {
 	a.repaint()
 }
 
-// approveClaudeSwitch asks before a switch onto an API-key account: it
-// changes HOW Claude Code authenticates, which a running session cannot pick
-// up, so it is never one click (A33). One with a base URL also changes where
-// the requests go, which a running session takes up when it re-reads
-// settings.json (A46).
-func (a *appShell) approveClaudeSwitch(num string) bool {
+// askClaudeSwitch asks before a switch onto an API-key account: it changes
+// HOW Claude Code authenticates, which a running session cannot pick up, so
+// it is never one click (A33). One with a base URL also changes where the
+// requests go, which a running session takes up when it re-reads
+// settings.json (A46). ok says whether to go on, approve whether the switch
+// needs the approval recorded.
+func (a *appShell) askClaudeSwitch(num string) (approve, ok bool) {
 	apiKey, base := a.apiKeyAccount(num)
 	if !apiKey {
-		return true
+		return false, true
 	}
 	if a.act.ApproveAPIKey == nil || a.act.Ask == nil {
+		a.setNote("Not switched: account #"+num+" uses an API key; switch to it from the dashboard or the command line.", true)
 		a.notify("Switch needs confirmation", "Account #"+num+" uses an API key. Switch to it from the dashboard or the command line, where it can ask you first.")
-		return false
+		a.repaint()
+		return false, false
 	}
 	detail := "This account authenticates with a token instead of a subscription login, and its usage is billed per token. "
 	if base != "" {
@@ -664,21 +689,22 @@ func (a *appShell) approveClaudeSwitch(num string) bool {
 	} else {
 		detail += a.act.RestartNotice()
 	}
-	ok, err := a.act.Ask("Switch to API-key account #"+num+"?", detail, "Switch", "Cancel")
-	if err != nil || !ok {
-		return false
+	yes, err := a.act.Ask("Switch to API-key account #"+num+"?", detail, "Switch", "Cancel")
+	if err != nil || !yes {
+		return false, false
 	}
-	a.act.ApproveAPIKey(num)
-	return true
+	return true, true
 }
 
 // pauseAuto turns auto-switch off before a switch by hand and says whether
-// it did. A dry run decides nothing for real, so it is left running.
-func (a *appShell) pauseAuto() (bool, error) {
+// it did. A dry run decides nothing for real, so it is left running; a Codex
+// login moves only while Codex rotation is on, so only then is it paused.
+func (a *appShell) pauseAuto(provider string) (bool, error) {
 	a.mu.Lock()
 	dryRun := a.last.Auto != nil && a.last.Auto.DryRun
+	codex := a.last.Auto != nil && a.last.Auto.Codex != nil && a.last.Auto.Codex.Enabled
 	a.mu.Unlock()
-	if !a.autoRunning() || dryRun || a.act.AutoStop == nil {
+	if !a.autoRunning() || dryRun || a.act.AutoStop == nil || provider == reporting.ProviderCodex && !codex {
 		return false, nil
 	}
 	if err := a.act.AutoStop(); err != nil {
@@ -742,25 +768,27 @@ func (a *appShell) upgradeHint() string {
 	return a.act.UpgradeHint()
 }
 
-// installUpdate runs the self-upgrade and reports the outcome. A build the
-// tray cannot upgrade is told how to (A36).
-func (a *appShell) installUpdate() {
+// installUpdate runs the self-upgrade and reports the outcome; it returns
+// the panel's note for it. A build the tray cannot upgrade is told how to
+// (A36).
+func (a *appShell) installUpdate() (note string, alert bool) {
 	if hint := a.upgradeHint(); hint != "" {
 		a.mu.Lock()
 		pending := a.pending
 		a.mu.Unlock()
 		a.notify(releaseTitle(pending), "To update: "+hint)
-		return
+		return "To update: " + hint, false
 	}
 	msg, restart, err := a.upgradeApp()
 	if err != nil {
 		a.notify("Update failed", err.Error())
-		return
+		return "Update failed: " + err.Error(), true
 	}
 	a.notify(brandName()+" update", msg)
 	if restart != nil {
 		restart()
 	}
+	return msg, false
 }
 
 // releaseTitle is "tycswap X is available", or "tycswap update" without a

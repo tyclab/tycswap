@@ -245,11 +245,10 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 					sh.click(id)
 				}
 			},
-			OnPanelAction: func(action tray.PanelAction) error {
+			OnPanelAction: func(action tray.PanelAction) {
 				if sh != nil {
-					return sh.panelAction(action)
+					sh.panelAction(action)
 				}
-				return nil
 			},
 			OnActivate: func() {
 				if sh != nil {

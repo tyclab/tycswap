@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -110,7 +111,7 @@ func TestTrayPanelRowsColumnsAndDashes(t *testing.T) {
 	codex := panelRow("codex", 1, "cx", "promax", nil, limitWindow(100.0, resetIn(7*time.Hour)), nil)
 	codex["isActive"] = true
 	ultra["disabled"] = true
-	pro["usageStatus"] = "stale"
+	pro["usageStatus"] = "token_expired"
 	opus["switchable"] = false
 	opus["isActive"] = true
 	p := sh.panelAt(panelState(codex, unknown, pro, opus, ultra, free), panelNow)
@@ -155,8 +156,8 @@ func TestTrayPanelRowsColumnsAndDashes(t *testing.T) {
 	if row := rowByID(t, p, "claude:1"); row.Plan != "Ultra" || row.Tag != "not rotated" || row.Warning != "" || row.Active || row.Disabled {
 		t.Fatalf("an account excluded from rotation: %+v", row)
 	}
-	if row := rowByID(t, p, "claude:2"); row.Plan != "Pro" || row.Tag != "" || row.Warning != "stale" {
-		t.Fatalf("a stale reading: %+v", row)
+	if row := rowByID(t, p, "claude:2"); row.Plan != "Pro" || row.Tag != "" || row.Warning != "token expired" {
+		t.Fatalf("an expired token: %+v", row)
 	}
 	if row := rowByID(t, p, "claude:4"); row.Plan != "" || row.Warning != "" {
 		t.Fatalf("no plan recorded: %+v", row)
@@ -169,6 +170,36 @@ func TestTrayPanelRowsColumnsAndDashes(t *testing.T) {
 	}
 	if p.Title != "tycswap" || p.Offline || p.Note != "" {
 		t.Fatalf("title %q, offline %v, note %q", p.Title, p.Offline, p.Note)
+	}
+}
+
+// A failed reading is said in the dashboard's words; an API-key account,
+// which reports no usage by design, has no warning.
+func TestTrayPanelWarningIsWords(t *testing.T) {
+	sh, _, _ := newTestShell(t)
+	for status, want := range map[string]string{"ok": "", "api_key": "", "token_expired": "token expired", "relogin_required": "re-login needed",
+		"keychain_unavailable": "keychain unavailable", "no_credentials": "no credentials", "unavailable": "usage unavailable", "some_new_state": "some new state"} {
+		row := panelRow("claude", 1, "a", "Ultra", nil, limitWindow(5.0, ""), nil)
+		row["usageStatus"] = status
+		if got := sh.panelAt(panelState(row), panelNow).Rows[0].Warning; got != want {
+			t.Errorf("status %s warns %q, want %q", status, got, want)
+		}
+	}
+}
+
+// A Codex row is coloured against the Codex engine's one bar, not Claude's.
+func TestTrayPanelCodexRowsUseTheCodexBar(t *testing.T) {
+	sh, _, _ := newTestShell(t)
+	claude := panelRow("claude", 1, "a", "Ultra", nil, limitWindow(92.0, ""), nil)
+	codex := panelRow("codex", 1, "b", "", limitWindow(92.0, ""), limitWindow(92.0, ""), nil)
+	st := panelState(claude, codex)
+	st.Auto = &web.AutoView{Codex: &web.CodexAutoView{Enabled: true, Threshold: 90}}
+	p := sh.panelAt(st, panelNow)
+	if cells := cellsOf(p, rowByID(t, p, "claude:1")); cells["sevenDay"].Limit {
+		t.Fatal("a Claude week at 92% took the limit colour under a 97% bar")
+	}
+	if cells := cellsOf(p, rowByID(t, p, "codex:1")); !cells["sevenDay"].Limit || !cells["fiveHour"].Limit {
+		t.Fatalf("a Codex row at 92%% is under the Codex bar of 90: %+v", cells)
 	}
 }
 
@@ -213,13 +244,14 @@ func TestTrayPanelResetLines(t *testing.T) {
 }
 
 // Share and bar turn the limit colour at each window's own auto-switch bar
-// (85 / 97 / 95 in the sample state), not below it.
+// (85 / 97 / 95 in the sample state), judged on the share as it is shown:
+// "97%" is never drawn below a 97 bar.
 func TestTrayPanelLimitLevelFollowsEachBar(t *testing.T) {
 	sh, _, _ := newTestShell(t)
 	for _, check := range []struct {
 		five, week, fable float64
 		limit             bool
-	}{{85, 97, 95, true}, {84.4, 96.9, 94.9, false}} {
+	}{{85, 97, 95, true}, {84.5, 96.5, 94.5, true}, {84.4, 96.4, 94.4, false}} {
 		row := panelRow("claude", 1, "a", "Ultra", limitWindow(check.five, ""), limitWindow(check.week, ""), map[string]map[string]any{"Fable": limitWindow(check.fable, "")})
 		p := sh.panelAt(panelState(row), panelNow)
 		for id, cell := range cellsOf(p, p.Rows[0]) {
@@ -261,20 +293,22 @@ func TestTrayPanelFooterActions(t *testing.T) {
 	}
 	rig.latest = "v2.2.0"
 	rig.claude = brewSeat("2.1.280", "2.1.281")
-	sh.click("update")
+	if _, err := sh.checkRelease(); err != nil {
+		t.Fatal(err)
+	}
+	sh.checkClaudeCode(false)
+	sh.repaint()
 	if ids := footerIDs(pt.panel); !slices.Equal(ids, []string{"quit", "install-update", "claude-code", "auto", "autostart", "open"}) {
 		t.Fatalf("footer with updates %v", ids)
 	}
 	if pt.panel.Actions[1].Title != "Update tycswap" || pt.panel.Actions[2].Title != "Update Claude" {
 		t.Fatalf("update buttons %+v", pt.panel.Actions[1:3])
 	}
-	if len(ft.notes) != 1 || !strings.Contains(ft.notes[0], "update buttons in the tray panel") {
-		t.Fatalf("update notification points outside the panel: %v", ft.notes)
-	}
 }
 
-// Out of reach, the note says why and the two switches are off limits; the
-// rows keep the last state. Before any state the list says "No data yet".
+// Out of reach, the note says why and Auto-switch is off limits; Start at
+// login acts on this machine and stays usable. The rows keep the last state.
+// Before any state the list says "No data yet".
 func TestTrayPanelOfflineAndBeforeTheFirstState(t *testing.T) {
 	sh, _, _ := newTestShell(t)
 	sh.act.Offline = func() (bool, string) { return true, "engine unreachable at http://127.0.0.1:7337" }
@@ -283,7 +317,7 @@ func TestTrayPanelOfflineAndBeforeTheFirstState(t *testing.T) {
 		t.Fatalf("offline panel %+v", p)
 	}
 	for _, action := range p.Actions {
-		if (action.ID == "auto" || action.ID == "autostart") != action.Disabled {
+		if (action.ID == "auto") != action.Disabled {
 			t.Fatalf("offline action %+v", action)
 		}
 	}
@@ -328,7 +362,7 @@ func switchShell(t *testing.T, on, dryRun bool) (*appShell, *fakeTray, *[]string
 	t.Helper()
 	sh, ft, calls := newTestShell(t)
 	st := codexState()
-	st.Auto = &web.AutoView{Running: on, DryRun: dryRun}
+	st.Auto = &web.AutoView{Running: on, DryRun: dryRun, Codex: &web.CodexAutoView{Enabled: true, Threshold: 90}}
 	if on {
 		_ = sh.act.AutoStart()
 	}
@@ -415,6 +449,140 @@ func TestTraySwitchFailureTurnsAutoSwitchBackOn(t *testing.T) {
 	}
 }
 
+func TestTraySwitchFailureSaysAutoSwitchStaysOff(t *testing.T) {
+	sh, ft, calls := switchShell(t, true, false)
+	sh.act.SwitchTo = func(key string) ([]int, error) {
+		*calls = append(*calls, "switch:"+key)
+		return nil, errors.New("slot 2 has no stored login")
+	}
+	sh.act.AutoStart = func() error { *calls = append(*calls, "auto-start"); return errors.New("settings.json is read-only") }
+	sh.click("switch:claude:2")
+	if got := strings.Join(*calls, ","); got != "auto-stop,switch:claude:2,auto-start" {
+		t.Fatalf("calls %s", got)
+	}
+	want := "slot 2 has no stored login; auto-switch stays off: settings.json is read-only"
+	if p := sh.panel(sh.last); p.Note != "Switch failed: "+want || !p.Alert {
+		t.Fatalf("note %q", p.Note)
+	}
+	if note := lastNote(ft); note != "Switch failed | "+want {
+		t.Fatalf("notification %q", note)
+	}
+}
+
+// Two Switch clicks run one after the other: a first that fails cannot turn
+// auto-switch back on behind the second.
+func TestTraySwitchClicksRunOneAtATime(t *testing.T) {
+	sh, _, calls := switchShell(t, true, false)
+	var mu sync.Mutex
+	record := func(call string) { mu.Lock(); *calls = append(*calls, call); mu.Unlock() }
+	running := false
+	sh.act.AutoRunning = func() bool { mu.Lock(); defer mu.Unlock(); return running }
+	running = true
+	sh.act.AutoStop = func() error { record("auto-stop"); mu.Lock(); running = false; mu.Unlock(); return nil }
+	sh.act.AutoStart = func() error { record("auto-start"); mu.Lock(); running = true; mu.Unlock(); return nil }
+	inFirst, release := make(chan struct{}), make(chan struct{})
+	sh.act.SwitchTo = func(key string) ([]int, error) {
+		record("switch:" + key)
+		if key == "claude:2" {
+			close(inFirst)
+			<-release
+			return nil, errors.New("slot 2 has no stored login")
+		}
+		return nil, nil
+	}
+	done := make(chan struct{}, 2)
+	go func() { sh.click("switch:claude:2"); done <- struct{}{} }()
+	<-inFirst
+	go func() { sh.click("switch:codex:3"); done <- struct{}{} }()
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	<-done
+	<-done
+	mu.Lock()
+	got, on := strings.Join(*calls, ","), running
+	mu.Unlock()
+	if got != "auto-stop,switch:claude:2,auto-start,auto-stop,switch:codex:3" || on {
+		t.Fatalf("calls %s, auto-switch on %v", got, on)
+	}
+	if p := sh.panel(sh.last); p.Note != "Switched to Codex #3. Auto-switch is now off, so the login stays there." {
+		t.Fatalf("note %q", p.Note)
+	}
+}
+
+// The API-key approval is recorded only for a switch that is made.
+func TestTraySwitchApprovesAnAPIKeyOnlyWhenItSwitches(t *testing.T) {
+	sh, _, calls := switchShell(t, true, false)
+	st := sh.last
+	key := acct(4, "key@example.com", "", false, nil, nil, "", nil)
+	key["kind"] = "api_key"
+	st.Accounts = append(st.Accounts, key)
+	sh.update(st)
+	var approved []string
+	sh.act.ApproveAPIKey = func(num string) { approved = append(approved, num); *calls = append(*calls, "approve:"+num) }
+	sh.act.RestartNotice = func() string { return "" }
+	sh.act.Ask = func(string, string, string, string) (bool, error) { return true, nil }
+	sh.act.AutoStop = func() error { *calls = append(*calls, "auto-stop"); return errors.New("settings.json is read-only") }
+	sh.click("switch:claude:4")
+	if len(approved) != 0 {
+		t.Fatalf("approved %v without a switch (calls %v)", approved, *calls)
+	}
+	sh.act.AutoStop = func() error { *calls = append(*calls, "auto-stop"); return nil }
+	*calls = nil
+	sh.click("switch:claude:4")
+	if got := strings.Join(*calls, ","); got != "auto-stop,approve:4,switch:claude:4" {
+		t.Fatalf("calls %s", got)
+	}
+}
+
+// The note is the last panel action's result or error, whichever action it
+// was (DESIGN A84); the notification stays.
+func TestTrayPanelNoteTellsEveryAction(t *testing.T) {
+	sh, ft, rig := updatesShell(t, false)
+	note := func() (string, bool) { p := sh.panel(sh.last); return p.Note, p.Alert }
+	sh.act.OpenDashboard = func() error { return errors.New("no browser") }
+	sh.click("open")
+	if text, alert := note(); text != "Could not open the dashboard: no browser" || !alert {
+		t.Fatalf("open: %q %v", text, alert)
+	}
+	sh.click("switch:gemini:1")
+	if text, alert := note(); text != "Switch failed: no gemini accounts here." || !alert {
+		t.Fatalf("unknown provider: %q %v", text, alert)
+	}
+	st := sh.last
+	key := acct(3, "key@example.com", "", false, nil, nil, "", nil)
+	key["kind"] = "api_key"
+	st.Accounts = append(st.Accounts, key)
+	sh.update(st)
+	sh.act.Ask = nil
+	sh.click("switch:claude:3")
+	if text, alert := note(); !strings.HasPrefix(text, "Not switched: account #3 uses an API key") || !alert {
+		t.Fatalf("API key without a question: %q %v", text, alert)
+	}
+	rig.latest = "v2.2.0"
+	if _, err := sh.checkRelease(); err != nil {
+		t.Fatal(err)
+	}
+	sh.act.Upgrade = func() (string, error) { return "", errors.New("offline") }
+	sh.click("install-update")
+	if text, alert := note(); text != "Update failed: offline" || !alert {
+		t.Fatalf("failed update: %q %v", text, alert)
+	}
+	sh.act.Upgrade = func() (string, error) { return "Updated tycswap 2.1.0 → 2.2.0", nil }
+	sh.click("install-update")
+	if text, alert := note(); text != "Updated tycswap 2.1.0 → 2.2.0" || alert {
+		t.Fatalf("update: %q %v", text, alert)
+	}
+	rig.claude = brewSeat("2.1.280", "2.1.281")
+	sh.checkClaudeCode(false)
+	sh.click("claude-code")
+	if text, alert := note(); text != "Claude Code updated. Restart running Claude Code sessions to use the new version." || alert {
+		t.Fatalf("Claude Code update: %q %v", text, alert)
+	}
+	if notes := strings.Join(ft.notesNow(), "\n"); !strings.Contains(notes, "Could not open the dashboard | ") || !strings.Contains(notes, "Update failed | offline") {
+		t.Fatalf("notifications %q", notes)
+	}
+}
+
 func TestTraySwitchLeavesADryRunAlone(t *testing.T) {
 	sh, _, calls := switchShell(t, true, true)
 	sh.click("switch:claude:2")
@@ -422,6 +590,20 @@ func TestTraySwitchLeavesADryRunAlone(t *testing.T) {
 		t.Fatalf("calls %s", got)
 	}
 	if p := sh.panel(sh.last); p.Note != "Switched to #2." {
+		t.Fatalf("note %q", p.Note)
+	}
+}
+
+// Without Codex rotation nothing would move a Codex login, so a Codex
+// switch leaves auto-switch on.
+func TestTraySwitchCodexWithoutCodexRotationLeavesAutoSwitchOn(t *testing.T) {
+	sh, _, calls := switchShell(t, true, false)
+	sh.last.Auto.Codex.Enabled = false
+	sh.click("switch:codex:3")
+	if got := strings.Join(*calls, ","); got != "switch:codex:3" {
+		t.Fatalf("calls %s", got)
+	}
+	if p := sh.panel(sh.last); p.Note != "Switched to Codex #3." {
 		t.Fatalf("note %q", p.Note)
 	}
 }
@@ -453,12 +635,8 @@ func TestTrayPanelActionRunsCommands(t *testing.T) {
 	sh, _, calls := newTestShell(t)
 	sh.update(sampleState())
 	*calls = nil
-	if err := sh.panelAction(tray.PanelAction{Kind: "command", Key: "switch:claude:2"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := sh.panelAction(tray.PanelAction{Kind: "sort", Key: "fiveHour"}); err == nil {
-		t.Fatal("a sort action was accepted")
-	}
+	sh.panelAction(tray.PanelAction{Kind: "command", Key: "switch:claude:2"})
+	sh.panelAction(tray.PanelAction{Kind: "sort", Key: "switch:claude:1"})
 	if got := strings.Join(*calls, ","); got != "switch:claude:2" {
 		t.Fatalf("calls %s", got)
 	}
