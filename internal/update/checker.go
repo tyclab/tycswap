@@ -4,13 +4,15 @@ package update
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/mod/semver"
 
@@ -20,14 +22,15 @@ import (
 )
 
 // Checker performs the passive update check. The zero value is usable in
-// production: it queries the real Endpoint via http.DefaultClient against the
-// real wall clock and OS environment. Tests override every seam (CacheDir is
+// production: it reads the real ReleasesURL via http.DefaultClient against
+// the real wall clock and OS environment. Tests override every seam (CacheDir is
 // mandatory — there is no sane default).
 type Checker struct {
 	CacheDir string
-	// HTTPClient issues the releases-endpoint request; nil -> http.DefaultClient.
+	// HTTPClient asks the release page; nil -> http.DefaultClient.
 	HTTPClient *http.Client
-	// Clk supplies the cache read/write timestamp; nil -> clock.System{}.
+	// Clk supplies the cache timestamp and the time a limited network may
+	// try again; nil -> clock.System{}.
 	Clk    clock.Clock
 	Getenv func(string) string
 	// HomeDir is $HOME for install-shape detection; "" -> os.UserHomeDir().
@@ -97,12 +100,6 @@ func (c Checker) CheckForUpdate(exePath, currentVersion string, plat platform.Pl
 	)
 }
 
-// releaseResponse is the subset of the GitHub releases
-// schema this checker needs (Amendment A6).
-type releaseResponse struct {
-	TagName string `json:"tag_name"`
-}
-
 func (c Checker) fetchLatestTag() string {
 	ctx, cancel := context.WithTimeout(context.Background(), FetchTimeout)
 	defer cancel()
@@ -113,9 +110,9 @@ func (c Checker) fetchLatestTag() string {
 	return tag
 }
 
-// Latest asks Endpoint for the latest release's tag now and says why when it
-// cannot (DESIGN A27: the dashboard's Updates card names what it could not
-// check). The answer also refreshes cache/update_check.json, so the passive
+// Latest asks the release page for the latest release's tag now and says why
+// when it cannot (DESIGN A27: the dashboard's Updates card names what it could
+// not check). The answer also refreshes cache/update_check.json, so the passive
 // notice of the next CLI command agrees with the card; a failure leaves the
 // cache alone. The tag is a v-prefixed semver string; one that is not
 // semver is an error, never a "newer version".
@@ -133,31 +130,75 @@ func (c Checker) Latest(ctx context.Context) (string, error) {
 
 // latestTag is the one request both Latest and fetchLatestTag make.
 func (c Checker) latestTag(ctx context.Context) (string, error) {
-	return fetchLatestTag(ctx, c.client(), Endpoint)
+	return fetchLatestTag(ctx, c.client(), ReleasesURL, c.clock())
 }
 
-// fetchLatestTag asks endpoint, a GitHub releases API URL, for the latest
-// release's tag; the download shape of SelfUpgrade asks the same.
-func fetchLatestTag(ctx context.Context, client *http.Client, endpoint string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+// limitedMsg is GitHub's 403 or 429: it limits the whole network (every
+// program and device behind its address), not this program.
+const limitedMsg = "GitHub is limiting requests from this network; try again later"
+
+// fetchLatestTag reads the latest release's tag from where releases/latest
+// redirects, the tag page, without following the redirect (DESIGN A86): the
+// API's unauthenticated 60 requests an hour are shared by the whole network.
+// The download shape of SelfUpgrade asks the same.
+func fetchLatestTag(ctx context.Context, client *http.Client, releases string, clk clock.Clock) (string, error) {
+	latest := strings.TrimRight(releases, "/") + "/latest"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, latest, nil)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	resp, err := client.Do(req)
+	noFollow := *client
+	noFollow.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := noFollow.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("%s: HTTP %d", endpoint, resp.StatusCode)
+	switch resp.StatusCode {
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
+		http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+		if loc, err := resp.Location(); err == nil {
+			if tag, ok := tagFromLocation(loc); ok {
+				return tag, nil
+			}
+		}
+		// A repository without releases redirects to its releases list.
+		return "", fmt.Errorf("no release found at %s", latest)
+	case http.StatusForbidden, http.StatusTooManyRequests:
+		if at, ok := retryAt(resp.Header, clk.Now()); ok {
+			return "", fmt.Errorf("%s (after %s)", limitedMsg, at.Local().Format("15:04"))
+		}
+		return "", errors.New(limitedMsg)
+	case http.StatusNotFound:
+		return "", fmt.Errorf("no release found at %s", latest)
 	}
-	var rel releaseResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&rel); err != nil {
-		return "", fmt.Errorf("%s: %w", endpoint, err)
+	return "", fmt.Errorf("%s: HTTP %d", latest, resp.StatusCode)
+}
+
+// tagFromLocation is <tag> of a URL whose path ends in /releases/tag/<tag>.
+// The escaped path is cut so an escaped "/" stays inside the tag.
+func tagFromLocation(loc *url.URL) (string, bool) {
+	const marker = "/releases/tag/"
+	p := loc.EscapedPath()
+	i := strings.LastIndex(p, marker)
+	if i < 0 {
+		return "", false
 	}
-	if rel.TagName == "" {
-		return "", fmt.Errorf("%s: no tag_name in the release", endpoint)
+	tag, err := url.PathUnescape(p[i+len(marker):])
+	if err != nil || tag == "" {
+		return "", false
 	}
-	return rel.TagName, nil
+	return tag, true
+}
+
+// retryAt is when a limited network may ask again: Retry-After (seconds from
+// now) or else GitHub's x-ratelimit-reset (Unix seconds).
+func retryAt(h http.Header, now time.Time) (time.Time, bool) {
+	if s, err := strconv.ParseInt(strings.TrimSpace(h.Get("Retry-After")), 10, 32); err == nil && s >= 0 {
+		return now.Add(time.Duration(s) * time.Second), true
+	}
+	if u, err := strconv.ParseInt(strings.TrimSpace(h.Get("X-Ratelimit-Reset")), 10, 64); err == nil && u > 0 {
+		return time.Unix(u, 0), true
+	}
+	return time.Time{}, false
 }

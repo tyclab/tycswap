@@ -10,6 +10,5 @@ import (
 
 func main() {
 	fmt.Println(update.ModulePath)
-	fmt.Println(update.Endpoint)
 	fmt.Println(update.ReleasesURL)
 }

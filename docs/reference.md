@@ -2794,9 +2794,10 @@ tabs:
 Choose **Interactive menu… → Import / export…** to transfer accounts. The dashboard
 opens a terminal menu; the existing export/import commands read and write local files.
 
-The update check compares the running version with the latest release at the
-endpoint `tycswap upgrade` uses (`update.Endpoint`), and the installed Claude
-Code (`claude --version`, found on `PATH` or where its installers put it) with
+The update check compares the running version with the latest release, read
+where `tycswap upgrade` reads it (the redirect of `<ReleasesURL>/latest`),
+and the installed Claude Code (`claude --version`, found on `PATH` or where
+its installers put it) with
 the release source for its installer: the native release channel for native
 or unknown installs, native latest for WinGet, npm's `dist-tags` for an npm
 install, and the cask's formula for Homebrew. Native and unknown installs
@@ -2812,7 +2813,8 @@ the dashboard starts); *Update Claude Code* runs the installer's own
 command (`claude update`, `npm install -g @anthropic-ai/claude-code@latest`,
 `brew upgrade --cask <cask>`, `winget upgrade`). A missing Claude Code is
 named with the install line to type, never installed from the page. A check
-that fails keeps what the check before it found and names the error; the
+that fails keeps what the check before it found and names the error (for
+tycswap, the reasons under `tycswap upgrade`'s Errors); the
 card never says everything is up to date while something could not be
 checked. The running `tycswap web` keeps its version until it is started
 again; running Claude Code sessions keep theirs until restarted. After a
@@ -3019,14 +3021,32 @@ tycswap app [--remote URL --token-file PATH] --autostart on|off|status
 A bare `tycswap` opens the interactive action menu, including when the tray
 is already running. Its **Start tray app** action starts `tycswap app` detached,
 with output appended to the app log. `tycswap app` itself runs in the foreground.
-The Windows panel has **Accounts** and **Advanced** tabs and an **Add account…**
-action. Browser setup opens a terminal and uses the existing provider login
-flow: a new tab in the current Windows Terminal window when `wt.exe` is on the
-PATH, else a console through PowerShell `Start-Process` (DESIGN A81). Each
-account cell shows the share used and the time to its reset; the row title
-carries the plan Claude Code reports. Remote Windows trays use the distro in their WSL token-file path;
-a web setup request can be delivered to one connected tray over authenticated
-SSE. Requests are not replayed after reconnection.
+On Windows a click on the icon opens the daily view (DESIGN A84) instead of
+the menu below. Under the brand name, a list: per account its name, the plan
+in a small label, `not rotated` for an account excluded from rotation and, in
+the dashboard's words, a reading that failed (`token expired`, …); one column
+per limit (5-hour, weekly, each reported model window) with the share and a
+bar, both in the limit colour when the share shown is at or over that
+window's auto-switch threshold (a Codex row's: the Codex engine's), and under
+it the reset as clock
+time and time left (`15:04 · 3h 52m` for the 5-hour window, `Today 15:04`,
+`Mon 15:04` or `Mon 2 Jan` for the others); `—` where the account reports no
+such window or its plan cannot run Fable; a **Switch** button, **In use** on
+the active account. One line under the list says what the last action did,
+or why the engine is out of reach, which disables Switch and Auto-switch;
+Start at login and the updates act on this machine and stay usable.
+The footer holds **Quit**, **Update tycswap** and **Update Claude** while
+one waits, the **Auto-switch** and **Start at login** switches and **Open
+dashboard**. Tab walks the Switch buttons, then the footer; Space or Enter
+presses; Esc closes. The panel has no settings and no Add account: those are
+in the dashboard and `tycswap config` / `tycswap add`. **Add account…** in
+the dashboard and the Linux and macOS menus opens browser setup in a
+terminal with the existing provider login flow: a new tab in the current
+Windows Terminal window when `wt.exe` is on the PATH, else a console through
+PowerShell `Start-Process` (DESIGN A81). Remote Windows trays use the distro
+in their WSL token-file path; a web setup request can be delivered to one
+connected tray over authenticated SSE. Requests are not replayed after
+reconnection.
 
 ### Options
 
@@ -3058,7 +3078,10 @@ window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
 - **Accounts**: one row per account with its windows and a usage bar, the
   active one marked; a click switches (an API-key account asks first; one
   with a base URL shows `→ <host>`, and the question names the whole URL,
-  DESIGN A46); more than ten accounts move into *All N accounts* ▸, beside
+  DESIGN A46) and, when auto-switch is on and not a dry run (a Codex row:
+  while Codex rotation is on), turns it off first, so the next tick, also
+  one already running, leaves the login there (turned on again if the
+  switch fails; the notification says it, A84); more than ten accounts move into *All N accounts* ▸, beside
   the active one; *Add
   current login* stores the login Claude Code has;
 - **Automation**: *Auto-switch* (on or off; its second line names the
@@ -3285,10 +3308,13 @@ manager's when it lies in the Nix store, a Homebrew `Cellar`, Scoop's `apps`
 or `WindowsApps`, or was started through a symbolic link: `upgrade` says so
 and leaves it to the package manager. One this process can replace — it can
 write the directory and the file and owns the file (on Windows: the file is
-not read-only) — gets the newest release downloaded over it: `upgrade` reads
-the latest release's tag from
-`Endpoint`, compares it with its own version (nothing to do when it is not
-newer), downloads `SHA256SUMS` and `tycswap_<tag>_<os>_<arch>[.exe]` from
+not read-only) — gets the newest release downloaded over it: `upgrade` refuses
+a `ReleasesURL` that is not https, reads the latest release's tag from the
+redirect of `<ReleasesURL>/latest` (one request that does not follow it; the
+`Location` path ends in `/releases/tag/<tag>`; GitHub's API, which allows a
+network 60 unauthenticated requests an hour, is not asked), compares it with
+its own version (nothing to do when it is not newer), downloads
+`SHA256SUMS` and `tycswap_<tag>_<os>_<arch>[.exe]` from
 `<ReleasesURL>/download/<tag>/` over https only (redirects included; at most
 256 MiB) into a temporary file next to the binary, refuses the build unless
 `SHA256SUMS` has exactly one line for that file and its sha256 matches, marks
@@ -3304,12 +3330,11 @@ tycswap's own module and releases:
 | Variable | Default |
 |----------|---------|
 | `github.com/tyclab/tycswap/internal/update.ModulePath` | `github.com/tyclab/tycswap/cmd/tycswap` (what `go install …@latest` installs) |
-| `github.com/tyclab/tycswap/internal/update.Endpoint` | `https://api.github.com/repos/tyclab/tycswap/releases/latest` (the passive update notice's source; `tag_name` is read) |
-| `github.com/tyclab/tycswap/internal/update.ReleasesURL` | `https://github.com/tyclab/tycswap/releases` (where a download upgrade fetches `download/<tag>/…`; shown in manual guidance) |
+| `github.com/tyclab/tycswap/internal/update.ReleasesURL` | `https://github.com/tyclab/tycswap/releases` (its `latest` must redirect to `…/releases/tag/<tag>`, as GitHub's does: the update check's and `upgrade`'s source of the latest tag; where a download upgrade fetches `download/<tag>/…`; shown in manual guidance) |
 
 ```
 go build -ldflags "-X github.com/tyclab/tycswap/internal/update.ModulePath=example.com/fork/cmd/tycswap \
-  -X github.com/tyclab/tycswap/internal/update.Endpoint=https://example.com/releases/latest" ./cmd/tycswap
+  -X github.com/tyclab/tycswap/internal/update.ReleasesURL=https://example.com/fork/releases" ./cmd/tycswap
 ```
 
 ### Files
@@ -3379,7 +3404,11 @@ manually from a shell where it is available.` (exit 1).
 
 A download upgrade that cannot go ahead says why, then `To upgrade manually,
 download the build for this machine from:` and the releases URL (exit 1):
-`Could not read the newest release: …`, `… SHA256SUMS has no line for <file>;
+`Could not read the newest release: …` (`GitHub is limiting requests from this
+network; try again later` for its `403` or `429`, with `(after HH:MM)` in local
+time when the answer carries `Retry-After` or `x-ratelimit-reset`; `no release
+found at <url>` for a `404` or a redirect that names no tag; `<url>: HTTP
+<code>` for any other answer), `… SHA256SUMS has no line for <file>;
 refusing to install an unverifiable build.` (also for no `SHA256SUMS`, several
 lines or a malformed hash), `Checksum mismatch for <file> (got …, want …) —
 refusing to install it.`, `The release downloads at <url> are not https;
@@ -5193,9 +5222,10 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   <n>`) after logging the account back in produces; an `account-unquarantined`
   event is then emitted.
 - **Passive update notice.** After most commands, a muted one-line update notice
-  may be printed to stderr when a newer tycswap release (from
-  `update.Endpoint`, see `tycswap upgrade`) is known, with what `tycswap
-  upgrade` would do: a checkout build is told to `git pull && make install`, a
+  may be printed to stderr when a newer tycswap release (from the redirect of
+  `<update.ReleasesURL>/latest`, see `tycswap upgrade`) is known, with what
+  `tycswap upgrade` would do: a checkout build is told to
+  `git pull && make install`, a
   package manager's binary to update it with that package manager, any other
   to run `tycswap upgrade`. It is suppressed in
   `--json` mode and after `purge` and `upgrade`, and it never affects the exit
@@ -5258,7 +5288,7 @@ Session groups are retired (DESIGN A78): `tycswap groups` answers only the
 `guard` hook older group sessions call, and every other verb exits 1 saying so.
 Import/export guides
 provider, account scope and file selection; exports require a new file and a token
-warning confirmation. The web/tray Interactive menu action opens this same menu.
+warning confirmation. The Interactive menu action of the dashboard and the Linux and macOS tray menus opens this same menu.
 `web --reuse` opens the running local or remote tray dashboard through its authenticated
 launch API; it starts a background app only if no app holds the relevant lock.
 `add --login --switch` activates a renewed login even when that account is already active.

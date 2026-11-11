@@ -85,14 +85,14 @@ func newE2E(t *testing.T) *e2e {
 	root := t.TempDir()
 	e := &e2e{t: t, claudeLog: filepath.Join(root, "claude.log")}
 
-	// tycswap's release endpoint: a newer release is out.
+	// tycswap's release page: a newer release is out.
 	releases := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"tag_name":"v99.1.0"}`))
+		http.Redirect(w, r, "/releases/tag/v99.1.0", http.StatusFound)
 	}))
 	t.Cleanup(releases.Close)
-	prevEndpoint := update.Endpoint
-	update.Endpoint = releases.URL
-	t.Cleanup(func() { update.Endpoint = prevEndpoint })
+	prevReleases := update.ReleasesURL
+	update.ReleasesURL = releases.URL
+	t.Cleanup(func() { update.ReleasesURL = prevReleases })
 	// Claude Code's release channel: 2.1.281 is the newest on "latest".
 	channel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/latest" {

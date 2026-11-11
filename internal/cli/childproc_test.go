@@ -12,6 +12,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/update"
 )
 
 // childRoleEnv makes the test binary play a child process instead of running
@@ -43,6 +44,9 @@ func TestMain(m *testing.M) {
 	// Every switcher and scratch login gets its home's fake Keychain, never
 	// the real login Keychain (homekeychain_test.go).
 	useHomeKeychains()
+	// A command's passive update notice asks the release page; a test that
+	// serves none gets a refused connection, never github.com.
+	update.ReleasesURL = "https://127.0.0.1:1/releases"
 	os.Exit(m.Run())
 }
 

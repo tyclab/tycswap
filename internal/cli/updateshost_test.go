@@ -22,13 +22,13 @@ import (
 	"github.com/tyclab/tycswap/internal/update"
 )
 
-// hostFixture is an updatesHost over fakes: a release endpoint the test
+// hostFixture is an updatesHost over fakes: a release page the test
 // serves, a Claude Code status the test sets, an upgrade that prints what
 // the test says.
 type hostFixture struct {
 	h       *updatesHost
 	mu      sync.Mutex
-	tag     string // what the release endpoint answers ("" → 503)
+	tag     string // the release page's tag ("" → 503)
 	cc      ccversion.Status
 	changes int
 	upCode  int
@@ -47,12 +47,12 @@ func newHostFixture(t *testing.T, current string) *hostFixture {
 			http.Error(w, "down", http.StatusServiceUnavailable)
 			return
 		}
-		_, _ = w.Write([]byte(`{"tag_name":"` + tag + `"}`))
+		http.Redirect(w, r, "/releases/tag/"+tag, http.StatusFound)
 	}))
 	t.Cleanup(srv.Close)
-	prev := update.Endpoint
-	update.Endpoint = srv.URL
-	t.Cleanup(func() { update.Endpoint = prev })
+	prev := update.ReleasesURL
+	update.ReleasesURL = srv.URL
+	t.Cleanup(func() { update.ReleasesURL = prev })
 	checker := update.Checker{CacheDir: t.TempDir()}
 	f.h = &updatesHost{
 		latest: checker.Latest,

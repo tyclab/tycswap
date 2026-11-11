@@ -30,7 +30,6 @@ evidence.
 
 | ID | Defect | Where | Verdict | Ev | Series |
 | --- | --- | --- | --- | --- | --- |
-| OFF-1 | a tick already past the gate can still switch after Stop or `auto off` | autoswitch/tick.go | FIX D2 (the guarded switch) |  | E |
 | OFF-2 | a tray click that only ends a dashboard dry run says "Auto-switch off" | cli/appshell.go, webfacades.go | FIX D5 (`SetEnabled`) |  | E |
 | OFF-3 | an unreadable `settings.json` reads as off with no stored warning; `auto on` fails on it | settings/settings.go | FIX D1 D7 |  | E |
 | OFF-4 | the hosted Codex loop reacts up to one interval after Start or `auto on`; it has no wake | cli/codexauto.go, webfacades.go | FIX D3 (one tick) |  | E |
@@ -125,12 +124,9 @@ evidence.
 | TRAY-4 | start-at-login status is "an entry with this label exists" | autostart/autostart.go Enabled | FIX D9 | T | U |
 | TRAY-6 | Linux registers with the watcher once | tray/sni_linux.go | FIX D9 |  | U |
 | TRAY-7 | text menus drop a switch row's second line | tray/tray.go FallbackTitle | FIX D9 | TV | U |
-| TRAY-8 | panel keeps stale countdowns offline; "No accounts" before first state | cli/traypanel.go | FIX D9 |  | U |
 | TRAY-9 | macOS: turning start at login off boots out the caller | autostart/launchagent.go | FIX | P | U |
-| TRAY-10 | Windows panel: Enter on an account does nothing | tray/panel_windows.go | FIX | P | U |
 | TRAY-11 | Windows: a refused first NIM_ADD ends the app | tray/tray_windows.go | FIX | P | U |
 | TRAY-12 | Linux: underscore in a label is swallowed | tray/sni_linux.go | FIX | P | U |
-| TRAY-13 | HDM_LAYOUT gets stack addresses as integers | tray/panel_fit_windows.go | FIX | P | U |
 
 ## Switching lane
 
