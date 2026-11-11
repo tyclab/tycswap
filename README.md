@@ -96,7 +96,7 @@ diverge, the divergences are enumerated in [`docs/DESIGN.md`](docs/DESIGN.md)
 
 **Prerequisites.**
 
-- Go 1.25.5 or newer to build or `go install`; Go selects the patched 1.26.10
+- Go 1.25.5 or newer to build or `go install`; Go selects the patched 1.26.11
   toolchain from `go.mod`. The CLI builds without cgo; on
   macOS the menu-bar app needs cgo (the Command Line Tools: `xcode-select
   --install`), and a build without it serves the tray app's dashboard alone.
@@ -907,7 +907,10 @@ to start it in the background. `--headless` runs the dashboard server without an
 how often the live state is polled (default 5 seconds), `--debug` logs errors
 to stderr, `--autostart`
 registers start at login (a LaunchAgent, an XDG autostart entry, a `Run`
-value) and exits. One app runs
+value) and exits. On Windows, where a scheduled task named like that entry
+starts the tray at logon (a provisioner's), the task is the one entry:
+**Start at login** and `--autostart` enable and disable it, remove a `Run`
+value of the same name, and `--autostart status` names it. One app runs
 per machine: a second one says it is already running, and `tycswap purge`
 refuses while one runs. The background app logs to
 `~/Library/Logs/tycswap.log` on macOS and to `app.log` in the backup store

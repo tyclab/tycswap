@@ -733,7 +733,7 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	quit := func() { quitOnce.Do(func() { cancel(); t.Quit() }) }
 	var restart atomic.Bool
 	var restartTag atomic.Pointer[string]
-	cfg := autostartConfig(o)
+	readAutostart, writeAutostart := trayAutostart(autostartConfig(o))
 	update.RemoveStaleBinary(exePath()) // a Windows upgrade's leftover from last time
 	// How this build is upgraded, decided at the start: the menu, the card
 	// and every check ask, and the answer does not change while it runs.
@@ -749,8 +749,8 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 		AutoStop:       rc.AutoStop,
 		Upgrade:        func() (string, error) { return upgradeForShell() },
 		UpgradeHint:    func() string { return buildHint },
-		Autostart:      func() (bool, error) { return autostart.Enabled(cfg) },
-		SetAutostart:   func(on bool) error { return setAutostart(cfg, on) },
+		Autostart:      readAutostart,
+		SetAutostart:   writeAutostart,
 		SetModelLimits: rc.SetModel,
 		// ApproveAPIKey / RestartNotice stay nil: the tray refuses an API-key
 		// switch and points at the dashboard (A33). RunClaudeCode and

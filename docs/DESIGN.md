@@ -3609,7 +3609,7 @@ stored copy out of the live file.
 
 **Not done here.** Windows has no owner-only DACL on `credentials/`, exports
 and the store root (`CheckPrivateRoot` is a no-op there); a follow-up.
-Dependencies: `go.mod` pins `toolchain go1.26.10`; `make vuln` runs
+Dependencies: `go.mod` pins `toolchain go1.26.11`; `make vuln` runs
 govulncheck.
 ## A26. `internal/web` — the browser dashboard and its security model (Go-side additive extension)
 
@@ -6998,3 +6998,46 @@ A79's plan in the row title; A80's `55% · 8m` cells and details box; and
 the `Used by` column, Check for updates, the version text and the
 "Auto-switch managed by …" status, which A83 left with nothing to say.
 The Linux and macOS menus are unchanged (A37).
+
+## A85. Start at login has one owner per box
+
+On Windows the tray's *Start at login* read and wrote the HKCU `Run` value
+alone (A35). A provisioner may start the tray from a scheduled task at
+logon instead, named with the identifier the `Run` value would carry
+(`io.github.tyclab.tycswap`, `….remote` for a remote tray, A45). There the
+switch showed off although the tray started at every logon, and turning it
+on added the `Run` value: a second start entry.
+
+The rule: start at login has one owner per box. Where a task `\<label>`
+exists, it is the owner: the state is the task's own enabled state, and on
+and off enable and disable the task, then remove a `Run` value of the same
+name. Without a task the `Run` value is the owner, as before. macOS and
+Linux are unchanged.
+
+- The task is read with `schtasks.exe /Query /TN \<label> /HRESULT /XML`
+  and changed with `/Change /TN \<label> /ENABLE` or `/DISABLE`, each in a
+  hidden window (`HideWindow`, `CREATE_NO_WINDOW`) from the system
+  directory, ended after 10 seconds so a hung tool cannot freeze the tray.
+- The state is the definition's `Settings/Enabled`, absent meaning enabled.
+  No text is matched: each trigger has an `Enabled` of its own, and the
+  tool's other output formats are translated.
+- Written to a pipe, the definition declares UTF-16 but is often code-page
+  bytes. A BOM or NUL bytes mean UTF-16; otherwise the bytes are read as
+  they are, anything not UTF-8 replaced, and the declaration ignored.
+- "No such task" is `/Query`'s non-zero exit, and only `/HRESULT` tells it
+  apart without reading translated text: the exit code is then the HRESULT,
+  and `0x80070002` or `0x80070003` (file or path not found) means no task.
+  Any other failure (access denied, no answer within 10 seconds, a
+  definition that is not a task) is an error naming the task with the
+  tool's message. It is never read as no task, which would make the `Run`
+  value a second owner.
+- `app --autostart status` names the owner when it is the task: `Start at
+  login: on (logon task <label>)`; the `Run` value's wording is as before.
+- Every panel build asks for the state, and every read starts the tool, so
+  the tray reads it at most every 30 seconds; a click on the switch drops
+  that read and the repaint reads again at once.
+
+Tests replace the tool and the `Run` value on every platform; a test binary
+refuses the real tool as it refuses the real `Run` key. One test, on Windows
+with `CI` set, drives a task it creates under a random name through the
+real tool and deletes it.

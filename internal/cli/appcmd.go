@@ -387,6 +387,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	// How this build is upgraded, decided at the start: the menu, the card
 	// and every check ask, and the answer does not change while it runs.
 	buildHint := appUpgradeHint()
+	readAutostart, writeAutostart := trayAutostart(autostart.Config{})
 	sh = newAppShell(t, shellActions{
 		OpenDashboard: openDashboard,
 		AccountSetup:  openAccountSetup,
@@ -400,8 +401,8 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		AutoStop:     func() error { return d.auto.Stop() },
 		Upgrade:      func() (string, error) { return upgradeForShell() },
 		UpgradeHint:  func() string { return buildHint },
-		Autostart:    func() (bool, error) { return autostart.Enabled(autostart.Config{}) },
-		SetAutostart: func(on bool) error { return setAutostart(autostart.Config{}, on) },
+		Autostart:    readAutostart,
+		SetAutostart: writeAutostart,
 		SetModelLimits: func(on bool) error {
 			sf := settingsFacade{root: d.sw.BackupDir()}
 			var err error
@@ -698,6 +699,57 @@ func setAutostart(cfg autostart.Config, on bool) error {
 	return autostart.Disable(cfg)
 }
 
+// trayAutostart is the tray's Autostart and SetAutostart for cfg.
+func trayAutostart(cfg autostart.Config) (func() (bool, error), func(bool) error) {
+	return cachedAutostart(
+		func() (bool, error) { return autostart.Enabled(cfg) },
+		func(on bool) error { return setAutostart(cfg, on) },
+		time.Now)
+}
+
+// cachedAutostart serves a read for 30 seconds, because the panel asks at
+// every build and on Windows every read starts schtasks.exe; a change drops
+// it, so the repaint after a click reads again at once.
+func cachedAutostart(read func() (bool, error), set func(bool) error, now func() time.Time) (func() (bool, error), func(bool) error) {
+	var (
+		mu     sync.Mutex
+		on     bool
+		err    error
+		readAt time.Time
+		valid  bool
+	)
+	get := func() (bool, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if !valid || now().Sub(readAt) >= 30*time.Second {
+			on, err = read()
+			readAt, valid = now(), true
+		}
+		return on, err
+	}
+	put := func(enable bool) error {
+		serr := set(enable)
+		mu.Lock()
+		valid = false
+		mu.Unlock()
+		return serr
+	}
+	return get, put
+}
+
+// autostartLine is --autostart's answer; it names a logon task that owns
+// start at login (A85).
+func autostartLine(e autostart.Entry) string {
+	line := "Start at login: off"
+	if e.Enabled {
+		line = "Start at login: on"
+	}
+	if e.Task != "" {
+		line += " (logon task " + e.Task + ")"
+	}
+	return line
+}
+
 func appAutostart(mode string, cfg autostart.Config, s ioStreams) int {
 	var err error
 	switch mode {
@@ -710,16 +762,12 @@ func appAutostart(mode string, cfg autostart.Config, s ioStreams) int {
 		errorTo(s.err, "Error: "+err.Error())
 		return 1
 	}
-	on, err := autostart.Enabled(cfg)
+	e, err := autostart.Status(cfg)
 	if err != nil {
 		errorTo(s.err, "Error: "+err.Error())
 		return 1
 	}
-	if on {
-		fmt.Fprintln(s.out, "Start at login: on")
-	} else {
-		fmt.Fprintln(s.out, "Start at login: off")
-	}
+	fmt.Fprintln(s.out, autostartLine(e))
 	return 0
 }
 

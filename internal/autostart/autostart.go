@@ -1,6 +1,7 @@
 // Package autostart registers `tycswap app` to start at login (DESIGN A35):
 // a LaunchAgent on macOS, an XDG autostart entry on Linux, a HKCU Run value
-// on Windows. Stdlib plus golang.org/x/sys/windows/registry.
+// on Windows, or there a scheduled logon task of the same name where a
+// provisioner made one (A85). Stdlib plus golang.org/x/sys/windows/registry.
 package autostart
 
 import (
@@ -76,7 +77,7 @@ func Enable(c Config) error {
 	case "linux":
 		return xdgEnable(c)
 	case "windows":
-		return registryEnable(c)
+		return windowsSet(c, true)
 	}
 	return ErrUnsupported
 }
@@ -90,23 +91,41 @@ func Disable(c Config) error {
 	case "linux":
 		return xdgDisable(c)
 	case "windows":
-		return registryDisable(c)
+		return windowsSet(c, false)
 	}
 	return ErrUnsupported
 }
 
-// Enabled reports whether an entry exists.
+// Entry is start at login as its owner reports it.
+type Entry struct {
+	Enabled bool
+	// Task names the scheduled logon task that owns start at login on this
+	// Windows box (A85); "" where the platform's own entry does.
+	Task string
+}
+
+// Enabled reports whether start at login is on.
 func Enabled(c Config) (bool, error) {
+	e, err := Status(c)
+	return e.Enabled, err
+}
+
+// Status reads start at login from its owner: on macOS and Linux whether
+// the entry exists, on Windows the logon task's state where there is one,
+// else whether the Run value exists.
+func Status(c Config) (Entry, error) {
 	c = c.withDefaults()
 	switch c.GOOS {
 	case "darwin":
-		return fileExists(launchAgentPath(c))
+		on, err := fileExists(launchAgentPath(c))
+		return Entry{Enabled: on}, err
 	case "linux":
-		return fileExists(xdgPath(c))
+		on, err := fileExists(xdgPath(c))
+		return Entry{Enabled: on}, err
 	case "windows":
-		return registryEnabled(c)
+		return windowsStatus(c)
 	}
-	return false, ErrUnsupported
+	return Entry{}, ErrUnsupported
 }
 
 func fileExists(p string) (bool, error) {

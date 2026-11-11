@@ -123,7 +123,6 @@ evidence.
 | TRAY-2 | Windows keeps one pending notification | tray/tray_windows.go Notify | FIX D9 | V | U |
 | TRAY-3 | dry-run engine notifies "Auto-switched"; titles lack the slot | cli/webfacades.go onEvent, appshell.go | FIX D5 D9 |  | E |
 | TRAY-4 | start-at-login status is "an entry with this label exists" | autostart/autostart.go Enabled | FIX D9 | T | U |
-| TRAY-5 | start at login has two owners on a provisioned box | cli/traypanel.go, autostart/registry_windows.go | FIX D9 | VL | U |
 | TRAY-6 | Linux registers with the watcher once | tray/sni_linux.go | FIX D9 |  | U |
 | TRAY-7 | text menus drop a switch row's second line | tray/tray.go FallbackTitle | FIX D9 | TV | U |
 | TRAY-9 | macOS: turning start at login off boots out the caller | autostart/launchagent.go | FIX | P | U |
