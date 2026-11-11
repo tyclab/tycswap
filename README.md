@@ -744,6 +744,12 @@ $ tycswap upgrade
 tycswap was built from a checkout: git pull && make install
 ```
 
+The newest release is the one the releases page's `latest` link redirects
+to, not an answer of GitHub's API, which allows a network 60 unauthenticated
+requests an hour. When GitHub limits the network anyway, the check says `GitHub is
+limiting requests from this network; try again later`, with the time when
+GitHub names one.
+
 A release binary (the builds a release publishes) is replaced by the newest
 release's build for this machine
 (`tycswap_<version>_<os>_<arch>` from the

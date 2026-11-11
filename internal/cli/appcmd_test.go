@@ -114,17 +114,17 @@ func TestAppWithoutATrayServesTheDashboard(t *testing.T) {
 	}
 }
 
-// releaseEndpoint serves a release with tag for the update check.
-func releaseEndpoint(t *testing.T, tag string) {
+// releasePage serves a release with tag for the update check: releases/latest
+// redirects to the tag's page.
+func releasePage(t *testing.T, tag string) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"tag_name":"` + tag + `"}`))
+		http.Redirect(w, r, "/owner/repo/releases/tag/"+tag, http.StatusFound)
 	}))
 	t.Cleanup(srv.Close)
-	prev := update.Endpoint
-	update.Endpoint = srv.URL
-	t.Cleanup(func() { update.Endpoint = prev })
+	prev := update.ReleasesURL
+	update.ReleasesURL = srv.URL + "/owner/repo/releases"
+	t.Cleanup(func() { update.ReleasesURL = prev })
 }
 
 // stubRestart takes the update restart's hand-over: the successor is not
@@ -177,7 +177,7 @@ func installWithoutClicking(t *testing.T) *atomic.Int32 {
 // end every update restart. The remote token goes with it.
 func TestAppRestartHandOverReleasesTheLockOnce(t *testing.T) {
 	appTestHome(t)
-	releaseEndpoint(t, "v99.0.0")
+	releasePage(t, "v99.0.0")
 	hints := installWithoutClicking(t)
 	tags, free := stubRestart(t, appLockPath())
 	ft := &blockingTray{done: make(chan struct{})}
@@ -218,7 +218,7 @@ func TestAppRestartHandOverReleasesTheLockOnce(t *testing.T) {
 func TestRemoteRestartHandOverReleasesTheLockOnce(t *testing.T) {
 	appTestHome(t)
 	fx := startRemoteServer(t, testRemoteToken, "127.0.0.1:0")
-	releaseEndpoint(t, "v99.0.0")
+	releasePage(t, "v99.0.0")
 	hints := installWithoutClicking(t)
 	tags, free := stubRestart(t, remoteLockPath())
 	ft := &blockingTray{done: make(chan struct{})}

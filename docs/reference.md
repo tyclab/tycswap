@@ -2794,9 +2794,10 @@ tabs:
 Choose **Interactive menu… → Import / export…** to transfer accounts. The dashboard
 opens a terminal menu; the existing export/import commands read and write local files.
 
-The update check compares the running version with the latest release at the
-endpoint `tycswap upgrade` uses (`update.Endpoint`), and the installed Claude
-Code (`claude --version`, found on `PATH` or where its installers put it) with
+The update check compares the running version with the latest release, read
+where `tycswap upgrade` reads it (the redirect of `<ReleasesURL>/latest`),
+and the installed Claude Code (`claude --version`, found on `PATH` or where
+its installers put it) with
 the release source for its installer: the native release channel for native
 or unknown installs, native latest for WinGet, npm's `dist-tags` for an npm
 install, and the cask's formula for Homebrew. Native and unknown installs
@@ -2812,7 +2813,8 @@ the dashboard starts); *Update Claude Code* runs the installer's own
 command (`claude update`, `npm install -g @anthropic-ai/claude-code@latest`,
 `brew upgrade --cask <cask>`, `winget upgrade`). A missing Claude Code is
 named with the install line to type, never installed from the page. A check
-that fails keeps what the check before it found and names the error; the
+that fails keeps what the check before it found and names the error (for
+tycswap, the reasons under `tycswap upgrade`'s Errors); the
 card never says everything is up to date while something could not be
 checked. The running `tycswap web` keeps its version until it is started
 again; running Claude Code sessions keep theirs until restarted. After a
@@ -3306,10 +3308,13 @@ manager's when it lies in the Nix store, a Homebrew `Cellar`, Scoop's `apps`
 or `WindowsApps`, or was started through a symbolic link: `upgrade` says so
 and leaves it to the package manager. One this process can replace — it can
 write the directory and the file and owns the file (on Windows: the file is
-not read-only) — gets the newest release downloaded over it: `upgrade` reads
-the latest release's tag from
-`Endpoint`, compares it with its own version (nothing to do when it is not
-newer), downloads `SHA256SUMS` and `tycswap_<tag>_<os>_<arch>[.exe]` from
+not read-only) — gets the newest release downloaded over it: `upgrade` refuses
+a `ReleasesURL` that is not https, reads the latest release's tag from the
+redirect of `<ReleasesURL>/latest` (one request that does not follow it; the
+`Location` path ends in `/releases/tag/<tag>`; GitHub's API, which allows a
+network 60 unauthenticated requests an hour, is not asked), compares it with
+its own version (nothing to do when it is not newer), downloads
+`SHA256SUMS` and `tycswap_<tag>_<os>_<arch>[.exe]` from
 `<ReleasesURL>/download/<tag>/` over https only (redirects included; at most
 256 MiB) into a temporary file next to the binary, refuses the build unless
 `SHA256SUMS` has exactly one line for that file and its sha256 matches, marks
@@ -3325,12 +3330,11 @@ tycswap's own module and releases:
 | Variable | Default |
 |----------|---------|
 | `github.com/tyclab/tycswap/internal/update.ModulePath` | `github.com/tyclab/tycswap/cmd/tycswap` (what `go install …@latest` installs) |
-| `github.com/tyclab/tycswap/internal/update.Endpoint` | `https://api.github.com/repos/tyclab/tycswap/releases/latest` (the passive update notice's source; `tag_name` is read) |
-| `github.com/tyclab/tycswap/internal/update.ReleasesURL` | `https://github.com/tyclab/tycswap/releases` (where a download upgrade fetches `download/<tag>/…`; shown in manual guidance) |
+| `github.com/tyclab/tycswap/internal/update.ReleasesURL` | `https://github.com/tyclab/tycswap/releases` (its `latest` must redirect to `…/releases/tag/<tag>`, as GitHub's does: the update check's and `upgrade`'s source of the latest tag; where a download upgrade fetches `download/<tag>/…`; shown in manual guidance) |
 
 ```
 go build -ldflags "-X github.com/tyclab/tycswap/internal/update.ModulePath=example.com/fork/cmd/tycswap \
-  -X github.com/tyclab/tycswap/internal/update.Endpoint=https://example.com/releases/latest" ./cmd/tycswap
+  -X github.com/tyclab/tycswap/internal/update.ReleasesURL=https://example.com/fork/releases" ./cmd/tycswap
 ```
 
 ### Files
@@ -3400,7 +3404,11 @@ manually from a shell where it is available.` (exit 1).
 
 A download upgrade that cannot go ahead says why, then `To upgrade manually,
 download the build for this machine from:` and the releases URL (exit 1):
-`Could not read the newest release: …`, `… SHA256SUMS has no line for <file>;
+`Could not read the newest release: …` (`GitHub is limiting requests from this
+network; try again later` for its `403` or `429`, with `(after HH:MM)` in local
+time when the answer carries `Retry-After` or `x-ratelimit-reset`; `no release
+found at <url>` for a `404` or a redirect that names no tag; `<url>: HTTP
+<code>` for any other answer), `… SHA256SUMS has no line for <file>;
 refusing to install an unverifiable build.` (also for no `SHA256SUMS`, several
 lines or a malformed hash), `Checksum mismatch for <file> (got …, want …) —
 refusing to install it.`, `The release downloads at <url> are not https;
@@ -5214,9 +5222,10 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   <n>`) after logging the account back in produces; an `account-unquarantined`
   event is then emitted.
 - **Passive update notice.** After most commands, a muted one-line update notice
-  may be printed to stderr when a newer tycswap release (from
-  `update.Endpoint`, see `tycswap upgrade`) is known, with what `tycswap
-  upgrade` would do: a checkout build is told to `git pull && make install`, a
+  may be printed to stderr when a newer tycswap release (from the redirect of
+  `<update.ReleasesURL>/latest`, see `tycswap upgrade`) is known, with what
+  `tycswap upgrade` would do: a checkout build is told to
+  `git pull && make install`, a
   package manager's binary to update it with that package manager, any other
   to run `tycswap upgrade`. It is suppressed in
   `--json` mode and after `purge` and `upgrade`, and it never affects the exit
