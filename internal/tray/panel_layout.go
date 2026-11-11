@@ -185,21 +185,16 @@ func panelFooterPlace(widths []int, right []bool, width, gap, spacer int) []pane
 	return out
 }
 
-// panelFooterRowWidth is the footer on one row: both groups and the spacer.
-func panelFooterRowWidth(widths []int, right []bool, gap, spacer int) int {
-	sum, groups := 0, map[bool]bool{}
+func panelFooterMinWidth(widths []int, right []bool, gap int) int {
+	left, group, count := 0, 0, 0
 	for i, w := range widths {
-		sum += w
-		groups[right[i]] = true
+		if right[i] {
+			group, count = group+w, count+1
+		} else {
+			left = max(left, w)
+		}
 	}
-	if len(widths) == 0 {
-		return 0
-	}
-	sum += (len(widths) - len(groups)) * gap
-	if len(groups) == 2 {
-		sum += spacer
-	}
-	return sum
+	return max(left, group+max(0, count-1)*gap)
 }
 
 // layoutPanel sizes the panel to its content within maxWidth by maxHeight
@@ -225,14 +220,14 @@ func layoutPanel(p Panel, m panelMeasure, maxWidth, maxHeight, scrollbar int) pa
 		buttonWidths = append(buttonWidths, panelFooterWidth(action, m, metrics))
 		right = append(right, panelRight(action))
 	}
-	footerRow := panelFooterRowWidth(buttonWidths, right, metrics.gap, 2*unit)
+	footerWidth := panelFooterMinWidth(buttonWidths, right, metrics.gap)
 	for range 2 {
 		list := 0
 		for _, w := range widths {
 			list += w
 		}
 		list += (len(widths) - 1) * metrics.gap
-		g.width = max(list, footerRow, m.textWidth(panelHeading, p.Title)) + 2*pad
+		g.width = max(list, footerWidth, m.textWidth(panelHeading, p.Title)) + 2*pad
 		if g.scroll {
 			g.width += scrollbar
 		}
@@ -365,16 +360,24 @@ func clonePanel(p Panel) Panel {
 	return p
 }
 
-type panelColors struct{ background, header, text, muted, line, selection, accent, track, limit uintptr }
+type panelColors struct{ background, header, text, muted, line, selection, accent, track, limit, disabledAccent uintptr }
 
 // panelPalette is the panel's colours outside high contrast. Text, muted,
 // limit and accent keep 4.5:1 against the background; the limit colour is
 // the approved picture's orange.
 func panelPalette(dark bool, accent uintptr) panelColors {
 	if dark {
-		return panelColors{0x202020, 0x292929, 0xf0f0f0, 0xb6b6b6, 0x424242, 0x493c33, accent, 0x404040, colorRef("#ffb454")}
+		return panelColors{0x202020, 0x292929, 0xf0f0f0, 0xb6b6b6, 0x424242, 0x493c33, accent, 0x404040, colorRef("#ffb454"), panelDimAccent(accent, 0x202020)}
 	}
-	return panelColors{0xffffff, 0xf8f6f5, 0x222222, 0x666666, 0xe4dcd7, 0xfcf3ed, accent, 0xdedede, colorRef("#a84300")}
+	return panelColors{0xffffff, 0xf8f6f5, 0x222222, 0x666666, 0xe4dcd7, 0xfcf3ed, accent, 0xdedede, colorRef("#a84300"), panelDimAccent(accent, 0xffffff)}
+}
+
+func panelDimAccent(accent, background uintptr) uintptr {
+	var color uintptr
+	for shift := 0; shift < 24; shift += 8 {
+		color |= (3*((accent>>shift)&0xff) + ((background >> shift) & 0xff)) / 4 << shift
+	}
+	return color
 }
 
 // colorRef turns "#rrggbb" into a Windows COLORREF (0x00bbggrr).

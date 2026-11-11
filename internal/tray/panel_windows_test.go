@@ -161,12 +161,16 @@ func TestNativePanelSwitchesAndNoSettings(t *testing.T) {
 	actions := make(chan PanelAction, 8)
 	tr := nativePanelFixture(t, func(action PanelAction) { actions <- action })
 	p := tr.panel
-	for id, text := range map[string]string{"auto": "Auto-switch, on", "autostart": "Start at login, off", "quit": "Quit", "open": "Open dashboard"} {
+	value := panelFixture()
+	value.Actions = append([]Item{value.Actions[0], {ID: "updates-open", Title: "Check for updates…"}}, value.Actions[1:]...)
+	tr.SetPanel(value)
+	p.update()
+	for id, text := range map[string]string{"auto": "Auto-switch, on", "autostart": "Start at login, off", "quit": "Quit", "updates-open": "Check for updates…", "open": "Open dashboard"} {
 		if got := panelControlText(p.controls[p.actionIDs[id]]); got != text {
 			t.Fatalf("%s reads %q, want %q", id, got, text)
 		}
 	}
-	for _, id := range []string{"auto", "autostart"} {
+	for _, id := range []string{"auto", "autostart", "updates-open"} {
 		nativeClick(p.controls[p.actionIDs[id]])
 		if action := nativeAction(t, actions); action != (PanelAction{Kind: "command", Key: id}) {
 			t.Fatalf("%s dispatched %+v", id, action)
@@ -177,7 +181,7 @@ func TestNativePanelSwitchesAndNoSettings(t *testing.T) {
 		if class != "Button" && class != "BUTTON" && hwnd != p.list {
 			t.Fatalf("a %s control is left in the panel", class)
 		}
-		for _, gone := range []string{"Accounts", "Advanced", "Save", "Reset", "Add account", "Interactive menu", "Check for updates"} {
+		for _, gone := range []string{"Accounts", "Advanced", "Save", "Reset", "Add account", "Interactive menu"} {
 			if strings.HasPrefix(text, gone) {
 				t.Fatalf("control %q is left in the panel", text)
 			}
@@ -380,6 +384,30 @@ func TestNativePanelThemes(t *testing.T) {
 			for x := int32(0); x < client.right; x++ {
 				color, _, _ := pixel.Call(mem, uintptr(x), uintptr(y))
 				seen[color]++
+			}
+		}
+		for _, action := range p.panel.Actions {
+			if action.Kind != KindToggle {
+				continue
+			}
+			for _, state := range []struct{ checked, disabled bool }{{false, false}, {true, false}, {false, true}, {true, true}} {
+				action.Checked = state.checked
+				r := menuRect{0, 0, int32(panelFooterWidth(action, p, p.geometry.metrics)), int32(p.geometry.metrics.control)}
+				p.fill(mem, r, p.palette.background)
+				p.drawToggle(mem, r, action, state.disabled)
+				_, height := panelPill(p.geometry.metrics)
+				x := p.geometry.metrics.unit + p.textWidth(panelBody, action.Title) + height/2
+				got, _, _ := pixel.Call(mem, uintptr(x), uintptr(r.bottom/2))
+				want := p.palette.muted
+				if state.checked {
+					want = p.palette.accent
+					if state.disabled {
+						want = p.palette.disabledAccent
+					}
+				}
+				if got != want {
+					t.Errorf("theme %d %s checked=%v disabled=%v: track %#x, want %#x", theme, action.ID, state.checked, state.disabled, got, want)
+				}
 			}
 		}
 		menuSelectObject.Call(mem, old)

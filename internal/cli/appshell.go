@@ -40,6 +40,8 @@ import (
 // them to the switcher, the engine, the browser and the updater.
 type shellActions struct {
 	OpenDashboard func() error
+	OpenUpdates   func() error
+	CheckUpdates  func() error
 	AccountSetup  func(string) error
 	// SwitchTo switches to the account a row key names ("claude:2",
 	// "codex:1", A47) and returns the codex sessions still running on the
@@ -579,6 +581,26 @@ func (a *appShell) click(id string) {
 		if err != nil {
 			a.setNote("Start at login: "+err.Error(), true)
 			a.notify("Start at login", err.Error())
+		}
+		a.repaint()
+	case id == "updates-open":
+		if a.act.CheckUpdates == nil || a.act.OpenUpdates == nil {
+			return
+		}
+		checkErr := a.act.CheckUpdates()
+		openErr := a.act.OpenUpdates()
+		a.setNote("Updates opened in the dashboard.", false)
+		var failures []string
+		if checkErr != nil {
+			failures = append(failures, "Could not check for updates: "+checkErr.Error())
+		}
+		if openErr != nil {
+			failures = append(failures, "Could not open the dashboard: "+openErr.Error())
+		}
+		if len(failures) > 0 {
+			message := strings.Join(failures, "; ")
+			a.setNote(message, true)
+			a.notify("Updates", message)
 		}
 		a.repaint()
 	case id == "install-update":

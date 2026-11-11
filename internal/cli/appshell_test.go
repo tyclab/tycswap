@@ -127,6 +127,8 @@ func newTestShell(t *testing.T) (*appShell, *fakeTray, *[]string) {
 	running := false
 	act := shellActions{
 		OpenDashboard: func() error { calls = append(calls, "open"); return nil },
+		OpenUpdates:   func() error { calls = append(calls, "open-updates"); return nil },
+		CheckUpdates:  func() error { calls = append(calls, "check-updates"); return nil },
 		SwitchTo:      func(key string) ([]int, error) { calls = append(calls, "switch:"+key); return nil, nil },
 		AutoRunning:   func() bool { return running },
 		AutoStart:     func() error { running = true; calls = append(calls, "auto-start"); return nil },

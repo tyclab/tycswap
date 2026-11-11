@@ -41,7 +41,7 @@ func panelSystemColor(index uintptr) uintptr {
 func colorsForPanel(theme menuTheme) panelColors {
 	if theme == menuHighContrast {
 		window, face, text, gray, frame, highlight := panelSystemColor(5), panelSystemColor(15), panelSystemColor(8), panelSystemColor(17), panelSystemColor(6), panelSystemColor(13)
-		return panelColors{window, face, text, gray, frame, highlight, text, gray, highlight}
+		return panelColors{window, face, text, gray, frame, highlight, text, gray, highlight, gray}
 	}
 	return panelPalette(theme == menuDark, themeAccent(theme))
 }
@@ -331,8 +331,11 @@ func (p *windowsPanel) drawButton(draw *drawMenuItem) bool {
 func (p *windowsPanel) drawToggle(dc uintptr, rect menuRect, action Item, disabled bool) {
 	m := p.geometry.metrics
 	text, edge := p.palette.text, p.palette.accent
+	if action.Checked {
+		text = p.palette.accent
+	}
 	if disabled {
-		text, edge = p.palette.muted, p.palette.muted
+		text, edge = p.palette.muted, p.palette.disabledAccent
 	}
 	x := rect.left + int32(m.unit/2)
 	p.text(dc, p.font, text, menuRect{x, rect.top, rect.right, rect.bottom}, action.Title, panelLine)

@@ -296,7 +296,11 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			HttpOnly: true,
 			SameSite: http.SameSiteLaxMode,
 		})
-		http.Redirect(w, r, "/#csrf="+s.token, http.StatusSeeOther)
+		target := "/"
+		if r.URL.Query().Get("show") == "updates" {
+			target += "?show=updates"
+		}
+		http.Redirect(w, r, target+"#csrf="+s.token, http.StatusSeeOther)
 		return
 	}
 	if !s.hasCookie(r) {

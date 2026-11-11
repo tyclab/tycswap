@@ -3034,10 +3034,14 @@ time and time left (`15:04 · 3h 52m` for the 5-hour window, `Today 15:04`,
 such window or its plan cannot run Fable; a **Switch** button, **In use** on
 the active account. One line under the list says what the last action did,
 or why the engine is out of reach, which disables Switch and Auto-switch;
-Start at login and the updates act on this machine and stay usable.
-The footer holds **Quit**, **Update tycswap** and **Update Claude** while
+Start at login and pending local update actions stay usable.
+The footer holds **Quit**, **Check for updates…**, **Update tycswap** and **Update Claude** while
 one waits, the **Auto-switch** and **Start at login** switches and **Open
-dashboard**. Tab walks the Switch buttons, then the footer; Space or Enter
+dashboard**. **Check for updates…** starts the dashboard's update check and
+opens its Updates section without installing anything. In remote mode it checks
+the server's installation and is unavailable while that server is unreachable.
+Manual checks still work with `--no-update-check`; package-managed builds keep
+their update instructions. Tab walks the Switch buttons, then the footer; Space or Enter
 presses; Esc closes. The panel has no settings and no Add account: those are
 in the dashboard and `tycswap config` / `tycswap add`. **Add account…** in
 the dashboard and the Linux and macOS menus opens browser setup in a
@@ -3054,7 +3058,7 @@ reconnection.
 |--------|---------|
 | `--open` | Also open the dashboard in the browser at start. |
 | `--headless` | No tray icon: serve the dashboard only, like `tycswap web --no-open`. Not with `--remote`. |
-| `--no-update-check` | Do not check for a newer tycswap (90 s after start, then every 6 h) or Claude Code (30 s after start, then every 6 h). |
+| `--no-update-check` | Disable scheduled checks for a newer tycswap (90 s after start, then every 6 h) or Claude Code (30 s after start, then every 6 h). Manual checks remain available. |
 | `--port N` | Fixed dashboard port on `127.0.0.1` (0–65535; default `0`, any free port). Not with `--remote`. |
 | `--interval SECONDS` | Live-state poll interval (1 to 3600; default `5`). Not with `--remote`. |
 | `--debug` | Log errors to stderr; with `--remote`, every call's status and every end of the event stream. |

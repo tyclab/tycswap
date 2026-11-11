@@ -1198,7 +1198,11 @@ func (b *blockingTray) Quit()      { b.once.Do(func() { close(b.done) }); b.fake
 // not announced as an outage.
 func TestRemoteModeRunsTheTray(t *testing.T) {
 	appLockHome(t)
-	fx := startRemoteServer(t, testRemoteToken, "127.0.0.1:0")
+	checks := &remoteUpdateChecks{}
+	fx := startRemoteServer(t, testRemoteToken, "127.0.0.1:0", func(d *web.Deps) {
+		d.Updates = checks
+		d.UpdatesOwnSchedule = true
+	})
 	ft := &blockingTray{done: make(chan struct{})}
 	var opts atomic.Pointer[tray.Options]
 	prev := newTray
@@ -1250,6 +1254,13 @@ func TestRemoteModeRunsTheTray(t *testing.T) {
 	if len(*opened) != 1 || (*opened)[0] != fx.srv.URL() {
 		t.Errorf("browser got %q, want the engine's launch URL %q", *opened, fx.srv.URL())
 	}
+	if checks.count.Load() != 0 {
+		t.Fatal("update schedule ran with --no-update-check")
+	}
+	o.OnClick("updates-open")
+	if checks.count.Load() != 1 || len(*opened) != 2 || (*opened)[1] != fx.srv.URL()+"&show=updates" {
+		t.Fatalf("manual dashboard check: %d, opened %q", checks.count.Load(), *opened)
+	}
 	ft.mu.Lock()
 	notes := append([]string(nil), ft.notes...)
 	ft.mu.Unlock()
@@ -1300,4 +1311,43 @@ func TestRemoteSwitchPostsRowKey(t *testing.T) {
 	if _, err := rc.Switch("2"); err == nil {
 		t.Error("a bare slot was taken for a key")
 	}
+}
+
+func TestRemoteCheckUpdatesUsesEngine(t *testing.T) {
+	calls := make(chan string, 4)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+testRemoteToken {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		calls <- r.Method + " " + r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+	rc := newRemoteClient(server.URL, tokenFile(t, testRemoteToken))
+	if err := rc.loadToken(); err != nil {
+		t.Fatal(err)
+	}
+	if err := rc.CheckUpdates(); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("remote update call count %d", len(calls))
+	}
+	if got := <-calls; got != "POST /api/updates/check" {
+		t.Fatalf("remote update call %s", got)
+	}
+}
+
+type remoteUpdateChecks struct{ count atomic.Int32 }
+
+func (c *remoteUpdateChecks) View() web.UpdatesView { return web.UpdatesView{} }
+func (c *remoteUpdateChecks) Check() error {
+	c.count.Add(1)
+	return nil
+}
+func (c *remoteUpdateChecks) Apply(string) (web.UpdateResult, error) {
+	return web.UpdateResult{}, errors.New("unexpected install")
 }
