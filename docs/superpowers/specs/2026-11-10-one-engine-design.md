@@ -350,15 +350,19 @@ The state document's `auto` object is `enabled`, `enabledChange`, `running`
 D7's events. Tray, dashboard, TUI, `list` and `status` render from it;
 at-limit markers use the same policy function as the tick.
 
-Windows panel: one page. Per account: slot and name, plan, status, each
-window as share and reset (absolute when the engine is unreachable), and the
-reading's age. No details box, no Settings page, no scope selector, no
-model-limits switch, no "Used by" column. Footer: Auto-switch, Start at
-login, Open dashboard, Add account, Quit, and the update row when one waits.
-Double-click and Enter open the confirmation, which names the one destination
-and offers "switch and turn auto-switch off" or "switch and keep it on".
-Countdowns are recomputed at paint on a one-minute timer. Before the first
-state: "No data yet".
+Windows panel: one page, the daily view. A title; one row per account
+with its name, the plan under it and a warning when its reading failed;
+one column per limit (5-hour, weekly, each model window) showing the
+share, a bar and, small under the bar, that limit's own reset as clock
+time and time left; a centred dash where the account has no such limit
+or its plan cannot run the model; a Switch button per row, "In use" on
+the active one. Under the list, one line for the last action's result.
+Footer: Quit on the left (and the update buttons while an update
+waits), Auto-switch, Start at login and Open dashboard on the right. No
+tabs, no settings, no details box, no "Used by" column, no sorting, no
+confirmation: Switch acts at once and turns auto-switch off when it was
+on, so the login stays where the user put it; the line under the list
+says so. Before the first state: "No data yet".
 
 Start at login has one owner per box. Where a logon task with the app's
 identifier exists, the switch enables and disables that task and reads its

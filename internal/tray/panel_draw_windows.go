@@ -3,25 +3,24 @@
 package tray
 
 import (
-	"slices"
 	"unsafe"
 )
 
-type panelColors struct{ background, header, text, muted, line, selection, selectedText, accent uintptr }
-type panelCustomDraw struct {
-	header panelHeader
-	stage  uint32
-	dc     uintptr
-	rect   menuRect
-	item   uintptr
-	state  uint32
-	param  uintptr
-}
-type panelListDraw struct {
-	custom                     panelCustomDraw
-	textColor, backgroundColor uint32
-	subItem                    int32
-}
+var (
+	panelCreateBrush = menuGDI.NewProc("CreateSolidBrush")
+	panelCreatePen   = menuGDI.NewProc("CreatePen")
+	panelRoundRect   = menuGDI.NewProc("RoundRect")
+	panelEllipse     = menuGDI.NewProc("Ellipse")
+	panelFocusRect   = user32.NewProc("DrawFocusRect")
+)
+
+const (
+	dtCenter      = 0x1
+	dtRight       = 0x2
+	dtEndEllipsis = 0x8000
+	panelLine     = dtSingleLine | dtVCenter | dtNoPrefix | dtEndEllipsis
+)
+
 type panelPaint struct {
 	dc              uintptr
 	erase           int32
@@ -29,25 +28,20 @@ type panelPaint struct {
 	restore, update int32
 	reserved        [32]byte
 }
-type panelMonitor struct {
-	size          uint32
-	monitor, work menuRect
-	flags         uint32
-}
 
 func panelSystemColor(index uintptr) uintptr {
 	value, _, _ := user32.NewProc("GetSysColor").Call(index)
 	return value
 }
 
+// High contrast takes the system's colours; the limit state uses the
+// highlight colour, which every high-contrast scheme sets apart.
 func colorsForPanel(theme menuTheme) panelColors {
 	if theme == menuHighContrast {
-		return panelColors{panelSystemColor(5), panelSystemColor(15), panelSystemColor(8), panelSystemColor(17), panelSystemColor(6), panelSystemColor(13), panelSystemColor(14), panelSystemColor(8)}
+		window, face, text, gray, frame, highlight := panelSystemColor(5), panelSystemColor(15), panelSystemColor(8), panelSystemColor(17), panelSystemColor(6), panelSystemColor(13)
+		return panelColors{window, face, text, gray, frame, highlight, text, frame, highlight}
 	}
-	if theme == menuDark {
-		return panelColors{0x202020, 0x292929, 0xf0f0f0, 0xb6b6b6, 0x424242, 0x493c33, 0xf0f0f0, themeAccent(theme)}
-	}
-	return panelColors{0xffffff, 0xf8f6f5, 0x222222, 0x666666, 0xe4dcd7, 0xfcf3ed, 0x222222, themeAccent(theme)}
+	return panelPalette(theme == menuDark, themeAccent(theme))
 }
 
 func setPanelDPIAware() {
@@ -70,32 +64,22 @@ func (p *windowsPanel) scale(value int) int { return (value*p.dpi + 48) / 96 }
 
 func (p *windowsPanel) freeTheme() {
 	stock, _, _ := menuStockObject.Call(17)
-	seen := make(map[uintptr]bool)
-	for _, object := range []uintptr{p.font, p.bold, p.titleFont, p.background, p.headerBrush, p.selectionBrush} {
+	seen := map[uintptr]bool{}
+	for _, object := range []uintptr{p.font, p.strong, p.small, p.titleFont, p.background} {
 		if object != 0 && object != stock && !seen[object] {
 			menuDeleteObject.Call(object)
 			seen[object] = true
 		}
 	}
-	if p.imageList != 0 {
-		panelControls.NewProc("ImageList_Destroy").Call(p.imageList)
-	}
-	p.font, p.bold, p.titleFont, p.background, p.headerBrush, p.selectionBrush, p.imageList = 0, 0, 0, 0, 0, 0, 0
+	p.font, p.strong, p.small, p.titleFont, p.background = 0, 0, 0, 0, 0
 }
 
+// refreshTheme rebuilds the fonts and colours for the current app mode and
+// DPI. Only the four font sizes are fixed; every other size derives from
+// them (panelMetrics).
 func (p *windowsPanel) refreshTheme() {
 	if p.hwnd == 0 {
 		return
-	}
-	p.captureEdit()
-	p.rendering = true
-	defer func() { p.rendering = false }()
-	stock, _, _ := menuStockObject.Call(17)
-	for id, control := range p.controls {
-		panelSend.Call(control, panelSetFont, stock, 0)
-		if id == panelAccounts || id == panelFields {
-			panelSend.Call(control, panelListBase+3, 1, 0)
-		}
 	}
 	p.freeTheme()
 	p.theme = readMenuTheme()
@@ -103,52 +87,26 @@ func (p *windowsPanel) refreshTheme() {
 	var metrics menuNonClientMetrics
 	metrics.size = uint32(unsafe.Sizeof(metrics))
 	menuSystemParameters.Call(0x29, uintptr(metrics.size), uintptr(unsafe.Pointer(&metrics)), 0)
-	font := metrics.menuFont
-	if font.faceName[0] == 0 {
-		copyUTF16(font.faceName[:], "Segoe UI")
+	face := metrics.menuFont
+	if face.faceName[0] == 0 {
+		copyUTF16(face.faceName[:], "Segoe UI")
 	}
-	font.height, font.weight = int32(-p.scale(13)), 400
-	p.font, _, _ = menuCreateFont.Call(uintptr(unsafe.Pointer(&font)))
-	if p.font == 0 {
-		p.font, _, _ = menuStockObject.Call(17)
-	}
-	font.weight = 700
-	p.bold, _, _ = menuCreateFont.Call(uintptr(unsafe.Pointer(&font)))
-	if p.bold == 0 {
-		p.bold = p.font
-	}
-	font.height = int32(-p.scale(16))
-	p.titleFont, _, _ = menuCreateFont.Call(uintptr(unsafe.Pointer(&font)))
-	if p.titleFont == 0 {
-		p.titleFont = p.bold
-	}
-	brush := menuGDI.NewProc("CreateSolidBrush")
-	p.background, _, _ = brush.Call(p.palette.background)
-	p.headerBrush, _, _ = brush.Call(p.palette.header)
-	p.selectionBrush, _, _ = brush.Call(p.palette.selection)
-	p.imageList, _, _ = panelControls.NewProc("ImageList_Create").Call(1, uintptr(p.metrics().row), 0x20, 0, 1)
-	for id, control := range p.controls {
-		font := p.font
-		if id == 100 {
-			font = p.titleFont
+	stock, _, _ := menuStockObject.Call(17)
+	create := func(height, weight int32) uintptr {
+		font := face
+		font.height, font.weight = -height, weight
+		if handle, _, _ := menuCreateFont.Call(uintptr(unsafe.Pointer(&font))); handle != 0 {
+			return handle
 		}
-		if id == 220 || id == 225 {
-			font = p.bold
-		}
-		panelSend.Call(control, panelSetFont, font, 1)
-		if id == panelAccounts || id == panelFields {
-			panelSend.Call(control, panelListBase+1, 0, p.palette.background)
-			panelSend.Call(control, panelListBase+36, 0, p.palette.text)
-			panelSend.Call(control, panelListBase+38, 0, p.palette.background)
-			panelSend.Call(control, panelListBase+3, 1, p.imageList)
-		}
+		return stock
 	}
-	p.columnsFor(panelAccounts, p.model.panel.Columns)
-	p.columnsFor(panelFields, panelFieldColumns)
-	p.fitColumns(panelAccounts, p.accountWidths())
-	p.fitColumns(panelFields, p.fieldWidths())
-	panelInvalidate.Call(p.hwnd, 0, 1)
-	p.layout()
+	p.font = create(int32(p.scale(13)), 400)
+	p.strong = create(int32(p.scale(13)), 600)
+	p.small = create(int32(p.scale(11)), 400)
+	p.titleFont = create(int32(p.scale(16)), 700)
+	p.background, _, _ = panelCreateBrush.Call(p.palette.background)
+	p.position()
+	user32.NewProc("RedrawWindow").Call(p.hwnd, 0, 0, 0x1|0x4|0x80|0x400)
 }
 
 func clampPanelRect(anchor point, work menuRect, width, height int32) menuRect {
@@ -159,416 +117,244 @@ func clampPanelRect(anchor point, work menuRect, width, height int32) menuRect {
 	return menuRect{x, y, x + width, y + height}
 }
 
-func (p *windowsPanel) position() {
-	if p.anchor == nil {
-		p.anchor = new(point)
-		pGetCursorPos.Call(uintptr(unsafe.Pointer(p.anchor)))
-	}
-	anchor := *p.anchor
-	monitor, _, _ := user32.NewProc("MonitorFromPoint").Call(uintptr(uint64(uint32(anchor.x))|uint64(uint32(anchor.y))<<32), 2)
-	info := panelMonitor{size: uint32(unsafe.Sizeof(panelMonitor{}))}
-	if monitor == 0 || func() bool {
-		ok, _, _ := user32.NewProc("GetMonitorInfoW").Call(monitor, uintptr(unsafe.Pointer(&info)))
-		return ok == 0
-	}() {
-		info.work = menuRect{0, 0, 1920, 1080}
-	}
-	width, height := p.contentSize()
-	var window, client menuRect
-	user32.NewProc("GetWindowRect").Call(p.hwnd, uintptr(unsafe.Pointer(&window)))
-	panelGetClient.Call(p.hwnd, uintptr(unsafe.Pointer(&client)))
-	width += int(window.right - window.left - client.right)
-	height += int(window.bottom - window.top - client.bottom)
-	rect := clampPanelRect(anchor, info.work, int32(width), int32(height))
-	user32.NewProc("SetWindowPos").Call(p.hwnd, 0, uintptr(rect.left), uintptr(rect.top), uintptr(rect.right-rect.left), uintptr(rect.bottom-rect.top), 0x14)
-	panelInvalidate.Call(p.hwnd, 0, 1)
+func (p *windowsPanel) fill(dc uintptr, r menuRect, color uintptr) {
+	brush, _, _ := panelCreateBrush.Call(color)
+	menuFillRect.Call(dc, uintptr(unsafe.Pointer(&r)), brush)
+	menuDeleteObject.Call(brush)
 }
 
-func (p *windowsPanel) layout() {
-	if p.hwnd == 0 || len(p.controls) == 0 {
+func (p *windowsPanel) text(dc, font, color uintptr, r menuRect, text string, flags uintptr) {
+	if text == "" {
 		return
 	}
-	var rect menuRect
-	panelGetClient.Call(p.hwnd, uintptr(unsafe.Pointer(&rect)))
-	width, height := int(rect.right), int(rect.bottom)
-	m := p.metrics()
-	pad, inner := m.pad, width-2*m.pad
-	move := func(id, x, y, w, h int) {
-		if control := p.controls[id]; control != 0 {
-			panelMove.Call(control, uintptr(x), uintptr(y), uintptr(max(1, w)), uintptr(max(1, h)), 1)
-		}
-	}
-	head := p.head(m)
-	title := p.lineHeight(p.titleFont)
-	titleWidth := p.textWidth(p.titleFont, panelControlText(p.controls[100]))
-	versionWidth := p.textWidth(p.font, panelControlText(p.controls[101]))
-	move(100, pad, head.row+(m.control-title)/2, titleWidth+2, title)
-	move(101, pad+titleWidth+m.unit, head.row+(m.control-m.line)/2, versionWidth+2, m.line)
-	move(panelDashboard, pad+titleWidth+3*m.unit+versionWidth, head.row, p.buttonWidth(m, p.bold, panelControlText(p.controls[panelDashboard])), m.control)
-	accounts := p.buttonWidth(m, p.bold, "Accounts")
-	move(panelAccountTab, pad, head.tabs, accounts, m.control)
-	move(panelSettingsTab, pad+accounts+m.unit/2, head.tabs, p.buttonWidth(m, p.bold, "Advanced"), m.control)
-	buttons, footerHeight := p.footer(m, width)
-	footer := height - footerHeight
-	rules := []int{head.rule, footer}
-	var frames []menuRect
-	framed := func(id, x, y, w, h int) {
-		frames = append(frames, menuRect{int32(x), int32(y), int32(x + w), int32(y + h + 2*m.box)})
-		move(id, x+m.box, y+m.box, w-2*m.box, h)
-	}
-	status := footer + footerHeight - m.unit - m.line
-	move(228, pad, status, inner, m.line)
-	if p.controls[228] == 0 {
-		instance, _, _ := pGetModuleHandleW.Call(0)
-		control, _, _ := pCreateWindowExW.Call(0, uintptr(unsafe.Pointer(utf16z("STATIC"))), uintptr(unsafe.Pointer(utf16z(""))), panelChild|panelVisible,
-			uintptr(pad), uintptr(status), uintptr(inner), uintptr(m.line), p.hwnd, 228, instance, 0)
-		p.controls[228] = control
-		panelSend.Call(control, panelSetFont, p.font, 1)
-	}
-	text := p.model.panel.Status
-	if p.errorText != "" {
-		text = p.errorText
-	}
-	p.setText(228, text)
-	shown := make(map[string]bool)
-	for _, button := range buttons {
-		shown[button.id] = true
-	}
-	for key, id := range p.actionControls {
-		if !shown[key] {
-			panelShow.Call(p.controls[id], 0)
-		}
-	}
-	for _, button := range buttons {
-		id := p.actionControls[button.id]
-		move(id, pad+button.x, footer+m.unit+button.y, button.width, m.control)
-		panelShow.Call(p.controls[id], 5)
-	}
-	for _, id := range []int{panelAccounts, 220, 221, 222} {
-		panelShow.Call(p.controls[id], uintptr(boolValue(!p.model.settings))*5)
-	}
-	for _, id := range []int{224, panelScopes, panelFields, 225, 226, panelEdit, panelChoice, panelSave, panelReset, 227} {
-		panelShow.Call(p.controls[id], uintptr(boolValue(p.model.settings))*5)
-	}
-	if p.model.settings {
-		label := p.textWidth(p.font, panelControlText(p.controls[224]))
-		move(224, pad, head.content+(m.control-m.line)/2, label+2, m.line)
-		move(panelScopes, pad+label+m.unit, head.content, p.scopeWidth(m), p.dropHeight(m, len(p.model.panel.Settings)))
-		detail := footer - p.settingDetail(m)
-		top := head.content + m.control + m.unit
-		move(panelFields, pad, top, inner, detail-m.unit-top)
-		rules = append(rules, detail-m.unit/2)
-		p.fillLastColumn(panelFields)
-		if p.revealPending[panelFields] {
-			p.revealSelection(panelFields)
-		}
-		description := detail + m.line + m.unit/4
-		editor := description + 3*m.line + 4 + 2*m.box + m.unit/2
-		reset := p.buttonWidth(m, p.font, "Reset")
-		save := p.buttonWidth(m, p.bold, "Save")
-		saveX := width - pad - reset - m.unit*3/4 - save
-		move(225, pad, detail, inner, m.line)
-		framed(226, pad, description, inner, 3*m.line+4)
-		move(panelEdit, pad, editor, saveX-m.unit-pad, m.control)
-		move(panelChoice, pad, editor, saveX-m.unit-pad, p.dropHeight(m, len(p.choiceValues)))
-		move(panelSave, saveX, editor, save, m.control)
-		move(panelReset, width-pad-reset, editor, reset, m.control)
-		move(227, pad, editor+m.control+m.unit/2, inner, m.line)
-		p.rendering = true
-		p.renderEditor()
-		p.rendering = false
-	} else {
-		detail := footer - p.accountDetail(m)
-		lines := p.detailLines()*m.line + 4
-		move(panelAccounts, pad, head.content, inner, detail-m.unit-head.content)
-		rules = append(rules, detail-m.unit/2)
-		p.fillLastColumn(panelAccounts)
-		if p.revealPending[panelAccounts] {
-			p.revealSelection(panelAccounts)
-		}
-		move(220, pad, detail, inner, m.line)
-		framed(221, pad, detail+m.line+m.unit/4, inner, lines)
-		p.fitScroll(221)
-		move(222, pad, detail+m.line+m.unit/4+lines+2*m.box+m.unit/2, inner, m.line)
-	}
-	if !slices.Equal(rules, p.rules) || !slices.Equal(frames, p.frames) {
-		p.rules, p.frames = rules, frames
-		panelInvalidate.Call(p.hwnd, 0, 1)
-	}
-	panelInvalidate.Call(p.controls[panelAccountTab], 0, 1)
-	panelInvalidate.Call(p.controls[panelSettingsTab], 0, 1)
-}
-
-// Sized for the longest row so moving the selection never resizes the table.
-func (p *windowsPanel) detailLines() int {
-	lines := 1
-	for _, row := range p.model.panel.Rows {
-		lines = max(lines, len(row.Details))
-	}
-	return min(lines, 7)
-}
-
-func (p *windowsPanel) paint() uintptr {
-	var paint panelPaint
-	dc, _, _ := user32.NewProc("BeginPaint").Call(p.hwnd, uintptr(unsafe.Pointer(&paint)))
-	if dc != 0 {
-		menuFillRect.Call(dc, uintptr(unsafe.Pointer(&paint.rect)), p.background)
-		var rect menuRect
-		panelGetClient.Call(p.hwnd, uintptr(unsafe.Pointer(&rect)))
-		brush, _, _ := menuGDI.NewProc("CreateSolidBrush").Call(p.palette.line)
-		for _, y := range p.rules {
-			line := menuRect{0, int32(y), rect.right, int32(y) + 1}
-			menuFillRect.Call(dc, uintptr(unsafe.Pointer(&line)), brush)
-		}
-		for _, frame := range p.frames {
-			user32.NewProc("FrameRect").Call(dc, uintptr(unsafe.Pointer(&frame)), brush)
-		}
-		menuDeleteObject.Call(brush)
-	}
-	user32.NewProc("EndPaint").Call(p.hwnd, uintptr(unsafe.Pointer(&paint)))
-	return 0
-}
-
-func (p *windowsPanel) colorControl(dc, control uintptr) uintptr {
-	color := p.palette.text
-	id, _, _ := user32.NewProc("GetDlgCtrlID").Call(control)
-	if id == 101 || id == 221 || id == 222 || id == 224 || id == 226 || id == 227 || id == 228 {
-		color = p.palette.muted
-	}
+	menuSelectObject.Call(dc, font)
+	menuBkMode.Call(dc, 1)
 	menuTextColor.Call(dc, color)
-	menuGDI.NewProc("SetBkColor").Call(dc, p.palette.background)
-	return p.background
+	menuDrawText.Call(dc, uintptr(unsafe.Pointer(utf16z(text))), ^uintptr(0), uintptr(unsafe.Pointer(&r)), flags)
 }
 
+// shape draws a rounded rectangle (radius r) or, with ellipse, the circle
+// in it, outlined in edge and filled with inside; noFill leaves it hollow.
+func (p *windowsPanel) shape(dc uintptr, b menuRect, radius int, edge, inside uintptr, noFill, ellipse bool) {
+	pen, _, _ := panelCreatePen.Call(0, 1, edge)
+	brush, _, _ := menuStockObject.Call(5)
+	if !noFill {
+		brush, _, _ = panelCreateBrush.Call(inside)
+		defer menuDeleteObject.Call(brush)
+	}
+	oldPen, _, _ := menuSelectObject.Call(dc, pen)
+	oldBrush, _, _ := menuSelectObject.Call(dc, brush)
+	if ellipse {
+		panelEllipse.Call(dc, uintptr(b.left), uintptr(b.top), uintptr(b.right), uintptr(b.bottom))
+	} else {
+		panelRoundRect.Call(dc, uintptr(b.left), uintptr(b.top), uintptr(b.right), uintptr(b.bottom), uintptr(radius), uintptr(radius))
+	}
+	menuSelectObject.Call(dc, oldPen)
+	menuSelectObject.Call(dc, oldBrush)
+	menuDeleteObject.Call(pen)
+}
+
+func (p *windowsPanel) rule(dc uintptr, left, right, y int) {
+	p.fill(dc, menuRect{int32(left), int32(y), int32(right), int32(y + 1)}, p.palette.line)
+}
+
+// paint draws the popup's own parts: title, column labels, the rules, the
+// note line.
+func (p *windowsPanel) paint(dc uintptr) {
+	if dc == 0 {
+		return
+	}
+	saved, _, _ := menuSaveDC.Call(dc)
+	defer menuRestoreDC.Call(dc, saved)
+	var client menuRect
+	panelGetClient.Call(p.hwnd, uintptr(unsafe.Pointer(&client)))
+	p.fill(dc, client, p.palette.background)
+	g := p.geometry
+	p.text(dc, p.titleFont, p.palette.text, panelBox(g.title), p.panel.Title, panelLine)
+	header := panelBox(g.header)
+	header.right = client.right
+	p.fill(dc, header, p.palette.header)
+	p.rule(dc, 0, int(client.right), g.header.y+g.header.height-1)
+	for i, column := range p.panel.Columns {
+		if i < len(g.columns) {
+			span := g.columns[i]
+			p.text(dc, p.font, p.palette.muted, menuRect{int32(span.x), header.top, int32(span.x + span.width), header.bottom}, column.Label, panelLine)
+		}
+	}
+	p.rule(dc, 0, int(client.right), g.list.y+g.list.height)
+	note, color := p.panel.Note, p.palette.text
+	if p.panel.Alert {
+		color = p.palette.limit
+	}
+	if p.errorText != "" {
+		note, color = p.errorText, p.palette.limit
+	}
+	p.text(dc, p.font, color, panelBox(g.note), note, panelLine)
+	p.rule(dc, 0, int(client.right), g.footer)
+}
+
+func panelBox(r panelRect) menuRect {
+	return menuRect{int32(r.x), int32(r.y), int32(r.x + r.width), int32(r.y + r.height)}
+}
+
+// paintList draws the rows visible at the scroll offset; the Switch buttons
+// on them draw themselves.
+func (p *windowsPanel) paintList(dc uintptr) {
+	if dc == 0 {
+		return
+	}
+	saved, _, _ := menuSaveDC.Call(dc)
+	defer menuRestoreDC.Call(dc, saved)
+	var client menuRect
+	panelGetClient.Call(p.list, uintptr(unsafe.Pointer(&client)))
+	p.fill(dc, client, p.palette.background)
+	g := p.geometry
+	if len(p.panel.Rows) == 0 {
+		p.text(dc, p.font, p.palette.muted, client, p.panel.Empty, panelLine|dtCenter)
+		return
+	}
+	if g.row <= 0 {
+		return
+	}
+	for i := p.scroll / g.row; i < len(p.panel.Rows) && i*g.row-p.scroll < int(client.bottom); i++ {
+		top := i*g.row - p.scroll
+		p.paintRow(dc, p.panel.Rows[i], top)
+		if i < len(p.panel.Rows)-1 {
+			p.rule(dc, g.metrics.pad, int(client.right)-g.metrics.pad, top+g.row-1)
+		}
+	}
+}
+
+func (p *windowsPanel) paintRow(dc uintptr, row PanelRow, top int) {
+	g := p.geometry
+	unit := g.metrics.unit
+	first := menuRect{0, int32(top + g.line1), 0, int32(top + g.line1 + g.first)}
+	second := menuRect{0, int32(top + g.line2), 0, int32(top + g.line2 + g.second)}
+	account := g.columns[0]
+	end := int32(account.x + account.width)
+	first.left, first.right = int32(account.x), end
+	p.text(dc, p.strong, p.palette.text, first, row.Name, panelLine)
+	line := second
+	line.left, line.right = int32(account.x), end
+	if row.Plan != "" {
+		label := line
+		label.right = min(end, label.left+int32(panelLabelWidth(p, g.metrics, row.Plan)))
+		p.shape(dc, label, unit/2, p.palette.muted, 0, true, false)
+		p.text(dc, p.small, p.palette.text, label, row.Plan, panelLine|dtCenter)
+		line.left = label.right + int32(unit/2)
+	}
+	for _, part := range []struct {
+		text  string
+		color uintptr
+	}{{row.Tag, p.palette.muted}, {row.Warning, p.palette.limit}} {
+		if part.text != "" && line.left < end {
+			p.text(dc, p.small, part.color, line, part.text, panelLine)
+			line.left += int32(p.textWidth(panelSmall, part.text) + unit/2)
+		}
+	}
+	for i, cell := range row.Cells {
+		if i+1 >= len(g.columns)-1 {
+			break
+		}
+		span := g.columns[i+1]
+		left, right := int32(span.x), int32(span.x+span.width)
+		if cell.Absent {
+			p.text(dc, p.font, p.palette.muted, menuRect{left, int32(top), right, int32(top + g.row)}, "—", panelLine|dtCenter)
+			continue
+		}
+		color := p.palette.accent
+		if cell.Limit {
+			color = p.palette.limit
+		}
+		p.text(dc, p.font, color, menuRect{left, first.top, left + int32(g.share), first.bottom}, cell.Share, panelLine|dtRight)
+		height := max(2, unit/2)
+		bar := menuRect{left + int32(g.share+unit/2), (first.top+first.bottom)/2 - int32(height/2), right, 0}
+		bar.bottom = bar.top + int32(height)
+		p.fill(dc, bar, p.palette.track)
+		filled := bar
+		filled.right = bar.left + int32(float64(bar.right-bar.left)*min(100, max(0, cell.Pct))/100+0.5)
+		if filled.right > filled.left {
+			p.fill(dc, filled, color)
+		}
+		p.text(dc, p.small, p.palette.muted, menuRect{left, second.top, right, second.bottom}, cell.Reset, panelLine)
+	}
+}
+
+// drawButton draws every control: a row's Switch or "In use", a switch as
+// label, pill and state, and the footer's commands as outlined buttons.
 func (p *windowsPanel) drawButton(draw *drawMenuItem) bool {
 	if draw.ctlType != 4 {
 		return false
 	}
 	id := int(draw.ctlID)
-	selectedTab := id == panelAccountTab && !p.model.settings || id == panelSettingsTab && p.model.settings
-	primary := id == panelSave
-	brush, color, font := p.background, p.palette.text, p.font
-	if selectedTab || id == panelDashboard {
-		color, font = p.palette.accent, p.bold
-	}
-	if primary && draw.itemState&4 == 0 {
-		brush, _, _ = menuGDI.NewProc("CreateSolidBrush").Call(p.palette.accent)
-		defer menuDeleteObject.Call(brush)
-		color, font = p.palette.background, p.bold
-	}
-	if draw.itemState&1 != 0 {
-		brush = p.selectionBrush
-	}
-	if draw.itemState&4 != 0 {
-		color = p.palette.muted
-	}
-	menuFillRect.Call(draw.hdc, uintptr(unsafe.Pointer(&draw.rect)), brush)
-	if id != panelAccountTab && id != panelSettingsTab {
-		border, _, _ := menuGDI.NewProc("CreateSolidBrush").Call(p.palette.line)
-		user32.NewProc("FrameRect").Call(draw.hdc, uintptr(unsafe.Pointer(&draw.rect)), border)
-		menuDeleteObject.Call(border)
-	}
-	saved, _, _ := menuSaveDC.Call(draw.hdc)
-	defer menuRestoreDC.Call(draw.hdc, saved)
-	menuSelectObject.Call(draw.hdc, font)
-	menuBkMode.Call(draw.hdc, 1)
-	menuTextColor.Call(draw.hdc, color)
-	text := panelControlText(draw.hwndItem)
-	rect := draw.rect
-	menuDrawText.Call(draw.hdc, uintptr(unsafe.Pointer(utf16z(text))), ^uintptr(0), uintptr(unsafe.Pointer(&rect)), dtSingleLine|dtVCenter|dtNoPrefix|1|0x8000)
-	if selectedTab {
-		line := menuRect{rect.left, rect.bottom - int32(max(2, p.metrics().line/8)), rect.right, rect.bottom}
-		accent, _, _ := menuGDI.NewProc("CreateSolidBrush").Call(p.palette.accent)
-		menuFillRect.Call(draw.hdc, uintptr(unsafe.Pointer(&line)), accent)
-		menuDeleteObject.Call(accent)
-	}
-	if draw.itemState&0x10 != 0 {
-		user32.NewProc("DrawFocusRect").Call(draw.hdc, uintptr(unsafe.Pointer(&rect)))
-	}
-	return true
-}
-
-func (p *windowsPanel) drawCombo(draw *drawMenuItem) bool {
-	if draw.ctlType != 3 {
-		return false
-	}
-	labels := p.comboValues[int(draw.ctlID)]
-	text := ""
-	if int32(draw.itemID) >= 0 && int(draw.itemID) < len(labels) {
-		text = labels[draw.itemID]
-	}
-	color, brush := p.palette.text, p.background
-	if draw.itemState&1 != 0 {
-		color, brush = p.palette.selectedText, p.selectionBrush
-	}
-	if draw.itemState&4 != 0 {
-		color = p.palette.muted
-	}
-	menuFillRect.Call(draw.hdc, uintptr(unsafe.Pointer(&draw.rect)), brush)
-	saved, _, _ := menuSaveDC.Call(draw.hdc)
-	defer menuRestoreDC.Call(draw.hdc, saved)
-	menuSelectObject.Call(draw.hdc, p.font)
-	menuBkMode.Call(draw.hdc, 1)
-	menuTextColor.Call(draw.hdc, color)
-	rect := draw.rect
-	m := p.metrics()
-	rect.left += int32(m.unit * 5 / 8)
-	rect.right -= int32(m.unit * 3 / 8)
-	menuDrawText.Call(draw.hdc, uintptr(unsafe.Pointer(utf16z(text))), ^uintptr(0), uintptr(unsafe.Pointer(&rect)), dtSingleLine|dtVCenter|dtNoPrefix|0x8000)
-	if draw.itemState&0x10 != 0 {
-		user32.NewProc("DrawFocusRect").Call(draw.hdc, uintptr(unsafe.Pointer(&rect)))
-	}
-	return true
-}
-
-func (p *windowsPanel) drawList(draw *panelListDraw) uintptr {
-	if draw.custom.stage == 1 {
-		return 0x20
-	}
-	if draw.custom.stage == 0x30001 {
-		p.drawCell(draw.custom.header.hwnd, int(draw.custom.item), int(draw.subItem), draw.custom.dc)
-		return 4
-	}
-	if draw.custom.stage != 0x10001 {
-		return 0
-	}
-	hwnd, index := draw.custom.header.hwnd, int(draw.custom.item)
-	count := 3
-	if hwnd == p.controls[panelAccounts] {
-		count = len(p.model.panel.Columns)
-	}
-	var bounds, client menuRect
-	panelSend.Call(hwnd, panelListBase+14, uintptr(index), uintptr(unsafe.Pointer(&bounds)))
-	panelGetClient.Call(hwnd, uintptr(unsafe.Pointer(&client)))
-	bounds.left, bounds.right = 0, client.right
-	state, _, _ := panelSend.Call(hwnd, panelListBase+44, uintptr(index), 3)
-	brush := p.background
-	if state&2 != 0 {
-		brush = p.selectionBrush
-	}
-	menuFillRect.Call(draw.custom.dc, uintptr(unsafe.Pointer(&bounds)), brush)
-	for column := 0; column < count; column++ {
-		p.drawCell(hwnd, index, column, draw.custom.dc)
-	}
-	focus, _, _ := user32.NewProc("GetFocus").Call()
-	if focus == hwnd && state&1 != 0 {
-		user32.NewProc("DrawFocusRect").Call(draw.custom.dc, uintptr(unsafe.Pointer(&bounds)))
-	}
-	return 4
-}
-
-func (p *windowsPanel) drawCell(hwnd uintptr, index, column int, dc uintptr) {
-	if index < 0 || column < 0 {
-		return
-	}
-	text, active, format := "", false, uintptr(0)
-	if hwnd == p.controls[panelAccounts] {
-		if index >= len(p.model.panel.Rows) || column >= len(p.model.panel.Columns) {
-			return
-		}
-		row := p.model.panel.Rows[index]
-		if column == 0 {
-			text, active = row.Title, row.Active
-		} else if column < len(row.Cells) {
-			text = row.Cells[column]
-		}
-		if column > 0 && p.model.panel.Columns[column].ID != "owner" {
-			format = 2
-		}
-	} else if hwnd == p.controls[panelFields] {
-		scope := p.model.scope()
-		if scope == nil || index >= len(scope.Settings) {
-			return
-		}
-		field := scope.Settings[index]
-		cells := []string{field.Label, field.Value, field.Source}
-		if column >= len(cells) {
-			return
-		}
-		text = cells[column]
-	} else {
-		return
-	}
-	rect := menuRect{top: int32(column)}
-	panelSend.Call(hwnd, panelListBase+56, uintptr(index), uintptr(unsafe.Pointer(&rect)))
-	if column == 0 {
-		width, _, _ := panelSend.Call(hwnd, panelListBase+29, 0, 0)
-		rect.right = rect.left + int32(width)
-	}
-	state, _, _ := panelSend.Call(hwnd, panelListBase+44, uintptr(index), 2)
-	color, brush, font := p.palette.text, p.background, p.font
-	if state&2 != 0 {
-		color, brush = p.palette.selectedText, p.selectionBrush
-	}
-	if active {
-		font = p.bold
-		if p.theme != menuHighContrast {
-			color = p.palette.accent
-		}
-	}
-	menuFillRect.Call(dc, uintptr(unsafe.Pointer(&rect)), brush)
+	disabled, pressed := draw.itemState&4 != 0, draw.itemState&1 != 0
+	focused := draw.itemState&0x10 != 0 && draw.itemState&0x200 == 0
+	dc, rect := draw.hdc, draw.rect
 	saved, _, _ := menuSaveDC.Call(dc)
 	defer menuRestoreDC.Call(dc, saved)
-	menuSelectObject.Call(dc, font)
-	menuBkMode.Call(dc, 1)
-	menuTextColor.Call(dc, color)
-	m := p.metrics()
-	if column == 0 && hwnd == p.controls[panelAccounts] {
-		if active {
-			check := rect
-			check.left += int32(m.unit / 2)
-			check.right = check.left + int32(2*m.unit)
-			menuDrawText.Call(dc, uintptr(unsafe.Pointer(utf16z("✓"))), ^uintptr(0), uintptr(unsafe.Pointer(&check)), dtSingleLine|dtVCenter|dtNoPrefix)
+	p.fill(dc, rect, p.palette.background)
+	label, font, color := "", p.font, p.palette.text
+	if i, ok := p.rowFor(id); ok {
+		if p.panel.Rows[i].Active {
+			p.text(dc, p.strong, p.palette.accent, rect, "In use", panelLine|dtCenter)
+			return true
 		}
-		rect.left += int32(3 * m.unit)
+		label = "Switch"
+	} else if action, ok := p.actionFor(id); ok {
+		if action.Kind == KindToggle {
+			p.drawToggle(dc, rect, action, disabled)
+			if focused {
+				panelFocusRect.Call(dc, uintptr(unsafe.Pointer(&rect)))
+			}
+			return true
+		}
+		label = action.Title
+		if action.ID == "open" {
+			font, color = p.strong, p.palette.accent
+		}
 	} else {
-		rect.left += int32(m.unit)
+		return false
 	}
-	rect.right -= int32(m.unit * 3 / 4)
-	menuDrawText.Call(dc, uintptr(unsafe.Pointer(utf16z(text))), ^uintptr(0), uintptr(unsafe.Pointer(&rect)), dtSingleLine|dtVCenter|dtNoPrefix|format|0x8000)
+	if pressed {
+		p.fill(dc, rect, p.palette.selection)
+	}
+	if disabled {
+		color = p.palette.muted
+	}
+	p.shape(dc, rect, p.geometry.metrics.unit/2, p.palette.line, 0, true, false)
+	p.text(dc, font, color, rect, label, panelLine|dtCenter)
+	if focused {
+		inner := menuRect{rect.left + 2, rect.top + 2, rect.right - 2, rect.bottom - 2}
+		panelFocusRect.Call(dc, uintptr(unsafe.Pointer(&inner)))
+	}
+	return true
 }
 
-func (p *windowsPanel) drawHeader(draw *panelCustomDraw) uintptr {
-	if draw.stage == 1 {
-		return 0x20
+// drawToggle is a switch: its label, a pill filled with the accent and the
+// knob right when on, outlined with the knob left when off, and the word.
+func (p *windowsPanel) drawToggle(dc uintptr, rect menuRect, action Item, disabled bool) {
+	m := p.geometry.metrics
+	text, edge := p.palette.text, p.palette.accent
+	if disabled {
+		text, edge = p.palette.muted, p.palette.muted
 	}
-	if draw.stage != 0x10001 {
-		return 0
+	x := rect.left + int32(m.unit/2)
+	p.text(dc, p.font, text, menuRect{x, rect.top, rect.right, rect.bottom}, action.Title, panelLine)
+	x += int32(p.textWidth(panelBody, action.Title) + m.unit/2)
+	width, height := panelPill(m)
+	top := (rect.top+rect.bottom)/2 - int32(height/2)
+	pill := menuRect{x, top, x + int32(width), top + int32(height)}
+	knob := int32(height - 4)
+	if action.Checked {
+		p.shape(dc, pill, height, edge, edge, false, false)
+		p.shape(dc, menuRect{pill.right - 2 - knob, top + 2, pill.right - 2, top + 2 + knob}, 0, p.palette.background, p.palette.background, false, true)
+	} else {
+		p.shape(dc, pill, height, p.palette.muted, 0, true, false)
+		p.shape(dc, menuRect{pill.left + 2, top + 2, pill.left + 2 + knob, top + 2 + knob}, 0, p.palette.muted, p.palette.muted, false, true)
 	}
-	parent, _, _ := user32.NewProc("GetParent").Call(draw.header.hwnd)
-	labels := []string{"Setting", "Value", "Source"}
-	index := int(draw.item)
-	format := uintptr(0)
-	if parent == p.controls[panelAccounts] {
-		labels = nil
-		for _, column := range p.model.panel.Columns {
-			labels = append(labels, column.Label)
-		}
-		if index > 0 && index < len(p.model.panel.Columns) && p.model.panel.Columns[index].ID != "owner" {
-			format = 2
-		}
-		if index < len(p.model.panel.Columns) && p.model.panel.Columns[index].ID == p.model.panel.SortColumn {
-			if p.model.panel.SortDescending {
-				labels[index] += " ↓"
-			} else {
-				labels[index] += " ↑"
-			}
-		}
+	state := "off"
+	if action.Checked {
+		state = "on"
 	}
-	if index < 0 || index >= len(labels) {
-		return 0
-	}
-	menuFillRect.Call(draw.dc, uintptr(unsafe.Pointer(&draw.rect)), p.headerBrush)
-	menuSelectObject.Call(draw.dc, p.font)
-	menuBkMode.Call(draw.dc, 1)
-	menuTextColor.Call(draw.dc, p.palette.muted)
-	m := p.metrics()
-	rect := draw.rect
-	rect.left += int32(m.unit)
-	rect.right -= int32(m.unit * 3 / 4)
-	if parent == p.controls[panelAccounts] && index == 0 {
-		rect.left += int32(2 * m.unit)
-	}
-	menuDrawText.Call(draw.dc, uintptr(unsafe.Pointer(utf16z(labels[index]))), ^uintptr(0), uintptr(unsafe.Pointer(&rect)), dtSingleLine|dtVCenter|dtNoPrefix|format|0x8000)
-	return 4
+	p.text(dc, p.font, text, menuRect{pill.right + int32(m.unit/2), rect.top, rect.right, rect.bottom}, state, panelLine)
 }

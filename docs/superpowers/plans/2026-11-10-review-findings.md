@@ -126,12 +126,9 @@ evidence.
 | TRAY-5 | start at login has two owners on a provisioned box | cli/traypanel.go, autostart/registry_windows.go | FIX D9 | VL | U |
 | TRAY-6 | Linux registers with the watcher once | tray/sni_linux.go | FIX D9 |  | U |
 | TRAY-7 | text menus drop a switch row's second line | tray/tray.go FallbackTitle | FIX D9 | TV | U |
-| TRAY-8 | panel keeps stale countdowns offline; "No accounts" before first state | cli/traypanel.go | FIX D9 |  | U |
 | TRAY-9 | macOS: turning start at login off boots out the caller | autostart/launchagent.go | FIX | P | U |
-| TRAY-10 | Windows panel: Enter on an account does nothing | tray/panel_windows.go | FIX | P | U |
 | TRAY-11 | Windows: a refused first NIM_ADD ends the app | tray/tray_windows.go | FIX | P | U |
 | TRAY-12 | Linux: underscore in a label is swallowed | tray/sni_linux.go | FIX | P | U |
-| TRAY-13 | HDM_LAYOUT gets stack addresses as integers | tray/panel_fit_windows.go | FIX | P | U |
 
 ## Switching lane
 

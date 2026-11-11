@@ -44,8 +44,7 @@ type shellActions struct {
 	// SwitchTo switches to the account a row key names ("claude:2",
 	// "codex:1", A47) and returns the codex sessions still running on the
 	// old Codex account (nil for a Claude switch).
-	SwitchTo    func(key string) (runningPIDs []int, err error)
-	SaveSetting func(scope, key string, value *string) error
+	SwitchTo func(key string) (runningPIDs []int, err error)
 	// AddCurrent stores the login Claude Code is signed in with as an
 	// account (A37; web.Server.AddCurrentLogin). nil hides the row.
 	AddCurrent   func() (web.AddLoginResult, error)
@@ -117,8 +116,14 @@ type appShell struct {
 	alerted         map[string]bool // Claude row key → threshold alert already shown
 	recoveryAlerted map[string]bool
 	last            web.State
-	panelOrder      string
-	panelDescending bool
+	// note is the panel's line under the list, the last action's result;
+	// noteAlert draws it as a warning (DESIGN A84).
+	note      string
+	noteAlert bool
+	// refresh lays the panel out again when no state came for panelRefresh
+	// (the constant unless a test sets it), so its countdowns stay current.
+	refresh      *time.Timer
+	panelRefresh time.Duration
 	// pending is a newer release the user has not installed yet (menu item);
 	// offered is the last tag a dialog/notification was shown for.
 	pending string
@@ -220,6 +225,7 @@ func (a *appShell) paint(st web.State) {
 	a.tray.SetMenu(a.menu(st))
 	if panel, ok := a.tray.(tray.PanelTray); ok {
 		panel.SetPanel(a.panel(st))
+		a.armPanelRefresh()
 	}
 	a.syncIcon()
 	a.thresholdAlert(st, active, ok)
@@ -508,50 +514,7 @@ func (a *appShell) click(id string) {
 			a.notify("Could not open the dashboard", capitalizeFirst(err.Error()))
 		}
 	case strings.HasPrefix(id, "switch:"):
-		provider, num := splitRowKey(strings.TrimPrefix(id, "switch:"))
-		switch provider {
-		case reporting.ProviderCodex:
-			a.codexSwitchClick(num)
-			return
-		case reporting.ProviderClaude:
-		default:
-			a.notify("Switch failed", "No "+provider+" accounts here.")
-			return
-		}
-		// An API-key account changes HOW Claude Code authenticates, and a
-		// running session cannot pick that up — so it is never one click (A33).
-		// One with a base URL also changes where the requests go, which a
-		// running session takes up when it re-reads settings.json (A46).
-		apiKey, base := a.apiKeyAccount(num)
-		if apiKey {
-			if a.act.ApproveAPIKey == nil || a.act.Ask == nil {
-				a.notify("Switch needs confirmation", "Account #"+num+" uses an API key. Switch to it from the dashboard or the command line, where it can ask you first.")
-				return
-			}
-			detail := "This account authenticates with a token instead of a subscription login, and its usage is billed per token. "
-			if base != "" {
-				detail += switching.EndpointNotice(base) + " " + a.endpointSessionNotice()
-			} else {
-				detail += a.act.RestartNotice()
-			}
-			ok, err := a.act.Ask("Switch to API-key account #"+num+"?", detail, "Switch", "Cancel")
-			if err != nil || !ok {
-				return
-			}
-			a.act.ApproveAPIKey(num)
-		}
-		if _, err := a.act.SwitchTo(reporting.ProviderClaude + ":" + num); err != nil {
-			a.notify("Switch failed", err.Error())
-			return
-		}
-		// The menu stays open (A37): it shows the new active account now,
-		// not at the dashboard's next poll.
-		a.dashboardChanged()
-		if base != "" {
-			a.notify("Switched to account #"+num, switching.EndpointAppliedNote(endpointHost(base)))
-			return
-		}
-		a.notify("Switched to account #"+num, "Restart running Claude Code sessions to pick it up.")
+		a.switchClick(strings.TrimPrefix(id, "switch:"))
 	case id == "auto":
 		a.mu.Lock()
 		managed := a.last.Auto != nil && a.last.Auto.ManagedBy != ""
@@ -567,9 +530,12 @@ func (a *appShell) click(id string) {
 			err = a.act.AutoStart()
 		}
 		if err != nil {
+			a.setNote("Auto-switch: "+err.Error(), true)
 			a.notify("Auto-switch", err.Error())
+			a.repaint()
 			return
 		}
+		a.setNote("", false)
 		a.mu.Lock()
 		rotated := rotatedAccounts(a.last)
 		a.mu.Unlock()
@@ -600,7 +566,9 @@ func (a *appShell) click(id string) {
 		if err == nil {
 			err = a.act.SetAutostart(!on)
 		}
+		a.setNote("", false)
 		if err != nil {
+			a.setNote("Start at login: "+err.Error(), true)
 			a.notify("Start at login", err.Error())
 		}
 		a.repaint()
@@ -613,18 +581,110 @@ func (a *appShell) click(id string) {
 	}
 }
 
-// codexSwitchClick switches to Codex slot num, as the dashboard's Codex row
-// and the terminal dashboard do, and says which codex sessions still run on
-// the old account (A47). A Codex API-key login is never switchable, so its
-// row is disabled and nothing here asks first.
-func (a *appShell) codexSwitchClick(num string) {
-	pids, err := a.act.SwitchTo(reporting.ProviderCodex + ":" + num)
-	if err != nil {
-		a.notify("Switch failed", err.Error())
+// switchClick switches to the account a row key names ("claude:2",
+// "codex:1", A47). A switch made by hand stays where the user put it:
+// auto-switch, when on and not a dry run, is turned off first, or its next
+// tick would move the login away again; a switch that then fails turns it
+// back on (DESIGN A84). A Codex switch says which codex sessions still run
+// on the old account; a Codex API-key login is never switchable, so nothing
+// asks first.
+func (a *appShell) switchClick(key string) {
+	provider, num := splitRowKey(key)
+	base, label := "", "#"+num
+	switch provider {
+	case reporting.ProviderCodex:
+		label = "Codex #" + num
+	case reporting.ProviderClaude:
+		if !a.approveClaudeSwitch(num) {
+			return
+		}
+		_, base = a.apiKeyAccount(num)
+	default:
+		a.notify("Switch failed", "No "+provider+" accounts here.")
 		return
 	}
+	paused, err := a.pauseAuto()
+	if err != nil {
+		a.setNote("Not switched: auto-switch could not be turned off: "+err.Error(), true)
+		a.notify("Switch failed", "Auto-switch could not be turned off, so the login stays: "+err.Error())
+		a.repaint()
+		return
+	}
+	pids, err := a.act.SwitchTo(provider + ":" + num)
+	if err != nil {
+		reason := err.Error()
+		if paused {
+			if again := a.act.AutoStart(); again != nil {
+				reason += "; auto-switch stays off: " + again.Error()
+			}
+		}
+		a.setNote("Switch failed: "+reason, true)
+		a.notify("Switch failed", reason)
+		a.repaint()
+		return
+	}
+	// The menu stays open (A37): it shows the new active account now, not
+	// at the dashboard's next poll.
 	a.dashboardChanged()
-	a.notify("Switched Codex to account #"+num, codexRestartSentence(pids))
+	note := "Switched to " + label + "."
+	title, body := "Switched to account #"+num, "Restart running Claude Code sessions to pick it up."
+	switch {
+	case provider == reporting.ProviderCodex:
+		title, body = "Switched Codex to account #"+num, codexRestartSentence(pids)
+	case base != "":
+		body = switching.EndpointAppliedNote(endpointHost(base))
+	}
+	if paused {
+		const stays = " Auto-switch is now off, so the login stays there."
+		note += stays
+		body += stays
+	}
+	a.setNote(note, false)
+	a.notify(title, body)
+	a.repaint()
+}
+
+// approveClaudeSwitch asks before a switch onto an API-key account: it
+// changes HOW Claude Code authenticates, which a running session cannot pick
+// up, so it is never one click (A33). One with a base URL also changes where
+// the requests go, which a running session takes up when it re-reads
+// settings.json (A46).
+func (a *appShell) approveClaudeSwitch(num string) bool {
+	apiKey, base := a.apiKeyAccount(num)
+	if !apiKey {
+		return true
+	}
+	if a.act.ApproveAPIKey == nil || a.act.Ask == nil {
+		a.notify("Switch needs confirmation", "Account #"+num+" uses an API key. Switch to it from the dashboard or the command line, where it can ask you first.")
+		return false
+	}
+	detail := "This account authenticates with a token instead of a subscription login, and its usage is billed per token. "
+	if base != "" {
+		detail += switching.EndpointNotice(base) + " " + a.endpointSessionNotice()
+	} else {
+		detail += a.act.RestartNotice()
+	}
+	ok, err := a.act.Ask("Switch to API-key account #"+num+"?", detail, "Switch", "Cancel")
+	if err != nil || !ok {
+		return false
+	}
+	a.act.ApproveAPIKey(num)
+	return true
+}
+
+// pauseAuto turns auto-switch off before a switch by hand and says whether
+// it did. A dry run decides nothing for real, so it is left running.
+func (a *appShell) pauseAuto() (bool, error) {
+	a.mu.Lock()
+	dryRun := a.last.Auto != nil && a.last.Auto.DryRun
+	a.mu.Unlock()
+	if !a.autoRunning() || dryRun || a.act.AutoStop == nil {
+		return false, nil
+	}
+	if err := a.act.AutoStop(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // codexRestartSentence is what a Codex switch leaves to do: `codex switch`'s

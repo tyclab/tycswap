@@ -390,10 +390,6 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	sh = newAppShell(t, shellActions{
 		OpenDashboard: openDashboard,
 		AccountSetup:  openAccountSetup,
-		SaveSetting: func(scope, key string, value *string) error {
-			_, err := srv.SaveSetting(scope, key, value)
-			return err
-		},
 		// A row key: the Claude switcher or the Codex one (A47).
 		SwitchTo: func(key string) ([]int, error) {
 			return d.switchTo(key)
