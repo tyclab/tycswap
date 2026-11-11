@@ -20,8 +20,9 @@ import (
 	"github.com/tyclab/tycswap/internal/platform"
 )
 
-// downloadServer is an https stand-in for GitHub: the latest release at
-// /latest, and the release's files at /download/<tag>/<name>.
+// downloadServer is an https stand-in for GitHub: /latest redirects to the
+// latest release's tag page, and the release's files are at
+// /download/<tag>/<name>.
 type downloadServer struct {
 	t     *testing.T
 	srv   *httptest.Server
@@ -56,7 +57,7 @@ func newDownloadServer(t *testing.T, tag string, assets map[string][]byte, sums 
 	rs.srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rs.hits.Add(1)
 		if r.URL.Path == "/latest" {
-			_, _ = io.WriteString(w, `{"tag_name":"`+rs.tag+`"}`)
+			http.Redirect(w, r, "/releases/tag/"+rs.tag, http.StatusFound)
 			return
 		}
 		name, ok := strings.CutPrefix(r.URL.Path, "/download/"+rs.tag+"/")
@@ -93,10 +94,9 @@ func installedBinary(t *testing.T, name string) (dir, exe string) {
 	return dir, exe
 }
 
-// downloadUpgrader upgrades from rs: the package's Endpoint and ReleasesURL
-// point at it for the test.
+// downloadUpgrader upgrades from rs: the package's ReleasesURL points at it
+// for the test.
 func downloadUpgrader(rs *downloadServer, version string) (Upgrader, *bytes.Buffer, *bytes.Buffer) {
-	withEndpoint(rs.t, rs.srv.URL+"/latest")
 	withReleasesURL(rs.t, rs.srv.URL)
 	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
 	u := Upgrader{
@@ -249,11 +249,11 @@ func TestDownloadUpgrade_NoAssetForPlatform(t *testing.T) {
 	}
 }
 
-func TestDownloadUpgrade_EndpointUnreachable(t *testing.T) {
+func TestDownloadUpgrade_ReleasesUnreachable(t *testing.T) {
 	rs := newDownloadServer(t, "v0.7.0", nil, nil)
 	_, exe := installedBinary(t, "tycswap")
 	u, _, stderr := downloadUpgrader(rs, "v0.6.0")
-	withEndpoint(t, "https://127.0.0.1:1/latest")
+	withReleasesURL(t, "https://127.0.0.1:1")
 
 	if code := u.SelfUpgrade(exe, platform.Linux); code != 1 {
 		t.Fatalf("exit %d, want 1", code)
@@ -280,14 +280,13 @@ func TestDownloadUpgrade_HTTPSOnly(t *testing.T) {
 	t.Cleanup(plain.Close)
 	redirecting := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/latest" {
-			_, _ = io.WriteString(w, `{"tag_name":"v0.7.0"}`)
+			http.Redirect(w, r, "/releases/tag/v0.7.0", http.StatusFound)
 			return
 		}
 		http.Redirect(w, r, plain.URL+r.URL.Path, http.StatusFound)
 	}))
 	t.Cleanup(redirecting.Close)
 	u, _, stderr = downloadUpgrader(rs, "v0.6.0")
-	withEndpoint(t, redirecting.URL+"/latest")
 	withReleasesURL(t, redirecting.URL)
 	u.HTTPClient = redirecting.Client()
 	if code := u.SelfUpgrade(exe, platform.Linux); code != 1 || !strings.Contains(stderr.String(), "non-https") {
@@ -367,7 +366,7 @@ func TestDownloadUpgrade_RedirectCap(t *testing.T) {
 		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case r.URL.Path == "/latest":
-				_, _ = io.WriteString(w, `{"tag_name":"v0.7.0"}`)
+				http.Redirect(w, r, "/releases/tag/v0.7.0", http.StatusFound)
 			case r.URL.Path == "/download/v0.7.0/SHA256SUMS":
 				_, _ = w.Write(sumsFor(map[string][]byte{asset: body}))
 			case r.URL.Path == "/download/v0.7.0/"+asset:

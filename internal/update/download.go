@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/mod/semver"
 
+	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/platform"
 )
 
@@ -217,10 +218,16 @@ func (u Upgrader) downloadUpgrade(exePath string, plat platform.Platform) int {
 		fmt.Fprintf(u.stderr(), "To upgrade manually, download the build for this machine from:\n  %s\n", ReleasesURL)
 		return 1
 	}
+	// The release lookup asks ReleasesURL too: plain http is refused before
+	// anything is fetched.
+	releases := strings.TrimRight(ReleasesURL, "/")
+	if r, err := url.Parse(releases); err != nil || r.Scheme != "https" || r.Host == "" {
+		return manual("The release downloads at %s/download/ are not https; refusing.", releases)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), DownloadTimeout)
 	defer cancel()
 	client := u.httpClient()
-	tag, err := fetchLatestTag(ctx, client, Endpoint)
+	tag, err := fetchLatestTag(ctx, client, releases, clock.System{})
 	if err != nil {
 		return manual("Could not read the newest release: %v", err)
 	}
@@ -237,7 +244,7 @@ func (u Upgrader) downloadUpgrade(exePath string, plat platform.Platform) int {
 	if asset == "" {
 		return manual("No release build is published for this platform.")
 	}
-	base := strings.TrimRight(ReleasesURL, "/") + "/download/" + tag + "/"
+	base := releases + "/download/" + tag + "/"
 	if b, err := url.Parse(base); err != nil || b.Scheme != "https" || b.Host == "" {
 		return manual("The release downloads at %s are not https; refusing.", base)
 	}

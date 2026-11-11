@@ -27,33 +27,48 @@ func fakeAt(epoch float64) *clock.Fake {
 	return clock.NewFake(time.Unix(sec, nsec))
 }
 
-// releaseServer returns an httptest server that serves tagName as the
-// releases endpoint's tag_name field (or a non-200 when tagName is "").
+// releasesPath is where a test server keeps its release pages, as GitHub
+// keeps them under /<owner>/<repo>/releases.
+const releasesPath = "/owner/repo/releases"
+
+// releaseServer stands in for GitHub's release pages: <releasesPath>/latest
+// redirects to tagName's tag page, or answers 404 when tagName is "".
 func releaseServer(t *testing.T, tagName string) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return releasePages(t, func(w http.ResponseWriter, r *http.Request) {
 		if tagName == "" {
-			w.WriteHeader(http.StatusNotFound)
+			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"tag_name": tagName})
+		http.Redirect(w, r, releasesPath+"/tag/"+tagName, http.StatusFound)
+	})
+}
+
+// releasePages serves latest at <releasesPath>/latest and points ReleasesURL
+// at the server. Any other page fails the test: the check reads the tag from
+// the redirect and must not follow it.
+func releasePages(t *testing.T, latest http.HandlerFunc) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != releasesPath+"/latest" {
+			t.Errorf("requested %s: the check followed the redirect", r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		latest(w, r)
 	}))
 	t.Cleanup(srv.Close)
+	withReleasesURL(t, srv.URL+releasesPath)
 	return srv
 }
 
-// withEndpoint swaps the package-level Endpoint var for the test's duration.
-func withEndpoint(t *testing.T, url string) {
-	t.Helper()
-	prev := Endpoint
-	Endpoint = url
-	t.Cleanup(func() { Endpoint = prev })
+// latestURL is the page the check asks, for the server releasePages started.
+func latestURL(srv *httptest.Server) string {
+	return srv.URL + releasesPath + "/latest"
 }
 
 func TestCheckForUpdate_NewerVersionAvailable(t *testing.T) {
-	srv := releaseServer(t, "v0.3.0")
-	withEndpoint(t, srv.URL)
+	releaseServer(t, "v0.3.0")
 
 	c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}
 	msg := c.CheckForUpdate("", "v0.2.0", platform.Linux)
@@ -65,8 +80,7 @@ func TestCheckForUpdate_NewerVersionAvailable(t *testing.T) {
 }
 
 func TestCheckForUpdate_UpToDate(t *testing.T) {
-	srv := releaseServer(t, "v0.2.0")
-	withEndpoint(t, srv.URL)
+	releaseServer(t, "v0.2.0")
 
 	c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}
 	if msg := c.CheckForUpdate("", "v0.2.0", platform.Linux); msg != "" {
@@ -96,8 +110,7 @@ func TestCheckForUpdate_SemverCompareTable(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := releaseServer(t, tc.latest)
-			withEndpoint(t, srv.URL)
+			releaseServer(t, tc.latest)
 
 			c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}
 			msg := c.CheckForUpdate("", tc.current, platform.Linux)
@@ -110,8 +123,7 @@ func TestCheckForUpdate_SemverCompareTable(t *testing.T) {
 }
 
 func TestCheckForUpdate_FetchFailureNoNotice(t *testing.T) {
-	srv := releaseServer(t, "") // 404
-	withEndpoint(t, srv.URL)
+	releaseServer(t, "") // 404
 
 	c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}
 	if msg := c.CheckForUpdate("", "v0.1.0", platform.Linux); msg != "" {
@@ -125,7 +137,7 @@ func TestCheckForUpdate_UnreachableEndpointNoNotice(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	url := srv.URL
 	srv.Close() // now unreachable
-	withEndpoint(t, url)
+	withReleasesURL(t, url)
 
 	c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}
 	if msg := c.CheckForUpdate("", "v0.1.0", platform.Linux); msg != "" {
@@ -145,7 +157,7 @@ func TestCheckForUpdate_TimeoutNoNotice(t *testing.T) {
 	// or Close would deadlock forever on the still-blocked in-flight handler.
 	t.Cleanup(srv.Close)
 	t.Cleanup(func() { close(block) })
-	withEndpoint(t, srv.URL)
+	withReleasesURL(t, srv.URL)
 
 	prevTimeout := FetchTimeout
 	FetchTimeout = 20 * time.Millisecond
@@ -162,12 +174,10 @@ func TestCheckForUpdate_TimeoutNoNotice(t *testing.T) {
 // entirely while fresh").
 func TestCheckForUpdate_CacheHitSkipsNetwork(t *testing.T) {
 	calls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	releasePages(t, func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		_ = json.NewEncoder(w).Encode(map[string]string{"tag_name": "v0.3.0"})
-	}))
-	t.Cleanup(srv.Close)
-	withEndpoint(t, srv.URL)
+		http.Redirect(w, r, releasesPath+"/tag/v0.3.0", http.StatusFound)
+	})
 
 	dir := t.TempDir()
 	c := Checker{CacheDir: dir, Clk: fakeAt(1000)}
@@ -195,12 +205,10 @@ func TestCheckForUpdate_CacheHitSkipsNetwork(t *testing.T) {
 // failures as None, so a down endpoint is retried at most once per TTL").
 func TestCheckForUpdate_NegativeResultCached(t *testing.T) {
 	calls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	releasePages(t, func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	t.Cleanup(srv.Close)
-	withEndpoint(t, srv.URL)
+	})
 
 	dir := t.TempDir()
 	c1 := Checker{CacheDir: dir, Clk: fakeAt(1000)}
@@ -226,12 +234,10 @@ func TestCheckForUpdate_NegativeResultCached(t *testing.T) {
 // triggers a fresh network call.
 func TestCheckForUpdate_CacheExpiresRefetches(t *testing.T) {
 	calls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	releasePages(t, func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		_ = json.NewEncoder(w).Encode(map[string]string{"tag_name": "v0.3.0"})
-	}))
-	t.Cleanup(srv.Close)
-	withEndpoint(t, srv.URL)
+		http.Redirect(w, r, releasesPath+"/tag/v0.3.0", http.StatusFound)
+	})
 
 	dir := t.TempDir()
 	c1 := Checker{CacheDir: dir, Clk: fakeAt(1000)}
@@ -269,8 +275,7 @@ func TestCheckForUpdate_HintByInstallShape(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := releaseServer(t, "v0.9.0")
-			withEndpoint(t, srv.URL)
+			releaseServer(t, "v0.9.0")
 
 			c := Checker{
 				CacheDir: t.TempDir(),
@@ -318,28 +323,31 @@ func TestCheckForUpdate_ReadsPythonFixtureCacheGracefully(t *testing.T) {
 	}
 }
 
-func TestReleaseEndpointReceivesRequest(t *testing.T) {
-	var gotPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		_ = json.NewEncoder(w).Encode(map[string]string{"tag_name": "v9.9.9"})
-	}))
-	t.Cleanup(srv.Close)
-	withEndpoint(t, srv.URL+"/repos/tyclab/tycswap/releases/latest")
+// TestReleasePageReceivesRequest: the one request is a GET of
+// <ReleasesURL>/latest, a trailing slash on ReleasesURL or not.
+func TestReleasePageReceivesRequest(t *testing.T) {
+	for _, suffix := range []string{"", "/"} {
+		var gotPath string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotPath = r.URL.Path
+			http.Redirect(w, r, "/tyclab/tycswap/releases/tag/v9.9.9", http.StatusFound)
+		}))
+		t.Cleanup(srv.Close)
+		withReleasesURL(t, srv.URL+"/tyclab/tycswap/releases"+suffix)
 
-	c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}
-	msg := c.CheckForUpdate("", "v0.1.0", platform.Linux)
-	if msg == "" {
-		t.Fatal("expected a notice")
-	}
-	if want := "/repos/tyclab/tycswap/releases/latest"; gotPath != want {
-		t.Errorf("request path = %q, want %q", gotPath, want)
+		c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}
+		if msg := c.CheckForUpdate("", "v0.1.0", platform.Linux); msg == "" {
+			t.Fatalf("ReleasesURL with %q: expected a notice", suffix)
+		}
+		if want := "/tyclab/tycswap/releases/latest"; gotPath != want {
+			t.Errorf("ReleasesURL with %q: request path = %q, want %q", suffix, gotPath, want)
+		}
 	}
 }
 
-func TestDefaultEndpointAndCacheTTL(t *testing.T) {
-	if Endpoint != "https://api.github.com/repos/tyclab/tycswap/releases/latest" {
-		t.Errorf("default Endpoint = %q, unexpected", Endpoint)
+func TestDefaultReleasesURLAndCacheTTL(t *testing.T) {
+	if ReleasesURL != "https://github.com/tyclab/tycswap/releases" {
+		t.Errorf("default ReleasesURL = %q, unexpected", ReleasesURL)
 	}
 	if fmt.Sprint(CacheTTL) != "24h0m0s" {
 		t.Errorf("CacheTTL = %v, want 24h0m0s", CacheTTL)
@@ -351,7 +359,6 @@ func TestDefaultEndpointAndCacheTTL(t *testing.T) {
 // cache.
 func TestLatest_ReportsTagAndRefreshesCache(t *testing.T) {
 	srv := releaseServer(t, "v0.9.0")
-	withEndpoint(t, srv.URL)
 	dir := t.TempDir()
 	c := Checker{CacheDir: dir, Clk: fakeAt(1000)}
 	tag, err := c.Latest(context.Background())
@@ -379,34 +386,143 @@ func TestLatest_Errors(t *testing.T) {
 	ctx := context.Background()
 	c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}
 
-	withEndpoint(t, releaseServer(t, "").URL) // 404
-	if _, err := c.Latest(ctx); err == nil || !strings.Contains(err.Error(), "HTTP 404") {
-		t.Errorf("non-200: %v", err)
+	srv := releaseServer(t, "") // 404
+	if _, err := c.Latest(ctx); err == nil || err.Error() != "no release found at "+latestURL(srv) {
+		t.Errorf("404: %v", err)
 	}
-	withEndpoint(t, releaseServer(t, "not-a-version").URL)
+	releaseServer(t, "not-a-version")
 	if _, err := c.Latest(ctx); err == nil || !strings.Contains(err.Error(), "not a version") {
 		t.Errorf("odd tag: %v", err)
-	}
-	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("{")) }))
-	t.Cleanup(bad.Close)
-	withEndpoint(t, bad.URL)
-	if _, err := c.Latest(ctx); err == nil {
-		t.Error("bad JSON: want an error")
-	}
-	empty := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("{}")) }))
-	t.Cleanup(empty.Close)
-	withEndpoint(t, empty.URL)
-	if _, err := c.Latest(ctx); err == nil || !strings.Contains(err.Error(), "no tag_name") {
-		t.Errorf("empty release: %v", err)
 	}
 	closed := httptest.NewServer(http.NotFoundHandler())
 	url := closed.URL
 	closed.Close()
-	withEndpoint(t, url)
+	withReleasesURL(t, url)
 	if _, err := c.Latest(ctx); err == nil {
 		t.Error("closed port: want an error")
 	}
 	if _, err := os.Stat(filepath.Join(c.CacheDir, "update_check.json")); !os.IsNotExist(err) {
 		t.Errorf("a failed Latest wrote the cache: %v", err)
+	}
+}
+
+// redirectTo answers status with Location set as given: http.Redirect would
+// turn a relative one into an absolute path.
+func redirectTo(status int, location string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if location != "" {
+			w.Header().Set("Location", location)
+		}
+		w.WriteHeader(status)
+	}
+}
+
+// TestLatest_ReadsTheTagFromTheRedirect: the tag is the last path segment of
+// the tag page every redirect status points at, with a Location that is a
+// URL, an absolute path or relative to the page asked, and unescaped. The
+// tag page itself is never asked (releasePages fails the test).
+func TestLatest_ReadsTheTagFromTheRedirect(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		status   int
+		location string // "{srv}" is the server's URL
+		want     string
+	}{
+		{"302, absolute path", http.StatusFound, releasesPath + "/tag/v1.2.3", "v1.2.3"},
+		{"301", http.StatusMovedPermanently, releasesPath + "/tag/v1.2.3", "v1.2.3"},
+		{"303", http.StatusSeeOther, releasesPath + "/tag/v1.2.3", "v1.2.3"},
+		{"307", http.StatusTemporaryRedirect, releasesPath + "/tag/v1.2.3", "v1.2.3"},
+		{"308", http.StatusPermanentRedirect, releasesPath + "/tag/v1.2.3", "v1.2.3"},
+		{"302, full URL", http.StatusFound, "{srv}" + releasesPath + "/tag/v1.2.3", "v1.2.3"},
+		{"302, relative", http.StatusFound, "tag/v1.2.3", "v1.2.3"},
+		{"302, escaped tag", http.StatusFound, releasesPath + "/tag/v1.2.3%2Bbuild", "v1.2.3+build"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var srv *httptest.Server
+			srv = releasePages(t, func(w http.ResponseWriter, r *http.Request) {
+				redirectTo(tc.status, strings.ReplaceAll(tc.location, "{srv}", srv.URL))(w, r)
+			})
+			c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}
+			if tag, err := c.Latest(context.Background()); err != nil || tag != tc.want {
+				t.Errorf("Latest = %q, %v; want %q", tag, err, tc.want)
+			}
+		})
+	}
+}
+
+// TestLatest_NoReleaseFound: a repository without releases redirects to its
+// releases list; neither that, an empty tag nor a missing Location is a tag.
+func TestLatest_NoReleaseFound(t *testing.T) {
+	for _, tc := range []struct{ name, location string }{
+		{"to the releases list", releasesPath},
+		{"empty tag", releasesPath + "/tag/"},
+		{"no Location", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := releasePages(t, redirectTo(http.StatusFound, tc.location))
+			c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}
+			_, err := c.Latest(context.Background())
+			if want := "no release found at " + latestURL(srv); err == nil || err.Error() != want {
+				t.Errorf("Latest error = %v, want %q", err, want)
+			}
+		})
+	}
+}
+
+// TestLatest_LimitedNetwork: GitHub answers 403 or 429 once a network used up
+// its requests. The error says so in the user's words, with the local time
+// to try again when the answer carries one (Retry-After first).
+func TestLatest_LimitedNetwork(t *testing.T) {
+	const limited = "GitHub is limiting requests from this network; try again later"
+	const now = 1_800_000_000
+	at := func(unix int64) string {
+		return limited + " (after " + time.Unix(unix, 0).Local().Format("15:04") + ")"
+	}
+	for _, tc := range []struct {
+		name    string
+		status  int
+		headers map[string]string
+		want    string
+	}{
+		{"403", http.StatusForbidden, nil, limited},
+		{"429", http.StatusTooManyRequests, nil, limited},
+		{"429, Retry-After", http.StatusTooManyRequests, map[string]string{"Retry-After": "5400"}, at(now + 5400)},
+		{"403, x-ratelimit-reset", http.StatusForbidden, map[string]string{"X-Ratelimit-Reset": "1800003600"}, at(1_800_003_600)},
+		{"both: Retry-After wins", http.StatusTooManyRequests,
+			map[string]string{"Retry-After": "60", "X-Ratelimit-Reset": "1800009999"}, at(now + 60)},
+		{"unreadable headers", http.StatusForbidden,
+			map[string]string{"Retry-After": "soon", "X-Ratelimit-Reset": "later"}, limited},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			releasePages(t, func(w http.ResponseWriter, r *http.Request) {
+				for k, v := range tc.headers {
+					w.Header().Set(k, v)
+				}
+				w.WriteHeader(tc.status)
+			})
+			c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(now)}
+			if _, err := c.Latest(context.Background()); err == nil || err.Error() != tc.want {
+				t.Errorf("Latest error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestLatest_OtherStatuses: 404 is no release; any other status names the
+// page and the code.
+func TestLatest_OtherStatuses(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		want   func(url string) string
+	}{
+		{http.StatusNotFound, func(url string) string { return "no release found at " + url }},
+		{http.StatusInternalServerError, func(url string) string { return url + ": HTTP 500" }},
+		{http.StatusOK, func(url string) string { return url + ": HTTP 200" }},
+	} {
+		srv := releasePages(t, func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(tc.status) })
+		c := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}
+		if _, err := c.Latest(context.Background()); err == nil || err.Error() != tc.want(latestURL(srv)) {
+			t.Errorf("HTTP %d: Latest error = %v, want %q", tc.status, err, tc.want(latestURL(srv)))
+		}
 	}
 }

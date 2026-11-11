@@ -3484,6 +3484,8 @@ from a module proxy in a directory, and classifies each binary's real build
 info. Downloading has the downgrade guard `go install` lacks: nothing
 happens unless the latest tag is semver-greater than the running version.
 
+Superseded by A86 for the release lookup: the tag comes from the redirect of `<ReleasesURL>/latest`, and `Endpoint` is gone.
+
 
 ---
 
@@ -6950,3 +6952,43 @@ Tests replace the tool and the `Run` value on every platform; a test binary
 refuses the real tool as it refuses the real `Run` key. One test, on Windows
 with `CI` set, drives a task it creates under a random name through the
 real tool and deletes it.
+
+## A86. The update check reads the release page, not the API
+
+*Check for updates* answered `HTTP 403`. The check asked
+`https://api.github.com/repos/tyclab/tycswap/releases/latest` (`update.Endpoint`,
+A24) without a token, and GitHub allows 60 such requests an hour per public
+IP address, shared by every program and device behind it; once they are
+used, every answer is 403 until the hour is over. Measured on the reporting
+box: the API answered 403 with `x-ratelimit-remaining: 0`, while
+`https://github.com/tyclab/tycswap/releases/latest` answered `302` with
+`location: https://github.com/tyclab/tycswap/releases/tag/v0.10.0`. The check
+needs only that tag, and the downloads already use
+`<ReleasesURL>/download/<tag>/…`, no API.
+
+The rule: the latest release's tag comes from the release page's redirect.
+
+- One GET of `<ReleasesURL>/latest` that does not follow redirects. A `301`,
+  `302`, `303`, `307` or `308` whose `Location` path ends in
+  `/releases/tag/<tag>` gives `<tag>`, unescaped; a relative `Location` is
+  resolved against the request URL. The passive notice, `Checker.Latest`
+  (the dashboard's card, the tray's check and offer) and the download
+  upgrade all read it so.
+- `update.Endpoint` is gone; `update.ReleasesURL` is the one address, still
+  settable with `-ldflags -X`. Since the lookup now asks it too, the
+  download upgrade refuses a `ReleasesURL` that is not https before any
+  request, as it refused such downloads before.
+- Errors say what happened and name no API. `429`, or `403` (GitHub's
+  answer when it limits a network): `GitHub is limiting requests from this
+  network; try again later`, with `(after HH:MM)` in local time from
+  `Retry-After` (seconds) or else `x-ratelimit-reset` (Unix seconds). `404`,
+  or a redirect that does not lead to a tag page (a repository without
+  releases redirects to `/releases`): `no release found at <url>`. Any other
+  status: `<url>: HTTP <code>`, where `<url>` is the page asked.
+- Unchanged: `FetchTimeout`, the 24-hour cache with its negative results,
+  the semver comparison and its pre-release handling (Deviation #1).
+
+Supersedes A24's `Endpoint` (the API URL and its `tag_name`); A6's JSON
+reading goes with it. The CLI package's tests point `ReleasesURL` at a
+closed local port, so a command's passive notice in a test never reaches
+github.com.

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"debug/buildinfo"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -151,9 +150,6 @@ func TestSelfUpgrade_CheckoutPrintsHintInstallsNothing(t *testing.T) {
 }
 
 func TestNoticeNamesTyclabReleases(t *testing.T) {
-	if Endpoint != "https://api.github.com/repos/tyclab/tycswap/releases/latest" {
-		t.Errorf("Endpoint = %q, want tyclab/tycswap releases", Endpoint)
-	}
 	if ReleasesURL != "https://github.com/tyclab/tycswap/releases" {
 		t.Errorf("ReleasesURL = %q", ReleasesURL)
 	}
@@ -161,16 +157,16 @@ func TestNoticeNamesTyclabReleases(t *testing.T) {
 		t.Errorf("ModulePath = %q", ModulePath)
 	}
 
-	var gotPath, gotAccept string
+	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath, gotAccept = r.URL.Path, r.Header.Get("Accept")
-		io.WriteString(w, `{"tag_name":"v9.0.0"}`)
+		gotPath = r.URL.Path
+		http.Redirect(w, r, "/tyclab/tycswap/releases/tag/v9.0.0", http.StatusFound)
 	}))
 	t.Cleanup(srv.Close)
-	withEndpoint(t, srv.URL+"/repos/tyclab/tycswap/releases/latest")
+	withReleasesURL(t, srv.URL+"/tyclab/tycswap/releases")
 	msg := Checker{CacheDir: t.TempDir(), Clk: fakeAt(1000)}.CheckForUpdate("", "v0.1.0", platform.Linux)
-	if gotPath != "/repos/tyclab/tycswap/releases/latest" || gotAccept != "application/vnd.github+json" {
-		t.Errorf("request %q (Accept %q)", gotPath, gotAccept)
+	if gotPath != "/tyclab/tycswap/releases/latest" {
+		t.Errorf("request %q", gotPath)
 	}
 	if !strings.Contains(msg, "A newer version of tycswap is available (9.0.0)") {
 		t.Errorf("notice = %q", msg)
@@ -183,7 +179,7 @@ func TestNoticeNamesTyclabReleases(t *testing.T) {
 	}
 }
 
-// TestLdflagsOverride links a tiny program with -X on all three variables and
+// TestLdflagsOverride links a tiny program with -X on both variables and
 // checks it prints the overrides: proof they are link-time settable vars.
 func TestLdflagsOverride(t *testing.T) {
 	if testing.Short() {
@@ -196,7 +192,6 @@ func TestLdflagsOverride(t *testing.T) {
 	const pkg = "github.com/tyclab/tycswap/internal/update"
 	flags := strings.Join([]string{
 		"-X " + pkg + ".ModulePath=example.com/fork/cmd/tycswap",
-		"-X " + pkg + ".Endpoint=https://example.com/api/releases/latest",
 		"-X " + pkg + ".ReleasesURL=https://example.com/releases",
 	}, " ")
 	out := filepath.Join(t.TempDir(), "printvars")
@@ -213,7 +208,7 @@ func TestLdflagsOverride(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "example.com/fork/cmd/tycswap\nhttps://example.com/api/releases/latest\nhttps://example.com/releases\n"
+	want := "example.com/fork/cmd/tycswap\nhttps://example.com/releases\n"
 	if string(got) != want {
 		t.Errorf("printvars = %q, want %q", got, want)
 	}
