@@ -3040,7 +3040,7 @@ SSE. Requests are not replayed after reconnection.
 | `--debug` | Log errors to stderr; with `--remote`, every call's status and every end of the event stream. |
 | `--remote URL` | Be the tray for the dashboard at `URL`, which must be `http://127.0.0.1:<port>` or `http://localhost:<port>` and nothing else. |
 | `--token-file PATH` | The `remote.token` that dashboard's app wrote. Default `$TYCSWAP_REMOTE_TOKEN_FILE`; required with `--remote`, refused without it. |
-| `--autostart MODE` | `on` registers start at login, `off` removes it, `status` shows it; then exits. With `--remote` the entry carries the remote arguments. |
+| `--autostart MODE` | `on` registers start at login, `off` removes it, `status` shows it; then exits. With `--remote` the entry carries the remote arguments. On Windows a scheduled task named like the entry owns start at login where one exists: `on` and `off` enable and disable it and remove a `Run` value of that name, `status` reads it (DESIGN A85). |
 
 ### Description
 
@@ -3087,6 +3087,13 @@ click. A badge on the icon (a dot on Windows and Linux, the count on macOS)
 means an update waits. On macOS the menu stays open after a click and shows
 the outcome in place; *Open dashboard* and *Quit* close it.
 
+*Start at login* is `--autostart` from the tray. On Windows, where a
+scheduled task `\io.github.tyclab.tycswap` (`\….remote` for a remote tray)
+exists, the switch shows and changes that task's enabled state and removes a
+`Run` value of the same name; otherwise it is the `Run` value. The tray reads
+the state at most every 30 seconds, and again at once after a click on the
+switch (DESIGN A85).
+
 The app holds `app.lock` for its lifetime: a second app exits 1 with `tycswap app
 is already running on this machine`, and `tycswap purge` refuses. Without a
 tray (`--headless`, a Linux session without a StatusNotifierWatcher, a macOS
@@ -3123,6 +3130,7 @@ login*, refuses a switch onto an API-key account (use the dashboard), and holds
 | `~/Library/LaunchAgents/io.github.tyclab.tycswap.plist` | Start at login on macOS (`….remote.plist` for a remote tray). |
 | `${XDG_CONFIG_HOME:-~/.config}/autostart/io.github.tyclab.tycswap.desktop` | Start at login on Linux. |
 | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, value `io.github.tyclab.tycswap` | Start at login on Windows (`….remote` for a remote tray). |
+| Scheduled task `\io.github.tyclab.tycswap` (`\….remote`) | Start at login on Windows where a provisioner registered it; it takes the `Run` value's place (DESIGN A85). |
 
 ### Exit status
 
@@ -3143,7 +3151,9 @@ without a tray (--headless). Press Ctrl-C to stop.` / `No system tray is
 available here; running the dashboard server only. Press Ctrl-C to stop.` and
 `Remote token: <path> (for tycswap app --remote)`. With `--remote`: `Remote
 engine: <url> (token from <path>)`. The menu’s **Start tray app** action, to stdout: `tycswap is running in the background — its icon is in the menu bar /
-tray.` and `Log: <path>`. `--autostart`: `Start at login: on` or `off`.
+tray.` and `Log: <path>`. `--autostart`: `Start at login: on` or `off`; where a logon
+task owns start at login the line names it, `Start at login: on (logon task
+io.github.tyclab.tycswap.remote)`.
 
 ### Errors
 
@@ -3155,6 +3165,7 @@ tray.` and `Log: <path>`. `--autostart`: `Start at login: on` or `off`.
 | `tycswap is already running — its icon is in the menu bar / tray.` (stdout) | Start tray app while an app runs; nothing is started. | 0 |
 | `tycswap stopped right after starting (…).` and the end of the log | The background child exited before taking its lock. | 1 |
 | `Error: …` | `--autostart` could not register, remove or read the entry. | 1 |
+| `Error: logon task \<name>: schtasks <verb> (exit <code>): <message>` | `--autostart` could not read (`/Query`) or change (`/Change`) the logon task; `<message>` is the tool's. A click on the tray's switch reports the same text. | 1 |
 | `argument --remote: expected http://127.0.0.1:<port> or http://localhost:<port> …` | `--remote` is not plain http on loopback with a port. | 2 |
 | `argument --remote: not allowed with --headless (…)` | `--remote` with `--headless`, `--port` or `--interval`. | 2 |
 | `argument --remote: needs --token-file PATH or TYCSWAP_REMOTE_TOKEN_FILE …` | No token file. | 2 |
