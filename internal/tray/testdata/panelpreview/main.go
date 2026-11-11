@@ -1,16 +1,27 @@
 //go:build windows
 
+// panelpreview shows the tray panel with a synthetic fixture. With -png it
+// draws the panel outside every monitor, without focus or a tray icon,
+// writes the picture and exits; without it, it runs a tray icon whose click
+// opens the panel.
+//
+// The picture checks drawing only. The fixture is a tray.Panel written by
+// hand, not one the app builds from a state, so the builder's rules (dashes,
+// clock texts, limit colours) are the cli tests' to check. The window takes
+// the DPI of the monitor nearest the left of the virtual screen, so on a
+// desktop whose monitors differ in DPI the picture's scale can differ from
+// the real panel's, which opens on the tray's monitor.
 package main
 
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +32,103 @@ import (
 )
 
 func main() {
+	picture := flag.String("png", "", "write a PNG of the panel window to this path and exit")
+	theme := flag.String("theme", "", "dark or light for -png; the system's when empty")
+	flag.Parse()
+	model := fixture(time.Now())
+	if *picture == "" {
+		interactive(model)
+		return
+	}
+	img, err := tray.PanelPicture(model, *theme)
+	if err == nil {
+		var out bytes.Buffer
+		if err = png.Encode(&out, img); err == nil {
+			err = os.WriteFile(*picture, out.Bytes(), 0o644)
+		}
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+// fixture is the approved picture: reset times count from now, so the
+// picture never goes stale. Its texts follow the app's panel builder.
+func fixture(now time.Time) tray.Panel {
+	type limit struct {
+		pct   float64
+		in    time.Duration // 0: the window has not started
+		dash  bool
+		limit float64
+	}
+	cell := func(l limit, fiveHour bool) tray.PanelCell {
+		if l.dash {
+			return tray.PanelCell{Absent: true}
+		}
+		c := tray.PanelCell{Share: fmt.Sprintf("%.0f%%", l.pct), Pct: l.pct, Limit: l.pct >= l.limit}
+		if l.in > 0 {
+			c.Reset = resetLine(now.Add(l.in+30*time.Second), fiveHour, now)
+		}
+		return c
+	}
+	none := limit{dash: true}
+	five := func(pct float64, in time.Duration) limit { return limit{pct: pct, in: in, limit: 85} }
+	week := func(pct float64, in time.Duration) limit { return limit{pct: pct, in: in, limit: 97} }
+	fable := func(pct float64, in time.Duration) limit { return limit{pct: pct, in: in, limit: 95} }
+	day := 24 * time.Hour
+	rows := []struct {
+		id, name, plan string
+		active         bool
+		limits         [3]limit
+	}{
+		{"claude:1", "#1 xxxxxxxxxxxxxxx", "Ultra", false, [3]limit{none, week(54, 2*day+22*time.Hour), fable(50, 2*day+22*time.Hour)}},
+		{"claude:2", "#2 xxxxxxxxxxxxxxxxxxxx", "Pro", false, [3]limit{five(0, 0), week(100, 12*time.Hour+22*time.Minute), none}},
+		{"claude:3", "#3 xxxxxxxxxxxxxxxx", "Ultra", false, [3]limit{five(0, 0), week(100, 2*day+19*time.Hour), fable(100, 2*day+19*time.Hour)}},
+		{"claude:4", "#4 xxxxxxxxxxxxxxxxxxxxxxx", "", false, [3]limit{five(0, 0), week(100, 10*time.Hour+22*time.Minute), fable(90, 10*time.Hour+22*time.Minute)}},
+		{"claude:5", "#5 xxxxxxxxxxxxxxxxxxxxx", "Ultra", true, [3]limit{five(3, 3*time.Hour+52*time.Minute), week(1, 6*day+20*time.Hour), fable(2, 6*day+20*time.Hour)}},
+		{"codex:1", "Codex #1 xxxxxxxxxxxxxxx", "promax", true, [3]limit{none, week(100, 7*time.Hour+28*time.Minute), none}},
+	}
+	p := tray.Panel{Title: "tycswap",
+		Columns: []tray.Column{{ID: "account", Label: "Account"}, {ID: "fiveHour", Label: "5-hour"}, {ID: "sevenDay", Label: "Weekly"}, {ID: "model:Fable", Label: "Fable"}},
+		Actions: []tray.Item{{ID: "quit", Title: "Quit"}, {ID: "auto", Title: "Auto-switch", Kind: tray.KindToggle, Checked: true},
+			{ID: "autostart", Title: "Start at login", Kind: tray.KindToggle, Checked: true}, {ID: "open", Title: "Open dashboard"}}}
+	for _, r := range rows {
+		row := tray.PanelRow{ID: r.id, Name: r.name, Plan: r.plan, Active: r.active}
+		for i, l := range r.limits {
+			row.Cells = append(row.Cells, cell(l, i == 0))
+		}
+		p.Rows = append(p.Rows, row)
+	}
+	return p
+}
+
+// resetLine mirrors the app's: clock time and time left.
+func resetLine(at time.Time, fiveHour bool, now time.Time) string {
+	clock := at.Format("15:04")
+	if !fiveHour {
+		day := func(t time.Time) time.Time { y, m, d := t.Date(); return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
+		switch days := int(day(at).Sub(day(now)).Hours() / 24); {
+		case days == 0:
+			clock = "Today " + clock
+		case days <= 6:
+			clock = at.Format("Mon 15:04")
+		default:
+			clock = at.Format("Mon 2 Jan")
+		}
+	}
+	d := at.Sub(now)
+	left := fmt.Sprintf("%dd %dh", int(d.Hours())/24, int(d.Hours())%24)
+	switch {
+	case d < time.Hour:
+		left = fmt.Sprintf("%dm", max(1, int(d.Minutes())))
+	case d < 24*time.Hour:
+		left = fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
+	}
+	return clock + " · " + left
+}
+
+func interactive(model tray.Panel) {
 	img := image.NewRGBA(image.Rect(0, 0, 16, 16))
 	for y := 2; y < 14; y++ {
 		for x := 2; x < 14; x++ {
@@ -29,61 +137,36 @@ func main() {
 	}
 	var icon bytes.Buffer
 	_ = png.Encode(&icon, img)
-	model := fixture()
 	var mu sync.Mutex
 	var shell tray.Tray
 	options := tray.Options{Tooltip: "Synthetic tray preview"}
-	options.OnPanelAction = func(action tray.PanelAction) error {
+	options.OnPanelAction = func(action tray.PanelAction) {
 		encoded, _ := json.Marshal(action)
 		fmt.Println(string(encoded))
-		if action.Kind == "command" && action.Key == "quit" {
+		if action.Key == "quit" {
 			shell.Quit()
-			return nil
+			return
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		switch action.Kind {
-		case "setting-set", "setting-reset":
-			for i := range model.Settings {
-				if model.Settings[i].ID != action.Scope {
-					continue
+		model.Note = ""
+		if key, ok := strings.CutPrefix(action.Key, "switch:"); ok {
+			provider, _, _ := strings.Cut(key, ":")
+			for i := range model.Rows {
+				if strings.HasPrefix(model.Rows[i].ID, provider+":") {
+					model.Rows[i].Active = model.Rows[i].ID == key
 				}
-				for j := range model.Settings[i].Settings {
-					field := &model.Settings[i].Settings[j]
-					if field.Key != action.Key {
-						continue
-					}
-					if field.ReadOnly != "" {
-						return fmt.Errorf("%s", field.ReadOnly)
-					}
-					field.Value, field.IsDefault, field.Source = action.Value, false, "user"
-					if action.Kind == "setting-reset" {
-						field.Value, field.IsDefault, field.Source = "85", true, "default"
-					}
+				if model.Rows[i].ID == key {
+					model.Note = "Switched to " + strings.Fields(model.Rows[i].Name)[0] + "."
 				}
 			}
-		case "sort":
-			model.SortDescending = model.SortColumn == action.Key && !model.SortDescending
-			model.SortColumn = action.Key
-			index := 0
-			for i, column := range model.Columns {
-				if column.ID == action.Key {
-					index = i
-				}
+		}
+		for i := range model.Actions {
+			if model.Actions[i].ID == action.Key && model.Actions[i].Kind == tray.KindToggle {
+				model.Actions[i].Checked = !model.Actions[i].Checked
 			}
-			sort.SliceStable(model.Rows, func(i, j int) bool {
-				a, b := model.Rows[i].Cells[index], model.Rows[j].Cells[index]
-				if a == b {
-					return model.Rows[i].ID < model.Rows[j].ID
-				}
-				if model.SortDescending {
-					return a > b
-				}
-				return a < b
-			})
 		}
 		shell.(tray.PanelTray).SetPanel(model)
-		return nil
 	}
 	var err error
 	shell, err = tray.New(tray.Icon{PNG: icon.Bytes()}, options)
@@ -98,14 +181,6 @@ func main() {
 				return
 			}
 			time.Sleep(100 * time.Millisecond)
-		}
-	}()
-	go func() {
-		for tick := range time.NewTicker(2 * time.Second).C {
-			mu.Lock()
-			model.Status = "Synthetic fixture · updated " + tick.Format("15:04:05")
-			shell.(tray.PanelTray).SetPanel(model)
-			mu.Unlock()
 		}
 	}()
 	time.AfterFunc(10*time.Minute, shell.Quit)
@@ -135,83 +210,4 @@ func openOwnTray() bool {
 	})
 	user.NewProc("EnumWindows").Call(callback, 0)
 	return found
-}
-
-func fixture() tray.Panel {
-	lo, hi := 0.0, 100.0
-	p := tray.Panel{Title: "tycswap preview", Version: "Synthetic data", Status: "Synthetic fixture · connected",
-		Columns: []tray.Column{{ID: "account", Label: "Account"}, {ID: "fiveHour", Label: "5-hour"}, {ID: "weekly", Label: "Weekly"}, {ID: "fable", Label: "Fable"}, {ID: "owner", Label: "Used by"}},
-		Actions: []tray.Item{{ID: "open", Title: "Open dashboard"}, {ID: "update", Title: "Check for updates"},
-			{ID: "install-update", Title: "Update tycswap", Kind: tray.KindUpdate}, {ID: "claude-code", Title: "Update Claude", Kind: tray.KindUpdate},
-			{ID: "quit", Title: "Quit"}, {ID: "auto", Title: "Auto-switch", Kind: tray.KindToggle}, {ID: "autostart", Title: "Start at login", Kind: tray.KindToggle, Checked: true}},
-	}
-	quotas := [][]string{{"0%", "65%", "100%"}, {"0%", "46%", "—"}, {"3%", "97%", "100%"}, {"9%", "88%", "79%"}, {"0%", "100%", "89%"}, {"0%", "48%", "55%"}, {"0%", "97%", "100%"}, {"—", "93%", "—"}}
-	for i, name := range []string{"Work", "Business", "Personal", "Max", "Spare", "Personal", "Spare", "Codex #1"} {
-		number := i + 1
-		id := fmt.Sprintf("claude:%d", number)
-		title := fmt.Sprintf("#%d %s", number, name)
-		owner := "—"
-		if number == 4 {
-			owner = "Fable · 2 sessions"
-		}
-		if number == 6 {
-			owner = "Opus · 1 session"
-		}
-		if number == 8 {
-			owner = "Codex"
-			id = "codex:1"
-			title = name
-		}
-		targets := []tray.Target{{ID: fmt.Sprintf("switch:claude:%d", number), Label: "Existing / default"}, {ID: fmt.Sprintf("group:fable:%d", number), Label: "Fable"}, {ID: fmt.Sprintf("group:opus:%d", number), Label: "Opus / other"}}
-		if number == 4 {
-			targets[1].Disabled, targets[1].Reason = true, "Already active for Fable"
-			targets[0].Disabled, targets[0].Reason = true, "Reserved by Fable's live sessions"
-			targets[2].Disabled, targets[2].Reason = true, "Reserved by Fable's live sessions"
-		}
-		if number == 2 {
-			targets[1].Disabled, targets[1].Reason = true, "Fable start not permitted for this account"
-		}
-		if number == 6 {
-			targets[2].Disabled, targets[2].Reason = true, "Already active for Opus / other"
-			targets[0].Disabled, targets[0].Reason = true, "Reserved by Opus / other's live sessions"
-			targets[1].Disabled, targets[1].Reason = true, "Reserved by Opus / other's live sessions"
-		}
-		if number == 8 {
-			targets = []tray.Target{{ID: "switch:codex:1", Label: "Codex", Disabled: true, Reason: "Already active for Codex"}}
-		}
-		quota := quotas[i]
-		var details []string
-		for window, label := range []string{"5-hour", "Weekly", "Fable"} {
-			line := label + ": " + quota[window] + " used · resets in 2d"
-			if quota[window] == "—" {
-				line = label + ": not reported"
-			}
-			if number == 8 && window == 2 {
-				line = "Fable: not applicable to Codex"
-			}
-			details = append(details, line)
-		}
-		if number != 8 {
-			details = append(details, "No separate Opus limit reported; shared limits are shown above.")
-		}
-		details = append(details, "Synthetic usage fixture")
-		if number != 8 && quota[2] == "100%" {
-			targets[1].Disabled, targets[1].Reason = true, "Fable weekly limit exhausted"
-		}
-		p.Rows = append(p.Rows, tray.PanelRow{ID: id, Title: title, Active: owner != "—", Cells: []string{title, quota[0], quota[1], quota[2], owner}, Details: details, Targets: targets})
-	}
-	for _, scope := range []tray.SettingScope{{ID: "", Label: "Shared defaults"}, {ID: "fable", Label: "Fable"}, {ID: "opus", Label: "Opus / other"}} {
-		scope.Settings = []tray.PanelSetting{
-			{Key: "autoswitch.fiveHourThreshold", Label: "5-hour threshold", Kind: "float", Value: "85", Min: &lo, Max: &hi, Description: "Rotate at this percentage used.", Applies: "Next rotation check", Source: "default", IsDefault: true},
-			{Key: "autoswitch.sevenDayThreshold", Label: "Weekly threshold", Kind: "float", Value: "97", Min: &lo, Max: &hi, Description: "Weekly switch threshold.", Applies: "Next rotation check", Source: "user"},
-			{Key: "autoswitch.strategy", Label: "Switch strategy", Kind: "choice", Value: "soonest-reset", Choices: []string{"best", "soonest-reset"}, Source: "default", IsDefault: true},
-			{Key: "autoswitch.codexEnabled", Label: "Codex auto-switch", Kind: "bool", Value: "false", Source: "default", IsDefault: true},
-			{Key: "autoswitch.handoverWaitMinutes", Label: "Handover wait", Kind: "int", Value: "30", Description: "Offer a handover after this many minutes.", Source: "default", IsDefault: true},
-		}
-		if scope.ID != "" {
-			scope.Settings = append(scope.Settings, tray.PanelSetting{Key: "autoswitch.model", Label: "Model limits", Kind: "string", Value: strings.ToLower(scope.ID), Source: "session", ReadOnly: "Model limits follow this group's live sessions."})
-		}
-		p.Settings = append(p.Settings, scope)
-	}
-	return p
 }

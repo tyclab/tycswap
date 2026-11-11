@@ -5,14 +5,18 @@ package tray
 import (
 	"fmt"
 	"reflect"
-	"strings"
+	"sync"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
 
+// The daily view (DESIGN A84): the popup paints the title, the column
+// labels, the note and the rules; a child viewport paints the rows and
+// scrolls them. Every Switch, switch and footer command is a real owner-drawn
+// BUTTON, so focus, Tab order and screen readers keep working.
+
 var (
-	panelControls      = windows.NewLazySystemDLL("comctl32.dll")
 	panelSend          = user32.NewProc("SendMessageW")
 	panelShow          = user32.NewProc("ShowWindow")
 	panelMove          = user32.NewProc("MoveWindow")
@@ -20,115 +24,63 @@ var (
 	panelGetText       = user32.NewProc("GetWindowTextW")
 	panelGetTextLength = user32.NewProc("GetWindowTextLengthW")
 	panelEnable        = user32.NewProc("EnableWindow")
+	panelIsVisible     = user32.NewProc("IsWindowVisible")
+	panelIsChild       = user32.NewProc("IsChild")
 	panelGetClient     = user32.NewProc("GetClientRect")
 	panelSetFocus      = user32.NewProc("SetFocus")
+	panelGetFocus      = user32.NewProc("GetFocus")
 	panelInvalidate    = user32.NewProc("InvalidateRect")
-	panelSubclass      = panelControls.NewProc("SetWindowSubclass")
-	panelDefSubclass   = panelControls.NewProc("DefSubclassProc")
+	panelSetPos        = user32.NewProc("SetWindowPos")
+	panelControlID     = user32.NewProc("GetDlgCtrlID")
+	panelNextTab       = user32.NewProc("GetNextDlgTabItem")
 )
 
 const (
-	panelChild        = 0x40000000
-	panelVisible      = 0x10000000
-	panelTabStop      = 0x10000
-	panelBorder       = 0x800000
-	panelNotify       = 0x004e
-	panelSetFont      = 0x0030
-	panelListBase     = 0x1000
-	panelComboReset   = 0x014b
-	panelComboAdd     = 0x0143
-	panelComboSelect  = 0x014e
-	panelComboCurrent = 0x0147
-	panelAccountTab   = 201
-	panelSettingsTab  = 202
-	panelAccounts     = 203
-	panelScopes       = 206
-	panelFields       = 207
-	panelEdit         = 208
-	panelChoice       = 209
-	panelSave         = 210
-	panelReset        = 211
-	panelDashboard    = 212
-	panelActionBase   = 300
+	panelChild         = 0x40000000
+	panelVisible       = 0x10000000
+	panelTabStop       = 0x10000
+	panelBorder        = 0x800000
+	panelClipChildren  = 0x02000000
+	panelControlParent = 0x10000
+	panelToolWindow    = 0x80
+	panelNoActivate    = 0x08000000
+	panelOwnerDraw     = 0xb
+	panelActionBase    = 300
+	panelRowBase       = 1000
 )
-
-type panelHeader struct {
-	hwnd, id uintptr
-	code     uint32
-}
-type panelListItem struct {
-	mask                         uint32
-	item, subItem                int32
-	state, stateMask             uint32
-	text                         *uint16
-	textMax, image               int32
-	param                        uintptr
-	indent, groupID              int32
-	columns                      uint32
-	columnIndices, columnFormats uintptr
-	group                        int32
-}
-type panelListColumn struct {
-	mask                                                               uint32
-	format, width                                                      int32
-	text                                                               *uint16
-	textMax, subItem, image, order, minWidth, defaultWidth, idealWidth int32
-}
-type panelListNotification struct {
-	header                      panelHeader
-	item, subItem               int32
-	newState, oldState, changed uint32
-	action                      point
-	param                       uintptr
-}
-type panelActionResult struct {
-	action PanelAction
-	err    error
-}
-
-type panelColumnsCache struct {
-	columns []Column
-	dpi     int
-}
-type panelRowsCache struct {
-	keys []string
-	rows [][]string
-}
 
 type windowsPanel struct {
 	tray     *windowsTray
-	hwnd     uintptr
-	controls map[int]uintptr
-	model    panelModel
+	hwnd     uintptr // the popup
+	list     uintptr // the rows' viewport
+	panel    Panel
+	geometry panelGeometry
+	scroll   int
+	anchor   *point
+	picture  bool // drawn for a picture: outside every monitor, never activated
 
-	dpi                                                                       int
-	theme                                                                     menuTheme
-	palette                                                                   panelColors
-	font, bold, titleFont, background, headerBrush, selectionBrush, imageList uintptr
+	dpi                            int
+	theme                          menuTheme
+	palette                        panelColors
+	font, strong, small, titleFont uintptr
 
-	rendering      bool
-	switchingPage  bool
-	errorText      string
-	fieldErrors    map[panelFieldID]string
-	pending        map[panelFieldID]bool
-	choiceValues   []string
-	comboValues    map[int][]string
-	actionControls map[string]int
-	controlActions map[int]string
-	nextAction     int
-	columnCache    map[int]panelColumnsCache
-	rowCache       map[int]panelRowsCache
-	revealPending  map[int]bool
-	fittedWidths   map[int][]int
-	rules          []int
-	frames         []menuRect
-	anchor         *point
-	confirm        *panelConfirm
+	controls  map[int]uintptr // control ID → window
+	keys      map[int]string  // control ID → row ID or action ID
+	rowIDs    map[string]int
+	actionIDs map[string]int
+	nextRow   int
+	nextNamed int
 }
 
 func nativePanelStruct[T any](value uintptr) *T { return *(**T)(unsafe.Pointer(&value)) }
 
 func panelWindowClass() string { return windowClass() + "Panel" }
+func panelListClass() string   { return windowClass() + "PanelRows" }
+
+// One callback each for the process: Windows has a fixed number of them.
+var panelProcedures = sync.OnceValues(func() (uintptr, uintptr) {
+	return windows.NewCallback(panelWndProc), windows.NewCallback(panelListProc)
+})
 
 func (t *windowsTray) SetPanel(value Panel) {
 	value = clonePanel(value)
@@ -158,79 +110,56 @@ func (t *windowsTray) showPanel() bool {
 			return false
 		}
 	}
-	t.panel.anchor = nil
-	t.panel.update()
-	t.panel.position()
-	panelShow.Call(t.panel.hwnd, 5)
-	pSetForegroundWindow.Call(t.panel.hwnd)
-	panelSetFocus.Call(t.panel.controls[panelAccounts])
-	if t.panel.model.settings {
-		panelSetFocus.Call(t.panel.controls[panelScopes])
-	}
+	p := t.panel
+	p.anchor = nil
+	p.update()
+	panelShow.Call(p.hwnd, 5)
+	pSetForegroundWindow.Call(p.hwnd)
+	// The popup itself takes focus, so a stray Enter or Space switches
+	// nothing; the first Tab reaches the first Switch.
+	panelSetFocus.Call(p.hwnd)
+	panelSend.Call(p.hwnd, 0x127, 3, 0) // WM_CHANGEUISTATE, UIS_INITIALIZE: focus cues follow the last input
 	return true
 }
 
-func (t *windowsTray) createPanel() error {
-	init := struct{ size, classes uint32 }{8, 1}
-	if ok, _, err := panelControls.NewProc("InitCommonControlsEx").Call(uintptr(unsafe.Pointer(&init))); ok == 0 {
-		return fmt.Errorf("native controls: %w", err)
-	}
-	p := &windowsPanel{tray: t, controls: make(map[int]uintptr), dpi: 96, fieldErrors: make(map[panelFieldID]string), pending: make(map[panelFieldID]bool)}
+func (t *windowsTray) createPanel() error { return t.newPanel(false) }
+
+func (t *windowsTray) newPanel(picture bool) error {
+	p := &windowsPanel{tray: t, dpi: 96, picture: picture, controls: map[int]uintptr{}, keys: map[int]string{},
+		rowIDs: map[string]int{}, actionIDs: map[string]int{}, nextRow: panelRowBase, nextNamed: panelActionBase}
 	t.panel = p
 	instance, _, _ := pGetModuleHandleW.Call(0)
 	cursor, _, _ := user32.NewProc("LoadCursorW").Call(0, 32512)
-	name := utf16z(panelWindowClass())
-	class := wndClassExW{cbSize: uint32(unsafe.Sizeof(wndClassExW{})), lpfnWndProc: windows.NewCallback(panelWndProc), hInstance: windows.Handle(instance), hCursor: windows.Handle(cursor), lpszClassName: name}
-	if atom, _, err := pRegisterClassExW.Call(uintptr(unsafe.Pointer(&class))); atom == 0 && err != windows.ERROR_CLASS_ALREADY_EXISTS {
-		t.panel = nil
-		return fmt.Errorf("overview window class: %w", err)
+	main, list := panelProcedures()
+	for _, class := range []struct {
+		name string
+		proc uintptr
+	}{{panelWindowClass(), main}, {panelListClass(), list}} {
+		wc := wndClassExW{cbSize: uint32(unsafe.Sizeof(wndClassExW{})), lpfnWndProc: class.proc, hInstance: windows.Handle(instance), hCursor: windows.Handle(cursor), lpszClassName: utf16z(class.name)}
+		if atom, _, err := pRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc))); atom == 0 && err != windows.ERROR_CLASS_ALREADY_EXISTS {
+			t.panel = nil
+			return fmt.Errorf("overview window class: %w", err)
+		}
 	}
-	window, _, err := pCreateWindowExW.Call(0x10000|0x80, uintptr(unsafe.Pointer(name)), uintptr(unsafe.Pointer(utf16z("tycswap overview"))),
-		0x80000000|panelBorder|0x02000000, 0, 0, 620, 580, uintptr(t.hwnd), 0, instance, 0)
+	ex, x := uintptr(panelControlParent|panelToolWindow), uintptr(0)
+	if picture {
+		ex |= panelNoActivate
+		x = uintptr(panelOffscreen(620))
+	}
+	window, _, err := pCreateWindowExW.Call(ex, uintptr(unsafe.Pointer(utf16z(panelWindowClass()))), 0,
+		0x80000000|panelBorder|panelClipChildren, x, 0, 620, 480, uintptr(t.hwnd), 0, instance, 0)
 	if window == 0 {
 		t.panel = nil
 		return fmt.Errorf("overview window: %w", err)
 	}
 	p.hwnd = window
 	p.readDPI()
-	controls := []struct {
-		id           int
-		class, title string
-		style        uintptr
-	}{
-		{100, "STATIC", "", 0}, {101, "STATIC", "", 0},
-		{panelDashboard, "BUTTON", "Open dashboard", panelTabStop | 0xb},
-		{panelAccountTab, "BUTTON", "Accounts", panelTabStop | 0xb}, {panelSettingsTab, "BUTTON", "Advanced", panelTabStop | 0xb},
-		{panelAccounts, "SysListView32", "Accounts", panelTabStop | 1 | 4 | 8 | 0x40 | 0x100000 | 0x200000},
-		{220, "STATIC", "", 0}, {221, "EDIT", "", 4 | 0x40 | 0x800 | 0x200000}, {222, "STATIC", "", 0},
-		{224, "STATIC", "Apply to", 0}, {panelScopes, "COMBOBOX", "", panelTabStop | 3 | 0x10 | 0x200 | 0x200000},
-		{panelFields, "SysListView32", "Advanced", panelTabStop | 1 | 4 | 8 | 0x40 | 0x100000 | 0x200000},
-		{225, "STATIC", "", 0}, {226, "EDIT", "", 4 | 0x40 | 0x800 | 0x200000},
-		{panelEdit, "EDIT", "", panelTabStop | panelBorder | 0x80}, {panelChoice, "COMBOBOX", "", panelTabStop | 3 | 0x10 | 0x200 | 0x200000},
-		{panelSave, "BUTTON", "Save", panelTabStop | 0xb}, {panelReset, "BUTTON", "Reset", panelTabStop | 0xb},
-		{227, "STATIC", "", 0},
-	}
-	for _, control := range controls {
-		child, _, err := pCreateWindowExW.Call(0, uintptr(unsafe.Pointer(utf16z(control.class))), uintptr(unsafe.Pointer(utf16z(control.title))),
-			panelChild|panelVisible|control.style, 0, 0, 10, 10, window, uintptr(control.id), instance, 0)
-		if child == 0 {
-			p.close()
-			t.panel = nil
-			return fmt.Errorf("overview control %s: %w", control.class, err)
-		}
-		p.controls[control.id] = child
-	}
-	for _, id := range []int{panelAccounts, panelFields} {
-		panelSend.Call(p.controls[id], panelListBase+54, 0, 0x20|0x10000|0x4000)
-		panelSubclass.Call(p.controls[id], windows.NewCallback(panelListSubclass), 1, 0)
-		header, _, _ := panelSend.Call(p.controls[id], panelListBase+31, 0, 0)
-		panelSubclass.Call(header, windows.NewCallback(panelHeaderSubclass), 2, 0)
-	}
-	for _, id := range []int{panelScopes, panelChoice} {
-		panelSubclass.Call(p.controls[id], windows.NewCallback(panelComboSubclass), 3, 0)
-	}
-	for _, id := range []int{221, 226} {
-		panelSubclass.Call(p.controls[id], windows.NewCallback(panelListSubclass), 1, 0)
+	p.list, _, err = pCreateWindowExW.Call(panelControlParent, uintptr(unsafe.Pointer(utf16z(panelListClass()))), 0,
+		panelChild|panelVisible|panelClipChildren, 0, 0, 10, 10, window, 100, instance, 0)
+	if p.list == 0 {
+		p.close()
+		t.panel = nil
+		return fmt.Errorf("overview list: %w", err)
 	}
 	p.refreshTheme()
 	p.update()
@@ -238,36 +167,56 @@ func (t *windowsTray) createPanel() error {
 }
 
 func (p *windowsPanel) close() {
-	p.closeConfirm()
 	if p.hwnd != 0 {
 		pDestroyWindow.Call(p.hwnd)
-		p.hwnd = 0
+		p.hwnd, p.list = 0, 0
 	}
 	p.freeTheme()
 }
 
+func (p *windowsPanel) hide() { panelShow.Call(p.hwnd, 0) }
+
+// dialogMessage gives the popup a dialog's keyboard: Tab and Shift+Tab walk
+// the controls, Space or Enter press the focused one, Esc closes.
 func (p *windowsPanel) dialogMessage(message *msg) bool {
-	if p.confirm != nil {
-		return p.confirmMessage(message)
-	}
-	visible, _, _ := user32.NewProc("IsWindowVisible").Call(p.hwnd)
-	if visible == 0 {
+	if visible, _, _ := panelIsVisible.Call(p.hwnd); visible == 0 {
 		return false
 	}
-	child, _, _ := user32.NewProc("IsChild").Call(p.hwnd, uintptr(message.hwnd))
-	if uintptr(message.hwnd) != p.hwnd && child == 0 {
+	if child, _, _ := panelIsChild.Call(p.hwnd, uintptr(message.hwnd)); uintptr(message.hwnd) != p.hwnd && child == 0 {
 		return false
 	}
-	if message.message == 0x100 && message.wParam == 0x1b {
-		panelShow.Call(p.hwnd, 0)
-		return true
+	if message.message == 0x100 {
+		focus, _, _ := panelGetFocus.Call()
+		switch message.wParam {
+		case 0x1b:
+			p.hide()
+			return true
+		case 0x0d:
+			if inside, _, _ := panelIsChild.Call(p.hwnd, focus); inside != 0 {
+				id, _, _ := panelControlID.Call(focus)
+				p.command(int(id), 0)
+			}
+			return true
+		case 0x09:
+			if focus == 0 || focus == p.hwnd {
+				shift, _, _ := user32.NewProc("GetKeyState").Call(0x10)
+				if next, _, _ := panelNextTab.Call(p.hwnd, 0, uintptr(boolValue(int16(shift) < 0))); next != 0 {
+					panelSetFocus.Call(next)
+					p.reveal(next)
+				}
+				return true
+			}
+		}
 	}
 	handled, _, _ := user32.NewProc("IsDialogMessageW").Call(p.hwnd, uintptr(unsafe.Pointer(message)))
+	if handled != 0 && message.message == 0x100 {
+		focus, _, _ := panelGetFocus.Call()
+		p.reveal(focus)
+	}
 	return handled != 0
 }
 
-func (p *windowsPanel) setText(id int, value string) {
-	control := p.controls[id]
+func (p *windowsPanel) setText(control uintptr, value string) {
 	if control != 0 && panelControlText(control) != value {
 		panelSetText.Call(control, uintptr(unsafe.Pointer(utf16z(value))))
 	}
@@ -275,17 +224,11 @@ func (p *windowsPanel) setText(id int, value string) {
 
 func panelControlText(control uintptr) string {
 	length, _, _ := panelGetTextLength.Call(control)
-	if length > 65536 {
-		length = 65536
-	}
-	text := make([]uint16, int(length)+1)
+	text := make([]uint16, min(int(length), 65536)+1)
 	panelGetText.Call(control, uintptr(unsafe.Pointer(&text[0])), uintptr(len(text)))
 	return windows.UTF16ToString(text)
 }
 
-func (p *windowsPanel) enable(id int, enabled bool) {
-	panelEnable.Call(p.controls[id], uintptr(boolValue(enabled)))
-}
 func boolValue(value bool) int {
 	if value {
 		return 1
@@ -294,615 +237,255 @@ func boolValue(value bool) int {
 }
 
 func (p *windowsPanel) update() {
-	p.captureEdit()
 	p.tray.mu.Lock()
 	value := p.tray.panelData
 	p.tray.mu.Unlock()
-	p.model.update(value)
-	p.rendering = true
-	defer func() { p.rendering = false }()
-	p.setText(100, value.Title)
-	p.setText(101, value.Version)
-	panelSetText.Call(p.hwnd, uintptr(unsafe.Pointer(utf16z(value.Title+" overview"))))
-	p.renderAccounts()
-	p.renderScopes()
-	p.renderFields()
-	p.renderActions()
-	p.layout()
+	p.panel = value
+	panelSetText.Call(p.hwnd, uintptr(unsafe.Pointer(utf16z(value.Title))))
+	p.syncRows()
+	p.syncActions()
+	p.position()
 }
 
-func (p *windowsPanel) columnsFor(control int, columns []Column) {
-	hwnd := p.controls[control]
-	if p.columnCache == nil {
-		p.columnCache = make(map[int]panelColumnsCache)
-	}
-	cache := p.columnCache[control]
-	if cache.dpi == p.dpi && reflect.DeepEqual(cache.columns, columns) {
-		return
-	}
-	for panelSendColumnCount(hwnd) > 0 {
-		panelSend.Call(hwnd, panelListBase+28, 0, 0)
-	}
-	for i, column := range columns {
-		format := int32(0)
-		if control == panelAccounts && i > 0 && column.ID != "owner" {
-			format = 1
-		}
-		item := panelListColumn{mask: 1 | 2 | 4, format: format, text: utf16z(column.Label)}
-		panelSend.Call(hwnd, panelListBase+97, uintptr(i), uintptr(unsafe.Pointer(&item)))
-	}
-	p.columnCache[control] = panelColumnsCache{append([]Column(nil), columns...), p.dpi}
-	delete(p.fittedWidths, control)
-}
-
-func panelSendColumnCount(hwnd uintptr) int {
-	header, _, _ := panelSend.Call(hwnd, panelListBase+31, 0, 0)
-	count, _, _ := panelSend.Call(header, 0x1200, 0, 0)
-	return int(count)
-}
-
-func (p *windowsPanel) listRows(id int, keys []string, rows [][]string, selected int) {
-	hwnd := p.controls[id]
-	if p.rowCache == nil {
-		p.rowCache = make(map[int]panelRowsCache)
-	}
-	cache := p.rowCache[id]
-	current, _, _ := panelSend.Call(hwnd, panelListBase+12, ^uintptr(0), 2)
-	ordered := reflect.DeepEqual(cache.keys, keys)
-	if ordered && reflect.DeepEqual(cache.rows, rows) && int(current) == selected {
-		return
-	}
-	top, _, _ := panelSend.Call(hwnd, panelListBase+39, 0, 0)
-	topKey, selectedKey := "", ""
-	if int(top) >= 0 && int(top) < len(cache.keys) {
-		topKey = cache.keys[top]
-	}
-	if int(current) >= 0 && int(current) < len(cache.keys) {
-		selectedKey = cache.keys[current]
-	}
-	selectedChanged := selected >= 0 && selected < len(keys) && keys[selected] != selectedKey
-	panelSend.Call(hwnd, 0xb, 0, 0)
-	if !ordered {
-		panelSend.Call(hwnd, panelListBase+9, 0, 0)
-	}
-	for i, cells := range rows {
-		for j, cell := range cells {
-			if ordered && i < len(cache.rows) && j < len(cache.rows[i]) && cache.rows[i][j] == cell {
-				continue
-			}
-			item := panelListItem{mask: 1, item: int32(i), subItem: int32(j), text: utf16z(cell)}
-			message := uintptr(panelListBase + 116)
-			if j == 0 && !ordered {
-				message = panelListBase + 77
-			}
-			parameter := uintptr(i)
-			if j == 0 && !ordered {
-				parameter = 0
-			}
-			panelSend.Call(hwnd, message, parameter, uintptr(unsafe.Pointer(&item)))
-		}
-	}
-	if selected >= 0 && (!ordered || int(current) != selected) {
-		clear := panelListItem{stateMask: 3}
-		panelSend.Call(hwnd, panelListBase+43, ^uintptr(0), uintptr(unsafe.Pointer(&clear)))
-		item := panelListItem{state: 3, stateMask: 3}
-		panelSend.Call(hwnd, panelListBase+43, uintptr(selected), uintptr(unsafe.Pointer(&item)))
-	}
-	if !ordered && topKey != "" {
-		for i, key := range keys {
-			if key != topKey {
-				continue
-			}
-			var first menuRect
-			panelSend.Call(hwnd, panelListBase+14, 0, uintptr(unsafe.Pointer(&first)))
-			panelSend.Call(hwnd, panelListBase+20, 0, uintptr(i*int(first.bottom-first.top)))
-			break
-		}
-	}
-	if selectedChanged {
-		p.revealSelection(id)
-	}
-	panelSend.Call(hwnd, 0xb, 1, 0)
-	panelInvalidate.Call(hwnd, 0, 1)
-	p.rowCache[id] = panelRowsCache{append([]string(nil), keys...), rows}
-}
-
-// A list on a page that was never laid out has no visible rows, and scrolling
-// it would leave the selection off-screen once it is sized. Defer to layout.
-func (p *windowsPanel) revealSelection(id int) {
-	hwnd := p.controls[id]
-	page, _, _ := panelSend.Call(hwnd, panelListBase+40, 0, 0)
-	if page == 0 {
-		if p.revealPending == nil {
-			p.revealPending = make(map[int]bool)
-		}
-		p.revealPending[id] = true
-		return
-	}
-	delete(p.revealPending, id)
-	if selected, _, _ := panelSend.Call(hwnd, panelListBase+12, ^uintptr(0), 2); int(selected) >= 0 {
-		panelSend.Call(hwnd, panelListBase+19, selected, 0)
+// release hands the focus to the popup before control is disabled or
+// destroyed: Windows would leave it nowhere, and then the popup gets no
+// Tab or Esc (a Switch that succeeds becomes "In use" and is disabled).
+func (p *windowsPanel) release(control uintptr) {
+	if focus, _, _ := panelGetFocus.Call(); focus == control {
+		panelSetFocus.Call(p.hwnd)
 	}
 }
 
-func (p *windowsPanel) renderAccounts() {
-	columns := p.model.panel.Columns
-	p.columnsFor(panelAccounts, columns)
-	var rows [][]string
-	var keys []string
-	selected := -1
-	for i, row := range p.model.panel.Rows {
-		cells := append([]string(nil), row.Cells...)
-		for len(cells) < len(columns) {
-			cells = append(cells, "")
-		}
-		if len(cells) > 0 {
-			cells[0] = row.Title
-			if row.Active {
-				cells[0] = "✓ " + row.Title
-			}
-		}
-		rows = append(rows, cells)
-		keys = append(keys, row.ID)
-		if row.ID == p.model.rowID {
-			selected = i
-		}
-	}
-	p.listRows(panelAccounts, keys, rows, selected)
-	p.fitColumns(panelAccounts, p.accountWidths())
-	header, _, _ := panelSend.Call(p.controls[panelAccounts], panelListBase+31, 0, 0)
-	panelInvalidate.Call(header, 0, 1)
-	p.renderDetails()
-}
-
-func (p *windowsPanel) combo(id int, labels []string, selected int) {
-	hwnd := p.controls[id]
-	if p.comboValues == nil {
-		p.comboValues = make(map[int][]string)
-	}
-	previous := p.comboValues[id]
-	equal := len(previous) == len(labels)
-	for i := range labels {
-		if !equal || previous[i] != labels[i] {
-			equal = false
-			break
-		}
-	}
-	if equal {
-		current, _, _ := panelSend.Call(hwnd, panelComboCurrent, 0, 0)
-		if int(current) != selected {
-			panelSend.Call(hwnd, panelComboSelect, uintptr(selected), 0)
-		}
-		return
-	}
-	p.comboValues[id] = append([]string(nil), labels...)
-	panelSend.Call(hwnd, panelComboReset, 0, 0)
-	for _, label := range labels {
-		panelSend.Call(hwnd, panelComboAdd, 0, uintptr(unsafe.Pointer(utf16z(label))))
-	}
-	if selected >= 0 {
-		panelSend.Call(hwnd, panelComboSelect, uintptr(selected), 0)
-	}
-}
-
-func (p *windowsPanel) renderDetails() {
-	hint := "Double-click or press Enter to switch."
-	if row := p.model.row(); row == nil {
-		p.setText(220, "No accounts")
-		p.setText(221, "Open the dashboard to add an account.")
-		hint = ""
-	} else {
-		p.setText(220, row.Title)
-		p.setText(221, strings.Join(row.Details, "\r\n"))
-	}
-	if p.model.panel.Offline {
-		hint = "Reconnect before switching accounts."
-	}
-	p.setText(222, hint)
-	p.fitScroll(221)
-}
-
-func (p *windowsPanel) renderScopes() {
-	var labels []string
-	selected := -1
-	for i, scope := range p.model.panel.Settings {
-		labels = append(labels, scope.Label)
-		if scope.ID == p.model.scopeID {
-			selected = i
-		}
-	}
-	p.combo(panelScopes, labels, selected)
-}
-
-func (p *windowsPanel) renderFields() {
-	p.columnsFor(panelFields, panelFieldColumns)
-	var rows [][]string
-	var keys []string
-	selected := -1
-	if scope := p.model.scope(); scope != nil {
-		for i, field := range scope.Settings {
-			rows = append(rows, []string{field.Label, field.Value, field.Source})
-			keys = append(keys, scope.ID+":"+field.Key)
-			if field.Key == p.model.fieldKey {
-				selected = i
-			}
-		}
-	}
-	p.listRows(panelFields, keys, rows, selected)
-	p.fitColumns(panelFields, p.fieldWidths())
-	p.renderEditor()
-}
-
-func (p *windowsPanel) captureEdit() {
-	if p.rendering || p.controls[panelEdit] == 0 || p.model.field() == nil {
-		return
-	}
-	field := p.model.field()
-	if field.Kind == "bool" || field.Kind == "choice" {
-		return
-	}
-	p.model.edit(panelControlText(p.controls[panelEdit]))
-}
-
-func (p *windowsPanel) renderEditor() {
-	field := p.model.field()
-	choice := false
-	editable := field != nil && field.ReadOnly == "" && !p.model.panel.Offline && p.tray.opts.OnPanelAction != nil
-	if field == nil {
-		p.setText(225, "No settings available")
-		p.setText(226, "")
-	} else {
-		p.setText(225, field.Label)
-		p.setText(226, field.Description+"\r\n"+field.Applies)
-		p.fitScroll(226)
-		choice = field.Kind == "bool" || field.Kind == "choice"
-		p.choiceValues = append([]string(nil), field.Choices...)
-		if field.Kind == "bool" {
-			p.choiceValues = []string{"false", "true"}
-		}
-		if choice {
-			selected := -1
-			for i, value := range p.choiceValues {
-				if value == p.model.value() {
-					selected = i
-				}
-			}
-			p.combo(panelChoice, p.choiceValues, selected)
-		} else {
-			p.setText(panelEdit, p.model.value())
-		}
-	}
-	panelShow.Call(p.controls[panelEdit], uintptr(boolValue(!choice))*5)
-	panelShow.Call(p.controls[panelChoice], uintptr(boolValue(choice))*5)
-	p.enable(panelEdit, editable)
-	p.enable(panelChoice, editable)
-	id := panelFieldID{p.model.scopeID, p.model.fieldKey}
-	dirty := field != nil && !samePanelValue(*field, p.model.value(), field.Value)
-	p.enable(panelSave, editable && dirty && !p.pending[id])
-	p.enable(panelReset, editable && field != nil && !field.IsDefault && !p.pending[id])
-	status := p.fieldErrors[id]
-	if p.pending[id] {
-		status = "Saving…"
-	} else if status == "" && dirty {
-		status = "Unsaved changes"
-	}
-	if field != nil && field.ReadOnly != "" {
-		status = field.ReadOnly
-	}
-	if p.model.panel.Offline {
-		status = "Reconnect before changing settings. Your edits are preserved."
-	}
-	p.setText(227, status)
-}
-
-func (p *windowsPanel) renderActions() {
+func (p *windowsPanel) button(parent uintptr, id int) uintptr {
 	instance, _, _ := pGetModuleHandleW.Call(0)
-	if p.actionControls == nil {
-		p.actionControls = make(map[string]int)
-		p.controlActions = make(map[int]string)
-		p.nextAction = panelActionBase
+	control, _, _ := pCreateWindowExW.Call(0, uintptr(unsafe.Pointer(utf16z("BUTTON"))), 0, panelChild|panelVisible|panelTabStop|panelOwnerDraw,
+		0, 0, 10, 10, parent, uintptr(id), instance, 0)
+	return control
+}
+
+// syncControls keeps one control per key across updates, so a live update never
+// moves focus or changes a control's identity, and orders them for Tab.
+func (p *windowsPanel) syncControls(parent, after uintptr, keys []string, ids map[string]int, next *int, render func(i int) (string, bool)) {
+	keep := map[int]bool{}
+	for i, key := range keys {
+		id, ok := ids[key]
+		if !ok {
+			id, *next = *next, *next+1
+			ids[key], p.keys[id] = id, key
+		}
+		control := p.controls[id]
+		if control == 0 {
+			if control = p.button(parent, id); control == 0 {
+				continue
+			}
+			p.controls[id] = control
+		}
+		keep[id] = true
+		text, enabled := render(i)
+		p.setText(control, text)
+		if !enabled {
+			p.release(control)
+		}
+		panelEnable.Call(control, uintptr(boolValue(enabled)))
+		panelSetPos.Call(control, after, 0, 0, 0, 0, 0x1|0x2|0x10)
+		after = control
+		panelInvalidate.Call(control, 0, 1)
 	}
-	valid := make(map[int]bool)
-	dashboard := false
-	for _, action := range p.model.panel.Actions {
-		if action.ID == "open" {
-			dashboard = true
-			p.enable(panelDashboard, !action.Disabled)
-			continue
-		}
-		id, exists := p.actionControls[action.ID]
-		if !exists {
-			id = p.nextAction
-			p.nextAction++
-			p.actionControls[action.ID] = id
-			p.controlActions[id] = action.ID
-		}
-		valid[id] = true
-		label := action.FallbackTitle()
-		child := p.controls[id]
-		if child == 0 {
-			child, _, _ = pCreateWindowExW.Call(0, uintptr(unsafe.Pointer(utf16z("BUTTON"))), uintptr(unsafe.Pointer(utf16z(label))), panelChild|panelVisible|panelTabStop|0xb,
-				0, 0, 10, 10, p.hwnd, uintptr(id), instance, 0)
-		}
-		if child != 0 {
-			p.controls[id] = child
-			p.setText(id, label)
-			panelSend.Call(child, panelSetFont, p.font, 1)
-			p.enable(id, panelCommandEnabled(p.model.panel, action))
-		}
-	}
-	for id, control := range p.controls {
-		if id >= panelActionBase && !valid[id] {
-			pDestroyWindow.Call(control)
+	for key, id := range ids {
+		if !keep[id] {
+			p.release(p.controls[id])
+			pDestroyWindow.Call(p.controls[id])
 			delete(p.controls, id)
-			delete(p.actionControls, p.controlActions[id])
-			delete(p.controlActions, id)
+			delete(p.keys, id)
+			delete(ids, key)
 		}
 	}
-	panelShow.Call(p.controls[panelDashboard], uintptr(boolValue(dashboard))*5)
+}
+
+func (p *windowsPanel) syncRows() {
+	keys := make([]string, len(p.panel.Rows))
+	for i, row := range p.panel.Rows {
+		keys[i] = row.ID
+	}
+	p.syncControls(p.list, 0, keys, p.rowIDs, &p.nextRow, func(i int) (string, bool) {
+		row := p.panel.Rows[i]
+		return panelSummary(p.panel.Columns, row), panelSwitchEnabled(p.panel, row)
+	})
+}
+
+func (p *windowsPanel) syncActions() {
+	keys := make([]string, len(p.panel.Actions))
+	for i, action := range p.panel.Actions {
+		keys[i] = action.ID
+	}
+	p.syncControls(p.hwnd, p.list, keys, p.actionIDs, &p.nextNamed, func(i int) (string, bool) {
+		action := p.panel.Actions[i]
+		text := action.Title
+		if action.Kind == KindToggle {
+			text = panelToggleText(action)
+		}
+		return text, panelCommandEnabled(p.panel, action)
+	})
+}
+
+func (p *windowsPanel) rowFor(id int) (int, bool) {
+	if id < panelRowBase {
+		return 0, false
+	}
+	for i, row := range p.panel.Rows {
+		if row.ID == p.keys[id] {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+func (p *windowsPanel) actionFor(id int) (Item, bool) {
+	if id >= panelRowBase {
+		return Item{}, false
+	}
+	for _, action := range p.panel.Actions {
+		if key, ok := p.keys[id]; ok && action.ID == key {
+			return action, true
+		}
+	}
+	return Item{}, false
 }
 
 func (p *windowsPanel) command(id int, notification int) {
-	if p.rendering {
+	if notification != 0 {
 		return
 	}
-	if id != panelScopes && id != panelEdit && id != panelChoice && notification != 0 {
+	if id == 2 {
+		p.hide()
 		return
 	}
-	switch id {
-	case panelAccountTab, panelSettingsTab:
-		p.captureEdit()
-		p.switchingPage = true
-		p.model.settings = id == panelSettingsTab
-		p.position()
-		p.layout()
-		panelShow.Call(p.hwnd, 5)
-		pSetForegroundWindow.Call(p.hwnd)
-		focus := panelAccounts
-		if p.model.settings {
-			focus = panelScopes
+	if i, ok := p.rowFor(id); ok {
+		if row := p.panel.Rows[i]; panelSwitchEnabled(p.panel, row) {
+			p.dispatch(PanelAction{Kind: "command", Key: "switch:" + row.ID})
 		}
-		panelSetFocus.Call(p.controls[focus])
-		p.switchingPage = false
-	case panelScopes:
-		if notification != 1 {
-			return
-		}
-		p.captureEdit()
-		selected, _, _ := panelSend.Call(p.controls[id], panelComboCurrent, 0, 0)
-		if int(selected) < 0 || int(selected) >= len(p.model.panel.Settings) {
-			return
-		}
-		p.model.scopeID = p.model.panel.Settings[selected].ID
-		p.model.selectField()
-		p.rendering = true
-		p.renderFields()
-		p.rendering = false
-	case panelEdit:
-		if notification != 0x300 {
-			return
-		}
-		p.captureEdit()
-		delete(p.fieldErrors, panelFieldID{p.model.scopeID, p.model.fieldKey})
-		p.updateEditorButtons()
-	case panelChoice:
-		if notification != 1 {
-			return
-		}
-		selected, _, _ := panelSend.Call(p.controls[id], panelComboCurrent, 0, 0)
-		if int(selected) >= 0 && int(selected) < len(p.choiceValues) {
-			p.model.edit(p.choiceValues[selected])
-		}
-		delete(p.fieldErrors, panelFieldID{p.model.scopeID, p.model.fieldKey})
-		p.updateEditorButtons()
-	case panelSave, panelReset:
-		p.captureEdit()
-		kind := "setting-set"
-		if id == panelReset {
-			kind = "setting-reset"
-		}
-		action, err := p.model.mutation(kind)
-		if err != nil {
-			p.fieldErrors[panelFieldID{p.model.scopeID, p.model.fieldKey}] = err.Error()
-			p.updateEditorButtons()
-			return
-		}
-		p.dispatch(action)
-	case panelDashboard:
-		p.dispatch(PanelAction{Kind: "command", Key: "open"})
-	case 2:
-		panelShow.Call(p.hwnd, 0)
-	default:
-		for _, action := range p.model.panel.Actions {
-			if action.ID != p.controlActions[id] {
-				continue
-			}
-			if panelCommandEnabled(p.model.panel, action) {
-				p.dispatch(PanelAction{Kind: "command", Key: action.ID})
-			}
-			break
-		}
+		return
 	}
-}
-
-func (p *windowsPanel) updateEditorButtons() {
-	p.rendering = true
-	p.renderEditor()
-	p.rendering = false
+	if action, ok := p.actionFor(id); ok && panelCommandEnabled(p.panel, action) {
+		p.dispatch(PanelAction{Kind: "command", Key: action.ID})
+	}
 }
 
 func (p *windowsPanel) dispatch(action PanelAction) {
-	if strings.HasPrefix(action.Kind, "setting-") {
-		id := panelFieldID{action.Scope, action.Key}
-		if p.pending[id] {
-			return
-		}
-		p.pending[id] = true
-		p.model.awaitSetting(action)
-		delete(p.fieldErrors, id)
-		p.updateEditorButtons()
+	if action.Key == "open" {
+		p.hide()
 	}
-	if action.Kind == "command" && action.Key == "open" {
-		panelShow.Call(p.hwnd, 0)
-	}
+	// Off the UI thread: a switch waits on locks and the engine. Its
+	// outcome comes back as the next panel's note.
 	go func() {
-		var err error
 		if p.tray.opts.OnPanelAction != nil {
-			err = p.tray.opts.OnPanelAction(action)
-		} else if action.Kind == "command" && p.tray.opts.OnClick != nil {
+			p.tray.opts.OnPanelAction(action)
+		} else if p.tray.opts.OnClick != nil {
 			p.tray.opts.OnClick(action.Key)
-		} else {
-			err = fmt.Errorf("this action is unavailable")
-		}
-		p.tray.mu.Lock()
-		p.tray.panelResults = append(p.tray.panelResults, panelActionResult{action, err})
-		hwnd := p.tray.hwnd
-		p.tray.mu.Unlock()
-		if hwnd != 0 {
-			pPostMessageW.Call(uintptr(hwnd), wmPanelResult, 0, 0)
 		}
 	}()
 }
 
-func (t *windowsTray) applyPanelResults() {
-	t.mu.Lock()
-	results := t.panelResults
-	t.panelResults = nil
-	t.mu.Unlock()
-	if t.panel == nil {
+// reveal scrolls a focused Switch into view.
+func (p *windowsPanel) reveal(focus uintptr) {
+	if inside, _, _ := panelIsChild.Call(p.list, focus); focus == 0 || inside == 0 {
 		return
 	}
-	p := t.panel
-	for _, result := range results {
-		if strings.HasPrefix(result.action.Kind, "setting-") {
-			id := panelFieldID{result.action.Scope, result.action.Key}
-			delete(p.pending, id)
-			if result.err != nil {
-				p.fieldErrors[id] = result.err.Error()
-				p.model.cancelSetting(result.action)
-			}
-		} else if result.err != nil {
-			p.errorText = result.err.Error()
-		} else {
-			p.errorText = ""
-		}
+	id, _, _ := panelControlID.Call(focus)
+	if i, ok := p.rowFor(int(id)); ok {
+		p.scrollTo(p.geometry.scrollToShow(i, p.scroll))
 	}
-	p.updateEditorButtons()
-	p.layout()
-}
-
-func (p *windowsPanel) notification(pointer uintptr) uintptr {
-	header := nativePanelStruct[panelHeader](pointer)
-	if header.code == 0xfffffff4 {
-		return p.drawList(nativePanelStruct[panelListDraw](pointer))
-	}
-	if p.rendering {
-		return 0
-	}
-	if header.code == uint32(0xffffff9b) {
-		note := nativePanelStruct[panelListNotification](pointer)
-		if note.item < 0 || note.newState&2 == 0 {
-			return 0
-		}
-		p.captureEdit()
-		if header.hwnd == p.controls[panelAccounts] && int(note.item) < len(p.model.panel.Rows) {
-			p.model.rowID = p.model.panel.Rows[note.item].ID
-			p.rendering = true
-			p.renderDetails()
-			p.rendering = false
-		} else if header.hwnd == p.controls[panelFields] {
-			if scope := p.model.scope(); scope != nil && int(note.item) < len(scope.Settings) {
-				p.model.fieldKey = scope.Settings[note.item].Key
-				p.updateEditorButtons()
-			}
-		}
-	} else if header.code == 0xffffff8e && header.hwnd == p.controls[panelAccounts] {
-		note := nativePanelStruct[panelListNotification](pointer)
-		p.confirmSwitch(int(note.item))
-	} else if header.code == 0xffffff94 && header.hwnd == p.controls[panelAccounts] {
-		note := nativePanelStruct[panelListNotification](pointer)
-		if note.subItem >= 0 && int(note.subItem) < len(p.model.panel.Columns) {
-			p.dispatch(PanelAction{Kind: "sort", Key: p.model.panel.Columns[note.subItem].ID})
-		}
-	}
-	return 0
 }
 
 func panelWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uintptr {
-	winMu.Lock()
-	t := winTray
-	winMu.Unlock()
-	if t == nil || t.panel == nil {
+	p := currentPanel()
+	if p == nil || p.hwnd != uintptr(hwnd) {
 		result, _, _ := pDefWindowProcW.Call(uintptr(hwnd), uintptr(message), wParam, lParam)
 		return result
 	}
-	p := t.panel
 	switch message {
 	case wmClose:
-		panelShow.Call(uintptr(hwnd), 0)
+		p.hide()
 		return 0
 	case 0x0006:
-		if wParam&0xffff == 0 && !p.switchingPage && (p.confirm == nil || lParam != p.confirm.hwnd) {
-			panelShow.Call(uintptr(hwnd), 0)
+		if wParam&0xffff == 0 && !p.picture {
+			p.hide()
 		}
 		return 0
 	case wmCommand:
 		p.command(int(wParam&0xffff), int(wParam>>16))
 		return 0
-	case panelNotify:
-		if lParam != 0 {
-			return p.notification(lParam)
-		}
-		return 0
-	case 0x0005:
-		if p.hwnd != 0 {
-			p.layout()
-		}
-		return 0
 	case 0x02e0:
 		p.dpi = int(wParam & 0xffff)
 		p.refreshTheme()
-		p.position()
 		return 0
 	case 0x001a, 0x0015, 0x031a:
 		p.refreshTheme()
 		return 0
 	case 0x000f:
-		return p.paint()
+		var paint panelPaint
+		dc, _, _ := user32.NewProc("BeginPaint").Call(p.hwnd, uintptr(unsafe.Pointer(&paint)))
+		p.paint(dc)
+		user32.NewProc("EndPaint").Call(p.hwnd, uintptr(unsafe.Pointer(&paint)))
+		return 0
+	case 0x0318:
+		p.paint(wParam)
+		return 0
 	case 0x0014:
 		return 1
 	case wmDrawItem:
-		if lParam != 0 && (p.drawButton(nativePanelStruct[drawMenuItem](lParam)) || p.drawCombo(nativePanelStruct[drawMenuItem](lParam))) {
+		if lParam != 0 && p.drawButton(nativePanelStruct[drawMenuItem](lParam)) {
 			return 1
 		}
-	case wmMeasureItem:
-		if lParam != 0 {
-			measure := nativePanelStruct[measureMenuItem](lParam)
-			if measure.ctlType == 3 {
-				m := p.metrics()
-				measure.itemHeight = uint32(m.line + m.unit - 1)
-				return 1
-			}
-		}
-	case 0x0133, 0x0134, 0x0138:
-		return p.colorControl(wParam, lParam)
+	case 0x020a:
+		p.wheel(wParam)
+		return 0
 	}
 	result, _, _ := pDefWindowProcW.Call(uintptr(hwnd), uintptr(message), wParam, lParam)
 	return result
 }
 
-func panelListSubclass(hwnd uintptr, message uint32, wParam, lParam, id, ref uintptr) uintptr {
-	result, _, _ := panelDefSubclass.Call(hwnd, uintptr(message), wParam, lParam)
-	winMu.Lock()
-	t := winTray
-	winMu.Unlock()
-	if t != nil && t.panel != nil && t.panel.theme == menuDark {
-		switch message {
-		case 0xf, 0x85, 0x115, 0x114, 0x20a, 0xa0, 0xa1, 0xa2, 0x5:
-			t.panel.paintScrollbars(hwnd)
+func panelListProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uintptr {
+	p := currentPanel()
+	if p == nil || p.list != uintptr(hwnd) {
+		result, _, _ := pDefWindowProcW.Call(uintptr(hwnd), uintptr(message), wParam, lParam)
+		return result
+	}
+	switch message {
+	case 0x000f:
+		var paint panelPaint
+		dc, _, _ := user32.NewProc("BeginPaint").Call(p.list, uintptr(unsafe.Pointer(&paint)))
+		p.paintList(dc)
+		user32.NewProc("EndPaint").Call(p.list, uintptr(unsafe.Pointer(&paint)))
+		return 0
+	case 0x0318:
+		p.paintList(wParam)
+		return 0
+	case 0x0014:
+		return 1
+	case wmDrawItem:
+		if lParam != 0 && p.drawButton(nativePanelStruct[drawMenuItem](lParam)) {
+			return 1
 		}
-		if message == 0x317 && lParam&2 != 0 {
-			t.panel.paintScrollbarsOnDC(hwnd, wParam)
+	case wmCommand:
+		p.command(int(wParam&0xffff), int(wParam>>16))
+		return 0
+	case 0x0115:
+		p.vscroll(wParam)
+		return 0
+	case 0x020a:
+		p.wheel(wParam)
+		return 0
+	}
+	result, _, _ := pDefWindowProcW.Call(uintptr(hwnd), uintptr(message), wParam, lParam)
+	if p.theme == menuDark {
+		switch message {
+		case 0x85, 0xa0, 0xa1, 0xa2, 0x5:
+			p.paintScrollbars(p.list)
+		case 0x317:
+			if lParam&2 != 0 {
+				p.paintScrollbarsOnDC(p.list, wParam)
+			}
 		}
 	}
 	return result

@@ -172,18 +172,20 @@ func (a *appShell) claudeCodeItem() (tray.Item, bool) {
 }
 
 // claudeCodeClick updates Claude Code with its own installer, after asking;
-// a missing one is told how to install (A27).
-func (a *appShell) claudeCodeClick() {
+// a missing one is told how to install (A27). done says whether the click
+// had an outcome, and note is the panel's line for it.
+func (a *appShell) claudeCodeClick() (note string, alert, done bool) {
 	a.mu.Lock()
 	st := a.claude
 	a.mu.Unlock()
 	switch st.State() {
 	case ccversion.Missing:
-		a.notify("Install Claude Code", "Claude Code is not installed on this machine. Install it with: "+ccversion.InstallHint(platformGOOS()))
-		return
+		hint := ccversion.InstallHint(platformGOOS())
+		a.notify("Install Claude Code", "Claude Code is not installed on this machine. Install it with: "+hint)
+		return "Claude Code is not installed. Install it with: " + hint, true, true
 	case ccversion.UpdateAvailable:
 	default:
-		return
+		return "", false, false
 	}
 	cmd := ccversion.UpgradeCommand(st.Installed)
 	if a.act.Ask != nil {
@@ -191,16 +193,17 @@ func (a *appShell) claudeCodeClick() {
 			"Update Claude Code from "+st.Installed.Version+" to "+st.Latest+" with:\n\n"+cmd.String()+
 				"\n\nRunning Claude Code sessions keep the old version until you restart them.", "Update", "Cancel")
 		if err == nil && !ok {
-			return
+			return "", false, false
 		}
 		// No dialog on this platform: the click was the request.
 	}
 	a.notify("Claude Code", "Updating Claude Code — this can take a minute.")
 	if _, err := a.runClaudeCode(st); err != nil {
 		a.notify("Claude Code update failed", err.Error())
-	} else {
-		a.notify("Claude Code update done", "Restart running Claude Code sessions to use the new version.")
+		return "Claude Code update failed: " + err.Error(), true, true
 	}
+	a.notify("Claude Code update done", "Restart running Claude Code sessions to use the new version.")
+	return "Claude Code updated. Restart running Claude Code sessions to use the new version.", false, true
 }
 
 // runClaudeCode runs the update the check st found, for the tray and for the
