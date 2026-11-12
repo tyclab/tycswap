@@ -9,5 +9,13 @@
   "platformAutomerge": false,
   "forkProcessing": "enabled",
   "osvVulnerabilityAlerts": true,
-  "postUpdateOptions": ["gomodTidy"]
+  "postUpdateOptions": ["gomodTidy"],
+  "packageRules": [
+    {
+      "description": "Patch, minor, digest and pin updates merge themselves once the branch is green and up to date with main, after the 3-day minimumReleaseAge, as in the sibling repos. Majors stay PRs. platformAutomerge is off: main has no branch protection and the repository does not allow auto-merge, so Renovate merges a green, up-to-date branch itself, with a merge commit like every other PR here. A merge to main releases nothing; a release is a tag.",
+      "matchUpdateTypes": ["patch", "minor", "digest", "pin", "pinDigest"],
+      "automerge": true,
+      "automergeStrategy": "merge-commit"
+    }
+  ]
 }
