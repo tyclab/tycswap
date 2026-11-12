@@ -7096,3 +7096,30 @@ Supersedes A24's `Endpoint` (the API URL and its `tag_name`); A6's JSON
 reading goes with it. The CLI package's tests point `ReleasesURL` at a
 closed local port, so a command's passive notice in a test never reaches
 github.com.
+
+## A87. The Windows tray opens the dashboard's update check
+
+The Windows panel's footer includes `Check for updates…` after `Quit`, even
+when no update is known or scheduled checks are disabled. It starts the same
+check as the dashboard's `Check now`, then opens the Updates section. It never
+asks to install anything. The existing Linux and macOS update menu behavior
+is unchanged.
+
+A local tray calls its shared updates facade; a remote tray sends authenticated
+`POST /api/updates/check` to its dashboard server. The remote shortcut is disabled
+while that server is unreachable. A failed check request still attempts to open
+the dashboard; check and browser errors appear in the panel note and notification.
+The normal package-manager upgrade hints remain in the dashboard.
+
+The single-use launch URL accepts only `show=updates` as a navigation target.
+Its authenticated redirect preserves that target beside the CSRF fragment; the
+client stores the CSRF token as before, removes the query and navigates to
+`#updates`. After the first state arrives it unfolds and focuses the Updates
+section. Later state events do not repeatedly move focus or scroll the page.
+
+On switches use the same accent for label, track and state; an unavailable on
+switch keeps a dimmed accent, while off remains neutral. High-contrast mode
+continues using system colors. Footer commands wrap within the content width
+instead of widening the account table, keeping the two switches and Open
+dashboard together when they fit. This restores the manual shortcut removed
+by A84 while retaining its daily view.

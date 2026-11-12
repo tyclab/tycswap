@@ -355,10 +355,13 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	if f, ok := s.err.(*os.File); ok && isTTY(f) {
 		outputPlace = "the terminal running " + brandName() + " app"
 	}
-	openDashboard := func() error {
+	openDashboardAt := func(showUpdates bool) error {
 		u, err := srv.LaunchURL()
 		if err != nil {
 			return err
+		}
+		if showUpdates {
+			u += "&show=updates"
 		}
 		if err := openBrowser(u); err != nil {
 			// Leave a way in (A41): the address, single-use like the one
@@ -370,6 +373,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		}
 		return nil
 	}
+	openDashboard := func() error { return openDashboardAt(false) }
 	var quitOnce sync.Once
 	quit := func() { quitOnce.Do(func() { cancel(); t.Quit() }) }
 	var restart atomic.Bool
@@ -389,6 +393,8 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	readAutostart, writeAutostart := trayAutostart(autostart.Config{})
 	sh = newAppShell(t, shellActions{
 		OpenDashboard: openDashboard,
+		OpenUpdates:   func() error { return openDashboardAt(true) },
+		CheckUpdates:  updates.Check,
 		AccountSetup:  openAccountSetup,
 		// A row key: the Claude switcher or the Codex one (A47).
 		SwitchTo: func(key string) ([]int, error) {

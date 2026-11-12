@@ -377,6 +377,10 @@ func (c *remoteClient) AutoStart() error {
 	return c.mutate("/api/auto/start", map[string]any{"dryRun": false})
 }
 
+func (c *remoteClient) CheckUpdates() error {
+	return c.call(http.MethodPost, "/api/updates/check", nil, nil)
+}
+
 // AutoStop is POST /api/auto/stop.
 func (c *remoteClient) AutoStop() error {
 	return c.mutate("/api/auto/stop", nil)
@@ -717,10 +721,13 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	if f, ok := s.err.(*os.File); ok && isTTY(f) {
 		outputPlace = "the terminal running " + brandName() + " app"
 	}
-	openDashboard := func() error {
+	openDashboardAt := func(showUpdates bool) error {
 		u, err := rc.Launch()
 		if err != nil {
 			return err
+		}
+		if showUpdates {
+			u += "&show=updates"
 		}
 		if err := openBrowser(u); err != nil {
 			fmt.Fprintln(s.err, "Dashboard: "+u)
@@ -728,6 +735,7 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 		}
 		return nil
 	}
+	openDashboard := func() error { return openDashboardAt(false) }
 	var quitOnce sync.Once
 	quit := func() { quitOnce.Do(func() { cancel(); t.Quit() }) }
 	var restart atomic.Bool
@@ -739,6 +747,8 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	buildHint := appUpgradeHint()
 	sh = newAppShell(t, shellActions{
 		OpenDashboard: openDashboard,
+		OpenUpdates:   func() error { return openDashboardAt(true) },
+		CheckUpdates:  rc.CheckUpdates,
 		AccountSetup: func(section string) error {
 			return openRemoteAccountSetup(o.tokenFile, func() error { return rc.call("POST", "/api/accounts/setup", map[string]any{"section": section}, nil) }, section)
 		},

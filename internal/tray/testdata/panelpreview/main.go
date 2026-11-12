@@ -34,8 +34,19 @@ import (
 func main() {
 	picture := flag.String("png", "", "write a PNG of the panel window to this path and exit")
 	theme := flag.String("theme", "", "dark or light for -png; the system's when empty")
+	offline := flag.Bool("offline", false, "show an unavailable engine with disabled account controls")
+	autostart := flag.Bool("autostart", true, "show Start at login as on")
 	flag.Parse()
 	model := fixture(time.Now())
+	model.Offline, model.Alert = *offline, *offline
+	if *offline {
+		model.Note = "Engine unavailable. Account controls are disabled."
+	}
+	for i := range model.Actions {
+		if model.Actions[i].ID == "autostart" {
+			model.Actions[i].Checked = *autostart
+		}
+	}
 	if *picture == "" {
 		interactive(model)
 		return
@@ -91,7 +102,7 @@ func fixture(now time.Time) tray.Panel {
 	}
 	p := tray.Panel{Title: "tycswap",
 		Columns: []tray.Column{{ID: "account", Label: "Account"}, {ID: "fiveHour", Label: "5-hour"}, {ID: "sevenDay", Label: "Weekly"}, {ID: "model:Fable", Label: "Fable"}},
-		Actions: []tray.Item{{ID: "quit", Title: "Quit"}, {ID: "auto", Title: "Auto-switch", Kind: tray.KindToggle, Checked: true},
+		Actions: []tray.Item{{ID: "quit", Title: "Quit"}, {ID: "updates-open", Title: "Check for updates…"}, {ID: "auto", Title: "Auto-switch", Kind: tray.KindToggle, Checked: true},
 			{ID: "autostart", Title: "Start at login", Kind: tray.KindToggle, Checked: true}, {ID: "open", Title: "Open dashboard"}}}
 	for _, r := range rows {
 		row := tray.PanelRow{ID: r.id, Name: r.name, Plan: r.plan, Active: r.active}

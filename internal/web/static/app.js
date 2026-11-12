@@ -301,8 +301,13 @@
 
   // ---- tabs ----------------------------------------------------------------
 
+  var pendingUpdatesNavigation = false;
+  if (new URLSearchParams(window.location.search).get('show') === 'updates') {
+    try { history.replaceState(null, '', window.location.pathname + '#updates'); } catch (e) { /* ignore */ }
+  }
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
   function selectTab(name, focus, hash) {
+    if (hash !== '#updates') { pendingUpdatesNavigation = false; }
     tabs.forEach(function (t) {
       var on = t.getAttribute('data-tab') === name;
       t.setAttribute('aria-selected', on ? 'true' : 'false');
@@ -331,6 +336,13 @@
   });
   function tabFromHash() {
     var h = (window.location.hash || '').replace('#', '');
+    if (h === 'updates') {
+      selectTab('dashboard', false, '#updates');
+      pendingUpdatesNavigation = true;
+      if (state && state.updates) { showUpdates(); }
+      return;
+    }
+    pendingUpdatesNavigation = false;
     var section = $(h);
     if (section && section.classList.contains('guide-section')) {
       // A contents link names a section inside Guide, not another tab. Keep
@@ -2135,6 +2147,7 @@
     renderGuarded('settings', 'panel-settings', { settings: st.settings, models: modelWindowNames(st) }, function () { renderSettings(st); });
     renderGuarded('sessions', 'panel-sessions', st.sessions, function () { renderSessions(st.sessions); });
     applyFolds(st);
+    if (pendingUpdatesNavigation && st.updates) { showUpdates(); }
     tickCountdowns();
   }
 
@@ -2172,22 +2185,23 @@
     return res;
   }
 
+  function showUpdates() {
+    pendingUpdatesNavigation = false;
+    selectTab('dashboard', false, '#updates');
+    if ($('updates-card').classList.contains('folded')) { foldCard('updates-card', false); }
+    var card = $('updates-card').hidden ? $('updates-ok') : $('updates-card');
+    if (card.scrollIntoView) { card.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+    var title = $('updates-title');
+    if (title && !$('updates-card').hidden) { title.focus({ preventScroll: true }); }
+    return Promise.resolve();
+  }
+
   var ACTIONS = {
     'card-toggle': function (btn) {
       var id = btn.getAttribute('data-card');
       return foldCard(id, !$(id).classList.contains('folded'));
     },
-    'updates-show': function () {
-      selectTab('dashboard');
-      // Unfolding here is a fold change like the chevron's: sent, or the
-      // next state folds the card again.
-      if ($('updates-card').classList.contains('folded')) { foldCard('updates-card', false); }
-      var card = $('updates-card').hidden ? $('updates-ok') : $('updates-card');
-      if (card.scrollIntoView) { card.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
-      var title = $('updates-title');
-      if (title && !$('updates-card').hidden) { title.focus({ preventScroll: true }); }
-      return Promise.resolve();
-    },
+    'updates-show': showUpdates,
     'updates-check': function (btn) {
       btn.disabled = true; btn.setAttribute('aria-busy', 'true');
       return api('POST', '/api/updates/check', {}).catch(function (err) {

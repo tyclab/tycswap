@@ -72,7 +72,8 @@ func (a *appShell) panelAt(st web.State, now time.Time) tray.Panel {
 		}
 		p.Rows = append(p.Rows, r)
 	}
-	p.Actions = append(p.Actions, tray.Item{ID: "quit", Title: "Quit"})
+	p.Actions = append(p.Actions, tray.Item{ID: "quit", Title: "Quit"},
+		tray.Item{ID: "updates-open", Title: "Check for updates…", Disabled: down || a.act.CheckUpdates == nil || a.act.OpenUpdates == nil})
 	for _, action := range a.updatesSection() {
 		switch action.ID {
 		case "install-update":

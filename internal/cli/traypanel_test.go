@@ -278,11 +278,11 @@ func TestTrayPanelFooterActions(t *testing.T) {
 	sh.tray = pt
 	sh.act.Autostart = func() (bool, error) { return true, nil }
 	sh.repaint()
-	if ids := footerIDs(pt.panel); !slices.Equal(ids, []string{"quit", "auto", "autostart", "open"}) {
+	if ids := footerIDs(pt.panel); !slices.Equal(ids, []string{"quit", "updates-open", "auto", "autostart", "open"}) {
 		t.Fatalf("footer without an update %v", ids)
 	}
 	for _, action := range pt.panel.Actions {
-		want := map[string]string{"quit": "Quit", "auto": "Auto-switch", "autostart": "Start at login", "open": "Open dashboard"}[action.ID]
+		want := map[string]string{"quit": "Quit", "updates-open": "Check for updates…", "auto": "Auto-switch", "autostart": "Start at login", "open": "Open dashboard"}[action.ID]
 		toggle := action.ID == "auto" || action.ID == "autostart"
 		if action.Title != want || (action.Kind == tray.KindToggle) != toggle || action.Disabled {
 			t.Fatalf("footer action %+v", action)
@@ -298,11 +298,11 @@ func TestTrayPanelFooterActions(t *testing.T) {
 	}
 	sh.checkClaudeCode(false)
 	sh.repaint()
-	if ids := footerIDs(pt.panel); !slices.Equal(ids, []string{"quit", "install-update", "claude-code", "auto", "autostart", "open"}) {
+	if ids := footerIDs(pt.panel); !slices.Equal(ids, []string{"quit", "updates-open", "install-update", "claude-code", "auto", "autostart", "open"}) {
 		t.Fatalf("footer with updates %v", ids)
 	}
-	if pt.panel.Actions[1].Title != "Update tycswap" || pt.panel.Actions[2].Title != "Update Claude" {
-		t.Fatalf("update buttons %+v", pt.panel.Actions[1:3])
+	if pt.panel.Actions[2].Title != "Update tycswap" || pt.panel.Actions[3].Title != "Update Claude" {
+		t.Fatalf("update buttons %+v", pt.panel.Actions[2:4])
 	}
 }
 
@@ -317,7 +317,7 @@ func TestTrayPanelOfflineAndBeforeTheFirstState(t *testing.T) {
 		t.Fatalf("offline panel %+v", p)
 	}
 	for _, action := range p.Actions {
-		if (action.ID == "auto") != action.Disabled {
+		if (action.ID == "auto" || action.ID == "updates-open") != action.Disabled {
 			t.Fatalf("offline action %+v", action)
 		}
 	}
@@ -691,4 +691,31 @@ func TestTrayPanelRepaintsDoNotInterleave(t *testing.T) {
 			t.Fatalf("%s missing after both checks: %v", id, order)
 		}
 	}
+}
+
+func TestTrayPanelUpdatesShortcut(t *testing.T) {
+	sh, ft, calls := newTestShell(t)
+	pt := &panelCaptureTray{fakeTray: ft}
+	sh.tray = pt
+	sh.update(sampleState())
+	before := pt.count()
+	sh.click("updates-open")
+	if got := strings.Join(*calls, ","); got != "check-updates,open-updates" {
+		t.Fatalf("shortcut calls %s", got)
+	}
+	if pt.count() <= before || pt.panel.Note != "Updates opened in the dashboard." || pt.panel.Alert {
+		t.Fatalf("shortcut feedback: %+v", pt.panel)
+	}
+	sh.act.CheckUpdates = func() error { return errors.New("engine offline") }
+	sh.act.OpenUpdates = func() error { *calls = append(*calls, "open-failed-check"); return errors.New("no browser") }
+	sh.click("updates-open")
+	if (*calls)[len(*calls)-1] != "open-failed-check" || !pt.panel.Alert ||
+		!strings.Contains(pt.panel.Note, "engine offline") || !strings.Contains(pt.panel.Note, "no browser") {
+		t.Fatalf("failed shortcut feedback: %+v, calls %v", pt.panel, *calls)
+	}
+	if notes := ft.notesNow(); len(notes) != 1 || !strings.Contains(notes[0], "engine offline") {
+		t.Fatalf("shortcut error notification %v", notes)
+	}
+	sh.act.CheckUpdates = nil
+	sh.click("updates-open")
 }

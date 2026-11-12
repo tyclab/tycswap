@@ -889,9 +889,12 @@ Ultra login's 5-hour column reads, or that the plan cannot run Fable. Fable at
 the default login at once and turns auto-switch off when it was on (for a
 Codex account, while Codex rotation is on), so the login stays where you put
 it; the line under the list says so, and the active
-account reads **In use**. The footer has **Quit**, the update buttons while an
-update waits, the **Auto-switch** and **Start at login** switches and **Open
-dashboard**. Tab moves through the buttons, Space or Enter presses one, Esc
+account reads **In use**. The footer has **Quit**, **Check for updates…**, the
+update buttons while an update waits, the **Auto-switch** and **Start at login**
+switches and **Open dashboard**. **Check for updates…** starts the dashboard's
+check and opens its Updates section, including with `--no-update-check`. A
+remote tray checks the dashboard's machine; package-managed builds keep their
+normal update instructions. Tab moves through the buttons, Space or Enter presses one, Esc
 closes the panel. Settings and Add account are in the dashboard (and
 `tycswap config`, `tycswap add`). Start at login is local to the tray's
 device.

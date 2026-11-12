@@ -88,6 +88,33 @@ func TestPanelFooterPlacement(t *testing.T) {
 	}
 }
 
+func TestPanelUpdateCommandsWrapWithoutWideningAccounts(t *testing.T) {
+	p := panelFixture()
+	base := layoutPanel(p, fakeMeasure{}, 4000, 4000, 17)
+	commands := []Item{{ID: "updates-open", Title: "Check for updates…"}, {ID: "install-update", Title: "Update tycswap"}, {ID: "claude-code", Title: "Update Claude"}}
+	for count := 1; count <= len(commands); count++ {
+		p.Actions = append(append(append([]Item{}, panelFixture().Actions[:1]...), commands[:count]...), panelFixture().Actions[1:]...)
+		g := layoutPanel(p, fakeMeasure{}, 4000, 4000, 17)
+		if g.width != base.width || !slices.Equal(g.columns, base.columns) {
+			t.Fatalf("%d update commands moved the account columns: %+v", count, g)
+		}
+		for i, button := range g.buttons {
+			if button.x < g.metrics.pad || button.x+button.width > g.width-g.metrics.pad || button.y < g.footer || button.y+button.height > g.height {
+				t.Fatalf("%d update commands: button outside the footer: %+v", count, button)
+			}
+			for _, other := range g.buttons[:i] {
+				if button.y == other.y && button.x < other.x+other.width && other.x < button.x+button.width {
+					t.Fatalf("overlapping footer controls: %+v and %+v", button, other)
+				}
+			}
+		}
+		last := len(g.buttons) - 1
+		if g.buttons[last].y != g.buttons[last-1].y || g.buttons[last].y != g.buttons[last-2].y {
+			t.Fatal("the toggles and dashboard must stay together")
+		}
+	}
+}
+
 // The panel is as wide as its content and its footer's one row, as tall as
 // its rows; past the work area the list scrolls and everything else stays.
 func TestPanelGeometryFitsAndScrolls(t *testing.T) {
@@ -128,7 +155,7 @@ func TestPanelGeometryFitsAndScrolls(t *testing.T) {
 		t.Fatalf("the scroll bar did not widen the panel: %d vs %d", short.width, g.width)
 	}
 	wide := p
-	wide.Actions = append([]Item{{ID: "install-update", Title: strings.Repeat("u", 60)}}, p.Actions...)
+	wide.Actions = append([]Item{{ID: "install-update", Title: strings.Repeat("u", 100)}}, p.Actions...)
 	if w := layoutPanel(wide, m, 4000, 4000, 17); w.width <= g.width || w.columns[4].x+w.columns[4].width != w.width-w.metrics.pad || w.columns[0].width != g.columns[0].width+w.width-g.width {
 		t.Fatalf("a wider footer left the Switch column off the right edge: %+v", w.columns)
 	}
@@ -231,6 +258,9 @@ func TestPanelPaletteContrast(t *testing.T) {
 		}
 		if c.track == c.background || c.line == c.background {
 			t.Errorf("dark=%v: bar track or rule invisible", dark)
+		}
+		if c.disabledAccent == c.accent || c.disabledAccent == c.muted || contrast(c.disabledAccent, c.background) < 3 {
+			t.Errorf("dark=%v: disabled on state must retain a distinct, visible accent", dark)
 		}
 	}
 	// The approved picture's orange.
