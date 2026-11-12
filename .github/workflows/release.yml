@@ -43,7 +43,7 @@ jobs:
           done
       - name: Smoke test
         run: ./dist/tycswap_${TAG}_linux_amd64 --version
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-windows
           path: dist/*
@@ -75,7 +75,7 @@ jobs:
           ./dist/tycswap_${TAG}_darwin_arm64 --version
           ./dist/tycswap_${TAG}_darwin_arm64 app --help > /dev/null
           lipo -archs "dist/tycswap_${TAG}_darwin_amd64" | grep -qx x86_64
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: darwin
           path: dist/*
