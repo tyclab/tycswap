@@ -7126,3 +7126,34 @@ continues using system colors. Footer commands wrap within the content width
 instead of widening the account table, keeping the two switches and Open
 dashboard together when they fit. This restores the manual shortcut removed
 by A84 while retaining its daily view.
+
+## A88. Explicit switches reclaim idle per-account profiles
+
+`switch ACCOUNT` returns an idle legacy `run`/`env` profile's login to its
+stored slot before the normal default-profile switch. A live CLI or IDE
+session, unreadable process state, conflicting owners, mismatching identities,
+or unverified credential keeps the claim held, including with `--force`.
+The refusal for a live profile names its PIDs and the retry command.
+
+The source snapshot is read under the shared store lock. A matching account
+block or nonempty credential fingerprint proves local lineage; otherwise the
+OAuth profile endpoint must identify the account outside the locks. Before
+committing, the store lock and source credential, config and storage-write
+locks are acquired and both ownership and source bytes are checked again.
+The stored config must identify the same account too. An unverifiable rotation,
+including an expired access token the endpoint cannot identify, is held for
+reconciliation or a fresh login rather than overwritten from a stale backup.
+
+A private `.tycswap-release.json` in the source profile records its version,
+full account identity and SHA-256 digest of the account-only credential. It is
+written before the backup. The verified credential is saved before removing
+the source login; its seat-wide credentials and conversation files remain.
+The claim is removed only after the source no longer serves the login, then
+the marker is removed. A retry after source cleanup requires the marker's
+identity and digest to match the saved backup. A new legacy claim removes any
+old marker so a later session cannot inherit earlier release proof.
+
+The normal switch still rechecks availability under its own locks. A failure
+after releasing the source leaves a saved, unclaimed account for retry; it
+does not repopulate a second rotating login. Default auto-switching remains
+the account selection policy after a successful switch.

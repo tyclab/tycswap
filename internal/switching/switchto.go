@@ -111,6 +111,9 @@ func SwitchTo(s *store.Store, identifier string, jsonOut, force bool) (any, erro
 		return nil, err
 	}
 
+	if err := releaseIdleLegacy(s, targetAccount); err != nil {
+		return nil, err
+	}
 	op, err := performSwitch(s, targetAccount, !jsonOut, force, prov)
 	if err != nil {
 		return nil, err

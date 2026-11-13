@@ -43,6 +43,12 @@ func (s *Store) ClaimLegacyProfile(number, email, profile string) error {
 		return err
 	}
 	registry.Claims[number] = groups.Owner{Scope: "legacy:" + number, ProfileDir: profile, Account: account}
+	if err := groups.SafePath(legacyReleasePath(profile)); err != nil {
+		return err
+	}
+	if err := removeGroupFile(legacyReleasePath(profile)); err != nil {
+		return err
+	}
 	return registry.Save(s.backupDir)
 }
 
