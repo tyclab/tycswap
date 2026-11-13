@@ -6146,7 +6146,10 @@ never start a duplicate server. The remote tray publishes separate connection me
 
 An explicit `add --login --switch` onto the current account uses the existing locked
 activation path, so its new credential becomes live instead of returning already-active.
-Plain `add --login` continues to leave the live login untouched.
+Plain `add --login` leaves the live login untouched for any other account. A login
+as the current account takes the same activation without `--switch`: the reference
+names it as the repair for a dead login, the active row reads the live store, and
+the renewed backup alone left that row at `no credentials` until a forced switch.
 
 ## A66. The engine keeps nothing between ticks
 
