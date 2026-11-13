@@ -210,7 +210,8 @@ to make the new account live straight away, through the same switch as
 `tycswap switch 2`. Arguments after `--` go to `claude auth login`, for example
 `tycswap add --login -- --email bob@example.com` or `-- --sso`. `--slot` and
 `--alias` work as for `tycswap add`. If the account is already managed, its
-stored credentials are refreshed in place. This flow explicitly selects subscription
+stored credentials are refreshed in place; signing in as the account that is
+already live also makes the new login the live one. This flow explicitly selects subscription
 login (`--claudeai`) and rejects `--console` before starting Claude Code; API keys
 belong in `add-token`.
 

@@ -644,7 +644,8 @@ stored credentials and config in place rather than allocating a second slot, and
 reports `Updated credentials for Account <n> (<email> [<tag>]).`. This is the
 supported way to repair an account whose refresh token has died (`usageStatus:
 relogin_required`): run `tycswap add --login` and sign in as that account, or
-log in with it in Claude Code and re-run `tycswap add`. The refresh also clears
+log in with it in Claude Code and re-run `tycswap add`. When that account is the
+live one, `add --login` also makes the new login the live one. The refresh also clears
 any `tycswap auto` quarantine on that slot. Invalidating an idle session profile
 also releases its credential claim, preserving its conversation history. A
 running or unverifiable CLI or IDE session retains its credentials and claim;
@@ -671,6 +672,10 @@ otherwise the account takes `--slot` or the next free slot, with `--alias`
 applied. The live login is untouched and `activeAccountNumber` stays on it: it
 follows that account when `--slot` moves it, and is cleared when `--slot`
 overwrites its record.
+A login as the live account itself is the exception: `add` then activates the
+new login through the same path as `tycswap switch <n> --force`, which keeps a
+safety copy of the replaced credential, so the live store and `list` hold the
+renewed login.
 With `--switch`, `add` then switches to the new account through the same path
 as `tycswap switch <n>`, so the outgoing account's credentials are written back
 as on any switch. Scratch cleanup runs on every exit path, including a failed
@@ -5298,4 +5303,4 @@ provider, account scope and file selection; exports require a new file and a tok
 warning confirmation. The Interactive menu action of the dashboard and the Linux and macOS tray menus opens this same menu.
 `web --reuse` opens the running local or remote tray dashboard through its authenticated
 launch API; it starts a background app only if no app holds the relevant lock.
-`add --login --switch` activates a renewed login even when that account is already active.
+`add --login` activates a renewed login when that account is already active, with or without `--switch`.

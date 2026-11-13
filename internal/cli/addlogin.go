@@ -164,14 +164,16 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 	// before the switch so a switch failure cannot leave a login behind.
 	_ = removeScratch()
 
-	if a.switchAfter {
-		data, err := sw.ReadSequence()
-		if err != nil {
-			return renderDomainError(err, false, s.out, s.err)
-		}
-		email, org, active := sw.GetCurrentAccount()
-		replaceActive := active && sw.FindAccountSlot(data, email, org) == num
-		if _, err := sw.SwitchToForce(num, false, replaceActive); err != nil {
+	data, err := sw.ReadSequence()
+	if err != nil {
+		return renderDomainError(err, false, s.out, s.err)
+	}
+	// A login as the live account renews it: without the activation the live
+	// store keeps the old credential and `list` reads that one (A65).
+	email, org, active := sw.GetCurrentAccount()
+	renewsLive := active && sw.FindAccountSlot(data, email, org) == num
+	if a.switchAfter || renewsLive {
+		if _, err := sw.SwitchToForce(num, false, renewsLive); err != nil {
 			return renderDomainError(err, false, s.out, s.err)
 		}
 	}
