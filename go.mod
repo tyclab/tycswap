@@ -2,7 +2,7 @@ module github.com/tyclab/tycswap
 
 go 1.25.5
 
-toolchain go1.26.11
+toolchain go1.27.4
 
 require (
 	github.com/charmbracelet/bubbletea v1.3.10
