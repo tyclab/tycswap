@@ -2,11 +2,16 @@ package cli
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/groups"
+	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/testutil"
 )
 
@@ -71,4 +76,42 @@ func TestAddLoginRecordsThePlanAndListShowsIt(t *testing.T) {
 	if _, present := payload.Accounts[0]["plan"]; present {
 		t.Errorf("row 1 carries a plan it never reported: %v", payload.Accounts[0]["plan"])
 	}
+}
+
+func TestAddLoginRenewsAccountWithAnIdleSessionClaim(t *testing.T) {
+	f := newLoginFixture(t)
+	if code, _, errb := f.run(t, "add", "--login"); code != 0 {
+		t.Fatalf("initial login: exit %d, stderr %q", code, errb)
+	}
+	root := paths.GetBackupRoot()
+	dir := sessprofile.SessionDirFor(root, "2", "b@example.com")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	account := groups.Account{Number: "2", Email: "b@example.com", UUID: "uuid-b@example.com"}
+	for path, value := range map[string]any{
+		filepath.Join(dir, ".claude.json"):      map[string]any{"oauthAccount": map[string]any{"emailAddress": account.Email, "organizationUuid": ""}},
+		filepath.Join(dir, ".credentials.json"): map[string]any{"claudeAiOauth": map[string]any{"accessToken": "old-access", "refreshToken": "old-refresh"}},
+	} {
+		if err := groups.WriteJSON(path, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registry := groups.Registry{Version: 1, Claims: map[string]groups.Owner{"2": {Scope: "legacy:2", ProfileDir: dir, Account: account}}}
+	if err := registry.Save(root); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Setenv(t, "FAKE_CLAUDE_TOKEN", "renewed-access")
+	testutil.Setenv(t, "FAKE_CLAUDE_REFRESH", "renewed-refresh")
+	if code, out, errb := f.run(t, "add", "--login", "--switch"); code != 0 {
+		t.Fatalf("renewal: exit %d, stdout %q, stderr %q", code, out, errb)
+	}
+	seq := f.sequence(t)
+	if len(seq.Accounts) != 2 || seq.Active == nil || *seq.Active != 2 {
+		t.Fatal("renewal did not activate the original slot")
+	}
+	if !strings.Contains(f.liveCreds(t), "renewed-access") {
+		t.Fatal("renewed credential was not made live")
+	}
+	assertNoScratch(t)
 }

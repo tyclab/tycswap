@@ -645,7 +645,10 @@ reports `Updated credentials for Account <n> (<email> [<tag>]).`. This is the
 supported way to repair an account whose refresh token has died (`usageStatus:
 relogin_required`): run `tycswap add --login` and sign in as that account, or
 log in with it in Claude Code and re-run `tycswap add`. The refresh also clears
-any `tycswap auto` quarantine on that slot. An account a retired session group
+any `tycswap auto` quarantine on that slot. Invalidating an idle session profile
+also releases its credential claim, preserving its conversation history. A
+running or unverifiable CLI or IDE session retains its credentials and claim;
+its profile is marked for deferred invalidation instead. An account a retired session group
 still holds is refused, naming the group: its stored login stays the group's
 until the next auto-switch tick after its last session exits hands it back
 (DESIGN A74, A78).
