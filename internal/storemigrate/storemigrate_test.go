@@ -482,7 +482,7 @@ func TestKeychainItemsTooLargeGoToTheFile(t *testing.T) {
 	// The session profile reads the file now; credstore and the Codex store
 	// read their files first by their own rules.
 	if creds, ok := sessprofile.ReadSessionCredentials(kc, filepath.Join(newRoot, "sessions", "1-a_example.com")); !ok || creds != big+"s" {
-		t.Errorf("session credential = %q, %v", len(creds), ok)
+		t.Errorf("session credential has %d bytes, %v", len(creds), ok)
 	}
 
 	rep2, err := Run(Options{NewRoot: newRoot, OldRoots: []string{old}, Platform: &mac, Keychain: kc})
