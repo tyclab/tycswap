@@ -166,7 +166,7 @@ func (s *Store) credentialOwners(number string) ([]groups.Owner, error) {
 		if err != nil {
 			return nil, err
 		}
-		if len(pids) == 0 && (!ok || !readable || profileCreds == "" || sessprofile.IsStale(dir)) {
+		if len(pids) == 0 && (!ok || !readable || profileCreds == "" || ccfile.SeatWideOnly(profileCreds) || sessprofile.IsStale(dir)) {
 			continue
 		}
 		if !ok && slot != number && !fingerprintsEqual(profileCreds, backup) {
@@ -243,6 +243,9 @@ func (s *Store) EnsureAccountAvailable(number string) error {
 		scope = "default"
 	}
 	if owner.Scope != "" && (owner.Scope != scope || owner.Uncertain) {
+		if strings.HasPrefix(owner.Scope, "legacy:") && len(owner.PIDs) > 0 {
+			return legacyBusy(number, owner.PIDs)
+		}
 		return cerr.Session("Account-%s is owned by %s%s; choose another account or reconcile that profile before switching", number, owner.Scope, uncertainSuffix(owner.Uncertain))
 	}
 	return nil
