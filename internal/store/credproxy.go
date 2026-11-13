@@ -65,24 +65,44 @@ func (s *Store) WriteAccountCredentials(num, email, creds string) error {
 	if err := s.Creds.WriteBackup(num, email, creds); err != nil {
 		return err
 	}
-	s.postBackupWrite(num, email)
-	return nil
+	return s.postBackupWrite(num, email)
 }
 
 // postBackupWrite is _post_backup_write (spec 01§7): a LIVE session keeps its own
 // credential copy but is stale-marked so setup_session re-bootstraps it once it
 // exits; a non-live profile has its credential material dropped immediately so
 // the next `tycswap run` re-bootstraps from the fresh backup (history preserved).
-func (s *Store) postBackupWrite(num, email string) {
+// The caller holds the store lock; release a claim only after invalidation succeeds.
+func (s *Store) postBackupWrite(num, email string) error {
 	dir := s.SessionDir(num, email)
-	if len(sessprofile.LiveSessionPIDs(dir)) > 0 {
+	pids, err := profilePIDs(dir)
+	if err != nil || len(pids) > 0 {
 		sessprofile.MarkStale(dir)
-		return
+		return err
 	}
-	existed, _ := sessprofile.InvalidateSessionCredentials(s.kc, dir)
+	registry, err := groups.LoadRegistry(s.backupDir)
+	if err != nil {
+		return err
+	}
+	existed, err := sessprofile.InvalidateSessionCredentials(s.kc, dir)
+	if err != nil {
+		return err
+	}
+	if owner, claimed := registry.Claims[num]; claimed && owner.Scope == "legacy:"+num && owner.ProfileDir == dir {
+		if creds, _, err := s.ReadProfileCredentials(dir); err != nil {
+			return err
+		} else if creds != "" {
+			return errors.New("session credential invalidation was incomplete; its ownership claim remains held")
+		}
+		delete(registry.Claims, num)
+		if err := registry.Save(s.backupDir); err != nil {
+			return err
+		}
+	}
 	if existed && s.Log != nil {
 		s.Log.Infof("Invalidated session credentials for account %s", num)
 	}
+	return nil
 }
 
 // DeleteAccountFiles is the single chokepoint for every path that removes or
