@@ -347,7 +347,7 @@ func (a *autoFacade) startHosted(dryRun bool) error {
 // tick reads the setting, as the Claude tick does (DESIGN A83).
 func (a *autoFacade) codexRound(ctx context.Context, eng *codexauto.AutoSwitcher, dryRun bool) {
 	retireGroups(a.sw, a.onEvent, dryRun)
-	if dryRun || autoSwitchOn(a.sw.BackupDir()) {
+	if eng != nil && (dryRun || autoSwitchOn(a.sw.BackupDir())) {
 		a.codexTick(ctx, eng, dryRun)
 	}
 }
