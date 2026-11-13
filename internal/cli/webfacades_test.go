@@ -740,6 +740,9 @@ func TestAutoFacade_CodexDisabledNoLoop(t *testing.T) {
 		if eng != nil {
 			t.Errorf("codex switcher %v: a Codex engine runs with autoswitch.codexEnabled off", codexSw != nil)
 		}
+		if err := a.stopHosted(); err != nil {
+			t.Fatal(err)
+		}
 		v := a.View().Codex
 		if codexSw == nil && v != nil {
 			t.Errorf("a Codex view without Codex accounts: %+v", v)
@@ -747,9 +750,35 @@ func TestAutoFacade_CodexDisabledNoLoop(t *testing.T) {
 		if codexSw != nil && (v == nil || v.Enabled || v.Running || v.LastTick != nil) {
 			t.Errorf("codex view = %+v, want off, not running, no tick", v)
 		}
-		if err := a.stopHosted(); err != nil {
-			t.Fatal(err)
-		}
+	}
+}
+
+func TestAutoFacade_CodexRoundWithoutEngine(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		enabled string
+		dryRun  bool
+	}{
+		{"on", "true", false},
+		{"off", "false", false},
+		{"dry run", "false", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sw := fixtureSwitcher(t)
+			root := sw.BackupDir()
+			if _, err := settings.SetSetting(root, "autoswitch.enabled", tc.enabled); err != nil {
+				t.Fatal(err)
+			}
+			a := newAutoFacade(sw, fixtureCodex(t))
+			pendingFableGroup(t, root)
+			a.codexRound(context.Background(), nil, tc.dryRun)
+			if v := a.View(); v.Codex.LastTick != nil || len(v.Events) != 0 {
+				t.Errorf("no Codex engine: last tick %+v, events %+v", v.Codex.LastTick, v.Events)
+			}
+			if pending, err := groups.Pending(root, groups.Fable); err != nil || pending != tc.dryRun {
+				t.Errorf("pending group = %v, %v; want %v", pending, err, tc.dryRun)
+			}
+		})
 	}
 }
 
