@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Fixed:** switching to an account held by an idle `run`/`env` profile returns its verified latest login to the default profile automatically. Conversation history and profile MCP logins remain intact; interrupted releases can be retried. Running sessions keep their claim and the error names their PIDs and the retry command.
 - **Fixed:** with Codex rotation off (`autoswitch.codexEnabled` `false`) or no Codex account when it started, the app and the dashboard no longer run a Codex tick each round. That tick set Codex's last tick and logged a Codex `error` event, `snapshot failed (runtime error: invalid memory address or nil pointer dereference)`, on every round while auto-switch was on or a dry run ran.
 - **Fixed:** signing in again releases an idle session profile's credential claim when its old credentials are invalidated. The renewed login stays usable in its existing slot instead of showing `no credentials` or conflicting owners. Running or unverifiable CLI and IDE sessions keep their credentials and claim until they can be safely invalidated.
 - **Added:** **Check for updates…** in the Windows tray footer starts the dashboard's update check and opens its Updates section, including when scheduled checks are disabled. A remote tray checks the server's installation and keeps package-managed update instructions; clicking the shortcut never installs an update.

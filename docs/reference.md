@@ -469,6 +469,18 @@ be correct; the post-switch note is informational (see NOTES). The switch
 cooperates with Claude Code's own credential lock, so it never interleaves
 with a token refresh.
 
+An explicit `switch ACCOUNT` can reclaim an idle per-account `run`/`env`
+profile. It checks the profile and stored config identities, then proves its
+credential by the stored lineage or the OAuth profile endpoint before saving
+the latest login and releasing the claim. Profile conversation files and MCP
+logins stay in place. Running CLI or IDE sessions block the handoff; the error
+names their PIDs and asks you to exit them and retry `tycswap switch ACCOUNT`.
+Unreadable process records or unverified credentials remain held. In particular,
+an expired access token with an unrecognized rotated refresh token may need a
+fresh `tycswap add --login` before ownership can be established. `--force` does
+not bypass these checks. A failed switch after the release leaves the account
+available in its slot, with the verified credential saved for retry.
+
 A switch changes only the `oauthAccount` key of `~/.claude.json`; every other
 key stays as it is. With no live config (absent, blank or `null`) the file is
 created holding `{"oauthAccount": …}` alone; a stored config is never written
