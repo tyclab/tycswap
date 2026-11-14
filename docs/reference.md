@@ -1578,6 +1578,15 @@ form intended for cron. Switching proactively (while the old account is still
 valid) is what keeps the change safe under the macOS Keychain propagation
 latency.
 
+Before polling, a real tick returns verified unused `run`/`env` profiles to
+their account slots through the same locked release as an explicit switch.
+Disabled accounts are left alone. Dry runs can rank an unused profile but do
+not release it. A running or unverifiable profile keeps its login and claim.
+If these profiles hold the remaining alternatives, the tick emits `no-switch`
+with reason `accounts-in-use` and account-specific details, rather than
+`all-exhausted`, and retries at the ordinary cadence. Web account rows include
+`ownershipBlockReason` when held; their rotation eligibility matches the engine.
+
 Auto-switch rotates between subscription accounts only (DESIGN A33). An
 API-key account is never a target, not even when every subscription account
 is at its limit (the tick reports `all-exhausted` instead), and when one is

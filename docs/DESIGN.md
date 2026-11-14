@@ -7157,3 +7157,31 @@ The normal switch still rechecks availability under its own locks. A failure
 after releasing the source leaves a saved, unclaimed account for retry; it
 does not repopulate a second rotating login. Default auto-switching remains
 the account selection policy after a successful switch.
+
+## A89. Automatic rotation and profile ownership
+
+A88 only ran for an explicit account switch. Automatic candidate selection
+discarded a legacy owner even after its last process exited, so it never
+reached that release. Before polling, a real engine tick now prepares its
+enabled subscription candidates through A88's verified release. This also
+lets a released expired login refresh through the normal guarded backup path.
+The selected target is checked again before freshening and switching. Dry
+runs inspect release eligibility without changing credentials or claims.
+Unverified, conflicting and live owners remain protected; disabled accounts
+are neither released nor selected by this preparation.
+
+The frozen engine interface gains no required method. The core adapter
+provides optional preparation and ownership-reason capabilities. When no
+target qualifies and a held account has remaining or unknown quota, the
+engine emits `no-switch: accounts-in-use` with the actual ownership reasons.
+It keeps the normal retry cadence instead of sleeping until a quota reset.
+An account known to be exhausted does not produce that ownership diagnosis.
+Snapshot eligibility applies the same ownership check; web rows expose an
+optional `ownershipBlockReason`, and web/tray controls display it and refuse
+the blocked switch before submission.
+
+Ordinary parallel sessions share the default rotating login. Independent
+`run`/`env` profiles remain explicit account pins, not an automatic worker
+allocation mechanism. An idle prompt is still a running process and retains
+its profile's login; reclaim never terminates it or copies a live refresh
+token into another profile.

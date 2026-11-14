@@ -9,7 +9,7 @@ import (
 	"github.com/tyclab/tycswap/internal/store"
 )
 
-func releaseIdleLegacy(s *store.Store, number string) error {
+func ReleaseIdleLegacy(s *store.Store, number string) error {
 	var candidate *store.LegacyRelease
 	if err := s.Lock.With(func() error {
 		var err error

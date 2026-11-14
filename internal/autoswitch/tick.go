@@ -91,6 +91,11 @@ func (e *Engine) tickInner() (tickResult, error) {
 	cur := *current
 	currentEmail := e.sw.AccountEmail(cur)
 	activeRef := refOf(cur, currentEmail)
+	if !e.dryRun {
+		if sw, ok := e.sw.(interface{ PrepareRotationCandidates() }); ok {
+			sw.PrepareRotationCandidates()
+		}
+	}
 
 	// An expired hold keeps its stamp but polls candidates: failover needs them.
 	idleHold := holdLive(activeMemoryOf(state, cur).IdleHoldSince, e.nowSeconds())
@@ -217,6 +222,9 @@ func (e *Engine) tickInner() (tickResult, error) {
 	}
 
 	if len(ordered) == 0 {
+		if e.reportOwnershipBlock(cur, headroom) {
+			return tickResult{Outcome: Blocked}, nil
+		}
 		if !anyKnown {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-comparison", Detail: "no candidate has readable usage"})
 			return tickResult{Outcome: Blocked}, nil
@@ -248,6 +256,7 @@ func (e *Engine) tickInner() (tickResult, error) {
 
 	axisName := axisLabel(axis, trigger)
 	transientFailure := false
+	ownershipFailure := false
 	for _, num := range ordered {
 		email := e.sw.AccountEmail(num)
 		if e.dryRun {
@@ -265,6 +274,8 @@ func (e *Engine) tickInner() (tickResult, error) {
 			}
 		case "transient":
 			transientFailure = true
+		case "ownership-blocked":
+			ownershipFailure = true
 		case "skip-live-session":
 			// skip silently
 		default: // "ok"
@@ -276,7 +287,9 @@ func (e *Engine) tickInner() (tickResult, error) {
 		e.emit(ErrorEvent{Ts: e.nowISO(), Message: "could not freshen any candidate (network?)", Transient: true})
 		return tickResult{Outcome: Error}, nil
 	}
-	e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-viable-target"})
+	if !ownershipFailure {
+		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-viable-target"})
+	}
 	return tickResult{Outcome: Blocked}, nil
 }
 
@@ -373,6 +386,9 @@ func (e *Engine) selectCandidates(
 		}
 	}
 	if len(oauthCandidates) == 0 {
+		if e.reportOwnershipBlock(cur, headroom) {
+			return nil, oauthCandidates, false, &tickResult{Outcome: Blocked}
+		}
 		if !isHandover(trigger) {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-candidates"})
 		}

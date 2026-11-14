@@ -396,6 +396,15 @@ Enabled Account-2 (bob@example.com).
 
 ### Auto-switch before a limit
 
+Ordinary parallel Claude sessions should use the same default login so they all
+follow its rotation. `tycswap run` and `tycswap env` deliberately pin a separate
+profile: while any Claude process uses it, that account cannot also become the
+default login. A finished conversation left open still holds its account.
+Exit finished sessions to return their accounts to rotation; their history stays
+saved. Auto-switch reclaims a verified unused profile on its next tick. The
+dashboard and tray identify accounts held by other profiles, and a blocked tick
+reports `accounts-in-use` when those accounts prevent rotation.
+
 Auto-switch is off until you turn it on, from the CLI, the tray's
 **Auto-switch** toggle or the dashboard's Start:
 

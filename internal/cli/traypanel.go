@@ -49,6 +49,10 @@ func (a *appShell) panelAt(st web.State, now time.Time) tray.Panel {
 		}
 		status, _ := row["usageStatus"].(string)
 		r.Warning = panelWarning(status)
+		if reason, _ := row["ownershipBlockReason"].(string); reason != "" {
+			r.Disabled = true
+			r.Warning = reason
+		}
 		windows := panelWindows(row)
 		for _, column := range p.Columns[1:] {
 			bar := bars.model

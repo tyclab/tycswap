@@ -1105,6 +1105,7 @@
     if (a.isActive) { out.push(chip('active', 'active')); }
     if (a.atLimit) { out.push(chip('at limit', 'crit', (a.limitingWindows || []).join(', ') || 'a window is at 100%')); }
     if (a.disabled) { out.push(chip('disabled', 'outline', 'held out of auto-rotation')); }
+    if (a.ownershipBlockReason) { out.push(chip('held by another profile', 'warn', a.ownershipBlockReason)); }
     if (!a.switchable) { out.push(chip('not switchable', 'warn', isClaude(a) ? 'missing stored credentials or config backup' : 'a Codex API-key login cannot be switched to')); }
     if (a.usageStatus && SENTINEL_STATUSES[a.usageStatus] && a.usageStatus !== 'api_key') { out.push(chip(SENTINEL_STATUSES[a.usageStatus], 'serious')); }
     if (a.usageStatus === 'unavailable') { out.push(chip('usage unavailable', 'warn', 'the last measurement is stale or failed; the meters show the last good values')); }
@@ -1182,7 +1183,8 @@
 
     var acts = el('div', { class: 'row-actions' });
     var sw = el('button', { type: 'button', class: 'btn btn-sm btn-primary', 'data-post': '/api/switch/' + keyPath(a), 'data-label': 'Switch', 'aria-label': 'Switch to Codex account ' + a.number, text: a.isActive ? 'Active' : 'Switch' });
-    if (a.isActive || !a.switchable) { sw.disabled = true; }
+    if (a.isActive || !a.switchable || a.ownershipBlockReason) { sw.disabled = true; }
+    if (a.ownershipBlockReason) { sw.title = a.ownershipBlockReason; }
     acts.appendChild(sw);
     var menu = el('details', { class: 'menu' });
     menu.appendChild(el('summary', { class: 'btn btn-sm btn-icon', 'aria-label': 'More actions for Codex account ' + a.number, 'aria-haspopup': 'menu', text: '⋯' }));
@@ -1266,7 +1268,8 @@
       } else {
         sw.setAttribute('data-post', '/api/switch/' + keyPath(a));
       }
-      if (a.isActive || !a.switchable) { sw.disabled = true; }
+      if (a.isActive || !a.switchable || a.ownershipBlockReason) { sw.disabled = true; }
+      if (a.ownershipBlockReason) { sw.title = a.ownershipBlockReason; }
       acts.appendChild(sw);
 
       var menu = el('details', { class: 'menu' });
