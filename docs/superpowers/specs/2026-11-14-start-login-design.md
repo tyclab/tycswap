@@ -1,294 +1,197 @@
-# A start login for every session, and the end of `run` / `env`
+# Start on a marked login
 
-Status: draft for the operator's go. Nothing in it is built.
-Review of v0.11.6 that led here: rows RECLAIM-1 to RECLAIM-6 in
-`docs/superpowers/plans/2026-11-10-review-findings.md`.
-Plan: `docs/superpowers/plans/2026-11-14-start-login.md`.
+Status: implementation design for the first release (S1–S4 and S6). S5 is a
+separate, later release, gated on fleet acceptance of its replacement. Plan:
+`docs/superpowers/plans/2026-11-14-start-login.md`.
 
-## Why
+## Purpose and boundaries
 
-**What a session may run is decided in the second it starts.** Claude Code
-fetches an organization's server-managed settings at process start, for the
-organization that owns the login at that moment. Those settings can deny a
-model (`deniedModels`, `availableModels`); a denied `--model` is replaced with
-a notice and a denied `/model` is refused
-([model configuration](https://code.claude.com/docs/en/model-config),
-[server-managed settings](https://code.claude.com/docs/en/server-managed-settings)).
+Allow an operator to mark accounts suitable for starting a command, select a
+usable marked account before launch, and then let the ordinary engine rotate
+the shared default login. A start creates no profile or claim. Account choice
+is generic: this feature does not change, bypass, test the boundaries of, or
+promise an outcome under organization-managed settings or model policy. The
+operator chooses marks; account names, subscription names and policy outcomes
+do not imply a mark. No settings tampering is part of this design.
 
-Measured on one box, transcripts from 2026-11-12 to 2026-11-14 (56 main
-sessions, 193 transcripts with their subagents) against the switch log (204
-switches):
+The command receives the inherited environment and arguments unchanged. The
+selection is best effort: stale cached usage, a concurrent engine or manual
+switch, or the child reading credentials later can mean the child sees a
+different login. Existing sessions share that login and are affected by a
+switch. No child-read handshake or hold is claimed. No new credentials are
+copied outside existing slots and the default profile.
 
-- 5 sessions carry the notice `Model "…" is restricted by your organization's
-  settings`. All 5 have it in their first 8 lines, and all 5 started on a
-  login of the denying organization.
-- Of 16 main sessions that started on such a login, 15 answered first with
-  the fallback model. Of 40 that started on another login, 32 answered first
-  with the model the organization denies.
-- A process that started on another login keeps the model after rotation:
-  such sessions wrote 4,935 answers with the denied model while a login of
-  the denying organization was the default login, 1,966 of them more than 60
-  minutes into an unbroken stretch on it. Two sessions changed to the denied
-  model 11 minutes after their start, while on such a login.
-- `--model` does not help: the 5 sessions asked for the model by name.
+## S1. Marking accounts
 
-**The working method is manual and is undone by the engine.** The operator's
-sequence is: auto-switch off, switch, start the sessions, auto-switch on. The
-log shows the engine moving the login back 10 seconds and 3 seconds after it
-was turned on again: a switch by hand stamps no cooldown
-(`autoswitch/tick.go` stamps `lastSwitchAt` only in `perform`).
+Account records gain `startLogin`, absent or non-boolean meaning false.
+`tycswap start --allow ID`, `--disallow ID` and `--list` manage/list marks;
+ID resolves using existing unambiguous account resolution. Marks persist on
+the same account through swap, move, in-place re-add/re-login, re-add into a
+new slot, add-token and import where the existing identity is retained. They
+must not leak to a different identity reusing a slot. New identities default
+to false; define matching using each lifecycle operation's existing identity
+and conflict checks. Preserve existing independent metadata as well; do not
+silently drop `disabled` or alias when refreshing the same identity. Writes
+use the existing store lock and atomic sequence write.
 
-**`run` / `env` were the other way to start on a chosen account, and they
-pin it.** A pinned account is out of the rotation for every other session;
-on 2026-11-14 three pinned accounts left the default login without a usable
-target. v0.11.6 added an automatic reclaim that now breaks the pins
-themselves (RECLAIM-1, RECLAIM-2). The removal was decided on 2026-11-10
-(`2026-11-10-one-engine-design.md`, D10); what it lacked was the
-replacement for "start on this account".
+## S2. Launch and failure behavior
 
-The operator's words:
+`tycswap start [--account ID] [--] [command [args...]]` defaults to the real
+Claude executable. Management options are exclusive with launching and each
+other. Parse only the prefix before `--` or the first command; all remaining
+arguments, including flags, pass unchanged. Malformed tycswap syntax is a
+usage error (2), runs no child. An unknown or ambiguous explicit ID, or an
+unavailable target, is a selection failure: report it and run the command on
+the current login. This includes inaccessible/corrupt store or settings,
+permission/private-root failure, lock failure, refresh/switch/stamp failure,
+and unavailable usage or ownership information. Never continue to read or
+write an unsafe store after a private-root failure. A failure after a completed
+switch reports the switch and the failed stamp; it does not switch back or
+retry the child. Failures print one sanitized diagnostic to stderr and, when
+safe and possible, the log; absence of marks and an already-marked current
+login are silent. Do not emit credentials. No stdout diagnostics pollute the
+child's output. Unexpected process crashes and inability to execute the
+requested command cannot be made fail-open; a launch failure is reported once
+and exits nonzero (127 when executable is not found), never reruns a child.
 
-- 2026-11-13: "i need a way to start a claude session with … ultra account
-  but then let it switch after start back to auto mode" (the account names
-  are left out here).
-- 2026-11-14: "should we include it more general to have the option to have
-  session start account default?"
-- 2026-11-14: "even if that account is at limit should still work right? and
-  if creds are gone we would just use auto one or something like that?"
-- 2026-11-14: "might it be easier to just do it for all claude sessions? so i
-  can be sure i can switch to fable later?"
-- 2026-11-10, on `run` / `env` session profiles: "Remove them".
+Before store initialization or profile neutralization, preserve the incoming
+environment. If `CLAUDE_CONFIG_DIR` is set (including empty), the command has
+`--bare`, or any of the existing Claude auth override variables is present,
+skip selection and run unchanged. Define the variable list by reusing the
+existing `session.AuthOverrideEnvVars` contract, not a second guessed list.
+This protects existing pinned shells throughout the first release. Do not
+scrub or add environment variables, including for arbitrary commands. Check
+arguments without consuming or rewriting them. An override skips even an
+explicit account request with a diagnostic.
 
-## Goals
+Without `--account`, no marks or a current marked account cause no switch or
+stamp; auto-switch off also skips selection. With `--account`, the requested
+account is the sole candidate, need not be marked, and is the explicit
+exception permitted while auto-switch is off. Both forms apply all safety,
+ownership, model and cached-usage eligibility checks in S3, including not
+selecting a known 100% account. No implicit force, API-key approval, or prompt
+is allowed. A no-op switch is not stamped. An explicit current account may
+be reported as already active. Selection failures never toggle auto-switch.
 
-Each goal names the test that proves it (plan task in brackets).
+Candidate preparation follows existing engine semantics where practical,
+including refresh when near expiry with guarded credential ownership, token
+identity verification and legacy release. No network call occurs when selection is skipped or when the
+current account already satisfies the request. Retry the next ordered candidate
+on per-account transient refresh, identity, or ownership/release failures;
+quarantine invalid grant/no refresh token and identity conflict with the
+engine's existing semantics. Other failures report a clear reason and end selection. An
+explicit ID has no alternate. After a successful mutation do not attempt a
+second target, even if stamping fails.
 
-1. **A session starts on a start login when one is usable.** With the
-   default login on an unmarked account and a marked account below its bars,
-   `tycswap start -- <command>` leaves the default login on the marked
-   account and runs the command with its arguments and environment
-   unchanged. `TestStartSwitchesToStartLogin` [T2].
-2. **A start is never blocked.** No marked account, none usable, auto-switch
-   off, or a failed switch: the command still runs on the current login, and
-   one line on standard error and in the log says why.
-   `TestStartFallsBackAndStillRuns` (one case per reason) [T2].
-3. **The engine does not undo a start.** The start switch stamps the
-   engine's `lastSwitchAt`; a tick inside the cooldown with the new account
-   over a proactive bar reports `cooldown`.
-   `TestStartSwitchHoldsTheProactiveCooldown` [T2].
-4. **No pin.** A start creates no profile and no claim and sets no
-   `CLAUDE_CONFIG_DIR`. `TestStartLeavesNoClaim` [T2].
-5. **It covers every session of the fleet.** The provisioner puts a `claude`
-   launcher ahead of the real one on `PATH`; a session started by typing
-   `claude`, by `flakelab sessions --start claude` or by `claude -p` goes
-   through `tycswap start`. Provisioner check plus acceptance A1 [T5].
-6. **`run`, `env`, `map` and `unmap` are gone**, and profiles they left
-   behind return their login to the account slot once, including a login
-   that rotated in its profile and has since expired.
-   `TestLeftoverProfileRelease` (cases idle, live, rotated, rotated and
-   expired, offline) [T4]. Closes RECLAIM-1 to RECLAIM-5.
-7. **The screens say which accounts are start logins** and why a held
-   account is held. `TestAccountRowStartLogin`, `TestTrayPanelStartLogin`
-   [T3].
+### Serialization in v0.11.6
 
-## Non-goals
+The existing engine holds `.autoswitch_state.lock` across its enabled recheck,
+`SwitchTo`, and stamp; `SwitchTo` takes the store and Claude locks. Use this
+existing state → store → Claude order. Never hold the store lock while calling
+`RefreshBackupGuarded` or `SwitchTo`: both acquire it themselves. Prepare and
+freshen a candidate before acquiring the state lock. Under the state lock,
+re-read the current login and auto-enabled setting immediately before switching,
+then use the existing guarded switch and stamp only a confirmed mutation.
+Concurrent starts serialize here; the second rechecks and does not switch or
+stamp if the desired account is already live. Preserve unrelated state fields.
+Do not acquire the state lock recursively while stamping or quarantining. A
+switch or stamp error produces a clear diagnostic and launches the child once.
 
-- Two logins in use at once. Sessions share the default login, as since A78.
-- Choosing a start login per directory (`map`). It goes with `run`.
-- Sessions that do not use the OAuth login (`--bare`, an API key in the
-  environment): `start` runs them unchanged.
+Enabled-setting writers and manual switches do not currently take this state
+lock. Consequently, an off/manual operation racing just after the enabled
+recheck can still lose to a start; similarly, another account or roster change
+can race selection. The guarded switch retains its existing ownership checks.
+This narrow race is accepted in the first release, and stronger cross-command
+serialization may be added later if needed. Direct settings-file edits also sit
+outside this protocol. Filelock's in-process mutex wait has no hard timeout;
+do not claim a strict upper bound on startup latency.
 
-## Anti-goals
+When E1 lands, migrate these participants together to E1's lock order and
+one-switch operation. Add a `start` origin and explicit preserve-auto
+semantics to E1; do not use a separately locked stamp helper inside E1 or mix
+orders. Reconcile E1's actual interfaces when it is implemented.
 
-- No path that leaves auto-switch off after a start, and no start that moves
-  the login while auto-switch is off: off means nothing moves it (A83).
-- No copy of a login outside the default profile and the account slots.
-- No wait, timer or hold that ends on a guessed duration.
+### Handoff
 
-## Design
+POSIX replaces tycswap with the resolved child. Windows spawns and waits,
+returns the actual child exit code, and coordinates SIGINT so the wrapper does
+not exit on the child's first Ctrl+C. A real launch failure is distinct from a
+child exit; do not map every spawn error to 130. Preserve terminal handles and
+standard streams. Test signal behavior on Windows; cross-compilation alone
+cannot establish console behavior.
 
-### S1. Start logins are marked per account
+The provisioner launcher resolves a real executable that cannot resolve to
+itself (including symlinks and path/case normalization). It invokes
+`tycswap start -- <real executable> "$@"` if tycswap exists, otherwise executes
+the real executable once. It cannot infer whether a nonzero status came from
+tycswap or the child, so it must never retry after invoking tycswap. Direct
+`tycswap start` without an explicit command must resolve the real executable
+without selecting the launcher recursively; if that cannot be established,
+report a launch error once. The launcher must not alter the child's environment
+or arguments. `alias claude='tycswap start -- claude'` alone is unsafe when
+`claude` resolves to the launcher; document an explicit verified real path.
 
-An account record gains `startLogin` (boolean, absent means false), set like
-`disabled`:
+## S3. Candidate ordering
 
-```
-tycswap start --allow <NUM|EMAIL|ALIAS>
-tycswap start --disallow <NUM|EMAIL|ALIAS>
-tycswap start --list
-```
+Use cached usage only; no usage request is made by start. An automatic
+candidate must be marked, pass `RotationEligible`, not be quarantined, and
+pass the engine's counted-model guard derived from the same default session
+policy and model-expansion rules. `RotationEligible` can provisionally accept
+an idle legacy claim for which a release candidate exists; the guarded release
+still has to succeed. An explicit candidate has the same gates except the
+mark and auto-on requirements. No eligible candidates means fallback.
 
-The dashboard's account menu gets the same toggle. The flag lives in the
-record, so it survives a slot renumbering (a slot moved from 2 to 8 on the
-measured box). With no account marked, `start` runs the command and does
-nothing else: a store that never uses the feature sees no change.
+Rank in sequence order by these tiers, then lowest binding utilization and
+sequence order for ties: A, all known counted windows below their configured
+bars; B, at least one at or above a bar but none known at 100%, or unknown
+usage; C, any known counted window at 100%, excluded. Resolve unknown binding
+utilization deterministically after known values within B. If required model
+coverage cannot be established from the same cached data, exclude the
+candidate; do not invent model availability. Empty model requirements follow
+the engine's own semantics. Cache may be stale: an apparently viable account
+can in fact be exhausted, and this is not a guarantee of access to a model.
+A fresh launch from an unmarked current login may switch back to a marked
+account each time the engine moves away, including nested launches; each
+actual start switch stamps the cooldown. An already-marked login does not
+stamp, so frequent launches do not extend cooldown in that case.
 
-Why a flag and not a rule: which organization denies which model is not
-readable from a stored login. The plan name does not say it either (a login
-without a top-tier plan started the denied model in the measurements).
+## S4. Engine state
 
-### S2. `tycswap start [--account <id>] [--] [command [args…]]`
+A confirmed start switch records the engine's `lastSwitchAt`, `lastSwitchTo`
+and clears active memory, under the protocol above. `proactive` and `reserved`
+respect cooldown; `at-limit`, `failover`, and `model-missing` do not. Model
+coverage reduces but cannot eliminate a model-missing move: cached state and
+session policy can change. There is no startup hold, and the stamp is not a
+guarantee that the launched process reads that login. A stamp-write error is
+visible and may allow an immediate engine move.
 
-`command` defaults to `claude`. In this order, each step under the store
-lock where it reads or writes the store:
+## S5. Later release: retire legacy profiles
 
-1. `CLAUDE_CONFIG_DIR` is set, `--bare` is among the arguments, or the
-   environment carries an API key Claude Code would use: run the command.
-2. No account is marked and no `--account` is given: run the command.
-3. Auto-switch is off and no `--account` is given: run the command, one line
-   (`auto-switch is off; starting on Account-N`).
-4. The live login (`ResolveLiveSlot`) is a marked account: run the command.
-5. Pick the target (S3). None: run the command, one line with the reason.
-6. Freshen the target as the engine does (`RefreshBackupGuarded` when the
-   stored token is near expiry), then switch with the ordinary guarded
-   switch. A failure: run the command, one line with the error.
-7. Stamp the engine state: `lastSwitchAt` now, `lastSwitchTo` the target,
-   the active memory cleared, as `perform` does.
-8. Run the command: `exec` on POSIX, spawn and wait on Windows, the code
-   `run` used for the default login (`session.ExecDefault`), moved to
-   `internal/launch`.
+`run`, `env`, `map`, and `unmap` remain available in the first release. Only
+a subsequent release, after the fleet replacement is accepted, may remove
+them and retire their claims. The later implementation must preserve login
+ownership and migration: do not duplicate refresh-token lineages; leave live
+or unverifiable claims intact; release idle claims only with verified identity,
+including rotated/expired profile credentials under their own lock; retain the
+slot backup on invalid grant. Scheduled non-dry ticks perform retirement,
+including while auto-switch is off; observe and dry-run ticks do not. Surface
+release failures consistently. Audit every caller before deleting helpers,
+and retain conversation history. RECLAIM-1 through RECLAIM-5 remain open
+until that behavior and command retirement ship. The first release documents
+the existing reclaim limitations and event reasons (RECLAIM-6). The later plan
+requires fresh code review before implementation.
 
-Every one-line notice also goes to the log file: a terminal UI that clears
-the screen would hide it.
+## S6. Surfaces and rollout
 
-`--account <id>` names the target for this start and skips S3; it is the
-explicit form of the operator's manual sequence and works with auto-switch
-off, because a person named the account.
+`list`, dashboard and tray show the mark; the dashboard can toggle it. The
+tray has no mark setting. The toggle applies to Claude accounts only; Codex
+rows do not offer it. Update reference, design, changelog and help with the
+actual behavior, including failure and stale-cache limits.
 
-### S3. Which marked account
-
-Candidates are the marked accounts that `store.RotationEligible` accepts
-(stored login and config, not disabled, not an API key, not held by another
-owner) and that the engine has not quarantined. Usage comes from the store's
-cached entries only: a start makes no usage request.
-
-- **Tier A:** every counted window is below its bar (`autoswitch.*Threshold`,
-  the counted models as the engine counts them).
-- **Tier B:** a window is at or over its bar but none is at 100 %, or the
-  usage is unknown.
-- **Tier C:** a window is at 100 %. Never chosen (see "Ruling wanted").
-
-The first non-empty tier wins; inside a tier the lowest binding utilisation,
-ties by sequence order. The engine's strategy is not consulted: its next
-proactive move re-ranks with fresh usage.
-
-### S4. What the engine changes
-
-One thing: it reads the stamp of S2 step 7 like its own. `reserved` and
-`proactive` moves wait out `autoswitch.cooldownSeconds`; `at-limit`,
-`failover` and `model-missing` do not, as today. No new setting.
-
-When E1 Task 1 of the one-engine plan lands ("one switch operation"), the
-start switch becomes its origin `start` with `KeepAuto`; until then S2 step
-7 calls an exported stamp helper in `internal/autoswitch`.
-
-### S5. `run`, `env`, `map`, `unmap` and their profiles
-
-Removed as D10 describes, in this order: the launch and Keychain-name
-helpers other features use move out of `internal/session` and
-`internal/sessprofile`; the four commands, their help, README and reference
-sections go; the ownership scan keeps reading legacy claims until none is
-left.
-
-Leftover profiles retire as session groups did (A78), replacing A89's
-release before every poll: a scheduled tick that is not a dry run releases
-each claimed profile once no process uses it.
-
-- A profile whose login is the slot's own lineage is released as today.
-- A login that rotated in its profile is verified by the profile endpoint
-  while its access token lives. Once it expired, the release refreshes it
-  with the profile's own refresh token under the profile's credential lock
-  and takes the identity the refresh returns (RECLAIM-3). `invalid_grant`
-  drops the dead login with its claim and keeps the slot's backup, as A78.
-- A release that cannot verify (offline, an identity that does not resolve)
-  keeps the claim and stores the reason on the claim. The snapshot shows
-  that reason, so the dashboard, the tray and the engine give the same
-  answer (RECLAIM-4).
-- A hand-over tick with a held account emits one line (RECLAIM-5).
-
-With no command left that creates a claim, RECLAIM-1 and RECLAIM-2 cannot
-occur. `sessions/` stays on disk: it holds conversation history.
-
-### S6. Screens
-
-`list`, the dashboard and the tray panel show `start` on a marked account.
-The dashboard menu toggles it. The tray gets no setting (operator's ruling:
-no settings in the tray). `no-switch` reasons `accounts-in-use` and
-`account-unavailable` enter the reference and the port spec's reason list
-(RECLAIM-6).
-
-## Ruling wanted: a start login at 100 %
-
-The operator asked whether a start works when the start account is at its
-limit. It can be built, at a price:
-
-- For as long as the login sits on the exhausted account, every other
-  running session's request fails. On 2026-11-14 ten agents ended that way
-  when the login they shared reached a five-hour limit.
-- `at-limit` ignores the cooldown, so the engine would move the login away
-  before the new process has read it. It needs a hold: `start` records its
-  process id, and a tick does nothing while that process lives and has not
-  yet written `sessions/<pid>.json`. One traced start wrote that file 1.8 s
-  after `exec`, 1.5 s after it read the login. Whether the organization's
-  settings are bound by then, and whether an interactive start writes the
-  file before its folder-trust question, are not measured.
-
-This design leaves tier C out: with every marked account at 100 % the
-session starts on the current login and says so. If the operator wants tier
-C, it is a second step with that hold and the two measurements first.
-
-## Limits, accepted
-
-- A tick's `at-limit` or `failover` move can land between `start`'s check
-  and the new process reading the login (0.3 s after `exec` in the traced
-  start). The session then starts on the engine's target.
-- With the live login already a marked account, `start` stamps nothing: a
-  stamp on every start would hold proactive moves for as long as sessions
-  keep starting, until the account reached 100 %. A proactive move in the
-  same second as a start can therefore still win.
-- **Not proven: changing to a denied model later.** A session that started
-  on a start login and has run more than an hour on a denying
-  organization's login may have fetched that organization's settings (they
-  are polled hourly). Continuing with the model is measured (1,966
-  answers); changing to it then is not. Acceptance A2 measures it. If it
-  fails, the remedy is a `PreModelSwitch` hook, designed separately.
-- Sessions started while a denying organization's login is live run under
-  all of that organization's managed settings (plugins, telemetry
-  endpoints, minimum version), not only its model list. Starting on a start
-  login avoids that at start; what a running session takes over at the
-  hourly poll is not measured.
-
-## Alternatives considered
-
-- **Only for sessions that ask for the denied model.** Needs the launcher to
-  read `--model`, the settings' default model and a later `/model`. The
-  operator's question settles it: all sessions, so a later change of model
-  stays possible.
-- **A `SessionStart` hook that switches.** The hooks reference does not say
-  whether it runs before the managed settings are bound; a launcher runs
-  before the process exists.
-- **Keep `run` / `env` and narrow the reclaim.** A shell pinned with `env`
-  and no Claude process is the same on disk as an abandoned profile; any
-  rule that spares the first keeps the second out of the rotation, which is
-  the complaint of 2026-11-14.
-- **Prefer start logins in the rotation.** The login would sit on them
-  until a bar, which uses them up first and leaves none for a start.
-
-## Acceptance on the fleet
-
-- **A1.** With a denying organization's login live and a marked account in
-  tier A: `tycswap start -- claude -p "<one line>" --model <denied model>`.
-  The transcript has no restriction notice and its first answer names the
-  requested model; the switch log shows one switch and no return inside the
-  cooldown. Needs the operator's go when the login must be moved onto the
-  denying organization for the test: it moves the login of every running
-  session.
-- **A2.** A session started through `start` with another model; after more
-  than 60 minutes unbroken on a denying organization's login, `/model
-  <denied model>` and one prompt. Pass: the answer names that model.
-
-## Rollout
-
-tycswap release with S1 to S4 and S6, then the provisioner's launcher (goal
-5) and A1; S5 in the release after, so a box has the replacement before the
-commands go. DESIGN A90 records S1 to S4, A91 the retirement.
+Ship S1–S4/S6 first, then deploy the provisioner launcher. Test with fake
+providers and temporary stores; acceptance on each participating box verifies
+launcher routing, one child invocation, account choice using operator-selected
+authorized accounts, fallback and cooldown without inspecting private
+transcripts. Do not alter account marks or real logins without the operator's
+instruction. No acceptance seeks a model denied by an organization's policy.
+S5 ships only after the operator accepts the replacement across the fleet.

@@ -90,3 +90,21 @@ func TestNew_FixtureHomeConstructs(t *testing.T) {
 		t.Errorf("activeAccountNumber=%v want 1", data.ActiveAccountNumber)
 	}
 }
+
+func TestNewSkipMigrationsLeavesExistingStoreUntouched(t *testing.T) {
+	s := freshStore(t)
+	writeSequenceRaw(t, s, `{"sequence":[1],"accounts":{"1":{"email":"a@example.com"}}}`)
+	before, _ := os.ReadFile(s.SequenceFile)
+	var notices bytes.Buffer
+	_, err := New(Options{SkipMigrations: true, Keychain: keychain.NewFake(), WinCred: wincred.NewFake(), Stderr: &notices})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(s.SequenceFile)
+	if string(before) != string(after) || notices.Len() != 0 {
+		t.Fatal("read-only construction mutated roster or printed notices")
+	}
+	if _, err := os.Stat(filepath.Join(s.BackupDir(), ".migrations.json")); !os.IsNotExist(err) {
+		t.Fatalf("migration state created: %v", err)
+	}
+}

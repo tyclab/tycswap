@@ -7185,3 +7185,57 @@ Ordinary parallel sessions share the default rotating login. Independent
 allocation mechanism. An idle prompt is still a running process and retains
 its profile's login; reclaim never terminates it or copies a live refresh
 token into another profile.
+
+
+## A90. Startup login marks and shared-login handoff
+
+`startLogin` is operator-owned account metadata, absent or non-boolean meaning
+false. Mark writes resolve the account under the existing roster lock and use
+the normal atomic sequence write. Re-add, re-login, add-token, move and swap
+retain alias, disabled and startup metadata for the operation's existing
+composite identity. Forced imports retain local flags and retain a local alias
+when the envelope omits it. New identities do not inherit a displaced slot's
+metadata; export format and new-import defaults are unchanged.
+
+`start` selects an eligible marked account before a one-shot command handoff.
+An explicit ID is the sole candidate and bypasses only mark/auto-on requirements.
+Usage is cached; model coverage, quarantine, rotation and credential ownership
+remain the engine's gates. No usage fetch or account mark is inferred from a
+name, plan or policy result. The feature does not grant model access or change
+managed settings. It creates no profile, claim, child-read handshake or hold.
+
+Preserve the incoming argv and environment before initialization. A set
+`CLAUDE_CONFIG_DIR`, child `--bare`, or any `session.AuthOverrideEnvVars` variable
+skips launch selection without changing the inherited environment. Management
+forms still work independently. No-mark and current-mark paths are silent and
+perform no network or mutation. `store.Options.SkipMigrations` lets launch
+initialization avoid otherwise automatic migration writes on these paths.
+
+Freshen candidates before the autoswitch state lock. Use the current state →
+store → Claude order, recheck enabled/current under the state lock, switch
+through the guarded existing operation and stamp only a confirmed mutation.
+Preserve other engine-state fields and never nest a state lock during stamp or
+quarantine. A late stamp failure is reported after the switch, without rollback
+or a second target. Proactive/reserved cooldown honors a start switch; urgent
+at-limit/failover/model-missing behavior remains. Manual switches, enabled
+writers and roster mutations do not all share this lock; the remaining narrow
+race is accepted for this release. In-process filelock waits are unbounded.
+Future E1 work must migrate all participants together to its final lock order.
+
+Selection errors print a sanitized stderr diagnostic and hand off once on the
+current login; unsafe-root failures bypass store access. Launch errors are
+separate and never retry the child. POSIX execs; Windows spawns and waits with
+child status and console signal ownership. Default command resolution and
+provisioner launchers must reject their own canonical executable identity.
+The child inherits its environment and arguments unchanged. A cached choice
+can be stale or another switch can precede the child's credential read.
+
+Reporting carries the mark through `AccountSnapshot`, optional true-only list
+JSON and human tags. Dashboard Claude rows expose the boolean and authenticated
+allow/disallow routes through AccountOps → core → lifecycle; Codex has no
+startup control or field. Tray rows show the tag without a mark action.
+
+This release retains `run`, `env`, `map`, `unmap` and their login ownership.
+The later S5 retirement requires fleet acceptance and fresh review. In the
+meantime an open `env` shell without a running Claude process does not keep
+its claim from idle reclaim, and a newly starting legacy process can race it.

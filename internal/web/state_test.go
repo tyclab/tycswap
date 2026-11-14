@@ -115,7 +115,7 @@ func testStateExactShape(t *testing.T, codex bool) {
 			map[string]any{
 				"number": 1, "email": "alice@example.com", "alias": "work", "orgName": "Acme", "plan": "Ultra",
 				"kind": "oauth", "isActive": true, "disabled": false, "switchable": true, "rotationEligible": true,
-				"usageStatus": "ok", "provider": "claude", "key": "claude:1",
+				"startLogin": false, "usageStatus": "ok", "provider": "claude", "key": "claude:1",
 				"usage": map[string]any{
 					"fiveHour": map[string]any{"pct": 42, "resetsAt": "2026-09-19T12:00:00Z"},
 					"sevenDay": map[string]any{"pct": 100, "resetsAt": "2026-09-22T00:00:00Z"},
@@ -127,12 +127,12 @@ func testStateExactShape(t *testing.T, codex bool) {
 			map[string]any{
 				"number": 2, "email": "bob@example.com", "alias": "", "orgName": "",
 				"kind": "api_key", "isActive": false, "disabled": true, "switchable": true, "rotationEligible": false,
-				"usageStatus": "api_key", "usage": nil, "provider": "claude", "key": "claude:2",
+				"startLogin": false, "usageStatus": "api_key", "usage": nil, "provider": "claude", "key": "claude:2",
 			},
 			map[string]any{
 				"number": 3, "email": "carol@example.com", "alias": "", "orgName": "",
 				"kind": "oauth", "isActive": false, "disabled": false, "switchable": false, "rotationEligible": false,
-				"usageStatus": "unavailable", "usage": nil, "provider": "claude", "key": "claude:3",
+				"startLogin": false, "usageStatus": "unavailable", "usage": nil, "provider": "claude", "key": "claude:3",
 			},
 		},
 		"sessions": map[string]any{
@@ -608,6 +608,20 @@ func TestStateRowCarriesSkipReason(t *testing.T) {
 	for _, k := range []string{"skipReason", "skipAt"} {
 		if _, ok := refresh[k]; ok {
 			t.Errorf("usageRefresh carries %q without a skip: %#v", k, refresh)
+		}
+	}
+}
+
+func TestStartLoginOnlyOnClaudeRows(t *testing.T) {
+	for _, provider := range []string{reporting.ProviderClaude, reporting.ProviderCodex} {
+		row := accountRow(reporting.AccountSnapshot{Number: "1", Provider: provider, StartLogin: true})
+		value, exists := row["startLogin"]
+		if provider == reporting.ProviderClaude {
+			if value != true {
+				t.Fatal("Claude mark missing")
+			}
+		} else if exists {
+			t.Fatal("Codex row offers start login")
 		}
 	}
 }

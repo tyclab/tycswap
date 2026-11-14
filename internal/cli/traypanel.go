@@ -47,6 +47,12 @@ func (a *appShell) panelAt(st web.State, now time.Time) tray.Panel {
 		if boolOf(row["disabled"]) {
 			r.Tag = "not rotated"
 		}
+		if rowProvider(row) != "codex" && boolOf(row["startLogin"]) {
+			if r.Tag != "" {
+				r.Tag += " · "
+			}
+			r.Tag += "start login"
+		}
 		status, _ := row["usageStatus"].(string)
 		r.Warning = panelWarning(status)
 		if reason, _ := row["ownershipBlockReason"].(string); reason != "" {

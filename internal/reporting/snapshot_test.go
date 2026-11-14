@@ -29,7 +29,7 @@ func TestSnapshot_RotationEligible(t *testing.T) {
   "sequence": [1, 2, 3, 4],
   "accounts": {
     "1": {"email": "on@example.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "x"},
-    "2": {"email": "off@example.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "x", "disabled": true},
+    "2": {"email": "off@example.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "x", "disabled": true, "startLogin": true},
     "3": {"email": "bare@example.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "x"},
     "4": {"email": "bareoff@example.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "x", "disabled": true}
   }
@@ -57,6 +57,9 @@ func TestSnapshot_RotationEligible(t *testing.T) {
 		if a.Switchable != tc.switchable || a.Disabled != tc.disabled {
 			t.Errorf("slot %s Switchable=%v Disabled=%v, want %v/%v",
 				tc.num, a.Switchable, a.Disabled, tc.switchable, tc.disabled)
+		}
+		if a.StartLogin != (tc.num == "2") {
+			t.Errorf("slot %s StartLogin=%v", tc.num, a.StartLogin)
 		}
 		if a.RotationEligible != tc.wantRotEligible {
 			t.Errorf("slot %s RotationEligible=%v, want %v", tc.num, a.RotationEligible, tc.wantRotEligible)

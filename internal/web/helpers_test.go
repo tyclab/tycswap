@@ -228,6 +228,11 @@ func (o *fakeOps) err(name string) error {
 	return o.errs[name]
 }
 
+func (o *fakeOps) SetStartLogin(id string, allowed bool) error {
+	o.record(fmt.Sprintf("SetStartLogin(%s,%v)", id, allowed))
+	return o.err("SetStartLogin")
+}
+
 func (o *fakeOps) SetAlias(id, alias string) (string, string, error) {
 	o.record(fmt.Sprintf("SetAlias(%s,%s)", id, alias))
 	if err := o.err("SetAlias"); err != nil {

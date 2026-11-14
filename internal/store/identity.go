@@ -344,6 +344,36 @@ func (s *Store) AccountIdentity(num string) map[string]string {
 	}
 }
 
+// StartLoginFrom reports the operator's startup mark from an already-loaded roster.
+func StartLoginFrom(data *SequenceData, num string) bool {
+	rec, ok := recordFor(data, num)
+	if !ok {
+		return false
+	}
+	marked, _ := rec["startLogin"].(bool)
+	return marked
+}
+
+func (s *Store) IsStartLogin(num string) bool {
+	data, _ := s.ReadSequence()
+	return StartLoginFrom(data, num)
+}
+
+func (s *Store) StartLoginNumbers() []string {
+	data, _ := s.ReadSequence()
+	if data == nil {
+		return nil
+	}
+	var out []string
+	for _, n := range data.Sequence {
+		num := strconv.Itoa(n)
+		if StartLoginFrom(data, num) {
+			out = append(out, num)
+		}
+	}
+	return out
+}
+
 // disabledFromData reports whether a slot is flagged out of rotation in
 // already-loaded data (spec 01§8.4 _disabled_from_data).
 func disabledFromData(data *SequenceData, num string) bool {

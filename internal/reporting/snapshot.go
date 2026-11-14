@@ -23,7 +23,8 @@ type AccountSnapshot struct {
 	Usage      usage.UsageEntry
 	Alias      string
 	Plan       string // plan name Claude Code reports for the login, "" when unknown
-	Disabled   bool   // held out of auto-rotation (still a valid explicit target)
+	StartLogin bool
+	Disabled   bool // held out of auto-rotation (still a valid explicit target)
 	// Excludes the engine's transient quarantine: necessary, not sufficient, for an automatic pick.
 	RotationEligible     bool
 	OwnershipBlockReason string
@@ -106,6 +107,7 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 			Alias:                info.Alias,
 			Plan:                 info.Plan,
 			Disabled:             disabled,
+			StartLogin:           store.StartLoginFrom(data, num),
 			RotationEligible:     rotationEligible(data, switchable, disabled, s.AccountKindFor(num)) && ownershipBlock == "",
 			OwnershipBlockReason: ownershipBlock,
 			AtLimit:              atLimit,

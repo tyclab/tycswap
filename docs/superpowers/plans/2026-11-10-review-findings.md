@@ -37,9 +37,13 @@ evidence.
 
 ## From the review of the automatic reclaim (v0.11.6)
 
-Closed by `docs/superpowers/plans/2026-11-14-start-login.md` (spec S5, S6).
-Each T row has a test that passes on v0.11.5 or fails only on v0.11.6's new
-claim.
+Planned follow-up: `docs/superpowers/plans/2026-11-14-start-login.md`
+(spec S5, S6). S5 is a separate release after fleet acceptance; the first
+startup-login release does not close RECLAIM-1 through RECLAIM-5.
+Each T row has a private repro test that passes on v0.11.5 or fails only on
+v0.11.6's new claim. The fixture
+`tycswap-review-20261114/review_repro_test.go` is not tracked in this repository;
+review and incorporate it with the later S5 implementation.
 
 | ID | Defect | Where | Verdict | Ev | Series |
 | --- | --- | --- | --- | --- | --- |
@@ -48,7 +52,6 @@ claim.
 | RECLAIM-3 | a profile login that rotated in its profile and then expired is never released: the release asks the profile endpoint, which an expired token cannot answer; the tick reports `no-comparison` | switching/legacyrelease.go ReleaseIdleLegacy | FIX S5 (verify by refresh) | T | R |
 | RECLAIM-4 | the snapshot calls an account eligible when a release candidate exists, the engine refuses it when the release cannot verify: dashboard and tray show no reason | store/identity.go RotationOwnershipBlockReason | FIX S5 (reason stored on the claim) | T | R |
 | RECLAIM-5 | a `reserved` or `model-missing` tick with a held account emits `accounts-in-use` and `…-no-target` | autoswitch/tick.go selectCandidates | FIX S5 | T | R |
-| RECLAIM-6 | `account-unavailable` is in no document; the port spec's reason list lacks it and `accounts-in-use`; README's "Pinning a shell" promises what RECLAIM-1 breaks | docs/reference.md, docs/port-spec/05-autoswitch.md, README.md | FIX S6 |  | R |
 
 ## Engine lane
 

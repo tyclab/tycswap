@@ -63,6 +63,8 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("POST /api/accounts/swap", s.handleSwap)
 	api.HandleFunc("POST /api/accounts/{id}/disable", s.handleDisable(true))
 	api.HandleFunc("POST /api/accounts/{id}/enable", s.handleDisable(false))
+	api.HandleFunc("POST /api/accounts/{id}/start-login/allow", s.handleStartLogin(true))
+	api.HandleFunc("POST /api/accounts/{id}/start-login/disallow", s.handleStartLogin(false))
 	api.HandleFunc("POST /api/accounts/{id}/remove", s.handleRemove)
 	api.HandleFunc("POST /api/accounts/{id}/alias", s.handleAlias)
 	api.HandleFunc("POST /api/accounts/{id}/move", s.handleMove)
@@ -545,6 +547,23 @@ func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mutate(w, func() (map[string]any, error) { return s.d.Facade.SwitchTo(id, true) })
+}
+
+func (s *Server) handleStartLogin(allowed bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		provider, id, ok := pathKey(w, r)
+		if !ok {
+			return
+		}
+		if provider != reporting.ProviderClaude {
+			writeError(w, http.StatusBadRequest, "start login is available for Claude accounts only")
+			return
+		}
+		if unavailable(w, s.d.Accounts != nil, "account operations") {
+			return
+		}
+		s.mutate(w, func() (map[string]any, error) { return nil, s.d.Accounts.SetStartLogin(id, allowed) })
+	}
 }
 
 func (s *Server) handleDisable(disabled bool) http.HandlerFunc {

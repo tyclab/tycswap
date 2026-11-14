@@ -29,6 +29,10 @@ tycswap alias [<NUM|EMAIL|ALIAS> <NAME>]      set / list account aliases
 tycswap alias <NUM|EMAIL|ALIAS> --unset       remove an account's alias
 tycswap move <NUM|EMAIL|ALIAS> <SLOT>         assign an account to a slot (swaps if taken)
 tycswap swap <A> <B>                          exchange two accounts' slot numbers
+tycswap start [--account ID] [--] [command [args...]]
+                                            choose a startup login, then launch once
+tycswap start --allow ID | --disallow ID | --list
+                                            manage startup marks (Claude accounts)
 tycswap run [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history|--no-share-history] [-- ARGS...]
                                             launch Claude Code as an account, this terminal only
 tycswap env [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history] [--shell {sh|fish|pwsh}] [--unset]
@@ -192,6 +196,7 @@ Present only when applicable (additive, schemaVersion 1):
 |-----|------|--------------|
 | `alias` | string | An alias is set. |
 | `disabled` | `true` | The account is disabled. |
+| `startLogin` | `true` | The Claude account is marked for startup selection. |
 | `baseUrl` | string | An API-key account carries a base URL (DESIGN A46): the whole URL its requests go to. |
 | `plan` | string | Claude Code recorded a plan name for the login (DESIGN A79), for example `Ultra`. |
 | `atLimit` | `true` | A relevant window is at/over its limit. |
@@ -1199,6 +1204,94 @@ Swapped Account 1 and Account 2:
 
 ---
 
+## tycswap start
+
+### Synopsis
+
+```text
+tycswap start [--account ID] [--] [command [args...]]
+tycswap start --allow ID
+tycswap start --disallow ID
+tycswap start --list
+```
+
+### Description
+
+The management forms set, clear or list the operator's startup marks. They are
+exclusive with each other and with launching. IDs use the ordinary account
+resolution above. Marks are an optional boolean `startLogin` in Claude account
+records; absent or non-boolean values mean false. They follow the same identity
+through re-login, re-add, slot changes and a forced import over that identity.
+Alias and disabled metadata survive those refreshes too. A different identity
+reusing a slot, or a newly imported identity, starts unmarked. Marks do not
+change disabled state or imply model access.
+
+The launch form defaults to the real Claude executable. Parse only the prefix
+before `--` or the first command; every remaining argument is passed unchanged.
+With auto-switch on, no marks or a marked current login cause no switch and no
+cooldown stamp. Otherwise only marked rotation-eligible subscription accounts
+are candidates. An explicit `--account ID` is the sole candidate and bypasses
+the mark and auto-on requirements; disabled, API-key, quarantined, unsafe-owner
+and incompatible-model targets still cannot be selected. Selection uses cached
+usage only, with no usage API request, and the engine's counted-model policy.
+Accounts below every counted bar rank first, then unknown or above-bar accounts
+that are below 100%; within a tier, lowest binding usage wins with sequence
+order for ties. Any known counted window at 100% excludes the target. Missing
+required model coverage excludes it too. Guarded credential preparation may
+refresh a near-expiry login or release an eligible idle legacy profile.
+
+A set `CLAUDE_CONFIG_DIR` (including empty), `--bare` in the child arguments,
+or any variable in the existing Claude auth-override contract skips selection.
+The inherited environment and arguments are passed unchanged, even with an
+explicit `--account`. No new profile or claim is created. Marks are managed
+independently of these launch-only overrides.
+
+Unavailable selection, including an unknown or ambiguous explicit account,
+unreadable store/settings, lock or credential failure, prints one sanitized
+diagnostic on stderr and runs the command once on the current login. No marks
+and a current marked login are silent. A completed switch followed by a failed
+cooldown stamp is reported; it is not rolled back. There are no stdout
+selection diagnostics. Malformed tycswap syntax exits 2 without launching.
+Executable launch errors exit nonzero (127 when not found); no failure retries
+the child. Otherwise the child's actual exit status is returned.
+
+The startup choice is best effort: cached usage can be stale, other sessions
+share the default login, and another switch can occur before the child reads
+credentials. Actual start switches stamp `lastSwitchAt` and `lastSwitchTo` and
+clear engine active-memory state. Proactive and reserved moves honor cooldown;
+at-limit, failover and model-missing moves may still happen. State-lock
+serialization prevents two starts from switching to the same already-live
+target, but an off/manual-switch or roster write racing after the final recheck
+can still win or lose. No strict startup-latency bound is promised.
+
+The dashboard exposes Claude-only **Allow for start** / **Disallow for start**.
+`list`, the dashboard and the tray show the mark; the tray has no mark setting.
+Dashboard uses authenticated POST routes
+`/api/accounts/claude:ID/start-login/allow` and `.../disallow`; Codex targets
+are rejected. List JSON adds `startLogin: true` only for marked rows; dashboard
+Claude rows carry the boolean, and Codex rows omit it.
+
+### Launchers
+
+Use an explicit verified real path for a manual launcher:
+
+```sh
+claude() { tycswap start -- /absolute/path/to/real/claude "$@"; }
+```
+
+The real path must not resolve to the launcher, including through symlinks.
+If tycswap is installed, invoke it once and return its status. Otherwise execute
+the real command once. Never retry after a nonzero result: that result can be
+the child's own exit code. If `start` cannot safely resolve its default Claude
+executable, it reports a launch error.
+
+POSIX replaces tycswap with the child; Windows spawns and waits with inherited
+standard streams and returns the child status. Windows console Ctrl+C behavior
+requires native Windows integration validation; cross-vet is insufficient.
+Legacy `run`, `env`, `map` and `unmap` remain in this release.
+
+---
+
 ## tycswap run
 
 ### Synopsis
@@ -1309,6 +1402,11 @@ note to stderr and exits 0, so `eval "$(tycswap env <n>)"` is a safe no-op. When
 `CLAUDE_CONFIG_DIR` is already set, the preset-override behavior applies instead:
 the profile is prepared and exported for this shell, overriding the preset,
 identical to `tycswap run`.
+
+An open shell without a Claude process does not retain the profile's login.
+With auto-switch on, a real tick can reclaim that idle profile; run the `env`
+command again before starting Claude after an idle period. A process still
+starting can race reclaim too. These legacy limitations remain in this release.
 
 Output discipline: stdout carries only the eval-able lines. Before the export,
 one unset line is emitted for each currently-set authentication-override
@@ -1585,7 +1683,11 @@ not release it. A running or unverifiable profile keeps its login and claim.
 If these profiles hold the remaining alternatives, the tick emits `no-switch`
 with reason `accounts-in-use` and account-specific details, rather than
 `all-exhausted`, and retries at the ordinary cadence. Web account rows include
-`ownershipBlockReason` when held; their rotation eligibility matches the engine.
+`ownershipBlockReason` when held. Eligibility can provisionally include an idle
+profile eligible for attempted release; the actual release may still fail
+identity verification. A target that becomes unavailable during guarded
+preparation reports `no-switch` with reason `account-unavailable` and the
+ownership detail.
 
 Auto-switch rotates between subscription accounts only (DESIGN A33). An
 API-key account is never a target, not even when every subscription account
@@ -1754,7 +1856,7 @@ a `Z` suffix), plus per-kind fields:
 | `poll` | `active` (`{number,email}` or null), `headroomPct` (`{num: float|null}`), `threshold` (float: the 7d bar), `fetchErrors` (`{num: msg}`, optional), `windowsPct` (`{num: {label: float}}`, optional) |
 | `switch` | `trigger` (`proactive`\|`at-limit`\|`failover`\|`reserved`\|`model-missing`), `axis` (`5h`\|`7d`\|`model`: the window that made the tick move; empty under `failover`, where usage was unreadable, and under `reserved` and `model-missing`, where the account decided), `from` (ref), `to` (ref), `warnings` (array), `dryRun` (bool) |
 | `group-release` | `group` (`fable`\|`opus`), `released` (`{number,email}`): a retired group's account returned to its slot |
-| `no-switch` | `reason` (string), `detail` (string); under `active-usage-unknown` and `active-idle`, `detail` ends in ` · <skip reason>` while the active account's `list --json` row carries `usageRefresh.skipReason`; `disabled` while auto-switch is off, then the tick's only event |
+| `no-switch` | `reason` (string), `detail` (string); `accounts-in-use` when held profiles prevent rotation, `account-unavailable` when guarded target preparation loses availability; under `active-usage-unknown` and `active-idle`, `detail` ends in ` · <skip reason>` while the active account's `list --json` row carries `usageRefresh.skipReason`; `disabled` while auto-switch is off, then the tick's only event |
 | `account-quarantined` | `number`, `email`, `reason` |
 | `account-unquarantined` | `number`, `email`, `reason` |
 | `all-exhausted` | `earliestResetAt` (string or null) |
@@ -2971,6 +3073,7 @@ anything else `500`.
 | `POST /api/accounts/add` | `{"provider": "claude"\|"codex"}` (optional) | `tycswap add`; answers `{"ok": true, "result": {"number", "email", "refreshed"}}`, the account the live login is now (`refreshed`: it was that account already). The tray's *Add current login* is the same call. With `codex`, `tycswap codex add`, answering `{"number", "email"}` | `500` `Claude Code has no subscription login on this computer. …` when Claude Code has no live login, before anything is stored; `400` unknown provider; `503` `codex` without Codex accounts; `409` `codex` while the Codex store stays busy for 10 s |
 | `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias", "baseUrl"}` | `tycswap add-token [--base-url]` (the token is never echoed or logged); `503` with a `baseUrl` when the facade cannot store one | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
 | `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y`; for a `codex:` key `tycswap codex enable`, `disable`, `remove -y`, holding the Codex store lock throughout | `400` bare key, `404` unknown provider, `503` a `codex:` key without Codex accounts, `409` the Codex store stayed busy (a Codex switch or a token refresh held it) for 10 s |
+| `POST /api/accounts/{key}/start-login/allow`, `/start-login/disallow` | | `tycswap start --allow ID` / `--disallow ID`; updates Claude startup metadata only | `400` bare or Codex key, `404` unknown provider/account, `503` account operations unavailable |
 | `POST /api/accounts/{key}/alias` | `{"alias": "<name>"}` (empty unsets) | `tycswap alias` | `400` bare key, `404` a `codex:` key or an unknown provider |
 | `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` | `400` missing slot or bare key, `404` a `codex:` key or an unknown provider |
 | `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` | `400` missing or bare keys, `404` a `codex:` key or an unknown provider |
@@ -4827,7 +4930,7 @@ tycswap reads the following environment variables.
 
 | Variable | Effect |
 |----------|--------|
-| `CLAUDE_CONFIG_DIR` | Overrides the Claude Code config home: the global config is `<dir>/.claude.json` and credentials are `<dir>/.credentials.json`. `tycswap env` and `tycswap run` treat any set value as a preset and override it with the session profile they prepare. For every other command the effect depends on the value: a tycswap session pin — a value inside `<backup_root>/sessions/`, as set by `tycswap env` — is ignored, and the command operates on the default login and prints `This shell is pinned via tycswap env; operating on the default login.` to stderr; a custom value outside `<backup_root>/sessions/` is honored. The default-profile mirror used by session sharing deliberately ignores this and reads the real `~/.claude` profile. |
+| `CLAUDE_CONFIG_DIR` | Overrides the Claude Code config home: the global config is `<dir>/.claude.json` and credentials are `<dir>/.credentials.json`. `tycswap start` skips startup selection and passes any set value unchanged, even empty. `tycswap env` and `tycswap run` treat any set value as a preset and override it with the session profile they prepare. For every other command the effect depends on the value: a tycswap session pin — a value inside `<backup_root>/sessions/`, as set by `tycswap env` — is ignored, and the command operates on the default login and prints `This shell is pinned via tycswap env; operating on the default login.` to stderr; a custom value outside `<backup_root>/sessions/` is honored. The default-profile mirror used by session sharing deliberately ignores this and reads the real `~/.claude` profile. |
 | `XDG_DATA_HOME` | On Linux/WSL, selects the backup-root parent: `<XDG_DATA_HOME>/tycswap` (and, for `tycswap migrate`, the old store `<XDG_DATA_HOME>/claude-swap`). Ignored when unset, empty, or non-absolute; a leading `~` is expanded. |
 | `HOME` | The user's home directory; the base for `~/.claude.json`, `~/.claude/`, `~/.local/share`, `~/.tycswap`, the old `~/.claude-swap-backup` (read only by `tycswap migrate`), and `~/go/bin`. |
 | `WSL_DISTRO_NAME` | When non-empty, the platform is detected as WSL (which uses the Linux/WSL backup-root layout). |
@@ -4904,7 +5007,7 @@ Inside the backup root:
 
 | Path | Contents |
 |------|----------|
-| `sequence.json` | The account registry: `activeAccountNumber`, `lastUpdated`, the `sequence` array of slot numbers, and an `accounts` map keyed by slot (`email`, `uuid`, `organizationUuid`, `organizationName`, `added`, and optional `alias`, `plan` (the plan name Claude Code recorded for the login, written by `add` and refreshed by a switch, DESIGN A79), `kind: "api_key"`, `disabled: true`, and with `kind: "api_key"` a `baseUrl`, the endpoint the key is for). |
+| `sequence.json` | The account registry: `activeAccountNumber`, `lastUpdated`, the `sequence` array of slot numbers, and an `accounts` map keyed by slot (`email`, `uuid`, `organizationUuid`, `organizationName`, `added`, and optional `alias`, `startLogin: true`, `plan` (the plan name Claude Code recorded for the login, written by `add` and refreshed by a switch, DESIGN A79), `kind: "api_key"`, `disabled: true`, and with `kind: "api_key"` a `baseUrl`, the endpoint the key is for). |
 | `settings.json` | Settings (see SETTINGS). |
 | `claude-settings.prev.json` | Present while an API-key account with a base URL is active (DESIGN A46): what the three keys of Claude Code's `settings.json` the switch owns, `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN` (written) and `env.ANTHROPIC_API_KEY` (removed), held before (`{"version": 1, "settingsPath", "keys": {"<key>": {"present", "value"?}}}`, including whether `env` existed), mode 0600. A switch onto any other account restores them from it and removes it; one that is not a complete record (version 1, an entry for `env` and each key, nothing after it) is corrupt and stops the switch. `tycswap purge` deletes it and says so first. |
 | `mappings.json` | Directory→account mappings (`schemaVersion`, `mappings` keyed by absolute path). |
@@ -5118,7 +5221,7 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
 - **JSONL for `auto`.** `tycswap auto --json` writes one compact JSON object per
   event, one per line.
 - **Additive rule.** Under schemaVersion 1 the schema only grows: optional keys
-  (`alias`, `disabled`, `atLimit`, `limitingWindows`, `usageFetchedAt`,
+  (`alias`, `disabled`, `startLogin`, `atLimit`, `limitingWindows`, `usageFetchedAt`,
   `usageAgeSeconds`, and the window sub-keys `resetsAt`, `countdown`, `clock`)
   are present only when they apply and omitted otherwise; no existing key
   changes type or meaning. Consumers must ignore unknown keys and, for `auto`,

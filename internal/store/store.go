@@ -55,6 +55,8 @@ type Store struct {
 // os.Stderr, no OAuth network client). Tests inject fakes.
 type Options struct {
 	Debug bool
+	// SkipMigrations keeps startup selection initialization free of migration writes.
+	SkipMigrations bool
 	// Clock is the wall clock for timestamps and cooldowns; default clock.System.
 	Clock clock.Clock
 	// Keychain is the macOS Keychain client; default keychain.Security{}.
@@ -166,10 +168,11 @@ func New(opts Options) (*Store, error) {
 	// (7) registry migrations — self-contained, never abort construction. Every
 	// error is logged (via the Host's Logger) and left for retry; only the
 	// user-facing progress notices come back for relaying to stderr.
-	for _, notice := range migrations.Run(migHost{s}) {
-		fmt.Fprintln(stderr, notice)
+	if !opts.SkipMigrations {
+		for _, notice := range migrations.Run(migHost{s}) {
+			fmt.Fprintln(stderr, notice)
+		}
 	}
-
 	return s, nil
 }
 

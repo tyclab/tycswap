@@ -275,6 +275,9 @@ func accountRow(a reporting.AccountSnapshot) map[string]any {
 		"provider":         a.ProviderName(),
 		"key":              a.Key(),
 	}
+	if a.ProviderName() == reporting.ProviderClaude {
+		row["startLogin"] = a.StartLogin
+	}
 	if usage == nil {
 		row["usage"] = nil
 	} else {

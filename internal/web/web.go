@@ -77,6 +77,7 @@ type BaseURLAdder interface {
 }
 
 type AccountOps interface {
+	SetStartLogin(id string, allowed bool) error
 	SetAlias(id, alias string) (num, normalized string, err error)
 	UnsetAlias(id string) (num string, err error)
 	MoveAccount(account, target string) (srcNum, tgtNum string, swapped bool, err error)

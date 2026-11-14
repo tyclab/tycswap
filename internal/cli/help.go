@@ -42,6 +42,8 @@ Commands:
   tycswap remove <num|email>         remove an account
   tycswap disable <num|email>        hold an account out of auto-rotation
   tycswap enable <num|email>         return a disabled account to rotation
+  tycswap start [-- command args]    launch once on a usable marked login
+  tycswap start --allow|--disallow ID mark or unmark a start login (--list lists)
   tycswap run <num|email> [-- ...]   run as an account, this terminal only
   tycswap run                        run the current dir's mapped account
   tycswap env <num|email>            print an eval-able CLAUDE_CONFIG_DIR export for this shell

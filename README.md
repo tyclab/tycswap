@@ -564,6 +564,56 @@ accounts. The browser dashboard's *Switch* asks before switching to one; the
 TUI and the dashboard's *Force switch* do not ask and refuse, pointing at
 `tycswap switch <n>`.
 
+### Start on a marked login
+
+Mark the accounts you want `start` to prefer when launching a command:
+
+```sh
+tycswap start --allow work
+tycswap start --list
+tycswap auto on
+tycswap start -- /absolute/path/to/real/claude --resume
+```
+
+Use `--disallow ID` to remove a mark. Account numbers, aliases and unambiguous
+emails work as IDs. The dashboard offers **Allow for start** / **Disallow for
+start** on Claude rows; `list`, the dashboard and the tray show `start login`.
+Marks belong to the account and survive re-login, re-add, move and swap. A
+forced import of an existing identity retains its local mark, disabled flag
+and alias when the export has no alias. New identities start unmarked.
+
+With auto-switch on, `start` leaves a marked current login alone; otherwise it
+picks an eligible marked subscription account using cached usage and the
+engine's counted-model checks. Accounts below every configured bar rank first,
+then other usable or unknown readings; a known 100% account is excluded. It
+makes no usage request. `--account ID` chooses only that account, without
+requiring a mark, and works while auto-switch is off; all other eligibility
+checks still apply. This does not grant model access or change managed policy.
+
+Selection is best effort. Missing marks and an already-marked current login
+are silent. An unavailable target or store prints a clear error on stderr,
+then launches once on the current login. An actual switch stamps the engine's
+cooldown, but cached data can be stale and other sessions and the engine share
+the same default login. Another switch can happen before the child reads it.
+This creates no session profile or startup hold. Executable launch failures
+exit nonzero and never rerun the command.
+
+The child's environment and arguments pass unchanged. A set
+`CLAUDE_CONFIG_DIR` (even empty), `--bare`, or a Claude authentication override
+skips selection, including an explicit `--account` request. Options for tycswap
+end at `--` or the first command. Without a command, `start` resolves the real
+Claude executable; failure to resolve it safely is a launch error.
+
+A manual shell launcher must use a verified real executable path:
+
+```sh
+claude() { tycswap start -- /absolute/path/to/real/claude "$@"; }
+```
+
+The real path must not resolve back to a launcher. A launcher invokes tycswap
+once and returns its status; a nonzero child exit must never trigger a retry.
+`run`, `env`, `map` and `unmap` remain available in this release.
+
 ### Run accounts in parallel
 
 Plain `claude` needs nothing from tycswap: every session runs on the default
@@ -631,7 +681,7 @@ $ cd ~/work/client-app && tycswap run     # runs as account 2
 **Pinning a shell.** `tycswap env` prepares the same session profile `tycswap run`
 does, but instead of launching `claude` it prints an eval-able export that pins
 the current shell's `CLAUDE_CONFIG_DIR` to the account. Every subsequent
-`claude` in that shell runs as the pinned account, and no separate process is
+`claude` in that shell uses that profile, and no separate process is
 launched:
 
 ```
@@ -662,12 +712,17 @@ tycswap env 2 --shell fish | source
 tycswap env 2 --shell pwsh | Invoke-Expression
 ```
 
-A pinned shell keeps the profile it eval'd until it eval's again. After
-switching accounts or a credential change, re-run the `eval` — or use
-`tycswap run`, which re-prepares the profile on every launch.
+The shell keeps the profile path it eval'd until it evals again. A shell
+alone does not keep the login: with auto-switch on, a real tick may reclaim
+the profile when no Claude process uses it, even while that shell is open.
+Re-run the `eval` before starting Claude after an idle period, or use
+`tycswap run`, which re-prepares the profile on every launch. A process still
+starting may also race that reclaim; this legacy limitation remains until
+the later retirement release.
 
-In a pinned shell, every tycswap command except `tycswap env` and `tycswap run`
-ignores the pin and operates on the default login, printing `This shell is
+In a pinned shell, launching with `tycswap start` honors the pin and skips
+selection. Other tycswap commands except `tycswap env` and `tycswap run`
+ignore the pin and operate on the default login, printing `This shell is
 pinned via tycswap env; operating on the default login.` to standard error.
 
 ### Export and import

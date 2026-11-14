@@ -194,6 +194,8 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 			accountNum = strconv.Itoa(s.NextAccountNumberFrom(data))
 		}
 
+		metadata := accountMetadata(s, data, emailVal, "")
+
 		// Each branch mutates and commits the locked roster: the occupancy it was
 		// decided from is the occupancy it is written into.
 		if displaceSlot != nil {
@@ -242,6 +244,7 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 		rec.set("organizationUuid", "")
 		rec.set("organizationName", "")
 		rec.set("added", timestamp(s))
+		carryAccountMetadata(rec, metadata)
 		if isAPIKey {
 			rec.set("kind", "api_key")
 		}

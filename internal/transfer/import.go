@@ -320,6 +320,12 @@ func Import(acc Accounts, source string, force bool) error {
 			if err != nil {
 				return err
 			}
+			if existingSlot != "" {
+				rec, err = retainLocalMetadata(rec, data.Accounts[existingSlot])
+				if err != nil {
+					return err
+				}
+			}
 			data.Accounts[targetNum] = rec
 			if tnum, err := strconv.Atoi(targetNum); err == nil && !containsInt(data.Sequence, tnum) {
 				data.Sequence = append(data.Sequence, tnum)
@@ -633,4 +639,28 @@ func joinPIDs(pids []int) string {
 		parts[i] = strconv.Itoa(p)
 	}
 	return strings.Join(parts, ", ")
+}
+
+func retainLocalMetadata(incoming, local json.RawMessage) (json.RawMessage, error) {
+	var old, fresh map[string]json.RawMessage
+	if err := json.Unmarshal(local, &old); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(incoming, &fresh); err != nil {
+		return nil, err
+	}
+	out := append([]byte(nil), incoming[:len(incoming)-1]...)
+	for _, key := range []string{"alias", "disabled", "startLogin"} {
+		if _, exists := fresh[key]; exists {
+			continue
+		}
+		if value, exists := old[key]; exists {
+			encodedKey, _ := json.Marshal(key)
+			out = append(out, ',')
+			out = append(out, encodedKey...)
+			out = append(out, ':')
+			out = append(out, value...)
+		}
+	}
+	return append(out, '}'), nil
 }
