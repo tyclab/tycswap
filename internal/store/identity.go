@@ -417,7 +417,35 @@ func (s *Store) RotationEligible(data *SequenceData, num string) bool {
 	if !s.AccountIsSwitchable(num) || disabledFromData(data, num) || s.AccountKindFor(num) == "api_key" {
 		return false
 	}
-	return s.EnsureAccountAvailable(num) == nil
+	return s.RotationOwnershipBlockReason(num) == ""
+}
+
+func (s *Store) RotationOwnershipBlockReason(num string) string {
+	if err := s.EnsureAccountAvailable(num); err != nil {
+		if candidate, releaseErr := s.LegacyReleaseCandidate(num); releaseErr == nil && candidate != nil {
+			return ""
+		}
+		return err.Error()
+	}
+	return ""
+}
+
+func (s *Store) RotationBlockReasons() map[string]string {
+	data, _ := s.ReadSequence()
+	out := map[string]string{}
+	if data == nil {
+		return out
+	}
+	for _, n := range data.Sequence {
+		num := strconv.Itoa(n)
+		if disabledFromData(data, num) || !s.AccountIsSwitchable(num) || s.AccountKindFor(num) == "api_key" {
+			continue
+		}
+		if reason := s.RotationOwnershipBlockReason(num); reason != "" {
+			out[num] = reason
+		}
+	}
+	return out
 }
 
 // SwitchableAccountNumbers returns the rotation-eligible slots in sequence order

@@ -25,9 +25,10 @@ type AccountSnapshot struct {
 	Plan       string // plan name Claude Code reports for the login, "" when unknown
 	Disabled   bool   // held out of auto-rotation (still a valid explicit target)
 	// Excludes the engine's transient quarantine: necessary, not sufficient, for an automatic pick.
-	RotationEligible bool
-	AtLimit          bool
-	LimitingWindows  []string
+	RotationEligible     bool
+	OwnershipBlockReason string
+	AtLimit              bool
+	LimitingWindows      []string
 	// "" means ProviderClaude so existing literals keep working; read it through ProviderName or Key.
 	Provider string
 }
@@ -91,23 +92,25 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 		atLimit, limiting := atLimitFor(entries[num].DecisionValue(), models)
 		switchable := s.AccountIsSwitchable(num)
 		disabled := recordDisabled(data, num)
+		ownershipBlock := s.RotationOwnershipBlockReason(num)
 		accounts = append(accounts, AccountSnapshot{
-			Number:           num,
-			Email:            info.Email,
-			OrgName:          info.OrgName,
-			OrgUUID:          info.OrgUUID,
-			IsActive:         info.IsActive,
-			Kind:             s.AccountKindFor(num),
-			BaseURL:          info.BaseURL,
-			Switchable:       switchable,
-			Usage:            entries[num],
-			Alias:            info.Alias,
-			Plan:             info.Plan,
-			Disabled:         disabled,
-			RotationEligible: rotationEligible(data, switchable, disabled, s.AccountKindFor(num)),
-			AtLimit:          atLimit,
-			LimitingWindows:  limiting,
-			Provider:         ProviderClaude,
+			Number:               num,
+			Email:                info.Email,
+			OrgName:              info.OrgName,
+			OrgUUID:              info.OrgUUID,
+			IsActive:             info.IsActive,
+			Kind:                 s.AccountKindFor(num),
+			BaseURL:              info.BaseURL,
+			Switchable:           switchable,
+			Usage:                entries[num],
+			Alias:                info.Alias,
+			Plan:                 info.Plan,
+			Disabled:             disabled,
+			RotationEligible:     rotationEligible(data, switchable, disabled, s.AccountKindFor(num)) && ownershipBlock == "",
+			OwnershipBlockReason: ownershipBlock,
+			AtLimit:              atLimit,
+			LimitingWindows:      limiting,
+			Provider:             ProviderClaude,
 		})
 	}
 	return &AccountsSnapshot{

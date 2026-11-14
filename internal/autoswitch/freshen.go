@@ -19,6 +19,12 @@ func (e *Engine) freshenTarget(number, email string) string {
 		// rotating refresh token with nobody reading the warning.
 		return "skip-live-session"
 	}
+	if sw, ok := e.sw.(interface{ PrepareRotationTarget(string) error }); ok {
+		if err := sw.PrepareRotationTarget(number); err != nil {
+			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "account-unavailable", Detail: err.Error()})
+			return "ownership-blocked"
+		}
+	}
 	creds := e.sw.ReadAccountCredentials(number, email)
 	if creds == "" {
 		return "transient"

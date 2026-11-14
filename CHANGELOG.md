@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Fixed:** automatic rotation reclaims verified unused `run`/`env` profiles before polling, including expired logins that can then refresh. Running profiles remain protected. When they hold the remaining accounts, the engine reports `accounts-in-use` instead of `all-exhausted`; the dashboard and tray explain the ownership block and exclude those accounts from fallback rankings.
 - **Fixed:** `tycswap add --login` as the account that is already live makes the new login the live one, as `--switch` did. Before, only the stored copy was renewed: the live store kept the old credential, so `list` and the dashboard went on reporting `no credentials` or `re-login needed` for the active account after a successful sign-in, until `tycswap switch <n> --force`. A login as any other account still leaves the live login untouched.
 - **Fixed:** switching to an account held by an idle `run`/`env` profile returns its verified latest login to the default profile automatically. Conversation history and profile MCP logins remain intact; interrupted releases can be retried. Running sessions keep their claim and the error names their PIDs and the retry command.
 - **Fixed:** with Codex rotation off (`autoswitch.codexEnabled` `false`) or no Codex account when it started, the app and the dashboard no longer run a Codex tick each round. That tick set Codex's last tick and logged a Codex `error` event, `snapshot failed (runtime error: invalid memory address or nil pointer dereference)`, on every round while auto-switch was on or a dry run ran.

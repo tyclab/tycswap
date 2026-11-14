@@ -78,6 +78,17 @@ func panelState(rows ...map[string]any) web.State {
 	return st
 }
 
+func TestTrayPanelExplainsOwnershipBlock(t *testing.T) {
+	sh, _, _ := newTestShell(t)
+	row := panelRow("claude", 2, "worker", "Ultra", nil, nil, nil)
+	reason := "Account-2 has a running session profile (PID 42)"
+	row["ownershipBlockReason"] = reason
+	got := rowByID(t, sh.panelAt(panelState(row), panelNow), "claude:2")
+	if !got.Disabled || got.Warning != reason {
+		t.Fatalf("tray offered a blocked switch without its reason: %+v", got)
+	}
+}
+
 func cellsOf(p tray.Panel, row tray.PanelRow) map[string]tray.PanelCell {
 	out := map[string]tray.PanelCell{}
 	for i, cell := range row.Cells {

@@ -31,6 +31,9 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 	if s.GroupID() != "" {
 		return switchOp{}, cerr.Session("session groups are retired; the default login switches by itself")
 	}
+	if err := ReleaseIdleLegacy(s, targetAccount); err != nil {
+		return switchOp{}, err
+	}
 	warningsOut := []string{}
 
 	// Session-mode drift warning (warn, never block).

@@ -285,6 +285,9 @@ func accountRow(a reporting.AccountSnapshot) map[string]any {
 		// A46); the page shows its host.
 		row["baseUrl"] = a.BaseURL
 	}
+	if a.OwnershipBlockReason != "" {
+		row["ownershipBlockReason"] = a.OwnershipBlockReason
+	}
 	if plan := rowPlan(a); plan != "" {
 		row["plan"] = plan
 	}
