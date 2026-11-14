@@ -156,6 +156,15 @@ func startOverride(env, command []string) string {
 
 func selectStartLogin(account string, stderr io.Writer) {
 	root := paths.GetBackupRoot()
+	if info, err := os.Stat(root); err == nil {
+		if !info.IsDir() {
+			startNotice(stderr, "Could not select a start login: the tycswap store "+root+" is not a directory; launching on the current login.")
+			return
+		}
+	} else if !os.IsNotExist(err) {
+		startNotice(stderr, "Could not select a start login: could not inspect the tycswap store: "+err.Error()+"; launching on the current login.")
+		return
+	}
 	warning, err := paths.CheckPrivateRoot(root)
 	if err != nil {
 		startNotice(stderr, "Could not select a start login: "+err.Error()+"; launching on the current login.")

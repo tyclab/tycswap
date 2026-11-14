@@ -126,6 +126,12 @@ func TestStartFallsBackAndStillRuns(t *testing.T) {
 			argv := []string{"start", "command"}
 			root := paths.GetBackupRoot()
 			if failure == "bad-root" {
+				previous := newSwitcher
+				newSwitcher = func(store.Options) (*core.Switcher, error) {
+					t.Fatal("invalid store root reached switcher construction")
+					return nil, nil
+				}
+				t.Cleanup(func() { newSwitcher = previous })
 				if err := os.MkdirAll(filepath.Dir(root), 0o700); err != nil {
 					t.Fatal(err)
 				}
@@ -153,6 +159,9 @@ func TestStartFallsBackAndStillRuns(t *testing.T) {
 			code, out, stderr := runCLI(t, argv, false, false)
 			if code != 23 || *calls != 1 || out != "" || strings.Count(stderr, "tycswap start:") != 1 {
 				t.Fatalf("code=%d calls=%d out=%q stderr=%q", code, *calls, out, stderr)
+			}
+			if failure == "bad-root" && !strings.Contains(stderr, "not a directory") {
+				t.Fatalf("invalid root diagnostic = %q", stderr)
 			}
 		})
 	}
