@@ -35,6 +35,21 @@ evidence.
 | OFF-4 | the hosted Codex loop reacts up to one interval after Start or `auto on`; it has no wake | cli/codexauto.go, webfacades.go | FIX D3 (one tick) |  | E |
 | OFF-5 | saved bars other than the model reach the app's engine only at app start, since Stop no longer ends it | cli/webfacades.go | FIX D3 (settings read per tick) |  | E |
 
+## From the review of the automatic reclaim (v0.11.6)
+
+Closed by `docs/superpowers/plans/2026-11-14-start-login.md` (spec S5, S6).
+Each T row has a test that passes on v0.11.5 or fails only on v0.11.6's new
+claim.
+
+| ID | Defect | Where | Verdict | Ev | Series |
+| --- | --- | --- | --- | --- | --- |
+| RECLAIM-1 | a tick below every bar logs a shell pinned with `env` out: every real tick releases every unused profile before polling, and a pinned shell without a Claude process is unused | autoswitch/tick.go tickInner, core/autoswitch_adapters.go | CUT S5 (`env` goes) | T | R |
+| RECLAIM-2 | a tick between `run`'s lock release and Claude's `sessions/<pid>.json` (1.8 s after `exec` in one traced start) releases the starting profile and can make its account the default login too | session/bootstrap.go SetupSession, switching/legacyrelease.go | CUT S5 (`run` goes) | T | R |
+| RECLAIM-3 | a profile login that rotated in its profile and then expired is never released: the release asks the profile endpoint, which an expired token cannot answer; the tick reports `no-comparison` | switching/legacyrelease.go ReleaseIdleLegacy | FIX S5 (verify by refresh) | T | R |
+| RECLAIM-4 | the snapshot calls an account eligible when a release candidate exists, the engine refuses it when the release cannot verify: dashboard and tray show no reason | store/identity.go RotationOwnershipBlockReason | FIX S5 (reason stored on the claim) | T | R |
+| RECLAIM-5 | a `reserved` or `model-missing` tick with a held account emits `accounts-in-use` and `…-no-target` | autoswitch/tick.go selectCandidates | FIX S5 | T | R |
+| RECLAIM-6 | `account-unavailable` is in no document; the port spec's reason list lacks it and `accounts-in-use`; README's "Pinning a shell" promises what RECLAIM-1 breaks | docs/reference.md, docs/port-spec/05-autoswitch.md, README.md | FIX S6 |  | R |
+
 ## Engine lane
 
 | ID | Defect | Where | Verdict | Ev | Series |
