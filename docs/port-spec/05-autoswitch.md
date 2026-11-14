@@ -159,6 +159,14 @@ Human: `"no switch: {reason}"` + `" ({detail})"` if detail non-empty.
 `"no-candidates"`, `"no-comparison"`, `"no-qualifying-candidate"`,
 `"no-viable-target"`, `"already-active"`.
 
+Go extensions also emit `"disabled"`, `"model-missing-no-target"`,
+`"reserved-no-target"`, `"accounts-in-use"` and `"account-unavailable"`.
+`accounts-in-use` means held session profiles prevent rotation; detail carries
+the ownership reasons. `account-unavailable` means guarded preparation found
+the chosen account no longer available; detail explains the release/ownership
+failure. Snapshot eligibility may provisionally include an idle profile whose
+actual release still cannot verify its identity.
+
 ### `account-quarantined` (`QuarantineEvent`)
 Fields: `number` (str), `email` (str), `reason` (str).
 ```json

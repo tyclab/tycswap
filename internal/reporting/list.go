@@ -94,6 +94,7 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 				UsageAgeS:       entry.AgeS,
 				Alias:           info.Alias,
 				Disabled:        recordDisabled(data, num),
+				StartLogin:      store.StartLoginFrom(data, num),
 				AtLimit:         atLimit,
 				LimitingWindows: limiting,
 				BaseURL:         info.BaseURL,
@@ -157,6 +158,9 @@ func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries ma
 		}
 		if info.IsActive {
 			markers += " " + printer.BoldAccent("(active)")
+		}
+		if store.StartLoginFrom(data, num) {
+			markers += " " + printer.Muted("(start login)")
 		}
 		if recordDisabled(data, num) {
 			markers += " " + printer.Muted("(disabled)")

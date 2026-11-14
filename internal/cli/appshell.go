@@ -357,6 +357,9 @@ func gaugeGroup(rows []map[string]any, withModels []string, subID, subTitle stri
 	for _, r := range rows {
 		sub := windowsLine(r, []string{"all"})
 		var flags []string
+		if rowProvider(r) == reporting.ProviderClaude && boolOf(r["startLogin"]) {
+			flags = append(flags, "start login")
+		}
 		if boolOf(r["atLimit"]) {
 			flags = append(flags, "at limit")
 		}

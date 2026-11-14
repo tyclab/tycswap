@@ -56,3 +56,7 @@ func (sw *Switcher) Purge() error {
 func (sw *Switcher) AddAccountFromLogin(src lifecycle.AddSource, slot *int, assumeYes bool, alias *string) (string, error) {
 	return lifecycle.AddAccountFrom(sw.Store, src, slot, assumeYes, alias)
 }
+
+func (sw *Switcher) SetStartLogin(id string, allowed bool) error {
+	return lifecycle.SetStartLogin(sw.Store, id, allowed)
+}

@@ -1103,6 +1103,7 @@
   function statusChips(a) {
     var out = [];
     if (a.isActive) { out.push(chip('active', 'active')); }
+    if (isClaude(a) && a.startLogin) { out.push(chip('start login', 'outline', 'eligible for startup selection')); }
     if (a.atLimit) { out.push(chip('at limit', 'crit', (a.limitingWindows || []).join(', ') || 'a window is at 100%')); }
     if (a.disabled) { out.push(chip('disabled', 'outline', 'held out of auto-rotation')); }
     if (a.ownershipBlockReason) { out.push(chip('held by another profile', 'warn', a.ownershipBlockReason)); }
@@ -1139,6 +1140,14 @@
     var a = { type: 'button', class: 'btn btn-sm' + (attrs.danger ? ' btn-danger' : ''), text: label, role: 'menuitem' };
     Object.keys(attrs).forEach(function (k) { if (k !== 'danger') { a[k] = attrs[k]; } });
     return el('button', a);
+  }
+
+  function startLoginAction(a) {
+    if (!isClaude(a)) { return null; }
+    return menuButton(a.startLogin ? 'Disallow for start' : 'Allow for start', {
+      'data-post': '/api/accounts/' + keyPath(a) + '/start-login/' + (a.startLogin ? 'disallow' : 'allow'),
+      'data-label': a.startLogin ? 'Disallow for start' : 'Allow for start'
+    });
   }
 
   function modelMeter(u, size) {
@@ -1277,6 +1286,7 @@
       var listEl = el('div', { class: 'menu-list', role: 'menu' });
       var k = rowKey(a);
       listEl.appendChild(menuButton('Use saved login…', { 'data-action': 'force-switch', 'data-id': k, 'data-name': accountLabel(a) }));
+      listEl.appendChild(startLoginAction(a));
       if (a.disabled) {
         listEl.appendChild(menuButton('Enable for rotation', { 'data-post': '/api/accounts/' + keyPath(a) + '/enable', 'data-label': 'Enable' }));
       } else {

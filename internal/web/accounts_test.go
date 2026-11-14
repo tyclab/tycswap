@@ -652,3 +652,28 @@ func TestBody_MalformedJSON400_EveryBodyRoute(t *testing.T) {
 		t.Fatal("a facade was reached with malformed JSON")
 	}
 }
+
+func TestStartLoginRoutes(t *testing.T) {
+	h := newHarness(t)
+	for _, action := range []string{"allow", "disallow"} {
+		resp := h.post("/api/accounts/claude:work/start-login/" + action)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: %d", action, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+	if got := h.ops.Calls(); !reflect.DeepEqual(got, []string{"SetStartLogin(work,true)", "SetStartLogin(work,false)"}) {
+		t.Fatalf("calls %v", got)
+	}
+	resp := h.post("/api/accounts/codex:1/start-login/allow")
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("Codex status %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+	h = newHarness(t, withNoAccounts())
+	resp = h.post("/api/accounts/claude:1/start-login/allow")
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("missing facade status %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}

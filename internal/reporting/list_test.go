@@ -33,7 +33,7 @@ func TestBuildListPayload_Golden(t *testing.T) {
   "sequence": [1, 2],
   "accounts": {
     "1": {"email": "alice@example.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "x"},
-    "2": {"email": "bob@example.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "x", "alias": "dev", "disabled": true}
+    "2": {"email": "bob@example.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "x", "alias": "dev", "disabled": true, "startLogin": true}
   }
 }`)
 	writeBackup(t, s, "1", "alice@example.com", oauthCreds("at1", "rt1", 0), `{"oauthAccount":{"emailAddress":"alice@example.com"}}`)
@@ -69,7 +69,7 @@ func TestBuildListPayload_Golden(t *testing.T) {
 				"number": 2, "email": "bob@example.com",
 				"organizationName": "", "organizationUuid": "", "isOrganization": false,
 				"active": false, "usageStatus": "unavailable", "usage": nil,
-				"alias": "dev", "disabled": true,
+				"alias": "dev", "disabled": true, "startLogin": true,
 			},
 		},
 	}
@@ -161,7 +161,7 @@ func TestBuildListPayload_OptionalKeyOmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	row := got.(map[string]any)["accounts"].([]any)[0].(map[string]any)
-	for _, key := range []string{"alias", "disabled", "usageFetchedAt", "usageAgeSeconds"} {
+	for _, key := range []string{"alias", "disabled", "startLogin", "usageFetchedAt", "usageAgeSeconds"} {
 		if _, present := row[key]; present {
 			t.Errorf("key %q must be omitted on an aliasless/enabled/usageless row", key)
 		}
@@ -184,7 +184,7 @@ func TestRenderAccounts_HumanColumnsAndMarkers(t *testing.T) {
   "activeAccountNumber": 1, "lastUpdated": "x", "sequence": [1, 2],
   "accounts": {
     "1": {"email": "alice@example.com", "organizationUuid": "", "organizationName": ""},
-    "2": {"email": "bob@example.com", "organizationUuid": "", "organizationName": "", "alias": "dev", "disabled": true}
+    "2": {"email": "bob@example.com", "organizationUuid": "", "organizationName": "", "alias": "dev", "disabled": true, "startLogin": true}
   }
 }`)
 	// Active credential for alice so she is not read as no-credentials.
@@ -211,7 +211,7 @@ func TestRenderAccounts_HumanColumnsAndMarkers(t *testing.T) {
 	if !strings.Contains(out, "1: alice@example.com [personal] (active)") {
 		t.Errorf("alice row wrong:\n%s", out)
 	}
-	if !strings.Contains(out, "2: dev (bob@example.com) [personal] (disabled)") {
+	if !strings.Contains(out, "2: dev (bob@example.com) [personal] (start login) (disabled)") {
 		t.Errorf("bob alias/disabled row wrong:\n%s", out)
 	}
 	// Alice's served measurement renders indented with a tree glyph.

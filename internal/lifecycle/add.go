@@ -145,21 +145,7 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 			accountNum = strconv.Itoa(s.NextAccountNumberFrom(data))
 		}
 
-		existingAlias := ""
-		if slot != nil {
-			if rec, present := recordAt(data, accountNum); present {
-				if rec.str("email") == email && rec.str("organizationUuid") == orgUUID {
-					existingAlias = rec.str("alias")
-				}
-			}
-			if migrateFrom != "" {
-				if rec, present := recordAt(data, migrateFrom); present {
-					if a := rec.str("alias"); a != "" {
-						existingAlias = a
-					}
-				}
-			}
-		}
+		metadata := accountMetadata(s, data, email, orgUUID)
 
 		if alias != nil {
 			if conflict := s.AliasInUse(data, normAlias, accountNum); conflict != "" {
@@ -225,12 +211,9 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		rec.set("organizationName", cfgOrgName)
 		rec.set("plan", cfgPlan)
 		rec.set("added", timestamp(s))
-		carriedAlias := existingAlias
+		carryAccountMetadata(rec, metadata)
 		if alias != nil {
-			carriedAlias = normAlias
-		}
-		if carriedAlias != "" {
-			rec.set("alias", carriedAlias)
+			rec.set("alias", normAlias)
 		}
 		if err := putRecord(data, accountNum, rec); err != nil {
 			return err

@@ -796,3 +796,31 @@ func TestImportClearDeadTokenErrorAborts(t *testing.T) {
 		t.Fatal("expected clear-dead-token error to propagate")
 	}
 }
+
+func TestImportRetainsLocalStartMetadataOnlyForExistingIdentity(t *testing.T) {
+	f := newFakeAccounts(t)
+	f.seedAccount("1", "a@example.com", "", recordOpts{alias: "local", disabled: true})
+	local := f.record(t, "1")
+	local["startLogin"] = true
+	f.seq.Accounts["1"], _ = json.Marshal(local)
+	incoming := oauthAccount(9, "a@example.com", "")
+	if _, err := importText(t, f, envelopeJSON(nil, incoming), true); err != nil {
+		t.Fatal(err)
+	}
+	r := f.record(t, "1")
+	if r["startLogin"] != true || r["disabled"] != true || r["alias"] != "local" {
+		t.Fatalf("metadata lost: %v", r)
+	}
+	incoming = oauthAccount(1, "new@example.com", "")
+	incoming["startLogin"], incoming["disabled"] = true, true
+	if _, err := importText(t, f, envelopeJSON(nil, incoming), true); err != nil {
+		t.Fatal(err)
+	}
+	r = f.record(t, "2")
+	if _, ok := r["startLogin"]; ok {
+		t.Fatal("new imported identity inherited startup mark")
+	}
+	if _, ok := r["disabled"]; ok {
+		t.Fatal("new imported identity inherited disabled flag")
+	}
+}

@@ -37,6 +37,9 @@ func Main() int {
 
 // run is the testable front controller. argv excludes the program name.
 func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int {
+	if len(argv) > 0 && argv[0] == "start" {
+		return startCommand(prog, argv[1:], s)
+	}
 	// Profile-aware launchers and hooks retain the inherited Claude profile.
 	hook := len(argv) > 1 && ((argv[0] == "groups" && argv[1] == "guard") || (argv[0] == "recovery" && argv[1] == "record"))
 	if !hook && (len(argv) == 0 || (argv[0] != "run" && argv[0] != "env")) {

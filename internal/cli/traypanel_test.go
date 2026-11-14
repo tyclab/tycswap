@@ -730,3 +730,26 @@ func TestTrayPanelUpdatesShortcut(t *testing.T) {
 	sh.act.CheckUpdates = nil
 	sh.click("updates-open")
 }
+
+func TestTrayStartLoginTag(t *testing.T) {
+	sh, _, _ := newTestShell(t)
+	claude := panelRow("claude", 1, "work", "", nil, nil, nil)
+	codex := panelRow("codex", 1, "code", "", nil, nil, nil)
+	claude["startLogin"], claude["disabled"], codex["startLogin"] = true, true, true
+	p := sh.panelAt(panelState(claude, codex), panelNow)
+	if got := rowByID(t, p, "claude:1").Tag; got != "not rotated · start login" {
+		t.Fatalf("Claude tag %q", got)
+	}
+	if got := rowByID(t, p, "codex:1").Tag; got != "" {
+		t.Fatalf("Codex tag %q", got)
+	}
+	for _, tc := range []struct {
+		row  map[string]any
+		want bool
+	}{{claude, true}, {codex, false}} {
+		items := gaugeGroup([]map[string]any{tc.row}, nil, "all", "Accounts")
+		if len(items) != 1 || strings.Contains(items[0].Sub, "start login") != tc.want {
+			t.Fatalf("menu tag %+v", items)
+		}
+	}
+}

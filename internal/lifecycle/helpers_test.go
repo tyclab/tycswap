@@ -60,7 +60,7 @@ func newStoreOpts(t *testing.T, opts store.Options) *store.Store {
 // acct is a managed-account seed spec.
 type acct struct {
 	num, email, org, orgName, uuid, alias, kind string
-	disabled                                    bool
+	disabled, startLogin                        bool
 	creds, config                               string // "" = no backup written
 }
 
@@ -88,6 +88,9 @@ func seed(t *testing.T, s *store.Store, active *int, accts ...acct) {
 		}
 		if a.kind != "" {
 			rec.set("kind", a.kind)
+		}
+		if a.startLogin {
+			rec.set("startLogin", true)
 		}
 		if a.disabled {
 			rec.set("disabled", true)

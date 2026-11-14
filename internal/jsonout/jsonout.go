@@ -199,6 +199,7 @@ type RowOpts struct {
 	UsageAgeS       *float64
 	Alias           string
 	Disabled        bool
+	StartLogin      bool
 	AtLimit         bool
 	LimitingWindows []string
 	// BaseURL is the endpoint an API-key account carries (DESIGN A46); the
@@ -232,6 +233,9 @@ func AccountRow(number int, email, orgName, orgUUID string, active bool, usageEn
 	}
 	if opts.Alias != "" {
 		row["alias"] = opts.Alias
+	}
+	if opts.StartLogin {
+		row["startLogin"] = true
 	}
 	if opts.Disabled {
 		row["disabled"] = true

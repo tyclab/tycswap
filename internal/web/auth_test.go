@@ -28,6 +28,8 @@ var allRoutes = []struct{ method, path string }{
 	{"POST", "/api/accounts/swap"},
 	{"POST", "/api/accounts/claude:1/disable"},
 	{"POST", "/api/accounts/claude:1/enable"},
+	{"POST", "/api/accounts/claude:1/start-login/allow"},
+	{"POST", "/api/accounts/claude:1/start-login/disallow"},
 	{"POST", "/api/accounts/claude:1/remove"},
 	{"POST", "/api/accounts/claude:1/alias"},
 	{"POST", "/api/accounts/claude:1/move"},
