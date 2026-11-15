@@ -6,7 +6,7 @@ package tui
 import (
 	"fmt"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // clampInt clamps v to [lo, hi]. Callers pass lo <= hi.

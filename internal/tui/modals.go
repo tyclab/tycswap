@@ -13,8 +13,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"charm.land/lipgloss/v2"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // tokenForm is what the add-token modal collects (09§7.2 TokenForm).

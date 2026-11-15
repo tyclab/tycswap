@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/lifecycle"
@@ -221,7 +221,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // the terminal height is known; a primary screen supplies its footer bindings
 // via footerScreen, while modals — which cover the footer and carry their own
 // inline hints — do not.
+//
+// Lip Gloss v2 renders full-fidelity colour and leaves downsampling to the
+// output, and bubbletea v1 writes the frame to stdout unchanged, so the frame
+// is downsampled to stdout's colour profile here, as lipgloss v1 did inside
+// Render: a 256- or 16-colour terminal gets the nearest colours, a non-terminal
+// plain text.
 func (m *Model) View() string {
+	return lipgloss.Sprint(m.render())
+}
+
+// render builds the frame View writes.
+func (m *Model) render() string {
 	if m.quitting {
 		return ""
 	}

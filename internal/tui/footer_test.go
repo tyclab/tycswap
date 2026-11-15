@@ -9,7 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 )
 
 const wideFooter = 200 // wide enough that nothing truncates
@@ -108,5 +109,32 @@ func TestFooterTruncatesNarrowWidth(t *testing.T) {
 	m.width = 22
 	if w := lipgloss.Width(m.renderFooter(d.footerBindings(m))); w > 22 {
 		t.Fatalf("rendered footer width = %d, want <= 22", w)
+	}
+}
+
+// -- colour downsampling -----------------------------------------------------
+
+// TestViewDownsamplesToTheOutputProfile: lipgloss v2 renders full-fidelity
+// colour and bubbletea v1 writes the frame unchanged, so View downsamples the
+// frame to stdout's colour profile, as lipgloss v1's Render did. The footer's
+// key labels are colAccent #d7875f, xterm colour 173.
+func TestViewDownsamplesToTheOutputProfile(t *testing.T) {
+	old := lipgloss.Writer.Profile
+	t.Cleanup(func() { lipgloss.Writer.Profile = old })
+	m := newTestModel(&fakeFacade{})
+	m.width, m.height = 80, 24
+	for _, tc := range []struct {
+		profile   colorprofile.Profile
+		want, not string
+	}{
+		{colorprofile.TrueColor, "38;2;215;135;95", ""},
+		{colorprofile.ANSI256, "38;5;173", "38;2;"},
+		{colorprofile.NoTTY, "Switch accounts", "\x1b["},
+	} {
+		lipgloss.Writer.Profile = tc.profile
+		frame := m.View()
+		if !strings.Contains(frame, tc.want) || tc.not != "" && strings.Contains(frame, tc.not) {
+			t.Errorf("%s frame: want %q, not %q:\n%q", tc.profile, tc.want, tc.not, frame)
+		}
 	}
 }

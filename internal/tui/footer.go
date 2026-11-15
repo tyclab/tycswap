@@ -12,7 +12,7 @@
 package tui
 
 import (
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // footerBinding is one key+label hint shown in the footer bar.
