@@ -3,14 +3,14 @@
 A full-fidelity Go port of `claude-swap`, grounded in the behavioral specs in
 `docs/port-spec/01–10` (10-audit.md corrections override the rest).
 
-- Module: `github.com/tyclab/tycswap` · Go 1.25 · single binary `tycswap`
+- Module: `github.com/tyclab/tycswap` · Go per `go.mod` · single binary `tycswap`
   (also installed as `claude-swap`).
 - No cgo, except `internal/tray` on darwin (A12 as amended by A35). macOS
   Keychain via the `security` subprocess exactly as Python.
-- TUI: bubbletea v1.3 + lipgloss v1.1 + bubbles v1.0. HTTP: stdlib `net/http`.
-  Extra deps limited to `golang.org/x/sys` (flock/`LockFileEx`, Windows PID
-  probe, console VT) and `golang.org/x/text/unicode/norm` (NFC for
-  `slugify_email` / keychain service hashing). No other third-party deps.
+- TUI: Bubble Tea v2 + Lip Gloss v2 (charm.land). HTTP: stdlib `net/http`.
+  `golang.org/x/sys` serves flock/`LockFileEx`, the Windows PID probe and
+  console VT, and `golang.org/x/text/unicode/norm` NFC for `slugify_email` /
+  keychain service hashing; the rest are `go.mod`'s direct requires.
 - Out of scope: the rumps macOS menu bar (`menubar.py`, spec 09 §10). The
   update-check/upgrade subsystem is redesigned for Go (§6, §7 below). The
   menu-bar / tray app of A35 is a Go-side addition, not a port of it.
@@ -969,6 +969,10 @@ darwin release binaries are therefore built on a macOS runner, Linux and
 Windows stay CGO-free cross-builds, and a darwin build with `CGO_ENABLED=0`
 (a `go install` without the Command Line Tools) has no tray and serves the
 dashboard alone.
+
+**Amended:** the Charm stack moved to `charm.land/bubbletea/v2` (#97) and
+`charm.land/lipgloss/v2` (#98); bubbles never entered `go.mod` and
+`internal/deps` is deleted.
 
 ## A13. Pinned cross-package interfaces
 
