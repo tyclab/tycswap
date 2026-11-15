@@ -13,6 +13,7 @@ import (
 	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // pyFloat is a float64 whose JSON form matches Python's json.dumps: a
@@ -392,7 +393,9 @@ func clampValue(spec Spec, value any) any {
 		}
 		return spec.Default
 	case KindString:
-		if s, ok := value.(string); ok && s != "" {
+		// A terminal control character makes the value unset: v0.12.0's TUI
+		// stored pastes raw, and every sink prints the value as it is.
+		if s, ok := value.(string); ok && s != "" && !termsafe.HasControl(s) {
 			return s
 		}
 		return spec.Default
@@ -814,6 +817,9 @@ func ParseSettingValue(spec Spec, rawValue string) (any, error) {
 		value := strings.TrimSpace(rawValue)
 		if value == "" {
 			return nil, cerr.Config("%s expects a non-empty value; use 'tycswap config unset %s' to clear it", spec.Dotted(), spec.Dotted())
+		}
+		if termsafe.HasControl(value) {
+			return nil, cerr.Config("%s must not contain a control character", spec.Dotted())
 		}
 		if spec.Field == "Model" && noModelWord(value) {
 			return nil, cerr.Config("%s %q names no model; use 'tycswap config unset %s' to stop counting model limits", spec.Dotted(), value, spec.Dotted())
