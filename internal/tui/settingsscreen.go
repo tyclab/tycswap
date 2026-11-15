@@ -25,6 +25,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // engineNote states, for every key, when a running auto-switch engine applies
@@ -105,7 +106,7 @@ func (s *settingsScreen) current() (settings.Effective, bool) {
 func (s *settingsScreen) update(m *Model, msg tea.Msg) tea.Cmd {
 	if paste, ok := msg.(tea.PasteMsg); ok {
 		if s.editing {
-			s.input += paste.Content
+			s.input += termsafe.Strip(paste.Content)
 			s.editError = ""
 		}
 		return nil
@@ -153,7 +154,7 @@ func (s *settingsScreen) updateEditing(m *Model, key tea.KeyPressMsg) tea.Cmd {
 		}
 	default:
 		if key.Text != "" {
-			s.input += key.Text
+			s.input += termsafe.Strip(key.Text)
 			s.editError = ""
 		}
 	}

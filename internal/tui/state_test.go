@@ -439,9 +439,12 @@ func TestAddTokenValidation(t *testing.T) {
 }
 
 // TestAddTokenTextInput: a field takes typed and pasted text, the space bar
-// and an AltGr character (Windows reports "@" on a German layout as ctrl+alt
-// with the text set), ignores ctrl chords, and backspace removes one
-// character, not one byte of "ä" or "日".
+// and an AltGr character, ignores ctrl and alt chords, and backspace removes
+// one character, not one byte of "ä" or "日". The key's Text decides: AltGr "@"
+// on a German layout arrives as a plain "@" (bubbletea v2 reads Windows input
+// as VT sequences), and the ctrl+alt form with Text set, which win32 input mode
+// would report, types it too. An ESC-prefixed alt+letter has no Text, so it
+// types nothing; bubbletea v1 typed the bare letter.
 func TestAddTokenTextInput(t *testing.T) {
 	m := newTestModel(&fakeFacade{})
 	a := &addTokenModal{focus: 1, onDone: func(*Model, *tokenForm) tea.Cmd { return nil }}
@@ -449,16 +452,18 @@ func TestAddTokenTextInput(t *testing.T) {
 		tea.KeyPressMsg{Code: 'ä', Text: "ä"},
 		tea.KeyPressMsg{Code: '日', Text: "日"},
 		tea.KeyPressMsg{Code: tea.KeySpace, Text: " "},
+		tea.KeyPressMsg{Code: '@', Text: "@"},
 		tea.KeyPressMsg{Code: '@', Text: "@", Mod: tea.ModCtrl | tea.ModAlt},
 		tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl},
+		tea.KeyPressMsg{Code: 'b', Mod: tea.ModAlt},
 		tea.PasteMsg{Content: "é@x"},
 	} {
 		a.update(m, k)
 	}
-	if a.email != "ä日 @é@x" {
-		t.Fatalf("email = %q, want %q", a.email, "ä日 @é@x")
+	if a.email != "ä日 @@é@x" {
+		t.Fatalf("email = %q, want %q", a.email, "ä日 @@é@x")
 	}
-	for _, want := range []string{"ä日 @é@", "ä日 @é", "ä日 @", "ä日 ", "ä日", "ä", "", ""} {
+	for _, want := range []string{"ä日 @@é@", "ä日 @@é", "ä日 @@", "ä日 @", "ä日 ", "ä日", "ä", "", ""} {
 		a.update(m, tea.KeyPressMsg{Code: tea.KeyBackspace})
 		if a.email != want {
 			t.Fatalf("after backspace email = %q, want %q", a.email, want)
@@ -476,6 +481,42 @@ func TestPasteReachesTheTopScreen(t *testing.T) {
 	m.Update(tea.PasteMsg{Content: "sk-ant-oat01-x"})
 	if a.token != "sk-ant-oat01-x" {
 		t.Fatalf("token after the paste = %q, want %q", a.token, "sk-ant-oat01-x")
+	}
+}
+
+// TestPasteStripsControlCharacters: a paste into a single-line field keeps its
+// text and drops terminal control characters, as the menu prompt's filter does
+// (termsafe.Strip): a copied token's trailing newline never reaches the field,
+// and an escape sequence stays inert text.
+func TestPasteStripsControlCharacters(t *testing.T) {
+	m := newTestModel(&fakeFacade{})
+	a := &addTokenModal{onDone: func(*Model, *tokenForm) tea.Cmd { return nil }}
+	m.pushScreen(a)
+	m.Update(tea.PasteMsg{Content: "sk-ant\x1b[31m-oat01\r\n"})
+	if a.token != "sk-ant[31m-oat01" {
+		t.Fatalf("token after the paste = %q, want %q", a.token, "sk-ant[31m-oat01")
+	}
+}
+
+// TestKeyTextStripsControlCharacters: outside a bracketed paste (a terminal
+// without it, or a paste that carries ESC[201~) pasted text arrives as key
+// presses, and the decoder copies a CSI-u text parameter or a CSI 27;mod;code~
+// code into Text unchecked: "\x1b[97;1;27:91:50:74u" decodes to Code 'a' with
+// Text "\x1b[2J", and "\x1b[27;2;7~" to Text "\a". A field types the text
+// without its control characters.
+func TestKeyTextStripsControlCharacters(t *testing.T) {
+	m := newTestModel(&fakeFacade{})
+	a := &addTokenModal{focus: 1, onDone: func(*Model, *tokenForm) tea.Cmd { return nil }}
+	for _, k := range []tea.KeyPressMsg{
+		{Code: 'x', Text: "x"},
+		{Code: 'a', Text: "\x1b[2J"},
+		{Code: 'y', Text: "y"},
+		{Code: 7, Mod: tea.ModShift, Text: "\a"},
+	} {
+		a.update(m, k)
+	}
+	if a.email != "x[2Jy" {
+		t.Fatalf("email = %q, want %q", a.email, "x[2Jy")
 	}
 }
 
