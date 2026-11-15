@@ -132,10 +132,12 @@ func (a *addTokenModal) update(m *Model, msg tea.Msg) tea.Cmd {
 		})
 		return nil
 	default:
-		// Text is set for printable input only: letters, the space bar and
-		// AltGr characters, never a ctrl chord.
+		// Text is what the key types: letters, the space bar, AltGr characters;
+		// a ctrl or ESC-prefixed alt chord has none. Pasted text outside a
+		// bracketed paste arrives here too, and the decoder copies a CSI-u text
+		// parameter into Text unchecked, so it is stripped like a paste.
 		if key.Text != "" {
-			a.editFocused(func(s string) string { return s + key.Text })
+			a.editFocused(func(s string) string { return s + termsafe.Strip(key.Text) })
 		}
 		return nil
 	}

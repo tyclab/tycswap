@@ -154,7 +154,7 @@ func (s *settingsScreen) updateEditing(m *Model, key tea.KeyPressMsg) tea.Cmd {
 		}
 	default:
 		if key.Text != "" {
-			s.input += key.Text
+			s.input += termsafe.Strip(key.Text)
 			s.editError = ""
 		}
 	}
