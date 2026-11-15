@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -104,7 +104,7 @@ func panelWidth(m *Model) int {
 }
 
 func (a *autoScreen) update(m *Model, msg tea.Msg) tea.Cmd {
-	key, ok := msg.(tea.KeyMsg)
+	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil
 	}

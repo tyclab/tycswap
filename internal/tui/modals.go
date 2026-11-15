@@ -13,8 +13,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // tokenForm is what the add-token modal collects (09§7.2 TokenForm).
@@ -37,7 +37,7 @@ type confirmModal struct {
 }
 
 func (c *confirmModal) update(m *Model, msg tea.Msg) tea.Cmd {
-	key, ok := msg.(tea.KeyMsg)
+	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil
 	}
@@ -90,7 +90,11 @@ const (
 )
 
 func (a *addTokenModal) update(m *Model, msg tea.Msg) tea.Cmd {
-	key, ok := msg.(tea.KeyMsg)
+	if paste, ok := msg.(tea.PasteMsg); ok {
+		a.editFocused(func(s string) string { return s + paste.Content })
+		return nil
+	}
+	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil
 	}
@@ -126,8 +130,10 @@ func (a *addTokenModal) update(m *Model, msg tea.Msg) tea.Cmd {
 		})
 		return nil
 	default:
-		if len(key.String()) == 1 || key.Type == tea.KeyRunes {
-			a.editFocused(func(s string) string { return s + string(key.Runes) })
+		// Text is set for printable input only: letters, the space bar and
+		// AltGr characters, never a ctrl chord.
+		if key.Text != "" {
+			a.editFocused(func(s string) string { return s + key.Text })
 		}
 		return nil
 	}
@@ -208,7 +214,7 @@ type outputModal struct {
 }
 
 func (o *outputModal) update(m *Model, msg tea.Msg) tea.Cmd {
-	key, ok := msg.(tea.KeyMsg)
+	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil
 	}

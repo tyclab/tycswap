@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
@@ -31,7 +31,10 @@ func (m menuPrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch k := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = k.Width, k.Height
-	case tea.KeyMsg:
+	case tea.PasteMsg:
+		m.text += termsafe.Strip(k.Content)
+		m.index = 0
+	case tea.KeyPressMsg:
 		switch k.String() {
 		case "esc", "ctrl+c", "ctrl+d":
 			m.done = true
@@ -54,8 +57,8 @@ func (m menuPrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+u":
 			m.text, m.index = "", 0
 		default:
-			if k.Type == tea.KeyRunes || k.Type == tea.KeySpace {
-				m.text += termsafe.Strip(string(k.Runes))
+			if k.Text != "" {
+				m.text += termsafe.Strip(k.Text)
 				m.index = 0
 			}
 		}
@@ -63,9 +66,9 @@ func (m menuPrompt) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m menuPrompt) View() string {
+func (m menuPrompt) View() tea.View {
 	if m.done {
-		return ""
+		return tea.NewView("")
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n%s\n", termsafe.Strip(m.title))
@@ -92,7 +95,7 @@ func (m menuPrompt) View() string {
 	} else {
 		b.WriteString("Enter save · Ctrl+U clear · Esc back\n")
 	}
-	return b.String()
+	return tea.NewView(b.String())
 }
 
 var askMenu = askTerminal

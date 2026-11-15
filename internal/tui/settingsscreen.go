@@ -21,8 +21,8 @@ import (
 	"strconv"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/tyclab/tycswap/internal/settings"
 )
@@ -103,7 +103,14 @@ func (s *settingsScreen) current() (settings.Effective, bool) {
 }
 
 func (s *settingsScreen) update(m *Model, msg tea.Msg) tea.Cmd {
-	key, ok := msg.(tea.KeyMsg)
+	if paste, ok := msg.(tea.PasteMsg); ok {
+		if s.editing {
+			s.input += paste.Content
+			s.editError = ""
+		}
+		return nil
+	}
+	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil
 	}
@@ -131,8 +138,8 @@ func (s *settingsScreen) update(m *Model, msg tea.Msg) tea.Cmd {
 
 // updateEditing drives the inline input: enter submits, esc cancels (the
 // first stage of the two-stage escape; a second esc leaves the screen),
-// backspace deletes, every other printable key is typed.
-func (s *settingsScreen) updateEditing(m *Model, key tea.KeyMsg) tea.Cmd {
+// backspace deletes, every other printable key (the space bar too) is typed.
+func (s *settingsScreen) updateEditing(m *Model, key tea.KeyPressMsg) tea.Cmd {
 	switch key.String() {
 	case "esc":
 		s.editing, s.input, s.editError = false, "", ""
@@ -144,12 +151,9 @@ func (s *settingsScreen) updateEditing(m *Model, key tea.KeyMsg) tea.Cmd {
 			s.input = string(r[:len(r)-1])
 			s.editError = ""
 		}
-	case " ":
-		s.input += " "
-		s.editError = ""
 	default:
-		if key.Type == tea.KeyRunes {
-			s.input += string(key.Runes)
+		if key.Text != "" {
+			s.input += key.Text
 			s.editError = ""
 		}
 	}

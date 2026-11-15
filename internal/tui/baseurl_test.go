@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -28,13 +28,13 @@ func (f *baseURLFacade) AddAccountFromTokenWithBaseURL(token, baseURL string, em
 
 func keyTo(a *addTokenModal, m *Model, keys ...string) {
 	for _, k := range keys {
-		var msg tea.KeyMsg
+		var msg tea.KeyPressMsg
 		switch k {
 		case "tab", "enter", "esc", "left", "right", "backspace":
-			msg = tea.KeyMsg{Type: map[string]tea.KeyType{"tab": tea.KeyTab, "enter": tea.KeyEnter, "esc": tea.KeyEsc,
+			msg = tea.KeyPressMsg{Code: map[string]rune{"tab": tea.KeyTab, "enter": tea.KeyEnter, "esc": tea.KeyEsc,
 				"left": tea.KeyLeft, "right": tea.KeyRight, "backspace": tea.KeyBackspace}[k]}
 		default:
-			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
+			msg = typed(k)
 		}
 		a.update(m, msg)
 	}

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/tyclab/tycswap/internal/settings"
 )
@@ -47,16 +47,16 @@ func selectKey(t *testing.T, s *settingsScreen, dotted string) {
 	t.Fatalf("no row for %q", dotted)
 }
 
-func keyPress(k string) tea.KeyMsg {
+func keyPress(k string) tea.KeyPressMsg {
 	switch k {
 	case "enter":
-		return tea.KeyMsg{Type: tea.KeyEnter}
+		return tea.KeyPressMsg{Code: tea.KeyEnter}
 	case "esc":
-		return tea.KeyMsg{Type: tea.KeyEscape}
+		return tea.KeyPressMsg{Code: tea.KeyEscape}
 	case "backspace":
-		return tea.KeyMsg{Type: tea.KeyBackspace}
+		return tea.KeyPressMsg{Code: tea.KeyBackspace}
 	}
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)}
+	return typed(k)
 }
 
 // typeText types s one rune at a time.
@@ -238,6 +238,23 @@ func TestSettingsIntWithinRangePersists(t *testing.T) {
 	}
 	if !hasToast(m, "autoswitch.unhealthyTicks = 5", "", "") {
 		t.Fatalf("expected the config-set line as a toast, got %v", toastMessages(m))
+	}
+}
+
+// A paste (a PasteMsg in bubbletea v2) types into the open input and does
+// nothing while no input is open.
+func TestSettingsPasteTypesIntoTheInput(t *testing.T) {
+	m, s, _ := settingsModel(t)
+	selectKey(t, s, "autoswitch.unhealthyTicks")
+	m.Update(tea.PasteMsg{Content: "9"})
+	if s.editing || s.input != "" {
+		t.Fatalf("a paste outside the input: editing=%v input=%q", s.editing, s.input)
+	}
+	s.update(m, keyPress("enter"))
+	s.update(m, keyPress("backspace"))
+	m.Update(tea.PasteMsg{Content: "42"})
+	if s.input != "42" {
+		t.Fatalf("input after the paste = %q, want 42", s.input)
 	}
 }
 
