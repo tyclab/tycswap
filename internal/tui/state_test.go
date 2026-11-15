@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -256,7 +256,7 @@ func TestRemoveDispatchOpensConfirm(t *testing.T) {
 		t.Fatalf("confirm message = %q", cm.message)
 	}
 	// Confirm → the remove action fires.
-	execAll(cm.update(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}))
+	execAll(cm.update(m, tea.KeyPressMsg{Code: 'y', Text: "y"}))
 	if len(f.removeCalls) != 1 || f.removeCalls[0] != "1" {
 		t.Fatalf("RemoveAccount calls = %v, want [1]", f.removeCalls)
 	}
@@ -439,19 +439,19 @@ func TestAddTokenValidation(t *testing.T) {
 }
 
 // TestAddTokenTextInput: a field takes typed and pasted text, the space bar
-// and an AltGr character (Windows reports "@" on a German layout with Alt
-// set), ignores ctrl chords, and backspace removes one character, not one
-// byte of "ä" or "日".
+// and an AltGr character (Windows reports "@" on a German layout as ctrl+alt
+// with the text set), ignores ctrl chords, and backspace removes one
+// character, not one byte of "ä" or "日".
 func TestAddTokenTextInput(t *testing.T) {
 	m := newTestModel(&fakeFacade{})
 	a := &addTokenModal{focus: 1, onDone: func(*Model, *tokenForm) tea.Cmd { return nil }}
-	for _, k := range []tea.KeyMsg{
-		{Type: tea.KeyRunes, Runes: []rune("ä")},
-		{Type: tea.KeyRunes, Runes: []rune("日")},
-		{Type: tea.KeySpace, Runes: []rune{' '}},
-		{Type: tea.KeyRunes, Runes: []rune("@"), Alt: true},
-		{Type: tea.KeyCtrlA},
-		{Type: tea.KeyRunes, Runes: []rune("é@x"), Paste: true},
+	for _, k := range []tea.Msg{
+		tea.KeyPressMsg{Code: 'ä', Text: "ä"},
+		tea.KeyPressMsg{Code: '日', Text: "日"},
+		tea.KeyPressMsg{Code: tea.KeySpace, Text: " "},
+		tea.KeyPressMsg{Code: '@', Text: "@", Mod: tea.ModCtrl | tea.ModAlt},
+		tea.KeyPressMsg{Code: 'a', Mod: tea.ModCtrl},
+		tea.PasteMsg{Content: "é@x"},
 	} {
 		a.update(m, k)
 	}
@@ -459,10 +459,37 @@ func TestAddTokenTextInput(t *testing.T) {
 		t.Fatalf("email = %q, want %q", a.email, "ä日 @é@x")
 	}
 	for _, want := range []string{"ä日 @é@", "ä日 @é", "ä日 @", "ä日 ", "ä日", "ä", "", ""} {
-		a.update(m, tea.KeyMsg{Type: tea.KeyBackspace})
+		a.update(m, tea.KeyPressMsg{Code: tea.KeyBackspace})
 		if a.email != want {
 			t.Fatalf("after backspace email = %q, want %q", a.email, want)
 		}
+	}
+}
+
+// TestPasteReachesTheTopScreen: bubbletea v2 delivers a bracketed paste as a
+// PasteMsg, not as a key, so Update must route it to the top screen: a pasted
+// setup token lands in the focused field.
+func TestPasteReachesTheTopScreen(t *testing.T) {
+	m := newTestModel(&fakeFacade{})
+	a := &addTokenModal{onDone: func(*Model, *tokenForm) tea.Cmd { return nil }}
+	m.pushScreen(a)
+	m.Update(tea.PasteMsg{Content: "sk-ant-oat01-x"})
+	if a.token != "sk-ant-oat01-x" {
+		t.Fatalf("token after the paste = %q, want %q", a.token, "sk-ant-oat01-x")
+	}
+}
+
+// TestViewHoldsTheAltScreen: the alt screen is a View field in bubbletea v2;
+// every frame asks for it, the empty last frame too.
+func TestViewHoldsTheAltScreen(t *testing.T) {
+	m := newTestModel(&fakeFacade{})
+	m.width, m.height = 80, 24
+	if v := m.View(); !v.AltScreen || v.Content == "" {
+		t.Fatalf("running view: AltScreen=%v content=%q", v.AltScreen, v.Content)
+	}
+	m.quitting = true
+	if v := m.View(); !v.AltScreen || v.Content != "" {
+		t.Fatalf("quitting view: AltScreen=%v content=%q", v.AltScreen, v.Content)
 	}
 }
 
@@ -611,7 +638,7 @@ func TestOpenAutoIdempotent(t *testing.T) {
 // actually fires.
 
 func TestEscKeyDispatch(t *testing.T) {
-	esc := tea.KeyMsg{Type: tea.KeyEscape}
+	esc := tea.KeyPressMsg{Code: tea.KeyEscape}
 
 	t.Run("auto_pops", func(t *testing.T) {
 		host := &engineHost{}

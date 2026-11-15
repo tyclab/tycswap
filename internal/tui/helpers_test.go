@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
@@ -207,6 +207,15 @@ func withReset(t *testing.T, lastGood map[string]any, key, resetsAt string) map[
 	}
 	t.Fatalf("no window %q in fixture %v", key, lastGood)
 	return nil
+}
+
+// typed is the key press a terminal reports for printable text: the rune as
+// the key code, or KeyExtended for a run of several, with the text set.
+func typed(s string) tea.KeyPressMsg {
+	if r := []rune(s); len(r) == 1 {
+		return tea.KeyPressMsg{Code: r[0], Text: s}
+	}
+	return tea.KeyPressMsg{Code: tea.KeyExtended, Text: s}
 }
 
 // runCmd executes a tea.Cmd and returns its message (nil for a nil cmd or a nil

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -351,7 +351,7 @@ func TestConfirmedRemovalRechecksTheIdentityItNamed(t *testing.T) {
 	// still names the old one.
 	land(m, "1", repAcct("1", "a@x.com", "", "personal"), repAcct("2", "someone-else@x.com", "", "personal"))
 
-	dropCmd(cm.update(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}))
+	dropCmd(cm.update(m, tea.KeyPressMsg{Code: 'y', Text: "y"}))
 	if len(f.removeCalls) != 0 {
 		t.Fatalf("removed %v after the slot changed hands", f.removeCalls)
 	}
@@ -372,7 +372,7 @@ func TestConfirmedRemovalProceedsWhenTheIdentityHolds(t *testing.T) {
 	// A usage refresh is not a change of identity.
 	land(m, "1", repAcct("1", "a@x.com", "", "personal"), repAcct("2", "b@x.com", "", "personal"))
 
-	execAll(cm.update(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}))
+	execAll(cm.update(m, tea.KeyPressMsg{Code: 'y', Text: "y"}))
 	if !reflect.DeepEqual(f.removeCalls, []string{"2"}) {
 		t.Fatalf("RemoveAccount calls = %v, want [2]", f.removeCalls)
 	}
@@ -392,7 +392,7 @@ func TestSameEmailAccountsAreToldApartByOrg(t *testing.T) {
 	other.OrgUUID = "uuid-other"
 	land(m, "1", repAcct("1", "a@x.com", "", "personal"), other)
 
-	dropCmd(cm.update(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}))
+	dropCmd(cm.update(m, tea.KeyPressMsg{Code: 'y', Text: "y"}))
 	if len(f.removeCalls) != 0 {
 		t.Fatalf("removed %v — the org changed under the confirmation", f.removeCalls)
 	}

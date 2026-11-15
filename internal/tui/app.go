@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
@@ -127,7 +127,8 @@ func Run(f Facade, start string, opts ...Option) int {
 	// Deviation #7), so this printed text is redundant here.
 	restore := redirectHumanOutput(m.notices)
 	defer restore()
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	// The alt screen is declared by View (bubbletea v2 has no WithAltScreen).
+	p := tea.NewProgram(m)
 	final, err := p.Run()
 	if err != nil {
 		return 1
@@ -210,7 +211,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case engineEventMsg, engineStoppedMsg:
 		return m, m.routeEngine(msg)
 
-	case tea.KeyMsg:
+	// Key presses and pastes go to the top screen; bubbletea v2 delivers a
+	// bracketed paste as a PasteMsg, not as a key.
+	case tea.KeyPressMsg, tea.PasteMsg:
 		return m, m.top().update(m, msg)
 	}
 	return m, nil
@@ -220,8 +223,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // The footer bar sits on the last row (with toasts stacked just above it) when
 // the terminal height is known; a primary screen supplies its footer bindings
 // via footerScreen, while modals — which cover the footer and carry their own
-// inline hints — do not.
-func (m *Model) View() string {
+// inline hints — do not. The whole session runs in the alt screen.
+func (m *Model) View() tea.View {
+	v := tea.NewView(m.render())
+	v.AltScreen = true
+	return v
+}
+
+// render builds the screen content View shows.
+func (m *Model) render() string {
 	if m.quitting {
 		return ""
 	}
