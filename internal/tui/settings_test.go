@@ -258,6 +258,19 @@ func TestSettingsPasteTypesIntoTheInput(t *testing.T) {
 	}
 }
 
+// TestSettingsPasteStripsControlCharacters: the Settings input drops terminal
+// control characters from a paste, as the add-token form does.
+func TestSettingsPasteStripsControlCharacters(t *testing.T) {
+	m, s, _ := settingsModel(t)
+	selectKey(t, s, "autoswitch.unhealthyTicks")
+	s.update(m, keyPress("enter"))
+	s.update(m, keyPress("backspace"))
+	m.Update(tea.PasteMsg{Content: "4\x1b[2J2\n"})
+	if s.input != "4[2J2" {
+		t.Fatalf("input after the paste = %q, want %q", s.input, "4[2J2")
+	}
+}
+
 func TestSettingsIntOutOfRangeIsRefusedWithTheMessage(t *testing.T) {
 	m, s, dir := settingsModel(t)
 	selectKey(t, s, "autoswitch.unhealthyTicks")
