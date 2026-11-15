@@ -3,9 +3,12 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/settings"
 )
 
@@ -32,6 +35,26 @@ func TestConfigListShowsAllDefaults(t *testing.T) {
 	}
 	if !strings.Contains(out, "autoswitch.sevenDayThreshold") {
 		t.Errorf("list missing autoswitch.sevenDayThreshold:\n%s", out)
+	}
+}
+
+// TestConfigListNeverPrintsAStoredControlCharacter: a model stored before
+// settings refused control characters reads as unset, so `config list` and
+// `config get` print no escape sequence from it.
+func TestConfigListNeverPrintsAStoredControlCharacter(t *testing.T) {
+	cleanHome(t)
+	path := settings.SettingsPath(paths.GetBackupRoot())
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"autoswitch":{"model":"Fable\u001b[2J\u0007"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"list"}, {"get", "autoswitch.model"}} {
+		code, out, errStr := runConfig(t, args...)
+		if code != 0 || strings.ContainsAny(out, "\x1b\a") {
+			t.Errorf("config %v: exit %d, stdout %q (stderr %q)", args, code, out, errStr)
+		}
 	}
 }
 

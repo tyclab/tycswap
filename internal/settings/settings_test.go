@@ -934,6 +934,35 @@ func TestSetModelNoneSaysHowToUnset(t *testing.T) {
 	}
 }
 
+// A free-text setting cannot hold a terminal control character: v0.12.0's TUI
+// stored pasted text raw, and `config list`, the auto loop's warnings and the
+// TUI print the value as it is. Setting one is refused; one already stored,
+// hand-edited or passed as `auto --model` reads as unset.
+func TestModelWithControlCharactersIsRefusedAndReadsUnset(t *testing.T) {
+	spec, err := SpecFor("autoswitch.model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []string{"Fable\x1b[2J", "\x1b]0;x\a", "Fa\u009bble"} {
+		if got, err := ParseSettingValue(spec, v); err == nil || !strings.Contains(err.Error(), "control character") {
+			t.Errorf("set %q = %v, %v; want a control-character refusal", v, got, err)
+		}
+	}
+	root := t.TempDir()
+	writeSettingsJSON(t, root, `{"autoswitch":{"model":"Fable\u001b[2J"}}`)
+	if got := Load(root).Model; got != nil {
+		t.Errorf("Load model = %q, want unset", *got)
+	}
+	for _, r := range EffectiveSettings(root) {
+		if r.Spec.Field == "Model" && r.Value != nil {
+			t.Errorf("effective model = %q, want unset", FormatSettingValue(r.Value))
+		}
+	}
+	if got := MergedWithCLI(Default(), CLIOverrides{Model: strp("Fable\x1b[2J")}).Model; got != nil {
+		t.Errorf("auto --model with controls = %q, want unset", *got)
+	}
+}
+
 func derefOrNil(s *string) string {
 	if s == nil {
 		return "<nil>"
