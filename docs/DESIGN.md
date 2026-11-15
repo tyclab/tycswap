@@ -972,7 +972,13 @@ dashboard alone.
 
 **Amended:** the Charm stack moved to `charm.land/bubbletea/v2` (#97) and
 `charm.land/lipgloss/v2` (#98); bubbles never entered `go.mod` and
-`internal/deps` is deleted.
+`internal/deps` is deleted. The allowed deps are `go.mod`'s direct requires
+plus their transitive modules: the two Charm modules;
+`github.com/charmbracelet/colorprofile`, which both require and
+`internal/tui/footer_test.go` names for its colour profiles;
+`github.com/mattn/go-isatty`, terminal detection that also knows Cygwin and
+MSYS ptys (`cli.isTTY`, `lifecycle.StdinIsTerminal`); `golang.org/x/mod`,
+`golang.org/x/sys` and `golang.org/x/text`.
 
 ## A13. Pinned cross-package interfaces
 
@@ -3615,7 +3621,7 @@ stored copy out of the live file.
 
 **Not done here.** Windows has no owner-only DACL on `credentials/`, exports
 and the store root (`CheckPrivateRoot` is a no-op there); a follow-up.
-Dependencies: `go.mod` pins `toolchain go1.26.11`; `make vuln` runs
+Dependencies: `go.mod` pins the toolchain (its `toolchain` line); `make vuln` runs
 govulncheck.
 ## A26. `internal/web` — the browser dashboard and its security model (Go-side additive extension)
 
