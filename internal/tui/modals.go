@@ -15,6 +15,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // tokenForm is what the add-token modal collects (09§7.2 TokenForm).
@@ -91,7 +93,7 @@ const (
 
 func (a *addTokenModal) update(m *Model, msg tea.Msg) tea.Cmd {
 	if paste, ok := msg.(tea.PasteMsg); ok {
-		a.editFocused(func(s string) string { return s + paste.Content })
+		a.editFocused(func(s string) string { return s + termsafe.Strip(paste.Content) })
 		return nil
 	}
 	key, ok := msg.(tea.KeyPressMsg)
