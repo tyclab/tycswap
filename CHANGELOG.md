@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Changed:** in the terminal UI (since bubbletea v2) an Alt+letter chord no longer types its letter into a text field: the add-token form, the Settings input and the interactive menu's filter. A paste into one of those fields drops terminal control characters, so a copied token's trailing newline no longer lands in the field.
 - **Added:** `tycswap start` selects a marked eligible startup login using cached usage, then launches the command once with unchanged arguments and environment. `--allow ID`, `--disallow ID` and `--list` manage marks; `--account ID` can explicitly select an eligible account while auto-switch is off. Selection errors fall back to the current login; an actual switch stamps cooldown, with no startup hold or model-access guarantee. Pinned profiles, `--bare` and auth overrides skip selection. List, dashboard and tray show marks, and the dashboard can toggle Claude marks.
 - **Fixed:** re-adding the same account into a slot, migrating it through add-token, or forcibly importing its login retains local disabled/startup metadata and its alias when no replacement alias is supplied. Different identities cannot inherit the displaced account's marks. Legacy `run`/`env` commands remain, with their idle-profile reclaim limitations documented.
 

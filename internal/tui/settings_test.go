@@ -258,6 +258,41 @@ func TestSettingsPasteTypesIntoTheInput(t *testing.T) {
 	}
 }
 
+// TestSettingsPasteStripsControlCharacters: the Settings input drops terminal
+// control characters from a paste, as the add-token form does.
+func TestSettingsPasteStripsControlCharacters(t *testing.T) {
+	m, s, _ := settingsModel(t)
+	selectKey(t, s, "autoswitch.unhealthyTicks")
+	s.update(m, keyPress("enter"))
+	s.update(m, keyPress("backspace"))
+	m.Update(tea.PasteMsg{Content: "4\x1b[2J2\n"})
+	if s.input != "4[2J2" {
+		t.Fatalf("input after the paste = %q, want %q", s.input, "4[2J2")
+	}
+}
+
+// TestSettingsKeyTextStripsControlCharacters: a key press whose Text holds
+// control characters (pasted text outside a bracketed paste, decoded from
+// CSI-u) types only the text, and an ESC-prefixed alt+letter, which has no
+// Text, types nothing.
+func TestSettingsKeyTextStripsControlCharacters(t *testing.T) {
+	m, s, _ := settingsModel(t)
+	selectKey(t, s, "autoswitch.unhealthyTicks")
+	s.update(m, keyPress("enter"))
+	s.update(m, keyPress("backspace"))
+	for _, k := range []tea.KeyPressMsg{
+		{Code: '4', Text: "4"},
+		{Code: 'a', Text: "\x1b[2J"},
+		{Code: 'b', Mod: tea.ModAlt},
+		{Code: '2', Text: "2"},
+	} {
+		s.update(m, k)
+	}
+	if s.input != "4[2J2" {
+		t.Fatalf("input = %q, want %q", s.input, "4[2J2")
+	}
+}
+
 func TestSettingsIntOutOfRangeIsRefusedWithTheMessage(t *testing.T) {
 	m, s, dir := settingsModel(t)
 	selectKey(t, s, "autoswitch.unhealthyTicks")
