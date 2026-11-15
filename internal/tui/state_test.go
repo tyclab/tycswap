@@ -498,6 +498,28 @@ func TestPasteStripsControlCharacters(t *testing.T) {
 	}
 }
 
+// TestKeyTextStripsControlCharacters: outside a bracketed paste (a terminal
+// without it, or a paste that carries ESC[201~) pasted text arrives as key
+// presses, and the decoder copies a CSI-u text parameter or a CSI 27;mod;code~
+// code into Text unchecked: "\x1b[97;1;27:91:50:74u" decodes to Code 'a' with
+// Text "\x1b[2J", and "\x1b[27;2;7~" to Text "\a". A field types the text
+// without its control characters.
+func TestKeyTextStripsControlCharacters(t *testing.T) {
+	m := newTestModel(&fakeFacade{})
+	a := &addTokenModal{focus: 1, onDone: func(*Model, *tokenForm) tea.Cmd { return nil }}
+	for _, k := range []tea.KeyPressMsg{
+		{Code: 'x', Text: "x"},
+		{Code: 'a', Text: "\x1b[2J"},
+		{Code: 'y', Text: "y"},
+		{Code: 7, Mod: tea.ModShift, Text: "\a"},
+	} {
+		a.update(m, k)
+	}
+	if a.email != "x[2Jy" {
+		t.Fatalf("email = %q, want %q", a.email, "x[2Jy")
+	}
+}
+
 // TestViewHoldsTheAltScreen: the alt screen is a View field in bubbletea v2;
 // every frame asks for it, the empty last frame too.
 func TestViewHoldsTheAltScreen(t *testing.T) {
