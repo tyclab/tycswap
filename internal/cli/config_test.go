@@ -58,6 +58,50 @@ func TestConfigListNeverPrintsAStoredControlCharacter(t *testing.T) {
 	}
 }
 
+// A stored value that is ignored says so where the setting is shown: `config
+// list` and `config get` mark it "(ignored)" and print the notice (the key,
+// why, the repair) on stderr; --json carries ignored and the notice. The
+// value itself never appears.
+func TestConfigSaysWhenAStoredValueIsIgnored(t *testing.T) {
+	cleanHome(t)
+	path := settings.SettingsPath(paths.GetBackupRoot())
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"autoswitch":{"model":"Fable\u001b[2J"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"list"}, {"get", "autoswitch.model"}} {
+		code, out, errStr := runConfig(t, args...)
+		if code != 0 || !strings.Contains(out, "(ignored)") || strings.Contains(out+errStr, "Fable") ||
+			!strings.Contains(errStr, "autoswitch.model: the stored value") ||
+			!strings.Contains(errStr, "tycswap config unset autoswitch.model") {
+			t.Errorf("config %v: exit %d, stdout %q, stderr %q", args, code, out, errStr)
+		}
+	}
+	code, out, errStr := runConfig(t, "--json", "get", "autoswitch.model")
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); code != 0 || err != nil {
+		t.Fatalf("--json get: exit %d, %v, stdout %q, stderr %q", code, err, out, errStr)
+	}
+	if notice, _ := got["notice"].(string); got["ignored"] != true || got["value"] != nil || !strings.Contains(notice, "control character") {
+		t.Errorf("--json get = %v", got)
+	}
+	code, out, _ = runConfig(t, "--json", "list")
+	var list struct {
+		Settings []map[string]any `json:"settings"`
+	}
+	if err := json.Unmarshal([]byte(out), &list); code != 0 || err != nil {
+		t.Fatalf("--json list: exit %d, %v", code, err)
+	}
+	for _, item := range list.Settings {
+		ignored := item["key"] == "autoswitch.model"
+		if notice, _ := item["notice"].(string); (item["ignored"] == true) != ignored || (notice != "") != ignored {
+			t.Errorf("--json list item %v", item)
+		}
+	}
+}
+
 // TestConfigListJSON: --json list has one entry per SettingSpecs key with
 // key/value/isSet.
 func TestConfigListJSON(t *testing.T) {

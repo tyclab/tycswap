@@ -64,6 +64,27 @@ func fixtureSwitcher(t *testing.T) *core.Switcher {
 	return sw
 }
 
+// An ignored stored value reaches the dashboard as a notice on its row, and
+// only on its row.
+func TestSettingsFacadeCarriesTheIgnoredNotice(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(settings.SettingsPath(root), []byte(`{"autoswitch":{"model":"Fable\u001b[2J"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range (settingsFacade{root: root}).Effective() {
+		if v.Key != "autoswitch.model" {
+			if v.Notice != "" {
+				t.Errorf("%s: notice %q", v.Key, v.Notice)
+			}
+			continue
+		}
+		if v.Value != nil || !strings.Contains(v.Notice, "control character") ||
+			!strings.Contains(v.Notice, "tycswap config unset autoswitch.model") || strings.Contains(v.Notice, "Fable") {
+			t.Errorf("model view = %+v", v)
+		}
+	}
+}
+
 // TestSettingsFacade: every spec is listed with kind/default/bounds, Set and
 // Unset round-trip through settings.json, and a bad key or value is a
 // validation error (400 on the API), not a config failure (500).

@@ -620,6 +620,35 @@ func TestSettingsViewNeverWraps(t *testing.T) {
 	}
 }
 
+// An ignored stored value shows as "(ignored)" in its row, and the row's
+// detail carries the notice: the key, why and the repair, never the value
+// (the help names Fable as an example, so the check is on the escape's tail).
+func TestSettingsRowSaysAStoredValueIsIgnored(t *testing.T) {
+	m, s, dir := settingsModel(t)
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"autoswitch":{"model":"Fable\u001b[2J"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.reload(m)
+	selectKey(t, s, "autoswitch.model")
+	row := stripANSI(s.rowText(rowFor(t, s, "autoswitch.model"), false, 20, 12, 100))
+	if !strings.Contains(row, "(ignored)") || strings.Contains(row, "[2J") {
+		t.Errorf("row = %q, want (ignored)", row)
+	}
+	var plain []string
+	for _, l := range s.detailLines(100) {
+		plain = append(plain, stripANSI(l))
+	}
+	detail := strings.Join(plain, " ")
+	for _, want := range []string{"control character", "tycswap config unset autoswitch.model"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("detail lacks %q:\n%s", want, strings.Join(plain, "\n"))
+		}
+	}
+	if strings.Contains(detail, "[2J") {
+		t.Errorf("detail echoes the value:\n%s", strings.Join(plain, "\n"))
+	}
+}
+
 // At 80 columns every key's detail is read whole: the help, the kind with its
 // range or choices, the default and the engine note wrap between words rather
 // than being clipped.

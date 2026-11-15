@@ -171,6 +171,17 @@ func TestAutoThresholdFlagsPerWindow(t *testing.T) {
 	}
 }
 
+// A --model with a control character is a flag error, as a bad --interval is:
+// the value would otherwise be read as unset without a word.
+func TestAutoModelWithControlCharacterIsAFlagError(t *testing.T) {
+	cleanHome(t)
+	code, out, errStr := runSub(t, "auto", "--once", "--model", "Fable\x1b[2J")
+	if code != 2 || !strings.Contains(errStr, "argument --model: must not contain a control character") ||
+		strings.ContainsRune(out+errStr, 0x1b) {
+		t.Errorf("exit %d, stdout %q, stderr %q", code, out, errStr)
+	}
+}
+
 // TestAutoUnknownFlag: an unknown auto flag is an exit-2 error.
 func TestAutoUnknownFlag(t *testing.T) {
 	cleanHome(t)

@@ -963,6 +963,97 @@ func TestModelWithControlCharactersIsRefusedAndReadsUnset(t *testing.T) {
 	}
 }
 
+// A list pasted over two lines, or with a tab, names the models it named
+// before: ParseModelNames trims the space around each name, so the whitespace
+// controls (TAB, LF, CR, NEL) become spaces, on set and on load, and the value
+// prints as one line.
+func TestModelListWithWhitespaceControlsKeepsItsModels(t *testing.T) {
+	spec, err := SpecFor("autoswitch.model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"Fable", "Opus"}
+	for _, v := range []string{"Fable,\nOpus", "Fable,\tOpus", "Fable,\r\nOpus", "Fable,\u0085Opus"} {
+		got, err := ParseSettingValue(spec, v)
+		s, _ := got.(string)
+		if err != nil || strings.ContainsAny(s, "\t\n\r\u0085") || !reflect.DeepEqual(ParseModelNames(&s), want) {
+			t.Errorf("set %q = %q, %v; want a one-line value naming %v", v, s, err, want)
+		}
+	}
+	for _, stored := range []string{`Fable,\nOpus`, `Fable,\tOpus`} {
+		root := t.TempDir()
+		writeSettingsJSON(t, root, `{"autoswitch":{"model":"`+stored+`"}}`)
+		got := Load(root).Model
+		if got == nil || strings.ContainsAny(*got, "\t\n") || !reflect.DeepEqual(ParseModelNames(got), want) {
+			t.Errorf("stored %s: Load model = %q, want a one-line value naming %v", stored, derefOrNil(got), want)
+		}
+		for _, r := range EffectiveSettings(root) {
+			if r.Ignored {
+				t.Errorf("stored %s: %s marked ignored", stored, r.Spec.Dotted())
+			}
+		}
+		if n := Notices(root); len(n) != 0 {
+			t.Errorf("stored %s: notices %q, want none", stored, n)
+		}
+	}
+}
+
+// A stored value with any other control character is ignored, and every
+// reader can say so: its row is marked, and the notice names the key, why and
+// the repair, never the value.
+func TestStoredModelWithControlCharacterIsIgnoredWithNotice(t *testing.T) {
+	root := t.TempDir()
+	writeSettingsJSON(t, root, `{"autoswitch":{"model":"Fable\u001b[2J","sevenDayThreshold":90}}`)
+	var row Effective
+	for _, r := range EffectiveSettings(root) {
+		switch {
+		case r.Spec.Field == "Model":
+			row = r
+		case r.Ignored || r.Notice() != "":
+			t.Errorf("%s marked ignored", r.Spec.Dotted())
+		}
+	}
+	if !row.Ignored || !row.IsSet || row.Value != nil || row.Display() != "(ignored)" {
+		t.Fatalf("model row = %+v (display %q), want ignored, set, no value", row, row.Display())
+	}
+	n := row.Notice()
+	for _, want := range []string{"autoswitch.model", "control character", "ignored",
+		"tycswap config set autoswitch.model", "tycswap config unset autoswitch.model"} {
+		if !strings.Contains(n, want) {
+			t.Errorf("notice %q lacks %q", n, want)
+		}
+	}
+	if strings.Contains(n, "Fable") || strings.ContainsRune(n, 0x1b) {
+		t.Errorf("notice %q echoes the value", n)
+	}
+	if got := Notices(root); len(got) != 1 || got[0] != n {
+		t.Errorf("Notices = %q, want [%q]", got, n)
+	}
+	clean := t.TempDir()
+	writeSettingsJSON(t, clean, `{"autoswitch":{"model":"Fable"}}`)
+	if got := Notices(clean); len(got) != 0 {
+		t.Errorf("clean file: Notices = %q, want none", got)
+	}
+}
+
+// A refused value or key is quoted with %q, so a control character in it
+// reaches the terminal (or the dashboard's log) escaped, not raw.
+func TestRefusalsQuoteTheInput(t *testing.T) {
+	for _, key := range []string{"autoswitch.enabled", "autoswitch.unhealthyTicks", "autoswitch.cooldownSeconds"} {
+		spec, err := SpecFor(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = ParseSettingValue(spec, "x\x1b[2J")
+		if err == nil || strings.ContainsRune(err.Error(), 0x1b) || !strings.Contains(err.Error(), `"x\x1b[2J"`) {
+			t.Errorf("%s: err = %v, want the input quoted", key, err)
+		}
+	}
+	if _, err := SpecFor("auto\x1b[2J"); err == nil || strings.ContainsRune(err.Error(), 0x1b) || !strings.Contains(err.Error(), `"auto\x1b[2J"`) {
+		t.Errorf("unknown key: err = %v, want the key quoted", err)
+	}
+}
+
 func derefOrNil(s *string) string {
 	if s == nil {
 		return "<nil>"

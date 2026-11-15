@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -289,6 +290,32 @@ func TestSSE_AutoEventsDoNotDisturbLateSubscriber(t *testing.T) {
 		t.Fatalf("late subscriber first event %q", first.name)
 	}
 	late.expectNone(t, 30*time.Millisecond)
+}
+
+// The live model route takes the value through the settings gate: a control
+// character is refused (400, the value not echoed) and never reaches the
+// engine; whitespace controls in a list become spaces.
+func TestAutoModelRefusesControlCharacters(t *testing.T) {
+	h := newHarness(t)
+	resp := h.postJSON("/api/auto/model", `{"model":"Fable\u001b[2J"}`)
+	if body := string(readBody(t, resp)); resp.StatusCode != http.StatusBadRequest ||
+		!strings.Contains(body, "control character") || strings.Contains(body, "Fable") {
+		t.Errorf("status %d: %s", resp.StatusCode, body)
+	}
+	if calls := h.auto.Calls(); len(calls) != 0 {
+		t.Errorf("a refused model reached the engine: %v", calls)
+	}
+	resp = h.postJSON("/api/auto/model", `{"model":"Fable,\nOpus"}`)
+	if calls := h.auto.Calls(); resp.StatusCode != http.StatusOK || len(calls) != 1 || calls[0] != `ApplyModels("Fable, Opus")` {
+		t.Errorf("a two-line list: status %d, calls %v", resp.StatusCode, calls)
+	}
+}
+
+// The settings tab shows a row's notice (an ignored stored value) next to it.
+func TestSettingRowShowsItsNotice(t *testing.T) {
+	if js := staticFile(t, "app.js"); !strings.Contains(js, "sv.notice") {
+		t.Error("app.js does not render sv.notice")
+	}
 }
 
 // TestAutoModelAppliesLive: the "Count model limits" switch must reach the
