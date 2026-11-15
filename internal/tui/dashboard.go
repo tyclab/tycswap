@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -250,7 +250,7 @@ func remapMenuIndex(previous []menuEntry, index int, next []menuEntry) int {
 }
 
 func (d *dashboardScreen) update(m *Model, msg tea.Msg) tea.Cmd {
-	key, ok := msg.(tea.KeyMsg)
+	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil
 	}
@@ -713,7 +713,7 @@ func (s *switchScreen) onSnapshot(m *Model) tea.Cmd {
 }
 
 func (s *switchScreen) update(m *Model, msg tea.Msg) tea.Cmd {
-	key, ok := msg.(tea.KeyMsg)
+	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil
 	}
@@ -788,7 +788,7 @@ func (w *watchScreen) indexAfterBuild(snap *reporting.AccountsSnapshot, firstBui
 }
 
 func (w *watchScreen) update(m *Model, msg tea.Msg) tea.Cmd {
-	key, ok := msg.(tea.KeyMsg)
+	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return nil
 	}

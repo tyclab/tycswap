@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/tyclab/tycswap/internal/reporting"
 )
 
@@ -127,17 +127,22 @@ func TestMenuRefusesReassignedSlot(t *testing.T) {
 
 func TestMenuPromptFilteringAndCancellation(t *testing.T) {
 	m := menuPrompt{choices: []string{"Claude work", "Codex personal"}, width: 80, height: 24}
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("codex")})
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyExtended, Text: "codex"})
 	m = next.(menuPrompt)
 	if !reflect.DeepEqual(m.matches(), []int{1}) {
 		t.Fatal(m.matches())
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	m = next.(menuPrompt)
 	if m.text != "codex " || !reflect.DeepEqual(m.matches(), []int{1}) {
 		t.Fatalf("space was lost: %q", m.text)
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	next, _ = m.Update(tea.PasteMsg{Content: "pers"})
+	m = next.(menuPrompt)
+	if m.text != "codex pers" || !reflect.DeepEqual(m.matches(), []int{1}) {
+		t.Fatalf("the paste was lost: %q", m.text)
+	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if next.(menuPrompt).accepted || !next.(menuPrompt).done {
 		t.Fatal("Escape selected an action")
 	}
