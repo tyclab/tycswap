@@ -30,7 +30,9 @@ func (s *Server) SaveSetting(scope, key string, value *string) (map[string]any, 
 				return nil, err
 			}
 			result["value"] = written
-			model = *value
+			// The engine takes what was stored (TAB/LF between names became
+			// spaces), not the raw request.
+			model, _ = written.(string)
 		}
 		applied, err := s.applyModelSetting(key, model)
 		if applied {

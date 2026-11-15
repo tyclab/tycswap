@@ -118,6 +118,9 @@ type SettingView struct {
 	Min         *float64 `json:"min,omitempty"`
 	Max         *float64 `json:"max,omitempty"`
 	Applies     string   `json:"applies"`
+	// Notice says that the stored value is ignored, why and how to repair
+	// it (settings.Effective.Notice); empty when nothing is wrong.
+	Notice string `json:"notice,omitempty"`
 }
 
 // SettingsFacade is the settings.json surface.

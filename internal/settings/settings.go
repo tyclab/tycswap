@@ -256,7 +256,7 @@ func SpecFor(dotted string) (Spec, error) {
 	for i, s := range SettingSpecs {
 		keys[i] = s.Dotted()
 	}
-	return Spec{}, cerr.Config("unknown setting '%s'\nValid keys: %s", dotted, strings.Join(keys, ", "))
+	return Spec{}, cerr.Config("unknown setting %q\nValid keys: %s", dotted, strings.Join(keys, ", "))
 }
 
 // SettingsPath returns <root>/settings.json.
@@ -393,10 +393,14 @@ func clampValue(spec Spec, value any) any {
 		}
 		return spec.Default
 	case KindString:
-		// A terminal control character makes the value unset: v0.12.0's TUI
-		// stored pastes raw, and every sink prints the value as it is.
-		if s, ok := value.(string); ok && s != "" && !termsafe.HasControl(s) {
-			return s
+		// Any control character left after TextValue makes the value unset:
+		// v0.12.0's TUI stored pastes raw, and every sink prints the value as
+		// it is. EffectiveSettings marks such a value ignored and Notices
+		// words it, so no reader drops it without a word.
+		if s, ok := value.(string); ok && s != "" {
+			if text, clean := TextValue(s); clean {
+				return text
+			}
 		}
 		return spec.Default
 	case KindChoice:
@@ -411,6 +415,32 @@ func clampValue(spec Spec, value any) any {
 	default:
 		return spec.Default
 	}
+}
+
+// whitespaceControls are the control characters that only separate words:
+// TAB, LF, VT, FF, CR and NEL.
+var whitespaceControls = strings.NewReplacer("\t", " ", "\n", " ", "\v", " ", "\f", " ", "\r", " ", "\u0085", " ")
+
+// TextValue is the one gate for a free-text setting value, stored or given
+// (config set, a --model flag, the dashboard): the whitespace controls become
+// spaces, since ParseModelNames trims the space around each comma-separated
+// name, so a list pasted over two lines ("Fable,\nOpus") names the models it
+// named before and prints on one line. clean is false when any other control
+// character is left; such a value is refused or ignored, never printed.
+func TextValue(s string) (text string, clean bool) {
+	text = whitespaceControls.Replace(s)
+	return text, !termsafe.HasControl(text)
+}
+
+// ignoredText reports whether a stored value of spec's kind is ignored for a
+// control character (clampValue's KindString case).
+func ignoredText(spec Spec, raw any) bool {
+	s, ok := raw.(string)
+	if spec.Kind != KindString || !ok || s == "" {
+		return false
+	}
+	_, clean := TextValue(s)
+	return !clean
 }
 
 // asNumber accepts float64/int (JSON numbers or Go-typed CLI overrides) and
@@ -680,6 +710,41 @@ type Effective struct {
 	// explicit value equal to the default still counts (presence, not value
 	// equality).
 	IsSet bool
+	// Ignored reports a stored value that holds a control character: Value
+	// is the default, and Notice says so.
+	Ignored bool
+}
+
+// Display is the value as a list shows it: "(ignored)" for an ignored stored
+// value, else FormatSettingValue's form.
+func (e Effective) Display() string {
+	if e.Ignored {
+		return "(ignored)"
+	}
+	return FormatSettingValue(e.Value)
+}
+
+// Notice is what every surface that shows e says when its stored value is
+// ignored: the key, why, and the repair, never the value. Empty otherwise.
+func (e Effective) Notice() string {
+	if !e.Ignored {
+		return ""
+	}
+	key := e.Spec.Dotted()
+	return fmt.Sprintf("%s: the stored value contains a control character, so it is ignored and the default applies; "+
+		"set it again with 'tycswap config set %s <value>' or clear it with 'tycswap config unset %s'", key, key, key)
+}
+
+// Notices lists the notice of every ignored stored value in root's
+// settings.json, in registry order; the auto loop reports them.
+func Notices(root string) []string {
+	var out []string
+	for _, e := range EffectiveSettings(root) {
+		if n := e.Notice(); n != "" {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // EffectiveSettings returns (spec, effective value, explicitly set?) for
@@ -690,7 +755,9 @@ func EffectiveSettings(root string) []Effective {
 	out := make([]Effective, 0, len(SettingSpecs))
 	for _, spec := range SettingSpecs {
 		section, _ := raw[spec.Section].(map[string]any)
-		out = append(out, Effective{Spec: spec, Value: fields[spec.Field], IsSet: isSetIn(spec, section)})
+		stored, present := section[spec.JSONKey]
+		out = append(out, Effective{Spec: spec, Value: fields[spec.Field], IsSet: isSetIn(spec, section),
+			Ignored: present && ignoredText(spec, stored)})
 	}
 	return out
 }
@@ -803,7 +870,7 @@ func ParseSettingValue(spec Spec, rawValue string) (any, error) {
 		key := strings.ToLower(strings.TrimSpace(rawValue))
 		v, ok := boolWords[key]
 		if !ok {
-			return nil, cerr.Config("%s expects true or false (or 1/0, yes/no), got '%s'", spec.Dotted(), rawValue)
+			return nil, cerr.Config("%s expects true or false (or 1/0, yes/no), got %q", spec.Dotted(), rawValue)
 		}
 		return v, nil
 	case KindChoice:
@@ -814,11 +881,12 @@ func ParseSettingValue(spec Spec, rawValue string) (any, error) {
 		}
 		return nil, cerr.Config("%s must be one of: %s", spec.Dotted(), strings.Join(spec.Choices, ", "))
 	case KindString:
-		value := strings.TrimSpace(rawValue)
+		value, clean := TextValue(rawValue)
+		value = strings.TrimSpace(value)
 		if value == "" {
 			return nil, cerr.Config("%s expects a non-empty value; use 'tycswap config unset %s' to clear it", spec.Dotted(), spec.Dotted())
 		}
-		if termsafe.HasControl(value) {
+		if !clean {
 			return nil, cerr.Config("%s must not contain a control character", spec.Dotted())
 		}
 		if spec.Field == "Model" && noModelWord(value) {
@@ -828,7 +896,7 @@ func ParseSettingValue(spec Spec, rawValue string) (any, error) {
 	case KindInt:
 		n, err := strconv.Atoi(rawValue)
 		if err != nil {
-			return nil, cerr.Config("%s expects an integer, got '%s'", spec.Dotted(), rawValue)
+			return nil, cerr.Config("%s expects an integer, got %q", spec.Dotted(), rawValue)
 		}
 		if float64(n) < spec.Lo || float64(n) > spec.Hi {
 			return nil, cerr.Config("%s must be between %s and %s", spec.Dotted(), FormatSettingValue(spec.Lo), FormatSettingValue(spec.Hi))
@@ -837,7 +905,7 @@ func ParseSettingValue(spec Spec, rawValue string) (any, error) {
 	case KindFloat:
 		f, err := strconv.ParseFloat(rawValue, 64)
 		if err != nil {
-			return nil, cerr.Config("%s expects a number, got '%s'", spec.Dotted(), rawValue)
+			return nil, cerr.Config("%s expects a number, got %q", spec.Dotted(), rawValue)
 		}
 		// Inside the range, not "below Lo or above Hi": NaN compares false
 		// both ways, so the latter let "nan" through to a write that then

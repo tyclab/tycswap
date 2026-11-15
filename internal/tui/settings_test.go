@@ -324,7 +324,7 @@ func TestSettingsIntOutOfRangeIsRefusedWithTheMessage(t *testing.T) {
 	s.update(m, keyPress("backspace"))
 	typeText(m, s, "x")
 	s.update(m, keyPress("enter"))
-	if want := "autoswitch.unhealthyTicks expects an integer, got 'x'"; s.editError != want {
+	if want := `autoswitch.unhealthyTicks expects an integer, got "x"`; s.editError != want {
 		t.Fatalf("editError = %q, want %q", s.editError, want)
 	}
 }

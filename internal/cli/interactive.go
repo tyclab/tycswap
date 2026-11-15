@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/paths"
@@ -143,10 +144,15 @@ func promptConfigArguments(argv []string, s ioStreams) (int, bool) {
 		return code, true
 	}
 	values := settings.EffectiveSettings(paths.GetBackupRoot())
+	for _, v := range values {
+		if n := v.Notice(); n != "" {
+			fmt.Fprintln(s.err, "warning: "+n)
+		}
+	}
 	if len(pos) == 1 {
 		labels := make([]string, len(values))
 		for i, value := range values {
-			labels[i] = value.Spec.Dotted() + "  " + settings.FormatSettingValue(value.Value)
+			labels[i] = value.Spec.Dotted() + "  " + value.Display()
 		}
 		i, _, ok := askMenu(s, "Choose a setting", labels, "")
 		if !ok {

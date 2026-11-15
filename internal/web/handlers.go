@@ -1077,7 +1077,15 @@ func (s *Server) handleAutoModel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "model is required (\"\" counts 5h and 7d only)")
 		return
 	}
-	model := strings.TrimSpace(*b.Model)
+	// The settings gate, as autoswitch.model's own route has it: a control
+	// character is refused without echoing the value, and the whitespace
+	// controls between listed names become spaces.
+	model, clean := settings.TextValue(*b.Model)
+	if !clean {
+		writeError(w, http.StatusBadRequest, "model must not contain a control character")
+		return
+	}
+	model = strings.TrimSpace(model)
 	s.mutate(w, func() (map[string]any, error) {
 		if !s.d.Auto.View().Hosted {
 			return map[string]any{"model": model}, nil

@@ -130,11 +130,15 @@ func configList(root string, jsonMode bool, s ioStreams) int {
 	if jsonMode {
 		items := make([]map[string]any, 0, len(rows))
 		for _, r := range rows {
-			items = append(items, map[string]any{
+			item := map[string]any{
 				"key":   r.Spec.Dotted(),
 				"value": r.Value,
 				"isSet": r.IsSet,
-			})
+			}
+			if r.Ignored {
+				item["ignored"], item["notice"] = true, r.Notice()
+			}
+			items = append(items, item)
 		}
 		writeJSONIndent(s.out, map[string]any{
 			"schemaVersion": jsonout.SchemaVersion,
@@ -148,16 +152,21 @@ func configList(root string, jsonMode bool, s ioStreams) int {
 		if l := len(r.Spec.Dotted()); l > keyW {
 			keyW = l
 		}
-		if l := len(settings.FormatSettingValue(r.Value)); l > valW {
+		if l := len(r.Display()); l > valW {
 			valW = l
 		}
 	}
 	for _, r := range rows {
-		line := fmt.Sprintf("%-*s  %-*s", keyW, r.Spec.Dotted(), valW, settings.FormatSettingValue(r.Value))
+		line := fmt.Sprintf("%-*s  %-*s", keyW, r.Spec.Dotted(), valW, r.Display())
 		if r.IsSet {
 			fmt.Fprintln(s.out, line)
 		} else {
 			fmt.Fprintln(s.out, line+"  "+printer.Dimmed("(default)"))
+		}
+	}
+	for _, r := range rows {
+		if r.Ignored {
+			fmt.Fprintln(s.err, "warning: "+r.Notice())
 		}
 	}
 	return 0
@@ -168,24 +177,30 @@ func configGet(root, key string, jsonMode bool, s ioStreams) int {
 	if err != nil {
 		return renderConfigError(err, jsonMode, s)
 	}
-	var value any
-	var isSet bool
+	var row settings.Effective
 	for _, r := range settings.EffectiveSettings(root) {
 		if r.Spec.Dotted() == spec.Dotted() {
-			value, isSet = r.Value, r.IsSet
+			row = r
 			break
 		}
 	}
 	if jsonMode {
-		writeJSONIndent(s.out, map[string]any{
+		out := map[string]any{
 			"schemaVersion": jsonout.SchemaVersion,
 			"key":           spec.Dotted(),
-			"value":         value,
-			"isSet":         isSet,
-		})
+			"value":         row.Value,
+			"isSet":         row.IsSet,
+		}
+		if row.Ignored {
+			out["ignored"], out["notice"] = true, row.Notice()
+		}
+		writeJSONIndent(s.out, out)
 		return 0
 	}
-	fmt.Fprintln(s.out, settings.FormatSettingValue(value))
+	fmt.Fprintln(s.out, row.Display())
+	if row.Ignored {
+		fmt.Fprintln(s.err, "warning: "+row.Notice())
+	}
 	return 0
 }
 

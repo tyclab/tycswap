@@ -573,6 +573,7 @@ and `to` are both the target (DESIGN A68). A bare `switch --strategy` with
 | `argument --strategy: invalid choice: '<v>' (choose from 'best', 'next-available')` | usage, exit 2 |
 | `--strategy can only be used with bare 'switch'` | usage, exit 2 |
 | `--model can only be used with 'switch --strategy best' or 'switch --strategy next-available'` | usage, exit 2 |
+| `argument --model: must not contain a control character` (TAB, LF, VT, FF, CR and NEL become spaces) | usage, exit 2 |
 | `--force can only be used with 'import' or 'switch <num\|email>'` | usage, exit 2 |
 | `--yes can only be used with 'switch <num\|email>'` | usage, exit 2 |
 | ``Account-<n> authenticates with an API key. Switching to it changes how Claude Code authenticates, and every Claude Code session that is already running keeps its current login until you restart it. Confirm the switch to go ahead: `tycswap switch <n>` asks first.`` | `ValidationError`, exit 1: a switch onto an API-key account without an approval (`--json` without `--yes`) |
@@ -1888,6 +1889,7 @@ A handled error in `--json` mode is emitted as the compact error envelope
 |---------|------|
 | `argument --interval: invalid float value: '<v>'` (and each `--*-threshold`, `--cooldown`) | 2 |
 | `argument --interval: expected one argument` (and the others) | 2 |
+| `argument --model: must not contain a control character` (TAB, LF, VT, FF, CR and NEL become spaces) | 2 |
 | `unrecognized arguments: <tok>` (including the removed `--threshold`, and anything after `on`, `off` or `status` they do not take) | 2 |
 | A `ClaudeSwitchError` before the loop | 1 |
 
@@ -1968,6 +1970,15 @@ range, wrong type, corrupt file); `2` on a usage error.
   ```
 - `get` (human): the bare value; `get --json`:
   `{"schemaVersion":1,"key":"<k>","value":<v>,"isSet":<bool>}`.
+- A stored free-text value that holds a control character (other than TAB,
+  LF, VT, FF, CR or NEL, which read as spaces) is ignored, and the default
+  applies. `list` and `get` show it as `(ignored)` and print
+  `warning: <key>: the stored value contains a control character, so it is
+  ignored and the default applies; set it again with 'tycswap config set <key>
+  <value>' or clear it with 'tycswap config unset <key>'` on stderr; `--json`
+  adds `"ignored":true` and that sentence as `"notice"`. The value itself is
+  never printed. The TUI's Settings row, the dashboard's settings row and the
+  auto loop (one `config-warning` at its first tick) say the same.
 - `set`: `<key> = <value>`.
 - `unset`: `<key> unset (default: <default>)`, or the stderr notice
   `<key> is not set; nothing to do` (exit 0) when it was not set.
@@ -1981,12 +1992,13 @@ range, wrong type, corrupt file); `2` on a usage error.
 | `the following arguments are required: KEY` (or `KEY, VALUE`, `VALUE`) | 2 |
 | `unrecognized arguments: <tok>` | 2 |
 | `--json can only be used with list or get` | 2 |
-| `unknown setting '<key>'\nValid keys: ...` | 1 |
+| `unknown setting "<key>"\nValid keys: ...` (the key quoted, control characters escaped) | 1 |
 | `<key> must be between <lo> and <hi>` | 1 |
-| `<key> expects an integer, got '<v>'` / `expects a number, got '<v>'` | 1 |
-| `<key> expects true or false (or 1/0, yes/no), got '<v>'` | 1 |
+| `<key> expects an integer, got "<v>"` / `expects a number, got "<v>"` | 1 |
+| `<key> expects true or false (or 1/0, yes/no), got "<v>"` | 1 |
 | `<key> must be one of: <choices>` | 1 |
 | `<key> expects a non-empty value; use 'tycswap config unset <key>' to clear it` | 1 |
+| `<key> must not contain a control character` (free text; TAB, LF, VT, FF, CR and NEL become spaces first) | 1 |
 
 ### Example
 
@@ -3082,7 +3094,7 @@ anything else `500`.
 | `POST /api/auto/start` | `{"dryRun": bool}` | real: make sure an engine is hosted (and the Codex engine beside it on a machine with Codex accounts), then turn `autoswitch.enabled` on and wake the engine; with `TYCSWAP_AUTO_MANAGED_BY` set, only write the setting. Dry run: host a dry-run engine, write nothing; while the setting is off it takes the idle real engine's place | `400` beside a dry run already running or while auto-switch is on in this process, or still stopping |
 | `POST /api/auto/stop`, `/api/auto/wake` | | stop: turn `autoswitch.enabled` off and leave a real engine hosted; a dry run is stopped instead (waits up to 2 s for both loops to end), writes nothing and gives the host back to the real engine; wake: poll now (the Claude engine) | `400` nothing hosted and the setting already off (stop), or nothing hosted and no external scheduler (wake); stop `409` when a dry run's tick outlasts the wait (it is stopping; Start refuses until both loops have) |
 | `POST /api/auto/threshold` | `{"threshold": 50-100}` | retarget the hosted engine's 7d bar; the bounds are `autoswitch.sevenDayThreshold`'s (DESIGN A34) | `400` missing, out of range, or nothing hosted (with an external scheduler: `the scheduler reads the saved setting; change autoswitch.sevenDayThreshold in Settings`) |
-| `POST /api/auto/model` | `{"model": "all"\|"<names>"\|""}` | retarget the hosted engine's model windows; with nothing hosted, nothing to retarget | `400` missing (`""` is a value) |
+| `POST /api/auto/model` | `{"model": "all"\|"<names>"\|""}` | retarget the hosted engine's model windows; with nothing hosted, nothing to retarget | `400` missing (`""` is a value), or a control character (TAB, LF, VT, FF, CR and NEL become spaces) |
 | `POST /api/updates/check` | | check for a newer tycswap release and a newer Claude Code now, in the background; the result arrives with the state (in `tycswap app` with a tray, the tray's checks, DESIGN A44) | `202` at once; `503` without the updates host |
 | `POST /api/updates/apply` | `{"target": "app"\|"claude-code"}` | run one update after the page asked: `tycswap upgrade`'s path, or Claude Code's own installer; answers `{"message", "output"}`, on failure `{"error", "output"}` | `400` missing or unknown target, nothing known to update, or the installer's refusal (its last line); `409` another update is still running |
 | `POST /api/ui/folded` | `{"card": "accounts-card"\|"updates-card", "folded": bool}` | remember a folded card in `ui_prefs.json`, then broadcast | `400` unknown card; `503` without view preferences |

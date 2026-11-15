@@ -40,6 +40,9 @@ type Engine struct {
 	pendingModels atomic.Pointer[[]string]
 	onEvent       func(Event)
 	dryRun        bool
+	// noticesSaid: the first tick has reported settings.Notices (tick
+	// goroutine only).
+	noticesSaid bool
 
 	clk     clock.Clock
 	sleeper Sleeper
