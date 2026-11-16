@@ -131,11 +131,15 @@ func configList(root string, jsonMode bool, s ioStreams) int {
 	if jsonMode {
 		items := make([]map[string]any, 0, len(rows))
 		for _, r := range rows {
-			items = append(items, map[string]any{
+			item := map[string]any{
 				"key":   r.Spec.Dotted(),
 				"value": r.Value,
 				"isSet": r.IsSet,
-			})
+			}
+			if r.Cleaned {
+				item["cleaned"], item["notice"] = true, r.Notice()
+			}
+			items = append(items, item)
 		}
 		writeJSONIndent(s.out, map[string]any{
 			"schemaVersion": jsonout.SchemaVersion,
@@ -161,6 +165,11 @@ func configList(root string, jsonMode bool, s ioStreams) int {
 			fmt.Fprintln(s.out, line+"  "+printer.Dimmed("(default)"))
 		}
 	}
+	for _, r := range rows {
+		if r.Cleaned {
+			fmt.Fprintln(s.err, "warning: "+r.Notice())
+		}
+	}
 	return 0
 }
 
@@ -169,24 +178,30 @@ func configGet(root, key string, jsonMode bool, s ioStreams) int {
 	if err != nil {
 		return renderConfigError(err, jsonMode, s)
 	}
-	var value any
-	var isSet bool
+	var row settings.Effective
 	for _, r := range settings.EffectiveSettings(root) {
 		if r.Spec.Dotted() == spec.Dotted() {
-			value, isSet = r.Value, r.IsSet
+			row = r
 			break
 		}
 	}
 	if jsonMode {
-		writeJSONIndent(s.out, map[string]any{
+		out := map[string]any{
 			"schemaVersion": jsonout.SchemaVersion,
 			"key":           spec.Dotted(),
-			"value":         value,
-			"isSet":         isSet,
-		})
+			"value":         row.Value,
+			"isSet":         row.IsSet,
+		}
+		if row.Cleaned {
+			out["cleaned"], out["notice"] = true, row.Notice()
+		}
+		writeJSONIndent(s.out, out)
 		return 0
 	}
-	fmt.Fprintln(s.out, settings.FormatSettingValue(value))
+	fmt.Fprintln(s.out, settings.FormatSettingValue(row.Value))
+	if row.Cleaned {
+		fmt.Fprintln(s.err, "warning: "+row.Notice())
+	}
 	return 0
 }
 

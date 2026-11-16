@@ -3,9 +3,12 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/settings"
 )
 
@@ -32,6 +35,70 @@ func TestConfigListShowsAllDefaults(t *testing.T) {
 	}
 	if !strings.Contains(out, "autoswitch.sevenDayThreshold") {
 		t.Errorf("list missing autoswitch.sevenDayThreshold:\n%s", out)
+	}
+}
+
+// TestConfigListNeverPrintsAStoredControlCharacter: a model stored before
+// settings refused control characters reads as unset, so `config list` and
+// `config get` print no escape sequence from it.
+func TestConfigListNeverPrintsAStoredControlCharacter(t *testing.T) {
+	cleanHome(t)
+	path := settings.SettingsPath(paths.GetBackupRoot())
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"autoswitch":{"model":"Fable\u001b[2J\u0007"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"list"}, {"get", "autoswitch.model"}} {
+		code, out, errStr := runConfig(t, args...)
+		if code != 0 || strings.ContainsAny(out, "\x1b\a") {
+			t.Errorf("config %v: exit %d, stdout %q (stderr %q)", args, code, out, errStr)
+		}
+	}
+}
+
+// A stored value read without its control characters says so where the
+// setting is shown: `config list` and `config get` print the clean value and
+// the notice (what was removed, how to clean the file) on stderr; --json
+// carries cleaned and the notice. No control character is printed.
+func TestConfigSaysWhenAStoredValueWasCleaned(t *testing.T) {
+	cleanHome(t)
+	path := settings.SettingsPath(paths.GetBackupRoot())
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"autoswitch":{"model":"Fable\u001b[2J"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"list"}, {"get", "autoswitch.model"}} {
+		code, out, errStr := runConfig(t, args...)
+		if code != 0 || !strings.Contains(out, "Fable[2J") || strings.ContainsRune(out+errStr, 0x1b) ||
+			strings.Count(errStr, "autoswitch.model: the stored value held terminal control characters") != 1 ||
+			!strings.Contains(errStr, "tycswap config set autoswitch.model") {
+			t.Errorf("config %v: exit %d, stdout %q, stderr %q", args, code, out, errStr)
+		}
+	}
+	code, out, errStr := runConfig(t, "--json", "get", "autoswitch.model")
+	var got map[string]any
+	if err := json.Unmarshal([]byte(out), &got); code != 0 || err != nil {
+		t.Fatalf("--json get: exit %d, %v, stdout %q, stderr %q", code, err, out, errStr)
+	}
+	if notice, _ := got["notice"].(string); got["cleaned"] != true || got["value"] != "Fable[2J" || !strings.Contains(notice, "removed") {
+		t.Errorf("--json get = %v", got)
+	}
+	code, out, _ = runConfig(t, "--json", "list")
+	var list struct {
+		Settings []map[string]any `json:"settings"`
+	}
+	if err := json.Unmarshal([]byte(out), &list); code != 0 || err != nil {
+		t.Fatalf("--json list: exit %d, %v", code, err)
+	}
+	for _, item := range list.Settings {
+		cleaned := item["key"] == "autoswitch.model"
+		if notice, _ := item["notice"].(string); (item["cleaned"] == true) != cleaned || (notice != "") != cleaned {
+			t.Errorf("--json list item %v", item)
+		}
 	}
 }
 

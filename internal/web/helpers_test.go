@@ -338,6 +338,9 @@ type fakeSettings struct {
 	setErr   error
 	unsetErr error
 	unsetOK  bool
+	// written, when set, is what Set reports it stored (the real facade
+	// stores the parsed value, which can differ from raw).
+	written any
 }
 
 func (s *fakeSettings) Calls() []string {
@@ -358,6 +361,9 @@ func (s *fakeSettings) Set(dotted, raw string) (any, error) {
 	s.calls = append(s.calls, fmt.Sprintf("Set(%s,%s)", dotted, raw))
 	if s.setErr != nil {
 		return nil, s.setErr
+	}
+	if s.written != nil {
+		return s.written, nil
 	}
 	return raw, nil
 }

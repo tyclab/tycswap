@@ -1934,7 +1934,8 @@
     var idc = el('div', { class: 'setting-id' }, [
       el('div', { class: 'label-row' }, [el('span', { class: 'label', text: sv.label || humanLabel(sv.key) }), el('span', { class: 'key', text: sv.key, title: sv.key })]),
       sv.description ? el('div', { class: 'desc', text: sv.description }) : null,
-      sv.applies ? el('div', { class: 'applies', text: sv.applies }) : null
+      sv.applies ? el('div', { class: 'applies', text: sv.applies }) : null,
+      sv.notice ? el('div', { class: 'notice notice-crit', text: sv.notice }) : null
     ]);
     row.appendChild(idc);
     if (sv.readOnly) {

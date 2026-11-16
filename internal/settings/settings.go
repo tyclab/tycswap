@@ -13,6 +13,7 @@ import (
 	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // pyFloat is a float64 whose JSON form matches Python's json.dumps: a
@@ -255,7 +256,7 @@ func SpecFor(dotted string) (Spec, error) {
 	for i, s := range SettingSpecs {
 		keys[i] = s.Dotted()
 	}
-	return Spec{}, cerr.Config("unknown setting '%s'\nValid keys: %s", dotted, strings.Join(keys, ", "))
+	return Spec{}, cerr.Config("unknown setting %q\nValid keys: %s", dotted, strings.Join(keys, ", "))
 }
 
 // SettingsPath returns <root>/settings.json.
@@ -392,8 +393,14 @@ func clampValue(spec Spec, value any) any {
 		}
 		return spec.Default
 	case KindString:
-		if s, ok := value.(string); ok && s != "" {
-			return s
+		// Read clean: v0.12.0's TUI stored pastes raw, and every reader prints
+		// or matches the value as it is. Every reader gets the same value
+		// without its control characters, so nothing main counted is dropped;
+		// EffectiveSettings marks the row cleaned for the screens that show it.
+		if s, ok := value.(string); ok {
+			if text, _ := CleanText(s); text != "" {
+				return text
+			}
 		}
 		return spec.Default
 	case KindChoice:
@@ -408,6 +415,42 @@ func clampValue(spec Spec, value any) any {
 	default:
 		return spec.Default
 	}
+}
+
+// whitespaceControls are the control characters that only separate words:
+// TAB, LF, VT, FF, CR and NEL.
+var whitespaceControls = strings.NewReplacer("\t", " ", "\n", " ", "\v", " ", "\f", " ", "\r", " ", "\u0085", " ")
+
+// TextValue is the one gate for a free-text setting value, stored or given
+// (config set, a --model flag, the dashboard): the whitespace controls become
+// spaces, since ParseModelNames trims the space around each comma-separated
+// name, so a list pasted over two lines ("Fable,\nOpus") names the models it
+// named before and prints on one line. clean is false when any other control
+// character is left; such a value is refused (CleanText reads a stored one).
+func TextValue(s string) (text string, clean bool) {
+	text = whitespaceControls.Replace(s)
+	return text, !termsafe.HasControl(text)
+}
+
+// CleanText is how a stored free-text value is read: TextValue's spaces, then
+// termsafe.Strip, which drops the other control characters and leaves the
+// rest of an escape sequence as inert text ("Opus\x1b[2J" reads "Opus[2J").
+// cleaned reports that something besides whitespace was removed.
+func CleanText(s string) (text string, cleaned bool) {
+	spaced, _ := TextValue(s)
+	text = termsafe.Strip(spaced)
+	return text, text != spaced
+}
+
+// cleanedText reports whether a stored value of spec's kind is read without
+// control characters it holds (clampValue's KindString case).
+func cleanedText(spec Spec, raw any) bool {
+	s, ok := raw.(string)
+	if spec.Kind != KindString || !ok {
+		return false
+	}
+	_, cleaned := CleanText(s)
+	return cleaned
 }
 
 // asNumber accepts float64/int (JSON numbers or Go-typed CLI overrides) and
@@ -677,6 +720,26 @@ type Effective struct {
 	// explicit value equal to the default still counts (presence, not value
 	// equality).
 	IsSet bool
+	// Cleaned reports a stored value read without control characters it
+	// holds (CleanText): Value is the clean value, and Notice says so.
+	Cleaned bool
+}
+
+// Notice is what the screens that show e (config list/get, the settings
+// menus, the TUI's and the dashboard's settings rows) say when its stored
+// value was read clean: what was removed and how to clean the file, never
+// the value. Empty otherwise.
+func (e Effective) Notice() string {
+	if !e.Cleaned {
+		return ""
+	}
+	key := e.Spec.Dotted()
+	left := "which were removed"
+	if e.Value == nil {
+		left = "which were removed and left nothing, so the key reads as unset"
+	}
+	return fmt.Sprintf("%s: the stored value held terminal control characters, %s; save it again to clean the file: "+
+		"'tycswap config set %s <value>' or 'tycswap config unset %s'", key, left, key, key)
 }
 
 // EffectiveSettings returns (spec, effective value, explicitly set?) for
@@ -687,7 +750,9 @@ func EffectiveSettings(root string) []Effective {
 	out := make([]Effective, 0, len(SettingSpecs))
 	for _, spec := range SettingSpecs {
 		section, _ := raw[spec.Section].(map[string]any)
-		out = append(out, Effective{Spec: spec, Value: fields[spec.Field], IsSet: isSetIn(spec, section)})
+		stored, present := section[spec.JSONKey]
+		out = append(out, Effective{Spec: spec, Value: fields[spec.Field], IsSet: isSetIn(spec, section),
+			Cleaned: present && cleanedText(spec, stored)})
 	}
 	return out
 }
@@ -800,7 +865,7 @@ func ParseSettingValue(spec Spec, rawValue string) (any, error) {
 		key := strings.ToLower(strings.TrimSpace(rawValue))
 		v, ok := boolWords[key]
 		if !ok {
-			return nil, cerr.Config("%s expects true or false (or 1/0, yes/no), got '%s'", spec.Dotted(), rawValue)
+			return nil, cerr.Config("%s expects true or false (or 1/0, yes/no), got %q", spec.Dotted(), rawValue)
 		}
 		return v, nil
 	case KindChoice:
@@ -811,9 +876,13 @@ func ParseSettingValue(spec Spec, rawValue string) (any, error) {
 		}
 		return nil, cerr.Config("%s must be one of: %s", spec.Dotted(), strings.Join(spec.Choices, ", "))
 	case KindString:
-		value := strings.TrimSpace(rawValue)
+		value, clean := TextValue(rawValue)
+		value = strings.TrimSpace(value)
 		if value == "" {
 			return nil, cerr.Config("%s expects a non-empty value; use 'tycswap config unset %s' to clear it", spec.Dotted(), spec.Dotted())
+		}
+		if !clean {
+			return nil, cerr.Config("%s must not contain a control character", spec.Dotted())
 		}
 		if spec.Field == "Model" && noModelWord(value) {
 			return nil, cerr.Config("%s %q names no model; use 'tycswap config unset %s' to stop counting model limits", spec.Dotted(), value, spec.Dotted())
@@ -822,7 +891,7 @@ func ParseSettingValue(spec Spec, rawValue string) (any, error) {
 	case KindInt:
 		n, err := strconv.Atoi(rawValue)
 		if err != nil {
-			return nil, cerr.Config("%s expects an integer, got '%s'", spec.Dotted(), rawValue)
+			return nil, cerr.Config("%s expects an integer, got %q", spec.Dotted(), rawValue)
 		}
 		if float64(n) < spec.Lo || float64(n) > spec.Hi {
 			return nil, cerr.Config("%s must be between %s and %s", spec.Dotted(), FormatSettingValue(spec.Lo), FormatSettingValue(spec.Hi))
@@ -831,7 +900,7 @@ func ParseSettingValue(spec Spec, rawValue string) (any, error) {
 	case KindFloat:
 		f, err := strconv.ParseFloat(rawValue, 64)
 		if err != nil {
-			return nil, cerr.Config("%s expects a number, got '%s'", spec.Dotted(), rawValue)
+			return nil, cerr.Config("%s expects a number, got %q", spec.Dotted(), rawValue)
 		}
 		// Inside the range, not "below Lo or above Hi": NaN compares false
 		// both ways, so the latter let "nan" through to a write that then

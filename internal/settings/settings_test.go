@@ -934,6 +934,129 @@ func TestSetModelNoneSaysHowToUnset(t *testing.T) {
 	}
 }
 
+// A free-text setting cannot hold a terminal control character: v0.12.0's TUI
+// stored pasted text raw, and `config list`, the auto loop's warnings and the
+// TUI print the value as it is. Setting one is refused; one already stored,
+// hand-edited or merged from an override is read without its control
+// characters (the flags themselves refuse one).
+func TestModelWithControlCharactersIsRefusedAndReadsClean(t *testing.T) {
+	spec, err := SpecFor("autoswitch.model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []string{"Fable\x1b[2J", "\x1b]0;x\a", "Fa\u009bble"} {
+		if got, err := ParseSettingValue(spec, v); err == nil || !strings.Contains(err.Error(), "control character") {
+			t.Errorf("set %q = %v, %v; want a control-character refusal", v, got, err)
+		}
+	}
+	root := t.TempDir()
+	writeSettingsJSON(t, root, `{"autoswitch":{"model":"Fable\u001b[2J"}}`)
+	if got := Load(root).Model; got == nil || *got != "Fable[2J" {
+		t.Errorf("Load model = %q, want it without the ESC", derefOrNil(got))
+	}
+	if got := MergedWithCLI(Default(), CLIOverrides{Model: strp("Fable\x1b[2J")}).Model; got == nil || *got != "Fable[2J" {
+		t.Errorf("a merged override with controls = %q, want it without the ESC", derefOrNil(got))
+	}
+}
+
+// A list pasted over two lines, or with a tab, names the models it named
+// before: ParseModelNames trims the space around each name, so the whitespace
+// controls (TAB, LF, CR, NEL) become spaces, on set and on load, and the value
+// prints as one line.
+func TestModelListWithWhitespaceControlsKeepsItsModels(t *testing.T) {
+	spec, err := SpecFor("autoswitch.model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"Fable", "Opus"}
+	for _, v := range []string{"Fable,\nOpus", "Fable,\tOpus", "Fable,\r\nOpus", "Fable,\u0085Opus"} {
+		got, err := ParseSettingValue(spec, v)
+		s, _ := got.(string)
+		if err != nil || strings.ContainsAny(s, "\t\n\r\u0085") || !reflect.DeepEqual(ParseModelNames(&s), want) {
+			t.Errorf("set %q = %q, %v; want a one-line value naming %v", v, s, err, want)
+		}
+	}
+	for _, stored := range []string{`Fable,\nOpus`, `Fable,\tOpus`} {
+		root := t.TempDir()
+		writeSettingsJSON(t, root, `{"autoswitch":{"model":"`+stored+`"}}`)
+		got := Load(root).Model
+		if got == nil || strings.ContainsAny(*got, "\t\n") || !reflect.DeepEqual(ParseModelNames(got), want) {
+			t.Errorf("stored %s: Load model = %q, want a one-line value naming %v", stored, derefOrNil(got), want)
+		}
+		for _, r := range EffectiveSettings(root) {
+			if r.Cleaned || r.Notice() != "" {
+				t.Errorf("stored %s: %s marked cleaned (%q)", stored, r.Spec.Dotted(), r.Notice())
+			}
+		}
+	}
+}
+
+// A stored value with other control characters is cleaned on read: every
+// reader gets it without them (termsafe.Strip), so a list main counted is still
+// counted. The row says what was removed and how to clean the file, never the
+// value. A value of control characters only reads as unset, and says so.
+func TestStoredValueWithControlCharactersIsCleanedOnRead(t *testing.T) {
+	root := t.TempDir()
+	writeSettingsJSON(t, root, `{"autoswitch":{"model":"Fable,Opus\u001b[2J\u0007","sevenDayThreshold":90}}`)
+	if got := Load(root).Model; got == nil || *got != "Fable,Opus[2J" || !reflect.DeepEqual(ParseModelNames(got), []string{"Fable", "Opus[2J"}) {
+		t.Fatalf("Load model = %q, want the value without its control characters", derefOrNil(got))
+	}
+	var row Effective
+	for _, r := range EffectiveSettings(root) {
+		switch {
+		case r.Spec.Field == "Model":
+			row = r
+		case r.Cleaned || r.Notice() != "":
+			t.Errorf("%s marked cleaned", r.Spec.Dotted())
+		}
+	}
+	if !row.Cleaned || !row.IsSet || row.Value != "Fable,Opus[2J" {
+		t.Fatalf("model row = %+v, want cleaned, set, the clean value", row)
+	}
+	n := row.Notice()
+	for _, want := range []string{"autoswitch.model", "control characters", "removed",
+		"tycswap config set autoswitch.model", "tycswap config unset autoswitch.model"} {
+		if !strings.Contains(n, want) {
+			t.Errorf("notice %q lacks %q", n, want)
+		}
+	}
+	if strings.Contains(n, "Fable") || strings.ContainsRune(n, 0x1b) {
+		t.Errorf("notice %q echoes the value", n)
+	}
+	only := t.TempDir()
+	writeSettingsJSON(t, only, `{"autoswitch":{"model":"\u001b\u0007"}}`)
+	for _, r := range EffectiveSettings(only) {
+		if r.Spec.Field == "Model" && (!r.Cleaned || r.Value != nil || !strings.Contains(r.Notice(), "nothing")) {
+			t.Errorf("controls only: row %+v, notice %q", r, r.Notice())
+		}
+	}
+	clean := t.TempDir()
+	writeSettingsJSON(t, clean, `{"autoswitch":{"model":"Fable,\nOpus"}}`)
+	for _, r := range EffectiveSettings(clean) {
+		if r.Cleaned || r.Notice() != "" {
+			t.Errorf("a two-line list: %s marked cleaned", r.Spec.Dotted())
+		}
+	}
+}
+
+// A refused value or key is quoted with %q, so a control character in it
+// reaches the terminal (or the dashboard's log) escaped, not raw.
+func TestRefusalsQuoteTheInput(t *testing.T) {
+	for _, key := range []string{"autoswitch.enabled", "autoswitch.unhealthyTicks", "autoswitch.cooldownSeconds"} {
+		spec, err := SpecFor(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = ParseSettingValue(spec, "x\x1b[2J")
+		if err == nil || strings.ContainsRune(err.Error(), 0x1b) || !strings.Contains(err.Error(), `"x\x1b[2J"`) {
+			t.Errorf("%s: err = %v, want the input quoted", key, err)
+		}
+	}
+	if _, err := SpecFor("auto\x1b[2J"); err == nil || strings.ContainsRune(err.Error(), 0x1b) || !strings.Contains(err.Error(), `"auto\x1b[2J"`) {
+		t.Errorf("unknown key: err = %v, want the key quoted", err)
+	}
+}
+
 func derefOrNil(s *string) string {
 	if s == nil {
 		return "<nil>"
