@@ -1,9 +1,18 @@
 # Busy-model rotation, and the end of `run`/`env`
 
-Status: rev 2 after an independent review; one build (B2, B3, B5, B6), go given 2026-11-16 ("fix it merge it roll
-it out. test it make sure it really works"). Phase 2 (parallel Fable and Opus
-on two logins) is a decision for the operator, not part of this build. Plan:
-`docs/superpowers/plans/2026-11-16-busy-model-rotation.md`.
+Status: rev 3, after an Opus max review and a Fable review; one build (B2, B3,
+B5, B6) plus flakelab's parked-session waker. Phase 2 (a Fable login beside the
+default login, `2026-11-16-fable-store-design.md`) is the operator's chosen way to
+the full ask and is piloted separately.
+
+**What the operator gets before Phase 2.** Tonight's stall cannot recur: when no
+usable account can serve Fable, the login rotates on the 5-hour and weekly
+limits onto the accounts whose Fable week is spent, and sessions parked on a
+limit are told to go on once the login has room. What it does *not* give: while
+one Fable session is alive and one account still serves Fable, every Opus lane
+runs on that Fable account too; Opus reaches the Fable-spent accounts only after
+the Fable-capable ones are at their bars. That is the reverse of "opus session
+... fill the accounts with no fable left", and only Phase 2 delivers that order.
 
 ## The operator's words
 
@@ -96,7 +105,12 @@ are dropped. The full ask needs Phase 2.
 
 ## Goals, each with the test that proves it
 
-B2. **A model nobody can serve does not block anybody.** The default-session
+B2. **A model nobody can serve does not block anybody** (judged at the engine's
+bars: an account serves a model only while below its 5h, 7d and model bars, so
+the lanes leave the last Fable account before its wall; one room rule, a window
+whose reset has passed is room, in the policy and the engine alike; unknown or
+stale usage serves nothing; a blocked tick while an account has room emits
+`blocked-with-room`). The default-session
 policy counts a derived model only while some account the tick may use
 (enabled, rotation-eligible, not quarantined, plus the current account) reports
 that model's window with room and has room on its 5h and 7d windows, judged on
@@ -138,6 +152,16 @@ tycswap switch logs one `live-login-changed` event, remembered in the engine
 state. The poll event names models dropped as `unservable`. Tests: disable over
 HTTP logs `by dashboard`; an external credential write logs once across two
 ticks and a restart.
+
+B7. **A parked session goes on when the login has room** (flakelab). A session
+that hit a limit parks until the reset its error named and makes no request
+before, so a switch alone does not reach it (seen 2026-11-15 23:46 and
+2026-11-16 00:08: six to eight lanes needed a typed line). After every
+auto-switch tick, `claude-wake-parked` types one "go on" line into each Claude
+pane parked on a limit banner whose kind of limit the live account has room
+for, once per pane, account and window, never into a pane that works, shows a
+dialog or holds typed text (Claude Code's empty box carries a no-break space).
+Tests: `test-claude-wake-parked`; a dry run over the box's real panes.
 
 ## Ruling-to-test coverage
 
