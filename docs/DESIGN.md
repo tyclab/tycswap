@@ -7288,7 +7288,11 @@ ownership hold) reaches the journal under a name no `poll`/`no-switch`/
 
 The scheduled tick (`auto --once`, `--observe`), `start`'s selection, and the
 at-limit marks of `list`, `status` and the account snapshot (the dashboard's
-and the TUI's rows) all read the one result. Unchanged: an explicit
+and the TUI's rows) all read the one result. The dashboard state carries it as
+`auto.counting` (the families of the live sessions, the counted, dropped and
+reserved), with a one-line caption; the Auto tab, *Next best* and the tray's
+figures render it, so an unset `autoswitch.model` reads *Follow sessions*, not
+*Off*. Unchanged: an explicit
 `autoswitch.model` or `--model`, which never drops a model; the long-running
 loop and the hosted engines, which keep their configured models (ENG-8); and
 one login for every default session, so while an account can serve Fable and a

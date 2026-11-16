@@ -99,12 +99,13 @@ func RecordDefaultSessionModel(root, sessionID, model string, now time.Time) (bo
 
 // PolicyResult is the default-session policy for one tick (DESIGN A76, A77,
 // A91): the settings to decide with, the accounts left to Fable work (nil
-// reserves none) and the derived models dropped because no usable account
-// can serve them.
+// reserves none), the derived models dropped because no usable account can
+// serve them, and the model families the live default sessions run.
 type PolicyResult struct {
 	Settings   settings.AutoSwitchSettings
 	Reserved   func(num string) bool
 	Unservable []string
+	Sessions   []string
 }
 
 // DefaultSessionPolicy is DefaultSessionPolicyResult at the store's clock.
@@ -146,6 +147,10 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 	if len(families) == 0 {
 		return r
 	}
+	for family := range families {
+		r.Sessions = append(r.Sessions, family)
+	}
+	sort.Strings(r.Sessions)
 	view := newPolicyView(s, now)
 	var counted []string
 	for _, name := range scopedNamesFor(view.usage, families) {

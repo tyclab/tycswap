@@ -386,6 +386,32 @@ func TestShellModelLimitSwitch(t *testing.T) {
 	}
 }
 
+// TestShellFollowsTheEngineCount: while autoswitch.model is unset the tray's
+// figures count what the dashboard says the engine counts now (Fable for the
+// live Fable sessions, DESIGN A91), while the switch still shows the setting
+// and turns it on.
+func TestShellFollowsTheEngineCount(t *testing.T) {
+	sh, ft, _ := newTestShell(t)
+	var saved *bool
+	sh.act.SetModelLimits = func(on bool) error { saved = &on; return nil }
+	st := sampleState()
+	st.Accounts[1] = acct(1, "alice@example.com", "work", true, 45.0, 30.0, "Fable", 97.0)
+	st.Auto = &web.AutoView{Running: true, Settings: map[string]any{"autoswitch.model": nil},
+		Counting: &web.CountingView{Mode: "sessions", Models: []string{"Fable"}, Sessions: []string{"fable"}, Caption: "counting 5h + 7d + Fable (live Fable sessions)"}}
+	sh.update(st)
+	if ft.title != "⟳ #1 · 97%" && ft.title != "#1 · 97%" {
+		t.Errorf("title = %q, want the counted Fable window", ft.title)
+	}
+	it, _ := ft.item("model-limits")
+	if it.Checked || it.Sub != "off — counting 5h + 7d + Fable (live Fable sessions)" {
+		t.Errorf("switch = %+v, want off with the engine's count", it)
+	}
+	sh.click("model-limits")
+	if saved == nil || !*saved {
+		t.Fatalf("click should turn the setting on, got %v", saved)
+	}
+}
+
 func TestParseAppArgs(t *testing.T) {
 	o, err := parseAppArgs([]string{"--port", "7337", "--interval=2.5", "--open", "--headless", "--debug"})
 	if err != nil {

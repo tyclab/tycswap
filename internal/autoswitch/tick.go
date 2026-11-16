@@ -90,7 +90,7 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 	cur := *current
 	currentEmail := e.sw.AccountEmail(cur)
 	activeRef := refOf(cur, currentEmail)
-	e.noteLiveLogin(state, cur)
+	e.noteLiveLogin(cur)
 	if !e.dryRun {
 		if sw, ok := e.sw.(interface{ PrepareRotationCandidates() }); ok {
 			sw.PrepareRotationCandidates()

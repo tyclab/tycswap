@@ -150,6 +150,13 @@ type AutoView struct {
 	Events     []AutoEventView `json:"events"`     // most recent last, ring of <= 200
 	Quarantine map[string]any  `json:"quarantine"` // contents of autoswitch_state.json (may be nil)
 	Codex      *CodexAutoView  `json:"codex"`
+
+	// LastTickAt is when a real tick last saw the live login, as epoch
+	// seconds (lastSeenAt in autoswitch_state.json); null before one did.
+	LastTickAt *float64 `json:"lastTickAt"`
+	// Counting is what auto-switch counts now (DESIGN A91); null when the
+	// host cannot tell.
+	Counting *CountingView `json:"counting"`
 }
 
 // CodexAutoView is the Codex auto-switch engine as the dashboard shows it.

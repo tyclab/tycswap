@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/settings"
@@ -121,5 +122,32 @@ func TestEngineSwitchNamesItsTrigger(t *testing.T) {
 	}
 	if len(actors) != 1 || actors[0] != "Switched to account 2 by engine:proactive" {
 		t.Fatalf("actor lines = %q, want one naming engine:proactive", actors)
+	}
+}
+
+// Every real tick records when it saw the live login, the last tick the
+// dashboard shows under a scheduler; a dry run records nothing.
+func TestRealTicksRecordTheLastTick(t *testing.T) {
+	clk := newClk()
+	statePath := filepath.Join(t.TempDir(), StateFilename)
+	f := &rosterFake{fakeSwitcher: twoAccounts(clk, dictEntry(usageOf(10, 10)), dictEntry(usageOf(10, 10))), recorded: "1"}
+	engine := func(dryRun bool) *Engine {
+		return NewEngine(f, settings.Default(), (&recorder{}).on, dryRun, WithClock(clk), WithStatePath(statePath))
+	}
+	if ReadLastTick(statePath) != nil {
+		t.Fatal("a last tick before any tick")
+	}
+	engine(false).Tick()
+	first := float64(clk.Now().UnixNano()) / 1e9
+	clk.Advance(2 * time.Minute)
+	engine(false).Tick()
+	second := float64(clk.Now().UnixNano()) / 1e9
+	if got := ReadLastTick(statePath); got == nil || *got != second || *got == first {
+		t.Fatalf("last tick = %v, want the second tick's %v", got, second)
+	}
+	clk.Advance(2 * time.Minute)
+	engine(true).Tick()
+	if got := ReadLastTick(statePath); got == nil || *got != second {
+		t.Fatalf("a dry run moved the last tick to %v", got)
 	}
 }

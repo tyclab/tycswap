@@ -31,15 +31,13 @@ func (e LiveLoginChangedEvent) Human() string {
 	return "live login changed from account " + e.From + " to " + e.To + " without a tycswap switch"
 }
 
-// noteLiveLogin remembers the live slot a real tick saw (lastSeenLive,
-// lastSeenAt) and reports a change no tycswap switch since lastSeenAt
-// explains. A failed write is logged; the tick goes on.
-func (e *Engine) noteLiveLogin(state map[string]any, cur string) {
+// noteLiveLogin records, each real tick, the live slot it saw and when
+// (lastSeenLive, lastSeenAt: the dashboard's last tick) and reports a change
+// no tycswap switch since the previous tick explains. A failed write is
+// logged; the tick goes on.
+func (e *Engine) noteLiveLogin(cur string) {
 	rs, ok := e.sw.(recordedSwitcher)
 	if !ok || e.dryRun {
-		return
-	}
-	if seen, _ := state["lastSeenLive"].(string); seen == cur {
 		return
 	}
 	var from string
@@ -102,4 +100,14 @@ func (e *Engine) reportBlockedWithRoom(cur string, quarantined map[string]bool, 
 	if e.log != nil {
 		e.log.Warningf("Blocked on Account-%s although %s are below their 5h and 7d bars", cur, strings.Join(room, ", "))
 	}
+}
+
+// ReadLastTick is when a real tick last saw the live login (lastSeenAt), as
+// epoch seconds, or nil before one did; lock-free like ReadQuarantineEntries.
+func ReadLastTick(statePath string) *float64 {
+	at, ok := numOfAny(readStateFile(statePath)["lastSeenAt"])
+	if !ok {
+		return nil
+	}
+	return &at
 }

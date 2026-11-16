@@ -159,6 +159,8 @@ func testStateExactShape(t *testing.T, codex bool) {
 			},
 			"quarantine": map[string]any{"quarantine": map[string]any{"3": map[string]any{"reason": "invalid_grant", "at": 1758275000}}},
 			"codex":      nil,
+			"lastTickAt": nil,
+			"counting":   nil,
 		},
 		"strategies":    []any{"best", "next-available"},
 		"name":          "tycswap",
