@@ -153,7 +153,7 @@ func promptConfigArguments(argv []string, s ioStreams) (int, bool) {
 	if len(pos) == 1 {
 		labels := make([]string, len(values))
 		for i, value := range values {
-			labels[i] = value.Spec.Dotted() + "  " + value.Display()
+			labels[i] = value.Spec.Dotted() + "  " + settings.FormatSettingValue(value.Value)
 		}
 		i, _, ok := askMenu(s, "Choose a setting", labels, "")
 		if !ok {

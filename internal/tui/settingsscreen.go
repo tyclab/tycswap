@@ -318,7 +318,7 @@ func (s *settingsScreen) rowLines(width int) ([]string, int) {
 	keyW, valW := 0, 0
 	for _, r := range s.rows {
 		keyW = max(keyW, lipgloss.Width(r.Spec.JSONKey))
-		valW = max(valW, lipgloss.Width(r.Display()))
+		valW = max(valW, lipgloss.Width(settings.FormatSettingValue(r.Value)))
 	}
 	var lines []string
 	cursor := 0
@@ -358,7 +358,7 @@ func (s *settingsScreen) rowText(r settings.Effective, selected bool, keyW, valW
 		t.add("▏", segStyle{Fg: colAccent})
 		return clipRichLines(t, width).render()
 	}
-	t.addFg(fmt.Sprintf("%-*s", valW, r.Display()), colForeground)
+	t.addFg(fmt.Sprintf("%-*s", valW, settings.FormatSettingValue(r.Value)), colForeground)
 	if !r.IsSet {
 		t.addFg("  (default)", colMuted)
 	}
@@ -423,7 +423,7 @@ func wrapDetail(head, text string, width int) []richText {
 	return append(lines, cur)
 }
 
-// noticeLines wraps a row's notice (an ignored stored value) whole, in the
+// noticeLines wraps a row's notice (a stored value read clean) whole, in the
 // critical colour; unlike the help it is never clipped, since its last words
 // are the repair. No notice, no lines.
 func noticeLines(notice string, width int) []richText {

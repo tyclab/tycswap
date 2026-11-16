@@ -9,7 +9,6 @@
 package cli
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -70,7 +69,7 @@ func dispatchMain(prog string, p *parsed, s ioStreams) int {
 	}
 
 	var payload any
-	derr := runMainAction(p, sw, &payload, s.err)
+	derr := runMainAction(p, sw, &payload)
 	if derr != nil {
 		return renderDomainError(derr, p.json, s.out, s.err)
 	}
@@ -85,7 +84,7 @@ func dispatchMain(prog string, p *parsed, s ioStreams) int {
 
 // runMainAction invokes the selected switcher action, capturing the JSON
 // payload (spec 08§5 dispatch table). Human output is written by the method.
-func runMainAction(p *parsed, sw *core.Switcher, payload *any, stderr io.Writer) error {
+func runMainAction(p *parsed, sw *core.Switcher, payload *any) error {
 	switch {
 	case p.addAccount:
 		return sw.AddAccount(p.slot, false, p.alias)
@@ -98,15 +97,13 @@ func runMainAction(p *parsed, sw *core.Switcher, payload *any, stderr io.Writer)
 	case p.enableAccount != nil:
 		return sw.SetAccountDisabled(*p.enableAccount, false)
 	case p.list:
-		// The at-limit markers count autoswitch.model's windows.
-		warnIgnoredSettings(sw.BackupDir(), stderr)
 		out, err := sw.ListAccounts(p.tokenStatus, p.json, nil)
 		if out != nil {
 			*payload = out
 		}
 		return err
 	case p.switchFlag:
-		return dispatchSwitch(p, sw, payload, stderr)
+		return dispatchSwitch(p, sw, payload)
 	case p.switchTo != nil:
 		// Moving onto an API-key account changes how Claude Code
 		// authenticates, which a running session does not pick up (DESIGN
@@ -120,7 +117,6 @@ func runMainAction(p *parsed, sw *core.Switcher, payload *any, stderr io.Writer)
 		}
 		return err
 	case p.status:
-		warnIgnoredSettings(sw.BackupDir(), stderr)
 		out, err := sw.Status(p.json)
 		if out != nil {
 			*payload = out
@@ -142,12 +138,9 @@ func runMainAction(p *parsed, sw *core.Switcher, payload *any, stderr io.Writer)
 }
 
 // dispatchSwitch handles the bare --switch model resolution + call (spec 08§5).
-// A stored autoswitch.model it would decide with but ignores is said: in the
-// result's warnings with --json, else on stderr.
-func dispatchSwitch(p *parsed, sw *core.Switcher, payload *any, stderr io.Writer) error {
+func dispatchSwitch(p *parsed, sw *core.Switcher, payload *any) error {
 	var models []string
 	var modelSource *string
-	var notices []string
 	switch {
 	case p.strategy == nil:
 		models, modelSource = nil, nil
@@ -156,46 +149,21 @@ func dispatchSwitch(p *parsed, sw *core.Switcher, payload *any, stderr io.Writer
 		src := "cli"
 		modelSource = &src
 	default:
-		root := sw.BackupDir()
-		models = settings.ParseModelNames(settings.Load(root).Model)
+		models = settings.ParseModelNames(settings.Load(sw.BackupDir()).Model)
 		if len(models) > 0 {
 			src := "autoswitch.model"
 			modelSource = &src
 		}
-		notices = settings.Notices(root)
-	}
-	if !p.json {
-		printNotices(notices, stderr)
 	}
 	sp, err := sw.Switch(p.strategy, p.json, models, modelSource)
 	if sp != nil && len(models) > 0 {
 		sp["models"] = models
 		sp["modelSource"] = *modelSource
 	}
-	if p.json && len(notices) > 0 {
-		if sp == nil {
-			printNotices(notices, stderr)
-		} else {
-			warnings, _ := sp["warnings"].([]string)
-			sp["warnings"] = append(warnings, notices...)
-		}
-	}
 	if sp != nil {
 		*payload = sp
 	}
 	return err
-}
-
-// warnIgnoredSettings says on stderr every stored setting that is ignored
-// (settings.Notices), for the commands that decide with one.
-func warnIgnoredSettings(root string, stderr io.Writer) {
-	printNotices(settings.Notices(root), stderr)
-}
-
-func printNotices(notices []string, stderr io.Writer) {
-	for _, n := range notices {
-		fmt.Fprintln(stderr, "warning: "+n)
-	}
 }
 
 // runTUIOrNotice hands off to internal/tui through the RunTUI indirection, or

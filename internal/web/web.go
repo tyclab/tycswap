@@ -118,8 +118,8 @@ type SettingView struct {
 	Min         *float64 `json:"min,omitempty"`
 	Max         *float64 `json:"max,omitempty"`
 	Applies     string   `json:"applies"`
-	// Notice says that the stored value is ignored, why and how to repair
-	// it (settings.Effective.Notice); empty when nothing is wrong.
+	// Notice says that the stored value was read without control characters
+	// and how to clean the file (settings.Effective.Notice); empty otherwise.
 	Notice string `json:"notice,omitempty"`
 }
 

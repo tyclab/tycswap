@@ -984,12 +984,9 @@ func TestModelListWithWhitespaceControlsKeepsItsModels(t *testing.T) {
 			t.Errorf("stored %s: Load model = %q, want a one-line value naming %v", stored, derefOrNil(got), want)
 		}
 		for _, r := range EffectiveSettings(root) {
-			if r.Ignored {
-				t.Errorf("stored %s: %s marked ignored", stored, r.Spec.Dotted())
+			if r.Cleaned || r.Notice() != "" {
+				t.Errorf("stored %s: %s marked cleaned (%q)", stored, r.Spec.Dotted(), r.Notice())
 			}
-		}
-		if n := Notices(root); len(n) != 0 {
-			t.Errorf("stored %s: notices %q, want none", stored, n)
 		}
 	}
 }

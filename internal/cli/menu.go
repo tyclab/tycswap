@@ -297,7 +297,7 @@ func menuSettings(s ioStreams) {
 	}
 	labels := make([]string, len(values))
 	for i, value := range values {
-		labels[i] = value.Spec.Label() + ": " + value.Display()
+		labels[i] = value.Spec.Label() + ": " + settings.FormatSettingValue(value.Value)
 	}
 	i, _, ok := askMenu(s, "Advanced auto-switch settings", labels, "")
 	if !ok {

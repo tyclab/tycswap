@@ -393,12 +393,12 @@ func clampValue(spec Spec, value any) any {
 		}
 		return spec.Default
 	case KindString:
-		// Any control character left after TextValue makes the value unset:
-		// v0.12.0's TUI stored pastes raw, and every sink prints the value as
-		// it is. EffectiveSettings marks such a value ignored and Notices
-		// words it, so no reader drops it without a word.
-		if s, ok := value.(string); ok && s != "" {
-			if text, clean := TextValue(s); clean {
+		// Read clean: v0.12.0's TUI stored pastes raw, and every reader prints
+		// or matches the value as it is. Every reader gets the same value
+		// without its control characters, so nothing main counted is dropped;
+		// EffectiveSettings marks the row cleaned for the screens that show it.
+		if s, ok := value.(string); ok {
+			if text, _ := CleanText(s); text != "" {
 				return text
 			}
 		}
@@ -426,21 +426,31 @@ var whitespaceControls = strings.NewReplacer("\t", " ", "\n", " ", "\v", " ", "\
 // spaces, since ParseModelNames trims the space around each comma-separated
 // name, so a list pasted over two lines ("Fable,\nOpus") names the models it
 // named before and prints on one line. clean is false when any other control
-// character is left; such a value is refused or ignored, never printed.
+// character is left; such a value is refused (CleanText reads a stored one).
 func TextValue(s string) (text string, clean bool) {
 	text = whitespaceControls.Replace(s)
 	return text, !termsafe.HasControl(text)
 }
 
-// ignoredText reports whether a stored value of spec's kind is ignored for a
-// control character (clampValue's KindString case).
-func ignoredText(spec Spec, raw any) bool {
+// CleanText is how a stored free-text value is read: TextValue's spaces, then
+// termsafe.Strip, which drops the other control characters and leaves the
+// rest of an escape sequence as inert text ("Opus\x1b[2J" reads "Opus[2J").
+// cleaned reports that something besides whitespace was removed.
+func CleanText(s string) (text string, cleaned bool) {
+	spaced, _ := TextValue(s)
+	text = termsafe.Strip(spaced)
+	return text, text != spaced
+}
+
+// cleanedText reports whether a stored value of spec's kind is read without
+// control characters it holds (clampValue's KindString case).
+func cleanedText(spec Spec, raw any) bool {
 	s, ok := raw.(string)
-	if spec.Kind != KindString || !ok || s == "" {
+	if spec.Kind != KindString || !ok {
 		return false
 	}
-	_, clean := TextValue(s)
-	return !clean
+	_, cleaned := CleanText(s)
+	return cleaned
 }
 
 // asNumber accepts float64/int (JSON numbers or Go-typed CLI overrides) and
@@ -710,41 +720,26 @@ type Effective struct {
 	// explicit value equal to the default still counts (presence, not value
 	// equality).
 	IsSet bool
-	// Ignored reports a stored value that holds a control character: Value
-	// is the default, and Notice says so.
-	Ignored bool
+	// Cleaned reports a stored value read without control characters it
+	// holds (CleanText): Value is the clean value, and Notice says so.
+	Cleaned bool
 }
 
-// Display is the value as a list shows it: "(ignored)" for an ignored stored
-// value, else FormatSettingValue's form.
-func (e Effective) Display() string {
-	if e.Ignored {
-		return "(ignored)"
-	}
-	return FormatSettingValue(e.Value)
-}
-
-// Notice is what every surface that shows e says when its stored value is
-// ignored: the key, why, and the repair, never the value. Empty otherwise.
+// Notice is what the screens that show e (config list/get, the settings
+// menus, the TUI's and the dashboard's settings rows) say when its stored
+// value was read clean: what was removed and how to clean the file, never
+// the value. Empty otherwise.
 func (e Effective) Notice() string {
-	if !e.Ignored {
+	if !e.Cleaned {
 		return ""
 	}
 	key := e.Spec.Dotted()
-	return fmt.Sprintf("%s: the stored value contains a control character, so it is ignored, as if the key were not set; "+
-		"set it again with 'tycswap config set %s <value>' or clear it with 'tycswap config unset %s'", key, key, key)
-}
-
-// Notices lists the notice of every ignored stored value in root's
-// settings.json, in registry order; the auto loop reports them.
-func Notices(root string) []string {
-	var out []string
-	for _, e := range EffectiveSettings(root) {
-		if n := e.Notice(); n != "" {
-			out = append(out, n)
-		}
+	left := "which were removed"
+	if e.Value == nil {
+		left = "which were removed and left nothing, so the key reads as unset"
 	}
-	return out
+	return fmt.Sprintf("%s: the stored value held terminal control characters, %s; save it again to clean the file: "+
+		"'tycswap config set %s <value>' or 'tycswap config unset %s'", key, left, key, key)
 }
 
 // EffectiveSettings returns (spec, effective value, explicitly set?) for
@@ -757,7 +752,7 @@ func EffectiveSettings(root string) []Effective {
 		section, _ := raw[spec.Section].(map[string]any)
 		stored, present := section[spec.JSONKey]
 		out = append(out, Effective{Spec: spec, Value: fields[spec.Field], IsSet: isSetIn(spec, section),
-			Ignored: present && ignoredText(spec, stored)})
+			Cleaned: present && cleanedText(spec, stored)})
 	}
 	return out
 }

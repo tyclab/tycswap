@@ -135,8 +135,8 @@ func configList(root string, jsonMode bool, s ioStreams) int {
 				"value": r.Value,
 				"isSet": r.IsSet,
 			}
-			if r.Ignored {
-				item["ignored"], item["notice"] = true, r.Notice()
+			if r.Cleaned {
+				item["cleaned"], item["notice"] = true, r.Notice()
 			}
 			items = append(items, item)
 		}
@@ -152,12 +152,12 @@ func configList(root string, jsonMode bool, s ioStreams) int {
 		if l := len(r.Spec.Dotted()); l > keyW {
 			keyW = l
 		}
-		if l := len(r.Display()); l > valW {
+		if l := len(settings.FormatSettingValue(r.Value)); l > valW {
 			valW = l
 		}
 	}
 	for _, r := range rows {
-		line := fmt.Sprintf("%-*s  %-*s", keyW, r.Spec.Dotted(), valW, r.Display())
+		line := fmt.Sprintf("%-*s  %-*s", keyW, r.Spec.Dotted(), valW, settings.FormatSettingValue(r.Value))
 		if r.IsSet {
 			fmt.Fprintln(s.out, line)
 		} else {
@@ -165,7 +165,7 @@ func configList(root string, jsonMode bool, s ioStreams) int {
 		}
 	}
 	for _, r := range rows {
-		if r.Ignored {
+		if r.Cleaned {
 			fmt.Fprintln(s.err, "warning: "+r.Notice())
 		}
 	}
@@ -191,14 +191,14 @@ func configGet(root, key string, jsonMode bool, s ioStreams) int {
 			"value":         row.Value,
 			"isSet":         row.IsSet,
 		}
-		if row.Ignored {
-			out["ignored"], out["notice"] = true, row.Notice()
+		if row.Cleaned {
+			out["cleaned"], out["notice"] = true, row.Notice()
 		}
 		writeJSONIndent(s.out, out)
 		return 0
 	}
-	fmt.Fprintln(s.out, row.Display())
-	if row.Ignored {
+	fmt.Fprintln(s.out, settings.FormatSettingValue(row.Value))
+	if row.Cleaned {
 		fmt.Fprintln(s.err, "warning: "+row.Notice())
 	}
 	return 0

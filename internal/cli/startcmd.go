@@ -178,11 +178,6 @@ func selectStartLogin(account string, stderr io.Writer) {
 		startNotice(stderr, "Start login selection is unavailable as root; launching on the current login.")
 		return
 	}
-	// The selection counts autoswitch.model's windows; an ignored stored
-	// value is said before it decides.
-	for _, n := range settings.Notices(root) {
-		startNotice(stderr, n)
-	}
 	sw, err := newSwitcher(store.Options{OAuth: oauth.NewHTTPClient(), Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
 	if err != nil {
 		startNotice(stderr, "Could not open the account store; launching on the current login.")

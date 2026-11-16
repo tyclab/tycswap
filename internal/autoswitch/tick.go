@@ -54,14 +54,6 @@ func (e *Engine) tick() (result tickResult) {
 const DisabledDetail = "auto-switch is off; tycswap auto on turns it on"
 
 func (e *Engine) tickInner() (tickResult, error) {
-	// A stored setting that settings ignores (a control character) is said
-	// once per engine, on or off, so every host of the loop reports it.
-	if !e.noticesSaid {
-		e.noticesSaid = true
-		for _, n := range settings.Notices(e.sw.BackupDir()) {
-			e.emit(ConfigWarningEvent{Ts: e.nowISO(), Message: n})
-		}
-	}
 	// The on/off comes before anything the tick could touch: off, it asks
 	// the switcher nothing and reads or writes no state (DESIGN A83).
 	if e.enabled != nil && !e.enabled() {
