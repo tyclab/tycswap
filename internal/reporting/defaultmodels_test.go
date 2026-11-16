@@ -1,6 +1,7 @@
 package reporting
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/testutil"
 )
 
@@ -143,8 +145,9 @@ func liveSessionAs(t *testing.T, dir string, pid int, id string) {
 	}
 }
 
-// The default login leaves Fable-capable accounts to Fable work only while
-// every live session has a recorded model and none runs Fable (DESIGN A77).
+// The default login leaves Fable-capable accounts with Fable room to Fable
+// work only while every live session has a recorded model and none runs
+// Fable (DESIGN A77, A91).
 func TestDefaultSessionPolicyReservesFableForFableSessions(t *testing.T) {
 	strp := func(v string) *string { return &v }
 	type session struct{ id, model string }
@@ -173,6 +176,12 @@ func TestDefaultSessionPolicyReservesFableForFableSessions(t *testing.T) {
     "5": {"email": "unknown@example.com", "subscriptionType": "team"}
   }
 }`)
+			rows := map[string]any{}
+			for num, email := range map[string]string{"1": "ultra", "2": "pro", "3": "team", "4": "max", "5": "unknown"} {
+				rows[num] = map[string]any{"email": email + "@example.com", "organizationUuid": "", "fetchedAt": clock.Seconds(clk) - 60,
+					"lastGood": map[string]any{"seven_day": map[string]any{"pct": 20.0}, "scoped": []any{map[string]any{"name": "Fable", "pct": 10.0}}}}
+			}
+			writeUsageRows(t, s, rows)
 			pids := []int{os.Getpid(), os.Getppid()}
 			if pids[1] <= 1 {
 				t.Skip("no second live process to stand for a session")
@@ -209,4 +218,179 @@ func deref(p *string) string {
 		return ""
 	}
 	return *p
+}
+
+// incident is the cached usage of 2026-11-15 23:53 (DESIGN A91): 3 and 11
+// have Fable room but are at their 5h limits, 4, 7 and 8 have room on 5h
+// and 7d but their Fable week is spent. live is the default login's account;
+// fiveHourReset, when set, moves 11's 5h reset into the past.
+type incident struct {
+	live          string
+	disabled      []string
+	fiveHourReset time.Duration
+	sessions      map[string]string // session id -> model, live for this process and its parent
+}
+
+func incidentWindow(pct float64, reset time.Time) map[string]any {
+	return map[string]any{"pct": pct, "resets_at": reset.UTC().Format(time.RFC3339)}
+}
+
+func (in incident) store(t *testing.T) (*store.Store, time.Time) {
+	t.Helper()
+	clk := testutil.FixedClock(t, fixedNow)
+	now := clk.Now()
+	s := newStore(t, clk, nil)
+	type figures struct{ five, week, fable float64 }
+	accounts := map[string]figures{"3": {100, 27, 28}, "4": {5, 78, 100}, "7": {4, 88, 100}, "8": {-1, 93, 100}, "11": {100, 80, 78}}
+	disabled := map[string]bool{}
+	for _, num := range in.disabled {
+		disabled[num] = true
+	}
+	records := map[string]any{}
+	rows := map[string]any{}
+	for num, f := range accounts {
+		email := "acct" + num + "@example.com"
+		records[num] = map[string]any{"email": email, "organizationUuid": "", "organizationName": "", "subscriptionType": "ultra", "disabled": disabled[num]}
+		creds := oauthCreds("at"+num, "rt"+num, 0)
+		writeBackup(t, s, num, email, creds, `{"oauthAccount":{"emailAddress":"`+email+`"}}`)
+		if num == in.live {
+			writeLiveConfig(t, s, email, "")
+			writeActiveCreds(t, s, creds)
+		}
+		fiveReset := now.Add(2 * time.Hour)
+		if num == "11" && in.fiveHourReset != 0 {
+			fiveReset = now.Add(-in.fiveHourReset)
+		}
+		last := map[string]any{
+			"seven_day": incidentWindow(f.week, now.Add(3*24*time.Hour)),
+			"scoped":    []any{map[string]any{"name": "Fable", "pct": f.fable, "resets_at": now.Add(4 * 24 * time.Hour).UTC().Format(time.RFC3339)}},
+		}
+		if f.five >= 0 {
+			last["five_hour"] = incidentWindow(f.five, fiveReset)
+		}
+		rows[num] = map[string]any{"email": email, "organizationUuid": "", "fetchedAt": clock.Seconds(clk) - 60, "lastGood": last}
+	}
+	seq, err := json.Marshal(map[string]any{"activeAccountNumber": 3, "lastUpdated": "x", "sequence": []int{3, 4, 7, 8, 11}, "accounts": records})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeSequenceRaw(t, s, string(seq))
+	writeUsageRows(t, s, rows)
+	pids := []int{os.Getpid(), os.Getppid()}
+	i := 0
+	for id, model := range in.sessions {
+		if i >= len(pids) || pids[i] <= 1 {
+			t.Skip("no live process left to stand for a session")
+		}
+		liveSessionAs(t, s.DefaultProfileDir(), pids[i], id)
+		i++
+		if _, err := RecordDefaultSessionModel(s.BackupDir(), id, model, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return s, now
+}
+
+var fableSession = map[string]string{"s-fable": "claude-fable-5-1"}
+
+// A live Fable session no usable account can serve blocks nobody: every
+// account with Fable room is at its 5h limit (DESIGN A91).
+func TestPolicyDropsUnservableModel(t *testing.T) {
+	s, now := incident{live: "3", sessions: fableSession}.store(t)
+	r := DefaultSessionPolicyResult(s, settings.Default(), now)
+	if r.Settings.Model != nil || strings.Join(r.Unservable, ",") != "Fable" {
+		t.Fatalf("model = %q, unservable = %v; want none counted and Fable unservable", deref(r.Settings.Model), r.Unservable)
+	}
+}
+
+// A cached 5h window at 100 % whose reset has passed is room (ENG-7): 11
+// serves Fable again, so Fable counts.
+func TestPolicyKeepsModelAfterReset(t *testing.T) {
+	s, now := incident{live: "3", sessions: fableSession, fiveHourReset: time.Minute}.store(t)
+	r := DefaultSessionPolicyResult(s, settings.Default(), now)
+	if deref(r.Settings.Model) != "Fable" || len(r.Unservable) != 0 {
+		t.Fatalf("model = %q, unservable = %v; want Fable counted", deref(r.Settings.Model), r.Unservable)
+	}
+}
+
+// Only accounts a tick may use serve a model: a disabled, quarantined or
+// legacy-held account does not, the live account does even when disabled.
+func TestPolicyPoolExcludesDisabledAndHeld(t *testing.T) {
+	for name, tc := range map[string]struct {
+		in      incident
+		prepare func(t *testing.T, s *store.Store)
+		counted bool
+	}{
+		"enabled":             {in: incident{live: "3"}, counted: true},
+		"disabled":            {in: incident{live: "3", disabled: []string{"11"}}},
+		"live-and-disabled":   {in: incident{live: "11", disabled: []string{"11"}}, counted: true},
+		"quarantined":         {in: incident{live: "3"}, prepare: quarantine("11")},
+		"unreadable-state":    {in: incident{live: "3"}, prepare: brokenState, counted: true},
+		"held-by-live-legacy": {in: incident{live: "3"}, prepare: legacyHold("11")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			tc.in.sessions, tc.in.fiveHourReset = fableSession, time.Minute
+			s, now := tc.in.store(t)
+			if tc.prepare != nil {
+				tc.prepare(t, s)
+			}
+			r := DefaultSessionPolicyResult(s, settings.Default(), now)
+			if counted := deref(r.Settings.Model) == "Fable" && len(r.Unservable) == 0; counted != tc.counted {
+				t.Fatalf("model = %q, unservable = %v; want Fable counted %v", deref(r.Settings.Model), r.Unservable, tc.counted)
+			}
+		})
+	}
+}
+
+func quarantine(num string) func(*testing.T, *store.Store) {
+	return func(t *testing.T, s *store.Store) {
+		state := `{"schemaVersion": 1, "quarantine": {"` + num + `": {"email": "acct` + num + `@example.com", "reason": "invalid_grant"}}}`
+		if err := os.WriteFile(filepath.Join(s.BackupDir(), "autoswitch_state.json"), []byte(state), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func brokenState(t *testing.T, s *store.Store) {
+	if err := os.WriteFile(filepath.Join(s.BackupDir(), "autoswitch_state.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func legacyHold(num string) func(*testing.T, *store.Store) {
+	return func(t *testing.T, s *store.Store) {
+		makeLiveSession(t, s, num, "acct"+num+"@example.com")
+		data, err := s.ReadSequence()
+		if err != nil || s.RotationEligible(data, num) {
+			t.Fatalf("Account-%s is still rotation-eligible under a live legacy profile (%v)", num, err)
+		}
+	}
+}
+
+// Without a live Fable session only accounts that can run Fable and sit
+// under the model bar on their Fable window are left to Fable (DESIGN A91):
+// a spent Fable week, or one at the bar, reserves nothing.
+func TestReservationNeedsFableRoom(t *testing.T) {
+	s, now := incident{live: "3", sessions: map[string]string{"s-opus": "claude-opus-5-5"}}.store(t)
+	rows := map[string]any{}
+	for num, fable := range map[string]float64{"3": 96, "4": 100, "7": 100, "8": 100, "11": 78} {
+		email := "acct" + num + "@example.com"
+		rows[num] = map[string]any{"email": email, "organizationUuid": "", "fetchedAt": float64(now.Unix()) - 60, "lastGood": map[string]any{
+			"five_hour": incidentWindow(10, now.Add(time.Hour)), "seven_day": incidentWindow(50, now.Add(72*time.Hour)),
+			"scoped": []any{map[string]any{"name": "Fable", "pct": fable, "resets_at": now.Add(96 * time.Hour).UTC().Format(time.RFC3339)}},
+		}}
+	}
+	writeUsageRows(t, s, rows)
+	base := settings.Default()
+	base.ModelThreshold = 95
+	r := DefaultSessionPolicyResult(s, base, now)
+	var got []string
+	for _, num := range []string{"3", "4", "7", "8", "11"} {
+		if r.Reserved != nil && r.Reserved(num) {
+			got = append(got, num)
+		}
+	}
+	if strings.Join(got, ",") != "11" {
+		t.Fatalf("reserved = %v, want [11]", got)
+	}
 }

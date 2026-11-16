@@ -12,9 +12,10 @@ import (
 	"github.com/tyclab/tycswap/internal/store"
 )
 
-// Config-driven only: list/status take no --model flag.
+// configuredModels is autoswitch.model, or while it is unset the models the
+// default-session policy counts (DESIGN A91); list/status take no --model flag.
 func configuredModels(s *store.Store) []string {
-	return settings.ParseModelNames(settings.Load(s.BackupDir()).Model)
+	return settings.ParseModelNames(DefaultSessionPolicyResult(s, settings.Load(s.BackupDir()), s.Clk.Now()).Settings.Model)
 }
 
 // An unknown headroom (sentinel, nil, non-map) is reported unknown, never at-limit.

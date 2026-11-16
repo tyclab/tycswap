@@ -1740,11 +1740,24 @@ the model families the default profile's live sessions run, as recorded by
 always wins, and with no records nothing is counted. The loop and the dashboard's hosted engine keep
 their configured models.
 
+**A derived model nobody can serve is not counted** (DESIGN A91). A model
+counted this way stays counted only while some account the tick may use (enabled,
+rotation-eligible and not quarantined, or the live account) has room on that
+model's window and on its 5h and 7d windows, judged on cached usage; a window at
+100 % whose reset time has passed has room, and an absent 5h window is room. A
+dropped model is named in the `poll` event as `unservable` (`not counted: Fable
+(no usable account can serve it)` on the human line), and the tick decides on
+5h and 7d. `list`, `status`, `start` and the dashboard's at-limit marks count
+the same models.
+
 **The default login leaves Fable-capable accounts to Fable work** (DESIGN
-A77). While `autoswitch.model` is unset and every live default session has a
+A77, A91). While `autoswitch.model` is unset and every live default session has a
 recorded model, none of them Fable, the scheduled tick reserves every account
-that can continue Fable (its plan, or a recorded `fableContinue` capability):
-under either strategy it sorts after every qualifying account that cannot,
+that can continue Fable (its plan, or a recorded `fableContinue` capability)
+and still has Fable room: it reports a Fable window under
+`autoswitch.modelThreshold`, or one whose reset time has passed. An account
+whose Fable week is spent is never reserved. Under either strategy a
+reserved account sorts after every qualifying account that cannot,
 within the same bar tier, and is taken only when nothing else is left. When the
 active account is reserved and every window is under its bar, the tick hands
 over to an account that cannot run Fable as soon as one is below every bar:
@@ -1853,7 +1866,7 @@ a `Z` suffix), plus per-kind fields:
 
 | `event` | Fields |
 |---------|--------|
-| `poll` | `active` (`{number,email}` or null), `headroomPct` (`{num: float|null}`), `threshold` (float: the 7d bar), `fetchErrors` (`{num: msg}`, optional), `windowsPct` (`{num: {label: float}}`, optional) |
+| `poll` | `active` (`{number,email}` or null), `headroomPct` (`{num: float|null}`), `threshold` (float: the 7d bar), `fetchErrors` (`{num: msg}`, optional), `windowsPct` (`{num: {label: float}}`, optional), `unservable` (`[name]`, optional: derived models not counted because no usable account can serve them, DESIGN A91) |
 | `switch` | `trigger` (`proactive`\|`at-limit`\|`failover`\|`reserved`\|`model-missing`), `axis` (`5h`\|`7d`\|`model`: the window that made the tick move; empty under `failover`, where usage was unreadable, and under `reserved` and `model-missing`, where the account decided), `from` (ref), `to` (ref), `warnings` (array), `dryRun` (bool) |
 | `group-release` | `group` (`fable`\|`opus`), `released` (`{number,email}`): a retired group's account returned to its slot |
 | `no-switch` | `reason` (string), `detail` (string); `accounts-in-use` when held profiles prevent rotation, `account-unavailable` when guarded target preparation loses availability; under `active-usage-unknown` and `active-idle`, `detail` ends in ` · <skip reason>` while the active account's `list --json` row carries `usageRefresh.skipReason`; `disabled` while auto-switch is off, then the tick's only event |

@@ -92,6 +92,7 @@ type PollEvent struct {
 	Threshold   float64
 	FetchErrors map[string]string      // only for usage-unknown accounts with a last error
 	Windows     map[string][]WindowPct // ordered "5h","7d",scoped per account
+	Unservable  []string               // derived models not counted: no usable account can serve them (DESIGN A91)
 }
 
 // Kind implements Event.
@@ -128,6 +129,9 @@ func (e PollEvent) JSON() map[string]any {
 	}
 	if len(windows) > 0 {
 		fields["windowsPct"] = windows
+	}
+	if len(e.Unservable) > 0 {
+		fields["unservable"] = e.Unservable
 	}
 	return baseJSON(e.Kind(), e.Ts, fields)
 }
@@ -175,6 +179,9 @@ func (e PollEvent) Human() string {
 		tail = " | others: " + strings.Join(others, ", ")
 	}
 	email, _ := e.Active["email"].(string)
+	if len(e.Unservable) > 0 {
+		tail += " | not counted: " + strings.Join(e.Unservable, ", ") + " (no usable account can serve it)"
+	}
 	// The line carries the 7d bar only, so it says so: "switch at 92%" next
 	// to a 5h window at 90% would read as a contradiction now that each window
 	// has a bar of its own (DESIGN A34).

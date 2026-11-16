@@ -7,9 +7,11 @@ package reporting
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/jsonout"
@@ -345,4 +347,42 @@ func lineContaining(out, sub string) string {
 		}
 	}
 	return ""
+}
+
+// While autoswitch.model is unset, `list` marks an account at its limit on
+// the windows the default-session policy counts: Fable while some usable
+// account can serve it, not while none can (DESIGN A91).
+func TestAtLimitUsesDerivedPolicy(t *testing.T) {
+	for name, tc := range map[string]struct {
+		reset time.Duration
+		want4 []string
+	}{
+		"fable-servable":   {reset: time.Minute, want4: []string{"Fable"}},
+		"fable-unservable": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := incident{live: "3", sessions: fableSession, fiveHourReset: tc.reset}.store(t)
+			got, err := ListAccounts(s, false, true, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows := map[string]map[string]any{}
+			for _, raw := range got.(map[string]any)["accounts"].([]any) {
+				row := raw.(map[string]any)
+				rows[fmt.Sprint(row["number"])] = row
+			}
+			if tc.want4 == nil {
+				if _, ok := rows["4"]["atLimit"]; ok {
+					t.Fatalf("Account-4 marked at limit on %v; Fable is not counted", rows["4"]["limitingWindows"])
+				}
+			} else if rows["4"]["atLimit"] != true || !jsonEqual(t, rows["4"]["limitingWindows"], tc.want4) {
+				t.Fatalf("Account-4 atLimit = %v on %v, want %v", rows["4"]["atLimit"], rows["4"]["limitingWindows"], tc.want4)
+			}
+			var out bytes.Buffer
+			renderAccounts(&out, s, BuildAccountsInfo(s), CollectUsageEntries(s, BuildAccountsInfo(s), map[string]bool{}), false)
+			if marked := strings.Contains(lineContaining(out.String(), "acct4@example.com"), "at limit: Fable"); marked != (tc.want4 != nil) {
+				t.Fatalf("human list marks Account-4 at its Fable limit = %v, want %v:\n%s", marked, tc.want4 != nil, out.String())
+			}
+		})
+	}
 }

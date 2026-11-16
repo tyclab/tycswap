@@ -80,7 +80,7 @@ func (e *Engine) tickInner() (tickResult, error) {
 
 	current := e.sw.CurrentAccountNumber()
 	if current == nil {
-		e.emit(PollEvent{Ts: e.nowISO(), Active: nil, Headroom: map[string]*float64{}, Threshold: s.SevenDayThreshold})
+		e.emit(PollEvent{Ts: e.nowISO(), Active: nil, Headroom: map[string]*float64{}, Threshold: s.SevenDayThreshold, Unservable: e.unservable})
 		if e.sw.HasLiveLogin() {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "unmanaged-active-account", Detail: "run 'tycswap --add-account' to include it in rotation"})
 		} else {
@@ -121,6 +121,7 @@ func (e *Engine) tickInner() (tickResult, error) {
 		Threshold:   s.SevenDayThreshold,
 		FetchErrors: fetchErrors,
 		Windows:     windows,
+		Unservable:  e.unservable,
 	})
 
 	e.checkModelNames(state, quarantined, usageMap)

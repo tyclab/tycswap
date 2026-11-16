@@ -46,6 +46,8 @@ type Engine struct {
 	rng     func() float64
 	// reserved: accounts this profile leaves to Fable work (DESIGN A71); nil reserves none.
 	reserved func(num string) bool
+	// unservable: derived models the policy dropped, named in the poll event (DESIGN A91).
+	unservable []string
 	// enabled is autoswitch.enabled, read at every tick (DESIGN A83); nil means on.
 	enabled   func() bool
 	oauth     oauth.Client
@@ -79,6 +81,12 @@ func WithRNG(rng func() float64) Option { return func(e *Engine) { e.rng = rng }
 // hands over to an unreserved account that is below every bar.
 func WithReserved(reserved func(num string) bool) Option {
 	return func(e *Engine) { e.reserved = reserved }
+}
+
+// WithUnservable names the derived models no usable account can serve; the
+// poll event reports them (DESIGN A91). The engine never counts them.
+func WithUnservable(models []string) Option {
+	return func(e *Engine) { e.unservable = append([]string(nil), models...) }
 }
 
 // WithEnabled is the on/off each tick reads first (DESIGN A83); nil means on.

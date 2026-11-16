@@ -7239,3 +7239,38 @@ This release retains `run`, `env`, `map`, `unmap` and their login ownership.
 The later S5 retirement requires fleet acceptance and fresh review. In the
 meantime an open `env` shell without a running Claude process does not keep
 its claim from idle reclaim, and a newly starting legacy process can race it.
+
+## A91. Servable models
+
+On 2026-11-15 from 23:53 every scheduled tick reported `all-exhausted`. Eight
+of 22 live default sessions ran Fable, so A76 counted the Fable window for the
+whole login; the accounts with Fable room (3, 11) were at their 5-hour limits
+and every account with 5-hour and weekly room (4, 7) had spent its Fable week,
+so every account read headroom 0. Opus sessions stopped while 4 and 7 had Opus
+room. A77 had accepted that one live Fable session keeps every default session
+on a Fable-capable account; that limit holds only while some account can serve
+Fable.
+
+`reporting.DefaultSessionPolicyResult` decides it once from cached usage and
+returns the settings, the reservation and the derived models it dropped. A
+derived model stays counted while an account in the pool reports its window
+with room and has room on its 5-hour and weekly windows. The pool is every
+enabled, rotation-eligible account not quarantined in the engine state file,
+plus the live account whatever its flags. A window has room below 100 %, or at
+100 % once its reset time has passed: a cached reading does not see a renewal
+(ENG-7 elsewhere is unchanged). An absent 5-hour window is room; an absent
+weekly one is not. A dropped model is named in the poll event as `unservable`
+(`not counted: Fable` on the human line) and the engine counts 5h and 7d for it.
+
+The reservation (A77) now covers only accounts that can run Fable, report a
+Fable window and sit under `autoswitch.modelThreshold` on it, the same reset
+rule applied. An account whose Fable week is spent is never reserved, so Opus
+work fills it.
+
+The scheduled tick (`auto --once`, `--observe`), `start`'s selection, and the
+at-limit marks of `list`, `status` and the account snapshot (the dashboard's
+and the TUI's rows) all read the one result. Unchanged: an explicit
+`autoswitch.model` or `--model`, which never drops a model; the long-running
+loop and the hosted engines, which keep their configured models (ENG-8); and
+one login for every default session, so while an account can serve Fable and a
+Fable session runs, Opus sessions stay on a Fable-capable account too.

@@ -424,7 +424,10 @@ func TestUnknownRecoveryFallsBack(t *testing.T) {
 	}
 }
 
-func TestScopedOnlyExhaustionDrivesWakeTime(t *testing.T) {
+// An explicit model keeps today's semantics (DESIGN A91 changes derived
+// models only): a candidate blocked by Fable alone still leaves the tick
+// all-exhausted, and the scoped reset drives the wake.
+func TestExplicitModelKeepsExhaustion(t *testing.T) {
 	clk := newClk()
 	f := newFake()
 	f.current = strp("1")
@@ -450,6 +453,75 @@ func TestScopedOnlyExhaustionDrivesWakeTime(t *testing.T) {
 	ae := rec.last("all-exhausted").(AllExhaustedEvent)
 	if ae.EarliestResetAt == nil || *ae.EarliestResetAt != "2026-07-03T09:00:00Z" {
 		t.Errorf("earliestResetAt = %v, want 2026-07-03T09:00:00Z (min across accounts)", ae.EarliestResetAt)
+	}
+}
+
+// incidentFake is the usage of 2026-11-15 23:53 as the engine sees it:
+// active 3 and 11 at their 5h limits with Fable room, 4, 7 and 8 with room on
+// 5h and 7d but no Fable left (DESIGN A91); fiveHour11 is 11's 5h use.
+func incidentFake(clk *clock.Fake, fiveHour11 float64) *fakeSwitcher {
+	f := newFake()
+	f.current = strp("3")
+	f.switchable = []string{"3", "4", "7", "8", "11"}
+	soon := func(d time.Duration) string { return clk.Now().Add(d).UTC().Format(time.RFC3339) }
+	fable := func(pct float64) []any { return []any{scopedWin("Fable", pct, soon(96*time.Hour))} }
+	f.entries = map[string]usage.UsageEntry{
+		"3":  dictEntry(map[string]any{"five_hour": win(100, soon(2*time.Hour)), "seven_day": win(27, soon(72*time.Hour)), "scoped": fable(28)}),
+		"4":  dictEntry(map[string]any{"five_hour": win(5, soon(4*time.Hour)), "seven_day": win(78, soon(48*time.Hour)), "scoped": fable(100)}),
+		"7":  dictEntry(map[string]any{"five_hour": win(4, soon(4*time.Hour)), "seven_day": win(88, soon(24*time.Hour)), "scoped": fable(100)}),
+		"8":  dictEntry(map[string]any{"seven_day": win(93, soon(120*time.Hour)), "scoped": fable(100)}),
+		"11": dictEntry(map[string]any{"five_hour": win(fiveHour11, soon(time.Hour)), "seven_day": win(80, soon(60*time.Hour)), "scoped": fable(78)}),
+	}
+	for _, num := range f.switchable {
+		f.emails[num] = "acct" + num + "@x.com"
+		f.creds[num] = farFutureCreds(clk, "r"+num)
+	}
+	return f
+}
+
+// The engine built from the policy's result for a Fable model nobody can
+// serve counts 5h and 7d only, so active 3 at its 5h limit moves onto an
+// account whose Fable week is spent instead of reporting all-exhausted, and
+// the poll names the model it left out (DESIGN A91).
+func TestDerivedUnservableDoesNotExhaust(t *testing.T) {
+	clk := newClk()
+	f := incidentFake(clk, 100)
+	rec := &recorder{}
+	e := build(t, f, settings.Default(), rec, clk, false, WithUnservable([]string{"Fable"}))
+	if got := e.Tick(); got != Switched || rec.count("all-exhausted") != 0 {
+		t.Fatalf("outcome = %v, events %v; want a switch, never all-exhausted", got, rec.kinds())
+	}
+	if to := deref(f.current); to != "4" && to != "7" {
+		t.Fatalf("switched to %s, want 4 or 7", to)
+	}
+	poll := rec.last("poll").(PollEvent)
+	if got, _ := json.Marshal(poll.JSON()["unservable"]); string(got) != `["Fable"]` {
+		t.Fatalf("poll unservable = %s, want [\"Fable\"]", got)
+	}
+	if !strings.Contains(poll.Human(), "not counted: Fable") {
+		t.Fatalf("poll line %q does not name the model it left out", poll.Human())
+	}
+}
+
+// Guard: once 11's 5h window has room again the policy counts Fable, and an
+// engine counting it moves Fable-spent 7 onto 11 at its Fable limit.
+func TestDerivedServableFableStillMoves(t *testing.T) {
+	clk := newClk()
+	f := incidentFake(clk, 0)
+	f.current = strp("7")
+	s := settings.Default()
+	m := "Fable"
+	s.Model = &m
+	rec := &recorder{}
+	e := build(t, f, s, rec, clk, false)
+	if got := e.Tick(); got != Switched || deref(f.current) != "11" {
+		t.Fatalf("outcome = %v, current %s, events %v; want a switch to 11", got, deref(f.current), rec.kinds())
+	}
+	if sw := rec.last("switch").(SwitchEvent); sw.Trigger != "at-limit" {
+		t.Fatalf("trigger = %q, want at-limit", sw.Trigger)
+	}
+	if _, named := rec.last("poll").(PollEvent).JSON()["unservable"]; named {
+		t.Fatal("a counted model is reported unservable")
 	}
 }
 
