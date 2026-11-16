@@ -7259,20 +7259,28 @@ on its 5-hour and weekly windows (`fiveHourThreshold`, `sevenDayThreshold`):
 judged at 100 %, the last account with Fable room kept Fable counted from its
 bar up to its hard limit while the engine already refused it as a target. An
 absent 5-hour window is room; an absent weekly one is not. Only a reading the
-engine would still decide on serves: the account's last fetch succeeded (no
-failure, skip or sentinel) and `UsageEntry.DecisionValue` still trusts it
-(`usage.StaleOKS`, or up to `usage.TrustMaxAgeS` while its next poll is not
-due), so an account whose fetches keep failing cannot keep a model counted on
-old numbers. The pool is every enabled, rotation-eligible account not
+engine would still decide on serves: `UsageEntry.DecisionValue`, the value
+the engine reads. A sentinel (no credential, an expired token an owner
+holds) serves nothing; a reading younger than `usage.StaleOKS` serves, and so
+does an older one up to `usage.TrustMaxAgeS` while the engine extends its
+trust (failed fetches, a next poll not yet due), since the engine still
+targets that account. The only account with Fable room drew http-429 on its
+usage request many times a day, each with a 300-second backoff; refusing it
+on any failed fetch dropped Fable as unservable for each of those windows.
+Past `usage.TrustMaxAgeS` a reading no longer serves. The pool is every
+enabled, rotation-eligible account not
 quarantined in the engine state file, plus the live account whatever its
 flags. A dropped model is named in the poll event as `unservable` (`not
 counted: Fable` on the human line) and the engine counts 5h and 7d for it.
 
 One room rule serves the policy and the engine: `oauth.AsOf` reads a window
 whose reset time has passed as 0 %, since a cached reading does not see a
-renewal (ENG-7). The engine reads every decision value through it, so an
-account the policy finds serving after its reset is a target before its next
-fetch, and limits and recoveries follow the same reading.
+renewal (ENG-7). The engine reads every decision value through it, and limits
+and recoveries follow the same reading. An account the policy finds serving
+after its reset is a target before its next fetch only while its last
+reading is still trusted: an account parked at its limit falls due for a
+poll at that reset, so in practice while the reading is younger than
+`usage.StaleOKS`; otherwise the move comes after the fetch that poll brings.
 
 The reservation (A77) now covers only accounts that can run Fable, report a
 Fable window and sit under `autoswitch.modelThreshold` on it, read the same

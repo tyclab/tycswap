@@ -1743,9 +1743,11 @@ their configured models.
 **A derived model nobody can serve is not counted** (DESIGN A91). A model
 counted this way stays counted only while some account the tick may use (enabled,
 rotation-eligible and not quarantined, or the live account) is below the
-model bar on that model's window and below the 5h and 7d bars, judged on cached
-usage the engine would still decide on: the account's last fetch succeeded and
-the reading is within the engine's trust bound. An absent 5h window is room.
+model bar on that model's window and below the 5h and 7d bars, judged on the
+cached reading the engine still decides on: younger than 5 minutes, or up to
+an hour old while the engine extends its trust (failed fetches, a next poll
+not yet due); a sentinel (no credential, an expired token an owner holds)
+serves nothing. An absent 5h window is room.
 A dropped model is named in the `poll` event as `unservable` (`not counted: Fable
 (no usable account can serve it)` on the human line), and the tick decides on
 5h and 7d. `list`, `status`, `start` and the dashboard's at-limit marks count
@@ -1754,7 +1756,9 @@ the same models.
 **A window whose reset has passed reads 0 %** (DESIGN A91). The engine and the
 policy read a cached window whose `resets_at` lies in the past as renewed, so
 an account at 100 % before its reset is a target again without waiting for its
-next fetch.
+next fetch while its last reading is still trusted, in practice younger than
+5 minutes, since an account parked at its limit falls due for a poll at that
+reset; otherwise it becomes one after that fetch.
 
 **The default login leaves Fable-capable accounts to Fable work** (DESIGN
 A77, A91). While `autoswitch.model` is unset and every live default session has a

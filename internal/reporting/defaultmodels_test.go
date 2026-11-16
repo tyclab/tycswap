@@ -14,6 +14,7 @@ import (
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/testutil"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 func liveDefaultSession(t *testing.T, dir, id string) {
@@ -315,12 +316,25 @@ func TestPolicyDropsUnservableModel(t *testing.T) {
 }
 
 // A cached 5h window at 100 % whose reset has passed is room (ENG-7): 11
-// serves Fable again, so Fable counts.
+// serves Fable again, so Fable counts, while 11's last reading is one the
+// engine still trusts; an older one serves only after 11's next fetch
+// (DESIGN A91).
 func TestPolicyKeepsModelAfterReset(t *testing.T) {
-	s, now := incident{live: "3", sessions: fableSession, fiveHourReset: time.Minute}.store(t)
-	r := DefaultSessionPolicyResult(s, settings.Default(), now)
-	if deref(r.Settings.Model) != "Fable" || len(r.Unservable) != 0 {
-		t.Fatalf("model = %q, unservable = %v; want Fable counted", deref(r.Settings.Model), r.Unservable)
+	now := float64(testutil.FixedClock(t, fixedNow).Now().Unix())
+	for name, tc := range map[string]struct {
+		age     float64
+		counted bool
+	}{
+		"trusted":   {age: 60, counted: true},
+		"untrusted": {age: usage.StaleOKS + 60},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, at := incident{live: "3", sessions: fableSession, fiveHourReset: time.Minute, row11: map[string]any{"fetchedAt": now - tc.age}}.store(t)
+			r := DefaultSessionPolicyResult(s, settings.Default(), at)
+			if counted := deref(r.Settings.Model) == "Fable" && len(r.Unservable) == 0; counted != tc.counted {
+				t.Fatalf("model = %q, unservable = %v; want Fable counted %v", deref(r.Settings.Model), r.Unservable, tc.counted)
+			}
+		})
 	}
 }
 
@@ -392,22 +406,44 @@ func TestPolicyServesBelowTheEngineBars(t *testing.T) {
 	}
 }
 
-// Only usage the engine would still decide on serves: an account whose last
-// fetch failed, was skipped or is past the trust bound does not, however good
-// its old numbers look (DESIGN A91).
+// Only a reading the engine would still decide on serves (DESIGN A91): a
+// failing fetch keeps 11 serving while the engine still trusts its last
+// reading (usage.TrustMaxAgeS), not past that; a sentinel (no credential) or
+// an old reading never serves, however good its numbers look.
 func TestPolicyIgnoresUnknownOrOldUsage(t *testing.T) {
 	now := float64(testutil.FixedClock(t, fixedNow).Now().Unix())
-	for name, row := range map[string]map[string]any{
-		"failing": {"consecutiveFailures": 2, "lastError": "http-429", "lastAttemptAt": now - 30},
-		"skipped": {"skipReason": "conflicting credential owners; hold switching", "skipAt": now - 600},
-		"old":     {"fetchedAt": now - 2*3600},
+	failing := func(age float64) map[string]any {
+		return map[string]any{"fetchedAt": now - age, "consecutiveFailures": 2, "lastError": "http-429", "lastAttemptAt": now - 30}
+	}
+	for name, tc := range map[string]struct {
+		row     map[string]any
+		prepare func(*testing.T, *store.Store)
+		counted bool
+	}{
+		"failing-trusted":    {row: failing(1800), counted: true},
+		"failing-past-trust": {row: failing(usage.TrustMaxAgeS + 60)},
+		"no-credential":      {prepare: noAccessToken("11")},
+		"old":                {row: map[string]any{"fetchedAt": now - 2*3600}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			s, at := incident{live: "3", sessions: fableSession, fiveHourReset: time.Minute, row11: row}.store(t)
-			if r := DefaultSessionPolicyResult(s, settings.Default(), at); r.Settings.Model != nil || strings.Join(r.Unservable, ",") != "Fable" {
-				t.Fatalf("model = %q, unservable = %v; want Fable dropped", deref(r.Settings.Model), r.Unservable)
+			s, at := incident{live: "3", sessions: fableSession, fiveHourReset: time.Minute, row11: tc.row}.store(t)
+			if tc.prepare != nil {
+				tc.prepare(t, s)
+			}
+			r := DefaultSessionPolicyResult(s, settings.Default(), at)
+			if counted := deref(r.Settings.Model) == "Fable" && len(r.Unservable) == 0; counted != tc.counted || !counted && strings.Join(r.Unservable, ",") != "Fable" {
+				t.Fatalf("model = %q, unservable = %v; want Fable counted %v", deref(r.Settings.Model), r.Unservable, tc.counted)
 			}
 		})
+	}
+}
+
+// noAccessToken leaves num's backup without an access token, so its usage
+// reads as the no-credentials sentinel.
+func noAccessToken(num string) func(*testing.T, *store.Store) {
+	return func(t *testing.T, s *store.Store) {
+		email := "acct" + num + "@example.com"
+		writeBackup(t, s, num, email, oauthCreds("", "rt"+num, 0), `{"oauthAccount":{"emailAddress":"`+email+`"}}`)
 	}
 }
 

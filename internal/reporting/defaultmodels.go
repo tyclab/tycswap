@@ -203,14 +203,11 @@ func newPolicyView(s *store.Store, now time.Time) policyView {
 	return v
 }
 
-// servingValue is the reading an account may serve a model on: its last
-// fetch succeeded (no failure, skip or sentinel) and the engine still
-// decides on it (UsageEntry.DecisionValue: younger than usage.StaleOKS, or
-// trusted up to usage.TrustMaxAgeS while its next poll is not yet due).
+// servingValue is the reading an account may serve a model on: the one the
+// engine still decides on (UsageEntry.DecisionValue: younger than
+// usage.StaleOKS, or trusted up to usage.TrustMaxAgeS, also after failed
+// fetches). A sentinel or an untrusted reading is no map and serves nothing.
 func servingValue(e usage.UsageEntry) map[string]any {
-	if e.ConsecutiveFailures > 0 || e.LastError != "" || e.SkipReason != "" {
-		return nil
-	}
 	m, _ := e.DecisionValue().(map[string]any)
 	return m
 }
