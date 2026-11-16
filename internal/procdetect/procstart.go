@@ -8,8 +8,9 @@ import (
 	"strings"
 )
 
-// procRoot is where /proc is mounted; tests point it at a fake one.
-var procRoot = "/proc"
+// procRoot is where /proc is mounted and machineIDPath the machine id
+// Claude Code puts in a record's pidDomain; tests point them at fakes.
+var procRoot, machineIDPath = "/proc", "/etc/machine-id"
 
 // RecordAlive reports whether the process a Claude Code session record names
 // still runs. Claude Code writes procStart, field 22 of /proc/<pid>/stat: in
@@ -47,14 +48,21 @@ func procStartTime(pid int) (string, bool) {
 	return fields[19], true
 }
 
-// sameNamespace reports whether a record's pidDomain ("linux:<id>:pid:[N]")
-// names this process's PID namespace; a record without one is taken as local.
+// sameNamespace reports whether a record's pidDomain
+// ("linux:<machine-id>:pid:[N]") is this machine's and this process's PID
+// namespace: the inode alone repeats across machines. A record without one
+// is taken as local.
 func sameNamespace(pidDomain string) bool {
 	if pidDomain == "" {
 		return true
 	}
 	ns, err := os.Readlink(filepath.Join(procRoot, "self", "ns", "pid"))
-	return err == nil && strings.HasSuffix(pidDomain, ":"+ns)
+	if err != nil {
+		return false
+	}
+	id, err := os.ReadFile(machineIDPath)
+	machine := strings.TrimSpace(string(id))
+	return err == nil && machine != "" && pidDomain == "linux:"+machine+":"+ns
 }
 
 func procStartText(v any) string {

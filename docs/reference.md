@@ -1318,7 +1318,8 @@ disabled ones included, whose profile no Claude process uses:
 - Its conversations (`projects/`) are copied into the default profile's
   `projects/` where missing, once (`.tycswap-history-copied` in the profile
   records it), so `claude --resume <id>` finds them on the default login.
-  Nothing in the default profile is replaced; the profile keeps its copy.
+  Nothing in the default profile is replaced (a namesake of another size is
+  logged with both paths and sizes); the profile keeps its copy.
 - On the live account, the profile's login is dropped and its claim released
   when the login is empty, the live login's own lineage, or stale (the stored
   login was rewritten while the profile ran). The stored login and the live
@@ -1333,7 +1334,10 @@ disabled ones included, whose profile no Claude process uses:
   saves the profile's login into the slot and releases the claim. A login
   whose access token expired is verified by refreshing its own token, written
   back into the profile first; a refused refresh drops it and keeps the
-  stored login. A release that cannot verify the login is stored as the
+  stored login. A refreshed login the profile cannot store is saved into the
+  slot when the token response names the account, else kept in
+  `.creds-<n>-<email>.enc.recovered` (0600) beside the slot's stored login,
+  which the warning names. A release that cannot verify the login is stored as the
   account's ownership reason until the login changes, and that login is not
   asked about again; a refresh that failed in transport (no answer, a
   timeout, a server error) is tried again after the usage failure backoff,

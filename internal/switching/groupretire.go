@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/tyclab/tycswap/internal/groups"
+	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
@@ -25,16 +26,17 @@ func RetireGroup(s *store.Store) (*groups.Account, error) {
 	if pids, err := store.LiveProfilePIDs(s.ProfileDir()); err != nil || len(pids) > 0 {
 		return released, ErrGroupBusy
 	}
-	if err := copyHistory(filepath.Join(s.ProfileDir(), "projects"), filepath.Join(s.DefaultProfileDir(), "projects")); err != nil {
+	if err := copyHistory(s.Log, filepath.Join(s.ProfileDir(), "projects"), filepath.Join(s.DefaultProfileDir(), "projects")); err != nil {
 		return released, err
 	}
 	return released, groups.Retire(s.SharedRoot(), s.GroupID())
 }
 
 // copyHistory copies every conversation file the destination lacks, streamed
-// through a temporary file; nothing in the destination is replaced, and
-// symlinks in the group's profile are not followed.
-func copyHistory(from, to string) error {
+// through a temporary file; nothing in the destination is replaced (a
+// namesake of another size is logged), and symlinks in the group's profile
+// are not followed.
+func copyHistory(log *logging.Logger, from, to string) error {
 	if err := groups.SafePath(from); err != nil {
 		return err
 	}
@@ -50,7 +52,13 @@ func copyHistory(from, to string) error {
 			return err
 		}
 		dest := filepath.Join(to, rel)
-		if _, err := os.Lstat(dest); err == nil || !os.IsNotExist(err) {
+		switch kept, err := os.Lstat(dest); {
+		case err == nil:
+			if info, ierr := d.Info(); ierr == nil && info.Size() != kept.Size() && log != nil {
+				log.Warningf("Kept %s (%d bytes); not copied over it: %s (%d bytes)", dest, kept.Size(), path, info.Size())
+			}
+			return nil
+		case !os.IsNotExist(err):
 			return err
 		}
 		if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {

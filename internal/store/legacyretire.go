@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/base64"
 	"path/filepath"
 
 	"github.com/tyclab/tycswap/internal/atomicfile"
@@ -13,6 +14,7 @@ import (
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/storenames"
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
@@ -177,10 +179,7 @@ func (s *Store) RefreshLegacyLogin(ctx context.Context, c oauth.Client, number, 
 	switch {
 	case out.Credentials != "":
 		if err := s.writeLegacyLogin(owner.ProfileDir, out.Credentials); err != nil {
-			if s.Log != nil {
-				s.Log.Warningf("Refreshed the session profile login of account %s but could not store it: %v", number, err)
-			}
-			return oauth.RefreshOutcome{Error: oauth.ErrRefreshFailed}, err
+			return out, s.keepRefreshedLegacyLogin(owner, value, out, err)
 		}
 	case out.Error == oauth.ErrInvalidGrant || out.Error == oauth.ErrNoRefreshToken:
 		if err := s.dropLegacyLogin(owner, "Dropped the rejected session profile login of account %s"); err != nil {
@@ -188,6 +187,34 @@ func (s *Store) RefreshLegacyLogin(ctx context.Context, c oauth.Client, number, 
 		}
 	}
 	return out, nil
+}
+
+// keepRefreshedLegacyLogin keeps a refreshed login its profile could not
+// store, the only live copy of its token family now (DESIGN A92). A token
+// response naming the account proves it: it becomes the slot backup and the
+// profile retires. Otherwise it goes to a 0600 recovery file beside the slot
+// backup, in the backup's format, the returned error names it for the
+// caller's warning, and the spent login is held, never sent again.
+func (s *Store) keepRefreshedLegacyLogin(owner groups.Owner, spent string, out oauth.RefreshOutcome, cause error) error {
+	number, email := owner.Account.Number, owner.Account.Email
+	login := oauth.AccountOnly(out.Credentials)
+	if data, err := s.classifiedRoster(); err == nil && out.TokenAccount != nil && s.SlotForIdentity(data, out.TokenAccount) == number {
+		if err := s.Creds.WriteBackup(number, email, login); err == nil {
+			if s.Log != nil {
+				s.Log.Warningf("Account-%s's session profile could not store its refreshed login (%v); the login is saved in the account's slot", number, cause)
+			}
+			return s.dropLegacyLogin(owner, "Released idle session profile for account %s")
+		}
+	}
+	path := filepath.Join(s.CredentialsDir, storenames.CredsFile(number, email)+".recovered")
+	reason := cerr.Session("Account-%s's refreshed session login could not be stored (%v); it is kept in %s. Sign in to that account with tycswap add --login --switch, or move that file over the account's stored login.", number, cause, path)
+	if err := atomicfile.Write(path, []byte(base64.StdEncoding.EncodeToString([]byte(login))), atomicfile.Opts{}); err != nil {
+		reason = cerr.Session("Account-%s's refreshed session login could not be stored (%v) nor kept in %s (%v); sign in to that account again with tycswap add --login --switch", number, cause, path, err)
+	}
+	if _, err := s.HoldLegacyRelease(number, spent, reason.Error(), HoldRefused); err != nil {
+		return err
+	}
+	return reason
 }
 
 // HoldKind says how a recorded hold is honoured.

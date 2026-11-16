@@ -1,13 +1,21 @@
 package store
 
 import (
+	"context"
+	"encoding/base64"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/groups"
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/storenames"
 )
 
 // A drop needs its proof under the locks: anything else keeps login and claim.
@@ -80,5 +88,64 @@ func TestReusedPIDDoesNotHoldProfile(t *testing.T) {
 		if pids, err := LiveProfilePIDs(dir); err != nil || len(pids) != want {
 			t.Fatalf("procStart %s: live PIDs %v, %v; want %d", procStart, pids, err, want)
 		}
+	}
+}
+
+// failingSetKeychain refuses every write, as a full or locked Keychain does.
+type failingSetKeychain struct{ keychain.KeychainClient }
+
+func (failingSetKeychain) Set(string, string, string) error {
+	return errors.New("keychain write refused")
+}
+
+// A refreshed login the profile cannot store is the only live copy of its
+// token family: it is kept in the slot when the token response names the
+// account, else in a recovery file beside the slot backup.
+func TestRefreshedLoginKeptWhenProfileWriteFails(t *testing.T) {
+	const login = `{"claudeAiOauth":{"accessToken":"old-access","refreshToken":"old-refresh"}}`
+	const refreshed = `{"claudeAiOauth":{"accessToken":"new-access","refreshToken":"new-refresh","expiresAt":4102444800000}}`
+	for name, account := range map[string]*oauth.Identity{"named": {Email: "one@example.test", UUID: "u-1"}, "unnamed": nil} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := claimedSession(t)
+			s.Platform = platform.MacOS
+			s.kc = failingSetKeychain{keychain.NewFake()}
+			fc := &oauth.FakeClient{RefreshFn: func(context.Context, string) oauth.RefreshOutcome {
+				return oauth.RefreshOutcome{Credentials: refreshed, TokenAccount: account}
+			}}
+			err := s.Lock.With(func() error {
+				_, err := s.RefreshLegacyLogin(context.Background(), fc, "1", login)
+				return err
+			})
+			stored, _ := s.ReadAccountCredentials("1", "one@example.test")
+			profile, perr := s.LegacyProfileOf("1")
+			if perr != nil {
+				t.Fatal(perr)
+			}
+			recovery := filepath.Join(s.CredentialsDir, storenames.CredsFile("1", "one@example.test")+".recovered")
+			if account != nil {
+				if err != nil || stored != refreshed || profile.Credential != "" || profile.Claimed {
+					t.Fatalf("named: err %v, stored %q, profile %+v; want the refreshed login in the slot and the profile retired", err, stored, profile)
+				}
+				return
+			}
+			info, serr := os.Stat(recovery)
+			if serr != nil || info.Mode().Perm() != 0o600 {
+				t.Fatalf("no 0600 recovery file %s: %v", recovery, serr)
+			}
+			raw, _ := os.ReadFile(recovery)
+			if decoded, _ := base64.StdEncoding.DecodeString(string(raw)); string(decoded) != refreshed {
+				t.Fatal("the recovery file does not hold the refreshed login")
+			}
+			if err == nil || stored != "" || profile.Credential != login || !profile.Claimed {
+				t.Fatalf("unnamed: err %v, stored %q, profile %+v; want the slot untouched and the profile held", err, stored, profile)
+			}
+			registry, _ := groups.LoadRegistry(s.BackupDir())
+			if registry.Held["1"].Digest != releaseDigest(login) {
+				t.Fatal("the spent profile login is not held, so a later round would refresh it again")
+			}
+			if !strings.Contains(err.Error(), recovery) {
+				t.Fatalf("the error for the warning does not name the recovery file: %v", err)
+			}
+		})
 	}
 }

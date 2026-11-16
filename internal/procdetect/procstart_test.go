@@ -74,9 +74,10 @@ func fakeProc(t *testing.T, pid int) {
 		t.Fatal(err)
 	}
 	writeRaw(t, filepath.Join(root, strconv.Itoa(pid), "stat"), strconv.Itoa(pid)+" (we) ird) "+strings.Join(fields, " ")+"\n")
-	prev := procRoot
-	procRoot = root
-	t.Cleanup(func() { procRoot = prev })
+	writeRaw(t, filepath.Join(root, "machine-id"), "x\n")
+	prev, prevID := procRoot, machineIDPath
+	procRoot, machineIDPath = root, filepath.Join(root, "machine-id")
+	t.Cleanup(func() { procRoot, machineIDPath = prev, prevID })
 }
 
 func TestRecordAliveComparesProcStart(t *testing.T) {
@@ -94,6 +95,7 @@ func TestRecordAliveComparesProcStart(t *testing.T) {
 		{"float", 100.0, "", false},
 		{"this namespace", "100", "linux:x:pid:[7]", false},
 		{"other namespace", "100", "linux:x:pid:[8]", true},
+		{"other machine, same namespace inode", "100", "linux:y:pid:[7]", true},
 		{"unreadable start", "abc", "", true},
 	} {
 		if got := RecordAlive(pid, tc.procStart, tc.domain); got != tc.alive {

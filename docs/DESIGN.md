@@ -7278,11 +7278,14 @@ rounds: scheduled and real (`auto --once`, each loop interval, the app's
 hosted loop, with auto-switch on or off), never a dry run, a status line's
 tick or `start`, and never under the engine's state lock. A89's pre-poll
 release of candidates stays as it was. For every stored account, disabled ones
-included, whose profile no Claude process uses:
+included, whose profile no Claude process uses (for a disabled account that
+can mean a profile request or a refresh with its leftover login; retirement
+never enables the account or switches to it):
 
 1. `projects/` is copied into the default profile's where missing (A78's
-   copy, never replacing a file), once: `.tycswap-history-copied` stops a
-   transcript Claude Code later cleans up from coming back.
+   copy, never replacing a file; a namesake of another size is logged with
+   both paths and sizes), once: `.tycswap-history-copied` stops a transcript
+   Claude Code later cleans up from coming back.
 2. On the live default account the claim is released by dropping the
    profile's login when it is empty, the live login's own lineage, or stale.
    Neither the slot backup nor the live credential is written. A login of
@@ -7316,7 +7319,13 @@ included, whose profile no Claude process uses:
    credential, config and storage-write locks; the new credential goes back
    into the profile before anything else, then the profile endpoint names
    it. `invalid_grant` drops the dead login and the claim and keeps the slot
-   backup.
+   backup. A refreshed login the profile cannot store is the only live copy
+   of its token family: when the token response names the account it is
+   saved as the slot backup under the locks already held and the profile
+   retires; otherwise it goes to `.creds-<n>-<email>.enc.recovered` beside
+   the slot backup (0600, the backup's format, so moving it over the slot's
+   `.enc` restores it), the warning names that file, and the spent profile
+   login is held, never refreshed again.
 6. RECLAIM-4: a release refused by verification is stored in
    `claims.json` (`held`, reason and the login's digest), and rotation
    eligibility returns that reason until the login changes, so the dashboard,
@@ -7342,6 +7351,10 @@ unreadable or misidentified profiles keep everything.
 Liveness (SES-6): every check of a Claude Code session record, the session
 list and the ownership checks alike, compares the record's `procStart` with
 field 22 of `/proc/<pid>/stat` when both exist and the record's `pidDomain`
-names this PID namespace, so a reused PID neither keeps a dead profile's claim
-nor lists a dead session. A record without `procStart`, one from another
-namespace, or a system without `/proc` keeps the PID-only check.
+names this machine and PID namespace (`linux:<machine-id>:pid:[N]`, compared
+whole: the namespace inode repeats across machines), so a reused PID neither
+keeps a dead profile's claim nor lists a dead session. A record without
+`procStart`, one from another machine or namespace, or a system without
+`/proc` keeps the PID-only check. Two boxes cloned with one machine id cannot
+be told apart by the record; profile folders are per box, so a record from
+another box reaches this one only through a copied store.

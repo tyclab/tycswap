@@ -243,6 +243,8 @@ func TestProfileHistoryCopiedOnce(t *testing.T) {
 	}
 }
 
+// Retirement may ask about a disabled account's leftover login; it never
+// enables that account or switches to it.
 func TestDisabledAccountProfileRetires(t *testing.T) {
 	sw := retireStore(t, &oauth.FakeClient{})
 	login := retireCreds("at-3", "rt-3")
@@ -253,6 +255,40 @@ func TestDisabledAccountProfileRetires(t *testing.T) {
 	}
 	if got, _ := sw.ReadAccountCredentials("3", retireEmails["3"]); got != login {
 		t.Fatalf("the disabled account's login was not kept in its slot: %q", got)
+	}
+	if !sw.IsAccountDisabled("3") || *sw.CurrentAccountNumber() != "1" {
+		t.Fatal("retiring the disabled account's profile enabled it or switched to it")
+	}
+}
+
+// A namesake the default profile already has is not replaced; one of
+// another size is logged with both paths and sizes.
+func TestSkippedNamesakeLogged(t *testing.T) {
+	sw := retireStore(t, &oauth.FakeClient{})
+	dir := legacyProfile(t, sw, "2", "", false, false)
+	work := filepath.Join(sw.Home, ".claude", "projects", "-work")
+	writeTestFile(t, filepath.Join(dir, "projects", "-work", "differs.jsonl"), "profile copy\n", 0o600)
+	writeTestFile(t, filepath.Join(work, "differs.jsonl"), "default's own\n", 0o600)
+	writeTestFile(t, filepath.Join(dir, "projects", "-work", "same.jsonl"), "same size A\n", 0o600)
+	writeTestFile(t, filepath.Join(work, "same.jsonl"), "same size B\n", 0o600)
+	scheduledTick(t)
+	if got, _ := os.ReadFile(filepath.Join(work, "differs.jsonl")); string(got) != "default's own\n" {
+		t.Fatalf("a namesake was replaced: %q", got)
+	}
+	logged, _ := os.ReadFile(filepath.Join(sw.BackupDir(), "tycswap.log"))
+	line := ""
+	for _, l := range strings.Split(string(logged), "\n") {
+		if strings.Contains(l, "differs.jsonl") {
+			line = l
+		}
+		if strings.Contains(l, "same.jsonl") {
+			t.Fatalf("a same-size namesake was logged: %s", l)
+		}
+	}
+	for _, want := range []string{filepath.Join(dir, "projects", "-work", "differs.jsonl"), filepath.Join(work, "differs.jsonl"), "13 bytes", "14 bytes"} {
+		if !strings.Contains(line, want) {
+			t.Fatalf("the skipped namesake's line %q lacks %q", line, want)
+		}
 	}
 }
 

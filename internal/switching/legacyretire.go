@@ -94,7 +94,7 @@ func copyProfileHistory(s *store.Store, dir string) error {
 	case err != nil:
 		return err
 	case info.IsDir():
-		if err := copyHistory(from, filepath.Join(s.DefaultProfileDir(), "projects")); err != nil {
+		if err := copyHistory(s.Log, from, filepath.Join(s.DefaultProfileDir(), "projects")); err != nil {
 			return err
 		}
 	case info.Mode()&os.ModeSymlink == 0:
