@@ -58,6 +58,8 @@ in a scratch folder. Operator-only: the second browser sign-in.
 | P4 | Does a switch inside the Fable store reach a running session? | swap the store's credential between two fable-lineage logins | next request runs on the new account (usage moves) |
 | P5 | What do shared `.claude.json` writes break? | run both classes on different accounts for an hour; record `oauthAccount` flips and tycswap's live-account detection | tycswap identifies each store's live account by credential lineage, never by `.claude.json` |
 | P6 | Does a shared `modelAccessCache` leak a denial? | Opus session on an OBI login running; start a Fable session on the Fable store | Fable session runs Fable (transcript `"model"`) |
+| P8 | Does a session parked on account A go on after the Fable store moves to B? | park a Fable-store session on a limit, switch the store | it waits until told (as on the default store); `claude-wake-parked` covers Fable-store panes too |
+| P9 | Which store does `claude --resume` of a Fable session started without `--model` take? | settings default model Fable, resume without flags | the launcher reads the session's recorded family and picks the Fable store |
 | P7 | MCP sign-ins | list the MCP servers that use OAuth; open one from a Fable-store session | works, or the list of servers needing a second sign-in is known |
 
 ## Build outline (after the pilot)
