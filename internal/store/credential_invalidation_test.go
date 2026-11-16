@@ -27,9 +27,7 @@ func claimedSession(t *testing.T) (*Store, string) {
 			t.Fatal(err)
 		}
 	}
-	if err := s.Lock.With(func() error { return s.ClaimLegacyProfile("1", "one@example.test", dir) }); err != nil {
-		t.Fatal(err)
-	}
+	claimLegacy(t, s, "1", dir)
 	return s, dir
 }
 

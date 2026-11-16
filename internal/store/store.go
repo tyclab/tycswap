@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/filelock"
@@ -112,7 +113,7 @@ func New(opts Options) (*Store, error) {
 	}
 	defaultKeychainService := "Claude Code-credentials"
 	if !defaultUnpinned {
-		defaultKeychainService = sessprofile.KeychainServiceName(defaultProfileDir)
+		defaultKeychainService = ccfile.KeychainServiceName(defaultProfileDir)
 	}
 	if inherited := os.Getenv("TYCSWAP_DEFAULT_KEYCHAIN_SERVICE"); os.Getenv("TYCSWAP_DEFAULT_PROFILE_DIR") == defaultProfileDir && (inherited == "Claude Code-credentials" || validDefaultService(inherited)) {
 		defaultKeychainService = inherited

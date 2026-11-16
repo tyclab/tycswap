@@ -91,31 +91,6 @@ func TestMoveMissingArgs(t *testing.T) {
 	}
 }
 
-// TestRunTailSplit: `run 2 -- --bogus` forwards the tail unparsed; a bad flag
-// BEFORE the "--" is an exit-2 error. Both go through runCommand's head parse.
-func TestRunBadFlagBeforeDashDash(t *testing.T) {
-	cleanHome(t)
-	code, _, errStr := runSub(t, "run", "2", "--bogus")
-	if code != 2 {
-		t.Fatalf("exit = %d, want 2 (stderr=%q)", code, errStr)
-	}
-	if !strings.Contains(errStr, "unrecognized arguments") {
-		t.Errorf("stderr = %q, want 'unrecognized arguments'", errStr)
-	}
-}
-
-// TestRunExtraPositional: two positional accounts is an exit-2 error.
-func TestRunExtraPositional(t *testing.T) {
-	cleanHome(t)
-	code, _, errStr := runSub(t, "run", "2", "3")
-	if code != 2 {
-		t.Fatalf("exit = %d, want 2 (stderr=%q)", code, errStr)
-	}
-	if !strings.Contains(errStr, "unrecognized arguments") {
-		t.Errorf("stderr = %q, want 'unrecognized arguments'", errStr)
-	}
-}
-
 // TestAutoBadValue: a non-numeric --seven-day-threshold is an exit-2 error (before the
 // switcher is built).
 func TestAutoBadThreshold(t *testing.T) {

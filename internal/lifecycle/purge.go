@@ -6,13 +6,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/printer"
-	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/storenames"
 )
@@ -93,7 +93,7 @@ func Purge(s *store.Store) error {
 		if len(profiles) > 0 {
 			if s.Platform == platform.MacOS {
 				for _, profile := range profiles {
-					_ = s.Keychain().Delete(sessprofile.KeychainServiceName(profile), keychain.AccountName())
+					_ = s.Keychain().Delete(ccfile.KeychainServiceName(profile), keychain.AccountName())
 				}
 			}
 			removed = append(removed, "Session profiles: "+strings.Join(profiles, ", "))

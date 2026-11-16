@@ -17,7 +17,6 @@ import (
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
-	"github.com/tyclab/tycswap/internal/session"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 )
@@ -136,7 +135,7 @@ func startOverride(env, command []string) string {
 		if key == "CLAUDE_CONFIG_DIR" || platform.IsWindows() && strings.EqualFold(key, "CLAUDE_CONFIG_DIR") {
 			return key + " is set"
 		}
-		for _, override := range session.AuthOverrideEnvVars {
+		for _, override := range launch.AuthOverrideEnvVars {
 			if strings.EqualFold(key, override) && (platform.IsWindows() || key == override) {
 				return override + " is set"
 			}

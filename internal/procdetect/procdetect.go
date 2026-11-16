@@ -58,9 +58,9 @@ func IsPIDAlive(pid int) bool {
 }
 
 // ListSessions globs <claudeDir>/sessions/*.json and returns the sessions
-// whose PID is currently alive. Returns an empty slice if the sessions
-// subdirectory isn't a directory. A file that is corrupt JSON, has no
-// integer-valued "pid" field, or fails to read is skipped, never raised.
+// whose process is currently alive (RecordAlive). Returns an empty slice if
+// the sessions subdirectory isn't a directory. A file that is corrupt JSON,
+// has no integer-valued "pid" field, or fails to read is skipped, never raised.
 // A failure to enumerate the directory itself (e.g. permission denied) is
 // swallowed here — see ListSessionsErr for the error-surfacing variant.
 func ListSessions(claudeDir string) []ClaudeSession {
@@ -104,7 +104,7 @@ func ListSessionsErr(claudeDir string) ([]ClaudeSession, error) {
 		if !ok {
 			continue
 		}
-		if !IsPIDAlive(pid) {
+		if !RecordAlive(pid, m["procStart"], getString(m, "pidDomain", "")) {
 			continue
 		}
 		out = append(out, ClaudeSession{
