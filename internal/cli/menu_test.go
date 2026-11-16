@@ -142,6 +142,11 @@ func TestMenuPromptFilteringAndCancellation(t *testing.T) {
 	if m.text != "codex pers" || !reflect.DeepEqual(m.matches(), []int{1}) {
 		t.Fatalf("the paste was lost: %q", m.text)
 	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: 'b', Mod: tea.ModAlt})
+	m = next.(menuPrompt)
+	if m.text != "codex pers" {
+		t.Fatalf("alt+b typed into the filter: %q", m.text)
+	}
 	next, _ = m.Update(tea.PasteMsg{Content: "\x1b[2J\r\n"})
 	m = next.(menuPrompt)
 	if m.text != "codex pers[2J" {

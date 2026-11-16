@@ -14,6 +14,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/tyclab/tycswap/internal/settings"
 )
 
 // negNumRe mirrors argparse's _negative_number_matcher. Since no tycswap option
@@ -195,7 +197,11 @@ func parseArgs(prog string, argv []string, stdout, stderr io.Writer) parseResult
 			if ex != nil {
 				return *ex
 			}
-			p.model = &v
+			text, clean := settings.TextValue(v)
+			if !clean {
+				return argError(prog, stderr, "argument --model: must not contain a control character")
+			}
+			p.model = &text
 		case "--slot":
 			v, ex := takeValue()
 			if ex != nil {

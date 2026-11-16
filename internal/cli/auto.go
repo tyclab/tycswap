@@ -109,7 +109,11 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 			if !ok {
 				return subError(autoProg, s.err, "argument --model: expected one argument")
 			}
-			model = &v
+			text, clean := settings.TextValue(v)
+			if !clean {
+				return subError(autoProg, s.err, "argument --model: must not contain a control character")
+			}
+			model = &text
 		case tok == "-h" || tok == "--help":
 			renderAutoHelp(s.out)
 			return 0

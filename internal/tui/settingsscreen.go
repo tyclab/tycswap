@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/termsafe"
@@ -380,6 +380,9 @@ func (s *settingsScreen) detailLines(width int) []string {
 	for _, t := range wrapDetail("", kindLabel(r.Spec)+" · default "+settings.FormatSettingValue(r.Spec.Default)+" · "+engineNote, width) {
 		out = append(out, fit(t))
 	}
+	for _, t := range noticeLines(r.Notice(), width) {
+		out = append(out, fit(t))
+	}
 	var last richText
 	switch {
 	case s.editError != "":
@@ -420,6 +423,32 @@ func wrapDetail(head, text string, width int) []richText {
 		sep = " "
 	}
 	return append(lines, cur)
+}
+
+// noticeLines wraps a row's notice (a stored value read clean) whole, in the
+// critical colour; unlike the help it is never clipped, since its last words
+// are the repair. No notice, no lines.
+func noticeLines(notice string, width int) []richText {
+	var lines []richText
+	var cur richText
+	used := 0
+	for _, word := range strings.Fields(notice) {
+		w := lipgloss.Width(word)
+		if used > 0 && used+1+w > width {
+			lines = append(lines, cur)
+			cur, used = richText{}, 0
+		}
+		if used > 0 {
+			cur.addFg(" ", colSevCrit)
+			used++
+		}
+		cur.addFg(word, colSevCrit)
+		used += w
+	}
+	if used > 0 {
+		lines = append(lines, cur)
+	}
+	return lines
 }
 
 // kindLabel names a key's kind with its range (int/float) or its choices.

@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/tyclab/tycswap/internal/settings"
 )
@@ -324,7 +324,7 @@ func TestSettingsIntOutOfRangeIsRefusedWithTheMessage(t *testing.T) {
 	s.update(m, keyPress("backspace"))
 	typeText(m, s, "x")
 	s.update(m, keyPress("enter"))
-	if want := "autoswitch.unhealthyTicks expects an integer, got 'x'"; s.editError != want {
+	if want := `autoswitch.unhealthyTicks expects an integer, got "x"`; s.editError != want {
 		t.Fatalf("editError = %q, want %q", s.editError, want)
 	}
 }
@@ -617,6 +617,31 @@ func TestSettingsViewNeverWraps(t *testing.T) {
 	lines := strings.Split(s.view(m), "\n")
 	if len(lines) > m.contentHeight() {
 		t.Fatalf("view is %d lines for a content height of %d", len(lines), m.contentHeight())
+	}
+}
+
+// A stored value read without its control characters shows clean in its
+// row, and the row's detail carries the notice: what was removed and how to
+// clean the file, never the value.
+func TestSettingsRowSaysAStoredValueWasCleaned(t *testing.T) {
+	m, s, dir := settingsModel(t)
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"autoswitch":{"model":"Fable\u001b[2J"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.reload(m)
+	selectKey(t, s, "autoswitch.model")
+	if row := s.rowText(rowFor(t, s, "autoswitch.model"), false, 20, 12, 100); !strings.Contains(stripANSI(row), "Fable[2J") || strings.Contains(row, "\x1b[2J") {
+		t.Errorf("row = %q, want the clean value", row)
+	}
+	var plain []string
+	for _, l := range s.detailLines(100) {
+		plain = append(plain, stripANSI(l))
+	}
+	detail := strings.Join(plain, " ")
+	for _, want := range []string{"control characters", "removed", "tycswap config set autoswitch.model"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("detail lacks %q:\n%s", want, strings.Join(plain, "\n"))
+		}
 	}
 }
 

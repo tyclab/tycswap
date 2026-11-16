@@ -43,6 +43,7 @@ func (f settingsFacade) Effective() []web.SettingView {
 			IsDefault:   !e.IsSet,
 			Choices:     e.Spec.Choices,
 			Description: e.Spec.Help,
+			Notice:      e.Notice(),
 		}
 		if e.Spec.Kind == settings.KindFloat || e.Spec.Kind == settings.KindInt {
 			lo, hi := e.Spec.Lo, e.Spec.Hi

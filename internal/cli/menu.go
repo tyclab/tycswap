@@ -290,6 +290,11 @@ func menuManage(s ioStreams) {
 
 func menuSettings(s ioStreams) {
 	values := settings.EffectiveSettings(paths.GetBackupRoot())
+	for _, v := range values {
+		if n := v.Notice(); n != "" {
+			fmt.Fprintln(s.err, "warning: "+n)
+		}
+	}
 	labels := make([]string, len(values))
 	for i, value := range values {
 		labels[i] = value.Spec.Label() + ": " + settings.FormatSettingValue(value.Value)
