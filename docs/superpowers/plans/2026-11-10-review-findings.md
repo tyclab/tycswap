@@ -1,7 +1,7 @@
 # Review findings, 2026-11-10
 
-Open work only: a row is deleted by the change that closes it. Design:
-`docs/superpowers/specs/2026-11-10-one-engine-design.md` (D-numbers below).
+Open work only: a row is deleted by the change that closes it. D-numbers
+name sections of the one-engine design, in git history at 1d724d6.
 
 Verdict: FIX, CUT (goes with a removal in D10), DUP (same defect, other
 lane), BY-DESIGN, PROVISIONER (fixed in
