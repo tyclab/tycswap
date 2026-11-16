@@ -16,6 +16,16 @@ import (
 type Registry struct {
 	Version int              `json:"version"`
 	Claims  map[string]Owner `json:"claims"`
+	// Held records, per account, why releasing its former profile's login was
+	// refused, for the credential it was refused for (RECLAIM-4).
+	Held map[string]Hold `json:"held,omitempty"`
+}
+
+// Hold is a refused release: the reason, and the SHA-256 of the account-only
+// profile credential it applies to; a changed credential is tried again.
+type Hold struct {
+	Reason string `json:"reason"`
+	Digest string `json:"digest"`
 }
 
 func ClaimsPath(root string) string { return filepath.Join(root, "groups", "claims.json") }
@@ -27,6 +37,9 @@ func LoadRegistry(root string) (*Registry, error) {
 	}
 	if r.Version != 1 || r.Claims == nil {
 		return nil, fmt.Errorf("invalid credential ownership registry; repair %s before switching", ClaimsPath(root))
+	}
+	if r.Held == nil {
+		r.Held = map[string]Hold{}
 	}
 	for number, owner := range r.Claims {
 		id, err := Parse(owner.Scope)

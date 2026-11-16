@@ -650,6 +650,14 @@ keeps its account while a Claude session still runs in it; a shell whose
 `CLAUDE_CONFIG_DIR` still names one works on the default login and says so on
 standard error. `mappings.json` is no longer read.
 
+Once no session runs in it, the next scheduled auto-switch tick (also while
+auto-switch is off) copies the profile's conversations into the default
+profile, so `claude --resume <id>` continues them on the shared login, and
+returns its login to the account: saved into the slot after the usual
+ownership check, or dropped when it is stale or a copy of the live login. A
+profile whose login cannot be verified keeps it, and the dashboard and tray
+say why.
+
 ### Export and import
 
 `tycswap export` writes accounts to a portable file for transfer to another

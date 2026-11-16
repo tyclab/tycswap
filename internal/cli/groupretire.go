@@ -58,6 +58,20 @@ func retireGroups(root *core.Switcher, emit func(autoswitch.Event), dry bool) {
 	}
 }
 
+// retireProfiles retires what `tycswap run` and `env` left behind on the same
+// rounds as retireGroups: scheduled and real, never a dry run or a status
+// line's tick (DESIGN A92). A held profile is retried on the next round.
+func retireProfiles(root *core.Switcher, dry bool) {
+	if dry {
+		return
+	}
+	switching.RetireLegacyProfiles(root.Store, func(number string, err error) {
+		if root.Log != nil {
+			root.Log.Warningf("Account-%s profile retirement held: %v", number, err)
+		}
+	})
+}
+
 type releaseEvent struct {
 	ts      string
 	account groups.Account

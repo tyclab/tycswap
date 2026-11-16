@@ -1311,6 +1311,31 @@ Claude session still runs in it, it keeps its account (`accounts-in-use`, A89).
 A shell whose `CLAUDE_CONFIG_DIR` still names one works on the default login
 (see ENVIRONMENT).
 
+The leftovers retire on their own, on each scheduled round of `tycswap auto`
+or the app (not a dry run, not a status line's tick). For every account,
+disabled ones included, whose profile no Claude process uses:
+
+- Its conversations (`projects/`) are copied into the default profile's
+  `projects/` where missing, once (`.tycswap-history-copied` in the profile
+  records it), so `claude --resume <id>` finds them on the default login.
+  Nothing in the default profile is replaced; the profile keeps its copy.
+- On the live account, the profile's login is dropped and its claim released
+  when the login is empty, the live login's own lineage, or stale (the stored
+  login was rewritten while the profile ran). The stored login and the live
+  credential are never written. Another lineage keeps its claim, and the
+  account stays held (`conflicting credential owners`) until it is signed in
+  again with `tycswap add --login`.
+- On any other account, a stale profile login is dropped the same way;
+  otherwise the verified release of `tycswap switch` saves the profile's login
+  into the slot and releases the claim. A login whose access token expired is
+  verified by refreshing its own token, written back into the profile first;
+  a refused refresh drops it and keeps the stored login. A release that cannot
+  verify the login is stored as the account's ownership reason until the
+  login changes.
+
+Each held profile is logged as `Account-<n> profile retirement held: <reason>`
+and tried again on the next round. An interrupted release finishes there.
+
 ### Exit status
 
 `2`.
@@ -1380,18 +1405,23 @@ form intended for cron. Switching proactively (while the old account is still
 valid) is what keeps the change safe under the macOS Keychain propagation
 latency.
 
-Before polling, a real tick returns verified unused `run`/`env` profiles to
-their account slots through the same locked release as an explicit switch.
-Disabled accounts are left alone. Dry runs can rank an unused profile but do
-not release it. A running or unverifiable profile keeps its login and claim.
-If these profiles hold the remaining alternatives, the tick emits `no-switch`
-with reason `accounts-in-use` and account-specific details, rather than
-`all-exhausted`, and retries at the ordinary cadence. Web account rows include
-`ownershipBlockReason` when held. Eligibility can provisionally include an idle
-profile eligible for attempted release; the actual release may still fail
-identity verification. A target that becomes unavailable during guarded
-preparation reports `no-switch` with reason `account-unavailable` and the
-ownership detail.
+Before polling, a real tick returns verified unused former `run`/`env`
+profiles of its candidates to their account slots through the same locked
+release as an explicit switch. Each scheduled round (`auto --once`, each
+interval of the loop, the app's hosted loop; whether auto-switch is on or
+off, never a dry run or a status line's tick) retires every former profile
+no Claude process uses, of every account, disabled and live ones included:
+see [tycswap run, env, map, unmap (removed)](#tycswap-run-env-map-unmap-removed).
+A running or unverifiable profile keeps its login and claim. If these
+profiles hold the remaining alternatives, the tick emits `no-switch` with
+reason `accounts-in-use` and account-specific details, rather than
+`all-exhausted`, and retries at the ordinary cadence; a `reserved` or
+`model-missing` hand-over says only its own `…-no-target`. Web account rows
+include `ownershipBlockReason` when held. An idle profile awaiting release
+counts as eligible until a release refuses its login; the reason is then
+stored and shown until that login changes. A target that becomes unavailable
+during guarded preparation reports `no-switch` with reason
+`account-unavailable` and the ownership detail.
 
 Auto-switch rotates between subscription accounts only (DESIGN A33). An
 API-key account is never a target, not even when every subscription account
@@ -4718,7 +4748,7 @@ Inside the backup root:
 | `sessions/` | Former per-account profiles of the removed `tycswap run` / `tycswap env`, `<n>-<email>` (the `@` in the email replaced by `_`); kept for their history (DESIGN A92). |
 | `default_models.json` | The model family each default-profile session runs, as `--observe` records it from the status line (DESIGN A76): `{"schemaVersion": 1, "sessions": {"<session id>": {"family", "seenAt"}}}`. Kept a day; no credentials. |
 | `observe_state.json` | The time of the last near-bar observation that ran a tick, for the 15-second slot (DESIGN A75). |
-| `groups/` | What retired session groups left (DESIGN A78): `claims.json` (also the legacy `run` profiles' claims), and per group a `profile/` directory kept for its history, plus `retired.json` once the group is retired. |
+| `groups/` | What retired session groups left (DESIGN A78): `claims.json` (also the former `run` profiles' claims, and under `held` each refused profile release as `{"<n>": {"reason", "digest"}}`, the digest being the SHA-256 of the account-only profile login it was refused for; absent when none, DESIGN A92), and per group a `profile/` directory kept for its history, plus `retired.json` once the group is retired. |
 | `cache/usage.json` | Cached usage measurements. |
 | `live_lineage.json` | The chain record of the default login's live credential (DESIGN A68): `{"schemaVersion": 1, "fingerprint": "<sha256>", "slot": "<n>", "identity": {"uuid", "email", "orgUuid"}, "seenAt": <epoch-seconds>}`, mode 0600. Written without a lock (last writer wins) when the profile endpoint names the slot of the default login's live credential, and only when the record changes; a dry run or a store-only read never writes it, and a group scope's own login never reads or writes it. A derived cache: a missing or malformed file reads as absent, and a record whose slot the roster no longer maps to its identity is ignored. |
 | `statusline.json` | Label and quota per account for Claude Code status lines (see STATUS LINE STATE). Derived: never copied by `tycswap migrate`. |

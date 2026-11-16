@@ -7272,3 +7272,41 @@ claims, the ownership checks (A88, A89) still treat a profile as its account's
 owner, a live session in one keeps its claim, and a shell whose
 `CLAUDE_CONFIG_DIR` still names one runs every command on the default login
 with one notice.
+
+Leftovers retire on their own, beside A78's group retirement and on the same
+rounds: scheduled and real (`auto --once`, each loop interval, the app's
+hosted loop, with auto-switch on or off), never a dry run, a status line's
+tick or `start`, and never under the engine's state lock. A89's pre-poll
+release of candidates stays as it was. For every stored account, disabled ones
+included, whose profile no Claude process uses:
+
+1. `projects/` is copied into the default profile's where missing (A78's
+   copy, never replacing a file), once: `.tycswap-history-copied` stops a
+   transcript Claude Code later cleans up from coming back.
+2. On the live default account the claim is released by dropping the
+   profile's login when it is empty, the live login's own lineage, or stale.
+   Neither the slot backup nor the live credential is written. A login of
+   another lineage without the stale mark keeps its claim: the operator
+   decides, by signing in again.
+3. On other accounts a stale login is dropped the same way, and anything else
+   takes A88's verified release. The stale mark (`postBackupWrite` set it
+   while the profile ran, after its stored login was rewritten) is the proof:
+   `run` itself discarded such a login on its next launch, while A88 would
+   have saved it over the newer stored login once the profile endpoint named
+   the account. This holds for explicit switches too.
+4. RECLAIM-3: a rotated profile login whose access token expired is verified
+   by refreshing its own token under the store lock and the profile's
+   credential, config and storage-write locks; the new credential goes back
+   into the profile before anything else, then the profile endpoint names
+   it. `invalid_grant` drops the dead login and the claim and keeps the slot
+   backup.
+5. RECLAIM-4: a release refused by verification is stored in
+   `claims.json` (`held`, reason and the login's digest), and rotation
+   eligibility returns that reason until the login changes, so the dashboard,
+   tray and engine agree. RECLAIM-5: a hand-over with nowhere to go emits only
+   its `…-no-target`.
+
+A drop marks the profile stale before clearing its login and unmarks it after
+the claim is gone, so an interrupted drop finishes on the next round; an
+interrupted verified release finishes through A88's marker. Running,
+unreadable or misidentified profiles keep everything.

@@ -157,6 +157,7 @@ func (s *Store) ReleaseLegacyAccount(expected *LegacyRelease, verify func(string
 		return err
 	}
 	delete(registry.Claims, owner.Account.Number)
+	delete(registry.Held, owner.Account.Number)
 	if err := registry.Save(s.backupDir); err != nil {
 		return err
 	}

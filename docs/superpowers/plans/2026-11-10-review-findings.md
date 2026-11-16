@@ -35,21 +35,6 @@ evidence.
 | OFF-4 | the hosted Codex loop reacts up to one interval after Start or `auto on`; it has no wake | cli/codexauto.go, webfacades.go | FIX D3 (one tick) |  | E |
 | OFF-5 | saved bars other than the model reach the app's engine only at app start, since Stop no longer ends it | cli/webfacades.go | FIX D3 (settings read per tick) |  | E |
 
-## From the review of the automatic reclaim (v0.11.6)
-
-Follow-up: `docs/superpowers/plans/2026-11-16-busy-model-rotation.md`,
-Stream B (the operator's 2026-11-16 ruling replaced S5's acceptance gate).
-Each T row has a private repro test that passes on v0.11.5 or fails only on
-v0.11.6's new claim. The fixture
-`tycswap-review-20261114/review_repro_test.go` is not tracked in this repository;
-review and incorporate it with Stream B.
-
-| ID | Defect | Where | Verdict | Ev | Series |
-| --- | --- | --- | --- | --- | --- |
-| RECLAIM-3 | a profile login that rotated in its profile and then expired is never released: the release asks the profile endpoint, which an expired token cannot answer; the tick reports `no-comparison` | switching/legacyrelease.go ReleaseIdleLegacy | FIX S5 (verify by refresh) | T | R |
-| RECLAIM-4 | the snapshot calls an account eligible when a release candidate exists, the engine refuses it when the release cannot verify: dashboard and tray show no reason | store/identity.go RotationOwnershipBlockReason | FIX S5 (reason stored on the claim) | T | R |
-| RECLAIM-5 | a `reserved` or `model-missing` tick with a held account emits `accounts-in-use` and `…-no-target` | autoswitch/tick.go selectCandidates | FIX S5 | T | R |
-
 ## Engine lane
 
 | ID | Defect | Where | Verdict | Ev | Series |
@@ -187,7 +172,6 @@ review and incorporate it with Stream B.
 | SES-3 | one unparsable session file vetoes every ownership check | store/ownership.go profilePIDs | FIX | T | R |
 | SES-5 | pinned session's status line handled as default login | cli/observe.go | DUP CLI-8 | T |  |
 | SES-6 | stale session file counts as running once its PID is reused | procdetect/procdetect.go, store/ownership.go | FIX | TV | R |
-| SES-7 | an account once run in a profile is refused as a target for good | store/ownership.go | CUT D10 | T | R |
 | SES-8 | symlink above the store root | groups/registry.go | DUP STORE-6 | T |  |
 | SES-10 | at-limit marker kept after the reset time passed | reporting/atlimit.go, render.go | FIX D4 | T | E |
 | SES-11 | unknown 5h utilization printed as 0 % | reporting/render.go | FIX | T | R |
