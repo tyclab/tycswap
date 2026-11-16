@@ -157,6 +157,7 @@ func (s *Store) ReleaseLegacyAccount(expected *LegacyRelease, verify func(string
 		return err
 	}
 	delete(registry.Claims, owner.Account.Number)
+	delete(registry.Held, owner.Account.Number)
 	if err := registry.Save(s.backupDir); err != nil {
 		return err
 	}
@@ -177,15 +178,15 @@ func (s *Store) clearLegacyLogin(dir string) error {
 	remainder, keep := ccfile.SeatWidePart(value)
 	if s.Platform == platform.MacOS {
 		if keep {
-			err = s.kc.Set(sessprofile.KeychainServiceName(dir), keychain.AccountName(), remainder)
+			err = s.kc.Set(ccfile.KeychainServiceName(dir), keychain.AccountName(), remainder)
 		} else {
-			err = s.kc.Delete(sessprofile.KeychainServiceName(dir), keychain.AccountName())
+			err = s.kc.Delete(ccfile.KeychainServiceName(dir), keychain.AccountName())
 		}
 		if err != nil {
 			return err
 		}
 	}
-	path := filepath.Join(dir, sessprofile.CredentialsFileName)
+	path := filepath.Join(dir, ccfile.CredentialsFileName)
 	if keep {
 		return atomicfile.Write(path, []byte(remainder), atomicfile.Opts{})
 	}

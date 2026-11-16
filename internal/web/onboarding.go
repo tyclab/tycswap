@@ -21,8 +21,7 @@ type CurrentLoginView struct {
 
 // AuthOverridesView lists what makes Claude Code authenticate with something
 // other than its stored login: the variables set in the server's own
-// environment (which a plain `claude` inherits; `tycswap run` and `tycswap
-// env` scrub the key and token ones), and the keys set in Claude Code's
+// environment (which a plain `claude` inherits), and the keys set in Claude Code's
 // settings.json (`env.ANTHROPIC_API_KEY` and the like, or an `apiKeyHelper`).
 // Names only, never a value.
 type AuthOverridesView struct {
@@ -36,7 +35,7 @@ type AuthOverridesView struct {
 // Any reports whether something overrides the login.
 func (v AuthOverridesView) Any() bool { return len(v.Env) > 0 || len(v.Settings) > 0 }
 
-// session.AuthOverrideEnvVars plus ANTHROPIC_BASE_URL, which sends requests elsewhere.
+// launch.AuthOverrideEnvVars plus ANTHROPIC_BASE_URL, which sends requests elsewhere.
 var authOverrideEnv = []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL"}
 
 // authOverrideSettings are the settings.json keys with the same effect.

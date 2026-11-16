@@ -134,7 +134,7 @@ type ClaudeSessionJSON struct {
 	Entrypoint string  `json:"entrypoint"`
 	Status     *string `json:"status"`
 	Title      string  `json:"title"`   // from the transcript; "" when none yet
-	Profile    string  `json:"profile"` // slot of the `run`/`env` session profile; "" for the default login
+	Profile    string  `json:"profile"` // slot of a former `run`/`env` profile still running; "" for the default login
 	Group      string  `json:"group,omitempty"`
 	Model      string  `json:"model,omitempty"`
 }

@@ -37,11 +37,11 @@ import (
 	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/codex/transfer"
 	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/launch"
 	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/reporting"
-	"github.com/tyclab/tycswap/internal/session"
 	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
@@ -65,7 +65,7 @@ var codexLookPath = exec.LookPath
 // would run the login under flags tycswap never chose. It returns the process's
 // exit status.
 var runCodexLogin = func(binary string, args []string, s ioStreams) (int, error) {
-	cmd := session.CLICommand(context.Background(), binary, args...)
+	cmd := launch.CLICommand(context.Background(), binary, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.in, s.out, s.err
 	err := cmd.Run()
 	var exitErr *exec.ExitError

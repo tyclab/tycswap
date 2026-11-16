@@ -450,10 +450,13 @@ func (s *Store) RotationEligible(data *SequenceData, num string) bool {
 	return s.RotationOwnershipBlockReason(num) == ""
 }
 
+// RotationOwnershipBlockReason is "" for an account automatic rotation may
+// take: unowned, or held by an idle former profile whose release was not
+// already refused for the credential it holds now (RECLAIM-4).
 func (s *Store) RotationOwnershipBlockReason(num string) string {
 	if err := s.EnsureAccountAvailable(num); err != nil {
 		if candidate, releaseErr := s.LegacyReleaseCandidate(num); releaseErr == nil && candidate != nil {
-			return ""
+			return s.heldReason(num, candidate.Credentials)
 		}
 		return err.Error()
 	}

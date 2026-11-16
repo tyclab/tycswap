@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tyclab/tycswap/internal/mappings"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/store"
 )
@@ -504,44 +503,6 @@ func TestRemoveTreatsARivalsCompletedRemovalAsDone(t *testing.T) {
 	data := readSeq(t, s)
 	if len(data.Accounts) != 2 {
 		t.Fatalf("roster holds %d accounts, want the rival's 2: %v", len(data.Accounts), data.Accounts)
-	}
-}
-
-// TestRemoveRetiresNoMappingsWhenItRemovedNothing: mappings.json is a separate
-// file with its own lifetime — a directory mapping outlives the roster and keeps
-// working the moment the identity is registered again. So only a removal this
-// call actually performed has mappings to retire. The window is the corrupt-
-// roster refusal's own second remedy: the user deletes sequence.json while a
-// confirmation stands open, intending to re-register with `tycswap add`. This call
-// then correctly removes nothing — and pruning on the way out would delete their
-// directory mappings as a side effect of a command that reported "nothing to do",
-// silently, with rc=0.
-func TestRemoveRetiresNoMappingsWhenItRemovedNothing(t *testing.T) {
-	s := newStore(t)
-	seedThreeSlots(t, s)
-	ms := mappings.New(s.BackupDir())
-	dir := filepath.Join(t.TempDir(), "project")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := ms.Set(dir, "two@example.com", ""); err != nil {
-		t.Fatalf("seed mapping: %v", err)
-	}
-	out := captureOut(t)
-	withPrompter(t, &racingPrompter{t: t, s: s, commit: func() {
-		if err := os.Remove(s.SequenceFile); err != nil {
-			t.Fatal(err)
-		}
-	}})
-
-	if err := RemoveAccount(s, "2", false); err != nil {
-		t.Fatalf("RemoveAccount with the roster deleted at the prompt: %v", err)
-	}
-	if !strings.Contains(out.String(), "already removed") {
-		t.Fatalf("precondition: the no-op branch was not the one taken: %q", out.String())
-	}
-	if _, _, ok := ms.Resolve(dir); !ok {
-		t.Error("a remove that removed nothing pruned the identity's directory mappings")
 	}
 }
 

@@ -383,10 +383,11 @@ func (a *autoFacade) startHosted(dryRun bool) error {
 }
 
 // codexRound is one round of the hosted loop. Retiring a former session group
-// never moves the default login, so it runs whatever the setting; the Codex
+// or profile never moves the default login, so it runs whatever the setting; the Codex
 // tick reads the setting, as the Claude tick does (DESIGN A83).
 func (a *autoFacade) codexRound(ctx context.Context, eng *codexauto.AutoSwitcher, dryRun bool) {
 	retireGroups(a.sw, a.onEvent, dryRun)
+	retireProfiles(a.sw, dryRun)
 	if eng != nil && (dryRun || autoSwitchOn(a.sw.BackupDir())) {
 		a.codexTick(ctx, eng, dryRun)
 	}

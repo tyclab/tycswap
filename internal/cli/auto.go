@@ -161,9 +161,11 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		autoForegroundNotice(s, on, !once, jsonMode, dryRun, merged)
 		if once && !on && !dryRun {
 			sayDisabled()
-			// Retiring a former session group never moves the default login,
-			// and `add` tells its user the next tick does it (DESIGN A78).
+			// Retiring a former session group or profile never moves the
+			// default login, and `add` tells its user the next tick does it
+			// (DESIGN A78, A92).
 			retireGroups(sw, onEvent, false)
+			retireProfiles(sw, false)
 			return int(autoswitch.NoAction)
 		}
 	}
@@ -215,6 +217,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	// each round, as the Claude tick does, and a dry run still decides (A83).
 	codexRound := func(ctx context.Context) {
 		retireGroups(sw, onEvent, dryRun)
+		retireProfiles(sw, dryRun)
 		if dryRun || autoSwitchOn(root) {
 			runCodexTick(ctx)
 		}

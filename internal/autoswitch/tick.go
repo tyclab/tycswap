@@ -394,7 +394,8 @@ func (e *Engine) selectCandidates(
 		}
 	}
 	if len(oauthCandidates) == 0 {
-		if e.reportOwnershipBlock(cur, headroom) {
+		// A hand-over with nowhere to go says so in its own one line (RECLAIM-5).
+		if !isHandover(trigger) && e.reportOwnershipBlock(cur, headroom) {
 			return nil, oauthCandidates, false, &tickResult{Outcome: Blocked}
 		}
 		if !isHandover(trigger) {
