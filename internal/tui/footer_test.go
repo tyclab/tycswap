@@ -6,10 +6,13 @@
 package tui
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 )
 
 const wideFooter = 200 // wide enough that nothing truncates
@@ -108,5 +111,36 @@ func TestFooterTruncatesNarrowWidth(t *testing.T) {
 	m.width = 22
 	if w := lipgloss.Width(m.renderFooter(d.footerBindings(m))); w > 22 {
 		t.Fatalf("rendered footer width = %d, want <= 22", w)
+	}
+}
+
+// -- colour downsampling -----------------------------------------------------
+
+// TestProgramDownsamplesToTheOutputProfile: lipgloss v2 renders full-fidelity
+// colour and Bubble Tea v2's renderer downsamples the frame to the output's
+// colour profile, so a 256-colour terminal gets the nearest colour and a
+// non-terminal none. The footer's key labels are colAccent #d7875f, xterm
+// colour 173. NoTTY checks for no colour (38;), not for no escape at all: the
+// renderer still writes cursor and screen sequences.
+func TestProgramDownsamplesToTheOutputProfile(t *testing.T) {
+	for _, tc := range []struct {
+		profile   colorprofile.Profile
+		want, not string
+	}{
+		{colorprofile.TrueColor, "38;2;215;135;95", ""},
+		{colorprofile.ANSI256, "38;5;173", "38;2;"},
+		{colorprofile.NoTTY, "Switch accounts", "38;"},
+	} {
+		var out bytes.Buffer
+		p := tea.NewProgram(newTestModel(&fakeFacade{}), tea.WithInput(nil), tea.WithOutput(&out),
+			tea.WithColorProfile(tc.profile), tea.WithWindowSize(80, 24), tea.WithoutSignalHandler())
+		go p.Quit()
+		if _, err := p.Run(); err != nil {
+			t.Fatalf("%s: run: %v", tc.profile, err)
+		}
+		frame := out.String()
+		if !strings.Contains(frame, tc.want) || tc.not != "" && strings.Contains(frame, tc.not) {
+			t.Errorf("%s output: want %q, not %q:\n%q", tc.profile, tc.want, tc.not, frame)
+		}
 	}
 }

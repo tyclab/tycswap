@@ -94,8 +94,19 @@ diverge, the divergences are enumerated in [`docs/DESIGN.md`](docs/DESIGN.md)
 
 **Prerequisites.**
 
-- Go 1.25.5 or newer to build or `go install`; Go selects the patched 1.26.11
-  toolchain from `go.mod`. The CLI builds without cgo; on
+- Go 1.21 or newer, which switches toolchains by itself under `GOTOOLCHAIN=auto`
+  (the default of the standard Go distribution):
+  - A build in a checkout (`make build`, `make install`) uses the patched
+    toolchain that `go.mod`'s `toolchain` line pins, or your Go if it is newer.
+  - `go install …@latest` runs outside any module and does not read that
+    line. It builds with your Go when that meets the `go` line of the
+    module's `go.mod`, and switches to a newer toolchain only when it does
+    not. For the pinned toolchain, set `GOTOOLCHAIN` to the `toolchain` line's
+    value (`GOTOOLCHAIN=go1.x.y go install …`).
+  - With `GOTOOLCHAIN=local`, Go never switches: it must be at least the
+    `go` line's version, and an older Go refuses to build.
+
+  The CLI builds without cgo; on
   macOS the menu-bar app needs cgo (the Command Line Tools: `xcode-select
   --install`), and a build without it serves the tray app's dashboard alone.
 - The Claude Code CLI, for the accounts to run against.
