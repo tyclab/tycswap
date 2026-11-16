@@ -10,7 +10,6 @@ import (
 
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/groups"
-	"github.com/tyclab/tycswap/internal/mappings"
 	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/storenames"
 )
@@ -69,9 +68,9 @@ func (s *Store) WriteAccountCredentials(num, email, creds string) error {
 }
 
 // postBackupWrite is _post_backup_write (spec 01§7): a LIVE session keeps its own
-// credential copy but is stale-marked so setup_session re-bootstraps it once it
-// exits; a non-live profile has its credential material dropped immediately so
-// the next `tycswap run` re-bootstraps from the fresh backup (history preserved).
+// credential copy but is stale-marked, so its claim is released once it exits;
+// a non-live profile has its credential material dropped immediately (history
+// preserved).
 // The caller holds the store lock; release a claim only after invalidation succeeds.
 func (s *Store) postBackupWrite(num, email string) error {
 	dir := s.SessionDir(num, email)
@@ -132,13 +131,6 @@ func (s *Store) DeleteAccountFiles(num, email string) error {
 		}
 	}
 	return nil
-}
-
-// PruneMappings drops directory mappings for an identity that no longer has a
-// slot, returning the number pruned (spec 01§7 _prune_mappings). Slot migration
-// and swap keep the (email, org) identity, so they never call this.
-func (s *Store) PruneMappings(email, orgUUID string) (int, error) {
-	return mappings.New(s.backupDir).PruneAccount(email, orgUUID)
 }
 
 // PersistBackupCredentials writes a rotated credential to an inactive slot's

@@ -37,18 +37,15 @@ evidence.
 
 ## From the review of the automatic reclaim (v0.11.6)
 
-Planned follow-up: `docs/superpowers/plans/2026-11-14-start-login.md`
-(spec S5, S6). S5 is a separate release after fleet acceptance; the first
-startup-login release does not close RECLAIM-1 through RECLAIM-5.
+Follow-up: `docs/superpowers/plans/2026-11-16-busy-model-rotation.md`,
+Stream B (the operator's 2026-11-16 ruling replaced S5's acceptance gate).
 Each T row has a private repro test that passes on v0.11.5 or fails only on
 v0.11.6's new claim. The fixture
 `tycswap-review-20261114/review_repro_test.go` is not tracked in this repository;
-review and incorporate it with the later S5 implementation.
+review and incorporate it with Stream B.
 
 | ID | Defect | Where | Verdict | Ev | Series |
 | --- | --- | --- | --- | --- | --- |
-| RECLAIM-1 | a tick below every bar logs a shell pinned with `env` out: every real tick releases every unused profile before polling, and a pinned shell without a Claude process is unused | autoswitch/tick.go tickInner, core/autoswitch_adapters.go | CUT S5 (`env` goes) | T | R |
-| RECLAIM-2 | a tick between `run`'s lock release and Claude's `sessions/<pid>.json` (1.8 s after `exec` in one traced start) releases the starting profile and can make its account the default login too | session/bootstrap.go SetupSession, switching/legacyrelease.go | CUT S5 (`run` goes) | T | R |
 | RECLAIM-3 | a profile login that rotated in its profile and then expired is never released: the release asks the profile endpoint, which an expired token cannot answer; the tick reports `no-comparison` | switching/legacyrelease.go ReleaseIdleLegacy | FIX S5 (verify by refresh) | T | R |
 | RECLAIM-4 | the snapshot calls an account eligible when a release candidate exists, the engine refuses it when the release cannot verify: dashboard and tray show no reason | store/identity.go RotationOwnershipBlockReason | FIX S5 (reason stored on the claim) | T | R |
 | RECLAIM-5 | a `reserved` or `model-missing` tick with a held account emits `accounts-in-use` and `…-no-target` | autoswitch/tick.go selectCandidates | FIX S5 | T | R |
@@ -103,9 +100,7 @@ review and incorporate it with the later S5 implementation.
 | CLI-4 | `--slot` overwrite prompt while the login owns the terminal | cli/loginwait.go | FIX | P | R |
 | CLI-5 | login stored before its organization name is written | cli/loginwait.go, lifecycle/addsource.go | FIX | P | R |
 | CLI-6 | `auto` usage error exits 2 | cli/config.go | DUP ENG-12 |  |  |
-| CLI-7 | pinned shell: other commands fall back to `~/.claude` | cli/cli.go neutralizePinnedSessionProfile | CUT D10 | V | R |
 | CLI-8 | observe from a pinned profile booked to the default login | cli/observe.go | FIX D6 | T | E |
-| CLI-9 | `run` without an account in a pinned shell launches the pinned one | cli/run.go | CUT D10 |  | R |
 | CLI-10 | `config set autoswitch.model ","` accepted, disables the session policy | settings/settings.go ParseSettingValue | FIX | V | E |
 | CLI-11 | TUI add-token "slot occupied" matches a Codex number | tui/app.go slotOccupant | FIX | V | R |
 | CLI-12 | menu prefills "(none)", Enter fails | cli/menu.go, interactive.go | FIX |  | R |
@@ -188,15 +183,12 @@ review and incorporate it with the later S5 implementation.
 
 | ID | Defect | Where | Verdict | Ev | Series |
 | --- | --- | --- | --- | --- | --- |
-| SES-1 | failed probe reseeds a profile from the stale backup, then deletes it | session/bootstrap.go | CUT D10 | T | R |
 | SES-2 | every slot backup write deletes the profile's credential | store/credproxy.go postBackupWrite | CUT D10 | TV | R |
 | SES-3 | one unparsable session file vetoes every ownership check | store/ownership.go profilePIDs | FIX | T | R |
-| SES-4 | `env N` on the active account pins nothing, exits 0 | session/env.go | CUT D10 | V | R |
 | SES-5 | pinned session's status line handled as default login | cli/observe.go | DUP CLI-8 | T |  |
 | SES-6 | stale session file counts as running once its PID is reused | procdetect/procdetect.go, store/ownership.go | FIX | TV | R |
 | SES-7 | an account once run in a profile is refused as a target for good | store/ownership.go | CUT D10 | T | R |
 | SES-8 | symlink above the store root | groups/registry.go | DUP STORE-6 | T |  |
-| SES-9 | `--share-history` deletes same-named profile memory files | session/history.go | CUT D10 | T | R |
 | SES-10 | at-limit marker kept after the reset time passed | reporting/atlimit.go, render.go | FIX D4 | T | E |
 | SES-11 | unknown 5h utilization printed as 0 % | reporting/render.go | FIX | T | R |
 | SES-12 | at-limit marker ignores the session-model policy | reporting/atlimit.go | FIX D9 |  | E |

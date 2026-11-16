@@ -32,7 +32,7 @@ func TestHelpFlag(t *testing.T) {
 		"tycswap config",
 		"--slot",
 		"--email",
-		"tycswap run 2 -- --resume", // epilog example
+		"tycswap auto --once", // epilog example
 		"keep working",
 	}
 	for _, s := range mustContain {

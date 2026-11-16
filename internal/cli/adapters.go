@@ -8,13 +8,10 @@ import (
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
-	"github.com/tyclab/tycswap/internal/session"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/transfer"
 	"github.com/tyclab/tycswap/internal/usage"
 )
-
-var _ session.Accounts = (*core.Switcher)(nil)
 
 // ---- autoswitch.Switcher (DESIGN A13, FROZEN) ------------------------------
 

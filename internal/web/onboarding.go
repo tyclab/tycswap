@@ -21,8 +21,7 @@ type CurrentLoginView struct {
 
 // AuthOverridesView lists what makes Claude Code authenticate with something
 // other than its stored login: the variables set in the server's own
-// environment (which a plain `claude` inherits; `tycswap run` and `tycswap
-// env` scrub the key and token ones), and the keys set in Claude Code's
+// environment (which a plain `claude` inherits), and the keys set in Claude Code's
 // settings.json (`env.ANTHROPIC_API_KEY` and the like, or an `apiKeyHelper`).
 // Names only, never a value.
 type AuthOverridesView struct {

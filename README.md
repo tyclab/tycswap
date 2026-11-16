@@ -28,7 +28,6 @@ over once by [`tycswap migrate`](#move-over-from-claude-swap).
 | store a login, switch in place, alias, disable | yes | yes |
 | usage windows in list and dashboard | 5h, 7d, per model | 5h, weekly |
 | auto-switch before a limit | yes | yes, same `tycswap auto` loop and dashboard Auto tab |
-| second account in its own terminal | `run`, `env` | no: a switch lists the `codex` processes still on the old token |
 | take over an existing switcher's registry | — | yes, from codex-auth |
 | export, import, purge | yes | yes |
 
@@ -58,8 +57,8 @@ replaces the active login with another account's stored credentials.
 
 **Backup store.** The backup store is a directory holding every managed
 account's saved credentials and configuration, the account roster
-(`sequence.json`), settings, directory mappings, the usage cache, session
-profiles, and the switch log. Its location is per-platform (see
+(`sequence.json`), settings, the usage cache, former session profiles, and
+the switch log. Its location is per-platform (see
 [Data locations](#data-locations)). Switching copies credentials between the
 backup store and the active login; it removes nothing.
 
@@ -72,11 +71,10 @@ this headroom to choose a target; by default (`autoswitch.strategy`
 `soonest-reset`) auto-switch orders the targets that qualify by earliest weekly
 renewal, and `best` orders them by most headroom instead.
 
-**Session profile.** A session profile is a private `CLAUDE_CONFIG_DIR` under
-the backup store's `sessions/` directory. It lets one account run in a single
-terminal without changing the machine-wide active login. `tycswap run` and
-`tycswap env` prepare and use session profiles; this is how two accounts run in
-parallel.
+**Shared default login.** Every Claude session uses the default login, which
+tycswap switches between accounts; no session is pinned to an account. The
+per-account session profiles of `tycswap run` and `tycswap env` (removed, see
+[Former session profiles](#former-session-profiles)) retire on their own.
 
 **Relationship to claude-swap (Python).** tycswap is a Go port of claude-swap
 (Python, MIT, by Onur Cetinkol). The two implementations share their on-disk
@@ -87,7 +85,7 @@ the two never share one; `tycswap migrate` copies an existing claude-swap store
 once. The command grammar,
 exit codes, and lock protocol are identical. claude-swap's macOS menu bar
 application is not ported; tycswap's own tray application, `tycswap app`, works
-on macOS, Windows and Linux. The update mechanism, the `tycswap env` command, the
+on macOS, Windows and Linux. The update mechanism, the
 at-limit markers, and the Codex provider are Go-only; where the Go binary and the Python reference
 diverge, the divergences are enumerated in [`docs/DESIGN.md`](docs/DESIGN.md)
 §6 and its Amendments.
@@ -396,14 +394,11 @@ Enabled Account-2 (bob@example.com).
 
 ### Auto-switch before a limit
 
-Ordinary parallel Claude sessions should use the same default login so they all
-follow its rotation. `tycswap run` and `tycswap env` deliberately pin a separate
-profile: while any Claude process uses it, that account cannot also become the
-default login. A finished conversation left open still holds its account.
-Exit finished sessions to return their accounts to rotation; their history stays
-saved. Auto-switch reclaims a verified unused profile on its next tick. The
-dashboard and tray identify accounts held by other profiles, and a blocked tick
-reports `accounts-in-use` when those accounts prevent rotation.
+Parallel Claude sessions use the same default login and all follow its
+rotation. A session still running in a former `tycswap run`/`env` profile holds
+that account until it exits; the dashboard and tray identify such accounts, and
+a blocked tick reports `accounts-in-use` when they prevent rotation (see
+[Former session profiles](#former-session-profiles)).
 
 Auto-switch is off until you turn it on, from the CLI, the tray's
 **Auto-switch** toggle or the dashboard's Start:
@@ -612,29 +607,13 @@ claude() { tycswap start -- /absolute/path/to/real/claude "$@"; }
 
 The real path must not resolve back to a launcher. A launcher invokes tycswap
 once and returns its status; a nonzero child exit must never trigger a retry.
-`run`, `env`, `map` and `unmap` remain available in this release.
 
 ### Run accounts in parallel
 
 Plain `claude` needs nothing from tycswap: every session runs on the default
 login, and auto-switch moves that login by the models the sessions run (see
-[Auto-switch before a limit](#auto-switch-before-a-limit)). All default
-sessions share one account at a time, and subagents run on their session's
-account. To run a second account beside it, pin a terminal to that account.
-
-`tycswap run` launches Claude Code as a chosen account in the current terminal
-only, using a session profile, without changing the machine-wide active login.
-A second terminal can run `tycswap run` for a different account at the same time.
-
-```
-$ tycswap run 2 -- --version
-Launching Account-2 (bob@example.com) [session mode]
-2.1.212 (Claude Code)
-```
-
-Arguments after `--` are forwarded to `claude`. When the requested account is
-already the active default login, `tycswap run` launches `claude` directly rather
-than preparing a session profile.
+[Auto-switch before a limit](#auto-switch-before-a-limit)). All sessions share
+one account at a time, and subagents run on their session's account.
 
 **Session groups are retired.** The Fable and Opus / other groups and
 `tycswap claude` are gone; plain `claude` follows the session's model on the
@@ -662,68 +641,14 @@ the dashboard provides a manual plan; stop the source before running it.
 model request. The dashboard's **Guide → Sessions** covers the workflow,
 including Flakelab start/resume integration.
 
-**Directory mappings.** Map a directory to an account so a bare `tycswap run` in
-that directory resolves to it:
+#### Former session profiles
 
-```
-$ tycswap map 2 ~/work/client-app
-Mapped ~/work/client-app → Account-2 (bob@example.com)
-
-$ tycswap map
-Directory mappings:
-  ~/work/client-app → 2: bob@example.com [personal]
-
-$ cd ~/work/client-app && tycswap run     # runs as account 2
-```
-
-`tycswap unmap [path]` removes a mapping.
-
-**Pinning a shell.** `tycswap env` prepares the same session profile `tycswap run`
-does, but instead of launching `claude` it prints an eval-able export that pins
-the current shell's `CLAUDE_CONFIG_DIR` to the account. Every subsequent
-`claude` in that shell uses that profile, and no separate process is
-launched:
-
-```
-$ eval "$(tycswap env 2)"                 # pin this shell to account 2
-$ eval "$(tycswap env)"                   # resolve from this directory's mapping
-$ eval "$(tycswap env --unset)"           # drop the pin (back to the default login)
-```
-
-`tycswap env` writes only the eval lines to standard output; every notice goes to
-standard error:
-
-```
-$ tycswap env 2
-Prepared Account-2 (bob@example.com) [session mode]      # (stderr)
-export CLAUDE_CONFIG_DIR='~/.local/share/tycswap/sessions/2-bob_example.com'
-```
-
-When the chosen account is already the active default login, `tycswap env` exports
-nothing and writes a note to standard error, since an unpinned shell already uses
-that account; the `eval` is a safe no-op.
-
-Other shells take `--shell`:
-
-```fish
-tycswap env 2 --shell fish | source
-```
-```powershell
-tycswap env 2 --shell pwsh | Invoke-Expression
-```
-
-The shell keeps the profile path it eval'd until it evals again. A shell
-alone does not keep the login: with auto-switch on, a real tick may reclaim
-the profile when no Claude process uses it, even while that shell is open.
-Re-run the `eval` before starting Claude after an idle period, or use
-`tycswap run`, which re-prepares the profile on every launch. A process still
-starting may also race that reclaim; this legacy limitation remains until
-the later retirement release.
-
-In a pinned shell, launching with `tycswap start` honors the pin and skips
-selection. Other tycswap commands except `tycswap env` and `tycswap run`
-ignore the pin and operate on the default login, printing `This shell is
-pinned via tycswap env; operating on the default login.` to standard error.
+`tycswap run`, `env`, `map` and `unmap`, which pinned a terminal or a directory
+to one account in its own profile under the store's `sessions/` directory, are
+removed: they exit 2 with a pointer to the shared login. A profile left behind
+keeps its account while a Claude session still runs in it; a shell whose
+`CLAUDE_CONFIG_DIR` still names one works on the default login and says so on
+standard error. `mappings.json` is no longer read.
 
 ### Export and import
 
@@ -1284,11 +1209,10 @@ Inside the backup store:
 | `credentials/`            | Each account's stored credential blob (`.enc`).               |
 | `configs/`                | Each account's configuration snapshot.                        |
 | `settings.json`           | Auto-switch settings, the on/off among them (`tycswap config`, `tycswap auto on\|off`). |
-| `mappings.json`           | Directory-to-account mappings (`tycswap map`).                  |
 | `cache/usage.json`        | Cached usage fetches.                                         |
 | `cache/update_check.json` | Cached update-check result.                                  |
 | `statusline.json`         | Label and quota per account for status lines (see Status line integration). |
-| `sessions/`               | Session profiles for `tycswap run` and `tycswap env`.            |
+| `sessions/`               | Former `tycswap run`/`env` profiles, until they retire.        |
 | `tycswap.log`             | The switch log; rotates at 1 MB, keeping 3 backups.          |
 | `ui_prefs.json`           | The dashboard's folded cards.                                  |
 | `app.lock`, `remote.lock` | Held while the tray app (or a remote tray) runs.              |

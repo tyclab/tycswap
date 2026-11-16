@@ -31,7 +31,7 @@ func (s *Store) RefreshBackupGuarded(ctx context.Context, c oauth.Client, num, e
 			return nil // became the live login: Claude Code owns its token now
 		}
 		if len(s.LiveSessionPidsFor(num, email)) > 0 {
-			return nil // a `tycswap run` session owns this lineage
+			return nil // a session in its former profile owns this lineage
 		}
 		backup, _ := s.ReadAccountCredentials(num, email)
 		if backup == "" {

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
+	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/settings"
 )
@@ -44,9 +45,7 @@ func TestAutomaticRotationFromLegacyProfile(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := sw.Lock.With(func() error { return sw.ClaimLegacyProfile("2", "b@example.test", dir) }); err != nil {
-				t.Fatal(err)
-			}
+			claimLegacy(t, sw, "2", dir)
 			if mode == "live" {
 				if err := os.Mkdir(filepath.Join(dir, "sessions"), 0o700); err != nil {
 					t.Fatal(err)
@@ -138,5 +137,21 @@ func TestAutomaticRotationFromLegacyProfile(t *testing.T) {
 				t.Fatal("conversation history changed")
 			}
 		})
+	}
+}
+
+// claimLegacy records the claim `tycswap run` wrote for a profile; nothing
+// writes one since its removal (DESIGN A92), but stores still hold them.
+func claimLegacy(t *testing.T, sw *Switcher, number, dir string) {
+	t.Helper()
+	id := sw.AccountIdentity(number)
+	registry, err := groups.LoadRegistry(sw.SharedRoot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry.Claims[number] = groups.Owner{Scope: "legacy:" + number, ProfileDir: dir,
+		Account: groups.Account{Number: number, Email: id["email"], OrgUUID: id["organizationUuid"], UUID: id["uuid"]}}
+	if err := registry.Save(sw.SharedRoot()); err != nil {
+		t.Fatal(err)
 	}
 }

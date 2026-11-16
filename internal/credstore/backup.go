@@ -117,7 +117,7 @@ func (s *FileKeychainStore) decodeEnc(path, logMsg string) (string, bool) {
 // It returns the account part only (oauth.AccountOnly, DESIGN A59): a slot
 // written before the seat-wide split may still hold the MCP server logins of
 // the live file it was taken from. They are set aside here, so no refresh
-// write-back or `run` profile picks them up; the stored bytes stay until the
+// write-back or profile picks them up; the stored bytes stay until the
 // slot's next write.
 func (s *FileKeychainStore) ReadBackup(num, email string) (string, error) {
 	encPath := s.backupEncPath(num, email)

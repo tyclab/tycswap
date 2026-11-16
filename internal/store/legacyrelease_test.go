@@ -149,17 +149,25 @@ func TestLegacyReleaseKeepsClaimWhenKeychainRetainsCredential(t *testing.T) {
 	}
 }
 
-func TestNewLegacyClaimDropsOldReleaseProof(t *testing.T) {
-	s, dir, candidate := releaseFixture(t)
-	marker := legacyReleaseMarker{Version: 1, Account: candidate.Owner.Account, Digest: releaseDigest(candidate.Credentials)}
-	if err := groups.WriteJSON(legacyReleasePath(dir), marker); err != nil {
+// claimLegacy records the claim `tycswap run` wrote for a profile; nothing
+// writes one since its removal (DESIGN A92), but stores still hold them.
+func claimLegacy(t *testing.T, s *Store, number, dir string) {
+	t.Helper()
+	data, err := s.classifiedRoster()
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Lock.With(func() error { return s.ClaimLegacyProfile("1", "one@example.test", dir) }); err != nil {
+	account, err := s.accountFrom(data, number)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(legacyReleasePath(dir)); !os.IsNotExist(err) {
-		t.Fatal("a later session inherited old release proof")
+	registry, err := groups.LoadRegistry(s.backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry.Claims[number] = groups.Owner{Scope: "legacy:" + number, ProfileDir: dir, Account: account}
+	if err := registry.Save(s.backupDir); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -29,10 +29,24 @@ func legacySwitchProfile(t *testing.T, s *store.Store, creds string) string {
 			t.Fatal(err)
 		}
 	}
-	if err := s.Lock.With(func() error { return s.ClaimLegacyProfile("2", "b@x.com", dir) }); err != nil {
+	claimLegacy(t, s, "2", dir)
+	return dir
+}
+
+// claimLegacy records the claim `tycswap run` wrote for a profile; nothing
+// writes one since its removal (DESIGN A92), but stores still hold them.
+func claimLegacy(t *testing.T, s *store.Store, number, dir string) {
+	t.Helper()
+	id := s.AccountIdentity(number)
+	registry, err := groups.LoadRegistry(s.SharedRoot())
+	if err != nil {
 		t.Fatal(err)
 	}
-	return dir
+	registry.Claims[number] = groups.Owner{Scope: "legacy:" + number, ProfileDir: dir,
+		Account: groups.Account{Number: number, Email: id["email"], OrgUUID: id["organizationUuid"], UUID: id["uuid"]}}
+	if err := registry.Save(s.SharedRoot()); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func assertLegacySwitchHeld(t *testing.T, s *store.Store, dir, active, backup, profile string) {

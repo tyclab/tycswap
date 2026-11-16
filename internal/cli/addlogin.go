@@ -28,8 +28,8 @@ import (
 	"github.com/tyclab/tycswap/internal/platform"
 )
 
-// claudeLookPath resolves the claude binary the way `tycswap run` does
-// (shutil.which, so a Windows .cmd shim resolves). A seam for the tests.
+// claudeLookPath resolves the claude binary on PATH (so a Windows .cmd shim
+// resolves). A seam for the tests.
 var claudeLookPath = exec.LookPath
 
 // loginKeychain is the Keychain a scratch login may write its credential to
@@ -183,7 +183,7 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 
 // loginEnv is the parent environment with CLAUDE_CONFIG_DIR pointing at the
 // scratch profile. Any CLAUDE_CONFIG_DIR already set — a custom one, or the
-// session profile of a `tycswap env`-pinned shell — is replaced, so the login
+// former session profile a shell still names — is replaced, so the login
 // can never land in a live profile. CLAUDE_SECURESTORAGE_CONFIG_DIR is dropped
 // too: Claude Code names its credential storage after it in place of the
 // config dir, and after the default `~/.claude` storage (the unhashed items)

@@ -1026,6 +1026,8 @@ Python-fidelity contract in `docs/port-spec/` is unchanged.
 
 ## A16. `tycswap env` — pin a shell to an account (Go-side additive extension)
 
+Removed by A92 (2026-11-16) with `run`, `map` and `unmap`.
+
 `tycswap env [NUM|EMAIL|ALIAS] [--no-share] [--share-history] [--shell sh|fish|pwsh]
 [--unset] [--debug]` gives the CURRENT shell a per-account Claude Code identity —
 `eval "$(tycswap env 2)"` — by preparing the same persistent session profile
@@ -7239,3 +7241,34 @@ This release retains `run`, `env`, `map`, `unmap` and their login ownership.
 The later S5 retirement requires fleet acceptance and fresh review. In the
 meantime an open `env` shell without a running Claude process does not keep
 its claim from idle reclaim, and a newly starting legacy process can race it.
+
+## A92. run, env and map retire
+
+The operator ruled on 2026-11-10 that the per-account profile commands go
+("Remove them") and on 2026-11-16, finding them still shipped, "FIX IT".
+`tycswap run`, `env`, `map` and `unmap` are gone, with the session manager
+(`internal/session`), the directory mappings (`internal/mappings`; a
+`mappings.json` stays on disk unread, and `add`/`remove` no longer prune it)
+and their help, docs, adapters and the env-only SIGINT routing. Each of the
+four names exits 2 before the store is read, like an unknown command, with one
+stderr line pointing at the shared default login and `claude --resume`. Every
+Claude session shares the default login, which tycswap switches; A89's
+"explicit account pins" no longer exist.
+
+Why it took a second ruling: the removal waited behind the one-engine series
+(D10, behind E1 which never shipped) and then behind a fleet-acceptance gate
+the ruling did not set (start-login S5); nothing asserted the commands gone.
+`TestLegacyProfileCommandsAreGone` does now. A removal ruling ships in the
+next release, pinned by a test, never behind a series or a gate the operator
+did not set.
+
+The helpers other features use moved out first: `launch.AuthOverrideEnvVars`,
+`launch.ScrubAuthOverrides`, `launch.CLICommand` and `launch.CheckCmdShimArgs`
+(add --login, codex login, the updater, start) and `ccfile.KeychainServiceName`,
+`ccfile.CredentialsFileName`, `ccfile.ReadProfileIdentity` (store, purge,
+migrate). What stays until no profile is left: `internal/sessprofile` reads
+the profiles under `<store>/sessions/`, `groups/claims.json` keeps their
+claims, the ownership checks (A88, A89) still treat a profile as its account's
+owner, a live session in one keeps its claim, and a shell whose
+`CLAUDE_CONFIG_DIR` still names one runs every command on the default login
+with one notice.

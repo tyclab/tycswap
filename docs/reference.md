@@ -33,12 +33,6 @@ tycswap start [--account ID] [--] [command [args...]]
                                             choose a startup login, then launch once
 tycswap start --allow ID | --disallow ID | --list
                                             manage startup marks (Claude accounts)
-tycswap run [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history|--no-share-history] [-- ARGS...]
-                                            launch Claude Code as an account, this terminal only
-tycswap env [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history] [--shell {sh|fish|pwsh}] [--unset]
-                                            print eval-able env lines that pin this shell
-tycswap map [<NUM|EMAIL|ALIAS> [PATH]]        map a directory to an account / list mappings
-tycswap unmap [PATH]                          remove a directory mapping
 tycswap auto [--once] [--json] [--interval SECONDS] [--five-hour-threshold PCT]
            [--seven-day-threshold PCT] [--model-threshold PCT] [--cooldown SECONDS]
            [--model NAMES] [--dry-run]      auto-switch when nearing rate limits
@@ -97,7 +91,7 @@ Legacy flag spellings are equivalent to the verbs and remain supported:
 `--enable-account <id>`, `--export <path>`, `--import <path>`, `--tui`,
 `--watch`, `--menubar`, `--upgrade`, `--purge`. `ls` is an alias for `list`,
 `rm` for `remove`, `update` for `upgrade`. A verb, or the leading legacy flag,
-must be the first argument; `tycswap --debug run 2` is not accepted (place the
+must be the first argument; `tycswap --debug auto` is not accepted (place the
 verb first).
 
 ## Account resolution: NUM | EMAIL | ALIAS
@@ -474,7 +468,7 @@ be correct; the post-switch note is informational (see NOTES). The switch
 cooperates with Claude Code's own credential lock, so it never interleaves
 with a token refresh.
 
-An explicit `switch ACCOUNT` can reclaim an idle per-account `run`/`env`
+An explicit `switch ACCOUNT` can reclaim an idle former per-account `run`/`env`
 profile. It checks the profile and stored config identities, then proves its
 credential by the stored lineage or the OAuth profile endpoint before saving
 the latest login and releasing the claim. Profile conversation files and MCP
@@ -674,8 +668,8 @@ until the next auto-switch tick after its last session exits hands it back
 With `--login`, `add` stores a login the live one never sees. It creates a
 private scratch profile (`login.*`, mode 0700) under the backup root and runs
 `claude auth login [LOGIN-ARGS...]` with `CLAUDE_CONFIG_DIR` pointing at it,
-replacing any `CLAUDE_CONFIG_DIR` the shell already carries (including a
-`tycswap env` pin) and dropping any `CLAUDE_SECURESTORAGE_CONFIG_DIR`. The
+replacing any `CLAUDE_CONFIG_DIR` the shell already carries (including one
+naming a former session profile) and dropping any `CLAUDE_SECURESTORAGE_CONFIG_DIR`. The
 terminal is handed to the login so the browser flow can be completed; no store
 or roster lock is held while it runs. Claude Code ends its login with "Login
 successful. Press Enter to continue…" and keeps running until then; `add`
@@ -1288,328 +1282,38 @@ executable, it reports a launch error.
 POSIX replaces tycswap with the child; Windows spawns and waits with inherited
 standard streams and returns the child status. Windows console Ctrl+C behavior
 requires native Windows integration validation; cross-vet is insufficient.
-Legacy `run`, `env`, `map` and `unmap` remain in this release.
 
 ---
 
-## tycswap run
+## tycswap run, env, map, unmap (removed)
 
 ### Synopsis
 
 ```
-tycswap run [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history|--no-share-history] [--debug] [-- ARGS...]
+tycswap run|env|map|unmap [ARGS...]
 ```
-
-### Options
-
-| Option | Type | Default | Constraints |
-|--------|------|---------|-------------|
-| `--no-share` | flag | off (session shares the default profile's MCP/config) | — |
-| `--share-history` | flag | off | Mutually last-wins with `--no-share-history`. |
-| `--no-share-history` | flag | on (history not shared) | — |
-| `--debug` | flag | off | — |
-| `-- ARGS...` | passthrough | — | Everything after the first `--` is forwarded to `claude` verbatim. |
 
 ### Description
 
-Launches Claude Code as a stored account in the current terminal only, without
-changing the machine-wide default login. It prepares the account's persistent
-session profile (bootstrap, token validate, MCP mirror, credential scrub) and
-then execs `claude` with `CLAUDE_CONFIG_DIR` pointed at that profile. With no
-account argument, the account is resolved from the current directory's mapping
-(see `tycswap map`); if the directory has no usable mapping, `claude` launches as
-the default login. This is an experimental feature.
+Removed on the operator's ruling of 2026-11-10 (DESIGN A92). Every Claude
+session uses the shared default login, which tycswap switches; nothing pins a
+terminal, shell or directory to one account any more. Each of the four names
+exits `2` before reading the store, with
 
-### Files
+```
+tycswap: error: tycswap run was removed: every Claude session uses the shared default login, which tycswap switches. Start plain claude; claude --resume <id> continues a former profile's conversation there.
+```
 
-Reads `sequence.json`, `mappings.json`, per-account `configs/`/`credentials/`.
-Creates and maintains the account's `sessions/<n>-<email>` profile directory.
+on standard error (the name is the one given) and nothing on standard output.
+
+A profile `run` or `env` created stays under `<backup root>/sessions/`. While a
+Claude session still runs in it, it keeps its account (`accounts-in-use`, A89).
+A shell whose `CLAUDE_CONFIG_DIR` still names one works on the default login
+(see ENVIRONMENT).
 
 ### Exit status
 
-The exit status of the launched `claude` process. `1` on a pre-exec failure;
-`2` on a usage error. On POSIX the process is replaced by `claude`, so tycswap
-itself does not return on success.
-
-### Output
-
-Preparation notices (`Launching Account-<n> (<email>) [session mode]`, warnings)
-are printed before the handoff. A directory with no mapping prints
-`No account mapped for <dir> — launching the default account.`; a mapping to a
-removed account prints a warning and launches the default.
-
-### Errors
-
-| Message | Exit |
-|---------|------|
-| `unrecognized arguments: <tok>` | 2 |
-| A `SessionError` / bootstrap failure (`Error: <message>`) | 1 |
-| Corrupt or unreadable `sequence.json` (`ConfigError`, names the file and the repair/restart options) | 1 |
-
-An API-key account cannot be run in session mode and is rejected.
-
-Account resolution — an explicit account, or the current directory's
-mapping — refuses on a corrupt roster; with no account argument this means
-`run` refuses rather than falling back to the default login.
-
-### Example (illustrative — requires a real Claude Code install)
-
-```
-$ tycswap run 2 -- --resume
-Launching Account-2 (bob@example.com) [session mode]
-# ... claude starts as account 2 with --resume ...
-```
-
-### See also
-
-`tycswap env`, `tycswap map`.
-
----
-
-## tycswap env
-
-### Synopsis
-
-```
-tycswap env [<NUM|EMAIL|ALIAS>] [--no-share] [--share-history] [--shell {sh|fish|pwsh}] [--unset] [--debug]
-```
-
-### Options
-
-| Option | Type | Default | Constraints |
-|--------|------|---------|-------------|
-| `--shell` | choice `sh` \| `fish` \| `pwsh` | `sh` | Selects the output syntax. |
-| `--no-share` | flag | off | — |
-| `--share-history` | flag | off | — |
-| `--unset` | flag | off | Takes no account argument; skips bootstrap. |
-| `--debug` | flag | off | — |
-
-### Description
-
-Prints shell-evalable lines that pin the current shell to a stored account's
-session profile without launching `claude`. It prepares the same profile
-`tycswap run` does (bootstrap / validate / mirror / `--no-share` /
-`--share-history` all apply), then prints a `CLAUDE_CONFIG_DIR` export instead
-of exec'ing. Intended for `eval "$(tycswap env 2)"`. `--unset` prints only the
-`CLAUDE_CONFIG_DIR` unset line for the chosen shell, dropping the pin. With no
-account, the account is resolved from the current directory's mapping; unlike
-`run`, `env` has no default-login fallback and errors when nothing is mapped.
-
-When the chosen account is already the active default login and
-`CLAUDE_CONFIG_DIR` is not already set, `tycswap env` does nothing: it prepares no
-profile, creates no second credential copy, and exports nothing. It writes one
-note to stderr and exits 0, so `eval "$(tycswap env <n>)"` is a safe no-op. When
-`CLAUDE_CONFIG_DIR` is already set, the preset-override behavior applies instead:
-the profile is prepared and exported for this shell, overriding the preset,
-identical to `tycswap run`.
-
-An open shell without a Claude process does not retain the profile's login.
-With auto-switch on, a real tick can reclaim that idle profile; run the `env`
-command again before starting Claude after an idle period. A process still
-starting can race reclaim too. These legacy limitations remain in this release.
-
-Output discipline: stdout carries only the eval-able lines. Before the export,
-one unset line is emitted for each currently-set authentication-override
-variable (see ENVIRONMENT) so it cannot shadow the pinned account. All notices
-and warnings go to stderr.
-
-
-In `--shell pwsh` output every value is single-quoted with `'` doubled, and
-so are the typographic single quotes U+2018 to U+201B, which PowerShell also
-treats as quote characters. Strings shown by `list`, `status`, the dashboard
-and the Codex commands that come from exports, APIs or other tools' files
-(emails, aliases, organization and workspace names, running-instance paths)
-are printed with control characters (C0, DEL, C1, ESC) removed.
-
-On Windows, when `claude` resolves to a `.cmd` or `.bat` shim (the npm
-install), `run` and `add --login` refuse an argument holding a character
-cmd.exe interprets (`& | < > ^ % ! " ( )` or a line break), because cmd.exe
-re-parses such a script's command line; the native `claude.exe` has no such
-restriction. `add --login` also removes the auth override variables
-(`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, …) from the login's
-environment, as `run` and `env` do.
-
-### Files
-
-Same as `tycswap run`: reads the registry and mappings, prepares the account's
-`sessions/<n>-<email>` profile.
-
-### Exit status
-
-`0` on success; `1` on a handled error (including "nothing to prepare"); `2` on
-a usage error.
-
-### Output
-
-The eval stream, per shell:
-
-| Shell | Export | Unset |
-|-------|--------|-------|
-| `sh` | `export CLAUDE_CONFIG_DIR='<dir>'` | `unset CLAUDE_CONFIG_DIR` |
-| `fish` | `set -gx CLAUDE_CONFIG_DIR '<dir>'` | `set -e CLAUDE_CONFIG_DIR` |
-| `pwsh` | `$env:CLAUDE_CONFIG_DIR = '<dir>'` | `Remove-Item Env:CLAUDE_CONFIG_DIR -ErrorAction SilentlyContinue` |
-
-When the chosen account is already the active default login and no
-`CLAUDE_CONFIG_DIR` preset is set, stdout is empty; only the stderr note is
-written (see Description).
-
-### Errors
-
-| Message | Exit |
-|---------|------|
-| `argument --shell: invalid choice: '<v>' (choose from sh, fish, pwsh)` | 2 |
-| `--unset does not take a NUM\|EMAIL\|ALIAS argument` | 2 |
-| `argument --shell: expected one argument` | 2 |
-| `unrecognized arguments: <tok>` | 2 |
-| `Nothing to prepare an environment for (...). Pass an account ..., map this directory ..., or clear a pinned profile with tycswap env --unset.` | 1 |
-| Corrupt or unreadable `sequence.json` (`ConfigError`, names the file and the repair/restart options) | 1 |
-
-Account resolution (an explicit `NUM\|EMAIL\|ALIAS`, or the current
-directory's mapping) refuses on a corrupt roster rather than reporting that
-no such account exists.
-
-### Example
-
-```
-$ tycswap env 2
-Prepared Account-2 (bob@example.com) [session mode]      # (stderr)
-export CLAUDE_CONFIG_DIR='~/.local/share/tycswap/sessions/2-bob_example.com'
-$ tycswap env 1                                            # already the active default login
-Account-1 (alice@example.com) is the active default login — an unpinned shell already uses it; nothing exported.      # (stderr; exit 0, nothing exported)
-$ tycswap env --unset
-unset CLAUDE_CONFIG_DIR
-$ tycswap env --unset --shell fish
-set -e CLAUDE_CONFIG_DIR
-```
-
-`tycswap env` has no counterpart in claude-swap (Python); it is defined by this
-implementation.
-
-### See also
-
-`tycswap run`, `tycswap map`, ENVIRONMENT.
-
----
-
-## tycswap map
-
-### Synopsis
-
-```
-tycswap map                                   list directory mappings
-tycswap map <NUM|EMAIL|ALIAS> [PATH]          map a directory to an account
-tycswap map [...] [--debug]
-```
-
-### Options
-
-| Option | Type | Default | Constraints |
-|--------|------|---------|-------------|
-| `NUM\|EMAIL\|ALIAS` | positional | — | Optional. Omit (with no `PATH`) to list mappings; supply it to map a directory. |
-| `PATH` | positional string | the current directory | The directory to map. A non-existent directory is mapped with a warning. |
-| `--debug` | flag | off | — |
-
-### Description
-
-With no arguments, lists directory→account mappings. With an account and an
-optional path (defaulting to the current directory), records that a bare
-`tycswap run` / `tycswap env` in that directory resolves to the given account. A
-path that is not an existing directory is mapped anyway with a warning.
-
-### Files
-
-Reads and writes `mappings.json` in the backup root.
-
-### Exit status
-
-`0` on success; `1` on a handled error; `2` on a usage error.
-
-### Output
-
-- List: `Directory mappings:` and one `  <path> → <n>: <email> [<tag>]` line
-  per mapping (or `... (account removed)` for a dangling mapping); or the empty
-  notice `No directory mappings yet.` plus a hint.
-- Set: `Mapped <path> → Account-<n> (<email>)`, with `(was <prev-email>)`
-  appended when the path was previously mapped to a different account.
-
-### Errors
-
-| Message | Exit |
-|---------|------|
-| `unrecognized arguments: <tok>` | 2 |
-| `No account found with identifier: <id>` | 1 |
-| Corrupt or unreadable `sequence.json`, given an account argument (`ConfigError`, names the file and the repair/restart options) | 1 |
-
-A non-directory path prints
-`Warning: <path> is not an existing directory (mapping it anyway)` on stdout
-and proceeds.
-
-The corrupt-roster refusal applies only when an account is given: account
-resolution refuses rather than reporting "no such account." The bare,
-no-argument listing does not detect a corrupt roster at all and exits 0 —
-every mapping prints as `... (account removed)`, whether or not the account
-it names still exists, because the listing cannot tell corruption from
-absence.
-
-### Example
-
-```
-$ tycswap map
-Directory mappings:
-  ~/work/client-app → 2: bob@example.com [personal]
-```
-
-### See also
-
-`tycswap unmap`, `tycswap run`, `tycswap env`.
-
----
-
-## tycswap unmap
-
-### Synopsis
-
-```
-tycswap unmap [PATH] [--debug]
-```
-
-### Options
-
-| Option | Type | Default | Constraints |
-|--------|------|---------|-------------|
-| `PATH` | positional string | the current directory | The directory whose mapping is removed. |
-| `--debug` | flag | off | — |
-
-### Description
-
-Removes the mapping for a directory (defaulting to the current directory).
-
-### Files
-
-Reads and writes `mappings.json`.
-
-### Exit status
-
-`0` on success (including "no mapping present"); `2` on a usage error.
-
-### Output
-
-`Unmapped <path>` when a mapping was removed, else `No mapping for <path>`.
-
-### Errors
-
-`unrecognized arguments: <tok>` (exit 2).
-
-### Example
-
-```
-$ tycswap unmap ~/work/client-app
-Unmapped ~/work/client-app
-```
-
-### See also
-
-`tycswap map`.
+`2`.
 
 ---
 
@@ -2910,9 +2614,9 @@ tabs:
   troubleshooting and where the data lives.
 - **Sessions**: running Claude Code sessions grouped by directory, with
   status (busy, waiting, idle), title from the transcript, and *Stop*. The
-  list includes sessions started with `tycswap run` or `tycswap env` (found
-  in the session profiles under the backup root and marked with the slot
-  they run as). Only a session file named after the pid it carries
+  list includes sessions still running in a former `tycswap run`/`env`
+  profile (found under the backup root and marked with the slot they run
+  as). Only a session file named after the pid it carries
   (`sessions/<pid>.json`, as Claude Code writes it) is listed. Stop sends
   SIGTERM, or TerminateProcess on Windows, and only to a PID that is listed
   as a Claude Code session at that moment and whose process start time
@@ -3135,7 +2839,7 @@ Press Ctrl-C to stop.
 `tycswap tui`, `tycswap auto`, `tycswap config`.
 
 **Not yet in the dashboard** (follow-ups): `add --login` and `codex login` as
-a cancellable job, and `map`/`unmap`. The tray is `tycswap app`, and its
+a cancellable job. The tray is `tycswap app`, and its
 remote mode uses the bearer token and `POST /api/launch` above.
 
 ---
@@ -4930,7 +4634,7 @@ tycswap reads the following environment variables.
 
 | Variable | Effect |
 |----------|--------|
-| `CLAUDE_CONFIG_DIR` | Overrides the Claude Code config home: the global config is `<dir>/.claude.json` and credentials are `<dir>/.credentials.json`. `tycswap start` skips startup selection and passes any set value unchanged, even empty. `tycswap env` and `tycswap run` treat any set value as a preset and override it with the session profile they prepare. For every other command the effect depends on the value: a tycswap session pin — a value inside `<backup_root>/sessions/`, as set by `tycswap env` — is ignored, and the command operates on the default login and prints `This shell is pinned via tycswap env; operating on the default login.` to stderr; a custom value outside `<backup_root>/sessions/` is honored. The default-profile mirror used by session sharing deliberately ignores this and reads the real `~/.claude` profile. |
+| `CLAUDE_CONFIG_DIR` | Overrides the Claude Code config home: the global config is `<dir>/.claude.json` and credentials are `<dir>/.credentials.json`. `tycswap start` skips startup selection and passes any set value unchanged, even empty. For every other command the effect depends on the value: a former session profile — a value inside `<backup_root>/sessions/`, as `tycswap env` set it before its removal — is ignored, and the command operates on the default login and prints `CLAUDE_CONFIG_DIR names a retired tycswap profile; operating on the default login.` to stderr; a custom value outside `<backup_root>/sessions/` is honored. |
 | `XDG_DATA_HOME` | On Linux/WSL, selects the backup-root parent: `<XDG_DATA_HOME>/tycswap` (and, for `tycswap migrate`, the old store `<XDG_DATA_HOME>/claude-swap`). Ignored when unset, empty, or non-absolute; a leading `~` is expanded. |
 | `HOME` | The user's home directory; the base for `~/.claude.json`, `~/.claude/`, `~/.local/share`, `~/.tycswap`, the old `~/.claude-swap-backup` (read only by `tycswap migrate`), and `~/go/bin`. |
 | `WSL_DISTRO_NAME` | When non-empty, the platform is detected as WSL (which uses the Linux/WSL backup-root layout). |
@@ -4950,18 +4654,15 @@ else non-TTY → off; else `TERM=dumb` → off; else on. The result is computed 
 per process and cached.
 
 **Authentication-override variables (scrubbed).** The following make `claude`
-bypass account OAuth. `tycswap run` and `tycswap env` scrub them from the prepared
-session environment (and `tycswap env` emits an unset line for each one currently
-set, so the calling shell drops it too):
+bypass account OAuth. `tycswap add --login` scrubs them from the login's
+environment, and `tycswap start` skips selection while one is set:
 
 - `ANTHROPIC_API_KEY`
 - `ANTHROPIC_AUTH_TOKEN`
 - `CLAUDE_CODE_OAUTH_TOKEN`
 - `CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR`
 - `CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR`
-
-They are not scrubbed on the same-account fast path or when `tycswap run` falls
-through to launching the default login.
+- `CLAUDE_SECURESTORAGE_CONFIG_DIR` (not an override, but it moves Claude Code's credential storage, DESIGN A56)
 
 ## FILES
 
@@ -5010,11 +4711,11 @@ Inside the backup root:
 | `sequence.json` | The account registry: `activeAccountNumber`, `lastUpdated`, the `sequence` array of slot numbers, and an `accounts` map keyed by slot (`email`, `uuid`, `organizationUuid`, `organizationName`, `added`, and optional `alias`, `startLogin: true`, `plan` (the plan name Claude Code recorded for the login, written by `add` and refreshed by a switch, DESIGN A79), `kind: "api_key"`, `disabled: true`, and with `kind: "api_key"` a `baseUrl`, the endpoint the key is for). |
 | `settings.json` | Settings (see SETTINGS). |
 | `claude-settings.prev.json` | Present while an API-key account with a base URL is active (DESIGN A46): what the three keys of Claude Code's `settings.json` the switch owns, `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN` (written) and `env.ANTHROPIC_API_KEY` (removed), held before (`{"version": 1, "settingsPath", "keys": {"<key>": {"present", "value"?}}}`, including whether `env` existed), mode 0600. A switch onto any other account restores them from it and removes it; one that is not a complete record (version 1, an entry for `env` and each key, nothing after it) is corrupt and stops the switch. `tycswap purge` deletes it and says so first. |
-| `mappings.json` | Directory→account mappings (`schemaVersion`, `mappings` keyed by absolute path). |
+| `mappings.json` | Directory→account mappings of the removed `tycswap map`; no longer read (DESIGN A92). |
 | `autoswitch_state.json` | `tycswap auto` cooldown, quarantine, failover-count, idle-hold and model-name-check state, guarded by `.autoswitch_state.lock`. |
 | `configs/` | Per-account config snapshots, `.claude-config-<n>-<email>.json`. `<email>` is the account's email as `add` accepts it (one `@`, at most 254 bytes, no whitespace, control character, `/`, `\` or `< > : " | ? *`), so the name is a single path component. |
 | `credentials/` | Per-account credential files, `.creds-<n>-<email>.enc` and the retained previous generation `.creds-<n>-<email>.enc.prev` (file backend; `<email>` as for `configs/`). macOS stores these in the Keychain instead, except a credential too large to reach the `security` command over stdin (a command line over 4032 bytes, so a credential over about 2 KB, for example one carrying many `mcpOAuth` tokens), which stays in this file (mode 0600) rather than on a command line. The live Claude Code credential falls back to `.credentials.json` the same way. |
-| `sessions/` | Per-account session-mode profiles, `<n>-<email>` (the `@` in the email replaced by `_`), created by `tycswap run` / `tycswap env`. |
+| `sessions/` | Former per-account profiles of the removed `tycswap run` / `tycswap env`, `<n>-<email>` (the `@` in the email replaced by `_`); kept for their history (DESIGN A92). |
 | `default_models.json` | The model family each default-profile session runs, as `--observe` records it from the status line (DESIGN A76): `{"schemaVersion": 1, "sessions": {"<session id>": {"family", "seenAt"}}}`. Kept a day; no credentials. |
 | `observe_state.json` | The time of the last near-bar observation that ran a tick, for the 15-second slot (DESIGN A75). |
 | `groups/` | What retired session groups left (DESIGN A78): `claims.json` (also the legacy `run` profiles' claims), and per group a `profile/` directory kept for its history, plus `retired.json` once the group is retired. |
@@ -5032,7 +4733,7 @@ Inside the backup root:
 | `app.lock`, `remote.lock` | Held by `tycswap app` and by `tycswap app --remote` while they run; `tycswap purge` refuses while `app.lock` is held. |
 | `remote.token` | The running `tycswap app`'s token for a remote tray, 0600, removed when it stops. |
 | `app.log` | The output of `tycswap app` started in the background (on macOS `~/Library/Logs/tycswap.log`), rotated to `app.log.1` past 5 MiB. |
-| `.settings.lock`, `.mappings.lock` | Held while `settings.json` or `mappings.json` is read, changed and written back, so concurrent commands cannot lose an update. No data; skipped by `tycswap migrate`. |
+| `.settings.lock` | Held while `settings.json` is read, changed and written back, so concurrent commands cannot lose an update. No data; skipped by `tycswap migrate`, as is the `.mappings.lock` older versions left. |
 
 Claude Code's own files that tycswap reads and writes:
 
@@ -5198,9 +4899,10 @@ of the match, the same as any other exhausted window (above).
 | `130` | Interrupted by SIGINT (Ctrl-C). `tycswap web` and `tycswap app` exit `0` instead (see [SIGNALS](#signals)). |
 
 For `tycswap auto --once` the status is the tick outcome: `0` switched, `1` error,
-`2` no action, `3` blocked. `tycswap run` on success is replaced by the launched
-`claude` and exits with its status. `tycswap menubar` always exits `1` in this
-build.
+`2` no action, `3` blocked. `tycswap start` on success is replaced by (or, on
+Windows, waits for) the launched command and exits with its status. `tycswap
+run`, `env`, `map` and `unmap` are removed and exit `2`. `tycswap menubar`
+always exits `1` in this build.
 
 ## JSON OUTPUT CONTRACT
 
@@ -5255,7 +4957,7 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
 ## COMPATIBILITY
 
 - The on-disk formats are shared with claude-swap (Python): `sequence.json`,
-  `settings.json`, `mappings.json`, the per-account `configs/` and
+  `settings.json`, the per-account `configs/` and
   `credentials/` files, `cache/usage.json`, and the log format are read and
   written identically. The store root is not shared: tycswap keeps its own
   (see FILES), and `tycswap migrate` copies a claude-swap store into it once.
@@ -5275,7 +4977,8 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   - `tycswap upgrade` and the passive update notice use this repository's releases
     and `go install`, not PyPI/uv/pipx. Pre-release builds do receive update
     notices.
-  - `tycswap env` is provided; it has no claude-swap (Python) counterpart.
+  - `tycswap run`, `map` and `unmap` are removed (DESIGN A92): every session
+    shares the default login, and `mappings.json` is not read.
   - `tycswap list` / `tycswap status` (human and `--json`) and the TUI surface an
     at-limit marker that folds in the per-model weekly windows configured by
     `autoswitch.model`. The additive `--json` fields `atLimit` and
@@ -5306,20 +5009,12 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   needed.` The restart advice on macOS is only about applying the change sooner
   than the Keychain cache would.
 - **Same account in two places can drift.** An account held as both the default
-  login and a session-mode profile can make one copy's token go stale if the
-  server rotates it, because each profile refreshes independently. `tycswap run`
-  and `tycswap env` do not create a second copy for an account that is already the
-  active default login — `run` launches the default login directly and `env`
-  exports nothing — so this arises only when the two roles are established
-  separately, for example pinning an account with `tycswap env` and later making it
-  the default login with `tycswap switch`. If a session later fails to
-  authenticate, exit it and re-run `tycswap run <n>`. `tycswap list` flags two slots
-  that report identical usage and reset times as possibly the same account.
-  When `run` or `env` does prepare a profile for the account that is the
-  default login (with `CLAUDE_CONFIG_DIR` preset), or for a slot whose stored
-  refresh token is the live login's (right after a switch), it seeds the
-  profile from the stored credential without refreshing it, so the default
-  login's refresh token is never consumed by tycswap.
+  login and a former session profile can make one copy's token go stale if the
+  server rotates it, because each profile refreshes independently. If a session
+  in such a profile later fails to authenticate, exit it and resume its
+  conversation with plain `claude --resume` on the default login. `tycswap list`
+  flags two slots that report identical usage and reset times as possibly the
+  same account.
 - **Inactive-account refreshes hold the store lock.** When `list`, `status`
   or the dashboard refresh an inactive account's expired token, the store lock
   is taken before the request, the account is re-checked (still inactive, no

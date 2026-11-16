@@ -40,9 +40,12 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 	if len(argv) > 0 && argv[0] == "start" {
 		return startCommand(prog, argv[1:], s)
 	}
+	if len(argv) > 0 && removedProfileCommands[argv[0]] {
+		return removedProfileCommand(prog, argv[0], s.err)
+	}
 	// Profile-aware launchers and hooks retain the inherited Claude profile.
 	hook := len(argv) > 1 && ((argv[0] == "groups" && argv[1] == "guard") || (argv[0] == "recovery" && argv[1] == "record"))
-	if !hook && (len(argv) == 0 || (argv[0] != "run" && argv[0] != "env")) {
+	if !hook {
 		neutralizePinnedSessionProfile(s.err)
 	}
 
@@ -76,27 +79,19 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 	}
 
 	// Pre-dispatch on the first token (spec 08§1 step 4). Each must be the
-	// first argument (DESIGN Deviation 10): `tycswap --debug run 2` is unsupported.
+	// first argument (DESIGN Deviation 10): `tycswap --debug auto` is unsupported.
 	if len(argv) > 0 {
 		switch argv[0] {
 		case "menu":
 			return menuCommand(prog, argv[1:], s, stdinTTY && stdoutTTY)
-		case "run":
-			return runCommand(prog, argv[1:], s)
 		case "groups":
 			return groupsCommand(prog, argv[1:], s)
 		case "recovery":
 			return recoveryCommand(prog, argv[1:], s)
-		case "env":
-			return envCommand(prog, argv[1:], s)
 		case "auto":
 			return autoCommand(prog, argv[1:], s)
 		case "config":
 			return configCommand(prog, argv[1:], s)
-		case "map":
-			return mapCommand(prog, argv[1:], s)
-		case "unmap":
-			return unmapCommand(prog, argv[1:], s)
 		case "alias":
 			return aliasCommand(prog, argv[1:], s)
 		case "swap":
@@ -154,7 +149,17 @@ func neutralizePinnedSessionProfile(stderr io.Writer) {
 	if original := os.Getenv("TYCSWAP_DEFAULT_PROFILE_DIR"); os.Getenv("TYCSWAP_DEFAULT_PROFILE_UNPINNED") != "true" && filepath.IsAbs(original) && !sessprofile.IsSessionProfileDir(paths.GetBackupRoot(), original) {
 		_ = os.Setenv("CLAUDE_CONFIG_DIR", original)
 	}
-	io.WriteString(stderr, printer.Dimmed("This shell is pinned via tycswap env; operating on the default login.")+"\n")
+	io.WriteString(stderr, printer.Dimmed("CLAUDE_CONFIG_DIR names a retired tycswap profile; operating on the default login.")+"\n")
+}
+
+// removedProfileCommands are the per-account profile commands the operator
+// removed on 2026-11-10 (DESIGN A92); they exit 2 like an unknown command.
+var removedProfileCommands = map[string]bool{"run": true, "env": true, "map": true, "unmap": true}
+
+func removedProfileCommand(prog, name string, stderr io.Writer) int {
+	fmt.Fprintf(stderr, "%s: error: %s %s was removed: every Claude session uses the shared default login, which tycswap switches. "+
+		"Start plain claude; claude --resume <id> continues a former profile's conversation there.\n", prog, prog, name)
+	return 2
 }
 
 func isTTY(f *os.File) bool {

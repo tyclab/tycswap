@@ -12,46 +12,6 @@ import (
 	"github.com/tyclab/tycswap/internal/platform"
 )
 
-func (s *Store) EnsureSessionAccountAvailable(number, profile string) error {
-	owner, err := s.CredentialOwner(number)
-	if err != nil {
-		return err
-	}
-	if owner.Scope == "" || owner.Scope == "legacy:"+number && owner.ProfileDir == profile && !owner.Uncertain {
-		return nil
-	}
-	return fmt.Errorf("Account-%s is held by %s%s; this legacy profile cannot copy its rotating credential", number, owner.Scope, uncertainSuffix(owner.Uncertain))
-}
-
-func (s *Store) ClaimLegacyProfile(number, email, profile string) error {
-	if profile != s.SessionDir(number, email) {
-		return fmt.Errorf("legacy profile path disagrees with its account")
-	}
-	if err := s.EnsureSessionAccountAvailable(number, profile); err != nil {
-		return err
-	}
-	data, err := s.classifiedRoster()
-	if err != nil {
-		return err
-	}
-	account, err := s.accountFrom(data, number)
-	if err != nil {
-		return err
-	}
-	registry, err := groups.LoadRegistry(s.backupDir)
-	if err != nil {
-		return err
-	}
-	registry.Claims[number] = groups.Owner{Scope: "legacy:" + number, ProfileDir: profile, Account: account}
-	if err := groups.SafePath(legacyReleasePath(profile)); err != nil {
-		return err
-	}
-	if err := removeGroupFile(legacyReleasePath(profile)); err != nil {
-		return err
-	}
-	return registry.Save(s.backupDir)
-}
-
 func (s *Store) ClearLegacyForGroup(journal *groups.Journal) error {
 	if journal.SourceOwner == nil {
 		return nil

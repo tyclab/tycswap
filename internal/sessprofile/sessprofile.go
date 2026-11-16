@@ -1,4 +1,4 @@
-// Package sessprofile is the session-profile leaf (identity, location, stale marker); it breaks the store↔session import cycle.
+// Package sessprofile reads the per-account profiles `tycswap run` left behind (location, stale marker, credential) until they retire (DESIGN A92).
 package sessprofile
 
 import (
@@ -17,9 +17,8 @@ import (
 )
 
 // StaleMarkerName is the deferred-invalidation marker file: backup
-// credentials changed while a session was live, so the profile must be
-// re-bootstrapped on the next non-live `tycswap run` even if it still passes
-// the local reuse check.
+// credentials changed while a session was live, so the profile's login is
+// stale once that session exits.
 const StaleMarkerName = ".tycswap-stale-credentials"
 
 // Only filesystem-safe (Windows-forbidden characters included), not injective: the "<num>-" prefix makes session dirs unique.
