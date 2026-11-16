@@ -1753,9 +1753,12 @@ A dropped model is named in the `poll` event as `unservable` (`not counted: Fabl
 5h and 7d. `list`, `status`, `start` and the dashboard's at-limit marks count
 the same models.
 
-**A window whose reset has passed reads 0 %** (DESIGN A91). The engine and the
-policy read a cached window whose `resets_at` lies in the past as renewed, so
-an account at 100 % before its reset is a target again without waiting for its
+**A window whose reset has passed reads 0 %** (DESIGN A91). The engine, the
+policy, `start`, the at-limit marks of `list`, `status`, the TUI and the
+dashboard, and the dashboard's and tray's rows read a cached window whose
+`resets_at` lies in the past as renewed: 0 % with its next reset unknown (no
+`resetsAt`, sorted with the unknown renewals under `soonest-reset`). An
+account at 100 % before its reset is a target again without waiting for its
 next fetch while its last reading is still trusted, in practice younger than
 5 minutes, since an account parked at its limit falls due for a poll at that
 reset; otherwise it becomes one after that fetch.
@@ -3262,7 +3265,10 @@ window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
   threshold of each window; it writes `autoswitch.enabled`, so it also turns
   off a timer's ticks, and the app's engine follows it from launch);
   *Model limits*, which sets `autoswitch.model` (`all` or unset) and
-  retargets the engine hosted in the app. The thresholds are set with `tycswap config`,
+  retargets the engine hosted in the app; unset, its second line reads
+  `follows sessions — ` and the dashboard's count caption (the caption alone
+  while the app hosts the engine, which does not follow sessions), and `off`
+  only for an explicit `none`. The thresholds are set with `tycswap config`,
   in the TUI and on the dashboard;
 - **App**: Claude Code's state when nothing is to update; *Start at login*;
   *Check for updates…*; *Quit tycswap*.

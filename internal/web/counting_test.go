@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 // The caption says in one line what auto-switch counts and why, for each
@@ -61,5 +62,36 @@ func TestStateCarriesCountingAndLastTick(t *testing.T) {
 	}
 	if st.Auto.LastTickAt == nil || *st.Auto.LastTickAt != at {
 		t.Fatalf("lastTickAt = %v, want %v", st.Auto.LastTickAt, at)
+	}
+}
+
+// The dashboard's Claude rows carry usage read by the engine's room rule, so
+// the Auto tab's Next best ranks a renewed account as the engine does: a
+// window whose reset has passed reads 0 % with no reset time (DESIGN A91).
+func TestStateRowsReadRenewedWindows(t *testing.T) {
+	h := newHarness(t)
+	past := testNow.Add(-time.Minute).UTC().Format(time.RFC3339)
+	snap := sampleSnapshot()
+	snap.Accounts[0].Usage.LastGood = map[string]any{
+		"five_hour": map[string]any{"pct": 100.0, "resets_at": past, "countdown": "0m", "clock": "09:59"},
+		"seven_day": map[string]any{"pct": 30.0, "resets_at": "2026-09-22T00:00:00Z"},
+	}
+	h.fa.mu.Lock()
+	h.fa.snap = snap
+	h.fa.mu.Unlock()
+	var st struct {
+		Accounts []struct {
+			Usage struct {
+				FiveHour map[string]any `json:"fiveHour"`
+				SevenDay map[string]any `json:"sevenDay"`
+			} `json:"usage"`
+		} `json:"accounts"`
+	}
+	if err := json.Unmarshal(readBody(t, h.get("/api/state")), &st); err != nil {
+		t.Fatal(err)
+	}
+	five, week := st.Accounts[0].Usage.FiveHour, st.Accounts[0].Usage.SevenDay
+	if five["pct"] != 0.0 || five["resetsAt"] != nil || five["countdown"] != nil || week["pct"] != 30.0 || week["resetsAt"] != "2026-09-22T00:00:00Z" {
+		t.Fatalf("row 1: 5h %v, 7d %v; want 5h renewed (0 %%, no reset), 7d as measured", five, week)
 	}
 }

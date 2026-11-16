@@ -11,6 +11,8 @@
 package autoswitch
 
 import (
+	"time"
+
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/usage"
@@ -85,11 +87,15 @@ func (e *Engine) headroomByClass(value any) usage.Headroom {
 	return usage.AccountHeadroomByClass(usageDict(value), e.models)
 }
 
-// decisionValues projects each entry to its decision value (dict | sentinel |
-// nil), read as of now: a window whose reset has passed reads 0 % (DESIGN
-// A91). Every key is present (nil stands in for Python's None).
+// decisionValues is decisionValuesAt the engine's clock.
 func (e *Engine) decisionValues(entries map[string]usage.UsageEntry) map[string]any {
-	now := e.clk.Now()
+	return decisionValuesAt(entries, e.clk.Now())
+}
+
+// decisionValuesAt projects each entry to its decision value (dict |
+// sentinel | nil), read as of now: a window whose reset has passed reads 0 %
+// (DESIGN A91). Every key is present (nil stands in for Python's None).
+func decisionValuesAt(entries map[string]usage.UsageEntry, now time.Time) map[string]any {
 	out := make(map[string]any, len(entries))
 	for num, entry := range entries {
 		v := entry.DecisionValue()

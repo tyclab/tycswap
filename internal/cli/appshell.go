@@ -285,14 +285,22 @@ func (a *appShell) menu(st web.State) []tray.Item {
 		// One switch for the per-model weekly windows: it decides what
 		// auto-switch counts AND what every percentage here reports, so the
 		// two can never tell different stories (A39).
+		// Unset, the setting follows the sessions (A91); "off" is an
+		// explicit none.
 		name := modelWindowLabel(st)
 		set := settingModels(st)
 		sub := "off — 5h and 7d only, " + name + " ignored"
+		var counting *web.CountingView
+		if st.Auto != nil {
+			counting = st.Auto.Counting
+		}
 		switch {
 		case len(set) > 0:
 			sub = "counting " + strings.Join(set, ", ") + " — applies to percentages and switching"
-		case st.Auto != nil && st.Auto.Counting != nil:
-			sub = "off — " + st.Auto.Counting.Caption
+		case counting != nil && counting.Mode == "sessions":
+			sub = "follows sessions — " + counting.Caption
+		case counting != nil && counting.Mode == "hosted":
+			sub = counting.Caption
 		}
 		items = append(items, tray.Item{ID: "model-limits", Kind: tray.KindToggle, Title: "Model limits", Sub: sub, Checked: len(set) > 0})
 	}

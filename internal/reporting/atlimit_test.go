@@ -104,7 +104,7 @@ func TestAtLimitFor_Table(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			atLimit, limiting := atLimitFor(tc.decision, tc.models)
+			atLimit, limiting := atLimitFor(tc.decision, tc.models, time.Time{})
 			if atLimit != tc.wantAtLimit {
 				t.Fatalf("atLimit = %v, want %v", atLimit, tc.wantAtLimit)
 			}
@@ -412,5 +412,43 @@ func TestListAndStatusRunThePolicyOnce(t *testing.T) {
 		if runs != 1 {
 			t.Errorf("%s ran the policy %d times, want once", name, runs)
 		}
+	}
+}
+
+// The at-limit marks read a cached window whose reset has passed as renewed,
+// as the engine does: 11's 5h window at 100 % reset a minute ago, 3's resets
+// in two hours. list (JSON and human), status and the account snapshot agree
+// (DESIGN A91).
+func TestAtLimitReadsRenewedWindows(t *testing.T) {
+	for _, live := range []string{"3", "11"} {
+		t.Run("live-"+live, func(t *testing.T) {
+			s, _ := incident{live: live, fiveHourReset: time.Minute}.store(t)
+			got, err := ListAccounts(s, false, true, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rows := map[string]map[string]any{}
+			for _, raw := range got.(map[string]any)["accounts"].([]any) {
+				row := raw.(map[string]any)
+				rows[fmt.Sprint(row["number"])] = row
+			}
+			if _, ok := rows["11"]["atLimit"]; ok || rows["3"]["atLimit"] != true {
+				t.Fatalf("list --json atLimit: 11 = %v on %v, 3 = %v; want 11 renewed, 3 at its 5h limit", rows["11"]["atLimit"], rows["11"]["limitingWindows"], rows["3"]["atLimit"])
+			}
+			var out bytes.Buffer
+			renderAccounts(&out, s, BuildAccountsInfo(s), CollectUsageEntries(s, BuildAccountsInfo(s), map[string]bool{}), false)
+			if strings.Contains(lineContaining(out.String(), "acct11@example.com"), "at limit") || !strings.Contains(lineContaining(out.String(), "acct3@example.com"), "at limit: 5h") {
+				t.Fatalf("human list marks:\n%s", out.String())
+			}
+			for _, a := range Snapshot(s, map[string]bool{}).Accounts {
+				if want := a.Number == "3"; a.AtLimit != want {
+					t.Fatalf("snapshot Account-%s AtLimit = %v on %v, want %v", a.Number, a.AtLimit, a.LimitingWindows, want)
+				}
+			}
+			active := buildStatusPayload(s)["active"].(map[string]any)
+			if _, at := active["atLimit"]; at != (live == "3") {
+				t.Fatalf("status of live %s: atLimit = %v, want %v", live, active["atLimit"], live == "3")
+			}
+		})
 	}
 }

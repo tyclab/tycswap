@@ -7274,13 +7274,18 @@ flags. A dropped model is named in the poll event as `unservable` (`not
 counted: Fable` on the human line) and the engine counts 5h and 7d for it.
 
 One room rule serves the policy and the engine: `oauth.AsOf` reads a window
-whose reset time has passed as 0 %, since a cached reading does not see a
-renewal (ENG-7). The engine reads every decision value through it, and limits
-and recoveries follow the same reading. An account the policy finds serving
-after its reset is a target before its next fetch only while its last
-reading is still trusted: an account parked at its limit falls due for a
-poll at that reset, so in practice while the reading is younger than
-`usage.StaleOKS`; otherwise the move comes after the fetch that poll brings.
+whose reset time has passed as 0 % with its next reset unknown (D4), since a
+cached reading does not see a renewal (ENG-7). It drops the window's reset
+time and countdown, so `soonest-reset` sorts a renewed account with the
+unknown renewals, not first on a renewal in the past. The engine reads every
+decision value through it, as do `start`'s ranking, the at-limit marks of
+`list`, `status` and the account snapshot, and the dashboard's rows (and so
+*Next best* and the tray's figures); the TUI's meters and *Next best* still
+read the cached values (ENG-7). An account the policy finds serving after its reset is a
+target before its next fetch only while its last reading is still trusted:
+an account parked at its limit falls due for a poll at that reset, so in
+practice while the reading is younger than `usage.StaleOKS`; otherwise the
+move comes after the fetch that poll brings.
 
 The reservation (A77) now covers only accounts that can run Fable, report a
 Fable window and sit under `autoswitch.modelThreshold` on it, read the same
@@ -7307,7 +7312,9 @@ and the TUI's rows) all read the one result. The dashboard state carries it as
 `auto.counting` (the families of the live sessions, the counted, dropped and
 reserved), with a one-line caption; the Auto tab, *Next best* and the tray's
 figures render it, so an unset `autoswitch.model` reads *Follow sessions*, not
-*Off*. Unchanged: an explicit
+*Off*; the tray's *Model limits* switch reads `follows sessions — <caption>`
+(the caption alone under a hosted engine, which does not follow sessions)
+and says `off` only for an explicit `none`. Unchanged: an explicit
 `autoswitch.model` or `--model`, which never drops a model; the long-running
 loop and the hosted engines, which keep their configured models (ENG-8); and
 one login for every default session, so while an account can serve Fable and a

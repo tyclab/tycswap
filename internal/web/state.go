@@ -22,6 +22,7 @@ import (
 	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/version"
@@ -174,7 +175,13 @@ func (s *Server) buildState(o stateOpts) State {
 		if n, err := strconv.Atoi(snap.ActiveNumber); err == nil {
 			st.ActiveNumber = n
 		}
+		now := s.d.Clock.Now()
 		for _, a := range snap.Accounts {
+			if a.ProviderName() == reporting.ProviderClaude {
+				// The engine's room rule (DESIGN A91): the page ranks and
+				// draws a renewed window as the engine reads it.
+				a.Usage.LastGood = oauth.AsOf(a.Usage.LastGood, now)
+			}
 			st.Accounts = append(st.Accounts, accountRow(a))
 		}
 	}

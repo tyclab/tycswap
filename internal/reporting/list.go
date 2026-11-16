@@ -85,7 +85,7 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 			activeNum = info.Number
 		}
 		entry := entries[num]
-		atLimit, limiting := atLimitFor(entry.DecisionValue(), models)
+		atLimit, limiting := atLimitFor(entry.DecisionValue(), models, s.Clk.Now())
 		row := jsonout.AccountRow(
 			info.Number, info.Email, info.OrgName, info.OrgUUID, info.IsActive,
 			entry.DecisionValue(),
@@ -165,7 +165,7 @@ func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries ma
 		if recordDisabled(data, num) {
 			markers += " " + printer.Muted("(disabled)")
 		}
-		if mk := atLimitMarker(entries[num].DecisionValue(), models); mk != "" {
+		if mk := atLimitMarker(entries[num].DecisionValue(), models, s.Clk.Now()); mk != "" {
 			markers += " " + mk
 		}
 		fmt.Fprintf(w, "  %s: %s %s%s\n", num, label, printer.Muted("["+tag+"]"), markers)

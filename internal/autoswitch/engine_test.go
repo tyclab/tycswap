@@ -658,6 +658,23 @@ func TestBlockedWithRoomNamesAnOwnershipHold(t *testing.T) {
 	}
 }
 
+// Under soonest-reset a window whose reset has passed has no known renewal:
+// candidate 2's week renewed an hour ago, so it sorts with the unknown
+// renewals behind 3, which renews on 07-19, not first (DESIGN A91, D4).
+func TestSoonestResetTreatsARenewedWindowAsUnknown(t *testing.T) {
+	clk := newClk()
+	f := threeCandidatesForStrategy(10, clk.Now().Add(-time.Hour).UTC().Format(time.RFC3339), 40, "2026-07-19T00:00:00Z")
+	s := settings.Default()
+	s.Strategy = "soonest-reset"
+	rec := &recorder{}
+	if got := build(t, f, s, rec, clk, true).Tick(); got != Switched {
+		t.Fatalf("outcome = %v, kinds %v; want a switch", got, rec.kinds())
+	}
+	if n := rec.last("switch").(SwitchEvent).ToRef["number"]; n != 3 {
+		t.Fatalf("target = %v, want 3 (known renewal before unknown)", n)
+	}
+}
+
 // -- item 32: model-aware switch ------------------------------------------
 
 func TestModelMaxedSwitchesDespiteSessionHeadroom(t *testing.T) {
