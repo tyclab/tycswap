@@ -165,6 +165,27 @@ func AccountRef(number *int, email string) map[string]any {
 	return map[string]any{"number": number, "email": email}
 }
 
+// SwitchedTo reads a --json switch payload: whether it changed the live login
+// (a switch, or a forced activation from the stored backup) and the account
+// number it went to ("" when the payload names none).
+func SwitchedTo(payload map[string]any) (string, bool) {
+	if switched, _ := payload["switched"].(bool); !switched && payload["reason"] != "activated" {
+		return "", false
+	}
+	to, _ := payload["to"].(map[string]any)
+	switch n := to["number"].(type) {
+	case *int:
+		if n != nil {
+			return strconv.Itoa(*n), true
+		}
+	case int:
+		return strconv.Itoa(n), true
+	case float64:
+		return strconv.Itoa(int(n)), true
+	}
+	return "", true
+}
+
 // UsageFreshnessFields returns the additive usageFetchedAt/usageAgeSeconds fields
 // describing how old the served measurement is. Empty when fetchedAt is nil.
 func UsageFreshnessFields(fetchedAt *float64, ageS *float64) map[string]any {

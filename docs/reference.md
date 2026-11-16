@@ -1494,11 +1494,37 @@ the model families the default profile's live sessions run, as recorded by
 always wins, and with no records nothing is counted. The loop and the dashboard's hosted engine keep
 their configured models.
 
+**A derived model nobody can serve is not counted** (DESIGN A91). A model
+counted this way stays counted only while some account the tick may use (enabled,
+rotation-eligible and not quarantined, or the live account) is below the
+model bar on that model's window and below the 5h and 7d bars, judged on the
+cached reading the engine still decides on: younger than 5 minutes, or up to
+an hour old while the engine extends its trust (failed fetches, a next poll
+not yet due); a sentinel (no credential, an expired token an owner holds)
+serves nothing. An absent 5h window is room.
+A dropped model is named in the `poll` event as `unservable` (`not counted: Fable
+(no usable account can serve it)` on the human line), and the tick decides on
+5h and 7d. `list`, `status`, `start` and the dashboard's at-limit marks count
+the same models.
+
+**A window whose reset has passed reads 0 %** (DESIGN A91). The engine, the
+policy, `start`, the at-limit marks of `list`, `status`, the TUI and the
+dashboard, and the dashboard's and tray's rows read a cached window whose
+`resets_at` lies in the past as renewed: 0 % with its next reset unknown (no
+`resetsAt`, sorted with the unknown renewals under `soonest-reset`). An
+account at 100 % before its reset is a target again without waiting for its
+next fetch while its last reading is still trusted, in practice younger than
+5 minutes, since an account parked at its limit falls due for a poll at that
+reset; otherwise it becomes one after that fetch.
+
 **The default login leaves Fable-capable accounts to Fable work** (DESIGN
-A77). While `autoswitch.model` is unset and every live default session has a
+A77, A91). While `autoswitch.model` is unset and every live default session has a
 recorded model, none of them Fable, the scheduled tick reserves every account
-that can continue Fable (its plan, or a recorded `fableContinue` capability):
-under either strategy it sorts after every qualifying account that cannot,
+that can continue Fable (its plan, or a recorded `fableContinue` capability)
+and still has Fable room: it reports a Fable window under
+`autoswitch.modelThreshold`, or one whose reset time has passed. An account
+whose Fable week is spent is never reserved. Under either strategy a
+reserved account sorts after every qualifying account that cannot,
 within the same bar tier, and is taken only when nothing else is left. When the
 active account is reserved and every window is under its bar, the tick hands
 over to an account that cannot run Fable as soon as one is below every bar:
@@ -1607,7 +1633,7 @@ a `Z` suffix), plus per-kind fields:
 
 | `event` | Fields |
 |---------|--------|
-| `poll` | `active` (`{number,email}` or null), `headroomPct` (`{num: float|null}`), `threshold` (float: the 7d bar), `fetchErrors` (`{num: msg}`, optional), `windowsPct` (`{num: {label: float}}`, optional) |
+| `poll` | `active` (`{number,email}` or null), `headroomPct` (`{num: float|null}`), `threshold` (float: the 7d bar), `fetchErrors` (`{num: msg}`, optional), `windowsPct` (`{num: {label: float}}`, optional), `unservable` (`[name]`, optional: derived models not counted because no usable account can serve them, DESIGN A91) |
 | `switch` | `trigger` (`proactive`\|`at-limit`\|`failover`\|`reserved`\|`model-missing`), `axis` (`5h`\|`7d`\|`model`: the window that made the tick move; empty under `failover`, where usage was unreadable, and under `reserved` and `model-missing`, where the account decided), `from` (ref), `to` (ref), `warnings` (array), `dryRun` (bool) |
 | `group-release` | `group` (`fable`\|`opus`), `released` (`{number,email}`): a retired group's account returned to its slot |
 | `no-switch` | `reason` (string), `detail` (string); `accounts-in-use` when held profiles prevent rotation, `account-unavailable` when guarded target preparation loses availability; under `active-usage-unknown` and `active-idle`, `detail` ends in ` · <skip reason>` while the active account's `list --json` row carries `usageRefresh.skipReason`; `disabled` while auto-switch is off, then the tick's only event |
@@ -1617,6 +1643,8 @@ a `Z` suffix), plus per-kind fields:
 | `sleep` | `seconds` (float), `until` (string) |
 | `error` | `message` (string), `transient` (bool) |
 | `config-warning` | `message` (string) |
+| `blocked-with-room` | `accounts` (slot strings): the live account is over a bar and the tick was blocked while these enabled, eligible accounts are below their 5h and 7d bars, kept out by a counted model window or an ownership hold; once per change of the set, never for a hysteresis or cooldown hold (DESIGN A91, see LOG) |
+| `live-login-changed` | `from`, `to` (slot strings): the live login changed without a tycswap switch, reported once per change (see LOG) |
 
 The Codex engine reports a tick only when it switched or failed, or on every
 tick under `--dry-run`. Its human line carries the same `HH:MM:SS` prefix as
@@ -2622,9 +2650,13 @@ tabs:
   slider that sets the 7d threshold of the hosted engine (50–100; not saved;
   enabled, as Wake is, only while an engine is hosted; with
   `TYCSWAP_AUTO_MANAGED_BY` set the State tile says `scheduled by <owner>`
-  instead; the 5h and model bars are settings only, DESIGN A34); *Count model
-  limits*, which saves
-  `autoswitch.model` as `all`, selected model names, or unset (Off), using Save; the *Next best* ranking with each
+  instead and a *Last tick* tile replaces *Started*, from `lastSeenAt` in
+  `autoswitch_state.json`; the 5h and model bars are settings only, DESIGN
+  A34), and a *Bars* tile with the three bars in force; *Count model limits*,
+  which saves `autoswitch.model` as `all` (*All model windows*), selected
+  model names, or unset (*Follow sessions (default)*), using Save, with a
+  caption, also on the Strategy tile and *Next best*, that says what is
+  counted now and why, from the state's `auto.counting` (DESIGN A91); the *Next best* ranking with each
   account's verdict, which marks a row *at threshold* when any of its windows
   has reached its own bar, ranks `best` hierarchically by weekly, enabled
   model-weekly, then 5-hour usage, and names the bars in force (`switch at 5h 85% · 7d 97%`, plus the model bar while model
@@ -2738,7 +2770,16 @@ machine that had no Codex accounts when `tycswap web` started:
 `{"enabled", "running", "threshold", "lastTick"}`, `lastTick` being null or
 `{"at", "outcome", "detail", "switchedTo", "runningPids"}` (`outcome` `ok`,
 `switched`, `blocked`, `no-accounts` or `error`; `switchedTo` null unless it
-switched). An engine event is `{"at", "kind", "message", "account",
+switched). `auto.lastTickAt` is when a real tick last saw the live login
+(epoch seconds, null before one did). `auto.counting` is what auto-switch
+counts now (DESIGN A91): `{"mode", "setting", "models", "sessions",
+"unservable", "reserved", "caption"}`, `mode` `setting` (a saved
+`autoswitch.model`, in `setting`), `sessions` (unset: `models` derived from the
+model families the live default sessions run, in `sessions`, minus
+`unservable`, with the accounts left to Fable work in `reserved`) or `hosted`
+(unset, with an engine hosted in this process, which keeps its configured
+models); `caption` says it in one line, e.g. `counting 5h + 7d; Fable not
+counted: no usable account can serve it`. An engine event is `{"at", "kind", "message", "account",
 "fields"}`; a Codex tick's also carries `"provider": "codex"` (the Claude
 engine's carry no `provider`), its `kind` is `switch`, `error`,
 `all-exhausted` or `no-switch` for the outcomes switched, error, blocked and
@@ -2981,7 +3022,10 @@ window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
   threshold of each window; it writes `autoswitch.enabled`, so it also turns
   off a timer's ticks, and the app's engine follows it from launch);
   *Model limits*, which sets `autoswitch.model` (`all` or unset) and
-  retargets the engine hosted in the app. The thresholds are set with `tycswap config`,
+  retargets the engine hosted in the app; unset, its second line reads
+  `follows sessions — ` and the dashboard's count caption (the caption alone
+  while the app hosts the engine, which does not follow sessions), and `off`
+  only for an explicit `none`. The thresholds are set with `tycswap config`,
   in the TUI and on the dashboard;
 - **App**: Claude Code's state when nothing is to update; *Start at login*;
   *Check for updates…*; *Quit tycswap*.
@@ -4833,6 +4877,39 @@ to write it is logged and never fails the operation.
   `resetsAt` not reported is null. `pollIntervalS` is 600 when no poll is
   planned; treat the data as stale when `now - fetchedAt >= 2 * pollIntervalS`.
 - **Compatibility.** Ignore the file when `schemaVersion` is not 1.
+
+## LOG
+
+`<backup_root>/tycswap.log` (FILES) records every change made by hand: after
+the change succeeded, the command, screen or route that made it adds one INFO
+line `<change> by <actor>` beside the change's own line.
+
+- **Changes.** `Disabled account <id>`, `Enabled account <id>`, `Switched to
+  account <n>`, `Set <key>=<value>`, `Unset <key>`, the Codex ones as `Codex
+  account`; the `<id>` is the identifier the caller gave. A refused change,
+  a switch onto the active account (without `--force`) and an unset of a key
+  that is not set write none; a disable of an account already disabled is
+  still recorded.
+- **Actors.** `cli(pid=<pid>,parent=<program>)` for a command (also run from
+  `tycswap menu`; `parent` only where `/proc` exists), `tui`, `tray`,
+  `dashboard(cookie|bearer,<remote address>)` for the API, `start`, and
+  `engine:<trigger>` for an auto-switch, on its own line after the switch
+  layer's unchanged `Switched from account <from> to <to>`.
+- **Logins made elsewhere.** Every real tick (`auto` without `--dry-run`)
+  records the live slot it saw and when (`lastSeenLive`, `lastSeenAt` in
+  `autoswitch_state.json`; the dashboard's *Last tick*). When the live slot
+  differs from the previous tick's and no tycswap switch since then explains
+  it (the engine's or `start`'s stamp, or the roster's `activeAccountNumber`
+  written at or after then), it emits `live-login-changed` and logs `Live
+  login changed from account <from> to <to> without a tycswap switch`, once
+  per change.
+- **Blocks the bars do not explain.** A real tick that ends blocked while
+  the live account is over a bar, and accounts below their 5h and 7d bars
+  were kept out by a counted model window or an ownership hold, emits
+  `blocked-with-room` and logs the warning `Blocked on Account-<n> although
+  <a>, <b> are below their 5h and 7d bars`, once per set of accounts: the
+  set is kept as `lastBlockedWithRoom` in `autoswitch_state.json`, and a tick
+  without such a block clears it.
 
 ## SETTINGS
 

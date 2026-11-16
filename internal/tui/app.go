@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
+	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -65,6 +66,8 @@ type Model struct {
 	source    snapshotSource
 	multi     providerWiring
 	start     string
+	// actionLog records a change and its actor; nil records nothing.
+	actionLog func(change, actor string)
 
 	snapshot         *reporting.AccountsSnapshot
 	busy             bool
@@ -91,6 +94,10 @@ type Option func(*Model)
 // WithEngineFactory injects the auto-switch engine factory (09§4.3). Without
 // it, the Auto screen opens but its engine is inert.
 func WithEngineFactory(fn EngineFactory) Option { return func(m *Model) { m.newEngine = fn } }
+
+// WithActionLog records each change the TUI makes, as "<change> by tui" in
+// tycswap.log; without it nothing is recorded.
+func WithActionLog(fn func(change, actor string)) Option { return func(m *Model) { m.actionLog = fn } }
 
 // newModel builds the application model (09§2.1 constructor). threshold_pct is
 // loaded once from settings; any load failure falls back to nil (bare except).
@@ -505,7 +512,8 @@ func (m *Model) doSwitch(id string) tea.Cmd {
 	}
 	number := t.number
 	return m.startAction("Switch to account "+number, func() (map[string]any, error) {
-		return m.facade.SwitchTo(number, true)
+		res, err := m.facade.SwitchTo(number, true)
+		return m.loggedSwitch(number, res, err)
 	}, false)
 }
 
@@ -513,8 +521,28 @@ func (m *Model) doSwitch(id string) tea.Cmd {
 func (m *Model) switchBest() tea.Cmd {
 	best := "best"
 	return m.startAction("Switch (best)", func() (map[string]any, error) {
-		return m.facade.Switch(&best, true, nil, nil)
+		res, err := m.facade.Switch(&best, true, nil, nil)
+		return m.loggedSwitch("", res, err)
 	}, false)
+}
+
+// logAction records a change the TUI made.
+func (m *Model) logAction(change string) {
+	if m.actionLog != nil {
+		m.actionLog(change, "tui")
+	}
+}
+
+// loggedSwitch passes a switch's result on, recording it when it moved the
+// login; number names the target when the payload does not.
+func (m *Model) loggedSwitch(number string, res map[string]any, err error) (map[string]any, error) {
+	if to, moved := jsonout.SwitchedTo(res); err == nil && moved {
+		if to == "" {
+			to = number
+		}
+		m.logAction("Switched to account " + to)
+	}
+	return res, err
 }
 
 // toggleDisabled holds an account out of rotation or returns it, reading the
@@ -536,7 +564,11 @@ func (m *Model) toggleDisabled(id string) tea.Cmd {
 		verb = "Disable"
 	}
 	return m.startAction(fmt.Sprintf("%s account %s", verb, number), func() (map[string]any, error) {
-		return nil, m.facade.SetAccountDisabled(number, target)
+		if err := m.facade.SetAccountDisabled(number, target); err != nil {
+			return nil, err
+		}
+		m.logAction(verb + "d account " + number)
+		return nil, nil
 	}, false)
 }
 

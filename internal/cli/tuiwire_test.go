@@ -70,13 +70,14 @@ func stubTUIProviders(t *testing.T, present bool, codexSw *switcher.Switcher) *t
 }
 
 // TestTUIWiringIsClaudeOnlyWithoutCodex pins that an install with no Codex
-// store keeps the exact Claude-only option set: no Codex switcher is built and
-// the dashboard reads the Facade as before.
+// store keeps the exact Claude-only option set (the engine factory and the
+// action log): no Codex switcher is built and the dashboard reads the Facade
+// as before.
 func TestTUIWiringIsClaudeOnlyWithoutCodex(t *testing.T) {
 	c := stubTUIProviders(t, false, nil)
 	opts := tuiOptions(context.Background(), &core.Switcher{Store: &store.Store{}})
-	if len(opts) != 1 || c.built != 0 || c.calls != 0 {
-		t.Fatalf("opts=%d built=%d providers=%d, want the engine factory alone", len(opts), c.built, c.calls)
+	if len(opts) != 2 || c.built != 0 || c.calls != 0 {
+		t.Fatalf("opts=%d built=%d providers=%d, want the engine factory and the action log alone", len(opts), c.built, c.calls)
 	}
 }
 
@@ -91,8 +92,8 @@ func TestTUIWiringAddsCodexRowsWhenCodexIsPresent(t *testing.T) {
 	c := stubTUIProviders(t, true, codexSw)
 
 	opts := tuiOptions(context.Background(), &core.Switcher{Store: &store.Store{}})
-	if len(opts) != 2 || c.built != 1 || c.calls != 1 {
-		t.Fatalf("opts=%d built=%d providers=%d, want engine factory + providers", len(opts), c.built, c.calls)
+	if len(opts) != 3 || c.built != 1 || c.calls != 1 {
+		t.Fatalf("opts=%d built=%d providers=%d, want engine factory + action log + providers", len(opts), c.built, c.calls)
 	}
 	if c.codex != tui.CodexActions(codexSw) {
 		t.Errorf("action router = %#v, want the Codex switcher", c.codex)

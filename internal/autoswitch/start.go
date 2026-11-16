@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/filelock"
@@ -56,7 +57,7 @@ func StartSelection(sw Switcher, account string, snapshot func() (StartSnapshot,
 			candidates = append(candidates, num)
 		}
 	}
-	ordered := StartTargets(candidates, snap.Entries, snap.Settings, e.models)
+	ordered := StartTargets(candidates, snap.Entries, snap.Settings, e.models, e.clk.Now())
 	var failures []string
 	for _, target := range ordered {
 		email := sw.AccountEmail(target)
@@ -104,7 +105,7 @@ func StartSelection(sw Switcher, account string, snapshot func() (StartSnapshot,
 			}
 			state := e.readState()
 			if !containsStartCandidate(current.Candidates, target) || quarantinedSet(state)[target] ||
-				len(StartTargets([]string{target}, current.Entries, current.Settings, settings.ParseModelNames(current.Settings.Model))) == 0 {
+				len(StartTargets([]string{target}, current.Entries, current.Settings, settings.ParseModelNames(current.Settings.Model), e.clk.Now())) == 0 {
 				outcome = startFailure("selection-changed", fmt.Errorf("start login eligibility changed; continuing with the current login"))
 				return nil
 			}
@@ -166,12 +167,10 @@ func containsStartCandidate(candidates []string, target string) bool {
 	return false
 }
 
-// StartTargets ranks cached candidates by tier and binding utilization; stable ties keep sequence order.
-func StartTargets(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, models []string) []string {
-	values := make(map[string]any, len(entries))
-	for num, entry := range entries {
-		values[num] = entry.DecisionValue()
-	}
+// StartTargets ranks cached candidates by tier and binding utilization, read
+// as of now like the engine's (DESIGN A91); stable ties keep sequence order.
+func StartTargets(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, models []string, now time.Time) []string {
+	values := decisionValuesAt(entries, now)
 	required := requiredModels(models, values)
 	type candidate struct {
 		num   string

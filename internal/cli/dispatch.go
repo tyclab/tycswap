@@ -92,10 +92,16 @@ func runMainAction(p *parsed, sw *core.Switcher, payload *any) error {
 		return sw.AddAccountFromTokenWithBaseURL(*p.addToken, derefStr(p.baseURL), p.email, intToStrPtr(p.slot), false)
 	case p.removeAccount != nil:
 		return sw.RemoveAccount(*p.removeAccount, false)
-	case p.disableAccount != nil:
-		return sw.SetAccountDisabled(*p.disableAccount, true)
-	case p.enableAccount != nil:
-		return sw.SetAccountDisabled(*p.enableAccount, false)
+	case p.disableAccount != nil || p.enableAccount != nil:
+		id, disabled := derefStr(p.enableAccount), p.disableAccount != nil
+		if disabled {
+			id = *p.disableAccount
+		}
+		if err := sw.SetAccountDisabled(id, disabled); err != nil {
+			return err
+		}
+		sw.Log.Action(enabledWord(disabled)+" account "+id, cliActor())
+		return nil
 	case p.list:
 		out, err := sw.ListAccounts(p.tokenStatus, p.json, nil)
 		if out != nil {
@@ -111,9 +117,13 @@ func runMainAction(p *parsed, sw *core.Switcher, payload *any) error {
 		if err := confirmSwitchToAPIKey(os.Stdout, *p.switchTo, sw, p.json, p.yes, p.force); err != nil {
 			return err
 		}
+		before := markOf(sw)
 		sp, err := sw.SwitchToForce(*p.switchTo, p.json, p.force)
 		if sp != nil {
 			*payload = sp
+		}
+		if err == nil {
+			logSwitchSince(sw, before, cliActor())
 		}
 		return err
 	case p.status:
@@ -155,7 +165,11 @@ func dispatchSwitch(p *parsed, sw *core.Switcher, payload *any) error {
 			modelSource = &src
 		}
 	}
+	before := markOf(sw)
 	sp, err := sw.Switch(p.strategy, p.json, models, modelSource)
+	if err == nil {
+		logSwitchSince(sw, before, cliActor())
+	}
 	if sp != nil && len(models) > 0 {
 		sp["models"] = models
 		sp["modelSource"] = *modelSource

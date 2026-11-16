@@ -53,7 +53,7 @@ func (e *Engine) tick() (result tickResult) {
 // emits while auto-switch is off; `auto --observe` says the same.
 const DisabledDetail = "auto-switch is off; tycswap auto on turns it on"
 
-func (e *Engine) tickInner() (tickResult, error) {
+func (e *Engine) tickInner() (result tickResult, err error) {
 	// The on/off comes before anything the tick could touch: off, it asks
 	// the switcher nothing and reads or writes no state (DESIGN A83).
 	if e.enabled != nil && !e.enabled() {
@@ -70,7 +70,6 @@ func (e *Engine) tickInner() (tickResult, error) {
 	if !e.dryRun {
 		// Dry-run never mutates state, so recovered quarantines release only on
 		// real ticks.
-		var err error
 		state, err = e.releaseRecoveredQuarantines(state)
 		if err != nil {
 			return tickResult{}, err
@@ -80,7 +79,7 @@ func (e *Engine) tickInner() (tickResult, error) {
 
 	current := e.sw.CurrentAccountNumber()
 	if current == nil {
-		e.emit(PollEvent{Ts: e.nowISO(), Active: nil, Headroom: map[string]*float64{}, Threshold: s.SevenDayThreshold})
+		e.emit(PollEvent{Ts: e.nowISO(), Active: nil, Headroom: map[string]*float64{}, Threshold: s.SevenDayThreshold, Unservable: e.unservable})
 		if e.sw.HasLiveLogin() {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "unmanaged-active-account", Detail: "run 'tycswap --add-account' to include it in rotation"})
 		} else {
@@ -91,6 +90,7 @@ func (e *Engine) tickInner() (tickResult, error) {
 	cur := *current
 	currentEmail := e.sw.AccountEmail(cur)
 	activeRef := refOf(cur, currentEmail)
+	e.noteLiveLogin(cur)
 	if !e.dryRun {
 		if sw, ok := e.sw.(interface{ PrepareRotationCandidates() }); ok {
 			sw.PrepareRotationCandidates()
@@ -100,6 +100,17 @@ func (e *Engine) tickInner() (tickResult, error) {
 	// An expired hold keeps its stamp but polls candidates: failover needs them.
 	idleHold := holdLive(activeMemoryOf(state, cur).IdleHoldSince, e.nowSeconds())
 	entries, usageMap, headroom := e.collectScheduledUsage(cur, quarantined, pollThreshold(s, e.models), idleHold)
+	// axis names the window class that made the tick move, so the log, the
+	// qualification gate and the hysteresis all talk about the same resource
+	// (DESIGN A34). held collects targets an ownership hold refused.
+	axis := usage.ClassWeek
+	var trigger string
+	held := map[string]bool{}
+	defer func() {
+		if err == nil && result.Outcome != Error {
+			e.noteBlockedWithRoom(cur, trigger, axis, result.Outcome == Blocked, quarantined, held, usageMap, s)
+		}
+	}()
 
 	fetchErrors := map[string]string{}
 	for num, entry := range entries {
@@ -121,6 +132,7 @@ func (e *Engine) tickInner() (tickResult, error) {
 		Threshold:   s.SevenDayThreshold,
 		FetchErrors: fetchErrors,
 		Windows:     windows,
+		Unservable:  e.unservable,
 	})
 
 	e.checkModelNames(state, quarantined, usageMap)
@@ -136,11 +148,6 @@ func (e *Engine) tickInner() (tickResult, error) {
 
 	activeHeadroom := headroom[cur]
 	activeByClass := e.headroomByClass(usageMap[cur])
-	// axis names the window class that made the tick move, so the log, the
-	// qualification gate and the hysteresis all talk about the same resource
-	// (DESIGN A34).
-	axis := usage.ClassWeek
-	var trigger string
 	if activeHeadroom != nil {
 		if _, had := state["active"]; had && !e.dryRun {
 			if _, err := e.mutateState(clearActiveMemory); err != nil {
@@ -276,8 +283,9 @@ func (e *Engine) tickInner() (tickResult, error) {
 			transientFailure = true
 		case "ownership-blocked":
 			ownershipFailure = true
+			held[num] = true
 		case "skip-live-session":
-			// skip silently
+			held[num] = true // no event of its own
 		default: // "ok"
 			return e.perform(num, email, trigger, axisName)
 		}
@@ -670,6 +678,7 @@ func (e *Engine) perform(number, email, trigger, axis string) (tickResult, error
 		return tickResult{}, err
 	}
 	if switched {
+		e.log.Action("Switched to account "+number, "engine:"+trigger)
 		e.emit(SwitchEvent{
 			Ts:       e.nowISO(),
 			Trigger:  trigger,

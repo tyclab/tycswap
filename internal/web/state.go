@@ -16,11 +16,13 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/version"
@@ -54,6 +56,66 @@ type State struct {
 	Updates *UpdatesView `json:"updates"`
 	// UI: the page's remembered view choices; null without Deps.UIPrefs (A27).
 	UI *UIView `json:"ui"`
+}
+
+// CountingView is what auto-switch counts now (DESIGN A91). Mode "setting":
+// autoswitch.model is set (Setting); "sessions": it is unset and the
+// default-session policy derived Models from the families the live default
+// sessions run (Sessions), dropping Unservable and leaving Reserved to Fable;
+// "hosted": it is unset and the engine hosted here keeps its configured
+// models. Caption says it in one line.
+type CountingView struct {
+	Mode       string   `json:"mode"`
+	Setting    string   `json:"setting,omitempty"`
+	Models     []string `json:"models"`
+	Sessions   []string `json:"sessions"`
+	Unservable []string `json:"unservable"`
+	Reserved   []string `json:"reserved"`
+	Caption    string   `json:"caption"`
+}
+
+// countingCaption is the one line the Auto tab, the tray and the strategy
+// tile show for c, e.g. "counting 5h + 7d + Fable (live Fable sessions)".
+func countingCaption(c CountingView) string {
+	line := "counting 5h + 7d"
+	for _, m := range c.Models {
+		if strings.EqualFold(m, "all") {
+			line += " + every model window"
+			break
+		}
+		line += " + " + m
+	}
+	switch c.Mode {
+	case "setting":
+		return line + " (autoswitch.model)"
+	case "hosted":
+		return line + " (the engine hosted here does not follow sessions)"
+	}
+	if len(c.Models) > 0 {
+		line += " (live " + strings.Join(c.Models, ", ") + " sessions)"
+	}
+	if len(c.Unservable) > 0 {
+		line += "; " + strings.Join(c.Unservable, ", ") + " not counted: no usable account can serve it"
+	}
+	switch {
+	case len(c.Sessions) == 0:
+		line += "; no live session has reported its model"
+	case !containsFold(c.Sessions, "fable"):
+		line += "; no live Fable session"
+		if len(c.Reserved) > 0 {
+			line += " — accounts with Fable room reserved: " + strings.Join(c.Reserved, ", ")
+		}
+	}
+	return line
+}
+
+func containsFold(list []string, want string) bool {
+	for _, v := range list {
+		if strings.EqualFold(v, want) {
+			return true
+		}
+	}
+	return false
 }
 
 // SessionsJSON is the sessions section.
@@ -113,7 +175,13 @@ func (s *Server) buildState(o stateOpts) State {
 		if n, err := strconv.Atoi(snap.ActiveNumber); err == nil {
 			st.ActiveNumber = n
 		}
+		now := s.d.Clock.Now()
 		for _, a := range snap.Accounts {
+			if a.ProviderName() == reporting.ProviderClaude {
+				// The engine's room rule (DESIGN A91): the page ranks and
+				// draws a renewed window as the engine reads it.
+				a.Usage.LastGood = oauth.AsOf(a.Usage.LastGood, now)
+			}
 			st.Accounts = append(st.Accounts, accountRow(a))
 		}
 	}
@@ -159,6 +227,11 @@ func (s *Server) buildState(o stateOpts) State {
 		v := s.d.Auto.View()
 		if v.Events == nil {
 			v.Events = []AutoEventView{}
+		}
+		if v.Counting != nil {
+			c := *v.Counting
+			c.Caption = countingCaption(c)
+			v.Counting = &c
 		}
 		st.Auto = &v
 	}

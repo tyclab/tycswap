@@ -2,6 +2,8 @@ package cli
 
 import (
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/cerr"
@@ -27,6 +29,22 @@ type autoswitchAdapter struct{ *core.Switcher }
 func (a autoswitchAdapter) ReadAccountCredentials(num, email string) string {
 	v, _ := a.Switcher.ReadAccountCredentials(num, email)
 	return v
+}
+
+// RecordedSwitch is the slot the roster names active and when the roster was
+// last written, as epoch seconds: every tycswap switch writes both, so the
+// engine can tell a login made elsewhere (live-login-changed).
+func (a autoswitchAdapter) RecordedSwitch() (string, float64) {
+	data, err := a.ReadSequence()
+	if err != nil || data == nil || data.ActiveAccountNumber == nil {
+		return "", 0
+	}
+	slot := strconv.Itoa(*data.ActiveAccountNumber)
+	at, err := time.Parse(time.RFC3339, data.LastUpdated)
+	if err != nil {
+		return slot, 0
+	}
+	return slot, float64(at.Unix())
 }
 
 var _ autoswitch.Switcher = autoswitchAdapter{}

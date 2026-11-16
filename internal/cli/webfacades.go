@@ -208,7 +208,47 @@ func newAutoFacade(sw *core.Switcher, codexSw *codexswitcher.Switcher) *autoFaca
 // Events is the channel the web server fans out as `event: auto`.
 func (a *autoFacade) Events() <-chan web.AutoEventView { return a.stream }
 
+// View is the engine's state and what it counts now; the policy behind the
+// count scans processes, so it runs outside the host's lock.
 func (a *autoFacade) View() web.AutoView {
+	v, s, hosted := a.view()
+	v.LastTickAt = autoswitch.ReadLastTick(autoswitch.StatePath(a.sw.BackupDir()))
+	v.Counting = a.counting(s, hosted)
+	return v
+}
+
+// counting is what the engine counts now (DESIGN A91): a set autoswitch.model,
+// the configured models of an engine hosted here (ENG-8), or what the
+// default-session policy derives for the scheduled ticks.
+func (a *autoFacade) counting(s settings.AutoSwitchSettings, hosted bool) *web.CountingView {
+	c := &web.CountingView{Mode: "sessions", Models: settings.ParseModelNames(s.Model)}
+	switch {
+	case s.Model != nil:
+		c.Mode, c.Setting = "setting", *s.Model
+	case hosted:
+		c.Mode = "hosted"
+	default:
+		r := reporting.DefaultSessionPolicyResult(a.sw.Store, s, a.clk.Now())
+		c.Models, c.Sessions, c.Unservable = settings.ParseModelNames(r.Settings.Model), r.Sessions, r.Unservable
+		if data, _ := a.sw.ReadSequence(); data != nil && r.Reserved != nil {
+			for _, n := range data.Sequence {
+				if num := strconv.Itoa(n); r.Reserved(num) {
+					c.Reserved = append(c.Reserved, num)
+				}
+			}
+		}
+	}
+	for _, list := range []*[]string{&c.Sessions, &c.Unservable, &c.Reserved} {
+		if *list == nil {
+			*list = []string{}
+		}
+	}
+	return c
+}
+
+// view is the engine host's own state, the settings its engine decides with
+// and whether one is hosted here.
+func (a *autoFacade) view() (web.AutoView, settings.AutoSwitchSettings, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	fresh := settings.Load(a.sw.BackupDir())
@@ -256,7 +296,7 @@ func (a *autoFacade) View() web.AutoView {
 			LastTick:  a.codexLast,
 		}
 	}
-	return v
+	return v, s, a.running
 }
 
 // Start hosts a real engine unless an external scheduler runs the ticks, and
