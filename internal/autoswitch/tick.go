@@ -91,6 +91,7 @@ func (e *Engine) tickInner() (tickResult, error) {
 	cur := *current
 	currentEmail := e.sw.AccountEmail(cur)
 	activeRef := refOf(cur, currentEmail)
+	e.noteLiveLogin(state, cur)
 	if !e.dryRun {
 		if sw, ok := e.sw.(interface{ PrepareRotationCandidates() }); ok {
 			sw.PrepareRotationCandidates()
@@ -670,6 +671,7 @@ func (e *Engine) perform(number, email, trigger, axis string) (tickResult, error
 		return tickResult{}, err
 	}
 	if switched {
+		e.log.Action("Switched to account "+number, "engine:"+trigger)
 		e.emit(SwitchEvent{
 			Ts:       e.nowISO(),
 			Trigger:  trigger,

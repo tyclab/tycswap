@@ -318,7 +318,10 @@ type Deps struct {
 	Rand         io.Reader     // token entropy; default crypto/rand
 	Interval     time.Duration // poll tick; default 5 s
 	Logger       func(string)  // default discards
-	Ticker       func(d time.Duration) (<-chan time.Time, func())
+	// ActionLog records a change made through the API and who made it, in
+	// tycswap.log beside the change's own line; default discards.
+	ActionLog func(change, actor string)
+	Ticker    func(d time.Duration) (<-chan time.Time, func())
 
 	// Optional surfaces: nil → the section is null in the state document and
 	// its routes answer 503.
@@ -423,6 +426,9 @@ func New(d Deps) (*Server, error) {
 	}
 	if d.Logger == nil {
 		d.Logger = func(string) {}
+	}
+	if d.ActionLog == nil {
+		d.ActionLog = func(string, string) {}
 	}
 	if d.Sessions == nil {
 		d.Sessions = DefaultSessions

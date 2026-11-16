@@ -319,6 +319,7 @@ func autoOnOffCommand(verb string, rest []string, s ioStreams) int {
 		}
 	}
 	sw.Log.Info("Auto-switch turned " + verb + " (cli)")
+	sw.Log.Action("Set autoswitch.enabled="+strconv.FormatBool(verb == "on"), cliActor())
 	fmt.Fprintln(s.out, "Auto-switch "+verb+".")
 	return 0
 }

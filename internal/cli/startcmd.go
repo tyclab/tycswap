@@ -199,6 +199,9 @@ func selectStartLogin(account string, stderr io.Writer) {
 	if outcome.Detail != "" {
 		reportStartSelection(sw, stderr, outcome.Detail)
 	}
+	if outcome.Switched {
+		sw.Log.Action("Switched to account "+outcome.To, "start")
+	}
 }
 
 func reportStartSelection(sw *core.Switcher, stderr io.Writer, detail string) {

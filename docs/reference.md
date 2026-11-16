@@ -1876,6 +1876,7 @@ a `Z` suffix), plus per-kind fields:
 | `sleep` | `seconds` (float), `until` (string) |
 | `error` | `message` (string), `transient` (bool) |
 | `config-warning` | `message` (string) |
+| `live-login-changed` | `from`, `to` (slot strings): the live login changed without a tycswap switch, reported once per change (see LOG) |
 
 The Codex engine reports a tick only when it switched or failed, or on every
 tick under `--dry-run`. Its human line carries the same `HH:MM:SS` prefix as
@@ -5092,6 +5093,31 @@ to write it is logged and never fails the operation.
   `resetsAt` not reported is null. `pollIntervalS` is 600 when no poll is
   planned; treat the data as stale when `now - fetchedAt >= 2 * pollIntervalS`.
 - **Compatibility.** Ignore the file when `schemaVersion` is not 1.
+
+## LOG
+
+`<backup_root>/tycswap.log` (FILES) records every change made by hand: after
+the change succeeded, the command, screen or route that made it adds one INFO
+line `<change> by <actor>` beside the change's own line.
+
+- **Changes.** `Disabled account <id>`, `Enabled account <id>`, `Switched to
+  account <n>`, `Set <key>=<value>`, `Unset <key>`, the Codex ones as `Codex
+  account`; the `<id>` is the identifier the caller gave. A refused change,
+  a switch onto the active account (without `--force`) and an unset of a key
+  that is not set write none; a disable of an account already disabled is
+  still recorded.
+- **Actors.** `cli(pid=<pid>,parent=<program>)` for a command (also run from
+  `tycswap menu`; `parent` only where `/proc` exists), `tui`, `tray`,
+  `dashboard(cookie|bearer,<remote address>)` for the API, `start`, and
+  `engine:<trigger>` for an auto-switch, on its own line after the switch
+  layer's unchanged `Switched from account <from> to <to>`.
+- **Logins made elsewhere.** A real tick (`auto` without `--dry-run`)
+  remembers the live slot it saw (`lastSeenLive`, `lastSeenAt` in
+  `autoswitch_state.json`). When the live slot differs and no tycswap switch
+  since `lastSeenAt` explains it (the engine's or `start`'s stamp, or the
+  roster's `activeAccountNumber` written at or after then), it emits
+  `live-login-changed` and logs `Live login changed from account <from> to
+  <to> without a tycswap switch`, once per change.
 
 ## SETTINGS
 
