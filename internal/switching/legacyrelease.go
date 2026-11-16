@@ -2,6 +2,7 @@ package switching
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 
 	"github.com/tyclab/tycswap/internal/cclock"
@@ -9,6 +10,14 @@ import (
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/store"
 )
+
+// ErrStillHeld marks a hold already recorded for the same profile login on
+// an earlier round: callers log it at debug instead of warning again.
+var ErrStillHeld = errors.New("release still held")
+
+type stillHeld struct{ error }
+
+func (e stillHeld) Unwrap() []error { return []error{e.error, ErrStillHeld} }
 
 func ReleaseIdleLegacy(s *store.Store, number string) error {
 	var profile store.LegacyProfile
@@ -25,10 +34,12 @@ func ReleaseIdleLegacy(s *store.Store, number string) error {
 	}
 	var candidate *store.LegacyRelease
 	order := store.LegacyLoginNewer
+	held, isHeld := "", false
 	if err := s.Lock.With(func() error {
 		var err error
 		if candidate, err = s.LegacyReleaseCandidate(number); err == nil && candidate != nil {
 			order = s.LegacyLoginOrder(candidate.Owner.Account, candidate.Credentials)
+			held, isHeld = s.LegacyReleaseHeld(number, candidate.Credentials)
 		}
 		return err
 	}); err != nil || candidate == nil {
@@ -36,13 +47,14 @@ func ReleaseIdleLegacy(s *store.Store, number string) error {
 	}
 	// An older copy of the stored login goes nowhere: neither to the token
 	// or profile endpoint nor over the stored login (DESIGN A92).
-	switch order {
-	case store.LegacyLoginOlder:
+	switch {
+	case order == store.LegacyLoginOlder:
 		return withLegacyLocks(s, candidate.Owner.ProfileDir, func() error { return s.DropOlderLegacyLogin(number, candidate.Credentials) })
-	case store.LegacyLoginUnordered:
-		held := cerr.Session("Account-%s's session login and its stored login cannot be ordered by expiry; its login and claim remain held. Sign in to that account with tycswap add --login --switch to renew it.", number)
-		holdLegacyRelease(s, number, candidate.Credentials, held)
-		return held
+	case order == store.LegacyLoginUnordered:
+		return holdLegacyRelease(s, number, candidate.Credentials, cerr.Session("Account-%s's session login and its stored login cannot be ordered by expiry; its login and claim remain held. Sign in to that account with tycswap add --login --switch to renew it.", number), store.HoldRefused)
+	case isHeld:
+		// RECLAIM-4: this login was refused, or waits out a transport failure.
+		return stillHeld{cerr.Session("%s", held)}
 	}
 	backup, _ := s.ReadAccountCredentials(number, candidate.Owner.Account.Email)
 	if candidate.Credentials != "" && !legacySameLineage(candidate.Credentials, backup) &&
@@ -84,7 +96,7 @@ func ReleaseIdleLegacy(s *store.Store, number string) error {
 		})
 	})
 	if refused != nil {
-		holdLegacyRelease(s, number, value, refused)
+		return holdLegacyRelease(s, number, value, refused, store.HoldRefused)
 	}
 	return err
 }
@@ -105,10 +117,10 @@ func refreshIdleLegacy(s *store.Store, candidate *store.LegacyRelease) (*store.L
 	switch {
 	case out.Error == oauth.ErrInvalidGrant || out.Error == oauth.ErrNoRefreshToken:
 		return nil, nil
+	case out.Error == oauth.ErrTransient:
+		return nil, holdLegacyRelease(s, number, candidate.Credentials, cerr.Session("Account-%s's expired session login could not be refreshed for now; it is tried again after a pause", number), store.HoldTransient)
 	case out.Credentials == "":
-		held := cerr.Session("Account-%s's expired session login could not be refreshed to verify it; its login and claim remain held", number)
-		holdLegacyRelease(s, number, candidate.Credentials, held)
-		return nil, held
+		return nil, holdLegacyRelease(s, number, candidate.Credentials, cerr.Session("Account-%s's expired session login could not be refreshed to verify it; its login and claim remain held", number), store.HoldRefused)
 	}
 	var refreshed *store.LegacyRelease
 	err := s.Lock.With(func() error {
@@ -119,10 +131,21 @@ func refreshIdleLegacy(s *store.Store, candidate *store.LegacyRelease) (*store.L
 	return refreshed, err
 }
 
-func holdLegacyRelease(s *store.Store, number, credential string, reason error) {
-	if err := s.Lock.With(func() error { return s.HoldLegacyRelease(number, credential, reason.Error()) }); err != nil && s.Log != nil {
+// holdLegacyRelease records reason for credential and returns it, marked
+// ErrStillHeld when that login was held for it already.
+func holdLegacyRelease(s *store.Store, number, credential string, reason error, kind store.HoldKind) error {
+	repeat := false
+	if err := s.Lock.With(func() error {
+		var err error
+		repeat, err = s.HoldLegacyRelease(number, credential, reason.Error(), kind)
+		return err
+	}); err != nil && s.Log != nil {
 		s.Log.Warningf("Account-%s release hold not recorded: %v", number, err)
 	}
+	if repeat {
+		return stillHeld{reason}
+	}
+	return reason
 }
 
 // withLegacyLocks runs fn under the store lock, then the profile's credential,

@@ -22,10 +22,15 @@ type Registry struct {
 }
 
 // Hold is a refused release: the reason, and the SHA-256 of the account-only
-// profile credential it applies to; a changed credential is tried again.
+// profile credential it applies to; a changed credential is tried again. A
+// transport failure is tried again from RetryAt (Unix seconds); a Live hold,
+// the live account's, only keeps its warning to one per login.
 type Hold struct {
-	Reason string `json:"reason"`
-	Digest string `json:"digest"`
+	Reason   string  `json:"reason"`
+	Digest   string  `json:"digest"`
+	RetryAt  float64 `json:"retryAt,omitempty"`
+	Failures int     `json:"failures,omitempty"`
+	Live     bool    `json:"live,omitempty"`
 }
 
 func ClaimsPath(root string) string { return filepath.Join(root, "groups", "claims.json") }

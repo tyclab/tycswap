@@ -210,6 +210,10 @@ func TestDifferentLineageKeepsClaim(t *testing.T) {
 	if !strings.Contains(string(logged), "Account-1 profile retirement held") {
 		t.Fatalf("the held claim was not logged: %s", logged)
 	}
+	scheduledTick(t)
+	if n := heldWarnings(t, sw, "1"); n != 1 {
+		t.Fatalf("held warnings = %d after a second round, want 1", n)
+	}
 }
 
 func TestProfileHistoryCopiedOnce(t *testing.T) {

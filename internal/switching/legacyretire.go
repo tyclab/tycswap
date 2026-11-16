@@ -21,7 +21,8 @@ const historyCopiedMarker = ".tycswap-history-copied"
 // default profile where missing, then its login and claim are released: the
 // live account's by dropping a stale or duplicate profile login, never
 // writing its backup or the live credential; any other through the verified
-// release (A88). A live or unverifiable claim stays; held is told why.
+// release (A88). A live or unverifiable claim stays; held is told why, with
+// ErrStillHeld when the same login was held for the same reason before.
 func RetireLegacyProfiles(s *store.Store, held func(number string, err error)) {
 	data, err := s.ReadSequence()
 	if err != nil || data == nil {
@@ -66,7 +67,9 @@ func retireLegacyProfile(s *store.Store, number string, live bool) error {
 	switch {
 	case !profile.Pending():
 	case live:
-		err = withLegacyLocks(s, profile.Dir, func() error { return s.DiscardLegacyLogin(number, profile.Credential) })
+		if err = withLegacyLocks(s, profile.Dir, func() error { return s.DiscardLegacyLogin(number, profile.Credential) }); err != nil {
+			err = holdLegacyRelease(s, number, profile.Credential, err, store.HoldLive)
+		}
 	default:
 		err = ReleaseIdleLegacy(s, number)
 	}

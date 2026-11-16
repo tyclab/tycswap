@@ -7320,8 +7320,19 @@ included, whose profile no Claude process uses:
 6. RECLAIM-4: a release refused by verification is stored in
    `claims.json` (`held`, reason and the login's digest), and rotation
    eligibility returns that reason until the login changes, so the dashboard,
-   tray and engine agree. RECLAIM-5: a hand-over with nowhere to go emits only
-   its `…-no-target`.
+   tray and engine agree. While that login stays, no round, preparation or
+   `tycswap switch` asks about it again: the release returns the recorded
+   reason without a profile request or a refresh. A refresh that failed in
+   transport (`transient`: no answer, a timeout, a 5xx, a 429) is no refusal:
+   it is held with `retryAt` and `failures` and tried again once the usage
+   store's failure backoff (04§2.6, 30 s doubling to 600 s) has passed. The
+   profile endpoint answers nothing for a login it cannot name and for a
+   network failure alike, so a refused verification cannot tell the two
+   apart and holds until the login changes or a new sign-in drops it.
+   `Account-<n> profile retirement held` and `session release held` are
+   warned once per login and reason, later rounds at debug; on the live
+   account, whose drop asks no one, the hold (`live`) does only that.
+   RECLAIM-5: a hand-over with nowhere to go emits only its `…-no-target`.
 
 A drop marks the profile stale before clearing its login and unmarks it after
 the claim is gone, so an interrupted drop finishes on the next round; an

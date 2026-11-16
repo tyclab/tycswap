@@ -1333,12 +1333,16 @@ disabled ones included, whose profile no Claude process uses:
   saves the profile's login into the slot and releases the claim. A login
   whose access token expired is verified by refreshing its own token, written
   back into the profile first; a refused refresh drops it and keeps the
-  stored login. A release that cannot
-  verify the login is stored as the account's ownership reason until the
-  login changes.
+  stored login. A release that cannot verify the login is stored as the
+  account's ownership reason until the login changes, and that login is not
+  asked about again; a refresh that failed in transport (no answer, a
+  timeout, a server error) is tried again after the usage failure backoff,
+  30 seconds doubling to 10 minutes.
 
-Each held profile is logged as `Account-<n> profile retirement held: <reason>`
-and tried again on the next round. An interrupted release finishes there.
+A held profile is logged once per login as
+`Account-<n> profile retirement held: <reason>` (later rounds at debug level)
+and tried again when its login changes. An interrupted release finishes on the
+next round.
 
 ### Exit status
 

@@ -7,6 +7,7 @@ import (
 	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/oauth"
@@ -189,19 +190,57 @@ func (s *Store) RefreshLegacyLogin(ctx context.Context, c oauth.Client, number, 
 	return out, nil
 }
 
-// HoldLegacyRelease records why a release of credential was refused, so
-// rotation eligibility shows the reason until the credential changes.
-func (s *Store) HoldLegacyRelease(number, credential, reason string) error {
+// HoldKind says how a recorded hold is honoured.
+type HoldKind int
+
+const (
+	// HoldRefused holds until the profile's login changes.
+	HoldRefused HoldKind = iota
+	// HoldTransient (a transport failure) holds for the usage failure backoff.
+	HoldTransient
+	// HoldLive, on the live account, holds nothing: it keeps the warning to one.
+	HoldLive
+)
+
+// HoldLegacyRelease records why the release of credential is held, so
+// rotation eligibility shows the reason until the credential changes, and
+// reports whether the same login was held for the same reason before: a
+// round warns once per login (DESIGN A92). The caller holds the store lock.
+func (s *Store) HoldLegacyRelease(number, credential, reason string, kind HoldKind) (bool, error) {
 	registry, err := groups.LoadRegistry(s.backupDir)
 	if err != nil {
-		return err
+		return false, err
 	}
-	hold := groups.Hold{Reason: reason, Digest: releaseDigest(credential)}
+	prev := registry.Held[number]
+	hold := groups.Hold{Reason: reason, Digest: releaseDigest(credential), Live: kind == HoldLive}
+	repeat := prev.Digest == hold.Digest && prev.Reason == hold.Reason && prev.Live == hold.Live
+	if kind == HoldTransient {
+		hold.Failures = 1
+		if repeat {
+			hold.Failures = prev.Failures + 1
+		}
+		hold.RetryAt = clock.Seconds(s.Clk) + usage.FailureBackoffS(hold.Failures)
+	}
 	if registry.Held[number] == hold {
-		return nil
+		return repeat, nil
 	}
 	registry.Held[number] = hold
-	return registry.Save(s.backupDir)
+	return repeat, registry.Save(s.backupDir)
+}
+
+// LegacyReleaseHeld is the recorded reason while the release of credential
+// stays held: refused, or inside a transport failure's pause. The release
+// then asks no one.
+func (s *Store) LegacyReleaseHeld(number, credential string) (string, bool) {
+	registry, err := groups.LoadRegistry(s.backupDir)
+	if err != nil {
+		return "", false
+	}
+	hold, ok := registry.Held[number]
+	if !ok || hold.Live || hold.Digest != releaseDigest(credential) || hold.RetryAt != 0 && clock.Seconds(s.Clk) >= hold.RetryAt {
+		return "", false
+	}
+	return hold.Reason, true
 }
 
 func (s *Store) heldReason(number, credential string) string {
@@ -209,7 +248,7 @@ func (s *Store) heldReason(number, credential string) string {
 	if err != nil {
 		return ""
 	}
-	if hold := registry.Held[number]; hold.Digest == releaseDigest(credential) {
+	if hold := registry.Held[number]; !hold.Live && hold.Digest == releaseDigest(credential) {
 		return hold.Reason
 	}
 	return ""
