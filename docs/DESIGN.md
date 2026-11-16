@@ -7294,13 +7294,30 @@ included, whose profile no Claude process uses:
    `run` itself discarded such a login on its next launch, while A88 would
    have saved it over the newer stored login once the profile endpoint named
    the account. This holds for explicit switches too.
-4. RECLAIM-3: a rotated profile login whose access token expired is verified
+4. Before any request, a profile login of another lineage than a slot backup
+   not known dead (the usage store's `TokenDead`) is ordered by `expiresAt`.
+   Expiring no later than the backup, it is the older copy: it is dropped the
+   same way, without a request to the token or profile endpoint, and neither
+   the backup nor the live credential is written. Expiring later, or with no
+   backup or a dead one, it takes A88's release (item 5 when expired). Either
+   expiry unreadable, it is held without a request. The order is taken again
+   under the release's locks, before a refresh and before the save. Why:
+   nothing records what Anthropic's token endpoint does when a rotated
+   refresh token is presented again (for Codex a reused one is `invalid_grant`
+   and can revoke the token family), and an unexpired older copy would pass
+   the profile endpoint and be saved over the newer backup; so a profile
+   login goes out only when it can be shown to be the newest. Such a pair
+   needs a backup written without `postBackupWrite` dropping the profile's
+   login: a failed or interrupted invalidation, a macOS Keychain delete that
+   failed, a stale mark that could not be written, or a store an older
+   version wrote.
+5. RECLAIM-3: a rotated profile login whose access token expired is verified
    by refreshing its own token under the store lock and the profile's
    credential, config and storage-write locks; the new credential goes back
    into the profile before anything else, then the profile endpoint names
    it. `invalid_grant` drops the dead login and the claim and keeps the slot
    backup.
-5. RECLAIM-4: a release refused by verification is stored in
+6. RECLAIM-4: a release refused by verification is stored in
    `claims.json` (`held`, reason and the login's digest), and rotation
    eligibility returns that reason until the login changes, so the dashboard,
    tray and engine agree. RECLAIM-5: a hand-over with nowhere to go emits only

@@ -12,6 +12,7 @@ import (
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/sessprofile"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // LegacyProfile is what an account's former `tycswap run`/`env` profile holds
@@ -85,15 +86,86 @@ func (s *Store) DiscardLegacyLogin(number, expected string) error {
 	return s.dropLegacyLogin(owner, "Discarded the idle session profile login of account %s")
 }
 
+// LegacyOrder places an idle profile login against its slot's stored login.
+type LegacyOrder int
+
+const (
+	// LegacyLoginNewer: no stored login, one known dead, the same lineage, or
+	// a profile login that expires later; the verified release decides.
+	LegacyLoginNewer LegacyOrder = iota
+	// LegacyLoginOlder: it expires no later than a stored login of another
+	// lineage, so it is an older copy.
+	LegacyLoginOlder
+	// LegacyLoginUnordered: either expiry is unreadable.
+	LegacyLoginUnordered
+)
+
+// LegacyLoginOrder compares an idle profile login with the slot backup by
+// expiresAt (DESIGN A92). Nothing records what the token endpoint does with a
+// rotated refresh token presented again, so a profile login goes out only
+// when it can be shown to be the newest.
+func (s *Store) LegacyLoginOrder(account groups.Account, login string) LegacyOrder {
+	if login == "" || ccfile.SeatWideOnly(login) {
+		return LegacyLoginNewer
+	}
+	backup, err := s.ReadAccountCredentials(account.Number, account.Email)
+	switch {
+	case err != nil:
+		return LegacyLoginUnordered
+	case backup == "" || sameLegacyLineage(login, backup) || s.backupDead(account):
+		return LegacyLoginNewer
+	}
+	mine, mineOK := oauth.ExpiresAtMS(login)
+	stored, storedOK := oauth.ExpiresAtMS(backup)
+	switch {
+	case !mineOK || !storedOK:
+		return LegacyLoginUnordered
+	case mine <= stored:
+		return LegacyLoginOlder
+	}
+	return LegacyLoginNewer
+}
+
+// backupDead: the slot's stored lineage drew invalid_grant (usage.TokenDead).
+func (s *Store) backupDead(a groups.Account) bool {
+	if s.Usage == nil {
+		return false
+	}
+	ids := map[string]usage.Identity{a.Number: {Email: a.Email, OrgUUID: a.OrgUUID}}
+	return s.Usage.Entries(ids)[a.Number].TokenDead()
+}
+
+// DropOlderLegacyLogin drops an idle profile login LegacyLoginOrder finds
+// older than the slot's stored login, without saving or presenting it
+// anywhere. Same locks as DiscardLegacyLogin; the order is taken again under them.
+func (s *Store) DropOlderLegacyLogin(number, expected string) error {
+	owner, value, err := s.idleLegacyProfile(number, expected)
+	if err != nil {
+		return err
+	}
+	if s.LegacyLoginOrder(owner.Account, value) != LegacyLoginOlder {
+		return legacyOrderChanged(number)
+	}
+	return s.dropLegacyLogin(owner, "Dropped the older session profile login of account %s; its slot holds a newer one")
+}
+
+func legacyOrderChanged(number string) error {
+	return cerr.Session("Account-%s's stored login changed while its session profile was being released; the next round tries again", number)
+}
+
 // RefreshLegacyLogin verifies an idle profile login whose access token
 // expired by refreshing its own token (RECLAIM-3): a new credential goes back
 // into the profile, as Claude Code would write it, so the release can verify
 // it; a refused grant means the profile's lineage is dead, so its login and
-// claim go and the slot backup stays. Same locks as DiscardLegacyLogin.
+// claim go and the slot backup stays. Same locks as DiscardLegacyLogin; a
+// login no longer the newest (LegacyLoginOrder) is not sent.
 func (s *Store) RefreshLegacyLogin(ctx context.Context, c oauth.Client, number, expected string) (oauth.RefreshOutcome, error) {
 	owner, value, err := s.idleLegacyProfile(number, expected)
 	if err != nil {
 		return oauth.RefreshOutcome{}, err
+	}
+	if s.LegacyLoginOrder(owner.Account, value) != LegacyLoginNewer {
+		return oauth.RefreshOutcome{}, legacyOrderChanged(number)
 	}
 	if c == nil || oauth.ExtractAccessToken(value) == "" {
 		return oauth.RefreshOutcome{Error: oauth.ErrTransient}, nil

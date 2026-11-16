@@ -38,7 +38,7 @@ func TestAutomaticRotationFromLegacyProfile(t *testing.T) {
 			}
 			latest := b
 			if mode == "rotated" || mode == "unverified" {
-				latest = oauthCreds("rotated-b")
+				latest = laterCreds("rotated-b")
 			}
 			for name, value := range map[string]string{".claude.json": backupConfig("b@example.test"), ".credentials.json": latest, "history.jsonl": "keep this conversation\n"} {
 				if err := os.WriteFile(filepath.Join(dir, name), []byte(value), 0o600); err != nil {
@@ -140,6 +140,12 @@ func TestAutomaticRotationFromLegacyProfile(t *testing.T) {
 	}
 }
 
+// laterCreds is a login issued after oauthCreds' logins: it expires later,
+// which is how a rotated login shows it is the newer one (DESIGN A92).
+func laterCreds(access string) string {
+	return strings.Replace(oauthCreds(access), "4102444800000", "4102444900000", 1)
+}
+
 // claimLegacy records the claim `tycswap run` wrote for a profile; nothing
 // writes one since its removal (DESIGN A92), but stores still hold them.
 func claimLegacy(t *testing.T, sw *Switcher, number, dir string) {
@@ -181,6 +187,17 @@ func legacyReview(t *testing.T, login string) (*Switcher, string) {
 	return sw, dir
 }
 
+// olderStoredLogin makes Account-2's stored login one that expired before
+// a profile login expiring at 2, so that profile login is the newest.
+func olderStoredLogin(t *testing.T, sw *Switcher) string {
+	t.Helper()
+	stored := strings.ReplaceAll(oauthCreds("tok-b"), "4102444800000", "1")
+	if err := sw.Creds.WriteBackup("2", "b@example.test", stored); err != nil {
+		t.Fatal(err)
+	}
+	return stored
+}
+
 func reviewUsage(activePct float64) func(context.Context, string) (map[string]any, error) {
 	return func(_ context.Context, token string) (map[string]any, error) {
 		pct := 10.0
@@ -197,9 +214,11 @@ func reviewUsage(activePct float64) func(context.Context, string) (map[string]an
 func TestRotatedExpiredProfileVerifiedByRefresh(t *testing.T) {
 	for _, rejected := range []bool{false, true} {
 		t.Run(strconv.FormatBool(rejected), func(t *testing.T) {
-			rotated := strings.ReplaceAll(oauthCreds("rotated-b"), "4102444800000", "1")
+			rotated := strings.ReplaceAll(oauthCreds("rotated-b"), "4102444800000", "2")
 			sw, dir := legacyReview(t, rotated)
+			stored := olderStoredLogin(t, sw)
 			refreshed := oauthCreds("refreshed-b")
+			profileRefreshes := 0
 			fc := &oauth.FakeClient{
 				UsageFn: reviewUsage(100),
 				ProfileFn: func(_ context.Context, token string) *oauth.Identity {
@@ -209,9 +228,14 @@ func TestRotatedExpiredProfileVerifiedByRefresh(t *testing.T) {
 					return &oauth.Identity{Email: "b@example.test"}
 				},
 				RefreshFn: func(_ context.Context, creds string) oauth.RefreshOutcome {
-					if creds != rotated {
+					switch {
+					case creds == stored:
+						// The stored login's own refresh, once the profile's is gone.
+						return oauth.RefreshOutcome{Credentials: oauthCreds("tok-b")}
+					case creds != rotated:
 						t.Errorf("refreshed another login than the profile's")
 					}
+					profileRefreshes++
 					if rejected {
 						return oauth.RefreshOutcome{Error: oauth.ErrInvalidGrant}
 					}
@@ -222,6 +246,9 @@ func TestRotatedExpiredProfileVerifiedByRefresh(t *testing.T) {
 			e := autoswitch.NewEngine(autoswitchAdapter{sw}, settings.Default(), func(autoswitch.Event) {}, false,
 				autoswitch.WithClock(sw.Clk), autoswitch.WithOAuthClient(fc))
 			got := e.Tick()
+			if profileRefreshes != 1 {
+				t.Fatalf("the profile's login was refreshed %d times, want once", profileRefreshes)
+			}
 			if owner, err := sw.CredentialOwner("2"); err != nil || strings.HasPrefix(owner.Scope, "legacy:") {
 				t.Fatalf("the profile still owns Account-2: %+v, %v", owner, err)
 			}
@@ -245,8 +272,9 @@ func TestRotatedExpiredProfileVerifiedByRefresh(t *testing.T) {
 // A refreshed login the profile endpoint cannot name yet stays in the profile,
 // where the next round verifies it; the stored login is not touched.
 func TestRefreshedProfileLoginKeptUntilVerified(t *testing.T) {
-	rotated := strings.ReplaceAll(oauthCreds("rotated-b"), "4102444800000", "1")
+	rotated := strings.ReplaceAll(oauthCreds("rotated-b"), "4102444800000", "2")
 	sw, dir := legacyReview(t, rotated)
+	stored := olderStoredLogin(t, sw)
 	refreshed := oauthCreds("refreshed-b")
 	fc := &oauth.FakeClient{
 		UsageFn: reviewUsage(100),
@@ -263,7 +291,7 @@ func TestRefreshedProfileLoginKeptUntilVerified(t *testing.T) {
 	if got, _ := os.ReadFile(filepath.Join(dir, ".credentials.json")); string(got) != refreshed {
 		t.Fatalf("the refreshed login is not in the profile: %s", got)
 	}
-	if backup, _ := sw.ReadAccountCredentials("2", "b@example.test"); backup != oauthCreds("tok-b") {
+	if backup, _ := sw.ReadAccountCredentials("2", "b@example.test"); backup != stored {
 		t.Fatalf("the stored login changed: %s", backup)
 	}
 	if owner, err := sw.CredentialOwner("2"); err != nil || owner.Scope != "legacy:2" {
@@ -274,7 +302,7 @@ func TestRefreshedProfileLoginKeptUntilVerified(t *testing.T) {
 // RECLAIM-4: once a release cannot verify the profile's login, the snapshot
 // says why instead of offering the account the engine refuses.
 func TestHeldReleaseShowsReason(t *testing.T) {
-	sw, _ := legacyReview(t, oauthCreds("rotated-b"))
+	sw, _ := legacyReview(t, laterCreds("rotated-b"))
 	fc := &oauth.FakeClient{UsageFn: reviewUsage(100)}
 	sw.OAuth = fc
 	e := autoswitch.NewEngine(autoswitchAdapter{sw}, settings.Default(), func(autoswitch.Event) {}, false,

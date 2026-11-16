@@ -78,6 +78,9 @@ func TestSwitchToReclaimsIdleLegacyLogin(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s, _, _ := twoAccountStore(t)
 			latest := oauthCreds(tc.access, tc.refresh)
+			if tc.verify {
+				latest = laterCreds(tc.access, tc.refresh)
+			}
 			dir := legacySwitchProfile(t, s, latest)
 			queries := 0
 			s.OAuth = &oauth.FakeClient{ProfileFn: func(_ context.Context, token string) *oauth.Identity {
@@ -134,7 +137,7 @@ func TestSwitchToPreservesUnverifiedLegacyLogin(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, active, backup := twoAccountStore(t)
-			latest := oauthCreds("unknown-access", "unknown-refresh")
+			latest := laterCreds("unknown-access", "unknown-refresh")
 			dir := legacySwitchProfile(t, s, latest)
 			s.OAuth = &oauth.FakeClient{ProfileFn: func(context.Context, string) *oauth.Identity { return tc.id }}
 			if _, err := SwitchTo(s, "2", true, false); err == nil || !strings.Contains(err.Error(), "could not be verified") {
@@ -171,8 +174,8 @@ func TestSwitchToPreservesLiveOrUnreadableLegacySession(t *testing.T) {
 
 func TestSwitchToRechecksLegacyCredentialAfterIdentityLookup(t *testing.T) {
 	s, active, backup := twoAccountStore(t)
-	dir := legacySwitchProfile(t, s, oauthCreds("first-access", "first-refresh"))
-	changed := oauthCreds("changed-access", "changed-refresh")
+	dir := legacySwitchProfile(t, s, laterCreds("first-access", "first-refresh"))
+	changed := laterCreds("changed-access", "changed-refresh")
 	s.OAuth = &oauth.FakeClient{ProfileFn: func(context.Context, string) *oauth.Identity {
 		if err := os.WriteFile(filepath.Join(dir, ".credentials.json"), []byte(changed), 0o600); err != nil {
 			t.Fatal(err)

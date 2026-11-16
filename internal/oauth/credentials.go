@@ -101,6 +101,12 @@ func ExtractAccessToken(creds string) string {
 	return tok
 }
 
+// ExpiresAtMS is the login's expiresAt in epoch milliseconds; ok is false
+// when it is missing or not a number.
+func ExpiresAtMS(creds string) (float64, bool) {
+	return numFloat(ExtractOAuthData(creds)["expiresAt"])
+}
+
 // expiresAt is epoch milliseconds; a non-numeric value counts as not expired (04§1.6).
 func IsOAuthTokenExpired(expiresAt any, now time.Time) bool {
 	ms, ok := numFloat(expiresAt)

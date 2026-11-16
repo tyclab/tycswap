@@ -24,12 +24,25 @@ func ReleaseIdleLegacy(s *store.Store, number string) error {
 		return withLegacyLocks(s, profile.Dir, func() error { return s.DiscardLegacyLogin(number, profile.Credential) })
 	}
 	var candidate *store.LegacyRelease
+	order := store.LegacyLoginNewer
 	if err := s.Lock.With(func() error {
 		var err error
-		candidate, err = s.LegacyReleaseCandidate(number)
+		if candidate, err = s.LegacyReleaseCandidate(number); err == nil && candidate != nil {
+			order = s.LegacyLoginOrder(candidate.Owner.Account, candidate.Credentials)
+		}
 		return err
 	}); err != nil || candidate == nil {
 		return err
+	}
+	// An older copy of the stored login goes nowhere: neither to the token
+	// or profile endpoint nor over the stored login (DESIGN A92).
+	switch order {
+	case store.LegacyLoginOlder:
+		return withLegacyLocks(s, candidate.Owner.ProfileDir, func() error { return s.DropOlderLegacyLogin(number, candidate.Credentials) })
+	case store.LegacyLoginUnordered:
+		held := cerr.Session("Account-%s's session login and its stored login cannot be ordered by expiry; its login and claim remain held. Sign in to that account with tycswap add --login --switch to renew it.", number)
+		holdLegacyRelease(s, number, candidate.Credentials, held)
+		return held
 	}
 	backup, _ := s.ReadAccountCredentials(number, candidate.Owner.Account.Email)
 	if candidate.Credentials != "" && !legacySameLineage(candidate.Credentials, backup) &&
@@ -56,6 +69,9 @@ func ReleaseIdleLegacy(s *store.Store, number string) error {
 			backup, _ := s.ReadAccountCredentials(number, candidate.Owner.Account.Email)
 			if legacySameLineage(live, backup) {
 				return nil
+			}
+			if s.LegacyLoginOrder(candidate.Owner.Account, live) != store.LegacyLoginNewer {
+				return cerr.Session("Account-%s's stored login changed while its session profile was being released; the next round tries again", number)
 			}
 			kind, _ := classifyOutgoing(s, number, candidate.Owner.Account.Email, live, prov, data)
 			identity := candidate.Owner.Account

@@ -1325,11 +1325,15 @@ disabled ones included, whose profile no Claude process uses:
   credential are never written. Another lineage keeps its claim, and the
   account stays held (`conflicting credential owners`) until it is signed in
   again with `tycswap add --login`.
-- On any other account, a stale profile login is dropped the same way;
-  otherwise the verified release of `tycswap switch` saves the profile's login
-  into the slot and releases the claim. A login whose access token expired is
-  verified by refreshing its own token, written back into the profile first;
-  a refused refresh drops it and keeps the stored login. A release that cannot
+- On any other account, a stale profile login is dropped the same way, and so
+  is one of another lineage that expires no later than the stored login
+  (unless that stored login is known dead), without asking the token or
+  profile endpoint; one whose expiry or the stored login's cannot be read is
+  held without a request. Otherwise the verified release of `tycswap switch`
+  saves the profile's login into the slot and releases the claim. A login
+  whose access token expired is verified by refreshing its own token, written
+  back into the profile first; a refused refresh drops it and keeps the
+  stored login. A release that cannot
   verify the login is stored as the account's ownership reason until the
   login changes.
 
