@@ -731,7 +731,7 @@ func (e Effective) Notice() string {
 		return ""
 	}
 	key := e.Spec.Dotted()
-	return fmt.Sprintf("%s: the stored value contains a control character, so it is ignored and the default applies; "+
+	return fmt.Sprintf("%s: the stored value contains a control character, so it is ignored, as if the key were not set; "+
 		"set it again with 'tycswap config set %s <value>' or clear it with 'tycswap config unset %s'", key, key, key)
 }
 

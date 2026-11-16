@@ -31,7 +31,7 @@ evidence.
 | ID | Defect | Where | Verdict | Ev | Series |
 | --- | --- | --- | --- | --- | --- |
 | OFF-2 | a tray click that only ends a dashboard dry run says "Auto-switch off" | cli/appshell.go, webfacades.go | FIX D5 (`SetEnabled`) |  | E |
-| OFF-3 | an unreadable `settings.json` reads as off with no stored warning; `auto on` fails on it | settings/settings.go | FIX D1 D7 |  | E |
+| OFF-3 | an unreadable `settings.json` (a raw ESC typed into a value makes it invalid JSON) reads every key as its default, auto-switch off, with no warning on `config`, the TUI, the dashboard or the auto loop; `auto on` fails on it | settings/settings.go | FIX D1 D7 |  | E |
 | OFF-4 | the hosted Codex loop reacts up to one interval after Start or `auto on`; it has no wake | cli/codexauto.go, webfacades.go | FIX D3 (one tick) |  | E |
 | OFF-5 | saved bars other than the model reach the app's engine only at app start, since Stop no longer ends it | cli/webfacades.go | FIX D3 (settings read per tick) |  | E |
 

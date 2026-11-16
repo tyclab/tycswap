@@ -289,6 +289,8 @@ func (a *appShell) menu(st web.State) []tray.Item {
 		sub := "off — 5h and 7d only, " + name + " ignored"
 		if len(withModels) > 0 {
 			sub = "counting " + strings.Join(withModels, ", ") + " — applies to percentages and switching"
+		} else if storedModelIgnored(st) {
+			sub = "off — the stored list has a control character and is ignored; set it again in Settings"
 		}
 		items = append(items, tray.Item{ID: "model-limits", Kind: tray.KindToggle, Title: "Model limits", Sub: sub, Checked: len(withModels) > 0})
 	}
@@ -1168,6 +1170,17 @@ func countedModels(st web.State) []string {
 		}
 	}
 	return nil
+}
+
+// storedModelIgnored reports a stored autoswitch.model that settings ignores
+// (its row carries a notice), so the switch does not read as plainly off.
+func storedModelIgnored(st web.State) bool {
+	for _, sv := range st.Settings {
+		if sv.Key == "autoswitch.model" {
+			return sv.Notice != ""
+		}
+	}
+	return false
 }
 
 // modelWindowLabel names the per-model window the accounts actually report,

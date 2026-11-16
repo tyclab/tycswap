@@ -1974,11 +1974,15 @@ range, wrong type, corrupt file); `2` on a usage error.
   LF, VT, FF, CR or NEL, which read as spaces) is ignored, and the default
   applies. `list` and `get` show it as `(ignored)` and print
   `warning: <key>: the stored value contains a control character, so it is
-  ignored and the default applies; set it again with 'tycswap config set <key>
-  <value>' or clear it with 'tycswap config unset <key>'` on stderr; `--json`
-  adds `"ignored":true` and that sentence as `"notice"`. The value itself is
-  never printed. The TUI's Settings row, the dashboard's settings row and the
-  auto loop (one `config-warning` at its first tick) say the same.
+  ignored, as if the key were not set; set it again with 'tycswap config set
+  <key> <value>' or clear it with 'tycswap config unset <key>'` on stderr;
+  `--json` adds `"ignored":true` and that sentence as `"notice"`. The value
+  itself is never printed. Everything that decides with the key says the same:
+  the settings menus, the TUI's Settings row, the dashboard's settings row, the
+  tray's Model limits switch, `list` and `status` (stderr), `switch --strategy`
+  without `--model` (stderr; with `--json` in `warnings`), `start` (a
+  `tycswap start:` line) and the auto loop (one `config-warning` at its first
+  tick). A `--model` flag still applies over an ignored stored value.
 - `set`: `<key> = <value>`.
 - `unset`: `<key> unset (default: <default>)`, or the stderr notice
   `<key> is not set; nothing to do` (exit 0) when it was not set.
@@ -3090,7 +3094,7 @@ anything else `500`.
 | `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` | `400` missing slot or bare key, `404` a `codex:` key or an unknown provider |
 | `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` | `400` missing or bare keys, `404` a `codex:` key or an unknown provider |
 | `POST /api/sessions/{pid}/stop` | | stop a listed Claude Code session, after verifying the process start time | `400` bad pid, `404` not listed (or gone before the lock), `409` the pid now belongs to another process or cannot be verified, `500` the signal failed |
-| `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset`; each listed key carries `applies`, a sentence saying when a saved value takes effect; saving or unsetting `autoswitch.model` also retargets an engine hosted in this process, also one idling while auto-switch is off (`"applied": true` in the result) | `400` unknown key, value out of range, or missing value; the engine's own error when the retarget fails after the save |
+| `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset`; each listed key carries `applies`, a sentence saying when a saved value takes effect, and `notice` when its stored value is ignored (a control character; the sentence `config list` prints); saving or unsetting `autoswitch.model` also retargets an engine hosted in this process, also one idling while auto-switch is off (`"applied": true` in the result), with the value as stored | `400` unknown key, value out of range, missing value, or a control character in a free-text value; the engine's own error when the retarget fails after the save |
 | `POST /api/auto/start` | `{"dryRun": bool}` | real: make sure an engine is hosted (and the Codex engine beside it on a machine with Codex accounts), then turn `autoswitch.enabled` on and wake the engine; with `TYCSWAP_AUTO_MANAGED_BY` set, only write the setting. Dry run: host a dry-run engine, write nothing; while the setting is off it takes the idle real engine's place | `400` beside a dry run already running or while auto-switch is on in this process, or still stopping |
 | `POST /api/auto/stop`, `/api/auto/wake` | | stop: turn `autoswitch.enabled` off and leave a real engine hosted; a dry run is stopped instead (waits up to 2 s for both loops to end), writes nothing and gives the host back to the real engine; wake: poll now (the Claude engine) | `400` nothing hosted and the setting already off (stop), or nothing hosted and no external scheduler (wake); stop `409` when a dry run's tick outlasts the wait (it is stopping; Start refuses until both loops have) |
 | `POST /api/auto/threshold` | `{"threshold": 50-100}` | retarget the hosted engine's 7d bar; the bounds are `autoswitch.sevenDayThreshold`'s (DESIGN A34) | `400` missing, out of range, or nothing hosted (with an external scheduler: `the scheduler reads the saved setting; change autoswitch.sevenDayThreshold in Settings`) |

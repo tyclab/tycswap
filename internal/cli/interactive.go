@@ -144,8 +144,9 @@ func promptConfigArguments(argv []string, s ioStreams) (int, bool) {
 		return code, true
 	}
 	values := settings.EffectiveSettings(paths.GetBackupRoot())
+	// config get says the notice itself.
 	for _, v := range values {
-		if n := v.Notice(); n != "" {
+		if n := v.Notice(); n != "" && pos[0] != "get" {
 			fmt.Fprintln(s.err, "warning: "+n)
 		}
 	}
