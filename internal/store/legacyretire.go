@@ -362,7 +362,8 @@ func (s *Store) dropLegacyLogin(owner groups.Owner, done string) error {
 }
 
 // writeLegacyLogin stores a refreshed login where Claude Code reads it for
-// this profile: the hashed Keychain entry on macOS, else the credentials file.
+// this profile: the credentials file, and on macOS the hashed Keychain entry
+// first, which Claude Code reads before the file.
 func (s *Store) writeLegacyLogin(dir, value string) error {
 	if s.Platform == platform.MacOS {
 		if err := s.kc.Set(ccfile.KeychainServiceName(dir), keychain.AccountName(), value); err != nil {

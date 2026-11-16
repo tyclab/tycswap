@@ -646,9 +646,14 @@ including Flakelab start/resume integration.
 `tycswap run`, `env`, `map` and `unmap`, which pinned a terminal or a directory
 to one account in its own profile under the store's `sessions/` directory, are
 removed: they exit 2 with a pointer to the shared login. A profile left behind
-keeps its account while a Claude session still runs in it; a shell whose
-`CLAUDE_CONFIG_DIR` still names one works on the default login and says so on
-standard error. `mappings.json` is no longer read.
+keeps its account while a Claude session still runs in it. In a shell whose
+`CLAUDE_CONFIG_DIR` still names one, tycswap's own commands work on the default
+login and say so on standard error, but `claude`, plain or through
+`tycswap start` (which passes the environment on unchanged), still uses that
+profile: unset it first (`unset CLAUDE_CONFIG_DIR`; fish
+`set -e CLAUDE_CONFIG_DIR`; PowerShell `Remove-Item Env:CLAUDE_CONFIG_DIR`), as
+the notice and the removed commands' message say. `mappings.json` is no longer
+read.
 
 Once no session runs in it, the next scheduled auto-switch tick (also while
 auto-switch is off) copies the profile's conversations into the default

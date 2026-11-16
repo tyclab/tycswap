@@ -354,3 +354,73 @@ func TestLiveProfileKeepsClaim(t *testing.T) {
 		t.Fatal("a running profile's conversations were copied")
 	}
 }
+
+// lowUsage keeps every account below every bar, so a tick switches nothing.
+func lowUsage(context.Context, string) (map[string]any, error) {
+	return map[string]any{"five_hour": map[string]any{"utilization": 10.0}, "seven_day": map[string]any{"utilization": 10.0}}, nil
+}
+
+// assertLiveProfileRetired: the live account's stale profile lost its login
+// and claim, and its conversation reached the default profile.
+func assertLiveProfileRetired(t *testing.T, sw *core.Switcher, dir string) {
+	t.Helper()
+	if claimed(t, sw, "1") || exists(filepath.Join(dir, ".credentials.json")) {
+		t.Fatal("the round kept the live account's stale profile login or claim")
+	}
+	if got, _ := os.ReadFile(filepath.Join(sw.Home, ".claude", "projects", "-work", "s1.jsonl")); string(got) != "conversation of 1\n" {
+		t.Fatalf("the profile's conversation did not reach the default profile: %q", got)
+	}
+}
+
+// With auto-switch on, `auto --once` retires after the engine's tick; only
+// retirement handles the live account's profile.
+func TestRetirementRunsWithAutoSwitchOn(t *testing.T) {
+	sw := retireStore(t, &oauth.FakeClient{UsageFn: lowUsage})
+	dir := legacyProfile(t, sw, "1", retireCreds("at-old", "rt-old"), true, true)
+	if _, err := settings.SetSetting(sw.BackupDir(), "autoswitch.enabled", "true"); err != nil {
+		t.Fatal(err)
+	}
+	runCodex(t, "", "auto", "--once", "--json")
+	assertLiveProfileRetired(t, sw, dir)
+}
+
+// The app's hosted loop retires on each round, as `auto --once` does.
+func TestHostedLoopRoundRetiresProfiles(t *testing.T) {
+	sw := retireStore(t, &oauth.FakeClient{UsageFn: lowUsage})
+	dir := legacyProfile(t, sw, "1", retireCreds("at-old", "rt-old"), true, true)
+	newAutoFacade(sw, nil).codexRound(context.Background(), nil, false)
+	assertLiveProfileRetired(t, sw, dir)
+}
+
+// The copy marker is written only after a complete copy: a transcript that
+// cannot be read holds the round, and the next round copies everything.
+func TestHistoryMarkerOnlyAfterCompleteCopy(t *testing.T) {
+	sw := retireStore(t, &oauth.FakeClient{})
+	dir := legacyProfile(t, sw, "2", "", false, false)
+	locked := filepath.Join(dir, "projects", "-work", "locked.jsonl")
+	writeTestFile(t, locked, "unreadable for now\n", 0o000)
+	if f, err := os.Open(locked); err == nil {
+		f.Close()
+		t.Skip("this user reads a 0000 file")
+	}
+	scheduledTick(t)
+	if exists(filepath.Join(dir, ".tycswap-history-copied")) {
+		t.Fatal("the marker was written after an incomplete copy")
+	}
+	if n := heldWarnings(t, sw, "2"); n != 1 {
+		t.Fatalf("held warnings = %d, want the incomplete copy logged", n)
+	}
+	if err := os.Chmod(locked, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scheduledTick(t)
+	work := filepath.Join(sw.Home, ".claude", "projects", "-work")
+	for _, name := range []string{"locked.jsonl", "s2.jsonl"} {
+		if !exists(filepath.Join(work, name)) {
+			t.Fatalf("the next round did not copy %s", name)
+		}
+	}
+	if !exists(filepath.Join(dir, ".tycswap-history-copied")) {
+		t.Fatal("the complete copy wrote no marker")
+	}
+}

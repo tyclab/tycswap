@@ -101,13 +101,11 @@ internal/codex/usagecache ──► internal/codex/store ──► internal/code
 | `settings` | `settings.json` store, `SETTING_SPECS`, `AutoSwitchSettings` (frozen value), clamp, `config set/get/unset`, `merged_with_cli`, `parse_model_names`. (08§8, 05§2) |
 | `sessprofile` | Session-profile leaf: dir naming (`slugify_email`, `session_dir_for`), NFC keychain service hashing, invalidation/stale-marker/delete. (06§1.5, breaks store↔session cycle) |
 | `procdetect` | Read Claude Code `sessions/*.json` + `ide/*.lock`, `is_pid_alive` (POSIX `kill 0`, Windows `OpenProcess`). (06§4) |
-| `mappings` | `MappingStore`: `mappings.json`, `normalize_path`, nearest-ancestor `resolve`, prune. (06§5) |
 | `store` | The substrate: `sequence.json` model + read/write, path wiring, credential proxies (+`_post_backup_write`), identity resolution, org-field backfill, live-session guards, `FileLock` handle, `UsageStore` handle, migrations-at-construct. (01, 03 wiring) |
 | `lifecycle` | Free funcs over `*store.Store`: add/add-token/remove/move/swap/alias/disable/enable/purge. (01§5–11) |
 | `switching` | switch/switch-to/best/next-available, `performSwitch`, `classifyOutgoing`, replan, self-switch provenance. (02§4–9) |
 | `reporting` | list/status renderers + JSON payloads, `collectUsageEntries` (paced, identity-guarded), snapshots, duplicate/lockstep warnings. (02§10–13) |
-| `core` | `Switcher` façade: composes `store` + `lifecycle`/`switching`/`reporting`; satisfies the façade interfaces `autoswitch`/`tui`/`session`/`transfer` consume. |
-| `session` | `SessionManager`: run/exec-default, bootstrap/reuse, `_sync_sharing`, MCP mirror, share-history. (06§1–3) |
+| `core` | `Switcher` façade: composes `store` + `lifecycle`/`switching`/`reporting`; satisfies the façade interfaces `autoswitch`/`tui`/`transfer` consume. |
 | `transfer` | `.tycswap` export/import (reads Python files). (07§1–4) |
 | `migrations` | Registry migrations (windows keyring, macos keyring) + `.migrations.json` state; org backfill is in `store`. (07§5–6) |
 | `autoswitch` | `AutoSwitchEngine`, events, tick, `run_loop`, quarantine, cooldown, freshen. (05) |
@@ -435,6 +433,8 @@ State file `autoswitch_state.json` under its own `.autoswitch_state.lock`
 out (recover→ErrorEvent, transient).
 
 ### 2.19 `session` — 06§1–3
+Removed with `run` and `env` (A92); kept here as the record of what they did.
+
 `manager.go`, `bootstrap.go`, `sharing.go`, `mcp.go`, `history.go`, `exec_posix.go`, `exec_windows.go`
 ```go
 type Manager struct{ sw *core.Switcher }
@@ -557,7 +557,7 @@ Every Python thread/loop → Go construct, with lifecycle/shutdown:
 | active-refresh persist callback re-acquiring locks from inside a fetch | network refresh runs with **no** `FileLock` held; the persist callback re-acquires `FileLock → cclock.Credentials → cclock.Config` and re-checks owner/lineage before writing (non-reentrant lock preserved) | callback returns `USAGE_TOKEN_EXPIRED` on mid-refresh owner-appears/lineage change. |
 | TUI Textual workers (`run_worker(thread=True, group=…)`) + 3s poll timer | bubbletea: `tea.Tick(3s)` poll; workers are `tea.Cmd`s returning typed msgs (`refreshDoneMsg`/`refreshErrMsg`/`actionDoneMsg`/`engineEventMsg`/`engineStoppedMsg`) handled in `Update`; single-flight = plain `bool` model fields (Update is single-goroutine) | goroutines never touch model state directly — only send messages. Engine hosted as long-lived goroutine draining onto a channel, re-armed by a `tea.Cmd` blocking-receive. |
 | `FileLock` (flock/msvcrt, 0.1s poll, 10s) | `filelock.FileLock` `unix.Flock`/`LockFileEx`, monotonic timeout | released on `Release()`/fd-close/process death; non-reentrant. |
-| SIGINT / Ctrl-C (Python: no handler, `KeyboardInterrupt` → 130) | `cli` installs `signal.Notify(sigint)`; on receipt prints the cancelled note and `os.Exit(130)`. For `tycswap run` POSIX the process is already replaced by `syscall.Exec` (no tycswap signal handler after exec); Windows run wrapper mirrors child exit / Ctrl-C→130. The auto loop installs **only** SIGTERM→Stop (matching the single Python signal handler); its Ctrl-C path prints "Auto-switch stopped" → 130. |
+| SIGINT / Ctrl-C (Python: no handler, `KeyboardInterrupt` → 130) | `cli` installs `signal.Notify(sigint)`; on receipt prints the cancelled note and `os.Exit(130)`. For `tycswap start` POSIX the process is already replaced by `syscall.Exec` (no tycswap signal handler after exec); on Windows `start` waits for the child, mirrors its exit and owns console Ctrl-C while it runs (A90). The auto loop installs **only** SIGTERM→Stop (matching the single Python signal handler); its Ctrl-C path prints "Auto-switch stopped" → 130. |
 
 Data-race discipline: usability cache (`credstore`) guarded by a mutex if a store
 is shared across goroutines (TUI). Store CRUD is single-threaded under `FileLock`.
@@ -918,7 +918,7 @@ delivery kills the process before the cancel note / JSON-vs-plain routing can
 run, so `cli` MUST install a SIGINT notifier to **reproduce** (never extend)
 Python's semantics: print the exact cancelled note, route stderr-vs-stdout by
 JSON mode, exit 130. Interactive prompts convert cancellation into the
-prompt-local "Cancelled" behavior. On the POSIX `tycswap run` path the handler
+prompt-local "Cancelled" behavior. On the POSIX `tycswap start` path the handler
 is irrelevant after `syscall.Exec` (process image replaced). The auto loop
 additionally installs SIGTERM→`engine.Stop()` — the only signal handler the
 Python code has.
@@ -7270,8 +7270,11 @@ migrate). What stays until no profile is left: `internal/sessprofile` reads
 the profiles under `<store>/sessions/`, `groups/claims.json` keeps their
 claims, the ownership checks (A88, A89) still treat a profile as its account's
 owner, a live session in one keeps its claim, and a shell whose
-`CLAUDE_CONFIG_DIR` still names one runs every command on the default login
-with one notice.
+`CLAUDE_CONFIG_DIR` still names one runs every tycswap command on the default
+login with one notice. `claude` itself, plain or through `tycswap start`
+(which passes the environment on unchanged, A90), still reads that profile,
+and `env --unset` is gone, so the notice and the removed commands' message
+say how to unset the variable in sh, fish and PowerShell.
 
 Leftovers retire on their own, beside A78's group retirement and on the same
 rounds: scheduled and real (`auto --once`, each loop interval, the app's
@@ -7284,7 +7287,9 @@ never enables the account or switches to it):
 
 1. `projects/` is copied into the default profile's where missing (A78's
    copy, never replacing a file; a namesake of another size is logged with
-   both paths and sizes), once: `.tycswap-history-copied` stops a transcript
+   both paths and sizes; a copied transcript keeps its modification time,
+   by which Claude Code orders its session list), once, the marker written
+   only after a complete copy: `.tycswap-history-copied` stops a transcript
    Claude Code later cleans up from coming back.
 2. On the live default account the claim is released by dropping the
    profile's login when it is empty, the live login's own lineage, or stale.

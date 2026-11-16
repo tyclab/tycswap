@@ -1305,11 +1305,17 @@ tycswap: error: tycswap run was removed: every Claude session uses the shared de
 ```
 
 on standard error (the name is the one given) and nothing on standard output.
+When `CLAUDE_CONFIG_DIR` names a former profile, `Start plain claude` reads
+`CLAUDE_CONFIG_DIR still names a former tycswap profile: unset it first (unset
+CLAUDE_CONFIG_DIR; fish: set -e CLAUDE_CONFIG_DIR; PowerShell: Remove-Item
+Env:CLAUDE_CONFIG_DIR), then start plain claude` instead.
 
 A profile `run` or `env` created stays under `<backup root>/sessions/`. While a
 Claude session still runs in it, it keeps its account (`accounts-in-use`, A89).
-A shell whose `CLAUDE_CONFIG_DIR` still names one works on the default login
-(see ENVIRONMENT).
+In a shell whose `CLAUDE_CONFIG_DIR` still names one, tycswap's own commands
+work on the default login (see ENVIRONMENT), but `claude`, plain or through
+`tycswap start`, which passes the environment on unchanged, still uses that
+profile until `CLAUDE_CONFIG_DIR` is unset.
 
 The leftovers retire on their own, on each scheduled round of `tycswap auto`
 or the app (not a dry run, not a status line's tick). For every account,
@@ -4679,7 +4685,7 @@ tycswap reads the following environment variables.
 
 | Variable | Effect |
 |----------|--------|
-| `CLAUDE_CONFIG_DIR` | Overrides the Claude Code config home: the global config is `<dir>/.claude.json` and credentials are `<dir>/.credentials.json`. `tycswap start` skips startup selection and passes any set value unchanged, even empty. For every other command the effect depends on the value: a former session profile — a value inside `<backup_root>/sessions/`, as `tycswap env` set it before its removal — is ignored, and the command operates on the default login and prints `CLAUDE_CONFIG_DIR names a retired tycswap profile; operating on the default login.` to stderr; a custom value outside `<backup_root>/sessions/` is honored. |
+| `CLAUDE_CONFIG_DIR` | Overrides the Claude Code config home: the global config is `<dir>/.claude.json` and credentials are `<dir>/.credentials.json`. `tycswap start` skips startup selection and passes any set value unchanged, even empty. For every other command the effect depends on the value: a former session profile — a value inside `<backup_root>/sessions/`, as `tycswap env` set it before its removal — is ignored, and the command operates on the default login and prints `CLAUDE_CONFIG_DIR names a retired tycswap profile; operating on the default login. Unset it so plain claude stops using that profile: unset CLAUDE_CONFIG_DIR (fish: set -e CLAUDE_CONFIG_DIR; PowerShell: Remove-Item Env:CLAUDE_CONFIG_DIR).` to stderr (where `TYCSWAP_DEFAULT_PROFILE_DIR` names a custom default it is restored, and the notice says to set `CLAUDE_CONFIG_DIR` back to it); a custom value outside `<backup_root>/sessions/` is honored. |
 | `XDG_DATA_HOME` | On Linux/WSL, selects the backup-root parent: `<XDG_DATA_HOME>/tycswap` (and, for `tycswap migrate`, the old store `<XDG_DATA_HOME>/claude-swap`). Ignored when unset, empty, or non-absolute; a leading `~` is expanded. |
 | `HOME` | The user's home directory; the base for `~/.claude.json`, `~/.claude/`, `~/.local/share`, `~/.tycswap`, the old `~/.claude-swap-backup` (read only by `tycswap migrate`), and `~/go/bin`. |
 | `WSL_DISTRO_NAME` | When non-empty, the platform is detected as WSL (which uses the Linux/WSL backup-root layout). |

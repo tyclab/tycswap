@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/groups"
@@ -439,5 +440,29 @@ func TestRetireEndsTheDefaultLoginConflict(t *testing.T) {
 	}
 	if owner, err := s.CredentialOwner("1"); err != nil || owner.Scope != "default" || owner.Uncertain {
 		t.Fatalf("default login does not own the account alone: %+v, %v", owner, err)
+	}
+}
+
+// Claude Code orders its session list by file mtime: a copied transcript
+// keeps its source's, so a former conversation does not jump to the top.
+func TestCopyHistoryKeepsModTime(t *testing.T) {
+	from, to := t.TempDir(), t.TempDir()
+	src := filepath.Join(from, "-work", "s.jsonl")
+	if err := os.MkdirAll(filepath.Dir(src), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(src, []byte("conversation\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	when := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	if err := os.Chtimes(src, when, when); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyHistory(nil, from, to); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(to, "-work", "s.jsonl"))
+	if err != nil || !info.ModTime().Equal(when) {
+		t.Fatalf("copied transcript mtime %v, %v; want %v", info.ModTime(), err, when)
 	}
 }

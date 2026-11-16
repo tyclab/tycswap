@@ -29,6 +29,9 @@ func TestManagedProfileRestoresCustomDefault(t *testing.T) {
 		if got := os.Getenv("CLAUDE_CONFIG_DIR"); got != want {
 			t.Fatalf("default profile = %q, want %q", got, want)
 		}
+		if advice := "back to " + custom; original == custom && !strings.Contains(errb.String(), advice) {
+			t.Fatalf("the notice does not say %q: %q", advice, errb.String())
+		}
 	}
 }
 

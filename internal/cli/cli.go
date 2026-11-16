@@ -146,19 +146,30 @@ func neutralizePinnedSessionProfile(stderr io.Writer) {
 		return
 	}
 	_ = os.Unsetenv("CLAUDE_CONFIG_DIR")
+	advice := unpinAdvice
 	if original := os.Getenv("TYCSWAP_DEFAULT_PROFILE_DIR"); os.Getenv("TYCSWAP_DEFAULT_PROFILE_UNPINNED") != "true" && filepath.IsAbs(original) && !sessprofile.IsSessionProfileDir(paths.GetBackupRoot(), original) {
 		_ = os.Setenv("CLAUDE_CONFIG_DIR", original)
+		advice = "Set CLAUDE_CONFIG_DIR back to " + original + " so plain claude stops using that profile."
 	}
-	io.WriteString(stderr, printer.Dimmed("CLAUDE_CONFIG_DIR names a retired tycswap profile; operating on the default login.")+"\n")
+	io.WriteString(stderr, printer.Dimmed("CLAUDE_CONFIG_DIR names a retired tycswap profile; operating on the default login. "+advice)+"\n")
 }
+
+// unpinAdvice: tycswap ignores a former profile in CLAUDE_CONFIG_DIR, but
+// claude, plain or through tycswap start, still reads it.
+const unpinAdvice = "Unset it so plain claude stops using that profile: unset CLAUDE_CONFIG_DIR (fish: set -e CLAUDE_CONFIG_DIR; PowerShell: Remove-Item Env:CLAUDE_CONFIG_DIR)."
 
 // removedProfileCommands are the per-account profile commands the operator
 // removed on 2026-11-10 (DESIGN A92); they exit 2 like an unknown command.
 var removedProfileCommands = map[string]bool{"run": true, "env": true, "map": true, "unmap": true}
 
 func removedProfileCommand(prog, name string, stderr io.Writer) int {
+	start := "Start plain claude"
+	if sessprofile.IsSessionProfileDir(paths.GetBackupRoot(), os.Getenv("CLAUDE_CONFIG_DIR")) {
+		start = "CLAUDE_CONFIG_DIR still names a former tycswap profile: unset it first (unset CLAUDE_CONFIG_DIR; fish: set -e CLAUDE_CONFIG_DIR; " +
+			"PowerShell: Remove-Item Env:CLAUDE_CONFIG_DIR), then start plain claude"
+	}
 	fmt.Fprintf(stderr, "%s: error: %s %s was removed: every Claude session uses the shared default login, which tycswap switches. "+
-		"Start plain claude; claude --resume <id> continues a former profile's conversation there.\n", prog, prog, name)
+		"%s; claude --resume <id> continues a former profile's conversation there.\n", prog, prog, name, start)
 	return 2
 }
 

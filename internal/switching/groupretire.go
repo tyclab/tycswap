@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/logging"
@@ -68,12 +69,17 @@ func copyHistory(log *logging.Logger, from, to string) error {
 	})
 }
 
+// copyFile keeps the source's mtime: Claude Code orders its session list by it.
 func copyFile(from, to string) error {
 	in, err := os.Open(from)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(to), ".tycswap-copy-*")
 	if err != nil {
 		return err
@@ -84,6 +90,9 @@ func copyFile(from, to string) error {
 		return err
 	}
 	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chtimes(tmp.Name(), time.Time{}, info.ModTime()); err != nil {
 		return err
 	}
 	return os.Rename(tmp.Name(), to)
