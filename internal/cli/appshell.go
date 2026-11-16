@@ -285,12 +285,24 @@ func (a *appShell) menu(st web.State) []tray.Item {
 		// One switch for the per-model weekly windows: it decides what
 		// auto-switch counts AND what every percentage here reports, so the
 		// two can never tell different stories (A39).
+		// Unset, the setting follows the sessions (A91); "off" is an
+		// explicit none.
 		name := modelWindowLabel(st)
+		set := settingModels(st)
 		sub := "off — 5h and 7d only, " + name + " ignored"
-		if len(withModels) > 0 {
-			sub = "counting " + strings.Join(withModels, ", ") + " — applies to percentages and switching"
+		var counting *web.CountingView
+		if st.Auto != nil {
+			counting = st.Auto.Counting
 		}
-		items = append(items, tray.Item{ID: "model-limits", Kind: tray.KindToggle, Title: "Model limits", Sub: sub, Checked: len(withModels) > 0})
+		switch {
+		case len(set) > 0:
+			sub = "counting " + strings.Join(set, ", ") + " — applies to percentages and switching"
+		case counting != nil && counting.Mode == "sessions":
+			sub = "follows sessions — " + counting.Caption
+		case counting != nil && counting.Mode == "hosted":
+			sub = counting.Caption
+		}
+		items = append(items, tray.Item{ID: "model-limits", Kind: tray.KindToggle, Title: "Model limits", Sub: sub, Checked: len(set) > 0})
 	}
 	items = append(items, tray.Separator(), tray.Header("App"))
 	// An update of Claude Code sits in the Updates section; its other states
@@ -563,7 +575,7 @@ func (a *appShell) click(id string) {
 		a.mu.Lock()
 		st := a.last
 		a.mu.Unlock()
-		on := countsModelLimits(st)
+		on := len(settingModels(st)) > 0
 		name := modelWindowLabel(st)
 		if err := a.act.SetModelLimits(!on); err != nil {
 			a.notify(name+" limit", err.Error())
@@ -1149,12 +1161,23 @@ type windowPct struct {
 }
 
 // countsModelLimits reports whether the per-model weekly windows count
-// towards the figures this shell shows — the same `autoswitch.model` setting
-// the engine decides with, preferring the running engine's live value so the
-// tray and the engine can never disagree (A39).
+// towards the figures this shell shows — what the engine counts now, so the
+// tray and the engine can never disagree (A39, A91).
 func countsModelLimits(st web.State) bool { return len(countedModels(st)) > 0 }
 
+// countedModels is what the engine counts now as the dashboard reports it
+// (auto.counting: the setting, or what the default login's sessions derive),
+// else the setting.
 func countedModels(st web.State) []string {
+	if st.Auto != nil && st.Auto.Counting != nil {
+		return st.Auto.Counting.Models
+	}
+	return settingModels(st)
+}
+
+// settingModels is `autoswitch.model` as the Model limits switch sets it,
+// preferring the running engine's live value.
+func settingModels(st web.State) []string {
 	if st.Auto != nil && st.Auto.Running && st.Auto.Settings != nil {
 		if v, present := st.Auto.Settings["autoswitch.model"]; present {
 			sv, _ := v.(string)

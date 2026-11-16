@@ -1,6 +1,10 @@
 package core
 
-import "github.com/tyclab/tycswap/internal/switching"
+import (
+	"errors"
+
+	"github.com/tyclab/tycswap/internal/switching"
+)
 
 func (sw *Switcher) PrepareRotationTarget(number string) error {
 	return switching.ReleaseIdleLegacy(sw.Store, number)
@@ -12,7 +16,11 @@ func (sw *Switcher) PrepareRotationCandidates() {
 		if current != nil && *current == number {
 			continue
 		}
-		if err := sw.PrepareRotationTarget(number); err != nil && sw.Log != nil {
+		switch err := sw.PrepareRotationTarget(number); {
+		case err == nil || sw.Log == nil:
+		case errors.Is(err, switching.ErrStillHeld):
+			sw.Log.Debugf("Account-%s session release held: %v", number, err)
+		default:
 			sw.Log.Warningf("Account-%s session release held: %v", number, err)
 		}
 	}

@@ -45,8 +45,8 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 			msg := "Account-" + targetAccount + " (" + preEmail + ") has a live session-mode " +
 				"Claude instance (PID " + joinInts(pids) + "). Running the same account as both " +
 				"the default login and a session can make one copy's token go stale if the server " +
-				"rotates it. If the session later fails to authenticate, exit it and re-run " +
-				"'tycswap run " + targetAccount + "'."
+				"rotates it. If the session later fails to authenticate, exit it and resume its " +
+				"conversation with plain claude --resume on the default login."
 			if emitOutput {
 				printWarning(msg)
 			} else {

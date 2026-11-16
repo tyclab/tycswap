@@ -22,6 +22,7 @@ import (
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/usage"
@@ -212,9 +213,9 @@ func countSessionPolicy(t *testing.T) *atomic.Int32 {
 	t.Helper()
 	var calls atomic.Int32
 	prev := defaultSessionPolicy
-	defaultSessionPolicy = func(s *store.Store, base settings.AutoSwitchSettings) (settings.AutoSwitchSettings, func(string) bool) {
+	defaultSessionPolicy = func(s *store.Store, base settings.AutoSwitchSettings, now time.Time) reporting.PolicyResult {
 		calls.Add(1)
-		return prev(s, base)
+		return prev(s, base, now)
 	}
 	t.Cleanup(func() { defaultSessionPolicy = prev })
 	return &calls
@@ -266,6 +267,29 @@ func TestAutoOnceDisabledExits2(t *testing.T) {
 	if policy.Load() != 1 || strings.Contains(errb, "Auto-switch is off") {
 		t.Fatalf("on: %d session-policy scans, stderr %q", policy.Load(), errb)
 	}
+}
+
+// A scheduled tick builds its engine from the default-session policy's
+// result, and the poll names the derived models it dropped (DESIGN A91).
+func TestAutoOnceNamesUnservableModels(t *testing.T) {
+	sw := fixtureSwitcher(t)
+	useSwitcher(t, sw)
+	useCodexSource(t, &fakeCodexSource{})
+	prev := defaultSessionPolicy
+	defaultSessionPolicy = func(_ *store.Store, base settings.AutoSwitchSettings, _ time.Time) reporting.PolicyResult {
+		return reporting.PolicyResult{Settings: base, Unservable: []string{"Fable"}}
+	}
+	t.Cleanup(func() { defaultSessionPolicy = prev })
+	_, out, errb := runCodex(t, "", "auto", "--once", "--dry-run", "--json")
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if ev := decodeJSON(t, line); ev["event"] == "poll" {
+			if got, _ := json.Marshal(ev["unservable"]); string(got) != `["Fable"]` {
+				t.Fatalf("poll %s: unservable = %s, want [\"Fable\"]", line, got)
+			}
+			return
+		}
+	}
+	t.Fatalf("no poll event: stdout %q, stderr %q", out, errb)
 }
 
 // TestAutoObserveDisabledRecordsModelOnly: while off a status line near a bar

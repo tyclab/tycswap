@@ -174,7 +174,6 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 			if err := s.WriteSequence(data); err != nil {
 				return err
 			}
-			pruneMappings(s, displaceSlot.email, displaceSlot.org)
 		}
 
 		if migrateFrom != "" {
@@ -273,7 +272,7 @@ func keepActive(data *store.SequenceData, displaced *displaceInfo, migrateFrom s
 // premise revalidateDisplacement re-checks under the lock that commits.
 //
 // It runs BEFORE that lock. A human pause is unbounded; the store lock is not
-// (10s cross-process, and `tycswap run`'s bootstrap queues on the same file), so a
+// (10s cross-process, and every engine tick queues on the same file), so a
 // question asked with it held turns every concurrent tycswap into a lock failure.
 // The occupancy shown is still read under a lock of its own, so what the user is
 // asked about is a classified, backfilled roster and never a file caught

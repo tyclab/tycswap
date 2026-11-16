@@ -27,7 +27,7 @@ func runTUI(f any, start string) int {
 }
 
 func tuiOptions(ctx context.Context, sw *core.Switcher) []tui.Option {
-	opts := []tui.Option{tui.WithEngineFactory(engineFactoryFor(sw))}
+	opts := []tui.Option{tui.WithEngineFactory(engineFactoryFor(sw)), tui.WithActionLog(sw.Log.Action)}
 	if !codexIsPresent() {
 		return opts
 	}

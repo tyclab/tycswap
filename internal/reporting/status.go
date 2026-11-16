@@ -104,7 +104,7 @@ func buildStatusPayload(s *store.Store) map[string]any {
 	if baseURL != "" {
 		active["baseUrl"] = baseURL
 	}
-	atLimit, limiting := atLimitFor(entry.DecisionValue(), configuredModels(s))
+	atLimit, limiting := atLimitFor(entry.DecisionValue(), configuredModels(s), s.Clk.Now())
 	for k, v := range jsonout.AtLimitFields(atLimit, limiting) {
 		active[k] = v
 	}
@@ -161,7 +161,7 @@ func renderStatus(w io.Writer, s *store.Store) {
 	baseURL := store.BaseURLFrom(data, accountNum)
 	entry := activeAccountUsage(s, live, email, orgUUID, baseURL)
 	marker := ""
-	if mk := atLimitMarker(entry.DecisionValue(), configuredModels(s)); mk != "" {
+	if mk := atLimitMarker(entry.DecisionValue(), configuredModels(s), s.Clk.Now()); mk != "" {
 		marker = " " + mk
 	}
 	fmt.Fprintf(w, "%s %s (%s %s)%s\n",

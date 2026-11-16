@@ -89,8 +89,7 @@ func RemoveAccount(s *store.Store, identifier string, assumeYes bool) error {
 	// still intact, and a file the user deleted meanwhile (the refusal message's
 	// own second remedy) reads as the fresh roster it is, so this call cannot
 	// resurrect the records they discarded.
-	removed := false
-	if err := s.WithRosterLocked(func(data *store.SequenceData) error {
+	return s.WithRosterLocked(func(data *store.SequenceData) error {
 		rec, present := recordAt(data, accountNum)
 		if !present {
 			if moved := s.FindAccountSlot(data, email, org); moved != "" {
@@ -132,23 +131,12 @@ func RemoveAccount(s *store.Store, identifier string, assumeYes bool) error {
 		if err := s.WriteSequence(data); err != nil {
 			return err
 		}
-		removed = true
 		if s.Log != nil {
 			s.Log.Infof("Removed account %s: %s", accountNum, email)
 		}
 		emitLine(printer.Accent("Removed") + " Account-" + accountNum + " (" + email + ")")
 		return nil
-	}); err != nil {
-		return err
-	}
-
-	// mappings.json is a different file with its own consistency; pruning it
-	// needs no lock, and only a removal this call actually performed has
-	// mappings to retire.
-	if removed {
-		pruneMappings(s, email, org)
-	}
-	return nil
+	})
 }
 
 // taggedIdentity renders an account the way the disambiguation list does —

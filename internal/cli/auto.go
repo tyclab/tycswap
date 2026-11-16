@@ -165,19 +165,21 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		autoForegroundNotice(s, on, !once, jsonMode, dryRun, merged)
 		if once && !on && !dryRun {
 			sayDisabled()
-			// Retiring a former session group never moves the default login,
-			// and `add` tells its user the next tick does it (DESIGN A78).
+			// Retiring a former session group or profile never moves the
+			// default login, and `add` tells its user the next tick does it
+			// (DESIGN A78, A92).
 			retireGroups(sw, onEvent, false)
+			retireProfiles(sw, false)
 			return int(autoswitch.NoAction)
 		}
 	}
 	// A scheduled tick counts the models the default login's live sessions
-	// run while autoswitch.model is unset, and leaves Fable-capable accounts
-	// to Fable while none of them runs it (DESIGN A76, A77).
-	defaultSettings := merged
-	var reserved func(string) bool
+	// run while autoswitch.model is unset and some usable account can serve
+	// them, and leaves accounts with Fable room to Fable while none of them
+	// runs it (DESIGN A76, A77, A91).
+	policy := reporting.PolicyResult{Settings: merged}
 	if once {
-		defaultSettings, reserved = defaultSessionPolicy(sw.Store, merged)
+		policy = defaultSessionPolicy(sw.Store, merged, sw.Clk.Now())
 	}
 
 	// The Codex engine emits from its own goroutine in loop mode; one mutex
@@ -189,11 +191,12 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		defer outMu.Unlock()
 		emitClaude(ev)
 	}
-	engine := autoswitch.NewEngine(autoswitchAdapter{engineSwitcher(sw, dryRun)}, defaultSettings, onEvent, dryRun,
+	engine := autoswitch.NewEngine(autoswitchAdapter{engineSwitcher(sw, dryRun)}, policy.Settings, onEvent, dryRun,
 		autoswitch.WithOAuthClient(sw.OAuth),
 		autoswitch.WithLogger(sw.Log),
 		autoswitch.WithClock(sw.Clk),
-		autoswitch.WithReserved(reserved),
+		autoswitch.WithReserved(policy.Reserved),
+		autoswitch.WithUnservable(policy.Unservable),
 		autoswitch.WithEnabled(func() bool { return autoSwitchOn(root) }),
 	)
 
@@ -218,6 +221,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	// each round, as the Claude tick does, and a dry run still decides (A83).
 	codexRound := func(ctx context.Context) {
 		retireGroups(sw, onEvent, dryRun)
+		retireProfiles(sw, dryRun)
 		if dryRun || autoSwitchOn(root) {
 			runCodexTick(ctx)
 		}
@@ -267,7 +271,7 @@ func autoForegroundNotice(s ioStreams, on, loop, jsonMode, dryRun bool, merged s
 
 // defaultSessionPolicy is the scheduled tick's session policy, which scans
 // the running processes; a variable so a test can see it was not asked.
-var defaultSessionPolicy = reporting.DefaultSessionPolicy
+var defaultSessionPolicy = reporting.DefaultSessionPolicyResult
 
 // autoSwitchOn is autoswitch.enabled, the one on/off every tick path reads
 // afresh (DESIGN A83).
@@ -322,6 +326,7 @@ func autoOnOffCommand(verb string, rest []string, s ioStreams) int {
 		}
 	}
 	sw.Log.Info("Auto-switch turned " + verb + " (cli)")
+	sw.Log.Action("Set autoswitch.enabled="+strconv.FormatBool(verb == "on"), cliActor())
 	fmt.Fprintln(s.out, "Auto-switch "+verb+".")
 	return 0
 }
@@ -407,8 +412,10 @@ func renderAutoHelp(out io.Writer) {
 	fmt.Fprintln(out, "`on --if-unset` turns it on only when nothing has set it yet.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Each window has a bar of its own: the 5h window bursts and refills in hours,")
-	fmt.Fprintln(out, "the 7d one is the account's whole budget, and a per-model week counts only")
-	fmt.Fprintln(out, "with --model.")
+	fmt.Fprintln(out, "the 7d one is the account's whole budget, and a per-model week counts with")
+	fmt.Fprintln(out, "--model, or with --once while autoswitch.model is unset: then the windows of")
+	fmt.Fprintln(out, "the models the default login's sessions run count, while some usable account")
+	fmt.Fprintln(out, "can serve them.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "--observe reads the JSON Claude Code passes its status line on stdin and, when")
 	fmt.Fprintln(out, "a 5h or 7d window there is within 15 points of its bar, runs one tick that")

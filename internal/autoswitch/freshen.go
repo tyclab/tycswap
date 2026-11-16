@@ -14,9 +14,9 @@ func (e *Engine) freshenTarget(number, email string) string {
 		return "ok" // API keys don't expire/refresh
 	}
 	if len(e.sw.LiveSessionPidsFor(number, email)) > 0 {
-		// A live `tycswap run` session owns this account's token in its own
-		// profile; auto-activating it as the default too would duplicate a
-		// rotating refresh token with nobody reading the warning.
+		// A live session in the account's former profile owns its token;
+		// auto-activating it as the default too would duplicate a rotating
+		// refresh token with nobody reading the warning.
 		return "skip-live-session"
 	}
 	if sw, ok := e.sw.(interface{ PrepareRotationTarget(string) error }); ok {

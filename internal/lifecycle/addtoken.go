@@ -209,7 +209,7 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 			if err := s.WriteSequence(data); err != nil {
 				return err
 			}
-			pruneMappings(s, displaceSlot.email, displaceSlot.org)
+			afterDisplace()
 		}
 
 		if migrateFrom != "" {

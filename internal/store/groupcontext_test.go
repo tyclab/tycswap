@@ -68,9 +68,7 @@ func TestReadOwnedCredentialsFailsForCorruptClaimsAndIdentityDrift(t *testing.T)
 	if err := os.WriteFile(filepath.Join(dir, ".credentials.json"), []byte(`{"claudeAiOauth":{"accessToken":"synthetic-one","refreshToken":"refresh-one"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Lock.With(func() error { return s.ClaimLegacyProfile("1", "one@example.test", dir) }); err != nil {
-		t.Fatal(err)
-	}
+	claimLegacy(t, s, "1", dir)
 	if value, err := s.ReadOwnedCredentials("1", "one@example.test"); err != nil || value == "" {
 		t.Fatal("reserved legacy profile was not readable")
 	}
@@ -104,9 +102,7 @@ func TestStoppedLegacyDeletionReleasesItsReservation(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".credentials.json"), []byte(`{"claudeAiOauth":{"accessToken":"synthetic-one","refreshToken":"refresh-one"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Lock.With(func() error { return s.ClaimLegacyProfile("1", "one@example.test", dir) }); err != nil {
-		t.Fatal(err)
-	}
+	claimLegacy(t, s, "1", dir)
 	if err := s.Lock.With(func() error { return s.DeleteAccountFiles("1", "one@example.test") }); err != nil {
 		t.Fatal(err)
 	}

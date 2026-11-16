@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/settings"
 )
@@ -118,9 +119,9 @@ func configCommand(_ string, argv []string, s ioStreams) int {
 	case "get":
 		return configGet(root, actionArgs[0], jsonMode, s)
 	case "set":
-		return configSet(root, actionArgs[0], actionArgs[1], s)
+		return configSet(sw.Log, root, actionArgs[0], actionArgs[1], s)
 	case "unset":
-		return configUnset(root, actionArgs[0], s)
+		return configUnset(sw.Log, root, actionArgs[0], s)
 	}
 	return 0
 }
@@ -204,21 +205,23 @@ func configGet(root, key string, jsonMode bool, s ioStreams) int {
 	return 0
 }
 
-func configSet(root, key, raw string, s ioStreams) int {
+func configSet(log *logging.Logger, root, key, raw string, s ioStreams) int {
 	value, err := settings.SetSetting(root, key, raw)
 	if err != nil {
 		return renderConfigError(err, false, s)
 	}
+	log.Action("Set "+key+"="+settings.FormatSettingValue(value), cliActor())
 	fmt.Fprintf(s.out, "%s = %s\n", key, settings.FormatSettingValue(value))
 	return 0
 }
 
-func configUnset(root, key string, s ioStreams) int {
+func configUnset(log *logging.Logger, root, key string, s ioStreams) int {
 	removed, err := settings.UnsetSetting(root, key)
 	if err != nil {
 		return renderConfigError(err, false, s)
 	}
 	if removed {
+		log.Action("Unset "+key, cliActor())
 		spec, serr := settings.SpecFor(key)
 		def := any(nil)
 		if serr == nil {

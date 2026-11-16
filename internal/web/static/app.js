@@ -465,12 +465,21 @@
     return settingValue(st, key);
   }
 
+  // countedModelNames: the model windows auto-switch counts now, as the state
+  // reports them (auto.counting, DESIGN A91); else the engine's or the saved
+  // autoswitch.model.
+  function countedModelNames(st) {
+    var c = (st.auto || {}).counting;
+    if (c && Array.isArray(c.models)) { return parseModelNames(c.models); }
+    return parseModelNames(engineSetting(st, 'autoswitch.model'));
+  }
+
   function displayAccounts(st, ordering) {
     var list = claudeRows(st).slice();
     var ranked = rankCandidates(st).ranked;
     var ranks = {};
     ranked.forEach(function (r, i) { ranks[r.number] = i; });
-    var models = parseModelNames(engineSetting(st, 'autoswitch.model'));
+    var models = countedModelNames(st);
     function values(a) {
       var cls = classPcts(relevantWindows(a.usage, models));
       var model = bindingPct(((a.usage || {}).scoped || []).map(function (w) { return { pct: pctNum(w.pct) }; }).filter(function (w) { return w.pct !== null; }));
@@ -612,7 +621,7 @@
   function rankCandidates(st) {
     var now = Date.now() / 1000;
     var auto = st.auto || {};
-    var models = parseModelNames(engineSetting(st, 'autoswitch.model'));
+    var models = countedModelNames(st);
     var required = requiredModelWindows(st, models);
     var strat = engineSetting(st, 'autoswitch.strategy') || 'soonest-reset';
     // One bar per window. The 7d one follows the running engine when the
@@ -736,6 +745,13 @@
     return 'counting 5h + 7d + ' + models.join(', ');
   }
 
+  // countingLine: the state's one-line account of what is counted, else the
+  // note for models.
+  function countingLine(st, models) {
+    var c = (st.auto || {}).counting;
+    return c && c.caption ? c.caption : countingNote(models);
+  }
+
   // modelWindowNames lists the per-model weekly windows the accounts report
   // (e.g. "Fable"), so the UI can say which limits are being ignored.
   function modelWindowNames(st) {
@@ -751,7 +767,7 @@
   // while model windows exist but autoswitch.model is unset: an account at
   // 100% of a model's weekly limit then still counts as eligible.
   function ignoredModelsNote(st, models) {
-    if (models.length) { return null; }
+    if (models.length || ((st.auto || {}).counting || {}).mode === 'sessions') { return null; }
     var names = modelWindowNames(st);
     if (!names.length) { return null; }
     return el('span', { class: 'chip chip-warn', title: 'Choose and save windows under "Count model limits" on the Auto tab, or autoswitch.model on the Settings tab', text: names.join(', ') + ' limits ignored' });
@@ -1493,7 +1509,7 @@
     var actions = $('auto-actions');
     var slider = $('threshold-slider');
     var strat = String(engineSetting(st, 'autoswitch.strategy') || 'soonest-reset');
-    var models = parseModelNames(engineSetting(st, 'autoswitch.model'));
+    var models = countedModelNames(st);
     if (!a) {
       badge.textContent = 'unavailable'; badge.className = 'chip chip-outline';
       body.appendChild(el('div', { class: 'empty-state' }, [el('span', { class: 'title', text: 'Auto-switch is not wired into this build' }), el('code', { text: NAME + ' auto' })]));
@@ -1508,9 +1524,16 @@
       var tiles = el('div', { class: 'tiles' });
       var stateLine = a.running && a.dryRun ? 'decides, never switches' : a.owner ? 'scheduled by ' + a.owner : a.running ? 'switches near the limit' : a.managedBy ? a.managedBy : 'not polling';
       tiles.appendChild(tile('State', a.managedBy ? 'managed externally' : a.running ? (a.dryRun ? 'dry-run' : 'running') : 'stopped', [stateLine], a.running ? (a.dryRun ? 'warn' : 'good') : ''));
-      tiles.appendChild(tile('7d threshold', Math.round(a.threshold * 10) / 10 + '%', ['the 5h and model windows have bars of their own']));
-      tiles.appendChild(tile('Strategy', strat, [el('span', { class: 'ellipsis', text: countingNote(models), title: countingNote(models) })]));
-      tiles.appendChild(tile('Started', a.startedAt ? el('span', { 'data-started': String(Math.round(a.startedAt * 1000)), text: fmtAgo(Date.now() - a.startedAt * 1000) }) : '—', [a.startedAt ? fmtUnix(a.startedAt) : 'not running']));
+      var bars = rankCandidates(st).bars;
+      var pct = function (v) { return Math.round(v * 10) / 10 + '%'; };
+      tiles.appendChild(tile('Bars', '5h ' + pct(bars.fiveHour) + ' · 7d ' + pct(bars.sevenDay) + ' · model ' + pct(bars.model), ['each window switches at its own bar']));
+      tiles.appendChild(tile('Strategy', strat, [el('span', { class: 'ellipsis', text: countingLine(st, models), title: countingLine(st, models) })]));
+      if (a.owner && !a.hosted) {
+        // The scheduler's ticks run elsewhere: when the last one saw the login.
+        tiles.appendChild(tile('Last tick', a.lastTickAt ? el('span', { 'data-started': String(Math.round(a.lastTickAt * 1000)), text: fmtAgo(Date.now() - a.lastTickAt * 1000) }) : '—', [a.lastTickAt ? fmtUnix(a.lastTickAt) : 'no tick yet']));
+      } else {
+        tiles.appendChild(tile('Started', a.startedAt ? el('span', { 'data-started': String(Math.round(a.startedAt * 1000)), text: fmtAgo(Date.now() - a.startedAt * 1000) }) : '—', [a.startedAt ? fmtUnix(a.startedAt) : 'not running']));
+      }
       if (a.codex) { tiles.appendChild(codexTile(a.codex)); }
       body.appendChild(tiles);
       fallbackNotices(st).forEach(function (n) { body.appendChild(n); });
@@ -1551,12 +1574,12 @@
     clear(tb);
     var barNote = '5h ' + Math.round(res.bars.fiveHour * 10) / 10 + '% · 7d ' + Math.round(res.bars.sevenDay * 10) / 10 + '%';
     if (res.models.length) { barNote += ' · model ' + Math.round(res.bars.model * 10) / 10 + '%'; }
-    $('nextbest-sub').textContent = countingNote(res.models) + ' · ' + res.strategy + ' · ' + (res.models.length ? '7d → model → 5h' : '7d → 5h') + ' · switch at ' + barNote;
+    $('nextbest-sub').textContent = countingLine(st, res.models) + ' · ' + res.strategy + ' · ' + (res.models.length ? '7d → model → 5h' : '7d → 5h') + ' · switch at ' + barNote;
     var nbSub = $('nextbest-sub');
     var savedModels = parseModelNames(settingValue(st, 'autoswitch.model'));
     var ignored = ignoredModelsNote(st, savedModels);
     if (ignored) { nbSub.appendChild(document.createTextNode(' \u00b7 ')); nbSub.appendChild(ignored); }
-    if (a && a.running && JSON.stringify(res.models) !== JSON.stringify(savedModels)) {
+    if (a && a.running && !a.counting && JSON.stringify(res.models) !== JSON.stringify(savedModels)) {
       nbSub.appendChild(document.createTextNode(' \u00b7 '));
       nbSub.appendChild(chip('running engine: ' + countingNote(res.models), 'outline', 'The running engine counts a different set than the saved setting; save autoswitch.model again to retarget it'));
     }
@@ -1777,7 +1800,7 @@
     var mode = box.querySelector('select');
     if (!mode) {
       mode = el('select', { 'aria-label': 'Count model limits' }, [
-        el('option', { value: 'off', text: 'Off' }), el('option', { value: 'all', text: 'All models' }),
+        el('option', { value: 'off', text: 'Follow sessions (default)' }), el('option', { value: 'all', text: 'All model windows' }),
         el('option', { value: 'selected', text: 'Selected models' })
       ]);
       box.appendChild(mode);
@@ -1858,7 +1881,7 @@
       });
     }
     autoModelPicker.sync(saved, modelWindowNames(st));
-    $('model-limits-which').textContent = countingNote(parseModelNames(saved));
+    $('model-limits-which').textContent = countingLine(st, parseModelNames(saved));
   }
 
   function settingControl(sv, reported) {

@@ -17,7 +17,6 @@ import (
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
-	"github.com/tyclab/tycswap/internal/session"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 )
@@ -136,7 +135,7 @@ func startOverride(env, command []string) string {
 		if key == "CLAUDE_CONFIG_DIR" || platform.IsWindows() && strings.EqualFold(key, "CLAUDE_CONFIG_DIR") {
 			return key + " is set"
 		}
-		for _, override := range session.AuthOverrideEnvVars {
+		for _, override := range launch.AuthOverrideEnvVars {
 			if strings.EqualFold(key, override) && (platform.IsWindows() || key == override) {
 				return override + " is set"
 			}
@@ -199,6 +198,9 @@ func selectStartLogin(account string, stderr io.Writer) {
 	if outcome.Detail != "" {
 		reportStartSelection(sw, stderr, outcome.Detail)
 	}
+	if outcome.Switched {
+		sw.Log.Action("Switched to account "+outcome.To, "start")
+	}
 }
 
 func reportStartSelection(sw *core.Switcher, stderr io.Writer, detail string) {
@@ -238,7 +240,7 @@ func readStartSnapshot(sw *core.Switcher, account string) (autoswitch.StartSnaps
 		}
 		return snap, nil
 	}
-	snap.Settings, _ = defaultSessionPolicy(view, set)
+	snap.Settings = defaultSessionPolicy(view, set, view.Clk.Now()).Settings
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
 		if (account == "" && store.StartLoginFrom(data, num) || account == num) && view.RotationEligible(data, num) {

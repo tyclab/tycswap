@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/settings"
 )
 
 // SaveSetting writes a shared setting; nil resets. Session groups and their
@@ -63,11 +64,17 @@ func (s *Server) handleSettingSave(w http.ResponseWriter, r *http.Request, scope
 		raw := valueString(body.Value)
 		value = &raw
 	}
-	result, err := s.SaveSetting(scope, r.PathValue("key"), value)
+	key := r.PathValue("key")
+	result, err := s.SaveSetting(scope, key, value)
 	if err != nil {
 		s.d.Logger("web: " + err.Error())
 		writeError(w, statusFor(err), err.Error())
 		return
+	}
+	if removed, _ := result["removed"].(bool); removed {
+		s.logAction(r, "Unset "+key)
+	} else if written, ok := result["value"]; ok {
+		s.logAction(r, "Set "+key+"="+settings.FormatSettingValue(written))
 	}
 	sequence := result["stateSequence"]
 	delete(result, "stateSequence")

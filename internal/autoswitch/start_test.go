@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/oauth"
@@ -22,16 +23,29 @@ func TestStartTargets(t *testing.T) {
 		"3": dictEntry(usageOf(20, 30)), "4": dictEntry(usageOf(20, 30)),
 		"5": dictEntry(usageOf(100, 0)), "6": dictEntry(usageOf(5, 10)),
 	}
-	got := StartTargets([]string{"1", "2", "3", "4", "5", "6"}, entries, set, nil)
+	got := StartTargets([]string{"1", "2", "3", "4", "5", "6"}, entries, set, nil, baseTime)
 	if want := []string{"6", "3", "4", "1", "2"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("targets = %v, want %v", got, want)
 	}
 	entries["6"] = dictEntry(map[string]any{"seven_day": win(10, ""), "scoped": []any{scopedWin("Opus", 20, "")}})
-	if got := StartTargets([]string{"1", "2", "6"}, entries, set, []string{"all"}); !reflect.DeepEqual(got, []string{"6"}) {
+	if got := StartTargets([]string{"1", "2", "6"}, entries, set, []string{"all"}, baseTime); !reflect.DeepEqual(got, []string{"6"}) {
 		t.Fatalf("model coverage = %v", got)
 	}
-	if got := StartTargets([]string{"1", "6"}, entries, set, []string{"missing"}); len(got) != 0 {
+	if got := StartTargets([]string{"1", "6"}, entries, set, []string{"missing"}, baseTime); len(got) != 0 {
 		t.Fatalf("invented model coverage: %v", got)
+	}
+}
+
+// start reads cached usage by the engine's room rule: account 2's 5h window
+// was at 100 % and reset a minute ago, so it is a start target, not
+// none-usable (DESIGN A91).
+func TestStartTakesARenewedAccount(t *testing.T) {
+	f, clk, path, snapshot := startTestSetup(t)
+	past := clk.Now().Add(-time.Minute).UTC().Format(time.RFC3339)
+	f.entries["2"] = dictEntry(map[string]any{"five_hour": win(100, past), "seven_day": win(10, "")})
+	out := StartSelection(f, "", snapshot, WithClock(clk), WithStatePath(path))
+	if !out.Switched || out.To != "2" {
+		t.Fatalf("start = %+v, want a switch to the renewed account 2", out)
 	}
 }
 

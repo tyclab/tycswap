@@ -11,7 +11,6 @@ import (
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/platform"
-	"github.com/tyclab/tycswap/internal/sessprofile"
 )
 
 func (s *Store) ForGroup(id groups.ID) (*Store, error) {
@@ -66,12 +65,12 @@ type profileCredentials struct {
 
 func (p *profileCredentials) ReadActive() (string, bool, error) {
 	s := p.owner
-	path := filepath.Join(s.ProfileDir(), sessprofile.CredentialsFileName)
+	path := filepath.Join(s.ProfileDir(), ccfile.CredentialsFileName)
 	if err := groups.SafePath(path); err != nil {
 		return "", false, err
 	}
 	if s.Platform == platform.MacOS {
-		value, found, err := s.kc.Get(sessprofile.KeychainServiceName(s.ProfileDir()), keychain.AccountName())
+		value, found, err := s.kc.Get(ccfile.KeychainServiceName(s.ProfileDir()), keychain.AccountName())
 		if err != nil {
 			return "", true, err
 		}
@@ -88,18 +87,18 @@ func (p *profileCredentials) ReadActive() (string, bool, error) {
 
 func (p *profileCredentials) WriteActive(value string) error {
 	s := p.owner
-	if err := groups.SafePath(filepath.Join(s.ProfileDir(), sessprofile.CredentialsFileName)); err != nil {
+	if err := groups.SafePath(filepath.Join(s.ProfileDir(), ccfile.CredentialsFileName)); err != nil {
 		return err
 	}
 	if credstore.LooksLikeAPIKey(value) {
 		return fmt.Errorf("managed session groups require OAuth accounts")
 	}
 	if s.Platform == platform.MacOS {
-		if err := s.kc.Set(sessprofile.KeychainServiceName(s.ProfileDir()), keychain.AccountName(), value); err != nil {
+		if err := s.kc.Set(ccfile.KeychainServiceName(s.ProfileDir()), keychain.AccountName(), value); err != nil {
 			return err
 		}
 	}
-	return atomicfile.Write(filepath.Join(s.ProfileDir(), sessprofile.CredentialsFileName), []byte(value), atomicfile.Opts{})
+	return atomicfile.Write(filepath.Join(s.ProfileDir(), ccfile.CredentialsFileName), []byte(value), atomicfile.Opts{})
 }
 
 func (p *profileCredentials) WriteActiveAccount(value string) error {
@@ -121,12 +120,12 @@ func (p *profileCredentials) ReadLiveOAuth() string {
 
 func (p *profileCredentials) ClearActive() error {
 	s := p.owner
-	path := filepath.Join(s.ProfileDir(), sessprofile.CredentialsFileName)
+	path := filepath.Join(s.ProfileDir(), ccfile.CredentialsFileName)
 	if err := groups.SafePath(path); err != nil {
 		return err
 	}
 	if s.Platform == platform.MacOS {
-		if err := s.kc.Delete(sessprofile.KeychainServiceName(s.ProfileDir()), keychain.AccountName()); err != nil {
+		if err := s.kc.Delete(ccfile.KeychainServiceName(s.ProfileDir()), keychain.AccountName()); err != nil {
 			return err
 		}
 	}
