@@ -7253,19 +7253,38 @@ Fable.
 
 `reporting.DefaultSessionPolicyResult` decides it once from cached usage and
 returns the settings, the reservation and the derived models it dropped. A
-derived model stays counted while an account in the pool reports its window
-with room and has room on its 5-hour and weekly windows. The pool is every
-enabled, rotation-eligible account not quarantined in the engine state file,
-plus the live account whatever its flags. A window has room below 100 %, or at
-100 % once its reset time has passed: a cached reading does not see a renewal
-(ENG-7 elsewhere is unchanged). An absent 5-hour window is room; an absent
-weekly one is not. A dropped model is named in the poll event as `unservable`
-(`not counted: Fable` on the human line) and the engine counts 5h and 7d for it.
+derived model stays counted while an account in the pool sits below the bars
+the engine moves at on that model's window (`autoswitch.modelThreshold`) and
+on its 5-hour and weekly windows (`fiveHourThreshold`, `sevenDayThreshold`):
+judged at 100 %, the last account with Fable room kept Fable counted from its
+bar up to its hard limit while the engine already refused it as a target. An
+absent 5-hour window is room; an absent weekly one is not. Only a reading the
+engine would still decide on serves: the account's last fetch succeeded (no
+failure, skip or sentinel) and `UsageEntry.DecisionValue` still trusts it
+(`usage.StaleOKS`, or up to `usage.TrustMaxAgeS` while its next poll is not
+due), so an account whose fetches keep failing cannot keep a model counted on
+old numbers. The pool is every enabled, rotation-eligible account not
+quarantined in the engine state file, plus the live account whatever its
+flags. A dropped model is named in the poll event as `unservable` (`not
+counted: Fable` on the human line) and the engine counts 5h and 7d for it.
+
+One room rule serves the policy and the engine: `oauth.AsOf` reads a window
+whose reset time has passed as 0 %, since a cached reading does not see a
+renewal (ENG-7). The engine reads every decision value through it, so an
+account the policy finds serving after its reset is a target before its next
+fetch, and limits and recoveries follow the same reading.
 
 The reservation (A77) now covers only accounts that can run Fable, report a
-Fable window and sit under `autoswitch.modelThreshold` on it, the same reset
-rule applied. An account whose Fable week is spent is never reserved, so Opus
-work fills it.
+Fable window and sit under `autoswitch.modelThreshold` on it, read the same
+way. An account whose Fable week is spent is never reserved, so Opus work
+fills it.
+
+A blocked tick (`all-exhausted` and the other `Blocked` outcomes) that leaves
+an enabled, rotation-eligible, unquarantined account below its 5-hour and
+weekly bars emits `blocked-with-room` naming those accounts, and logs it as a
+warning: a block the account budgets do not explain (a model window, an
+ownership hold) reaches the journal under a name no `poll`/`no-switch`/
+`all-exhausted` filter drops.
 
 The scheduled tick (`auto --once`, `--observe`), `start`'s selection, and the
 at-limit marks of `list`, `status` and the account snapshot (the dashboard's

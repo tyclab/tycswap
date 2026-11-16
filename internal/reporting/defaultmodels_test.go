@@ -229,6 +229,8 @@ type incident struct {
 	disabled      []string
 	fiveHourReset time.Duration
 	sessions      map[string]string // session id -> model, live for this process and its parent
+	five11        *float64          // 11's 5h utilization instead of 100
+	row11         map[string]any    // usage-row fields of 11 over the fresh success
 }
 
 func incidentWindow(pct float64, reset time.Time) map[string]any {
@@ -242,6 +244,9 @@ func (in incident) store(t *testing.T) (*store.Store, time.Time) {
 	s := newStore(t, clk, nil)
 	type figures struct{ five, week, fable float64 }
 	accounts := map[string]figures{"3": {100, 27, 28}, "4": {5, 78, 100}, "7": {4, 88, 100}, "8": {-1, 93, 100}, "11": {100, 80, 78}}
+	if in.five11 != nil {
+		accounts["11"] = figures{*in.five11, 80, 78}
+	}
 	disabled := map[string]bool{}
 	for _, num := range in.disabled {
 		disabled[num] = true
@@ -268,7 +273,13 @@ func (in incident) store(t *testing.T) (*store.Store, time.Time) {
 		if f.five >= 0 {
 			last["five_hour"] = incidentWindow(f.five, fiveReset)
 		}
-		rows[num] = map[string]any{"email": email, "organizationUuid": "", "fetchedAt": clock.Seconds(clk) - 60, "lastGood": last}
+		row := map[string]any{"email": email, "organizationUuid": "", "fetchedAt": clock.Seconds(clk) - 60, "lastGood": last}
+		if num == "11" {
+			for k, v := range in.row11 {
+				row[k] = v
+			}
+		}
+		rows[num] = row
 	}
 	seq, err := json.Marshal(map[string]any{"activeAccountNumber": 3, "lastUpdated": "x", "sequence": []int{3, 4, 7, 8, 11}, "accounts": records})
 	if err != nil {
@@ -337,6 +348,64 @@ func TestPolicyPoolExcludesDisabledAndHeld(t *testing.T) {
 			r := DefaultSessionPolicyResult(s, settings.Default(), now)
 			if counted := deref(r.Settings.Model) == "Fable" && len(r.Unservable) == 0; counted != tc.counted {
 				t.Fatalf("model = %q, unservable = %v; want Fable counted %v", deref(r.Settings.Model), r.Unservable, tc.counted)
+			}
+		})
+	}
+}
+
+// An account serves a model only below the bars the engine moves at, not at
+// 100 %: at 5h 92 with the bar at 90 the engine would move off 11, so Fable,
+// which only 11 can still run, is dropped; at 85 it is counted (DESIGN A91).
+func TestPolicyServesBelowTheEngineBars(t *testing.T) {
+	for name, tc := range map[string]struct {
+		five    float64
+		counted bool
+	}{
+		"over-the-5h-bar":  {five: 92},
+		"under-the-5h-bar": {five: 85, counted: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, now := incident{live: "3", sessions: fableSession, five11: &tc.five}.store(t)
+			base := settings.Default()
+			base.FiveHourThreshold = 90
+			r := DefaultSessionPolicyResult(s, base, now)
+			if counted := deref(r.Settings.Model) == "Fable"; counted != tc.counted || counted == (len(r.Unservable) > 0) {
+				t.Fatalf("model = %q, unservable = %v; want Fable counted %v", deref(r.Settings.Model), r.Unservable, tc.counted)
+			}
+		})
+	}
+	for _, bar := range []struct {
+		name string
+		set  func(*settings.AutoSwitchSettings)
+	}{
+		{"7d-bar", func(b *settings.AutoSwitchSettings) { b.SevenDayThreshold = 80 }},
+		{"model-bar", func(b *settings.AutoSwitchSettings) { b.ModelThreshold = 78 }},
+	} {
+		t.Run(bar.name, func(t *testing.T) {
+			s, now := incident{live: "3", sessions: fableSession, fiveHourReset: time.Minute}.store(t)
+			base := settings.Default()
+			bar.set(&base)
+			if r := DefaultSessionPolicyResult(s, base, now); r.Settings.Model != nil {
+				t.Fatalf("11 at its %s still serves Fable: model %q", bar.name, deref(r.Settings.Model))
+			}
+		})
+	}
+}
+
+// Only usage the engine would still decide on serves: an account whose last
+// fetch failed, was skipped or is past the trust bound does not, however good
+// its old numbers look (DESIGN A91).
+func TestPolicyIgnoresUnknownOrOldUsage(t *testing.T) {
+	now := float64(testutil.FixedClock(t, fixedNow).Now().Unix())
+	for name, row := range map[string]map[string]any{
+		"failing": {"consecutiveFailures": 2, "lastError": "http-429", "lastAttemptAt": now - 30},
+		"skipped": {"skipReason": "conflicting credential owners; hold switching", "skipAt": now - 600},
+		"old":     {"fetchedAt": now - 2*3600},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, at := incident{live: "3", sessions: fableSession, fiveHourReset: time.Minute, row11: row}.store(t)
+			if r := DefaultSessionPolicyResult(s, settings.Default(), at); r.Settings.Model != nil || strings.Join(r.Unservable, ",") != "Fable" {
+				t.Fatalf("model = %q, unservable = %v; want Fable dropped", deref(r.Settings.Model), r.Unservable)
 			}
 		})
 	}

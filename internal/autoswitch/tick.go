@@ -53,7 +53,7 @@ func (e *Engine) tick() (result tickResult) {
 // emits while auto-switch is off; `auto --observe` says the same.
 const DisabledDetail = "auto-switch is off; tycswap auto on turns it on"
 
-func (e *Engine) tickInner() (tickResult, error) {
+func (e *Engine) tickInner() (result tickResult, err error) {
 	// The on/off comes before anything the tick could touch: off, it asks
 	// the switcher nothing and reads or writes no state (DESIGN A83).
 	if e.enabled != nil && !e.enabled() {
@@ -70,7 +70,6 @@ func (e *Engine) tickInner() (tickResult, error) {
 	if !e.dryRun {
 		// Dry-run never mutates state, so recovered quarantines release only on
 		// real ticks.
-		var err error
 		state, err = e.releaseRecoveredQuarantines(state)
 		if err != nil {
 			return tickResult{}, err
@@ -101,6 +100,11 @@ func (e *Engine) tickInner() (tickResult, error) {
 	// An expired hold keeps its stamp but polls candidates: failover needs them.
 	idleHold := holdLive(activeMemoryOf(state, cur).IdleHoldSince, e.nowSeconds())
 	entries, usageMap, headroom := e.collectScheduledUsage(cur, quarantined, pollThreshold(s, e.models), idleHold)
+	defer func() {
+		if err == nil && result.Outcome == Blocked {
+			e.reportBlockedWithRoom(cur, quarantined, usageMap, s)
+		}
+	}()
 
 	fetchErrors := map[string]string{}
 	for num, entry := range entries {

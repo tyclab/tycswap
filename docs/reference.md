@@ -1742,13 +1742,19 @@ their configured models.
 
 **A derived model nobody can serve is not counted** (DESIGN A91). A model
 counted this way stays counted only while some account the tick may use (enabled,
-rotation-eligible and not quarantined, or the live account) has room on that
-model's window and on its 5h and 7d windows, judged on cached usage; a window at
-100 % whose reset time has passed has room, and an absent 5h window is room. A
-dropped model is named in the `poll` event as `unservable` (`not counted: Fable
+rotation-eligible and not quarantined, or the live account) is below the
+model bar on that model's window and below the 5h and 7d bars, judged on cached
+usage the engine would still decide on: the account's last fetch succeeded and
+the reading is within the engine's trust bound. An absent 5h window is room.
+A dropped model is named in the `poll` event as `unservable` (`not counted: Fable
 (no usable account can serve it)` on the human line), and the tick decides on
 5h and 7d. `list`, `status`, `start` and the dashboard's at-limit marks count
 the same models.
+
+**A window whose reset has passed reads 0 %** (DESIGN A91). The engine and the
+policy read a cached window whose `resets_at` lies in the past as renewed, so
+an account at 100 % before its reset is a target again without waiting for its
+next fetch.
 
 **The default login leaves Fable-capable accounts to Fable work** (DESIGN
 A77, A91). While `autoswitch.model` is unset and every live default session has a
@@ -1876,6 +1882,7 @@ a `Z` suffix), plus per-kind fields:
 | `sleep` | `seconds` (float), `until` (string) |
 | `error` | `message` (string), `transient` (bool) |
 | `config-warning` | `message` (string) |
+| `blocked-with-room` | `accounts` (slot strings): the tick was blocked while these enabled, eligible accounts are below their 5h and 7d bars (DESIGN A91) |
 | `live-login-changed` | `from`, `to` (slot strings): the live login changed without a tycswap switch, reported once per change (see LOG) |
 
 The Codex engine reports a tick only when it switched or failed, or on every

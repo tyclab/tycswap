@@ -1,6 +1,11 @@
 package autoswitch
 
-import "math"
+import (
+	"math"
+	"strings"
+
+	"github.com/tyclab/tycswap/internal/settings"
+)
 
 // recordedSwitcher is a switcher that can say which slot the roster last
 // made active and when the roster was written: every tycswap switch writes
@@ -71,4 +76,30 @@ func switchedByTycswap(state map[string]any, rs recordedSwitcher, cur string, si
 	}
 	slot, at := rs.RecordedSwitch()
 	return slot == cur && at >= math.Floor(since)
+}
+
+// reportBlockedWithRoom names, after a blocked tick, every enabled, eligible
+// account below its 5h and 7d bars: a block those bars do not explain (a
+// model window, an ownership hold) shows in the journal and the log.
+func (e *Engine) reportBlockedWithRoom(cur string, quarantined map[string]bool, usageMap map[string]any, s settings.AutoSwitchSettings) {
+	var room []string
+	for _, num := range e.sw.SwitchableAccountNumbers() {
+		if quarantined[num] || e.sw.AccountKindFor(num) == "api_key" || usageDict(usageMap[num]) == nil {
+			continue
+		}
+		h := e.headroomByClass(usageMap[num])
+		_, weekOver := utilizationOver(h.Week, s.SevenDayThreshold)
+		_, sessionOver := utilizationOver(h.Session, s.FiveHourThreshold)
+		if h.Week != nil && !weekOver && !sessionOver {
+			room = append(room, num)
+		}
+	}
+	if len(room) == 0 {
+		return
+	}
+	room = sortNumeric(room)
+	e.emit(BlockedWithRoomEvent{Ts: e.nowISO(), Accounts: room})
+	if e.log != nil {
+		e.log.Warningf("Blocked on Account-%s although %s are below their 5h and 7d bars", cur, strings.Join(room, ", "))
+	}
 }

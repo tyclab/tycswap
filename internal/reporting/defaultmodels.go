@@ -16,6 +16,7 @@ import (
 	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 const (
@@ -148,7 +149,7 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 	view := newPolicyView(s, now)
 	var counted []string
 	for _, name := range scopedNamesFor(view.usage, families) {
-		if view.serves(name) {
+		if view.serves(name, base) {
 			counted = append(counted, name)
 		} else {
 			r.Unservable = append(r.Unservable, name)
@@ -165,12 +166,14 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 	return r
 }
 
-// policyView is the cached usage of every account and the pool a tick may
-// use: enabled, rotation-eligible, not quarantined, plus the live account.
+// policyView is every account's cached usage, its usage the engine would
+// still decide on (serving), and the pool a tick may use: enabled,
+// rotation-eligible, not quarantined, plus the live account. Both readings
+// are taken as of now, as the engine takes them (oauth.AsOf).
 type policyView struct {
-	usage map[string]*oauth.Usage
-	pool  map[string]bool
-	now   time.Time
+	usage   map[string]*oauth.Usage
+	serving map[string]*oauth.Usage
+	pool    map[string]bool
 }
 
 func newPolicyView(s *store.Store, now time.Time) policyView {
@@ -179,11 +182,15 @@ func newPolicyView(s *store.Store, now time.Time) policyView {
 	entries := CollectUsageEntries(s, infos, map[string]bool{})
 	data, _ := s.ReadSequence()
 	quarantined := autoswitch.ReadQuarantineEntries(autoswitch.StatePath(s.BackupDir()))
-	v := policyView{usage: map[string]*oauth.Usage{}, pool: map[string]bool{}, now: now}
+	v := policyView{usage: map[string]*oauth.Usage{}, serving: map[string]*oauth.Usage{}, pool: map[string]bool{}}
 	for _, info := range infos {
 		num := strconv.Itoa(info.Number)
-		if u := oauth.NewUsage(entries[num].LastGood); u != nil {
+		entry := entries[num]
+		if u := oauth.NewUsage(oauth.AsOf(entry.LastGood, now)); u != nil {
 			v.usage[num] = u
+		}
+		if u := oauth.NewUsage(oauth.AsOf(servingValue(entry), now)); u != nil {
+			v.serving[num] = u
 		}
 		_, held := quarantined[num]
 		v.pool[num] = info.IsActive || !held && s.RotationEligible(data, num)
@@ -191,18 +198,29 @@ func newPolicyView(s *store.Store, now time.Time) policyView {
 	return v
 }
 
-// serves reports whether an account in the pool has room on model's window
-// and on its 5h and 7d windows; an absent 5h window is room.
-func (v policyView) serves(model string) bool {
-	for num, u := range v.usage {
-		if !v.pool[num] || u.SevenDay == nil || !below(u.SevenDay.Pct, u.SevenDay.ResetsAt, 100, v.now) {
-			continue
-		}
-		if u.FiveHour != nil && !below(u.FiveHour.Pct, u.FiveHour.ResetsAt, 100, v.now) {
+// servingValue is the reading an account may serve a model on: its last
+// fetch succeeded (no failure, skip or sentinel) and the engine still
+// decides on it (UsageEntry.DecisionValue: younger than usage.StaleOKS, or
+// trusted up to usage.TrustMaxAgeS while its next poll is not yet due).
+func servingValue(e usage.UsageEntry) map[string]any {
+	if e.ConsecutiveFailures > 0 || e.LastError != "" || e.SkipReason != "" {
+		return nil
+	}
+	m, _ := e.DecisionValue().(map[string]any)
+	return m
+}
+
+// serves reports whether an account in the pool sits below the bars the
+// engine moves at on model's window and on its 5h and 7d windows; an absent
+// 5h window is room, an absent 7d window is not.
+func (v policyView) serves(model string, bars settings.AutoSwitchSettings) bool {
+	for num, u := range v.serving {
+		if !v.pool[num] || u.SevenDay == nil || u.SevenDay.Pct >= bars.SevenDayThreshold ||
+			u.FiveHour != nil && u.FiveHour.Pct >= bars.FiveHourThreshold {
 			continue
 		}
 		for _, w := range u.Scoped {
-			if strings.EqualFold(w.Name, model) && below(w.Pct, w.ResetsAt, 100, v.now) {
+			if strings.EqualFold(w.Name, model) && w.Pct < bars.ModelThreshold {
 				return true
 			}
 		}
@@ -219,22 +237,12 @@ func (v policyView) fableBelow(bar float64) map[string]bool {
 		for _, w := range u.Scoped {
 			if strings.Contains(strings.ToLower(w.Name), "fable") {
 				found = true
-				under = under && below(w.Pct, w.ResetsAt, bar, v.now)
+				under = under && w.Pct < bar
 			}
 		}
 		out[num] = found && under
 	}
 	return out
-}
-
-// below is the room rule (DESIGN A91): a window is under bar while its cached
-// utilization is, or once its reset time has passed (ENG-7).
-func below(pct float64, resetsAt string, bar float64, now time.Time) bool {
-	if pct < bar {
-		return true
-	}
-	reset, err := time.Parse(time.RFC3339, resetsAt)
-	return err == nil && !reset.After(now)
 }
 
 // scopedNamesFor is every per-model window name an account reports for one of

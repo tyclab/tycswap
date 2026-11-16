@@ -191,6 +191,24 @@ func (e PollEvent) Human() string {
 	)
 }
 
+// BlockedWithRoomEvent: a tick was blocked while these enabled, eligible
+// accounts are below their 5h and 7d bars, so a model window or an ownership
+// hold, not the account's own budget, keeps them out (DESIGN A91).
+type BlockedWithRoomEvent struct {
+	Ts       string
+	Accounts []string
+}
+
+func (BlockedWithRoomEvent) Kind() string { return "blocked-with-room" }
+
+func (e BlockedWithRoomEvent) JSON() map[string]any {
+	return baseJSON(e.Kind(), e.Ts, map[string]any{"accounts": e.Accounts})
+}
+
+func (e BlockedWithRoomEvent) Human() string {
+	return "blocked although " + strings.Join(e.Accounts, ", ") + " are below their 5h and 7d bars"
+}
+
 // AccountNumberStr takes an int (dry-run) or a *int from jsonout.AccountRef; nil renders "None" as Python does.
 func AccountNumberStr(v any) string {
 	switch n := v.(type) {

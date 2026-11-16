@@ -386,3 +386,31 @@ func TestAtLimitUsesDerivedPolicy(t *testing.T) {
 		})
 	}
 }
+
+// Guard: one list or status command runs the default-session policy once,
+// whichever output it prints (its process scan and account view are not
+// free).
+func TestListAndStatusRunThePolicyOnce(t *testing.T) {
+	s, _ := incident{live: "3", sessions: fableSession}.store(t)
+	runs := 0
+	prev := runDefaultPolicy
+	runDefaultPolicy = func(s *store.Store, base settings.AutoSwitchSettings, now time.Time) PolicyResult {
+		runs++
+		return prev(s, base, now)
+	}
+	t.Cleanup(func() { runDefaultPolicy = prev })
+	for name, run := range map[string]func() error{
+		"list --json":   func() error { _, err := ListAccounts(s, false, true, nil); return err },
+		"list":          func() error { _, err := ListAccounts(s, false, false, nil); return err },
+		"status --json": func() error { _, err := Status(s, true); return err },
+		"status":        func() error { _, err := Status(s, false); return err },
+	} {
+		runs = 0
+		if err := run(); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if runs != 1 {
+			t.Errorf("%s ran the policy %d times, want once", name, runs)
+		}
+	}
+}

@@ -338,6 +338,7 @@ func TestMixedUnknownAndExhausted(t *testing.T) {
 
 // -- item 8/9/10/11: all-exhausted reset math -----------------------------
 
+// Resets lie after baseTime: a window whose reset has passed reads 0 % (DESIGN A91).
 func TestAllExhaustedEarliestReset(t *testing.T) {
 	clk := newClk()
 	f := newFake()
@@ -345,9 +346,9 @@ func TestAllExhaustedEarliestReset(t *testing.T) {
 	f.switchable = []string{"1", "2", "3"}
 	f.emails = map[string]string{"1": "a", "2": "b", "3": "c"}
 	f.entries = map[string]usage.UsageEntry{
-		"1": dictEntry(map[string]any{"five_hour": win(100, "2026-07-03T12:00:00Z"), "seven_day": win(10, "")}),
-		"2": dictEntry(map[string]any{"five_hour": win(100, "2026-07-03T10:30:00Z"), "seven_day": win(10, "")}),
-		"3": dictEntry(map[string]any{"five_hour": win(100, "2026-07-03T11:00:00Z"), "seven_day": win(10, "")}),
+		"1": dictEntry(map[string]any{"five_hour": win(100, "2026-07-18T12:00:00Z"), "seven_day": win(10, "")}),
+		"2": dictEntry(map[string]any{"five_hour": win(100, "2026-07-18T10:30:00Z"), "seven_day": win(10, "")}),
+		"3": dictEntry(map[string]any{"five_hour": win(100, "2026-07-18T11:00:00Z"), "seven_day": win(10, "")}),
 	}
 	rec := &recorder{}
 	e := build(t, f, settings.Default(), rec, clk, false)
@@ -359,8 +360,8 @@ func TestAllExhaustedEarliestReset(t *testing.T) {
 	if !ok {
 		t.Fatalf("no all-exhausted event; kinds=%v", rec.kinds())
 	}
-	if ae.EarliestResetAt == nil || *ae.EarliestResetAt != "2026-07-03T10:30:00Z" {
-		t.Errorf("earliestResetAt = %v, want 2026-07-03T10:30:00Z", ae.EarliestResetAt)
+	if ae.EarliestResetAt == nil || *ae.EarliestResetAt != "2026-07-18T10:30:00Z" {
+		t.Errorf("earliestResetAt = %v, want 2026-07-18T10:30:00Z", ae.EarliestResetAt)
 	}
 	if r.SleepUntil == nil {
 		t.Errorf("SleepUntil not set")
@@ -378,12 +379,12 @@ func TestDualExhaustedRecoversAtLaterReset(t *testing.T) {
 	f.entries = map[string]usage.UsageEntry{
 		// active exhausted with a later reset (16:00) so the min across accounts
 		// is driven by the candidate's own recovery time.
-		"1": dictEntry(map[string]any{"five_hour": win(100, "2026-07-03T16:00:00Z"), "seven_day": win(10, "")}),
+		"1": dictEntry(map[string]any{"five_hour": win(100, "2026-07-18T16:00:00Z"), "seven_day": win(10, "")}),
 		"2": dictEntry(map[string]any{
 			// blocked on both 5h (12:00) and Fable (15:00): usable only at 15:00.
-			"five_hour": win(100, "2026-07-03T12:00:00Z"),
+			"five_hour": win(100, "2026-07-18T12:00:00Z"),
 			"seven_day": win(10, ""),
-			"scoped":    []any{scopedWin("Fable", 100, "2026-07-03T15:00:00Z")},
+			"scoped":    []any{scopedWin("Fable", 100, "2026-07-18T15:00:00Z")},
 		}),
 	}
 	s := settings.Default()
@@ -393,8 +394,8 @@ func TestDualExhaustedRecoversAtLaterReset(t *testing.T) {
 	e := build(t, f, s, rec, clk, false)
 	e.Tick()
 	ae := rec.last("all-exhausted").(AllExhaustedEvent)
-	if ae.EarliestResetAt == nil || *ae.EarliestResetAt != "2026-07-03T15:00:00Z" {
-		t.Errorf("earliestResetAt = %v, want 2026-07-03T15:00:00Z", ae.EarliestResetAt)
+	if ae.EarliestResetAt == nil || *ae.EarliestResetAt != "2026-07-18T15:00:00Z" {
+		t.Errorf("earliestResetAt = %v, want 2026-07-18T15:00:00Z", ae.EarliestResetAt)
 	}
 }
 
@@ -437,11 +438,11 @@ func TestExplicitModelKeepsExhaustion(t *testing.T) {
 	// Fable -> a 5h/7d-only scan finds no >=100% window, but with model="Fable"
 	// the scoped reset drives the wake.
 	f.entries = map[string]usage.UsageEntry{
-		"1": dictEntry(map[string]any{"five_hour": win(100, "2026-07-03T09:00:00Z"), "seven_day": win(10, "")}),
+		"1": dictEntry(map[string]any{"five_hour": win(100, "2026-07-18T09:00:00Z"), "seven_day": win(10, "")}),
 		"2": dictEntry(map[string]any{
 			"five_hour": win(5, ""),
 			"seven_day": win(5, ""),
-			"scoped":    []any{scopedWin("Fable", 100, "2026-07-03T14:00:00Z")},
+			"scoped":    []any{scopedWin("Fable", 100, "2026-07-18T14:00:00Z")},
 		}),
 	}
 	s := settings.Default()
@@ -451,15 +452,16 @@ func TestExplicitModelKeepsExhaustion(t *testing.T) {
 	e := build(t, f, s, rec, clk, false)
 	e.Tick()
 	ae := rec.last("all-exhausted").(AllExhaustedEvent)
-	if ae.EarliestResetAt == nil || *ae.EarliestResetAt != "2026-07-03T09:00:00Z" {
-		t.Errorf("earliestResetAt = %v, want 2026-07-03T09:00:00Z (min across accounts)", ae.EarliestResetAt)
+	if ae.EarliestResetAt == nil || *ae.EarliestResetAt != "2026-07-18T09:00:00Z" {
+		t.Errorf("earliestResetAt = %v, want 2026-07-18T09:00:00Z (min across accounts)", ae.EarliestResetAt)
 	}
 }
 
 // incidentFake is the usage of 2026-11-15 23:53 as the engine sees it:
 // active 3 and 11 at their 5h limits with Fable room, 4, 7 and 8 with room on
-// 5h and 7d but no Fable left (DESIGN A91); fiveHour11 is 11's 5h use.
-func incidentFake(clk *clock.Fake, fiveHour11 float64) *fakeSwitcher {
+// 5h and 7d but no Fable left (DESIGN A91); 11's 5h window resets at now +
+// reset11, in the past when negative.
+func incidentFake(clk *clock.Fake, reset11 time.Duration) *fakeSwitcher {
 	f := newFake()
 	f.current = strp("3")
 	f.switchable = []string{"3", "4", "7", "8", "11"}
@@ -470,7 +472,7 @@ func incidentFake(clk *clock.Fake, fiveHour11 float64) *fakeSwitcher {
 		"4":  dictEntry(map[string]any{"five_hour": win(5, soon(4*time.Hour)), "seven_day": win(78, soon(48*time.Hour)), "scoped": fable(100)}),
 		"7":  dictEntry(map[string]any{"five_hour": win(4, soon(4*time.Hour)), "seven_day": win(88, soon(24*time.Hour)), "scoped": fable(100)}),
 		"8":  dictEntry(map[string]any{"seven_day": win(93, soon(120*time.Hour)), "scoped": fable(100)}),
-		"11": dictEntry(map[string]any{"five_hour": win(fiveHour11, soon(time.Hour)), "seven_day": win(80, soon(60*time.Hour)), "scoped": fable(78)}),
+		"11": dictEntry(map[string]any{"five_hour": win(100, soon(reset11)), "seven_day": win(80, soon(60*time.Hour)), "scoped": fable(78)}),
 	}
 	for _, num := range f.switchable {
 		f.emails[num] = "acct" + num + "@x.com"
@@ -485,7 +487,7 @@ func incidentFake(clk *clock.Fake, fiveHour11 float64) *fakeSwitcher {
 // the poll names the model it left out (DESIGN A91).
 func TestDerivedUnservableDoesNotExhaust(t *testing.T) {
 	clk := newClk()
-	f := incidentFake(clk, 100)
+	f := incidentFake(clk, time.Hour)
 	rec := &recorder{}
 	e := build(t, f, settings.Default(), rec, clk, false, WithUnservable([]string{"Fable"}))
 	if got := e.Tick(); got != Switched || rec.count("all-exhausted") != 0 {
@@ -503,11 +505,12 @@ func TestDerivedUnservableDoesNotExhaust(t *testing.T) {
 	}
 }
 
-// Guard: once 11's 5h window has room again the policy counts Fable, and an
-// engine counting it moves Fable-spent 7 onto 11 at its Fable limit.
+// Once 11's 5h window has reset the policy counts Fable, and the engine,
+// reading the same cached entry (5h 100 %, reset passed) by the same room
+// rule, moves Fable-spent 7 onto 11 at its Fable limit (DESIGN A91).
 func TestDerivedServableFableStillMoves(t *testing.T) {
 	clk := newClk()
-	f := incidentFake(clk, 0)
+	f := incidentFake(clk, -time.Minute)
 	f.current = strp("7")
 	s := settings.Default()
 	m := "Fable"
@@ -522,6 +525,42 @@ func TestDerivedServableFableStillMoves(t *testing.T) {
 	}
 	if _, named := rec.last("poll").(PollEvent).JSON()["unservable"]; named {
 		t.Fatal("a counted model is reported unservable")
+	}
+}
+
+// A blocked tick names the accounts that still have room on 5h and 7d, so a
+// block the bars do not explain shows in the journal; with none, it names
+// nobody (DESIGN A91).
+func TestBlockedWithRoomNamesTheAccounts(t *testing.T) {
+	clk := newClk()
+	f := incidentFake(clk, time.Hour)
+	s := settings.Default()
+	m := "Fable"
+	s.Model = &m
+	rec := &recorder{}
+	e := build(t, f, s, rec, clk, false)
+	if got := e.Tick(); got != Blocked || rec.count("all-exhausted") != 1 {
+		t.Fatalf("outcome = %v, kinds %v; want all-exhausted", got, rec.kinds())
+	}
+	ev, ok := rec.last("blocked-with-room").(BlockedWithRoomEvent)
+	if !ok || rec.count("blocked-with-room") != 1 {
+		t.Fatalf("kinds %v; want one blocked-with-room", rec.kinds())
+	}
+	if got, _ := json.Marshal(ev.JSON()["accounts"]); string(got) != `["4","7","8"]` {
+		t.Fatalf("accounts = %s, want [\"4\",\"7\",\"8\"]", got)
+	}
+	if !strings.Contains(ev.Human(), "4, 7, 8") {
+		t.Fatalf("human line %q does not name them", ev.Human())
+	}
+
+	rec = &recorder{}
+	f = newFake()
+	f.current = strp("1")
+	f.switchable = []string{"1", "2"}
+	f.emails = map[string]string{"1": "a", "2": "b"}
+	f.entries = map[string]usage.UsageEntry{"1": dictEntry(usageOf(100, 50)), "2": dictEntry(usageOf(100, 40))}
+	if got := build(t, f, settings.Default(), rec, clk, false).Tick(); got != Blocked || rec.count("blocked-with-room") != 0 {
+		t.Fatalf("outcome = %v, kinds %v; want blocked without blocked-with-room", got, rec.kinds())
 	}
 }
 

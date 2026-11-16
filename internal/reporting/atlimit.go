@@ -15,8 +15,12 @@ import (
 // configuredModels is autoswitch.model, or while it is unset the models the
 // default-session policy counts (DESIGN A91); list/status take no --model flag.
 func configuredModels(s *store.Store) []string {
-	return settings.ParseModelNames(DefaultSessionPolicyResult(s, settings.Load(s.BackupDir()), s.Clk.Now()).Settings.Model)
+	return settings.ParseModelNames(runDefaultPolicy(s, settings.Load(s.BackupDir()), s.Clk.Now()).Settings.Model)
 }
+
+// runDefaultPolicy is the policy configuredModels runs; a variable so a test
+// can count the runs.
+var runDefaultPolicy = DefaultSessionPolicyResult
 
 // An unknown headroom (sentinel, nil, non-map) is reported unknown, never at-limit.
 func atLimitFor(decisionValue any, models []string) (bool, []string) {

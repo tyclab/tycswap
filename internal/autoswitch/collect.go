@@ -12,6 +12,7 @@ package autoswitch
 
 import (
 	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
@@ -57,7 +58,7 @@ func (e *Engine) collectScheduledUsage(current string, quarantined map[string]bo
 	}
 
 	entries := e.sw.UsageEntriesByAccount(plan)
-	usageMap := decisionValues(entries)
+	usageMap := e.decisionValues(entries)
 
 	activeValue := usageMap[current]
 	activeHeadroom := accountHeadroom(usageDict(activeValue), e.models)
@@ -70,7 +71,7 @@ func (e *Engine) collectScheduledUsage(current string, quarantined map[string]bo
 			fetch[c] = true
 		}
 		entries = e.sw.UsageEntriesByAccount(fetch)
-		usageMap = decisionValues(entries)
+		usageMap = e.decisionValues(entries)
 	}
 
 	headroom := make(map[string]*float64, len(usageMap))
@@ -85,11 +86,17 @@ func (e *Engine) headroomByClass(value any) usage.Headroom {
 }
 
 // decisionValues projects each entry to its decision value (dict | sentinel |
-// nil); every key is present (nil stands in for Python's None).
-func decisionValues(entries map[string]usage.UsageEntry) map[string]any {
+// nil), read as of now: a window whose reset has passed reads 0 % (DESIGN
+// A91). Every key is present (nil stands in for Python's None).
+func (e *Engine) decisionValues(entries map[string]usage.UsageEntry) map[string]any {
+	now := e.clk.Now()
 	out := make(map[string]any, len(entries))
 	for num, entry := range entries {
-		out[num] = entry.DecisionValue()
+		v := entry.DecisionValue()
+		if m, ok := v.(map[string]any); ok {
+			v = oauth.AsOf(m, now)
+		}
+		out[num] = v
 	}
 	return out
 }
