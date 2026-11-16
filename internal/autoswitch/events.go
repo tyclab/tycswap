@@ -191,9 +191,10 @@ func (e PollEvent) Human() string {
 	)
 }
 
-// BlockedWithRoomEvent: a tick was blocked while these enabled, eligible
-// accounts are below their 5h and 7d bars, so a model window or an ownership
-// hold, not the account's own budget, keeps them out (DESIGN A91).
+// BlockedWithRoomEvent: the live account is over a bar and the tick was
+// blocked while these enabled, eligible accounts are below their 5h and 7d
+// bars, kept out by a counted model window or an ownership hold, not by
+// their own budget; once per set of accounts (DESIGN A91).
 type BlockedWithRoomEvent struct {
 	Ts       string
 	Accounts []string

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/usage"
@@ -561,6 +562,99 @@ func TestBlockedWithRoomNamesTheAccounts(t *testing.T) {
 	f.entries = map[string]usage.UsageEntry{"1": dictEntry(usageOf(100, 50)), "2": dictEntry(usageOf(100, 40))}
 	if got := build(t, f, settings.Default(), rec, clk, false).Tick(); got != Blocked || rec.count("blocked-with-room") != 0 {
 		t.Fatalf("outcome = %v, kinds %v; want blocked without blocked-with-room", got, rec.kinds())
+	}
+}
+
+// blockedWarnings are the blocked-with-room warnings in dir's log.
+func blockedWarnings(t *testing.T, dir string) []string {
+	t.Helper()
+	var out []string
+	for _, m := range logMessages(t, dir) {
+		if strings.Contains(m, "Blocked on") {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// A proactive tick held by the hysteresis margin is an ordinary hold the bars
+// explain: account 2 is below every bar but not better by the margin, so the
+// tick reports neither blocked-with-room nor a warning (DESIGN A91).
+func TestBlockedWithRoomQuietOnHysteresisHold(t *testing.T) {
+	clk := newClk()
+	dir := t.TempDir()
+	f := twoAccounts(clk, dictEntry(usageOf(10, 98)), dictEntry(usageOf(10, 90)))
+	rec := &recorder{}
+	e := build(t, f, settings.Default(), rec, clk, false, WithLogger(logging.NewWithClock(dir, false, clk)))
+	if got := e.Tick(); got != Blocked || reasonOf(t, rec.last("no-switch")) != "no-qualifying-candidate" {
+		t.Fatalf("outcome = %v, kinds %v; want a hysteresis hold", got, rec.kinds())
+	}
+	if n := rec.count("blocked-with-room"); n != 0 {
+		t.Fatalf("blocked-with-room reported %d times on a hysteresis hold", n)
+	}
+	if w := blockedWarnings(t, dir); len(w) != 0 {
+		t.Fatalf("a hysteresis hold logged %q", w)
+	}
+}
+
+// A block a counted model window explains is reported once per set of
+// accounts it keeps out: one event and one warning across two ticks and a new
+// engine instance; a changed set, and the same set after a tick without the
+// block, are reported again (DESIGN A91).
+func TestBlockedWithRoomReportedOncePerSet(t *testing.T) {
+	clk := newClk()
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, StateFilename)
+	f := incidentFake(clk, time.Hour)
+	s := settings.Default()
+	m := "Fable"
+	s.Model = &m
+	rec := &recorder{}
+	engine := func() *Engine {
+		return build(t, f, s, rec, clk, false, WithStatePath(statePath), WithLogger(logging.NewWithClock(dir, false, clk)))
+	}
+	e := engine()
+	e.Tick()
+	e.Tick()
+	engine().Tick()
+	if n, w := rec.count("blocked-with-room"), blockedWarnings(t, dir); n != 1 || len(w) != 1 {
+		t.Fatalf("reported %d times, warnings %q; want one of each", n, w)
+	}
+	if w := blockedWarnings(t, dir)[0]; w != "Blocked on Account-3 although 4, 7, 8 are below their 5h and 7d bars" {
+		t.Fatalf("warning = %q", w)
+	}
+
+	f.entries["8"] = dictEntry(map[string]any{"seven_day": win(98, ""), "scoped": []any{scopedWin("Fable", 100, "")}})
+	engine().Tick()
+	engine().Tick()
+	ev, _ := rec.last("blocked-with-room").(BlockedWithRoomEvent)
+	if n, w := rec.count("blocked-with-room"), blockedWarnings(t, dir); n != 2 || len(w) != 2 || strings.Join(ev.Accounts, ",") != "4,7" {
+		t.Fatalf("after 8 crossed its 7d bar: %d events (last %v), warnings %q; want the new set 4, 7 once", n, ev.Accounts, w)
+	}
+
+	// A tick without the block forgets the set, so its return is news.
+	blocking := f.entries["3"]
+	f.entries["3"] = dictEntry(usageOf(10, 27))
+	engine().Tick()
+	f.entries["3"] = blocking
+	engine().Tick()
+	if n := rec.count("blocked-with-room"); n != 3 {
+		t.Fatalf("a block that ended and came back was reported %d times in all, want 3", n)
+	}
+}
+
+// Guard: a target a live session holds is an ownership hold, not a bar: the
+// blocked tick names it (DESIGN A91).
+func TestBlockedWithRoomNamesAnOwnershipHold(t *testing.T) {
+	clk := newClk()
+	f := twoAccounts(clk, dictEntry(usageOf(10, 99)), dictEntry(usageOf(10, 10)))
+	f.liveSessions["2"] = []int{4242}
+	rec := &recorder{}
+	if got := build(t, f, settings.Default(), rec, clk, false).Tick(); got != Blocked {
+		t.Fatalf("outcome = %v, kinds %v; want blocked", got, rec.kinds())
+	}
+	if ev, ok := rec.last("blocked-with-room").(BlockedWithRoomEvent); !ok || strings.Join(ev.Accounts, ",") != "2" {
+		t.Fatalf("kinds %v; want blocked-with-room naming 2", rec.kinds())
 	}
 }
 

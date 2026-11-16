@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 // recordedSwitcher is a switcher that can say which slot the roster last
@@ -76,30 +77,83 @@ func switchedByTycswap(state map[string]any, rs recordedSwitcher, cur string, si
 	return slot == cur && at >= math.Floor(since)
 }
 
-// reportBlockedWithRoom names, after a blocked tick, every enabled, eligible
-// account below its 5h and 7d bars: a block those bars do not explain (a
-// model window, an ownership hold) shows in the journal and the log.
-func (e *Engine) reportBlockedWithRoom(cur string, quarantined map[string]bool, usageMap map[string]any, s settings.AutoSwitchSettings) {
+// blockedWithRoomKey is the state-file key holding the account set the last
+// blocked-with-room report named.
+const blockedWithRoomKey = "lastBlockedWithRoom"
+
+// noteBlockedWithRoom reports a block the 5h and 7d bars do not explain, once
+// per set of accounts it names (keptOut). The set is remembered in the state
+// file and a tick without such a block forgets it, so a hysteresis hold, a
+// cooldown or the same block on the next tick says nothing. A failed write is
+// logged and tried again next tick; a dry run shows the event and keeps
+// nothing.
+func (e *Engine) noteBlockedWithRoom(cur, trigger string, axis usage.Class, blocked bool, quarantined, held map[string]bool, usageMap map[string]any, s settings.AutoSwitchSettings) {
 	var room []string
+	if blocked && (trigger == "at-limit" || trigger == "proactive") {
+		room = e.keptOut(cur, trigger, axis, quarantined, held, usageMap, s)
+	}
+	key := strings.Join(room, ",")
+	if e.dryRun {
+		if key != "" {
+			e.emit(BlockedWithRoomEvent{Ts: e.nowISO(), Accounts: room})
+		}
+		return
+	}
+	if last, _ := e.readState()[blockedWithRoomKey].(string); last == key {
+		return
+	}
+	changed := false
+	_, err := e.mutateState(func(st map[string]any) {
+		last, _ := st[blockedWithRoomKey].(string)
+		changed = last != key
+		if key == "" {
+			delete(st, blockedWithRoomKey)
+		} else {
+			st[blockedWithRoomKey] = key
+		}
+	})
+	if err != nil {
+		if e.log != nil {
+			e.log.Warningf("Blocked-with-room not recorded: %v; it is checked again next tick", err)
+		}
+		return
+	}
+	if !changed || key == "" {
+		return
+	}
+	e.emit(BlockedWithRoomEvent{Ts: e.nowISO(), Accounts: room})
+	if e.log != nil {
+		e.log.Warningf("Blocked on Account-%s although %s are below their 5h and 7d bars", cur, strings.Join(room, ", "))
+	}
+}
+
+// keptOut names, after a tick the live account's bars made move (at-limit,
+// proactive), the enabled, eligible accounts below their 5h and 7d bars that
+// it did not take for a reason those bars do not give: a counted model window
+// (not reported, at 100 %, or over its bar when that window made the tick
+// move) or an ownership hold met while preparing the target. One the
+// hysteresis margin kept out is not named.
+func (e *Engine) keptOut(cur, trigger string, axis usage.Class, quarantined, held map[string]bool, usageMap map[string]any, s settings.AutoSwitchSettings) []string {
+	required := requiredModels(e.models, usageMap)
+	var out []string
 	for _, num := range e.sw.SwitchableAccountNumbers() {
-		if quarantined[num] || e.sw.AccountKindFor(num) == "api_key" || usageDict(usageMap[num]) == nil {
+		if num == cur || quarantined[num] || e.sw.AccountKindFor(num) == "api_key" || usageDict(usageMap[num]) == nil {
 			continue
 		}
 		h := e.headroomByClass(usageMap[num])
 		_, weekOver := utilizationOver(h.Week, s.SevenDayThreshold)
 		_, sessionOver := utilizationOver(h.Session, s.FiveHourThreshold)
-		if h.Week != nil && !weekOver && !sessionOver {
-			room = append(room, num)
+		if h.Week == nil || weekOver || sessionOver {
+			continue
+		}
+		modelUtil, modelOver := utilizationOver(h.Model, s.ModelThreshold)
+		byModel := !hasRequiredModels(usageMap[num], required) || h.Model != nil && modelUtil >= 100 ||
+			trigger == "proactive" && axis == usage.ClassModel && modelOver
+		if byModel || held[num] {
+			out = append(out, num)
 		}
 	}
-	if len(room) == 0 {
-		return
-	}
-	room = sortNumeric(room)
-	e.emit(BlockedWithRoomEvent{Ts: e.nowISO(), Accounts: room})
-	if e.log != nil {
-		e.log.Warningf("Blocked on Account-%s although %s are below their 5h and 7d bars", cur, strings.Join(room, ", "))
-	}
+	return sortNumeric(out)
 }
 
 // ReadLastTick is when a real tick last saw the live login (lastSeenAt), as

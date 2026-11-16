@@ -100,9 +100,15 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 	// An expired hold keeps its stamp but polls candidates: failover needs them.
 	idleHold := holdLive(activeMemoryOf(state, cur).IdleHoldSince, e.nowSeconds())
 	entries, usageMap, headroom := e.collectScheduledUsage(cur, quarantined, pollThreshold(s, e.models), idleHold)
+	// axis names the window class that made the tick move, so the log, the
+	// qualification gate and the hysteresis all talk about the same resource
+	// (DESIGN A34). held collects targets an ownership hold refused.
+	axis := usage.ClassWeek
+	var trigger string
+	held := map[string]bool{}
 	defer func() {
-		if err == nil && result.Outcome == Blocked {
-			e.reportBlockedWithRoom(cur, quarantined, usageMap, s)
+		if err == nil && result.Outcome != Error {
+			e.noteBlockedWithRoom(cur, trigger, axis, result.Outcome == Blocked, quarantined, held, usageMap, s)
 		}
 	}()
 
@@ -142,11 +148,6 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 
 	activeHeadroom := headroom[cur]
 	activeByClass := e.headroomByClass(usageMap[cur])
-	// axis names the window class that made the tick move, so the log, the
-	// qualification gate and the hysteresis all talk about the same resource
-	// (DESIGN A34).
-	axis := usage.ClassWeek
-	var trigger string
 	if activeHeadroom != nil {
 		if _, had := state["active"]; had && !e.dryRun {
 			if _, err := e.mutateState(clearActiveMemory); err != nil {
@@ -282,8 +283,9 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 			transientFailure = true
 		case "ownership-blocked":
 			ownershipFailure = true
+			held[num] = true
 		case "skip-live-session":
-			// skip silently
+			held[num] = true // no event of its own
 		default: // "ok"
 			return e.perform(num, email, trigger, axisName)
 		}

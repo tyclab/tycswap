@@ -1886,7 +1886,7 @@ a `Z` suffix), plus per-kind fields:
 | `sleep` | `seconds` (float), `until` (string) |
 | `error` | `message` (string), `transient` (bool) |
 | `config-warning` | `message` (string) |
-| `blocked-with-room` | `accounts` (slot strings): the tick was blocked while these enabled, eligible accounts are below their 5h and 7d bars (DESIGN A91) |
+| `blocked-with-room` | `accounts` (slot strings): the live account is over a bar and the tick was blocked while these enabled, eligible accounts are below their 5h and 7d bars, kept out by a counted model window or an ownership hold; once per change of the set, never for a hysteresis or cooldown hold (DESIGN A91, see LOG) |
 | `live-login-changed` | `from`, `to` (slot strings): the live login changed without a tycswap switch, reported once per change (see LOG) |
 
 The Codex engine reports a tick only when it switched or failed, or on every
@@ -5143,6 +5143,13 @@ line `<change> by <actor>` beside the change's own line.
   written at or after then), it emits `live-login-changed` and logs `Live
   login changed from account <from> to <to> without a tycswap switch`, once
   per change.
+- **Blocks the bars do not explain.** A real tick that ends blocked while
+  the live account is over a bar, and accounts below their 5h and 7d bars
+  were kept out by a counted model window or an ownership hold, emits
+  `blocked-with-room` and logs the warning `Blocked on Account-<n> although
+  <a>, <b> are below their 5h and 7d bars`, once per set of accounts: the
+  set is kept as `lastBlockedWithRoom` in `autoswitch_state.json`, and a tick
+  without such a block clears it.
 
 ## SETTINGS
 

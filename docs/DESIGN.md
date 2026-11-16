@@ -7287,12 +7287,19 @@ Fable window and sit under `autoswitch.modelThreshold` on it, read the same
 way. An account whose Fable week is spent is never reserved, so Opus work
 fills it.
 
-A blocked tick (`all-exhausted` and the other `Blocked` outcomes) that leaves
-an enabled, rotation-eligible, unquarantined account below its 5-hour and
-weekly bars emits `blocked-with-room` naming those accounts, and logs it as a
-warning: a block the account budgets do not explain (a model window, an
-ownership hold) reaches the journal under a name no `poll`/`no-switch`/
-`all-exhausted` filter drops.
+A block the 5-hour and weekly bars do not explain emits `blocked-with-room`
+and logs it as a warning, under a name no `poll`/`no-switch`/`all-exhausted`
+filter drops: the live account is at or over a bar (trigger `at-limit` or
+`proactive`, a counted model window included), the tick ends `Blocked`, and
+enabled, rotation-eligible, unquarantined accounts below their 5-hour and
+weekly bars were kept out by a counted model window (not reported, at
+100 %, or over its bar when that window made the tick move) or by an
+ownership hold met while preparing the target. A hold the hysteresis margin
+or the cooldown explains names nobody; the first version warned on every
+blocked tick, so a proactive tick held by the margin warned with each
+status-line observation. The set is reported once per change: the engine
+state file keeps the last one (`lastBlockedWithRoom`) and a tick without
+such a block forgets it. A dry run shows the event and keeps nothing.
 
 The scheduled tick (`auto --once`, `--observe`), `start`'s selection, and the
 at-limit marks of `list`, `status` and the account snapshot (the dashboard's
