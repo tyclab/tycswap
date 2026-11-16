@@ -5,15 +5,18 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/usage"
 )
 
 const (
@@ -94,26 +97,45 @@ func RecordDefaultSessionModel(root, sessionID, model string, now time.Time) (bo
 	return changed, atomicfile.Write(filepath.Join(root, defaultModelsFile), raw, atomicfile.Opts{})
 }
 
-// DefaultSessionPolicy counts, for the default login, the model limits of the
-// families its live sessions run when autoswitch.model is unset (DESIGN A76),
-// and names the accounts it leaves to Fable work (A77): while every live
-// session has a recorded model, none of them Fable, an account that can run
-// Fable ranks last and hands over to one that cannot. A set autoswitch.model
-// always wins; a live session of unknown model reserves nothing.
+// PolicyResult is the default-session policy for one tick (DESIGN A76, A77,
+// A91): the settings to decide with, the accounts left to Fable work (nil
+// reserves none), the derived models dropped because no usable account can
+// serve them, and the model families the live default sessions run.
+type PolicyResult struct {
+	Settings   settings.AutoSwitchSettings
+	Reserved   func(num string) bool
+	Unservable []string
+	Sessions   []string
+}
+
+// DefaultSessionPolicy is DefaultSessionPolicyResult at the store's clock.
 func DefaultSessionPolicy(s *store.Store, base settings.AutoSwitchSettings) (settings.AutoSwitchSettings, func(num string) bool) {
+	r := DefaultSessionPolicyResult(s, base, s.Clk.Now())
+	return r.Settings, r.Reserved
+}
+
+// DefaultSessionPolicyResult counts, for the default login, the model limits
+// of the families its live sessions run when autoswitch.model is unset (DESIGN
+// A76), but only those some usable account can serve (A91). While every live
+// session has a recorded model, none of them Fable, it reserves the accounts
+// that can run Fable and still have Fable room (A77, A91). A set
+// autoswitch.model always wins; a live session of unknown model reserves
+// nothing.
+func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings, now time.Time) PolicyResult {
+	r := PolicyResult{Settings: base}
 	if base.Model != nil {
-		return base, nil
+		return r
 	}
 	records := readDefaultSessionModels(s.BackupDir())
 	if len(records) == 0 {
-		return base, nil
+		return r
 	}
 	sessions, _, err := procdetect.GetRunningInstancesErr(s.DefaultProfileDir())
-	if err != nil {
-		return base, nil
+	if err != nil || len(sessions) == 0 {
+		return r
 	}
 	families := map[string]bool{}
-	allKnown := len(sessions) > 0
+	allKnown := true
 	for _, session := range sessions {
 		rec, ok := records[session.SessionID]
 		if !ok {
@@ -122,26 +144,118 @@ func DefaultSessionPolicy(s *store.Store, base settings.AutoSwitchSettings) (set
 		}
 		families[rec.Family] = true
 	}
-	if model := strings.Join(scopedNamesFor(s, families), ","); model != "" {
-		base.Model = &model
+	if len(families) == 0 {
+		return r
+	}
+	for family := range families {
+		r.Sessions = append(r.Sessions, family)
+	}
+	sort.Strings(r.Sessions)
+	view := newPolicyView(s, now)
+	var counted []string
+	for _, name := range scopedNamesFor(view.usage, families) {
+		if view.serves(name, base) {
+			counted = append(counted, name)
+		} else {
+			r.Unservable = append(r.Unservable, name)
+		}
+	}
+	if model := strings.Join(counted, ","); model != "" {
+		r.Settings.Model = &model
 	}
 	if !allKnown || families["fable"] {
-		return base, nil
+		return r
 	}
-	return base, s.FableCapable
+	room := view.fableBelow(base.ModelThreshold)
+	r.Reserved = func(num string) bool { return room[num] && s.FableCapable(num) }
+	return r
+}
+
+// policyView is every account's cached usage, its usage the engine would
+// still decide on (serving), and the pool a tick may use: enabled,
+// rotation-eligible, not quarantined, plus the live account. Both readings
+// are taken as of now, as the engine takes them (oauth.AsOf).
+type policyView struct {
+	usage   map[string]*oauth.Usage
+	serving map[string]*oauth.Usage
+	pool    map[string]bool
+}
+
+func newPolicyView(s *store.Store, now time.Time) policyView {
+	s = passStore(s, map[string]bool{})
+	infos := BuildAccountsInfo(s)
+	entries := CollectUsageEntries(s, infos, map[string]bool{})
+	data, _ := s.ReadSequence()
+	quarantined := autoswitch.ReadQuarantineEntries(autoswitch.StatePath(s.BackupDir()))
+	v := policyView{usage: map[string]*oauth.Usage{}, serving: map[string]*oauth.Usage{}, pool: map[string]bool{}}
+	for _, info := range infos {
+		num := strconv.Itoa(info.Number)
+		entry := entries[num]
+		if u := oauth.NewUsage(oauth.AsOf(entry.LastGood, now)); u != nil {
+			v.usage[num] = u
+		}
+		if u := oauth.NewUsage(oauth.AsOf(servingValue(entry), now)); u != nil {
+			v.serving[num] = u
+		}
+		_, held := quarantined[num]
+		v.pool[num] = info.IsActive || !held && s.RotationEligible(data, num)
+	}
+	return v
+}
+
+// servingValue is the reading an account may serve a model on: the one the
+// engine still decides on (UsageEntry.DecisionValue: younger than
+// usage.StaleOKS, or trusted up to usage.TrustMaxAgeS, also after failed
+// fetches). A sentinel or an untrusted reading is no map and serves nothing.
+func servingValue(e usage.UsageEntry) map[string]any {
+	m, _ := e.DecisionValue().(map[string]any)
+	return m
+}
+
+// serves reports whether an account in the pool sits below the bars the
+// engine moves at on model's window and on its 5h and 7d windows; an absent
+// 5h window is room, an absent 7d window is not.
+func (v policyView) serves(model string, bars settings.AutoSwitchSettings) bool {
+	for num, u := range v.serving {
+		if !v.pool[num] || u.SevenDay == nil || u.SevenDay.Pct >= bars.SevenDayThreshold ||
+			u.FiveHour != nil && u.FiveHour.Pct >= bars.FiveHourThreshold {
+			continue
+		}
+		for _, w := range u.Scoped {
+			if strings.EqualFold(w.Name, model) && w.Pct < bars.ModelThreshold {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// fableBelow names the accounts that report a Fable window and sit under bar
+// on every one of them.
+func (v policyView) fableBelow(bar float64) map[string]bool {
+	out := map[string]bool{}
+	for num, u := range v.usage {
+		found, under := false, true
+		for _, w := range u.Scoped {
+			if strings.Contains(strings.ToLower(w.Name), "fable") {
+				found = true
+				under = under && w.Pct < bar
+			}
+		}
+		out[num] = found && under
+	}
+	return out
 }
 
 // scopedNamesFor is every per-model window name an account reports for one of
 // the model families, sorted.
-func scopedNamesFor(s *store.Store, families map[string]bool) []string {
+func scopedNamesFor(usage map[string]*oauth.Usage, families map[string]bool) []string {
 	names := map[string]bool{}
-	for _, entry := range UsageEntriesByAccount(s, map[string]bool{}) {
-		if u := oauth.NewUsage(entry.LastGood); u != nil {
-			for _, w := range u.Scoped {
-				for family := range families {
-					if strings.Contains(strings.ToLower(w.Name), family) {
-						names[w.Name] = true
-					}
+	for _, u := range usage {
+		for _, w := range u.Scoped {
+			for family := range families {
+				if strings.Contains(strings.ToLower(w.Name), family) {
+					names[w.Name] = true
 				}
 			}
 		}

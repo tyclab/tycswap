@@ -291,7 +291,7 @@ func Import(acc Accounts, source string, force bool) error {
 				if pids := acc.LiveSessionPidsFor(targetNum, entry.email); len(pids) > 0 {
 					eprint("Warning: " + entry.email + " (slot " + targetNum + ") has a live " +
 						"session-mode instance (PID " + joinPIDs(pids) + "); its session profile keeps " +
-						"the pre-import credentials until it is restarted via 'tycswap run'.")
+						"the pre-import credentials until that session exits.")
 				}
 			} else {
 				if !slotOccupied(data, entry.exportedNum) {

@@ -44,7 +44,7 @@ func fetchAccountUsage(s *store.Store, info AccountInfo) usage.FetchRecord {
 
 	hasLiveSession := len(s.LiveSessionPidsFor(num, info.Email)) > 0
 
-	// A run profile holds the newest token generation; read it strictly read-only, rotating it would log the next `tycswap run` out.
+	// A former run profile may hold the newest token generation; read it strictly read-only until its release takes it over.
 	sessionDir := s.SessionDir(num, info.Email)
 	sessionCreds, sessOK := sessprofile.ReadSessionCredentials(reportKC, sessionDir)
 	if sessOK && sessprofile.SessionIdentityDrifted(sessionDir, info.Email, info.OrgUUID) {

@@ -55,6 +55,15 @@ type Client interface {
 	Usage(ctx context.Context, accessToken string) (raw map[string]any, err error)
 }
 
+// ProfileProber is an optional Client capability: ProfileAnswer resolves a
+// token as Profile does and reports whether the endpoint answered (an
+// identity, 401 or 403) or the request failed (transport error, timeout,
+// 429, 5xx, malformed reply). A Client without it cannot tell: its nil
+// counts as a failed request.
+type ProfileProber interface {
+	ProfileAnswer(ctx context.Context, accessToken string) (id *Identity, answered bool)
+}
+
 // HTTPClient is the real Client backed by net/http. The URL fields default to
 // the production endpoints and are overridable for tests.
 type HTTPClient struct {
@@ -194,12 +203,19 @@ func (c *HTTPClient) Refresh(ctx context.Context, creds string) RefreshOutcome {
 // failure (04§1.12). A 401 fails open with a WARNING; other errors log at DEBUG.
 // Must not be called while any credential/config lock is held.
 func (c *HTTPClient) Profile(ctx context.Context, accessToken string) *Identity {
+	id, _ := c.ProfileAnswer(ctx, accessToken)
+	return id
+}
+
+// ProfileAnswer implements ProfileProber: only an identity, a 401 or a 403
+// is the endpoint's answer.
+func (c *HTTPClient) ProfileAnswer(ctx context.Context, accessToken string) (*Identity, bool) {
 	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, c.ProfileURL, nil)
 	if err != nil {
 		debugf("OAuth profile fetch failed: %v", err)
-		return nil
+		return nil, false
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
@@ -208,7 +224,7 @@ func (c *HTTPClient) Profile(ctx context.Context, accessToken string) *Identity 
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
 		debugf("OAuth profile fetch failed: %v", err)
-		return nil
+		return nil, false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
@@ -218,22 +234,22 @@ func (c *HTTPClient) Profile(ctx context.Context, accessToken string) *Identity 
 		} else {
 			debugf("OAuth profile fetch failed: HTTP %d", resp.StatusCode)
 		}
-		return nil
+		return nil, resp.StatusCode == 401 || resp.StatusCode == 403
 	}
 	data, ok := decodeResponseMap(io.LimitReader(resp.Body, maxSuccessBody))
 	if !ok {
 		debugf("OAuth profile fetch failed: undecodable response")
-		return nil
+		return nil, false
 	}
 	account, ok := data["account"].(map[string]any)
 	if !ok {
 		debugf("OAuth profile response missing account object")
-		return nil
+		return nil, false
 	}
 	uuid, ok := account["uuid"].(string)
 	if !ok || strings.TrimSpace(uuid) == "" {
 		debugf("OAuth profile response missing account.uuid")
-		return nil
+		return nil, false
 	}
 	id := &Identity{UUID: strings.TrimSpace(uuid)}
 	if email, ok := account["email"].(string); ok {
@@ -244,7 +260,7 @@ func (c *HTTPClient) Profile(ctx context.Context, accessToken string) *Identity 
 			id.OrgUUID = ou
 		}
 	}
-	return id
+	return id, true
 }
 
 // Usage fetches raw utilization data (04§1.15). Returns an *HTTPError for a
@@ -370,6 +386,11 @@ func (f *FakeClient) Profile(ctx context.Context, accessToken string) *Identity 
 	return nil
 }
 
+// ProfileAnswer implements ProfileProber: the fake's every reply is an answer.
+func (f *FakeClient) ProfileAnswer(ctx context.Context, accessToken string) (*Identity, bool) {
+	return f.Profile(ctx, accessToken), true
+}
+
 // Usage implements Client.
 func (f *FakeClient) Usage(ctx context.Context, accessToken string) (map[string]any, error) {
 	if f.UsageFn != nil {
@@ -380,6 +401,8 @@ func (f *FakeClient) Usage(ctx context.Context, accessToken string) (map[string]
 
 // compile-time assertions.
 var (
-	_ Client = (*HTTPClient)(nil)
-	_ Client = (*FakeClient)(nil)
+	_ Client        = (*HTTPClient)(nil)
+	_ Client        = (*FakeClient)(nil)
+	_ ProfileProber = (*HTTPClient)(nil)
+	_ ProfileProber = (*FakeClient)(nil)
 )

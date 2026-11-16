@@ -13,25 +13,16 @@ ships alongside its release pin. Account marks remain an operator choice.
   box. The operator selects marks and authorizes any real-login acceptance
   test. Verify one child invocation, shared-login selection and cooldown with
   authorized accounts. Record sanitized results, not private transcripts.
-- [ ] Accept the replacement across the fleet before starting S5. A dedicated
-  Windows Ctrl+C console check remains a follow-up; the native Windows suite
-  covers child exit status, spawn failures and existing command-shim behavior.
+- [ ] Accept the startup-login rollout across the fleet. A dedicated Windows
+  Ctrl+C console check remains a follow-up; the native Windows suite covers
+  child exit status, spawn failures and existing command-shim behavior.
 
-## Later release: S5
+## S5
 
-`run`, `env`, `map` and `unmap` remain available until the replacement is
-accepted. RECLAIM-1 through RECLAIM-5 stay open. The first release documents
-their current limitations; it does not fix or conceal them.
-
-- [ ] Review a separate retirement change against the then-current code. Audit
-  legacy claims/releases, mappings, session helpers, group retirement and all
-  callers before deleting anything. Preserve conversation history and login
-  ownership, and leave live or unverifiable claims intact.
-- [ ] Review and incorporate the private reproduction fixture
-  `tycswap-review-20261114/review_repro_test.go`, which is not tracked here.
-  Test idle, live, rotated/expired, invalid-grant and offline claims, scheduling
-  on real versus observe/dry-run ticks, and the removed command/help paths.
-- [ ] Remove each review-finding row only in the change that closes it.
+Superseded: the operator ruled on 2026-11-16 that `run`, `env`, `map` and
+`unmap` go now, without the acceptance gate above. The retirement and
+RECLAIM-3 to -5 are `docs/superpowers/plans/2026-11-16-busy-model-rotation.md`,
+Stream B.
 
 Stronger serialization with manual switches or roster edits is deferred until
 needed. Startup uses the current engine's state → store → Claude lock order;

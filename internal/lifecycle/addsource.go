@@ -13,7 +13,6 @@ import (
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/oauth"
-	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
@@ -39,7 +38,7 @@ func LoginDir(dir string, kc keychain.KeychainClient) AddSource {
 // LoginKeychainService is the Keychain service Claude Code keys a login's
 // credential under when CLAUDE_CONFIG_DIR=dir (the account is
 // keychain.AccountName()).
-func LoginKeychainService(dir string) string { return sessprofile.KeychainServiceName(dir) }
+func LoginKeychainService(dir string) string { return ccfile.KeychainServiceName(dir) }
 
 // loginCredentials is the credential the login left: <dir>/.credentials.json,
 // or — when that file is absent and the source has a Keychain — the item

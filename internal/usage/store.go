@@ -376,6 +376,11 @@ func rowEligible(row map[string]any, now float64, respectPlans bool) bool {
 	return pollDue || stale
 }
 
+// FailureBackoffS is failureBackoffS without a Retry-After.
+func FailureBackoffS(consecutiveFailures int) float64 {
+	return failureBackoffS(consecutiveFailures, nil)
+}
+
 // failureBackoffS computes the failure backoff seconds (04§2.6). With no
 // Retry-After it is 30·2^(n-1) capped at 600; Retry-After:0 floors at
 // EDGE_BACKOFF_S (capped at 600); Retry-After:N>0 honors N (capped at 900) as a

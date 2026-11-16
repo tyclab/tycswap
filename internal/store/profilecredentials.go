@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"unicode/utf8"
 
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/platform"
-	"github.com/tyclab/tycswap/internal/sessprofile"
 )
 
 func (s *Store) ReadProfileCredentials(dir string) (string, bool, error) {
@@ -18,7 +18,7 @@ func (s *Store) ReadProfileCredentials(dir string) (string, bool, error) {
 		return "", false, err
 	}
 	if s.Platform == platform.MacOS {
-		value, found, err := s.kc.Get(sessprofile.KeychainServiceName(dir), keychain.AccountName())
+		value, found, err := s.kc.Get(ccfile.KeychainServiceName(dir), keychain.AccountName())
 		if err != nil {
 			return "", false, err
 		}
@@ -26,7 +26,7 @@ func (s *Store) ReadProfileCredentials(dir string) (string, bool, error) {
 			return value, true, nil
 		}
 	}
-	data, err := os.ReadFile(filepath.Join(dir, sessprofile.CredentialsFileName))
+	data, err := os.ReadFile(filepath.Join(dir, ccfile.CredentialsFileName))
 	if os.IsNotExist(err) {
 		return "", false, nil
 	}

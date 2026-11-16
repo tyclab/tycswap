@@ -27,13 +27,13 @@ import (
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/codex/authfile"
 	codexstore "github.com/tyclab/tycswap/internal/codex/store"
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
-	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/storenames"
 )
 
@@ -652,11 +652,11 @@ func keychainItems(oldRoot, newRoot string, kc keychain.KeychainClient) []kcItem
 			}
 			items = append(items, kcItem{
 				KeychainItem: KeychainItem{
-					FromService: sessprofile.KeychainServiceName(filepath.Join(oldRoot, sessionsDir, e.Name())),
-					ToService:   sessprofile.KeychainServiceName(filepath.Join(newRoot, sessionsDir, e.Name())),
+					FromService: ccfile.KeychainServiceName(filepath.Join(oldRoot, sessionsDir, e.Name())),
+					ToService:   ccfile.KeychainServiceName(filepath.Join(newRoot, sessionsDir, e.Name())),
 					Account:     keychain.AccountName(),
 				},
-				fallback: sessionsDir + "/" + e.Name() + "/" + sessprofile.CredentialsFileName,
+				fallback: sessionsDir + "/" + e.Name() + "/" + ccfile.CredentialsFileName,
 				encode:   raw,
 			})
 		}

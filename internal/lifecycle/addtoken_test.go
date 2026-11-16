@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tyclab/tycswap/internal/mappings"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/testutil"
 )
@@ -388,28 +387,27 @@ func TestAddTokenDisplaceTruncatedRosterKeepsOtherSlots(t *testing.T) {
 	}
 }
 
-// racingOnMappingNotice is the Output seam: it commits a rival change to
-// sequence.json once, when the directory-mapping prune notice is printed. That
-// notice is the only observable event between add-token's displace COMMIT and
-// its migrate branch, so it is the only place a test can stand in for a
-// concurrent writer inside that window. commit nil truncates the roster.
-type racingOnMappingNotice struct {
-	t      *testing.T
-	s      *store.Store
-	commit func()
-	done   bool
-}
-
-func (w *racingOnMappingNotice) Write(p []byte) (int, error) {
-	if !w.done && bytes.Contains(p, []byte("directory mapping")) {
-		w.done = true
-		if w.commit != nil {
-			w.commit()
+// raceAfterDisplace commits a rival change to sequence.json once, right after
+// add-token's displace commit (afterDisplace), the only place a test can stand
+// in for a concurrent writer before the migrate branch. commit nil truncates
+// the roster.
+func raceAfterDisplace(t *testing.T, s *store.Store, commit func()) *bool {
+	t.Helper()
+	done := false
+	prev := afterDisplace
+	afterDisplace = func() {
+		if done {
+			return
+		}
+		done = true
+		if commit != nil {
+			commit()
 		} else {
-			corruptSequence(w.t, w.s, "")
+			corruptSequence(t, s, "")
 		}
 	}
-	return len(p), nil
+	t.Cleanup(func() { afterDisplace = prev })
+	return &done
 }
 
 // TestAddTokenMigrateTruncatedRosterKeepsOtherSlots pins add-token's MIGRATE
@@ -423,25 +421,14 @@ func TestAddTokenMigrateTruncatedRosterKeepsOtherSlots(t *testing.T) {
 		acct{num: "2", email: "tok@token.local", creds: "c2", config: "g2"},
 		acct{num: "3", email: "other@example.com", uuid: "uuid-x", creds: "c3", config: "g3"},
 	)
-	// A mapping for the displaced identity, so the prune notice fires.
-	mapped := filepath.Join(t.TempDir(), "proj")
-	if err := os.MkdirAll(mapped, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := mappings.New(s.BackupDir()).Set(mapped, "other@example.com", ""); err != nil {
-		t.Fatal(err)
-	}
 	withPrompter(t, &fakePrompter{prompts: []promptResp{{val: "y", ok: true}}})
-	seam := &racingOnMappingNotice{t: t, s: s}
-	prev := Output
-	Output = seam
-	t.Cleanup(func() { Output = prev })
+	raced := raceAfterDisplace(t, s, nil)
 
 	if err := AddAccountFromToken(s, "sk-ant-oat01-TOK", sp("tok@token.local"), sp("3"), false); err != nil {
 		t.Fatalf("AddAccountFromToken migrating into a truncated roster: %v", err)
 	}
-	if !seam.done {
-		t.Fatal("precondition: the prune notice never fired, so the migrate branch window was never exercised")
+	if !*raced {
+		t.Fatal("precondition: the displace commit never ran, so the migrate branch window was never exercised")
 	}
 
 	data := readSeq(t, s)
@@ -567,8 +554,8 @@ func TestAddTokenAtThePromptKeepsARivalsCommittedRecord(t *testing.T) {
 }
 
 // TestAddTokenMigrateCommitsTheRosterItDecidedFrom pins the migrate branch
-// against an unlocked write whose file parses. It lands at the prune notice —
-// inside the locked span, after this call's own displace commit — so the
+// against an unlocked write whose file parses. It lands right after this
+// call's own displace commit, inside the locked span, so the
 // disagreement is between the roster in hand and a strictly newer, perfectly
 // readable file that no tycswap could have written.
 func TestAddTokenMigrateCommitsTheRosterItDecidedFrom(t *testing.T) {
@@ -578,28 +565,17 @@ func TestAddTokenMigrateCommitsTheRosterItDecidedFrom(t *testing.T) {
 		acct{num: "2", email: "tok@token.local", creds: "c2", config: "g2"},
 		acct{num: "3", email: "other@example.com", uuid: "uuid-x", creds: "c3", config: "g3"},
 	)
-	// A mapping for the displaced identity, so the prune notice fires.
-	mapped := filepath.Join(t.TempDir(), "proj")
-	if err := os.MkdirAll(mapped, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := mappings.New(s.BackupDir()).Set(mapped, "other@example.com", ""); err != nil {
-		t.Fatal(err)
-	}
 	withPrompter(t, &fakePrompter{prompts: []promptResp{{val: "y", ok: true}}})
 	// A concurrent `tycswap remove keep` commits inside the window.
-	seam := &racingOnMappingNotice{t: t, s: s, commit: commitRival(t, s, nil,
+	raced := raceAfterDisplace(t, s, commitRival(t, s, nil,
 		acct{num: "2", email: "tok@token.local"},
-	)}
-	prev := Output
-	Output = seam
-	t.Cleanup(func() { Output = prev })
+	))
 
 	if err := AddAccountFromToken(s, "sk-ant-oat01-TOK", sp("tok@token.local"), sp("3"), false); err != nil {
 		t.Fatalf("AddAccountFromToken migrating while a rival commits: %v", err)
 	}
-	if !seam.done {
-		t.Fatal("precondition: the prune notice never fired, so the window was never exercised")
+	if !*raced {
+		t.Fatal("precondition: the displace commit never ran, so the window was never exercised")
 	}
 
 	data := readSeq(t, s)

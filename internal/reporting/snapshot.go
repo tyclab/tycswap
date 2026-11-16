@@ -90,7 +90,7 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 		if info.IsActive {
 			activeNumber = num
 		}
-		atLimit, limiting := atLimitFor(entries[num].DecisionValue(), models)
+		atLimit, limiting := atLimitFor(entries[num].DecisionValue(), models, s.Clk.Now())
 		switchable := s.AccountIsSwitchable(num)
 		disabled := recordDisabled(data, num)
 		ownershipBlock := s.RotationOwnershipBlockReason(num)

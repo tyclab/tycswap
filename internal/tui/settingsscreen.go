@@ -228,6 +228,7 @@ func (s *settingsScreen) save(m *Model, spec settings.Spec, raw string) tea.Cmd 
 		if err != nil {
 			return "", "", err
 		}
+		m.logAction("Set " + key + "=" + settings.FormatSettingValue(value))
 		return key + " = " + settings.FormatSettingValue(value), "", nil
 	})
 }
@@ -255,6 +256,7 @@ func (s *settingsScreen) reset(m *Model) tea.Cmd {
 		if !removed {
 			return notSet, "", nil
 		}
+		m.logAction("Unset " + key)
 		return key + " unset (default: " + def + ")", "", nil
 	})
 }

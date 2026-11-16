@@ -1,10 +1,7 @@
-// Package sessprofile is the session-profile leaf (identity, location, stale marker); it breaks the store↔session import cycle.
+// Package sessprofile reads the per-account profiles `tycswap run` left behind (location, stale marker, credential) until they retire (DESIGN A92).
 package sessprofile
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,21 +10,16 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/procdetect"
 )
 
 // StaleMarkerName is the deferred-invalidation marker file: backup
-// credentials changed while a session was live, so the profile must be
-// re-bootstrapped on the next non-live `tycswap run` even if it still passes
-// the local reuse check.
+// credentials changed while a session was live, so the profile's login is
+// stale once that session exits.
 const StaleMarkerName = ".tycswap-stale-credentials"
-
-// CredentialsFileName is the plaintext credential seed every session profile
-// carries (POSIX and Windows both use it as the Claude Code fallback; macOS
-// additionally shadows it with a hashed Keychain entry once Claude writes one).
-const CredentialsFileName = ".credentials.json"
 
 // Only filesystem-safe (Windows-forbidden characters included), not injective: the "<num>-" prefix makes session dirs unique.
 func SlugifyEmail(email string) string {
@@ -111,17 +103,6 @@ func resolveProfilePath(p string) string {
 	}
 }
 
-// KeychainServiceName returns the Keychain service name Claude Code derives
-// for this CLAUDE_CONFIG_DIR value: Claude hashes the raw, NFC-normalized,
-// UNRESOLVED env var string (never a resolved/realpath variant) with SHA-256
-// and takes the first 8 hex characters.
-func KeychainServiceName(sessionDir string) string {
-	normalized := norm.NFC.String(sessionDir)
-	sum := sha256.Sum256([]byte(normalized))
-	digest := hex.EncodeToString(sum[:])[:8]
-	return "Claude Code-credentials-" + digest
-}
-
 // StaleMarkerPath returns <sessionDir>/.tycswap-stale-credentials.
 func StaleMarkerPath(sessionDir string) string {
 	return filepath.Join(sessionDir, StaleMarkerName)
@@ -163,7 +144,7 @@ func DeleteMacOSKeychainEntry(kc keychain.KeychainClient, sessionDir string) {
 	if platform.Detect() != platform.MacOS {
 		return
 	}
-	_ = kc.Delete(KeychainServiceName(sessionDir), keychain.AccountName())
+	_ = kc.Delete(ccfile.KeychainServiceName(sessionDir), keychain.AccountName())
 }
 
 // InvalidateSessionCredentials drops a profile's credentials but keeps its history, so the next run re-bootstraps from backup
@@ -173,7 +154,7 @@ func InvalidateSessionCredentials(kc keychain.KeychainClient, sessionDir string)
 		return false, nil
 	}
 	DeleteMacOSKeychainEntry(kc, sessionDir)
-	if err := removeIfExists(filepath.Join(sessionDir, CredentialsFileName)); err != nil {
+	if err := removeIfExists(filepath.Join(sessionDir, ccfile.CredentialsFileName)); err != nil {
 		return true, err
 	}
 	if err := ClearStaleMarker(sessionDir); err != nil {
@@ -191,31 +172,6 @@ func DeleteSessionProfile(kc keychain.KeychainClient, sessionDir string) {
 	_ = os.RemoveAll(sessionDir)
 }
 
-func ReadSessionIdentity(sessionDir string) (email, orgUUID string, ok bool) {
-	data, err := os.ReadFile(filepath.Join(sessionDir, ".claude.json"))
-	if err != nil {
-		return "", "", false
-	}
-	var cfg any
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return "", "", false
-	}
-	m, isMap := cfg.(map[string]any)
-	if !isMap {
-		return "", "", false
-	}
-	oa, isOAMap := m["oauthAccount"].(map[string]any)
-	if !isOAMap {
-		return "", "", false
-	}
-	e, _ := oa["emailAddress"].(string)
-	if e == "" {
-		return "", "", false
-	}
-	org, _ := oa["organizationUuid"].(string)
-	return e, org, true
-}
-
 // SessionIdentityDrifted reports whether the profile is logged in as a
 // different account than its slot (an in-session /login can re-point a
 // profile without moving its directory). Mirrors _is_session_valid's
@@ -223,7 +179,7 @@ func ReadSessionIdentity(sessionDir string) (email, orgUUID string, ok bool) {
 // are non-empty. An unreadable identity is NOT drift — it degrades to
 // trusting the profile rather than abandoning it over a broken .claude.json.
 func SessionIdentityDrifted(sessionDir, email, orgUUID string) bool {
-	profileEmail, profileOrg, ok := ReadSessionIdentity(sessionDir)
+	profileEmail, profileOrg, ok := ccfile.ReadProfileIdentity(sessionDir)
 	if !ok {
 		return false
 	}
@@ -240,11 +196,11 @@ func ReadSessionCredentials(kc keychain.KeychainClient, sessionDir string) (cred
 		return "", false
 	}
 	if platform.Detect() == platform.MacOS {
-		if value, found, err := kc.Get(KeychainServiceName(sessionDir), keychain.AccountName()); err == nil && found && value != "" {
+		if value, found, err := kc.Get(ccfile.KeychainServiceName(sessionDir), keychain.AccountName()); err == nil && found && value != "" {
 			return value, true
 		}
 	}
-	data, err := os.ReadFile(filepath.Join(sessionDir, CredentialsFileName))
+	data, err := os.ReadFile(filepath.Join(sessionDir, ccfile.CredentialsFileName))
 	if err != nil {
 		return "", false
 	}

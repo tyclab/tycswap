@@ -101,13 +101,11 @@ internal/codex/usagecache ──► internal/codex/store ──► internal/code
 | `settings` | `settings.json` store, `SETTING_SPECS`, `AutoSwitchSettings` (frozen value), clamp, `config set/get/unset`, `merged_with_cli`, `parse_model_names`. (08§8, 05§2) |
 | `sessprofile` | Session-profile leaf: dir naming (`slugify_email`, `session_dir_for`), NFC keychain service hashing, invalidation/stale-marker/delete. (06§1.5, breaks store↔session cycle) |
 | `procdetect` | Read Claude Code `sessions/*.json` + `ide/*.lock`, `is_pid_alive` (POSIX `kill 0`, Windows `OpenProcess`). (06§4) |
-| `mappings` | `MappingStore`: `mappings.json`, `normalize_path`, nearest-ancestor `resolve`, prune. (06§5) |
 | `store` | The substrate: `sequence.json` model + read/write, path wiring, credential proxies (+`_post_backup_write`), identity resolution, org-field backfill, live-session guards, `FileLock` handle, `UsageStore` handle, migrations-at-construct. (01, 03 wiring) |
 | `lifecycle` | Free funcs over `*store.Store`: add/add-token/remove/move/swap/alias/disable/enable/purge. (01§5–11) |
 | `switching` | switch/switch-to/best/next-available, `performSwitch`, `classifyOutgoing`, replan, self-switch provenance. (02§4–9) |
 | `reporting` | list/status renderers + JSON payloads, `collectUsageEntries` (paced, identity-guarded), snapshots, duplicate/lockstep warnings. (02§10–13) |
-| `core` | `Switcher` façade: composes `store` + `lifecycle`/`switching`/`reporting`; satisfies the façade interfaces `autoswitch`/`tui`/`session`/`transfer` consume. |
-| `session` | `SessionManager`: run/exec-default, bootstrap/reuse, `_sync_sharing`, MCP mirror, share-history. (06§1–3) |
+| `core` | `Switcher` façade: composes `store` + `lifecycle`/`switching`/`reporting`; satisfies the façade interfaces `autoswitch`/`tui`/`transfer` consume. |
 | `transfer` | `.tycswap` export/import (reads Python files). (07§1–4) |
 | `migrations` | Registry migrations (windows keyring, macos keyring) + `.migrations.json` state; org backfill is in `store`. (07§5–6) |
 | `autoswitch` | `AutoSwitchEngine`, events, tick, `run_loop`, quarantine, cooldown, freshen. (05) |
@@ -435,6 +433,8 @@ State file `autoswitch_state.json` under its own `.autoswitch_state.lock`
 out (recover→ErrorEvent, transient).
 
 ### 2.19 `session` — 06§1–3
+Removed with `run` and `env` (A92); kept here as the record of what they did.
+
 `manager.go`, `bootstrap.go`, `sharing.go`, `mcp.go`, `history.go`, `exec_posix.go`, `exec_windows.go`
 ```go
 type Manager struct{ sw *core.Switcher }
@@ -557,7 +557,7 @@ Every Python thread/loop → Go construct, with lifecycle/shutdown:
 | active-refresh persist callback re-acquiring locks from inside a fetch | network refresh runs with **no** `FileLock` held; the persist callback re-acquires `FileLock → cclock.Credentials → cclock.Config` and re-checks owner/lineage before writing (non-reentrant lock preserved) | callback returns `USAGE_TOKEN_EXPIRED` on mid-refresh owner-appears/lineage change. |
 | TUI Textual workers (`run_worker(thread=True, group=…)`) + 3s poll timer | bubbletea: `tea.Tick(3s)` poll; workers are `tea.Cmd`s returning typed msgs (`refreshDoneMsg`/`refreshErrMsg`/`actionDoneMsg`/`engineEventMsg`/`engineStoppedMsg`) handled in `Update`; single-flight = plain `bool` model fields (Update is single-goroutine) | goroutines never touch model state directly — only send messages. Engine hosted as long-lived goroutine draining onto a channel, re-armed by a `tea.Cmd` blocking-receive. |
 | `FileLock` (flock/msvcrt, 0.1s poll, 10s) | `filelock.FileLock` `unix.Flock`/`LockFileEx`, monotonic timeout | released on `Release()`/fd-close/process death; non-reentrant. |
-| SIGINT / Ctrl-C (Python: no handler, `KeyboardInterrupt` → 130) | `cli` installs `signal.Notify(sigint)`; on receipt prints the cancelled note and `os.Exit(130)`. For `tycswap run` POSIX the process is already replaced by `syscall.Exec` (no tycswap signal handler after exec); Windows run wrapper mirrors child exit / Ctrl-C→130. The auto loop installs **only** SIGTERM→Stop (matching the single Python signal handler); its Ctrl-C path prints "Auto-switch stopped" → 130. |
+| SIGINT / Ctrl-C (Python: no handler, `KeyboardInterrupt` → 130) | `cli` installs `signal.Notify(sigint)`; on receipt prints the cancelled note and `os.Exit(130)`. For `tycswap start` POSIX the process is already replaced by `syscall.Exec` (no tycswap signal handler after exec); on Windows `start` waits for the child, mirrors its exit and owns console Ctrl-C while it runs (A90). The auto loop installs **only** SIGTERM→Stop (matching the single Python signal handler); its Ctrl-C path prints "Auto-switch stopped" → 130. |
 
 Data-race discipline: usability cache (`credstore`) guarded by a mutex if a store
 is shared across goroutines (TUI). Store CRUD is single-threaded under `FileLock`.
@@ -918,7 +918,7 @@ delivery kills the process before the cancel note / JSON-vs-plain routing can
 run, so `cli` MUST install a SIGINT notifier to **reproduce** (never extend)
 Python's semantics: print the exact cancelled note, route stderr-vs-stdout by
 JSON mode, exit 130. Interactive prompts convert cancellation into the
-prompt-local "Cancelled" behavior. On the POSIX `tycswap run` path the handler
+prompt-local "Cancelled" behavior. On the POSIX `tycswap start` path the handler
 is irrelevant after `syscall.Exec` (process image replaced). The auto loop
 additionally installs SIGTERM→`engine.Stop()` — the only signal handler the
 Python code has.
@@ -1035,6 +1035,8 @@ ignore them, so this adds signal without breaking any documented shape. The
 Python-fidelity contract in `docs/port-spec/` is unchanged.
 
 ## A16. `tycswap env` — pin a shell to an account (Go-side additive extension)
+
+Removed by A92 (2026-11-16) with `run`, `map` and `unmap`.
 
 `tycswap env [NUM|EMAIL|ALIAS] [--no-share] [--share-history] [--shell sh|fish|pwsh]
 [--unset] [--debug]` gives the CURRENT shell a per-account Claude Code identity —
@@ -7215,7 +7217,7 @@ name, plan or policy result. The feature does not grant model access or change
 managed settings. It creates no profile, claim, child-read handshake or hold.
 
 Preserve the incoming argv and environment before initialization. A set
-`CLAUDE_CONFIG_DIR`, child `--bare`, or any `session.AuthOverrideEnvVars` variable
+`CLAUDE_CONFIG_DIR`, child `--bare`, or any `launch.AuthOverrideEnvVars` variable
 skips launch selection without changing the inherited environment. Management
 forms still work independently. No-mark and current-mark paths are silent and
 perform no network or mutation. `store.Options.SkipMigrations` lets launch
@@ -7249,3 +7251,211 @@ This release retains `run`, `env`, `map`, `unmap` and their login ownership.
 The later S5 retirement requires fleet acceptance and fresh review. In the
 meantime an open `env` shell without a running Claude process does not keep
 its claim from idle reclaim, and a newly starting legacy process can race it.
+
+## A91. Servable models
+
+On 2026-11-15 from 23:53 every scheduled tick reported `all-exhausted`. Eight
+of 22 live default sessions ran Fable, so A76 counted the Fable window for the
+whole login; the accounts with Fable room (3, 11) were at their 5-hour limits
+and every account with 5-hour and weekly room (4, 7) had spent its Fable week,
+so every account read headroom 0. Opus sessions stopped while 4 and 7 had Opus
+room. A77 had accepted that one live Fable session keeps every default session
+on a Fable-capable account; that limit holds only while some account can serve
+Fable.
+
+`reporting.DefaultSessionPolicyResult` decides it once from cached usage and
+returns the settings, the reservation and the derived models it dropped. A
+derived model stays counted while an account in the pool sits below the bars
+the engine moves at on that model's window (`autoswitch.modelThreshold`) and
+on its 5-hour and weekly windows (`fiveHourThreshold`, `sevenDayThreshold`):
+judged at 100 %, the last account with Fable room kept Fable counted from its
+bar up to its hard limit while the engine already refused it as a target. An
+absent 5-hour window is room; an absent weekly one is not. Only a reading the
+engine would still decide on serves: `UsageEntry.DecisionValue`, the value
+the engine reads. A sentinel (no credential, an expired token an owner
+holds) serves nothing; a reading younger than `usage.StaleOKS` serves, and so
+does an older one up to `usage.TrustMaxAgeS` while the engine extends its
+trust (failed fetches, a next poll not yet due), since the engine still
+targets that account. The only account with Fable room drew http-429 on its
+usage request many times a day, each with a 300-second backoff; refusing it
+on any failed fetch dropped Fable as unservable for each of those windows.
+Past `usage.TrustMaxAgeS` a reading no longer serves. The pool is every
+enabled, rotation-eligible account not
+quarantined in the engine state file, plus the live account whatever its
+flags. A dropped model is named in the poll event as `unservable` (`not
+counted: Fable` on the human line) and the engine counts 5h and 7d for it.
+
+One room rule serves the policy and the engine: `oauth.AsOf` reads a window
+whose reset time has passed as 0 % with its next reset unknown (D4), since a
+cached reading does not see a renewal (ENG-7). It drops the window's reset
+time and countdown, so `soonest-reset` sorts a renewed account with the
+unknown renewals, not first on a renewal in the past. The engine reads every
+decision value through it, as do `start`'s ranking, the at-limit marks of
+`list`, `status` and the account snapshot, and the dashboard's rows (and so
+*Next best* and the tray's figures); the TUI's meters and *Next best* still
+read the cached values (ENG-7). An account the policy finds serving after its reset is a
+target before its next fetch only while its last reading is still trusted:
+an account parked at its limit falls due for a poll at that reset, so in
+practice while the reading is younger than `usage.StaleOKS`; otherwise the
+move comes after the fetch that poll brings.
+
+The reservation (A77) now covers only accounts that can run Fable, report a
+Fable window and sit under `autoswitch.modelThreshold` on it, read the same
+way. An account whose Fable week is spent is never reserved, so Opus work
+fills it.
+
+A block the 5-hour and weekly bars do not explain emits `blocked-with-room`
+and logs it as a warning, under a name no `poll`/`no-switch`/`all-exhausted`
+filter drops: the live account is at or over a bar (trigger `at-limit` or
+`proactive`, a counted model window included), the tick ends `Blocked`, and
+enabled, rotation-eligible, unquarantined accounts below their 5-hour and
+weekly bars were kept out by a counted model window (not reported, at
+100 %, or over its bar when that window made the tick move) or by an
+ownership hold met while preparing the target. A hold the hysteresis margin
+or the cooldown explains names nobody; the first version warned on every
+blocked tick, so a proactive tick held by the margin warned with each
+status-line observation. The set is reported once per change: the engine
+state file keeps the last one (`lastBlockedWithRoom`) and a tick without
+such a block forgets it. A dry run shows the event and keeps nothing.
+
+The scheduled tick (`auto --once`, `--observe`), `start`'s selection, and the
+at-limit marks of `list`, `status` and the account snapshot (the dashboard's
+and the TUI's rows) all read the one result. The dashboard state carries it as
+`auto.counting` (the families of the live sessions, the counted, dropped and
+reserved), with a one-line caption; the Auto tab, *Next best* and the tray's
+figures render it, so an unset `autoswitch.model` reads *Follow sessions*, not
+*Off*; the tray's *Model limits* switch reads `follows sessions — <caption>`
+(the caption alone under a hosted engine, which does not follow sessions)
+and says `off` only for an explicit `none`. Unchanged: an explicit
+`autoswitch.model` or `--model`, which never drops a model; the long-running
+loop and the hosted engines, which keep their configured models (ENG-8); and
+one login for every default session, so while an account can serve Fable and a
+Fable session runs, Opus sessions stay on a Fable-capable account too.
+
+## A92. run, env and map retire
+
+The operator ruled on 2026-11-10 that the per-account profile commands go
+("Remove them") and on 2026-11-16, finding them still shipped, "FIX IT".
+`tycswap run`, `env`, `map` and `unmap` are gone, with the session manager
+(`internal/session`), the directory mappings (`internal/mappings`; a
+`mappings.json` stays on disk unread, and `add`/`remove` no longer prune it)
+and their help, docs, adapters and the env-only SIGINT routing. Each of the
+four names exits 2 before the store is read, like an unknown command, with one
+stderr line pointing at the shared default login and `claude --resume`. Every
+Claude session shares the default login, which tycswap switches; A89's
+"explicit account pins" no longer exist.
+
+Why it took a second ruling: the removal waited behind the one-engine series
+(D10, behind E1 which never shipped) and then behind a fleet-acceptance gate
+the ruling did not set (start-login S5); nothing asserted the commands gone.
+`TestLegacyProfileCommandsAreGone` does now. A removal ruling ships in the
+next release, pinned by a test, never behind a series or a gate the operator
+did not set.
+
+The helpers other features use moved out first: `launch.AuthOverrideEnvVars`,
+`launch.ScrubAuthOverrides`, `launch.CLICommand` and `launch.CheckCmdShimArgs`
+(add --login, codex login, the updater, start) and `ccfile.KeychainServiceName`,
+`ccfile.CredentialsFileName`, `ccfile.ReadProfileIdentity` (store, purge,
+migrate). What stays until no profile is left: `internal/sessprofile` reads
+the profiles under `<store>/sessions/`, `groups/claims.json` keeps their
+claims, the ownership checks (A88, A89) still treat a profile as its account's
+owner, a live session in one keeps its claim, and a shell whose
+`CLAUDE_CONFIG_DIR` still names one runs every tycswap command on the default
+login with one notice. `claude` itself, plain or through `tycswap start`
+(which passes the environment on unchanged, A90), still reads that profile,
+and `env --unset` is gone, so the notice and the removed commands' message
+say how to unset the variable in sh, fish and PowerShell.
+
+Leftovers retire on their own, beside A78's group retirement and on the same
+rounds: scheduled and real (`auto --once`, each loop interval, the app's
+hosted loop, with auto-switch on or off), never a dry run, a status line's
+tick or `start`, and never under the engine's state lock. A89's pre-poll
+release of candidates stays as it was. For every stored account, disabled ones
+included, whose profile no Claude process uses (for a disabled account that
+can mean a profile request or a refresh with its leftover login; retirement
+never enables the account or switches to it):
+
+1. `projects/` is copied into the default profile's where missing (A78's
+   copy, never replacing a file; a namesake of another size is logged with
+   both paths and sizes; a copied transcript keeps its modification time,
+   by which Claude Code orders its session list), once, the marker written
+   only after a complete copy: `.tycswap-history-copied` stops a transcript
+   Claude Code later cleans up from coming back.
+2. On the live default account the claim is released by dropping the
+   profile's login when it is empty, the live login's own lineage, or stale.
+   Neither the slot backup nor the live credential is written. A login of
+   another lineage without the stale mark keeps its claim: the operator
+   decides, by signing in again.
+3. On other accounts a stale login is dropped the same way, and anything else
+   takes A88's verified release. The stale mark (`postBackupWrite` set it
+   while the profile ran, after its stored login was rewritten) is the proof:
+   `run` itself discarded such a login on its next launch, while A88 would
+   have saved it over the newer stored login once the profile endpoint named
+   the account. This holds for explicit switches too.
+4. Before any request, a profile login of another lineage than a slot backup
+   not known dead (the usage store's `TokenDead`) is ordered by `expiresAt`.
+   Expiring no later than the backup, it is the older copy: it is dropped the
+   same way, without a request to the token or profile endpoint, and neither
+   the backup nor the live credential is written. Expiring later, or with no
+   backup or a dead one, it takes A88's release (item 5 when expired). Either
+   expiry unreadable, it is held without a request. The order is taken again
+   under the release's locks, before a refresh and before the save. Why:
+   nothing records what Anthropic's token endpoint does when a rotated
+   refresh token is presented again (for Codex a reused one is `invalid_grant`
+   and can revoke the token family), and an unexpired older copy would pass
+   the profile endpoint and be saved over the newer backup; so a profile
+   login goes out only when it can be shown to be the newest. Such a pair
+   needs a backup written without `postBackupWrite` dropping the profile's
+   login: a failed or interrupted invalidation, a macOS Keychain delete that
+   failed, a stale mark that could not be written, or a store an older
+   version wrote.
+5. RECLAIM-3: a rotated profile login whose access token expired is verified
+   by refreshing its own token under the store lock and the profile's
+   credential, config and storage-write locks; the new credential goes back
+   into the profile before anything else, then the profile endpoint names
+   it. `invalid_grant` drops the dead login and the claim and keeps the slot
+   backup. A refreshed login the profile cannot store is the only live copy
+   of its token family: when the token response names the account it is
+   saved as the slot backup under the locks already held and the profile
+   retires; otherwise it goes to `.creds-<n>-<email>.enc.recovered` beside
+   the slot backup (0600, the backup's format, so moving it over the slot's
+   `.enc` restores it), the warning names that file, and the spent profile
+   login is held, never refreshed again. The slot's next stored login
+   removes that file.
+6. RECLAIM-4: a release refused by verification is stored in
+   `claims.json` (`held`, reason and the login's digest), and rotation
+   eligibility returns that reason until the login changes, so the dashboard,
+   tray and engine agree. While that login stays, no round, preparation or
+   `tycswap switch` asks about it again: the release returns the recorded
+   reason without a profile request or a refresh. A refresh that failed in
+   transport (`transient`: no answer, a timeout, a 5xx, a 429) is no refusal:
+   it is held with `retryAt` and `failures` and tried again once the usage
+   store's failure backoff (04§2.6, 30 s doubling to 600 s) has passed. The
+   profile endpoint's silence is told apart the same way, through the
+   optional `oauth.ProfileProber` the HTTP client implements beside the
+   unchanged `oauth.Client`: an identity naming another account, a 401 or
+   a 403 is a refusal, held until the login changes or a new sign-in drops
+   it; a transport error, a timeout, a 429, a 5xx or a malformed reply is a
+   failed request, held for the same backoff and asked again (before, one
+   outage kept a good login out of rotation until the operator signed in
+   again). A client that cannot tell counts its nil as a failed request.
+   `Account-<n> profile retirement held` and `session release held` are
+   warned once per login and reason, later rounds at debug; on the live
+   account, whose drop asks no one, the hold (`live`) does only that.
+   RECLAIM-5: a hand-over with nowhere to go emits only its `…-no-target`.
+
+A drop marks the profile stale before clearing its login and unmarks it after
+the claim is gone, so an interrupted drop finishes on the next round; an
+interrupted verified release finishes through A88's marker. Running,
+unreadable or misidentified profiles keep everything.
+
+Liveness (SES-6): every check of a Claude Code session record, the session
+list and the ownership checks alike, compares the record's `procStart` with
+field 22 of `/proc/<pid>/stat` when both exist and the record's `pidDomain`
+names this machine and PID namespace (`linux:<machine-id>:pid:[N]`, compared
+whole: the namespace inode repeats across machines), so a reused PID neither
+keeps a dead profile's claim nor lists a dead session. A record without
+`procStart`, one from another machine or namespace, or a system without
+`/proc` keeps the PID-only check. Two boxes cloned with one machine id cannot
+be told apart by the record; profile folders are per box, so a record from
+another box reaches this one only through a copied store.
