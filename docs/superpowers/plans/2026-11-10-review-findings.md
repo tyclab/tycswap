@@ -110,7 +110,6 @@ evidence.
 | WEB-14 | a burst of engine events is shown twice | web/static/app.js appendAutoEvent | FIX D7 | T | E |
 | WEB-15 | state observers can get an older state after a newer one | web/web.go broadcast | FIX | T | U |
 | WEB-16 | token stays in the page after the dialog closes | web/static/app.js closeModal | FIX D9 | TV | U |
-| WEB-17 | stale session file listed as a running session | web/web.go probeSessions | DUP SES-6 | P |  |
 
 ## Tray lane
 
@@ -171,7 +170,6 @@ evidence.
 | SES-2 | every slot backup write deletes the profile's credential | store/credproxy.go postBackupWrite | CUT D10 | TV | R |
 | SES-3 | one unparsable session file vetoes every ownership check | store/ownership.go profilePIDs | FIX | T | R |
 | SES-5 | pinned session's status line handled as default login | cli/observe.go | DUP CLI-8 | T |  |
-| SES-6 | stale session file counts as running once its PID is reused | procdetect/procdetect.go, store/ownership.go | FIX | TV | R |
 | SES-8 | symlink above the store root | groups/registry.go | DUP STORE-6 | T |  |
 | SES-10 | at-limit marker kept after the reset time passed | reporting/atlimit.go, render.go | FIX D4 | T | E |
 | SES-11 | unknown 5h utilization printed as 0 % | reporting/render.go | FIX | T | R |

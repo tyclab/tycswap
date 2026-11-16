@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/sessprofile"
@@ -55,5 +56,29 @@ func TestDiscardLegacyLoginRefusals(t *testing.T) {
 				t.Fatal("a refused drop changed the profile's login")
 			}
 		})
+	}
+}
+
+// SES-6: a profile's session record whose PID now names a process with
+// another start time does not hold the profile.
+func TestReusedPIDDoesNotHoldProfile(t *testing.T) {
+	raw, err := os.ReadFile("/proc/self/stat")
+	if err != nil {
+		t.Skip("no /proc on this system")
+	}
+	stat := string(raw)
+	start := strings.Fields(stat[strings.LastIndexByte(stat, ')')+1:])[19]
+	pid := strconv.Itoa(os.Getpid())
+	for procStart, want := range map[string]int{"1": 0, start: 1} {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "sessions"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "sessions", pid+".json"), []byte(`{"pid":`+pid+`,"procStart":"`+procStart+`"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if pids, err := LiveProfilePIDs(dir); err != nil || len(pids) != want {
+			t.Fatalf("procStart %s: live PIDs %v, %v; want %d", procStart, pids, err, want)
+		}
 	}
 }

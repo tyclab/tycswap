@@ -7310,3 +7310,10 @@ A drop marks the profile stale before clearing its login and unmarks it after
 the claim is gone, so an interrupted drop finishes on the next round; an
 interrupted verified release finishes through A88's marker. Running,
 unreadable or misidentified profiles keep everything.
+
+Liveness (SES-6): every check of a Claude Code session record, the session
+list and the ownership checks alike, compares the record's `procStart` with
+field 22 of `/proc/<pid>/stat` when both exist and the record's `pidDomain`
+names this PID namespace, so a reused PID neither keeps a dead profile's claim
+nor lists a dead session. A record without `procStart`, one from another
+namespace, or a system without `/proc` keeps the PID-only check.

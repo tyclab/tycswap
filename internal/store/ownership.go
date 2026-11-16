@@ -209,7 +209,9 @@ func profilePIDs(dir string) ([]int, error) {
 				return nil, fmt.Errorf("cannot verify Claude process state at %s: %w", path, err)
 			}
 			var record struct {
-				PID *int64 `json:"pid"`
+				PID       *int64 `json:"pid"`
+				ProcStart any    `json:"procStart"`
+				PIDDomain any    `json:"pidDomain"`
 			}
 			if err := json.Unmarshal(data, &record); err != nil {
 				return nil, fmt.Errorf("Claude process state at %s is unreadable; credential ownership is unknown", path)
@@ -218,7 +220,8 @@ func profilePIDs(dir string) ([]int, error) {
 				return nil, fmt.Errorf("Claude process state at %s has no valid PID; credential ownership is unknown", path)
 			}
 			pid := *record.PID
-			if procdetect.IsPIDAlive(int(pid)) {
+			domain, _ := record.PIDDomain.(string)
+			if procdetect.RecordAlive(int(pid), record.ProcStart, domain) {
 				seen[int(pid)] = true
 			}
 		}

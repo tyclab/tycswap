@@ -2647,7 +2647,10 @@ tabs:
   list includes sessions still running in a former `tycswap run`/`env`
   profile (found under the backup root and marked with the slot they run
   as). Only a session file named after the pid it carries
-  (`sessions/<pid>.json`, as Claude Code writes it) is listed. Stop sends
+  (`sessions/<pid>.json`, as Claude Code writes it) is listed, and one that
+  records `procStart` only while that PID still has that start time
+  (`/proc/<pid>/stat` field 22, in this PID namespace), so a reused PID does
+  not list a dead session. Stop sends
   SIGTERM, or TerminateProcess on Windows, and only to a PID that is listed
   as a Claude Code session at that moment and whose process start time
   (Linux `/proc/<pid>/stat`, macOS `kinfo_proc`, Windows `GetProcessTimes`
