@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -129,7 +130,8 @@ func TestRefreshedLoginKeptWhenProfileWriteFails(t *testing.T) {
 				return
 			}
 			info, serr := os.Stat(recovery)
-			if serr != nil || info.Mode().Perm() != 0o600 {
+			// Windows reports no owner-only mode bits.
+			if serr != nil || runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 				t.Fatalf("no 0600 recovery file %s: %v", recovery, serr)
 			}
 			raw, _ := os.ReadFile(recovery)
