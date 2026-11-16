@@ -937,8 +937,9 @@ func TestSetModelNoneSaysHowToUnset(t *testing.T) {
 // A free-text setting cannot hold a terminal control character: v0.12.0's TUI
 // stored pasted text raw, and `config list`, the auto loop's warnings and the
 // TUI print the value as it is. Setting one is refused; one already stored,
-// hand-edited or passed as `auto --model` reads as unset.
-func TestModelWithControlCharactersIsRefusedAndReadsUnset(t *testing.T) {
+// hand-edited or merged from an override is read without its control
+// characters (the flags themselves refuse one).
+func TestModelWithControlCharactersIsRefusedAndReadsClean(t *testing.T) {
 	spec, err := SpecFor("autoswitch.model")
 	if err != nil {
 		t.Fatal(err)
@@ -950,16 +951,11 @@ func TestModelWithControlCharactersIsRefusedAndReadsUnset(t *testing.T) {
 	}
 	root := t.TempDir()
 	writeSettingsJSON(t, root, `{"autoswitch":{"model":"Fable\u001b[2J"}}`)
-	if got := Load(root).Model; got != nil {
-		t.Errorf("Load model = %q, want unset", *got)
+	if got := Load(root).Model; got == nil || *got != "Fable[2J" {
+		t.Errorf("Load model = %q, want it without the ESC", derefOrNil(got))
 	}
-	for _, r := range EffectiveSettings(root) {
-		if r.Spec.Field == "Model" && r.Value != nil {
-			t.Errorf("effective model = %q, want unset", FormatSettingValue(r.Value))
-		}
-	}
-	if got := MergedWithCLI(Default(), CLIOverrides{Model: strp("Fable\x1b[2J")}).Model; got != nil {
-		t.Errorf("auto --model with controls = %q, want unset", *got)
+	if got := MergedWithCLI(Default(), CLIOverrides{Model: strp("Fable\x1b[2J")}).Model; got == nil || *got != "Fable[2J" {
+		t.Errorf("a merged override with controls = %q, want it without the ESC", derefOrNil(got))
 	}
 }
 
@@ -998,26 +994,30 @@ func TestModelListWithWhitespaceControlsKeepsItsModels(t *testing.T) {
 	}
 }
 
-// A stored value with any other control character is ignored, and every
-// reader can say so: its row is marked, and the notice names the key, why and
-// the repair, never the value.
-func TestStoredModelWithControlCharacterIsIgnoredWithNotice(t *testing.T) {
+// A stored value with other control characters is cleaned on read: every
+// reader gets it without them (termsafe.Strip), so a list main counted is still
+// counted. The row says what was removed and how to clean the file, never the
+// value. A value of control characters only reads as unset, and says so.
+func TestStoredValueWithControlCharactersIsCleanedOnRead(t *testing.T) {
 	root := t.TempDir()
-	writeSettingsJSON(t, root, `{"autoswitch":{"model":"Fable\u001b[2J","sevenDayThreshold":90}}`)
+	writeSettingsJSON(t, root, `{"autoswitch":{"model":"Fable,Opus\u001b[2J\u0007","sevenDayThreshold":90}}`)
+	if got := Load(root).Model; got == nil || *got != "Fable,Opus[2J" || !reflect.DeepEqual(ParseModelNames(got), []string{"Fable", "Opus[2J"}) {
+		t.Fatalf("Load model = %q, want the value without its control characters", derefOrNil(got))
+	}
 	var row Effective
 	for _, r := range EffectiveSettings(root) {
 		switch {
 		case r.Spec.Field == "Model":
 			row = r
-		case r.Ignored || r.Notice() != "":
-			t.Errorf("%s marked ignored", r.Spec.Dotted())
+		case r.Cleaned || r.Notice() != "":
+			t.Errorf("%s marked cleaned", r.Spec.Dotted())
 		}
 	}
-	if !row.Ignored || !row.IsSet || row.Value != nil || row.Display() != "(ignored)" {
-		t.Fatalf("model row = %+v (display %q), want ignored, set, no value", row, row.Display())
+	if !row.Cleaned || !row.IsSet || row.Value != "Fable,Opus[2J" {
+		t.Fatalf("model row = %+v, want cleaned, set, the clean value", row)
 	}
 	n := row.Notice()
-	for _, want := range []string{"autoswitch.model", "control character", "ignored",
+	for _, want := range []string{"autoswitch.model", "control characters", "removed",
 		"tycswap config set autoswitch.model", "tycswap config unset autoswitch.model"} {
 		if !strings.Contains(n, want) {
 			t.Errorf("notice %q lacks %q", n, want)
@@ -1026,13 +1026,19 @@ func TestStoredModelWithControlCharacterIsIgnoredWithNotice(t *testing.T) {
 	if strings.Contains(n, "Fable") || strings.ContainsRune(n, 0x1b) {
 		t.Errorf("notice %q echoes the value", n)
 	}
-	if got := Notices(root); len(got) != 1 || got[0] != n {
-		t.Errorf("Notices = %q, want [%q]", got, n)
+	only := t.TempDir()
+	writeSettingsJSON(t, only, `{"autoswitch":{"model":"\u001b\u0007"}}`)
+	for _, r := range EffectiveSettings(only) {
+		if r.Spec.Field == "Model" && (!r.Cleaned || r.Value != nil || !strings.Contains(r.Notice(), "nothing")) {
+			t.Errorf("controls only: row %+v, notice %q", r, r.Notice())
+		}
 	}
 	clean := t.TempDir()
-	writeSettingsJSON(t, clean, `{"autoswitch":{"model":"Fable"}}`)
-	if got := Notices(clean); len(got) != 0 {
-		t.Errorf("clean file: Notices = %q, want none", got)
+	writeSettingsJSON(t, clean, `{"autoswitch":{"model":"Fable,\nOpus"}}`)
+	for _, r := range EffectiveSettings(clean) {
+		if r.Cleaned || r.Notice() != "" {
+			t.Errorf("a two-line list: %s marked cleaned", r.Spec.Dotted())
+		}
 	}
 }
 

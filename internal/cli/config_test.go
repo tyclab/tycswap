@@ -58,11 +58,11 @@ func TestConfigListNeverPrintsAStoredControlCharacter(t *testing.T) {
 	}
 }
 
-// A stored value that is ignored says so where the setting is shown: `config
-// list` and `config get` mark it "(ignored)" and print the notice (the key,
-// why, the repair) on stderr; --json carries ignored and the notice. The
-// value itself never appears.
-func TestConfigSaysWhenAStoredValueIsIgnored(t *testing.T) {
+// A stored value read without its control characters says so where the
+// setting is shown: `config list` and `config get` print the clean value and
+// the notice (what was removed, how to clean the file) on stderr; --json
+// carries cleaned and the notice. No control character is printed.
+func TestConfigSaysWhenAStoredValueWasCleaned(t *testing.T) {
 	cleanHome(t)
 	path := settings.SettingsPath(paths.GetBackupRoot())
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -73,9 +73,9 @@ func TestConfigSaysWhenAStoredValueIsIgnored(t *testing.T) {
 	}
 	for _, args := range [][]string{{"list"}, {"get", "autoswitch.model"}} {
 		code, out, errStr := runConfig(t, args...)
-		if code != 0 || !strings.Contains(out, "(ignored)") || strings.Contains(out+errStr, "Fable") ||
-			!strings.Contains(errStr, "autoswitch.model: the stored value") ||
-			!strings.Contains(errStr, "tycswap config unset autoswitch.model") {
+		if code != 0 || !strings.Contains(out, "Fable[2J") || strings.ContainsRune(out+errStr, 0x1b) ||
+			strings.Count(errStr, "autoswitch.model: the stored value held terminal control characters") != 1 ||
+			!strings.Contains(errStr, "tycswap config set autoswitch.model") {
 			t.Errorf("config %v: exit %d, stdout %q, stderr %q", args, code, out, errStr)
 		}
 	}
@@ -84,7 +84,7 @@ func TestConfigSaysWhenAStoredValueIsIgnored(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); code != 0 || err != nil {
 		t.Fatalf("--json get: exit %d, %v, stdout %q, stderr %q", code, err, out, errStr)
 	}
-	if notice, _ := got["notice"].(string); got["ignored"] != true || got["value"] != nil || !strings.Contains(notice, "control character") {
+	if notice, _ := got["notice"].(string); got["cleaned"] != true || got["value"] != "Fable[2J" || !strings.Contains(notice, "removed") {
 		t.Errorf("--json get = %v", got)
 	}
 	code, out, _ = runConfig(t, "--json", "list")
@@ -95,8 +95,8 @@ func TestConfigSaysWhenAStoredValueIsIgnored(t *testing.T) {
 		t.Fatalf("--json list: exit %d, %v", code, err)
 	}
 	for _, item := range list.Settings {
-		ignored := item["key"] == "autoswitch.model"
-		if notice, _ := item["notice"].(string); (item["ignored"] == true) != ignored || (notice != "") != ignored {
+		cleaned := item["key"] == "autoswitch.model"
+		if notice, _ := item["notice"].(string); (item["cleaned"] == true) != cleaned || (notice != "") != cleaned {
 			t.Errorf("--json list item %v", item)
 		}
 	}

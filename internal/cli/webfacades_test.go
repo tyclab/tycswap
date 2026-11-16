@@ -64,9 +64,9 @@ func fixtureSwitcher(t *testing.T) *core.Switcher {
 	return sw
 }
 
-// An ignored stored value reaches the dashboard as a notice on its row, and
-// only on its row.
-func TestSettingsFacadeCarriesTheIgnoredNotice(t *testing.T) {
+// A stored value read without its control characters reaches the dashboard
+// clean, with the notice on its row and only there.
+func TestSettingsFacadeCarriesTheCleanedNotice(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(settings.SettingsPath(root), []byte(`{"autoswitch":{"model":"Fable\u001b[2J"}}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -78,8 +78,8 @@ func TestSettingsFacadeCarriesTheIgnoredNotice(t *testing.T) {
 			}
 			continue
 		}
-		if v.Value != nil || !strings.Contains(v.Notice, "control character") ||
-			!strings.Contains(v.Notice, "tycswap config unset autoswitch.model") || strings.Contains(v.Notice, "Fable") {
+		if v.Value != "Fable[2J" || !strings.Contains(v.Notice, "control characters") ||
+			!strings.Contains(v.Notice, "tycswap config set autoswitch.model") || strings.Contains(v.Notice, "Fable") {
 			t.Errorf("model view = %+v", v)
 		}
 	}
