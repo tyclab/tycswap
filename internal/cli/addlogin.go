@@ -20,11 +20,12 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/launch"
 	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
-	"github.com/tyclab/tycswap/internal/session"
 )
 
 // claudeLookPath resolves the claude binary the way `tycswap run` does
@@ -144,12 +145,11 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 	}()
 
 	args := append([]string{"auth", "login", "--claudeai"}, a.tail...)
-	if err := session.CheckCmdShimArgs(binary, args); err != nil {
-		return renderDomainError(err, false, s.out, s.err)
+	if err := launch.CheckCmdShimArgs(binary, args); err != nil {
+		return renderDomainError(cerr.Validation("%s", err.Error()), false, s.out, s.err)
 	}
-	// The auth override variables (ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN,
-	// …) make claude skip the account login; they are scrubbed as run/env do.
-	login, err := startClaudeLogin(binary, args, loginEnv(session.ScrubAuthOverrides(os.Environ()), scratch), s)
+	// Auth override variables (ANTHROPIC_API_KEY, …) make claude skip the account login.
+	login, err := startClaudeLogin(binary, args, loginEnv(launch.ScrubAuthOverrides(os.Environ()), scratch), s)
 	if err != nil {
 		return renderDomainError(lifecycle.ErrLoginIncomplete(), false, s.out, s.err)
 	}

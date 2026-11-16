@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/launch"
 	"github.com/tyclab/tycswap/internal/platform"
 )
 
@@ -25,25 +26,6 @@ func newManager(t *testing.T, accts *fakeAccounts, opts Options) (*Manager, *byt
 	return NewManager(accts, opts), buf
 }
 
-func TestAuthOverrideEnvVarsExactList(t *testing.T) {
-	want := []string{
-		"ANTHROPIC_API_KEY",
-		"ANTHROPIC_AUTH_TOKEN",
-		"CLAUDE_CODE_OAUTH_TOKEN",
-		"CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
-		"CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR",
-		"CLAUDE_SECURESTORAGE_CONFIG_DIR",
-	}
-	if len(AuthOverrideEnvVars) != len(want) {
-		t.Fatalf("AuthOverrideEnvVars = %v, want %v", AuthOverrideEnvVars, want)
-	}
-	for i, v := range want {
-		if AuthOverrideEnvVars[i] != v {
-			t.Errorf("AuthOverrideEnvVars[%d] = %q, want %q", i, AuthOverrideEnvVars[i], v)
-		}
-	}
-}
-
 func TestScrubEnvAndSetEnvVar(t *testing.T) {
 	in := []string{
 		"PATH=/usr/bin",
@@ -51,7 +33,7 @@ func TestScrubEnvAndSetEnvVar(t *testing.T) {
 		"FOO=bar",
 		"CLAUDE_CODE_OAUTH_TOKEN=tok",
 	}
-	got := scrubEnv(in, AuthOverrideEnvVars)
+	got := scrubEnv(in, launch.AuthOverrideEnvVars)
 	if envValue(got, "ANTHROPIC_API_KEY") != "" {
 		t.Error("ANTHROPIC_API_KEY not scrubbed")
 	}
@@ -210,16 +192,16 @@ func TestRunScrubsAuthOverrideFromSessionEnv(t *testing.T) {
 	if err := m.Run("2", nil, false, false); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	launch := runner.execCalls[0].env
-	for _, v := range AuthOverrideEnvVars {
-		if envValue(launch, v) != "" {
+	got := runner.execCalls[0].env
+	for _, v := range launch.AuthOverrideEnvVars {
+		if envValue(got, v) != "" {
 			t.Errorf("%s not scrubbed from session env", v)
 		}
 	}
-	if envValue(launch, "UNRELATED") != "keepme" {
+	if envValue(got, "UNRELATED") != "keepme" {
 		t.Error("unrelated var dropped from session env")
 	}
-	if envValue(launch, "CLAUDE_CONFIG_DIR") != sessionDir {
+	if envValue(got, "CLAUDE_CONFIG_DIR") != sessionDir {
 		t.Error("session env missing CLAUDE_CONFIG_DIR")
 	}
 	if !strings.Contains(buf.String(), "Ignoring") || !strings.Contains(buf.String(), "ANTHROPIC_API_KEY") {

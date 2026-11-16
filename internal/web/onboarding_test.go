@@ -56,7 +56,7 @@ func TestDetectAuthOverrides(t *testing.T) {
 	}
 	// The variables, in their order; empty ones select nothing. A
 	// setup-token in CLAUDE_CODE_OAUTH_TOKEN bypasses the stored login too
-	// (session.AuthOverrideEnvVars).
+	// (launch.AuthOverrideEnvVars).
 	v = DetectAuthOverrides(getenv(map[string]string{"ANTHROPIC_BASE_URL": "https://proxy.example", "ANTHROPIC_API_KEY": "  ", "ANTHROPIC_AUTH_TOKEN": "t", "CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-x"}), path)
 	if !reflect.DeepEqual(v.Env, []string{"ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_BASE_URL"}) || len(v.Settings) != 0 {
 		t.Errorf("env = %+v", v)

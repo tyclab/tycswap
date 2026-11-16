@@ -8,9 +8,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/launch"
 	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/printer"
-	"github.com/tyclab/tycswap/internal/session"
 )
 
 // loginPollInterval is how often a running login is checked for a complete
@@ -35,7 +35,7 @@ type loginProcess struct {
 // never chose — with env as its whole environment and the terminal inherited,
 // so the user can finish the browser flow.
 var startClaudeLogin = func(binary string, args, env []string, s ioStreams) (*loginProcess, error) {
-	cmd := session.CLICommand(context.Background(), binary, args...)
+	cmd := launch.CLICommand(context.Background(), binary, args...)
 	cmd.Env = env
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.in, s.out, s.err
 	if err := cmd.Start(); err != nil {

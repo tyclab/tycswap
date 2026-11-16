@@ -12,16 +12,16 @@ import (
 
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/launch"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
-	"github.com/tyclab/tycswap/internal/session"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
 func startTestLaunch(t *testing.T) *int {
 	t.Helper()
 	cleanHome(t)
-	for _, key := range append([]string{"CLAUDE_CONFIG_DIR"}, session.AuthOverrideEnvVars...) {
+	for _, key := range append([]string{"CLAUDE_CONFIG_DIR"}, launch.AuthOverrideEnvVars...) {
 		value, exists := os.LookupEnv(key)
 		if err := os.Unsetenv(key); err != nil {
 			t.Fatal(err)
@@ -69,7 +69,7 @@ func TestStartPassesArgvAndEnvThroughFrontController(t *testing.T) {
 }
 
 func TestStartOverridesDoNotOpenStore(t *testing.T) {
-	keys := append([]string{"CLAUDE_CONFIG_DIR"}, session.AuthOverrideEnvVars...)
+	keys := append([]string{"CLAUDE_CONFIG_DIR"}, launch.AuthOverrideEnvVars...)
 	keys = append(keys, "--bare")
 	for _, key := range keys {
 		t.Run(key, func(t *testing.T) {

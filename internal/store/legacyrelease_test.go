@@ -10,7 +10,6 @@ import (
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/platform"
-	"github.com/tyclab/tycswap/internal/sessprofile"
 )
 
 func releaseFixture(t *testing.T) (*Store, string, *LegacyRelease) {
@@ -39,7 +38,7 @@ func TestLegacyReleaseRecoversAfterSourceCleared(t *testing.T) {
 	if err := groups.WriteJSON(legacyReleasePath(dir), marker); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(filepath.Join(dir, sessprofile.CredentialsFileName)); err != nil {
+	if err := os.Remove(filepath.Join(dir, ccfile.CredentialsFileName)); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Lock.With(func() error {
@@ -87,7 +86,7 @@ func TestLegacyReleaseMissingCredentialNeedsMatchingSavedProof(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := os.Remove(filepath.Join(dir, sessprofile.CredentialsFileName)); err != nil {
+			if err := os.Remove(filepath.Join(dir, ccfile.CredentialsFileName)); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := s.LegacyReleaseCandidate("1"); err == nil {
@@ -104,7 +103,7 @@ func TestLegacyReleaseMissingCredentialNeedsMatchingSavedProof(t *testing.T) {
 func TestLegacyReleaseKeepsSeatCredentials(t *testing.T) {
 	s, dir, _ := releaseFixture(t)
 	value := `{"claudeAiOauth":{"accessToken":"old-access","refreshToken":"old-refresh"},"mcpOAuth":{"test-server":{"accessToken":"seat-token"}}}`
-	if err := os.WriteFile(filepath.Join(dir, sessprofile.CredentialsFileName), []byte(value), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ccfile.CredentialsFileName), []byte(value), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Lock.With(func() error {
@@ -133,7 +132,7 @@ func (retainedReleaseKeychain) Delete(string, string) error { return nil }
 func TestLegacyReleaseKeepsClaimWhenKeychainRetainsCredential(t *testing.T) {
 	s, dir, candidate := releaseFixture(t)
 	kc := keychain.NewFake()
-	kc.Seed(sessprofile.KeychainServiceName(dir), keychain.AccountName(), candidate.Credentials)
+	kc.Seed(ccfile.KeychainServiceName(dir), keychain.AccountName(), candidate.Credentials)
 	s.Platform = platform.MacOS
 	s.kc = retainedReleaseKeychain{kc}
 	if err := s.Lock.With(func() error {
@@ -170,7 +169,7 @@ func TestLegacyReleaseRefusesInvalidSourceOrStoredConfig(t *testing.T) {
 			s, dir, _ := releaseFixture(t)
 			switch mismatch {
 			case "credential":
-				if err := os.WriteFile(filepath.Join(dir, sessprofile.CredentialsFileName), []byte("not an OAuth login"), 0o600); err != nil {
+				if err := os.WriteFile(filepath.Join(dir, ccfile.CredentialsFileName), []byte("not an OAuth login"), 0o600); err != nil {
 					t.Fatal(err)
 				}
 			case "config":
@@ -187,7 +186,7 @@ func TestLegacyReleaseRefusesInvalidSourceOrStoredConfig(t *testing.T) {
 			if err != nil || registry.Claims["1"].Scope != "legacy:1" {
 				t.Fatal("refused handoff lost its claim")
 			}
-			if _, err := os.Stat(filepath.Join(dir, sessprofile.CredentialsFileName)); err != nil {
+			if _, err := os.Stat(filepath.Join(dir, ccfile.CredentialsFileName)); err != nil {
 				t.Fatal("refused handoff lost its credentials")
 			}
 		})

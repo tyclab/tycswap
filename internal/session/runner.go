@@ -10,6 +10,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/cclock"
 	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/launch"
 )
 
 // Without it cmd.Run reads captured pipes to EOF and can outlive the timeout while an orphaned grandchild holds one.
@@ -36,7 +37,7 @@ func (osRunner) Probe(argv, env []string, timeout time.Duration) (string, int, e
 func (osRunner) ProbeInDir(argv, env []string, timeout time.Duration, cwd string) (string, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	cmd := CLICommand(ctx, argv[0], argv[1:]...)
+	cmd := launch.CLICommand(ctx, argv[0], argv[1:]...)
 	cmd.Env = env
 	cmd.Dir = cwd
 	cmd.WaitDelay = probeWaitDelay

@@ -78,7 +78,7 @@ func (s *Store) credentialOwners(number string) ([]groups.Owner, error) {
 					return nil, err
 				}
 				owner.PIDs = pids
-				email, org, ok := sessprofile.ReadSessionIdentity(owner.ProfileDir)
+				email, org, ok := ccfile.ReadProfileIdentity(owner.ProfileDir)
 				_, credsOK, err := s.ReadProfileCredentials(owner.ProfileDir)
 				if err != nil {
 					return nil, err
@@ -109,7 +109,7 @@ func (s *Store) credentialOwners(number string) ([]groups.Owner, error) {
 		if err != nil {
 			return nil, err
 		}
-		email, org, ok := sessprofile.ReadSessionIdentity(dir)
+		email, org, ok := ccfile.ReadProfileIdentity(dir)
 		if active != nil && (active.Number == number || active.SameIdentity(account)) {
 			owner := groups.Owner{Scope: string(id), ProfileDir: dir, Account: *active, Uncertain: !ok || profileCreds == "" || email != active.Email || org != active.OrgUUID}
 			if _, present := registry.Claims[active.Number]; !present {
@@ -161,7 +161,7 @@ func (s *Store) credentialOwners(number string) ([]groups.Owner, error) {
 		if err != nil {
 			return nil, err
 		}
-		email, org, ok := sessprofile.ReadSessionIdentity(dir)
+		email, org, ok := ccfile.ReadProfileIdentity(dir)
 		profileCreds, readable, err := s.ReadProfileCredentials(dir)
 		if err != nil {
 			return nil, err
@@ -300,7 +300,7 @@ func (s *Store) ReadOwnedCredentialsLocked(number, email string) (string, error)
 	if !ok {
 		return "", fmt.Errorf("Account-%s's owning profile credential is unreadable", number)
 	}
-	profileEmail, profileOrg, identityOK := sessprofile.ReadSessionIdentity(owner.ProfileDir)
+	profileEmail, profileOrg, identityOK := ccfile.ReadProfileIdentity(owner.ProfileDir)
 	if !identityOK || profileEmail != owner.Account.Email || profileOrg != owner.Account.OrgUUID {
 		return "", fmt.Errorf("owning profile identity changed while reading Account-%s", number)
 	}

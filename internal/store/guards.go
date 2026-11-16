@@ -73,7 +73,7 @@ func (s *Store) destructiveOwner(number, email string) (groups.Owner, error) {
 		if err != nil {
 			return groups.Owner{}, err
 		}
-		profileEmail, org, ok := sessprofile.ReadSessionIdentity(owner.ProfileDir)
+		profileEmail, org, ok := ccfile.ReadProfileIdentity(owner.ProfileDir)
 		owner.Uncertain = owner.Uncertain || !ok || profileEmail != owner.Account.Email || org != owner.Account.OrgUUID
 	}
 	for _, id := range groups.All() {
@@ -97,7 +97,7 @@ func (s *Store) destructiveOwner(number, email string) (groups.Owner, error) {
 			return groups.Owner{}, err
 		}
 		if ok && value != "" && !ccfile.SeatWideOnly(value) {
-			profileEmail, _, identityOK := sessprofile.ReadSessionIdentity(dir)
+			profileEmail, _, identityOK := ccfile.ReadProfileIdentity(dir)
 			if !identityOK || profileEmail == email {
 				return groups.Owner{Scope: string(id), ProfileDir: dir, Uncertain: true}, nil
 			}

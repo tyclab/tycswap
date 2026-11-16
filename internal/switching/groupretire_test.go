@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/oauth"
-	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
@@ -137,7 +137,7 @@ func TestRetireReturnsNewestCredentialToPool(t *testing.T) {
 	if oauth.ExtractAccessToken(live) != "" || mcpTokenOf(t, live, "srv") != "mcp" {
 		t.Fatalf("profile kept its login or lost its MCP sign-in: %s", live)
 	}
-	if _, _, ok := sessprofile.ReadSessionIdentity(opus.ProfileDir()); ok {
+	if _, _, ok := ccfile.ReadProfileIdentity(opus.ProfileDir()); ok {
 		t.Fatal("profile still names the released account")
 	}
 	if owner, err := s.CredentialOwner("1"); err != nil || owner.Scope != "" {

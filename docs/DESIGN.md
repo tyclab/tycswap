@@ -7205,7 +7205,7 @@ name, plan or policy result. The feature does not grant model access or change
 managed settings. It creates no profile, claim, child-read handshake or hold.
 
 Preserve the incoming argv and environment before initialization. A set
-`CLAUDE_CONFIG_DIR`, child `--bare`, or any `session.AuthOverrideEnvVars` variable
+`CLAUDE_CONFIG_DIR`, child `--bare`, or any `launch.AuthOverrideEnvVars` variable
 skips launch selection without changing the inherited environment. Management
 forms still work independently. No-mark and current-mark paths are silent and
 perform no network or mutation. `store.Options.SkipMigrations` lets launch

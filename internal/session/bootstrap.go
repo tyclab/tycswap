@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/oauth"
@@ -174,7 +175,7 @@ func (m *Manager) bootstrap(sessionDir, accountNum, email, orgUUID string) error
 	}
 	chmodPosix(sessionDir, 0o700)
 
-	credsPath := filepath.Join(sessionDir, sessprofile.CredentialsFileName)
+	credsPath := filepath.Join(sessionDir, ccfile.CredentialsFileName)
 	if err := os.WriteFile(credsPath, []byte(creds), 0o600); err != nil {
 		return err
 	}

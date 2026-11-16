@@ -13,24 +13,12 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/launch"
 	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/printer"
 )
-
-// These make claude bypass account OAuth (verified against claude 2.1.175); scrubbed from launch and probe env, not the fast path.
-var AuthOverrideEnvVars = []string{
-	"ANTHROPIC_API_KEY",
-	"ANTHROPIC_AUTH_TOKEN",
-	"CLAUDE_CODE_OAUTH_TOKEN",
-	"CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
-	"CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR",
-	// Not an auth override, but Claude Code keeps its credentials under this
-	// dir instead of the session profile's, and in the default ~/.claude
-	// storage when it is set but empty: the live login's (DESIGN A56).
-	"CLAUDE_SECURESTORAGE_CONFIG_DIR",
-}
 
 // authStatusTimeout bounds the `claude auth status --json` probe (a local check
 // that still spawns the full CLI).
@@ -239,7 +227,7 @@ func (m *Manager) Run(identifier string, claudeArgs []string, share, shareHistor
 		return err
 	}
 
-	env := setEnvVar(scrubEnv(m.environ(), AuthOverrideEnvVars), "CLAUDE_CONFIG_DIR", sessionDir)
+	env := setEnvVar(scrubEnv(m.environ(), launch.AuthOverrideEnvVars), "CLAUDE_CONFIG_DIR", sessionDir)
 	return m.exec(claudeBin, claudeArgs, env)
 }
 
@@ -299,7 +287,7 @@ func (m *Manager) scrubbedPresent() []string {
 		set[envKey(e)] = true
 	}
 	var out []string
-	for _, v := range AuthOverrideEnvVars {
+	for _, v := range launch.AuthOverrideEnvVars {
 		if set[v] { // set at all: an empty value still counts (see the list)
 			out = append(out, v)
 		}
@@ -310,7 +298,7 @@ func (m *Manager) scrubbedPresent() []string {
 // probeEnv builds the auth-status probe env: the session config dir, with the
 // auth-override vars dropped.
 func (m *Manager) probeEnv(sessionDir string) []string {
-	return setEnvVar(scrubEnv(m.environ(), AuthOverrideEnvVars), "CLAUDE_CONFIG_DIR", sessionDir)
+	return setEnvVar(scrubEnv(m.environ(), launch.AuthOverrideEnvVars), "CLAUDE_CONFIG_DIR", sessionDir)
 }
 
 // -- output helpers (session.py print(dimmed(...)) / warning(...) → stdout) --
@@ -339,10 +327,6 @@ func envKey(entry string) string {
 	}
 	return entry
 }
-
-// ScrubAuthOverrides returns environ without the AuthOverrideEnvVars, the
-// scrub run and env apply, for other commands that start claude.
-func ScrubAuthOverrides(environ []string) []string { return scrubEnv(environ, AuthOverrideEnvVars) }
 
 // scrubEnv returns a fresh slice with every entry whose key is in drop removed.
 func scrubEnv(environ, drop []string) []string {

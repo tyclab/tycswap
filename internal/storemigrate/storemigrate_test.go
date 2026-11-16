@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/codex/authfile"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/platform"
@@ -259,7 +260,7 @@ func TestKeychainItemsCopiedNeverDeleted(t *testing.T) {
 	}
 	mustSet(keychain.OldBackupService, "account-1-a@example.com", "blob")
 	mustSet(keychain.OldBackupService, "account-1-a@example.com.prev", "older")
-	oldSess := sessprofile.KeychainServiceName(filepath.Join(old, "sessions", "1-a_example.com"))
+	oldSess := ccfile.KeychainServiceName(filepath.Join(old, "sessions", "1-a_example.com"))
 	mustSet(oldSess, keychain.AccountName(), "sess")
 	mac := platform.MacOS
 
@@ -278,7 +279,7 @@ func TestKeychainItemsCopiedNeverDeleted(t *testing.T) {
 	if len(rep.Keychain) != 3 {
 		t.Errorf("copied %d Keychain items, want 3: %+v", len(rep.Keychain), rep.Keychain)
 	}
-	newSess := sessprofile.KeychainServiceName(filepath.Join(newRoot, "sessions", "1-a_example.com"))
+	newSess := ccfile.KeychainServiceName(filepath.Join(newRoot, "sessions", "1-a_example.com"))
 	for _, c := range []struct{ svc, acct, want string }{
 		{keychain.BackupService, "account-1-a@example.com", "blob"},
 		{keychain.BackupService, "account-1-a@example.com.prev", "older"},
@@ -421,7 +422,7 @@ func TestKeychainItemsTooLargeGoToTheFile(t *testing.T) {
 	kc.Seed(keychain.OldBackupService, "account-1-a@example.com.prev", big+"p")
 	kc.Seed(keychain.OldBackupService, "account-None-a@example.com", "small")
 	kc.Seed(keychain.OldCodexService, authfile.FileKey("k1"), big+"c")
-	oldSess := sessprofile.KeychainServiceName(filepath.Join(old, "sessions", "1-a_example.com"))
+	oldSess := ccfile.KeychainServiceName(filepath.Join(old, "sessions", "1-a_example.com"))
 	kc.Seed(oldSess, keychain.AccountName(), big+"s")
 	mac := platform.MacOS
 
