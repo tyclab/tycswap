@@ -79,6 +79,18 @@ func TestSettingSet_ValueTypes(t *testing.T) {
 	}
 }
 
+// The running engine is retargeted with the value Set stored, not the raw
+// request: a list sent over two lines is stored on one, and the engine (its
+// state document, the tray label) gets that line.
+func TestSettingModel_RetargetsWithTheStoredValue(t *testing.T) {
+	h := newHarness(t)
+	h.set.written = "Fable, Opus"
+	resp := h.postJSON("/api/settings/autoswitch.model", map[string]any{"value": "Fable,\nOpus"})
+	if calls := h.auto.Calls(); resp.StatusCode != http.StatusOK || len(calls) != 1 || calls[0] != `ApplyModels("Fable, Opus")` {
+		t.Fatalf("status %d, engine calls %v, want the stored line", resp.StatusCode, calls)
+	}
+}
+
 // Saving autoswitch.model, or unsetting it, also retargets a running engine,
 // so the settings grid and the Count model limits toggle behave the same
 // while the engine runs; another key never reaches the engine, and a stopped

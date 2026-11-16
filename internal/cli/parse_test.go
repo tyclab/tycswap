@@ -97,6 +97,17 @@ func TestStrategyInvalidChoice(t *testing.T) {
 	}
 }
 
+// --switch --model refuses a control character the way auto --model does: it
+// would be printed in "Using configured model limits" and the typo warning.
+func TestSwitchModelWithControlCharacterIsAnArgError(t *testing.T) {
+	cleanHome(t)
+	code, out, errStr := runCLI(t, []string{"--switch", "--strategy", "best", "--model", "Fable\x1b[2J"}, false, false)
+	if code != 2 || !strings.Contains(errStr, "argument --model: must not contain a control character") ||
+		strings.ContainsRune(out+errStr, 0x1b) {
+		t.Errorf("exit %d, stdout %q, stderr %q", code, out, errStr)
+	}
+}
+
 // TestSlotInvalidInt: a non-integer --slot is an exit-2 error.
 func TestSlotInvalidInt(t *testing.T) {
 	cleanHome(t)

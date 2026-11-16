@@ -135,7 +135,8 @@ func (a *addTokenModal) update(m *Model, msg tea.Msg) tea.Cmd {
 		// Text is what the key types: letters, the space bar, AltGr characters;
 		// a ctrl or ESC-prefixed alt chord has none. Pasted text outside a
 		// bracketed paste arrives here too, and the decoder copies a CSI-u text
-		// parameter into Text unchecked, so it is stripped like a paste.
+		// parameter, a CSI 27;mod;code~ code or a C1 character into Text
+		// unchecked, so it is stripped like a paste.
 		if key.Text != "" {
 			a.editFocused(func(s string) string { return s + termsafe.Strip(key.Text) })
 		}

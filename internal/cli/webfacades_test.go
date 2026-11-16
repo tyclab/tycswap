@@ -64,6 +64,27 @@ func fixtureSwitcher(t *testing.T) *core.Switcher {
 	return sw
 }
 
+// A stored value read without its control characters reaches the dashboard
+// clean, with the notice on its row and only there.
+func TestSettingsFacadeCarriesTheCleanedNotice(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(settings.SettingsPath(root), []byte(`{"autoswitch":{"model":"Fable\u001b[2J"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range (settingsFacade{root: root}).Effective() {
+		if v.Key != "autoswitch.model" {
+			if v.Notice != "" {
+				t.Errorf("%s: notice %q", v.Key, v.Notice)
+			}
+			continue
+		}
+		if v.Value != "Fable[2J" || !strings.Contains(v.Notice, "control characters") ||
+			!strings.Contains(v.Notice, "tycswap config set autoswitch.model") || strings.Contains(v.Notice, "Fable") {
+			t.Errorf("model view = %+v", v)
+		}
+	}
+}
+
 // TestSettingsFacade: every spec is listed with kind/default/bounds, Set and
 // Unset round-trip through settings.json, and a bad key or value is a
 // validation error (400 on the API), not a config failure (500).
