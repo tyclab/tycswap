@@ -7330,7 +7330,8 @@ never enables the account or switches to it):
    retires; otherwise it goes to `.creds-<n>-<email>.enc.recovered` beside
    the slot backup (0600, the backup's format, so moving it over the slot's
    `.enc` restores it), the warning names that file, and the spent profile
-   login is held, never refreshed again.
+   login is held, never refreshed again. The slot's next stored login
+   removes that file.
 6. RECLAIM-4: a release refused by verification is stored in
    `claims.json` (`held`, reason and the login's digest), and rotation
    eligibility returns that reason until the login changes, so the dashboard,
@@ -7340,9 +7341,14 @@ never enables the account or switches to it):
    transport (`transient`: no answer, a timeout, a 5xx, a 429) is no refusal:
    it is held with `retryAt` and `failures` and tried again once the usage
    store's failure backoff (04§2.6, 30 s doubling to 600 s) has passed. The
-   profile endpoint answers nothing for a login it cannot name and for a
-   network failure alike, so a refused verification cannot tell the two
-   apart and holds until the login changes or a new sign-in drops it.
+   profile endpoint's silence is told apart the same way, through the
+   optional `oauth.ProfileProber` the HTTP client implements beside the
+   unchanged `oauth.Client`: an identity naming another account, a 401 or
+   a 403 is a refusal, held until the login changes or a new sign-in drops
+   it; a transport error, a timeout, a 429, a 5xx or a malformed reply is a
+   failed request, held for the same backoff and asked again (before, one
+   outage kept a good login out of rotation until the operator signed in
+   again). A client that cannot tell counts its nil as a failed request.
    `Account-<n> profile retirement held` and `session release held` are
    warned once per login and reason, later rounds at debug; on the live
    account, whose drop asks no one, the hold (`live`) does only that.

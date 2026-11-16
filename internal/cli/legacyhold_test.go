@@ -1,9 +1,13 @@
 package cli
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -112,5 +116,64 @@ func TestTransientRefreshPausesThenRetries(t *testing.T) {
 	}
 	if n := heldWarnings(t, sw, "2"); n != 1 {
 		t.Fatalf("held warnings = %d, want 1", n)
+	}
+}
+
+// profileEndpoint serves the profile endpoint with the status it is set to,
+// naming Account-2 on 200, and counts its requests.
+type profileEndpoint struct{ status, hits atomic.Int32 }
+
+func useProfileEndpoint(t *testing.T, sw *core.Switcher, status int) *profileEndpoint {
+	t.Helper()
+	p := &profileEndpoint{}
+	p.status.Store(int32(status))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		p.hits.Add(1)
+		if code := int(p.status.Load()); code != http.StatusOK {
+			w.WriteHeader(code)
+			return
+		}
+		io.WriteString(w, `{"account":{"uuid":"u-2","email":"`+retireEmails["2"]+`"},"organization":{"uuid":""}}`)
+	}))
+	t.Cleanup(srv.Close)
+	sw.OAuth = &oauth.HTTPClient{TokenURL: srv.URL, ProfileURL: srv.URL, UsageURL: srv.URL}
+	return p
+}
+
+// An outage of the profile endpoint is no refusal: the login is asked about
+// again after the pause and released once the endpoint names it.
+func TestProfileOutageRetriedAfterPause(t *testing.T) {
+	sw := retireStore(t, &oauth.FakeClient{})
+	endpoint := useProfileEndpoint(t, sw, http.StatusServiceUnavailable)
+	login := retireCredsAt("at-2-new", "rt-2-new", "4102444900000")
+	legacyProfile(t, sw, "2", login, true, false)
+	scheduledTick(t)
+	if endpoint.hits.Load() != 1 || !claimed(t, sw, "2") {
+		t.Fatalf("outage round: %d requests, claimed %v", endpoint.hits.Load(), claimed(t, sw, "2"))
+	}
+	endpoint.status.Store(http.StatusOK)
+	fakeClock(sw).Advance(10 * time.Second)
+	scheduledTick(t)
+	if endpoint.hits.Load() != 1 {
+		t.Fatalf("asked again inside the pause: %d requests", endpoint.hits.Load())
+	}
+	fakeClock(sw).Advance(25 * time.Second)
+	scheduledTick(t)
+	if got, _ := sw.ReadAccountCredentials("2", retireEmails["2"]); endpoint.hits.Load() != 2 || got != login || claimed(t, sw, "2") {
+		t.Fatalf("after the pause: %d requests, stored %q, claimed %v; want the login released", endpoint.hits.Load(), got, claimed(t, sw, "2"))
+	}
+}
+
+// A 401 is the endpoint's answer: the login stays held and is not asked
+// about again.
+func TestProfile401StaysHeld(t *testing.T) {
+	sw := retireStore(t, &oauth.FakeClient{})
+	endpoint := useProfileEndpoint(t, sw, http.StatusUnauthorized)
+	legacyProfile(t, sw, "2", retireCredsAt("at-2-new", "rt-2-new", "4102444900000"), true, false)
+	scheduledTick(t)
+	fakeClock(sw).Advance(6 * time.Hour)
+	scheduledTick(t)
+	if endpoint.hits.Load() != 1 || !claimed(t, sw, "2") || !strings.Contains(sw.RotationOwnershipBlockReason("2"), "could not be verified") {
+		t.Fatalf("%d requests, claimed %v, reason %q; want one request and the refusal held", endpoint.hits.Load(), claimed(t, sw, "2"), sw.RotationOwnershipBlockReason("2"))
 	}
 }

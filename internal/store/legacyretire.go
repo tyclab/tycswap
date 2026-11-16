@@ -206,7 +206,7 @@ func (s *Store) keepRefreshedLegacyLogin(owner groups.Owner, spent string, out o
 			return s.dropLegacyLogin(owner, "Released idle session profile for account %s")
 		}
 	}
-	path := filepath.Join(s.CredentialsDir, storenames.CredsFile(number, email)+".recovered")
+	path := filepath.Join(s.CredentialsDir, storenames.CredsRecoveredFile(number, email))
 	reason := cerr.Session("Account-%s's refreshed session login could not be stored (%v); it is kept in %s. Sign in to that account with tycswap add --login --switch, or move that file over the account's stored login.", number, cause, path)
 	if err := atomicfile.Write(path, []byte(base64.StdEncoding.EncodeToString([]byte(login))), atomicfile.Opts{}); err != nil {
 		reason = cerr.Session("Account-%s's refreshed session login could not be stored (%v) nor kept in %s (%v); sign in to that account again with tycswap add --login --switch", number, cause, path, err)

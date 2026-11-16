@@ -137,8 +137,20 @@ func (s *FileKeychainStore) ReadBackup(num, email string) (string, error) {
 	return "", nil
 }
 
-// A slot stores the account part only (DESIGN A59); every slot write passes here.
+// A slot stores the account part only (DESIGN A59); every slot write passes
+// here. A stored login supersedes the slot's recovery file (DESIGN A92).
 func (s *FileKeychainStore) WriteBackup(num, email, creds string) error {
+	if err := s.writeBackup(num, email, creds); err != nil {
+		return err
+	}
+	recovered := filepath.Join(s.credentialsDir, storenames.CredsRecoveredFile(num, email))
+	if err := os.Remove(recovered); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		s.log.Warningf("Could not remove %s: %v", recovered, err)
+	}
+	return nil
+}
+
+func (s *FileKeychainStore) writeBackup(num, email, creds string) error {
 	creds = oauth.AccountOnly(creds)
 	s.retainPreviousBackup(num, email, creds)
 	if s.useKeychain() {

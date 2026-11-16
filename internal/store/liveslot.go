@@ -256,6 +256,28 @@ func (s *Store) ReaskProfile(creds string) *oauth.Identity {
 	return id
 }
 
+// ReaskProfileAnswer is ReaskProfile for a release that holds on a miss: it
+// also reports whether a nil identity is the endpoint's answer, which only
+// an oauth.ProfileProber can tell, and asks again instead of reusing a miss.
+func (s *Store) ReaskProfileAnswer(creds string) (*oauth.Identity, bool) {
+	prober, ok := s.OAuth.(oauth.ProfileProber)
+	fp := oauth.CredentialFingerprint(creds)
+	if !ok || fp == nil || s.Lock != nil && s.Lock.Held() {
+		id := s.ReaskProfile(creds)
+		return id, id != nil
+	}
+	if a := s.lineage.entry(*fp); a.done && a.id != nil {
+		return a.id, true
+	}
+	token := oauth.ExtractAccessToken(creds)
+	if token == "" {
+		return nil, false
+	}
+	id, answered := prober.ProfileAnswer(context.Background(), token)
+	s.lineage.remember(*fp, id, s.Clk.Now())
+	return id, id != nil || answered
+}
+
 // identitySlot is the managed OAuth slot an endpoint identity names, or "".
 // Another slot than the config's needs the roster's uuid to agree, as
 // classifyOutgoing's cross-slot rule does.

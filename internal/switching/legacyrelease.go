@@ -68,8 +68,9 @@ func ReleaseIdleLegacy(s *store.Store, number string) error {
 	}
 	value := candidate.Credentials
 	prov := &Provenance{Live: &value}
+	answered := true
 	if value != "" && !legacySameLineage(value, backup) {
-		prov.Resolved = s.ReaskProfile(value)
+		prov.Resolved, answered = s.ReaskProfileAnswer(value)
 	}
 	var refused error
 	err := withLegacyLocks(s, candidate.Owner.ProfileDir, func() error {
@@ -95,7 +96,11 @@ func ReleaseIdleLegacy(s *store.Store, number string) error {
 			return refused
 		})
 	})
-	if refused != nil {
+	switch {
+	case refused != nil && !answered:
+		// The profile endpoint did not answer: a failed request, not a refusal.
+		return holdLegacyRelease(s, number, value, cerr.Session("Account-%s's session login could not be verified for now (the profile endpoint did not answer); it is tried again after a pause", number), store.HoldTransient)
+	case refused != nil:
 		return holdLegacyRelease(s, number, value, refused, store.HoldRefused)
 	}
 	return err

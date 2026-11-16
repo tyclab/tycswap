@@ -148,6 +148,44 @@ func TestRefreshedLoginKeptWhenProfileWriteFails(t *testing.T) {
 			if !strings.Contains(err.Error(), recovery) {
 				t.Fatalf("the error for the warning does not name the recovery file: %v", err)
 			}
+			if err := s.WriteAccountCredentials("1", "one@example.test", refreshed); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(recovery); !os.IsNotExist(err) {
+				t.Fatalf("the recovery file outlived the slot's next stored login: %v", err)
+			}
 		})
+	}
+}
+
+// The expiry order is taken again under the locks: a slot login that moved
+// past the profile's after the candidate was read stops the refresh.
+func TestRefreshSkipsLoginOlderThanRewrittenBackup(t *testing.T) {
+	s, dir := claimedSession(t)
+	const login = `{"claudeAiOauth":{"accessToken":"p","refreshToken":"p-r","expiresAt":2000}}`
+	if err := os.WriteFile(filepath.Join(dir, ".credentials.json"), []byte(login), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Creds.WriteBackup("1", "one@example.test", `{"claudeAiOauth":{"accessToken":"b","refreshToken":"b-r","expiresAt":1000}}`); err != nil {
+		t.Fatal(err)
+	}
+	account := groups.Account{Number: "1", Email: "one@example.test"}
+	if s.LegacyLoginOrder(account, login) != LegacyLoginNewer {
+		t.Fatal("fixture: the profile login is not the newest at the candidate read")
+	}
+	if err := s.Creds.WriteBackup("1", "one@example.test", `{"claudeAiOauth":{"accessToken":"b2","refreshToken":"b2-r","expiresAt":3000}}`); err != nil {
+		t.Fatal(err)
+	}
+	refreshes := 0
+	fc := &oauth.FakeClient{RefreshFn: func(context.Context, string) oauth.RefreshOutcome {
+		refreshes++
+		return oauth.RefreshOutcome{Error: oauth.ErrTransient}
+	}}
+	err := s.Lock.With(func() error {
+		_, err := s.RefreshLegacyLogin(context.Background(), fc, "1", login)
+		return err
+	})
+	if err == nil || refreshes != 0 {
+		t.Fatalf("refresh error %v, %d refreshes; want none for a login older than the slot's", err, refreshes)
 	}
 }

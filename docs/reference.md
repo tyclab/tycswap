@@ -1343,11 +1343,13 @@ disabled ones included, whose profile no Claude process uses:
   stored login. A refreshed login the profile cannot store is saved into the
   slot when the token response names the account, else kept in
   `.creds-<n>-<email>.enc.recovered` (0600) beside the slot's stored login,
-  which the warning names. A release that cannot verify the login is stored as the
-  account's ownership reason until the login changes, and that login is not
-  asked about again; a refresh that failed in transport (no answer, a
-  timeout, a server error) is tried again after the usage failure backoff,
-  30 seconds doubling to 10 minutes.
+  which the warning names and the slot's next stored login removes. A
+  release that cannot verify the login (a 401 or 403 from the identity
+  check, or an identity naming another account) is stored as the account's
+  ownership reason until the login changes, and that login is not asked
+  about again; a refresh or identity check that failed in transport (no
+  answer, a timeout, a 429, a server error) is tried again after the usage
+  failure backoff, 30 seconds doubling to 10 minutes.
 
 A held profile is logged once per login as
 `Account-<n> profile retirement held: <reason>` (later rounds at debug level)

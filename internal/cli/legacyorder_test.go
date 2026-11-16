@@ -145,3 +145,23 @@ func TestUnorderedProfileLoginHeld(t *testing.T) {
 		})
 	}
 }
+
+// The expiry order is taken again under the locks, before the save: a slot
+// login that moves past the profile's while the profile endpoint is asked
+// is kept, and the profile's is not saved over it.
+func TestBackupRewrittenBeforeSaveIsKept(t *testing.T) {
+	newer := retireCredsAt("at-2-newest", "rt-2-newest", "4102445000000")
+	var sw *core.Switcher
+	oc := &countedOAuth{profile: func(string) *oauth.Identity {
+		if err := sw.Creds.WriteBackup("2", retireEmails["2"], newer); err != nil {
+			t.Error(err)
+		}
+		return accountB("")
+	}}
+	sw = retireStore(t, oc.client())
+	legacyProfile(t, sw, "2", retireCredsAt("at-2-new", "rt-2-new", "4102444900000"), true, false)
+	scheduledTick(t)
+	if got, _ := sw.ReadAccountCredentials("2", retireEmails["2"]); got != newer || oc.refreshes.Load() != 0 {
+		t.Fatalf("stored login %q after %d refreshes; want the newer one kept", got, oc.refreshes.Load())
+	}
+}
