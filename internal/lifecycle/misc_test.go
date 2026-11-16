@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/tyclab/tycswap/internal/mappings"
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
@@ -64,51 +63,6 @@ func TestDeadTokenClearedOnAddTokenRefresh(t *testing.T) {
 	}
 	if s.Usage.Entries(ids)["1"].AuthDeadStrikes != 0 {
 		t.Error("dead-token quarantine not lifted after refresh")
-	}
-}
-
-// TestRemovePrunesMappings: remove drops the departed identity's directory
-// mappings (spec 01§13). Slot migration/swap keep them (verified by the swap
-// tests leaving the identity in place).
-func TestRemovePrunesMappings(t *testing.T) {
-	s := newStore(t)
-	seed(t, s, ip(1), switchable("1", "a@example.com"), switchable("2", "b@example.com"))
-	ms := mappings.New(s.BackupDir())
-	dir := filepath.Join(t.TempDir(), "project")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := ms.Set(dir, "b@example.com", ""); err != nil {
-		t.Fatalf("seed mapping: %v", err)
-	}
-	if err := RemoveAccount(s, "2", true); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, ok := ms.Resolve(dir); ok {
-		t.Error("mapping for removed account was not pruned")
-	}
-}
-
-// TestAddSlotDisplacePrunesMappings: displacing a different account at an
-// explicit slot prunes its mappings (spec 01§13: overwrite prunes).
-func TestAddSlotDisplacePrunesMappings(t *testing.T) {
-	s := newStore(t)
-	seed(t, s, ip(1), acct{num: "1", email: "old@example.com", creds: "x", config: "y"})
-	ms := mappings.New(s.BackupDir())
-	dir := filepath.Join(t.TempDir(), "proj")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := ms.Set(dir, "old@example.com", ""); err != nil {
-		t.Fatal(err)
-	}
-	seedLiveLogin(t, s, "new@example.com", "", "", "uuid-n", oauthBlob)
-	answerYes(t)
-	if err := AddAccount(s, ip(1), false, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, ok := ms.Resolve(dir); ok {
-		t.Error("displaced account's mapping not pruned")
 	}
 }
 

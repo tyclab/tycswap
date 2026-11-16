@@ -26,6 +26,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
@@ -374,6 +375,16 @@ func (s *Server) mutate(w http.ResponseWriter, fn func() (map[string]any, error)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": payload, "stateSequence": seq})
 }
 
+// logAction records a change this request made, naming the dashboard, how
+// the request authenticated and where it came from.
+func (s *Server) logAction(r *http.Request, change string) {
+	auth := "cookie"
+	if s.hasBearer(r) {
+		auth = "bearer"
+	}
+	s.d.ActionLog(change, "dashboard("+auth+","+r.RemoteAddr+")")
+}
+
 func (s *Server) runMutation(fn func() (map[string]any, error)) (map[string]any, uint64, error) {
 	s.mutMu.Lock()
 	payload, err := fn()
@@ -506,7 +517,13 @@ func (s *Server) handleSwitchStrategy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	strategy := b.Strategy
-	s.mutate(w, func() (map[string]any, error) { return s.d.Facade.Switch(&strategy, true, b.Models, nil) })
+	s.mutate(w, func() (map[string]any, error) {
+		res, err := s.d.Facade.Switch(&strategy, true, b.Models, nil)
+		if to, moved := jsonout.SwitchedTo(res); err == nil && moved {
+			s.logAction(r, "Switched to account "+to)
+		}
+		return res, err
+	})
 }
 
 // handleSwitch switches to one account; ?force=1 skips the backup via
@@ -530,7 +547,13 @@ func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request) {
 		if !s.codexOps(w) {
 			return
 		}
-		s.mutate(w, func() (map[string]any, error) { return s.d.Codex.SwitchTo(id) })
+		s.mutate(w, func() (map[string]any, error) {
+			res, err := s.d.Codex.SwitchTo(id)
+			if already, _ := res["alreadyActive"].(bool); err == nil && !already {
+				s.logAction(r, "Switched to Codex account "+id)
+			}
+			return res, err
+		})
 		return
 	}
 	if isTruthy(r.URL.Query().Get("confirmAuthChange")) {
@@ -543,10 +566,24 @@ func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request) {
 		if unavailable(w, s.d.Accounts != nil, "account operations") {
 			return
 		}
-		s.mutate(w, func() (map[string]any, error) { return s.d.Accounts.SwitchToForce(id, true, true) })
+		s.mutate(w, s.loggedSwitch(r, id, func() (map[string]any, error) { return s.d.Accounts.SwitchToForce(id, true, true) }))
 		return
 	}
-	s.mutate(w, func() (map[string]any, error) { return s.d.Facade.SwitchTo(id, true) })
+	s.mutate(w, s.loggedSwitch(r, id, func() (map[string]any, error) { return s.d.Facade.SwitchTo(id, true) }))
+}
+
+// loggedSwitch runs a Claude switch and records it when it moved the login.
+func (s *Server) loggedSwitch(r *http.Request, id string, sw func() (map[string]any, error)) func() (map[string]any, error) {
+	return func() (map[string]any, error) {
+		res, err := sw()
+		if to, moved := jsonout.SwitchedTo(res); err == nil && moved {
+			if to == "" {
+				to = id
+			}
+			s.logAction(r, "Switched to account "+to)
+		}
+		return res, err
+	}
 }
 
 func (s *Server) handleStartLogin(allowed bool) http.HandlerFunc {
@@ -572,15 +609,24 @@ func (s *Server) handleDisable(disabled bool) http.HandlerFunc {
 		if !ok {
 			return
 		}
+		change := "Enabled account " + id
+		if disabled {
+			change = "Disabled account " + id
+		}
+		set := func(id string, disabled bool) error { return s.d.Facade.SetAccountDisabled(id, disabled) }
 		if provider == reporting.ProviderCodex {
 			if !s.codexOps(w) {
 				return
 			}
-			s.mutate(w, func() (map[string]any, error) { return nil, s.d.Codex.SetAccountDisabled(id, disabled) })
-			return
+			change = strings.Replace(change, "account", "Codex account", 1)
+			set = s.d.Codex.SetAccountDisabled
 		}
 		s.mutate(w, func() (map[string]any, error) {
-			return nil, s.d.Facade.SetAccountDisabled(id, disabled)
+			if err := set(id, disabled); err != nil {
+				return nil, err
+			}
+			s.logAction(r, change)
+			return nil, nil
 		})
 	}
 }
@@ -1003,6 +1049,9 @@ func (s *Server) handleAutoStart(w http.ResponseWriter, r *http.Request) {
 		if err := s.d.Auto.Start(b.DryRun); err != nil {
 			return nil, err
 		}
+		if !b.DryRun {
+			s.logAction(r, "Set autoswitch.enabled=true")
+		}
 		return map[string]any{"running": true, "dryRun": b.DryRun}, nil
 	})
 }
@@ -1015,7 +1064,11 @@ func (s *Server) handleAutoSimple(action string) http.HandlerFunc {
 		s.mutate(w, func() (map[string]any, error) {
 			var err error
 			if action == "stop" {
-				err = s.d.Auto.Stop()
+				// Stopping a hosted dry run writes nothing.
+				dry := s.d.Auto.View().DryRun
+				if err = s.d.Auto.Stop(); err == nil && !dry {
+					s.logAction(r, "Set autoswitch.enabled=false")
+				}
 			} else {
 				err = s.d.Auto.Wake()
 			}

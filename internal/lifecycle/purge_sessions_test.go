@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/platform"
-	"github.com/tyclab/tycswap/internal/sessprofile"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
@@ -101,7 +101,7 @@ func TestPurgeRemovesGroupKeychainEntries(t *testing.T) {
 	if err := os.MkdirAll(profile, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	service := sessprofile.KeychainServiceName(profile)
+	service := ccfile.KeychainServiceName(profile)
 	kc.Seed(service, keychain.AccountName(), "test credential")
 	answerYes(t)
 	if err := Purge(s); err != nil {

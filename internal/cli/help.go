@@ -44,12 +44,6 @@ Commands:
   tycswap enable <num|email>         return a disabled account to rotation
   tycswap start [-- command args]    launch once on a usable marked login
   tycswap start --allow|--disallow ID mark or unmark a start login (--list lists)
-  tycswap run <num|email> [-- ...]   run as an account, this terminal only
-  tycswap run                        run the current dir's mapped account
-  tycswap env <num|email>            print an eval-able CLAUDE_CONFIG_DIR export for this shell
-  tycswap map <num|email> [path]     map a directory to an account
-  tycswap map                        list directory mappings
-  tycswap unmap [path]               remove a directory mapping
   tycswap alias <num|email> <name>   set a short alias for an account
   tycswap alias <num|email> --unset  remove an account's alias
   tycswap alias                      list all aliases
@@ -102,8 +96,6 @@ const mainEpilog = `Flags combine with subcommands:
   tycswap add-token --base-url https://gateway.example.com --email gw@example.com
                                           # a gateway's key: a switch to it sets
                                           # ANTHROPIC_BASE_URL in Claude Code's settings
-  tycswap run 2 -- --resume                 # forward args after '--' to claude
-  eval "$(tycswap env 2)"                   # pin THIS shell to account 2 (no claude launch)
   tycswap auto on --if-unset                # turn auto-switch on unless already set
   tycswap auto --once                       # single auto-switch tick (cron-friendly)
   tycswap config set autoswitch.sevenDayThreshold 92

@@ -108,6 +108,12 @@ func oauthCreds(access, refresh string) string {
 	return string(b)
 }
 
+// laterCreds is a login issued after oauthCreds' logins: it expires later,
+// which is how a rotated login shows it is the newer one (DESIGN A92).
+func laterCreds(access, refresh string) string {
+	return strings.Replace(oauthCreds(access, refresh), "4102444800000", "4102444900000", 1)
+}
+
 // backupConfig builds a backup config JSON with the given oauthAccount fields.
 func backupConfig(email, orgUUID string) string {
 	m := map[string]any{

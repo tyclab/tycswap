@@ -32,6 +32,9 @@ for (const strategy of ['best','soonest-reset']) {
 // Disabled model limits neither sort nor block accounts.
 assert.deepEqual(order([account(1,40,100,10),account(2,40,0,60)],''),['1','2']);
 assert.deepEqual(order([account(1,40,100,10),account(2,40,0,60)],'all'),['2','1']);
+// What the engine counts now (auto.counting, DESIGN A91) ranks as the
+// setting would: the Fable window counts though autoswitch.model is unset.
+assert.deepEqual(Array.from(ctx.rankCandidates({accounts:[account(1,40,100,10),account(2,40,0,60)],settings:[{key:'autoswitch.model',value:''},{key:'autoswitch.strategy',value:'best'}],auto:{counting:{models:['Fable']}}}).ranked,x=>x.number),['2','1']);
 // A full weekly window is always below usable accounts. A soon reset leads
 // the blocked group even if the other account has lower model/burst usage.
 const fullSoon=account(3,100,70,70,2);

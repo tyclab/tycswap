@@ -195,6 +195,7 @@ func (m *Model) codexSwitch(t rowTarget) tea.Cmd {
 		if res.AlreadyActive {
 			return fmt.Sprintf("Codex account %s is already active: %s", res.Number, res.Email), "", nil
 		}
+		m.logAction("Switched to Codex account " + res.Number)
 		msg := fmt.Sprintf("Switched to Codex account %s: %s", res.Number, res.Email)
 		return msg, runningPIDsWarning(res.RunningPIDs), nil
 	})
@@ -226,6 +227,7 @@ func (m *Model) codexToggleDisabled(t rowTarget, target bool) tea.Cmd {
 		if err != nil {
 			return "", "", err
 		}
+		m.logAction(fmt.Sprintf("%s Codex account %s", done, resolved))
 		return fmt.Sprintf("%s Codex account %s", done, resolved), "", nil
 	})
 }

@@ -241,7 +241,11 @@ func (d *dashboard) switchTo(key string) ([]int, error) {
 	provider, ref := splitRowKey(key)
 	switch provider {
 	case reporting.ProviderClaude:
+		before := markOf(d.sw)
 		_, err := d.sw.SwitchTo(ref, false)
+		if err == nil {
+			logSwitchSince(d.sw, before, "tray")
+		}
 		return nil, err
 	case reporting.ProviderCodex:
 	default:
@@ -253,6 +257,9 @@ func (d *dashboard) switchTo(key string) ([]int, error) {
 	res, err := d.codex.SwitchTo(ref)
 	if err != nil {
 		return nil, err
+	}
+	if already, _ := res["alreadyActive"].(bool); !already {
+		d.sw.Log.Action("Switched to Codex account "+ref, "tray")
 	}
 	pids, _ := res["runningPids"].([]int)
 	return pids, nil
@@ -334,6 +341,7 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 				fmt.Fprintln(s.err, m)
 			}
 		},
+		ActionLog: sw.Log.Action,
 	})
 	if err != nil {
 		errorTo(s.err, "Error: "+err.Error())

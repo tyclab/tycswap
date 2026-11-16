@@ -1,11 +1,10 @@
-// guards.go — the live-session guards and session-profile lifecycle helpers the
-// store shares with internal/session (via the sessprofile leaf, which breaks the
-// store↔session cycle).
+// guards.go — the live-session guards and the lifecycle helpers for the
+// per-account profiles `tycswap run` left behind (DESIGN A92).
 //
 // Implements spec 01§7 (_ensure_no_live_session, _session_dir,
 // _live_session_pids, _invalidate_session_credentials, _delete_session_profile).
 // Every destructive slot op funnels through EnsureNoLiveSession, which refuses
-// while a session-mode `tycswap run` process is live against that slot.
+// while a Claude process is live in that slot's former session profile.
 package store
 
 import (
@@ -73,7 +72,7 @@ func (s *Store) destructiveOwner(number, email string) (groups.Owner, error) {
 		if err != nil {
 			return groups.Owner{}, err
 		}
-		profileEmail, org, ok := sessprofile.ReadSessionIdentity(owner.ProfileDir)
+		profileEmail, org, ok := ccfile.ReadProfileIdentity(owner.ProfileDir)
 		owner.Uncertain = owner.Uncertain || !ok || profileEmail != owner.Account.Email || org != owner.Account.OrgUUID
 	}
 	for _, id := range groups.All() {
@@ -97,7 +96,7 @@ func (s *Store) destructiveOwner(number, email string) (groups.Owner, error) {
 			return groups.Owner{}, err
 		}
 		if ok && value != "" && !ccfile.SeatWideOnly(value) {
-			profileEmail, _, identityOK := sessprofile.ReadSessionIdentity(dir)
+			profileEmail, _, identityOK := ccfile.ReadProfileIdentity(dir)
 			if !identityOK || profileEmail == email {
 				return groups.Owner{Scope: string(id), ProfileDir: dir, Uncertain: true}, nil
 			}

@@ -15,7 +15,6 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/lifecycle"
-	"github.com/tyclab/tycswap/internal/session"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/testutil"
@@ -23,10 +22,6 @@ import (
 )
 
 // ---- interface-satisfaction compile checks (DESIGN A2/A13) ------------------
-
-// session.Accounts is satisfied directly: plain *store.Store promotion plus
-// the three adapters in session_adapters.go.
-var _ session.Accounts = (*Switcher)(nil)
 
 // autoswitchAdapter demonstrates the fix documented in
 // autoswitch_adapters.go's ReadAccountCredentials note: *Switcher plus a
@@ -263,38 +258,6 @@ func TestAddAccountRefreshInPlaceAndAlias(t *testing.T) {
 	}
 	if rows, err := sw.ListAliases(); err != nil || len(rows) != 0 {
 		t.Fatalf("ListAliases after unset: rows=%v err=%v", rows, err)
-	}
-}
-
-// TestSessionAdapters_ReadAccountConfigPlatformSlotForDirectory exercises the
-// three explicit session.Accounts adapters (session_adapters.go).
-func TestSessionAdapters_ReadAccountConfigPlatformSlotForDirectory(t *testing.T) {
-	sw := newTestSwitcher(t)
-	seedManaged(t, sw, "1", "alice@example.com", oauthCreds("tok-1"))
-	writeSeqDirect(t, sw, ptrInt(1), []int{1}, map[string]json.RawMessage{
-		"1": rawRecord(map[string]any{"email": "alice@example.com", "organizationUuid": ""}),
-	})
-
-	cfg, err := sw.ReadAccountConfig("1", "alice@example.com")
-	if err != nil {
-		t.Fatalf("ReadAccountConfig: %v", err)
-	}
-	if _, ok := cfg["oauthAccount"]; !ok {
-		t.Fatalf("ReadAccountConfig missing oauthAccount: %v", cfg)
-	}
-
-	missing, err := sw.ReadAccountConfig("99", "nope@example.com")
-	if err != nil || len(missing) != 0 {
-		t.Fatalf("ReadAccountConfig(missing) = %v, err=%v, want empty map, nil", missing, err)
-	}
-
-	if sw.Platform() != sw.Store.Platform {
-		t.Fatalf("Platform() = %v, want %v", sw.Platform(), sw.Store.Platform)
-	}
-
-	slot, email, err := sw.SlotForDirectory(sw.Home)
-	if err != nil || slot != nil || email != nil {
-		t.Fatalf("SlotForDirectory(unmapped) = (%v, %v, %v), want (nil, nil, nil)", slot, email, err)
 	}
 }
 

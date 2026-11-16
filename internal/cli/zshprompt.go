@@ -102,3 +102,9 @@ func showMenuCommand(s ioStreams, args []string) {
 	}
 	fmt.Fprintln(s.err, "→ "+strings.Join(words, " "))
 }
+
+// posixQuote wraps s in POSIX single quotes, rendering each embedded single
+// quote as close-quote, escaped quote, reopen-quote.
+func posixQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}

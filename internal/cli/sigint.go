@@ -16,16 +16,8 @@ var sigintJSON atomic.Bool
 
 var sigintNote atomic.Value // string
 
-// sigintCancelToStderr forces the cancel note to stderr for `tycswap env`, whose stdout is an eval stream; separate from JSON mode.
-var sigintCancelToStderr atomic.Bool
-
-// setSigintJSON records JSON mode and clears the stderr override so it never leaks across commands; env re-asserts it after.
-func setSigintJSON(v bool) {
-	sigintJSON.Store(v)
-	sigintCancelToStderr.Store(false)
-}
-
-func setSigintCancelToStderr() { sigintCancelToStderr.Store(true) }
+// setSigintJSON records JSON mode, which sends the cancel note to stderr.
+func setSigintJSON(v bool) { sigintJSON.Store(v) }
 
 func setSigintNote(note string) { sigintNote.Store(note) }
 
@@ -74,7 +66,7 @@ func sigintCleanup() {
 
 func writeSigintNote(s ioStreams) {
 	note := "\n" + printer.Dimmed(currentSigintNote())
-	if sigintJSON.Load() || sigintCancelToStderr.Load() {
+	if sigintJSON.Load() {
 		fmt.Fprintln(s.err, note)
 	} else {
 		fmt.Fprintln(s.out, note)

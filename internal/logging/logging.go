@@ -165,6 +165,14 @@ func (l *Logger) Warning(msg string) { l.emit(LevelWarning, msg) }
 // Error logs at ERROR.
 func (l *Logger) Error(msg string) { l.emit(LevelError, msg) }
 
+// Action logs a manual change and who made it, "<change> by <actor>", at INFO.
+// A nil logger writes nothing.
+func (l *Logger) Action(change, actor string) {
+	if l != nil {
+		l.Info(change + " by " + actor)
+	}
+}
+
 // Infof / Warningf / Debugf / Errorf are printf-style convenience wrappers.
 func (l *Logger) Infof(format string, a ...any)    { l.Info(fmt.Sprintf(format, a...)) }
 func (l *Logger) Warningf(format string, a ...any) { l.Warning(fmt.Sprintf(format, a...)) }

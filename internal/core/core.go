@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/tyclab/tycswap/internal/lifecycle"
+	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/switching"
@@ -21,6 +22,9 @@ func New(opts store.Options) (*Switcher, error) {
 	}
 	return &Switcher{Store: s}, nil
 }
+
+// Platform shadows the store's Platform field for callers that read it through the façade.
+func (sw *Switcher) Platform() platform.Platform { return sw.Store.Platform }
 
 func init() {
 	// Process-wide seams: a process hosts one switcher.

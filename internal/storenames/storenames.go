@@ -52,6 +52,9 @@ func CredsFile(num, email string) string {
 // CredsPrevFile is the retained previous credential generation's base name.
 func CredsPrevFile(num, email string) string { return CredsFile(num, email) + ".prev" }
 
+// CredsRecoveredFile keeps a refreshed login its profile could not store.
+func CredsRecoveredFile(num, email string) string { return CredsFile(num, email) + ".recovered" }
+
 func KeychainAccount(num, email string) string { return "account-" + num + "-" + email }
 
 // KeychainAccountPrev is the account name of the retained previous credential

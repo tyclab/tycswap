@@ -319,13 +319,9 @@ func clearDeadToken(s *store.Store, num, email, org string) {
 	_ = s.Usage.ClearDeadToken([]string{num}, map[string]usage.Identity{num: {Email: email, OrgUUID: org}})
 }
 
-// pruneMappings drops directory mappings for a departed identity and prints the
-// count when non-zero (spec 01§7 _prune_mappings).
-func pruneMappings(s *store.Store, email, org string) {
-	if n, _ := s.PruneMappings(email, org); n > 0 {
-		emitLine(printer.Dimmed(fmt.Sprintf("Removed %d directory mapping(s) for this account", n)))
-	}
-}
+// afterDisplace runs once add-token's displacement of another account is
+// committed, inside the roster lock; tests stand a rival writer in that window.
+var afterDisplace = func() {}
 
 // ---- ordered account records -------------------------------------------------
 //
