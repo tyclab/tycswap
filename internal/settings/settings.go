@@ -158,6 +158,9 @@ type Spec struct {
 	Choices []string // used for the choice kind
 	Default any      // float64 | int | bool | string | nil; matches Default()'s field
 	Help    string
+	// ConfigOnly: settable through `tycswap config` only; the dashboard, its
+	// routes and the TUI's Settings screen leave the key out (DESIGN A93).
+	ConfigOnly bool
 }
 
 // Dotted returns "section.jsonKey", e.g. "autoswitch.sevenDayThreshold".
@@ -213,20 +216,20 @@ var SettingSpecs = []Spec{
 		Lo: 50.0, Hi: 100.0, Default: 97.0,
 		Help: "Switch at this weekly usage percentage"},
 	{Section: "autoswitch", JSONKey: "model", Field: "Model", Kind: KindString,
-		Default: nil,
-		Help:    "Count model limits (e.g. Fable or all); automatic targets must report these windows"},
+		Default: nil, ConfigOnly: true,
+		Help: "Count model limits (e.g. Fable or all); automatic targets must report these windows"},
 	{Section: "autoswitch", JSONKey: "modelThreshold", Field: "ModelThreshold", Kind: KindFloat,
 		Lo: 50.0, Hi: 100.0, Default: 95.0,
-		Help: "Switch at this usage percentage for selected models"},
+		Help: "Switch at this usage percentage of a counted model window, whether autoswitch.model names it or session following picks it"},
 	{Section: "autoswitch", JSONKey: "intervalSeconds", Field: "IntervalSeconds", Kind: KindFloat,
 		Lo: 15.0, Hi: 3600.0, Default: 60.0,
 		Help: "Poll interval for the tycswap auto loop, in seconds"},
 	{Section: "autoswitch", JSONKey: "codexEnabled", Field: "CodexEnabled", Kind: KindBool,
 		Default: true,
-		Help:    "Also auto-switch Codex accounts in the tycswap auto loop"},
+		Help:    "Also auto-switch Codex accounts wherever auto-switch runs (tycswap auto, auto --once, the dashboard)"},
 	{Section: "autoswitch", JSONKey: "codexThreshold", Field: "CodexThreshold", Kind: KindFloat,
 		Lo: 0.0, Hi: 99.9, Default: 0.0,
-		Help: "Codex switch threshold (%); 0 uses the weekly threshold"},
+		Help: "Switch Codex accounts at this usage percentage; 0 = same as the weekly threshold"},
 	{Section: "autoswitch", JSONKey: "cooldownSeconds", Field: "CooldownSeconds", Kind: KindFloat,
 		Lo: 0.0, Hi: 86400.0, Default: 300.0,
 		Help: "Minimum seconds between proactive switches"},
@@ -329,21 +332,6 @@ func Load(root string) AutoSwitchSettings {
 	if _, present := fields["SevenDayThreshold"]; !present {
 		if v, legacy := section[LegacyThresholdKey]; legacy {
 			fields["SevenDayThreshold"] = v
-		}
-	}
-	return clamp(fields)
-}
-
-func LoadOver(root string, base AutoSwitchSettings) AutoSwitchSettings {
-	raw := readRaw(SettingsPath(root))
-	section, ok := raw["autoswitch"].(map[string]any)
-	if !ok {
-		return base
-	}
-	fields := fieldsOf(base)
-	for _, spec := range SettingSpecs {
-		if value, exists := section[spec.JSONKey]; exists {
-			fields[spec.Field] = value
 		}
 	}
 	return clamp(fields)

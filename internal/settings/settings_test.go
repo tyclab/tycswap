@@ -24,15 +24,32 @@ func writeSettingsJSON(t *testing.T, root, content string) {
 
 func strp(s string) *string { return &s }
 
-func TestGroupOverridesInheritUnspecifiedSettings(t *testing.T) {
-	root := t.TempDir()
-	base := Default()
-	base.SevenDayThreshold = 99
-	base.HandoverWaitMinutes = 15
-	writeSettingsJSON(t, root, `{"autoswitch":{"fiveHourThreshold":90}}`)
-	got := LoadOver(root, base)
-	if got.FiveHourThreshold != 90 || got.SevenDayThreshold != 99 || got.HandoverWaitMinutes != 15 {
-		t.Fatalf("group overrides replaced inherited settings: %+v", got)
+// TestOnlyTheModelSettingIsConfigOnly: autoswitch.model is set through
+// tycswap config only (DESIGN A93); every other key stays on every surface.
+func TestOnlyTheModelSettingIsConfigOnly(t *testing.T) {
+	for _, spec := range SettingSpecs {
+		if want := spec.Dotted() == "autoswitch.model"; spec.ConfigOnly != want {
+			t.Errorf("%s: ConfigOnly = %v, want %v", spec.Dotted(), spec.ConfigOnly, want)
+		}
+	}
+}
+
+// TestHelpTextsSayWhereTheyApply: the Codex keys run wherever auto-switch
+// ticks, auto --once included, and the model bar covers every counted model
+// window, the ones session following picks too (DESIGN A93).
+func TestHelpTextsSayWhereTheyApply(t *testing.T) {
+	for key, want := range map[string]string{
+		"autoswitch.codexEnabled":   "Also auto-switch Codex accounts wherever auto-switch runs (tycswap auto, auto --once, the dashboard)",
+		"autoswitch.codexThreshold": "Switch Codex accounts at this usage percentage; 0 = same as the weekly threshold",
+		"autoswitch.modelThreshold": "Switch at this usage percentage of a counted model window, whether autoswitch.model names it or session following picks it",
+	} {
+		spec, err := SpecFor(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if spec.Help != want {
+			t.Errorf("%s help = %q, want %q", key, spec.Help, want)
+		}
 	}
 }
 
@@ -444,19 +461,13 @@ func TestDefault_CodexKnobs(t *testing.T) {
 	if d.CodexThreshold != 0.0 {
 		t.Errorf("Default().CodexThreshold = %v, want 0", d.CodexThreshold)
 	}
-	for _, tc := range []struct {
-		key, help string
-		kind      Kind
-	}{
-		{"autoswitch.codexEnabled", "Also auto-switch Codex accounts in the tycswap auto loop", KindBool},
-		{"autoswitch.codexThreshold", "Codex switch threshold (%); 0 uses the weekly threshold", KindFloat},
-	} {
-		spec, err := SpecFor(tc.key)
+	for key, kind := range map[string]Kind{"autoswitch.codexEnabled": KindBool, "autoswitch.codexThreshold": KindFloat} {
+		spec, err := SpecFor(key)
 		if err != nil {
-			t.Fatalf("SpecFor(%s): %v", tc.key, err)
+			t.Fatalf("SpecFor(%s): %v", key, err)
 		}
-		if spec.Kind != tc.kind || spec.Help != tc.help {
-			t.Errorf("%s: Kind=%q Help=%q, want %q %q", tc.key, spec.Kind, spec.Help, tc.kind, tc.help)
+		if spec.Kind != kind {
+			t.Errorf("%s: Kind=%q, want %q", key, spec.Kind, kind)
 		}
 	}
 	if spec, _ := SpecFor("autoswitch.codexThreshold"); spec.Lo != 0.0 || spec.Hi != 99.9 {
