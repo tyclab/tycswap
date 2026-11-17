@@ -154,7 +154,7 @@ type Options struct {
 	OnSystemEvent func(string)
 	// Tooltip is the initial hover text (also the accessibility label).
 	Tooltip string
-	// OnClick receives the ID of the menu item the user chose.
+	// OnClick receives the menu item the user chose as its Item.Choice.
 	OnClick func(id string)
 	// OnPanelAction receives the Windows panel's commands; their outcome
 	// comes back as the panel's note.
@@ -256,7 +256,20 @@ func (m *menuModel) idAt(i int) (string, bool) {
 	if i < 0 || i >= len(m.flat) || !m.flat[i].Clickable() {
 		return "", false
 	}
-	return m.flat[i].ID, true
+	return m.flat[i].Choice(), true
+}
+
+// Choice is what a click on the row hands the caller: its ID, and for a
+// toggle the state it showed ("auto:on", "auto:off"), so the caller sets the
+// opposite of what was seen rather than of what it last read (DESIGN A94).
+func (it Item) Choice() string {
+	if it.Kind != KindToggle {
+		return it.ID
+	}
+	if it.Checked {
+		return it.ID + ":on"
+	}
+	return it.ID + ":off"
 }
 
 func walkMenu(items []Item, row func(tag int, it Item), enter func(tag int, it Item), leave func()) {

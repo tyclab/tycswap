@@ -124,6 +124,9 @@ type appShell struct {
 	noteAlert bool
 	// switchMu lets one switch from the tray run at a time (DESIGN A84).
 	switchMu sync.Mutex
+	// autoMu is held while an Auto-switch click is in flight; a click that
+	// finds it held is dropped (DESIGN A94).
+	autoMu sync.Mutex
 	// refresh lays the panel out again when no state came for panelRefresh
 	// (the constant unless a test sets it), so its countdowns stay current.
 	refresh      *time.Timer
@@ -207,8 +210,6 @@ func (a *appShell) paint(st web.State) {
 	if running {
 		title = strings.TrimSpace("⟳ " + title)
 		tooltip += " · auto-switch on"
-	} else if st.Auto != nil && st.Auto.ManagedBy != "" {
-		tooltip += " · managed by " + st.Auto.ManagedBy
 	} else {
 		tooltip += " · auto-switch off"
 	}
@@ -244,8 +245,6 @@ func (a *appShell) menu(st web.State) []tray.Item {
 	state := "auto-switch off"
 	if running {
 		state = "auto-switch on"
-	} else if st.Auto != nil && st.Auto.ManagedBy != "" {
-		state = "auto-switch managed externally"
 	}
 	withModels := countedModels(st)
 	sub := strings.TrimPrefix(version.Version, "v") + " · " + state
@@ -276,11 +275,7 @@ func (a *appShell) menu(st web.State) []tray.Item {
 	if !running {
 		autoSub = "off — switch accounts by hand or turn on"
 	}
-	managed := st.Auto != nil && st.Auto.ManagedBy != ""
-	if managed {
-		autoSub = "Managed by " + st.Auto.ManagedBy
-	}
-	items = append(items, tray.Item{Disabled: managed, ID: "auto", Kind: tray.KindToggle, Title: "Auto-switch", Sub: autoSub, Checked: running})
+	items = append(items, tray.Item{ID: "auto", Kind: tray.KindToggle, Title: "Auto-switch", Sub: autoSub, Checked: running})
 	if a.act.SetModelLimits != nil {
 		// One switch for the per-model weekly windows: it decides what
 		// auto-switch counts AND what every percentage here reports, so the
@@ -541,36 +536,8 @@ func (a *appShell) click(id string) {
 		a.repaint()
 	case strings.HasPrefix(id, "switch:"):
 		a.switchClick(strings.TrimPrefix(id, "switch:"))
-	case id == "auto":
-		a.mu.Lock()
-		managed := a.last.Auto != nil && a.last.Auto.ManagedBy != ""
-		a.mu.Unlock()
-		if managed {
-			return
-		}
-		var err error
-		wasRunning := a.autoRunning()
-		if wasRunning {
-			err = a.act.AutoStop()
-		} else {
-			err = a.act.AutoStart()
-		}
-		if err != nil {
-			a.setNote("Auto-switch: "+err.Error(), true)
-			a.notify("Auto-switch", err.Error())
-			a.repaint()
-			return
-		}
-		a.setNote("", false)
-		a.mu.Lock()
-		rotated := rotatedAccounts(a.last)
-		a.mu.Unlock()
-		if wasRunning {
-			a.notify("Auto-switch off", capitalizeFirst(rotated)+" are no longer rotated automatically.")
-		} else {
-			a.notify("Auto-switch on", capitalizeFirst(rotated)+" rotate automatically near the limit.")
-		}
-		a.repaint()
+	case id == "auto:on" || id == "auto:off":
+		a.autoClick(id == "auto:on")
 	case id == "model-limits":
 		a.mu.Lock()
 		st := a.last
@@ -587,7 +554,9 @@ func (a *appShell) click(id string) {
 			a.notify("Model limits on", "Auto-switch and every percentage now count all per-model weekly windows too.")
 		}
 		a.repaint()
-	case id == "autostart":
+	case id == "autostart:on" || id == "autostart:off":
+		// Start at login is read from this machine, never a cached state, so
+		// it still flips what it reads.
 		on, err := a.act.Autostart()
 		if err == nil {
 			err = a.act.SetAutostart(!on)
@@ -626,6 +595,37 @@ func (a *appShell) click(id string) {
 	case id == "quit":
 		a.act.Quit()
 	}
+}
+
+// autoClick sets auto-switch to the opposite of what the row showed when it
+// was clicked (DESIGN A94): read from the shell's state, a second click that
+// lands before the repaint would turn it back. A click while a change is in
+// flight is dropped, not queued.
+func (a *appShell) autoClick(showedOn bool) {
+	if !a.autoMu.TryLock() {
+		return
+	}
+	defer a.autoMu.Unlock()
+	set := a.act.AutoStart
+	if showedOn {
+		set = a.act.AutoStop
+	}
+	if err := set(); err != nil {
+		a.setNote("Auto-switch: "+err.Error(), true)
+		a.notify("Auto-switch", err.Error())
+		a.repaint()
+		return
+	}
+	a.setNote("", false)
+	a.mu.Lock()
+	rotated := rotatedAccounts(a.last)
+	a.mu.Unlock()
+	if showedOn {
+		a.notify("Auto-switch off", capitalizeFirst(rotated)+" are no longer rotated automatically.")
+	} else {
+		a.notify("Auto-switch on", capitalizeFirst(rotated)+" rotate automatically near the limit.")
+	}
+	a.repaint()
 }
 
 // switchClick switches to the account a row key names ("claude:2",

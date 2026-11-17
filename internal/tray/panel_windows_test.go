@@ -155,8 +155,9 @@ func TestNativePanelFocusStaysAfterASwitch(t *testing.T) {
 	}
 }
 
-// The two switches say their state in their window text and dispatch
-// "auto" and "autostart"; no tab, list view, editor or combo box is left.
+// The two switches say their state in their window text and dispatch it
+// with their id ("auto:on", "autostart:off", DESIGN A94); no tab, list view,
+// editor or combo box is left.
 func TestNativePanelSwitchesAndNoSettings(t *testing.T) {
 	actions := make(chan PanelAction, 8)
 	tr := nativePanelFixture(t, func(action PanelAction) { actions <- action })
@@ -170,10 +171,10 @@ func TestNativePanelSwitchesAndNoSettings(t *testing.T) {
 			t.Fatalf("%s reads %q, want %q", id, got, text)
 		}
 	}
-	for _, id := range []string{"auto", "autostart", "updates-open"} {
+	for id, key := range map[string]string{"auto": "auto:on", "autostart": "autostart:off", "updates-open": "updates-open"} {
 		nativeClick(p.controls[p.actionIDs[id]])
-		if action := nativeAction(t, actions); action != (PanelAction{Kind: "command", Key: id}) {
-			t.Fatalf("%s dispatched %+v", id, action)
+		if action := nativeAction(t, actions); action != (PanelAction{Kind: "command", Key: key}) {
+			t.Fatalf("%s dispatched %+v, want key %q", id, action, key)
 		}
 	}
 	for hwnd, class := range nativeChildren(p.hwnd) {
@@ -259,8 +260,12 @@ func TestNativePanelOfflinePreservesLocalDeviceCommands(t *testing.T) {
 			t.Fatalf("offline local command %s is disabled", key)
 		}
 		p.command(p.actionIDs[key], 0)
-		if action := nativeAction(t, actions); action.Key != key {
-			t.Fatalf("local command %s dispatched %+v", key, action)
+		want := key
+		if key == "autostart" {
+			want = "autostart:off"
+		}
+		if action := nativeAction(t, actions); action.Key != want {
+			t.Fatalf("local command %s dispatched %+v, want key %q", key, action, want)
 		}
 	}
 	if nativeEnabled(p.controls[p.actionIDs["auto"]]) {

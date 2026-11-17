@@ -207,9 +207,9 @@ func TestShellClicks(t *testing.T) {
 
 	sh.click("open")
 	sh.click("switch:claude:2")
-	sh.click("auto")
-	sh.click("auto")
-	sh.click("autostart")
+	sh.click(autoChoice(t, ft))
+	sh.click(autoChoice(t, ft))
+	sh.click("autostart:off")
 	sh.click("install-update")
 	sh.click("quit")
 
@@ -223,6 +223,99 @@ func TestShellClicks(t *testing.T) {
 	}
 }
 
+// autoChoice is the click the Auto-switch row hands the shell as the menu
+// shows it now: its id and the state it shows (DESIGN A94).
+func autoChoice(t *testing.T, ft *fakeTray) string {
+	t.Helper()
+	it, ok := ft.item("auto")
+	if !ok {
+		t.Fatal("no Auto-switch row")
+	}
+	return it.Choice()
+}
+
+// TestShellAutoClickSetsWhatItShowed: the 2026-11-17 16:39:25 off-and-on
+// again (DESIGN A94). A click sets the opposite of the state the row showed;
+// one that arrives while a change is in flight is dropped, not queued; a
+// click after the first has finished toggles again.
+func TestShellAutoClickSetsWhatItShowed(t *testing.T) {
+	sh, ft, _ := newTestShell(t)
+	var mu sync.Mutex
+	var writes []string
+	running := false
+	inFirst, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	sh.act.AutoRunning = func() bool { mu.Lock(); defer mu.Unlock(); return running }
+	sh.act.AutoStart = func() error {
+		once.Do(func() { close(inFirst); <-release })
+		mu.Lock()
+		defer mu.Unlock()
+		writes, running = append(writes, "on"), true
+		return nil
+	}
+	sh.act.AutoStop = func() error {
+		mu.Lock()
+		defer mu.Unlock()
+		writes, running = append(writes, "off"), false
+		return nil
+	}
+	sh.update(sampleState())
+	shown := autoChoice(t, ft)
+	if shown != "auto:off" {
+		t.Fatalf("the row shows %q", shown)
+	}
+	done := make(chan struct{}, 2)
+	for range 2 {
+		go func() { sh.click(shown); done <- struct{}{} }()
+	}
+	select {
+	case <-inFirst:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("a click on %q never turned auto-switch on", shown)
+	}
+	// The dropped click returns while the first still blocks.
+	returned := 0
+	select {
+	case <-done:
+		returned++
+	case <-time.After(2 * time.Second):
+	}
+	close(release)
+	for returned < 2 {
+		select {
+		case <-done:
+			returned++
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%d of 2 clicks returned", returned)
+		}
+	}
+	mu.Lock()
+	got, on := strings.Join(writes, ","), running
+	mu.Unlock()
+	if got != "on" || !on {
+		t.Fatalf("writes %q, on %v; want one write turning it on", got, on)
+	}
+	if shown = autoChoice(t, ft); shown != "auto:on" {
+		t.Fatalf("after the click the row shows %q", shown)
+	}
+	sh.click(shown)
+	mu.Lock()
+	got, on = strings.Join(writes, ","), running
+	mu.Unlock()
+	if got != "on,off" || on {
+		t.Fatalf("writes %q, on %v; want the next click to turn it off", got, on)
+	}
+	// A click carries what it showed: one from a row still drawn on sets
+	// off, though the shell reads off already.
+	sh.click("auto:on")
+	mu.Lock()
+	got = strings.Join(writes, ",")
+	mu.Unlock()
+	if got != "on,off,off" {
+		t.Fatalf("writes %q; a click that showed on must set off", got)
+	}
+}
+
 func TestShellShowsAutoModeInTitleAndMenu(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
 	sh.update(sampleState())
@@ -232,14 +325,14 @@ func TestShellShowsAutoModeInTitleAndMenu(t *testing.T) {
 	if it, _ := ft.item("auto"); it.Checked || it.Kind != tray.KindToggle || !strings.HasPrefix(it.Sub, "off") {
 		t.Errorf("off: item=%+v", it)
 	}
-	sh.click("auto") // turns it on and repaints at once
+	sh.click(autoChoice(t, ft)) // turns it on and repaints at once
 	if ft.title != "⟳ #1 · 45%" || !strings.Contains(ft.tooltip, "auto-switch on") {
 		t.Errorf("on: title=%q tooltip=%q", ft.title, ft.tooltip)
 	}
 	if it, _ := ft.item("auto"); !it.Checked || !strings.HasPrefix(it.Sub, "rotates Claude accounts near the limit (") || !strings.Contains(it.Sub, "5h 85% · 7d 97%") {
 		t.Errorf("on: item=%+v", it)
 	}
-	sh.click("auto")
+	sh.click(autoChoice(t, ft))
 	if ft.title != "#1 · 45%" {
 		t.Errorf("off again: title=%q", ft.title)
 	}
@@ -885,7 +978,7 @@ func TestShellCodexRowsUnderOwnHeader(t *testing.T) {
 	if len(ft.notes) != 0 {
 		t.Errorf("the Codex account at 99%% raised an alert: %v", ft.notes)
 	}
-	sh.click("auto")
+	sh.click(autoChoice(t, ft))
 	if au, _ := ft.item("auto"); au.Sub != "rotates Claude and Codex accounts near the limit (5h 85% · 7d 97% · codex 90%)" {
 		t.Errorf("auto row = %q", au.Sub)
 	}
@@ -937,11 +1030,11 @@ func TestShellClaudeOnlyMenuUnchanged(t *testing.T) {
 		if strings.Contains(ft.tooltip, "codex") {
 			t.Errorf("tooltip = %q", ft.tooltip)
 		}
-		sh.click("auto")
+		sh.click(autoChoice(t, ft))
 		if au, _ := ft.item("auto"); au.Sub != "rotates Claude accounts near the limit (5h 85% · 7d 97%)" {
 			t.Errorf("auto row = %q", au.Sub)
 		}
-		sh.click("auto")
+		sh.click(autoChoice(t, ft))
 		if got := strings.Join(ft.notesNow(), "\n"); got != "Auto-switch on | Claude accounts rotate automatically near the limit.\nAuto-switch off | Claude accounts are no longer rotated automatically." {
 			t.Errorf("notes = %q", got)
 		}
@@ -1052,7 +1145,7 @@ func TestTrayManagedToggleWritesSetting(t *testing.T) {
 	sh.update(st)
 	for i, want := range []bool{true, false, true} {
 		if i > 0 {
-			sh.click("auto")
+			sh.click(autoChoice(t, ft))
 		}
 		item, ok := ft.item("auto")
 		if !ok || item.Disabled || item.Checked != want || settings.Load(root).Enabled != want {
@@ -1091,7 +1184,7 @@ func TestTrayClickAfterCLIOffTurnsOn(t *testing.T) {
 	if item, _ := ft.item("auto"); item.Checked {
 		t.Fatalf("item checked while the setting is off: %+v", item)
 	}
-	sh.click("auto")
+	sh.click(autoChoice(t, ft))
 	item, _ := ft.item("auto")
 	if !settings.Load(root).Enabled || !item.Checked || engines.built() != 1 {
 		t.Fatalf("after the click: enabled %v, item %+v, %d engines", settings.Load(root).Enabled, item, engines.built())

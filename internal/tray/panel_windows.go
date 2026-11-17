@@ -367,7 +367,7 @@ func (p *windowsPanel) command(id int, notification int) {
 		return
 	}
 	if action, ok := p.actionFor(id); ok && panelCommandEnabled(p.panel, action) {
-		p.dispatch(PanelAction{Kind: "command", Key: action.ID})
+		p.dispatch(PanelAction{Kind: "command", Key: action.Choice()})
 	}
 }
 

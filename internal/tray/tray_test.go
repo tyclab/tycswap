@@ -32,6 +32,19 @@ func TestMenuModelIDs(t *testing.T) {
 	}
 }
 
+// A toggle's click names the state it showed, so the caller sets the
+// opposite of what was seen, not of what it last read (DESIGN A94); every
+// other row's click is its ID.
+func TestToggleChoiceCarriesShownState(t *testing.T) {
+	var m menuModel
+	m.set([]Item{{ID: "auto", Kind: KindToggle, Checked: true}, {ID: "autostart", Kind: KindToggle}, {ID: "switch:claude:2"}})
+	for i, want := range []string{"auto:on", "autostart:off", "switch:claude:2"} {
+		if id, ok := m.idAt(i); !ok || id != want {
+			t.Errorf("idAt(%d) = %q,%v, want %q", i, id, ok, want)
+		}
+	}
+}
+
 func TestFallbackTitleAndClickable(t *testing.T) {
 	on := Item{Kind: KindToggle, Title: "Auto-switch", Checked: true, ID: "auto"}
 	if got := on.FallbackTitle(); got != "Auto-switch: On" {
