@@ -366,9 +366,8 @@ alice@example.com
 The full-screen interactive dashboard is `tycswap tui` (also `tycswap watch`;
 a bare `tycswap` opens the action menu). It shows the same accounts with live usage and
 refreshes on a timer. Its Settings screen (`c`, or the menu's "Settings…" row)
-lists every `settings.json` key but `autoswitch.model`, which `tycswap config`
-alone sets, with its value and help text and edits it in
-place — a bool toggles, a choice cycles, a number or string is typed and
+lists every `settings.json` key with its value and help text and edits it in
+place — a bool toggles, a choice cycles, a number is typed and
 validated like `tycswap config set` — and `u` resets a key to its default; the
 auto-switch screen's own threshold adjustment (`t`, which moves the 7d bar)
 stays session-only.
@@ -473,8 +472,8 @@ so there is always another poll between "nearly full" and "full", and they can
 be squeezed close to full before moving. Raise the 5h bar if you work in
 small, predictable steps; lower it (or poll more often) if you run wide
 fan-outs. Set a bar to 100 to never switch off that window before it is
-actually full. The model bar applies only to the windows `autoswitch.model`
-counts. When more than one window is over its bar, the costliest decides (the
+actually full. The model bar applies to the model windows counted for the
+live sessions (below). When more than one window is over its bar, the costliest decides (the
 week, then a model's week, then the 5h window), and the switch line names it
 (`Switched Account-1 -> Account-2 (b@example.com) (proactive, 7d)`). A settings
 file that still has the old single `autoswitch.threshold` keeps working: its
@@ -515,23 +514,17 @@ scheduled tick counts the per-model weekly windows of the models the default
 login's live sessions run, and while none of them runs Fable it leaves
 Fable-capable accounts to Fable work; nothing needs setting. Without status
 line records auto-switch weighs only the account-wide 5-hour and 7-day windows.
-To pin the counted models instead, set the model's display name in
-`autoswitch.model`:
-
-```
-$ tycswap config set autoswitch.model Fable
-autoswitch.model = Fable
-```
-
-The value is matched, case-insensitively, against the display name of the
-account's scoped weekly window. An exhausted per-model weekly window then reads
-as at-limit even when the account-wide 7-day window has headroom. A name that
-matches no window is a silent no-op — use the display name exactly as it appears
-in the account's per-model usage rows.
+The counted models always follow the live sessions (DESIGN A76, A91): the
+`autoswitch.model` setting and the `--model` flags were removed (DESIGN A97),
+and `tycswap auto --model` or `tycswap switch --model` exits 2. A session's
+model family is matched, case-insensitively, against the display names of the
+account's scoped weekly windows (`fable` counts `Fable 5`). An exhausted
+counted per-model weekly window then reads
+as at-limit even when the account-wide 7-day window has headroom.
 
 **Renewal-ordered switching.** By default auto-switch tries the qualifying
 target with the earliest weekly renewal first (`autoswitch.strategy
-soonest-reset`): the account whose 7-day window — and any `autoswitch.model`
+soonest-reset`): the account whose 7-day window — and any counted per-model
 weekly windows — refills earliest is tried first, so quota is spent where it
 returns soonest and no account sits idle on a window that is about to renew.
 `best` instead tries the target with the most headroom first. Qualification
@@ -706,8 +699,8 @@ given, which overwrites it. Import rejects any file marked `encrypted: true`.
 
 ### Configure settings
 
-Rotation tuning lives in the dashboard's **Settings** and `tycswap config`;
-`autoswitch.model` is set with `tycswap config` only. The 5-hour threshold is 85% by default: a 15% reserve before the provider's
+Rotation tuning lives in the dashboard's **Settings** and `tycswap config`.
+The 5-hour threshold is 85% by default: a 15% reserve before the provider's
 limit, not a provider requirement. Changing presentation does not change the
 saved policy.
 
@@ -719,7 +712,6 @@ $ tycswap config
 autoswitch.enabled            true
 autoswitch.fiveHourThreshold  85             (default)
 autoswitch.sevenDayThreshold  92
-autoswitch.model              Fable
 autoswitch.modelThreshold     95             (default)
 autoswitch.intervalSeconds    60             (default)
 autoswitch.codexEnabled       true           (default)
@@ -859,7 +851,7 @@ the dashboard and how often) and what is counted now, with the *Next best*
 ranking and quarantine; *Sessions*
 lists the running Claude Code sessions (also those started with `tycswap
 run`) and can stop one; *Settings* edits the `settings.json` keys with their
-type, range and default, the keys of `tycswap config` but `autoswitch.model`,
+type, range and default, the keys of `tycswap config`,
 and lists *Poll interval* only while the dashboard runs the checks; *Guide* explains
 the tool. The Accounts and Updates cards fold, and the choice is remembered.
 Choose **Interactive menu… → Import / export…** to transfer accounts through a terminal launched from the dashboard or the Linux and macOS tray menu. Files contain account tokens; the guided export asks before writing and requires a new destination.
@@ -959,12 +951,11 @@ time. The external timer controls cadence; `autoswitch.intervalSeconds`
 only controls a continuous tycswap loop, which loads the settings when it
 starts.
 
-**Model windows.** Unset, `autoswitch.model` follows the models the live
-sessions run; the Auto tab's *Counting now* line says what is counted and
-why. `tycswap config set autoswitch.model all` (or `Fable, Opus`) counts
-those windows always, and the Auto tab then warns that session following is
-off; `tycswap config unset autoswitch.model` turns it back on. Named windows
-match case-insensitively. The Windows table shows each reported limit
+**Model windows.** The model windows counted always follow the models the
+live sessions run (DESIGN A76, A91); the Auto tab's *Counting now* line says
+what is counted and why. `autoswitch.model` was removed (DESIGN A97), so
+nothing a user sets replaces that set; an engine hosted by the dashboard
+counts 5h and 7d only. The Windows table shows each reported limit
 independently; the icon's summary counts only the counted windows.
 
 **WSL: the Windows tray for the engine in the distro.** Inside WSL there is no
@@ -1276,13 +1267,13 @@ MIT. Behavioral design and CLI surface derived from claude-swap, © Onur
 Cetinkol, MIT.
 
 When model limits are counted, automatic rotation requires a reported usage
-window for each selected model on its target. `all` requires every model
-reported across the current account measurements. If no compatible account has
+window for each counted model on its target. If no compatible account has
 quota, the engine keeps the current account instead of selecting a target with
 missing model data. This is a conservative quota check, not a model-entitlement
-probe. Without `autoswitch.model`, the models counted are the ones the default
-login's sessions report through their status lines; the switcher never changes
-the model inside a running session, or restarts sessions.
+probe. The models counted are the ones the default login's sessions report
+through their status lines (DESIGN A76; no setting or flag replaces them since
+DESIGN A97); the switcher never changes the model inside a running session, or
+restarts sessions.
 
 ## Process and logic
 
