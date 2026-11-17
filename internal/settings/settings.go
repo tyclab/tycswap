@@ -150,17 +150,15 @@ const (
 // bounds/choices/defaults, shared by the lenient clamp on load and the
 // strict `parse_setting_value` used by `tycswap config set`.
 type Spec struct {
-	Section string // top-level JSON section ("autoswitch")
-	JSONKey string // camelCase key inside the section
-	Field   string // the AutoSwitchSettings Go field name
-	Kind    Kind
-	Lo, Hi  float64  // used for float/int kinds
-	Choices []string // used for the choice kind
-	Default any      // float64 | int | bool | string | nil; matches Default()'s field
-	Help    string
-	// ConfigOnly: settable through `tycswap config` only; the dashboard, its
-	// routes and the TUI's Settings screen leave the key out (DESIGN A93).
-	ConfigOnly bool
+	Section    string // top-level JSON section ("autoswitch")
+	JSONKey    string // camelCase key inside the section
+	Field      string // the AutoSwitchSettings Go field name
+	Kind       Kind
+	Lo, Hi     float64  // used for float/int kinds
+	Choices    []string // used for the choice kind
+	Default    any      // float64 | int | bool | string | nil; matches Default()'s field
+	Help       string
+	ConfigOnly bool // set through `tycswap config` only (DESIGN A93)
 }
 
 // Dotted returns "section.jsonKey", e.g. "autoswitch.sevenDayThreshold".
@@ -198,13 +196,9 @@ func (s Spec) Label() string {
 	return s.Dotted()
 }
 
-// SettingSpecs is the single source of truth for every settings.json key, in
-// registry order: the order `tycswap config`, the TUI's Settings screen and
-// the dashboard's Settings tab list them, so the on/off comes first, then the
-// bars, and the model windows sit right before the model bar that applies to
-// them (DESIGN A49). It must cover every AutoSwitchSettings field, and each
-// spec's Default must equal Default()'s corresponding field (both enforced by
-// tests).
+// SettingSpecs is every settings.json key in the order every view lists them:
+// the on/off, the bars, the model windows before their bar (DESIGN A49). Tests
+// hold it to every AutoSwitchSettings field and to Default()'s values.
 var SettingSpecs = []Spec{
 	{Section: "autoswitch", JSONKey: "enabled", Field: "Enabled", Kind: KindBool,
 		Default: false,

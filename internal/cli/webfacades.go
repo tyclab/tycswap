@@ -149,12 +149,10 @@ type autoEngine interface {
 	ApplyModels(string)
 }
 
-// autoFacade hosts one autoswitch engine inside the dashboard process and
-// streams its events to the tray. Beside it runs the Codex engine when this
-// machine has Codex accounts, as in `tycswap auto` (DESIGN A47), and both
-// feed one stream. The engine is a host the setting gates (A83): Start and
-// Stop turn autoswitch.enabled on and off, and the engine idles while it is
-// off. The dashboard starts no dry run (A93).
+// autoFacade hosts one autoswitch engine, and the Codex engine beside it on a
+// machine with Codex accounts (DESIGN A47), in the dashboard process; both
+// feed the tray's event stream. Start and Stop turn autoswitch.enabled on and
+// off and the engine idles while it is off (A83); no dry run (A93).
 type autoFacade struct {
 	// managedBy names an external tick scheduler (TYCSWAP_AUTO_MANAGED_BY): this
 	// host then runs no real engine, and Start and Stop only write the setting (A83).
@@ -200,8 +198,7 @@ func newAutoFacade(sw *core.Switcher, codexSw *codexswitcher.Switcher) *autoFaca
 	return a
 }
 
-// Events is the channel the web server fans out as `event: auto`, which the
-// tray turns into notifications.
+// Events is the channel the web server fans out as `event: auto`.
 func (a *autoFacade) Events() <-chan web.AutoEventView { return a.stream }
 
 // View is the engine's state and what it counts now; the policy behind the
@@ -277,8 +274,7 @@ func (a *autoFacade) view() (web.AutoView, settings.AutoSwitchSettings, bool) {
 		Quarantine: quarantine,
 	}
 	if a.codexSw != nil && len(a.codexSw.Store().Slots()) > 0 {
-		// The Codex bar is the one the engine started with (or would start
-		// with).
+		// The Codex bar is the one the engine started (or would start) with.
 		v.Codex = &web.CodexAutoView{
 			Enabled:   s.CodexEnabled,
 			Running:   (live && a.codexEngine != nil) || (owned && fresh.CodexEnabled),
@@ -289,8 +285,7 @@ func (a *autoFacade) view() (web.AutoView, settings.AutoSwitchSettings, bool) {
 	return v, s, a.running
 }
 
-// Start hosts the engine unless an external scheduler runs the ticks, and
-// only then turns auto-switch on.
+// Start hosts the engine unless a scheduler runs the ticks, then turns it on.
 func (a *autoFacade) Start() error {
 	if a.managedBy == "" {
 		if err := a.startHosted(); err != nil {
@@ -382,9 +377,8 @@ func stillRunning(done chan struct{}) bool {
 	}
 }
 
-// Stop turns auto-switch off and returns at once: the engine stays hosted
-// and idles. With nothing hosted and no owner, there is nothing to stop once
-// the setting is off.
+// Stop turns auto-switch off at once and leaves the engine hosted, idling;
+// with nothing hosted, no owner and the setting off there is nothing to stop.
 func (a *autoFacade) Stop() error {
 	a.mu.Lock()
 	hosted := a.running && a.engine != nil
@@ -449,9 +443,8 @@ func (a *autoFacade) resume() (started bool, err error) {
 	return true, nil
 }
 
-// ApplyModels retargets the running engine's per-model windows; the in-process
-// tray's Model limits switch calls it after saving autoswitch.model. With
-// nothing hosted, the saved setting is what counts.
+// ApplyModels retargets the hosted engine's model windows for the in-process
+// tray's Model limits switch; with nothing hosted it does nothing.
 func (a *autoFacade) ApplyModels(model string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -468,8 +461,7 @@ func (a *autoFacade) ApplyModels(model string) error {
 	return nil
 }
 
-// onEvent is the engine's sink: offer the event to the stream without ever
-// blocking the engine goroutine.
+// onEvent is the engine's sink.
 func (a *autoFacade) onEvent(ev autoswitch.Event) {
 	fields := ev.JSON()
 	view := web.AutoEventView{At: clock.Seconds(a.clk), Kind: ev.Kind(), Message: ev.Human(), Fields: fields}
@@ -482,9 +474,8 @@ func (a *autoFacade) onEvent(ev autoswitch.Event) {
 	a.publish(view)
 }
 
-// codexTick runs one Codex tick and records it as the engine's last. Like
-// `tycswap auto`, only a switch or an error reaches the event stream
-// (codexTickShown).
+// codexTick runs one Codex tick, records it as the last, and streams it when
+// codexTickShown, as `tycswap auto` prints it.
 func (a *autoFacade) codexTick(ctx context.Context, eng *codexauto.AutoSwitcher) {
 	tick := eng.Tick(ctx, false)
 	at := clock.Seconds(a.clk)
@@ -504,10 +495,9 @@ func (a *autoFacade) codexTick(ctx context.Context, eng *codexauto.AutoSwitcher)
 	}
 }
 
-// codexEvent is a Codex tick as an engine event: the Claude engine's kind
-// for the outcome, so the tray treats it as it does those (switched →
-// switch, error → error, blocked → all-exhausted, else no-switch),
-// Tick.Human as the message, and the `auto --json` fields.
+// codexEvent is a Codex tick as an engine event with the Claude engine's kind
+// for its outcome (switched → switch, error → error, blocked → all-exhausted,
+// else no-switch), Tick.Human and the `auto --json` fields.
 func codexEvent(at float64, tick codexauto.Tick) web.AutoEventView {
 	kind := "no-switch"
 	switch tick.Outcome {
@@ -524,8 +514,7 @@ func codexEvent(at float64, tick codexauto.Tick) web.AutoEventView {
 	}
 }
 
-// publish offers an event to the stream without ever blocking the engine
-// goroutine that produced it.
+// publish offers an event to the stream without blocking its producer.
 func (a *autoFacade) publish(view web.AutoEventView) {
 	select {
 	case a.stream <- view:

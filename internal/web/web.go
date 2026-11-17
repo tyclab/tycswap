@@ -152,15 +152,12 @@ type AutoView struct {
 
 	// LastTickAt is when a real tick last saw the live login, as epoch
 	// seconds (lastSeenAt in autoswitch_state.json); null before one did.
-	LastTickAt *float64 `json:"lastTickAt"`
-	// Counting is what auto-switch counts now (DESIGN A91); null when the
-	// host cannot tell.
-	Counting *CountingView `json:"counting"`
+	LastTickAt *float64      `json:"lastTickAt"`
+	Counting   *CountingView `json:"counting"` // what is counted now (DESIGN A91); null when unknown
 }
 
-// CodexAutoView is the Codex auto-switch engine as the dashboard shows it.
-// Threshold is its one bar (autoswitch.codexThreshold, or the 7d bar when
-// that is 0), fixed when the engine starts.
+// CodexAutoView is the Codex auto-switch engine as the dashboard shows it;
+// Threshold is its bar, autoswitch.codexThreshold or the 7d bar for 0.
 type CodexAutoView struct {
 	Enabled   bool           `json:"enabled"` // autoswitch.codexEnabled
 	Running   bool           `json:"running"`
@@ -176,8 +173,7 @@ type CodexTickView struct {
 	RunningPIDs []int   `json:"runningPids"`
 }
 
-// AutoFacade is the Auto-switch switch: Start turns auto-switch on, Stop
-// turns it off (DESIGN A83, A93).
+// AutoFacade is the Auto-switch switch (DESIGN A83, A93).
 type AutoFacade interface {
 	View() AutoView
 	Start() error
@@ -336,9 +332,8 @@ type Deps struct {
 	Codex    CodexOps
 	Settings SettingsFacade
 	Auto     AutoFacade
-	// AutoEvents, when non-nil, is fanned out as SSE `auto` events (the
-	// tray's notifications); each one also triggers a state broadcast. A
-	// closed channel ends the auto stream.
+	// AutoEvents, when non-nil, is fanned out as SSE `auto` events; each one
+	// also triggers a state broadcast. A closed channel ends the auto stream.
 	AutoEvents <-chan AutoEventView
 
 	Updates UpdatesFacade
