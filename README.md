@@ -446,7 +446,9 @@ Each window has a limit of its own, set by how fast that window fills:
 Ultra (formerly Max 20x) loses its five-hour limit as Anthropic verifies
 accounts during its staged rollout. tycswap follows the windows returned by
 Anthropic: an absent five-hour window does not block switching or recovery,
-and weekly and counted model limits still apply. A reported five-hour window
+and weekly and counted model limits still apply. When the active account's
+five-hour window reaches its bar, an account without one is a target while it
+is below its weekly and counted model bars. A reported five-hour window
 continues to count, including on Ultra accounts awaiting verification. Max
 (formerly Max 5x) retains that window. No threshold changes are needed.
 
@@ -528,7 +530,9 @@ returns soonest and no account sits idle on a window that is about to renew.
 `best` instead tries the target with the most headroom first. Qualification
 itself is the same under both. On a proactive switch, a target
 must still land under the threshold and beat the active account by the
-hysteresis margin, both measured on the window that triggered the tick. On an
+hysteresis margin, both measured on the window that triggered the tick; when
+that is the five-hour window, an account without one needs only to be under
+all of its own bars. On an
 at-limit or failover switch neither check applies, but `soonest-reset` still
 never lets an early renewal beat a threshold: an account at or above one of its
 bars is tried only after every account below all of them, regardless of how
