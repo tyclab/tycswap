@@ -41,7 +41,6 @@ type State struct {
 	ActiveNumber  any              `json:"activeNumber"` // int, or nil when no managed account is active
 	Accounts      []map[string]any `json:"accounts"`
 	Sessions      SessionsJSON     `json:"sessions"`
-	Recovery      *RecoveryView    `json:"recovery,omitempty"`
 	Settings      []SettingView    `json:"settings"` // null when no SettingsFacade
 	Auto          *AutoView        `json:"auto"`     // null when no AutoFacade
 	Strategies    []string         `json:"strategies"`
@@ -136,7 +135,6 @@ type ClaudeSessionJSON struct {
 	Title      string  `json:"title"`   // from the transcript; "" when none yet
 	Profile    string  `json:"profile"` // slot of a former `run`/`env` profile still running; "" for the default login
 	Group      string  `json:"group,omitempty"`
-	Model      string  `json:"model,omitempty"`
 }
 
 // IdeInstanceJSON is one running IDE instance.
@@ -219,15 +217,8 @@ func (s *Server) buildState(o stateOpts) State {
 	if s.d.Settings != nil {
 		st.Settings = s.settingsViews()
 	}
-	if s.d.Recovery != nil && snap != nil {
-		v := s.d.Recovery.View(*snap)
-		st.Recovery = &v
-	}
 	if s.d.Auto != nil {
 		v := s.d.Auto.View()
-		if v.Events == nil {
-			v.Events = []AutoEventView{}
-		}
 		if v.Counting != nil {
 			c := *v.Counting
 			c.Caption = countingCaption(c)
@@ -238,9 +229,6 @@ func (s *Server) buildState(o stateOpts) State {
 	sv := s.d.Sessions()
 	for _, c := range sv.Claude {
 		item := s.claudeSessionJSON(c, sv.ConfigDir[c.PID], sv.Profile[c.PID])
-		if st.Recovery != nil {
-			item.Model = st.Recovery.SessionModels[c.SessionID]
-		}
 		st.Sessions.Claude = append(st.Sessions.Claude, item)
 	}
 	for _, i := range sv.IDE {

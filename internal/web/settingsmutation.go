@@ -3,22 +3,27 @@ package web
 import (
 	"net/http"
 
+	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/settings"
 )
 
 // SaveSetting writes a shared setting; nil resets. Session groups and their
-// scoped settings are retired (DESIGN A78).
+// scoped settings are retired (DESIGN A78); a key only `tycswap config` sets
+// is refused (DESIGN A93).
 func (s *Server) SaveSetting(scope, key string, value *string) (map[string]any, error) {
 	if scope != "" {
 		return nil, cerr.Validation("session groups are retired; settings have one scope")
+	}
+	if configOnly(key) {
+		name := brand.Sanitized().Name
+		return nil, cerr.Validation("%s is set with %s config only: %s config set %s <value>, or %s config unset %s", key, name, name, key, name, key)
 	}
 	result, sequence, err := s.runMutation(func() (map[string]any, error) {
 		result := map[string]any{"key": key}
 		if s.d.Settings == nil {
 			return nil, cerr.Validation("Default settings are unavailable")
 		}
-		model := ""
 		if value == nil {
 			removed, err := s.d.Settings.Unset(key)
 			if err != nil {
@@ -31,15 +36,8 @@ func (s *Server) SaveSetting(scope, key string, value *string) (map[string]any, 
 				return nil, err
 			}
 			result["value"] = written
-			// The engine takes what was stored (TAB/LF between names became
-			// spaces), not the raw request.
-			model, _ = written.(string)
 		}
-		applied, err := s.applyModelSetting(key, model)
-		if applied {
-			result["applied"] = true
-		}
-		return result, err
+		return result, nil
 	})
 	if err != nil {
 		return nil, err

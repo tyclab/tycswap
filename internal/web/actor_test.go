@@ -38,7 +38,6 @@ func (a *actionLines) take() []string {
 func TestDashboardActionsNameTheirActor(t *testing.T) {
 	var got actionLines
 	h := newHarness(t, got.option())
-	h.auto.view.DryRun = false
 	const actor = " by dashboard(cookie,127.0.0.1:"
 	for _, step := range []struct {
 		name string
@@ -53,7 +52,6 @@ func TestDashboardActionsNameTheirActor(t *testing.T) {
 		}, "Set autoswitch.strategy=best" + actor},
 		{"unset", func() *http.Response { return h.post("/api/settings/autoswitch.strategy/unset") }, "Unset autoswitch.strategy" + actor},
 		{"start", func() *http.Response { return h.postJSON("/api/auto/start", map[string]any{}) }, "Set autoswitch.enabled=true" + actor},
-		{"start-dry", func() *http.Response { return h.postJSON("/api/auto/start", map[string]any{"dryRun": true}) }, ""},
 		{"stop", func() *http.Response { return h.post("/api/auto/stop") }, "Set autoswitch.enabled=false" + actor},
 	} {
 		resp := step.do()

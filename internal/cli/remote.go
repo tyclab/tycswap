@@ -386,24 +386,6 @@ func (c *remoteClient) AutoStop() error {
 	return c.mutate("/api/auto/stop", nil)
 }
 
-func (c *remoteClient) SetModel(on bool) error {
-	model := ""
-	var err error
-	if on {
-		model = "all"
-		err = c.call(http.MethodPost, "/api/settings/autoswitch.model", map[string]any{"value": "all"}, nil)
-	} else {
-		err = c.call(http.MethodPost, "/api/settings/autoswitch.model/unset", nil, nil)
-	}
-	if err != nil {
-		return err
-	}
-	if aerr := c.call(http.MethodPost, "/api/auto/model", map[string]any{"model": model}, nil); aerr != nil && c.AutoRunning() {
-		return aerr
-	}
-	return nil
-}
-
 // Launch is POST /api/launch: the one-time dashboard URL, checked and
 // rebuilt before it is returned — see checkLaunchURL.
 func (c *remoteClient) Launch() (string, error) {
@@ -752,15 +734,14 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 		AccountSetup: func(section string) error {
 			return openRemoteAccountSetup(o.tokenFile, func() error { return rc.call("POST", "/api/accounts/setup", map[string]any{"section": section}, nil) }, section)
 		},
-		SwitchTo:       rc.Switch,
-		AutoRunning:    rc.AutoRunning,
-		AutoStart:      rc.AutoStart,
-		AutoStop:       rc.AutoStop,
-		Upgrade:        func() (string, error) { return upgradeForShell() },
-		UpgradeHint:    func() string { return buildHint },
-		Autostart:      readAutostart,
-		SetAutostart:   writeAutostart,
-		SetModelLimits: rc.SetModel,
+		SwitchTo:     rc.Switch,
+		AutoRunning:  rc.AutoRunning,
+		AutoStart:    rc.AutoStart,
+		AutoStop:     rc.AutoStop,
+		Upgrade:      func() (string, error) { return upgradeForShell() },
+		UpgradeHint:  func() string { return buildHint },
+		Autostart:    readAutostart,
+		SetAutostart: writeAutostart,
 		// ApproveAPIKey / RestartNotice stay nil: the tray refuses an API-key
 		// switch and points at the dashboard (A33). RunClaudeCode and
 		// CheckClaudeCode stay nil: Claude Code lives in the distro, not here

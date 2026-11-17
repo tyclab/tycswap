@@ -3,7 +3,6 @@ package autoswitch
 import (
 	"math"
 	"math/rand/v2"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -126,7 +125,7 @@ func NewEngine(sw Switcher, s settings.AutoSwitchSettings, onEvent func(Event), 
 	if e.statePath == "" {
 		e.statePath = StatePath(sw.BackupDir())
 	}
-	e.lockPath = filepath.Join(filepath.Dir(e.statePath), ".autoswitch_state.lock")
+	e.lockPath = stateLockPath(e.statePath)
 	// Poll plans must key on the same bars/models the engine decides with.
 	sw.SetPollPolicyInputs(pollThreshold(s, e.models), e.models)
 	return e

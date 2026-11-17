@@ -27,7 +27,7 @@ func panelFixture() Panel {
 			{ID: "claude:2", Name: "#2 xxxxxxxxxxxxxxxxxxxx", Plan: "Pro", Warning: "stale", Active: true, Cells: []PanelCell{{Share: "0%"}, {Share: "100%", Pct: 100, Limit: true, Reset: "Today 02:52 · 12h 22m"}, {Absent: true}}},
 			{ID: "codex:1", Name: "Codex #1 xxxxxxxxxxxxxxx", Disabled: true, Cells: []PanelCell{{Absent: true}, {Share: "7%", Pct: 7}, {Absent: true}}},
 		},
-		Actions: []Item{{ID: "quit", Title: "Quit"}, {ID: "auto", Title: "Auto-switch", Kind: KindToggle, Checked: true},
+		Actions: []Item{{ID: "quit", Title: "Quit"}, {ID: "auto", Title: "Auto-switch", Kind: KindToggle, Checked: true, ShownState: true},
 			{ID: "autostart", Title: "Start at login", Kind: KindToggle}, {ID: "open", Title: "Open dashboard"}}}
 }
 

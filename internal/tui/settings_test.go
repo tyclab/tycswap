@@ -158,13 +158,25 @@ func TestSettingsOpensFromMenuAndKey(t *testing.T) {
 
 // -- the rows ----------------------------------------------------------------
 
+// screenSpecs is the registry without the keys only `tycswap config` sets.
+func screenSpecs() []settings.Spec {
+	var out []settings.Spec
+	for _, spec := range settings.SettingSpecs {
+		if !spec.ConfigOnly {
+			out = append(out, spec)
+		}
+	}
+	return out
+}
+
 func TestSettingsListsEveryKeyFromTheSettingsPackage(t *testing.T) {
 	m, s, _ := settingsModel(t)
-	if len(s.rows) != len(settings.SettingSpecs) {
-		t.Fatalf("rows = %d, want one per spec (%d)", len(s.rows), len(settings.SettingSpecs))
+	specs := screenSpecs()
+	if len(s.rows) != len(specs) {
+		t.Fatalf("rows = %d, want one per listed spec (%d)", len(s.rows), len(specs))
 	}
 	view := stripANSI(s.view(m))
-	for i, spec := range settings.SettingSpecs {
+	for i, spec := range specs {
 		if s.rows[i].Spec.Dotted() != spec.Dotted() {
 			t.Fatalf("row %d is %q, want registry order %q", i, s.rows[i].Spec.Dotted(), spec.Dotted())
 		}
@@ -176,8 +188,8 @@ func TestSettingsListsEveryKeyFromTheSettingsPackage(t *testing.T) {
 		}
 	}
 	// Nothing is set yet: every row carries the default marker.
-	if n := strings.Count(view, "(default)"); n != len(settings.SettingSpecs) {
-		t.Fatalf("default markers = %d, want %d:\n%s", n, len(settings.SettingSpecs), view)
+	if n := strings.Count(view, "(default)"); n != len(specs) {
+		t.Fatalf("default markers = %d, want %d:\n%s", n, len(specs), view)
 	}
 	// The detail names the highlighted key, its help, its range and when the
 	// engine applies it. The help may wrap between words, so compare with the
@@ -189,6 +201,37 @@ func TestSettingsListsEveryKeyFromTheSettingsPackage(t *testing.T) {
 			t.Fatalf("detail lacks %q:\n%s", want, view)
 		}
 	}
+}
+
+// autoswitch.model is set through tycswap config only (DESIGN A93): the
+// screen has no row for it, set or unset.
+func TestSettingsLeavesOutTheModelSetting(t *testing.T) {
+	m, s, dir := settingsModel(t)
+	if _, err := settings.SetSetting(dir, "autoswitch.model", "Fable"); err != nil {
+		t.Fatal(err)
+	}
+	s.reload(m)
+	for _, r := range s.rows {
+		if r.Spec.Dotted() == "autoswitch.model" {
+			t.Fatal("the Settings screen lists autoswitch.model")
+		}
+	}
+	if view := stripANSI(s.view(m)); strings.Contains(view, "Count model limits") {
+		t.Fatalf("view names the model setting:\n%s", view)
+	}
+}
+
+// withStringRow appends the registry's string row the screen no longer lists,
+// so the generic string editor stays covered.
+func withStringRow(t *testing.T, s *settingsScreen, dir string) {
+	t.Helper()
+	for _, e := range settings.EffectiveSettings(dir) {
+		if e.Spec.Kind == settings.KindString {
+			s.rows = append(s.rows, e)
+			return
+		}
+	}
+	t.Fatal("the registry has no string setting")
 }
 
 func TestSettingsRowsFollowAnExternalChange(t *testing.T) {
@@ -407,6 +450,7 @@ func TestSettingsEnumCycles(t *testing.T) {
 
 func TestSettingsStringEditsAndEmptyIsRefused(t *testing.T) {
 	m, s, dir := settingsModel(t)
+	withStringRow(t, s, dir)
 	selectKey(t, s, "autoswitch.model")
 	s.update(m, keyPress("enter"))
 	if s.input != "" {
@@ -629,6 +673,7 @@ func TestSettingsRowSaysAStoredValueWasCleaned(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.reload(m)
+	withStringRow(t, s, dir)
 	selectKey(t, s, "autoswitch.model")
 	if row := s.rowText(rowFor(t, s, "autoswitch.model"), false, 20, 12, 100); !strings.Contains(stripANSI(row), "Fable[2J") || strings.Contains(row, "\x1b[2J") {
 		t.Errorf("row = %q, want the clean value", row)

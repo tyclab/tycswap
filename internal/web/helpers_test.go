@@ -401,16 +401,8 @@ func (a *fakeAuto) op(name string) error {
 	return a.errs[name]
 }
 
-func (a *fakeAuto) Start(dryRun bool) error { return a.op(fmt.Sprintf("Start(%v)", dryRun)) }
-func (a *fakeAuto) Stop() error             { return a.op("Stop") }
-func (a *fakeAuto) Wake() error             { return a.op("Wake") }
-func (a *fakeAuto) ApplyModels(model string) error {
-	return a.op(fmt.Sprintf("ApplyModels(%q)", model))
-}
-
-func (a *fakeAuto) ApplyThreshold(t float64) error {
-	return a.op(fmt.Sprintf("ApplyThreshold(%g)", t))
-}
+func (a *fakeAuto) Start() error { return a.op("Start") }
+func (a *fakeAuto) Stop() error  { return a.op("Stop") }
 
 // fakeUpdates is the UpdatesFacade seam: a view the test sets, recorded
 // calls, and an Apply that can block (gate) to prove one-at-a-time.
@@ -612,12 +604,8 @@ func sampleSettings() []SettingView {
 
 func sampleAuto() AutoView {
 	return AutoView{
-		Available: true, Running: true, Hosted: true, DryRun: true, StartedAt: f64(1758276000), Threshold: 85,
-		Settings: map[string]any{"autoswitch.sevenDayThreshold": 85.0, "autoswitch.strategy": "soonest-reset", "autoswitch.codexEnabled": true},
-		Events: []AutoEventView{
-			{At: 1758276001, Kind: "poll", Message: "polled 3 accounts"},
-			{At: 1758276002, Kind: "switch", Message: "switched to #2", Account: "2", Fields: map[string]any{"from": "1"}},
-		},
+		Available: true, Running: true, Hosted: true, StartedAt: f64(1758276000), Threshold: 85,
+		Settings:   map[string]any{"autoswitch.sevenDayThreshold": 85.0, "autoswitch.strategy": "soonest-reset", "autoswitch.codexEnabled": true},
 		Quarantine: map[string]any{"quarantine": map[string]any{"3": map[string]any{"reason": "invalid_grant", "at": 1758275000.0}}},
 	}
 }

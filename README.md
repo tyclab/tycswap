@@ -366,7 +366,8 @@ alice@example.com
 The full-screen interactive dashboard is `tycswap tui` (also `tycswap watch`;
 a bare `tycswap` opens the action menu). It shows the same accounts with live usage and
 refreshes on a timer. Its Settings screen (`c`, or the menu's "Settings…" row)
-lists every `settings.json` key with its value and help text and edits it in
+lists every `settings.json` key but `autoswitch.model`, which `tycswap config`
+alone sets, with its value and help text and edits it in
 place — a bool toggles, a choice cycles, a number or string is typed and
 validated like `tycswap config set` — and `u` resets a key to its default; the
 auto-switch screen's own threshold adjustment (`t`, which moves the 7d bar)
@@ -431,6 +432,12 @@ shell takes effect without touching the app.
 `tycswap auto on --if-unset` turns it on only when nothing has set it yet,
 for a provisioner that must not override a user's later "off".
 
+A switch by hand (`tycswap switch`, the dashboard, the tray, the TUI) leaves
+auto-switch as it is. For `autoswitch.cooldownSeconds` (300 by default) after
+it, auto-switch makes no switch, even off an account at its limit, and each
+tick in that time says `no switch: cooldown (switched by hand to account 4;
+held for another 297s)`. After that it decides as always.
+
 `tycswap auto` runs a foreground loop that polls usage and switches to another
 account before the active one reaches its rate limit:
 
@@ -445,8 +452,10 @@ Each window has a limit of its own, set by how fast that window fills:
 
 Ultra (formerly Max 20x) loses its five-hour limit as Anthropic verifies
 accounts during its staged rollout. tycswap follows the windows returned by
-Anthropic: an absent five-hour window does not block switching or recovery,
-and weekly and counted model limits still apply. A reported five-hour window
+Anthropic: an absent five-hour window does not block switching,
+and weekly and counted model limits still apply. When the active account's
+five-hour window reaches its bar, an account without one is a target while it
+is below its weekly and counted model bars. A reported five-hour window
 continues to count, including on Ultra accounts awaiting verification. Max
 (formerly Max 5x) retains that window. No threshold changes are needed.
 
@@ -528,7 +537,9 @@ returns soonest and no account sits idle on a window that is about to renew.
 `best` instead tries the target with the most headroom first. Qualification
 itself is the same under both. On a proactive switch, a target
 must still land under the threshold and beat the active account by the
-hysteresis margin, both measured on the window that triggered the tick. On an
+hysteresis margin, both measured on the window that triggered the tick; when
+that is the five-hour window, an account without one needs only to be under
+all of its own bars. On an
 at-limit or failover switch neither check applies, but `soonest-reset` still
 never lets an early renewal beat a threshold: an account at or above one of its
 bars is tried only after every account below all of them, regardless of how
@@ -632,25 +643,12 @@ default login instead. A former group hands its account back on the first
 auto-switch tick after its last session exits, and its conversations are
 copied into the default profile, so `claude --resume` continues them.
 
-A Claude session whose lifecycle hooks run `tycswap recovery record` can offer
-**Continue in Codex** after a corroborated limit, once compatible account
-rotation is exhausted and the known wait exceeds 30 minutes
-(`autoswitch.handoverWaitMinutes`, minimum 15); any other stopped session can be
-chosen in the dashboard for a manual plan. Review saved context
-and omissions before explicitly starting a new conversation. Unfinished tools,
-unknown source state and another busy editor in the same worktree block launch.
-The Flakelab launcher reserves editing ownership and preserves source history;
-stop the destination before using `tycswap recovery reclaim --cwd /path/to/work
---confirm-no-background-tools` to return editing to the source.
-
-Existing unmanaged sources must exit before transfer. Codex automatic recovery
-requires typed app-server events with account and process identity from the
-owning host; ordinary terminal error text is insufficient. A Codex account
-switch still requires restarting/resuming Codex. Without the supported launcher,
-the dashboard provides a manual plan; stop the source before running it.
-`tycswap recovery prepare --help` explains saved-context preparation without a
-model request. The dashboard's **Guide → Sessions** covers the workflow,
-including Flakelab start/resume integration.
+**The handover after a limit is removed.** `tycswap recovery`, the
+dashboard's *Continue after a limit* card and *Continue in Codex…* button and
+the tray's *Session at limit* item are gone: a session parked on a limit goes
+on when the login has room. Every `tycswap recovery` verb exits 2 with a line
+saying so, except `recovery record`, the hook a former group session may still
+run, which exits 0.
 
 #### Former session profiles
 
@@ -708,8 +706,8 @@ given, which overwrites it. Import rejects any file marked `encrypted: true`.
 
 ### Configure settings
 
-Rotation tuning lives in the dashboard's **Settings** and `tycswap config`.
-The 5-hour threshold is 85% by default: a 15% reserve before the provider's
+Rotation tuning lives in the dashboard's **Settings** and `tycswap config`;
+`autoswitch.model` is set with `tycswap config` only. The 5-hour threshold is 85% by default: a 15% reserve before the provider's
 limit, not a provider requirement. Changing presentation does not change the
 saved policy.
 
@@ -855,12 +853,14 @@ account that is not stored yet, warns when an `ANTHROPIC_*` variable or a
 can be updated: a newer tycswap release and a newer Claude Code from the
 installer it was set up with, each installed from the page after a
 confirmation (the header carries the count on every tab; the check runs at
-start and every six hours). *Auto* runs an auto-switch engine in the `web`
-process with its *Next best* ranking, quarantine and event log; *Sessions*
+start and every six hours). *Auto* has one *Auto-switch* switch
+(`autoswitch.enabled`), says who checks (a scheduler and its last check, or
+the dashboard and how often) and what is counted now, with the *Next best*
+ranking and quarantine; *Sessions*
 lists the running Claude Code sessions (also those started with `tycswap
-run`) and can stop one; *Settings* edits every `settings.json` key with its
-type, range and default, the same keys as `tycswap config`, and picks the
-counted model windows from the ones the accounts report; *Guide* explains
+run`) and can stop one; *Settings* edits the `settings.json` keys with their
+type, range and default, the keys of `tycswap config` but `autoswitch.model`,
+and lists *Poll interval* only while the dashboard runs the checks; *Guide* explains
 the tool. The Accounts and Updates cards fold, and the choice is remembered.
 Choose **Interactive menu… → Import / export…** to transfer accounts through a terminal launched from the dashboard or the Linux and macOS tray menu. Files contain account tokens; the guided export asks before writing and requires a new destination.
 
@@ -871,8 +871,8 @@ the launch URL alone (a new tab needs a fresh URL). On WSL the browser opens on
 the Windows side through `wslview` or an `xdg-open` that translates Linux
 paths. On a machine with Codex accounts the dashboard lists them under their
 own heading after the Claude accounts, with switch, disable / enable and
-remove, *+ Add current Codex login* stores the codex CLI's login, and the Auto
-tab runs the Codex engine beside the Claude one, as `tycswap auto` does;
+remove, *+ Add current Codex login* stores the codex CLI's login, and
+auto-switch rotates them beside the Claude accounts, as `tycswap auto` does;
 alias, move, swap, export and import of Codex accounts are available through the interactive menu or `tycswap codex`. See `docs/reference.md`, `tycswap web`, for the API and the security
 model.
 
@@ -900,10 +900,10 @@ with a bar and, under it, when that limit resets and how long that is
 auto-switch threshold. `—` means no such window was reported, which is how a verified
 Ultra login's 5-hour column reads, or that the plan cannot run Fable. Fable at
 100% does not mean the shared weekly limit is exhausted. **Switch** switches
-the default login at once and turns auto-switch off when it was on (for a
-Codex account, while Codex rotation is on), so the login stays where you put
-it; the line under the list says so, and the active
-account reads **In use**. The footer has **Quit**, **Check for updates…**, the
+the default login at once and leaves auto-switch as it is; like every switch
+by hand it holds auto-switch for the cooldown ([Auto-switch before a
+limit](#auto-switch-before-a-limit)). The line under the list says what
+happened, and the active account reads **In use**. The footer has **Quit**, **Check for updates…**, the
 update buttons while an update waits, the **Auto-switch** and **Start at login**
 switches and **Open dashboard**. **Check for updates…** starts the dashboard's
 check and opens its Updates section, including with `--no-update-check`. A
@@ -913,8 +913,8 @@ closes the panel. Settings and Add account are in the dashboard (and
 `tycswap config`, `tycswap add`). Start at login is local to the tray's
 device.
 
-macOS and Linux retain their platform menus; there a switch from the menu
-turns auto-switch off the same way. The icon's title reports the active
+macOS and Linux retain their platform menus, where a switch acts the same
+way. The icon's title reports the active
 account and its fullest counted window (`#1 · 45%`, with `⟳` while the hosted
 engine runs). Notifications report switches, quarantines and thresholds.
 Update checks and installation retain the normal release checks and restart
@@ -944,29 +944,28 @@ elsewhere.
 `TYCSWAP_AUTO_MANAGED_BY=flakelab-tycswap-autoswitch.timer` in the dashboard
 service environment (or name your scheduler). It only means "do not host an
 engine here": the app starts no engine of its own, so a second engine never
-runs beside the timer's. The tray's toggle and the dashboard's Start and Stop
-still work: they turn `autoswitch.enabled` on and off, which the timer's
-`tycswap auto --once` reads on every tick, and they show that setting as
-running or stopped. The dashboard names the scheduler on its State tile and
-turns Wake and the live threshold slider off, since no engine runs there; a
-dry run is still offered. Seed the setting from the provisioner with
+runs beside the timer's. The tray's toggle and the dashboard's Auto-switch
+switch still work: they turn `autoswitch.enabled` on and off, which the timer's
+`tycswap auto --once` reads on every tick, and they show that setting as on
+or off. The Auto tab says `checked by <scheduler>, last check <time ago>`,
+and the Settings tab leaves out *Poll interval*, which `auto --once` never
+reads. Seed the setting from the provisioner with
 `tycswap auto on --if-unset`. This declares ownership; it does not probe
 whether the named scheduler is currently active.
 
 Flakelab manages the package, service and timer without overwriting saved
 tycswap policy settings. Its `auto --once` checks reload those values each
 time. The external timer controls cadence; `autoswitch.intervalSeconds`
-only controls a continuous tycswap loop. Continuous runners load shared
-defaults at startup, while explicit group overrides reload each group check.
-Grouped engines currently recreate their failed-poll counter each check,
-so the failed-poll threshold is not offered as a group override.
+only controls a continuous tycswap loop, which loads the settings when it
+starts.
 
-**Model windows.** The Auto and Settings tabs offer Off, All models, and
-Selected models with Save. Named windows match case-insensitively; saved
-names remain available even before accounts report them. Drafts survive
-usage refreshes. The Windows table shows each reported limit independently;
-the icon's summary counts only the selected windows. Group model selection
-follows the group's confirmed sessions.
+**Model windows.** Unset, `autoswitch.model` follows the models the live
+sessions run; the Auto tab's *Counting now* line says what is counted and
+why. `tycswap config set autoswitch.model all` (or `Fable, Opus`) counts
+those windows always, and the Auto tab then warns that session following is
+off; `tycswap config unset autoswitch.model` turns it back on. Named windows
+match case-insensitively. The Windows table shows each reported limit
+independently; the icon's summary counts only the counted windows.
 
 **WSL: the Windows tray for the engine in the distro.** Inside WSL there is no
 tray, so the app there runs headless and the Windows binary shows the icon. In
@@ -1014,7 +1013,7 @@ Windows reaches the distro's `127.0.0.1:7337` through WSL2's localhost
 forwarding (on by default). The token is only accepted on loopback, the file
 is readable only by its owner in the distro, and a new start writes a new
 one, which the tray reads again by itself. The remote tray switches, toggles
-auto-switch and the model limit and opens the distro's dashboard; Claude
+auto-switch and opens the distro's dashboard; Claude
 Code's updates and *Add current login* stay on the distro's dashboard. Until
 the distro's app answers, the icon shows `⚠`.
 
@@ -1299,7 +1298,6 @@ flowchart LR
     F["Usage polling"] --> G["Auto-switch policy"]
     S["Session status lines → auto --observe"] --> G
     G --> D
-    H["Reviewed recovery handover"] --> C
 ```
 
 Repository instructions: [AGENTS.md](AGENTS.md).

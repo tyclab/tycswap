@@ -10,37 +10,11 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
-	"github.com/tyclab/tycswap/internal/recovery"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/tray"
 	"github.com/tyclab/tycswap/internal/web"
 )
-
-func TestRecoveryOfferNotifiesOnceAndOpensReview(t *testing.T) {
-	tray := &fakeTray{}
-	opened := 0
-	shell := newAppShell(tray, shellActions{OpenDashboard: func() error { opened++; return nil }})
-	st := sampleState()
-	st.Recovery = &web.RecoveryView{Incidents: []recovery.Incident{{Event: recovery.Event{Provider: "claude", SessionID: "s", IncidentID: "one"}, Decision: recovery.Decision{Action: "offer", NewlyOffered: true}}}}
-	shell.update(st)
-	shell.update(st)
-	if notes := tray.notesNow(); len(notes) != 1 || !strings.Contains(notes[0], "Continue in Codex?") {
-		t.Fatalf("recovery notifications: %v", notes)
-	}
-	if _, ok := tray.item("recovery-open"); !ok {
-		t.Fatal("handover review missing from tray")
-	}
-	shell.click("recovery-open")
-	if opened != 1 {
-		t.Fatal("handover click did not open review")
-	}
-	st.Recovery.Incidents[0].Dismissed = true
-	shell.update(st)
-	if _, ok := tray.item("recovery-open"); ok {
-		t.Fatal("dismissed offer stayed in tray")
-	}
-}
 
 type fakeTray struct {
 	mu      sync.Mutex
@@ -207,8 +181,8 @@ func TestShellClicks(t *testing.T) {
 
 	sh.click("open")
 	sh.click("switch:claude:2")
-	sh.click("auto")
-	sh.click("auto")
+	sh.click(autoChoice(t, ft))
+	sh.click(autoChoice(t, ft))
 	sh.click("autostart")
 	sh.click("install-update")
 	sh.click("quit")
@@ -223,6 +197,99 @@ func TestShellClicks(t *testing.T) {
 	}
 }
 
+// autoChoice is the click the Auto-switch row hands the shell as the menu
+// shows it now: its id and the state it shows (DESIGN A94).
+func autoChoice(t *testing.T, ft *fakeTray) string {
+	t.Helper()
+	it, ok := ft.item("auto")
+	if !ok {
+		t.Fatal("no Auto-switch row")
+	}
+	return it.Choice()
+}
+
+// TestShellAutoClickSetsWhatItShowed: the 2026-11-17 16:39:25 off-and-on
+// again (DESIGN A94). A click sets the opposite of the state the row showed;
+// one that arrives while a change is in flight is dropped, not queued; a
+// click after the first has finished toggles again.
+func TestShellAutoClickSetsWhatItShowed(t *testing.T) {
+	sh, ft, _ := newTestShell(t)
+	var mu sync.Mutex
+	var writes []string
+	running := false
+	inFirst, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	sh.act.AutoRunning = func() bool { mu.Lock(); defer mu.Unlock(); return running }
+	sh.act.AutoStart = func() error {
+		once.Do(func() { close(inFirst); <-release })
+		mu.Lock()
+		defer mu.Unlock()
+		writes, running = append(writes, "on"), true
+		return nil
+	}
+	sh.act.AutoStop = func() error {
+		mu.Lock()
+		defer mu.Unlock()
+		writes, running = append(writes, "off"), false
+		return nil
+	}
+	sh.update(sampleState())
+	shown := autoChoice(t, ft)
+	if shown != "auto:off" {
+		t.Fatalf("the row shows %q", shown)
+	}
+	done := make(chan struct{}, 2)
+	for range 2 {
+		go func() { sh.click(shown); done <- struct{}{} }()
+	}
+	select {
+	case <-inFirst:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("a click on %q never turned auto-switch on", shown)
+	}
+	// The dropped click returns while the first still blocks.
+	returned := 0
+	select {
+	case <-done:
+		returned++
+	case <-time.After(2 * time.Second):
+	}
+	close(release)
+	for returned < 2 {
+		select {
+		case <-done:
+			returned++
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%d of 2 clicks returned", returned)
+		}
+	}
+	mu.Lock()
+	got, on := strings.Join(writes, ","), running
+	mu.Unlock()
+	if got != "on" || !on {
+		t.Fatalf("writes %q, on %v; want one write turning it on", got, on)
+	}
+	if shown = autoChoice(t, ft); shown != "auto:on" {
+		t.Fatalf("after the click the row shows %q", shown)
+	}
+	sh.click(shown)
+	mu.Lock()
+	got, on = strings.Join(writes, ","), running
+	mu.Unlock()
+	if got != "on,off" || on {
+		t.Fatalf("writes %q, on %v; want the next click to turn it off", got, on)
+	}
+	// A click carries what it showed: one from a row still drawn on sets
+	// off, though the shell reads off already.
+	sh.click("auto:on")
+	mu.Lock()
+	got = strings.Join(writes, ",")
+	mu.Unlock()
+	if got != "on,off,off" {
+		t.Fatalf("writes %q; a click that showed on must set off", got)
+	}
+}
+
 func TestShellShowsAutoModeInTitleAndMenu(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
 	sh.update(sampleState())
@@ -232,14 +299,14 @@ func TestShellShowsAutoModeInTitleAndMenu(t *testing.T) {
 	if it, _ := ft.item("auto"); it.Checked || it.Kind != tray.KindToggle || !strings.HasPrefix(it.Sub, "off") {
 		t.Errorf("off: item=%+v", it)
 	}
-	sh.click("auto") // turns it on and repaints at once
+	sh.click(autoChoice(t, ft)) // turns it on and repaints at once
 	if ft.title != "⟳ #1 · 45%" || !strings.Contains(ft.tooltip, "auto-switch on") {
 		t.Errorf("on: title=%q tooltip=%q", ft.title, ft.tooltip)
 	}
 	if it, _ := ft.item("auto"); !it.Checked || !strings.HasPrefix(it.Sub, "rotates Claude accounts near the limit (") || !strings.Contains(it.Sub, "5h 85% · 7d 97%") {
 		t.Errorf("on: item=%+v", it)
 	}
-	sh.click("auto")
+	sh.click(autoChoice(t, ft))
 	if ft.title != "#1 · 45%" {
 		t.Errorf("off again: title=%q", ft.title)
 	}
@@ -348,52 +415,28 @@ func TestShellPctParsing(t *testing.T) {
 	}
 }
 
-// TestShellModelLimitSwitch: one switch decides what auto-switch counts and
-// what every percentage in the tray reports (A39).
-func TestShellModelLimitSwitch(t *testing.T) {
+// TestShellCountsTheModelSetting: autoswitch.model, set with `tycswap
+// config`, decides what every percentage in the tray reports (A39).
+func TestShellCountsTheModelSetting(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
-	var saved *bool
-	sh.act.SetModelLimits = func(on bool) error { saved = &on; return nil }
-
 	st := sampleState() // active #1: 5h 45%, 7d 30%, Fable 12% — no model setting
 	sh.update(st)
 	if ft.title != "#1 · 45%" {
-		t.Errorf("off: title = %q, want the worst of 5h/7d", ft.title)
+		t.Errorf("unset: title = %q, want the worst of 5h/7d", ft.title)
 	}
-	it, ok := ft.item("model-limits")
-	if !ok || it.Checked || it.Title != "Model limits" || !strings.Contains(it.Sub, "ignored") {
-		t.Errorf("off: switch = %+v (ok=%v)", it, ok)
-	}
-
-	// Turning it on writes the setting…
-	sh.click("model-limits")
-	if saved == nil || !*saved {
-		t.Fatalf("click should switch it on, got %v", saved)
-	}
-	// …and the next state document, which now carries the setting, makes the
-	// model window count everywhere.
 	st.Settings = append(st.Settings, web.SettingView{Key: "autoswitch.model", Value: "all"})
 	st.Accounts[1] = acct(1, "alice@example.com", "work", true, 45.0, 30.0, "Fable", 97.0)
 	sh.update(st)
 	if ft.title != "#1 · 97%" {
-		t.Errorf("on: title = %q, want the model window to count", ft.title)
-	}
-	if it, _ := ft.item("model-limits"); !it.Checked || !strings.Contains(it.Sub, "counting all") {
-		t.Errorf("on: switch = %+v", it)
-	}
-	if !strings.Contains(strings.Join(ft.notes, "\n"), "Model limits on") {
-		t.Errorf("notes = %v", ft.notes)
+		t.Errorf("set: title = %q, want the model window to count", ft.title)
 	}
 }
 
 // TestShellFollowsTheEngineCount: while autoswitch.model is unset the tray's
 // figures count what the dashboard says the engine counts now (Fable for the
-// live Fable sessions, DESIGN A91), while the switch still shows the setting
-// and turns it on.
+// live Fable sessions, DESIGN A91).
 func TestShellFollowsTheEngineCount(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
-	var saved *bool
-	sh.act.SetModelLimits = func(on bool) error { saved = &on; return nil }
 	st := sampleState()
 	st.Accounts[1] = acct(1, "alice@example.com", "work", true, 45.0, 30.0, "Fable", 97.0)
 	st.Auto = &web.AutoView{Running: true, Settings: map[string]any{"autoswitch.model": nil},
@@ -402,44 +445,42 @@ func TestShellFollowsTheEngineCount(t *testing.T) {
 	if ft.title != "⟳ #1 · 97%" && ft.title != "#1 · 97%" {
 		t.Errorf("title = %q, want the counted Fable window", ft.title)
 	}
-	it, _ := ft.item("model-limits")
-	if it.Checked || it.Sub != "follows sessions — counting 5h + 7d + Fable (live Fable sessions)" {
-		t.Errorf("switch = %+v, want unchecked, following the sessions", it)
-	}
-	sh.click("model-limits")
-	if saved == nil || !*saved {
-		t.Fatalf("click should turn the setting on, got %v", saved)
-	}
 }
 
-// TestShellModelLimitsStates: the Model limits switch says "off" only for an
-// explicit none; unset, it follows the sessions and shows what the engine
-// counts now; set, it is on (DESIGN A91).
-func TestShellModelLimitsStates(t *testing.T) {
+// TestShellMenuHasNoModelLimits: the Model limits switch is gone (DESIGN
+// A94). On, it wrote autoswitch.model = all, which switched off following
+// the sessions; the key is set with `tycswap config` only. Whatever the
+// setting and the engine's count, no row offers it, and its old id does
+// nothing.
+func TestShellMenuHasNoModelLimits(t *testing.T) {
 	for name, tc := range map[string]struct {
 		setting  any
 		counting web.CountingView
-		checked  bool
-		sub      string
 	}{
-		"unset": {counting: web.CountingView{Mode: "sessions", Models: []string{"Fable"}, Sessions: []string{"fable"}, Caption: "counting 5h + 7d + Fable (live Fable sessions)"},
-			sub: "follows sessions — counting 5h + 7d + Fable (live Fable sessions)"},
-		"unset-hosted": {counting: web.CountingView{Mode: "hosted", Models: []string{}, Caption: "counting 5h + 7d (the engine hosted here does not follow sessions)"},
-			sub: "counting 5h + 7d (the engine hosted here does not follow sessions)"},
-		"none": {setting: "none", counting: web.CountingView{Mode: "setting", Setting: "none", Models: []string{}, Caption: "counting 5h + 7d (autoswitch.model)"},
-			sub: "off — 5h and 7d only, Fable ignored"},
-		"set": {setting: "Fable", counting: web.CountingView{Mode: "setting", Setting: "Fable", Models: []string{"Fable"}, Caption: "counting 5h + 7d + Fable (autoswitch.model)"},
-			checked: true, sub: "counting Fable — applies to percentages and switching"},
+		"unset":        {counting: web.CountingView{Mode: "sessions", Models: []string{"Fable"}, Sessions: []string{"fable"}, Caption: "counting 5h + 7d + Fable (live Fable sessions)"}},
+		"unset-hosted": {counting: web.CountingView{Mode: "hosted", Models: []string{}, Caption: "counting 5h + 7d (the engine hosted here does not follow sessions)"}},
+		"none":         {setting: "none", counting: web.CountingView{Mode: "setting", Setting: "none", Models: []string{}, Caption: "counting 5h + 7d (autoswitch.model)"}},
+		"set":          {setting: "Fable", counting: web.CountingView{Mode: "setting", Setting: "Fable", Models: []string{"Fable"}, Caption: "counting 5h + 7d + Fable (autoswitch.model)"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			sh, ft, _ := newTestShell(t)
-			sh.act.SetModelLimits = func(bool) error { return nil }
+			sh, ft, calls := newTestShell(t)
 			st := sampleState()
 			counting := tc.counting
 			st.Auto = &web.AutoView{Running: true, Settings: map[string]any{"autoswitch.model": tc.setting}, Counting: &counting}
 			sh.update(st)
-			if it, _ := ft.item("model-limits"); it.Checked != tc.checked || it.Sub != tc.sub {
-				t.Errorf("switch = checked %v %q, want checked %v %q", it.Checked, it.Sub, tc.checked, tc.sub)
+			for _, it := range ft.menu {
+				if it.ID == "model-limits" || strings.Contains(it.Title, "Model limits") {
+					t.Fatalf("menu row %+v", it)
+				}
+			}
+			for _, it := range sh.panel(st).Actions {
+				if it.ID == "model-limits" {
+					t.Fatalf("panel action %+v", it)
+				}
+			}
+			sh.click("model-limits")
+			if len(*calls) != 0 || len(ft.notesNow()) != 0 {
+				t.Fatalf("the old id acted: calls %v, notes %v", *calls, ft.notesNow())
 			}
 		})
 	}
@@ -885,7 +926,7 @@ func TestShellCodexRowsUnderOwnHeader(t *testing.T) {
 	if len(ft.notes) != 0 {
 		t.Errorf("the Codex account at 99%% raised an alert: %v", ft.notes)
 	}
-	sh.click("auto")
+	sh.click(autoChoice(t, ft))
 	if au, _ := ft.item("auto"); au.Sub != "rotates Claude and Codex accounts near the limit (5h 85% · 7d 97% · codex 90%)" {
 		t.Errorf("auto row = %q", au.Sub)
 	}
@@ -937,11 +978,11 @@ func TestShellClaudeOnlyMenuUnchanged(t *testing.T) {
 		if strings.Contains(ft.tooltip, "codex") {
 			t.Errorf("tooltip = %q", ft.tooltip)
 		}
-		sh.click("auto")
+		sh.click(autoChoice(t, ft))
 		if au, _ := ft.item("auto"); au.Sub != "rotates Claude accounts near the limit (5h 85% · 7d 97%)" {
 			t.Errorf("auto row = %q", au.Sub)
 		}
-		sh.click("auto")
+		sh.click(autoChoice(t, ft))
 		if got := strings.Join(ft.notesNow(), "\n"); got != "Auto-switch on | Claude accounts rotate automatically near the limit.\nAuto-switch off | Claude accounts are no longer rotated automatically." {
 			t.Errorf("notes = %q", got)
 		}
@@ -1032,7 +1073,7 @@ func TestTrayCountsOnlySelectedModels(t *testing.T) {
 func TestTrayManagedToggleWritesSetting(t *testing.T) {
 	a := newAutoFacade(fixtureSwitcher(t), nil)
 	a.managedBy = testOwner
-	a.newEngine = func(settings.AutoSwitchSettings, func(autoswitch.Event), bool) autoEngine {
+	a.newEngine = func(settings.AutoSwitchSettings, func(autoswitch.Event)) autoEngine {
 		t.Fatal("the tray built an engine under an external owner")
 		return nil
 	}
@@ -1043,7 +1084,7 @@ func TestTrayManagedToggleWritesSetting(t *testing.T) {
 	ft := &fakeTray{}
 	sh := newAppShell(ft, shellActions{
 		AutoRunning: func() bool { return a.View().Running },
-		AutoStart:   func() error { return a.Start(false) },
+		AutoStart:   func() error { return a.Start() },
 		AutoStop:    a.Stop,
 	})
 	st := sampleState()
@@ -1052,7 +1093,7 @@ func TestTrayManagedToggleWritesSetting(t *testing.T) {
 	sh.update(st)
 	for i, want := range []bool{true, false, true} {
 		if i > 0 {
-			sh.click("auto")
+			sh.click(autoChoice(t, ft))
 		}
 		item, ok := ft.item("auto")
 		if !ok || item.Disabled || item.Checked != want || settings.Load(root).Enabled != want {
@@ -1072,7 +1113,7 @@ func TestTrayClickAfterCLIOffTurnsOn(t *testing.T) {
 	engines := countingEngines(a)
 	t.Cleanup(func() { a.stopKeepingChoice() })
 	root := a.sw.BackupDir()
-	if err := a.Start(false); err != nil {
+	if err := a.Start(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := settings.SetSetting(root, "autoswitch.enabled", "false"); err != nil {
@@ -1081,7 +1122,7 @@ func TestTrayClickAfterCLIOffTurnsOn(t *testing.T) {
 	ft := &fakeTray{}
 	sh := newAppShell(ft, shellActions{
 		AutoRunning: func() bool { return a.View().Running },
-		AutoStart:   func() error { return a.Start(false) },
+		AutoStart:   func() error { return a.Start() },
 		AutoStop:    a.Stop,
 	})
 	st := sampleState()
@@ -1091,7 +1132,7 @@ func TestTrayClickAfterCLIOffTurnsOn(t *testing.T) {
 	if item, _ := ft.item("auto"); item.Checked {
 		t.Fatalf("item checked while the setting is off: %+v", item)
 	}
-	sh.click("auto")
+	sh.click(autoChoice(t, ft))
 	item, _ := ft.item("auto")
 	if !settings.Load(root).Enabled || !item.Checked || engines.built() != 1 {
 		t.Fatalf("after the click: enabled %v, item %+v, %d engines", settings.Load(root).Enabled, item, engines.built())

@@ -208,8 +208,8 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 		trigger = "failover"
 	}
 
-	if heldByCooldown(trigger) && e.inCooldown(state) {
-		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "cooldown"})
+	if detail, held := e.cooldownHold(trigger, state); held {
+		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "cooldown", Detail: detail})
 		return tickResult{Outcome: NoAction}, nil
 	}
 
@@ -350,7 +350,8 @@ func axisLabel(axis usage.Class, trigger string) string {
 // made the tick move; they land only below every bar (DESIGN A71, A73).
 func isHandover(trigger string) bool { return trigger == "reserved" || trigger == "model-missing" }
 
-// heldByCooldown names the triggers a recent switch holds back. A login that
+// heldByCooldown names the triggers the engine's or start's recent switch
+// holds back; a switch by hand holds every trigger (DESIGN A94). A login that
 // cannot serve a counted model moves at once: its sessions cannot run until
 // it does (DESIGN A77).
 func heldByCooldown(trigger string) bool { return trigger == "proactive" || trigger == "reserved" }
@@ -422,30 +423,15 @@ func (e *Engine) selectCandidates(
 			continue // itself at its limit — never a target
 		}
 		cand := e.headroomByClass(usageMap[num])
-		if trigger == "proactive" && activeAxis != nil {
-			// (a) landing below the bar and (b) better by the full margin,
-			// both judged on the window that made the tick move, and only on
-			// that one (DESIGN A34).
-			ch := cand.Axis(axis)
-			if ch == nil {
-				ch = cand.Weekly()
-			}
-			if ch == nil {
-				continue
-			}
-			if (100.0 - *ch) >= axisThreshold(s, axis) {
-				continue
-			}
-			if *ch-*activeAxis < s.HysteresisPct {
-				continue
-			}
+		below := belowEveryBar(cand, s)
+		if trigger == "proactive" && activeAxis != nil && !landsProactively(cand, axis, *activeAxis, below, s) {
+			continue
 		}
 		// Whatever the trigger, never land on an account whose weekly budget
 		// (the week or a counted model window) is already spent.
 		if cand.WeeklyExhausted() {
 			continue
 		}
-		below := belowEveryBar(cand, s)
 		reserved := e.isReserved(num)
 		// A hand-over leaves a Fable-capable account only for one that is
 		// not, and only when that one is below every bar (DESIGN A71).
@@ -472,6 +458,25 @@ func (e *Engine) selectCandidates(
 		ordered = append(ordered, q.num)
 	}
 	return ordered, oauthCandidates, anyKnown, nil
+}
+
+// landsProactively is the proactive gate: (a) landing below the bar and (b)
+// better by the full margin, both judged on the window that made the tick
+// move, and only on that one (DESIGN A34). An account without a 5h window has
+// no 5h limit: on a 5h move it lands when it is below every bar of its own
+// (DESIGN A96).
+func landsProactively(cand usage.Headroom, axis usage.Class, active float64, below bool, s settings.AutoSwitchSettings) bool {
+	ch := cand.Axis(axis)
+	if ch == nil && axis == usage.ClassSession {
+		return below
+	}
+	if ch == nil {
+		ch = cand.Weekly()
+	}
+	if ch == nil || 100.0-*ch >= axisThreshold(s, axis) || *ch-active < s.HysteresisPct {
+		return false
+	}
+	return true
 }
 
 // decisionAxes is the order in which the three classes are considered. The
@@ -637,16 +642,16 @@ func (e *Engine) perform(number, email, trigger, axis string) (tickResult, error
 	outcome := NoAction
 	switched := false
 	err := lock.With(func() error {
-		// Off since the tick began (a switch by hand turns it off first,
-		// DESIGN A84): the user's pick stands.
+		// Turned off, or switched by hand, since the tick began: a hand
+		// switch stamps its hold under this lock (DESIGN A94).
 		if e.enabled != nil && !e.enabled() {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "disabled", Detail: DisabledDetail})
 			outcome = NoAction
 			return nil
 		}
 		state := e.readState()
-		if heldByCooldown(trigger) && e.inCooldown(state) {
-			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "cooldown"})
+		if detail, held := e.cooldownHold(trigger, state); held {
+			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "cooldown", Detail: detail})
 			outcome = NoAction
 			return nil
 		}
@@ -663,10 +668,7 @@ func (e *Engine) perform(number, email, trigger, axis string) (tickResult, error
 			outcome = NoAction
 			return nil
 		}
-		state["schemaVersion"] = StateSchemaVersion
-		state["lastSwitchAt"] = e.nowSeconds()
-		state["lastSwitchTo"] = number
-		clearActiveMemory(state)
+		stampSwitch(state, number, e.nowSeconds(), false)
 		if err := e.writeState(state); err != nil {
 			return err
 		}
