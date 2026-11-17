@@ -296,17 +296,6 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 	auto := newAutoFacade(sw, codexSw)
 	auto.managedBy = strings.TrimSpace(os.Getenv(brand.Sanitized().EnvPrefix + "_AUTO_MANAGED_BY"))
 	codex := newCodexOps(codexSw)
-	recovery := newRecoveryWeb(newRecoveryRuntime(sw, func(group, account string) error {
-		if group == "codex" {
-			if codex == nil {
-				return fmt.Errorf("Codex account operations unavailable")
-			}
-			_, err := codex.SwitchTo(account)
-			return err
-		}
-		_, err := sw.SwitchTo(account, true)
-		return err
-	}))
 	var host *updatesHost
 	updates := o.updates
 	if updates == nil {
@@ -317,7 +306,6 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 		Facade:             sw,
 		Snapshot:           providers.NewMultiSnapshotSource(ctx, sw, codexSw),
 		Accounts:           sw,
-		Recovery:           recovery,
 		Codex:              codex,
 		Settings:           settingsFacade{root: sw.BackupDir()},
 		Auto:               auto,

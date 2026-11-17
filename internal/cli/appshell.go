@@ -111,13 +111,12 @@ type shellActions struct {
 }
 
 type appShell struct {
-	tray            tray.Tray
-	act             shellActions
-	notify          func(title, body string)
-	mu              sync.Mutex
-	alerted         map[string]bool // Claude row key → threshold alert already shown
-	recoveryAlerted map[string]bool
-	last            web.State
+	tray    tray.Tray
+	act     shellActions
+	notify  func(title, body string)
+	mu      sync.Mutex
+	alerted map[string]bool // Claude row key → threshold alert already shown
+	last    web.State
 	// note is the panel's line under the list, the last action's result;
 	// noteAlert draws it as a warning (DESIGN A84).
 	note      string
@@ -233,7 +232,6 @@ func (a *appShell) paint(st web.State) {
 	}
 	a.syncIcon()
 	a.thresholdAlert(st, active, ok)
-	a.recoveryAlert(st)
 }
 
 // menu lays out the dropdown (A37): a gauge row per account (usage bar, the
@@ -257,14 +255,6 @@ func (a *appShell) menu(st web.State) []tray.Item {
 		items = append(items, tray.Item{ID: "offline", Title: capitalizeFirst(why), Disabled: true})
 	}
 	items = append(items, tray.Item{ID: "open", Title: "Open dashboard", Dismiss: true})
-	if st.Recovery != nil {
-		for _, incident := range st.Recovery.Incidents {
-			if incident.Decision.Action == "offer" && !incident.Dismissed {
-				items = append(items, tray.Item{ID: "recovery-open", Title: "Session at limit · review handover…", Dismiss: true})
-				break
-			}
-		}
-	}
 	// What can be updated comes first, where it is seen (A44).
 	items = append(items, a.updatesSection()...)
 	items = append(items, tray.Separator(), tray.Header("Accounts"))
@@ -531,7 +521,7 @@ func (a *appShell) click(id string) {
 		}
 	case id == "add-current":
 		a.addCurrentClick()
-	case id == "open" || id == "recovery-open":
+	case id == "open":
 		err := a.act.OpenDashboard()
 		a.setNote("", false)
 		if err != nil {
@@ -976,33 +966,6 @@ func (a *appShell) autoEvent(ev web.AutoEventView) {
 			title = "Account #" + ev.Account + " quarantined"
 		}
 		a.notify(title, ev.Message)
-	}
-}
-
-func (a *appShell) recoveryAlert(st web.State) {
-	if st.Recovery == nil {
-		return
-	}
-	for _, incident := range st.Recovery.Incidents {
-		if incident.Dismissed || incident.Decision.Action != "offer" || !incident.Decision.NewlyOffered {
-			continue
-		}
-		key := incident.Event.SessionID + ":" + incident.Event.IncidentID
-		a.mu.Lock()
-		if a.recoveryAlerted == nil {
-			a.recoveryAlerted = map[string]bool{}
-		}
-		seen := a.recoveryAlerted[key]
-		a.recoveryAlerted[key] = true
-		a.mu.Unlock()
-		if seen {
-			continue
-		}
-		destination := "Codex"
-		if incident.Event.Provider == "codex" {
-			destination = "Claude"
-		}
-		a.notify("Session at limit", "Continue in "+destination+"? Open the dashboard to review the saved context.")
 	}
 }
 

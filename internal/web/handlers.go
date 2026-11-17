@@ -72,9 +72,6 @@ func (s *Server) routes() http.Handler {
 
 	// sessions
 	api.HandleFunc("POST /api/sessions/{pid}/stop", s.handleStop)
-	api.HandleFunc("POST /api/recovery/prepare", s.handleRecoveryPrepare)
-	api.HandleFunc("POST /api/recovery/dismiss", s.handleRecoveryDismiss)
-	api.HandleFunc("POST /api/recovery/start", s.handleRecoveryStart)
 
 	// settings
 	api.HandleFunc("GET /api/settings", s.handleSettingsList)
