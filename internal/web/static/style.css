@@ -357,7 +357,6 @@ input[type="text"], input[type="password"], input[type="number"], input[type="em
 }
 input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft-2); }
 input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
-input[type="range"] { width: 100%; accent-color: var(--accent); height: 28px; }
 
 /* ---------- tables ---------- */
 .tbl { width: 100%; border-collapse: collapse; }
@@ -408,13 +407,10 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 .empty-state code { background: var(--neutral-soft); padding: 2px 6px; border-radius: 4px; color: var(--fg); overflow-wrap: anywhere; }
 
 /* ---------- auto tab ---------- */
-.slider-row { display: grid; gap: var(--s1); margin-top: var(--s4); }
-.slider-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--s2); }
-.slider-head label { font-size: var(--t12); font-weight: 600; color: var(--fg-2); }
-.slider-head output { font-size: var(--t16); font-weight: 650; font-variant-numeric: tabular-nums; }
-.ticks { display: flex; justify-content: space-between; font-size: var(--t11); color: var(--muted); font-variant-numeric: tabular-nums; padding: 0 2px; }
-#engine-card .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-#engine-card .tile { background: var(--card-2); box-shadow: none; }
+.auto-line { margin: var(--s2) 0 0; overflow-wrap: anywhere; }
+.notice-warn { border-color: var(--warn); background: var(--warn-soft); }
+#auto-card .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: var(--s3); }
+#auto-card .tile { background: var(--card-2); box-shadow: none; }
 .nb-tbl { table-layout: fixed; }
 .nb-tbl td { overflow: hidden; }
 .nb-tbl th, .nb-tbl td { padding: 7px 5px; }
@@ -459,16 +455,6 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
   .setting-row { grid-template-columns: 1fr; }
   .setting-default, .setting-actions { grid-column: 1; justify-content: flex-start; }
 }
-
-.log-toolbar { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s3); align-items: center; }
-.log-toolbar select, .log-toolbar input[type="search"], .log-toolbar input[type="text"] { width: auto; height: 30px; padding: 4px 8px; font-size: var(--t13); }
-.log { list-style: none; margin: var(--s3) 0 0; padding: 0; max-height: 420px; overflow-y: auto; font-size: var(--t13); border: 1px solid var(--line-2); border-radius: 10px; background: var(--card-2); }
-.log li { display: grid; grid-template-columns: 70px 132px 1fr; gap: var(--s3); padding: 6px var(--s3); border-bottom: 1px solid var(--line-2); align-items: baseline; }
-.log li:last-child { border-bottom: 0; }
-.log .stamp { color: var(--muted); font-variant-numeric: tabular-nums; font-size: var(--t12); }
-.log .msg { overflow-wrap: anywhere; }
-.log .acct-ref { color: var(--muted); font-size: var(--t12); }
-.log-empty { margin-top: var(--s3); }
 
 /* ---------- sessions ---------- */
 .stat-chips { display: flex; gap: var(--s2); flex-wrap: wrap; }
@@ -535,8 +521,6 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
   .acct-tbl .row-actions .btn-primary { flex: 1; justify-content: center; }
   .menu-list { right: auto; left: 0; }
   .tbl:not(.acct-tbl) { display: block; overflow-x: auto; }
-  .log li { grid-template-columns: 62px 1fr; }
-  .log li .msg { grid-column: 1 / -1; }
   .top { padding: var(--s2) var(--gutter); }
   .brand-sub { display: none; }
   .card { padding: var(--s4); }
@@ -688,13 +672,7 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 .guide .crit { color: var(--crit-ink); font-weight: 600; }
 @media (max-width: 700px) { .guide-toc ol { columns: 1; } .guide-dl { grid-template-columns: 1fr; } .guide-tbl code { white-space: normal; } }
 
-/* The Settings tab's model windows: a switch per window, wrapping (DESIGN A49). */
-.model-picker { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); align-items: center; }
-.model-picker .switch input[type="checkbox"]:disabled { cursor: default; opacity: .35; }
-
-/* Model controls live outside repaintable usage tiles. */
-#auto-model-picker { padding: var(--s3) var(--s4); }
-.model-names:not([hidden]) { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); align-items: center; }
+.switch input[type="checkbox"]:disabled { cursor: default; opacity: .35; }
 
 /* Explicit light must also reset native form controls from the OS scheme. */
 :root[data-theme="light"] { color-scheme: light; }
@@ -710,7 +688,3 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
  .acct-tbl.no-model-column .c-mm { display: none; }
  .acct-tbl.no-5h-column .c-m5, .acct-tbl.no-5h-column .col-5h { display: none; }
  .meter-absent .meter-val { color: var(--muted); font-weight: 400; }
- .recovery-list { padding: 0 1rem 1rem; }
- .recovery-row + .recovery-row { margin-top: 1rem; }
- .recovery-row .btn + .btn { margin-left: .5rem; }
- .handover-preview { max-height: 40vh; overflow: auto; white-space: pre-wrap; font-size: .8rem; text-align: left; }

@@ -132,9 +132,6 @@ func (o codexOps) AddCurrent() (map[string]any, error) {
 
 // ---- auto-switch engine host ----
 
-// autoEventRing caps the retained event log.
-const autoEventRing = 200
-
 // autoStopWait bounds how long Stop waits for the engine's loop to return (a
 // tick in flight finishes first). It is short because the dashboard calls
 // Stop while holding its mutation lock, which every other action waits on.
@@ -149,15 +146,12 @@ type autoEngine interface {
 	RunLoop() int
 	Stop()
 	Wake()
-	ApplyThreshold(float64)
-	ApplyModels(string)
 }
 
-// autoFacade hosts one autoswitch engine inside the dashboard process and
-// streams its events. Beside it runs the Codex engine when this machine has
-// Codex accounts, as in `tycswap auto` (DESIGN A47), and both feed one event
-// log. A real engine is a host the setting gates (A83): Start and Stop turn
-// autoswitch.enabled on and off, and the engine idles while it is off.
+// autoFacade hosts one autoswitch engine, and the Codex engine beside it on a
+// machine with Codex accounts (DESIGN A47), in the dashboard process; both
+// feed the tray's event stream. Start and Stop turn autoswitch.enabled on and
+// off and the engine idles while it is off (A83); no dry run (A93).
 type autoFacade struct {
 	// managedBy names an external tick scheduler (TYCSWAP_AUTO_MANAGED_BY): this
 	// host then runs no real engine, and Start and Stop only write the setting (A83).
@@ -168,7 +162,7 @@ type autoFacade struct {
 	// accounts at launch, which then hosts the Claude engine alone.
 	codexSw *codexswitcher.Switcher
 	// newEngine builds the engine; tests substitute one.
-	newEngine func(s settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool) autoEngine
+	newEngine func(s settings.AutoSwitchSettings, onEvent func(autoswitch.Event)) autoEngine
 	// newCodexEngine builds the Codex engine at Start, nil for none: the
 	// constructor `tycswap auto` uses. Tests substitute one.
 	newCodexEngine func(s settings.AutoSwitchSettings) *codexauto.AutoSwitcher
@@ -177,11 +171,8 @@ type autoFacade struct {
 	engine    autoEngine
 	done      chan struct{} // closed when the current engine's RunLoop returns
 	running   bool
-	dryRun    bool
 	startedAt *float64
-	threshold float64
 	settings  settings.AutoSwitchSettings
-	events    []web.AutoEventView
 	stream    chan web.AutoEventView
 
 	codexEngine *codexauto.AutoSwitcher // this run's Codex engine; nil when none runs
@@ -197,8 +188,8 @@ type autoFacade struct {
 // newCodexAutoEngineFor, as `tycswap auto` builds it.
 func newAutoFacade(sw *core.Switcher, codexSw *codexswitcher.Switcher) *autoFacade {
 	a := &autoFacade{sw: sw, clk: sw.Clk, codexSw: codexSw, stream: make(chan web.AutoEventView, 64)}
-	a.newEngine = func(s settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool) autoEngine {
-		return newAutoEngine(sw, s, onEvent, dryRun, sw.OAuth)
+	a.newEngine = func(s settings.AutoSwitchSettings, onEvent func(autoswitch.Event)) autoEngine {
+		return newAutoEngine(sw, s, onEvent, false, sw.OAuth)
 	}
 	a.newCodexEngine = func(s settings.AutoSwitchSettings) *codexauto.AutoSwitcher {
 		return newCodexAutoEngineFor(codexSw, s)
@@ -254,10 +245,8 @@ func (a *autoFacade) view() (web.AutoView, settings.AutoSwitchSettings, bool) {
 	defer a.mu.Unlock()
 	fresh := settings.Load(a.sw.BackupDir())
 	s := a.settings
-	threshold := a.threshold
 	if !a.running {
 		s = fresh
-		threshold = s.SevenDayThreshold
 	}
 	// Each quarantine entry carries its reason and the engine's RFC3339 "at"
 	// stamp, so the page can show since when a slot has been held out.
@@ -269,27 +258,22 @@ func (a *autoFacade) view() (web.AutoView, settings.AutoSwitchSettings, bool) {
 		}
 		quarantine[k] = entry
 	}
-	events := make([]web.AutoEventView, len(a.events)) // never nil: the UI wants []
-	copy(events, a.events)
-	// An engine whose ticks all report disabled is not running to the user;
-	// ManagedBy stays empty, older clients lock the toggle on it (DESIGN A83).
-	live := a.running && (a.dryRun || fresh.Enabled)
+	// An engine whose ticks all report disabled is not running to the user
+	// (DESIGN A83).
+	live := a.running && fresh.Enabled
 	owned := a.managedBy != "" && fresh.Enabled
 	v := web.AutoView{
 		Available:  true,
 		Owner:      a.managedBy,
 		Hosted:     a.running,
 		Running:    live || owned,
-		DryRun:     a.dryRun,
 		StartedAt:  a.startedAt,
-		Threshold:  threshold,
+		Threshold:  s.SevenDayThreshold,
 		Settings:   settings.ValuesOf(s),
-		Events:     events,
 		Quarantine: quarantine,
 	}
 	if a.codexSw != nil && len(a.codexSw.Store().Slots()) > 0 {
-		// The Codex bar is the one the engine started with (or would start
-		// with): the slider moves the Claude 7d bar only.
+		// The Codex bar is the one the engine started (or would start) with.
 		v.Codex = &web.CodexAutoView{
 			Enabled:   s.CodexEnabled,
 			Running:   (live && a.codexEngine != nil) || (owned && fresh.CodexEnabled),
@@ -300,14 +284,10 @@ func (a *autoFacade) view() (web.AutoView, settings.AutoSwitchSettings, bool) {
 	return v, s, a.running
 }
 
-// Start hosts a real engine unless an external scheduler runs the ticks, and
-// only then turns auto-switch on; a dry run is hosted and writes nothing.
-func (a *autoFacade) Start(dryRun bool) error {
-	if dryRun {
-		return a.startDryRun()
-	}
+// Start hosts the engine unless a scheduler runs the ticks, then turns it on.
+func (a *autoFacade) Start() error {
 	if a.managedBy == "" {
-		if err := a.startHosted(false); err != nil {
+		if err := a.startHosted(); err != nil {
 			return err
 		}
 	}
@@ -316,51 +296,29 @@ func (a *autoFacade) Start(dryRun bool) error {
 	}
 	// Tick now, not an interval later; the Codex loop follows at its next round.
 	a.mu.Lock()
-	if a.running && !a.dryRun && a.engine != nil {
+	if a.running && a.engine != nil {
 		a.engine.Wake()
 	}
 	a.mu.Unlock()
 	return nil
 }
 
-// startDryRun hosts a dry run. The real engine, idle while auto-switch is
-// off, gives way to it; stopping the dry run hosts the real one again.
-func (a *autoFacade) startDryRun() error {
-	a.mu.Lock()
-	idle := a.running && a.engine != nil && !a.dryRun && !autoSwitchOn(a.sw.BackupDir())
-	if !idle {
-		a.mu.Unlock()
-		return a.startHosted(true)
-	}
-	if err := a.stopLocked(); err != nil {
-		return err
-	}
-	err := a.startHosted(true)
-	if err != nil {
-		_ = a.startHosted(false)
-	}
-	return err
-}
-
 // startHosted runs the engines in this process; it never writes the setting.
-func (a *autoFacade) startHosted(dryRun bool) error {
+func (a *autoFacade) startHosted() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.running {
-		if !dryRun && !a.dryRun {
-			return nil // the real engine is hosted already
-		}
-		return cerr.Validation("auto-switch is already running")
+		return nil // hosted already
 	}
 	if stillRunning(a.done) || stillRunning(a.codexDone) {
 		// A Stop timed out waiting: never run two engines side by side.
 		return cerr.Validation("auto-switch is still stopping; try again in a moment")
 	}
 	s := settings.Load(a.sw.BackupDir())
-	engine := a.newEngine(s, a.onEvent, dryRun)
+	engine := a.newEngine(s, a.onEvent)
 	now := clock.Seconds(a.clk)
 	done := make(chan struct{})
-	a.engine, a.done, a.running, a.dryRun, a.startedAt, a.threshold, a.settings = engine, done, true, dryRun, &now, s.SevenDayThreshold, s
+	a.engine, a.done, a.running, a.startedAt, a.settings = engine, done, true, &now, s
 	go func() {
 		defer close(done)
 		engine.RunLoop()
@@ -378,7 +336,7 @@ func (a *autoFacade) startHosted(dryRun bool) error {
 	codexEngine := a.newCodexEngine(s)
 	a.codexEngine, a.codexDone = codexEngine, nil
 	a.stopCodex = startCodexLoop(true, time.Duration(s.IntervalSeconds*float64(time.Second)), func(ctx context.Context) {
-		a.codexRound(ctx, codexEngine, dryRun)
+		a.codexRound(ctx, codexEngine)
 	})
 	return nil
 }
@@ -386,11 +344,11 @@ func (a *autoFacade) startHosted(dryRun bool) error {
 // codexRound is one round of the hosted loop. Retiring a former session group
 // or profile never moves the default login, so it runs whatever the setting; the Codex
 // tick reads the setting, as the Claude tick does (DESIGN A83).
-func (a *autoFacade) codexRound(ctx context.Context, eng *codexauto.AutoSwitcher, dryRun bool) {
-	retireGroups(a.sw, a.onEvent, dryRun)
-	retireProfiles(a.sw, dryRun)
-	if eng != nil && (dryRun || autoSwitchOn(a.sw.BackupDir())) {
-		a.codexTick(ctx, eng, dryRun)
+func (a *autoFacade) codexRound(ctx context.Context, eng *codexauto.AutoSwitcher) {
+	retireGroups(a.sw, a.onEvent, false)
+	retireProfiles(a.sw, false)
+	if eng != nil && autoSwitchOn(a.sw.BackupDir()) {
+		a.codexTick(ctx, eng)
 	}
 }
 
@@ -418,22 +376,11 @@ func stillRunning(done chan struct{}) bool {
 	}
 }
 
-// Stop turns auto-switch off and returns at once: a real engine stays hosted
-// and idles. A hosted dry run, which never turned it on, is stopped instead,
-// writes nothing and hands the host back to the real engine. With nothing
-// hosted and no owner, there is nothing to stop once the setting is off.
+// Stop turns auto-switch off at once and leaves the engine hosted, idling;
+// with nothing hosted, no owner and the setting off there is nothing to stop.
 func (a *autoFacade) Stop() error {
 	a.mu.Lock()
 	hosted := a.running && a.engine != nil
-	if hosted && a.dryRun {
-		err := a.stopLocked()
-		if a.managedBy == "" {
-			if herr := a.startHosted(false); err == nil {
-				err = herr
-			}
-		}
-		return err
-	}
 	a.mu.Unlock()
 	if !hosted && a.managedBy == "" && !autoSwitchOn(a.sw.BackupDir()) {
 		return cerr.Validation("auto-switch is not running")
@@ -442,8 +389,8 @@ func (a *autoFacade) Stop() error {
 }
 
 // stopLocked, called with a.mu held on a running engine, releases it, stops
-// both loops and waits (up to autoStopWait) for them, so a Start right after
-// it never overlaps two engines. A tick that outlasts the wait is a
+// both loops and waits (up to autoStopWait) for them, so a later start never
+// overlaps two engines. A tick that outlasts the wait is a
 // lock-kind error (409); Start refuses until both loops have returned.
 func (a *autoFacade) stopLocked() error {
 	engine, done, stopCodex := a.engine, a.done, a.stopCodex
@@ -489,72 +436,13 @@ func (a *autoFacade) resume() (started bool, err error) {
 	if a.managedBy != "" {
 		return false, nil
 	}
-	if err := a.startHosted(false); err != nil {
+	if err := a.startHosted(); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
-// Wake polls now; under an external scheduler nothing is hosted to wake.
-func (a *autoFacade) Wake() error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if !a.running || a.engine == nil {
-		if a.managedBy != "" {
-			return nil
-		}
-		return cerr.Validation("auto-switch is not running")
-	}
-	a.engine.Wake()
-	return nil
-}
-
-// ApplyThreshold retargets the running engine's 7d bar, the one the slider
-// moves (DESIGN A34). The bounds are the autoswitch.sevenDayThreshold spec's
-// (50–100), as for `tycswap config` and the TUI.
-func (a *autoFacade) ApplyThreshold(t float64) error {
-	spec, err := settings.SpecFor("autoswitch.sevenDayThreshold")
-	if err != nil {
-		return err
-	}
-	if t != t || t < spec.Lo || t > spec.Hi {
-		return cerr.Validation("threshold must be between %g and %g", spec.Lo, spec.Hi)
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if !a.running || a.engine == nil {
-		if a.managedBy != "" {
-			return cerr.Validation("the scheduler reads the saved setting; change autoswitch.sevenDayThreshold in Settings")
-		}
-		return cerr.Validation("auto-switch is not running")
-	}
-	a.engine.ApplyThreshold(t)
-	a.threshold = t
-	return nil
-}
-
-// ApplyModels retargets the running engine's per-model windows. The
-// dashboard's "Count model limits" switch saves the setting AND calls this, so
-// headroom, the at-limit verdict and the ranking change at once instead of
-// waiting for a restart. With nothing hosted, the saved setting is what counts.
-func (a *autoFacade) ApplyModels(model string) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if !a.running || a.engine == nil {
-		return nil
-	}
-	a.engine.ApplyModels(model)
-	if model == "" {
-		a.settings.Model = nil
-	} else {
-		m := model
-		a.settings.Model = &m
-	}
-	return nil
-}
-
-// onEvent is the engine's sink: ring-buffer the event and offer it to the
-// stream without ever blocking the engine goroutine.
+// onEvent is the engine's sink.
 func (a *autoFacade) onEvent(ev autoswitch.Event) {
 	fields := ev.JSON()
 	view := web.AutoEventView{At: clock.Seconds(a.clk), Kind: ev.Kind(), Message: ev.Human(), Fields: fields}
@@ -567,11 +455,10 @@ func (a *autoFacade) onEvent(ev autoswitch.Event) {
 	a.publish(view)
 }
 
-// codexTick runs one Codex tick and records it as the engine's last. Like
-// `tycswap auto`, only a switch or an error reaches the event log, and every
-// tick under dry-run (codexTickShown).
-func (a *autoFacade) codexTick(ctx context.Context, eng *codexauto.AutoSwitcher, dryRun bool) {
-	tick := eng.Tick(ctx, dryRun)
+// codexTick runs one Codex tick, records it as the last, and streams it when
+// codexTickShown, as `tycswap auto` prints it.
+func (a *autoFacade) codexTick(ctx context.Context, eng *codexauto.AutoSwitcher) {
+	tick := eng.Tick(ctx, false)
 	at := clock.Seconds(a.clk)
 	last := &web.CodexTickView{At: at, Outcome: tick.Outcome, Detail: tick.Detail, RunningPIDs: tick.RunningPIDs}
 	if last.RunningPIDs == nil {
@@ -584,15 +471,14 @@ func (a *autoFacade) codexTick(ctx context.Context, eng *codexauto.AutoSwitcher,
 	a.mu.Lock()
 	a.codexLast = last
 	a.mu.Unlock()
-	if codexTickShown(tick, dryRun) {
+	if codexTickShown(tick, false) {
 		a.publish(codexEvent(at, tick))
 	}
 }
 
-// codexEvent is a Codex tick as an engine event: the Claude engine's kind
-// for the outcome, so the page colours and filters it as it does those
-// (switched → switch, error → error, blocked → all-exhausted, else
-// no-switch), Tick.Human as the message, and the `auto --json` fields.
+// codexEvent is a Codex tick as an engine event with the Claude engine's kind
+// for its outcome (switched → switch, error → error, blocked → all-exhausted,
+// else no-switch), Tick.Human and the `auto --json` fields.
 func codexEvent(at float64, tick codexauto.Tick) web.AutoEventView {
 	kind := "no-switch"
 	switch tick.Outcome {
@@ -609,15 +495,8 @@ func codexEvent(at float64, tick codexauto.Tick) web.AutoEventView {
 	}
 }
 
-// publish ring-buffers an event and offers it to the stream without ever
-// blocking the engine goroutine that produced it.
+// publish offers an event to the stream without blocking its producer.
 func (a *autoFacade) publish(view web.AutoEventView) {
-	a.mu.Lock()
-	a.events = append(a.events, view)
-	if len(a.events) > autoEventRing {
-		a.events = a.events[len(a.events)-autoEventRing:]
-	}
-	a.mu.Unlock()
 	select {
 	case a.stream <- view:
 	default:

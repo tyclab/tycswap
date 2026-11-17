@@ -348,9 +348,9 @@ func TestIndexHTML_DesignSystemMarkup(t *testing.T) {
 		`id="hdr-acct"`, // header strip: active account + 5h / 7d / model windows
 		`id="summary-tiles"`, `id="badge-dashboard"`, `id="badge-sessions"`, `id="badge-auto"`, `id="conn-age"`,
 		`id="sess-filter"`, `id="sess-status"`, `id="sess-sort"`, `id="sessions-groups"`, `id="ide-tbl"`,
-		`id="log-kind"`, `id="log-follow"`, `id="log-clear"`, `id="nextbest-tbl"`, `id="auto-settings"`,
-		`id="model-limits-toggle"`, // persistent Off / All / Selected model control
-		`class="empty-state"`, `<datalist id="threshold-ticks">`,
+		`id="nextbest-tbl"`, `id="auto-settings"`,
+		`id="auto-switch" role="switch"`, `id="auto-counting"`, `id="auto-model-warning"`, // DESIGN A93
+		`class="empty-state"`,
 	} {
 		if !strings.Contains(index, needle) {
 			t.Errorf("index lacks %q", needle)
@@ -417,18 +417,18 @@ func TestIndexHTML_HasEverySection(t *testing.T) {
 			t.Errorf("tab/panel %q missing", tab)
 		}
 	}
-	for _, id := range []string{"modal", "modal-form", "threshold-slider", "nextbest-list", "auto-log", "quarantine-body", "settings-grid", "settings-empty", "hdr-acct", "token-status-toggle", "accounts-body", "toasts"} {
+	for _, id := range []string{"modal", "modal-form", "auto-switch", "nextbest-list", "quarantine-body", "settings-grid", "settings-empty", "hdr-acct", "token-status-toggle", "accounts-body", "toasts"} {
 		if !strings.Contains(index, `id="`+id+`"`) {
 			t.Errorf("element #%s missing", id)
 		}
 	}
-	for _, action := range []string{"switch-strategy", "add-current", "add-token", "auto-start"} {
+	for _, action := range []string{"switch-strategy", "add-current", "add-token"} {
 		if !strings.Contains(index, `data-action="`+action+`"`) {
 			t.Errorf("toolbar action %q missing", action)
 		}
 	}
 	js, _ := staticFS.ReadFile("static/app.js")
-	for _, needle := range []string{"'force-switch'", "'alias'", "'move'", "'swap'", "'remove'", "/api/accounts/swap", "/api/auto/threshold", "/api/settings/", "?force=1", "?tokenStatus=1", "addEventListener('auto'", "lessSoonest", "lessBest", "997", "998", "999", "renderGuarded('settings'"} {
+	for _, needle := range []string{"'force-switch'", "'alias'", "'move'", "'swap'", "'remove'", "/api/accounts/swap", "/api/auto/start", "/api/auto/stop", "/api/settings/", "?force=1", "?tokenStatus=1", "lessSoonest", "lessBest", "997", "998", "999", "renderGuarded('settings'"} {
 		if !strings.Contains(string(js), needle) {
 			t.Errorf("app.js lacks %q", needle)
 		}

@@ -106,9 +106,6 @@ type CodexOps interface {
 type SettingView struct {
 	Key         string   `json:"key"` // dotted, e.g. "autoswitch.sevenDayThreshold"
 	Label       string   `json:"label,omitempty"`
-	Scope       string   `json:"scope,omitempty"`
-	Source      string   `json:"source,omitempty"`
-	ReadOnly    string   `json:"readOnly,omitempty"`
 	Kind        string   `json:"kind"`  // "float"|"int"|"bool"|"choice"|"string"
 	Value       any      `json:"value"` // effective value
 	Default     any      `json:"default"`
@@ -141,30 +138,24 @@ type AutoEventView struct {
 
 // AutoView is the auto-switch engine's state as the dashboard shows it.
 type AutoView struct {
-	ManagedBy  string          `json:"managedBy,omitempty"` // always empty since DESIGN A83; older clients read it
-	Owner      string          `json:"owner,omitempty"`     // the external scheduler of ticks, when one is named
-	Available  bool            `json:"available"`
-	Running    bool            `json:"running"`
-	Hosted     bool            `json:"hosted"` // an engine runs inside this process
-	DryRun     bool            `json:"dryRun"`
-	StartedAt  *float64        `json:"startedAt"`
-	Threshold  float64         `json:"threshold"`  // live autoswitch.sevenDayThreshold, the 7d bar (ApplyThreshold-adjusted)
-	Settings   map[string]any  `json:"settings"`   // effective autoswitch settings the engine started with
-	Events     []AutoEventView `json:"events"`     // most recent last, ring of <= 200
-	Quarantine map[string]any  `json:"quarantine"` // contents of autoswitch_state.json (may be nil)
-	Codex      *CodexAutoView  `json:"codex"`
+	Owner      string         `json:"owner,omitempty"` // the external scheduler of ticks, when one is named
+	Available  bool           `json:"available"`       // always true since DESIGN A83; older clients read it
+	Running    bool           `json:"running"`
+	Hosted     bool           `json:"hosted"` // an engine runs inside this process
+	StartedAt  *float64       `json:"startedAt"`
+	Threshold  float64        `json:"threshold"`  // autoswitch.sevenDayThreshold, the 7d bar the engine decides with
+	Settings   map[string]any `json:"settings"`   // effective autoswitch settings the engine started with
+	Quarantine map[string]any `json:"quarantine"` // contents of autoswitch_state.json (may be nil)
+	Codex      *CodexAutoView `json:"codex"`
 
 	// LastTickAt is when a real tick last saw the live login, as epoch
 	// seconds (lastSeenAt in autoswitch_state.json); null before one did.
-	LastTickAt *float64 `json:"lastTickAt"`
-	// Counting is what auto-switch counts now (DESIGN A91); null when the
-	// host cannot tell.
-	Counting *CountingView `json:"counting"`
+	LastTickAt *float64      `json:"lastTickAt"`
+	Counting   *CountingView `json:"counting"` // what is counted now (DESIGN A91); null when unknown
 }
 
-// CodexAutoView is the Codex auto-switch engine as the dashboard shows it.
-// Threshold is its one bar (autoswitch.codexThreshold, or the 7d bar when
-// that is 0), fixed when the engine starts: the slider never moves it.
+// CodexAutoView is the Codex auto-switch engine as the dashboard shows it;
+// Threshold is its bar, autoswitch.codexThreshold or the 7d bar for 0.
 type CodexAutoView struct {
 	Enabled   bool           `json:"enabled"` // autoswitch.codexEnabled
 	Running   bool           `json:"running"`
@@ -180,14 +171,11 @@ type CodexTickView struct {
 	RunningPIDs []int   `json:"runningPids"`
 }
 
-// AutoFacade drives the hosted auto-switch engine.
+// AutoFacade is the Auto-switch switch (DESIGN A83, A93).
 type AutoFacade interface {
 	View() AutoView
-	Start(dryRun bool) error
+	Start() error
 	Stop() error
-	Wake() error
-	ApplyThreshold(threshold float64) error // the 7d bar, within the autoswitch.sevenDayThreshold bounds (50–100)
-	ApplyModels(model string) error
 }
 
 // soonest-reset is deliberately absent: switching.Switch treats unknown strings as plain rotation; it is auto-only (A17).
@@ -336,7 +324,6 @@ type Deps struct {
 	// Optional surfaces: nil → the section is null in the state document and
 	// its routes answer 503.
 	Accounts AccountOps
-	Recovery RecoveryFacade
 	// Codex drives the Codex rows; nil (no Codex accounts at launch) makes
 	// every route given a codex: key answer 503 (DESIGN A47).
 	Codex    CodexOps

@@ -369,11 +369,11 @@ func TestTrayPanelRefreshesCountdowns(t *testing.T) {
 
 // switchShell is a shell with a Claude and a Codex row and auto-switch as
 // given; calls lists every hook run, in order.
-func switchShell(t *testing.T, on, dryRun bool) (*appShell, *fakeTray, *[]string) {
+func switchShell(t *testing.T, on bool) (*appShell, *fakeTray, *[]string) {
 	t.Helper()
 	sh, ft, calls := newTestShell(t)
 	st := codexState()
-	st.Auto = &web.AutoView{Running: on, DryRun: dryRun, Codex: &web.CodexAutoView{Enabled: true, Threshold: 90}}
+	st.Auto = &web.AutoView{Running: on, Codex: &web.CodexAutoView{Enabled: true, Threshold: 90}}
 	if on {
 		_ = sh.act.AutoStart()
 	}
@@ -390,21 +390,24 @@ func lastNote(ft *fakeTray) string {
 	return notes[len(notes)-1]
 }
 
-func TestTraySwitchTurnsAutoSwitchOff(t *testing.T) {
-	sh, ft, calls := switchShell(t, true, false)
+// A switch from the tray leaves auto-switch as it is (DESIGN A94): it writes
+// no autoswitch.enabled, and the engine holds for the cooldown instead
+// (TestHandSwitchesHoldTheEngine).
+func TestTraySwitchLeavesAutoSwitchOn(t *testing.T) {
+	sh, ft, calls := switchShell(t, true)
 	sh.click("switch:claude:2")
-	if got := strings.Join(*calls, ","); got != "auto-stop,switch:claude:2" {
+	if got := strings.Join(*calls, ","); got != "switch:claude:2" {
 		t.Fatalf("calls %s", got)
 	}
 	p := sh.panel(sh.last)
-	if p.Note != "Switched to #2. Auto-switch is now off, so the login stays there." || p.Alert {
+	if p.Note != "Switched to #2." || p.Alert {
 		t.Fatalf("note %q", p.Note)
 	}
-	if note := lastNote(ft); !strings.HasPrefix(note, "Switched to account #2 |") || !strings.Contains(note, "Auto-switch is now off") {
+	if note := lastNote(ft); note != "Switched to account #2 | Restart running Claude Code sessions to pick it up." {
 		t.Fatalf("notification %q", note)
 	}
-	if auto := p.Actions[slices.IndexFunc(p.Actions, func(a tray.Item) bool { return a.ID == "auto" })]; auto.Checked {
-		t.Fatal("the auto-switch switch still reads on")
+	if auto := p.Actions[slices.IndexFunc(p.Actions, func(a tray.Item) bool { return a.ID == "auto" })]; !auto.Checked {
+		t.Fatal("the auto-switch switch reads off")
 	}
 	sh.click("autostart")
 	if p := sh.panel(sh.last); p.Note != "" {
@@ -413,7 +416,7 @@ func TestTraySwitchTurnsAutoSwitchOff(t *testing.T) {
 }
 
 func TestTraySwitchWithAutoSwitchOffLeavesItAlone(t *testing.T) {
-	sh, ft, calls := switchShell(t, false, false)
+	sh, ft, calls := switchShell(t, false)
 	sh.click("switch:claude:2")
 	if got := strings.Join(*calls, ","); got != "switch:claude:2" {
 		t.Fatalf("calls %s", got)
@@ -426,30 +429,15 @@ func TestTraySwitchWithAutoSwitchOffLeavesItAlone(t *testing.T) {
 	}
 }
 
-func TestTraySwitchIsNotMadeWhenAutoSwitchStaysOn(t *testing.T) {
-	sh, ft, calls := switchShell(t, true, false)
-	sh.act.AutoStop = func() error { *calls = append(*calls, "auto-stop"); return errors.New("settings.json is read-only") }
-	sh.click("switch:claude:2")
-	if got := strings.Join(*calls, ","); got != "auto-stop" {
-		t.Fatalf("calls %s", got)
-	}
-	p := sh.panel(sh.last)
-	if !strings.Contains(p.Note, "settings.json is read-only") || !strings.Contains(p.Note, "Not switched") || !p.Alert {
-		t.Fatalf("note %q", p.Note)
-	}
-	if note := lastNote(ft); !strings.HasPrefix(note, "Switch failed |") || !strings.Contains(note, "settings.json is read-only") {
-		t.Fatalf("notification %q", note)
-	}
-}
-
-func TestTraySwitchFailureTurnsAutoSwitchBackOn(t *testing.T) {
-	sh, ft, calls := switchShell(t, true, false)
+// A switch that fails touches auto-switch neither: nothing turned it off.
+func TestTraySwitchFailureLeavesAutoSwitchAlone(t *testing.T) {
+	sh, ft, calls := switchShell(t, true)
 	sh.act.SwitchTo = func(key string) ([]int, error) {
 		*calls = append(*calls, "switch:"+key)
 		return nil, errors.New("slot 2 has no stored login")
 	}
 	sh.click("switch:claude:2")
-	if got := strings.Join(*calls, ","); got != "auto-stop,switch:claude:2,auto-start" {
+	if got := strings.Join(*calls, ","); got != "switch:claude:2" {
 		t.Fatalf("calls %s", got)
 	}
 	if p := sh.panel(sh.last); p.Note != "Switch failed: slot 2 has no stored login" || !p.Alert {
@@ -460,37 +448,12 @@ func TestTraySwitchFailureTurnsAutoSwitchBackOn(t *testing.T) {
 	}
 }
 
-func TestTraySwitchFailureSaysAutoSwitchStaysOff(t *testing.T) {
-	sh, ft, calls := switchShell(t, true, false)
-	sh.act.SwitchTo = func(key string) ([]int, error) {
-		*calls = append(*calls, "switch:"+key)
-		return nil, errors.New("slot 2 has no stored login")
-	}
-	sh.act.AutoStart = func() error { *calls = append(*calls, "auto-start"); return errors.New("settings.json is read-only") }
-	sh.click("switch:claude:2")
-	if got := strings.Join(*calls, ","); got != "auto-stop,switch:claude:2,auto-start" {
-		t.Fatalf("calls %s", got)
-	}
-	want := "slot 2 has no stored login; auto-switch stays off: settings.json is read-only"
-	if p := sh.panel(sh.last); p.Note != "Switch failed: "+want || !p.Alert {
-		t.Fatalf("note %q", p.Note)
-	}
-	if note := lastNote(ft); note != "Switch failed | "+want {
-		t.Fatalf("notification %q", note)
-	}
-}
-
-// Two Switch clicks run one after the other: a first that fails cannot turn
-// auto-switch back on behind the second.
+// Two Switch clicks run one after the other, and neither touches
+// auto-switch.
 func TestTraySwitchClicksRunOneAtATime(t *testing.T) {
-	sh, _, calls := switchShell(t, true, false)
+	sh, _, calls := switchShell(t, true)
 	var mu sync.Mutex
 	record := func(call string) { mu.Lock(); *calls = append(*calls, call); mu.Unlock() }
-	running := false
-	sh.act.AutoRunning = func() bool { mu.Lock(); defer mu.Unlock(); return running }
-	running = true
-	sh.act.AutoStop = func() error { record("auto-stop"); mu.Lock(); running = false; mu.Unlock(); return nil }
-	sh.act.AutoStart = func() error { record("auto-start"); mu.Lock(); running = true; mu.Unlock(); return nil }
 	inFirst, release := make(chan struct{}), make(chan struct{})
 	sh.act.SwitchTo = func(key string) ([]int, error) {
 		record("switch:" + key)
@@ -510,37 +473,33 @@ func TestTraySwitchClicksRunOneAtATime(t *testing.T) {
 	<-done
 	<-done
 	mu.Lock()
-	got, on := strings.Join(*calls, ","), running
+	got := strings.Join(*calls, ",")
 	mu.Unlock()
-	if got != "auto-stop,switch:claude:2,auto-start,auto-stop,switch:codex:3" || on {
-		t.Fatalf("calls %s, auto-switch on %v", got, on)
+	if got != "switch:claude:2,switch:codex:3" || !sh.autoRunning() {
+		t.Fatalf("calls %s, auto-switch on %v", got, sh.autoRunning())
 	}
-	if p := sh.panel(sh.last); p.Note != "Switched to Codex #3. Auto-switch is now off, so the login stays there." {
+	if p := sh.panel(sh.last); p.Note != "Switched to Codex #3." {
 		t.Fatalf("note %q", p.Note)
 	}
 }
 
-// The API-key approval is recorded only for a switch that is made.
+// The API-key approval is recorded only for a switch that is made, right
+// before it.
 func TestTraySwitchApprovesAnAPIKeyOnlyWhenItSwitches(t *testing.T) {
-	sh, _, calls := switchShell(t, true, false)
+	sh, _, calls := switchShell(t, true)
 	st := sh.last
 	key := acct(4, "key@example.com", "", false, nil, nil, "", nil)
 	key["kind"] = "api_key"
 	st.Accounts = append(st.Accounts, key)
 	sh.update(st)
-	var approved []string
-	sh.act.ApproveAPIKey = func(num string) { approved = append(approved, num); *calls = append(*calls, "approve:"+num) }
+	sh.act.ApproveAPIKey = func(num string) { *calls = append(*calls, "approve:"+num) }
 	sh.act.RestartNotice = func() string { return "" }
-	sh.act.Ask = func(string, string, string, string) (bool, error) { return true, nil }
-	sh.act.AutoStop = func() error { *calls = append(*calls, "auto-stop"); return errors.New("settings.json is read-only") }
+	answer := false
+	sh.act.Ask = func(string, string, string, string) (bool, error) { return answer, nil }
 	sh.click("switch:claude:4")
-	if len(approved) != 0 {
-		t.Fatalf("approved %v without a switch (calls %v)", approved, *calls)
-	}
-	sh.act.AutoStop = func() error { *calls = append(*calls, "auto-stop"); return nil }
-	*calls = nil
+	answer = true
 	sh.click("switch:claude:4")
-	if got := strings.Join(*calls, ","); got != "auto-stop,approve:4,switch:claude:4" {
+	if got := strings.Join(*calls, ","); got != "approve:4,switch:claude:4" {
 		t.Fatalf("calls %s", got)
 	}
 }
@@ -594,50 +553,21 @@ func TestTrayPanelNoteTellsEveryAction(t *testing.T) {
 	}
 }
 
-func TestTraySwitchLeavesADryRunAlone(t *testing.T) {
-	sh, _, calls := switchShell(t, true, true)
-	sh.click("switch:claude:2")
-	if got := strings.Join(*calls, ","); got != "switch:claude:2" {
-		t.Fatalf("calls %s", got)
-	}
-	if p := sh.panel(sh.last); p.Note != "Switched to #2." {
-		t.Fatalf("note %q", p.Note)
-	}
-}
-
-// Without Codex rotation nothing would move a Codex login, so a Codex
-// switch leaves auto-switch on.
-func TestTraySwitchCodexWithoutCodexRotationLeavesAutoSwitchOn(t *testing.T) {
-	sh, _, calls := switchShell(t, true, false)
-	sh.last.Auto.Codex.Enabled = false
-	sh.click("switch:codex:3")
-	if got := strings.Join(*calls, ","); got != "switch:codex:3" {
-		t.Fatalf("calls %s", got)
-	}
-	if p := sh.panel(sh.last); p.Note != "Switched to Codex #3." {
-		t.Fatalf("note %q", p.Note)
-	}
-}
-
-func TestTraySwitchCodexTurnsAutoSwitchOff(t *testing.T) {
-	sh, ft, calls := switchShell(t, true, false)
-	sh.click("switch:codex:3")
-	if got := strings.Join(*calls, ","); got != "auto-stop,switch:codex:3" {
-		t.Fatalf("calls %s", got)
-	}
-	if p := sh.panel(sh.last); p.Note != "Switched to Codex #3. Auto-switch is now off, so the login stays there." {
-		t.Fatalf("note %q", p.Note)
-	}
-	if note := lastNote(ft); note != "Switched Codex to account #3 | The next codex session uses it. Auto-switch is now off, so the login stays there." {
-		t.Fatalf("notification %q", note)
-	}
-	sh, _, calls = switchShell(t, false, false)
-	sh.click("switch:codex:3")
-	if got := strings.Join(*calls, ","); got != "switch:codex:3" {
-		t.Fatalf("calls with auto-switch off %s", got)
-	}
-	if p := sh.panel(sh.last); p.Note != "Switched to Codex #3." {
-		t.Fatalf("note %q", p.Note)
+// A Codex switch leaves auto-switch on too, with Codex rotation on or off.
+func TestTraySwitchCodexLeavesAutoSwitchOn(t *testing.T) {
+	for _, rotation := range []bool{true, false} {
+		sh, ft, calls := switchShell(t, true)
+		sh.last.Auto.Codex.Enabled = rotation
+		sh.click("switch:codex:3")
+		if got := strings.Join(*calls, ","); got != "switch:codex:3" {
+			t.Fatalf("rotation %v: calls %s", rotation, got)
+		}
+		if p := sh.panel(sh.last); p.Note != "Switched to Codex #3." {
+			t.Fatalf("rotation %v: note %q", rotation, p.Note)
+		}
+		if note := lastNote(ft); note != "Switched Codex to account #3 | The next codex session uses it." {
+			t.Fatalf("rotation %v: notification %q", rotation, note)
+		}
 	}
 }
 

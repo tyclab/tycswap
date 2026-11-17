@@ -21,6 +21,28 @@ func runConfig(t *testing.T, args ...string) (int, string, string) {
 	return code, out.String(), errb.String()
 }
 
+// TestConfigSetsAndUnsetsTheModelSetting: autoswitch.model left the
+// dashboard and the TUI, and `tycswap config` still lists, sets and unsets it
+// (DESIGN A93).
+func TestConfigSetsAndUnsetsTheModelSetting(t *testing.T) {
+	cleanHome(t)
+	if code, out, _ := runConfig(t, "list"); code != 0 || !strings.Contains(out, "autoswitch.model") {
+		t.Fatalf("list = %d:\n%s", code, out)
+	}
+	if code, _, errStr := runConfig(t, "set", "autoswitch.model", "Fable"); code != 0 {
+		t.Fatalf("set = %d: %s", code, errStr)
+	}
+	if m := settings.Load(paths.GetBackupRoot()).Model; m == nil || *m != "Fable" {
+		t.Fatalf("model after set = %v", m)
+	}
+	if code, _, errStr := runConfig(t, "unset", "autoswitch.model"); code != 0 {
+		t.Fatalf("unset = %d: %s", code, errStr)
+	}
+	if m := settings.Load(paths.GetBackupRoot()).Model; m != nil {
+		t.Fatalf("model after unset = %q", *m)
+	}
+}
+
 // TestConfigListShowsAllDefaults: no args lists every SettingSpecs key, each
 // marked "(default)" on a fresh home (spec 08§7.8/§14). The count follows the
 // registry, as the Python test does, so adding a setting does not break it.

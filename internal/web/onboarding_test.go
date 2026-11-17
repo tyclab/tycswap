@@ -204,21 +204,20 @@ func TestIndexHTML_SettingsTab(t *testing.T) {
 	}
 }
 
-// The "limits ignored" warning says where model windows are counted: the
-// Count model limits switch on the Auto tab, or autoswitch.model on the
-// Settings tab. The key left the Auto tab with the settings editor, so the
-// warning must not send the user there to set it.
-func TestStaticIgnoredModelsNoteNamesBothPlaces(t *testing.T) {
+// The "limits ignored" warning points at what is counted now and at the one
+// place that sets autoswitch.model, `tycswap config` (DESIGN A93), never at
+// a control on the page.
+func TestStaticIgnoredModelsNoteNamesTheCommand(t *testing.T) {
 	note := regexp.MustCompile(`function ignoredModelsNote\(st, models\) \{[\s\S]*?\n  \}`).FindString(staticFile(t, "app.js"))
 	if note == "" {
 		t.Fatal("no ignoredModelsNote in app.js")
 	}
-	for _, want := range []string{`"Count model limits" on the Auto tab`, "autoswitch.model on the Settings tab"} {
+	for _, want := range []string{"Counting now on the Auto tab", "' config set autoswitch.model"} {
 		if !strings.Contains(note, want) {
 			t.Errorf("the warning lacks %q:\n%s", want, note)
 		}
 	}
-	if strings.Contains(note, "autoswitch.model on the Auto tab") {
-		t.Error("the warning sends the user to the Auto tab to set autoswitch.model")
+	if strings.Contains(note, "Settings tab") || strings.Contains(note, "Count model limits") {
+		t.Errorf("the warning sends the user to a page control:\n%s", note)
 	}
 }

@@ -313,13 +313,11 @@ func (f *fakeFacade) BackupDir() string                                        {
 func (f *fakeFacade) SetPollPolicyInputs(float64, []string)                    {}
 func (f *fakeFacade) ClearPollPolicyInputs()                                   {}
 
-// remoteFakeAuto records engine calls and reports a settable running flag;
-// applyErr is what ApplyModels returns while running.
+// remoteFakeAuto records engine calls and reports a settable running flag.
 type remoteFakeAuto struct {
-	mu       sync.Mutex
-	calls    []string
-	running  bool
-	applyErr error
+	mu      sync.Mutex
+	calls   []string
+	running bool
 }
 
 func (a *remoteFakeAuto) record(s string) {
@@ -337,11 +335,11 @@ func (a *remoteFakeAuto) Calls() []string {
 func (a *remoteFakeAuto) View() web.AutoView {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return web.AutoView{Available: true, Running: a.running, Hosted: a.running, Threshold: 97, Events: []web.AutoEventView{}}
+	return web.AutoView{Available: true, Running: a.running, Hosted: a.running, Threshold: 97}
 }
 
-func (a *remoteFakeAuto) Start(dryRun bool) error {
-	a.record("Start(" + map[bool]string{true: "dry", false: "real"}[dryRun] + ")")
+func (a *remoteFakeAuto) Start() error {
+	a.record("Start(real)")
 	a.mu.Lock()
 	a.running = true
 	a.mu.Unlock()
@@ -354,18 +352,6 @@ func (a *remoteFakeAuto) Stop() error {
 	a.running = false
 	a.mu.Unlock()
 	return nil
-}
-
-func (a *remoteFakeAuto) Wake() error                  { a.record("Wake"); return nil }
-func (a *remoteFakeAuto) ApplyThreshold(float64) error { return nil }
-func (a *remoteFakeAuto) ApplyModels(model string) error {
-	a.record("ApplyModels(" + model + ")")
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if !a.running {
-		return cerr.Validation("auto-switch is not running")
-	}
-	return a.applyErr
 }
 
 type remoteFakeSettings struct {
@@ -569,36 +555,6 @@ func TestRemoteClientCalls(t *testing.T) {
 	if got := strings.Join(fx.auto.Calls(), ","); got != "Start(real),Stop" {
 		t.Errorf("auto calls = %s", got)
 	}
-	// The model switch mirrors the local one: setting first, then the engine
-	// hosted there; with none hosted, nothing is retargeted (DESIGN A83).
-	if err := rc.SetModel(true); err != nil {
-		t.Fatal(err)
-	}
-	if err := rc.SetModel(false); err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.Join(fx.set.Calls(), ","); got != "Set(autoswitch.model,all),Unset(autoswitch.model)" {
-		t.Errorf("settings calls = %s", got)
-	}
-	if got := strings.Join(fx.auto.Calls(), ","); got != "Start(real),Stop" {
-		t.Errorf("auto calls = %s, want no retarget with nothing hosted", got)
-	}
-	// With the engine running, a failed retarget is reported.
-	if err := rc.AutoStart(); err != nil {
-		t.Fatal(err)
-	}
-	if !rc.AutoRunning() {
-		t.Error("AutoRunning should follow the last state")
-	}
-	fx.auto.mu.Lock()
-	fx.auto.applyErr = errors.New("retarget failed in the test")
-	fx.auto.mu.Unlock()
-	if err := rc.SetModel(true); err == nil || !strings.Contains(err.Error(), "retarget failed in the test") {
-		t.Errorf("SetModel while running with a failing retarget = %v, want the engine's message", err)
-	}
-	fx.auto.mu.Lock()
-	fx.auto.applyErr = nil
-	fx.auto.mu.Unlock()
 	// Launch hands back the server's own one-time URL, rebuilt from its
 	// checked parts.
 	u, err := rc.Launch()
