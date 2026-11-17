@@ -31,6 +31,12 @@ func (a autoswitchAdapter) ReadAccountCredentials(num, email string) string {
 	return v
 }
 
+// SwitchTo shadows the hand switch: the engine and `tycswap start` stamp
+// their own switch under the state lock they hold (DESIGN A94).
+func (a autoswitchAdapter) SwitchTo(id string, jsonOut bool) (map[string]any, error) {
+	return a.Switcher.EngineSwitchTo(id, jsonOut)
+}
+
 // RecordedSwitch is the slot the roster names active and when the roster was
 // last written, as epoch seconds: every tycswap switch writes both, so the
 // engine can tell a login made elsewhere (live-login-changed).

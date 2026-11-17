@@ -208,8 +208,8 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 		trigger = "failover"
 	}
 
-	if heldByCooldown(trigger) && e.inCooldown(state) {
-		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "cooldown"})
+	if detail, held := e.cooldownHold(trigger, state); held {
+		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "cooldown", Detail: detail})
 		return tickResult{Outcome: NoAction}, nil
 	}
 
@@ -350,7 +350,8 @@ func axisLabel(axis usage.Class, trigger string) string {
 // made the tick move; they land only below every bar (DESIGN A71, A73).
 func isHandover(trigger string) bool { return trigger == "reserved" || trigger == "model-missing" }
 
-// heldByCooldown names the triggers a recent switch holds back. A login that
+// heldByCooldown names the triggers the engine's or start's recent switch
+// holds back; a switch by hand holds every trigger (DESIGN A94). A login that
 // cannot serve a counted model moves at once: its sessions cannot run until
 // it does (DESIGN A77).
 func heldByCooldown(trigger string) bool { return trigger == "proactive" || trigger == "reserved" }
@@ -637,16 +638,16 @@ func (e *Engine) perform(number, email, trigger, axis string) (tickResult, error
 	outcome := NoAction
 	switched := false
 	err := lock.With(func() error {
-		// Off since the tick began (a switch by hand turns it off first,
-		// DESIGN A84): the user's pick stands.
+		// Turned off, or switched by hand, since the tick began: a hand
+		// switch stamps its hold under this lock (DESIGN A94).
 		if e.enabled != nil && !e.enabled() {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "disabled", Detail: DisabledDetail})
 			outcome = NoAction
 			return nil
 		}
 		state := e.readState()
-		if heldByCooldown(trigger) && e.inCooldown(state) {
-			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "cooldown"})
+		if detail, held := e.cooldownHold(trigger, state); held {
+			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "cooldown", Detail: detail})
 			outcome = NoAction
 			return nil
 		}
@@ -663,10 +664,7 @@ func (e *Engine) perform(number, email, trigger, axis string) (tickResult, error
 			outcome = NoAction
 			return nil
 		}
-		state["schemaVersion"] = StateSchemaVersion
-		state["lastSwitchAt"] = e.nowSeconds()
-		state["lastSwitchTo"] = number
-		clearActiveMemory(state)
+		stampSwitch(state, number, e.nowSeconds(), false)
 		if err := e.writeState(state); err != nil {
 			return err
 		}
