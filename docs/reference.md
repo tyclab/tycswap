@@ -1501,7 +1501,9 @@ moves when a window has reached its own bar, and when more than one has, the
 costliest names the move: the 7d window, then a counted model week, then the
 5h window. The proactive checks (landing below the bar, beating the active
 account by `autoswitch.hysteresisPct`) are made on that window alone; a
-candidate that reports no window of that class is judged on its weekly figure.
+candidate that reports no window of that class is judged on its weekly figure,
+except on a 5h move: a candidate without a 5h window has no 5h limit and is a
+target when it is below every bar of its own (DESIGN A96).
 Whatever the trigger, a candidate whose week, or a counted model week, is
 spent is never a target. The startup line names every bar (`Auto-switch
 running: 5h 85% · 7d 97% · model 95%, every 60s`); the poll line carries the
@@ -5009,7 +5011,9 @@ regardless, so refusing every imperfect target would strand it — and a
 qualifying candidate reached by either of those two triggers may therefore
 sit at or above a threshold. The landing and hysteresis checks are made on the
 **window that triggered the tick**, the 5h, the 7d or a counted per-model
-week, since each has a threshold of its own (DESIGN A34). Whatever the
+week, since each has a threshold of its own (DESIGN A34). On a tick the 5h
+window triggered, a candidate that reports no 5h window skips both checks and
+needs only to be under every one of its own bars (DESIGN A96). Whatever the
 trigger, a candidate whose weekly budget is already spent (the 7d window or a
 counted model window) is never a target.
 

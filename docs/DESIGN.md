@@ -4647,7 +4647,8 @@ axes; fill rate sets their bars. The two are separate questions and their
 answers point opposite ways.) Everything downstream speaks about that axis
 alone: the proactive gate judges a candidate's landing on it, the hysteresis
 margin is measured on it (a candidate that reports no window of that class is
-judged on its weekly figure instead of being ruled out for an unknown), the
+judged on its weekly figure instead of being ruled out for an unknown; on a 5h
+move one without a 5h window needs only its own bars, A96), the
 `switch` event carries it as `axis` (`5h` | `7d` | `model`; empty under
 `failover`, where no usage was readable) and in its human line
 (`(proactive, 5h)`), and `below-threshold` names the window closest to its own
@@ -7632,3 +7633,52 @@ unknown, and every settings write drops it (`retiredKeys`), unlike an
 unknown key such as `includeApiKeyAccounts`, which writes keep. The store's
 `recovery/` directory (`state.json`, `state.json.lock`) is left on disk,
 neither read nor deleted.
+
+## A96. An absent 5-hour window is room on a 5-hour move
+
+On 2026-11-17 from 21:08 (tycswap 0.13.1, `autoswitch.model` unset, Fable
+dropped as unservable) the active account 12 sat at 93 %, then 98 %, of its
+5-hour window with its week at 3 to 5 %. The bars were 5h 90, 7d 98, model 95,
+hysteresis 10. Account 11 was at its 5-hour bar; accounts 3 (week 90 %) and 8
+(week 97 %) report no 5-hour window, as Ultra accounts do once Anthropic has
+verified them; 4 and 7 had used 99 % of their week. Every tick answered
+`no-qualifying-candidate`, and the engine would have moved only at 100 %,
+after the sessions hit the limit.
+
+A34's proactive gate judged a candidate that reports no window of the
+deciding class on its weekly figure. Written for a model-window move onto an
+account that never used that model, it held account 3's week (10 points of
+room) against the 5-hour bar and against 12's 5-hour room plus the margin
+(10 − 7 < 10). An account without a 5-hour window has no 5-hour limit, yet it
+could be a proactive 5-hour target only while its week was nearly unused.
+A91 already counts an absent 5-hour window as room when it decides whether a
+model is servable, and the README says such a window does not block
+switching.
+
+On a proactive move the 5-hour window made, a candidate that reports no
+5-hour window is free on that axis: it is a target when it sits below every
+bar of its own, the week and any counted model window. The 5-hour bar and the
+margin against the active account's 5-hour room are not applied to its weekly
+reading. It cannot bring the login back: below every bar, none of its windows
+is hot, so the next tick on it reports `below-threshold`. Unchanged: a
+candidate that reports a 5-hour window, moves the week or a model window made
+(the weekly fallback still judges a week move onto an account that reports no
+7d window, on its counted model window), `at-limit`, `failover`, `reserved`
+and `model-missing`, and the strategies' order. The case the fallback was
+written for no longer reaches the gate: since automatic targets must report
+every counted model, a candidate without the model window is refused first
+(`no-compatible-model-target`).
+
+The warning `Blocked on Account-12 although 3, 8 are below their 5h and 7d
+bars` in that evening's log came from a status-line tick at 21:06:29, while
+Fable was still counted and 3 and 8 had spent their Fable week: A91's report,
+correct there. The ticks after Fable was dropped named nobody.
+
+Tests (`internal/autoswitch/absent5h_test.go`): the live pool switches
+proactively on the 5h axis, to 3 under `best` and under `soonest-reset` when
+3's week renews first, to 8 when 8's does, with no `blocked-with-room`, and the
+next tick on the new account, past the cooldown, stays; a candidate without a
+5-hour window at its weekly bar, or over a counted model window's bar, is no
+target; one with a 5-hour window keeps the bar and the margin; a week move
+still holds a candidate without a 5-hour window to the margin on the week and
+refuses one that reports no week.

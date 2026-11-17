@@ -423,30 +423,15 @@ func (e *Engine) selectCandidates(
 			continue // itself at its limit — never a target
 		}
 		cand := e.headroomByClass(usageMap[num])
-		if trigger == "proactive" && activeAxis != nil {
-			// (a) landing below the bar and (b) better by the full margin,
-			// both judged on the window that made the tick move, and only on
-			// that one (DESIGN A34).
-			ch := cand.Axis(axis)
-			if ch == nil {
-				ch = cand.Weekly()
-			}
-			if ch == nil {
-				continue
-			}
-			if (100.0 - *ch) >= axisThreshold(s, axis) {
-				continue
-			}
-			if *ch-*activeAxis < s.HysteresisPct {
-				continue
-			}
+		below := belowEveryBar(cand, s)
+		if trigger == "proactive" && activeAxis != nil && !landsProactively(cand, axis, *activeAxis, below, s) {
+			continue
 		}
 		// Whatever the trigger, never land on an account whose weekly budget
 		// (the week or a counted model window) is already spent.
 		if cand.WeeklyExhausted() {
 			continue
 		}
-		below := belowEveryBar(cand, s)
 		reserved := e.isReserved(num)
 		// A hand-over leaves a Fable-capable account only for one that is
 		// not, and only when that one is below every bar (DESIGN A71).
@@ -473,6 +458,25 @@ func (e *Engine) selectCandidates(
 		ordered = append(ordered, q.num)
 	}
 	return ordered, oauthCandidates, anyKnown, nil
+}
+
+// landsProactively is the proactive gate: (a) landing below the bar and (b)
+// better by the full margin, both judged on the window that made the tick
+// move, and only on that one (DESIGN A34). An account without a 5h window has
+// no 5h limit: on a 5h move it lands when it is below every bar of its own
+// (DESIGN A96).
+func landsProactively(cand usage.Headroom, axis usage.Class, active float64, below bool, s settings.AutoSwitchSettings) bool {
+	ch := cand.Axis(axis)
+	if ch == nil && axis == usage.ClassSession {
+		return below
+	}
+	if ch == nil {
+		ch = cand.Weekly()
+	}
+	if ch == nil || 100.0-*ch >= axisThreshold(s, axis) || *ch-active < s.HysteresisPct {
+		return false
+	}
+	return true
 }
 
 // decisionAxes is the order in which the three classes are considered. The
