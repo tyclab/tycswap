@@ -5,9 +5,9 @@
 // browser's built-in reconnect. Countdowns are recomputed client-side every second from
 // the server's resets_at / expiresAt / startedAt values. The Auto tab ranks
 // "Next best" candidates client-side by availability, reset time and all
-// counted usage windows, and colours engine events like
-// tui eventColor. Components: tile(), meter(), chip() — one implementation
-// each, reused on every tab. DESIGN A27 adds the Updates card and header
+// counted usage windows; it has one Auto-switch switch and shows what is
+// counted (DESIGN A93). Components: tile(), meter(), chip() — one
+// implementation each, reused on every tab. DESIGN A27 adds the Updates card and header
 // indicator, the Settings tab, the foldable cards, the add-current-login
 // callout and the auth-overrides notice; the Guide tab is static markup.
 (function () {
@@ -34,18 +34,11 @@
   var $ = function (id) { return document.getElementById(id); };
   var state = null;
   var minimumStateSequence = 0;
-  var autoModelPicker = null;
-  var modelSettingRow = null;
   var lastStateAt = 0;
   var inflight = {};
   var showTokenStatus = false;
   var strategy = 'best';
   var accountOrder = { key: 'best', direction: 1 };
-  var autoLog = [];      // ring of AutoEventView, oldest first
-  var autoLogLastAt = 0;
-  var LOG_RING = 200;
-  var sliderActive = false;
-  var sliderTimer = null;
   // Idle sessions are hidden by default: what matters at a glance is what is
   // working or waiting for you. 'active' = busy + waiting.
   var sessFilter = { q: '', status: 'active', sort: 'busy' };
@@ -99,19 +92,6 @@
     if (ms < 1000) { return 'now'; }
     if (ms < 60000) { return Math.floor(ms / 1000) + 's ago'; }
     return fmtDur(ms) + ' ago';
-  }
-
-  function fmtUnix(sec) {
-    if (sec === null || sec === undefined) { return '—'; }
-    var d = new Date(sec * 1000);
-    return isNaN(d.getTime()) ? '—' : d.toLocaleString();
-  }
-
-  function fmtClock(sec) {
-    var d = new Date(sec * 1000);
-    if (isNaN(d.getTime())) { return ''; }
-    var hh = d.getHours(), mm = d.getMinutes(), ss = d.getSeconds();
-    return (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
   }
 
   function pctNum(v) {
@@ -455,6 +435,21 @@
     return undefined;
   }
 
+  // settingLabel: a setting's one name, the registry's label the server
+  // sends with each row (DESIGN A93); the key when the row is not listed.
+  function settingLabel(st, key) {
+    var list = (st && st.settings) || [];
+    for (var i = 0; i < list.length; i++) { if (list[i].key === key && list[i].label) { return list[i].label; } }
+    return key;
+  }
+
+  // modelSetting: autoswitch.model as the state reports it (auto.counting,
+  // mode "setting"); the settings list no longer carries it (DESIGN A93).
+  function modelSetting(st) {
+    var c = ((st && st.auto) || {}).counting;
+    return c && c.mode === 'setting' ? c.setting : null;
+  }
+
   // engineSetting: the value the RUNNING engine was started with (the Go
   // AutoView.Settings map is keyed "autoswitch.<key>"), falling back to the
   // saved settings.json value when not running.
@@ -624,13 +619,10 @@
     var models = countedModelNames(st);
     var required = requiredModelWindows(st, models);
     var strat = engineSetting(st, 'autoswitch.strategy') || 'soonest-reset';
-    // One bar per window. The 7d one follows the running engine when the
-    // slider has moved it; the other two are settings only.
-    var sevenDay = pctNum(settingValue(st, 'autoswitch.sevenDayThreshold')) || 97;
-    if (auto.running && typeof auto.threshold === 'number') { sevenDay = auto.threshold; }
+    // One bar per window, as the running engine or the saved settings have it.
     var bars = {
       fiveHour: pctNum(engineSetting(st, 'autoswitch.fiveHourThreshold')) || 85,
-      sevenDay: sevenDay,
+      sevenDay: pctNum(engineSetting(st, 'autoswitch.sevenDayThreshold')) || 97,
       model: pctNum(engineSetting(st, 'autoswitch.modelThreshold')) || 95
     };
     var quarantine = quarantineMap(auto);
@@ -770,7 +762,7 @@
     if (models.length || ((st.auto || {}).counting || {}).mode === 'sessions') { return null; }
     var names = modelWindowNames(st);
     if (!names.length) { return null; }
-    return el('span', { class: 'chip chip-warn', title: 'Choose and save windows under "Count model limits" on the Auto tab, or autoswitch.model on the Settings tab', text: names.join(', ') + ' limits ignored' });
+    return el('span', { class: 'chip chip-warn', title: 'Not counted now (see Counting now on the Auto tab); ' + NAME + ' config set autoswitch.model counts them', text: names.join(', ') + ' limits ignored' });
   }
 
   // ---- header + summary ------------------------------------------------------
@@ -787,9 +779,7 @@
     var busy = sess.filter(function (c) { return c.status === 'busy'; }).length;
     badgeS.className = 'tab-badge' + (busy ? ' hot' : '');
     badgeS.title = busy ? busy + ' busy' : '';
-    var badgeA = $('badge-auto');
-    if (st.auto && st.auto.running) { badgeA.textContent = st.auto.dryRun ? 'dry' : '●'; badgeA.className = 'tab-badge live'; badgeA.title = st.auto.dryRun ? 'engine running (dry-run)' : 'engine running'; }
-    else { badgeA.textContent = ''; badgeA.className = 'tab-badge'; }
+    renderAutoBadge(st);
     // Settings: how many keys are set away from their default.
     var custom = (Array.isArray(st.settings) ? st.settings : []).filter(function (sv) { return !sv.isDefault; }).length;
     var badgeSt = $('badge-settings');
@@ -1250,7 +1240,7 @@
     $('add-current-codex').hidden = !((st.auto && st.auto.codex) || codex.length);
     var count = codex.length ? list.length + ' Claude \u00b7 ' + codex.length + ' Codex' : list.length + (list.length === 1 ? ' account' : ' accounts');
     $('accounts-sub').textContent = count + (st.activeNumber !== null && st.activeNumber !== undefined ? ' · active #' + st.activeNumber : ' · none active');
-    var accIgnored = ignoredModelsNote(st, parseModelNames(settingValue(st, 'autoswitch.model')));
+    var accIgnored = ignoredModelsNote(st, countedModelNames(st));
     if (accIgnored) { $('accounts-sub').appendChild(document.createTextNode(' · ')); $('accounts-sub').appendChild(accIgnored); }
     var tokenCol = document.querySelector('.col-token');
     if (tokenCol) { tokenCol.hidden = !showTokenStatus; }
@@ -1502,54 +1492,81 @@
 
   // ---- auto: render ----------------------------------------------------------
 
+  // autoOn: auto-switch is on and something checks (DESIGN A83).
+  function autoOn(st) { return !!(st && st.auto && st.auto.running); }
+
+  // autoStateText: who checks, in the words the heading uses (DESIGN A93):
+  // a scheduler and its last check, or this dashboard and how often.
+  function autoStateText(st) {
+    var a = st.auto || {};
+    var last = a.lastTickAt ? 'last check ' + fmtAgo(Date.now() - a.lastTickAt * 1000) : 'no check yet';
+    if (!autoOn(st)) { return 'not checked while off' + (a.owner ? ', ' + last : ''); }
+    if (a.owner && !a.hosted) { return 'checked by ' + a.owner + ', ' + last; }
+    var every = pctNum(engineSetting(st, 'autoswitch.intervalSeconds'));
+    return 'checked every ' + (every === null ? '?' : Math.round(every)) + ' s by this dashboard';
+  }
+
+  // autoStateLine: autoStateText with the time of the last check kept ticking.
+  function autoStateLine(st) {
+    var a = st.auto || {};
+    var text = autoStateText(st);
+    var i = a.owner && a.lastTickAt ? text.lastIndexOf('last check ') : -1;
+    if (i < 0) { return [text]; }
+    return [text.slice(0, i) + 'last check ', el('span', { 'data-started': String(Math.round(a.lastTickAt * 1000)), text: fmtAgo(Date.now() - a.lastTickAt * 1000) })];
+  }
+
+  // renderAutoBadge: the Auto tab's badge in the heading's words.
+  function renderAutoBadge(st) {
+    var badge = $('badge-auto');
+    var on = autoOn(st);
+    badge.textContent = st.auto ? (on ? 'on' : 'off') : '';
+    badge.className = 'tab-badge' + (on ? ' live' : '');
+    badge.title = st.auto ? 'Auto-switch ' + (on ? 'on' : 'off') + ': ' + autoStateText(st) : '';
+  }
+
+  // modelWarning: the one line shown while autoswitch.model is set, which
+  // turns session following off (DESIGN A93).
+  function modelWarning(st) {
+    var value = modelSetting(st);
+    if (value === null) { return ''; }
+    return 'autoswitch.model is set to "' + value + '", so session following is off. ' + NAME + ' config unset autoswitch.model turns it back on.';
+  }
+
   function renderAuto(st) {
     var a = st.auto;
-    var badge = $('auto-badge'), body = $('auto-body');
+    var badge = $('auto-badge'), body = $('auto-body'), toggle = $('auto-switch');
     clear(body);
-    var actions = $('auto-actions');
-    var slider = $('threshold-slider');
     var strat = String(engineSetting(st, 'autoswitch.strategy') || 'soonest-reset');
     var models = countedModelNames(st);
+    toggle.parentNode.hidden = !a;
+    var warning = modelWarning(st);
+    $('auto-model-warning').textContent = warning;
+    $('auto-model-warning').hidden = !warning;
     if (!a) {
       badge.textContent = 'unavailable'; badge.className = 'chip chip-outline';
+      $('auto-state').textContent = '';
+      $('auto-counting').textContent = '';
       body.appendChild(el('div', { class: 'empty-state' }, [el('span', { class: 'title', text: 'Auto-switch is not wired into this build' }), el('code', { text: NAME + ' auto' })]));
-      actions.hidden = true;
-      slider.disabled = true;
     } else {
-      actions.hidden = false;
-      if (!a.available) { badge.textContent = a.managedBy ? 'managed by ' + a.managedBy : 'engine unavailable'; badge.className = 'chip chip-warn'; }
-      else if (a.running) { badge.textContent = a.dryRun ? 'running · dry-run' : 'running'; badge.className = 'chip ' + (a.dryRun ? 'chip-warn' : 'chip-good'); }
-      else { badge.textContent = 'stopped'; badge.className = 'chip chip-outline'; }
+      var on = autoOn(st);
+      badge.textContent = on ? 'on' : 'off';
+      badge.className = 'chip ' + (on ? 'chip-good' : 'chip-outline');
+      if (!toggle.disabled) { toggle.checked = on; }
+      var line = $('auto-state');
+      clear(line);
+      autoStateLine(st).forEach(function (n) { line.appendChild(typeof n === 'string' ? document.createTextNode(n) : n); });
+      $('auto-counting').textContent = 'Counting now: ' + countingLine(st, models);
 
       var tiles = el('div', { class: 'tiles' });
-      var stateLine = a.running && a.dryRun ? 'decides, never switches' : a.owner ? 'scheduled by ' + a.owner : a.running ? 'switches near the limit' : a.managedBy ? a.managedBy : 'not polling';
-      tiles.appendChild(tile('State', a.managedBy ? 'managed externally' : a.running ? (a.dryRun ? 'dry-run' : 'running') : 'stopped', [stateLine], a.running ? (a.dryRun ? 'warn' : 'good') : ''));
       var bars = rankCandidates(st).bars;
       var pct = function (v) { return Math.round(v * 10) / 10 + '%'; };
-      tiles.appendChild(tile('Bars', '5h ' + pct(bars.fiveHour) + ' · 7d ' + pct(bars.sevenDay) + ' · model ' + pct(bars.model), ['each window switches at its own bar']));
-      tiles.appendChild(tile('Strategy', strat, [el('span', { class: 'ellipsis', text: countingLine(st, models), title: countingLine(st, models) })]));
-      if (a.owner && !a.hosted) {
-        // The scheduler's ticks run elsewhere: when the last one saw the login.
-        tiles.appendChild(tile('Last tick', a.lastTickAt ? el('span', { 'data-started': String(Math.round(a.lastTickAt * 1000)), text: fmtAgo(Date.now() - a.lastTickAt * 1000) }) : '—', [a.lastTickAt ? fmtUnix(a.lastTickAt) : 'no tick yet']));
-      } else {
-        tiles.appendChild(tile('Started', a.startedAt ? el('span', { 'data-started': String(Math.round(a.startedAt * 1000)), text: fmtAgo(Date.now() - a.startedAt * 1000) }) : '—', [a.startedAt ? fmtUnix(a.startedAt) : 'not running']));
-      }
-      if (a.codex) { tiles.appendChild(codexTile(a.codex)); }
+      tiles.appendChild(tile(settingLabel(st, 'autoswitch.fiveHourThreshold'), pct(bars.fiveHour)));
+      tiles.appendChild(tile(settingLabel(st, 'autoswitch.sevenDayThreshold'), pct(bars.sevenDay)));
+      tiles.appendChild(tile(settingLabel(st, 'autoswitch.modelThreshold'), pct(bars.model)));
+      tiles.appendChild(tile(settingLabel(st, 'autoswitch.strategy'), strat));
+      if (a.codex) { tiles.appendChild(codexTile(st, a.codex)); }
       body.appendChild(tiles);
       fallbackNotices(st).forEach(function (n) { body.appendChild(n); });
-
-      // Start is offered while off; a dry run also beside an external
-      // scheduler, whose ticks no engine here would double.
-      actions.querySelectorAll('[data-action="auto-start"]').forEach(function (b) { b.disabled = !a.available || (b.getAttribute('data-dry') === '1' ? a.hosted && a.running : a.running); });
-      actions.querySelector('[data-post="/api/auto/stop"]').disabled = !a.running;
-      // Wake and the live threshold act on the engine hosted here; under an
-      // external scheduler there is none (the server says where to go).
-      actions.querySelector('[data-post="/api/auto/wake"]').disabled = !a.hosted;
-      slider.disabled = !a.available || !a.hosted;
-      if (!sliderActive) {
-        slider.value = String(Math.round(a.threshold));
-        $('threshold-out').textContent = Math.round(a.threshold) + '%';
-      }
     }
 
     // quarantine (compact, only when non-empty)
@@ -1576,13 +1593,8 @@
     if (res.models.length) { barNote += ' · model ' + Math.round(res.bars.model * 10) / 10 + '%'; }
     $('nextbest-sub').textContent = countingLine(st, res.models) + ' · ' + res.strategy + ' · ' + (res.models.length ? '7d → model → 5h' : '7d → 5h') + ' · switch at ' + barNote;
     var nbSub = $('nextbest-sub');
-    var savedModels = parseModelNames(settingValue(st, 'autoswitch.model'));
-    var ignored = ignoredModelsNote(st, savedModels);
+    var ignored = ignoredModelsNote(st, res.models);
     if (ignored) { nbSub.appendChild(document.createTextNode(' \u00b7 ')); nbSub.appendChild(ignored); }
-    if (a && a.running && !a.counting && JSON.stringify(res.models) !== JSON.stringify(savedModels)) {
-      nbSub.appendChild(document.createTextNode(' \u00b7 '));
-      nbSub.appendChild(chip('running engine: ' + countingNote(res.models), 'outline', 'The running engine counts a different set than the saved setting; save autoswitch.model again to retarget it'));
-    }
     $('nextbest-empty').hidden = res.ranked.length > 0;
     $('nextbest-tbl').hidden = res.ranked.length === 0;
     res.ranked.forEach(function (r, idx) {
@@ -1616,7 +1628,7 @@
       } else if (u && u.scoped && u.scoped.length) {
         modelCell = meter({ label: u.scoped[0].name || 'model', pct: u.scoped[0].pct, resetsAt: u.scoped[0].resetsAt, size: 'compact' });
         modelCell.classList.add('not-counted');
-        modelCell.title = (u.scoped[0].name || 'model') + ' is not counted by the engine — add it to autoswitch.model';
+        modelCell.title = (u.scoped[0].name || 'model') + ' is not counted now';
       } else {
         modelCell = emptyMeter('model', 'compact');
       }
@@ -1625,143 +1637,29 @@
       tr.appendChild(el('td', { class: 'c-verdict' }, [verdict]));
       tb.appendChild(tr);
     });
-
-    if (a && Array.isArray(a.events)) { a.events.forEach(function (ev) { appendAutoEvent(ev, true); }); }
-    renderAutoLog();
   }
 
-  // codexTile: the Codex engine that runs beside the Claude one (DESIGN A47).
-  // Its one bar is fixed when it starts: the slider moves the Claude 7d bar
-  // only.
-  function codexTile(c) {
+  // codexTile: Codex auto-switch beside the Claude one (DESIGN A47), named as
+  // the Settings tab names it.
+  function codexTile(st, c) {
     var last = c.lastTick ? (c.lastTick.detail || c.lastTick.outcome) : 'no tick yet';
-    var sub = c.enabled || c.running ? 'bar ' + Math.round(c.threshold * 10) / 10 + '%, fixed at start \u00b7 last: ' + last : 'autoswitch.codexEnabled is off';
-    return tile('Codex engine', c.running ? 'running' : c.enabled ? 'stopped' : 'off', [el('span', { class: 'ellipsis', text: sub, title: sub })], c.running ? 'good' : '');
+    var sub = c.enabled ? settingLabel(st, 'autoswitch.codexThreshold') + ' ' + Math.round(c.threshold * 10) / 10 + '% \u00b7 last: ' + last : settingLabel(st, 'autoswitch.codexEnabled') + ' is off in Settings';
+    return tile(settingLabel(st, 'autoswitch.codexEnabled'), c.running ? 'on' : 'off', [el('span', { class: 'ellipsis', text: sub, title: sub })], c.running ? 'good' : '');
   }
 
-  // ---- event log -------------------------------------------------------------
-
-  var EVENT_VARIANT = { 'switch': 'accent', 'error': 'warn', 'account-quarantined': 'warn', 'all-exhausted': 'crit', 'account-unquarantined': 'good' };
-  var QUIET_KINDS = { 'poll': true, 'no-switch': true, 'sleep': true, 'account-unquarantined': true };
-  var logKindFilter = '';
-
-  function appendAutoEvent(ev, fromState) {
-    if (!ev || typeof ev !== 'object') { return; }
-    var at = typeof ev.at === 'number' ? ev.at : 0;
-    if (fromState && at <= autoLogLastAt) { return; }
-    if (!fromState && at <= autoLogLastAt) {
-      var last = autoLog[autoLog.length - 1];
-      if (last && last.at === at && last.kind === ev.kind && last.message === ev.message) { return; }
-    }
-    autoLog.push(ev);
-    if (at > autoLogLastAt) { autoLogLastAt = at; }
-    if (autoLog.length > LOG_RING) { autoLog.splice(0, autoLog.length - LOG_RING); }
-  }
-
-  function renderAutoLog() {
-    var ul = $('auto-log');
-    var showQuiet = $('log-quiet').checked;
-    var follow = $('log-follow').checked;
-    var kinds = {};
-    autoLog.forEach(function (ev) { if (ev.kind) { kinds[ev.kind] = true; } });
-    var sel = $('log-kind');
-    var current = sel.value;
-    if (document.activeElement !== sel) { // never rebuild an open dropdown under the pointer
-      var want = [''].concat(Object.keys(kinds).sort());
-      var have = Array.prototype.map.call(sel.options, function (o) { return o.value; });
-      if (want.join('\u0000') !== have.join('\u0000')) {
-        clear(sel);
-        sel.appendChild(el('option', { value: '', text: 'All kinds' }));
-        Object.keys(kinds).sort().forEach(function (k) { sel.appendChild(el('option', { value: k, selected: k === current, text: k })); });
-      }
-    }
-    if (current && !kinds[current]) { logKindFilter = ''; }
-    clear(ul);
-    var shown = 0;
-    autoLog.forEach(function (ev) {
-      if (!showQuiet && QUIET_KINDS[ev.kind] && !logKindFilter) { return; }
-      if (logKindFilter && ev.kind !== logKindFilter) { return; }
-      shown++;
-      var variant = EVENT_VARIANT[ev.kind] || (QUIET_KINDS[ev.kind] ? 'outline' : '');
-      var codex = ev.provider === 'codex'; // a Codex engine tick (DESIGN A47)
-      var li = el('li', {}, [
-        el('span', { class: 'stamp', text: ev.at ? fmtClock(ev.at) : '' }),
-        el('span', {}, [chip(ev.kind || 'event', variant), codex ? chip('codex', 'kind') : null]),
-        el('span', { class: 'msg' }, [ev.message || '', ev.account ? el('span', { class: 'acct-ref', text: ' · ' + (codex ? 'codex #' : '#') + ev.account }) : null])
-      ]);
-      ul.appendChild(li);
-    });
-    $('log-count').textContent = autoLog.length ? autoLog.length + (autoLog.length === 1 ? ' event' : ' events') : '';
-    $('auto-log-empty').hidden = autoLog.length > 0;
-    ul.hidden = shown === 0;
-    if (autoLog.length && shown === 0) {
-      ul.hidden = false;
-      ul.appendChild(el('li', {}, [el('span', { class: 'stamp' }), el('span'), el('span', { class: 'msg muted', text: 'All ' + autoLog.length + ' events are hidden by the filter (quiet kinds: poll, no-switch, sleep).' })]));
-    }
-    if (follow) { ul.scrollTop = ul.scrollHeight; }
-  }
-  $('log-quiet').addEventListener('change', renderAutoLog);
-  $('log-follow').addEventListener('change', renderAutoLog);
-  $('log-kind').addEventListener('change', function (ev) { logKindFilter = ev.target.value; renderAutoLog(); });
-  $('log-clear').addEventListener('click', function () { autoLog = []; renderAutoLog(); });
-
-  // threshold slider: live-applied with debounce
-  (function () {
-    var slider = $('threshold-slider');
-    function send() {
-      var v = parseInt(slider.value, 10);
-      api('POST', '/api/auto/threshold', { threshold: v }).then(function () { toast('7d threshold ' + v + '% applied to the running engine.', 'ok'); }).catch(function (err) { toast(err.message); });
-    }
-    slider.addEventListener('input', function () {
-      sliderActive = true;
-      $('threshold-out').textContent = slider.value + '%';
-      if (sliderTimer) { clearTimeout(sliderTimer); }
-      sliderTimer = setTimeout(function () { sliderActive = false; send(); }, 400);
-    });
-    slider.addEventListener('change', function () {
-      if (sliderTimer) { clearTimeout(sliderTimer); sliderTimer = null; }
-      sliderActive = false;
-      send();
-    });
-  })();
-
-  // ---- model picker (pure; testdata/modelpicker.cjs runs this block) ------
-
-  // modelPickerOptions: the boxes the Settings tab shows for autoswitch.model
-  // (DESIGN A49): one per model window the accounts report, then one per name
-  // the saved value carries that no account reports, ticked, so a save never
-  // drops it. Names split on commas only and match without case, as
-  // settings.ParseModelNames does; a box keeps the reported spelling. "all"
-  // ticks the All box and leaves the named ones as they are.
-  function modelPickerOptions(saved, reported) {
-    var names = typeof saved === 'string' ? saved.split(',').map(function (x) { return x.trim(); }).filter(Boolean) : [];
-    var all = false;
-    var picked = {};
-    names.forEach(function (n) {
-      if (n.toLowerCase() === 'all') { all = true; } else { picked[n.toLowerCase()] = true; }
-    });
-    var seen = {};
-    var options = [];
-    function add(n, checked) {
-      var k = n.toLowerCase();
-      if (k === 'all' || seen[k]) { return; }
-      seen[k] = true;
-      options.push({ name: n, checked: checked });
-    }
-    (reported || []).forEach(function (n) { add(n, !!picked[n.toLowerCase()]); });
-    names.forEach(function (n) { add(n, true); });
-    return { all: all, options: options };
-  }
-
-  // modelPickerValue: what Save sends: "all", the ticked names joined by
-  // commas, or null when nothing is ticked, which Save sends as a reset since
-  // the server refuses an empty value.
-  function modelPickerValue(all, ticked) {
-    if (all) { return 'all'; }
-    return ticked.length ? ticked.join(', ') : null;
-  }
-
-  // ---- end model picker ------------------------------------------------------
+  // The Auto-switch switch: on is what Start did, off what Stop did (DESIGN
+  // A93); the next state document confirms it.
+  $('auto-switch').addEventListener('change', function (ev) {
+    var box = ev.target, on = box.checked;
+    var name = settingLabel(state, 'autoswitch.enabled');
+    box.disabled = true;
+    api('POST', on ? '/api/auto/start' : '/api/auto/stop', on ? {} : undefined).then(function () {
+      toast(name + (on ? ' on.' : ' off.'), 'ok');
+    }).catch(function (err) {
+      box.checked = !on;
+      toast(err && err.message ? err.message : String(err));
+    }).then(function () { box.disabled = false; });
+  });
 
   // ---- settings (shared row renderer) ---------------------------------------
 
@@ -1769,23 +1667,8 @@
     return '/api/settings/' + encodeURIComponent(key);
   }
 
-
-  var SETTING_LABELS = {
-    'autoswitch.enabled': 'Auto-switch',
-    'autoswitch.fiveHourThreshold': '5h threshold', 'autoswitch.sevenDayThreshold': '7d threshold',
-    'autoswitch.modelThreshold': 'Model threshold', 'autoswitch.intervalSeconds': 'Poll interval',
-    'autoswitch.codexEnabled': 'Codex auto-switch', 'autoswitch.codexThreshold': 'Codex threshold',
-    'autoswitch.cooldownSeconds': 'Cooldown', 'autoswitch.hysteresisPct': 'Hysteresis',
-    'autoswitch.strategy': 'Strategy',
-    'autoswitch.unhealthyTicks': 'Unhealthy ticks', 'autoswitch.model': 'Model windows'
-  };
-
-  function humanLabel(key) {
-    if (SETTING_LABELS[key]) { return SETTING_LABELS[key]; }
-    var leaf = key.split('.').pop();
-    var words = leaf.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').toLowerCase();
-    return words.charAt(0).toUpperCase() + words.slice(1);
-  }
+  // rowLabel: the registry's name for a row (sv.label), its key without one.
+  function rowLabel(sv) { return sv.label || sv.key; }
 
   function unitFor(key) {
     if (/Seconds$/.test(key)) { return 's'; }
@@ -1793,104 +1676,9 @@
     return '';
   }
 
-  // Persistent editor: state refreshes never replace an open control, an
-  // unsaved draft, or a choice whose save is still in flight.
-  function modelPicker(sv, id, reported, existing) {
-    var box = existing || el('div', { class: 'model-picker', id: id, role: 'group' });
-    var mode = box.querySelector('select');
-    if (!mode) {
-      mode = el('select', { 'aria-label': 'Count model limits' }, [
-        el('option', { value: 'off', text: 'Follow sessions (default)' }), el('option', { value: 'all', text: 'All model windows' }),
-        el('option', { value: 'selected', text: 'Selected models' })
-      ]);
-      box.appendChild(mode);
-    }
-    var names = box.querySelector('.model-names') || el('div', { class: 'model-names' });
-    if (!names.parentNode) { box.appendChild(names); }
-    var signature = null;
-    var named = [];
-    var extra = null;
-    function showNames() { names.hidden = mode.value !== 'selected'; }
-    function changed() { box.modelDirty = true; showNames(); }
-    box.addEventListener('change', changed);
-    box.addEventListener('input', changed);
-    box.pickerValue = function () {
-      if (mode.value === 'off') { return null; }
-      if (mode.value === 'all') { return 'all'; }
-      var picked = named.filter(function (n) { return n.input.checked; }).map(function (n) { return n.name; });
-      if (extra) { picked = picked.concat(extra.value.split(',').map(function (n) { return n.trim(); }).filter(Boolean)); }
-      return modelPickerValue(false, picked);
-    };
-    box.sync = function (value, windows) {
-      if (box.modelDirty || box.modelPending || box.contains(document.activeElement)) { return; }
-      var pick = modelPickerOptions(value, windows);
-      var next = JSON.stringify(pick.options.map(function (o) { return o.name; }));
-      if (next !== signature) {
-        clear(names);
-        named = pick.options.map(function (o) {
-          var cb = el('input', { type: 'checkbox', 'aria-label': 'Count the ' + o.name + ' window' });
-          names.appendChild(el('label', { class: 'switch' }, [cb, el('bdi', { text: o.name })]));
-          return { name: o.name, input: cb };
-        });
-        extra = el('input', { type: 'text', placeholder: 'Other model names, separated by commas', 'aria-label': 'Other model names' });
-        names.appendChild(extra);
-        signature = next;
-      }
-      named.forEach(function (n, i) { n.input.checked = pick.options[i].checked; });
-      extra.value = '';
-      mode.value = pick.all ? 'all' : pick.options.some(function (o) { return o.checked; }) ? 'selected' : 'off';
-      showNames();
-    };
-    box.sync(sv.value, reported);
-    return box;
-  }
-
-  function saveModelEditor(box, value, button) {
-    if (box.modelPending) { return Promise.resolve(); }
-    box.modelPending = true;
-    var controls = Array.prototype.slice.call(box.querySelectorAll('input, select, button'));
-    if (button && controls.indexOf(button) < 0) { controls.push(button); }
-    controls.forEach(function (c) { c.disabled = true; });
-    var url = '/api/settings/' + encodeURIComponent('autoswitch.model');
-    return (value === null ? api('DELETE', url) : api('POST', url, { value: value })).then(function () {
-      return api('GET', '/api/state' + (showTokenStatus ? '?tokenStatus=1' : ''));
-    }).then(function (fresh) {
-      box.modelDirty = false;
-      box.modelPending = false;
-      if (box.contains(document.activeElement) || document.activeElement === button) { document.activeElement.blur(); }
-      delete renderSigs.settings;
-      render(fresh);
-      toast('Model windows saved.', 'ok');
-    }).catch(function (err) {
-      // Keep the attempted choice available for retry, including when the
-      // save succeeded but the confirming read failed.
-      box.modelDirty = true;
-      toast(err.message);
-    }).then(function () {
-      box.modelPending = false;
-      controls.forEach(function (c) { c.disabled = false; });
-    });
-  }
-
-  function renderModelPicker(st) {
-    var saved = settingValue(st, 'autoswitch.model');
-    if (!autoModelPicker) {
-      autoModelPicker = modelPicker({ value: saved }, 'auto-model-picker', modelWindowNames(st), $('auto-model-picker'));
-      $('model-limits-save').addEventListener('click', function () {
-        saveModelEditor(autoModelPicker, autoModelPicker.pickerValue(), this);
-      });
-    }
-    autoModelPicker.sync(saved, modelWindowNames(st));
-    $('model-limits-which').textContent = countingLine(st, parseModelNames(saved));
-  }
-
-  function settingControl(sv, reported) {
+  function settingControl(sv) {
     var id = 'set-' + sv.key.replace(/[^a-z0-9]/gi, '-');
-    var input = sv.key === 'autoswitch.model' ? modelPicker(sv, id, reported) : null;
-    if (input) {
-      input.setAttribute('aria-label', humanLabel(sv.key) + ' (' + sv.key + ')');
-      return input;
-    }
+    var input;
     if (sv.kind === 'bool') {
       input = el('input', { type: 'checkbox', id: id, checked: sv.value === true || sv.value === 'true' });
     } else if (sv.kind === 'choice') {
@@ -1901,17 +1689,15 @@
       if (typeof sv.min === 'number') { input.min = String(sv.min); }
       if (typeof sv.max === 'number') { input.max = String(sv.max); }
     } else {
-      input = el('input', { type: 'text', id: id, value: sv.value === null || sv.value === undefined ? '' : String(sv.value), autocomplete: 'off', spellcheck: 'false', placeholder: sv.key === 'autoswitch.model' ? 'empty = ignore model limits; all; or names, e.g. Fable, Opus' : '' });
+      input = el('input', { type: 'text', id: id, value: sv.value === null || sv.value === undefined ? '' : String(sv.value), autocomplete: 'off', spellcheck: 'false' });
     }
-    input.setAttribute('aria-label', humanLabel(sv.key) + ' (' + sv.key + ')');
+    input.setAttribute('aria-label', rowLabel(sv) + ' (' + sv.key + ')');
     return input;
   }
 
   function controlValue(input, sv) {
-    if (input.pickerValue) { return input.pickerValue(); }
     if (sv.kind === 'bool') { return input.checked; }
     if (sv.kind === 'int' || sv.kind === 'float') { var n = parseFloat(input.value); return isNaN(n) ? input.value : n; }
-    if (sv.key === 'autoswitch.model' && !input.value.trim()) { return null; }
     return input.value;
   }
 
@@ -1925,26 +1711,16 @@
   // settingRow: the key, what it does and when a saved value takes effect
   // (sv.applies, which the server words from what the code does), the
   // control, configured value and default, Save and Reset.
-  function settingRow(sv, reported) {
-    if (sv.key === 'autoswitch.model' && modelSettingRow) {
-      var editor = modelSettingRow.querySelector('.model-picker');
-      if (editor.modelDirty || editor.modelPending || modelSettingRow.contains(document.activeElement)) { return modelSettingRow; }
-    }
+  function settingRow(sv) {
     var row = el('div', { class: 'setting-row', role: 'group', 'aria-label': sv.key });
     var idc = el('div', { class: 'setting-id' }, [
-      el('div', { class: 'label-row' }, [el('span', { class: 'label', text: sv.label || humanLabel(sv.key) }), el('span', { class: 'key', text: sv.key, title: sv.key })]),
+      el('div', { class: 'label-row' }, [el('span', { class: 'label', text: rowLabel(sv) }), el('span', { class: 'key', text: sv.key, title: sv.key })]),
       sv.description ? el('div', { class: 'desc', text: sv.description }) : null,
       sv.applies ? el('div', { class: 'applies', text: sv.applies }) : null,
       sv.notice ? el('div', { class: 'notice notice-crit', text: sv.notice }) : null
     ]);
     row.appendChild(idc);
-    if (sv.readOnly) {
-      row.appendChild(el('div', { class: 'setting-ctl', text: fmtSetting(sv.value, sv.key) }));
-      row.appendChild(el('div', { class: 'setting-default' }, [chip(sv.source === 'session' ? 'live sessions' : 'managed', 'outline')]));
-      row.appendChild(el('div', { class: 'setting-actions muted', text: sv.readOnly }));
-      return row;
-    }
-    var input = settingControl(sv, reported);
+    var input = settingControl(sv);
     var ctl = el('div', { class: 'setting-ctl' }, [input]);
     var unit = unitFor(sv.key);
     if (typeof sv.min === 'number' || typeof sv.max === 'number') {
@@ -1960,16 +1736,12 @@
     ]));
     var save = el('button', { type: 'button', class: 'btn btn-sm btn-primary', text: 'Save', 'aria-label': 'Save ' + sv.key });
     save.addEventListener('click', function () {
-      var v = controlValue(input, sv);
-      if (sv.key === 'autoswitch.model') { saveModelEditor(input, v, save); return; }
-      var url = settingsEndpoint(sv.key);
-      run(save, 'Save ' + humanLabel(sv.key), v === null ? api('DELETE', url) : api('POST', url, { value: v }));
+      run(save, 'Save ' + rowLabel(sv), api('POST', settingsEndpoint(sv.key), { value: controlValue(input, sv) }));
     });
     input.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); save.click(); } });
     var reset = el('button', { type: 'button', class: 'btn btn-sm btn-ghost', text: 'Reset', 'aria-label': 'Reset ' + sv.key + ' to default', disabled: !!sv.isDefault, title: 'Remove the override and fall back to the default' });
-    reset.addEventListener('click', function () { if (sv.key === 'autoswitch.model') { saveModelEditor(input, null, reset); return; } run(reset, 'Reset ' + humanLabel(sv.key), api('DELETE', settingsEndpoint(sv.key))); });
+    reset.addEventListener('click', function () { run(reset, 'Reset ' + rowLabel(sv), api('DELETE', settingsEndpoint(sv.key))); });
     row.appendChild(el('div', { class: 'setting-actions' }, [save, reset]));
-    if (sv.key === 'autoswitch.model') { modelSettingRow = row; }
     return row;
   }
 
@@ -1986,7 +1758,6 @@
     $('settings-empty').hidden = avail;
     $('settings-sub').textContent = avail ? list.length + ' keys · ' + list.filter(function (sv) { return !sv.isDefault; }).length + ' changed' : '';
     if (!avail) { return; }
-    var reported = modelWindowNames(st);
     var sections = {};
     var order = [];
     list.forEach(function (sv) {
@@ -1996,7 +1767,7 @@
     });
     order.forEach(function (sec) {
       if (order.length > 1) { body.appendChild(el('h3', { class: 'settings-section-title', text: sec })); }
-      sections[sec].forEach(function (sv) { body.appendChild(settingRow(sv, reported)); });
+      sections[sec].forEach(function (sv) { body.appendChild(settingRow(sv)); });
     });
   }
 
@@ -2039,10 +1810,10 @@
   }
 
   // sigOf: the change signature of a state slice. Fields that move every tick
-  // without changing what is painted (usage freshness, server time, the event
-  // ring the log consumes on its own path) are dropped, otherwise the guard
-  // would repaint on every poll and defeat its purpose.
-  var VOLATILE = { usageAgeSeconds: true, serverTime: true, events: true };
+  // without changing what is painted (usage freshness, server time) are
+  // dropped, otherwise the guard would repaint on every poll and defeat its
+  // purpose.
+  var VOLATILE = { usageAgeSeconds: true, serverTime: true };
   function sigOf(data) {
     return JSON.stringify(data === undefined ? null : data, function (k, v) { return VOLATILE[k] ? undefined : v; });
   }
@@ -2090,7 +1861,7 @@
       reopenDetails(container, open);
     });
   }
-  document.addEventListener('focusout', function () { setTimeout(function () { flushPendingRenders(); if (state) { renderModelPicker(state); } }, 120); });
+  document.addEventListener('focusout', function () { setTimeout(flushPendingRenders, 120); });
   document.addEventListener('click', function () { setTimeout(flushPendingRenders, 120); });
   document.addEventListener('toggle', function () { setTimeout(flushPendingRenders, 0); }, true);
 
@@ -2170,18 +1941,17 @@
     renderRecovery(st);
     renderSortHeaders(st);
     var accountView = st;
-    renderModelPicker(st);
     renderHeader(accountView);
     renderOnboarding(st);
     renderGuarded('updates', 'updates', { updates: st.updates, applying: updApplying }, function () { renderUpdates(st); });
     renderGuarded('dashboard', 'accounts-card',
       { accounts: accountView.accounts, active: accountView.activeNumber, order: accountOrder, strategies: st.strategies, settings: st.settings, currentLogin: st.currentLogin,
-        auto: st.auto && { running: st.auto.running, threshold: st.auto.threshold, settings: st.auto.settings, quarantine: st.auto.quarantine, codex: !!st.auto.codex } },
+        auto: st.auto && { running: st.auto.running, settings: st.auto.settings, counting: st.auto.counting, quarantine: st.auto.quarantine, codex: !!st.auto.codex } },
       function () { renderSummary(accountView); renderAccounts(accountView); });
     renderGuarded('auto', 'panel-auto',
       { auto: st.auto, accounts: st.accounts, active: st.activeNumber, settings: st.settings },
       function () { renderAuto(st); });
-    renderGuarded('settings', 'panel-settings', { settings: st.settings, models: modelWindowNames(st) }, function () { renderSettings(st); });
+    renderGuarded('settings', 'panel-settings', { settings: st.settings }, function () { renderSettings(st); });
     renderGuarded('sessions', 'panel-sessions', st.sessions, function () { renderSessions(st.sessions); });
     applyFolds(st);
     if (pendingUpdatesNavigation && st.updates) { showUpdates(); }
@@ -2270,7 +2040,7 @@
     },
     'updates-dismiss': function () { updResult = null; renderUpdateResult(); return Promise.resolve(); },
     'switch-strategy': function (btn) {
-      var models = parseModelNames(settingValue(state, 'autoswitch.model'));
+      var models = parseModelNames(modelSetting(state));
       var body = { strategy: strategy };
       if (models.length) { body.models = models; }
       return run(btn, 'Switch (' + strategy + ')', api('POST', '/api/switch', body));
@@ -2371,10 +2141,6 @@
         if (!ok) { return; }
         return run(btn, 'Remove', api('POST', '/api/accounts/' + encodeURIComponent(id) + '/remove'));
       });
-    },
-    'auto-start': function (btn) {
-      var dry = btn.getAttribute('data-dry') === '1';
-      return run(btn, dry ? 'Start dry-run' : 'Start', api('POST', '/api/auto/start', { dryRun: dry }));
     }
   };
 
@@ -2439,9 +2205,6 @@
         render(JSON.parse(ev.data));
         setConn('on');
       } catch (e) { toast('Bad state event: ' + e.message); }
-    });
-    es.addEventListener('auto', function (ev) {
-      try { appendAutoEvent(JSON.parse(ev.data), false); renderAutoLog(); } catch (e) { /* ignore malformed */ }
     });
     var mine = es;
     es.addEventListener('error', function () {

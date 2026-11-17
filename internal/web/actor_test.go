@@ -53,7 +53,6 @@ func TestDashboardActionsNameTheirActor(t *testing.T) {
 		}, "Set autoswitch.strategy=best" + actor},
 		{"unset", func() *http.Response { return h.post("/api/settings/autoswitch.strategy/unset") }, "Unset autoswitch.strategy" + actor},
 		{"start", func() *http.Response { return h.postJSON("/api/auto/start", map[string]any{}) }, "Set autoswitch.enabled=true" + actor},
-		{"start-dry", func() *http.Response { return h.postJSON("/api/auto/start", map[string]any{"dryRun": true}) }, ""},
 		{"stop", func() *http.Response { return h.post("/api/auto/stop") }, "Set autoswitch.enabled=false" + actor},
 	} {
 		resp := step.do()

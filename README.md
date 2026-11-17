@@ -366,7 +366,8 @@ alice@example.com
 The full-screen interactive dashboard is `tycswap tui` (also `tycswap watch`;
 a bare `tycswap` opens the action menu). It shows the same accounts with live usage and
 refreshes on a timer. Its Settings screen (`c`, or the menu's "Settings…" row)
-lists every `settings.json` key with its value and help text and edits it in
+lists every `settings.json` key but `autoswitch.model`, which `tycswap config`
+alone sets, with its value and help text and edits it in
 place — a bool toggles, a choice cycles, a number or string is typed and
 validated like `tycswap config set` — and `u` resets a key to its default; the
 auto-switch screen's own threshold adjustment (`t`, which moves the 7d bar)
@@ -708,8 +709,8 @@ given, which overwrites it. Import rejects any file marked `encrypted: true`.
 
 ### Configure settings
 
-Rotation tuning lives in the dashboard's **Settings** and `tycswap config`.
-The 5-hour threshold is 85% by default: a 15% reserve before the provider's
+Rotation tuning lives in the dashboard's **Settings** and `tycswap config`;
+`autoswitch.model` is set with `tycswap config` only. The 5-hour threshold is 85% by default: a 15% reserve before the provider's
 limit, not a provider requirement. Changing presentation does not change the
 saved policy.
 
@@ -855,12 +856,14 @@ account that is not stored yet, warns when an `ANTHROPIC_*` variable or a
 can be updated: a newer tycswap release and a newer Claude Code from the
 installer it was set up with, each installed from the page after a
 confirmation (the header carries the count on every tab; the check runs at
-start and every six hours). *Auto* runs an auto-switch engine in the `web`
-process with its *Next best* ranking, quarantine and event log; *Sessions*
+start and every six hours). *Auto* has one *Auto-switch* switch
+(`autoswitch.enabled`), says who checks (a scheduler and its last check, or
+the dashboard and how often) and what is counted now, with the *Next best*
+ranking and quarantine; *Sessions*
 lists the running Claude Code sessions (also those started with `tycswap
-run`) and can stop one; *Settings* edits every `settings.json` key with its
-type, range and default, the same keys as `tycswap config`, and picks the
-counted model windows from the ones the accounts report; *Guide* explains
+run`) and can stop one; *Settings* edits the `settings.json` keys with their
+type, range and default, the keys of `tycswap config` but `autoswitch.model`,
+and lists *Poll interval* only while the dashboard runs the checks; *Guide* explains
 the tool. The Accounts and Updates cards fold, and the choice is remembered.
 Choose **Interactive menu… → Import / export…** to transfer accounts through a terminal launched from the dashboard or the Linux and macOS tray menu. Files contain account tokens; the guided export asks before writing and requires a new destination.
 
@@ -871,8 +874,8 @@ the launch URL alone (a new tab needs a fresh URL). On WSL the browser opens on
 the Windows side through `wslview` or an `xdg-open` that translates Linux
 paths. On a machine with Codex accounts the dashboard lists them under their
 own heading after the Claude accounts, with switch, disable / enable and
-remove, *+ Add current Codex login* stores the codex CLI's login, and the Auto
-tab runs the Codex engine beside the Claude one, as `tycswap auto` does;
+remove, *+ Add current Codex login* stores the codex CLI's login, and
+auto-switch rotates them beside the Claude accounts, as `tycswap auto` does;
 alias, move, swap, export and import of Codex accounts are available through the interactive menu or `tycswap codex`. See `docs/reference.md`, `tycswap web`, for the API and the security
 model.
 
@@ -944,29 +947,28 @@ elsewhere.
 `TYCSWAP_AUTO_MANAGED_BY=flakelab-tycswap-autoswitch.timer` in the dashboard
 service environment (or name your scheduler). It only means "do not host an
 engine here": the app starts no engine of its own, so a second engine never
-runs beside the timer's. The tray's toggle and the dashboard's Start and Stop
-still work: they turn `autoswitch.enabled` on and off, which the timer's
-`tycswap auto --once` reads on every tick, and they show that setting as
-running or stopped. The dashboard names the scheduler on its State tile and
-turns Wake and the live threshold slider off, since no engine runs there; a
-dry run is still offered. Seed the setting from the provisioner with
+runs beside the timer's. The tray's toggle and the dashboard's Auto-switch
+switch still work: they turn `autoswitch.enabled` on and off, which the timer's
+`tycswap auto --once` reads on every tick, and they show that setting as on
+or off. The Auto tab says `checked by <scheduler>, last check <time ago>`,
+and the Settings tab leaves out *Poll interval*, which `auto --once` never
+reads. Seed the setting from the provisioner with
 `tycswap auto on --if-unset`. This declares ownership; it does not probe
 whether the named scheduler is currently active.
 
 Flakelab manages the package, service and timer without overwriting saved
 tycswap policy settings. Its `auto --once` checks reload those values each
 time. The external timer controls cadence; `autoswitch.intervalSeconds`
-only controls a continuous tycswap loop. Continuous runners load shared
-defaults at startup, while explicit group overrides reload each group check.
-Grouped engines currently recreate their failed-poll counter each check,
-so the failed-poll threshold is not offered as a group override.
+only controls a continuous tycswap loop, which loads the settings when it
+starts.
 
-**Model windows.** The Auto and Settings tabs offer Off, All models, and
-Selected models with Save. Named windows match case-insensitively; saved
-names remain available even before accounts report them. Drafts survive
-usage refreshes. The Windows table shows each reported limit independently;
-the icon's summary counts only the selected windows. Group model selection
-follows the group's confirmed sessions.
+**Model windows.** Unset, `autoswitch.model` follows the models the live
+sessions run; the Auto tab's *Counting now* line says what is counted and
+why. `tycswap config set autoswitch.model all` (or `Fable, Opus`) counts
+those windows always, and the Auto tab then warns that session following is
+off; `tycswap config unset autoswitch.model` turns it back on. Named windows
+match case-insensitively. The Windows table shows each reported limit
+independently; the icon's summary counts only the counted windows.
 
 **WSL: the Windows tray for the engine in the distro.** Inside WSL there is no
 tray, so the app there runs headless and the Windows binary shows the icon. In

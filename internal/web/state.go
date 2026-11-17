@@ -225,9 +225,6 @@ func (s *Server) buildState(o stateOpts) State {
 	}
 	if s.d.Auto != nil {
 		v := s.d.Auto.View()
-		if v.Events == nil {
-			v.Events = []AutoEventView{}
-		}
 		if v.Counting != nil {
 			c := *v.Counting
 			c.Caption = countingCaption(c)

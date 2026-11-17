@@ -3733,7 +3733,8 @@ is touched by that goroutine alone, which adopts a queued set at the start
 of its next tick. The settings routes call `ApplyModels` themselves whenever
 `autoswitch.model` is saved or unset while the engine runs, so the toggle
 and the settings grid share one path and the page never has to remember to
-retarget. Stop asks the engine to stop and waits up to 2 s for its
+retarget (until A93: the page sets neither, the threshold, wake and model
+routes are gone, and only the in-process tray calls `ApplyModels`). Stop asks the engine to stop and waits up to 2 s for its
 loop to return; past that it answers 409 ("stopping") rather than holding the
 dashboard's mutation lock, the engine already counts as stopped, and Start
 refuses while the old loop is still finishing, so two engines never run at
@@ -3884,7 +3885,8 @@ depends on the settings facade alone: it is hidden only when `state.settings`
 is null, which `tycswap web` never sends (the facade is always wired), and
 never on the auto engine. The Auto tab keeps its live threshold slider and
 the *Count model limits* switch and gains a short way to the Settings tab in
-place of the duplicated card. A test wires the real `settingsFacade` over a
+place of the duplicated card (A93 removes both and leaves `autoswitch.model`
+out of the tab, and *Poll interval* while a scheduler owns the ticks). A test wires the real `settingsFacade` over a
 store with no `settings.json` and asserts that `/api/state` carries every
 defined key, at its default and marked so, in registry order.
 
@@ -3897,8 +3899,8 @@ settings when it starts (`settings.Load` in the host's `Start`) and only
 
 | Key | Takes effect |
 |---|---|
-| `autoswitch.model` | at once for the engine this page hosts: a save or reset through the settings routes calls `ApplyModels` on it while it runs (A26; an engine in the TUI or `tycswap auto` keeps its value until it next starts), and the at-limit marks re-read it for every state document |
-| `autoswitch.sevenDayThreshold` (A34; `autoswitch.threshold` before it) | at the next engine start; the Auto tab's slider retargets the running engine's 7d bar for this run only, unsaved |
+| `autoswitch.model` | at once for the engine this page hosts: a save or reset through the settings routes calls `ApplyModels` on it while it runs (A26; an engine in the TUI or `tycswap auto` keeps its value until it next starts), and the at-limit marks re-read it for every state document; since A93 the tab does not list it |
+| `autoswitch.sevenDayThreshold` (A34; `autoswitch.threshold` before it) | at the next engine start; the Auto tab's slider retargets the running engine's 7d bar for this run only, unsaved (the slider is gone since A93) |
 | `autoswitch.codexEnabled`, `autoswitch.codexThreshold` | at the next start of a Codex engine: this page's, which runs beside the Claude one when the dashboard started with Codex accounts (A47), or `tycswap auto`'s; the TUI's engine never reads them |
 | every other key (`intervalSeconds`, `cooldownSeconds`, `hysteresisPct`, `strategy`, `unhealthyTicks`, and any key added later) | at the next engine start, here, in the TUI's Auto view or in `tycswap auto` |
 
@@ -4671,7 +4673,7 @@ lowest bar, so from 70 % of the 5h window the active account is fetched more
 often than the poll interval. `PlanAfterFetch` itself is unchanged.
 
 **One bar stays adjustable at runtime.** The TUI's `t` adjustment and the
-dashboard's slider move the 7d bar, the account's whole budget, and nothing
+dashboard's slider (removed by A93 with its route) move the 7d bar, the account's whole budget, and nothing
 else: `Engine.ApplyThreshold` and `POST /api/auto/threshold` are that bar,
 bounded by its spec (50–100), and the dashboard's bar tick and the TUI's
 usage-bar tick follow it. The other two bars are settings.
@@ -4688,7 +4690,7 @@ usage-bar tick follow it. The other two bars are settings.
 - **Dashboard.** The Next best ranking judges each window against its own bar
   (the *at threshold* chip) and ranks by the weekly figure; its subtitle names
   the bars (`switch at 5h 85% · 7d 97%`); the Auto tab's tile and slider are
-  the *7d threshold*; the Settings tab lists the three keys; the Guide
+  the *7d threshold* (A93: a *Weekly threshold* tile, no slider); the Settings tab lists the three keys; the Guide
   explains the three bars and why they differ.
 - **CLI.** `tycswap auto`'s startup line names all three bars (`Auto-switch
   running: 5h 85% · 7d 97% · model 95%, every 60s`), its help says each
@@ -4959,7 +4961,7 @@ whether the engine counts them (`autoswitch.model`) and the percentage the
 tray shows. The menu's **`<window> limit`** switch, named after the window
 the accounts report ("Fable limit"), writes `autoswitch.model` (`all`, or
 unset) and retargets the running engine in the same click (`ApplyModels`,
-as the dashboard's *Count model limits* does, A26). Every figure the shell
+as the dashboard's *Count model limits* did until A93, A26). Every figure the shell
 shows — the title, each account's bar, the threshold alert — counts exactly
 the windows the engine counts, read from the running engine's live settings
 first and the saved setting otherwise. A window that does not count is still
@@ -5542,10 +5544,12 @@ dry-run) and the `--json` fields are shared too, so `tycswap auto` prints
 exactly what it printed. The dashboard's engine host builds the Codex engine
 at Start with the same constructor and runs it on the same loop at the
 engine's interval; every tick becomes `lastTick`, and what passes the filter
-goes to the event log. Stop stops the Claude engine, cancels the Codex loop
+goes to the event log (the tray's notifications alone since A93, which drops
+the page's log). Stop stops the Claude engine, cancels the Codex loop
 and waits for both within the one `autoStopWait` budget; past it Stop answers
 409 and Start refuses until both loops have returned, the A26 rule for the
-Claude loop. The slider retargets the Claude 7d bar only: the Codex bar is
+Claude loop (since A83 Stop turns the key off and A93 removes the dashboard's
+dry run, so only the app's exit ends the engines). The slider retargets the Claude 7d bar only: the Codex bar is
 fixed for the run, as in `tycswap auto`, and the tile says so. There is no
 Codex model setting, quarantine or state file. `autoswitch.codexEnabled` and
 `codexThreshold` take effect when a Codex engine next starts: this page's,
@@ -5726,6 +5730,7 @@ retargets a running engine exactly as it did (A26). The tab repaints when the
 reported windows change as well as when the settings do, so a window that
 appears after the page loaded gets its switch. The Auto tab's *Count model
 limits* switch and the tray's `<window> limit` switch (A39) are unchanged.
+A93 removes the picker from both tabs: `tycswap config` alone sets the key.
 
 *Tests.* The registry's first four keys are pinned by name. A node script
 runs the picker's pure block of `app.js` (`modelPickerOptions`,
@@ -5777,7 +5782,8 @@ in force.
 
 ## A51 — Persistent model controls and scheduler ownership
 
-The Auto tab's Count model limits control replaces the boolean shortcut
+The Auto tab's Count model limits control (removed by A93 with the Settings
+row's editor) replaces the boolean shortcut
 with Off, All models, and Selected models plus Save. Both tabs use the same
 editor and settings routes; Off or an empty selection unsets the override.
 Reported names and unreported saved names are offered without case-sensitive
@@ -5803,9 +5809,10 @@ sentinel. Excluded windows stay visible and are marked not counted.
 
 TYCSWAP_AUTO_MANAGED_BY declares external scheduler ownership in the host's
 environment. This is explicit configuration rather than platform-specific
-process guessing. The facade refuses every Start, including remembered
-startup and dry runs, and exposes the owner with Available=false. The HTTP
-route returns 409, and both dashboard and remote tray disable Start. The
+process guessing. The facade refused every Start, including remembered
+startup and dry runs, and exposed the owner with Available=false; the HTTP
+route returned 409, and both dashboard and remote tray disabled Start (A83
+replaced this: Start under an owner writes the setting). The
 one-shot CLI is unaffected. Flakelab sets this owner on its dashboard service
 whenever its autoswitch timer is configured. Disabling a UI control alone
 would not protect old remote clients, direct requests, or app auto-resume.
@@ -6913,7 +6920,8 @@ The rule: one key, `autoswitch.enabled` in `settings.json`, default off
   follows at its next round); Stop writes off and returns at once, leaving
   the engine hosted. A dry run writes nothing: while the key is off it takes
   the idle engine's place and Stop gives the host back; while the key is on
-  it is refused, and so is a Start beside it. Each write is one INFO log line.
+  it is refused, and so is a Start beside it (A93 removes the dashboard's dry
+  run). Each write is one INFO log line.
   Quitting the app or `tycswap web` ends the hosted engine without writing.
   The view's `running` is a hosted engine that is a dry run or has the key
   on; `hosted` says an engine runs in this process, and model retargets
@@ -6927,7 +6935,8 @@ The rule: one key, `autoswitch.enabled` in `settings.json`, default off
   wake, and the live 7d bar says to change the saved setting; the page turns
   Wake and the slider off, names the scheduler on the State tile, and keeps
   the Settings tab's scheduler notes. A dry run is offered there beside the
-  scheduler's ticks.
+  scheduler's ticks. (A93 removes Wake, the slider, the dry run and the State
+  tile; the heading says `checked by <owner>`.)
 
 Supersedes A43's `ui_prefs.json` choice and A51's refusal of Start under an
 external owner. Closes HOST-1 ("off" exists only inside the app process) and
@@ -7459,3 +7468,72 @@ keeps a dead profile's claim nor lists a dead session. A record without
 `/proc` keeps the PID-only check. Two boxes cloned with one machine id cannot
 be told apart by the record; profile folders are per box, so a record from
 another box reaches this one only through a copied store.
+
+## A93. One auto-switch switch; what is counted is shown, not chosen
+
+**Why.** The operator runs `tycswap auto --once --json` from a systemd timer
+every two minutes and the dashboard with `TYCSWAP_AUTO_MANAGED_BY` set, so
+it hosts no engine. The Auto tab still offered what only a hosted engine
+used, and some of it misled. *Count model limits* saved `autoswitch.model`;
+only the unset value lets a scheduled tick follow sessions and move Opus work
+to accounts whose Fable week is spent (`reporting/defaultmodels.go`), and an
+explicit value switched that off for 38 hours without the page saying so.
+Start dry-run started a second engine in the dashboard that counted
+differently from the timer's ticks; Wake and the 7d slider reached no
+engine; the event log stayed empty because the ticks print to the journal;
+*Poll interval* is never read by `auto --once`. Settings carried a second
+set of names in the script.
+
+**What.**
+
+- *One switch.* The Auto tab has one *Auto-switch* switch, the words of the
+  Settings row and the tray: on is `POST /api/auto/start` (Start), off
+  `POST /api/auto/stop` (Stop); both write `autoswitch.enabled` with and
+  without an owner (A83). A start asking for a dry run is refused with the
+  terminal command, `tycswap auto --dry-run`.
+- *The heading says what is true.* `Auto-switch` with an `on` or `off` chip;
+  the line under it is `checked by <owner>, last check <time ago>` under a
+  scheduler and `checked every <interval> s by this dashboard` while an
+  engine is hosted here; while off, `not checked while off` (with the last
+  check under an owner). The tab badge says `on` or `off` with that line as
+  its tooltip. No "engine" or "running" wording.
+- *What is counted is shown.* `Counting now: <caption>` is
+  `auto.counting.caption` (A91). While `autoswitch.model` is set (counting
+  mode `setting`) one warning line says its value, that session following is
+  off, and `tycswap config unset autoswitch.model`.
+- *`autoswitch.model` is set through `tycswap config` only.* The registry
+  marks it (`Spec.ConfigOnly`) and every surface follows the mark: the
+  dashboard's settings list and state leave it out, `POST`/`DELETE
+  /api/settings/autoswitch.model` and `…/unset` answer 400 naming `tycswap
+  config set|unset`, and the TUI's Settings screen does not list it. `config
+  list|get|set|unset` and `auto --model` are unchanged.
+- *Gone, with what only they used.* Start dry-run, Wake, the 7d slider and
+  the event log leave the page; `/api/auto/wake`, `/api/auto/threshold` and
+  `/api/auto/model` answer 404; `AutoFacade` keeps `View`, `Start()` and
+  `Stop()`; the engine host drops its dry run, `Wake`, `ApplyThreshold` and
+  its event ring (`AutoView.events`). The event stream stays: the tray turns
+  it into notifications. `autoFacade.ApplyModels` stays for the in-process
+  tray's model switch. `AutoView.dryRun` stays, always false, beside
+  `managedBy` and `available`, for older clients.
+- *Poll interval* is listed only while no owner is named.
+- *One name per setting.* The registry's labels (`Spec.Label`) are the names
+  on the Settings rows, the toasts, the Auto tab's tiles (*5-hour threshold*,
+  *Weekly threshold*, *Model threshold*, *Account order*, *Codex
+  auto-switch* with its *Codex threshold*) and the Guide; the script's label
+  table is gone. The help texts say that Codex auto-switch runs wherever
+  auto-switch runs, `auto --once` included, that 0 for the Codex threshold
+  means the weekly threshold, and that the model threshold covers every
+  counted model window, session following's included.
+- *Dead code and wrong texts.* `settings.LoadOver`, `SettingView.Scope`,
+  `Source` and `ReadOnly`, and the page's read-only, `managedBy` and
+  `!available` branches had no caller or could not run; the Guide and the
+  Settings intro no longer say the engine runs inside `tycswap web`, name
+  "± keys" or "Model windows", or that tray and dashboard edit the same
+  settings.
+
+**Tests.** A node script runs the production Auto tab and Settings rows over
+a small DOM with the registry's labels: on and off in both modes, the three
+counting modes' caption and warning, the switch's two requests, and every
+tile and toast name. Go tests pin the 404s, the refused dry run and model
+saves (store untouched), the hidden *Poll interval*, the facade's start, tick
+and stop through the switch, and `config set|unset autoswitch.model`.

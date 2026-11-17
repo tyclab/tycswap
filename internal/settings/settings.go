@@ -150,14 +150,15 @@ const (
 // bounds/choices/defaults, shared by the lenient clamp on load and the
 // strict `parse_setting_value` used by `tycswap config set`.
 type Spec struct {
-	Section string // top-level JSON section ("autoswitch")
-	JSONKey string // camelCase key inside the section
-	Field   string // the AutoSwitchSettings Go field name
-	Kind    Kind
-	Lo, Hi  float64  // used for float/int kinds
-	Choices []string // used for the choice kind
-	Default any      // float64 | int | bool | string | nil; matches Default()'s field
-	Help    string
+	Section    string // top-level JSON section ("autoswitch")
+	JSONKey    string // camelCase key inside the section
+	Field      string // the AutoSwitchSettings Go field name
+	Kind       Kind
+	Lo, Hi     float64  // used for float/int kinds
+	Choices    []string // used for the choice kind
+	Default    any      // float64 | int | bool | string | nil; matches Default()'s field
+	Help       string
+	ConfigOnly bool // set through `tycswap config` only (DESIGN A93)
 }
 
 // Dotted returns "section.jsonKey", e.g. "autoswitch.sevenDayThreshold".
@@ -195,13 +196,9 @@ func (s Spec) Label() string {
 	return s.Dotted()
 }
 
-// SettingSpecs is the single source of truth for every settings.json key, in
-// registry order: the order `tycswap config`, the TUI's Settings screen and
-// the dashboard's Settings tab list them, so the on/off comes first, then the
-// bars, and the model windows sit right before the model bar that applies to
-// them (DESIGN A49). It must cover every AutoSwitchSettings field, and each
-// spec's Default must equal Default()'s corresponding field (both enforced by
-// tests).
+// SettingSpecs is every settings.json key in the order every view lists them:
+// the on/off, the bars, the model windows before their bar (DESIGN A49). Tests
+// hold it to every AutoSwitchSettings field and to Default()'s values.
 var SettingSpecs = []Spec{
 	{Section: "autoswitch", JSONKey: "enabled", Field: "Enabled", Kind: KindBool,
 		Default: false,
@@ -213,20 +210,20 @@ var SettingSpecs = []Spec{
 		Lo: 50.0, Hi: 100.0, Default: 97.0,
 		Help: "Switch at this weekly usage percentage"},
 	{Section: "autoswitch", JSONKey: "model", Field: "Model", Kind: KindString,
-		Default: nil,
-		Help:    "Count model limits (e.g. Fable or all); automatic targets must report these windows"},
+		Default: nil, ConfigOnly: true,
+		Help: "Count model limits (e.g. Fable or all); automatic targets must report these windows"},
 	{Section: "autoswitch", JSONKey: "modelThreshold", Field: "ModelThreshold", Kind: KindFloat,
 		Lo: 50.0, Hi: 100.0, Default: 95.0,
-		Help: "Switch at this usage percentage for selected models"},
+		Help: "Switch at this usage percentage of a counted model window, whether autoswitch.model names it or session following picks it"},
 	{Section: "autoswitch", JSONKey: "intervalSeconds", Field: "IntervalSeconds", Kind: KindFloat,
 		Lo: 15.0, Hi: 3600.0, Default: 60.0,
 		Help: "Poll interval for the tycswap auto loop, in seconds"},
 	{Section: "autoswitch", JSONKey: "codexEnabled", Field: "CodexEnabled", Kind: KindBool,
 		Default: true,
-		Help:    "Also auto-switch Codex accounts in the tycswap auto loop"},
+		Help:    "Also auto-switch Codex accounts wherever auto-switch runs (tycswap auto, auto --once, the dashboard)"},
 	{Section: "autoswitch", JSONKey: "codexThreshold", Field: "CodexThreshold", Kind: KindFloat,
 		Lo: 0.0, Hi: 99.9, Default: 0.0,
-		Help: "Codex switch threshold (%); 0 uses the weekly threshold"},
+		Help: "Switch Codex accounts at this usage percentage; 0 = same as the weekly threshold"},
 	{Section: "autoswitch", JSONKey: "cooldownSeconds", Field: "CooldownSeconds", Kind: KindFloat,
 		Lo: 0.0, Hi: 86400.0, Default: 300.0,
 		Help: "Minimum seconds between proactive switches"},
@@ -329,21 +326,6 @@ func Load(root string) AutoSwitchSettings {
 	if _, present := fields["SevenDayThreshold"]; !present {
 		if v, legacy := section[LegacyThresholdKey]; legacy {
 			fields["SevenDayThreshold"] = v
-		}
-	}
-	return clamp(fields)
-}
-
-func LoadOver(root string, base AutoSwitchSettings) AutoSwitchSettings {
-	raw := readRaw(SettingsPath(root))
-	section, ok := raw["autoswitch"].(map[string]any)
-	if !ok {
-		return base
-	}
-	fields := fieldsOf(base)
-	for _, spec := range SettingSpecs {
-		if value, exists := section[spec.JSONKey]; exists {
-			fields[spec.Field] = value
 		}
 	}
 	return clamp(fields)

@@ -79,14 +79,21 @@ func (s *settingsScreen) onMessage(m *Model, msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-// reload re-reads every key's effective value and set-marker, and syncs the
+// reload re-reads every key's effective value and set-marker, leaving out the
+// keys only `tycswap config` sets (DESIGN A93), and syncs the
 // dashboard's bar tick to the file's 7d bar, as the Auto view's mount does:
 // a 7d threshold saved here moves the tick on the accounts monitor at once. The
 // Auto view is never stacked under this screen (both open from the dashboard),
 // so no session override is in effect to be overwritten.
 func (s *settingsScreen) reload(m *Model) {
 	root := m.facade.BackupDir()
-	s.rows = settings.EffectiveSettings(root)
+	var rows []settings.Effective
+	for _, e := range settings.EffectiveSettings(root) {
+		if !e.Spec.ConfigOnly {
+			rows = append(rows, e)
+		}
+	}
+	s.rows = rows
 	if s.index >= len(s.rows) {
 		s.index = max(len(s.rows)-1, 0)
 	}
