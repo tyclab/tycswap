@@ -1032,7 +1032,7 @@ func TestTrayCountsOnlySelectedModels(t *testing.T) {
 func TestTrayManagedToggleWritesSetting(t *testing.T) {
 	a := newAutoFacade(fixtureSwitcher(t), nil)
 	a.managedBy = testOwner
-	a.newEngine = func(settings.AutoSwitchSettings, func(autoswitch.Event), bool) autoEngine {
+	a.newEngine = func(settings.AutoSwitchSettings, func(autoswitch.Event)) autoEngine {
 		t.Fatal("the tray built an engine under an external owner")
 		return nil
 	}
@@ -1043,7 +1043,7 @@ func TestTrayManagedToggleWritesSetting(t *testing.T) {
 	ft := &fakeTray{}
 	sh := newAppShell(ft, shellActions{
 		AutoRunning: func() bool { return a.View().Running },
-		AutoStart:   func() error { return a.Start(false) },
+		AutoStart:   func() error { return a.Start() },
 		AutoStop:    a.Stop,
 	})
 	st := sampleState()
@@ -1072,7 +1072,7 @@ func TestTrayClickAfterCLIOffTurnsOn(t *testing.T) {
 	engines := countingEngines(a)
 	t.Cleanup(func() { a.stopKeepingChoice() })
 	root := a.sw.BackupDir()
-	if err := a.Start(false); err != nil {
+	if err := a.Start(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := settings.SetSetting(root, "autoswitch.enabled", "false"); err != nil {
@@ -1081,7 +1081,7 @@ func TestTrayClickAfterCLIOffTurnsOn(t *testing.T) {
 	ft := &fakeTray{}
 	sh := newAppShell(ft, shellActions{
 		AutoRunning: func() bool { return a.View().Running },
-		AutoStart:   func() error { return a.Start(false) },
+		AutoStart:   func() error { return a.Start() },
 		AutoStop:    a.Stop,
 	})
 	st := sampleState()

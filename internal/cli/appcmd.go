@@ -403,7 +403,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		AddCurrent:  func() (web.AddLoginResult, error) { return srv.AddCurrentLogin() },
 		AutoRunning: func() bool { return d.auto.View().Running },
 		AutoStart: func() error {
-			if err := d.auto.Start(false); err != nil {
+			if err := d.auto.Start(); err != nil {
 				return err
 			}
 			d.sw.Log.Action("Set autoswitch.enabled=true", "tray")

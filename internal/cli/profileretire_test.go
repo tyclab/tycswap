@@ -388,7 +388,7 @@ func TestRetirementRunsWithAutoSwitchOn(t *testing.T) {
 func TestHostedLoopRoundRetiresProfiles(t *testing.T) {
 	sw := retireStore(t, &oauth.FakeClient{UsageFn: lowUsage})
 	dir := legacyProfile(t, sw, "1", retireCreds("at-old", "rt-old"), true, true)
-	newAutoFacade(sw, nil).codexRound(context.Background(), nil, false)
+	newAutoFacade(sw, nil).codexRound(context.Background(), nil)
 	assertLiveProfileRetired(t, sw, dir)
 }
 

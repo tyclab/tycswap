@@ -82,12 +82,9 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("DELETE /api/settings/{key}", s.handleSettingUnset)
 	api.HandleFunc("POST /api/settings/{key}/unset", s.handleSettingUnset)
 
-	// auto-switch
+	// auto-switch: the one switch, on and off (DESIGN A93)
 	api.HandleFunc("POST /api/auto/start", s.handleAutoStart)
-	api.HandleFunc("POST /api/auto/stop", s.handleAutoSimple("stop"))
-	api.HandleFunc("POST /api/auto/wake", s.handleAutoSimple("wake"))
-	api.HandleFunc("POST /api/auto/threshold", s.handleAutoThreshold)
-	api.HandleFunc("POST /api/auto/model", s.handleAutoModel)
+	api.HandleFunc("POST /api/auto/stop", s.handleAutoStop)
 
 	// updates (A27)
 	api.HandleFunc("POST /api/updates/check", s.handleUpdatesCheck)
@@ -924,36 +921,39 @@ func (s *Server) handleSettingsList(w http.ResponseWriter, r *http.Request) {
 }
 
 // settingsViews is the facade's list, never nil, each key with its Applies
-// note. It annotates a copy: a facade may hand the same slice to the serve
-// loop and to a request at once. The caller has checked that Settings is
-// set.
+// note, without the keys only `tycswap config` sets and, while a scheduler
+// owns the ticks, without Poll interval, which auto --once never reads
+// (DESIGN A93). It builds a new slice: a facade may hand the same one to the
+// serve loop and to a request at once. The caller has checked that Settings
+// is set.
 func (s *Server) settingsViews() []SettingView {
 	eff := s.d.Settings.Effective()
-	list := make([]SettingView, len(eff))
-	copy(list, eff)
+	list := make([]SettingView, 0, len(eff))
 	managed := s.d.Auto != nil && s.d.Auto.View().Owner != ""
-	for i := range list {
-		list[i].Applies = settingApplies(list[i].Key)
-		if managed {
-			switch list[i].Key {
-			case "autoswitch.handoverWaitMinutes":
-			case "autoswitch.intervalSeconds":
-				list[i].Applies = "The scheduler sets the check interval; this value only affects a continuous loop."
-			default:
-				list[i].Applies = "Applies at the next scheduled check."
-			}
+	for _, sv := range eff {
+		if configOnly(sv.Key) || managed && sv.Key == "autoswitch.intervalSeconds" {
+			continue
 		}
+		sv.Applies = settingApplies(sv.Key)
+		if managed && sv.Key != "autoswitch.handoverWaitMinutes" {
+			sv.Applies = "Applies at the next scheduled check."
+		}
+		list = append(list, sv)
 	}
 	return list
 }
 
+// configOnly reports a key the registry marks as set through `tycswap config`
+// only (DESIGN A93).
+func configOnly(key string) bool {
+	spec, err := settings.SpecFor(key)
+	return err == nil && spec.ConfigOnly
+}
+
 // settingApplies says when a saved value takes effect, as the code has it
 // (A27); nothing here changes when. An engine copies the settings when it
-// starts (the host's Start runs settings.Load) and only ApplyThreshold and
-// ApplyModels change a running one. A save or reset of autoswitch.model
-// calls ApplyModels (applyModelSetting) on the engine this page hosts, never
-// on one in another process, and the at-limit marks re-read it for every
-// state document. The Codex keys are read when a Codex engine starts: this
+// starts (the host's Start runs settings.Load). The Codex keys are read when
+// a Codex engine starts: this
 // page's Start runs one beside the Claude engine when the dashboard started
 // with Codex accounts (A47), `tycswap auto` runs one, and the terminal
 // dashboard's engine never does. autoswitch.enabled is read by every tick
@@ -964,8 +964,6 @@ func settingApplies(key string) string {
 		return "Applies at the next tick."
 	case "autoswitch.handoverWaitMinutes":
 		return "Applies at the next usage update."
-	case modelSettingKey:
-		return "Applies now to this dashboard; other auto-switch processes must restart."
 	case "autoswitch.sevenDayThreshold":
 		return "Applies when auto-switch restarts."
 	case "autoswitch.codexEnabled", "autoswitch.codexThreshold":
@@ -975,37 +973,12 @@ func settingApplies(key string) string {
 }
 
 // handleSettingSet accepts {"value": <string|number|bool>}; non-strings are
-// rendered with fmt so a JS client may send the natural JSON type. Saving
-// autoswitch.model also retargets a running engine (applyModelSetting), and
-// the result says so with "applied": true.
+// rendered with fmt so a JS client may send the natural JSON type.
 func (s *Server) handleSettingSet(w http.ResponseWriter, r *http.Request) {
 	if unavailable(w, s.d.Settings != nil, "settings") {
 		return
 	}
 	s.handleSettingSave(w, r, "", false)
-}
-
-// modelSettingKey is the one setting whose save must also reach a running
-// engine: the engine counts the model windows it was started with, so a
-// saved autoswitch.model would otherwise wait for a restart. Every save goes
-// through the settings routes — the Count model limits toggle and the
-// settings grid alike — so the retarget lives here, once, rather than in
-// each client path.
-const modelSettingKey = "autoswitch.model"
-
-// applyModelSetting retargets the running engine after autoswitch.model was
-// saved (value) or unset (""). Another key, a build without an engine, or an
-// engine that is not running leave it alone and report false.
-func (s *Server) applyModelSetting(key, value string) (bool, error) {
-	// Only an engine hosted here can be retargeted; an external scheduler's
-	// ticks read the saved setting (DESIGN A83).
-	if key != modelSettingKey || s.d.Auto == nil || !s.d.Auto.View().Hosted {
-		return false, nil
-	}
-	if err := s.d.Auto.ApplyModels(strings.TrimSpace(value)); err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 // valueString renders a JSON scalar the way a CLI user would type it.
@@ -1031,12 +1004,10 @@ func (s *Server) handleSettingUnset(w http.ResponseWriter, r *http.Request) {
 
 // -- auto-switch --------------------------------------------------------------
 
+// handleAutoStart is the switch turned on. A dry run is no longer started
+// here (DESIGN A93): `tycswap auto --dry-run` runs one in a terminal.
 func (s *Server) handleAutoStart(w http.ResponseWriter, r *http.Request) {
 	if unavailable(w, s.d.Auto != nil, "auto-switch") {
-		return
-	}
-	if owner := s.d.Auto.View().ManagedBy; owner != "" {
-		writeError(w, http.StatusConflict, "auto-switch is managed by "+owner)
 		return
 	}
 	var b struct {
@@ -1045,122 +1016,31 @@ func (s *Server) handleAutoStart(w http.ResponseWriter, r *http.Request) {
 	if !decodeBody(w, r, &b) {
 		return
 	}
+	if b.DryRun {
+		writeError(w, http.StatusBadRequest, "the dashboard starts no dry run; run "+brand.Sanitized().Name+" auto --dry-run in a terminal")
+		return
+	}
 	s.mutate(w, func() (map[string]any, error) {
-		if err := s.d.Auto.Start(b.DryRun); err != nil {
+		if err := s.d.Auto.Start(); err != nil {
 			return nil, err
 		}
-		if !b.DryRun {
-			s.logAction(r, "Set autoswitch.enabled=true")
-		}
-		return map[string]any{"running": true, "dryRun": b.DryRun}, nil
+		s.logAction(r, "Set autoswitch.enabled=true")
+		return map[string]any{"running": true}, nil
 	})
 }
 
-func (s *Server) handleAutoSimple(action string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if unavailable(w, s.d.Auto != nil, "auto-switch") {
-			return
-		}
-		s.mutate(w, func() (map[string]any, error) {
-			var err error
-			if action == "stop" {
-				// Stopping a hosted dry run writes nothing.
-				dry := s.d.Auto.View().DryRun
-				if err = s.d.Auto.Stop(); err == nil && !dry {
-					s.logAction(r, "Set autoswitch.enabled=false")
-				}
-			} else {
-				err = s.d.Auto.Wake()
-			}
-			if err != nil {
-				return nil, err
-			}
-			return map[string]any{"action": action}, nil
-		})
-	}
-}
-
-// handleAutoThreshold applies a session 7d threshold: the slider moves the 7d
-// bar, the account's whole budget, and nothing else (DESIGN A34). The value
-// must lie in the range autoswitch.sevenDayThreshold allows (50–100), the
-// same bounds the CLI and the TUI's +/- keys enforce: below 50 the engine
-// would treat every account as over the limit.
-func (s *Server) handleAutoThreshold(w http.ResponseWriter, r *http.Request) {
+// handleAutoStop is the switch turned off.
+func (s *Server) handleAutoStop(w http.ResponseWriter, r *http.Request) {
 	if unavailable(w, s.d.Auto != nil, "auto-switch") {
 		return
 	}
-	var b struct {
-		Threshold *float64 `json:"threshold"`
-	}
-	if !decodeBody(w, r, &b) {
-		return
-	}
-	if b.Threshold == nil {
-		writeError(w, http.StatusBadRequest, "threshold is required")
-		return
-	}
-	t := *b.Threshold
-	if err := checkThreshold(t); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
 	s.mutate(w, func() (map[string]any, error) {
-		if err := s.d.Auto.ApplyThreshold(t); err != nil {
+		if err := s.d.Auto.Stop(); err != nil {
 			return nil, err
 		}
-		return map[string]any{"threshold": t}, nil
+		s.logAction(r, "Set autoswitch.enabled=false")
+		return map[string]any{"action": "stop"}, nil
 	})
-}
-
-// handleAutoModel retargets the running engine's per-model windows: "all", a
-// comma-separated list of window names, or "" for 5h + 7d only. The page saves
-// autoswitch.model and then calls this, so the running engine's headroom,
-// at-limit verdict and ranking follow at once.
-func (s *Server) handleAutoModel(w http.ResponseWriter, r *http.Request) {
-	if unavailable(w, s.d.Auto != nil, "auto-switch") {
-		return
-	}
-	var b struct {
-		Model *string `json:"model"`
-	}
-	if !decodeBody(w, r, &b) {
-		return
-	}
-	if b.Model == nil {
-		writeError(w, http.StatusBadRequest, "model is required (\"\" counts 5h and 7d only)")
-		return
-	}
-	// The settings gate, as autoswitch.model's own route has it: a control
-	// character is refused without echoing the value, and the whitespace
-	// controls between listed names become spaces.
-	model, clean := settings.TextValue(*b.Model)
-	if !clean {
-		writeError(w, http.StatusBadRequest, "model must not contain a control character")
-		return
-	}
-	model = strings.TrimSpace(model)
-	s.mutate(w, func() (map[string]any, error) {
-		if !s.d.Auto.View().Hosted {
-			return map[string]any{"model": model}, nil
-		}
-		if err := s.d.Auto.ApplyModels(model); err != nil {
-			return nil, err
-		}
-		return map[string]any{"model": model}, nil
-	})
-}
-
-// checkThreshold validates a live 7d threshold against the
-// autoswitch.sevenDayThreshold spec's bounds.
-func checkThreshold(t float64) error {
-	spec, err := settings.SpecFor("autoswitch.sevenDayThreshold")
-	if err != nil {
-		return err
-	}
-	if t != t || t < spec.Lo || t > spec.Hi {
-		return cerr.Validation("threshold must be between %g and %g", spec.Lo, spec.Hi)
-	}
-	return nil
 }
 
 // -- errors -------------------------------------------------------------------

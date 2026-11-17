@@ -1,7 +1,7 @@
-// Tests for the auto-switch routes and the `auto` SSE stream: start (dry-run
-// flag), stop, wake, threshold bounds, error mapping, nil-façade 503s, and
-// the fan-out of engine events to every subscriber followed by a state
-// broadcast.
+// Tests for the auto-switch routes and the `auto` SSE stream: start and stop,
+// the removed routes, error mapping, nil-façade 503s, and the fan-out of
+// engine events to every subscriber (the tray's notifications) followed by a
+// state broadcast.
 package web
 
 import (
@@ -15,115 +15,71 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 )
 
-func TestAutoStart_DryRunFlag(t *testing.T) {
+// The one Auto-switch switch posts start (on) and stop (off); a dry run is
+// no longer started from the dashboard (DESIGN A93).
+func TestAutoStartAndStop(t *testing.T) {
 	h := newHarness(t)
-	cases := []struct {
-		body any
-		want string
-	}{
-		{map[string]any{"dryRun": true}, "Start(true)"},
-		{map[string]any{"dryRun": false}, "Start(false)"},
-		{map[string]any{}, "Start(false)"},
-		{nil, "Start(false)"},
-	}
-	var want []string
-	for _, tc := range cases {
-		resp := h.postJSON("/api/auto/start", tc.body)
+	for _, body := range []any{map[string]any{"dryRun": false}, map[string]any{}, nil} {
+		resp := h.postJSON("/api/auto/start", body)
 		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("body %v: status %d: %s", tc.body, resp.StatusCode, readBody(t, resp))
+			t.Fatalf("body %v: status %d: %s", body, resp.StatusCode, readBody(t, resp))
 		}
-		res, _ := decodeJSON(t, resp)["result"].(map[string]any)
-		if res["running"] != true || res["dryRun"] != (tc.want == "Start(true)") {
-			t.Errorf("body %v: result %v", tc.body, res)
-		}
-		want = append(want, tc.want)
-	}
-	if got := h.auto.Calls(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("calls %v, want %v", got, want)
-	}
-}
-
-func TestAutoStopWake(t *testing.T) {
-	h := newHarness(t)
-	for _, a := range []string{"stop", "wake"} {
-		resp := h.post("/api/auto/" + a)
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("%s: status %d", a, resp.StatusCode)
-		}
-		res, _ := decodeJSON(t, resp)["result"].(map[string]any)
-		if res["action"] != a {
-			t.Errorf("%s: result %v", a, res)
+		if res, _ := decodeJSON(t, resp)["result"].(map[string]any); res["running"] != true {
+			t.Errorf("body %v: result %v", body, res)
 		}
 	}
-	if got := h.auto.Calls(); !reflect.DeepEqual(got, []string{"Stop", "Wake"}) {
+	resp := h.post("/api/auto/stop")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("stop: status %d", resp.StatusCode)
+	}
+	if got := h.auto.Calls(); !reflect.DeepEqual(got, []string{"Start", "Start", "Start", "Stop"}) {
 		t.Fatalf("calls %v", got)
 	}
 }
 
-func TestAutoThreshold_Bounds(t *testing.T) {
+func TestAutoStartRefusesADryRun(t *testing.T) {
 	h := newHarness(t)
-	ok := []struct {
-		v    any
-		want string
-	}{
-		{50, "ApplyThreshold(50)"}, {99.9, "ApplyThreshold(99.9)"}, {55.5, "ApplyThreshold(55.5)"}, {80, "ApplyThreshold(80)"}, {100, "ApplyThreshold(100)"},
+	resp := h.postJSON("/api/auto/start", map[string]any{"dryRun": true})
+	if body := string(readBody(t, resp)); resp.StatusCode != http.StatusBadRequest || !strings.Contains(body, "auto --dry-run") {
+		t.Fatalf("status %d: %s", resp.StatusCode, body)
 	}
-	var want []string
-	for _, tc := range ok {
-		resp := h.postJSON("/api/auto/threshold", map[string]any{"threshold": tc.v})
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("threshold %v: status %d: %s", tc.v, resp.StatusCode, readBody(t, resp))
-		}
-		want = append(want, tc.want)
+	if calls := h.auto.Calls(); len(calls) != 0 {
+		t.Fatalf("a dry-run request reached the engine host: %v", calls)
 	}
-	// The slider moves the 7d bar, so the bounds are
-	// autoswitch.sevenDayThreshold's (50-100), as in the CLI and the TUI; 0
-	// would make every account count as over the limit (DESIGN A34).
-	bad := []any{
-		map[string]any{"threshold": -1},
-		map[string]any{"threshold": 0},
-		map[string]any{"threshold": 49.9},
-		map[string]any{"threshold": 100.01},
-		map[string]any{"threshold": 1000},
-		map[string]any{"threshold": "80"},
-		map[string]any{"threshold": nil},
-		map[string]any{},
-		nil,
-		"{\"threshold\": NaN}",
-	}
-	for _, body := range bad {
-		resp := h.postJSON("/api/auto/threshold", body)
-		if resp.StatusCode != http.StatusBadRequest {
-			t.Errorf("body %v: status %d, want 400", body, resp.StatusCode)
+}
+
+// Wake, the live 7d slider and the model retarget left the page with their
+// routes (DESIGN A93).
+func TestRemovedAutoRoutesAnswer404(t *testing.T) {
+	h := newHarness(t)
+	for _, p := range []string{"/api/auto/wake", "/api/auto/threshold", "/api/auto/model"} {
+		if resp := h.postJSON(p, map[string]any{"threshold": 80, "model": "all"}); resp.StatusCode != http.StatusNotFound {
+			t.Errorf("%s: status %d, want 404", p, resp.StatusCode)
 		}
 	}
-	if got := h.auto.Calls(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("calls %v, want %v (out-of-range values must not reach the engine)", got, want)
+	if calls := h.auto.Calls(); len(calls) != 0 {
+		t.Errorf("a removed route reached the engine host: %v", calls)
 	}
 }
 
 func TestAuto_ErrorMapping(t *testing.T) {
 	h := newHarness(t)
 	h.auto.mu.Lock()
-	h.auto.errs["Start(false)"] = cerr.Validation("engine already running")
+	h.auto.errs["Start"] = cerr.Validation("engine already running")
 	h.auto.errs["Stop"] = cerr.Config("no engine")
-	h.auto.errs["ApplyThreshold(50)"] = cerr.Lock("busy")
 	h.auto.mu.Unlock()
-	if resp := h.postJSON("/api/auto/start", map[string]any{"dryRun": false}); resp.StatusCode != http.StatusBadRequest {
+	if resp := h.postJSON("/api/auto/start", map[string]any{}); resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("start status %d", resp.StatusCode)
 	}
 	if resp := h.post("/api/auto/stop"); resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("stop status %d", resp.StatusCode)
 	}
-	if resp := h.postJSON("/api/auto/threshold", map[string]any{"threshold": 50}); resp.StatusCode != http.StatusConflict {
-		t.Errorf("threshold status %d", resp.StatusCode)
-	}
 }
 
 func TestAuto_Nil503(t *testing.T) {
 	h := newHarness(t, withNoAuto())
-	for _, p := range []string{"/api/auto/start", "/api/auto/stop", "/api/auto/wake", "/api/auto/threshold"} {
-		resp := h.postJSON(p, map[string]any{"threshold": 50, "dryRun": true})
+	for _, p := range []string{"/api/auto/start", "/api/auto/stop"} {
+		resp := h.postJSON(p, map[string]any{})
 		if resp.StatusCode != http.StatusServiceUnavailable {
 			t.Errorf("%s: status %d, want 503", p, resp.StatusCode)
 		}
@@ -135,7 +91,9 @@ func TestAuto_Nil503(t *testing.T) {
 	}
 }
 
-func TestAuto_StateEventsNeverNull(t *testing.T) {
+// The state's auto section carries no event ring: the page has no event log
+// (DESIGN A93), and nil maps and pointers serialise as null.
+func TestAuto_StateHasNoEventRing(t *testing.T) {
 	h := newHarness(t)
 	h.auto.mu.Lock()
 	h.auto.view = AutoView{Available: true}
@@ -143,8 +101,8 @@ func TestAuto_StateEventsNeverNull(t *testing.T) {
 	var st map[string]any
 	_ = json.Unmarshal(readBody(t, h.get("/api/state")), &st)
 	auto := st["auto"].(map[string]any)
-	if ev, ok := auto["events"].([]any); !ok || len(ev) != 0 {
-		t.Fatalf("auto.events = %v, want []", auto["events"])
+	if _, present := auto["events"]; present {
+		t.Fatalf("auto.events = %v, want no such key", auto["events"])
 	}
 	if auto["quarantine"] != nil || auto["settings"] != nil || auto["startedAt"] != nil {
 		t.Fatalf("nil maps/pointers must serialise as null: %v", auto)
@@ -292,25 +250,6 @@ func TestSSE_AutoEventsDoNotDisturbLateSubscriber(t *testing.T) {
 	late.expectNone(t, 30*time.Millisecond)
 }
 
-// The live model route takes the value through the settings gate: a control
-// character is refused (400, the value not echoed) and never reaches the
-// engine; whitespace controls in a list become spaces.
-func TestAutoModelRefusesControlCharacters(t *testing.T) {
-	h := newHarness(t)
-	resp := h.postJSON("/api/auto/model", `{"model":"Fable\u001b[2J"}`)
-	if body := string(readBody(t, resp)); resp.StatusCode != http.StatusBadRequest ||
-		!strings.Contains(body, "control character") || strings.Contains(body, "Fable") {
-		t.Errorf("status %d: %s", resp.StatusCode, body)
-	}
-	if calls := h.auto.Calls(); len(calls) != 0 {
-		t.Errorf("a refused model reached the engine: %v", calls)
-	}
-	resp = h.postJSON("/api/auto/model", `{"model":"Fable,\nOpus"}`)
-	if calls := h.auto.Calls(); resp.StatusCode != http.StatusOK || len(calls) != 1 || calls[0] != `ApplyModels("Fable, Opus")` {
-		t.Errorf("a two-line list: status %d, calls %v", resp.StatusCode, calls)
-	}
-}
-
 // The settings tab shows a row's notice (an ignored stored value) next to it.
 func TestSettingRowShowsItsNotice(t *testing.T) {
 	if js := staticFile(t, "app.js"); !strings.Contains(js, "sv.notice") {
@@ -318,49 +257,10 @@ func TestSettingRowShowsItsNotice(t *testing.T) {
 	}
 }
 
-// TestAutoModelAppliesLive: the "Count model limits" switch must reach the
-// RUNNING engine, not only settings.json — otherwise headroom, the at-limit
-// verdict and the ranking keep counting a window the user just excluded.
-func TestAutoModelAppliesLive(t *testing.T) {
-	h := newHarness(t)
-	for _, tc := range []struct {
-		body string
-		want string
-	}{
-		{`{"model":"all"}`, `ApplyModels("all")`},
-		{`{"model":""}`, `ApplyModels("")`},
-		{`{"model":"  Fable , Opus "}`, `ApplyModels("Fable , Opus")`},
-	} {
-		h.auto.calls = nil
-		resp := h.postJSON("/api/auto/model", tc.body)
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("%s: status %d: %s", tc.body, resp.StatusCode, readBody(t, resp))
-		}
-		if len(h.auto.calls) != 1 || h.auto.calls[0] != tc.want {
-			t.Errorf("%s: calls %v, want [%s]", tc.body, h.auto.calls, tc.want)
-		}
-	}
-	// Nothing hosted here (an external scheduler's ticks, or no engine yet):
-	// the route answers and retargets nothing.
-	h.auto.mu.Lock()
-	h.auto.calls, h.auto.view.Hosted = nil, false
-	h.auto.mu.Unlock()
-	if resp := h.postJSON("/api/auto/model", `{"model":"all"}`); resp.StatusCode != http.StatusOK || len(h.auto.Calls()) != 0 {
-		t.Fatalf("nothing hosted: status %d, calls %v", resp.StatusCode, h.auto.Calls())
-	}
-	h.auto.calls = nil
-	if resp := h.postJSON("/api/auto/model", `{}`); resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("a missing model must be rejected: %d", resp.StatusCode)
-	}
-	if len(h.auto.calls) != 0 {
-		t.Errorf("nothing should reach the engine on a bad request: %v", h.auto.calls)
-	}
-}
-
 func TestMutationStateBarrier(t *testing.T) {
 	h := newHarness(t)
 	before := decodeJSON(t, h.get("/api/state"))["sequence"].(float64)
-	reply := decodeJSON(t, h.postJSON("/api/settings/autoswitch.model", map[string]any{"value": "Opus"}))
+	reply := decodeJSON(t, h.postJSON("/api/settings/autoswitch.strategy", map[string]any{"value": "best"}))
 	barrier := reply["stateSequence"].(float64)
 	after := decodeJSON(t, h.get("/api/state"))["sequence"].(float64)
 	if !(before < barrier && barrier < after) {
