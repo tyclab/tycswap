@@ -410,13 +410,10 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 			return nil
 		},
 		AutoStop: func() error {
-			dry := d.auto.View().DryRun
 			if err := d.auto.Stop(); err != nil {
 				return err
 			}
-			if !dry {
-				d.sw.Log.Action("Set autoswitch.enabled=false", "tray")
-			}
+			d.sw.Log.Action("Set autoswitch.enabled=false", "tray")
 			return nil
 		},
 		Upgrade:       func() (string, error) { return upgradeForShell() },

@@ -369,11 +369,11 @@ func TestTrayPanelRefreshesCountdowns(t *testing.T) {
 
 // switchShell is a shell with a Claude and a Codex row and auto-switch as
 // given; calls lists every hook run, in order.
-func switchShell(t *testing.T, on, dryRun bool) (*appShell, *fakeTray, *[]string) {
+func switchShell(t *testing.T, on bool) (*appShell, *fakeTray, *[]string) {
 	t.Helper()
 	sh, ft, calls := newTestShell(t)
 	st := codexState()
-	st.Auto = &web.AutoView{Running: on, DryRun: dryRun, Codex: &web.CodexAutoView{Enabled: true, Threshold: 90}}
+	st.Auto = &web.AutoView{Running: on, Codex: &web.CodexAutoView{Enabled: true, Threshold: 90}}
 	if on {
 		_ = sh.act.AutoStart()
 	}
@@ -394,7 +394,7 @@ func lastNote(ft *fakeTray) string {
 // no autoswitch.enabled, and the engine holds for the cooldown instead
 // (TestHandSwitchesHoldTheEngine).
 func TestTraySwitchLeavesAutoSwitchOn(t *testing.T) {
-	sh, ft, calls := switchShell(t, true, false)
+	sh, ft, calls := switchShell(t, true)
 	sh.click("switch:claude:2")
 	if got := strings.Join(*calls, ","); got != "switch:claude:2" {
 		t.Fatalf("calls %s", got)
@@ -416,7 +416,7 @@ func TestTraySwitchLeavesAutoSwitchOn(t *testing.T) {
 }
 
 func TestTraySwitchWithAutoSwitchOffLeavesItAlone(t *testing.T) {
-	sh, ft, calls := switchShell(t, false, false)
+	sh, ft, calls := switchShell(t, false)
 	sh.click("switch:claude:2")
 	if got := strings.Join(*calls, ","); got != "switch:claude:2" {
 		t.Fatalf("calls %s", got)
@@ -431,7 +431,7 @@ func TestTraySwitchWithAutoSwitchOffLeavesItAlone(t *testing.T) {
 
 // A switch that fails touches auto-switch neither: nothing turned it off.
 func TestTraySwitchFailureLeavesAutoSwitchAlone(t *testing.T) {
-	sh, ft, calls := switchShell(t, true, false)
+	sh, ft, calls := switchShell(t, true)
 	sh.act.SwitchTo = func(key string) ([]int, error) {
 		*calls = append(*calls, "switch:"+key)
 		return nil, errors.New("slot 2 has no stored login")
@@ -451,7 +451,7 @@ func TestTraySwitchFailureLeavesAutoSwitchAlone(t *testing.T) {
 // Two Switch clicks run one after the other, and neither touches
 // auto-switch.
 func TestTraySwitchClicksRunOneAtATime(t *testing.T) {
-	sh, _, calls := switchShell(t, true, false)
+	sh, _, calls := switchShell(t, true)
 	var mu sync.Mutex
 	record := func(call string) { mu.Lock(); *calls = append(*calls, call); mu.Unlock() }
 	inFirst, release := make(chan struct{}), make(chan struct{})
@@ -486,7 +486,7 @@ func TestTraySwitchClicksRunOneAtATime(t *testing.T) {
 // The API-key approval is recorded only for a switch that is made, right
 // before it.
 func TestTraySwitchApprovesAnAPIKeyOnlyWhenItSwitches(t *testing.T) {
-	sh, _, calls := switchShell(t, true, false)
+	sh, _, calls := switchShell(t, true)
 	st := sh.last
 	key := acct(4, "key@example.com", "", false, nil, nil, "", nil)
 	key["kind"] = "api_key"
@@ -553,21 +553,10 @@ func TestTrayPanelNoteTellsEveryAction(t *testing.T) {
 	}
 }
 
-func TestTraySwitchLeavesADryRunAlone(t *testing.T) {
-	sh, _, calls := switchShell(t, true, true)
-	sh.click("switch:claude:2")
-	if got := strings.Join(*calls, ","); got != "switch:claude:2" {
-		t.Fatalf("calls %s", got)
-	}
-	if p := sh.panel(sh.last); p.Note != "Switched to #2." {
-		t.Fatalf("note %q", p.Note)
-	}
-}
-
 // A Codex switch leaves auto-switch on too, with Codex rotation on or off.
 func TestTraySwitchCodexLeavesAutoSwitchOn(t *testing.T) {
 	for _, rotation := range []bool{true, false} {
-		sh, ft, calls := switchShell(t, true, false)
+		sh, ft, calls := switchShell(t, true)
 		sh.last.Auto.Codex.Enabled = rotation
 		sh.click("switch:codex:3")
 		if got := strings.Join(*calls, ","); got != "switch:codex:3" {

@@ -188,14 +188,10 @@ func TestAutoFacade(t *testing.T) {
 	if err := a.Stop(); err == nil || !strings.Contains(err.Error(), "not running") {
 		t.Errorf("idle Stop err = %v", err)
 	}
-	// Nothing hosted, nothing to retarget: the next engine reads the saved model.
-	if err := a.ApplyModels("all"); err != nil {
-		t.Errorf("idle ApplyModels = %v, want nil", err)
-	}
 	if err := a.Start(); err != nil {
 		t.Fatal(err)
 	}
-	if v := a.View(); !v.Running || !v.Hosted || v.DryRun || v.StartedAt == nil || !settings.Load(sw.BackupDir()).Enabled {
+	if v := a.View(); !v.Running || !v.Hosted || v.StartedAt == nil || !settings.Load(sw.BackupDir()).Enabled {
 		t.Errorf("running view = %+v", v)
 	}
 	select {
@@ -205,9 +201,6 @@ func TestAutoFacade(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Error("the hosted engine did not tick within 5s")
-	}
-	if err := a.ApplyModels("all"); err != nil || a.View().Settings["autoswitch.model"] != "all" {
-		t.Errorf("ApplyModels: %v, view %v", err, a.View().Settings["autoswitch.model"])
 	}
 	// Stop turns the setting off and leaves the engine hosted (A83).
 	if err := a.Stop(); err != nil {
@@ -293,9 +286,8 @@ func (e *fakeEngine) RunLoop() int {
 	<-e.release
 	return 0
 }
-func (e *fakeEngine) Stop()              { e.once.Do(func() { close(e.stop) }) }
-func (e *fakeEngine) Wake()              {}
-func (e *fakeEngine) ApplyModels(string) {}
+func (e *fakeEngine) Stop() { e.once.Do(func() { close(e.stop) }) }
+func (e *fakeEngine) Wake() {}
 
 // Ending the hosted engine waits (bounded) for its loop to return; when a
 // tick outlasts the wait, it reports a lock-kind error instead of holding the
@@ -1069,8 +1061,8 @@ func TestFacadeManagedToggleWritesSetting(t *testing.T) {
 	check := func(when string, running, enabled bool) {
 		t.Helper()
 		v := a.View()
-		if !v.Available || v.ManagedBy != "" || v.Running != running {
-			t.Fatalf("%s: view available %v managedBy %q running %v, want true \"\" %v", when, v.Available, v.ManagedBy, v.Running, running)
+		if !v.Available || v.Running != running {
+			t.Fatalf("%s: view available %v running %v, want true %v", when, v.Available, v.Running, running)
 		}
 		if got := settings.Load(root).Enabled; got != enabled {
 			t.Fatalf("%s: autoswitch.enabled = %v, want %v", when, got, enabled)
@@ -1257,11 +1249,8 @@ func TestFacadeOwnerControlsWithNothingHosted(t *testing.T) {
 	if err := a.Start(); err != nil {
 		t.Fatal(err)
 	}
-	if v := a.View(); !v.Running || v.Hosted || v.Owner != testOwner || v.ManagedBy != "" || v.Codex == nil || !v.Codex.Running {
+	if v := a.View(); !v.Running || v.Hosted || v.Owner != testOwner || v.Codex == nil || !v.Codex.Running {
 		t.Fatalf("owner view = %+v codex %+v", v, v.Codex)
-	}
-	if err := a.ApplyModels("all"); err != nil {
-		t.Errorf("ApplyModels = %v, want nil", err)
 	}
 	if _, err := settings.SetSetting(root, "autoswitch.codexEnabled", "false"); err != nil {
 		t.Fatal(err)
@@ -1271,10 +1260,6 @@ func TestFacadeOwnerControlsWithNothingHosted(t *testing.T) {
 	}
 	if n := engines.built(); n != 0 {
 		t.Fatalf("%d engines built under an external owner", n)
-	}
-	b := newAutoFacade(a.sw, nil)
-	if err := b.ApplyModels("all"); err != nil {
-		t.Errorf("no owner, nothing hosted: ApplyModels = %v, want nil", err)
 	}
 }
 
@@ -1398,7 +1383,7 @@ func TestDashboardSwitchWritesTheSetting(t *testing.T) {
 			if got := settings.Load(sw.BackupDir()).Enabled; got != step.enabled {
 				t.Fatalf("owner %q: after %s: autoswitch.enabled = %v", owner, step.path, got)
 			}
-			if v := d.auto.View(); v.Running != step.enabled || v.Hosted != (owner == "") || v.ManagedBy != "" || !v.Available {
+			if v := d.auto.View(); v.Running != step.enabled || v.Hosted != (owner == "") || !v.Available {
 				t.Fatalf("owner %q: after %s: view %+v", owner, step.path, v)
 			}
 		}

@@ -313,13 +313,11 @@ func (f *fakeFacade) BackupDir() string                                        {
 func (f *fakeFacade) SetPollPolicyInputs(float64, []string)                    {}
 func (f *fakeFacade) ClearPollPolicyInputs()                                   {}
 
-// remoteFakeAuto records engine calls and reports a settable running flag;
-// applyErr is what ApplyModels returns while running.
+// remoteFakeAuto records engine calls and reports a settable running flag.
 type remoteFakeAuto struct {
-	mu       sync.Mutex
-	calls    []string
-	running  bool
-	applyErr error
+	mu      sync.Mutex
+	calls   []string
+	running bool
 }
 
 func (a *remoteFakeAuto) record(s string) {
@@ -354,18 +352,6 @@ func (a *remoteFakeAuto) Stop() error {
 	a.running = false
 	a.mu.Unlock()
 	return nil
-}
-
-func (a *remoteFakeAuto) Wake() error                  { a.record("Wake"); return nil }
-func (a *remoteFakeAuto) ApplyThreshold(float64) error { return nil }
-func (a *remoteFakeAuto) ApplyModels(model string) error {
-	a.record("ApplyModels(" + model + ")")
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if !a.running {
-		return cerr.Validation("auto-switch is not running")
-	}
-	return a.applyErr
 }
 
 type remoteFakeSettings struct {

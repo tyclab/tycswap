@@ -5282,8 +5282,8 @@ host an engine here" (DESIGN A83). Start (`POST /api/auto/start`, the tray's
 toggle) writes `autoswitch.enabled` on and starts nothing, since the
 scheduler's ticks now run; Stop writes it off. `auto.running` reports the
 setting, `auto.owner` names the scheduler, `auto.hosted` is false,
-`auto.available` is always true, `auto.managedBy` always empty and
-`auto.dryRun` always false (the fields stay for older clients). The Auto tab
+`auto.available` is always true (it stays for older clients; `auto.managedBy`
+and `auto.dryRun` are gone, DESIGN A93). The Auto tab
 says `checked by <owner>, last check <time ago>`, and the Settings tab says
 a saved value applies at the next scheduled check and leaves out *Poll
 interval* (DESIGN A93). The app does not start an engine at launch.

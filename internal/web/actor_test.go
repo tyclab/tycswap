@@ -38,7 +38,6 @@ func (a *actionLines) take() []string {
 func TestDashboardActionsNameTheirActor(t *testing.T) {
 	var got actionLines
 	h := newHarness(t, got.option())
-	h.auto.view.DryRun = false
 	const actor = " by dashboard(cookie,127.0.0.1:"
 	for _, step := range []struct {
 		name string

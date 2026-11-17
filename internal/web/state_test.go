@@ -151,7 +151,7 @@ func testStateExactShape(t *testing.T, codex bool) {
 			map[string]any{"key": "autoswitch.strategy", "kind": "choice", "value": "best", "default": "soonest-reset", "isDefault": false, "choices": []any{"best", "soonest-reset"}, "description": "How auto-switch orders qualifying targets", "applies": settingApplies("autoswitch.strategy")},
 		},
 		"auto": map[string]any{
-			"available": true, "running": true, "hosted": true, "dryRun": false, "startedAt": 1758276000, "threshold": 85,
+			"available": true, "running": true, "hosted": true, "startedAt": 1758276000, "threshold": 85,
 			"settings":   map[string]any{"autoswitch.sevenDayThreshold": 85, "autoswitch.strategy": "soonest-reset", "autoswitch.codexEnabled": true},
 			"quarantine": map[string]any{"quarantine": map[string]any{"3": map[string]any{"reason": "invalid_grant", "at": 1758275000}}},
 			"codex":      nil,

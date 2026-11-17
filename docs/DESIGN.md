@@ -7518,9 +7518,11 @@ set of names in the script.
   `/api/auto/model` answer 404; `AutoFacade` keeps `View`, `Start()` and
   `Stop()`; the engine host drops its dry run, `Wake`, `ApplyThreshold` and
   its event ring (`AutoView.events`). The event stream stays: the tray turns
-  it into notifications. `autoFacade.ApplyModels` stays for the in-process
-  tray's model switch. `AutoView.dryRun` stays, always false, beside
-  `managedBy` and `available`, for older clients.
+  it into notifications. With the tray's model switch gone (A94) the
+  facade's `ApplyModels` has no caller and goes too. `AutoView` drops
+  `dryRun` and `managedBy`: an older client reads the absent fields as the
+  false and empty they always held. `available` stays, always true, because
+  an older tray locks its toggle without it.
 - *Poll interval* is listed only while no owner is named.
 - *One name per setting.* The registry's labels (`Spec.Label`) are the names
   on the Settings rows, the toasts, the Auto tab's tiles (*5-hour threshold*,

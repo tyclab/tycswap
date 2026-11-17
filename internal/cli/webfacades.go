@@ -146,7 +146,6 @@ type autoEngine interface {
 	RunLoop() int
 	Stop()
 	Wake()
-	ApplyModels(string)
 }
 
 // autoFacade hosts one autoswitch engine, and the Codex engine beside it on a
@@ -259,8 +258,8 @@ func (a *autoFacade) view() (web.AutoView, settings.AutoSwitchSettings, bool) {
 		}
 		quarantine[k] = entry
 	}
-	// An engine whose ticks all report disabled is not running to the user;
-	// ManagedBy stays empty, older clients lock the toggle on it (DESIGN A83).
+	// An engine whose ticks all report disabled is not running to the user
+	// (DESIGN A83).
 	live := a.running && fresh.Enabled
 	owned := a.managedBy != "" && fresh.Enabled
 	v := web.AutoView{
@@ -441,24 +440,6 @@ func (a *autoFacade) resume() (started bool, err error) {
 		return false, err
 	}
 	return true, nil
-}
-
-// ApplyModels retargets the hosted engine's model windows for the in-process
-// tray's Model limits switch; with nothing hosted it does nothing.
-func (a *autoFacade) ApplyModels(model string) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if !a.running || a.engine == nil {
-		return nil
-	}
-	a.engine.ApplyModels(model)
-	if model == "" {
-		a.settings.Model = nil
-	} else {
-		m := model
-		a.settings.Model = &m
-	}
-	return nil
 }
 
 // onEvent is the engine's sink.
