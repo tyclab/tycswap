@@ -508,11 +508,19 @@ normal state, its stored key is its credential, and the switch away backs up
 its config only. A rollback restores the exact pre-switch credential (an API key
 with the seat-wide keys left beside it).
 
+A switch that moves the live account is a switch by hand: it leaves
+`autoswitch.enabled` as it is and holds the engine for
+`autoswitch.cooldownSeconds`, whatever the trigger (DESIGN A94; see `tycswap
+auto`). The dashboard, the tray and the TUI switch the same way.
+
 ### Files
 
 Reads and writes `sequence.json` (the active pointer), the live Claude Code
 config/credentials, per-account `configs/`/`credentials/`, and
-`live_lineage.json` (the live credential's attributed slot, DESIGN A68). A switch onto or
+`live_lineage.json` (the live credential's attributed slot, DESIGN A68). A
+switch that moves the live account stamps `lastSwitchAt`, `lastSwitchTo` and
+`lastSwitchBy: "hand"` in `autoswitch_state.json` under
+`.autoswitch_state.lock`, held across the switch. A switch onto or
 away from an account with a base URL also writes Claude Code's
 `settings.json` (the two `env` keys only) and `claude-settings.prev.json` in the
 backup root. Acquires the backup-root and Claude Code credential locks.
@@ -1485,7 +1493,8 @@ counts, while another account reports one (a Pro login when Fable is counted),
 the tick moves to an account that reports it and is below every bar: the
 `switch` line names the `model-missing` trigger and no window, and with no such
 account the tick reports `no-switch` with reason `model-missing-no-target` and
-stays. The cooldown does not hold this move: the sessions that run the model
+stays. The cooldown of the engine's own switch does not hold this move (a
+switch by hand's does, DESIGN A94): the sessions that run the model
 cannot run at all until the login moves (DESIGN A77).
 
 **The default login follows its sessions' models** (DESIGN A76). While
@@ -3027,21 +3036,17 @@ window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
 - **Accounts**: one row per account with its windows and a usage bar, the
   active one marked; a click switches (an API-key account asks first; one
   with a base URL shows `→ <host>`, and the question names the whole URL,
-  DESIGN A46) and, when auto-switch is on and not a dry run (a Codex row:
-  while Codex rotation is on), turns it off first, so the next tick, also
-  one already running, leaves the login there (turned on again if the
-  switch fails; the notification says it, A84); more than ten accounts move into *All N accounts* ▸, beside
+  DESIGN A46) and leaves auto-switch as it is: like every switch by hand it
+  holds the engine for `autoswitch.cooldownSeconds` (DESIGN A94); more than
+  ten accounts move into *All N accounts* ▸, beside
   the active one; *Add
   current login* stores the login Claude Code has;
 - **Automation**: *Auto-switch* (on or off; its second line names the
   threshold of each window; it writes `autoswitch.enabled`, so it also turns
-  off a timer's ticks, and the app's engine follows it from launch);
-  *Model limits*, which sets `autoswitch.model` (`all` or unset) and
-  retargets the engine hosted in the app; unset, its second line reads
-  `follows sessions — ` and the dashboard's count caption (the caption alone
-  while the app hosts the engine, which does not follow sessions), and `off`
-  only for an explicit `none`. The thresholds are set with `tycswap config`,
-  in the TUI and on the dashboard;
+  off a timer's ticks, and the app's engine follows it from launch; a click
+  sets the opposite of the state the row showed, and one made while a change
+  is still in flight is dropped, DESIGN A94). `autoswitch.model` and the
+  thresholds are set with `tycswap config`, in the TUI and on the dashboard;
 - **App**: Claude Code's state when nothing is to update; *Start at login*;
   *Check for updates…*; *Quit tycswap*.
 
@@ -4940,7 +4945,7 @@ Every key, with its type, range, default, and meaning:
 | `autoswitch.intervalSeconds` | float (seconds) | 15–3600 | 60 | Poll interval for the `tycswap auto` loop. |
 | `autoswitch.codexEnabled` | bool | — | true | Also auto-switch Codex accounts in the `tycswap auto` loop. A no-op without Codex accounts. |
 | `autoswitch.codexThreshold` | float (percent) | 0–99.9 | 0 | Codex-only switch threshold; 0 uses `autoswitch.sevenDayThreshold` (DESIGN A34). |
-| `autoswitch.cooldownSeconds` | float (seconds) | 0–86400 | 300 | Minimum seconds between proactive switches. |
+| `autoswitch.cooldownSeconds` | float (seconds) | 0–86400 | 300 | Minimum seconds between proactive switches; after a switch by hand, no switch at all for this long (DESIGN A94). |
 | `autoswitch.hysteresisPct` | float (percent) | 0–50 | 10 | A switch target must beat the active account by at least this many percent. |
 | `autoswitch.strategy` | choice | `best`, `soonest-reset` | `soonest-reset` | How auto-switch orders qualifying targets: `soonest-reset` (earliest weekly renewal) or `best` (most headroom). See below. |
 | `autoswitch.unhealthyTicks` | int | 1–100 | 3 | Consecutive failed polls before an account is treated as unhealthy. |
@@ -4966,7 +4971,8 @@ through the same validation.
 which already-qualifying candidates are offered to `tycswap auto`; it changes
 none of the qualification gates. Known and positive headroom and quarantine
 exclusion apply identically under both values and for every trigger
-(`proactive`, `at-limit`, `failover`). The cooldown, the threshold-landing
+(`proactive`, `at-limit`, `failover`). The cooldown (except after a switch by
+hand, which it holds for every trigger, DESIGN A94), the threshold-landing
 check and the hysteresis check apply only under the `proactive`
 trigger — an `at-limit` or `failover` tick must leave the active account
 regardless, so refusing every imperfect target would strand it — and a

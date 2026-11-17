@@ -431,6 +431,12 @@ shell takes effect without touching the app.
 `tycswap auto on --if-unset` turns it on only when nothing has set it yet,
 for a provisioner that must not override a user's later "off".
 
+A switch by hand (`tycswap switch`, the dashboard, the tray, the TUI) leaves
+auto-switch as it is. For `autoswitch.cooldownSeconds` (300 by default) after
+it, auto-switch makes no switch, even off an account at its limit, and each
+tick in that time says `no switch: cooldown (switched by hand to account 4;
+held for another 297s)`. After that it decides as always.
+
 `tycswap auto` runs a foreground loop that polls usage and switches to another
 account before the active one reaches its rate limit:
 
@@ -900,10 +906,10 @@ with a bar and, under it, when that limit resets and how long that is
 auto-switch threshold. `—` means no such window was reported, which is how a verified
 Ultra login's 5-hour column reads, or that the plan cannot run Fable. Fable at
 100% does not mean the shared weekly limit is exhausted. **Switch** switches
-the default login at once and turns auto-switch off when it was on (for a
-Codex account, while Codex rotation is on), so the login stays where you put
-it; the line under the list says so, and the active
-account reads **In use**. The footer has **Quit**, **Check for updates…**, the
+the default login at once and leaves auto-switch as it is; like every switch
+by hand it holds auto-switch for the cooldown ([Auto-switch before a
+limit](#auto-switch-before-a-limit)). The line under the list says what
+happened, and the active account reads **In use**. The footer has **Quit**, **Check for updates…**, the
 update buttons while an update waits, the **Auto-switch** and **Start at login**
 switches and **Open dashboard**. **Check for updates…** starts the dashboard's
 check and opens its Updates section, including with `--no-update-check`. A
@@ -913,8 +919,8 @@ closes the panel. Settings and Add account are in the dashboard (and
 `tycswap config`, `tycswap add`). Start at login is local to the tray's
 device.
 
-macOS and Linux retain their platform menus; there a switch from the menu
-turns auto-switch off the same way. The icon's title reports the active
+macOS and Linux retain their platform menus, where a switch acts the same
+way. The icon's title reports the active
 account and its fullest counted window (`#1 · 45%`, with `⟳` while the hosted
 engine runs). Notifications report switches, quarantines and thresholds.
 Update checks and installation retain the normal release checks and restart
@@ -1014,7 +1020,7 @@ Windows reaches the distro's `127.0.0.1:7337` through WSL2's localhost
 forwarding (on by default). The token is only accepted on loopback, the file
 is readable only by its owner in the distro, and a new start writes a new
 one, which the tray reads again by itself. The remote tray switches, toggles
-auto-switch and the model limit and opens the distro's dashboard; Claude
+auto-switch and opens the distro's dashboard; Claude
 Code's updates and *Add current login* stay on the distro's dashboard. Until
 the distro's app answers, the icon shows `⚠`.
 

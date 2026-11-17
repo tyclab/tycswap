@@ -4954,6 +4954,9 @@ remote tray, no tray here) creates no lock file. Asking whether an app runs
 
 ## A39. One switch for the model limit, in the tray as well
 
+The tray's switch is gone since A94; `autoswitch.model` is set with `tycswap
+config`.
+
 The per-model weekly windows decide two things that must not disagree:
 whether the engine counts them (`autoswitch.model`) and the percentage the
 tray shows. The menu's **`<window> limit`** switch, named after the window
@@ -6917,7 +6920,7 @@ The rule: one key, `autoswitch.enabled` in `settings.json`, default off
   Quitting the app or `tycswap web` ends the hosted engine without writing.
   The view's `running` is a hosted engine that is a dry run or has the key
   on; `hosted` says an engine runs in this process, and model retargets
-  (a model save, the tray's Model limits) go to it whenever it is hosted.
+  (a model save; the tray's Model limits until A94) go to it whenever it is hosted.
 - An external scheduler no longer locks the toggle. `TYCSWAP_AUTO_MANAGED_BY`
   now only means "do not host an engine here": Start and Stop write the key
   and start nothing, the view's `running` is the key, its `owner` names the
@@ -6998,7 +7001,8 @@ The rule: the Windows panel is one page.
 
 A switch from any tray (`appShell.click`, so the Linux and macOS menus too)
 acts at once; only the API-key question (A33) stays, and its approval is
-recorded only right before the switch is made. When auto-switch is on and
+recorded only right before the switch is made. Replaced by A94, which leaves
+auto-switch as it is and holds the engine instead: when auto-switch is on and
 not a dry run (for a Codex row: and Codex rotation is on, since nothing else
 moves a Codex login), the click turns it off first and does not switch when
 that fails; a switch that then fails turns it on again. Switch clicks run
@@ -7324,7 +7328,7 @@ and the TUI's rows) all read the one result. The dashboard state carries it as
 `auto.counting` (the families of the live sessions, the counted, dropped and
 reserved), with a one-line caption; the Auto tab, *Next best* and the tray's
 figures render it, so an unset `autoswitch.model` reads *Follow sessions*, not
-*Off*; the tray's *Model limits* switch reads `follows sessions — <caption>`
+*Off*; the tray's *Model limits* switch (gone since A94) read `follows sessions — <caption>`
 (the caption alone under a hosted engine, which does not follow sessions)
 and says `off` only for an explicit `none`. Unchanged: an explicit
 `autoswitch.model` or `--model`, which never drops a model; the long-running
@@ -7459,3 +7463,54 @@ keeps a dead profile's claim nor lists a dead session. A record without
 `/proc` keeps the PID-only check. Two boxes cloned with one machine id cannot
 be told apart by the record; profile folders are per box, so a record from
 another box reaches this one only through a copied store.
+
+## A94. The tray sets auto-switch; a switch by hand holds for the cooldown
+
+The operator accepted these rows on 2026-11-17 ("all rows as proposed, build
+it"). Three things went wrong.
+
+On 2026-11-17 16:39:25 (also 11-14 and 11-15) one tray process turned
+auto-switch off and 0.6 s later on again. The click read the shell's cached
+state and flipped it; panel clicks each run on their own goroutine, nothing
+serialised them, and the button repainted only after a full state document,
+so a second click landed on the flipped cache. Now a click carries the state
+the row showed and sets the opposite of that: the row's `tray.Item` sets
+`ShownState`, so its click is `Item.Choice`, `auto:on` or `auto:off`, on every
+platform's menu and the Windows panel. Other toggles, and the public
+`desktop/tray` package's users, keep a plain ID. A click that arrives while an
+auto-switch change is still in flight is dropped, not queued.
+
+A switch by hand meant two things. The tray turned auto-switch off before it
+and left it off (A84), while one from the dashboard left it on, and the engine
+could undo it: on 2026-11-16 a dashboard switch to account 4 at 16:37:17 was
+followed at 16:37:20 by `Switched to account 3 by engine:at-limit`. The rule
+now, on every surface (`tycswap switch`, the dashboard, both trays, the TUI):
+a switch by hand leaves `autoswitch.enabled` as it is, and for
+`autoswitch.cooldownSeconds` after it the engine makes no switch, whatever the
+trigger. After that it decides as always.
+
+- One place stamps the hold: `core.Switcher`'s `SwitchTo`, `SwitchToForce`
+  and `Switch`, which every hand switch goes through. It runs the switch under
+  the state lock (`.autoswitch_state.lock`) the engine's own switch and
+  `tycswap start` hold for theirs, and when the roster's live slot or stamp
+  moved, stamps it as they do (`lastSwitchAt`, `lastSwitchTo`, the failover
+  memory cleared) plus `lastSwitchBy: "hand"` (`autoswitch.HandSwitch`). A
+  tick that decided before the switch re-reads the state under the lock and
+  sees the hold. A stamp that cannot be written is logged; the switch stands.
+- The engine and `start` switch through `EngineSwitchTo` (their adapter
+  shadows `SwitchTo`): they stamp under the lock they already hold, which a
+  hand switch would wait on, and their stamp clears the mark, so their own
+  cooldown holds `proactive` and `reserved` only, as before.
+- A tick held by a hand switch emits `no-switch` with reason `cooldown` and
+  the detail `switched by hand to account N; held for another Ss`.
+- The tray no longer turns auto-switch off for a switch, nor back on after a
+  failed one. Its switch clicks still run one at a time.
+- The Codex engine has no cooldown and is unchanged: it moves only off a
+  Codex account at or over its bar.
+
+The tray menu's *Model limits* switch goes: on, it wrote `autoswitch.model =
+all`, which switched off following the sessions (A91). The key is set with
+`tycswap config`. Its menu item, click handler and the app's and remote
+client's hooks (the latter called `/api/auto/model`) are gone. The menu's
+"managed by" tooltip, sub line and grey-out also go: the server has left
+`managedBy` empty since A83, so they could not show.
