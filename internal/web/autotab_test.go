@@ -44,10 +44,10 @@ func TestAppJSAutoTab(t *testing.T) {
 	}
 }
 
-// autoPanel is the Auto tab's markup.
+// autoPanel is the Auto tab's markup; a Windows checkout has CRLF in it.
 func autoPanel(t *testing.T) string {
 	t.Helper()
-	m := regexp.MustCompile(`(?s)<section class="panel" id="panel-auto".*?</section>\n\n  <!-- =+ Sessions`).FindString(staticFile(t, "index.html"))
+	m := regexp.MustCompile(`(?s)<section class="panel" id="panel-auto".*?</section>\s+<!-- =+ Sessions`).FindString(staticFile(t, "index.html"))
 	if m == "" {
 		t.Fatal("no Auto panel in index.html")
 	}
