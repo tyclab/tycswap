@@ -6579,8 +6579,8 @@ for verified Ultra accounts, with removal staged per account. Weekly usage
 and model entitlements remain. Plan names therefore establish Fable
 compatibility but never determine which usage windows count.
 
-Routing and recovery require usable weekly usage and validate a five-hour
-window only when reported. An omitted or null window is absent; a reported
+Routing and recovery (since gone: A78, A95) require usable weekly usage and
+validate a five-hour window only when reported. An omitted or null window is absent; a reported
 window with unusable utilization is unknown and cannot authorize dispatch.
 All reported windows retain their existing thresholds and model checks.
 `groups.Entitlement` recognizes `ultra` alongside the legacy Max identifiers,
@@ -6770,13 +6770,15 @@ login reconciles only while no default session runs, as before.
 
 Still-running group sessions keep working: `groups guard` (their
 PreModelSwitch hook) and `recovery record --group` (their lifecycle hooks)
-still answer, and their status lines mark the group's account due (A75).
+still answer (since A95 the hook records nothing and exits 0), and their
+status lines mark the group's account due (A75).
 
 The Claude side of the Claude / Codex handover now uses the default login:
 its account checks follow the model class (`FableCapable` for Fable), a
 rotation switches the default login, and a Claude destination is plain
 `claude --model`. A recorded incident from a group session says the group is
-retired. Settings have one scope; a scoped save is refused.
+retired. (A95 removed the handover.) Settings have one scope; a scoped save
+is refused.
 
 Kept on purpose: `groups/claims.json` also records the legacy `run` profiles'
 claims, so the registry, its validation and `SafePath` stay; a recorded
@@ -7459,3 +7461,39 @@ keeps a dead profile's claim nor lists a dead session. A record without
 `/proc` keeps the PID-only check. Two boxes cloned with one machine id cannot
 be told apart by the record; profile folders are per box, so a record from
 another box reaches this one only through a copied store.
+
+## A95. The handover after a limit is removed
+
+The operator accepted on 2026-11-17: "Settings: *Handover wait*, the
+'Continue after a limit' card, tray 'Session at limit' → Remove the feature.
+Unused here: no recovery hook is installed, flakelab's wake-parked does this
+job." The one-engine design (D10) had listed the same removal on 2026-11-10.
+Nothing installs `tycswap recovery record` since the group launcher went
+(A78) and the operator's boxes run no such hook, while the dashboard's
+recovery runtime still read the store on every state build and could switch
+accounts on a `rotate` decision there.
+
+Removed: `internal/recovery`; every `tycswap recovery` verb (`record`,
+`observe`, `list`, `dismiss`, `prepare`, `plan`, `reclaim`); the dashboard's
+*Continue after a limit* card, the sessions table's *Continue in Codex…*
+button, the Guide's *Continue in the other tool* and its handover lines; the
+`POST /api/recovery/{prepare,dismiss,start}` routes and the state document's
+`recovery`; the tray's *Session at limit · review handover…* item and its
+notification; the `TYCSWAP_HANDOVER_*` launch environment; the rotation on a
+recovery decision; `autoswitch.handoverWaitMinutes`. The sessions table's
+model label goes too: only the recovery store filled it (`sessionModels`),
+from the hooks nothing installs.
+
+`tycswap recovery …` exits 2 before the store is read with one line, as
+`tycswap run` does (A92): it was removed, and a session parked on a limit
+goes on when the login has room. `recovery record` prints the same line and
+exits 0: it is the lifecycle hook a former group session may still run
+(A78), and a Claude Code hook that exits 2 blocks the prompt and keeps a
+Stop from ending the turn. `groups guard` stays and no longer writes the
+recovery store.
+
+A stored `handoverWaitMinutes` is read as nothing, `config` refuses it as
+unknown, and every settings write drops it (`retiredKeys`), unlike an
+unknown key such as `includeApiKeyAccounts`, which writes keep. The store's
+`recovery/` directory (`state.json`, `state.json.lock`) is left on disk,
+neither read nor deleted.

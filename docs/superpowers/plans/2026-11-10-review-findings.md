@@ -66,12 +66,7 @@ evidence.
 | HOST-5 | exit gives a tick in flight 2 s | cli/webfacades.go stopKeepingChoice | FIX D5 | T | E |
 | HOST-6 | launch URL with its token printed to the service journal (local journal only: the central log store holds the line with the token redacted) | cli/appcmd.go, web/web.go | FIX D5 | VL | E |
 | HOST-7 | nil Codex engine logs an error every tick | cli/webfacades.go codexTick | FIX D5 | TV | E |
-| HOST-8 | handover rotation switches inside every state build | cli/recovery_runtime.go | CUT D10 |  | R |
 | HOST-9 | hosted loop asleep after all-exhausted | autoswitch/loop.go | DUP ENG-9 |  |  |
-| HOST-10 | Claude incident recorded without an account | cli/recovery.go | CUT D10 | T | R |
-| HOST-11 | default-login session cannot be handed over | cli/recovery_runtime.go | CUT D10 | T | R |
-| HOST-12 | unconfirmed handover blocks the workspace for good | cli/recovery_web.go | CUT D10 | T | R |
-| HOST-13 | reclaim always fails for a Claude destination | cli/recovery_reclaim.go | CUT D10 | T | R |
 | HOST-14 | start-at-login entry drops `--no-update-check` | cli/appcmd.go autostartConfig | FIX D9 | V | U |
 | HOST-15 | Updates card says installed on any exit 0 | cli/updateshost.go applyApp | FIX |  | R |
 

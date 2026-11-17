@@ -1363,6 +1363,37 @@ next round.
 
 ---
 
+## tycswap recovery (removed)
+
+### Synopsis
+
+```
+tycswap recovery [VERB] [ARGS...]
+```
+
+### Description
+
+Removed on the operator's ruling of 2026-11-17 (DESIGN A95) with the rest of
+the handover after a limit: the dashboard's *Continue after a limit* card, its
+*Continue in Codex…* button, the `/api/recovery/*` routes, the tray's
+*Session at limit* item and `autoswitch.handoverWaitMinutes`. Every verb
+(`record`, `observe`, `list`, `dismiss`, `prepare`, `plan`, `reclaim`, or none)
+prints, before reading the store,
+
+```
+tycswap: error: tycswap recovery was removed: a session parked on a limit goes on when the login has room.
+```
+
+on standard error and nothing on standard output. The `recovery/` directory
+the feature wrote in the backup root is left as it is and never read.
+
+### Exit status
+
+`2`; `0` for `recovery record`, the lifecycle hook a former session group
+installed (DESIGN A78), so a session that still runs it is not blocked.
+
+---
+
 ## tycswap auto
 
 ### Synopsis
@@ -4831,6 +4862,7 @@ Inside the backup root:
 | `default_models.json` | The model family each default-profile session runs, as `--observe` records it from the status line (DESIGN A76): `{"schemaVersion": 1, "sessions": {"<session id>": {"family", "seenAt"}}}`. Kept a day; no credentials. |
 | `observe_state.json` | The time of the last near-bar observation that ran a tick, for the 15-second slot (DESIGN A75). |
 | `groups/` | What retired session groups left (DESIGN A78): `claims.json` (also the former `run` profiles' claims, and under `held` each refused profile release as `{"<n>": {"reason", "digest"}}`, the digest being the SHA-256 of the account-only profile login it was refused for; absent when none, DESIGN A92), and per group a `profile/` directory kept for its history, plus `retired.json` once the group is retired. |
+| `recovery/` | `state.json` and `state.json.lock` of the removed handover after a limit (DESIGN A95); no longer read or written, and not deleted. |
 | `cache/usage.json` | Cached usage measurements. |
 | `live_lineage.json` | The chain record of the default login's live credential (DESIGN A68): `{"schemaVersion": 1, "fingerprint": "<sha256>", "slot": "<n>", "identity": {"uuid", "email", "orgUuid"}, "seenAt": <epoch-seconds>}`, mode 0600. Written without a lock (last writer wins) when the profile endpoint names the slot of the default login's live credential, and only when the record changes; a dry run or a store-only read never writes it, and a group scope's own login never reads or writes it. A derived cache: a missing or malformed file reads as absent, and a record whose slot the roster no longer maps to its identity is ignored. |
 | `statusline.json` | Label and quota per account for Claude Code status lines (see STATUS LINE STATE). Derived: never copied by `tycswap migrate`. |
@@ -4951,7 +4983,10 @@ degrades to the (clamped) default without error, and a key tycswap does not
 know is ignored on read and kept by every write.
 `autoswitch.includeApiKeyAccounts` is such a key since DESIGN A33 removed it:
 a file that still carries it loads as if it did not, and `config set`, `get`
-and `unset` refuse it as an unknown setting. `autoswitch.threshold`, the
+and `unset` refuse it as an unknown setting. `autoswitch.handoverWaitMinutes`,
+removed with the handover after a limit (DESIGN A95), is read and refused the
+same way, but every write (`config set` and `unset`, the TUI's and the
+dashboard's Settings) drops it from the file. `autoswitch.threshold`, the
 single bar before DESIGN A34, is no key either, but it still counts: a file
 that carries it seeds `autoswitch.sevenDayThreshold` (the new key wins where
 both are present), `config` reports the 7d bar as set, and `config unset
@@ -5046,7 +5081,8 @@ of the match, the same as any other exhausted window (above).
 For `tycswap auto --once` the status is the tick outcome: `0` switched, `1` error,
 `2` no action, `3` blocked. `tycswap start` on success is replaced by (or, on
 Windows, waits for) the launched command and exits with its status. `tycswap
-run`, `env`, `map` and `unmap` are removed and exit `2`. `tycswap menubar`
+run`, `env`, `map` and `unmap` are removed and exit `2`, and so does `tycswap
+recovery` (`recovery record` exits `0`). `tycswap menubar`
 always exits `1` in this build.
 
 ## JSON OUTPUT CONTRACT
