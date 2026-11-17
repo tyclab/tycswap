@@ -21,25 +21,25 @@ function account(number, week, model, burst, hours=24) {
   scoped:[{name:'Fable',pct:model,resetsAt:reset(hours)}]
  }};
 }
-function rank(accounts, model='all', strategy='best') {
- return ctx.rankCandidates({accounts,settings:[{key:'autoswitch.model',value:model},{key:'autoswitch.strategy',value:strategy}]}).ranked;
+// models is what the engine counts now (auto.counting, DESIGN A91, A97).
+function rank(accounts, models=['Fable'], strategy='best') {
+ return ctx.rankCandidates({accounts,settings:[{key:'autoswitch.strategy',value:strategy}],auto:{counting:{models}}}).ranked;
 }
 function order(...args) { return Array.from(rank(...args), x => x.number); }
 // A complete tie alone falls back to slot number, in either strategy.
 for (const strategy of ['best','soonest-reset']) {
- assert.deepEqual(order([account(1,40,30,60),account(2,40,30,10),account(3,40,20,70),account(4,30,50,70)],'all',strategy),['4','3','2','1']);
+ assert.deepEqual(order([account(1,40,30,60),account(2,40,30,10),account(3,40,20,70),account(4,30,50,70)],['Fable'],strategy),['4','3','2','1']);
 }
-// Disabled model limits neither sort nor block accounts.
-assert.deepEqual(order([account(1,40,100,10),account(2,40,0,60)],''),['1','2']);
-assert.deepEqual(order([account(1,40,100,10),account(2,40,0,60)],'all'),['2','1']);
-// What the engine counts now (auto.counting, DESIGN A91) ranks as the
-// setting would: the Fable window counts though autoswitch.model is unset.
-assert.deepEqual(Array.from(ctx.rankCandidates({accounts:[account(1,40,100,10),account(2,40,0,60)],settings:[{key:'autoswitch.model',value:''},{key:'autoswitch.strategy',value:'best'}],auto:{counting:{models:['Fable']}}}).ranked,x=>x.number),['2','1']);
+// Uncounted model limits neither sort nor block accounts.
+assert.deepEqual(order([account(1,40,100,10),account(2,40,0,60)],[]),['1','2']);
+assert.deepEqual(order([account(1,40,100,10),account(2,40,0,60)],['Fable']),['2','1']);
+// A settings list that still names autoswitch.model counts nothing (A97).
+assert.deepEqual(Array.from(ctx.rankCandidates({accounts:[account(1,40,100,10),account(2,40,0,60)],settings:[{key:'autoswitch.model',value:'all'},{key:'autoswitch.strategy',value:'best'}]}).ranked,x=>x.number),['1','2']);
 // A full weekly window is always below usable accounts. A soon reset leads
 // the blocked group even if the other account has lower model/burst usage.
 const fullSoon=account(3,100,70,70,2);
 for (const strategy of ['best','soonest-reset']) {
- const rows=rank([account(1,100,0,0,48),account(2,98,80,70,48),fullSoon],'all',strategy);
+ const rows=rank([account(1,100,0,0,48),account(2,98,80,70,48),fullSoon],['Fable'],strategy);
  assert.deepEqual(Array.from(rows,x=>x.number),['2','3','1']);
  assert.equal(rows[1].soonReset,true);
  assert.equal(rows[1].tier,3); // never claim it is usable yet
@@ -48,13 +48,13 @@ for (const strategy of ['best','soonest-reset']) {
 const blocked=account(1,100,100,10,2);
 blocked.usage.scoped[0].resetsAt=reset(48);
 assert.equal(rank([blocked])[0].soonReset,false);
-assert.equal(rank([blocked],'')[0].soonReset,true);
+assert.equal(rank([blocked],[])[0].soonReset,true);
 for (const stamp of [null,'broken',reset(-1),reset(0),reset(5),reset(6)]) {
  const a=account(1,100,0,0); a.usage.sevenDay.resetsAt=stamp;
  assert.equal(rank([a])[0].soonReset,false);
 }
 // Preserve reset strategy and filter active/disabled/Codex accounts.
-assert.deepEqual(order([account(1,10,0,0,48),account(2,30,0,0,12)],'all','soonest-reset'),['2','1']);
+assert.deepEqual(order([account(1,10,0,0,48),account(2,30,0,0,12)],['Fable'],'soonest-reset'),['2','1']);
 const hidden=[{...account(3,0,0,0),isActive:true},{...account(4,0,0,0),rotationEligible:false},{...account(5,0,0,0),provider:'codex'}];
 assert.deepEqual(order([...hidden,account(2,20,0,0)]),['2']);
 console.log('hierarchical ranking and soon-reset groups passed');
@@ -79,15 +79,15 @@ assert.match(ctx.usageFreshness({usageStatus:'relogin_required',usageRefresh:{er
 assert.doesNotMatch(ctx.usageFreshness({usageStatus:'relogin_required',usageRefresh:{error:'invalid_grant',nextAt:reset(1)}}).text,/next attempt/);
 
 const missing=account(1,0,0,0);delete missing.usage.scoped;
-assert.deepEqual(order([missing,account(2,40,20,20)],'all'),['2','1']);
-assert.equal(rank([missing],'Fable')[0].label,'model usage missing: fable');
-assert.deepEqual(order([missing,account(2,40,20,20)],''),['1','2']);
+assert.deepEqual(order([missing,account(2,40,20,20)],['Fable']),['2','1']);
+assert.equal(rank([missing],['Fable'])[0].label,'model usage missing: fable');
+assert.deepEqual(order([missing,account(2,40,20,20)],[]),['1','2']);
 
 ctx.modelWindowNames = st => [...new Set(st.accounts.flatMap(a => (a.usage.scoped || []).map(w => w.name)))];
-const sharedState = {accounts:[account(1,20,100,20),account(2,50,20,10)], settings:[{key:'autoswitch.model',value:'all'}]};
+const sharedState = {accounts:[account(1,20,100,20),account(2,50,20,10)], settings:[], auto:{counting:{models:['Fable']}}};
 const originalState = JSON.stringify(sharedState);
 assert.deepEqual(Array.from(ctx.displayAccounts(sharedState,{key:'model',direction:1}),a=>a.number),[2,1]);
 assert.deepEqual(Array.from(ctx.displayAccounts(sharedState,{key:'model',direction:-1}),a=>a.number),[1,2]);
-const ties = {accounts:[account(1,40,30,60),account(2,40,30,10),account(3,40,20,70)],settings:sharedState.settings};
+const ties = {accounts:[account(1,40,30,60),account(2,40,30,10),account(3,40,20,70)],settings:[],auto:sharedState.auto};
 assert.deepEqual(Array.from(ctx.displayAccounts(ties,{key:'sevenDay',direction:1}),a=>a.number),[3,2,1]);
 assert.equal(JSON.stringify(sharedState),originalState);

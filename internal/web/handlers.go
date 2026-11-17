@@ -29,7 +29,6 @@ import (
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/reporting"
-	"github.com/tyclab/tycswap/internal/settings"
 )
 
 // maxBody bounds a JSON request body.
@@ -486,8 +485,7 @@ func (s *Server) codexOps(w http.ResponseWriter) bool {
 }
 
 type switchBody struct {
-	Strategy string   `json:"strategy"`
-	Models   []string `json:"models"`
+	Strategy string `json:"strategy"`
 }
 
 // handleSwitchStrategy is the bare `tycswap switch --strategy …`.
@@ -512,7 +510,7 @@ func (s *Server) handleSwitchStrategy(w http.ResponseWriter, r *http.Request) {
 	}
 	strategy := b.Strategy
 	s.mutate(w, func() (map[string]any, error) {
-		res, err := s.d.Facade.Switch(&strategy, true, b.Models, nil)
+		res, err := s.d.Facade.Switch(&strategy, true)
 		if to, moved := jsonout.SwitchedTo(res); err == nil && moved {
 			s.logAction(r, "Switched to account "+to)
 		}
@@ -918,9 +916,8 @@ func (s *Server) handleSettingsList(w http.ResponseWriter, r *http.Request) {
 }
 
 // settingsViews is the facade's list, never nil, each key with its Applies
-// note, without the keys only `tycswap config` sets and, while a scheduler
-// owns the ticks, without Poll interval, which auto --once never reads
-// (DESIGN A93). It builds a new slice: a facade may hand the same one to the
+// note and, while a scheduler owns the ticks, without Poll interval, which
+// auto --once never reads (DESIGN A93). It builds a new slice: a facade may hand the same one to the
 // serve loop and to a request at once. The caller has checked that Settings
 // is set.
 func (s *Server) settingsViews() []SettingView {
@@ -928,7 +925,7 @@ func (s *Server) settingsViews() []SettingView {
 	list := make([]SettingView, 0, len(eff))
 	managed := s.d.Auto != nil && s.d.Auto.View().Owner != ""
 	for _, sv := range eff {
-		if configOnly(sv.Key) || managed && sv.Key == "autoswitch.intervalSeconds" {
+		if managed && sv.Key == "autoswitch.intervalSeconds" {
 			continue
 		}
 		sv.Applies = settingApplies(sv.Key)
@@ -938,13 +935,6 @@ func (s *Server) settingsViews() []SettingView {
 		list = append(list, sv)
 	}
 	return list
-}
-
-// configOnly reports a key the registry marks as set through `tycswap config`
-// only (DESIGN A93).
-func configOnly(key string) bool {
-	spec, err := settings.SpecFor(key)
-	return err == nil && spec.ConfigOnly
 }
 
 // settingApplies says when a saved value takes effect, as the code has it

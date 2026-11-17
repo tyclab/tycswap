@@ -63,7 +63,6 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 		}
 		e.emit(ConfigWarningEvent{Ts: e.nowISO(), Message: "auto-switch is off; this dry run shows what it would do"})
 	}
-	e.adoptPendingModels()
 	s := e.currentSettings()
 
 	state := e.readState()
@@ -134,8 +133,6 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 		Windows:     windows,
 		Unservable:  e.unservable,
 	})
-
-	e.checkModelNames(state, quarantined, usageMap)
 
 	// An API-key account has no quota to watch, and the engine never moves on
 	// or off one by itself (DESIGN A33): that is a change of how Claude Code
@@ -692,80 +689,6 @@ func (e *Engine) perform(number, email, trigger, axis string) (tickResult, error
 		return tickResult{Outcome: Switched}, nil
 	}
 	return tickResult{Outcome: outcome}, nil
-}
-
-// checkModelNames is the autoswitch.model typo guard (05§18). Once every
-// account has been read, the list it checked goes into the state file's
-// modelNamesChecked, so a list warns once per store, not once per process.
-// The key is advisory: a failed write is logged and the tick goes on.
-func (e *Engine) checkModelNames(state map[string]any, quarantined map[string]bool, usageMap map[string]any) {
-	hasNamed := false
-	for _, m := range e.models {
-		if strings.ToLower(m) != "all" {
-			hasNamed = true
-			break
-		}
-	}
-	key := strings.ToLower(strings.Join(e.models, ","))
-	checked, _ := state["modelNamesChecked"].(string)
-	if !hasNamed || checked == key || (e.dryRun && e.dryModelChecked == key) {
-		return
-	}
-	var relevant []string
-	for _, n := range e.sw.SwitchableAccountNumbers() {
-		if !quarantined[n] && e.sw.AccountKindFor(n) != "api_key" {
-			relevant = append(relevant, n)
-		}
-	}
-	var values []any
-	var readable []map[string]any
-	for _, n := range relevant {
-		v := usageMap[n]
-		values = append(values, v)
-		if d := usageDict(v); d != nil {
-			readable = append(readable, d)
-		}
-	}
-	if len(readable) == 0 || len(readable) != len(values) {
-		return // not every account observed yet — re-check next tick
-	}
-	seen := map[string]bool{}
-	for _, v := range readable {
-		scoped, ok := v["scoped"].([]any)
-		if !ok {
-			continue
-		}
-		for _, sv := range scoped {
-			sm, ok := sv.(map[string]any)
-			if !ok {
-				continue
-			}
-			if name, ok := sm["name"].(string); ok {
-				seen[strings.ToLower(name)] = true
-			}
-		}
-	}
-	var missing []string
-	for _, m := range e.models {
-		low := strings.ToLower(m)
-		if low == "all" {
-			continue
-		}
-		if !seen[low] {
-			missing = append(missing, m)
-		}
-	}
-	if len(missing) > 0 {
-		e.emit(ConfigWarningEvent{Ts: e.nowISO(), Message: "autoswitch.model: " + strings.Join(missing, ", ") +
-			" matches no account's usage windows — only the 5h/7d limits are being watched for it (typo?)"})
-	}
-	if e.dryRun {
-		e.dryModelChecked = key
-		return
-	}
-	if _, err := e.mutateState(func(st map[string]any) { st["modelNamesChecked"] = key }); err != nil && e.log != nil {
-		e.log.Warningf("Model-name check not recorded: %v; it runs again next tick", err)
-	}
 }
 
 // refOf builds an account ref {"number": int, "email": email} (05§12 _ref).

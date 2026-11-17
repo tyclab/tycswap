@@ -415,31 +415,29 @@ func TestShellPctParsing(t *testing.T) {
 	}
 }
 
-// TestShellCountsTheModelSetting: autoswitch.model, set with `tycswap
-// config`, decides what every percentage in the tray reports (A39).
-func TestShellCountsTheModelSetting(t *testing.T) {
+// TestShellIgnoresTheRetiredModelSetting: a settings row or engine value
+// that still names autoswitch.model counts nothing in the tray; only what the
+// dashboard says the engine counts does (A39, A97).
+func TestShellIgnoresTheRetiredModelSetting(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
-	st := sampleState() // active #1: 5h 45%, 7d 30%, Fable 12% — no model setting
-	sh.update(st)
-	if ft.title != "#1 · 45%" {
-		t.Errorf("unset: title = %q, want the worst of 5h/7d", ft.title)
-	}
+	st := sampleState() // active #1: 5h 45%, 7d 30%, Fable 12%
 	st.Settings = append(st.Settings, web.SettingView{Key: "autoswitch.model", Value: "all"})
+	st.Auto = &web.AutoView{Running: true, Settings: map[string]any{"autoswitch.model": "all"}}
 	st.Accounts[1] = acct(1, "alice@example.com", "work", true, 45.0, 30.0, "Fable", 97.0)
 	sh.update(st)
-	if ft.title != "#1 · 97%" {
-		t.Errorf("set: title = %q, want the model window to count", ft.title)
+	if ft.title != "⟳ #1 · 45%" && ft.title != "#1 · 45%" {
+		t.Errorf("title = %q, want the worst of 5h/7d", ft.title)
 	}
 }
 
-// TestShellFollowsTheEngineCount: while autoswitch.model is unset the tray's
-// figures count what the dashboard says the engine counts now (Fable for the
-// live Fable sessions, DESIGN A91).
+// TestShellFollowsTheEngineCount: the tray's figures count what the
+// dashboard says the engine counts now (Fable for the live Fable sessions,
+// DESIGN A91, A97).
 func TestShellFollowsTheEngineCount(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
 	st := sampleState()
 	st.Accounts[1] = acct(1, "alice@example.com", "work", true, 45.0, 30.0, "Fable", 97.0)
-	st.Auto = &web.AutoView{Running: true, Settings: map[string]any{"autoswitch.model": nil},
+	st.Auto = &web.AutoView{Running: true,
 		Counting: &web.CountingView{Mode: "sessions", Models: []string{"Fable"}, Sessions: []string{"fable"}, Caption: "counting 5h + 7d + Fable (live Fable sessions)"}}
 	sh.update(st)
 	if ft.title != "⟳ #1 · 97%" && ft.title != "#1 · 97%" {
@@ -449,24 +447,20 @@ func TestShellFollowsTheEngineCount(t *testing.T) {
 
 // TestShellMenuHasNoModelLimits: the Model limits switch is gone (DESIGN
 // A94). On, it wrote autoswitch.model = all, which switched off following
-// the sessions; the key is set with `tycswap config` only. Whatever the
-// setting and the engine's count, no row offers it, and its old id does
-// nothing.
+// the sessions; the key is gone (A97). Whatever the engine's count, no row
+// offers it, and its old id does nothing.
 func TestShellMenuHasNoModelLimits(t *testing.T) {
 	for name, tc := range map[string]struct {
-		setting  any
 		counting web.CountingView
 	}{
-		"unset":        {counting: web.CountingView{Mode: "sessions", Models: []string{"Fable"}, Sessions: []string{"fable"}, Caption: "counting 5h + 7d + Fable (live Fable sessions)"}},
-		"unset-hosted": {counting: web.CountingView{Mode: "hosted", Models: []string{}, Caption: "counting 5h + 7d (the engine hosted here does not follow sessions)"}},
-		"none":         {setting: "none", counting: web.CountingView{Mode: "setting", Setting: "none", Models: []string{}, Caption: "counting 5h + 7d (autoswitch.model)"}},
-		"set":          {setting: "Fable", counting: web.CountingView{Mode: "setting", Setting: "Fable", Models: []string{"Fable"}, Caption: "counting 5h + 7d + Fable (autoswitch.model)"}},
+		"sessions": {counting: web.CountingView{Mode: "sessions", Models: []string{"Fable"}, Sessions: []string{"fable"}, Caption: "counting 5h + 7d + Fable (live Fable sessions)"}},
+		"hosted":   {counting: web.CountingView{Mode: "hosted", Models: []string{}, Caption: "counting 5h + 7d (the engine hosted here does not follow sessions)"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			sh, ft, calls := newTestShell(t)
 			st := sampleState()
 			counting := tc.counting
-			st.Auto = &web.AutoView{Running: true, Settings: map[string]any{"autoswitch.model": tc.setting}, Counting: &counting}
+			st.Auto = &web.AutoView{Running: true, Counting: &counting}
 			sh.update(st)
 			for _, it := range ft.menu {
 				if it.ID == "model-limits" || strings.Contains(it.Title, "Model limits") {
@@ -823,7 +817,7 @@ func TestInstallUpdateRestartsAfterSuccess(t *testing.T) {
 func TestShellModelWindowAlertsOnItsOwnThreshold(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
 	st := sampleState()
-	st.Settings = append(st.Settings, web.SettingView{Key: "autoswitch.model", Value: "all"})
+	st.Auto = &web.AutoView{Running: true, Counting: &web.CountingView{Mode: "sessions", Models: []string{"Fable"}, Sessions: []string{"fable"}}}
 	// Fable at 96 is over the 95 model bar; 5h and 7d are cold.
 	st.Accounts[1] = acct(1, "alice@example.com", "work", true, 10.0, 20.0, "Fable", 96.0)
 	sh.update(st)
@@ -1044,7 +1038,7 @@ func TestShellCodexAutoSwitchNotification(t *testing.T) {
 
 func TestTrayCountsOnlySelectedModels(t *testing.T) {
 	st := sampleState()
-	st.Settings = append(st.Settings, web.SettingView{Key: "autoswitch.model", Value: "fAbLe"})
+	st.Auto = &web.AutoView{Counting: &web.CountingView{Mode: "sessions", Models: []string{"fAbLe"}}}
 	r := acct(1, "a@example.com", "", true, 15.0, 20.0, "Fable", 30.0)
 	r["usage"].(map[string]any)["scoped"] = []any{map[string]any{"name": "Fable", "pct": 30.0}, map[string]any{"name": "Opus", "pct": 99.0}}
 	models := countedModels(st)
@@ -1057,13 +1051,11 @@ func TestTrayCountsOnlySelectedModels(t *testing.T) {
 	if !strings.Contains(windowsLine(r, models), "Opus 99% (not counted)") {
 		t.Fatal("uncounted window disappeared or counted")
 	}
+	// A running engine's settings name no model any more (DESIGN A97); one
+	// that still did is not read, and without auto.counting nothing counts.
 	st.Auto = &web.AutoView{Running: true, Settings: map[string]any{"autoswitch.model": "OPUS"}}
-	if p, _ := maxWindowPct(r, countedModels(st)); p != 99 {
-		t.Fatalf("live model must win: %v", p)
-	}
-	st.Auto.Settings["autoswitch.model"] = ""
 	if p, _ := maxWindowPct(r, countedModels(st)); p != 20 {
-		t.Fatalf("live Off must win: %v", p)
+		t.Fatalf("an engine's autoswitch.model was read: %v", p)
 	}
 }
 

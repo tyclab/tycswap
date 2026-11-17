@@ -51,7 +51,7 @@ func TestCrossFlagValidation(t *testing.T) {
 		{"json without command surface", []string{"--purge", "--json"}, "--json can only be used with 'list', 'status', or 'switch'"},
 		{"json with token-status", []string{"--list", "--token-status", "--json"}, "--token-status cannot be combined with --json"},
 		{"strategy without switch", []string{"--list", "--strategy", "best"}, "--strategy can only be used with bare 'switch'"},
-		{"model without strategy", []string{"--switch", "--model", "Fable"}, "--model can only be used with 'switch --strategy best' or 'switch --strategy next-available'"},
+		{"model removed", []string{"--switch", "--model", "Fable"}, "--model was removed: auto-switch counts the models the sessions run."},
 		{"slot without add", []string{"--list", "--slot", "3"}, "--slot can only be used with 'add' or 'add-token'"},
 		{"email without add-token", []string{"--add-account", "--email", "me@x.com"}, "--email can only be used with 'add-token'"},
 		{"account without export", []string{"--list", "--account", "2"}, "--account can only be used with 'export'"},
@@ -97,13 +97,12 @@ func TestStrategyInvalidChoice(t *testing.T) {
 	}
 }
 
-// --switch --model refuses a control character the way auto --model does: it
-// would be printed in "Using configured model limits" and the typo warning.
-func TestSwitchModelWithControlCharacterIsAnArgError(t *testing.T) {
+// --switch --model is removed (DESIGN A97): any value, a control character
+// included, gets the one line and is never printed.
+func TestSwitchModelIsRemovedWhateverItsValue(t *testing.T) {
 	cleanHome(t)
 	code, out, errStr := runCLI(t, []string{"--switch", "--strategy", "best", "--model", "Fable\x1b[2J"}, false, false)
-	if code != 2 || !strings.Contains(errStr, "argument --model: must not contain a control character") ||
-		strings.ContainsRune(out+errStr, 0x1b) {
+	if code != 2 || errStr != modelFlagRemoved+"\n" || strings.ContainsRune(out+errStr, 0x1b) {
 		t.Errorf("exit %d, stdout %q, stderr %q", code, out, errStr)
 	}
 }

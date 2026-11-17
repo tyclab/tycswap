@@ -76,51 +76,6 @@ func TestSettingSet_ValueTypes(t *testing.T) {
 	}
 }
 
-// autoswitch.model is set through tycswap config only (DESIGN A93): the
-// list and the state leave it out, and every settings route refuses to set
-// or unset it, naming the command, without touching the store or the engine.
-func TestSettingsLeaveOutTheModelSetting(t *testing.T) {
-	h := newHarness(t)
-	h.set.mu.Lock()
-	h.set.views = append(h.set.views, SettingView{Key: "autoswitch.model", Kind: "string", Value: "Fable"})
-	h.set.mu.Unlock()
-	var body, st struct {
-		Settings []SettingView `json:"settings"`
-	}
-	if err := json.Unmarshal(readBody(t, h.get("/api/settings")), &body); err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(readBody(t, h.get("/api/state")), &st); err != nil {
-		t.Fatal(err)
-	}
-	for _, list := range [][]SettingView{body.Settings, st.Settings} {
-		if len(list) == 0 {
-			t.Fatal("no settings")
-		}
-		for _, sv := range list {
-			if sv.Key == "autoswitch.model" {
-				t.Fatalf("the settings list carries autoswitch.model: %+v", list)
-			}
-		}
-	}
-	for _, resp := range []*http.Response{
-		h.postJSON("/api/settings/autoswitch.model", map[string]any{"value": "all"}),
-		h.send(http.MethodDelete, "/api/settings/autoswitch.model", nil),
-		h.post("/api/settings/autoswitch.model/unset"),
-	} {
-		if body := string(readBody(t, resp)); resp.StatusCode != http.StatusBadRequest ||
-			!strings.Contains(body, "tycswap config set autoswitch.model") || !strings.Contains(body, "tycswap config unset autoswitch.model") {
-			t.Errorf("status %d: %s", resp.StatusCode, body)
-		}
-	}
-	if calls := h.set.Calls(); len(calls) != 0 {
-		t.Errorf("a refused save reached the store: %v", calls)
-	}
-	if calls := h.auto.Calls(); len(calls) != 0 {
-		t.Errorf("a refused save reached the engine host: %v", calls)
-	}
-}
-
 // Poll interval is listed only while no scheduler owns the ticks: auto --once
 // never reads it (DESIGN A93).
 func TestSettingsListPollIntervalOnlyWithoutAnOwner(t *testing.T) {

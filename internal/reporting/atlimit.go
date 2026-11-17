@@ -13,8 +13,8 @@ import (
 	"github.com/tyclab/tycswap/internal/store"
 )
 
-// configuredModels is autoswitch.model, or while it is unset the models the
-// default-session policy counts (DESIGN A91); list/status take no --model flag.
+// configuredModels is the models the default-session policy counts (DESIGN
+// A91, A97).
 func configuredModels(s *store.Store) []string {
 	return settings.ParseModelNames(runDefaultPolicy(s, settings.Load(s.BackupDir()), s.Clk.Now()).Settings.Model)
 }

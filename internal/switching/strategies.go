@@ -1,5 +1,4 @@
-// strategies.go — the usage-aware scoring for `best` and the inert-model typo
-// guard (spec 02§5). selectBestSwitchable never recommends a move it cannot
+// strategies.go — the usage-aware scoring for `best` (spec 02§5). selectBestSwitchable never recommends a move it cannot
 // prove lands on strictly more headroom, never onto a worse or merely
 // unverifiable account; ties (including current-vs-other) resolve to staying put
 // / the earliest slot.
@@ -10,7 +9,7 @@ import "github.com/tyclab/tycswap/internal/store"
 // selectBestSwitchable decides the `best` target relative to current (spec
 // 02§5). Returns (target, note); target "" with a note means stay. Notes: none,
 // current-unavailable, no-comparison, incomplete-comparison, stay, exhausted.
-func selectBestSwitchable(s *store.Store, currentNum string, models []string, usage map[string]any) (string, string) {
+func selectBestSwitchable(s *store.Store, currentNum string, usage map[string]any) (string, string) {
 	data, _ := s.ReadSequence()
 	if data == nil {
 		return "", "none"
@@ -32,7 +31,7 @@ func selectBestSwitchable(s *store.Store, currentNum string, models []string, us
 		return "", "none"
 	}
 
-	currentHeadroom := headroomOf(usage[currentNum], models)
+	currentHeadroom := headroomOf(usage[currentNum])
 	if currentHeadroom == nil {
 		// Can't measure where the user is → can't prove any target is better.
 		return "", "current-unavailable"
@@ -44,7 +43,7 @@ func selectBestSwitchable(s *store.Store, currentNum string, models []string, us
 	}
 	var scored []scoredEntry
 	for _, num := range others {
-		scored = append(scored, scoredEntry{headroomOf(usage[num], models), num})
+		scored = append(scored, scoredEntry{headroomOf(usage[num]), num})
 	}
 
 	// known preserves rotation (sequence) order; the first maximal wins, so ties
@@ -82,62 +81,4 @@ func selectBestSwitchable(s *store.Store, currentNum string, models []string, us
 		return "", "exhausted"
 	}
 	return "", "stay"
-}
-
-// warnInertModels is the one-shot --model typo guard (spec 02§5). It only fires
-// when every account's usage is a readable dict; a configured name no account
-// reports is appended to warnings (JSON) or printed via warning() (human).
-func warnInertModels(usage map[string]any, models []string, jsonOut bool, warnings *[]string) {
-	wanted := map[string]string{} // lower → original
-	for _, m := range models {
-		lm := lower(m)
-		if lm == "all" {
-			continue
-		}
-		wanted[lm] = m
-	}
-	if len(wanted) == 0 || len(usage) == 0 {
-		return
-	}
-	for _, v := range usage {
-		if !isUsageDict(v) {
-			return
-		}
-	}
-	seen := map[string]bool{}
-	for _, v := range usage {
-		m, _ := v.(map[string]any)
-		scoped, _ := m["scoped"].([]any)
-		for _, item := range scoped {
-			sm, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			if name, ok := sm["name"].(string); ok {
-				seen[lower(name)] = true
-			}
-		}
-	}
-	var missing []string
-	// Deterministic order: follow the models argument's first-spelling order.
-	emitted := map[string]bool{}
-	for _, m := range models {
-		lm := lower(m)
-		if lm == "all" || emitted[lm] {
-			continue
-		}
-		if _, want := wanted[lm]; want && !seen[lm] {
-			missing = append(missing, wanted[lm])
-			emitted[lm] = true
-		}
-	}
-	if len(missing) == 0 {
-		return
-	}
-	msg := "model(s) " + joinComma(missing) + " match no account's usage windows (typo?)"
-	if jsonOut {
-		*warnings = append(*warnings, msg)
-	} else {
-		printWarning(msg)
-	}
 }

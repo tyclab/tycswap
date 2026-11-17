@@ -302,7 +302,7 @@ func (f *fakeFacade) SwitchTo(id string, jsonOut bool) (map[string]any, error) {
 	return map[string]any{"switched": true}, nil
 }
 
-func (f *fakeFacade) Switch(*string, bool, []string, *string) (map[string]any, error) {
+func (f *fakeFacade) Switch(*string, bool) (map[string]any, error) {
 	return nil, errors.New("not in this test")
 }
 func (f *fakeFacade) SetAccountDisabled(string, bool) error                    { return nil }

@@ -366,7 +366,7 @@ func TestRotationFromAnEndpointRevertsIt(t *testing.T) {
 	s := newTestStore(t, nil)
 	endpointSeat(t, s)
 	switchTo(t, s, "3", false)
-	if _, err := Switch(s, nil, true, nil, nil); err != nil {
+	if _, err := Switch(s, nil, true); err != nil {
 		t.Fatalf("Switch: %v", err)
 	}
 	assertOnSubscription(t, s, userSettings())

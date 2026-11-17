@@ -13,7 +13,6 @@ import (
 	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/filelock"
-	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
 // pyFloat is a float64 whose JSON form matches Python's json.dumps: a
@@ -81,7 +80,7 @@ type AutoSwitchSettings struct {
 	// 85 % to full inside one poll interval, and an overshoot is a hard stop
 	// mid-task. SevenDayThreshold gates the week, which creeps, so it can be
 	// squeezed close to full before moving; ModelThreshold gates the per-model
-	// weekly windows, which count only when Model names them.
+	// weekly windows session following counts (DESIGN A97).
 	FiveHourThreshold float64
 	SevenDayThreshold float64
 	ModelThreshold    float64
@@ -101,8 +100,9 @@ type AutoSwitchSettings struct {
 	HysteresisPct   float64
 	Strategy        string
 	UnhealthyTicks  int
-	// Model is a comma-separated model display name list (e.g. "Fable" or
-	// "Fable,Opus"), "all", or nil (account-wide 5h/7d only, the default).
+	// Model is the counted model windows as a comma-separated list of display
+	// names ("Fable"), or nil for 5h/7d only. Only the default-session policy
+	// sets it; settings.json no longer holds it (DESIGN A97).
 	Model *string
 }
 
@@ -112,7 +112,7 @@ type AutoSwitchSettings struct {
 // intervalSeconds 60, codexEnabled true, codexThreshold 0, cooldownSeconds 300,
 // hysteresisPct 10,
 // strategy "soonest-reset" (DESIGN A32; the Python dataclass has "best"),
-// unhealthyTicks 3, model nil. The dataclass's includeApiKeyAccounts is gone
+// unhealthyTicks 3, no counted model. The dataclass's includeApiKeyAccounts is gone
 // (DESIGN A33): auto-switch never moves onto an API-key account.
 func Default() AutoSwitchSettings {
 	return AutoSwitchSettings{
@@ -141,22 +141,20 @@ const (
 	KindInt    Kind = "int"
 	KindBool   Kind = "bool"
 	KindChoice Kind = "choice"
-	KindString Kind = "string"
 )
 
 // Spec is one settings.json key's metadata: single source of truth for
 // bounds/choices/defaults, shared by the lenient clamp on load and the
 // strict `parse_setting_value` used by `tycswap config set`.
 type Spec struct {
-	Section    string // top-level JSON section ("autoswitch")
-	JSONKey    string // camelCase key inside the section
-	Field      string // the AutoSwitchSettings Go field name
-	Kind       Kind
-	Lo, Hi     float64  // used for float/int kinds
-	Choices    []string // used for the choice kind
-	Default    any      // float64 | int | bool | string | nil; matches Default()'s field
-	Help       string
-	ConfigOnly bool // set through `tycswap config` only (DESIGN A93)
+	Section string // top-level JSON section ("autoswitch")
+	JSONKey string // camelCase key inside the section
+	Field   string // the AutoSwitchSettings Go field name
+	Kind    Kind
+	Lo, Hi  float64  // used for float/int kinds
+	Choices []string // used for the choice kind
+	Default any      // float64 | int | bool | string | nil; matches Default()'s field
+	Help    string
 }
 
 // Dotted returns "section.jsonKey", e.g. "autoswitch.sevenDayThreshold".
@@ -170,8 +168,6 @@ func (s Spec) Label() string {
 		return "5-hour threshold"
 	case "SevenDayThreshold":
 		return "Weekly threshold"
-	case "Model":
-		return "Count model limits"
 	case "ModelThreshold":
 		return "Model threshold"
 	case "IntervalSeconds":
@@ -193,7 +189,7 @@ func (s Spec) Label() string {
 }
 
 // SettingSpecs is every settings.json key in the order every view lists them:
-// the on/off, the bars, the model windows before their bar (DESIGN A49). Tests
+// the on/off, the bars (DESIGN A49). Tests
 // hold it to every AutoSwitchSettings field and to Default()'s values.
 var SettingSpecs = []Spec{
 	{Section: "autoswitch", JSONKey: "enabled", Field: "Enabled", Kind: KindBool,
@@ -205,12 +201,9 @@ var SettingSpecs = []Spec{
 	{Section: "autoswitch", JSONKey: "sevenDayThreshold", Field: "SevenDayThreshold", Kind: KindFloat,
 		Lo: 50.0, Hi: 100.0, Default: 97.0,
 		Help: "Switch at this weekly usage percentage"},
-	{Section: "autoswitch", JSONKey: "model", Field: "Model", Kind: KindString,
-		Default: nil, ConfigOnly: true,
-		Help: "Count model limits (e.g. Fable or all); automatic targets must report these windows"},
 	{Section: "autoswitch", JSONKey: "modelThreshold", Field: "ModelThreshold", Kind: KindFloat,
 		Lo: 50.0, Hi: 100.0, Default: 95.0,
-		Help: "Switch at this usage percentage of a counted model window, whether autoswitch.model names it or session following picks it"},
+		Help: "Switch at this usage percentage of every model window session following counts"},
 	{Section: "autoswitch", JSONKey: "intervalSeconds", Field: "IntervalSeconds", Kind: KindFloat,
 		Lo: 15.0, Hi: 3600.0, Default: 60.0,
 		Help: "Poll interval for the tycswap auto loop, in seconds"},
@@ -236,8 +229,9 @@ var SettingSpecs = []Spec{
 
 // retiredKeys are autoswitch keys whose feature is gone: read by nothing and
 // dropped by every write, unlike an unknown key, which writes keep.
-// handoverWaitMinutes left with the handover after a limit (DESIGN A95).
-var retiredKeys = []string{"handoverWaitMinutes"}
+// handoverWaitMinutes left with the handover after a limit (DESIGN A95),
+// model with the choice of counted models (DESIGN A97).
+var retiredKeys = []string{"handoverWaitMinutes", "model"}
 
 func dropRetired(data map[string]any) {
 	section, ok := data["autoswitch"].(map[string]any)
@@ -385,17 +379,6 @@ func clampValue(spec Spec, value any) any {
 			return b
 		}
 		return spec.Default
-	case KindString:
-		// Read clean: v0.12.0's TUI stored pastes raw, and every reader prints
-		// or matches the value as it is. Every reader gets the same value
-		// without its control characters, so nothing main counted is dropped;
-		// EffectiveSettings marks the row cleaned for the screens that show it.
-		if s, ok := value.(string); ok {
-			if text, _ := CleanText(s); text != "" {
-				return text
-			}
-		}
-		return spec.Default
 	case KindChoice:
 		if s, ok := value.(string); ok {
 			for _, c := range spec.Choices {
@@ -408,42 +391,6 @@ func clampValue(spec Spec, value any) any {
 	default:
 		return spec.Default
 	}
-}
-
-// whitespaceControls are the control characters that only separate words:
-// TAB, LF, VT, FF, CR and NEL.
-var whitespaceControls = strings.NewReplacer("\t", " ", "\n", " ", "\v", " ", "\f", " ", "\r", " ", "\u0085", " ")
-
-// TextValue is the one gate for a free-text setting value, stored or given
-// (config set, a --model flag, the dashboard): the whitespace controls become
-// spaces, since ParseModelNames trims the space around each comma-separated
-// name, so a list pasted over two lines ("Fable,\nOpus") names the models it
-// named before and prints on one line. clean is false when any other control
-// character is left; such a value is refused (CleanText reads a stored one).
-func TextValue(s string) (text string, clean bool) {
-	text = whitespaceControls.Replace(s)
-	return text, !termsafe.HasControl(text)
-}
-
-// CleanText is how a stored free-text value is read: TextValue's spaces, then
-// termsafe.Strip, which drops the other control characters and leaves the
-// rest of an escape sequence as inert text ("Opus\x1b[2J" reads "Opus[2J").
-// cleaned reports that something besides whitespace was removed.
-func CleanText(s string) (text string, cleaned bool) {
-	spaced, _ := TextValue(s)
-	text = termsafe.Strip(spaced)
-	return text, text != spaced
-}
-
-// cleanedText reports whether a stored value of spec's kind is read without
-// control characters it holds (clampValue's KindString case).
-func cleanedText(spec Spec, raw any) bool {
-	s, ok := raw.(string)
-	if spec.Kind != KindString || !ok {
-		return false
-	}
-	_, cleaned := CleanText(s)
-	return cleaned
 }
 
 // asNumber accepts float64/int (JSON numbers or Go-typed CLI overrides) and
@@ -486,23 +433,12 @@ func applyField(out *AutoSwitchSettings, field string, value any) {
 		out.Strategy = value.(string)
 	case "UnhealthyTicks":
 		out.UnhealthyTicks = value.(int)
-	case "Model":
-		if value == nil {
-			out.Model = nil
-		} else {
-			m := value.(string)
-			out.Model = &m
-		}
 	}
 }
 
 // fieldsOf projects an AutoSwitchSettings into a field-name → value map (the
 // inverse of applyField/clamp), used by MergedWithCLI and Save.
 func fieldsOf(s AutoSwitchSettings) map[string]any {
-	var model any
-	if s.Model != nil {
-		model = *s.Model
-	}
 	return map[string]any{
 		"Enabled":           s.Enabled,
 		"FiveHourThreshold": s.FiveHourThreshold,
@@ -515,7 +451,6 @@ func fieldsOf(s AutoSwitchSettings) map[string]any {
 		"HysteresisPct":     s.HysteresisPct,
 		"Strategy":          s.Strategy,
 		"UnhealthyTicks":    s.UnhealthyTicks,
-		"Model":             model,
 	}
 }
 
@@ -713,26 +648,6 @@ type Effective struct {
 	// explicit value equal to the default still counts (presence, not value
 	// equality).
 	IsSet bool
-	// Cleaned reports a stored value read without control characters it
-	// holds (CleanText): Value is the clean value, and Notice says so.
-	Cleaned bool
-}
-
-// Notice is what the screens that show e (config list/get, the settings
-// menus, the TUI's and the dashboard's settings rows) say when its stored
-// value was read clean: what was removed and how to clean the file, never
-// the value. Empty otherwise.
-func (e Effective) Notice() string {
-	if !e.Cleaned {
-		return ""
-	}
-	key := e.Spec.Dotted()
-	left := "which were removed"
-	if e.Value == nil {
-		left = "which were removed and left nothing, so the key reads as unset"
-	}
-	return fmt.Sprintf("%s: the stored value held terminal control characters, %s; save it again to clean the file: "+
-		"'tycswap config set %s <value>' or 'tycswap config unset %s'", key, left, key, key)
 }
 
 // EffectiveSettings returns (spec, effective value, explicitly set?) for
@@ -743,15 +658,13 @@ func EffectiveSettings(root string) []Effective {
 	out := make([]Effective, 0, len(SettingSpecs))
 	for _, spec := range SettingSpecs {
 		section, _ := raw[spec.Section].(map[string]any)
-		stored, present := section[spec.JSONKey]
-		out = append(out, Effective{Spec: spec, Value: fields[spec.Field], IsSet: isSetIn(spec, section),
-			Cleaned: present && cleanedText(spec, stored)})
+		out = append(out, Effective{Spec: spec, Value: fields[spec.Field], IsSet: isSetIn(spec, section)})
 	}
 	return out
 }
 
 // ValuesOf renders s the way `tycswap config` names its keys: dotted key →
-// effective value for every spec in registry order (an unset Model is nil).
+// effective value for every spec in registry order.
 // It is derived from SettingSpecs and the same field map EffectiveSettings
 // uses, so a new setting shows up here without a second list to maintain.
 func ValuesOf(s AutoSwitchSettings) map[string]any {
@@ -774,18 +687,17 @@ type CLIOverrides struct {
 	ModelThreshold    *float64
 	IntervalSeconds   *float64
 	CooldownSeconds   *float64
-	Model             *string
 }
 
 func (o CLIOverrides) isEmpty() bool {
 	return o.FiveHourThreshold == nil && o.SevenDayThreshold == nil &&
 		o.ModelThreshold == nil && o.IntervalSeconds == nil &&
-		o.CooldownSeconds == nil && o.Model == nil
+		o.CooldownSeconds == nil
 }
 
 // MergedWithCLI overlays o's non-nil overrides onto s, then re-clamps (so
 // out-of-range CLI values are clamped too). With no overrides at all, s is
-// returned unchanged.
+// returned unchanged; s.Model, which no flag sets, is kept.
 func MergedWithCLI(s AutoSwitchSettings, o CLIOverrides) AutoSwitchSettings {
 	if o.isEmpty() {
 		return s
@@ -806,15 +718,14 @@ func MergedWithCLI(s AutoSwitchSettings, o CLIOverrides) AutoSwitchSettings {
 	if o.CooldownSeconds != nil {
 		fields["CooldownSeconds"] = *o.CooldownSeconds
 	}
-	if o.Model != nil {
-		fields["Model"] = *o.Model
-	}
-	return clamp(fields)
+	out := clamp(fields)
+	out.Model = s.Model
+	return out
 }
 
-// ParseModelNames splits a comma-separated model list, trims each entry, and
-// case-insensitively dedupes (first spelling wins). A nil or empty value
-// returns an empty (non-nil) slice.
+// ParseModelNames splits the comma-separated counted model list, trims each
+// entry, and case-insensitively dedupes (first spelling wins). A nil or empty
+// value returns an empty (non-nil) slice.
 func ParseModelNames(v *string) []string {
 	out := []string{}
 	if v == nil || *v == "" {
@@ -823,7 +734,7 @@ func ParseModelNames(v *string) []string {
 	seen := map[string]bool{}
 	for _, part := range strings.Split(*v, ",") {
 		name := strings.TrimSpace(part)
-		if name == "" || noModelWord(name) {
+		if name == "" {
 			continue
 		}
 		key := strings.ToLower(name)
@@ -833,12 +744,6 @@ func ParseModelNames(v *string) []string {
 		}
 	}
 	return out
-}
-
-// noModelWord is how the help and dashboard show an unset model list.
-func noModelWord(name string) bool {
-	n := strings.ToLower(strings.TrimSpace(name))
-	return n == "none" || n == "(none)"
 }
 
 // --- strict parsing for `tycswap config set` ------------------------------
@@ -868,19 +773,6 @@ func ParseSettingValue(spec Spec, rawValue string) (any, error) {
 			}
 		}
 		return nil, cerr.Config("%s must be one of: %s", spec.Dotted(), strings.Join(spec.Choices, ", "))
-	case KindString:
-		value, clean := TextValue(rawValue)
-		value = strings.TrimSpace(value)
-		if value == "" {
-			return nil, cerr.Config("%s expects a non-empty value; use 'tycswap config unset %s' to clear it", spec.Dotted(), spec.Dotted())
-		}
-		if !clean {
-			return nil, cerr.Config("%s must not contain a control character", spec.Dotted())
-		}
-		if spec.Field == "Model" && noModelWord(value) {
-			return nil, cerr.Config("%s %q names no model; use 'tycswap config unset %s' to stop counting model limits", spec.Dotted(), value, spec.Dotted())
-		}
-		return value, nil
 	case KindInt:
 		n, err := strconv.Atoi(rawValue)
 		if err != nil {

@@ -8,8 +8,8 @@ import (
 )
 
 // Switch rotates by strategy: a switch by hand (byHand).
-func (sw *Switcher) Switch(strategy *string, jsonOut bool, models []string, modelSrc *string) (map[string]any, error) {
-	return sw.byHand(func() (any, error) { return switching.Switch(sw.Store, strategy, jsonOut, models, modelSrc) })
+func (sw *Switcher) Switch(strategy *string, jsonOut bool) (map[string]any, error) {
+	return sw.byHand(func() (any, error) { return switching.Switch(sw.Store, strategy, jsonOut) })
 }
 
 func (sw *Switcher) ApproveAPIKeySwitch(id string) {

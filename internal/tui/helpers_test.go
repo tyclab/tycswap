@@ -83,7 +83,7 @@ func (f *fakeFacade) SwitchTo(id string, jsonOut bool) (map[string]any, error) {
 	return f.switchToResult, f.switchToErr
 }
 
-func (f *fakeFacade) Switch(strategy *string, jsonOut bool, models []string, modelSrc *string) (map[string]any, error) {
+func (f *fakeFacade) Switch(strategy *string, jsonOut bool) (map[string]any, error) {
 	f.switchCalls++
 	return f.switchResult, f.switchErr
 }

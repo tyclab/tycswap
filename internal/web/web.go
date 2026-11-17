@@ -59,7 +59,7 @@ var staticFS embed.FS
 type Facade interface {
 	AccountsSnapshot(fetch map[string]bool) *reporting.AccountsSnapshot
 	SwitchTo(id string, jsonOut bool) (map[string]any, error)
-	Switch(strategy *string, jsonOut bool, models []string, modelSrc *string) (map[string]any, error)
+	Switch(strategy *string, jsonOut bool) (map[string]any, error)
 	SetAccountDisabled(id string, disabled bool) error
 	RemoveAccount(id string, yes bool) error
 	AddAccount(slot *int, assumeYes bool, alias *string) error
@@ -106,7 +106,7 @@ type CodexOps interface {
 type SettingView struct {
 	Key         string   `json:"key"` // dotted, e.g. "autoswitch.sevenDayThreshold"
 	Label       string   `json:"label,omitempty"`
-	Kind        string   `json:"kind"`  // "float"|"int"|"bool"|"choice"|"string"
+	Kind        string   `json:"kind"`  // "float"|"int"|"bool"|"choice"
 	Value       any      `json:"value"` // effective value
 	Default     any      `json:"default"`
 	IsDefault   bool     `json:"isDefault"`
@@ -115,9 +115,6 @@ type SettingView struct {
 	Min         *float64 `json:"min,omitempty"`
 	Max         *float64 `json:"max,omitempty"`
 	Applies     string   `json:"applies"`
-	// Notice says that the stored value was read without control characters
-	// and how to clean the file (settings.Effective.Notice); empty otherwise.
-	Notice string `json:"notice,omitempty"`
 }
 
 // SettingsFacade is the settings.json surface.

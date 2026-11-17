@@ -115,16 +115,12 @@ func (f *fakeFacade) SwitchTo(id string, jsonOut bool) (map[string]any, error) {
 	return f.switchPayload, nil
 }
 
-func (f *fakeFacade) Switch(strategy *string, jsonOut bool, models []string, modelSrc *string) (map[string]any, error) {
+func (f *fakeFacade) Switch(strategy *string, jsonOut bool) (map[string]any, error) {
 	st := "<nil>"
 	if strategy != nil {
 		st = *strategy
 	}
-	src := "<nil>"
-	if modelSrc != nil {
-		src = *modelSrc
-	}
-	f.record(fmt.Sprintf("Switch(%s,%v,%v,%s)", st, jsonOut, models, src))
+	f.record(fmt.Sprintf("Switch(%s,%v)", st, jsonOut))
 	if err := f.errFor("Switch"); err != nil {
 		return nil, err
 	}

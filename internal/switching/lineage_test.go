@@ -128,7 +128,7 @@ func TestRotationUnderLineageMismatchSwitchesOffTheCredentialSlot(t *testing.T) 
 	for _, tc := range lineageLives {
 		t.Run(tc.name, func(t *testing.T) {
 			s := lineageSeat(t, 5, tc.live)
-			out, err := Switch(s, nil, true, nil, nil)
+			out, err := Switch(s, nil, true)
 			if err != nil {
 				t.Fatalf("Switch: %v", err)
 			}
@@ -146,7 +146,7 @@ func TestSwitchRepairsConfigUnderLineageMismatch(t *testing.T) {
 		{"switch-to", "direct", func(s *store.Store, jsonOut bool) (any, error) { return SwitchTo(s, "5", jsonOut, false) }},
 		{"switch-to --force", "direct", func(s *store.Store, jsonOut bool) (any, error) { return SwitchTo(s, "5", jsonOut, true) }},
 		// Recorded active 6: the rotation lands on 5, the credential's slot.
-		{"rotation", "rotation", func(s *store.Store, jsonOut bool) (any, error) { return Switch(s, nil, jsonOut, nil, nil) }},
+		{"rotation", "rotation", func(s *store.Store, jsonOut bool) (any, error) { return Switch(s, nil, jsonOut) }},
 	}
 	for _, p := range paths {
 		for _, tc := range lineageLives {

@@ -24,24 +24,14 @@ func writeSettingsJSON(t *testing.T, root, content string) {
 
 func strp(s string) *string { return &s }
 
-// TestOnlyTheModelSettingIsConfigOnly: autoswitch.model is set through
-// tycswap config only (DESIGN A93); every other key stays on every surface.
-func TestOnlyTheModelSettingIsConfigOnly(t *testing.T) {
-	for _, spec := range SettingSpecs {
-		if want := spec.Dotted() == "autoswitch.model"; spec.ConfigOnly != want {
-			t.Errorf("%s: ConfigOnly = %v, want %v", spec.Dotted(), spec.ConfigOnly, want)
-		}
-	}
-}
-
 // TestHelpTextsSayWhereTheyApply: the Codex keys run wherever auto-switch
-// ticks, auto --once included, and the model bar covers every counted model
-// window, the ones session following picks too (DESIGN A93).
+// ticks, auto --once included, and the model bar covers every model window
+// session following counts (DESIGN A93, A97).
 func TestHelpTextsSayWhereTheyApply(t *testing.T) {
 	for key, want := range map[string]string{
 		"autoswitch.codexEnabled":    "Also auto-switch Codex accounts wherever auto-switch runs (tycswap auto, auto --once, the dashboard)",
 		"autoswitch.codexThreshold":  "Switch Codex accounts at this usage percentage; 0 = same as the weekly threshold",
-		"autoswitch.modelThreshold":  "Switch at this usage percentage of a counted model window, whether autoswitch.model names it or session following picks it",
+		"autoswitch.modelThreshold":  "Switch at this usage percentage of every model window session following counts",
 		"autoswitch.cooldownSeconds": "Minimum seconds between proactive switches; after a switch by hand, no switch at all for this long",
 	} {
 		spec, err := SpecFor(key)
@@ -120,8 +110,6 @@ func TestLoad_ClampTable(t *testing.T) {
 			func(s AutoSwitchSettings) bool { return s.FiveHourThreshold == 85.0 }, "fiveHourThreshold=85 (default)"},
 		{"strategy_chaos_falls_back_to_soonest_reset", `{"autoswitch":{"strategy":"chaos"}}`,
 			func(s AutoSwitchSettings) bool { return s.Strategy == "soonest-reset" }, "strategy=soonest-reset"},
-		{"model_123_falls_back_to_none", `{"autoswitch":{"model":123}}`,
-			func(s AutoSwitchSettings) bool { return s.Model == nil }, "model=nil"},
 		{"codexThreshold_200_clamps_to_99_9", `{"autoswitch":{"codexThreshold":200}}`,
 			func(s AutoSwitchSettings) bool { return s.CodexThreshold == 99.9 }, "codexThreshold=99.9"},
 		{"codexThreshold_neg5_clamps_to_0", `{"autoswitch":{"codexThreshold":-5}}`,
@@ -217,6 +205,7 @@ func TestSave_FileMode0600(t *testing.T) {
 
 // --- SettingSpecs registry invariants (spec 08§8.2) ---
 
+// Model is no setting: only the default-session policy sets it (DESIGN A97).
 func TestSettingSpecs_CoversEveryField(t *testing.T) {
 	want := map[string]bool{
 		"Enabled":           true,
@@ -224,7 +213,7 @@ func TestSettingSpecs_CoversEveryField(t *testing.T) {
 		"IntervalSeconds": true, "CodexEnabled": true,
 		"CodexThreshold": true, "CooldownSeconds": true,
 		"HysteresisPct": true, "Strategy": true,
-		"UnhealthyTicks": true, "Model": true,
+		"UnhealthyTicks": true,
 	}
 	got := map[string]bool{}
 	for _, s := range SettingSpecs {
@@ -245,17 +234,14 @@ func TestSettingSpecs_DefaultsMatchDataclass(t *testing.T) {
 	}
 }
 
-// The on/off leads the registry, then the keys that decide when a window is
-// full, and the model windows sit right before the model bar that applies
-// only to them: `tycswap config`, the TUI's Settings screen and the
-// dashboard's Settings tab list the keys in this order, and autoswitch.model
-// last put the choice of which model limits count at the bottom, away from
-// its bar (DESIGN A49).
-func TestSettingSpecs_ModelWindowsBesideTheirBar(t *testing.T) {
+// The on/off leads the registry, then the bars that decide when a window is
+// full: `tycswap config`, the TUI's Settings screen and the dashboard's
+// Settings tab list the keys in this order (DESIGN A49, A97).
+func TestSettingSpecs_BarsLead(t *testing.T) {
 	want := []string{
 		"autoswitch.enabled",
 		"autoswitch.fiveHourThreshold", "autoswitch.sevenDayThreshold",
-		"autoswitch.model", "autoswitch.modelThreshold",
+		"autoswitch.modelThreshold",
 	}
 	var got []string
 	for _, s := range SettingSpecs[:len(want)] {
@@ -310,7 +296,7 @@ func TestSetSetting_FloatKeepsTrailingDecimal(t *testing.T) {
 	}
 
 	// A subsequent write of a different key must preserve threshold's ".0".
-	if _, err := SetSetting(root, "autoswitch.model", "Fable"); err != nil {
+	if _, err := SetSetting(root, "autoswitch.strategy", "best"); err != nil {
 		t.Fatal(err)
 	}
 	data, err = os.ReadFile(SettingsPath(root))
@@ -719,28 +705,6 @@ func TestSetSetting_RejectsUnknownKey(t *testing.T) {
 	}
 }
 
-func TestSetSetting_StringKindRoundTrips(t *testing.T) {
-	root := t.TempDir()
-	v, err := SetSetting(root, "autoswitch.model", "Fable")
-	if err != nil || v != "Fable" {
-		t.Fatalf("v=%v err=%v", v, err)
-	}
-	if got := Load(root).Model; got == nil || *got != "Fable" {
-		t.Errorf("Load().Model = %v, want Fable", got)
-	}
-}
-
-func TestSetSetting_StringKindRejectsEmpty(t *testing.T) {
-	root := t.TempDir()
-	_, err := SetSetting(root, "autoswitch.model", "   ")
-	if err == nil || !strings.Contains(err.Error(), "unset") {
-		t.Errorf("err = %v, want it to mention 'unset'", err)
-	}
-	if _, statErr := os.Stat(SettingsPath(root)); !os.IsNotExist(statErr) {
-		t.Error("settings.json should not have been created")
-	}
-}
-
 func TestSetSetting_RejectsBoolWordsStrictly(t *testing.T) {
 	root := t.TempDir()
 	v, err := SetSetting(root, "autoswitch.codexEnabled", "FALSE")
@@ -893,13 +857,6 @@ func TestMergedWithCLI_ValuesAreClamped(t *testing.T) {
 	}
 }
 
-func TestMergedWithCLI_ModelOverride(t *testing.T) {
-	merged := MergedWithCLI(Default(), CLIOverrides{Model: strp("Fable")})
-	if merged.Model == nil || *merged.Model != "Fable" {
-		t.Errorf("Model = %v, want Fable", merged.Model)
-	}
-}
-
 // --- ParseModelNames ---
 
 func TestParseModelNames(t *testing.T) {
@@ -912,10 +869,6 @@ func TestParseModelNames(t *testing.T) {
 		{"empty", strp(""), []string{}},
 		{"single", strp("Fable"), []string{"Fable"}},
 		{"dedupe_first_spelling_wins", strp("Opus, opus,Fable"), []string{"Opus", "Fable"}},
-		// The help shows the unset value as "(none)": a stored "none" counts nothing.
-		{"none_word", strp("none"), []string{}},
-		{"none_shown", strp("(none)"), []string{}},
-		{"none_beside_a_model", strp("None,Fable"), []string{"Fable"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -924,128 +877,6 @@ func TestParseModelNames(t *testing.T) {
 				t.Errorf("ParseModelNames(%v) = %v, want %v", derefOrNil(c.in), got, c.want)
 			}
 		})
-	}
-}
-
-// 2026-11-04: `config set autoswitch.model none` stored a model named "none",
-// which no target reports, so every automatic switch would have been refused.
-func TestSetModelNoneSaysHowToUnset(t *testing.T) {
-	spec, err := SpecFor("autoswitch.model")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, v := range []string{"none", "(none)", "NONE"} {
-		if _, err := ParseSettingValue(spec, v); err == nil || !strings.Contains(err.Error(), "tycswap config unset autoswitch.model") {
-			t.Errorf("set %q = %v, want a pointer to unset", v, err)
-		}
-	}
-	if got, err := ParseSettingValue(spec, "Fable"); err != nil || got != "Fable" {
-		t.Errorf("set Fable = %v, %v", got, err)
-	}
-}
-
-// A free-text setting cannot hold a terminal control character: v0.12.0's TUI
-// stored pasted text raw, and `config list`, the auto loop's warnings and the
-// TUI print the value as it is. Setting one is refused; one already stored,
-// hand-edited or merged from an override is read without its control
-// characters (the flags themselves refuse one).
-func TestModelWithControlCharactersIsRefusedAndReadsClean(t *testing.T) {
-	spec, err := SpecFor("autoswitch.model")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, v := range []string{"Fable\x1b[2J", "\x1b]0;x\a", "Fa\u009bble"} {
-		if got, err := ParseSettingValue(spec, v); err == nil || !strings.Contains(err.Error(), "control character") {
-			t.Errorf("set %q = %v, %v; want a control-character refusal", v, got, err)
-		}
-	}
-	root := t.TempDir()
-	writeSettingsJSON(t, root, `{"autoswitch":{"model":"Fable\u001b[2J"}}`)
-	if got := Load(root).Model; got == nil || *got != "Fable[2J" {
-		t.Errorf("Load model = %q, want it without the ESC", derefOrNil(got))
-	}
-	if got := MergedWithCLI(Default(), CLIOverrides{Model: strp("Fable\x1b[2J")}).Model; got == nil || *got != "Fable[2J" {
-		t.Errorf("a merged override with controls = %q, want it without the ESC", derefOrNil(got))
-	}
-}
-
-// A list pasted over two lines, or with a tab, names the models it named
-// before: ParseModelNames trims the space around each name, so the whitespace
-// controls (TAB, LF, CR, NEL) become spaces, on set and on load, and the value
-// prints as one line.
-func TestModelListWithWhitespaceControlsKeepsItsModels(t *testing.T) {
-	spec, err := SpecFor("autoswitch.model")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"Fable", "Opus"}
-	for _, v := range []string{"Fable,\nOpus", "Fable,\tOpus", "Fable,\r\nOpus", "Fable,\u0085Opus"} {
-		got, err := ParseSettingValue(spec, v)
-		s, _ := got.(string)
-		if err != nil || strings.ContainsAny(s, "\t\n\r\u0085") || !reflect.DeepEqual(ParseModelNames(&s), want) {
-			t.Errorf("set %q = %q, %v; want a one-line value naming %v", v, s, err, want)
-		}
-	}
-	for _, stored := range []string{`Fable,\nOpus`, `Fable,\tOpus`} {
-		root := t.TempDir()
-		writeSettingsJSON(t, root, `{"autoswitch":{"model":"`+stored+`"}}`)
-		got := Load(root).Model
-		if got == nil || strings.ContainsAny(*got, "\t\n") || !reflect.DeepEqual(ParseModelNames(got), want) {
-			t.Errorf("stored %s: Load model = %q, want a one-line value naming %v", stored, derefOrNil(got), want)
-		}
-		for _, r := range EffectiveSettings(root) {
-			if r.Cleaned || r.Notice() != "" {
-				t.Errorf("stored %s: %s marked cleaned (%q)", stored, r.Spec.Dotted(), r.Notice())
-			}
-		}
-	}
-}
-
-// A stored value with other control characters is cleaned on read: every
-// reader gets it without them (termsafe.Strip), so a list main counted is still
-// counted. The row says what was removed and how to clean the file, never the
-// value. A value of control characters only reads as unset, and says so.
-func TestStoredValueWithControlCharactersIsCleanedOnRead(t *testing.T) {
-	root := t.TempDir()
-	writeSettingsJSON(t, root, `{"autoswitch":{"model":"Fable,Opus\u001b[2J\u0007","sevenDayThreshold":90}}`)
-	if got := Load(root).Model; got == nil || *got != "Fable,Opus[2J" || !reflect.DeepEqual(ParseModelNames(got), []string{"Fable", "Opus[2J"}) {
-		t.Fatalf("Load model = %q, want the value without its control characters", derefOrNil(got))
-	}
-	var row Effective
-	for _, r := range EffectiveSettings(root) {
-		switch {
-		case r.Spec.Field == "Model":
-			row = r
-		case r.Cleaned || r.Notice() != "":
-			t.Errorf("%s marked cleaned", r.Spec.Dotted())
-		}
-	}
-	if !row.Cleaned || !row.IsSet || row.Value != "Fable,Opus[2J" {
-		t.Fatalf("model row = %+v, want cleaned, set, the clean value", row)
-	}
-	n := row.Notice()
-	for _, want := range []string{"autoswitch.model", "control characters", "removed",
-		"tycswap config set autoswitch.model", "tycswap config unset autoswitch.model"} {
-		if !strings.Contains(n, want) {
-			t.Errorf("notice %q lacks %q", n, want)
-		}
-	}
-	if strings.Contains(n, "Fable") || strings.ContainsRune(n, 0x1b) {
-		t.Errorf("notice %q echoes the value", n)
-	}
-	only := t.TempDir()
-	writeSettingsJSON(t, only, `{"autoswitch":{"model":"\u001b\u0007"}}`)
-	for _, r := range EffectiveSettings(only) {
-		if r.Spec.Field == "Model" && (!r.Cleaned || r.Value != nil || !strings.Contains(r.Notice(), "nothing")) {
-			t.Errorf("controls only: row %+v, notice %q", r, r.Notice())
-		}
-	}
-	clean := t.TempDir()
-	writeSettingsJSON(t, clean, `{"autoswitch":{"model":"Fable,\nOpus"}}`)
-	for _, r := range EffectiveSettings(clean) {
-		if r.Cleaned || r.Notice() != "" {
-			t.Errorf("a two-line list: %s marked cleaned", r.Spec.Dotted())
-		}
 	}
 }
 
@@ -1110,8 +941,8 @@ func TestLoad_PythonFixture(t *testing.T) {
 	if got.SevenDayThreshold != 80.0 {
 		t.Errorf("SevenDayThreshold = %v, want 80 (seeded by the fixture's legacy threshold key)", got.SevenDayThreshold)
 	}
-	if got.Model == nil || *got.Model != "Fable" {
-		t.Errorf("Model = %v, want Fable", got.Model)
+	if got.Model != nil {
+		t.Errorf("Model = %v, want nil: the fixture's model key is retired (DESIGN A97)", *got.Model)
 	}
 	// Everything else the fixture didn't set stays default.
 	if got.IntervalSeconds != Default().IntervalSeconds {
@@ -1120,7 +951,7 @@ func TestLoad_PythonFixture(t *testing.T) {
 }
 
 // ValuesOf names every spec by its dotted key and carries the struct's value
-// for it; an unset Model is nil and a set one its string.
+// for it; the derived Model is no key.
 func TestValuesOf_CoversEverySpec(t *testing.T) {
 	got := ValuesOf(Default())
 	if len(got) != len(SettingSpecs) {
@@ -1137,11 +968,11 @@ func TestValuesOf_CoversEverySpec(t *testing.T) {
 		}
 	}
 	s := Default()
-	m := "Fable, Opus"
+	m := "Fable"
 	s.Model, s.SevenDayThreshold = &m, 77
 	got = ValuesOf(s)
-	if got["autoswitch.model"] != "Fable, Opus" || got["autoswitch.sevenDayThreshold"] != 77.0 {
-		t.Fatalf("ValuesOf(set) model %#v threshold %#v", got["autoswitch.model"], got["autoswitch.sevenDayThreshold"])
+	if _, listed := got["autoswitch.model"]; listed || got["autoswitch.sevenDayThreshold"] != 77.0 {
+		t.Fatalf("ValuesOf(set) = %#v", got)
 	}
 }
 
@@ -1226,7 +1057,7 @@ func TestLegacyThresholdSeedsTheSevenDayBar(t *testing.T) {
 // would leave the old value in force and report nothing to do.
 func TestUnsetSevenDayBarAlsoDropsTheLegacyKey(t *testing.T) {
 	root := t.TempDir()
-	writeSettingsJSON(t, root, `{"schemaVersion":1,"autoswitch":{"threshold":72,"model":"Fable"}}`)
+	writeSettingsJSON(t, root, `{"schemaVersion":1,"autoswitch":{"threshold":72,"strategy":"best"}}`)
 	removed, err := UnsetSetting(root, "autoswitch.sevenDayThreshold")
 	if err != nil || !removed {
 		t.Fatalf("UnsetSetting = %v, %v; want removed", removed, err)
@@ -1243,8 +1074,8 @@ func TestUnsetSevenDayBarAlsoDropsTheLegacyKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	section, _ := raw["autoswitch"].(map[string]any)
-	if _, present := section["threshold"]; present || section["model"] != "Fable" {
-		t.Errorf("autoswitch section after unset = %v, want the legacy key gone and model kept", section)
+	if _, present := section["threshold"]; present || section["strategy"] != "best" {
+		t.Errorf("autoswitch section after unset = %v, want the legacy key gone and strategy kept", section)
 	}
 
 	both := t.TempDir()

@@ -250,13 +250,6 @@ func TestSSE_AutoEventsDoNotDisturbLateSubscriber(t *testing.T) {
 	late.expectNone(t, 30*time.Millisecond)
 }
 
-// The settings tab shows a row's notice (an ignored stored value) next to it.
-func TestSettingRowShowsItsNotice(t *testing.T) {
-	if js := staticFile(t, "app.js"); !strings.Contains(js, "sv.notice") {
-		t.Error("app.js does not render sv.notice")
-	}
-}
-
 func TestMutationStateBarrier(t *testing.T) {
 	h := newHarness(t)
 	before := decodeJSON(t, h.get("/api/state"))["sequence"].(float64)

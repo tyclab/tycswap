@@ -7,16 +7,12 @@ import (
 )
 
 // The caption says in one line what auto-switch counts and why, for each
-// way the count comes about (DESIGN A91).
+// way the count comes about (DESIGN A91, A97).
 func TestCountingCaption(t *testing.T) {
 	for name, tc := range map[string]struct {
 		in   CountingView
 		want string
 	}{
-		"explicit-model": {CountingView{Mode: "setting", Setting: "Fable", Models: []string{"Fable"}},
-			"counting 5h + 7d + Fable (autoswitch.model)"},
-		"explicit-all": {CountingView{Mode: "setting", Setting: "all", Models: []string{"all"}},
-			"counting 5h + 7d + every model window (autoswitch.model)"},
 		"sessions-fable-counted": {CountingView{Mode: "sessions", Models: []string{"Fable"}, Sessions: []string{"fable", "opus"}},
 			"counting 5h + 7d + Fable (live Fable sessions)"},
 		"sessions-fable-unservable": {CountingView{Mode: "sessions", Models: []string{}, Sessions: []string{"fable"}, Unservable: []string{"Fable"}},

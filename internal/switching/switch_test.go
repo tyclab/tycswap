@@ -54,7 +54,7 @@ func TestSwitchRotationJSON(t *testing.T) {
 	seedBackup(t, s, "2", "b@x.com", cb, "")
 	seedLive(t, s, "a@x.com", "", ca) // live == account 1's backup (own-bytes)
 
-	out, err := Switch(s, nil, true, nil, nil)
+	out, err := Switch(s, nil, true)
 	if err != nil {
 		t.Fatalf("Switch: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestSwitchNextAvailableAnchorDrift(t *testing.T) {
 	// self-switch no-op.
 	t.Run("plain rotation self-no-ops on the drifted slot", func(t *testing.T) {
 		s := setup(t)
-		out, err := Switch(s, nil, true, nil, nil)
+		out, err := Switch(s, nil, true)
 		if err != nil {
 			t.Fatalf("Switch: %v", err)
 		}
@@ -129,7 +129,7 @@ func TestSwitchNextAvailableAnchorDrift(t *testing.T) {
 	t.Run("next-available anchors on the live slot", func(t *testing.T) {
 		s := setup(t)
 		strat := "next-available"
-		out, err := Switch(s, &strat, true, nil, nil)
+		out, err := Switch(s, &strat, true)
 		if err != nil {
 			t.Fatalf("Switch: %v", err)
 		}
@@ -153,7 +153,7 @@ func TestSwitchNoopReasons(t *testing.T) {
 		}))
 		seedBackup(t, s, "1", "a@x.com", ca, "")
 		seedLive(t, s, "a@x.com", "", ca)
-		out, err := Switch(s, nil, true, nil, nil)
+		out, err := Switch(s, nil, true)
 		if err != nil {
 			t.Fatalf("Switch: %v", err)
 		}
@@ -175,7 +175,7 @@ func TestSwitchNoopReasons(t *testing.T) {
 		seedBackup(t, s, "1", "a@x.com", ca, "")
 		seedBackup(t, s, "2", "b@x.com", cb, "")
 		seedLive(t, s, "stranger@x.com", "", oauthCreds("s", "s")) // not managed
-		out, err := Switch(s, nil, true, nil, nil)
+		out, err := Switch(s, nil, true)
 		if err != nil {
 			t.Fatalf("Switch: %v", err)
 		}
@@ -196,7 +196,7 @@ func TestSwitchNoopReasons(t *testing.T) {
 		seedBackup(t, s, "1", "a@x.com", ca, "")
 		// slot 2 has no backups ⇒ not switchable.
 		seedLive(t, s, "a@x.com", "", ca)
-		out, err := Switch(s, nil, true, nil, nil)
+		out, err := Switch(s, nil, true)
 		if err != nil {
 			t.Fatalf("Switch: %v", err)
 		}
@@ -247,7 +247,7 @@ func TestSwitchFreshMachineFallbackIsRotationEligible(t *testing.T) {
 
 	t.Run("skips a disabled candidate silently and lands on the first eligible slot", func(t *testing.T) {
 		s := setup(t, map[string]bool{"1": true, "2": true}, nil)
-		out, err := Switch(s, nil, true, nil, nil)
+		out, err := Switch(s, nil, true)
 		if err != nil {
 			t.Fatalf("Switch: %v", err)
 		}
@@ -290,7 +290,7 @@ func TestSwitchFreshMachineFallbackIsRotationEligible(t *testing.T) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				s := setup(t, tc.disabled, tc.noBackup)
-				out, err := Switch(s, nil, true, nil, nil)
+				out, err := Switch(s, nil, true)
 				if err != nil {
 					t.Fatalf("Switch: %v", err)
 				}
@@ -308,7 +308,7 @@ func TestSwitchFreshMachineFallbackIsRotationEligible(t *testing.T) {
 
 	t.Run("skips an unswitchable candidate silently", func(t *testing.T) {
 		s := setup(t, map[string]bool{"1": true}, map[string]bool{"2": true})
-		out, err := Switch(s, nil, true, nil, nil)
+		out, err := Switch(s, nil, true)
 		if err != nil {
 			t.Fatalf("Switch: %v", err)
 		}
@@ -323,7 +323,7 @@ func TestSwitchFreshMachineFallbackIsRotationEligible(t *testing.T) {
 
 	t.Run("every other slot disabled leaves no rotation target", func(t *testing.T) {
 		s := setup(t, map[string]bool{"1": true, "2": true, "3": true, "4": true}, nil)
-		_, err := Switch(s, nil, true, nil, nil)
+		_, err := Switch(s, nil, true)
 		if err == nil || !strings.Contains(err.Error(), "No accounts remain in rotation") {
 			t.Fatalf("err = %v, want the re-enable guidance", err)
 		}
@@ -333,7 +333,7 @@ func TestSwitchFreshMachineFallbackIsRotationEligible(t *testing.T) {
 // TestSwitchNoAccounts: no sequence.json ⇒ ConfigError.
 func TestSwitchNoAccounts(t *testing.T) {
 	s := newTestStore(t, nil)
-	_, err := Switch(s, nil, true, nil, nil)
+	_, err := Switch(s, nil, true)
 	if err == nil || err.Error() != "No accounts are managed yet" {
 		t.Fatalf("err = %v, want ConfigError(No accounts are managed yet)", err)
 	}

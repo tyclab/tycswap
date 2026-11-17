@@ -442,13 +442,6 @@
     return key;
   }
 
-  // modelSetting: autoswitch.model as the state reports it (auto.counting,
-  // mode "setting"); the settings list no longer carries it (DESIGN A93).
-  function modelSetting(st) {
-    var c = ((st && st.auto) || {}).counting;
-    return c && c.mode === 'setting' ? c.setting : null;
-  }
-
   // engineSetting: the value the RUNNING engine was started with (the Go
   // AutoView.Settings map is keyed "autoswitch.<key>"), falling back to the
   // saved settings.json value when not running.
@@ -460,12 +453,10 @@
   }
 
   // countedModelNames: the model windows auto-switch counts now, as the state
-  // reports them (auto.counting, DESIGN A91); else the engine's or the saved
-  // autoswitch.model.
+  // reports them (auto.counting, DESIGN A91, A97); none when it does not.
   function countedModelNames(st) {
     var c = (st.auto || {}).counting;
-    if (c && Array.isArray(c.models)) { return parseModelNames(c.models); }
-    return parseModelNames(engineSetting(st, 'autoswitch.model'));
+    return c && Array.isArray(c.models) ? parseModelNames(c.models) : [];
   }
 
   function displayAccounts(st, ordering) {
@@ -497,30 +488,24 @@
     });
   }
 
-  // parseModelNames mirrors settings.ParseModelNames: COMMA-separated, never
-  // whitespace-separated — a window is called "Fable 5", and splitting on
-  // spaces turned that into two names that match nothing, so the dashboard
-  // silently stopped counting a limit the engine was counting. Lower-cased
-  // here because every comparison in this file is lower-case; Go lower-cases
-  // at comparison time instead.
+  // parseModelNames lower-cases the counted model names (auto.counting.models),
+  // because every comparison in this file is lower-case; Go lower-cases at
+  // comparison time instead.
   function parseModelNames(v) {
-    if (Array.isArray(v)) { return v.map(function (x) { return String(x).trim().toLowerCase(); }).filter(Boolean); }
-    if (typeof v !== 'string' || !v.trim()) { return []; }
-    return v.split(',').map(function (x) { return x.trim().toLowerCase(); }).filter(Boolean);
+    return v.map(function (x) { return String(x).trim().toLowerCase(); }).filter(Boolean);
   }
 
   // relevantWindows mirrors oauth.RelevantWindows: 5h, 7d, then scoped windows
-  // matched by the configured model names ("all" matches every scoped window).
+  // matched by the counted model names.
   function relevantWindows(usage, models) {
     var out = [];
     if (!usage) { return out; }
     if (usage.fiveHour) { out.push({ label: '5h', pct: pctNum(usage.fiveHour.pct), resetsAt: usage.fiveHour.resetsAt }); }
     if (usage.sevenDay) { out.push({ label: '7d', pct: pctNum(usage.sevenDay.pct), resetsAt: usage.sevenDay.resetsAt }); }
     if (models.length && usage.scoped) {
-      var all = models.indexOf('all') >= 0;
       usage.scoped.forEach(function (w) {
         var n = String(w.name || '').toLowerCase();
-        if (all || models.indexOf(n) >= 0) { out.push({ label: w.name || 'model', pct: pctNum(w.pct), resetsAt: w.resetsAt, scoped: true }); }
+        if (models.indexOf(n) >= 0) { out.push({ label: w.name || 'model', pct: pctNum(w.pct), resetsAt: w.resetsAt, scoped: true }); }
       });
     }
     return out.filter(function (w) { return w.pct !== null; });
@@ -594,19 +579,6 @@
   // rankCandidates mirrors tui/autoview.go candidatesText: each window against
   // its own bar (DESIGN A34). The panel compares 7d, model and 5h
   // hierarchically rather than collapsing the windows into one percentage.
-  function requiredModelWindows(st, models) {
-    var names = models.filter(function (name) { return name !== 'all'; });
-    if (models.indexOf('all') >= 0) {
-      claudeRows(st).forEach(function (a) {
-        ((a.usage || {}).scoped || []).forEach(function (w) {
-          var name = String(w.name || '').toLowerCase();
-          if (name && pctNum(w.pct) !== null && names.indexOf(name) < 0) { names.push(name); }
-        });
-      });
-      if (!names.length) { names.push('all'); }
-    }
-    return names;
-  }
   function missingModelWindows(usage, required) {
     var reported = ((usage || {}).scoped || []).filter(function (w) { return pctNum(w.pct) !== null; }).map(function (w) { return String(w.name || '').toLowerCase(); });
     return required.filter(function (name) { return reported.indexOf(name) < 0; });
@@ -616,7 +588,7 @@
     var now = Date.now() / 1000;
     var auto = st.auto || {};
     var models = countedModelNames(st);
-    var required = requiredModelWindows(st, models);
+    var required = models;
     var strat = engineSetting(st, 'autoswitch.strategy') || 'soonest-reset';
     // One bar per window, as the running engine or the saved settings have it.
     var bars = {
@@ -732,7 +704,6 @@
 
   function countingNote(models) {
     if (!models.length) { return 'counting 5h + 7d only'; }
-    if (models.indexOf('all') >= 0) { return 'counting 5h + 7d + every model window'; }
     return 'counting 5h + 7d + ' + models.join(', ');
   }
 
@@ -754,14 +725,15 @@
     return Object.keys(names).sort();
   }
 
-  // ignoredModelsNote is the warning shown wherever a ranking is displayed
-  // while model windows exist but autoswitch.model is unset: an account at
-  // 100% of a model's weekly limit then still counts as eligible.
+  // ignoredModelsNote is the chip shown wherever a ranking is displayed while
+  // model windows exist but nothing counts them and the engine does not follow
+  // sessions: an account at 100% of a model's weekly limit then still counts
+  // as eligible.
   function ignoredModelsNote(st, models) {
     if (models.length || ((st.auto || {}).counting || {}).mode === 'sessions') { return null; }
     var names = modelWindowNames(st);
     if (!names.length) { return null; }
-    return el('span', { class: 'chip chip-warn', title: 'Not counted now (see Counting now on the Auto tab); ' + NAME + ' config set autoswitch.model counts them', text: names.join(', ') + ' limits ignored' });
+    return el('span', { class: 'chip chip-warn', title: 'Not counted now (see Counting now on the Auto tab)', text: names.join(', ') + ' limits ignored' });
   }
 
   // ---- header + summary ------------------------------------------------------
@@ -1521,14 +1493,6 @@
     badge.title = st.auto ? 'Auto-switch ' + (on ? 'on' : 'off') + ': ' + autoStateText(st) : '';
   }
 
-  // modelWarning: the one line shown while autoswitch.model is set, which
-  // turns session following off (DESIGN A93).
-  function modelWarning(st) {
-    var value = modelSetting(st);
-    if (value === null) { return ''; }
-    return 'autoswitch.model is set to "' + value + '", so session following is off. ' + NAME + ' config unset autoswitch.model turns it back on.';
-  }
-
   function renderAuto(st) {
     var a = st.auto;
     var badge = $('auto-badge'), body = $('auto-body'), toggle = $('auto-switch');
@@ -1536,9 +1500,6 @@
     var strat = String(engineSetting(st, 'autoswitch.strategy') || 'soonest-reset');
     var models = countedModelNames(st);
     toggle.parentNode.hidden = !a;
-    var warning = modelWarning(st);
-    $('auto-model-warning').textContent = warning;
-    $('auto-model-warning').hidden = !warning;
     if (!a) {
       badge.textContent = 'unavailable'; badge.className = 'chip chip-outline';
       $('auto-state').textContent = '';
@@ -1618,7 +1579,7 @@
       ])]));
       tr.appendChild(el('td', { class: 'c-mini' }, [windowCell(u, 'fiveHour', '5h', 'compact')]));
       tr.appendChild(el('td', { class: 'c-mini' }, [windowCell(u, 'sevenDay', '7d', 'compact')]));
-      var scopedMatch = (u && u.scoped || []).filter(function (w) { return res.models.indexOf('all') >= 0 || res.models.indexOf(String(w.name || '').toLowerCase()) >= 0; });
+      var scopedMatch = (u && u.scoped || []).filter(function (w) { return res.models.indexOf(String(w.name || '').toLowerCase()) >= 0; });
       var top = scopedMatch.slice().sort(function (x, y) { return (pctNum(y.pct) || 0) - (pctNum(x.pct) || 0); })[0];
       var modelCell;
       if (top) {
@@ -1714,8 +1675,7 @@
     var idc = el('div', { class: 'setting-id' }, [
       el('div', { class: 'label-row' }, [el('span', { class: 'label', text: rowLabel(sv) }), el('span', { class: 'key', text: sv.key, title: sv.key })]),
       sv.description ? el('div', { class: 'desc', text: sv.description }) : null,
-      sv.applies ? el('div', { class: 'applies', text: sv.applies }) : null,
-      sv.notice ? el('div', { class: 'notice notice-crit', text: sv.notice }) : null
+      sv.applies ? el('div', { class: 'applies', text: sv.applies }) : null
     ]);
     row.appendChild(idc);
     var input = settingControl(sv);
@@ -1972,10 +1932,7 @@
     },
     'updates-dismiss': function () { updResult = null; renderUpdateResult(); return Promise.resolve(); },
     'switch-strategy': function (btn) {
-      var models = parseModelNames(modelSetting(state));
-      var body = { strategy: strategy };
-      if (models.length) { body.models = models; }
-      return run(btn, 'Switch (' + strategy + ')', api('POST', '/api/switch', body));
+      return run(btn, 'Switch (' + strategy + ')', api('POST', '/api/switch', { strategy: strategy }));
     },
     // No confirmation (A27): storing the login Claude Code has changes
     // nothing else, and the callout above the table has already said what

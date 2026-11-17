@@ -60,13 +60,8 @@ func TestDashboardStateCarriesEverySettingDefault(t *testing.T) {
 	if st.Settings == nil {
 		t.Fatal("state.settings is null with a facade wired")
 	}
-	// Every key but the ones only `tycswap config` sets (DESIGN A93).
-	var specs []settings.Spec
-	for _, spec := range settings.SettingSpecs {
-		if !spec.ConfigOnly {
-			specs = append(specs, spec)
-		}
-	}
+	// Every key (DESIGN A93, A97).
+	specs := settings.SettingSpecs
 	if len(st.Settings) != len(specs) {
 		t.Fatalf("state carries %d settings, the package lists %d", len(st.Settings), len(specs))
 	}

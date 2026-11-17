@@ -306,7 +306,7 @@ func TestRotationSkipsADamagedAPIKeySlot(t *testing.T) {
 			if got := s.SwitchableAccountNumbers(); !reflect.DeepEqual(got, []string{"1"}) {
 				t.Errorf("SwitchableAccountNumbers() = %v, want [1]", got)
 			}
-			res, err := Switch(s, nil, true, nil, nil)
+			res, err := Switch(s, nil, true)
 			if err != nil {
 				t.Fatalf("Switch: %v", err)
 			}

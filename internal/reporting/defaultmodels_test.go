@@ -40,7 +40,9 @@ func TestDefaultSessionSettingsFollowLiveSessions(t *testing.T) {
 		"fable-1m":           {"s-fable", "claude-fable-5-1[1m]", nil, "Fable"},
 		"opus-session":       {"s-opus", "claude-opus-5-5", nil, ""},
 		"recorded-but-ended": {"s-other", "claude-fable-5-1", nil, ""},
-		"explicit-setting":   {"s-opus", "claude-opus-5-5", strp("all"), "all"},
+		// A Model on the base decides nothing: the policy derives it (A97).
+		"base-model-ignored": {"s-opus", "claude-opus-5-5", strp("all"), ""},
+		"base-model-fable":   {"s-fable", "claude-fable-5-1", strp("Opus"), "Fable"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			clk := testutil.FixedClock(t, fixedNow)
@@ -162,7 +164,7 @@ func TestDefaultSessionPolicyReservesFableForFableSessions(t *testing.T) {
 		"one-fable-session":  {live: []session{{"a", "claude-opus-5-5"}, {"b", "claude-fable-5-1"}}},
 		"unrecorded-session": {live: []session{{"a", "claude-opus-5-5"}, {"b", ""}}},
 		"no-live-session":    {recorded: []session{{"gone", "claude-opus-5-5"}}},
-		"explicit-setting":   {live: []session{{"a", "claude-opus-5-5"}}, set: strp("Opus")},
+		"base-model-ignored": {live: []session{{"a", "claude-opus-5-5"}, {"b", "claude-sonnet-5-5"}}, set: strp("Opus"), reserve: []string{"1", "3"}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			clk := testutil.FixedClock(t, fixedNow)

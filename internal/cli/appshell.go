@@ -27,7 +27,6 @@ import (
 	"github.com/tyclab/tycswap/internal/ccversion"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/reporting"
-	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/termsafe"
 	"github.com/tyclab/tycswap/internal/tray"
@@ -1045,29 +1044,10 @@ type windowPct struct {
 func countsModelLimits(st web.State) bool { return len(countedModels(st)) > 0 }
 
 // countedModels is what the engine counts now as the dashboard reports it
-// (auto.counting: the setting, or what the default login's sessions derive),
-// else the setting.
+// (auto.counting, what the default login's sessions derive; DESIGN A91, A97).
 func countedModels(st web.State) []string {
 	if st.Auto != nil && st.Auto.Counting != nil {
 		return st.Auto.Counting.Models
-	}
-	return settingModels(st)
-}
-
-// settingModels is the `autoswitch.model` setting, preferring the running
-// engine's live value.
-func settingModels(st web.State) []string {
-	if st.Auto != nil && st.Auto.Running && st.Auto.Settings != nil {
-		if v, present := st.Auto.Settings["autoswitch.model"]; present {
-			sv, _ := v.(string)
-			return settings.ParseModelNames(&sv)
-		}
-	}
-	for _, sv := range st.Settings {
-		if sv.Key == "autoswitch.model" {
-			s, _ := sv.Value.(string)
-			return settings.ParseModelNames(&s)
-		}
 	}
 	return nil
 }

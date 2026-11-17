@@ -79,21 +79,14 @@ func (s *settingsScreen) onMessage(m *Model, msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-// reload re-reads every key's effective value and set-marker, leaving out the
-// keys only `tycswap config` sets (DESIGN A93), and syncs the
+// reload re-reads every key's effective value and set-marker, and syncs the
 // dashboard's bar tick to the file's 7d bar, as the Auto view's mount does:
 // a 7d threshold saved here moves the tick on the accounts monitor at once. The
 // Auto view is never stacked under this screen (both open from the dashboard),
 // so no session override is in effect to be overwritten.
 func (s *settingsScreen) reload(m *Model) {
 	root := m.facade.BackupDir()
-	var rows []settings.Effective
-	for _, e := range settings.EffectiveSettings(root) {
-		if !e.Spec.ConfigOnly {
-			rows = append(rows, e)
-		}
-	}
-	s.rows = rows
+	s.rows = settings.EffectiveSettings(root)
 	if s.index >= len(s.rows) {
 		s.index = max(len(s.rows)-1, 0)
 	}
@@ -387,9 +380,6 @@ func (s *settingsScreen) detailLines(width int) []string {
 	for _, t := range wrapDetail("", kindLabel(r.Spec)+" · default "+settings.FormatSettingValue(r.Spec.Default)+" · "+engineNote, width) {
 		out = append(out, fit(t))
 	}
-	for _, t := range noticeLines(r.Notice(), width) {
-		out = append(out, fit(t))
-	}
 	var last richText
 	switch {
 	case s.editError != "":
@@ -430,32 +420,6 @@ func wrapDetail(head, text string, width int) []richText {
 		sep = " "
 	}
 	return append(lines, cur)
-}
-
-// noticeLines wraps a row's notice (a stored value read clean) whole, in the
-// critical colour; unlike the help it is never clipped, since its last words
-// are the repair. No notice, no lines.
-func noticeLines(notice string, width int) []richText {
-	var lines []richText
-	var cur richText
-	used := 0
-	for _, word := range strings.Fields(notice) {
-		w := lipgloss.Width(word)
-		if used > 0 && used+1+w > width {
-			lines = append(lines, cur)
-			cur, used = richText{}, 0
-		}
-		if used > 0 {
-			cur.addFg(" ", colSevCrit)
-			used++
-		}
-		cur.addFg(word, colSevCrit)
-		used += w
-	}
-	if used > 0 {
-		lines = append(lines, cur)
-	}
-	return lines
 }
 
 // kindLabel names a key's kind with its range (int/float) or its choices.

@@ -33,12 +33,11 @@ type realSleeper struct{}
 func (realSleeper) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
 type Engine struct {
-	sw            Switcher
-	settings      atomic.Pointer[settings.AutoSwitchSettings]
-	models        []string
-	pendingModels atomic.Pointer[[]string]
-	onEvent       func(Event)
-	dryRun        bool
+	sw       Switcher
+	settings atomic.Pointer[settings.AutoSwitchSettings]
+	models   []string
+	onEvent  func(Event)
+	dryRun   bool
 
 	clk     clock.Clock
 	sleeper Sleeper
@@ -57,9 +56,6 @@ type Engine struct {
 	stopCh   chan struct{}
 	stopOnce sync.Once
 	wakeCh   chan struct{}
-
-	// The model list a dry run last checked: presentation only, never decision state (DESIGN A66).
-	dryModelChecked string
 }
 
 // Option customizes construction; NewEngine keeps the DESIGN §2.18 positional

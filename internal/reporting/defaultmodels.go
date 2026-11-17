@@ -115,17 +115,15 @@ func DefaultSessionPolicy(s *store.Store, base settings.AutoSwitchSettings) (set
 }
 
 // DefaultSessionPolicyResult counts, for the default login, the model limits
-// of the families its live sessions run when autoswitch.model is unset (DESIGN
-// A76), but only those some usable account can serve (A91). While every live
-// session has a recorded model, none of them Fable, it reserves the accounts
-// that can run Fable and still have Fable room (A77, A91). A set
-// autoswitch.model always wins; a live session of unknown model reserves
+// of the families its live sessions run (DESIGN A76), but only those some
+// usable account can serve (A91). While every live session has a recorded
+// model, none of them Fable, it reserves the accounts that can run Fable and
+// still have Fable room (A77, A91). It always decides: no setting or flag
+// names the counted models (A97). A live session of unknown model reserves
 // nothing.
 func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings, now time.Time) PolicyResult {
+	base.Model = nil
 	r := PolicyResult{Settings: base}
-	if base.Model != nil {
-		return r
-	}
 	records := readDefaultSessionModels(s.BackupDir())
 	if len(records) == 0 {
 		return r

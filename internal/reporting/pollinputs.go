@@ -53,9 +53,7 @@ func resolvePollPolicies(s *store.Store) []pollInputs {
 	}
 	pollInputsMu.Unlock()
 	if _, pinned := byScope[s.BackupDir()]; !pinned {
-		loaded := settings.Load(s.BackupDir())
-		models := settings.ParseModelNames(loaded.Model)
-		byScope[s.BackupDir()] = pollInputs{lowestBar(loaded, models), models}
+		byScope[s.BackupDir()] = pollInputs{lowestBar(settings.Load(s.BackupDir()), nil), nil}
 	}
 	var out []pollInputs
 	for _, p := range byScope {
@@ -99,7 +97,7 @@ func PollPolicyInputs() (threshold float64, models []string, pinned bool) {
 }
 
 // resolvePollInputs returns the pinned override when present, else the settings
-// file's threshold and parsed model names (spec 02§13 _poll_policy_inputs).
+// file's bars and no model, which no file names any more (DESIGN A97).
 func resolvePollInputs(s *store.Store) (float64, []string) {
 	pollInputsMu.Lock()
 	o := pollInputsOverride
@@ -110,9 +108,7 @@ func resolvePollInputs(s *store.Store) (float64, []string) {
 	if o != nil {
 		return o.threshold, append([]string(nil), o.models...)
 	}
-	loaded := settings.Load(s.BackupDir())
-	models := settings.ParseModelNames(loaded.Model)
-	return lowestBar(loaded, models), models
+	return lowestBar(settings.Load(s.BackupDir()), nil), nil
 }
 
 // lowestBar is the single figure poll planning escalates on now that each

@@ -233,9 +233,10 @@ func TestStatusPayload_AtLimitOmittedWhenUnderLimit(t *testing.T) {
 	}
 }
 
-func TestListPayload_AtLimitConfigDrivenScopedModel(t *testing.T) {
-	// A scoped weekly window at 100% only reads as at-limit when the model is
-	// configured via autoswitch.model — config-driven, no CLI flag.
+func TestListPayload_AtLimitIgnoresTheRetiredModelKey(t *testing.T) {
+	// A scoped weekly window at 100% reads as at-limit only while the
+	// default-session policy counts it (TestAtLimitUsesDerivedPolicy); a file
+	// that still holds autoswitch.model counts nothing (DESIGN A97).
 	newScopedStore := func(t *testing.T, clk clock.Clock) *store.Store {
 		now := clock.Seconds(clk)
 		s := newStore(t, clk, nil)
@@ -268,27 +269,16 @@ func TestListPayload_AtLimitConfigDrivenScopedModel(t *testing.T) {
 			t.Errorf("scoped window must not gate without a configured model, got %v", row["atLimit"])
 		}
 	})
-	t.Run("model_configured_at_limit", func(t *testing.T) {
-		clk := testutil.FixedClock(t, fixedNow)
-		s := newScopedStore(t, clk)
-		writeSettings(t, s, `{"autoswitch": {"model": "Fable 5"}}`)
-		row := rowOf(t, s)
-		if row["atLimit"] != true {
-			t.Errorf("configured model at 100%% should be at-limit, got %v", row["atLimit"])
-		}
-		if !jsonEqual(t, row["limitingWindows"], []any{"Fable 5"}) {
-			t.Errorf("limitingWindows = %v, want [Fable 5]", row["limitingWindows"])
-		}
-	})
-	t.Run("model_all_at_limit", func(t *testing.T) {
-		clk := testutil.FixedClock(t, fixedNow)
-		s := newScopedStore(t, clk)
-		writeSettings(t, s, `{"autoswitch": {"model": "all"}}`)
-		row := rowOf(t, s)
-		if row["atLimit"] != true {
-			t.Errorf("model=all should fold every scoped window, got %v", row["atLimit"])
-		}
-	})
+	for _, stored := range []string{"Fable 5", "all"} {
+		t.Run("retired_model_key_"+stored, func(t *testing.T) {
+			clk := testutil.FixedClock(t, fixedNow)
+			s := newScopedStore(t, clk)
+			writeSettings(t, s, `{"autoswitch": {"model": "`+stored+`"}}`)
+			if row := rowOf(t, s); row["atLimit"] != nil {
+				t.Errorf("a stored autoswitch.model %q gated the row: atLimit %v on %v", stored, row["atLimit"], row["limitingWindows"])
+			}
+		})
+	}
 }
 
 func TestRenderAccounts_AtLimitMarker(t *testing.T) {
@@ -349,7 +339,7 @@ func lineContaining(out, sub string) string {
 	return ""
 }
 
-// While autoswitch.model is unset, `list` marks an account at its limit on
+// `list` marks an account at its limit on
 // the windows the default-session policy counts: Fable while some usable
 // account can serve it, not while none can (DESIGN A91).
 func TestAtLimitUsesDerivedPolicy(t *testing.T) {

@@ -570,12 +570,12 @@ func candidateLabelRowPriced(number, email, label, color string, width int) (ric
 //   - BINDING — the counted window with the highest pct: the number the row is
 //     ranked by and the one the engine decides on. Severity-colored and BOLD;
 //     the bold is what says "this is the one being acted on".
-//   - COUNTED but not binding — relevant on the configured autoswitch.model axis,
+//   - COUNTED but not binding — relevant on the engine's counted model axis,
 //     so it could bind once it climbs. Severity-colored too, behind its muted
 //     label: the color states what the figure MEANS, exactly as the account
 //     card's bars and the mini account line state it, so a counted window at 99%
 //     never reads as unremarkable for want of binding.
-//   - UNCOUNTED — a scoped window autoswitch.model does not match. It affects
+//   - UNCOUNTED — a scoped window the engine does not count. It affects
 //     neither the ranking nor the engine's pick, so it is muted and dim: visible
 //     (the user must be able to watch a per-model window fill before configuring
 //     it) but plainly informational.
