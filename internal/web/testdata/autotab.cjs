@@ -51,7 +51,7 @@ const label = key => registry.find(r => r.key === key).label;
 const settings = registry.map(r => ({key: r.key, label: r.label, kind: 'float', value: 90, default: 90, isDefault: true}));
 const owner = 'flakelab-tycswap-autoswitch.timer';
 function auto(mode, on, hosted) {
-  const counting = {mode, models: mode === 'setting' ? ['Fable'] : [], sessions: [], unservable: [], reserved: [], caption: 'caption for ' + mode};
+  const counting = {mode, models: mode === 'setting' ? ['Fable'] : [], sessions: [], unservable: [], reserved: [], caption: 'counting 5h + 7d (' + mode + ')'};
   if (mode === 'setting') { counting.setting = 'Fable'; }
   return {available: true, running: on, hosted, owner: hosted ? '' : owner, lastTickAt: Date.now() / 1000 - 120, settings: {'autoswitch.intervalSeconds': 60},
     counting, quarantine: {}, codex: {enabled: true, running: on, threshold: 97, lastTick: null}};
@@ -78,7 +78,7 @@ for (const mode of ['setting', 'sessions', 'hosted']) {
     assert.equal(text(ids['badge-auto']), chipText, name + ': the tab badge follows the heading');
     assert.ok(ids['badge-auto'].title.endsWith(line), name + ': badge title ' + ids['badge-auto'].title);
     assert.equal(ids['auto-switch'].checked, name.endsWith(' on'), name + ': the switch follows the state');
-    assert.equal(text(ids['auto-counting']), 'Counting now: caption for ' + mode, mode);
+    assert.equal(text(ids['auto-counting']), 'Counting now: 5h + 7d (' + mode + ')', mode + ': the label says counting once');
     const warning = ids['auto-model-warning'];
     if (mode === 'setting') {
       assert.equal(warning.hidden, false, 'the warning shows while autoswitch.model is set');

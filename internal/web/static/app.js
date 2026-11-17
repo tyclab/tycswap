@@ -1552,7 +1552,8 @@
       var line = $('auto-state');
       clear(line);
       autoStateLine(st).forEach(function (n) { line.appendChild(typeof n === 'string' ? document.createTextNode(n) : n); });
-      $('auto-counting').textContent = 'Counting now: ' + countingLine(st, models);
+      // The state's caption opens with "counting"; the label already says it.
+      $('auto-counting').textContent = 'Counting now: ' + countingLine(st, models).replace(/^counting /, '');
 
       var tiles = el('div', { class: 'tiles' });
       var bars = rankCandidates(st).bars;

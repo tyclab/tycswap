@@ -222,7 +222,7 @@ var SettingSpecs = []Spec{
 		Help: "Switch Codex accounts at this usage percentage; 0 = same as the weekly threshold"},
 	{Section: "autoswitch", JSONKey: "cooldownSeconds", Field: "CooldownSeconds", Kind: KindFloat,
 		Lo: 0.0, Hi: 86400.0, Default: 300.0,
-		Help: "Minimum seconds between proactive switches"},
+		Help: "Minimum seconds between proactive switches; after a switch by hand, no switch at all for this long"},
 	{Section: "autoswitch", JSONKey: "hysteresisPct", Field: "HysteresisPct", Kind: KindFloat,
 		Lo: 0.0, Hi: 50.0, Default: 10.0,
 		Help: "Minimum extra quota required in the next account (%)"},

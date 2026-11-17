@@ -39,9 +39,10 @@ func TestOnlyTheModelSettingIsConfigOnly(t *testing.T) {
 // window, the ones session following picks too (DESIGN A93).
 func TestHelpTextsSayWhereTheyApply(t *testing.T) {
 	for key, want := range map[string]string{
-		"autoswitch.codexEnabled":   "Also auto-switch Codex accounts wherever auto-switch runs (tycswap auto, auto --once, the dashboard)",
-		"autoswitch.codexThreshold": "Switch Codex accounts at this usage percentage; 0 = same as the weekly threshold",
-		"autoswitch.modelThreshold": "Switch at this usage percentage of a counted model window, whether autoswitch.model names it or session following picks it",
+		"autoswitch.codexEnabled":    "Also auto-switch Codex accounts wherever auto-switch runs (tycswap auto, auto --once, the dashboard)",
+		"autoswitch.codexThreshold":  "Switch Codex accounts at this usage percentage; 0 = same as the weekly threshold",
+		"autoswitch.modelThreshold":  "Switch at this usage percentage of a counted model window, whether autoswitch.model names it or session following picks it",
+		"autoswitch.cooldownSeconds": "Minimum seconds between proactive switches; after a switch by hand, no switch at all for this long",
 	} {
 		spec, err := SpecFor(key)
 		if err != nil {
