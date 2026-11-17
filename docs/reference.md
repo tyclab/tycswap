@@ -2066,7 +2066,8 @@ approval and the failure shows why (DESIGN A33), naming `tycswap switch <n>`,
 which asks first.
 
 The Settings screen (`c`, or the menu's "Settings…" row) shows every key of
-`settings.json` (see [SETTINGS](#settings)) under its section, with its
+`settings.json` (see [SETTINGS](#settings)) but `autoswitch.model`, which
+`tycswap config` alone sets (DESIGN A93), under its section, with its
 effective value and a `(default)` marker on a key that is not set, as
 `tycswap config list` prints them (which lists the dotted keys without
 section headers); the highlighted key's help text, kind, range or choices,
