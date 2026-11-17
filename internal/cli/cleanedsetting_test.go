@@ -97,16 +97,15 @@ func TestSettingsMenusSayACleanedValueOnce(t *testing.T) {
 	}
 }
 
-// The tray's Model limits switch counts the clean list like every other
-// reader, on every platform's toggle: on, and naming the models.
+// The tray counts the clean list like every other reader: the Fable window
+// named in it counts towards the title and the tooltip.
 func TestTrayCountsTheCleanedModel(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
-	sh.act.SetModelLimits = func(bool) error { return nil }
 	st := sampleState()
 	st.Settings = append(st.Settings, web.SettingView{Key: "autoswitch.model", Value: "Fable,Opus[2J", Notice: cleanedNotice + ", which were removed"})
+	st.Accounts[1] = acct(1, "alice@example.com", "work", true, 45.0, 30.0, "Fable", 97.0)
 	sh.update(st)
-	it, ok := ft.item("model-limits")
-	if !ok || !it.Checked || !strings.Contains(it.Sub, "Fable") || strings.Contains(it.Sub, "control") {
-		t.Errorf("switch = %+v (ok=%v)", it, ok)
+	if ft.title != "#1 · 97%" || !strings.Contains(ft.tooltip, "Fable 97%") || strings.Contains(ft.tooltip, "not counted") || strings.Contains(ft.tooltip, "control") {
+		t.Errorf("title %q, tooltip %q", ft.title, ft.tooltip)
 	}
 }

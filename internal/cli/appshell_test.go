@@ -441,52 +441,28 @@ func TestShellPctParsing(t *testing.T) {
 	}
 }
 
-// TestShellModelLimitSwitch: one switch decides what auto-switch counts and
-// what every percentage in the tray reports (A39).
-func TestShellModelLimitSwitch(t *testing.T) {
+// TestShellCountsTheModelSetting: autoswitch.model, set with `tycswap
+// config`, decides what every percentage in the tray reports (A39).
+func TestShellCountsTheModelSetting(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
-	var saved *bool
-	sh.act.SetModelLimits = func(on bool) error { saved = &on; return nil }
-
 	st := sampleState() // active #1: 5h 45%, 7d 30%, Fable 12% — no model setting
 	sh.update(st)
 	if ft.title != "#1 · 45%" {
-		t.Errorf("off: title = %q, want the worst of 5h/7d", ft.title)
+		t.Errorf("unset: title = %q, want the worst of 5h/7d", ft.title)
 	}
-	it, ok := ft.item("model-limits")
-	if !ok || it.Checked || it.Title != "Model limits" || !strings.Contains(it.Sub, "ignored") {
-		t.Errorf("off: switch = %+v (ok=%v)", it, ok)
-	}
-
-	// Turning it on writes the setting…
-	sh.click("model-limits")
-	if saved == nil || !*saved {
-		t.Fatalf("click should switch it on, got %v", saved)
-	}
-	// …and the next state document, which now carries the setting, makes the
-	// model window count everywhere.
 	st.Settings = append(st.Settings, web.SettingView{Key: "autoswitch.model", Value: "all"})
 	st.Accounts[1] = acct(1, "alice@example.com", "work", true, 45.0, 30.0, "Fable", 97.0)
 	sh.update(st)
 	if ft.title != "#1 · 97%" {
-		t.Errorf("on: title = %q, want the model window to count", ft.title)
-	}
-	if it, _ := ft.item("model-limits"); !it.Checked || !strings.Contains(it.Sub, "counting all") {
-		t.Errorf("on: switch = %+v", it)
-	}
-	if !strings.Contains(strings.Join(ft.notes, "\n"), "Model limits on") {
-		t.Errorf("notes = %v", ft.notes)
+		t.Errorf("set: title = %q, want the model window to count", ft.title)
 	}
 }
 
 // TestShellFollowsTheEngineCount: while autoswitch.model is unset the tray's
 // figures count what the dashboard says the engine counts now (Fable for the
-// live Fable sessions, DESIGN A91), while the switch still shows the setting
-// and turns it on.
+// live Fable sessions, DESIGN A91).
 func TestShellFollowsTheEngineCount(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
-	var saved *bool
-	sh.act.SetModelLimits = func(on bool) error { saved = &on; return nil }
 	st := sampleState()
 	st.Accounts[1] = acct(1, "alice@example.com", "work", true, 45.0, 30.0, "Fable", 97.0)
 	st.Auto = &web.AutoView{Running: true, Settings: map[string]any{"autoswitch.model": nil},
@@ -495,44 +471,42 @@ func TestShellFollowsTheEngineCount(t *testing.T) {
 	if ft.title != "⟳ #1 · 97%" && ft.title != "#1 · 97%" {
 		t.Errorf("title = %q, want the counted Fable window", ft.title)
 	}
-	it, _ := ft.item("model-limits")
-	if it.Checked || it.Sub != "follows sessions — counting 5h + 7d + Fable (live Fable sessions)" {
-		t.Errorf("switch = %+v, want unchecked, following the sessions", it)
-	}
-	sh.click("model-limits")
-	if saved == nil || !*saved {
-		t.Fatalf("click should turn the setting on, got %v", saved)
-	}
 }
 
-// TestShellModelLimitsStates: the Model limits switch says "off" only for an
-// explicit none; unset, it follows the sessions and shows what the engine
-// counts now; set, it is on (DESIGN A91).
-func TestShellModelLimitsStates(t *testing.T) {
+// TestShellMenuHasNoModelLimits: the Model limits switch is gone (DESIGN
+// A94). On, it wrote autoswitch.model = all, which switched off following
+// the sessions; the key is set with `tycswap config` only. Whatever the
+// setting and the engine's count, no row offers it, and its old id does
+// nothing.
+func TestShellMenuHasNoModelLimits(t *testing.T) {
 	for name, tc := range map[string]struct {
 		setting  any
 		counting web.CountingView
-		checked  bool
-		sub      string
 	}{
-		"unset": {counting: web.CountingView{Mode: "sessions", Models: []string{"Fable"}, Sessions: []string{"fable"}, Caption: "counting 5h + 7d + Fable (live Fable sessions)"},
-			sub: "follows sessions — counting 5h + 7d + Fable (live Fable sessions)"},
-		"unset-hosted": {counting: web.CountingView{Mode: "hosted", Models: []string{}, Caption: "counting 5h + 7d (the engine hosted here does not follow sessions)"},
-			sub: "counting 5h + 7d (the engine hosted here does not follow sessions)"},
-		"none": {setting: "none", counting: web.CountingView{Mode: "setting", Setting: "none", Models: []string{}, Caption: "counting 5h + 7d (autoswitch.model)"},
-			sub: "off — 5h and 7d only, Fable ignored"},
-		"set": {setting: "Fable", counting: web.CountingView{Mode: "setting", Setting: "Fable", Models: []string{"Fable"}, Caption: "counting 5h + 7d + Fable (autoswitch.model)"},
-			checked: true, sub: "counting Fable — applies to percentages and switching"},
+		"unset":        {counting: web.CountingView{Mode: "sessions", Models: []string{"Fable"}, Sessions: []string{"fable"}, Caption: "counting 5h + 7d + Fable (live Fable sessions)"}},
+		"unset-hosted": {counting: web.CountingView{Mode: "hosted", Models: []string{}, Caption: "counting 5h + 7d (the engine hosted here does not follow sessions)"}},
+		"none":         {setting: "none", counting: web.CountingView{Mode: "setting", Setting: "none", Models: []string{}, Caption: "counting 5h + 7d (autoswitch.model)"}},
+		"set":          {setting: "Fable", counting: web.CountingView{Mode: "setting", Setting: "Fable", Models: []string{"Fable"}, Caption: "counting 5h + 7d + Fable (autoswitch.model)"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			sh, ft, _ := newTestShell(t)
-			sh.act.SetModelLimits = func(bool) error { return nil }
+			sh, ft, calls := newTestShell(t)
 			st := sampleState()
 			counting := tc.counting
 			st.Auto = &web.AutoView{Running: true, Settings: map[string]any{"autoswitch.model": tc.setting}, Counting: &counting}
 			sh.update(st)
-			if it, _ := ft.item("model-limits"); it.Checked != tc.checked || it.Sub != tc.sub {
-				t.Errorf("switch = checked %v %q, want checked %v %q", it.Checked, it.Sub, tc.checked, tc.sub)
+			for _, it := range ft.menu {
+				if it.ID == "model-limits" || strings.Contains(it.Title, "Model limits") {
+					t.Fatalf("menu row %+v", it)
+				}
+			}
+			for _, it := range sh.panel(st).Actions {
+				if it.ID == "model-limits" {
+					t.Fatalf("panel action %+v", it)
+				}
+			}
+			sh.click("model-limits")
+			if len(*calls) != 0 || len(ft.notesNow()) != 0 {
+				t.Fatalf("the old id acted: calls %v, notes %v", *calls, ft.notesNow())
 			}
 		})
 	}

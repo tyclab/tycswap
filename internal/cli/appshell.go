@@ -73,10 +73,6 @@ type shellActions struct {
 	// Restart relaunches the (now replaced) binary and ends this process; nil
 	// → the user is asked to restart by hand. tag is the release just installed.
 	Restart func(tag string)
-	// SetModelLimits turns the per-model weekly windows on or off: it writes
-	// autoswitch.model AND retargets a running engine, so the tray, the
-	// dashboard and the engine agree at once (A39). nil hides the switch.
-	SetModelLimits func(on bool) error
 	// ApproveAPIKey records the user's approval for a switch onto an API-key
 	// account, and RestartNotice is the sentence naming how many sessions must
 	// be restarted (A33). Both nil → the tray refuses the switch and says where
@@ -276,29 +272,6 @@ func (a *appShell) menu(st web.State) []tray.Item {
 		autoSub = "off — switch accounts by hand or turn on"
 	}
 	items = append(items, tray.Item{ID: "auto", Kind: tray.KindToggle, Title: "Auto-switch", Sub: autoSub, Checked: running})
-	if a.act.SetModelLimits != nil {
-		// One switch for the per-model weekly windows: it decides what
-		// auto-switch counts AND what every percentage here reports, so the
-		// two can never tell different stories (A39).
-		// Unset, the setting follows the sessions (A91); "off" is an
-		// explicit none.
-		name := modelWindowLabel(st)
-		set := settingModels(st)
-		sub := "off — 5h and 7d only, " + name + " ignored"
-		var counting *web.CountingView
-		if st.Auto != nil {
-			counting = st.Auto.Counting
-		}
-		switch {
-		case len(set) > 0:
-			sub = "counting " + strings.Join(set, ", ") + " — applies to percentages and switching"
-		case counting != nil && counting.Mode == "sessions":
-			sub = "follows sessions — " + counting.Caption
-		case counting != nil && counting.Mode == "hosted":
-			sub = counting.Caption
-		}
-		items = append(items, tray.Item{ID: "model-limits", Kind: tray.KindToggle, Title: "Model limits", Sub: sub, Checked: len(set) > 0})
-	}
 	items = append(items, tray.Separator(), tray.Header("App"))
 	// An update of Claude Code sits in the Updates section; its other states
 	// (missing, latest, could not check) stay here.
@@ -538,22 +511,6 @@ func (a *appShell) click(id string) {
 		a.switchClick(strings.TrimPrefix(id, "switch:"))
 	case id == "auto:on" || id == "auto:off":
 		a.autoClick(id == "auto:on")
-	case id == "model-limits":
-		a.mu.Lock()
-		st := a.last
-		a.mu.Unlock()
-		on := len(settingModels(st)) > 0
-		name := modelWindowLabel(st)
-		if err := a.act.SetModelLimits(!on); err != nil {
-			a.notify(name+" limit", err.Error())
-			return
-		}
-		if on {
-			a.notify(name+" limit off", "Auto-switch and every percentage now count the 5h and 7d windows only.")
-		} else {
-			a.notify("Model limits on", "Auto-switch and every percentage now count all per-model weekly windows too.")
-		}
-		a.repaint()
 	case id == "autostart:on" || id == "autostart:off":
 		// Start at login is read from this machine, never a cached state, so
 		// it still flips what it reads.
@@ -1175,8 +1132,8 @@ func countedModels(st web.State) []string {
 	return settingModels(st)
 }
 
-// settingModels is `autoswitch.model` as the Model limits switch sets it,
-// preferring the running engine's live value.
+// settingModels is the `autoswitch.model` setting, preferring the running
+// engine's live value.
 func settingModels(st web.State) []string {
 	if st.Auto != nil && st.Auto.Running && st.Auto.Settings != nil {
 		if v, present := st.Auto.Settings["autoswitch.model"]; present {

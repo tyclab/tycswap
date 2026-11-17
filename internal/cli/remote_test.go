@@ -569,36 +569,6 @@ func TestRemoteClientCalls(t *testing.T) {
 	if got := strings.Join(fx.auto.Calls(), ","); got != "Start(real),Stop" {
 		t.Errorf("auto calls = %s", got)
 	}
-	// The model switch mirrors the local one: setting first, then the engine
-	// hosted there; with none hosted, nothing is retargeted (DESIGN A83).
-	if err := rc.SetModel(true); err != nil {
-		t.Fatal(err)
-	}
-	if err := rc.SetModel(false); err != nil {
-		t.Fatal(err)
-	}
-	if got := strings.Join(fx.set.Calls(), ","); got != "Set(autoswitch.model,all),Unset(autoswitch.model)" {
-		t.Errorf("settings calls = %s", got)
-	}
-	if got := strings.Join(fx.auto.Calls(), ","); got != "Start(real),Stop" {
-		t.Errorf("auto calls = %s, want no retarget with nothing hosted", got)
-	}
-	// With the engine running, a failed retarget is reported.
-	if err := rc.AutoStart(); err != nil {
-		t.Fatal(err)
-	}
-	if !rc.AutoRunning() {
-		t.Error("AutoRunning should follow the last state")
-	}
-	fx.auto.mu.Lock()
-	fx.auto.applyErr = errors.New("retarget failed in the test")
-	fx.auto.mu.Unlock()
-	if err := rc.SetModel(true); err == nil || !strings.Contains(err.Error(), "retarget failed in the test") {
-		t.Errorf("SetModel while running with a failing retarget = %v, want the engine's message", err)
-	}
-	fx.auto.mu.Lock()
-	fx.auto.applyErr = nil
-	fx.auto.mu.Unlock()
 	// Launch hands back the server's own one-time URL, rebuilt from its
 	// checked parts.
 	u, err := rc.Launch()

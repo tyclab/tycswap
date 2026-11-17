@@ -419,39 +419,10 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 			}
 			return nil
 		},
-		Upgrade:      func() (string, error) { return upgradeForShell() },
-		UpgradeHint:  func() string { return buildHint },
-		Autostart:    readAutostart,
-		SetAutostart: writeAutostart,
-		SetModelLimits: func(on bool) error {
-			sf := settingsFacade{root: d.sw.BackupDir()}
-			var err error
-			removed := false
-			if on {
-				_, err = sf.Set("autoswitch.model", "all")
-			} else {
-				removed, err = sf.Unset("autoswitch.model")
-			}
-			if err != nil {
-				return err
-			}
-			if on {
-				d.sw.Log.Action("Set autoswitch.model=all", "tray")
-			} else if removed {
-				d.sw.Log.Action("Unset autoswitch.model", "tray")
-			}
-			// Retarget the engine hosted here too: leaving it on the models it
-			// started with is what made this switch look broken (A39). An
-			// external scheduler's ticks read the saved setting (A83).
-			model := ""
-			if on {
-				model = "all"
-			}
-			if d.auto.View().Hosted {
-				return d.auto.ApplyModels(model)
-			}
-			return nil
-		},
+		Upgrade:       func() (string, error) { return upgradeForShell() },
+		UpgradeHint:   func() string { return buildHint },
+		Autostart:     readAutostart,
+		SetAutostart:  writeAutostart,
 		ApproveAPIKey: d.sw.ApproveAPIKeySwitch,
 		RestartNotice: restartNotice,
 		EndpointSessionNotice: func() string {
