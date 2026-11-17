@@ -442,7 +442,7 @@ account before the active one reaches its rate limit:
 
 ```
 $ tycswap auto --seven-day-threshold 92
-Auto-switch running: 5h 85% · 7d 92% · model 95%, every 60s — Ctrl-C to stop
+Auto-switch running: 5h 85% · 7d 92%, every 60s — Ctrl-C to stop
 13:53:36  Account-1 (alice@example.com): usage unknown (http-429) (7d bar 92%) | others: #2: ? (http-429), #3: ?, #5: ? (http-429)
 13:53:36  no switch: active-usage-unknown (1/3 before failover)
 ```

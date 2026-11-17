@@ -257,8 +257,8 @@ func autoForegroundNotice(s ioStreams, on, loop, jsonMode, dryRun bool, merged s
 			dry = " (dry-run)"
 		}
 		fmt.Fprintln(s.out, printer.Dimmed(fmt.Sprintf(
-			"Auto-switch running: 5h %s%% · 7d %s%% · model %s%%, every %.0fs%s — Ctrl-C to stop",
-			pctText(merged.FiveHourThreshold), pctText(merged.SevenDayThreshold), pctText(merged.ModelThreshold),
+			"Auto-switch running: 5h %s%% · 7d %s%%, every %.0fs%s — Ctrl-C to stop",
+			pctText(merged.FiveHourThreshold), pctText(merged.SevenDayThreshold),
 			merged.IntervalSeconds, dry)))
 	}
 }
