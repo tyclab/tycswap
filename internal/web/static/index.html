@@ -135,41 +135,20 @@
   </section>
 
   <!-- ===================== Auto ===================== -->
+  <!-- One switch; what is counted is shown, not chosen (DESIGN A93). -->
   <section class="panel" id="panel-auto" role="tabpanel" aria-labelledby="tab-auto" hidden>
     <div class="grid2 w-2-3">
-      <div class="card" id="engine-card">
+      <div class="card" id="auto-card">
         <div class="card-head">
-          <div class="head-l"><h2>Auto-switch engine</h2><span id="auto-badge" class="chip"></span></div>
+          <div class="head-l"><h2>Auto-switch</h2><span id="auto-badge" class="chip"></span></div>
           <div class="head-r">
-            <span class="card-sub"><code>{{.Name}} auto</code></span>
+            <label class="switch" for="auto-switch"><input type="checkbox" id="auto-switch" role="switch"> Auto-switch</label>
           </div>
         </div>
-        <div id="auto-model-picker" class="model-picker">
-          <label for="model-limits-toggle">Count model limits</label>
-          <select id="model-limits-toggle" aria-label="Count model limits">
-            <option value="off">Follow sessions (default)</option><option value="all">All model windows</option><option value="selected">Selected models</option>
-          </select>
-          <div class="model-names"></div>
-          <button type="button" id="model-limits-save" class="btn btn-sm btn-primary">Save</button>
-          <span id="model-limits-which" class="card-sub"></span>
-        </div>
+        <p id="auto-state" class="card-sub auto-line"></p>
+        <p id="auto-counting" class="auto-line"></p>
+        <p id="auto-model-warning" class="notice notice-warn" role="status" hidden></p>
         <div id="auto-body"></div>
-        <div class="actions" id="auto-actions">
-          <button type="button" class="btn btn-primary" data-action="auto-start" data-dry="0" data-label="Start">Start</button>
-          <button type="button" class="btn" data-action="auto-start" data-dry="1" data-label="Start dry-run">Start dry-run</button>
-          <button type="button" class="btn" data-post="/api/auto/stop" data-label="Stop">Stop</button>
-          <button type="button" class="btn" data-post="/api/auto/wake" data-label="Wake" title="Poll now instead of waiting for the next interval">Wake</button>
-        </div>
-        <div class="slider-row">
-          <div class="slider-head">
-            <label for="threshold-slider">7d threshold, this run</label>
-            <output id="threshold-out" for="threshold-slider">–</output>
-          </div>
-          <input type="range" id="threshold-slider" min="50" max="100" step="1" value="97" list="threshold-ticks" aria-describedby="threshold-help">
-          <datalist id="threshold-ticks"><option value="50"></option><option value="60"></option><option value="70"></option><option value="80"></option><option value="90"></option><option value="100"></option></datalist>
-          <div class="ticks" aria-hidden="true"><span>50</span><span>60</span><span>70</span><span>80</span><span>90</span><span>100</span></div>
-          <p id="threshold-help" class="muted small">Applied live to the running engine, like the TUI's +/− keys; it is not saved. The saved value is <code>autoswitch.sevenDayThreshold</code> on the <a href="#settings">Settings tab</a>. It moves the 7d bar only: the 5h window keeps <code>autoswitch.fiveHourThreshold</code> and the model windows <code>autoswitch.model</code> counts keep <code>autoswitch.modelThreshold</code>.</p>
-        </div>
         <div id="quarantine-section" class="section" hidden>
           <h3>Quarantine</h3>
           <table class="tbl compact" id="quarantine-tbl">
@@ -189,33 +168,14 @@
         </table>
         <div id="nextbest-empty" class="empty-state" hidden>
           <span class="title">No other switchable account</span>
-          <span>Add a second account or enable a disabled one to give the engine somewhere to go.</span>
+          <span>Add a second account or enable a disabled one to give auto-switch somewhere to go.</span>
           <code>{{.Name}} enable &lt;num|email&gt;</code>
         </div>
       </div>
     </div>
 
     <!-- The settings editor is its own tab (A27); this is the short way there. -->
-    <p class="settings-link" id="auto-settings"><span id="auto-settings-note">The engine starts with the saved <code>autoswitch.*</code> settings: the 5h, 7d and model thresholds, poll interval, cooldown, hysteresis, strategy, model windows and the rest.</span> <a class="btn btn-sm" href="#settings">Edit them on the Settings tab</a></p>
-
-    <div class="card">
-      <div class="card-head">
-        <div class="head-l"><h2>Event log</h2><span id="log-count" class="chip chip-outline"></span></div>
-        <div class="log-toolbar">
-          <label class="sr-only" for="log-kind">Filter by kind</label>
-          <select id="log-kind"><option value="">All kinds</option></select>
-          <label class="switch" for="log-quiet"><input type="checkbox" id="log-quiet"> quiet events</label>
-          <label class="switch" for="log-follow"><input type="checkbox" id="log-follow" checked> follow</label>
-          <button type="button" class="btn btn-sm btn-ghost" id="log-clear">Clear</button>
-        </div>
-      </div>
-      <ul class="log" id="auto-log" aria-live="polite" aria-relevant="additions"></ul>
-      <div id="auto-log-empty" class="empty-state log-empty">
-        <span class="title">No events yet</span>
-        <span>Start the engine (dry-run is safe: it decides but never switches) and every poll, decision and switch lands here.</span>
-        <code>{{.Name}} auto --once</code>
-      </div>
-    </div>
+    <p class="settings-link" id="auto-settings"><span>The thresholds, account order and the other auto-switch settings are on the Settings tab; <code>autoswitch.model</code> is set with <code>{{.Name}} config</code>.</span> <a class="btn btn-sm" href="#settings">Edit them on the Settings tab</a></p>
   </section>
 
   <!-- ===================== Sessions ===================== -->
@@ -265,7 +225,7 @@
       <div class="card-head">
         <div class="head-l"><h2>Settings</h2><span id="settings-sub" class="card-sub"></span></div>
       </div>
-      <p class="muted settings-intro">Tray and dashboard edit the same settings. <strong>Reset</strong> restores a default. The model limits follow the models your sessions run unless <code>autoswitch.model</code> is set. Each setting says when a change takes effect.</p>
+      <p class="muted settings-intro"><strong>Reset</strong> restores a default. Each setting says when a change takes effect. The model limits follow the models your sessions run unless <code>autoswitch.model</code> is set, which only <code>{{.Name}} config</code> does. <em>Poll interval</em> is listed while this dashboard runs the checks.</p>
       <div class="settings-grid" id="settings-grid"></div>
       <div id="settings-empty" class="empty-state" hidden>
         <span class="title">Settings are not available in this build</span>
@@ -314,7 +274,7 @@
           <dt>At limit / eligible</dt>
           <dd>An account is <em>at limit</em> when any counted window is at 100 %. It is <em>eligible for rotation</em> when it is enabled, has stored credentials and is not the active one; those are the accounts Auto mode may pick.</dd>
           <dt>The thresholds</dt>
-          <dd>One bar per window, at which Auto mode considers that window full and looks for another account: <code>autoswitch.fiveHourThreshold</code> (<strong>85 %</strong> by default), <code>autoswitch.sevenDayThreshold</code> (<strong>97 %</strong>) and, for the counted model windows, <code>autoswitch.modelThreshold</code> (<strong>95 %</strong>). Each window is judged against its own bar. Set them on the Settings tab; the Auto tab's slider moves the 7d bar for the running engine only.</dd>
+          <dd>One bar per window, at which Auto mode considers that window full and looks for another account: <em>5-hour threshold</em> (<code>autoswitch.fiveHourThreshold</code>, <strong>85 %</strong> by default), <em>Weekly threshold</em> (<code>autoswitch.sevenDayThreshold</code>, <strong>97 %</strong>) and, for the counted model windows, <em>Model threshold</em> (<code>autoswitch.modelThreshold</code>, <strong>95 %</strong>). Each window is judged against its own bar. Set them on the Settings tab.</dd>
         </dl>
       </article>
 
@@ -343,33 +303,34 @@
 
       <article class="card guide-section" id="g-auto">
         <h2>Auto mode</h2>
-        <p>The engine polls every account's usage, and when one of the active account's windows crosses its own bar it switches to the best candidate and logs why, naming the window (<code>5h</code>, <code>7d</code> or <code>model</code>). Start and stop it on the Auto tab; the tab badge shows a dot while it runs. The engine here runs inside <code>{{.Name}} web</code>; <code>{{.Name}} auto</code> runs the same engine in a terminal. On a machine with Codex accounts both run the Codex engine beside it, which rotates Codex accounts on a bar of its own.</p>
+        <p>Auto-switch checks every account's usage, and when one of the active account's windows crosses its own bar it switches to the best candidate, naming the window (<code>5h</code>, <code>7d</code> or <code>model</code>) in the log. The <em>Auto-switch</em> switch on the Auto tab turns it on and off (it is <code>autoswitch.enabled</code>, the same switch as the tray's and <code>{{.Name}} auto on|off</code>); the tab badge says <em>on</em> or <em>off</em>. The line under the heading says who checks: a scheduler that runs <code>{{.Name}} auto --once</code> and when it last checked, or this dashboard and how often. On a machine with Codex accounts every check also rotates Codex accounts, on a bar of their own.</p>
+        <p><em>Counting now</em> says which windows auto-switch counts and why: with <code>autoswitch.model</code> unset it follows the models your live sessions run. When <code>autoswitch.model</code> is set, session following is off and the tab says so; <code>{{.Name}} config unset autoswitch.model</code> turns it back on. That setting is changed with <code>{{.Name}} config</code> only.</p>
         <h3>Settings that matter</h3>
         <dl class="guide-dl">
-          <dt>5h threshold</dt><dd><code>autoswitch.fiveHourThreshold</code>, <strong>85 %</strong> by default: the lowest of the three bars, because this window <em>bursts</em>. A fan-out of parallel subagents can take it from 85 % to full between two polls, and hitting 100 % stops you mid-task. Raise it only if you work in small, predictable steps; lower it (or poll more often) if you run wide fan-outs.</dd>
-          <dt>7d threshold</dt><dd><code>autoswitch.sevenDayThreshold</code>, <strong>97 %</strong> by default: the 7-day window is the account's whole budget, and it <em>creeps</em>, so it can be squeezed nearly full before moving. This is the bar the slider and the TUI's ± keys move. A settings file that still has the old single <code>autoswitch.threshold</code> seeds this bar.</dd>
-          <dt>Count model limits</dt><dd><code>autoswitch.model</code>: unset (<em>Follow sessions</em>, the default), the scheduled ticks count the model windows of the models the live default sessions run, while some usable account is below its bars on them, and 5h and 7d otherwise; the caption beside it says what is counted now and why. <em>all</em>, or a comma-separated list of model names, always counts those per-model weekly windows, so an account at a model's bar is skipped even if its 5h/7d meters are low. On the Settings tab it is <em>Model windows</em>, right above the model threshold: the windows the accounts report, alongside any saved names. Both tabs offer <em>Follow sessions (default)</em>, <em>All model windows</em>, or <em>Selected models</em>; choose the windows and press <em>Save</em>. Follow sessions clears the setting. Unreported saved names stay available.</dd>
-          <dt>Model threshold</dt><dd><code>autoswitch.modelThreshold</code>, <strong>95 %</strong> by default: the bar for a per-model weekly window, weekly too, so also high. It applies only to the windows <em>Count model limits</em> counts. A bar of 100 means "never move on this window before it is full", for any of the three.</dd>
-          <dt>Strategy</dt><dd><code>autoswitch.strategy</code>: <em>soonest-reset</em> (the default) prefers the account whose weekly window renews first, so several accounts are used evenly and none sits idle on a window that is about to renew; <em>best</em> takes the account with the most headroom right now.</dd>
-          <dt>Hysteresis, cooldown</dt><dd><code>autoswitch.hysteresisPct</code>: a target must beat the active account by this much, so two accounts at the same level do not flap. <code>autoswitch.cooldownSeconds</code>: the least time between two proactive switches.</dd>
+          <dt>5-hour threshold</dt><dd><code>autoswitch.fiveHourThreshold</code>, <strong>85 %</strong> by default: the lowest of the three bars, because this window <em>bursts</em>. A fan-out of parallel subagents can take it from 85 % to full between two checks, and hitting 100 % stops you mid-task. Raise it only if you work in small, predictable steps; lower it (or check more often) if you run wide fan-outs.</dd>
+          <dt>Weekly threshold</dt><dd><code>autoswitch.sevenDayThreshold</code>, <strong>97 %</strong> by default: the 7-day window is the account's whole budget, and it <em>creeps</em>, so it can be squeezed nearly full before moving. A settings file that still has the old single <code>autoswitch.threshold</code> seeds this bar.</dd>
+          <dt>Count model limits</dt><dd><code>autoswitch.model</code>: unset (the default), each check counts the model windows of the models the live default sessions run, while some usable account is below its bars on them, and 5h and 7d otherwise. <em>all</em>, or a comma-separated list of model names, always counts those per-model weekly windows, so an account at a model's bar is skipped even if its 5h/7d meters are low. Set it with <code>{{.Name}} config set autoswitch.model all</code>, clear it with <code>{{.Name}} config unset autoswitch.model</code>.</dd>
+          <dt>Model threshold</dt><dd><code>autoswitch.modelThreshold</code>, <strong>95 %</strong> by default: the bar for every counted per-model weekly window, the ones <code>autoswitch.model</code> names and the ones session following picks. A bar of 100 means "never move on this window before it is full", for any of the three.</dd>
+          <dt>Account order</dt><dd><code>autoswitch.strategy</code>: <em>soonest-reset</em> (the default) prefers the account whose weekly window renews first, so several accounts are used evenly and none sits idle on a window that is about to renew; <em>best</em> takes the account with the most headroom right now.</dd>
+          <dt>Minimum improvement, Switch cooldown</dt><dd><code>autoswitch.hysteresisPct</code>: a target must beat the active account by this much, so two accounts at the same level do not flap. <code>autoswitch.cooldownSeconds</code>: the least time between two proactive switches.</dd>
           <dt>API-key accounts</dt><dd>Auto-switch never moves onto, or off, an API-key account by itself. That is a change of <em>how</em> Claude Code authenticates, billed per token, and a session that is already running keeps its old login until you restart it, so only you can decide to make it. Switching to one by hand asks first. The header says so in red while one is active.</dd>
-          <dt>Dry run</dt><dd>Starts the engine so it logs what it <em>would</em> do without switching. Good for a first day.</dd>
+          <dt>Dry run</dt><dd><code>{{.Name}} auto --dry-run</code> in a terminal decides and prints what it <em>would</em> do without switching.</dd>
         </dl>
         <h3>Quarantine</h3>
-        <p>An account whose credentials stop working (expired refresh token, re-login required) is quarantined: the engine stops trying it and lists the reason. Choose <strong>Add account…</strong> and sign in as that Claude account to refresh it; the live login is untouched.</p>
-        <p class="muted">The <em>Next best</em> panel compares weekly, counted model-weekly, then 5-hour usage, with lower usage first. Soonest-reset mode keeps reset time first within each availability tier. Full accounts stay below usable ones; those whose counted full windows all reset within five hours lead the blocked group and are marked “at limit · resets &lt;5h”. Model limits affect ranking only when enabled. Each row shows why it is available or blocked.</p>
+        <p>An account whose credentials stop working (expired refresh token, re-login required) is quarantined: auto-switch stops trying it and lists the reason. Choose <strong>Add account…</strong> and sign in as that Claude account to refresh it; the live login is untouched.</p>
+        <p class="muted">The <em>Next best</em> panel compares weekly, counted model-weekly, then 5-hour usage, with lower usage first. Soonest-reset mode keeps reset time first within each availability tier. Full accounts stay below usable ones; those whose counted full windows all reset within five hours lead the blocked group and are marked “at limit · resets &lt;5h”. Model limits affect ranking only when counted. Each row shows why it is available or blocked.</p>
       </article>
 
       <article class="card guide-section" id="g-settings">
         <h2>Settings</h2>
-        <p>The Settings tab lists every key of <code>settings.json</code> with its type, range, default and current value, and saves or resets one key at a time; it is <code>{{.Name}} config</code> in the browser. Every key is an <code>autoswitch.*</code> key today: the three thresholds, the poll interval, the cooldown, the hysteresis, the strategy, the model windows, how many failed polls make an account unhealthy, and the Codex engine's own switch and threshold.</p>
-        <p>A saved value is validated like <code>config set</code> (an out-of-range number is refused and nothing is written), and every row says when it takes effect. An auto-switch engine reads the settings when it starts (here, in <code>{{.Name}} tui</code> or in <code>{{.Name}} auto</code>), so a running one keeps what it started with; only <code>autoswitch.model</code> reaches a running engine on this page at once. The Codex keys are read when this page's engine (with Codex accounts) or <code>{{.Name}} auto</code> starts, never by the terminal dashboard's.</p>
+        <p>The Settings tab lists the keys of <code>settings.json</code> with their type, range, default and current value, and saves or resets one key at a time; it is <code>{{.Name}} config</code> in the browser, except for <code>autoswitch.model</code>, which only <code>{{.Name}} config</code> sets. Every key is an <code>autoswitch.*</code> key today: the three thresholds, the poll interval, the switch cooldown, the minimum improvement, the account order, how many failed polls make an account unhealthy, and Codex auto-switch with its own threshold. <em>Poll interval</em> is listed only while this dashboard runs the checks: a scheduler's <code>auto --once</code> never reads it.</p>
+        <p>A saved value is validated like <code>config set</code> (an out-of-range number is refused and nothing is written), and every row says when it takes effect. A scheduler's next check reads the saved settings; an engine hosted in <code>{{.Name}} web</code>, <code>{{.Name}} tui</code> or <code>{{.Name}} auto</code> reads them when it starts and keeps them while it runs, except <em>Auto-switch</em> itself, which every check reads.</p>
       </article>
 
       <article class="card guide-section" id="g-sessions">
         <h2>Sessions</h2>
         <p>The session list shows each Claude conversation's project, state and captured model. Every session runs on the default login, and tycswap moves that login by itself: each session's status line tells it the model the session runs, so while a Fable session runs the login stays on an account that can run Fable, and while none does, Fable-capable accounts are kept for Fable work. Subagents run on their session's login.</p>
-        <p>The Windows tray opens an account table. Each percentage names its limit; 100% in Fable does not mean the shared weekly limit is full. Focus a row for reset times and freshness, or click a column to sort. Settings in the tray and here share the same values. Click Weekly, 5-hour or a model limit to sort; click again to reverse. <em>Next best</em> restores availability ordering. Display sorting does not change automatic rotation.</p>
+        <p>The Windows tray opens an account table. Each percentage names its limit; 100% in Fable does not mean the shared weekly limit is full. Focus a row for reset times and freshness, or click a column to sort. The tray's Auto-switch toggle and the Auto tab's switch are the same setting. Click Weekly, 5-hour or a model limit to sort; click again to reverse. <em>Next best</em> restores availability ordering. Display sorting does not change automatic rotation.</p>
         <p>Session groups are retired. A former group hands its account back once its last session exits, and its conversations are copied into the default profile, so <code>claude --resume</code> continues them.</p>
         <h3>Continue in the other tool</h3>
         <p>After a captured, corroborated limit, tycswap first tries a compatible account. If none is expected within 30 minutes and the other provider can run, a recovery card offers <em>Continue in Codex / Claude</em> or <em>Wait</em>. Set <code>autoswitch.handoverWaitMinutes</code> to 15 for an earlier offer. Unknown or stale resets remain unknown; overload and network failures alone do not trigger it.</p>
@@ -384,7 +345,7 @@
 
       <article class="card guide-section" id="g-codex">
         <h2>Codex accounts</h2>
-        <p>{{.Name}} switches Codex (ChatGPT) accounts too, under <code>{{.Name}} codex</code>: <code>list</code>, <code>status</code>, <code>switch</code>, <code>add</code>, <code>login</code>, <code>alias</code>, <code>export</code> and <code>import</code>. The terminal dashboard (<code>{{.Name}} tui</code>) shows them beside the Claude accounts, and <code>{{.Name}} auto</code> rotates them when <code>autoswitch.codexEnabled</code> is on (its own bar is <code>autoswitch.codexThreshold</code>; 0 means the Claude 7d threshold). On this page the Codex accounts are listed under their own heading after the Claude ones, with <em>Switch</em>, <em>Disable</em> / <em>Enable</em> and <em>Remove</em>; <em>+ Add current Codex login</em> stores the account the codex CLI is signed in with, and the Auto tab's Start runs the Codex engine beside the Claude one, with its own tile and its ticks in the event log.</p>
+        <p>{{.Name}} switches Codex (ChatGPT) accounts too, under <code>{{.Name}} codex</code>: <code>list</code>, <code>status</code>, <code>switch</code>, <code>add</code>, <code>login</code>, <code>alias</code>, <code>export</code> and <code>import</code>. The terminal dashboard (<code>{{.Name}} tui</code>) shows them beside the Claude accounts, and auto-switch rotates them wherever it runs when <em>Codex auto-switch</em> (<code>autoswitch.codexEnabled</code>) is on; its own bar is <em>Codex threshold</em> (<code>autoswitch.codexThreshold</code>; 0 = same as the weekly threshold). On this page the Codex accounts are listed under their own heading after the Claude ones, with <em>Switch</em>, <em>Disable</em> / <em>Enable</em> and <em>Remove</em>; <em>+ Add current Codex login</em> stores the account the codex CLI is signed in with, and the Auto tab shows Codex auto-switch in its own tile.</p>
       </article>
 
       <article class="card guide-section" id="g-cli">
@@ -400,7 +361,7 @@
             <tr><td>Switch to the best account</td><td><code>{{.Name}} switch --strategy best</code></td></tr>
             <tr><td>Run Claude once as account 2</td><td><code>{{.Name}} run 2 -- --resume</code></td></tr>
             <tr><td>Pin a shell to an account</td><td><code>eval "$({{.Name}} env 2)"</code></td></tr>
-            <tr><td>Auto mode in the foreground</td><td><code>{{.Name}} auto --seven-day-threshold 92</code></td></tr>
+            <tr><td>Auto mode in the foreground</td><td><code>{{.Name}} auto --seven-day-threshold 92</code> · dry run: <code>auto --dry-run</code></td></tr>
             <tr><td>Show, set or reset a setting</td><td><code>{{.Name}} config</code> · <code>config set autoswitch.sevenDayThreshold 92</code> · <code>config unset autoswitch.model</code></td></tr>
             <tr><td>Codex accounts</td><td><code>{{.Name}} codex list</code> · <code>codex switch 2</code> · <code>codex add</code></td></tr>
             <tr><td>Export / import accounts (<strong>plain text</strong>: it holds live credentials, so treat the file like a password)</td><td><code>{{.Name}} export accounts.{{.Name}}</code> · <code>import accounts.{{.Name}}</code></td></tr>
@@ -420,7 +381,7 @@
         <details class="guide-faq"><summary>Claude Code ignores the stored login altogether</summary><p>An <code>ANTHROPIC_API_KEY</code>, <code>ANTHROPIC_AUTH_TOKEN</code>, <code>CLAUDE_CODE_OAUTH_TOKEN</code> or <code>ANTHROPIC_BASE_URL</code> in the environment, or in the <code>env</code> block of Claude Code's <code>settings.json</code>, takes the place of the login. The Dashboard says so above the accounts when it sees one; unset the variable or remove the key.</p></details>
         <details class="guide-faq"><summary>An account says “re-login needed” or “token expired”</summary><p>Its refresh token was revoked or expired. Choose <strong>Add account…</strong> and sign in as that Claude account; its slot and alias stay the same. If it is the live account, signing in again in Claude Code and <em>Add current login</em> does the same.</p></details>
         <details class="guide-faq"><summary>“Usage unavailable”</summary><p>The last usage read failed or is stale (offline, or the usage endpoint hiccuped). The meters keep the last good values; they refresh on the next poll.</p></details>
-        <details class="guide-faq"><summary>Auto mode switched to an account I did not expect</summary><p>Open the Auto tab: <em>Next best</em> shows candidates and their limits, and the event log records every decision. Usually the answer is a per-model window: choose and save the windows under <em>Count model limits</em> if you care about a model's weekly headroom.</p></details>
+        <details class="guide-faq"><summary>Auto mode switched to an account I did not expect</summary><p>Open the Auto tab: <em>Counting now</em> says which windows are counted and <em>Next best</em> shows candidates and their limits; a scheduler's journal (or the terminal running <code>{{.Name}} auto</code>) prints each check's decision. Usually the answer is a per-model window: <code>{{.Name}} config set autoswitch.model</code> counts the ones you name if you care about a model's weekly headroom.</p></details>
         <details class="guide-faq"><summary>“Not switchable” on an account</summary><p>Its stored credential or config backup is missing, typically after Claude Code changed its file layout. Re-add the account.</p></details>
         <details class="guide-faq"><summary>The Updates card says it could not check</summary><p>The release endpoint or Claude Code's source could not be read (offline, a proxy, a rate limit). What the last successful check found still shows, and <em>Check now</em> asks again. <code>{{.Name}} upgrade</code> in a terminal says the same for this program.</p></details>
         <details class="guide-faq"><summary>The dashboard lost its connection</summary><p>The dashboard only ever listens on this machine (127.0.0.1). If the process was stopped, run <code>{{.Name}} web</code> again and open the URL it prints: the old page's tokens are dead, so the page says “session ended” rather than retrying.</p></details>

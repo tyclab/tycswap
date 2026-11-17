@@ -425,24 +425,6 @@ func TestStaticElRefusesUnsafeAttributes(t *testing.T) {
 	}
 }
 
-// The live threshold slider and Wake act on an engine hosted in this
-// process, so they are off while none is (an external scheduler's ticks);
-// the State tile names that scheduler, and the dry-run Start is offered
-// unless an engine hosted here is live (DESIGN A83).
-func TestStaticAutoControlsFollowHosted(t *testing.T) {
-	js := staticFile(t, "app.js")
-	for _, want := range []string{
-		"slider.disabled = !a.available || !a.hosted;",
-		"actions.querySelector('[data-post=\"/api/auto/wake\"]').disabled = !a.hosted;",
-		"b.disabled = !a.available || (b.getAttribute('data-dry') === '1' ? a.hosted && a.running : a.running);",
-		"'scheduled by ' + a.owner",
-	} {
-		if !strings.Contains(js, want) {
-			t.Errorf("app.js lacks %s", want)
-		}
-	}
-}
-
 // After a restart the page's tokens are dead: the stream must stop retrying
 // and say so, and token status comes from the stream, not a stale copy.
 func TestStaticStreamStopsOnDeadSession(t *testing.T) {
@@ -480,8 +462,7 @@ func TestStaticCodexRows(t *testing.T) {
 	}
 	for _, want := range []string{
 		"el('tr', { class: 'provider-head' }", "var codex = codexRows(st);", "'add-current-codex': function", "{ provider: 'codex' }",
-		"api('POST', url).then(codexRestartNote)", "if (a.codex) { tiles.appendChild(codexTile(a.codex)); }",
-		"ev.provider === 'codex'",
+		"api('POST', url).then(codexRestartNote)", "if (a.codex) { tiles.appendChild(codexTile(st, a.codex)); }",
 		// Only Codex rows: no "No managed accounts yet" over them.
 		"$('accounts-empty').hidden = list.length > 0 || codex.length > 0;",
 		// The restart note is something to act on, not a failure.
