@@ -103,7 +103,7 @@ func TestSelectBestSwitchable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newTestStore(t, nil)
 			setupAccounts(t, s, tc.slots, tc.disabled)
-			target, note := selectBestSwitchable(s, tc.current, nil, tc.usage)
+			target, note := selectBestSwitchable(s, tc.current, tc.usage)
 			if target != tc.wantTarget || note != tc.wantNote {
 				t.Fatalf("got (%q, %q), want (%q, %q)", target, note, tc.wantTarget, tc.wantNote)
 			}
@@ -111,58 +111,17 @@ func TestSelectBestSwitchable(t *testing.T) {
 	}
 }
 
-// TestSelectBestSwitchableWithModels folds a named scoped window into the
-// headroom comparison: the scoped 100% binds even when 5h/7d have room.
-func TestSelectBestSwitchableWithModels(t *testing.T) {
+// TestSelectBestSwitchableCountsFiveHourAndWeekOnly: `switch --strategy best`
+// has no model list since --model and autoswitch.model went (DESIGN A97), so
+// a spent Fable week does not steer it: both accounts look alike.
+func TestSelectBestSwitchableCountsFiveHourAndWeekOnly(t *testing.T) {
 	s := newTestStore(t, nil)
 	setupAccounts(t, s, []int{1, 2}, nil)
 	usage := map[string]any{
-		"1": scopedUsage(10, "Fable", 100), // Fable at limit ⇒ headroom 0
-		"2": scopedUsage(10, "Fable", 10),  // Fable has room ⇒ headroom 90
+		"1": scopedUsage(10, "Fable", 100),
+		"2": scopedUsage(10, "Fable", 10),
 	}
-	// Without models the scoped window is invisible: both look identical (hr 90).
-	if target, note := selectBestSwitchable(s, "1", nil, usage); target != "" || note != "stay" {
-		t.Fatalf("no models: got (%q,%q), want (\"\",\"stay\")", target, note)
+	if target, note := selectBestSwitchable(s, "1", usage); target != "" || note != "stay" {
+		t.Fatalf("got (%q,%q), want (\"\",\"stay\")", target, note)
 	}
-	// With models=[Fable], account 1 is exhausted, account 2 has room.
-	if target, note := selectBestSwitchable(s, "1", []string{"Fable"}, usage); target != "2" || note != "" {
-		t.Fatalf("models=Fable: got (%q,%q), want (\"2\",\"\")", target, note)
-	}
-}
-
-func TestWarnInertModels(t *testing.T) {
-	t.Run("fires when every account readable and a model is unseen", func(t *testing.T) {
-		resetSeams(t)
-		usage := map[string]any{
-			"1": scopedUsage(0, "Fable", 0),
-			"2": scopedUsage(0, "Fable", 0),
-		}
-		var warnings []string
-		warnInertModels(usage, []string{"Fable", "Ghost"}, true, &warnings)
-		want := "model(s) Ghost match no account's usage windows (typo?)"
-		if len(warnings) != 1 || warnings[0] != want {
-			t.Fatalf("warnings = %v, want [%q]", warnings, want)
-		}
-	})
-	t.Run("silent when an account's usage is not a dict", func(t *testing.T) {
-		resetSeams(t)
-		usage := map[string]any{
-			"1": scopedUsage(0, "Fable", 0),
-			"2": "api key", // unreadable ⇒ could be the one carrying the window
-		}
-		var warnings []string
-		warnInertModels(usage, []string{"Ghost"}, true, &warnings)
-		if len(warnings) != 0 {
-			t.Fatalf("warnings = %v, want none", warnings)
-		}
-	})
-	t.Run("the all sentinel never warns", func(t *testing.T) {
-		resetSeams(t)
-		usage := map[string]any{"1": scopedUsage(0, "Fable", 0)}
-		var warnings []string
-		warnInertModels(usage, []string{"all"}, true, &warnings)
-		if len(warnings) != 0 {
-			t.Fatalf("warnings = %v, want none", warnings)
-		}
-	})
 }

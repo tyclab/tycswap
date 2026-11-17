@@ -37,11 +37,6 @@ func crossFlagValidate(prog string, p *parsed, stderr io.Writer) parseResult {
 		return fail("--strategy can only be used with bare 'switch'")
 	}
 
-	// 6. --model with strategy unset.
-	if p.model != nil && p.strategy == nil {
-		return fail("--model can only be used with 'switch --strategy best' or 'switch --strategy next-available'")
-	}
-
 	// 7. --slot without add|add-token.
 	if p.slot != nil && !(p.addAccount || p.addToken != nil) {
 		return fail("--slot can only be used with 'add' or 'add-token'")

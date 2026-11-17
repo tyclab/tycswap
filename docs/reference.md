@@ -15,7 +15,7 @@ tycswap status [--json]                       show the active account
 tycswap switch [--json]                       rotate to the next account
 tycswap switch <NUM|EMAIL|ALIAS> [--json] [--force] [--yes]
                                             switch to a specific account
-tycswap switch --strategy {best|next-available} [--model NAMES] [--json]
+tycswap switch --strategy {best|next-available} [--json]
                                             pick the target by remaining quota
 tycswap add [--slot NUM] [--alias NAME]       snapshot the current login as an account
 tycswap add --login [--switch] [--slot NUM] [--alias NAME] [-- LOGIN-ARGS...]
@@ -35,7 +35,7 @@ tycswap start --allow ID | --disallow ID | --list
                                             manage startup marks (Claude accounts)
 tycswap auto [--once] [--json] [--interval SECONDS] [--five-hour-threshold PCT]
            [--seven-day-threshold PCT] [--model-threshold PCT] [--cooldown SECONDS]
-           [--model NAMES] [--dry-run]      auto-switch when nearing rate limits
+           [--dry-run]                      auto-switch when nearing rate limits
 tycswap config [list] [--json]                show settings
 tycswap config get <KEY> [--json]             read one setting
 tycswap config set <KEY> <VALUE>              change one setting
@@ -365,7 +365,7 @@ alice@example.com
 ```
 tycswap switch [--json] [--debug]
 tycswap switch <NUM|EMAIL|ALIAS> [--json] [--force] [--yes] [--debug]
-tycswap switch --strategy {best|next-available} [--model NAMES] [--json] [--debug]
+tycswap switch --strategy {best|next-available} [--json] [--debug]
 ```
 
 ### Options
@@ -376,7 +376,6 @@ tycswap switch --strategy {best|next-available} [--model NAMES] [--json] [--debu
 | `--force` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; activates without backing up the current login first. When the live credential already belongs to the target while `~/.claude.json` names another slot, it repairs the config instead, as without `--force` (DESIGN A68). |
 | `--yes` / `-y` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; answers the API-key confirmation below, for scripts. |
 | `--strategy` | choice `best` \| `next-available` | unset | Only with bare `switch` (no target). |
-| `--model` | string (comma-separated names) | unset | Only with `switch --strategy`. |
 | `--debug` | flag | off | — |
 
 ### Description
@@ -384,9 +383,9 @@ tycswap switch --strategy {best|next-available} [--model NAMES] [--json] [--debu
 Bare `tycswap switch` rotates to the next account in the sequence. `tycswap switch
 <NUM|EMAIL|ALIAS>` activates a specific account. `--strategy best` picks the
 account with the most remaining 5h/7d quota; `--strategy next-available`
-rotates, skipping rate-limited accounts. `--model` adds the named models'
-per-model weekly limits to the quota computation for the usage-aware
-strategies.
+rotates, skipping rate-limited accounts. Both strategies count the 5h and 7d
+windows only: the `--model` flag that added per-model weekly limits was
+removed (DESIGN A97) and exits 2.
 
 Switching onto an **API-key account** is the one switch that asks first
 (DESIGN A33). It replaces the subscription login with a managed key billed per
@@ -563,9 +562,7 @@ credential and Claude Code's `settings.json` are left alone. The target's
 identity is written into `~/.claude.json` and into the target's stored config.
 The target's stored credential is refreshed from the live one when only its
 access token has rotated, and `activeAccountNumber` becomes the target. `from`
-and `to` are both the target (DESIGN A68). A bare `switch --strategy` with
-`--model` additionally emits `models` (array of string) and `modelSource`
-(`cli` or `autoswitch.model`).
+and `to` are both the target (DESIGN A68).
 
 ### Errors
 
@@ -574,8 +571,7 @@ and `to` are both the target (DESIGN A68). A bare `switch --strategy` with
 | `No account found with identifier: <id>` | `AccountNotFoundError`, exit 1 |
 | `argument --strategy: invalid choice: '<v>' (choose from 'best', 'next-available')` | usage, exit 2 |
 | `--strategy can only be used with bare 'switch'` | usage, exit 2 |
-| `--model can only be used with 'switch --strategy best' or 'switch --strategy next-available'` | usage, exit 2 |
-| `argument --model: must not contain a control character` (TAB, LF, VT, FF, CR and NEL become spaces) | usage, exit 2 |
+| `--model was removed: auto-switch counts the models the sessions run.` (the one stderr line for any `--model`, DESIGN A97) | usage, exit 2 |
 | `--force can only be used with 'import' or 'switch <num\|email>'` | usage, exit 2 |
 | `--yes can only be used with 'switch <num\|email>'` | usage, exit 2 |
 | ``Account-<n> authenticates with an API key. Switching to it changes how Claude Code authenticates, and every Claude Code session that is already running keeps its current login until you restart it. Confirm the switch to go ahead: `tycswap switch <n>` asks first.`` | `ValidationError`, exit 1: a switch onto an API-key account without an approval (`--json` without `--yes`) |
@@ -1409,7 +1405,7 @@ installed (DESIGN A78), so a session that still runs it is not blocked.
 ```
 tycswap auto [--once] [--json] [--interval SECONDS] [--five-hour-threshold PCT]
            [--seven-day-threshold PCT] [--model-threshold PCT] [--cooldown SECONDS]
-           [--model NAMES] [--dry-run] [--debug] [--observe]
+           [--dry-run] [--debug] [--observe]
 tycswap auto on [--if-unset]
 tycswap auto off
 tycswap auto status [--json]
@@ -1424,9 +1420,8 @@ tycswap auto status [--json]
 | `--interval` | float seconds | `autoswitch.intervalSeconds` (60) | Clamped to 15–3600. |
 | `--five-hour-threshold` | float percent | `autoswitch.fiveHourThreshold` (85) | Clamped to 50–100. |
 | `--seven-day-threshold` | float percent | `autoswitch.sevenDayThreshold` (97) | Clamped to 50–100. |
-| `--model-threshold` | float percent | `autoswitch.modelThreshold` (95) | Clamped to 50–100; applies only to the windows `--model` / `autoswitch.model` counts. |
+| `--model-threshold` | float percent | `autoswitch.modelThreshold` (95) | Clamped to 50–100; applies to every model window session following counts. |
 | `--cooldown` | float seconds | `autoswitch.cooldownSeconds` (300) | Clamped to 0–86400. |
-| `--model` | string (comma names) | `autoswitch.model` | Adds per-model weekly limits. |
 | `--dry-run` | flag | off | Evaluate and report but never switch. |
 | `--debug` | flag | off | — |
 | `--observe` | flag | off | Implies `--once`. Reads Claude Code's status line JSON on stdin; see below. |
@@ -1491,7 +1486,7 @@ moving onto or off an API key changes how Claude Code authenticates, which a
 running session does not pick up, so only the user makes that switch.
 
 **One bar per window** (DESIGN A34). The 5h window, the 7d window and each
-per-model weekly window `autoswitch.model` counts are judged against bars of
+per-model weekly window session following counts are judged against bars of
 their own: `autoswitch.fiveHourThreshold` (85), `autoswitch.sevenDayThreshold`
 (97) and `autoswitch.modelThreshold` (95). The 5h window bursts (a fan-out of
 parallel subagents can fill it between two polls), so its bar is the lowest;
@@ -1510,7 +1505,7 @@ running: 5h 85% · 7d 97% · model 95%, every 60s`); the poll line carries the
 7d bar (`(7d bar 97%)`); the `below-threshold` reason names the window closest
 to its own bar (`7d 50% < 97%`), and a switch names the window that made it
 (`(proactive, 5h)`). The poll cadence escalates on the lowest bar in force (the
-model bar only while `autoswitch.model` counts something), so from 15 points
+model bar only while a model window is counted), so from 15 points
 under the 5h bar the active account is fetched more often. A `settings.json`
 that still carries the single `autoswitch.threshold` seeds the 7d bar.
 
@@ -1521,8 +1516,8 @@ tried is governed by `autoswitch.strategy` — earliest weekly renewal first
 [SETTINGS](#settings) for the ordering rules.
 
 **A login without a counted model's window hands over** (DESIGN A73). When the
-active account reports usage but no window for a model `autoswitch.model`
-counts, while another account reports one (a Pro login when Fable is counted),
+active account reports usage but no window for a counted model, while
+another account reports one (a Pro login when Fable is counted),
 the tick moves to an account that reports it and is below every bar: the
 `switch` line names the `model-missing` trigger and no window, and with no such
 account the tick reports `no-switch` with reason `model-missing-no-target` and
@@ -1530,12 +1525,13 @@ stays. The cooldown of the engine's own switch does not hold this move (a
 switch by hand's does, DESIGN A94): the sessions that run the model
 cannot run at all until the login moves (DESIGN A77).
 
-**The default login follows its sessions' models** (DESIGN A76). While
-`autoswitch.model` is unset, a `--once` tick counts the per-model windows of
-the model families the default profile's live sessions run, as recorded by
-`--observe` from their status lines. A set `autoswitch.model` or `--model`
-always wins, and with no records nothing is counted. The loop and the dashboard's hosted engine keep
-their configured models.
+**The default login follows its sessions' models** (DESIGN A76, A97). A
+`--once` tick counts the per-model windows of the model families the default
+profile's live sessions run, as recorded by `--observe` from their status
+lines; with no records nothing is counted. No setting or flag replaces that
+set: `autoswitch.model` and `--model` were removed (DESIGN A97). The loop and
+the dashboard's or the TUI's hosted engine never follow sessions and count 5h
+and 7d only.
 
 **A derived model nobody can serve is not counted** (DESIGN A91). A model
 counted this way stays counted only while some account the tick may use (enabled,
@@ -1561,7 +1557,7 @@ next fetch while its last reading is still trusted, in practice younger than
 reset; otherwise it becomes one after that fetch.
 
 **The default login leaves Fable-capable accounts to Fable work** (DESIGN
-A77, A91). While `autoswitch.model` is unset and every live default session has a
+A77, A91). While every live default session has a
 recorded model, none of them Fable, the scheduled tick reserves every account
 that can continue Fable (its plan, or a recorded `fableContinue` capability)
 and still has Fable room: it reports a Fable window under
@@ -1627,7 +1623,7 @@ below the active account. The Codex threshold is `autoswitch.codexThreshold`,
 or the effective `--seven-day-threshold` / `autoswitch.sevenDayThreshold` when
 that is 0 (DESIGN A34); at 100 it moves only off an account at its limit. An
 account with no measurement is never switched away from. Cooldown, quarantine
-and `--model` apply to Claude only; Codex API-key accounts are never targets,
+and the counted model windows apply to Claude only; Codex API-key accounts are never targets,
 as Claude ones are not. `--dry-run` applies to both engines.
 
 The dashboard's Auto tab (`tycswap web`) runs the same Codex engine beside its
@@ -1646,7 +1642,7 @@ Reads `sequence.json`, `settings.json`, `cache/usage.json`. `on` and `off`
 write `autoswitch.enabled` in `settings.json` under `.settings.lock`, as
 `tycswap config set` does. Reads and writes
 `autoswitch_state.json` (cooldown, quarantine, the active account's failover
-count and idle-hold start, and the last model-name check, DESIGN A66) under
+count and idle-hold start) under
 `.autoswitch_state.lock`.
 Reads and writes `live_lineage.json`, and harvests a token Claude Code
 refreshed itself into the live slot's backup, as `list` does; `--dry-run`
@@ -1713,7 +1709,7 @@ A handled error in `--json` mode is emitted as the compact error envelope
 |---------|------|
 | `argument --interval: invalid float value: '<v>'` (and each `--*-threshold`, `--cooldown`) | 2 |
 | `argument --interval: expected one argument` (and the others) | 2 |
-| `argument --model: must not contain a control character` (TAB, LF, VT, FF, CR and NEL become spaces) | 2 |
+| `--model was removed: auto-switch counts the models the sessions run.` (the one stderr line for `--model`, DESIGN A97) | 2 |
 | `unrecognized arguments: <tok>` (including the removed `--threshold`, and anything after `on`, `off` or `status` they do not take) | 2 |
 | A `ClaudeSwitchError` before the loop | 1 |
 
@@ -1794,18 +1790,6 @@ range, wrong type, corrupt file); `2` on a usage error.
   ```
 - `get` (human): the bare value; `get --json`:
   `{"schemaVersion":1,"key":"<k>","value":<v>,"isSet":<bool>}`.
-- A stored free-text value is read clean: TAB, LF, VT, FF, CR and NEL read as
-  spaces, and any other control character is removed (the rest of an escape
-  sequence stays as plain text: `Opus<ESC>[2J` reads `Opus[2J`). Every reader
-  (switching, the at-limit markers, `start`, the tray, the auto loop) uses that
-  clean value; a value of control characters only reads as unset. The screens
-  that show the setting say so: `list` and `get` print the clean value and
-  `warning: <key>: the stored value held terminal control characters, which
-  were removed; save it again to clean the file: 'tycswap config set <key>
-  <value>' or 'tycswap config unset <key>'` on stderr, and `--json` adds
-  `"cleaned":true` and that sentence as `"notice"`; the settings menus, the
-  TUI's Settings row and the dashboard's settings row carry the same notice.
-  No control character is printed.
 - `set`: `<key> = <value>`.
 - `unset`: `<key> unset (default: <default>)`, or the stderr notice
   `<key> is not set; nothing to do` (exit 0) when it was not set.
@@ -1824,8 +1808,6 @@ range, wrong type, corrupt file); `2` on a usage error.
 | `<key> expects an integer, got "<v>"` / `expects a number, got "<v>"` | 1 |
 | `<key> expects true or false (or 1/0, yes/no), got "<v>"` | 1 |
 | `<key> must be one of: <choices>` | 1 |
-| `<key> expects a non-empty value; use 'tycswap config unset <key>' to clear it` | 1 |
-| `<key> must not contain a control character` (free text; TAB, LF, VT, FF, CR and NEL become spaces first) | 1 |
 
 ### Example
 
@@ -2108,14 +2090,13 @@ approval and the failure shows why (DESIGN A33), naming `tycswap switch <n>`,
 which asks first.
 
 The Settings screen (`c`, or the menu's "Settings…" row) shows every key of
-`settings.json` (see [SETTINGS](#settings)) but `autoswitch.model`, which
-`tycswap config` alone sets (DESIGN A93), under its section, with its
+`settings.json` (see [SETTINGS](#settings)) under its section, with its
 effective value and a `(default)` marker on a key that is not set, as
 `tycswap config list` prints them (which lists the dotted keys without
 section headers); the highlighted key's help text, kind, range or choices,
 and default are shown below the rows. `enter` edits the
 highlighted key with a control matching its kind: a bool toggles and a
-choice cycles, saved at once; a number or string opens an inline input over
+choice cycles, saved at once; a number opens an inline input over
 the current value. A typed value is validated the way `tycswap config set`
 validates it — out of range, wrong type or empty is refused with the same
 message, shown under the rows, and nothing is written. `u` removes the key so
@@ -2138,14 +2119,14 @@ applies when the engine next starts. In the TUI that is the next time the
 auto-switch screen is opened (it starts its engine from the file), for a
 `tycswap auto` process its next launch, and for the engine `tycswap web`
 runs its next start from that dashboard. Outside the engine, the at-limit
-markers and `tycswap switch` read `autoswitch.model` from the file each time,
-so they follow a change on the next poll or command. The auto-switch
+markers count the models the live sessions run, read afresh on every poll
+(DESIGN A91, A97). The auto-switch
 screen's own `t` threshold adjustment moves the 7d bar, the account's whole
 budget, and nothing else (DESIGN A34); it remains session-only and is never
 written to the file; its hint says so and points at Settings for a change
 that should persist. The screen's summary line names every bar in force
-(`switch at 5h 85% · 7d 97%`, then `· model 95%` while `autoswitch.model`
-counts a window), marks the 7d bar `(session)` once the adjustment moved it,
+(`switch at 5h 85% · 7d 97%`; the engine it starts counts no model window,
+so no model bar shows, DESIGN A97), marks the 7d bar `(session)` once the adjustment moved it,
 and logs `— 7d threshold set to <n>% for this session —`. The *Next best*
 panel ranks the way the engine decides: a row counts as at threshold when any
 of its windows has reached the bar that governs it, and `best` orders by the
@@ -2302,10 +2283,10 @@ minus the leading "resets": the column heading above it already names the
 window, so the cell does not repeat it on every row.
 
 Which windows count toward a row's rank — and toward the auto engine's own
-pick — is a narrower set: `5h` and `7d` always, plus a per-model window named
-by `autoswitch.model` (see SETTINGS below). Every other per-model window
-still gets a column — so it can be watched before it is configured to
-matter — but never moves any row's rank. Emphasis is per cell, not per row,
+pick — is a narrower set: `5h` and `7d` only, since the engine the TUI
+starts does not follow sessions (DESIGN A97). Every per-model
+window still gets a column — so it can be watched — but never moves any
+row's rank. Emphasis is per cell, not per row,
 since which window binds a candidate's rank varies from row to row within
 one column, and it reads three ways, not two. Severity color states what a
 figure MEANS, and every COUNTED figure carries it — the same color the
@@ -2325,7 +2306,7 @@ uncounted window is never that. Only a window that is BOTH uncounted and
 short of its limit carries neither color nor bold: muted and dim. This
 third level matters most on the dashboard's accounts monitor, whose columns
 are never counted at all — its ranking axis is always the bare `5h`/`7d`
-pair, never `autoswitch.model` — so without it a per-model window that had
+pair — so without it a per-model window that had
 run completely out would read there exactly as one sitting at 40% does; the
 per-row layout the table replaces has always flagged that case outright (as
 `Fable (!)`, further below), and the table states the same fact in color
@@ -2347,10 +2328,9 @@ varies: the cell carrying the row's ranking figure is on the table, and it
 is the row's one bold cell.
 
 A column heading is always muted, and additionally dim when its window is
-uncounted on the currently configured axis, so a dimmed heading and the
-header's own `Next best · counting 5h, 7d` note (`Next best · counting 5h, 7d, Fable` with
-`autoswitch.model` set; `Next best · counting 5h, 7d, all models` for the
-`all` sentinel) always agree about which columns matter to the ranking.
+uncounted on the engine's axis, so a dimmed heading and the
+header's own `Next best · counting 5h, 7d` note always agree about which
+columns matter to the ranking.
 
 No line of the table ever wraps, regardless of terminal width. A table that
 does not fit narrows one reduction at a time, re-measuring after each: the
@@ -2474,8 +2454,8 @@ so a window reads the same way in both places. Each row's label cell carries
 the account's identity exactly as it always has: the alias form
 `alias (email)` when an alias is set, else the bare email, then `[tag]`,
 then a `(disabled)` marker in the warning color when the account is
-disabled. Which windows count stays `5h` and `7d` here regardless of
-`autoswitch.model` — the axis this monitor has always used — so a per-model
+disabled. Which windows count stays `5h` and `7d` here — the axis this
+monitor has always used — so a per-model
 window is always an uncounted column: muted and dim short of its limit, but
 carrying its full severity color, the same as a counted figure, from the
 moment it runs out — an exhausted per-model window is the one figure on
@@ -2710,9 +2690,7 @@ tabs:
   every <interval> s by this dashboard`; while off, `not checked while off`
   (with the last check under an owner). The tab badge says `on` or `off` with
   the same line as its tooltip. `Counting now: <caption>` is the state's
-  `auto.counting.caption` (DESIGN A91); while `autoswitch.model` is set one
-  warning line says its value, that session following is off, and `tycswap
-  config unset autoswitch.model`. Tiles name the *5-hour threshold*, *Weekly
+  `auto.counting.caption` (DESIGN A91, A97). Tiles name the *5-hour threshold*, *Weekly
   threshold*, *Model threshold* and *Account order* in force, and on a
   machine with Codex accounts *Codex auto-switch* (on or off, its *Codex
   threshold*, the last tick). The *Next best* ranking with each account's
@@ -2734,8 +2712,7 @@ tabs:
   a control of its type (number with range, switch, select), its default and
   the value in effect, *Save* and *Reset* per key, validated as `config set`
   validates, and a line saying when a saved value takes effect.
-  `autoswitch.model` is not listed: `tycswap config` alone sets it (DESIGN
-  A93). *Poll interval* is listed only while no `TYCSWAP_AUTO_MANAGED_BY`
+  *Poll interval* is listed only while no `TYCSWAP_AUTO_MANAGED_BY`
   owner is named, since `auto --once` never reads it. With an owner, a saved
   value applies at the scheduler's next check; otherwise an engine reads the
   settings when it starts, so a running one keeps what it started with, and
@@ -2744,7 +2721,8 @@ tabs:
   the TUI's engine never reads them. The tab's badge counts the keys set away
   from their default.
 - **Guide**: what the tool is, slots and the active account, the 5h / 7d /
-  model windows and their thresholds, getting started, switching by hand, Auto
+  model windows and their thresholds (the model windows always follow the
+  sessions), getting started, switching by hand, Auto
   mode, the settings, sessions, updates, Codex accounts, a command cheat-sheet,
   troubleshooting and where the data lives.
 - **Sessions**: running Claude Code sessions grouped by directory, with
@@ -2826,13 +2804,12 @@ machine that had no Codex accounts when `tycswap web` started:
 `switched`, `blocked`, `no-accounts` or `error`; `switchedTo` null unless it
 switched). `auto.lastTickAt` is when a real tick last saw the live login
 (epoch seconds, null before one did). `auto.counting` is what auto-switch
-counts now (DESIGN A91): `{"mode", "setting", "models", "sessions",
-"unservable", "reserved", "caption"}`, `mode` `setting` (a saved
-`autoswitch.model`, in `setting`), `sessions` (unset: `models` derived from the
+counts now (DESIGN A91, A97): `{"mode", "models", "sessions",
+"unservable", "reserved", "caption"}`, `mode` `sessions` (`models` derived from the
 model families the live default sessions run, in `sessions`, minus
 `unservable`, with the accounts left to Fable work in `reserved`) or `hosted`
-(unset, with an engine hosted in this process, which keeps its configured
-models); `caption` says it in one line, e.g. `counting 5h + 7d; Fable not
+(an engine hosted in this process, which does not follow sessions and counts
+5h and 7d only); `caption` says it in one line, e.g. `counting 5h + 7d; Fable not
 counted: no usable account can serve it`. An engine event is `{"at", "kind", "message", "account",
 "fields"}`; a Codex tick's also carries `"provider": "codex"` (the Claude
 engine's carry no `provider`), its `kind` is `switch`, `error`,
@@ -2920,7 +2897,7 @@ anything else `500`.
 | `GET /api/state[?tokenStatus=1]` | | the state document | `200` |
 | `GET /api/events?csrf=<t>[&tokenStatus=1]` | | Server-Sent Events: `state` frames, `auto` frames (one engine event each; a Codex tick's carries `"provider": "codex"`), a `: ping` every 15 s | `200`, then a stream |
 | `POST /api/launch` | | a one-time dashboard URL, `{"url": "http://127.0.0.1:<port>/?token=<t>"}`: the unused start URL, else a fresh one; for a remote tray, with the bearer token only | `403` with the cookie and CSRF pair, or without a remote token configured |
-| `POST /api/switch` | `{"strategy": "best"\|"next-available", "models": [...]}` | `tycswap switch --strategy` | `400` missing or unknown strategy |
+| `POST /api/switch` | `{"strategy": "best"\|"next-available"}` | `tycswap switch --strategy`; a `models` field is ignored (DESIGN A97) | `400` missing or unknown strategy |
 | `POST /api/switch/{key}[?force=1][&confirmAuthChange=1]` | | `tycswap switch <id> [--force] [--yes]`; `confirmAuthChange=1` records the user's yes to a switch onto an API-key account, which the page asks for first (DESIGN A33). A `codex:` key is `tycswap codex switch <id>` and answers `{"number", "email", "runningPids", "alreadyActive"}` | `400` bare key, an API-key target without `confirmAuthChange`, or `force` / `confirmAuthChange` with a `codex:` key; `404` unknown provider; `503` `confirmAuthChange` without account operations, or a `codex:` key without Codex accounts; `409` a `codex:` key while the Codex store stays busy for 10 s |
 | `POST /api/accounts/add` | `{"provider": "claude"\|"codex"}` (optional) | `tycswap add`; answers `{"ok": true, "result": {"number", "email", "refreshed"}}`, the account the live login is now (`refreshed`: it was that account already). The tray's *Add current login* is the same call. With `codex`, `tycswap codex add`, answering `{"number", "email"}` | `500` `Claude Code has no subscription login on this computer. …` when Claude Code has no live login, before anything is stored; `400` unknown provider; `503` `codex` without Codex accounts; `409` `codex` while the Codex store stays busy for 10 s |
 | `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias", "baseUrl"}` | `tycswap add-token [--base-url]` (the token is never echoed or logged); `503` with a `baseUrl` when the facade cannot store one | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
@@ -2930,7 +2907,7 @@ anything else `500`.
 | `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` | `400` missing slot or bare key, `404` a `codex:` key or an unknown provider |
 | `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` | `400` missing or bare keys, `404` a `codex:` key or an unknown provider |
 | `POST /api/sessions/{pid}/stop` | | stop a listed Claude Code session, after verifying the process start time | `400` bad pid, `404` not listed (or gone before the lock), `409` the pid now belongs to another process or cannot be verified, `500` the signal failed |
-| `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset`; each listed key carries `label` (the registry's name), `applies`, a sentence saying when a saved value takes effect, and `notice` when its stored value was read without control characters (the sentence `config list` prints). The list leaves out `autoswitch.model`, and `autoswitch.intervalSeconds` while an owner is named (DESIGN A93) | `400` unknown key, value out of range, missing value, a control character in a free-text value, or `autoswitch.model`, which `tycswap config` alone sets |
+| `GET /api/settings`; `POST /api/settings/{key}`; `DELETE /api/settings/{key}` or `POST /api/settings/{key}/unset` | `{"value": ...}` | `tycswap config list\|set\|unset`; each listed key carries `label` (the registry's name) and `applies`, a sentence saying when a saved value takes effect. The list leaves out `autoswitch.intervalSeconds` while an owner is named (DESIGN A93) | `400` unknown key (`autoswitch.model` among them, DESIGN A97), value out of range, or missing value |
 | `POST /api/auto/start` | `{}` | the Auto-switch switch turned on: make sure an engine is hosted (and the Codex engine beside it on a machine with Codex accounts), then turn `autoswitch.enabled` on and wake the engine; with `TYCSWAP_AUTO_MANAGED_BY` set, only write the setting | `400` `{"dryRun": true}` (the dashboard starts no dry run; `tycswap auto --dry-run` does), or a previous engine still stopping |
 | `POST /api/auto/stop` | | the switch turned off: turn `autoswitch.enabled` off and leave the engine hosted, idling | `400` nothing hosted, no owner and the setting already off |
 | `POST /api/updates/check` | | check for a newer tycswap release and a newer Claude Code now, in the background; the result arrives with the state (in `tycswap app` with a tray, the tray's checks, DESIGN A44) | `202` at once; `503` without the updates host |
@@ -3073,8 +3050,8 @@ window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
   threshold of each window; it writes `autoswitch.enabled`, so it also turns
   off a timer's ticks, and the app's engine follows it from launch; a click
   sets the opposite of the state the row showed, and one made while a change
-  is still in flight is dropped, DESIGN A94). `autoswitch.model` and the
-  thresholds are set with `tycswap config`, in the TUI and on the dashboard;
+  is still in flight is dropped, DESIGN A94). The thresholds are set with
+  `tycswap config`, in the TUI and on the dashboard;
 - **App**: Claude Code's state when nothing is to update; *Start at login*;
   *Check for updates…*; *Quit tycswap*.
 
@@ -4970,7 +4947,7 @@ Every key, with its type, range, default, and meaning:
 | `autoswitch.enabled` | bool | — | false | Auto-switch on or off (DESIGN A83). Every tick reads it first; false, a tick looks at no account and reports `no-switch` `disabled` (`auto --once` exits 2). Written by `tycswap auto on` / `off`, the tray's toggle and the dashboard's Auto-switch switch; `tycswap auto on --if-unset` writes it only when absent. Seeded once from an older app's remembered choice. |
 | `autoswitch.fiveHourThreshold` | float (percent) | 50–100 | 85 | Switch when the **5h** window reaches this percent. The lowest bar on purpose: this window bursts (a fan-out of parallel subagents can fill it from 85 to 100 between two polls), and the margin is what lets the next poll act before it stops a task midway. |
 | `autoswitch.sevenDayThreshold` | float (percent) | 50–100 | 97 | Switch when the **7d** window reaches this percent: the account's whole budget. A week creeps rather than bursts, so it can be squeezed nearly full. The TUI's `t` adjustment moves this bar for one run. A file that still carries the single `autoswitch.threshold` seeds it. |
-| `autoswitch.modelThreshold` | float (percent) | 50–100 | 95 | Switch when a **per-model weekly** window reaches this percent. Weekly too, so also high. Applies to every counted model window: the ones `autoswitch.model` names and the ones session following picks. |
+| `autoswitch.modelThreshold` | float (percent) | 50–100 | 95 | Switch when a **per-model weekly** window reaches this percent. Weekly too, so also high. Applies to every model window session following counts (DESIGN A76, A91). |
 | `autoswitch.intervalSeconds` | float (seconds) | 15–3600 | 60 | Poll interval for the `tycswap auto` loop and an engine hosted in the dashboard; `auto --once` never reads it, so the dashboard leaves it out while a scheduler owns the ticks (DESIGN A93). |
 | `autoswitch.codexEnabled` | bool | — | true | Also auto-switch Codex accounts wherever auto-switch runs (`tycswap auto`, `auto --once`, the dashboard). A no-op without Codex accounts. |
 | `autoswitch.codexThreshold` | float (percent) | 0–99.9 | 0 | Codex-only switch threshold; 0 = same as the weekly threshold, `autoswitch.sevenDayThreshold` (DESIGN A34). |
@@ -4978,7 +4955,6 @@ Every key, with its type, range, default, and meaning:
 | `autoswitch.hysteresisPct` | float (percent) | 0–50 | 10 | A switch target must beat the active account by at least this many percent. |
 | `autoswitch.strategy` | choice | `best`, `soonest-reset` | `soonest-reset` | How auto-switch orders qualifying targets: `soonest-reset` (earliest weekly renewal) or `best` (most headroom). See below. |
 | `autoswitch.unhealthyTicks` | int | 1–100 | 3 | Consecutive failed polls before an account is treated as unhealthy. |
-| `autoswitch.model` | string | — | (none) | Also switch on these models' weekly limits (for example `Fable`, `Fable,Opus`, or `all`). Unset, a scheduled tick counts the models the default login's live sessions run (DESIGN A76); `none` is refused: use `tycswap config unset autoswitch.model`. Set with `tycswap config` only: the dashboard and the TUI's Settings screen leave it out (DESIGN A93). |
 
 Reads are forgiving: a missing file, a bad type, or an out-of-range value
 degrades to the (clamped) default without error, and a key tycswap does not
@@ -4986,9 +4962,11 @@ know is ignored on read and kept by every write.
 `autoswitch.includeApiKeyAccounts` is such a key since DESIGN A33 removed it:
 a file that still carries it loads as if it did not, and `config set`, `get`
 and `unset` refuse it as an unknown setting. `autoswitch.handoverWaitMinutes`,
-removed with the handover after a limit (DESIGN A95), is read and refused the
-same way, but every write (`config set` and `unset`, the TUI's and the
-dashboard's Settings) drops it from the file. `autoswitch.threshold`, the
+removed with the handover after a limit (DESIGN A95), and `autoswitch.model`,
+removed with the choice of counted models (DESIGN A97: the model windows
+always follow the live sessions), are read and refused the same way, but every
+write (`config set` and `unset`, the TUI's and the dashboard's Settings) drops
+them from the file. `autoswitch.threshold`, the
 single bar before DESIGN A34, is no key either, but it still counts: a file
 that carries it seeds `autoswitch.sevenDayThreshold` (the new key wins where
 both are present), `config` reports the 7d bar as set, and `config unset
@@ -4997,7 +4975,7 @@ are strict: an out-of-range or mistyped value is rejected with a `ConfigError`.
 A whole-number float is stored and shown without a fractional part
 (`80.0` → `80`). The TUI's Settings screen (`c` on the dashboard; see
 `tycswap tui`) and the browser dashboard's Settings tab edit the same file
-through the same validation, every key but `autoswitch.model`.
+through the same validation.
 
 **`autoswitch.strategy` ordering.** The strategy governs only the order in
 which already-qualifying candidates are offered to `tycswap auto`; it changes
@@ -5029,7 +5007,7 @@ counted model window) is never a target.
   `autoswitch.sevenDayThreshold`, each counted model window below
   `autoswitch.modelThreshold` — and ranks by the latest parseable
   `resets_at` among the account's weekly-scope windows: the 7-day window
-  plus every per-model scoped window matched by `autoswitch.model`. The 5h
+  plus every counted per-model scoped window. The 5h
   window is never part of the renewal, since it is not weekly. A window
   whose `resets_at` is absent or unparseable is skipped; an account with no
   parseable weekly `resets_at` at all has an *unknown* renewal. Within this
@@ -5054,24 +5032,22 @@ $ tycswap config set autoswitch.strategy best
 autoswitch.strategy = best
 ```
 
-**`autoswitch.model` name matching.** A model name is matched against the
-scoped weekly window's display name, compared case-insensitively and exactly.
-The value stored and matched is the bare display name (for example `Fable`), not
-a decorated form; a name that matches no window is silently inert (no window is
-counted and no error is raised). The `--strategy` command-line flag and the
+**Counted model windows** (DESIGN A76, A91, A97). A scheduled tick counts
+the scoped weekly windows whose display name contains a model family the
+default login's live sessions run, compared case-insensitively (a `fable`
+session counts `Fable 5`; see `tycswap auto`). No setting or flag names them:
+`autoswitch.model` and `--model` were removed. The `--strategy` command-line flag and the
 usage-aware `switch`/`auto` strategies accept `best` and `next-available` — a
 separate vocabulary from the persisted `autoswitch.strategy` setting, which
 accepts `best` and `soonest-reset`.
 
-This matching decision is visible, not just enforced: `tycswap tui`'s
-auto-switch screen (above) lists every per-model weekly window an account
-reports in its "Next best" candidates panel whether or not `autoswitch.model`
-names it, but only a window this setting matches counts toward that row's
-binding percentage and rank. An unmatched window renders muted for
+`tycswap tui`'s auto-switch screen (above) lists every per-model weekly
+window an account reports in its "Next best" candidates panel, but the
+engine it starts does not follow sessions, so no such window counts toward
+a row's binding percentage and rank there. An uncounted window renders muted for
 visibility alone while it still has room left, so a user can watch a
-model's weekly window climb before deciding to fold it into the switching
-decision; once it runs out it carries its usual severity color regardless
-of the match, the same as any other exhausted window (above).
+model's weekly window climb; once it runs out it carries its usual severity
+color, the same as any other exhausted window (above).
 
 ## EXIT STATUS
 
@@ -5166,8 +5142,8 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   - `tycswap run`, `map` and `unmap` are removed (DESIGN A92): every session
     shares the default login, and `mappings.json` is not read.
   - `tycswap list` / `tycswap status` (human and `--json`) and the TUI surface an
-    at-limit marker that folds in the per-model weekly windows configured by
-    `autoswitch.model`. The additive `--json` fields `atLimit` and
+    at-limit marker that folds in the per-model weekly windows the default
+    login's live sessions count (DESIGN A91). The additive `--json` fields `atLimit` and
     `limitingWindows` are present only when an account is at limit.
   - The `tycswap codex` namespace, the Codex engine in `tycswap auto`, and the
     `autoswitch.codexEnabled` / `autoswitch.codexThreshold` settings port
@@ -5209,7 +5185,7 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   newer credential is used and nothing is refreshed. A busy lock skips the
   refresh for that pass. The Codex side has worked this way from the start.
 - **At-limit is independent of `usageStatus`.** `atLimit` reflects a relevant
-  rate-limit window (including a per-model weekly window from `autoswitch.model`)
+  rate-limit window (including a per-model weekly window the live sessions count)
   being at or over its limit. An account can be `usageStatus: "ok"` and still
   `atLimit: true` when a scoped weekly window is exhausted even though the
   account-wide 7d window has room; conversely `atLimit` is absent whenever no

@@ -21,28 +21,6 @@ func runConfig(t *testing.T, args ...string) (int, string, string) {
 	return code, out.String(), errb.String()
 }
 
-// TestConfigSetsAndUnsetsTheModelSetting: autoswitch.model left the
-// dashboard and the TUI, and `tycswap config` still lists, sets and unsets it
-// (DESIGN A93).
-func TestConfigSetsAndUnsetsTheModelSetting(t *testing.T) {
-	cleanHome(t)
-	if code, out, _ := runConfig(t, "list"); code != 0 || !strings.Contains(out, "autoswitch.model") {
-		t.Fatalf("list = %d:\n%s", code, out)
-	}
-	if code, _, errStr := runConfig(t, "set", "autoswitch.model", "Fable"); code != 0 {
-		t.Fatalf("set = %d: %s", code, errStr)
-	}
-	if m := settings.Load(paths.GetBackupRoot()).Model; m == nil || *m != "Fable" {
-		t.Fatalf("model after set = %v", m)
-	}
-	if code, _, errStr := runConfig(t, "unset", "autoswitch.model"); code != 0 {
-		t.Fatalf("unset = %d: %s", code, errStr)
-	}
-	if m := settings.Load(paths.GetBackupRoot()).Model; m != nil {
-		t.Fatalf("model after unset = %q", *m)
-	}
-}
-
 // TestConfigListShowsAllDefaults: no args lists every SettingSpecs key, each
 // marked "(default)" on a fresh home (spec 08§7.8/§14). The count follows the
 // registry, as the Python test does, so adding a setting does not break it.
@@ -61,8 +39,9 @@ func TestConfigListShowsAllDefaults(t *testing.T) {
 }
 
 // TestConfigListNeverPrintsAStoredControlCharacter: a model stored before
-// settings refused control characters reads as unset, so `config list` and
-// `config get` print no escape sequence from it.
+// autoswitch.model was removed, control characters and all, is not read
+// (DESIGN A97): `config list` prints no escape sequence and no row for it, and
+// --json carries neither the key nor a cleaned notice.
 func TestConfigListNeverPrintsAStoredControlCharacter(t *testing.T) {
 	cleanHome(t)
 	path := settings.SettingsPath(paths.GetBackupRoot())
@@ -72,42 +51,9 @@ func TestConfigListNeverPrintsAStoredControlCharacter(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"autoswitch":{"model":"Fable\u001b[2J\u0007"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"list"}, {"get", "autoswitch.model"}} {
-		code, out, errStr := runConfig(t, args...)
-		if code != 0 || strings.ContainsAny(out, "\x1b\a") {
-			t.Errorf("config %v: exit %d, stdout %q (stderr %q)", args, code, out, errStr)
-		}
-	}
-}
-
-// A stored value read without its control characters says so where the
-// setting is shown: `config list` and `config get` print the clean value and
-// the notice (what was removed, how to clean the file) on stderr; --json
-// carries cleaned and the notice. No control character is printed.
-func TestConfigSaysWhenAStoredValueWasCleaned(t *testing.T) {
-	cleanHome(t)
-	path := settings.SettingsPath(paths.GetBackupRoot())
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(`{"autoswitch":{"model":"Fable\u001b[2J"}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"list"}, {"get", "autoswitch.model"}} {
-		code, out, errStr := runConfig(t, args...)
-		if code != 0 || !strings.Contains(out, "Fable[2J") || strings.ContainsRune(out+errStr, 0x1b) ||
-			strings.Count(errStr, "autoswitch.model: the stored value held terminal control characters") != 1 ||
-			!strings.Contains(errStr, "tycswap config set autoswitch.model") {
-			t.Errorf("config %v: exit %d, stdout %q, stderr %q", args, code, out, errStr)
-		}
-	}
-	code, out, errStr := runConfig(t, "--json", "get", "autoswitch.model")
-	var got map[string]any
-	if err := json.Unmarshal([]byte(out), &got); code != 0 || err != nil {
-		t.Fatalf("--json get: exit %d, %v, stdout %q, stderr %q", code, err, out, errStr)
-	}
-	if notice, _ := got["notice"].(string); got["cleaned"] != true || got["value"] != "Fable[2J" || !strings.Contains(notice, "removed") {
-		t.Errorf("--json get = %v", got)
+	code, out, errStr := runConfig(t, "list")
+	if code != 0 || strings.ContainsAny(out+errStr, "\x1b\a") || strings.Contains(out+errStr, "autoswitch.model ") {
+		t.Errorf("config list: exit %d, stdout %q (stderr %q)", code, out, errStr)
 	}
 	code, out, _ = runConfig(t, "--json", "list")
 	var list struct {
@@ -117,8 +63,7 @@ func TestConfigSaysWhenAStoredValueWasCleaned(t *testing.T) {
 		t.Fatalf("--json list: exit %d, %v", code, err)
 	}
 	for _, item := range list.Settings {
-		cleaned := item["key"] == "autoswitch.model"
-		if notice, _ := item["notice"].(string); (item["cleaned"] == true) != cleaned || (notice != "") != cleaned {
+		if _, cleaned := item["cleaned"]; cleaned || item["notice"] != nil || item["key"] == "autoswitch.model" {
 			t.Errorf("--json list item %v", item)
 		}
 	}

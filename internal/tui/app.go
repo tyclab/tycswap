@@ -521,7 +521,7 @@ func (m *Model) doSwitch(id string) tea.Cmd {
 func (m *Model) switchBest() tea.Cmd {
 	best := "best"
 	return m.startAction("Switch (best)", func() (map[string]any, error) {
-		res, err := m.facade.Switch(&best, true, nil, nil)
+		res, err := m.facade.Switch(&best, true)
 		return m.loggedSwitch("", res, err)
 	}, false)
 }

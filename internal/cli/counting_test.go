@@ -70,9 +70,10 @@ func countingStore(t *testing.T, model string, usage map[string][3]float64) *cor
 }
 
 // The dashboard's state says what the scheduled ticks count now, from the
-// default-session policy itself: a set model, a Fable session some account
-// can serve, one none can serve, and no Fable session with the accounts left
-// to Fable (DESIGN A91).
+// default-session policy itself: a Fable session some account can serve,
+// one none can serve, and no Fable session with the accounts left to Fable
+// (DESIGN A91). A settings.json that still holds autoswitch.model counts the
+// same (A97).
 func TestAutoViewReportsCounting(t *testing.T) {
 	room := map[string][3]float64{"1": {10, 20, 30}, "2": {10, 20, 30}}
 	spent := map[string][3]float64{"1": {10, 20, 100}, "2": {10, 20, 100}}
@@ -81,8 +82,8 @@ func TestAutoViewReportsCounting(t *testing.T) {
 		usage          map[string][3]float64
 		want           web.CountingView
 	}{
-		"explicit-model": {model: "claude-fable-5-1", setting: "Fable", usage: spent,
-			want: web.CountingView{Mode: "setting", Setting: "Fable", Models: []string{"Fable"}, Sessions: []string{}, Unservable: []string{}, Reserved: []string{}}},
+		"retired-model-key": {model: "claude-fable-5-1", setting: "Fable", usage: spent,
+			want: web.CountingView{Mode: "sessions", Models: []string{}, Sessions: []string{"fable"}, Unservable: []string{"Fable"}, Reserved: []string{}}},
 		"fable-counted": {model: "claude-fable-5-1", usage: room,
 			want: web.CountingView{Mode: "sessions", Models: []string{"Fable"}, Sessions: []string{"fable"}, Unservable: []string{}, Reserved: []string{}}},
 		"fable-unservable": {model: "claude-fable-5-1", usage: spent,
@@ -92,14 +93,12 @@ func TestAutoViewReportsCounting(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			sw := countingStore(t, tc.model, tc.usage)
-			// The fixture's settings.json counts Fable; unset is to follow sessions.
-			if _, err := settings.UnsetSetting(sw.BackupDir(), "autoswitch.model"); err != nil {
-				t.Fatal(err)
-			}
+			body := `{"schemaVersion":1}`
 			if tc.setting != "" {
-				if _, err := settings.SetSetting(sw.BackupDir(), "autoswitch.model", tc.setting); err != nil {
-					t.Fatal(err)
-				}
+				body = `{"schemaVersion":1,"autoswitch":{"model":"` + tc.setting + `"}}`
+			}
+			if err := os.WriteFile(settings.SettingsPath(sw.BackupDir()), []byte(body), 0o600); err != nil {
+				t.Fatal(err)
 			}
 			a := newAutoFacade(sw, nil)
 			a.managedBy = testOwner

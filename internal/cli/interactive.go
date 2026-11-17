@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/paths"
@@ -144,12 +143,6 @@ func promptConfigArguments(argv []string, s ioStreams) (int, bool) {
 		return code, true
 	}
 	values := settings.EffectiveSettings(paths.GetBackupRoot())
-	// config get says the notice itself.
-	for _, v := range values {
-		if n := v.Notice(); n != "" && pos[0] != "get" {
-			fmt.Fprintln(s.err, "warning: "+n)
-		}
-	}
 	if len(pos) == 1 {
 		labels := make([]string, len(values))
 		for i, value := range values {

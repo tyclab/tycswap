@@ -201,7 +201,7 @@ func TestNewAndPromotedAccessors(t *testing.T) {
 // SwitchToForce all reach switching's "No accounts are managed yet" guard.
 func TestSwitchAndSwitchToOnEmptyStore_ReturnsConfigError(t *testing.T) {
 	sw := newTestSwitcher(t)
-	if _, err := sw.Switch(nil, true, nil, nil); cerr.TypeName(err) != "ConfigError" {
+	if _, err := sw.Switch(nil, true); cerr.TypeName(err) != "ConfigError" {
 		t.Fatalf("Switch: err = %v, want ConfigError", err)
 	}
 	if _, err := sw.SwitchTo("1", true); cerr.TypeName(err) != "ConfigError" {
@@ -301,7 +301,7 @@ func TestSwitchRotationAndForce(t *testing.T) {
 	})
 	seedLive(t, sw, "a@x.com", credsA)
 
-	out, err := sw.Switch(nil, true, nil, nil)
+	out, err := sw.Switch(nil, true)
 	if err != nil {
 		t.Fatalf("Switch: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestAutoAddCurrentSeamWiring(t *testing.T) {
 	})
 	seedLive(t, sw, "unmanaged@x.com", oauthCreds("tok-unmanaged"))
 
-	if _, err := sw.Switch(nil, false, nil, nil); err != nil {
+	if _, err := sw.Switch(nil, false); err != nil {
 		t.Fatalf("Switch (human, unmanaged-live): %v", err)
 	}
 	data, err := sw.ReadSequence()

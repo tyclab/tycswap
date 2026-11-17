@@ -121,7 +121,7 @@ func TestSwitchForeignCredentialPreserved(t *testing.T) {
 	// Live login says account 1 (email a@x.com) but the live bytes are foreign.
 	seedLive(t, s, "a@x.com", "", liveCreds)
 
-	out, err := Switch(s, nil, true, nil, nil)
+	out, err := Switch(s, nil, true)
 	if err != nil {
 		t.Fatalf("Switch: %v", err)
 	}

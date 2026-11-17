@@ -73,7 +73,8 @@ func TestFiveHourAtItsOwnThresholdSwitches(t *testing.T) {
 }
 
 // The per-model weekly window has the third bar, and it applies only while
-// autoswitch.model counts that window.
+// session following counts that window (the engine gets the counted set in
+// settings.Model, DESIGN A97).
 func TestModelWindowHasItsOwnThreshold(t *testing.T) {
 	withFable := func(five, seven, fable float64) map[string]any {
 		return map[string]any{
@@ -306,9 +307,8 @@ func TestModelMoveRejectsACandidateWithoutThatWindow(t *testing.T) {
 
 // TestPollCadenceKeysOnTheLowestBarInForce: the poll planner escalates on one
 // figure, compared against the binding headroom, so the engine hands it the
-// lowest bar in force; the model bar joins only while autoswitch.model counts
-// something (DESIGN A34). NewEngine pins it, ApplyThreshold (the 7d bar) and
-// ApplyModels re-pin it.
+// lowest bar in force; the model bar joins only while a model window counts
+// (DESIGN A34). NewEngine pins it and ApplyThreshold (the 7d bar) re-pins it.
 func TestPollCadenceKeysOnTheLowestBarInForce(t *testing.T) {
 	s := settings.Default() // 5h 85, 7d 97, model 95
 	if got := pollThreshold(s, nil); got != 85 {

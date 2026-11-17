@@ -25,7 +25,7 @@ func TestSwitchStrategy_CallsFacadeForEachStrategy(t *testing.T) {
 			if res, _ := body["result"].(map[string]any); res["strategy"] != st {
 				t.Errorf("result %v", body["result"])
 			}
-			want := []string{"Switch(" + st + ",true,[],<nil>)"}
+			want := []string{"Switch(" + st + ",true)"}
 			if got := h.fa.Calls(); !reflect.DeepEqual(got, want) {
 				t.Fatalf("calls %v, want %v", got, want)
 			}
@@ -33,13 +33,15 @@ func TestSwitchStrategy_CallsFacadeForEachStrategy(t *testing.T) {
 	}
 }
 
-func TestSwitchStrategy_PassesModels(t *testing.T) {
+// A body that still carries "models" (an older page) is accepted and the
+// list ignored: the strategies count 5h and 7d only (DESIGN A97).
+func TestSwitchStrategy_IgnoresModels(t *testing.T) {
 	h := newHarness(t)
 	resp := h.postJSON("/api/switch", map[string]any{"strategy": "best", "models": []string{"opus", "sonnet"}})
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status %d", resp.StatusCode)
 	}
-	if got := h.fa.Calls(); !reflect.DeepEqual(got, []string{"Switch(best,true,[opus sonnet],<nil>)"}) {
+	if got := h.fa.Calls(); !reflect.DeepEqual(got, []string{"Switch(best,true)"}) {
 		t.Fatalf("calls %v", got)
 	}
 }

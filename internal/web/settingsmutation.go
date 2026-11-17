@@ -3,21 +3,15 @@ package web
 import (
 	"net/http"
 
-	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/settings"
 )
 
 // SaveSetting writes a shared setting; nil resets. Session groups and their
-// scoped settings are retired (DESIGN A78); a key only `tycswap config` sets
-// is refused (DESIGN A93).
+// scoped settings are retired (DESIGN A78).
 func (s *Server) SaveSetting(scope, key string, value *string) (map[string]any, error) {
 	if scope != "" {
 		return nil, cerr.Validation("session groups are retired; settings have one scope")
-	}
-	if configOnly(key) {
-		name := brand.Sanitized().Name
-		return nil, cerr.Validation("%s is set with %s config only: %s config set %s <value>, or %s config unset %s", key, name, name, key, name, key)
 	}
 	result, sequence, err := s.runMutation(func() (map[string]any, error) {
 		result := map[string]any{"key": key}

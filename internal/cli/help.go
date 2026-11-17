@@ -117,8 +117,6 @@ const visibleOptions = `options:
   --strategy {best,next-available}
                         With bare 'switch': pick the target by remaining 5h/7d
                         quota
-  --model NAMES         With 'switch --strategy': also count these models'
-                        per-model weekly limits
   --slot NUM            Specify slot number when adding account (use with 'add'
                         or 'add-token')
   --email EMAIL         Email address for the account (use with 'add-token')

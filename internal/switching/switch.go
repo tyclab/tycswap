@@ -6,7 +6,6 @@ package switching
 
 import (
 	"os"
-	"strings"
 
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/printer"
@@ -15,8 +14,8 @@ import (
 
 // Switch rotates to the next account or runs a usage-aware strategy (spec 02§4).
 // strategy is nil / "best" / "next-available"; a value not in the usage-aware
-// set is a plain rotation. models steer only the usage-aware strategies.
-func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, modelSrc *string) (any, error) {
+// set is a plain rotation. The strategies count 5h and 7d only (DESIGN A97).
+func Switch(s *store.Store, strategy *string, jsonOut bool) (any, error) {
 	strategyStr := ""
 	if strategy != nil {
 		strategyStr = *strategy
@@ -26,24 +25,6 @@ func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, mod
 		strategyLabel = strategyStr
 	}
 	warnings := []string{}
-	if strategyLabel == "rotation" {
-		models = nil // model limits only steer the usage-aware strategies
-	}
-	if len(models) > 0 && !jsonOut {
-		source := ""
-		if modelSrc != nil {
-			if *modelSrc == "cli" {
-				source = "--model"
-			} else {
-				source = *modelSrc
-			}
-		}
-		line := "Using configured model limits: " + joinComma(models)
-		if source != "" {
-			line += " (from " + source + ")"
-		}
-		printOut(printer.Dimmed(line))
-	}
 
 	if _, err := os.Stat(s.SequenceFile); err != nil {
 		return nil, cerr.Config("No accounts are managed yet")
@@ -129,9 +110,7 @@ func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, mod
 
 	// Strategy `best`.
 	if strategyStr == "best" {
-		bestUsage := usageByAccount(s)
-		warnInertModels(bestUsage, models, jsonOut, &warnings)
-		target, note := selectBestSwitchable(s, currentNum, models, bestUsage)
+		target, note := selectBestSwitchable(s, currentNum, usageByAccount(s))
 		if target != "" {
 			op, err := performSwitch(s, target, !jsonOut, false, nil)
 			if err != nil {
@@ -142,7 +121,7 @@ func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, mod
 			}
 			return nil, nil
 		}
-		if res := bestNoop(note, strategyLabel, currentNum, currentRef, models, jsonOut, warnings); res != nil || note != "none" {
+		if res := bestNoop(note, strategyLabel, currentNum, currentRef, jsonOut, warnings); res != nil || note != "none" {
 			return res, nil
 		}
 		// note == "none": fall through to rotation.
@@ -174,7 +153,6 @@ func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, mod
 	usage := map[string]any{}
 	if strategyStr == "next-available" {
 		usage = usageByAccount(s)
-		warnInertModels(usage, models, jsonOut, &warnings)
 	}
 
 	nextAccount := ""
@@ -209,25 +187,13 @@ func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, mod
 			continue
 		}
 		if strategyStr == "next-available" {
-			headroom := headroomOf(usage[candidate], models)
+			headroom := headroomOf(usage[candidate])
 			if headroom != nil && *headroom <= 0 {
 				skippedExhausted = append(skippedExhausted, candidate)
-				label := "5h/7d"
-				if len(models) > 0 {
-					var at []string
-					for _, w := range relevantWindowsOf(usage[candidate], models) {
-						if w.Pct >= 100.0 {
-							at = append(at, w.Label)
-						}
-					}
-					if len(at) > 0 {
-						label = strings.Join(at, "/")
-					}
-				}
 				if jsonOut {
-					warnings = append(warnings, "Skipped Account-"+candidate+" (at "+label+" limit)")
+					warnings = append(warnings, "Skipped Account-"+candidate+" (at 5h/7d limit)")
 				} else {
-					printOut(printer.Accent("Skipping") + " Account-" + candidate + " (at " + label + " limit)")
+					printOut(printer.Accent("Skipping") + " Account-" + candidate + " (at 5h/7d limit)")
 				}
 				continue
 			}
@@ -236,13 +202,8 @@ func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, mod
 		break
 	}
 
-	limitsLabel := "5h/7d limit"
-	if len(models) > 0 {
-		limitsLabel = "usage limits"
-	}
-
 	if nextAccount == "" && len(skippedExhausted) > 0 {
-		msg := "All other accounts are at their " + limitsLabel + " — staying on Account-" + currentNum + "."
+		msg := "All other accounts are at their 5h/7d limit — staying on Account-" + currentNum + "."
 		if jsonOut {
 			return switchNoop(noopArgs{
 				strategy: strategyLabel, reason: "candidates-exhausted",
@@ -379,7 +340,7 @@ func switchFreshMachine(s *store.Store, strategyLabel string, jsonOut bool, warn
 
 // bestNoop maps a selectBestSwitchable note to its no-op result (spec 02§4.5).
 // Returns nil only for note "none" (the caller falls through to rotation).
-func bestNoop(note, strategyLabel, currentNum string, currentRef map[string]any, models []string, jsonOut bool, warnings []string) map[string]any {
+func bestNoop(note, strategyLabel, currentNum string, currentRef map[string]any, jsonOut bool, warnings []string) map[string]any {
 	switch note {
 	case "current-unavailable":
 		if jsonOut {
@@ -418,17 +379,13 @@ func bestNoop(note, strategyLabel, currentNum string, currentRef map[string]any,
 		printOut(printer.Accent("Already on the account with the most remaining quota") + " (Account-" + currentNum + ").")
 		return nil
 	case "exhausted":
-		limitsLabel := "5h/7d limit"
-		if len(models) > 0 {
-			limitsLabel = "usage limits"
-		}
 		if jsonOut {
 			return switchNoop(noopArgs{
 				strategy: strategyLabel, reason: "candidates-exhausted", toRef: currentRef, warnings: warnings,
-				message: "All accounts are at their " + limitsLabel + " — staying on Account-" + currentNum + ".",
+				message: "All accounts are at their 5h/7d limit — staying on Account-" + currentNum + ".",
 			})
 		}
-		printWarning("All accounts are at their " + limitsLabel + " — staying on Account-" + currentNum + ".")
+		printWarning("All accounts are at their 5h/7d limit — staying on Account-" + currentNum + ".")
 		return nil
 	}
 	return nil // "none"

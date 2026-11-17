@@ -43,20 +43,13 @@ func usageByAccount(s *store.Store) map[string]any {
 	return map[string]any{}
 }
 
-func headroomOf(v any, models []string) *float64 {
+// headroomOf is an account's 5h/7d headroom, nil when its usage is unknown.
+func headroomOf(v any) *float64 {
 	m, ok := v.(map[string]any)
 	if !ok {
 		return nil
 	}
-	return oauth.AccountHeadroom(oauth.NewUsage(m), models)
-}
-
-func relevantWindowsOf(v any, models []string) []oauth.RelevantWindow {
-	m, ok := v.(map[string]any)
-	if !ok {
-		return nil
-	}
-	return oauth.RelevantWindows(oauth.NewUsage(m), models)
+	return oauth.AccountHeadroom(oauth.NewUsage(m), nil)
 }
 
 func isUsageDict(v any) bool {

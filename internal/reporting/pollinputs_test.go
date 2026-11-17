@@ -13,8 +13,9 @@ import (
 // TestResolvePollInputsKeysOnTheLowestBar: with no engine pinning the poll
 // plan, cadence follows settings.json, and the one figure the planner
 // escalates on is the lowest bar in force; the per-model bar joins only while
-// autoswitch.model counts something (DESIGN A34). A file that still carries
-// the single legacy "threshold" key seeds the 7d bar with it.
+// a pinned engine counts a model window (DESIGN A34), so a file that still
+// carries the retired autoswitch.model counts none (DESIGN A97). A file that
+// still carries the single legacy "threshold" key seeds the 7d bar with it.
 func TestResolvePollInputsKeysOnTheLowestBar(t *testing.T) {
 	ClearPollPolicyInputs()
 	t.Cleanup(ClearPollPolicyInputs)
@@ -27,7 +28,7 @@ func TestResolvePollInputsKeysOnTheLowestBar(t *testing.T) {
 		{"defaults", `{}`, 85, nil},
 		{"7d lowest", `{"autoswitch":{"fiveHourThreshold":90,"sevenDayThreshold":80}}`, 80, nil},
 		{"model bar not in force", `{"autoswitch":{"fiveHourThreshold":90,"sevenDayThreshold":95,"modelThreshold":60}}`, 90, nil},
-		{"model bar in force", `{"autoswitch":{"fiveHourThreshold":90,"sevenDayThreshold":95,"modelThreshold":60,"model":"all"}}`, 60, []string{"all"}},
+		{"retired model key", `{"autoswitch":{"fiveHourThreshold":90,"sevenDayThreshold":95,"modelThreshold":60,"model":"all"}}`, 90, nil},
 		{"legacy threshold", `{"autoswitch":{"threshold":70}}`, 70, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

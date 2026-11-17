@@ -158,16 +158,8 @@ func TestSettingsOpensFromMenuAndKey(t *testing.T) {
 
 // -- the rows ----------------------------------------------------------------
 
-// screenSpecs is the registry without the keys only `tycswap config` sets.
-func screenSpecs() []settings.Spec {
-	var out []settings.Spec
-	for _, spec := range settings.SettingSpecs {
-		if !spec.ConfigOnly {
-			out = append(out, spec)
-		}
-	}
-	return out
-}
+// screenSpecs is the registry: every key is on the screen (DESIGN A97).
+func screenSpecs() []settings.Spec { return settings.SettingSpecs }
 
 func TestSettingsListsEveryKeyFromTheSettingsPackage(t *testing.T) {
 	m, s, _ := settingsModel(t)
@@ -203,11 +195,11 @@ func TestSettingsListsEveryKeyFromTheSettingsPackage(t *testing.T) {
 	}
 }
 
-// autoswitch.model is set through tycswap config only (DESIGN A93): the
-// screen has no row for it, set or unset.
+// autoswitch.model is removed (DESIGN A97): the screen has no row for it,
+// even while settings.json still holds it.
 func TestSettingsLeavesOutTheModelSetting(t *testing.T) {
 	m, s, dir := settingsModel(t)
-	if _, err := settings.SetSetting(dir, "autoswitch.model", "Fable"); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"autoswitch":{"model":"Fable"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	s.reload(m)
@@ -219,19 +211,6 @@ func TestSettingsLeavesOutTheModelSetting(t *testing.T) {
 	if view := stripANSI(s.view(m)); strings.Contains(view, "Count model limits") {
 		t.Fatalf("view names the model setting:\n%s", view)
 	}
-}
-
-// withStringRow appends the registry's string row the screen no longer lists,
-// so the generic string editor stays covered.
-func withStringRow(t *testing.T, s *settingsScreen, dir string) {
-	t.Helper()
-	for _, e := range settings.EffectiveSettings(dir) {
-		if e.Spec.Kind == settings.KindString {
-			s.rows = append(s.rows, e)
-			return
-		}
-	}
-	t.Fatal("the registry has no string setting")
 }
 
 func TestSettingsRowsFollowAnExternalChange(t *testing.T) {
@@ -448,25 +427,6 @@ func TestSettingsEnumCycles(t *testing.T) {
 	}
 }
 
-func TestSettingsStringEditsAndEmptyIsRefused(t *testing.T) {
-	m, s, dir := settingsModel(t)
-	withStringRow(t, s, dir)
-	selectKey(t, s, "autoswitch.model")
-	s.update(m, keyPress("enter"))
-	if s.input != "" {
-		t.Fatalf("an unset string starts empty, not %q", s.input)
-	}
-	s.update(m, keyPress("enter"))
-	if !strings.Contains(s.editError, "expects a non-empty value") {
-		t.Fatalf("empty string editError = %q", s.editError)
-	}
-	typeText(m, s, "Fable, Opus")
-	landSettingsAction(t, m, s.update(m, keyPress("enter")))
-	if got := readSettings(t, dir)["model"]; got != "Fable, Opus" {
-		t.Fatalf("model = %v", got)
-	}
-}
-
 // -- reset -------------------------------------------------------------------
 
 func TestSettingsResetRemovesTheKey(t *testing.T) {
@@ -661,32 +621,6 @@ func TestSettingsViewNeverWraps(t *testing.T) {
 	lines := strings.Split(s.view(m), "\n")
 	if len(lines) > m.contentHeight() {
 		t.Fatalf("view is %d lines for a content height of %d", len(lines), m.contentHeight())
-	}
-}
-
-// A stored value read without its control characters shows clean in its
-// row, and the row's detail carries the notice: what was removed and how to
-// clean the file, never the value.
-func TestSettingsRowSaysAStoredValueWasCleaned(t *testing.T) {
-	m, s, dir := settingsModel(t)
-	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"autoswitch":{"model":"Fable\u001b[2J"}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	s.reload(m)
-	withStringRow(t, s, dir)
-	selectKey(t, s, "autoswitch.model")
-	if row := s.rowText(rowFor(t, s, "autoswitch.model"), false, 20, 12, 100); !strings.Contains(stripANSI(row), "Fable[2J") || strings.Contains(row, "\x1b[2J") {
-		t.Errorf("row = %q, want the clean value", row)
-	}
-	var plain []string
-	for _, l := range s.detailLines(100) {
-		plain = append(plain, stripANSI(l))
-	}
-	detail := strings.Join(plain, " ")
-	for _, want := range []string{"control characters", "removed", "tycswap config set autoswitch.model"} {
-		if !strings.Contains(detail, want) {
-			t.Errorf("detail lacks %q:\n%s", want, strings.Join(plain, "\n"))
-		}
 	}
 }
 

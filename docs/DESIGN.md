@@ -6213,7 +6213,8 @@ additive keys; `schemaVersion` stays 1 and a malformed value reads as absent.
   switch path's lock mutation that records `lastSwitchAt`, so a new active
   account starts at zero.
 
-`"modelNamesChecked": "<list>"` is the comma-joined, lower-cased
+`"modelNamesChecked": "<list>"` (gone with the name check since A97, which
+leaves a stored key unread) is the comma-joined, lower-cased
 `autoswitch.model` list the name check (05§18) last warned or verified for.
 The check completes on a tick where every switchable subscription account
 outside quarantine has readable usage. When the stored value differs from the
@@ -7340,10 +7341,11 @@ and the TUI's rows) all read the one result. The dashboard state carries it as
 `auto.counting` (the families of the live sessions, the counted, dropped and
 reserved), with a one-line caption; the Auto tab, *Next best* and the tray's
 figures render it, so an unset `autoswitch.model` reads *Follow sessions*, not
-*Off*; the tray's *Model limits* switch (gone since A94) read `follows sessions — <caption>`
+*Off* (A97 removes the setting: the policy always decides); the tray's *Model limits* switch (gone since A94) read `follows sessions — <caption>`
 (the caption alone under a hosted engine, which does not follow sessions)
 and says `off` only for an explicit `none`. Unchanged: an explicit
-`autoswitch.model` or `--model`, which never drops a model; the long-running
+`autoswitch.model` or `--model`, which never drops a model (both removed
+by A97); the long-running
 loop and the hosted engines, which keep their configured models (ENG-8); and
 one login for every default session, so while an account can serve Fable and a
 Fable session runs, Opus sessions stay on a Fable-capable account too.
@@ -7508,8 +7510,8 @@ set of names in the script.
   `auto.counting.caption` (A91). While `autoswitch.model` is set (counting
   mode `setting`) one warning line says its value, that session following is
   off, and `tycswap config unset autoswitch.model`.
-- *`autoswitch.model` is set through `tycswap config` only.* The registry
-  marks it (`Spec.ConfigOnly`) and every surface follows the mark: the
+- *`autoswitch.model` is set through `tycswap config` only* (until A97
+  removes it with the mark). The registry marks it (`Spec.ConfigOnly`) and every surface follows the mark: the
   dashboard's settings list and state leave it out, `POST`/`DELETE
   /api/settings/autoswitch.model` and `…/unset` answer 400 naming `tycswap
   config set|unset`, and the TUI's Settings screen does not list it. `config
@@ -7682,3 +7684,65 @@ next tick on the new account, past the cooldown, stays; a candidate without a
 target; one with a 5-hour window keeps the bar and the margin; a week move
 still holds a candidate without a 5-hour window to the margin on the week and
 refuses one that reports no week.
+
+## A97. The model setting is removed; auto-switch always follows the sessions
+
+**Why.** On 2026-11-17 the operator was asked whether `autoswitch.model` and
+the `--model` flags should go, since no wanted behaviour needs them: left
+unset, the default-session policy (A76, A77, A91) already counts Fable while
+Fable sessions run, keeps accounts with Fable room free for them and lets Opus
+fill the accounts whose Fable week is spent. His answer: "Remove it". Every
+value someone had set caused `all-exhausted` while accounts still had Opus
+room: one box stored `all`, another `Fable`. Any value skipped the policy (its
+early return on a set setting): `all` or a list counts a model window even
+when no account can serve it, so every account reads 0 % room; `none` counts
+none, so Opus uses up the accounts that still have Fable room. A93 had already
+taken it off the page and the tray and added a warning line for it.
+
+**What.**
+
+- *Session following is the only rule.* `reporting.DefaultSessionPolicyResult`
+  always decides; it clears the base settings' `Model` before deriving, so
+  nothing a caller passes replaces the counted set. Its rules are A91's
+  unchanged: counted models from the live default sessions, a model no usable
+  account can serve dropped and named `unservable`, the Fable reservation,
+  `blocked-with-room`. `AutoSwitchSettings.Model` stays as the engine's input:
+  the policy fills it, nothing loads it from `settings.json` and no write puts
+  it there. The long-running loop and a hosted engine never followed sessions
+  (ENG-8, A91); with nothing to configure they count 5h and 7d.
+- *The key is retired.* `autoswitch.model` leaves the registry, so `config
+  set|get|unset autoswitch.model` answer `unknown setting` and no list shows
+  it. A file that holds it loads; the value is not read, and the next
+  settings write drops it (`retiredKeys`, as `handoverWaitMinutes`, A95).
+  `Spec.ConfigOnly` had no other key and goes, with the dashboard's 400 for
+  it and the TUI's filter.
+- *The flags go.* `tycswap auto --model` and `switch … --model` exit 2 with
+  `--model was removed: auto-switch counts the models the sessions run.`;
+  help and usage no longer list them. `--model-threshold` stays; the model
+  threshold applies to every model window session following counts.
+- *What existed only for a set value goes.* `switch --strategy` counts 5h
+  and 7d only: its model list, the `Using configured model limits` line, the
+  `--model` typo warning and the `models`/`modelSource` result fields go, and
+  `POST /api/switch` ignores a `models` field. The engine's typo guard
+  (`checkModelNames`, the state file's `modelNamesChecked`) and the unused
+  `Engine.ApplyModels` go; `config-warning` stays for the dry run while off.
+  The control-character handling of the free-text value (`TextValue`,
+  `CleanText`, the `cleaned`/`notice` fields of `config list|get --json`, the
+  warning lines of `config` and the menus, the notice on the TUI's and the
+  dashboard's rows, the `string` setting kind) had no other setting. The
+  dashboard's counting mode `setting` and `auto.counting.setting`, its
+  warning line, its fallback to the setting and the `all` handling in its
+  ranking go; the tray reads the counted models from `auto.counting` only.
+  `Counting now: …` keeps its captions for `sessions` and `hosted`.
+
+**Tests.** With a `settings.json` holding `"model"` set to `all`, `Fable` or
+`none`, a scheduled tick on the 2026-11-17 shape (every account at 100 %
+Fable, the live account at its 5-hour limit, another below its 5-hour and
+weekly bars) polls the same windows as without the key and switches to that
+account; `all` and `Fable` ended `all-exhausted` before. The key is refused
+by `config set|get|unset`, survives a load and is gone after the next write;
+neither `config list` nor the Settings tab nor the TUI lists it; both flags
+exit 2 with the line; the served page has no warning line and does not name
+the key. The policy tests that pinned "a set value wins" now pin that a
+`Model` on the base decides nothing; engine tests that need a counted model
+set it on the engine's settings, the seam the policy fills.

@@ -349,7 +349,7 @@ func TestIndexHTML_DesignSystemMarkup(t *testing.T) {
 		`id="summary-tiles"`, `id="badge-dashboard"`, `id="badge-sessions"`, `id="badge-auto"`, `id="conn-age"`,
 		`id="sess-filter"`, `id="sess-status"`, `id="sess-sort"`, `id="sessions-groups"`, `id="ide-tbl"`,
 		`id="nextbest-tbl"`, `id="auto-settings"`,
-		`id="auto-switch" role="switch"`, `id="auto-counting"`, `id="auto-model-warning"`, // DESIGN A93
+		`id="auto-switch" role="switch"`, `id="auto-counting"`, // DESIGN A93
 		`class="empty-state"`,
 	} {
 		if !strings.Contains(index, needle) {

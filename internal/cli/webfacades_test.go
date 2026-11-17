@@ -64,27 +64,6 @@ func fixtureSwitcher(t *testing.T) *core.Switcher {
 	return sw
 }
 
-// A stored value read without its control characters reaches the dashboard
-// clean, with the notice on its row and only there.
-func TestSettingsFacadeCarriesTheCleanedNotice(t *testing.T) {
-	root := t.TempDir()
-	if err := os.WriteFile(settings.SettingsPath(root), []byte(`{"autoswitch":{"model":"Fable\u001b[2J"}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, v := range (settingsFacade{root: root}).Effective() {
-		if v.Key != "autoswitch.model" {
-			if v.Notice != "" {
-				t.Errorf("%s: notice %q", v.Key, v.Notice)
-			}
-			continue
-		}
-		if v.Value != "Fable[2J" || !strings.Contains(v.Notice, "control characters") ||
-			!strings.Contains(v.Notice, "tycswap config set autoswitch.model") || strings.Contains(v.Notice, "Fable") {
-			t.Errorf("model view = %+v", v)
-		}
-	}
-}
-
 // TestSettingsFacade: every spec is listed with kind/default/bounds, Set and
 // Unset round-trip through settings.json, and a bad key or value is a
 // validation error (400 on the API), not a config failure (500).
@@ -103,14 +82,14 @@ func TestSettingsFacade(t *testing.T) {
 	if !ok || th.Kind != "float" || th.Min == nil || *th.Min != 50 || th.Max == nil || *th.Max != 100 || th.IsDefault || th.Value != float64(80) || th.Default != float64(97) || th.Description == "" {
 		t.Fatalf("7d threshold view = %+v", th)
 	}
-	for _, k := range []string{"autoswitch.fiveHourThreshold", "autoswitch.modelThreshold", "autoswitch.codexThreshold", "autoswitch.codexEnabled", "autoswitch.strategy", "autoswitch.model"} {
+	for _, k := range []string{"autoswitch.fiveHourThreshold", "autoswitch.modelThreshold", "autoswitch.codexThreshold", "autoswitch.codexEnabled", "autoswitch.strategy"} {
 		if _, ok := byKey[k]; !ok {
 			t.Errorf("setting %s missing", k)
 		}
 	}
-	// includeApiKeyAccounts is gone (DESIGN A33), and so is the single
-	// threshold (DESIGN A34).
-	for _, k := range []string{"autoswitch.includeApiKeyAccounts", "autoswitch.threshold"} {
+	// includeApiKeyAccounts is gone (DESIGN A33), so is the single threshold
+	// (DESIGN A34), and the fixture's model key is retired (DESIGN A97).
+	for _, k := range []string{"autoswitch.includeApiKeyAccounts", "autoswitch.threshold", "autoswitch.model"} {
 		if _, ok := byKey[k]; ok {
 			t.Errorf("unexpected setting %s", k)
 		}
@@ -172,18 +151,14 @@ func TestAutoFacade(t *testing.T) {
 	if !v.Available || v.Running || v.Hosted || v.StartedAt != nil || v.Settings["autoswitch.sevenDayThreshold"] != float64(80) || v.Threshold != 80 || v.Quarantine == nil {
 		t.Fatalf("idle view = %+v", v)
 	}
-	// The settings map is derived from the spec: one key per setting, and the
-	// model is what the fixture's settings.json holds (a string when set, nil
-	// when not), not a hand-kept copy.
+	// The settings map is derived from the spec: one key per setting, and
+	// no autoswitch.model, though the fixture's settings.json holds one
+	// (DESIGN A97).
 	if len(v.Settings) != len(settings.SettingSpecs) {
 		t.Fatalf("view settings has %d keys, want %d (one per spec)", len(v.Settings), len(settings.SettingSpecs))
 	}
-	var wantModel any
-	if m := settings.Load(sw.BackupDir()).Model; m != nil {
-		wantModel = *m
-	}
-	if got, ok := v.Settings["autoswitch.model"]; !ok || got != wantModel {
-		t.Fatalf("model = %#v (present %v), want the loaded %#v", got, ok, wantModel)
+	if got, ok := v.Settings["autoswitch.model"]; ok {
+		t.Fatalf("model = %#v, want no key", got)
 	}
 	if err := a.Stop(); err == nil || !strings.Contains(err.Error(), "not running") {
 		t.Errorf("idle Stop err = %v", err)
@@ -1395,20 +1370,22 @@ func TestDashboardSwitchWritesTheSetting(t *testing.T) {
 }
 
 // TestDashboardRefusesTheModelSetting: through the real dashboard, a save or
-// reset of autoswitch.model is refused and the stored value stays; `tycswap
-// config` is the one place to change it (DESIGN A93).
+// reset of autoswitch.model is refused as an unknown setting and the stored
+// file stays as it was (DESIGN A97).
 func TestDashboardRefusesTheModelSetting(t *testing.T) {
 	sw := fixtureSwitcher(t)
-	if _, err := settings.SetSetting(sw.BackupDir(), "autoswitch.model", "Fable"); err != nil {
+	path := settings.SettingsPath(sw.BackupDir())
+	before, err := os.ReadFile(path)
+	if err != nil {
 		t.Fatal(err)
 	}
 	_, post := serveDashboard(t, sw, "")
-	for _, path := range []string{"/api/settings/autoswitch.model", "/api/settings/autoswitch.model/unset"} {
-		if status, _ := post(path, `{"value":"all"}`); status != http.StatusBadRequest {
-			t.Fatalf("%s = %d, want 400", path, status)
+	for _, route := range []string{"/api/settings/autoswitch.model", "/api/settings/autoswitch.model/unset"} {
+		if status, _ := post(route, `{"value":"all"}`); status != http.StatusBadRequest {
+			t.Fatalf("%s = %d, want 400", route, status)
 		}
-		if m := settings.Load(sw.BackupDir()).Model; m == nil || *m != "Fable" {
-			t.Fatalf("after %s: model = %v, want Fable kept", path, m)
+		if after, _ := os.ReadFile(path); string(after) != string(before) {
+			t.Fatalf("after %s settings.json changed: %s", route, after)
 		}
 	}
 }

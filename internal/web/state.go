@@ -57,15 +57,13 @@ type State struct {
 	UI *UIView `json:"ui"`
 }
 
-// CountingView is what auto-switch counts now (DESIGN A91). Mode "setting":
-// autoswitch.model is set (Setting); "sessions": it is unset and the
-// default-session policy derived Models from the families the live default
-// sessions run (Sessions), dropping Unservable and leaving Reserved to Fable;
-// "hosted": it is unset and the engine hosted here keeps its configured
-// models. Caption says it in one line.
+// CountingView is what auto-switch counts now (DESIGN A91, A97). Mode
+// "sessions": the default-session policy derived Models from the families the
+// live default sessions run (Sessions), dropping Unservable and leaving
+// Reserved to Fable; "hosted": the engine hosted here keeps the models it was
+// built with. Caption says it in one line.
 type CountingView struct {
 	Mode       string   `json:"mode"`
-	Setting    string   `json:"setting,omitempty"`
 	Models     []string `json:"models"`
 	Sessions   []string `json:"sessions"`
 	Unservable []string `json:"unservable"`
@@ -78,16 +76,9 @@ type CountingView struct {
 func countingCaption(c CountingView) string {
 	line := "counting 5h + 7d"
 	for _, m := range c.Models {
-		if strings.EqualFold(m, "all") {
-			line += " + every model window"
-			break
-		}
 		line += " + " + m
 	}
-	switch c.Mode {
-	case "setting":
-		return line + " (autoswitch.model)"
-	case "hosted":
+	if c.Mode == "hosted" {
 		return line + " (the engine hosted here does not follow sessions)"
 	}
 	if len(c.Models) > 0 {

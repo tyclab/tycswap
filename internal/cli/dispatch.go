@@ -18,7 +18,6 @@ import (
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/printer"
-	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/transfer"
 	"github.com/tyclab/tycswap/internal/update"
 	"github.com/tyclab/tycswap/internal/version"
@@ -147,32 +146,12 @@ func runMainAction(p *parsed, sw *core.Switcher, payload *any) error {
 	return nil
 }
 
-// dispatchSwitch handles the bare --switch model resolution + call (spec 08§5).
+// dispatchSwitch handles the bare --switch call (spec 08§5).
 func dispatchSwitch(p *parsed, sw *core.Switcher, payload *any) error {
-	var models []string
-	var modelSource *string
-	switch {
-	case p.strategy == nil:
-		models, modelSource = nil, nil
-	case p.model != nil:
-		models = settings.ParseModelNames(p.model)
-		src := "cli"
-		modelSource = &src
-	default:
-		models = settings.ParseModelNames(settings.Load(sw.BackupDir()).Model)
-		if len(models) > 0 {
-			src := "autoswitch.model"
-			modelSource = &src
-		}
-	}
 	before := markOf(sw)
-	sp, err := sw.Switch(p.strategy, p.json, models, modelSource)
+	sp, err := sw.Switch(p.strategy, p.json)
 	if err == nil {
 		logSwitchSince(sw, before, cliActor())
-	}
-	if sp != nil && len(models) > 0 {
-		sp["models"] = models
-		sp["modelSource"] = *modelSource
 	}
 	if sp != nil {
 		*payload = sp

@@ -363,7 +363,7 @@ func TestAutoForegroundNotice(t *testing.T) {
 	}{
 		{"loop off", false, true, false, "", "Auto-switch is off; tycswap auto on turns it on.\n"},
 		{"once off", false, false, false, "", "Auto-switch is off; tycswap auto on turns it on.\n"},
-		{"loop on", true, true, false, "Auto-switch running: 5h 85% · 7d 97% · model 95%, every 60s — Ctrl-C to stop\n", ""},
+		{"loop on", true, true, false, "Auto-switch running: 5h 85% · 7d 97%, every 60s — Ctrl-C to stop\n", ""},
 		{"loop on json", true, true, true, "", ""},
 		{"once on", true, false, false, "", ""},
 	} {

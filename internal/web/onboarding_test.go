@@ -204,20 +204,35 @@ func TestIndexHTML_SettingsTab(t *testing.T) {
 	}
 }
 
-// The "limits ignored" warning points at what is counted now and at the one
-// place that sets autoswitch.model, `tycswap config` (DESIGN A93), never at
-// a control on the page.
-func TestStaticIgnoredModelsNoteNamesTheCommand(t *testing.T) {
+// The "limits ignored" chip points at what is counted now, never at a
+// control on the page or at autoswitch.model, which is gone (DESIGN A97).
+func TestStaticIgnoredModelsNotePointsAtCountingNow(t *testing.T) {
 	note := regexp.MustCompile(`function ignoredModelsNote\(st, models\) \{[\s\S]*?\n  \}`).FindString(staticFile(t, "app.js"))
 	if note == "" {
 		t.Fatal("no ignoredModelsNote in app.js")
 	}
-	for _, want := range []string{"Counting now on the Auto tab", "' config set autoswitch.model"} {
-		if !strings.Contains(note, want) {
-			t.Errorf("the warning lacks %q:\n%s", want, note)
+	if !strings.Contains(note, "Counting now on the Auto tab") {
+		t.Errorf("the chip does not point at Counting now:\n%s", note)
+	}
+	for _, gone := range []string{"Settings tab", "Count model limits", "autoswitch.model", "config set"} {
+		if strings.Contains(note, gone) {
+			t.Errorf("the chip names %q:\n%s", gone, note)
 		}
 	}
-	if strings.Contains(note, "Settings tab") || strings.Contains(note, "Count model limits") {
-		t.Errorf("the warning sends the user to a page control:\n%s", note)
+}
+
+// The served page has no warning line for a set autoswitch.model and names
+// the key nowhere: the setting is gone (DESIGN A97).
+func TestStaticPageHasNoModelSettingWarning(t *testing.T) {
+	for _, name := range []string{"index.html", "app.js"} {
+		file := staticFile(t, name)
+		for _, gone := range []string{"auto-model-warning", "session following is off", "Count model limits"} {
+			if strings.Contains(file, gone) {
+				t.Errorf("%s still has %q", name, gone)
+			}
+		}
+		if regexp.MustCompile(`autoswitch\.model\b`).MatchString(file) {
+			t.Errorf("%s still names autoswitch.model", name)
+		}
 	}
 }

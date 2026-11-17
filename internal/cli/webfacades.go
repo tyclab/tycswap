@@ -43,7 +43,6 @@ func (f settingsFacade) Effective() []web.SettingView {
 			IsDefault:   !e.IsSet,
 			Choices:     e.Spec.Choices,
 			Description: e.Spec.Help,
-			Notice:      e.Notice(),
 		}
 		if e.Spec.Kind == settings.KindFloat || e.Spec.Kind == settings.KindInt {
 			lo, hi := e.Spec.Lo, e.Spec.Hi
@@ -209,14 +208,12 @@ func (a *autoFacade) View() web.AutoView {
 	return v
 }
 
-// counting is what the engine counts now (DESIGN A91): a set autoswitch.model,
-// the configured models of an engine hosted here (ENG-8), or what the
-// default-session policy derives for the scheduled ticks.
+// counting is what the engine counts now (DESIGN A91, A97): an engine hosted
+// here keeps the models it was built with (ENG-8); the scheduled ticks count
+// what the default-session policy derives.
 func (a *autoFacade) counting(s settings.AutoSwitchSettings, hosted bool) *web.CountingView {
 	c := &web.CountingView{Mode: "sessions", Models: settings.ParseModelNames(s.Model)}
 	switch {
-	case s.Model != nil:
-		c.Mode, c.Setting = "setting", *s.Model
 	case hosted:
 		c.Mode = "hosted"
 	default:

@@ -15,7 +15,7 @@ import (
 type Facade interface {
 	AccountsSnapshot(fetch map[string]bool) *reporting.AccountsSnapshot
 	SwitchTo(id string, jsonOut bool) (map[string]any, error)
-	Switch(strategy *string, jsonOut bool, models []string, modelSrc *string) (map[string]any, error)
+	Switch(strategy *string, jsonOut bool) (map[string]any, error)
 	SetAccountDisabled(id string, disabled bool) error
 	RemoveAccount(id string, yes bool) error
 	AddAccount(slot *int, assumeYes bool, alias *string) error

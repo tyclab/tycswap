@@ -138,7 +138,7 @@ func TestRotationNeverLandsOnAnAPIKey(t *testing.T) {
 	if !s.AccountIsSwitchable("2") {
 		t.Error("the API-key slot must stay a valid target for a switch by hand")
 	}
-	res, err := Switch(s, nil, true, nil, nil)
+	res, err := Switch(s, nil, true)
 	if err != nil {
 		t.Fatalf("Switch: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestRotationWithOnlyAnAPIKeyLeftSwitchesNowhere(t *testing.T) {
 	seedLive(t, s, oauthSeatEmail, "", ca)
 	before := seatState(t, s)
 
-	res, err := Switch(s, nil, true, nil, nil)
+	res, err := Switch(s, nil, true)
 	if err != nil {
 		t.Fatalf("Switch: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestTheFreshMachineSkipNamesTheAPIKeyRule(t *testing.T) {
 	}))
 	seedBackup(t, s, "1", apiKeySeatEmail, apiKeySeatKey, "")
 	seedBackup(t, s, "2", "b@x.com", oauthCreds("acc-b", "ref-b"), "")
-	res, err := Switch(s, nil, true, nil, nil)
+	res, err := Switch(s, nil, true)
 	if err != nil {
 		t.Fatalf("Switch: %v", err)
 	}

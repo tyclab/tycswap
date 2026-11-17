@@ -1,8 +1,8 @@
 'use strict';
 // Runs the production Auto tab and Settings rows over a small DOM (DESIGN
 // A93): the one switch, the heading's on/off and who checks, Counting now
-// and the autoswitch.model warning, and every name a tile or toast shows
-// taken from the registry labels the Go test passes in.
+// with no autoswitch.model warning (A97), and every name a tile or toast
+// shows taken from the registry labels the Go test passes in.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -31,7 +31,7 @@ document.createElement = tag => new Node(tag);
 document.createTextNode = text => Object.assign(new Node('#text'), {_text: String(text)});
 document.body = new Node('body'); document.activeElement = document.body;
 const ids = {};
-for (const id of ['auto-badge', 'auto-body', 'auto-model-warning', 'auto-state', 'auto-counting', 'quarantine-body', 'quarantine-section',
+for (const id of ['auto-badge', 'auto-body', 'auto-state', 'auto-counting', 'quarantine-body', 'quarantine-section',
   'nextbest-list', 'nextbest-sub', 'nextbest-empty', 'nextbest-tbl', 'badge-auto', 'settings-grid', 'settings-empty', 'settings-sub', 'toasts', 'conn-age']) { ids[id] = new Node('div'); }
 const switchLabel = new Node('label');
 ids['auto-switch'] = switchLabel.appendChild(new Node('input'));
@@ -51,23 +51,22 @@ const label = key => registry.find(r => r.key === key).label;
 const settings = registry.map(r => ({key: r.key, label: r.label, kind: 'float', value: 90, default: 90, isDefault: true}));
 const owner = 'flakelab-tycswap-autoswitch.timer';
 function auto(mode, on, hosted) {
-  const counting = {mode, models: mode === 'setting' ? ['Fable'] : [], sessions: [], unservable: [], reserved: [], caption: 'counting 5h + 7d (' + mode + ')'};
-  if (mode === 'setting') { counting.setting = 'Fable'; }
+  const counting = {mode, models: [], sessions: [], unservable: [], reserved: [], caption: 'counting 5h + 7d (' + mode + ')'};
   return {available: true, running: on, hosted, owner: hosted ? '' : owner, lastTickAt: Date.now() / 1000 - 120, settings: {'autoswitch.intervalSeconds': 60},
     counting, quarantine: {}, codex: {enabled: true, running: on, threshold: 97, lastTick: null}};
 }
 const text = node => node.textContent;
 const words = () => [ids['auto-badge'], ids['auto-state'], ids['auto-counting'], ids['auto-body']].map(text).join(' ');
 
-// Rows 1 and 7: on/off in both modes, the caption and the warning for the
-// three counting modes.
+// Rows 1 and 7: on/off in both modes and the caption for the two counting
+// modes; no line names the removed autoswitch.model.
 const want = {
   'owner on': ['on', 'checked by ' + owner + ', last check 2m ago'],
   'owner off': ['off', 'not checked while off, last check 2m ago'],
   'hosted on': ['on', 'checked every 60 s by this dashboard'],
   'hosted off': ['off', 'not checked while off'],
 };
-for (const mode of ['setting', 'sessions', 'hosted']) {
+for (const mode of ['sessions', 'hosted']) {
   for (const [name, [chipText, line]] of Object.entries(want)) {
     const st = {accounts: [], settings, auto: auto(mode, name.endsWith(' on'), name.startsWith('hosted'))};
     ctx.state = st;
@@ -79,13 +78,7 @@ for (const mode of ['setting', 'sessions', 'hosted']) {
     assert.ok(ids['badge-auto'].title.endsWith(line), name + ': badge title ' + ids['badge-auto'].title);
     assert.equal(ids['auto-switch'].checked, name.endsWith(' on'), name + ': the switch follows the state');
     assert.equal(text(ids['auto-counting']), 'Counting now: 5h + 7d (' + mode + ')', mode + ': the label says counting once');
-    const warning = ids['auto-model-warning'];
-    if (mode === 'setting') {
-      assert.equal(warning.hidden, false, 'the warning shows while autoswitch.model is set');
-      for (const part of ['"Fable"', 'session following is off', 'tycswap config unset autoswitch.model']) { assert.ok(text(warning).includes(part), text(warning)); }
-    } else {
-      assert.equal(warning.hidden, true, mode + ': no warning without autoswitch.model');
-    }
+    assert.doesNotMatch(words(), /autoswitch\.model|session following is off/, mode + ': ' + words());
     if (name.startsWith('owner')) { assert.doesNotMatch(words(), /engine|running/i, name + ': ' + words()); }
   }
 }
@@ -118,5 +111,5 @@ assert.ok(codexSub.startsWith(label('autoswitch.codexThreshold') + ' 97%'), code
   }
   const rows = ids['settings-grid'].all().filter(n => n.className === 'label').map(text);
   assert.deepEqual(rows, registry.map(r => r.label), 'each row carries the registry name');
-  console.log('auto tab: one switch, heading, counting, warning and registry names passed');
+  console.log('auto tab: one switch, heading, counting and registry names passed');
 })().catch(e => { console.error(e); process.exitCode = 1; });

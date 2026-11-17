@@ -14,8 +14,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-
-	"github.com/tyclab/tycswap/internal/settings"
 )
 
 // negNumRe mirrors argparse's _negative_number_matcher. Since no tycswap option
@@ -49,7 +47,6 @@ type parsed struct {
 	upgrade    bool
 
 	strategy       *string
-	model          *string
 	slot           *int
 	email          *string
 	account        *string
@@ -193,15 +190,8 @@ func parseArgs(prog string, argv []string, stdout, stderr io.Writer) parseResult
 			}
 			p.strategy = &v
 		case "--model":
-			v, ex := takeValue()
-			if ex != nil {
-				return *ex
-			}
-			text, clean := settings.TextValue(v)
-			if !clean {
-				return argError(prog, stderr, "argument --model: must not contain a control character")
-			}
-			p.model = &text
+			fmt.Fprintln(stderr, modelFlagRemoved)
+			return parseResult{code: 2, done: true}
 		case "--slot":
 			v, ex := takeValue()
 			if ex != nil {

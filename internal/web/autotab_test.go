@@ -14,8 +14,8 @@ import (
 
 // The Auto tab and the Settings rows run over a small DOM with the
 // registry's labels (DESIGN A93): one switch, the heading's words, Counting
-// now, the autoswitch.model warning, and every tile and toast naming a
-// setting as the registry does.
+// now with no autoswitch.model warning (A97), and every tile and toast naming
+// a setting as the registry does.
 func TestAppJSAutoTab(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -27,9 +27,7 @@ func TestAppJSAutoTab(t *testing.T) {
 	}
 	var registry []entry
 	for _, spec := range settings.SettingSpecs {
-		if !spec.ConfigOnly {
-			registry = append(registry, entry{spec.Dotted(), spec.Label()})
-		}
+		registry = append(registry, entry{spec.Dotted(), spec.Label()})
 	}
 	labels, err := json.Marshal(registry)
 	if err != nil {

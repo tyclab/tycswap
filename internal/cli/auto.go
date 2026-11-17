@@ -2,10 +2,10 @@
 //
 // Implements spec 08§7.7 / 05§19: the flag grammar (--once/--json/--interval/
 // --five-hour-threshold/--seven-day-threshold/--model-threshold/--cooldown/
-// --model/--dry-run/--debug; one threshold flag per window replaces
-// --threshold, DESIGN A34, and the include-api-key-accounts pair is gone with
-// its setting, DESIGN A33), merged_with_cli, the engine construction, --once
-// (exit = outcome), loop mode with SIGTERM→Stop and the dimmed banner, and the
+// --dry-run/--debug; one threshold flag per window replaces --threshold,
+// DESIGN A34, the include-api-key-accounts pair is gone with its setting,
+// DESIGN A33, and --model with autoswitch.model, DESIGN A97), merged_with_cli,
+// the engine construction, --once (exit = outcome), loop mode with SIGTERM→Stop and the dimmed banner, and the
 // JSONL/human emit callbacks. The compact JSONL/error-envelope discipline
 // (spec 08§7.7) is distinct from the main path's indent-2. prog is hardcoded
 // "tycswap auto".
@@ -32,6 +32,10 @@ import (
 
 const autoProg = "tycswap auto"
 
+// modelFlagRemoved is the one line `auto --model` and `switch --model` exit 2
+// with: what is counted follows the sessions (DESIGN A97).
+const modelFlagRemoved = "--model was removed: auto-switch counts the models the sessions run."
+
 // autoCommand handles `tycswap auto ...` (spec 08§7.7). argv excludes "auto".
 func autoCommand(_ string, argv []string, s ioStreams) int {
 	if len(argv) > 0 && (argv[0] == "on" || argv[0] == "off" || argv[0] == "status") {
@@ -41,7 +45,6 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	var interval, cooldown *float64
 	// One flag per bar, named after the window it governs (DESIGN A34).
 	var fiveHour, sevenDay, modelBar *float64
-	var model *string
 
 	// takeFloat / takeStr consume the value for a value flag, erroring (exit 2)
 	// on a missing/invalid argument.
@@ -105,15 +108,8 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 			}
 			cooldown = &f
 		case tok == "--model":
-			v, ok := next()
-			if !ok {
-				return subError(autoProg, s.err, "argument --model: expected one argument")
-			}
-			text, clean := settings.TextValue(v)
-			if !clean {
-				return subError(autoProg, s.err, "argument --model: must not contain a control character")
-			}
-			model = &text
+			fmt.Fprintln(s.err, modelFlagRemoved)
+			return 2
 		case tok == "-h" || tok == "--help":
 			renderAutoHelp(s.out)
 			return 0
@@ -138,7 +134,6 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		ModelThreshold:    modelBar,
 		IntervalSeconds:   interval,
 		CooldownSeconds:   cooldown,
-		Model:             model,
 	})
 
 	onEvent := humanEmit(s.out)
@@ -174,9 +169,8 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		}
 	}
 	// A scheduled tick counts the models the default login's live sessions
-	// run while autoswitch.model is unset and some usable account can serve
-	// them, and leaves accounts with Fable room to Fable while none of them
-	// runs it (DESIGN A76, A77, A91).
+	// run while some usable account can serve them, and leaves accounts with
+	// Fable room to Fable while none of them runs it (DESIGN A76, A77, A91, A97).
 	policy := reporting.PolicyResult{Settings: merged}
 	if once {
 		policy = defaultSessionPolicy(sw.Store, merged, sw.Clk.Now())
@@ -263,8 +257,8 @@ func autoForegroundNotice(s ioStreams, on, loop, jsonMode, dryRun bool, merged s
 			dry = " (dry-run)"
 		}
 		fmt.Fprintln(s.out, printer.Dimmed(fmt.Sprintf(
-			"Auto-switch running: 5h %s%% · 7d %s%% · model %s%%, every %.0fs%s — Ctrl-C to stop",
-			pctText(merged.FiveHourThreshold), pctText(merged.SevenDayThreshold), pctText(merged.ModelThreshold),
+			"Auto-switch running: 5h %s%% · 7d %s%%, every %.0fs%s — Ctrl-C to stop",
+			pctText(merged.FiveHourThreshold), pctText(merged.SevenDayThreshold),
 			merged.IntervalSeconds, dry)))
 	}
 }
@@ -400,7 +394,7 @@ func autoError(err error, jsonMode bool, s ioStreams) int {
 func renderAutoHelp(out io.Writer) {
 	fmt.Fprintln(out, "usage: tycswap auto [-h] [--once] [--json] [--interval SECONDS]")
 	fmt.Fprintln(out, "                  [--five-hour-threshold PCT] [--seven-day-threshold PCT]")
-	fmt.Fprintln(out, "                  [--model-threshold PCT] [--cooldown SECONDS] [--model NAMES]")
+	fmt.Fprintln(out, "                  [--model-threshold PCT] [--cooldown SECONDS]")
 	fmt.Fprintln(out, "                  [--dry-run] [--debug] [--observe]")
 	fmt.Fprintln(out, "       tycswap auto on [--if-unset]")
 	fmt.Fprintln(out, "       tycswap auto off")
@@ -412,10 +406,9 @@ func renderAutoHelp(out io.Writer) {
 	fmt.Fprintln(out, "`on --if-unset` turns it on only when nothing has set it yet.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Each window has a bar of its own: the 5h window bursts and refills in hours,")
-	fmt.Fprintln(out, "the 7d one is the account's whole budget, and a per-model week counts with")
-	fmt.Fprintln(out, "--model, or with --once while autoswitch.model is unset: then the windows of")
-	fmt.Fprintln(out, "the models the default login's sessions run count, while some usable account")
-	fmt.Fprintln(out, "can serve them.")
+	fmt.Fprintln(out, "the 7d one is the account's whole budget, and with --once a per-model week")
+	fmt.Fprintln(out, "counts for the models the default login's sessions run, while some usable")
+	fmt.Fprintln(out, "account can serve them.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "--observe reads the JSON Claude Code passes its status line on stdin and, when")
 	fmt.Fprintln(out, "a 5h or 7d window there is within 15 points of its bar, runs one tick that")
