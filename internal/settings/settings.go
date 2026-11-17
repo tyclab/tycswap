@@ -82,10 +82,9 @@ type AutoSwitchSettings struct {
 	// mid-task. SevenDayThreshold gates the week, which creeps, so it can be
 	// squeezed close to full before moving; ModelThreshold gates the per-model
 	// weekly windows, which count only when Model names them.
-	FiveHourThreshold   float64
-	SevenDayThreshold   float64
-	ModelThreshold      float64
-	HandoverWaitMinutes int
+	FiveHourThreshold float64
+	SevenDayThreshold float64
+	ModelThreshold    float64
 
 	IntervalSeconds float64
 	// CodexEnabled: Codex rides in the same `tycswap auto` process as its own
@@ -117,19 +116,18 @@ type AutoSwitchSettings struct {
 // (DESIGN A33): auto-switch never moves onto an API-key account.
 func Default() AutoSwitchSettings {
 	return AutoSwitchSettings{
-		Enabled:             false,
-		FiveHourThreshold:   85.0,
-		SevenDayThreshold:   97.0,
-		ModelThreshold:      95.0,
-		HandoverWaitMinutes: 30,
-		IntervalSeconds:     60.0,
-		CodexEnabled:        true,
-		CodexThreshold:      0.0,
-		CooldownSeconds:     300.0,
-		HysteresisPct:       10.0,
-		Strategy:            "soonest-reset",
-		UnhealthyTicks:      3,
-		Model:               nil,
+		Enabled:           false,
+		FiveHourThreshold: 85.0,
+		SevenDayThreshold: 97.0,
+		ModelThreshold:    95.0,
+		IntervalSeconds:   60.0,
+		CodexEnabled:      true,
+		CodexThreshold:    0.0,
+		CooldownSeconds:   300.0,
+		HysteresisPct:     10.0,
+		Strategy:          "soonest-reset",
+		UnhealthyTicks:    3,
+		Model:             nil,
 	}
 }
 
@@ -189,8 +187,6 @@ func (s Spec) Label() string {
 		return "Account order"
 	case "UnhealthyTicks":
 		return "Failed polls"
-	case "HandoverWaitMinutes":
-		return "Handover wait"
 	}
 	return s.Dotted()
 }
@@ -239,9 +235,24 @@ var SettingSpecs = []Spec{
 	{Section: "autoswitch", JSONKey: "unhealthyTicks", Field: "UnhealthyTicks", Kind: KindInt,
 		Lo: 1, Hi: 100, Default: 3,
 		Help: "Consecutive failed polls before an account is unhealthy"},
-	{Section: "autoswitch", JSONKey: "handoverWaitMinutes", Field: "HandoverWaitMinutes", Kind: KindInt,
-		Lo: 15, Hi: 1440, Default: 30,
-		Help: "Offer a reviewed handover after a corroborated limit when no compatible account is expected within this many minutes"},
+}
+
+// retiredKeys are autoswitch keys whose feature is gone: read by nothing and
+// dropped by every write, unlike an unknown key, which writes keep.
+// handoverWaitMinutes left with the handover after a limit (DESIGN A95).
+var retiredKeys = []string{"handoverWaitMinutes"}
+
+func dropRetired(data map[string]any) {
+	section, ok := data["autoswitch"].(map[string]any)
+	if !ok {
+		return
+	}
+	for _, key := range retiredKeys {
+		delete(section, key)
+	}
+	if len(section) == 0 {
+		delete(data, "autoswitch")
+	}
 }
 
 // SpecFor looks up a spec by dotted key; an unknown key returns a
@@ -479,8 +490,6 @@ func applyField(out *AutoSwitchSettings, field string, value any) {
 		out.SevenDayThreshold = value.(float64)
 	case "ModelThreshold":
 		out.ModelThreshold = value.(float64)
-	case "HandoverWaitMinutes":
-		out.HandoverWaitMinutes = value.(int)
 	case "IntervalSeconds":
 		out.IntervalSeconds = value.(float64)
 	case "CodexEnabled":
@@ -513,19 +522,18 @@ func fieldsOf(s AutoSwitchSettings) map[string]any {
 		model = *s.Model
 	}
 	return map[string]any{
-		"Enabled":             s.Enabled,
-		"FiveHourThreshold":   s.FiveHourThreshold,
-		"SevenDayThreshold":   s.SevenDayThreshold,
-		"ModelThreshold":      s.ModelThreshold,
-		"HandoverWaitMinutes": s.HandoverWaitMinutes,
-		"IntervalSeconds":     s.IntervalSeconds,
-		"CodexEnabled":        s.CodexEnabled,
-		"CodexThreshold":      s.CodexThreshold,
-		"CooldownSeconds":     s.CooldownSeconds,
-		"HysteresisPct":       s.HysteresisPct,
-		"Strategy":            s.Strategy,
-		"UnhealthyTicks":      s.UnhealthyTicks,
-		"Model":               model,
+		"Enabled":           s.Enabled,
+		"FiveHourThreshold": s.FiveHourThreshold,
+		"SevenDayThreshold": s.SevenDayThreshold,
+		"ModelThreshold":    s.ModelThreshold,
+		"IntervalSeconds":   s.IntervalSeconds,
+		"CodexEnabled":      s.CodexEnabled,
+		"CodexThreshold":    s.CodexThreshold,
+		"CooldownSeconds":   s.CooldownSeconds,
+		"HysteresisPct":     s.HysteresisPct,
+		"Strategy":          s.Strategy,
+		"UnhealthyTicks":    s.UnhealthyTicks,
+		"Model":             model,
 	}
 }
 
@@ -604,6 +612,7 @@ func saveUnlocked(root string, s AutoSwitchSettings) error {
 		section[spec.JSONKey] = fields[spec.Field]
 	}
 	raw["autoswitch"] = section
+	dropRetired(raw)
 	coercePyFloats(raw)
 	return atomicfile.WriteJSON(path, raw, atomicfile.Opts{})
 }
@@ -645,6 +654,7 @@ func writeSettingUnlocked(root, dotted, raw string, onlyIfAbsent bool) (value an
 	}
 	section[spec.JSONKey] = value
 	data[spec.Section] = section
+	dropRetired(data)
 	coercePyFloats(data)
 	if err := atomicfile.WriteJSON(path, data, atomicfile.Opts{}); err != nil {
 		return nil, false, err
@@ -704,6 +714,7 @@ func unsetSettingUnlocked(root, dotted string) (bool, error) {
 	} else {
 		data[spec.Section] = section
 	}
+	dropRetired(data)
 	coercePyFloats(data)
 	if err := atomicfile.WriteJSON(path, data, atomicfile.Opts{}); err != nil {
 		return false, err

@@ -933,7 +933,6 @@ func (s *Server) settingsViews() []SettingView {
 		list[i].Applies = settingApplies(list[i].Key)
 		if managed {
 			switch list[i].Key {
-			case "autoswitch.handoverWaitMinutes":
 			case "autoswitch.intervalSeconds":
 				list[i].Applies = "The scheduler sets the check interval; this value only affects a continuous loop."
 			default:
@@ -959,8 +958,6 @@ func settingApplies(key string) string {
 	switch key {
 	case "autoswitch.enabled":
 		return "Applies at the next tick."
-	case "autoswitch.handoverWaitMinutes":
-		return "Applies at the next usage update."
 	case modelSettingKey:
 		return "Applies now to this dashboard; other auto-switch processes must restart."
 	case "autoswitch.sevenDayThreshold":
