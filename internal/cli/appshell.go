@@ -271,7 +271,7 @@ func (a *appShell) menu(st web.State) []tray.Item {
 	if !running {
 		autoSub = "off — switch accounts by hand or turn on"
 	}
-	items = append(items, tray.Item{ID: "auto", Kind: tray.KindToggle, Title: "Auto-switch", Sub: autoSub, Checked: running})
+	items = append(items, tray.Item{ID: "auto", Kind: tray.KindToggle, Title: "Auto-switch", Sub: autoSub, Checked: running, ShownState: true})
 	items = append(items, tray.Separator(), tray.Header("App"))
 	// An update of Claude Code sits in the Updates section; its other states
 	// (missing, latest, could not check) stay here.
@@ -511,9 +511,7 @@ func (a *appShell) click(id string) {
 		a.switchClick(strings.TrimPrefix(id, "switch:"))
 	case id == "auto:on" || id == "auto:off":
 		a.autoClick(id == "auto:on")
-	case id == "autostart:on" || id == "autostart:off":
-		// Start at login is read from this machine, never a cached state, so
-		// it still flips what it reads.
+	case id == "autostart":
 		on, err := a.act.Autostart()
 		if err == nil {
 			err = a.act.SetAutostart(!on)

@@ -32,13 +32,14 @@ func TestMenuModelIDs(t *testing.T) {
 	}
 }
 
-// A toggle's click names the state it showed, so the caller sets the
-// opposite of what was seen, not of what it last read (DESIGN A94); every
-// other row's click is its ID.
+// A toggle with ShownState names the state it showed, so the caller sets
+// the opposite of what was seen, not of what it last read (DESIGN A94);
+// every other row's click, other toggles' too, is its ID.
 func TestToggleChoiceCarriesShownState(t *testing.T) {
 	var m menuModel
-	m.set([]Item{{ID: "auto", Kind: KindToggle, Checked: true}, {ID: "autostart", Kind: KindToggle}, {ID: "switch:claude:2"}})
-	for i, want := range []string{"auto:on", "autostart:off", "switch:claude:2"} {
+	m.set([]Item{{ID: "auto", Kind: KindToggle, Checked: true, ShownState: true}, {ID: "auto2", Kind: KindToggle, ShownState: true},
+		{ID: "autostart", Kind: KindToggle}, {ID: "switch:claude:2", ShownState: true}})
+	for i, want := range []string{"auto:on", "auto2:off", "autostart", "switch:claude:2"} {
 		if id, ok := m.idAt(i); !ok || id != want {
 			t.Errorf("idAt(%d) = %q,%v, want %q", i, id, ok, want)
 		}

@@ -209,7 +209,7 @@ func TestShellClicks(t *testing.T) {
 	sh.click("switch:claude:2")
 	sh.click(autoChoice(t, ft))
 	sh.click(autoChoice(t, ft))
-	sh.click("autostart:off")
+	sh.click("autostart")
 	sh.click("install-update")
 	sh.click("quit")
 

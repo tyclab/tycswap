@@ -409,7 +409,7 @@ func TestTraySwitchLeavesAutoSwitchOn(t *testing.T) {
 	if auto := p.Actions[slices.IndexFunc(p.Actions, func(a tray.Item) bool { return a.ID == "auto" })]; !auto.Checked {
 		t.Fatal("the auto-switch switch reads off")
 	}
-	sh.click("autostart:off")
+	sh.click("autostart")
 	if p := sh.panel(sh.last); p.Note != "" {
 		t.Fatalf("a click on a switch kept the note %q", p.Note)
 	}

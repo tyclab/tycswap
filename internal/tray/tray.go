@@ -51,6 +51,8 @@ type Item struct {
 	Children  []Item
 	// Other rows keep the macOS menu open so a click shows its effect in place (A37); Windows and Linux always close it.
 	Dismiss bool
+	// ShownState: a toggle's click names the state it showed (Choice).
+	ShownState bool
 }
 
 // Separator is the menu divider.
@@ -154,7 +156,7 @@ type Options struct {
 	OnSystemEvent func(string)
 	// Tooltip is the initial hover text (also the accessibility label).
 	Tooltip string
-	// OnClick receives the menu item the user chose as its Item.Choice.
+	// OnClick receives the chosen menu item's Item.Choice: its ID.
 	OnClick func(id string)
 	// OnPanelAction receives the Windows panel's commands; their outcome
 	// comes back as the panel's note.
@@ -259,11 +261,10 @@ func (m *menuModel) idAt(i int) (string, bool) {
 	return m.flat[i].Choice(), true
 }
 
-// Choice is what a click on the row hands the caller: its ID, and for a
-// toggle the state it showed ("auto:on", "auto:off"), so the caller sets the
-// opposite of what was seen rather than of what it last read (DESIGN A94).
+// Choice is what a click hands the caller: its ID, for a ShownState toggle
+// with the state it showed ("auto:on"), to set the opposite (DESIGN A94).
 func (it Item) Choice() string {
-	if it.Kind != KindToggle {
+	if it.Kind != KindToggle || !it.ShownState {
 		return it.ID
 	}
 	if it.Checked {

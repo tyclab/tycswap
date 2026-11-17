@@ -96,7 +96,7 @@ func (a *appShell) panelAt(st web.State, now time.Time) tray.Panel {
 		action.Sub = ""
 		p.Actions = append(p.Actions, action)
 	}
-	p.Actions = append(p.Actions, tray.Item{ID: "auto", Title: "Auto-switch", Kind: tray.KindToggle, Checked: a.autoRunning(),
+	p.Actions = append(p.Actions, tray.Item{ID: "auto", Title: "Auto-switch", Kind: tray.KindToggle, Checked: a.autoRunning(), ShownState: true,
 		Disabled: down || a.act.AutoStart == nil || a.act.AutoStop == nil})
 	if a.act.Autostart != nil {
 		on, err := a.act.Autostart()
