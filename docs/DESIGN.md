@@ -7693,7 +7693,7 @@ unset, the default-session policy (A76, A77, A91) already counts Fable while
 Fable sessions run, keeps accounts with Fable room free for them and lets Opus
 fill the accounts whose Fable week is spent. His answer: "Remove it". Every
 value someone had set caused `all-exhausted` while accounts still had Opus
-room: GamerTyc stored `all`, tycdev `Fable`. Any value skipped the policy (its
+room: one box stored `all`, another `Fable`. Any value skipped the policy (its
 early return on a set setting): `all` or a list counts a model window even
 when no account can serve it, so every account reads 0 % room; `none` counts
 none, so Opus uses up the accounts that still have Fable room. A93 had already
