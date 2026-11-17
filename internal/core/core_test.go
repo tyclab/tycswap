@@ -35,6 +35,12 @@ func (a autoswitchAdapter) ReadAccountCredentials(num, email string) string {
 	return v
 }
 
+// SwitchTo is the engine's switch, as cli's adapter has it: SwitchTo itself
+// is a switch by hand, which takes the state lock the engine holds (A94).
+func (a autoswitchAdapter) SwitchTo(id string, jsonOut bool) (map[string]any, error) {
+	return a.Switcher.EngineSwitchTo(id, jsonOut)
+}
+
 var _ autoswitch.Switcher = autoswitchAdapter{}
 
 // ---- scaffolding --------------------------------------------------------

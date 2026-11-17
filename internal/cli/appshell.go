@@ -73,10 +73,6 @@ type shellActions struct {
 	// Restart relaunches the (now replaced) binary and ends this process; nil
 	// → the user is asked to restart by hand. tag is the release just installed.
 	Restart func(tag string)
-	// SetModelLimits turns the per-model weekly windows on or off: it writes
-	// autoswitch.model AND retargets a running engine, so the tray, the
-	// dashboard and the engine agree at once (A39). nil hides the switch.
-	SetModelLimits func(on bool) error
 	// ApproveAPIKey records the user's approval for a switch onto an API-key
 	// account, and RestartNotice is the sentence naming how many sessions must
 	// be restarted (A33). Both nil → the tray refuses the switch and says where
@@ -122,8 +118,11 @@ type appShell struct {
 	// noteAlert draws it as a warning (DESIGN A84).
 	note      string
 	noteAlert bool
-	// switchMu lets one switch from the tray run at a time (DESIGN A84).
+	// switchMu lets one switch from the tray run at a time.
 	switchMu sync.Mutex
+	// autoMu is held while an Auto-switch click is in flight; a click that
+	// finds it held is dropped (DESIGN A94).
+	autoMu sync.Mutex
 	// refresh lays the panel out again when no state came for panelRefresh
 	// (the constant unless a test sets it), so its countdowns stay current.
 	refresh      *time.Timer
@@ -207,8 +206,6 @@ func (a *appShell) paint(st web.State) {
 	if running {
 		title = strings.TrimSpace("⟳ " + title)
 		tooltip += " · auto-switch on"
-	} else if st.Auto != nil && st.Auto.ManagedBy != "" {
-		tooltip += " · managed by " + st.Auto.ManagedBy
 	} else {
 		tooltip += " · auto-switch off"
 	}
@@ -244,8 +241,6 @@ func (a *appShell) menu(st web.State) []tray.Item {
 	state := "auto-switch off"
 	if running {
 		state = "auto-switch on"
-	} else if st.Auto != nil && st.Auto.ManagedBy != "" {
-		state = "auto-switch managed externally"
 	}
 	withModels := countedModels(st)
 	sub := strings.TrimPrefix(version.Version, "v") + " · " + state
@@ -276,34 +271,7 @@ func (a *appShell) menu(st web.State) []tray.Item {
 	if !running {
 		autoSub = "off — switch accounts by hand or turn on"
 	}
-	managed := st.Auto != nil && st.Auto.ManagedBy != ""
-	if managed {
-		autoSub = "Managed by " + st.Auto.ManagedBy
-	}
-	items = append(items, tray.Item{Disabled: managed, ID: "auto", Kind: tray.KindToggle, Title: "Auto-switch", Sub: autoSub, Checked: running})
-	if a.act.SetModelLimits != nil {
-		// One switch for the per-model weekly windows: it decides what
-		// auto-switch counts AND what every percentage here reports, so the
-		// two can never tell different stories (A39).
-		// Unset, the setting follows the sessions (A91); "off" is an
-		// explicit none.
-		name := modelWindowLabel(st)
-		set := settingModels(st)
-		sub := "off — 5h and 7d only, " + name + " ignored"
-		var counting *web.CountingView
-		if st.Auto != nil {
-			counting = st.Auto.Counting
-		}
-		switch {
-		case len(set) > 0:
-			sub = "counting " + strings.Join(set, ", ") + " — applies to percentages and switching"
-		case counting != nil && counting.Mode == "sessions":
-			sub = "follows sessions — " + counting.Caption
-		case counting != nil && counting.Mode == "hosted":
-			sub = counting.Caption
-		}
-		items = append(items, tray.Item{ID: "model-limits", Kind: tray.KindToggle, Title: "Model limits", Sub: sub, Checked: len(set) > 0})
-	}
+	items = append(items, tray.Item{ID: "auto", Kind: tray.KindToggle, Title: "Auto-switch", Sub: autoSub, Checked: running, ShownState: true})
 	items = append(items, tray.Separator(), tray.Header("App"))
 	// An update of Claude Code sits in the Updates section; its other states
 	// (missing, latest, could not check) stay here.
@@ -541,52 +509,8 @@ func (a *appShell) click(id string) {
 		a.repaint()
 	case strings.HasPrefix(id, "switch:"):
 		a.switchClick(strings.TrimPrefix(id, "switch:"))
-	case id == "auto":
-		a.mu.Lock()
-		managed := a.last.Auto != nil && a.last.Auto.ManagedBy != ""
-		a.mu.Unlock()
-		if managed {
-			return
-		}
-		var err error
-		wasRunning := a.autoRunning()
-		if wasRunning {
-			err = a.act.AutoStop()
-		} else {
-			err = a.act.AutoStart()
-		}
-		if err != nil {
-			a.setNote("Auto-switch: "+err.Error(), true)
-			a.notify("Auto-switch", err.Error())
-			a.repaint()
-			return
-		}
-		a.setNote("", false)
-		a.mu.Lock()
-		rotated := rotatedAccounts(a.last)
-		a.mu.Unlock()
-		if wasRunning {
-			a.notify("Auto-switch off", capitalizeFirst(rotated)+" are no longer rotated automatically.")
-		} else {
-			a.notify("Auto-switch on", capitalizeFirst(rotated)+" rotate automatically near the limit.")
-		}
-		a.repaint()
-	case id == "model-limits":
-		a.mu.Lock()
-		st := a.last
-		a.mu.Unlock()
-		on := len(settingModels(st)) > 0
-		name := modelWindowLabel(st)
-		if err := a.act.SetModelLimits(!on); err != nil {
-			a.notify(name+" limit", err.Error())
-			return
-		}
-		if on {
-			a.notify(name+" limit off", "Auto-switch and every percentage now count the 5h and 7d windows only.")
-		} else {
-			a.notify("Model limits on", "Auto-switch and every percentage now count all per-model weekly windows too.")
-		}
-		a.repaint()
+	case id == "auto:on" || id == "auto:off":
+		a.autoClick(id == "auto:on")
 	case id == "autostart":
 		on, err := a.act.Autostart()
 		if err == nil {
@@ -628,13 +552,42 @@ func (a *appShell) click(id string) {
 	}
 }
 
+// autoClick sets auto-switch to the opposite of what the row showed when it
+// was clicked (DESIGN A94): read from the shell's state, a second click that
+// lands before the repaint would turn it back. A click while a change is in
+// flight is dropped, not queued.
+func (a *appShell) autoClick(showedOn bool) {
+	if !a.autoMu.TryLock() {
+		return
+	}
+	defer a.autoMu.Unlock()
+	set := a.act.AutoStart
+	if showedOn {
+		set = a.act.AutoStop
+	}
+	if err := set(); err != nil {
+		a.setNote("Auto-switch: "+err.Error(), true)
+		a.notify("Auto-switch", err.Error())
+		a.repaint()
+		return
+	}
+	a.setNote("", false)
+	a.mu.Lock()
+	rotated := rotatedAccounts(a.last)
+	a.mu.Unlock()
+	if showedOn {
+		a.notify("Auto-switch off", capitalizeFirst(rotated)+" are no longer rotated automatically.")
+	} else {
+		a.notify("Auto-switch on", capitalizeFirst(rotated)+" rotate automatically near the limit.")
+	}
+	a.repaint()
+}
+
 // switchClick switches to the account a row key names ("claude:2",
-// "codex:1", A47). A switch made by hand stays where the user put it:
-// auto-switch, when on and not a dry run, is turned off first, or its next
-// tick would move the login away again; a switch that then fails turns it
-// back on (DESIGN A84). A Codex switch says which codex sessions still run
-// on the old account; a Codex API-key login is never switchable, so nothing
-// asks first.
+// "codex:1", A47). It leaves auto-switch as it is: the switch holds the
+// engine for its cooldown, as every switch by hand does (DESIGN A94). A Codex
+// switch says which codex sessions still run on the old account; a Codex
+// API-key login is never switchable, so nothing asks first.
 func (a *appShell) switchClick(key string) {
 	provider, num := splitRowKey(key)
 	base, label, approve := "", "#"+num, false
@@ -653,17 +606,8 @@ func (a *appShell) switchClick(key string) {
 		a.repaint()
 		return
 	}
-	// One switch at a time: a first that fails must not turn auto-switch
-	// back on behind a second that worked.
 	a.switchMu.Lock()
 	defer a.switchMu.Unlock()
-	paused, err := a.pauseAuto(provider)
-	if err != nil {
-		a.setNote("Not switched: auto-switch could not be turned off: "+err.Error(), true)
-		a.notify("Switch failed", "Auto-switch could not be turned off, so the login stays: "+err.Error())
-		a.repaint()
-		return
-	}
 	// Recorded only now: an approval left behind would let a later switch
 	// onto the slot through unasked (A33).
 	if approve {
@@ -671,14 +615,8 @@ func (a *appShell) switchClick(key string) {
 	}
 	pids, err := a.act.SwitchTo(provider + ":" + num)
 	if err != nil {
-		reason := err.Error()
-		if paused {
-			if again := a.act.AutoStart(); again != nil {
-				reason += "; auto-switch stays off: " + again.Error()
-			}
-		}
-		a.setNote("Switch failed: "+reason, true)
-		a.notify("Switch failed", reason)
+		a.setNote("Switch failed: "+err.Error(), true)
+		a.notify("Switch failed", err.Error())
 		a.repaint()
 		return
 	}
@@ -692,11 +630,6 @@ func (a *appShell) switchClick(key string) {
 		title, body = "Switched Codex to account #"+num, codexRestartSentence(pids)
 	case base != "":
 		body = switching.EndpointAppliedNote(endpointHost(base))
-	}
-	if paused {
-		const stays = " Auto-switch is now off, so the login stays there."
-		note += stays
-		body += stays
 	}
 	a.setNote(note, false)
 	a.notify(title, body)
@@ -731,23 +664,6 @@ func (a *appShell) askClaudeSwitch(num string) (approve, ok bool) {
 		return false, false
 	}
 	return true, true
-}
-
-// pauseAuto turns auto-switch off before a switch by hand and says whether
-// it did. A dry run decides nothing for real, so it is left running; a Codex
-// login moves only while Codex rotation is on, so only then is it paused.
-func (a *appShell) pauseAuto(provider string) (bool, error) {
-	a.mu.Lock()
-	dryRun := a.last.Auto != nil && a.last.Auto.DryRun
-	codex := a.last.Auto != nil && a.last.Auto.Codex != nil && a.last.Auto.Codex.Enabled
-	a.mu.Unlock()
-	if !a.autoRunning() || dryRun || a.act.AutoStop == nil || provider == reporting.ProviderCodex && !codex {
-		return false, nil
-	}
-	if err := a.act.AutoStop(); err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 // codexRestartSentence is what a Codex switch leaves to do: `codex switch`'s
@@ -1175,8 +1091,8 @@ func countedModels(st web.State) []string {
 	return settingModels(st)
 }
 
-// settingModels is `autoswitch.model` as the Model limits switch sets it,
-// preferring the running engine's live value.
+// settingModels is the `autoswitch.model` setting, preferring the running
+// engine's live value.
 func settingModels(st web.State) []string {
 	if st.Auto != nil && st.Auto.Running && st.Auto.Settings != nil {
 		if v, present := st.Auto.Settings["autoswitch.model"]; present {

@@ -2,7 +2,6 @@ package autoswitch
 
 import (
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -39,7 +38,7 @@ func StartSelection(sw Switcher, account string, snapshot func() (StartSnapshot,
 	if e.statePath == "" {
 		e.statePath = StatePath(sw.BackupDir())
 	}
-	e.lockPath = filepath.Join(filepath.Dir(e.statePath), ".autoswitch_state.lock")
+	e.lockPath = stateLockPath(e.statePath)
 	snap, err := snapshot()
 	if err != nil {
 		return startFailure("selection-failed", err)
@@ -119,9 +118,7 @@ func StartSelection(sw Switcher, account string, snapshot func() (StartSnapshot,
 			}
 			outcome = StartOutcome{Switched: true, From: current.Current, To: target,
 				Detail: "Switched to start login Account-" + target + "."}
-			state["schemaVersion"] = StateSchemaVersion
-			state["lastSwitchAt"], state["lastSwitchTo"] = e.nowSeconds(), target
-			clearActiveMemory(state)
+			stampSwitch(state, target, e.nowSeconds(), false)
 			if err := e.writeState(state); err != nil {
 				outcome.Reason = "stamp-failed"
 				outcome.Detail += " Could not record the auto-switch cooldown: " + err.Error()

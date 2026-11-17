@@ -10,11 +10,13 @@ package autoswitch
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 
 	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/oauth"
 )
@@ -183,6 +185,70 @@ func (e *Engine) inCooldown(state map[string]any) bool {
 		return false
 	}
 	return (e.nowSeconds() - last) < e.currentSettings().CooldownSeconds
+}
+
+// byHand is lastSwitchBy for a switch made by hand (DESIGN A94).
+const byHand = "hand"
+
+// cooldownHold reports whether a recent switch holds back a tick of trigger,
+// and the event's detail. A switch by hand holds every trigger and names
+// itself (DESIGN A94); the engine's own and start's hold heldByCooldown's.
+func (e *Engine) cooldownHold(trigger string, state map[string]any) (detail string, held bool) {
+	if !e.inCooldown(state) {
+		return "", false
+	}
+	if by, _ := state["lastSwitchBy"].(string); by != byHand {
+		return "", heldByCooldown(trigger)
+	}
+	to, _ := state["lastSwitchTo"].(string)
+	last, _ := numOfAny(state["lastSwitchAt"])
+	left := math.Ceil(e.currentSettings().CooldownSeconds - (e.nowSeconds() - last))
+	return fmt.Sprintf("switched by hand to account %s; held for another %.0fs", to, left), true
+}
+
+// stateLockPath is the state file's lock, beside it.
+func stateLockPath(statePath string) string {
+	return filepath.Join(filepath.Dir(statePath), ".autoswitch_state.lock")
+}
+
+// stampSwitch records a switch onto number at at: the stamp the cooldown
+// reads. A switch by hand is marked as one; the engine's own and start's
+// clear the mark. The failover memory starts over.
+func stampSwitch(state map[string]any, number string, at float64, hand bool) {
+	state["schemaVersion"] = StateSchemaVersion
+	state["lastSwitchAt"], state["lastSwitchTo"] = at, number
+	if hand {
+		state["lastSwitchBy"] = byHand
+	} else {
+		delete(state, "lastSwitchBy")
+	}
+	clearActiveMemory(state)
+}
+
+// HandSwitch runs a switch made by hand, switchFn, which returns the slot it
+// made active ("" for none), under the state lock the engine's own switches
+// hold, and stamps it as they are stamped, marked as by hand: the engine then
+// makes no switch for autoswitch.cooldownSeconds after it, whatever the
+// trigger (DESIGN A94). switchFn's error comes back as is; a stamp that
+// cannot be written goes to warn, since the switch stands.
+func HandSwitch(statePath string, clk clock.Clock, warn func(error), switchFn func() (string, error)) error {
+	var switchErr error
+	err := filelock.New(stateLockPath(statePath), 0).With(func() error {
+		var slot string
+		if slot, switchErr = switchFn(); switchErr != nil || slot == "" {
+			return nil
+		}
+		state := readStateFile(statePath)
+		stampSwitch(state, slot, clock.Seconds(clk), true)
+		if err := atomicfile.WriteJSON(statePath, state, atomicfile.Opts{}); err != nil && warn != nil {
+			warn(err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return switchErr
 }
 
 // quarantinedSet builds the set of quarantined slot numbers from a state map
