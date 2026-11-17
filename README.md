@@ -452,7 +452,7 @@ Each window has a limit of its own, set by how fast that window fills:
 
 Ultra (formerly Max 20x) loses its five-hour limit as Anthropic verifies
 accounts during its staged rollout. tycswap follows the windows returned by
-Anthropic: an absent five-hour window does not block switching or recovery,
+Anthropic: an absent five-hour window does not block switching,
 and weekly and counted model limits still apply. A reported five-hour window
 continues to count, including on Ultra accounts awaiting verification. Max
 (formerly Max 5x) retains that window. No threshold changes are needed.
@@ -639,25 +639,12 @@ default login instead. A former group hands its account back on the first
 auto-switch tick after its last session exits, and its conversations are
 copied into the default profile, so `claude --resume` continues them.
 
-A Claude session whose lifecycle hooks run `tycswap recovery record` can offer
-**Continue in Codex** after a corroborated limit, once compatible account
-rotation is exhausted and the known wait exceeds 30 minutes
-(`autoswitch.handoverWaitMinutes`, minimum 15); any other stopped session can be
-chosen in the dashboard for a manual plan. Review saved context
-and omissions before explicitly starting a new conversation. Unfinished tools,
-unknown source state and another busy editor in the same worktree block launch.
-The Flakelab launcher reserves editing ownership and preserves source history;
-stop the destination before using `tycswap recovery reclaim --cwd /path/to/work
---confirm-no-background-tools` to return editing to the source.
-
-Existing unmanaged sources must exit before transfer. Codex automatic recovery
-requires typed app-server events with account and process identity from the
-owning host; ordinary terminal error text is insufficient. A Codex account
-switch still requires restarting/resuming Codex. Without the supported launcher,
-the dashboard provides a manual plan; stop the source before running it.
-`tycswap recovery prepare --help` explains saved-context preparation without a
-model request. The dashboard's **Guide → Sessions** covers the workflow,
-including Flakelab start/resume integration.
+**The handover after a limit is removed.** `tycswap recovery`, the
+dashboard's *Continue after a limit* card and *Continue in Codex…* button and
+the tray's *Session at limit* item are gone: a session parked on a limit goes
+on when the login has room. Every `tycswap recovery` verb exits 2 with a line
+saying so, except `recovery record`, the hook a former group session may still
+run, which exits 0.
 
 #### Former session profiles
 
@@ -1307,7 +1294,6 @@ flowchart LR
     F["Usage polling"] --> G["Auto-switch policy"]
     S["Session status lines → auto --observe"] --> G
     G --> D
-    H["Reviewed recovery handover"] --> C
 ```
 
 Repository instructions: [AGENTS.md](AGENTS.md).

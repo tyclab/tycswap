@@ -326,7 +326,6 @@ type Deps struct {
 	// Optional surfaces: nil → the section is null in the state document and
 	// its routes answer 503.
 	Accounts AccountOps
-	Recovery RecoveryFacade
 	// Codex drives the Codex rows; nil (no Codex accounts at launch) makes
 	// every route given a codex: key answer 503 (DESIGN A47).
 	Codex    CodexOps

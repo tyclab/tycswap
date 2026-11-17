@@ -153,7 +153,6 @@ func TestSave_Roundtrip(t *testing.T) {
 		IntervalSeconds: 60.0, CodexEnabled: false,
 		CodexThreshold: 75.0, CooldownSeconds: 60.0, HysteresisPct: 10.0, Strategy: "best",
 		UnhealthyTicks: 3, Model: nil,
-		HandoverWaitMinutes: 30,
 	}
 	if err := Save(root, custom); err != nil {
 		t.Fatal(err)
@@ -225,7 +224,6 @@ func TestSettingSpecs_CoversEveryField(t *testing.T) {
 		"CodexThreshold": true, "CooldownSeconds": true,
 		"HysteresisPct": true, "Strategy": true,
 		"UnhealthyTicks": true, "Model": true,
-		"HandoverWaitMinutes": true,
 	}
 	got := map[string]bool{}
 	for _, s := range SettingSpecs {

@@ -72,9 +72,6 @@ func (s *Server) routes() http.Handler {
 
 	// sessions
 	api.HandleFunc("POST /api/sessions/{pid}/stop", s.handleStop)
-	api.HandleFunc("POST /api/recovery/prepare", s.handleRecoveryPrepare)
-	api.HandleFunc("POST /api/recovery/dismiss", s.handleRecoveryDismiss)
-	api.HandleFunc("POST /api/recovery/start", s.handleRecoveryStart)
 
 	// settings
 	api.HandleFunc("GET /api/settings", s.handleSettingsList)
@@ -935,7 +932,7 @@ func (s *Server) settingsViews() []SettingView {
 			continue
 		}
 		sv.Applies = settingApplies(sv.Key)
-		if managed && sv.Key != "autoswitch.handoverWaitMinutes" {
+		if managed {
 			sv.Applies = "Applies at the next scheduled check."
 		}
 		list = append(list, sv)
@@ -962,8 +959,6 @@ func settingApplies(key string) string {
 	switch key {
 	case "autoswitch.enabled":
 		return "Applies at the next tick."
-	case "autoswitch.handoverWaitMinutes":
-		return "Applies at the next usage update."
 	case "autoswitch.sevenDayThreshold":
 		return "Applies when auto-switch restarts."
 	case "autoswitch.codexEnabled", "autoswitch.codexThreshold":

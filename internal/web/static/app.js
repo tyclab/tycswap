@@ -371,7 +371,6 @@
       $('modal-error').textContent = '';
       var fields = $('modal-fields');
       clear(fields);
-      if (opts.preview) { fields.appendChild(el('pre', { class: 'handover-preview', text: opts.preview, tabindex: '0' })); }
       (opts.fields || []).forEach(function (f) {
         var input;
         if (f.type === 'select') {
@@ -1378,16 +1377,14 @@
       el('span', { class: 'title ellipsis', text: c.title || (shortId ? 'session ' + shortId : '—'), title: c.title || c.sessionId || '' }),
       c.title && shortId ? el('span', { class: 'cell-sub mono', text: shortId }) : null,
       c.group ? chip('retired group', 'outline', 'Started in a retired session group; resume it with plain claude --resume') :
-        c.profile ? chip('run as #' + c.profile, 'accent') : chip('default login', 'outline'),
-      c.model ? el('span', { class: 'cell-sub', text: c.model }) : null
+        c.profile ? chip('run as #' + c.profile, 'accent') : chip('default login', 'outline')
     ]));
     tr.appendChild(el('td', { class: 'c-pid num mono', text: String(c.pid) }));
     tr.appendChild(el('td', { class: 'c-kind' }, [el('span', { text: c.kind || '—' }), c.entrypoint ? el('span', { class: 'cell-sub', text: ' · ' + c.entrypoint }) : null]));
     tr.appendChild(el('td', { class: 'c-status' }, [statusChip(c.status)]));
     tr.appendChild(el('td', { class: 'c-started cell-sub' }, [el('span', { 'data-started': String(c.startedAt || 0), text: '' })]));
     var stop = el('button', { type: 'button', class: 'btn btn-sm btn-danger', 'data-post': '/api/sessions/' + encodeURIComponent(c.pid) + '/stop', 'data-label': 'Stop', 'data-confirm': 'Stop Claude Code session ' + c.pid + (c.cwd ? ' in ' + c.cwd : '') + '? `claude --continue` in that directory resumes it.', 'aria-label': 'Stop session ' + c.pid, text: 'Stop' });
-    var handover = el('button', { type: 'button', class: 'btn btn-sm', 'data-action': 'recovery-prepare', 'data-session': c.sessionId, 'data-provider': 'claude', text: 'Continue in Codex…', disabled: c.status === 'busy' || !c.sessionId });
-    tr.appendChild(el('td', { class: 'c-actions td-actions' }, [handover, stop]));
+    tr.appendChild(el('td', { class: 'c-actions td-actions' }, [stop]));
     return tr;
   }
 
@@ -1867,78 +1864,12 @@
 
   var pendingState = null;
 
-  function renderRecovery(st) {
-    var card = $('recovery-card');
-    if (!card) { return; }
-    var recovery = st.recovery || {};
-    var incidents = (recovery.incidents || []).filter(function (x) { return x.decision.action !== 'ignore'; });
-    var handovers = Object.keys(recovery.handovers || {}).map(function (key) { return recovery.handovers[key]; }).filter(function (x) { return x.status !== 'reclaimed'; });
-    card.hidden = !incidents.length && !handovers.length && !recovery.error;
-    $('recovery-wait').textContent = 'Offer handover when the wait exceeds ' + (recovery.waitMinutes || 30) + ' minutes';
-    var box = $('recovery-list'); clear(box);
-    if (recovery.error) { box.appendChild(el('p', { text: recovery.error })); }
-    handovers.forEach(function (item) {
-      var row = el('div', { class: 'recovery-row' });
-      row.appendChild(el('strong', { text: lastSegment(item.cwd) + ' · continuing in ' + (item.destination.provider === 'codex' ? 'Codex' : 'Claude') }));
-      row.appendChild(el('p', { text: item.destination_session_id ? 'Continuation started. The source conversation is preserved; its managed editing prompts are paused for this workspace.' : 'Waiting for the destination session to appear. This workspace stays reserved; another continuation will not be started.' }));
-      box.appendChild(row);
-    });
-    incidents.forEach(function (item) {
-      var event = item.event, decision = item.decision;
-      var row = el('div', { class: 'recovery-row' });
-      row.appendChild(el('strong', { text: (event.provider === 'codex' ? 'Codex' : 'Claude') + ' · ' + lastSegment(event.cwd) }));
-      row.appendChild(el('p', { text: decision.reason }));
-      if (decision.ready_at && Date.parse(decision.ready_at) > Date.now()) { row.appendChild(el('p', { text: 'Next known availability: ' + new Date(decision.ready_at).toLocaleString() })); }
-      if (decision.action === 'offer') {
-        row.appendChild(el('button', { type: 'button', class: 'btn btn-primary', 'data-action': 'recovery-prepare', 'data-session': event.session_id, 'data-provider': event.provider, text: 'Continue in ' + (event.provider === 'claude' ? 'Codex' : 'Claude') + '…' }));
-        row.appendChild(el('button', { type: 'button', class: 'btn', 'data-action': 'recovery-dismiss', 'data-session': event.session_id, 'data-incident': event.incident_id, text: 'Wait' }));
-      }
-      box.appendChild(row);
-    });
-  }
-
-  function prepareHandover(btn) {
-    var id = btn.getAttribute('data-session'), provider = btn.getAttribute('data-provider');
-    return openModal({ title: 'Prepare handover', message: 'The other tool starts a new conversation in the same workspace. The original session stays available.', okLabel: 'Review context', fields: [
-      { name: 'objective', label: 'What should it continue?', hint: 'Optional. Saved recent messages and workspace changes are included.' },
-      { name: 'constraints', label: 'Constraints or next steps' }
-    ] }).then(function (values) {
-      if (!values) { return null; }
-      return api('POST', '/api/recovery/prepare', { sessionId: id, context: { objective: values.objective, constraints: values.constraints ? [values.constraints] : [] } });
-    }).then(function (response) {
-      if (!response) { return; }
-      var packet = response.packet;
-      var fields = [];
-      if (provider === 'codex') { fields.push({ name: 'model', label: 'Claude model', type: 'select', value: 'opus', options: [{ value: 'opus', label: 'Opus' }, { value: 'fable', label: 'Fable' }] }); }
-      fields.push({ name: 'pending', type: 'checkbox', label: 'I confirm the source is idle and no background command is still editing this workspace.', required: true });
-      return openModal({ title: 'Review and continue in ' + (provider === 'claude' ? 'Codex' : 'Claude'),
-        message: packet.omissions && packet.omissions.length ? 'Omitted: ' + packet.omissions.join(' · ') : 'Review the saved context below. The destination uses its own permissions.',
-        preview: JSON.stringify(packet.source, null, 2), fields: fields, okLabel: 'Start continuation' }).then(function (choice) {
-        if (!choice) { return; }
-        var dest = provider === 'claude' ? { provider: 'codex', model: '' } : { provider: 'claude', model: choice.model };
-        return api('POST', '/api/recovery/start', { packet: packet, destination: dest, reviewedDigest: packet.digest, explicit: true, pendingConfirmed: choice.pending }).then(function (result) {
-          if (result.started) { toast(result.message, 'ok'); }
-          else { return openModal({ title: 'Continue from a terminal', message: result.message, preview: JSON.stringify(result.plan, null, 2), okLabel: 'Close' }); }
-        });
-      });
-    });
-  }
-
-  document.addEventListener('click', function (ev) {
-    var btn = ev.target.closest('[data-action="recovery-prepare"], [data-action="recovery-dismiss"]');
-    if (!btn) { return; }
-    var operation = btn.getAttribute('data-action') === 'recovery-prepare' ? prepareHandover(btn) :
-      api('POST', '/api/recovery/dismiss', { sessionId: btn.getAttribute('data-session'), incidentId: btn.getAttribute('data-incident') });
-    operation.catch(function (err) { toast(err.message); });
-  });
-
   function render(st) {
     if (st.sequence && st.sequence < minimumStateSequence) { return; }
     minimumStateSequence = Math.max(minimumStateSequence, st.sequence || 0);
     if (document.hidden) { pendingState = st; state = st; lastStateAt = Date.now(); return; } // paint once on return
     state = st;
     lastStateAt = Date.now();
-    renderRecovery(st);
     renderSortHeaders(st);
     var accountView = st;
     renderHeader(accountView);

@@ -10,37 +10,11 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
-	"github.com/tyclab/tycswap/internal/recovery"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/tray"
 	"github.com/tyclab/tycswap/internal/web"
 )
-
-func TestRecoveryOfferNotifiesOnceAndOpensReview(t *testing.T) {
-	tray := &fakeTray{}
-	opened := 0
-	shell := newAppShell(tray, shellActions{OpenDashboard: func() error { opened++; return nil }})
-	st := sampleState()
-	st.Recovery = &web.RecoveryView{Incidents: []recovery.Incident{{Event: recovery.Event{Provider: "claude", SessionID: "s", IncidentID: "one"}, Decision: recovery.Decision{Action: "offer", NewlyOffered: true}}}}
-	shell.update(st)
-	shell.update(st)
-	if notes := tray.notesNow(); len(notes) != 1 || !strings.Contains(notes[0], "Continue in Codex?") {
-		t.Fatalf("recovery notifications: %v", notes)
-	}
-	if _, ok := tray.item("recovery-open"); !ok {
-		t.Fatal("handover review missing from tray")
-	}
-	shell.click("recovery-open")
-	if opened != 1 {
-		t.Fatal("handover click did not open review")
-	}
-	st.Recovery.Incidents[0].Dismissed = true
-	shell.update(st)
-	if _, ok := tray.item("recovery-open"); ok {
-		t.Fatal("dismissed offer stayed in tray")
-	}
-}
 
 type fakeTray struct {
 	mu      sync.Mutex
