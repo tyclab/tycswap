@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
 )
@@ -125,6 +127,36 @@ func TestEmptyFableTurnsTheStoreOff(t *testing.T) {
 	}
 	if raw, _ := os.ReadFile(sw.StatePath()); string(raw) != root {
 		t.Fatalf("root state changed: %s", raw)
+	}
+}
+
+// --empty waits for the Fable state lock a Fable tick holds, so the tick
+// installs no login under it.
+func TestEmptyFableWaitsForTheFableStateLock(t *testing.T) {
+	sw, fable, _ := fableSwitcher(t)
+	lock := filelock.New(filepath.Join(filepath.Dir(fable.StatePath()), ".autoswitch_state.lock"), 0)
+	if ok, err := lock.Acquire(0); !ok || err != nil {
+		t.Fatalf("Acquire = %v, %v", ok, err)
+	}
+	t.Cleanup(func() { _ = lock.Release() })
+	store := filepath.Join(paths.FableStoreDir(sw.BackupDir()), ".credentials.json")
+	before, _ := os.ReadFile(store)
+	done := make(chan error, 1)
+	go func() {
+		_, err := sw.EmptyFable(false)
+		done <- err
+	}()
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if raw, _ := os.ReadFile(store); string(raw) != string(before) {
+			t.Fatal("emptied while the Fable state lock was held")
+		}
+	}
+	_ = lock.Release()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if st := sw.FableStore(); st.On {
+		t.Fatalf("FableStore %+v after EmptyFable", st)
 	}
 }
 
