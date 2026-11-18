@@ -13,11 +13,13 @@ import (
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
@@ -145,9 +147,17 @@ func fableTick(sw *core.Switcher, merged settings.AutoSwitchSettings, onEvent fu
 	emit := func(ev autoswitch.Event) { onEvent(fableEvent{ev}) }
 	s := merged
 	s.Model = nil
-	if names := reporting.FableWindowNames(adapter.def.Store, sw.Clk.Now()); len(names) > 0 {
+	names := reporting.FableWindowNames(adapter.def.Store, sw.Clk.Now())
+	if len(names) > 0 {
 		model := strings.Join(names, ",")
 		s.Model = &model
+	}
+	moved := false
+	if !dryRun && autoSwitchOn(sw.BackupDir()) {
+		var on bool
+		if moved, on = checkFableLive(adapter, sw, s, names, emit); !on {
+			return autoswitch.Blocked, true
+		}
 	}
 	engine := autoswitch.NewEngine(adapter, s, emit, dryRun,
 		autoswitch.WithStatePath(adapter.fable.StatePath()),
@@ -157,10 +167,97 @@ func fableTick(sw *core.Switcher, merged settings.AutoSwitchSettings, onEvent fu
 		autoswitch.WithEnabled(func() bool { return autoSwitchOn(sw.BackupDir()) }),
 	)
 	outcome = engine.Tick()
+	if moved {
+		outcome = significantOutcome(autoswitch.Switched, outcome)
+	}
 	if !dryRun {
 		keepFableLoginAlive(adapter, sw, emit)
 	}
 	return outcome, true
+}
+
+// checkFableLive checks the Fable store's live login itself (DESIGN A102):
+// its usage is the default login's, so a dead one shows nowhere else. An
+// expired login is refreshed in the store under its Claude Code locks; a
+// refresh the server rejects quarantines it in the Fable state file. A live
+// login quarantined so moves the store to the best account with a usable
+// Fable login, or empties it: on is false then. The default login is never
+// read or written.
+func checkFableLive(a fableAdapter, sw *core.Switcher, s settings.AutoSwitchSettings, models []string, emit func(autoswitch.Event)) (moved, on bool) {
+	data, _ := a.def.ReadSequence()
+	slot := a.def.Store.ResolveFableLiveSlot(data).Slot
+	live, _, err := a.fable.Creds.ReadActive()
+	if slot == "" || err != nil || live == "" {
+		return false, true
+	}
+	email := a.AccountEmail(slot)
+	if a.def.Store.FableStore().Usable {
+		if !oauth.IsOAuthTokenExpired(oauth.ExtractOAuthData(live)["expiresAt"], sw.Clk.Now()) {
+			return false, true
+		}
+		out := a.def.Store.RefreshFableLiveGuarded(context.Background(), sw.OAuth, slot, email, live)
+		if out.Error != oauth.ErrInvalidGrant && out.Error != oauth.ErrNoRefreshToken {
+			return false, true
+		}
+		if err := autoswitch.Quarantine(a.fable.StatePath(), sw.Clk, slot, email, oauth.ErrInvalidGrant, live, emit); err != nil {
+			sw.Log.Warningf("Fable store: the dead live Fable login of account %s was not quarantined: %v", slot, err)
+			return false, true
+		}
+	}
+	return leaveDeadFableLogin(a, sw, slot, email, s, models, emit)
+}
+
+// leaveDeadFableLogin moves the Fable store off account dead's quarantined
+// login onto the account the cached usage ranks first among those with a
+// usable Fable login, else the first of them; with none it empties the store.
+func leaveDeadFableLogin(a fableAdapter, sw *core.Switcher, dead, email string, s settings.AutoSwitchSettings, models []string, emit func(autoswitch.Event)) (moved, on bool) {
+	var pool []string
+	for _, num := range a.SwitchableAccountNumbers() {
+		if num != dead {
+			pool = append(pool, num)
+		}
+	}
+	ts := sw.Clk.Now().UTC().Format("2006-01-02T15:04:05") + "Z"
+	warn := func(err error) { sw.Log.Warningf("Fable store: the switch off a dead login was not recorded: %v", err) }
+	if len(pool) == 0 {
+		err := autoswitch.EngineSwitch(a.fable.StatePath(), sw.Clk, warn, func() (string, error) {
+			_, err := switching.EmptyFable(a.fable)
+			return "", err
+		})
+		if err != nil {
+			sw.Log.Warningf("Fable store: could not empty the store off the dead Fable login of account %s: %v", dead, err)
+			return false, true
+		}
+		sw.Log.Action("Emptied the Fable store", "engine:failover")
+		emit(autoswitch.NoSwitchEvent{Ts: ts, Reason: "no-viable-target",
+			Detail: "Account-" + dead + "'s Fable login is dead and no other account has a usable one; the Fable store is empty, so Fable sessions start on the default login"})
+		return false, false
+	}
+	target := append(autoswitch.StartTargets(pool, a.UsageEntriesByAccount(map[string]bool{}), s, models, sw.Clk.Now()), pool...)[0]
+	err := autoswitch.EngineSwitch(a.fable.StatePath(), sw.Clk, warn, func() (string, error) {
+		r, err := a.SwitchTo(target, true)
+		if err != nil {
+			return "", err
+		}
+		num, _ := jsonout.SwitchedTo(r)
+		return num, nil
+	})
+	if err != nil {
+		sw.Log.Warningf("Fable store: could not move the store off the dead Fable login of account %s: %v", dead, err)
+		return false, true
+	}
+	a.LogSwitch(target, "engine:failover")
+	emit(autoswitch.SwitchEvent{Ts: ts, Trigger: "failover",
+		FromRef: map[string]any{"number": slotNumber(dead), "email": email},
+		ToRef:   map[string]any{"number": slotNumber(target), "email": a.AccountEmail(target)}})
+	return true, true
+}
+
+func slotNumber(slot string) any {
+	if n, err := strconv.Atoi(slot); err == nil {
+		return n
+	}
+	return slot
 }
 
 // significantOutcome is the more significant of two ticks' outcomes: an

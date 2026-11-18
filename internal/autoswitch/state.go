@@ -232,6 +232,17 @@ func stampSwitch(state map[string]any, number string, at float64, hand bool) {
 // trigger (DESIGN A94). switchFn's error comes back as is; a stamp that
 // cannot be written goes to warn, since the switch stands.
 func HandSwitch(statePath string, clk clock.Clock, warn func(error), switchFn func() (string, error)) error {
+	return stampedSwitch(statePath, clk, warn, switchFn, true)
+}
+
+// EngineSwitch is HandSwitch for a switch the engine makes outside a tick,
+// off a dead live Fable login (DESIGN A102): stamped as the engine's own, so
+// it holds nothing.
+func EngineSwitch(statePath string, clk clock.Clock, warn func(error), switchFn func() (string, error)) error {
+	return stampedSwitch(statePath, clk, warn, switchFn, false)
+}
+
+func stampedSwitch(statePath string, clk clock.Clock, warn func(error), switchFn func() (string, error), hand bool) error {
 	var switchErr error
 	err := filelock.New(stateLockPath(statePath), 0).With(func() error {
 		var slot string
@@ -239,7 +250,7 @@ func HandSwitch(statePath string, clk clock.Clock, warn func(error), switchFn fu
 			return nil
 		}
 		state := readStateFile(statePath)
-		stampSwitch(state, slot, clock.Seconds(clk), true)
+		stampSwitch(state, slot, clock.Seconds(clk), hand)
 		if err := atomicfile.WriteJSON(statePath, state, atomicfile.Opts{}); err != nil && warn != nil {
 			warn(err)
 		}

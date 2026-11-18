@@ -379,6 +379,55 @@ func (s *Store) RefreshFableBackupGuarded(ctx context.Context, c oauth.Client, n
 	return out
 }
 
+// RefreshFableLiveGuarded refreshes the Fable store's live login, account
+// num's, under the Fable store's locks: Claude Code's credential-refresh lock
+// keeps its own refresh out, so a rejected grant is the login's verdict, not
+// a lost race. A login rotated since held was read comes back as it is. The
+// refreshed login goes into the store, with its seat-wide keys, and into num's
+// Fable login file. invalid_grant comes back in the outcome (DESIGN A102).
+func (s *Store) RefreshFableLiveGuarded(ctx context.Context, c oauth.Client, num, email, held string) oauth.RefreshOutcome {
+	out := oauth.RefreshOutcome{Error: RefreshDeclined}
+	f := s.fableScope()
+	if f == nil {
+		return out
+	}
+	err := f.WithFableLocks(func() error {
+		live, _, err := f.Creds.ReadActive()
+		if err != nil || live == "" {
+			return nil
+		}
+		if live != held {
+			out = oauth.RefreshOutcome{Credentials: live}
+			return nil
+		}
+		data, _ := f.ReadSequence()
+		if f.fableLiveSlot(data, live, false).Slot != num {
+			return nil
+		}
+		reqCtx, cancel := context.WithTimeout(ctx, GuardedRefreshTimeout)
+		defer cancel()
+		out = c.Refresh(reqCtx, live)
+		if out.Credentials == "" {
+			return nil
+		}
+		err = f.Creds.WriteActiveAccount(out.Credentials)
+		if err == nil {
+			err = f.WriteAccountCredentials(num, email, oauth.AccountOnly(out.Credentials))
+		}
+		if err != nil {
+			if f.Log != nil {
+				f.Log.Warningf("Refreshed the Fable store's login of account %s but could not store it: %v", num, err)
+			}
+			out = oauth.RefreshOutcome{Error: oauth.ErrRefreshFailed}
+		}
+		return nil
+	})
+	if err != nil && f.Log != nil {
+		f.Log.Debugf("Skipped the Fable store's login refresh for account %s: %v", num, err)
+	}
+	return out
+}
+
 // HarvestFableLive stores a Fable login Claude Code rotated in the Fable store
 // in the Fable login file of the slot the chain record or the profile named,
 // under the Fable store's locks and re-checked there. The live credential is
