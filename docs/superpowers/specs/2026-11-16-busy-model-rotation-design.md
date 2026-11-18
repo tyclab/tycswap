@@ -2,7 +2,7 @@
 
 Status: rev 3, after an Opus max review and a Fable review; one build (B2, B3,
 B5, B6) plus flakelab's parked-session waker. Phase 2 (a Fable login beside the
-default login, `2026-11-16-fable-store-design.md`) is the operator's chosen way to
+default login, `docs/DESIGN.md` A100) is the operator's chosen way to
 the full ask and is piloted separately.
 
 **What the operator gets before Phase 2.** Tonight's stall cannot recur: when no
