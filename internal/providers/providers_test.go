@@ -206,6 +206,21 @@ func TestMergeSnapshotsOfTwoTakenSnapshots(t *testing.T) {
 	}
 }
 
+// The merged snapshot carries the Claude snapshot's Fable store (DESIGN
+// A104); a Codex snapshot has none to give.
+func TestMergePassesTheFableStoreFromClaude(t *testing.T) {
+	fable := map[string]any{"state": "on", "number": 8}
+	claude := reporting.AccountsSnapshot{Fable: fable, Accounts: []reporting.AccountSnapshot{{Number: "8", FableLogin: &reporting.FableLogin{Live: true, Status: "ok"}}}}
+	codex := reporting.AccountsSnapshot{Provider: "codex", Accounts: []reporting.AccountSnapshot{{Number: "1", Provider: "codex"}}}
+	snap := MergeSnapshots(claude, codex)
+	if !reflect.DeepEqual(snap.Fable, fable) || snap.Accounts[0].FableLogin == nil || !snap.Accounts[0].FableLogin.Live {
+		t.Fatalf("merged = %+v", snap)
+	}
+	if snap := MergeSnapshots(codex); snap.Fable != nil {
+		t.Fatalf("a Codex-only merge has fable %v", snap.Fable)
+	}
+}
+
 func TestProviderLabelsAreShortEnoughForARowBadge(t *testing.T) {
 	for in, want := range map[string]string{"claude": "claude", "codex": "codex", "unknown": "unknown"} {
 		if got := ProviderLabel(in); got != want {

@@ -34,7 +34,11 @@ func Status(s *store.Store, jsonOut bool) (any, error) {
 		return nil, err
 	}
 	if jsonOut {
-		return buildStatusPayload(s), nil
+		payload := buildStatusPayload(s)
+		if fable, _, ok := fableStatus(s); ok {
+			payload["fable"] = fable
+		}
+		return payload, nil
 	}
 	renderStatus(os.Stdout, s)
 	return nil, nil
@@ -129,8 +133,17 @@ func unmanagedStatus(email string) map[string]any {
 	}
 }
 
-// renderStatus prints the human status view to w (spec 02§12).
+// renderStatus prints the human status view to w (spec 02§12), and the
+// Fable store's line after it while an account has a Fable login (DESIGN
+// A104).
 func renderStatus(w io.Writer, s *store.Store) {
+	renderActiveStatus(w, s)
+	if _, line, ok := fableStatus(s); ok {
+		fmt.Fprintln(w, line)
+	}
+}
+
+func renderActiveStatus(w io.Writer, s *store.Store) {
 	email, orgUUID, ok := s.GetCurrentAccount()
 	shown := termsafe.Strip(email) // printed; email itself stays the lookup key
 	if !ok {

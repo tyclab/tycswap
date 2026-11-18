@@ -77,6 +77,7 @@ func ListAccounts(s *store.Store, showTokenStatus, jsonOut bool, fetch map[strin
 func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]usage.UsageEntry, showTokenStatus bool) map[string]any {
 	data, _ := s.ReadSequence()
 	models := configuredModels(s)
+	fable := readFableView(s, data)
 	var activeNum any
 	accounts := make([]any, 0, len(infos))
 	for _, info := range infos {
@@ -107,12 +108,18 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 			ts, _ := oauth.BuildTokenStatus(info.Creds, s.Clk.Now())
 			row["tokenStatus"] = ts
 		}
+		if login := fable.login(num); login != nil {
+			row["fableLogin"] = *login
+		}
 		accounts = append(accounts, row)
 	}
 	payload := map[string]any{
 		"schemaVersion":       jsonout.SchemaVersion,
 		"activeAccountNumber": activeNum,
 		"accounts":            accounts,
+	}
+	if fable != nil {
+		payload["fableAccountNumber"] = fable.accountNumber()
 	}
 	if dup := duplicateAccountWarnings(s, infos); len(dup) > 0 {
 		payload["duplicateAccountWarnings"] = dup
@@ -138,6 +145,7 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries map[string]usage.UsageEntry, showTokenStatus bool) {
 	data, _ := s.ReadSequence()
 	models := configuredModels(s)
+	fable := readFableView(s, data)
 	fmt.Fprintln(w, printer.Bolded("Accounts:"))
 	for i, info := range infos {
 		num := strconv.Itoa(info.Number)
@@ -167,6 +175,9 @@ func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries ma
 		}
 		if mk := atLimitMarker(entries[num].DecisionValue(), models, s.Clk.Now()); mk != "" {
 			markers += " " + mk
+		}
+		if fableMarkers := fableTag(fable.login(num)); fableMarkers != "" {
+			markers += " " + fableMarkers
 		}
 		fmt.Fprintf(w, "  %s: %s %s%s\n", num, label, printer.Muted("["+tag+"]"), markers)
 		for _, line := range usageEntryLines(entries[num]) {
