@@ -560,3 +560,15 @@ func TestDefaultResolverBesideTheFableStore(t *testing.T) {
 		})
 	}
 }
+
+// The default login resolved from a Fable scope (ownership, retirement) uses
+// the default backups and the default chain record.
+func TestDefaultLiveSlotFromTheFableScope(t *testing.T) {
+	s := fableFixture(t)
+	putFableLogin(t, s, "2", fableCreds("at-d1", "rt-d1"))
+	f := mustFable(t, s)
+	data, _ := s.ReadSequence()
+	if got := f.defaultLiveSlot(data, fableCreds("at-d1", "rt-d1")); got.Slot != "1" || got.Source != SourceBackup {
+		t.Fatalf("defaultLiveSlot on the Fable scope = %+v, want slot 1 by backup", got)
+	}
+}

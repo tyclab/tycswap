@@ -100,6 +100,9 @@ func (s *Store) ResolveLiveSlotWith(data *SequenceData, readLive func() string) 
 // defaultLiveSlot is ResolveLiveSlot for the default login, whatever the
 // store's scope, given the default profile's credential.
 func (s *Store) defaultLiveSlot(data *SequenceData, creds string) LiveSlot {
+	if s.fable {
+		return s.defaultScope().defaultLiveSlot(data, creds)
+	}
 	email, orgUUID, ok := ccfile.ReadOAuthIdentityFrom(s.DefaultConfigPath())
 	if !ok {
 		return LiveSlot{}

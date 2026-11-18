@@ -43,6 +43,10 @@ func (s *Store) ForFable() (*Store, error) {
 		return nil, ErrFableUnsupported
 	}
 	clone := *s
+	clone.defaultCreds = s.Creds
+	if s.sharedCreds != nil {
+		clone.defaultCreds = s.sharedCreds
+	}
 	clone.fable, clone.group, clone.sharedCreds = true, "", nil
 	clone.CredentialsDir = paths.FableCredentialsDir(s.backupDir)
 	clone.Creds = credstore.New(credstore.Config{
@@ -52,6 +56,18 @@ func (s *Store) ForFable() (*Store, error) {
 		FileOnly:       true,
 	}, s.kc, s.Clk, s.Log)
 	return &clone, nil
+}
+
+// defaultScope is the default store a Fable scope was made from: the default
+// login's resolution reads its backups and chain record, whatever the scope.
+func (s *Store) defaultScope() *Store {
+	if !s.fable {
+		return s
+	}
+	d := *s
+	d.fable, d.Creds, d.defaultCreds = false, s.defaultCreds, nil
+	d.CredentialsDir = filepath.Join(s.backupDir, "credentials")
+	return &d
 }
 
 // IsFable reports whether s is a Fable scope.
