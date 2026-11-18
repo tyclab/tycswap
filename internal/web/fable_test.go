@@ -5,6 +5,9 @@ package web
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -153,5 +156,21 @@ func TestFableSwitchRouteRefusals(t *testing.T) {
 	h := newHarness(t)
 	if resp := h.post("/api/switch/claude:2?store=fable"); resp.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("without the Fable seam: status %d, want 503", resp.StatusCode)
+	}
+}
+
+// The page with and without a Fable store (DESIGN A104), over the node
+// harness the Auto tab tests use (A93).
+func TestAppJSFable(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed; Fable page test skipped")
+	}
+	path := filepath.Join(t.TempDir(), "app.js")
+	if err := os.WriteFile(path, []byte(staticFile(t, "app.js")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(node, "testdata/fable.cjs", path).CombinedOutput(); err != nil {
+		t.Fatalf("fable page: %v\n%s", err, out)
 	}
 }

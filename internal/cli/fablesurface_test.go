@@ -23,6 +23,7 @@ import (
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/launch"
 	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/web"
 )
 
 // served is a dashboard over sw, without Codex, reached with its cookie and
@@ -224,4 +225,25 @@ func TestDashboardAutoFable(t *testing.T) {
 		"claude:3": map[string]any{"live": false, "status": "ok"}, "claude:4": nil}) {
 		t.Fatalf("fableLogin per row = %v", rows)
 	}
+}
+
+// The whole page over the real dashboard's state with the Fable store on and
+// off shows no undefined, null or NaN, no exception and no toast.
+func TestDashboardPageWithTheFableStore(t *testing.T) {
+	sw, _ := atFableLimit.build(t)
+	srv := serveFableDashboard(t, sw)
+	state := func() web.State {
+		status, body := srv.call(http.MethodGet, "/api/state")
+		var st web.State
+		if err := json.Unmarshal(body, &st); status != http.StatusOK || err != nil || st.Fable == nil {
+			t.Fatalf("state: %d %v %s", status, err, body)
+		}
+		return st
+	}
+	cases := []pageCase{{Name: "fable on", State: state()}}
+	if status, body := srv.call(http.MethodPost, "/api/switch/claude:2?store=fable&empty=1"); status != http.StatusOK {
+		t.Fatalf("empty: %d %s", status, body)
+	}
+	cases = append(cases, pageCase{Name: "fable off", State: state()})
+	renderPage(t, servedPage(func(path string) string { _, body := srv.call(http.MethodGet, path); return string(body) }), cases)
 }
