@@ -358,7 +358,7 @@ func (e *Engine) missesCountedModel(cur string, usageMap map[string]any) bool {
 	if len(required) == 0 || len(required) == 1 && required[0] == "all" || hasRequiredModels(usageMap[cur], required) {
 		return false
 	}
-	// A name no account reports is a configuration problem, warned about elsewhere.
+	// Only an account that reports every counted window can take over.
 	for num, value := range usageMap {
 		if num != cur && hasRequiredModels(value, required) {
 			return true

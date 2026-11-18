@@ -1500,8 +1500,8 @@ candidate that reports no window of that class is judged on its weekly figure,
 except on a 5h move: a candidate without a 5h window has no 5h limit and is a
 target when it is below every bar of its own (DESIGN A96).
 Whatever the trigger, a candidate whose week, or a counted model week, is
-spent is never a target. The startup line names every bar (`Auto-switch
-running: 5h 85% · 7d 97% · model 95%, every 60s`); the poll line carries the
+spent is never a target. The startup line names the 5h and 7d bars (`Auto-switch
+running: 5h 85% · 7d 97%, every 60s`); the poll line carries the
 7d bar (`(7d bar 97%)`); the `below-threshold` reason names the window closest
 to its own bar (`7d 50% < 97%`), and a switch names the window that made it
 (`(proactive, 5h)`). The poll cadence escalates on the lowest bar in force (the
@@ -3096,8 +3096,8 @@ Windows through WSL2's localhost forwarding. It sends `Authorization: Bearer
 <token>` with the token read from `--token-file` (read again after a 401),
 follows the dashboard's event stream (reconnecting with backoff from 1 s to
 30 s; silence for a minute counts as a dead stream), follows no redirect and
-uses no proxy. It stores nothing and runs no engine: switches, auto-switch
-and the model limit act on the distro's engine; *Open dashboard*
+uses no proxy. It stores nothing and runs no engine: switches and
+auto-switch act on the distro's engine; *Open dashboard*
 asks `POST /api/launch` for a one-time URL and opens it only when it is the
 engine's own loopback address. It has no Claude Code row and no *Add current
 login*, refuses a switch onto an API-key account (use the dashboard), and holds

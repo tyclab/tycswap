@@ -374,7 +374,7 @@ cleanup logs and continues.
 ### 2.15 `switching` — 02§4–9
 `switch.go`, `switchto.go`, `strategies.go`, `perform.go`, `classify.go`, `provenance.go`, `replan.go`
 ```go
-func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, modelSrc *string) (any, error)
+func Switch(s *store.Store, strategy *string, jsonOut bool) (any, error)
 func SwitchTo(s *store.Store, id string, jsonOut, force bool) (any, error)
 func performSwitch(s *store.Store, target string, emit, forceActivate bool, prov *Provenance) (SwitchOp, error)
 func classifyOutgoing(...) (kind string, foreignSlot string)     // 02§9 identity oracle
@@ -4596,7 +4596,8 @@ measure different things, and fill at different rates:
 - A **per-model weekly window** is a budget too, but a narrower one: at 100 %
   that one model is gone for the week while the account still serves
   everything else. It creeps like the week, and it counts only while
-  `autoswitch.model` names it.
+  `autoswitch.model` names it (since A97, which removed the setting, while
+  the scheduled tick's live sessions run that model).
 
 One bar could not serve both kinds. Set for the week it left no margin on the
 5h window, so a burst overshot it; set for the 5h window it gave up the week
@@ -4957,8 +4958,8 @@ remote tray, no tray here) creates no lock file. Asking whether an app runs
 
 ## A39. One switch for the model limit, in the tray as well
 
-The tray's switch is gone since A94; `autoswitch.model` is set with `tycswap
-config`.
+The tray's switch is gone since A94; `autoswitch.model` was set with `tycswap
+config` until A97 removed it.
 
 The per-model weekly windows decide two things that must not disagree:
 whether the engine counts them (`autoswitch.model`) and the percentage the
@@ -5704,7 +5705,8 @@ Windows).
 
 ## A49. The model windows sit beside their bar, picked from the reported windows
 
-`autoswitch.model` decides which per-model weekly windows auto-switch counts,
+`autoswitch.model` decides which per-model weekly windows auto-switch counts
+(until A97 removed it; the sessions decide since),
 and `autoswitch.modelThreshold` is the bar for exactly those windows. The
 registry (`settings.SettingSpecs`) listed the model key last, after the poll
 interval, the Codex keys, the cooldown, the hysteresis, the strategy and the
@@ -6693,9 +6695,10 @@ tick (`auto --once`, as the timer, the quota hook and `--observe` run it)
 counts, while `autoswitch.model` is unset, the reported per-model windows of
 the families its live sessions run, matched against the default profile's
 running session records, as `GroupSettings` does for a group. An explicit
-`autoswitch.model` or `--model` always wins, and without records nothing
+`autoswitch.model` or `--model` always wins (until A97 removed both, so the
+sessions always decide), and without records nothing
 changes. A long-running `tycswap auto` loop and the dashboard's hosted engine
-keep their configured models. `config set autoswitch.model none` is refused
+keep their configured models (since A97 none: they count 5h and 7d only). `config set autoswitch.model none` is refused
 with a pointer to `unset`, and a stored `none` or `(none)` counts nothing,
 since the help shows the unset value that way.
 
@@ -6717,8 +6720,8 @@ capability allows Fable (`Store.FableCapable`, the test A71 applies) is
 reserved: it ranks last, and an active one hands over with the `reserved`
 trigger, under the cooldown, to an account that cannot run Fable and is below
 every bar. A live session without a record or a Fable session clears the
-reservation, as does an explicit `autoswitch.model`; with no live session the
-login stays where it is, because nothing burns.
+reservation, as does an explicit `autoswitch.model` (until A97 removed it);
+with no live session the login stays where it is, because nothing burns.
 
 `--observe` reports whether its record was news: a session's first status line
 or a change of family. News runs one tick at once on the cached usage, without
