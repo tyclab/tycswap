@@ -6,7 +6,7 @@ toolchain go1.27.4
 
 require (
 	charm.land/bubbletea/v2 v2.1.1
-	charm.land/lipgloss/v2 v2.1.0
+	charm.land/lipgloss/v2 v2.1.1
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/mattn/go-isatty v0.0.24
 	golang.org/x/mod v0.43.0
