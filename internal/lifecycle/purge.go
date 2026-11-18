@@ -25,6 +25,9 @@ func Purge(s *store.Store) error {
 	if err != nil {
 		return err
 	}
+	if err := purgeFableSessions(s); err != nil {
+		return err
+	}
 	if _, _, err := purgeRoster(s); err != nil {
 		return err
 	}
@@ -60,6 +63,9 @@ func Purge(s *store.Store) error {
 		var err error
 		profiles, err = purgeProfiles(backupDir)
 		if err != nil {
+			return err
+		}
+		if err := purgeFableSessions(s); err != nil {
 			return err
 		}
 		data, slots, err := purgeRoster(s)
@@ -176,6 +182,24 @@ func purgeProfiles(root string) ([]string, error) {
 		}
 	}
 	return profiles, nil
+}
+
+// purgeFableSessions refuses while the Fable store holds a login and a Claude
+// session runs: purge deletes the store, and a session's record does not name
+// the store it runs on (DESIGN A101).
+func purgeFableSessions(s *store.Store) error {
+	f, err := s.ForFable()
+	if err != nil || !f.HasLiveLogin() {
+		return nil
+	}
+	pids, err := store.LiveProfilePIDs(s.DefaultProfileDir())
+	if err != nil {
+		return cerr.Session("Cannot verify Claude sessions before purge: %s", err)
+	}
+	if len(pids) > 0 {
+		return cerr.Session("Claude session(s) running (PID %s) may use the Fable store, which purge deletes. Exit them first, then retry --purge.", joinInts(pids, ", "))
+	}
+	return nil
 }
 
 func pathExists(path string) bool {

@@ -130,6 +130,8 @@ func relocateLocked(s *store.Store, data *store.SequenceData, numSrc, target str
 
 	creds, _ := s.ReadAccountCredentials(numSrc, email)
 	config, _ := s.ReadAccountConfig(numSrc, email)
+	fab := fableLogins(s)
+	fableCreds, fableLive := fableMaterial(fab, numSrc, email), fableLiveSlot(fab)
 
 	srcDir := s.SessionDir(numSrc, email)
 	dstDir := s.SessionDir(target, email)
@@ -145,6 +147,11 @@ func relocateLocked(s *store.Store, data *store.SequenceData, numSrc, target str
 			}
 		}
 		// Write-or-clear the target key to num_src's exact state.
+		if fab != nil {
+			if err := writeOrClearCreds(fab, target, email, fableCreds); err != nil {
+				return err
+			}
+		}
 		if err := writeOrClearCreds(s, target, email, creds); err != nil {
 			return err
 		}
@@ -167,6 +174,9 @@ func relocateLocked(s *store.Store, data *store.SequenceData, numSrc, target str
 		// Pre-commit failure: drop strays under the target key, put the profile
 		// back, best-effort (records still point at num_src).
 		_ = s.Creds.DeleteBackup(target, email)
+		if fab != nil {
+			_ = fab.Creds.DeleteBackup(target, email)
+		}
 		if e := s.DeleteConfigBackup(target, email); e != nil {
 			logErrorf(s, "Cleanup after failed move incomplete: %v", e)
 		}
@@ -184,6 +194,13 @@ func relocateLocked(s *store.Store, data *store.SequenceData, numSrc, target str
 	}
 	if creds != "" {
 		_ = s.Creds.DeletePrev(target, email)
+	}
+	if fab != nil {
+		_ = fab.Creds.DeleteBackup(numSrc, email)
+		if fableCreds != "" {
+			_ = fab.Creds.DeletePrev(target, email)
+		}
+		followFableChain(fab, fableLive, map[string]string{numSrc: target})
 	}
 	logInfof(s, "Moved slot: %s (%s) -> %s", numSrc, email, target)
 	return nil
@@ -227,6 +244,17 @@ func swapAccountsLocked(s *store.Store, data *store.SequenceData, first, second 
 	credsB, _ := s.ReadAccountCredentials(numB, emailB)
 	configA, _ := s.ReadAccountConfig(numA, emailA)
 	configB, _ := s.ReadAccountConfig(numB, emailB)
+	fab := fableLogins(s)
+	fableA, fableB, fableLive := fableMaterial(fab, numA, emailA), fableMaterial(fab, numB, emailB), fableLiveSlot(fab)
+	fableStaging := map[string]string{}
+	if fab != nil && emailA == emailB {
+		// Staged before anything changes, so a refusal here needs no rollback.
+		st, e := stageOverlapMaterial(fab, []stageItem{{num: numA, creds: fableA}, {num: numB, creds: fableB}})
+		if e != nil {
+			return "", "", e
+		}
+		fableStaging = st
+	}
 
 	intA, _ := parseSlot(numA)
 	intB, _ := parseSlot(numB)
@@ -245,6 +273,14 @@ func swapAccountsLocked(s *store.Store, data *store.SequenceData, first, second 
 		}
 		swapSessionDirs(s, numA, emailA, numB, emailB)
 
+		if fab != nil {
+			if err := writeOrClearCreds(fab, numB, emailA, fableA); err != nil {
+				return err
+			}
+			if err := writeOrClearCreds(fab, numA, emailB, fableB); err != nil {
+				return err
+			}
+		}
 		if err := writeOrClearCreds(s, numB, emailA, credsA); err != nil {
 			return err
 		}
@@ -276,6 +312,7 @@ func swapAccountsLocked(s *store.Store, data *store.SequenceData, first, second 
 
 	if err := run(); err != nil {
 		rollbackSwap(s, numA, emailA, credsA, configA, numB, emailB, credsB, configB, staging)
+		rollbackFableSwap(fab, numA, emailA, fableA, numB, emailB, fableB, fableStaging)
 		return "", "", err
 	}
 
@@ -294,6 +331,20 @@ func swapAccountsLocked(s *store.Store, data *store.SequenceData, first, second 
 		_ = s.Creds.DeletePrev(numA, emailB)
 	}
 	discardStaging(s, staging)
+	if fab != nil {
+		if emailA != emailB {
+			_ = fab.Creds.DeleteBackup(numA, emailA)
+			_ = fab.Creds.DeleteBackup(numB, emailB)
+		}
+		if fableA != "" {
+			_ = fab.Creds.DeletePrev(numB, emailA)
+		}
+		if fableB != "" {
+			_ = fab.Creds.DeletePrev(numA, emailB)
+		}
+		discardStaging(fab, fableStaging)
+		followFableChain(fab, fableLive, map[string]string{numA: numB, numB: numA})
+	}
 	logInfof(s, "Swapped slots: %s (%s) <-> %s (%s)", numA, emailA, numB, emailB)
 	return numA, numB, nil
 }
@@ -475,6 +526,71 @@ func rollbackSwap(s *store.Store, numA, emailA, credsA, configA, numB, emailB, c
 		} else {
 			discardStaging(s, staging)
 		}
+	}
+}
+
+// rollbackFableSwap is rollbackSwap for the Fable logins (DESIGN A101):
+// each goes back under its old key, a stray under a new key goes, and a staged
+// copy is kept when a restore failed.
+func rollbackFableSwap(fab *store.Store, numA, emailA, fableA, numB, emailB, fableB string, staging map[string]string) {
+	if fab == nil {
+		return
+	}
+	overlap, failures := emailA == emailB, 0
+	for _, r := range [][3]string{{numA, emailA, fableA}, {numB, emailB, fableB}} {
+		var e error
+		if r[2] != "" {
+			e = fab.WriteAccountCredentials(r[0], r[1], r[2])
+		} else if overlap {
+			e = fab.Creds.DeleteBackupStrict(r[0], r[1])
+		}
+		if e != nil {
+			failures++
+			logErrorf(fab, "Rollback Fable login restore failed for slot %s: %v", r[0], e)
+		}
+	}
+	if !overlap {
+		for _, ne := range [][2]string{{numB, emailA}, {numA, emailB}} {
+			if e := fab.Creds.DeleteBackup(ne[0], ne[1]); e != nil {
+				failures++
+				logErrorf(fab, "Rollback Fable login cleanup failed for slot %s: %v", ne[0], e)
+			}
+		}
+	} else if failures == 0 {
+		_ = fab.Creds.DeletePrev(numA, emailA)
+		_ = fab.Creds.DeletePrev(numB, emailB)
+	}
+	if failures > 0 && len(staging) > 0 {
+		kept := stagingPaths(staging)
+		logErrorf(fab, "Rollback incomplete — staged pre-swap Fable logins kept for manual recovery: %s", kept)
+		emitWarning("Swap rollback was incomplete; your pre-swap Fable logins are preserved in: " + kept)
+		return
+	}
+	discardStaging(fab, staging)
+}
+
+// fableMaterial is num's Fable login, "" without one or without a Fable scope.
+func fableMaterial(fab *store.Store, num, email string) string {
+	if fab == nil {
+		return ""
+	}
+	creds, _ := fab.ReadAccountCredentials(num, email)
+	return creds
+}
+
+// followFableChain points the Fable chain record at the Fable store's account
+// under its new number; the caller holds the store lock and has committed.
+func followFableChain(fab *store.Store, live string, renumbered map[string]string) {
+	to, moved := renumbered[live]
+	if live == "" || !moved {
+		return
+	}
+	creds, _, err := fab.Creds.ReadActive()
+	if err == nil && creds != "" {
+		err = fab.RecordFableLive(to, creds)
+	}
+	if err != nil {
+		logWarningf(fab, "Could not point the Fable store's chain record at Account-%s: %v", to, err)
 	}
 }
 
