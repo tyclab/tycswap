@@ -48,17 +48,17 @@ func observedNearBar(raw []byte, s settings.AutoSwitchSettings) bool {
 	return false
 }
 
-// observeTicks records a default-login session's model and reports whether
-// the observation runs a tick: near a bar at most once per observeGap, with
-// the observed account's poll marked due (DESIGN A75), and at once when the
-// session's model is new or changed, on the usage already cached (A77).
-// While auto-switch is off it only records the model (A83).
+// observeTicks records a session's model and store and reports whether the
+// observation runs a tick: near a bar at most once per observeGap, with the
+// observed account's poll marked due (DESIGN A75), and at once when the
+// session's model or store is new or changed, on the usage already cached
+// (A77, A102). While auto-switch is off it only records the model (A83).
 func observeTicks(sw *core.Switcher, raw []byte, s settings.AutoSwitchSettings, enabled bool) bool {
 	group := observedGroup(sw.BackupDir())
 	modelNews := false
 	if group == "" {
 		session, model := observedSessionModel(raw)
-		news, err := reporting.RecordDefaultSessionModel(sw.BackupDir(), session, model, sw.Clk.Now())
+		news, err := reporting.RecordDefaultSessionModel(sw.BackupDir(), session, model, observedStore(), sw.Clk.Now())
 		if err != nil {
 			sw.Log.Debugf("Session model not recorded: %v", err)
 		}
@@ -112,9 +112,26 @@ func claimObserveSlot(dir string, now time.Time) bool {
 	return atomicfile.Write(path, raw, atomicfile.Opts{}) == nil
 }
 
+// observedStore is the store the status line's session runs on: "fable" in a
+// Fable-store session, else "" (DESIGN A102).
+func observedStore() string {
+	if fableSessionProcess {
+		return "fable"
+	}
+	return ""
+}
+
 // markObservedDue makes the observed profile's account due for a usage fetch,
-// so the tick that follows reads it fresh (DESIGN A75).
+// so the tick that follows reads it fresh (DESIGN A75); in a Fable-store
+// session the Fable store's live account (A102).
 func markObservedDue(sw *core.Switcher, group groups.ID) {
+	if group == "" && fableSessionProcess {
+		data, _ := sw.ReadSequence()
+		if num := sw.Store.ResolveFableLiveSlot(data).Slot; num != "" {
+			reporting.MarkUsageDue(sw.Store, num)
+		}
+		return
+	}
 	scope := sw
 	if group != "" {
 		g, err := sw.ForGroup(group)
