@@ -31,6 +31,16 @@ const (
 type defaultSessionModel struct {
 	Family string  `json:"family"`
 	SeenAt float64 `json:"seenAt"`
+	// Store is "fable" for a session on the Fable store, "" for the default
+	// store's (DESIGN A100).
+	Store string `json:"store,omitempty"`
+}
+
+// RecordedSession is the model family and store recorded for a session, ok
+// false when it has no record.
+func RecordedSession(root, sessionID string) (family, store string, ok bool) {
+	rec, ok := readDefaultSessionModels(root)[sessionID]
+	return rec.Family, rec.Store, ok
 }
 
 func readDefaultSessionModels(root string) map[string]defaultSessionModel {
@@ -46,9 +56,9 @@ func readDefaultSessionModels(root string) map[string]defaultSessionModel {
 	return file.Sessions
 }
 
-// modelFamily is the family of a Claude model id or alias ("fable", "opus",
+// ModelFamily is the family of a Claude model id or alias ("fable", "opus",
 // "sonnet", "haiku"), "" for anything else.
-func modelFamily(model string) string {
+func ModelFamily(model string) string {
 	m := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(model)), "[1m]")
 	for _, ch := range m {
 		if !(ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '-') {
@@ -68,7 +78,7 @@ func modelFamily(model string) string {
 // was news: a session seen for the first time or one that changed family
 // (A77). An unknown model or a busy lock records nothing.
 func RecordDefaultSessionModel(root, sessionID, model string, now time.Time) (bool, error) {
-	family := modelFamily(model)
+	family := ModelFamily(model)
 	if sessionID == "" || family == "" {
 		return false, nil
 	}
