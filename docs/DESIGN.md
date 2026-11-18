@@ -8312,7 +8312,10 @@ account `autoswitch.StartTargets` ranks first in the Fable pool, else the
 pool's first (`switch`, trigger `failover`, stamped as the engine's own by
 `autoswitch.EngineSwitch`), or, with an empty pool, is emptied (`no-switch`,
 `no-viable-target`, the tick blocked), and `start` then sends Fable sessions
-to the default login with its notice. The default login is never read or
+to the default login with its notice. A switch of the Fable store by hand
+within the cooldown holds the move or the emptying as it holds a tick (A94,
+`no-switch`, `cooldown`); the quarantine alone already makes the store
+unusable, so `start` sends Fable sessions to the default login meanwhile. The default login is never read or
 written. This replaces the rule that the live Fable login is Claude Code's
 alone to refresh (plan 1.7) for an expired one.
 

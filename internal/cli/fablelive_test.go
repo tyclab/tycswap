@@ -142,3 +142,26 @@ func TestQuarantinedLiveFableLoginIsLeftWithoutARefresh(t *testing.T) {
 		t.Fatalf("FableStore = %+v", st)
 	}
 }
+
+// A switch of the Fable store by hand holds the move off its dead login for
+// the cooldown, as it holds the tick (A94); the login is quarantined at once,
+// so start already sends Fable sessions to the default login.
+func TestDeadLiveFableLoginMoveWaitsOutAHandSwitch(t *testing.T) {
+	dead := false
+	sw, _ := deadLiveFixture(t, []string{"3"}, &dead)
+	writeFile(t, filepath.Join(paths.FableStoreDir(sw.BackupDir()), ".credentials.json"), fableLoginOf("3", farExpiry))
+	if r, err := sw.SwitchFable("2", true); err != nil || r["switched"] != true {
+		t.Fatalf("hand switch: %v, %v", r, err)
+	}
+	dead = true
+	_, out, _ := runCodex(t, "", "auto", "--once", "--json")
+	_, fable, _ := splitByStore(t, out)
+	held := eventOf(fable, "no-switch")
+	if eventOf(fable, "account-quarantined") == nil || eventOf(fable, "switch") != nil || held == nil ||
+		held["reason"] != "cooldown" || held["detail"] != "switched by hand to account 2; held for another 300s" {
+		t.Fatalf("Fable events %v", fable)
+	}
+	if st := sw.Store.FableStore(); !st.On || st.Usable || st.Live.Slot != "2" {
+		t.Fatalf("FableStore = %+v, want on Account-2 and unusable", st)
+	}
+}

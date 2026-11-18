@@ -220,12 +220,14 @@ func leaveDeadFableLogin(a fableAdapter, sw *core.Switcher, dead, email string, 
 	ts := sw.Clk.Now().UTC().Format("2006-01-02T15:04:05") + "Z"
 	warn := func(err error) { sw.Log.Warningf("Fable store: the switch off a dead login was not recorded: %v", err) }
 	if len(pool) == 0 {
-		err := autoswitch.EngineSwitch(a.fable.StatePath(), sw.Clk, warn, func() (string, error) {
+		emptied := false
+		held, err := autoswitch.EngineSwitch(a.fable.StatePath(), sw.Clk, s, warn, func() (string, error) {
 			_, err := switching.EmptyFable(a.fable)
+			emptied = err == nil
 			return "", err
 		})
-		if err != nil {
-			sw.Log.Warningf("Fable store: could not empty the store off the dead Fable login of account %s: %v", dead, err)
+		if !emptied {
+			fableHeldOrFailed(sw, emit, ts, held, "could not empty the store off the dead Fable login of account "+dead, err)
 			return false, true
 		}
 		sw.Log.Action("Emptied the Fable store", "engine:failover")
@@ -234,16 +236,18 @@ func leaveDeadFableLogin(a fableAdapter, sw *core.Switcher, dead, email string, 
 		return false, false
 	}
 	target := append(autoswitch.StartTargets(pool, a.UsageEntriesByAccount(map[string]bool{}), s, models, sw.Clk.Now()), pool...)[0]
-	err := autoswitch.EngineSwitch(a.fable.StatePath(), sw.Clk, warn, func() (string, error) {
+	switched := false
+	held, err := autoswitch.EngineSwitch(a.fable.StatePath(), sw.Clk, s, warn, func() (string, error) {
 		r, err := a.SwitchTo(target, true)
 		if err != nil {
 			return "", err
 		}
-		num, _ := jsonout.SwitchedTo(r)
+		num, ok := jsonout.SwitchedTo(r)
+		switched = ok
 		return num, nil
 	})
-	if err != nil {
-		sw.Log.Warningf("Fable store: could not move the store off the dead Fable login of account %s: %v", dead, err)
+	if !switched {
+		fableHeldOrFailed(sw, emit, ts, held, "could not move the store off the dead Fable login of account "+dead+" to account "+target, err)
 		return false, true
 	}
 	a.LogSwitch(target, "engine:failover")
@@ -251,6 +255,16 @@ func leaveDeadFableLogin(a fableAdapter, sw *core.Switcher, dead, email string, 
 		FromRef: map[string]any{"number": slotNumber(dead), "email": email},
 		ToRef:   map[string]any{"number": slotNumber(target), "email": a.AccountEmail(target)}})
 	return true, true
+}
+
+// fableHeldOrFailed reports a move off a dead login that a switch by hand
+// held (a cooldown event, as a tick has) or that failed (a warning).
+func fableHeldOrFailed(sw *core.Switcher, emit func(autoswitch.Event), ts, held, what string, err error) {
+	if held != "" {
+		emit(autoswitch.NoSwitchEvent{Ts: ts, Reason: "cooldown", Detail: held})
+		return
+	}
+	sw.Log.Warningf("Fable store: %s: %v", what, err)
 }
 
 func slotNumber(slot string) any {

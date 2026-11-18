@@ -1764,7 +1764,9 @@ live login quarantined so is left at once: the store moves to the account the
 cached usage ranks first among those with a usable Fable login (`switch`,
 trigger `failover`, logged `by engine:failover`), or, with none, it is emptied
 (`no-switch`, reason `no-viable-target`; `tycswap start` then sends Fable
-sessions to the default login and says so). The default login is never read
+sessions to the default login and says so). A switch of the Fable store by
+hand holds that move for the cooldown, as it holds the tick; the quarantined
+login already counts as unusable for `start`. The default login is never read
 or written. `--dry-run` runs both ticks dry. The loop and
 the dashboard's hosted engine run no Fable tick. A dead default login leaves
 the account's usage unknown, so neither store takes it until it is signed in
