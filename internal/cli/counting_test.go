@@ -132,3 +132,20 @@ func TestAutoViewReportsTheLastTick(t *testing.T) {
 		t.Fatalf("last tick = %v, want 1763251200.5", got)
 	}
 }
+
+// An engine hosted here was built from settings.Load and follows no session
+// (ENG-8): the view says "hosted" and names no counted model, also while a
+// live Fable session some account can serve runs (DESIGN A97).
+func TestAutoViewReportsTheHostedEngine(t *testing.T) {
+	sw := countingStore(t, "claude-fable-5-1", map[string][3]float64{"1": {10, 20, 30}, "2": {10, 20, 30}})
+	a := newAutoFacade(sw, nil)
+	countingEngines(a)
+	t.Cleanup(func() { a.stopKeepingChoice() })
+	if err := a.Start(); err != nil {
+		t.Fatal(err)
+	}
+	want := web.CountingView{Mode: "hosted", Models: []string{}, Sessions: []string{}, Unservable: []string{}, Reserved: []string{}}
+	if got := a.View().Counting; got == nil || !reflect.DeepEqual(*got, want) {
+		t.Fatalf("counting = %+v, want %+v", got, want)
+	}
+}

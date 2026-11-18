@@ -152,10 +152,13 @@ func TestIndexHTML_GuideTab(t *testing.T) {
 			t.Errorf("guide contents do not link #%s", id)
 		}
 	}
-	for _, needle := range []string{"{{.Name}} config", "{{.Name}} upgrade", "{{.Name}} codex", "add --login", "Add account…", "autoswitch.sevenDayThreshold", "autoswitch.model", "5-hour", "7-day", "sessions", "127.0.0.1"} {
+	for _, needle := range []string{"{{.Name}} config", "{{.Name}} upgrade", "{{.Name}} codex", "add --login", "Add account…", "autoswitch.sevenDayThreshold", "autoswitch.modelThreshold", "5-hour", "7-day", "sessions", "127.0.0.1"} {
 		if !strings.Contains(guide, needle) {
 			t.Errorf("guide lacks %q", needle)
 		}
+	}
+	if strings.Contains(guide, "<code>autoswitch.model</code>") {
+		t.Error("the guide names the removed autoswitch.model setting (DESIGN A97)")
 	}
 	if strings.Contains(guide, "telemetry") && !strings.Contains(guide, "There is no telemetry") {
 		t.Error("the guide mentions telemetry other than to say there is none")

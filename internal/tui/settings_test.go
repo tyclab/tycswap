@@ -390,6 +390,26 @@ func TestSettingsFloatNaNIsRefusedInline(t *testing.T) {
 	}
 }
 
+// An emptied input is refused inline with the message `tycswap config set`
+// gives, the input stays open and nothing is written.
+func TestSettingsEmptyValueIsRefusedInline(t *testing.T) {
+	m, s, dir := settingsModel(t)
+	selectKey(t, s, "autoswitch.sevenDayThreshold")
+	s.update(m, keyPress("enter"))
+	for s.input != "" {
+		s.update(m, keyPress("backspace"))
+	}
+	if cmd := s.update(m, keyPress("enter")); cmd != nil {
+		t.Fatal("an empty value must start no action")
+	}
+	if want := `autoswitch.sevenDayThreshold expects a number, got ""`; !s.editing || s.editError != want {
+		t.Fatalf("editing=%v editError=%q, want the input open with %q", s.editing, s.editError, want)
+	}
+	if readSettings(t, dir) != nil {
+		t.Fatal("an empty value must not be written")
+	}
+}
+
 func TestSettingsBoolToggles(t *testing.T) {
 	m, s, dir := settingsModel(t)
 	selectKey(t, s, "autoswitch.codexEnabled")

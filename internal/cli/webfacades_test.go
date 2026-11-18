@@ -1292,6 +1292,14 @@ func TestCodexLoopSkipsWhileDisabled(t *testing.T) {
 // that answers the status and the decoded result.
 func serveDashboard(t *testing.T, sw *core.Switcher, owner string) (*dashboard, func(path, body string) (int, map[string]any)) {
 	t.Helper()
+	d, post, _ := serveDashboardPage(t, sw, owner)
+	return d, post
+}
+
+// serveDashboardPage is serveDashboard with a GET helper that answers the
+// body of a page or static file the dashboard serves.
+func serveDashboardPage(t *testing.T, sw *core.Switcher, owner string) (*dashboard, func(path, body string) (int, map[string]any), func(path string) string) {
+	t.Helper()
 	t.Setenv(brand.Sanitized().EnvPrefix+"_AUTO_MANAGED_BY", owner)
 	useSwitcher(t, sw)
 	prevPresent, prevQuiet := codexIsPresent, newQuietCodexSwitcher
@@ -1321,6 +1329,19 @@ func serveDashboard(t *testing.T, sw *core.Switcher, owner string) (*dashboard, 
 		resp.Body.Close()
 	}
 	base := launch[:strings.Index(launch, "/?token=")]
+	get := func(path string) string {
+		t.Helper()
+		resp, err := c.Get(base + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		raw, err := io.ReadAll(resp.Body)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s: %d %v", path, resp.StatusCode, err)
+		}
+		return string(raw)
+	}
 	return d, func(path, body string) (int, map[string]any) {
 		t.Helper()
 		req, _ := http.NewRequest(http.MethodPost, base+path, strings.NewReader(body))
@@ -1335,7 +1356,7 @@ func serveDashboard(t *testing.T, sw *core.Switcher, owner string) (*dashboard, 
 		}
 		_ = json.NewDecoder(resp.Body).Decode(&out)
 		return resp.StatusCode, out.Result
-	}
+	}, get
 }
 
 // TestDashboardSwitchWritesTheSetting: through the real dashboard, the
