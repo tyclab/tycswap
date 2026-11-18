@@ -4789,7 +4789,7 @@ alone); the badged icons are drawn once per count and kept.
 **The shell** (`internal/cli/appshell.go`) is the platform-independent
 behaviour, tested with a fake tray: title `#<slot> · <fullest counted
 window %>` (`⟳` in front while auto-switch runs), a tooltip with every
-window, the menu of A37, notifications on engine `switch` and
+window (with a Fable login, `Default #N · Fable #M` instead, A104), the menu of A37, notifications on engine `switch` and
 `account-quarantined` events, and once when a window of the active account
 reaches its own bar (A34), re-armed when every window is ten points below
 its bar. It only ever renders `web.State` and acts through `shellActions`,
@@ -6973,7 +6973,8 @@ The rule: the Windows panel is one page.
 - The account cell has two lines: the name (`#2 name`, `Codex #1 name`),
   semi-bold, cut with an ellipsis past the column's cap of 36 units (about
   34 average characters); then the plan in an outlined label, `not
-  rotated` (muted) for an account excluded from rotation, and in the limit
+  rotated` (muted) for an account excluded from rotation (on the Fable
+  store's account a second outlined label `Fable`, A104), and in the limit
   colour, in the dashboard's words, a reading that failed (`token
   expired`, `re-login needed`, `usage unavailable`, …; none for an API-key
   account, which reports no usage by design).
@@ -6992,6 +6993,7 @@ The rule: the Windows panel is one page.
   shows what is reported.
 - The action cell is a Switch button, disabled for an account that cannot
   be switched to; the active account shows `In use` in the accent instead.
+  A104 adds `Use for Fable` beside it on every row the Fable store can take.
 - One note line under the list: the last panel action's result or error,
   whichever button it was, or while the engine is out of reach why. Then
   Switch and `Auto-switch` are disabled; `Start at login` and the updates
@@ -7051,7 +7053,7 @@ menu… (the dashboard and `tycswap add`, `tycswap menu`); A67's details line;
 A79's plan in the row title; A80's `55% · 8m` cells and details box; and
 the `Used by` column, Check for updates, the version text and the
 "Auto-switch managed by …" status, which A83 left with nothing to say.
-The Linux and macOS menus are unchanged (A37).
+The Linux and macOS menus are unchanged (A37), but for A104's Fable items.
 
 ## A85. Start at login has one owner per box
 
@@ -8378,3 +8380,126 @@ Fable store; `TestStartOnWindowsMatchesTheVariableCaseInsensitively` and
 `TestStartOnMacOSLeavesAFableSessionAsBefore` the platforms; and
 `TestStartWithoutFableLoginsPassesTheEnvironmentUnchanged` the byte-identical
 environment of a box without a Fable login.
+
+## A104. Two live logins on every surface
+
+**Why.** A100 gives each account a second login and the Fable store to run
+it; the design says the dashboard and the tray show two live accounts, the
+default login's and the Fable store's. Every surface took its one live
+account from `store.ResolveLiveSlot` on the default store: `list` and
+`status` through `reporting.BuildAccountsInfo`, `/api/state` as
+`activeNumber` and the rows' `isActive`, the tray as `In use`, the TUI as
+`ActiveNumber`. The operator's standing rules for the tray hold: one page,
+every account's windows and reset times visible at once, no settings in the
+tray (A84). On 2026-11-18 he decided the tray gets a Fable switch (open
+point O11: "Add a tray button").
+
+**The rule.** While some account has a Fable login, every surface below adds
+the Fable store beside the default login; without one, nothing changes: no
+field, line, chip, label, button or item (A100's no-change rule). The
+default login's markers (`(active)`, `isActive`, `In use`, *Switch*, *Switch
+now*, the best candidate) stay the default login's.
+
+**One reading.** `reporting.readFableView` reads the Fable store once per
+pass: `Store.FableStore()` for on, off, usable and the reason; the live slot
+by `ResolveFableLiveSlot` on a `WithoutLineageWrites` view (backup, chain,
+then the profile endpoint, never written), as `AccountInfo.FableLive` is
+resolved (A102); and per account its Fable login, `sign in again` when the
+Fable state file holds an `invalid_grant` quarantine entry for it. The
+store's state is `on`, `off` (no login held) or `unusable` (the live login's
+grant quarantined).
+
+**`list`.** `list --json` adds `fableAccountNumber` (int, or null while the
+store is off or its slot unknown) and on each row with a Fable login
+`fableLogin: {"live", "status"}` (`ok` or `sign in again`). The human list
+adds, after every existing marker, `(Fable store)` on the store's account,
+`(Fable login)` on another account with a usable login, and `(Fable login:
+sign in again)` on a quarantined one.
+
+**`status`.** `status --json` adds a top-level `fable`, whatever `active`
+is: `state`, `storeDir` (the cleaned `paths.FableStoreDir`, the value
+`start` gives a Fable session), `number` (null while unknown), `source`
+(`backup`, `chain`, `profile`; null while unknown), `reason` while off or
+unusable, and while the slot is known `email`, `organizationName`, `plan`
+(when recorded), `usageStatus` and `usage` in the shapes of `active`. The
+usage is the account's shared row read the way `activeAccountUsage` reads
+the default one: one collector pass over that account's info row, which
+fetches with its default login when due and never with the Fable login
+(A100, 1.7). flakelab's wake-parked reads `.fable.number`, `.fable.storeDir`
+and `.fable.usage.*`. The human output adds one line: `Fable store:
+Account-N (<email>) · Fable 34% · 7d 61%` (the fullest Fable window and the
+weekly window, each when known), `… · Fable login: sign in again`, `Fable
+store: on, its account unknown`, or `Fable store: off`.
+
+**The dashboard's state.** `reporting.Snapshot` carries the same object
+(`AccountsSnapshot.Fable`) and each row's `FableLogin`; `providers.merge`
+passes `Fable` from the Claude snapshot. `web.State` gains `fable` (omitted
+when nil) and each Claude row `fableLogin`, a plain map so the in-process
+tray reads what a remote one decodes. `auto.fable` (`web.FableAutoView`,
+built by the facade in `cli/webfacades.go`) is the Fable store's engine:
+`lastTickAt` and `quarantine` from `fable/autoswitch_state.json`
+(`autoswitch.ReadLastTick`, `ReadQuarantineEntries`), `caption` `Counting
+5h + 7d` plus every Fable window name an account reports, `ranking`
+`autoswitch.RankTargets` over the Fable pool less the live slot with the
+Fable settings, as the Fable tick ranks (A102), and `heldUntil` (epoch
+seconds) while the state file's switch by hand (A94) holds the engine. The
+usage both rankings read is one collector pass. Without a Fable login the
+document is v0.15.1's byte for byte.
+
+**The route.** `POST /api/switch/{key}?store=fable` calls
+`core.Switcher.SwitchFable` for a `claude:` key, a switch by hand that
+stamps the Fable store's hold; `&empty=1`, on any key, calls `EmptyFable`.
+Both run through the authenticated mutation path (cookie and CSRF, or the
+bearer) and log `Switched the Fable store to account N` or `Emptied the
+Fable store` with the dashboard actor, beside the switch's own `by hand`
+line. Another `store` value, a `codex:` key, `force` or `confirmAuthChange`
+answer 400; a server without the seam (`web.Deps.Fable`) answers 503. The
+default login, `sequence.json` and `.claude.json` are not written.
+
+**The page.** While `fable` is present the header adds a second line under
+the active account, `Fable: #N <name>` (a *Fable login: sign in again* chip
+while unusable), or `Fable store off` with the command that turns it on as
+its tooltip. The account table gives the store's row a `Fable` chip,
+another row with a usable Fable login a `Fable login` chip, and a
+quarantined one `Fable login: sign in again` in the warning style with the
+command that signs it in again as its tooltip; a row without a Fable login
+gets no chip, and its menu names `add --login --lineage fable --slot N`
+(open point O6: no second sign-in from the page). Each row with a usable
+Fable login has *Use for Fable*, which posts the route; on the store's own
+row it reads *Fable here* and is disabled. The Auto tab adds one line,
+`Fable store: counting 5h + 7d + Fable · next #M`.
+
+**The tray (O11).** The Windows panel's Fable store row carries a second
+outlined label `Fable` after the plan label, and its screen-reader text
+ends in `, Fable store`. Every row the Fable store can take (enabled, its
+Fable login usable, a plan that runs Fable, not in the Fable quarantine, not
+the store's own) has a second button, `Use for Fable`, beside *Switch*; it
+switches the Fable store through the dashboard (the remote tray posts the
+route, the in-process app calls `SwitchFable`), and a click while one is in
+flight is dropped, as for the Auto-switch button (A94). The action cell's
+*Switch* and `In use` stay the default login's. The Linux and macOS menus
+end the Fable store row's label in ` · Fable` and add one `Use for Fable:
+#N <name>` item per such account. The icon's tooltip reads `Default #N ·
+Fable #M` (`Fable off`, `Fable account unknown`) in place of the default
+account's name and windows, which the panel shows. A remote tray decodes the
+new fields; an older dashboard sends none and the tray shows nothing new.
+
+**Limits.** The TUI shows the default store only: its frozen facade (A13)
+has no Fable store. The page shows neither the Fable store's hold nor its
+quarantine beyond the chips. The tray tooltip names the two accounts, not
+their windows.
+
+**Tests.** `TestListNamesTheFableStoreAndItsLogins`,
+`TestListWithTheFableStoreOff`, `TestListWithoutFableLogins`,
+`TestStatusFableObject` (each state, the wake-parked paths) and
+`TestSnapshotCarriesTheFableStore` in `reporting`;
+`TestMergePassesTheFableStoreFromClaude`; `TestStateCarriesTheFableStore`,
+`TestStateRowFableLoginIsAMap`, `TestStateWithoutFable`,
+`TestFableSwitchRoute`, `TestFableSwitchRouteRefusals`, the route in the
+auth tables (401, 403) and `TestAppJSFable` (`testdata/fable.cjs`: every
+page element with a Fable store, none without, the button's request) in
+`web`; `TestDashboardStateWithoutFableLogins` (the state document against
+`testdata/nofable-state.json`, recorded from the tree before these
+surfaces), `TestDashboardSwitchesTheFableStoreOnly`,
+`TestDashboardAutoFable` and `TestDashboardPageWithTheFableStore` over a real
+switcher in `cli`.

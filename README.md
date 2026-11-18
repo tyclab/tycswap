@@ -914,6 +914,18 @@ auto-switch rotates them beside the Claude accounts, as `tycswap auto` does;
 alias, move, swap, export and import of Codex accounts are available through the interactive menu or `tycswap codex`. See `docs/reference.md`, `tycswap web`, for the API and the security
 model.
 
+With a Fable login on some account ([The Fable store](#run-accounts-in-parallel)),
+the header names the Fable store's account under the active one (`Fable: #2
+bob@example.com`, or `Fable store off`), the Fable store's row carries a
+`Fable` chip and rows with another usable Fable login a `Fable login` chip
+(`Fable login: sign in again`, in the warning colour, for a quarantined one,
+with the command that signs it in again). **Use for Fable** in such a row
+switches the Fable store there by hand, which holds the Fable store's
+auto-switch for the cooldown; the store's own row reads **Fable here**. The
+Auto tab adds one line, `Fable store: counting 5h + 7d + Fable · next #3`.
+*Switch*, *Switch now* and the best candidate stay the default login's. The
+terminal dashboard (`tycswap tui`) shows the default login only.
+
 ### Tray application
 
 Dashboard **Settings → Appearance** offers Auto, Light and Dark. Auto follows
@@ -951,8 +963,18 @@ closes the panel. Settings and Add account are in the dashboard (and
 `tycswap config`, `tycswap add`). Start at login is local to the tray's
 device.
 
+With a Fable login on some account, the Fable store's row carries a second
+outlined label, `Fable`, after its plan, and every row the Fable store can
+take (enabled, its Fable login usable, a plan that runs Fable, not
+quarantined) has **Use for Fable** beside **Switch**: it switches the Fable
+store there through the dashboard, as the dashboard's button does, and a
+click while one is under way is dropped. **Switch** and **In use** stay the
+default login's. The icon's tooltip reads `Default #1 · Fable #2` (or `Fable
+off`).
+
 macOS and Linux retain their platform menus, where a switch acts the same
-way. The icon's title reports the active
+way; with a Fable login the Fable store's account row ends in ` · Fable` and
+each account the Fable store can take has a `Use for Fable: #N` item. The icon's title reports the active
 account and its fullest counted window (`#1 · 45%`, with `⟳` while the hosted
 engine runs). Notifications report switches, quarantines and thresholds.
 Update checks and installation retain the normal release checks and restart

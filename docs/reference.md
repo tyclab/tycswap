@@ -144,6 +144,11 @@ Accounts registered from an API key show `API key (no quota)`; one that
 carries a base URL (`add-token --base-url`) shows `→ <host>` after its tag,
 the host of the endpoint its requests go to (the whole URL is in `--json`).
 `--token-status` adds an OAuth token expiry line per account.
+While an account has a Fable login (DESIGN A100, A104), tags follow the other
+markers: `(Fable store)` on the Fable store's account, `(Fable login)` on
+another account whose Fable login the store can use, and `(Fable login: sign
+in again)` on one whose Fable login the Fable engine quarantined on
+`invalid_grant`. `(active)` stays the default login's.
 When usage cannot be fetched the row reads `usage unavailable (<reason>)` where
 `<reason>` is the last fetch error (for example `http-429`, `http-401`).
 
@@ -174,6 +179,11 @@ With `--json`, exactly one indented JSON document is written to stdout:
 }
 ```
 
+While an account has a Fable login the document also carries
+`fableAccountNumber`: the Fable store's account (int), or `null` while the
+store is off or its account unknown (DESIGN A104). Without a Fable login it
+is absent.
+
 An `<account-row>` object contains these keys.
 
 Always present:
@@ -203,6 +213,7 @@ Present only when applicable (additive, schemaVersion 1):
 | `usageFetchedAt` | string (ISO-8601 UTC) | `usage` is non-null and the measurement time is known. |
 | `usageAgeSeconds` | number | Emitted with `usageFetchedAt`. |
 | `usageRefresh` | object | A usage fetch was skipped and none has been attempted since: `skipReason` (string) says why, for example `owner holds an expired token; Claude Code refreshes it on next use`, and `skipAt` (string, ISO-8601 UTC, seconds) since when. The next attempted fetch, successful or failed, removes both. |
+| `fableLogin` | object | The account has a Fable login (DESIGN A104): `{"live": bool, "status": "ok" \| "sign in again"}`. `live` is whether the Fable store holds it; `sign in again` means the Fable engine quarantined it on `invalid_grant`. |
 
 The `usageStatus` enumeration:
 
@@ -277,7 +288,12 @@ tycswap status [--json] [--debug]
 
 Reports the current default login (the account Claude Code will use) and the
 number of managed accounts. When the live account is not one tycswap manages, the
-active record is reported as unmanaged.
+active record is reported as unmanaged. While an account has a Fable login it
+also reports the Fable store (DESIGN A104) in one more line, `Fable store:
+Account-N (<email>) · Fable 34% · 7d 61%` (the account's fullest Fable window
+and its weekly window, each when known), `Fable store: Account-N (<email>) ·
+Fable login: sign in again` while its login is quarantined, `Fable store: on,
+its account unknown`, or `Fable store: off`.
 
 ### Files
 
@@ -317,6 +333,18 @@ endpoint profile is still in Claude Code's `settings.json` under another login
 (env.ANTHROPIC_BASE_URL, env.ANTHROPIC_AUTH_TOKEN), over this login; a switch
 to any account puts back what it held.`, managed or not: those keys take
 precedence over that login.
+
+While an account has a Fable login the document carries a top-level `fable`
+object (DESIGN A104), whatever `active` is; without one it is absent:
+
+| Key | Type | Meaning |
+|-----|------|---------|
+| `state` | string | `on`, `off` (the store holds no login) or `unusable` (its login is quarantined on `invalid_grant`). |
+| `storeDir` | string | The Fable store's directory, the value `tycswap start` gives Fable sessions in `CLAUDE_SECURESTORAGE_CONFIG_DIR`. |
+| `number` | int \| null | The Fable store's account; `null` while off or unknown. |
+| `email`, `organizationName`, `plan`, `usageStatus`, `usage` | | That account's, in the shapes of `active`, while it is known (`plan` when recorded). The usage is the account's shared row, fetched with its default login, never with the Fable one. |
+| `source` | string \| null | What named the account: `backup`, `chain` or `profile` (DESIGN A68); `null` while unknown. |
+| `reason` | string | Present while the store is off or unusable: `the store is empty`, `Account-N's Fable login: sign in again`. |
 
 ### Errors
 
@@ -2884,7 +2912,18 @@ tabs:
   effect.` *+ Add current Codex login* stores the account the codex CLI is
   signed in with, as `tycswap codex add` does, and the card counts `<n>
   Claude · <m> Codex`. The header, the summary tiles and *Next best* stay on
-  the Claude accounts.
+  the Claude accounts. While an account has a Fable login (DESIGN A104) the
+  header adds a line under the active account, `Fable: #N <name>` (with a
+  *Fable login: sign in again* chip while the store's login is quarantined),
+  or `Fable store off` with the command that turns it on as its tooltip; the
+  Fable store's row carries a `Fable` chip, a row with another usable Fable
+  login a `Fable login` chip, and one to sign in again a warning chip whose
+  tooltip is the command (`tycswap add --login --lineage fable --slot N`). A
+  row with a usable Fable login has *Use for Fable*, `POST
+  /api/switch/{key}?store=fable`; on the Fable store's own row it reads *Fable
+  here* and is disabled. The menu of a row without a Fable login names that
+  command. *Switch*, *Switch now* and the *Best candidate* stay the default
+  store's.
 - **Auto** (DESIGN A93): the heading `Auto-switch` with an `on` or `off`
   chip and one *Auto-switch* switch, `autoswitch.enabled`: on is
   `POST /api/auto/start`, off `POST /api/auto/stop` (DESIGN A83). The line
@@ -2905,7 +2944,9 @@ tabs:
   the *Best candidate* tile and where *Switch now · Best* goes. The accounts
   the engine could not take (at a limit, quarantined, without usage) follow:
   those whose counted full windows all reset in less than five hours lead
-  them. The quarantine; a link to the Settings tab.
+  them. The quarantine; a link to the Settings tab. While an account has a
+  Fable login, a line `Fable store: <auto.fable.caption> · next #M` says what
+  the Fable store's checks count and the account they would take next.
   The page starts no dry run (`tycswap auto --dry-run` does) and has no event
   log: a scheduler's ticks print to its journal.
 - **Settings**: the `settings.json` keys `tycswap config` knows
@@ -3018,6 +3059,16 @@ counted: no usable account can serve it`. `auto.ranking` is the order the
 engine would take the other accounts in over what `auto.counting` counts,
 best first (`autoswitch.strategy`, the engine's `sortQualifying`; an account
 at a counted limit, quarantined or without usage is left out; DESIGN A99).
+While an account has a Fable login (DESIGN A104) the document carries `fable`,
+the object `status --json` carries; each Claude row with a Fable login
+carries `fableLogin` as in `list --json`; and `auto.fable` is the Fable
+store's engine: `{"lastTickAt", "caption", "ranking", "quarantine",
+"heldUntil"?}`, read from `fable/autoswitch_state.json` (`lastTickAt` epoch
+seconds or null, `quarantine` as `auto.quarantine`), `caption` `Counting 5h +
+7d` and every Fable window an account reports, `ranking` the order a Fable
+tick would take the Fable pool in (DESIGN A102), and `heldUntil` (epoch
+seconds) while a switch of the Fable store by hand holds its engine. Without a
+Fable login none of these keys is present and the document is v0.15.1's.
 An engine event is `{"at", "kind", "message", "account",
 "fields"}`; a Codex tick's also carries `"provider": "codex"` (the Claude
 engine's carry no `provider`), its `kind` is `switch`, `error`,
@@ -3107,6 +3158,7 @@ anything else `500`.
 | `POST /api/launch` | | a one-time dashboard URL, `{"url": "http://127.0.0.1:<port>/?token=<t>"}`: the unused start URL, else a fresh one; for a remote tray, with the bearer token only | `403` with the cookie and CSRF pair, or without a remote token configured |
 | `POST /api/switch` | `{"strategy": "best"\|"next-available"}` | `tycswap switch --strategy`, counting what it counts (DESIGN A98); a `models` field is ignored (DESIGN A97) | `400` missing or unknown strategy |
 | `POST /api/switch/{key}[?force=1][&confirmAuthChange=1]` | | `tycswap switch <id> [--force] [--yes]`; `confirmAuthChange=1` records the user's yes to a switch onto an API-key account, which the page asks for first (DESIGN A33). A `codex:` key is `tycswap codex switch <id>` and answers `{"number", "email", "runningPids", "alreadyActive"}` | `400` bare key, an API-key target without `confirmAuthChange`, or `force` / `confirmAuthChange` with a `codex:` key; `404` unknown provider; `503` `confirmAuthChange` without account operations, or a `codex:` key without Codex accounts; `409` a `codex:` key while the Codex store stays busy for 10 s |
+| `POST /api/switch/{key}?store=fable[&empty=1]` | | `tycswap switch --store fable <id>`, a switch of the Fable store by hand that holds its engine for `autoswitch.cooldownSeconds`; with `empty=1`, on any key, `tycswap switch --store fable --empty`. Answers the switch's JSON (`"store": "fable"`); the default login, the roster and `.claude.json` are not written (DESIGN A104) | `400` another `store` value, a `codex:` key, or `force` / `confirmAuthChange`; the Fable switch's own refusals (an account without a Fable login, a plan without Fable) by kind; `503` without the Fable seam |
 | `POST /api/accounts/add` | `{"provider": "claude"\|"codex"}` (optional) | `tycswap add`; answers `{"ok": true, "result": {"number", "email", "refreshed"}}`, the account the live login is now (`refreshed`: it was that account already). The tray's *Add current login* is the same call. With `codex`, `tycswap codex add`, answering `{"number", "email"}` | `500` `Claude Code has no subscription login on this computer. …` when Claude Code has no live login, before anything is stored; `400` unknown provider; `503` `codex` without Codex accounts; `409` `codex` while the Codex store stays busy for 10 s |
 | `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias", "baseUrl"}` | `tycswap add-token [--base-url]` (the token is never echoed or logged); `503` with a `baseUrl` when the facade cannot store one | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
 | `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y`; for a `codex:` key `tycswap codex enable`, `disable`, `remove -y`, holding the Codex store lock throughout | `400` bare key, `404` unknown provider, `503` a `codex:` key without Codex accounts, `409` the Codex store stayed busy (a Codex switch or a token refresh held it) for 10 s |
