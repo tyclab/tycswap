@@ -7516,7 +7516,11 @@ set of names in the script.
   Settings row and the tray: on is `POST /api/auto/start` (Start), off
   `POST /api/auto/stop` (Stop); both write `autoswitch.enabled` with and
   without an owner (A83). A start asking for a dry run is refused with the
-  terminal command, `tycswap auto --dry-run`.
+  terminal command, `tycswap auto --dry-run`. Since 2026-11-18 (the
+  operator: "why is on web frontend dashboard not an auto mode toggle?") the
+  Dashboard tab's Accounts card shows the same switch in its head: the same
+  state, the same two requests, both switches locked while a change is in
+  flight and hidden where the Auto tab hides its own.
 - *The heading says what is true.* `Auto-switch` with an `on` or `off` chip;
   the line under it is `checked by <owner>, last check <time ago>` under a
   scheduler and `checked every <interval> s by this dashboard` while an

@@ -1526,6 +1526,18 @@
   // autoOn: auto-switch is on and something checks (DESIGN A83).
   function autoOn(st) { return !!(st && st.auto && st.auto.running); }
 
+  // The Auto-switch switch is on the Auto tab and in the Accounts card's
+  // head: one setting shown twice. Both show the state, both hide without
+  // auto-switch, and one locked by a change in flight is left alone.
+  function autoSwitches() { return [$('auto-switch'), $('dash-auto-switch')].filter(Boolean); }
+  function syncAutoSwitches(st) {
+    var on = autoOn(st);
+    autoSwitches().forEach(function (box) {
+      box.parentNode.hidden = !st.auto;
+      if (!box.disabled) { box.checked = on; }
+    });
+  }
+
   // autoStateText: who checks, in the words the heading uses (DESIGN A93):
   // a scheduler and its last check, or this dashboard and how often.
   function autoStateText(st) {
@@ -1557,11 +1569,11 @@
 
   function renderAuto(st) {
     var a = st.auto;
-    var badge = $('auto-badge'), body = $('auto-body'), toggle = $('auto-switch');
+    var badge = $('auto-badge'), body = $('auto-body');
     clear(body);
     var strat = String(engineSetting(st, 'autoswitch.strategy') || 'soonest-reset');
     var models = countedModelNames(st);
-    toggle.parentNode.hidden = !a;
+    syncAutoSwitches(st);
     if (!a) {
       badge.textContent = 'unavailable'; badge.className = 'chip chip-outline';
       $('auto-state').textContent = '';
@@ -1571,7 +1583,6 @@
       var on = autoOn(st);
       badge.textContent = on ? 'on' : 'off';
       badge.className = 'chip ' + (on ? 'chip-good' : 'chip-outline');
-      if (!toggle.disabled) { toggle.checked = on; }
       var line = $('auto-state');
       clear(line);
       autoStateLine(st).forEach(function (n) { line.appendChild(typeof n === 'string' ? document.createTextNode(n) : n); });
@@ -1681,18 +1692,20 @@
   }
 
   // The Auto-switch switch: on is what Start did, off what Stop did (DESIGN
-  // A93); the next state document confirms it.
-  $('auto-switch').addEventListener('change', function (ev) {
-    var box = ev.target, on = box.checked;
+  // A93); both switches are locked while the change is in flight, and the
+  // next state document confirms it.
+  function setAutoSwitch(ev) {
+    var on = ev.target.checked, boxes = autoSwitches();
     var name = settingLabel(state, 'autoswitch.enabled');
-    box.disabled = true;
+    boxes.forEach(function (b) { b.checked = on; b.disabled = true; });
     api('POST', on ? '/api/auto/start' : '/api/auto/stop', on ? {} : undefined).then(function () {
       toast(name + (on ? ' on.' : ' off.'), 'ok');
     }).catch(function (err) {
-      box.checked = !on;
+      boxes.forEach(function (b) { b.checked = !on; });
       toast(err && err.message ? err.message : String(err));
-    }).then(function () { box.disabled = false; });
-  });
+    }).then(function () { boxes.forEach(function (b) { b.disabled = false; }); });
+  }
+  autoSwitches().forEach(function (b) { b.addEventListener('change', setAutoSwitch); });
 
   // ---- settings (shared row renderer) ---------------------------------------
 

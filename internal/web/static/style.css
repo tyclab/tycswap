@@ -576,7 +576,7 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 .card-toggle:hover .chev { opacity: 1; }
 .card.folded > :not(.card-head):not(.add-callout) { display: none; }
 .card.folded > .card-head { margin-bottom: 0; }
-.card.folded > .card-head .switch { display: none; } /* "Token status" changes nothing while folded */
+.card.folded > .card-head .switch[for="token-status-toggle"] { display: none; } /* "Token status" changes nothing while folded */
 .card.folded > .add-callout:not([hidden]) { margin: var(--s3) 0 0; }
 @media (prefers-reduced-motion: reduce) { .card-toggle .chev { transition: none; } }
 

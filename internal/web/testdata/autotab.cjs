@@ -35,10 +35,17 @@ for (const id of ['auto-badge', 'auto-body', 'auto-state', 'auto-counting', 'qua
   'nextbest-list', 'nextbest-sub', 'nextbest-empty', 'nextbest-tbl', 'badge-auto', 'settings-grid', 'settings-empty', 'settings-sub', 'toasts', 'conn-age']) { ids[id] = new Node('div'); }
 const switchLabel = new Node('label');
 ids['auto-switch'] = switchLabel.appendChild(new Node('input'));
+// The same switch in the Dashboard tab's Accounts card head.
+ids['dash-auto-switch'] = new Node('label').appendChild(new Node('input'));
 const toasts = [], requests = [];
+let gate = null, fail = false; // a request held in flight, a request refused
 const ctx = {document, console, Promise, setTimeout, Math, Date, JSON, Object, Array, String, Number, isNaN, parseFloat, parseInt, encodeURIComponent,
   state: null, minimumStateSequence: 0, lastStateAt: 0, $: id => ids[id], NAME: 'tycswap', CSRF: 'test', showTokenStatus: false,
-  fetch: (url, opts) => { requests.push([opts.method, url]); return Promise.resolve({ok: true, status: 200, text: () => Promise.resolve('{"ok":true}')}); }};
+  fetch: (url, opts) => {
+    requests.push([opts.method, url]);
+    const res = fail ? {ok: false, status: 500, text: () => Promise.resolve('{"error":"settings locked"}')} : {ok: true, status: 200, text: () => Promise.resolve('{"ok":true}')};
+    return (gate || Promise.resolve()).then(() => res);
+  }};
 function block(start, end) { const a = js.indexOf(start), b = js.indexOf(end, a); assert.ok(a >= 0 && b > a, start); vm.runInNewContext(js.slice(a, b), ctx); }
 block('  var UNSAFE_ATTR', '  // ---- tabs');
 ctx.toast = (msg, kind) => toasts.push([msg, kind]);
@@ -77,6 +84,8 @@ for (const mode of ['sessions', 'hosted']) {
     assert.equal(text(ids['badge-auto']), chipText, name + ': the tab badge follows the heading');
     assert.ok(ids['badge-auto'].title.endsWith(line), name + ': badge title ' + ids['badge-auto'].title);
     assert.equal(ids['auto-switch'].checked, name.endsWith(' on'), name + ': the switch follows the state');
+    assert.equal(ids['dash-auto-switch'].checked, name.endsWith(' on'), name + ': the Dashboard tab switch follows the state');
+    assert.ok(!ids['auto-switch'].parentNode.hidden && !ids['dash-auto-switch'].parentNode.hidden, name + ': both switches show');
     assert.equal(text(ids['auto-counting']), 'Counting now: 5h + 7d (' + mode + ')', mode + ': the label says counting once');
     assert.doesNotMatch(words(), /autoswitch\.model|session following is off/, mode + ': ' + words());
     if (name.startsWith('owner')) { assert.doesNotMatch(words(), /engine|running/i, name + ': ' + words()); }
@@ -99,6 +108,32 @@ assert.ok(codexSub.startsWith(label('autoswitch.codexThreshold') + ' 97%'), code
   await new Promise(r => setTimeout(r, 0));
   assert.deepEqual(requests.splice(0), [['POST', '/api/auto/start'], ['POST', '/api/auto/stop']]);
   assert.deepEqual(toasts.splice(0).map(t => t[0]), [label('autoswitch.enabled') + ' on.', label('autoswitch.enabled') + ' off.']);
+
+  // The Dashboard tab's switch is the same setting: the same two requests,
+  // both switches show the change and are locked while it is in flight (a
+  // state document then leaves them alone), and a refused change puts both
+  // back.
+  const dash = ids['dash-auto-switch'];
+  const offState = {accounts: [], settings, auto: auto('sessions', false, false)};
+  ctx.state = offState; ctx.renderAuto(offState);
+  let release; gate = new Promise(r => { release = r; });
+  dash.checked = true; dash.emit('change');
+  assert.ok(toggle.checked && toggle.disabled && dash.disabled, 'both switches on and locked while the change is in flight');
+  ctx.renderAuto(offState);
+  assert.ok(toggle.checked && dash.checked, 'a state document during the change leaves the locked switches alone');
+  release(); gate = null;
+  await new Promise(r => setTimeout(r, 0));
+  assert.ok(!toggle.disabled && !dash.disabled && toggle.checked && dash.checked, 'both unlocked and on after the change');
+  fail = true;
+  dash.checked = false; dash.emit('change');
+  await new Promise(r => setTimeout(r, 0));
+  fail = false;
+  assert.ok(toggle.checked && dash.checked && !toggle.disabled && !dash.disabled, 'a refused change puts both back');
+  assert.deepEqual(requests.splice(0), [['POST', '/api/auto/start'], ['POST', '/api/auto/stop']]);
+  assert.deepEqual(toasts.splice(0).map(t => t[0]), [label('autoswitch.enabled') + ' on.', 'settings locked']);
+  const none = {accounts: [], settings};
+  ctx.state = none; ctx.renderAuto(none);
+  assert.ok(toggle.parentNode.hidden && dash.parentNode.hidden, 'without auto-switch both switches hide');
 
   // Row 10: a Save and a Reset toast name the setting as the registry does.
   ctx.renderSettings({settings});
