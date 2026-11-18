@@ -43,7 +43,7 @@ const storeMCP = `"mcpOAuth":{"srv":{"accessToken":"m"}}`
 // login is live in ~/.claude.
 func fableFixture(t *testing.T) *Store {
 	t.Helper()
-	s := freshStore(t)
+	s := fableFreshStore(t)
 	writeSequenceRaw(t, s, fableRoster)
 	for num, email := range fableEmails {
 		if err := s.Creds.WriteBackup(num, email, fableCreds("at-d"+num, "rt-d"+num)); err != nil {
@@ -53,6 +53,14 @@ func fableFixture(t *testing.T) *Store {
 	}
 	writeLiveCreds(t, s, fableCreds("at-d1", "rt-d1"))
 	writeLiveIdentity(t, s, "one@example.com", "org-1")
+	return s
+}
+
+// fableFreshStore is freshStore off macOS, where the Fable store is refused.
+func fableFreshStore(t *testing.T) *Store {
+	t.Helper()
+	s := freshStore(t)
+	s.Platform = platform.Linux
 	return s
 }
 
@@ -116,7 +124,7 @@ func fingerprint(creds string) string { return *oauth.CredentialFingerprint(cred
 // A2 -------------------------------------------------------------------------
 
 func TestFableScopePaths(t *testing.T) {
-	s := freshStore(t)
+	s := fableFreshStore(t)
 	root := s.BackupDir()
 	f := mustFable(t, s)
 	if !f.IsFable() || s.IsFable() {
@@ -199,6 +207,7 @@ func TestFableReadsCreateNoDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	s.Platform = platform.Linux
 	f := mustFable(t, s)
 	_ = s.FableStore()
 	_ = f.FableStore()
