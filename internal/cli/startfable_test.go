@@ -32,6 +32,7 @@ type startRecord struct {
 func fableStart(t *testing.T, state string) (*core.Switcher, *startRecord) {
 	t.Helper()
 	startTestLaunch(t)
+	resetFableSessionProcess(t)
 	var sw *core.Switcher
 	if state == "none" {
 		sw = fixtureSwitcher(t)

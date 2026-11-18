@@ -86,6 +86,8 @@ func parseStartArguments(argv []string) (startArguments, error) {
 
 func startCommand(prog string, argv []string, streams ioStreams) int {
 	env := os.Environ()
+	// The child gets env; this process acts on the default login under its locks.
+	dropFableStoreEnv()
 	parsed, err := parseStartArguments(argv)
 	if err != nil {
 		return subError(prog+" start", streams.err, err.Error())
