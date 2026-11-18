@@ -3,8 +3,10 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -30,13 +32,18 @@ func deadLiveFixture(t *testing.T, others []string, dead *bool) (*core.Switcher,
 			return oauth.RefreshOutcome{Error: oauth.ErrTransient}
 		}}
 	sw, asked := fx.build(t)
-	login := fableLoginOf("2", sw.Clk.Now().Add(-time.Hour).UnixMilli())
+	putLiveFableLogin(t, sw, fableLoginOf("2", sw.Clk.Now().Add(-time.Hour).UnixMilli()))
+	return sw, asked
+}
+
+// putLiveFableLogin makes login Account-2's Fable login and the Fable store's.
+func putLiveFableLogin(t *testing.T, sw *core.Switcher, login string) {
+	t.Helper()
 	f, _ := sw.Store.ForFable()
 	if err := f.WriteAccountCredentials("2", fableEmail("2"), login); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(paths.FableStoreDir(sw.BackupDir()), ".credentials.json"), login)
-	return sw, asked
 }
 
 // defaultStoreFiles is the default login's files and the default store's state.
@@ -92,6 +99,59 @@ func TestDeadLiveFableLoginMovesTheFableStore(t *testing.T) {
 	}
 	if log := readOrAbsent(t, filepath.Join(sw.BackupDir(), "tycswap.log")); !strings.Contains(log, "Switched the Fable store to account 3 by engine:failover") {
 		t.Fatalf("log:\n%s", log)
+	}
+	var state map[string]any
+	if err := json.Unmarshal([]byte(readOrAbsent(t, fableStatePath(sw))), &state); err != nil || state["lastSwitchTo"] != "3" || state["lastSwitchBy"] != nil {
+		t.Fatalf("Fable state %v (%v), want the move stamped as the engine's own", state, err)
+	}
+}
+
+// The move off a dead live login goes to the account the cached usage ranks
+// first, not to the pool's first: 3 has no Fable room left, 4 has.
+func TestDeadLiveFableLoginMovesToTheBestRankedAccount(t *testing.T) {
+	fx := fableTickFixture{def: "1", live: "2", logins: []string{"2", "3", "4"},
+		usage: map[string][3]float64{"1": {10, 20, 30}, "2": {10, 20, 10}, "3": {10, 20, 100}, "4": {10, 20, 10}},
+		refresh: func(creds string) oauth.RefreshOutcome {
+			if strings.Contains(creds, `"rt-f2"`) {
+				return oauth.RefreshOutcome{Error: oauth.ErrInvalidGrant}
+			}
+			return oauth.RefreshOutcome{Error: oauth.ErrTransient}
+		}}
+	sw, _ := fx.build(t)
+	putLiveFableLogin(t, sw, fableLoginOf("2", sw.Clk.Now().Add(-time.Hour).UnixMilli()))
+	_, out, _ := runCodex(t, "", "auto", "--once", "--json")
+	_, fable, _ := splitByStore(t, out)
+	ev := eventOf(fable, "switch")
+	to, _ := ev["to"].(map[string]any)
+	if ev == nil || ev["trigger"] != "failover" || to["number"] != float64(4) {
+		t.Fatalf("Fable events %v, want the failover to Account-4", fable)
+	}
+}
+
+// A live Fable login with no refresh token cannot be refreshed: it is
+// quarantined and left as an invalid_grant one is (DESIGN A102).
+func TestLiveFableLoginWithoutARefreshTokenIsLeft(t *testing.T) {
+	fx := fableTickFixture{def: "1", live: "2", logins: []string{"2", "3"},
+		usage: map[string][3]float64{"1": {10, 20, 30}, "2": {10, 20, 10}, "3": {10, 20, 10}, "4": {10, 20, 50}},
+		refresh: func(creds string) oauth.RefreshOutcome {
+			if !strings.Contains(creds, `"refreshToken"`) {
+				return oauth.RefreshOutcome{Error: oauth.ErrNoRefreshToken}
+			}
+			return oauth.RefreshOutcome{Error: oauth.ErrTransient}
+		}}
+	sw, asked := fx.build(t)
+	expired := strconv.FormatInt(sw.Clk.Now().Add(-time.Hour).UnixMilli(), 10)
+	putLiveFableLogin(t, sw, `{"claudeAiOauth":{"accessToken":"at-f2","expiresAt":`+expired+`}}`)
+	code, out, _ := runCodex(t, "", "auto", "--once", "--json")
+	_, fable, _ := splitByStore(t, out)
+	if len(asked.all()) == 0 {
+		t.Fatal("the expired live login was not checked")
+	}
+	if q := eventOf(fable, "account-quarantined"); q == nil || q["number"] != "2" {
+		t.Fatalf("Fable events %v, want Account-2 quarantined", fable)
+	}
+	if ev := eventOf(fable, "switch"); code != 0 || ev == nil || ev["trigger"] != "failover" || !strings.Contains(storeLive(t, sw), "at-f3") {
+		t.Fatalf("exit %d, Fable events %v, store %s", code, fable, storeLive(t, sw))
 	}
 }
 
