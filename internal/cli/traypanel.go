@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/groups"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/tray"
 	"github.com/tyclab/tycswap/internal/web"
 )
@@ -39,7 +40,8 @@ func (a *appShell) panelAt(st web.State, now time.Time) tray.Panel {
 	claude, codex := rowsByProvider(st.Accounts)
 	for _, row := range append(claude, codex...) {
 		r := tray.PanelRow{ID: rowKey(row), Name: "#" + rowNumber(row) + " " + rowName(row),
-			Active: boolOf(row["isActive"]), Disabled: !boolOf(row["switchable"])}
+			Active: boolOf(row["isActive"]), Disabled: !boolOf(row["switchable"]),
+			Fable: fableLive(row), FableSwitch: a.act.SwitchFable != nil && fableSwitchable(st, row)}
 		if rowProvider(row) == "codex" {
 			r.Name = "Codex " + r.Name
 		}
@@ -128,6 +130,29 @@ func panelWarning(status string) string {
 func panelRunsFable(plan string) bool {
 	entitled := groups.Entitlement(groups.Fable, groups.Continue, plan, nil, nil)
 	return !entitled.Known || entitled.Allowed
+}
+
+// fableLive reports whether a row's Fable login is the Fable store's live one.
+func fableLive(row map[string]any) bool {
+	login, _ := row["fableLogin"].(map[string]any)
+	return boolOf(login["live"])
+}
+
+// fableSwitchable reports whether Use for Fable can move the Fable store to
+// a row: a rotated Claude account with a usable Fable login that is not the
+// live one, on a plan that runs Fable, not quarantined by the Fable engine.
+func fableSwitchable(st web.State, row map[string]any) bool {
+	login, _ := row["fableLogin"].(map[string]any)
+	plan, _ := row["plan"].(string)
+	if rowProvider(row) != reporting.ProviderClaude || login == nil || login["status"] != reporting.FableLoginOK ||
+		boolOf(login["live"]) || boolOf(row["disabled"]) || !panelRunsFable(plan) {
+		return false
+	}
+	if st.Auto != nil && st.Auto.Fable != nil {
+		_, held := st.Auto.Fable.Quarantine[rowNumber(row)]
+		return !held
+	}
+	return true
 }
 
 // panelLimit is one window's cell: a dash when it is not reported, else its

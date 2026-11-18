@@ -46,6 +46,8 @@ type shellActions struct {
 	// "codex:1", A47) and returns the codex sessions still running on the
 	// old Codex account (nil for a Claude switch).
 	SwitchTo func(key string) (runningPIDs []int, err error)
+	// SwitchFable is Use for Fable on a Claude row key (A104); nil hides it.
+	SwitchFable func(key string) error
 	// AddCurrent stores the login Claude Code is signed in with as an
 	// account (A37; web.Server.AddCurrentLogin). nil hides the row.
 	AddCurrent   func() (web.AddLoginResult, error)
@@ -119,8 +121,9 @@ type appShell struct {
 	// switchMu lets one switch from the tray run at a time.
 	switchMu sync.Mutex
 	// autoMu is held while an Auto-switch click is in flight; a click that
-	// finds it held is dropped (DESIGN A94).
-	autoMu sync.Mutex
+	// finds it held is dropped (DESIGN A94). fableMu is the same for Use for Fable.
+	autoMu  sync.Mutex
+	fableMu sync.Mutex
 	// refresh lays the panel out again when no state came for panelRefresh
 	// (the constant unless a test sets it), so its countdowns stay current.
 	refresh      *time.Timer
@@ -198,6 +201,14 @@ func (a *appShell) paint(st web.State) {
 		models := countedModels(st)
 		title = fmt.Sprintf("#%s · %s", rowNumber(active), fmtPctShort(maxWindowPct(active, models)))
 		tooltip = head + " — #" + rowNumber(active) + " " + rowName(active) + " · " + windowsLine(active, models)
+	}
+	if st.Fable != nil {
+		// Both stores' accounts; the panel shows the default one's name and windows.
+		def := "no active account"
+		if ok {
+			def = "Default #" + rowNumber(active)
+		}
+		tooltip = head + " — " + def + " · " + fableTooltip(st.Fable)
 	}
 	// The auto-switch state is visible without opening the menu: the
 	// rotation glyph leads the title while the engine runs.
@@ -288,6 +299,11 @@ const inlineAccounts = 10
 func (a *appShell) accountRows(st web.State, withModels []string) []tray.Item {
 	claude, codex := rowsByProvider(st.Accounts)
 	items := gaugeGroup(claude, withModels, "accounts", "All %d accounts")
+	for _, r := range claude {
+		if a.act.SwitchFable != nil && fableSwitchable(st, r) {
+			items = append(items, tray.Item{ID: "fable:" + rowKey(r), Title: "Use for Fable: #" + rowNumber(r) + "  " + rowName(r)})
+		}
+	}
 	if a.act.AccountSetup != nil {
 		items = append(items, tray.Item{ID: "account-setup", Title: "Add account…", Dismiss: true}, tray.Item{ID: "menu:main", Title: "Interactive menu…", Dismiss: true})
 	}
@@ -353,6 +369,9 @@ func gaugeGroup(rows []map[string]any, withModels []string, subID, subTitle stri
 		}
 		if sub == "" {
 			sub = "no usage data yet"
+		}
+		if fableLive(r) {
+			sub += " · Fable"
 		}
 		it := tray.Item{
 			ID:       "switch:" + rowKey(r),
@@ -498,6 +517,8 @@ func (a *appShell) click(id string) {
 		a.repaint()
 	case strings.HasPrefix(id, "switch:"):
 		a.switchClick(strings.TrimPrefix(id, "switch:"))
+	case strings.HasPrefix(id, "fable:"):
+		a.fableClick(strings.TrimPrefix(id, "fable:"))
 	case id == "auto:on" || id == "auto:off":
 		a.autoClick(id == "auto:on")
 	case id == "autostart":
@@ -623,6 +644,39 @@ func (a *appShell) switchClick(key string) {
 	a.setNote(note, false)
 	a.notify(title, body)
 	a.repaint()
+}
+
+// fableClick is Use for Fable: the Fable store's switch by hand, which holds
+// its engine (A104). A click while one is in flight is dropped.
+func (a *appShell) fableClick(key string) {
+	if a.act.SwitchFable == nil || !a.fableMu.TryLock() {
+		return
+	}
+	defer a.fableMu.Unlock()
+	_, num := splitRowKey(key)
+	if err := a.act.SwitchFable(key); err != nil {
+		a.setNote("Fable switch failed: "+err.Error(), true)
+		a.notify("Fable switch failed", err.Error())
+		a.repaint()
+		return
+	}
+	a.dashboardChanged()
+	a.setNote("Switched the Fable store to #"+num+".", false)
+	a.notify("Switched the Fable store to account #"+num, "Fable sessions use account #"+num+"'s Fable login.")
+	a.repaint()
+}
+
+func fableTooltip(fable map[string]any) string {
+	if fable["state"] == "off" {
+		return "Fable off"
+	}
+	switch n := fable["number"].(type) {
+	case int:
+		return "Fable #" + strconv.Itoa(n)
+	case float64:
+		return "Fable #" + strconv.Itoa(int(n))
+	}
+	return "Fable account unknown"
 }
 
 // askClaudeSwitch asks before a switch onto an API-key account: it changes

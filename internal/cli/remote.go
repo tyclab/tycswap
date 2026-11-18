@@ -372,6 +372,11 @@ func (c *remoteClient) Switch(key string) ([]int, error) {
 	return res.RunningPIDs, nil
 }
 
+// SwitchFable is POST /api/switch/{key}?store=fable, the dashboard's Use for Fable.
+func (c *remoteClient) SwitchFable(key string) error {
+	return c.mutate("/api/switch/"+neturl.PathEscape(key)+"?store=fable", nil)
+}
+
 // AutoStart starts the engine for real (never a dry run from the tray).
 func (c *remoteClient) AutoStart() error {
 	return c.mutate("/api/auto/start", map[string]any{"dryRun": false})
@@ -735,6 +740,7 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 			return openRemoteAccountSetup(o.tokenFile, func() error { return rc.call("POST", "/api/accounts/setup", map[string]any{"section": section}, nil) }, section)
 		},
 		SwitchTo:     rc.Switch,
+		SwitchFable:  rc.SwitchFable,
 		AutoRunning:  rc.AutoRunning,
 		AutoStart:    rc.AutoStart,
 		AutoStop:     rc.AutoStop,
