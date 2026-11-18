@@ -97,6 +97,9 @@ type ClaudeSessionJSON struct {
 	Title      string  `json:"title"`   // from the transcript; "" when none yet
 	Profile    string  `json:"profile"` // slot of a former `run`/`env` profile still running; "" for the default login
 	Group      string  `json:"group,omitempty"`
+	// Store is "fable" or "default" while an account has a Fable login and
+	// the session's status line recorded its store (DESIGN A102); else absent.
+	Store string `json:"store,omitempty"`
 }
 
 // IdeInstanceJSON is one running IDE instance.
@@ -190,8 +193,18 @@ func (s *Server) buildState(o stateOpts) State {
 		st.Auto = &v
 	}
 	sv := s.d.Sessions()
+	var stores map[string]string
+	if st.Fable != nil {
+		stores = reporting.SessionStores(s.d.Facade.BackupDir())
+	}
 	for _, c := range sv.Claude {
 		item := s.claudeSessionJSON(c, sv.ConfigDir[c.PID], sv.Profile[c.PID])
+		if store, ok := stores[c.SessionID]; ok && item.Profile == "" && item.Group == "" {
+			item.Store = "default"
+			if store == "fable" {
+				item.Store = "fable"
+			}
+		}
 		st.Sessions.Claude = append(st.Sessions.Claude, item)
 	}
 	for _, i := range sv.IDE {

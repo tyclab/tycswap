@@ -22,6 +22,13 @@ func ErrAPIKeyNeedsApproval(num string) error {
 
 const APIKeyRestartNote = "Restart your Claude Code sessions: one that is already running keeps its previous login until it is restarted."
 
+// KeychainFollowupNote and FileFollowupNote say when a running session takes
+// up a switch onto a login, by where the live credential is (spec 02§8.4).
+const (
+	KeychainFollowupNote = "Restart Claude Code to apply immediately — otherwise the session can take up to ~30 seconds to pick up the new account."
+	FileFollowupNote     = "New account is active on your next message — no restart needed."
+)
+
 func RestartNotice(running int) string {
 	switch {
 	case running == 1:

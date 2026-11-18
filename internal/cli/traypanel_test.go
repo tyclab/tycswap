@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/tray"
 	"github.com/tyclab/tycswap/internal/web"
 )
@@ -382,6 +383,31 @@ func switchShell(t *testing.T, on bool) (*appShell, *fakeTray, *[]string) {
 	return sh, ft, calls
 }
 
+// trayLoginNote is what the switch notification says about running sessions
+// on this platform.
+func trayLoginNote() string {
+	if trayOnKeychain() {
+		return switching.KeychainFollowupNote
+	}
+	return switching.FileFollowupNote
+}
+
+// A switch onto a login says what a running session does, as `tycswap switch`
+// says it: at its next message, or on macOS within about 30 seconds; never
+// that every session must restart.
+func TestTraySwitchSaysWhenSessionsTakeItUp(t *testing.T) {
+	old := trayOnKeychain
+	t.Cleanup(func() { trayOnKeychain = old })
+	for keychain, want := range map[bool]string{false: switching.FileFollowupNote, true: switching.KeychainFollowupNote} {
+		trayOnKeychain = func() bool { return keychain }
+		sh, ft, _ := switchShell(t, true)
+		sh.click("switch:claude:2")
+		if note := lastNote(ft); note != "Switched to account #2 | "+want {
+			t.Errorf("keychain=%v: notification %q", keychain, note)
+		}
+	}
+}
+
 func lastNote(ft *fakeTray) string {
 	notes := ft.notesNow()
 	if len(notes) == 0 {
@@ -403,7 +429,7 @@ func TestTraySwitchLeavesAutoSwitchOn(t *testing.T) {
 	if p.Note != "Switched to #2." || p.Alert {
 		t.Fatalf("note %q", p.Note)
 	}
-	if note := lastNote(ft); note != "Switched to account #2 | Restart running Claude Code sessions to pick it up." {
+	if note := lastNote(ft); note != "Switched to account #2 | "+trayLoginNote() {
 		t.Fatalf("notification %q", note)
 	}
 	if auto := p.Actions[slices.IndexFunc(p.Actions, func(a tray.Item) bool { return a.ID == "auto" })]; !auto.Checked {
@@ -424,7 +450,7 @@ func TestTraySwitchWithAutoSwitchOffLeavesItAlone(t *testing.T) {
 	if p := sh.panel(sh.last); p.Note != "Switched to #2." {
 		t.Fatalf("note %q", p.Note)
 	}
-	if note := lastNote(ft); note != "Switched to account #2 | Restart running Claude Code sessions to pick it up." {
+	if note := lastNote(ft); note != "Switched to account #2 | "+trayLoginNote() {
 		t.Fatalf("notification %q", note)
 	}
 }

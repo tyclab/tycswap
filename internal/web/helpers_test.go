@@ -60,6 +60,7 @@ type fakeFacade struct {
 	disableErr    error
 	errs          map[string]error // by method name
 	lastToken     string           // AddAccountFromToken's token, kept out of calls
+	backupDir     string           // BackupDir's answer; "" is /tmp/backups
 	postAddSnap   *reporting.AccountsSnapshot
 	// afterAdd, when set, is the roster AddAccount leaves behind: the
 	// snapshot reads it from then on.
@@ -194,7 +195,12 @@ func (f *fakeFacade) AddAccountFromTokenWithBaseURL(token, baseURL string, email
 	return f.errFor("AddAccountFromTokenWithBaseURL")
 }
 
-func (f *fakeFacade) BackupDir() string                                      { return "/tmp/backups" }
+func (f *fakeFacade) BackupDir() string {
+	if f.backupDir != "" {
+		return f.backupDir
+	}
+	return "/tmp/backups"
+}
 func (f *fakeFacade) SetPollPolicyInputs(threshold float64, models []string) {}
 func (f *fakeFacade) ClearPollPolicyInputs()                                 {}
 

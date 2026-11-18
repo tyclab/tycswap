@@ -11,21 +11,29 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/reporting"
 )
 
-// fakeFable is the FableOps seam: recorded calls.
+// fakeFable is the FableOps seam: recorded calls; during, when set, runs
+// inside each call.
 type fakeFable struct {
-	mu    sync.Mutex
-	calls []string
+	mu     sync.Mutex
+	calls  []string
+	during func()
 }
 
 func (f *fakeFable) record(s string) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls = append(f.calls, s)
+	during := f.during
+	f.mu.Unlock()
+	if during != nil {
+		during()
+	}
 }
 
 func (f *fakeFable) Calls() []string {
@@ -130,6 +138,35 @@ func TestFableSwitchRoute(t *testing.T) {
 	}
 }
 
+// The Fable switch and the empty take the mutation path as every switch
+// does (DESIGN A104): under the mutation lock, a reply whose stateSequence
+// is newer than the state read before, and a state on the stream.
+func TestFableSwitchRouteIsAMutation(t *testing.T) {
+	f := &fakeFable{}
+	h := newHarness(t, withFable(f))
+	var unlocked atomic.Int32
+	f.during = func() {
+		if h.s.mutMu.TryLock() {
+			h.s.mutMu.Unlock()
+			unlocked.Add(1)
+		}
+	}
+	stream := h.openSSE()
+	defer stream.close()
+	stream.nextState(t, timeout)
+	for _, path := range []string{"/api/switch/claude:2?store=fable", "/api/switch/claude:9?store=fable&empty=1"} {
+		before := decodeJSON(t, h.get("/api/state"))["sequence"].(float64)
+		reply := decodeJSON(t, h.post(path))
+		if barrier, ok := reply["stateSequence"].(float64); !ok || barrier <= before {
+			t.Errorf("%s: stateSequence %v, state before it %v", path, reply["stateSequence"], before)
+		}
+		stream.nextState(t, timeout)
+	}
+	if n := unlocked.Load(); n != 0 {
+		t.Errorf("%d Fable store changes ran outside the mutation lock", n)
+	}
+}
+
 func TestFableSwitchRouteRefusals(t *testing.T) {
 	for _, tc := range []struct {
 		path string
@@ -188,5 +225,35 @@ func TestFableSwitchRouteTakesTheBearer(t *testing.T) {
 	}
 	if got := f.Calls(); !reflect.DeepEqual(got, []string{"SwitchFable(3)"}) {
 		t.Fatalf("fable calls %v", got)
+	}
+}
+
+// A session's store comes from its status line's record (DESIGN A102): while
+// an account has a Fable login, a session recorded on the Fable store says
+// "fable", one recorded on the default store "default", and one without a
+// record says nothing. Without a Fable login no session carries a store.
+func TestSessionsNameTheirStore(t *testing.T) {
+	dir := t.TempDir()
+	records := `{"schemaVersion":1,"sessions":{"sess-1":{"family":"fable","seenAt":1758276000,"store":"fable"},"sess-2":{"family":"opus","seenAt":1758276000}}}`
+	if err := os.WriteFile(filepath.Join(dir, "default_models.json"), []byte(records), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	withRecords := func(h *harness, d *Deps) {
+		h.fa.backupDir = dir
+		h.sessions.Claude = append(h.sessions.Claude, procdetect.ClaudeSession{PID: 4444, SessionID: "sess-3", CWD: "/work/third", StartedAt: 1758276200000, Kind: "interactive"})
+	}
+	stores := func(h *harness) map[string]any {
+		out := map[string]any{}
+		for _, c := range stateOf(t, h)["sessions"].(map[string]any)["claude"].([]any) {
+			row := c.(map[string]any)
+			out[row["sessionId"].(string)] = row["store"]
+		}
+		return out
+	}
+	if got := stores(newHarness(t, withFable(&fakeFable{}), withRecords)); !reflect.DeepEqual(got, map[string]any{"sess-1": "fable", "sess-2": "default", "sess-3": nil}) {
+		t.Errorf("with a Fable login: stores %v", got)
+	}
+	if got := stores(newHarness(t, withRecords)); !reflect.DeepEqual(got, map[string]any{"sess-1": nil, "sess-2": nil, "sess-3": nil}) {
+		t.Errorf("without a Fable login: stores %v", got)
 	}
 }

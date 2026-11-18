@@ -1115,7 +1115,7 @@
     if (a.ownershipBlockReason) { out.push(chip('held by another profile', 'warn', a.ownershipBlockReason)); }
     if (!a.switchable) { out.push(chip('not switchable', 'warn', isClaude(a) ? 'missing stored credentials or config backup' : 'a Codex API-key login cannot be switched to')); }
     if (a.usageStatus && SENTINEL_STATUSES[a.usageStatus] && a.usageStatus !== 'api_key') { out.push(chip(SENTINEL_STATUSES[a.usageStatus], 'serious')); }
-    if (a.usageStatus === 'unavailable') { out.push(chip('usage unavailable', 'warn', 'the last measurement is stale or failed; the meters show the last good values')); }
+    if (a.usageStatus === 'unavailable') { out.push(chip('usage unavailable', 'warn', 'no recent reading: the last one failed or is too old to decide on; the meters stay empty until a reading succeeds')); }
     return out;
   }
 
@@ -1326,6 +1326,8 @@
       }
       listEl.appendChild(el('div', { class: 'menu-sep' }));
       listEl.appendChild(menuButton(a.alias ? 'Change alias…' : 'Set alias…', { 'data-action': 'alias', 'data-id': k, 'data-alias': a.alias || '', 'data-name': accountLabel(a) }));
+      // An empty alias removes it; the route takes no body as empty.
+      if (a.alias) { listEl.appendChild(menuButton('Remove alias', { 'data-post': '/api/accounts/' + keyPath(a) + '/alias', 'data-label': 'Remove alias' })); }
       listEl.appendChild(menuButton('Move to slot…', { 'data-action': 'move', 'data-id': k, 'data-name': accountLabel(a) }));
       listEl.appendChild(menuButton('Swap with…', { 'data-action': 'swap', 'data-id': k, 'data-name': accountLabel(a) }));
       listEl.appendChild(el('div', { class: 'menu-sep' }));
@@ -1402,6 +1404,15 @@
     });
   }
 
+  // storeChip: the login a session runs on. While an account has a Fable
+  // login only the session's recorded store names it (DESIGN A102); without
+  // a record nothing is said.
+  function storeChip(c) {
+    if (c.store === 'fable') { return chip('Fable store', 'accent', "Runs on the Fable store's login"); }
+    if (c.store === 'default' || !(state && state.fable)) { return chip('default login', 'outline'); }
+    return null;
+  }
+
   function sessionRow(c) {
     var tr = el('tr');
     var shortId = (c.sessionId || '').slice(0, 8);
@@ -1409,7 +1420,7 @@
       el('span', { class: 'title ellipsis', text: c.title || (shortId ? 'session ' + shortId : '—'), title: c.title || c.sessionId || '' }),
       c.title && shortId ? el('span', { class: 'cell-sub mono', text: shortId }) : null,
       c.group ? chip('retired group', 'outline', 'Started in a retired session group; resume it with plain claude --resume') :
-        c.profile ? chip('run as #' + c.profile, 'accent') : chip('default login', 'outline')
+        c.profile ? chip('run as #' + c.profile, 'accent') : storeChip(c)
     ]));
     tr.appendChild(el('td', { class: 'c-pid num mono', text: String(c.pid) }));
     tr.appendChild(el('td', { class: 'c-kind' }, [el('span', { text: c.kind || '—' }), c.entrypoint ? el('span', { class: 'cell-sub', text: ' · ' + c.entrypoint }) : null]));
@@ -1524,6 +1535,18 @@
   // autoOn: auto-switch is on and something checks (DESIGN A83).
   function autoOn(st) { return !!(st && st.auto && st.auto.running); }
 
+  // The Auto-switch switch is on the Auto tab and in the Accounts card's
+  // head: one setting shown twice. Both show the state, both hide without
+  // auto-switch, and one locked by a change in flight is left alone.
+  function autoSwitches() { return [$('auto-switch'), $('dash-auto-switch')].filter(Boolean); }
+  function syncAutoSwitches(st) {
+    var on = autoOn(st);
+    autoSwitches().forEach(function (box) {
+      box.parentNode.hidden = !st.auto;
+      if (!box.disabled) { box.checked = on; }
+    });
+  }
+
   // autoStateText: who checks, in the words the heading uses (DESIGN A93):
   // a scheduler and its last check, or this dashboard and how often.
   function autoStateText(st) {
@@ -1555,11 +1578,11 @@
 
   function renderAuto(st) {
     var a = st.auto;
-    var badge = $('auto-badge'), body = $('auto-body'), toggle = $('auto-switch');
+    var badge = $('auto-badge'), body = $('auto-body');
     clear(body);
     var strat = String(engineSetting(st, 'autoswitch.strategy') || 'soonest-reset');
     var models = countedModelNames(st);
-    toggle.parentNode.hidden = !a;
+    syncAutoSwitches(st);
     if (!a) {
       badge.textContent = 'unavailable'; badge.className = 'chip chip-outline';
       $('auto-state').textContent = '';
@@ -1569,7 +1592,6 @@
       var on = autoOn(st);
       badge.textContent = on ? 'on' : 'off';
       badge.className = 'chip ' + (on ? 'chip-good' : 'chip-outline');
-      if (!toggle.disabled) { toggle.checked = on; }
       var line = $('auto-state');
       clear(line);
       autoStateLine(st).forEach(function (n) { line.appendChild(typeof n === 'string' ? document.createTextNode(n) : n); });
@@ -1660,14 +1682,19 @@
     });
   }
 
-  // fableAutoLine: the Fable store's engine in one line (DESIGN A104): what
-  // its tick counts and the account it would take next.
+  // fableAutoLine: the Fable store's engine in one line (DESIGN A104): under
+  // a scheduler what its tick counts and the account it would take next;
+  // only `auto --once` runs a Fable tick (A102), so not under this dashboard.
   function fableAutoLine(a) {
     var f = a && a.fable;
     if (!f) { return null; }
-    var caption = String(f.caption || 'Counting 5h + 7d');
-    var next = f.ranking && f.ranking.length ? 'next #' + f.ranking[0] : 'no account to take next';
-    return el('p', { class: 'auto-line', id: 'auto-fable', text: 'Fable store: ' + caption.charAt(0).toLowerCase() + caption.slice(1) + ' \u00b7 ' + next });
+    var text = "Fable store: this dashboard's checks do not move it; a scheduler running " + NAME + ' auto --once does';
+    if (a.owner) {
+      var caption = String(f.caption || 'Counting 5h + 7d');
+      var next = f.ranking && f.ranking.length ? 'next #' + f.ranking[0] : 'no account to take next';
+      text = 'Fable store: ' + caption.charAt(0).toLowerCase() + caption.slice(1) + ' \u00b7 ' + next;
+    }
+    return el('p', { class: 'auto-line', id: 'auto-fable', text: text });
   }
 
   // codexTile: Codex auto-switch beside the Claude one (DESIGN A47), named as
@@ -1679,18 +1706,20 @@
   }
 
   // The Auto-switch switch: on is what Start did, off what Stop did (DESIGN
-  // A93); the next state document confirms it.
-  $('auto-switch').addEventListener('change', function (ev) {
-    var box = ev.target, on = box.checked;
+  // A93); both switches are locked while the change is in flight, and the
+  // next state document confirms it.
+  function setAutoSwitch(ev) {
+    var on = ev.target.checked, boxes = autoSwitches();
     var name = settingLabel(state, 'autoswitch.enabled');
-    box.disabled = true;
+    boxes.forEach(function (b) { b.checked = on; b.disabled = true; });
     api('POST', on ? '/api/auto/start' : '/api/auto/stop', on ? {} : undefined).then(function () {
       toast(name + (on ? ' on.' : ' off.'), 'ok');
     }).catch(function (err) {
-      box.checked = !on;
+      boxes.forEach(function (b) { b.checked = !on; });
       toast(err && err.message ? err.message : String(err));
-    }).then(function () { box.disabled = false; });
-  });
+    }).then(function () { boxes.forEach(function (b) { b.disabled = false; }); });
+  }
+  autoSwitches().forEach(function (b) { b.addEventListener('change', setAutoSwitch); });
 
   // ---- settings (shared row renderer) ---------------------------------------
 
@@ -1914,7 +1943,7 @@
       { auto: st.auto, accounts: st.accounts, active: st.activeNumber, settings: st.settings },
       function () { renderAuto(st); });
     renderGuarded('settings', 'panel-settings', { settings: st.settings }, function () { renderSettings(st); });
-    renderGuarded('sessions', 'panel-sessions', st.sessions, function () { renderSessions(st.sessions); });
+    renderGuarded('sessions', 'panel-sessions', { sessions: st.sessions, fable: !!st.fable }, function () { renderSessions(st.sessions); });
     applyFolds(st);
     if (pendingUpdatesNavigation && st.updates) { showUpdates(); }
     tickCountdowns();

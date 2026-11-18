@@ -43,6 +43,16 @@ func RecordedSession(root, sessionID string) (family, store string, ok bool) {
 	return rec.Family, rec.Store, ok
 }
 
+// SessionStores is each recorded session's store, "fable" or "" for the
+// default store; a session without a record is not in it.
+func SessionStores(root string) map[string]string {
+	out := map[string]string{}
+	for id, rec := range readDefaultSessionModels(root) {
+		out[id] = rec.Store
+	}
+	return out
+}
+
 func readDefaultSessionModels(root string) map[string]defaultSessionModel {
 	var file struct {
 		Sessions map[string]defaultSessionModel `json:"sessions"`

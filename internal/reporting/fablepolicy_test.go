@@ -122,18 +122,30 @@ func TestRankTargetsPutsTheFableLiveAccountLast(t *testing.T) {
 	}
 }
 
-// With the Fable store off (its logins kept) or without Fable logins the
-// policy is A91's: the Fable session counts Fable and nothing is reserved.
+// With the Fable store off (its logins kept), on with its live login dead, or
+// without Fable logins the policy is A91's: the Fable session counts Fable
+// and nothing is reserved.
 func TestDefaultPolicyWithoutAUsableFableStoreIsA91(t *testing.T) {
 	for name, tc := range map[string]struct {
 		live   string
 		logins []string
+		dead   bool
 	}{
-		"store-off":       {"", incidentSlots},
-		"no-fable-logins": {"", nil},
+		"store-off":       {"", incidentSlots, false},
+		"store-unusable":  {"8", incidentSlots, true},
+		"no-fable-logins": {"", nil, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, now := fableIncident(t, fableAndOpus, []string{"s-fable"}, tc.live, tc.logins...)
+			if tc.dead {
+				f, _ := s.ForFable()
+				if err := autoswitch.Quarantine(f.StatePath(), s.Clk, tc.live, "acct"+tc.live+"@example.com", "invalid_grant", oauthCreds("fat"+tc.live, "frt"+tc.live, 0), func(autoswitch.Event) {}); err != nil {
+					t.Fatal(err)
+				}
+				if st := s.FableStore(); !st.On || st.Usable {
+					t.Fatalf("precondition: FableStore = %+v, want on and unusable", st)
+				}
+			}
 			r := DefaultSessionPolicyResult(s, settings.Default(), now)
 			if deref(r.Settings.Model) != "Fable" || r.Reserved != nil || !reflect.DeepEqual(r.Sessions, []string{"fable", "opus"}) {
 				t.Fatalf("model %q, reserved %s, sessions %v; want A91's Fable counted, none reserved", deref(r.Settings.Model), reservedOf(r), r.Sessions)

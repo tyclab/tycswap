@@ -2975,7 +2975,10 @@ tabs:
   those whose counted full windows all reset in less than five hours lead
   them. The quarantine; a link to the Settings tab. While an account has a
   Fable login, a line `Fable store: <auto.fable.caption> · next #M` says what
-  the Fable store's checks count and the account they would take next.
+  the Fable store's checks count and the account they would take next while
+  a scheduler runs the checks (`auto.owner`); otherwise it reads `Fable store:
+  this dashboard's checks do not move it; a scheduler running tycswap auto
+  --once does`, since only `auto --once` runs a Fable tick (DESIGN A102).
   The page starts no dry run (`tycswap auto --dry-run` does) and has no event
   log: a scheduler's ticks print to its journal.
 - **Settings**: the `settings.json` keys `tycswap config` knows
@@ -3096,8 +3099,12 @@ store's engine: `{"lastTickAt", "caption", "ranking", "quarantine",
 seconds or null, `quarantine` as `auto.quarantine`), `caption` `Counting 5h +
 7d` and every Fable window an account reports, `ranking` the order a Fable
 tick would take the Fable pool in (DESIGN A102), and `heldUntil` (epoch
-seconds) while a switch of the Fable store by hand holds its engine. Without a
-Fable login none of these keys is present and the document is v0.15.1's.
+seconds) while a switch of the Fable store by hand holds its engine. A
+session of the default profile whose status line recorded its store in
+`default_models.json` carries `store`, `fable` or `default`; the Sessions tab
+then shows *Fable store* or *default login*, and nothing for a session
+without a record. Without a Fable login none of these keys is present and the
+document is v0.15.1's.
 An engine event is `{"at", "kind", "message", "account",
 "fields"}`; a Codex tick's also carries `"provider": "codex"` (the Claude
 engine's carry no `provider`), its `kind` is `switch`, `error`,
@@ -5216,9 +5223,11 @@ line `<change> by <actor>` beside the change's own line.
 
 - **Changes.** `Disabled account <id>`, `Enabled account <id>`, `Switched to
   account <n>`, `Set <key>=<value>`, `Unset <key>`, the Codex ones as `Codex
-  account`; the `<id>` is the identifier the caller gave. A refused change,
-  a switch onto the active account (without `--force`) and an unset of a key
-  that is not set write none; a disable of an account already disabled is
+  account`, and from the dashboard `Set alias '<alias>' for account <n>` and
+  `Removed alias for account <n>`; the `<id>` is the identifier the caller
+  gave. A refused change, a switch onto the active account (without
+  `--force`), an unset of a key that is not set and an alias change that
+  changes nothing write none; a disable of an account already disabled is
   still recorded.
 - **Actors.** `cli(pid=<pid>,parent=<program>)` for a command (also run from
   `tycswap menu`; `parent` only where `/proc` exists), `tui`, `tray`,
