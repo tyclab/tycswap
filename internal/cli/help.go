@@ -135,6 +135,9 @@ const visibleOptions = `options:
                         which add refuses: use 'add-token')
   --switch              With 'add --login': switch to the new account after
                         storing it
+  --lineage {default,fable}
+                        With 'add --login': fable stores the sign-in as the
+                        Fable login of the account it names
   --force               Overwrite existing accounts during import; with
                         'switch <num|email>', activate without backing up first
   -y, --yes             With 'switch <num|email>' onto an API-key account:
