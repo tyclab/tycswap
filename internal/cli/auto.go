@@ -221,8 +221,16 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		}
 	}
 	if once {
-		// Claude first, then Codex; the exit status is the Claude outcome.
-		code := int(engine.Tick())
+		// Claude first, the Fable store's tick after the default one, then
+		// Codex; the exit status is the more significant Claude outcome
+		// (DESIGN A102).
+		outcome := engine.Tick()
+		if dryRun || autoSwitchOn(root) {
+			if fable, ran := fableTick(sw, merged, onEvent, dryRun); ran {
+				outcome = significantOutcome(outcome, fable)
+			}
+		}
+		code := int(outcome)
 		// A status line's tick is about latency; group retirement and Codex
 		// wait for the scheduled one (DESIGN A78).
 		if !observe {

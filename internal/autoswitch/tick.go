@@ -708,7 +708,12 @@ func (e *Engine) perform(number, email, trigger, axis string) (tickResult, error
 		return tickResult{}, err
 	}
 	if switched {
-		e.log.Action("Switched to account "+number, "engine:"+trigger)
+		// A switcher over another store names it in its own line (DESIGN A102).
+		if l, ok := e.sw.(interface{ LogSwitch(number, actor string) }); ok {
+			l.LogSwitch(number, "engine:"+trigger)
+		} else {
+			e.log.Action("Switched to account "+number, "engine:"+trigger)
+		}
 		e.emit(SwitchEvent{
 			Ts:       e.nowISO(),
 			Trigger:  trigger,
