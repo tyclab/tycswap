@@ -127,8 +127,21 @@ func (t transferAdapter) ResolveSlot(id string) (string, error) {
 	return num, nil
 }
 
+// CurrentAccount is the account the live default login belongs to, by the
+// resolved live slot (DESIGN A68): a Fable session writes its own account into
+// ~/.claude.json. While Fable logins exist, a slot only the config names is no
+// evidence, so no account counts as live (DESIGN A101).
 func (t transferAdapter) CurrentAccount() (email, orgUUID string, ok bool) {
-	return t.Store.GetCurrentAccount()
+	data, err := t.Store.ReadSequence()
+	if err != nil || data == nil {
+		return "", "", false
+	}
+	live := t.Store.ResolveLiveSlot(data)
+	if live.Slot == "" || live.Source == store.SourceConfig && t.Store.AccountKindFor(live.Slot) == "oauth" && t.Store.HasFableLogins() {
+		return "", "", false
+	}
+	id := t.Store.AccountIdentity(live.Slot)
+	return id["email"], id["organizationUuid"], true
 }
 
 // ReadActiveCredentials returns the live active credential ("" when none),

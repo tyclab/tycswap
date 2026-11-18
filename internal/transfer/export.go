@@ -117,6 +117,16 @@ func Export(acc Accounts, destination, account string, full bool) error {
 			if !found {
 				return cerr.Config("Claude config file not found")
 			}
+			if names, ok := configAccount(configText); ok && names != [2]string{email, orgUUID} {
+				// ~/.claude.json names another account (a Fable session's,
+				// DESIGN A101): the account's own stored config goes out.
+				if configText, err = acc.ReadAccountConfig(num, email); err != nil {
+					return err
+				}
+				if configText == "" {
+					return cerr.Config("no backup config found for account %s (%s)", num, email)
+				}
+			}
 		} else {
 			credsText, err = acc.ReadAccountCredentials(num, email)
 			if err != nil {
@@ -250,6 +260,21 @@ func parsePayload(text, label string) (map[string]any, error) {
 		return nil, cerr.Transfer("%s must be a JSON object", label)
 	}
 	return m, nil
+}
+
+// configAccount is the (email, organizationUuid) a config's oauthAccount
+// names; ok is false when the text names none.
+func configAccount(text string) (id [2]string, ok bool) {
+	var doc struct {
+		OAuthAccount *struct {
+			Email string `json:"emailAddress"`
+			Org   any    `json:"organizationUuid"`
+		} `json:"oauthAccount"`
+	}
+	if json.Unmarshal([]byte(text), &doc) != nil || doc.OAuthAccount == nil || doc.OAuthAccount.Email == "" {
+		return id, false
+	}
+	return [2]string{doc.OAuthAccount.Email, strOrEmpty(doc.OAuthAccount.Org)}, true
 }
 
 // slimConfig reduces a parsed ~/.claude.json to just {"oauthAccount": ...},
