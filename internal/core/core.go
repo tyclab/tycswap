@@ -29,6 +29,7 @@ func (sw *Switcher) Platform() platform.Platform { return sw.Store.Platform }
 func init() {
 	// Process-wide seams: a process hosts one switcher.
 	switching.UsageProvider = reporting.UsageByAccount
+	switching.CountedModels = reporting.CountedForSwitch
 	switching.PostSwitchList = postSwitchList
 	switching.AutoAddCurrent = autoAddCurrent
 	switching.Prompt = func(prompt string) (string, bool) {

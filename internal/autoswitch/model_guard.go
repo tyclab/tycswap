@@ -17,26 +17,10 @@ func reportedModels(value any) map[string]bool {
 	return names
 }
 
-func requiredModels(models []string, values map[string]any) []string {
+func requiredModels(models []string) []string {
 	names := map[string]bool{}
-	all := false
 	for _, model := range models {
-		name := strings.ToLower(model)
-		if name == "all" {
-			all = true
-		} else {
-			names[name] = true
-		}
-	}
-	if all {
-		for _, value := range values {
-			for name := range reportedModels(value) {
-				names[name] = true
-			}
-		}
-		if len(names) == 0 {
-			names["all"] = true
-		}
+		names[strings.ToLower(model)] = true
 	}
 	result := make([]string, 0, len(names))
 	for name := range names {

@@ -1,84 +1,62 @@
-// strategies.go — the usage-aware scoring for `best` (spec 02§5). selectBestSwitchable never recommends a move it cannot
-// prove lands on strictly more headroom, never onto a worse or merely
-// unverifiable account; ties (including current-vs-other) resolve to staying put
-// / the earliest slot.
+// strategies.go — the usage-aware choice for `best` (spec 02§5, DESIGN A99):
+// the account the account order ranks first, as the engine ranks its targets,
+// over the windows the default-session policy counts; never an account at a
+// counted limit, and never a move away from a live account that ranks first.
 package switching
 
-import "github.com/tyclab/tycswap/internal/store"
+import (
+	"github.com/tyclab/tycswap/internal/autoswitch"
+	"github.com/tyclab/tycswap/internal/store"
+)
 
 // selectBestSwitchable decides the `best` target relative to current (spec
 // 02§5). Returns (target, note); target "" with a note means stay. Notes: none,
 // current-unavailable, no-comparison, incomplete-comparison, stay, exhausted.
-func selectBestSwitchable(s *store.Store, currentNum string, usage map[string]any) (string, string) {
+func selectBestSwitchable(s *store.Store, currentNum string, c Counting, usage map[string]any) (string, string) {
 	data, _ := s.ReadSequence()
 	if data == nil {
 		return "", "none"
 	}
+	known := func(num string) bool { _, ok := usage[num].(map[string]any); return ok }
 
-	var others []string
+	// The candidate set is SwitchableAccountNumbers (store.RotationEligible)
+	// without the quarantined slots the engine never targets, in sequence
+	// order with the current slot in its place, so ties resolve by slot.
+	var candidates []string
+	others, measured := 0, 0
 	for _, n := range data.Sequence {
 		num := itoa(n)
 		if num == currentNum {
+			candidates = append(candidates, num)
 			continue
 		}
-		// store.RotationEligible owns the rule; the candidate set here is exactly
-		// SwitchableAccountNumbers minus the current slot.
-		if s.RotationEligible(data, num) {
-			others = append(others, num)
+		if s.RotationEligible(data, num) && !c.Quarantined[num] {
+			candidates = append(candidates, num)
+			others++
+			if known(num) {
+				measured++
+			}
 		}
 	}
-	if len(others) == 0 {
+	if others == 0 {
 		return "", "none"
 	}
-
-	currentHeadroom := headroomOf(usage[currentNum])
-	if currentHeadroom == nil {
+	if !known(currentNum) {
 		// Can't measure where the user is → can't prove any target is better.
 		return "", "current-unavailable"
 	}
-
-	type scoredEntry struct {
-		h   *float64
-		num string
-	}
-	var scored []scoredEntry
-	for _, num := range others {
-		scored = append(scored, scoredEntry{headroomOf(usage[num]), num})
-	}
-
-	// known preserves rotation (sequence) order; the first maximal wins, so ties
-	// resolve to the earliest slot.
-	var bestHeadroom *float64
-	var bestNum string
-	anyKnown := false
-	for _, e := range scored {
-		if e.h == nil {
-			continue
-		}
-		anyKnown = true
-		if bestHeadroom == nil || *e.h > *bestHeadroom {
-			bestHeadroom = e.h
-			bestNum = e.num
-		}
-	}
-	if !anyKnown {
+	if measured == 0 {
 		return "", "no-comparison"
 	}
-
-	// Strictly greater only.
-	if *bestHeadroom > *currentHeadroom {
-		return bestNum, ""
+	unknown := measured < others
+	ranked := autoswitch.RankTargets(candidates, usage, c.Settings, c.Models, c.Reserved, s.Clk.Now())
+	switch {
+	case len(ranked) > 0 && ranked[0] != currentNum:
+		return ranked[0], ""
+	case unknown:
+		return "", "incomplete-comparison"
+	case len(ranked) > 0:
+		return "", "stay"
 	}
-
-	// Current is at least as good as everything measurable. Only claim "all
-	// exhausted" when every candidate's usage is known.
-	for _, e := range scored {
-		if e.h == nil {
-			return "", "incomplete-comparison"
-		}
-	}
-	if *currentHeadroom <= 0 {
-		return "", "exhausted"
-	}
-	return "", "stay"
+	return "", "exhausted"
 }

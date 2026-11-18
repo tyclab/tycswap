@@ -6,6 +6,7 @@ package switching
 
 import (
 	"os"
+	"strings"
 
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/printer"
@@ -14,7 +15,8 @@ import (
 
 // Switch rotates to the next account or runs a usage-aware strategy (spec 02§4).
 // strategy is nil / "best" / "next-available"; a value not in the usage-aware
-// set is a plain rotation. The strategies count 5h and 7d only (DESIGN A97).
+// set is a plain rotation. The strategies count 5h, 7d and the model windows
+// the default-session policy counts (DESIGN A98).
 func Switch(s *store.Store, strategy *string, jsonOut bool) (any, error) {
 	strategyStr := ""
 	if strategy != nil {
@@ -108,9 +110,18 @@ func Switch(s *store.Store, strategy *string, jsonOut bool) (any, error) {
 		currentRef = numRef(currentNum, email)
 	}
 
+	var counting Counting
+	if strategyLabel != "rotation" {
+		counting = countedModels(s)
+		if line := countingLine(counting, strategyStr == "best"); line != "" && !jsonOut {
+			printOut(printer.Dimmed(line))
+		}
+	}
+	models := counting.Models
+
 	// Strategy `best`.
 	if strategyStr == "best" {
-		target, note := selectBestSwitchable(s, currentNum, usageByAccount(s))
+		target, note := selectBestSwitchable(s, currentNum, counting, usageByAccount(s))
 		if target != "" {
 			op, err := performSwitch(s, target, !jsonOut, false, nil)
 			if err != nil {
@@ -121,7 +132,7 @@ func Switch(s *store.Store, strategy *string, jsonOut bool) (any, error) {
 			}
 			return nil, nil
 		}
-		if res := bestNoop(note, strategyLabel, currentNum, currentRef, jsonOut, warnings); res != nil || note != "none" {
+		if res := bestNoop(note, strategyLabel, currentNum, currentRef, counting, jsonOut, warnings); res != nil || note != "none" {
 			return res, nil
 		}
 		// note == "none": fall through to rotation.
@@ -187,13 +198,14 @@ func Switch(s *store.Store, strategy *string, jsonOut bool) (any, error) {
 			continue
 		}
 		if strategyStr == "next-available" {
-			headroom := headroomOf(usage[candidate])
+			headroom := headroomOf(usage[candidate], models)
 			if headroom != nil && *headroom <= 0 {
 				skippedExhausted = append(skippedExhausted, candidate)
+				label := spentLabel(usage[candidate], models)
 				if jsonOut {
-					warnings = append(warnings, "Skipped Account-"+candidate+" (at 5h/7d limit)")
+					warnings = append(warnings, "Skipped Account-"+candidate+" (at "+label+" limit)")
 				} else {
-					printOut(printer.Accent("Skipping") + " Account-" + candidate + " (at 5h/7d limit)")
+					printOut(printer.Accent("Skipping") + " Account-" + candidate + " (at " + label + " limit)")
 				}
 				continue
 			}
@@ -203,7 +215,7 @@ func Switch(s *store.Store, strategy *string, jsonOut bool) (any, error) {
 	}
 
 	if nextAccount == "" && len(skippedExhausted) > 0 {
-		msg := "All other accounts are at their 5h/7d limit — staying on Account-" + currentNum + "."
+		msg := "All other accounts are at their " + limitsLabel(models) + " — staying on Account-" + currentNum + "."
 		if jsonOut {
 			return switchNoop(noopArgs{
 				strategy: strategyLabel, reason: "candidates-exhausted",
@@ -340,7 +352,8 @@ func switchFreshMachine(s *store.Store, strategyLabel string, jsonOut bool, warn
 
 // bestNoop maps a selectBestSwitchable note to its no-op result (spec 02§4.5).
 // Returns nil only for note "none" (the caller falls through to rotation).
-func bestNoop(note, strategyLabel, currentNum string, currentRef map[string]any, jsonOut bool, warnings []string) map[string]any {
+func bestNoop(note, strategyLabel, currentNum string, currentRef map[string]any, c Counting, jsonOut bool, warnings []string) map[string]any {
+	models := c.Models
 	switch note {
 	case "current-unavailable":
 		if jsonOut {
@@ -364,28 +377,28 @@ func bestNoop(note, strategyLabel, currentNum string, currentRef map[string]any,
 		if jsonOut {
 			return switchNoop(noopArgs{
 				strategy: strategyLabel, reason: "usage-unavailable", toRef: currentRef, warnings: warnings,
-				message: "No account with known usage has more remaining quota; some usage is unavailable — staying on Account-" + currentNum + ".",
+				message: "No account with known usage ranks before it; some usage is unavailable — staying on Account-" + currentNum + ".",
 			})
 		}
-		printOut(printer.Dimmed("No account with known usage has more remaining quota; some usage is unavailable — staying on Account-" + currentNum + "."))
+		printOut(printer.Dimmed("No account with known usage ranks before it; some usage is unavailable — staying on Account-" + currentNum + "."))
 		return nil
 	case "stay":
 		if jsonOut {
 			return switchNoop(noopArgs{
 				strategy: strategyLabel, reason: "already-best", toRef: currentRef, warnings: warnings,
-				message: "Already on the account with the most remaining quota (Account-" + currentNum + ").",
+				message: "Already on the account the account order (" + c.Settings.Strategy + ") ranks first (Account-" + currentNum + ").",
 			})
 		}
-		printOut(printer.Accent("Already on the account with the most remaining quota") + " (Account-" + currentNum + ").")
+		printOut(printer.Accent("Already on the account the account order ("+c.Settings.Strategy+") ranks first") + " (Account-" + currentNum + ").")
 		return nil
 	case "exhausted":
 		if jsonOut {
 			return switchNoop(noopArgs{
 				strategy: strategyLabel, reason: "candidates-exhausted", toRef: currentRef, warnings: warnings,
-				message: "All accounts are at their 5h/7d limit — staying on Account-" + currentNum + ".",
+				message: "All accounts are at their " + limitsLabel(models) + " — staying on Account-" + currentNum + ".",
 			})
 		}
-		printWarning("All accounts are at their 5h/7d limit — staying on Account-" + currentNum + ".")
+		printWarning("All accounts are at their " + limitsLabel(models) + " — staying on Account-" + currentNum + ".")
 		return nil
 	}
 	return nil // "none"
@@ -399,4 +412,49 @@ func seqIndex(seq []int, v int) int {
 		}
 	}
 	return -1
+}
+
+// spentLabel names the full windows that put an account at its limit
+// ("Fable", "5h/7d"); with no model window counted it reads "5h/7d".
+func spentLabel(v any, models []string) string {
+	if len(models) == 0 {
+		return "5h/7d"
+	}
+	var at []string
+	for _, w := range relevantWindowsOf(v, models) {
+		if w.Pct >= 100.0 {
+			at = append(at, w.Label)
+		}
+	}
+	if len(at) == 0 {
+		return "5h/7d"
+	}
+	return strings.Join(at, "/")
+}
+
+// limitsLabel names the limits the strategies count, for the line that says
+// every candidate is at one.
+func limitsLabel(models []string) string {
+	if len(models) > 0 {
+		return "usage limits"
+	}
+	return "5h/7d limit"
+}
+
+// countingLine is the text-mode line before a switch by strategy: the
+// caption of the counted set while a model window counts (DESIGN A98) and,
+// for best, the account order it ranks by (DESIGN A99); "" when neither.
+func countingLine(c Counting, best bool) string {
+	var parts []string
+	if len(c.Models) > 0 && c.Caption != "" {
+		parts = append(parts, c.Caption)
+	}
+	if best {
+		parts = append(parts, "account order: "+c.Settings.Strategy)
+	}
+	line := strings.Join(parts, " · ")
+	if line == "" {
+		return ""
+	}
+	return strings.ToUpper(line[:1]) + line[1:]
 }

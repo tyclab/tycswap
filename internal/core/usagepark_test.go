@@ -71,10 +71,11 @@ func TestEngineKeepsAnAtLimitCandidateTrusted(t *testing.T) {
 	})
 	seedLive(t, sw, "a@x.com", credsA)
 
-	// Count every model window, as autoswitch.model "all" does.
+	// Count the Fable window, as the default-session policy does while a live
+	// Fable session runs (DESIGN A76).
 	s := settings.Default()
-	all := "all"
-	s.Model = &all
+	fable := "Fable"
+	s.Model = &fable
 	s.IntervalSeconds = 15
 	t.Cleanup(sw.ClearPollPolicyInputs)
 	engine := autoswitch.NewEngine(autoswitchAdapter{sw}, s, func(autoswitch.Event) {}, false,

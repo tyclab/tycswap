@@ -48,13 +48,8 @@ func relevantWindows(usage map[string]any, models []string) []winTuple {
 	}
 	if len(models) > 0 {
 		wanted := make(map[string]bool, len(models))
-		matchAll := false
 		for _, m := range models {
-			lm := strings.ToLower(m)
-			if lm == "all" {
-				matchAll = true
-			}
-			wanted[lm] = true
+			wanted[strings.ToLower(m)] = true
 		}
 		if scoped, ok := usage["scoped"].([]any); ok {
 			for _, sv := range scoped {
@@ -67,7 +62,7 @@ func relevantWindows(usage map[string]any, models []string) []winTuple {
 				if pct == nil || !nameOK {
 					continue
 				}
-				if matchAll || wanted[strings.ToLower(name)] {
+				if wanted[strings.ToLower(name)] {
 					resets, _ := s["resets_at"].(string)
 					out = append(out, winTuple{name, *pct, resets})
 				}

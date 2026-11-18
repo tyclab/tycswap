@@ -204,35 +204,54 @@ func (a *autoFacade) Events() <-chan web.AutoEventView { return a.stream }
 func (a *autoFacade) View() web.AutoView {
 	v, s, hosted := a.view()
 	v.LastTickAt = autoswitch.ReadLastTick(autoswitch.StatePath(a.sw.BackupDir()))
-	v.Counting = a.counting(s, hosted)
+	var reserved func(string) bool
+	v.Counting, reserved = a.counting(s, hosted)
+	v.Ranking = a.ranking(s, v.Counting.Models, reserved)
 	return v
+}
+
+// ranking is the order the engine would take the other accounts in, over the
+// windows it counts now, with the accounts the policy reserves (DESIGN A99).
+func (a *autoFacade) ranking(s settings.AutoSwitchSettings, models []string, reserved func(string) bool) []string {
+	data, _ := a.sw.ReadSequence()
+	if data == nil {
+		return []string{}
+	}
+	live := ""
+	if n := a.sw.CurrentAccountNumber(); n != nil {
+		live = *n
+	}
+	quarantined := autoswitch.ReadQuarantineEntries(autoswitch.StatePath(a.sw.BackupDir()))
+	var candidates []string
+	for _, n := range data.Sequence {
+		num := strconv.Itoa(n)
+		if _, held := quarantined[num]; num != live && !held && a.sw.RotationEligible(data, num) {
+			candidates = append(candidates, num)
+		}
+	}
+	return append([]string{}, autoswitch.RankTargets(candidates, reporting.UsageByAccount(a.sw.Store), s, models, reserved, a.clk.Now())...)
 }
 
 // counting is what the engine counts now (DESIGN A91, A97): an engine hosted
 // here keeps the models it was built with (ENG-8); the scheduled ticks count
 // what the default-session policy derives.
-func (a *autoFacade) counting(s settings.AutoSwitchSettings, hosted bool) *web.CountingView {
+func (a *autoFacade) counting(s settings.AutoSwitchSettings, hosted bool) (*web.CountingView, func(string) bool) {
 	c := &web.CountingView{Mode: "sessions", Models: settings.ParseModelNames(s.Model)}
+	var reserved func(string) bool
 	switch {
 	case hosted:
 		c.Mode = "hosted"
 	default:
 		r := reporting.DefaultSessionPolicyResult(a.sw.Store, s, a.clk.Now())
 		c.Models, c.Sessions, c.Unservable = settings.ParseModelNames(r.Settings.Model), r.Sessions, r.Unservable
-		if data, _ := a.sw.ReadSequence(); data != nil && r.Reserved != nil {
-			for _, n := range data.Sequence {
-				if num := strconv.Itoa(n); r.Reserved(num) {
-					c.Reserved = append(c.Reserved, num)
-				}
-			}
-		}
+		c.Reserved, reserved = r.ReservedIn(a.sw.Store), r.Reserved
 	}
 	for _, list := range []*[]string{&c.Sessions, &c.Unservable, &c.Reserved} {
 		if *list == nil {
 			*list = []string{}
 		}
 	}
-	return c
+	return c, reserved
 }
 
 // view is the engine host's own state, the settings its engine decides with

@@ -381,11 +381,23 @@ tycswap switch --strategy {best|next-available} [--json] [--debug]
 ### Description
 
 Bare `tycswap switch` rotates to the next account in the sequence. `tycswap switch
-<NUM|EMAIL|ALIAS>` activates a specific account. `--strategy best` picks the
-account with the most remaining 5h/7d quota; `--strategy next-available`
-rotates, skipping rate-limited accounts. Both strategies count the 5h and 7d
-windows only: the `--model` flag that added per-model weekly limits was
-removed (DESIGN A97) and exits 2.
+<NUM|EMAIL|ALIAS>` activates a specific account. `--strategy best` takes
+the account `autoswitch.strategy` ranks first, as the engine ranks its
+targets (`best`: most weekly room; `soonest-reset`: below every bar first,
+earliest weekly renewal first), the dashboard's *Best candidate* (DESIGN A99);
+when the live account ranks first it stays (`already-best`). Quarantined
+accounts and accounts at a counted limit are never targets, and the accounts
+left to Fable work rank last. `--strategy next-available` rotates, skipping
+accounts at a limit. Both strategies count the 5h and 7d windows and the per-model weekly
+windows the default-session policy counts, the set the dashboard's *Counting
+now* shows (DESIGN A98): while a live Fable session runs and some usable
+account can serve it, an account whose Fable week is spent is at its limit
+(`Skipping Account-2 (at Fable limit)`). In text mode a dimmed line names that
+set with the dashboard's caption (`Counting 5h + 7d + Fable (live Fable
+sessions)`) whenever a model window counts, and `best` adds the order it
+ranks by (`Account order: soonest-reset`, or `… · account order:
+soonest-reset` after the caption). No flag chooses the set: the
+`--model` flag was removed (DESIGN A97) and exits 2.
 
 Switching onto an **API-key account** is the one switch that asks first
 (DESIGN A33). It replaces the subscription login with a managed key billed per
@@ -1500,8 +1512,8 @@ candidate that reports no window of that class is judged on its weekly figure,
 except on a 5h move: a candidate without a 5h window has no 5h limit and is a
 target when it is below every bar of its own (DESIGN A96).
 Whatever the trigger, a candidate whose week, or a counted model week, is
-spent is never a target. The startup line names every bar (`Auto-switch
-running: 5h 85% · 7d 97% · model 95%, every 60s`); the poll line carries the
+spent is never a target. The startup line names the 5h and 7d bars (`Auto-switch
+running: 5h 85% · 7d 97%, every 60s`); the poll line carries the
 7d bar (`(7d bar 97%)`); the `below-threshold` reason names the window closest
 to its own bar (`7d 50% < 97%`), and a switch names the window that made it
 (`(proactive, 5h)`). The poll cadence escalates on the lowest bar in force (the
@@ -2695,13 +2707,13 @@ tabs:
   machine with Codex accounts *Codex auto-switch* (on or off, its *Codex
   threshold*, the last tick). The *Next best* ranking with each account's
   verdict, which marks a row *at threshold* when any of its windows has
-  reached its own bar, ranks `best` hierarchically by weekly, counted
-  model-weekly, then 5-hour usage, and names the bars in force (`switch at 5h
-  85% · 7d 97%`, plus the model bar while model windows count). Full accounts
-  follow usable accounts; those whose counted full windows all reset in less
-  than five hours lead the blocked group. `soonest-reset` retains reset-time
-  priority within availability groups. This dashboard order does not change
-  the automatic selection policy. The quarantine; a link to the Settings tab.
+  reached its own bar, takes the order the engine ranks its targets in, the
+  state's `auto.ranking` (DESIGN A99), and names the bars in force (`switch at 5h
+  85% · 7d 97%`, plus the model bar while model windows count); its first is
+  the *Best candidate* tile and where *Switch now · Best* goes. The accounts
+  the engine could not take (at a limit, quarantined, without usage) follow:
+  those whose counted full windows all reset in less than five hours lead
+  them. The quarantine; a link to the Settings tab.
   The page starts no dry run (`tycswap auto --dry-run` does) and has no event
   log: a scheduler's ticks print to its journal.
 - **Settings**: the `settings.json` keys `tycswap config` knows
@@ -2721,8 +2733,8 @@ tabs:
   the TUI's engine never reads them. The tab's badge counts the keys set away
   from their default.
 - **Guide**: what the tool is, slots and the active account, the 5h / 7d /
-  model windows and their thresholds (the model windows always follow the
-  sessions), getting started, switching by hand, Auto
+  model windows and their thresholds (a scheduler's checks follow the
+  sessions; checks the dashboard runs itself count 5h and 7d only), getting started, switching by hand, Auto
   mode, the settings, sessions, updates, Codex accounts, a command cheat-sheet,
   troubleshooting and where the data lives.
 - **Sessions**: running Claude Code sessions grouped by directory, with
@@ -2810,7 +2822,11 @@ model families the live default sessions run, in `sessions`, minus
 `unservable`, with the accounts left to Fable work in `reserved`) or `hosted`
 (an engine hosted in this process, which does not follow sessions and counts
 5h and 7d only); `caption` says it in one line, e.g. `counting 5h + 7d; Fable not
-counted: no usable account can serve it`. An engine event is `{"at", "kind", "message", "account",
+counted: no usable account can serve it`. `auto.ranking` is the order the
+engine would take the other accounts in over what `auto.counting` counts,
+best first (`autoswitch.strategy`, the engine's `sortQualifying`; an account
+at a counted limit, quarantined or without usage is left out; DESIGN A99).
+An engine event is `{"at", "kind", "message", "account",
 "fields"}`; a Codex tick's also carries `"provider": "codex"` (the Claude
 engine's carry no `provider`), its `kind` is `switch`, `error`,
 `all-exhausted` or `no-switch` for the outcomes switched, error, blocked and
@@ -2897,7 +2913,7 @@ anything else `500`.
 | `GET /api/state[?tokenStatus=1]` | | the state document | `200` |
 | `GET /api/events?csrf=<t>[&tokenStatus=1]` | | Server-Sent Events: `state` frames, `auto` frames (one engine event each; a Codex tick's carries `"provider": "codex"`), a `: ping` every 15 s | `200`, then a stream |
 | `POST /api/launch` | | a one-time dashboard URL, `{"url": "http://127.0.0.1:<port>/?token=<t>"}`: the unused start URL, else a fresh one; for a remote tray, with the bearer token only | `403` with the cookie and CSRF pair, or without a remote token configured |
-| `POST /api/switch` | `{"strategy": "best"\|"next-available"}` | `tycswap switch --strategy`; a `models` field is ignored (DESIGN A97) | `400` missing or unknown strategy |
+| `POST /api/switch` | `{"strategy": "best"\|"next-available"}` | `tycswap switch --strategy`, counting what it counts (DESIGN A98); a `models` field is ignored (DESIGN A97) | `400` missing or unknown strategy |
 | `POST /api/switch/{key}[?force=1][&confirmAuthChange=1]` | | `tycswap switch <id> [--force] [--yes]`; `confirmAuthChange=1` records the user's yes to a switch onto an API-key account, which the page asks for first (DESIGN A33). A `codex:` key is `tycswap codex switch <id>` and answers `{"number", "email", "runningPids", "alreadyActive"}` | `400` bare key, an API-key target without `confirmAuthChange`, or `force` / `confirmAuthChange` with a `codex:` key; `404` unknown provider; `503` `confirmAuthChange` without account operations, or a `codex:` key without Codex accounts; `409` a `codex:` key while the Codex store stays busy for 10 s |
 | `POST /api/accounts/add` | `{"provider": "claude"\|"codex"}` (optional) | `tycswap add`; answers `{"ok": true, "result": {"number", "email", "refreshed"}}`, the account the live login is now (`refreshed`: it was that account already). The tray's *Add current login* is the same call. With `codex`, `tycswap codex add`, answering `{"number", "email"}` | `500` `Claude Code has no subscription login on this computer. …` when Claude Code has no live login, before anything is stored; `400` unknown provider; `503` `codex` without Codex accounts; `409` `codex` while the Codex store stays busy for 10 s |
 | `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias", "baseUrl"}` | `tycswap add-token [--base-url]` (the token is never echoed or logged); `503` with a `baseUrl` when the facade cannot store one | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
@@ -3096,8 +3112,8 @@ Windows through WSL2's localhost forwarding. It sends `Authorization: Bearer
 <token>` with the token read from `--token-file` (read again after a 401),
 follows the dashboard's event stream (reconnecting with backoff from 1 s to
 30 s; silence for a minute counts as a dead stream), follows no redirect and
-uses no proxy. It stores nothing and runs no engine: switches, auto-switch
-and the model limit act on the distro's engine; *Open dashboard*
+uses no proxy. It stores nothing and runs no engine: switches and
+auto-switch act on the distro's engine; *Open dashboard*
 asks `POST /api/launch` for a one-time URL and opens it only when it is the
 engine's own loopback address. It has no Claude Code row and no *Add current
 login*, refuses a switch onto an API-key account (use the dashboard), and holds
@@ -4963,8 +4979,8 @@ know is ignored on read and kept by every write.
 a file that still carries it loads as if it did not, and `config set`, `get`
 and `unset` refuse it as an unknown setting. `autoswitch.handoverWaitMinutes`,
 removed with the handover after a limit (DESIGN A95), and `autoswitch.model`,
-removed with the choice of counted models (DESIGN A97: the model windows
-always follow the live sessions), are read and refused the same way, but every
+removed with the choice of counted models (DESIGN A97: no setting chooses
+the counted model windows), are read and refused the same way, but every
 write (`config set` and `unset`, the TUI's and the dashboard's Settings) drops
 them from the file. `autoswitch.threshold`, the
 single bar before DESIGN A34, is no key either, but it still counts: a file

@@ -46,7 +46,7 @@ evidence.
 | ENG-5 | failover strikes count ticks, from every source | autoswitch/tick.go countUnknownTick | FIX D4 | T | E |
 | ENG-6 | candidate without a 5h window judged on the 5h line | autoswitch/tick.go | FIX D4 | T | E |
 | ENG-7 | window at 100 % stays full after its reset passed: since A91 the engine, policy, `start`, at-limit marks and dashboard/tray rows read it renewed (`oauth.AsOf`); the TUI's meters and *Next best* still read the cached `Usage.LastGood` | tui/autoview.go candidatesText, widgets.go | FIX D4 | T | E |
-| ENG-8 | loop hosts never apply the session policy | cli/auto.go, tuiwire.go, webfacades.go | FIX D3 | V | E |
+| ENG-8 | loop hosts never apply the session policy; since v0.15.0 they count no model window | cli/auto.go, tuiwire.go, webfacades.go | FIX D3 | V | E |
 | ENG-9 | all-exhausted sleeps up to 6 h, nothing wakes it | autoswitch/loop.go | FIX D5 | V | E |
 | ENG-10 | switch warnings dropped (`[]string` vs `[]any`) | autoswitch/tick.go sliceOf | FIX D4 | T | E |
 | ENG-11 | idle login with an expired token is failed over | autoswitch/tick.go | FIX D4 D8 | L | E |

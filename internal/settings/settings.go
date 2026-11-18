@@ -697,7 +697,7 @@ func (o CLIOverrides) isEmpty() bool {
 
 // MergedWithCLI overlays o's non-nil overrides onto s, then re-clamps (so
 // out-of-range CLI values are clamped too). With no overrides at all, s is
-// returned unchanged; s.Model, which no flag sets, is kept.
+// returned unchanged.
 func MergedWithCLI(s AutoSwitchSettings, o CLIOverrides) AutoSwitchSettings {
 	if o.isEmpty() {
 		return s
@@ -718,9 +718,7 @@ func MergedWithCLI(s AutoSwitchSettings, o CLIOverrides) AutoSwitchSettings {
 	if o.CooldownSeconds != nil {
 		fields["CooldownSeconds"] = *o.CooldownSeconds
 	}
-	out := clamp(fields)
-	out.Model = s.Model
-	return out
+	return clamp(fields)
 }
 
 // ParseModelNames splits the comma-separated counted model list, trims each

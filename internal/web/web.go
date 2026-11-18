@@ -149,6 +149,11 @@ type AutoView struct {
 	// seconds (lastSeenAt in autoswitch_state.json); null before one did.
 	LastTickAt *float64      `json:"lastTickAt"`
 	Counting   *CountingView `json:"counting"` // what is counted now (DESIGN A91); null when unknown
+	// Ranking is the order the engine would take the other accounts in, best
+	// first, over what Counting counts; the page's best candidate is its first
+	// and a switch by hand to the best account takes it (DESIGN A99). Null
+	// when unknown.
+	Ranking []string `json:"ranking"`
 }
 
 // CodexAutoView is the Codex auto-switch engine as the dashboard shows it;

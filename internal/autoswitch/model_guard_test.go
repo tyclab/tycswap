@@ -9,7 +9,7 @@ import (
 
 func TestModelGuardPreservesSessionModel(t *testing.T) {
 	for _, strategy := range []string{"best", "soonest-reset"} {
-		for _, model := range []string{"Fable", "all", ""} {
+		for _, model := range []string{"Fable", ""} {
 			for _, atLimit := range []float64{90, 100} {
 				t.Run(strategy+model+pctLabel(atLimit), func(t *testing.T) {
 					f := newFake()
@@ -56,7 +56,7 @@ func TestModelGuardPreservesSessionModel(t *testing.T) {
 }
 
 func TestModelGuardRejectsUnknownFailover(t *testing.T) {
-	for _, model := range []string{"Fable", "all"} {
+	for _, model := range []string{"Fable"} {
 		f := twoAccounts(newClk(), nilEntry(), dictEntry(usageOf(10, 0)))
 		s := settings.Default()
 		s.Model = &model

@@ -203,8 +203,8 @@ func TestWindowTableDuplicateLabelKeepsEveryFigure(t *testing.T) {
 	panel := tablePanel(t, &reporting.AccountsSnapshot{
 		ActiveNumber: "1",
 		Accounts:     []reporting.AccountSnapshot{candAcct("2", email, lg)},
-	}, modelPtr("Fable"), 120)
-	assertBindingCell(t, "the Next best panel", panelRowSegs(panel, "2"), lg, settings.ParseModelNames(modelPtr("Fable")))
+	}, nil, 120)
+	assertBindingCell(t, "the Next best panel", panelRowSegs(panel, "2"), lg, nil)
 	header, row := panelHeaderRow(t, panel), panelRow(t, panel, "2")
 	if got := strings.Count(header, "Fable"); got != 2 {
 		t.Errorf("the header %q names Fable %d times, want one column per reported window", header, got)
@@ -518,7 +518,7 @@ func TestCountedFigureCarriesItsOwnSeverity(t *testing.T) {
 
 // TestWindowTableHeaderDimExactlyWhenUncounted fixes that the column headers and
 // the panel's "counting …" note always agree: a header is muted, and dim exactly
-// when its column does not count on the configured autoswitch.model axis.
+// when its column does not count; the panel counts 5h and 7d only (DESIGN A97).
 func TestWindowTableHeaderDimExactlyWhenUncounted(t *testing.T) {
 	lg := windows(12, 88, scopedWindow{"Fable", 40}, scopedWindow{"Opus", 30})
 	for _, tc := range []struct {
@@ -526,8 +526,7 @@ func TestWindowTableHeaderDimExactlyWhenUncounted(t *testing.T) {
 		dim   map[string]bool // column → dim
 	}{
 		{nil, map[string]bool{"5h": false, "7d": false, "Fable": true, "Opus": true}},
-		{modelPtr("Fable"), map[string]bool{"5h": false, "7d": false, "Fable": false, "Opus": true}},
-		{modelPtr("all"), map[string]bool{"5h": false, "7d": false, "Fable": false, "Opus": false}},
+		{modelPtr("Fable"), map[string]bool{"5h": false, "7d": false, "Fable": true, "Opus": true}},
 	} {
 		rt := tablePanel(t, &reporting.AccountsSnapshot{
 			ActiveNumber: "1",

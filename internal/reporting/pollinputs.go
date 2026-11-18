@@ -53,7 +53,7 @@ func resolvePollPolicies(s *store.Store) []pollInputs {
 	}
 	pollInputsMu.Unlock()
 	if _, pinned := byScope[s.BackupDir()]; !pinned {
-		byScope[s.BackupDir()] = pollInputs{lowestBar(settings.Load(s.BackupDir()), nil), nil}
+		byScope[s.BackupDir()] = pollInputs{lowestBar(settings.Load(s.BackupDir())), nil}
 	}
 	var out []pollInputs
 	for _, p := range byScope {
@@ -108,19 +108,15 @@ func resolvePollInputs(s *store.Store) (float64, []string) {
 	if o != nil {
 		return o.threshold, append([]string(nil), o.models...)
 	}
-	return lowestBar(settings.Load(s.BackupDir()), nil), nil
+	return lowestBar(settings.Load(s.BackupDir())), nil
 }
 
 // lowestBar is the single figure poll planning escalates on now that each
 // window has a threshold of its own (DESIGN A34). The planner compares it
 // against the BINDING headroom, so the lowest bar in force is the honest one:
 // whichever window is closest to making the engine act decides how often an
-// account is looked at. The per-model bar is in force only while models
-// counts something. It is the same rule the engine pins (its pollThreshold).
-func lowestBar(s settings.AutoSwitchSettings, models []string) float64 {
-	lowest := math.Min(s.SevenDayThreshold, s.FiveHourThreshold)
-	if len(models) > 0 {
-		lowest = math.Min(lowest, s.ModelThreshold)
-	}
-	return lowest
+// account is looked at. Without an engine's pin no model window counts, so
+// the per-model bar is not in force (the engine's pollThreshold adds it).
+func lowestBar(s settings.AutoSwitchSettings) float64 {
+	return math.Min(s.SevenDayThreshold, s.FiveHourThreshold)
 }

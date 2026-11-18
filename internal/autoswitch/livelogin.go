@@ -134,7 +134,7 @@ func (e *Engine) noteBlockedWithRoom(cur, trigger string, axis usage.Class, bloc
 // move) or an ownership hold met while preparing the target. One the
 // hysteresis margin kept out is not named.
 func (e *Engine) keptOut(cur, trigger string, axis usage.Class, quarantined, held map[string]bool, usageMap map[string]any, s settings.AutoSwitchSettings) []string {
-	required := requiredModels(e.models, usageMap)
+	required := requiredModels(e.models)
 	var out []string
 	for _, num := range e.sw.SwitchableAccountNumbers() {
 		if num == cur || quarantined[num] || e.sw.AccountKindFor(num) == "api_key" || usageDict(usageMap[num]) == nil {

@@ -152,10 +152,19 @@ func TestIndexHTML_GuideTab(t *testing.T) {
 			t.Errorf("guide contents do not link #%s", id)
 		}
 	}
-	for _, needle := range []string{"{{.Name}} config", "{{.Name}} upgrade", "{{.Name}} codex", "add --login", "Add account…", "autoswitch.sevenDayThreshold", "autoswitch.model", "5-hour", "7-day", "sessions", "127.0.0.1"} {
+	for _, needle := range []string{"{{.Name}} config", "{{.Name}} upgrade", "{{.Name}} codex", "add --login", "Add account…", "autoswitch.sevenDayThreshold", "autoswitch.modelThreshold", "5-hour", "7-day", "sessions", "127.0.0.1"} {
 		if !strings.Contains(guide, needle) {
 			t.Errorf("guide lacks %q", needle)
 		}
+	}
+	for _, needle := range []string{"a scheduler's checks follow the models your live sessions run; checks this dashboard runs itself count the 5-hour and weekly windows only",
+		"Checks this dashboard or <code>{{.Name}} auto</code> runs itself count 5h and 7d only"} {
+		if !strings.Contains(guide, needle) {
+			t.Errorf("guide does not say which checks follow the sessions: lacks %q", needle)
+		}
+	}
+	if strings.Contains(guide, "<code>autoswitch.model</code>") {
+		t.Error("the guide names the removed autoswitch.model setting (DESIGN A97)")
 	}
 	if strings.Contains(guide, "telemetry") && !strings.Contains(guide, "There is no telemetry") {
 		t.Error("the guide mentions telemetry other than to say there is none")
@@ -178,6 +187,9 @@ func TestIndexHTML_SettingsTab(t *testing.T) {
 		if !strings.Contains(panel, `id="`+id+`"`) {
 			t.Errorf("settings panel lacks #%s", id)
 		}
+	}
+	if !strings.Contains(panel, "When a scheduler runs the checks, the model limits follow the models your sessions run; when this dashboard runs them, it counts the 5-hour and weekly limits only.") {
+		t.Error("the Settings intro does not say which checks follow the sessions")
 	}
 	auto := regexp.MustCompile(`(?s)<section class="panel" id="panel-auto".*?</section>\s*<!-- =+ Sessions`).FindString(index)
 	if auto == "" {

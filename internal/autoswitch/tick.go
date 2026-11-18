@@ -13,8 +13,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/usage"
 )
@@ -215,7 +217,7 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 		// Nothing to hand over to: the account stays (DESIGN A71, A73).
 		detail := "the active account can run Fable; no account without Fable is below every bar"
 		if trigger == "model-missing" {
-			detail = "the active account reports no " + strings.Join(requiredModels(e.models, usageMap), ", ") +
+			detail = "the active account reports no " + strings.Join(requiredModels(e.models), ", ") +
 				" usage; no account that does is below every bar"
 		}
 		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: trigger + "-no-target", Detail: detail})
@@ -354,11 +356,11 @@ func isHandover(trigger string) bool { return trigger == "reserved" || trigger =
 func heldByCooldown(trigger string) bool { return trigger == "proactive" || trigger == "reserved" }
 
 func (e *Engine) missesCountedModel(cur string, usageMap map[string]any) bool {
-	required := requiredModels(e.models, usageMap)
-	if len(required) == 0 || len(required) == 1 && required[0] == "all" || hasRequiredModels(usageMap[cur], required) {
+	required := requiredModels(e.models)
+	if len(required) == 0 || hasRequiredModels(usageMap[cur], required) {
 		return false
 	}
-	// A name no account reports is a configuration problem, warned about elsewhere.
+	// Only an account that reports every counted window can take over.
 	for num, value := range usageMap {
 		if num != cur && hasRequiredModels(value, required) {
 			return true
@@ -403,7 +405,7 @@ func (e *Engine) selectCandidates(
 	}
 
 	var qualifying []qual
-	required := requiredModels(e.models, usageMap)
+	required := requiredModels(e.models)
 	modelRejected := false
 	activeAxis := activeByClass.Axis(axis)
 	for _, num := range oauthCandidates {
@@ -411,38 +413,22 @@ func (e *Engine) selectCandidates(
 			modelRejected = true
 			continue
 		}
-		h := headroom[num]
-		if h == nil {
+		if headroom[num] != nil {
+			anyKnown = true
+		}
+		q, cand, ok := targetQual(num, usageMap[num], e.models, required, s, e.isReserved(num))
+		if !ok {
 			continue
 		}
-		anyKnown = true
-		if *h <= 0 {
-			continue // itself at its limit — never a target
-		}
-		cand := e.headroomByClass(usageMap[num])
-		below := belowEveryBar(cand, s)
-		if trigger == "proactive" && activeAxis != nil && !landsProactively(cand, axis, *activeAxis, below, s) {
+		if trigger == "proactive" && activeAxis != nil && !landsProactively(cand, axis, *activeAxis, q.below, s) {
 			continue
 		}
-		// Whatever the trigger, never land on an account whose weekly budget
-		// (the week or a counted model window) is already spent.
-		if cand.WeeklyExhausted() {
-			continue
-		}
-		reserved := e.isReserved(num)
 		// A hand-over leaves a Fable-capable account only for one that is
 		// not, and only when that one is below every bar (DESIGN A71).
-		if trigger == "reserved" && (reserved || !below) || trigger == "model-missing" && !below {
+		if trigger == "reserved" && (q.reserved || !q.below) || trigger == "model-missing" && !q.below {
 			continue
 		}
-		qualifying = append(qualifying, qual{
-			h:        *h,
-			weekly:   cand.Weekly(),
-			below:    below,
-			reserved: reserved,
-			renewal:  renewalTS(usageDict(usageMap[num]), e.models),
-			num:      num,
-		})
+		qualifying = append(qualifying, q)
 	}
 	if len(qualifying) == 0 && modelRejected {
 		if !isHandover(trigger) {
@@ -455,6 +441,51 @@ func (e *Engine) selectCandidates(
 		ordered = append(ordered, q.num)
 	}
 	return ordered, oauthCandidates, anyKnown, nil
+}
+
+// targetQual is the part of qualifying a target no trigger changes: an account
+// that reports every counted window, has known usage and is neither at a limit
+// nor out of its weekly budget (the week or a counted model window). The
+// engine, a switch by hand and the dashboard's best candidate rank on it
+// (DESIGN A99).
+func targetQual(num string, value any, models, required []string, s settings.AutoSwitchSettings, reserved bool) (qual, usage.Headroom, bool) {
+	if !hasRequiredModels(value, required) {
+		return qual{}, usage.Headroom{}, false
+	}
+	h := accountHeadroom(usageDict(value), models)
+	if h == nil || *h <= 0 {
+		return qual{}, usage.Headroom{}, false
+	}
+	cand := usage.AccountHeadroomByClass(usageDict(value), models)
+	if cand.WeeklyExhausted() {
+		return qual{}, usage.Headroom{}, false
+	}
+	return qual{h: *h, weekly: cand.Weekly(), below: belowEveryBar(cand, s), reserved: reserved,
+		renewal: renewalTS(usageDict(value), models), num: num}, cand, true
+}
+
+// RankTargets orders candidates as the engine orders its targets: values are
+// their decision values, read as of now, and an account targetQual refuses is
+// left out. A switch by hand to the best account and the dashboard's best
+// candidate take the first (DESIGN A99).
+func RankTargets(candidates []string, values map[string]any, s settings.AutoSwitchSettings, models []string, reserved func(string) bool, now time.Time) []string {
+	required := requiredModels(models)
+	var qualifying []qual
+	for _, num := range candidates {
+		v := values[num]
+		if m, ok := v.(map[string]any); ok {
+			v = oauth.AsOf(m, now)
+		}
+		if q, _, ok := targetQual(num, v, models, required, s, reserved != nil && reserved(num)); ok {
+			qualifying = append(qualifying, q)
+		}
+	}
+	sortQualifying(qualifying, s.Strategy)
+	out := make([]string, len(qualifying))
+	for i, q := range qualifying {
+		out[i] = q.num
+	}
+	return out
 }
 
 // landsProactively is the proactive gate: (a) landing below the bar and (b)

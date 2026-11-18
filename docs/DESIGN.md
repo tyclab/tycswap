@@ -374,7 +374,7 @@ cleanup logs and continues.
 ### 2.15 `switching` — 02§4–9
 `switch.go`, `switchto.go`, `strategies.go`, `perform.go`, `classify.go`, `provenance.go`, `replan.go`
 ```go
-func Switch(s *store.Store, strategy *string, jsonOut bool, models []string, modelSrc *string) (any, error)
+func Switch(s *store.Store, strategy *string, jsonOut bool) (any, error)
 func SwitchTo(s *store.Store, id string, jsonOut, force bool) (any, error)
 func performSwitch(s *store.Store, target string, emit, forceActivate bool, prov *Provenance) (SwitchOp, error)
 func classifyOutgoing(...) (kind string, foreignSlot string)     // 02§9 identity oracle
@@ -4596,7 +4596,8 @@ measure different things, and fill at different rates:
 - A **per-model weekly window** is a budget too, but a narrower one: at 100 %
   that one model is gone for the week while the account still serves
   everything else. It creeps like the week, and it counts only while
-  `autoswitch.model` names it.
+  `autoswitch.model` names it (since A97, which removed the setting, while
+  the scheduled tick's live sessions run that model).
 
 One bar could not serve both kinds. Set for the week it left no margin on the
 5h window, so a burst overshot it; set for the 5h window it gave up the week
@@ -4957,8 +4958,8 @@ remote tray, no tray here) creates no lock file. Asking whether an app runs
 
 ## A39. One switch for the model limit, in the tray as well
 
-The tray's switch is gone since A94; `autoswitch.model` is set with `tycswap
-config`.
+The tray's switch is gone since A94; `autoswitch.model` was set with `tycswap
+config` until A97 removed it.
 
 The per-model weekly windows decide two things that must not disagree:
 whether the engine counts them (`autoswitch.model`) and the percentage the
@@ -5704,7 +5705,8 @@ Windows).
 
 ## A49. The model windows sit beside their bar, picked from the reported windows
 
-`autoswitch.model` decides which per-model weekly windows auto-switch counts,
+`autoswitch.model` decides which per-model weekly windows auto-switch counts
+(until A97 removed it; the sessions decide since),
 and `autoswitch.modelThreshold` is the bar for exactly those windows. The
 registry (`settings.SettingSpecs`) listed the model key last, after the poll
 interval, the Codex keys, the cooldown, the hysteresis, the strategy and the
@@ -6693,9 +6695,10 @@ tick (`auto --once`, as the timer, the quota hook and `--observe` run it)
 counts, while `autoswitch.model` is unset, the reported per-model windows of
 the families its live sessions run, matched against the default profile's
 running session records, as `GroupSettings` does for a group. An explicit
-`autoswitch.model` or `--model` always wins, and without records nothing
+`autoswitch.model` or `--model` always wins (until A97 removed both, so the
+sessions always decide), and without records nothing
 changes. A long-running `tycswap auto` loop and the dashboard's hosted engine
-keep their configured models. `config set autoswitch.model none` is refused
+keep their configured models (since A97 none: they count 5h and 7d only). `config set autoswitch.model none` is refused
 with a pointer to `unset`, and a stored `none` or `(none)` counts nothing,
 since the help shows the unset value that way.
 
@@ -6717,8 +6720,8 @@ capability allows Fable (`Store.FableCapable`, the test A71 applies) is
 reserved: it ranks last, and an active one hands over with the `reserved`
 trigger, under the cooldown, to an account that cannot run Fable and is below
 every bar. A live session without a record or a Fable session clears the
-reservation, as does an explicit `autoswitch.model`; with no live session the
-login stays where it is, because nothing burns.
+reservation, as does an explicit `autoswitch.model` (until A97 removed it);
+with no live session the login stays where it is, because nothing burns.
 
 `--observe` reports whether its record was news: a session's first status line
 or a change of family. News runs one tick at once on the cached usage, without
@@ -7337,7 +7340,8 @@ such a block forgets it. A dry run shows the event and keeps nothing.
 
 The scheduled tick (`auto --once`, `--observe`), `start`'s selection, and the
 at-limit marks of `list`, `status` and the account snapshot (the dashboard's
-and the TUI's rows) all read the one result. The dashboard state carries it as
+and the TUI's rows) all read the one result, and since A98 so does a switch
+by strategy. The dashboard state carries it as
 `auto.counting` (the families of the live sessions, the counted, dropped and
 reserved), with a one-line caption; the Auto tab, *Next best* and the tray's
 figures render it, so an unset `autoswitch.model` reads *Follow sessions*, not
@@ -7721,7 +7725,7 @@ taken it off the page and the tray and added a warning line for it.
   help and usage no longer list them. `--model-threshold` stays; the model
   threshold applies to every model window session following counts.
 - *What existed only for a set value goes.* `switch --strategy` counts 5h
-  and 7d only: its model list, the `Using configured model limits` line, the
+  and 7d only (until A98, which has it count the policy's set): its model list, the `Using configured model limits` line, the
   `--model` typo warning and the `models`/`modelSource` result fields go, and
   `POST /api/switch` ignores a `models` field. The engine's typo guard
   (`checkModelNames`, the state file's `modelNamesChecked`) and the unused
@@ -7746,3 +7750,120 @@ exit 2 with the line; the served page has no warning line and does not name
 the key. The policy tests that pinned "a set value wins" now pin that a
 `Model` on the base decides nothing; engine tests that need a counted model
 set it on the engine's settings, the seam the policy fills.
+
+## A98. A switch by strategy counts what the session rule counts
+
+**Why.** A97 left `switch --strategy` judging on 5h and 7d only, since the
+model list it took came from the removed setting and flag. The review of
+v0.15.0 reproduced the result with a Fable session live: accounts 1 (live,
+Fable 20 %), 2 (most 5h and 7d room, Fable 100 %) and 5 (Fable 10 %). The
+dashboard said `counting 5h + 7d + Fable (live Fable sessions)`, marked
+account 2 `at limit: Fable` and named 5 its best candidate, and *Switch now*
+with *Best* and with *Next available* both switched to account 2, onto a
+login its Fable sessions cannot use. Asked whether the button and `tycswap
+switch --strategy` should pick what the page shows, the operator said
+"fix it" (2026-11-18).
+
+**What.**
+
+- *One counted set.* `switch --strategy best|next-available`, the
+  dashboard's *Switch now* (`POST /api/switch`) and the TUI's best-switch all
+  run `switching.Switch`, which asks the seam `switching.CountedModels` for
+  the counted models; core wires it to `reporting.CountedForSwitch`, the
+  default-session policy (A91) over the saved bars, the result `list`,
+  `status`, `start`, the at-limit marks and the page's ranking read. *Best*
+  judges headroom on 5h, 7d and those windows, and *Next available* skips an
+  account at its limit on any of them. No flag, request field or setting
+  names the set: `POST /api/switch` still ignores `models`. A plain rotation
+  and `tycswap switch <id>` count nothing and are unchanged.
+- *What the page does with the rest.* The page's ranking counts
+  `auto.counting.models`: a model the policy drops as unservable is not in it,
+  so the switch does not count it either and picks as before; the accounts
+  the policy reserves for Fable are ranked like any other on the page, so the
+  switch does not hold them back either (the reservation stays the engine's;
+  since A99 all three rank them last).
+- *Saying so.* In text mode, while a model window counts, one dimmed line
+  gives the policy's caption, the dashboard's (`reporting.CountingCaption`,
+  e.g. `Counting 5h + 7d + Fable (live Fable sessions)`), and a skipped
+  account names its full windows (`Skipping Account-2 (at Fable limit)`; the
+  JSON warning says the same), the all-at-limit line reads `usage limits`.
+  `--json` gains no field.
+- *Unchanged.* *Best* still moves only onto strictly more headroom than the
+  live account has under that set, so where the live account is best it
+  answers `already-best` while the page still names its best other account
+  (until A99, which ranks by the account order).
+
+**Tests.** The reproduction at the three entry points (`switch --strategy
+--json`, `POST /api/switch`, `tui.Facade.Switch`), each failing on v0.15.0:
+*Best* lands on 5 where the live account has less room, answers
+`already-best` with the review's figures, where the live account has more;
+*Next available* skips 2; with Fable unservable or no session reporting a
+model the pick is the 5h and 7d one. One test renders the page over the
+dashboard's state and compares its best candidate and at-limit marks with
+where *Switch now* lands for the same state.
+
+## A99. A switch by hand to the best account takes what the account order ranks first
+
+**Why.** After A98 the three choices of a best account counted the same
+windows but ranked by three rules: *Best* (`switching.selectBestSwitchable`)
+took the most binding headroom, strictly more than the live account's; the
+page's best candidate came from `app.js` (`lessBest`, `lessSoonest`, best
+candidate only below every bar); the engine orders by `sortQualifying`. On
+the operator's boxes the account order is `soonest-reset`, so the button and
+the page named different accounts. Put to him: "make *Switch now · Best*
+follow the *Account order* setting, so a switch by hand picks what the page
+shows and what the engine would pick." His answer: "do it" (2026-11-18).
+
+**Where they disagreed** (each a state of the test below, on A98's code):
+
+- *Renewal against room*, `soonest-reset`: *Best* took the account with the
+  most room, the page and the engine the one renewing first.
+- *Over a bar, not at limit*, `best`: the engine ranks on weekly room without
+  tiers and took the account over its 5-hour bar with the most weekly room;
+  the page put that account in its *at threshold* group and named the other,
+  and *Best*, on binding headroom, took the other too.
+- *Reserved accounts*: the engine ranks accounts left to Fable work last;
+  the page and *Best* ignored the reservation and took one.
+- *Unservable model*, `soonest-reset`: as the first, once the model dropped.
+- Ties: the page broke ties on 7d, model, then 5h usage, the engine on
+  binding headroom.
+
+**What.**
+
+- *One ranking.* `autoswitch.RankTargets` orders candidates as the engine
+  orders its targets: `targetQual` (the part of the qualification no trigger
+  changes: every counted window reported, usage known, not at a limit, week
+  and counted model week not spent), then `sortQualifying` by
+  `autoswitch.strategy`, decision values read as of now. The engine's
+  `selectCandidates` builds its targets with the same `targetQual` and adds
+  only its trigger gates (the proactive landing gate, the hand-over filters).
+- *The switch.* `selectBestSwitchable` ranks the live account with the
+  rotation-eligible, unquarantined others, in sequence order, over A98's
+  counted set and the policy's reservation (`switching.Counting`, filled by
+  `reporting.CountedForSwitch`). It takes the first unless that is the live
+  account (`already-best`); an unknown live reading still stays
+  (`usage-unavailable`), as does a live account first while another account's
+  usage is unknown. Quarantined accounts are no longer targets. Text mode
+  names the order, beside A98's caption.
+- *The page.* The state carries the ranking as `auto.ranking` (the other
+  accounts, best first, over `auto.counting`'s models and reservation; the
+  hosted engine's has neither). *Next best* lists those accounts in that
+  order and the rest after them as before; *Best candidate* is the first.
+  `app.js` keeps its own comparators only for the rows the engine could not
+  take and for a state without `auto.ranking`.
+- *Unchanged.* `next-available`, `tycswap switch <id>`, the engine's
+  decisions, `--json`'s fields. An engine moves only when a trigger lets it,
+  through its gates: a proactive move can skip the first account when it
+  would not land below the triggering bar by the hysteresis margin, so the
+  engine's target equals the page's best candidate where no gate refuses it
+  (always on an at-limit move).
+
+**Tests.** `TestSwitchNowAgreesWithThePage` renders the page over the
+dashboard's state for seven states under both orders (renewals against
+room, an account over a bar but not at limit, reserved accounts, a counted
+Fable window, an unservable one, unknown usage, the live account first) and
+asserts that *Switch now · Best*, the page's best candidate and the
+scheduled tick's dry-run target are one account, that the live account first
+stays, and that *Next available* never lands on an account the page marks at
+limit; five of the fourteen failed on A98's code. The switching unit table
+runs under both orders.

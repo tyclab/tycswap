@@ -16,9 +16,9 @@ import (
 	"github.com/tyclab/tycswap/internal/web"
 )
 
-// countingStore is the fixture with accounts 1 and 2 able to run Fable, the
-// given cached usage (5h, 7d, Fable per account) and one live default session
-// running model.
+// countingStore is the fixture with accounts 1 and 2 (and every other account
+// given usage) enabled and able to run Fable, the given cached usage (5h, 7d, Fable per
+// account) and one live default session running model.
 func countingStore(t *testing.T, model string, usage map[string][3]float64) *core.Switcher {
 	t.Helper()
 	sw := fixtureSwitcher(t)
@@ -26,12 +26,17 @@ func countingStore(t *testing.T, model string, usage map[string][3]float64) *cor
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, num := range []string{"1", "2"} {
+	capable := map[string]bool{"1": true, "2": true}
+	for num := range usage {
+		capable[num] = true
+	}
+	for num := range capable {
 		var rec map[string]any
 		if err := json.Unmarshal(data.Accounts[num], &rec); err != nil {
 			t.Fatal(err)
 		}
 		rec["fableContinue"] = true
+		delete(rec, "disabled")
 		data.Accounts[num], _ = json.Marshal(rec)
 	}
 	if err := sw.WriteSequence(data); err != nil {
@@ -40,7 +45,7 @@ func countingStore(t *testing.T, model string, usage map[string][3]float64) *cor
 	now := time.Now()
 	rows := map[string]any{}
 	for num, u := range usage {
-		email := map[string]string{"1": "alice@example.com", "2": "bob@example.com"}[num]
+		email := map[string]string{"1": "alice@example.com", "2": "bob@example.com", "5": "carol@example.com"}[num]
 		reset := now.Add(3 * time.Hour).UTC().Format(time.RFC3339)
 		rows[num] = map[string]any{"email": email, "organizationUuid": "", "fetchedAt": float64(now.Unix()) - 30, "lastGood": map[string]any{
 			"five_hour": map[string]any{"pct": u[0], "resets_at": reset},
@@ -125,5 +130,22 @@ func TestAutoViewReportsTheLastTick(t *testing.T) {
 	}
 	if got := a.View().LastTickAt; got == nil || *got != 1763251200.5 {
 		t.Fatalf("last tick = %v, want 1763251200.5", got)
+	}
+}
+
+// An engine hosted here was built from settings.Load and follows no session
+// (ENG-8): the view says "hosted" and names no counted model, also while a
+// live Fable session some account can serve runs (DESIGN A97).
+func TestAutoViewReportsTheHostedEngine(t *testing.T) {
+	sw := countingStore(t, "claude-fable-5-1", map[string][3]float64{"1": {10, 20, 30}, "2": {10, 20, 30}})
+	a := newAutoFacade(sw, nil)
+	countingEngines(a)
+	t.Cleanup(func() { a.stopKeepingChoice() })
+	if err := a.Start(); err != nil {
+		t.Fatal(err)
+	}
+	want := web.CountingView{Mode: "hosted", Models: []string{}, Sessions: []string{}, Unservable: []string{}, Reserved: []string{}}
+	if got := a.View().Counting; got == nil || !reflect.DeepEqual(*got, want) {
+		t.Fatalf("counting = %+v, want %+v", got, want)
 	}
 }

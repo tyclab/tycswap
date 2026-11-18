@@ -6,8 +6,17 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 )
+
+// countingFor is a Counting with the default bars, the given account order
+// and counted models, and nothing reserved or quarantined.
+func countingFor(strategy string, models ...string) Counting {
+	set := settings.Default()
+	set.Strategy = strategy
+	return Counting{Models: models, Settings: set}
+}
 
 // setupAccounts writes switchable backups + sequence for slots (the first slot
 // is recorded active). disabled marks slots parked out of rotation.
@@ -99,29 +108,35 @@ func TestSelectBestSwitchable(t *testing.T) {
 			wantTarget: "2", wantNote: "",
 		},
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			s := newTestStore(t, nil)
-			setupAccounts(t, s, tc.slots, tc.disabled)
-			target, note := selectBestSwitchable(s, tc.current, tc.usage)
-			if target != tc.wantTarget || note != tc.wantNote {
-				t.Fatalf("got (%q, %q), want (%q, %q)", target, note, tc.wantTarget, tc.wantNote)
-			}
-		})
+	for _, strategy := range []string{"best", "soonest-reset"} {
+		for _, tc := range tests {
+			t.Run(strategy+"/"+tc.name, func(t *testing.T) {
+				s := newTestStore(t, nil)
+				setupAccounts(t, s, tc.slots, tc.disabled)
+				target, note := selectBestSwitchable(s, tc.current, countingFor(strategy), tc.usage)
+				if target != tc.wantTarget || note != tc.wantNote {
+					t.Fatalf("got (%q, %q), want (%q, %q)", target, note, tc.wantTarget, tc.wantNote)
+				}
+			})
+		}
 	}
 }
 
-// TestSelectBestSwitchableCountsFiveHourAndWeekOnly: `switch --strategy best`
-// has no model list since --model and autoswitch.model went (DESIGN A97), so
-// a spent Fable week does not steer it: both accounts look alike.
-func TestSelectBestSwitchableCountsFiveHourAndWeekOnly(t *testing.T) {
+// TestSelectBestSwitchableCountsTheCountedModels: `switch --strategy best`
+// judges on the model windows the default-session policy counts (DESIGN A98):
+// with none counted a spent Fable week does not steer it, with Fable counted
+// the account with Fable room is the better one.
+func TestSelectBestSwitchableCountsTheCountedModels(t *testing.T) {
 	s := newTestStore(t, nil)
 	setupAccounts(t, s, []int{1, 2}, nil)
 	usage := map[string]any{
 		"1": scopedUsage(10, "Fable", 100),
 		"2": scopedUsage(10, "Fable", 10),
 	}
-	if target, note := selectBestSwitchable(s, "1", usage); target != "" || note != "stay" {
-		t.Fatalf("got (%q,%q), want (\"\",\"stay\")", target, note)
+	if target, note := selectBestSwitchable(s, "1", countingFor("best"), usage); target != "" || note != "stay" {
+		t.Fatalf("no model counted: got (%q,%q), want (\"\",\"stay\")", target, note)
+	}
+	if target, note := selectBestSwitchable(s, "1", countingFor("best", "Fable"), usage); target != "2" || note != "" {
+		t.Fatalf("Fable counted: got (%q,%q), want (\"2\",\"\")", target, note)
 	}
 }

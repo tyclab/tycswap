@@ -13,6 +13,7 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
@@ -31,6 +32,29 @@ var PostSwitchList func(s *store.Store) error
 
 var AutoAddCurrent func(s *store.Store) (activeNum string, err error)
 
+// Counting is what a switch by strategy counts and ranks on: the model
+// windows the default-session policy counts, the caption that says why
+// (DESIGN A98), the saved settings (bars and account order), the accounts the
+// policy leaves to Fable work and the quarantined ones (DESIGN A99).
+type Counting struct {
+	Models      []string
+	Caption     string
+	Settings    settings.AutoSwitchSettings
+	Reserved    func(num string) bool
+	Quarantined map[string]bool
+}
+
+// CountedModels returns the Counting for s; core wires it to
+// reporting.CountedForSwitch. Unwired, only 5h and 7d count.
+var CountedModels func(s *store.Store) Counting
+
+func countedModels(s *store.Store) Counting {
+	if CountedModels == nil {
+		return Counting{Settings: settings.Load(s.BackupDir())}
+	}
+	return CountedModels(s)
+}
+
 // usageByAccount invokes the UsageProvider seam, returning an empty (non-nil)
 // map when unwired so callers never nil-deref.
 func usageByAccount(s *store.Store) map[string]any {
@@ -43,18 +67,22 @@ func usageByAccount(s *store.Store) map[string]any {
 	return map[string]any{}
 }
 
-// headroomOf is an account's 5h/7d headroom, nil when its usage is unknown.
-func headroomOf(v any) *float64 {
+// headroomOf is an account's headroom on 5h, 7d and the counted model
+// windows, nil when its usage is unknown.
+func headroomOf(v any, models []string) *float64 {
 	m, ok := v.(map[string]any)
 	if !ok {
 		return nil
 	}
-	return oauth.AccountHeadroom(oauth.NewUsage(m), nil)
+	return oauth.AccountHeadroom(oauth.NewUsage(m), models)
 }
 
-func isUsageDict(v any) bool {
-	_, ok := v.(map[string]any)
-	return ok
+func relevantWindowsOf(v any, models []string) []oauth.RelevantWindow {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return oauth.RelevantWindows(oauth.NewUsage(m), models)
 }
 
 func numRef(numStr, email string) map[string]any {

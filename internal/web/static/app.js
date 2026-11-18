@@ -639,8 +639,19 @@
       ranked.push(r);
     });
     var less = strat === 'soonest-reset' ? lessSoonest : lessBest;
-    ranked.sort(function (a, b) { return less(a, b) ? -1 : less(b, a) ? 1 : 0; });
-    return { ranked: ranked, models: models, strategy: strat, bars: bars };
+    // The engine's own order (auto.ranking, DESIGN A99) places every account
+    // it could take; the others keep their groups after them. Without it, as
+    // from a server that sends none, the page ranks by itself.
+    var order = Array.isArray(auto.ranking) ? auto.ranking : null;
+    var pos = {};
+    if (order) { order.forEach(function (n, i) { pos[String(n)] = i; }); }
+    var placed = function (r) { return Object.prototype.hasOwnProperty.call(pos, r.number); };
+    ranked.sort(function (a, b) {
+      if (order && (placed(a) || placed(b))) { return !placed(a) ? 1 : !placed(b) ? -1 : pos[a.number] - pos[b.number]; }
+      return less(a, b) ? -1 : less(b, a) ? 1 : 0;
+    });
+    var best = order ? (ranked.length && placed(ranked[0]) ? ranked[0] : null) : ranked.filter(function (r) { return !r.label && r.tier <= 1; })[0] || null;
+    return { ranked: ranked, models: models, strategy: strat, bars: bars, best: best };
   }
 
   function numLess(a, b) { var x = parseInt(a, 10), y = parseInt(b, 10); if (!isNaN(x) && !isNaN(y)) { return x < y; } return a < b; }
@@ -726,14 +737,13 @@
   }
 
   // ignoredModelsNote is the chip shown wherever a ranking is displayed while
-  // model windows exist but nothing counts them and the engine does not follow
-  // sessions: an account at 100% of a model's weekly limit then still counts
-  // as eligible.
+  // model windows exist but the engine hosted here counts none of them: an
+  // account at 100% of a model's weekly limit then still counts as eligible.
   function ignoredModelsNote(st, models) {
     if (models.length || ((st.auto || {}).counting || {}).mode === 'sessions') { return null; }
     var names = modelWindowNames(st);
     if (!names.length) { return null; }
-    return el('span', { class: 'chip chip-warn', title: 'Not counted now (see Counting now on the Auto tab)', text: names.join(', ') + ' limits ignored' });
+    return el('span', { class: 'chip chip-warn', title: 'Not counted now (see Counting now on the Auto tab)', text: names.join(', ') + ' limits ignored: this dashboard runs the checks itself and counts the 5-hour and weekly limits only' });
   }
 
   // ---- header + summary ------------------------------------------------------
@@ -1059,7 +1069,7 @@
     var active = accts.filter(function (a) { return a.isActive; })[0];
     var atLimit = accts.filter(function (a) { return a.atLimit; });
     var res = rankCandidates(st);
-    var best = res.ranked.filter(function (r) { return !r.label && r.tier <= 1; })[0];
+    var best = res.best;
 
     box.appendChild(tile('Accounts', String(accts.length), [eligible + ' eligible for rotation']));
     if (active) {
@@ -1071,7 +1081,7 @@
     if (best) {
       box.appendChild(tile('Best candidate', '#' + best.number, [el('span', { class: 'ellipsis', text: accountName(best.account) }), chip((100 - best.pct).toFixed(0) + '% headroom', 'good')], 'good'));
     } else {
-      box.appendChild(tile('Best candidate', '—', [res.ranked.length ? 'no account is under every one of its bars' : 'no other account'], res.ranked.length ? 'warn' : ''));
+      box.appendChild(tile('Best candidate', '—', [res.ranked.length ? 'no account can take over now' : 'no other account'], res.ranked.length ? 'warn' : ''));
     }
   }
 
@@ -1643,12 +1653,10 @@
     } else if (sv.kind === 'choice') {
       input = el('select', { id: id });
       (sv.choices || []).forEach(function (c) { input.appendChild(el('option', { value: c, selected: String(sv.value) === c, text: c })); });
-    } else if (sv.kind === 'int' || sv.kind === 'float') {
+    } else {
       input = el('input', { type: 'number', id: id, value: sv.value === null || sv.value === undefined ? '' : String(sv.value), step: sv.kind === 'int' ? '1' : 'any' });
       if (typeof sv.min === 'number') { input.min = String(sv.min); }
       if (typeof sv.max === 'number') { input.max = String(sv.max); }
-    } else {
-      input = el('input', { type: 'text', id: id, value: sv.value === null || sv.value === undefined ? '' : String(sv.value), autocomplete: 'off', spellcheck: 'false' });
     }
     input.setAttribute('aria-label', rowLabel(sv) + ' (' + sv.key + ')');
     return input;
