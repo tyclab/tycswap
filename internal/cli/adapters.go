@@ -162,6 +162,19 @@ func (t transferAdapter) ReadActiveConfig() (string, bool, error) {
 	return string(b), true, nil
 }
 
+// DropFableLogin removes the Fable login under (num, email), when Fable
+// logins exist; the import holds the store lock.
+func (t transferAdapter) DropFableLogin(num, email string) error {
+	f, err := t.Store.ForFable()
+	if err != nil {
+		return nil
+	}
+	if _, err := os.Stat(f.CredentialsDir); err != nil {
+		return nil
+	}
+	return f.Creds.DeleteBackupStrict(num, email)
+}
+
 func (t transferAdapter) ReadAccountConfig(num, email string) (string, error) {
 	return t.Store.ReadAccountConfig(num, email)
 }

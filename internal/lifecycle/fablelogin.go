@@ -206,3 +206,50 @@ func deleteFableLogin(s *store.Store, num, email string) error {
 	}
 	return f.Creds.DeleteBackupStrict(num, email)
 }
+
+// emptyFableBeforeDisplacing empties the Fable store before add --slot puts
+// another identity in the slot it is on, as remove does; outside the lock.
+func emptyFableBeforeDisplacing(s *store.Store, slot *int, email, orgUUID string) error {
+	if slot == nil || fableLogins(s) == nil {
+		return nil
+	}
+	data, _ := s.ReadSequence()
+	if slotOccupant(data, strconv.Itoa(*slot), email, orgUUID) == nil {
+		return nil
+	}
+	return emptyFableBefore(s, strconv.Itoa(*slot))
+}
+
+// reslotFableLogins gives accountNum the Fable login of the identity add puts
+// there (DESIGN A101): a displaced identity's goes, one moving in from
+// migrateFrom brings its own, a new one has none. The caller holds the store
+// lock and has deleted nothing yet; it runs follow once the roster is written,
+// so the chain record follows a moved Fable store's account.
+func reslotFableLogins(s *store.Store, displaced *displaceInfo, migrateFrom, accountNum, email string) (follow func(), err error) {
+	follow = func() {}
+	fab := fableLogins(s)
+	if fab == nil {
+		return follow, nil
+	}
+	live := fableLiveSlot(fab)
+	if displaced != nil {
+		if err := deleteFableLogin(s, displaced.num, displaced.email); err != nil {
+			return follow, err
+		}
+	}
+	creds := ""
+	if migrateFrom != "" {
+		creds = fableMaterial(fab, migrateFrom, email)
+	}
+	if err := writeOrClearCreds(fab, accountNum, email, creds); err != nil {
+		return follow, err
+	}
+	if migrateFrom == "" {
+		return follow, nil
+	}
+	_ = fab.Creds.DeleteBackup(migrateFrom, email)
+	if creds != "" {
+		_ = fab.Creds.DeletePrev(accountNum, email)
+	}
+	return func() { followFableChain(fab, live, map[string]string{migrateFrom: accountNum}) }, nil
+}

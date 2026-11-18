@@ -159,6 +159,8 @@ func (d *diskAccounts) WriteAccountConfig(num, email, config string) error {
 
 func (d *diskAccounts) LiveSessionPidsFor(string, string) []int { return nil }
 func (d *diskAccounts) TokenDead(string, string, string) bool   { return false }
+func (d *diskAccounts) DropFableLogin(string, string) error     { return nil }
+
 func (d *diskAccounts) ClearDeadToken(string, string, string) error {
 	return nil
 }

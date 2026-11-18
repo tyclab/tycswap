@@ -137,3 +137,36 @@ func TestExportTakesTheLiveLoginFromTheCredential(t *testing.T) {
 		})
 	}
 }
+
+// Import never replaces a slot's identity: --force overwrites the slot of the
+// same identity, whose Fable login stays its own, and a new account lands in a
+// slot the roster does not hold. A Fable login left under that slot and email
+// (by an older tycswap's remove or move) is not the new account's: it goes
+// (DESIGN A101).
+func TestImportOfANewAccountDropsAFableLoginLeftInItsSlot(t *testing.T) {
+	sw := fableCLISwitcher(t)
+	f, err := sw.Store.ForFable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.WriteAccountCredentials("7", "dave@example.com", fableLogin("f7-left")); err != nil {
+		t.Fatal(err)
+	}
+	bobBefore, _ := f.ReadAccountCredentials("2", "bob@example.com")
+	envelope := filepath.Join(t.TempDir(), "in.tycswap")
+	writeFile(t, envelope, `{"version":1,"exportedAt":"2026-11-18T00:00:00Z","exportedFrom":"linux","swapVersion":"t","encrypted":false,"activeAccountNumber":null,"accounts":[`+
+		`{"number":7,"email":"dave@example.com","uuid":"","organizationUuid":"","organizationName":"","added":"t","credentials":{"claudeAiOauth":{"accessToken":"at-dave","refreshToken":"rt-dave"}},"config":{"oauthAccount":{"emailAddress":"dave@example.com"}}},`+
+		`{"number":2,"email":"bob@example.com","uuid":"","organizationUuid":"","organizationName":"","added":"t","credentials":{"claudeAiOauth":{"accessToken":"at-bob-new","refreshToken":"rt-bob-new"}},"config":{"oauthAccount":{"emailAddress":"bob@example.com"}}}]}`)
+	prevErr := transfer.Stderr
+	transfer.Stderr = &strings.Builder{}
+	t.Cleanup(func() { transfer.Stderr = prevErr })
+	if code, _, errb := runCLI(t, []string{"import", envelope, "--force"}, false, false); code != 0 {
+		t.Fatalf("import: exit %d, stderr %q", code, errb)
+	}
+	if got, _ := f.ReadAccountCredentials("7", "dave@example.com"); got != "" {
+		t.Errorf("the imported Account-7 holds the Fable login left in its slot: %s", got)
+	}
+	if got, _ := f.ReadAccountCredentials("2", "bob@example.com"); got != bobBefore {
+		t.Errorf("--force over bob's own slot changed his Fable login: %s", got)
+	}
+}

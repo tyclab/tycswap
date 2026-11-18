@@ -138,6 +138,9 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 	if err != nil || cancelled {
 		return err
 	}
+	if err := emptyFableBeforeDisplacing(s, slotPtr, confirmEmail, ""); err != nil {
+		return err
+	}
 
 	return s.WithRosterLocked(func(data *store.SequenceData) error {
 		// Email defaulting (§6.2): note this may assign slotPtr for the
@@ -198,6 +201,10 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 
 		// Each branch mutates and commits the locked roster: the occupancy it was
 		// decided from is the occupancy it is written into.
+		followFable, err := reslotFableLogins(s, displaceSlot, migrateFrom, accountNum, emailVal)
+		if err != nil {
+			return err
+		}
 		if displaceSlot != nil {
 			if err := s.DeleteAccountFiles(displaceSlot.num, displaceSlot.email); err != nil {
 				return err
@@ -263,6 +270,7 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 		if err := s.WriteSequence(data); err != nil {
 			return err
 		}
+		followFable()
 
 		sourceLabel := "token"
 		if isAPIKey {

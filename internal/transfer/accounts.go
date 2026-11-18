@@ -20,6 +20,9 @@ type Accounts interface {
 	ReadAccountConfig(num, email string) (string, error)
 	WriteAccountCredentials(num, email, creds string) error
 	WriteAccountConfig(num, email, config string) error
+	// DropFableLogin removes a Fable login stored under (num, email): an
+	// account imported into a slot it did not hold cannot own it (DESIGN A101).
+	DropFableLogin(num, email string) error
 
 	LiveSessionPidsFor(num, email string) []int
 	TokenDead(num, email, orgUUID string) bool
