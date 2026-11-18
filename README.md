@@ -636,6 +636,15 @@ login, and auto-switch moves that login by the models the sessions run (see
 [Auto-switch before a limit](#auto-switch-before-a-limit)). All sessions share
 one account at a time, and subagents run on their session's account.
 
+**The Fable store.** An account can hold a second, independent sign-in, its
+Fable login. The Fable store (`<backup store>/fable/store/`) holds one of them
+live, and Fable sessions run on it through Claude Code's
+`CLAUDE_SECURESTORAGE_CONFIG_DIR`, while every other session stays on the
+default login; tycswap switches the two independently and never moves a login
+between them. `tycswap switch --store fable <n>` switches it by hand and
+`tycswap switch --store fable --empty` turns it off. A box where no account has
+a Fable login works exactly as before. macOS has no Fable store.
+
 **Session groups are retired.** The Fable and Opus / other groups and
 `tycswap claude` are gone; plain `claude` follows the session's model on the
 default login instead. A former group hands its account back on the first
@@ -1227,6 +1236,8 @@ Inside the backup store:
 |---------------------------|---------------------------------------------------------------|
 | `sequence.json`           | The account roster: slot, email, alias, kind, disabled state. |
 | `credentials/`            | Each account's stored credential blob (`.enc`).               |
+| `credentials-fable/`      | Each account's Fable login (`.enc`), once one is signed in.   |
+| `fable/`                  | The Fable store (`fable/store/`), its auto-switch state and chain record. |
 | `configs/`                | Each account's configuration snapshot.                        |
 | `settings.json`           | Auto-switch settings, the on/off among them (`tycswap config`, `tycswap auto on\|off`). |
 | `cache/usage.json`        | Cached usage fetches.                                         |
