@@ -270,12 +270,22 @@ func (s *Store) AliasInUse(data *SequenceData, alias, excludeNum string) string 
 	return s.aliasInUse(data, alias, excludeNum)
 }
 
+// GetCurrentAccount is the live config's identity; a Fable scope has none,
+// since every session writes its own account to the shared ~/.claude.json.
 func (s *Store) GetCurrentAccount() (email, orgUUID string, ok bool) {
+	if s.fable {
+		return "", "", false
+	}
 	return ccfile.ReadOAuthIdentityFrom(s.GlobalConfigPath())
 }
 
-// HasLiveLogin reports whether ~/.claude.json carries any live identity.
+// HasLiveLogin reports whether ~/.claude.json carries any live identity, or
+// on a Fable scope whether the Fable store holds a login.
 func (s *Store) HasLiveLogin() bool {
+	if s.fable {
+		live, _, err := s.Creds.ReadActive()
+		return err == nil && live != ""
+	}
 	_, _, ok := s.GetCurrentAccount()
 	return ok
 }

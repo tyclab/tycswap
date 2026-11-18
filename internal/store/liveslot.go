@@ -83,6 +83,13 @@ func (s *Store) ResolveLiveSlot(data *SequenceData) LiveSlot {
 // ResolveLiveSlotWith is ResolveLiveSlot reading the live credential through
 // readLive, so a caller that needs the bytes as well reads them once.
 func (s *Store) ResolveLiveSlotWith(data *SequenceData, readLive func() string) LiveSlot {
+	if s.fable {
+		live := readLive()
+		if live == "" {
+			return LiveSlot{}
+		}
+		return s.fableLiveSlot(data, live, true)
+	}
 	email, orgUUID, ok := s.GetCurrentAccount()
 	if !ok {
 		return LiveSlot{}

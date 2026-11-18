@@ -48,6 +48,7 @@ type Store struct {
 	defaultKeychainService string
 	lineage                *lineageMemo
 	lineageReadOnly        bool
+	fable                  bool
 }
 
 // Options carries the injectable seams for New. All are optional: a zero

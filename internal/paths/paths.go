@@ -148,3 +148,12 @@ func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// FableScopeDir is the Fable store's scope root: its state file and chain record (DESIGN A100).
+func FableScopeDir(root string) string { return filepath.Join(root, "fable") }
+
+// FableStoreDir is the Fable store, the value Fable sessions get in CLAUDE_SECURESTORAGE_CONFIG_DIR.
+func FableStoreDir(root string) string { return filepath.Join(FableScopeDir(root), "store") }
+
+// FableCredentialsDir holds the accounts' Fable logins, beside credentials/.
+func FableCredentialsDir(root string) string { return filepath.Join(root, "credentials-fable") }

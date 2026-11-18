@@ -10,6 +10,7 @@ import (
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
 )
 
@@ -32,6 +33,9 @@ func (s *Store) GroupID() groups.ID { return s.group }
 func (s *Store) SharedRoot() string { return s.backupDir }
 
 func (s *Store) ScopeRoot() string {
+	if s.fable {
+		return paths.FableScopeDir(s.backupDir)
+	}
 	if s.group == "" {
 		return s.backupDir
 	}
@@ -43,6 +47,9 @@ func (s *Store) StatePath() string {
 }
 
 func (s *Store) ProfileDir() string {
+	if s.fable {
+		return paths.FableStoreDir(s.backupDir)
+	}
 	if s.group == "" {
 		return s.DefaultProfileDir()
 	}
@@ -50,7 +57,7 @@ func (s *Store) ProfileDir() string {
 }
 
 func (s *Store) GlobalConfigPath() string {
-	if s.group == "" {
+	if s.group == "" || s.fable {
 		return s.DefaultConfigPath()
 	}
 	return filepath.Join(s.ProfileDir(), ".claude.json")
