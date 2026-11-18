@@ -7239,7 +7239,8 @@ managed settings. It creates no profile, claim, child-read handshake or hold.
 
 Preserve the incoming argv and environment before initialization. A set
 `CLAUDE_CONFIG_DIR`, child `--bare`, or any `launch.AuthOverrideEnvVars` variable
-skips launch selection without changing the inherited environment. Management
+skips launch selection without changing the inherited environment (except a
+`CLAUDE_SECURESTORAGE_CONFIG_DIR` naming the Fable store, A103). Management
 forms still work independently. No-mark and current-mark paths are silent and
 perform no network or mutation. `store.Options.SkipMigrations` lets launch
 initialization avoid otherwise automatic migration writes on these paths.
@@ -7260,7 +7261,8 @@ current login; unsafe-root failures bypass store access. Launch errors are
 separate and never retry the child. POSIX execs; Windows spawns and waits with
 child status and console signal ownership. Default command resolution and
 provisioner launchers must reject their own canonical executable identity.
-The child inherits its environment and arguments unchanged. A cached choice
+The child inherits its environment and arguments unchanged, except that A103
+sets or removes `CLAUDE_SECURESTORAGE_CONFIG_DIR` by the session's model. A cached choice
 can be stale or another switch can precede the child's credential read.
 
 Reporting carries the mark through `AccountSnapshot`, optional true-only list
@@ -8092,3 +8094,85 @@ normalized output was byte-identical to origin/main's when it was written.
 `modelFamily`), the `store` field of a `default_models.json` record
 (`"fable"` for a Fable-store session, omitted for the default store's), and
 `reporting.RecordedSession(root, id)`, a session's recorded family and store.
+
+## A103. tycswap start picks the store by the session's model
+
+**Why.** flakelab routes every `claude` through `tycswap start -- <real
+claude> "$@"`; on POSIX `start` execs, so the Claude process keeps its pid and
+the environment `start` composes. A100's design puts sessions whose model is
+Fable on the Fable store through `CLAUDE_SECURESTORAGE_CONFIG_DIR` and keeps
+every other session on the default login. Before this entry `start` counted
+that variable as a user override (A90): it skipped selection and handed the
+variable on, so every `claude` started from a Fable session's shell (an
+agent's, a restore's) stayed on the Fable store whatever its model.
+
+**The session's model** (`cli.sessionFamily`). The first source that names a
+model answers; its family is `reporting.ModelFamily` (aliases and full ids,
+a `[1m]` suffix included), so an unknown model answers with no family:
+
+1. `--model X` or `--model=X` before a `--`; given twice, the last wins.
+2. `ANTHROPIC_MODEL` (on Windows the name matches in any case).
+3. `--resume ID`, `-r ID` or `--resume=ID`, ID a UUID: the session's record
+   in `default_models.json` (`reporting.RecordedSession`), else the model of
+   the last assistant line of `~/.claude/projects/*/ID.jsonl`, reading at
+   most the last 1 MiB. Claude Code's own `<synthetic>` lines and subagent
+   (`isSidechain`) lines are skipped. A path that resolves out of
+   `projects/` through a symlink is not read; only regular files are.
+4. The `model` key of `<cwd>/.claude/settings.local.json`, then
+   `<cwd>/.claude/settings.json`, then `~/.claude/settings.json`; the first
+   file that sets it wins, and a file that cannot be read or parsed, or sets
+   no string, is skipped.
+5. Otherwise there is no family.
+
+**Overrides keep A90.** With `CLAUDE_CONFIG_DIR` set, another
+`launch.AuthOverrideEnvVars` variable set, `--bare` in the child's
+arguments, or `CLAUDE_SECURESTORAGE_CONFIG_DIR` set to anything but the
+Fable store directory (empty included), `start` reads nothing and changes
+nothing. A value equal to `paths.FableStoreDir` (cleaned; on Windows
+case-insensitively, the name too) is tycswap's own, not an override.
+
+**The store** (`cli.startEnvironment`):
+
+| Family | Fable store | Child environment | Default start-login selection | Notice |
+| --- | --- | --- | --- | --- |
+| `fable` | on and usable | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<FableStoreDir>`, in place of an inherited entry or appended | skipped | none |
+| `fable` | off or unusable, with Fable logins | the variable removed if it named the store | as before | `tycswap start: the Fable store has no usable login (<reason>); starting on the default login.` |
+| other or none, or no Fable logins | – | the variable removed if it named the store | as before | none |
+
+Every other variable passes unchanged and in order. Without a Fable login
+the session's model is not read and the child environment is the input
+environment, less a variable naming the Fable store (A100's one difference).
+`--account N` with a Fable session on the store still selects the default
+login and prints `tycswap start: --account selects the default login; this
+Fable session starts on the Fable store (Account-M).` (without the account
+while the store's live slot is unknown); the Fable store does not move.
+
+**No network, nothing created.** The state is `Store.FableStore()`: the live
+slot from backup or chain only, and an unknown slot counts as usable. A box
+without `credentials-fable/`, or a store `start` must not read (not a
+directory, not private, run as root), opens nothing. No directory is created.
+
+**Platforms.** macOS never sets the variable (`ForFable` refuses), so a
+Fable session there starts as before, with no notice. Windows spawns with the
+composed environment and matches the variable's name and value
+case-insensitively (`cli.startWindows` is the tests' seam).
+
+**Limits.** `--continue` and the `--resume` picker give no family (O10): such
+a session starts by its settings' model. A session that changes model with
+`/model` stays on the store it started on. Fable subagents of an Opus session
+run on the default store. Other `claude` options that set a model (a
+`--settings` file, managed settings) are not read.
+
+**Tests.** `TestSessionFamilySources` drives each source, each precedence
+pair, a last assistant line beyond 1 MiB and one just inside it, a malformed
+transcript, a non-UUID id, a bare `--resume`, `--continue` and `-c`;
+`TestSessionFamilyTranscriptStaysInProjects` refuses file and directory
+symlinks out of `projects/`. `TestStartPicksTheStoreBySessionModel` runs
+`start` for every table row, inherited values kept or removed, an unknown
+live slot and a profile endpoint that fails the test;
+`TestStartOverridesKeepAFableSessionUnchanged` every override;
+`TestStartAccountWithAFableSession` the `--account` notice and an unchanged
+Fable store; `TestStartOnWindowsMatchesTheVariableCaseInsensitively` and
+`TestStartOnMacOSLeavesAFableSessionAsBefore` the platforms; and
+`TestStartWithoutFableLoginsPassesTheEnvironmentUnchanged` the byte-identical
+environment of a box without a Fable login.
