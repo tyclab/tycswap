@@ -11,21 +11,28 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/reporting"
 )
 
-// fakeFable is the FableOps seam: recorded calls.
+// fakeFable is the FableOps seam: recorded calls; during, when set, runs
+// inside each call.
 type fakeFable struct {
-	mu    sync.Mutex
-	calls []string
+	mu     sync.Mutex
+	calls  []string
+	during func()
 }
 
 func (f *fakeFable) record(s string) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls = append(f.calls, s)
+	during := f.during
+	f.mu.Unlock()
+	if during != nil {
+		during()
+	}
 }
 
 func (f *fakeFable) Calls() []string {
@@ -127,6 +134,35 @@ func TestFableSwitchRoute(t *testing.T) {
 	}
 	if got := h.fa.Calls(); len(got) != 0 {
 		t.Fatalf("the default store was reached: %v", got)
+	}
+}
+
+// The Fable switch and the empty take the mutation path as every switch
+// does (DESIGN A104): under the mutation lock, a reply whose stateSequence
+// is newer than the state read before, and a state on the stream.
+func TestFableSwitchRouteIsAMutation(t *testing.T) {
+	f := &fakeFable{}
+	h := newHarness(t, withFable(f))
+	var unlocked atomic.Int32
+	f.during = func() {
+		if h.s.mutMu.TryLock() {
+			h.s.mutMu.Unlock()
+			unlocked.Add(1)
+		}
+	}
+	stream := h.openSSE()
+	defer stream.close()
+	stream.nextState(t, timeout)
+	for _, path := range []string{"/api/switch/claude:2?store=fable", "/api/switch/claude:9?store=fable&empty=1"} {
+		before := decodeJSON(t, h.get("/api/state"))["sequence"].(float64)
+		reply := decodeJSON(t, h.post(path))
+		if barrier, ok := reply["stateSequence"].(float64); !ok || barrier <= before {
+			t.Errorf("%s: stateSequence %v, state before it %v", path, reply["stateSequence"], before)
+		}
+		stream.nextState(t, timeout)
+	}
+	if n := unlocked.Load(); n != 0 {
+		t.Errorf("%d Fable store changes ran outside the mutation lock", n)
 	}
 }
 
