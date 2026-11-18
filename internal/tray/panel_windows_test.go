@@ -155,6 +155,58 @@ func TestNativePanelFocusStaysAfterASwitch(t *testing.T) {
 	}
 }
 
+// Use for Fable is its own button in the list, left of its row's Switch and
+// before it in Tab order; it says its row in words, dispatches "fable:" and
+// the row key, and is off limits offline. The Fable store's row has none,
+// and its Switch's text ends in ", Fable store".
+func TestNativePanelUseForFable(t *testing.T) {
+	actions := make(chan PanelAction, 8)
+	tr := nativePanelFixture(t, func(action PanelAction) { actions <- action })
+	p := tr.panel
+	tr.SetPanel(fableFixture())
+	p.update()
+	button := p.controls[p.rowIDs["claude:1"+panelFableKey]]
+	if parent, _, _ := user32.NewProc("GetParent").Call(button); button == 0 || parent != p.list {
+		t.Fatal("claude:1 has no Use for Fable in the list")
+	}
+	if text := panelControlText(button); text != "Use #1 xxxxxxxxxxxxxxx for Fable" || !nativeEnabled(button) {
+		t.Fatalf("Use for Fable reads %q, enabled %v", text, nativeEnabled(button))
+	}
+	if _, has := p.rowIDs["claude:2"+panelFableKey]; has {
+		t.Fatal("the Fable store's row has Use for Fable")
+	}
+	if text := panelControlText(p.controls[p.rowIDs["claude:2"]]); !strings.HasSuffix(text, ", Fable store") {
+		t.Fatalf("the Fable store's row reads %q", text)
+	}
+	var r menuRect
+	user32.NewProc("GetWindowRect").Call(button, uintptr(unsafe.Pointer(&r)))
+	user32.NewProc("MapWindowPoints").Call(0, p.list, uintptr(unsafe.Pointer(&r)), 2)
+	if want := p.geometry.fableRect(0, p.scroll); int(r.left) != want.x || int(r.right-r.left) != want.width {
+		t.Fatalf("Use for Fable at %+v, want %+v", r, want)
+	}
+	if next, _, _ := panelNextTab.Call(p.hwnd, button, 0); next != p.controls[p.rowIDs["claude:1"]] {
+		t.Fatal("Tab from Use for Fable does not reach its row's Switch")
+	}
+	nativeClick(button)
+	if action := nativeAction(t, actions); action != (PanelAction{Kind: "command", Key: "fable:claude:1"}) {
+		t.Fatalf("Use for Fable dispatched %+v", action)
+	}
+	value := fableFixture()
+	value.Offline = true
+	tr.SetPanel(value)
+	p.update()
+	if nativeEnabled(button) {
+		t.Fatal("offline Use for Fable is usable")
+	}
+	p.command(p.rowIDs["claude:1"+panelFableKey], 0)
+	nativeNoAction(t, actions, "an offline Use for Fable")
+	tr.SetPanel(panelFixture())
+	p.update()
+	if _, has := p.rowIDs["claude:1"+panelFableKey]; has || p.geometry.fable != 0 {
+		t.Fatal("Use for Fable outlived its row's FableSwitch")
+	}
+}
+
 // The two switches say their state in their window text and dispatch
 // "auto:on" (the state it showed, DESIGN A94) and "autostart"; no tab, list
 // view, editor or combo box is left.

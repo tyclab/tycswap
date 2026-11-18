@@ -157,6 +157,10 @@ func (p *windowsPanel) placeRows() {
 			r := p.geometry.switchRect(i, p.scroll)
 			panelMove.Call(control, uintptr(r.x), uintptr(r.y), uintptr(r.width), uintptr(r.height), 1)
 		}
+		if id, ok := p.rowIDs[row.ID+panelFableKey]; ok && p.controls[id] != 0 {
+			r := p.geometry.fableRect(i, p.scroll)
+			panelMove.Call(p.controls[id], uintptr(r.x), uintptr(r.y), uintptr(r.width), uintptr(r.height), 1)
+		}
 	}
 }
 

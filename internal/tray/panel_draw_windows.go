@@ -234,11 +234,14 @@ func (p *windowsPanel) paintRow(dc uintptr, row PanelRow, top int) {
 	p.text(dc, p.strong, p.palette.text, first, row.Name, panelLine)
 	line := second
 	line.left, line.right = int32(account.x), end
-	if row.Plan != "" {
+	for _, text := range panelLabels(row) {
+		if line.left >= end {
+			break
+		}
 		label := line
-		label.right = min(end, label.left+int32(panelLabelWidth(p, g.metrics, row.Plan)))
+		label.right = min(end, label.left+int32(panelLabelWidth(p, g.metrics, text)))
 		p.shape(dc, label, unit/2, p.palette.muted, 0, true, false)
-		p.text(dc, p.small, p.palette.text, label, row.Plan, panelLine|dtCenter)
+		p.text(dc, p.small, p.palette.text, label, text, panelLine|dtCenter)
 		line.left = label.right + int32(unit/2)
 	}
 	for _, part := range []struct {
@@ -299,6 +302,8 @@ func (p *windowsPanel) drawButton(draw *drawMenuItem) bool {
 			return true
 		}
 		label = "Switch"
+	} else if _, ok := p.fableFor(id); ok {
+		label = "Use for Fable"
 	} else if action, ok := p.actionFor(id); ok {
 		if action.Kind == KindToggle {
 			p.drawToggle(dc, rect, action, disabled)
