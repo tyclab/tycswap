@@ -13,9 +13,9 @@ func dispatchFableSwitch(p *parsed, sw *core.Switcher, payload *any) error {
 	var res map[string]any
 	var err error
 	if p.empty {
-		res, err = sw.EmptyFable(p.json)
+		res, err = sw.EmptyFableBy(p.json, cliActor())
 	} else {
-		res, err = sw.SwitchFable(*p.switchTo, p.json)
+		res, err = sw.SwitchFableBy(*p.switchTo, p.json, cliActor())
 	}
 	if err != nil {
 		return err
@@ -42,4 +42,16 @@ func fableSwitchLine(res map[string]any) string {
 		return "The Fable store is off now; Fable sessions start on the default login."
 	}
 	return "Switched the Fable store to Account-" + num + " (" + email + ")."
+}
+
+// quietFable is the dashboard's Fable store: its routes log each switch with
+// the request's actor, so the switch itself writes no line.
+type quietFable struct{ sw *core.Switcher }
+
+func (q quietFable) SwitchFable(id string, jsonOut bool) (map[string]any, error) {
+	return q.sw.SwitchFableBy(id, jsonOut, "")
+}
+
+func (q quietFable) EmptyFable(jsonOut bool) (map[string]any, error) {
+	return q.sw.EmptyFableBy(jsonOut, "")
 }

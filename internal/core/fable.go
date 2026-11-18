@@ -20,12 +20,18 @@ func (sw *Switcher) ForFable() (*Switcher, error) {
 // file (A94 per store). byHand's roster mark cannot see it: the roster does
 // not change.
 func (sw *Switcher) SwitchFable(id string, jsonOut bool) (map[string]any, error) {
+	return sw.SwitchFableBy(id, jsonOut, "hand")
+}
+
+// SwitchFableBy is SwitchFable with the log line's actor ("" writes none, for
+// a caller that logs the switch itself).
+func (sw *Switcher) SwitchFableBy(id string, jsonOut bool, actor string) (map[string]any, error) {
 	f, err := sw.Store.ForFable()
 	if err != nil {
 		return nil, err
 	}
 	run := func() (map[string]any, error) {
-		return switching.SwitchFable(f, id, switching.FableSwitchOptions{Actor: "hand"})
+		return switching.SwitchFable(f, id, switching.FableSwitchOptions{Actor: actor})
 	}
 	if !f.HasFableLogins() {
 		return run() // refused before the Fable scope exists, so nothing creates it
@@ -62,6 +68,11 @@ func (sw *Switcher) EngineSwitchFable(id string, jsonOut bool) (map[string]any, 
 // EmptyFable turns the Fable store off, under the Fable state lock while it
 // holds a login so no Fable tick installs one meanwhile. It stamps no hold.
 func (sw *Switcher) EmptyFable(jsonOut bool) (map[string]any, error) {
+	return sw.EmptyFableBy(jsonOut, "hand")
+}
+
+// EmptyFableBy is EmptyFable with the log line's actor ("" writes none).
+func (sw *Switcher) EmptyFableBy(jsonOut bool, actor string) (map[string]any, error) {
 	f, err := sw.Store.ForFable()
 	if err != nil {
 		return nil, err
@@ -75,8 +86,8 @@ func (sw *Switcher) EmptyFable(jsonOut bool) (map[string]any, error) {
 		result, err = switching.EmptyFable(f)
 		return "", err
 	})
-	if err == nil && result["switched"] == true && sw.Log != nil {
-		sw.Log.Action("Emptied the Fable store", "hand")
+	if err == nil && result["switched"] == true && sw.Log != nil && actor != "" {
+		sw.Log.Action("Emptied the Fable store", actor)
 	}
 	return result, err
 }

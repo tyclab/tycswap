@@ -303,8 +303,8 @@ func TestAppTraySwitchesTheFableStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	log, _ := os.ReadFile(filepath.Join(sw.BackupDir(), "tycswap.log"))
-	if n := strings.Count(string(log), "Switched the Fable store to account 2 by tray"); n != 1 {
-		t.Fatalf("%d tray lines in the log, want one for the one move:\n%s", n, log)
+	if n := strings.Count(string(log), "Switched the Fable store to account 2"); n != 1 || !strings.Contains(string(log), "Switched the Fable store to account 2 by tray") {
+		t.Fatalf("%d lines for the one move, want one, the tray's:\n%s", n, log)
 	}
 	err := d.switchFable("codex:1")
 	var e *cerr.Error

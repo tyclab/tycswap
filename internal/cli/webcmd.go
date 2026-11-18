@@ -307,7 +307,7 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 		Snapshot:           providers.NewMultiSnapshotSource(ctx, sw, codexSw),
 		Accounts:           sw,
 		Codex:              codex,
-		Fable:              sw,
+		Fable:              quietFable{sw},
 		Settings:           settingsFacade{root: sw.BackupDir()},
 		Auto:               auto,
 		AutoEvents:         auto.Events(),

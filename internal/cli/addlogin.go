@@ -260,7 +260,7 @@ func activateFableLogin(sw *core.Switcher, num string, switchAfter bool, s ioStr
 	if !switchAfter && f.HasLiveLogin() {
 		return nil
 	}
-	res, err := sw.SwitchFable(num, false)
+	res, err := sw.SwitchFableBy(num, false, cliActor())
 	if err != nil {
 		return err
 	}

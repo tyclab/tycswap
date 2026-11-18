@@ -32,7 +32,6 @@ import (
 	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/ccversion"
 	"github.com/tyclab/tycswap/internal/cerr"
-	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -813,15 +812,6 @@ func (d *dashboard) switchFable(key string) error {
 	if provider != reporting.ProviderClaude {
 		return cerr.AccountNotFound("no %s Fable logins in this app: %s", provider, key)
 	}
-	res, err := d.sw.SwitchFable(ref, false)
-	if err != nil {
-		return err
-	}
-	if to, moved := jsonout.SwitchedTo(res); moved {
-		if to == "" {
-			to = ref
-		}
-		d.sw.Log.Action("Switched the Fable store to account "+to, "tray")
-	}
-	return nil
+	_, err := d.sw.SwitchFableBy(ref, false, "tray")
+	return err
 }

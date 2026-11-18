@@ -186,6 +186,13 @@ func TestDashboardSwitchesTheFableStoreOnly(t *testing.T) {
 	if status, body := srv.call(http.MethodPost, "/api/switch/claude:1?store=fable&empty=1"); status != http.StatusOK {
 		t.Fatalf("empty: %d %s", status, body)
 	}
+	// One line per move, the dashboard's: the switch itself writes none.
+	log := readOrAbsent(t, filepath.Join(sw.BackupDir(), "tycswap.log"))
+	for _, line := range []string{"Switched the Fable store to account 3", "Emptied the Fable store"} {
+		if n := strings.Count(log, line); n != 1 || !strings.Contains(log, line+" by dashboard(") {
+			t.Errorf("%d %q lines, want one, the dashboard's:\n%s", n, line, log)
+		}
+	}
 	if fable := stateDoc(t, srv)["fable"].(map[string]any); fable["state"] != "off" || fable["number"] != nil {
 		t.Fatalf("after emptying: fable %v", fable)
 	}
