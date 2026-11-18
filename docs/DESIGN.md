@@ -8319,7 +8319,10 @@ to the default login with its notice. A switch of the Fable store by hand
 within the cooldown holds the move or the emptying as it holds a tick (A94,
 `no-switch`, `cooldown`); the quarantine alone already makes the store
 unusable, so `start` sends Fable sessions to the default login meanwhile.
-The default login is never read or written. This replaces the rule that the
+Auto-switch turned off since the tick began holds them too: the key is
+re-read under the state lock, as the engine's own switch re-reads it (A83),
+and the engine then says `disabled`; the quarantine stands, as a dead
+target's does. The default login is never read or written. This replaces the rule that the
 live Fable login is Claude Code's alone to refresh (plan 1.7) for an expired
 one.
 

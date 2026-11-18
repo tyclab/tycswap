@@ -15,6 +15,7 @@ import (
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/settings"
 )
 
 // deadLiveFixture: the default login on 1, the Fable store on 2 with a live
@@ -103,6 +104,60 @@ func TestDeadLiveFableLoginMovesTheFableStore(t *testing.T) {
 	var state map[string]any
 	if err := json.Unmarshal([]byte(readOrAbsent(t, fableStatePath(sw))), &state); err != nil || state["lastSwitchTo"] != "3" || state["lastSwitchBy"] != nil {
 		t.Fatalf("Fable state %v (%v), want the move stamped as the engine's own", state, err)
+	}
+}
+
+// Auto-switch turned off while the tick refreshes the expired live Fable
+// login: the dead login is quarantined, as the engine quarantines a dead
+// target, but the store is neither moved nor emptied, as the engine's own
+// switch re-reads the key under its lock (DESIGN A83, A102).
+func TestDeadLiveFableLoginStaysOnceAutoSwitchIsTurnedOff(t *testing.T) {
+	for name, others := range map[string][]string{"move": {"3"}, "empty": nil} {
+		t.Run(name, func(t *testing.T) {
+			var root string
+			dead := false
+			fx := fableTickFixture{def: "1", live: "2", logins: append([]string{"2"}, others...),
+				usage: map[string][3]float64{"1": {10, 20, 30}, "2": {10, 20, 10}, "3": {10, 20, 10}, "4": {10, 20, 50}},
+				refresh: func(creds string) oauth.RefreshOutcome {
+					if !dead || !strings.Contains(creds, `"rt-f2"`) {
+						return oauth.RefreshOutcome{Error: oauth.ErrTransient}
+					}
+					if _, err := settings.SetSetting(root, "autoswitch.enabled", "false"); err != nil {
+						t.Error(err)
+					}
+					return oauth.RefreshOutcome{Error: oauth.ErrInvalidGrant}
+				}}
+			sw, _ := fx.build(t)
+			root = sw.BackupDir()
+			putLiveFableLogin(t, sw, fableLoginOf("2", sw.Clk.Now().Add(-time.Hour).UnixMilli()))
+			runCodex(t, "", "auto", "--once", "--json")
+			f, _ := sw.Store.ForFable()
+			files := func() map[string]string {
+				m := defaultStoreFiles(t, sw)
+				m["live"], m["chain"] = storeLive(t, sw), readOrAbsent(t, filepath.Join(f.ScopeRoot(), "live_lineage.json"))
+				for _, num := range []string{"2", "3"} {
+					m["fable"+num], _ = f.ReadAccountCredentials(num, fableEmail(num))
+				}
+				return m
+			}
+			before := files()
+			dead = true
+			_, out, _ := runCodex(t, "", "auto", "--once", "--json")
+			_, fable, _ := splitByStore(t, out)
+			if q, ns := eventOf(fable, "account-quarantined"), eventOf(fable, "no-switch"); q == nil || ns == nil || ns["reason"] != "disabled" || eventOf(fable, "switch") != nil {
+				t.Fatalf("Fable events %v", fable)
+			}
+			if after := files(); !sameStrings(before, after) {
+				t.Fatalf("written while off:\nbefore %v\nafter  %v", before, after)
+			}
+			var state map[string]any
+			if err := json.Unmarshal([]byte(readOrAbsent(t, fableStatePath(sw))), &state); err != nil || state["lastSwitchTo"] != nil {
+				t.Fatalf("Fable state %v (%v), want no switch stamped", state, err)
+			}
+			if st := sw.Store.FableStore(); !st.On || st.Live.Slot != "2" {
+				t.Fatalf("FableStore = %+v, want still on Account-2", st)
+			}
+		})
 	}
 }
 
