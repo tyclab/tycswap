@@ -614,9 +614,14 @@ the same default login. Another switch can happen before the child reads it.
 This creates no session profile or startup hold. Executable launch failures
 exit nonzero and never rerun the command.
 
-The child's environment and arguments pass unchanged. A set
+The child's arguments pass unchanged, and so does its environment, except
+`CLAUDE_SECURESTORAGE_CONFIG_DIR` while a Fable store exists: a session whose
+model is Fable (`--model`, `ANTHROPIC_MODEL`, the resumed session's model, then
+the Claude Code settings) starts on the Fable store when it has a usable
+login, and every other session drops a value naming the Fable store. A set
 `CLAUDE_CONFIG_DIR` (even empty), `--bare`, or a Claude authentication override
-skips selection, including an explicit `--account` request. Options for tycswap
+(a `CLAUDE_SECURESTORAGE_CONFIG_DIR` of your own included) skips selection and
+passes everything unchanged, including an explicit `--account` request. Options for tycswap
 end at `--` or the first command. Without a command, `start` resolves the real
 Claude executable; failure to resolve it safely is a launch error.
 
@@ -635,6 +640,45 @@ Plain `claude` needs nothing from tycswap: every session runs on the default
 login, and auto-switch moves that login by the models the sessions run (see
 [Auto-switch before a limit](#auto-switch-before-a-limit)). All sessions share
 one account at a time, and subagents run on their session's account.
+
+**The Fable store.** An account can hold a second, independent sign-in, its
+Fable login. The Fable store (`<backup store>/fable/store/`) holds one of them
+live, and Fable sessions run on it through Claude Code's
+`CLAUDE_SECURESTORAGE_CONFIG_DIR`, while every other session stays on the
+default login; tycswap switches the two independently and never moves a login
+between them. `tycswap start`, and so a `claude` launcher built on it, picks
+the store by the session's model; a Fable session on a Fable store without a
+usable login starts on the default login and says so. `tycswap switch --store
+fable <n>` switches it by hand and `tycswap switch --store fable --empty` turns
+it off. `tycswap auto --once` rotates it too: after the default tick, a second
+tick moves the Fable store to an account with Fable room, while the default
+login leaves those accounts to it and fills the ones whose Fable week is
+spent; the `tycswap auto` loop and the dashboard's own engine do not. When
+the Fable store's own login dies, that tick quarantines it and moves the store
+to another account's Fable login, or empties it. A box
+where no account has a Fable login works exactly as before. macOS has no
+Fable store.
+
+To add a Fable login, sign each account in a second time, once per account and
+box, after it has been added:
+
+```
+$ tycswap add --login --lineage fable --slot 2
+Sign in as bob@example.com in the browser.
+Stored the Fable login for Account-2 (bob@example.com).
+The Fable store now uses Account-2.
+```
+
+The browser flow is the one `add --login` runs; sign in as the account named.
+Only the Fable login is stored: the default login, the roster and
+`~/.claude.json` stay as they were. The first Fable login turns the Fable store
+on; later ones are only stored, unless `--switch` is given. A sign-in as another
+account, one not added yet, one whose plan has no Fable, or the account's
+default login stores nothing. A Fable login stays with the account it was
+signed in as: `remove`, `move`, `swap` and an `add --slot` that moves an
+account take it along, an `add --slot` that puts another account in a slot
+deletes the old one's, `purge` deletes the Fable store, and `export` and
+`import` never carry a Fable login.
 
 **Session groups are retired.** The Fable and Opus / other groups and
 `tycswap claude` are gone; plain `claude` follows the session's model on the
@@ -874,6 +918,18 @@ auto-switch rotates them beside the Claude accounts, as `tycswap auto` does;
 alias, move, swap, export and import of Codex accounts are available through the interactive menu or `tycswap codex`. See `docs/reference.md`, `tycswap web`, for the API and the security
 model.
 
+With a Fable login on some account ([The Fable store](#run-accounts-in-parallel)),
+the header names the Fable store's account under the active one (`Fable: #2
+bob@example.com`, or `Fable store off`), the Fable store's row carries a
+`Fable` chip and rows with another usable Fable login a `Fable login` chip
+(`Fable login: sign in again`, in the warning colour, for a quarantined one,
+with the command that signs it in again). **Use for Fable** in such a row
+switches the Fable store there by hand, which holds the Fable store's
+auto-switch for the cooldown; the store's own row reads **Fable here**. The
+Auto tab adds one line, `Fable store: counting 5h + 7d + Fable · next #3`.
+*Switch*, *Switch now* and the best candidate stay the default login's. The
+terminal dashboard (`tycswap tui`) shows the default login only.
+
 ### Tray application
 
 Dashboard **Settings → Appearance** offers Auto, Light and Dark. Auto follows
@@ -911,8 +967,19 @@ closes the panel. Settings and Add account are in the dashboard (and
 `tycswap config`, `tycswap add`). Start at login is local to the tray's
 device.
 
+With a Fable login on some account, the Fable store's row carries a second
+outlined label, `Fable`, after its plan, and every row the Fable store can
+take (enabled, its Fable login usable, a plan that runs Fable, not
+quarantined) has **Use for Fable** beside **Switch**: it switches the Fable
+store there through the dashboard, as the dashboard's button does, and a
+click while one is under way is dropped. **Switch** and **In use** stay the
+default login's. The icon's tooltip reads `Default #1 · Fable #2` (or `Fable
+off`).
+
 macOS and Linux retain their platform menus, where a switch acts the same
-way. The icon's title reports the active
+way; with a Fable login the Fable store's account row's second line ends in
+` · Fable` and each account the Fable store can take has a `Use for Fable: #N`
+item after the account rows. The icon's title reports the active
 account and its fullest counted window (`#1 · 45%`, with `⟳` while the hosted
 engine runs). Notifications report switches, quarantines and thresholds.
 Update checks and installation retain the normal release checks and restart
@@ -1227,6 +1294,8 @@ Inside the backup store:
 |---------------------------|---------------------------------------------------------------|
 | `sequence.json`           | The account roster: slot, email, alias, kind, disabled state. |
 | `credentials/`            | Each account's stored credential blob (`.enc`).               |
+| `credentials-fable/`      | Each account's Fable login (`.enc`), once one is signed in.   |
+| `fable/`                  | The Fable store (`fable/store/`), its auto-switch state and chain record. |
 | `configs/`                | Each account's configuration snapshot.                        |
 | `settings.json`           | Auto-switch settings, the on/off among them (`tycswap config`, `tycswap auto on\|off`). |
 | `cache/usage.json`        | Cached usage fetches.                                         |

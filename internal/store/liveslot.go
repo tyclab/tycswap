@@ -83,6 +83,13 @@ func (s *Store) ResolveLiveSlot(data *SequenceData) LiveSlot {
 // ResolveLiveSlotWith is ResolveLiveSlot reading the live credential through
 // readLive, so a caller that needs the bytes as well reads them once.
 func (s *Store) ResolveLiveSlotWith(data *SequenceData, readLive func() string) LiveSlot {
+	if s.fable {
+		live := readLive()
+		if live == "" {
+			return LiveSlot{}
+		}
+		return s.fableLiveSlot(data, live, true)
+	}
 	email, orgUUID, ok := s.GetCurrentAccount()
 	if !ok {
 		return LiveSlot{}
@@ -93,6 +100,9 @@ func (s *Store) ResolveLiveSlotWith(data *SequenceData, readLive func() string) 
 // defaultLiveSlot is ResolveLiveSlot for the default login, whatever the
 // store's scope, given the default profile's credential.
 func (s *Store) defaultLiveSlot(data *SequenceData, creds string) LiveSlot {
+	if s.fable {
+		return s.defaultScope().defaultLiveSlot(data, creds)
+	}
 	email, orgUUID, ok := ccfile.ReadOAuthIdentityFrom(s.DefaultConfigPath())
 	if !ok {
 		return LiveSlot{}
@@ -338,9 +348,16 @@ func (m *lineageMemo) remember(fp string, id *oauth.Identity, at time.Time) {
 	m.asked[fp] = profileAnswer{id: id, done: true, at: at}
 }
 
+// warnLineage logs at DEBUG when the config names the Fable store's live
+// account: Fable sessions write theirs to the shared ~/.claude.json, so each
+// timer tick would warn (DESIGN A100).
 func (s *Store) warnLineage(ls LiveSlot, email, orgUUID string) {
 	if s.Log == nil {
 		return
+	}
+	logf := s.Log.Warningf
+	if s.configNamesFableLive(ls.ConfigSlot) {
+		logf = s.Log.Debugf
 	}
 	if m := s.lineage; m != nil {
 		m.mu.Lock()
@@ -354,6 +371,21 @@ func (s *Store) warnLineage(ls LiveSlot, email, orgUUID string) {
 		}
 		m.warned[pair] = true
 	}
-	s.Log.Warningf("live config names slot %s (%s, %s) but the live credential is slot %s's (by %s); using %s. A running Claude Code may have rewritten ~/.claude.json",
+	logf("live config names slot %s (%s, %s) but the live credential is slot %s's (by %s); using %s. A running Claude Code may have rewritten ~/.claude.json",
 		ls.ConfigSlot, email, orgUUID, ls.Slot, ls.Source, ls.Slot)
+}
+
+// configNamesFableLive reports whether slot is the Fable store's live
+// account, by backup or chain only.
+func (s *Store) configNamesFableLive(slot string) bool {
+	f := s.fableScope()
+	if f == nil || slot == "" {
+		return false
+	}
+	live, _, err := f.Creds.ReadActive()
+	if err != nil || live == "" {
+		return false
+	}
+	data, _ := f.ReadSequence()
+	return f.fableLiveSlot(data, live, false).Slot == slot
 }

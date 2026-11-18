@@ -8,6 +8,7 @@ import (
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
 )
 
@@ -67,11 +68,16 @@ type Store interface {
 type Config struct {
 	Platform       platform.Platform
 	CredentialsDir string
+	// ActivePath replaces ~/.claude/.credentials.json; FileOnly keeps the store off the Keychain, the managed API key and the global config (DESIGN A100).
+	ActivePath string
+	FileOnly   bool
 }
 
 type FileKeychainStore struct {
 	platform       platform.Platform
 	credentialsDir string
+	activePath     string
+	fileOnly       bool
 	kc             keychain.KeychainClient
 	clk            clock.Clock
 	log            *logging.Logger
@@ -87,6 +93,8 @@ func New(cfg Config, kc keychain.KeychainClient, clk clock.Clock, log *logging.L
 	return &FileKeychainStore{
 		platform:       cfg.Platform,
 		credentialsDir: cfg.CredentialsDir,
+		activePath:     cfg.ActivePath,
+		fileOnly:       cfg.FileOnly,
 		kc:             kc,
 		clk:            clk,
 		log:            log,
@@ -95,7 +103,14 @@ func New(cfg Config, kc keychain.KeychainClient, clk clock.Clock, log *logging.L
 
 var _ Store = (*FileKeychainStore)(nil)
 
-func (s *FileKeychainStore) macOS() bool { return s.platform == platform.MacOS }
+func (s *FileKeychainStore) macOS() bool { return s.platform == platform.MacOS && !s.fileOnly }
+
+func (s *FileKeychainStore) credentialsPath() string {
+	if s.activePath != "" {
+		return s.activePath
+	}
+	return paths.GetCredentialsPath()
+}
 
 func (s *FileKeychainStore) useKeychain() bool {
 	if !s.macOS() {

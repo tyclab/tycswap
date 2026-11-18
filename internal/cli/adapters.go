@@ -127,8 +127,21 @@ func (t transferAdapter) ResolveSlot(id string) (string, error) {
 	return num, nil
 }
 
+// CurrentAccount is the account the live default login belongs to, by the
+// resolved live slot (DESIGN A68): a Fable session writes its own account into
+// ~/.claude.json. While Fable logins exist, a slot only the config names is no
+// evidence, so no account counts as live (DESIGN A101).
 func (t transferAdapter) CurrentAccount() (email, orgUUID string, ok bool) {
-	return t.Store.GetCurrentAccount()
+	data, err := t.Store.ReadSequence()
+	if err != nil || data == nil {
+		return "", "", false
+	}
+	live := t.Store.ResolveLiveSlot(data)
+	if live.Slot == "" || live.Source == store.SourceConfig && t.Store.AccountKindFor(live.Slot) == "oauth" && t.Store.HasFableLogins() {
+		return "", "", false
+	}
+	id := t.Store.AccountIdentity(live.Slot)
+	return id["email"], id["organizationUuid"], true
 }
 
 // ReadActiveCredentials returns the live active credential ("" when none),
@@ -147,6 +160,19 @@ func (t transferAdapter) ReadActiveConfig() (string, bool, error) {
 		return "", false, err
 	}
 	return string(b), true, nil
+}
+
+// DropFableLogin removes the Fable login under (num, email): an account
+// imported into a slot it did not hold cannot own it (DESIGN A101).
+func (t transferAdapter) DropFableLogin(num, email string) error {
+	f, err := t.Store.ForFable()
+	if err != nil {
+		return nil
+	}
+	if _, err := os.Stat(f.CredentialsDir); err != nil {
+		return nil
+	}
+	return f.Creds.DeleteBackupStrict(num, email)
 }
 
 func (t transferAdapter) ReadAccountConfig(num, email string) (string, error) {

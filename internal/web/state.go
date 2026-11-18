@@ -54,6 +54,9 @@ type State struct {
 	Updates *UpdatesView `json:"updates"`
 	// UI: the page's remembered view choices; null without Deps.UIPrefs (A27).
 	UI *UIView `json:"ui"`
+	// Fable is the Fable store as status --json shows it; absent while no
+	// account has a Fable login (DESIGN A104).
+	Fable map[string]any `json:"fable,omitempty"`
 }
 
 // CountingView is what auto-switch counts now (DESIGN A91, A97). Mode
@@ -132,6 +135,7 @@ func (s *Server) buildState(o stateOpts) State {
 		if n, err := strconv.Atoi(snap.ActiveNumber); err == nil {
 			st.ActiveNumber = n
 		}
+		st.Fable = snap.Fable
 		now := s.d.Clock.Now()
 		for _, a := range snap.Accounts {
 			if a.ProviderName() == reporting.ProviderClaude {
@@ -297,6 +301,11 @@ func accountRow(a reporting.AccountSnapshot) map[string]any {
 	}
 	if a.ProviderName() == reporting.ProviderClaude {
 		row["startLogin"] = a.StartLogin
+	}
+	if a.FableLogin != nil {
+		// A map, as a JSON reader sees it: the in-process tray reads rows
+		// as they are.
+		row["fableLogin"] = map[string]any{"live": a.FableLogin.Live, "status": a.FableLogin.Status}
 	}
 	if usage == nil {
 		row["usage"] = nil

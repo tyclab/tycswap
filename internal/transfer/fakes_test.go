@@ -227,6 +227,8 @@ func (f *fakeAccounts) TokenDead(num, email, org string) bool {
 	return f.dead[num+"|"+email+"|"+org]
 }
 
+func (f *fakeAccounts) DropFableLogin(num, email string) error { return nil }
+
 func (f *fakeAccounts) ClearDeadToken(num, email, org string) error {
 	if f.clearErr != nil {
 		return f.clearErr

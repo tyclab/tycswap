@@ -530,6 +530,15 @@ func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	switch store := r.URL.Query().Get("store"); store {
+	case "":
+	case "fable":
+		s.handleFableSwitch(w, r, provider, id)
+		return
+	default:
+		writeError(w, http.StatusBadRequest, "unknown store "+strconv.Quote(store)+"; the switch takes store=fable or none")
+		return
+	}
 	if provider == reporting.ProviderCodex {
 		q := r.URL.Query()
 		if isTruthy(q.Get("force")) || isTruthy(q.Get("confirmAuthChange")) {
@@ -562,6 +571,40 @@ func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mutate(w, s.loggedSwitch(r, id, func() (map[string]any, error) { return s.d.Facade.SwitchTo(id, true) }))
+}
+
+// handleFableSwitch is ?store=fable (DESIGN A104): a switch of the Fable
+// store by hand to a Claude account, or with empty=1, on any key, the store
+// emptied. Neither touches the default login.
+func (s *Server) handleFableSwitch(w http.ResponseWriter, r *http.Request, provider, id string) {
+	q := r.URL.Query()
+	switch {
+	case provider != reporting.ProviderClaude:
+		writeError(w, http.StatusBadRequest, "the Fable store holds Claude logins only")
+		return
+	case isTruthy(q.Get("force")) || isTruthy(q.Get("confirmAuthChange")):
+		writeError(w, http.StatusBadRequest, "force and confirmAuthChange apply to the default login only")
+		return
+	case unavailable(w, s.d.Fable != nil, "the Fable store"):
+		return
+	}
+	if isTruthy(q.Get("empty")) {
+		s.mutate(w, func() (map[string]any, error) {
+			res, err := s.d.Fable.EmptyFable(true)
+			if emptied, _ := res["switched"].(bool); err == nil && emptied {
+				s.logAction(r, "Emptied the Fable store")
+			}
+			return res, err
+		})
+		return
+	}
+	s.mutate(w, func() (map[string]any, error) {
+		res, err := s.d.Fable.SwitchFable(id, true)
+		if to, moved := jsonout.SwitchedTo(res); err == nil && moved {
+			s.logAction(r, "Switched the Fable store to account "+to)
+		}
+		return res, err
+	})
 }
 
 // loggedSwitch runs a Claude switch and records it when it moved the login.

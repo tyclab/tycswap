@@ -58,7 +58,7 @@ func TestDefaultSessionSettingsFollowLiveSessions(t *testing.T) {
 			if tc.live == "s-opus" {
 				recorded = "s-opus"
 			}
-			if _, err := RecordDefaultSessionModel(s.BackupDir(), recorded, tc.model, clk.Now()); err != nil {
+			if _, err := RecordDefaultSessionModel(s.BackupDir(), recorded, tc.model, "", clk.Now()); err != nil {
 				t.Fatal(err)
 			}
 			base := settings.Default()
@@ -84,24 +84,24 @@ func TestRecordDefaultSessionModelBoundsItsWrites(t *testing.T) {
 		}
 		return info.ModTime()
 	}
-	if _, err := RecordDefaultSessionModel(root, "s1", "claude-opus-5-5", t0); err != nil {
+	if _, err := RecordDefaultSessionModel(root, "s1", "claude-opus-5-5", "", t0); err != nil {
 		t.Fatal(err)
 	}
 	first := mtime()
 	time.Sleep(20 * time.Millisecond)
-	if _, err := RecordDefaultSessionModel(root, "s1", "claude-opus-5-5", t0.Add(10*time.Second)); err != nil {
+	if _, err := RecordDefaultSessionModel(root, "s1", "claude-opus-5-5", "", t0.Add(10*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if !mtime().Equal(first) {
 		t.Fatal("an unchanged model was rewritten within a minute")
 	}
-	if _, err := RecordDefaultSessionModel(root, "s1", "claude-fable-5-1", t0.Add(20*time.Second)); err != nil {
+	if _, err := RecordDefaultSessionModel(root, "s1", "claude-fable-5-1", "", t0.Add(20*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if mtime().Equal(first) {
 		t.Fatal("a model change was not written")
 	}
-	if _, err := RecordDefaultSessionModel(root, "s1", "not a model", t0.Add(30*time.Second)); err != nil {
+	if _, err := RecordDefaultSessionModel(root, "s1", "not a model", "", t0.Add(30*time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if got := readDefaultSessionModels(root)["s1"].Family; got != "fable" {
@@ -127,7 +127,7 @@ func TestRecordDefaultSessionModelReportsNews(t *testing.T) {
 		{"s1", "not a model", 4 * time.Minute, false},
 		{"", "claude-opus-5-5", 5 * time.Minute, false},
 	} {
-		got, err := RecordDefaultSessionModel(root, step.session, step.model, t0.Add(step.at))
+		got, err := RecordDefaultSessionModel(root, step.session, step.model, "", t0.Add(step.at))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -196,7 +196,7 @@ func TestDefaultSessionPolicyReservesFableForFableSessions(t *testing.T) {
 				if sess.model == "" {
 					continue
 				}
-				if _, err := RecordDefaultSessionModel(s.BackupDir(), sess.id, sess.model, clk.Now()); err != nil {
+				if _, err := RecordDefaultSessionModel(s.BackupDir(), sess.id, sess.model, "", clk.Now()); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -298,7 +298,7 @@ func (in incident) store(t *testing.T) (*store.Store, time.Time) {
 		}
 		liveSessionAs(t, s.DefaultProfileDir(), pids[i], id)
 		i++
-		if _, err := RecordDefaultSessionModel(s.BackupDir(), id, model, now); err != nil {
+		if _, err := RecordDefaultSessionModel(s.BackupDir(), id, model, "", now); err != nil {
 			t.Fatal(err)
 		}
 	}

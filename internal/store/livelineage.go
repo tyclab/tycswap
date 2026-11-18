@@ -8,6 +8,7 @@ import (
 	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/paths"
 )
 
 // liveLineageFile is the chain-of-custody record: the profile endpoint's answer
@@ -33,7 +34,13 @@ func (id lineageIdentity) oauth() oauth.Identity {
 	return oauth.Identity{UUID: id.UUID, Email: id.Email, OrgUUID: id.OrgUUID}
 }
 
-func (s *Store) liveLineagePath() string { return filepath.Join(s.backupDir, liveLineageFile) }
+// liveLineagePath is the default store's chain record, or the Fable store's own (DESIGN A100).
+func (s *Store) liveLineagePath() string {
+	if s.fable {
+		return filepath.Join(paths.FableScopeDir(s.backupDir), liveLineageFile)
+	}
+	return filepath.Join(s.backupDir, liveLineageFile)
+}
 
 // readLiveLineage reads the chain record; a missing or malformed one is absent.
 func (s *Store) readLiveLineage() (liveLineage, bool) {

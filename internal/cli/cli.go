@@ -40,6 +40,7 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 	if len(argv) > 0 && argv[0] == "start" {
 		return startCommand(prog, argv[1:], s)
 	}
+	dropFableStoreEnv()
 	if len(argv) > 0 && removedProfileCommands[argv[0]] {
 		return removedProfileCommand(prog, argv[0], s.err)
 	}

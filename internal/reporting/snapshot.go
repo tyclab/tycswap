@@ -32,6 +32,8 @@ type AccountSnapshot struct {
 	LimitingWindows      []string
 	// "" means ProviderClaude so existing literals keep working; read it through ProviderName or Key.
 	Provider string
+	// FableLogin is the account's Fable login; nil without one (DESIGN A104).
+	FableLogin *FableLogin
 }
 
 const (
@@ -68,6 +70,9 @@ type AccountsSnapshot struct {
 	Accounts     []AccountSnapshot
 	TakenAt      float64
 	Provider     string
+	// Fable is the Fable store as status --json shows it; nil while no
+	// account has a Fable login (DESIGN A104).
+	Fable map[string]any
 }
 
 func (s AccountsSnapshot) ProviderName() string { return providerOrDefault(s.Provider) }
@@ -82,6 +87,7 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 	entries := CollectUsageEntries(s, infos, fetch)
 	data, _ := s.ReadSequence()
 	models := configuredModels(s)
+	fable := readFableView(s, data)
 
 	var activeNumber string
 	accounts := make([]AccountSnapshot, 0, len(infos))
@@ -113,14 +119,19 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 			AtLimit:              atLimit,
 			LimitingWindows:      limiting,
 			Provider:             ProviderClaude,
+			FableLogin:           fable.login(num),
 		})
 	}
-	return &AccountsSnapshot{
+	snap := &AccountsSnapshot{
 		ActiveNumber: activeNumber,
 		Accounts:     accounts,
 		TakenAt:      clock.Seconds(s.Clk),
 		Provider:     ProviderClaude,
 	}
+	if fable != nil {
+		snap.Fable = fable.object(s, data, entries[fable.live.Slot])
+	}
+	return snap
 }
 
 // A nil roster carries no disabled information, so no slot is eligible: fail closed like store.RotationEligible (DESIGN A19).

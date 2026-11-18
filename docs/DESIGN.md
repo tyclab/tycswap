@@ -4789,7 +4789,7 @@ alone); the badged icons are drawn once per count and kept.
 **The shell** (`internal/cli/appshell.go`) is the platform-independent
 behaviour, tested with a fake tray: title `#<slot> · <fullest counted
 window %>` (`⟳` in front while auto-switch runs), a tooltip with every
-window, the menu of A37, notifications on engine `switch` and
+window (with a Fable login, `Default #N · Fable #M` instead, A104), the menu of A37, notifications on engine `switch` and
 `account-quarantined` events, and once when a window of the active account
 reaches its own bar (A34), re-armed when every window is ten points below
 its bar. It only ever renders `web.State` and acts through `shellActions`,
@@ -6172,7 +6172,8 @@ never start a duplicate server. The remote tray publishes separate connection me
 An explicit `add --login --switch` onto the current account uses the existing locked
 activation path, so its new credential becomes live instead of returning already-active.
 Plain `add --login` leaves the live login untouched for any other account. A login
-as the current account takes the same activation without `--switch`: the reference
+as the current account (the slot the live credential resolves to, A101) takes the
+same activation without `--switch`: the reference
 names it as the repair for a dead login, the active row reads the live store, and
 the renewed backup alone left that row at `no credentials` until a forced switch.
 
@@ -6346,7 +6347,8 @@ answers names the live slot, and `LiveSlot.Source` says which one did:
    then uses an answer it already has.
 4. `config`. Otherwise X.
 
-The chain record is the default login's. Only a resolution of the default
+The chain record is the default login's; the Fable store keeps its own,
+`fable/live_lineage.json` (A100). Only a resolution of the default
 login reads or writes it: the default scope's `ResolveLiveSlot`, and the
 ownership and handoff checks of the default login from any scope. A group
 scope resolving its own login goes backup, profile, config, so its rotation
@@ -6722,6 +6724,8 @@ trigger, under the cooldown, to an account that cannot run Fable and is below
 every bar. A live session without a record or a Fable session clears the
 reservation, as does an explicit `autoswitch.model` (until A97 removed it);
 with no live session the login stays where it is, because nothing burns.
+While the Fable store is usable the reservation is A102's instead: always,
+and only of the accounts the Fable store can use and its live account.
 
 `--observe` reports whether its record was news: a session's first status line
 or a change of family. News runs one tick at once on the cached usage, without
@@ -6969,7 +6973,8 @@ The rule: the Windows panel is one page.
 - The account cell has two lines: the name (`#2 name`, `Codex #1 name`),
   semi-bold, cut with an ellipsis past the column's cap of 36 units (about
   34 average characters); then the plan in an outlined label, `not
-  rotated` (muted) for an account excluded from rotation, and in the limit
+  rotated` (muted) for an account excluded from rotation (on the Fable
+  store's account a second outlined label `Fable`, A104), and in the limit
   colour, in the dashboard's words, a reading that failed (`token
   expired`, `re-login needed`, `usage unavailable`, …; none for an API-key
   account, which reports no usage by design).
@@ -6988,6 +6993,7 @@ The rule: the Windows panel is one page.
   shows what is reported.
 - The action cell is a Switch button, disabled for an account that cannot
   be switched to; the active account shows `In use` in the accent instead.
+  A104 adds `Use for Fable` beside it on every row the Fable store can take.
 - One note line under the list: the last panel action's result or error,
   whichever button it was, or while the engine is out of reach why. Then
   Switch and `Auto-switch` are disabled; `Start at login` and the updates
@@ -7003,7 +7009,8 @@ The rule: the Windows panel is one page.
   its rows; past the work area the list scrolls and the title, the note and
   the footer stay.
 - Every Switch, switch and footer command is a real owner-drawn button, so
-  Tab walks the Switch buttons top to bottom and then the footer, Space or
+  Tab walks the Switch buttons top to bottom (A104: each row's `Use for
+  Fable` just before its Switch) and then the footer, Space or
   Enter press, Esc closes. The popup itself has the focus when it opens, so
   a stray key presses nothing, and gets it back when the focused Switch
   becomes `In use` (disabled) or goes. A Switch's window text is its row in words
@@ -7047,7 +7054,7 @@ menu… (the dashboard and `tycswap add`, `tycswap menu`); A67's details line;
 A79's plan in the row title; A80's `55% · 8m` cells and details box; and
 the `Used by` column, Check for updates, the version text and the
 "Auto-switch managed by …" status, which A83 left with nothing to say.
-The Linux and macOS menus are unchanged (A37).
+The Linux and macOS menus are unchanged (A37), but for A104's Fable items.
 
 ## A85. Start at login has one owner per box
 
@@ -7238,7 +7245,8 @@ managed settings. It creates no profile, claim, child-read handshake or hold.
 
 Preserve the incoming argv and environment before initialization. A set
 `CLAUDE_CONFIG_DIR`, child `--bare`, or any `launch.AuthOverrideEnvVars` variable
-skips launch selection without changing the inherited environment. Management
+skips launch selection without changing the inherited environment (except a
+`CLAUDE_SECURESTORAGE_CONFIG_DIR` naming the Fable store, A103). Management
 forms still work independently. No-mark and current-mark paths are silent and
 perform no network or mutation. `store.Options.SkipMigrations` lets launch
 initialization avoid otherwise automatic migration writes on these paths.
@@ -7259,7 +7267,8 @@ current login; unsafe-root failures bypass store access. Launch errors are
 separate and never retry the child. POSIX execs; Windows spawns and waits with
 child status and console signal ownership. Default command resolution and
 provisioner launchers must reject their own canonical executable identity.
-The child inherits its environment and arguments unchanged. A cached choice
+The child inherits its environment and arguments unchanged, except that A103
+sets or removes `CLAUDE_SECURESTORAGE_CONFIG_DIR` by the session's model. A cached choice
 can be stale or another switch can precede the child's credential read.
 
 Reporting carries the mark through `AccountSnapshot`, optional true-only list
@@ -7322,7 +7331,9 @@ move comes after the fetch that poll brings.
 The reservation (A77) now covers only accounts that can run Fable, report a
 Fable window and sit under `autoswitch.modelThreshold` on it, read the same
 way. An account whose Fable week is spent is never reserved, so Opus work
-fills it.
+fills it. While the Fable store is usable, A102 counts the default store's
+sessions only and reserves the Fable pool's accounts with Fable room and the
+Fable store's live account whatever runs.
 
 A block the 5-hour and weekly bars do not explain emits `blocked-with-room`
 and logs it as a warning, under a name no `poll`/`no-switch`/`all-exhausted`
@@ -7376,7 +7387,9 @@ did not set.
 
 The helpers other features use moved out first: `launch.AuthOverrideEnvVars`,
 `launch.ScrubAuthOverrides`, `launch.CLICommand` and `launch.CheckCmdShimArgs`
-(add --login, codex login, the updater, start) and `ccfile.KeychainServiceName`,
+(add --login, codex login, the updater, start; `ScrubAuthOverrides` still
+drops `CLAUDE_SECURESTORAGE_CONFIG_DIR`, and `cli.run` drops the Fable store's
+value of it for tycswap's own process, A100) and `ccfile.KeychainServiceName`,
 `ccfile.CredentialsFileName`, `ccfile.ReadProfileIdentity` (store, purge,
 migrate). What stays until no profile is left: `internal/sessprofile` reads
 the profiles under `<store>/sessions/`, `groups/claims.json` keeps their
@@ -7578,6 +7591,8 @@ a switch by hand leaves `autoswitch.enabled` as it is, and for
 `autoswitch.cooldownSeconds` after it the engine makes no switch, whatever the
 trigger. After that it decides as always.
 
+- The hold is per store: a switch of the Fable store by hand stamps
+  `fable/autoswitch_state.json` and holds only the Fable engine (A100).
 - One place stamps the hold: `core.Switcher`'s `SwitchTo`, `SwitchToForce`
   and `Switch`, which every hand switch goes through. It runs the switch under
   the state lock (`.autoswitch_state.lock`) the engine's own switch and
@@ -7867,3 +7882,675 @@ scheduled tick's dry-run target are one account, that the live account first
 stays, and that *Next available* never lands on an account the page marks at
 limit; five of the fourteen failed on A98's code. The switching unit table
 runs under both orders.
+
+## A100. The Fable store: a second login per account beside the default login
+
+**Why.** One shared login serves every Claude Code session on a box. While a
+Fable session is alive and some account has Fable room, the login sits on that
+account and the Opus sessions burn its 5-hour window there too; while none is
+alive, Opus fills the Fable-spent accounts. The operator wants both at once:
+"opus session with opus limit auto swich to fill the accounts with no fable
+left", Fable sessions on the accounts that still have Fable. His design
+request (2026-11-16): "we can have 2 logins into the same account so i think
+that is the best idea. no need for handover and stuff". His order after the
+pilot (2026-11-18): build it. Each account gets a second, independent sign-in;
+sessions whose model is Fable run with Claude Code's
+`CLAUDE_SECURESTORAGE_CONFIG_DIR` pointing at a second credential store;
+tycswap rotates the two stores independently, and no login ever moves between
+them.
+
+**Pilot results (2026-11-17).** One box, Claude Code 2.1.326, tycswap 0.13.1;
+times CET. Pilot account: slot 4, a personal Ultra account at 99 % of its week
+with its reset three days out. Its second sign-in went into a scratch store
+outside tycswap's store; the probes were `claude -p` runs with
+`CLAUDE_SECURESTORAGE_CONFIG_DIR` set to it.
+
+Not tested:
+
+- P4 and P8: they need a second account's sign-in in the scratch store.
+- P6: no login of a model-restricting organization was enabled.
+- P9: it needs the launcher.
+- P5 as planned (an hour with both classes): one probe only.
+- P1's alternation: the default login was never refreshed on demand, because
+  that means writing the live store. It was watched through tycswap instead.
+  Its own token refresh after the second sign-in was due about 02:50 on
+  2026-11-18 and is not in this record.
+- More than two sign-ins of one account on one box, and how many sign-ins an
+  account may hold at once.
+- Interactive sessions: P2, P3 and P7 ran as print-mode probes.
+
+| # | Result | Measured |
+| --- | --- | --- |
+| P1 | pass so far | Second sign-in at 20:13. The scratch login was refreshed 20 times, 20 s apart, at the real token endpoint: 20 times HTTP 200, each with a new refresh token and a new access token, and the profile and usage endpoints answered 200 after each. The default login's usage fetch succeeded 18 minutes after the sign-in and 3 minutes after the last refresh; tycswap logged nothing about the account. |
+| P2 | pass | `strace` of one probe: 57 opens of the scratch store's credential file, all reads; no open of `~/.claude/.credentials.json`; no credential write. Transcript under `~/.claude/projects`, record under `~/.claude/sessions`. Also written under the shared config: `.claude.json`, plugin `.in_use` marks and the scratch login's synced skills (`~/.claude/skills/synced/`); a default-store session was offered that new skill a moment later. |
+| P3 | pass | A default-store session listed the scratch-store session, and its message came back quoted. The scratch-store session listed twelve default-store sessions, and its message arrived. |
+| P5 | one observation | `oauthAccount` named the default login's account before and after the probe; tycswap logged no live-login warning. |
+| P7 | pass on this box | The scratch store held no `mcpOAuth` entry. `claude mcp list` on it: two stdio servers, one HTTP server and one claude.ai connector connected; a fifth server's line was cut off and is not judged. claude.ai connectors follow the store's account. |
+
+Seen on the way: an access token lives 8 hours, and a new login's refresh
+token carries an expiry 28 days out. Whether a refresh moves that expiry was
+not read. Two sign-ins before the pilot: one account was signed in on one box
+on 2026-11-13 22:52 and on a second box at 23:44; on 2026-11-17 both logins
+answered the usage endpoint, each box having refreshed on its own since
+(deduced from the 8-hour token life), and the later sign-in did not end the
+earlier one. One `invalid_grant` on the second box on 2026-11-06 is
+unexplained.
+
+What the single login left unused, from the scheduled ticks on the pilot box,
+2026-11-16 04:20 (v0.13.0) to 2026-11-17 19:52 CET, 899 ticks over 38 hours:
+
+- By the ticks' own readings no enabled account was below its Fable, 5h and
+  7d bars for 22.0 hours. The engine reported `all-exhausted` for 21.5 of
+  them; for 18.3 another enabled account was below its 5h and 7d bars. Nine
+  switches were made by hand from the dashboard. Moving there is what the
+  busy-model rule exists to do, and it needs no second store.
+- The rule never acted: every tick counted the Fable window and none named it
+  unservable. By the rule's code that happens in those hours only while
+  `autoswitch.model` holds an explicit value, which skips the rule; the value
+  read `all` at 19:52. Who set it and when is not established. It is unset
+  since 2026-11-17 20:11 (A97 removed the setting).
+- The second store adds only the other 16 hours, when some account still
+  serves Fable and the Opus sessions burn that account too. On the live
+  account the weekly window moved 12.9 points an hour while it had Fable room
+  and 1.3 while its Fable was spent (18 hours each; uncontrolled: nights and
+  parked sessions fall on both sides). The total budget does not grow.
+
+**Names.** The *default login* is the shared login in
+`~/.claude/.credentials.json` that tycswap rotated before. A *Fable login* is
+an account's second, independent sign-in, its own OAuth grant and refresh
+token family; in code its lineage is `fable`, the other `default`. The *Fable
+store* is the second credential store, which holds the one Fable login live
+there; Fable sessions run on it.
+
+**On disk.** `<root>` is the backup root.
+
+| Path | Mode | Content |
+| --- | --- | --- |
+| `<root>/credentials-fable/` | 0700 | the accounts' Fable logins, `.creds-<n>-<email>.enc` (+ `.prev`), the format of `credentials/` |
+| `<root>/fable/` | 0700 | the Fable store's scope root |
+| `<root>/fable/autoswitch_state.json` (+ `.autoswitch_state.lock`) | 0600 | the Fable store's engine state, the root state file's schema (A66, A94) |
+| `<root>/fable/live_lineage.json` | 0600 | the Fable store's chain record, A68's schema |
+| `<root>/fable/store/` | 0700 | the Fable store: the value sessions get in `CLAUDE_SECURESTORAGE_CONFIG_DIR` (`paths.FableStoreDir`) |
+| `<root>/fable/store/.credentials.json` | 0600 | the live Fable login plus the store's own seat-wide keys (`mcpOAuth`, `mcpOAuthClientConfig`) |
+| `<root>/fable/store/.storage-write.lock/`, `<root>/fable/store.lock/` | dir | Claude Code's storage-write and credential-refresh locks of the Fable store |
+
+Everything else is shared and single: the roster, `configs/`, the usage cache,
+`settings.json`, `default_models.json`, the log. Nothing that acts on the
+Fable store writes `.claude.json`, the roster, Claude Code's settings, the
+default credential, `credentials/` or `configs/`.
+
+In code: `credstore.Config` gains `ActivePath` (the active credential file;
+empty is Claude Code's default) and `FileOnly` (no Keychain, no managed API
+key, no global-config read or write). `Store.ForFable` returns the Fable
+scope: a clone whose credential store is file-only with `credentials-fable/`
+as its backups and the Fable store's file as its active credential, whose
+`StatePath`, chain record and `ProfileDir` are the Fable ones, and which
+shares the roster, the usage cache and the store lock. It touches no disk;
+`SetupFableDirectories` creates the three directories and only writers call
+it. A Fable login write invalidates no session profile. On the scope,
+`GetCurrentAccount` names no account (it would read the shared
+`.claude.json`), `HasLiveLogin` is whether the store holds a login, and
+`ResolveLiveSlot` is the Fable resolver.
+
+**On and off.** The store *has Fable logins* when a roster account has a
+readable Fable login. It is *on* when it has Fable logins and its
+`.credentials.json` holds a login (not seat-wide keys only, A29); *off* when
+it has Fable logins and holds none. It is *usable* when on and no
+`invalid_grant` quarantine entry in `fable/autoswitch_state.json` carries the
+live login's refresh-token fingerprint. `Store.FableStore()` returns
+`{On, Live, Usable, Reason}`, its live slot from backup or chain only, so a
+caller without network can ask it. No setting turns the store off: `tycswap
+switch --store fable --empty` empties it, and `tycswap switch --store fable
+<id>` turns it on again (the operator kept this on 2026-11-18).
+
+**The Fable resolver.** `Store.ResolveFableLiveSlot` never reads
+`.claude.json`: every session writes its own account there (P2, P5). It
+tries, in order, A68's sources on the Fable lineage: `backup`, exactly one
+OAuth slot's Fable login holding the live credential's lineage (fingerprint
+or the same account block); `chain`, `fable/live_lineage.json` naming this
+fingerprint while the roster still maps its identity to its slot; `profile`,
+the profile endpoint's account, written to the Fable chain record unless the
+store is a `WithoutLineageWrites` view and asked once per fingerprint per
+process; else no slot. `Store.HarvestFableLive` is A68's harvest on the
+Fable lineage: when chain or profile named the live slot and its Fable login
+has another fingerprint, the live login's account part is written into it,
+under the store lock and the Fable store's credential-refresh and
+storage-write locks, re-checked there. The live credential is never written.
+`Store.RefreshFableBackupGuarded` is `RefreshBackupGuarded` on a Fable login:
+under the store lock, declined while that login is the Fable store's live
+one (Claude Code refreshes it), its lineage re-checked, and only that login's
+file written; `invalid_grant` comes back in the outcome.
+
+The default resolver is unchanged except one line: when `.claude.json` names
+the Fable store's live account (by backup or chain) and the default
+credential is another slot's, A68's `live config names slot …` line is
+logged at DEBUG, not WARNING. A Fable session writing its account into the
+shared config is expected, and each timer tick is a new process.
+
+**The switch.** `switching.SwitchFable(fable, id, opts)`:
+
+1. Before the locks, the target must be a roster OAuth account with a Fable
+   login whose plan offers Fable. Refusals, nothing written: an unknown id,
+   `Account-N is an API-key account; the Fable store holds OAuth logins
+   only`, `Account-N has no Fable login: tycswap add --login --lineage fable
+   --slot N`, `Account-N's plan offers no Fable`. When the target is already
+   the live Fable slot (profile allowed), the result is `already-active`.
+2. The locks, in order: the tycswap store lock `<root>/.lock`, then Claude
+   Code's credential-refresh lock (`AcquireProfileCredentials`) and
+   storage-write lock (`AcquireProfileStorageWrite`) of the Fable store
+   (`Store.WithFableLocks`). No config lock; the default store's Claude Code
+   locks are not taken.
+3. Under them the live login is read again and, when it changed, resolved by
+   backup and chain only. It goes into its account's Fable login (`.prev`
+   kept), or, unattributed, into the unclaimed stash in `credentials-fable/`
+   with the context `{"lineage":"fable"}`.
+4. The target's Fable login is installed with the store's own seat-wide keys
+   spliced in, by atomic rename, 0600: a running session reads it on its next
+   request. The Fable chain record names it.
+5. The result is `{"schemaVersion", "switched", "from", "to", "reason",
+   "store": "fable"}`, with `from` and `to` as account refs (`from` null for
+   an empty store or an unknown login).
+
+`switching.EmptyFable` takes the same locks, backs the live login up as in
+step 3, and leaves the store's seat-wide keys only, or no file when it has
+none; its reason is `emptied`.
+
+`core.Switcher.SwitchFable` is the switch by hand: under
+`fable/.autoswitch_state.lock`, and a switch stamps the hold (`lastSwitchAt`,
+`lastSwitchTo`, `lastSwitchBy: "hand"`) in `fable/autoswitch_state.json`
+only: A94's hold is per store, and `byHand`'s roster mark cannot see a Fable
+switch, since the roster does not change. It logs `Switched the Fable store
+to account N by hand`. `EngineSwitchFable` stamps nothing (the engine does,
+A102). `EmptyFable` runs under the same state lock while the store holds a
+login. On the command line: `tycswap switch --store fable <id>`, `tycswap
+switch --store fable --empty`, and `--store default`, the switch as without
+`--store`. `--store fable` with `--strategy`, `--force`, no id, or an id and
+`--empty` exits 2 with one line, `--store fable takes an account or
+--empty`; another store name exits 2 with `unknown store: X`.
+
+**Per-lineage quarantine.** A dead Fable login is quarantined in
+`fable/autoswitch_state.json` only, in the root file's `quarantine` shape
+(reason `invalid_grant`, `refreshTokenFingerprint`); the default store never
+reads that file, and a dead default login stays in the root file. The engine
+that writes it is A102's.
+
+**The variable in tycswap's own processes.** Every child of a Fable-store
+session inherits `CLAUDE_SECURESTORAGE_CONFIG_DIR`: its status line, its
+quota hook, any `tycswap` an agent runs. `cclock` honours the variable, the
+default credential path does not, so such a process would switch the default
+login under the Fable store's Claude Code locks. At the top of `cli.run`,
+after `start` (A103's), a value equal to `paths.FableStoreDir` (cleaned;
+case-insensitive on Windows) is unset for the process and
+`cli.fableSessionProcess` set. Any other value is the user's own and left as
+it is. `launch.ScrubAuthOverrides` keeps the variable in its list (A92).
+
+**macOS.** `Store.ForFable` returns `ErrFableUnsupported`: "The Fable store
+needs a file-based credential store; macOS keeps Claude Code's login in the
+Keychain". Claude Code's Keychain naming under the variable is unknown.
+Windows uses the same file layout; it is built, not tested on a live box.
+
+**No Fable login, no change.** A box where no account has a Fable login
+behaves as v0.15.1: no command creates `fable/` or `credentials-fable/`, no
+document gains a field, and the variable's removal (above) is the only
+difference in `start`'s environment. `TestNoFableLoginNoChange` runs `list
+--json`, `status --json`, `auto --once --json --dry-run`, `switch 2 --json`
+and `switch 2` on the fixture store and checks that neither directory
+appears and that each JSON document has v0.15.1's key paths; their
+normalized output was byte-identical to origin/main's when it was written.
+
+**Helpers for the other lanes.** `reporting.ModelFamily` (was
+`modelFamily`), the `store` field of a `default_models.json` record
+(`"fable"` for a Fable-store session, omitted for the default store's), and
+`reporting.RecordedSession(root, id)`, a session's recorded family and store.
+
+## A101. A Fable login is signed in once per account and box
+
+**Why.** A Fable login is an account's second, independent sign-in (A100):
+its own OAuth grant, never a copy of the default login, whose refresh token
+would then rotate in two places. The operator signs each account in a second
+time in the browser, once per account and box (design, "Limits"). `add
+--login` already drives that browser sign-in in a scratch profile (A56, A82);
+what it leaves is stored as the account's Fable login instead of its default
+login. Every command that renames, removes or moves an account's files takes
+the Fable login with them.
+
+**The sign-in.** `tycswap add --login --lineage fable [--slot N] [--switch]
+[-- LOGIN-ARGS...]`; `--lineage=VALUE` too. `--lineage default` is `add
+--login` as before; another value exits 2 (`unknown lineage: X (default or
+fable)`); `--lineage` without `--login` exits 1 (`--lineage goes with
+--login`), and with `--alias` exits 1: an alias names a new account. On macOS
+it exits 1 with `ErrFableUnsupported`'s text. Every one of these is refused
+before Claude starts. With `--slot N` it first prints `Sign in as <email of N>
+in the browser.`; an `N` that names no account is refused there. The scratch
+profile, its cleanup and the store-as-soon-as-complete rule (A82) are those of
+`add --login`.
+
+**The identity rules.** `lifecycle.AddFableLogin(s, src, slot)`, through
+`core.Switcher.AddFableLogin`, reads the scratch login's identity and
+credential. It refuses, storing nothing, exit 1, one line each:
+
+- an API key or an incomplete login: the `add --login` wording;
+- an identity that names no OAuth roster account: `Account <email> is not
+  stored yet: add it first with tycswap add --login.`;
+- `--slot N` naming another account: `This sign-in is <email>, not Account-N
+  (<email N>); nothing stored.` (without the parenthesis when slot N is empty);
+- a plan without Fable (`FableCapable` on the default login): `Account-N's
+  plan does not offer Fable.`;
+- the refresh-token fingerprint of the account's default login or of the live
+  default credential: `This is Account-N's default login, not a second
+  sign-in; sign in again in the browser.`
+
+On success it calls `SetupFableDirectories` and writes the account-only
+credential to the account's Fable login, keeping `.prev`, under the store lock,
+with the roster re-checked there. Nothing else is written: `sequence.json`,
+`configs/`, `credentials/`, `~/.claude/.credentials.json` and `~/.claude.json`
+stay byte-identical. It prints `Stored the Fable login for Account-N
+(<email>).`
+
+**The first login turns the store on.** When the Fable store holds no login,
+or with `--switch`, the command then calls `core.SwitchFable(N)`, a switch by
+hand that holds the Fable engine for the cooldown (A94 per store), and prints
+`The Fable store now uses Account-N.` A second account's Fable login is only
+stored. When the signed-in account is the Fable store's live one, the new login
+also replaces the store's, under the Fable store's locks (A100) with the live
+login re-read there, keeping the store's MCP logins, and the chain record names
+it. Otherwise the store keeps the older grant, and the next tick's harvest
+(A100) would write that older grant back over the new file. This is how a dead
+live Fable login (its `invalid_grant` quarantine names the live fingerprint) is
+repaired: the store is usable again at once.
+
+**Lifecycle.**
+
+- `remove` deletes the account's Fable login and its `.prev`. When the account
+  is the Fable store's live one (resolved before the roster lock), the store is
+  emptied first by `core.EmptyFable` (under the Fable state lock); if that
+  fails, nothing is removed and the error is named. Under the roster lock a
+  store that took the account again meanwhile refuses.
+- `move` and `swap` carry the Fable login with its account in
+  `credentials-fable/`: written under the new key, staged in
+  `credentials-fable/.swap-staging-creds-N.json` for a same-email swap (before
+  anything changes), rolled back with the default backup, and the old key
+  removed after the commit. When a moved account is the Fable store's live one,
+  `fable/live_lineage.json` is rewritten to its new number under the store lock.
+- The rule under both: a Fable login belongs to the identity it was signed in
+  as. `add` and `add-token` with `--slot N` follow it too (added after lane
+  B's report): an account the add moves from its old slot to N takes its Fable
+  login, and the chain record when the store is on it; an identity the add
+  displaces from N loses its Fable login, the store emptied first when it is
+  on N, as for `remove`; a new identity in N takes none, so a login left under
+  N's key goes. `import` replaces no slot's identity (`--force` overwrites the
+  slot of the same identity, whose Fable login stays); a new account it puts
+  in a slot the roster does not hold deletes a Fable login left under that
+  key, which an older tycswap's `remove` or `move` can leave.
+- `purge` removes `credentials-fable/` and `fable/` with the rest of the store.
+  Its session check covered tycswap's session profiles and the retired groups
+  only, not `~/.claude/sessions`, where every session, a Fable-store one
+  included, registers, and a session's record does not name its store. While
+  the Fable store holds a login, purge therefore also refuses while any live
+  Claude session is registered there.
+- `export` reads the default logins only and never carries a Fable login;
+  `import` never writes one and leaves `credentials-fable/` as it is.
+- Without a Fable login none of these, nor `add` or `add --login`, creates
+  `fable/` or `credentials-fable/`, and their output is v0.15.1's
+  (`TestNoFableLoginLifecycleNoChange`, compared with origin/main 00d9582).
+
+**Deciding from the resolved live slot.** A Fable session writes its account
+into the shared `~/.claude.json` (pilot P5). `add --login` decided its
+renewal of the live login (A65) from that config identity, so a default
+sign-in of the Fable store's account force-switched the default login onto it.
+It now decides from `ResolveLiveSlot(data).Slot`, the default credential's own
+slot. A plain `add` of the live login stores the live credential under the
+config identity; when that identity is the Fable store's live account and the
+default credential resolves to another account, it now refuses (`~/.claude.json
+names Account-N, the Fable store's account, but the default login is
+Account-M's; nothing stored.`). Of the other `GetCurrentAccount` callers,
+`switching/perform.go`, `switch.go` and `provenance.go` use it by A68's
+design, the resolver reads it as its first input, the group profile ones read a
+group's own config, and the status, dashboard callout, first-run prompt and
+`add-token` hint only display it. The transfer adapter's `CurrentAccount`
+answers the resolved slot's account too (none while Fable logins exist and
+only the config names the slot), so `export` reads the live credential only
+for the account it belongs to, and with that account's stored config when
+`~/.claude.json` names another; before, exporting the Fable store's account
+wrote the default login as its own. `authmode.go` gates the API-key
+confirmation on the config's slot and is left (a Fable session never writes an
+API-key account there).
+
+## A102. One tick per store
+
+**Why.** A100 gives each account a second login and the Fable store to run
+it. The stores must rotate apart: "opus session with opus limit auto swich
+to fill the accounts with no fable left" (the operator, 2026-11-16), while
+the Fable store sits on an account that still has Fable. The timer runs
+`tycswap auto --once --json` every 2 minutes, the quota hook the same, and
+the status line `tycswap auto --observe --json`.
+
+**Two ticks.** `auto --once` (the timer, the quota hook, `--observe`) runs
+the default tick first, then, while auto-switch is on and the Fable store is
+on (A100), the Fable tick. A dry run runs both dry, over
+`WithoutLineageWrites` views. A real Fable tick first harvests the store's
+rotated login (`HarvestFableLive`), and keeps one idle Fable login alive
+after (below). The exit code is the more significant of the two outcomes: 1
+if either errored, else 0 if either switched, else 3 if either was blocked,
+else 2. With no Fable login, or with the store off, only the default tick
+runs and the run is v0.15.1's byte for byte (`TestFableTickNoChangeWithoutAStore`;
+compared with origin/main when written).
+
+**The adapter.** The Fable engine is `autoswitch.NewEngine` over
+`cli.fableAdapter`, which satisfies the frozen `autoswitch.Switcher` (A13):
+the live account is `ResolveFableLiveSlot`, a live login whether the store
+holds one, the logins and their refresh (`RefreshFableBackupGuarded`) and
+writes the Fable logins, the switch `EngineSwitchFable`, the roster answers
+(kind, identity, email, uuid backfill) the default store's, and the usage the
+default store's collector, so one fetch path with the default login serves
+both stores (A100, 1.7). It names no session owner and has no rotation
+hooks: no profile or claim owns a Fable login. Its poll inputs are
+registered under the Fable scope's key. Its `RecordedSwitch` is the Fable
+chain record, which every Fable switch writes, so the engine tells a switch
+from a login made elsewhere and records `lastSeenLive`/`lastSeenAt` in the
+Fable state file. Its state file is `fable/autoswitch_state.json`.
+
+**The pool** (`reporting.FablePool`) is every account that is enabled and
+rotation-eligible by the default rules, able to run Fable
+(`Store.FableCapable`), holding a Fable login, and not quarantined in the
+Fable state file. The default store's quarantine does not exclude.
+
+**The Fable settings** are the merged settings with the model set to every
+Fable window name an account's cached usage reports; they are counted
+always, with no session following, no reservation and no `unservable`.
+
+**The default store beside it.** While the Fable store is usable,
+`reporting.DefaultSessionPolicyResult` counts the families of the sessions
+whose record names no store; a session without a record still counts as one
+of unknown family. It always reserves the Fable pool's accounts with Fable
+room (A91's reading at `autoswitch.modelThreshold`) and the Fable store's
+live account, whatever its room and whatever runs: they rank last (A71) and
+an active one hands over under the cooldown (A77). An account with Fable
+room but no Fable login is the default store's. Off, unusable or without
+Fable logins, the policy is A91's. The dashboard's counting and ranking,
+`start`'s ranking and `switch --strategy` read the same result.
+
+**The status-line record.** `--observe` records `"store":"fable"` for a
+session whose process runs under the Fable store (`cli.fableSessionProcess`,
+A100); a default-store record has no store field, and a changed store is
+news like a changed family. Near a bar in a Fable-store session it marks the
+Fable store's live account due, not the default login's.
+
+**Poll plans.** `AccountInfo.FableLive` marks the Fable store's live account
+(resolved without a chain-record write), and the planner plans it as an
+active account, on every scope's inputs, the Fable scope's Fable windows
+included. An inactive account's plan is unchanged.
+
+**Hold, cooldown and quarantine per store.** Each state file keeps its own
+switch stamp: a switch of the Fable store by hand holds only the Fable tick
+for `autoswitch.cooldownSeconds` (`switched by hand to account N; held for
+another Ss`), a default one only the default tick. The Fable engine
+freshens a target through `RefreshFableBackupGuarded`; `invalid_grant`
+quarantines the account in the Fable state file only, through the engine's
+own path (`account-quarantined`), and a new Fable login with another
+fingerprint releases it (`credentials-replaced`) on the next real Fable
+tick.
+
+**Keep-alive.** A refresh token not used for 28 days may expire (measured in
+the pilot). A real Fable tick refreshes at most one idle Fable login: not
+live in the store, not quarantined, last refreshed more than 14 days ago,
+the oldest such. The last refresh is its `expiresAt` less 8 hours, the
+measured access-token life; a credential carries only its expiry. The
+refresh is `RefreshFableBackupGuarded`, logged at INFO as `Kept the Fable
+login of account N alive`; `invalid_grant` quarantines as above, through
+`autoswitch.Quarantine`.
+
+**The live Fable login's own health** (added after lane C's report). The
+Fable tick's usage is the default login's, so a dead live Fable login showed
+nowhere and `FableStore().Usable` stayed true. A real Fable tick, before the
+engine, now checks it: once its access token has expired (Claude Code
+refreshes a login in use before that), `Store.RefreshFableLiveGuarded`
+refreshes it in the store under the Fable store's locks, so Claude Code's own
+refresh is kept out and a rejected grant is the login's verdict, not a lost
+race; the result goes into the store and the account's Fable login file. An
+`invalid_grant` or missing refresh token quarantines it per (account, fable)
+as above, with the live credential's fingerprint. A live login quarantined so,
+now or by an earlier keep-alive, is left at once: the store moves to the
+account `autoswitch.StartTargets` ranks first in the Fable pool, else the
+pool's first (`switch`, trigger `failover`, stamped as the engine's own by
+`autoswitch.EngineSwitch`), or, with an empty pool, is emptied (`no-switch`,
+`no-viable-target`, the tick blocked), and `start` then sends Fable sessions
+to the default login with its notice. A switch of the Fable store by hand
+within the cooldown holds the move or the emptying as it holds a tick (A94,
+`no-switch`, `cooldown`); the quarantine alone already makes the store
+unusable, so `start` sends Fable sessions to the default login meanwhile.
+The default login is never read or written. This replaces the rule that the
+live Fable login is Claude Code's alone to refresh (plan 1.7) for an expired
+one.
+
+**Events and log lines.** Every Fable tick event carries `"store":"fable"`
+(`cli.fableEvent`, modelled on `groupEvent`); the default tick's are
+unchanged. Human lines start with `Fable store: `. The engine logs its
+switch as `Switched the Fable store to account N by engine:<trigger>`
+through the switcher's optional `LogSwitch`, and its other lines through a
+logger prefixed `Fable store: `.
+
+**Limits.** The `tycswap auto` loop and an engine hosted by `web` or `app`
+run no Fable tick (the operator's boxes run the timer). Usage is one row per
+account fetched with the default login, so a dead default login leaves the
+account's usage unknown and blocks it for both stores until it is signed in
+again.
+
+## A103. tycswap start picks the store by the session's model
+
+**Why.** flakelab routes every `claude` through `tycswap start -- <real
+claude> "$@"`; on POSIX `start` execs, so the Claude process keeps its pid and
+the environment `start` composes. A100's design puts sessions whose model is
+Fable on the Fable store through `CLAUDE_SECURESTORAGE_CONFIG_DIR` and keeps
+every other session on the default login. Before this entry `start` counted
+that variable as a user override (A90): it skipped selection and handed the
+variable on, so every `claude` started from a Fable session's shell (an
+agent's, a restore's) stayed on the Fable store whatever its model.
+
+**The session's model** (`cli.sessionFamily`). The first source that names a
+model answers; its family is `reporting.ModelFamily` (aliases and full ids,
+a `[1m]` suffix included), so an unknown model answers with no family:
+
+1. `--model X` or `--model=X` before a `--`; given twice, the last wins.
+2. `ANTHROPIC_MODEL` (on Windows the name matches in any case).
+3. `--resume ID`, `-r ID` or `--resume=ID`, ID a UUID: the session's record
+   in `default_models.json` (`reporting.RecordedSession`), else the model of
+   the last assistant line of `~/.claude/projects/*/ID.jsonl`, reading at
+   most the last 1 MiB. Claude Code's own `<synthetic>` lines and subagent
+   (`isSidechain`) lines are skipped. A path that resolves out of
+   `projects/` through a symlink is not read; only regular files are.
+4. The `model` key of `<cwd>/.claude/settings.local.json`, then
+   `<cwd>/.claude/settings.json`, then `~/.claude/settings.json`; the first
+   file that sets it wins, and a file that cannot be read or parsed, or sets
+   no string, is skipped.
+5. Otherwise there is no family.
+
+**Overrides keep A90.** With `CLAUDE_CONFIG_DIR` set, another
+`launch.AuthOverrideEnvVars` variable set, `--bare` in the child's
+arguments, or `CLAUDE_SECURESTORAGE_CONFIG_DIR` set to anything but the
+Fable store directory (empty included), `start` reads nothing and changes
+nothing. A value equal to `paths.FableStoreDir` (cleaned; on Windows
+case-insensitively, the name too) is tycswap's own, not an override.
+
+**The store** (`cli.startEnvironment`):
+
+| Family | Fable store | Child environment | Default start-login selection | Notice |
+| --- | --- | --- | --- | --- |
+| `fable` | on and usable | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<FableStoreDir>`, in place of an inherited entry or appended | skipped | none |
+| `fable` | off or unusable, with Fable logins | the variable removed if it named the store | as before | `tycswap start: the Fable store has no usable login (<reason>); starting on the default login.` |
+| other or none, or no Fable logins | – | the variable removed if it named the store | as before | none |
+
+Every other variable passes unchanged and in order. Without a Fable login
+the session's model is not read and the child environment is the input
+environment, less a variable naming the Fable store (A100's one difference).
+`--account N` with a Fable session on the store still selects the default
+login and prints `tycswap start: --account selects the default login; this
+Fable session starts on the Fable store (Account-M).` (without the account
+while the store's live slot is unknown); the Fable store does not move.
+
+**No network, nothing created.** The state is `Store.FableStore()`: the live
+slot from backup or chain only, and an unknown slot counts as usable. A box
+without `credentials-fable/`, or a store `start` must not read (not a
+directory, not private, run as root), opens nothing. No directory is created.
+
+**Platforms.** macOS never sets the variable (`ForFable` refuses), so a
+Fable session there starts as before, with no notice. Windows spawns with the
+composed environment and matches the variable's name and value
+case-insensitively (`cli.startWindows` is the tests' seam).
+
+**Limits.** `--continue` and the `--resume` picker give no family (O10): such
+a session starts by its settings' model. A session that changes model with
+`/model` stays on the store it started on. Fable subagents of an Opus session
+run on the default store. Other `claude` options that set a model (a
+`--settings` file, managed settings) are not read.
+
+**Tests.** `TestSessionFamilySources` drives each source, each precedence
+pair, a last assistant line beyond 1 MiB and one just inside it, a malformed
+transcript, a non-UUID id, a bare `--resume`, `--continue` and `-c`;
+`TestSessionFamilyTranscriptStaysInProjects` refuses file and directory
+symlinks out of `projects/`. `TestStartPicksTheStoreBySessionModel` runs
+`start` for every table row, inherited values kept or removed, an unknown
+live slot and a profile endpoint that fails the test;
+`TestStartOverridesKeepAFableSessionUnchanged` every override;
+`TestStartAccountWithAFableSession` the `--account` notice and an unchanged
+Fable store; `TestStartOnWindowsMatchesTheVariableCaseInsensitively` and
+`TestStartOnMacOSLeavesAFableSessionAsBefore` the platforms; and
+`TestStartWithoutFableLoginsPassesTheEnvironmentUnchanged` the byte-identical
+environment of a box without a Fable login.
+
+## A104. Two live logins on every surface
+
+**Why.** A100 gives each account a second login and the Fable store to run
+it; the design says the dashboard and the tray show two live accounts, the
+default login's and the Fable store's. Every surface took its one live
+account from `store.ResolveLiveSlot` on the default store: `list` and
+`status` through `reporting.BuildAccountsInfo`, `/api/state` as
+`activeNumber` and the rows' `isActive`, the tray as `In use`, the TUI as
+`ActiveNumber`. The operator's standing rules for the tray hold: one page,
+every account's windows and reset times visible at once, no settings in the
+tray (A84). On 2026-11-18 he decided the tray gets a Fable switch (open
+point O11: "Add a tray button").
+
+**The rule.** While some account has a Fable login, every surface below adds
+the Fable store beside the default login; without one, nothing changes: no
+field, line, chip, label, button or item (A100's no-change rule). The
+default login's markers (`(active)`, `isActive`, `In use`, *Switch*, *Switch
+now*, the best candidate) stay the default login's.
+
+**One reading.** `reporting.readFableView` reads the Fable store once per
+pass: `Store.FableStore()` for on, off, usable and the reason; the live slot
+by `ResolveFableLiveSlot` on a `WithoutLineageWrites` view (backup, chain,
+then the profile endpoint, never written), as `AccountInfo.FableLive` is
+resolved (A102); and per account its Fable login, `sign in again` when the
+Fable state file holds an `invalid_grant` quarantine entry for it. The
+store's state is `on`, `off` (no login held) or `unusable` (the live login's
+grant quarantined).
+
+**`list`.** `list --json` adds `fableAccountNumber` (int, or null while the
+store is off or its slot unknown) and on each row with a Fable login
+`fableLogin: {"live", "status"}` (`ok` or `sign in again`). The human list
+adds, after every existing marker, `(Fable store)` on the store's account,
+`(Fable login)` on another account with a usable login, and `(Fable login:
+sign in again)` on a quarantined one.
+
+**`status`.** `status --json` adds a top-level `fable`, whatever `active`
+is: `state`, `storeDir` (the cleaned `paths.FableStoreDir`, the value
+`start` gives a Fable session), `number` (null while unknown), `source`
+(`backup`, `chain`, `profile`; null while unknown), `reason` while off or
+unusable, and while the slot is known `email`, `organizationName`, `plan`
+(when recorded), `usageStatus` and `usage` in the shapes of `active`. The
+usage is the account's shared row read the way `activeAccountUsage` reads
+the default one: one collector pass over that account's info row, which
+fetches with its default login when due and never with the Fable login
+(A100, 1.7). flakelab's wake-parked reads `.fable.number`, `.fable.storeDir`
+and `.fable.usage.*`. The human output adds one line: `Fable store:
+Account-N (<email>) · Fable 34% · 7d 61%` (the fullest Fable window and the
+weekly window, each when known), `… · Fable login: sign in again`, `Fable
+store: on, its account unknown`, or `Fable store: off`.
+
+**The dashboard's state.** `reporting.Snapshot` carries the same object
+(`AccountsSnapshot.Fable`) and each row's `FableLogin`; `providers.merge`
+passes `Fable` from the Claude snapshot. `web.State` gains `fable` (omitted
+when nil) and each Claude row `fableLogin`, a plain map so the in-process
+tray reads what a remote one decodes. `auto.fable` (`web.FableAutoView`,
+built by the facade in `cli/webfacades.go`) is the Fable store's engine:
+`lastTickAt` and `quarantine` from `fable/autoswitch_state.json`
+(`autoswitch.ReadLastTick`, `ReadQuarantineEntries`), `caption` `Counting
+5h + 7d` plus every Fable window name an account reports, `ranking`
+`autoswitch.RankTargets` over the Fable pool less the live slot with the
+Fable settings, as the Fable tick ranks (A102), and `heldUntil` (epoch
+seconds) while the state file's switch by hand (A94) holds the engine. The
+usage both rankings read is one collector pass. Without a Fable login the
+document is v0.15.1's byte for byte.
+
+**The route.** `POST /api/switch/{key}?store=fable` calls
+`core.Switcher.SwitchFable` for a `claude:` key, a switch by hand that
+stamps the Fable store's hold; `&empty=1`, on any key, calls `EmptyFable`.
+Both run through the authenticated mutation path (cookie and CSRF, or the
+bearer) and log `Switched the Fable store to account N` or `Emptied the
+Fable store` with the dashboard actor, beside the switch's own `by hand`
+line. Another `store` value, a `codex:` key, `force` or `confirmAuthChange`
+answer 400; a server without the seam (`web.Deps.Fable`) answers 503. The
+default login, `sequence.json` and `.claude.json` are not written.
+
+**The page.** While `fable` is present the header adds a second line under
+the active account, `Fable: #N <name>` (a *Fable login: sign in again* chip
+while unusable), or `Fable store off` with the command that turns it on as
+its tooltip. The account table gives the store's row a `Fable` chip,
+another row with a usable Fable login a `Fable login` chip, and a
+quarantined one `Fable login: sign in again` in the warning style with the
+command that signs it in again as its tooltip; a row without a Fable login
+gets no chip, and its menu names `add --login --lineage fable --slot N`
+(open point O6: no second sign-in from the page). Each row with a usable
+Fable login has *Use for Fable*, which posts the route; on the store's own
+row it reads *Fable here* and is disabled. The Auto tab adds one line,
+`Fable store: counting 5h + 7d + Fable · next #M`.
+
+**The tray (O11).** The Windows panel's Fable store row carries a second
+outlined label `Fable` after the plan label, and its screen-reader text
+ends in `, Fable store`. Every row the Fable store can take (enabled, its
+Fable login usable, a plan that runs Fable, not in the Fable quarantine, not
+the store's own) has a second button, `Use for Fable`, beside *Switch*; it
+switches the Fable store through the dashboard (the remote tray posts the
+route, the in-process app calls `SwitchFable`), and a click while one is in
+flight is dropped, as for the Auto-switch button (A94). The button sits
+left of *Switch*, which keeps the column's right edge; Tab reaches it just
+before its row's *Switch*; its window text is `Use <row name> for Fable`;
+the column widens by it only while some row has one. The note reads
+`Switched the Fable store to #N.` and a notification says so; a failure
+reads `Fable switch failed: <error>`. The action cell's *Switch* and `In
+use` stay the default login's. The Linux and macOS menus end the Fable store
+row's second line in ` · Fable` and add, after the account rows, one `Use
+for Fable: #N <name>` item per such account. The icon's tooltip reads `Default #N ·
+Fable #M` (`Fable off`, `Fable account unknown`) in place of the default
+account's name and windows, which the panel shows. A remote tray decodes the
+new fields; an older dashboard sends none and the tray shows nothing new.
+
+**Limits.** The TUI shows the default store only: its frozen facade (A13)
+has no Fable store. The page shows neither the Fable store's hold nor its
+quarantine beyond the chips. The tray tooltip names the two accounts, not
+their windows.
+
+**Tests.** `TestListNamesTheFableStoreAndItsLogins`,
+`TestListWithTheFableStoreOff`, `TestListWithoutFableLogins`,
+`TestStatusFableObject` (each state, the wake-parked paths) and
+`TestSnapshotCarriesTheFableStore` in `reporting`;
+`TestMergePassesTheFableStoreFromClaude`; `TestStateCarriesTheFableStore`,
+`TestStateRowFableLoginIsAMap`, `TestStateWithoutFable`,
+`TestFableSwitchRoute`, `TestFableSwitchRouteRefusals`, the route in the
+auth tables (401, 403) and `TestAppJSFable` (`testdata/fable.cjs`: every
+page element with a Fable store, none without, the button's request) in
+`web`; `TestDashboardStateWithoutFableLogins` (the state document against
+`testdata/nofable-state.json`, recorded from the tree before these
+surfaces), `TestDashboardSwitchesTheFableStoreOnly`,
+`TestDashboardAutoFable` and `TestDashboardPageWithTheFableStore` over a real
+switcher in `cli`. The tray: `TestPanelFableLabelAndButton` (the label, the
+button and the A84 fit, wide and narrow) and `TestPanelFableAccessibleTexts`
+in `tray`, `TestNativePanelUseForFable` on Windows; `TestTrayFablePanelRows`,
+`TestTrayFableTooltip`, `TestTrayFableMenu`, `TestTrayFableClick`,
+`TestTrayFableClicksDropWhileOneIsInFlight`,
+`TestTrayWithoutFableLoginsNothingChanges`,
+`TestAppTraySwitchesTheFableStore` (the in-process switch over a real
+store), `TestRemoteSwitchFablePostsTheStore`, `TestRemoteModeUsesForFable`
+and `TestRemoteTrayDecodesTheFableFields` (with and without the fields) in
+`cli`.

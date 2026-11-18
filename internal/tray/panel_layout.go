@@ -55,6 +55,7 @@ type panelGeometry struct {
 	content                  int
 	scroll                   bool
 	buttons                  []panelRect // one per Panel.Actions entry
+	fable                    int         // Use for Fable's width; 0 while no row has one
 }
 
 func panelShareWidth(m panelMeasure) int { return m.textWidth(panelBody, "100%") }
@@ -65,10 +66,26 @@ func panelLabelWidth(m panelMeasure, metrics panelMetrics, plan string) int {
 	return m.textWidth(panelSmall, plan) + metrics.unit + 2
 }
 
+// panelLabels are a row's outlined labels: its plan, then "Fable" on the
+// Fable store's row.
+func panelLabels(row PanelRow) []string {
+	var labels []string
+	if row.Plan != "" {
+		labels = append(labels, row.Plan)
+	}
+	if row.Fable {
+		labels = append(labels, "Fable")
+	}
+	return labels
+}
+
 func panelSecondLineWidth(m panelMeasure, metrics panelMetrics, row PanelRow) int {
 	width := 0
-	if row.Plan != "" {
-		width = panelLabelWidth(m, metrics, row.Plan)
+	for _, label := range panelLabels(row) {
+		if width > 0 {
+			width += metrics.unit / 2
+		}
+		width += panelLabelWidth(m, metrics, label)
 	}
 	for _, text := range []string{row.Tag, row.Warning} {
 		if text == "" {
@@ -105,7 +122,21 @@ func panelColumnWidths(p Panel, m panelMeasure, metrics panelMetrics) []int {
 		}
 	}
 	widths[limits+1] = max(m.textWidth(panelBody, "Switch"), m.textWidth(panelStrong, "In use")) + 2*metrics.inset
+	if fable := panelFableWidth(p, m, metrics); fable > 0 {
+		widths[limits+1] += fable + metrics.gap
+	}
 	return widths
+}
+
+// panelFableWidth is Use for Fable's button, which sits left of Switch; 0
+// while no row has one.
+func panelFableWidth(p Panel, m panelMeasure, metrics panelMetrics) int {
+	for _, row := range p.Rows {
+		if row.FableSwitch {
+			return m.textWidth(panelBody, "Use for Fable") + 2*metrics.inset
+		}
+	}
+	return 0
 }
 
 func panelRight(action Item) bool { return action.Kind == KindToggle || action.ID == "open" }
@@ -202,7 +233,7 @@ func panelFooterMinWidth(widths []int, right []bool, gap int) int {
 // gains a scroll bar; too wide, the account column gives way.
 func layoutPanel(p Panel, m panelMeasure, maxWidth, maxHeight, scrollbar int) panelGeometry {
 	metrics := panelMetricsOf(m)
-	g := panelGeometry{metrics: metrics, share: panelShareWidth(m)}
+	g := panelGeometry{metrics: metrics, share: panelShareWidth(m), fable: panelFableWidth(p, m, metrics)}
 	unit, pad := metrics.unit, metrics.pad
 	small := m.lineHeight(panelSmall)
 	first := max(m.lineHeight(panelStrong), metrics.line)
@@ -290,10 +321,21 @@ func firstLabel(p Panel) string {
 	return p.Columns[0].Label
 }
 
-// switchRect is row i's Switch button in the list viewport.
+// switchRect is row i's Switch button in the list viewport, at the action
+// column's right end.
 func (g panelGeometry) switchRect(i, scroll int) panelRect {
 	action := g.columns[len(g.columns)-1]
-	return panelRect{action.x, i*g.row + (g.row-g.metrics.control)/2 - scroll, action.width, g.metrics.control}
+	left := 0
+	if g.fable > 0 {
+		left = g.fable + g.metrics.gap
+	}
+	return panelRect{action.x + left, i*g.row + (g.row-g.metrics.control)/2 - scroll, action.width - left, g.metrics.control}
+}
+
+// fableRect is row i's Use for Fable, at the action column's left end.
+func (g panelGeometry) fableRect(i, scroll int) panelRect {
+	r := g.switchRect(i, scroll)
+	return panelRect{g.columns[len(g.columns)-1].x, r.y, g.fable, r.height}
 }
 
 func (g panelGeometry) maxScroll() int { return max(0, g.content-g.list.height) }
@@ -327,8 +369,15 @@ func panelSummary(columns []Column, row PanelRow) string {
 			parts = append(parts, columns[i+1].Label+" "+cell.Share)
 		}
 	}
+	if row.Fable {
+		parts = append(parts, "Fable store")
+	}
 	return strings.Join(parts, ", ")
 }
+
+func panelFableText(row PanelRow) string { return "Use " + row.Name + " for Fable" }
+
+func panelFableEnabled(panel Panel, row PanelRow) bool { return !panel.Offline && row.FableSwitch }
 
 func panelToggleText(action Item) string {
 	if action.Checked {

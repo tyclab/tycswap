@@ -31,6 +31,16 @@ const (
 type defaultSessionModel struct {
 	Family string  `json:"family"`
 	SeenAt float64 `json:"seenAt"`
+	// Store is "fable" for a session on the Fable store, "" for the default
+	// store's (DESIGN A100).
+	Store string `json:"store,omitempty"`
+}
+
+// RecordedSession is the model family and store recorded for a session, ok
+// false when it has no record.
+func RecordedSession(root, sessionID string) (family, store string, ok bool) {
+	rec, ok := readDefaultSessionModels(root)[sessionID]
+	return rec.Family, rec.Store, ok
 }
 
 func readDefaultSessionModels(root string) map[string]defaultSessionModel {
@@ -46,9 +56,9 @@ func readDefaultSessionModels(root string) map[string]defaultSessionModel {
 	return file.Sessions
 }
 
-// modelFamily is the family of a Claude model id or alias ("fable", "opus",
+// ModelFamily is the family of a Claude model id or alias ("fable", "opus",
 // "sonnet", "haiku"), "" for anything else.
-func modelFamily(model string) string {
+func ModelFamily(model string) string {
 	m := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(model)), "[1m]")
 	for _, ch := range m {
 		if !(ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '-') {
@@ -63,12 +73,13 @@ func modelFamily(model string) string {
 	return ""
 }
 
-// RecordDefaultSessionModel remembers the model family a default-login session
-// runs, as its status line reports it (DESIGN A76), and reports whether that
-// was news: a session seen for the first time or one that changed family
-// (A77). An unknown model or a busy lock records nothing.
-func RecordDefaultSessionModel(root, sessionID, model string, now time.Time) (bool, error) {
-	family := modelFamily(model)
+// RecordDefaultSessionModel remembers the model family a session runs, as its
+// status line reports it (DESIGN A76), and its store: "fable" for a session on
+// the Fable store, "" for the default store's (A102). It reports whether that
+// was news: a session seen for the first time or one that changed family or
+// store (A77). An unknown model or a busy lock records nothing.
+func RecordDefaultSessionModel(root, sessionID, model, store string, now time.Time) (bool, error) {
+	family := ModelFamily(model)
 	if sessionID == "" || family == "" {
 		return false, nil
 	}
@@ -80,11 +91,11 @@ func RecordDefaultSessionModel(root, sessionID, model string, now time.Time) (bo
 	sessions := readDefaultSessionModels(root)
 	at := float64(now.UnixNano()) / 1e9
 	old, seen := sessions[sessionID]
-	changed := !seen || old.Family != family
+	changed := !seen || old.Family != family || old.Store != store
 	if !changed && at-old.SeenAt < defaultModelRefresh.Seconds() && at >= old.SeenAt {
 		return false, nil
 	}
-	sessions[sessionID] = defaultSessionModel{Family: family, SeenAt: at}
+	sessions[sessionID] = defaultSessionModel{Family: family, SeenAt: at, Store: store}
 	for id, rec := range sessions {
 		if at-rec.SeenAt > defaultModelKeep.Seconds() {
 			delete(sessions, id)
@@ -121,9 +132,25 @@ func DefaultSessionPolicy(s *store.Store, base settings.AutoSwitchSettings) (set
 // still have Fable room (A77, A91). It always decides: no setting or flag
 // names the counted models (A97). A live session of unknown model reserves
 // nothing.
+//
+// While the Fable store is usable (A102) it counts the default store's
+// sessions only, those whose record names no store, and always reserves the
+// Fable pool's accounts with Fable room and the Fable store's live account.
 func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings, now time.Time) PolicyResult {
 	base.Model = nil
 	r := PolicyResult{Settings: base}
+	fable := s.FableStore()
+	var cached *policyView
+	viewOf := func() *policyView {
+		if cached == nil {
+			v := newPolicyView(s, now)
+			cached = &v
+		}
+		return cached
+	}
+	if fable.Usable {
+		r.Reserved = fableReserved(s, fable.Live.Slot, viewOf().fableBelow(base.ModelThreshold))
+	}
 	records := readDefaultSessionModels(s.BackupDir())
 	if len(records) == 0 {
 		return r
@@ -140,6 +167,9 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 			allKnown = false
 			continue
 		}
+		if fable.Usable && rec.Store == "fable" {
+			continue
+		}
 		families[rec.Family] = true
 	}
 	if len(families) == 0 {
@@ -149,7 +179,7 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 		r.Sessions = append(r.Sessions, family)
 	}
 	sort.Strings(r.Sessions)
-	view := newPolicyView(s, now)
+	view := viewOf()
 	var counted []string
 	for _, name := range scopedNamesFor(view.usage, families) {
 		if view.serves(name, base) {
@@ -161,12 +191,52 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 	if model := strings.Join(counted, ","); model != "" {
 		r.Settings.Model = &model
 	}
-	if !allKnown || families["fable"] {
+	if fable.Usable || !allKnown || families["fable"] {
 		return r
 	}
 	room := view.fableBelow(base.ModelThreshold)
 	r.Reserved = func(num string) bool { return room[num] && s.FableCapable(num) }
 	return r
+}
+
+// fableReserved is the default store's reservation beside a usable Fable
+// store (DESIGN A102): the Fable pool's accounts with Fable room, and the
+// Fable store's live account whatever its room. An account the Fable store
+// cannot use is left to the default store.
+func fableReserved(s *store.Store, live string, room map[string]bool) func(num string) bool {
+	pool := map[string]bool{}
+	for _, num := range FablePool(s) {
+		pool[num] = room[num]
+	}
+	return func(num string) bool { return num != "" && num == live || pool[num] }
+}
+
+// FablePool is the accounts the Fable store may use (DESIGN A102): enabled
+// and rotation-eligible by the default rules, able to run Fable, holding a
+// Fable login, and not quarantined in the Fable state file. s is the
+// default store.
+func FablePool(s *store.Store) []string {
+	f, err := s.ForFable()
+	data, _ := s.ReadSequence()
+	if err != nil || data == nil {
+		return nil
+	}
+	held := autoswitch.ReadQuarantineEntries(f.StatePath())
+	var out []string
+	for _, n := range data.Sequence {
+		num := strconv.Itoa(n)
+		if _, dead := held[num]; dead || !s.RotationEligible(data, num) || !s.FableCapable(num) || !s.HasFableLogin(num) {
+			continue
+		}
+		out = append(out, num)
+	}
+	return out
+}
+
+// FableWindowNames is every Fable window name an account's cached usage
+// reports, sorted: what the Fable store's tick counts (DESIGN A102).
+func FableWindowNames(s *store.Store, now time.Time) []string {
+	return scopedNamesFor(newPolicyView(s, now).usage, map[string]bool{"fable": true})
 }
 
 // policyView is every account's cached usage, its usage the engine would

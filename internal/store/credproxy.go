@@ -64,6 +64,9 @@ func (s *Store) WriteAccountCredentials(num, email, creds string) error {
 	if err := s.Creds.WriteBackup(num, email, creds); err != nil {
 		return err
 	}
+	if s.fable {
+		return nil // no session profile holds a Fable login
+	}
 	return s.postBackupWrite(num, email)
 }
 

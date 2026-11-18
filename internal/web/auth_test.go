@@ -22,6 +22,8 @@ var allRoutes = []struct{ method, path string }{
 	{"POST", "/api/switch"},
 	{"POST", "/api/switch/claude:1"},
 	{"POST", "/api/switch/claude:1?force=1"},
+	{"POST", "/api/switch/claude:1?store=fable"},
+	{"POST", "/api/switch/claude:1?store=fable&empty=1"},
 	{"POST", "/api/accounts/add"},
 	{"POST", "/api/accounts/setup"},
 	{"POST", "/api/accounts/add-token"},

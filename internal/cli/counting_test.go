@@ -68,7 +68,7 @@ func countingStore(t *testing.T, model string, usage map[string][3]float64) *cor
 	if err := os.WriteFile(filepath.Join(sessions, strconv.Itoa(os.Getpid())+".json"), body, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := reporting.RecordDefaultSessionModel(sw.BackupDir(), "s-live", model, now); err != nil {
+	if _, err := reporting.RecordDefaultSessionModel(sw.BackupDir(), "s-live", model, "", now); err != nil {
 		t.Fatal(err)
 	}
 	return sw

@@ -302,6 +302,11 @@ func Import(acc Accounts, source string, force bool) error {
 				outcome = "imported"
 			}
 
+			if outcome == "imported" {
+				if err := acc.DropFableLogin(targetNum, entry.email); err != nil {
+					return err
+				}
+			}
 			if err := acc.WriteAccountCredentials(targetNum, entry.email, entry.credsText); err != nil {
 				return err
 			}

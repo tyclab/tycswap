@@ -81,6 +81,11 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 	if !validateEmail(email) {
 		return cerr.Validation("The logged-in account's email cannot name a store file: %s. It needs %s.", strconv.Quote(email), storenames.EmailRule)
 	}
+	if !src.isLoginDir() {
+		if err := refuseFableSessionConfig(s, email, orgUUID); err != nil {
+			return err
+		}
+	}
 
 	// Settled before asking: prompting first would ask to authorize overwriting a slot the command is about to refuse.
 	if slot != nil && *slot < 1 {
@@ -91,6 +96,9 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 	// lock the commit below holds.
 	confirmed, cancelled, err := confirmDisplacement(s, slot, assumeYes, email, orgUUID)
 	if err != nil || cancelled {
+		return err
+	}
+	if err := emptyFableBeforeDisplacing(s, slot, email, orgUUID); err != nil {
 		return err
 	}
 
@@ -163,6 +171,10 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		// Destructive cleanup is now safe (new account data is in memory). Each
 		// branch mutates and commits the locked roster: the occupancy it was
 		// decided from is the occupancy it is written into.
+		followFable, err := reslotFableLogins(s, displaceSlot, migrateFrom, accountNum, email)
+		if err != nil {
+			return err
+		}
 		if displaceSlot != nil {
 			if err := s.DeleteAccountFiles(displaceSlot.num, displaceSlot.email); err != nil {
 				return err
@@ -231,6 +243,7 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		if err := s.WriteSequence(data); err != nil {
 			return err
 		}
+		followFable()
 		*landed = accountNum
 
 		tag := displayTag(email, cfgOrgName)

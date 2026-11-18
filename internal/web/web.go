@@ -153,7 +153,23 @@ type AutoView struct {
 	// first, over what Counting counts; the page's best candidate is its first
 	// and a switch by hand to the best account takes it (DESIGN A99). Null
 	// when unknown.
-	Ranking []string `json:"ranking"`
+	Ranking []string       `json:"ranking"`
+	Fable   *FableAutoView `json:"fable,omitempty"` // the Fable store's engine; absent without a Fable login (A104)
+}
+
+// FableAutoView is the Fable store's engine from its own state file (DESIGN A104); HeldUntil ends a hand switch's hold.
+type FableAutoView struct {
+	LastTickAt *float64       `json:"lastTickAt"`
+	Caption    string         `json:"caption"`
+	Ranking    []string       `json:"ranking"`
+	Quarantine map[string]any `json:"quarantine"`
+	HeldUntil  *float64       `json:"heldUntil,omitempty"`
+}
+
+// FableOps switches the Fable store by hand, which holds its engine, or empties it (DESIGN A104).
+type FableOps interface {
+	SwitchFable(id string, jsonOut bool) (map[string]any, error)
+	EmptyFable(jsonOut bool) (map[string]any, error)
 }
 
 // CodexAutoView is the Codex auto-switch engine as the dashboard shows it;
@@ -329,6 +345,7 @@ type Deps struct {
 	// Codex drives the Codex rows; nil (no Codex accounts at launch) makes
 	// every route given a codex: key answer 503 (DESIGN A47).
 	Codex    CodexOps
+	Fable    FableOps // nil makes ?store=fable answer 503
 	Settings SettingsFacade
 	Auto     AutoFacade
 	// AutoEvents, when non-nil, is fanned out as SSE `auto` events; each one

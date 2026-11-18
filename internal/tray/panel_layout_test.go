@@ -215,6 +215,87 @@ func TestPanelAccessibleTexts(t *testing.T) {
 	}
 }
 
+// fableFixture is panelFixture with the Fable store on claude:2 and Use for
+// Fable on claude:1.
+func fableFixture() Panel {
+	p := panelFixture()
+	p.Rows[0].FableSwitch = true
+	p.Rows[1].Fable = true
+	return p
+}
+
+// The Fable store's row has a second outlined label after its plan; a row
+// that can take the Fable store has Use for Fable left of Switch, which still
+// ends at the right edge. A label alone leaves the action column as it was.
+func TestPanelFableLabelAndButton(t *testing.T) {
+	m := fakeMeasure{}
+	metrics := panelMetricsOf(m)
+	// "Pro" and "Fable" outlined, then "stale".
+	if got := panelSecondLineWidth(m, metrics, fableFixture().Rows[1]); got != (3*6+8+2)+4+(5*6+8+2)+4+5*6 {
+		t.Fatalf("second line with the Fable label %d", got)
+	}
+	if got := panelSecondLineWidth(m, metrics, PanelRow{Fable: true}); got != 5*6+8+2 {
+		t.Fatalf("the Fable label alone %d", got)
+	}
+	switchWidth, fableWidth := 6*8+2*12, 13*7+2*12 // "In use" strong, "Use for Fable" body
+	labelOnly := panelFixture()
+	labelOnly.Rows[1].Fable = true
+	if got := panelColumnWidths(labelOnly, m, metrics)[4]; got != switchWidth {
+		t.Fatalf("a Fable label widened the action column to %d", got)
+	}
+	if got := panelColumnWidths(fableFixture(), m, metrics)[4]; got != fableWidth+metrics.gap+switchWidth {
+		t.Fatalf("action column with Use for Fable %d", got)
+	}
+	plain := layoutPanel(panelFixture(), m, 4000, 4000, 17)
+	if got := layoutPanel(labelOnly, m, 4000, 4000, 17); !slices.Equal(got.columns, plain.columns) || got.width != plain.width || got.fable != 0 {
+		t.Fatalf("a Fable label moved the columns: %+v", got.columns)
+	}
+	for _, check := range []struct {
+		name     string
+		maxWidth int
+	}{{"wide", 4000}, {"narrow", plain.width}} {
+		g := layoutPanel(fableFixture(), m, check.maxWidth, 4000, 17)
+		action := g.columns[len(g.columns)-1]
+		if g.width > check.maxWidth || action.x+action.width != g.width-g.metrics.pad || action.width != fableWidth+metrics.gap+switchWidth {
+			t.Fatalf("%s: action column %+v in a panel %d wide", check.name, action, g.width)
+		}
+		for i := range 3 {
+			s, f := g.switchRect(i, 10), g.fableRect(i, 10)
+			if s.x+s.width != action.x+action.width || s.width != switchWidth || s.y != i*g.row+(g.row-g.metrics.control)/2-10 {
+				t.Fatalf("%s: row %d Switch %+v", check.name, i, s)
+			}
+			if f.x != action.x || f.width != fableWidth || f.x+f.width+g.metrics.gap != s.x || f.y != s.y || f.height != s.height {
+				t.Fatalf("%s: row %d Use for Fable %+v beside Switch %+v", check.name, i, f, s)
+			}
+		}
+	}
+	if narrow := layoutPanel(fableFixture(), m, plain.width, 4000, 17); narrow.columns[0].width >= plain.columns[0].width {
+		t.Fatalf("the account column did not give way: %d", narrow.columns[0].width)
+	}
+}
+
+// The Fable store's row says so to a screen reader; Use for Fable names its
+// row and, like Switch, is off limits while the engine is out of reach.
+func TestPanelFableAccessibleTexts(t *testing.T) {
+	p := fableFixture()
+	if got := panelSummary(p.Columns, p.Rows[1]); got != "#2 xxxxxxxxxxxxxxxxxxxx, in use, Pro, stale, 5-hour 0%, Weekly 100%, Fable store" {
+		t.Fatalf("Fable store summary %q", got)
+	}
+	if got := panelSummary(p.Columns, p.Rows[0]); got != "Switch to #1 xxxxxxxxxxxxxxx, Ultra, not rotated, Weekly 54%, Fable 50%" {
+		t.Fatalf("Use for Fable changed the row's summary: %q", got)
+	}
+	if got := panelFableText(p.Rows[0]); got != "Use #1 xxxxxxxxxxxxxxx for Fable" {
+		t.Fatalf("Use for Fable text %q", got)
+	}
+	if !panelFableEnabled(p, p.Rows[0]) || panelFableEnabled(p, p.Rows[1]) || panelFableEnabled(p, p.Rows[2]) {
+		t.Fatal("Use for Fable availability")
+	}
+	p.Offline = true
+	if panelFableEnabled(p, p.Rows[0]) {
+		t.Fatal("offline: Use for Fable must be off limits")
+	}
+}
+
 func TestPanelCopyIsIndependentOfProducer(t *testing.T) {
 	p := panelFixture()
 	c := clonePanel(p)

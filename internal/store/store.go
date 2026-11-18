@@ -48,6 +48,8 @@ type Store struct {
 	defaultKeychainService string
 	lineage                *lineageMemo
 	lineageReadOnly        bool
+	fable                  bool
+	defaultCreds           credstore.Store
 }
 
 // Options carries the injectable seams for New. All are optional: a zero

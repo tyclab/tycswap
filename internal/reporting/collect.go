@@ -226,7 +226,7 @@ func ReplanCachedUsage(s *store.Store) {
 		}
 		for _, policy := range policies {
 			at, every := usage.PlanAfterFetch(usage.PlanInput{PrevIntervalS: e.PollIntervalS, PrevUsage: e.LastGood, NewUsage: e.LastGood,
-				IsActive: info.IsActive, Threshold: policy.threshold, Models: policy.models, Now: *e.FetchedAt,
+				IsActive: info.plannedActive(), Threshold: policy.threshold, Models: policy.models, Now: *e.FetchedAt,
 				Recent429: e.Last429At != nil && clock.Seconds(s.Clk)-*e.Last429At < usage.Recent429WindowS})
 			if at < *e.NextPollAt {
 				if current, exists := plans[num]; !exists || at < *current.NextPollAt {
@@ -349,7 +349,7 @@ func persistPollPlans(
 				PrevIntervalS: before.PollIntervalS,
 				PrevUsage:     before.LastGood,
 				NewUsage:      after.LastGood,
-				IsActive:      infoByNum[num].IsActive,
+				IsActive:      infoByNum[num].plannedActive(),
 				Threshold:     policy.threshold,
 				Models:        policy.models,
 				Recent429:     recent429,
@@ -384,3 +384,7 @@ func activeCCRunning(s *store.Store) bool {
 // backgroundCtx is the per-fetch context; oauth applies its own 5s per-request
 // deadline internally (spec 02§2 usage API timeout).
 func backgroundCtx() context.Context { return context.Background() }
+
+// plannedActive is whether the account's polls follow the active cadence: the
+// default store's live account and the Fable store's (DESIGN A102).
+func (info AccountInfo) plannedActive() bool { return info.IsActive || info.FableLive }

@@ -79,6 +79,9 @@ func RemoveAccount(s *store.Store, identifier string, assumeYes bool) error {
 			return nil
 		}
 	}
+	if err := emptyFableBefore(s, accountNum); err != nil {
+		return err
+	}
 
 	// The commit span. An unbounded amount of time passed at the prompt with
 	// nothing yet destroyed, so the roster the deletion is applied to is read
@@ -118,6 +121,9 @@ func RemoveAccount(s *store.Store, identifier string, assumeYes bool) error {
 		// must still stop the delete (DeleteAccountFiles re-checks as a safety
 		// net, but this is the refusal with the actionable message).
 		if err := s.EnsureNoLiveSession(accountNum, email, "--remove-account"); err != nil {
+			return err
+		}
+		if err := deleteFableLogin(s, accountNum, email); err != nil {
 			return err
 		}
 		if err := s.DeleteAccountFiles(accountNum, email); err != nil {

@@ -31,8 +31,10 @@ import (
 	"github.com/tyclab/tycswap/internal/autostart"
 	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/ccversion"
+	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/printer"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/tray"
 	"github.com/tyclab/tycswap/internal/update"
@@ -400,6 +402,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		SwitchTo: func(key string) ([]int, error) {
 			return d.switchTo(key)
 		},
+		SwitchFable: d.switchFable,
 		AddCurrent:  func() (web.AddLoginResult, error) { return srv.AddCurrentLogin() },
 		AutoRunning: func() bool { return d.auto.View().Running },
 		AutoStart: func() error {
@@ -800,4 +803,15 @@ options:
                       with --remote the entry carries the remote arguments
 `, prog, remoteTokenFileEnv())
 	return 0
+}
+
+// switchFable is the tray's Use for Fable: the Fable store's switch by hand
+// (A104), logged as the tray's when it moved the login.
+func (d *dashboard) switchFable(key string) error {
+	provider, ref := splitRowKey(key)
+	if provider != reporting.ProviderClaude {
+		return cerr.AccountNotFound("no %s Fable logins in this app: %s", provider, key)
+	}
+	_, err := d.sw.SwitchFableBy(ref, false, "tray")
+	return err
 }

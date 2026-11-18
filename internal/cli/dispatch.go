@@ -107,6 +107,8 @@ func runMainAction(p *parsed, sw *core.Switcher, payload *any) error {
 			*payload = out
 		}
 		return err
+	case p.store != nil && *p.store == "fable":
+		return dispatchFableSwitch(p, sw, payload)
 	case p.switchFlag:
 		return dispatchSwitch(p, sw, payload)
 	case p.switchTo != nil:

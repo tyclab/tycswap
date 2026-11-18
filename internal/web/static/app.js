@@ -1033,11 +1033,14 @@
     var accts = claudeRows(st);
     var active = accts.filter(function (a) { return a.isActive; })[0];
     var sig = JSON.stringify(active ? [active.number, active.email, active.alias, active.usage, active.usageStatus, active.atLimit] : null);
+    var fable = fableLine(st);
+    if (fable) { sig += JSON.stringify([st.fable.state, st.fable.number, st.fable.email, st.fable.reason, accts.map(accountName)]); }
     if (box.getAttribute('data-sig') === sig) { return; }
     box.setAttribute('data-sig', sig);
     clear(box);
     if (!active) {
       box.appendChild(el('span', { class: 'hdr-none muted', text: 'no active account' }));
+      if (fable) { box.appendChild(fable); }
       return;
     }
     var who = el('div', { class: 'hdr-who' }, [
@@ -1050,7 +1053,7 @@
         ? chip('API key · ' + hostOf(active.baseUrl), 'crit', 'Claude Code sends its requests to ' + active.baseUrl)
         : chip('API key · billed per token', 'crit', 'Claude Code is on a managed API-key account'));
     }
-    box.appendChild(who);
+    box.appendChild(fable ? el('div', { class: 'hdr-stack' }, [who, fable]) : who);
     var u = active.usage || {};
     var meters = el('div', { class: 'hdr-meters' });
     meters.appendChild(u.fiveHour ? meter({ label: '5h', pct: u.fiveHour.pct, resetsAt: u.fiveHour.resetsAt, size: 'compact' }) : emptyMeter('5h', 'compact'));
@@ -1059,6 +1062,22 @@
     var top = scoped.sort(function (x, y) { return (pctNum(y.pct) || 0) - (pctNum(x.pct) || 0); })[0];
     meters.appendChild(top ? meter({ label: top.name || 'model', pct: top.pct, resetsAt: top.resetsAt, size: 'compact' }) : emptyMeter('model', 'compact'));
     box.appendChild(meters);
+  }
+
+  // fableLine: the header's second line while an account has a Fable login
+  // (DESIGN A104): the Fable store's account, or that the store is off and
+  // the command that turns it on.
+  function fableLine(st) {
+    var f = st.fable;
+    if (!f) { return null; }
+    if (f.state === 'off') {
+      return el('div', { class: 'hdr-fable', text: 'Fable store off', title: 'Turn it on: ' + NAME + ' switch --store fable <account>' });
+    }
+    var row = claudeRows(st).filter(function (a) { return String(a.number) === String(f.number); })[0];
+    var who = f.number === null || f.number === undefined ? 'account unknown' : '#' + f.number + ' ' + (row ? accountName(row) : f.email || '');
+    var line = el('div', { class: 'hdr-fable', title: f.email || '' }, [el('span', { class: 'ellipsis', text: 'Fable: ' + who })]);
+    if (f.state === 'unusable') { line.appendChild(chip('Fable login: sign in again', 'warn', f.reason || '')); }
+    return line;
   }
 
   function renderSummary(st) {
@@ -1098,6 +1117,30 @@
     if (a.usageStatus && SENTINEL_STATUSES[a.usageStatus] && a.usageStatus !== 'api_key') { out.push(chip(SENTINEL_STATUSES[a.usageStatus], 'serious')); }
     if (a.usageStatus === 'unavailable') { out.push(chip('usage unavailable', 'warn', 'the last measurement is stale or failed; the meters show the last good values')); }
     return out;
+  }
+
+  // fableChips: a row's place in the Fable store (DESIGN A104): the store's
+  // account, a Fable login, or one to sign in again with the command that
+  // does it; nothing for a row without a Fable login.
+  function fableChips(a) {
+    var l = a.fableLogin, out = [];
+    if (!l) { return out; }
+    if (l.live) { out.push(chip('Fable', 'accent', "The Fable store's account: Fable sessions run on its Fable login")); }
+    if (l.status !== 'ok') { out.push(chip('Fable login: sign in again', 'warn', 'Sign in again: ' + fableLoginCommand(a))); }
+    else if (!l.live) { out.push(chip('Fable login', 'outline', 'The Fable store can use this account')); }
+    return out;
+  }
+
+  function fableLoginCommand(a) { return NAME + ' add --login --lineage fable --slot ' + a.number; }
+
+  // fableButton: Use for Fable on a row with a usable Fable login; on the
+  // Fable store's own account it says so and does nothing.
+  function fableButton(a) {
+    var l = a.fableLogin;
+    if (!l || l.status !== 'ok') { return null; }
+    var b = el('button', { type: 'button', class: 'btn btn-sm', 'data-post': '/api/switch/' + keyPath(a) + '?store=fable', 'data-label': 'Use for Fable', 'aria-label': 'Use account ' + a.number + ' for Fable', text: l.live ? 'Fable here' : 'Use for Fable' });
+    b.disabled = !!l.live;
+    return b;
   }
 
   function usageFreshness(a) {
@@ -1232,7 +1275,7 @@
 
       var acct = el('div', { class: 'acct' });
       var nameRow = el('div', { class: 'acct-name' }, [el('span', { class: 'primary', text: a.alias || a.email || '(no email)', title: a.email || '' })]);
-      statusChips(a).forEach(function (c) { nameRow.appendChild(c); });
+      statusChips(a).concat(fableChips(a)).forEach(function (c) { nameRow.appendChild(c); });
       acct.appendChild(nameRow);
       var meta = el('div', { class: 'acct-meta' });
       if (a.kind) { meta.appendChild(chip(a.kind === 'api_key' ? 'api key' : a.kind, 'kind')); }
@@ -1267,6 +1310,8 @@
       if (a.isActive || !a.switchable || a.ownershipBlockReason) { sw.disabled = true; }
       if (a.ownershipBlockReason) { sw.title = a.ownershipBlockReason; }
       acts.appendChild(sw);
+      var useFable = fableButton(a);
+      if (useFable) { acts.appendChild(useFable); }
 
       var menu = el('details', { class: 'menu' });
       menu.appendChild(el('summary', { class: 'btn btn-sm btn-icon', 'aria-label': 'More actions for account ' + a.number, 'aria-haspopup': 'menu', text: '⋯' }));
@@ -1285,6 +1330,11 @@
       listEl.appendChild(menuButton('Swap with…', { 'data-action': 'swap', 'data-id': k, 'data-name': accountLabel(a) }));
       listEl.appendChild(el('div', { class: 'menu-sep' }));
       listEl.appendChild(menuButton('Remove…', { 'data-action': 'remove', 'data-id': k, 'data-name': accountLabel(a), danger: true }));
+      if (st.fable && !a.fableLogin && a.kind !== 'api_key') {
+        // A Fable login is signed in from a terminal (DESIGN A101).
+        listEl.appendChild(el('div', { class: 'menu-sep' }));
+        listEl.appendChild(el('div', { class: 'menu-note', text: 'Add a Fable login: ' + fableLoginCommand(a) }));
+      }
       menu.appendChild(listEl);
       acts.appendChild(menu);
 
@@ -1525,6 +1575,8 @@
       autoStateLine(st).forEach(function (n) { line.appendChild(typeof n === 'string' ? document.createTextNode(n) : n); });
       // The state's caption opens with "counting"; the label already says it.
       $('auto-counting').textContent = 'Counting now: ' + countingLine(st, models).replace(/^counting /, '');
+      var fableAuto = fableAutoLine(a);
+      if (fableAuto) { body.appendChild(fableAuto); }
 
       var tiles = el('div', { class: 'tiles' });
       var bars = rankCandidates(st).bars;
@@ -1606,6 +1658,16 @@
       tr.appendChild(el('td', { class: 'c-verdict' }, [verdict]));
       tb.appendChild(tr);
     });
+  }
+
+  // fableAutoLine: the Fable store's engine in one line (DESIGN A104): what
+  // its tick counts and the account it would take next.
+  function fableAutoLine(a) {
+    var f = a && a.fable;
+    if (!f) { return null; }
+    var caption = String(f.caption || 'Counting 5h + 7d');
+    var next = f.ranking && f.ranking.length ? 'next #' + f.ranking[0] : 'no account to take next';
+    return el('p', { class: 'auto-line', id: 'auto-fable', text: 'Fable store: ' + caption.charAt(0).toLowerCase() + caption.slice(1) + ' \u00b7 ' + next });
   }
 
   // codexTile: Codex auto-switch beside the Claude one (DESIGN A47), named as

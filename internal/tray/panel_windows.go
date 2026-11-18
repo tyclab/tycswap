@@ -47,6 +47,7 @@ const (
 	panelOwnerDraw     = 0xb
 	panelActionBase    = 300
 	panelRowBase       = 1000
+	panelFableKey      = "\x00fable" // after a row ID: that row's Use for Fable
 )
 
 type windowsPanel struct {
@@ -302,13 +303,22 @@ func (p *windowsPanel) syncControls(parent, after uintptr, keys []string, ids ma
 	}
 }
 
+// syncRows keeps a Switch per row and Use for Fable before it, in the order
+// they are drawn left to right.
 func (p *windowsPanel) syncRows() {
-	keys := make([]string, len(p.panel.Rows))
+	var keys []string
+	var rows []int
 	for i, row := range p.panel.Rows {
-		keys[i] = row.ID
+		if row.FableSwitch {
+			keys, rows = append(keys, row.ID+panelFableKey), append(rows, i)
+		}
+		keys, rows = append(keys, row.ID), append(rows, i)
 	}
 	p.syncControls(p.list, 0, keys, p.rowIDs, &p.nextRow, func(i int) (string, bool) {
-		row := p.panel.Rows[i]
+		row := p.panel.Rows[rows[i]]
+		if keys[i] != row.ID {
+			return panelFableText(row), panelFableEnabled(p.panel, row)
+		}
 		return panelSummary(p.panel.Columns, row), panelSwitchEnabled(p.panel, row)
 	})
 }
@@ -328,12 +338,16 @@ func (p *windowsPanel) syncActions() {
 	})
 }
 
-func (p *windowsPanel) rowFor(id int) (int, bool) {
+func (p *windowsPanel) rowFor(id int) (int, bool) { return p.rowKeyed(id, "") }
+
+func (p *windowsPanel) fableFor(id int) (int, bool) { return p.rowKeyed(id, panelFableKey) }
+
+func (p *windowsPanel) rowKeyed(id int, suffix string) (int, bool) {
 	if id < panelRowBase {
 		return 0, false
 	}
 	for i, row := range p.panel.Rows {
-		if row.ID == p.keys[id] {
+		if row.ID+suffix == p.keys[id] {
 			return i, true
 		}
 	}
@@ -366,6 +380,12 @@ func (p *windowsPanel) command(id int, notification int) {
 		}
 		return
 	}
+	if i, ok := p.fableFor(id); ok {
+		if row := p.panel.Rows[i]; panelFableEnabled(p.panel, row) {
+			p.dispatch(PanelAction{Kind: "command", Key: "fable:" + row.ID})
+		}
+		return
+	}
 	if action, ok := p.actionFor(id); ok && panelCommandEnabled(p.panel, action) {
 		p.dispatch(PanelAction{Kind: "command", Key: action.Choice()})
 	}
@@ -392,7 +412,11 @@ func (p *windowsPanel) reveal(focus uintptr) {
 		return
 	}
 	id, _, _ := panelControlID.Call(focus)
-	if i, ok := p.rowFor(int(id)); ok {
+	i, ok := p.rowFor(int(id))
+	if !ok {
+		i, ok = p.fableFor(int(id))
+	}
+	if ok {
 		p.scrollTo(p.geometry.scrollToShow(i, p.scroll))
 	}
 }
