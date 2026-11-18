@@ -139,6 +139,38 @@ func TestFileOnlyNeverCallsTheKeychain(t *testing.T) {
 	}
 }
 
+// The default store's managed API key in ~/.claude.json is neither the Fable
+// store's login nor cleared by its writes, and an API key never goes in.
+func TestFileOnlyLeavesTheManagedKeyAlone(t *testing.T) {
+	home := testutil.IsolateHome(t)
+	globalConfig := filepath.Join(home, ".claude.json")
+	const cfg = `{"primaryApiKey":"sk-ant-api03-default","customApiKeyResponses":{"approved":["default"],"rejected":[]}}`
+	writeFile(t, globalConfig, cfg)
+	s, active := fableStore(t, platform.Linux, newFakeKC())
+
+	if got, _, err := s.ReadActive(); err != nil || got != "" {
+		t.Fatalf("ReadActive on an empty store = %q, %v; the managed key is the default store's", got, err)
+	}
+	if err := s.ClearActive(); err != nil {
+		t.Fatalf("ClearActive on an empty store: %v", err)
+	}
+	if err := s.WriteActiveAccount("sk-ant-api03-key"); err == nil {
+		t.Fatal("WriteActiveAccount took an API key on a file-only store")
+	}
+	if _, err := os.Stat(active); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the refused API key left an active file (%v)", err)
+	}
+	if err := s.WriteActiveAccount(fableLoginA); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ClearActive(); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := os.ReadFile(globalConfig); string(raw) != cfg {
+		t.Fatalf("~/.claude.json = %s, want it unchanged", raw)
+	}
+}
+
 func mustMkdir(t *testing.T, file string) string {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
