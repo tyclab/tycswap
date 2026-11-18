@@ -10,7 +10,10 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +25,7 @@ import (
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/web"
 )
 
@@ -206,17 +210,20 @@ func (a *autoFacade) View() web.AutoView {
 	v.LastTickAt = autoswitch.ReadLastTick(autoswitch.StatePath(a.sw.BackupDir()))
 	var reserved func(string) bool
 	v.Counting, reserved = a.counting(s, hosted)
-	v.Ranking = a.ranking(s, v.Counting.Models, reserved)
+	data, _ := a.sw.ReadSequence()
+	if data == nil {
+		v.Ranking = []string{}
+		return v
+	}
+	values := reporting.UsageByAccount(a.sw.Store)
+	v.Ranking = a.ranking(data, values, s, v.Counting.Models, reserved)
+	v.Fable = a.fable(data, values, s)
 	return v
 }
 
 // ranking is the order the engine would take the other accounts in, over the
 // windows it counts now, with the accounts the policy reserves (DESIGN A99).
-func (a *autoFacade) ranking(s settings.AutoSwitchSettings, models []string, reserved func(string) bool) []string {
-	data, _ := a.sw.ReadSequence()
-	if data == nil {
-		return []string{}
-	}
+func (a *autoFacade) ranking(data *store.SequenceData, values map[string]any, s settings.AutoSwitchSettings, models []string, reserved func(string) bool) []string {
 	live := ""
 	if n := a.sw.CurrentAccountNumber(); n != nil {
 		live = *n
@@ -229,7 +236,75 @@ func (a *autoFacade) ranking(s settings.AutoSwitchSettings, models []string, res
 			candidates = append(candidates, num)
 		}
 	}
-	return append([]string{}, autoswitch.RankTargets(candidates, reporting.UsageByAccount(a.sw.Store), s, models, reserved, a.clk.Now())...)
+	return append([]string{}, autoswitch.RankTargets(candidates, values, s, models, reserved, a.clk.Now())...)
+}
+
+// fable is the Fable store's engine as the Auto tab shows it (DESIGN A104),
+// nil while no account has a Fable login: its last tick, quarantine and
+// hold from its own state file, and the order a Fable tick would take its
+// pool in, counting the Fable windows as that tick does (A102).
+func (a *autoFacade) fable(data *store.SequenceData, values map[string]any, s settings.AutoSwitchSettings) *web.FableAutoView {
+	if !a.sw.Store.HasFableLogins() {
+		return nil
+	}
+	f, err := a.sw.Store.ForFable()
+	if err != nil {
+		return nil
+	}
+	path, now := f.StatePath(), a.clk.Now()
+	names := reporting.FableWindowNames(a.sw.Store, now)
+	counted := s
+	counted.Model = nil
+	if len(names) > 0 {
+		model := strings.Join(names, ",")
+		counted.Model = &model
+	}
+	live := a.sw.Store.WithoutLineageWrites().ResolveFableLiveSlot(data).Slot
+	var candidates []string
+	for _, num := range reporting.FablePool(a.sw.Store) {
+		if num != live {
+			candidates = append(candidates, num)
+		}
+	}
+	v := &web.FableAutoView{
+		LastTickAt: autoswitch.ReadLastTick(path),
+		Caption:    strings.Join(append([]string{"Counting 5h + 7d"}, names...), " + "),
+		Ranking:    append([]string{}, autoswitch.RankTargets(candidates, values, counted, names, nil, now)...),
+		Quarantine: quarantineView(path),
+	}
+	if until, held := handHoldUntil(path, s.CooldownSeconds, clock.Seconds(a.clk)); held {
+		v.HeldUntil = &until
+	}
+	return v
+}
+
+// handHoldUntil is when the hold of a switch by hand recorded in the state file
+// at path ends (DESIGN A94), while it lasts.
+func handHoldUntil(path string, cooldown, now float64) (float64, bool) {
+	var state struct {
+		By *string  `json:"lastSwitchBy"`
+		At *float64 `json:"lastSwitchAt"`
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil || json.Unmarshal(raw, &state) != nil || state.By == nil || *state.By != "hand" || state.At == nil {
+		return 0, false
+	}
+	until := *state.At + cooldown
+	return until, until > now
+}
+
+// quarantineView is the state file's quarantine as the page reads it: each
+// slot's reason and the engine's RFC3339 "at" stamp.
+func quarantineView(path string) map[string]any {
+	quarantine := map[string]any{}
+	for k, e := range autoswitch.ReadQuarantineEntries(path) {
+		entry := map[string]any{"reason": e.Reason}
+		if e.At != "" {
+			entry["at"] = e.At
+		}
+		quarantine[k] = entry
+	}
+	return quarantine
 }
 
 // counting is what the engine counts now (DESIGN A91, A97): an engine hosted
@@ -266,14 +341,7 @@ func (a *autoFacade) view() (web.AutoView, settings.AutoSwitchSettings, bool) {
 	}
 	// Each quarantine entry carries its reason and the engine's RFC3339 "at"
 	// stamp, so the page can show since when a slot has been held out.
-	quarantine := map[string]any{}
-	for k, e := range autoswitch.ReadQuarantineEntries(autoswitch.StatePath(a.sw.BackupDir())) {
-		entry := map[string]any{"reason": e.Reason}
-		if e.At != "" {
-			entry["at"] = e.At
-		}
-		quarantine[k] = entry
-	}
+	quarantine := quarantineView(autoswitch.StatePath(a.sw.BackupDir()))
 	// An engine whose ticks all report disabled is not running to the user
 	// (DESIGN A83).
 	live := a.running && fresh.Enabled
@@ -522,6 +590,7 @@ func (a *autoFacade) publish(view web.AutoEventView) {
 var (
 	_ web.Facade         = (*core.Switcher)(nil)
 	_ web.AccountOps     = (*core.Switcher)(nil)
+	_ web.FableOps       = (*core.Switcher)(nil)
 	_ web.CodexOps       = codexOps{}
 	_ web.SettingsFacade = settingsFacade{}
 	_ web.AutoFacade     = (*autoFacade)(nil)
