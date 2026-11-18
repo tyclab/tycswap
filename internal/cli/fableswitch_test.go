@@ -127,20 +127,27 @@ func TestSwitchStoreArgumentErrors(t *testing.T) {
 // `--store default` is the switch as it is without --store.
 func TestSwitchStoreDefaultIsTheSwitch(t *testing.T) {
 	outputs := map[string]string{}
-	for name, argv := range map[string][]string{
-		"plain":   {"switch", "2"},
-		"default": {"switch", "--store", "default", "2"},
+	// One subtest per form: useSwitcher replaces newSwitcher, which
+	// fixtureSwitcher itself calls, until its test ends.
+	for _, form := range []struct {
+		name string
+		argv []string
+	}{
+		{"plain", []string{"switch", "2"}},
+		{"default", []string{"switch", "--store", "default", "2"}},
 	} {
-		sw := fixtureSwitcher(t)
-		useSwitcher(t, sw)
-		code, out, errb := runHuman(t, argv...)
-		if code != 0 {
-			t.Fatalf("%s: exit %d, stderr %q", name, code, errb)
-		}
-		if cur := sw.CurrentAccountNumber(); cur == nil || *cur != "2" {
-			t.Fatalf("%s: live account %v", name, cur)
-		}
-		outputs[name] = strings.ReplaceAll(out, sw.Home, "<HOME>")
+		t.Run(form.name, func(t *testing.T) {
+			sw := fixtureSwitcher(t)
+			useSwitcher(t, sw)
+			code, out, errb := runHuman(t, form.argv...)
+			if code != 0 {
+				t.Fatalf("exit %d, stderr %q", code, errb)
+			}
+			if cur := sw.CurrentAccountNumber(); cur == nil || *cur != "2" {
+				t.Fatalf("live account %v", cur)
+			}
+			outputs[form.name] = strings.ReplaceAll(out, sw.Home, "<HOME>")
+		})
 	}
 	if outputs["plain"] != outputs["default"] {
 		t.Fatalf("switch --store default printed\n%s\nswitch printed\n%s", outputs["default"], outputs["plain"])

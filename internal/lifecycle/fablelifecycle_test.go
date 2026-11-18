@@ -75,11 +75,20 @@ func TestRemoveDeletesTheFableLogin(t *testing.T) {
 func TestRemoveOfTheFableStoresAccountEmptiesTheStore(t *testing.T) {
 	s := withFableLogins(t, "2")
 	others := map[string]string{}
-	for _, p := range []string{filepath.Join(s.CredentialsDir, storenames.CredsFile("1", "a@example.com")), fableFile(s, "1", "a@example.com"), fableFile(s, "1", "a@example.com") + ".prev"} {
+	for _, p := range []string{fableFile(s, "1", "a@example.com"), fableFile(s, "1", "a@example.com") + ".prev"} {
 		others[p] = readFile(t, p)
+	}
+	// Account-1's default login through the store: a file on Linux, the
+	// Keychain on macOS.
+	defaultBefore, err := s.ReadAccountCredentials("1", "a@example.com")
+	if err != nil {
+		t.Fatal(err)
 	}
 	if err := RemoveAccount(s, "2", true); err != nil {
 		t.Fatal(err)
+	}
+	if got, err := s.ReadAccountCredentials("1", "a@example.com"); err != nil || got != defaultBefore {
+		t.Errorf("the remove changed Account-1's default login (%v)", err)
 	}
 	if st := s.FableStore(); st.On {
 		t.Errorf("FableStore = %+v, want off", st)
