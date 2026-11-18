@@ -8209,8 +8209,8 @@ answers the resolved slot's account too (none while Fable logins exist and
 only the config names the slot), so `export` reads the live credential only
 for the account it belongs to, and with that account's stored config when
 `~/.claude.json` names another; before, exporting the Fable store's account
-wrote the default login as its own. `authmode.go` gates the
-API-key confirmation on the config's slot and is left (a Fable session never writes an
+wrote the default login as its own. `authmode.go` gates the API-key
+confirmation on the config's slot and is left (a Fable session never writes an
 API-key account there).
 
 ## A102. One tick per store
@@ -8315,9 +8315,10 @@ pool's first (`switch`, trigger `failover`, stamped as the engine's own by
 to the default login with its notice. A switch of the Fable store by hand
 within the cooldown holds the move or the emptying as it holds a tick (A94,
 `no-switch`, `cooldown`); the quarantine alone already makes the store
-unusable, so `start` sends Fable sessions to the default login meanwhile. The default login is never read or
-written. This replaces the rule that the live Fable login is Claude Code's
-alone to refresh (plan 1.7) for an expired one.
+unusable, so `start` sends Fable sessions to the default login meanwhile.
+The default login is never read or written. This replaces the rule that the
+live Fable login is Claude Code's alone to refresh (plan 1.7) for an expired
+one.
 
 **Events and log lines.** Every Fable tick event carries `"store":"fable"`
 (`cli.fableEvent`, modelled on `groupEvent`); the default tick's are
