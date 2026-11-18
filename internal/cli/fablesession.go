@@ -9,9 +9,7 @@ import (
 	"github.com/tyclab/tycswap/internal/platform"
 )
 
-// fableSessionProcess is true when this process was started under a session
-// on the Fable store: its status line, its quota hook or an agent's tycswap
-// (DESIGN A100).
+// fableSessionProcess: this process runs under a Fable-store session (its status line, quota hook or an agent; DESIGN A100).
 var fableSessionProcess bool
 
 const secureStorageEnv = "CLAUDE_SECURESTORAGE_CONFIG_DIR"

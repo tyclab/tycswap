@@ -68,12 +68,9 @@ type Store interface {
 type Config struct {
 	Platform       platform.Platform
 	CredentialsDir string
-	// ActivePath is the active credential file; "" is Claude Code's default
-	// (~/.claude/.credentials.json). The Fable store's is its own (DESIGN A100).
+	// ActivePath replaces ~/.claude/.credentials.json; FileOnly keeps the store off the Keychain, the managed API key and the global config (DESIGN A100).
 	ActivePath string
-	// FileOnly keeps the store off the Keychain, the managed API key and the
-	// global config: every credential it holds is a file.
-	FileOnly bool
+	FileOnly   bool
 }
 
 type FileKeychainStore struct {
@@ -106,7 +103,6 @@ func New(cfg Config, kc keychain.KeychainClient, clk clock.Clock, log *logging.L
 
 var _ Store = (*FileKeychainStore)(nil)
 
-// macOS is whether the store uses the Keychain at all; a file-only store never does.
 func (s *FileKeychainStore) macOS() bool { return s.platform == platform.MacOS && !s.fileOnly }
 
 func (s *FileKeychainStore) credentialsPath() string {
