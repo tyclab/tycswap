@@ -6172,7 +6172,8 @@ never start a duplicate server. The remote tray publishes separate connection me
 An explicit `add --login --switch` onto the current account uses the existing locked
 activation path, so its new credential becomes live instead of returning already-active.
 Plain `add --login` leaves the live login untouched for any other account. A login
-as the current account takes the same activation without `--switch`: the reference
+as the current account (the slot the live credential resolves to, A101) takes the
+same activation without `--switch`: the reference
 names it as the repair for a dead login, the active row reads the live store, and
 the renewed backup alone left that row at `no credentials` until a forced switch.
 
@@ -8092,3 +8093,103 @@ normalized output was byte-identical to origin/main's when it was written.
 `modelFamily`), the `store` field of a `default_models.json` record
 (`"fable"` for a Fable-store session, omitted for the default store's), and
 `reporting.RecordedSession(root, id)`, a session's recorded family and store.
+
+## A101. A Fable login is signed in once per account and box
+
+**Why.** A Fable login is an account's second, independent sign-in (A100):
+its own OAuth grant, never a copy of the default login, whose refresh token
+would then rotate in two places. The operator signs each account in a second
+time in the browser, once per account and box (design, "Limits"). `add
+--login` already drives that browser sign-in in a scratch profile (A56, A82);
+what it leaves is stored as the account's Fable login instead of its default
+login. Every command that renames, removes or moves an account's files takes
+the Fable login with them.
+
+**The sign-in.** `tycswap add --login --lineage fable [--slot N] [--switch]
+[-- LOGIN-ARGS...]`; `--lineage=VALUE` too. `--lineage default` is `add
+--login` as before; another value exits 2 (`unknown lineage: X (default or
+fable)`); `--lineage` without `--login` exits 1 (`--lineage goes with
+--login`), and with `--alias` exits 1: an alias names a new account. On macOS
+it exits 1 with `ErrFableUnsupported`'s text. Every one of these is refused
+before Claude starts. With `--slot N` it first prints `Sign in as <email of N>
+in the browser.`; an `N` that names no account is refused there. The scratch
+profile, its cleanup and the store-as-soon-as-complete rule (A82) are those of
+`add --login`.
+
+**The identity rules.** `lifecycle.AddFableLogin(s, src, slot)`, through
+`core.Switcher.AddFableLogin`, reads the scratch login's identity and
+credential. It refuses, storing nothing, exit 1, one line each:
+
+- an API key or an incomplete login: the `add --login` wording;
+- an identity that names no OAuth roster account: `Account <email> is not
+  stored yet: add it first with tycswap add --login.`;
+- `--slot N` naming another account: `This sign-in is <email>, not Account-N
+  (<email N>); nothing stored.` (without the parenthesis when slot N is empty);
+- a plan without Fable (`FableCapable` on the default login): `Account-N's
+  plan does not offer Fable.`;
+- the refresh-token fingerprint of the account's default login or of the live
+  default credential: `This is Account-N's default login, not a second
+  sign-in; sign in again in the browser.`
+
+On success it calls `SetupFableDirectories` and writes the account-only
+credential to the account's Fable login, keeping `.prev`, under the store lock,
+with the roster re-checked there. Nothing else is written: `sequence.json`,
+`configs/`, `credentials/`, `~/.claude/.credentials.json` and `~/.claude.json`
+stay byte-identical. It prints `Stored the Fable login for Account-N
+(<email>).`
+
+**The first login turns the store on.** When the Fable store holds no login,
+or with `--switch`, the command then calls `core.SwitchFable(N)`, a switch by
+hand that holds the Fable engine for the cooldown (A94 per store), and prints
+`The Fable store now uses Account-N.` A second account's Fable login is only
+stored. When the signed-in account is the Fable store's live one, the new login
+also replaces the store's, under the Fable store's locks (A100) with the live
+login re-read there, keeping the store's MCP logins, and the chain record names
+it. Otherwise the store keeps the older grant, and the next tick's harvest
+(A100) would write that older grant back over the new file. This is how a dead
+live Fable login (its `invalid_grant` quarantine names the live fingerprint) is
+repaired: the store is usable again at once.
+
+**Lifecycle.**
+
+- `remove` deletes the account's Fable login and its `.prev`. When the account
+  is the Fable store's live one (resolved before the roster lock), the store is
+  emptied first by `core.EmptyFable` (under the Fable state lock); if that
+  fails, nothing is removed and the error is named. Under the roster lock a
+  store that took the account again meanwhile refuses.
+- `move` and `swap` carry the Fable login with its account in
+  `credentials-fable/`: written under the new key, staged in
+  `credentials-fable/.swap-staging-creds-N.json` for a same-email swap (before
+  anything changes), rolled back with the default backup, and the old key
+  removed after the commit. When a moved account is the Fable store's live one,
+  `fable/live_lineage.json` is rewritten to its new number under the store lock.
+- `purge` removes `credentials-fable/` and `fable/` with the rest of the store.
+  Its session check covered tycswap's session profiles and the retired groups
+  only, not `~/.claude/sessions`, where every session, a Fable-store one
+  included, registers, and a session's record does not name its store. While
+  the Fable store holds a login, purge therefore also refuses while any live
+  Claude session is registered there.
+- `export` reads the default logins only and never carries a Fable login;
+  `import` never writes one and leaves `credentials-fable/` as it is.
+- Without a Fable login none of these, nor `add` or `add --login`, creates
+  `fable/` or `credentials-fable/`, and their output is v0.15.1's
+  (`TestNoFableLoginLifecycleNoChange`, compared with origin/main 00d9582).
+
+**Deciding from the resolved live slot.** A Fable session writes its account
+into the shared `~/.claude.json` (pilot P5). `add --login` decided its
+renewal of the live login (A65) from that config identity, so a default
+sign-in of the Fable store's account force-switched the default login onto it.
+It now decides from `ResolveLiveSlot(data).Slot`, the default credential's own
+slot. A plain `add` of the live login stores the live credential under the
+config identity; when that identity is the Fable store's live account and the
+default credential resolves to another account, it now refuses (`~/.claude.json
+names Account-N, the Fable store's account, but the default login is
+Account-M's; nothing stored.`). Of the other `GetCurrentAccount` callers,
+`switching/perform.go`, `switch.go` and `provenance.go` use it by A68's
+design, the resolver reads it as its first input, the group profile ones read a
+group's own config, and the status, dashboard callout, first-run prompt and
+`add-token` hint only display it. Two decide outside this entry's files and
+are left: the transfer adapter's `CurrentAccount` makes `export` read the live
+credential for the account the config names, and `authmode.go` gates the
+API-key confirmation on the config's slot (a Fable session never writes an
+API-key account there).

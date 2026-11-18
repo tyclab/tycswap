@@ -645,6 +645,25 @@ between them. `tycswap switch --store fable <n>` switches it by hand and
 `tycswap switch --store fable --empty` turns it off. A box where no account has
 a Fable login works exactly as before. macOS has no Fable store.
 
+To add a Fable login, sign each account in a second time, once per account and
+box, after it has been added:
+
+```
+$ tycswap add --login --lineage fable --slot 2
+Sign in as bob@example.com in the browser.
+Stored the Fable login for Account-2 (bob@example.com).
+The Fable store now uses Account-2.
+```
+
+The browser flow is the one `add --login` runs; sign in as the account named.
+Only the Fable login is stored: the default login, the roster and
+`~/.claude.json` stay as they were. The first Fable login turns the Fable store
+on; later ones are only stored, unless `--switch` is given. A sign-in as another
+account, one not added yet, one whose plan has no Fable, or the account's
+default login stores nothing. `remove`, `move` and `swap` take an account's
+Fable login with it, `purge` deletes the Fable store, and `export` and `import`
+never carry a Fable login.
+
 **Session groups are retired.** The Fable and Opus / other groups and
 `tycswap claude` are gone; plain `claude` follows the session's model on the
 default login instead. A former group hands its account back on the first

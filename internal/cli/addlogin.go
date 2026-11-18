@@ -14,13 +14,16 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/launch"
 	"github.com/tyclab/tycswap/internal/lifecycle"
@@ -44,28 +47,40 @@ var loginKeychain = func() keychain.KeychainClient {
 }
 
 const (
-	errSwitchWithoutLogin = "--switch goes with --login: the live login is already the one add stores"
-	errTailWithoutLogin   = "arguments after -- go with --login: they are claude's login arguments"
+	errSwitchWithoutLogin  = "--switch goes with --login: the live login is already the one add stores"
+	errTailWithoutLogin    = "arguments after -- go with --login: they are claude's login arguments"
+	errLineageWithoutLogin = "--lineage goes with --login"
+	errAliasFable          = "--alias names a new account; a Fable login is stored for an account already added"
 )
 
 type addArgs struct {
 	login, switchAfter bool
-	rest               []string // add's own flags, for the main parser
-	tail               []string // everything after the first "--"
+	// lineage is --lineage's value (DESIGN A101); lineageErr a usage error for it.
+	lineage, lineageErr string
+	rest                []string // add's own flags, for the main parser
+	tail                []string // everything after the first "--"
 }
 
 func splitAddArgs(argv []string) addArgs {
 	var a addArgs
-	for i, tok := range argv {
+	for i := 0; i < len(argv); i++ {
+		tok := argv[i]
 		if tok == "--" {
 			a.tail = argv[i+1:]
 			break
 		}
-		switch tok {
-		case "--login":
+		switch {
+		case tok == "--login":
 			a.login = true
-		case "--switch":
+		case tok == "--switch":
 			a.switchAfter = true
+		case strings.HasPrefix(tok, "--lineage="):
+			a.setLineage(strings.TrimPrefix(tok, "--lineage="))
+		case tok == "--lineage" && i+1 < len(argv) && !isOptionLike(argv[i+1]):
+			i++
+			a.setLineage(argv[i])
+		case tok == "--lineage":
+			a.lineageErr = "argument --lineage: expected one argument"
 		default:
 			a.rest = append(a.rest, tok)
 		}
@@ -73,10 +88,20 @@ func splitAddArgs(argv []string) addArgs {
 	return a
 }
 
+func (a *addArgs) setLineage(v string) {
+	a.lineage = v
+	if v != "default" && v != "fable" && a.lineageErr == "" {
+		a.lineageErr = "unknown lineage: " + v + " (default or fable)"
+	}
+}
+
 // addCommand intercepts `tycswap add` (and its legacy spelling --add-account).
 // handled is false for a plain add, which the main parser dispatches as before.
 func addCommand(prog string, argv []string, s ioStreams) (code int, handled bool) {
 	a := splitAddArgs(argv)
+	if a.lineageErr != "" {
+		return argError(prog, s.err, a.lineageErr).code, true
+	}
 	if !a.login {
 		switch {
 		case a.switchAfter:
@@ -84,6 +109,9 @@ func addCommand(prog string, argv []string, s ioStreams) (code int, handled bool
 			return 1, true
 		case len(a.tail) > 0:
 			errorTo(s.err, "Error: "+errTailWithoutLogin)
+			return 1, true
+		case a.lineage != "":
+			errorTo(s.err, "Error: "+errLineageWithoutLogin)
 			return 1, true
 		}
 		return 0, false
@@ -117,6 +145,12 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 		return code
 	}
 	setSigintJSON(false)
+	fable := a.lineage == "fable"
+	if fable {
+		if code, refused := fableLoginPreflight(sw, p, s); refused {
+			return code
+		}
+	}
 
 	binary, err := claudeLookPath("claude")
 	if err != nil || binary == "" {
@@ -154,24 +188,34 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 		return renderDomainError(lifecycle.ErrLoginIncomplete(), false, s.out, s.err)
 	}
 	src := lifecycle.LoginDir(scratch, kc)
-	num, err := storeLoginWhenComplete(src, login, func() (string, error) {
-		return sw.AddAccountFromLogin(src, p.slot, false, p.alias)
-	}, s)
+	store := func() (string, error) { return sw.AddAccountFromLogin(src, p.slot, false, p.alias) }
+	if fable {
+		store = func() (string, error) { return sw.AddFableLogin(src, p.slot) }
+	}
+	num, err := storeLoginWhenComplete(src, login, store, s)
 	if err != nil {
 		return renderDomainError(err, false, s.out, s.err)
 	}
 	// The stored copy is all that is needed from here on; drop the scratch
 	// before the switch so a switch failure cannot leave a login behind.
 	_ = removeScratch()
+	if fable {
+		if err := activateFableLogin(sw, num, a.switchAfter, s); err != nil {
+			return renderDomainError(err, false, s.out, s.err)
+		}
+		maybeUpdateNotice(p, sw.BackupDir(), sw.Platform(), s.err)
+		return 0
+	}
 
 	data, err := sw.ReadSequence()
 	if err != nil {
 		return renderDomainError(err, false, s.out, s.err)
 	}
 	// A login as the live account renews it: without the activation the live
-	// store keeps the old credential and `list` reads that one (A65).
-	email, org, active := sw.GetCurrentAccount()
-	renewsLive := active && sw.FindAccountSlot(data, email, org) == num
+	// store keeps the old credential and `list` reads that one (A65). The live
+	// account is the credential's, not the one ~/.claude.json names: a Fable
+	// session writes its own account there (A101).
+	renewsLive := sw.ResolveLiveSlot(data).Slot == num
 	if a.switchAfter || renewsLive {
 		if _, err := sw.SwitchToForce(num, false, renewsLive); err != nil {
 			return renderDomainError(err, false, s.out, s.err)
@@ -179,6 +223,51 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 	}
 	maybeUpdateNotice(p, sw.BackupDir(), sw.Platform(), s.err)
 	return 0
+}
+
+// fableLoginPreflight refuses a Fable sign-in before Claude starts, and with
+// --slot names the account to sign in as (DESIGN A101).
+func fableLoginPreflight(sw *core.Switcher, p *parsed, s ioStreams) (int, bool) {
+	if p.alias != nil {
+		errorTo(s.err, "Error: "+errAliasFable)
+		return 1, true
+	}
+	if _, err := sw.Store.ForFable(); err != nil {
+		return renderDomainError(err, false, s.out, s.err), true
+	}
+	if p.slot == nil {
+		return 0, false
+	}
+	data, err := sw.ReadSequence()
+	if err != nil {
+		return renderDomainError(err, false, s.out, s.err), true
+	}
+	_, email, _, err := sw.ResolveAccountFrom(data, strconv.Itoa(*p.slot))
+	if err != nil {
+		return renderDomainError(err, false, s.out, s.err), true
+	}
+	fmt.Fprintln(s.out, "Sign in as "+email+" in the browser.")
+	return 0, false
+}
+
+// activateFableLogin installs a stored Fable login by a switch by hand when
+// the Fable store holds none, or with --switch.
+func activateFableLogin(sw *core.Switcher, num string, switchAfter bool, s ioStreams) error {
+	f, err := sw.Store.ForFable()
+	if err != nil {
+		return err
+	}
+	if !switchAfter && f.HasLiveLogin() {
+		return nil
+	}
+	res, err := sw.SwitchFable(num, false)
+	if err != nil {
+		return err
+	}
+	if res["switched"] == true {
+		fmt.Fprintln(s.out, lifecycle.FableStoreUses(num))
+	}
+	return nil
 }
 
 // loginEnv is the parent environment with CLAUDE_CONFIG_DIR pointing at the

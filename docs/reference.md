@@ -23,6 +23,8 @@ tycswap switch --store fable --empty [--json] turn the Fable store off
 tycswap add [--slot NUM] [--alias NAME]       snapshot the current login as an account
 tycswap add --login [--switch] [--slot NUM] [--alias NAME] [-- LOGIN-ARGS...]
                                             log another account in beside the live one and store it
+tycswap add --login --lineage fable [--slot NUM] [--switch] [-- LOGIN-ARGS...]
+                                            sign an added account in again as its Fable login
 tycswap add-token [TOKEN|-] [--email EMAIL] [--slot NUM] [--base-url URL]
                                             register a setup-token or API key
 tycswap remove <NUM|EMAIL|ALIAS>              remove an account (prompts to confirm)
@@ -686,6 +688,7 @@ $ tycswap switch 2 --json
 ```
 tycswap add [--slot NUM] [--alias NAME] [--debug]
 tycswap add --login [--switch] [--slot NUM] [--alias NAME] [--debug] [-- LOGIN-ARGS...]
+tycswap add --login --lineage fable [--slot NUM] [--switch] [--debug] [-- LOGIN-ARGS...]
 ```
 
 ### Options
@@ -695,7 +698,8 @@ tycswap add --login [--switch] [--slot NUM] [--alias NAME] [--debug] [-- LOGIN-A
 | `--slot` | int | next free slot | Only with `add` or `add-token`. |
 | `--alias` | string | none | Only with `add`. Letters/digits/`.`/`-`/`_`; not all-numeric. |
 | `--login` | flag | off | Run `claude auth login` in a scratch profile and store that account instead of the live login. |
-| `--switch` | flag | off | Only with `--login`: switch to the new account after storing it. |
+| `--switch` | flag | off | Only with `--login`: switch to the new account after storing it; with `--lineage fable`, switch the Fable store to it. |
+| `--lineage` | `default` \| `fable` | `default` | Only with `--login`. `fable` stores the sign-in as the Fable login of the account it names (below); `default` is `add --login` without it. Also `--lineage=VALUE`. |
 | `-- LOGIN-ARGS...` | strings | none | Only with `--login`: passed to `claude auth login` (`--email EMAIL`, `--sso`, `--claudeai`; `--console` is refused before Claude starts; subscription mode is selected explicitly). |
 | `--debug` | flag | off | — |
 
@@ -759,7 +763,9 @@ overwrites its record.
 A login as the live account itself is the exception: `add` then activates the
 new login through the same path as `tycswap switch <n> --force`, which keeps a
 safety copy of the replaced credential, so the live store and `list` hold the
-renewed login.
+renewed login. The live account is the one the live credential resolves to (as
+`status` resolves it), not the one `~/.claude.json` names: a Fable-store session
+writes its own account there (DESIGN A101).
 With `--switch`, `add` then switches to the new account through the same path
 as `tycswap switch <n>`, so the outgoing account's credentials are written back
 as on any switch. Scratch cleanup runs on every exit path, including a failed
@@ -768,13 +774,37 @@ login and Ctrl-C. A failed cleanup retains the private directory with a
 it. Unmarked profiles may still be in use and are left alone. Cleanup failure
 does not undo a successful save or change its exit status.
 
+**`--lineage fable`** (DESIGN A101) signs an account that is already added in a
+second time, as its *Fable login* (see `tycswap switch`, the Fable store): once
+per account and box. The browser flow is the same scratch-profile login; with
+`--slot N` it first prints `Sign in as <email of N> in the browser.` What it
+stores is the account-only credential, in `credentials-fable/` under the roster
+account the sign-in names (`.prev` kept), under the backup-root lock. Nothing
+else is written: not `sequence.json`, `configs/`, `credentials/`, the live
+credential or `~/.claude.json`. Nothing is stored, exit 1, when the sign-in
+names no added OAuth account, is not account `N` of `--slot N`, is on a plan
+without Fable, or is the account's default login or the live default credential
+(the same refresh token). When the Fable store holds no login, the new Fable
+login is installed there by a switch by hand (it holds the Fable store's engine
+for the cooldown), and with `--switch` it always is. When the account is the
+Fable store's live one, the new login replaces the store's under the Fable
+store's locks, keeping the store's MCP logins, so a dead live login is repaired
+by signing in again. `--alias` is refused with it; macOS refuses it before
+Claude starts.
+
+A plain `add` of the live login refuses when `~/.claude.json` names the Fable
+store's account while the live credential resolves to another account: a Fable
+session wrote that config, and the credential is not that account's.
+
 ### Files
 
 Reads the live `~/.claude.json` and credentials store, or with `--login` the
 scratch profile's `.claude.json` and `.credentials.json`. Writes
 `sequence.json`, `configs/`, and `credentials/` (or the macOS Keychain). With
 `--login`, creates and removes `<backup root>/login.*`; with `--switch`, also
-writes the live login as `tycswap switch` does. On macOS, where Claude Code
+writes the live login as `tycswap switch` does. With `--lineage fable`, writes
+only `credentials-fable/` and, when it installs the login, the Fable store
+(`fable/`). On macOS, where Claude Code
 keeps a login's credential in the Keychain rather than in
 `.credentials.json`, `--login` reads it from the item Claude Code creates for
 the scratch directory (`Claude Code-credentials-<first 8 hex of the
@@ -788,8 +818,9 @@ the live login are untouched. Cleanup attempts serialize on
 ### Exit status
 
 `0` on success; `1` on a handled error (for example no current login, an
-invalid alias, a `--login` that did not complete, or `--switch` / `--`
-arguments without `--login`); `2` on a usage error (for example `--json`).
+invalid alias, a `--login` that did not complete, or `--switch` / `--lineage` /
+`--` arguments without `--login`); `2` on a usage error (for example `--json`,
+or a `--lineage` other than `default` or `fable`).
 
 ### Output
 
@@ -797,7 +828,9 @@ arguments without `--login`); `2` on a usage error (for example `--json`).
 for Account <n> (<email> [<tag>]).` when refreshing an already-managed identity
 in place. With `--login`, a new account reads `Added Account <n>: <email>
 [<tag>] (from login)`, preceded by whatever `claude auth login` prints; with
-`--switch`, the switch's usual output follows. `add` has no `--json` mode.
+`--switch`, the switch's usual output follows. With `--lineage fable`:
+`Stored the Fable login for Account-<n> (<email>).`, and `The Fable store now
+uses Account-<n>.` when the Fable store took it. `add` has no `--json` mode.
 
 ### Errors
 
@@ -817,12 +850,23 @@ With `--login`:
   than a `claudeAiOauth` subscription credential.
 - `Error: 'claude' was not found on PATH. Install Claude Code first.`
 
+With `--lineage fable` (exit 1, nothing stored):
+
+- `Error: Account <email> is not stored yet: add it first with tycswap add --login.`
+- `Error: This sign-in is <email>, not Account-<n> (<email of n>); nothing stored.`
+- `Error: Account-<n>'s plan does not offer Fable.`
+- `Error: This is Account-<n>'s default login, not a second sign-in; sign in again in the browser.`
+- `Error: --alias names a new account; a Fable login is stored for an account already added`
+- `Error: The Fable store needs a file-based credential store; macOS keeps Claude Code's login in the Keychain`
+- `tycswap: error: unknown lineage: <value> (default or fable)` (exit 2)
+
 Without `--login`:
 
 - `Error: --switch goes with --login: the live login is already the one add
   stores`
 - `Error: arguments after -- go with --login: they are claude's login
   arguments`
+- `Error: --lineage goes with --login`
 
 ### Example (illustrative — requires a current Claude Code login to snapshot)
 
@@ -832,6 +876,11 @@ Added Account 3: me@example.com [personal]
 
 $ tycswap add --login --alias second -- --email other@example.com
 Added Account 4: other@example.com [personal] (from login)
+
+$ tycswap add --login --lineage fable --slot 4
+Sign in as other@example.com in the browser.
+Stored the Fable login for Account-4 (other@example.com).
+The Fable store now uses Account-4.
 ```
 
 ### See also
@@ -933,12 +982,15 @@ Only `--debug`. The account identifier is required.
 
 Permanently removes a managed account: its `sequence.json` entry, stored
 config, and stored credentials. Prompts for confirmation on an interactive
-terminal (`[y/N]`); any answer other than `y` cancels.
+terminal (`[y/N]`); any answer other than `y` cancels. Its Fable login and
+that file's `.prev` go too (DESIGN A101). When the account is the Fable store's
+live one, the store is emptied first as by `switch --store fable --empty`; if
+that fails, nothing is removed and the error names why.
 
 ### Files
 
-Removes the account's `configs/` and `credentials/` entries and its
-`sequence.json` record.
+Removes the account's `configs/`, `credentials/` and `credentials-fable/`
+entries and its `sequence.json` record.
 
 ### Exit status
 
@@ -1175,8 +1227,11 @@ the target slot, nothing changes.
 ### Files
 
 Rewrites the affected `sequence.json` records and renames the per-account
-`configs/`, `credentials/`, and `sessions/` entries to match the new slot
-numbers.
+`configs/`, `credentials/`, `credentials-fable/` and `sessions/` entries to
+match the new slot numbers. A Fable login moves with its account, staged and
+rolled back like its `credentials/` entry; when the account is the Fable
+store's live one, `fable/live_lineage.json` is rewritten to its new number
+(DESIGN A101).
 
 ### Exit status
 
@@ -1237,7 +1292,8 @@ Exchanges the slot numbers of two accounts. Both accounts must exist.
 ### Files
 
 Rewrites the two `sequence.json` records and renames the corresponding
-`configs/`, `credentials/`, and `sessions/` entries.
+`configs/`, `credentials/`, `credentials-fable/` and `sessions/` entries, the
+Fable logins and the Fable store's chain record as for `move` (DESIGN A101).
 
 ### Exit status
 
@@ -1930,12 +1986,13 @@ client secrets, which belong to the seat and never leave the machine). A live
 credentials file holding nothing but those keys is no login, so an active
 API-key account exports its managed key. An account with a base URL is
 exported from its backup even while it is active (Claude Code's credential
-store holds nothing for it then), with its key and its `baseUrl`.
+store holds nothing for it then), with its key and its `baseUrl`. An export
+never carries a Fable login: it reads the default logins only (DESIGN A101).
 
 ### Files
 
 Reads `sequence.json`, `configs/`, `credentials/` (or Keychain). Writes the
-`.tycswap` file (or stdout).
+`.tycswap` file (or stdout). Never reads `credentials-fable/` or `fable/`.
 
 ### Exit status
 
@@ -2012,6 +2069,9 @@ matched on its `(email, organizationUuid)` identity: an existing match is
 skipped, or overwritten with `--force`; a new identity gets a freshly allocated
 slot. Only a destination with no prior preference inherits the file's
 `activeAccountNumber`. Encrypted exports are rejected.
+
+An import never writes a Fable login and leaves the existing ones in
+`credentials-fable/` as they are (DESIGN A101).
 
 Only the account identity is imported: each account's `config` is reduced to
 its `oauthAccount`, also from a `--full` export, because every other key of
@@ -3488,8 +3548,12 @@ cannot be read counts as held), `purge` refuses before the prompt and deletes
 nothing: the tray would go on showing accounts that no longer exist. Quit the
 app from its menu first.
 
-Live sessions in legacy or retired group profiles also block purge.
-Unreadable process records are refused. The command checks these conditions
+Live sessions in legacy or retired group profiles also block purge. So does
+any live Claude session under `~/.claude/sessions` while the Fable store holds a
+login: purge deletes the Fable store, and a session's record does not name the
+store it runs on (`Claude session(s) running (PID <pids>) may use the Fable
+store, which purge deletes. Exit them first, then retry --purge.`, DESIGN
+A101). Unreadable process records are refused. The command checks these conditions
 again after confirmation, under the account lock, before deleting credentials
 or profiles.
 
@@ -3504,7 +3568,9 @@ file names from it and refuses; fix the record in <sequence.json> or remove
 
 ### Files
 
-Removes the backup root's data, retaining its coordination locks (and, on macOS, each account's
+Removes the backup root's data, `credentials-fable/` and `fable/` (the Fable
+logins, the Fable store, its state and chain record) among it, retaining its
+coordination locks (and, on macOS, each account's
 Keychain backup and its retained `.prev` generation under service `tycswap`,
 plus the session profiles' entries).
 

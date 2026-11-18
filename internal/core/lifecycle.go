@@ -57,6 +57,11 @@ func (sw *Switcher) AddAccountFromLogin(src lifecycle.AddSource, slot *int, assu
 	return lifecycle.AddAccountFrom(sw.Store, src, slot, assumeYes, alias)
 }
 
+// AddFableLogin stores a scratch-profile login as the Fable login of the account it names (DESIGN A101).
+func (sw *Switcher) AddFableLogin(src lifecycle.AddSource, slot *int) (string, error) {
+	return lifecycle.AddFableLogin(sw.Store, src, slot)
+}
+
 func (sw *Switcher) SetStartLogin(id string, allowed bool) error {
 	return lifecycle.SetStartLogin(sw.Store, id, allowed)
 }

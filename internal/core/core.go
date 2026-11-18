@@ -36,6 +36,10 @@ func init() {
 		return lifecycle.ActivePrompter.Prompt(prompt)
 	}
 	reporting.FirstRunSetup = firstRunSetup
+	lifecycle.EmptyFableStore = func(s *store.Store) error {
+		_, err := (&Switcher{Store: s}).EmptyFable(false)
+		return err
+	}
 }
 
 // postSwitchList wires switching.PostSwitchList to the nested list_accounts()
