@@ -97,6 +97,11 @@ const note = n => rowOf(n).all().filter(e => e.className === 'menu-note').map(te
 assert.deepEqual(note(5), ['Add a Fable login: tycswap add --login --lineage fable --slot 5']);
 assert.deepEqual(note(3), []);
 assert.equal(text(ids['auto-body'].children[0]), 'Fable store: counting 5h + 7d + Fable · next #3');
+// Only a scheduler's `auto --once` runs the Fable tick (DESIGN A102): while
+// this dashboard runs the checks itself the line names no next account.
+const hosted = fableState(); hosted.auto.owner = ''; hosted.auto.hosted = true;
+render(hosted);
+assert.equal(text(ids['auto-body'].children[0]), "Fable store: this dashboard's checks do not move it; a scheduler running tycswap auto --once does");
 
 // The store off: the header says so and names the command; the unusable
 // store warns.

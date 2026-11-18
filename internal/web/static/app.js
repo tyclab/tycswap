@@ -1682,14 +1682,19 @@
     });
   }
 
-  // fableAutoLine: the Fable store's engine in one line (DESIGN A104): what
-  // its tick counts and the account it would take next.
+  // fableAutoLine: the Fable store's engine in one line (DESIGN A104): under
+  // a scheduler what its tick counts and the account it would take next;
+  // only `auto --once` runs a Fable tick (A102), so not under this dashboard.
   function fableAutoLine(a) {
     var f = a && a.fable;
     if (!f) { return null; }
-    var caption = String(f.caption || 'Counting 5h + 7d');
-    var next = f.ranking && f.ranking.length ? 'next #' + f.ranking[0] : 'no account to take next';
-    return el('p', { class: 'auto-line', id: 'auto-fable', text: 'Fable store: ' + caption.charAt(0).toLowerCase() + caption.slice(1) + ' \u00b7 ' + next });
+    var text = "Fable store: this dashboard's checks do not move it; a scheduler running " + NAME + ' auto --once does';
+    if (a.owner) {
+      var caption = String(f.caption || 'Counting 5h + 7d');
+      var next = f.ranking && f.ranking.length ? 'next #' + f.ranking[0] : 'no account to take next';
+      text = 'Fable store: ' + caption.charAt(0).toLowerCase() + caption.slice(1) + ' \u00b7 ' + next;
+    }
+    return el('p', { class: 'auto-line', id: 'auto-fable', text: text });
   }
 
   // codexTile: Codex auto-switch beside the Claude one (DESIGN A47), named as

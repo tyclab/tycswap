@@ -8515,7 +8515,11 @@ gets no chip, and its menu names `add --login --lineage fable --slot N`
 (open point O6: no second sign-in from the page). Each row with a usable
 Fable login has *Use for Fable*, which posts the route; on the store's own
 row it reads *Fable here* and is disabled. The Auto tab adds one line,
-`Fable store: counting 5h + 7d + Fable · next #M`.
+`Fable store: counting 5h + 7d + Fable · next #M` under a scheduler (an
+`auto.owner`). No engine this page hosts runs a Fable tick (A102), so without
+an owner the line says so instead (2026-11-18): `Fable store: this
+dashboard's checks do not move it; a scheduler running tycswap auto --once
+does`.
 
 **The tray (O11).** The Windows panel's Fable store row carries a second
 outlined label `Fable` after the plan label, and its screen-reader text

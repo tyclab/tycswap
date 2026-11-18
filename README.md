@@ -928,7 +928,10 @@ bob@example.com`, or `Fable store off`), the Fable store's row carries a
 with the command that signs it in again). **Use for Fable** in such a row
 switches the Fable store there by hand, which holds the Fable store's
 auto-switch for the cooldown; the store's own row reads **Fable here**. The
-Auto tab adds one line, `Fable store: counting 5h + 7d + Fable · next #3`.
+Auto tab adds one line, `Fable store: counting 5h + 7d + Fable · next #3`
+while a scheduler runs the checks; while the dashboard runs them it says that
+its checks do not move the Fable store, since only `tycswap auto --once` runs a
+Fable tick.
 *Switch*, *Switch now* and the best candidate stay the default login's. The
 terminal dashboard (`tycswap tui`) shows the default login only.
 
