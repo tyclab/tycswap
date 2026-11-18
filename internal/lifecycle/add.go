@@ -98,6 +98,9 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 	if err != nil || cancelled {
 		return err
 	}
+	if err := emptyFableBeforeDisplacing(s, slot, email, orgUUID); err != nil {
+		return err
+	}
 
 	return s.WithRosterLocked(func(data *store.SequenceData) error {
 		if slot == nil {
@@ -168,6 +171,10 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		// Destructive cleanup is now safe (new account data is in memory). Each
 		// branch mutates and commits the locked roster: the occupancy it was
 		// decided from is the occupancy it is written into.
+		followFable, err := reslotFableLogins(s, displaceSlot, migrateFrom, accountNum, email)
+		if err != nil {
+			return err
+		}
 		if displaceSlot != nil {
 			if err := s.DeleteAccountFiles(displaceSlot.num, displaceSlot.email); err != nil {
 				return err
@@ -236,6 +243,7 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		if err := s.WriteSequence(data); err != nil {
 			return err
 		}
+		followFable()
 		*landed = accountNum
 
 		tag := displayTag(email, cfgOrgName)

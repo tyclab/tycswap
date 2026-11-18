@@ -20,6 +20,7 @@ type Accounts interface {
 	ReadAccountConfig(num, email string) (string, error)
 	WriteAccountCredentials(num, email, creds string) error
 	WriteAccountConfig(num, email, config string) error
+	DropFableLogin(num, email string) error
 
 	LiveSessionPidsFor(num, email string) []int
 	TokenDead(num, email, orgUUID string) bool

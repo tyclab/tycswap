@@ -788,6 +788,13 @@ otherwise the account takes `--slot` or the next free slot, with `--alias`
 applied. The live login is untouched and `activeAccountNumber` stays on it: it
 follows that account when `--slot` moves it, and is cleared when `--slot`
 overwrites its record.
+A Fable login stays with the account it was signed in as (DESIGN A101): an
+account `--slot` moves takes its Fable login to the new slot (and the Fable
+store's chain record when the store is on it); an account `--slot` overwrites
+loses its Fable login, the Fable store emptied first when it is on that
+account, as for `remove`; a new account takes none, so a Fable login left
+under its slot and email goes. `add` without `--login` and `add-token
+--slot` do the same.
 A login as the live account itself is the exception: `add` then activates the
 new login through the same path as `tycswap switch <n> --force`, which keeps a
 safety copy of the replaced credential, so the live store and `list` hold the
@@ -1776,8 +1783,19 @@ Fable state file only, and a new Fable login releases it
 (`credentials-replaced`). A real Fable tick also refreshes at most one idle
 Fable login, the one refreshed longest ago, when that was more than 14 days
 ago (its `expiresAt` less 8 hours), so its refresh token does not expire
-unused, and logs `Kept the Fable login of account <n> alive`; the live login
-is Claude Code's to refresh. `--dry-run` runs both ticks dry. The loop and
+unused, and logs `Kept the Fable login of account <n> alive`. Before it
+decides, a real Fable tick checks the store's live login itself, whose usage
+is the default login's: once its access token has expired, it refreshes it
+in the store under the store's Claude Code locks (`RefreshFableLiveGuarded`),
+and a refresh the server rejects quarantines it in the Fable state file. A
+live login quarantined so is left at once: the store moves to the account the
+cached usage ranks first among those with a usable Fable login (`switch`,
+trigger `failover`, logged `by engine:failover`), or, with none, it is emptied
+(`no-switch`, reason `no-viable-target`; `tycswap start` then sends Fable
+sessions to the default login and says so). A switch of the Fable store by
+hand holds that move for the cooldown, as it holds the tick; the quarantined
+login already counts as unusable for `start`. The default login is never read
+or written. `--dry-run` runs both ticks dry. The loop and
 the dashboard's hosted engine run no Fable tick. A dead default login leaves
 the account's usage unknown, so neither store takes it until it is signed in
 again.
@@ -2081,7 +2099,13 @@ Serializes managed accounts (with their credentials) to a `.tycswap` JSON file
 for transfer to another machine. By default each account carries only its
 `oauthAccount` config; `--full` embeds the whole per-account config. An import
 reads only the `oauthAccount` of either form. The active
-account is read from the live vault for the freshest tokens. In a bulk export, a
+account is read from the live vault for the freshest tokens. The active account
+is the one the live credential resolves to (backup, chain record, profile), not
+the one `~/.claude.json` names, which a Fable session rewrites with its own
+account; when `~/.claude.json` names another account, the active account's
+stored config is exported. While Fable logins exist, a live credential no
+evidence attributes makes no account active, and each account is exported from
+its backup (DESIGN A101). In a bulk export, a
 single broken account is skipped with a stderr warning; a named single-account
 export treats the same condition as a hard failure. A missing `oauthAccount` is
 always fatal. Each account's credentials are exported without the seat-wide
@@ -2174,8 +2198,12 @@ skipped, or overwritten with `--force`; a new identity gets a freshly allocated
 slot. Only a destination with no prior preference inherits the file's
 `activeAccountNumber`. Encrypted exports are rejected.
 
-An import never writes a Fable login and leaves the existing ones in
-`credentials-fable/` as they are (DESIGN A101).
+An import never writes a Fable login. It replaces no slot's identity:
+`--force` overwrites the slot of the same identity, whose Fable login stays
+its own. A new account lands in a slot the roster does not hold; a Fable login
+left under that slot and email (by an older tycswap) is not its own and is
+deleted. The other Fable logins in `credentials-fable/` stay as they are
+(DESIGN A101).
 
 Only the account identity is imported: each account's `config` is reduced to
 its `oauthAccount`, also from a `--full` export, because every other key of
@@ -2203,7 +2231,8 @@ and `alias`. Every one of these refusals is made before anything is written.
 ### Files
 
 Reads the `.tycswap` file (or stdin). Writes `sequence.json`, `configs/`,
-`credentials/` under one lock spanning the write pass.
+`credentials/` under one lock spanning the write pass, and deletes a Fable
+login left in `credentials-fable/` under a new account's slot and email.
 
 ### Exit status
 

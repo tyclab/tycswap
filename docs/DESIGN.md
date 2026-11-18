@@ -8172,6 +8172,16 @@ repaired: the store is usable again at once.
   anything changes), rolled back with the default backup, and the old key
   removed after the commit. When a moved account is the Fable store's live one,
   `fable/live_lineage.json` is rewritten to its new number under the store lock.
+- The rule under both: a Fable login belongs to the identity it was signed in
+  as. `add` and `add-token` with `--slot N` follow it too (added after lane
+  B's report): an account the add moves from its old slot to N takes its Fable
+  login, and the chain record when the store is on it; an identity the add
+  displaces from N loses its Fable login, the store emptied first when it is
+  on N, as for `remove`; a new identity in N takes none, so a login left under
+  N's key goes. `import` replaces no slot's identity (`--force` overwrites the
+  slot of the same identity, whose Fable login stays); a new account it puts
+  in a slot the roster does not hold deletes a Fable login left under that
+  key, which an older tycswap's `remove` or `move` can leave.
 - `purge` removes `credentials-fable/` and `fable/` with the rest of the store.
   Its session check covered tycswap's session profiles and the retired groups
   only, not `~/.claude/sessions`, where every session, a Fable-store one
@@ -8197,10 +8207,13 @@ Account-M's; nothing stored.`). Of the other `GetCurrentAccount` callers,
 `switching/perform.go`, `switch.go` and `provenance.go` use it by A68's
 design, the resolver reads it as its first input, the group profile ones read a
 group's own config, and the status, dashboard callout, first-run prompt and
-`add-token` hint only display it. Two decide outside this entry's files and
-are left: the transfer adapter's `CurrentAccount` makes `export` read the live
-credential for the account the config names, and `authmode.go` gates the
-API-key confirmation on the config's slot (a Fable session never writes an
+`add-token` hint only display it. The transfer adapter's `CurrentAccount`
+answers the resolved slot's account too (none while Fable logins exist and
+only the config names the slot), so `export` reads the live credential only
+for the account it belongs to, and with that account's stored config when
+`~/.claude.json` names another; before, exporting the Fable store's account
+wrote the default login as its own. `authmode.go` gates the API-key
+confirmation on the config's slot and is left (a Fable session never writes an
 API-key account there).
 
 ## A102. One tick per store
@@ -8286,6 +8299,29 @@ measured access-token life; a credential carries only its expiry. The
 refresh is `RefreshFableBackupGuarded`, logged at INFO as `Kept the Fable
 login of account N alive`; `invalid_grant` quarantines as above, through
 `autoswitch.Quarantine`.
+
+**The live Fable login's own health** (added after lane C's report). The
+Fable tick's usage is the default login's, so a dead live Fable login showed
+nowhere and `FableStore().Usable` stayed true. A real Fable tick, before the
+engine, now checks it: once its access token has expired (Claude Code
+refreshes a login in use before that), `Store.RefreshFableLiveGuarded`
+refreshes it in the store under the Fable store's locks, so Claude Code's own
+refresh is kept out and a rejected grant is the login's verdict, not a lost
+race; the result goes into the store and the account's Fable login file. An
+`invalid_grant` or missing refresh token quarantines it per (account, fable)
+as above, with the live credential's fingerprint. A live login quarantined so,
+now or by an earlier keep-alive, is left at once: the store moves to the
+account `autoswitch.StartTargets` ranks first in the Fable pool, else the
+pool's first (`switch`, trigger `failover`, stamped as the engine's own by
+`autoswitch.EngineSwitch`), or, with an empty pool, is emptied (`no-switch`,
+`no-viable-target`, the tick blocked), and `start` then sends Fable sessions
+to the default login with its notice. A switch of the Fable store by hand
+within the cooldown holds the move or the emptying as it holds a tick (A94,
+`no-switch`, `cooldown`); the quarantine alone already makes the store
+unusable, so `start` sends Fable sessions to the default login meanwhile.
+The default login is never read or written. This replaces the rule that the
+live Fable login is Claude Code's alone to refresh (plan 1.7) for an expired
+one.
 
 **Events and log lines.** Every Fable tick event carries `"store":"fable"`
 (`cli.fableEvent`, modelled on `groupEvent`); the default tick's are

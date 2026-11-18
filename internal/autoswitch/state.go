@@ -19,6 +19,7 @@ import (
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/settings"
 )
 
 // StatePath is the persisted cooldown/quarantine state file path under a backup
@@ -232,23 +233,47 @@ func stampSwitch(state map[string]any, number string, at float64, hand bool) {
 // trigger (DESIGN A94). switchFn's error comes back as is; a stamp that
 // cannot be written goes to warn, since the switch stands.
 func HandSwitch(statePath string, clk clock.Clock, warn func(error), switchFn func() (string, error)) error {
+	_, err := stampedSwitch(statePath, clk, nil, warn, switchFn)
+	return err
+}
+
+// EngineSwitch is HandSwitch for a switch the engine makes outside a tick,
+// off a dead live Fable login (DESIGN A102): stamped as the engine's own. A
+// switch by hand within s's cooldown holds it as it holds a tick (A94):
+// switchFn does not run and held names why.
+func EngineSwitch(statePath string, clk clock.Clock, s settings.AutoSwitchSettings, warn func(error), switchFn func() (string, error)) (held string, err error) {
+	return stampedSwitch(statePath, clk, &s, warn, switchFn)
+}
+
+// stampedSwitch runs switchFn under the state lock and stamps the slot it
+// made active: by hand without engine settings, as the engine's with them.
+func stampedSwitch(statePath string, clk clock.Clock, engine *settings.AutoSwitchSettings, warn func(error), switchFn func() (string, error)) (held string, err error) {
 	var switchErr error
-	err := filelock.New(stateLockPath(statePath), 0).With(func() error {
+	err = filelock.New(stateLockPath(statePath), 0).With(func() error {
+		state := readStateFile(statePath)
+		if engine != nil {
+			e := &Engine{clk: clk}
+			e.settings.Store(engine)
+			if detail, hold := e.cooldownHold("failover", state); hold {
+				held = detail
+				return nil
+			}
+		}
 		var slot string
 		if slot, switchErr = switchFn(); switchErr != nil || slot == "" {
 			return nil
 		}
-		state := readStateFile(statePath)
-		stampSwitch(state, slot, clock.Seconds(clk), true)
+		state = readStateFile(statePath)
+		stampSwitch(state, slot, clock.Seconds(clk), engine == nil)
 		if err := atomicfile.WriteJSON(statePath, state, atomicfile.Opts{}); err != nil && warn != nil {
 			warn(err)
 		}
 		return nil
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
-	return switchErr
+	return held, switchErr
 }
 
 // quarantinedSet builds the set of quarantined slot numbers from a state map

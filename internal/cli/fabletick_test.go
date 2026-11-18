@@ -605,7 +605,8 @@ func TestKeepAliveQuarantinesADeadLogin(t *testing.T) {
 	}
 }
 
-// A dry run keeps nothing alive; a real tick does.
+// A dry run keeps nothing alive; a real tick does, and checks the expired
+// live login too.
 func TestKeepAliveOnlyOnARealTick(t *testing.T) {
 	_, asked := keepAliveFixture(t, map[string]time.Duration{"3": 20 * 24 * time.Hour}, func(creds string) oauth.RefreshOutcome {
 		return oauth.RefreshOutcome{Credentials: creds}
@@ -615,8 +616,8 @@ func TestKeepAliveOnlyOnARealTick(t *testing.T) {
 		t.Fatalf("a dry run refreshed %q", got)
 	}
 	runCodex(t, "", "auto", "--once", "--json")
-	if got := refreshedSlots(asked); got != "3" {
-		t.Fatalf("a real tick refreshed %q, want 3", got)
+	if got := refreshedSlots(asked); got != "2,3" {
+		t.Fatalf("a real tick refreshed %q, want 2 (the live login, expired) and 3", got)
 	}
 }
 

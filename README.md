@@ -653,7 +653,9 @@ fable <n>` switches it by hand and `tycswap switch --store fable --empty` turns
 it off. `tycswap auto --once` rotates it too: after the default tick, a second
 tick moves the Fable store to an account with Fable room, while the default
 login leaves those accounts to it and fills the ones whose Fable week is
-spent; the `tycswap auto` loop and the dashboard's own engine do not. A box
+spent; the `tycswap auto` loop and the dashboard's own engine do not. When
+the Fable store's own login dies, that tick quarantines it and moves the store
+to another account's Fable login, or empties it. A box
 where no account has a Fable login works exactly as before. macOS has no
 Fable store.
 
@@ -672,9 +674,11 @@ Only the Fable login is stored: the default login, the roster and
 `~/.claude.json` stay as they were. The first Fable login turns the Fable store
 on; later ones are only stored, unless `--switch` is given. A sign-in as another
 account, one not added yet, one whose plan has no Fable, or the account's
-default login stores nothing. `remove`, `move` and `swap` take an account's
-Fable login with it, `purge` deletes the Fable store, and `export` and `import`
-never carry a Fable login.
+default login stores nothing. A Fable login stays with the account it was
+signed in as: `remove`, `move`, `swap` and an `add --slot` that moves an
+account take it along, an `add --slot` that puts another account in a slot
+deletes the old one's, `purge` deletes the Fable store, and `export` and
+`import` never carry a Fable login.
 
 **Session groups are retired.** The Fable and Opus / other groups and
 `tycswap claude` are gone; plain `claude` follows the session's model on the
