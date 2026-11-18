@@ -417,6 +417,9 @@ func TestRefreshFableBackupGuarded(t *testing.T) {
 		var sent string
 		c := &oauth.FakeClient{RefreshFn: func(_ context.Context, creds string) oauth.RefreshOutcome {
 			sent = creds
+			if !s.Lock.Held() {
+				t.Error("the store lock is not held during the refresh")
+			}
 			return oauth.RefreshOutcome{Credentials: fresh}
 		}}
 		out := s.RefreshFableBackupGuarded(context.Background(), c, "2", fableEmails["2"], held)
