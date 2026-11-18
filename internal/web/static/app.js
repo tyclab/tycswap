@@ -639,8 +639,19 @@
       ranked.push(r);
     });
     var less = strat === 'soonest-reset' ? lessSoonest : lessBest;
-    ranked.sort(function (a, b) { return less(a, b) ? -1 : less(b, a) ? 1 : 0; });
-    return { ranked: ranked, models: models, strategy: strat, bars: bars };
+    // The engine's own order (auto.ranking, DESIGN A99) places every account
+    // it could take; the others keep their groups after them. Without it, as
+    // from a server that sends none, the page ranks by itself.
+    var order = Array.isArray(auto.ranking) ? auto.ranking : null;
+    var pos = {};
+    if (order) { order.forEach(function (n, i) { pos[String(n)] = i; }); }
+    var placed = function (r) { return Object.prototype.hasOwnProperty.call(pos, r.number); };
+    ranked.sort(function (a, b) {
+      if (order && (placed(a) || placed(b))) { return !placed(a) ? 1 : !placed(b) ? -1 : pos[a.number] - pos[b.number]; }
+      return less(a, b) ? -1 : less(b, a) ? 1 : 0;
+    });
+    var best = order ? (ranked.length && placed(ranked[0]) ? ranked[0] : null) : ranked.filter(function (r) { return !r.label && r.tier <= 1; })[0] || null;
+    return { ranked: ranked, models: models, strategy: strat, bars: bars, best: best };
   }
 
   function numLess(a, b) { var x = parseInt(a, 10), y = parseInt(b, 10); if (!isNaN(x) && !isNaN(y)) { return x < y; } return a < b; }
@@ -1058,7 +1069,7 @@
     var active = accts.filter(function (a) { return a.isActive; })[0];
     var atLimit = accts.filter(function (a) { return a.atLimit; });
     var res = rankCandidates(st);
-    var best = res.ranked.filter(function (r) { return !r.label && r.tier <= 1; })[0];
+    var best = res.best;
 
     box.appendChild(tile('Accounts', String(accts.length), [eligible + ' eligible for rotation']));
     if (active) {
@@ -1070,7 +1081,7 @@
     if (best) {
       box.appendChild(tile('Best candidate', '#' + best.number, [el('span', { class: 'ellipsis', text: accountName(best.account) }), chip((100 - best.pct).toFixed(0) + '% headroom', 'good')], 'good'));
     } else {
-      box.appendChild(tile('Best candidate', '—', [res.ranked.length ? 'no account is under every one of its bars' : 'no other account'], res.ranked.length ? 'warn' : ''));
+      box.appendChild(tile('Best candidate', '—', [res.ranked.length ? 'no account can take over now' : 'no other account'], res.ranked.length ? 'warn' : ''));
     }
   }
 

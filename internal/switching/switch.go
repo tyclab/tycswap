@@ -110,17 +110,18 @@ func Switch(s *store.Store, strategy *string, jsonOut bool) (any, error) {
 		currentRef = numRef(currentNum, email)
 	}
 
-	var models []string
+	var counting Counting
 	if strategyLabel != "rotation" {
-		var caption string
-		if models, caption = countedModels(s); len(models) > 0 && caption != "" && !jsonOut {
-			printOut(printer.Dimmed(strings.ToUpper(caption[:1]) + caption[1:]))
+		counting = countedModels(s)
+		if line := countingLine(counting, strategyStr == "best"); line != "" && !jsonOut {
+			printOut(printer.Dimmed(line))
 		}
 	}
+	models := counting.Models
 
 	// Strategy `best`.
 	if strategyStr == "best" {
-		target, note := selectBestSwitchable(s, currentNum, models, usageByAccount(s))
+		target, note := selectBestSwitchable(s, currentNum, counting, usageByAccount(s))
 		if target != "" {
 			op, err := performSwitch(s, target, !jsonOut, false, nil)
 			if err != nil {
@@ -131,7 +132,7 @@ func Switch(s *store.Store, strategy *string, jsonOut bool) (any, error) {
 			}
 			return nil, nil
 		}
-		if res := bestNoop(note, strategyLabel, currentNum, currentRef, models, jsonOut, warnings); res != nil || note != "none" {
+		if res := bestNoop(note, strategyLabel, currentNum, currentRef, counting, jsonOut, warnings); res != nil || note != "none" {
 			return res, nil
 		}
 		// note == "none": fall through to rotation.
@@ -351,7 +352,8 @@ func switchFreshMachine(s *store.Store, strategyLabel string, jsonOut bool, warn
 
 // bestNoop maps a selectBestSwitchable note to its no-op result (spec 02§4.5).
 // Returns nil only for note "none" (the caller falls through to rotation).
-func bestNoop(note, strategyLabel, currentNum string, currentRef map[string]any, models []string, jsonOut bool, warnings []string) map[string]any {
+func bestNoop(note, strategyLabel, currentNum string, currentRef map[string]any, c Counting, jsonOut bool, warnings []string) map[string]any {
+	models := c.Models
 	switch note {
 	case "current-unavailable":
 		if jsonOut {
@@ -375,19 +377,19 @@ func bestNoop(note, strategyLabel, currentNum string, currentRef map[string]any,
 		if jsonOut {
 			return switchNoop(noopArgs{
 				strategy: strategyLabel, reason: "usage-unavailable", toRef: currentRef, warnings: warnings,
-				message: "No account with known usage has more remaining quota; some usage is unavailable — staying on Account-" + currentNum + ".",
+				message: "No account with known usage ranks before it; some usage is unavailable — staying on Account-" + currentNum + ".",
 			})
 		}
-		printOut(printer.Dimmed("No account with known usage has more remaining quota; some usage is unavailable — staying on Account-" + currentNum + "."))
+		printOut(printer.Dimmed("No account with known usage ranks before it; some usage is unavailable — staying on Account-" + currentNum + "."))
 		return nil
 	case "stay":
 		if jsonOut {
 			return switchNoop(noopArgs{
 				strategy: strategyLabel, reason: "already-best", toRef: currentRef, warnings: warnings,
-				message: "Already on the account with the most remaining quota (Account-" + currentNum + ").",
+				message: "Already on the account the account order (" + c.Settings.Strategy + ") ranks first (Account-" + currentNum + ").",
 			})
 		}
-		printOut(printer.Accent("Already on the account with the most remaining quota") + " (Account-" + currentNum + ").")
+		printOut(printer.Accent("Already on the account the account order ("+c.Settings.Strategy+") ranks first") + " (Account-" + currentNum + ").")
 		return nil
 	case "exhausted":
 		if jsonOut {
@@ -437,4 +439,22 @@ func limitsLabel(models []string) string {
 		return "usage limits"
 	}
 	return "5h/7d limit"
+}
+
+// countingLine is the text-mode line before a switch by strategy: the
+// caption of the counted set while a model window counts (DESIGN A98) and,
+// for best, the account order it ranks by (DESIGN A99); "" when neither.
+func countingLine(c Counting, best bool) string {
+	var parts []string
+	if len(c.Models) > 0 && c.Caption != "" {
+		parts = append(parts, c.Caption)
+	}
+	if best {
+		parts = append(parts, "account order: "+c.Settings.Strategy)
+	}
+	line := strings.Join(parts, " · ")
+	if line == "" {
+		return ""
+	}
+	return strings.ToUpper(line[:1]) + line[1:]
 }

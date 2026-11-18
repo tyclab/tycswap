@@ -4,8 +4,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/switching"
 )
 
 // ReservedIn lists, in sequence order, the accounts r leaves to Fable work.
@@ -63,10 +65,18 @@ func containsFold(list []string, want string) bool {
 	return false
 }
 
-// CountedForSwitch is what a switch by strategy counts: the model windows the
-// default-session policy counts, with its caption (DESIGN A98).
-func CountedForSwitch(s *store.Store) ([]string, string) {
-	r := runDefaultPolicy(s, settings.Load(s.BackupDir()), s.Clk.Now())
+// CountedForSwitch is what a switch by strategy counts and ranks on: the
+// model windows the default-session policy counts, with its caption (DESIGN
+// A98), the saved settings, the policy's reservation and the quarantined
+// accounts (DESIGN A99).
+func CountedForSwitch(s *store.Store) switching.Counting {
+	set := settings.Load(s.BackupDir())
+	r := runDefaultPolicy(s, set, s.Clk.Now())
 	models := settings.ParseModelNames(r.Settings.Model)
-	return models, CountingCaption(false, models, r.Sessions, r.Unservable, r.ReservedIn(s))
+	quarantined := map[string]bool{}
+	for num := range autoswitch.ReadQuarantineEntries(autoswitch.StatePath(s.BackupDir())) {
+		quarantined[num] = true
+	}
+	return switching.Counting{Models: models, Caption: CountingCaption(false, models, r.Sessions, r.Unservable, r.ReservedIn(s)),
+		Settings: set, Reserved: r.Reserved, Quarantined: quarantined}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
@@ -31,14 +32,25 @@ var PostSwitchList func(s *store.Store) error
 
 var AutoAddCurrent func(s *store.Store) (activeNum string, err error)
 
-// CountedModels returns the model windows a switch by strategy counts and the
-// caption that says why: the default-session policy's (DESIGN A98). core
-// wires it to reporting.CountedForSwitch; unwired, only 5h and 7d count.
-var CountedModels func(s *store.Store) (models []string, caption string)
+// Counting is what a switch by strategy counts and ranks on: the model
+// windows the default-session policy counts, the caption that says why
+// (DESIGN A98), the saved settings (bars and account order), the accounts the
+// policy leaves to Fable work and the quarantined ones (DESIGN A99).
+type Counting struct {
+	Models      []string
+	Caption     string
+	Settings    settings.AutoSwitchSettings
+	Reserved    func(num string) bool
+	Quarantined map[string]bool
+}
 
-func countedModels(s *store.Store) ([]string, string) {
+// CountedModels returns the Counting for s; core wires it to
+// reporting.CountedForSwitch. Unwired, only 5h and 7d count.
+var CountedModels func(s *store.Store) Counting
+
+func countedModels(s *store.Store) Counting {
 	if CountedModels == nil {
-		return nil, ""
+		return Counting{Settings: settings.Load(s.BackupDir())}
 	}
 	return CountedModels(s)
 }

@@ -2,9 +2,13 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/jsonout"
@@ -83,10 +87,17 @@ func TestSwitchStrategySaysWhatItCounts(t *testing.T) {
 			t.Fatalf("stdout %q, want the caption line and the skip naming Fable", out)
 		}
 	})
+	t.Run("fable-best", func(t *testing.T) {
+		useSwitcher(t, countingStore(t, "claude-fable-5-1", strategyStates[0].usage))
+		if _, out, _ := runHuman(t, "switch", "--strategy", "best"); !strings.Contains(out, "Counting 5h + 7d + Fable (live Fable sessions) · account order: soonest-reset\n") {
+			t.Fatalf("stdout %q, want the caption and the account order on one line", out)
+		}
+	})
 	t.Run("no-session", func(t *testing.T) {
 		useSwitcher(t, countingStore(t, "", strategyStates[0].usage))
-		if _, out, _ := runHuman(t, "switch", "--strategy", "best"); strings.Contains(out, "Counting") {
-			t.Fatalf("stdout %q names a counted set while only 5h and 7d count", out)
+		_, out, _ := runHuman(t, "switch", "--strategy", "best")
+		if strings.Contains(out, "Counting") || !strings.Contains(out, "Account order: soonest-reset\n") {
+			t.Fatalf("stdout %q, want the account order and no counted set while only 5h and 7d count", out)
 		}
 	})
 }
@@ -120,41 +131,135 @@ func TestSwitchNowAndTheTUICountTheSessionsModels(t *testing.T) {
 	}
 }
 
-// For one state the account Best switches to is the page's best candidate,
-// and Next available never lands on an account the page marks at limit.
+// rankRow is one account's cached usage for the ranking states: 5h, 7d and
+// Fable percentages, the hours until its 7d and Fable windows renew, and
+// unknown for an account with no reading at all.
+type rankRow struct {
+	five, week, fable, renews float64
+	unknown                   bool
+}
+
+// rankingStore is countingStore with a renewal time of its own per account.
+func rankingStore(t *testing.T, model string, rows map[string]rankRow) *core.Switcher {
+	t.Helper()
+	flat := map[string][3]float64{}
+	for num, r := range rows {
+		flat[num] = [3]float64{r.five, r.week, r.fable}
+	}
+	sw := countingStore(t, model, flat)
+	now := time.Now()
+	accounts := map[string]any{}
+	for num, r := range rows {
+		if r.unknown {
+			continue
+		}
+		at := func(h float64) string {
+			return now.Add(time.Duration(h * float64(time.Hour))).UTC().Format(time.RFC3339)
+		}
+		email := map[string]string{"1": "alice@example.com", "2": "bob@example.com", "5": "carol@example.com"}[num]
+		accounts[num] = map[string]any{"email": email, "organizationUuid": "", "fetchedAt": float64(now.Unix()) - 30, "lastGood": map[string]any{
+			"five_hour": map[string]any{"pct": r.five, "resets_at": at(3)},
+			"seven_day": map[string]any{"pct": r.week, "resets_at": at(r.renews)},
+			"scoped":    []any{map[string]any{"name": "Fable", "pct": r.fable, "resets_at": at(r.renews)}},
+		}}
+	}
+	raw, _ := json.Marshal(map[string]any{"schemaVersion": 2, "accounts": accounts})
+	if err := os.WriteFile(filepath.Join(sw.BackupDir(), "cache", "usage.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return sw
+}
+
+// rankingStates: accounts 1 (live), 2 and 5 under both account orders. want
+// is where Best lands per order ("" stays: already-best), page the page's
+// best candidate when it differs, engine whether a scheduled tick moves (the
+// live account at its 5-hour limit).
+var rankingStates = []struct {
+	name, model string
+	rows        map[string]rankRow
+	want, page  map[string]string
+	engine      bool
+}{
+	{"renewal-against-room", "", map[string]rankRow{"1": {100, 30, 0, 72, false}, "2": {10, 20, 0, 120, false}, "5": {10, 40, 0, 24, false}},
+		map[string]string{"best": "2", "soonest-reset": "5"}, nil, true},
+	{"over-a-bar-not-at-limit", "", map[string]rankRow{"1": {100, 30, 0, 72, false}, "2": {90, 10, 0, 72, false}, "5": {10, 40, 0, 72, false}},
+		map[string]string{"best": "2", "soonest-reset": "5"}, nil, true},
+	{"reserved", "claude-opus-5-5", map[string]rankRow{"1": {100, 30, 100, 72, false}, "2": {10, 10, 30, 72, false}, "5": {10, 40, 100, 72, false}},
+		map[string]string{"best": "5", "soonest-reset": "5"}, nil, true},
+	{"fable-counted", "claude-fable-5-1", map[string]rankRow{"1": {100, 30, 20, 72, false}, "2": {10, 10, 100, 120, false}, "5": {10, 40, 10, 24, false}},
+		map[string]string{"best": "5", "soonest-reset": "5"}, nil, true},
+	{"fable-unservable", "claude-fable-5-1", map[string]rankRow{"1": {100, 30, 100, 72, false}, "2": {10, 20, 100, 120, false}, "5": {10, 40, 100, 24, false}},
+		map[string]string{"best": "2", "soonest-reset": "5"}, nil, true},
+	{"unknown-usage", "", map[string]rankRow{"1": {100, 30, 0, 72, false}, "2": {0, 0, 0, 0, true}, "5": {10, 40, 0, 72, false}},
+		map[string]string{"best": "5", "soonest-reset": "5"}, nil, true},
+	{"live-account-first", "", map[string]rankRow{"1": {10, 10, 0, 24, false}, "2": {10, 30, 0, 72, false}, "5": {10, 40, 0, 120, false}},
+		map[string]string{"best": "", "soonest-reset": ""}, map[string]string{"best": "2", "soonest-reset": "2"}, false},
+}
+
+// For one state, under either account order, the account a switch by hand to
+// the best account takes is the page's best candidate and, where a scheduled
+// tick moves, the engine's target; one that ranks the live account first
+// stays. Next available never lands on an account the page marks at limit
+// (DESIGN A98, A99).
 func TestSwitchNowAgreesWithThePage(t *testing.T) {
 	var cases []pageCase
 	var page pageFiles
-	landed := map[string]map[string]string{}
-	for _, tc := range strategyStates {
-		landed[tc.name] = map[string]string{}
-		for _, strategy := range []string{"best", "next-available"} {
-			t.Run(tc.name+"/"+strategy, func(t *testing.T) {
-				sw := countingStore(t, tc.model, tc.usage)
-				writeSettings(t, sw, `{"schemaVersion":1,"autoswitch":{"enabled":true}}`)
+	type result struct{ best, engine, next string }
+	results := map[string]*result{}
+	for _, tc := range rankingStates {
+		for _, order := range []string{"best", "soonest-reset"} {
+			name := tc.name + "/" + order
+			results[name] = &result{}
+			settingsBody := `{"schemaVersion":1,"autoswitch":{"enabled":true,"strategy":"` + order + `"}}`
+			t.Run(name, func(t *testing.T) {
+				sw := rankingStore(t, tc.model, tc.rows)
+				writeSettings(t, sw, settingsBody)
 				d, post, get := serveDashboardPage(t, sw, testOwner)
 				page = servedPage(get)
-				if strategy == "best" {
-					cases = append(cases, pageCase{tc.name, d.srv.Snapshot()})
+				cases = append(cases, pageCase{name, d.srv.Snapshot()})
+				useCodexSource(t, &fakeCodexSource{})
+				_, out, _ := runCodex(t, "", "auto", "--once", "--dry-run", "--json")
+				for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+					if ev := decodeJSON(t, line); ev["event"] == "switch" {
+						to, _ := ev["to"].(map[string]any)
+						results[name].engine = fmt.Sprint(to["number"])
+					}
 				}
-				_, res := post("/api/switch", `{"strategy":"`+strategy+`"}`)
-				landed[tc.name][strategy], _ = switchLanding(t, res)
+				_, res := post("/api/switch", `{"strategy":"best"}`)
+				results[name].best, _ = switchLanding(t, res)
+			})
+			t.Run(name+"/next-available", func(t *testing.T) {
+				sw := rankingStore(t, tc.model, tc.rows)
+				writeSettings(t, sw, settingsBody)
+				_, post := serveDashboard(t, sw, testOwner)
+				_, res := post("/api/switch", `{"strategy":"next-available"}`)
+				results[name].next, _ = switchLanding(t, res)
 			})
 		}
 	}
 	views := renderPage(t, page, cases)
-	for _, tc := range strategyStates {
-		v := views[tc.name]
-		page := "none"
-		if v.Best != nil {
-			page = *v.Best
-		}
-		if best := landed[tc.name]["best"]; best != "" && page != best {
-			t.Errorf("%s: Best switched to %s, the page's best candidate is %s", tc.name, best, page)
-		}
-		for _, n := range v.AtLimit {
-			if landed[tc.name]["next-available"] == n {
-				t.Errorf("%s: Next available landed on %s, which the page marks at limit (%v)", tc.name, n, v.AtLimit)
+	for _, tc := range rankingStates {
+		for _, order := range []string{"best", "soonest-reset"} {
+			name := tc.name + "/" + order
+			r, v := results[name], views[name]
+			pageBest := "none"
+			if v.Best != nil {
+				pageBest = *v.Best
+			}
+			wantPage := tc.want[order]
+			if p, ok := tc.page[order]; ok {
+				wantPage = p
+			}
+			if r.best != tc.want[order] || pageBest != wantPage {
+				t.Errorf("%s: Best landed on %q, the page's best candidate is %s; want %q and %s", name, r.best, pageBest, tc.want[order], wantPage)
+			}
+			if tc.engine && r.engine != tc.want[order] || !tc.engine && r.engine != "" {
+				t.Errorf("%s: the engine moved to %q, want %q (moves: %v)", name, r.engine, tc.want[order], tc.engine)
+			}
+			for _, n := range v.AtLimit {
+				if r.next == n {
+					t.Errorf("%s: Next available landed on %s, which the page marks at limit (%v)", name, n, v.AtLimit)
+				}
 			}
 		}
 	}

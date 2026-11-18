@@ -7780,7 +7780,8 @@ switch --strategy` should pick what the page shows, the operator said
   `auto.counting.models`: a model the policy drops as unservable is not in it,
   so the switch does not count it either and picks as before; the accounts
   the policy reserves for Fable are ranked like any other on the page, so the
-  switch does not hold them back either (the reservation stays the engine's).
+  switch does not hold them back either (the reservation stays the engine's;
+  since A99 all three rank them last).
 - *Saying so.* In text mode, while a model window counts, one dimmed line
   gives the policy's caption, the dashboard's (`reporting.CountingCaption`,
   e.g. `Counting 5h + 7d + Fable (live Fable sessions)`), and a skipped
@@ -7789,7 +7790,8 @@ switch --strategy` should pick what the page shows, the operator said
   `--json` gains no field.
 - *Unchanged.* *Best* still moves only onto strictly more headroom than the
   live account has under that set, so where the live account is best it
-  answers `already-best` while the page still names its best other account.
+  answers `already-best` while the page still names its best other account
+  (until A99, which ranks by the account order).
 
 **Tests.** The reproduction at the three entry points (`switch --strategy
 --json`, `POST /api/switch`, `tui.Facade.Switch`), each failing on v0.15.0:
@@ -7799,3 +7801,69 @@ switch --strategy` should pick what the page shows, the operator said
 model the pick is the 5h and 7d one. One test renders the page over the
 dashboard's state and compares its best candidate and at-limit marks with
 where *Switch now* lands for the same state.
+
+## A99. A switch by hand to the best account takes what the account order ranks first
+
+**Why.** After A98 the three choices of a best account counted the same
+windows but ranked by three rules: *Best* (`switching.selectBestSwitchable`)
+took the most binding headroom, strictly more than the live account's; the
+page's best candidate came from `app.js` (`lessBest`, `lessSoonest`, best
+candidate only below every bar); the engine orders by `sortQualifying`. On
+the operator's boxes the account order is `soonest-reset`, so the button and
+the page named different accounts. Put to him: "make *Switch now · Best*
+follow the *Account order* setting, so a switch by hand picks what the page
+shows and what the engine would pick." His answer: "do it" (2026-11-18).
+
+**Where they disagreed** (each a state of the test below, on A98's code):
+
+- *Renewal against room*, `soonest-reset`: *Best* took the account with the
+  most room, the page and the engine the one renewing first.
+- *Over a bar, not at limit*, `best`: the engine ranks on weekly room without
+  tiers and took the account over its 5-hour bar with the most weekly room;
+  the page put that account in its *at threshold* group and named the other,
+  and *Best*, on binding headroom, took the other too.
+- *Reserved accounts*: the engine ranks accounts left to Fable work last;
+  the page and *Best* ignored the reservation and took one.
+- *Unservable model*, `soonest-reset`: as the first, once the model dropped.
+- Ties: the page broke ties on 7d, model, then 5h usage, the engine on
+  binding headroom.
+
+**What.**
+
+- *One ranking.* `autoswitch.RankTargets` orders candidates as the engine
+  orders its targets: `targetQual` (the part of the qualification no trigger
+  changes: every counted window reported, usage known, not at a limit, week
+  and counted model week not spent), then `sortQualifying` by
+  `autoswitch.strategy`, decision values read as of now. The engine's
+  `selectCandidates` builds its targets with the same `targetQual` and adds
+  only its trigger gates (the proactive landing gate, the hand-over filters).
+- *The switch.* `selectBestSwitchable` ranks the live account with the
+  rotation-eligible, unquarantined others, in sequence order, over A98's
+  counted set and the policy's reservation (`switching.Counting`, filled by
+  `reporting.CountedForSwitch`). It takes the first unless that is the live
+  account (`already-best`); an unknown live reading still stays
+  (`usage-unavailable`), as does a live account first while another account's
+  usage is unknown. Quarantined accounts are no longer targets. Text mode
+  names the order, beside A98's caption.
+- *The page.* The state carries the ranking as `auto.ranking` (the other
+  accounts, best first, over `auto.counting`'s models and reservation; the
+  hosted engine's has neither). *Next best* lists those accounts in that
+  order and the rest after them as before; *Best candidate* is the first.
+  `app.js` keeps its own comparators only for the rows the engine could not
+  take and for a state without `auto.ranking`.
+- *Unchanged.* `next-available`, `tycswap switch <id>`, the engine's
+  decisions, `--json`'s fields. An engine moves only when a trigger lets it,
+  through its gates: a proactive move can skip the first account when it
+  would not land below the triggering bar by the hysteresis margin, so the
+  engine's target equals the page's best candidate where no gate refuses it
+  (always on an at-limit move).
+
+**Tests.** `TestSwitchNowAgreesWithThePage` renders the page over the
+dashboard's state for seven states under both orders (renewals against
+room, an account over a bar but not at limit, reserved accounts, a counted
+Fable window, an unservable one, unknown usage, the live account first) and
+asserts that *Switch now · Best*, the page's best candidate and the
+scheduled tick's dry-run target are one account, that the live account first
+stays, and that *Next available* never lands on an account the page marks at
+limit; five of the fourteen failed on A98's code. The switching unit table
+runs under both orders.

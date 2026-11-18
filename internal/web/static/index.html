@@ -99,7 +99,7 @@
       <div class="toolbar" role="group" aria-label="Account actions">
         <span class="toolbar-label">Switch</span>
         <div class="seg" role="radiogroup" aria-label="Switch strategy" id="strategy-seg">
-          <button type="button" role="radio" aria-checked="true" data-strategy="best" title="Pick the account with the most quota left">Best</button>
+          <button type="button" role="radio" aria-checked="true" data-strategy="best" title="Switch to the best candidate, in the account order">Best</button>
           <button type="button" role="radio" aria-checked="false" data-strategy="next-available" title="Rotate, skipping rate-limited accounts">Next available</button>
         </div>
         <button type="button" class="btn btn-primary" data-action="switch-strategy" data-label="Switch">Switch now</button>
@@ -289,7 +289,7 @@
         <h2>Switching by hand</h2>
         <ul>
           <li><strong>Switch</strong> in an account's row makes that account active at once, whatever its windows say. <strong>Force switch</strong> in the row menu skips the backup of the current login first. A switch onto an API-key account asks first: it changes how Claude Code authenticates, and running sessions keep their old login until restarted. <strong>Force switch</strong> does not ask that and is refused for an API-key account.</li>
-          <li><strong>Best</strong> (the strategy control on the Dashboard) switches to the account with the most headroom; <strong>Next available</strong> goes to the next slot in order that is not at limit. Both count the windows <em>Counting now</em> names, a model window included, so neither lands on an account marked at limit on it. Neither ever picks a disabled account or an API-key account.</li>
+          <li><strong>Best</strong> (the strategy control on the Dashboard) switches to the <em>Best candidate</em>: the account the <em>Account order</em> setting ranks first, as auto-switch ranks its targets, and stays when the active account ranks first; <strong>Next available</strong> goes to the next slot in order that is not at limit. Both count the windows <em>Counting now</em> names, a model window included, so neither lands on an account marked at limit on it. Neither ever picks a disabled account or an API-key account.</li>
           <li><strong>Disable</strong> an account to keep it stored but out of every rotation; a shared account you only want on demand, say. <strong>Enable</strong> brings it back.</li>
           <li><strong>Move / Swap</strong> renumbers slots; <strong>Remove</strong> deletes the stored copy (your Claude login itself is untouched).</li>
         </ul>

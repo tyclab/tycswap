@@ -381,16 +381,22 @@ tycswap switch --strategy {best|next-available} [--json] [--debug]
 ### Description
 
 Bare `tycswap switch` rotates to the next account in the sequence. `tycswap switch
-<NUM|EMAIL|ALIAS>` activates a specific account. `--strategy best` picks the
-account with the most remaining quota, and only when it has more than the
-live account; `--strategy next-available` rotates, skipping accounts at a
-limit. Both strategies count the 5h and 7d windows and the per-model weekly
+<NUM|EMAIL|ALIAS>` activates a specific account. `--strategy best` takes
+the account `autoswitch.strategy` ranks first, as the engine ranks its
+targets (`best`: most weekly room; `soonest-reset`: below every bar first,
+earliest weekly renewal first), the dashboard's *Best candidate* (DESIGN A99);
+when the live account ranks first it stays (`already-best`). Quarantined
+accounts and accounts at a counted limit are never targets, and the accounts
+left to Fable work rank last. `--strategy next-available` rotates, skipping
+accounts at a limit. Both strategies count the 5h and 7d windows and the per-model weekly
 windows the default-session policy counts, the set the dashboard's *Counting
 now* shows (DESIGN A98): while a live Fable session runs and some usable
 account can serve it, an account whose Fable week is spent is at its limit
 (`Skipping Account-2 (at Fable limit)`). In text mode a dimmed line names that
 set with the dashboard's caption (`Counting 5h + 7d + Fable (live Fable
-sessions)`) whenever a model window counts. No flag chooses the set: the
+sessions)`) whenever a model window counts, and `best` adds the order it
+ranks by (`Account order: soonest-reset`, or `… · account order:
+soonest-reset` after the caption). No flag chooses the set: the
 `--model` flag was removed (DESIGN A97) and exits 2.
 
 Switching onto an **API-key account** is the one switch that asks first
@@ -2701,13 +2707,13 @@ tabs:
   machine with Codex accounts *Codex auto-switch* (on or off, its *Codex
   threshold*, the last tick). The *Next best* ranking with each account's
   verdict, which marks a row *at threshold* when any of its windows has
-  reached its own bar, ranks `best` hierarchically by weekly, counted
-  model-weekly, then 5-hour usage, and names the bars in force (`switch at 5h
-  85% · 7d 97%`, plus the model bar while model windows count). Full accounts
-  follow usable accounts; those whose counted full windows all reset in less
-  than five hours lead the blocked group. `soonest-reset` retains reset-time
-  priority within availability groups. This dashboard order does not change
-  the automatic selection policy. The quarantine; a link to the Settings tab.
+  reached its own bar, takes the order the engine ranks its targets in, the
+  state's `auto.ranking` (DESIGN A99), and names the bars in force (`switch at 5h
+  85% · 7d 97%`, plus the model bar while model windows count); its first is
+  the *Best candidate* tile and where *Switch now · Best* goes. The accounts
+  the engine could not take (at a limit, quarantined, without usage) follow:
+  those whose counted full windows all reset in less than five hours lead
+  them. The quarantine; a link to the Settings tab.
   The page starts no dry run (`tycswap auto --dry-run` does) and has no event
   log: a scheduler's ticks print to its journal.
 - **Settings**: the `settings.json` keys `tycswap config` knows
@@ -2816,7 +2822,11 @@ model families the live default sessions run, in `sessions`, minus
 `unservable`, with the accounts left to Fable work in `reserved`) or `hosted`
 (an engine hosted in this process, which does not follow sessions and counts
 5h and 7d only); `caption` says it in one line, e.g. `counting 5h + 7d; Fable not
-counted: no usable account can serve it`. An engine event is `{"at", "kind", "message", "account",
+counted: no usable account can serve it`. `auto.ranking` is the order the
+engine would take the other accounts in over what `auto.counting` counts,
+best first (`autoswitch.strategy`, the engine's `sortQualifying`; an account
+at a counted limit, quarantined or without usage is left out; DESIGN A99).
+An engine event is `{"at", "kind", "message", "account",
 "fields"}`; a Codex tick's also carries `"provider": "codex"` (the Claude
 engine's carry no `provider`), its `kind` is `switch`, `error`,
 `all-exhausted` or `no-switch` for the outcomes switched, error, blocked and

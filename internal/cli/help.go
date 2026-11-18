@@ -84,8 +84,8 @@ Aliases: ls=list  rm=remove  update=upgrade`
 
 // mainEpilog is the RawDescription epilog (spec 08§3), verbatim.
 const mainEpilog = `Flags combine with subcommands:
-  tycswap switch --strategy best           # pick the account with most quota left
-  tycswap switch --strategy next-available # rotate, skipping rate-limited accounts
+  tycswap switch --strategy best           # the account the account order ranks first
+  tycswap switch --strategy next-available # rotate, skipping accounts at a limit
   tycswap switch user@example.com
   tycswap list --json
   tycswap add --slot 3                      # add to a specific slot
@@ -115,8 +115,10 @@ const visibleOptions = `options:
   --json                Emit machine-readable JSON to stdout (use with 'list',
                         'status', or 'switch')
   --strategy {best,next-available}
-                        With bare 'switch': pick the target by remaining 5h/7d
-                        quota
+                        With bare 'switch': best takes the account
+                        autoswitch.strategy ranks first, next-available the
+                        next one not at a limit; both count the windows
+                        auto-switch counts
   --slot NUM            Specify slot number when adding account (use with 'add'
                         or 'add-token')
   --email EMAIL         Email address for the account (use with 'add-token')

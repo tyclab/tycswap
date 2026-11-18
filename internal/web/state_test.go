@@ -157,6 +157,7 @@ func testStateExactShape(t *testing.T, codex bool) {
 			"codex":      nil,
 			"lastTickAt": nil,
 			"counting":   nil,
+			"ranking":    nil,
 		},
 		"strategies":    []any{"best", "next-available"},
 		"name":          "tycswap",
