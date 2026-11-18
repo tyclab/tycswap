@@ -7009,7 +7009,8 @@ The rule: the Windows panel is one page.
   its rows; past the work area the list scrolls and the title, the note and
   the footer stay.
 - Every Switch, switch and footer command is a real owner-drawn button, so
-  Tab walks the Switch buttons top to bottom and then the footer, Space or
+  Tab walks the Switch buttons top to bottom (A104: each row's `Use for
+  Fable` just before its Switch) and then the footer, Space or
   Enter press, Esc closes. The popup itself has the focus when it opens, so
   a stray key presses nothing, and gets it back when the focused Switch
   becomes `In use` (disabled) or goes. A Switch's window text is its row in words
@@ -8476,10 +8477,15 @@ Fable login usable, a plan that runs Fable, not in the Fable quarantine, not
 the store's own) has a second button, `Use for Fable`, beside *Switch*; it
 switches the Fable store through the dashboard (the remote tray posts the
 route, the in-process app calls `SwitchFable`), and a click while one is in
-flight is dropped, as for the Auto-switch button (A94). The action cell's
-*Switch* and `In use` stay the default login's. The Linux and macOS menus
-end the Fable store row's label in ` · Fable` and add one `Use for Fable:
-#N <name>` item per such account. The icon's tooltip reads `Default #N ·
+flight is dropped, as for the Auto-switch button (A94). The button sits
+left of *Switch*, which keeps the column's right edge; Tab reaches it just
+before its row's *Switch*; its window text is `Use <row name> for Fable`;
+the column widens by it only while some row has one. The note reads
+`Switched the Fable store to #N.` and a notification says so; a failure
+reads `Fable switch failed: <error>`. The action cell's *Switch* and `In
+use` stay the default login's. The Linux and macOS menus end the Fable store
+row's second line in ` · Fable` and add, after the account rows, one `Use
+for Fable: #N <name>` item per such account. The icon's tooltip reads `Default #N ·
 Fable #M` (`Fable off`, `Fable account unknown`) in place of the default
 account's name and windows, which the panel shows. A remote tray decodes the
 new fields; an older dashboard sends none and the tray shows nothing new.
@@ -8502,4 +8508,13 @@ page element with a Fable store, none without, the button's request) in
 `testdata/nofable-state.json`, recorded from the tree before these
 surfaces), `TestDashboardSwitchesTheFableStoreOnly`,
 `TestDashboardAutoFable` and `TestDashboardPageWithTheFableStore` over a real
-switcher in `cli`.
+switcher in `cli`. The tray: `TestPanelFableLabelAndButton` (the label, the
+button and the A84 fit, wide and narrow) and `TestPanelFableAccessibleTexts`
+in `tray`, `TestNativePanelUseForFable` on Windows; `TestTrayFablePanelRows`,
+`TestTrayFableTooltip`, `TestTrayFableMenu`, `TestTrayFableClick`,
+`TestTrayFableClicksDropWhileOneIsInFlight`,
+`TestTrayWithoutFableLoginsNothingChanges`,
+`TestAppTraySwitchesTheFableStore` (the in-process switch over a real
+store), `TestRemoteSwitchFablePostsTheStore`, `TestRemoteModeUsesForFable`
+and `TestRemoteTrayDecodesTheFableFields` (with and without the fields) in
+`cli`.

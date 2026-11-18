@@ -973,8 +973,9 @@ default login's. The icon's tooltip reads `Default #1 · Fable #2` (or `Fable
 off`).
 
 macOS and Linux retain their platform menus, where a switch acts the same
-way; with a Fable login the Fable store's account row ends in ` · Fable` and
-each account the Fable store can take has a `Use for Fable: #N` item. The icon's title reports the active
+way; with a Fable login the Fable store's account row's second line ends in
+` · Fable` and each account the Fable store can take has a `Use for Fable: #N`
+item after the account rows. The icon's title reports the active
 account and its fullest counted window (`#1 · 45%`, with `⟳` while the hosted
 engine runs). Notifications report switches, quarantines and thresholds.
 Update checks and installation retain the normal release checks and restart
