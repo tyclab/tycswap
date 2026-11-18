@@ -8090,10 +8090,11 @@ session inherits `CLAUDE_SECURESTORAGE_CONFIG_DIR`: its status line, its
 quota hook, any `tycswap` an agent runs. `cclock` honours the variable, the
 default credential path does not, so such a process would switch the default
 login under the Fable store's Claude Code locks. At the top of `cli.run`,
-after `start` (A103's), a value equal to `paths.FableStoreDir` (cleaned;
-case-insensitive on Windows) is unset for the process and
-`cli.fableSessionProcess` set. Any other value is the user's own and left as
-it is. `launch.ScrubAuthOverrides` keeps the variable in its list (A92).
+and in `start` (A103's) right after it has captured the environment its child
+gets, a value equal to `paths.FableStoreDir` (cleaned; case-insensitive on
+Windows) is unset for the process and `cli.fableSessionProcess` set, so
+`start`'s own start-login selection takes the default store's locks too. Any
+other value is the user's own and left as it is. `launch.ScrubAuthOverrides` keeps the variable in its list (A92).
 
 **macOS.** `Store.ForFable` returns `ErrFableUnsupported`: "The Fable store
 needs a file-based credential store; macOS keeps Claude Code's login in the
