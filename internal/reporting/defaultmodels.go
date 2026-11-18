@@ -140,13 +140,13 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 	base.Model = nil
 	r := PolicyResult{Settings: base}
 	fable := s.FableStore()
-	var view *policyView
-	viewOf := func() policyView {
-		if view == nil {
+	var cached *policyView
+	viewOf := func() *policyView {
+		if cached == nil {
 			v := newPolicyView(s, now)
-			view = &v
+			cached = &v
 		}
-		return *view
+		return cached
 	}
 	if fable.Usable {
 		r.Reserved = fableReserved(s, fable.Live.Slot, viewOf().fableBelow(base.ModelThreshold))
@@ -179,7 +179,7 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 		r.Sessions = append(r.Sessions, family)
 	}
 	sort.Strings(r.Sessions)
-	viewOf()
+	view := viewOf()
 	var counted []string
 	for _, name := range scopedNamesFor(view.usage, families) {
 		if view.serves(name, base) {
