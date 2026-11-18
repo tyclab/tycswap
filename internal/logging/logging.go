@@ -114,6 +114,7 @@ type Logger struct {
 	debug   bool
 	clk     clock.Clock
 	console io.Writer
+	prefix  string
 }
 
 // New configures the "tycswap" logger writing to dir/tycswap.log. The
@@ -140,10 +141,20 @@ func NewWithClock(dir string, debug bool, clk clock.Clock) *Logger {
 	return l
 }
 
+// Prefixed is a logger writing to l's file with prefix before each message:
+// the Fable store's tick names its store on every line (DESIGN A102).
+func (l *Logger) Prefixed(prefix string) *Logger {
+	if l == nil {
+		return nil
+	}
+	return &Logger{w: l.w, level: l.level, debug: l.debug, clk: l.clk, console: l.console, prefix: l.prefix + prefix}
+}
+
 func (l *Logger) emit(level Level, msg string) {
 	if level < l.level {
 		return
 	}
+	msg = l.prefix + msg
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	line := FormatLine(Record{Time: l.clk.Now(), Level: level, Message: msg}) + "\n"

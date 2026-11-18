@@ -268,7 +268,18 @@ func quarantinedSet(state map[string]any) map[string]bool {
 // quarantine records a slot's dead/mismatched credential and emits the event
 // (05§14). The fingerprint is the credential's refresh-token hash, or nil.
 func (e *Engine) quarantine(number, email, reason string) error {
-	creds := e.sw.ReadAccountCredentials(number, email)
+	return e.recordQuarantine(number, email, reason, e.sw.ReadAccountCredentials(number, email))
+}
+
+// Quarantine records number's dead login, creds, in the state file at
+// statePath as a tick does and emits the event: for a refresh made outside a
+// tick (DESIGN A102).
+func Quarantine(statePath string, clk clock.Clock, number, email, reason, creds string, emit func(Event)) error {
+	e := &Engine{statePath: statePath, lockPath: stateLockPath(statePath), clk: clk, onEvent: emit}
+	return e.recordQuarantine(number, email, reason, creds)
+}
+
+func (e *Engine) recordQuarantine(number, email, reason, creds string) error {
 	var fingerprint *string
 	if creds != "" {
 		fingerprint = oauth.CredentialFingerprint(creds)

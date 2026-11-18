@@ -650,8 +650,12 @@ between them. `tycswap start`, and so a `claude` launcher built on it, picks
 the store by the session's model; a Fable session on a Fable store without a
 usable login starts on the default login and says so. `tycswap switch --store
 fable <n>` switches it by hand and `tycswap switch --store fable --empty` turns
-it off. A box where no account has a Fable login works exactly as before.
-macOS has no Fable store.
+it off. `tycswap auto --once` rotates it too: after the default tick, a second
+tick moves the Fable store to an account with Fable room, while the default
+login leaves those accounts to it and fills the ones whose Fable week is
+spent; the `tycswap auto` loop and the dashboard's own engine do not. A box
+where no account has a Fable login works exactly as before. macOS has no
+Fable store.
 
 To add a Fable login, sign each account in a second time, once per account and
 box, after it has been added:

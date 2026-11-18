@@ -21,6 +21,7 @@ func BuildAccountsInfo(s *store.Store) []AccountInfo {
 	live := &liveRead{s: s}
 	ls := s.ResolveLiveSlotWith(data, live.value)
 	activeNum := ls.Slot
+	fableNum := fableLiveSlot(s, data)
 
 	infos := make([]AccountInfo, 0, len(data.Sequence))
 	for _, n := range data.Sequence {
@@ -67,6 +68,7 @@ func BuildAccountsInfo(s *store.Store) []AccountInfo {
 			Plan:                s.RecordPlan(num, rec),
 			KeychainUnavailable: keychainUnavailable,
 			BaseURL:             store.BaseURLFrom(data, num),
+			FableLive:           fableNum != "" && num == fableNum,
 		}
 		if isActive {
 			info.live, info.liveCreds = ls, live.value()
@@ -99,4 +101,13 @@ func (r *liveRead) value() string {
 		return val
 	}
 	return ""
+}
+
+// fableLiveSlot is the Fable store's live account while the store is on,
+// resolved without writing the Fable chain record (DESIGN A102); "" for none.
+func fableLiveSlot(s *store.Store, data *store.SequenceData) string {
+	if s.IsFable() || !s.HasFableLogins() {
+		return ""
+	}
+	return s.WithoutLineageWrites().ResolveFableLiveSlot(data).Slot
 }

@@ -44,7 +44,7 @@ func TestModelFamilyExported(t *testing.T) {
 
 func TestDefaultRecordHasNoStoreField(t *testing.T) {
 	root := t.TempDir()
-	if _, err := RecordDefaultSessionModel(root, "s1", "opus", time.Unix(100, 0)); err != nil {
+	if _, err := RecordDefaultSessionModel(root, "s1", "opus", "", time.Unix(100, 0)); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(filepath.Join(root, "default_models.json"))
