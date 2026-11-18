@@ -614,9 +614,14 @@ the same default login. Another switch can happen before the child reads it.
 This creates no session profile or startup hold. Executable launch failures
 exit nonzero and never rerun the command.
 
-The child's environment and arguments pass unchanged. A set
+The child's arguments pass unchanged, and so does its environment, except
+`CLAUDE_SECURESTORAGE_CONFIG_DIR` while a Fable store exists: a session whose
+model is Fable (`--model`, `ANTHROPIC_MODEL`, the resumed session's model, then
+the Claude Code settings) starts on the Fable store when it has a usable
+login, and every other session drops a value naming the Fable store. A set
 `CLAUDE_CONFIG_DIR` (even empty), `--bare`, or a Claude authentication override
-skips selection, including an explicit `--account` request. Options for tycswap
+(a `CLAUDE_SECURESTORAGE_CONFIG_DIR` of your own included) skips selection and
+passes everything unchanged, including an explicit `--account` request. Options for tycswap
 end at `--` or the first command. Without a command, `start` resolves the real
 Claude executable; failure to resolve it safely is a launch error.
 
@@ -641,9 +646,12 @@ Fable login. The Fable store (`<backup store>/fable/store/`) holds one of them
 live, and Fable sessions run on it through Claude Code's
 `CLAUDE_SECURESTORAGE_CONFIG_DIR`, while every other session stays on the
 default login; tycswap switches the two independently and never moves a login
-between them. `tycswap switch --store fable <n>` switches it by hand and
-`tycswap switch --store fable --empty` turns it off. A box where no account has
-a Fable login works exactly as before. macOS has no Fable store.
+between them. `tycswap start`, and so a `claude` launcher built on it, picks
+the store by the session's model; a Fable session on a Fable store without a
+usable login starts on the default login and says so. `tycswap switch --store
+fable <n>` switches it by hand and `tycswap switch --store fable --empty` turns
+it off. A box where no account has a Fable login works exactly as before.
+macOS has no Fable store.
 
 To add a Fable login, sign each account in a second time, once per account and
 box, after it has been added:

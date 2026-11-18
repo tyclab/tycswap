@@ -1366,8 +1366,36 @@ refresh a near-expiry login or release an eligible idle legacy profile.
 A set `CLAUDE_CONFIG_DIR` (including empty), `--bare` in the child arguments,
 or any variable in the existing Claude auth-override contract skips selection.
 The inherited environment and arguments are passed unchanged, even with an
-explicit `--account`. No new profile or claim is created. Marks are managed
-independently of these launch-only overrides.
+explicit `--account`. `CLAUDE_SECURESTORAGE_CONFIG_DIR` counts as an override
+unless it names the Fable store (`<backup root>/fable/store`, compared
+cleaned; case-insensitively on Windows). No new profile or claim is created.
+Marks are managed independently of these launch-only overrides.
+
+Without an override, `start` picks the session's credential store by its
+model family. The first source that names a model answers: `--model X` or
+`--model=X` (the last one), `ANTHROPIC_MODEL`, for `--resume ID`, `-r ID` or
+`--resume=ID` with a UUID the session's record in `default_models.json` and
+else the last assistant line in the last 1 MiB of
+`~/.claude/projects/*/ID.jsonl` (no symlink out of `projects/`), then the
+`model` key of `<cwd>/.claude/settings.local.json`, `<cwd>/.claude/settings.json`
+and `~/.claude/settings.json`. A bare `--resume`, `--continue` and `-c` give no
+model of their own. Aliases and full ids (with `[1m]`) count alike.
+
+| Family | Fable store | Child environment | Selection | Notice on stderr |
+| --- | --- | --- | --- | --- |
+| Fable | on and usable | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | skipped | none |
+| Fable | off or unusable, with Fable logins | that variable removed if it named the store | runs | `tycswap start: the Fable store has no usable login (<reason>); starting on the default login.` |
+| other, none, or no Fable login | – | that variable removed if it named the store | runs | none |
+
+Every other variable passes unchanged. The store's state comes from its files
+only (no network); a live Fable login whose account is unknown counts as
+usable. With a Fable session on the store, `--account ID` still selects the
+default login and prints `tycswap start: --account selects the default login;
+this Fable session starts on the Fable store (Account-N).`; the Fable store does
+not move. A box without a Fable login passes the environment unchanged, less a
+variable naming the Fable store. macOS has no Fable store and never sets the
+variable. A session keeps the store it started on: `/model` does not move it,
+and Fable subagents of another session run on that session's store.
 
 Unavailable selection, including an unknown or ambiguous explicit account,
 unreadable store/settings, lock or credential failure, prints one sanitized

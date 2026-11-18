@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode"
@@ -24,6 +25,9 @@ import (
 var startExec = launch.Exec
 var startResolve = launch.Resolve
 var startResolveDefault = launch.ResolveDefault
+
+// startSelect is the default start-login selection; tests watch it.
+var startSelect = selectStartLogin
 
 type startArguments struct {
 	account, action, id string
@@ -110,33 +114,51 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 		startNotice(streams.err, "Could not launch command: "+err.Error())
 		return 1
 	}
-	if reason := startOverride(env, parsed.command); reason != "" {
+	root := paths.GetBackupRoot()
+	storeDir := filepath.Clean(paths.FableStoreDir(root))
+	childEnv := env
+	if reason := startOverride(env, parsed.command, storeDir); reason != "" {
 		if parsed.account != "" {
 			startNotice(streams.err, "Skipping the requested start login because "+reason+"; launching unchanged.")
 		}
 	} else {
-		selectStartLogin(parsed.account, streams.err)
+		fable, hasFableLogins := startFableStore(root)
+		var onFable bool
+		var notice string
+		childEnv, onFable, notice = startEnvironment(env, args, fable, hasFableLogins, storeDir)
+		if notice != "" {
+			startNotice(streams.err, notice)
+		}
+		if !onFable || parsed.account != "" {
+			startSelect(parsed.account, streams.err)
+		}
+		if onFable && parsed.account != "" {
+			startNotice(streams.err, "--account selects the default login; this Fable session starts on the Fable store"+accountSuffix(fable.Live.Slot)+".")
+		}
 	}
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
 	release := claimSigint()
 	defer release()
-	code, err := startExec(bin, args, env)
+	code, err := startExec(bin, args, childEnv)
 	if err != nil {
 		startNotice(streams.err, "Could not launch command: "+err.Error())
 	}
 	return code
 }
 
-func startOverride(env, command []string) string {
+func startOverride(env, command []string, storeDir string) string {
 	for _, entry := range env {
-		key, _, _ := strings.Cut(entry, "=")
-		if key == "CLAUDE_CONFIG_DIR" || platform.IsWindows() && strings.EqualFold(key, "CLAUDE_CONFIG_DIR") {
+		key, value, _ := strings.Cut(entry, "=")
+		if envKeyIs(key, "CLAUDE_CONFIG_DIR") {
 			return key + " is set"
 		}
+		if envKeyIs(key, secureStorageEnv) && isFableStoreDir(value, storeDir) {
+			continue
+		}
 		for _, override := range launch.AuthOverrideEnvVars {
-			if strings.EqualFold(key, override) && (platform.IsWindows() || key == override) {
+			if envKeyIs(key, override) {
 				return override + " is set"
 			}
 		}
@@ -153,28 +175,33 @@ func startOverride(env, command []string) string {
 	return ""
 }
 
-func selectStartLogin(account string, stderr io.Writer) {
-	root := paths.GetBackupRoot()
+// startStoreProblem is why start must not read the tycswap store at root, as
+// a notice; "" when it may.
+func startStoreProblem(root string) string {
+	const fallback = "; launching on the current login."
 	if info, err := os.Stat(root); err == nil {
 		if !info.IsDir() {
-			startNotice(stderr, "Could not select a start login: the tycswap store "+root+" is not a directory; launching on the current login.")
-			return
+			return "Could not select a start login: the tycswap store " + root + " is not a directory" + fallback
 		}
 	} else if !os.IsNotExist(err) {
-		startNotice(stderr, "Could not select a start login: could not inspect the tycswap store: "+err.Error()+"; launching on the current login.")
-		return
+		return "Could not select a start login: could not inspect the tycswap store: " + err.Error() + fallback
 	}
 	warning, err := paths.CheckPrivateRoot(root)
 	if err != nil {
-		startNotice(stderr, "Could not select a start login: "+err.Error()+"; launching on the current login.")
-		return
+		return "Could not select a start login: " + err.Error() + fallback
 	}
 	if warning != "" {
-		startNotice(stderr, warning+"; launching on the current login.")
-		return
+		return warning + fallback
 	}
 	if geteuid() == 0 && !platform.IsWindows() && !platform.RunningInContainer() {
-		startNotice(stderr, "Start login selection is unavailable as root; launching on the current login.")
+		return "Start login selection is unavailable as root" + fallback
+	}
+	return ""
+}
+
+func selectStartLogin(account string, stderr io.Writer) {
+	if problem := startStoreProblem(paths.GetBackupRoot()); problem != "" {
+		startNotice(stderr, problem)
 		return
 	}
 	sw, err := newSwitcher(store.Options{OAuth: oauth.NewHTTPClient(), Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
@@ -325,5 +352,6 @@ func renderStartHelp(prog string, out io.Writer) int {
 	fmt.Fprintln(out, "\nStart on a usable marked login, then launch once (default: real Claude).")
 	fmt.Fprintln(out, "Selection failures launch on the current login. Arguments and environment pass unchanged.")
 	fmt.Fprintln(out, "--account also works with auto-switch off; inherited auth/profile overrides skip selection.")
+	fmt.Fprintln(out, "Sessions on a Fable model start on the Fable store when one is on (tycswap add --login --lineage fable).")
 	return 0
 }
