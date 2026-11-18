@@ -18,7 +18,6 @@ import (
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/keychain"
-	"github.com/tyclab/tycswap/internal/paths"
 )
 
 // OAuth (Keychain, then file) is tried fully first so a Keychain-empty file login is never misread as an API key.
@@ -36,7 +35,7 @@ func (s *FileKeychainStore) ReadActive() (string, bool, error) {
 		keychainFailed = true
 	}
 
-	raw, existsFile, rerr := ccfile.ReadCredentialsFile()
+	raw, existsFile, rerr := ccfile.ReadCredentialsFileAt(s.credentialsPath())
 	if rerr != nil {
 		// A present credentials file that could not be read → Python's None.
 		s.log.Errorf("Failed to read credentials file: %v", rerr)
@@ -44,6 +43,9 @@ func (s *FileKeychainStore) ReadActive() (string, bool, error) {
 	}
 	if existsFile && strings.TrimSpace(raw) != "" && !ccfile.SeatWideOnly(raw) {
 		return raw, false, nil // raw text, NOT stripped
+	}
+	if s.fileOnly {
+		return "", false, nil
 	}
 
 	if key := s.readManagedKey(); key != "" {
@@ -102,6 +104,9 @@ func (s *FileKeychainStore) readGlobalConfig() map[string]any {
 // axis (spec 03§5.5): a managed key clears OAuth and vice-versa.
 func (s *FileKeychainStore) WriteActive(creds string) error {
 	if LooksLikeAPIKey(creds) {
+		if s.fileOnly {
+			return errFileOnlyKey
+		}
 		return s.writeManagedCredentials(strings.TrimSpace(creds), false)
 	}
 	if err := s.writeOAuthCredentials(creds); err != nil {
@@ -110,6 +115,8 @@ func (s *FileKeychainStore) WriteActive(creds string) error {
 	s.clearManagedKey()
 	return nil
 }
+
+var errFileOnlyKey = cerr.CredentialWrite("This credential store holds OAuth logins only")
 
 // WriteActiveAccount writes a stored account credential as Claude Code's active
 // one, carrying the live credential's seat-wide remainder — the MCP server
@@ -125,6 +132,9 @@ func (s *FileKeychainStore) WriteActive(creds string) error {
 // refresh write-back uses for a blob that already holds the live remainder.
 func (s *FileKeychainStore) WriteActiveAccount(creds string) error {
 	if LooksLikeAPIKey(creds) {
+		if s.fileOnly {
+			return errFileOnlyKey
+		}
 		return s.writeManagedCredentials(strings.TrimSpace(creds), true)
 	}
 	merged, err := ccfile.SpliceCredentials(creds, s.readLiveOAuth())
@@ -161,7 +171,7 @@ func (s *FileKeychainStore) readLiveOAuth() string {
 			return v
 		}
 	}
-	raw, _, err := ccfile.ReadCredentialsFile()
+	raw, _, err := ccfile.ReadCredentialsFileAt(s.credentialsPath())
 	if err != nil {
 		s.log.Warningf("Could not read the live credentials file; the live MCP server logins will not be carried over: %v", err)
 		return ""
@@ -203,7 +213,7 @@ func (s *FileKeychainStore) writeOAuthCredentialsBeforeFile(creds string, before
 			return err
 		}
 	}
-	if err := ccfile.WriteCredentialsFile(creds); err != nil {
+	if err := ccfile.WriteCredentialsFileAt(s.credentialsPath(), creds); err != nil {
 		return cerr.CredentialWrite("Failed to write credentials: %v", err)
 	}
 	s.deleteActiveKeychainEntry()
@@ -217,10 +227,10 @@ func (s *FileKeychainStore) writeOAuthCredentialsBeforeFile(creds string, before
 // refreshStaleCredentialsFile bumps an already-present .credentials.json's mtime
 // after a Keychain write (rewrite-when-present / never-create, #86). Best-effort.
 func (s *FileKeychainStore) refreshStaleCredentialsFile(creds string) {
-	if !exists(paths.GetCredentialsPath()) {
+	if !exists(s.credentialsPath()) {
 		return
 	}
-	if err := ccfile.WriteCredentialsFile(creds); err != nil {
+	if err := ccfile.WriteCredentialsFileAt(s.credentialsPath(), creds); err != nil {
 		s.log.Warningf("Could not refresh .credentials.json after Keychain write (%v); a running session may not hot-reload until restart", err)
 	}
 }
@@ -376,6 +386,9 @@ func managedWriteFailed(err error, restore func(dropped string) error, dropped s
 }
 
 func (s *FileKeychainStore) clearManagedKey() {
+	if s.fileOnly {
+		return
+	}
 	if s.macOS() {
 		_ = s.kc.Delete(managedKeychainService, keychain.AccountName())
 	}
@@ -428,7 +441,7 @@ func (s *FileKeychainStore) clearOAuthLogin(beforeFile func() error) error {
 // plaintext file (best-effort, spec 03§5.6).
 func (s *FileKeychainStore) clearOAuthCredential() {
 	s.deleteActiveKeychainEntry()
-	p := paths.GetCredentialsPath()
+	p := s.credentialsPath()
 	if exists(p) {
 		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			s.log.Warningf("Failed to remove credentials file: %v", err)

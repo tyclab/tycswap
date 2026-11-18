@@ -87,7 +87,11 @@ func ReadGlobalConfigStrict(path string) (map[string]any, error) {
 // returned exists flag is false (with a nil error) when the file is absent; the
 // text is returned verbatim (callers apply any strip/non-blank check).
 func ReadCredentialsFile() (raw string, exists bool, err error) {
-	path := paths.GetCredentialsPath()
+	return ReadCredentialsFileAt(paths.GetCredentialsPath())
+}
+
+// ReadCredentialsFileAt is ReadCredentialsFile for another credential store's file (DESIGN A100).
+func ReadCredentialsFileAt(path string) (raw string, exists bool, err error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -103,7 +107,12 @@ func ReadCredentialsFile() (raw string, exists bool, err error) {
 // needed. The payload is stored raw — no JSON re-encoding — matching Claude
 // Code's own file, whose changed mtime is what invalidates its cached token.
 func WriteCredentialsFile(raw string) error {
-	return atomicWrite(paths.GetCredentialsPath(), []byte(raw))
+	return WriteCredentialsFileAt(paths.GetCredentialsPath(), raw)
+}
+
+// WriteCredentialsFileAt is WriteCredentialsFile for another credential store's file.
+func WriteCredentialsFileAt(path, raw string) error {
+	return atomicWrite(path, []byte(raw))
 }
 
 // SeatWideKeys are the top-level keys of ~/.claude/.credentials.json that
