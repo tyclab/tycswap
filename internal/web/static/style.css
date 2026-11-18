@@ -576,7 +576,7 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 .card-toggle:hover .chev { opacity: 1; }
 .card.folded > :not(.card-head):not(.add-callout) { display: none; }
 .card.folded > .card-head { margin-bottom: 0; }
-.card.folded > .card-head .switch { display: none; } /* "Token status" changes nothing while folded */
+.card.folded > .card-head .switch[for="token-status-toggle"] { display: none; } /* "Token status" changes nothing while folded */
 .card.folded > .add-callout:not([hidden]) { margin: var(--s3) 0 0; }
 @media (prefers-reduced-motion: reduce) { .card-toggle .chev { transition: none; } }
 
@@ -670,6 +670,49 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 .guide .good { color: var(--good-ink); font-weight: 600; }
 .guide .warn { color: var(--warn-ink); font-weight: 600; }
 .guide .crit { color: var(--crit-ink); font-weight: 600; }
+.guide .serious { color: var(--serious-ink); font-weight: 600; }
+/* guide diagrams: inline SVG in the page's tokens, one column to 390 px */
+.g-fig { margin: var(--s2) 0 var(--s4); display: grid; gap: var(--s3) var(--s5); align-items: start; }
+.g-fig figcaption { font-size: var(--t13); line-height: 1.6; color: var(--fg-2); }
+.g-fig figcaption ul { margin: 0; }
+.g-svg { display: block; width: 100%; max-width: 420px; height: auto; }
+@media (min-width: 760px) { .g-fig { grid-template-columns: minmax(0, 400px) minmax(0, 1fr); } }
+.g-svg .gd-box, .g-svg .gd-row { fill: var(--card-2); stroke: var(--line); }
+.g-svg .gd-row { fill: var(--card); }
+.g-svg .gd-live { fill: var(--accent-soft); stroke: var(--accent); }
+.g-svg .gd-fable { fill: color-mix(in srgb, var(--brand-violet) 12%, var(--card)); stroke: var(--brand-violet); }
+.g-svg .gd-q { fill: var(--card); stroke: var(--fg-2); stroke-width: 1.2; }
+.g-svg .gd-end { fill: var(--card); stroke: var(--muted); stroke-dasharray: 3 3; }
+.g-svg .gd-group { fill: none; stroke: var(--line); stroke-dasharray: 4 3; }
+.g-svg text { font-family: inherit; }
+.g-svg .gd-t { fill: var(--fg); font-size: 12px; }
+.g-svg .gd-h { fill: var(--fg); font-size: 12.5px; font-weight: 650; }
+.g-svg .gd-s { fill: var(--muted); font-size: 11px; }
+.g-svg .gd-l { fill: var(--fg-2); font-size: 11px; font-weight: 600; }
+.g-svg .gd-vt { fill: var(--brand-violet); }
+.g-svg .gd-a { stroke: var(--fg-2); stroke-width: 1.4; fill: none; }
+.g-svg .gd-af { stroke: var(--brand-violet); stroke-dasharray: 4 3; }
+.g-svg .gd-hd { fill: var(--fg-2); }
+.g-svg .gd-hd-f { fill: var(--brand-violet); }
+/* "something looks wrong": symptom → cause → what to do */
+.guide-section .g-flow { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s4); }
+.g-case { display: grid; grid-template-columns: 1fr; gap: var(--s3); margin: 0; }
+.g-case p { margin: 0; padding: var(--s2) var(--s3); border-radius: 9px; border: 1px solid var(--line); background: var(--card-2); position: relative; }
+.g-case .g-see { font-weight: 600; border-color: var(--warn); }
+.g-case .g-do { border-color: var(--accent); background: var(--accent-soft); }
+.g-case .g-see::after, .g-case .g-why::after { content: "↓" / ""; position: absolute; left: 50%; bottom: -17px; color: var(--fg-2); font-size: 14px; line-height: 1; }
+.g-tag { display: block; color: var(--muted); font-size: var(--t11); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.g-head { display: none; }
+@media (min-width: 760px) {
+  .g-case { grid-template-columns: 1fr 1.3fr 1.3fr; gap: var(--s5); }
+  .g-case .g-see::after, .g-case .g-why::after { content: "→" / ""; left: auto; right: -19px; bottom: auto; top: 50%; transform: translateY(-50%); }
+  .g-tag { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .g-head { display: grid; }
+  .g-case.g-head p { border: 0; background: none; padding: 0 var(--s3); color: var(--muted); font-size: var(--t11); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .g-case.g-head p::after { content: none; }
+}
+.g-set td:first-child { width: 34%; font-weight: 600; }
+.g-def { display: block; color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
 @media (max-width: 700px) { .guide-toc ol { columns: 1; } .guide-dl { grid-template-columns: 1fr; } .guide-tbl code { white-space: normal; } }
 
 .switch input[type="checkbox"]:disabled { cursor: default; opacity: .35; }

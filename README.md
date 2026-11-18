@@ -154,7 +154,8 @@ Run `tycswap` to open the interactive menu, even while the tray is running.
 Type to filter, use the arrow keys to choose, and press Escape to go back.
 **Add account…** signs in with Claude or Codex through your browser, saves an
 existing login, or adds a token. **Manage accounts…** switches, renames,
-enables/disables, moves, or removes an account. It also offers **Sign in again…**
+enables/disables, moves, or removes an account, and offers **Remove alias** on
+an account that has one. It also offers **Sign in again…**
 and **Use saved login** for Claude; renewing the active account activates its new login.
 **Import / export…** guides Claude and Codex file transfers.
 **Open web dashboard** reuses the running app, starting it in the background if needed.
@@ -295,9 +296,10 @@ $ tycswap switch --strategy best            # what the account order ranks first
 $ tycswap switch --strategy next-available  # rotate, skipping at-limit accounts
 ```
 
-Both count the windows the dashboard's *Counting now* names: 5h, 7d and,
-while live sessions run a model some usable account can serve, that model's
-weekly window (DESIGN A98). `best` ranks as auto-switch does under
+Both count the windows a scheduled tick counts (the dashboard's *Counting
+now* while a scheduler checks; an engine the dashboard hosts counts 5h and 7d
+only): 5h, 7d and, while live sessions run a model some usable account can
+serve, that model's weekly window (DESIGN A98). `best` ranks as auto-switch does under
 `autoswitch.strategy` and takes the dashboard's *Best candidate*, staying put
 when the live account ranks first (DESIGN A99).
 
@@ -926,7 +928,10 @@ bob@example.com`, or `Fable store off`), the Fable store's row carries a
 with the command that signs it in again). **Use for Fable** in such a row
 switches the Fable store there by hand, which holds the Fable store's
 auto-switch for the cooldown; the store's own row reads **Fable here**. The
-Auto tab adds one line, `Fable store: counting 5h + 7d + Fable · next #3`.
+Auto tab adds one line, `Fable store: counting 5h + 7d + Fable · next #3`
+while a scheduler runs the checks; while the dashboard runs them it says that
+its checks do not move the Fable store, since only `tycswap auto --once` runs a
+Fable tick.
 *Switch*, *Switch now* and the best candidate stay the default login's. The
 terminal dashboard (`tycswap tui`) shows the default login only.
 

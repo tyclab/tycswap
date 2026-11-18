@@ -3910,12 +3910,19 @@ same package (`settings.SetSetting` / `UnsetSetting` and the
 saved in one shows in the other on its next read.
 
 **Guide tab.** Static markup in `index.html`, templated with the brand name
-only: what the tool is, the five concepts (slot, active account, the 5h / 7d /
-model windows, at limit and eligible, the one threshold), getting started,
-switching by hand, Auto mode and its settings, the Settings tab, Sessions,
-Updates, Codex accounts (the CLI has them, the page does not), a command
-cheat-sheet that includes `tycswap config`, troubleshooting, and where the
-data lives. It names no URL: the page works offline and the static-asset test
+only, written for someone with two or more accounts who opened the page:
+what happens (a picture of the saved logins, the live login, the Fable store
+and the sessions that use them), getting started, switching by hand (a
+picture of what a running session does with it), Auto-switch (a flow of one
+check), the settings that steer it, reading the meters, Fable logins,
+Sessions, Updates, Codex accounts, "something looks wrong" as symptom, cause
+and what to do, the handful of commands a dashboard user needs, and where
+the data lives. Since 2026-11-18 (the operator: "Guide needs debloat and
+correction use flows and diagramms to explain stuff. this is for humans
+after all") the three pictures are inline SVG drawn with the page's colour
+tokens, with real text and a title and description for screen readers; each
+control is named as the page names it, and the reference stays in
+`docs/reference.md` and the README. It names no URL: the page works offline and the static-asset test
 forbids any (`TestIndexHTML_OnlyLocalReferences`), so the Claude Code install
 lines live in Go (`ccversion.InstallHint`) and reach the page through the
 state. Section fragments (`#g-…`) select the Guide tab and scroll after it
@@ -7516,7 +7523,11 @@ set of names in the script.
   Settings row and the tray: on is `POST /api/auto/start` (Start), off
   `POST /api/auto/stop` (Stop); both write `autoswitch.enabled` with and
   without an owner (A83). A start asking for a dry run is refused with the
-  terminal command, `tycswap auto --dry-run`.
+  terminal command, `tycswap auto --dry-run`. Since 2026-11-18 (the
+  operator: "why is on web frontend dashboard not an auto mode toggle?") the
+  Dashboard tab's Accounts card shows the same switch in its head: the same
+  state, the same two requests, both switches locked while a change is in
+  flight and hidden where the Auto tab hides its own.
 - *The heading says what is true.* `Auto-switch` with an `on` or `off` chip;
   the line under it is `checked by <owner>, last check <time ago>` under a
   scheduler and `checked every <interval> s by this dashboard` while an
@@ -8507,7 +8518,11 @@ gets no chip, and its menu names `add --login --lineage fable --slot N`
 (open point O6: no second sign-in from the page). Each row with a usable
 Fable login has *Use for Fable*, which posts the route; on the store's own
 row it reads *Fable here* and is disabled. The Auto tab adds one line,
-`Fable store: counting 5h + 7d + Fable · next #M`.
+`Fable store: counting 5h + 7d + Fable · next #M` under a scheduler (an
+`auto.owner`). No engine this page hosts runs a Fable tick (A102), so without
+an owner the line says so instead (2026-11-18): `Fable store: this
+dashboard's checks do not move it; a scheduler running tycswap auto --once
+does`.
 
 **The tray (O11).** The Windows panel's Fable store row carries a second
 outlined label `Fable` after the plan label, and its screen-reader text

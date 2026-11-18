@@ -31,7 +31,8 @@ document.querySelector = () => null;
 document.querySelectorAll = () => [];
 const ids = {};
 for (const id of ['hdr-acct', 'accounts-body', 'accounts-empty', 'add-callout', 'add-callout-email', 'add-hint', 'accounts-tbl', 'add-current-codex', 'accounts-sub',
-  'auto-badge', 'auto-body', 'auto-state', 'auto-counting', 'quarantine-body', 'quarantine-section', 'nextbest-list', 'nextbest-sub', 'nextbest-empty', 'nextbest-tbl', 'toasts']) { ids[id] = new Node('div'); }
+  'auto-badge', 'auto-body', 'auto-state', 'auto-counting', 'quarantine-body', 'quarantine-section', 'nextbest-list', 'nextbest-sub', 'nextbest-empty', 'nextbest-tbl', 'toasts',
+  'sess-filter', 'sess-status', 'sess-sort']) { ids[id] = new Node('div'); }
 ids['auto-switch'] = new Node('label').appendChild(new Node('input'));
 const requests = [];
 const ctx = {document, console, Promise, setTimeout, Math, Date, JSON, Object, Array, String, Number, isNaN, parseFloat, parseInt, encodeURIComponent,
@@ -44,6 +45,7 @@ block('  function api(', '  // ---- tabs');
 block('  // ---- shared derivations', '  // ---- header + summary');
 block('  // fallbackNotices:', '  function renderSummary(');
 block('  // ---- accounts', '  // ---- sessions');
+block('  // ---- sessions', '  // ---- auto: render');
 block('  // ---- auto: render', '  // The Auto-switch switch:');
 block('  function codexRestartNote(', '  function showUpdates(');
 block("    var btn = ev.target.closest ? ev.target.closest('button[data-post], button[data-action]')", "  $('token-status-toggle')", "  document.addEventListener('click', function (ev) {\n");
@@ -104,6 +106,11 @@ render(fableState());
 const moved = fableState(); moved.fable.number = 3; moved.fable.email = 'acct3@example.com';
 ctx.renderActiveStrip(moved);
 assert.match(text(ids['hdr-acct']), /Fable: #3 acct3@example\.com/);
+// Only a scheduler's `auto --once` runs the Fable tick (DESIGN A102): while
+// this dashboard runs the checks itself the line names no next account.
+const hosted = fableState(); hosted.auto.owner = ''; hosted.auto.hosted = true;
+render(hosted);
+assert.equal(text(ids['auto-body'].children[0]), "Fable store: this dashboard's checks do not move it; a scheduler running tycswap auto --once does");
 
 // The store off: the header says so and names the command; the unusable
 // store warns.
@@ -123,6 +130,19 @@ for (const id of ['hdr-acct', 'accounts-body', 'auto-body']) {
   assert.ok(!all.some(e => /Fable (store|login|here)|for Fable|Fable:/.test(e._text) || e.className.startsWith('chip') && text(e) === 'Fable' ||
     /fable/.test(e.className + ' ' + (e.attrs['data-post'] || '') + ' ' + (e.attrs.id || ''))), id + ' shows Fable without a Fable login: ' + text(ids[id]));
 }
+
+// The Sessions tab names a session's store where its status line recorded
+// it: the Fable store, the default login, or, while an account has a Fable
+// login and no record says, nothing. Without a Fable login every session is
+// on the default login.
+const storeChips = c => ctx.sessionRow(c).all().filter(e => e.className.startsWith('chip') && /Fable store|default login/.test(text(e))).map(text);
+const session = store => ({pid: 7, sessionId: 'abcdef12-0000', status: 'busy', store});
+ctx.state = fableState();
+assert.deepEqual(storeChips(session('fable')), ['Fable store']);
+assert.deepEqual(storeChips(session('default')), ['default login']);
+assert.deepEqual(storeChips(session(undefined)), [], 'an unknown store is not named');
+ctx.state = plainState();
+assert.deepEqual(storeChips(session(undefined)), ['default login']);
 
 (async () => {
   // Use for Fable posts the Fable store's switch for its row.

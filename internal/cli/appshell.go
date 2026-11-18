@@ -26,6 +26,7 @@ import (
 	"github.com/tyclab/tycswap/internal/ccsettings"
 	"github.com/tyclab/tycswap/internal/ccversion"
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/switching"
 	"github.com/tyclab/tycswap/internal/termsafe"
@@ -600,7 +601,7 @@ func (a *appShell) autoClick(showedOn bool) {
 // API-key login is never switchable, so nothing asks first.
 func (a *appShell) switchClick(key string) {
 	provider, num := splitRowKey(key)
-	base, label, approve := "", "#"+num, false
+	base, label, approve, apiKey := "", "#"+num, false, false
 	switch provider {
 	case reporting.ProviderCodex:
 		label = "Codex #" + num
@@ -609,7 +610,7 @@ func (a *appShell) switchClick(key string) {
 		if approve, ok = a.askClaudeSwitch(num); !ok {
 			return
 		}
-		_, base = a.apiKeyAccount(num)
+		apiKey, base = a.apiKeyAccount(num)
 	default:
 		a.setNote("Switch failed: no "+provider+" accounts here.", true)
 		a.notify("Switch failed", "No "+provider+" accounts here.")
@@ -634,17 +635,27 @@ func (a *appShell) switchClick(key string) {
 	// at the dashboard's next poll.
 	a.dashboardChanged()
 	note := "Switched to " + label + "."
-	title, body := "Switched to account #"+num, "Restart running Claude Code sessions to pick it up."
+	title, body := "Switched to account #"+num, switching.FileFollowupNote
+	if trayOnKeychain() {
+		body = switching.KeychainFollowupNote
+	}
 	switch {
 	case provider == reporting.ProviderCodex:
 		title, body = "Switched Codex to account #"+num, codexRestartSentence(pids)
 	case base != "":
 		body = switching.EndpointAppliedNote(endpointHost(base))
+	case apiKey:
+		body = switching.APIKeyRestartNote
 	}
 	a.setNote(note, false)
 	a.notify(title, body)
 	a.repaint()
 }
+
+// trayOnKeychain reports whether the live login is in the macOS Keychain,
+// where a running session takes a switch up within about 30 seconds; a
+// file-backed one takes it at its next message, an API-key one at a restart.
+var trayOnKeychain = func() bool { return platform.Detect() == platform.MacOS }
 
 // fableClick is Use for Fable: the Fable store's switch by hand, which holds
 // its engine (A104). A click while one is in flight is dropped.

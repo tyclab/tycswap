@@ -74,6 +74,19 @@ func TestStaticAutoTabHasOneSwitch(t *testing.T) {
 	}
 }
 
+// The Dashboard tab shows the same Auto-switch switch in the Accounts card's
+// head, under the same name, and stays visible while that card is folded.
+func TestStaticDashboardHasTheAutoSwitch(t *testing.T) {
+	index := staticFile(t, "index.html")
+	head := regexp.MustCompile(`(?s)<div class="card" id="accounts-card">\s*<div class="card-head">.*?<div class="add-callout"`).FindString(index)
+	if !strings.Contains(head, `<label class="switch" for="dash-auto-switch"><input type="checkbox" id="dash-auto-switch" role="switch"> Auto-switch</label>`) {
+		t.Errorf("the Accounts card head lacks the Auto-switch switch:\n%s", head)
+	}
+	if strings.Contains(staticFile(t, "style.css"), ".card.folded > .card-head .switch {") {
+		t.Error("a folded Accounts card hides the Auto-switch switch")
+	}
+}
+
 // Row 13 of DESIGN A93: the page's dead branches and wrong texts are gone.
 func TestStaticNoDeadAutoBranchesOrWrongTexts(t *testing.T) {
 	js := staticFile(t, "app.js")
