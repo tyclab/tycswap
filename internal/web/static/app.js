@@ -1034,7 +1034,7 @@
     var active = accts.filter(function (a) { return a.isActive; })[0];
     var sig = JSON.stringify(active ? [active.number, active.email, active.alias, active.usage, active.usageStatus, active.atLimit] : null);
     var fable = fableLine(st);
-    if (fable) { sig += JSON.stringify([st.fable, accts.map(accountName)]); }
+    if (fable) { sig += JSON.stringify([st.fable.state, st.fable.number, st.fable.email, st.fable.reason, accts.map(accountName)]); }
     if (box.getAttribute('data-sig') === sig) { return; }
     box.setAttribute('data-sig', sig);
     clear(box);
