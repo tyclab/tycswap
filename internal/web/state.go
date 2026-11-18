@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/brand"
@@ -72,40 +71,9 @@ type CountingView struct {
 }
 
 // countingCaption is the one line the Auto tab, the tray and the strategy
-// tile show for c, e.g. "counting 5h + 7d + Fable (live Fable sessions)".
+// tile show for c, the one a switch by strategy prints (DESIGN A98).
 func countingCaption(c CountingView) string {
-	line := "counting 5h + 7d"
-	for _, m := range c.Models {
-		line += " + " + m
-	}
-	if c.Mode == "hosted" {
-		return line + " (the engine hosted here does not follow sessions)"
-	}
-	if len(c.Models) > 0 {
-		line += " (live " + strings.Join(c.Models, ", ") + " sessions)"
-	}
-	if len(c.Unservable) > 0 {
-		line += "; " + strings.Join(c.Unservable, ", ") + " not counted: no usable account can serve it"
-	}
-	switch {
-	case len(c.Sessions) == 0:
-		line += "; no live session has reported its model"
-	case !containsFold(c.Sessions, "fable"):
-		line += "; no live Fable session"
-		if len(c.Reserved) > 0 {
-			line += " — accounts with Fable room reserved: " + strings.Join(c.Reserved, ", ")
-		}
-	}
-	return line
-}
-
-func containsFold(list []string, want string) bool {
-	for _, v := range list {
-		if strings.EqualFold(v, want) {
-			return true
-		}
-	}
-	return false
+	return reporting.CountingCaption(c.Mode == "hosted", c.Models, c.Sessions, c.Unservable, c.Reserved)
 }
 
 // SessionsJSON is the sessions section.

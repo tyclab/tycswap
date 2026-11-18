@@ -7340,7 +7340,8 @@ such a block forgets it. A dry run shows the event and keeps nothing.
 
 The scheduled tick (`auto --once`, `--observe`), `start`'s selection, and the
 at-limit marks of `list`, `status` and the account snapshot (the dashboard's
-and the TUI's rows) all read the one result. The dashboard state carries it as
+and the TUI's rows) all read the one result, and since A98 so does a switch
+by strategy. The dashboard state carries it as
 `auto.counting` (the families of the live sessions, the counted, dropped and
 reserved), with a one-line caption; the Auto tab, *Next best* and the tray's
 figures render it, so an unset `autoswitch.model` reads *Follow sessions*, not
@@ -7724,7 +7725,7 @@ taken it off the page and the tray and added a warning line for it.
   help and usage no longer list them. `--model-threshold` stays; the model
   threshold applies to every model window session following counts.
 - *What existed only for a set value goes.* `switch --strategy` counts 5h
-  and 7d only: its model list, the `Using configured model limits` line, the
+  and 7d only (until A98, which has it count the policy's set): its model list, the `Using configured model limits` line, the
   `--model` typo warning and the `models`/`modelSource` result fields go, and
   `POST /api/switch` ignores a `models` field. The engine's typo guard
   (`checkModelNames`, the state file's `modelNamesChecked`) and the unused
@@ -7749,3 +7750,52 @@ exit 2 with the line; the served page has no warning line and does not name
 the key. The policy tests that pinned "a set value wins" now pin that a
 `Model` on the base decides nothing; engine tests that need a counted model
 set it on the engine's settings, the seam the policy fills.
+
+## A98. A switch by strategy counts what the session rule counts
+
+**Why.** A97 left `switch --strategy` judging on 5h and 7d only, since the
+model list it took came from the removed setting and flag. The review of
+v0.15.0 reproduced the result with a Fable session live: accounts 1 (live,
+Fable 20 %), 2 (most 5h and 7d room, Fable 100 %) and 5 (Fable 10 %). The
+dashboard said `counting 5h + 7d + Fable (live Fable sessions)`, marked
+account 2 `at limit: Fable` and named 5 its best candidate, and *Switch now*
+with *Best* and with *Next available* both switched to account 2, onto a
+login its Fable sessions cannot use. Asked whether the button and `tycswap
+switch --strategy` should pick what the page shows, the operator said
+"fix it" (2026-11-18).
+
+**What.**
+
+- *One counted set.* `switch --strategy best|next-available`, the
+  dashboard's *Switch now* (`POST /api/switch`) and the TUI's best-switch all
+  run `switching.Switch`, which asks the seam `switching.CountedModels` for
+  the counted models; core wires it to `reporting.CountedForSwitch`, the
+  default-session policy (A91) over the saved bars, the result `list`,
+  `status`, `start`, the at-limit marks and the page's ranking read. *Best*
+  judges headroom on 5h, 7d and those windows, and *Next available* skips an
+  account at its limit on any of them. No flag, request field or setting
+  names the set: `POST /api/switch` still ignores `models`. A plain rotation
+  and `tycswap switch <id>` count nothing and are unchanged.
+- *What the page does with the rest.* The page's ranking counts
+  `auto.counting.models`: a model the policy drops as unservable is not in it,
+  so the switch does not count it either and picks as before; the accounts
+  the policy reserves for Fable are ranked like any other on the page, so the
+  switch does not hold them back either (the reservation stays the engine's).
+- *Saying so.* In text mode, while a model window counts, one dimmed line
+  gives the policy's caption, the dashboard's (`reporting.CountingCaption`,
+  e.g. `Counting 5h + 7d + Fable (live Fable sessions)`), and a skipped
+  account names its full windows (`Skipping Account-2 (at Fable limit)`; the
+  JSON warning says the same), the all-at-limit line reads `usage limits`.
+  `--json` gains no field.
+- *Unchanged.* *Best* still moves only onto strictly more headroom than the
+  live account has under that set, so where the live account is best it
+  answers `already-best` while the page still names its best other account.
+
+**Tests.** The reproduction at the three entry points (`switch --strategy
+--json`, `POST /api/switch`, `tui.Facade.Switch`), each failing on v0.15.0:
+*Best* lands on 5 where the live account has less room, answers
+`already-best` with the review's figures, where the live account has more;
+*Next available* skips 2; with Fable unservable or no session reporting a
+model the pick is the 5h and 7d one. One test renders the page over the
+dashboard's state and compares its best candidate and at-limit marks with
+where *Switch now* lands for the same state.

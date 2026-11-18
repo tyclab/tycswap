@@ -9,7 +9,7 @@ import "github.com/tyclab/tycswap/internal/store"
 // selectBestSwitchable decides the `best` target relative to current (spec
 // 02§5). Returns (target, note); target "" with a note means stay. Notes: none,
 // current-unavailable, no-comparison, incomplete-comparison, stay, exhausted.
-func selectBestSwitchable(s *store.Store, currentNum string, usage map[string]any) (string, string) {
+func selectBestSwitchable(s *store.Store, currentNum string, models []string, usage map[string]any) (string, string) {
 	data, _ := s.ReadSequence()
 	if data == nil {
 		return "", "none"
@@ -31,7 +31,7 @@ func selectBestSwitchable(s *store.Store, currentNum string, usage map[string]an
 		return "", "none"
 	}
 
-	currentHeadroom := headroomOf(usage[currentNum])
+	currentHeadroom := headroomOf(usage[currentNum], models)
 	if currentHeadroom == nil {
 		// Can't measure where the user is → can't prove any target is better.
 		return "", "current-unavailable"
@@ -43,7 +43,7 @@ func selectBestSwitchable(s *store.Store, currentNum string, usage map[string]an
 	}
 	var scored []scoredEntry
 	for _, num := range others {
-		scored = append(scored, scoredEntry{headroomOf(usage[num]), num})
+		scored = append(scored, scoredEntry{headroomOf(usage[num], models), num})
 	}
 
 	// known preserves rotation (sequence) order; the first maximal wins, so ties

@@ -382,10 +382,16 @@ tycswap switch --strategy {best|next-available} [--json] [--debug]
 
 Bare `tycswap switch` rotates to the next account in the sequence. `tycswap switch
 <NUM|EMAIL|ALIAS>` activates a specific account. `--strategy best` picks the
-account with the most remaining 5h/7d quota; `--strategy next-available`
-rotates, skipping rate-limited accounts. Both strategies count the 5h and 7d
-windows only: the `--model` flag that added per-model weekly limits was
-removed (DESIGN A97) and exits 2.
+account with the most remaining quota, and only when it has more than the
+live account; `--strategy next-available` rotates, skipping accounts at a
+limit. Both strategies count the 5h and 7d windows and the per-model weekly
+windows the default-session policy counts, the set the dashboard's *Counting
+now* shows (DESIGN A98): while a live Fable session runs and some usable
+account can serve it, an account whose Fable week is spent is at its limit
+(`Skipping Account-2 (at Fable limit)`). In text mode a dimmed line names that
+set with the dashboard's caption (`Counting 5h + 7d + Fable (live Fable
+sessions)`) whenever a model window counts. No flag chooses the set: the
+`--model` flag was removed (DESIGN A97) and exits 2.
 
 Switching onto an **API-key account** is the one switch that asks first
 (DESIGN A33). It replaces the subscription login with a managed key billed per
@@ -2897,7 +2903,7 @@ anything else `500`.
 | `GET /api/state[?tokenStatus=1]` | | the state document | `200` |
 | `GET /api/events?csrf=<t>[&tokenStatus=1]` | | Server-Sent Events: `state` frames, `auto` frames (one engine event each; a Codex tick's carries `"provider": "codex"`), a `: ping` every 15 s | `200`, then a stream |
 | `POST /api/launch` | | a one-time dashboard URL, `{"url": "http://127.0.0.1:<port>/?token=<t>"}`: the unused start URL, else a fresh one; for a remote tray, with the bearer token only | `403` with the cookie and CSRF pair, or without a remote token configured |
-| `POST /api/switch` | `{"strategy": "best"\|"next-available"}` | `tycswap switch --strategy`; a `models` field is ignored (DESIGN A97) | `400` missing or unknown strategy |
+| `POST /api/switch` | `{"strategy": "best"\|"next-available"}` | `tycswap switch --strategy`, counting what it counts (DESIGN A98); a `models` field is ignored (DESIGN A97) | `400` missing or unknown strategy |
 | `POST /api/switch/{key}[?force=1][&confirmAuthChange=1]` | | `tycswap switch <id> [--force] [--yes]`; `confirmAuthChange=1` records the user's yes to a switch onto an API-key account, which the page asks for first (DESIGN A33). A `codex:` key is `tycswap codex switch <id>` and answers `{"number", "email", "runningPids", "alreadyActive"}` | `400` bare key, an API-key target without `confirmAuthChange`, or `force` / `confirmAuthChange` with a `codex:` key; `404` unknown provider; `503` `confirmAuthChange` without account operations, or a `codex:` key without Codex accounts; `409` a `codex:` key while the Codex store stays busy for 10 s |
 | `POST /api/accounts/add` | `{"provider": "claude"\|"codex"}` (optional) | `tycswap add`; answers `{"ok": true, "result": {"number", "email", "refreshed"}}`, the account the live login is now (`refreshed`: it was that account already). The tray's *Add current login* is the same call. With `codex`, `tycswap codex add`, answering `{"number", "email"}` | `500` `Claude Code has no subscription login on this computer. …` when Claude Code has no live login, before anything is stored; `400` unknown provider; `503` `codex` without Codex accounts; `409` `codex` while the Codex store stays busy for 10 s |
 | `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias", "baseUrl"}` | `tycswap add-token [--base-url]` (the token is never echoed or logged); `503` with a `baseUrl` when the facade cannot store one | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |

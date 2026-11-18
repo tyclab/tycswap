@@ -103,7 +103,7 @@ func TestSelectBestSwitchable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newTestStore(t, nil)
 			setupAccounts(t, s, tc.slots, tc.disabled)
-			target, note := selectBestSwitchable(s, tc.current, tc.usage)
+			target, note := selectBestSwitchable(s, tc.current, nil, tc.usage)
 			if target != tc.wantTarget || note != tc.wantNote {
 				t.Fatalf("got (%q, %q), want (%q, %q)", target, note, tc.wantTarget, tc.wantNote)
 			}
@@ -111,17 +111,21 @@ func TestSelectBestSwitchable(t *testing.T) {
 	}
 }
 
-// TestSelectBestSwitchableCountsFiveHourAndWeekOnly: `switch --strategy best`
-// has no model list since --model and autoswitch.model went (DESIGN A97), so
-// a spent Fable week does not steer it: both accounts look alike.
-func TestSelectBestSwitchableCountsFiveHourAndWeekOnly(t *testing.T) {
+// TestSelectBestSwitchableCountsTheCountedModels: `switch --strategy best`
+// judges on the model windows the default-session policy counts (DESIGN A98):
+// with none counted a spent Fable week does not steer it, with Fable counted
+// the account with Fable room is the better one.
+func TestSelectBestSwitchableCountsTheCountedModels(t *testing.T) {
 	s := newTestStore(t, nil)
 	setupAccounts(t, s, []int{1, 2}, nil)
 	usage := map[string]any{
 		"1": scopedUsage(10, "Fable", 100),
 		"2": scopedUsage(10, "Fable", 10),
 	}
-	if target, note := selectBestSwitchable(s, "1", usage); target != "" || note != "stay" {
-		t.Fatalf("got (%q,%q), want (\"\",\"stay\")", target, note)
+	if target, note := selectBestSwitchable(s, "1", nil, usage); target != "" || note != "stay" {
+		t.Fatalf("no model counted: got (%q,%q), want (\"\",\"stay\")", target, note)
+	}
+	if target, note := selectBestSwitchable(s, "1", []string{"Fable"}, usage); target != "2" || note != "" {
+		t.Fatalf("Fable counted: got (%q,%q), want (\"2\",\"\")", target, note)
 	}
 }

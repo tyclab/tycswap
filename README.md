@@ -295,6 +295,10 @@ $ tycswap switch --strategy best            # the account with the most headroom
 $ tycswap switch --strategy next-available  # rotate, skipping at-limit accounts
 ```
 
+Both count the windows the dashboard's *Counting now* names: 5h, 7d and,
+while live sessions run a model some usable account can serve, that model's
+weekly window (DESIGN A98).
+
 **Restart semantics.** The follow-up line states whether Claude Code needs a
 restart, keyed to where the credential write landed:
 

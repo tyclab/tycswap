@@ -31,6 +31,18 @@ var PostSwitchList func(s *store.Store) error
 
 var AutoAddCurrent func(s *store.Store) (activeNum string, err error)
 
+// CountedModels returns the model windows a switch by strategy counts and the
+// caption that says why: the default-session policy's (DESIGN A98). core
+// wires it to reporting.CountedForSwitch; unwired, only 5h and 7d count.
+var CountedModels func(s *store.Store) (models []string, caption string)
+
+func countedModels(s *store.Store) ([]string, string) {
+	if CountedModels == nil {
+		return nil, ""
+	}
+	return CountedModels(s)
+}
+
 // usageByAccount invokes the UsageProvider seam, returning an empty (non-nil)
 // map when unwired so callers never nil-deref.
 func usageByAccount(s *store.Store) map[string]any {
@@ -43,13 +55,22 @@ func usageByAccount(s *store.Store) map[string]any {
 	return map[string]any{}
 }
 
-// headroomOf is an account's 5h/7d headroom, nil when its usage is unknown.
-func headroomOf(v any) *float64 {
+// headroomOf is an account's headroom on 5h, 7d and the counted model
+// windows, nil when its usage is unknown.
+func headroomOf(v any, models []string) *float64 {
 	m, ok := v.(map[string]any)
 	if !ok {
 		return nil
 	}
-	return oauth.AccountHeadroom(oauth.NewUsage(m), nil)
+	return oauth.AccountHeadroom(oauth.NewUsage(m), models)
+}
+
+func relevantWindowsOf(v any, models []string) []oauth.RelevantWindow {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return oauth.RelevantWindows(oauth.NewUsage(m), models)
 }
 
 func numRef(numStr, email string) map[string]any {

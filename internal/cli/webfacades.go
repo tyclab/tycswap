@@ -219,13 +219,7 @@ func (a *autoFacade) counting(s settings.AutoSwitchSettings, hosted bool) *web.C
 	default:
 		r := reporting.DefaultSessionPolicyResult(a.sw.Store, s, a.clk.Now())
 		c.Models, c.Sessions, c.Unservable = settings.ParseModelNames(r.Settings.Model), r.Sessions, r.Unservable
-		if data, _ := a.sw.ReadSequence(); data != nil && r.Reserved != nil {
-			for _, n := range data.Sequence {
-				if num := strconv.Itoa(n); r.Reserved(num) {
-					c.Reserved = append(c.Reserved, num)
-				}
-			}
-		}
+		c.Reserved = r.ReservedIn(a.sw.Store)
 	}
 	for _, list := range []*[]string{&c.Sessions, &c.Unservable, &c.Reserved} {
 		if *list == nil {
