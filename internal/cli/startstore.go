@@ -4,13 +4,17 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // startWindows is start's platform seam: Windows matches environment names,
@@ -21,6 +25,107 @@ var startWindows = platform.IsWindows
 const transcriptTail = 1 << 20
 
 var sessionUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// startEnvironment is the child environment for argv (program first) when no
+// override holds, whether the session starts on the Fable store, which skips
+// the default start-login selection, and the notice to print. Only a Fable
+// session on a usable Fable store gets CLAUDE_SECURESTORAGE_CONFIG_DIR; every
+// other session loses it when it names the store. Without Fable logins the
+// session's model is not even read.
+func startEnvironment(env, argv []string, fable store.FableState, hasFableLogins bool, storeDir string) (childEnv []string, skipSelection bool, notice string) {
+	if !hasFableLogins || startSessionFamily(argv, env) != "fable" {
+		return withoutFableStore(env, storeDir), false, ""
+	}
+	if fable.On && fable.Usable {
+		return withFableStore(env, storeDir), true, ""
+	}
+	return withoutFableStore(env, storeDir), false, "the Fable store has no usable login (" + fable.Reason + "); starting on the default login."
+}
+
+func startSessionFamily(argv, env []string) string {
+	cwd, _ := os.Getwd()
+	home, _ := os.UserHomeDir()
+	family, _ := sessionFamily(argv[min(1, len(argv)):], env, cwd, home, paths.GetBackupRoot())
+	return family
+}
+
+// startFableStore is the Fable store's state and whether any account has a
+// Fable login. Without credentials-fable/, or with a store start must not
+// read (startStoreProblem), it opens nothing. It makes no profile request and
+// creates nothing.
+func startFableStore(root string) (store.FableState, bool) {
+	if info, err := os.Stat(paths.FableCredentialsDir(root)); err != nil || !info.IsDir() || startStoreProblem(root) != "" {
+		return store.FableState{}, false
+	}
+	sw, err := newSwitcher(store.Options{Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
+	if err != nil {
+		return store.FableState{}, false
+	}
+	fable := sw.Store.FableStore()
+	return fable, fable.On || sw.Store.HasFableLogins()
+}
+
+// isFableStoreDir reports whether value names storeDir (cleaned; on Windows
+// case-insensitively).
+func isFableStoreDir(value, storeDir string) bool {
+	if value == "" {
+		return false
+	}
+	if startWindows() {
+		return strings.EqualFold(filepath.Clean(value), storeDir)
+	}
+	return filepath.Clean(value) == storeDir
+}
+
+func isFableStoreEntry(entry, storeDir string) bool {
+	key, value, _ := strings.Cut(entry, "=")
+	return envKeyIs(key, secureStorageEnv) && isFableStoreDir(value, storeDir)
+}
+
+// withoutFableStore is env without a CLAUDE_SECURESTORAGE_CONFIG_DIR naming
+// the Fable store; env itself when it has none.
+func withoutFableStore(env []string, storeDir string) []string {
+	for i, entry := range env {
+		if !isFableStoreEntry(entry, storeDir) {
+			continue
+		}
+		out := append([]string(nil), env[:i]...)
+		for _, rest := range env[i+1:] {
+			if !isFableStoreEntry(rest, storeDir) {
+				out = append(out, rest)
+			}
+		}
+		return out
+	}
+	return env
+}
+
+// withFableStore is env with CLAUDE_SECURESTORAGE_CONFIG_DIR set to storeDir,
+// in place of an inherited entry or appended.
+func withFableStore(env []string, storeDir string) []string {
+	out := make([]string, 0, len(env)+1)
+	set := false
+	for _, entry := range env {
+		key, _, _ := strings.Cut(entry, "=")
+		if !envKeyIs(key, secureStorageEnv) {
+			out = append(out, entry)
+		} else if !set {
+			out = append(out, secureStorageEnv+"="+storeDir)
+			set = true
+		}
+	}
+	if !set {
+		out = append(out, secureStorageEnv+"="+storeDir)
+	}
+	return out
+}
+
+func accountSuffix(slot string) string {
+	if slot == "" {
+		return ""
+	}
+	return " (Account-" + slot + ")"
+}
 
 // sessionFamily is the model family of the Claude session that args (the
 // child's arguments after its program) start, and the source that answered:
