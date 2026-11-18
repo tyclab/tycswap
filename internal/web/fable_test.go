@@ -174,3 +174,19 @@ func TestAppJSFable(t *testing.T) {
 		t.Fatalf("fable page: %v\n%s", err, out)
 	}
 }
+
+// The remote tray's bearer reaches the Fable switch as it reaches the
+// default one (DESIGN A45, A104).
+func TestFableSwitchRouteTakesTheBearer(t *testing.T) {
+	f := &fakeFable{}
+	h := newHarness(t, withRemoteToken(remoteToken), withFable(f))
+	if resp := h.do(bearer(h.newReq(http.MethodPost, "/api/switch/claude:3?store=fable", nil), remoteToken)); resp.StatusCode != http.StatusOK {
+		t.Fatalf("bearer: status %d: %s", resp.StatusCode, readBody(t, resp))
+	}
+	if resp := h.do(bearer(h.newReq(http.MethodPost, "/api/switch/claude:3?store=fable", nil), "wrong")); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("wrong bearer: status %d, want 401", resp.StatusCode)
+	}
+	if got := f.Calls(); !reflect.DeepEqual(got, []string{"SwitchFable(3)"}) {
+		t.Fatalf("fable calls %v", got)
+	}
+}
