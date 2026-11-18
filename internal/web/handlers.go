@@ -810,6 +810,7 @@ func (s *Server) handleRemove(w http.ResponseWriter, r *http.Request) {
 	s.mutate(w, func() (map[string]any, error) { return nil, s.d.Facade.RemoveAccount(id, true) })
 }
 
+// handleAlias sets a Claude account's alias, or with an empty one removes it.
 func (s *Server) handleAlias(w http.ResponseWriter, r *http.Request) {
 	if unavailable(w, s.d.Accounts != nil, "account operations") {
 		return
@@ -826,10 +827,14 @@ func (s *Server) handleAlias(w http.ResponseWriter, r *http.Request) {
 	}
 	alias := strings.TrimSpace(b.Alias)
 	s.mutate(w, func() (map[string]any, error) {
+		before := s.claudeAliases()
 		if alias == "" {
 			num, err := s.d.Accounts.UnsetAlias(id)
 			if err != nil {
 				return nil, err
+			}
+			if before[num] != "" {
+				s.logAction(r, "Removed alias for account "+num)
 			}
 			return map[string]any{"number": num, "alias": ""}, nil
 		}
@@ -837,8 +842,26 @@ func (s *Server) handleAlias(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return nil, err
 		}
+		// A validated alias is letters, digits, '.', '-' and '_' only.
+		if before[num] != normalized {
+			s.logAction(r, "Set alias '"+normalized+"' for account "+num)
+		}
 		return map[string]any{"number": num, "alias": normalized}, nil
 	})
+}
+
+// claudeAliases maps each Claude slot to its alias, read from the store
+// without a usage fetch, so a change that changed nothing logs nothing.
+func (s *Server) claudeAliases() map[string]string {
+	out := map[string]string{}
+	if snap := s.d.Snapshot.AccountsSnapshot(map[string]bool{}); snap != nil {
+		for _, a := range snap.Accounts {
+			if a.ProviderName() == reporting.ProviderClaude {
+				out[a.Number] = a.Alias
+			}
+		}
+	}
+	return out
 }
 
 func (s *Server) handleMove(w http.ResponseWriter, r *http.Request) {

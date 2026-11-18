@@ -115,6 +115,51 @@ func TestMenuRenewActiveLoginRequestsActivation(t *testing.T) {
 	}
 }
 
+// An account with an alias offers Remove alias as its own choice, which runs
+// `alias N --unset` (`codex alias` on a Codex row); one without has none.
+func TestMenuRemoveAliasIsItsOwnChoice(t *testing.T) {
+	for _, tc := range []struct {
+		account reporting.AccountSnapshot
+		want    []string
+	}{
+		{reporting.AccountSnapshot{Number: "1", Email: "a@example.com", Alias: "work", IsActive: true}, []string{"alias", "1", "--unset"}},
+		{reporting.AccountSnapshot{Number: "2", Email: "c@example.com", Alias: "cx", Provider: reporting.ProviderCodex}, []string{"codex", "alias", "2", "--unset"}},
+		{reporting.AccountSnapshot{Number: "3", Email: "b@example.com"}, nil},
+	} {
+		old := menuAccounts
+		t.Cleanup(func() { menuAccounts = old })
+		menuAccounts = func(ioStreams) ([]reporting.AccountSnapshot, error) {
+			return []reporting.AccountSnapshot{tc.account}, nil
+		}
+		commands := workflowCommands(t)
+		var offered []string
+		oldAsk := askMenu
+		t.Cleanup(func() { askMenu = oldAsk })
+		askMenu = func(_ ioStreams, title string, choices []string, _ string) (int, string, bool) {
+			if title == "Manage which account?" {
+				return 0, "", true
+			}
+			offered = choices
+			for i, c := range choices {
+				if c == "Remove alias" {
+					return i, "", true
+				}
+			}
+			return 0, "", false
+		}
+		menuManage(ioStreams{err: io.Discard})
+		if tc.want == nil {
+			if len(*commands) != 0 || strings.Contains(strings.Join(offered, "|"), "Remove alias") {
+				t.Errorf("#%s without an alias: offered %q, ran %v", tc.account.Number, offered, *commands)
+			}
+			continue
+		}
+		if !reflect.DeepEqual(*commands, [][]string{tc.want}) || offered[1] != "Rename…" || offered[2] != "Remove alias" {
+			t.Errorf("#%s: offered %q, ran %v, want %v", tc.account.Number, offered, *commands, tc.want)
+		}
+	}
+}
+
 func TestDashboardReuseAuthenticatesAndDoesNotStartAnotherApp(t *testing.T) {
 	appLockHome(t)
 	lock, held, err := acquireAppLock()

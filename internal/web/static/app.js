@@ -1326,6 +1326,8 @@
       }
       listEl.appendChild(el('div', { class: 'menu-sep' }));
       listEl.appendChild(menuButton(a.alias ? 'Change alias…' : 'Set alias…', { 'data-action': 'alias', 'data-id': k, 'data-alias': a.alias || '', 'data-name': accountLabel(a) }));
+      // An empty alias removes it; the route takes no body as empty.
+      if (a.alias) { listEl.appendChild(menuButton('Remove alias', { 'data-post': '/api/accounts/' + keyPath(a) + '/alias', 'data-label': 'Remove alias' })); }
       listEl.appendChild(menuButton('Move to slot…', { 'data-action': 'move', 'data-id': k, 'data-name': accountLabel(a) }));
       listEl.appendChild(menuButton('Swap with…', { 'data-action': 'swap', 'data-id': k, 'data-name': accountLabel(a) }));
       listEl.appendChild(el('div', { class: 'menu-sep' }));

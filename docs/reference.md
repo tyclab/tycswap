@@ -5216,9 +5216,11 @@ line `<change> by <actor>` beside the change's own line.
 
 - **Changes.** `Disabled account <id>`, `Enabled account <id>`, `Switched to
   account <n>`, `Set <key>=<value>`, `Unset <key>`, the Codex ones as `Codex
-  account`; the `<id>` is the identifier the caller gave. A refused change,
-  a switch onto the active account (without `--force`) and an unset of a key
-  that is not set write none; a disable of an account already disabled is
+  account`, and from the dashboard `Set alias '<alias>' for account <n>` and
+  `Removed alias for account <n>`; the `<id>` is the identifier the caller
+  gave. A refused change, a switch onto the active account (without
+  `--force`), an unset of a key that is not set and an alias change that
+  changes nothing write none; a disable of an account already disabled is
   still recorded.
 - **Actors.** `cli(pid=<pid>,parent=<program>)` for a command (also run from
   `tycswap menu`; `parent` only where `/proc` exists), `tui`, `tray`,

@@ -154,7 +154,8 @@ Run `tycswap` to open the interactive menu, even while the tray is running.
 Type to filter, use the arrow keys to choose, and press Escape to go back.
 **Add account…** signs in with Claude or Codex through your browser, saves an
 existing login, or adds a token. **Manage accounts…** switches, renames,
-enables/disables, moves, or removes an account. It also offers **Sign in again…**
+enables/disables, moves, or removes an account, and offers **Remove alias** on
+an account that has one. It also offers **Sign in again…**
 and **Use saved login** for Claude; renewing the active account activates its new login.
 **Import / export…** guides Claude and Codex file transfers.
 **Open web dashboard** reuses the running app, starting it in the background if needed.

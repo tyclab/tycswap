@@ -222,7 +222,12 @@ func menuManage(s ioStreams) {
 	if a.Disabled {
 		toggle = "Enable automatic rotation"
 	}
-	choices := []string{"Switch to this account", "Rename…", toggle, "Move to another slot…", "Remove stored account"}
+	const removeAlias = "Remove alias"
+	choices := []string{"Switch to this account", "Rename…"}
+	if a.Alias != "" {
+		choices = append(choices, removeAlias)
+	}
+	choices = append(choices, toggle, "Move to another slot…", "Remove stored account")
 	if a.ProviderName() == reporting.ProviderClaude {
 		choices = append(choices, "Sign in again…", "Use saved login")
 	}
@@ -234,13 +239,13 @@ func menuManage(s ioStreams) {
 	if a.ProviderName() == reporting.ProviderCodex {
 		args = append(args, "codex")
 	}
-	switch i {
-	case 0:
+	switch choices[i] {
+	case "Switch to this account":
 		if !menuConfirm(s, "Switch to "+termsafe.Strip(a.Email)+"?") {
 			return
 		}
 		args = append(args, "switch", a.Number)
-	case 1:
+	case "Rename…":
 		_, name, ok := askMenu(s, "Account name (empty clears it)", nil, a.Alias)
 		if !ok {
 			return
@@ -251,13 +256,15 @@ func menuManage(s ioStreams) {
 		} else {
 			args = append(args, name)
 		}
-	case 2:
+	case removeAlias:
+		args = append(args, "alias", a.Number, "--unset")
+	case toggle:
 		verb := "disable"
 		if a.Disabled {
 			verb = "enable"
 		}
 		args = append(args, verb, a.Number)
-	case 3:
+	case "Move to another slot…":
 		_, slot, ok := askMenu(s, "Destination slot", nil, "")
 		if !ok || slot == "" {
 			return
@@ -266,9 +273,9 @@ func menuManage(s ioStreams) {
 			return
 		}
 		args = append(args, "move", a.Number, slot)
-	case 4:
+	case "Remove stored account":
 		args = append(args, "remove", a.Number)
-	case 5:
+	case "Sign in again…":
 		args = []string{"add", "--login"}
 		if a.IsActive {
 			if !menuConfirm(s, "Sign in again and replace the active Claude login?") {
@@ -277,7 +284,7 @@ func menuManage(s ioStreams) {
 			args = append(args, "--switch")
 		}
 		args = append(args, "--", "--email", a.Email)
-	case 6:
+	case "Use saved login":
 		if !menuConfirm(s, "Use the saved login for "+termsafe.Strip(a.Email)+"? This replaces the current Claude login.") {
 			return
 		}
