@@ -309,6 +309,153 @@ func TestFableTickDryRunWritesNothing(t *testing.T) {
 	}
 }
 
+// turnOffWhenRefreshing is a refresh that turns auto-switch off in *root
+// while it refreshes a credential naming token, and succeeds.
+func turnOffWhenRefreshing(t *testing.T, root *string, token string) func(string) oauth.RefreshOutcome {
+	return func(creds string) oauth.RefreshOutcome {
+		if strings.Contains(creds, token) {
+			if _, err := settings.SetSetting(*root, "autoswitch.enabled", "false"); err != nil {
+				t.Error(err)
+			}
+		}
+		return oauth.RefreshOutcome{Credentials: creds}
+	}
+}
+
+// Auto-switch turned off while the default tick freshens its target: the
+// Fable tick reads the key at its start and does not run (DESIGN A83, A102).
+func TestFableTickDoesNotRunOnceAutoSwitchIsTurnedOff(t *testing.T) {
+	var root string
+	fx := atFableLimit
+	fx.usage = map[string][3]float64{"1": {90, 20, 30}, "2": {10, 20, 100}, "3": {10, 20, 10}, "4": {10, 20, 100}}
+	fx.refresh = turnOffWhenRefreshing(t, &root, `"at-d`)
+	sw, asked := fx.build(t)
+	root = sw.BackupDir()
+	near := strconv.FormatInt(int64(clock.Seconds(sw.Clk)*1000+60_000), 10)
+	for _, num := range []string{"2", "3", "4"} {
+		if err := sw.WriteAccountCredentials(num, fableEmail(num), `{"claudeAiOauth":{"accessToken":"at-d`+num+`","refreshToken":"rt-d`+num+`","expiresAt":`+near+`}}`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, out, _ := runCodex(t, "", "auto", "--once", "--json")
+	def, fable, _ := splitByStore(t, out)
+	if len(asked.all()) == 0 || eventOf(def, "switch") != nil {
+		t.Fatalf("the default tick freshened %d targets, events %v", len(asked.all()), def)
+	}
+	if len(fable) != 0 {
+		t.Fatalf("the Fable tick ran after auto-switch was turned off: %v", fable)
+	}
+}
+
+// Auto-switch turned off while the Fable tick freshens its target: the Fable
+// engine re-reads the key before it switches, as the default one does.
+func TestFableSwitchStopsOnceAutoSwitchIsTurnedOff(t *testing.T) {
+	var root string
+	fx := atFableLimit
+	fx.refresh = turnOffWhenRefreshing(t, &root, `"at-f3"`)
+	sw, asked := fx.build(t)
+	root = sw.BackupDir()
+	f, _ := sw.Store.ForFable()
+	if err := f.WriteAccountCredentials("3", fableEmail("3"), fableLoginOf("3", int64(clock.Seconds(sw.Clk)*1000+60_000))); err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ := runCodex(t, "", "auto", "--once", "--json")
+	_, fable, _ := splitByStore(t, out)
+	if ns := eventOf(fable, "no-switch"); len(asked.all()) == 0 || ns == nil || ns["reason"] != "disabled" || eventOf(fable, "switch") != nil {
+		t.Fatalf("Fable events %v after %d refreshes", fable, len(asked.all()))
+	}
+	if got := storeLive(t, sw); !strings.Contains(got, "at-f2") {
+		t.Fatalf("Fable store holds %s, want Account-2's Fable login still", got)
+	}
+}
+
+// A dry run harvests no rotated Fable login; a real tick does.
+func TestFableTickDryRunHarvestsNothing(t *testing.T) {
+	sw, _ := atFableLimit.build(t)
+	sw.Store.OAuth.(*oauth.FakeClient).ProfileFn = func(_ context.Context, token string) *oauth.Identity {
+		if token != "at-f3-rotated" {
+			return nil
+		}
+		return &oauth.Identity{UUID: "u-3", Email: fableEmail("3")}
+	}
+	writeFile(t, filepath.Join(paths.FableStoreDir(sw.BackupDir()), ".credentials.json"),
+		`{"claudeAiOauth":{"accessToken":"at-f3-rotated","refreshToken":"rt-f3-rotated","expiresAt":4102444800000}}`)
+	f, _ := sw.Store.ForFable()
+	backup := func() string { c, _ := f.ReadAccountCredentials("3", fableEmail("3")); return c }
+	runCodex(t, "", "auto", "--once", "--json", "--dry-run")
+	if got := backup(); strings.Contains(got, "rotated") {
+		t.Fatalf("a dry run harvested the rotated login: %s", got)
+	}
+	runCodex(t, "", "auto", "--once", "--json")
+	if got := backup(); !strings.Contains(got, "rt-f3-rotated") {
+		t.Fatalf("a real tick did not harvest the rotated login: %s", got)
+	}
+}
+
+// The Fable engine's poll inputs sit beside the default engine's: the shared
+// planner still plans an account on the default engine's model windows.
+func TestFablePollInputsKeepTheDefaultEngines(t *testing.T) {
+	sw, _ := atFableLimit.build(t)
+	now := clock.Seconds(sw.Clk)
+	at := func(d time.Duration) string { return sw.Clk.Now().Add(d).UTC().Format(time.RFC3339) }
+	rows := map[string]any{"3": map[string]any{"email": fableEmail("3"), "organizationUuid": "", "fetchedAt": now - 30, "nextPollAt": now + 300, "pollIntervalS": 600.0,
+		"lastGood": map[string]any{
+			"five_hour": map[string]any{"pct": 10.0, "resets_at": at(3 * time.Hour)},
+			"seven_day": map[string]any{"pct": 20.0, "resets_at": at(3 * time.Hour)},
+			"scoped": []any{map[string]any{"name": "Opus", "pct": 50.0, "resets_at": at(2 * time.Minute)},
+				map[string]any{"name": "Fable", "pct": 10.0, "resets_at": at(3 * time.Hour)}},
+		}}}
+	raw, _ := json.Marshal(map[string]any{"schemaVersion": 2, "accounts": rows})
+	writeFile(t, filepath.Join(sw.BackupDir(), "cache", "usage.json"), string(raw))
+	root := sw.BackupDir()
+	reporting.SetScopedPollInputs(root, root, 90, []string{"Opus"})
+	t.Cleanup(func() { reporting.ClearScopedPollInputs(root, root) })
+	a, _ := newFableAdapter(sw, sw.Log)
+	a.SetPollPolicyInputs(90, []string{"Fable"})
+	t.Cleanup(a.ClearPollPolicyInputs)
+	if next := a.UsageEntriesByAccount(map[string]bool{})["3"].NextPollAt; next == nil || *next >= now+300 {
+		t.Fatalf("Account-3's next poll was not brought before %v by its Opus window", now+300)
+	}
+}
+
+// The Fable engine fetches usage with the default login, the one fetch path
+// both stores share (DESIGN A102), never with an account's Fable login.
+func TestFableUsageFetchUsesTheDefaultLogin(t *testing.T) {
+	sw, _ := atFableLimit.build(t)
+	var tokens []string
+	sw.Store.OAuth.(*oauth.FakeClient).UsageFn = func(_ context.Context, token string) (map[string]any, error) {
+		tokens = append(tokens, token)
+		return map[string]any{"five_hour": map[string]any{"utilization": 10.0}, "seven_day": map[string]any{"utilization": 20.0}}, nil
+	}
+	rows := map[string]any{"3": map[string]any{"email": fableEmail("3"), "organizationUuid": "", "fetchedAt": clock.Seconds(sw.Clk) - 4000}}
+	raw, _ := json.Marshal(map[string]any{"schemaVersion": 2, "accounts": rows})
+	writeFile(t, filepath.Join(sw.BackupDir(), "cache", "usage.json"), string(raw))
+	a, _ := newFableAdapter(sw, sw.Log)
+	a.UsageEntriesByAccount(map[string]bool{"3": true})
+	if strings.Join(tokens, ",") != "at-d3" {
+		t.Fatalf("usage fetched with %q, want Account-3's default login at-d3", tokens)
+	}
+}
+
+// A live Fable login no account's Fable login or chain record names is not
+// the default login's account: the Fable tick leaves it, as the default tick
+// leaves an unmanaged login.
+func TestFableTickLeavesAnUnknownLiveLogin(t *testing.T) {
+	fx := atFableLimit
+	fx.usage = map[string][3]float64{"1": {10, 20, 100}, "2": {10, 20, 100}, "3": {10, 20, 10}, "4": {10, 20, 100}}
+	sw, _ := fx.build(t)
+	unknown := fableLoginOf("9", farExpiry)
+	writeFile(t, filepath.Join(paths.FableStoreDir(sw.BackupDir()), ".credentials.json"), unknown)
+	_, out, _ := runCodex(t, "", "auto", "--once", "--json")
+	_, fable, _ := splitByStore(t, out)
+	if ns := eventOf(fable, "no-switch"); ns == nil || ns["reason"] != "unmanaged-active-account" || eventOf(fable, "switch") != nil {
+		t.Fatalf("Fable events %v", fable)
+	}
+	if storeLive(t, sw) != unknown {
+		t.Fatal("the Fable tick replaced the unknown live login")
+	}
+}
+
 // Every Fable event carries "store":"fable" and its line names the store;
 // the default tick's lines are those of a run without the Fable store.
 func TestFableEventsCarryTheStore(t *testing.T) {
@@ -633,6 +780,22 @@ func TestKeepAliveQuarantinesADeadLogin(t *testing.T) {
 	}
 	if _, err := os.Stat(autoswitch.StatePath(sw.BackupDir())); !os.IsNotExist(err) {
 		t.Fatalf("the root state file was written (%v)", err)
+	}
+}
+
+// A quarantined idle login is left: the oldest idle login not quarantined is
+// the one kept alive.
+func TestKeepAliveLeavesAQuarantinedLogin(t *testing.T) {
+	sw, asked := keepAliveFixture(t, map[string]time.Duration{"1": 20 * 24 * time.Hour, "3": 16 * 24 * time.Hour}, func(creds string) oauth.RefreshOutcome {
+		return oauth.RefreshOutcome{Credentials: creds}
+	})
+	if err := autoswitch.Quarantine(fableStatePath(sw), sw.Clk, "1", fableEmail("1"), oauth.ErrInvalidGrant, "", func(autoswitch.Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	a, _ := newFableAdapter(sw, sw.Log)
+	keepFableLoginAlive(a, sw, func(autoswitch.Event) {})
+	if got := refreshedSlots(asked); got != "3" {
+		t.Fatalf("refreshed %q, want 3; the quarantined 1 is left", got)
 	}
 }
 
