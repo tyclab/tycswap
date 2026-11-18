@@ -296,9 +296,10 @@ $ tycswap switch --strategy best            # what the account order ranks first
 $ tycswap switch --strategy next-available  # rotate, skipping at-limit accounts
 ```
 
-Both count the windows the dashboard's *Counting now* names: 5h, 7d and,
-while live sessions run a model some usable account can serve, that model's
-weekly window (DESIGN A98). `best` ranks as auto-switch does under
+Both count the windows a scheduled tick counts (the dashboard's *Counting
+now* while a scheduler checks; an engine the dashboard hosts counts 5h and 7d
+only): 5h, 7d and, while live sessions run a model some usable account can
+serve, that model's weekly window (DESIGN A98). `best` ranks as auto-switch does under
 `autoswitch.strategy` and takes the dashboard's *Best candidate*, staying put
 when the live account ranks first (DESIGN A99).
 

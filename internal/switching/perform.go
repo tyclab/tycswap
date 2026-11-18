@@ -700,9 +700,9 @@ func printSwitchFollowup(s *store.Store, target string, plan *profilePlan) {
 		}
 	}
 	if backend == "keychain" {
-		printOut(printer.Dimmed("Restart Claude Code to apply immediately — otherwise the session can take up to ~30 seconds to pick up the new account."))
+		printOut(printer.Dimmed(KeychainFollowupNote))
 	} else {
-		printOut(printer.Dimmed("New account is active on your next message — no restart needed."))
+		printOut(printer.Dimmed(FileFollowupNote))
 	}
 }
 

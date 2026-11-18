@@ -136,15 +136,16 @@ func TestIndexHTML_OnboardingMarkup(t *testing.T) {
 	}
 }
 
-// The Guide tab: every section the design names, generic text, no URL (the
-// page works offline), and Codex where the tool supports it.
+// The Guide tab: every section, generic text, no URL (the page works
+// offline), the three diagrams as inline SVG with real text and a text
+// alternative, and none of the statements the code had outgrown.
 func TestIndexHTML_GuideTab(t *testing.T) {
 	index := staticFile(t, "index.html")
 	guide := regexp.MustCompile(`(?s)<section class="panel" id="panel-guide".*?</section>`).FindString(index)
 	if guide == "" {
 		t.Fatal("no guide panel")
 	}
-	for _, id := range []string{"g-what", "g-concepts", "g-start", "g-switch", "g-auto", "g-settings", "g-sessions", "g-updates", "g-codex", "g-cli", "g-trouble", "g-privacy"} {
+	for _, id := range []string{"g-what", "g-start", "g-switch", "g-auto", "g-settings", "g-concepts", "g-fable", "g-sessions", "g-updates", "g-codex", "g-trouble", "g-cli", "g-privacy"} {
 		if !strings.Contains(guide, `id="`+id+`"`) {
 			t.Errorf("guide section #%s missing", id)
 		}
@@ -152,19 +153,34 @@ func TestIndexHTML_GuideTab(t *testing.T) {
 			t.Errorf("guide contents do not link #%s", id)
 		}
 	}
-	for _, needle := range []string{"{{.Name}} config", "{{.Name}} upgrade", "{{.Name}} codex", "add --login", "Add account…", "autoswitch.sevenDayThreshold", "autoswitch.modelThreshold", "5-hour", "7-day", "sessions", "127.0.0.1"} {
+	for _, needle := range []string{"{{.Name}} config", "{{.Name}} upgrade", "{{.Name}} codex", "add --login", "Add account…", "Auto-switch",
+		"5-hour", "weekly", "Use for Fable", "{{.Name}} start", "127.0.0.1",
+		// Which checks follow the sessions' models.
+		"Count 5-hour and weekly use", "a scheduler also counts each", "{{.Name}} auto --observe"} {
 		if !strings.Contains(guide, needle) {
 			t.Errorf("guide lacks %q", needle)
 		}
 	}
-	for _, needle := range []string{"a scheduler's checks follow the models your live sessions run; checks this dashboard runs itself count the 5-hour and weekly windows only",
-		"Checks this dashboard or <code>{{.Name}} auto</code> runs itself count 5h and 7d only"} {
-		if !strings.Contains(guide, needle) {
-			t.Errorf("guide does not say which checks follow the sessions: lacks %q", needle)
+	svgs := regexp.MustCompile(`(?s)<svg class="g-svg" viewBox="0 0 320 \d+" role="img" aria-labelledby="([a-z-]+)-t ([a-z-]+)-d">(.*?)</svg>`).FindAllStringSubmatch(guide, -1)
+	if len(svgs) != 3 {
+		t.Fatalf("guide has %d diagrams, want 3", len(svgs))
+	}
+	for _, m := range svgs {
+		if m[1] != m[2] || !strings.Contains(m[3], `<title id="`+m[1]+`-t">`) || !strings.Contains(m[3], `<desc id="`+m[1]+`-d">`) {
+			t.Errorf("diagram %s has no title and description for screen readers", m[1])
+		}
+		if !strings.Contains(m[3], "<text ") || regexp.MustCompile(`(?i)(fill|stroke)="#|<image|<foreignObject`).MatchString(m[3]) {
+			t.Errorf("diagram %s: text must be real text and colours the page's own", m[1])
 		}
 	}
-	if strings.Contains(guide, "<code>autoswitch.model</code>") {
-		t.Error("the guide names the removed autoswitch.model setting (DESIGN A97)")
+	for _, gone := range []string{"Force switch", "{{.Name}} run", "{{.Name}} env", "Auto mode", "five hours after it filled",
+		"keep the last good values", "Restart running Claude Code sessions", "Focus a row", "<code>autoswitch.", "five things to understand"} {
+		if strings.Contains(index, gone) {
+			t.Errorf("the page still says %q", gone)
+		}
+	}
+	if strings.Contains(staticFile(t, "app.js"), "last good values") {
+		t.Error("the usage unavailable tooltip still says the meters keep the last good values")
 	}
 	if strings.Contains(guide, "telemetry") && !strings.Contains(guide, "There is no telemetry") {
 		t.Error("the guide mentions telemetry other than to say there is none")

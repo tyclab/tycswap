@@ -571,7 +571,7 @@ func TestShellAPIKeySwitchAsksFirst(t *testing.T) {
 	if !strings.Contains(asked, "2 Claude Code sessions are running.") || strings.Contains(asked, "ANTHROPIC_BASE_URL") {
 		t.Errorf("dialog without a base URL = %q", asked)
 	}
-	if notes := ft.notesNow(); !strings.HasSuffix(notes[len(notes)-1], "Restart running Claude Code sessions to pick it up.") {
+	if notes := ft.notesNow(); notes[len(notes)-1] != "Switched to account #3 | "+switching.APIKeyRestartNote {
 		t.Errorf("notes = %v", notes)
 	}
 
@@ -1011,7 +1011,7 @@ func TestShellSwitchClickCarriesKey(t *testing.T) {
 		t.Errorf("calls = %s", got)
 	}
 	want := []string{
-		"Switched to account #2 | Restart running Claude Code sessions to pick it up.",
+		"Switched to account #2 | " + trayLoginNote(),
 		"Switched Codex to account #3 | codex is running (pid 4242, 4343) — restart it for the new account to take effect.",
 		"Switched Codex to account #3 | The next codex session uses it.",
 		"Switch failed | Another tycswap process is using the Codex store; try again.",

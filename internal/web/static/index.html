@@ -46,7 +46,7 @@
     <div class="onboard" id="onboard" hidden>
       <section class="card auth-warn" id="auth-overrides" hidden>
         <h2>Claude Code may not use the stored login</h2>
-        <p id="auth-overrides-env" hidden>The environment <code>{{.Name}} web</code> runs in sets <strong id="auth-overrides-env-keys"></strong>. A <code>claude</code> started from the same shell inherits them and signs in with them instead of the login shown here; <code>{{.Name}} run</code> and <code>{{.Name}} env</code> scrub the key and token variables (not <code>ANTHROPIC_BASE_URL</code>).</p>
+        <p id="auth-overrides-env" hidden>The environment <code>{{.Name}} web</code> runs in sets <strong id="auth-overrides-env-keys"></strong>. A <code>claude</code> started from the same shell inherits them and signs in with them instead of the login shown here. Unset them in that shell, or start <code>claude</code> from one without them.</p>
         <p id="auth-overrides-settings" hidden><code id="auth-overrides-path">settings.json</code> sets <strong id="auth-overrides-settings-keys"></strong>. Claude Code signs in with these instead of the stored login. Remove them from the file to use the accounts below.</p>
       </section>
     </div>
@@ -235,160 +235,314 @@
   <section class="panel" id="panel-guide" role="tabpanel" aria-labelledby="tab-guide" hidden>
     <div class="guide">
       <nav class="guide-toc card" aria-label="Guide contents">
-        <div class="card-head"><div class="head-l"><h2>Guide</h2></div><span class="card-sub">how to use {{.Name}}</span></div>
+        <div class="card-head"><div class="head-l"><h2>Guide</h2></div><span class="card-sub">what {{.Name}} does and what to click</span></div>
         <ol>
-          <li><a href="#g-what">What this is</a></li>
-          <li><a href="#g-concepts">The five things to understand</a></li>
-          <li><a href="#g-start">Getting started in 3 minutes</a></li>
+          <li><a href="#g-what">What happens</a></li>
+          <li><a href="#g-start">Getting started</a></li>
           <li><a href="#g-switch">Switching by hand</a></li>
-          <li><a href="#g-auto">Auto mode</a></li>
-          <li><a href="#g-settings">Settings</a></li>
+          <li><a href="#g-auto">Auto-switch</a></li>
+          <li><a href="#g-settings">The settings that steer it</a></li>
+          <li><a href="#g-concepts">Reading the meters</a></li>
+          <li><a href="#g-fable">Fable logins</a></li>
           <li><a href="#g-sessions">Sessions</a></li>
           <li><a href="#g-updates">Updates</a></li>
           <li><a href="#g-codex">Codex accounts</a></li>
-          <li><a href="#g-cli">Command cheat-sheet</a></li>
-          <li><a href="#g-trouble">When something looks wrong</a></li>
+          <li><a href="#g-trouble">Something looks wrong</a></li>
+          <li><a href="#g-cli">Commands</a></li>
           <li><a href="#g-privacy">Where your data lives</a></li>
         </ol>
       </nav>
 
       <article class="card guide-section" id="g-what">
-        <h2>What this is</h2>
-        <p>Claude Code signs in as <em>one</em> account at a time, and every account has usage windows that run out. <strong>{{.Name}}</strong> keeps several Claude accounts on this machine, shows how much room each of them has left, and swaps the one Claude Code uses: by hand with one click, or automatically before you hit a wall. It does the same for Codex (ChatGPT) accounts from the command line.</p>
-        <p>With your accounts it only reads their usage and refreshes a stored login's token; the update check reads public release information and sends nothing about you. Switching only rewrites Claude Code's local credential and config files, exactly as signing out and back in would.</p>
-      </article>
-
-      <article class="card guide-section" id="g-concepts">
-        <h2>The five things to understand</h2>
-        <dl class="guide-dl">
-          <dt>Account / slot</dt>
-          <dd>Each stored login is an <em>account</em> in a numbered <em>slot</em> (<code>#1</code>, <code>#2</code>, …). You can give a slot an alias (<code>work</code>, <code>spare</code>) and use number, alias or email interchangeably everywhere.</dd>
-          <dt>Active account</dt>
-          <dd>The one Claude Code is using right now. The header always shows it with its three meters. Changing it is what “switching” means.</dd>
-          <dt>Windows: 5h, 7d, model</dt>
-          <dd>Anthropic limits each account per <strong>rolling 5-hour window</strong> and per <strong>7-day window</strong>, and some plans add a <strong>per-model weekly window</strong>. A meter shows the share used; the small text underneath says when that window resets. <span class="good">green</span> = plenty left, <span class="warn">amber</span> = getting close, <span class="crit">red</span> = at the limit. A window Anthropic does not report for an account (a verified Ultra login has no 5-hour limit) shows a dash, and the 5-hour column is left out while no listed account has one. The plan chip next to <code>oauth</code> is the plan Claude Code reports for that login.</dd>
-          <dt>At limit / eligible</dt>
-          <dd>An account is <em>at limit</em> when any counted window is at 100 %. It is <em>eligible for rotation</em> when it is enabled, has stored credentials and is not the active one; those are the accounts Auto mode may pick.</dd>
-          <dt>The thresholds</dt>
-          <dd>One bar per window, at which Auto mode considers that window full and looks for another account: <em>5-hour threshold</em> (<code>autoswitch.fiveHourThreshold</code>, <strong>85 %</strong> by default), <em>Weekly threshold</em> (<code>autoswitch.sevenDayThreshold</code>, <strong>97 %</strong>) and, for the counted model windows, <em>Model threshold</em> (<code>autoswitch.modelThreshold</code>, <strong>95 %</strong>). Each window is judged against its own bar. Set them on the Settings tab.</dd>
-        </dl>
+        <h2>What happens</h2>
+        <p>Claude Code is signed in to one account at a time: its <em>live login</em>. {{.Name}} keeps a saved login for each of your accounts and copies one into the live login when you click <strong>Switch</strong>, or by itself with <strong>Auto-switch</strong> on.</p>
+        <figure class="g-fig">
+      <svg class="g-svg" viewBox="0 0 320 320" role="img" aria-labelledby="gd-what-t gd-what-d">
+        <title id="gd-what-t">Your accounts, the live login, the Fable store and the sessions that use them</title>
+        <desc id="gd-what-d">Three accounts are saved: number 1, alias work, with its saved login and a Fable login; number 2; number 3, alias spare. Switch copies number 2's saved login into the live login, Claude Code's own sign-in. Use for Fable puts number 1's Fable login into the Fable store, which exists only once an account has a Fable login. All other sessions use the live login; Fable sessions started via {{.Name}} start use the Fable store.</desc>
+        <rect class="gd-box" x="1" y="1" width="318" height="134" rx="8"/>
+        <text class="gd-h" x="12" y="20">Your accounts, saved by {{.Name}}</text>
+        <rect class="gd-row" x="10" y="30" width="300" height="28" rx="6"/>
+        <text class="gd-t" x="20" y="48">#1 work</text>
+        <text class="gd-s" x="300" y="48" text-anchor="end">saved login + <tspan class="gd-vt">Fable login</tspan></text>
+        <rect class="gd-row" x="10" y="62" width="300" height="28" rx="6"/>
+        <text class="gd-t" x="20" y="80">#2</text>
+        <text class="gd-s" x="300" y="80" text-anchor="end">saved login</text>
+        <rect class="gd-row" x="10" y="94" width="300" height="28" rx="6"/>
+        <text class="gd-t" x="20" y="112">#3 spare</text>
+        <text class="gd-s" x="300" y="112" text-anchor="end">saved login</text>
+        <line class="gd-a" x1="78" y1="135" x2="78" y2="166" />
+        <path class="gd-hd" d="M73.5 165L82.5 165L78 172Z"/>
+        <text class="gd-l" x="86" y="158">Switch</text>
+        <line class="gd-a gd-af" x1="242" y1="135" x2="242" y2="166" />
+        <path class="gd-hd-f" d="M237.5 165L246.5 165L242 172Z"/>
+        <text class="gd-l" x="234" y="158" text-anchor="end">Use for Fable</text>
+        <rect class="gd-live" x="1" y="172" width="154" height="64" rx="8"/>
+        <text class="gd-h" x="12" y="192">Live login</text>
+        <text class="gd-s" x="12" y="209">Claude Code's sign-in</text>
+        <text class="gd-s" x="12" y="225">now #2's saved login</text>
+        <rect class="gd-fable" x="165" y="172" width="154" height="64" rx="8"/>
+        <text class="gd-h" x="176" y="192">Fable store</text>
+        <text class="gd-s" x="176" y="209">with Fable logins only</text>
+        <text class="gd-s" x="176" y="225">now #1's Fable login</text>
+        <line class="gd-a" x1="78" y1="236" x2="78" y2="260" />
+        <path class="gd-hd" d="M73.5 259L82.5 259L78 266Z"/>
+        <line class="gd-a gd-af" x1="242" y1="236" x2="242" y2="260" />
+        <path class="gd-hd-f" d="M237.5 259L246.5 259L242 266Z"/>
+        <rect class="gd-box" x="1" y="266" width="154" height="52" rx="8"/>
+        <text class="gd-h" x="12" y="286">All other sessions</text>
+        <text class="gd-s" x="12" y="304">Opus, Sonnet, …</text>
+        <rect class="gd-box" x="165" y="266" width="154" height="52" rx="8"/>
+        <text class="gd-h" x="176" y="286">Fable sessions</text>
+        <text class="gd-s" x="176" y="304">via {{.Name}} start</text>
+      </svg>
+          <figcaption>
+            <ul>
+              <li>Every Claude Code session uses the live login, so one switch moves all of them.</li>
+              <li>Only Fable sessions started through <code>{{.Name}} start</code> can use the second login, the <a href="#g-fable">Fable store</a>.</li>
+            </ul>
+          </figcaption>
+        </figure>
       </article>
 
       <article class="card guide-section" id="g-start">
-        <h2>Getting started in 3 minutes</h2>
+        <h2>Getting started</h2>
         <ol class="guide-steps">
-          <li><strong>Choose Add account…</strong> here or in the tray. Guided setup opens in a terminal.</li>
-          <li><strong>Choose Claude or Codex</strong> and complete browser sign-in. The account is saved automatically.</li>
-          <li><strong>Repeat to add another account.</strong> Claude sign-in leaves your current login active. Codex sign-in saves the outgoing login, then changes the current account.</li>
-          <li><strong>Pick the active one</strong> from the Dashboard (the row's <em>Switch</em>) or turn on Auto mode and let it decide.</li>
-          <li><strong>Restart running Claude Code sessions</strong> after a switch (<code>claude --continue</code> picks up where you were). The Sessions tab shows what is running.</li>
+          <li><strong>Add account…</strong> opens guided setup in a terminal: choose <em>Sign in with Claude</em> and sign in in the browser. The account is saved; the live login stays as it is.</li>
+          <li>Repeat for each account. <strong>Save current login</strong> saves the account Claude Code is signed in with now.</li>
+          <li>Turn on <strong>Auto-switch</strong> above the accounts, or click <strong>Switch</strong> on the one you want.</li>
         </ol>
-        <p class="muted">Have a setup token or an API key instead of a browser login? <em>Add token…</em> here, or <code>{{.Name}} add-token</code> in a terminal. API-key accounts have no usage windows, and neither Auto mode nor a rotation ever moves onto one: you switch to one by hand and confirm. An API-key account may carry a <strong>base URL</strong> (the field in <em>Add token…</em>, or <code>{{.Name}} add-token --base-url</code>): a switch to it writes the endpoint and the key into Claude Code's <code>settings.json</code> as <code>env.ANTHROPIC_BASE_URL</code> and <code>env.ANTHROPIC_AUTH_TOKEN</code> and removes <code>env.ANTHROPIC_API_KEY</code>, and a switch to any other account puts back exactly what those keys held. A running Claude Code can take the endpoint up at once, but keeps it after a switch away until it is restarted.</p>
+        <p class="muted">A setup token or an API key goes in with <strong>Add token…</strong>. Auto-switch never picks an API-key account; a switch to one asks first, since it is billed per token.</p>
       </article>
 
       <article class="card guide-section" id="g-switch">
         <h2>Switching by hand</h2>
-        <ul>
-          <li><strong>Switch</strong> in an account's row makes that account active at once, whatever its windows say. <strong>Force switch</strong> in the row menu skips the backup of the current login first. A switch onto an API-key account asks first: it changes how Claude Code authenticates, and running sessions keep their old login until restarted. <strong>Force switch</strong> does not ask that and is refused for an API-key account.</li>
-          <li><strong>Best</strong> (the strategy control on the Dashboard) switches to the <em>Best candidate</em>: the account the <em>Account order</em> setting ranks first, as auto-switch ranks its targets, and stays when the active account ranks first; <strong>Next available</strong> goes to the next slot in order that is not at limit. Both count the windows <em>Counting now</em> names, a model window included, so neither lands on an account marked at limit on it. Neither ever picks a disabled account or an API-key account.</li>
-          <li><strong>Disable</strong> an account to keep it stored but out of every rotation; a shared account you only want on demand, say. <strong>Enable</strong> brings it back.</li>
-          <li><strong>Move / Swap</strong> renumbers slots; <strong>Remove</strong> deletes the stored copy (your Claude login itself is untouched).</li>
-        </ul>
-        <p>Windows come back on their own: a 5-hour window at 100 % is usable again five hours after it filled, which is what the countdown under each meter tells you.</p>
+        <figure class="g-fig">
+      <svg class="g-svg" viewBox="0 0 320 445" role="img" aria-labelledby="gd-switch-t gd-switch-d">
+        <title id="gd-switch-t">What a switch by hand does</title>
+        <desc id="gd-switch-d">You click Switch on account 2. {{.Name}} saves the outgoing login back to its account, number 1, with its latest tokens, and number 2's saved login becomes the live login. Running sessions on the live login use number 2 from their next message; on macOS within about 30 seconds, or at once after a restart. Sessions on the Fable store are not touched. A switch onto an API-key account asks first, and running sessions keep their old login until they are restarted. Auto-switch makes no switch for the Switch cooldown, 5 minutes by default.</desc>
+        <rect class="gd-q" x="1" y="1" width="318" height="30" rx="14"/>
+        <text class="gd-t" x="12" y="20">You click Switch on #2</text>
+        <line class="gd-a" x1="160" y1="31" x2="160" y2="49" />
+        <path class="gd-hd" d="M155.5 48L164.5 48L160 55Z"/>
+        <rect class="gd-box" x="1" y="55" width="318" height="44" rx="8"/>
+        <text class="gd-h" x="12" y="74">{{.Name}} saves the outgoing login back</text>
+        <text class="gd-s" x="12" y="88">to its account, #1, with its latest tokens</text>
+        <line class="gd-a" x1="160" y1="99" x2="160" y2="117" />
+        <path class="gd-hd" d="M155.5 116L164.5 116L160 123Z"/>
+        <rect class="gd-live" x="1" y="123" width="318" height="30" rx="8"/>
+        <text class="gd-t" x="12" y="142">#2's saved login becomes the live login</text>
+        <line class="gd-a" x1="160" y1="153" x2="160" y2="171" />
+        <path class="gd-hd" d="M155.5 170L164.5 170L160 177Z"/>
+        <rect class="gd-group" x="1" y="177" width="318" height="198" rx="10"/>
+        <text class="gd-l" x="12" y="194">Running sessions</text>
+        <rect class="gd-row" x="11" y="203" width="298" height="58" rx="8"/>
+        <text class="gd-t" x="22" y="222">On the live login: the next message</text>
+        <text class="gd-s" x="22" y="236">uses #2; on macOS within about 30 s,</text>
+        <text class="gd-s" x="22" y="250">or at once after a restart</text>
+        <rect class="gd-fable" x="11" y="269" width="298" height="30" rx="8"/>
+        <text class="gd-t" x="22" y="288">On the Fable store: not touched</text>
+        <rect class="gd-row" x="11" y="307" width="298" height="58" rx="8"/>
+        <text class="gd-t" x="22" y="326">Onto an API-key account: it asks</text>
+        <text class="gd-s" x="22" y="340">first; sessions keep their old login</text>
+        <text class="gd-s" x="22" y="354">until they are restarted</text>
+        <line class="gd-a" x1="160" y1="375" x2="160" y2="393" />
+        <path class="gd-hd" d="M155.5 392L164.5 392L160 399Z"/>
+        <rect class="gd-end" x="1" y="399" width="318" height="44" rx="14"/>
+        <text class="gd-t" x="12" y="418">And Auto-switch makes no switch</text>
+        <text class="gd-s" x="12" y="432">for the Switch cooldown (5 minutes by default)</text>
+      </svg>
+          <figcaption>No restart is needed, except after a switch onto an API-key account.</figcaption>
+        </figure>
+        <dl class="guide-dl">
+          <dt>Switch now</dt><dd><em>Best</em> takes the account <em>Account order</em> ranks first and stays if that is the live one; <em>Next available</em> takes the next account in slot order that is not at a limit. Neither picks a disabled or an API-key account.</dd>
+          <dt>Use saved login…</dt><dd>Writes that account's saved login over the live login without saving the outgoing one: for a live login that stopped working.</dd>
+          <dt>Allow for start</dt><dd>Lets <code>{{.Name}} start</code> switch to this account when it launches Claude Code with Auto-switch on.</dd>
+          <dt>Remove…</dt><dd>Deletes the saved login and the account's Fable login; the live login stays.</dd>
+        </dl>
       </article>
 
       <article class="card guide-section" id="g-auto">
-        <h2>Auto mode</h2>
-        <p>Auto-switch checks every account's usage, and when one of the active account's windows crosses its own bar it switches to the best candidate, naming the window (<code>5h</code>, <code>7d</code> or <code>model</code>) in the log. The <em>Auto-switch</em> switch on the Auto tab turns it on and off (it is <code>autoswitch.enabled</code>, the same switch as the tray's and <code>{{.Name}} auto on|off</code>); the tab badge says <em>on</em> or <em>off</em>. The line under the heading says who checks: a scheduler that runs <code>{{.Name}} auto --once</code> and when it last checked, or this dashboard and how often. On a machine with Codex accounts every check also rotates Codex accounts, on a bar of their own.</p>
-        <p><em>Counting now</em> says which windows auto-switch counts and why: a scheduler's checks follow the models your live sessions run; checks this dashboard runs itself count the 5-hour and weekly windows only. No setting chooses them.</p>
-        <h3>Settings that matter</h3>
-        <dl class="guide-dl">
-          <dt>5-hour threshold</dt><dd><code>autoswitch.fiveHourThreshold</code>, <strong>85 %</strong> by default: the lowest of the three bars, because this window <em>bursts</em>. A fan-out of parallel subagents can take it from 85 % to full between two checks, and hitting 100 % stops you mid-task. Raise it only if you work in small, predictable steps; lower it (or check more often) if you run wide fan-outs.</dd>
-          <dt>Weekly threshold</dt><dd><code>autoswitch.sevenDayThreshold</code>, <strong>97 %</strong> by default: the 7-day window is the account's whole budget, and it <em>creeps</em>, so it can be squeezed nearly full before moving. A settings file that still has the old single <code>autoswitch.threshold</code> seeds this bar.</dd>
-          <dt>Model limits</dt><dd>A scheduler's check (<code>{{.Name}} auto --once</code>) counts the model windows of the models the live default sessions run, while some usable account is below its bars on them, and 5h and 7d otherwise. Checks this dashboard or <code>{{.Name}} auto</code> runs itself count 5h and 7d only. No setting or flag chooses them.</dd>
-          <dt>Model threshold</dt><dd><code>autoswitch.modelThreshold</code>, <strong>95 %</strong> by default: the bar for every per-model weekly window session following counts. A bar of 100 means "never move on this window before it is full", for any of the three.</dd>
-          <dt>Account order</dt><dd><code>autoswitch.strategy</code>: <em>soonest-reset</em> (the default) prefers the account whose weekly window renews first, so several accounts are used evenly and none sits idle on a window that is about to renew; <em>best</em> takes the account with the most headroom right now.</dd>
-          <dt>Minimum improvement, Switch cooldown</dt><dd><code>autoswitch.hysteresisPct</code>: a target must beat the active account by this much, so two accounts at the same level do not flap. <code>autoswitch.cooldownSeconds</code>: the least time between two proactive switches.</dd>
-          <dt>API-key accounts</dt><dd>Auto-switch never moves onto, or off, an API-key account by itself. That is a change of <em>how</em> Claude Code authenticates, billed per token, and a session that is already running keeps its old login until you restart it, so only you can decide to make it. Switching to one by hand asks first. The header says so in red while one is active.</dd>
-          <dt>Dry run</dt><dd><code>{{.Name}} auto --dry-run</code> in a terminal decides and prints what it <em>would</em> do without switching.</dd>
-        </dl>
-        <h3>Quarantine</h3>
-        <p>An account whose credentials stop working (expired refresh token, re-login required) is quarantined: auto-switch stops trying it and lists the reason. Choose <strong>Add account…</strong> and sign in as that Claude account to refresh it; the live login is untouched.</p>
-        <p class="muted">The <em>Next best</em> panel compares weekly, counted model-weekly, then 5-hour usage, with lower usage first. Soonest-reset mode keeps reset time first within each availability tier. Full accounts stay below usable ones; those whose counted full windows all reset within five hours lead the blocked group and are marked “at limit · resets &lt;5h”. Model limits affect ranking only when counted. Each row shows why it is available or blocked.</p>
+        <h2>Auto-switch</h2>
+        <p>One setting, shown above the accounts, on the Auto tab, in the tray and as <code>{{.Name}} auto on</code> / <code>off</code>. The line under the Auto tab's heading says who checks: a scheduler running <code>{{.Name}} auto --once</code>, or this dashboard at its <em>Poll interval</em>.</p>
+        <figure class="g-fig">
+      <svg class="g-svg" viewBox="0 0 320 668" role="img" aria-labelledby="gd-auto-t gd-auto-d">
+        <title id="gd-auto-t">What Auto-switch does on each check</title>
+        <desc id="gd-auto-d">Each check, by a scheduler or by this dashboard: if Auto-switch is off, nothing happens. If you switched by hand within the Switch cooldown, it waits. It counts the 5-hour and weekly use; a scheduler also counts each model your sessions run. If the live account is not over a threshold, not at its limit and not failing 3 polls in a row, it stays. Otherwise the targets are the accounts that are enabled, not API-key accounts, not quarantined and not at a limit, those below every threshold first; a threshold move needs 10 points more room on that window. With no target it stays. Otherwise it switches to the first target by Account order: the soonest weekly reset by default, or the most weekly room. Its next threshold move then waits the Switch cooldown.</desc>
+        <rect class="gd-box" x="1" y="1" width="216" height="44" rx="8"/>
+        <text class="gd-h" x="12" y="20">Each check</text>
+        <text class="gd-s" x="12" y="34">by a scheduler or this dashboard</text>
+        <line class="gd-a" x1="108" y1="45" x2="108" y2="63" />
+        <path class="gd-hd" d="M103.5 62L112.5 62L108 69Z"/>
+        <rect class="gd-q" x="1" y="69" width="216" height="30" rx="14"/>
+        <text class="gd-t" x="12" y="88">Auto-switch on?</text>
+        <line class="gd-a" x1="217" y1="84" x2="243" y2="84" />
+        <path class="gd-hd" d="M242 79.5L242 88.5L249 84Z"/>
+        <text class="gd-l" x="233" y="79" text-anchor="middle">no</text>
+        <rect class="gd-end" x="249" y="70" width="70" height="28" rx="14"/>
+        <text class="gd-t" x="284" y="88" text-anchor="middle">nothing</text>
+        <line class="gd-a" x1="108" y1="99" x2="108" y2="117" />
+        <path class="gd-hd" d="M103.5 116L112.5 116L108 123Z"/>
+        <text class="gd-l" x="116" y="115">yes</text>
+        <rect class="gd-q" x="1" y="123" width="216" height="45" rx="14"/>
+        <text class="gd-t" x="12" y="142">Switched by hand within</text>
+        <text class="gd-t" x="12" y="157">the Switch cooldown?</text>
+        <line class="gd-a" x1="217" y1="145" x2="243" y2="145" />
+        <path class="gd-hd" d="M242 140.5L242 149.5L249 145Z"/>
+        <text class="gd-l" x="233" y="140" text-anchor="middle">yes</text>
+        <rect class="gd-end" x="249" y="131" width="70" height="28" rx="14"/>
+        <text class="gd-t" x="284" y="149" text-anchor="middle">wait</text>
+        <line class="gd-a" x1="108" y1="168" x2="108" y2="186" />
+        <path class="gd-hd" d="M103.5 185L112.5 185L108 192Z"/>
+        <text class="gd-l" x="116" y="184">no</text>
+        <rect class="gd-box" x="1" y="192" width="216" height="58" rx="8"/>
+        <text class="gd-h" x="12" y="211">Count 5-hour and weekly use</text>
+        <text class="gd-s" x="12" y="225">a scheduler also counts each</text>
+        <text class="gd-s" x="12" y="239">model your sessions run</text>
+        <line class="gd-a" x1="108" y1="250" x2="108" y2="268" />
+        <path class="gd-hd" d="M103.5 267L112.5 267L108 274Z"/>
+        <rect class="gd-q" x="1" y="274" width="216" height="60" rx="14"/>
+        <text class="gd-t" x="12" y="293">Live account over a threshold,</text>
+        <text class="gd-t" x="12" y="308">at its limit, or failing</text>
+        <text class="gd-t" x="12" y="323">3 polls in a row?</text>
+        <line class="gd-a" x1="217" y1="304" x2="243" y2="304" />
+        <path class="gd-hd" d="M242 299.5L242 308.5L249 304Z"/>
+        <text class="gd-l" x="233" y="299" text-anchor="middle">no</text>
+        <rect class="gd-end" x="249" y="290" width="70" height="28" rx="14"/>
+        <text class="gd-t" x="284" y="308" text-anchor="middle">stay</text>
+        <line class="gd-a" x1="108" y1="334" x2="108" y2="352" />
+        <path class="gd-hd" d="M103.5 351L112.5 351L108 358Z"/>
+        <text class="gd-l" x="116" y="350">yes</text>
+        <rect class="gd-box" x="1" y="358" width="216" height="88" rx="8"/>
+        <text class="gd-h" x="12" y="377">Targets: enabled, not API-key,</text>
+        <text class="gd-t" x="12" y="392">not quarantined, not at limit,</text>
+        <text class="gd-t" x="12" y="407">below every threshold first</text>
+        <text class="gd-s" x="12" y="421">a threshold move needs 10 points</text>
+        <text class="gd-s" x="12" y="435">more room on that window</text>
+        <line class="gd-a" x1="108" y1="446" x2="108" y2="464" />
+        <path class="gd-hd" d="M103.5 463L112.5 463L108 470Z"/>
+        <rect class="gd-q" x="1" y="470" width="216" height="30" rx="14"/>
+        <text class="gd-t" x="12" y="489">Any target left?</text>
+        <line class="gd-a" x1="217" y1="485" x2="243" y2="485" />
+        <path class="gd-hd" d="M242 480.5L242 489.5L249 485Z"/>
+        <text class="gd-l" x="233" y="480" text-anchor="middle">no</text>
+        <rect class="gd-end" x="249" y="471" width="70" height="28" rx="14"/>
+        <text class="gd-t" x="284" y="489" text-anchor="middle">stay</text>
+        <line class="gd-a" x1="108" y1="500" x2="108" y2="518" />
+        <path class="gd-hd" d="M103.5 517L112.5 517L108 524Z"/>
+        <text class="gd-l" x="116" y="516">yes</text>
+        <rect class="gd-live" x="1" y="524" width="216" height="73" rx="8"/>
+        <text class="gd-h" x="12" y="543">Switch to the first by</text>
+        <text class="gd-t" x="12" y="558">Account order</text>
+        <text class="gd-s" x="12" y="572">soonest weekly reset (default)</text>
+        <text class="gd-s" x="12" y="586">or most weekly room</text>
+        <line class="gd-a" x1="108" y1="597" x2="108" y2="615" />
+        <path class="gd-hd" d="M103.5 614L112.5 614L108 621Z"/>
+        <rect class="gd-end" x="1" y="621" width="216" height="45" rx="14"/>
+        <text class="gd-t" x="12" y="640">Its next threshold move waits</text>
+        <text class="gd-t" x="12" y="655">the Switch cooldown</text>
+      </svg>
+          <figcaption>
+            <ul>
+              <li>A scheduler counts a model's weekly limit (Fable, say) only if Claude Code's status line runs <code>{{.Name}} auto --observe</code>. <em>Counting now</em> on the Auto tab shows what counts.</li>
+              <li><em>Next best</em> lists the order Auto-switch would take the accounts in, and why one is blocked.</li>
+              <li>An account whose saved login Anthropic refuses is quarantined: skipped until you sign in as it again.</li>
+            </ul>
+          </figcaption>
+        </figure>
       </article>
 
       <article class="card guide-section" id="g-settings">
-        <h2>Settings</h2>
-        <p>The Settings tab lists the keys of <code>settings.json</code> with their type, range, default and current value, and saves or resets one key at a time; it is <code>{{.Name}} config</code> in the browser. Every key is an <code>autoswitch.*</code> key today: the three thresholds, the poll interval, the switch cooldown, the minimum improvement, the account order, how many failed polls make an account unhealthy, and Codex auto-switch with its own threshold. <em>Poll interval</em> is listed only while this dashboard runs the checks: a scheduler's <code>auto --once</code> never reads it.</p>
-        <p>A saved value is validated like <code>config set</code> (an out-of-range number is refused and nothing is written), and every row says when it takes effect. A scheduler's next check reads the saved settings; an engine hosted in <code>{{.Name}} web</code>, <code>{{.Name}} tui</code> or <code>{{.Name}} auto</code> reads them when it starts and keeps them while it runs, except <em>Auto-switch</em> itself, which every check reads.</p>
+        <h2>The settings that steer it</h2>
+        <table class="tbl compact guide-tbl g-set">
+          <thead><tr><th scope="col">Setting, default</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td>5-hour threshold<span class="g-def">85 %</span></td><td>Move when the 5-hour window passes this; low, because parallel work fills it fast.</td></tr>
+            <tr><td>Weekly threshold<span class="g-def">97 %</span></td><td>The same for the weekly window.</td></tr>
+            <tr><td>Model threshold<span class="g-def">95 %</span></td><td>The same for a counted model's weekly limit.</td></tr>
+            <tr><td>Account order<span class="g-def">soonest-reset</span></td><td><em>soonest-reset</em>: the weekly window that renews first, so all accounts get used; <em>best</em>: the most weekly room.</td></tr>
+            <tr><td>Minimum improvement<span class="g-def">10</span></td><td>Points of extra room a threshold move needs, so it does not flip back and forth.</td></tr>
+            <tr><td>Switch cooldown<span class="g-def">300 s</span></td><td>After an automatic threshold move the next one waits this long; after a switch by hand, every automatic switch does.</td></tr>
+            <tr><td>Failed polls<span class="g-def">3</span></td><td>Failed usage reads of the live account in a row before Auto-switch moves off it.</td></tr>
+            <tr><td>Poll interval<span class="g-def">60 s</span></td><td>How often this dashboard checks.</td></tr>
+            <tr><td>Codex auto-switch, Codex threshold<span class="g-def">on, 0</span></td><td>Codex accounts, on one bar; 0 means the weekly threshold.</td></tr>
+          </tbody>
+        </table>
+        <p class="muted">Change them on the Settings tab.</p>
+      </article>
+
+      <article class="card guide-section" id="g-concepts">
+        <h2>Reading the meters</h2>
+        <p>Each account has a 5-hour and a weekly window; some plans add a weekly limit per model. A meter shows the share used and, underneath, when it resets: <span class="good">green</span> below 70 %, <span class="warn">amber</span> from 70 %, <span class="serious">orange</span> from 90 %, <span class="crit">red</span> at 100 % (<em>at limit</em>). A dash means Anthropic reports no such window for that account (an Ultra login has no 5-hour limit); an empty meter means there is no recent reading.</p>
+        <p><em>Best candidate</em> is the account Auto-switch would take next. Sorting the table changes only the view.</p>
+      </article>
+
+      <article class="card guide-section" id="g-fable">
+        <h2>Fable logins</h2>
+        <p>An account can be signed in twice. The second sign-in, its <em>Fable login</em>, can go into the Fable store, which Fable sessions use, so they and your other sessions run on different accounts at once.</p>
+        <ul>
+          <li><strong>Add one:</strong> <code>{{.Name}} add --login --lineage fable --slot N</code> in a terminal. The first one turns the Fable store on. Not on macOS.</li>
+          <li><strong>Which sessions:</strong> those started through <code>{{.Name}} start</code> whose model is Fable. All others use the live login.</li>
+          <li><strong>On the page:</strong> <em>Fable</em> marks the Fable store's account, <em>Fable login</em> one it can use. <strong>Use for Fable</strong> moves the Fable store there and, like any switch by hand, holds its automatic moves for the <em>Switch cooldown</em>.</li>
+          <li><strong>Automatic moves:</strong> only a scheduler's checks move the Fable store, never this dashboard's. They also keep the live login off the accounts the Fable store needs while another account is below every threshold.</li>
+          <li><strong>Off:</strong> <code>{{.Name}} switch --store fable --empty</code>. Fable sessions then use the live login.</li>
+        </ul>
       </article>
 
       <article class="card guide-section" id="g-sessions">
         <h2>Sessions</h2>
-        <p>The session list shows each Claude conversation's project and state. Every session runs on the default login unless it runs on the Fable store (below), and tycswap moves that login by itself: each session's status line tells it the model the session runs, so while a Fable session runs the login stays on an account that can run Fable, and while none does, Fable-capable accounts are kept for Fable work. Subagents run on their session's login.</p>
-        <p>An account can hold a second sign-in, a <em>Fable login</em> (<code>{{.Name}} add --login --lineage fable --slot N</code> in a terminal). A Fable session started with <code>{{.Name}} start</code> then runs on the <em>Fable store</em>, which holds one account's Fable login. The header names that account under the active one; its row carries a <em>Fable</em> chip, a row whose Fable login the store can use carries <em>Fable login</em>, and <em>Use for Fable</em> moves the store there. Like every switch by hand, that holds the Fable store's auto-switch for the switch cooldown. The Auto tab's <em>Fable store</em> line says what its checks count and which account they would take next. <code>{{.Name}} switch --store fable --empty</code> turns the Fable store off.</p>
-        <p>The Windows tray opens an account table. Each percentage names its limit; 100% in Fable does not mean the shared weekly limit is full. Focus a row for reset times and freshness, or click a column to sort. The tray's Auto-switch toggle and the Auto tab's switch are the same setting. Click Weekly, 5-hour or a model limit to sort; click again to reverse. <em>Next best</em> restores availability ordering. Display sorting does not change automatic rotation.</p>
-        <p>Session groups are retired. A former group hands its account back once its last session exits, and its conversations are copied into the default profile, so <code>claude --resume</code> continues them.</p>
+        <p>The Sessions tab lists the running Claude Code sessions and the IDEs with the Claude Code extension. <strong>Stop</strong> ends a session; <code>claude --continue</code> in its folder resumes it.</p>
       </article>
 
       <article class="card guide-section" id="g-updates">
         <h2>Updates</h2>
-        <p>The Dashboard checks for two updates when it starts and every six hours: a newer <strong>{{.Name}}</strong> release, and a newer <strong>Claude Code</strong> from the installer Claude Code was set up with (its native installer, npm, Homebrew or WinGet). The header shows a count while something waits; the card installs each one after you confirm, and shows what the installer printed. <code>{{.Name}} web</code> keeps running the old version until you start it again; running Claude Code sessions keep theirs until you restart them. A build from a checkout, or one installed outside a Go bin directory, is told how to upgrade instead.</p>
+        <p>The dashboard looks for a newer {{.Name}} and Claude Code every six hours (<strong>Check now</strong> asks at once) and installs one after you confirm; <code>{{.Name}} upgrade</code> updates {{.Name}} from a terminal. What is running keeps its old version until it is started again.</p>
       </article>
 
       <article class="card guide-section" id="g-codex">
         <h2>Codex accounts</h2>
-        <p>{{.Name}} switches Codex (ChatGPT) accounts too, under <code>{{.Name}} codex</code>: <code>list</code>, <code>status</code>, <code>switch</code>, <code>add</code>, <code>login</code>, <code>alias</code>, <code>export</code> and <code>import</code>. The terminal dashboard (<code>{{.Name}} tui</code>) shows them beside the Claude accounts, and auto-switch rotates them wherever it runs when <em>Codex auto-switch</em> (<code>autoswitch.codexEnabled</code>) is on; its own bar is <em>Codex threshold</em> (<code>autoswitch.codexThreshold</code>; 0 = same as the weekly threshold). On this page the Codex accounts are listed under their own heading after the Claude ones, with <em>Switch</em>, <em>Disable</em> / <em>Enable</em> and <em>Remove</em>; <em>+ Add current Codex login</em> stores the account the codex CLI is signed in with, and the Auto tab shows Codex auto-switch in its own tile.</p>
-      </article>
-
-      <article class="card guide-section" id="g-cli">
-        <h2>Command cheat-sheet</h2>
-        <p>Everything the dashboard does is also a command, handy in scripts and hooks.</p>
-        <table class="tbl compact guide-tbl">
-          <thead><tr><th scope="col">Task</th><th scope="col">Command</th></tr></thead>
-          <tbody>
-            <tr><td>List accounts with usage</td><td><code>{{.Name}} list</code></td></tr>
-            <tr><td>Store the current Claude login</td><td><code>{{.Name}} add</code></td></tr>
-            <tr><td>Sign another account in beside the live one</td><td><code>{{.Name}} add --login [--switch]</code></td></tr>
-            <tr><td>Switch to slot 2 / alias / email</td><td><code>{{.Name}} switch 2</code></td></tr>
-            <tr><td>Switch to the best account</td><td><code>{{.Name}} switch --strategy best</code></td></tr>
-            <tr><td>Run Claude once as account 2</td><td><code>{{.Name}} run 2 -- --resume</code></td></tr>
-            <tr><td>Pin a shell to an account</td><td><code>eval "$({{.Name}} env 2)"</code></td></tr>
-            <tr><td>Auto mode in the foreground</td><td><code>{{.Name}} auto --seven-day-threshold 92</code> · dry run: <code>auto --dry-run</code></td></tr>
-            <tr><td>Show, set or reset a setting</td><td><code>{{.Name}} config</code> · <code>config set autoswitch.sevenDayThreshold 92</code> · <code>config unset autoswitch.sevenDayThreshold</code></td></tr>
-            <tr><td>Codex accounts</td><td><code>{{.Name}} codex list</code> · <code>codex switch 2</code> · <code>codex add</code></td></tr>
-            <tr><td>Export / import accounts (<strong>plain text</strong>: it holds live credentials, so treat the file like a password)</td><td><code>{{.Name}} export accounts.{{.Name}}</code> · <code>import accounts.{{.Name}}</code></td></tr>
-            <tr><td>Update {{.Name}}</td><td><code>{{.Name}} upgrade</code></td></tr>
-            <tr><td>The terminal dashboard</td><td><code>{{.Name}} tui</code></td></tr>
-            <tr><td>This dashboard</td><td><code>{{.Name}} web</code></td></tr>
-            <tr><td>The action menu</td><td><code>{{.Name}}</code> or <code>{{.Name}} menu</code></td></tr>
-            <tr><td>The menu-bar / tray app</td><td>Choose <strong>Start tray app</strong> in the menu, or run <code>{{.Name}} app</code></td></tr>
-          </tbody>
-        </table>
-        <p class="muted"><code>{{.Name}} --help</code> and <code>{{.Name}} &lt;command&gt; --help</code> list every flag.</p>
+        <p>Codex (ChatGPT) accounts have their own heading with <strong>Switch</strong>, <strong>Disable</strong> or <strong>Enable</strong> and <strong>Remove</strong>; <strong>+ Add current Codex login</strong> saves the codex CLI's account. With <em>Codex auto-switch</em> on, a scheduler's checks rotate them, and this dashboard's do too when it started with Codex accounts. A running codex keeps its account until restarted; <code>{{.Name}} codex alias</code> names one.</p>
       </article>
 
       <article class="card guide-section" id="g-trouble">
-        <h2>When something looks wrong</h2>
-        <details class="guide-faq"><summary>A switch happened but Claude Code still uses the old account</summary><p>A switch reaches running sessions on their next request; a session started as another account with <code>{{.Name}} run</code> keeps its own login. Check that session's profile and any authentication overrides before restarting it.</p></details>
-        <details class="guide-faq"><summary>Claude Code ignores the stored login altogether</summary><p>An <code>ANTHROPIC_API_KEY</code>, <code>ANTHROPIC_AUTH_TOKEN</code>, <code>CLAUDE_CODE_OAUTH_TOKEN</code> or <code>ANTHROPIC_BASE_URL</code> in the environment, or in the <code>env</code> block of Claude Code's <code>settings.json</code>, takes the place of the login. The Dashboard says so above the accounts when it sees one; unset the variable or remove the key.</p></details>
-        <details class="guide-faq"><summary>An account says “re-login needed” or “token expired”</summary><p>Its refresh token was revoked or expired. Choose <strong>Add account…</strong> and sign in as that Claude account; its slot and alias stay the same. If it is the live account, signing in again in Claude Code and <em>Add current login</em> does the same.</p></details>
-        <details class="guide-faq"><summary>“Usage unavailable”</summary><p>The last usage read failed or is stale (offline, or the usage endpoint hiccuped). The meters keep the last good values; they refresh on the next poll.</p></details>
-        <details class="guide-faq"><summary>Auto mode switched to an account I did not expect</summary><p>Open the Auto tab: <em>Counting now</em> says which windows are counted and <em>Next best</em> shows candidates and their limits; a scheduler's journal (or the terminal running <code>{{.Name}} auto</code>) prints each check's decision. Usually the answer is a per-model window: one counts only while a live session runs that model and some usable account can serve it.</p></details>
-        <details class="guide-faq"><summary>“Not switchable” on an account</summary><p>Its stored credential or config backup is missing, typically after Claude Code changed its file layout. Re-add the account.</p></details>
-        <details class="guide-faq"><summary>The Updates card says it could not check</summary><p>The release endpoint or Claude Code's source could not be read (offline, a proxy, a rate limit). What the last successful check found still shows, and <em>Check now</em> asks again. <code>{{.Name}} upgrade</code> in a terminal says the same for this program.</p></details>
-        <details class="guide-faq"><summary>The dashboard lost its connection</summary><p>The dashboard only ever listens on this machine (127.0.0.1). If the process was stopped, run <code>{{.Name}} web</code> again and open the URL it prints: the old page's tokens are dead, so the page says “session ended” rather than retrying.</p></details>
-        <details class="guide-faq"><summary>macOS refuses to run a downloaded release (“cannot be opened”)</summary><p>The release binaries are not code-signed, so macOS quarantines one downloaded with a browser. <code>xattr -d com.apple.quarantine {{.Name}}</code> lifts it; downloading with <code>curl -LO</code>, <code>go install</code> and <code>{{.Name}} upgrade</code> avoid it.</p></details>
+        <h2>Something looks wrong</h2>
+        <ol class="g-flow" aria-label="Symptom, cause and what to do">
+          <li class="g-case g-head" aria-hidden="true"><p>You see</p><p>Why</p><p>Do this</p></li>
+          <li class="g-case"><p class="g-see"><span class="g-tag">You see: </span>A session still uses the old account after a switch</p><p class="g-why"><span class="g-tag">Why: </span>macOS (the Keychain), a session on the Fable store, or a switch onto an API-key account.</p><p class="g-do"><span class="g-tag">Do this: </span>macOS: wait 30 s or restart it. Fable store: <strong>Use for Fable</strong>. API key: restart it.</p></li>
+          <li class="g-case"><p class="g-see"><span class="g-tag">You see: </span>Claude Code ignores the saved logins</p><p class="g-why"><span class="g-tag">Why: </span>An API key, token or base URL in its environment or <code>settings.json</code>; the notice above the accounts names it.</p><p class="g-do"><span class="g-tag">Do this: </span>Remove it, then start <code>claude</code> again.</p></li>
+          <li class="g-case"><p class="g-see"><span class="g-tag">You see: </span><em>re-login needed</em>, or <em>Quarantine</em> on the Auto tab</p><p class="g-why"><span class="g-tag">Why: </span>Anthropic refused the saved login.</p><p class="g-do"><span class="g-tag">Do this: </span><strong>Add account…</strong>, <em>Sign in with Claude</em> as that account; its slot and alias stay.</p></li>
+          <li class="g-case"><p class="g-see"><span class="g-tag">You see: </span><em>token expired</em></p><p class="g-why"><span class="g-tag">Why: </span>The live login's short-lived token ran out while Claude Code was idle.</p><p class="g-do"><span class="g-tag">Do this: </span>Nothing: Claude Code renews it on its next request.</p></li>
+          <li class="g-case"><p class="g-see"><span class="g-tag">You see: </span><em>usage unavailable</em>, empty meters</p><p class="g-why"><span class="g-tag">Why: </span>The last reading failed or is too old.</p><p class="g-do"><span class="g-tag">Do this: </span>Wait: the line under the account says when it tries again.</p></li>
+          <li class="g-case"><p class="g-see"><span class="g-tag">You see: </span><em>not switchable</em></p><p class="g-why"><span class="g-tag">Why: </span>The saved login is incomplete.</p><p class="g-do"><span class="g-tag">Do this: </span>Sign in as that account again with <strong>Add account…</strong>.</p></li>
+          <li class="g-case"><p class="g-see"><span class="g-tag">You see: </span><em>Fable login: sign in again</em></p><p class="g-why"><span class="g-tag">Why: </span>That Fable login stopped working.</p><p class="g-do"><span class="g-tag">Do this: </span>Run the command in its tooltip.</p></li>
+          <li class="g-case"><p class="g-see"><span class="g-tag">You see: </span>Auto-switch did not switch, or went elsewhere</p><p class="g-why"><span class="g-tag">Why: </span>A switch by hand holds it for the <em>Switch cooldown</em>, or other windows counted than you thought.</p><p class="g-do"><span class="g-tag">Do this: </span>The Auto tab says who checks and when, <em>Counting now</em> what counts, <em>Next best</em> why an account is blocked.</p></li>
+          <li class="g-case"><p class="g-see"><span class="g-tag">You see: </span><em>reconnecting…</em> or <em>session ended</em></p><p class="g-why"><span class="g-tag">Why: </span>The dashboard was stopped or started again.</p><p class="g-do"><span class="g-tag">Do this: </span>Open it again from the tray or with <code>{{.Name}} web</code>.</p></li>
+        </ol>
+      </article>
+
+      <article class="card guide-section" id="g-cli">
+        <h2>Commands</h2>
+        <table class="tbl compact guide-tbl">
+          <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+          <tbody>
+            <tr><td><code>{{.Name}}</code></td><td>The menu: add, manage, import and export accounts, start the tray</td></tr>
+            <tr><td><code>{{.Name}} list</code></td><td>The accounts and their usage</td></tr>
+            <tr><td><code>{{.Name}} switch 2</code></td><td>Switch to account 2 (number, alias or email)</td></tr>
+            <tr><td><code>{{.Name}} auto on</code> · <code>auto off</code></td><td>Auto-switch on or off</td></tr>
+            <tr><td><code>{{.Name}} add --login</code></td><td>Sign in another account beside the live one</td></tr>
+            <tr><td><code>{{.Name}} config</code></td><td>Show or change a setting</td></tr>
+            <tr><td><code>{{.Name}} export FILE</code> · <code>import FILE</code></td><td>Move accounts to another machine (a login works on one machine at a time). The file holds live credentials in plain text: treat it like a password.</td></tr>
+          </tbody>
+        </table>
+        <p class="muted"><code>{{.Name}} --help</code> lists every command; the README and <code>docs/reference.md</code> in the {{.Name}} repository describe each one.</p>
       </article>
 
       <article class="card guide-section" id="g-privacy">
         <h2>Where your data lives</h2>
         <ul>
-          <li><strong>Accounts</strong> are stored under your user profile: <code>~/.local/share/{{.Name}}</code> on Linux and WSL (<code>$XDG_DATA_HOME/{{.Name}}</code> when that is set), <code>~/.{{.Name}}</code> on macOS and Windows. Each account's credential goes to the macOS Keychain where available, otherwise to a file only you can read; the roster (<code>sequence.json</code>), the config snapshots, <code>settings.json</code> and the usage cache sit next to them, and <code>{{.Name}} config path</code> prints where.</li>
-          <li><strong>The dashboard</strong> binds to 127.0.0.1 only and requires the per-launch secrets its URL carries; nothing is reachable from the network, and no credential ever leaves the process.</li>
-          <li><strong>Usage numbers</strong> come from the usage endpoint of each stored account.</li>
-          <li><strong>Exports</strong> (<code>{{.Name}} export</code>) hold live credentials in plain text: treat the file like a password.</li>
-          <li><strong>Nothing is reported anywhere.</strong> There is no telemetry; the update check reads a release endpoint and Claude Code's installer source, and sends nothing but the request.</li>
+          <li><strong>Saved logins and settings:</strong> <code>~/.local/share/{{.Name}}</code> on Linux and WSL (<code>$XDG_DATA_HOME/{{.Name}}</code> when set), <code>~/.{{.Name}}</code> on macOS and Windows, where macOS keeps the logins in the Keychain when it can.</li>
+          <li><strong>This dashboard</strong> listens on 127.0.0.1 only and answers only the browser that opened its launch URL.</li>
+          <li><strong>Network:</strong> usage reads (Anthropic, and OpenAI for Codex), login renewals and update checks. There is no telemetry.</li>
         </ul>
       </article>
     </div>
