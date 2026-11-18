@@ -174,7 +174,11 @@ func TestIndexHTML_GuideTab(t *testing.T) {
 		}
 	}
 	for _, gone := range []string{"Force switch", "{{.Name}} run", "{{.Name}} env", "Auto mode", "five hours after it filled",
-		"keep the last good values", "Restart running Claude Code sessions", "Focus a row", "<code>autoswitch.", "five things to understand"} {
+		"keep the last good values", "Restart running Claude Code sessions", "Focus a row", "<code>autoswitch.", "five things to understand",
+		// Whether a session keeps an API key after a switch away from it is not
+		// settled (DESIGN A33 against reference.md's NOTES): the Guide names
+		// only the switch onto one.
+		"No restart is needed, except after a switch onto an API-key account"} {
 		if strings.Contains(index, gone) {
 			t.Errorf("the page still says %q", gone)
 		}
