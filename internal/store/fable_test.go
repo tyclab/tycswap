@@ -530,3 +530,33 @@ func TestHarvestFableLive(t *testing.T) {
 		}
 	})
 }
+
+// A10 ------------------------------------------------------------------------
+
+func TestDefaultResolverBesideTheFableStore(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		fable   bool
+		warning bool
+	}{
+		{"config names the Fable store's live account", true, false},
+		{"no Fable store", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := fableFixture(t)
+			writeLiveIdentity(t, s, "two@example.com", "org-2")
+			if tc.fable {
+				putFableLogin(t, s, "2", fableCreds("at-f2", "rt-f2"))
+				putFableLive(t, s, withMCP(fableCreds("at-f2", "rt-f2")))
+			}
+			got := resolveLive(t, s)
+			if want := (LiveSlot{Slot: "1", ConfigSlot: "2", ByLineage: true, Source: SourceBackup}); got != want {
+				t.Fatalf("ResolveLiveSlot = %+v, want %+v", got, want)
+			}
+			raw, _ := os.ReadFile(filepath.Join(s.BackupDir(), "tycswap.log"))
+			if warned := strings.Contains(string(raw), "WARNING") && strings.Contains(string(raw), "live config names slot 2"); warned != tc.warning {
+				t.Fatalf("WARNING logged = %v, want %v:\n%s", warned, tc.warning, raw)
+			}
+		})
+	}
+}
