@@ -61,6 +61,9 @@ type parsed struct {
 	// baseURL is add-token's endpoint: the token is that endpoint's key, and
 	// a switch onto the account points Claude Code at it (DESIGN A46).
 	baseURL *string
+	// store and empty select the Fable store for a switch (DESIGN A100).
+	store *string
+	empty bool
 }
 
 // parseResult is the outcome of parseArgs: either a populated *parsed (done ==
@@ -178,6 +181,8 @@ func parseArgs(prog string, argv []string, stdout, stderr io.Writer) parseResult
 			p.full = true
 		case "--yes":
 			p.yes = true
+		case "--empty":
+			p.empty = true
 
 		// ---- value flags (outside the group) ------------------------------
 		case "--strategy":
@@ -226,6 +231,12 @@ func parseArgs(prog string, argv []string, stdout, stderr io.Writer) parseResult
 				return *ex
 			}
 			p.alias = &v
+		case "--store":
+			v, ex := takeValue()
+			if ex != nil {
+				return *ex
+			}
+			p.store = &v
 
 		// ---- the mutually-exclusive legacy group --------------------------
 		case "--add-account":

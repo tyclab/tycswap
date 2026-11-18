@@ -7,6 +7,7 @@
 package cli
 
 import (
+	"fmt"
 	"io"
 	"strings"
 )
@@ -19,6 +20,10 @@ func crossFlagValidate(prog string, p *parsed, stderr io.Writer) parseResult {
 		p.removeAccount != nil || p.disableAccount != nil || p.enableAccount != nil ||
 		p.switchTo != nil || p.export != nil || p.importPath != nil || p.addToken != nil) {
 		return fail("no command given — try '" + prog + " help'")
+	}
+
+	if r, failed := validateStore(prog, p, stderr); failed {
+		return r
 	}
 
 	if p.tokenStatus && !p.list {
@@ -80,4 +85,27 @@ func crossFlagValidate(prog string, p *parsed, stderr io.Writer) parseResult {
 	}
 
 	return parseResult{}
+}
+
+// validateStore checks --store and --empty (DESIGN A100); each error is one
+// line, exit 2.
+func validateStore(prog string, p *parsed, stderr io.Writer) (parseResult, bool) {
+	fail := func(msg string) (parseResult, bool) {
+		fmt.Fprintf(stderr, "%s: error: %s\n", prog, msg)
+		return parseResult{code: 2, done: true}, true
+	}
+	fable := p.store != nil && *p.store == "fable"
+	switch {
+	case p.store == nil:
+	case *p.store != "fable" && *p.store != "default":
+		return fail("unknown store: " + *p.store)
+	case !p.switchFlag && p.switchTo == nil:
+		return fail("--store can only be used with 'switch'")
+	case fable && (p.strategy != nil || p.force || p.empty == (p.switchTo != nil)):
+		return fail("--store fable takes an account or --empty")
+	}
+	if p.empty && !fable {
+		return fail("--empty can only be used with 'switch --store fable'")
+	}
+	return parseResult{}, false
 }
