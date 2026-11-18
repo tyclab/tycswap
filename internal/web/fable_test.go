@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/reporting"
 )
 
@@ -188,5 +189,35 @@ func TestFableSwitchRouteTakesTheBearer(t *testing.T) {
 	}
 	if got := f.Calls(); !reflect.DeepEqual(got, []string{"SwitchFable(3)"}) {
 		t.Fatalf("fable calls %v", got)
+	}
+}
+
+// A session's store comes from its status line's record (DESIGN A102): while
+// an account has a Fable login, a session recorded on the Fable store says
+// "fable", one recorded on the default store "default", and one without a
+// record says nothing. Without a Fable login no session carries a store.
+func TestSessionsNameTheirStore(t *testing.T) {
+	dir := t.TempDir()
+	records := `{"schemaVersion":1,"sessions":{"sess-1":{"family":"fable","seenAt":1758276000,"store":"fable"},"sess-2":{"family":"opus","seenAt":1758276000}}}`
+	if err := os.WriteFile(filepath.Join(dir, "default_models.json"), []byte(records), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	withRecords := func(h *harness, d *Deps) {
+		h.fa.backupDir = dir
+		h.sessions.Claude = append(h.sessions.Claude, procdetect.ClaudeSession{PID: 4444, SessionID: "sess-3", CWD: "/work/third", StartedAt: 1758276200000, Kind: "interactive"})
+	}
+	stores := func(h *harness) map[string]any {
+		out := map[string]any{}
+		for _, c := range stateOf(t, h)["sessions"].(map[string]any)["claude"].([]any) {
+			row := c.(map[string]any)
+			out[row["sessionId"].(string)] = row["store"]
+		}
+		return out
+	}
+	if got := stores(newHarness(t, withFable(&fakeFable{}), withRecords)); !reflect.DeepEqual(got, map[string]any{"sess-1": "fable", "sess-2": "default", "sess-3": nil}) {
+		t.Errorf("with a Fable login: stores %v", got)
+	}
+	if got := stores(newHarness(t, withRecords)); !reflect.DeepEqual(got, map[string]any{"sess-1": nil, "sess-2": nil, "sess-3": nil}) {
+		t.Errorf("without a Fable login: stores %v", got)
 	}
 }

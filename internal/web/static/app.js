@@ -1404,6 +1404,15 @@
     });
   }
 
+  // storeChip: the login a session runs on. While an account has a Fable
+  // login only the session's recorded store names it (DESIGN A102); without
+  // a record nothing is said.
+  function storeChip(c) {
+    if (c.store === 'fable') { return chip('Fable store', 'accent', "Runs on the Fable store's login"); }
+    if (c.store === 'default' || !(state && state.fable)) { return chip('default login', 'outline'); }
+    return null;
+  }
+
   function sessionRow(c) {
     var tr = el('tr');
     var shortId = (c.sessionId || '').slice(0, 8);
@@ -1411,7 +1420,7 @@
       el('span', { class: 'title ellipsis', text: c.title || (shortId ? 'session ' + shortId : '—'), title: c.title || c.sessionId || '' }),
       c.title && shortId ? el('span', { class: 'cell-sub mono', text: shortId }) : null,
       c.group ? chip('retired group', 'outline', 'Started in a retired session group; resume it with plain claude --resume') :
-        c.profile ? chip('run as #' + c.profile, 'accent') : chip('default login', 'outline')
+        c.profile ? chip('run as #' + c.profile, 'accent') : storeChip(c)
     ]));
     tr.appendChild(el('td', { class: 'c-pid num mono', text: String(c.pid) }));
     tr.appendChild(el('td', { class: 'c-kind' }, [el('span', { text: c.kind || '—' }), c.entrypoint ? el('span', { class: 'cell-sub', text: ' · ' + c.entrypoint }) : null]));
@@ -1929,7 +1938,7 @@
       { auto: st.auto, accounts: st.accounts, active: st.activeNumber, settings: st.settings },
       function () { renderAuto(st); });
     renderGuarded('settings', 'panel-settings', { settings: st.settings }, function () { renderSettings(st); });
-    renderGuarded('sessions', 'panel-sessions', st.sessions, function () { renderSessions(st.sessions); });
+    renderGuarded('sessions', 'panel-sessions', { sessions: st.sessions, fable: !!st.fable }, function () { renderSessions(st.sessions); });
     applyFolds(st);
     if (pendingUpdatesNavigation && st.updates) { showUpdates(); }
     tickCountdowns();

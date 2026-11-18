@@ -3096,8 +3096,12 @@ store's engine: `{"lastTickAt", "caption", "ranking", "quarantine",
 seconds or null, `quarantine` as `auto.quarantine`), `caption` `Counting 5h +
 7d` and every Fable window an account reports, `ranking` the order a Fable
 tick would take the Fable pool in (DESIGN A102), and `heldUntil` (epoch
-seconds) while a switch of the Fable store by hand holds its engine. Without a
-Fable login none of these keys is present and the document is v0.15.1's.
+seconds) while a switch of the Fable store by hand holds its engine. A
+session of the default profile whose status line recorded its store in
+`default_models.json` carries `store`, `fable` or `default`; the Sessions tab
+then shows *Fable store* or *default login*, and nothing for a session
+without a record. Without a Fable login none of these keys is present and the
+document is v0.15.1's.
 An engine event is `{"at", "kind", "message", "account",
 "fields"}`; a Codex tick's also carries `"provider": "codex"` (the Claude
 engine's carry no `provider`), its `kind` is `switch`, `error`,
