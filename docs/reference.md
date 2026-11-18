@@ -2721,8 +2721,8 @@ tabs:
   the TUI's engine never reads them. The tab's badge counts the keys set away
   from their default.
 - **Guide**: what the tool is, slots and the active account, the 5h / 7d /
-  model windows and their thresholds (the model windows always follow the
-  sessions), getting started, switching by hand, Auto
+  model windows and their thresholds (a scheduler's checks follow the
+  sessions; checks the dashboard runs itself count 5h and 7d only), getting started, switching by hand, Auto
   mode, the settings, sessions, updates, Codex accounts, a command cheat-sheet,
   troubleshooting and where the data lives.
 - **Sessions**: running Claude Code sessions grouped by directory, with
@@ -4963,8 +4963,8 @@ know is ignored on read and kept by every write.
 a file that still carries it loads as if it did not, and `config set`, `get`
 and `unset` refuse it as an unknown setting. `autoswitch.handoverWaitMinutes`,
 removed with the handover after a limit (DESIGN A95), and `autoswitch.model`,
-removed with the choice of counted models (DESIGN A97: the model windows
-always follow the live sessions), are read and refused the same way, but every
+removed with the choice of counted models (DESIGN A97: no setting chooses
+the counted model windows), are read and refused the same way, but every
 write (`config set` and `unset`, the TUI's and the dashboard's Settings) drops
 them from the file. `autoswitch.threshold`, the
 single bar before DESIGN A34, is no key either, but it still counts: a file

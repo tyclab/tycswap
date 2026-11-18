@@ -220,7 +220,7 @@
       <div class="card-head">
         <div class="head-l"><h2>Settings</h2><span id="settings-sub" class="card-sub"></span></div>
       </div>
-      <p class="muted settings-intro"><strong>Reset</strong> restores a default. Each setting says when a change takes effect. The model limits always follow the models your sessions run. <em>Poll interval</em> is listed while this dashboard runs the checks.</p>
+      <p class="muted settings-intro"><strong>Reset</strong> restores a default. Each setting says when a change takes effect. When a scheduler runs the checks, the model limits follow the models your sessions run; when this dashboard runs them, it counts the 5-hour and weekly limits only. <em>Poll interval</em> is listed while this dashboard runs the checks.</p>
       <div class="settings-grid" id="settings-grid"></div>
       <div id="settings-empty" class="empty-state" hidden>
         <span class="title">Settings are not available in this build</span>
@@ -299,12 +299,12 @@
       <article class="card guide-section" id="g-auto">
         <h2>Auto mode</h2>
         <p>Auto-switch checks every account's usage, and when one of the active account's windows crosses its own bar it switches to the best candidate, naming the window (<code>5h</code>, <code>7d</code> or <code>model</code>) in the log. The <em>Auto-switch</em> switch on the Auto tab turns it on and off (it is <code>autoswitch.enabled</code>, the same switch as the tray's and <code>{{.Name}} auto on|off</code>); the tab badge says <em>on</em> or <em>off</em>. The line under the heading says who checks: a scheduler that runs <code>{{.Name}} auto --once</code> and when it last checked, or this dashboard and how often. On a machine with Codex accounts every check also rotates Codex accounts, on a bar of their own.</p>
-        <p><em>Counting now</em> says which windows auto-switch counts and why: it follows the models your live sessions run. No setting chooses them.</p>
+        <p><em>Counting now</em> says which windows auto-switch counts and why: a scheduler's checks follow the models your live sessions run; checks this dashboard runs itself count the 5-hour and weekly windows only. No setting chooses them.</p>
         <h3>Settings that matter</h3>
         <dl class="guide-dl">
           <dt>5-hour threshold</dt><dd><code>autoswitch.fiveHourThreshold</code>, <strong>85 %</strong> by default: the lowest of the three bars, because this window <em>bursts</em>. A fan-out of parallel subagents can take it from 85 % to full between two checks, and hitting 100 % stops you mid-task. Raise it only if you work in small, predictable steps; lower it (or check more often) if you run wide fan-outs.</dd>
           <dt>Weekly threshold</dt><dd><code>autoswitch.sevenDayThreshold</code>, <strong>97 %</strong> by default: the 7-day window is the account's whole budget, and it <em>creeps</em>, so it can be squeezed nearly full before moving. A settings file that still has the old single <code>autoswitch.threshold</code> seeds this bar.</dd>
-          <dt>Model limits</dt><dd>Each check counts the model windows of the models the live default sessions run, while some usable account is below its bars on them, and 5h and 7d otherwise. No setting or flag chooses them.</dd>
+          <dt>Model limits</dt><dd>A scheduler's check (<code>{{.Name}} auto --once</code>) counts the model windows of the models the live default sessions run, while some usable account is below its bars on them, and 5h and 7d otherwise. Checks this dashboard or <code>{{.Name}} auto</code> runs itself count 5h and 7d only. No setting or flag chooses them.</dd>
           <dt>Model threshold</dt><dd><code>autoswitch.modelThreshold</code>, <strong>95 %</strong> by default: the bar for every per-model weekly window session following counts. A bar of 100 means "never move on this window before it is full", for any of the three.</dd>
           <dt>Account order</dt><dd><code>autoswitch.strategy</code>: <em>soonest-reset</em> (the default) prefers the account whose weekly window renews first, so several accounts are used evenly and none sits idle on a window that is about to renew; <em>best</em> takes the account with the most headroom right now.</dd>
           <dt>Minimum improvement, Switch cooldown</dt><dd><code>autoswitch.hysteresisPct</code>: a target must beat the active account by this much, so two accounts at the same level do not flap. <code>autoswitch.cooldownSeconds</code>: the least time between two proactive switches.</dd>

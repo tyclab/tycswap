@@ -726,14 +726,13 @@
   }
 
   // ignoredModelsNote is the chip shown wherever a ranking is displayed while
-  // model windows exist but nothing counts them and the engine does not follow
-  // sessions: an account at 100% of a model's weekly limit then still counts
-  // as eligible.
+  // model windows exist but the engine hosted here counts none of them: an
+  // account at 100% of a model's weekly limit then still counts as eligible.
   function ignoredModelsNote(st, models) {
     if (models.length || ((st.auto || {}).counting || {}).mode === 'sessions') { return null; }
     var names = modelWindowNames(st);
     if (!names.length) { return null; }
-    return el('span', { class: 'chip chip-warn', title: 'Not counted now (see Counting now on the Auto tab)', text: names.join(', ') + ' limits ignored' });
+    return el('span', { class: 'chip chip-warn', title: 'Not counted now (see Counting now on the Auto tab)', text: names.join(', ') + ' limits ignored: this dashboard runs the checks itself and counts the 5-hour and weekly limits only' });
   }
 
   // ---- header + summary ------------------------------------------------------

@@ -152,6 +152,9 @@ func TestDashboardPageRendersEveryState(t *testing.T) {
 			if hosted != (c != nil) {
 				t.Errorf("%s: %s chip %+v, want one only beside the hosted engine", name, where, c)
 			}
+			if want := "Fable limits ignored: this dashboard runs the checks itself and counts the 5-hour and weekly limits only"; c != nil && c.Text != want {
+				t.Errorf("%s: %s chip %q, want %q", name, where, c.Text, want)
+			}
 		}
 	}
 }
