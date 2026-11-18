@@ -81,6 +81,11 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 	if !validateEmail(email) {
 		return cerr.Validation("The logged-in account's email cannot name a store file: %s. It needs %s.", strconv.Quote(email), storenames.EmailRule)
 	}
+	if !src.isLoginDir() {
+		if err := refuseFableSessionConfig(s, email, orgUUID); err != nil {
+			return err
+		}
+	}
 
 	// Settled before asking: prompting first would ask to authorize overwriting a slot the command is about to refuse.
 	if slot != nil && *slot < 1 {

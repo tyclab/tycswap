@@ -49,8 +49,12 @@ func fakeClaudeLogin(args []string) int {
 	default:
 		account = fmt.Sprintf(`{"oauthAccount":{"emailAddress":"%s","organizationUuid":"%s","organizationName":"%s","accountUuid":"uuid-%s","planDisplayName":"%s"}}`,
 			email, os.Getenv("FAKE_CLAUDE_ORG"), os.Getenv("FAKE_CLAUDE_ORGNAME"), email, os.Getenv("FAKE_CLAUDE_PLAN"))
-		creds = fmt.Sprintf(`{"claudeAiOauth":{"accessToken":"%s","refreshToken":"%s","expiresAt":4102444800000,"scopes":["user:inference"]}}`,
-			os.Getenv("FAKE_CLAUDE_TOKEN"), os.Getenv("FAKE_CLAUDE_REFRESH"))
+		plan := ""
+		if sub := os.Getenv("FAKE_CLAUDE_SUBSCRIPTION"); sub != "" {
+			plan = `,"subscriptionType":"` + sub + `"`
+		}
+		creds = fmt.Sprintf(`{"claudeAiOauth":{"accessToken":"%s","refreshToken":"%s","expiresAt":4102444800000,"scopes":["user:inference"]%s}}`,
+			os.Getenv("FAKE_CLAUDE_TOKEN"), os.Getenv("FAKE_CLAUDE_REFRESH"), plan)
 	}
 	if !write(filepath.Join(dir, ".claude.json"), account) {
 		return 70
