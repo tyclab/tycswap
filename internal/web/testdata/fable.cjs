@@ -95,6 +95,15 @@ const note = n => rowOf(n).all().filter(e => e.className === 'menu-note').map(te
 assert.deepEqual(note(5), ['Add a Fable login: tycswap add --login --lineage fable --slot 5']);
 assert.deepEqual(note(3), []);
 assert.equal(text(ids['auto-body'].children[0]), 'Fable store: counting 5h + 7d + Fable · next #3');
+// An API-key account takes no Fable login (A101): its menu names no command.
+const keyed = fableState(); keyed.accounts[4].kind = 'api_key';
+render(keyed);
+assert.deepEqual(note(5), []);
+// The header redraws when only the Fable store moved.
+render(fableState());
+const moved = fableState(); moved.fable.number = 3; moved.fable.email = 'acct3@example.com';
+ctx.renderActiveStrip(moved);
+assert.match(text(ids['hdr-acct']), /Fable: #3 acct3@example\.com/);
 
 // The store off: the header says so and names the command; the unusable
 // store warns.
