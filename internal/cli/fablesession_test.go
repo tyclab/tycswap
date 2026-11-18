@@ -4,6 +4,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/cclock"
@@ -69,5 +70,44 @@ func TestRunKeepsAnotherSecureStorageDir(t *testing.T) {
 				t.Fatalf("lock %s, flag %v", cclock.CredentialsLockDir(), fableSessionProcess)
 			}
 		})
+	}
+}
+
+// One helper says whether a value names the Fable store, for cli.run and for
+// start alike; on Windows it compares without case (DESIGN A100, A103).
+func TestNamesFableStoreOnEachPlatform(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "fable", "store")
+	upper := strings.ToUpper(dir)
+	for _, tc := range []struct {
+		value   string
+		windows bool
+		want    bool
+	}{
+		{dir, false, true},
+		{dir + string(filepath.Separator), false, true},
+		{filepath.Join(dir, "..", "store"), false, true},
+		{upper, false, upper == dir},
+		{upper, true, true},
+		{filepath.Dir(dir), true, false},
+		{"", true, false},
+	} {
+		if got := namesFableStore(tc.value, dir, tc.windows); got != tc.want {
+			t.Errorf("namesFableStore(%q, windows=%v) = %v, want %v", tc.value, tc.windows, got, tc.want)
+		}
+	}
+}
+
+func TestRunDropsTheFableStoreVariableWithoutCaseOnWindows(t *testing.T) {
+	cleanHome(t)
+	resetFableSessionProcess(t)
+	prev := startWindows
+	startWindows = func() bool { return true }
+	t.Cleanup(func() { startWindows = prev })
+	testutil.Setenv(t, secureStorageVar, strings.ToUpper(paths.FableStoreDir(paths.GetBackupRoot())))
+	if code, _, errb := runSub(t, "--version"); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errb)
+	}
+	if v, ok := os.LookupEnv(secureStorageVar); ok || !fableSessionProcess {
+		t.Fatalf("%s is still %q (flag %v)", secureStorageVar, v, fableSessionProcess)
 	}
 }

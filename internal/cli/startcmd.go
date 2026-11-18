@@ -154,7 +154,7 @@ func startOverride(env, command []string, storeDir string) string {
 		if envKeyIs(key, "CLAUDE_CONFIG_DIR") {
 			return key + " is set"
 		}
-		if envKeyIs(key, secureStorageEnv) && isFableStoreDir(value, storeDir) {
+		if envKeyIs(key, secureStorageEnv) && namesFableStore(value, storeDir, startWindows()) {
 			continue
 		}
 		for _, override := range launch.AuthOverrideEnvVars {

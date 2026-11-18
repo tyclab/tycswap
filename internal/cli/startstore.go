@@ -17,8 +17,9 @@ import (
 	"github.com/tyclab/tycswap/internal/store"
 )
 
-// startWindows is start's platform seam: Windows matches environment names,
-// and the Fable store's path, case-insensitively.
+// startWindows is the platform seam of start and of cli.run's Fable store
+// check: Windows matches environment names, and the Fable store's path,
+// case-insensitively.
 var startWindows = platform.IsWindows
 
 // transcriptTail is how much of a transcript's end start reads for its model.
@@ -65,21 +66,9 @@ func startFableStore(root string) (store.FableState, bool) {
 	return fable, fable.On || sw.Store.HasFableLogins()
 }
 
-// isFableStoreDir reports whether value names storeDir (cleaned; on Windows
-// case-insensitively).
-func isFableStoreDir(value, storeDir string) bool {
-	if value == "" {
-		return false
-	}
-	if startWindows() {
-		return strings.EqualFold(filepath.Clean(value), storeDir)
-	}
-	return filepath.Clean(value) == storeDir
-}
-
 func isFableStoreEntry(entry, storeDir string) bool {
 	key, value, _ := strings.Cut(entry, "=")
-	return envKeyIs(key, secureStorageEnv) && isFableStoreDir(value, storeDir)
+	return envKeyIs(key, secureStorageEnv) && namesFableStore(value, storeDir, startWindows())
 }
 
 // withoutFableStore is env without a CLAUDE_SECURESTORAGE_CONFIG_DIR naming
