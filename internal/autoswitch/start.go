@@ -168,7 +168,7 @@ func containsStartCandidate(candidates []string, target string) bool {
 // as of now like the engine's (DESIGN A91); stable ties keep sequence order.
 func StartTargets(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, models []string, now time.Time) []string {
 	values := decisionValuesAt(entries, now)
-	required := requiredModels(models, values)
+	required := requiredModels(models)
 	type candidate struct {
 		num   string
 		tier  int

@@ -149,7 +149,7 @@ func TestPlanAfterFetchAtLimitPark(t *testing.T) {
 			"scoped":    []any{map[string]any{"name": "Fable", "pct": pct, "resets_at": iso(off)}},
 		}
 	}
-	all := []string{"all"}
+	fable := []string{"Fable"}
 	const parkAtHalf = ParkCapS * (1 - JitterFrac/2) // 3249 s
 
 	cases := []struct {
@@ -160,7 +160,7 @@ func TestPlanAfterFetchAtLimitPark(t *testing.T) {
 	}{
 		{
 			name:         "inactive, model window at 100% resets in 5 days: capped",
-			in:           PlanInput{NewUsage: modelAt(100, 5*day), Models: all, Now: now},
+			in:           PlanInput{NewUsage: modelAt(100, 5*day), Models: fable, Now: now},
 			wantInterval: 300, wantNextPoll: now + parkAtHalf,
 		},
 		{
@@ -170,12 +170,12 @@ func TestPlanAfterFetchAtLimitPark(t *testing.T) {
 		},
 		{
 			name:         "inactive, model window at 100% resets in 10 minutes: parks at the reset",
-			in:           PlanInput{NewUsage: modelAt(100, 600), Models: all, Now: now},
+			in:           PlanInput{NewUsage: modelAt(100, 600), Models: fable, Now: now},
 			wantInterval: 300, wantNextPoll: now + 600,
 		},
 		{
 			name:         "active, model window at 100% resets in 5 days: capped",
-			in:           PlanInput{IsActive: true, NewUsage: modelAt(100, 5*day), Models: all, Now: now},
+			in:           PlanInput{IsActive: true, NewUsage: modelAt(100, 5*day), Models: fable, Now: now},
 			wantInterval: 180, wantNextPoll: now + parkAtHalf,
 		},
 		{
@@ -211,7 +211,7 @@ func TestPlanAfterFetchAtLimitPark(t *testing.T) {
 		{1, now + ParkCapS*(1-JitterFrac)}, // 3078 s
 	} {
 		rng := func() float64 { return tc.rng }
-		next, interval := PlanAfterFetch(PlanInput{NewUsage: modelAt(100, 5*day), Models: all, Now: now, RNG: rng})
+		next, interval := PlanAfterFetch(PlanInput{NewUsage: modelAt(100, 5*day), Models: fable, Now: now, RNG: rng})
 		if !approxEq(next, tc.want) {
 			t.Errorf("rng=%v: nextPoll = now%+.1f, want now%+.1f", tc.rng, next-now, tc.want-now)
 		}
@@ -221,7 +221,7 @@ func TestPlanAfterFetchAtLimitPark(t *testing.T) {
 		if next-now >= TrustMaxAgeS {
 			t.Errorf("rng=%v: nextPoll = now%+.0f reaches the trust ceiling %v", tc.rng, next-now, TrustMaxAgeS)
 		}
-		if next, _ := PlanAfterFetch(PlanInput{NewUsage: modelAt(100, 600), Models: all, Now: now, RNG: rng}); !approxEq(next, now+600) {
+		if next, _ := PlanAfterFetch(PlanInput{NewUsage: modelAt(100, 600), Models: fable, Now: now, RNG: rng}); !approxEq(next, now+600) {
 			t.Errorf("rng=%v, reset in 10 minutes: nextPoll = now%+.1f, want the reset, now+600", tc.rng, next-now)
 		}
 	}

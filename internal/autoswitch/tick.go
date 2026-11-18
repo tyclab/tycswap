@@ -215,7 +215,7 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 		// Nothing to hand over to: the account stays (DESIGN A71, A73).
 		detail := "the active account can run Fable; no account without Fable is below every bar"
 		if trigger == "model-missing" {
-			detail = "the active account reports no " + strings.Join(requiredModels(e.models, usageMap), ", ") +
+			detail = "the active account reports no " + strings.Join(requiredModels(e.models), ", ") +
 				" usage; no account that does is below every bar"
 		}
 		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: trigger + "-no-target", Detail: detail})
@@ -354,8 +354,8 @@ func isHandover(trigger string) bool { return trigger == "reserved" || trigger =
 func heldByCooldown(trigger string) bool { return trigger == "proactive" || trigger == "reserved" }
 
 func (e *Engine) missesCountedModel(cur string, usageMap map[string]any) bool {
-	required := requiredModels(e.models, usageMap)
-	if len(required) == 0 || len(required) == 1 && required[0] == "all" || hasRequiredModels(usageMap[cur], required) {
+	required := requiredModels(e.models)
+	if len(required) == 0 || hasRequiredModels(usageMap[cur], required) {
 		return false
 	}
 	// Only an account that reports every counted window can take over.
@@ -403,7 +403,7 @@ func (e *Engine) selectCandidates(
 	}
 
 	var qualifying []qual
-	required := requiredModels(e.models, usageMap)
+	required := requiredModels(e.models)
 	modelRejected := false
 	activeAxis := activeByClass.Axis(axis)
 	for _, num := range oauthCandidates {

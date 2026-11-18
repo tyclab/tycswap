@@ -408,7 +408,6 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 
 /* ---------- auto tab ---------- */
 .auto-line { margin: var(--s2) 0 0; overflow-wrap: anywhere; }
-.notice-warn { border-color: var(--warn); background: var(--warn-soft); }
 #auto-card .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: var(--s3); }
 #auto-card .tile { background: var(--card-2); box-shadow: none; }
 .nb-tbl { table-layout: fixed; }
@@ -639,9 +638,7 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 
 /* settings tab, and the Auto tab's short way there */
 .settings-intro { margin: 0 0 var(--s3); line-height: 1.55; }
-.settings-intro code { background: var(--neutral-soft); padding: 1px 5px; border-radius: 4px; }
 .settings-link { margin: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s2) var(--s3); padding: var(--s3) var(--s4); border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); font-size: var(--t13); background: var(--card-2); }
-.settings-link code { background: var(--neutral-soft); padding: 1px 5px; border-radius: 4px; }
 .settings-link .btn { text-decoration: none; }
 
 /* guide */

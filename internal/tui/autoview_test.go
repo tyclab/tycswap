@@ -709,33 +709,18 @@ func TestUncountedScopedWindowNeverRanks(t *testing.T) {
 	if !strings.Contains(lines[2], "99%") {
 		t.Fatalf("an uncounted scoped window's figure must still be listed:\n%s", out)
 	}
-	// Configured, the very same window counts — and reverses the ranking.
-	a.settings.Model = modelPtr("Fable")
-	assertOrder(t, a.candidatesText(withScoped, 80, testNow).plain(), []string{"acc3@x", "acc2@x"})
 }
 
 // TestCandidatesHeaderNamesCountedAxis fixes the muted header suffix that
-// explains the de-emphasis: it names exactly the windows the panel counts.
+// explains the de-emphasis: it names exactly the windows the panel counts, the
+// 5h and 7d ones, as the TUI's engine does (DESIGN A97); a model value left in
+// the settings counts nothing.
 func TestCandidatesHeaderNamesCountedAxis(t *testing.T) {
-	for _, tc := range []struct {
-		model *string
-		want  string
-	}{
-		{nil, "Next best · counting 5h, 7d"},
-		{modelPtr(""), "Next best · counting 5h, 7d"},
-		{modelPtr("Fable"), "Next best · counting 5h, 7d, Fable"},
-		{modelPtr("Fable, Opus"), "Next best · counting 5h, 7d, Fable, Opus"},
-		{modelPtr("all"), "Next best · counting 5h, 7d, all models"},
-		{modelPtr("ALL"), "Next best · counting 5h, 7d, all models"},
-		// The sentinel already matches every scoped window, so it subsumes names
-		// listed alongside it — whether they precede or follow it.
-		{modelPtr("Fable,all"), "Next best · counting 5h, 7d, all models"},
-		{modelPtr("all, Fable"), "Next best · counting 5h, 7d, all models"},
-	} {
-		rt := oneRowPanel(t, windows(12, 88, scopedWindow{"Fable", 40}), tc.model, 80)
+	for _, model := range []*string{nil, modelPtr(""), modelPtr("Fable"), modelPtr("all")} {
+		rt := oneRowPanel(t, windows(12, 88, scopedWindow{"Fable", 40}), model, 80)
 		head := strings.SplitN(rt.plain(), "\n", 2)[0]
-		if head != tc.want {
-			t.Errorf("header = %q, want %q", head, tc.want)
+		if want := "Next best · counting 5h, 7d"; head != want {
+			t.Errorf("model %v: header = %q, want %q", model, head, want)
 		}
 		for _, s := range rt.segs {
 			if strings.Contains(s.Text, "counting") && s.Style != (segStyle{Fg: colMuted}) {
@@ -1363,9 +1348,10 @@ func TestCandidatesPanelJudgesEachWindowAgainstItsOwnBar(t *testing.T) {
 	assertOrder(t, a.candidatesText(snap, 0, testNow).plain(), []string{"burst@x", "calm@x", "week@x"})
 }
 
-// TestSummaryTextNamesEveryBar: the summary names each window's bar; the model
-// bar only while autoswitch.model counts a window, and the 7d bar, which the
-// threshold adjustment moves, carries the session mark (DESIGN A34).
+// TestSummaryTextNamesEveryBar: the summary names the bar of each window the
+// TUI's engine counts, 5h and 7d (it counts no model window, DESIGN A97), and
+// the 7d bar, which the threshold adjustment moves, carries the session mark
+// (DESIGN A34).
 func TestSummaryTextNamesEveryBar(t *testing.T) {
 	a := newAutoScreen()
 	a.settings = settings.Default()
@@ -1375,13 +1361,13 @@ func TestSummaryTextNamesEveryBar(t *testing.T) {
 	}
 	all := "all"
 	a.settings.Model = &all
-	if got := a.summaryText().plain(); !strings.Contains(got, "7d 97% · model 95% · poll every 60s") {
-		t.Errorf("summary with model windows counted = %q", got)
+	if got, want := a.summaryText().plain(), "auto-switch · switch at 5h 85% · 7d 97% · poll every 60s"; got != want {
+		t.Errorf("summary with a model value left in the settings = %q, want %q", got, want)
 	}
 	configured := 97.0
 	a.configuredThreshold = &configured
 	a.settings.SevenDayThreshold = 98
-	if got := a.summaryText().plain(); !strings.Contains(got, "5h 85% · 7d 98% (session) · model 95%") {
+	if got := a.summaryText().plain(); !strings.Contains(got, "5h 85% · 7d 98% (session) · poll every 60s") {
 		t.Errorf("summary after a session adjustment = %q", got)
 	}
 }

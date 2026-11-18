@@ -109,8 +109,8 @@ func TestModelWindowHasItsOwnThreshold(t *testing.T) {
 	})
 
 	t.Run("counted", func(t *testing.T) {
-		all := "all"
-		rec, e := build3(t, &all)
+		fable := "Fable"
+		rec, e := build3(t, &fable)
 		if got := e.Tick(); got != Switched {
 			t.Fatalf("outcome = %v, want Switched on the model bar (kinds=%v)", got, rec.kinds())
 		}
@@ -260,7 +260,7 @@ func TestHeadroomByClassSplitsTheAxes(t *testing.T) {
 		t.Errorf("binding = %v, want the smallest, 20", b)
 	}
 
-	counted := usage.AccountHeadroomByClass(lastGood, []string{"all"})
+	counted := usage.AccountHeadroomByClass(lastGood, []string{"Fable"})
 	if counted.Model == nil || *counted.Model != 40 {
 		t.Errorf("model = %v, want 40 once counted", counted.Model)
 	}
@@ -292,8 +292,8 @@ func TestModelMoveRejectsACandidateWithoutThatWindow(t *testing.T) {
 		"2": dictEntry(usageOf(5, 5)), // no Fable window at all
 	}
 	s := threeBars()
-	all := "all"
-	s.Model = &all
+	fable := "Fable"
+	s.Model = &fable
 	rec := &recorder{}
 	e := build(t, f, s, rec, newClk(), true)
 
@@ -318,7 +318,7 @@ func TestPollCadenceKeysOnTheLowestBarInForce(t *testing.T) {
 	if got := pollThreshold(s, nil); got != 97 {
 		t.Errorf("5h 99, no models: %v, want the 7d bar 97 (the model bar is not in force)", got)
 	}
-	if got := pollThreshold(s, []string{"all"}); got != 95 {
+	if got := pollThreshold(s, []string{"Fable"}); got != 95 {
 		t.Errorf("5h 99, models counted: %v, want the model bar 95", got)
 	}
 

@@ -22,8 +22,6 @@ func printWarning(msg string) { printer.Warning(msg) }
 
 func lower(s string) string { return strings.ToLower(s) }
 
-func joinComma(parts []string) string { return strings.Join(parts, ", ") }
-
 // joinInts renders ints joined by ", " (for the session-mode PID list).
 func joinInts(nums []int) string {
 	parts := make([]string, len(nums))

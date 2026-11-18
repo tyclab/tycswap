@@ -329,7 +329,8 @@ func (a *autoScreen) candidatesText(snap *reporting.AccountsSnapshot, width int,
 	if width <= 0 {
 		width = 80
 	}
-	models := settings.ParseModelNames(a.settings.Model)
+	// The TUI's engine counts no model window (DESIGN A97, ENG-8).
+	var models []string
 	// The ± keys move the 7d bar only — the account's whole budget; the 5h and
 	// per-model bars are settings (DESIGN A34). All three are needed here, because a
 	// row is "at threshold" when ANY window has reached the bar that governs
@@ -489,13 +490,7 @@ func (e candidateEntry) rowPriced(width int, clk renderClock) (richText, layoutS
 
 func countingNote(models []string) string {
 	parts := []string{"5h", "7d"}
-	for _, name := range models {
-		if strings.EqualFold(name, allModelsSentinel) {
-			parts = append(parts[:2], "all models")
-			break
-		}
-		parts = append(parts, name)
-	}
+	parts = append(parts, models...)
 	return "counting " + strings.Join(parts, ", ")
 }
 
@@ -990,9 +985,6 @@ func (a *autoScreen) summaryText() richText {
 	t.add(fmt.Sprintf("7d %s%%", pctLabel(a.settings.SevenDayThreshold)), thStyle)
 	if a.configuredThreshold != nil && a.settings.SevenDayThreshold != *a.configuredThreshold {
 		t.addFg(" (session)", colMuted)
-	}
-	if len(settings.ParseModelNames(a.settings.Model)) > 0 {
-		t.addPlain(fmt.Sprintf(" · model %s%%", pctLabel(a.settings.ModelThreshold)))
 	}
 	t.addPlain(fmt.Sprintf(" · poll every %.0fs", a.settings.IntervalSeconds))
 	if a.settings.Strategy != "best" {

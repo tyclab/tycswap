@@ -28,7 +28,7 @@ func TestStartTargets(t *testing.T) {
 		t.Fatalf("targets = %v, want %v", got, want)
 	}
 	entries["6"] = dictEntry(map[string]any{"seven_day": win(10, ""), "scoped": []any{scopedWin("Opus", 20, "")}})
-	if got := StartTargets([]string{"1", "2", "6"}, entries, set, []string{"all"}, baseTime); !reflect.DeepEqual(got, []string{"6"}) {
+	if got := StartTargets([]string{"1", "2", "6"}, entries, set, []string{"Opus"}, baseTime); !reflect.DeepEqual(got, []string{"6"}) {
 		t.Fatalf("model coverage = %v", got)
 	}
 	if got := StartTargets([]string{"1", "6"}, entries, set, []string{"missing"}, baseTime); len(got) != 0 {

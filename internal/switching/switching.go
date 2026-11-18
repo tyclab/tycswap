@@ -52,11 +52,6 @@ func headroomOf(v any) *float64 {
 	return oauth.AccountHeadroom(oauth.NewUsage(m), nil)
 }
 
-func isUsageDict(v any) bool {
-	_, ok := v.(map[string]any)
-	return ok
-}
-
 func numRef(numStr, email string) map[string]any {
 	n, _ := strconv.Atoi(numStr)
 	return jsonout.AccountRef(&n, email)

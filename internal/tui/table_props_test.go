@@ -1560,58 +1560,26 @@ func TestChoiceIsMonotoneInWidth(t *testing.T) {
 // price of the union column set on that roster, in columns of terminal.
 const choiceBoundaryBaseline = `
 	short/none/axis0 43 15
-	short/none/axis1 43 15
-	short/none/axis2 43 15
 	short/5h7d/axis0 43 15
-	short/5h7d/axis1 43 15
-	short/5h7d/axis2 43 15
 	short/scoped/axis0 73 15
-	short/scoped/axis1 73 15
-	short/scoped/axis2 73 15
 	short/dup/axis0 103 15
-	short/dup/axis1 103 15
-	short/dup/axis2 103 15
 	short/exhausted/axis0 73 27
-	short/exhausted/axis1 82 27
-	short/exhausted/axis2 73 27
 	short/scopedonly/axis0 43 25
-	short/scopedonly/axis1 64 25
-	short/scopedonly/axis2 43 25
 	short/7donly/axis0 43 15
-	short/7donly/axis1 43 15
-	short/7donly/axis2 43 15
 	short/six/axis0 98 55
-	short/six/axis1 98 55
-	short/six/axis2 98 55
 	short/label-none 31 15
 	short/label-short 34 15
 	short/label-aliastag 49 15
 	short/label-long 93 15
 	short/label-wide 60 15
 	real/none/axis0 43 15
-	real/none/axis1 43 15
-	real/none/axis2 43 15
 	real/5h7d/axis0 43 15
-	real/5h7d/axis1 43 15
-	real/5h7d/axis2 43 15
 	real/scoped/axis0 64 15
-	real/scoped/axis1 64 15
-	real/scoped/axis2 64 15
 	real/dup/axis0 76 15
-	real/dup/axis1 76 15
-	real/dup/axis2 85 15
 	real/exhausted/axis0 64 27
-	real/exhausted/axis1 64 27
-	real/exhausted/axis2 64 27
 	real/scopedonly/axis0 43 25
-	real/scopedonly/axis1 64 25
-	real/scopedonly/axis2 43 25
 	real/7donly/axis0 43 15
-	real/7donly/axis1 43 15
-	real/7donly/axis2 43 15
 	real/six/axis0 107 79
-	real/six/axis1 107 79
-	real/six/axis2 116 79
 	real/label-none 31 15
 	real/label-short 34 15
 	real/label-aliastag 49 15
@@ -2835,58 +2803,26 @@ func TestRowConstructionNormalisesNewlines(t *testing.T) {
 // by one column (i15MarkerAllowance): see that constant.
 const tableFirstFitBaseline = `
 	short/none/axis0 17 15 17 15
-	short/none/axis1 17 15 17 15
-	short/none/axis2 17 15 17 15
 	short/5h7d/axis0 17 15 17 15
-	short/5h7d/axis1 17 15 17 15
-	short/5h7d/axis2 17 15 17 15
 	short/scoped/axis0 17 15 17 15
-	short/scoped/axis1 29 15 32 15
-	short/scoped/axis2 23 15 24 15
 	short/dup/axis0 17 15 17 15
-	short/dup/axis1 41 15 47 15
-	short/dup/axis2 29 15 31 15
 	short/exhausted/axis0 17 27 29 27
-	short/exhausted/axis1 29 27 29 27
-	short/exhausted/axis2 17 27 29 27
 	short/scopedonly/axis0 17 25 17 28
-	short/scopedonly/axis1 29 25 30 28
-	short/scopedonly/axis2 17 25 17 28
 	short/7donly/axis0 17 15 17 15
-	short/7donly/axis1 17 15 17 15
-	short/7donly/axis2 17 15 17 15
 	short/six/axis0 18 16 18 16
-	short/six/axis1 54 16 58 16
-	short/six/axis2 24 16 25 16
 	short/label-none 16 15 16 15
 	short/label-short 17 15 17 15
 	short/label-aliastag 17 15 17 15
 	short/label-long 17 15 17 15
 	short/label-wide 17 15 17 15
 	real/none/axis0 17 15 17 15
-	real/none/axis1 17 15 17 15
-	real/none/axis2 17 15 17 15
 	real/5h7d/axis0 17 15 17 15
-	real/5h7d/axis1 17 15 17 15
-	real/5h7d/axis2 17 15 17 15
 	real/scoped/axis0 17 15 17 15
-	real/scoped/axis1 29 15 71 15
-	real/scoped/axis2 23 15 43 15
 	real/dup/axis0 17 15 17 15
-	real/dup/axis1 41 15 125 15
-	real/dup/axis2 29 15 69 15
 	real/exhausted/axis0 17 27 71 69
-	real/exhausted/axis1 29 27 71 69
-	real/exhausted/axis2 17 27 71 69
 	real/scopedonly/axis0 17 25 17 69
-	real/scopedonly/axis1 29 25 71 69
-	real/scopedonly/axis2 17 25 17 69
 	real/7donly/axis0 17 15 17 15
-	real/7donly/axis1 17 15 17 15
-	real/7donly/axis2 17 15 17 15
 	real/six/axis0 18 16 18 16
-	real/six/axis1 72 16 180 16
-	real/six/axis2 27 16 44 16
 	real/label-none 16 15 16 15
 	real/label-short 17 15 17 15
 	real/label-aliastag 17 15 17 15
@@ -2901,7 +2837,7 @@ const tableFirstFitBaseline = `
 	span-quarantined 21 15 21 15
 	span-unknownusage 17 15 17 15
 	pct-extremes 19 23 26 24
-	pct-extremes-all 25 23 26 24
+	pct-extremes-all 19 23 26 24
 	pct-unusable 17 22 23 21
 	stale 17 15 17 15
 	rows-0 1 1 1 1

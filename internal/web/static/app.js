@@ -1642,12 +1642,10 @@
     } else if (sv.kind === 'choice') {
       input = el('select', { id: id });
       (sv.choices || []).forEach(function (c) { input.appendChild(el('option', { value: c, selected: String(sv.value) === c, text: c })); });
-    } else if (sv.kind === 'int' || sv.kind === 'float') {
+    } else {
       input = el('input', { type: 'number', id: id, value: sv.value === null || sv.value === undefined ? '' : String(sv.value), step: sv.kind === 'int' ? '1' : 'any' });
       if (typeof sv.min === 'number') { input.min = String(sv.min); }
       if (typeof sv.max === 'number') { input.max = String(sv.max); }
-    } else {
-      input = el('input', { type: 'text', id: id, value: sv.value === null || sv.value === undefined ? '' : String(sv.value), autocomplete: 'off', spellcheck: 'false' });
     }
     input.setAttribute('aria-label', rowLabel(sv) + ' (' + sv.key + ')');
     return input;

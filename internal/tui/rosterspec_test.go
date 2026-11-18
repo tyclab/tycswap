@@ -806,11 +806,10 @@ func rotateVocab(vocab []string) []string {
 	return append(out, vocab[:len(vocab)/2]...)
 }
 
-// modelAxes are the three counted-ness axes: nothing configured (5h and 7d
-// count, every scoped window is informational), the "all" sentinel (every
-// scoped window counts, so every column is pinned), and one named model.
-func modelAxes(vocab []string) [][]string {
-	return [][]string{nil, {allModelsSentinel}, {vocab[0]}}
+// modelAxes are the counted-ness axes: the panel counts 5h and 7d, and every
+// scoped window is informational (DESIGN A97).
+func modelAxes([]string) [][]string {
+	return [][]string{nil}
 }
 
 // tableCorpus is the shape corpus every sweep enumerates: window shapes ×
@@ -870,7 +869,7 @@ func tableCorpus() []rosterSpec {
 			{label: labelShort, windows: []winSpec{
 				{windowLabel5h, 100, 45}, {windowLabel7d, 0, resetNone}}},
 		}},
-		rosterSpec{name: "pct-extremes-all", models: []string{allModelsSentinel}, rows: []rowSpec{
+		rosterSpec{name: "pct-extremes-all", rows: []rowSpec{
 			{label: labelShort, windows: []winSpec{
 				{windowLabel5h, 0, resetNone}, {windowLabel7d, 999, 45},
 				{"Fable", 100, 12 * 60}}},
@@ -965,7 +964,7 @@ func wideCorpus() []rosterSpec {
 		{name: "wide-12-short", rows: build(12, shortModelNames)},
 		{name: "wide-30-short", rows: build(30, shortModelNames)},
 		{name: "wide-12-real", rows: build(12, realModelNames)},
-		{name: "wide-30-real-all", rows: build(30, realModelNames), models: []string{allModelsSentinel}},
+		{name: "wide-30-real-all", rows: build(30, realModelNames)},
 	}
 }
 
