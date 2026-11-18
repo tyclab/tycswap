@@ -313,3 +313,22 @@ func TestStartHelpNamesTheFableStore(t *testing.T) {
 		t.Fatalf("code=%d help=%q", code, out)
 	}
 }
+
+// The help says what passes unchanged: the arguments, and the environment but
+// for the Fable store's variable (DESIGN A103).
+func TestStartHelpNamesTheOneVariableItChanges(t *testing.T) {
+	cleanHome(t)
+	code, out, _ := runCLI(t, []string{"start", "--help"}, false, false)
+	for _, want := range []string{
+		"\nSelection failures launch on the current login. Arguments pass unchanged.\n",
+		"\nThe environment passes unchanged, except CLAUDE_SECURESTORAGE_CONFIG_DIR: start sets it to the Fable store\n" +
+			"for a Fable session while that store is usable, and removes it from any other session when it names that store.\n",
+	} {
+		if code != 0 || !strings.Contains(out, want) {
+			t.Errorf("help lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "environment pass unchanged") {
+		t.Errorf("help still says the environment passes unchanged:\n%s", out)
+	}
+}

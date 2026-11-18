@@ -350,8 +350,10 @@ func renderStartHelp(prog string, out io.Writer) int {
 	fmt.Fprintf(out, "usage: %s start [--account ID] [--] [command [args...]]\n", prog)
 	fmt.Fprintf(out, "       %s start --allow ID | --disallow ID | --list\n", prog)
 	fmt.Fprintln(out, "\nStart on a usable marked login, then launch once (default: real Claude).")
-	fmt.Fprintln(out, "Selection failures launch on the current login. Arguments and environment pass unchanged.")
+	fmt.Fprintln(out, "Selection failures launch on the current login. Arguments pass unchanged.")
 	fmt.Fprintln(out, "--account also works with auto-switch off; inherited auth/profile overrides skip selection.")
 	fmt.Fprintln(out, "Sessions on a Fable model start on the Fable store when one is on (tycswap add --login --lineage fable).")
+	fmt.Fprintln(out, "The environment passes unchanged, except CLAUDE_SECURESTORAGE_CONFIG_DIR: start sets it to the Fable store")
+	fmt.Fprintln(out, "for a Fable session while that store is usable, and removes it from any other session when it names that store.")
 	return 0
 }
