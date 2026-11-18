@@ -19,6 +19,7 @@ import (
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/credstore"
+	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
@@ -469,6 +470,36 @@ func TestFableAdapterMethods(t *testing.T) {
 	}
 	if _, ok := any(a).(interface{ RotationBlockReasons() map[string]string }); ok {
 		t.Fatal("the adapter reports ownership blocks")
+	}
+}
+
+// The engine's write-back of a refreshed Fable login waits for the store
+// lock another process holds.
+func TestFableAdapterPersistsUnderTheStoreLock(t *testing.T) {
+	sw, _ := atFableLimit.build(t)
+	a, err := newFableAdapter(sw, sw.Log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := filelock.New(sw.Store.LockFile, 0)
+	if ok, err := other.Acquire(0); !ok || err != nil {
+		t.Fatalf("Acquire = %v, %v", ok, err)
+	}
+	t.Cleanup(func() { _ = other.Release() })
+	fresh := fableLoginOf("3", farExpiry-1)
+	done := make(chan error, 1)
+	go func() { done <- a.PersistBackupCredentials("3", fableEmail("3"), fresh) }()
+	for deadline := time.Now().Add(time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+		if a.ReadAccountCredentials("3", fableEmail("3")) == fresh {
+			t.Fatal("written while another process held the store lock")
+		}
+	}
+	_ = other.Release()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if got := a.ReadAccountCredentials("3", fableEmail("3")); got != fresh {
+		t.Fatalf("Fable login = %s", got)
 	}
 }
 
