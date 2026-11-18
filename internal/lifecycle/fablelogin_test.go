@@ -3,6 +3,7 @@
 package lifecycle
 
 import (
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -240,6 +241,11 @@ func TestAddFableLoginRenewsADeadLiveLogin(t *testing.T) {
 	}
 	if got := fableLoginOf(t, s, "1", "a@example.com"); got != fresh {
 		t.Errorf("Fable login = %q, want the new one", got)
+	}
+	var chain struct{ Fingerprint, Slot string }
+	if raw, err := os.ReadFile(filepath.Join(paths.FableScopeDir(s.BackupDir()), "live_lineage.json")); err != nil || json.Unmarshal(raw, &chain) != nil ||
+		chain.Slot != "1" || chain.Fingerprint != *oauth.CredentialFingerprint(fresh) {
+		t.Errorf("Fable chain record %+v (%v), want the new login on Account-1", chain, err)
 	}
 	if got := out.String(); got != "Stored the Fable login for Account-1 (a@example.com).\nThe Fable store now uses Account-1.\n" {
 		t.Errorf("output = %q", got)
