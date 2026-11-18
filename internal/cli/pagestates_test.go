@@ -47,9 +47,16 @@ type pageCase struct {
 	State web.State `json:"state"`
 }
 
-// renderPage runs the production app.js and index.html, as the dashboard
-// serves them, over each state and returns what the page shows, by name.
-func renderPage(t *testing.T, get func(string) string, cases []pageCase) map[string]pageView {
+// pageFiles is the production app.js and index.html as the dashboard serves
+// them.
+type pageFiles struct{ app, index string }
+
+func servedPage(get func(string) string) pageFiles {
+	return pageFiles{app: get("/static/app.js"), index: get("/")}
+}
+
+// renderPage runs the page over each state and returns what it shows, by name.
+func renderPage(t *testing.T, page pageFiles, cases []pageCase) map[string]pageView {
 	t.Helper()
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -60,7 +67,7 @@ func renderPage(t *testing.T, get func(string) string, cases []pageCase) map[str
 	if err != nil {
 		t.Fatal(err)
 	}
-	files := map[string]string{"app.js": get("/static/app.js"), "index.html": get("/"), "cases.json": string(raw)}
+	files := map[string]string{"app.js": page.app, "index.html": page.index, "cases.json": string(raw)}
 	for name, body := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
@@ -102,7 +109,7 @@ func TestDashboardPageRendersEveryState(t *testing.T) {
 	on := `{"schemaVersion":1,"autoswitch":{"enabled":true}}`
 	off := `{"schemaVersion":1,"autoswitch":{"enabled":false}}`
 	var cases []pageCase
-	var get func(string) string
+	var page pageFiles
 	for _, tc := range []struct {
 		name, model, body string
 		usage             map[string][3]float64
@@ -113,28 +120,32 @@ func TestDashboardPageRendersEveryState(t *testing.T) {
 		{"owner-fable-unservable", "claude-fable-5-1", on, spent},
 		{"owner-retired-model-key", "claude-fable-5-1", `{"schemaVersion":1,"autoswitch":{"enabled":true,"model":"all"}}`, spent},
 	} {
-		sw := countingStore(t, tc.model, tc.usage)
-		writeSettings(t, sw, tc.body)
-		d, _, g := serveDashboardPage(t, sw, testOwner)
-		get = g
-		cases = append(cases, pageCase{tc.name, d.srv.Snapshot()})
+		t.Run(tc.name, func(t *testing.T) {
+			sw := countingStore(t, tc.model, tc.usage)
+			writeSettings(t, sw, tc.body)
+			d, _, get := serveDashboardPage(t, sw, testOwner)
+			page = servedPage(get)
+			cases = append(cases, pageCase{tc.name, d.srv.Snapshot()})
+		})
 	}
-	sw := countingStore(t, "claude-fable-5-1", room)
-	writeSettings(t, sw, off)
-	d, post, _ := serveDashboardPage(t, sw, "")
-	countingEngines(d.auto)
-	cases = append(cases, pageCase{"unhosted-off", d.srv.Snapshot()})
-	if status, _ := post("/api/auto/start", `{}`); status != http.StatusOK {
-		t.Fatalf("start = %d", status)
-	}
-	cases = append(cases, pageCase{"hosted-on-fable-session", d.srv.Snapshot()})
-	if status, _ := post("/api/auto/stop", ""); status != http.StatusOK {
-		t.Fatalf("stop = %d", status)
-	}
-	cases = append(cases, pageCase{"hosted-off", d.srv.Snapshot()})
-	d.auto.stopKeepingChoice()
+	t.Run("hosted", func(t *testing.T) {
+		sw := countingStore(t, "claude-fable-5-1", room)
+		writeSettings(t, sw, off)
+		d, post, _ := serveDashboardPage(t, sw, "")
+		countingEngines(d.auto)
+		cases = append(cases, pageCase{"unhosted-off", d.srv.Snapshot()})
+		if status, _ := post("/api/auto/start", `{}`); status != http.StatusOK {
+			t.Fatalf("start = %d", status)
+		}
+		cases = append(cases, pageCase{"hosted-on-fable-session", d.srv.Snapshot()})
+		if status, _ := post("/api/auto/stop", ""); status != http.StatusOK {
+			t.Fatalf("stop = %d", status)
+		}
+		cases = append(cases, pageCase{"hosted-off", d.srv.Snapshot()})
+		d.auto.stopKeepingChoice()
+	})
 
-	views := renderPage(t, get, cases)
+	views := renderPage(t, page, cases)
 	counted := func(name string) bool {
 		v := views[name]
 		if len(v.NextBest) != 1 || v.NextBest[0].Model != "Fable" || v.NextBest[0].Counted == nil {
