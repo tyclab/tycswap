@@ -29,16 +29,6 @@ func newFamilyFiles(t *testing.T) familyFiles {
 	return f
 }
 
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func assistantLine(model string) string {
 	return `{"type":"assistant","message":{"model":"` + model + `","role":"assistant","content":[]}}` + "\n"
 }
