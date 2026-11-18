@@ -1646,6 +1646,39 @@ share one login: while one of them runs Fable, every one of them runs on a
 Fable-capable account. Subagents run on their main session's login, and only
 the main session's model is recorded.
 
+**The Fable store's tick** (DESIGN A102). While auto-switch is on and the
+Fable store is on (it has Fable logins and holds one, see `tycswap switch`),
+`--once` runs a second tick after the default one, for the Fable store. It
+harvests the store's rotated login first, then decides as the default tick
+does over the *Fable pool*: the accounts that are enabled and
+rotation-eligible, can run Fable, hold a Fable login and are not quarantined
+in `fable/autoswitch_state.json` (the default store's quarantine does not
+exclude). It counts every Fable window the accounts report, always, with no
+reservation, and reads the same usage rows, fetched with the default login.
+A switch installs the target's Fable login in the Fable store
+(`EngineSwitchFable`); the default login, the roster and `~/.claude.json`
+are untouched. It keeps its own cooldown and hold: a switch of the Fable
+store by hand holds only this tick, a default one only the default tick. A
+Fable login the server rejects (`invalid_grant`) is quarantined in the
+Fable state file only, and a new Fable login releases it
+(`credentials-replaced`). A real Fable tick also refreshes at most one idle
+Fable login, the one refreshed longest ago, when that was more than 14 days
+ago (its `expiresAt` less 8 hours), so its refresh token does not expire
+unused, and logs `Kept the Fable login of account <n> alive`; the live login
+is Claude Code's to refresh. `--dry-run` runs both ticks dry. The loop and
+the dashboard's hosted engine run no Fable tick. A dead default login leaves
+the account's usage unknown, so neither store takes it until it is signed in
+again.
+
+**Beside the Fable store the default store leaves it its accounts** (DESIGN
+A102). While the Fable store is usable, the scheduled tick counts only the
+sessions recorded on the default store, and always reserves the Fable pool's
+accounts with Fable room and the Fable store's live account, whatever the
+sessions run: the default login fills the accounts whose Fable week is
+spent. An account with Fable room but no Fable login is not reserved. With
+the Fable store off or unusable, or without Fable logins, the reservation
+above applies unchanged.
+
 **Retired session groups give their account back** (DESIGN A78). Session
 groups and `tycswap claude` are gone. A scheduled tick that is not a dry run
 (not a status line's `--observe` tick), also while auto-switch is off (DESIGN
@@ -1674,7 +1707,10 @@ family the session runs, and when that is news (the session's first status
 line, or a model change) it runs one tick at once on the cached usage, without
 taking the 15-second slot, so the login follows the session's model before the
 next timer tick (DESIGN A77); in a retired group's profile it marks that
-group's account instead. flakelab's status line command passes
+group's account instead. Run by a session on the Fable store, it records the
+session's store as `fable` (a change of store is news, as a change of model
+is) and marks the Fable store's live account due instead of the default
+login's (DESIGN A102). flakelab's status line command passes
 its input to `tycswap auto --observe` in the background. While auto-switch is
 off, `--observe` still records the session's model but marks no account due,
 runs no tick, prints the one `no-switch` `disabled` line and exits 2; with
@@ -1714,7 +1750,11 @@ count and idle-hold start) under
 `.autoswitch_state.lock`.
 Reads and writes `live_lineage.json`, and harvests a token Claude Code
 refreshed itself into the live slot's backup, as `list` does; `--dry-run`
-writes neither (DESIGN A68).
+writes neither (DESIGN A68). The Fable tick reads and writes
+`fable/autoswitch_state.json` under `fable/.autoswitch_state.lock`,
+`fable/live_lineage.json`, the Fable logins in `credentials-fable/` and the
+Fable store's `.credentials.json`, as `tycswap switch --store fable` does;
+`--dry-run` writes none of them.
 A real switch writes the same files `tycswap switch` does. The Codex engine
 reads and writes the files `tycswap codex switch` does.
 
@@ -1728,6 +1768,10 @@ Loop mode returns `0` on a clean stop. `--once` returns the tick outcome:
 | `1` | Error (network trouble, lock contention, transient freshen failure). |
 | `2` | No action needed (below threshold, cooldown, idle), or auto-switch is off (`no-switch` `disabled`). |
 | `3` | Blocked: a switch was wanted but no viable target exists / all exhausted. |
+
+With the Fable store's tick (DESIGN A102) the status is the more significant
+of the two outcomes: `1` if either tick errored, else `0` if either switched,
+else `3` if either was blocked, else `2`.
 
 A construction or configuration error before the first tick exits `1`.
 
@@ -1752,6 +1796,10 @@ a `Z` suffix), plus per-kind fields:
 | `config-warning` | `message` (string) |
 | `blocked-with-room` | `accounts` (slot strings): the live account is over a bar and the tick was blocked while these enabled, eligible accounts are below their 5h and 7d bars, kept out by a counted model window or an ownership hold; once per change of the set, never for a hysteresis or cooldown hold (DESIGN A91, see LOG) |
 | `live-login-changed` | `from`, `to` (slot strings): the live login changed without a tycswap switch, reported once per change (see LOG) |
+
+Every event of the Fable store's tick (DESIGN A102) carries `"store":
+"fable"` beside its own fields, and its human line starts with `Fable store:
+`; the default tick's events carry no `store`.
 
 The Codex engine reports a tick only when it switched or failed, or on every
 tick under `--dry-run`. Its human line carries the same `HH:MM:SS` prefix as
@@ -4917,7 +4965,7 @@ Inside the backup root:
 | `configs/` | Per-account config snapshots, `.claude-config-<n>-<email>.json`. `<email>` is the account's email as `add` accepts it (one `@`, at most 254 bytes, no whitespace, control character, `/`, `\` or `< > : " | ? *`), so the name is a single path component. |
 | `credentials/` | Per-account credential files, `.creds-<n>-<email>.enc` and the retained previous generation `.creds-<n>-<email>.enc.prev` (file backend; `<email>` as for `configs/`). macOS stores these in the Keychain instead, except a credential too large to reach the `security` command over stdin (a command line over 4032 bytes, so a credential over about 2 KB, for example one carrying many `mcpOAuth` tokens), which stays in this file (mode 0600) rather than on a command line. The live Claude Code credential falls back to `.credentials.json` the same way. |
 | `sessions/` | Former per-account profiles of the removed `tycswap run` / `tycswap env`, `<n>-<email>` (the `@` in the email replaced by `_`); kept for their history (DESIGN A92). |
-| `default_models.json` | The model family each default-profile session runs, as `--observe` records it from the status line (DESIGN A76): `{"schemaVersion": 1, "sessions": {"<session id>": {"family", "seenAt", "store"?}}}`, `store` being `"fable"` for a session on the Fable store and absent otherwise (DESIGN A100). Kept a day; no credentials. |
+| `default_models.json` | The model family each default-profile session runs, as `--observe` records it from the status line (DESIGN A76): `{"schemaVersion": 1, "sessions": {"<session id>": {"family", "seenAt", "store"?}}}`, `store` being `"fable"` for a session on the Fable store and absent otherwise (DESIGN A100); while the Fable store is usable the default store counts only the records without it (DESIGN A102). Kept a day; no credentials. |
 | `observe_state.json` | The time of the last near-bar observation that ran a tick, for the 15-second slot (DESIGN A75). |
 | `groups/` | What retired session groups left (DESIGN A78): `claims.json` (also the former `run` profiles' claims, and under `held` each refused profile release as `{"<n>": {"reason", "digest"}}`, the digest being the SHA-256 of the account-only profile login it was refused for; absent when none, DESIGN A92), and per group a `profile/` directory kept for its history, plus `retired.json` once the group is retired. |
 | `recovery/` | `state.json` and `state.json.lock` of the removed handover after a limit (DESIGN A95); no longer read or written, and not deleted. |
@@ -5001,7 +5049,10 @@ line `<change> by <actor>` beside the change's own line.
   `tycswap menu`; `parent` only where `/proc` exists), `tui`, `tray`,
   `dashboard(cookie|bearer,<remote address>)` for the API, `start`, and
   `engine:<trigger>` for an auto-switch, on its own line after the switch
-  layer's unchanged `Switched from account <from> to <to>`.
+  layer's unchanged `Switched from account <from> to <to>`. The Fable
+  store's switches read `Switched the Fable store to account <n> by
+  engine:<trigger>` and `… by hand`, and every other line of its engine
+  starts with `Fable store: ` (DESIGN A102).
 - **Logins made elsewhere.** Every real tick (`auto` without `--dry-run`)
   records the live slot it saw and when (`lastSeenLive`, `lastSeenAt` in
   `autoswitch_state.json`; the dashboard's *Last tick*). When the live slot

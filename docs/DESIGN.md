@@ -6723,6 +6723,8 @@ trigger, under the cooldown, to an account that cannot run Fable and is below
 every bar. A live session without a record or a Fable session clears the
 reservation, as does an explicit `autoswitch.model` (until A97 removed it);
 with no live session the login stays where it is, because nothing burns.
+While the Fable store is usable the reservation is A102's instead: always,
+and only of the accounts the Fable store can use and its live account.
 
 `--observe` reports whether its record was news: a session's first status line
 or a change of family. News runs one tick at once on the cached usage, without
@@ -7323,7 +7325,9 @@ move comes after the fetch that poll brings.
 The reservation (A77) now covers only accounts that can run Fable, report a
 Fable window and sit under `autoswitch.modelThreshold` on it, read the same
 way. An account whose Fable week is spent is never reserved, so Opus work
-fills it.
+fills it. While the Fable store is usable, A102 counts the default store's
+sessions only and reserves the Fable pool's accounts with Fable room and the
+Fable store's live account whatever runs.
 
 A block the 5-hour and weekly bars do not explain emits `blocked-with-room`
 and logs it as a warning, under a name no `poll`/`no-switch`/`all-exhausted`
@@ -8092,3 +8096,100 @@ normalized output was byte-identical to origin/main's when it was written.
 `modelFamily`), the `store` field of a `default_models.json` record
 (`"fable"` for a Fable-store session, omitted for the default store's), and
 `reporting.RecordedSession(root, id)`, a session's recorded family and store.
+
+## A102. One tick per store
+
+**Why.** A100 gives each account a second login and the Fable store to run
+it. The stores must rotate apart: "opus session with opus limit auto swich
+to fill the accounts with no fable left" (the operator, 2026-11-16), while
+the Fable store sits on an account that still has Fable. The timer runs
+`tycswap auto --once --json` every 2 minutes, the quota hook the same, and
+the status line `tycswap auto --observe --json`.
+
+**Two ticks.** `auto --once` (the timer, the quota hook, `--observe`) runs
+the default tick first, then, while auto-switch is on and the Fable store is
+on (A100), the Fable tick. A dry run runs both dry, over
+`WithoutLineageWrites` views. A real Fable tick first harvests the store's
+rotated login (`HarvestFableLive`), and keeps one idle Fable login alive
+after (below). The exit code is the more significant of the two outcomes: 1
+if either errored, else 0 if either switched, else 3 if either was blocked,
+else 2. With no Fable login, or with the store off, only the default tick
+runs and the run is v0.15.1's byte for byte (`TestFableTickNoChangeWithoutAStore`;
+compared with origin/main when written).
+
+**The adapter.** The Fable engine is `autoswitch.NewEngine` over
+`cli.fableAdapter`, which satisfies the frozen `autoswitch.Switcher` (A13):
+the live account is `ResolveFableLiveSlot`, a live login whether the store
+holds one, the logins and their refresh (`RefreshFableBackupGuarded`) and
+writes the Fable logins, the switch `EngineSwitchFable`, the roster answers
+(kind, identity, email, uuid backfill) the default store's, and the usage the
+default store's collector, so one fetch path with the default login serves
+both stores (A100, 1.7). It names no session owner and has no rotation
+hooks: no profile or claim owns a Fable login. Its poll inputs are
+registered under the Fable scope's key. Its `RecordedSwitch` is the Fable
+chain record, which every Fable switch writes, so the engine tells a switch
+from a login made elsewhere and records `lastSeenLive`/`lastSeenAt` in the
+Fable state file. Its state file is `fable/autoswitch_state.json`.
+
+**The pool** (`reporting.FablePool`) is every account that is enabled and
+rotation-eligible by the default rules, able to run Fable
+(`Store.FableCapable`), holding a Fable login, and not quarantined in the
+Fable state file. The default store's quarantine does not exclude.
+
+**The Fable settings** are the merged settings with the model set to every
+Fable window name an account's cached usage reports; they are counted
+always, with no session following, no reservation and no `unservable`.
+
+**The default store beside it.** While the Fable store is usable,
+`reporting.DefaultSessionPolicyResult` counts the families of the sessions
+whose record names no store; a session without a record still counts as one
+of unknown family. It always reserves the Fable pool's accounts with Fable
+room (A91's reading at `autoswitch.modelThreshold`) and the Fable store's
+live account, whatever its room and whatever runs: they rank last (A71) and
+an active one hands over under the cooldown (A77). An account with Fable
+room but no Fable login is the default store's. Off, unusable or without
+Fable logins, the policy is A91's. The dashboard's counting and ranking,
+`start`'s ranking and `switch --strategy` read the same result.
+
+**The status-line record.** `--observe` records `"store":"fable"` for a
+session whose process runs under the Fable store (`cli.fableSessionProcess`,
+A100); a default-store record has no store field, and a changed store is
+news like a changed family. Near a bar in a Fable-store session it marks the
+Fable store's live account due, not the default login's.
+
+**Poll plans.** `AccountInfo.FableLive` marks the Fable store's live account
+(resolved without a chain-record write), and the planner plans it as an
+active account, on every scope's inputs, the Fable scope's Fable windows
+included. An inactive account's plan is unchanged.
+
+**Hold, cooldown and quarantine per store.** Each state file keeps its own
+switch stamp: a switch of the Fable store by hand holds only the Fable tick
+for `autoswitch.cooldownSeconds` (`switched by hand to account N; held for
+another Ss`), a default one only the default tick. The Fable engine
+freshens a target through `RefreshFableBackupGuarded`; `invalid_grant`
+quarantines the account in the Fable state file only, through the engine's
+own path (`account-quarantined`), and a new Fable login with another
+fingerprint releases it (`credentials-replaced`) on the next real Fable
+tick.
+
+**Keep-alive.** A refresh token not used for 28 days may expire (measured in
+the pilot). A real Fable tick refreshes at most one idle Fable login: not
+live in the store, not quarantined, last refreshed more than 14 days ago,
+the oldest such. The last refresh is its `expiresAt` less 8 hours, the
+measured access-token life; a credential carries only its expiry. The
+refresh is `RefreshFableBackupGuarded`, logged at INFO as `Kept the Fable
+login of account N alive`; `invalid_grant` quarantines as above, through
+`autoswitch.Quarantine`.
+
+**Events and log lines.** Every Fable tick event carries `"store":"fable"`
+(`cli.fableEvent`, modelled on `groupEvent`); the default tick's are
+unchanged. Human lines start with `Fable store: `. The engine logs its
+switch as `Switched the Fable store to account N by engine:<trigger>`
+through the switcher's optional `LogSwitch`, and its other lines through a
+logger prefixed `Fable store: `.
+
+**Limits.** The `tycswap auto` loop and an engine hosted by `web` or `app`
+run no Fable tick (the operator's boxes run the timer). Usage is one row per
+account fetched with the default login, so a dead default login leaves the
+account's usage unknown and blocks it for both stores until it is signed in
+again.

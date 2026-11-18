@@ -642,8 +642,12 @@ live, and Fable sessions run on it through Claude Code's
 `CLAUDE_SECURESTORAGE_CONFIG_DIR`, while every other session stays on the
 default login; tycswap switches the two independently and never moves a login
 between them. `tycswap switch --store fable <n>` switches it by hand and
-`tycswap switch --store fable --empty` turns it off. A box where no account has
-a Fable login works exactly as before. macOS has no Fable store.
+`tycswap switch --store fable --empty` turns it off. `tycswap auto --once`
+rotates it too: after the default tick, a second tick moves the Fable store to
+an account with Fable room, while the default login leaves those accounts to
+it and fills the ones whose Fable week is spent; the `tycswap auto` loop and
+the dashboard's own engine do not. A box where no account has a Fable login
+works exactly as before. macOS has no Fable store.
 
 **Session groups are retired.** The Fable and Opus / other groups and
 `tycswap claude` are gone; plain `claude` follows the session's model on the
