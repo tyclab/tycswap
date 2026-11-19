@@ -684,13 +684,15 @@ tycswap mythos --allow work
 tycswap mythos --list
 ```
 
-`--disallow ID` removes a mark. While a session runs Mythos, auto-switch keeps
-the shared login on a marked account: it never moves to an unmarked one, and
-from an unmarked one it moves to a marked account below every bar at once.
-`tycswap start` starts a Mythos session on a marked account (the start-login
-marks do not apply to it) and every other session too while a Mythos session
-runs. With no account marked nothing is restricted, and `start` says so once
-per Mythos session. `list`, the dashboard (**Allow for Mythos**) and the tray
+`--disallow ID` removes a mark. While a session runs Mythos and a marked
+account has room (or the live one is marked and not at its limit),
+auto-switch keeps the shared login on a marked account: it never moves to an
+unmarked one, and from an unmarked one it moves to a marked account below
+every bar at once. `tycswap start` starts a Mythos session on a marked
+account (the start-login marks do not apply to it) and every other session
+too while a Mythos session runs. With no account marked, or none with room,
+nothing is restricted, so the other sessions keep running; `start` says so
+once per Mythos session when none is marked. `list`, the dashboard (**Allow for Mythos**) and the tray
 show the mark; the Auto tab's caption names the accounts a live Mythos session
 leaves the login, e.g. `live Mythos session: only accounts 2, 5`. Mythos
 sessions on the Fable store are not covered.

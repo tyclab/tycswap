@@ -160,9 +160,11 @@ type PolicyResult struct {
 	// leaves for any other below every bar: the Fable store's live one (A102).
 	ReservedLast func(num string) bool
 	// Serves is the accounts the default login may run on while a live
-	// session runs Mythos, the accounts marked for it; nil serves every
-	// account (DESIGN A106).
+	// session runs Mythos and Mythos can be served, the accounts marked for
+	// it; nil serves every account. Mythos is the marked accounts, in
+	// sequence order, while such a session runs (DESIGN A106).
 	Serves func(num string) bool
+	Mythos []string
 }
 
 // DefaultSessionPolicy is DefaultSessionPolicyResult at the store's clock.
@@ -242,7 +244,9 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 		r.Settings.Model = &model
 	}
 	if families["mythos"] {
-		if mythosInPool(s, view.pool) {
+		data, _ := s.ReadSequence()
+		r.Mythos = markedForMythos(data)
+		if view.mythosServed(data, base, counted) {
 			r.Serves = s.MythosCapable
 		} else {
 			r.Unservable = append(r.Unservable, MythosModel)
@@ -256,17 +260,64 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 	return r
 }
 
-// mythosInPool reports whether an account the tick may use is marked for
-// Mythos. Without one a Mythos session restricts nothing, so a mark nobody
-// set never freezes rotation (DESIGN A106).
-func mythosInPool(s *store.Store, pool map[string]bool) bool {
-	data, _ := s.ReadSequence()
-	for num, usable := range pool {
-		if usable && store.MythosFrom(data, num) {
+// markedForMythos lists the accounts marked for Mythos, in sequence order.
+func markedForMythos(data *store.SequenceData) []string {
+	var out []string
+	if data != nil {
+		for _, n := range data.Sequence {
+			if num := strconv.Itoa(n); store.MythosFrom(data, num) {
+				out = append(out, num)
+			}
+		}
+	}
+	return out
+}
+
+// mythosServed reports whether Mythos can be served, A91's rule for a model:
+// a marked account of the pool sits below the bars the engine moves at on its
+// 5h, 7d and counted windows, or the live account is marked and not at a hard
+// limit. Otherwise a Mythos session restricts nothing, so marks without room,
+// or none, never freeze rotation (DESIGN A106).
+func (v policyView) mythosServed(data *store.SequenceData, bars settings.AutoSwitchSettings, counted []string) bool {
+	for num, usable := range v.pool {
+		u := v.serving[num]
+		if !usable || u == nil || !store.MythosFrom(data, num) {
+			continue
+		}
+		if num == v.live {
+			if h := oauth.AccountHeadroom(u, counted); h != nil && *h > 0 {
+				return true
+			}
+		}
+		if belowBars(u, bars, counted) {
 			return true
 		}
 	}
 	return false
+}
+
+// belowBars reports whether u sits below the 5h, 7d and model bars on its
+// windows and on every counted one; an absent 5h window is room, an absent
+// 7d or counted window is not.
+func belowBars(u *oauth.Usage, bars settings.AutoSwitchSettings, counted []string) bool {
+	if u.SevenDay == nil || u.SevenDay.Pct >= bars.SevenDayThreshold || u.FiveHour != nil && u.FiveHour.Pct >= bars.FiveHourThreshold {
+		return false
+	}
+	for _, name := range counted {
+		found := false
+		for _, w := range u.Scoped {
+			if strings.EqualFold(w.Name, name) {
+				found = true
+				if w.Pct >= bars.ModelThreshold {
+					return false
+				}
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 // fableReserved is the default store's reservation beside a usable Fable
@@ -317,6 +368,7 @@ type policyView struct {
 	usage   map[string]*oauth.Usage
 	serving map[string]*oauth.Usage
 	pool    map[string]bool
+	live    string
 }
 
 func newPolicyView(s *store.Store, now time.Time) policyView {
@@ -337,6 +389,9 @@ func newPolicyView(s *store.Store, now time.Time) policyView {
 		}
 		_, held := quarantined[num]
 		v.pool[num] = info.IsActive || !held && s.RotationEligible(data, num)
+		if info.IsActive {
+			v.live = num
+		}
 	}
 	return v
 }

@@ -70,8 +70,8 @@ type CountingView struct {
 	Sessions   []string `json:"sessions"`
 	Unservable []string `json:"unservable"`
 	Reserved   []string `json:"reserved"`
-	// Mythos is the accounts a live Mythos session leaves the login; absent
-	// while nothing is restricted (DESIGN A106).
+	// Mythos is the accounts marked for Mythos while a Mythos session runs;
+	// absent otherwise (DESIGN A106).
 	Mythos  []string `json:"mythos,omitempty"`
 	Caption string   `json:"caption"`
 }

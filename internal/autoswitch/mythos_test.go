@@ -3,6 +3,7 @@ package autoswitch
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/settings"
 )
@@ -141,5 +142,30 @@ func TestMythosNilFilterServesEveryAccount(t *testing.T) {
 	e := build(t, f, settings.Default(), rec, clk, false, WithServes("Mythos", nil))
 	if got := e.Tick(); got != Switched || deref(f.current) != "2" {
 		t.Fatalf("outcome = %v current %q (kinds=%v)", got, deref(f.current), rec.kinds())
+	}
+}
+
+// A switch by hand onto an unmarked account holds the hand-over for the
+// cooldown like every trigger (A94); after it the login moves to a marked
+// account (DESIGN A106).
+func TestMythosHandOverWaitsForASwitchByHand(t *testing.T) {
+	clk := newClk()
+	f := threeAccounts(clk, dictEntry(usageOf(10, 10)), dictEntry(usageOf(0, 5)), dictEntry(usageOf(20, 40)))
+	rec := &recorder{}
+	e := build(t, f, settings.Default(), rec, clk, false, servesOption("3"))
+	handSwitched(t, e, "1")
+	clk.Advance(10 * time.Second)
+	if got := e.Tick(); got != NoAction || deref(f.current) != "1" {
+		t.Fatalf("outcome = %v current %q, want held on 1", got, deref(f.current))
+	}
+	if ns := rec.last("no-switch").(NoSwitchEvent); ns.Reason != "cooldown" || !strings.HasPrefix(ns.Detail, "switched by hand to account 1") {
+		t.Fatalf("no-switch = %+v", ns)
+	}
+	clk.Advance(time.Duration(settings.Default().CooldownSeconds) * time.Second)
+	if got := e.Tick(); got != Switched || deref(f.current) != "3" {
+		t.Fatalf("after the cooldown: outcome = %v current %q", got, deref(f.current))
+	}
+	if sw := rec.last("switch").(SwitchEvent); sw.Trigger != "model-missing" {
+		t.Fatalf("trigger %q", sw.Trigger)
 	}
 }

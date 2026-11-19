@@ -64,19 +64,36 @@ func TestRecordDefaultSessionModelRecordsMythos(t *testing.T) {
 }
 
 // While a default-store session runs Mythos the policy restricts the login to
-// the marked accounts; with no marked account in the pool it restricts
-// nothing and names Mythos unservable (DESIGN A106).
+// the marked accounts, but only while Mythos can be served (A91's rule): a
+// marked account of the pool below the bars the engine moves at (5h, 7d and
+// every counted window), or a marked live account not at a hard limit.
+// Otherwise it restricts nothing and names Mythos unservable. A Mythos
+// session counts only while its process lives (DESIGN A106).
 func TestPolicyRestrictsTheLoginToMythosAccounts(t *testing.T) {
+	ninety, ten := 90.0, 10.0
+	recordGone := func(t *testing.T, s *store.Store) {
+		if _, err := RecordDefaultSessionModel(s.BackupDir(), "s-gone", "claude-mythos-5-2", "", s.Clk.Now()); err != nil {
+			t.Fatal(err)
+		}
+		markMythos("8")(t, s)
+	}
+	both := map[string]string{"s-mythos": "claude-mythos-5-2", "s-fable": "claude-fable-5-2"}
 	for name, tc := range map[string]struct {
 		in         incident
 		prepare    func(*testing.T, *store.Store)
-		serves     string
+		serves     bool
+		mythos     string
 		unservable string
 	}{
-		"marked":            {in: incident{live: "3", sessions: mythosSession}, prepare: markMythos("8", "11"), serves: "8,11"},
+		"marked":            {in: incident{live: "3", sessions: mythosSession}, prepare: markMythos("8", "11"), serves: true, mythos: "8,11"},
 		"none-marked":       {in: incident{live: "3", sessions: mythosSession}, unservable: "Mythos"},
-		"marked-disabled":   {in: incident{live: "3", sessions: mythosSession, disabled: []string{"8"}}, prepare: markMythos("8"), unservable: "Mythos"},
-		"marked-live":       {in: incident{live: "8", sessions: mythosSession, disabled: []string{"8"}}, prepare: markMythos("8"), serves: "8"},
+		"marked-disabled":   {in: incident{live: "3", sessions: mythosSession, disabled: []string{"8"}}, prepare: markMythos("8"), mythos: "8", unservable: "Mythos"},
+		"marked-live":       {in: incident{live: "8", sessions: mythosSession, disabled: []string{"8"}}, prepare: markMythos("8"), serves: true, mythos: "8"},
+		"marked-full":       {in: incident{live: "4", sessions: mythosSession}, prepare: markMythos("3", "11"), mythos: "3,11", unservable: "Mythos"},
+		"live-over-its-bar": {in: incident{live: "11", sessions: mythosSession, five11: &ninety}, prepare: markMythos("11"), serves: true, mythos: "11"},
+		"live-at-a-limit":   {in: incident{live: "11", sessions: mythosSession}, prepare: markMythos("11"), mythos: "11", unservable: "Mythos"},
+		"counted-spent":     {in: incident{live: "3", sessions: both, five11: &ten}, prepare: markMythos("4"), mythos: "4", unservable: "Mythos"},
+		"session-closed":    {in: incident{live: "3", sessions: map[string]string{"s-opus": "claude-opus-5-5"}}, prepare: recordGone},
 		"no-mythos-session": {in: incident{live: "3", sessions: fableSession}, prepare: markMythos("8"), unservable: "Fable"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -85,8 +102,8 @@ func TestPolicyRestrictsTheLoginToMythosAccounts(t *testing.T) {
 				tc.prepare(t, s)
 			}
 			r := DefaultSessionPolicyResult(s, settings.Default(), now)
-			if got := strings.Join(r.ServesIn(s), ","); got != tc.serves || (r.Serves == nil) != (tc.serves == "") {
-				t.Fatalf("serves %q (nil %v), want %q", got, r.Serves == nil, tc.serves)
+			if (r.Serves != nil) != tc.serves || strings.Join(r.Mythos, ",") != tc.mythos {
+				t.Fatalf("restricts %v, marked %v; want %v, %q", r.Serves != nil, r.Mythos, tc.serves, tc.mythos)
 			}
 			if got := strings.Join(r.Unservable, ","); got != tc.unservable {
 				t.Fatalf("unservable %q, want %q", got, tc.unservable)
@@ -116,16 +133,18 @@ func TestPolicyMythosKeepsTheOtherRules(t *testing.T) {
 }
 
 // The counting caption says in one line which accounts a live Mythos session
-// leaves the login, or that none is marked (DESIGN A106).
+// leaves the login, or why it leaves the login free: none is marked, or the
+// marked ones have no room (DESIGN A106).
 func TestCountingCaptionNamesMythos(t *testing.T) {
 	for name, tc := range map[string]struct {
 		sessions, unservable, mythos []string
 		want                         string
 	}{
-		"served":     {[]string{"mythos"}, nil, []string{"2", "5"}, "counting 5h + 7d; live Mythos session: only accounts 2, 5; no live Fable session"},
-		"not-served": {[]string{"mythos"}, []string{"Mythos"}, nil, "counting 5h + 7d; Mythos not served: no account marked; no live Fable session"},
-		"both":       {[]string{"fable", "mythos"}, []string{"Fable", "Mythos"}, nil, "counting 5h + 7d; Fable not counted: no usable account can serve it; Mythos not served: no account marked"},
-		"without":    {[]string{"opus"}, nil, nil, "counting 5h + 7d; no live Fable session"},
+		"served":      {[]string{"mythos"}, nil, []string{"2", "5"}, "counting 5h + 7d; live Mythos session: only accounts 2, 5; no live Fable session"},
+		"not-served":  {[]string{"mythos"}, []string{"Mythos"}, nil, "counting 5h + 7d; Mythos not served: no account marked; no live Fable session"},
+		"marked-full": {[]string{"mythos"}, []string{"Mythos"}, []string{"2", "5"}, "counting 5h + 7d; Mythos not served: marked accounts 2, 5 have no room; no live Fable session"},
+		"both":        {[]string{"fable", "mythos"}, []string{"Fable", "Mythos"}, nil, "counting 5h + 7d; Fable not counted: no usable account can serve it; Mythos not served: no account marked"},
+		"without":     {[]string{"opus"}, nil, nil, "counting 5h + 7d; no live Fable session"},
 	} {
 		if got := CountingCaption(false, nil, tc.sessions, tc.unservable, nil, tc.mythos); got != tc.want {
 			t.Errorf("%s: %q, want %q", name, got, tc.want)

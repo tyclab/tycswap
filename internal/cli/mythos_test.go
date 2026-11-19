@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -108,10 +109,12 @@ func TestStartWhileAMythosSessionRuns(t *testing.T) {
 	}
 }
 
-// A Mythos start on a marked account at its limit: start --started records
-// the session as Mythos before its tick, so that tick keeps the login on the
-// marked account although an unmarked one has room.
-func TestMythosStartAtItsLimitStaysOnTheMarkedAccount(t *testing.T) {
+// A Mythos start on the only marked account, at its limit: start holds the
+// login and hands the family on; start --started records the session as
+// Mythos before its tick. Mythos cannot be served there (a hard limit, no
+// other marked account with room), so that tick moves the login as it would
+// without the session (DESIGN A106).
+func TestMythosStartAtItsLimitIsRecordedBeforeItsTick(t *testing.T) {
 	sw, rec := mythosStart(t, "", map[string][3]float64{"1": {10, 20, 30}, "2": {10, 100, 30}, "5": {10, 10, 10}}, nil, []string{"2"})
 	startModel(t, "claude-mythos-5-2")
 	token := envValue(rec.env, holdVar)
@@ -126,10 +129,10 @@ func TestMythosStartAtItsLimitStaysOnTheMarkedAccount(t *testing.T) {
 	if family, _, ok := reporting.RecordedSession(sw.BackupDir(), "s-live"); !ok || family != "mythos" {
 		t.Fatalf("recorded %q %v", family, ok)
 	}
-	if liveSlot(sw) != "2" {
-		t.Fatalf("live account %s, want the marked 2", liveSlot(sw))
+	if liveSlot(sw) != "5" {
+		t.Fatalf("live account %s, want 5: Mythos is not served at a hard limit", liveSlot(sw))
 	}
-	if state := heldStateOf(t, sw); state["startHolds"] != nil || state["lastSwitchTo"] != "2" {
+	if state := heldStateOf(t, sw); state["startHolds"] != nil || state["lastSwitchTo"] != "5" {
 		t.Fatalf("state = %v", state)
 	}
 }
@@ -302,6 +305,54 @@ func TestDashboardSetsTheMythosMark(t *testing.T) {
 	}
 }
 
+// onceTick runs `auto --once --json` (dry when asked) and returns the switch
+// it made or would make ("switch to N", "" for none), its trigger and the poll
+// event's unservable list as JSON ("" without one).
+func onceTick(t *testing.T, dry bool) (moved, trigger, unservable string) {
+	t.Helper()
+	args := []string{"auto", "--once", "--json"}
+	if dry {
+		args = append(args, "--dry-run")
+	}
+	_, out, _ := runCodex(t, "", args...)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		ev := decodeJSON(t, line)
+		switch ev["event"] {
+		case "poll":
+			if ev["unservable"] != nil {
+				raw, _ := json.Marshal(ev["unservable"])
+				unservable = string(raw)
+			}
+		case "switch":
+			to, _ := ev["to"].(map[string]any)
+			moved = fmt.Sprintf("switch to %v", to["number"])
+			trigger, _ = ev["trigger"].(string)
+		}
+	}
+	return moved, trigger, unservable
+}
+
+// writeCountingUsage rewrites the cached usage as countingStore writes it,
+// as a fetch after a window's reset would: 5h, 7d and Fable per account.
+func writeCountingUsage(t *testing.T, sw *core.Switcher, usage map[string][3]float64) {
+	t.Helper()
+	now := time.Now()
+	rows := map[string]any{}
+	for num, u := range usage {
+		email := map[string]string{"1": "alice@example.com", "2": "bob@example.com", "5": "carol@example.com"}[num]
+		reset := now.Add(3 * time.Hour).UTC().Format(time.RFC3339)
+		rows[num] = map[string]any{"email": email, "organizationUuid": "", "fetchedAt": float64(now.Unix()) - 30, "lastGood": map[string]any{
+			"five_hour": map[string]any{"pct": u[0], "resets_at": reset},
+			"seven_day": map[string]any{"pct": u[1], "resets_at": reset},
+			"scoped":    []any{map[string]any{"name": "Fable", "pct": u[2], "resets_at": reset}},
+		}}
+	}
+	raw, _ := json.Marshal(map[string]any{"schemaVersion": 2, "accounts": rows})
+	if err := os.WriteFile(filepath.Join(sw.BackupDir(), "cache", "usage.json"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // A scheduled tick with the live login at its 5-hour limit and an unmarked
 // account with the most room: a live Mythos session keeps the login among the
 // marked accounts; with no account marked the tick is the one without the
@@ -321,27 +372,55 @@ func TestAutoOnceWithAMythosSession(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			sw, _ := mythosStart(t, tc.live, usage, nil, tc.marks)
 			useCodexSource(t, &fakeCodexSource{})
-			_, out, errb := runCodex(t, "", "auto", "--once", "--dry-run", "--json")
-			moved, unservable := "", ""
-			for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-				ev := decodeJSON(t, line)
-				switch ev["event"] {
-				case "poll":
-					if ev["unservable"] != nil {
-						raw, _ := json.Marshal(ev["unservable"])
-						unservable = string(raw)
-					}
-				case "switch":
-					to, _ := ev["to"].(map[string]any)
-					moved = fmt.Sprintf("switch to %v", to["number"])
-				}
-			}
-			if moved != tc.want || unservable != tc.unservable {
-				t.Fatalf("%q, unservable %s; want %q, %s (stdout %q stderr %q)", moved, unservable, tc.want, tc.unservable, out, errb)
+			if moved, _, unservable := onceTick(t, true); moved != tc.want || unservable != tc.unservable {
+				t.Fatalf("%q, unservable %s; want %q, %s", moved, unservable, tc.want, tc.unservable)
 			}
 			if liveSlot(sw) != "1" {
 				t.Fatalf("dry run moved the login to %s", liveSlot(sw))
 			}
 		})
 	}
+}
+
+// Mythos restricts the login only while it can be served (A91's rule): with
+// every marked account at a limit the tick moves as without the session and
+// names Mythos unservable; a marked login over its bar but below its hard
+// limit stays, since the Mythos session still runs there; at its hard limit
+// it leaves for an unmarked account; once a marked account is below its bars
+// again, the next tick restricts again and moves the login there (DESIGN A106).
+func TestAutoOnceServesMythosOnlyWithRoom(t *testing.T) {
+	full := [3]float64{100, 40, 30}
+	for name, tc := range map[string]struct {
+		marks      []string
+		login      [3]float64
+		want       string
+		unservable string
+	}{
+		"marked-full-login-unmarked": {[]string{"5"}, [3]float64{90, 50, 30}, "switch to 2", `["Mythos"]`},
+		"login-marked-over-its-bar":  {[]string{"1", "5"}, [3]float64{90, 50, 30}, "", ""},
+		"login-marked-at-its-limit":  {[]string{"1", "5"}, [3]float64{100, 50, 30}, "switch to 2", `["Mythos"]`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			usage := map[string][3]float64{"1": tc.login, "2": {5, 10, 30}, "5": full}
+			sw, _ := mythosStart(t, "claude-mythos-5-2", usage, nil, tc.marks)
+			useCodexSource(t, &fakeCodexSource{})
+			if moved, _, unservable := onceTick(t, true); moved != tc.want || unservable != tc.unservable {
+				t.Fatalf("%q, unservable %s; want %q, %s", moved, unservable, tc.want, tc.unservable)
+			}
+			if liveSlot(sw) != "1" {
+				t.Fatalf("dry run moved the login to %s", liveSlot(sw))
+			}
+		})
+	}
+	t.Run("marked-account-back-below-its-bars", func(t *testing.T) {
+		sw, _ := mythosStart(t, "claude-mythos-5-2", map[string][3]float64{"1": {90, 50, 30}, "2": {5, 10, 30}, "5": full}, nil, []string{"5"})
+		useCodexSource(t, &fakeCodexSource{})
+		if moved, _, unservable := onceTick(t, false); moved != "switch to 2" || unservable != `["Mythos"]` || liveSlot(sw) != "2" {
+			t.Fatalf("first tick %q, unservable %s, live %s", moved, unservable, liveSlot(sw))
+		}
+		writeCountingUsage(t, sw, map[string][3]float64{"1": {90, 50, 30}, "2": {5, 10, 30}, "5": {10, 40, 30}})
+		if moved, trigger, unservable := onceTick(t, false); moved != "switch to 5" || trigger != "model-missing" || unservable != "" || liveSlot(sw) != "5" {
+			t.Fatalf("second tick %q (%s), unservable %s, live %s", moved, trigger, unservable, liveSlot(sw))
+		}
+	})
 }

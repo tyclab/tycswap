@@ -1608,27 +1608,38 @@ identity keep it, a new identity starts unmarked, and export carries none.
 
 `mythos` is a model family: the status line records a session on
 `claude-mythos-…` (a change from Fable to Mythos is news and runs a tick).
-While a live default-store session is recorded as Mythos, the scheduled tick
-(`auto --once`, `--observe`, `start --started`) keeps the default login on the
-marked accounts:
+While a live default-store session is recorded as Mythos (it counts while
+its process lives, idle or not; closing it lifts the restriction) and Mythos
+can be served, the scheduled tick (`auto --once`, `--observe`, `start
+--started`) keeps the default login on the marked accounts. Mythos can be
+served while a marked account of the pool (enabled, eligible, not
+quarantined, or the live one) is below the 5-hour, weekly and counted-model
+bars on the reading the engine decides on (an absent 5-hour window is room,
+an absent weekly one is not), or the live account is marked and not at a hard
+limit:
 
 - An unmarked account is no target. A tick that finds no marked target says
   `no-compatible-model-target`, detail `no qualifying target marked for
   Mythos; keeping the current account`, and stays.
-- A live account that is not marked hands over at once, cooldown or not, to a
-  marked account below every bar (trigger `model-missing`); without one it
-  stays and says `model-missing-no-target`, detail `the active account is not
-  marked for Mythos; no marked account is below every bar`.
+- A live account that is not marked hands over at once, whatever the
+  cooldown of the engine's own switch, to a marked account below every bar
+  (trigger `model-missing`); without one it stays and says
+  `model-missing-no-target`, detail `the active account is not marked for
+  Mythos; no marked account is below every bar`. A switch by hand holds it for
+  `autoswitch.cooldownSeconds`, as it holds every trigger.
 - The Fable reservation's hand-over (`reserved`) takes marked accounts only.
-- With no marked account in the pool (enabled, eligible, not quarantined, or
-  the live one), nothing is restricted: the tick is the one without the
-  session, and its `poll` event names `Mythos` in `unservable`.
+- When Mythos cannot be served (no account marked, or every marked one over
+  its bars and the live one, if marked, at a hard limit), nothing is
+  restricted: the tick is the one without the session, and its `poll` event
+  names `Mythos` in `unservable`. Once a marked account is below its bars
+  again, the next tick restricts again.
 
 `switch --strategy best` and the dashboard's *Next best* rank the marked
 accounts only, as the engine does; `next-available` and a switch by hand are
 not restricted. `auto.counting` carries `mythos`, the marked accounts, while
-the restriction holds, and its caption says it: `live Mythos session: only
-accounts 2, 5`, or `Mythos not served: no account marked`.
+a Mythos session runs, and its caption says it: `live Mythos session: only
+accounts 2, 5`, `Mythos not served: marked accounts 2, 5 have no room`, or
+`Mythos not served: no account marked`.
 
 `tycswap start` reads the session's model as for the store
 ([tycswap start](#tycswap-start)). For a Mythos session the candidates are the
@@ -1909,7 +1920,7 @@ serves nothing. An absent 5h window is room.
 A dropped model is named in the `poll` event as `unservable` (`not counted: Fable
 (no usable account can serve it)` on the human line), and the tick decides on
 5h and 7d. A live Mythos session restricts the login to the accounts marked
-for Mythos, and names `Mythos` there when none is marked
+for Mythos while one of them has room, and names `Mythos` there otherwise
 ([tycswap mythos](#tycswap-mythos)). `list`, `status`, `start` and the dashboard's at-limit marks count
 the same models.
 
@@ -3271,8 +3282,7 @@ counts now (DESIGN A91, A97): `{"mode", "models", "sessions",
 "unservable", "reserved", "caption"}`, `mode` `sessions` (`models` derived from the
 model families the live default sessions run, in `sessions`, minus
 `unservable`, with the accounts left to Fable work in `reserved`, and, while a
-live Mythos session restricts the login, the marked accounts in `mythos`,
-DESIGN A106) or `hosted`
+Mythos session runs, the marked accounts in `mythos`, DESIGN A106) or `hosted`
 (an engine hosted in this process, which does not follow sessions and counts
 5h and 7d only); `caption` says it in one line, e.g. `counting 5h + 7d; Fable not
 counted: no usable account can serve it`. `auto.ranking` is the order the

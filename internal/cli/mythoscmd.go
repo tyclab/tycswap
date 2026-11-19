@@ -85,7 +85,8 @@ func mythosNotice(stderr io.Writer, message string) {
 func renderMythosHelp(prog string, out io.Writer) int {
 	fmt.Fprintf(out, "usage: %s mythos --allow ID | --disallow ID | --list\n", prog)
 	fmt.Fprintln(out, "\nMark the accounts that may run Claude Mythos; nothing tycswap reads tells them apart.")
-	fmt.Fprintln(out, "While a session runs Mythos, auto-switch keeps the shared login on a marked account,")
-	fmt.Fprintln(out, "and start starts a Mythos session on one. With no account marked nothing is restricted.")
+	fmt.Fprintln(out, "While a session runs Mythos and a marked account has room, auto-switch keeps the shared login")
+	fmt.Fprintln(out, "on a marked account, and start starts a Mythos session on one. With none marked, or none with")
+	fmt.Fprintln(out, "room, nothing is restricted.")
 	return 0
 }

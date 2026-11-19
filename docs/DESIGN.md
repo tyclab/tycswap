@@ -8992,15 +8992,31 @@ row tag and menu line add `Mythos`, as they add `start login`.
 change of family is news (A77) and `start` learns the family of the session
 it launches.
 
-**The policy.** While a live default-store session is recorded as Mythos and
-an account in the policy's pool (A91: enabled, eligible, not quarantined, or
-the live one) is marked, `PolicyResult.Serves` is `Store.MythosCapable`; nil
-otherwise, which serves every account. With no marked account in the pool it
-restricts nothing and names `Mythos` in `Unservable`: a mark nobody set must
-never freeze rotation. The counted models and the reservation are as before:
+**The policy.** While a live default-store session is recorded as Mythos,
+`PolicyResult.Mythos` lists the marked accounts, and Mythos restricts the
+login only while it can be served, A91's rule for a model: an account of the
+policy's pool (enabled, eligible, not quarantined, or the live one) is marked
+and sits below the bars the engine moves at, on the reading the engine still
+decides on (`DecisionValue`, its trust age), on its 5-hour window (absent is
+room), its weekly window (absent is not) and every counted model window; or
+the live account is marked and not at a hard limit (binding headroom over
+those windows above 0). Then `PolicyResult.Serves` is
+`Store.MythosCapable`. Otherwise `Serves` is nil, which serves every account,
+and `Unservable` names `Mythos`: marks nobody set, or marks without room, must
+never freeze rotation. The first version restricted while any marked account
+was in the pool, so with every marked account at a limit the login stayed on
+an unmarked one at its bar, `no-compatible-model-target`, and every default
+session stopped while unmarked accounts had room (round-1 review, A91's fault
+of 2026-11-15 again). The counted windows join the test because the engine
+refuses a target over a counted window: a marked account with 5-hour and
+weekly room but a spent Fable week, while Fable counts, would freeze the
+login the same way. The counted models and the reservation are as before:
 Mythos has no window of its own, and Mythos-only sessions still reserve the
 Fable-capable accounts with Fable room (A77, A91). Mythos sessions on the
-Fable store are skipped as before (A102) and restrict nothing.
+Fable store are skipped as before (A102) and restrict nothing. Like every
+followed session, a Mythos session counts while its process lives, idle or
+not, and closing it lifts the restriction: its record outlives it for a day
+but counts only for a live process.
 
 **The engine** (`autoswitch.WithServes(model, serves)`, wired in
 `cli.defaultEngine`, nil for every other engine):
@@ -9013,7 +9029,11 @@ Fable store are skipped as before (A102) and restrict nothing.
   bar, not held by the cooldown (only by a start hold), naming no window;
   without a target it stays with `model-missing-no-target`, detail `the
   active account is not marked for Mythos; no marked account is below every
-  bar`. It never leaves a serving account for one that does not serve.
+  bar`. It never leaves a serving account for one that does not serve while
+  Mythos can be served.
+- A switch by hand onto an unmarked account holds that hand-over for
+  `autoswitch.cooldownSeconds`, as it holds every trigger (A94); after it the
+  login moves back to a marked account.
 - The Fable reservation's hand-over (A77, A102) takes serving accounts only.
 
 **Start.** `start` reads the session's model as for the store (A103), now
@@ -9030,21 +9050,28 @@ says `no usable start login`. The child of a Mythos session gets
 inherited one removed as `TYCSWAP_START_HOLD` is, override paths included.
 `start --started` records that family for the hook's `session_id` (Claude
 Code's hook input carries it for every event, SessionStart included) before
-its tick, so the policy restricts the login before the session's first status
-line: not for `clear` or `compact`, and not on a box without a store, which
-the record's lock would create. Without a start hold it records and does
-nothing else; the session's first status line is then no news.
+its tick, so the session counts before its first status line, for the timer's
+ticks and other sessions' starts too: not for `clear` or `compact`, and not on
+a box without a store, which the record's lock would create. Without a start
+hold it records and does nothing else; the session's first status line is
+then no news. A held Mythos start sits on a marked account at a hard limit,
+which start takes only when no marked account has room, so its `--started`
+tick finds Mythos not served and moves the login as without the session; the
+brief's test that this tick stays among the marked accounts no longer holds
+after the round-1 correction.
 
 **Switch by strategy.** `switch --strategy best` and the dashboard's *Next
 best* rank only the accounts the policy serves (`switching.Counting.Serves`),
 as A98 and A99 make them rank as the engine does. `next-available`, a rotation
 with skips, and a switch by hand are not restricted.
 
-**What the operator reads.** `reporting.CountingCaption` takes the served
+**What the operator reads.** `reporting.CountingCaption` takes the marked
 accounts: `counting 5h + 7d; live Mythos session: only accounts 2, 5; no live
-Fable session` or `counting 5h + 7d; Mythos not served: no account marked; …`.
-`auto.counting` carries them as `mythos` (omitted while nothing is
-restricted), and the `poll` event's `unservable` names `Mythos`.
+Fable session`, `counting 5h + 7d; Mythos not served: marked accounts 2, 5
+have no room; …` or `counting 5h + 7d; Mythos not served: no account marked;
+…`. `auto.counting` carries them as `mythos` while a Mythos session runs
+(omitted otherwise), and the `poll` event's `unservable` names `Mythos` while
+it is not served.
 
 **What stays.** A box without a mark and without a Mythos session is v0.16.2's:
 the engine's option is nil, the policy's `Serves` nil, the state document, list
@@ -9064,24 +9091,28 @@ from that field, not measured.
 **Tests.** In `autoswitch`: `TestMythosLoginStaysAmongMarkedAccounts` (the
 live shape: the login on a marked account at its 5-hour bar and at 100 %, an
 unmarked account with room), `TestMythosUnmarkedLoginMovesToAMarkedAccount`
-(with and without the cooldown), `TestMythosUnmarkedLoginStaysWithoutAServingTarget`,
+(with and without the cooldown of the engine's own switch),
+`TestMythosHandOverWaitsForASwitchByHand`, `TestMythosUnmarkedLoginStaysWithoutAServingTarget`,
 `TestMythosBoundsTheReservedHandOver` and `TestMythosNilFilterServesEveryAccount`.
 In `store`: `TestMythosFromOnlyAcceptsBooleanTrue`; in `lifecycle`:
 `TestMythosMarksPreserveMetadata` and `TestMythosMarkFollowsIdentity`; in
 `transfer`: `TestImportRetainsLocalMythosMarkOnlyForExistingIdentity`. In
 `reporting`: `TestRecordDefaultSessionModelRecordsMythos` (a Fable-to-Mythos
 change recorded and news), `TestPolicyRestrictsTheLoginToMythosAccounts` (no
-account marked: no filter and `Mythos` unservable; a marked account disabled;
-the live one), `TestPolicyMythosKeepsTheOtherRules`,
+account marked; a marked account disabled; the live one; every marked account
+at a limit; a marked live account over its bar and at its hard limit; a
+counted window spent; the Mythos session closed), `TestPolicyMythosKeepsTheOtherRules`,
 `TestCountingCaptionNamesMythos` and `TestListAndSnapshotShowTheMythosMark`.
 In `web`: `TestMythosRoutes` (auth, Codex, 503),
 `TestStateRowMythosOnlyWhenMarked` and `TestDashboardMythosControls`. In
 `cli`: `TestAutoOnceWithAMythosSession` (the tick with marks, with none: v0.16.2's
 target and `unservable`, and with an Opus session),
+`TestAutoOnceServesMythosOnlyWithRoom` (the round-1 states: every marked
+account at a limit; a marked login over its bar and at its hard limit; a
+marked account back below its bars),
 `TestMythosSessionStartsOnAMythosAccount`, `TestMythosSessionWithoutAMarkedAccount`,
-`TestStartWhileAMythosSessionRuns`, `TestMythosStartAtItsLimitStaysOnTheMarkedAccount`
-(the session's first tick, from `--started`, keeps the login on the marked
-account at its limit), `TestStartedRecordsTheFamilyWithoutAHold`,
+`TestStartWhileAMythosSessionRuns`, `TestMythosStartAtItsLimitIsRecordedBeforeItsTick`,
+`TestStartedRecordsTheFamilyWithoutAHold`,
 `TestStartRemovesAnInheritedFamily`, `TestMythosCommand`,
 `TestAutoViewReportsMythos`, `TestSwitchBestWhileAMythosSessionRuns`,
 `TestTrayMythosTag` and `TestDashboardSetsTheMythosMark`.
