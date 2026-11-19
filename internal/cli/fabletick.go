@@ -4,9 +4,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -96,19 +93,12 @@ func (a fableAdapter) ClearPollPolicyInputs() {
 	reporting.ClearScopedPollInputs(a.BackupDir(), a.fable.ScopeRoot())
 }
 
-// RecordedSwitch is the slot the Fable chain record names and when it was
-// written: every Fable switch writes it, so the engine can tell a switch from
-// a login made elsewhere.
+// RecordedSwitch is the Fable state file's switch stamp: every tycswap
+// switch of the Fable store writes it, by hand or the engine's, and nothing
+// else does. The Fable chain record is no such proof: the resolver writes it
+// for a login the profile endpoint names, one made elsewhere included.
 func (a fableAdapter) RecordedSwitch() (string, float64) {
-	var rec struct {
-		Slot   string  `json:"slot"`
-		SeenAt float64 `json:"seenAt"`
-	}
-	raw, err := os.ReadFile(filepath.Join(a.fable.ScopeRoot(), "live_lineage.json"))
-	if err != nil || json.Unmarshal(raw, &rec) != nil {
-		return "", 0
-	}
-	return rec.Slot, rec.SeenAt
+	return autoswitch.ReadSwitchStamp(a.fable.StatePath())
 }
 
 // LogSwitch is the engine's switch line, naming the store.

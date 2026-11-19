@@ -456,6 +456,61 @@ func TestFableTickLeavesAnUnknownLiveLogin(t *testing.T) {
 	}
 }
 
+// A login made elsewhere (a /login in a Fable-store session: a new grant only
+// the profile endpoint knows) is reported as the default tick reports one,
+// although resolving it writes the Fable chain record; a switch of the Fable
+// store by hand is not (DESIGN A102, F2-5).
+func TestFableTickReportsALoginMadeElsewhere(t *testing.T) {
+	for _, byHand := range []bool{false, true} {
+		t.Run(map[bool]string{false: "elsewhere", true: "by-hand"}[byHand], func(t *testing.T) {
+			fx := fableTickFixture{def: "3", live: "1", logins: []string{"1", "2"},
+				usage: map[string][3]float64{"1": {10, 20, 10}, "2": {10, 20, 10}, "3": {10, 20, 30}, "4": {10, 20, 30}}}
+			sw, _ := fx.build(t)
+			if code, out, _ := runCodex(t, "", "auto", "--once", "--json"); code != 2 {
+				t.Fatalf("tick 1 exit %d: %s", code, out)
+			}
+			var state map[string]any
+			if err := json.Unmarshal([]byte(readOrAbsent(t, fableStatePath(sw))), &state); err != nil || state["lastSeenLive"] != "1" {
+				t.Fatalf("after tick 1: %v (%v)", state, err)
+			}
+			// Two minutes pass; the fixture's clock stands still.
+			state["lastSeenAt"] = state["lastSeenAt"].(float64) - 120
+			raw, _ := json.Marshal(state)
+			writeFile(t, fableStatePath(sw), string(raw))
+			if byHand {
+				if r, err := sw.SwitchFable("2", true); err != nil || r["switched"] != true {
+					t.Fatalf("hand switch: %v, %v", r, err)
+				}
+			} else {
+				writeFile(t, filepath.Join(paths.FableStoreDir(sw.BackupDir()), ".credentials.json"),
+					`{"claudeAiOauth":{"accessToken":"at-elsewhere","refreshToken":"rt-elsewhere","expiresAt":4102444800000}}`)
+				sw.Store.OAuth = &oauth.FakeClient{ProfileFn: func(_ context.Context, token string) *oauth.Identity {
+					if token == "at-elsewhere" {
+						return &oauth.Identity{Email: fableEmail("2"), UUID: "u-2"}
+					}
+					return nil
+				}}
+			}
+			_, out, _ := runCodex(t, "", "auto", "--once", "--json")
+			_, fable, _ := splitByStore(t, out)
+			changed := eventOf(fable, "live-login-changed")
+			log := readOrAbsent(t, filepath.Join(sw.BackupDir(), "tycswap.log"))
+			if byHand {
+				if changed != nil || strings.Contains(log, "without a tycswap switch") {
+					t.Fatalf("a switch by hand reported as a login made elsewhere: %v", fable)
+				}
+				return
+			}
+			if changed == nil || changed["from"] != "1" || changed["to"] != "2" {
+				t.Fatalf("Fable events %v, want live-login-changed from 1 to 2", fable)
+			}
+			if !strings.Contains(log, "Fable store: Live login changed from account 1 to 2 without a tycswap switch") {
+				t.Fatalf("log:\n%s", log)
+			}
+		})
+	}
+}
+
 // Every Fable event carries "store":"fable" and its line names the store;
 // the default tick's lines are those of a run without the Fable store.
 func TestFableEventsCarryTheStore(t *testing.T) {
@@ -603,7 +658,14 @@ func TestFableAdapterMethods(t *testing.T) {
 	if err != nil || r["switched"] != true || r["store"] != "fable" {
 		t.Fatalf("switch %v, %v", r, err)
 	}
-	if slot, at := a.RecordedSwitch(); slot != "3" || at == 0 {
+	// The switch alone records nothing: the switch stamp its caller writes does.
+	if slot, at := a.RecordedSwitch(); slot != "" || at != 0 {
+		t.Fatalf("recorded switch %s at %v before a stamp", slot, at)
+	}
+	if err := autoswitch.HandSwitch(a.fable.StatePath(), sw.Clk, nil, func() (string, error) { return "3", nil }); err != nil {
+		t.Fatal(err)
+	}
+	if slot, at := a.RecordedSwitch(); slot != "3" || at != clock.Seconds(sw.Clk) {
 		t.Fatalf("recorded switch %s at %v", slot, at)
 	}
 	if entries := a.UsageEntriesByAccount(map[string]bool{}); entries["3"].LastGood == nil {

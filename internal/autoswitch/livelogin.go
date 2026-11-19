@@ -156,6 +156,16 @@ func (e *Engine) keptOut(cur, trigger string, axis usage.Class, quarantined, hel
 	return sortNumeric(out)
 }
 
+// ReadSwitchStamp is the switch stamp of the state file at statePath, the
+// slot a tycswap switch last made live and when (lastSwitchTo, lastSwitchAt),
+// "" and 0 without one; lock-free like ReadLastTick.
+func ReadSwitchStamp(statePath string) (slot string, at float64) {
+	state := readStateFile(statePath)
+	slot, _ = state["lastSwitchTo"].(string)
+	at, _ = numOfAny(state["lastSwitchAt"])
+	return slot, at
+}
+
 // ReadLastTick is when a real tick last saw the live login (lastSeenAt), as
 // epoch seconds, or nil before one did; lock-free like ReadQuarantineEntries.
 func ReadLastTick(statePath string) *float64 {

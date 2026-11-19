@@ -8264,9 +8264,16 @@ default store's collector, so one fetch path with the default login serves
 both stores (A100, 1.7). It names no session owner and has no rotation
 hooks: no profile or claim owns a Fable login. Its poll inputs are
 registered under the Fable scope's key. Its `RecordedSwitch` is the Fable
-chain record, which every Fable switch writes, so the engine tells a switch
-from a login made elsewhere and records `lastSeenLive`/`lastSeenAt` in the
-Fable state file. Its state file is `fable/autoswitch_state.json`.
+state file's switch stamp (`lastSwitchTo`, `lastSwitchAt`), which every
+tycswap switch of the Fable store writes, by hand or the engine's, and
+nothing else does, so the engine tells a switch from a login made elsewhere
+and records `lastSeenLive`/`lastSeenAt` in the Fable state file. The Fable
+chain record is no such proof: the resolver writes it whenever the profile
+endpoint names a login nobody switched in, and a real Fable tick resolves
+before the engine asks, so a login made elsewhere (a `/login` in a
+Fable-store session) went unreported until 2026-11-19; it is now reported
+as `live-login-changed`, as the default store reports one. Its state file is
+`fable/autoswitch_state.json`.
 
 **The pool** (`reporting.FablePool`) is every account that is enabled and
 rotation-eligible by the default rules, able to run Fable
