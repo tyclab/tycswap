@@ -958,6 +958,31 @@ func TestKeepAliveLeavesAQuarantinedLogin(t *testing.T) {
 	}
 }
 
+// The Fable store on Account-1 by its last install only (its login rotated
+// and not yet attributed): the keep-alive leaves 1, Claude Code's, and keeps
+// the oldest of the other idle logins alive (DESIGN A100, A102).
+func TestKeepAliveSkipsTheFableStoresLastInstall(t *testing.T) {
+	sw, asked := keepAliveFixture(t, map[string]time.Duration{"1": 40 * 24 * time.Hour, "3": 20 * 24 * time.Hour, "4": 24 * time.Hour}, func(creds string) oauth.RefreshOutcome {
+		return oauth.RefreshOutcome{Credentials: creds}
+	})
+	f, _ := sw.Store.ForFable()
+	held, _ := f.ReadAccountCredentials("1", fableEmail("1"))
+	if err := sw.Store.RecordFableLive("1", held); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(paths.FableStoreDir(sw.BackupDir()), ".credentials.json"),
+		`{"claudeAiOauth":{"accessToken":"at-rotated","refreshToken":"rt-rotated","expiresAt":4102444800000}}`)
+	data, _ := sw.ReadSequence()
+	if got := f.ResolveOwnerSlot(data); got.Slot != "1" || got.Source != store.SourceLastInstall {
+		t.Fatalf("the store's owner %+v, want Account-1 by last install", got)
+	}
+	a, _ := newFableAdapter(sw, sw.Log)
+	keepFableLoginAlive(a, sw, func(autoswitch.Event) {})
+	if got := refreshedSlots(asked); got != "2" {
+		t.Fatalf("refreshed %q, want 2 (the oldest idle login but the store's account 1)", got)
+	}
+}
+
 // A dry run keeps nothing alive; a real tick does, and checks the expired
 // live login too.
 func TestKeepAliveOnlyOnARealTick(t *testing.T) {

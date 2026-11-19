@@ -321,14 +321,15 @@ const (
 
 // keepFableLoginAlive refreshes the idle Fable login refreshed longest ago,
 // more than fableIdleAfter ago, so its refresh token does not expire unused.
-// The live login is Claude Code's to refresh; a quarantined one is left.
-// invalid_grant quarantines it in the Fable state file.
+// The Fable store's account, its last install included (ResolveOwnerSlot), is
+// Claude Code's to refresh; a quarantined one is left. invalid_grant
+// quarantines it in the Fable state file.
 func keepFableLoginAlive(a fableAdapter, sw *core.Switcher, emit func(autoswitch.Event)) {
 	data, _ := a.def.ReadSequence()
 	if data == nil {
 		return
 	}
-	live := a.def.Store.ResolveFableLiveSlot(data).Slot
+	live := a.fable.ResolveOwnerSlot(data).Slot
 	held := autoswitch.ReadQuarantineEntries(a.fable.StatePath())
 	now := sw.Clk.Now()
 	var pick, email, creds string

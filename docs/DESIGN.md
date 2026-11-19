@@ -8421,8 +8421,11 @@ the pilot). A real `auto --once` run with auto-switch on refreshes at most
 one idle Fable login, after the Fable tick or, while the store is off, in
 its place (2026-11-19: before, only a real Fable tick did, so after `switch
 --store fable --empty` every Fable login went unused until it expired): not
-live in the store, not quarantined, last refreshed more than 14 days ago,
-the oldest such. With the store off the run's stdout is unchanged unless a
+the Fable store's account, its last install included (`ResolveOwnerSlot`,
+A100; before 2026-11-19 only the resolved live slot was left, so a store
+on a rotated, unattributed login made the keep-alive pick that account,
+which the guarded refresh declines, and no other login was kept alive),
+not quarantined, last refreshed more than 14 days ago, the oldest such. With the store off the run's stdout is unchanged unless a
 refusal quarantines the login (`account-quarantined`, `store` `fable`). The last refresh is its `expiresAt` less 8 hours, the
 measured access-token life; a credential carries only its expiry. The
 refresh is `RefreshFableBackupGuarded`, logged at INFO as `Kept the Fable
