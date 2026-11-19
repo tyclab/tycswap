@@ -111,6 +111,11 @@ assert.match(text(ids['hdr-acct']), /Fable: #3 acct3@example\.com/);
 const hosted = fableState(); hosted.auto.owner = ''; hosted.auto.hosted = true;
 render(hosted);
 assert.equal(text(ids['auto-body'].children[0]), "Fable store: this dashboard's checks do not move it; a scheduler running tycswap auto --once does");
+// Nor while no Fable tick acts on it: auto-switch off, or the store off
+// (only a switch by hand turns it on, DESIGN A100).
+const autoOff = fableState(); autoOff.auto.running = false;
+render(autoOff);
+assert.equal(text(ids['auto-body'].children[0]), 'Fable store: not checked while off');
 
 // The store off: the header says so and names the command; the unusable
 // store warns.
@@ -119,6 +124,7 @@ render(off);
 const offLine = ids['hdr-acct'].all().find(e => e.className === 'hdr-fable');
 assert.equal(text(offLine), 'Fable store off');
 assert.equal(titleOf(offLine), 'Turn it on: tycswap switch --store fable <account>');
+assert.equal(text(ids['auto-body'].children[0]), 'Fable store: off; tycswap switch --store fable <account> turns it on');
 const unusable = fableState(); unusable.fable.state = 'unusable'; unusable.fable.reason = "Account-2's Fable login: sign in again";
 render(unusable);
 assert.match(text(ids['hdr-acct']), /Fable: #2 acct2@example\.com.*Fable login: sign in again/);

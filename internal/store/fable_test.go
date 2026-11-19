@@ -228,9 +228,10 @@ func TestFableReadsCreateNoDirectory(t *testing.T) {
 
 func TestFableStoreState(t *testing.T) {
 	live := fableCreds("at-f2", "rt-f2")
-	quarantine := func(fp string) string {
-		return `{"quarantine":{"2":{"email":"two@example.com","reason":"invalid_grant","at":"t","refreshTokenFingerprint":"` + fp + `"}}}`
+	quarantineFor := func(reason, fp string) string {
+		return `{"quarantine":{"2":{"email":"two@example.com","reason":"` + reason + `","at":"t","refreshTokenFingerprint":"` + fp + `"}}}`
 	}
+	quarantine := func(fp string) string { return quarantineFor("invalid_grant", fp) }
 	for _, tc := range []struct {
 		name       string
 		logins     bool
@@ -248,6 +249,10 @@ func TestFableStoreState(t *testing.T) {
 		{name: "dead entry, its fingerprint", logins: true, hasLogins: true, store: withMCP(live), state: quarantine(fingerprint(live)),
 			want: FableState{On: true, Live: LiveSlot{Slot: "2", Source: SourceBackup}}, reasonPart: "Account-2's Fable login: sign in again"},
 		{name: "dead entry, stale fingerprint", logins: true, hasLogins: true, store: withMCP(live), state: quarantine(fingerprint(fableCreds("x", "rt-old"))),
+			want: FableState{On: true, Usable: true, Live: LiveSlot{Slot: "2", Source: SourceBackup}}},
+		{name: "identity-conflict entry, its fingerprint", logins: true, hasLogins: true, store: withMCP(live), state: quarantineFor("identity-conflict", fingerprint(live)),
+			want: FableState{On: true, Live: LiveSlot{Slot: "2", Source: SourceBackup}}, reasonPart: "Account-2's Fable login: sign in again"},
+		{name: "identity-conflict entry, stale fingerprint", logins: true, hasLogins: true, store: withMCP(live), state: quarantineFor("identity-conflict", fingerprint(fableCreds("x", "rt-old"))),
 			want: FableState{On: true, Usable: true, Live: LiveSlot{Slot: "2", Source: SourceBackup}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -391,6 +396,33 @@ func TestResolveFableLiveSlotUnknownCredential(t *testing.T) {
 	}
 }
 
+// ResolveOwnerSlot names the last install for a login nothing else names,
+// while the roster holds the chain record's identity in its slot;
+// ResolveFableLiveSlot and FableStore keep their answer.
+func TestResolveOwnerSlotTakesTheFableStoresLastInstall(t *testing.T) {
+	s := fableFixture(t)
+	two := oauth.Identity{UUID: "u-2", Email: "two@example.com", OrgUUID: "org-2"}
+	putFableLogin(t, s, "2", fableCreds("at-f2", "rt-f2"))
+	writeFableChain(t, s, fableCreds("at-f2", "rt-f2"), "2", two)
+	putFableLive(t, s, fableCreds("at-f2-rotated", "rt-f2-rotated"))
+	data, _ := s.ReadSequence()
+	f := mustFable(t, s)
+	if got := f.ResolveOwnerSlot(data); got != (LiveSlot{Slot: "2", Source: SourceLastInstall}) {
+		t.Fatalf("owner %+v, want the last install", got)
+	}
+	if got := s.ResolveFableLiveSlot(data); got != (LiveSlot{}) {
+		t.Fatalf("ResolveFableLiveSlot = %+v, want no slot", got)
+	}
+	if got := s.FableStore().Live; got != (LiveSlot{}) {
+		t.Fatalf("FableStore().Live = %+v, want no slot", got)
+	}
+	writeSequenceRaw(t, s, strings.Replace(fableRoster, `"uuid": "u-2", "organizationUuid": "org-2"`, `"uuid": "u-9", "organizationUuid": "org-9"`, 1))
+	data, _ = s.ReadSequence()
+	if got := f.ResolveOwnerSlot(data); got.Slot != "" {
+		t.Fatalf("owner %+v after slot 2 changed identity, want none", got)
+	}
+}
+
 func TestResolveFableLiveSlotAsksTheProfileOnce(t *testing.T) {
 	s := fableFixture(t)
 	calls := 0
@@ -460,6 +492,20 @@ func TestRefreshFableBackupGuarded(t *testing.T) {
 		}}
 		if out := s.RefreshFableBackupGuarded(context.Background(), c, "2", fableEmails["2"], held); out.Error != RefreshDeclined {
 			t.Fatalf("outcome %+v", out)
+		}
+	})
+	t.Run("the store's login by last install is Claude Code's", func(t *testing.T) {
+		s := fableFixture(t)
+		two := oauth.Identity{UUID: "u-2", Email: "two@example.com", OrgUUID: "org-2"}
+		putFableLogin(t, s, "2", held)
+		writeFableChain(t, s, held, "2", two)
+		putFableLive(t, s, fableCreds("at-f2-rotated", "rt-f2-rotated"))
+		c := &oauth.FakeClient{RefreshFn: func(context.Context, string) oauth.RefreshOutcome {
+			t.Error("refreshed the rotated-away login of the account the store is on")
+			return oauth.RefreshOutcome{Error: oauth.ErrInvalidGrant}
+		}}
+		if out := s.RefreshFableBackupGuarded(context.Background(), c, "2", fableEmails["2"], held); out.Error != RefreshDeclined {
+			t.Fatalf("outcome %+v, want declined", out)
 		}
 	})
 	t.Run("invalid_grant comes back", func(t *testing.T) {

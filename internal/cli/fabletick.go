@@ -4,9 +4,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -96,19 +93,12 @@ func (a fableAdapter) ClearPollPolicyInputs() {
 	reporting.ClearScopedPollInputs(a.BackupDir(), a.fable.ScopeRoot())
 }
 
-// RecordedSwitch is the slot the Fable chain record names and when it was
-// written: every Fable switch writes it, so the engine can tell a switch from
-// a login made elsewhere.
+// RecordedSwitch is the Fable state file's switch stamp: every tycswap
+// switch of the Fable store writes it, by hand or the engine's, and nothing
+// else does. The Fable chain record is no such proof: the resolver writes it
+// for a login the profile endpoint names, one made elsewhere included.
 func (a fableAdapter) RecordedSwitch() (string, float64) {
-	var rec struct {
-		Slot   string  `json:"slot"`
-		SeenAt float64 `json:"seenAt"`
-	}
-	raw, err := os.ReadFile(filepath.Join(a.fable.ScopeRoot(), "live_lineage.json"))
-	if err != nil || json.Unmarshal(raw, &rec) != nil {
-		return "", 0
-	}
-	return rec.Slot, rec.SeenAt
+	return autoswitch.ReadSwitchStamp(a.fable.StatePath())
 }
 
 // LogSwitch is the engine's switch line, naming the store.
@@ -126,15 +116,28 @@ func (e fableEvent) JSON() map[string]any {
 	return v
 }
 
-func (e fableEvent) Human() string { return "Fable store: " + e.Event.Human() }
+// Human names the store; a quarantined Fable login is signed in again with
+// add --login --lineage fable, not re-added as a default login.
+func (e fableEvent) Human() string {
+	if q, ok := e.Event.(autoswitch.QuarantineEvent); ok {
+		return "Fable store: Account-" + q.Number + " (" + q.Email + ") quarantined: " + q.Reason +
+			". Sign its Fable login in again with 'tycswap add --login --lineage fable --slot " + q.Number + "'."
+	}
+	return "Fable store: " + e.Event.Human()
+}
 
 // fableTick runs the Fable store's tick after the default one, while the
 // store is on; ran is false when it does not run. The engine counts the Fable
 // windows the accounts report, always, with no reservation; a real tick
 // harvests the store's rotated login first and keeps one idle login alive
-// after.
+// after. With the store off a real run only keeps one idle login alive.
 func fableTick(sw *core.Switcher, merged settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool) (outcome autoswitch.TickOutcome, ran bool) {
 	if !sw.Store.FableStore().On {
+		if !dryRun && sw.Store.HasFableLogins() {
+			if a, err := newFableAdapter(sw, sw.Log); err == nil {
+				keepFableLoginAlive(a, sw, func(ev autoswitch.Event) { onEvent(fableEvent{ev}) })
+			}
+		}
 		return autoswitch.NoAction, false
 	}
 	if !dryRun {
@@ -209,7 +212,8 @@ func checkFableLive(a fableAdapter, sw *core.Switcher, s settings.AutoSwitchSett
 
 // leaveDeadFableLogin moves the Fable store off account dead's quarantined
 // login onto the account the cached usage ranks first among those with a
-// usable Fable login, else the first of them; with none it empties the store.
+// usable Fable login, else the first of them not known to be at a limit, else
+// the first; with none it empties the store.
 func leaveDeadFableLogin(a fableAdapter, sw *core.Switcher, dead, email string, s settings.AutoSwitchSettings, models []string, emit func(autoswitch.Event)) (moved, on bool) {
 	var pool []string
 	for _, num := range a.SwitchableAccountNumbers() {
@@ -219,21 +223,26 @@ func leaveDeadFableLogin(a fableAdapter, sw *core.Switcher, dead, email string, 
 	}
 	ts := sw.Clk.Now().UTC().Format("2006-01-02T15:04:05") + "Z"
 	warn := func(err error) { sw.Log.Warningf("Fable store: the switch off a dead login was not recorded: %v", err) }
-	// Turned off since the tick began, the store stays as it is: the key is
-	// re-read under the state lock, as the engine's own switch does (A83).
-	off := false
-	turnedOff := func() bool { off = !autoSwitchOn(sw.BackupDir()); return off }
+	// Turned off since the tick began, or moved off the dead login by another
+	// tick, the store stays as it is: both are re-read under the state lock,
+	// as the engine's own switch re-reads its state (A83).
+	stay := false
+	stays := func() bool {
+		data, _ := a.def.ReadSequence()
+		stay = !autoSwitchOn(sw.BackupDir()) || a.def.Store.ResolveFableLiveSlot(data).Slot != dead
+		return stay
+	}
 	if len(pool) == 0 {
 		emptied := false
 		held, err := autoswitch.EngineSwitch(a.fable.StatePath(), sw.Clk, s, warn, func() (string, error) {
-			if turnedOff() {
+			if stays() {
 				return "", nil
 			}
 			_, err := switching.EmptyFable(a.fable)
 			emptied = err == nil
 			return "", err
 		})
-		if off {
+		if stay {
 			return false, true
 		}
 		if !emptied {
@@ -245,10 +254,12 @@ func leaveDeadFableLogin(a fableAdapter, sw *core.Switcher, dead, email string, 
 			Detail: "Account-" + dead + "'s Fable login is dead and no other account has a usable one; the Fable store is empty, so Fable sessions start on the default login"})
 		return false, false
 	}
-	target := append(autoswitch.StartTargets(pool, a.UsageEntriesByAccount(map[string]bool{}), s, models, sw.Clk.Now()), pool...)[0]
+	entries, now := a.UsageEntriesByAccount(map[string]bool{}), sw.Clk.Now()
+	ranked := append(autoswitch.StartTargets(pool, entries, s, models, now), autoswitch.NotKnownAtALimit(pool, entries, models, now)...)
+	target := append(ranked, pool...)[0]
 	switched := false
 	held, err := autoswitch.EngineSwitch(a.fable.StatePath(), sw.Clk, s, warn, func() (string, error) {
-		if turnedOff() {
+		if stays() {
 			return "", nil
 		}
 		r, err := a.SwitchTo(target, true)
@@ -259,7 +270,7 @@ func leaveDeadFableLogin(a fableAdapter, sw *core.Switcher, dead, email string, 
 		switched = ok
 		return num, nil
 	})
-	if off {
+	if stay {
 		return false, true
 	}
 	if !switched {
@@ -310,14 +321,15 @@ const (
 
 // keepFableLoginAlive refreshes the idle Fable login refreshed longest ago,
 // more than fableIdleAfter ago, so its refresh token does not expire unused.
-// The live login is Claude Code's to refresh; a quarantined one is left.
-// invalid_grant quarantines it in the Fable state file.
+// The Fable store's account, its last install included (ResolveOwnerSlot), is
+// Claude Code's to refresh; a quarantined one is left. invalid_grant
+// quarantines it in the Fable state file.
 func keepFableLoginAlive(a fableAdapter, sw *core.Switcher, emit func(autoswitch.Event)) {
 	data, _ := a.def.ReadSequence()
 	if data == nil {
 		return
 	}
-	live := a.def.Store.ResolveFableLiveSlot(data).Slot
+	live := a.fable.ResolveOwnerSlot(data).Slot
 	held := autoswitch.ReadQuarantineEntries(a.fable.StatePath())
 	now := sw.Clk.Now()
 	var pick, email, creds string

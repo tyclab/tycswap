@@ -42,6 +42,32 @@ func TestModelFamilyExported(t *testing.T) {
 	}
 }
 
+// A provider's id carries the family as a whole word (F2-4); a string with no
+// family word, or with two, answers none.
+func TestModelFamilyOfAProviderID(t *testing.T) {
+	for model, want := range map[string]string{
+		"us.anthropic.claude-fable-5-2-v1:0": "fable", "anthropic.claude-opus-5-5-20261101-v1:0": "opus",
+		"claude-sonnet-5@20261001": "sonnet", "eu.anthropic.claude-haiku-5-v1:0[1m]": "haiku",
+		"opusplan": "", "default": "", "us.anthropic.claude-fableish-v1:0": "", "us.anthropic.claude-opus-fable-v1:0": "", "claude-opus-fable": "opus", "": "", "gpt-5.1:fast": "",
+	} {
+		if got := ModelFamily(model); got != want {
+			t.Errorf("ModelFamily(%q) = %q, want %q", model, got, want)
+		}
+	}
+}
+
+// A status line's provider id records nothing, as before (DESIGN A100: a box
+// without a Fable login behaves as v0.15.1).
+func TestProviderIDRecordsNoSessionModel(t *testing.T) {
+	root := t.TempDir()
+	if news, err := RecordDefaultSessionModel(root, "s1", "us.anthropic.claude-fable-5-2-v1:0", "", time.Unix(100, 0)); news || err != nil {
+		t.Fatalf("news %v, err %v", news, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "default_models.json")); !os.IsNotExist(err) {
+		t.Fatalf("default_models.json written (%v)", err)
+	}
+}
+
 func TestDefaultRecordHasNoStoreField(t *testing.T) {
 	root := t.TempDir()
 	if _, err := RecordDefaultSessionModel(root, "s1", "opus", "", time.Unix(100, 0)); err != nil {

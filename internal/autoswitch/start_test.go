@@ -36,6 +36,21 @@ func TestStartTargets(t *testing.T) {
 	}
 }
 
+// NotKnownAtALimit keeps an unread account, one with room and one whose
+// counted model window has room, in order, and drops a known 5h, 7d or
+// counted model window at 100 % (DESIGN A102).
+func TestNotKnownAtALimit(t *testing.T) {
+	entries := map[string]usage.UsageEntry{
+		"1": dictEntry(usageOf(10, 100)), "2": nilEntry(), "3": dictEntry(usageOf(100, 10)),
+		"4": dictEntry(usageOf(10, 20)), "5": dictEntry(map[string]any{"seven_day": win(10, ""), "scoped": []any{scopedWin("Fable", 100, "")}}),
+		"6": dictEntry(map[string]any{"seven_day": win(10, ""), "scoped": []any{scopedWin("Fable", 20, "")}}),
+	}
+	got := NotKnownAtALimit([]string{"1", "2", "3", "4", "5", "6"}, entries, []string{"Fable"}, baseTime)
+	if want := []string{"2", "4", "6"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("not known at a limit = %v, want %v", got, want)
+	}
+}
+
 // start reads cached usage by the engine's room rule: account 2's 5h window
 // was at 100 % and reset a minute ago, so it is a start target, not
 // none-usable (DESIGN A91).

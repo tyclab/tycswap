@@ -4,6 +4,8 @@ import (
 	"math"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/atomicfile"
+	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/usage"
 )
@@ -154,6 +156,49 @@ func (e *Engine) keptOut(cur, trigger string, axis usage.Class, quarantined, hel
 		}
 	}
 	return sortNumeric(out)
+}
+
+// ReadSwitchStamp is the switch stamp of the state file at statePath, the
+// slot a tycswap switch last made live and when (lastSwitchTo, lastSwitchAt),
+// "" and 0 without one; lock-free like ReadLastTick.
+func ReadSwitchStamp(statePath string) (slot string, at float64) {
+	state := readStateFile(statePath)
+	slot, _ = state["lastSwitchTo"].(string)
+	at, _ = numOfAny(state["lastSwitchAt"])
+	return slot, at
+}
+
+// RenumberLive carries a renumbering of accounts (old number to new) into the
+// state file at statePath, under its lock: lastSeenLive and lastSwitchTo
+// follow the account they name, every other field is kept. A move, swap or
+// add --slot changes an account's number, not the login a store holds, and
+// writes no switch stamp the Fable tick trusts (DESIGN A102). A file that
+// names no renumbered account is not written, nor its lock taken.
+func RenumberLive(statePath string, renumbered map[string]string) error {
+	keys := []string{"lastSeenLive", "lastSwitchTo"}
+	names := func(state map[string]any) bool {
+		for _, k := range keys {
+			if v, ok := state[k].(string); ok && renumbered[v] != "" {
+				return true
+			}
+		}
+		return false
+	}
+	if !names(readStateFile(statePath)) {
+		return nil
+	}
+	return filelock.New(stateLockPath(statePath), 0).With(func() error {
+		state := readStateFile(statePath)
+		if !names(state) {
+			return nil
+		}
+		for _, k := range keys {
+			if v, ok := state[k].(string); ok && renumbered[v] != "" {
+				state[k] = renumbered[v]
+			}
+		}
+		return atomicfile.WriteJSON(statePath, state, atomicfile.Opts{})
+	})
 }
 
 // ReadLastTick is when a real tick last saw the live login (lastSeenAt), as

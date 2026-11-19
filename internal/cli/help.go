@@ -42,7 +42,7 @@ Commands:
   tycswap remove <num|email>         remove an account
   tycswap disable <num|email>        hold an account out of auto-rotation
   tycswap enable <num|email>         return a disabled account to rotation
-  tycswap start [-- command args]    launch once on a usable marked login
+  tycswap start [-- command args]    launch once on a marked login, even at its limit
   tycswap start --allow|--disallow ID mark or unmark a start login (--list lists)
   tycswap alias <num|email> <name>   set a short alias for an account
   tycswap alias <num|email> --unset  remove an account's alias
@@ -138,6 +138,10 @@ const visibleOptions = `options:
   --lineage {default,fable}
                         With 'add --login': fable stores the sign-in as the
                         Fable login of the account it names
+  --store {default,fable}
+                        With 'switch': fable switches the Fable store, to an
+                        account (switch --store fable <num|email>) or off
+  --empty               With 'switch --store fable': turn the Fable store off
   --force               Overwrite existing accounts during import; with
                         'switch <num|email>', activate without backing up first
   -y, --yes             With 'switch <num|email>' onto an API-key account:

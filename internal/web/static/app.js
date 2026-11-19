@@ -1109,7 +1109,7 @@
   function statusChips(a) {
     var out = [];
     if (a.isActive) { out.push(chip('active', 'active')); }
-    if (isClaude(a) && a.startLogin) { out.push(chip('start login', 'outline', 'eligible for startup selection')); }
+    if (isClaude(a) && a.startLogin) { out.push(chip('start login', 'outline', 'used to start sessions, even at its limit')); }
     if (a.atLimit) { out.push(chip('at limit', 'crit', (a.limitingWindows || []).join(', ') || 'a window is at 100%')); }
     if (a.disabled) { out.push(chip('disabled', 'outline', 'held out of auto-rotation')); }
     if (a.ownershipBlockReason) { out.push(chip('held by another profile', 'warn', a.ownershipBlockReason)); }
@@ -1597,7 +1597,7 @@
       autoStateLine(st).forEach(function (n) { line.appendChild(typeof n === 'string' ? document.createTextNode(n) : n); });
       // The state's caption opens with "counting"; the label already says it.
       $('auto-counting').textContent = 'Counting now: ' + countingLine(st, models).replace(/^counting /, '');
-      var fableAuto = fableAutoLine(a);
+      var fableAuto = fableAutoLine(st);
       if (fableAuto) { body.appendChild(fableAuto); }
 
       var tiles = el('div', { class: 'tiles' });
@@ -1684,12 +1684,17 @@
 
   // fableAutoLine: the Fable store's engine in one line (DESIGN A104): under
   // a scheduler what its tick counts and the account it would take next;
-  // only `auto --once` runs a Fable tick (A102), so not under this dashboard.
-  function fableAutoLine(a) {
-    var f = a && a.fable;
+  // only `auto --once` runs a Fable tick (A102), so not under this dashboard,
+  // and only while auto-switch and the store are on.
+  function fableAutoLine(st) {
+    var a = st.auto, f = a && a.fable;
     if (!f) { return null; }
     var text = "Fable store: this dashboard's checks do not move it; a scheduler running " + NAME + ' auto --once does';
-    if (a.owner) {
+    if (st.fable && st.fable.state === 'off') {
+      text = 'Fable store: off; ' + NAME + ' switch --store fable <account> turns it on';
+    } else if (!autoOn(st)) {
+      text = 'Fable store: not checked while off';
+    } else if (a.owner) {
       var caption = String(f.caption || 'Counting 5h + 7d');
       var next = f.ranking && f.ranking.length ? 'next #' + f.ranking[0] : 'no account to take next';
       text = 'Fable store: ' + caption.charAt(0).toLowerCase() + caption.slice(1) + ' \u00b7 ' + next;

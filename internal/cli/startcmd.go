@@ -18,6 +18,7 @@ import (
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 )
@@ -26,8 +27,17 @@ var startExec = launch.Exec
 var startResolve = launch.Resolve
 var startResolveDefault = launch.ResolveDefault
 
-// startSelect is the default start-login selection; tests watch it.
+// startSelect is the default start-login selection; tests watch it. It
+// returns the start hold's token for the child, "" for none (DESIGN A105).
 var startSelect = selectStartLogin
+
+// startSelectFable is the start-login selection on the Fable store for a
+// session that starts on it (DESIGN A105).
+var startSelectFable = selectFableStartLogin
+
+// startHoldEnv carries a start hold's token to the session's SessionStart
+// hook, tycswap start --started (DESIGN A105).
+const startHoldEnv = "TYCSWAP_START_HOLD"
 
 type startArguments struct {
 	account, action, id string
@@ -63,7 +73,7 @@ func parseStartArguments(argv []string) (startArguments, error) {
 				}
 				parsed.action, parsed.id = tok, argv[i]
 			}
-		case "--list":
+		case "--list", "--started":
 			if parsed.action != "" || parsed.account != "" {
 				return parsed, fmt.Errorf("management options are exclusive")
 			}
@@ -95,6 +105,10 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 	if parsed.help {
 		return renderStartHelp(prog, streams.out)
 	}
+	if parsed.action == "--started" {
+		startStarted(streams.in)
+		return 0
+	}
 	if parsed.action != "" {
 		return startManagement(parsed, streams)
 	}
@@ -118,7 +132,7 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 	}
 	root := paths.GetBackupRoot()
 	storeDir := filepath.Clean(paths.FableStoreDir(root))
-	childEnv := env
+	childEnv, hold := env, ""
 	if reason := startOverride(env, parsed.command, storeDir); reason != "" {
 		if parsed.account != "" {
 			startNotice(streams.err, "Skipping the requested start login because "+reason+"; launching unchanged.")
@@ -131,13 +145,20 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 		if notice != "" {
 			startNotice(streams.err, notice)
 		}
-		if !onFable || parsed.account != "" {
-			startSelect(parsed.account, streams.err)
-		}
-		if onFable && parsed.account != "" {
-			startNotice(streams.err, "--account selects the default login; this Fable session starts on the Fable store"+accountSuffix(fable.Live.Slot)+".")
+		// Every session starts on a start login of the default store, a
+		// Fable-store session on one of the Fable store's too, under the
+		// same token (DESIGN A105).
+		hold = startSelect(parsed.account, streams.err)
+		if onFable {
+			fableHold, toDefault := startSelectFable(parsed.account, streams.err, hold)
+			if toDefault {
+				childEnv = withoutFableStore(env, storeDir)
+			} else if fableHold != "" {
+				hold = fableHold
+			}
 		}
 	}
+	childEnv = withStartHold(childEnv, hold)
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
@@ -201,15 +222,15 @@ func startStoreProblem(root string) string {
 	return ""
 }
 
-func selectStartLogin(account string, stderr io.Writer) {
+func selectStartLogin(account string, stderr io.Writer) (hold string) {
 	if problem := startStoreProblem(paths.GetBackupRoot()); problem != "" {
 		startNotice(stderr, problem)
-		return
+		return ""
 	}
 	sw, err := newSwitcher(store.Options{OAuth: oauth.NewHTTPClient(), Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
 	if err != nil {
 		startNotice(stderr, "Could not open the account store; launching on the current login.")
-		return
+		return ""
 	}
 	if account != "" {
 		data, readErr := sw.SequenceForUpdate()
@@ -218,7 +239,7 @@ func selectStartLogin(account string, stderr io.Writer) {
 		}
 		if readErr != nil {
 			reportStartSelection(sw, stderr, "Could not select the requested start login: "+readErr.Error()+"; launching on the current login.")
-			return
+			return ""
 		}
 	}
 	outcome := autoswitch.StartSelection(autoswitchAdapter{sw}, account, func() (autoswitch.StartSnapshot, error) {
@@ -230,6 +251,78 @@ func selectStartLogin(account string, stderr io.Writer) {
 	if outcome.Switched {
 		sw.Log.Action("Switched to account "+outcome.To, "start")
 	}
+	return outcome.Hold
+}
+
+// withStartHold is env with startHoldEnv set to token, or without it for "",
+// so a session never inherits another's hold; env itself when unchanged.
+func withStartHold(env []string, token string) []string {
+	out := env
+	for i, entry := range env {
+		if key, _, _ := strings.Cut(entry, "="); envKeyIs(key, startHoldEnv) {
+			out = append([]string(nil), env[:i]...)
+			for _, rest := range env[i+1:] {
+				if key, _, _ := strings.Cut(rest, "="); !envKeyIs(key, startHoldEnv) {
+					out = append(out, rest)
+				}
+			}
+			break
+		}
+	}
+	if token == "" {
+		return out
+	}
+	return append(out[:len(out):len(out)], startHoldEnv+"="+token)
+}
+
+// selectFableStartLogin is start's selection on the Fable store: the marked
+// accounts in the Fable pool (reporting.FablePool) are the candidates, or
+// account alone; the Fable store's live account is the current one; the
+// switch is the engine's Fable switch, stamped and held in the Fable state
+// file under its lock, the hold under token when the default selection holds
+// one. With none of them in the pool toDefault is true: the session starts on
+// the default login. Without marks, or with auto-switch off and no account,
+// it changes nothing (DESIGN A105).
+func selectFableStartLogin(account string, stderr io.Writer, token string) (hold string, toDefault bool) {
+	sw, err := newSwitcher(store.Options{OAuth: oauth.NewHTTPClient(), Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
+	if err != nil {
+		return "", false
+	}
+	a, err := newFableAdapter(sw, sw.Log)
+	if err != nil {
+		return "", false
+	}
+	if account != "" {
+		data, readErr := sw.SequenceForUpdate()
+		if readErr == nil {
+			account, _, _, readErr = sw.ResolveAccountFrom(data, account)
+		}
+		if readErr != nil {
+			return "", false
+		}
+	}
+	snapshot := func() (autoswitch.StartSnapshot, error) { return readFableStartSnapshot(sw, account) }
+	snap, err := snapshot()
+	if err != nil {
+		reportStartSelection(sw, stderr, "Fable store: Could not select a start login: "+err.Error()+"; continuing with the current login.")
+		return "", false
+	}
+	if account == "" && (len(snap.Marked) == 0 || !snap.Settings.Enabled) {
+		return "", false
+	}
+	if len(snap.Candidates) == 0 {
+		reportStartSelection(sw, stderr, "no start login has a Fable login; starting on the default login.")
+		return "", true
+	}
+	outcome := autoswitch.StartSelection(a, account, snapshot, autoswitch.WithClock(sw.Clk), autoswitch.WithOAuthClient(sw.OAuth),
+		autoswitch.WithStatePath(a.fable.StatePath()), autoswitch.WithStartHoldToken(token))
+	if outcome.Detail != "" {
+		reportStartSelection(sw, stderr, "Fable store: "+outcome.Detail)
+	}
+	if outcome.Switched {
+		sw.Log.Action("Switched the Fable store to account "+outcome.To, "start")
+	}
+	return outcome.Hold, false
 }
 
 func reportStartSelection(sw *core.Switcher, stderr io.Writer, detail string) {
@@ -263,16 +356,63 @@ func readStartSnapshot(sw *core.Switcher, account string) (autoswitch.StartSnaps
 	live := view.ResolveLiveSlot(data)
 	snap.Current = live.Slot
 	snap.CurrentMarked = store.StartLoginFrom(data, snap.Current)
-	if account == "" && snap.CurrentMarked || account != "" && snap.Current == account {
-		if live.Source == store.SourceConfig && view.AccountKindFor(snap.Current) == "oauth" {
-			return snap, fmt.Errorf("current login ownership could not be verified from cached credentials; run tycswap status to reconcile it")
-		}
+	current := account == "" && snap.CurrentMarked || account != "" && snap.Current == account
+	if current && live.Source == store.SourceConfig && view.AccountKindFor(snap.Current) == "oauth" {
+		return snap, fmt.Errorf("current login ownership could not be verified from cached credentials; run tycswap status to reconcile it")
+	}
+	// With auto-switch off a current start login gets no start hold (DESIGN A105).
+	if current && !set.Enabled {
 		return snap, nil
 	}
 	snap.Settings = defaultSessionPolicy(view, set, view.Clk.Now()).Settings
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
 		if (account == "" && store.StartLoginFrom(data, num) || account == num) && view.RotationEligible(data, num) {
+			snap.Candidates = append(snap.Candidates, num)
+		}
+	}
+	snap.Entries = (&core.Switcher{Store: view}).UsageEntriesByAccount(map[string]bool{})
+	return snap, nil
+}
+
+// readFableStartSnapshot is start's snapshot of the Fable store: the live
+// slot from backup or chain only, the candidates the marked accounts (or
+// account) in the Fable pool, counted on the Fable windows as the Fable tick
+// counts them. It makes no request.
+func readFableStartSnapshot(sw *core.Switcher, account string) (autoswitch.StartSnapshot, error) {
+	view := sw.Store.WithoutLineageWrites()
+	view.OAuth, view.Log = nil, nil
+	data, err := view.SequenceForUpdate()
+	if err != nil {
+		return autoswitch.StartSnapshot{}, err
+	}
+	set, err := loadStartSettings(view.BackupDir())
+	if err != nil {
+		return autoswitch.StartSnapshot{}, err
+	}
+	snap := autoswitch.StartSnapshot{Settings: set}
+	for _, n := range data.Sequence {
+		if num := strconv.Itoa(n); store.StartLoginFrom(data, num) {
+			snap.Marked = append(snap.Marked, num)
+		}
+	}
+	if account == "" && (len(snap.Marked) == 0 || !set.Enabled) {
+		return snap, nil
+	}
+	pool := map[string]bool{}
+	for _, num := range reporting.FablePool(view) {
+		pool[num] = true
+	}
+	snap.Current = view.FableStore().Live.Slot
+	snap.CurrentMarked = pool[snap.Current] && store.StartLoginFrom(data, snap.Current)
+	snap.Settings.Model = nil
+	if names := reporting.FableWindowNames(view, view.Clk.Now()); len(names) > 0 {
+		model := strings.Join(names, ",")
+		snap.Settings.Model = &model
+	}
+	for _, n := range data.Sequence {
+		num := strconv.Itoa(n)
+		if (account == "" && store.StartLoginFrom(data, num) || account == num) && pool[num] {
 			snap.Candidates = append(snap.Candidates, num)
 		}
 	}
@@ -351,11 +491,16 @@ func startNotice(stderr io.Writer, message string) string {
 func renderStartHelp(prog string, out io.Writer) int {
 	fmt.Fprintf(out, "usage: %s start [--account ID] [--] [command [args...]]\n", prog)
 	fmt.Fprintf(out, "       %s start --allow ID | --disallow ID | --list\n", prog)
-	fmt.Fprintln(out, "\nStart on a usable marked login, then launch once (default: real Claude).")
+	fmt.Fprintf(out, "       %s start --started\n", prog)
+	fmt.Fprintln(out, "\nStart on a marked login, then launch once (default: real Claude). A marked login with room")
+	fmt.Fprintln(out, "comes first; one at its limit is still used, and auto-switch leaves it there until the session")
+	fmt.Fprintln(out, "is up: --started, run as Claude Code's SessionStart hook, says so, else the hold ends after 30 s.")
 	fmt.Fprintln(out, "Selection failures launch on the current login. Arguments pass unchanged.")
 	fmt.Fprintln(out, "--account also works with auto-switch off; inherited auth/profile overrides skip selection.")
-	fmt.Fprintln(out, "Sessions on a Fable model start on the Fable store when one is on (tycswap add --login --lineage fable).")
+	fmt.Fprintln(out, "Sessions on a Fable model start on the Fable store when one is on (tycswap add --login --lineage fable),")
+	fmt.Fprintln(out, "which moves to a marked login with a Fable login too; with marks but none such, they start on the default login.")
 	fmt.Fprintln(out, "The environment passes unchanged, except CLAUDE_SECURESTORAGE_CONFIG_DIR: start sets it to the Fable store")
-	fmt.Fprintln(out, "for a Fable session while that store is usable, and removes it from any other session when it names that store.")
+	fmt.Fprintln(out, "for a Fable session while that store is usable, and removes it from any other session when it names that store;")
+	fmt.Fprintln(out, "and TYCSWAP_START_HOLD: start sets it for a session it holds a login at its limit for, and removes it from any other.")
 	return 0
 }

@@ -38,6 +38,7 @@ tycswap start [--account ID] [--] [command [args...]]
                                             choose a startup login, then launch once
 tycswap start --allow ID | --disallow ID | --list
                                             manage startup marks (Claude accounts)
+tycswap start --started                     end a session's start hold (a SessionStart hook)
 tycswap auto [--once] [--json] [--interval SECONDS] [--five-hour-threshold PCT]
            [--seven-day-threshold PCT] [--model-threshold PCT] [--cooldown SECONDS]
            [--dry-run]                      auto-switch when nearing rate limits
@@ -147,8 +148,9 @@ the host of the endpoint its requests go to (the whole URL is in `--json`).
 While an account has a Fable login (DESIGN A100, A104), tags follow the other
 markers: `(Fable store)` on the Fable store's account, `(Fable login)` on
 another account whose Fable login the store can use, and `(Fable login: sign
-in again)` on one whose Fable login the Fable engine quarantined on
-`invalid_grant`. `(active)` stays the default login's.
+in again)` on one whose Fable login the Fable engine quarantined
+(`invalid_grant`, or `identity-conflict`) and that has not been signed in
+again since. `(active)` stays the default login's.
 When usage cannot be fetched the row reads `usage unavailable (<reason>)` where
 `<reason>` is the last fetch error (for example `http-429`, `http-401`).
 
@@ -213,7 +215,7 @@ Present only when applicable (additive, schemaVersion 1):
 | `usageFetchedAt` | string (ISO-8601 UTC) | `usage` is non-null and the measurement time is known. |
 | `usageAgeSeconds` | number | Emitted with `usageFetchedAt`. |
 | `usageRefresh` | object | A usage fetch was skipped and none has been attempted since: `skipReason` (string) says why, for example `owner holds an expired token; Claude Code refreshes it on next use`, and `skipAt` (string, ISO-8601 UTC, seconds) since when. The next attempted fetch, successful or failed, removes both. |
-| `fableLogin` | object | The account has a Fable login (DESIGN A104): `{"live": bool, "status": "ok" \| "sign in again"}`. `live` is whether the Fable store holds it; `sign in again` means the Fable engine quarantined it on `invalid_grant`. |
+| `fableLogin` | object | The account has a Fable login (DESIGN A104): `{"live": bool, "status": "ok" \| "sign in again"}`. `live` is whether the Fable store holds it; `sign in again` means the Fable engine quarantined it (`invalid_grant`, or `identity-conflict`: it authenticates as another account) and it has not been signed in again since: a quarantine entry whose fingerprint is neither the stored Fable login's nor the Fable store's live login's names a replaced login and reads `ok` at once, before the engine releases it. |
 
 The `usageStatus` enumeration:
 
@@ -339,7 +341,7 @@ object (DESIGN A104), whatever `active` is; without one it is absent:
 
 | Key | Type | Meaning |
 |-----|------|---------|
-| `state` | string | `on`, `off` (the store holds no login) or `unusable` (its login is quarantined on `invalid_grant`). |
+| `state` | string | `on`, `off` (the store holds no login) or `unusable` (its login is quarantined: `invalid_grant`, or `identity-conflict`). |
 | `storeDir` | string | The Fable store's directory, the value `tycswap start` gives Fable sessions in `CLAUDE_SECURESTORAGE_CONFIG_DIR`. |
 | `number` | int \| null | The Fable store's account; `null` while off or unknown. |
 | `email`, `organizationName`, `plan`, `usageStatus`, `usage` | | That account's, in the shapes of `active`, while it is known (`plan` when recorded). The usage is the account's shared row, fetched with its default login, never with the Fable one. |
@@ -411,7 +413,7 @@ tycswap switch --store fable --empty [--json] [--debug]
 | `--force` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; activates without backing up the current login first. When the live credential already belongs to the target while `~/.claude.json` names another slot, it repairs the config instead, as without `--force` (DESIGN A68). |
 | `--yes` / `-y` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; answers the API-key confirmation below, for scripts. |
 | `--strategy` | choice `best` \| `next-available` | unset | Only with bare `switch` (no target). |
-| `--store` | `fable` \| `default` | `default` | Only with `switch`. `fable` switches the Fable store (below) and takes an account or `--empty`, never `--strategy` or `--force`; `default` is the switch without `--store`. |
+| `--store` | `fable` \| `default` | `default` | Only with `switch`. `fable` switches the Fable store (below) and takes an account or `--empty`, never `--strategy` or `--force`; with it the account, `--store fable` and the options come in any order. `default` is the switch without `--store`, whose account comes before its options. |
 | `--empty` | flag | off | Only with `--store fable`: turns the Fable store off. |
 | `--debug` | flag | off | — |
 
@@ -566,14 +568,16 @@ sign-in, its *Fable login*, in `credentials-fable/`. The *Fable store*,
 `<backup root>/fable/store/`, holds the one Fable login live there; Fable
 sessions run with `CLAUDE_SECURESTORAGE_CONFIG_DIR` set to it. `switch --store
 fable <id>` makes the account's Fable login the Fable store's live login: the
-outgoing one goes back into its account's Fable login (or, when no account can
-be named for it, into the unclaimed stash in `credentials-fable/`), and the
+outgoing one goes back into its account's Fable login (one nothing else names
+is taken for the account tycswap last installed there, with a copy in the
+unclaimed stash; with no such account it goes into the stash only), and the
 incoming one is installed with the store's own MCP server logins. It needs an
 OAuth account with a Fable login on a plan that offers Fable. It never touches
 the default login, `~/.claude.json`, the roster, `credentials/` or `configs/`,
 and it holds the Fable store's engine only, for `autoswitch.cooldownSeconds`.
 `switch --store fable --empty` puts the live Fable login back into its file
-and leaves the store with its MCP server logins only: the store is off, and
+and leaves the store with its MCP server logins only, and no chain record:
+the store is off, and
 Fable sessions start on the default login. `switch --store fable <id>` turns
 it on again. A box without Fable logins is unchanged. macOS has no Fable
 store.
@@ -592,7 +596,8 @@ backup root. Acquires the backup-root and Claude Code credential locks.
 
 `--store fable` reads the roster and writes only `fable/store/.credentials.json`
 (atomically, 0600), the outgoing account's Fable login in `credentials-fable/`
-(`.prev` kept) or the unclaimed stash there, `fable/live_lineage.json`, and
+(`.prev` kept) or the unclaimed stash there, `fable/live_lineage.json`
+(removed by `--empty`), and
 the hold in `fable/autoswitch_state.json` under `fable/.autoswitch_state.lock`.
 It acquires the backup-root lock, then the Fable store's own Claude Code
 credential-refresh lock (`fable/store.lock`) and storage-write lock
@@ -640,7 +645,10 @@ and `to` are both the target (DESIGN A68).
 
 `--store fable` prints `Switched the Fable store to Account-<n> (<email>).`,
 `The Fable store is already on Account-<n>.`, or, with `--empty`, `The Fable
-store is off now; Fable sessions start on the default login.` With `--json`:
+store is off now; Fable sessions start on the default login.`, and `The Fable
+store holds no login; Fable sessions start on the default login.` when it held
+none (also on a box without a Fable login, where nothing is created). With
+`--json`:
 
 ```
 {
@@ -1371,6 +1379,7 @@ tycswap start [--account ID] [--] [command [args...]]
 tycswap start --allow ID
 tycswap start --disallow ID
 tycswap start --list
+tycswap start --started
 ```
 
 ### Description
@@ -1382,7 +1391,8 @@ records; absent or non-boolean values mean false. They follow the same identity
 through re-login, re-add, slot changes and a forced import over that identity.
 Alias and disabled metadata survive those refreshes too. A different identity
 reusing a slot, or a newly imported identity, starts unmarked. Marks do not
-change disabled state or imply model access.
+change disabled state or imply model access. `--started` is the release of a
+start hold, run by a Claude Code SessionStart hook (see [Start hold](#start-hold)).
 
 The launch form defaults to the real Claude executable. Parse only the prefix
 before `--` or the first command; every remaining argument is passed unchanged.
@@ -1393,41 +1403,75 @@ the mark and auto-on requirements; disabled, API-key, quarantined, unsafe-owner
 and incompatible-model targets still cannot be selected. Selection uses cached
 usage only, with no usage API request, and the engine's counted-model policy.
 Accounts below every counted bar rank first, then unknown or above-bar accounts
-that are below 100%; within a tier, lowest binding usage wins with sequence
-order for ties. Any known counted window at 100% excludes the target. Missing
-required model coverage excludes it too. Guarded credential preparation may
-refresh a near-expiry login or release an eligible idle legacy profile.
+that are below 100%; within these tiers, lowest binding usage wins with sequence
+order for ties. Accounts at a limit (a known counted window at 100%) come last,
+in sequence order: a start login is used even at its limit, and the start hold
+below keeps auto-switch from moving it before the session is up (DESIGN A105).
+Missing required model coverage excludes a target. Guarded credential
+preparation may refresh a near-expiry login or release an eligible idle legacy
+profile.
 
 A set `CLAUDE_CONFIG_DIR` (including empty), `--bare` in the child arguments,
 or any variable in the existing Claude auth-override contract skips selection.
 The inherited environment and arguments are passed unchanged, even with an
-explicit `--account`. `CLAUDE_SECURESTORAGE_CONFIG_DIR` counts as an override
-unless it names the Fable store (`<backup root>/fable/store`, compared
-cleaned; case-insensitively on Windows). No new profile or claim is created.
+explicit `--account`, less an inherited `TYCSWAP_START_HOLD`.
+`CLAUDE_SECURESTORAGE_CONFIG_DIR` counts as an override unless it names the
+Fable store (`<backup root>/fable/store`, compared cleaned; case-insensitively
+on Windows). No new profile or claim is created.
 Marks are managed independently of these launch-only overrides.
 
 Without an override, `start` picks the session's credential store by its
-model family. The first source that names a model answers: `--model X` or
-`--model=X` (the last one), `ANTHROPIC_MODEL`, for `--resume ID`, `-r ID` or
-`--resume=ID` with a UUID the session's record in `default_models.json` and
-else the last assistant line in the last 1 MiB of
-`~/.claude/projects/*/ID.jsonl` (no symlink out of `projects/`), then the
-`model` key of `<cwd>/.claude/settings.local.json`, `<cwd>/.claude/settings.json`
-and `~/.claude/settings.json`. A bare `--resume`, `--continue` and `-c` give no
-model of their own. Aliases and full ids (with `[1m]`) count alike.
+model family. The settings it reads are, in this order, the `--settings`
+value (`--settings X` or `--settings=X`, the last one: JSON when it starts
+with `{`, else a file relative to the working directory),
+`<cwd>/.claude/settings.local.json`, `<cwd>/.claude/settings.json` and
+`~/.claude/settings.json`. The first source that names a model answers:
+
+1. `--model X` or `--model=X` (the last one);
+2. `ANTHROPIC_MODEL`;
+3. `env.ANTHROPIC_MODEL` of the settings, in their order (Claude Code applies
+   a settings `env` block as environment);
+4. for `--resume ID`, `-r ID` or `--resume=ID` with a UUID, the session's
+   record in `default_models.json`, else the last assistant line in the last
+   1 MiB of `~/.claude/projects/*/ID.jsonl` (no symlink out of `projects/`);
+5. the `model` key of the settings, in their order.
+
+A bare `--resume`, `--continue` and `-c` give no model of their own. Aliases,
+full ids (with `[1m]`) and a provider's id such as
+`us.anthropic.claude-fable-5-2-v1:0` count alike. Not read, so a session that
+runs Fable by one of these starts on the default login with no notice: no
+model named anywhere, `--model default` or a settings `model` of `default`
+(Claude Code takes the login's own default), `ANTHROPIC_DEFAULT_MODEL` and
+`ANTHROPIC_DEFAULT_<FAMILY>_MODEL` (`--model opus` with
+`ANTHROPIC_DEFAULT_OPUS_MODEL` naming a Fable model reads as Opus), managed
+settings, and a wrapper command (`tycswap start -- bash -lc "claude --model
+fable"`: only the child's own arguments are read).
 
 | Family | Fable store | Child environment | Selection | Notice on stderr |
 | --- | --- | --- | --- | --- |
-| Fable | on and usable | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | skipped | none |
+| Family | Fable store | Child environment | Selection | Notice on stderr |
+| --- | --- | --- | --- | --- |
+| Fable | on and usable, a marked account with a usable Fable login | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | runs, then runs on the Fable store too | the selections' own, the Fable store's starting `Fable store: ` |
+| Fable | on and usable, marks but none with a usable Fable login | that variable removed if it named the store | runs | `tycswap start: no start login has a Fable login; starting on the default login.` |
+| Fable | on and usable, no marks, or auto-switch off without `--account` | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | runs; the Fable store stays | none |
 | Fable | off or unusable, with Fable logins | that variable removed if it named the store | runs | `tycswap start: the Fable store has no usable login (<reason>); starting on the default login.` |
 | other, none, or no Fable login | – | that variable removed if it named the store | runs | none |
 
-Every other variable passes unchanged. The store's state comes from its files
-only (no network); a live Fable login whose account is unknown counts as
-usable. With a Fable session on the store, `--account ID` still selects the
-default login and prints `tycswap start: --account selects the default login;
-this Fable session starts on the Fable store (Account-N).`; the Fable store does
-not move. A box without a Fable login passes the environment unchanged, less a
+On the Fable store the candidates are the marked accounts that are enabled
+and eligible, whose plan offers Fable, that hold a Fable login and are not
+quarantined in `fable/autoswitch_state.json`; the current account is the Fable
+store's live one. They rank as above, counted on the Fable windows, and a
+switch moves the Fable store only (`tycswap start: Fable store: Switched to
+start login Account-<n>.`, logged `Switched the Fable store to account <n> by
+start`), stamped in `fable/autoswitch_state.json`. A selection there that
+fails otherwise says so and the session starts on the Fable store where it
+sits. `--account ID` selects the default login and is the Fable store's only
+candidate when it has a usable Fable login; otherwise the session starts on the
+default login with the notice above.
+
+Every other variable passes unchanged, but `TYCSWAP_START_HOLD` (below). The
+store's state comes from its files only (no network); a live Fable login whose account is unknown counts as
+usable. A box without a Fable login passes the environment unchanged, less a
 variable naming the Fable store. macOS has no Fable store and never sets the
 variable. A session keeps the store it started on: `/model` does not move it,
 and Fable subagents of another session run on that session's store.
@@ -1445,10 +1489,61 @@ The startup choice is best effort: cached usage can be stale, other sessions
 share the default login, and another switch can occur before the child reads
 credentials. Actual start switches stamp `lastSwitchAt` and `lastSwitchTo` and
 clear engine active-memory state. Proactive and reserved moves honor cooldown;
-at-limit, failover and model-missing moves may still happen. State-lock
-serialization prevents two starts from switching to the same already-live
-target, but an off/manual-switch or roster write racing after the final recheck
-can still win or lose. No strict startup-latency bound is promised.
+at-limit, failover and model-missing moves wait only for a start hold.
+State-lock serialization prevents two starts from switching to the same
+already-live target, but an off/manual-switch or roster write racing after the
+final recheck can still win or lose. A start login current and at its limit
+when `start` looks but moved before its recheck is reported as a selection
+change and the command runs on the current login. No strict startup-latency
+bound is promised.
+
+### Start hold
+
+When `start` settles on a login at a limit while auto-switch is on, by
+switching to it or because it is already current, it records a start hold in
+`autoswitch_state.json` under `.autoswitch_state.lock`, in the same write as
+the switch stamp: `"startHolds": {"<token>": <expiry>}`, the token 32 hex
+digits, the expiry epoch seconds 30 s on. The child gets
+`TYCSWAP_START_HOLD=<token>`; a session without a hold gets no such variable,
+and an inherited one is removed. The notice after such a switch reads
+`tycswap start: Switched to start login Account-<n>, which is at its limit;
+auto-switch moves on once the session is up.`; after any other switch it
+stays `tycswap start: Switched to start login Account-<n>.` A hold that
+cannot be written reads `tycswap start: Could not hold auto-switch for the
+starting session: <error>` and the child gets no token. With auto-switch off,
+`--account` at its limit switches as asked, with no hold. A login with room
+gets no hold: `start` is then as before. A Fable session's start login on the
+Fable store at a limit gets its hold in `fable/autoswitch_state.json`, which
+holds the Fable store's check, under the same token when the default login
+holds one too: the child gets one token.
+
+While a hold runs, every engine (the timer's and the status line's
+`auto --once`, the loop, the dashboard's) makes no switch, whatever the
+trigger, and reports `no-switch`, reason `cooldown`, detail `a session is
+starting; held for another <n>s`. A switch by hand is not held. Each write by
+`start` or `--started` drops the holds that have ended; a hold that ends more
+than 30 s from now holds nothing.
+
+`tycswap start --started` ends the session's hold. Add it to Claude Code's
+settings as a SessionStart hook:
+
+```json
+{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "tycswap start --started", "timeout": 45}]}]}}
+```
+
+Without `TYCSWAP_START_HOLD` it exits at once and opens nothing. It reads the
+hook's JSON on stdin unless stdin is a terminal (unreadable or empty input
+counts as `startup`) and does nothing for `source` `clear` or `compact`. It
+removes its token and the ended holds under each state file's lock, the
+default store's and the Fable store's; a token that is no longer there (its
+hold ended, or released before) changes nothing else. It then waits while
+another session is starting (it reads both state files every 100 ms, for at
+most 30 s), and runs one
+tick of the default store and the Fable store, as `auto --once` does, without
+its group retirement and Codex tick. It prints nothing on stdout, since a
+hook's stdout goes into the session, and exits 0 whatever happens; problems go
+to `tycswap.log`. Without the hook a hold ends after 30 s and the login moves
+at the next check; the session's first request can hit the limit.
 
 The dashboard exposes Claude-only **Allow for start** / **Disallow for start**.
 `list`, the dashboard and the tray show the mark; the tray has no mark setting.
@@ -1876,7 +1971,7 @@ Reads `sequence.json`, `settings.json`, `cache/usage.json`. `on` and `off`
 write `autoswitch.enabled` in `settings.json` under `.settings.lock`, as
 `tycswap config set` does. Reads and writes
 `autoswitch_state.json` (cooldown, quarantine, the active account's failover
-count and idle-hold start) under
+count and idle-hold start, and reads `tycswap start`'s start holds) under
 `.autoswitch_state.lock`.
 Reads and writes `live_lineage.json`, and harvests a token Claude Code
 refreshed itself into the live slot's backup, as `list` does; `--dry-run`
@@ -2976,9 +3071,12 @@ tabs:
   them. The quarantine; a link to the Settings tab. While an account has a
   Fable login, a line `Fable store: <auto.fable.caption> · next #M` says what
   the Fable store's checks count and the account they would take next while
-  a scheduler runs the checks (`auto.owner`); otherwise it reads `Fable store:
-  this dashboard's checks do not move it; a scheduler running tycswap auto
-  --once does`, since only `auto --once` runs a Fable tick (DESIGN A102).
+  a scheduler runs the checks (`auto.owner`) with auto-switch and the Fable
+  store on; with the store off it reads `Fable store: off; tycswap switch
+  --store fable <account> turns it on`, with auto-switch off `Fable store: not
+  checked while off`, and otherwise `Fable store: this dashboard's checks do
+  not move it; a scheduler running tycswap auto --once does`, since only
+  `auto --once` runs a Fable tick, and only while both are on (DESIGN A102).
   The page starts no dry run (`tycswap auto --dry-run` does) and has no event
   log: a scheduler's ticks print to its journal.
 - **Settings**: the `settings.json` keys `tycswap config` knows
@@ -3096,7 +3194,8 @@ the object `status --json` carries; each Claude row with a Fable login
 carries `fableLogin` as in `list --json`; and `auto.fable` is the Fable
 store's engine: `{"lastTickAt", "caption", "ranking", "quarantine",
 "heldUntil"?}`, read from `fable/autoswitch_state.json` (`lastTickAt` epoch
-seconds or null, `quarantine` as `auto.quarantine`), `caption` `Counting 5h +
+seconds or null, `quarantine` as `auto.quarantine`, less the entries of logins
+signed in again since), `caption` `Counting 5h +
 7d` and every Fable window an account reports, `ranking` the order a Fable
 tick would take the Fable pool in (DESIGN A102), and `heldUntil` (epoch
 seconds) while a switch of the Fable store by hand holds its engine. A
@@ -3194,7 +3293,7 @@ anything else `500`.
 | `POST /api/launch` | | a one-time dashboard URL, `{"url": "http://127.0.0.1:<port>/?token=<t>"}`: the unused start URL, else a fresh one; for a remote tray, with the bearer token only | `403` with the cookie and CSRF pair, or without a remote token configured |
 | `POST /api/switch` | `{"strategy": "best"\|"next-available"}` | `tycswap switch --strategy`, counting what it counts (DESIGN A98); a `models` field is ignored (DESIGN A97) | `400` missing or unknown strategy |
 | `POST /api/switch/{key}[?force=1][&confirmAuthChange=1]` | | `tycswap switch <id> [--force] [--yes]`; `confirmAuthChange=1` records the user's yes to a switch onto an API-key account, which the page asks for first (DESIGN A33). A `codex:` key is `tycswap codex switch <id>` and answers `{"number", "email", "runningPids", "alreadyActive"}` | `400` bare key, an API-key target without `confirmAuthChange`, or `force` / `confirmAuthChange` with a `codex:` key; `404` unknown provider; `503` `confirmAuthChange` without account operations, or a `codex:` key without Codex accounts; `409` a `codex:` key while the Codex store stays busy for 10 s |
-| `POST /api/switch/{key}?store=fable[&empty=1]` | | `tycswap switch --store fable <id>`, a switch of the Fable store by hand that holds its engine for `autoswitch.cooldownSeconds`; with `empty=1`, on any key, `tycswap switch --store fable --empty`. Answers the switch's JSON (`"store": "fable"`); the default login, the roster and `.claude.json` are not written (DESIGN A104) | `400` another `store` value, a `codex:` key, or `force` / `confirmAuthChange`; the Fable switch's own refusals (an account without a Fable login, a plan without Fable) by kind; `503` without the Fable seam |
+| `POST /api/switch/{key}?store=fable[&empty=1]` | | `tycswap switch --store fable <id>`, a switch of the Fable store by hand that holds its engine for `autoswitch.cooldownSeconds`; with `empty=1`, on any key, `tycswap switch --store fable --empty`. Answers the switch's JSON (`"store": "fable"`); the default login, the roster and `.claude.json` are not written (DESIGN A104) | `400` another `store` value, the empty `store=` included, a `codex:` key, or `force` / `confirmAuthChange`; the Fable switch's own refusals (an account without a Fable login, a plan without Fable) by kind; `503` without the Fable seam |
 | `POST /api/accounts/add` | `{"provider": "claude"\|"codex"}` (optional) | `tycswap add`; answers `{"ok": true, "result": {"number", "email", "refreshed"}}`, the account the live login is now (`refreshed`: it was that account already). The tray's *Add current login* is the same call. With `codex`, `tycswap codex add`, answering `{"number", "email"}` | `500` `Claude Code has no subscription login on this computer. …` when Claude Code has no live login, before anything is stored; `400` unknown provider; `503` `codex` without Codex accounts; `409` `codex` while the Codex store stays busy for 10 s |
 | `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias", "baseUrl"}` | `tycswap add-token [--base-url]` (the token is never echoed or logged); `503` with a `baseUrl` when the facade cannot store one | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
 | `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y`; for a `codex:` key `tycswap codex enable`, `disable`, `remove -y`, holding the Codex store lock throughout | `400` bare key, `404` unknown provider, `503` a `codex:` key without Codex accounts, `409` the Codex store stayed busy (a Codex switch or a token refresh held it) for 10 s |
@@ -5143,7 +5242,7 @@ Inside the backup root:
 | `settings.json` | Settings (see SETTINGS). |
 | `claude-settings.prev.json` | Present while an API-key account with a base URL is active (DESIGN A46): what the three keys of Claude Code's `settings.json` the switch owns, `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN` (written) and `env.ANTHROPIC_API_KEY` (removed), held before (`{"version": 1, "settingsPath", "keys": {"<key>": {"present", "value"?}}}`, including whether `env` existed), mode 0600. A switch onto any other account restores them from it and removes it; one that is not a complete record (version 1, an entry for `env` and each key, nothing after it) is corrupt and stops the switch. `tycswap purge` deletes it and says so first. |
 | `mappings.json` | Directory→account mappings of the removed `tycswap map`; no longer read (DESIGN A92). |
-| `autoswitch_state.json` | `tycswap auto` cooldown, quarantine, failover-count, idle-hold and model-name-check state, guarded by `.autoswitch_state.lock`. |
+| `autoswitch_state.json` | `tycswap auto` cooldown, quarantine, failover-count, idle-hold and model-name-check state, and `tycswap start`'s start holds (`startHolds`, token → expiry, DESIGN A105), guarded by `.autoswitch_state.lock`. |
 | `configs/` | Per-account config snapshots, `.claude-config-<n>-<email>.json`. `<email>` is the account's email as `add` accepts it (one `@`, at most 254 bytes, no whitespace, control character, `/`, `\` or `< > : " | ? *`), so the name is a single path component. |
 | `credentials/` | Per-account credential files, `.creds-<n>-<email>.enc` and the retained previous generation `.creds-<n>-<email>.enc.prev` (file backend; `<email>` as for `configs/`). macOS stores these in the Keychain instead, except a credential too large to reach the `security` command over stdin (a command line over 4032 bytes, so a credential over about 2 KB, for example one carrying many `mcpOAuth` tokens), which stays in this file (mode 0600) rather than on a command line. The live Claude Code credential falls back to `.credentials.json` the same way. |
 | `sessions/` | Former per-account profiles of the removed `tycswap run` / `tycswap env`, `<n>-<email>` (the `@` in the email replaced by `_`); kept for their history (DESIGN A92). |
@@ -5154,7 +5253,7 @@ Inside the backup root:
 | `cache/usage.json` | Cached usage measurements. |
 | `live_lineage.json` | The chain record of the default login's live credential (DESIGN A68): `{"schemaVersion": 1, "fingerprint": "<sha256>", "slot": "<n>", "identity": {"uuid", "email", "orgUuid"}, "seenAt": <epoch-seconds>}`, mode 0600. Written without a lock (last writer wins) when the profile endpoint names the slot of the default login's live credential, and only when the record changes; a dry run or a store-only read never writes it, and a group scope's own login never reads or writes it. A derived cache: a missing or malformed file reads as absent, and a record whose slot the roster no longer maps to its identity is ignored. |
 | `credentials-fable/` | The accounts' Fable logins (DESIGN A100): `.creds-<n>-<email>.enc` and `.enc.prev`, the format of `credentials/`, always files, mode 0600; the Fable store's unclaimed stash. Absent until the first Fable login. |
-| `fable/` | The Fable store's scope (DESIGN A100), absent until the first Fable login: `autoswitch_state.json` (+ `.autoswitch_state.lock`), its engine state and hold, the root file's schema; `live_lineage.json`, its chain record, the root record's schema; `store/`, the Fable store itself, whose `.credentials.json` (0600) holds the live Fable login and the store's own `mcpOAuth`/`mcpOAuthClientConfig`, beside Claude Code's `store/.storage-write.lock/` and `store.lock/`. |
+| `fable/` | The Fable store's scope (DESIGN A100), absent until the first Fable login: `autoswitch_state.json` (+ `.autoswitch_state.lock`), its engine state, hold and `tycswap start`'s start holds, the root file's schema; `live_lineage.json`, its chain record, the root record's schema; `store/`, the Fable store itself, whose `.credentials.json` (0600) holds the live Fable login and the store's own `mcpOAuth`/`mcpOAuthClientConfig`, beside Claude Code's `store/.storage-write.lock/` and `store.lock/`. |
 | `statusline.json` | Label and quota per account for Claude Code status lines (see STATUS LINE STATE). Derived: never copied by `tycswap migrate`. |
 | `.statusline.lock` | Held while `statusline.json` is rebuilt. No data. |
 | `cache/update_check.json` | Last passive update-check result (`{"timestamp": <epoch-seconds>, "data": <latest-version>}`). |
@@ -5235,8 +5334,12 @@ line `<change> by <actor>` beside the change's own line.
   `engine:<trigger>` for an auto-switch, on its own line after the switch
   layer's unchanged `Switched from account <from> to <to>`. The Fable
   store's switches read `Switched the Fable store to account <n> by
-  engine:<trigger>` and `… by hand`, and every other line of its engine
-  starts with `Fable store: ` (DESIGN A102).
+  <actor>`, one line per move: `engine:<trigger>` for its engine, and for a
+  switch by hand the command's (`switch --store fable`, `add --login
+  --lineage fable`), the tray's or the dashboard's actor. Emptying it reads
+  `Emptied the Fable store by <actor>` alike, `by hand` when `remove` or
+  `add --slot` empties it. Every other line of its engine starts with
+  `Fable store: ` (DESIGN A102).
 - **Logins made elsewhere.** Every real tick (`auto` without `--dry-run`)
   records the live slot it saw and when (`lastSeenLive`, `lastSeenAt` in
   `autoswitch_state.json`; the dashboard's *Last tick*). When the live slot
@@ -5522,7 +5625,10 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   account or organization); the `account-quarantined` event carries the slot
   `number`, `email`, and this `reason`, and its human line is `Account-<n>
   (<email>) quarantined: <reason>. Log in with it and run 'tycswap --add-account
-  --slot <n>' to recover.` The state persists in `autoswitch_state.json`.
+  --slot <n>' to recover.` The state persists in `autoswitch_state.json`. A
+  Fable login's quarantine (the Fable tick's, in `fable/autoswitch_state.json`)
+  reads `Fable store: Account-<n> (<email>) quarantined: <reason>. Sign its
+  Fable login in again with 'tycswap add --login --lineage fable --slot <n>'.`
   Quarantine affects only `tycswap auto`; a direct `tycswap switch <n>` still
   activates a quarantined account. A quarantine is released automatically at the
   next real tick once the slot's recorded email changes (`account-replaced`) or

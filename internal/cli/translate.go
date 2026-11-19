@@ -39,8 +39,12 @@ func translateSubcommand(argv []string) []string {
 
 	if verb == "switch" {
 		// Bare `switch` rotates; `switch <num|email>` jumps to that account.
-		// --store and its value go last, so the account may follow it.
+		// --store and its value go last, so the account may follow it; with
+		// --store fable the account may also follow any other option.
 		rest, store := splitStoreFlag(rest)
+		if len(store) > 0 && strings.TrimPrefix(store[len(store)-1], "--store=") == "fable" {
+			rest = accountFirst(rest)
+		}
 		if len(rest) > 0 && !startsWithDash(rest[0]) {
 			return append(append([]string{"--switch-to"}, rest...), store...)
 		}
@@ -70,6 +74,26 @@ func splitStoreFlag(args []string) (rest, store []string) {
 		}
 	}
 	return rest, store
+}
+
+// switchValueFlags are the main parser's options that take a separate
+// value: the token after one is that value, not an account.
+var switchValueFlags = map[string]bool{"--strategy": true, "--slot": true, "--email": true, "--base-url": true, "--account": true, "--alias": true}
+
+// accountFirst moves the first positional argument before "--" to the
+// front, where the switch takes its account.
+func accountFirst(args []string) []string {
+	for i := 0; i < len(args); i++ {
+		switch tok := args[i]; {
+		case tok == "--":
+			return args
+		case switchValueFlags[tok]:
+			i++
+		case !startsWithDash(tok):
+			return append(append([]string{tok}, args[:i]...), args[i+1:]...)
+		}
+	}
+	return args
 }
 
 func startsWithDash(s string) bool {

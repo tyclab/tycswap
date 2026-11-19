@@ -43,7 +43,9 @@ type Engine struct {
 	sleeper Sleeper
 	rng     func() float64
 	// reserved: accounts this profile leaves to Fable work (DESIGN A71); nil reserves none.
-	reserved func(num string) bool
+	reserved     func(num string) bool
+	reservedLast func(num string) bool
+	holdToken    string
 	// unservable: derived models the policy dropped, named in the poll event (DESIGN A91).
 	unservable []string
 	// enabled is autoswitch.enabled, read at every tick (DESIGN A83); nil means on.
@@ -78,11 +80,19 @@ func WithReserved(reserved func(num string) bool) Option {
 	return func(e *Engine) { e.reserved = reserved }
 }
 
+// WithReservedLast names the reserved account taken last, left for any other below every bar (A102).
+func WithReservedLast(last func(num string) bool) Option {
+	return func(e *Engine) { e.reservedLast = last }
+}
+
 // WithUnservable names the derived models no usable account can serve; the
 // poll event reports them (DESIGN A91). The engine never counts them.
 func WithUnservable(models []string) Option {
 	return func(e *Engine) { e.unservable = append([]string(nil), models...) }
 }
+
+// WithStartHoldToken is the token StartSelection holds under, "" for new (DESIGN A105).
+func WithStartHoldToken(token string) Option { return func(e *Engine) { e.holdToken = token } }
 
 // WithEnabled is the on/off each tick reads first (DESIGN A83); nil means on.
 func WithEnabled(enabled func() bool) Option { return func(e *Engine) { e.enabled = enabled } }
@@ -171,6 +181,10 @@ func (e *Engine) emit(ev Event) { e.onEvent(ev) }
 
 // isReserved reports whether the engine leaves num to Fable work (DESIGN A71).
 func (e *Engine) isReserved(num string) bool { return e.reserved != nil && e.reserved(num) }
+
+func (e *Engine) isReservedLast(num string) bool {
+	return e.isReserved(num) && e.reservedLast != nil && e.reservedLast(num)
+}
 
 // nowSeconds returns wall time as fractional Unix seconds (Python self.clock()).
 func (e *Engine) nowSeconds() float64 { return clock.Seconds(e.clk) }

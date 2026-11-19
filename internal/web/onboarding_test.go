@@ -156,7 +156,9 @@ func TestIndexHTML_GuideTab(t *testing.T) {
 	for _, needle := range []string{"{{.Name}} config", "{{.Name}} upgrade", "{{.Name}} codex", "add --login", "Add account…", "Auto-switch",
 		"5-hour", "weekly", "Use for Fable", "{{.Name}} start", "127.0.0.1",
 		// Which checks follow the sessions' models.
-		"Count 5-hour and weekly use", "a scheduler also counts each", "{{.Name}} auto --observe"} {
+		"Count 5-hour and weekly use", "a scheduler also counts each", "{{.Name}} auto --observe",
+		// Only the row's chip carries the sign-in command; the header's names the account.
+		"Run the command in the tooltip of the chip in that account's row."} {
 		if !strings.Contains(guide, needle) {
 			t.Errorf("guide lacks %q", needle)
 		}
@@ -173,7 +175,7 @@ func TestIndexHTML_GuideTab(t *testing.T) {
 			t.Errorf("diagram %s: text must be real text and colours the page's own", m[1])
 		}
 	}
-	for _, gone := range []string{"Force switch", "{{.Name}} run", "{{.Name}} env", "Auto mode", "five hours after it filled",
+	for _, gone := range []string{"Force switch", "{{.Name}} run", "{{.Name}} env", "Auto mode", "five hours after it filled", "Run the command in its tooltip",
 		"keep the last good values", "Restart running Claude Code sessions", "Focus a row", "<code>autoswitch.", "five things to understand",
 		// Whether a session keeps an API key after a switch away from it is not
 		// settled (DESIGN A33 against reference.md's NOTES): the Guide names

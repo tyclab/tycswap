@@ -94,10 +94,12 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 		// A switch backs up the slot whose credential is live, not the one a
 		// rewritten ~/.claude.json names; --force keeps the config's slot
 		// unless it targets the credential's, which is a repair (DESIGN A68).
+		// While Fable logins exist a slot only the config names is no
+		// evidence: the owner is the last install, or unknown (DESIGN A100).
 		configSlot := ""
 		var live store.LiveSlot
 		if curOK {
-			if live = s.ResolveLiveSlot(data); live.ByLineage && (!forceActivate || live.Slot == targetAccount) {
+			if live = s.ResolveOwnerSlot(data); live.ByLineage && (!forceActivate || live.Slot == targetAccount) {
 				rec, _ := accountRec(data, live.Slot)
 				configSlot, currentAccount, curEmail = currentAccount, live.Slot, recStr(rec, "email")
 			}
@@ -108,7 +110,7 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 		if (forceActivate && !repair) || !curOK || currentAccount == "" {
 			var fromRef map[string]any
 			switch {
-			case !curOK:
+			case !curOK, live.ByLineage && live.Slot == "":
 				fromRef = nil
 			case live.ByLineage:
 				// The result names the credential's slot, which the activation replaced.
@@ -165,6 +167,11 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 			tx.restoreClear = tx.originalCredentials == ""
 		}
 
+		if live.Source == store.SourceLastInstall && !curEndpoint {
+			if err := stashLastInstall(s, originalCreds, currentAccount); err != nil {
+				return cerr.Switch("Could not preserve the live credential before backing it up into Account-%s (safety-copy write failed: %v); nothing was switched", currentAccount, err)
+			}
+		}
 		commitErr := normalSwitchBody(s, data, tx, targetAccount, targetEmail, currentAccount, curEmail, configSlot, originalCreds, originalConfig, curEndpoint, prov, emitOutput, &warningsOut)
 		plan = tx.plan
 		if commitErr != nil {

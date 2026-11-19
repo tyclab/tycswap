@@ -3,13 +3,17 @@
 package lifecycle
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/storenames"
@@ -108,6 +112,40 @@ func TestRemoveOfTheFableStoresAccountEmptiesTheStore(t *testing.T) {
 	}
 }
 
+// The Fable store is on Account-2 and Claude Code rotated its login since the
+// last harvest; the profile endpoint does not answer. Removing Account-2, or
+// putting another account in slot 2, empties the store first: the login is the
+// last install's, so it goes into Account-2's Fable login before that goes.
+func TestRemovingTheFableStoresAccountEmptiesAnUnattributedLogin(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		act  func(s *store.Store) error
+	}{
+		{"remove", func(s *store.Store) error { return RemoveAccount(s, "2", true) }},
+		{"add --slot", func(s *store.Store) error {
+			_, err := AddAccountFrom(s, loginAs(t, "z@example.com", "", planCreds("at-z", "rt-z", "max")), ip(2), true, nil)
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := withFableLogins(t, "2")
+			s.OAuth = &oauth.FakeClient{ProfileFn: func(context.Context, string) *oauth.Identity { return nil }}
+			putFableStore(t, s, planCreds("at-f2-rotated", "rt-f2-rotated", "max"))
+			if err := tc.act(s); err != nil {
+				t.Fatal(err)
+			}
+			if st := s.FableStore(); st.On {
+				t.Errorf("FableStore = %+v: Fable sessions keep starting on the removed account's login", st)
+			}
+			assertNoFableLogin(t, s, "2", "b@example.com")
+			f, _ := s.ForFable()
+			if rows, _ := f.Creds.ListUnclaimed(); len(rows) != 1 {
+				t.Errorf("unclaimed %v, want the store's login kept", rows)
+			}
+		})
+	}
+}
+
 func TestRemoveStopsWhenTheFableStoreCannotBeEmptied(t *testing.T) {
 	s := withFableLogins(t, "2")
 	prev := EmptyFableStore
@@ -119,6 +157,94 @@ func TestRemoveStopsWhenTheFableStoreCannotBeEmptied(t *testing.T) {
 		t.Fatalf("RemoveAccount = %v", err)
 	}
 	sameFiles(t, "the failed remove", before, everyFile(t, s))
+}
+
+// The Fable store is on Account-2 by its last install only: Claude Code
+// rotated the login and the profile endpoint does not answer. move, swap and
+// an add --slot that moves Account-2 take the chain record along, so the
+// store's login is still the moved account's last install.
+func TestRenumberingFollowsTheChainRecordOfAnUnattributedLogin(t *testing.T) {
+	for _, tc := range []struct {
+		name, to string
+		act      func(s *store.Store) error
+	}{
+		{"move", "5", func(s *store.Store) error { _, _, _, err := MoveAccount(s, "2", "5"); return err }},
+		{"swap", "1", func(s *store.Store) error { _, _, err := SwapAccounts(s, "1", "2"); return err }},
+		{"add --slot", "5", func(s *store.Store) error {
+			_, err := AddAccountFrom(s, signIn(t, "b@example.com", planCreds("at-n2", "rt-n2", "max")), ip(5), true, nil)
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := withFableLogins(t, "2")
+			s.OAuth = &oauth.FakeClient{ProfileFn: func(context.Context, string) *oauth.Identity { return nil }}
+			putFableStore(t, s, planCreds("at-f2-rotated", "rt-f2-rotated", "max"))
+			if err := tc.act(s); err != nil {
+				t.Fatal(err)
+			}
+			f, _ := s.ForFable()
+			if got := f.ResolveOwnerSlot(readSeq(t, s)); got.Slot != tc.to || got.Source != store.SourceLastInstall {
+				t.Errorf("the store's owner = %+v, want Account-%s by last install", got, tc.to)
+			}
+		})
+	}
+}
+
+// move, swap, add --slot and add-token --slot carry the renumbering into the
+// Fable engine state: lastSeenLive and lastSwitchTo follow their account and
+// every other field stays, so the next Fable tick reports no login made
+// elsewhere (DESIGN A102). A state file that does not exist is not created.
+func TestRenumberingCarriesTheFableEngineState(t *testing.T) {
+	email, five := "b@example.com", "5"
+	for _, tc := range []struct {
+		name, seen, switchTo string
+		act                  func(t *testing.T, s *store.Store) error
+	}{
+		{"move", "5", "1", func(t *testing.T, s *store.Store) error { _, _, _, err := MoveAccount(s, "2", "5"); return err }},
+		{"swap", "1", "2", func(t *testing.T, s *store.Store) error { _, _, err := SwapAccounts(s, "1", "2"); return err }},
+		{"add --slot", "5", "1", func(t *testing.T, s *store.Store) error {
+			_, err := AddAccountFrom(s, signIn(t, email, planCreds("at-n2", "rt-n2", "max")), ip(5), true, nil)
+			return err
+		}},
+		{"add-token --slot", "5", "1", func(t *testing.T, s *store.Store) error {
+			return AddAccountFromToken(s, "sk-ant-oat01-N2", &email, &five, true)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := withFableLogins(t, "2")
+			f, _ := s.ForFable()
+			before := map[string]any{"schemaVersion": 1.0, "lastSeenLive": "2", "lastSeenAt": 100.0, "lastSwitchTo": "1", "lastSwitchAt": 50.0,
+				"lastSwitchBy": "hand", "active": map[string]any{"number": "2", "unhealthyTicks": 1.0, "idleHoldSince": nil},
+				"quarantine": map[string]any{"3": map[string]any{"email": "c@example.com", "reason": "invalid_grant", "at": "t", "refreshTokenFingerprint": nil}}}
+			raw, _ := json.Marshal(before)
+			if err := os.WriteFile(f.StatePath(), raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := tc.act(t, s); err != nil {
+				t.Fatal(err)
+			}
+			var after map[string]any
+			if err := json.Unmarshal([]byte(readFile(t, f.StatePath())), &after); err != nil {
+				t.Fatal(err)
+			}
+			before["lastSeenLive"], before["lastSwitchTo"] = tc.seen, tc.switchTo
+			if !reflect.DeepEqual(after, before) {
+				t.Fatalf("state %v, want %v", after, before)
+			}
+		})
+	}
+	t.Run("no state file", func(t *testing.T) {
+		s := withFableLogins(t, "2")
+		f, _ := s.ForFable()
+		if _, _, _, err := MoveAccount(s, "2", "5"); err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range []string{f.StatePath(), filepath.Join(filepath.Dir(f.StatePath()), ".autoswitch_state.lock")} {
+			if exists(p) {
+				t.Errorf("%s created", p)
+			}
+		}
+	})
 }
 
 // relocate and swap carry each Fable login with its account; the chain

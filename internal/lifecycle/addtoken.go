@@ -142,7 +142,8 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 		return err
 	}
 
-	return s.WithRosterLocked(func(data *store.SequenceData) error {
+	var renumbered map[string]string
+	if err := s.WithRosterLocked(func(data *store.SequenceData) error {
 		// Email defaulting (§6.2): note this may assign slotPtr for the
 		// placeholder, from the roster this call commits.
 		if emailVal == "" {
@@ -201,12 +202,15 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 
 		// Each branch mutates and commits the locked roster: the occupancy it was
 		// decided from is the occupancy it is written into.
-		followFable, err := reslotFableLogins(s, displaceSlot, migrateFrom, accountNum, emailVal)
+		displaceFable, followFable, err := reslotFableLogins(s, data, displaceSlot, migrateFrom, accountNum, emailVal)
 		if err != nil {
 			return err
 		}
 		if displaceSlot != nil {
 			if err := s.DeleteAccountFiles(displaceSlot.num, displaceSlot.email); err != nil {
+				return err
+			}
+			if err := displaceFable(); err != nil {
 				return err
 			}
 			if n, ok := parseSlot(displaceSlot.num); ok {
@@ -271,6 +275,9 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 			return err
 		}
 		followFable()
+		if migrateFrom != "" {
+			renumbered = map[string]string{migrateFrom: accountNum}
+		}
 
 		sourceLabel := "token"
 		if isAPIKey {
@@ -288,7 +295,11 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 		emitLine(printer.Accent("Added") + " Account " + accountNum + ": " + emailVal + " " +
 			printer.Muted("[personal]") + " " + printer.Muted("(from "+sourceLabel+")"))
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	renumberFableState(s, renumbered)
+	return nil
 }
 
 func tokenPlaceholderEmail(isAPIKey bool, slot int) string {

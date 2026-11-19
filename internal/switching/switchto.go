@@ -79,10 +79,11 @@ func SwitchTo(s *store.Store, identifier string, jsonOut, force bool) (any, erro
 
 	// Already-active short-circuit (issue #79 / #117). --force skips it, and so
 	// does a live slot found by its credential: its config needs the repair.
+	// The live slot is the owner the switch backs up (DESIGN A100).
 	var prov *Provenance
 	var live store.LiveSlot
 	if !force && data != nil {
-		live = s.ResolveLiveSlot(data)
+		live = s.ResolveOwnerSlot(data)
 	}
 	if live.Slot == targetAccount && !live.ByLineage {
 		rec, _ := accountRec(data, targetAccount)

@@ -58,6 +58,8 @@ func (f familyFiles) userSettings(t *testing.T, content string) {
 
 func TestSessionFamilySources(t *testing.T) {
 	model := func(m string) string { return `{"model":"` + m + `"}` }
+	envModel := func(m string) string { return `{"env":{"ANTHROPIC_MODEL":"` + m + `"}}` }
+	flagFile := filepath.Join(t.TempDir(), "flag-settings.json")
 	for _, tc := range []struct {
 		name         string
 		args, env    []string
@@ -166,6 +168,60 @@ func TestSessionFamilySources(t *testing.T) {
 			f.localSettings(t, model("gpt-9"))
 			f.userSettings(t, model("fable"))
 		}, family: "", from: "local"},
+		// A settings file's env block is environment to Claude Code (F2-4).
+		{name: "settings env.ANTHROPIC_MODEL", setup: func(t *testing.T, f familyFiles) {
+			f.userSettings(t, envModel("claude-fable-5-2"))
+		}, family: "fable", from: "user env"},
+		{name: "settings env beats the same file's model", setup: func(t *testing.T, f familyFiles) {
+			f.userSettings(t, `{"model":"opus","env":{"ANTHROPIC_MODEL":"fable"}}`)
+		}, family: "fable", from: "user env"},
+		{name: "a user settings env beats a local model", setup: func(t *testing.T, f familyFiles) {
+			f.localSettings(t, model("opus"))
+			f.userSettings(t, envModel("fable"))
+		}, family: "fable", from: "user env"},
+		{name: "local env beats project env", setup: func(t *testing.T, f familyFiles) {
+			f.localSettings(t, envModel("opus"))
+			f.projectSettings(t, envModel("fable"))
+		}, family: "opus", from: "local env"},
+		{name: "ANTHROPIC_MODEL beats a settings env", env: []string{"ANTHROPIC_MODEL=opus"}, setup: func(t *testing.T, f familyFiles) {
+			f.userSettings(t, envModel("fable"))
+		}, family: "opus", from: "ANTHROPIC_MODEL"},
+		{name: "a settings env beats --resume", args: []string{"--resume", resumeID}, setup: func(t *testing.T, f familyFiles) {
+			f.record(t, resumeID, "fable")
+			f.projectSettings(t, envModel("opus"))
+		}, family: "opus", from: "project env"},
+		{name: "an empty or non-string settings env is skipped", setup: func(t *testing.T, f familyFiles) {
+			f.localSettings(t, `{"env":{"ANTHROPIC_MODEL":""}}`)
+			f.projectSettings(t, `{"env":{"ANTHROPIC_MODEL":7},"model":"opus"}`)
+			f.userSettings(t, `{"env":"fable"}`)
+		}, family: "opus", from: "project"},
+		// --settings <file or JSON> is Claude Code's flag settings, above the files.
+		{name: "--settings file", args: []string{"--settings", flagFile}, setup: func(t *testing.T, f familyFiles) {
+			writeFile(t, flagFile, model("fable"))
+			f.localSettings(t, model("opus"))
+		}, family: "fable", from: "--settings"},
+		{name: "--settings= relative file", args: []string{"--settings=extra.json"}, setup: func(t *testing.T, f familyFiles) {
+			writeFile(t, filepath.Join(f.cwd, "extra.json"), model("fable"))
+		}, family: "fable", from: "--settings"},
+		{name: "--settings JSON", args: []string{"--settings", ` {"model":"fable"}`}, family: "fable", from: "--settings"},
+		{name: "--settings JSON env", args: []string{"--settings", `{"model":"opus","env":{"ANTHROPIC_MODEL":"fable"}}`}, family: "fable", from: "--settings env"},
+		{name: "--settings env beats a file's env", args: []string{"--settings=" + `{"env":{"ANTHROPIC_MODEL":"opus"}}`}, setup: func(t *testing.T, f familyFiles) {
+			f.localSettings(t, envModel("fable"))
+		}, family: "opus", from: "--settings env"},
+		{name: "a file's env beats --settings model", args: []string{"--settings", `{"model":"opus"}`}, setup: func(t *testing.T, f familyFiles) {
+			f.userSettings(t, envModel("fable"))
+		}, family: "fable", from: "user env"},
+		{name: "--resume beats --settings model", args: []string{"--settings", `{"model":"opus"}`, "--resume", resumeID}, setup: func(t *testing.T, f familyFiles) {
+			f.record(t, resumeID, "fable")
+		}, family: "fable", from: "recorded session"},
+		{name: "--settings twice, last wins", args: []string{"--settings", `{"model":"opus"}`, "--settings", `{"model":"fable"}`}, family: "fable", from: "--settings"},
+		{name: "--settings after -- is a prompt", args: []string{"--", "--settings", `{"model":"fable"}`}, family: "", from: ""},
+		{name: "--settings unreadable or malformed is skipped", args: []string{"--settings", "missing.json"}, setup: func(t *testing.T, f familyFiles) {
+			f.userSettings(t, model("opus"))
+		}, family: "opus", from: "user"},
+		{name: "--model beats --settings", args: []string{"--settings", `{"env":{"ANTHROPIC_MODEL":"fable"}}`, "--model", "opus"}, family: "opus", from: "--model"},
+		// A provider's id carries the family as a word.
+		{name: "--model provider id", args: []string{"--model", "us.anthropic.claude-fable-5-2-v1:0"}, family: "fable", from: "--model"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFamilyFiles(t)
@@ -173,13 +229,17 @@ func TestSessionFamilySources(t *testing.T) {
 				tc.setup(t, f)
 			}
 			family, from := sessionFamily(tc.args, tc.env, f.cwd, f.home, f.root)
+			name, env := strings.CutSuffix(tc.from, " env")
 			want := map[string]string{
 				"local":   filepath.Join(f.cwd, ".claude", "settings.local.json"),
 				"project": filepath.Join(f.cwd, ".claude", "settings.json"),
 				"user":    filepath.Join(f.home, ".claude", "settings.json"),
-			}[tc.from]
+			}[name]
 			if want == "" {
-				want = tc.from
+				want = name
+			}
+			if env {
+				want += " env.ANTHROPIC_MODEL"
 			}
 			if family != tc.family || from != want {
 				t.Fatalf("sessionFamily = %q from %q, want %q from %q", family, from, tc.family, want)

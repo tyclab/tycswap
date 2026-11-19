@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/store"
 )
@@ -90,6 +91,13 @@ func MoveAccount(s *store.Store, account, target string) (srcNum, tgtNum string,
 	if err != nil {
 		return "", "", false, err
 	}
+	if srcNum != tgtNum {
+		renumbered := map[string]string{srcNum: tgtNum}
+		if swapped {
+			renumbered[tgtNum] = srcNum
+		}
+		renumberFableState(s, renumbered)
+	}
 	return srcNum, tgtNum, swapped, nil
 }
 
@@ -109,6 +117,7 @@ func SwapAccounts(s *store.Store, first, second string) (numA, numB string, err 
 	if err != nil {
 		return "", "", err
 	}
+	renumberFableState(s, map[string]string{numA: numB, numB: numA})
 	return numA, numB, nil
 }
 
@@ -131,7 +140,7 @@ func relocateLocked(s *store.Store, data *store.SequenceData, numSrc, target str
 	creds, _ := s.ReadAccountCredentials(numSrc, email)
 	config, _ := s.ReadAccountConfig(numSrc, email)
 	fab := fableLogins(s)
-	fableCreds, fableLive := fableMaterial(fab, numSrc, email), fableLiveSlot(fab)
+	fableCreds, fableLive := fableMaterial(fab, numSrc, email), fableOwnerOf(fab)
 
 	srcDir := s.SessionDir(numSrc, email)
 	dstDir := s.SessionDir(target, email)
@@ -245,7 +254,7 @@ func swapAccountsLocked(s *store.Store, data *store.SequenceData, first, second 
 	configA, _ := s.ReadAccountConfig(numA, emailA)
 	configB, _ := s.ReadAccountConfig(numB, emailB)
 	fab := fableLogins(s)
-	fableA, fableB, fableLive := fableMaterial(fab, numA, emailA), fableMaterial(fab, numB, emailB), fableLiveSlot(fab)
+	fableA, fableB, fableLive := fableMaterial(fab, numA, emailA), fableMaterial(fab, numB, emailB), fableOwnerOf(fab)
 	fableStaging := map[string]string{}
 	if fab != nil && emailA == emailB {
 		// Staged before anything changes, so a refusal here needs no rollback.
@@ -578,19 +587,44 @@ func fableMaterial(fab *store.Store, num, email string) string {
 	return creds
 }
 
-// followFableChain points the Fable chain record at the Fable store's account
-// under its new number; the caller holds the store lock and has committed.
-func followFableChain(fab *store.Store, live string, renumbered map[string]string) {
-	to, moved := renumbered[live]
-	if live == "" || !moved {
+// followFableChain points the Fable chain record at the Fable store's
+// account, owner, under its new number; the caller holds the store lock and
+// has committed. A last install's record moves with its fingerprint, so the
+// store's login stays an assumption (DESIGN A100).
+func followFableChain(fab *store.Store, owner store.LiveSlot, renumbered map[string]string) {
+	to, moved := renumbered[owner.Slot]
+	if owner.Slot == "" || !moved {
 		return
 	}
-	creds, _, err := fab.Creds.ReadActive()
-	if err == nil && creds != "" {
-		err = fab.RecordFableLive(to, creds)
+	var err error
+	if owner.Source == store.SourceLastInstall {
+		err = fab.RepointFableLive(owner.Slot, to)
+	} else {
+		var creds string
+		if creds, _, err = fab.Creds.ReadActive(); err == nil && creds != "" {
+			err = fab.RecordFableLive(to, creds)
+		}
 	}
 	if err != nil {
 		logWarningf(fab, "Could not point the Fable store's chain record at Account-%s: %v", to, err)
+	}
+}
+
+// renumberFableState carries a committed renumbering into the Fable engine
+// state (autoswitch.RenumberLive), so the next Fable tick does not take the
+// store's account under its new number for a login made elsewhere. It runs
+// once the store lock is released: every Fable path takes the Fable state
+// lock before the store lock. A Fable tick between the roster's commit and
+// this write still reads the old number and may report live-login-changed
+// once (for a swap, the write then maps that tick's new number back, and the
+// next tick reports once more).
+func renumberFableState(s *store.Store, renumbered map[string]string) {
+	fab := fableLogins(s)
+	if fab == nil || len(renumbered) == 0 {
+		return
+	}
+	if err := autoswitch.RenumberLive(fab.StatePath(), renumbered); err != nil {
+		logWarningf(fab, "Could not renumber the Fable store's engine state; its next tick may report a live login change: %v", err)
 	}
 }
 
