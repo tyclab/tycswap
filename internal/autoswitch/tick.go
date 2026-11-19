@@ -216,6 +216,9 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 	if isHandover(trigger) && (blk != nil || len(ordered) == 0) {
 		// Nothing to hand over to: the account stays (DESIGN A71, A73).
 		detail := "the active account can run Fable; no account without Fable is below every bar"
+		if e.isReservedLast(cur) {
+			detail = "the Fable store runs on the active account; no other account is below every bar"
+		}
 		if trigger == "model-missing" {
 			detail = "the active account reports no " + strings.Join(requiredModels(e.models), ", ") +
 				" usage; no account that does is below every bar"
@@ -420,12 +423,14 @@ func (e *Engine) selectCandidates(
 		if !ok {
 			continue
 		}
+		q.last = e.isReservedLast(num)
 		if trigger == "proactive" && activeAxis != nil && !landsProactively(cand, axis, *activeAxis, q.below, s) {
 			continue
 		}
 		// A hand-over leaves a Fable-capable account only for one that is
-		// not, and only when that one is below every bar (DESIGN A71).
-		if trigger == "reserved" && (q.reserved || !q.below) || trigger == "model-missing" && !q.below {
+		// not, and only when that one is below every bar (DESIGN A71); off
+		// the account reserved last, for any other below every bar (A102).
+		if trigger == "reserved" && (!q.below || q.reserved && !e.isReservedLast(cur)) || trigger == "model-missing" && !q.below {
 			continue
 		}
 		qualifying = append(qualifying, q)
@@ -586,8 +591,10 @@ type qual struct {
 	// what "below threshold" means once there is one per window (DESIGN A34).
 	below bool
 	// reserved marks an account this profile leaves to Fable work; it sorts
-	// after every unreserved account of its tier (DESIGN A71).
+	// after every unreserved account of its tier (DESIGN A71), and with last
+	// after the other reserved ones (A102).
 	reserved bool
+	last     bool
 	renewal  *float64
 	num      string
 }
@@ -607,7 +614,8 @@ type qual struct {
 // weekly headroom descending, ties in sequence order. Under either strategy
 // an account reserved for Fable work sorts after every unreserved account of
 // its tier (DESIGN A71): a profile that never needs Fable takes a Fable-
-// capable account only when nothing else is left.
+// capable account only when nothing else is left; the one reserved last, the
+// Fable store's, after the other reserved ones (A102).
 func sortQualifying(qualifying []qual, strategy string) {
 	if strategy == "soonest-reset" {
 		sort.SliceStable(qualifying, func(i, j int) bool {
@@ -617,6 +625,9 @@ func sortQualifying(qualifying []qual, strategy string) {
 			}
 			if a.reserved != b.reserved {
 				return !a.reserved // unreserved before reserved, within the tier
+			}
+			if a.last != b.last {
+				return !a.last
 			}
 			if !a.below {
 				return a.h > b.h // tier B: most headroom first (best-like last resort)
@@ -640,6 +651,9 @@ func sortQualifying(qualifying []qual, strategy string) {
 		a, b := qualifying[i], qualifying[j]
 		if a.reserved != b.reserved {
 			return !a.reserved
+		}
+		if a.last != b.last {
+			return !a.last
 		}
 		if a.weekly != nil && b.weekly != nil && *a.weekly != *b.weekly {
 			return *a.weekly > *b.weekly

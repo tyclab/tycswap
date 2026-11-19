@@ -7246,16 +7246,20 @@ metadata; export format and new-import defaults are unchanged.
 `start` selects an eligible marked account before a one-shot command handoff.
 An explicit ID is the sole candidate and bypasses only mark/auto-on requirements.
 Usage is cached; model coverage, quarantine, rotation and credential ownership
-remain the engine's gates. No usage fetch or account mark is inferred from a
+remain the engine's gates, and a login at its limit is a candidate after every
+one with room (A105). No usage fetch or account mark is inferred from a
 name, plan or policy result. The feature does not grant model access or change
-managed settings. It creates no profile, claim, child-read handshake or hold.
+managed settings. It creates no profile, claim or child-read handshake; a
+session on a login at its limit gets a start hold (A105).
 
 Preserve the incoming argv and environment before initialization. A set
 `CLAUDE_CONFIG_DIR`, child `--bare`, or any `launch.AuthOverrideEnvVars` variable
 skips launch selection without changing the inherited environment (except a
-`CLAUDE_SECURESTORAGE_CONFIG_DIR` naming the Fable store, A103). Management
-forms still work independently. No-mark and current-mark paths are silent and
-perform no network or mutation. `store.Options.SkipMigrations` lets launch
+`CLAUDE_SECURESTORAGE_CONFIG_DIR` naming the Fable store, A103, and an
+inherited `TYCSWAP_START_HOLD`, A105). Management forms still work
+independently. No-mark and current-mark paths are silent and perform no
+network request; they write nothing, except the start hold of a current mark
+at its limit (A105). `store.Options.SkipMigrations` lets launch
 initialization avoid otherwise automatic migration writes on these paths.
 
 Freshen candidates before the autoswitch state lock. Use the current state →
@@ -7264,7 +7268,8 @@ through the guarded existing operation and stamp only a confirmed mutation.
 Preserve other engine-state fields and never nest a state lock during stamp or
 quarantine. A late stamp failure is reported after the switch, without rollback
 or a second target. Proactive/reserved cooldown honors a start switch; urgent
-at-limit/failover/model-missing behavior remains. Manual switches, enabled
+at-limit/failover/model-missing behavior remains, but for a running start hold,
+which holds every trigger (A105). Manual switches, enabled
 writers and roster mutations do not all share this lock; the remaining narrow
 race is accepted for this release. In-process filelock waits are unbounded.
 Future E1 work must migrate all participants together to its final lock order.
@@ -7275,7 +7280,8 @@ separate and never retry the child. POSIX execs; Windows spawns and waits with
 child status and console signal ownership. Default command resolution and
 provisioner launchers must reject their own canonical executable identity.
 The child inherits its environment and arguments unchanged, except that A103
-sets or removes `CLAUDE_SECURESTORAGE_CONFIG_DIR` by the session's model. A cached choice
+sets or removes `CLAUDE_SECURESTORAGE_CONFIG_DIR` by the session's model and
+A105 sets or removes `TYCSWAP_START_HOLD`. A cached choice
 can be stale or another switch can precede the child's credential read.
 
 Reporting carries the mark through `AccountSnapshot`, optional true-only list
@@ -8328,8 +8334,9 @@ rotated login (`HarvestFableLive`), and keeps one idle Fable login alive
 after (below). The exit code is the more significant of the two outcomes: 1
 if either errored, else 0 if either switched, else 3 if either was blocked,
 else 2. With no Fable login, or with the store off, only the default tick
-runs and the run is v0.15.1's byte for byte (`TestFableTickNoChangeWithoutAStore`;
-compared with origin/main when written).
+runs and the run's output is v0.15.1's byte for byte (`TestFableTickNoChangeWithoutAStore`;
+compared with origin/main when written); with the store off a real run still
+keeps one idle Fable login alive (below).
 
 **The adapter.** The Fable engine is `autoswitch.NewEngine` over
 `cli.fableAdapter`, which satisfies the frozen `autoswitch.Switcher` (A13):
@@ -8341,9 +8348,16 @@ default store's collector, so one fetch path with the default login serves
 both stores (A100, 1.7). It names no session owner and has no rotation
 hooks: no profile or claim owns a Fable login. Its poll inputs are
 registered under the Fable scope's key. Its `RecordedSwitch` is the Fable
-chain record, which every Fable switch writes, so the engine tells a switch
-from a login made elsewhere and records `lastSeenLive`/`lastSeenAt` in the
-Fable state file. Its state file is `fable/autoswitch_state.json`.
+state file's switch stamp (`lastSwitchTo`, `lastSwitchAt`), which every
+tycswap switch of the Fable store writes, by hand or the engine's, and
+nothing else does, so the engine tells a switch from a login made elsewhere
+and records `lastSeenLive`/`lastSeenAt` in the Fable state file. The Fable
+chain record is no such proof: the resolver writes it whenever the profile
+endpoint names a login nobody switched in, and a real Fable tick resolves
+before the engine asks, so a login made elsewhere (a `/login` in a
+Fable-store session) went unreported until 2026-11-19; it is now reported
+as `live-login-changed`, as the default store reports one. Its state file is
+`fable/autoswitch_state.json`.
 
 **The pool** (`reporting.FablePool`) is every account that is enabled and
 rotation-eligible by the default rules, able to run Fable
@@ -8361,10 +8375,22 @@ whose record names no store; a session without a record still counts as one
 of unknown family. It always reserves the Fable pool's accounts with Fable
 room (A91's reading at `autoswitch.modelThreshold`) and the Fable store's
 live account, whatever its room and whatever runs: they rank last (A71) and
-an active one hands over under the cooldown (A77). An account with Fable
-room but no Fable login is the default store's. Off, unusable or without
-Fable logins, the policy is A91's. The dashboard's counting and ranking,
-`start`'s ranking and `switch --strategy` read the same result.
+an active one hands over under the cooldown (A77). Among them the Fable
+store's live account ranks last as a target of the default tick
+(`PolicyResult.ReservedLast`, `autoswitch.WithReservedLast`), and a default
+login on it hands over, under the same cooldown, to any other account below
+every bar, reserved or not; from a reserved account that is not the Fable
+store's the hand-over still takes an unreserved one only, so it does not
+come back (2026-11-19: before, the default tick took the Fable store's
+account as readily as another reserved one and then stayed there with
+`reserved-no-target`, and Opus sessions burned the windows the Fable
+sessions ran on while another account was free). With no such account it
+stays and says `the Fable store runs on the active account; no other
+account is below every bar`. An account with Fable room but no Fable login
+is the default store's. Off, unusable or without Fable logins, the policy is
+A91's. The dashboard's counting and ranking, `start`'s ranking and `switch
+--strategy` read the same result, but for `ReservedLast`, which orders the
+default tick only.
 
 **The status-line record.** `--observe` records `"store":"fable"` for a
 session whose process runs under the Fable store (`cli.fableSessionProcess`,
@@ -8380,7 +8406,10 @@ included. An inactive account's plan is unchanged.
 **Hold, cooldown and quarantine per store.** Each state file keeps its own
 switch stamp: a switch of the Fable store by hand holds only the Fable tick
 for `autoswitch.cooldownSeconds` (`switched by hand to account N; held for
-another Ss`), a default one only the default tick. The Fable engine
+another Ss`), a default one only the default tick. A start hold in the Fable
+state file, from `start`'s selection on the Fable store (A105), holds the
+Fable tick and the move off a dead Fable login as one in the root state file
+holds the default tick. The Fable engine
 freshens a target through `RefreshFableBackupGuarded`; `invalid_grant`
 quarantines the account in the Fable state file only, through the engine's
 own path (`account-quarantined`), and a new Fable login with another
@@ -8388,9 +8417,13 @@ fingerprint releases it (`credentials-replaced`) on the next real Fable
 tick.
 
 **Keep-alive.** A refresh token not used for 28 days may expire (measured in
-the pilot). A real Fable tick refreshes at most one idle Fable login: not
+the pilot). A real `auto --once` run with auto-switch on refreshes at most
+one idle Fable login, after the Fable tick or, while the store is off, in
+its place (2026-11-19: before, only a real Fable tick did, so after `switch
+--store fable --empty` every Fable login went unused until it expired): not
 live in the store, not quarantined, last refreshed more than 14 days ago,
-the oldest such. The last refresh is its `expiresAt` less 8 hours, the
+the oldest such. With the store off the run's stdout is unchanged unless a
+refusal quarantines the login (`account-quarantined`, `store` `fable`). The last refresh is its `expiresAt` less 8 hours, the
 measured access-token life; a credential carries only its expiry. The
 refresh is `RefreshFableBackupGuarded`, logged at INFO as `Kept the Fable
 login of account N alive`; `invalid_grant` quarantines as above, through
@@ -8408,10 +8441,16 @@ race; the result goes into the store and the account's Fable login file. An
 as above, with the live credential's fingerprint. A live login quarantined so,
 now or by an earlier keep-alive, is left at once: the store moves to the
 account `autoswitch.StartTargets` ranks first in the Fable pool, else the
-pool's first (`switch`, trigger `failover`, stamped as the engine's own by
+pool's first account not known to be at a limit
+(`autoswitch.NotKnownAtALimit`: one whose usage is not read yet comes before
+one whose cached reading shows a limit reached, 2026-11-19), else the pool's
+first (`switch`, trigger `failover`, stamped as the engine's own by
 `autoswitch.EngineSwitch`), or, with an empty pool, is emptied (`no-switch`,
 `no-viable-target`, the tick blocked), and `start` then sends Fable sessions
-to the default login with its notice. A switch of the Fable store by hand
+to the default login with its notice. Under the Fable state lock the move
+resolves the live slot again: a store that another tick (the timer's, a
+status line's) has meanwhile moved off the dead login or emptied is left as
+it is, with no event and no log line. A switch of the Fable store by hand
 within the cooldown holds the move or the emptying as it holds a tick (A94,
 `no-switch`, `cooldown`); the quarantine alone already makes the store
 unusable, so `start` sends Fable sessions to the default login meanwhile.
@@ -8424,7 +8463,10 @@ one.
 
 **Events and log lines.** Every Fable tick event carries `"store":"fable"`
 (`cli.fableEvent`, modelled on `groupEvent`); the default tick's are
-unchanged. Human lines start with `Fable store: `. The engine logs its
+unchanged. Human lines start with `Fable store: `. An `account-quarantined`
+line names the Fable sign-in, not the default login's re-add: `Fable store:
+Account-N (<email>) quarantined: <reason>. Sign its Fable login in again with
+'tycswap add --login --lineage fable --slot N'.` (2026-11-19). The engine logs its
 switch as `Switched the Fable store to account N by engine:<trigger>`
 through the switcher's optional `LogSwitch`, and its other lines through a
 logger prefixed `Fable store: `.
@@ -8448,44 +8490,57 @@ agent's, a restore's) stayed on the Fable store whatever its model.
 
 **The session's model** (`cli.sessionFamily`). The first source that names a
 model answers; its family is `reporting.ModelFamily` (aliases and full ids,
-a `[1m]` suffix included), so an unknown model answers with no family:
+a `[1m]` suffix included, and a provider's id such as
+`us.anthropic.claude-fable-5-2-v1:0`, which names its family as a whole
+word; an id naming two families answers none), so an unknown model answers
+with no family. The settings are, in Claude Code's precedence, the
+`--settings` value (`--settings X` or `--settings=X`, the last before a
+`--`: JSON when it starts with `{`, else a file, relative to the working
+directory), then `<cwd>/.claude/settings.local.json`,
+`<cwd>/.claude/settings.json` and `~/.claude/settings.json`; a source that
+cannot be read or parsed, or sets no string, is skipped.
 
 1. `--model X` or `--model=X` before a `--`; given twice, the last wins.
 2. `ANTHROPIC_MODEL` (on Windows the name matches in any case).
-3. `--resume ID`, `-r ID` or `--resume=ID`, ID a UUID: the session's record
+3. `env.ANTHROPIC_MODEL` of the settings, in their order: Claude Code
+   applies a settings file's `env` block as environment, so it beats every
+   settings `model` (2026-11-19).
+4. `--resume ID`, `-r ID` or `--resume=ID`, ID a UUID: the session's record
    in `default_models.json` (`reporting.RecordedSession`), else the model of
    the last assistant line of `~/.claude/projects/*/ID.jsonl`, reading at
    most the last 1 MiB. Claude Code's own `<synthetic>` lines and subagent
    (`isSidechain`) lines are skipped. A path that resolves out of
    `projects/` through a symlink is not read; only regular files are.
-4. The `model` key of `<cwd>/.claude/settings.local.json`, then
-   `<cwd>/.claude/settings.json`, then `~/.claude/settings.json`; the first
-   file that sets it wins, and a file that cannot be read or parsed, or sets
-   no string, is skipped.
-5. Otherwise there is no family.
+5. The `model` key of the settings, in their order (`--settings` since
+   2026-11-19); the first that sets it wins.
+6. Otherwise there is no family.
+
+`RecordDefaultSessionModel` keeps the reading without provider ids: a
+status line reporting a provider's id records nothing, as in v0.15.1, since
+such a session runs on no login of tycswap's.
 
 **Overrides keep A90.** With `CLAUDE_CONFIG_DIR` set, another
 `launch.AuthOverrideEnvVars` variable set, `--bare` in the child's
 arguments, or `CLAUDE_SECURESTORAGE_CONFIG_DIR` set to anything but the
 Fable store directory (empty included), `start` reads nothing and changes
-nothing. A value equal to `paths.FableStoreDir` (cleaned; on Windows
+nothing but an inherited `TYCSWAP_START_HOLD`, which it removes (A105). A value equal to `paths.FableStoreDir` (cleaned; on Windows
 case-insensitively, the name too) is tycswap's own, not an override.
 
 **The store** (`cli.startEnvironment`):
 
 | Family | Fable store | Child environment | Default start-login selection | Notice |
 | --- | --- | --- | --- | --- |
-| `fable` | on and usable | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<FableStoreDir>`, in place of an inherited entry or appended | skipped | none |
+| `fable` | on and usable | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<FableStoreDir>`, in place of an inherited entry or appended; removed when no marked account has a usable Fable login (A105) | runs, and start's selection runs on the Fable store too (A105) | none, or A105's |
 | `fable` | off or unusable, with Fable logins | the variable removed if it named the store | as before | `tycswap start: the Fable store has no usable login (<reason>); starting on the default login.` |
 | other or none, or no Fable logins | – | the variable removed if it named the store | as before | none |
 
-Every other variable passes unchanged and in order. Without a Fable login
+Every other variable passes unchanged and in order, but
+`TYCSWAP_START_HOLD` (A105). Without a Fable login
 the session's model is not read and the child environment is the input
 environment, less a variable naming the Fable store (A100's one difference).
-`--account N` with a Fable session on the store still selects the default
-login and prints `tycswap start: --account selects the default login; this
-Fable session starts on the Fable store (Account-M).` (without the account
-while the store's live slot is unknown); the Fable store does not move.
+`--account N` with a Fable session on the store selects the default login and
+is the Fable store's sole start-login candidate (A105); until 2026-11-19 it
+selected the default login only and the Fable store did not move.
 
 **No network, nothing created.** The state is `Store.FableStore()`: the live
 slot from backup or chain only, and an unknown slot counts as usable. A box
@@ -8500,19 +8555,28 @@ case-insensitively (`cli.startWindows` is the tests' seam).
 **Limits.** `--continue` and the `--resume` picker give no family (O10): such
 a session starts by its settings' model. A session that changes model with
 `/model` stays on the store it started on. Fable subagents of an Opus session
-run on the default store. Other `claude` options that set a model (a
-`--settings` file, managed settings) are not read.
+run on the default store. Not read, so a Fable session started by one of
+these starts on the default login with no notice: no model named anywhere,
+`--model default` or a settings `model` of `default` (Claude Code then takes
+the login's own default, which its plan or organization decides);
+`ANTHROPIC_DEFAULT_MODEL` and `ANTHROPIC_DEFAULT_<FAMILY>_MODEL` (`--model
+opus` with `ANTHROPIC_DEFAULT_OPUS_MODEL=claude-fable-5-2` reads as Opus);
+managed settings; and a wrapper command (`tycswap start -- bash -lc "claude
+--model fable"`: only the child's own arguments are read).
 
 **Tests.** `TestSessionFamilySources` drives each source, each precedence
 pair, a last assistant line beyond 1 MiB and one just inside it, a malformed
-transcript, a non-UUID id, a bare `--resume`, `--continue` and `-c`;
+transcript, a non-UUID id, a bare `--resume`, `--continue` and `-c`, the
+settings' `env` block, `--settings` as a file and as JSON, and a provider's
+id; `TestModelFamilyOfAProviderID` and `TestProviderIDRecordsNoSessionModel`
+in `reporting` the provider ids;
 `TestSessionFamilyTranscriptStaysInProjects` refuses file and directory
 symlinks out of `projects/`. `TestStartPicksTheStoreBySessionModel` runs
 `start` for every table row, inherited values kept or removed, an unknown
 live slot and a profile endpoint that fails the test;
 `TestStartOverridesKeepAFableSessionUnchanged` every override;
-`TestStartAccountWithAFableSession` the `--account` notice and an unchanged
-Fable store; `TestStartOnWindowsMatchesTheVariableCaseInsensitively` and
+`TestStartAccountWithAFableSession` `--account` naming an account without a
+usable Fable login and an unchanged Fable store; `TestStartOnWindowsMatchesTheVariableCaseInsensitively` and
 `TestStartOnMacOSLeavesAFableSessionAsBefore` the platforms; and
 `TestStartWithoutFableLoginsPassesTheEnvironmentUnchanged` the byte-identical
 environment of a box without a Fable login.
@@ -8675,3 +8739,199 @@ in `tray`, `TestNativePanelUseForFable` on Windows; `TestTrayFablePanelRows`,
 store), `TestRemoteSwitchFablePostsTheStore`, `TestRemoteModeUsesForFable`
 and `TestRemoteTrayDecodesTheFableFields` (with and without the fields) in
 `cli`.
+
+## A105. A start login is used at its limit, and auto-switch waits until the session is up
+
+**Why.** The operator's order (2026-11-19): "i wanted that even account on
+the limit is used to start the session and then switched away after it is
+started". His marked start login was at its weekly limit, so A90's ranking
+dropped it (`StartTargets` excluded a candidate whose binding headroom was
+spent), `tycswap start` logged `start: no usable start login; continuing with
+the current login`, and the session started on the current login. A start
+login is needed for a session's first seconds only; its own usage does not
+decide it. Measured on 2026-11-19 with Claude Code through the launcher:
+
+- Claude Code settles what the login allows before the session takes its
+  first prompt (a transcript: its notice about the login at 22:35:19.544,
+  the first queue operation at 22:35:19.959, the SessionStart hook's output
+  at 22:35:22.38, the first user message at 22:35:22.399).
+- A SessionStart hook holds the first request: a hook that slept 6 s ended
+  at 09:00:25.32, and the first user message was recorded at 09:00:25.733.
+  Print mode (`claude -p`) runs SessionStart hooks too, and in both modes
+  the first user message was recorded only after the hook had ended (hook
+  end 09:07:55.88, first user message 09:07:56.07).
+- From exec to the SessionStart hook: an interactive session started with a
+  prompt 3.9 s, print mode 2.1 s plus Claude Code's own 3 s wait for stdin,
+  on a 16-core box under load.
+- The hook's stdin is JSON with `source` (`startup`, `resume`, `clear`,
+  `compact`) and `session_id`.
+- Start's switch stamp did not hold the engine's at-limit move
+  (`heldByCooldown`, A94), and a tick can come at any moment: the 2-minute
+  timer, and `auto --once --observe` from every session's status line. A
+  tick would move the login away before Claude Code had read it.
+
+**1. Selection.** A known counted window at 100 % no longer excludes a start
+target. `autoswitch.rankStartTargets` puts the accounts below every counted
+bar first, then those with room (unknown, or over a bar and below 100 %),
+both as A90 ranked them, then the accounts at a limit (binding headroom at
+or below 0), in sequence order whatever their reading. Every other gate
+stays: marked (or the explicit `--account`), rotation-eligible, not
+quarantined, the token not dead, the counted-model coverage, the guarded
+preparation with its ownership checks, and the re-check under the state
+lock, which ranks by the same rule. `autoswitch.StartTargets`, which the move
+off a dead live Fable login ranks its pool with (`leaveDeadFableLogin`,
+A102), is that ranking without the logins at a limit: its order is
+unchanged; the move's fallback when it names none is A102's.
+
+**2. The start hold.** When `start` settles on a login at a limit by that
+ranking while auto-switch is on, by switching to it or because it is already
+the current login (`already-start-login`, `already-active`, also when the
+switch under the lock finds it current), it records a hold in
+`autoswitch_state.json` under the state lock: `"startHolds": {"<token>":
+<expiry>}`, the token 16 random bytes (`crypto/rand`) as hex, the expiry
+epoch seconds, now plus `autoswitch.StartHoldS`. With a switch the hold is
+in the same write as the switch stamp. Every write by `start` or `--started`
+drops the holds that have ended. The child gets
+`TYCSWAP_START_HOLD=<token>`; without a hold it gets no such variable, and
+an inherited one (a nested `claude` in a session that was a held start) is
+removed, on the override paths too.
+- While any hold runs, the engine makes no switch, whatever the trigger:
+  `cooldownHold` checks it first, so the tick's own check, the check under
+  `perform`'s lock and the engine variant of `stampedSwitch` all hold, with
+  the event a switch by hand produces, `no-switch` / `cooldown`, detail `a
+  session is starting; held for another <n>s` (the longest hold left, rounded
+  up). A tick stops there, before it prepares a target. A switch by hand and
+  `start`'s own selection are not held.
+- A hold that ends more than `StartHoldS` from now was not written by this
+  clock and holds nothing: a clock that stepped back cannot hold the engine
+  longer than the bound.
+- A start on a login with room is v0.16.0's: no hold, no variable, the
+  current-login path silent and writing nothing; it reads the cached usage
+  and the default-session policy, files only, to tell. With auto-switch off,
+  an explicit `--account` at its limit is switched to as asked, with no hold
+  (nothing would act on one) and the plain notice.
+- A hold that cannot be written says `Could not hold auto-switch for the
+  starting session: <error>` and gives the child no token. A start login
+  current at its limit when `start` looks but moved by the time it holds the
+  lock is `selection-changed`, launched on the current login.
+
+**3. `tycswap start --started`**, the release, run by a Claude Code
+SessionStart hook. A management form like `--list`: exclusive with the
+others and with launching. It runs after `start`'s line that drops the
+Fable store's variable for its own process (A103). Without
+`TYCSWAP_START_HOLD` it exits at once: the store is not opened and nothing
+is read or written. It reads the hook's JSON on stdin unless stdin is a
+terminal; an unreadable or empty input counts as `startup`, and for `clear`
+or `compact` it does nothing, as with a store `start` must not read; without
+a store there is no hold to release. Under each state file's lock, the root
+one's and the Fable store's (6. below), it removes its own token and the
+ended holds; a state without holds is not locked, and one that loses none is
+not written. A token that is not there (released before, or ended) still
+gets the tick: a session that needed longer than the bound to come up is the
+one that most needs the login moved before its first request. It then waits
+while another session is starting: it reads both state files every 100 ms on
+the store's clock until neither holds a running hold, at the latest
+`StartHoldS` from its start, by which every hold it found has ended.
+Then it runs one real tick of both stores, the default store's and the
+Fable store's, as `auto --once` and `auto --observe` do, with the
+default-session policy, and without `auto --once`'s group retirement and
+Codex tick, which wait for the scheduled one as for a status line (A78): the
+session's first request waits for the hook. It prints nothing on stdout,
+since a SessionStart hook's stdout goes into the session's context
+(`oauth.Output`'s warning is discarded while it runs; it is logged too), and
+exits 0 whatever happens: a failing hook must not break a session. Tick
+errors and a panic go to `tycswap.log`; the token is never logged.
+
+**4. The bound**, `autoswitch.StartHoldS = 30`: how long the login stays
+where a session started when that session never reports, a command that is
+not Claude Code, a session without the hook, a crashed start. 30 s is about
+eight times the slower start measured above (3.9 s), and stays below the
+hook's 45 s timeout with the tick after the wait.
+
+**5. The notice.** After a switch onto a login at a limit with a hold the
+stderr line is `Switched to start login Account-<n>, which is at its limit;
+auto-switch moves on once the session is up.`; otherwise it stays `Switched
+to start login Account-<n>.`
+
+**What stays.** A box that marks no account, or only accounts with room, is
+v0.16.0's byte for byte: the state file, the child environment, the outputs
+and the log lines (`TestStartWithRoomRecordsNoHold` pins them, recorded from
+the unchanged code), but for a Fable session on a usable Fable store with
+marks, which 6. below moves. Every write keeps the state file's other fields (A90).
+A v0.16.0 engine reading a state file with `startHolds` ignores the key and
+keeps it: every engine write is a read-modify-write of the whole object. On
+Windows `start` spawns and waits, and the child gets the variable the same
+way.
+
+**6. The Fable store's start login** (2026-11-19, review F2-1). The operator's
+rule is that a session starts on a start login and may run on any account
+afterwards; before, a Fable session on a usable Fable store skipped the
+selection and started on whatever account the Fable store sat on, a work
+account included. It was missed because the accounts it matters for were
+disabled when the Fable store was planned. Whether Claude Code decides a
+Fable-store session's model access from that store's login alone, or also
+from files every session shares (`~/.claude.json` carries the default
+login's `oauthAccount` and a `modelAccessCache`), is not measured, so such a
+session's start satisfies both:
+- The default selection runs for every session, Fable-store sessions
+  included, as above, start hold and all: the shared files name a start
+  login while the session comes up.
+- Then the same selection runs on the Fable store (`cli.selectFableStartLogin`):
+  the candidates are the marked accounts in the Fable pool
+  (`reporting.FablePool`: enabled, eligible, a plan that offers Fable, a
+  Fable login, not quarantined in the Fable state file), the current account
+  is the Fable store's live one (backup or chain only, no request), the
+  ranking and the at-limit tier are start's, counted on the Fable windows as
+  the Fable tick counts them, the switch is the engine's Fable switch
+  (`cli.fableAdapter`, `EngineSwitchFable`), and the stamp and the hold go
+  into `fable/autoswitch_state.json` under its lock, so the Fable tick is held
+  as the default one is. The lock order is the Fable paths' own: the Fable
+  state lock, then the store lock, then Claude Code's two locks of the Fable
+  store; the default state lock is released before. Its lines are the
+  default's with `Fable store: ` before them (`tycswap start: Fable store:
+  Switched to start login Account-N.`), and a switch logs `Switched the Fable
+  store to account N by start`.
+- With marks but none of them in the Fable pool the session starts on the
+  default login, without `CLAUDE_SECURESTORAGE_CONFIG_DIR`, and stderr and the
+  log say `tycswap start: no start login has a Fable login; starting on the
+  default login.` Without marks, and with auto-switch off, the Fable store is
+  left where it sits, as before. A selection that fails otherwise (no
+  candidate could be prepared, a change under the lock) says so and the
+  session starts on the Fable store where it sits.
+- `--account ID` keeps its meaning for the default login and is the Fable
+  store's sole candidate when it is in the pool, else the notice above.
+- One token serves both holds: the Fable selection records its hold under the
+  default selection's token when that one holds (`autoswitch.WithStartHoldToken`),
+  and the child gets the one token. `start --started` releases it in both
+  state files, waits until neither holds an unexpired hold, and runs the one
+  tick of both stores. A box without a Fable login reads the Fable state file
+  for a hold and creates nothing.
+
+**Tests.** In `autoswitch`: `TestStartRanksALoginAtItsLimitLast`,
+`TestStartRanksLoginsAtALimitInSequenceOrder`,
+`TestStartTakesAMarkedLoginAtItsLimit`, `TestStartPrefersAMarkedLoginWithRoom`,
+`TestStartTakesAnExplicitAccountAtItsLimit` (auto-switch on and off),
+`TestStartHoldsALoginAlreadyCurrentAtItsLimit`,
+`TestStartHoldsATargetFoundCurrentUnderTheLock`,
+`TestStartHoldsNothingOnceTheCurrentLoginMoved`,
+`TestStartHoldThatCannotBeWritten`, `TestStartDropsExpiredHolds`,
+`TestStartHoldHoldsEveryTrigger`, `TestStartHoldPreparesNoTarget`,
+`TestStartHoldHoldsASwitchUnderWay` (the check under `perform`'s lock),
+`TestStartHoldHoldsTheEnginesOwnSwitchOnly` (`EngineSwitch`, `HandSwitch`),
+`TestStartHoldBeyondTheBoundHoldsNothing`, `TestReleaseStartHold`,
+`TestReleaseStartHoldWithoutAState` and `TestWaitStartHolds`. In `cli`:
+`TestStartAtItsLimitHoldsTheEngineForTheSession`,
+`TestStartWithRoomRecordsNoHold`,
+`TestStartedMovesTheLoginOnOnceTheSessionIsUp` (every source, empty and
+unreadable input), `TestStartedWithoutItsHoldDoesNothing`,
+`TestStartedTicksAfterItsHoldEnded` (ended, released before),
+`TestStartedWaitsForAnotherStartingSession` (the second session reports, or
+its hold ends), `TestStartedNeverFails` (no store, a corrupt state, a
+failing tick), `TestStartStartedIsAManagementForm`, `TestStartHelpNamesStarted`
+and `TestDeadLiveFableLoginWithEveryAccountAtItsLimit`; for the Fable store's
+start login `TestFableSessionStartsOnAStartLogin` (the reviewer's probe
+turned around: the move, the hold, the default selection beside it and the
+Fable tick after `--started`), `TestFableStartLoginRanksAndHolds`,
+`TestFableStartWithoutAMarkedFableLogin`,
+`TestFableStartWithoutMarksOrAutoSwitchIsAsBefore` (no file written),
+`TestFableStartAccount` and `TestFableStartOneTokenHoldsBothStores`.

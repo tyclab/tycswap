@@ -2,6 +2,7 @@ package autoswitch
 
 import (
 	"testing"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/settings"
@@ -111,5 +112,74 @@ func TestNothingReservedKeepsBelowThreshold(t *testing.T) {
 	e := build(t, f, settings.Default(), rec, clk, false)
 	if got := e.Tick(); got != NoAction || reasonOf(t, rec.last("no-switch")) != "below-threshold" {
 		t.Fatalf("outcome = %v, reason = %q, want NoAction/below-threshold", got, reasonOf(t, rec.last("no-switch")))
+	}
+}
+
+// lastOption names the reserved account the engine takes last: the Fable
+// store's live account beside a usable Fable store (DESIGN A102).
+func lastOption(num string) Option {
+	return WithReservedLast(func(n string) bool { return n == num })
+}
+
+// Among reserved targets the one reserved last ranks after the others, under
+// both strategies; an unreserved one still comes first.
+func TestReservedLastRanksAfterTheOtherReserved(t *testing.T) {
+	for _, strategy := range []string{"soonest-reset", "best"} {
+		t.Run(strategy, func(t *testing.T) {
+			clk := newClk()
+			// Active at its 7d limit; #2 (the Fable store's) has more room than #3.
+			f := threeAccounts(clk, dictEntry(usageOf(10, 100)), dictEntry(usageOf(10, 10)), dictEntry(usageOf(10, 20)))
+			f.reserved["2"], f.reserved["3"] = true, true
+			s := settings.Default()
+			s.Strategy = strategy
+			rec := &recorder{}
+			e := build(t, f, s, rec, clk, false, reservedOption(f), lastOption("2"))
+			if got := e.Tick(); got != Switched || deref(f.current) != "3" {
+				t.Fatalf("outcome = %v, current = %q, want a switch to 3 (kinds=%v)", got, deref(f.current), rec.kinds())
+			}
+		})
+	}
+}
+
+// An active account reserved last, under every bar, hands over to another
+// account below every bar, reserved or not; from a reserved account that is
+// not last the hand-over still takes an unreserved one only, so it does not
+// come back (DESIGN A102).
+func TestReservedLastActiveHandsOverToAReservedAccount(t *testing.T) {
+	clk := newClk()
+	f := threeAccounts(clk, dictEntry(usageOf(10, 10)), dictEntry(usageOf(10, 30)), dictEntry(usageOf(90, 10)))
+	f.reserved["1"], f.reserved["2"] = true, true
+	f.creds["1"] = farFutureCreds(clk, "r1")
+	rec := &recorder{}
+	e := build(t, f, settings.Default(), rec, clk, false, reservedOption(f), lastOption("1"))
+	if got := e.Tick(); got != Switched || deref(f.current) != "2" {
+		t.Fatalf("outcome = %v, current = %q, want a switch to 2 (kinds=%v)", got, deref(f.current), rec.kinds())
+	}
+	if sw, ok := rec.last("switch").(SwitchEvent); !ok || sw.Trigger != "reserved" || sw.Axis != "" {
+		t.Fatalf("switch event = %#v, want trigger reserved without an axis", rec.last("switch"))
+	}
+	if got := e.Tick(); got != NoAction || reasonOf(t, rec.last("no-switch")) != "cooldown" {
+		t.Fatalf("within the cooldown: outcome = %v, reason = %q", got, reasonOf(t, rec.last("no-switch")))
+	}
+	clk.Advance(time.Hour)
+	if got := e.Tick(); got != NoAction || reasonOf(t, rec.last("no-switch")) != "reserved-no-target" || deref(f.current) != "2" {
+		t.Fatalf("after the cooldown: outcome = %v, reason = %q, current %q", got, reasonOf(t, rec.last("no-switch")), deref(f.current))
+	}
+}
+
+// With no other account below every bar the account reserved last stays and
+// says why.
+func TestReservedLastActiveStaysWithoutATarget(t *testing.T) {
+	clk := newClk()
+	f := threeAccounts(clk, dictEntry(usageOf(10, 10)), dictEntry(usageOf(90, 10)), dictEntry(usageOf(10, 98)))
+	f.reserved["1"], f.reserved["2"] = true, true
+	rec := &recorder{}
+	e := build(t, f, settings.Default(), rec, clk, false, reservedOption(f), lastOption("1"))
+	if got := e.Tick(); got != NoAction || deref(f.current) != "1" {
+		t.Fatalf("outcome = %v, current %q", got, deref(f.current))
+	}
+	ns, _ := rec.last("no-switch").(NoSwitchEvent)
+	if ns.Reason != "reserved-no-target" || ns.Detail != "the Fable store runs on the active account; no other account is below every bar" {
+		t.Fatalf("no-switch = %+v", ns)
 	}
 }

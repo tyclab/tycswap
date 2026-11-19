@@ -249,24 +249,47 @@ func TestFableTickSwitchesTheFableStore(t *testing.T) {
 }
 
 // No Fable login, or the Fable store off: the run is the one tick of
-// v0.15.1, byte for byte (plan 1.1).
+// v0.15.1, byte for byte (plan 1.1). With the store off it keeps an idle
+// Fable login alive all the same, and says nothing of it on stdout (F2-9);
+// without a Fable login it asks for no refresh and creates no Fable directory.
 func TestFableTickNoChangeWithoutAStore(t *testing.T) {
 	base := atFableLimit
 	base.live, base.logins = "", nil
-	run := func(fx fableTickFixture) (int, string) {
-		sw, _ := fx.build(t)
+	base.refresh = func(creds string) oauth.RefreshOutcome {
+		return oauth.RefreshOutcome{Credentials: strings.Replace(creds, `"rt-f`, `"rt-new-f`, 1)}
+	}
+	run := func(fx fableTickFixture, idle string) (int, string, string) {
+		sw, asked := fx.build(t)
+		if idle != "" {
+			f, _ := sw.Store.ForFable()
+			at := sw.Clk.Now().Add(-20 * 24 * time.Hour).Add(fableTokenLife).UnixMilli()
+			if err := f.WriteAccountCredentials(idle, fableEmail(idle), fableLoginOf(idle, at)); err != nil {
+				t.Fatal(err)
+			}
+		}
 		code, out, _ := runCodex(t, "", "auto", "--once", "--json")
 		if _, err := os.Stat(fableStatePath(sw)); !os.IsNotExist(err) {
 			t.Fatalf("the Fable state file exists (%v)", err)
 		}
-		return code, out
+		if fx.logins == nil {
+			for _, dir := range []string{paths.FableCredentialsDir(sw.BackupDir()), paths.FableScopeDir(sw.BackupDir())} {
+				if _, err := os.Stat(dir); !os.IsNotExist(err) {
+					t.Fatalf("%s exists without a Fable login (%v)", dir, err)
+				}
+			}
+		}
+		return code, out, refreshedSlots(asked)
 	}
-	codeNone, none := run(base)
+	codeNone, none, refreshedNone := run(base, "")
 	off := base
 	off.logins = []string{"2", "3"}
-	codeOff, outOff := run(off)
-	if codeNone != 2 || codeOff != codeNone || outOff != none || strings.Contains(none, `"store"`) {
-		t.Fatalf("no login: exit %d\n%s\nstore off: exit %d\n%s", codeNone, none, codeOff, outOff)
+	codeOff, outOff, refreshedOff := run(off, "")
+	codeIdle, outIdle, refreshedIdle := run(off, "3")
+	if codeNone != 2 || codeOff != codeNone || outOff != none || strings.Contains(none, `"store"`) || codeIdle != codeNone || outIdle != none {
+		t.Fatalf("no login: exit %d\n%s\nstore off: exit %d\n%s\nstore off, an idle login: exit %d\n%s", codeNone, none, codeOff, outOff, codeIdle, outIdle)
+	}
+	if refreshedNone != "" || refreshedOff != "" || refreshedIdle != "3" {
+		t.Fatalf("refreshed: no login %q, store off %q, store off with Account-3 idle %q (want 3)", refreshedNone, refreshedOff, refreshedIdle)
 	}
 	if record := os.Getenv("TYCSWAP_FABLETICK_RECORD"); record != "" {
 		if err := os.WriteFile(filepath.Clean(record), []byte(none), 0o600); err != nil {
@@ -456,6 +479,61 @@ func TestFableTickLeavesAnUnknownLiveLogin(t *testing.T) {
 	}
 }
 
+// A login made elsewhere (a /login in a Fable-store session: a new grant only
+// the profile endpoint knows) is reported as the default tick reports one,
+// although resolving it writes the Fable chain record; a switch of the Fable
+// store by hand is not (DESIGN A102, F2-5).
+func TestFableTickReportsALoginMadeElsewhere(t *testing.T) {
+	for _, byHand := range []bool{false, true} {
+		t.Run(map[bool]string{false: "elsewhere", true: "by-hand"}[byHand], func(t *testing.T) {
+			fx := fableTickFixture{def: "3", live: "1", logins: []string{"1", "2"},
+				usage: map[string][3]float64{"1": {10, 20, 10}, "2": {10, 20, 10}, "3": {10, 20, 30}, "4": {10, 20, 30}}}
+			sw, _ := fx.build(t)
+			if code, out, _ := runCodex(t, "", "auto", "--once", "--json"); code != 2 {
+				t.Fatalf("tick 1 exit %d: %s", code, out)
+			}
+			var state map[string]any
+			if err := json.Unmarshal([]byte(readOrAbsent(t, fableStatePath(sw))), &state); err != nil || state["lastSeenLive"] != "1" {
+				t.Fatalf("after tick 1: %v (%v)", state, err)
+			}
+			// Two minutes pass; the fixture's clock stands still.
+			state["lastSeenAt"] = state["lastSeenAt"].(float64) - 120
+			raw, _ := json.Marshal(state)
+			writeFile(t, fableStatePath(sw), string(raw))
+			if byHand {
+				if r, err := sw.SwitchFable("2", true); err != nil || r["switched"] != true {
+					t.Fatalf("hand switch: %v, %v", r, err)
+				}
+			} else {
+				writeFile(t, filepath.Join(paths.FableStoreDir(sw.BackupDir()), ".credentials.json"),
+					`{"claudeAiOauth":{"accessToken":"at-elsewhere","refreshToken":"rt-elsewhere","expiresAt":4102444800000}}`)
+				sw.Store.OAuth = &oauth.FakeClient{ProfileFn: func(_ context.Context, token string) *oauth.Identity {
+					if token == "at-elsewhere" {
+						return &oauth.Identity{Email: fableEmail("2"), UUID: "u-2"}
+					}
+					return nil
+				}}
+			}
+			_, out, _ := runCodex(t, "", "auto", "--once", "--json")
+			_, fable, _ := splitByStore(t, out)
+			changed := eventOf(fable, "live-login-changed")
+			log := readOrAbsent(t, filepath.Join(sw.BackupDir(), "tycswap.log"))
+			if byHand {
+				if changed != nil || strings.Contains(log, "without a tycswap switch") {
+					t.Fatalf("a switch by hand reported as a login made elsewhere: %v", fable)
+				}
+				return
+			}
+			if changed == nil || changed["from"] != "1" || changed["to"] != "2" {
+				t.Fatalf("Fable events %v, want live-login-changed from 1 to 2", fable)
+			}
+			if !strings.Contains(log, "Fable store: Live login changed from account 1 to 2 without a tycswap switch") {
+				t.Fatalf("log:\n%s", log)
+			}
+		})
+	}
+}
+
 // Every Fable event carries "store":"fable" and its line names the store;
 // the default tick's lines are those of a run without the Fable store.
 func TestFableEventsCarryTheStore(t *testing.T) {
@@ -514,6 +592,62 @@ func TestDefaultHandSwitchHoldsTheDefaultTickOnly(t *testing.T) {
 	def, fable, _ := splitByStore(t, out)
 	if held := eventOf(def, "no-switch"); code != 0 || held == nil || held["reason"] != "cooldown" || eventOf(fable, "switch") == nil {
 		t.Fatalf("exit %d\ndefault %v\nFable %v", code, def, fable)
+	}
+}
+
+// The default login at its limit moves to another account reserved for the
+// Fable store before the Fable store's own account (F2-3).
+func TestDefaultTickTakesTheFableStoresAccountLast(t *testing.T) {
+	fx := fableTickFixture{def: "3", live: "1", logins: []string{"1", "2"},
+		usage: map[string][3]float64{"1": {10, 20, 10}, "2": {10, 30, 10}, "3": {10, 100, 100}, "4": {10, 100, 100}}}
+	sw, _ := fx.build(t)
+	code, out, _ := runCodex(t, "", "auto", "--once", "--json")
+	def, _, _ := splitByStore(t, out)
+	ev := eventOf(def, "switch")
+	to, _ := ev["to"].(map[string]any)
+	if code != 0 || ev == nil || ev["trigger"] != "at-limit" || to["number"] != float64(2) {
+		t.Fatalf("exit %d, default events %v; want the at-limit move to Account-2", code, def)
+	}
+	if got := readOrAbsent(t, filepath.Join(sw.Home, ".claude", ".credentials.json")); !strings.Contains(got, "at-d2") || !strings.Contains(storeLive(t, sw), "at-f1") {
+		t.Fatal("the default login is not on Account-2 beside the Fable store on Account-1")
+	}
+}
+
+// A default login on the Fable store's account hands over to another reserved
+// account below every bar, under the cooldown, and stays there: three ticks,
+// no move back (F2-3).
+func TestDefaultLoginLeavesTheFableStoresAccount(t *testing.T) {
+	fx := fableTickFixture{def: "1", live: "1", logins: []string{"1", "2"},
+		usage: map[string][3]float64{"1": {10, 20, 10}, "2": {10, 30, 10}, "3": {10, 100, 100}, "4": {10, 100, 100}}}
+	sw, _ := fx.build(t)
+	defLive := func() string { return readOrAbsent(t, filepath.Join(sw.Home, ".claude", ".credentials.json")) }
+	tick := func() []map[string]any {
+		_, out, _ := runCodex(t, "", "auto", "--once", "--json")
+		def, fable, _ := splitByStore(t, out)
+		if eventOf(fable, "switch") != nil || !strings.Contains(storeLive(t, sw), "at-f1") {
+			t.Fatalf("the Fable store moved: %v", fable)
+		}
+		return def
+	}
+	def := tick()
+	ev := eventOf(def, "switch")
+	to, _ := ev["to"].(map[string]any)
+	if ev == nil || ev["trigger"] != "reserved" || to["number"] != float64(2) || !strings.Contains(defLive(), "at-d2") {
+		t.Fatalf("tick 1: %v; want the reserved hand-over to Account-2", def)
+	}
+	if ns := eventOf(tick(), "no-switch"); ns == nil || ns["reason"] != "cooldown" || !strings.Contains(defLive(), "at-d2") {
+		t.Fatalf("tick 2, within the cooldown: %v", ns)
+	}
+	statePath := autoswitch.StatePath(sw.BackupDir())
+	var state map[string]any
+	if err := json.Unmarshal([]byte(readOrAbsent(t, statePath)), &state); err != nil {
+		t.Fatal(err)
+	}
+	state["lastSwitchAt"] = state["lastSwitchAt"].(float64) - 3600
+	raw, _ := json.Marshal(state)
+	writeFile(t, statePath, string(raw))
+	if ns := eventOf(tick(), "no-switch"); ns == nil || ns["reason"] != "reserved-no-target" || !strings.Contains(defLive(), "at-d2") {
+		t.Fatalf("tick 3, after the cooldown: %v; want Account-2 kept", ns)
 	}
 }
 
@@ -603,7 +737,14 @@ func TestFableAdapterMethods(t *testing.T) {
 	if err != nil || r["switched"] != true || r["store"] != "fable" {
 		t.Fatalf("switch %v, %v", r, err)
 	}
-	if slot, at := a.RecordedSwitch(); slot != "3" || at == 0 {
+	// The switch alone records nothing: the switch stamp its caller writes does.
+	if slot, at := a.RecordedSwitch(); slot != "" || at != 0 {
+		t.Fatalf("recorded switch %s at %v before a stamp", slot, at)
+	}
+	if err := autoswitch.HandSwitch(a.fable.StatePath(), sw.Clk, nil, func() (string, error) { return "3", nil }); err != nil {
+		t.Fatal(err)
+	}
+	if slot, at := a.RecordedSwitch(); slot != "3" || at != clock.Seconds(sw.Clk) {
 		t.Fatalf("recorded switch %s at %v", slot, at)
 	}
 	if entries := a.UsageEntriesByAccount(map[string]bool{}); entries["3"].LastGood == nil {
@@ -780,6 +921,24 @@ func TestKeepAliveQuarantinesADeadLogin(t *testing.T) {
 	}
 	if _, err := os.Stat(autoswitch.StatePath(sw.BackupDir())); !os.IsNotExist(err) {
 		t.Fatalf("the root state file was written (%v)", err)
+	}
+}
+
+// A Fable login's quarantine line names the Fable sign-in, not the default
+// login's re-add; the default store's line is as before (S1).
+func TestFableQuarantineLineNamesTheFableSignIn(t *testing.T) {
+	// The live login on 2 has expired and its refresh is refused.
+	keepAliveFixture(t, map[string]time.Duration{}, func(string) oauth.RefreshOutcome {
+		return oauth.RefreshOutcome{Error: oauth.ErrInvalidGrant}
+	})
+	_, out, _ := runCodex(t, "", "auto", "--once")
+	want := "Fable store: Account-2 (acct2@example.com) quarantined: invalid_grant. Sign its Fable login in again with 'tycswap add --login --lineage fable --slot 2'."
+	if !strings.Contains(out, want) || strings.Contains(out, "--add-account") {
+		t.Fatalf("stdout lacks %q:\n%s", want, out)
+	}
+	def := autoswitch.QuarantineEvent{Number: "3", Email: "acct3@example.com", Reason: "invalid_grant"}.Human()
+	if def != "Account-3 (acct3@example.com) quarantined: invalid_grant. Log in with it and run 'tycswap --add-account --slot 3' to recover." {
+		t.Fatalf("default line %q", def)
 	}
 }
 

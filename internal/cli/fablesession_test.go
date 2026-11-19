@@ -61,13 +61,15 @@ func TestStartDropsTheFableStoreVariableBeforeItSelects(t *testing.T) {
 		t.Run(strings.Join(args[1:], " "), func(t *testing.T) {
 			sw, rec := fableStart(t, "on")
 			sw.Store.OAuth = &oauth.FakeClient{}
+			// Account 2's plan offers Fable: --account makes it the Fable store's start login too.
+			setRecord(t, sw, "2", "subscriptionType", "max")
 			testutil.Setenv(t, secureStorageVar, fableStoreDir())
 			home, _ := os.UserHomeDir()
 			var cred, storage string
 			prev := startSelect
-			startSelect = func(account string, stderr io.Writer) {
+			startSelect = func(account string, stderr io.Writer) string {
 				cred, storage = cclock.CredentialsLockDir(), cclock.StorageWriteLockDir()
-				prev(account, stderr)
+				return prev(account, stderr)
 			}
 			t.Cleanup(func() { startSelect = prev })
 			if code, _, errb := runCLI(t, args, false, false); code != 23 || rec.execs != 1 {
