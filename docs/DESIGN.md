@@ -8204,9 +8204,11 @@ credential. It refuses, storing nothing, exit 1, one line each:
   default credential: `This is Account-N's default login, not a second
   sign-in; sign in again in the browser.`
 
-On success it calls `SetupFableDirectories` and writes the account-only
-credential to the account's Fable login, keeping `.prev`, under the store lock,
-with the roster re-checked there. Nothing else is written: `sequence.json`,
+On success, under the store lock and once the roster re-checked there still
+holds the account, it calls `SetupFableDirectories` and writes the account-only
+credential to the account's Fable login, keeping `.prev`; a refusal of that
+re-check leaves a box without a Fable login without `fable/` and
+`credentials-fable/`. Nothing else is written: `sequence.json`,
 `configs/`, `credentials/`, `~/.claude/.credentials.json` and `~/.claude.json`
 stay byte-identical. It prints `Stored the Fable login for Account-N
 (<email>).`

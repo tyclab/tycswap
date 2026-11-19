@@ -20,7 +20,8 @@ var EmptyFableStore = func(s *store.Store) error {
 
 // AddFableLogin stores a `claude auth login` in a scratch profile as the Fable
 // login of the roster account it signed in as (DESIGN A101). It writes the
-// Fable login file only, under the store lock, keeping .prev. When the account
+// Fable login file only, under the store lock, keeping .prev, and creates the
+// Fable directories only once the roster re-check there passed. When the account
 // is the Fable store's live one, the new login is installed there too, under
 // the Fable store's locks: the store's older login would otherwise be
 // harvested back over the new file.
@@ -51,9 +52,6 @@ func AddFableLogin(s *store.Store, src AddSource, slot *int) (string, error) {
 	if err := refuseDefaultGrant(s, num, email, creds); err != nil {
 		return "", err
 	}
-	if err := f.SetupFableDirectories(); err != nil {
-		return "", err
-	}
 	live, _, _ := f.Creds.ReadActive()
 	renew := live != "" && f.ResolveFableLiveSlot(data).Slot == num
 	write := func() error {
@@ -63,6 +61,9 @@ func AddFableLogin(s *store.Store, src AddSource, slot *int) (string, error) {
 		}
 		if s.FindAccountSlot(current, email, orgUUID) != num {
 			return cerr.Config("Account-%s changed while the sign-in was stored; nothing stored.", num)
+		}
+		if err := f.SetupFableDirectories(); err != nil {
+			return err
 		}
 		return f.WriteAccountCredentials(num, email, creds)
 	}
