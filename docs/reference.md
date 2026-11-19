@@ -1862,7 +1862,10 @@ the main session's model is recorded.
 
 **The Fable store's tick** (DESIGN A102). While auto-switch is on and the
 Fable store is on (it has Fable logins and holds one, see `tycswap switch`),
-`--once` runs a second tick after the default one, for the Fable store. It
+`--once` runs a second tick after the default one, for the Fable store. With
+auto-switch off there is no second tick; a real `--once` run still stores a
+login Claude Code rotated in the Fable store as that account's Fable login,
+and does nothing else there. The tick
 harvests the store's rotated login first, then decides as the default tick
 does over the *Fable pool*: the accounts that are enabled and
 rotation-eligible, can run Fable, hold a Fable login and are not quarantined
