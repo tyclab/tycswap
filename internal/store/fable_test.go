@@ -228,9 +228,10 @@ func TestFableReadsCreateNoDirectory(t *testing.T) {
 
 func TestFableStoreState(t *testing.T) {
 	live := fableCreds("at-f2", "rt-f2")
-	quarantine := func(fp string) string {
-		return `{"quarantine":{"2":{"email":"two@example.com","reason":"invalid_grant","at":"t","refreshTokenFingerprint":"` + fp + `"}}}`
+	quarantineFor := func(reason, fp string) string {
+		return `{"quarantine":{"2":{"email":"two@example.com","reason":"` + reason + `","at":"t","refreshTokenFingerprint":"` + fp + `"}}}`
 	}
+	quarantine := func(fp string) string { return quarantineFor("invalid_grant", fp) }
 	for _, tc := range []struct {
 		name       string
 		logins     bool
@@ -248,6 +249,10 @@ func TestFableStoreState(t *testing.T) {
 		{name: "dead entry, its fingerprint", logins: true, hasLogins: true, store: withMCP(live), state: quarantine(fingerprint(live)),
 			want: FableState{On: true, Live: LiveSlot{Slot: "2", Source: SourceBackup}}, reasonPart: "Account-2's Fable login: sign in again"},
 		{name: "dead entry, stale fingerprint", logins: true, hasLogins: true, store: withMCP(live), state: quarantine(fingerprint(fableCreds("x", "rt-old"))),
+			want: FableState{On: true, Usable: true, Live: LiveSlot{Slot: "2", Source: SourceBackup}}},
+		{name: "identity-conflict entry, its fingerprint", logins: true, hasLogins: true, store: withMCP(live), state: quarantineFor("identity-conflict", fingerprint(live)),
+			want: FableState{On: true, Live: LiveSlot{Slot: "2", Source: SourceBackup}}, reasonPart: "Account-2's Fable login: sign in again"},
+		{name: "identity-conflict entry, stale fingerprint", logins: true, hasLogins: true, store: withMCP(live), state: quarantineFor("identity-conflict", fingerprint(fableCreds("x", "rt-old"))),
 			want: FableState{On: true, Usable: true, Live: LiveSlot{Slot: "2", Source: SourceBackup}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

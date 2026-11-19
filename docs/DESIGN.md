@@ -8011,8 +8011,11 @@ it. A Fable login write invalidates no session profile. On the scope,
 readable Fable login. It is *on* when it has Fable logins and its
 `.credentials.json` holds a login (not seat-wide keys only, A29); *off* when
 it has Fable logins and holds none. It is *usable* when on and no
-`invalid_grant` quarantine entry in `fable/autoswitch_state.json` carries the
-live login's refresh-token fingerprint. `Store.FableStore()` returns
+quarantine entry in `fable/autoswitch_state.json`, whatever its reason
+(`invalid_grant`, or `identity-conflict` when a refresh showed another
+account's login), carries the live login's refresh-token fingerprint; the
+reason is then `Account-N's Fable login: sign in again`, the answer the
+login's own row gives. `Store.FableStore()` returns
 `{On, Live, Usable, Reason}`, its live slot from backup or chain only, so a
 caller without network can ask it. No setting turns the store off: `tycswap
 switch --store fable --empty` empties it, and `tycswap switch --store fable

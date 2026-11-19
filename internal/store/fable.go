@@ -22,8 +22,8 @@ import (
 var ErrFableUnsupported = errors.New("The Fable store needs a file-based credential store; macOS keeps Claude Code's login in the Keychain")
 
 // FableState is whether the Fable store is on: it has Fable logins and holds
-// one; usable unless that login's grant is quarantined as dead. Reason says
-// why it is not on or not usable.
+// one; usable unless a quarantine entry names that login. Reason says why it
+// is not on or not usable.
 type FableState struct {
 	On     bool
 	Live   LiveSlot
@@ -186,8 +186,9 @@ func (s *Store) FableStore() FableState {
 	return st
 }
 
-// deadFableLogin is the slot of an invalid_grant quarantine entry in the
-// Fable state file whose fingerprint is the live credential's.
+// deadFableLogin is the slot of a quarantine entry in the Fable state file,
+// whatever its reason (invalid_grant, identity-conflict), whose fingerprint
+// is the live credential's.
 func (s *Store) deadFableLogin(live string) (string, bool) {
 	fp := oauth.CredentialFingerprint(live)
 	entries := autoswitch.ReadQuarantineEntries(s.StatePath())
@@ -209,7 +210,7 @@ func (s *Store) deadFableLogin(live string) (string, bool) {
 		nums = append(nums, num)
 	}
 	for _, num := range slotkey.Sorted(nums) {
-		if got := state.Quarantine[num].Fingerprint; entries[num].Reason == oauth.ErrInvalidGrant && got != nil && *got == *fp {
+		if got := state.Quarantine[num].Fingerprint; got != nil && *got == *fp {
 			return num, true
 		}
 	}

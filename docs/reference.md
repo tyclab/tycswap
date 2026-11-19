@@ -339,7 +339,7 @@ object (DESIGN A104), whatever `active` is; without one it is absent:
 
 | Key | Type | Meaning |
 |-----|------|---------|
-| `state` | string | `on`, `off` (the store holds no login) or `unusable` (its login is quarantined on `invalid_grant`). |
+| `state` | string | `on`, `off` (the store holds no login) or `unusable` (its login is quarantined: `invalid_grant`, or `identity-conflict`). |
 | `storeDir` | string | The Fable store's directory, the value `tycswap start` gives Fable sessions in `CLAUDE_SECURESTORAGE_CONFIG_DIR`. |
 | `number` | int \| null | The Fable store's account; `null` while off or unknown. |
 | `email`, `organizationName`, `plan`, `usageStatus`, `usage` | | That account's, in the shapes of `active`, while it is known (`plan` when recorded). The usage is the account's shared row, fetched with its default login, never with the Fable one. |
