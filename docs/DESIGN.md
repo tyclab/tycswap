@@ -8251,8 +8251,9 @@ rotated login (`HarvestFableLive`), and keeps one idle Fable login alive
 after (below). The exit code is the more significant of the two outcomes: 1
 if either errored, else 0 if either switched, else 3 if either was blocked,
 else 2. With no Fable login, or with the store off, only the default tick
-runs and the run is v0.15.1's byte for byte (`TestFableTickNoChangeWithoutAStore`;
-compared with origin/main when written).
+runs and the run's output is v0.15.1's byte for byte (`TestFableTickNoChangeWithoutAStore`;
+compared with origin/main when written); with the store off a real run still
+keeps one idle Fable login alive (below).
 
 **The adapter.** The Fable engine is `autoswitch.NewEngine` over
 `cli.fableAdapter`, which satisfies the frozen `autoswitch.Switcher` (A13):
@@ -8317,9 +8318,13 @@ fingerprint releases it (`credentials-replaced`) on the next real Fable
 tick.
 
 **Keep-alive.** A refresh token not used for 28 days may expire (measured in
-the pilot). A real Fable tick refreshes at most one idle Fable login: not
+the pilot). A real `auto --once` run with auto-switch on refreshes at most
+one idle Fable login, after the Fable tick or, while the store is off, in
+its place (2026-11-19: before, only a real Fable tick did, so after `switch
+--store fable --empty` every Fable login went unused until it expired): not
 live in the store, not quarantined, last refreshed more than 14 days ago,
-the oldest such. The last refresh is its `expiresAt` less 8 hours, the
+the oldest such. With the store off the run's stdout is unchanged unless a
+refusal quarantines the login (`account-quarantined`, `store` `fable`). The last refresh is its `expiresAt` less 8 hours, the
 measured access-token life; a credential carries only its expiry. The
 refresh is `RefreshFableBackupGuarded`, logged at INFO as `Kept the Fable
 login of account N alive`; `invalid_grant` quarantines as above, through

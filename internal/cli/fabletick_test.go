@@ -249,24 +249,47 @@ func TestFableTickSwitchesTheFableStore(t *testing.T) {
 }
 
 // No Fable login, or the Fable store off: the run is the one tick of
-// v0.15.1, byte for byte (plan 1.1).
+// v0.15.1, byte for byte (plan 1.1). With the store off it keeps an idle
+// Fable login alive all the same, and says nothing of it on stdout (F2-9);
+// without a Fable login it asks for no refresh and creates no Fable directory.
 func TestFableTickNoChangeWithoutAStore(t *testing.T) {
 	base := atFableLimit
 	base.live, base.logins = "", nil
-	run := func(fx fableTickFixture) (int, string) {
-		sw, _ := fx.build(t)
+	base.refresh = func(creds string) oauth.RefreshOutcome {
+		return oauth.RefreshOutcome{Credentials: strings.Replace(creds, `"rt-f`, `"rt-new-f`, 1)}
+	}
+	run := func(fx fableTickFixture, idle string) (int, string, string) {
+		sw, asked := fx.build(t)
+		if idle != "" {
+			f, _ := sw.Store.ForFable()
+			at := sw.Clk.Now().Add(-20 * 24 * time.Hour).Add(fableTokenLife).UnixMilli()
+			if err := f.WriteAccountCredentials(idle, fableEmail(idle), fableLoginOf(idle, at)); err != nil {
+				t.Fatal(err)
+			}
+		}
 		code, out, _ := runCodex(t, "", "auto", "--once", "--json")
 		if _, err := os.Stat(fableStatePath(sw)); !os.IsNotExist(err) {
 			t.Fatalf("the Fable state file exists (%v)", err)
 		}
-		return code, out
+		if fx.logins == nil {
+			for _, dir := range []string{paths.FableCredentialsDir(sw.BackupDir()), paths.FableScopeDir(sw.BackupDir())} {
+				if _, err := os.Stat(dir); !os.IsNotExist(err) {
+					t.Fatalf("%s exists without a Fable login (%v)", dir, err)
+				}
+			}
+		}
+		return code, out, refreshedSlots(asked)
 	}
-	codeNone, none := run(base)
+	codeNone, none, refreshedNone := run(base, "")
 	off := base
 	off.logins = []string{"2", "3"}
-	codeOff, outOff := run(off)
-	if codeNone != 2 || codeOff != codeNone || outOff != none || strings.Contains(none, `"store"`) {
-		t.Fatalf("no login: exit %d\n%s\nstore off: exit %d\n%s", codeNone, none, codeOff, outOff)
+	codeOff, outOff, refreshedOff := run(off, "")
+	codeIdle, outIdle, refreshedIdle := run(off, "3")
+	if codeNone != 2 || codeOff != codeNone || outOff != none || strings.Contains(none, `"store"`) || codeIdle != codeNone || outIdle != none {
+		t.Fatalf("no login: exit %d\n%s\nstore off: exit %d\n%s\nstore off, an idle login: exit %d\n%s", codeNone, none, codeOff, outOff, codeIdle, outIdle)
+	}
+	if refreshedNone != "" || refreshedOff != "" || refreshedIdle != "3" {
+		t.Fatalf("refreshed: no login %q, store off %q, store off with Account-3 idle %q (want 3)", refreshedNone, refreshedOff, refreshedIdle)
 	}
 	if record := os.Getenv("TYCSWAP_FABLETICK_RECORD"); record != "" {
 		if err := os.WriteFile(filepath.Clean(record), []byte(none), 0o600); err != nil {

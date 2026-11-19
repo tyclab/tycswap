@@ -130,9 +130,14 @@ func (e fableEvent) Human() string {
 // store is on; ran is false when it does not run. The engine counts the Fable
 // windows the accounts report, always, with no reservation; a real tick
 // harvests the store's rotated login first and keeps one idle login alive
-// after.
+// after. With the store off a real run only keeps one idle login alive.
 func fableTick(sw *core.Switcher, merged settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool) (outcome autoswitch.TickOutcome, ran bool) {
 	if !sw.Store.FableStore().On {
+		if !dryRun && sw.Store.HasFableLogins() {
+			if a, err := newFableAdapter(sw, sw.Log); err == nil {
+				keepFableLoginAlive(a, sw, func(ev autoswitch.Event) { onEvent(fableEvent{ev}) })
+			}
+		}
 		return autoswitch.NoAction, false
 	}
 	if !dryRun {
