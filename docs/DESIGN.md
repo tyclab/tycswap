@@ -6960,8 +6960,8 @@ The rule: one key, `autoswitch.enabled` in `settings.json`, default off
   tile; the heading says `checked by <owner>`.)
 
 Supersedes A43's `ui_prefs.json` choice and A51's refusal of Start under an
-external owner. Closes HOST-1 ("off" exists only inside the app process) and
-HOST-4 (a remembered "on" survives a managed period and resumes unasked).
+external owner. Closes two review findings: "off" existed only inside the app
+process, and a remembered "on" survived a managed period and resumed unasked.
 
 ## A84. The tray panel is the daily view
 
@@ -7328,14 +7328,14 @@ flags. A dropped model is named in the poll event as `unservable` (`not
 counted: Fable` on the human line) and the engine counts 5h and 7d for it.
 
 One room rule serves the policy and the engine: `oauth.AsOf` reads a window
-whose reset time has passed as 0 % with its next reset unknown (D4), since a
-cached reading does not see a renewal (ENG-7). It drops the window's reset
+whose reset time has passed as 0 % with its next reset unknown, since a
+cached reading does not see a renewal. It drops the window's reset
 time and countdown, so `soonest-reset` sorts a renewed account with the
 unknown renewals, not first on a renewal in the past. The engine reads every
 decision value through it, as do `start`'s ranking, the at-limit marks of
 `list`, `status` and the account snapshot, and the dashboard's rows (and so
 *Next best* and the tray's figures); the TUI's meters and *Next best* still
-read the cached values (ENG-7). An account the policy finds serving after its reset is a
+read the cached values. An account the policy finds serving after its reset is a
 target before its next fetch only while its last reading is still trusted:
 an account parked at its limit falls due for a poll at that reset, so in
 practice while the reading is younger than `usage.StaleOKS`; otherwise the
@@ -7374,7 +7374,7 @@ figures render it, so an unset `autoswitch.model` reads *Follow sessions*, not
 and says `off` only for an explicit `none`. Unchanged: an explicit
 `autoswitch.model` or `--model`, which never drops a model (both removed
 by A97); the long-running
-loop and the hosted engines, which keep their configured models (ENG-8); and
+loop and the hosted engines, which keep their configured models; and
 one login for every default session, so while an account can serve Fable and a
 Fable session runs, Opus sessions stay on a Fable-capable account too.
 
@@ -7745,7 +7745,7 @@ taken it off the page and the tray and added a warning line for it.
   `blocked-with-room`. `AutoSwitchSettings.Model` stays as the engine's input:
   the policy fills it, nothing loads it from `settings.json` and no write puts
   it there. The long-running loop and a hosted engine never followed sessions
-  (ENG-8, A91); with nothing to configure they count 5h and 7d.
+  (A91); with nothing to configure they count 5h and 7d.
 - *The key is retired.* `autoswitch.model` leaves the registry, so `config
   set|get|unset autoswitch.model` answer `unknown setting` and no list shows
   it. A file that holds it loads; the value is not read, and the next
