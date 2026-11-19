@@ -18,8 +18,8 @@ func fableCreds(access string) string {
 	return `{"claudeAiOauth":{"accessToken":"` + access + `","refreshToken":"ref-` + access + `","expiresAt":4102444800000,"subscriptionType":"max"}}`
 }
 
-// fableSwitcher: accounts 1 and 2 with default and Fable logins; the Fable
-// store holds 1's; the root state file holds a hold of its own.
+// fableSwitcher: accounts 1 and 2 on Max, with default and Fable logins; the
+// Fable store holds 1's; the root state file holds a hold of its own.
 func fableSwitcher(t *testing.T) (*Switcher, *Switcher, string) {
 	t.Helper()
 	sw := newTestSwitcher(t)
@@ -27,10 +27,10 @@ func fableSwitcher(t *testing.T) (*Switcher, *Switcher, string) {
 	accounts := map[string]json.RawMessage{}
 	for num, email := range map[string]string{"1": "one@example.com", "2": "two@example.com"} {
 		accounts[num] = rawRecord(map[string]any{"email": email, "uuid": "u-" + num, "organizationUuid": "", "added": "t"})
-		seedManaged(t, sw, num, email, oauthCreds("d"+num))
+		seedManaged(t, sw, num, email, fableCreds("d"+num))
 	}
 	writeSeqDirect(t, sw, ptrInt(1), []int{1, 2}, accounts)
-	seedLive(t, sw, "one@example.com", oauthCreds("d1"))
+	seedLive(t, sw, "one@example.com", fableCreds("d1"))
 	fable, err := sw.ForFable()
 	if err != nil {
 		t.Fatal(err)
