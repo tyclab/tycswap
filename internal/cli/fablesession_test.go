@@ -65,9 +65,9 @@ func TestStartDropsTheFableStoreVariableBeforeItSelects(t *testing.T) {
 			home, _ := os.UserHomeDir()
 			var cred, storage string
 			prev := startSelect
-			startSelect = func(account string, stderr io.Writer) {
+			startSelect = func(account string, stderr io.Writer) string {
 				cred, storage = cclock.CredentialsLockDir(), cclock.StorageWriteLockDir()
-				prev(account, stderr)
+				return prev(account, stderr)
 			}
 			t.Cleanup(func() { startSelect = prev })
 			if code, _, errb := runCLI(t, args, false, false); code != 23 || rec.execs != 1 {

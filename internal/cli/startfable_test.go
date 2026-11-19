@@ -73,9 +73,9 @@ func fableStart(t *testing.T, state string) (*core.Switcher, *startRecord) {
 		return 23, nil
 	}
 	prev := startSelect
-	startSelect = func(account string, stderr io.Writer) {
+	startSelect = func(account string, stderr io.Writer) string {
 		rec.selections = append(rec.selections, account)
-		prev(account, stderr)
+		return prev(account, stderr)
 	}
 	t.Cleanup(func() { startSelect = prev })
 	return sw, rec
@@ -316,14 +316,15 @@ func TestStartHelpNamesTheFableStore(t *testing.T) {
 }
 
 // The help says what passes unchanged: the arguments, and the environment but
-// for the Fable store's variable (DESIGN A103).
-func TestStartHelpNamesTheOneVariableItChanges(t *testing.T) {
+// for the Fable store's variable (DESIGN A103) and the start hold's (A105).
+func TestStartHelpNamesTheVariablesItChanges(t *testing.T) {
 	cleanHome(t)
 	code, out, _ := runCLI(t, []string{"start", "--help"}, false, false)
 	for _, want := range []string{
 		"\nSelection failures launch on the current login. Arguments pass unchanged.\n",
 		"\nThe environment passes unchanged, except CLAUDE_SECURESTORAGE_CONFIG_DIR: start sets it to the Fable store\n" +
-			"for a Fable session while that store is usable, and removes it from any other session when it names that store.\n",
+			"for a Fable session while that store is usable, and removes it from any other session when it names that store;\n" +
+			"and TYCSWAP_START_HOLD: start sets it for a session it holds a login at its limit for, and removes it from any other.\n",
 	} {
 		if code != 0 || !strings.Contains(out, want) {
 			t.Errorf("help lacks %q:\n%s", want, out)

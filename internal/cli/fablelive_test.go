@@ -183,6 +183,29 @@ func TestDeadLiveFableLoginMovesToTheBestRankedAccount(t *testing.T) {
 	}
 }
 
+// With every account of the pool at its limit the move off a dead live login
+// still takes the pool's first: start's ranking of logins at a limit (DESIGN
+// A105) does not reach it.
+func TestDeadLiveFableLoginWithEveryAccountAtItsLimit(t *testing.T) {
+	fx := fableTickFixture{def: "1", live: "2", logins: []string{"2", "3", "4"},
+		usage: map[string][3]float64{"1": {10, 20, 30}, "2": {10, 20, 10}, "3": {10, 20, 100}, "4": {10, 100, 100}},
+		refresh: func(creds string) oauth.RefreshOutcome {
+			if strings.Contains(creds, `"rt-f2"`) {
+				return oauth.RefreshOutcome{Error: oauth.ErrInvalidGrant}
+			}
+			return oauth.RefreshOutcome{Error: oauth.ErrTransient}
+		}}
+	sw, _ := fx.build(t)
+	putLiveFableLogin(t, sw, fableLoginOf("2", sw.Clk.Now().Add(-time.Hour).UnixMilli()))
+	_, out, _ := runCodex(t, "", "auto", "--once", "--json")
+	_, fable, _ := splitByStore(t, out)
+	ev := eventOf(fable, "switch")
+	to, _ := ev["to"].(map[string]any)
+	if ev == nil || ev["trigger"] != "failover" || to["number"] != float64(3) {
+		t.Fatalf("Fable events %v, want the failover to Account-3", fable)
+	}
+}
+
 // A live Fable login with no refresh token cannot be refreshed: it is
 // quarantined and left as an invalid_grant one is (DESIGN A102).
 func TestLiveFableLoginWithoutARefreshTokenIsLeft(t *testing.T) {
