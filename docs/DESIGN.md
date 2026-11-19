@@ -8458,7 +8458,8 @@ pass: `Store.FableStore()` for on, off, usable and the reason; the live slot
 by `ResolveFableLiveSlot` on a `WithoutLineageWrites` view (backup, chain,
 then the profile endpoint, never written), as `AccountInfo.FableLive` is
 resolved (A102); and per account its Fable login, `sign in again` when the
-Fable state file holds an `invalid_grant` quarantine entry for it. Every
+Fable state file holds a quarantine entry for it, `invalid_grant` or the
+engine's `identity-conflict` (the pool and the tray leave out either). Every
 reader of that file on these surfaces, the pool (A102) and the tray included,
 reads it through `reporting.FableQuarantine`: an entry whose fingerprint is
 neither the account's stored Fable login's nor the Fable store's live
@@ -8572,8 +8573,9 @@ page element with a Fable store, none without, the button's request) in
 `testdata/nofable-state.json`, recorded from the tree before these
 surfaces), `TestDashboardSwitchesTheFableStoreOnly`,
 `TestDashboardAutoFable`, `TestDashboardPageWithTheFableStore`,
-`TestFableLoginSignedInAgainReadsOkAtOnce` and
-`TestFableLoginSignedInAgainWithAutoSwitchOff` over a real switcher in
+`TestFableLoginSignedInAgainReadsOkAtOnce`,
+`TestFableLoginSignedInAgainWithAutoSwitchOff` and
+`TestFableQuarantineOfAnyReasonReadsSignInAgain` over a real switcher in
 `cli`. The tray: `TestPanelFableLabelAndButton` (the label, the button and
 the A84 fit, wide and narrow) and `TestPanelFableAccessibleTexts`
 in `tray`, `TestNativePanelUseForFable` on Windows; `TestTrayFablePanelRows`,

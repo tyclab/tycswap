@@ -147,9 +147,9 @@ the host of the endpoint its requests go to (the whole URL is in `--json`).
 While an account has a Fable login (DESIGN A100, A104), tags follow the other
 markers: `(Fable store)` on the Fable store's account, `(Fable login)` on
 another account whose Fable login the store can use, and `(Fable login: sign
-in again)` on one whose Fable login the Fable engine quarantined on
-`invalid_grant` and that has not been signed in again since. `(active)` stays
-the default login's.
+in again)` on one whose Fable login the Fable engine quarantined
+(`invalid_grant`, or `identity-conflict`) and that has not been signed in
+again since. `(active)` stays the default login's.
 When usage cannot be fetched the row reads `usage unavailable (<reason>)` where
 `<reason>` is the last fetch error (for example `http-429`, `http-401`).
 
@@ -214,7 +214,7 @@ Present only when applicable (additive, schemaVersion 1):
 | `usageFetchedAt` | string (ISO-8601 UTC) | `usage` is non-null and the measurement time is known. |
 | `usageAgeSeconds` | number | Emitted with `usageFetchedAt`. |
 | `usageRefresh` | object | A usage fetch was skipped and none has been attempted since: `skipReason` (string) says why, for example `owner holds an expired token; Claude Code refreshes it on next use`, and `skipAt` (string, ISO-8601 UTC, seconds) since when. The next attempted fetch, successful or failed, removes both. |
-| `fableLogin` | object | The account has a Fable login (DESIGN A104): `{"live": bool, "status": "ok" \| "sign in again"}`. `live` is whether the Fable store holds it; `sign in again` means the Fable engine quarantined it on `invalid_grant` and it has not been signed in again since: a quarantine entry whose fingerprint is neither the stored Fable login's nor the Fable store's live login's names a replaced login and reads `ok` at once, before the engine releases it. |
+| `fableLogin` | object | The account has a Fable login (DESIGN A104): `{"live": bool, "status": "ok" \| "sign in again"}`. `live` is whether the Fable store holds it; `sign in again` means the Fable engine quarantined it (`invalid_grant`, or `identity-conflict`: it authenticates as another account) and it has not been signed in again since: a quarantine entry whose fingerprint is neither the stored Fable login's nor the Fable store's live login's names a replaced login and reads `ok` at once, before the engine releases it. |
 
 The `usageStatus` enumeration:
 

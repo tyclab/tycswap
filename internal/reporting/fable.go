@@ -24,7 +24,8 @@ import (
 
 // FableLogin is an account's Fable login as the surfaces show it: Live
 // while the Fable store holds it; Status FableLoginOK, or FableSignInAgain
-// for a login the Fable engine quarantined on invalid_grant.
+// for a login the Fable engine quarantined (FableQuarantine), on
+// invalid_grant or identity-conflict.
 type FableLogin struct {
 	Live   bool   `json:"live"`
 	Status string `json:"status"`
@@ -64,7 +65,7 @@ func readFableView(s *store.Store, data *store.SequenceData) *fableView {
 			continue
 		}
 		login := FableLogin{Live: num == v.live.Slot, Status: FableLoginOK}
-		if held[num].Reason == oauth.ErrInvalidGrant {
+		if _, dead := held[num]; dead {
 			login.Status = FableSignInAgain
 		}
 		v.logins[num] = login

@@ -359,3 +359,33 @@ func TestFableLoginSignedInAgainWithAutoSwitchOff(t *testing.T) {
 		t.Errorf("on the Fable store: row 3 fableLogin %v", row["fableLogin"])
 	}
 }
+
+// A Fable quarantine entry of another reason than invalid_grant (the
+// engine's identity-conflict) gets one answer: the row reads sign in again,
+// so neither the page nor the tray offers Use for Fable, and the pool, which
+// the engine and the ranking read, leaves the account out (DESIGN A102, A104).
+func TestFableQuarantineOfAnyReasonReadsSignInAgain(t *testing.T) {
+	sw, _ := atFableLimit.build(t)
+	if err := autoswitch.Quarantine(fableStatePath(sw), sw.Clk, "3", fableEmail("3"), "identity-conflict", fableLoginOf("3", farExpiry), func(autoswitch.Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	_, body := serveFableDashboard(t, sw).call(http.MethodGet, "/api/state")
+	var ws web.State
+	if err := json.Unmarshal(body, &ws); err != nil || ws.Auto == nil || ws.Auto.Fable == nil {
+		t.Fatalf("state: %v %s", err, body)
+	}
+	for _, row := range ws.Accounts {
+		if row["key"] != "claude:3" {
+			continue
+		}
+		if login := row["fableLogin"].(map[string]any); login["status"] != reporting.FableSignInAgain || fableSwitchable(ws, row) {
+			t.Errorf("row 3 fableLogin %v, tray Use for Fable %v; want sign in again and none", login, fableSwitchable(ws, row))
+		}
+	}
+	if _, held := ws.Auto.Fable.Quarantine["3"]; !held || len(ws.Auto.Fable.Ranking) != 0 {
+		t.Errorf("auto.fable quarantine %v ranking %v, want 3 held and no next account", ws.Auto.Fable.Quarantine, ws.Auto.Fable.Ranking)
+	}
+	if pool := reporting.FablePool(sw.Store); !reflect.DeepEqual(pool, []string{"2"}) {
+		t.Errorf("Fable pool = %v, want [2]", pool)
+	}
+}
