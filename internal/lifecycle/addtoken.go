@@ -142,7 +142,8 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 		return err
 	}
 
-	return s.WithRosterLocked(func(data *store.SequenceData) error {
+	var renumbered map[string]string
+	if err := s.WithRosterLocked(func(data *store.SequenceData) error {
 		// Email defaulting (§6.2): note this may assign slotPtr for the
 		// placeholder, from the roster this call commits.
 		if emailVal == "" {
@@ -274,6 +275,9 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 			return err
 		}
 		followFable()
+		if migrateFrom != "" {
+			renumbered = map[string]string{migrateFrom: accountNum}
+		}
 
 		sourceLabel := "token"
 		if isAPIKey {
@@ -291,7 +295,11 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 		emitLine(printer.Accent("Added") + " Account " + accountNum + ": " + emailVal + " " +
 			printer.Muted("[personal]") + " " + printer.Muted("(from "+sourceLabel+")"))
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	renumberFableState(s, renumbered)
+	return nil
 }
 
 func tokenPlaceholderEmail(isAPIKey bool, slot int) string {

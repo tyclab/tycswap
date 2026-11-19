@@ -4,9 +4,11 @@ package lifecycle
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -186,6 +188,63 @@ func TestRenumberingFollowsTheChainRecordOfAnUnattributedLogin(t *testing.T) {
 			}
 		})
 	}
+}
+
+// move, swap, add --slot and add-token --slot carry the renumbering into the
+// Fable engine state: lastSeenLive and lastSwitchTo follow their account and
+// every other field stays, so the next Fable tick reports no login made
+// elsewhere (DESIGN A102). A state file that does not exist is not created.
+func TestRenumberingCarriesTheFableEngineState(t *testing.T) {
+	email, five := "b@example.com", "5"
+	for _, tc := range []struct {
+		name, seen, switchTo string
+		act                  func(t *testing.T, s *store.Store) error
+	}{
+		{"move", "5", "1", func(t *testing.T, s *store.Store) error { _, _, _, err := MoveAccount(s, "2", "5"); return err }},
+		{"swap", "1", "2", func(t *testing.T, s *store.Store) error { _, _, err := SwapAccounts(s, "1", "2"); return err }},
+		{"add --slot", "5", "1", func(t *testing.T, s *store.Store) error {
+			_, err := AddAccountFrom(s, signIn(t, email, planCreds("at-n2", "rt-n2", "max")), ip(5), true, nil)
+			return err
+		}},
+		{"add-token --slot", "5", "1", func(t *testing.T, s *store.Store) error {
+			return AddAccountFromToken(s, "sk-ant-oat01-N2", &email, &five, true)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := withFableLogins(t, "2")
+			f, _ := s.ForFable()
+			before := map[string]any{"schemaVersion": 1.0, "lastSeenLive": "2", "lastSeenAt": 100.0, "lastSwitchTo": "1", "lastSwitchAt": 50.0,
+				"lastSwitchBy": "hand", "active": map[string]any{"number": "2", "unhealthyTicks": 1.0, "idleHoldSince": nil},
+				"quarantine": map[string]any{"3": map[string]any{"email": "c@example.com", "reason": "invalid_grant", "at": "t", "refreshTokenFingerprint": nil}}}
+			raw, _ := json.Marshal(before)
+			if err := os.WriteFile(f.StatePath(), raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := tc.act(t, s); err != nil {
+				t.Fatal(err)
+			}
+			var after map[string]any
+			if err := json.Unmarshal([]byte(readFile(t, f.StatePath())), &after); err != nil {
+				t.Fatal(err)
+			}
+			before["lastSeenLive"], before["lastSwitchTo"] = tc.seen, tc.switchTo
+			if !reflect.DeepEqual(after, before) {
+				t.Fatalf("state %v, want %v", after, before)
+			}
+		})
+	}
+	t.Run("no state file", func(t *testing.T) {
+		s := withFableLogins(t, "2")
+		f, _ := s.ForFable()
+		if _, _, _, err := MoveAccount(s, "2", "5"); err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range []string{f.StatePath(), filepath.Join(filepath.Dir(f.StatePath()), ".autoswitch_state.lock")} {
+			if exists(p) {
+				t.Errorf("%s created", p)
+			}
+		}
+	})
 }
 
 // relocate and swap carry each Fable login with its account; the chain

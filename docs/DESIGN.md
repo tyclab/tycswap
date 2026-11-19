@@ -8266,6 +8266,14 @@ repaired: the store is usable again at once.
   (`ResolveOwnerSlot`), `fable/live_lineage.json` is rewritten to its new number
   under the store lock; for a login only its last install names, the record
   moves with its fingerprint, so the login stays that assumption (A100).
+  Once the store lock is released, `move`, `swap`, `add --slot` and
+  `add-token --slot` carry the renumbering into `fable/autoswitch_state.json`
+  under its lock (`autoswitch.RenumberLive`): `lastSeenLive` and
+  `lastSwitchTo` follow the account they name, every other field stays. No
+  switch stamp is written, and the Fable tick trusts only that (A102), so
+  before 2026-11-19 its next tick reported `live-login-changed` for an account
+  that had only changed its number. A Fable tick between the roster's commit
+  and that write may still report it once.
 - The rule under both: a Fable login belongs to the identity it was signed in
   as. `add` and `add-token` with `--slot N` follow it too (added after lane
   B's report): an account the add moves from its old slot to N takes its Fable

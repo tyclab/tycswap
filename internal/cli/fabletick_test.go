@@ -21,6 +21,7 @@ import (
 	"github.com/tyclab/tycswap/internal/credstore"
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
@@ -529,6 +530,66 @@ func TestFableTickReportsALoginMadeElsewhere(t *testing.T) {
 			}
 			if !strings.Contains(log, "Fable store: Live login changed from account 1 to 2 without a tycswap switch") {
 				t.Fatalf("log:\n%s", log)
+			}
+		})
+	}
+}
+
+// move, swap and an add --slot migration of the Fable store's account change
+// its number, not its login: the next Fable tick reports no login made
+// elsewhere, since the Fable engine state follows the renumbering.
+func TestFableTickReportsNoLoginChangeAfterARenumbering(t *testing.T) {
+	for _, tc := range []struct {
+		name, to string
+		act      func(t *testing.T, sw *core.Switcher)
+	}{
+		{"move", "5", func(t *testing.T, sw *core.Switcher) {
+			if code, out, errOut := runCodex(t, "", "move", "1", "5"); code != 0 {
+				t.Fatalf("move exit %d: %s%s", code, out, errOut)
+			}
+		}},
+		{"swap", "2", func(t *testing.T, sw *core.Switcher) {
+			if code, out, errOut := runCodex(t, "", "swap", "1", "2"); code != 0 {
+				t.Fatalf("swap exit %d: %s%s", code, out, errOut)
+			}
+		}},
+		{"add --slot", "5", func(t *testing.T, sw *core.Switcher) {
+			dir := t.TempDir()
+			writeFile(t, filepath.Join(dir, ".claude.json"), `{"oauthAccount":{"emailAddress":"`+fableEmail("1")+`","organizationUuid":""}}`)
+			writeFile(t, filepath.Join(dir, ".credentials.json"), dryCreds("at-n1", "rt-n1"))
+			slot, prev := 5, lifecycle.Output
+			lifecycle.Output = &bytes.Buffer{}
+			t.Cleanup(func() { lifecycle.Output = prev })
+			if _, err := sw.AddAccountFromLogin(lifecycle.LoginDir(dir, nil), &slot, true, nil); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := fableTickFixture{def: "3", live: "1", logins: []string{"1", "2"},
+				usage: map[string][3]float64{"1": {10, 20, 10}, "2": {10, 20, 10}, "3": {10, 20, 30}, "4": {10, 20, 30}}}
+			sw, _ := fx.build(t)
+			if code, out, _ := runCodex(t, "", "auto", "--once", "--json"); code != 2 {
+				t.Fatalf("tick 1 exit %d: %s", code, out)
+			}
+			var state map[string]any
+			if err := json.Unmarshal([]byte(readOrAbsent(t, fableStatePath(sw))), &state); err != nil || state["lastSeenLive"] != "1" {
+				t.Fatalf("after tick 1: %v (%v)", state, err)
+			}
+			state["lastSeenAt"] = state["lastSeenAt"].(float64) - 120
+			raw, _ := json.Marshal(state)
+			writeFile(t, fableStatePath(sw), string(raw))
+			tc.act(t, sw)
+			_, out, _ := runCodex(t, "", "auto", "--once", "--json")
+			_, fable, _ := splitByStore(t, out)
+			if changed := eventOf(fable, "live-login-changed"); changed != nil {
+				t.Fatalf("a renumbering reported as a login made elsewhere: %v", changed)
+			}
+			if log := readOrAbsent(t, filepath.Join(sw.BackupDir(), "tycswap.log")); strings.Contains(log, "without a tycswap switch") {
+				t.Fatalf("log:\n%s", log)
+			}
+			if err := json.Unmarshal([]byte(readOrAbsent(t, fableStatePath(sw))), &state); err != nil || state["lastSeenLive"] != tc.to {
+				t.Fatalf("after tick 2: lastSeenLive %v, want %s (%v)", state["lastSeenLive"], tc.to, err)
 			}
 		})
 	}

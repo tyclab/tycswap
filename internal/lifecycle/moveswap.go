@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/store"
 )
@@ -90,6 +91,13 @@ func MoveAccount(s *store.Store, account, target string) (srcNum, tgtNum string,
 	if err != nil {
 		return "", "", false, err
 	}
+	if srcNum != tgtNum {
+		renumbered := map[string]string{srcNum: tgtNum}
+		if swapped {
+			renumbered[tgtNum] = srcNum
+		}
+		renumberFableState(s, renumbered)
+	}
 	return srcNum, tgtNum, swapped, nil
 }
 
@@ -109,6 +117,7 @@ func SwapAccounts(s *store.Store, first, second string) (numA, numB string, err 
 	if err != nil {
 		return "", "", err
 	}
+	renumberFableState(s, map[string]string{numA: numB, numB: numA})
 	return numA, numB, nil
 }
 
@@ -598,6 +607,24 @@ func followFableChain(fab *store.Store, owner store.LiveSlot, renumbered map[str
 	}
 	if err != nil {
 		logWarningf(fab, "Could not point the Fable store's chain record at Account-%s: %v", to, err)
+	}
+}
+
+// renumberFableState carries a committed renumbering into the Fable engine
+// state (autoswitch.RenumberLive), so the next Fable tick does not take the
+// store's account under its new number for a login made elsewhere. It runs
+// once the store lock is released: every Fable path takes the Fable state
+// lock before the store lock. A Fable tick between the roster's commit and
+// this write still reads the old number and may report live-login-changed
+// once (for a swap, the write then maps that tick's new number back, and the
+// next tick reports once more).
+func renumberFableState(s *store.Store, renumbered map[string]string) {
+	fab := fableLogins(s)
+	if fab == nil || len(renumbered) == 0 {
+		return
+	}
+	if err := autoswitch.RenumberLive(fab.StatePath(), renumbered); err != nil {
+		logWarningf(fab, "Could not renumber the Fable store's engine state; its next tick may report a live login change: %v", err)
 	}
 }
 

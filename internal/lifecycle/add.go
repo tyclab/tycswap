@@ -102,7 +102,8 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		return err
 	}
 
-	return s.WithRosterLocked(func(data *store.SequenceData) error {
+	var renumbered map[string]string
+	if err := s.WithRosterLocked(func(data *store.SequenceData) error {
 		if slot == nil {
 			if existing := s.FindAccountSlot(data, email, orgUUID); existing != "" {
 				if err := refuseGroupHeld(s, existing); err != nil {
@@ -247,6 +248,9 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 			return err
 		}
 		followFable()
+		if migrateFrom != "" {
+			renumbered = map[string]string{migrateFrom: accountNum}
+		}
 		*landed = accountNum
 
 		tag := displayTag(email, cfgOrgName)
@@ -266,7 +270,11 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		}
 		emitLine(line)
 		return nil
-	})
+	}); err != nil {
+		return err
+	}
+	renumberFableState(s, renumbered)
+	return nil
 }
 
 // keepActive follows the live identity on a migration and clears when a displacement deleted its record (DESIGN A56).
