@@ -530,13 +530,12 @@ func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	switch store := r.URL.Query().Get("store"); store {
-	case "":
-	case "fable":
+	if q := r.URL.Query(); q.Has("store") {
+		if store := q.Get("store"); store != "fable" {
+			writeError(w, http.StatusBadRequest, "unknown store "+strconv.Quote(store)+"; the switch takes store=fable or none")
+			return
+		}
 		s.handleFableSwitch(w, r, provider, id)
-		return
-	default:
-		writeError(w, http.StatusBadRequest, "unknown store "+strconv.Quote(store)+"; the switch takes store=fable or none")
 		return
 	}
 	if provider == reporting.ProviderCodex {

@@ -389,3 +389,21 @@ func TestFableQuarantineOfAnyReasonReadsSignInAgain(t *testing.T) {
 		t.Errorf("Fable pool = %v, want [2]", pool)
 	}
 }
+
+// A present store with another value than fable, the empty one included,
+// answers 400 and switches nothing: a client that builds the query from an
+// empty variable must not move the default login (DESIGN A104).
+func TestFableSwitchRouteRefusesAnEmptyStore(t *testing.T) {
+	sw, _ := atFableLimit.build(t)
+	srv := serveFableDashboard(t, sw)
+	creds := filepath.Join(sw.Home, ".claude", ".credentials.json")
+	before, live := readOrAbsent(t, creds), storeLive(t, sw)
+	for _, path := range []string{"/api/switch/claude:3?store=", "/api/switch/claude:3?store=x"} {
+		if status, body := srv.call(http.MethodPost, path); status != http.StatusBadRequest {
+			t.Errorf("POST %s: %d %s, want 400", path, status, body)
+		}
+	}
+	if readOrAbsent(t, creds) != before || storeLive(t, sw) != live {
+		t.Errorf("a refused switch moved a login: default %s, Fable store %s", readOrAbsent(t, creds), storeLive(t, sw))
+	}
+}

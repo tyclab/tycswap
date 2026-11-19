@@ -8513,8 +8513,10 @@ stamps the Fable store's hold; `&empty=1`, on any key, calls `EmptyFable`.
 Both run through the authenticated mutation path (cookie and CSRF, or the
 bearer) and log `Switched the Fable store to account N` or `Emptied the
 Fable store` with the dashboard actor, beside the switch's own `by hand`
-line. Another `store` value, a `codex:` key, `force` or `confirmAuthChange`
-answer 400; a server without the seam (`web.Deps.Fable`) answers 503. The
+line. Another `store` value (the empty `store=` included: only an absent
+`store` is the default switch), a `codex:` key, `force` or
+`confirmAuthChange` answer 400; a server without the seam
+(`web.Deps.Fable`) answers 503. The
 default login, `sequence.json` and `.claude.json` are not written.
 
 **The page.** While `fable` is present the header adds a second line under
@@ -8575,8 +8577,8 @@ surfaces), `TestDashboardSwitchesTheFableStoreOnly`,
 `TestDashboardAutoFable`, `TestDashboardPageWithTheFableStore`,
 `TestFableLoginSignedInAgainReadsOkAtOnce`,
 `TestFableLoginSignedInAgainWithAutoSwitchOff` and
-`TestFableQuarantineOfAnyReasonReadsSignInAgain` over a real switcher in
-`cli`. The tray: `TestPanelFableLabelAndButton` (the label, the button and
+`TestFableQuarantineOfAnyReasonReadsSignInAgain` and
+`TestFableSwitchRouteRefusesAnEmptyStore` over a real switcher in `cli`. The tray: `TestPanelFableLabelAndButton` (the label, the button and
 the A84 fit, wide and narrow) and `TestPanelFableAccessibleTexts`
 in `tray`, `TestNativePanelUseForFable` on Windows; `TestTrayFablePanelRows`,
 `TestTrayFableTooltip`, `TestTrayFableMenu`, `TestTrayFableClick`,

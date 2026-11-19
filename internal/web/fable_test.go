@@ -174,6 +174,8 @@ func TestFableSwitchRouteRefusals(t *testing.T) {
 		opts []option
 	}{
 		{"/api/switch/claude:2?store=default", http.StatusBadRequest, nil},
+		{"/api/switch/claude:2?store=", http.StatusBadRequest, nil},
+		{"/api/switch/claude:2?store=&empty=1", http.StatusBadRequest, nil},
 		{"/api/switch/claude:2?store=opus", http.StatusBadRequest, nil},
 		{"/api/switch/codex:1?store=fable", http.StatusBadRequest, []option{withCodex()}},
 		{"/api/switch/claude:2?store=fable&force=1", http.StatusBadRequest, nil},
