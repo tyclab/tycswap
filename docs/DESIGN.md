@@ -8265,7 +8265,8 @@ Fable state file. Its state file is `fable/autoswitch_state.json`.
 **The pool** (`reporting.FablePool`) is every account that is enabled and
 rotation-eligible by the default rules, able to run Fable
 (`Store.FableCapable`), holding a Fable login, and not quarantined in the
-Fable state file. The default store's quarantine does not exclude.
+Fable state file (`reporting.FableQuarantine`, A104). The default store's
+quarantine does not exclude.
 
 **The Fable settings** are the merged settings with the model set to every
 Fable window name an account's cached usage reports; they are counted
@@ -8457,7 +8458,14 @@ pass: `Store.FableStore()` for on, off, usable and the reason; the live slot
 by `ResolveFableLiveSlot` on a `WithoutLineageWrites` view (backup, chain,
 then the profile endpoint, never written), as `AccountInfo.FableLive` is
 resolved (A102); and per account its Fable login, `sign in again` when the
-Fable state file holds an `invalid_grant` quarantine entry for it. The
+Fable state file holds an `invalid_grant` quarantine entry for it. Every
+reader of that file on these surfaces, the pool (A102) and the tray included,
+reads it through `reporting.FableQuarantine`: an entry whose fingerprint is
+neither the account's stored Fable login's nor the Fable store's live
+login's names a login signed in again since and is left out, so the row
+reads `ok`, *Use for Fable* is there and the pool has the account right after
+the sign-in, with auto-switch on or off; the engine releases the entry at its
+next real tick as before. An entry without a fingerprint stands. The
 store's state is `on`, `off` (no login held) or `unusable` (the live login's
 grant quarantined).
 
@@ -8490,7 +8498,7 @@ when nil) and each Claude row `fableLogin`, a plain map so the in-process
 tray reads what a remote one decodes. `auto.fable` (`web.FableAutoView`,
 built by the facade in `cli/webfacades.go`) is the Fable store's engine:
 `lastTickAt` and `quarantine` from `fable/autoswitch_state.json`
-(`autoswitch.ReadLastTick`, `ReadQuarantineEntries`), `caption` `Counting
+(`autoswitch.ReadLastTick`, `reporting.FableQuarantine`), `caption` `Counting
 5h + 7d` plus every Fable window name an account reports, `ranking`
 `autoswitch.RankTargets` over the Fable pool less the live slot with the
 Fable settings, as the Fable tick ranks (A102), and `heldUntil` (epoch
@@ -8552,8 +8560,9 @@ their windows.
 
 **Tests.** `TestListNamesTheFableStoreAndItsLogins`,
 `TestListWithTheFableStoreOff`, `TestListWithoutFableLogins`,
-`TestStatusFableObject` (each state, the wake-parked paths) and
-`TestSnapshotCarriesTheFableStore` in `reporting`;
+`TestStatusFableObject` (each state, the wake-parked paths),
+`TestSnapshotCarriesTheFableStore` and
+`TestFableQuarantineLeavesOutLoginsSignedInAgain` in `reporting`;
 `TestMergePassesTheFableStoreFromClaude`; `TestStateCarriesTheFableStore`,
 `TestStateRowFableLoginIsAMap`, `TestStateWithoutFable`,
 `TestFableSwitchRoute`, `TestFableSwitchRouteRefusals`, the route in the
@@ -8562,9 +8571,11 @@ page element with a Fable store, none without, the button's request) in
 `web`; `TestDashboardStateWithoutFableLogins` (the state document against
 `testdata/nofable-state.json`, recorded from the tree before these
 surfaces), `TestDashboardSwitchesTheFableStoreOnly`,
-`TestDashboardAutoFable` and `TestDashboardPageWithTheFableStore` over a real
-switcher in `cli`. The tray: `TestPanelFableLabelAndButton` (the label, the
-button and the A84 fit, wide and narrow) and `TestPanelFableAccessibleTexts`
+`TestDashboardAutoFable`, `TestDashboardPageWithTheFableStore`,
+`TestFableLoginSignedInAgainReadsOkAtOnce` and
+`TestFableLoginSignedInAgainWithAutoSwitchOff` over a real switcher in
+`cli`. The tray: `TestPanelFableLabelAndButton` (the label, the button and
+the A84 fit, wide and narrow) and `TestPanelFableAccessibleTexts`
 in `tray`, `TestNativePanelUseForFable` on Windows; `TestTrayFablePanelRows`,
 `TestTrayFableTooltip`, `TestTrayFableMenu`, `TestTrayFableClick`,
 `TestTrayFableClicksDropWhileOneIsInFlight`,

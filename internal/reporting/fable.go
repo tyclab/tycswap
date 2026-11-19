@@ -5,7 +5,9 @@
 package reporting
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -48,15 +50,14 @@ func readFableView(s *store.Store, data *store.SequenceData) *fableView {
 	if data == nil || s.IsFable() || !s.HasFableLogins() {
 		return nil
 	}
-	f, err := s.ForFable()
-	if err != nil {
+	if _, err := s.ForFable(); err != nil {
 		return nil
 	}
 	v := &fableView{state: s.FableStore(), logins: map[string]FableLogin{}}
 	if v.state.On {
 		v.live = s.WithoutLineageWrites().ResolveFableLiveSlot(data)
 	}
-	held := autoswitch.ReadQuarantineEntries(f.StatePath())
+	held := FableQuarantine(s)
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
 		if !s.HasFableLogin(num) {
@@ -69,6 +70,47 @@ func readFableView(s *store.Store, data *store.SequenceData) *fableView {
 		v.logins[num] = login
 	}
 	return v
+}
+
+// FableQuarantine is the Fable state file's quarantine as every surface
+// reads it (DESIGN A104). An entry whose refresh-token fingerprint is
+// neither its account's stored Fable login's nor the Fable store's live
+// login's names a login signed in again since, which the engine releases at
+// its next real tick (credentials-replaced, A102); it is left out. An entry
+// without a fingerprint stands. s is the default store.
+func FableQuarantine(s *store.Store) map[string]autoswitch.QuarantineEntry {
+	f, err := s.ForFable()
+	if err != nil {
+		return map[string]autoswitch.QuarantineEntry{}
+	}
+	entries := autoswitch.ReadQuarantineEntries(f.StatePath())
+	var state struct {
+		Quarantine map[string]struct {
+			Fingerprint *string `json:"refreshTokenFingerprint"`
+		} `json:"quarantine"`
+	}
+	raw, err := os.ReadFile(f.StatePath())
+	if len(entries) == 0 || err != nil || json.Unmarshal(raw, &state) != nil {
+		return entries
+	}
+	data, _ := s.ReadSequence()
+	live, _, _ := f.Creds.ReadActive()
+	names := func(fp, creds string) bool {
+		got := oauth.CredentialFingerprint(creds)
+		return got != nil && *got == fp
+	}
+	for num := range entries {
+		fp := state.Quarantine[num].Fingerprint
+		if fp == nil {
+			continue
+		}
+		rec, _ := recordFor(data, num)
+		stored, _ := f.ReadAccountCredentials(num, recStr(rec, "email"))
+		if !names(*fp, stored) && !names(*fp, live) {
+			delete(entries, num)
+		}
+	}
+	return entries
 }
 
 // login is num's Fable login, nil without one.

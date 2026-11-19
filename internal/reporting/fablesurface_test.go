@@ -4,7 +4,10 @@ package reporting
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -274,5 +277,48 @@ func TestSnapshotCarriesTheFableStore(t *testing.T) {
 		if a.FableLogin != nil {
 			t.Fatalf("Account-%s has FableLogin without Fable logins", a.Number)
 		}
+	}
+}
+
+// A Fable quarantine entry stands while its fingerprint names the account's
+// stored Fable login or the login the Fable store holds; one whose login was
+// signed in again since is no dead login, and one without a fingerprint
+// stands (DESIGN A104).
+func TestFableQuarantineLeavesOutLoginsSignedInAgain(t *testing.T) {
+	s, _ := fableIncident(t, nil, nil, "8", "3", "4", "8", "11")
+	putFableStore(t, s, oauthCreds("fat8b", "frt8b", 0))
+	quarantineFable(t, s, "3", oauthCreds("fat3", "frt3", 0))
+	quarantineFable(t, s, "4", oauthCreds("fat4-old", "frt4-old", 0))
+	quarantineFable(t, s, "8", oauthCreds("fat8b", "frt8b", 0))
+	f, _ := s.ForFable()
+	raw, _ := os.ReadFile(f.StatePath())
+	var state map[string]any
+	if err := json.Unmarshal(raw, &state); err != nil {
+		t.Fatal(err)
+	}
+	state["quarantine"].(map[string]any)["11"] = map[string]any{"email": "acct11@example.com", "reason": "invalid_grant"}
+	raw, _ = json.Marshal(state)
+	if err := os.WriteFile(f.StatePath(), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for num := range FableQuarantine(s) {
+		got = append(got, num)
+	}
+	sort.Strings(got)
+	if strings.Join(got, ",") != "11,3,8" {
+		t.Errorf("Fable quarantine = %v, want 3 (its stored login), 8 (the store's login) and 11 (no fingerprint)", got)
+	}
+	status := map[string]string{}
+	for _, a := range Snapshot(s, map[string]bool{}).Accounts {
+		if a.FableLogin != nil {
+			status[a.Number] = a.FableLogin.Status
+		}
+	}
+	if want := map[string]string{"3": FableSignInAgain, "4": FableLoginOK, "8": FableSignInAgain, "11": FableSignInAgain}; !reflect.DeepEqual(status, want) {
+		t.Errorf("fableLogin status = %v, want %v", status, want)
+	}
+	if pool := strings.Join(FablePool(s), ","); pool != "4" {
+		t.Errorf("Fable pool = %s, want 4", pool)
 	}
 }

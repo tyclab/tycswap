@@ -18,11 +18,16 @@ import (
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/brand"
+	"github.com/tyclab/tycswap/internal/clock"
 	codexapi "github.com/tyclab/tycswap/internal/codex/api"
 	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/launch"
+	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/web"
 )
 
@@ -253,4 +258,104 @@ func TestDashboardPageWithTheFableStore(t *testing.T) {
 	}
 	cases = append(cases, pageCase{Name: "fable off", State: state()})
 	renderPage(t, servedPage(func(path string) string { _, body := srv.call(http.MethodGet, path); return string(body) }), cases)
+}
+
+// A dead live Fable login signed in again with the command its chip names
+// reads ok at once, before any Fable tick: the row, list and the pool agree
+// with the store's own state (DESIGN A101, A104).
+func TestFableLoginSignedInAgainReadsOkAtOnce(t *testing.T) {
+	f := newFableLoginFixture(t)
+	if code, _, errb := f.run(t, "add", "--login", "--lineage", "fable", "--slot", "1"); code != 0 {
+		t.Fatalf("first Fable login: exit %d %s", code, errb)
+	}
+	root := paths.GetBackupRoot()
+	live, err := os.ReadFile(filepath.Join(paths.FableStoreDir(root), ".credentials.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(paths.FableScopeDir(root), "autoswitch_state.json")
+	if err := autoswitch.Quarantine(statePath, clock.System{}, "1", "a@example.com", oauth.ErrInvalidGrant, string(live), func(autoswitch.Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, _ := runHuman(t, "list"); code != 0 || !strings.Contains(out, "(Fable login: sign in again)") || fableState(t).Usable {
+		t.Fatalf("precondition: the live Fable login reads dead; list exit %d\n%s", code, out)
+	}
+	signInAs(t, "a@example.com", "fable-1b")
+	if code, _, errb := f.run(t, "add", "--login", "--lineage", "fable", "--slot", "1"); code != 0 {
+		t.Fatalf("sign in again: exit %d %s", code, errb)
+	}
+	sw, err := newSwitcher(store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range reporting.Snapshot(sw.Store, map[string]bool{}).Accounts {
+		if a.Number == "1" && (a.FableLogin == nil || *a.FableLogin != (reporting.FableLogin{Live: true, Status: reporting.FableLoginOK})) {
+			t.Errorf("row 1 fableLogin = %+v, want live and ok", a.FableLogin)
+		}
+	}
+	if code, out, _ := runHuman(t, "list"); code != 0 || !strings.Contains(out, "(Fable store)") || strings.Contains(out, "sign in again") {
+		t.Errorf("list after the new sign-in: exit %d\n%s", code, out)
+	}
+	if pool := reporting.FablePool(sw.Store); !reflect.DeepEqual(pool, []string{"1"}) {
+		t.Errorf("Fable pool = %v, want [1]", pool)
+	}
+}
+
+// With auto-switch off no Fable tick releases a quarantine, and a login
+// signed in again still reads ok on every surface: the row, the tray's Use
+// for Fable, auto.fable's quarantine and ranking; the entry stays in the
+// state file for the engine to release (DESIGN A102, A104).
+func TestFableLoginSignedInAgainWithAutoSwitchOff(t *testing.T) {
+	fx := atFableLimit
+	fx.off = true
+	sw, _ := fx.build(t)
+	if err := autoswitch.Quarantine(fableStatePath(sw), sw.Clk, "3", fableEmail("3"), oauth.ErrInvalidGrant, fableLoginOf("3", farExpiry), func(autoswitch.Event) {}); err != nil {
+		t.Fatal(err)
+	}
+	srv := serveFableDashboard(t, sw)
+	row3 := func() (web.State, map[string]any) {
+		t.Helper()
+		_, body := srv.call(http.MethodGet, "/api/state")
+		var ws web.State
+		if err := json.Unmarshal(body, &ws); err != nil || ws.Auto == nil || ws.Auto.Fable == nil {
+			t.Fatalf("state: %v %s", err, body)
+		}
+		for _, row := range ws.Accounts {
+			if row["key"] == "claude:3" {
+				return ws, row
+			}
+		}
+		t.Fatal("no row claude:3")
+		return ws, nil
+	}
+	if ws, row := row3(); row["fableLogin"].(map[string]any)["status"] != reporting.FableSignInAgain || fableSwitchable(ws, row) {
+		t.Fatalf("precondition: the quarantined login reads %v", row["fableLogin"])
+	}
+	f, err := sw.Store.ForFable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewed := `{"claudeAiOauth":{"accessToken":"at-f3b","refreshToken":"rt-f3b","expiresAt":4102444800000}}`
+	if err := sw.Store.Lock.With(func() error { return f.WriteAccountCredentials("3", fableEmail("3"), renewed) }); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, _ := runCodex(t, "", "auto", "--once", "--json"); strings.Contains(out, `"store":"fable"`) {
+		t.Fatalf("auto --once with auto-switch off ran a Fable tick: exit %d\n%s", code, out)
+	}
+	if _, held := autoswitch.ReadQuarantineEntries(fableStatePath(sw))["3"]; !held {
+		t.Fatal("the quarantine entry left the state file without a Fable tick")
+	}
+	ws, row := row3()
+	if got := row["fableLogin"]; !reflect.DeepEqual(got, map[string]any{"live": false, "status": "ok"}) || !fableSwitchable(ws, row) {
+		t.Errorf("signed in again: row 3 fableLogin %v, Use for Fable %v", got, fableSwitchable(ws, row))
+	}
+	if _, held := ws.Auto.Fable.Quarantine["3"]; held || !reflect.DeepEqual(ws.Auto.Fable.Ranking, []string{"3"}) {
+		t.Errorf("auto.fable quarantine %v ranking %v, want none and [3]", ws.Auto.Fable.Quarantine, ws.Auto.Fable.Ranking)
+	}
+	if code, out, errb := runCodex(t, "", "switch", "--store", "fable", "3", "--json"); code != 0 {
+		t.Fatalf("switch --store fable 3: exit %d %s %s", code, out, errb)
+	}
+	if _, row := row3(); !reflect.DeepEqual(row["fableLogin"], map[string]any{"live": true, "status": "ok"}) {
+		t.Errorf("on the Fable store: row 3 fableLogin %v", row["fableLogin"])
+	}
 }
