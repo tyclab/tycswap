@@ -22,12 +22,14 @@ type LiveSlot struct {
 	Identity   *oauth.Identity
 }
 
-// LiveSlot.Source values, in resolution order (DESIGN A68).
+// LiveSlot.Source values, in resolution order (DESIGN A68). SourceLastInstall
+// is ResolveOwnerSlot's only: nothing else named the login (DESIGN A100).
 const (
-	SourceBackup  = "backup"
-	SourceChain   = "chain"
-	SourceProfile = "profile"
-	SourceConfig  = "config"
+	SourceBackup      = "backup"
+	SourceChain       = "chain"
+	SourceProfile     = "profile"
+	SourceConfig      = "config"
+	SourceLastInstall = "last-install"
 )
 
 // lineageMemo is shared by a Store and its scoped clones, so one process warns
@@ -95,6 +97,25 @@ func (s *Store) ResolveLiveSlotWith(data *SequenceData, readLive func() string) 
 		return LiveSlot{}
 	}
 	return s.liveSlotFor(data, email, orgUUID, s.group == "", readLive)
+}
+
+// ResolveOwnerSlot is the account a caller that backs up, replaces or keeps
+// the live login takes it for: ResolveLiveSlot's, except that a Fable store
+// login that backup, chain and profile leave unnamed belongs to the last
+// install (Source SourceLastInstall, Identity nil), the slot the store's chain
+// record names while the roster holds the record's identity there. Claude
+// Code's own refresh is the only other writer of that login, so this is an
+// assumption: a caller that writes the login into that slot keeps .prev and
+// stashes a copy. Slot "" means no owner is known (DESIGN A100).
+func (s *Store) ResolveOwnerSlot(data *SequenceData) LiveSlot {
+	ls := s.ResolveLiveSlot(data)
+	if !s.fable || ls.Slot != "" || !s.HasLiveLogin() {
+		return ls
+	}
+	if slot := s.lastInstall(data); slot != "" {
+		return LiveSlot{Slot: slot, Source: SourceLastInstall}
+	}
+	return ls
 }
 
 // defaultLiveSlot is ResolveLiveSlot for the default login, whatever the

@@ -391,6 +391,33 @@ func TestResolveFableLiveSlotUnknownCredential(t *testing.T) {
 	}
 }
 
+// ResolveOwnerSlot names the last install for a login nothing else names,
+// while the roster holds the chain record's identity in its slot;
+// ResolveFableLiveSlot and FableStore keep their answer.
+func TestResolveOwnerSlotTakesTheFableStoresLastInstall(t *testing.T) {
+	s := fableFixture(t)
+	two := oauth.Identity{UUID: "u-2", Email: "two@example.com", OrgUUID: "org-2"}
+	putFableLogin(t, s, "2", fableCreds("at-f2", "rt-f2"))
+	writeFableChain(t, s, fableCreds("at-f2", "rt-f2"), "2", two)
+	putFableLive(t, s, fableCreds("at-f2-rotated", "rt-f2-rotated"))
+	data, _ := s.ReadSequence()
+	f := mustFable(t, s)
+	if got := f.ResolveOwnerSlot(data); got != (LiveSlot{Slot: "2", Source: SourceLastInstall}) {
+		t.Fatalf("owner %+v, want the last install", got)
+	}
+	if got := s.ResolveFableLiveSlot(data); got != (LiveSlot{}) {
+		t.Fatalf("ResolveFableLiveSlot = %+v, want no slot", got)
+	}
+	if got := s.FableStore().Live; got != (LiveSlot{}) {
+		t.Fatalf("FableStore().Live = %+v, want no slot", got)
+	}
+	writeSequenceRaw(t, s, strings.Replace(fableRoster, `"uuid": "u-2", "organizationUuid": "org-2"`, `"uuid": "u-9", "organizationUuid": "org-9"`, 1))
+	data, _ = s.ReadSequence()
+	if got := f.ResolveOwnerSlot(data); got.Slot != "" {
+		t.Fatalf("owner %+v after slot 2 changed identity, want none", got)
+	}
+}
+
 func TestResolveFableLiveSlotAsksTheProfileOnce(t *testing.T) {
 	s := fableFixture(t)
 	calls := 0

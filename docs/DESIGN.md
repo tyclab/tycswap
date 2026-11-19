@@ -8032,6 +8032,26 @@ under the store lock, declined while that login is the Fable store's live
 one (Claude Code refreshes it), its lineage re-checked, and only that login's
 file written; `invalid_grant` comes back in the outcome.
 
+**The last install.** Claude Code rotates the Fable store's login on its
+own; until a harvest or the profile endpoint has named the rotated login, no
+backup and no chain fingerprint holds it. When the profile endpoint then does
+not answer (network, 429, 5xx), or the store lock keeps it out, or the
+rotation lands while a switch waits for Claude Code's lock, the login reads
+as nobody's. `Store.ResolveOwnerSlot`, which every caller that backs up,
+replaces or keeps the live login asks, takes such a login for the account
+tycswap last installed in the store: the slot the store's chain record
+names, whatever fingerprint it carries, while the roster still maps the
+identity it was written for to that OAuth slot (`Source` `last-install`,
+no `Identity`). Every Fable switch and renewal writes the record, and only
+Claude Code's own refresh writes the store's login otherwise. Because this is
+an assumption, a login backed up on it also goes to the unclaimed stash
+(`{"lineage":"fable","reason":"last-install","slot":"N"}`, logged at INFO),
+and the account's previous Fable login stays in `.prev`: a wrong assumption
+loses nothing. `EmptyFable` removes the record with the login, so a login
+that later appears in an emptied store has no last install and is stashed.
+`ResolveFableLiveSlot`, `FableStore()`, the engine, `list`, `status` and the
+dashboard keep their answer: no slot.
+
 The default resolver is unchanged except one line: when `.claude.json` names
 the Fable store's live account (by backup or chain) and the default
 credential is another slot's, A68's `live config names slot …` line is
@@ -8058,12 +8078,13 @@ shared config is expected, and each timer tick is a new process.
    committed while the switch waited. The target must still be the account
    it named, else `Account-N changed while the switch waited for the store
    lock; nothing switched. Retry the command.`, and still hold its Fable
-   login. The live login is read again and resolved by backup and chain,
-   and by a profile answer asked before the locks; when that is the target,
-   nothing is written and the result is `already-active`. It goes into its
-   account's Fable login (`.prev` kept), or, unattributed, into the
-   unclaimed stash in `credentials-fable/` with the context
-   `{"lineage":"fable"}`.
+   login. The live login is read again and its owner resolved
+   (`ResolveOwnerSlot`: backup, chain, a profile answer asked before the
+   locks, else the last install); when that is the target, nothing is
+   written and the result is `already-active`, also before the locks. It
+   goes into its account's Fable login (`.prev` kept, plus the stash copy
+   for a last install), or, with no owner, into the unclaimed stash in
+   `credentials-fable/` with the context `{"lineage":"fable"}`.
 4. The target's Fable login is installed with the store's own seat-wide keys
    spliced in, by atomic rename, 0600: a running session reads it on its next
    request. The Fable chain record names it.
@@ -8072,8 +8093,8 @@ shared config is expected, and each timer tick is a new process.
    an empty store or an unknown login).
 
 `switching.EmptyFable` takes the same locks, backs the live login up as in
-step 3, and leaves the store's seat-wide keys only, or no file when it has
-none; its reason is `emptied`.
+step 3, leaves the store's seat-wide keys only, or no file when it has
+none, and removes the Fable chain record; its reason is `emptied`.
 
 `core.Switcher.SwitchFable` is the switch by hand: under
 `fable/.autoswitch_state.lock`, and a switch stamps the hold (`lastSwitchAt`,

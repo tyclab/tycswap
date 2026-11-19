@@ -276,7 +276,7 @@ func (s *Store) fableChainSlot(data *SequenceData, live string) (string, *oauth.
 		return "", nil
 	}
 	id := rec.Identity.oauth()
-	if slot := s.fableIdentitySlot(data, &id); slot != "" && slot == rec.Slot {
+	if slot := s.oauthIdentitySlot(data, &id); slot != "" && slot == rec.Slot {
 		return slot, &id
 	}
 	return "", nil
@@ -291,7 +291,7 @@ func (s *Store) fableProfileSlot(data *SequenceData, live string) (string, *oaut
 	if id == nil {
 		return "", nil
 	}
-	slot := s.fableIdentitySlot(data, id)
+	slot := s.oauthIdentitySlot(data, id)
 	if slot == "" {
 		return "", nil
 	}
@@ -303,7 +303,7 @@ func (s *Store) fableProfileSlot(data *SequenceData, live string) (string, *oaut
 	return slot, id
 }
 
-func (s *Store) fableIdentitySlot(data *SequenceData, id *oauth.Identity) string {
+func (s *Store) oauthIdentitySlot(data *SequenceData, id *oauth.Identity) string {
 	slot := s.SlotForIdentity(data, id)
 	if slot == "" || kindFrom(data, slot) != "oauth" {
 		return ""
@@ -326,6 +326,17 @@ func (s *Store) RecordFableLive(num, creds string) error {
 	}
 	id := oauth.Identity{UUID: strField(rec, "uuid"), Email: strField(rec, "email"), OrgUUID: strField(rec, "organizationUuid")}
 	return f.writeLiveLineage(*fp, num, &id)
+}
+
+// ForgetFableLive removes the Fable chain record once the Fable store holds
+// no login, so no later login takes an emptied store's last install as its
+// account (DESIGN A100).
+func (s *Store) ForgetFableLive() error {
+	f, err := s.ForFable()
+	if err != nil {
+		return err
+	}
+	return f.forgetLiveLineage()
 }
 
 // RefreshFableBackupGuarded is RefreshBackupGuarded on account num's Fable

@@ -44,7 +44,7 @@ func SwitchFable(fable *store.Store, id string, opts FableSwitchOptions) (map[st
 		return nil, err
 	}
 	to := numRef(num, email)
-	if f.ResolveFableLiveSlot(data).Slot == num {
+	if f.ResolveOwnerSlot(data).Slot == num {
 		return fableResult(false, to, to, "already-active"), nil
 	}
 	if err := f.SetupFableDirectories(); err != nil {
@@ -60,7 +60,7 @@ func SwitchFable(fable *store.Store, id string, opts FableSwitchOptions) (map[st
 		if f.FindAccountSlot(current, email, org) != num {
 			return cerr.Switch("Account-%s changed while the switch waited for the store lock; nothing switched. Retry the command.", num)
 		}
-		ls := f.ResolveFableLiveSlot(current)
+		ls := f.ResolveOwnerSlot(current)
 		if already = ls.Slot == num; already {
 			return nil
 		}
@@ -95,8 +95,8 @@ func SwitchFable(fable *store.Store, id string, opts FableSwitchOptions) (map[st
 }
 
 // EmptyFable turns the Fable store off: under the same locks the live login
-// goes back into its account's Fable login, and the store keeps its seat-wide
-// keys only, or no file when it has none.
+// goes back into its account's Fable login, the store keeps its seat-wide
+// keys only, or no file when it has none, and its chain record goes.
 func EmptyFable(fable *store.Store) (map[string]any, error) {
 	f, err := fable.ForFable()
 	if err != nil {
@@ -115,10 +115,13 @@ func EmptyFable(fable *store.Store) (map[string]any, error) {
 	err = f.WithFableLocks(func() error {
 		current, _ := f.ReadSequence()
 		var err error
-		if from, err = backUpFableOutgoing(f, current, f.ResolveFableLiveSlot(current)); err != nil {
+		if from, err = backUpFableOutgoing(f, current, f.ResolveOwnerSlot(current)); err != nil {
 			return err
 		}
-		return f.Creds.ClearActive()
+		if err := f.Creds.ClearActive(); err != nil {
+			return err
+		}
+		return f.ForgetFableLive()
 	})
 	if err != nil {
 		return nil, err
@@ -139,9 +142,11 @@ func fableTargetRefusal(f *store.Store, num string) error {
 }
 
 // backUpFableOutgoing runs under the locks with the roster read there and ls,
-// the live login resolved from it (backup and chain, and a profile answer
-// asked before the locks: the store lock keeps the endpoint out). It returns
-// the outgoing account's ref, nil for an empty store or an unknown login.
+// the live login's owner resolved from it (backup and chain, a profile answer
+// asked before the locks, else the last install: the store lock keeps the
+// endpoint out). A login taken for the last install's is stashed as well. It
+// returns the outgoing account's ref, nil for an empty store or an unknown
+// login.
 func backUpFableOutgoing(f *store.Store, data *store.SequenceData, ls store.LiveSlot) (map[string]any, error) {
 	now, _, err := f.Creds.ReadActive()
 	if err != nil || now == "" {
@@ -152,6 +157,15 @@ func backUpFableOutgoing(f *store.Store, data *store.SequenceData, ls store.Live
 			return nil, err
 		}
 		return nil, nil
+	}
+	if ls.Source == store.SourceLastInstall {
+		id, err := f.Creds.WriteUnclaimed(now, map[string]any{"lineage": "fable", "reason": store.SourceLastInstall, "slot": ls.Slot})
+		if err != nil {
+			return nil, err
+		}
+		if f.Log != nil {
+			f.Log.Infof("Backed up the Fable store's login into account %s's Fable login as its last install (nothing else named its account); a copy is stashed as %s", ls.Slot, id)
+		}
 	}
 	rec, _ := accountRec(data, ls.Slot)
 	email := recStr(rec, "email")

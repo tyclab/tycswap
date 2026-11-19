@@ -566,14 +566,16 @@ sign-in, its *Fable login*, in `credentials-fable/`. The *Fable store*,
 `<backup root>/fable/store/`, holds the one Fable login live there; Fable
 sessions run with `CLAUDE_SECURESTORAGE_CONFIG_DIR` set to it. `switch --store
 fable <id>` makes the account's Fable login the Fable store's live login: the
-outgoing one goes back into its account's Fable login (or, when no account can
-be named for it, into the unclaimed stash in `credentials-fable/`), and the
+outgoing one goes back into its account's Fable login (one nothing else names
+is taken for the account tycswap last installed there, with a copy in the
+unclaimed stash; with no such account it goes into the stash only), and the
 incoming one is installed with the store's own MCP server logins. It needs an
 OAuth account with a Fable login on a plan that offers Fable. It never touches
 the default login, `~/.claude.json`, the roster, `credentials/` or `configs/`,
 and it holds the Fable store's engine only, for `autoswitch.cooldownSeconds`.
 `switch --store fable --empty` puts the live Fable login back into its file
-and leaves the store with its MCP server logins only: the store is off, and
+and leaves the store with its MCP server logins only, and no chain record:
+the store is off, and
 Fable sessions start on the default login. `switch --store fable <id>` turns
 it on again. A box without Fable logins is unchanged. macOS has no Fable
 store.
@@ -592,7 +594,8 @@ backup root. Acquires the backup-root and Claude Code credential locks.
 
 `--store fable` reads the roster and writes only `fable/store/.credentials.json`
 (atomically, 0600), the outgoing account's Fable login in `credentials-fable/`
-(`.prev` kept) or the unclaimed stash there, `fable/live_lineage.json`, and
+(`.prev` kept) or the unclaimed stash there, `fable/live_lineage.json`
+(removed by `--empty`), and
 the hold in `fable/autoswitch_state.json` under `fable/.autoswitch_state.lock`.
 It acquires the backup-root lock, then the Fable store's own Claude Code
 credential-refresh lock (`fable/store.lock`) and storage-write lock

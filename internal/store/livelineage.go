@@ -55,6 +55,29 @@ func (s *Store) readLiveLineage() (liveLineage, bool) {
 	return rec, true
 }
 
+// lastInstall is the slot the chain record names, whatever fingerprint it
+// carries, while the roster still maps the identity it was written for to that
+// OAuth slot; "" otherwise.
+func (s *Store) lastInstall(data *SequenceData) string {
+	rec, ok := s.readLiveLineage()
+	if !ok || data == nil {
+		return ""
+	}
+	id := rec.Identity.oauth()
+	if s.oauthIdentitySlot(data, &id) != rec.Slot {
+		return ""
+	}
+	return rec.Slot
+}
+
+// forgetLiveLineage removes the chain record: the store holds no login.
+func (s *Store) forgetLiveLineage() error {
+	if err := os.Remove(s.liveLineagePath()); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // writeLiveLineage records that the credential with fingerprint fp is slot's,
 // writing only when the record changes, so seenAt is when it was first seen.
 func (s *Store) writeLiveLineage(fp, slot string, id *oauth.Identity) error {
