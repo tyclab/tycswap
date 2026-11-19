@@ -5576,7 +5576,10 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
   account or organization); the `account-quarantined` event carries the slot
   `number`, `email`, and this `reason`, and its human line is `Account-<n>
   (<email>) quarantined: <reason>. Log in with it and run 'tycswap --add-account
-  --slot <n>' to recover.` The state persists in `autoswitch_state.json`.
+  --slot <n>' to recover.` The state persists in `autoswitch_state.json`. A
+  Fable login's quarantine (the Fable tick's, in `fable/autoswitch_state.json`)
+  reads `Fable store: Account-<n> (<email>) quarantined: <reason>. Sign its
+  Fable login in again with 'tycswap add --login --lineage fable --slot <n>'.`
   Quarantine affects only `tycswap auto`; a direct `tycswap switch <n>` still
   activates a quarantined account. A quarantine is released automatically at the
   next real tick once the slot's recorded email changes (`account-replaced`) or

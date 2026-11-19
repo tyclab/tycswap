@@ -8359,7 +8359,10 @@ one.
 
 **Events and log lines.** Every Fable tick event carries `"store":"fable"`
 (`cli.fableEvent`, modelled on `groupEvent`); the default tick's are
-unchanged. Human lines start with `Fable store: `. The engine logs its
+unchanged. Human lines start with `Fable store: `. An `account-quarantined`
+line names the Fable sign-in, not the default login's re-add: `Fable store:
+Account-N (<email>) quarantined: <reason>. Sign its Fable login in again with
+'tycswap add --login --lineage fable --slot N'.` (2026-11-19). The engine logs its
 switch as `Switched the Fable store to account N by engine:<trigger>`
 through the switcher's optional `LogSwitch`, and its other lines through a
 logger prefixed `Fable store: `.

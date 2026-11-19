@@ -845,6 +845,24 @@ func TestKeepAliveQuarantinesADeadLogin(t *testing.T) {
 	}
 }
 
+// A Fable login's quarantine line names the Fable sign-in, not the default
+// login's re-add; the default store's line is as before (S1).
+func TestFableQuarantineLineNamesTheFableSignIn(t *testing.T) {
+	// The live login on 2 has expired and its refresh is refused.
+	keepAliveFixture(t, map[string]time.Duration{}, func(string) oauth.RefreshOutcome {
+		return oauth.RefreshOutcome{Error: oauth.ErrInvalidGrant}
+	})
+	_, out, _ := runCodex(t, "", "auto", "--once")
+	want := "Fable store: Account-2 (acct2@example.com) quarantined: invalid_grant. Sign its Fable login in again with 'tycswap add --login --lineage fable --slot 2'."
+	if !strings.Contains(out, want) || strings.Contains(out, "--add-account") {
+		t.Fatalf("stdout lacks %q:\n%s", want, out)
+	}
+	def := autoswitch.QuarantineEvent{Number: "3", Email: "acct3@example.com", Reason: "invalid_grant"}.Human()
+	if def != "Account-3 (acct3@example.com) quarantined: invalid_grant. Log in with it and run 'tycswap --add-account --slot 3' to recover." {
+		t.Fatalf("default line %q", def)
+	}
+}
+
 // A quarantined idle login is left: the oldest idle login not quarantined is
 // the one kept alive.
 func TestKeepAliveLeavesAQuarantinedLogin(t *testing.T) {

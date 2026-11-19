@@ -116,7 +116,15 @@ func (e fableEvent) JSON() map[string]any {
 	return v
 }
 
-func (e fableEvent) Human() string { return "Fable store: " + e.Event.Human() }
+// Human names the store; a quarantined Fable login is signed in again with
+// add --login --lineage fable, not re-added as a default login.
+func (e fableEvent) Human() string {
+	if q, ok := e.Event.(autoswitch.QuarantineEvent); ok {
+		return "Fable store: Account-" + q.Number + " (" + q.Email + ") quarantined: " + q.Reason +
+			". Sign its Fable login in again with 'tycswap add --login --lineage fable --slot " + q.Number + "'."
+	}
+	return "Fable store: " + e.Event.Human()
+}
 
 // fableTick runs the Fable store's tick after the default one, while the
 // store is on; ran is false when it does not run. The engine counts the Fable
