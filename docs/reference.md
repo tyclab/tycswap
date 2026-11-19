@@ -1495,8 +1495,9 @@ Without `TYCSWAP_START_HOLD` it exits at once and opens nothing. It reads the
 hook's JSON on stdin unless stdin is a terminal (unreadable or empty input
 counts as `startup`) and does nothing for `source` `clear` or `compact`. It
 removes its token and the ended holds under the state lock; a token that is
-not there runs nothing more. Otherwise it waits while another session is
-starting (it reads the state every 100 ms, for at most 30 s), then runs one
+no longer there (its hold ended, or released before) changes nothing else. It
+then waits while another session is starting (it reads the state every 100 ms,
+for at most 30 s), and runs one
 tick of the default store and the Fable store, as `auto --once` does, without
 its group retirement and Codex tick. It prints nothing on stdout, since a
 hook's stdout goes into the session, and exits 0 whatever happens; problems go

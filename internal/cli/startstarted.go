@@ -13,11 +13,12 @@ import (
 	"github.com/tyclab/tycswap/internal/settings"
 )
 
-// startStarted releases the start hold startHoldEnv names and, once no other
-// session is starting, runs one tick of both stores as `auto --once` does.
-// It prints nothing, since a SessionStart hook's stdout goes into the
-// session, and its problems go to the log; the caller exits 0 whatever
-// happens.
+// startStarted releases the start hold startHoldEnv names, if it is still
+// there, and, once no other session is starting, runs one tick of both stores
+// as `auto --once` does: also when the hold had ended, since a session that
+// took longer than the bound to come up still needs the login moved. It
+// prints nothing, since a SessionStart hook's stdout goes into the session,
+// and its problems go to the log; the caller exits 0 whatever happens.
 func startStarted(in io.Reader) {
 	token := os.Getenv(startHoldEnv)
 	if token == "" || !sessionStarted(in) {
@@ -36,12 +37,8 @@ func startStarted(in io.Reader) {
 		}
 	}()
 	defer oauth.RedirectOutput(io.Discard)()
-	found, err := autoswitch.ReleaseStartHold(sw.StatePath(), sw.Clk, token)
-	if err != nil {
+	if err := autoswitch.ReleaseStartHold(sw.StatePath(), sw.Clk, token); err != nil {
 		sw.Log.Warningf("start --started: the start hold was not released: %v", err)
-	}
-	if !found {
-		return
 	}
 	autoswitch.WaitStartHolds(sw.StatePath(), sw.Clk)
 	logProblems := func(ev autoswitch.Event) {

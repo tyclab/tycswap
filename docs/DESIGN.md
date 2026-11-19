@@ -8666,8 +8666,10 @@ terminal; an unreadable or empty input counts as `startup`, and for `clear`
 or `compact` it does nothing, as with a store `start` must not read; without
 a store there is no hold to release. Under the state lock it removes its own token and the
 ended holds; a state without holds is not locked, and one that loses none is
-not written. A token that is not there (released before, or ended) means no
-tick. Otherwise it waits while another session is starting: it reads the
+not written. A token that is not there (released before, or ended) still
+gets the tick: a session that needed longer than the bound to come up is the
+one that most needs the login moved before its first request. It then waits
+while another session is starting: it reads the
 state file every 100 ms on the store's clock until no hold runs, at the
 latest `StartHoldS` from its start, by which every hold it found has ended.
 Then it runs one real tick of both stores, the default store's and the
@@ -8718,6 +8720,7 @@ the same way.
 `TestStartWithRoomRecordsNoHold`,
 `TestStartedMovesTheLoginOnOnceTheSessionIsUp` (every source, empty and
 unreadable input), `TestStartedWithoutItsHoldDoesNothing`,
+`TestStartedTicksAfterItsHoldEnded` (ended, released before),
 `TestStartedWaitsForAnotherStartingSession` (the second session reports, or
 its hold ends), `TestStartedNeverFails` (no store, a corrupt state, a
 failing tick), `TestStartStartedIsAManagementForm`, `TestStartHelpNamesStarted`

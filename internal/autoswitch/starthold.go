@@ -69,27 +69,24 @@ func settleStartHolds(state map[string]any, now float64, hold bool) string {
 }
 
 // ReleaseStartHold removes token's start hold from the state file at
-// statePath under its lock, with every hold that no longer runs; found is
-// false when token held nothing. A state without holds is neither locked nor
-// written.
-func ReleaseStartHold(statePath string, clk clock.Clock, token string) (found bool, err error) {
+// statePath under its lock, with every hold that no longer runs; a token that
+// is not there removes nothing of its own. A state without holds is neither
+// locked nor written, nor is one that loses none.
+func ReleaseStartHold(statePath string, clk clock.Clock, token string) error {
 	if _, ok := readStateFile(statePath)[startHoldsKey].(map[string]any); !ok {
-		return false, nil
+		return nil
 	}
-	err = filelock.New(stateLockPath(statePath), 0).With(func() error {
+	return filelock.New(stateLockPath(statePath), 0).With(func() error {
 		state := readStateFile(statePath)
 		holds, _ := state[startHoldsKey].(map[string]any)
-		now := clock.Seconds(clk)
-		found = liveStartHold(holds[token], now)
 		before := len(holds)
 		delete(holds, token)
-		settleStartHolds(state, now, false)
+		settleStartHolds(state, clock.Seconds(clk), false)
 		if after, _ := state[startHoldsKey].(map[string]any); len(after) == before {
 			return nil
 		}
 		return atomicfile.WriteJSON(statePath, state, atomicfile.Opts{})
 	})
-	return found, err
 }
 
 // WaitStartHolds returns once the state file at statePath holds no running

@@ -194,32 +194,51 @@ func TestStartedMovesTheLoginOnOnceTheSessionIsUp(t *testing.T) {
 }
 
 // Without the variable start --started opens no store and reads or writes
-// no state; with a token the state does not hold it runs no tick.
+// no state.
 func TestStartedWithoutItsHoldDoesNothing(t *testing.T) {
-	for _, token := range []string{"", strings.Repeat("0", 32)} {
-		t.Run(map[bool]string{true: "no-variable", false: "unknown-token"}[token == ""], func(t *testing.T) {
-			sw, _, rec := heldStart(t, false)
-			startHeld(t, rec)
-			path := sw.StatePath()
-			before := readOrAbsent(t, path)
-			info, err := os.Stat(path)
-			if err != nil {
+	sw, _, rec := heldStart(t, false)
+	startHeld(t, rec)
+	path := sw.StatePath()
+	before := readOrAbsent(t, path)
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := newSwitcher
+	newSwitcher = func(store.Options) (*core.Switcher, error) {
+		t.Fatal("start --started without a hold opened the store")
+		return nil, nil
+	}
+	t.Cleanup(func() { newSwitcher = previous })
+	code, out, errb := runCodex(t, `{"source":"startup"}`, "start", "--started")
+	later, _ := os.Stat(path)
+	if code != 0 || out != "" || errb != "" || liveSlot(sw) != "2" || readOrAbsent(t, path) != before || !later.ModTime().Equal(info.ModTime()) {
+		t.Fatalf("code=%d out=%q err=%q live=%s state %v", code, out, errb, liveSlot(sw), heldStateOf(t, sw))
+	}
+}
+
+// A session whose hold is no longer there, ended or released before, still
+// gets its one tick: one that took longer than the bound to come up needs the
+// login moved most.
+func TestStartedTicksAfterItsHoldEnded(t *testing.T) {
+	for _, ended := range []bool{true, false} {
+		t.Run(map[bool]string{true: "ended", false: "released-before"}[ended], func(t *testing.T) {
+			sw, clk, rec := heldStart(t, false)
+			token := startHeld(t, rec)
+			if ended {
+				clk.Advance(31 * time.Second)
+			} else if err := autoswitch.ReleaseStartHold(sw.StatePath(), clk, token); err != nil {
 				t.Fatal(err)
 			}
-			if token == "" {
-				previous := newSwitcher
-				newSwitcher = func(store.Options) (*core.Switcher, error) {
-					t.Fatal("start --started without a hold opened the store")
-					return nil, nil
-				}
-				t.Cleanup(func() { newSwitcher = previous })
-			} else {
-				t.Setenv(holdVar, token)
+			t.Setenv(holdVar, token)
+			if code, out, errb := runCodex(t, `{"source":"startup"}`, "start", "--started"); code != 0 || out != "" || errb != "" {
+				t.Fatalf("code=%d out=%q err=%q", code, out, errb)
 			}
-			code, out, errb := runCodex(t, `{"source":"startup"}`, "start", "--started")
-			later, _ := os.Stat(path)
-			if code != 0 || out != "" || errb != "" || liveSlot(sw) != "2" || readOrAbsent(t, path) != before || !later.ModTime().Equal(info.ModTime()) {
-				t.Fatalf("code=%d out=%q err=%q live=%s state %v", code, out, errb, liveSlot(sw), heldStateOf(t, sw))
+			if state := heldStateOf(t, sw); liveSlot(sw) != "5" || state["startHolds"] != nil || state["lastSwitchTo"] != "5" {
+				t.Fatalf("live %s, state %v", liveSlot(sw), state)
+			}
+			if log := readOrAbsent(t, filepath.Join(sw.BackupDir(), "tycswap.log")); strings.Count(log, "Switched to account 5 by engine:at-limit") != 1 {
+				t.Fatalf("log:\n%s", log)
 			}
 		})
 	}
@@ -266,8 +285,8 @@ func TestStartedWaitsForAnotherStartingSession(t *testing.T) {
 					t.Error("the tick ran before the other session was up")
 				}
 				if reported && sleeps == 1 {
-					if found, err := autoswitch.ReleaseStartHold(sw.StatePath(), waiting, second); !found || err != nil {
-						t.Errorf("the second session's release: %v, %v", found, err)
+					if err := autoswitch.ReleaseStartHold(sw.StatePath(), waiting, second); err != nil {
+						t.Errorf("the second session's release: %v", err)
 					}
 				}
 			}
@@ -312,7 +331,8 @@ func TestStartedNeverFails(t *testing.T) {
 		if code, out, errb := runCodex(t, `{"source":"startup"}`, "start", "--started"); code != 0 || out != "" || errb != "" {
 			t.Fatalf("code=%d out=%q err=%q", code, out, errb)
 		}
-		if liveSlot(sw) != "2" || readOrAbsent(t, sw.StatePath()) != "{" {
+		// A corrupt state holds nothing; the tick reads it as empty, as every tick does.
+		if liveSlot(sw) != "5" {
 			t.Fatalf("live %s, state %q", liveSlot(sw), readOrAbsent(t, sw.StatePath()))
 		}
 	})

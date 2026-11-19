@@ -388,8 +388,8 @@ func TestReleaseStartHold(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeHolds(t, path, map[string]any{"mine": now + 30, "other": now + 20, "old": now - 1})
-	if found, err := ReleaseStartHold(path, clk, "mine"); !found || err != nil {
-		t.Fatalf("found %v, err %v", found, err)
+	if err := ReleaseStartHold(path, clk, "mine"); err != nil {
+		t.Fatal(err)
 	}
 	state := readStateFile(path)
 	if !reflect.DeepEqual(holdsOf(path), map[string]any{"other": now + 20}) || state["extra"] != true {
@@ -399,8 +399,8 @@ func TestReleaseStartHold(t *testing.T) {
 	info, _ := os.Stat(path)
 	clk.Advance(time.Second)
 	for _, token := range []string{"mine", "unknown", ""} {
-		if found, err := ReleaseStartHold(path, clk, token); found || err != nil {
-			t.Fatalf("%q: found %v, err %v", token, found, err)
+		if err := ReleaseStartHold(path, clk, token); err != nil {
+			t.Fatalf("%q: %v", token, err)
 		}
 	}
 	after, _ := os.ReadFile(path)
@@ -408,8 +408,8 @@ func TestReleaseStartHold(t *testing.T) {
 		t.Fatal("a release that found nothing wrote the state")
 	}
 	clk.Advance(20 * time.Second)
-	if found, err := ReleaseStartHold(path, clk, "other"); found || err != nil {
-		t.Fatalf("expired: found %v, err %v", found, err)
+	if err := ReleaseStartHold(path, clk, "other"); err != nil {
+		t.Fatalf("expired: %v", err)
 	}
 	if _, has := readStateFile(path)["startHolds"]; has || readStateFile(path)["extra"] != true {
 		t.Fatalf("the expired hold was kept: %v", readStateFile(path))
@@ -420,8 +420,8 @@ func TestReleaseStartHold(t *testing.T) {
 func TestReleaseStartHoldWithoutAState(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, StateFilename)
-	if found, err := ReleaseStartHold(path, newClk(), "mine"); found || err != nil {
-		t.Fatalf("missing: found %v, err %v", found, err)
+	if err := ReleaseStartHold(path, newClk(), "mine"); err != nil {
+		t.Fatalf("missing: %v", err)
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 		t.Fatalf("created %v", entries)
@@ -429,8 +429,8 @@ func TestReleaseStartHoldWithoutAState(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if found, err := ReleaseStartHold(path, newClk(), "mine"); found || err != nil {
-		t.Fatalf("corrupt: found %v, err %v", found, err)
+	if err := ReleaseStartHold(path, newClk(), "mine"); err != nil {
+		t.Fatalf("corrupt: %v", err)
 	}
 	if raw, _ := os.ReadFile(path); string(raw) != "{" {
 		t.Fatalf("corrupt state rewritten: %q", raw)
@@ -465,7 +465,7 @@ func TestWaitStartHolds(t *testing.T) {
 	clk.Slept = nil
 	writeHolds(t, path, map[string]any{"other": clock.Seconds(clk) + 30})
 	clk.hook = func() {
-		if _, err := ReleaseStartHold(path, clk, "other"); err != nil {
+		if err := ReleaseStartHold(path, clk, "other"); err != nil {
 			t.Error(err)
 		}
 	}
