@@ -34,9 +34,6 @@ type AccountSnapshot struct {
 	Provider string
 	// FableLogin is the account's Fable login; nil without one (DESIGN A104).
 	FableLogin *FableLogin
-	// FableBy is what decides whether the account runs Fable: store.FableByPlan,
-	// FableByMark, FableUnknown or FableAPIKey (DESIGN A107).
-	FableBy string
 }
 
 const (
@@ -123,7 +120,6 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 			LimitingWindows:      limiting,
 			Provider:             ProviderClaude,
 			FableLogin:           fable.login(num),
-			FableBy:              s.FableEntitlement(data, num).By,
 		})
 	}
 	snap := &AccountsSnapshot{

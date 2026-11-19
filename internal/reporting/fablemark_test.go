@@ -1,34 +1,47 @@
-// The account snapshot carries what decides whether an account runs Fable,
-// for the menu's Allow / Disallow Fable (DESIGN A107).
+// The account snapshot reads no stored login for the Fable mark (DESIGN
+// A107): it feeds every refresh of the dashboard, the tray and the TUI.
 package reporting
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/storenames"
 	"github.com/tyclab/tycswap/internal/testutil"
 )
 
-func TestSnapshotCarriesWhatDecidesFable(t *testing.T) {
+// snapshotReadsOnMain is how many times Snapshot read each account's stored
+// login on origin/main 5969cfa, measured with this test there.
+const snapshotReadsOnMain = 4
+
+// A corrupt backup logs one warning per read, so the log counts the reads.
+func TestSnapshotReadsNoStoredLoginForFable(t *testing.T) {
 	s := newStore(t, testutil.FixedClock(t, fixedNow), nil)
 	writeSequenceRaw(t, s, `{
   "activeAccountNumber": null,
   "lastUpdated": "2026-07-17T08:00:00Z",
-  "sequence": [1, 2, 3, 4],
+  "sequence": [1, 2, 3],
   "accounts": {
     "1": {"email": "max@example.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "x"},
     "2": {"email": "org@example.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "x"},
-    "3": {"email": "marked@example.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "x", "fableContinue": true},
-    "4": {"email": "key@example.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "x", "kind": "api_key"}
+    "3": {"email": "marked@example.com", "uuid": "", "organizationUuid": "", "organizationName": "", "added": "x", "fableContinue": true}
   }
 }`)
-	writeBackup(t, s, "1", "max@example.com", `{"claudeAiOauth":{"accessToken":"at1","refreshToken":"rt1","subscriptionType":"max"}}`, `{"oauthAccount":{}}`)
-	writeBackup(t, s, "2", "org@example.com", oauthCreds("at2", "rt2", 0), `{"oauthAccount":{}}`)
-	writeBackup(t, s, "3", "marked@example.com", oauthCreds("at3", "rt3", 0), `{"oauthAccount":{}}`)
-	want := map[string]string{"1": store.FableByPlan, "2": store.FableUnknown, "3": store.FableByMark, "4": store.FableAPIKey}
-	for _, a := range Snapshot(s, nil).Accounts {
-		if a.FableBy != want[a.Number] {
-			t.Errorf("slot %s FableBy = %q, want %q", a.Number, a.FableBy, want[a.Number])
+	for num, email := range map[string]string{"1": "max@example.com", "2": "org@example.com", "3": "marked@example.com"} {
+		writeBackup(t, s, num, email, oauthCreds("at"+num, "rt"+num, 0), `{"oauthAccount":{}}`)
+		if err := os.WriteFile(filepath.Join(s.CredentialsDir, storenames.CredsFile(num, email)), []byte("!not base64!"), 0o600); err != nil {
+			t.Fatal(err)
 		}
+	}
+	reads := func() int {
+		raw, _ := os.ReadFile(filepath.Join(s.BackupDir(), "tycswap.log"))
+		return strings.Count(string(raw), "Failed to read credentials file")
+	}
+	before := reads()
+	Snapshot(s, nil)
+	if got := reads() - before; got != 3*snapshotReadsOnMain {
+		t.Fatalf("Snapshot read the stored logins %d times, want %d (%d per account, as on main)", got, 3*snapshotReadsOnMain, snapshotReadsOnMain)
 	}
 }

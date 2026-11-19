@@ -9022,16 +9022,18 @@ account's own menu ends with *Sign in for Fable…* (*Sign in again for Fable…
 when the snapshot has its Fable login), the same command, and, only where it
 changes the answer, *Allow Fable* (nothing decides yet, `unknown`) or
 *Disallow Fable* (a mark decides), which asks first and runs `fable --allow
-N` or `--disallow N`; an account whose plan decides gets neither. The menu
-reads what decides from the account snapshot (`AccountSnapshot.FableBy`,
-`FableEntitlement`'s `By`, filled beside `StartLogin`), so building it reads
-no store itself; the snapshot already reads each account's stored login for
-`Switchable` and now reads it once more. The new entries come last, after
-every entry they could shift.
+N` or `--disallow N`; an account whose plan decides gets neither. What
+decides is read for the chosen account only, and only where its Fable
+entries appear (`menuFableAnswer`, `FableEntitlement`'s `By`); without an
+answer the menu offers the sign-in and no toggle. The account snapshot
+carries none of it: it feeds every refresh of the dashboard, the tray and
+the TUI, and `FableEntitlement` reads the account's stored login (on macOS
+from the Keychain). The new entries come last, after every entry they could
+shift.
 
 **No mark, no change.** A box without the key reads every answer as before;
-the snapshot's new field is in no JSON document; the menu's other entries keep
-their places.
+no document gains a field, the account snapshot reads what it read before; the
+menu's other entries keep their places.
 
 **Tests.** `TestFableEntitlementSaysWhy` (every basis, a Pro plan's mark, a
 hand-set `false`, an unknown slot), `TestSetFableMarkWritesAndRemovesTheKey`
@@ -9054,4 +9056,8 @@ entry, the order of the accounts, the command),
 `TestMenuAddHasNoFableSignInWithoutAFableStore` and `TestMenuManageFableEntries`
 (the entries and their order, each confirmation and its cancel, the sign-in, a
 marked account, a plan that decides: the sign-in and no toggle, macOS, an API
-key, Codex); `TestSnapshotCarriesWhatDecidesFable` in `reporting`.
+key, Codex; the answer read for the chosen account only, and only there),
+`TestMenuManageWithoutAFableAnswerOffersNoToggle`; in `reporting`
+`TestSnapshotReadsNoStoredLoginForFable` (a corrupt backup logs one warning
+per read: four per account per snapshot, as on origin/main 5969cfa, where
+round 1's snapshot field made five).

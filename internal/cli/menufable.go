@@ -9,8 +9,12 @@ import (
 	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
-// fableSignInEntry is Add account's Fable sign-in (DESIGN A107).
-const fableSignInEntry = "add --login --lineage fable  Sign in for Fable"
+// The Fable entries of the menu (DESIGN A107).
+const (
+	fableSignInEntry = "add --login --lineage fable  Sign in for Fable"
+	fableAllow       = "Allow Fable"
+	fableDisallow    = "Disallow Fable"
+)
 
 // menuFableStore reports whether this platform can hold a Fable store: on
 // macOS the menu offers no Fable entry (DESIGN A100).
@@ -24,6 +28,20 @@ var menuFableRows = func(s ioStreams) ([]fableRow, error) {
 		return nil, err
 	}
 	return fableRows(sw)
+}
+
+// menuFableAnswer reads what decides whether one account runs Fable, for its
+// own menu only; tests replace it.
+var menuFableAnswer = func(s ioStreams, num string) (store.FableAnswer, error) {
+	sw, err := constructSwitcher(false, s.err)
+	if err != nil {
+		return store.FableAnswer{}, err
+	}
+	data, err := sw.ReadSequence()
+	if err != nil {
+		return store.FableAnswer{}, err
+	}
+	return sw.Store.FableEntitlement(data, num), nil
 }
 
 func fableSignInArgs(num string) []string {
@@ -71,7 +89,8 @@ func menuFableSignIn(s ioStreams) {
 // fableAccountEntries are an account menu's Fable sign-in and, where it
 // changes the answer, Allow Fable (nothing decides yet) or Disallow Fable (a
 // mark decides); none for Codex, an API key, or where no Fable store can be.
-func fableAccountEntries(a reporting.AccountSnapshot) (signIn, mark string) {
+// Only then is the account's answer read, and without it there is no toggle.
+func fableAccountEntries(s ioStreams, a reporting.AccountSnapshot) (signIn, mark string) {
 	if a.ProviderName() != reporting.ProviderClaude || a.Kind == "api_key" || !menuFableStore() {
 		return "", ""
 	}
@@ -79,11 +98,13 @@ func fableAccountEntries(a reporting.AccountSnapshot) (signIn, mark string) {
 	if a.FableLogin != nil {
 		signIn = "Sign in again for Fable…"
 	}
-	switch a.FableBy {
-	case store.FableUnknown:
-		mark = "Allow Fable"
-	case store.FableByMark:
-		mark = "Disallow Fable"
+	answer, err := menuFableAnswer(s, a.Number)
+	switch {
+	case err != nil:
+	case answer.By == store.FableUnknown:
+		mark = fableAllow
+	case answer.By == store.FableByMark:
+		mark = fableDisallow
 	}
 	return signIn, mark
 }
