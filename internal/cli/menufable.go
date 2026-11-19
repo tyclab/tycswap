@@ -5,6 +5,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
@@ -67,17 +68,21 @@ func menuFableSignIn(s ioStreams) {
 	menuExecute(s, fableSignInArgs(accounts[i].Number)...)
 }
 
-// fableAccountEntries are an account menu's Fable sign-in and its Allow or
-// Disallow Fable; none for Codex, an API key, or where no Fable store can be.
+// fableAccountEntries are an account menu's Fable sign-in and, where it
+// changes the answer, Allow Fable (nothing decides yet) or Disallow Fable (a
+// mark decides); none for Codex, an API key, or where no Fable store can be.
 func fableAccountEntries(a reporting.AccountSnapshot) (signIn, mark string) {
 	if a.ProviderName() != reporting.ProviderClaude || a.Kind == "api_key" || !menuFableStore() {
 		return "", ""
 	}
-	signIn, mark = "Sign in for Fable…", "Allow Fable"
+	signIn = "Sign in for Fable…"
 	if a.FableLogin != nil {
 		signIn = "Sign in again for Fable…"
 	}
-	if a.FableMark {
+	switch a.FableBy {
+	case store.FableUnknown:
+		mark = "Allow Fable"
+	case store.FableByMark:
 		mark = "Disallow Fable"
 	}
 	return signIn, mark

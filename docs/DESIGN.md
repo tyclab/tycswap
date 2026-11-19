@@ -9004,7 +9004,9 @@ carries no roster metadata. Before, `add --slot N` of the same identity and an
 `Account-N's plan does not offer Fable. If it runs Fable, mark it first:
 tycswap fable --allow N`, the first sentence alone for a Pro or Free plan.
 With `--slot N` the preflight asks it before `Sign in as …` and before Claude
-starts, so the operator never signs in for nothing. Without `--slot` the
+starts, so the operator never signs in for nothing; an API-key account in slot
+N is refused there too, with the sign-in's own `Account <email> is not stored
+yet: add it first with tycswap add --login.` Without `--slot` the
 account is known only from the sign-in's identity, so the refusal stays after
 it, in `AddFableLogin`; the menu always passes `--slot`.
 
@@ -9017,12 +9019,15 @@ among those that run Fable, without a Fable login first, then those with one
 fable --slot N`. With none it says `No account runs Fable yet. If one does,
 choose Allow Fable in its menu (tycswap fable --allow N).` A Claude OAuth
 account's own menu ends with *Sign in for Fable…* (*Sign in again for Fable…*
-when the snapshot has its Fable login), the same command, and *Allow Fable*,
-or *Disallow Fable* while it is marked, which asks first and runs `fable
---allow N` or `--disallow N`. The account menu reads the mark from the
-account snapshot (`AccountSnapshot.FableMark`, from the roster as
-`StartLogin`), so building it reads no credential. The new entries come last,
-after every entry they could shift.
+when the snapshot has its Fable login), the same command, and, only where it
+changes the answer, *Allow Fable* (nothing decides yet, `unknown`) or
+*Disallow Fable* (a mark decides), which asks first and runs `fable --allow
+N` or `--disallow N`; an account whose plan decides gets neither. The menu
+reads what decides from the account snapshot (`AccountSnapshot.FableBy`,
+`FableEntitlement`'s `By`, filled beside `StartLogin`), so building it reads
+no store itself; the snapshot already reads each account's stored login for
+`Switchable` and now reads it once more. The new entries come last, after
+every entry they could shift.
 
 **No mark, no change.** A box without the key reads every answer as before;
 the snapshot's new field is in no JSON document; the menu's other entries keep
@@ -9042,9 +9047,11 @@ identity and to another slot, move, swap, another identity in the slot) in
 write), `TestFableCommandAllowDisallowList` (the list, the key written and
 removed, the JSON, no Fable directory created), `TestFableCommandUnknownAccount`,
 `TestFableSignInOfAnUnknownPlanAccount` (refused before Claude starts, signed
-in after `fable --allow`), `TestMenuAddFableSignInAsksForTheAccount` (the
+in after `fable --allow`), `TestFableSignInOfAnAPIKeySlotOpensNoBrowser`,
+`TestMenuAddFableSignInAsksForTheAccount` (the
 entry, the order of the accounts, the command),
 `TestMenuAddFableSignInWithoutAFableAccount`,
 `TestMenuAddHasNoFableSignInWithoutAFableStore` and `TestMenuManageFableEntries`
 (the entries and their order, each confirmation and its cancel, the sign-in, a
-marked account, macOS, an API key, Codex).
+marked account, a plan that decides: the sign-in and no toggle, macOS, an API
+key, Codex); `TestSnapshotCarriesWhatDecidesFable` in `reporting`.

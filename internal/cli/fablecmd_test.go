@@ -154,3 +154,21 @@ func TestFableSignInOfAnUnknownPlanAccount(t *testing.T) {
 		t.Fatalf("claude's login started %d times", len(*started))
 	}
 }
+
+// A Fable sign-in with --slot naming an API-key account is refused before
+// Claude starts, with the sign-in's own wording (DESIGN A107).
+func TestFableSignInOfAnAPIKeySlotOpensNoBrowser(t *testing.T) {
+	f := newFableMarkFixture(t)
+	if code, _, errb := f.run(t, "add-token", "sk-ant-api03-test-key-4", "--email", "k@example.com", "--slot", "4"); code != 0 {
+		t.Fatalf("seeding Account-4: exit %d, stderr %q", code, errb)
+	}
+	started := countLogins(t, f)
+	code, out, errb := f.run(t, "add", "--login", "--lineage", "fable", "--slot", "4")
+	want := "Error: Account k@example.com is not stored yet: add it first with tycswap add --login."
+	if code != 1 || out != "" || strings.TrimSpace(errb) != want {
+		t.Fatalf("exit %d out %q stderr %q", code, out, errb)
+	}
+	if len(*started) != 0 {
+		t.Fatalf("claude's login started %d times", len(*started))
+	}
+}

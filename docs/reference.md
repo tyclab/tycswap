@@ -901,8 +901,9 @@ With `--lineage fable` (exit 1, nothing stored):
 - `Error: This sign-in is <email>, not Account-<n> (<email of n>); nothing stored.`
 - `Error: Account-<n>'s plan does not offer Fable. If it runs Fable, mark it first: tycswap fable --allow <n>`
   — the plan names no Fable and the account has no mark. With `--slot` the
-  refusal comes before Claude starts; without it the account is known only
-  after the sign-in. A Pro or Free plan gets the first sentence alone: a mark
+  refusal comes before Claude starts, as does `Account <email> is not stored
+  yet` for an API-key account in that slot; without it the account is known
+  only after the sign-in. A Pro or Free plan gets the first sentence alone: a mark
   cannot change it.
 - `Error: This is Account-<n>'s default login, not a second sign-in; sign in again in the browser.`
 - `Error: --alias names a new account; a Fable login is stored for an account already added`
@@ -2474,8 +2475,10 @@ and then those with one (`· sign in again`), each in roster order, and runs
 `add --login --lineage fable --slot N`; with none it names `tycswap fable --allow`.
 A Claude OAuth account's own menu ends with *Sign in for Fable…* (*Sign in again
 for Fable…* when it holds a Fable login), the same command for that account,
-and *Allow Fable*, or *Disallow Fable* while it is marked, which asks first and
-runs `tycswap fable --allow N` or `--disallow N` (DESIGN A107).
+and, where it changes the answer, *Allow Fable* (the plan says nothing) or
+*Disallow Fable* (a mark decides), which asks first and runs `tycswap fable
+--allow N` or `--disallow N`; an account whose plan decides gets neither
+(DESIGN A107).
 The selected account's identity is checked again before dispatching an action.
 Advanced settings use the shared setting definitions and validation. The tray
 can remain running; closing the menu never stops it. Its Start tray app action

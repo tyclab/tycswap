@@ -159,8 +159,9 @@ an account that has one. It also offers **Sign in again…**
 and **Use saved login** for Claude; renewing the active account activates its new login.
 Where a Fable store can exist (not on macOS), **Add account…** also offers the
 Fable sign-in, asking for the account (those without a Fable login first), and a
-Claude account's menu offers **Sign in for Fable…** and **Allow Fable** or
-**Disallow Fable** (see [Run accounts in parallel](#run-accounts-in-parallel)).
+Claude account's menu offers **Sign in for Fable…**, and **Allow Fable** where
+the plan says nothing or **Disallow Fable** where a mark decides (see
+[Run accounts in parallel](#run-accounts-in-parallel)).
 **Import / export…** guides Claude and Codex file transfers.
 **Open web dashboard** reuses the running app, starting it in the background if needed.
 Closing the menu leaves the tray running.

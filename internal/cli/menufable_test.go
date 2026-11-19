@@ -117,9 +117,10 @@ func manageAccount(t *testing.T, a reporting.AccountSnapshot) {
 }
 
 func TestMenuManageFableEntries(t *testing.T) {
-	plain := reporting.AccountSnapshot{Number: "3", Email: "c@example.com", Kind: "oauth"}
-	marked := reporting.AccountSnapshot{Number: "4", Email: "d@example.com", Kind: "oauth", FableMark: true,
+	plain := reporting.AccountSnapshot{Number: "3", Email: "c@example.com", Kind: "oauth", FableBy: store.FableUnknown}
+	marked := reporting.AccountSnapshot{Number: "4", Email: "d@example.com", Kind: "oauth", FableBy: store.FableByMark,
 		FableLogin: &reporting.FableLogin{Status: reporting.FableLoginOK}}
+	byPlan := reporting.AccountSnapshot{Number: "7", Email: "g@example.com", Kind: "oauth", FableBy: store.FableByPlan}
 	for _, tc := range []struct {
 		name      string
 		account   reporting.AccountSnapshot
@@ -138,6 +139,8 @@ func TestMenuManageFableEntries(t *testing.T) {
 			[]string{"Sign in again for Fable…", "Disallow Fable"}, [][]string{{"fable", "--disallow", "4"}}},
 		{"sign in again", marked, true, []string{"Sign in again for Fable"},
 			[]string{"Sign in again for Fable…", "Disallow Fable"}, [][]string{{"add", "--login", "--lineage", "fable", "--slot", "4"}}},
+		{"a plan that decides", byPlan, true, []string{"Sign in for Fable"},
+			[]string{"Sign in for Fable…"}, [][]string{{"add", "--login", "--lineage", "fable", "--slot", "7"}}},
 		{"no Fable store", plain, false, nil, nil, nil},
 		{"an API key", reporting.AccountSnapshot{Number: "5", Email: "k@example.com", Kind: "api_key"}, true, nil, nil, nil},
 		{"Codex", reporting.AccountSnapshot{Number: "6", Email: "x@example.com", Provider: reporting.ProviderCodex}, true, nil, nil, nil},

@@ -58,14 +58,3 @@ func (s *Store) FableEntitlement(data *SequenceData, number string) FableAnswer 
 	}
 	return answer
 }
-
-// FableMarkFrom reports the operator's Fable mark from a loaded roster: only
-// a boolean true counts, as for startLogin.
-func FableMarkFrom(data *SequenceData, num string) bool {
-	rec, ok := recordFor(data, num)
-	if !ok {
-		return false
-	}
-	marked, _ := rec[FableMarkKey].(bool)
-	return marked
-}

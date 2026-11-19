@@ -111,7 +111,7 @@ func FableStoreUses(num string) string { return "The Fable store now uses Accoun
 func fableLoginSlot(s *store.Store, data *store.SequenceData, email, orgUUID string, slot *int) (string, error) {
 	num := s.FindAccountSlot(data, email, orgUUID)
 	if num == "" || s.AccountKindFor(num) == "api_key" {
-		return "", cerr.Validation("Account %s is not stored yet: add it first with tycswap add --login.", email)
+		return "", ErrFableNotStored(email)
 	}
 	if slot != nil {
 		if want := strconv.Itoa(*slot); want != num {

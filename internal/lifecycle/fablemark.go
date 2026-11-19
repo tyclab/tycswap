@@ -40,6 +40,12 @@ func SetFableMark(s *store.Store, identifier string, allowed bool) error {
 	})
 }
 
+// ErrFableNotStored refuses a Fable sign-in of an identity with no OAuth
+// roster account, an API-key account's included.
+func ErrFableNotStored(email string) error {
+	return cerr.Validation("Account %s is not stored yet: add it first with tycswap add --login.", email)
+}
+
 // FablePlanRefusal is the Fable sign-in's refusal of an OAuth account that is
 // not known to run Fable, nil when it is (or for an API key, which the
 // sign-in refuses on its own). It names the mark when the mark would help.

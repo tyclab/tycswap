@@ -11,6 +11,7 @@ import (
 	"github.com/tyclab/tycswap/internal/providers"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/termsafe"
 	"github.com/tyclab/tycswap/internal/web"
 )
@@ -238,8 +239,10 @@ func menuManage(s ioStreams) {
 		choices = append(choices, "Sign in again…", "Use saved login")
 	}
 	fableSignIn, fableMark := fableAccountEntries(a)
-	if fableSignIn != "" {
-		choices = append(choices, fableSignIn, fableMark)
+	for _, entry := range []string{fableSignIn, fableMark} {
+		if entry != "" {
+			choices = append(choices, entry)
+		}
 	}
 	i, _, ok := askMenu(s, termsafe.Strip(a.Email), choices, "")
 	if !ok {
@@ -303,7 +306,7 @@ func menuManage(s ioStreams) {
 		args = fableSignInArgs(a.Number)
 	case fableMark:
 		question, flag := "Mark "+termsafe.Strip(a.Email)+" as running Fable, whatever its plan says?", "--allow"
-		if a.FableMark {
+		if a.FableBy == store.FableByMark {
 			question, flag = "Remove the Fable mark from "+termsafe.Strip(a.Email)+"? Its plan decides again.", "--disallow"
 		}
 		if !menuConfirm(s, question) {

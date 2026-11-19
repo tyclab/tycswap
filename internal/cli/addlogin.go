@@ -247,7 +247,12 @@ func fableLoginPreflight(sw *core.Switcher, p *parsed, s ioStreams) (int, bool) 
 	if err != nil {
 		return renderDomainError(err, false, s.out, s.err), true
 	}
-	if err := lifecycle.FablePlanRefusal(sw.Store, data, num); err != nil {
+	if sw.Store.AccountKindFor(num) == "api_key" {
+		err = lifecycle.ErrFableNotStored(email)
+	} else {
+		err = lifecycle.FablePlanRefusal(sw.Store, data, num)
+	}
+	if err != nil {
 		return renderDomainError(err, false, s.out, s.err), true
 	}
 	fmt.Fprintln(s.out, "Sign in as "+email+" in the browser.")
