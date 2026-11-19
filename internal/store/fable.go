@@ -313,13 +313,21 @@ func (s *Store) oauthIdentitySlot(data *SequenceData, id *oauth.Identity) string
 }
 
 // RecordFableLive writes the Fable chain record for creds, installed in the
-// Fable store for account num, with the roster's identity of num.
+// Fable store for account num, with the roster's identity of num: the Fable
+// store's last install (DESIGN A100).
 func (s *Store) RecordFableLive(num, creds string) error {
 	f, err := s.ForFable()
 	if err != nil {
 		return err
 	}
-	return f.RecordInstall(num, creds)
+	fp := oauth.CredentialFingerprint(creds)
+	data, err := f.ReadSequence()
+	rec, ok := recordFor(data, num)
+	if fp == nil || err != nil || !ok {
+		return err
+	}
+	id := oauth.Identity{UUID: strField(rec, "uuid"), Email: strField(rec, "email"), OrgUUID: strField(rec, "organizationUuid")}
+	return f.writeLiveLineage(*fp, num, &id)
 }
 
 // ForgetFableLive removes the Fable chain record once the Fable store holds

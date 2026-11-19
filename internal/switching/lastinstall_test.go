@@ -76,10 +76,36 @@ func TestDefaultSwitchWithAFableSessionsConfigBacksUpTheLastInstall(t *testing.T
 	}
 }
 
-// No default switch since the Fable logins came: no last install. The login
-// is stashed and the switch writes it into no slot.
-func TestDefaultSwitchWithAFableSessionsConfigAndNoLastInstallStashesTheLogin(t *testing.T) {
+// No default switch since the Fable logins came, so no chain record names
+// one: the roster's active account is still the last install, and the login
+// is backed up into it.
+func TestDefaultSwitchWithAFableSessionsConfigAndNoChainRecordBacksUpTheActiveAccount(t *testing.T) {
 	s, rotated := fableSessionConfig(t, true, false)
+	if _, err := os.Stat(filepath.Join(s.BackupDir(), "live_lineage.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the default chain record exists: %v", err)
+	}
+	twoBefore, _ := s.ReadAccountCredentials("2", fableEmails["2"])
+	if _, err := SwitchTo(s, "5", true, false); err != nil {
+		t.Fatal(err)
+	}
+	if two, _ := s.ReadAccountCredentials("2", fableEmails["2"]); two != twoBefore {
+		t.Errorf("Account-2's default login was replaced by %s", two)
+	}
+	if one, _ := s.ReadAccountCredentials("1", fableEmails["1"]); one != rotated {
+		t.Errorf("Account-1's default login = %s, want the rotated one", one)
+	}
+	if rows, _ := s.Creds.ListUnclaimed(); len(rows) != 1 {
+		t.Errorf("unclaimed %v, want one copy", rows)
+	}
+}
+
+// The roster names no active account: no owner. The login is stashed and the
+// switch writes it into no slot.
+func TestDefaultSwitchWithAFableSessionsConfigAndNoActiveAccountStashesTheLogin(t *testing.T) {
+	s, _ := fableSessionConfig(t, true, false)
+	data := mustSeq(t, s)
+	data.ActiveAccountNumber = nil
+	writeSeq(t, s, data)
 	twoBefore, _ := s.ReadAccountCredentials("2", fableEmails["2"])
 	oneBefore, _ := s.ReadAccountCredentials("1", fableEmails["1"])
 	res, err := SwitchTo(s, "5", true, false)
@@ -92,8 +118,7 @@ func TestDefaultSwitchWithAFableSessionsConfigAndNoLastInstallStashesTheLogin(t 
 	if one, _ := s.ReadAccountCredentials("1", fableEmails["1"]); one != oneBefore {
 		t.Errorf("Account-1's default login = %s, want it unchanged", one)
 	}
-	rows, _ := s.Creds.ListUnclaimed()
-	if len(rows) != 1 {
+	if rows, _ := s.Creds.ListUnclaimed(); len(rows) != 1 {
 		t.Fatalf("unclaimed %v, want the rotated login", rows)
 	}
 	if live := readActiveCreds(t, s); !oauth.SameAccountBlock(live, planCreds("at-d5", "rt-d5", "max")) {
@@ -102,7 +127,6 @@ func TestDefaultSwitchWithAFableSessionsConfigAndNoLastInstallStashesTheLogin(t 
 	if from := res.(map[string]any)["from"]; from != nil && from.(map[string]any) != nil {
 		t.Errorf("from %v, want none", from)
 	}
-	_ = rotated
 }
 
 // The same scenario on a box without a Fable login gives v0.15.1's result:

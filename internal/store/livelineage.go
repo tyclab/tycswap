@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/clock"
@@ -54,40 +53,6 @@ func (s *Store) readLiveLineage() (liveLineage, bool) {
 		return liveLineage{}, false
 	}
 	return rec, true
-}
-
-// lastInstall is the slot the chain record names, whatever fingerprint it
-// carries, while the roster still maps the identity it was written for to that
-// OAuth slot; "" otherwise. The default record holds a profile answer too, and
-// installs only while Fable logins exist, so on the default scope the slot
-// must also be the roster's active one, which every switch writes.
-func (s *Store) lastInstall(data *SequenceData) string {
-	rec, ok := s.readLiveLineage()
-	if !ok || data == nil {
-		return ""
-	}
-	id := rec.Identity.oauth()
-	if s.oauthIdentitySlot(data, &id) != rec.Slot {
-		return ""
-	}
-	if !s.fable && (data.ActiveAccountNumber == nil || strconv.Itoa(*data.ActiveAccountNumber) != rec.Slot) {
-		return ""
-	}
-	return rec.Slot
-}
-
-// RecordInstall writes s's chain record for creds, installed in s's live
-// store for account num, with the roster's identity of num: the store's last
-// install (DESIGN A100). Only an OAuth account's install is recorded.
-func (s *Store) RecordInstall(num, creds string) error {
-	fp := oauth.CredentialFingerprint(creds)
-	data, err := s.ReadSequence()
-	rec, ok := recordFor(data, num)
-	if fp == nil || err != nil || !ok || kindFrom(data, num) != "oauth" {
-		return err
-	}
-	id := oauth.Identity{UUID: strField(rec, "uuid"), Email: strField(rec, "email"), OrgUUID: strField(rec, "organizationUuid")}
-	return s.writeLiveLineage(*fp, num, &id)
 }
 
 // forgetLiveLineage removes the chain record: the store holds no login.

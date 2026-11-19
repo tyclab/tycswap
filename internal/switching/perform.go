@@ -126,7 +126,6 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 				return derr
 			}
 			op = o
-			recordInstall(s, targetAccount, targetEmail)
 			return nil
 		}
 
@@ -196,9 +195,6 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 
 		op = switchOp{From: fromRef, To: toRef, Warnings: warningsOut, Repaired: repair}
 		displayAfterLock = true
-		if !repair {
-			recordInstall(s, targetAccount, targetEmail)
-		}
 		return nil
 	})
 	if err != nil {
@@ -611,19 +607,6 @@ func activateTarget(s *store.Store, tx *switchTransaction, plan *profilePlan, ta
 		plan.warn(emitOutput, warningsOut)
 	}
 	return nil
-}
-
-// recordInstall names the account a switch installed in the default chain
-// record while Fable logins exist: the last install a login nothing else
-// names belongs to (DESIGN A100). Without Fable logins nothing is written.
-func recordInstall(s *store.Store, num, email string) {
-	if !s.HasFableLogins() {
-		return
-	}
-	creds, _ := s.ReadAccountCredentials(num, email)
-	if err := s.RecordInstall(num, creds); err != nil && s.Log != nil {
-		s.Log.Debugf("Could not record the installed login of account %s: %v", num, err)
-	}
 }
 
 // repairsConfig: the outgoing slot came from the live credential's lineage

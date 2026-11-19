@@ -6354,10 +6354,6 @@ answers names the live slot, and `LiveSlot.Source` says which one did:
    then uses an answer it already has.
 4. `config`. Otherwise X.
 
-While some account has a Fable login, a default switch that installs an
-OAuth account's login also writes the chain record for it, the store's last
-install (A100); without a Fable login it writes none, as before.
-
 The chain record is the default login's; the Fable store keeps its own,
 `fable/live_lineage.json` (A100). Only a resolution of the default
 login reads or writes it: the default scope's `ResolveLiveSlot`, and the
@@ -8049,7 +8045,8 @@ replaces or keeps the live login asks, takes such a login for the account
 tycswap last installed in the store: the slot the store's chain record
 names, whatever fingerprint it carries, while the roster still maps the
 identity it was written for to that OAuth slot (`Source` `last-install`,
-no `Identity`). Every Fable switch and renewal writes the record, and only
+no `Identity`); on the default store, below, the roster's active account.
+Every Fable switch and renewal writes the record, and only
 Claude Code's own refresh writes the store's login otherwise. Because this is
 an assumption, a login backed up on it also goes to the unclaimed stash
 (`{"lineage":"fable","reason":"last-install","slot":"N"}`, logged at INFO),
@@ -8065,14 +8062,15 @@ and profile missed it, `Source` `config`) is no evidence: every Fable session
 writes its own account there, so the default login, rotated and not yet
 harvested, was backed up into the Fable session's account's slot whenever
 the profile endpoint missed. Such a login belongs to the default store's last
-install: the default chain record's slot, while the roster maps its identity
-there and it is the roster's active slot (the record holds profile answers
-too, and installs only since Fable logins exist, so the two must agree). The
-switch backs the login up into it as `unresolved` (A68's pre-fix backup,
+install: the roster's active account, which every default switch writes and
+`move` and `swap` keep, when it is an OAuth account (the default chain record
+keeps its A68 meaning: profile answers only). The switch backs the login up
+into it as `unresolved` (A68's pre-fix backup,
 `.prev` kept) after stashing a copy (`{"reason":"last-install","slot":"N"}`,
 logged at INFO), and a target that is that slot repairs the config. With no
 last install the login is stashed and the target activated without an
-outgoing backup, as for an unmanaged live login (`from` null). Without a
+outgoing backup, as for an unmanaged live login (`from` null); that is the
+case only when the roster names no active OAuth account. Without a
 Fable login the switch is v0.15.1's: the config's slot takes the login
 (`TestDefaultSwitchWithoutFableLoginsBacksUpIntoTheConfigsSlot`, the same
 result as the v0.15.1 tag).

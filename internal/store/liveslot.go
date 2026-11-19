@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -105,12 +106,11 @@ func (s *Store) ResolveLiveSlotWith(data *SequenceData, readLive func() string) 
 // it unnamed; on the default scope, while Fable logins exist, when only
 // ~/.claude.json names an OAuth slot, since every Fable session writes its own
 // account there. Such a login belongs to the last install (Source
-// SourceLastInstall, Identity nil), the slot the store's chain record names
-// while the roster holds the record's identity there (lastInstall). Claude
-// Code's own refresh is the only other writer of that login, so this is an
-// assumption: a caller that writes the login into that slot keeps .prev and
-// stashes a copy. Slot "" means no owner is known; ByLineage is set on the
-// default scope when Slot is not ConfigSlot (DESIGN A100).
+// SourceLastInstall, Identity nil, see lastInstall). Claude Code's own refresh
+// is the only other writer of that login, so this is an assumption: a caller
+// that writes the login into that slot keeps .prev and stashes a copy. Slot ""
+// means no owner is known; ByLineage is set on the default scope when Slot is
+// not ConfigSlot (DESIGN A100).
 func (s *Store) ResolveOwnerSlot(data *SequenceData) LiveSlot {
 	live := ""
 	ls := s.ResolveLiveSlotWith(data, func() string {
@@ -135,6 +135,38 @@ func (s *Store) ResolveOwnerSlot(data *SequenceData) LiveSlot {
 	}
 	owner.ByLineage = !s.fable && owner.Slot != owner.ConfigSlot
 	return owner
+}
+
+// lastInstall is the account tycswap last installed in s's store. On the
+// Fable scope it is the slot the Fable chain record names, whatever
+// fingerprint it carries, while the roster still maps the identity it was
+// written for to that OAuth slot: every Fable switch writes the record and
+// EmptyFable removes it. On the default scope it is the roster's active
+// account, which every default switch writes and move and swap keep, when it
+// is an OAuth account. "" when there is none.
+func (s *Store) lastInstall(data *SequenceData) string {
+	if data == nil {
+		return ""
+	}
+	if !s.fable {
+		if data.ActiveAccountNumber == nil {
+			return ""
+		}
+		num := strconv.Itoa(*data.ActiveAccountNumber)
+		if _, ok := recordFor(data, num); !ok || kindFrom(data, num) != "oauth" {
+			return ""
+		}
+		return num
+	}
+	rec, ok := s.readLiveLineage()
+	if !ok {
+		return ""
+	}
+	id := rec.Identity.oauth()
+	if s.oauthIdentitySlot(data, &id) != rec.Slot {
+		return ""
+	}
+	return rec.Slot
 }
 
 // defaultLiveSlot is ResolveLiveSlot for the default login, whatever the
