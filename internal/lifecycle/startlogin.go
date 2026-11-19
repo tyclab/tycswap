@@ -35,7 +35,7 @@ func carryAccountMetadata(dst, src *record) {
 	if src == nil {
 		return
 	}
-	for _, key := range []string{"alias", "disabled", "startLogin"} {
+	for _, key := range []string{"alias", "disabled", "startLogin", store.FableMarkKey} {
 		if src.has(key) {
 			dst.set(key, src.vals[key])
 		}

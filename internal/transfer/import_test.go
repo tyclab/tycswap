@@ -824,3 +824,27 @@ func TestImportRetainsLocalStartMetadataOnlyForExistingIdentity(t *testing.T) {
 		t.Fatal("new imported identity inherited disabled flag")
 	}
 }
+
+// A forced import over an identity keeps its local Fable mark; a new
+// identity starts without one (DESIGN A107).
+func TestImportRetainsLocalFableMarkOnlyForExistingIdentity(t *testing.T) {
+	f := newFakeAccounts(t)
+	f.seedAccount("1", "a@example.com", "", recordOpts{})
+	local := f.record(t, "1")
+	local["fableContinue"] = true
+	f.seq.Accounts["1"], _ = json.Marshal(local)
+	if _, err := importText(t, f, envelopeJSON(nil, oauthAccount(9, "a@example.com", "")), true); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.record(t, "1"); r["fableContinue"] != true {
+		t.Fatalf("mark lost: %v", r)
+	}
+	incoming := oauthAccount(1, "new@example.com", "")
+	incoming["fableContinue"] = true
+	if _, err := importText(t, f, envelopeJSON(nil, incoming), true); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.record(t, "2")["fableContinue"]; ok {
+		t.Fatal("new imported identity inherited the Fable mark")
+	}
+}

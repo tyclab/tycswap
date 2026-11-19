@@ -34,6 +34,8 @@ type AccountSnapshot struct {
 	Provider string
 	// FableLogin is the account's Fable login; nil without one (DESIGN A104).
 	FableLogin *FableLogin
+	// FableMark is the operator's mark that the account runs Fable (DESIGN A107).
+	FableMark bool
 }
 
 const (
@@ -120,6 +122,7 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 			LimitingWindows:      limiting,
 			Provider:             ProviderClaude,
 			FableLogin:           fable.login(num),
+			FableMark:            store.FableMarkFrom(data, num),
 		})
 	}
 	snap := &AccountsSnapshot{

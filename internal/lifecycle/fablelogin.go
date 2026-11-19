@@ -122,8 +122,8 @@ func fableLoginSlot(s *store.Store, data *store.SequenceData, email, orgUUID str
 			return "", cerr.Validation("This sign-in is %s, not Account-%s%s; nothing stored.", email, want, other)
 		}
 	}
-	if !s.FableCapable(num) {
-		return "", cerr.Validation("Account-%s's plan does not offer Fable.", num)
+	if err := FablePlanRefusal(s, data, num); err != nil {
+		return "", err
 	}
 	return num, nil
 }

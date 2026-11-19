@@ -11,7 +11,6 @@ import (
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/groups"
-	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/sessprofile"
 )
@@ -311,27 +310,14 @@ func (s *Store) ReadOwnedCredentialsLocked(number, email string) (string, error)
 }
 
 // FableCapable reports whether the account can continue Fable sessions, by
-// its plan or a recorded fableContinue capability (DESIGN A71, A77). An API
-// key or an unknown entitlement is no capability. The plan is the account's
-// as its default login knows it, on every scope: a Fable scope answers as
-// the store it was made from (DESIGN A101).
+// its plan or a recorded fableContinue capability (DESIGN A71, A77, A107). An
+// API key or an unknown entitlement is no capability. The plan is the
+// account's as its default login knows it, on every scope: a Fable scope
+// answers as the store it was made from (DESIGN A101).
 func (s *Store) FableCapable(number string) bool {
 	data, err := s.ReadSequence()
 	if err != nil || data == nil {
 		return false
 	}
-	rec, ok := recordFor(data, number)
-	if !ok || strField(rec, "kind") == "api_key" {
-		return false
-	}
-	creds, _ := s.defaultScope().ReadAccountCredentials(number, strField(rec, "email"))
-	plan := strField(rec, "subscriptionType")
-	if value, ok := oauth.ExtractOAuthData(creds)["subscriptionType"].(string); ok {
-		plan = value
-	}
-	var recorded *bool
-	if value, ok := rec["fableContinue"].(bool); ok {
-		recorded = &value
-	}
-	return groups.Entitlement(groups.Fable, groups.Continue, plan, nil, recorded).Allowed
+	return s.FableEntitlement(data, number).Capable
 }

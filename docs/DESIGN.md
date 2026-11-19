@@ -8955,3 +8955,96 @@ Fable tick after `--started`), `TestFableStartLoginRanksAndHolds`,
 `TestFableStartWithoutAMarkedFableLogin`,
 `TestFableStartWithoutMarksOrAutoSwitchIsAsBefore` (no file written),
 `TestFableStartAccount` and `TestFableStartOneTokenHoldsBothStores`.
+
+## A107. The Fable mark, and the Fable sign-in in the menu
+
+**Why.** On 2026-11-19 `tycswap add --login --lineage fable --slot N` refused
+two organization accounts that run Fable, after the browser sign-in, with
+`Account-N's plan does not offer Fable.`: an organization's login often names
+no plan (`subscriptionType` empty), and `Store.FableCapable` (A71, A77) then
+answers no. It also honours a roster key `fableContinue`, which nothing but a
+test wrote; set by hand in `sequence.json`, it let the sign-in through. The
+operator, the same day: "interactive shell missing fable login": the `tycswap`
+menu had no way to the Fable sign-in.
+
+**What decides.** `Store.FableEntitlement(data, N)` is `FableCapable` with its
+reason (`FableAnswer{Capable, By, Plan}`), and `FableCapable` now reads it, so
+every caller (the sign-in, the Fable store's switch and pool, the default
+login's reservation) gives one answer. In order: an API-key account never runs
+Fable (`api-key`); a Pro or Free plan does not, whatever the mark (`plan`); a
+boolean `fableContinue` decides (`mark`); a Max or Ultra plan does (`plan`);
+anything else does not (`unknown`). The plan is the default login's
+`subscriptionType`, else the roster's, as before. Only `By` is new; no answer
+changes.
+
+**The mark.** `tycswap fable --allow ID | --disallow ID | --list [--json]`, in
+the forms and exit codes of `start --allow | --disallow | --list` (A90): the
+three exclude each other, a missing account, `--json` without `--list`, an
+unknown option or a positional argument exit 2 (`tycswap fable: error: …`);
+an unknown account exits 1. `lifecycle.SetFableMark`, under the roster lock
+like `SetStartLogin` and beside it, writes `fableContinue: true` or removes
+the key, so the plan decides again, and writes nothing when the record already
+says so. `--allow` refuses an API-key account (`Account-N is an API-key
+account; a Fable mark is for OAuth logins only.`) and a Pro or Free plan
+(`Account-N's plan (pro) cannot run Fable; nothing marked.`), where a mark
+would change nothing. `--list` prints per roster account its number, email,
+whether it runs Fable and why, and whether it holds a Fable login; `--json` is
+`{"schemaVersion":1,"accounts":[{"number","email","fable","by","plan"?,"fableLogin"}]}`.
+There was no `fable` command or abbreviation to shadow: the main parser
+matches no prefixes, and `switch --store fable` stays as it is.
+
+The key follows its identity as `startLogin` does: `carryAccountMetadata`
+(re-add, re-login, `add --slot`, `add-token`) and the forced import's
+`retainLocalMetadata` keep it; `move` and `swap` move the record whole; a new
+identity in the slot or a newly imported one starts without it; `export`
+carries no roster metadata. Before, `add --slot N` of the same identity and an
+`add` that migrated it to another slot dropped a hand-set key.
+
+**The refusal.** `lifecycle.FablePlanRefusal` is the sign-in's refusal:
+`Account-N's plan does not offer Fable. If it runs Fable, mark it first:
+tycswap fable --allow N`, the first sentence alone for a Pro or Free plan.
+With `--slot N` the preflight asks it before `Sign in as …` and before Claude
+starts, so the operator never signs in for nothing. Without `--slot` the
+account is known only from the sign-in's identity, so the refusal stays after
+it, in `AddFableLogin`; the menu always passes `--slot`.
+
+**The menu.** `menuFableStore` is whether the platform can hold a Fable
+store: not on macOS (A100), where none of the entries appears. *Add account*
+ends with `add --login --lineage fable  Sign in for Fable`; it reads `fable
+--list`'s rows (`menuFableRows`, only once chosen) and asks for the account
+among those that run Fable, without a Fable login first, then those with one
+(`· sign in again`), each in roster order, and runs `add --login --lineage
+fable --slot N`. With none it says `No account runs Fable yet. If one does,
+choose Allow Fable in its menu (tycswap fable --allow N).` A Claude OAuth
+account's own menu ends with *Sign in for Fable…* (*Sign in again for Fable…*
+when the snapshot has its Fable login), the same command, and *Allow Fable*,
+or *Disallow Fable* while it is marked, which asks first and runs `fable
+--allow N` or `--disallow N`. The account menu reads the mark from the
+account snapshot (`AccountSnapshot.FableMark`, from the roster as
+`StartLogin`), so building it reads no credential. The new entries come last,
+after every entry they could shift.
+
+**No mark, no change.** A box without the key reads every answer as before;
+the snapshot's new field is in no JSON document; the menu's other entries keep
+their places.
+
+**Tests.** `TestFableEntitlementSaysWhy` (every basis, a Pro plan's mark, a
+hand-set `false`, an unknown slot), `TestSetFableMarkWritesAndRemovesTheKey`
+(the key, other metadata kept, no rewrite of an unchanged record, a hand-set
+`false` removed), `TestSetFableMarkRefusals` (an unknown account, a Pro plan,
+an API key; no file changes), `TestAddFableLoginOfAnUnknownPlanNamesTheMark`
+(refused with the new line, stored after `SetFableMark`),
+`TestFablePlanRefusalOfAPlanWithoutFableOffersNoMark` and
+`TestFableMarkFollowsIdentity` (re-add, re-login, `add --slot` of the same
+identity and to another slot, move, swap, another identity in the slot) in
+`lifecycle`; `TestImportRetainsLocalFableMarkOnlyForExistingIdentity` in
+`transfer`; in `cli` `TestFableCommandArguments` (each usage error, exit 2, no
+write), `TestFableCommandAllowDisallowList` (the list, the key written and
+removed, the JSON, no Fable directory created), `TestFableCommandUnknownAccount`,
+`TestFableSignInOfAnUnknownPlanAccount` (refused before Claude starts, signed
+in after `fable --allow`), `TestMenuAddFableSignInAsksForTheAccount` (the
+entry, the order of the accounts, the command),
+`TestMenuAddFableSignInWithoutAFableAccount`,
+`TestMenuAddHasNoFableSignInWithoutAFableStore` and `TestMenuManageFableEntries`
+(the entries and their order, each confirmation and its cancel, the sign-in, a
+marked account, macOS, an API key, Codex).
