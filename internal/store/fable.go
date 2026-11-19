@@ -318,14 +318,7 @@ func (s *Store) RecordFableLive(num, creds string) error {
 	if err != nil {
 		return err
 	}
-	fp := oauth.CredentialFingerprint(creds)
-	data, err := f.ReadSequence()
-	rec, ok := recordFor(data, num)
-	if fp == nil || err != nil || !ok {
-		return err
-	}
-	id := oauth.Identity{UUID: strField(rec, "uuid"), Email: strField(rec, "email"), OrgUUID: strField(rec, "organizationUuid")}
-	return f.writeLiveLineage(*fp, num, &id)
+	return f.RecordInstall(num, creds)
 }
 
 // ForgetFableLive removes the Fable chain record once the Fable store holds

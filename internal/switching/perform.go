@@ -94,10 +94,12 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 		// A switch backs up the slot whose credential is live, not the one a
 		// rewritten ~/.claude.json names; --force keeps the config's slot
 		// unless it targets the credential's, which is a repair (DESIGN A68).
+		// While Fable logins exist a slot only the config names is no
+		// evidence: the owner is the last install, or unknown (DESIGN A100).
 		configSlot := ""
 		var live store.LiveSlot
 		if curOK {
-			if live = s.ResolveLiveSlot(data); live.ByLineage && (!forceActivate || live.Slot == targetAccount) {
+			if live = s.ResolveOwnerSlot(data); live.ByLineage && (!forceActivate || live.Slot == targetAccount) {
 				rec, _ := accountRec(data, live.Slot)
 				configSlot, currentAccount, curEmail = currentAccount, live.Slot, recStr(rec, "email")
 			}
@@ -108,7 +110,7 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 		if (forceActivate && !repair) || !curOK || currentAccount == "" {
 			var fromRef map[string]any
 			switch {
-			case !curOK:
+			case !curOK, live.ByLineage && live.Slot == "":
 				fromRef = nil
 			case live.ByLineage:
 				// The result names the credential's slot, which the activation replaced.
@@ -124,6 +126,7 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 				return derr
 			}
 			op = o
+			recordInstall(s, targetAccount, targetEmail)
 			return nil
 		}
 
@@ -165,6 +168,11 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 			tx.restoreClear = tx.originalCredentials == ""
 		}
 
+		if live.Source == store.SourceLastInstall && !curEndpoint {
+			if err := stashLastInstall(s, originalCreds, currentAccount); err != nil {
+				return cerr.Switch("Could not preserve the live credential before backing it up into Account-%s (safety-copy write failed: %v); nothing was switched", currentAccount, err)
+			}
+		}
 		commitErr := normalSwitchBody(s, data, tx, targetAccount, targetEmail, currentAccount, curEmail, configSlot, originalCreds, originalConfig, curEndpoint, prov, emitOutput, &warningsOut)
 		plan = tx.plan
 		if commitErr != nil {
@@ -188,6 +196,9 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 
 		op = switchOp{From: fromRef, To: toRef, Warnings: warningsOut, Repaired: repair}
 		displayAfterLock = true
+		if !repair {
+			recordInstall(s, targetAccount, targetEmail)
+		}
 		return nil
 	})
 	if err != nil {
@@ -600,6 +611,19 @@ func activateTarget(s *store.Store, tx *switchTransaction, plan *profilePlan, ta
 		plan.warn(emitOutput, warningsOut)
 	}
 	return nil
+}
+
+// recordInstall names the account a switch installed in the default chain
+// record while Fable logins exist: the last install a login nothing else
+// names belongs to (DESIGN A100). Without Fable logins nothing is written.
+func recordInstall(s *store.Store, num, email string) {
+	if !s.HasFableLogins() {
+		return
+	}
+	creds, _ := s.ReadAccountCredentials(num, email)
+	if err := s.RecordInstall(num, creds); err != nil && s.Log != nil {
+		s.Log.Debugf("Could not record the installed login of account %s: %v", num, err)
+	}
 }
 
 // repairsConfig: the outgoing slot came from the live credential's lineage

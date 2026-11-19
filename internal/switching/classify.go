@@ -162,6 +162,21 @@ func stashLiveCredential(s *store.Store, originalCreds, reason, currentAccount s
 	return id, nil
 }
 
+// stashLastInstall keeps a copy of a live login the switch backs up into
+// slot, its last install, on that assumption alone (DESIGN A100), before the
+// slot's backup is replaced; .prev keeps the one replaced.
+func stashLastInstall(s *store.Store, creds, slot string) error {
+	id, err := s.Creds.WriteUnclaimed(oauth.AccountOnly(creds), map[string]any{
+		"reason":      store.SourceLastInstall,
+		"slot":        slot,
+		"fingerprint": fingerprintValue(creds),
+	})
+	if err == nil && s.Log != nil {
+		s.Log.Infof("Backing up the live login into account %s as its last install (nothing else named its account); a copy is stashed as %s", slot, id)
+	}
+	return err
+}
+
 // fingerprintValue returns the credential fingerprint as a plain any (nil for
 // empty input) for the stash context.
 func fingerprintValue(creds string) any {

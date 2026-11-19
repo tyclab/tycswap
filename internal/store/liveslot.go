@@ -100,22 +100,41 @@ func (s *Store) ResolveLiveSlotWith(data *SequenceData, readLive func() string) 
 }
 
 // ResolveOwnerSlot is the account a caller that backs up, replaces or keeps
-// the live login takes it for: ResolveLiveSlot's, except that a Fable store
-// login that backup, chain and profile leave unnamed belongs to the last
-// install (Source SourceLastInstall, Identity nil), the slot the store's chain
-// record names while the roster holds the record's identity there. Claude
+// the live login takes it for: ResolveLiveSlot's, except where nothing names
+// the login. On the Fable scope that is when backup, chain and profile leave
+// it unnamed; on the default scope, while Fable logins exist, when only
+// ~/.claude.json names an OAuth slot, since every Fable session writes its own
+// account there. Such a login belongs to the last install (Source
+// SourceLastInstall, Identity nil), the slot the store's chain record names
+// while the roster holds the record's identity there (lastInstall). Claude
 // Code's own refresh is the only other writer of that login, so this is an
 // assumption: a caller that writes the login into that slot keeps .prev and
-// stashes a copy. Slot "" means no owner is known (DESIGN A100).
+// stashes a copy. Slot "" means no owner is known; ByLineage is set on the
+// default scope when Slot is not ConfigSlot (DESIGN A100).
 func (s *Store) ResolveOwnerSlot(data *SequenceData) LiveSlot {
-	ls := s.ResolveLiveSlot(data)
-	if !s.fable || ls.Slot != "" || !s.HasLiveLogin() {
+	live := ""
+	ls := s.ResolveLiveSlotWith(data, func() string {
+		if v, _, err := s.Creds.ReadActive(); err == nil {
+			live = v
+		}
+		return live
+	})
+	switch {
+	case live == "":
+		return ls
+	case s.fable:
+		if ls.Slot != "" {
+			return ls
+		}
+	case s.group != "" || ls.Source != SourceConfig || kindFrom(data, ls.ConfigSlot) != "oauth" || !s.HasFableLogins():
 		return ls
 	}
+	owner := LiveSlot{ConfigSlot: ls.ConfigSlot}
 	if slot := s.lastInstall(data); slot != "" {
-		return LiveSlot{Slot: slot, Source: SourceLastInstall}
+		owner.Slot, owner.Source = slot, SourceLastInstall
 	}
-	return ls
+	owner.ByLineage = !s.fable && owner.Slot != owner.ConfigSlot
+	return owner
 }
 
 // defaultLiveSlot is ResolveLiveSlot for the default login, whatever the

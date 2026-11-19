@@ -6354,6 +6354,10 @@ answers names the live slot, and `LiveSlot.Source` says which one did:
    then uses an answer it already has.
 4. `config`. Otherwise X.
 
+While some account has a Fable login, a default switch that installs an
+OAuth account's login also writes the chain record for it, the store's last
+install (A100); without a Fable login it writes none, as before.
+
 The chain record is the default login's; the Fable store keeps its own,
 `fable/live_lineage.json` (A100). Only a resolution of the default
 login reads or writes it: the default scope's `ResolveLiveSlot`, and the
@@ -8051,6 +8055,24 @@ loses nothing. `EmptyFable` removes the record with the login, so a login
 that later appears in an emptied store has no last install and is stashed.
 `ResolveFableLiveSlot`, `FableStore()`, the engine, `list`, `status` and the
 dashboard keep their answer: no slot.
+
+The default switch's outgoing backup asks `ResolveOwnerSlot` too. While some
+account has a Fable login, a slot only `~/.claude.json` names (backup, chain
+and profile missed it, `Source` `config`) is no evidence: every Fable session
+writes its own account there, so the default login, rotated and not yet
+harvested, was backed up into the Fable session's account's slot whenever
+the profile endpoint missed. Such a login belongs to the default store's last
+install: the default chain record's slot, while the roster maps its identity
+there and it is the roster's active slot (the record holds profile answers
+too, and installs only since Fable logins exist, so the two must agree). The
+switch backs the login up into it as `unresolved` (A68's pre-fix backup,
+`.prev` kept) after stashing a copy (`{"reason":"last-install","slot":"N"}`,
+logged at INFO), and a target that is that slot repairs the config. With no
+last install the login is stashed and the target activated without an
+outgoing backup, as for an unmanaged live login (`from` null). Without a
+Fable login the switch is v0.15.1's: the config's slot takes the login
+(`TestDefaultSwitchWithoutFableLoginsBacksUpIntoTheConfigsSlot`, the same
+result as the v0.15.1 tag).
 
 The default resolver is unchanged except one line: when `.claude.json` names
 the Fable store's live account (by backup or chain) and the default
