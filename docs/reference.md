@@ -5237,8 +5237,12 @@ line `<change> by <actor>` beside the change's own line.
   `engine:<trigger>` for an auto-switch, on its own line after the switch
   layer's unchanged `Switched from account <from> to <to>`. The Fable
   store's switches read `Switched the Fable store to account <n> by
-  engine:<trigger>` and `… by hand`, and every other line of its engine
-  starts with `Fable store: ` (DESIGN A102).
+  <actor>`, one line per move: `engine:<trigger>` for its engine, and for a
+  switch by hand the command's (`switch --store fable`, `add --login
+  --lineage fable`), the tray's or the dashboard's actor. Emptying it reads
+  `Emptied the Fable store by <actor>` alike, `by hand` when `remove` or
+  `add --slot` empties it. Every other line of its engine starts with
+  `Fable store: ` (DESIGN A102).
 - **Logins made elsewhere.** Every real tick (`auto` without `--dry-run`)
   records the live slot it saw and when (`lastSeenLive`, `lastSeenAt` in
   `autoswitch_state.json`; the dashboard's *Last tick*). When the live slot

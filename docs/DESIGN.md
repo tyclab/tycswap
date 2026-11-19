@@ -8070,10 +8070,15 @@ none; its reason is `emptied`.
 `fable/.autoswitch_state.lock`, and a switch stamps the hold (`lastSwitchAt`,
 `lastSwitchTo`, `lastSwitchBy: "hand"`) in `fable/autoswitch_state.json`
 only: A94's hold is per store, and `byHand`'s roster mark cannot see a Fable
-switch, since the roster does not change. It logs `Switched the Fable store
-to account N by hand`. `EngineSwitchFable` stamps nothing (the engine does,
-A102). `EmptyFable` runs under the same state lock while the store holds a
-login. On the command line: `tycswap switch --store fable <id>`, `tycswap
+switch, since the roster does not change. Through `SwitchFableBy` it logs
+`Switched the Fable store to account N by <actor>`, the caller's:
+`cli(…)` for `switch --store fable` and `add --login --lineage fable`,
+`tray` for the in-process tray; the dashboard passes none and logs the line
+itself with its own (A104), so each move has one line. `EngineSwitchFable`
+stamps nothing (the engine does, A102). `EmptyFable` runs under the same
+state lock while the store holds a login, and `EmptyFableBy` logs `Emptied
+the Fable store by <actor>` alike, `by hand` when `remove` or `add --slot`
+empties the store (A101). On the command line: `tycswap switch --store fable <id>`, `tycswap
 switch --store fable --empty`, and `--store default`, the switch as without
 `--store`. `--store fable` with `--strategy`, `--force`, no id, or an id and
 `--empty` exits 2 with one line, `--store fable takes an account or
@@ -8508,16 +8513,16 @@ usage both rankings read is one collector pass. Without a Fable login the
 document is v0.15.1's byte for byte.
 
 **The route.** `POST /api/switch/{key}?store=fable` calls
-`core.Switcher.SwitchFable` for a `claude:` key, a switch by hand that
-stamps the Fable store's hold; `&empty=1`, on any key, calls `EmptyFable`.
-Both run through the authenticated mutation path (cookie and CSRF, or the
-bearer) and log `Switched the Fable store to account N` or `Emptied the
-Fable store` with the dashboard actor, beside the switch's own `by hand`
-line. Another `store` value (the empty `store=` included: only an absent
-`store` is the default switch), a `codex:` key, `force` or
-`confirmAuthChange` answer 400; a server without the seam
-(`web.Deps.Fable`) answers 503. The
-default login, `sequence.json` and `.claude.json` are not written.
+`core.Switcher.SwitchFableBy` without an actor for a `claude:` key, a switch
+by hand that stamps the Fable store's hold; `&empty=1`, on any key, calls
+`EmptyFableBy` alike. Both run through the authenticated mutation path
+(cookie and CSRF, or the bearer) and log `Switched the Fable store to
+account N` or `Emptied the Fable store` with the dashboard actor, the one
+line of the move. Another `store` value (the empty `store=` included: only
+an absent `store` is the default switch), a `codex:` key, `force` or
+`confirmAuthChange` answer 400; a server without the seam (`web.Deps.Fable`)
+answers 503. The default login, `sequence.json` and `.claude.json` are not
+written.
 
 **The page.** While `fable` is present the header adds a second line under
 the active account, `Fable: #N <name>` (a *Fable login: sign in again* chip

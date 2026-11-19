@@ -71,6 +71,27 @@ func TestSwitchStoreFableForms(t *testing.T) {
 	}
 }
 
+// A switch of the Fable store by hand from the command line logs one line
+// per move with the command's actor, as the default switch does; no line
+// reads by hand (DESIGN A100, reference LOG).
+func TestSwitchStoreFableLogsTheCommandsActor(t *testing.T) {
+	sw := fableCLISwitcher(t)
+	for _, argv := range [][]string{{"switch", "--store", "fable", "2"}, {"switch", "--store", "fable", "--empty"}} {
+		if code, _, errb := runHuman(t, argv...); code != 0 {
+			t.Fatalf("%v: exit %d, stderr %q", argv, code, errb)
+		}
+	}
+	log, _ := os.ReadFile(filepath.Join(sw.BackupDir(), "tycswap.log"))
+	for _, line := range []string{"Switched the Fable store to account 2 by cli(pid=", "Emptied the Fable store by cli(pid="} {
+		if n := strings.Count(string(log), line); n != 1 {
+			t.Errorf("%d lines %q, want one:\n%s", n, line, log)
+		}
+	}
+	if strings.Contains(string(log), "by hand") {
+		t.Errorf("a line reads by hand:\n%s", log)
+	}
+}
+
 func TestSwitchStoreFableJSON(t *testing.T) {
 	for _, tc := range []struct {
 		argv           []string
