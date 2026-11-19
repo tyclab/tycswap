@@ -330,6 +330,23 @@ func (s *Store) RecordFableLive(num, creds string) error {
 	return f.writeLiveLineage(*fp, num, &id)
 }
 
+// RepointFableLive points the Fable chain record at slot to when it names
+// slot from, keeping its fingerprint and identity: a move or swap of the Fable
+// store's last install takes the record along, still an assumption for a
+// login nothing else names (DESIGN A100, A101).
+func (s *Store) RepointFableLive(from, to string) error {
+	f, err := s.ForFable()
+	if err != nil {
+		return err
+	}
+	rec, ok := f.readLiveLineage()
+	if !ok || rec.Slot != from {
+		return nil
+	}
+	id := rec.Identity.oauth()
+	return f.writeLiveLineage(rec.Fingerprint, to, &id)
+}
+
 // ForgetFableLive removes the Fable chain record once the Fable store holds
 // no login, so no later login takes an emptied store's last install as its
 // account (DESIGN A100).

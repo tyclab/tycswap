@@ -157,6 +157,37 @@ func TestRemoveStopsWhenTheFableStoreCannotBeEmptied(t *testing.T) {
 	sameFiles(t, "the failed remove", before, everyFile(t, s))
 }
 
+// The Fable store is on Account-2 by its last install only: Claude Code
+// rotated the login and the profile endpoint does not answer. move, swap and
+// an add --slot that moves Account-2 take the chain record along, so the
+// store's login is still the moved account's last install.
+func TestRenumberingFollowsTheChainRecordOfAnUnattributedLogin(t *testing.T) {
+	for _, tc := range []struct {
+		name, to string
+		act      func(s *store.Store) error
+	}{
+		{"move", "5", func(s *store.Store) error { _, _, _, err := MoveAccount(s, "2", "5"); return err }},
+		{"swap", "1", func(s *store.Store) error { _, _, err := SwapAccounts(s, "1", "2"); return err }},
+		{"add --slot", "5", func(s *store.Store) error {
+			_, err := AddAccountFrom(s, signIn(t, "b@example.com", planCreds("at-n2", "rt-n2", "max")), ip(5), true, nil)
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := withFableLogins(t, "2")
+			s.OAuth = &oauth.FakeClient{ProfileFn: func(context.Context, string) *oauth.Identity { return nil }}
+			putFableStore(t, s, planCreds("at-f2-rotated", "rt-f2-rotated", "max"))
+			if err := tc.act(s); err != nil {
+				t.Fatal(err)
+			}
+			f, _ := s.ForFable()
+			if got := f.ResolveOwnerSlot(readSeq(t, s)); got.Slot != tc.to || got.Source != store.SourceLastInstall {
+				t.Errorf("the store's owner = %+v, want Account-%s by last install", got, tc.to)
+			}
+		})
+	}
+}
+
 // relocate and swap carry each Fable login with its account; the chain
 // record follows the Fable store's account.
 func TestMoveCarriesTheFableLoginAndTheChainRecord(t *testing.T) {

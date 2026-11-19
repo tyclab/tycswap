@@ -131,7 +131,7 @@ func relocateLocked(s *store.Store, data *store.SequenceData, numSrc, target str
 	creds, _ := s.ReadAccountCredentials(numSrc, email)
 	config, _ := s.ReadAccountConfig(numSrc, email)
 	fab := fableLogins(s)
-	fableCreds, fableLive := fableMaterial(fab, numSrc, email), fableLiveSlot(fab)
+	fableCreds, fableLive := fableMaterial(fab, numSrc, email), fableOwnerOf(fab)
 
 	srcDir := s.SessionDir(numSrc, email)
 	dstDir := s.SessionDir(target, email)
@@ -245,7 +245,7 @@ func swapAccountsLocked(s *store.Store, data *store.SequenceData, first, second 
 	configA, _ := s.ReadAccountConfig(numA, emailA)
 	configB, _ := s.ReadAccountConfig(numB, emailB)
 	fab := fableLogins(s)
-	fableA, fableB, fableLive := fableMaterial(fab, numA, emailA), fableMaterial(fab, numB, emailB), fableLiveSlot(fab)
+	fableA, fableB, fableLive := fableMaterial(fab, numA, emailA), fableMaterial(fab, numB, emailB), fableOwnerOf(fab)
 	fableStaging := map[string]string{}
 	if fab != nil && emailA == emailB {
 		// Staged before anything changes, so a refusal here needs no rollback.
@@ -578,16 +578,23 @@ func fableMaterial(fab *store.Store, num, email string) string {
 	return creds
 }
 
-// followFableChain points the Fable chain record at the Fable store's account
-// under its new number; the caller holds the store lock and has committed.
-func followFableChain(fab *store.Store, live string, renumbered map[string]string) {
-	to, moved := renumbered[live]
-	if live == "" || !moved {
+// followFableChain points the Fable chain record at the Fable store's
+// account, owner, under its new number; the caller holds the store lock and
+// has committed. A last install's record moves with its fingerprint, so the
+// store's login stays an assumption (DESIGN A100).
+func followFableChain(fab *store.Store, owner store.LiveSlot, renumbered map[string]string) {
+	to, moved := renumbered[owner.Slot]
+	if owner.Slot == "" || !moved {
 		return
 	}
-	creds, _, err := fab.Creds.ReadActive()
-	if err == nil && creds != "" {
-		err = fab.RecordFableLive(to, creds)
+	var err error
+	if owner.Source == store.SourceLastInstall {
+		err = fab.RepointFableLive(owner.Slot, to)
+	} else {
+		var creds string
+		if creds, _, err = fab.Creds.ReadActive(); err == nil && creds != "" {
+			err = fab.RecordFableLive(to, creds)
+		}
 	}
 	if err != nil {
 		logWarningf(fab, "Could not point the Fable store's chain record at Account-%s: %v", to, err)

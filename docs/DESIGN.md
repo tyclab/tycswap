@@ -8239,8 +8239,10 @@ repaired: the store is usable again at once.
   `credentials-fable/`: written under the new key, staged in
   `credentials-fable/.swap-staging-creds-N.json` for a same-email swap (before
   anything changes), rolled back with the default backup, and the old key
-  removed after the commit. When a moved account is the Fable store's live one,
-  `fable/live_lineage.json` is rewritten to its new number under the store lock.
+  removed after the commit. When a moved account owns the Fable store's login
+  (`ResolveOwnerSlot`), `fable/live_lineage.json` is rewritten to its new number
+  under the store lock; for a login only its last install names, the record
+  moves with its fingerprint, so the login stays that assumption (A100).
 - The rule under both: a Fable login belongs to the identity it was signed in
   as. `add` and `add-token` with `--slot N` follow it too (added after lane
   B's report): an account the add moves from its old slot to N takes its Fable

@@ -181,12 +181,14 @@ func fableLiveSlot(f *store.Store) string {
 // fableOwner is the account the Fable store's login belongs to, its last
 // install when nothing else names it (store.ResolveOwnerSlot); "" when the
 // store holds none or no account is known.
-func fableOwner(f *store.Store) string {
+func fableOwner(f *store.Store) string { return fableOwnerOf(f).Slot }
+
+func fableOwnerOf(f *store.Store) store.LiveSlot {
 	if f == nil {
-		return ""
+		return store.LiveSlot{}
 	}
 	data, _ := f.ReadSequence()
-	return f.ResolveOwnerSlot(data).Slot
+	return f.ResolveOwnerSlot(data)
 }
 
 // emptyFableBefore empties the Fable store when num owns its login, so a
@@ -272,7 +274,7 @@ func reslotFableLogins(s *store.Store, data *store.SequenceData, displaced *disp
 	if migrateFrom == "" {
 		return displace, follow, nil
 	}
-	live := fableLiveSlot(fab)
+	owner := fableOwnerOf(fab)
 	follow = func() {
 		if creds != "" {
 			if err := fab.WriteAccountCredentials(accountNum, email, creds); err != nil {
@@ -282,7 +284,7 @@ func reslotFableLogins(s *store.Store, data *store.SequenceData, displaced *disp
 			_ = fab.Creds.DeletePrev(accountNum, email)
 		}
 		_ = fab.Creds.DeleteBackup(migrateFrom, email)
-		followFableChain(fab, live, map[string]string{migrateFrom: accountNum})
+		followFableChain(fab, owner, map[string]string{migrateFrom: accountNum})
 	}
 	return displace, follow, nil
 }
