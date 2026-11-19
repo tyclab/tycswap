@@ -71,6 +71,33 @@ func TestSwitchStoreFableForms(t *testing.T) {
 	}
 }
 
+// --empty on a store that holds no login says so: on an emptied store and on
+// a box without a Fable login, where it creates nothing (DESIGN A100).
+func TestSwitchStoreFableEmptyWithoutALogin(t *testing.T) {
+	const want = "The Fable store holds no login; Fable sessions start on the default login.\n"
+	t.Run("emptied store", func(t *testing.T) {
+		fableCLISwitcher(t)
+		if code, _, errb := runHuman(t, "switch", "--store", "fable", "--empty"); code != 0 {
+			t.Fatalf("first --empty: exit %d, stderr %q", code, errb)
+		}
+		if code, out, errb := runHuman(t, "switch", "--store", "fable", "--empty"); code != 0 || out != want {
+			t.Fatalf("exit %d, stdout %q, stderr %q; want %q", code, out, errb, want)
+		}
+	})
+	t.Run("no Fable login", func(t *testing.T) {
+		sw := fixtureSwitcher(t)
+		useSwitcher(t, sw)
+		if code, out, errb := runHuman(t, "switch", "--store", "fable", "--empty"); code != 0 || out != want {
+			t.Fatalf("exit %d, stdout %q, stderr %q; want %q", code, out, errb, want)
+		}
+		for _, dir := range []string{paths.FableScopeDir(sw.BackupDir()), filepath.Join(sw.BackupDir(), "credentials-fable")} {
+			if _, err := os.Stat(dir); !os.IsNotExist(err) {
+				t.Errorf("%s exists after --empty without a Fable login (%v)", dir, err)
+			}
+		}
+	})
+}
+
 // A switch of the Fable store by hand from the command line logs one line
 // per move with the command's actor, as the default switch does; no line
 // reads by hand (DESIGN A100, reference LOG).

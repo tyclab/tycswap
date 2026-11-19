@@ -641,7 +641,10 @@ and `to` are both the target (DESIGN A68).
 
 `--store fable` prints `Switched the Fable store to Account-<n> (<email>).`,
 `The Fable store is already on Account-<n>.`, or, with `--empty`, `The Fable
-store is off now; Fable sessions start on the default login.` With `--json`:
+store is off now; Fable sessions start on the default login.`, and `The Fable
+store holds no login; Fable sessions start on the default login.` when it held
+none (also on a box without a Fable login, where nothing is created). With
+`--json`:
 
 ```
 {
