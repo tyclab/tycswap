@@ -3,6 +3,7 @@
 package lifecycle
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"os"
@@ -180,6 +181,29 @@ func TestAddFableLoginStoresOnlyTheFableLogin(t *testing.T) {
 	}
 }
 
+// The plan is the account's, as the roster and the default login know it: a
+// Fable login whose credential names no subscriptionType (null when Claude
+// Code's profile fetch at login fails) is stored, so the switch takes it too.
+func TestAStoredFableLoginWithoutAPlanCanBeSwitchedTo(t *testing.T) {
+	s := fableLifecycleStore(t)
+	captureOut(t)
+	noPlan := `{"claudeAiOauth":{"accessToken":"at-f1","refreshToken":"rt-f1","expiresAt":4102444800000,"subscriptionType":null}}`
+	num, err := AddFableLogin(s, signIn(t, "a@example.com", noPlan), ip(1))
+	if err != nil {
+		t.Fatalf("AddFableLogin = %v", err)
+	}
+	f, _ := s.ForFable()
+	if s.FableCapable(num) != f.FableCapable(num) {
+		t.Errorf("FableCapable(%s): default scope %v, Fable scope %v", num, s.FableCapable(num), f.FableCapable(num))
+	}
+	if _, err := switching.SwitchFable(f, num, switching.FableSwitchOptions{}); err != nil {
+		t.Fatalf("SwitchFable refused the Fable login AddFableLogin stored: %v", err)
+	}
+	if st := s.FableStore(); !st.On || st.Live.Slot != num {
+		t.Errorf("FableStore = %+v, want on Account-%s", st, num)
+	}
+}
+
 func TestAddFableLoginAgainReplacesTheFileAndKeepsPrev(t *testing.T) {
 	s := fableLifecycleStore(t)
 	captureOut(t)
@@ -253,6 +277,35 @@ func TestAddFableLoginRenewsADeadLiveLogin(t *testing.T) {
 }
 
 // A Fable login of an account the store does not hold leaves the store alone.
+// The Fable store is on Account-2 by its last install only (its login
+// rotated, the profile endpoint silent): signing Account-2 in again renews
+// the store's login, as for an attributed one, and keeps a copy of the login
+// it replaces, since its account was only assumed.
+func TestAddFableLoginRenewsTheStoresLastInstall(t *testing.T) {
+	s := withFableLogins(t, "2")
+	s.OAuth = &oauth.FakeClient{ProfileFn: func(context.Context, string) *oauth.Identity { return nil }}
+	rotated := planCreds("at-f2-rotated", "rt-f2-rotated", "max")
+	putFableStore(t, s, rotated)
+	out := captureOut(t)
+	fresh := planCreds("at-f2-new", "rt-f2-new", "max")
+	if _, err := AddFableLogin(s, signIn(t, "b@example.com", fresh), nil); err != nil {
+		t.Fatal(err)
+	}
+	if live, _ := os.ReadFile(fableStoreFile(s)); !oauth.SameAccountBlock(string(live), fresh) {
+		t.Errorf("store = %s, want the new sign-in", live)
+	}
+	if got := fableLoginOf(t, s, "2", "b@example.com"); got != fresh {
+		t.Errorf("Fable login = %s", got)
+	}
+	if !strings.Contains(out.String(), FableStoreUses("2")) {
+		t.Errorf("output = %q", out.String())
+	}
+	f, _ := s.ForFable()
+	if rows, _ := f.Creds.ListUnclaimed(); len(rows) != 1 {
+		t.Errorf("unclaimed %v, want the replaced store login", rows)
+	}
+}
+
 func TestAddFableLoginOfAnotherAccountLeavesTheStore(t *testing.T) {
 	s := fableLifecycleStore(t)
 	captureOut(t)

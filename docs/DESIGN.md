@@ -8007,8 +8007,11 @@ it. A Fable login write invalidates no session profile. On the scope,
 readable Fable login. It is *on* when it has Fable logins and its
 `.credentials.json` holds a login (not seat-wide keys only, A29); *off* when
 it has Fable logins and holds none. It is *usable* when on and no
-`invalid_grant` quarantine entry in `fable/autoswitch_state.json` carries the
-live login's refresh-token fingerprint. `Store.FableStore()` returns
+quarantine entry in `fable/autoswitch_state.json`, whatever its reason
+(`invalid_grant`, or `identity-conflict` when a refresh showed another
+account's login), carries the live login's refresh-token fingerprint; the
+reason is then `Account-N's Fable login: sign in again`, the answer the
+login's own row gives. `Store.FableStore()` returns
 `{On, Live, Usable, Reason}`, its live slot from backup or chain only, so a
 caller without network can ask it. No setting turns the store off: `tycswap
 switch --store fable --empty` empties it, and `tycswap switch --store fable
@@ -8028,9 +8031,56 @@ has another fingerprint, the live login's account part is written into it,
 under the store lock and the Fable store's credential-refresh and
 storage-write locks, re-checked there. The live credential is never written.
 `Store.RefreshFableBackupGuarded` is `RefreshBackupGuarded` on a Fable login:
-under the store lock, declined while that login is the Fable store's live
-one (Claude Code refreshes it), its lineage re-checked, and only that login's
+under the store lock, declined while the Fable store is on that account, by
+its last install too (`ResolveOwnerSlot`; Claude Code refreshes it, and the
+stored file may hold a refresh token it rotated away), its lineage
+re-checked, and only that login's
 file written; `invalid_grant` comes back in the outcome.
+
+**The last install.** Claude Code rotates the Fable store's login on its
+own; until a harvest or the profile endpoint has named the rotated login, no
+backup and no chain fingerprint holds it. When the profile endpoint then does
+not answer (network, 429, 5xx), or the store lock keeps it out, or the
+rotation lands while a switch waits for Claude Code's lock, the login reads
+as nobody's. `Store.ResolveOwnerSlot`, which every caller that backs up,
+replaces or keeps the live login asks, takes such a login for the account
+tycswap last installed in the store: the slot the store's chain record
+names, whatever fingerprint it carries, while the roster still maps the
+identity it was written for to that OAuth slot (`Source` `last-install`,
+no `Identity`); on the default store, below, the roster's active account.
+Every Fable switch and renewal writes the record, and only
+Claude Code's own refresh writes the store's login otherwise. Because this is
+an assumption, a login backed up on it also goes to the unclaimed stash
+(`{"lineage":"fable","reason":"last-install","slot":"N"}`, logged at INFO),
+and the account's previous Fable login stays in `.prev`: a wrong assumption
+loses nothing. `EmptyFable` removes the record with the login, so a login
+that later appears in an emptied store has no last install and is stashed.
+`ResolveFableLiveSlot`, `FableStore()`, the engine, `list`, `status` and the
+dashboard keep their answer: no slot.
+
+The default switch's outgoing backup asks `ResolveOwnerSlot` too. While some
+account has a Fable login, a slot only `~/.claude.json` names (backup, chain
+and profile missed it, `Source` `config`) is no evidence: every Fable session
+writes its own account there, so the default login, rotated and not yet
+harvested, was backed up into the Fable session's account's slot whenever
+the profile endpoint missed. Such a login belongs to the default store's last
+install: the roster's active account, which every default switch writes and
+`move` and `swap` keep, when it is an OAuth account (the default chain record
+keeps its A68 meaning: profile answers only). The switch backs the login up
+into it as `unresolved` (A68's pre-fix backup,
+`.prev` kept) after stashing a copy (`{"reason":"last-install","slot":"N"}`,
+logged at INFO), and a target that is that slot repairs the config. With no
+last install the login is stashed and the target activated without an
+outgoing backup, as for an unmanaged live login (`from` null); that is the
+case only when the roster names no active OAuth account. `switch N`'s
+already-active check takes the same owner: with the config naming N and the
+default login N's last install's, another account's, it switches instead of
+answering `Already on`. Without a
+Fable login the switch is v0.15.1's: the config's slot takes the login
+(`TestDefaultSwitchWithoutFableLoginsBacksUpIntoTheConfigsSlot`), and
+`switch N` answers `already-active` and writes nothing
+(`TestSwitchToTheConfigsAccountWithoutFableLoginsIsAlreadyActive`), each the
+same result as the v0.15.1 tag.
 
 The default resolver is unchanged except one line: when `.claude.json` names
 the Fable store's live account (by backup or chain) and the default
@@ -8041,7 +8091,9 @@ shared config is expected, and each timer tick is a new process.
 **The switch.** `switching.SwitchFable(fable, id, opts)`:
 
 1. Before the locks, the target must be a roster OAuth account with a Fable
-   login whose plan offers Fable. Refusals, nothing written: an unknown id,
+   login whose plan offers Fable: `FableCapable`, read from the roster and the
+   default login on every scope, so the sign-in, the pool and the switch give
+   one answer. Refusals, nothing written: an unknown id,
    `Account-N is an API-key account; the Fable store holds OAuth logins
    only`, `Account-N has no Fable login: tycswap add --login --lineage fable
    --slot N`, `Account-N's plan offers no Fable`. When the target is already
@@ -8051,10 +8103,18 @@ shared config is expected, and each timer tick is a new process.
    storage-write lock (`AcquireProfileStorageWrite`) of the Fable store
    (`Store.WithFableLocks`). No config lock; the default store's Claude Code
    locks are not taken.
-3. Under them the live login is read again and, when it changed, resolved by
-   backup and chain only. It goes into its account's Fable login (`.prev`
-   kept), or, unattributed, into the unclaimed stash in `credentials-fable/`
-   with the context `{"lineage":"fable"}`.
+3. Under them the roster is read again, and the target and the outgoing
+   login are resolved from it, since a swap, move or `add --slot` may have
+   committed while the switch waited. The target must still be the account
+   it named, else `Account-N changed while the switch waited for the store
+   lock; nothing switched. Retry the command.`, and still hold its Fable
+   login. The live login is read again and its owner resolved
+   (`ResolveOwnerSlot`: backup, chain, a profile answer asked before the
+   locks, else the last install); when that is the target, nothing is
+   written and the result is `already-active`, also before the locks. It
+   goes into its account's Fable login (`.prev` kept, plus the stash copy
+   for a last install), or, with no owner, into the unclaimed stash in
+   `credentials-fable/` with the context `{"lineage":"fable"}`.
 4. The target's Fable login is installed with the store's own seat-wide keys
    spliced in, by atomic rename, 0600: a running session reads it on its next
    request. The Fable chain record names it.
@@ -8063,8 +8123,8 @@ shared config is expected, and each timer tick is a new process.
    an empty store or an unknown login).
 
 `switching.EmptyFable` takes the same locks, backs the live login up as in
-step 3, and leaves the store's seat-wide keys only, or no file when it has
-none; its reason is `emptied`.
+step 3, leaves the store's seat-wide keys only, or no file when it has
+none, and removes the Fable chain record; its reason is `emptied`.
 
 `core.Switcher.SwitchFable` is the switch by hand: under
 `fable/.autoswitch_state.lock`, and a switch stamps the hold (`lastSwitchAt`,
@@ -8152,9 +8212,11 @@ credential. It refuses, storing nothing, exit 1, one line each:
   default credential: `This is Account-N's default login, not a second
   sign-in; sign in again in the browser.`
 
-On success it calls `SetupFableDirectories` and writes the account-only
-credential to the account's Fable login, keeping `.prev`, under the store lock,
-with the roster re-checked there. Nothing else is written: `sequence.json`,
+On success, under the store lock and once the roster re-checked there still
+holds the account, it calls `SetupFableDirectories` and writes the account-only
+credential to the account's Fable login, keeping `.prev`; a refusal of that
+re-check leaves a box without a Fable login without `fable/` and
+`credentials-fable/`. Nothing else is written: `sequence.json`,
 `configs/`, `credentials/`, `~/.claude/.credentials.json` and `~/.claude.json`
 stay byte-identical. It prints `Stored the Fable login for Account-N
 (<email>).`
@@ -8163,10 +8225,12 @@ stay byte-identical. It prints `Stored the Fable login for Account-N
 or with `--switch`, the command then calls `core.SwitchFable(N)`, a switch by
 hand that holds the Fable engine for the cooldown (A94 per store), and prints
 `The Fable store now uses Account-N.` A second account's Fable login is only
-stored. When the signed-in account is the Fable store's live one, the new login
-also replaces the store's, under the Fable store's locks (A100) with the live
-login re-read there, keeping the store's MCP logins, and the chain record names
-it. Otherwise the store keeps the older grant, and the next tick's harvest
+stored. When the signed-in account owns the Fable store's login, its last
+install included (`ResolveOwnerSlot`, A100), the new login also replaces the
+store's, under the Fable store's locks (A100) with the live login re-read
+there, keeping the store's MCP logins, and the chain record names it; a login
+replaced on the last install's assumption goes to the unclaimed stash
+first. Otherwise the store keeps the older grant, and the next tick's harvest
 (A100) would write that older grant back over the new file. This is how a dead
 live Fable login (its `invalid_grant` quarantine names the live fingerprint) is
 repaired: the store is usable again at once.
@@ -8174,23 +8238,34 @@ repaired: the store is usable again at once.
 **Lifecycle.**
 
 - `remove` deletes the account's Fable login and its `.prev`. When the account
-  is the Fable store's live one (resolved before the roster lock), the store is
+  owns the Fable store's login (`ResolveOwnerSlot`, before the roster lock: a
+  rotated login nothing else names is its last install's, A100), the store is
   emptied first by `core.EmptyFable` (under the Fable state lock); if that
   fails, nothing is removed and the error is named. Under the roster lock a
-  store that took the account again meanwhile refuses.
+  store that took the account again meanwhile, by the same resolution,
+  refuses.
 - `move` and `swap` carry the Fable login with its account in
   `credentials-fable/`: written under the new key, staged in
   `credentials-fable/.swap-staging-creds-N.json` for a same-email swap (before
   anything changes), rolled back with the default backup, and the old key
-  removed after the commit. When a moved account is the Fable store's live one,
-  `fable/live_lineage.json` is rewritten to its new number under the store lock.
+  removed after the commit. When a moved account owns the Fable store's login
+  (`ResolveOwnerSlot`), `fable/live_lineage.json` is rewritten to its new number
+  under the store lock; for a login only its last install names, the record
+  moves with its fingerprint, so the login stays that assumption (A100).
 - The rule under both: a Fable login belongs to the identity it was signed in
   as. `add` and `add-token` with `--slot N` follow it too (added after lane
   B's report): an account the add moves from its old slot to N takes its Fable
   login, and the chain record when the store is on it; an identity the add
   displaces from N loses its Fable login, the store emptied first when it is
   on N, as for `remove`; a new identity in N takes none, so a login left under
-  N's key goes. `import` replaces no slot's identity (`--force` overwrites the
+  N's key goes; the identity already in N keeps its Fable login and `.prev`
+  byte for byte (`add --slot N` of it renews its default login, which
+  tycswap's own hints recommend). Each step runs beside the default side's:
+  a displaced account's Fable login goes right after its default files, a
+  moved one is written under the new key and leaves the old one once the
+  roster is written, so an add that fails before either (a live session on
+  the account, say) leaves the Fable logins where the roster has their
+  accounts. `import` replaces no slot's identity (`--force` overwrites the
   slot of the same identity, whose Fable login stays); a new account it puts
   in a slot the roster does not hold deletes a Fable login left under that
   key, which an older tycswap's `remove` or `move` can leave.

@@ -22,8 +22,8 @@ import (
 var ErrFableUnsupported = errors.New("The Fable store needs a file-based credential store; macOS keeps Claude Code's login in the Keychain")
 
 // FableState is whether the Fable store is on: it has Fable logins and holds
-// one; usable unless that login's grant is quarantined as dead. Reason says
-// why it is not on or not usable.
+// one; usable unless a quarantine entry names that login. Reason says why it
+// is not on or not usable.
 type FableState struct {
 	On     bool
 	Live   LiveSlot
@@ -186,8 +186,9 @@ func (s *Store) FableStore() FableState {
 	return st
 }
 
-// deadFableLogin is the slot of an invalid_grant quarantine entry in the
-// Fable state file whose fingerprint is the live credential's.
+// deadFableLogin is the slot of a quarantine entry in the Fable state file,
+// whatever its reason (invalid_grant, identity-conflict), whose fingerprint
+// is the live credential's.
 func (s *Store) deadFableLogin(live string) (string, bool) {
 	fp := oauth.CredentialFingerprint(live)
 	entries := autoswitch.ReadQuarantineEntries(s.StatePath())
@@ -209,7 +210,7 @@ func (s *Store) deadFableLogin(live string) (string, bool) {
 		nums = append(nums, num)
 	}
 	for _, num := range slotkey.Sorted(nums) {
-		if got := state.Quarantine[num].Fingerprint; entries[num].Reason == oauth.ErrInvalidGrant && got != nil && *got == *fp {
+		if got := state.Quarantine[num].Fingerprint; got != nil && *got == *fp {
 			return num, true
 		}
 	}
@@ -276,7 +277,7 @@ func (s *Store) fableChainSlot(data *SequenceData, live string) (string, *oauth.
 		return "", nil
 	}
 	id := rec.Identity.oauth()
-	if slot := s.fableIdentitySlot(data, &id); slot != "" && slot == rec.Slot {
+	if slot := s.oauthIdentitySlot(data, &id); slot != "" && slot == rec.Slot {
 		return slot, &id
 	}
 	return "", nil
@@ -291,7 +292,7 @@ func (s *Store) fableProfileSlot(data *SequenceData, live string) (string, *oaut
 	if id == nil {
 		return "", nil
 	}
-	slot := s.fableIdentitySlot(data, id)
+	slot := s.oauthIdentitySlot(data, id)
 	if slot == "" {
 		return "", nil
 	}
@@ -303,7 +304,7 @@ func (s *Store) fableProfileSlot(data *SequenceData, live string) (string, *oaut
 	return slot, id
 }
 
-func (s *Store) fableIdentitySlot(data *SequenceData, id *oauth.Identity) string {
+func (s *Store) oauthIdentitySlot(data *SequenceData, id *oauth.Identity) string {
 	slot := s.SlotForIdentity(data, id)
 	if slot == "" || kindFrom(data, slot) != "oauth" {
 		return ""
@@ -312,7 +313,8 @@ func (s *Store) fableIdentitySlot(data *SequenceData, id *oauth.Identity) string
 }
 
 // RecordFableLive writes the Fable chain record for creds, installed in the
-// Fable store for account num, with the roster's identity of num.
+// Fable store for account num, with the roster's identity of num: the Fable
+// store's last install (DESIGN A100).
 func (s *Store) RecordFableLive(num, creds string) error {
 	f, err := s.ForFable()
 	if err != nil {
@@ -328,10 +330,39 @@ func (s *Store) RecordFableLive(num, creds string) error {
 	return f.writeLiveLineage(*fp, num, &id)
 }
 
+// RepointFableLive points the Fable chain record at slot to when it names
+// slot from, keeping its fingerprint and identity: a move or swap of the Fable
+// store's last install takes the record along, still an assumption for a
+// login nothing else names (DESIGN A100, A101).
+func (s *Store) RepointFableLive(from, to string) error {
+	f, err := s.ForFable()
+	if err != nil {
+		return err
+	}
+	rec, ok := f.readLiveLineage()
+	if !ok || rec.Slot != from {
+		return nil
+	}
+	id := rec.Identity.oauth()
+	return f.writeLiveLineage(rec.Fingerprint, to, &id)
+}
+
+// ForgetFableLive removes the Fable chain record once the Fable store holds
+// no login, so no later login takes an emptied store's last install as its
+// account (DESIGN A100).
+func (s *Store) ForgetFableLive() error {
+	f, err := s.ForFable()
+	if err != nil {
+		return err
+	}
+	return f.forgetLiveLineage()
+}
+
 // RefreshFableBackupGuarded is RefreshBackupGuarded on account num's Fable
 // login: under the store lock, with the lineage re-checked there, it
-// refreshes and writes that login's file only. A login live in the Fable
-// store is Claude Code's to refresh. invalid_grant comes back in the outcome.
+// refreshes and writes that login's file only. The login of the account the
+// Fable store is on, its last install included (ResolveOwnerSlot), is Claude
+// Code's to refresh. invalid_grant comes back in the outcome.
 func (s *Store) RefreshFableBackupGuarded(ctx context.Context, c oauth.Client, num, email, held string) oauth.RefreshOutcome {
 	out := oauth.RefreshOutcome{Error: RefreshDeclined}
 	f := s.fableScope()
@@ -339,15 +370,12 @@ func (s *Store) RefreshFableBackupGuarded(ctx context.Context, c oauth.Client, n
 		return out
 	}
 	err := f.Lock.With(func() error {
-		live, _, err := f.Creds.ReadActive()
-		if err != nil {
+		if _, _, err := f.Creds.ReadActive(); err != nil {
 			return nil
 		}
-		if live != "" {
-			data, _ := f.ReadSequence()
-			if f.fableLiveSlot(data, live, false).Slot == num {
-				return nil
-			}
+		data, _ := f.ReadSequence()
+		if f.ResolveOwnerSlot(data).Slot == num {
+			return nil
 		}
 		backup, _ := f.ReadAccountCredentials(num, email)
 		if backup == "" {

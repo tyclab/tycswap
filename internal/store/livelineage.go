@@ -55,6 +55,14 @@ func (s *Store) readLiveLineage() (liveLineage, bool) {
 	return rec, true
 }
 
+// forgetLiveLineage removes the chain record: the store holds no login.
+func (s *Store) forgetLiveLineage() error {
+	if err := os.Remove(s.liveLineagePath()); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // writeLiveLineage records that the credential with fingerprint fp is slot's,
 // writing only when the record changes, so seenAt is when it was first seen.
 func (s *Store) writeLiveLineage(fp, slot string, id *oauth.Identity) error {

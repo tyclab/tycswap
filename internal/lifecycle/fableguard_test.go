@@ -86,6 +86,39 @@ func TestAddFableLoginRechecksTheRosterUnderTheLock(t *testing.T) {
 	}
 }
 
+// The re-check under the store lock refuses on a box without a Fable login:
+// the box stays without fable/ and credentials-fable/ (DESIGN A100).
+func TestAddFableLoginRefusedUnderTheLockCreatesNoFableDirectory(t *testing.T) {
+	s := fableLifecycleStore(t)
+	captureOut(t)
+	other := filelock.New(s.LockFile, 0)
+	if ok, err := other.Acquire(0); !ok || err != nil {
+		t.Fatalf("Acquire = %v, %v", ok, err)
+	}
+	t.Cleanup(func() { _ = other.Release() })
+	done := make(chan error, 1)
+	go func() {
+		_, err := AddFableLogin(s, signIn(t, "b@example.com", planCreds("at-f2", "rt-f2", "max")), nil)
+		done <- err
+	}()
+	time.Sleep(300 * time.Millisecond)
+	data := readSeq(t, s)
+	delete(data.Accounts, "2")
+	data.Sequence = []int{1, 3, 4}
+	if err := s.WriteSequence(data); err != nil {
+		t.Fatal(err)
+	}
+	_ = other.Release()
+	if err, want := <-done, "Account-2 changed while the sign-in was stored; nothing stored."; err == nil || err.Error() != want {
+		t.Fatalf("AddFableLogin = %v, want %q", err, want)
+	}
+	for _, dir := range []string{paths.FableCredentialsDir(s.BackupDir()), paths.FableScopeDir(s.BackupDir())} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Errorf("the refusal left %s", dir)
+		}
+	}
+}
+
 func TestAddFableLoginWaitsForTheStoreLock(t *testing.T) {
 	s := fableLifecycleStore(t)
 	captureOut(t)

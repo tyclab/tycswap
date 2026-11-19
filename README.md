@@ -679,7 +679,8 @@ account, one not added yet, one whose plan has no Fable, or the account's
 default login stores nothing. A Fable login stays with the account it was
 signed in as: `remove`, `move`, `swap` and an `add --slot` that moves an
 account take it along, an `add --slot` that puts another account in a slot
-deletes the old one's, `purge` deletes the Fable store, and `export` and
+deletes the old one's, an `add --slot` of the account already in the slot
+keeps it, `purge` deletes the Fable store, and `export` and
 `import` never carry a Fable login.
 
 **Session groups are retired.** The Fable and Opus / other groups and

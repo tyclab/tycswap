@@ -312,7 +312,9 @@ func (s *Store) ReadOwnedCredentialsLocked(number, email string) (string, error)
 
 // FableCapable reports whether the account can continue Fable sessions, by
 // its plan or a recorded fableContinue capability (DESIGN A71, A77). An API
-// key or an unknown entitlement is no capability.
+// key or an unknown entitlement is no capability. The plan is the account's
+// as its default login knows it, on every scope: a Fable scope answers as
+// the store it was made from (DESIGN A101).
 func (s *Store) FableCapable(number string) bool {
 	data, err := s.ReadSequence()
 	if err != nil || data == nil {
@@ -322,7 +324,7 @@ func (s *Store) FableCapable(number string) bool {
 	if !ok || strField(rec, "kind") == "api_key" {
 		return false
 	}
-	creds, _ := s.ReadAccountCredentials(number, strField(rec, "email"))
+	creds, _ := s.defaultScope().ReadAccountCredentials(number, strField(rec, "email"))
 	plan := strField(rec, "subscriptionType")
 	if value, ok := oauth.ExtractOAuthData(creds)["subscriptionType"].(string); ok {
 		plan = value
