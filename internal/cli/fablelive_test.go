@@ -15,6 +15,7 @@ import (
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
 )
 
@@ -301,5 +302,49 @@ func TestDeadLiveFableLoginMoveWaitsOutAHandSwitch(t *testing.T) {
 	}
 	if st := sw.Store.FableStore(); !st.On || st.Usable || st.Live.Slot != "2" {
 		t.Fatalf("FableStore = %+v, want on Account-2 and unusable", st)
+	}
+}
+
+// Two ticks at once (the timer and a status line) both find the live Fable
+// login dead. The second one's move, computed before the first moved the
+// store, finds under the state lock that the store has left the dead login:
+// it does nothing and says nothing, whatever the ranking now says (F2-6).
+func TestASecondMoveOffADeadFableLoginFindsItLeft(t *testing.T) {
+	for name, others := range map[string][]string{"move": {"3", "4"}, "empty": nil} {
+		t.Run(name, func(t *testing.T) {
+			fx := fableTickFixture{def: "4", live: "2", logins: append([]string{"2"}, others...),
+				usage:   map[string][3]float64{"1": {10, 20, 30}, "2": {10, 20, 10}, "3": {10, 20, 10}, "4": {10, 50, 50}},
+				refresh: func(string) oauth.RefreshOutcome { return oauth.RefreshOutcome{Error: oauth.ErrInvalidGrant} }}
+			sw, _ := fx.build(t)
+			putLiveFableLogin(t, sw, fableLoginOf("2", sw.Clk.Now().Add(-time.Hour).UnixMilli()))
+			a, err := newFableAdapter(sw, sw.Log)
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := settings.Load(sw.BackupDir())
+			names := reporting.FableWindowNames(sw.Store, sw.Clk.Now())
+			model := strings.Join(names, ",")
+			s.Model = &model
+			var events []map[string]any
+			emit := func(ev autoswitch.Event) { events = append(events, ev.JSON()) }
+			checkFableLive(a, sw, s, names, emit)
+			first, logPath := storeLive(t, sw), filepath.Join(sw.BackupDir(), "tycswap.log")
+			log, state := readOrAbsent(t, logPath), readOrAbsent(t, fableStatePath(sw))
+			// The second process read the same dead login; then a usage fetch
+			// ranks 4 first.
+			cache := filepath.Join(sw.BackupDir(), "cache", "usage.json")
+			for _, ranking := range []string{"same", "changed"} {
+				if ranking == "changed" {
+					writeFile(t, cache, strings.ReplaceAll(readOrAbsent(t, cache), `"pct":50`, `"pct":1`))
+				}
+				events = nil
+				if moved, on := leaveDeadFableLogin(a, sw, "2", fableEmail("2"), s, names, emit); moved || !on || len(events) != 0 {
+					t.Fatalf("second move, %s ranking: moved=%v on=%v events %v", ranking, moved, on, events)
+				}
+				if storeLive(t, sw) != first || readOrAbsent(t, logPath) != log || readOrAbsent(t, fableStatePath(sw)) != state {
+					t.Fatalf("second move, %s ranking, changed the store, the log or the state:\n%s", ranking, strings.TrimPrefix(readOrAbsent(t, logPath), log))
+				}
+			}
+		})
 	}
 }

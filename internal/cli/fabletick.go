@@ -219,21 +219,26 @@ func leaveDeadFableLogin(a fableAdapter, sw *core.Switcher, dead, email string, 
 	}
 	ts := sw.Clk.Now().UTC().Format("2006-01-02T15:04:05") + "Z"
 	warn := func(err error) { sw.Log.Warningf("Fable store: the switch off a dead login was not recorded: %v", err) }
-	// Turned off since the tick began, the store stays as it is: the key is
-	// re-read under the state lock, as the engine's own switch does (A83).
-	off := false
-	turnedOff := func() bool { off = !autoSwitchOn(sw.BackupDir()); return off }
+	// Turned off since the tick began, or moved off the dead login by another
+	// tick, the store stays as it is: both are re-read under the state lock,
+	// as the engine's own switch re-reads its state (A83).
+	stay := false
+	stays := func() bool {
+		data, _ := a.def.ReadSequence()
+		stay = !autoSwitchOn(sw.BackupDir()) || a.def.Store.ResolveFableLiveSlot(data).Slot != dead
+		return stay
+	}
 	if len(pool) == 0 {
 		emptied := false
 		held, err := autoswitch.EngineSwitch(a.fable.StatePath(), sw.Clk, s, warn, func() (string, error) {
-			if turnedOff() {
+			if stays() {
 				return "", nil
 			}
 			_, err := switching.EmptyFable(a.fable)
 			emptied = err == nil
 			return "", err
 		})
-		if off {
+		if stay {
 			return false, true
 		}
 		if !emptied {
@@ -248,7 +253,7 @@ func leaveDeadFableLogin(a fableAdapter, sw *core.Switcher, dead, email string, 
 	target := append(autoswitch.StartTargets(pool, a.UsageEntriesByAccount(map[string]bool{}), s, models, sw.Clk.Now()), pool...)[0]
 	switched := false
 	held, err := autoswitch.EngineSwitch(a.fable.StatePath(), sw.Clk, s, warn, func() (string, error) {
-		if turnedOff() {
+		if stays() {
 			return "", nil
 		}
 		r, err := a.SwitchTo(target, true)
@@ -259,7 +264,7 @@ func leaveDeadFableLogin(a fableAdapter, sw *core.Switcher, dead, email string, 
 		switched = ok
 		return num, nil
 	})
-	if off {
+	if stay {
 		return false, true
 	}
 	if !switched {
