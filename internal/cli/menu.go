@@ -108,10 +108,14 @@ func humanMenu(prog, start string, s ioStreams) int {
 }
 
 func menuAdd(s ioStreams) {
-	i, _, ok := askMenu(s, "Add account", []string{
+	choices := []string{
 		"add --login    Sign in with Claude", "codex login    Sign in with Codex",
 		"add            Save current Claude login", "codex add      Save current Codex login", "add-token      Claude setup token or API key",
-	}, "")
+	}
+	if menuFableStore() {
+		choices = append(choices, fableSignInEntry)
+	}
+	i, _, ok := askMenu(s, "Add account", choices, "")
 	if !ok {
 		return
 	}
@@ -144,6 +148,8 @@ func menuAdd(s ioStreams) {
 			args = append(args, "--base-url", baseURL)
 		}
 		menuExecute(s, args...)
+	case 5:
+		menuFableSignIn(s)
 	}
 }
 
@@ -231,6 +237,12 @@ func menuManage(s ioStreams) {
 	if a.ProviderName() == reporting.ProviderClaude {
 		choices = append(choices, "Sign in again…", "Use saved login")
 	}
+	fableSignIn, fableMark := fableAccountEntries(s, a)
+	for _, entry := range []string{fableSignIn, fableMark} {
+		if entry != "" {
+			choices = append(choices, entry)
+		}
+	}
 	i, _, ok := askMenu(s, termsafe.Strip(a.Email), choices, "")
 	if !ok {
 		return
@@ -289,6 +301,17 @@ func menuManage(s ioStreams) {
 			return
 		}
 		args = []string{"switch", a.Number, "--force"}
+	case fableSignIn:
+		args = fableSignInArgs(a.Number)
+	case fableMark:
+		question, flag := "Mark "+termsafe.Strip(a.Email)+" as running Fable, whatever its plan says?", "--allow"
+		if fableMark == fableDisallow {
+			question, flag = "Remove the Fable mark from "+termsafe.Strip(a.Email)+"? Its plan decides again.", "--disallow"
+		}
+		if !menuConfirm(s, question) {
+			return
+		}
+		args = []string{"fable", flag, a.Number}
 	}
 	if menuAccountCurrent(s, a) {
 		menuExecute(s, args...)

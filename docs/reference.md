@@ -38,6 +38,8 @@ tycswap start [--account ID] [--] [command [args...]]
                                             choose a startup login, then launch once
 tycswap start --allow ID | --disallow ID | --list
                                             manage startup marks (Claude accounts)
+tycswap fable --allow ID | --disallow ID | --list [--json]
+                                            mark the accounts that run Fable
 tycswap start --started                     end a session's start hold (a SessionStart hook)
 tycswap mythos --allow ID | --disallow ID | --list
                                             manage the marks of accounts that run Mythos
@@ -900,7 +902,12 @@ With `--lineage fable` (exit 1, nothing stored):
 
 - `Error: Account <email> is not stored yet: add it first with tycswap add --login.`
 - `Error: This sign-in is <email>, not Account-<n> (<email of n>); nothing stored.`
-- `Error: Account-<n>'s plan does not offer Fable.`
+- `Error: Account-<n>'s plan does not offer Fable. If it runs Fable, mark it first: tycswap fable --allow <n>`
+  — the plan names no Fable and the account has no mark. With `--slot` the
+  refusal comes before Claude starts, as does `Account <email> is not stored
+  yet` for an API-key account in that slot; without it the account is known
+  only after the sign-in. A Pro or Free plan gets the first sentence alone: a mark
+  cannot change it.
 - `Error: This is Account-<n>'s default login, not a second sign-in; sign in again in the browser.`
 - `Error: --alias names a new account; a Fable login is stored for an account already added`
 - `Error: The Fable store needs a file-based credential store; macOS keeps Claude Code's login in the Keychain`
@@ -1372,6 +1379,65 @@ Swapped Account 1 and Account 2:
 `tycswap move`.
 
 ---
+
+## tycswap fable
+
+### Synopsis
+
+```text
+tycswap fable --allow ID
+tycswap fable --disallow ID
+tycswap fable --list [--json]
+```
+
+### Description
+
+Marks the Claude accounts that run Fable although their plan does not say so,
+as an organization's login, whose plan field is often empty (DESIGN A107).
+`--allow` writes the boolean `fableContinue: true` into the account's roster
+record under the roster lock; `--disallow` removes the key, so the plan decides
+again. Both print nothing on success, and write nothing when the record already
+says so.
+IDs use the ordinary account resolution above. Only a boolean counts; a
+hand-written `false` keeps an account off Fable whatever its plan, and
+`--disallow` removes it too.
+
+An account runs Fable (`Store.FableCapable`, which the Fable sign-in, the Fable
+store's switch and pool and the default login's reservation read) by, in order:
+a Pro or Free plan, which never does; the mark; a Max or Ultra plan. The plan
+is the account's default login's `subscriptionType`, else the roster's.
+
+The mark follows the identity as `startLogin` does: a re-add, a re-login, a
+slot change and a forced import over the identity keep it; a different identity
+in the slot and a newly imported identity start without it. `export` does not
+carry it.
+
+`--list` prints one line per roster account in sequence order: number, email,
+`Fable: yes, plan <plan>` / `yes, marked` / `no, plan <plan>` / `no, marked
+off` / `no, unknown plan [<plan>]` / `no, API key`, and `Fable login: yes|no`.
+With `--json`:
+
+```json
+{
+  "schemaVersion": 1,
+  "accounts": [
+    {"number": 1, "email": "alice@example.com", "fable": true, "by": "plan", "plan": "max", "fableLogin": true},
+    {"number": 3, "email": "carol@example.com", "fable": true, "by": "mark", "fableLogin": false}
+  ]
+}
+```
+
+`by` is `plan`, `mark`, `unknown` or `api-key`; `plan` appears only when known.
+
+### Errors
+
+| Condition | Exit |
+|-----------|------|
+| no option, an option without its account, two of `--allow`, `--disallow`, `--list`, `--json` without `--list`, an unknown option or a positional argument | `2`, `tycswap fable: error: …` |
+| unknown account | `1`, `Error: …` |
+| `--list --json` and the store cannot be read | `1`, the JSON error envelope on stdout |
+| `--allow` of an API-key account: `Account-<n> is an API-key account; a Fable mark is for OAuth logins only.` | `1` |
+| `--allow` of a Pro or Free plan: `Account-<n>'s plan (<plan>) cannot run Fable; nothing marked.` | `1` |
 
 ## tycswap start
 
@@ -2498,6 +2564,17 @@ still clears that alias. Explicit arguments remain the unattended interface.
 Type to filter choices; arrows move; Enter selects; Escape returns. The menu
 supports browser sign-in for Claude and Codex, saving either provider's current
 login, Claude token entry, switching, aliases, disable/enable, moving and removal.
+Except on macOS, which has no Fable store, *Add account* ends with
+`add --login --lineage fable  Sign in for Fable`: it asks for the account among
+those that run Fable (`tycswap fable --list`), those without a Fable login first
+and then those with one (`· sign in again`), each in roster order, and runs
+`add --login --lineage fable --slot N`; with none it names `tycswap fable --allow`.
+A Claude OAuth account's own menu ends with *Sign in for Fable…* (*Sign in again
+for Fable…* when it holds a Fable login), the same command for that account,
+and, where it changes the answer, *Allow Fable* (the plan says nothing) or
+*Disallow Fable* (a mark decides), which asks first and runs `tycswap fable
+--allow N` or `--disallow N`; an account whose plan decides gets neither
+(DESIGN A107).
 The selected account's identity is checked again before dispatching an action.
 Advanced settings use the shared setting definitions and validation. The tray
 can remain running; closing the menu never stops it. Its Start tray app action

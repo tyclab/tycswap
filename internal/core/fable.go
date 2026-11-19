@@ -3,6 +3,7 @@ package core
 import (
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/switching"
 )
 
@@ -90,4 +91,9 @@ func (sw *Switcher) EmptyFableBy(jsonOut bool, actor string) (map[string]any, er
 		sw.Log.Action("Emptied the Fable store", actor)
 	}
 	return result, err
+}
+
+// SetFableMark writes or removes the account's Fable mark (DESIGN A107).
+func (sw *Switcher) SetFableMark(id string, allowed bool) error {
+	return lifecycle.SetFableMark(sw.Store, id, allowed)
 }

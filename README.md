@@ -157,6 +157,11 @@ existing login, or adds a token. **Manage accounts…** switches, renames,
 enables/disables, moves, or removes an account, and offers **Remove alias** on
 an account that has one. It also offers **Sign in again…**
 and **Use saved login** for Claude; renewing the active account activates its new login.
+Where a Fable store can exist (not on macOS), **Add account…** also offers the
+Fable sign-in, asking for the account (those without a Fable login first), and a
+Claude account's menu offers **Sign in for Fable…**, and **Allow Fable** where
+the plan says nothing or **Disallow Fable** where a mark decides (see
+[Run accounts in parallel](#run-accounts-in-parallel)).
 **Import / export…** guides Claude and Codex file transfers.
 **Open web dashboard** reuses the running app, starting it in the background if needed.
 Closing the menu leaves the tray running.
@@ -733,11 +738,24 @@ The Fable store now uses Account-2.
 ```
 
 The browser flow is the one `add --login` runs; sign in as the account named.
+An account runs Fable by its plan (Max or Ultra). An organization's login often
+names no plan; mark it if it runs Fable, before its sign-in:
+
+```
+$ tycswap fable --allow 3
+$ tycswap fable --list
+1  alice@example.com  Fable: yes, plan max     Fable login: yes
+3  carol@example.com  Fable: yes, marked       Fable login: no
+```
+
+`tycswap fable --disallow 3` removes the mark, so the plan decides again; the
+mark stays with the account across a re-add, a move and a forced import of it.
 Only the Fable login is stored: the default login, the roster and
 `~/.claude.json` stay as they were. The first Fable login turns the Fable store
 on; later ones are only stored, unless `--switch` is given. A sign-in as another
-account, one not added yet, one whose plan has no Fable, or the account's
-default login stores nothing. A Fable login stays with the account it was
+account, one not added yet, one whose plan has no Fable and no mark, or the
+account's default login stores nothing; with `--slot` an account without Fable
+is refused before the browser opens. A Fable login stays with the account it was
 signed in as: `remove`, `move`, `swap` and an `add --slot` that moves an
 account take it along, an `add --slot` that puts another account in a slot
 deletes the old one's, an `add --slot` of the account already in the slot

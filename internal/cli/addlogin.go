@@ -226,7 +226,8 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 }
 
 // fableLoginPreflight refuses a Fable sign-in before Claude starts, and with
-// --slot names the account to sign in as (DESIGN A101).
+// --slot names the account to sign in as (DESIGN A101), once its plan or mark
+// lets it run Fable (DESIGN A107).
 func fableLoginPreflight(sw *core.Switcher, p *parsed, s ioStreams) (int, bool) {
 	if p.alias != nil {
 		errorTo(s.err, "Error: "+errAliasFable)
@@ -242,7 +243,15 @@ func fableLoginPreflight(sw *core.Switcher, p *parsed, s ioStreams) (int, bool) 
 	if err != nil {
 		return renderDomainError(err, false, s.out, s.err), true
 	}
-	_, email, _, err := sw.ResolveAccountFrom(data, strconv.Itoa(*p.slot))
+	num, email, _, err := sw.ResolveAccountFrom(data, strconv.Itoa(*p.slot))
+	if err != nil {
+		return renderDomainError(err, false, s.out, s.err), true
+	}
+	if sw.Store.AccountKindFor(num) == "api_key" {
+		err = lifecycle.ErrFableNotStored(email)
+	} else {
+		err = lifecycle.FablePlanRefusal(sw.Store, data, num)
+	}
 	if err != nil {
 		return renderDomainError(err, false, s.out, s.err), true
 	}

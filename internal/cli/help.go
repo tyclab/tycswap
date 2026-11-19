@@ -45,6 +45,7 @@ Commands:
   tycswap start [-- command args]    launch once on a marked login, even at its limit
   tycswap start --allow|--disallow ID mark or unmark a start login (--list lists)
   tycswap mythos --allow|--disallow ID mark or unmark an account that runs Mythos
+  tycswap fable --allow|--disallow ID mark an account that runs Fable (--list lists)
   tycswap alias <num|email> <name>   set a short alias for an account
   tycswap alias <num|email> --unset  remove an account's alias
   tycswap alias                      list all aliases
