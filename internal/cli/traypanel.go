@@ -55,6 +55,12 @@ func (a *appShell) panelAt(st web.State, now time.Time) tray.Panel {
 			}
 			r.Tag += "start login"
 		}
+		if rowProvider(row) != "codex" && boolOf(row["mythos"]) {
+			if r.Tag != "" {
+				r.Tag += " · "
+			}
+			r.Tag += "Mythos"
+		}
 		status, _ := row["usageStatus"].(string)
 		r.Warning = panelWarning(status)
 		if reason, _ := row["ownershipBlockReason"].(string); reason != "" {

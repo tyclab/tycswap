@@ -29,8 +29,10 @@ func (r PolicyResult) ReservedIn(s *store.Store) []string {
 // CountingCaption is the one line the dashboard, the tray and a switch by
 // strategy show for what is counted, e.g. "counting 5h + 7d + Fable (live
 // Fable sessions)" (DESIGN A91, A98); hosted is an engine the dashboard runs
-// itself, which follows no session.
-func CountingCaption(hosted bool, models, sessions, unservable, reserved []string) string {
+// itself, which follows no session. mythos is the accounts marked for Mythos
+// while a Mythos session runs; Mythos in unservable means they have no room,
+// or there are none (A106).
+func CountingCaption(hosted bool, models, sessions, unservable, reserved, mythos []string) string {
 	line := "counting 5h + 7d"
 	for _, m := range models {
 		line += " + " + m
@@ -41,8 +43,22 @@ func CountingCaption(hosted bool, models, sessions, unservable, reserved []strin
 	if len(models) > 0 {
 		line += " (live " + strings.Join(models, ", ") + " sessions)"
 	}
-	if len(unservable) > 0 {
-		line += "; " + strings.Join(unservable, ", ") + " not counted: no usable account can serve it"
+	var windows []string
+	for _, name := range unservable {
+		if name != MythosModel {
+			windows = append(windows, name)
+		}
+	}
+	if len(windows) > 0 {
+		line += "; " + strings.Join(windows, ", ") + " not counted: no usable account can serve it"
+	}
+	switch {
+	case len(windows) < len(unservable) && len(mythos) == 0:
+		line += "; " + MythosModel + " not served: no account marked"
+	case len(windows) < len(unservable):
+		line += "; " + MythosModel + " not served: marked accounts " + strings.Join(mythos, ", ") + " have no room"
+	case len(mythos) > 0:
+		line += "; live " + MythosModel + " session: only accounts " + strings.Join(mythos, ", ")
 	}
 	switch {
 	case len(sessions) == 0:
@@ -77,6 +93,6 @@ func CountedForSwitch(s *store.Store) switching.Counting {
 	for num := range autoswitch.ReadQuarantineEntries(autoswitch.StatePath(s.BackupDir())) {
 		quarantined[num] = true
 	}
-	return switching.Counting{Models: models, Caption: CountingCaption(false, models, r.Sessions, r.Unservable, r.ReservedIn(s)),
-		Settings: set, Reserved: r.Reserved, Quarantined: quarantined}
+	return switching.Counting{Models: models, Caption: CountingCaption(false, models, r.Sessions, r.Unservable, r.ReservedIn(s), r.Mythos),
+		Settings: set, Reserved: r.Reserved, Quarantined: quarantined, Serves: r.Serves}
 }

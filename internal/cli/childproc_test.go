@@ -47,6 +47,11 @@ func TestMain(m *testing.M) {
 	// A command's passive update notice asks the release page; a test that
 	// serves none gets a refused connection, never github.com.
 	update.ReleasesURL = "https://127.0.0.1:1/releases"
+	// A suite run inside a session tycswap start launched inherits what start
+	// hands its child; the tests that want one set it themselves.
+	for _, key := range []string{startHoldEnv, startFamilyEnv, "ANTHROPIC_MODEL"} {
+		_ = os.Unsetenv(key)
+	}
 	os.Exit(m.Run())
 }
 

@@ -76,6 +76,11 @@ type BaseURLAdder interface {
 	AddAccountFromTokenWithBaseURL(token, baseURL string, email, slotArg *string, assumeYes bool) error
 }
 
+// MythosMarker sets the Mythos mark (A106); handlers type-assert AccountOps for it.
+type MythosMarker interface {
+	SetMythos(id string, allowed bool) error
+}
+
 type AccountOps interface {
 	SetStartLogin(id string, allowed bool) error
 	SetAlias(id, alias string) (num, normalized string, err error)

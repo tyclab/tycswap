@@ -47,7 +47,9 @@ type Engine struct {
 	reservedLast func(num string) bool
 	holdToken    string
 	// unservable: derived models the policy dropped, named in the poll event (DESIGN A91).
-	unservable []string
+	unservable  []string
+	serves      func(num string) bool // nil serves every account (DESIGN A106)
+	servesModel string
 	// enabled is autoswitch.enabled, read at every tick (DESIGN A83); nil means on.
 	enabled   func() bool
 	oauth     oauth.Client
@@ -89,6 +91,11 @@ func WithReservedLast(last func(num string) bool) Option {
 // poll event reports them (DESIGN A91). The engine never counts them.
 func WithUnservable(models []string) Option {
 	return func(e *Engine) { e.unservable = append([]string(nil), models...) }
+}
+
+// WithServes restricts targets to the accounts serving a live session's model (A106).
+func WithServes(model string, serves func(num string) bool) Option {
+	return func(e *Engine) { e.servesModel, e.serves = model, serves }
 }
 
 // WithStartHoldToken is the token StartSelection holds under, "" for new (DESIGN A105).
@@ -181,6 +188,8 @@ func (e *Engine) emit(ev Event) { e.onEvent(ev) }
 
 // isReserved reports whether the engine leaves num to Fable work (DESIGN A71).
 func (e *Engine) isReserved(num string) bool { return e.reserved != nil && e.reserved(num) }
+
+func (e *Engine) servesAccount(num string) bool { return e.serves == nil || e.serves(num) }
 
 func (e *Engine) isReservedLast(num string) bool {
 	return e.isReserved(num) && e.reservedLast != nil && e.reservedLast(num)

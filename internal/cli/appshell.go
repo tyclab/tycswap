@@ -346,6 +346,9 @@ func gaugeGroup(rows []map[string]any, withModels []string, subID, subTitle stri
 		if rowProvider(r) == reporting.ProviderClaude && boolOf(r["startLogin"]) {
 			flags = append(flags, "start login")
 		}
+		if rowProvider(r) == reporting.ProviderClaude && boolOf(r["mythos"]) {
+			flags = append(flags, "Mythos")
+		}
 		if boolOf(r["atLimit"]) {
 			flags = append(flags, "at limit")
 		}
