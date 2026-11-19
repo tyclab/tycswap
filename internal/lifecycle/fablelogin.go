@@ -22,9 +22,10 @@ var EmptyFableStore = func(s *store.Store) error {
 // login of the roster account it signed in as (DESIGN A101). It writes the
 // Fable login file only, under the store lock, keeping .prev, and creates the
 // Fable directories only once the roster re-check there passed. When the account
-// is the Fable store's live one, the new login is installed there too, under
-// the Fable store's locks: the store's older login would otherwise be
-// harvested back over the new file.
+// owns the Fable store's login, its last install included, the new login is
+// installed there too, under the Fable store's locks: the store's older login
+// would otherwise be harvested or backed up over the new file. A login
+// replaced on the last install's assumption is stashed first.
 func AddFableLogin(s *store.Store, src AddSource, slot *int) (string, error) {
 	f, err := s.ForFable()
 	if err != nil {
@@ -53,7 +54,7 @@ func AddFableLogin(s *store.Store, src AddSource, slot *int) (string, error) {
 		return "", err
 	}
 	live, _, _ := f.Creds.ReadActive()
-	renew := live != "" && f.ResolveFableLiveSlot(data).Slot == num
+	renew := live != "" && f.ResolveOwnerSlot(data).Slot == num
 	write := func() error {
 		current, err := s.ReadSequence()
 		if err != nil {
@@ -69,9 +70,16 @@ func AddFableLogin(s *store.Store, src AddSource, slot *int) (string, error) {
 	}
 	if renew {
 		err = f.WithFableLocks(func() error {
-			if now, _, _ := f.Creds.ReadActive(); now != live && f.FableStore().Live.Slot != num {
+			now, _, _ := f.Creds.ReadActive()
+			owner := fableOwnerOf(f)
+			if now != live && owner.Slot != num {
 				renew = false
 				return write()
+			}
+			if owner.Slot == num && owner.Source == store.SourceLastInstall {
+				if _, err := f.Creds.WriteUnclaimed(now, map[string]any{"lineage": "fable", "reason": store.SourceLastInstall, "slot": num}); err != nil {
+					return err
+				}
 			}
 			if err := write(); err != nil {
 				return err

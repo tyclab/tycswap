@@ -8225,10 +8225,12 @@ stay byte-identical. It prints `Stored the Fable login for Account-N
 or with `--switch`, the command then calls `core.SwitchFable(N)`, a switch by
 hand that holds the Fable engine for the cooldown (A94 per store), and prints
 `The Fable store now uses Account-N.` A second account's Fable login is only
-stored. When the signed-in account is the Fable store's live one, the new login
-also replaces the store's, under the Fable store's locks (A100) with the live
-login re-read there, keeping the store's MCP logins, and the chain record names
-it. Otherwise the store keeps the older grant, and the next tick's harvest
+stored. When the signed-in account owns the Fable store's login, its last
+install included (`ResolveOwnerSlot`, A100), the new login also replaces the
+store's, under the Fable store's locks (A100) with the live login re-read
+there, keeping the store's MCP logins, and the chain record names it; a login
+replaced on the last install's assumption goes to the unclaimed stash
+first. Otherwise the store keeps the older grant, and the next tick's harvest
 (A100) would write that older grant back over the new file. This is how a dead
 live Fable login (its `invalid_grant` quarantine names the live fingerprint) is
 repaired: the store is usable again at once.

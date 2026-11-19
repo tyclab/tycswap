@@ -3,6 +3,7 @@
 package lifecycle
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"os"
@@ -276,6 +277,35 @@ func TestAddFableLoginRenewsADeadLiveLogin(t *testing.T) {
 }
 
 // A Fable login of an account the store does not hold leaves the store alone.
+// The Fable store is on Account-2 by its last install only (its login
+// rotated, the profile endpoint silent): signing Account-2 in again renews
+// the store's login, as for an attributed one, and keeps a copy of the login
+// it replaces, since its account was only assumed.
+func TestAddFableLoginRenewsTheStoresLastInstall(t *testing.T) {
+	s := withFableLogins(t, "2")
+	s.OAuth = &oauth.FakeClient{ProfileFn: func(context.Context, string) *oauth.Identity { return nil }}
+	rotated := planCreds("at-f2-rotated", "rt-f2-rotated", "max")
+	putFableStore(t, s, rotated)
+	out := captureOut(t)
+	fresh := planCreds("at-f2-new", "rt-f2-new", "max")
+	if _, err := AddFableLogin(s, signIn(t, "b@example.com", fresh), nil); err != nil {
+		t.Fatal(err)
+	}
+	if live, _ := os.ReadFile(fableStoreFile(s)); !oauth.SameAccountBlock(string(live), fresh) {
+		t.Errorf("store = %s, want the new sign-in", live)
+	}
+	if got := fableLoginOf(t, s, "2", "b@example.com"); got != fresh {
+		t.Errorf("Fable login = %s", got)
+	}
+	if !strings.Contains(out.String(), FableStoreUses("2")) {
+		t.Errorf("output = %q", out.String())
+	}
+	f, _ := s.ForFable()
+	if rows, _ := f.Creds.ListUnclaimed(); len(rows) != 1 {
+		t.Errorf("unclaimed %v, want the replaced store login", rows)
+	}
+}
+
 func TestAddFableLoginOfAnotherAccountLeavesTheStore(t *testing.T) {
 	s := fableLifecycleStore(t)
 	captureOut(t)
