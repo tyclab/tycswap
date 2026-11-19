@@ -6,25 +6,37 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
 )
 
-// startStarted releases the start hold startHoldEnv names, if it is still
-// there, and, once no other session is starting, runs one tick of both stores
-// as `auto --once` does: also when the hold had ended, since a session that
-// took longer than the bound to come up still needs the login moved. It
+// startStarted records the family startFamilyEnv names for the hook's
+// session, so the policy knows a Mythos session before its first status line
+// (DESIGN A106). It then releases the start hold startHoldEnv names, if it is
+// still there, and, once no other session is starting, runs one tick of both
+// stores as `auto --once` does: also when the hold had ended, since a session
+// that took longer than the bound to come up still needs the login moved. It
 // prints nothing, since a SessionStart hook's stdout goes into the session,
 // and its problems go to the log; the caller exits 0 whatever happens.
 func startStarted(in io.Reader) {
-	token := os.Getenv(startHoldEnv)
-	if token == "" || !sessionStarted(in) {
+	token, family := os.Getenv(startHoldEnv), os.Getenv(startFamilyEnv)
+	if token == "" && family == "" {
 		return
 	}
-	if startStoreProblem(paths.GetBackupRoot()) != "" {
+	started, session := sessionStarted(in)
+	if !started || startStoreProblem(paths.GetBackupRoot()) != "" {
+		return
+	}
+	// A box without a store gets none: the record's lock would create it.
+	if info, err := os.Stat(paths.GetBackupRoot()); family != "" && err == nil && info.IsDir() {
+		_, _ = reporting.RecordDefaultSessionModel(paths.GetBackupRoot(), session, family, "", time.Now())
+	}
+	if token == "" {
 		return
 	}
 	sw, err := constructSwitcher(false, io.Discard)
@@ -59,16 +71,17 @@ func startStarted(in io.Reader) {
 }
 
 // sessionStarted reports whether the SessionStart hook's input starts a
-// session, as every source but clear and compact does. A terminal is not
-// read; an unreadable or empty input counts as a start.
-func sessionStarted(in io.Reader) bool {
+// session, as every source but clear and compact does, and the session's id.
+// A terminal is not read; an unreadable or empty input counts as a start.
+func sessionStarted(in io.Reader) (bool, string) {
 	if f, ok := in.(*os.File); ok && isTTY(f) {
-		return true
+		return true, ""
 	}
 	raw, _ := io.ReadAll(io.LimitReader(in, 1<<20))
 	var hook struct {
-		Source string `json:"source"`
+		Source    string `json:"source"`
+		SessionID string `json:"session_id"`
 	}
 	_ = json.Unmarshal(raw, &hook)
-	return hook.Source != "clear" && hook.Source != "compact"
+	return hook.Source != "clear" && hook.Source != "compact", hook.SessionID
 }

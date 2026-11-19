@@ -65,3 +65,8 @@ func (sw *Switcher) AddFableLogin(src lifecycle.AddSource, slot *int) (string, e
 func (sw *Switcher) SetStartLogin(id string, allowed bool) error {
 	return lifecycle.SetStartLogin(sw.Store, id, allowed)
 }
+
+// SetMythos marks or unmarks an account as one that runs Mythos (DESIGN A106).
+func (sw *Switcher) SetMythos(id string, allowed bool) error {
+	return lifecycle.SetMythos(sw.Store, id, allowed)
+}

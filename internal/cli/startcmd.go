@@ -31,6 +31,12 @@ var startResolveDefault = launch.ResolveDefault
 // returns the start hold's token for the child, "" for none (DESIGN A105).
 var startSelect = selectStartLogin
 
+// startSelectMythos is the selection for a session on Claude Mythos: among
+// the accounts marked for Mythos (DESIGN A106).
+var startSelectMythos = func(account string, stderr io.Writer) string {
+	return selectStartLoginFor(account, mythosFamily, stderr)
+}
+
 // startSelectFable is the start-login selection on the Fable store for a
 // session that starts on it (DESIGN A105).
 var startSelectFable = selectFableStartLogin
@@ -38,6 +44,12 @@ var startSelectFable = selectFableStartLogin
 // startHoldEnv carries a start hold's token to the session's SessionStart
 // hook, tycswap start --started (DESIGN A105).
 const startHoldEnv = "TYCSWAP_START_HOLD"
+
+// startFamilyEnv carries a Mythos session's family to its SessionStart hook,
+// which records it before the session's first status line (DESIGN A106).
+const startFamilyEnv = "TYCSWAP_START_FAMILY"
+
+const mythosFamily = "mythos"
 
 type startArguments struct {
 	account, action, id string
@@ -132,7 +144,7 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 	}
 	root := paths.GetBackupRoot()
 	storeDir := filepath.Clean(paths.FableStoreDir(root))
-	childEnv, hold := env, ""
+	childEnv, hold, family := env, "", ""
 	if reason := startOverride(env, parsed.command, storeDir); reason != "" {
 		if parsed.account != "" {
 			startNotice(streams.err, "Skipping the requested start login because "+reason+"; launching unchanged.")
@@ -147,8 +159,14 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 		}
 		// Every session starts on a start login of the default store, a
 		// Fable-store session on one of the Fable store's too, under the
-		// same token (DESIGN A105).
-		hold = startSelect(parsed.account, streams.err)
+		// same token (DESIGN A105); a Mythos session on an account marked
+		// for Mythos (A106).
+		if startSessionFamily(args, env) == mythosFamily {
+			family = mythosFamily
+			hold = startSelectMythos(parsed.account, streams.err)
+		} else {
+			hold = startSelect(parsed.account, streams.err)
+		}
 		if onFable {
 			fableHold, toDefault := startSelectFable(parsed.account, streams.err, hold)
 			if toDefault {
@@ -158,7 +176,7 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 			}
 		}
 	}
-	childEnv = withStartHold(childEnv, hold)
+	childEnv = withStartVar(withStartHold(childEnv, hold), startFamilyEnv, family)
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
@@ -223,6 +241,14 @@ func startStoreProblem(root string) string {
 }
 
 func selectStartLogin(account string, stderr io.Writer) (hold string) {
+	return selectStartLoginFor(account, "", stderr)
+}
+
+// selectStartLoginFor is start's selection on the default login for a
+// session of family: a Mythos session's candidates are the accounts marked
+// for Mythos while any is, every other session's the start logins the
+// default-session policy serves (DESIGN A106).
+func selectStartLoginFor(account, family string, stderr io.Writer) (hold string) {
 	if problem := startStoreProblem(paths.GetBackupRoot()); problem != "" {
 		startNotice(stderr, problem)
 		return ""
@@ -242,8 +268,12 @@ func selectStartLogin(account string, stderr io.Writer) (hold string) {
 			return ""
 		}
 	}
+	if family == mythosFamily && !anyMythosMark(sw) {
+		reportStartSelection(sw, stderr, "no account is marked for Mythos (tycswap mythos --allow ID); selecting a start login as for any session.")
+		family = ""
+	}
 	outcome := autoswitch.StartSelection(autoswitchAdapter{sw}, account, func() (autoswitch.StartSnapshot, error) {
-		return readStartSnapshot(sw, account)
+		return readStartSnapshotFor(sw, account, family)
 	}, autoswitch.WithClock(sw.Clk), autoswitch.WithOAuthClient(sw.OAuth), autoswitch.WithStatePath(sw.StatePath()))
 	if outcome.Detail != "" {
 		reportStartSelection(sw, stderr, outcome.Detail)
@@ -254,25 +284,45 @@ func selectStartLogin(account string, stderr io.Writer) (hold string) {
 	return outcome.Hold
 }
 
+// anyMythosMark reports whether the roster marks an account for Mythos.
+func anyMythosMark(sw *core.Switcher) bool {
+	data, _ := sw.ReadSequence()
+	if data == nil {
+		return false
+	}
+	for _, n := range data.Sequence {
+		if store.MythosFrom(data, strconv.Itoa(n)) {
+			return true
+		}
+	}
+	return false
+}
+
 // withStartHold is env with startHoldEnv set to token, or without it for "",
 // so a session never inherits another's hold; env itself when unchanged.
 func withStartHold(env []string, token string) []string {
+	return withStartVar(env, startHoldEnv, token)
+}
+
+// withStartVar is env with name set to value, or without it for "", so a
+// session never inherits another's; env itself when unchanged.
+func withStartVar(env []string, name, value string) []string {
 	out := env
 	for i, entry := range env {
-		if key, _, _ := strings.Cut(entry, "="); envKeyIs(key, startHoldEnv) {
+		if key, _, _ := strings.Cut(entry, "="); envKeyIs(key, name) {
 			out = append([]string(nil), env[:i]...)
 			for _, rest := range env[i+1:] {
-				if key, _, _ := strings.Cut(rest, "="); !envKeyIs(key, startHoldEnv) {
+				if key, _, _ := strings.Cut(rest, "="); !envKeyIs(key, name) {
 					out = append(out, rest)
 				}
 			}
 			break
 		}
 	}
-	if token == "" {
+	if value == "" {
 		return out
 	}
-	return append(out[:len(out):len(out)], startHoldEnv+"="+token)
+	return append(out[:len(out):len(out)], name+"="+value)
 }
 
 // selectFableStartLogin is start's selection on the Fable store: the marked
@@ -333,6 +383,14 @@ func reportStartSelection(sw *core.Switcher, stderr io.Writer, detail string) {
 }
 
 func readStartSnapshot(sw *core.Switcher, account string) (autoswitch.StartSnapshot, error) {
+	return readStartSnapshotFor(sw, account, "")
+}
+
+// readStartSnapshotFor is start's snapshot of the default login for a session
+// of family: the start logins are the marked ones, for a Mythos session the
+// accounts marked for Mythos, and only those the default-session policy
+// serves are current or candidates (DESIGN A106).
+func readStartSnapshotFor(sw *core.Switcher, account, family string) (autoswitch.StartSnapshot, error) {
 	view := sw.Store.WithoutLineageWrites()
 	view.OAuth, view.Log = nil, nil
 	data, err := view.SequenceForUpdate()
@@ -343,10 +401,14 @@ func readStartSnapshot(sw *core.Switcher, account string) (autoswitch.StartSnaps
 	if err != nil {
 		return autoswitch.StartSnapshot{}, err
 	}
+	marked := store.StartLoginFrom
+	if family == mythosFamily {
+		marked = store.MythosFrom
+	}
 	snap := autoswitch.StartSnapshot{Settings: set}
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
-		if store.StartLoginFrom(data, num) {
+		if marked(data, num) {
 			snap.Marked = append(snap.Marked, num)
 		}
 	}
@@ -355,7 +417,7 @@ func readStartSnapshot(sw *core.Switcher, account string) (autoswitch.StartSnaps
 	}
 	live := view.ResolveLiveSlot(data)
 	snap.Current = live.Slot
-	snap.CurrentMarked = store.StartLoginFrom(data, snap.Current)
+	snap.CurrentMarked = marked(data, snap.Current)
 	current := account == "" && snap.CurrentMarked || account != "" && snap.Current == account
 	if current && live.Source == store.SourceConfig && view.AccountKindFor(snap.Current) == "oauth" {
 		return snap, fmt.Errorf("current login ownership could not be verified from cached credentials; run tycswap status to reconcile it")
@@ -364,10 +426,13 @@ func readStartSnapshot(sw *core.Switcher, account string) (autoswitch.StartSnaps
 	if current && !set.Enabled {
 		return snap, nil
 	}
-	snap.Settings = defaultSessionPolicy(view, set, view.Clk.Now()).Settings
+	policy := defaultSessionPolicy(view, set, view.Clk.Now())
+	serves := func(num string) bool { return policy.Serves == nil || policy.Serves(num) }
+	snap.Settings = policy.Settings
+	snap.CurrentMarked = snap.CurrentMarked && serves(snap.Current)
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
-		if (account == "" && store.StartLoginFrom(data, num) || account == num) && view.RotationEligible(data, num) {
+		if (account == "" && marked(data, num) && serves(num) || account == num) && view.RotationEligible(data, num) {
 			snap.Candidates = append(snap.Candidates, num)
 		}
 	}
@@ -499,6 +564,7 @@ func renderStartHelp(prog string, out io.Writer) int {
 	fmt.Fprintln(out, "--account also works with auto-switch off; inherited auth/profile overrides skip selection.")
 	fmt.Fprintln(out, "Sessions on a Fable model start on the Fable store when one is on (tycswap add --login --lineage fable),")
 	fmt.Fprintln(out, "which moves to a marked login with a Fable login too; with marks but none such, they start on the default login.")
+	fmt.Fprintln(out, "Sessions on Mythos start on an account marked with tycswap mythos --allow ID, while one is marked.")
 	fmt.Fprintln(out, "The environment passes unchanged, except CLAUDE_SECURESTORAGE_CONFIG_DIR: start sets it to the Fable store")
 	fmt.Fprintln(out, "for a Fable session while that store is usable, and removes it from any other session when it names that store;")
 	fmt.Fprintln(out, "and TYCSWAP_START_HOLD: start sets it for a session it holds a login at its limit for, and removes it from any other.")

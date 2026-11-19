@@ -67,10 +67,14 @@ func readDefaultSessionModels(root string) map[string]defaultSessionModel {
 	return file.Sessions
 }
 
-var modelFamilies = []string{"fable", "opus", "sonnet", "haiku"}
+var modelFamilies = []string{"fable", "mythos", "opus", "sonnet", "haiku"}
 
-// ModelFamily is the family of a Claude model id or alias ("fable", "opus",
-// "sonnet", "haiku"), "" for anything else. A provider's id, such as
+// MythosModel names Claude Mythos in the policy's unservable list, the
+// engine's events and the counting caption (DESIGN A106).
+const MythosModel = "Mythos"
+
+// ModelFamily is the family of a Claude model id or alias ("fable", "mythos",
+// "opus", "sonnet", "haiku"), "" for anything else. A provider's id, such as
 // us.anthropic.claude-fable-5-2-v1:0, answers the one family it names as a
 // whole word.
 func ModelFamily(model string) string {
@@ -155,6 +159,10 @@ type PolicyResult struct {
 	// ReservedLast is the reserved account the default tick takes last and
 	// leaves for any other below every bar: the Fable store's live one (A102).
 	ReservedLast func(num string) bool
+	// Serves is the accounts the default login may run on while a live
+	// session runs Mythos, the accounts marked for it; nil serves every
+	// account (DESIGN A106).
+	Serves func(num string) bool
 }
 
 // DefaultSessionPolicy is DefaultSessionPolicyResult at the store's clock.
@@ -169,7 +177,8 @@ func DefaultSessionPolicy(s *store.Store, base settings.AutoSwitchSettings) (set
 // model, none of them Fable, it reserves the accounts that can run Fable and
 // still have Fable room (A77, A91). It always decides: no setting or flag
 // names the counted models (A97). A live session of unknown model reserves
-// nothing.
+// nothing. A live Mythos session restricts the login to the accounts marked
+// for Mythos, while one is in the pool (A106).
 //
 // While the Fable store is usable (A102) it counts the default store's
 // sessions only, those whose record names no store, and always reserves the
@@ -232,12 +241,32 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 	if model := strings.Join(counted, ","); model != "" {
 		r.Settings.Model = &model
 	}
+	if families["mythos"] {
+		if mythosInPool(s, view.pool) {
+			r.Serves = s.MythosCapable
+		} else {
+			r.Unservable = append(r.Unservable, MythosModel)
+		}
+	}
 	if fable.Usable || !allKnown || families["fable"] {
 		return r
 	}
 	room := view.fableBelow(base.ModelThreshold)
 	r.Reserved = func(num string) bool { return room[num] && s.FableCapable(num) }
 	return r
+}
+
+// mythosInPool reports whether an account the tick may use is marked for
+// Mythos. Without one a Mythos session restricts nothing, so a mark nobody
+// set never freezes rotation (DESIGN A106).
+func mythosInPool(s *store.Store, pool map[string]bool) bool {
+	data, _ := s.ReadSequence()
+	for num, usable := range pool {
+		if usable && store.MythosFrom(data, num) {
+			return true
+		}
+	}
+	return false
 }
 
 // fableReserved is the default store's reservation beside a usable Fable

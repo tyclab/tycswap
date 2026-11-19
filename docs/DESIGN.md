@@ -8955,3 +8955,133 @@ Fable tick after `--started`), `TestFableStartLoginRanksAndHolds`,
 `TestFableStartWithoutAMarkedFableLogin`,
 `TestFableStartWithoutMarksOrAutoSwitchIsAsBefore` (no file written),
 `TestFableStartAccount` and `TestFableStartOneTokenHoldsBothStores`.
+
+## A106. The login stays on an account that runs Mythos while a Mythos session runs
+
+**Why.** Only some accounts may run Claude Mythos, and nothing tycswap reads
+says which: every account reports the same per-model windows, and the
+profile answer carries no entitlement. Claude Code checks Mythos access on
+every request against the live login (measured 2026-11-18: a running Mythos
+session got `There's an issue with the selected model (claude-mythos-5-2)`
+while the shared login sat on another account for eleven seconds). tycswap
+mapped `claude-mythos-5-2` to no family, so the status line recorded such a
+session as nothing, the policy counted 5h and 7d only and the engine moved
+the login to any account with room; `start` did the same, and a session that
+changed from Fable to Mythos stayed recorded as Fable for up to a day. The
+operator's order (2026-11-19): "to handle 3 accounts mythos better".
+
+**The mark.** An operator-set roster key `mythos`; only a boolean `true`
+counts (`store.MythosFrom`, `Store.MythosCapable`). `lifecycle.SetMythos`
+sets and clears it under the roster lock, sharing `SetStartLogin`'s writer: an
+unchanged mark writes nothing. It is carried like `startLogin` (A90) across a
+re-add, re-login, move, swap and a forced import over the same identity, and
+never to a new identity. `tycswap mythos --allow ID | --disallow ID | --list`
+has the forms and exit codes of `start`'s management forms (0, 1 for a store
+or account error with `tycswap mythos: <error>`, 2 for usage) and, like them,
+no JSON. `list` tags `(Mythos)` after `(start login)`; list JSON and the
+dashboard's Claude rows carry `mythos: true` only when marked, so a box
+without a mark renders byte for byte as before; `reporting.AccountSnapshot`
+carries `Mythos`. The dashboard has a `Mythos` chip and **Allow for Mythos** /
+**Disallow for Mythos** (`POST /api/accounts/claude:ID/mythos/allow|disallow`,
+authenticated like every mutation; the handler asks `AccountOps` for
+`web.MythosMarker` by type assertion and answers 503 without it). The tray's
+row tag and menu line add `Mythos`, as they add `start login`.
+
+**The family.** `mythos` joins the recognised families
+(`reporting.ModelFamily`), so the status line records a Mythos session, a
+change of family is news (A77) and `start` learns the family of the session
+it launches.
+
+**The policy.** While a live default-store session is recorded as Mythos and
+an account in the policy's pool (A91: enabled, eligible, not quarantined, or
+the live one) is marked, `PolicyResult.Serves` is `Store.MythosCapable`; nil
+otherwise, which serves every account. With no marked account in the pool it
+restricts nothing and names `Mythos` in `Unservable`: a mark nobody set must
+never freeze rotation. The counted models and the reservation are as before:
+Mythos has no window of its own, and Mythos-only sessions still reserve the
+Fable-capable accounts with Fable room (A77, A91). Mythos sessions on the
+Fable store are skipped as before (A102) and restrict nothing.
+
+**The engine** (`autoswitch.WithServes(model, serves)`, wired in
+`cli.defaultEngine`, nil for every other engine):
+- An account that does not serve is no target. A tick whose targets were all
+  kept out so emits the existing `no-compatible-model-target`, detail `no
+  qualifying target marked for Mythos; keeping the current account` (with
+  ` with reported <models> usage` when a counted window kept some out too).
+- A live account that does not serve hands over after the at-limit check and
+  before the proactive one, with A73's trigger `model-missing`: below every
+  bar, not held by the cooldown (only by a start hold), naming no window;
+  without a target it stays with `model-missing-no-target`, detail `the
+  active account is not marked for Mythos; no marked account is below every
+  bar`. It never leaves a serving account for one that does not serve.
+- The Fable reservation's hand-over (A77, A102) takes serving accounts only.
+
+**Start.** `start` reads the session's model as for the store (A103), now
+also on a box without a Fable login. For a Mythos session the candidates are
+the accounts marked for Mythos, ranked as start ranks (A105: room first, then
+at a limit, with a start hold); the start-login marks do not apply to it.
+With no account marked, the session starts as any session does, after one
+notice: `tycswap start: no account is marked for Mythos (tycswap mythos
+--allow ID); selecting a start login as for any session.` Every other
+session's candidates and current start login are also only those the policy
+serves while a Mythos session runs; with none of them marked the selection
+says `no usable start login`. The child of a Mythos session gets
+`TYCSWAP_START_FAMILY=mythos`; every other child gets no such variable, an
+inherited one removed as `TYCSWAP_START_HOLD` is, override paths included.
+`start --started` records that family for the hook's `session_id` (Claude
+Code's hook input carries it for every event, SessionStart included) before
+its tick, so the policy restricts the login before the session's first status
+line: not for `clear` or `compact`, and not on a box without a store, which
+the record's lock would create. Without a start hold it records and does
+nothing else; the session's first status line is then no news.
+
+**Switch by strategy.** `switch --strategy best` and the dashboard's *Next
+best* rank only the accounts the policy serves (`switching.Counting.Serves`),
+as A98 and A99 make them rank as the engine does. `next-available`, a rotation
+with skips, and a switch by hand are not restricted.
+
+**What the operator reads.** `reporting.CountingCaption` takes the served
+accounts: `counting 5h + 7d; live Mythos session: only accounts 2, 5; no live
+Fable session` or `counting 5h + 7d; Mythos not served: no account marked; …`.
+`auto.counting` carries them as `mythos` (omitted while nothing is
+restricted), and the `poll` event's `unservable` names `Mythos`.
+
+**What stays.** A box without a mark and without a Mythos session is v0.16.2's:
+the engine's option is nil, the policy's `Serves` nil, the state document, list
+JSON and child environment unchanged (the existing no-change tests pass
+unedited; `nofable-state.json` is untouched).
+
+**Limits.** Not in scope: Mythos sessions on the Fable store, reading the
+entitlement from an API, and the long-running `tycswap auto` loop and hosted
+engines, which follow no session (A97). A Mythos session that draws no status
+line and was not started through `start` and its hook is never recorded. A
+session whose model changes to Mythos with `/model` counts from its next
+status line. `start --started` finds the session only once Claude Code has
+written its process record (`sessions/<pid>.json`, whose `startedAt` is the
+process start); that it exists when the SessionStart hook runs is inferred
+from that field, not measured.
+
+**Tests.** In `autoswitch`: `TestMythosLoginStaysAmongMarkedAccounts` (the
+live shape: the login on a marked account at its 5-hour bar and at 100 %, an
+unmarked account with room), `TestMythosUnmarkedLoginMovesToAMarkedAccount`
+(with and without the cooldown), `TestMythosUnmarkedLoginStaysWithoutAServingTarget`,
+`TestMythosBoundsTheReservedHandOver` and `TestMythosNilFilterServesEveryAccount`.
+In `store`: `TestMythosFromOnlyAcceptsBooleanTrue`; in `lifecycle`:
+`TestMythosMarksPreserveMetadata` and `TestMythosMarkFollowsIdentity`; in
+`transfer`: `TestImportRetainsLocalMythosMarkOnlyForExistingIdentity`. In
+`reporting`: `TestRecordDefaultSessionModelRecordsMythos` (a Fable-to-Mythos
+change recorded and news), `TestPolicyRestrictsTheLoginToMythosAccounts` (no
+account marked: no filter and `Mythos` unservable; a marked account disabled;
+the live one), `TestPolicyMythosKeepsTheOtherRules`,
+`TestCountingCaptionNamesMythos` and `TestListAndSnapshotShowTheMythosMark`.
+In `web`: `TestMythosRoutes` (auth, Codex, 503),
+`TestStateRowMythosOnlyWhenMarked` and `TestDashboardMythosControls`. In
+`cli`: `TestAutoOnceWithAMythosSession` (the tick with marks, with none: v0.16.2's
+target and `unservable`, and with an Opus session),
+`TestMythosSessionStartsOnAMythosAccount`, `TestMythosSessionWithoutAMarkedAccount`,
+`TestStartWhileAMythosSessionRuns`, `TestMythosStartAtItsLimitStaysOnTheMarkedAccount`
+(the session's first tick, from `--started`, keeps the login on the marked
+account at its limit), `TestStartedRecordsTheFamilyWithoutAHold`,
+`TestStartRemovesAnInheritedFamily`, `TestMythosCommand`,
+`TestAutoViewReportsMythos`, `TestSwitchBestWhileAMythosSessionRuns`,
+`TestTrayMythosTag` and `TestDashboardSetsTheMythosMark`.

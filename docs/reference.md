@@ -39,6 +39,8 @@ tycswap start [--account ID] [--] [command [args...]]
 tycswap start --allow ID | --disallow ID | --list
                                             manage startup marks (Claude accounts)
 tycswap start --started                     end a session's start hold (a SessionStart hook)
+tycswap mythos --allow ID | --disallow ID | --list
+                                            manage the marks of accounts that run Mythos
 tycswap auto [--once] [--json] [--interval SECONDS] [--five-hour-threshold PCT]
            [--seven-day-threshold PCT] [--model-threshold PCT] [--cooldown SECONDS]
            [--dry-run]                      auto-switch when nearing rate limits
@@ -208,6 +210,7 @@ Present only when applicable (additive, schemaVersion 1):
 | `alias` | string | An alias is set. |
 | `disabled` | `true` | The account is disabled. |
 | `startLogin` | `true` | The Claude account is marked for startup selection. |
+| `mythos` | `true` | The Claude account is marked as one that runs Claude Mythos (DESIGN A106). |
 | `baseUrl` | string | An API-key account carries a base URL (DESIGN A46): the whole URL its requests go to. |
 | `plan` | string | Claude Code recorded a plan name for the login (DESIGN A79), for example `Ultra`. |
 | `atLimit` | `true` | A relevant window is at/over its limit. |
@@ -1469,7 +1472,8 @@ sits. `--account ID` selects the default login and is the Fable store's only
 candidate when it has a usable Fable login; otherwise the session starts on the
 default login with the notice above.
 
-Every other variable passes unchanged, but `TYCSWAP_START_HOLD` (below). The
+Every other variable passes unchanged, but `TYCSWAP_START_HOLD` (below) and
+`TYCSWAP_START_FAMILY` ([tycswap mythos](#tycswap-mythos)). The
 store's state comes from its files only (no network); a live Fable login whose account is unknown counts as
 usable. A box without a Fable login passes the environment unchanged, less a
 variable naming the Fable store. macOS has no Fable store and never sets the
@@ -1531,7 +1535,9 @@ settings as a SessionStart hook:
 {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "tycswap start --started", "timeout": 45}]}]}}
 ```
 
-Without `TYCSWAP_START_HOLD` it exits at once and opens nothing. It reads the
+Without `TYCSWAP_START_HOLD` and `TYCSWAP_START_FAMILY` it exits at once and
+opens nothing; with the family only, it records it and does nothing else
+([tycswap mythos](#tycswap-mythos)). It reads the
 hook's JSON on stdin unless stdin is a terminal (unreadable or empty input
 counts as `startup`) and does nothing for `source` `clear` or `compact`. It
 removes its token and the ended holds under each state file's lock, the
@@ -1569,6 +1575,83 @@ executable, it reports a launch error.
 POSIX replaces tycswap with the child; Windows spawns and waits with inherited
 standard streams and returns the child status. Windows console Ctrl+C behavior
 requires native Windows integration validation; cross-vet is insufficient.
+
+---
+
+## tycswap mythos
+
+### Synopsis
+
+```text
+tycswap mythos --allow ID
+tycswap mythos --disallow ID
+tycswap mythos --list
+```
+
+### Description
+
+Only some accounts may run Claude Mythos, and nothing tycswap reads tells
+them apart: every account reports the same per-model windows, and the
+profile answer carries no entitlement. Claude Code checks Mythos access on
+every request against the live login, so a Mythos session fails while the
+shared login sits on an account without it (DESIGN A106).
+
+The forms set, clear or list the operator's Mythos marks, with the forms and
+exit codes of `start`'s management forms: one form at a time, `--list` prints
+the marked account numbers one per line, IDs use the ordinary account
+resolution, an unknown or ambiguous ID exits 1 (`tycswap mythos: <error>` on
+stderr), a usage error exits 2. There is no `--json`. A mark is the optional
+boolean `mythos` in the Claude account record, written under the roster lock;
+absent or non-boolean means false. It follows the identity like the start
+login's mark: re-add, re-login, move, swap and a forced import over that
+identity keep it, a new identity starts unmarked, and export carries none.
+
+`mythos` is a model family: the status line records a session on
+`claude-mythos-…` (a change from Fable to Mythos is news and runs a tick).
+While a live default-store session is recorded as Mythos, the scheduled tick
+(`auto --once`, `--observe`, `start --started`) keeps the default login on the
+marked accounts:
+
+- An unmarked account is no target. A tick that finds no marked target says
+  `no-compatible-model-target`, detail `no qualifying target marked for
+  Mythos; keeping the current account`, and stays.
+- A live account that is not marked hands over at once, cooldown or not, to a
+  marked account below every bar (trigger `model-missing`); without one it
+  stays and says `model-missing-no-target`, detail `the active account is not
+  marked for Mythos; no marked account is below every bar`.
+- The Fable reservation's hand-over (`reserved`) takes marked accounts only.
+- With no marked account in the pool (enabled, eligible, not quarantined, or
+  the live one), nothing is restricted: the tick is the one without the
+  session, and its `poll` event names `Mythos` in `unservable`.
+
+`switch --strategy best` and the dashboard's *Next best* rank the marked
+accounts only, as the engine does; `next-available` and a switch by hand are
+not restricted. `auto.counting` carries `mythos`, the marked accounts, while
+the restriction holds, and its caption says it: `live Mythos session: only
+accounts 2, 5`, or `Mythos not served: no account marked`.
+
+`tycswap start` reads the session's model as for the store
+([tycswap start](#tycswap-start)). For a Mythos session the candidates are the
+accounts marked for Mythos, ranked as start ranks (room first, then at a
+limit, with a start hold); the start-login marks do not apply to it. With no
+account marked it selects as for any session, after one notice:
+`tycswap start: no account is marked for Mythos (tycswap mythos --allow ID);
+selecting a start login as for any session.` Every other session's
+candidates and its current start login are also only marked accounts while a
+Mythos session runs. The child of a Mythos session gets
+`TYCSWAP_START_FAMILY=mythos`; any other child gets no such variable, an
+inherited one removed, on the override paths too. `start --started` records
+that family for the hook's `session_id` (not for `clear` or `compact`, and not
+on a box without a store) before its tick, so the session counts before its
+first status line; without a start hold it records and does nothing else.
+
+The dashboard's Claude rows carry `mythos: true` when marked, with a
+`Mythos` chip and **Allow for Mythos** / **Disallow for Mythos**, through
+`POST /api/accounts/claude:ID/mythos/allow` and `.../disallow`. `list` shows
+`(Mythos)`, list JSON `mythos: true` on marked rows only, and the tray
+`Mythos` in the row's tag. Not covered: Mythos sessions on the Fable store,
+the long-running `tycswap auto` loop and hosted engines (they follow no
+session), and any entitlement read from an API.
 
 ---
 
@@ -1825,7 +1908,9 @@ not yet due); a sentinel (no credential, an expired token an owner holds)
 serves nothing. An absent 5h window is room.
 A dropped model is named in the `poll` event as `unservable` (`not counted: Fable
 (no usable account can serve it)` on the human line), and the tick decides on
-5h and 7d. `list`, `status`, `start` and the dashboard's at-limit marks count
+5h and 7d. A live Mythos session restricts the login to the accounts marked
+for Mythos, and names `Mythos` there when none is marked
+([tycswap mythos](#tycswap-mythos)). `list`, `status`, `start` and the dashboard's at-limit marks count
 the same models.
 
 **A window whose reset has passed reads 0 %** (DESIGN A91). The engine, the
@@ -3185,7 +3270,9 @@ switched). `auto.lastTickAt` is when a real tick last saw the live login
 counts now (DESIGN A91, A97): `{"mode", "models", "sessions",
 "unservable", "reserved", "caption"}`, `mode` `sessions` (`models` derived from the
 model families the live default sessions run, in `sessions`, minus
-`unservable`, with the accounts left to Fable work in `reserved`) or `hosted`
+`unservable`, with the accounts left to Fable work in `reserved`, and, while a
+live Mythos session restricts the login, the marked accounts in `mythos`,
+DESIGN A106) or `hosted`
 (an engine hosted in this process, which does not follow sessions and counts
 5h and 7d only); `caption` says it in one line, e.g. `counting 5h + 7d; Fable not
 counted: no usable account can serve it`. `auto.ranking` is the order the
@@ -3301,6 +3388,7 @@ anything else `500`.
 | `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias", "baseUrl"}` | `tycswap add-token [--base-url]` (the token is never echoed or logged); `503` with a `baseUrl` when the facade cannot store one | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
 | `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y`; for a `codex:` key `tycswap codex enable`, `disable`, `remove -y`, holding the Codex store lock throughout | `400` bare key, `404` unknown provider, `503` a `codex:` key without Codex accounts, `409` the Codex store stayed busy (a Codex switch or a token refresh held it) for 10 s |
 | `POST /api/accounts/{key}/start-login/allow`, `/start-login/disallow` | | `tycswap start --allow ID` / `--disallow ID`; updates Claude startup metadata only | `400` bare or Codex key, `404` unknown provider/account, `503` account operations unavailable |
+| `POST /api/accounts/{key}/mythos/allow`, `/mythos/disallow` | | `tycswap mythos --allow ID` / `--disallow ID` (DESIGN A106) | `400` bare or Codex key, `404` unknown provider/account, `503` account operations without the mark |
 | `POST /api/accounts/{key}/alias` | `{"alias": "<name>"}` (empty unsets) | `tycswap alias` | `400` bare key, `404` a `codex:` key or an unknown provider |
 | `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` | `400` missing slot or bare key, `404` a `codex:` key or an unknown provider |
 | `POST /api/accounts/swap` | `{"a": "<key>", "b": "<key>"}` | `tycswap swap` | `400` missing or bare keys, `404` a `codex:` key or an unknown provider |
@@ -5241,7 +5329,7 @@ Inside the backup root:
 
 | Path | Contents |
 |------|----------|
-| `sequence.json` | The account registry: `activeAccountNumber`, `lastUpdated`, the `sequence` array of slot numbers, and an `accounts` map keyed by slot (`email`, `uuid`, `organizationUuid`, `organizationName`, `added`, and optional `alias`, `startLogin: true`, `plan` (the plan name Claude Code recorded for the login, written by `add` and refreshed by a switch, DESIGN A79), `kind: "api_key"`, `disabled: true`, and with `kind: "api_key"` a `baseUrl`, the endpoint the key is for). |
+| `sequence.json` | The account registry: `activeAccountNumber`, `lastUpdated`, the `sequence` array of slot numbers, and an `accounts` map keyed by slot (`email`, `uuid`, `organizationUuid`, `organizationName`, `added`, and optional `alias`, `startLogin: true`, `mythos: true` (DESIGN A106), `plan` (the plan name Claude Code recorded for the login, written by `add` and refreshed by a switch, DESIGN A79), `kind: "api_key"`, `disabled: true`, and with `kind: "api_key"` a `baseUrl`, the endpoint the key is for). |
 | `settings.json` | Settings (see SETTINGS). |
 | `claude-settings.prev.json` | Present while an API-key account with a base URL is active (DESIGN A46): what the three keys of Claude Code's `settings.json` the switch owns, `env.ANTHROPIC_BASE_URL` and `env.ANTHROPIC_AUTH_TOKEN` (written) and `env.ANTHROPIC_API_KEY` (removed), held before (`{"version": 1, "settingsPath", "keys": {"<key>": {"present", "value"?}}}`, including whether `env` existed), mode 0600. A switch onto any other account restores them from it and removes it; one that is not a complete record (version 1, an entry for `env` and each key, nothing after it) is corrupt and stops the switch. `tycswap purge` deletes it and says so first. |
 | `mappings.json` | Directory→account mappings of the removed `tycswap map`; no longer read (DESIGN A92). |
@@ -5507,7 +5595,7 @@ Codex line in `tycswap auto --json` is described under `tycswap auto`.
 - **JSONL for `auto`.** `tycswap auto --json` writes one compact JSON object per
   event, one per line.
 - **Additive rule.** Under schemaVersion 1 the schema only grows: optional keys
-  (`alias`, `disabled`, `startLogin`, `atLimit`, `limitingWindows`, `usageFetchedAt`,
+  (`alias`, `disabled`, `startLogin`, `mythos`, `atLimit`, `limitingWindows`, `usageFetchedAt`,
   `usageAgeSeconds`, and the window sub-keys `resetsAt`, `countdown`, `clock`)
   are present only when they apply and omitted otherwise; no existing key
   changes type or meaning. Consumers must ignore unknown keys and, for `auto`,

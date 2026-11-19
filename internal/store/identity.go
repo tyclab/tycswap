@@ -364,6 +364,24 @@ func StartLoginFrom(data *SequenceData, num string) bool {
 	return marked
 }
 
+// MythosFrom reports the operator's Mythos mark from an already-loaded
+// roster: only a boolean true marks an account (DESIGN A106).
+func MythosFrom(data *SequenceData, num string) bool {
+	rec, ok := recordFor(data, num)
+	if !ok {
+		return false
+	}
+	marked, _ := rec["mythos"].(bool)
+	return marked
+}
+
+// MythosCapable reports whether the operator marked the account as one that
+// runs Claude Mythos; nothing tycswap reads says so otherwise (DESIGN A106).
+func (s *Store) MythosCapable(num string) bool {
+	data, _ := s.ReadSequence()
+	return MythosFrom(data, num)
+}
+
 func (s *Store) IsStartLogin(num string) bool {
 	data, _ := s.ReadSequence()
 	return StartLoginFrom(data, num)
