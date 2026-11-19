@@ -118,15 +118,24 @@ func accountSuffix(slot string) string {
 
 // sessionFamily is the model family of the Claude session that args (the
 // child's arguments after its program) start, and the source that answered:
-// --model, ANTHROPIC_MODEL, the resumed session's record or transcript, then
-// the settings files. A source answers when it names a model; an unknown
-// model answers with no family. It reads files only, never the network.
+// --model, ANTHROPIC_MODEL, then the env.ANTHROPIC_MODEL of the settings
+// (--settings, then the three files), which Claude Code applies as
+// environment, the resumed session's record or transcript, then the settings'
+// model in the same order. A source answers when it names a model; an
+// unknown model answers with no family. It reads files only, never the
+// network.
 func sessionFamily(args, env []string, cwd, home, root string) (family, source string) {
 	if model, ok := modelFlag(args); ok {
 		return reporting.ModelFamily(model), "--model"
 	}
 	if model := envValue(env, "ANTHROPIC_MODEL"); model != "" {
 		return reporting.ModelFamily(model), "ANTHROPIC_MODEL"
+	}
+	sources := settingsSources(args, cwd, home)
+	for _, src := range sources {
+		if src.envModel != "" {
+			return reporting.ModelFamily(src.envModel), src.name + " env.ANTHROPIC_MODEL"
+		}
 	}
 	if id := resumedSession(args); sessionUUID.MatchString(id) {
 		if family, _, ok := reporting.RecordedSession(root, id); ok && family != "" {
@@ -138,6 +147,38 @@ func sessionFamily(args, env []string, cwd, home, root string) (family, source s
 			}
 		}
 	}
+	for _, src := range sources {
+		if src.model != "" {
+			return reporting.ModelFamily(src.model), src.name
+		}
+	}
+	return "", ""
+}
+
+// settingsSource is one Claude Code settings source: its name in
+// sessionFamily's answer, and the model and env.ANTHROPIC_MODEL it sets.
+type settingsSource struct {
+	name, model, envModel string
+}
+
+// settingsSources are the settings start reads, in Claude Code's precedence:
+// --settings, <cwd>/.claude/settings.local.json, <cwd>/.claude/settings.json,
+// ~/.claude/settings.json.
+func settingsSources(args []string, cwd, home string) []settingsSource {
+	var out []settingsSource
+	if value, ok := flagValue(args, "--settings"); ok {
+		var raw []byte
+		if strings.HasPrefix(strings.TrimSpace(value), "{") {
+			raw = []byte(value)
+		} else {
+			if !filepath.IsAbs(value) && cwd != "" {
+				value = filepath.Join(cwd, value)
+			}
+			raw = readSettingsFile(value)
+		}
+		model, envModel := parseSettings(raw)
+		out = append(out, settingsSource{"--settings", model, envModel})
+	}
 	var files []string
 	if cwd != "" {
 		files = append(files, filepath.Join(cwd, ".claude", "settings.local.json"), filepath.Join(cwd, ".claude", "settings.json"))
@@ -146,24 +187,29 @@ func sessionFamily(args, env []string, cwd, home, root string) (family, source s
 		files = append(files, filepath.Join(home, ".claude", "settings.json"))
 	}
 	for _, path := range files {
-		if model := settingsModel(path); model != "" {
-			return reporting.ModelFamily(model), path
-		}
+		model, envModel := parseSettings(readSettingsFile(path))
+		out = append(out, settingsSource{path, model, envModel})
 	}
-	return "", ""
+	return out
 }
 
 // modelFlag is the last --model value before a "--".
 func modelFlag(args []string) (model string, ok bool) {
+	return flagValue(args, "--model")
+}
+
+// flagValue is the last value of flag (`flag X` or `flag=X`) before a "--";
+// ok is false when there is none or it is empty.
+func flagValue(args []string, flag string) (value string, ok bool) {
 	for i := 0; i < len(args) && args[i] != "--"; i++ {
-		if value, found := strings.CutPrefix(args[i], "--model="); found {
-			model, ok = value, true
-		} else if args[i] == "--model" && i+1 < len(args) {
+		if v, found := strings.CutPrefix(args[i], flag+"="); found {
+			value, ok = v, true
+		} else if args[i] == flag && i+1 < len(args) {
 			i++
-			model, ok = args[i], true
+			value, ok = args[i], true
 		}
 	}
-	return model, ok && model != ""
+	return value, ok && value != ""
 }
 
 // resumedSession is the id --resume / -r names, "" for a bare --resume (the
@@ -271,23 +317,31 @@ func lastAssistantModel(path string) string {
 	return ""
 }
 
-// settingsModel is the "model" a Claude Code settings file sets, "" when the
-// file is missing, unreadable, malformed or does not set it.
-func settingsModel(path string) string {
+// readSettingsFile is a settings file's content, nil when it is missing,
+// unreadable or not a regular file.
+func readSettingsFile(path string) []byte {
 	info, err := os.Stat(path)
 	if err != nil || !info.Mode().IsRegular() {
-		return ""
+		return nil
 	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
+	raw, _ := os.ReadFile(path)
+	return raw
+}
+
+// parseSettings is the "model" and the env block's ANTHROPIC_MODEL a Claude
+// Code settings document sets, "" for each it does not set as a string or
+// when it is malformed.
+func parseSettings(raw []byte) (model, envModel string) {
 	var doc struct {
 		Model any `json:"model"`
+		Env   any `json:"env"`
 	}
 	if json.Unmarshal(raw, &doc) != nil {
-		return ""
+		return "", ""
 	}
-	model, _ := doc.Model.(string)
-	return strings.TrimSpace(model)
+	model, _ = doc.Model.(string)
+	if env, ok := doc.Env.(map[string]any); ok {
+		envModel, _ = env["ANTHROPIC_MODEL"].(string)
+	}
+	return strings.TrimSpace(model), strings.TrimSpace(envModel)
 }

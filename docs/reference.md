@@ -1414,14 +1414,31 @@ on Windows). No new profile or claim is created.
 Marks are managed independently of these launch-only overrides.
 
 Without an override, `start` picks the session's credential store by its
-model family. The first source that names a model answers: `--model X` or
-`--model=X` (the last one), `ANTHROPIC_MODEL`, for `--resume ID`, `-r ID` or
-`--resume=ID` with a UUID the session's record in `default_models.json` and
-else the last assistant line in the last 1 MiB of
-`~/.claude/projects/*/ID.jsonl` (no symlink out of `projects/`), then the
-`model` key of `<cwd>/.claude/settings.local.json`, `<cwd>/.claude/settings.json`
-and `~/.claude/settings.json`. A bare `--resume`, `--continue` and `-c` give no
-model of their own. Aliases and full ids (with `[1m]`) count alike.
+model family. The settings it reads are, in this order, the `--settings`
+value (`--settings X` or `--settings=X`, the last one: JSON when it starts
+with `{`, else a file relative to the working directory),
+`<cwd>/.claude/settings.local.json`, `<cwd>/.claude/settings.json` and
+`~/.claude/settings.json`. The first source that names a model answers:
+
+1. `--model X` or `--model=X` (the last one);
+2. `ANTHROPIC_MODEL`;
+3. `env.ANTHROPIC_MODEL` of the settings, in their order (Claude Code applies
+   a settings `env` block as environment);
+4. for `--resume ID`, `-r ID` or `--resume=ID` with a UUID, the session's
+   record in `default_models.json`, else the last assistant line in the last
+   1 MiB of `~/.claude/projects/*/ID.jsonl` (no symlink out of `projects/`);
+5. the `model` key of the settings, in their order.
+
+A bare `--resume`, `--continue` and `-c` give no model of their own. Aliases,
+full ids (with `[1m]`) and a provider's id such as
+`us.anthropic.claude-fable-5-2-v1:0` count alike. Not read, so a session that
+runs Fable by one of these starts on the default login with no notice: no
+model named anywhere, `--model default` or a settings `model` of `default`
+(Claude Code takes the login's own default), `ANTHROPIC_DEFAULT_MODEL` and
+`ANTHROPIC_DEFAULT_<FAMILY>_MODEL` (`--model opus` with
+`ANTHROPIC_DEFAULT_OPUS_MODEL` naming a Fable model reads as Opus), managed
+settings, and a wrapper command (`tycswap start -- bash -lc "claude --model
+fable"`: only the child's own arguments are read).
 
 | Family | Fable store | Child environment | Selection | Notice on stderr |
 | --- | --- | --- | --- | --- |

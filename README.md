@@ -634,10 +634,14 @@ first request can hit the limit.
 The child's arguments pass unchanged, and so does its environment, except
 `TYCSWAP_START_HOLD` (set for a session with a start hold, removed from any
 other) and `CLAUDE_SECURESTORAGE_CONFIG_DIR` while a Fable store exists: a
-session whose model is Fable (`--model`, `ANTHROPIC_MODEL`, the resumed
-session's model, then the Claude Code settings) starts on the Fable store when
-it has a usable login, and every other session drops a value naming the Fable
-store. A set `CLAUDE_CONFIG_DIR` (even empty), `--bare`, or a Claude
+session whose model is Fable (`--model`, `ANTHROPIC_MODEL`, a settings
+`env.ANTHROPIC_MODEL`, the resumed session's model, then a settings `model`;
+the settings are `--settings` and Claude Code's three settings files) starts on
+the Fable store when it has a usable login, and every other session drops a
+value naming the Fable store. `tycswap start` cannot see a Fable model chosen
+by `--model default` or none at all, by `ANTHROPIC_DEFAULT_MODEL` or
+`ANTHROPIC_DEFAULT_<FAMILY>_MODEL`, by managed settings or inside a wrapper
+command; such a session starts on the default login. A set `CLAUDE_CONFIG_DIR` (even empty), `--bare`, or a Claude
 authentication override (a `CLAUDE_SECURESTORAGE_CONFIG_DIR` of your own
 included) skips selection and passes everything else unchanged, including an
 explicit `--account` request. Options for tycswap end at `--` or the first

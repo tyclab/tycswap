@@ -8403,21 +8403,34 @@ agent's, a restore's) stayed on the Fable store whatever its model.
 
 **The session's model** (`cli.sessionFamily`). The first source that names a
 model answers; its family is `reporting.ModelFamily` (aliases and full ids,
-a `[1m]` suffix included), so an unknown model answers with no family:
+a `[1m]` suffix included, and a provider's id such as
+`us.anthropic.claude-fable-5-2-v1:0`, which names its family as a whole
+word; an id naming two families answers none), so an unknown model answers
+with no family. The settings are, in Claude Code's precedence, the
+`--settings` value (`--settings X` or `--settings=X`, the last before a
+`--`: JSON when it starts with `{`, else a file, relative to the working
+directory), then `<cwd>/.claude/settings.local.json`,
+`<cwd>/.claude/settings.json` and `~/.claude/settings.json`; a source that
+cannot be read or parsed, or sets no string, is skipped.
 
 1. `--model X` or `--model=X` before a `--`; given twice, the last wins.
 2. `ANTHROPIC_MODEL` (on Windows the name matches in any case).
-3. `--resume ID`, `-r ID` or `--resume=ID`, ID a UUID: the session's record
+3. `env.ANTHROPIC_MODEL` of the settings, in their order: Claude Code
+   applies a settings file's `env` block as environment, so it beats every
+   settings `model` (2026-11-19).
+4. `--resume ID`, `-r ID` or `--resume=ID`, ID a UUID: the session's record
    in `default_models.json` (`reporting.RecordedSession`), else the model of
    the last assistant line of `~/.claude/projects/*/ID.jsonl`, reading at
    most the last 1 MiB. Claude Code's own `<synthetic>` lines and subagent
    (`isSidechain`) lines are skipped. A path that resolves out of
    `projects/` through a symlink is not read; only regular files are.
-4. The `model` key of `<cwd>/.claude/settings.local.json`, then
-   `<cwd>/.claude/settings.json`, then `~/.claude/settings.json`; the first
-   file that sets it wins, and a file that cannot be read or parsed, or sets
-   no string, is skipped.
-5. Otherwise there is no family.
+5. The `model` key of the settings, in their order (`--settings` since
+   2026-11-19); the first that sets it wins.
+6. Otherwise there is no family.
+
+`RecordDefaultSessionModel` keeps the reading without provider ids: a
+status line reporting a provider's id records nothing, as in v0.15.1, since
+such a session runs on no login of tycswap's.
 
 **Overrides keep A90.** With `CLAUDE_CONFIG_DIR` set, another
 `launch.AuthOverrideEnvVars` variable set, `--bare` in the child's
@@ -8456,12 +8469,21 @@ case-insensitively (`cli.startWindows` is the tests' seam).
 **Limits.** `--continue` and the `--resume` picker give no family (O10): such
 a session starts by its settings' model. A session that changes model with
 `/model` stays on the store it started on. Fable subagents of an Opus session
-run on the default store. Other `claude` options that set a model (a
-`--settings` file, managed settings) are not read.
+run on the default store. Not read, so a Fable session started by one of
+these starts on the default login with no notice: no model named anywhere,
+`--model default` or a settings `model` of `default` (Claude Code then takes
+the login's own default, which its plan or organization decides);
+`ANTHROPIC_DEFAULT_MODEL` and `ANTHROPIC_DEFAULT_<FAMILY>_MODEL` (`--model
+opus` with `ANTHROPIC_DEFAULT_OPUS_MODEL=claude-fable-5-2` reads as Opus);
+managed settings; and a wrapper command (`tycswap start -- bash -lc "claude
+--model fable"`: only the child's own arguments are read).
 
 **Tests.** `TestSessionFamilySources` drives each source, each precedence
 pair, a last assistant line beyond 1 MiB and one just inside it, a malformed
-transcript, a non-UUID id, a bare `--resume`, `--continue` and `-c`;
+transcript, a non-UUID id, a bare `--resume`, `--continue` and `-c`, the
+settings' `env` block, `--settings` as a file and as JSON, and a provider's
+id; `TestModelFamilyOfAProviderID` and `TestProviderIDRecordsNoSessionModel`
+in `reporting` the provider ids;
 `TestSessionFamilyTranscriptStaysInProjects` refuses file and directory
 symlinks out of `projects/`. `TestStartPicksTheStoreBySessionModel` runs
 `start` for every table row, inherited values kept or removed, an unknown

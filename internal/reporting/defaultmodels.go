@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -66,16 +67,39 @@ func readDefaultSessionModels(root string) map[string]defaultSessionModel {
 	return file.Sessions
 }
 
+var modelFamilies = []string{"fable", "opus", "sonnet", "haiku"}
+
 // ModelFamily is the family of a Claude model id or alias ("fable", "opus",
-// "sonnet", "haiku"), "" for anything else.
+// "sonnet", "haiku"), "" for anything else. A provider's id, such as
+// us.anthropic.claude-fable-5-2-v1:0, answers the one family it names as a
+// whole word.
 func ModelFamily(model string) string {
+	if family := claudeFamily(model); family != "" {
+		return family
+	}
+	m := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(model)), "[1m]")
+	found := ""
+	for _, word := range strings.FieldsFunc(m, func(ch rune) bool { return !(ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9') }) {
+		if slices.Contains(modelFamilies, word) {
+			if found != "" && found != word {
+				return ""
+			}
+			found = word
+		}
+	}
+	return found
+}
+
+// claudeFamily is the family of a Claude model alias or claude-<family>-… id,
+// "" for anything else, a provider's id included.
+func claudeFamily(model string) string {
 	m := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(model)), "[1m]")
 	for _, ch := range m {
 		if !(ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '-') {
 			return ""
 		}
 	}
-	for _, family := range []string{"fable", "opus", "sonnet", "haiku"} {
+	for _, family := range modelFamilies {
 		if m == family || strings.HasPrefix(m, "claude-"+family+"-") && len(m) > len("claude-"+family+"-") {
 			return family
 		}
@@ -87,9 +111,10 @@ func ModelFamily(model string) string {
 // status line reports it (DESIGN A76), and its store: "fable" for a session on
 // the Fable store, "" for the default store's (A102). It reports whether that
 // was news: a session seen for the first time or one that changed family or
-// store (A77). An unknown model or a busy lock records nothing.
+// store (A77). An unknown model, a provider's id (such a session runs on no
+// login of tycswap's; v0.15.1 recorded none) or a busy lock records nothing.
 func RecordDefaultSessionModel(root, sessionID, model, store string, now time.Time) (bool, error) {
-	family := ModelFamily(model)
+	family := claudeFamily(model)
 	if sessionID == "" || family == "" {
 		return false, nil
 	}
