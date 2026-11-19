@@ -199,7 +199,8 @@ func checkFableLive(a fableAdapter, sw *core.Switcher, s settings.AutoSwitchSett
 
 // leaveDeadFableLogin moves the Fable store off account dead's quarantined
 // login onto the account the cached usage ranks first among those with a
-// usable Fable login, else the first of them; with none it empties the store.
+// usable Fable login, else the first of them not known to be at a limit, else
+// the first; with none it empties the store.
 func leaveDeadFableLogin(a fableAdapter, sw *core.Switcher, dead, email string, s settings.AutoSwitchSettings, models []string, emit func(autoswitch.Event)) (moved, on bool) {
 	var pool []string
 	for _, num := range a.SwitchableAccountNumbers() {
@@ -240,7 +241,9 @@ func leaveDeadFableLogin(a fableAdapter, sw *core.Switcher, dead, email string, 
 			Detail: "Account-" + dead + "'s Fable login is dead and no other account has a usable one; the Fable store is empty, so Fable sessions start on the default login"})
 		return false, false
 	}
-	target := append(autoswitch.StartTargets(pool, a.UsageEntriesByAccount(map[string]bool{}), s, models, sw.Clk.Now()), pool...)[0]
+	entries, now := a.UsageEntriesByAccount(map[string]bool{}), sw.Clk.Now()
+	ranked := append(autoswitch.StartTargets(pool, entries, s, models, now), autoswitch.NotKnownAtALimit(pool, entries, models, now)...)
+	target := append(ranked, pool...)[0]
 	switched := false
 	held, err := autoswitch.EngineSwitch(a.fable.StatePath(), sw.Clk, s, warn, func() (string, error) {
 		if stays() {

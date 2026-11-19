@@ -207,6 +207,34 @@ func TestDeadLiveFableLoginWithEveryAccountAtItsLimit(t *testing.T) {
 	}
 }
 
+// When no account of the pool has known room, the move off a dead live login
+// takes one whose usage is not read yet before one known to be at a limit:
+// account 1 has 7d 100 %, account 2 no usage row (F2-8).
+func TestDeadLiveFableLoginTakesAnUnreadAccountOverAFullOne(t *testing.T) {
+	fx := fableTickFixture{def: "4", live: "3", logins: []string{"1", "2", "3"},
+		usage: map[string][3]float64{"1": {10, 100, 92}, "3": {10, 20, 10}, "4": {10, 20, 30}},
+		refresh: func(creds string) oauth.RefreshOutcome {
+			if strings.Contains(creds, `"rt-f3"`) {
+				return oauth.RefreshOutcome{Error: oauth.ErrInvalidGrant}
+			}
+			return oauth.RefreshOutcome{Error: oauth.ErrTransient}
+		}}
+	sw, _ := fx.build(t)
+	f, _ := sw.Store.ForFable()
+	expired := fableLoginOf("3", sw.Clk.Now().Add(-time.Hour).UnixMilli())
+	if err := f.WriteAccountCredentials("3", fableEmail("3"), expired); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(paths.FableStoreDir(sw.BackupDir()), ".credentials.json"), expired)
+	_, out, _ := runCodex(t, "", "auto", "--once", "--json")
+	_, fable, _ := splitByStore(t, out)
+	ev := eventOf(fable, "switch")
+	to, _ := ev["to"].(map[string]any)
+	if ev == nil || ev["trigger"] != "failover" || to["number"] != float64(2) || !strings.Contains(storeLive(t, sw), "at-f2") {
+		t.Fatalf("Fable events %v, store %s; want the failover to Account-2", fable, storeLive(t, sw))
+	}
+}
+
 // A live Fable login with no refresh token cannot be refreshed: it is
 // quarantined and left as an invalid_grant one is (DESIGN A102).
 func TestLiveFableLoginWithoutARefreshTokenIsLeft(t *testing.T) {

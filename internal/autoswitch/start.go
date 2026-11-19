@@ -285,3 +285,18 @@ func StartTargets(candidates []string, entries map[string]usage.UsageEntry, set 
 	}
 	return result
 }
+
+// NotKnownAtALimit is candidates, in their order, less those whose cached
+// usage, read as of now, shows a limit reached: the move off a dead live
+// Fable login takes an account whose usage is not read yet before one known
+// to be full when start's ranking names none (DESIGN A102).
+func NotKnownAtALimit(candidates []string, entries map[string]usage.UsageEntry, models []string, now time.Time) []string {
+	values := decisionValuesAt(entries, now)
+	var out []string
+	for _, num := range candidates {
+		if room := usage.AccountHeadroomByClass(usageDict(values[num]), models).Binding(); room == nil || *room > 0 {
+			out = append(out, num)
+		}
+	}
+	return out
+}

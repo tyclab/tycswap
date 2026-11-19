@@ -8337,7 +8337,10 @@ race; the result goes into the store and the account's Fable login file. An
 as above, with the live credential's fingerprint. A live login quarantined so,
 now or by an earlier keep-alive, is left at once: the store moves to the
 account `autoswitch.StartTargets` ranks first in the Fable pool, else the
-pool's first (`switch`, trigger `failover`, stamped as the engine's own by
+pool's first account not known to be at a limit
+(`autoswitch.NotKnownAtALimit`: one whose usage is not read yet comes before
+one whose cached reading shows a limit reached, 2026-11-19), else the pool's
+first (`switch`, trigger `failover`, stamped as the engine's own by
 `autoswitch.EngineSwitch`), or, with an empty pool, is emptied (`no-switch`,
 `no-viable-target`, the tick blocked), and `start` then sends Fable sessions
 to the default login with its notice. Under the Fable state lock the move
@@ -8631,8 +8634,8 @@ quarantined, the token not dead, the counted-model coverage, the guarded
 preparation with its ownership checks, and the re-check under the state
 lock, which ranks by the same rule. `autoswitch.StartTargets`, which the move
 off a dead live Fable login ranks its pool with (`leaveDeadFableLogin`,
-A102), is that ranking without the logins at a limit: its order and its
-fallback to the pool's first are unchanged.
+A102), is that ranking without the logins at a limit: its order is
+unchanged; the move's fallback when it names none is A102's.
 
 **2. The start hold.** When `start` settles on a login at a limit by that
 ranking while auto-switch is on, by switching to it or because it is already
