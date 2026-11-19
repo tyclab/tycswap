@@ -28,12 +28,12 @@ const transcriptTail = 1 << 20
 var sessionUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // startEnvironment is the child environment for argv (program first) when no
-// override holds, whether the session starts on the Fable store, which skips
-// the default start-login selection, and the notice to print. Only a Fable
-// session on a usable Fable store gets CLAUDE_SECURESTORAGE_CONFIG_DIR; every
-// other session loses it when it names the store. Without Fable logins the
+// override holds, whether the session starts on the Fable store, where start
+// selects a start login too, and the notice to print. Only a Fable session on
+// a usable Fable store gets CLAUDE_SECURESTORAGE_CONFIG_DIR; every other
+// session loses it when it names the store. Without Fable logins the
 // session's model is not even read.
-func startEnvironment(env, argv []string, fable store.FableState, hasFableLogins bool, storeDir string) (childEnv []string, skipSelection bool, notice string) {
+func startEnvironment(env, argv []string, fable store.FableState, hasFableLogins bool, storeDir string) (childEnv []string, onFable bool, notice string) {
 	if !hasFableLogins || startSessionFamily(argv, env) != "fable" {
 		return withoutFableStore(env, storeDir), false, ""
 	}
@@ -107,13 +107,6 @@ func withFableStore(env []string, storeDir string) []string {
 		out = append(out, secureStorageEnv+"="+storeDir)
 	}
 	return out
-}
-
-func accountSuffix(slot string) string {
-	if slot == "" {
-		return ""
-	}
-	return " (Account-" + slot + ")"
 }
 
 // sessionFamily is the model family of the Claude session that args (the

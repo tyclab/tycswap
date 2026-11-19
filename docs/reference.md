@@ -1442,16 +1442,29 @@ fable"`: only the child's own arguments are read).
 
 | Family | Fable store | Child environment | Selection | Notice on stderr |
 | --- | --- | --- | --- | --- |
-| Fable | on and usable | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | skipped | none |
+| Family | Fable store | Child environment | Selection | Notice on stderr |
+| --- | --- | --- | --- | --- |
+| Fable | on and usable, a marked account with a usable Fable login | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | runs, then runs on the Fable store too | the selections' own, the Fable store's starting `Fable store: ` |
+| Fable | on and usable, marks but none with a usable Fable login | that variable removed if it named the store | runs | `tycswap start: no start login has a Fable login; starting on the default login.` |
+| Fable | on and usable, no marks, or auto-switch off without `--account` | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | runs; the Fable store stays | none |
 | Fable | off or unusable, with Fable logins | that variable removed if it named the store | runs | `tycswap start: the Fable store has no usable login (<reason>); starting on the default login.` |
 | other, none, or no Fable login | – | that variable removed if it named the store | runs | none |
 
+On the Fable store the candidates are the marked accounts that are enabled
+and eligible, whose plan offers Fable, that hold a Fable login and are not
+quarantined in `fable/autoswitch_state.json`; the current account is the Fable
+store's live one. They rank as above, counted on the Fable windows, and a
+switch moves the Fable store only (`tycswap start: Fable store: Switched to
+start login Account-<n>.`, logged `Switched the Fable store to account <n> by
+start`), stamped in `fable/autoswitch_state.json`. A selection there that
+fails otherwise says so and the session starts on the Fable store where it
+sits. `--account ID` selects the default login and is the Fable store's only
+candidate when it has a usable Fable login; otherwise the session starts on the
+default login with the notice above.
+
 Every other variable passes unchanged, but `TYCSWAP_START_HOLD` (below). The
 store's state comes from its files only (no network); a live Fable login whose account is unknown counts as
-usable. With a Fable session on the store, `--account ID` still selects the
-default login and prints `tycswap start: --account selects the default login;
-this Fable session starts on the Fable store (Account-N).`; the Fable store does
-not move. A box without a Fable login passes the environment unchanged, less a
+usable. A box without a Fable login passes the environment unchanged, less a
 variable naming the Fable store. macOS has no Fable store and never sets the
 variable. A session keeps the store it started on: `/model` does not move it,
 and Fable subagents of another session run on that session's store.
@@ -1492,7 +1505,10 @@ stays `tycswap start: Switched to start login Account-<n>.` A hold that
 cannot be written reads `tycswap start: Could not hold auto-switch for the
 starting session: <error>` and the child gets no token. With auto-switch off,
 `--account` at its limit switches as asked, with no hold. A login with room
-gets no hold: `start` is then as before.
+gets no hold: `start` is then as before. A Fable session's start login on the
+Fable store at a limit gets its hold in `fable/autoswitch_state.json`, which
+holds the Fable store's check, under the same token when the default login
+holds one too: the child gets one token.
 
 While a hold runs, every engine (the timer's and the status line's
 `auto --once`, the loop, the dashboard's) makes no switch, whatever the
@@ -1511,10 +1527,11 @@ settings as a SessionStart hook:
 Without `TYCSWAP_START_HOLD` it exits at once and opens nothing. It reads the
 hook's JSON on stdin unless stdin is a terminal (unreadable or empty input
 counts as `startup`) and does nothing for `source` `clear` or `compact`. It
-removes its token and the ended holds under the state lock; a token that is
-no longer there (its hold ended, or released before) changes nothing else. It
-then waits while another session is starting (it reads the state every 100 ms,
-for at most 30 s), and runs one
+removes its token and the ended holds under each state file's lock, the
+default store's and the Fable store's; a token that is no longer there (its
+hold ended, or released before) changes nothing else. It then waits while
+another session is starting (it reads both state files every 100 ms, for at
+most 30 s), and runs one
 tick of the default store and the Fable store, as `auto --once` does, without
 its group retirement and Codex tick. It prints nothing on stdout, since a
 hook's stdout goes into the session, and exits 0 whatever happens; problems go
@@ -5225,7 +5242,7 @@ Inside the backup root:
 | `cache/usage.json` | Cached usage measurements. |
 | `live_lineage.json` | The chain record of the default login's live credential (DESIGN A68): `{"schemaVersion": 1, "fingerprint": "<sha256>", "slot": "<n>", "identity": {"uuid", "email", "orgUuid"}, "seenAt": <epoch-seconds>}`, mode 0600. Written without a lock (last writer wins) when the profile endpoint names the slot of the default login's live credential, and only when the record changes; a dry run or a store-only read never writes it, and a group scope's own login never reads or writes it. A derived cache: a missing or malformed file reads as absent, and a record whose slot the roster no longer maps to its identity is ignored. |
 | `credentials-fable/` | The accounts' Fable logins (DESIGN A100): `.creds-<n>-<email>.enc` and `.enc.prev`, the format of `credentials/`, always files, mode 0600; the Fable store's unclaimed stash. Absent until the first Fable login. |
-| `fable/` | The Fable store's scope (DESIGN A100), absent until the first Fable login: `autoswitch_state.json` (+ `.autoswitch_state.lock`), its engine state and hold, the root file's schema; `live_lineage.json`, its chain record, the root record's schema; `store/`, the Fable store itself, whose `.credentials.json` (0600) holds the live Fable login and the store's own `mcpOAuth`/`mcpOAuthClientConfig`, beside Claude Code's `store/.storage-write.lock/` and `store.lock/`. |
+| `fable/` | The Fable store's scope (DESIGN A100), absent until the first Fable login: `autoswitch_state.json` (+ `.autoswitch_state.lock`), its engine state, hold and `tycswap start`'s start holds, the root file's schema; `live_lineage.json`, its chain record, the root record's schema; `store/`, the Fable store itself, whose `.credentials.json` (0600) holds the live Fable login and the store's own `mcpOAuth`/`mcpOAuthClientConfig`, beside Claude Code's `store/.storage-write.lock/` and `store.lock/`. |
 | `statusline.json` | Label and quota per account for Claude Code status lines (see STATUS LINE STATE). Derived: never copied by `tycswap migrate`. |
 | `.statusline.lock` | Held while `statusline.json` is rebuilt. No data. |
 | `cache/update_check.json` | Last passive update-check result (`{"timestamp": <epoch-seconds>, "data": <latest-version>}`). |

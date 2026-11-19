@@ -37,10 +37,17 @@ func startStarted(in io.Reader) {
 		}
 	}()
 	defer oauth.RedirectOutput(io.Discard)()
-	if err := autoswitch.ReleaseStartHold(sw.StatePath(), sw.Clk, token); err != nil {
-		sw.Log.Warningf("start --started: the start hold was not released: %v", err)
+	// One token holds both stores: the default one and the Fable store's.
+	statePaths := []string{sw.StatePath()}
+	if f, err := sw.Store.ForFable(); err == nil {
+		statePaths = append(statePaths, f.StatePath())
 	}
-	autoswitch.WaitStartHolds(sw.StatePath(), sw.Clk)
+	for _, path := range statePaths {
+		if err := autoswitch.ReleaseStartHold(path, sw.Clk, token); err != nil {
+			sw.Log.Warningf("start --started: the start hold was not released: %v", err)
+		}
+	}
+	autoswitch.WaitStartHolds(statePaths, sw.Clk)
 	logProblems := func(ev autoswitch.Event) {
 		if ev.Kind() == "error" {
 			sw.Log.Warningf("start --started: %s", ev.Human())

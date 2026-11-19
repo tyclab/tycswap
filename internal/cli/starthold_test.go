@@ -189,6 +189,12 @@ func TestStartedMovesTheLoginOnOnceTheSessionIsUp(t *testing.T) {
 			if log := readOrAbsent(t, filepath.Join(sw.BackupDir(), "tycswap.log")); strings.Count(log, "Switched to account 5 by engine:at-limit") != 1 {
 				t.Fatalf("log:\n%s", log)
 			}
+			// No Fable login: the Fable store's state is read for a hold, never created.
+			for _, dir := range []string{paths.FableScopeDir(sw.BackupDir()), paths.FableCredentialsDir(sw.BackupDir())} {
+				if _, err := os.Stat(dir); !os.IsNotExist(err) {
+					t.Fatalf("%s exists (%v)", dir, err)
+				}
+			}
 		})
 	}
 }

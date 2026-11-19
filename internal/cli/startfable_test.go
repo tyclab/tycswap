@@ -142,26 +142,26 @@ func envDiff(got, want []string) []string {
 func TestStartPicksTheStoreBySessionModel(t *testing.T) {
 	const noUsable = "tycswap start: the Fable store has no usable login (%s); starting on the default login.\n"
 	for _, tc := range []struct {
-		name, state      string
-		args             []string
-		inherit          bool
-		wantVar, selects bool
-		notice           string
+		name, state string
+		args        []string
+		inherit     bool
+		wantVar     bool
+		notice      string
 	}{
 		{name: "fable, on", state: "on", args: []string{"--model", "fable"}, wantVar: true},
 		{name: "fable, on, inherited value kept", state: "on", args: []string{"--model", "fable"}, inherit: true, wantVar: true},
 		{name: "fable, live slot unknown counts as usable", state: "unknown", args: []string{"--model", "fable"}, wantVar: true},
-		{name: "fable, off", state: "off", args: []string{"--model", "fable"}, selects: true,
+		{name: "fable, off", state: "off", args: []string{"--model", "fable"},
 			notice: strings.Replace(noUsable, "%s", "the store is empty", 1)},
-		{name: "fable, off, inherited value removed", state: "off", args: []string{"--model=claude-fable-5-1[1m]"}, inherit: true, selects: true,
+		{name: "fable, off, inherited value removed", state: "off", args: []string{"--model=claude-fable-5-1[1m]"}, inherit: true,
 			notice: strings.Replace(noUsable, "%s", "the store is empty", 1)},
-		{name: "fable, unusable", state: "unusable", args: []string{"--model", "fable"}, inherit: true, selects: true,
+		{name: "fable, unusable", state: "unusable", args: []string{"--model", "fable"}, inherit: true,
 			notice: strings.Replace(noUsable, "%s", "Account-1's Fable login: sign in again", 1)},
-		{name: "opus, on", state: "on", args: []string{"--model", "opus"}, selects: true},
-		{name: "opus, on, inherited value removed", state: "on", args: []string{"--model", "opus"}, inherit: true, selects: true},
-		{name: "no family, on, inherited value removed", state: "on", inherit: true, selects: true},
-		{name: "fable, no Fable logins", state: "none", args: []string{"--model", "fable"}, selects: true},
-		{name: "fable, no Fable logins, inherited value removed", state: "none", args: []string{"--model", "fable"}, inherit: true, selects: true},
+		{name: "opus, on", state: "on", args: []string{"--model", "opus"}},
+		{name: "opus, on, inherited value removed", state: "on", args: []string{"--model", "opus"}, inherit: true},
+		{name: "no family, on, inherited value removed", state: "on", inherit: true},
+		{name: "fable, no Fable logins", state: "none", args: []string{"--model", "fable"}},
+		{name: "fable, no Fable logins, inherited value removed", state: "none", args: []string{"--model", "fable"}, inherit: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sw, rec := fableStart(t, tc.state)
@@ -185,8 +185,9 @@ func TestStartPicksTheStoreBySessionModel(t *testing.T) {
 			if !reflect.DeepEqual(rec.env, want) {
 				t.Fatalf("child environment differs in %q", envDiff(rec.env, want))
 			}
-			if wantSel := map[bool]int{true: 1, false: 0}[tc.selects]; len(rec.selections) != wantSel || wantSel == 1 && rec.selections[0] != "" {
-				t.Fatalf("selections = %q, want %d", rec.selections, wantSel)
+			// The default selection runs for every session (DESIGN A105).
+			if len(rec.selections) != 1 || rec.selections[0] != "" {
+				t.Fatalf("selections = %q, want the default selection once", rec.selections)
 			}
 			if after, _ := os.ReadFile(filepath.Join(storeDir, ".credentials.json")); string(after) != string(liveBefore) {
 				t.Fatal("start changed the Fable store")
@@ -257,8 +258,12 @@ func TestStartOverridesKeepAFableSessionUnchanged(t *testing.T) {
 	}
 }
 
+// --account with a Fable session selects the default login and is the Fable
+// store's sole candidate; an account without a usable Fable login (here no
+// plan offers Fable) starts the session on the default login, and the Fable
+// store does not move (DESIGN A105).
 func TestStartAccountWithAFableSession(t *testing.T) {
-	for state, suffix := range map[string]string{"on": " (Account-1)", "unknown": ""} {
+	for _, state := range []string{"on", "unknown"} {
 		t.Run(state, func(t *testing.T) {
 			sw, rec := fableStart(t, state)
 			sw.Store.OAuth = &oauth.FakeClient{}
@@ -269,15 +274,15 @@ func TestStartAccountWithAFableSession(t *testing.T) {
 			}
 			chainBefore, _ := os.ReadFile(filepath.Join(paths.FableScopeDir(paths.GetBackupRoot()), "live_lineage.json"))
 			code, _, stderr := runCLI(t, []string{"start", "--account", "2", "--", "command", "--model", "fable"}, false, false)
-			notice := "tycswap start: --account selects the default login; this Fable session starts on the Fable store" + suffix + ".\n"
-			if code != 23 || strings.Count(stderr, notice) != 1 || strings.Count(stderr, "Fable") != 2 {
+			notice := "tycswap start: no start login has a Fable login; starting on the default login.\n"
+			if code != 23 || strings.Count(stderr, notice) != 1 || strings.Contains(stderr, "--account selects") {
 				t.Fatalf("code=%d stderr=%q", code, stderr)
 			}
 			if !reflect.DeepEqual(rec.selections, []string{"2"}) {
 				t.Fatalf("selections = %q, want the default login's selection of account 2", rec.selections)
 			}
-			if got := envValue(rec.env, secureStorageVar); got != storeDir {
-				t.Fatalf("%s = %q, want %q", secureStorageVar, got, storeDir)
+			if got := envValue(rec.env, secureStorageVar); got != "" {
+				t.Fatalf("%s = %q, want the default login", secureStorageVar, got)
 			}
 			if after, _ := os.ReadFile(filepath.Join(storeDir, ".credentials.json")); string(after) != string(liveBefore) {
 				t.Fatal("--account moved the Fable store")
@@ -322,7 +327,7 @@ func TestStartOnWindowsMatchesTheVariableCaseInsensitively(t *testing.T) {
 			if !reflect.DeepEqual(rec.env, want) {
 				t.Fatalf("child environment differs in %q", envDiff(rec.env, want))
 			}
-			if wantSel := map[bool]int{true: 0, false: 1}[tc.wantVar]; len(rec.selections) != wantSel {
+			if len(rec.selections) != 1 {
 				t.Fatalf("selections = %q", rec.selections)
 			}
 		})
@@ -342,7 +347,8 @@ func TestStartOnMacOSLeavesAFableSessionAsBefore(t *testing.T) {
 func TestStartHelpNamesTheFableStore(t *testing.T) {
 	cleanHome(t)
 	code, out, _ := runCLI(t, []string{"start", "--help"}, false, false)
-	if code != 0 || !strings.Contains(out, "\nSessions on a Fable model start on the Fable store when one is on (tycswap add --login --lineage fable).\n") {
+	if code != 0 || !strings.Contains(out, "\nSessions on a Fable model start on the Fable store when one is on (tycswap add --login --lineage fable),\n"+
+		"which moves to a marked login with a Fable login too; with marks but none such, they start on the default login.\n") {
 		t.Fatalf("code=%d help=%q", code, out)
 	}
 }

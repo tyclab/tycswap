@@ -609,6 +609,17 @@ It makes no usage request. `--account ID` chooses only that account, without
 requiring a mark, and works while auto-switch is off; all other eligibility
 checks still apply. This does not grant model access or change managed policy.
 
+A Fable session that starts on the Fable store (see [The Fable
+store](#run-accounts-in-parallel)) gets a start login there too, besides the
+default login's: the marked accounts with a usable Fable login are the
+candidates, ranked the same way, and `start` moves the Fable store to the
+first (`tycswap start: Fable store: Switched to start login Account-2.`). With
+marks but no usable Fable login among them, the session starts on the default
+login (`tycswap start: no start login has a Fable login; starting on the
+default login.`). `--account ID` is the Fable store's only candidate when it
+has a usable Fable login, else the same notice. Without marks, or with
+auto-switch off and no `--account`, the Fable store stays where it is.
+
 Selection is best effort. Missing marks and an already-marked current login
 are silent. An unavailable target or store prints a clear error on stderr,
 then launches once on the current login. An actual switch stamps the engine's
@@ -626,10 +637,12 @@ hook in Claude Code's settings (`~/.claude/settings.json`):
 {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "tycswap start --started", "timeout": 45}]}]}}
 ```
 
-`tycswap start --started` ends the session's hold and, once no other session
-is starting, runs one auto-switch check, which moves the login on. Without the
-hook the login stays for 30 s, then moves at the next check, and the session's
-first request can hit the limit.
+A Fable session held on the Fable store's start login holds the Fable
+store's check the same way; one token holds both stores. `tycswap start
+--started` ends the session's holds and, once no other session is starting,
+runs one auto-switch check, which moves the logins on. Without the hook a login
+stays for 30 s, then moves at the next check, and the session's first request
+can hit the limit.
 
 The child's arguments pass unchanged, and so does its environment, except
 `TYCSWAP_START_HOLD` (set for a session with a start hold, removed from any

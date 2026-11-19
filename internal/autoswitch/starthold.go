@@ -44,8 +44,9 @@ func startHoldLeft(state map[string]any, now float64) float64 {
 }
 
 // settleStartHolds drops the holds in state that no longer run and, with
-// hold, adds one ending StartHoldS from now; it returns the new hold's token.
-func settleStartHolds(state map[string]any, now float64, hold bool) string {
+// hold, adds one ending StartHoldS from now under token, a new one for "";
+// it returns the new hold's token.
+func settleStartHolds(state map[string]any, now float64, hold bool, token string) string {
 	holds, _ := state[startHoldsKey].(map[string]any)
 	kept := map[string]any{}
 	for token, end := range holds {
@@ -53,11 +54,14 @@ func settleStartHolds(state map[string]any, now float64, hold bool) string {
 			kept[token] = end
 		}
 	}
-	token := ""
-	if hold {
+	if !hold {
+		token = ""
+	} else if token == "" {
 		raw := make([]byte, 16)
 		_, _ = rand.Read(raw)
 		token = hex.EncodeToString(raw)
+	}
+	if token != "" {
 		kept[token] = now + StartHoldS
 	}
 	if len(kept) == 0 {
@@ -81,7 +85,7 @@ func ReleaseStartHold(statePath string, clk clock.Clock, token string) error {
 		holds, _ := state[startHoldsKey].(map[string]any)
 		before := len(holds)
 		delete(holds, token)
-		settleStartHolds(state, clock.Seconds(clk), false)
+		settleStartHolds(state, clock.Seconds(clk), false, "")
 		if after, _ := state[startHoldsKey].(map[string]any); len(after) == before {
 			return nil
 		}
@@ -89,16 +93,24 @@ func ReleaseStartHold(statePath string, clk clock.Clock, token string) error {
 	})
 }
 
-// WaitStartHolds returns once the state file at statePath holds no running
-// start hold, reading it every startHoldPoll on clk, and at the latest
-// StartHoldS from now, when every hold it found has ended.
-func WaitStartHolds(statePath string, clk clock.Clock) {
+// WaitStartHolds returns once none of the state files at statePaths holds a
+// running start hold, reading them every startHoldPoll on clk, and at the
+// latest StartHoldS from now, when every hold it found has ended.
+func WaitStartHolds(statePaths []string, clk clock.Clock) {
 	sleep := time.Sleep
 	if s, ok := clk.(clock.Sleeper); ok {
 		sleep = s.Sleep
 	}
+	held := func(now float64) bool {
+		for _, path := range statePaths {
+			if startHoldLeft(readStateFile(path), now) > 0 {
+				return true
+			}
+		}
+		return false
+	}
 	deadline := clock.Seconds(clk) + StartHoldS
-	for now := clock.Seconds(clk); now < deadline && startHoldLeft(readStateFile(statePath), now) > 0; now = clock.Seconds(clk) {
+	for now := clock.Seconds(clk); now < deadline && held(now); now = clock.Seconds(clk) {
 		sleep(startHoldPoll)
 	}
 }

@@ -155,7 +155,7 @@ func (e *Engine) settleStart(snapshot func() (StartSnapshot, error), account, ta
 			outcome.Detail = "Switched to start login Account-" + target + ", which is at its limit; auto-switch moves on once the session is up."
 		}
 		stampSwitch(state, target, e.nowSeconds(), false)
-		token := settleStartHolds(state, e.nowSeconds(), hold)
+		token := settleStartHolds(state, e.nowSeconds(), hold, e.holdToken)
 		if err := e.writeState(state); err != nil {
 			outcome.Reason = "stamp-failed"
 			outcome.Detail += " Could not record the auto-switch cooldown: " + err.Error()
@@ -174,7 +174,7 @@ func (e *Engine) settleStart(snapshot func() (StartSnapshot, error), account, ta
 // state lock the caller holds; a failed write is said in the outcome.
 func (e *Engine) recordStartHold(outcome *StartOutcome, state map[string]any) {
 	state["schemaVersion"] = StateSchemaVersion
-	token := settleStartHolds(state, e.nowSeconds(), true)
+	token := settleStartHolds(state, e.nowSeconds(), true, e.holdToken)
 	if err := e.writeState(state); err != nil {
 		outcome.Detail = strings.TrimSpace(outcome.Detail + " Could not hold auto-switch for the starting session: " + err.Error())
 		return

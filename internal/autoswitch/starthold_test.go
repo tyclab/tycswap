@@ -453,12 +453,12 @@ func (c *sleepHook) Sleep(d time.Duration) {
 func TestWaitStartHolds(t *testing.T) {
 	path := filepath.Join(t.TempDir(), StateFilename)
 	clk := &sleepHook{Fake: newClk()}
-	WaitStartHolds(path, clk)
+	WaitStartHolds([]string{path}, clk)
 	if len(clk.Slept) != 0 {
 		t.Fatalf("slept %v without a hold", clk.Slept)
 	}
 	writeHolds(t, path, map[string]any{"other": clock.Seconds(clk) + 0.35})
-	WaitStartHolds(path, clk)
+	WaitStartHolds([]string{path}, clk)
 	if want := []time.Duration{100 * time.Millisecond, 100 * time.Millisecond, 100 * time.Millisecond, 100 * time.Millisecond}; !reflect.DeepEqual(clk.Slept, want) {
 		t.Fatalf("slept %v, want %v", clk.Slept, want)
 	}
@@ -469,7 +469,7 @@ func TestWaitStartHolds(t *testing.T) {
 			t.Error(err)
 		}
 	}
-	WaitStartHolds(path, clk)
+	WaitStartHolds([]string{path}, clk)
 	if len(clk.Slept) != 1 {
 		t.Fatalf("slept %v, want once: the other session reported", clk.Slept)
 	}
@@ -481,7 +481,7 @@ func TestWaitStartHolds(t *testing.T) {
 		}
 	}
 	writeHolds(t, path, map[string]any{"first": clock.Seconds(clk) + 30})
-	WaitStartHolds(path, clk)
+	WaitStartHolds([]string{path}, clk)
 	if waited := clk.Now().Sub(start); waited < 30*time.Second || waited > 31*time.Second {
 		t.Fatalf("waited %v while sessions kept starting, want the 30 s bound", waited)
 	}
