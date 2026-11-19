@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Fixed:** `tycswap switch --store fable` took its account only right after the verb or after `--store fable`: `switch --json --store fable 2` answered the parser's `unrecognized arguments: 2`, and `switch --store fable --empty 2` the same two usage lines instead of `--store fable takes an account or --empty`. With `--store fable` the account, `--json` and `--debug` now come in any order, and an account with `--empty` gives the one documented line in every order; without `--store fable` the switch takes its arguments as before (DESIGN A100).
 - **Fixed:** the Auto tab's Fable store line named the account the Fable store would take next also while no Fable tick acts on it: with auto-switch off it now reads `Fable store: not checked while off`, and with the Fable store off `Fable store: off; tycswap switch --store fable <account> turns it on` (DESIGN A102, A104).
 - **Fixed:** the docs said a switch of the Fable store by hand logs `Switched the Fable store to account N by hand`, and that the dashboard writes that line beside its own. Each move writes one line with its actor, as the default switch does: `by cli(…)` from `switch --store fable` and `add --login --lineage fable`, `by tray`, `by dashboard(…)`; `Emptied the Fable store` likewise, `by hand` only when `remove` or `add --slot` empties it (DESIGN A100, A104).
 - **Fixed:** `POST /api/switch/{key}?store=` with an empty `store` switched the default login, as no `store` does; it now answers 400 like any other value but `fable`. The page and the tray never send it (DESIGN A104).

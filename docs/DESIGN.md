@@ -8078,11 +8078,14 @@ itself with its own (A104), so each move has one line. `EngineSwitchFable`
 stamps nothing (the engine does, A102). `EmptyFable` runs under the same
 state lock while the store holds a login, and `EmptyFableBy` logs `Emptied
 the Fable store by <actor>` alike, `by hand` when `remove` or `add --slot`
-empties the store (A101). On the command line: `tycswap switch --store fable <id>`, `tycswap
-switch --store fable --empty`, and `--store default`, the switch as without
-`--store`. `--store fable` with `--strategy`, `--force`, no id, or an id and
-`--empty` exits 2 with one line, `--store fable takes an account or
---empty`; another store name exits 2 with `unknown store: X`.
+empties the store (A101). On the command line: `tycswap switch --store fable
+<id>`, `tycswap switch --store fable --empty`, and `--store default`, the
+switch as without `--store`. With `--store fable` the id may stand anywhere
+among the options (`translate.go` takes the first argument that is neither
+an option nor an option's value); without it the id still comes first, as
+before. `--store fable` with `--strategy`, `--force`, no id, or an id and
+`--empty` exits 2 with one line in any order, `--store fable takes an
+account or --empty`; another store name exits 2 with `unknown store: X`.
 
 **Per-lineage quarantine.** A dead Fable login is quarantined in
 `fable/autoswitch_state.json` only, in the root file's `quarantine` shape

@@ -145,6 +145,59 @@ func TestSwitchStoreArgumentErrors(t *testing.T) {
 	}
 }
 
+// permutations is every order of units, each unit's tokens kept together.
+func permutations(units [][]string) [][]string {
+	if len(units) == 1 {
+		return [][]string{append([]string(nil), units[0]...)}
+	}
+	var out [][]string
+	for i, head := range units {
+		rest := append(append([][]string(nil), units[:i]...), units[i+1:]...)
+		for _, tail := range permutations(rest) {
+			out = append(out, append(append([]string(nil), head...), tail...))
+		}
+	}
+	return out
+}
+
+// `--store fable`, the account, --json and --debug may come in any order;
+// an account with --empty is the one documented line in every order
+// (DESIGN A100).
+func TestSwitchStoreFableFlagOrders(t *testing.T) {
+	for _, store := range [][]string{{"--store", "fable"}, {"--store=fable"}} {
+		for _, argv := range permutations([][]string{store, {"2"}, {"--json"}, {"--debug"}}) {
+			t.Run(strings.Join(argv, " "), func(t *testing.T) {
+				fableCLISwitcher(t)
+				code, out, errb := runSub(t, append([]string{"switch"}, argv...)...)
+				var doc struct {
+					Store string         `json:"store"`
+					To    map[string]any `json:"to"`
+				}
+				if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil || doc.Store != "fable" || doc.To["number"] != 2.0 {
+					t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errb)
+				}
+			})
+		}
+		for _, argv := range permutations([][]string{store, {"2"}, {"--empty"}}) {
+			t.Run(strings.Join(argv, " "), func(t *testing.T) {
+				fableCLISwitcher(t)
+				code, out, errb := runSub(t, append([]string{"switch"}, argv...)...)
+				if want := "tycswap: error: --store fable takes an account or --empty\n"; code != 2 || out != "" || errb != want {
+					t.Fatalf("exit %d, stdout %q, stderr %q; want 2 and %q", code, out, errb, want)
+				}
+			})
+		}
+	}
+	// Without --store fable the account still comes first, as in v0.15.1.
+	cleanHome(t)
+	for _, argv := range [][]string{{"switch", "--json", "2"}, {"switch", "--json", "--store", "default", "2"}} {
+		want := "usage: tycswap <command> [args] [options]\ntycswap: error: unrecognized arguments: 2\n"
+		if code, out, errb := runSub(t, argv...); code != 2 || out != "" || errb != want {
+			t.Errorf("%v: exit %d, stdout %q, stderr %q; want 2 and %q", argv, code, out, errb, want)
+		}
+	}
+}
+
 // `--store default` is the switch as it is without --store.
 func TestSwitchStoreDefaultIsTheSwitch(t *testing.T) {
 	outputs := map[string]string{}

@@ -412,7 +412,7 @@ tycswap switch --store fable --empty [--json] [--debug]
 | `--force` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; activates without backing up the current login first. When the live credential already belongs to the target while `~/.claude.json` names another slot, it repairs the config instead, as without `--force` (DESIGN A68). |
 | `--yes` / `-y` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; answers the API-key confirmation below, for scripts. |
 | `--strategy` | choice `best` \| `next-available` | unset | Only with bare `switch` (no target). |
-| `--store` | `fable` \| `default` | `default` | Only with `switch`. `fable` switches the Fable store (below) and takes an account or `--empty`, never `--strategy` or `--force`; `default` is the switch without `--store`. |
+| `--store` | `fable` \| `default` | `default` | Only with `switch`. `fable` switches the Fable store (below) and takes an account or `--empty`, never `--strategy` or `--force`; with it the account, `--store fable` and the options come in any order. `default` is the switch without `--store`, whose account comes before its options. |
 | `--empty` | flag | off | Only with `--store fable`: turns the Fable store off. |
 | `--debug` | flag | off | — |
 
