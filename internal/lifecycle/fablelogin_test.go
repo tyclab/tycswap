@@ -180,6 +180,29 @@ func TestAddFableLoginStoresOnlyTheFableLogin(t *testing.T) {
 	}
 }
 
+// The plan is the account's, as the roster and the default login know it: a
+// Fable login whose credential names no subscriptionType (null when Claude
+// Code's profile fetch at login fails) is stored, so the switch takes it too.
+func TestAStoredFableLoginWithoutAPlanCanBeSwitchedTo(t *testing.T) {
+	s := fableLifecycleStore(t)
+	captureOut(t)
+	noPlan := `{"claudeAiOauth":{"accessToken":"at-f1","refreshToken":"rt-f1","expiresAt":4102444800000,"subscriptionType":null}}`
+	num, err := AddFableLogin(s, signIn(t, "a@example.com", noPlan), ip(1))
+	if err != nil {
+		t.Fatalf("AddFableLogin = %v", err)
+	}
+	f, _ := s.ForFable()
+	if s.FableCapable(num) != f.FableCapable(num) {
+		t.Errorf("FableCapable(%s): default scope %v, Fable scope %v", num, s.FableCapable(num), f.FableCapable(num))
+	}
+	if _, err := switching.SwitchFable(f, num, switching.FableSwitchOptions{}); err != nil {
+		t.Fatalf("SwitchFable refused the Fable login AddFableLogin stored: %v", err)
+	}
+	if st := s.FableStore(); !st.On || st.Live.Slot != num {
+		t.Errorf("FableStore = %+v, want on Account-%s", st, num)
+	}
+}
+
 func TestAddFableLoginAgainReplacesTheFileAndKeepsPrev(t *testing.T) {
 	s := fableLifecycleStore(t)
 	captureOut(t)

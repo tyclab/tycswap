@@ -8041,7 +8041,9 @@ shared config is expected, and each timer tick is a new process.
 **The switch.** `switching.SwitchFable(fable, id, opts)`:
 
 1. Before the locks, the target must be a roster OAuth account with a Fable
-   login whose plan offers Fable. Refusals, nothing written: an unknown id,
+   login whose plan offers Fable: `FableCapable`, read from the roster and the
+   default login on every scope, so the sign-in, the pool and the switch give
+   one answer. Refusals, nothing written: an unknown id,
    `Account-N is an API-key account; the Fable store holds OAuth logins
    only`, `Account-N has no Fable login: tycswap add --login --lineage fable
    --slot N`, `Account-N's plan offers no Fable`. When the target is already

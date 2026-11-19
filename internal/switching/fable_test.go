@@ -45,6 +45,9 @@ func fableSwitchStore(t *testing.T) (*store.Store, *store.Store) {
 	writeSeq(t, s, seqData(ptrInt(1), []int{1, 2, 3, 4, 5}, records))
 	for num, email := range fableEmails {
 		creds := planCreds("at-d"+num, "rt-d"+num, "max")
+		if num == "3" {
+			creds = planCreds("at-d3", "rt-d3", "pro")
+		}
 		if num == "4" {
 			creds = "sk-ant-api03-four"
 		}
