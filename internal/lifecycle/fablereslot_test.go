@@ -111,6 +111,60 @@ func TestAddSlotMigrationCarriesTheFableLogin(t *testing.T) {
 	assertChain(t, s, "5")
 }
 
+// An add --slot that fails after its Fable step leaves the Fable logins in
+// step with the roster: Account-2's live session stops the migration at the
+// default side's delete, the roster keeps Account-2 in slot 2 and so does its
+// Fable login, and the retry once the session is gone carries it to 5.
+func TestAFailedAddSlotMigrationLeavesTheFableLoginWithTheRoster(t *testing.T) {
+	s := withFableLogins(t, "")
+	login := readFile(t, fableFile(s, "2", "b@example.com"))
+	startLiveSession(t, s, "2", "b@example.com")
+	add := func() error {
+		_, err := AddAccountFrom(s, signIn(t, "b@example.com", planCreds("at-n2", "rt-n2", "max")), ip(5), true, nil)
+		return err
+	}
+	if err := add(); err == nil || !strings.Contains(err.Error(), "live session-mode Claude instance") {
+		t.Fatalf("AddAccountFrom = %v, want the live session's refusal", err)
+	}
+	if _, ok := recordAt(readSeq(t, s), "2"); !ok {
+		t.Fatal("Account-2 left slot 2")
+	}
+	if !s.HasFableLogin("2") || exists(fableFile(s, "5", "b@example.com")) {
+		t.Errorf("the failed add moved Account-2's Fable login to 5 while the roster keeps it in 2")
+	}
+	if err := os.RemoveAll(s.SessionDir("2", "b@example.com")); err != nil {
+		t.Fatal(err)
+	}
+	if err := add(); err != nil {
+		t.Fatal(err)
+	}
+	if !exists(fableFile(s, "5", "b@example.com")) || readFile(t, fableFile(s, "5", "b@example.com")) != login {
+		t.Error("Account-2's Fable login is lost after the retry")
+	}
+	assertNoFableLogin(t, s, "2", "b@example.com")
+}
+
+// The same for a displacement: Account-2's live session stops the add before
+// its default files go, and its Fable login stays with it.
+func TestAFailedAddSlotDisplacementKeepsTheDisplacedFableLogin(t *testing.T) {
+	s := withFableLogins(t, "")
+	file := fableFile(s, "2", "b@example.com")
+	before := map[string]string{file: readFile(t, file), file + ".prev": readFile(t, file+".prev")}
+	startLiveSession(t, s, "2", "b@example.com")
+	_, err := AddAccountFrom(s, loginAs(t, "b@example.com", "org-new", planCreds("at-n", "rt-n", "max")), ip(2), true, nil)
+	if err == nil || !strings.Contains(err.Error(), "live session-mode Claude instance") {
+		t.Fatalf("AddAccountFrom = %v, want the live session's refusal", err)
+	}
+	if r := rec(t, readSeq(t, s), "2"); r.str("organizationUuid") == "org-new" {
+		t.Fatal("the displacing account took slot 2")
+	}
+	for p, want := range before {
+		if !exists(p) || readFile(t, p) != want {
+			t.Errorf("the failed add deleted or changed %s", p)
+		}
+	}
+}
+
 // add-token --slot 2 puts an API key in slot 2: Account-2's Fable login goes.
 func TestAddTokenSlotDisplacementRemovesTheFableLogin(t *testing.T) {
 	s := withFableLogins(t, "2")

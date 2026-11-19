@@ -201,12 +201,15 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 
 		// Each branch mutates and commits the locked roster: the occupancy it was
 		// decided from is the occupancy it is written into.
-		followFable, err := reslotFableLogins(s, data, displaceSlot, migrateFrom, accountNum, emailVal)
+		displaceFable, followFable, err := reslotFableLogins(s, data, displaceSlot, migrateFrom, accountNum, emailVal)
 		if err != nil {
 			return err
 		}
 		if displaceSlot != nil {
 			if err := s.DeleteAccountFiles(displaceSlot.num, displaceSlot.email); err != nil {
+				return err
+			}
+			if err := displaceFable(); err != nil {
 				return err
 			}
 			if n, ok := parseSlot(displaceSlot.num); ok {

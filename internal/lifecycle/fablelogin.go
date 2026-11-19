@@ -231,36 +231,57 @@ func emptyFableBeforeDisplacing(s *store.Store, slot *int, email, orgUUID string
 // there (DESIGN A101): a displaced identity's goes, one moving in from
 // migrateFrom brings its own, a new one has none, and one the locked roster
 // data already holds there keeps its own. The caller holds the store lock and
-// has deleted nothing yet; it runs follow once the roster is written, so the
-// chain record follows a moved Fable store's account.
-func reslotFableLogins(s *store.Store, data *store.SequenceData, displaced *displaceInfo, migrateFrom, accountNum, email string) (follow func(), err error) {
-	follow = func() {}
+// has deleted nothing yet. Each step that deletes or moves a Fable login runs
+// beside the default side's: displace right after the displaced account's
+// files are deleted, follow (the moved login, its old key, the chain record)
+// once the roster is written, so a failure before either leaves the Fable
+// logins where the roster still has their accounts.
+func reslotFableLogins(s *store.Store, data *store.SequenceData, displaced *displaceInfo, migrateFrom, accountNum, email string) (displace func() error, follow func(), err error) {
+	displace, follow = func() error { return nil }, func() {}
 	fab := fableLogins(s)
 	if fab == nil {
-		return follow, nil
+		return displace, follow, nil
 	}
 	if _, held := recordAt(data, accountNum); held && displaced == nil && migrateFrom == "" {
-		return follow, nil
+		return displace, follow, nil
 	}
-	live := fableLiveSlot(fab)
-	if displaced != nil {
-		if err := deleteFableLogin(s, displaced.num, displaced.email); err != nil {
-			return follow, err
-		}
+	if displaced != nil && fableOwner(fab) == displaced.num {
+		return displace, follow, cerr.Config("The Fable store took Account-%s again; nothing was removed. Retry the command.", displaced.num)
 	}
 	creds := ""
 	if migrateFrom != "" {
 		creds = fableMaterial(fab, migrateFrom, email)
 	}
-	if err := writeOrClearCreds(fab, accountNum, email, creds); err != nil {
-		return follow, err
+	clearLeftover := func() error {
+		if creds != "" {
+			return nil
+		}
+		return fab.Creds.DeleteBackupStrict(accountNum, email)
+	}
+	if displaced != nil {
+		displace = func() error {
+			if err := fab.Creds.DeleteBackupStrict(displaced.num, displaced.email); err != nil {
+				return err
+			}
+			return clearLeftover()
+		}
+	} else if err := clearLeftover(); err != nil {
+		return displace, follow, err
 	}
 	if migrateFrom == "" {
-		return follow, nil
+		return displace, follow, nil
 	}
-	_ = fab.Creds.DeleteBackup(migrateFrom, email)
-	if creds != "" {
-		_ = fab.Creds.DeletePrev(accountNum, email)
+	live := fableLiveSlot(fab)
+	follow = func() {
+		if creds != "" {
+			if err := fab.WriteAccountCredentials(accountNum, email, creds); err != nil {
+				logWarningf(fab, "Could not move Account-%s's Fable login from slot %s; it stays there: %v", accountNum, migrateFrom, err)
+				return
+			}
+			_ = fab.Creds.DeletePrev(accountNum, email)
+		}
+		_ = fab.Creds.DeleteBackup(migrateFrom, email)
+		followFableChain(fab, live, map[string]string{migrateFrom: accountNum})
 	}
-	return func() { followFableChain(fab, live, map[string]string{migrateFrom: accountNum}) }, nil
+	return displace, follow, nil
 }
