@@ -127,6 +127,9 @@ type PolicyResult struct {
 	Reserved   func(num string) bool
 	Unservable []string
 	Sessions   []string
+	// ReservedLast is the reserved account the default tick takes last and
+	// leaves for any other below every bar: the Fable store's live one (A102).
+	ReservedLast func(num string) bool
 }
 
 // DefaultSessionPolicy is DefaultSessionPolicyResult at the store's clock.
@@ -145,7 +148,8 @@ func DefaultSessionPolicy(s *store.Store, base settings.AutoSwitchSettings) (set
 //
 // While the Fable store is usable (A102) it counts the default store's
 // sessions only, those whose record names no store, and always reserves the
-// Fable pool's accounts with Fable room and the Fable store's live account.
+// Fable pool's accounts with Fable room and the Fable store's live account,
+// the latter last.
 func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings, now time.Time) PolicyResult {
 	base.Model = nil
 	r := PolicyResult{Settings: base}
@@ -159,7 +163,9 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 		return cached
 	}
 	if fable.Usable {
-		r.Reserved = fableReserved(s, fable.Live.Slot, viewOf().fableBelow(base.ModelThreshold))
+		live := fable.Live.Slot
+		r.Reserved = fableReserved(s, live, viewOf().fableBelow(base.ModelThreshold))
+		r.ReservedLast = func(num string) bool { return num != "" && num == live }
 	}
 	records := readDefaultSessionModels(s.BackupDir())
 	if len(records) == 0 {

@@ -8291,10 +8291,22 @@ whose record names no store; a session without a record still counts as one
 of unknown family. It always reserves the Fable pool's accounts with Fable
 room (A91's reading at `autoswitch.modelThreshold`) and the Fable store's
 live account, whatever its room and whatever runs: they rank last (A71) and
-an active one hands over under the cooldown (A77). An account with Fable
-room but no Fable login is the default store's. Off, unusable or without
-Fable logins, the policy is A91's. The dashboard's counting and ranking,
-`start`'s ranking and `switch --strategy` read the same result.
+an active one hands over under the cooldown (A77). Among them the Fable
+store's live account ranks last as a target of the default tick
+(`PolicyResult.ReservedLast`, `autoswitch.WithReservedLast`), and a default
+login on it hands over, under the same cooldown, to any other account below
+every bar, reserved or not; from a reserved account that is not the Fable
+store's the hand-over still takes an unreserved one only, so it does not
+come back (2026-11-19: before, the default tick took the Fable store's
+account as readily as another reserved one and then stayed there with
+`reserved-no-target`, and Opus sessions burned the windows the Fable
+sessions ran on while another account was free). With no such account it
+stays and says `the Fable store runs on the active account; no other
+account is below every bar`. An account with Fable room but no Fable login
+is the default store's. Off, unusable or without Fable logins, the policy is
+A91's. The dashboard's counting and ranking, `start`'s ranking and `switch
+--strategy` read the same result, but for `ReservedLast`, which orders the
+default tick only.
 
 **The status-line record.** `--observe` records `"store":"fable"` for a
 session whose process runs under the Fable store (`cli.fableSessionProcess`,

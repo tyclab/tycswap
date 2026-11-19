@@ -44,6 +44,9 @@ type Engine struct {
 	rng     func() float64
 	// reserved: accounts this profile leaves to Fable work (DESIGN A71); nil reserves none.
 	reserved func(num string) bool
+	// reservedLast: the reserved account taken last and left for any other
+	// below every bar, the Fable store's live one (DESIGN A102); nil names none.
+	reservedLast func(num string) bool
 	// unservable: derived models the policy dropped, named in the poll event (DESIGN A91).
 	unservable []string
 	// enabled is autoswitch.enabled, read at every tick (DESIGN A83); nil means on.
@@ -76,6 +79,14 @@ func WithRNG(rng func() float64) Option { return func(e *Engine) { e.rng = rng }
 // hands over to an unreserved account that is below every bar.
 func WithReserved(reserved func(num string) bool) Option {
 	return func(e *Engine) { e.reserved = reserved }
+}
+
+// WithReservedLast names, among the reserved accounts, the one the engine
+// takes last, after the other reserved ones, and that an active one hands over
+// to any other account below every bar, reserved or not: the Fable store's
+// live account beside a usable Fable store (DESIGN A102).
+func WithReservedLast(last func(num string) bool) Option {
+	return func(e *Engine) { e.reservedLast = last }
 }
 
 // WithUnservable names the derived models no usable account can serve; the
@@ -171,6 +182,11 @@ func (e *Engine) emit(ev Event) { e.onEvent(ev) }
 
 // isReserved reports whether the engine leaves num to Fable work (DESIGN A71).
 func (e *Engine) isReserved(num string) bool { return e.reserved != nil && e.reserved(num) }
+
+// isReservedLast reports whether num is reserved and taken last (DESIGN A102).
+func (e *Engine) isReservedLast(num string) bool {
+	return e.isReserved(num) && e.reservedLast != nil && e.reservedLast(num)
+}
 
 // nowSeconds returns wall time as fractional Unix seconds (Python self.clock()).
 func (e *Engine) nowSeconds() float64 { return clock.Seconds(e.clk) }

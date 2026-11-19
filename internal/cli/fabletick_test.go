@@ -595,6 +595,62 @@ func TestDefaultHandSwitchHoldsTheDefaultTickOnly(t *testing.T) {
 	}
 }
 
+// The default login at its limit moves to another account reserved for the
+// Fable store before the Fable store's own account (F2-3).
+func TestDefaultTickTakesTheFableStoresAccountLast(t *testing.T) {
+	fx := fableTickFixture{def: "3", live: "1", logins: []string{"1", "2"},
+		usage: map[string][3]float64{"1": {10, 20, 10}, "2": {10, 30, 10}, "3": {10, 100, 100}, "4": {10, 100, 100}}}
+	sw, _ := fx.build(t)
+	code, out, _ := runCodex(t, "", "auto", "--once", "--json")
+	def, _, _ := splitByStore(t, out)
+	ev := eventOf(def, "switch")
+	to, _ := ev["to"].(map[string]any)
+	if code != 0 || ev == nil || ev["trigger"] != "at-limit" || to["number"] != float64(2) {
+		t.Fatalf("exit %d, default events %v; want the at-limit move to Account-2", code, def)
+	}
+	if got := readOrAbsent(t, filepath.Join(sw.Home, ".claude", ".credentials.json")); !strings.Contains(got, "at-d2") || !strings.Contains(storeLive(t, sw), "at-f1") {
+		t.Fatal("the default login is not on Account-2 beside the Fable store on Account-1")
+	}
+}
+
+// A default login on the Fable store's account hands over to another reserved
+// account below every bar, under the cooldown, and stays there: three ticks,
+// no move back (F2-3).
+func TestDefaultLoginLeavesTheFableStoresAccount(t *testing.T) {
+	fx := fableTickFixture{def: "1", live: "1", logins: []string{"1", "2"},
+		usage: map[string][3]float64{"1": {10, 20, 10}, "2": {10, 30, 10}, "3": {10, 100, 100}, "4": {10, 100, 100}}}
+	sw, _ := fx.build(t)
+	defLive := func() string { return readOrAbsent(t, filepath.Join(sw.Home, ".claude", ".credentials.json")) }
+	tick := func() []map[string]any {
+		_, out, _ := runCodex(t, "", "auto", "--once", "--json")
+		def, fable, _ := splitByStore(t, out)
+		if eventOf(fable, "switch") != nil || !strings.Contains(storeLive(t, sw), "at-f1") {
+			t.Fatalf("the Fable store moved: %v", fable)
+		}
+		return def
+	}
+	def := tick()
+	ev := eventOf(def, "switch")
+	to, _ := ev["to"].(map[string]any)
+	if ev == nil || ev["trigger"] != "reserved" || to["number"] != float64(2) || !strings.Contains(defLive(), "at-d2") {
+		t.Fatalf("tick 1: %v; want the reserved hand-over to Account-2", def)
+	}
+	if ns := eventOf(tick(), "no-switch"); ns == nil || ns["reason"] != "cooldown" || !strings.Contains(defLive(), "at-d2") {
+		t.Fatalf("tick 2, within the cooldown: %v", ns)
+	}
+	statePath := autoswitch.StatePath(sw.BackupDir())
+	var state map[string]any
+	if err := json.Unmarshal([]byte(readOrAbsent(t, statePath)), &state); err != nil {
+		t.Fatal(err)
+	}
+	state["lastSwitchAt"] = state["lastSwitchAt"].(float64) - 3600
+	raw, _ := json.Marshal(state)
+	writeFile(t, statePath, string(raw))
+	if ns := eventOf(tick(), "no-switch"); ns == nil || ns["reason"] != "reserved-no-target" || !strings.Contains(defLive(), "at-d2") {
+		t.Fatalf("tick 3, after the cooldown: %v; want Account-2 kept", ns)
+	}
+}
+
 // A dead Fable login is quarantined in the Fable state file only; the next
 // Fable tick skips it, and a new Fable login releases it.
 func TestDeadFableLoginIsTheFableStoresOnly(t *testing.T) {
