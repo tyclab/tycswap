@@ -2977,9 +2977,12 @@ tabs:
   them. The quarantine; a link to the Settings tab. While an account has a
   Fable login, a line `Fable store: <auto.fable.caption> · next #M` says what
   the Fable store's checks count and the account they would take next while
-  a scheduler runs the checks (`auto.owner`); otherwise it reads `Fable store:
-  this dashboard's checks do not move it; a scheduler running tycswap auto
-  --once does`, since only `auto --once` runs a Fable tick (DESIGN A102).
+  a scheduler runs the checks (`auto.owner`) with auto-switch and the Fable
+  store on; with the store off it reads `Fable store: off; tycswap switch
+  --store fable <account> turns it on`, with auto-switch off `Fable store: not
+  checked while off`, and otherwise `Fable store: this dashboard's checks do
+  not move it; a scheduler running tycswap auto --once does`, since only
+  `auto --once` runs a Fable tick, and only while both are on (DESIGN A102).
   The page starts no dry run (`tycswap auto --dry-run` does) and has no event
   log: a scheduler's ticks print to its journal.
 - **Settings**: the `settings.json` keys `tycswap config` knows

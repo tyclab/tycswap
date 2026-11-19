@@ -8539,7 +8539,11 @@ row it reads *Fable here* and is disabled. The Auto tab adds one line,
 `auto.owner`). No engine this page hosts runs a Fable tick (A102), so without
 an owner the line says so instead (2026-11-18): `Fable store: this
 dashboard's checks do not move it; a scheduler running tycswap auto --once
-does`.
+does`. Nor does a scheduler's tick while auto-switch is off or the store is
+off (A102), and only a switch by hand turns the store on (A100), so the line
+names no next account then either: `Fable store: off; tycswap switch --store
+fable <account> turns it on` while the store is off, else `Fable store: not
+checked while off` while auto-switch is off.
 
 **The tray (O11).** The Windows panel's Fable store row carries a second
 outlined label `Fable` after the plan label, and its screen-reader text

@@ -931,7 +931,9 @@ auto-switch for the cooldown; the store's own row reads **Fable here**. The
 Auto tab adds one line, `Fable store: counting 5h + 7d + Fable · next #3`
 while a scheduler runs the checks; while the dashboard runs them it says that
 its checks do not move the Fable store, since only `tycswap auto --once` runs a
-Fable tick.
+Fable tick. With auto-switch off it reads `Fable store: not checked while off`,
+and with the Fable store off it names the command that turns it on, since no
+check moves the store then.
 *Switch*, *Switch now* and the best candidate stay the default login's. The
 terminal dashboard (`tycswap tui`) shows the default login only.
 

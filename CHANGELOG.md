@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Fixed:** the Auto tab's Fable store line named the account the Fable store would take next also while no Fable tick acts on it: with auto-switch off it now reads `Fable store: not checked while off`, and with the Fable store off `Fable store: off; tycswap switch --store fable <account> turns it on` (DESIGN A102, A104).
 - **Fixed:** the docs said a switch of the Fable store by hand logs `Switched the Fable store to account N by hand`, and that the dashboard writes that line beside its own. Each move writes one line with its actor, as the default switch does: `by cli(…)` from `switch --store fable` and `add --login --lineage fable`, `by tray`, `by dashboard(…)`; `Emptied the Fable store` likewise, `by hand` only when `remove` or `add --slot` empties it (DESIGN A100, A104).
 - **Fixed:** `POST /api/switch/{key}?store=` with an empty `store` switched the default login, as no `store` does; it now answers 400 like any other value but `fable`. The page and the tray never send it (DESIGN A104).
 - **Fixed:** a Fable login the Fable engine quarantined as `identity-conflict` (it authenticates as another account) read ok on the dashboard, which offered **Use for Fable**, while the tray hid that button and the Fable pool left the account out. Every surface now reads such a login as `sign in again`, as one quarantined on `invalid_grant` (DESIGN A104).
