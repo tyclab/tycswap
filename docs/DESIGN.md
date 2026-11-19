@@ -7386,7 +7386,7 @@ Claude session shares the default login, which tycswap switches; A89's
 "explicit account pins" no longer exist.
 
 Why it took a second ruling: the removal waited behind the one-engine series
-(D10, behind E1 which never shipped) and then behind a fleet-acceptance gate
+(behind E1, which never shipped) and then behind a fleet-acceptance gate
 the ruling did not set (start-login S5); nothing asserted the commands gone.
 `TestLegacyProfileCommandsAreGone` does now. A removal ruling ships in the
 next release, pinned by a test, never behind a series or a gate the operator
@@ -7635,7 +7635,7 @@ client's hooks (the latter called `/api/auto/model`) are gone. The menu's
 The operator accepted on 2026-11-17: "Settings: *Handover wait*, the
 'Continue after a limit' card, tray 'Session at limit' → Remove the feature.
 Unused here: no recovery hook is installed, flakelab's wake-parked does this
-job." The one-engine design (D10) had listed the same removal on 2026-11-10.
+job." The one-engine design of 2026-11-10 had listed the same removal.
 Nothing installs `tycswap recovery record` since the group launcher went
 (A78) and the operator's boxes run no such hook, while the dashboard's
 recovery runtime still read the store on every state build and could switch
