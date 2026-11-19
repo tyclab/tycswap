@@ -222,13 +222,17 @@ func emptyFableBeforeDisplacing(s *store.Store, slot *int, email, orgUUID string
 
 // reslotFableLogins gives accountNum the Fable login of the identity add puts
 // there (DESIGN A101): a displaced identity's goes, one moving in from
-// migrateFrom brings its own, a new one has none. The caller holds the store
-// lock and has deleted nothing yet; it runs follow once the roster is written,
-// so the chain record follows a moved Fable store's account.
-func reslotFableLogins(s *store.Store, displaced *displaceInfo, migrateFrom, accountNum, email string) (follow func(), err error) {
+// migrateFrom brings its own, a new one has none, and one the locked roster
+// data already holds there keeps its own. The caller holds the store lock and
+// has deleted nothing yet; it runs follow once the roster is written, so the
+// chain record follows a moved Fable store's account.
+func reslotFableLogins(s *store.Store, data *store.SequenceData, displaced *displaceInfo, migrateFrom, accountNum, email string) (follow func(), err error) {
 	follow = func() {}
 	fab := fableLogins(s)
 	if fab == nil {
+		return follow, nil
+	}
+	if _, held := recordAt(data, accountNum); held && displaced == nil && migrateFrom == "" {
 		return follow, nil
 	}
 	live := fableLiveSlot(fab)

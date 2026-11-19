@@ -8190,7 +8190,9 @@ repaired: the store is usable again at once.
   login, and the chain record when the store is on it; an identity the add
   displaces from N loses its Fable login, the store emptied first when it is
   on N, as for `remove`; a new identity in N takes none, so a login left under
-  N's key goes. `import` replaces no slot's identity (`--force` overwrites the
+  N's key goes; the identity already in N keeps its Fable login and `.prev`
+  byte for byte (`add --slot N` of it renews its default login, which
+  tycswap's own hints recommend). `import` replaces no slot's identity (`--force` overwrites the
   slot of the same identity, whose Fable login stays); a new account it puts
   in a slot the roster does not hold deletes a Fable login left under that
   key, which an older tycswap's `remove` or `move` can leave.

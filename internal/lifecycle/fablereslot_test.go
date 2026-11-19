@@ -65,6 +65,31 @@ func TestAddSlotDisplacementRemovesTheDisplacedFableLogin(t *testing.T) {
 	}
 }
 
+// add --slot 2 (and add --login --slot 2) of the identity already in slot 2
+// renews its default login, which tycswap's own hints recommend: its Fable
+// login and .prev stay byte for byte, wherever the Fable store is.
+func TestAddSlotOfTheIdentityInTheSlotKeepsItsFableLogin(t *testing.T) {
+	for _, live := range []string{"", "1", "2"} {
+		t.Run("fable store on "+live, func(t *testing.T) {
+			s := withFableLogins(t, live)
+			file := fableFile(s, "2", "b@example.com")
+			before := map[string]string{file: readFile(t, file), file + ".prev": readFile(t, file+".prev")}
+			num, err := AddAccountFrom(s, signIn(t, "b@example.com", planCreds("at-renew", "rt-renew", "max")), ip(2), true, nil)
+			if err != nil || num != "2" {
+				t.Fatalf("AddAccountFrom = %q, %v", num, err)
+			}
+			for p, want := range before {
+				if !exists(p) || readFile(t, p) != want {
+					t.Errorf("%s changed or went by re-adding Account-2 into its own slot", p)
+				}
+			}
+			if !s.HasFableLogin("2") {
+				t.Error("HasFableLogin(2) = false")
+			}
+		})
+	}
+}
+
 // add --slot 5 of Account-2's own identity moves Account-2 to 5: its Fable
 // login moves with it and the chain record follows the Fable store.
 func TestAddSlotMigrationCarriesTheFableLogin(t *testing.T) {
