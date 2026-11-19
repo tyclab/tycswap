@@ -96,7 +96,9 @@ func Switch(s *store.Store, strategy *string, jsonOut bool) (any, error) {
 	}
 
 	activeAccount := data.ActiveAccountNumber
-	live := s.ResolveLiveSlot(data)
+	// The current account is the owner switch N takes and the outgoing backup
+	// writes (DESIGN A100).
+	live := s.ResolveOwnerSlot(data)
 	currentNum := live.Slot
 	if live.ByLineage {
 		rec, _ := accountRec(data, currentNum)

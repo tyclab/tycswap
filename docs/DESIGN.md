@@ -8081,7 +8081,11 @@ outgoing backup, as for an unmanaged live login (`from` null); that is the
 case only when the roster names no active OAuth account. `switch N`'s
 already-active check takes the same owner: with the config naming N and the
 default login N's last install's, another account's, it switches instead of
-answering `Already on`. Without a
+answering `Already on`. `switch` and `switch --strategy` take it as their
+current account too (2026-11-19: before, they read the config's slot, so
+`next-available` counted on from the Fable session's account and the
+rotation answered `Already on` that account;
+`TestSwitchByStrategyTakesTheOwnerAsCurrent`). Without a
 Fable login the switch is v0.15.1's: the config's slot takes the login
 (`TestDefaultSwitchWithoutFableLoginsBacksUpIntoTheConfigsSlot`), and
 `switch N` answers `already-active` and writes nothing

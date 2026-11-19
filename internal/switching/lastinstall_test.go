@@ -217,3 +217,50 @@ func TestSwitchToTheConfigsAccountWithoutFableLoginsIsAlreadyActive(t *testing.T
 		t.Errorf("files %d, want %d", len(after), len(before))
 	}
 }
+
+// switch --strategy next-available and the plain rotation, while a Fable
+// session's Account-2 is in ~/.claude.json and the default login is
+// Account-1's last install: the current account is the owner switch N takes,
+// so the next account is 2 and Account-1's rotated login is backed up.
+func TestSwitchByStrategyTakesTheOwnerAsCurrent(t *testing.T) {
+	for _, strategy := range []string{"next-available", "rotation"} {
+		t.Run(strategy, func(t *testing.T) {
+			s, rotated := fableSessionConfig(t, true, true)
+			res, err := Switch(s, &strategy, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := res.(map[string]any)
+			from, _ := refOf(t, m["from"])
+			to, _ := refOf(t, m["to"])
+			if m["switched"] != true || from != 1 || to != 2 {
+				t.Fatalf("result %v, want a switch from Account-1 to Account-2", m)
+			}
+			if one, _ := s.ReadAccountCredentials("1", fableEmails["1"]); one != rotated {
+				t.Errorf("Account-1's default login = %s, want the rotated one", one)
+			}
+		})
+	}
+}
+
+// Without a Fable login the same state gives v0.16.0's result: the config's
+// Account-2 is current, so next-available takes 3 and the rotation answers
+// already-active.
+func TestSwitchByStrategyWithoutFableLoginsTakesTheConfigsAccount(t *testing.T) {
+	for _, tc := range []struct {
+		strategy, reason string
+		to               int
+	}{{"next-available", "", 3}, {"rotation", "already-active", 2}} {
+		t.Run(tc.strategy, func(t *testing.T) {
+			s, _ := fableSessionConfig(t, false, true)
+			res, err := Switch(s, &tc.strategy, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := res.(map[string]any)
+			if to, _ := refOf(t, m["to"]); to != tc.to || m["switched"] != (tc.reason == "") || tc.reason != "" && m["reason"] != tc.reason {
+				t.Fatalf("result %v, want to Account-%d, reason %q", m, tc.to, tc.reason)
+			}
+		})
+	}
+}
