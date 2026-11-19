@@ -177,15 +177,22 @@ func fableLiveSlot(f *store.Store) string {
 	return ""
 }
 
-// emptyFableBefore empties the Fable store when num is its live account, so a
+// fableOwner is the account the Fable store's login belongs to, its last
+// install when nothing else names it (store.ResolveOwnerSlot); "" when the
+// store holds none or no account is known.
+func fableOwner(f *store.Store) string {
+	if f == nil {
+		return ""
+	}
+	data, _ := f.ReadSequence()
+	return f.ResolveOwnerSlot(data).Slot
+}
+
+// emptyFableBefore empties the Fable store when num owns its login, so a
 // removal never leaves the store on a login of an account that is gone.
 func emptyFableBefore(s *store.Store, num string) error {
 	f, err := s.ForFable()
-	if err != nil || !f.HasLiveLogin() {
-		return nil
-	}
-	data, _ := f.ReadSequence()
-	if f.ResolveFableLiveSlot(data).Slot != num {
+	if err != nil || !f.HasLiveLogin() || fableOwner(f) != num {
 		return nil
 	}
 	if err := EmptyFableStore(s); err != nil {
@@ -201,7 +208,7 @@ func deleteFableLogin(s *store.Store, num, email string) error {
 	if f == nil {
 		return nil
 	}
-	if fableLiveSlot(f) == num {
+	if fableOwner(f) == num {
 		return cerr.Config("The Fable store took Account-%s again; nothing was removed. Retry the command.", num)
 	}
 	return f.Creds.DeleteBackupStrict(num, email)

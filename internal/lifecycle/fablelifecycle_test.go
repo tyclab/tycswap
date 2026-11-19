@@ -3,6 +3,7 @@
 package lifecycle
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/storenames"
@@ -105,6 +107,40 @@ func TestRemoveOfTheFableStoresAccountEmptiesTheStore(t *testing.T) {
 	}
 	if _, ok := recordAt(readSeq(t, s), "2"); ok {
 		t.Error("Account-2 is still in the roster")
+	}
+}
+
+// The Fable store is on Account-2 and Claude Code rotated its login since the
+// last harvest; the profile endpoint does not answer. Removing Account-2, or
+// putting another account in slot 2, empties the store first: the login is the
+// last install's, so it goes into Account-2's Fable login before that goes.
+func TestRemovingTheFableStoresAccountEmptiesAnUnattributedLogin(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		act  func(s *store.Store) error
+	}{
+		{"remove", func(s *store.Store) error { return RemoveAccount(s, "2", true) }},
+		{"add --slot", func(s *store.Store) error {
+			_, err := AddAccountFrom(s, loginAs(t, "z@example.com", "", planCreds("at-z", "rt-z", "max")), ip(2), true, nil)
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := withFableLogins(t, "2")
+			s.OAuth = &oauth.FakeClient{ProfileFn: func(context.Context, string) *oauth.Identity { return nil }}
+			putFableStore(t, s, planCreds("at-f2-rotated", "rt-f2-rotated", "max"))
+			if err := tc.act(s); err != nil {
+				t.Fatal(err)
+			}
+			if st := s.FableStore(); st.On {
+				t.Errorf("FableStore = %+v: Fable sessions keep starting on the removed account's login", st)
+			}
+			assertNoFableLogin(t, s, "2", "b@example.com")
+			f, _ := s.ForFable()
+			if rows, _ := f.Creds.ListUnclaimed(); len(rows) != 1 {
+				t.Errorf("unclaimed %v, want the store's login kept", rows)
+			}
+		})
 	}
 }
 

@@ -8204,10 +8204,12 @@ repaired: the store is usable again at once.
 **Lifecycle.**
 
 - `remove` deletes the account's Fable login and its `.prev`. When the account
-  is the Fable store's live one (resolved before the roster lock), the store is
+  owns the Fable store's login (`ResolveOwnerSlot`, before the roster lock: a
+  rotated login nothing else names is its last install's, A100), the store is
   emptied first by `core.EmptyFable` (under the Fable state lock); if that
   fails, nothing is removed and the error is named. Under the roster lock a
-  store that took the account again meanwhile refuses.
+  store that took the account again meanwhile, by the same resolution,
+  refuses.
 - `move` and `swap` carry the Fable login with its account in
   `credentials-fable/`: written under the new key, staged in
   `credentials-fable/.swap-staging-creds-N.json` for a same-email swap (before
