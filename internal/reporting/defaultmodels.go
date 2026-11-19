@@ -223,15 +223,15 @@ func fableReserved(s *store.Store, live string, room map[string]bool) func(num s
 
 // FablePool is the accounts the Fable store may use (DESIGN A102): enabled
 // and rotation-eligible by the default rules, able to run Fable, holding a
-// Fable login, and not quarantined in the Fable state file. s is the
-// default store.
+// Fable login, and not quarantined in the Fable state file (FableQuarantine).
+// s is the default store.
 func FablePool(s *store.Store) []string {
-	f, err := s.ForFable()
+	_, err := s.ForFable()
 	data, _ := s.ReadSequence()
 	if err != nil || data == nil {
 		return nil
 	}
-	held := autoswitch.ReadQuarantineEntries(f.StatePath())
+	held := FableQuarantine(s)
 	var out []string
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)

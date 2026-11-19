@@ -71,6 +71,54 @@ func TestSwitchStoreFableForms(t *testing.T) {
 	}
 }
 
+// --empty on a store that holds no login says so: on an emptied store and on
+// a box without a Fable login, where it creates nothing (DESIGN A100).
+func TestSwitchStoreFableEmptyWithoutALogin(t *testing.T) {
+	const want = "The Fable store holds no login; Fable sessions start on the default login.\n"
+	t.Run("emptied store", func(t *testing.T) {
+		fableCLISwitcher(t)
+		if code, _, errb := runHuman(t, "switch", "--store", "fable", "--empty"); code != 0 {
+			t.Fatalf("first --empty: exit %d, stderr %q", code, errb)
+		}
+		if code, out, errb := runHuman(t, "switch", "--store", "fable", "--empty"); code != 0 || out != want {
+			t.Fatalf("exit %d, stdout %q, stderr %q; want %q", code, out, errb, want)
+		}
+	})
+	t.Run("no Fable login", func(t *testing.T) {
+		sw := fixtureSwitcher(t)
+		useSwitcher(t, sw)
+		if code, out, errb := runHuman(t, "switch", "--store", "fable", "--empty"); code != 0 || out != want {
+			t.Fatalf("exit %d, stdout %q, stderr %q; want %q", code, out, errb, want)
+		}
+		for _, dir := range []string{paths.FableScopeDir(sw.BackupDir()), filepath.Join(sw.BackupDir(), "credentials-fable")} {
+			if _, err := os.Stat(dir); !os.IsNotExist(err) {
+				t.Errorf("%s exists after --empty without a Fable login (%v)", dir, err)
+			}
+		}
+	})
+}
+
+// A switch of the Fable store by hand from the command line logs one line
+// per move with the command's actor, as the default switch does; no line
+// reads by hand (DESIGN A100, reference LOG).
+func TestSwitchStoreFableLogsTheCommandsActor(t *testing.T) {
+	sw := fableCLISwitcher(t)
+	for _, argv := range [][]string{{"switch", "--store", "fable", "2"}, {"switch", "--store", "fable", "--empty"}} {
+		if code, _, errb := runHuman(t, argv...); code != 0 {
+			t.Fatalf("%v: exit %d, stderr %q", argv, code, errb)
+		}
+	}
+	log, _ := os.ReadFile(filepath.Join(sw.BackupDir(), "tycswap.log"))
+	for _, line := range []string{"Switched the Fable store to account 2 by cli(pid=", "Emptied the Fable store by cli(pid="} {
+		if n := strings.Count(string(log), line); n != 1 {
+			t.Errorf("%d lines %q, want one:\n%s", n, line, log)
+		}
+	}
+	if strings.Contains(string(log), "by hand") {
+		t.Errorf("a line reads by hand:\n%s", log)
+	}
+}
+
 func TestSwitchStoreFableJSON(t *testing.T) {
 	for _, tc := range []struct {
 		argv           []string
@@ -121,6 +169,59 @@ func TestSwitchStoreArgumentErrors(t *testing.T) {
 				t.Fatalf("exit %d, stdout %q, stderr %q; want 2 and %q", code, out, errb, tc.want)
 			}
 		})
+	}
+}
+
+// permutations is every order of units, each unit's tokens kept together.
+func permutations(units [][]string) [][]string {
+	if len(units) == 1 {
+		return [][]string{append([]string(nil), units[0]...)}
+	}
+	var out [][]string
+	for i, head := range units {
+		rest := append(append([][]string(nil), units[:i]...), units[i+1:]...)
+		for _, tail := range permutations(rest) {
+			out = append(out, append(append([]string(nil), head...), tail...))
+		}
+	}
+	return out
+}
+
+// `--store fable`, the account, --json and --debug may come in any order;
+// an account with --empty is the one documented line in every order
+// (DESIGN A100).
+func TestSwitchStoreFableFlagOrders(t *testing.T) {
+	for _, store := range [][]string{{"--store", "fable"}, {"--store=fable"}} {
+		for _, argv := range permutations([][]string{store, {"2"}, {"--json"}, {"--debug"}}) {
+			t.Run(strings.Join(argv, " "), func(t *testing.T) {
+				fableCLISwitcher(t)
+				code, out, errb := runSub(t, append([]string{"switch"}, argv...)...)
+				var doc struct {
+					Store string         `json:"store"`
+					To    map[string]any `json:"to"`
+				}
+				if err := json.Unmarshal([]byte(out), &doc); code != 0 || err != nil || doc.Store != "fable" || doc.To["number"] != 2.0 {
+					t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errb)
+				}
+			})
+		}
+		for _, argv := range permutations([][]string{store, {"2"}, {"--empty"}}) {
+			t.Run(strings.Join(argv, " "), func(t *testing.T) {
+				fableCLISwitcher(t)
+				code, out, errb := runSub(t, append([]string{"switch"}, argv...)...)
+				if want := "tycswap: error: --store fable takes an account or --empty\n"; code != 2 || out != "" || errb != want {
+					t.Fatalf("exit %d, stdout %q, stderr %q; want 2 and %q", code, out, errb, want)
+				}
+			})
+		}
+	}
+	// Without --store fable the account still comes first, as in v0.15.1.
+	cleanHome(t)
+	for _, argv := range [][]string{{"switch", "--json", "2"}, {"switch", "--json", "--store", "default", "2"}} {
+		want := "usage: tycswap <command> [args] [options]\ntycswap: error: unrecognized arguments: 2\n"
+		if code, out, errb := runSub(t, argv...); code != 2 || out != "" || errb != want {
+			t.Errorf("%v: exit %d, stdout %q, stderr %q; want 2 and %q", argv, code, out, errb, want)
+		}
 	}
 }
 

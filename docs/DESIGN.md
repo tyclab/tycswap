@@ -8130,14 +8130,22 @@ none, and removes the Fable chain record; its reason is `emptied`.
 `fable/.autoswitch_state.lock`, and a switch stamps the hold (`lastSwitchAt`,
 `lastSwitchTo`, `lastSwitchBy: "hand"`) in `fable/autoswitch_state.json`
 only: A94's hold is per store, and `byHand`'s roster mark cannot see a Fable
-switch, since the roster does not change. It logs `Switched the Fable store
-to account N by hand`. `EngineSwitchFable` stamps nothing (the engine does,
-A102). `EmptyFable` runs under the same state lock while the store holds a
-login. On the command line: `tycswap switch --store fable <id>`, `tycswap
-switch --store fable --empty`, and `--store default`, the switch as without
-`--store`. `--store fable` with `--strategy`, `--force`, no id, or an id and
-`--empty` exits 2 with one line, `--store fable takes an account or
---empty`; another store name exits 2 with `unknown store: X`.
+switch, since the roster does not change. Through `SwitchFableBy` it logs
+`Switched the Fable store to account N by <actor>`, the caller's:
+`cli(…)` for `switch --store fable` and `add --login --lineage fable`,
+`tray` for the in-process tray; the dashboard passes none and logs the line
+itself with its own (A104), so each move has one line. `EngineSwitchFable`
+stamps nothing (the engine does, A102). `EmptyFable` runs under the same
+state lock while the store holds a login, and `EmptyFableBy` logs `Emptied
+the Fable store by <actor>` alike, `by hand` when `remove` or `add --slot`
+empties the store (A101). On the command line: `tycswap switch --store fable
+<id>`, `tycswap switch --store fable --empty`, and `--store default`, the
+switch as without `--store`. With `--store fable` the id may stand anywhere
+among the options (`translate.go` takes the first argument that is neither
+an option nor an option's value); without it the id still comes first, as
+before. `--store fable` with `--strategy`, `--force`, no id, or an id and
+`--empty` exits 2 with one line in any order, `--store fable takes an
+account or --empty`; another store name exits 2 with `unknown store: X`.
 
 **Per-lineage quarantine.** A dead Fable login is quarantined in
 `fable/autoswitch_state.json` only, in the root file's `quarantine` shape
@@ -8340,7 +8348,8 @@ Fable state file. Its state file is `fable/autoswitch_state.json`.
 **The pool** (`reporting.FablePool`) is every account that is enabled and
 rotation-eligible by the default rules, able to run Fable
 (`Store.FableCapable`), holding a Fable login, and not quarantined in the
-Fable state file. The default store's quarantine does not exclude.
+Fable state file (`reporting.FableQuarantine`, A104). The default store's
+quarantine does not exclude.
 
 **The Fable settings** are the merged settings with the model set to every
 Fable window name an account's cached usage reports; they are counted
@@ -8532,7 +8541,15 @@ pass: `Store.FableStore()` for on, off, usable and the reason; the live slot
 by `ResolveFableLiveSlot` on a `WithoutLineageWrites` view (backup, chain,
 then the profile endpoint, never written), as `AccountInfo.FableLive` is
 resolved (A102); and per account its Fable login, `sign in again` when the
-Fable state file holds an `invalid_grant` quarantine entry for it. The
+Fable state file holds a quarantine entry for it, `invalid_grant` or the
+engine's `identity-conflict` (the pool and the tray leave out either). Every
+reader of that file on these surfaces, the pool (A102) and the tray included,
+reads it through `reporting.FableQuarantine`: an entry whose fingerprint is
+neither the account's stored Fable login's nor the Fable store's live
+login's names a login signed in again since and is left out, so the row
+reads `ok`, *Use for Fable* is there and the pool has the account right after
+the sign-in, with auto-switch on or off; the engine releases the entry at its
+next real tick as before. An entry without a fingerprint stands. The
 store's state is `on`, `off` (no login held) or `unusable` (the live login's
 grant quarantined).
 
@@ -8565,7 +8582,7 @@ when nil) and each Claude row `fableLogin`, a plain map so the in-process
 tray reads what a remote one decodes. `auto.fable` (`web.FableAutoView`,
 built by the facade in `cli/webfacades.go`) is the Fable store's engine:
 `lastTickAt` and `quarantine` from `fable/autoswitch_state.json`
-(`autoswitch.ReadLastTick`, `ReadQuarantineEntries`), `caption` `Counting
+(`autoswitch.ReadLastTick`, `reporting.FableQuarantine`), `caption` `Counting
 5h + 7d` plus every Fable window name an account reports, `ranking`
 `autoswitch.RankTargets` over the Fable pool less the live slot with the
 Fable settings, as the Fable tick ranks (A102), and `heldUntil` (epoch
@@ -8574,14 +8591,16 @@ usage both rankings read is one collector pass. Without a Fable login the
 document is v0.15.1's byte for byte.
 
 **The route.** `POST /api/switch/{key}?store=fable` calls
-`core.Switcher.SwitchFable` for a `claude:` key, a switch by hand that
-stamps the Fable store's hold; `&empty=1`, on any key, calls `EmptyFable`.
-Both run through the authenticated mutation path (cookie and CSRF, or the
-bearer) and log `Switched the Fable store to account N` or `Emptied the
-Fable store` with the dashboard actor, beside the switch's own `by hand`
-line. Another `store` value, a `codex:` key, `force` or `confirmAuthChange`
-answer 400; a server without the seam (`web.Deps.Fable`) answers 503. The
-default login, `sequence.json` and `.claude.json` are not written.
+`core.Switcher.SwitchFableBy` without an actor for a `claude:` key, a switch
+by hand that stamps the Fable store's hold; `&empty=1`, on any key, calls
+`EmptyFableBy` alike. Both run through the authenticated mutation path
+(cookie and CSRF, or the bearer) and log `Switched the Fable store to
+account N` or `Emptied the Fable store` with the dashboard actor, the one
+line of the move. Another `store` value (the empty `store=` included: only
+an absent `store` is the default switch), a `codex:` key, `force` or
+`confirmAuthChange` answer 400; a server without the seam (`web.Deps.Fable`)
+answers 503. The default login, `sequence.json` and `.claude.json` are not
+written.
 
 **The page.** While `fable` is present the header adds a second line under
 the active account, `Fable: #N <name>` (a *Fable login: sign in again* chip
@@ -8598,7 +8617,11 @@ row it reads *Fable here* and is disabled. The Auto tab adds one line,
 `auto.owner`). No engine this page hosts runs a Fable tick (A102), so without
 an owner the line says so instead (2026-11-18): `Fable store: this
 dashboard's checks do not move it; a scheduler running tycswap auto --once
-does`.
+does`. Nor does a scheduler's tick while auto-switch is off or the store is
+off (A102), and only a switch by hand turns the store on (A100), so the line
+names no next account then either: `Fable store: off; tycswap switch --store
+fable <account> turns it on` while the store is off, else `Fable store: not
+checked while off` while auto-switch is off.
 
 **The tray (O11).** The Windows panel's Fable store row carries a second
 outlined label `Fable` after the plan label, and its screen-reader text
@@ -8627,8 +8650,9 @@ their windows.
 
 **Tests.** `TestListNamesTheFableStoreAndItsLogins`,
 `TestListWithTheFableStoreOff`, `TestListWithoutFableLogins`,
-`TestStatusFableObject` (each state, the wake-parked paths) and
-`TestSnapshotCarriesTheFableStore` in `reporting`;
+`TestStatusFableObject` (each state, the wake-parked paths),
+`TestSnapshotCarriesTheFableStore` and
+`TestFableQuarantineLeavesOutLoginsSignedInAgain` in `reporting`;
 `TestMergePassesTheFableStoreFromClaude`; `TestStateCarriesTheFableStore`,
 `TestStateRowFableLoginIsAMap`, `TestStateWithoutFable`,
 `TestFableSwitchRoute`, `TestFableSwitchRouteRefusals`, the route in the
@@ -8637,9 +8661,12 @@ page element with a Fable store, none without, the button's request) in
 `web`; `TestDashboardStateWithoutFableLogins` (the state document against
 `testdata/nofable-state.json`, recorded from the tree before these
 surfaces), `TestDashboardSwitchesTheFableStoreOnly`,
-`TestDashboardAutoFable` and `TestDashboardPageWithTheFableStore` over a real
-switcher in `cli`. The tray: `TestPanelFableLabelAndButton` (the label, the
-button and the A84 fit, wide and narrow) and `TestPanelFableAccessibleTexts`
+`TestDashboardAutoFable`, `TestDashboardPageWithTheFableStore`,
+`TestFableLoginSignedInAgainReadsOkAtOnce`,
+`TestFableLoginSignedInAgainWithAutoSwitchOff` and
+`TestFableQuarantineOfAnyReasonReadsSignInAgain` and
+`TestFableSwitchRouteRefusesAnEmptyStore` over a real switcher in `cli`. The tray: `TestPanelFableLabelAndButton` (the label, the button and
+the A84 fit, wide and narrow) and `TestPanelFableAccessibleTexts`
 in `tray`, `TestNativePanelUseForFable` on Windows; `TestTrayFablePanelRows`,
 `TestTrayFableTooltip`, `TestTrayFableMenu`, `TestTrayFableClick`,
 `TestTrayFableClicksDropWhileOneIsInFlight`,

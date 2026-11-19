@@ -39,6 +39,9 @@ func fableSwitchLine(res map[string]any) string {
 	case "already-active":
 		return "The Fable store is already on Account-" + num + "."
 	case "emptied":
+		if res["switched"] != true {
+			return "The Fable store holds no login; Fable sessions start on the default login."
+		}
 		return "The Fable store is off now; Fable sessions start on the default login."
 	}
 	return "Switched the Fable store to Account-" + num + " (" + email + ")."

@@ -147,8 +147,9 @@ the host of the endpoint its requests go to (the whole URL is in `--json`).
 While an account has a Fable login (DESIGN A100, A104), tags follow the other
 markers: `(Fable store)` on the Fable store's account, `(Fable login)` on
 another account whose Fable login the store can use, and `(Fable login: sign
-in again)` on one whose Fable login the Fable engine quarantined on
-`invalid_grant`. `(active)` stays the default login's.
+in again)` on one whose Fable login the Fable engine quarantined
+(`invalid_grant`, or `identity-conflict`) and that has not been signed in
+again since. `(active)` stays the default login's.
 When usage cannot be fetched the row reads `usage unavailable (<reason>)` where
 `<reason>` is the last fetch error (for example `http-429`, `http-401`).
 
@@ -213,7 +214,7 @@ Present only when applicable (additive, schemaVersion 1):
 | `usageFetchedAt` | string (ISO-8601 UTC) | `usage` is non-null and the measurement time is known. |
 | `usageAgeSeconds` | number | Emitted with `usageFetchedAt`. |
 | `usageRefresh` | object | A usage fetch was skipped and none has been attempted since: `skipReason` (string) says why, for example `owner holds an expired token; Claude Code refreshes it on next use`, and `skipAt` (string, ISO-8601 UTC, seconds) since when. The next attempted fetch, successful or failed, removes both. |
-| `fableLogin` | object | The account has a Fable login (DESIGN A104): `{"live": bool, "status": "ok" \| "sign in again"}`. `live` is whether the Fable store holds it; `sign in again` means the Fable engine quarantined it on `invalid_grant`. |
+| `fableLogin` | object | The account has a Fable login (DESIGN A104): `{"live": bool, "status": "ok" \| "sign in again"}`. `live` is whether the Fable store holds it; `sign in again` means the Fable engine quarantined it (`invalid_grant`, or `identity-conflict`: it authenticates as another account) and it has not been signed in again since: a quarantine entry whose fingerprint is neither the stored Fable login's nor the Fable store's live login's names a replaced login and reads `ok` at once, before the engine releases it. |
 
 The `usageStatus` enumeration:
 
@@ -411,7 +412,7 @@ tycswap switch --store fable --empty [--json] [--debug]
 | `--force` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; activates without backing up the current login first. When the live credential already belongs to the target while `~/.claude.json` names another slot, it repairs the config instead, as without `--force` (DESIGN A68). |
 | `--yes` / `-y` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; answers the API-key confirmation below, for scripts. |
 | `--strategy` | choice `best` \| `next-available` | unset | Only with bare `switch` (no target). |
-| `--store` | `fable` \| `default` | `default` | Only with `switch`. `fable` switches the Fable store (below) and takes an account or `--empty`, never `--strategy` or `--force`; `default` is the switch without `--store`. |
+| `--store` | `fable` \| `default` | `default` | Only with `switch`. `fable` switches the Fable store (below) and takes an account or `--empty`, never `--strategy` or `--force`; with it the account, `--store fable` and the options come in any order. `default` is the switch without `--store`, whose account comes before its options. |
 | `--empty` | flag | off | Only with `--store fable`: turns the Fable store off. |
 | `--debug` | flag | off | — |
 
@@ -643,7 +644,10 @@ and `to` are both the target (DESIGN A68).
 
 `--store fable` prints `Switched the Fable store to Account-<n> (<email>).`,
 `The Fable store is already on Account-<n>.`, or, with `--empty`, `The Fable
-store is off now; Fable sessions start on the default login.` With `--json`:
+store is off now; Fable sessions start on the default login.`, and `The Fable
+store holds no login; Fable sessions start on the default login.` when it held
+none (also on a box without a Fable login, where nothing is created). With
+`--json`:
 
 ```
 {
@@ -2979,9 +2983,12 @@ tabs:
   them. The quarantine; a link to the Settings tab. While an account has a
   Fable login, a line `Fable store: <auto.fable.caption> · next #M` says what
   the Fable store's checks count and the account they would take next while
-  a scheduler runs the checks (`auto.owner`); otherwise it reads `Fable store:
-  this dashboard's checks do not move it; a scheduler running tycswap auto
-  --once does`, since only `auto --once` runs a Fable tick (DESIGN A102).
+  a scheduler runs the checks (`auto.owner`) with auto-switch and the Fable
+  store on; with the store off it reads `Fable store: off; tycswap switch
+  --store fable <account> turns it on`, with auto-switch off `Fable store: not
+  checked while off`, and otherwise `Fable store: this dashboard's checks do
+  not move it; a scheduler running tycswap auto --once does`, since only
+  `auto --once` runs a Fable tick, and only while both are on (DESIGN A102).
   The page starts no dry run (`tycswap auto --dry-run` does) and has no event
   log: a scheduler's ticks print to its journal.
 - **Settings**: the `settings.json` keys `tycswap config` knows
@@ -3099,7 +3106,8 @@ the object `status --json` carries; each Claude row with a Fable login
 carries `fableLogin` as in `list --json`; and `auto.fable` is the Fable
 store's engine: `{"lastTickAt", "caption", "ranking", "quarantine",
 "heldUntil"?}`, read from `fable/autoswitch_state.json` (`lastTickAt` epoch
-seconds or null, `quarantine` as `auto.quarantine`), `caption` `Counting 5h +
+seconds or null, `quarantine` as `auto.quarantine`, less the entries of logins
+signed in again since), `caption` `Counting 5h +
 7d` and every Fable window an account reports, `ranking` the order a Fable
 tick would take the Fable pool in (DESIGN A102), and `heldUntil` (epoch
 seconds) while a switch of the Fable store by hand holds its engine. A
@@ -3197,7 +3205,7 @@ anything else `500`.
 | `POST /api/launch` | | a one-time dashboard URL, `{"url": "http://127.0.0.1:<port>/?token=<t>"}`: the unused start URL, else a fresh one; for a remote tray, with the bearer token only | `403` with the cookie and CSRF pair, or without a remote token configured |
 | `POST /api/switch` | `{"strategy": "best"\|"next-available"}` | `tycswap switch --strategy`, counting what it counts (DESIGN A98); a `models` field is ignored (DESIGN A97) | `400` missing or unknown strategy |
 | `POST /api/switch/{key}[?force=1][&confirmAuthChange=1]` | | `tycswap switch <id> [--force] [--yes]`; `confirmAuthChange=1` records the user's yes to a switch onto an API-key account, which the page asks for first (DESIGN A33). A `codex:` key is `tycswap codex switch <id>` and answers `{"number", "email", "runningPids", "alreadyActive"}` | `400` bare key, an API-key target without `confirmAuthChange`, or `force` / `confirmAuthChange` with a `codex:` key; `404` unknown provider; `503` `confirmAuthChange` without account operations, or a `codex:` key without Codex accounts; `409` a `codex:` key while the Codex store stays busy for 10 s |
-| `POST /api/switch/{key}?store=fable[&empty=1]` | | `tycswap switch --store fable <id>`, a switch of the Fable store by hand that holds its engine for `autoswitch.cooldownSeconds`; with `empty=1`, on any key, `tycswap switch --store fable --empty`. Answers the switch's JSON (`"store": "fable"`); the default login, the roster and `.claude.json` are not written (DESIGN A104) | `400` another `store` value, a `codex:` key, or `force` / `confirmAuthChange`; the Fable switch's own refusals (an account without a Fable login, a plan without Fable) by kind; `503` without the Fable seam |
+| `POST /api/switch/{key}?store=fable[&empty=1]` | | `tycswap switch --store fable <id>`, a switch of the Fable store by hand that holds its engine for `autoswitch.cooldownSeconds`; with `empty=1`, on any key, `tycswap switch --store fable --empty`. Answers the switch's JSON (`"store": "fable"`); the default login, the roster and `.claude.json` are not written (DESIGN A104) | `400` another `store` value, the empty `store=` included, a `codex:` key, or `force` / `confirmAuthChange`; the Fable switch's own refusals (an account without a Fable login, a plan without Fable) by kind; `503` without the Fable seam |
 | `POST /api/accounts/add` | `{"provider": "claude"\|"codex"}` (optional) | `tycswap add`; answers `{"ok": true, "result": {"number", "email", "refreshed"}}`, the account the live login is now (`refreshed`: it was that account already). The tray's *Add current login* is the same call. With `codex`, `tycswap codex add`, answering `{"number", "email"}` | `500` `Claude Code has no subscription login on this computer. …` when Claude Code has no live login, before anything is stored; `400` unknown provider; `503` `codex` without Codex accounts; `409` `codex` while the Codex store stays busy for 10 s |
 | `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias", "baseUrl"}` | `tycswap add-token [--base-url]` (the token is never echoed or logged); `503` with a `baseUrl` when the facade cannot store one | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
 | `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y`; for a `codex:` key `tycswap codex enable`, `disable`, `remove -y`, holding the Codex store lock throughout | `400` bare key, `404` unknown provider, `503` a `codex:` key without Codex accounts, `409` the Codex store stayed busy (a Codex switch or a token refresh held it) for 10 s |
@@ -5238,8 +5246,12 @@ line `<change> by <actor>` beside the change's own line.
   `engine:<trigger>` for an auto-switch, on its own line after the switch
   layer's unchanged `Switched from account <from> to <to>`. The Fable
   store's switches read `Switched the Fable store to account <n> by
-  engine:<trigger>` and `… by hand`, and every other line of its engine
-  starts with `Fable store: ` (DESIGN A102).
+  <actor>`, one line per move: `engine:<trigger>` for its engine, and for a
+  switch by hand the command's (`switch --store fable`, `add --login
+  --lineage fable`), the tray's or the dashboard's actor. Emptying it reads
+  `Emptied the Fable store by <actor>` alike, `by hand` when `remove` or
+  `add --slot` empties it. Every other line of its engine starts with
+  `Fable store: ` (DESIGN A102).
 - **Logins made elsewhere.** Every real tick (`auto` without `--dry-run`)
   records the live slot it saw and when (`lastSeenLive`, `lastSeenAt` in
   `autoswitch_state.json`; the dashboard's *Last tick*). When the live slot

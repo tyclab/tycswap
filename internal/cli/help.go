@@ -138,6 +138,10 @@ const visibleOptions = `options:
   --lineage {default,fable}
                         With 'add --login': fable stores the sign-in as the
                         Fable login of the account it names
+  --store {default,fable}
+                        With 'switch': fable switches the Fable store, to an
+                        account (switch --store fable <num|email>) or off
+  --empty               With 'switch --store fable': turn the Fable store off
   --force               Overwrite existing accounts during import; with
                         'switch <num|email>', activate without backing up first
   -y, --yes             With 'switch <num|email>' onto an API-key account:

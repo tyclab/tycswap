@@ -270,7 +270,7 @@ func (a *autoFacade) fable(data *store.SequenceData, values map[string]any, s se
 		LastTickAt: autoswitch.ReadLastTick(path),
 		Caption:    strings.Join(append([]string{"Counting 5h + 7d"}, names...), " + "),
 		Ranking:    append([]string{}, autoswitch.RankTargets(candidates, values, counted, names, nil, now)...),
-		Quarantine: quarantineView(path),
+		Quarantine: quarantineView(reporting.FableQuarantine(a.sw.Store)),
 	}
 	if until, held := handHoldUntil(path, s.CooldownSeconds, clock.Seconds(a.clk)); held {
 		v.HeldUntil = &until
@@ -293,11 +293,11 @@ func handHoldUntil(path string, cooldown, now float64) (float64, bool) {
 	return until, until > now
 }
 
-// quarantineView is the state file's quarantine as the page reads it: each
-// slot's reason and the engine's RFC3339 "at" stamp.
-func quarantineView(path string) map[string]any {
+// quarantineView is a quarantine as the page reads it: each slot's reason
+// and the engine's RFC3339 "at" stamp.
+func quarantineView(entries map[string]autoswitch.QuarantineEntry) map[string]any {
 	quarantine := map[string]any{}
-	for k, e := range autoswitch.ReadQuarantineEntries(path) {
+	for k, e := range entries {
 		entry := map[string]any{"reason": e.Reason}
 		if e.At != "" {
 			entry["at"] = e.At
@@ -341,7 +341,7 @@ func (a *autoFacade) view() (web.AutoView, settings.AutoSwitchSettings, bool) {
 	}
 	// Each quarantine entry carries its reason and the engine's RFC3339 "at"
 	// stamp, so the page can show since when a slot has been held out.
-	quarantine := quarantineView(autoswitch.StatePath(a.sw.BackupDir()))
+	quarantine := quarantineView(autoswitch.ReadQuarantineEntries(autoswitch.StatePath(a.sw.BackupDir())))
 	// An engine whose ticks all report disabled is not running to the user
 	// (DESIGN A83).
 	live := a.running && fresh.Enabled
