@@ -315,6 +315,67 @@ func TestFableTickOffSaysDisabledOnce(t *testing.T) {
 	}
 }
 
+// Auto-switch off: no Fable tick runs, yet a real run stores a login Claude
+// Code rotated in the Fable store, as every read does for the default login.
+// The output and the Fable state stay as an off run leaves them, and a dry run
+// stores nothing.
+func TestAutoSwitchOffStillStoresTheFableStoresRotatedLogin(t *testing.T) {
+	fx := atFableLimit
+	fx.off = true
+	sw, _ := fx.build(t)
+	sw.Store.OAuth.(*oauth.FakeClient).ProfileFn = func(_ context.Context, token string) *oauth.Identity {
+		if token != "at-f2-rotated" {
+			return nil
+		}
+		return &oauth.Identity{UUID: "u-2", Email: fableEmail("2")}
+	}
+	writeFile(t, filepath.Join(paths.FableStoreDir(sw.BackupDir()), ".credentials.json"),
+		`{"claudeAiOauth":{"accessToken":"at-f2-rotated","refreshToken":"rt-f2-rotated","expiresAt":4102444800000}}`)
+	f, _ := sw.Store.ForFable()
+	backup := func() string { c, _ := f.ReadAccountCredentials("2", fableEmail("2")); return c }
+	runCodex(t, "", "auto", "--once", "--json", "--dry-run")
+	if got := backup(); strings.Contains(got, "rotated") {
+		t.Fatalf("a dry run stored the rotated login: %s", got)
+	}
+	code, out, _ := runCodex(t, "", "auto", "--once", "--json")
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if code != 2 || len(lines) != 1 || !strings.Contains(lines[0], `"reason":"disabled"`) || strings.Contains(out, `"store"`) {
+		t.Fatalf("exit %d, stdout %q", code, out)
+	}
+	if got := backup(); !strings.Contains(got, "rt-f2-rotated") {
+		t.Fatalf("auto-switch off: the Fable store's rotated login was not stored: %s", got)
+	}
+	if got := readOrAbsent(t, fableStatePath(sw)); got != "<absent>" {
+		t.Fatalf("Fable state written while off: %s", got)
+	}
+	if got := storeLive(t, sw); !strings.Contains(got, "at-f2-rotated") {
+		t.Fatalf("the Fable store's live login changed: %s", got)
+	}
+}
+
+// Auto-switch off on a box without a Fable login: a real run asks no profile
+// and creates nothing of the Fable scope.
+func TestAutoSwitchOffWithoutAFableLoginCreatesNothing(t *testing.T) {
+	sw, _ := fableTickFixture{def: "1", off: true, usage: map[string][3]float64{"1": {10, 20, 30}}}.build(t)
+	asked := 0
+	sw.Store.OAuth.(*oauth.FakeClient).ProfileFn = func(context.Context, string) *oauth.Identity {
+		asked++
+		return nil
+	}
+	code, out, _ := runCodex(t, "", "auto", "--once", "--json")
+	if code != 2 || !strings.Contains(out, `"reason":"disabled"`) {
+		t.Fatalf("exit %d, stdout %q", code, out)
+	}
+	for _, dir := range []string{paths.FableScopeDir(sw.BackupDir()), paths.FableCredentialsDir(sw.BackupDir())} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatalf("%s exists after an off run without a Fable login (%v)", dir, err)
+		}
+	}
+	if asked != 0 {
+		t.Fatalf("an off run without a Fable login asked the profile endpoint %d times", asked)
+	}
+}
+
 // A dry run decides both ticks and writes neither state file, nor the store.
 func TestFableTickDryRunWritesNothing(t *testing.T) {
 	sw, _ := atFableLimit.build(t)

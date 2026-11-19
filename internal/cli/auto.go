@@ -166,6 +166,12 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 			// (DESIGN A78, A92).
 			retireGroups(sw, onEvent, false)
 			retireProfiles(sw, false)
+			// Nor does storing a login Claude Code rotated in the Fable
+			// store: off stops switches, and every read stores the default
+			// login's the same way (DESIGN A102).
+			if sw.Store.FableStore().On {
+				sw.Store.HarvestFableLive()
+			}
 			return int(autoswitch.NoAction)
 		}
 	}

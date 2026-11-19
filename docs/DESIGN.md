@@ -8349,6 +8349,11 @@ else 2. With no Fable login, or with the store off, only the default tick
 runs and the run's output is v0.15.1's byte for byte (`TestFableTickNoChangeWithoutAStore`;
 compared with origin/main when written); with the store off a real run still
 keeps one idle Fable login alive (below).
+With auto-switch off no Fable tick runs. A real `--once` run then still
+harvests the store's rotated login, as every read harvests the default
+login's (A68): off stops switches, and the stored copy is tycswap's own. It
+does nothing else for the Fable store, writes no Fable state and prints
+nothing more (`TestAutoSwitchOffStillStoresTheFableStoresRotatedLogin`).
 
 **The adapter.** The Fable engine is `autoswitch.NewEngine` over
 `cli.fableAdapter`, which satisfies the frozen `autoswitch.Switcher` (A13):
