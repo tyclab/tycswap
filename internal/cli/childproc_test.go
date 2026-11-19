@@ -56,6 +56,11 @@ func TestMain(m *testing.M) {
 	menuFableRows = func(ioStreams) ([]fableRow, error) {
 		return nil, errors.New("menuFableRows is stubbed in tests")
 	}
+	// A suite run inside a session tycswap start launched inherits what start
+	// hands its child; the tests that want one set it themselves.
+	for _, key := range []string{startHoldEnv, startFamilyEnv, "ANTHROPIC_MODEL"} {
+		_ = os.Unsetenv(key)
+	}
 	os.Exit(m.Run())
 }
 

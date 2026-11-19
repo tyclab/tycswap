@@ -157,6 +157,10 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 		switch {
 		case ok && *activeHeadroom <= 0:
 			axis, trigger = hot, "at-limit"
+		case !e.servesAccount(cur):
+			// A live session's model does not run on this login: an account
+			// that serves it, below every bar, takes over (DESIGN A106).
+			trigger = "model-missing"
 		case ok:
 			axis, trigger = hot, "proactive"
 		case e.missesCountedModel(cur, usageMap):
@@ -222,6 +226,9 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 		if trigger == "model-missing" {
 			detail = "the active account reports no " + strings.Join(requiredModels(e.models), ", ") +
 				" usage; no account that does is below every bar"
+			if !e.servesAccount(cur) {
+				detail = "the active account is not marked for " + e.servesModel + "; no marked account is below every bar"
+			}
 		}
 		e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: trigger + "-no-target", Detail: detail})
 		return tickResult{Outcome: NoAction}, nil
@@ -409,9 +416,13 @@ func (e *Engine) selectCandidates(
 
 	var qualifying []qual
 	required := requiredModels(e.models)
-	modelRejected := false
+	modelRejected, servesRejected := false, false
 	activeAxis := activeByClass.Axis(axis)
 	for _, num := range oauthCandidates {
+		if !e.servesAccount(num) {
+			servesRejected = true
+			continue
+		}
 		if !hasRequiredModels(usageMap[num], required) {
 			modelRejected = true
 			continue
@@ -435,9 +446,9 @@ func (e *Engine) selectCandidates(
 		}
 		qualifying = append(qualifying, q)
 	}
-	if len(qualifying) == 0 && modelRejected {
+	if len(qualifying) == 0 && (modelRejected || servesRejected) {
 		if !isHandover(trigger) {
-			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-compatible-model-target", Detail: "no qualifying target with reported " + strings.Join(required, ", ") + " usage; keeping the current account"})
+			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "no-compatible-model-target", Detail: e.incompatibleDetail(required, modelRejected, servesRejected)})
 		}
 		return nil, oauthCandidates, anyKnown, &tickResult{Outcome: Blocked}
 	}
@@ -446,6 +457,19 @@ func (e *Engine) selectCandidates(
 		ordered = append(ordered, q.num)
 	}
 	return ordered, oauthCandidates, anyKnown, nil
+}
+
+// incompatibleDetail says which model kept every target out: a counted
+// window not reported, or the live sessions' model not served (DESIGN A106).
+func (e *Engine) incompatibleDetail(required []string, modelRejected, servesRejected bool) string {
+	var why []string
+	if servesRejected {
+		why = append(why, "marked for "+e.servesModel)
+	}
+	if modelRejected {
+		why = append(why, "with reported "+strings.Join(required, ", ")+" usage")
+	}
+	return "no qualifying target " + strings.Join(why, " ") + "; keeping the current account"
 }
 
 // targetQual is the part of qualifying a target no trigger changes: an account

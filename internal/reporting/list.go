@@ -96,6 +96,7 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 				Alias:           info.Alias,
 				Disabled:        recordDisabled(data, num),
 				StartLogin:      store.StartLoginFrom(data, num),
+				Mythos:          store.MythosFrom(data, num),
 				AtLimit:         atLimit,
 				LimitingWindows: limiting,
 				BaseURL:         info.BaseURL,
@@ -169,6 +170,9 @@ func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries ma
 		}
 		if store.StartLoginFrom(data, num) {
 			markers += " " + printer.Muted("(start login)")
+		}
+		if store.MythosFrom(data, num) {
+			markers += " " + printer.Muted("(Mythos)")
 		}
 		if recordDisabled(data, num) {
 			markers += " " + printer.Muted("(disabled)")

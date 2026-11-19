@@ -30,7 +30,7 @@ func selectBestSwitchable(s *store.Store, currentNum string, c Counting, usage m
 			candidates = append(candidates, num)
 			continue
 		}
-		if s.RotationEligible(data, num) && !c.Quarantined[num] {
+		if s.RotationEligible(data, num) && !c.Quarantined[num] && (c.Serves == nil || c.Serves(num)) {
 			candidates = append(candidates, num)
 			others++
 			if known(num) {

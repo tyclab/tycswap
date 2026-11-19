@@ -216,11 +216,13 @@ func round1(x float64) float64 {
 
 // AccountRow builds a full account row for --list.
 type RowOpts struct {
-	UsageFetchedAt  *float64
-	UsageAgeS       *float64
-	Alias           string
-	Disabled        bool
-	StartLogin      bool
+	UsageFetchedAt *float64
+	UsageAgeS      *float64
+	Alias          string
+	Disabled       bool
+	StartLogin     bool
+	// Mythos is the operator's mark for an account that runs Mythos (DESIGN A106).
+	Mythos          bool
 	AtLimit         bool
 	LimitingWindows []string
 	// BaseURL is the endpoint an API-key account carries (DESIGN A46); the
@@ -257,6 +259,9 @@ func AccountRow(number int, email, orgName, orgUUID string, active bool, usageEn
 	}
 	if opts.StartLogin {
 		row["startLogin"] = true
+	}
+	if opts.Mythos {
+		row["mythos"] = true
 	}
 	if opts.Disabled {
 		row["disabled"] = true

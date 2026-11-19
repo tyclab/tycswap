@@ -70,13 +70,16 @@ type CountingView struct {
 	Sessions   []string `json:"sessions"`
 	Unservable []string `json:"unservable"`
 	Reserved   []string `json:"reserved"`
-	Caption    string   `json:"caption"`
+	// Mythos is the accounts marked for Mythos while a Mythos session runs;
+	// absent otherwise (DESIGN A106).
+	Mythos  []string `json:"mythos,omitempty"`
+	Caption string   `json:"caption"`
 }
 
 // countingCaption is the one line the Auto tab, the tray and the strategy
 // tile show for c, the one a switch by strategy prints (DESIGN A98).
 func countingCaption(c CountingView) string {
-	return reporting.CountingCaption(c.Mode == "hosted", c.Models, c.Sessions, c.Unservable, c.Reserved)
+	return reporting.CountingCaption(c.Mode == "hosted", c.Models, c.Sessions, c.Unservable, c.Reserved, c.Mythos)
 }
 
 // SessionsJSON is the sessions section.
@@ -314,6 +317,9 @@ func accountRow(a reporting.AccountSnapshot) map[string]any {
 	}
 	if a.ProviderName() == reporting.ProviderClaude {
 		row["startLogin"] = a.StartLogin
+		if a.Mythos {
+			row["mythos"] = true
+		}
 	}
 	if a.FableLogin != nil {
 		// A map, as a JSON reader sees it: the in-process tray reads rows

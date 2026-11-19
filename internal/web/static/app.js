@@ -1110,6 +1110,7 @@
     var out = [];
     if (a.isActive) { out.push(chip('active', 'active')); }
     if (isClaude(a) && a.startLogin) { out.push(chip('start login', 'outline', 'used to start sessions, even at its limit')); }
+    if (isClaude(a) && a.mythos) { out.push(chip('Mythos', 'outline', 'runs Claude Mythos: while a Mythos session runs, auto-switch keeps the login on such an account')); }
     if (a.atLimit) { out.push(chip('at limit', 'crit', (a.limitingWindows || []).join(', ') || 'a window is at 100%')); }
     if (a.disabled) { out.push(chip('disabled', 'outline', 'held out of auto-rotation')); }
     if (a.ownershipBlockReason) { out.push(chip('held by another profile', 'warn', a.ownershipBlockReason)); }
@@ -1177,6 +1178,14 @@
     return menuButton(a.startLogin ? 'Disallow for start' : 'Allow for start', {
       'data-post': '/api/accounts/' + keyPath(a) + '/start-login/' + (a.startLogin ? 'disallow' : 'allow'),
       'data-label': a.startLogin ? 'Disallow for start' : 'Allow for start'
+    });
+  }
+
+  function mythosAction(a) {
+    if (!isClaude(a)) { return null; }
+    return menuButton(a.mythos ? 'Disallow for Mythos' : 'Allow for Mythos', {
+      'data-post': '/api/accounts/' + keyPath(a) + '/mythos/' + (a.mythos ? 'disallow' : 'allow'),
+      'data-label': a.mythos ? 'Disallow for Mythos' : 'Allow for Mythos'
     });
   }
 
@@ -1319,6 +1328,7 @@
       var k = rowKey(a);
       listEl.appendChild(menuButton('Use saved login…', { 'data-action': 'force-switch', 'data-id': k, 'data-name': accountLabel(a) }));
       listEl.appendChild(startLoginAction(a));
+      listEl.appendChild(mythosAction(a));
       if (a.disabled) {
         listEl.appendChild(menuButton('Enable for rotation', { 'data-post': '/api/accounts/' + keyPath(a) + '/enable', 'data-label': 'Enable' }));
       } else {

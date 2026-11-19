@@ -208,22 +208,23 @@ func (a *autoFacade) Events() <-chan web.AutoEventView { return a.stream }
 func (a *autoFacade) View() web.AutoView {
 	v, s, hosted := a.view()
 	v.LastTickAt = autoswitch.ReadLastTick(autoswitch.StatePath(a.sw.BackupDir()))
-	var reserved func(string) bool
-	v.Counting, reserved = a.counting(s, hosted)
+	var policy reporting.PolicyResult
+	v.Counting, policy = a.counting(s, hosted)
 	data, _ := a.sw.ReadSequence()
 	if data == nil {
 		v.Ranking = []string{}
 		return v
 	}
 	values := reporting.UsageByAccount(a.sw.Store)
-	v.Ranking = a.ranking(data, values, s, v.Counting.Models, reserved)
+	v.Ranking = a.ranking(data, values, s, v.Counting.Models, policy)
 	v.Fable = a.fable(data, values, s)
 	return v
 }
 
 // ranking is the order the engine would take the other accounts in, over the
-// windows it counts now, with the accounts the policy reserves (DESIGN A99).
-func (a *autoFacade) ranking(data *store.SequenceData, values map[string]any, s settings.AutoSwitchSettings, models []string, reserved func(string) bool) []string {
+// windows it counts now, with the accounts the policy reserves (DESIGN A99)
+// and only those it serves (A106).
+func (a *autoFacade) ranking(data *store.SequenceData, values map[string]any, s settings.AutoSwitchSettings, models []string, policy reporting.PolicyResult) []string {
 	live := ""
 	if n := a.sw.CurrentAccountNumber(); n != nil {
 		live = *n
@@ -232,11 +233,11 @@ func (a *autoFacade) ranking(data *store.SequenceData, values map[string]any, s 
 	var candidates []string
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
-		if _, held := quarantined[num]; num != live && !held && a.sw.RotationEligible(data, num) {
+		if _, held := quarantined[num]; num != live && !held && a.sw.RotationEligible(data, num) && (policy.Serves == nil || policy.Serves(num)) {
 			candidates = append(candidates, num)
 		}
 	}
-	return append([]string{}, autoswitch.RankTargets(candidates, values, s, models, reserved, a.clk.Now())...)
+	return append([]string{}, autoswitch.RankTargets(candidates, values, s, models, policy.Reserved, a.clk.Now())...)
 }
 
 // fable is the Fable store's engine as the Auto tab shows it (DESIGN A104),
@@ -310,23 +311,23 @@ func quarantineView(entries map[string]autoswitch.QuarantineEntry) map[string]an
 // counting is what the engine counts now (DESIGN A91, A97): an engine hosted
 // here keeps the models it was built with (ENG-8); the scheduled ticks count
 // what the default-session policy derives.
-func (a *autoFacade) counting(s settings.AutoSwitchSettings, hosted bool) (*web.CountingView, func(string) bool) {
+func (a *autoFacade) counting(s settings.AutoSwitchSettings, hosted bool) (*web.CountingView, reporting.PolicyResult) {
 	c := &web.CountingView{Mode: "sessions", Models: settings.ParseModelNames(s.Model)}
-	var reserved func(string) bool
+	var policy reporting.PolicyResult
 	switch {
 	case hosted:
 		c.Mode = "hosted"
 	default:
 		r := reporting.DefaultSessionPolicyResult(a.sw.Store, s, a.clk.Now())
 		c.Models, c.Sessions, c.Unservable = settings.ParseModelNames(r.Settings.Model), r.Sessions, r.Unservable
-		c.Reserved, reserved = r.ReservedIn(a.sw.Store), r.Reserved
+		c.Reserved, c.Mythos, policy = r.ReservedIn(a.sw.Store), r.Mythos, r
 	}
 	for _, list := range []*[]string{&c.Sessions, &c.Unservable, &c.Reserved} {
 		if *list == nil {
 			*list = []string{}
 		}
 	}
-	return c, reserved
+	return c, policy
 }
 
 // view is the engine host's own state, the settings its engine decides with

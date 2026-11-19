@@ -65,6 +65,8 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("POST /api/accounts/{id}/enable", s.handleDisable(false))
 	api.HandleFunc("POST /api/accounts/{id}/start-login/allow", s.handleStartLogin(true))
 	api.HandleFunc("POST /api/accounts/{id}/start-login/disallow", s.handleStartLogin(false))
+	api.HandleFunc("POST /api/accounts/{id}/mythos/allow", s.handleMythos(true))
+	api.HandleFunc("POST /api/accounts/{id}/mythos/disallow", s.handleMythos(false))
 	api.HandleFunc("POST /api/accounts/{id}/remove", s.handleRemove)
 	api.HandleFunc("POST /api/accounts/{id}/alias", s.handleAlias)
 	api.HandleFunc("POST /api/accounts/{id}/move", s.handleMove)
@@ -634,6 +636,26 @@ func (s *Server) handleStartLogin(allowed bool) http.HandlerFunc {
 			return
 		}
 		s.mutate(w, func() (map[string]any, error) { return nil, s.d.Accounts.SetStartLogin(id, allowed) })
+	}
+}
+
+// handleMythos marks or unmarks a Claude account as one that runs Mythos
+// (DESIGN A106); account operations without the mark answer 503.
+func (s *Server) handleMythos(allowed bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		provider, id, ok := pathKey(w, r)
+		if !ok {
+			return
+		}
+		if provider != reporting.ProviderClaude {
+			writeError(w, http.StatusBadRequest, "the Mythos mark is available for Claude accounts only")
+			return
+		}
+		marker, ok := s.d.Accounts.(MythosMarker)
+		if unavailable(w, ok, "account operations") {
+			return
+		}
+		s.mutate(w, func() (map[string]any, error) { return nil, marker.SetMythos(id, allowed) })
 	}
 }
 

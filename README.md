@@ -348,6 +348,8 @@ Markers, per line:
   Claude.ai's placeholder "<email>'s Organization" counts as personal.
 - `(active)` — the currently active login.
 - `(disabled)` — held out of auto-rotation by `tycswap disable`.
+- `(Mythos)` — marked by `tycswap mythos --allow` as an account that runs
+  Claude Mythos.
 - `at limit: <windows>` — a relevant usage window is at or over its limit; the
   suffix names the limiting windows (for example `7d` or `Fable 5`).
 
@@ -674,6 +676,31 @@ claude() { tycswap start -- /absolute/path/to/real/claude "$@"; }
 
 The real path must not resolve back to a launcher. A launcher invokes tycswap
 once and returns its status; a nonzero child exit must never trigger a retry.
+
+### Mark the accounts that run Mythos
+
+Only some accounts may run Claude Mythos, nothing tycswap reads says which,
+and Claude Code checks it on every request against the shared login. Mark
+them:
+
+```sh
+tycswap mythos --allow 2
+tycswap mythos --allow work
+tycswap mythos --list
+```
+
+`--disallow ID` removes a mark. While a session runs Mythos and a marked
+account has room (or the live one is marked and not at its limit),
+auto-switch keeps the shared login on a marked account: it never moves to an
+unmarked one, and from an unmarked one it moves to a marked account below
+every bar at once. `tycswap start` starts a Mythos session on a marked
+account (the start-login marks do not apply to it) and every other session
+too while a Mythos session runs. With no account marked, or none with room,
+nothing is restricted, so the other sessions keep running; `start` says so
+once per Mythos session when none is marked. `list`, the dashboard (**Allow for Mythos**) and the tray
+show the mark; the Auto tab's caption names the accounts a live Mythos session
+leaves the login, e.g. `live Mythos session: only accounts 2, 5`. Mythos
+sessions on the Fable store are not covered.
 
 ### Run accounts in parallel
 

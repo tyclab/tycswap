@@ -42,6 +42,9 @@ type Counting struct {
 	Settings    settings.AutoSwitchSettings
 	Reserved    func(num string) bool
 	Quarantined map[string]bool
+	// Serves is the accounts a live Mythos session leaves the login, nil
+	// for every account (DESIGN A106).
+	Serves func(num string) bool
 }
 
 // CountedModels returns the Counting for s; core wires it to

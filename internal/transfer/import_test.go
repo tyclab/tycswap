@@ -848,3 +848,27 @@ func TestImportRetainsLocalFableMarkOnlyForExistingIdentity(t *testing.T) {
 		t.Fatal("new imported identity inherited the Fable mark")
 	}
 }
+
+// A forced import of an existing identity keeps the local Mythos mark; a new
+// identity, even one whose envelope carries the key, gets none (DESIGN A106).
+func TestImportRetainsLocalMythosMarkOnlyForExistingIdentity(t *testing.T) {
+	f := newFakeAccounts(t)
+	f.seedAccount("1", "a@example.com", "", recordOpts{})
+	local := f.record(t, "1")
+	local["mythos"] = true
+	f.seq.Accounts["1"], _ = json.Marshal(local)
+	if _, err := importText(t, f, envelopeJSON(nil, oauthAccount(9, "a@example.com", "")), true); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.record(t, "1"); r["mythos"] != true {
+		t.Fatalf("mark lost: %v", r)
+	}
+	incoming := oauthAccount(1, "new@example.com", "")
+	incoming["mythos"] = true
+	if _, err := importText(t, f, envelopeJSON(nil, incoming), true); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := f.record(t, "2")["mythos"]; ok {
+		t.Fatal("new imported identity inherited the Mythos mark")
+	}
+}
