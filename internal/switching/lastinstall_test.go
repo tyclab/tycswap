@@ -151,3 +151,69 @@ func TestDefaultSwitchWithoutFableLoginsBacksUpIntoTheConfigsSlot(t *testing.T) 
 		t.Errorf("from %v, want Account-2", res.(map[string]any)["from"])
 	}
 }
+
+// switch 2, the account ~/.claude.json names because a Fable session wrote
+// it, while the default login is Account-1's (its last install): Account-2
+// is not live, so the switch backs Account-1's login up and installs 2's.
+// switch 1 repairs the config, saving the rotated login first.
+func TestSwitchToTheFableSessionsConfigAccountSwitches(t *testing.T) {
+	t.Run("the config's account", func(t *testing.T) {
+		s, rotated := fableSessionConfig(t, true, true)
+		res, err := SwitchTo(s, "2", true, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := res.(map[string]any)
+		if m["switched"] != true {
+			t.Fatalf("result %v, want a switch to Account-2", m)
+		}
+		if one, _ := s.ReadAccountCredentials("1", fableEmails["1"]); one != rotated {
+			t.Errorf("Account-1's default login = %s, want the rotated one", one)
+		}
+		if live := readActiveCreds(t, s); !oauth.SameAccountBlock(live, planCreds("at-d2", "rt-d2", "max")) {
+			t.Errorf("live = %s, want Account-2's", live)
+		}
+	})
+	t.Run("the last install", func(t *testing.T) {
+		s, rotated := fableSessionConfig(t, true, true)
+		res, err := SwitchTo(s, "1", true, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m := res.(map[string]any); m["reason"] != "config-repaired" {
+			t.Fatalf("result %v, want the config repaired", m)
+		}
+		if one, _ := s.ReadAccountCredentials("1", fableEmails["1"]); one != rotated {
+			t.Errorf("Account-1's default login = %s, want the rotated one", one)
+		}
+		if live := readActiveCreds(t, s); live != rotated {
+			t.Errorf("live = %s, want the rotated login left in place", live)
+		}
+	})
+}
+
+// Without a Fable login, switch 2 in the same state answers as v0.15.1:
+// already on Account-2, nothing written.
+func TestSwitchToTheConfigsAccountWithoutFableLoginsIsAlreadyActive(t *testing.T) {
+	s, rotated := fableSessionConfig(t, false, true)
+	before := snapshotTree(t, s.BackupDir())
+	res, err := SwitchTo(s, "2", true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := res.(map[string]any); m["switched"] != false || m["reason"] != "already-active" {
+		t.Fatalf("result %v, want already-active", m)
+	}
+	if live := readActiveCreds(t, s); live != rotated {
+		t.Errorf("live = %s, want it untouched", live)
+	}
+	after := snapshotTree(t, s.BackupDir())
+	for k, v := range before {
+		if after[k] != v {
+			t.Errorf("%s changed", k)
+		}
+	}
+	if len(after) != len(before) {
+		t.Errorf("files %d, want %d", len(after), len(before))
+	}
+}

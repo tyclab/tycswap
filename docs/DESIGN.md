@@ -8072,10 +8072,15 @@ into it as `unresolved` (A68's pre-fix backup,
 logged at INFO), and a target that is that slot repairs the config. With no
 last install the login is stashed and the target activated without an
 outgoing backup, as for an unmanaged live login (`from` null); that is the
-case only when the roster names no active OAuth account. Without a
+case only when the roster names no active OAuth account. `switch N`'s
+already-active check takes the same owner: with the config naming N and the
+default login N's last install's, another account's, it switches instead of
+answering `Already on`. Without a
 Fable login the switch is v0.15.1's: the config's slot takes the login
-(`TestDefaultSwitchWithoutFableLoginsBacksUpIntoTheConfigsSlot`, the same
-result as the v0.15.1 tag).
+(`TestDefaultSwitchWithoutFableLoginsBacksUpIntoTheConfigsSlot`), and
+`switch N` answers `already-active` and writes nothing
+(`TestSwitchToTheConfigsAccountWithoutFableLoginsIsAlreadyActive`), each the
+same result as the v0.15.1 tag.
 
 The default resolver is unchanged except one line: when `.claude.json` names
 the Fable store's live account (by backup or chain) and the default
