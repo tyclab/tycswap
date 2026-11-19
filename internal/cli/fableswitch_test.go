@@ -104,6 +104,8 @@ func TestSwitchStoreFableEmptyWithoutALogin(t *testing.T) {
 	})
 	t.Run("no Fable login", func(t *testing.T) {
 		sw := fixtureSwitcher(t)
+		// macOS has no Fable store and answers so; this is the wording elsewhere.
+		sw.Store.Platform = platform.Linux
 		useSwitcher(t, sw)
 		if code, out, errb := runHuman(t, "switch", "--store", "fable", "--empty"); code != 0 || out != want {
 			t.Fatalf("exit %d, stdout %q, stderr %q; want %q", code, out, errb, want)
