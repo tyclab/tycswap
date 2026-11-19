@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -107,6 +108,37 @@ func setVar(env []string, old, key, value string) []string {
 	return append(out, key+"="+value)
 }
 
+// envDiff names the keys whose entries differ between two environments,
+// never a value: an environment carries tokens. The same entries in another
+// order read "(order)".
+func envDiff(got, want []string) []string {
+	values := func(env []string) map[string]string {
+		out := map[string]string{}
+		for _, entry := range env {
+			key, value, _ := strings.Cut(entry, "=")
+			out[key] += value + "\x00"
+		}
+		return out
+	}
+	g, w := values(got), values(want)
+	var keys []string
+	for key, value := range g {
+		if w[key] != value {
+			keys = append(keys, key)
+		}
+	}
+	for key := range w {
+		if _, ok := g[key]; !ok {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	if len(keys) == 0 && !reflect.DeepEqual(got, want) {
+		keys = []string{"(order)"}
+	}
+	return keys
+}
+
 func TestStartPicksTheStoreBySessionModel(t *testing.T) {
 	const noUsable = "tycswap start: the Fable store has no usable login (%s); starting on the default login.\n"
 	for _, tc := range []struct {
@@ -151,7 +183,7 @@ func TestStartPicksTheStoreBySessionModel(t *testing.T) {
 				want = setVar(before, secureStorageVar, secureStorageVar, storeDir)
 			}
 			if !reflect.DeepEqual(rec.env, want) {
-				t.Fatalf("child environment differs:\n got %q\nwant %q", rec.env, want)
+				t.Fatalf("child environment differs in %q", envDiff(rec.env, want))
 			}
 			if wantSel := map[bool]int{true: 1, false: 0}[tc.selects]; len(rec.selections) != wantSel || wantSel == 1 && rec.selections[0] != "" {
 				t.Fatalf("selections = %q, want %d", rec.selections, wantSel)
@@ -288,7 +320,7 @@ func TestStartOnWindowsMatchesTheVariableCaseInsensitively(t *testing.T) {
 				want = setVar(before, key, secureStorageVar, fableStoreDir())
 			}
 			if !reflect.DeepEqual(rec.env, want) {
-				t.Fatalf("child environment differs:\n got %q\nwant %q", rec.env, want)
+				t.Fatalf("child environment differs in %q", envDiff(rec.env, want))
 			}
 			if wantSel := map[bool]int{true: 0, false: 1}[tc.wantVar]; len(rec.selections) != wantSel {
 				t.Fatalf("selections = %q", rec.selections)
