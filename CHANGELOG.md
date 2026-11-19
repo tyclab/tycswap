@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Fixed:** the Guide's *Something looks wrong* said to run the command in the tooltip of *Fable login: sign in again*, but the header's chip of that name has the reason as its tooltip; only the chip in the account's row has the command. The Guide now says so.
 - **Fixed:** `tycswap switch --store fable --empty` on a Fable store that held no login, or on a box without a Fable login, said `The Fable store is off now; …` as if it had turned the store off. It now says `The Fable store holds no login; Fable sessions start on the default login.`; `--json` (`"switched": false`) and the exit code are unchanged (DESIGN A100).
 - **Fixed:** `tycswap help` listed `--lineage` but not the two options that run the Fable store: its options now name `--store {default,fable}` (with `switch`: `switch --store fable <num|email>` switches the Fable store) and `--empty` (with `switch --store fable`: turns it off).
 - **Fixed:** `tycswap switch --store fable` took its account only right after the verb or after `--store fable`: `switch --json --store fable 2` answered the parser's `unrecognized arguments: 2`, and `switch --store fable --empty 2` the same two usage lines instead of `--store fable takes an account or --empty`. With `--store fable` the account, `--json` and `--debug` now come in any order, and an account with `--empty` gives the one documented line in every order; without `--store fable` the switch takes its arguments as before (DESIGN A100).
