@@ -18,7 +18,8 @@ func fableLogin(access string) string {
 }
 
 // fableCLISwitcher is the fixture store with Fable logins for alice (1) and
-// bob (2), and alice's live in the Fable store.
+// bob (2), both on Max as their default logins say, and alice's live in the
+// Fable store.
 func fableCLISwitcher(t *testing.T) *core.Switcher {
 	t.Helper()
 	sw := fixtureSwitcher(t)
@@ -28,6 +29,7 @@ func fableCLISwitcher(t *testing.T) *core.Switcher {
 		t.Fatal(err)
 	}
 	for num, email := range map[string]string{"1": "alice@example.com", "2": "bob@example.com"} {
+		withDefaultPlan(t, sw, num, email, "max")
 		if err := f.WriteAccountCredentials(num, email, fableLogin("f"+num)); err != nil {
 			t.Fatal(err)
 		}
@@ -41,6 +43,22 @@ func fableCLISwitcher(t *testing.T) *core.Switcher {
 	}
 	useSwitcher(t, sw)
 	return sw
+}
+
+// withDefaultPlan names plan in account num's default login, its tokens kept:
+// the Fable store takes an account whose plan offers Fable (DESIGN A101).
+func withDefaultPlan(t *testing.T, sw *core.Switcher, num, email, plan string) {
+	t.Helper()
+	creds, err := sw.Store.ReadAccountCredentials(num, email)
+	var m map[string]map[string]any
+	if err != nil || json.Unmarshal([]byte(creds), &m) != nil || m["claudeAiOauth"] == nil {
+		t.Fatalf("Account-%s's default login is not an OAuth login (%v)", num, err)
+	}
+	m["claudeAiOauth"]["subscriptionType"] = plan
+	raw, _ := json.Marshal(m)
+	if err := sw.Store.WriteAccountCredentials(num, email, string(raw)); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestSwitchStoreFableForms(t *testing.T) {
