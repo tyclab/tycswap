@@ -192,9 +192,13 @@ func (e *Engine) inCooldown(state map[string]any) bool {
 const byHand = "hand"
 
 // cooldownHold reports whether a recent switch holds back a tick of trigger,
-// and the event's detail. A switch by hand holds every trigger and names
-// itself (DESIGN A94); the engine's own and start's hold heldByCooldown's.
+// and the event's detail. A running start hold (DESIGN A105) and a switch by
+// hand hold every trigger and name themselves (A94); the engine's own and
+// start's switch hold heldByCooldown's.
 func (e *Engine) cooldownHold(trigger string, state map[string]any) (detail string, held bool) {
+	if left := startHoldLeft(state, e.nowSeconds()); left > 0 {
+		return fmt.Sprintf("a session is starting; held for another %.0fs", math.Ceil(left)), true
+	}
 	if !e.inCooldown(state) {
 		return "", false
 	}

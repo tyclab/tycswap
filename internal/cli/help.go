@@ -42,7 +42,7 @@ Commands:
   tycswap remove <num|email>         remove an account
   tycswap disable <num|email>        hold an account out of auto-rotation
   tycswap enable <num|email>         return a disabled account to rotation
-  tycswap start [-- command args]    launch once on a usable marked login
+  tycswap start [-- command args]    launch once on a marked login, even at its limit
   tycswap start --allow|--disallow ID mark or unmark a start login (--list lists)
   tycswap alias <num|email> <name>   set a short alias for an account
   tycswap alias <num|email> --unset  remove an account's alias

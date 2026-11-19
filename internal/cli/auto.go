@@ -24,6 +24,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
+	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -185,14 +186,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		defer outMu.Unlock()
 		emitClaude(ev)
 	}
-	engine := autoswitch.NewEngine(autoswitchAdapter{engineSwitcher(sw, dryRun)}, policy.Settings, onEvent, dryRun,
-		autoswitch.WithOAuthClient(sw.OAuth),
-		autoswitch.WithLogger(sw.Log),
-		autoswitch.WithClock(sw.Clk),
-		autoswitch.WithReserved(policy.Reserved),
-		autoswitch.WithUnservable(policy.Unservable),
-		autoswitch.WithEnabled(func() bool { return autoSwitchOn(root) }),
-	)
+	engine := defaultEngine(sw, policy, onEvent, dryRun)
 
 	// Codex rides along in this process as its own small engine (claude-swap
 	// PR #252 cli.py _codex_auto_engine); nil on a Claude-only machine, which
@@ -224,13 +218,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		// Claude first, the Fable store's tick after the default one, then
 		// Codex; the exit status is the more significant Claude outcome
 		// (DESIGN A102).
-		outcome := engine.Tick()
-		if dryRun || autoSwitchOn(root) {
-			if fable, ran := fableTick(sw, merged, onEvent, dryRun); ran {
-				outcome = significantOutcome(outcome, fable)
-			}
-		}
-		code := int(outcome)
+		code := int(onceTicks(sw, engine, merged, onEvent, dryRun))
 		// A status line's tick is about latency; group retirement and Codex
 		// wait for the scheduled one (DESIGN A78).
 		if !observe {
@@ -250,6 +238,31 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	code := engine.RunLoop()
 	stopCodex()
 	return code
+}
+
+// defaultEngine is the default store's engine `auto` runs under policy.
+func defaultEngine(sw *core.Switcher, policy reporting.PolicyResult, onEvent func(autoswitch.Event), dryRun bool) *autoswitch.Engine {
+	root := sw.BackupDir()
+	return autoswitch.NewEngine(autoswitchAdapter{engineSwitcher(sw, dryRun)}, policy.Settings, onEvent, dryRun,
+		autoswitch.WithOAuthClient(sw.OAuth),
+		autoswitch.WithLogger(sw.Log),
+		autoswitch.WithClock(sw.Clk),
+		autoswitch.WithReserved(policy.Reserved),
+		autoswitch.WithUnservable(policy.Unservable),
+		autoswitch.WithEnabled(func() bool { return autoSwitchOn(root) }),
+	)
+}
+
+// onceTicks is `auto --once`'s tick: engine's, then the Fable store's while
+// auto-switch is on (or in a dry run), and the more significant outcome.
+func onceTicks(sw *core.Switcher, engine *autoswitch.Engine, merged settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool) autoswitch.TickOutcome {
+	outcome := engine.Tick()
+	if dryRun || autoSwitchOn(sw.BackupDir()) {
+		if fable, ran := fableTick(sw, merged, onEvent, dryRun); ran {
+			outcome = significantOutcome(outcome, fable)
+		}
+	}
+	return outcome
 }
 
 // autoForegroundNotice says once what a foreground run finds: off, a stderr

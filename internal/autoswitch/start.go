@@ -1,7 +1,7 @@
 package autoswitch
 
 import (
-	"fmt"
+	"errors"
 	"sort"
 	"strings"
 	"time"
@@ -18,6 +18,8 @@ type StartOutcome struct {
 	From, To string
 	Reason   string
 	Detail   string
+	// Hold is the token of the start hold recorded for the session, "" for none (DESIGN A105).
+	Hold string
 }
 
 type StartSnapshot struct {
@@ -44,7 +46,10 @@ func StartSelection(sw Switcher, account string, snapshot func() (StartSnapshot,
 		return startFailure("selection-failed", err)
 	}
 	if outcome, stop := startNoop(snap, account); stop {
-		return outcome
+		if !startHoldWanted(snap, snap.Current, e.clk.Now()) {
+			return outcome
+		}
+		return e.settleStart(snapshot, account, "")
 	}
 	e.settings.Store(&snap.Settings)
 	e.models = settings.ParseModelNames(snap.Settings.Model)
@@ -56,9 +61,9 @@ func StartSelection(sw Switcher, account string, snapshot func() (StartSnapshot,
 			candidates = append(candidates, num)
 		}
 	}
-	ordered := StartTargets(candidates, snap.Entries, snap.Settings, e.models, e.clk.Now())
 	var failures []string
-	for _, target := range ordered {
+	for _, row := range rankStartTargets(candidates, snap.Entries, snap.Settings, e.models, e.clk.Now()) {
+		target := row.num
 		email := sw.AccountEmail(target)
 		preparationDetail := ""
 		e.onEvent = func(event Event) {
@@ -92,49 +97,99 @@ func StartSelection(sw Switcher, account string, snapshot func() (StartSnapshot,
 			failures = append(failures, "Account-"+target+": "+message)
 			continue
 		}
-		outcome := StartOutcome{}
-		err := filelock.New(e.lockPath, 0).With(func() error {
-			current, err := snapshot()
-			if err != nil {
-				return err
-			}
-			if noOp, stop := startNoop(current, account); stop {
-				outcome = noOp
-				return nil
-			}
-			state := e.readState()
-			if !containsStartCandidate(current.Candidates, target) || quarantinedSet(state)[target] ||
-				len(StartTargets([]string{target}, current.Entries, current.Settings, settings.ParseModelNames(current.Settings.Model), e.clk.Now())) == 0 {
-				outcome = startFailure("selection-changed", fmt.Errorf("start login eligibility changed; continuing with the current login"))
-				return nil
-			}
-			result, err := sw.SwitchTo(target, true)
-			if err != nil {
-				return err
-			}
-			if result == nil || !truthy(result["switched"]) {
-				outcome = StartOutcome{Reason: "already-active"}
-				return nil
-			}
-			outcome = StartOutcome{Switched: true, From: current.Current, To: target,
-				Detail: "Switched to start login Account-" + target + "."}
-			stampSwitch(state, target, e.nowSeconds(), false)
-			if err := e.writeState(state); err != nil {
-				outcome.Reason = "stamp-failed"
-				outcome.Detail += " Could not record the auto-switch cooldown: " + err.Error()
-			}
-			return nil
-		})
-		if err != nil {
-			return startFailure("switch-failed", err)
-		}
-		return outcome
+		return e.settleStart(snapshot, account, target)
 	}
 	detail := "no usable start login; continuing with the current login"
 	if len(failures) > 0 {
 		detail += " (" + strings.Join(failures, "; ") + ")"
 	}
 	return StartOutcome{Reason: "none-usable", Detail: detail}
+}
+
+var errSelectionChanged = errors.New("start login eligibility changed; continuing with the current login")
+
+// settleStart re-reads the snapshot under the state lock and settles there:
+// no switch when none is needed, else the switch to target, prepared outside
+// the lock ("" for none). A session on a login at a limit gets a start hold
+// while auto-switch is on, in the same write as the switch's stamp (DESIGN A105).
+func (e *Engine) settleStart(snapshot func() (StartSnapshot, error), account, target string) StartOutcome {
+	outcome := StartOutcome{}
+	err := filelock.New(e.lockPath, 0).With(func() error {
+		current, err := snapshot()
+		if err != nil {
+			return err
+		}
+		now := e.clk.Now()
+		if noOp, stop := startNoop(current, account); stop {
+			outcome = noOp
+			if startHoldWanted(current, current.Current, now) {
+				e.recordStartHold(&outcome, e.readState())
+			}
+			return nil
+		}
+		state := e.readState()
+		if !containsStartCandidate(current.Candidates, target) || quarantinedSet(state)[target] {
+			outcome = startFailure("selection-changed", errSelectionChanged)
+			return nil
+		}
+		ranked := rankStartTargets([]string{target}, current.Entries, current.Settings, settings.ParseModelNames(current.Settings.Model), now)
+		if len(ranked) == 0 {
+			outcome = startFailure("selection-changed", errSelectionChanged)
+			return nil
+		}
+		hold := current.Settings.Enabled && ranked[0].tier == startAtLimit
+		result, err := e.sw.SwitchTo(target, true)
+		if err != nil {
+			return err
+		}
+		if result == nil || !truthy(result["switched"]) {
+			outcome = StartOutcome{Reason: "already-active"}
+			if hold {
+				e.recordStartHold(&outcome, state)
+			}
+			return nil
+		}
+		outcome = StartOutcome{Switched: true, From: current.Current, To: target,
+			Detail: "Switched to start login Account-" + target + "."}
+		if hold {
+			outcome.Detail = "Switched to start login Account-" + target + ", which is at its limit; auto-switch moves on once the session is up."
+		}
+		stampSwitch(state, target, e.nowSeconds(), false)
+		token := settleStartHolds(state, e.nowSeconds(), hold)
+		if err := e.writeState(state); err != nil {
+			outcome.Reason = "stamp-failed"
+			outcome.Detail += " Could not record the auto-switch cooldown: " + err.Error()
+			return nil
+		}
+		outcome.Hold = token
+		return nil
+	})
+	if err != nil {
+		return startFailure("switch-failed", err)
+	}
+	return outcome
+}
+
+// recordStartHold writes a start hold for the session into state, under the
+// state lock the caller holds; a failed write is said in the outcome.
+func (e *Engine) recordStartHold(outcome *StartOutcome, state map[string]any) {
+	state["schemaVersion"] = StateSchemaVersion
+	token := settleStartHolds(state, e.nowSeconds(), true)
+	if err := e.writeState(state); err != nil {
+		outcome.Detail = strings.TrimSpace(outcome.Detail + " Could not hold auto-switch for the starting session: " + err.Error())
+		return
+	}
+	outcome.Hold = token
+}
+
+// startHoldWanted reports whether a session starting on num gets a start
+// hold: auto-switch is on and num is at a limit by start's ranking.
+func startHoldWanted(snap StartSnapshot, num string, now time.Time) bool {
+	if !snap.Settings.Enabled || num == "" {
+		return false
+	}
+	ranked := rankStartTargets([]string{num}, snap.Entries, snap.Settings, settings.ParseModelNames(snap.Settings.Model), now)
+	return len(ranked) == 1 && ranked[0].tier == startAtLimit
 }
 
 func startNoop(snap StartSnapshot, account string) (StartOutcome, bool) {
@@ -164,32 +219,41 @@ func containsStartCandidate(candidates []string, target string) bool {
 	return false
 }
 
-// StartTargets ranks cached candidates by tier and binding utilization, read
-// as of now like the engine's (DESIGN A91); stable ties keep sequence order.
-func StartTargets(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, models []string, now time.Time) []string {
+// Start's tiers: below every counted bar, room (unknown, or over a bar and
+// below 100 %), at a limit (DESIGN A105).
+const (
+	startBelowBars = iota
+	startRoom
+	startAtLimit
+)
+
+type startTarget struct {
+	num   string
+	tier  int
+	known bool
+	room  float64
+}
+
+// rankStartTargets ranks cached candidates by tier and binding utilization,
+// read as of now like the engine's (DESIGN A91); stable ties keep sequence
+// order, which alone orders the logins at a limit.
+func rankStartTargets(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, models []string, now time.Time) []startTarget {
 	values := decisionValuesAt(entries, now)
 	required := requiredModels(models)
-	type candidate struct {
-		num   string
-		tier  int
-		known bool
-		room  float64
-	}
-	var ranked []candidate
+	var ranked []startTarget
 	for _, num := range candidates {
 		if entries[num].TokenDead() || !hasRequiredModels(values[num], required) {
 			continue
 		}
 		h := usage.AccountHeadroomByClass(usageDict(values[num]), models)
 		room := h.Binding()
-		if room != nil && *room <= 0 {
-			continue
-		}
-		row := candidate{num: num, tier: 1, known: room != nil}
+		row := startTarget{num: num, tier: startRoom, known: room != nil}
 		if room != nil {
 			row.room = *room
-			if belowEveryBar(h, set) {
-				row.tier = 0
+			if *room <= 0 {
+				row.tier = startAtLimit
+			} else if belowEveryBar(h, set) {
+				row.tier = startBelowBars
 			}
 		}
 		ranked = append(ranked, row)
@@ -199,14 +263,25 @@ func StartTargets(candidates []string, entries map[string]usage.UsageEntry, set 
 		if a.tier != b.tier {
 			return a.tier < b.tier
 		}
+		if a.tier == startAtLimit {
+			return false
+		}
 		if a.known != b.known {
 			return a.known
 		}
 		return a.room > b.room
 	})
-	result := make([]string, len(ranked))
-	for i, row := range ranked {
-		result[i] = row.num
+	return ranked
+}
+
+// StartTargets is start's ranking without the logins at a limit: the move
+// off a dead live Fable login ranks its pool by it (DESIGN A102).
+func StartTargets(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, models []string, now time.Time) []string {
+	result := []string{}
+	for _, row := range rankStartTargets(candidates, entries, set, models, now) {
+		if row.tier != startAtLimit {
+			result = append(result, row.num)
+		}
 	}
 	return result
 }
