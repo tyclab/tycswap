@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,6 +63,19 @@ func TestStartRanksALoginAtItsLimitLast(t *testing.T) {
 	}
 	if got := StartTargets(candidates, entries, settings.Default(), nil, baseTime); !reflect.DeepEqual(got, []string{"4", "3", "2"}) {
 		t.Fatalf("StartTargets = %v", got)
+	}
+}
+
+// The logins at a limit keep sequence order whatever their room: one read
+// over 100 % keeps its place.
+func TestStartRanksLoginsAtALimitInSequenceOrder(t *testing.T) {
+	entries := map[string]usage.UsageEntry{"1": dictEntry(usageOf(0, 101)), "2": dictEntry(usageOf(100, 0))}
+	var nums []string
+	for _, row := range rankStartTargets([]string{"1", "2"}, entries, settings.Default(), nil, baseTime) {
+		nums = append(nums, row.num)
+	}
+	if !reflect.DeepEqual(nums, []string{"1", "2"}) {
+		t.Fatalf("ranking = %v, want sequence order", nums)
 	}
 }
 
@@ -176,6 +190,51 @@ func TestStartHoldsALoginAlreadyCurrentAtItsLimit(t *testing.T) {
 	}
 }
 
+// A target already current when start switches under the lock gets the
+// hold too.
+func TestStartHoldsATargetFoundCurrentUnderTheLock(t *testing.T) {
+	f, clk, path, snapshot := startTestSetup(t)
+	f.entries["2"] = dictEntry(usageOf(10, 100))
+	f.switchTo = func(*fakeSwitcher, string) (map[string]any, error) { return map[string]any{"switched": false}, nil }
+	out := StartSelection(f, "", snapshot, WithClock(clk), WithStatePath(path))
+	if out.Switched || out.Reason != "already-active" || !holdToken.MatchString(out.Hold) || len(holdsOf(path)) != 1 {
+		t.Fatalf("outcome=%+v holds=%v", out, holdsOf(path))
+	}
+}
+
+// The start login current and at its limit when start looks, but moved by
+// the time start holds the lock: the change is said and nothing is held.
+func TestStartHoldsNothingOnceTheCurrentLoginMoved(t *testing.T) {
+	f, clk, path, original := startTestSetup(t)
+	f.current = strp("2")
+	f.entries["2"] = dictEntry(usageOf(10, 100))
+	reads := 0
+	snapshot := func() (StartSnapshot, error) {
+		if reads++; reads == 2 {
+			f.current = strp("1")
+		}
+		return original()
+	}
+	out := StartSelection(f, "", snapshot, WithClock(clk), WithStatePath(path))
+	if out.Reason != "selection-changed" || out.Hold != "" || holdsOf(path) != nil || f.moves != 0 {
+		t.Fatalf("outcome=%+v holds=%v moves=%d", out, holdsOf(path), f.moves)
+	}
+}
+
+// A hold that cannot be written is said; the session gets no token.
+func TestStartHoldThatCannotBeWritten(t *testing.T) {
+	f, clk, path, snapshot := startTestSetup(t)
+	f.current = strp("2")
+	f.entries["2"] = dictEntry(usageOf(10, 100))
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	out := StartSelection(f, "", snapshot, WithClock(clk), WithStatePath(path))
+	if out.Reason != "already-start-login" || out.Hold != "" || !strings.HasPrefix(out.Detail, "Could not hold auto-switch for the starting session: ") {
+		t.Fatalf("outcome=%+v", out)
+	}
+}
+
 // Every start that writes the state drops the expired holds and keeps the
 // others; a state without holds left loses the key.
 func TestStartDropsExpiredHolds(t *testing.T) {
@@ -252,6 +311,20 @@ func (h *holdingSwitcher) LiveSessionPidsFor(num, email string) []int {
 		h.hold = nil
 	}
 	return h.fakeSwitcher.LiveSessionPidsFor(num, email)
+}
+
+// A tick during a hold stops before it prepares a target.
+func TestStartHoldPreparesNoTarget(t *testing.T) {
+	clk := newClk()
+	f := twoAccounts(clk, dictEntry(usageOf(0, 100)), dictEntry(usageOf(0, 10)))
+	path := filepath.Join(t.TempDir(), StateFilename)
+	writeHolds(t, path, map[string]any{"session": clock.Seconds(clk) + 30})
+	prepared := false
+	h := &holdingSwitcher{fakeSwitcher: f, hold: func() { prepared = true }}
+	e := NewEngine(h, settings.Default(), (&recorder{}).on, false, WithClock(clk), WithStatePath(path))
+	if got := e.Tick(); got != NoAction || prepared {
+		t.Fatalf("outcome = %v, target prepared %v", got, prepared)
+	}
 }
 
 func TestStartHoldHoldsASwitchUnderWay(t *testing.T) {
@@ -402,7 +475,11 @@ func TestWaitStartHolds(t *testing.T) {
 	}
 	clk.Slept = nil
 	start := clk.Now()
-	clk.hook = func() { writeHolds(t, path, map[string]any{"next": clock.Seconds(clk) + 30}) }
+	clk.hook = func() {
+		if clk.Now().Sub(start) < 40*time.Second {
+			writeHolds(t, path, map[string]any{"next": clock.Seconds(clk) + 30})
+		}
+	}
 	writeHolds(t, path, map[string]any{"first": clock.Seconds(clk) + 30})
 	WaitStartHolds(path, clk)
 	if waited := clk.Now().Sub(start); waited < 30*time.Second || waited > 31*time.Second {
