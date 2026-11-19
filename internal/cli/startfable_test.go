@@ -259,38 +259,59 @@ func TestStartOverridesKeepAFableSessionUnchanged(t *testing.T) {
 }
 
 // --account with a Fable session selects the default login and is the Fable
-// store's sole candidate; an account without a usable Fable login (here no
-// plan offers Fable) starts the session on the default login, and the Fable
-// store does not move (DESIGN A105).
+// store's sole candidate: with a usable Fable login the Fable store moves to
+// it; without one (here its plan offers no Fable) the session starts on the
+// default login and the Fable store does not move (DESIGN A105).
 func TestStartAccountWithAFableSession(t *testing.T) {
 	for _, state := range []string{"on", "unknown"} {
-		t.Run(state, func(t *testing.T) {
-			sw, rec := fableStart(t, state)
-			sw.Store.OAuth = &oauth.FakeClient{}
-			storeDir := fableStoreDir()
-			liveBefore, err := os.ReadFile(filepath.Join(storeDir, ".credentials.json"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			chainBefore, _ := os.ReadFile(filepath.Join(paths.FableScopeDir(paths.GetBackupRoot()), "live_lineage.json"))
-			code, _, stderr := runCLI(t, []string{"start", "--account", "2", "--", "command", "--model", "fable"}, false, false)
-			notice := "tycswap start: no start login has a Fable login; starting on the default login.\n"
-			if code != 23 || strings.Count(stderr, notice) != 1 || strings.Contains(stderr, "--account selects") {
-				t.Fatalf("code=%d stderr=%q", code, stderr)
-			}
-			if !reflect.DeepEqual(rec.selections, []string{"2"}) {
-				t.Fatalf("selections = %q, want the default login's selection of account 2", rec.selections)
-			}
-			if got := envValue(rec.env, secureStorageVar); got != "" {
-				t.Fatalf("%s = %q, want the default login", secureStorageVar, got)
-			}
-			if after, _ := os.ReadFile(filepath.Join(storeDir, ".credentials.json")); string(after) != string(liveBefore) {
-				t.Fatal("--account moved the Fable store")
-			}
-			if after, _ := os.ReadFile(filepath.Join(paths.FableScopeDir(paths.GetBackupRoot()), "live_lineage.json")); string(after) != string(chainBefore) {
-				t.Fatal("--account rewrote the Fable store's chain record")
-			}
-		})
+		for _, plan := range []string{"pro", "max"} {
+			t.Run(state+" "+plan, func(t *testing.T) {
+				sw, rec := fableStart(t, state)
+				sw.Store.OAuth = &oauth.FakeClient{}
+				withDefaultPlan(t, sw, "2", "bob@example.com", plan)
+				storeDir := fableStoreDir()
+				liveBefore, err := os.ReadFile(filepath.Join(storeDir, ".credentials.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				chainBefore, _ := os.ReadFile(filepath.Join(paths.FableScopeDir(paths.GetBackupRoot()), "live_lineage.json"))
+				code, _, stderr := runCLI(t, []string{"start", "--account", "2", "--", "command", "--model", "fable"}, false, false)
+				if code != 23 || strings.Contains(stderr, "--account selects") {
+					t.Fatalf("code=%d stderr=%q", code, stderr)
+				}
+				if !reflect.DeepEqual(rec.selections, []string{"2"}) {
+					t.Fatalf("selections = %q, want the default login's selection of account 2", rec.selections)
+				}
+				liveAfter, _ := os.ReadFile(filepath.Join(storeDir, ".credentials.json"))
+				chainAfter, _ := os.ReadFile(filepath.Join(paths.FableScopeDir(paths.GetBackupRoot()), "live_lineage.json"))
+				if plan == "max" {
+					moved := "tycswap start: Fable store: Switched to start login Account-2.\n"
+					if strings.Count(stderr, moved) != 1 || strings.Contains(stderr, "no start login has a Fable login") {
+						t.Fatalf("stderr=%q, want the Fable store moved to Account-2", stderr)
+					}
+					if got := envValue(rec.env, secureStorageVar); got != storeDir {
+						t.Fatalf("%s = %q, want the Fable store", secureStorageVar, got)
+					}
+					if !strings.Contains(string(liveAfter), `"accessToken":"f2"`) {
+						t.Fatal("the Fable store does not hold Account-2's Fable login")
+					}
+					return
+				}
+				notice := "tycswap start: no start login has a Fable login; starting on the default login.\n"
+				if strings.Count(stderr, notice) != 1 {
+					t.Fatalf("stderr=%q", stderr)
+				}
+				if got := envValue(rec.env, secureStorageVar); got != "" {
+					t.Fatalf("%s = %q, want the default login", secureStorageVar, got)
+				}
+				if string(liveAfter) != string(liveBefore) {
+					t.Fatal("--account moved the Fable store")
+				}
+				if string(chainAfter) != string(chainBefore) {
+					t.Fatal("--account rewrote the Fable store's chain record")
+				}
+			})
+		}
 	}
 }
 
