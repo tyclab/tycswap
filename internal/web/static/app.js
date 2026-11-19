@@ -1109,7 +1109,7 @@
   function statusChips(a) {
     var out = [];
     if (a.isActive) { out.push(chip('active', 'active')); }
-    if (isClaude(a) && a.startLogin) { out.push(chip('start login', 'outline', 'eligible for startup selection')); }
+    if (isClaude(a) && a.startLogin) { out.push(chip('start login', 'outline', 'used to start sessions, even at its limit')); }
     if (a.atLimit) { out.push(chip('at limit', 'crit', (a.limitingWindows || []).join(', ') || 'a window is at 100%')); }
     if (a.disabled) { out.push(chip('disabled', 'outline', 'held out of auto-rotation')); }
     if (a.ownershipBlockReason) { out.push(chip('held by another profile', 'warn', a.ownershipBlockReason)); }

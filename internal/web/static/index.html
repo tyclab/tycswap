@@ -357,7 +357,7 @@
         <dl class="guide-dl">
           <dt>Switch now</dt><dd><em>Best</em> takes the account <em>Account order</em> ranks first and stays if that is the live one; <em>Next available</em> takes the next account in slot order that is not at a limit. Neither picks a disabled or an API-key account.</dd>
           <dt>Use saved login…</dt><dd>Writes that account's saved login over the live login without saving the outgoing one: for a live login that stopped working.</dd>
-          <dt>Allow for start</dt><dd>Lets <code>{{.Name}} start</code> switch to this account when it launches Claude Code with Auto-switch on.</dd>
+          <dt>Allow for start</dt><dd>Lets <code>{{.Name}} start</code> switch to this account when it launches Claude Code with Auto-switch on, also while the account is at its limit; Auto-switch then moves on once the session is up.</dd>
           <dt>Remove…</dt><dd>Deletes the saved login and the account's Fable login; the live login stays.</dd>
         </dl>
       </article>

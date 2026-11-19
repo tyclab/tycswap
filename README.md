@@ -603,8 +603,9 @@ and alias when the export has no alias. New identities start unmarked.
 With auto-switch on, `start` leaves a marked current login alone; otherwise it
 picks an eligible marked subscription account using cached usage and the
 engine's counted-model checks. Accounts below every configured bar rank first,
-then other usable or unknown readings; a known 100% account is excluded. It
-makes no usage request. `--account ID` chooses only that account, without
+then other usable or unknown readings, then accounts at a limit: a start login
+is used even when it is at its limit, since a session needs it only to start.
+It makes no usage request. `--account ID` chooses only that account, without
 requiring a mark, and works while auto-switch is off; all other eligibility
 checks still apply. This does not grant model access or change managed policy.
 
@@ -613,18 +614,34 @@ are silent. An unavailable target or store prints a clear error on stderr,
 then launches once on the current login. An actual switch stamps the engine's
 cooldown, but cached data can be stale and other sessions and the engine share
 the same default login. Another switch can happen before the child reads it.
-This creates no session profile or startup hold. Executable launch failures
-exit nonzero and never rerun the command.
+Executable launch failures exit nonzero and never rerun the command.
+
+A session that starts on a login at its limit, while auto-switch is on, gets a
+start hold: auto-switch moves nothing until the session is up (`Switched to
+start login Account-2, which is at its limit; auto-switch moves on once the
+session is up.`). The session reports that it is up through a SessionStart
+hook in Claude Code's settings (`~/.claude/settings.json`):
+
+```json
+{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "tycswap start --started", "timeout": 45}]}]}}
+```
+
+`tycswap start --started` ends the session's hold and, once no other session
+is starting, runs one auto-switch check, which moves the login on. Without the
+hook the login stays for 30 s, then moves at the next check, and the session's
+first request can hit the limit.
 
 The child's arguments pass unchanged, and so does its environment, except
-`CLAUDE_SECURESTORAGE_CONFIG_DIR` while a Fable store exists: a session whose
-model is Fable (`--model`, `ANTHROPIC_MODEL`, the resumed session's model, then
-the Claude Code settings) starts on the Fable store when it has a usable
-login, and every other session drops a value naming the Fable store. A set
-`CLAUDE_CONFIG_DIR` (even empty), `--bare`, or a Claude authentication override
-(a `CLAUDE_SECURESTORAGE_CONFIG_DIR` of your own included) skips selection and
-passes everything unchanged, including an explicit `--account` request. Options for tycswap
-end at `--` or the first command. Without a command, `start` resolves the real
+`TYCSWAP_START_HOLD` (set for a session with a start hold, removed from any
+other) and `CLAUDE_SECURESTORAGE_CONFIG_DIR` while a Fable store exists: a
+session whose model is Fable (`--model`, `ANTHROPIC_MODEL`, the resumed
+session's model, then the Claude Code settings) starts on the Fable store when
+it has a usable login, and every other session drops a value naming the Fable
+store. A set `CLAUDE_CONFIG_DIR` (even empty), `--bare`, or a Claude
+authentication override (a `CLAUDE_SECURESTORAGE_CONFIG_DIR` of your own
+included) skips selection and passes everything else unchanged, including an
+explicit `--account` request. Options for tycswap end at `--` or the first
+command. Without a command, `start` resolves the real
 Claude executable; failure to resolve it safely is a launch error.
 
 A manual shell launcher must use a verified real executable path:
