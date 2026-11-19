@@ -8053,10 +8053,17 @@ shared config is expected, and each timer tick is a new process.
    storage-write lock (`AcquireProfileStorageWrite`) of the Fable store
    (`Store.WithFableLocks`). No config lock; the default store's Claude Code
    locks are not taken.
-3. Under them the live login is read again and, when it changed, resolved by
-   backup and chain only. It goes into its account's Fable login (`.prev`
-   kept), or, unattributed, into the unclaimed stash in `credentials-fable/`
-   with the context `{"lineage":"fable"}`.
+3. Under them the roster is read again, and the target and the outgoing
+   login are resolved from it, since a swap, move or `add --slot` may have
+   committed while the switch waited. The target must still be the account
+   it named, else `Account-N changed while the switch waited for the store
+   lock; nothing switched. Retry the command.`, and still hold its Fable
+   login. The live login is read again and resolved by backup and chain,
+   and by a profile answer asked before the locks; when that is the target,
+   nothing is written and the result is `already-active`. It goes into its
+   account's Fable login (`.prev` kept), or, unattributed, into the
+   unclaimed stash in `credentials-fable/` with the context
+   `{"lineage":"fable"}`.
 4. The target's Fable login is installed with the store's own seat-wide keys
    spliced in, by atomic rename, 0600: a running session reads it on its next
    request. The Fable chain record names it.
