@@ -360,8 +360,9 @@ func (s *Store) ForgetFableLive() error {
 
 // RefreshFableBackupGuarded is RefreshBackupGuarded on account num's Fable
 // login: under the store lock, with the lineage re-checked there, it
-// refreshes and writes that login's file only. A login live in the Fable
-// store is Claude Code's to refresh. invalid_grant comes back in the outcome.
+// refreshes and writes that login's file only. The login of the account the
+// Fable store is on, its last install included (ResolveOwnerSlot), is Claude
+// Code's to refresh. invalid_grant comes back in the outcome.
 func (s *Store) RefreshFableBackupGuarded(ctx context.Context, c oauth.Client, num, email, held string) oauth.RefreshOutcome {
 	out := oauth.RefreshOutcome{Error: RefreshDeclined}
 	f := s.fableScope()
@@ -369,15 +370,12 @@ func (s *Store) RefreshFableBackupGuarded(ctx context.Context, c oauth.Client, n
 		return out
 	}
 	err := f.Lock.With(func() error {
-		live, _, err := f.Creds.ReadActive()
-		if err != nil {
+		if _, _, err := f.Creds.ReadActive(); err != nil {
 			return nil
 		}
-		if live != "" {
-			data, _ := f.ReadSequence()
-			if f.fableLiveSlot(data, live, false).Slot == num {
-				return nil
-			}
+		data, _ := f.ReadSequence()
+		if f.ResolveOwnerSlot(data).Slot == num {
+			return nil
 		}
 		backup, _ := f.ReadAccountCredentials(num, email)
 		if backup == "" {

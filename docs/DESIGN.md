@@ -8031,8 +8031,10 @@ has another fingerprint, the live login's account part is written into it,
 under the store lock and the Fable store's credential-refresh and
 storage-write locks, re-checked there. The live credential is never written.
 `Store.RefreshFableBackupGuarded` is `RefreshBackupGuarded` on a Fable login:
-under the store lock, declined while that login is the Fable store's live
-one (Claude Code refreshes it), its lineage re-checked, and only that login's
+under the store lock, declined while the Fable store is on that account, by
+its last install too (`ResolveOwnerSlot`; Claude Code refreshes it, and the
+stored file may hold a refresh token it rotated away), its lineage
+re-checked, and only that login's
 file written; `invalid_grant` comes back in the outcome.
 
 **The last install.** Claude Code rotates the Fable store's login on its

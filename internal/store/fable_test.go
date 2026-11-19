@@ -494,6 +494,20 @@ func TestRefreshFableBackupGuarded(t *testing.T) {
 			t.Fatalf("outcome %+v", out)
 		}
 	})
+	t.Run("the store's login by last install is Claude Code's", func(t *testing.T) {
+		s := fableFixture(t)
+		two := oauth.Identity{UUID: "u-2", Email: "two@example.com", OrgUUID: "org-2"}
+		putFableLogin(t, s, "2", held)
+		writeFableChain(t, s, held, "2", two)
+		putFableLive(t, s, fableCreds("at-f2-rotated", "rt-f2-rotated"))
+		c := &oauth.FakeClient{RefreshFn: func(context.Context, string) oauth.RefreshOutcome {
+			t.Error("refreshed the rotated-away login of the account the store is on")
+			return oauth.RefreshOutcome{Error: oauth.ErrInvalidGrant}
+		}}
+		if out := s.RefreshFableBackupGuarded(context.Background(), c, "2", fableEmails["2"], held); out.Error != RefreshDeclined {
+			t.Fatalf("outcome %+v, want declined", out)
+		}
+	})
 	t.Run("invalid_grant comes back", func(t *testing.T) {
 		s := fableFixture(t)
 		putFableLogin(t, s, "2", held)
