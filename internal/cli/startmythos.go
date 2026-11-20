@@ -53,29 +53,8 @@ func mythosStartDir(root, model, account string, args []string, streams ioStream
 	if err != nil || proposed.allocation == "" {
 		return proposed.dir, err
 	}
-	start := fmt.Sprintf("start %d", os.Getpid())
-	if newID, _ := flagValue(args, "--session-id"); sessionUUID.MatchString(newID) {
-		start = newID
-	} else if sessionUUID.MatchString(session) {
-		start = session
-	}
-	if cwd, err := os.Getwd(); err == nil {
-		start = fmt.Sprintf("%q, %s", filepath.Base(cwd), start)
-	}
-	family := "Claude"
-	if model != "" {
-		family = strings.ToUpper(model[:1]) + model[1:]
-	}
-	question := fmt.Sprintf("Use Account-%s, allocated to %s, for this %s session (%s) and use its shared quota?", proposed.number, proposed.allocation, family, start)
-	if stop := slices.Index(args, "--"); stop >= 0 {
-		args = args[:stop]
-	}
-	ok, err := askPlacement(streams, question, slices.Contains(args, "-p") || slices.Contains(args, "--print"))
-	if err != nil {
+	if err := confirmStartAllocation(proposed.number, proposed.allocation, model, args, streams); err != nil {
 		return "", err
-	}
-	if !ok {
-		return "", fmt.Errorf("%s start deferred. Start again when an eligible placement is available", family)
 	}
 	current, err := locateMythosLogin(root, model, account, session)
 	if err != nil {

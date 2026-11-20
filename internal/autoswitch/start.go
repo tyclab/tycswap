@@ -32,6 +32,8 @@ type StartSnapshot struct {
 	Candidates      []string
 	Entries         map[string]usage.UsageEntry
 	Settings        settings.AutoSwitchSettings
+	// Set only for an already pending, idle native Fable selection.
+	FableAllocationExceptions map[string]bool
 }
 
 // StartSelection prepares outside the state lock, then shares the engine's switch/stamp order.
@@ -100,7 +102,7 @@ func StartSelection(sw Switcher, account string, snapshot func() (StartSnapshot,
 			failures = append(failures, "Account-"+target+": "+message)
 			continue
 		}
-		return e.settleStart(snapshot, account, target, snap.IdleOpus)
+		return e.settleStart(snapshot, account, target, snap.hasIdlePreference())
 	}
 	detail := "no usable start login; continuing with the current login"
 	if len(failures) > 0 {
@@ -115,7 +117,7 @@ var errSelectionChanged = errors.New("start login eligibility changed; continuin
 // no switch when none is needed, else the switch to target, prepared outside
 // the lock ("" for none). A session on a login at a limit gets a start hold
 // while auto-switch is on, in the same write as the switch's stamp (DESIGN A105).
-func (e *Engine) settleStart(snapshot func() (StartSnapshot, error), account, target string, preparedForIdleOpus bool) StartOutcome {
+func (e *Engine) settleStart(snapshot func() (StartSnapshot, error), account, target string, preparedForIdle bool) StartOutcome {
 	outcome := StartOutcome{}
 	err := filelock.New(e.lockPath, 0).With(func() error {
 		current, err := snapshot()
@@ -131,7 +133,7 @@ func (e *Engine) settleStart(snapshot func() (StartSnapshot, error), account, ta
 			return nil
 		}
 		state := e.readState()
-		if (preparedForIdleOpus && !current.IdleOpus) || !containsStartCandidate(current.Candidates, target) || quarantinedSet(state)[target] {
+		if (preparedForIdle && !current.hasIdlePreference()) || !containsStartCandidate(current.Candidates, target) || quarantinedSet(state)[target] {
 			outcome = startFailure("selection-changed", errSelectionChanged)
 			return nil
 		}
@@ -248,9 +250,18 @@ func rankStartTargets(candidates []string, entries map[string]usage.UsageEntry, 
 
 type startOrder struct{ soonestBinding, idleOpus bool }
 
+func (s StartSnapshot) hasIdlePreference() bool {
+	return s.IdleOpus || len(s.FableAllocationExceptions) > 0
+}
+
 func (s StartSnapshot) rank(candidates, models []string, now time.Time) []startTarget {
 	order := startOrder{idleOpus: s.IdleOpus, soonestBinding: s.IdleOpus && s.Settings.Strategy == "soonest-reset"}
-	return orderStartTargets(candidates, s.Entries, s.Settings, models, now, order)
+	ranked := orderStartTargets(candidates, s.Entries, s.Settings, models, now, order)
+	if len(s.FableAllocationExceptions) > 0 {
+		ordinary := func(row startTarget) bool { return row.tier != startAtLimit && !s.FableAllocationExceptions[row.num] }
+		sort.SliceStable(ranked, func(i, j int) bool { return ordinary(ranked[i]) && !ordinary(ranked[j]) })
+	}
+	return ranked
 }
 
 func orderStartTargets(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, models []string, now time.Time, order startOrder) []startTarget {

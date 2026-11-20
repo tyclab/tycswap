@@ -4,12 +4,10 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/keychain"
@@ -66,44 +64,6 @@ func startFableStore(root string) (store.FableState, bool) {
 	}
 	fable := sw.Store.FableStore()
 	return fable, fable.On || sw.Store.HasFableLogins()
-}
-
-// Check the credential of the store the child will inherit, including a
-// fallback after selection or a launch with automatic switching turned off.
-func checkStartAccount(root string, fable bool) error {
-	if _, err := os.Stat(filepath.Join(root, "sequence.json")); os.IsNotExist(err) || startStoreProblem(root) != "" {
-		return nil
-	}
-	sw, err := newSwitcher(store.Options{Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
-	if err != nil {
-		return fmt.Errorf("could not verify the account for launch: %w", err)
-	}
-	view := sw.Store.WithoutLineageWrites()
-	view.OAuth, view.Log = nil, nil
-	data, err := view.SequenceForUpdate()
-	if err != nil {
-		return err
-	}
-	for _, number := range data.Sequence {
-		if !store.DisabledFrom(data, strconv.Itoa(number)) {
-			continue
-		}
-		if fable {
-			view, err = view.ForFable()
-			if err != nil {
-				return err
-			}
-		}
-		current := view.ResolveOwnerSlot(data).Slot
-		if current == "" {
-			return fmt.Errorf("could not verify the current login while accounts are disabled")
-		}
-		if store.DisabledFrom(data, current) {
-			return fmt.Errorf("Account-%s is disabled. Select an enabled login before starting", current)
-		}
-		break
-	}
-	return nil
 }
 
 func isFableStoreEntry(entry, storeDir string) bool {
