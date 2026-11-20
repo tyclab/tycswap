@@ -78,7 +78,7 @@ const MythosModel = "Mythos"
 // us.anthropic.claude-fable-5-2-v1:0, answers the one family it names as a
 // whole word.
 func ModelFamily(model string) string {
-	if family := claudeFamily(model); family != "" {
+	if family := ClaudeFamily(model); family != "" {
 		return family
 	}
 	m := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(model)), "[1m]")
@@ -94,9 +94,9 @@ func ModelFamily(model string) string {
 	return found
 }
 
-// claudeFamily is the family of a Claude model alias or claude-<family>-… id,
+// ClaudeFamily is the family of a Claude model alias or claude-<family>-… id,
 // "" for anything else, a provider's id included.
-func claudeFamily(model string) string {
+func ClaudeFamily(model string) string {
 	m := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(model)), "[1m]")
 	for _, ch := range m {
 		if !(ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '-') {
@@ -118,7 +118,7 @@ func claudeFamily(model string) string {
 // store (A77). An unknown model, a provider's id (such a session runs on no
 // login of tycswap's; v0.15.1 recorded none) or a busy lock records nothing.
 func RecordDefaultSessionModel(root, sessionID, model, store string, now time.Time) (bool, error) {
-	family := claudeFamily(model)
+	family := ClaudeFamily(model)
 	if sessionID == "" || family == "" {
 		return false, nil
 	}

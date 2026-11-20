@@ -85,7 +85,7 @@ func parseStartArguments(argv []string) (startArguments, error) {
 				}
 				parsed.action, parsed.id = tok, argv[i]
 			}
-		case "--list", "--started":
+		case "--list", "--started", "--check":
 			if parsed.action != "" || parsed.account != "" {
 				return parsed, fmt.Errorf("management options are exclusive")
 			}
@@ -119,6 +119,10 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 	}
 	if parsed.action == "--started" {
 		startStarted(streams.in)
+		return 0
+	}
+	if parsed.action == "--check" {
+		startCheck(streams.in, streams.out)
 		return 0
 	}
 	if parsed.action != "" {
@@ -557,6 +561,7 @@ func renderStartHelp(prog string, out io.Writer) int {
 	fmt.Fprintf(out, "usage: %s start [--account ID] [--] [command [args...]]\n", prog)
 	fmt.Fprintf(out, "       %s start --allow ID | --disallow ID | --list\n", prog)
 	fmt.Fprintf(out, "       %s start --started\n", prog)
+	fmt.Fprintf(out, "       %s start --check\n", prog)
 	fmt.Fprintln(out, "\nStart on a marked login, then launch once (default: real Claude). A marked login with room")
 	fmt.Fprintln(out, "comes first; one at its limit is still used, and auto-switch leaves it there until the session")
 	fmt.Fprintln(out, "is up: --started, run as Claude Code's SessionStart hook, says so, else the hold ends after 30 s.")
@@ -568,5 +573,6 @@ func renderStartHelp(prog string, out io.Writer) int {
 	fmt.Fprintln(out, "The environment passes unchanged, except CLAUDE_SECURESTORAGE_CONFIG_DIR: start sets it to the Fable store")
 	fmt.Fprintln(out, "for a Fable session while that store is usable, and removes it from any other session when it names that store;")
 	fmt.Fprintln(out, "and TYCSWAP_START_HOLD: start sets it for a session it holds a login at its limit for, and removes it from any other.")
+	fmt.Fprintln(out, "--check, run by the status line, prints one line when the session runs on the other store than its model's.")
 	return 0
 }
