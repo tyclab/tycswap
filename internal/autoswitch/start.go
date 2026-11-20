@@ -2,6 +2,7 @@ package autoswitch
 
 import (
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -23,12 +24,14 @@ type StartOutcome struct {
 }
 
 type StartSnapshot struct {
-	Current       string
-	CurrentMarked bool
-	Marked        []string
-	Candidates    []string
-	Entries       map[string]usage.UsageEntry
-	Settings      settings.AutoSwitchSettings
+	Current         string
+	CurrentDisabled bool
+	IdleOpus        bool
+	CurrentMarked   bool
+	Marked          []string
+	Candidates      []string
+	Entries         map[string]usage.UsageEntry
+	Settings        settings.AutoSwitchSettings
 }
 
 // StartSelection prepares outside the state lock, then shares the engine's switch/stamp order.
@@ -49,7 +52,7 @@ func StartSelection(sw Switcher, account string, snapshot func() (StartSnapshot,
 		if !startHoldWanted(snap, snap.Current, e.clk.Now()) {
 			return outcome
 		}
-		return e.settleStart(snapshot, account, "")
+		return e.settleStart(snapshot, account, "", false)
 	}
 	e.settings.Store(&snap.Settings)
 	e.models = settings.ParseModelNames(snap.Settings.Model)
@@ -62,7 +65,7 @@ func StartSelection(sw Switcher, account string, snapshot func() (StartSnapshot,
 		}
 	}
 	var failures []string
-	for _, row := range rankStartTargets(candidates, snap.Entries, snap.Settings, e.models, e.clk.Now()) {
+	for _, row := range snap.rank(candidates, e.models, e.clk.Now()) {
 		target := row.num
 		email := sw.AccountEmail(target)
 		preparationDetail := ""
@@ -97,7 +100,7 @@ func StartSelection(sw Switcher, account string, snapshot func() (StartSnapshot,
 			failures = append(failures, "Account-"+target+": "+message)
 			continue
 		}
-		return e.settleStart(snapshot, account, target)
+		return e.settleStart(snapshot, account, target, snap.IdleOpus)
 	}
 	detail := "no usable start login; continuing with the current login"
 	if len(failures) > 0 {
@@ -112,7 +115,7 @@ var errSelectionChanged = errors.New("start login eligibility changed; continuin
 // no switch when none is needed, else the switch to target, prepared outside
 // the lock ("" for none). A session on a login at a limit gets a start hold
 // while auto-switch is on, in the same write as the switch's stamp (DESIGN A105).
-func (e *Engine) settleStart(snapshot func() (StartSnapshot, error), account, target string) StartOutcome {
+func (e *Engine) settleStart(snapshot func() (StartSnapshot, error), account, target string, preparedForIdleOpus bool) StartOutcome {
 	outcome := StartOutcome{}
 	err := filelock.New(e.lockPath, 0).With(func() error {
 		current, err := snapshot()
@@ -128,11 +131,11 @@ func (e *Engine) settleStart(snapshot func() (StartSnapshot, error), account, ta
 			return nil
 		}
 		state := e.readState()
-		if !containsStartCandidate(current.Candidates, target) || quarantinedSet(state)[target] {
+		if (preparedForIdleOpus && !current.IdleOpus) || !containsStartCandidate(current.Candidates, target) || quarantinedSet(state)[target] {
 			outcome = startFailure("selection-changed", errSelectionChanged)
 			return nil
 		}
-		ranked := rankStartTargets([]string{target}, current.Entries, current.Settings, settings.ParseModelNames(current.Settings.Model), now)
+		ranked := current.rank([]string{target}, settings.ParseModelNames(current.Settings.Model), now)
 		if len(ranked) == 0 {
 			outcome = startFailure("selection-changed", errSelectionChanged)
 			return nil
@@ -194,7 +197,7 @@ func startHoldWanted(snap StartSnapshot, num string, now time.Time) bool {
 
 func startNoop(snap StartSnapshot, account string) (StartOutcome, bool) {
 	switch {
-	case account != "" && snap.Current == account:
+	case account != "" && snap.Current == account && !snap.CurrentDisabled:
 		return StartOutcome{Reason: "already-active", Detail: "Requested start login is already active."}, true
 	case account == "" && len(snap.Marked) == 0:
 		return StartOutcome{Reason: "no-start-login"}, true
@@ -228,16 +231,29 @@ const (
 )
 
 type startTarget struct {
-	num   string
-	tier  int
-	known bool
-	room  float64
+	num          string
+	tier         int
+	known        bool
+	room         float64
+	reset        *float64
+	spentPremium bool
 }
 
 // rankStartTargets ranks cached candidates by tier and binding utilization,
 // read as of now like the engine's (DESIGN A91); stable ties keep sequence
 // order, which alone orders the logins at a limit.
 func rankStartTargets(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, models []string, now time.Time) []startTarget {
+	return orderStartTargets(candidates, entries, set, models, now, startOrder{})
+}
+
+type startOrder struct{ soonestBinding, idleOpus bool }
+
+func (s StartSnapshot) rank(candidates, models []string, now time.Time) []startTarget {
+	order := startOrder{idleOpus: s.IdleOpus, soonestBinding: s.IdleOpus && s.Settings.Strategy == "soonest-reset"}
+	return orderStartTargets(candidates, s.Entries, s.Settings, models, now, order)
+}
+
+func orderStartTargets(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, models []string, now time.Time, order startOrder) []startTarget {
 	values := decisionValuesAt(entries, now)
 	required := requiredModels(models)
 	var ranked []startTarget
@@ -245,11 +261,21 @@ func rankStartTargets(candidates []string, entries map[string]usage.UsageEntry, 
 		if entries[num].TokenDead() || !hasRequiredModels(values[num], required) {
 			continue
 		}
-		h := usage.AccountHeadroomByClass(usageDict(values[num]), models)
+		value := usageDict(values[num])
+		applicable := models
+		spent := false
+		if order.idleOpus {
+			applicable, spent = opusQuota(value, models)
+		}
+		h := usage.AccountHeadroomByClass(value, applicable)
 		room := h.Binding()
 		row := startTarget{num: num, tier: startRoom, known: room != nil}
 		if room != nil {
 			row.room = *room
+			row.spentPremium = spent
+			if order.soonestBinding {
+				row.reset = bindingWindowReset(value, applicable, *room)
+			}
 			if *room <= 0 {
 				row.tier = startAtLimit
 			} else if belowEveryBar(h, set) {
@@ -269,16 +295,73 @@ func rankStartTargets(candidates []string, entries map[string]usage.UsageEntry, 
 		if a.known != b.known {
 			return a.known
 		}
+		if a.spentPremium != b.spentPremium {
+			return a.spentPremium
+		}
+		if (a.reset == nil) != (b.reset == nil) {
+			return a.reset != nil
+		}
+		if a.reset != nil && *a.reset != *b.reset {
+			return *a.reset < *b.reset
+		}
 		return a.room > b.room
 	})
 	return ranked
 }
 
+// A missing premium window provides no evidence its quota is spent.
+func opusQuota(value map[string]any, models []string) ([]string, bool) {
+	u := oauth.NewUsage(value)
+	if u == nil {
+		return models, false
+	}
+	models = slices.Clone(models)
+	spent, hasRoom := false, false
+	for _, window := range u.Scoped {
+		name := strings.ToLower(window.Name)
+		switch {
+		case strings.Contains(name, "opus"):
+			models = append(models, window.Name)
+		case strings.Contains(name, "fable"), strings.Contains(name, "mythos"):
+			spent = spent || window.Pct >= 100
+			hasRoom = hasRoom || window.Pct < 100
+		}
+	}
+	return models, spent && !hasRoom
+}
+
+// A tie in remaining room lasts until all equally binding windows have reset.
+func bindingWindowReset(value map[string]any, models []string, room float64) *float64 {
+	var latest *float64
+	for _, window := range oauth.RelevantWindows(oauth.NewUsage(value), models) {
+		if 100-window.Pct != room {
+			continue
+		}
+		reset := parseResetTS(window.ResetsAt)
+		if reset == nil {
+			return nil
+		}
+		if latest == nil || *reset > *latest {
+			latest = reset
+		}
+	}
+	return latest
+}
+
 // StartTargets is start's ranking without the logins at a limit: the move
 // off a dead live Fable login ranks its pool by it (DESIGN A102).
 func StartTargets(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, models []string, now time.Time) []string {
+	return startTargetsWithRoom(rankStartTargets(candidates, entries, set, models, now))
+}
+
+// InitialPlacementTargets orders independently signed-in candidates for a new native session.
+func InitialPlacementTargets(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, models []string, now time.Time) []string {
+	return startTargetsWithRoom(orderStartTargets(candidates, entries, set, models, now, startOrder{soonestBinding: set.Strategy == "soonest-reset"}))
+}
+
+func startTargetsWithRoom(rows []startTarget) []string {
 	result := []string{}
-	for _, row := range rankStartTargets(candidates, entries, set, models, now) {
+	for _, row := range rows {
 		if row.tier != startAtLimit {
 			result = append(result, row.num)
 		}

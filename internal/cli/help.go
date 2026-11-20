@@ -40,11 +40,12 @@ Commands:
   tycswap add-token [TOKEN|-]        register a setup-token or API key
   tycswap add-token --base-url URL   register an API key for another endpoint
   tycswap remove <num|email>         remove an account
-  tycswap disable <num|email>        hold an account out of auto-rotation
-  tycswap enable <num|email>         return a disabled account to rotation
+  tycswap disable <num|email>        exclude a Claude account from selection
+  tycswap enable <num|email>         allow a disabled Claude account to be selected
   tycswap start [-- command args]    launch once on a marked login, even at its limit
   tycswap start --allow|--disallow ID mark or unmark a start login (--list lists)
   tycswap mythos --allow|--disallow ID mark or unmark an account that runs Mythos
+  tycswap models --list | ID SET     show or choose the account's preferred models
   tycswap fable --allow|--disallow ID mark an account that runs Fable (--list lists)
   tycswap alias <num|email> <name>   set a short alias for an account
   tycswap alias <num|email> --unset  remove an account's alias
@@ -137,9 +138,9 @@ const visibleOptions = `options:
                         which add refuses: use 'add-token')
   --switch              With 'add --login': switch to the new account after
                         storing it
-  --lineage {default,fable}
-                        With 'add --login': fable stores the sign-in as the
-                        Fable login of the account it names
+  --lineage {default,fable,mythos}
+                        With 'add --login': store the account's independent
+                        sign-in for the selected credential store
   --store {default,fable}
                         With 'switch': fable switches the Fable store, to an
                         account (switch --store fable <num|email>) or off

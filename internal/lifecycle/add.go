@@ -183,6 +183,9 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 			if err := displaceFable(); err != nil {
 				return err
 			}
+			if err := deleteMythosLogin(s, displaceSlot.email, displaceSlot.org); err != nil {
+				return err
+			}
 			if n, ok := parseSlot(displaceSlot.num); ok {
 				data.Sequence = removeInt(data.Sequence, n)
 			}

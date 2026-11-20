@@ -31,13 +31,19 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 	if s.GroupID() != "" {
 		return switchOp{}, cerr.Session("session groups are retired; the default login switches by itself")
 	}
+	preData, err := s.ReadSequence()
+	if err != nil {
+		return switchOp{}, err
+	}
+	if err := checkSwitchEnabled(preData, targetAccount); err != nil {
+		return switchOp{}, err
+	}
 	if err := ReleaseIdleLegacy(s, targetAccount); err != nil {
 		return switchOp{}, err
 	}
 	warningsOut := []string{}
 
 	// Session-mode drift warning (warn, never block).
-	preData, _ := s.ReadSequence()
 	preRec, _ := accountRec(preData, targetAccount)
 	preEmail := recStr(preRec, "email")
 	if preEmail != "" {
@@ -67,12 +73,15 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 	var plan *profilePlan
 	displayAfterLock := false
 
-	err := withTripleLock(s, func() error {
+	err = withTripleLock(s, func() error {
 		if err := s.EnsureAccountAvailable(targetAccount); err != nil {
 			return err
 		}
 		data, err := s.ReadSequence()
 		if err != nil {
+			return err
+		}
+		if err := checkSwitchEnabled(data, targetAccount); err != nil {
 			return err
 		}
 		currentAccount := ""

@@ -58,7 +58,7 @@ func TestMain(m *testing.M) {
 	}
 	// A suite run inside a session tycswap start launched inherits what start
 	// hands its child; the tests that want one set it themselves.
-	for _, key := range []string{startHoldEnv, startFamilyEnv, "ANTHROPIC_MODEL"} {
+	for _, key := range []string{startHoldEnv, startFamilyEnv, "ANTHROPIC_MODEL", "TYCSWAP_PLACEMENT_BROKER"} {
 		_ = os.Unsetenv(key)
 	}
 	os.Exit(m.Run())
@@ -67,6 +67,11 @@ func TestMain(m *testing.M) {
 // runTestChild reports what the child sees, on its own stdout/stderr.
 func runTestChild(role string) int {
 	switch role {
+	case "placement-broker":
+		if len(os.Args) != 2 || os.Args[1] != "--ask" {
+			return 1
+		}
+		return fakePlacementBroker(os.Stdin, os.Stdout, func(string) string { return os.Getenv("TEST_PLACEMENT_REPLY") })
 	case "detached":
 		n, err := os.Stdin.Read(make([]byte, 1))
 		fmt.Fprintln(os.Stdout, "stdout ok")

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -17,6 +18,60 @@ import (
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/store"
 )
+
+func TestOpusStartPrefersSpentPremiumOnlyForIdleDefaultLogin(t *testing.T) {
+	for _, tc := range []struct {
+		name, session, current, command, want string
+		allocated                             []string
+	}{
+		{name: "idle", current: "1", command: "claude", want: "3"},
+		{name: "versioned native executable", current: "1", command: "versioned", want: "3"},
+		{name: "custom command", current: "1", command: "another-program", want: "2"},
+		{name: "allocated elsewhere", current: "1", command: "claude", want: "2", allocated: []string{"fable"}},
+		{name: "live session", session: "live", current: "1", command: "claude", want: "2"},
+		{name: "unreadable session", session: "unknown", current: "1", command: "claude", want: "1"},
+		{name: "already on start login", current: "2", command: "claude", want: "2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := fableTickFixture{def: tc.current, usage: map[string][3]float64{
+				"2": {10, 50, 92}, "3": {10, 80, 100},
+			}}
+			sw, child := fableStartLogin(t, fx, "2", "3")
+			if tc.allocated != nil {
+				setRecord(t, sw, "3", store.ModelsKey, tc.allocated)
+			}
+			command := tc.command
+			startResolve = func(name string) (string, error) { return name, nil }
+			if command == "versioned" {
+				command = filepath.Join(sw.Home, ".local", "share", "claude", "versions", "1.2.3")
+				writeFile(t, command, "synthetic native executable")
+				dir := filepath.Join(sw.Home, ".local", "bin")
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Link(command, filepath.Join(dir, "claude")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.session != "" {
+				pid := strconv.Itoa(os.Getpid())
+				record := "invalid registry entry"
+				if tc.session == "live" {
+					record = `{"pid":` + pid + `,"sessionId":"another-session"}`
+				}
+				writeFile(t, filepath.Join(sw.DefaultProfileDir(), "sessions", pid+".json"), record)
+			}
+			code, _, stderr := runCLI(t, []string{"start", "--", command, "--model", "opus"}, false, false)
+			if code != 23 || child.execs != 1 {
+				t.Fatalf("start code=%d launches=%d stderr=%q", code, child.execs, stderr)
+			}
+			login, _, ok := sw.GetCurrentAccount()
+			if !ok || login != fableEmail(tc.want) {
+				t.Fatalf("login %q, want %q; stderr=%q", login, fableEmail(tc.want), stderr)
+			}
+		})
+	}
+}
 
 func startTestLaunch(t *testing.T) *int {
 	t.Helper()
@@ -120,7 +175,7 @@ func TestStartResolveFailureDoesNotSelect(t *testing.T) {
 }
 
 func TestStartFallsBackAndStillRuns(t *testing.T) {
-	for _, failure := range []string{"bad-root", "unknown-account", "corrupt-roster", "corrupt-settings", "constructor"} {
+	for _, failure := range []string{"bad-root", "unknown-account", "corrupt-settings", "constructor"} {
 		t.Run(failure, func(t *testing.T) {
 			calls := startTestLaunch(t)
 			argv := []string{"start", "command"}
@@ -164,6 +219,44 @@ func TestStartFallsBackAndStillRuns(t *testing.T) {
 				t.Fatalf("invalid root diagnostic = %q", stderr)
 			}
 		})
+	}
+}
+
+func TestStartCannotVerifyCorruptManagedRoster(t *testing.T) {
+	calls := startTestLaunch(t)
+	root := paths.GetBackupRoot()
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "sequence.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, stderr := runCLI(t, []string{"start", "command"}, false, false)
+	if code == 0 || *calls != 0 || !strings.Contains(stderr, "sequence.json") {
+		t.Fatalf("code=%d calls=%d stderr=%q", code, *calls, stderr)
+	}
+}
+
+func TestStartRefusesDisabledLoginWithAutomaticSwitchingOff(t *testing.T) {
+	for _, model := range []string{"opus", "fable"} {
+		t.Run(model, func(t *testing.T) {
+			sw, rec := fableStart(t, "on")
+			if err := sw.SetAccountDisabled("1", true); err != nil {
+				t.Fatal(err)
+			}
+			code, _, stderr := runCLI(t, []string{"start", "command", "--model", model}, false, false)
+			if code != 1 || rec.execs != 0 || !strings.Contains(stderr, "Account-1 is disabled") {
+				t.Fatalf("code=%d execs=%d stderr=%q", code, rec.execs, stderr)
+			}
+		})
+	}
+}
+
+func TestStartCannotPlaceUnknownFableLoginAlongsideDisabledAccounts(t *testing.T) {
+	_, rec := fableStart(t, "unknown")
+	code, _, stderr := runCLI(t, []string{"start", "command", "--model", "fable"}, false, false)
+	if code != 1 || rec.execs != 0 || !strings.Contains(stderr, "could not verify the current login") {
+		t.Fatalf("code=%d execs=%d stderr=%q", code, rec.execs, stderr)
 	}
 }
 

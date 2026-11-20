@@ -655,7 +655,7 @@ func retainLocalMetadata(incoming, local json.RawMessage) (json.RawMessage, erro
 		return nil, err
 	}
 	out := append([]byte(nil), incoming[:len(incoming)-1]...)
-	for _, key := range []string{"alias", "disabled", "startLogin", "mythos", "fableContinue"} {
+	for _, key := range []string{"alias", "disabled", "startLogin", "mythos", "fableContinue", "models"} {
 		if _, exists := fresh[key]; exists {
 			continue
 		}

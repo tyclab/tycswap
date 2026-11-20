@@ -406,8 +406,8 @@ Removed alias for Account 3
 
 ### Disable and enable accounts
 
-A disabled account stays managed and switchable by hand but is skipped by
-auto-switch:
+A disabled Claude account stays in the roster. Enable it before selecting it
+by hand or launching a managed session on it. Automatic rotation also skips it.
 
 ```
 $ tycswap disable 2
@@ -701,6 +701,30 @@ once per Mythos session when none is marked. `list`, the dashboard (**Allow for 
 show the mark; the Auto tab's caption names the accounts a live Mythos session
 leaves the login, e.g. `live Mythos session: only accounts 2, 5`. Mythos
 sessions on the Fable store are not covered.
+
+### Use an independent Mythos login
+
+On Linux, WSL and Windows, an existing subscription account can have a
+separate Claude sign-in for new Mythos sessions. For example, to enroll
+account 2 and allocate its quota to Mythos and Fable:
+
+```sh
+tycswap mythos --allow 2
+tycswap add --login --lineage mythos --slot 2
+tycswap models 2 mythos,fable
+```
+
+The browser sign-in must match the enrolled account and organization.
+Each enrolled identity has its own credential directory. A new Mythos
+session starts Claude with the selected directory. The native client
+checks model access on that login. In-process subagents share their
+parent session's login. Removing the account also removes its independent
+credential. Moving the same account to a new slot preserves the credential.
+
+`tycswap models --list` shows explicit allocations. Use
+`tycswap models 2 --derived` to clear the allocation for account 2.
+If an independent Mythos start needs an allocation exception, it asks
+before launching Claude. Each computer needs its own browser sign-in.
 
 ### Run accounts in parallel
 

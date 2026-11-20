@@ -76,6 +76,9 @@ func SwitchTo(s *store.Store, identifier string, jsonOut, force bool) (any, erro
 	// behind would let a later switch onto the slot through unasked (DESIGN
 	// A33).
 	approved := takeApproval(targetAccount)
+	if err := checkSwitchEnabled(data, targetAccount); err != nil {
+		return nil, err
+	}
 
 	// Already-active short-circuit (issue #79 / #117). --force skips it, and so
 	// does a live slot found by its credential: its config needs the repair.

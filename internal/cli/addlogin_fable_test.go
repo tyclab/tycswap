@@ -115,8 +115,8 @@ func TestAddLoginLineageRefusals(t *testing.T) {
 		code int
 		want string
 	}{
-		{"unknown value", platform.Linux, []string{"add", "--login", "--lineage", "other"}, 2, "tycswap: error: unknown lineage: other (default or fable)"},
-		{"unknown value, = form", platform.Linux, []string{"add", "--login", "--lineage=other"}, 2, "tycswap: error: unknown lineage: other (default or fable)"},
+		{"unknown value", platform.Linux, []string{"add", "--login", "--lineage", "other"}, 2, "tycswap: error: unknown lineage: other (default, fable or mythos)"},
+		{"unknown value, = form", platform.Linux, []string{"add", "--login", "--lineage=other"}, 2, "tycswap: error: unknown lineage: other (default, fable or mythos)"},
 		{"no value", platform.Linux, []string{"add", "--login", "--lineage"}, 2, "tycswap: error: argument --lineage: expected one argument"},
 		{"without --login", platform.Linux, []string{"add", "--lineage", "fable"}, 1, "Error: --lineage goes with --login"},
 		{"without --login, = form", platform.Linux, []string{"add", "--lineage=default"}, 1, "Error: --lineage goes with --login"},

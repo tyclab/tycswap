@@ -25,6 +25,10 @@ tycswap add --login [--switch] [--slot NUM] [--alias NAME] [-- LOGIN-ARGS...]
                                             log another account in beside the live one and store it
 tycswap add --login --lineage fable [--slot NUM] [--switch] [-- LOGIN-ARGS...]
                                             sign an added account in again as its Fable login
+tycswap add --login --lineage mythos [--slot NUM] [-- LOGIN-ARGS...]
+                                            enroll an independent login for Mythos starts
+tycswap models --list [--json]               show explicit model allocations
+tycswap models ID SET | ID --derived         set or clear a comma-separated allocation
 tycswap add-token [TOKEN|-] [--email EMAIL] [--slot NUM] [--base-url URL]
                                             register a setup-token or API key
 tycswap remove <NUM|EMAIL|ALIAS>              remove an account (prompts to confirm)
@@ -841,6 +845,14 @@ store's locks, keeping the store's MCP logins, so a dead live login is repaired
 by signing in again. `--alias` is refused with it; macOS refuses it before
 Claude starts.
 
+`--lineage mythos` enrolls a separate native sign-in for an enabled
+Mythos-marked subscription account on Linux, WSL and Windows. Its credential
+directory under `<backup root>/mythos/accounts/` is keyed by the email and
+organization, so renumbering slots preserves the login. `--slot` checks the
+identity selected in the browser. `--alias` and `--switch` apply to other
+forms of this command. The new login becomes available for native Mythos
+starts on this computer.
+
 A plain `add` of the live login refuses when `~/.claude.json` names the Fable
 store's account while the live credential resolves to another account: a Fable
 session wrote that config, and the credential is not that account's.
@@ -1090,9 +1102,9 @@ Legacy: `tycswap --disable-account <id>`.
 
 ### Description
 
-Holds an account out of auto-rotation. `tycswap auto` and the usage-aware `switch`
-strategies skip a disabled account; a direct `switch <id>` still activates it.
-The account and its credentials are retained.
+Disables selection of this Claude account across the default and Fable stores.
+Direct switches, forced switches, and new managed starts on the disabled account
+require it to be enabled again. The roster and saved credentials retain it.
 
 ### Files
 
@@ -1105,8 +1117,7 @@ Writes the `disabled` flag on the account's `sequence.json` record.
 ### Output
 
 `Disabled Account-<n> (<email>).` When the disabled account is also the active
-login, a second line follows: `  It is the active account — it stays live until
-you switch away; it just won't be an automatic switch target.`
+login, a second line follows: `  It is the active account. Existing sessions keep their login until you switch away. Managed starts on this login are blocked.`
 
 ### Errors
 
@@ -1117,7 +1128,7 @@ you switch away; it just won't be an automatic switch target.`
 ```
 $ tycswap disable 1
 Disabled Account-1 (alice@example.com).
-  It is the active account — it stays live until you switch away; it just won't be an automatic switch target.
+  It is the active account. Existing sessions keep their login until you switch away. Managed starts on this login are blocked.
 ```
 
 ### See also
@@ -2745,9 +2756,8 @@ organization, which is the only thing that distinguishes them. A completed
 removal or disable reports itself; both previously completed without
 acknowledgement.
 
-Disabled accounts appear in the switch and watch lists and remain valid
-explicit targets there, since disabling holds an account out of automatic
-rotation rather than out of the roster. The auto-switch screen's ranked
+Disabled Claude accounts appear in the switch and watch lists. Enable the
+account before selecting it. The auto-switch screen's ranked
 "Next best" candidates panel excludes disabled accounts entirely — an
 account held out of automatic rotation never appears in a ranking of
 automatic-switch targets. A quarantined account (one the auto engine has
@@ -5374,6 +5384,7 @@ tycswap reads the following environment variables.
 
 | Variable | Effect |
 |----------|--------|
+| `TYCSWAP_PLACEMENT_BROKER` | Absolute path to a trusted question broker. With `--ask` it accepts a JSON question and options on stdin and returns a confirmed JSON answer on stdout. An unattended Mythos start can ask the operator to use an eligible account outside its allocation for this placement. Each start owns its own question. An explicit “Use this time” answer lets tycswap check the identity, cached shared quota limits and allocation again before launch. A missing broker, cancellation or expiry ends this invocation. |
 | `CLAUDE_CONFIG_DIR` | Overrides the Claude Code config home: the global config is `<dir>/.claude.json` and credentials are `<dir>/.credentials.json`. `tycswap start` skips startup selection and passes any set value unchanged, even empty. For every other command the effect depends on the value: a former session profile — a value inside `<backup_root>/sessions/`, as `tycswap env` set it before its removal — is ignored, and the command operates on the default login and prints `CLAUDE_CONFIG_DIR names a retired tycswap profile; operating on the default login. Unset it so plain claude stops using that profile: unset CLAUDE_CONFIG_DIR (fish: set -e CLAUDE_CONFIG_DIR; PowerShell: Remove-Item Env:CLAUDE_CONFIG_DIR).` to stderr (where `TYCSWAP_DEFAULT_PROFILE_DIR` names a custom default it is restored, and the notice says to set `CLAUDE_CONFIG_DIR` back to it); a custom value outside `<backup_root>/sessions/` is honored. |
 | `XDG_DATA_HOME` | On Linux/WSL, selects the backup-root parent: `<XDG_DATA_HOME>/tycswap` (and, for `tycswap migrate`, the old store `<XDG_DATA_HOME>/claude-swap`). Ignored when unset, empty, or non-absolute; a leading `~` is expanded. |
 | `HOME` | The user's home directory; the base for `~/.claude.json`, `~/.claude/`, `~/.local/share`, `~/.tycswap`, the old `~/.claude-swap-backup` (read only by `tycswap migrate`), and `~/go/bin`. |

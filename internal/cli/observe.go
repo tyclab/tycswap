@@ -115,6 +115,9 @@ func claimObserveSlot(dir string, now time.Time) bool {
 // observedStore is the store the status line's session runs on: "fable" in a
 // Fable-store session, else "" (DESIGN A102).
 func observedStore() string {
+	if mythosSessionDir != "" {
+		return "mythos/" + filepath.Base(mythosSessionDir)
+	}
 	if fableSessionProcess {
 		return "fable"
 	}
@@ -125,6 +128,19 @@ func observedStore() string {
 // so the tick that follows reads it fresh (DESIGN A75); in a Fable-store
 // session the Fable store's live account (A102).
 func markObservedDue(sw *core.Switcher, group groups.ID) {
+	if mythosSessionDir != "" {
+		data, _ := sw.ReadSequence()
+		if data != nil {
+			for _, number := range data.Sequence {
+				num := strconv.Itoa(number)
+				if dir, ok := sw.Store.MythosLoginReady(data, num); ok && dir == mythosSessionDir {
+					reporting.MarkUsageDue(sw.Store, num)
+					return
+				}
+			}
+		}
+		return
+	}
 	if group == "" && fableSessionProcess {
 		data, _ := sw.ReadSequence()
 		if num := sw.Store.ResolveFableLiveSlot(data).Slot; num != "" {

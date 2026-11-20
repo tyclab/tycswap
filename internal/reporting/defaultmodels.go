@@ -222,7 +222,7 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 			allKnown = false
 			continue
 		}
-		if fable.Usable && rec.Store == "fable" {
+		if strings.HasPrefix(rec.Store, "mythos/") || fable.Usable && rec.Store == "fable" {
 			continue
 		}
 		if fable.Usable && rec.Family == "fable" {

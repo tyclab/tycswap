@@ -173,7 +173,7 @@ func Switch(s *store.Store, strategy *string, jsonOut bool) (any, error) {
 	n := len(sequence)
 	for offset := 1; offset < n; offset++ {
 		candidate := itoa(sequence[(currentIndex+offset)%n])
-		if disabledFromData(data, candidate) {
+		if store.DisabledFrom(data, candidate) {
 			if jsonOut {
 				warnings = append(warnings, "Skipped Account-"+candidate+" (disabled)")
 			} else {
@@ -296,7 +296,7 @@ func switchFreshMachine(s *store.Store, strategyLabel string, jsonOut bool, warn
 	// read apart here only to WORD the notice, which says "(disabled)" or names
 	// the re-add command. A19's exception is for the rotation loop in Switch,
 	// which decides on its own inline tests; nothing on this path decides on one.
-	targetDisabled := disabledFromData(data, target)
+	targetDisabled := store.DisabledFrom(data, target)
 	if !s.RotationEligible(data, target) {
 		var reason, consoleReason string
 		switch {

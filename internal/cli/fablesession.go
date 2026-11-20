@@ -10,6 +10,7 @@ import (
 
 // fableSessionProcess: this process runs under a Fable-store session (its status line, quota hook or an agent; DESIGN A100).
 var fableSessionProcess bool
+var mythosSessionDir string
 
 const secureStorageEnv = "CLAUDE_SECURESTORAGE_CONFIG_DIR"
 
@@ -17,6 +18,12 @@ const secureStorageEnv = "CLAUDE_SECURESTORAGE_CONFIG_DIR"
 // Fable store, so this process takes the default store's Claude Code locks
 // for the default login it acts on. Any other value is the user's own.
 func dropFableStoreEnv() {
+	mythosSessionDir = ""
+	if value := os.Getenv(secureStorageEnv); isMythosDirectory(paths.GetBackupRoot(), value) {
+		mythosSessionDir = value
+		_ = os.Unsetenv(secureStorageEnv)
+		return
+	}
 	if namesFableStore(os.Getenv(secureStorageEnv), paths.FableStoreDir(paths.GetBackupRoot()), startWindows()) {
 		_ = os.Unsetenv(secureStorageEnv)
 		fableSessionProcess = true

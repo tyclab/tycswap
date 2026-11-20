@@ -36,6 +36,46 @@ func TestStartTargets(t *testing.T) {
 	}
 }
 
+func TestIndependentPlacementUsesTheResetOfTheBindingWindow(t *testing.T) {
+	at := func(hours int) string { return baseTime.Add(time.Duration(hours) * time.Hour).Format(time.RFC3339) }
+	entries := map[string]usage.UsageEntry{
+		"later":         dictEntry(map[string]any{"five_hour": win(10, at(1)), "seven_day": win(20, at(24))}),
+		"sooner":        dictEntry(map[string]any{"five_hour": win(30, at(2)), "seven_day": win(10, at(48))}),
+		"tied-windows":  dictEntry(map[string]any{"five_hour": win(15, at(1)), "seven_day": win(15, at(30))}),
+		"unknown-reset": dictEntry(map[string]any{"five_hour": win(10, at(1)), "seven_day": win(15, "")}),
+		"unknown-usage": nilEntry(),
+		"full":          dictEntry(map[string]any{"five_hour": win(100, at(1)), "seven_day": win(0, at(24))}),
+	}
+	candidates := []string{"unknown-usage", "unknown-reset", "later", "tied-windows", "full", "sooner"}
+	set := settings.Default()
+	got := InitialPlacementTargets(candidates, entries, set, nil, baseTime)
+	want := []string{"sooner", "later", "tied-windows", "unknown-reset", "unknown-usage"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("soonest binding reset: got %v, want %v", got, want)
+	}
+	shared := StartTargets(candidates, entries, set, nil, baseTime)
+	set.Strategy = "best"
+	got = InitialPlacementTargets(candidates, entries, set, nil, baseTime)
+	if !reflect.DeepEqual(got, shared) || got[0] != "unknown-reset" {
+		t.Fatalf("headroom strategy: got %v, shared recovery order %v", got, shared)
+	}
+}
+
+func TestOpusStartPreservesUsefulPremiumAndCountsItsOwnWindow(t *testing.T) {
+	snap := StartSnapshot{IdleOpus: true, Settings: settings.Default(), Entries: map[string]usage.UsageEntry{}}
+	for num, windows := range map[string][]any{
+		"spent":     {scopedWin("Fable", 100, ""), scopedWin("Mythos", 100, ""), scopedWin("Opus", 50, "")},
+		"has room":  {scopedWin("Fable", 100, ""), scopedWin("Mythos", 10, ""), scopedWin("Opus", 5, "")},
+		"opus full": {scopedWin("Fable", 100, ""), scopedWin("Opus", 100, "")},
+	} {
+		snap.Entries[num] = dictEntry(map[string]any{"seven_day": win(20, ""), "scoped": windows})
+	}
+	ranked := snap.rank([]string{"has room", "opus full", "spent"}, nil, baseTime)
+	if got := startTargetsWithRoom(ranked); !reflect.DeepEqual(got, []string{"spent", "has room"}) {
+		t.Fatalf("Opus candidates with room = %v", got)
+	}
+}
+
 // NotKnownAtALimit keeps an unread account, one with room and one whose
 // counted model window has room, in order, and drops a known 5h, 7d or
 // counted model window at 100 % (DESIGN A102).
@@ -102,6 +142,21 @@ func startTestSetup(t *testing.T) (*startTestSwitcher, *clock.Fake, string, func
 			Candidates: []string{"2"}, Entries: f.entries, Settings: set}, nil
 	}
 	return f, clk, path, snapshot
+}
+
+func TestOpusStartObservesSessionAppearingDuringPreparation(t *testing.T) {
+	f, clk, path, original := startTestSetup(t)
+	idle := true
+	snapshot := func() (StartSnapshot, error) {
+		snap, err := original()
+		snap.IdleOpus = idle
+		idle = false
+		return snap, err
+	}
+	out := StartSelection(f, "", snapshot, WithClock(clk), WithStatePath(path))
+	if out.Switched || f.moves != 0 || out.Reason != "selection-changed" {
+		t.Fatalf("start outcome %+v, switches %d", out, f.moves)
+	}
 }
 
 func TestStartSwitchAndNoop(t *testing.T) {

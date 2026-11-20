@@ -74,9 +74,9 @@ func fableStart(t *testing.T, state string) (*core.Switcher, *startRecord) {
 		return 23, nil
 	}
 	prev := startSelect
-	startSelect = func(account string, stderr io.Writer) string {
+	startSelect = func(account, family string, stderr io.Writer) string {
 		rec.selections = append(rec.selections, account)
-		return prev(account, stderr)
+		return prev(account, family, stderr)
 	}
 	t.Cleanup(func() { startSelect = prev })
 	return sw, rec
@@ -150,7 +150,7 @@ func TestStartPicksTheStoreBySessionModel(t *testing.T) {
 	}{
 		{name: "fable, on", state: "on", args: []string{"--model", "fable"}, wantVar: true},
 		{name: "fable, on, inherited value kept", state: "on", args: []string{"--model", "fable"}, inherit: true, wantVar: true},
-		{name: "fable, live slot unknown counts as usable", state: "unknown", args: []string{"--model", "fable"}, wantVar: true},
+		{name: "fable, unknown live slot and all accounts enabled", state: "unknown", args: []string{"--model", "fable"}, wantVar: true},
 		{name: "fable, off", state: "off", args: []string{"--model", "fable"},
 			notice: strings.Replace(noUsable, "%s", "the store is empty", 1)},
 		{name: "fable, off, inherited value removed", state: "off", args: []string{"--model=claude-fable-5-1[1m]"}, inherit: true,
@@ -165,6 +165,11 @@ func TestStartPicksTheStoreBySessionModel(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sw, rec := fableStart(t, tc.state)
+			if tc.state == "unknown" {
+				if err := sw.SetAccountDisabled("5", false); err != nil {
+					t.Fatal(err)
+				}
+			}
 			storeDir := fableStoreDir()
 			if tc.inherit {
 				t.Setenv(secureStorageVar, storeDir+string(filepath.Separator))

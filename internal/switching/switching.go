@@ -223,13 +223,11 @@ func refreshPlan(data *store.SequenceData, num, configText string) {
 	}
 }
 
-func disabledFromData(data *store.SequenceData, num string) bool {
-	rec, ok := accountRec(data, num)
-	if !ok {
-		return false
+func checkSwitchEnabled(data *store.SequenceData, num string) error {
+	if store.DisabledFrom(data, num) {
+		return cerr.Validation("Account-%s is disabled. Enable it with tycswap enable %s before selecting it.", num, num)
 	}
-	d, _ := rec["disabled"].(bool)
-	return d
+	return nil
 }
 
 // bgCtx is the context for the advisory pre-lock profile resolution (its own 5s

@@ -40,7 +40,7 @@ func SwitchFable(fable *store.Store, id string, opts FableSwitchOptions) (map[st
 	if err != nil {
 		return nil, err
 	}
-	if err := fableTargetRefusal(f, num); err != nil {
+	if err := fableTargetRefusal(f, data, num); err != nil {
 		return nil, err
 	}
 	to := numRef(num, email)
@@ -59,6 +59,9 @@ func SwitchFable(fable *store.Store, id string, opts FableSwitchOptions) (map[st
 		}
 		if f.FindAccountSlot(current, email, org) != num {
 			return cerr.Switch("Account-%s changed while the switch waited for the store lock; nothing switched. Retry the command.", num)
+		}
+		if err := fableTargetRefusal(f, current, num); err != nil {
+			return err
 		}
 		ls := f.ResolveOwnerSlot(current)
 		if already = ls.Slot == num; already {
@@ -129,13 +132,16 @@ func EmptyFable(fable *store.Store) (map[string]any, error) {
 	return fableResult(true, from, nil, "emptied"), nil
 }
 
-func fableTargetRefusal(f *store.Store, num string) error {
+func fableTargetRefusal(f *store.Store, data *store.SequenceData, num string) error {
+	if err := checkSwitchEnabled(data, num); err != nil {
+		return err
+	}
 	switch {
 	case f.AccountKindFor(num) == "api_key":
 		return cerr.Validation("Account-%s is an API-key account; the Fable store holds OAuth logins only", num)
 	case !f.HasFableLogin(num):
 		return cerr.Validation("Account-%s has no Fable login: tycswap add --login --lineage fable --slot %s", num, num)
-	case !f.FableCapable(num):
+	case !f.FableEntitlement(data, num).Capable:
 		return cerr.Validation("Account-%s's plan offers no Fable", num)
 	}
 	return nil

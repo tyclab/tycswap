@@ -48,6 +48,10 @@ func (a *appShell) panelAt(st web.State, now time.Time) tray.Panel {
 		r.Plan, _ = row["plan"].(string)
 		if boolOf(row["disabled"]) {
 			r.Tag = "not rotated"
+			if rowProvider(row) == reporting.ProviderClaude {
+				r.Disabled = true
+				r.Tag = "disabled"
+			}
 		}
 		if rowProvider(row) != "codex" && boolOf(row["startLogin"]) {
 			if r.Tag != "" {

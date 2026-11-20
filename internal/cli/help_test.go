@@ -32,7 +32,7 @@ func TestHelpFlag(t *testing.T) {
 		"tycswap config",
 		"--slot",
 		"--email",
-		"--lineage {default,fable}",
+		"--lineage {default,fable,mythos}",
 		"--store {default,fable}",
 		"--empty ",
 		"tycswap auto --once", // epilog example

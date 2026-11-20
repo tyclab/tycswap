@@ -213,6 +213,9 @@ func AddAccountFromTokenWithBaseURL(s *store.Store, token, baseURL string, email
 			if err := displaceFable(); err != nil {
 				return err
 			}
+			if err := deleteMythosLogin(s, displaceSlot.email, displaceSlot.org); err != nil {
+				return err
+			}
 			if n, ok := parseSlot(displaceSlot.num); ok {
 				data.Sequence = removeInt(data.Sequence, n)
 			}

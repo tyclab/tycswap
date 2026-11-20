@@ -165,7 +165,7 @@ func TestTrayPanelRowsColumnsAndDashes(t *testing.T) {
 		t.Fatalf("an unknown plan hides the reported share: %+v", cells)
 	}
 
-	if row := rowByID(t, p, "claude:1"); row.Plan != "Ultra" || row.Tag != "not rotated" || row.Warning != "" || row.Active || row.Disabled {
+	if row := rowByID(t, p, "claude:1"); row.Plan != "Ultra" || row.Tag != "disabled" || row.Warning != "" || row.Active || !row.Disabled {
 		t.Fatalf("an account excluded from rotation: %+v", row)
 	}
 	if row := rowByID(t, p, "claude:2"); row.Plan != "Pro" || row.Tag != "" || row.Warning != "token expired" {
@@ -693,7 +693,7 @@ func TestTrayStartLoginTag(t *testing.T) {
 	codex := panelRow("codex", 1, "code", "", nil, nil, nil)
 	claude["startLogin"], claude["disabled"], codex["startLogin"] = true, true, true
 	p := sh.panelAt(panelState(claude, codex), panelNow)
-	if got := rowByID(t, p, "claude:1").Tag; got != "not rotated · start login" {
+	if got := rowByID(t, p, "claude:1").Tag; got != "disabled · start login" {
 		t.Fatalf("Claude tag %q", got)
 	}
 	if got := rowByID(t, p, "codex:1").Tag; got != "" {
