@@ -151,7 +151,7 @@ func (l *Logger) Prefixed(prefix string) *Logger {
 }
 
 func (l *Logger) emit(level Level, msg string) {
-	if level < l.level {
+	if l == nil || level < l.level {
 		return
 	}
 	msg = l.prefix + msg

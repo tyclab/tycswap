@@ -41,6 +41,7 @@ tycswap start --allow ID | --disallow ID | --list
 tycswap fable --allow ID | --disallow ID | --list [--json]
                                             mark the accounts that run Fable
 tycswap start --started                     end a session's start hold (a SessionStart hook)
+tycswap start --check                       name a session on the wrong store (a status line)
 tycswap mythos --allow ID | --disallow ID | --list
                                             manage the marks of accounts that run Mythos
 tycswap auto [--once] [--json] [--interval SECONDS] [--five-hour-threshold PCT]
@@ -1449,6 +1450,7 @@ tycswap start --allow ID
 tycswap start --disallow ID
 tycswap start --list
 tycswap start --started
+tycswap start --check
 ```
 
 ### Description
@@ -1462,6 +1464,8 @@ Alias and disabled metadata survive those refreshes too. A different identity
 reusing a slot, or a newly imported identity, starts unmarked. Marks do not
 change disabled state or imply model access. `--started` is the release of a
 start hold, run by a Claude Code SessionStart hook (see [Start hold](#start-hold)).
+`--check`, run by the status line, names a session on the wrong store (see
+[Status-line check](#status-line-check)).
 
 The launch form defaults to the real Claude executable. Parse only the prefix
 before `--` or the first command; every remaining argument is passed unchanged.
@@ -1623,6 +1627,38 @@ Dashboard uses authenticated POST routes
 `/api/accounts/claude:ID/start-login/allow` and `.../disallow`; Codex targets
 are rejected. List JSON adds `startLogin: true` only for marked rows; dashboard
 Claude rows carry the boolean, and Codex rows omit it.
+
+### Status-line check
+
+`tycswap start --check` reads the status-line JSON Claude Code passes on stdin
+(`session_id`, `model.id`) unless stdin is a terminal, and prints at most one
+line on stdout:
+
+| Session | Line |
+| --- | --- |
+| Fable on the default login, the Fable store usable | `⚠ Fable session on the default login: /exit, then claude --resume <session_id> --model <model> puts it on the Fable store` |
+| Fable on the default login, the Fable store usable, while `start` sends Fable sessions to the default login (start logins marked, auto-switch on, none of them with a usable Fable login) | `⚠ Fable session on the default login: no start login has a Fable login; mark one: tycswap start --allow ID` |
+| Opus, Mythos, Sonnet or Haiku on the Fable store | `⚠ <Family> session on the Fable store: /exit, then claude --resume <session_id> --model <model> puts it on the default login` |
+
+The session runs on the Fable store when `CLAUDE_SECURESTORAGE_CONFIG_DIR`
+names it, else on the default login; its family is that of `model.id` (an
+alias or a `claude-<family>-…` id; a provider's id or an unknown model prints
+nothing). `<model>` is the session's own `model.id`, lower-cased, so a pinned
+version and `[1m]` survive the resume; with `[1m]` it is single-quoted
+(`--model 'claude-fable-5-2[1m]'`). A `session_id` that is not a UUID is not
+printed: the line then ends `: restart it with --model <model>`. Any other session, a box without a Fable
+login, a Fable session on the default login while the Fable store is off or
+unusable (where `start` puts it), and every session under one of `start`'s
+overrides (`CLAUDE_CONFIG_DIR`, an auth override such as `ANTHROPIC_API_KEY`,
+or a `CLAUDE_SECURESTORAGE_CONFIG_DIR` of your own; see above) print nothing. Where `start` sends a Fable
+session is asked of the function `start` decides with, so a resume never lands
+where the line said it would not. It exits 0
+whatever happens, creates nothing, takes no lock, makes no network request and
+logs nothing of its own. While the Fable store is usable, auto-switch does not
+follow a Fable session on the default login (DESIGN A108): it runs on whatever
+account the default login's other sessions need until it is resumed on the
+Fable store, and the counting caption says so: `1 Fable session on the
+default login not followed (start --check names it)`.
 
 ### Launchers
 
@@ -2062,7 +2098,8 @@ again.
 
 **Beside the Fable store the default store leaves it its accounts** (DESIGN
 A102). While the Fable store is usable, the scheduled tick counts only the
-sessions recorded on the default store, and always reserves the Fable pool's
+sessions recorded on the default store, a Fable session among them not
+(DESIGN A108; `tycswap start --check` names it), and always reserves the Fable pool's
 accounts with Fable room and the Fable store's live account, whatever the
 sessions run: the default login fills the accounts whose Fable week is
 spent. An account with Fable room but no Fable login is not reserved. With
@@ -3359,7 +3396,9 @@ counts now (DESIGN A91, A97): `{"mode", "models", "sessions",
 "unservable", "reserved", "caption"}`, `mode` `sessions` (`models` derived from the
 model families the live default sessions run, in `sessions`, minus
 `unservable`, with the accounts left to Fable work in `reserved`, and, while a
-Mythos session runs, the marked accounts in `mythos`, DESIGN A106) or `hosted`
+Mythos session runs, the marked accounts in `mythos`, DESIGN A106; while the
+Fable store is usable, the live Fable sessions on the default login the count
+does not follow in `fableOnDefault`, absent when none, DESIGN A108) or `hosted`
 (an engine hosted in this process, which does not follow sessions and counts
 5h and 7d only); `caption` says it in one line, e.g. `counting 5h + 7d; Fable not
 counted: no usable account can serve it`. `auto.ranking` is the order the

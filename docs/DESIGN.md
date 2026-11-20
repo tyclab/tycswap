@@ -8388,8 +8388,9 @@ always, with no session following, no reservation and no `unservable`.
 
 **The default store beside it.** While the Fable store is usable,
 `reporting.DefaultSessionPolicyResult` counts the families of the sessions
-whose record names no store; a session without a record still counts as one
-of unknown family. It always reserves the Fable pool's accounts with Fable
+whose record names no store, but for Fable: a Fable session on the default
+login is not followed (A108; before 2026-11-20 it counted Fable); a session
+without a record still counts as one of unknown family. It always reserves the Fable pool's accounts with Fable
 room (A91's reading at `autoswitch.modelThreshold`) and the Fable store's
 live account, whatever its room and whatever runs: they rank last (A71) and
 an active one hands over under the cooldown (A77). Among them the Fable
@@ -9222,3 +9223,166 @@ key, Codex; the answer read for the chosen account only, and only there),
 `TestSnapshotReadsNoStoredLoginForFable` (a corrupt backup logs one warning
 per read: four per account per snapshot, as on origin/main 5969cfa, where
 round 1's snapshot field made five).
+
+## A108. The default login does not follow a Fable session while the Fable store is usable
+
+**Why.** The operator on 2026-11-20: "investigate tycswap switching seems
+irrationals", "something is wrong we wasted this account quota for opus". His
+order: "While the Fable store is usable, a Fable session that runs on the
+default login no longer changes what the default login counts or where it
+goes. The operator sees, where he looks at a session, that it runs on the
+wrong login and how it gets onto the right one." From his box's journal and
+`tycswap.log` (tycswap 0.17.0; times CET):
+
+- 10:43:30, the default tick's `poll`: headroom counted on 5h and 7d only
+  (account 12: 3 %, 3: 21 %, 9: 46 %).
+- 10:45:08, `/model Fable` in a session (A) that ran on the default login
+  (its record in `default_models.json` names no store). 10:45:10,
+  `Switched to account 9 by engine:at-limit`. 10:46:29, the default `poll`:
+  every account at 0 % but 9 (11 %): the default tick counted the Fable
+  window, from that one session.
+- 12:50:08, `Switched to account 10 by engine:at-limit`: another Fable
+  session (B) on the default login made the default login count Fable, and
+  account 10 was the only account with Fable room. 12:51:30, the default
+  `poll`: 10 at 8 %, every other account at 0 %.
+
+A102's policy skipped only records whose store is `fable`, so a Fable session
+on the default login counted Fable, and the default login, which serves the
+Opus sessions, went to the accounts the Fable store needs and burned their
+windows. Session A got there by `/model` (a session stays on the store it
+started on, A103); how B did is not established.
+
+**The rule.** While the Fable store is usable (`Store.FableStore().Usable`,
+A100), `reporting.DefaultSessionPolicyResult` skips a live session recorded as
+family `fable` whatever store its record names, as it skips the Fable store's
+sessions: it adds no family, so it changes neither the counted windows nor
+`Sessions`, nor any reservation or restriction. Everything else stays: A102's
+reservation of the Fable pool's accounts with Fable room and of the Fable
+store's live account (`ReservedLast`), Mythos (A106), and a live session
+without a record. With the store off, unusable or without Fable logins the
+policy is as before (A77, A91): a Fable session on the default login is
+followed and counts Fable, and `start` puts Fable sessions there then (A103).
+The dashboard's counting, `start`'s ranking and `switch --strategy` read the
+same result. The session keeps running on the default login, on whatever
+account the Opus sessions need; the status line says so.
+
+**What the operator reads.** `PolicyResult.FableOnDefault` counts the live
+Fable sessions on the default login the policy does not follow, and the
+counting caption (`reporting.CountingCaption`: the Auto tab, the tray; `switch
+--strategy` prints its caption only while a model window is counted) names them in place of `no live session has reported
+its model` or `no live Fable session`, which it read for them before (round-1
+review): `counting 5h + 7d; 1 Fable session on the default login not followed
+(start --check names it) — accounts with Fable room reserved: 3, 8, 11`.
+`auto.counting` carries the count as `fableOnDefault`, absent when none, so
+every other state's caption and document read as before.
+
+**`tycswap start --check`.** A management form like `--started`: exclusive
+with the other forms and with launching (exit 2, `management options are
+exclusive` or `management options cannot launch a command`). The status line
+runs it; flakelab adds it to its status-line wrapper. It reads the status-line
+JSON Claude Code passes on stdin (`session_id`, `model.id`, at most 1 MiB)
+unless stdin is a terminal. The session's store is the Fable store when the
+process runs under it (`cli.fableSessionProcess`, A100), else the default
+login. Its family is `reporting.ClaudeFamily` of `model.id`, the reading
+`RecordDefaultSessionModel` records: a provider's id or an unknown model gives
+none, and then nothing is printed. The Fable store's state is read as `start`
+reads it (`startFableStore`: its files only, nothing on a store `start` must
+not read).
+
+| Session | Prints |
+| --- | --- |
+| Fable on the default login, the Fable store usable | `⚠ Fable session on the default login: /exit, then claude --resume <session_id> --model <model> puts it on the Fable store` |
+| the same, while `start` sends Fable sessions to the default login (A105.6) | `⚠ Fable session on the default login: no start login has a Fable login; mark one: tycswap start --allow ID` |
+| Opus, Mythos, Sonnet or Haiku on the Fable store | `⚠ <Family> session on the Fable store: /exit, then claude --resume <session_id> --model <model> puts it on the default login` |
+| any other, or a box without a Fable login | nothing |
+
+`<model>` is the session's own `model.id` as `ClaudeFamily` validated it,
+lower-cased: letters, digits and dashes and an optional `[1m]`, so the
+version the session pinned and its 1M context survive the resume; with
+`[1m]` it is single-quoted (`--model 'claude-fable-5-2[1m]'`) so zsh does not
+take it as a pattern. The first version named the family alias, which
+dropped both (round-1 review). `session_id` is printed only when it is a
+UUID; otherwise the line ends `: restart it with --model <model>`. Nothing
+else from stdin reaches the output.
+
+Under one of `start`'s overrides (`cli.startOverride` of the process's
+environment: `CLAUDE_CONFIG_DIR`, a `launch.AuthOverrideEnvVars` variable, or
+a `CLAUDE_SECURESTORAGE_CONFIG_DIR` that does not name the Fable store) it
+prints nothing: such a session runs on no login `start` chose, and `start`
+would launch a resume of it unchanged (round-1 review).
+
+A105.6 sends every Fable session to the default login, with `no start login
+has a Fable login; starting on the default login.`, while start logins are
+marked, auto-switch is on and none of them is in the Fable pool. A resume
+with `--model fable` then lands on the default login again (round-1 review of
+this entry, 2026-11-20: the first version printed the resume line there too).
+`cli.fableStartsOnDefault`, start's snapshot of the Fable store
+(`readFableStartSnapshot`) and its decision, is what `start`'s Fable selection
+and `start --check` both ask, so the line names that cause and the way out
+instead.
+
+The hint names `--model`: Claude Code's `/model` rewrites the global `model`
+setting (`~/.claude/settings.json` held `"model": "opus"` on the box that
+day), so a bare `--resume` can come up on the other model; `start` reads
+`--model` first (A103, source 1) and Claude Code honours it, so both agree.
+The form prints at most one line and exits 0 whatever happens, a panic
+included. It creates no file or directory, takes no lock, makes no network
+request and writes no log line of its own; it reads the Fable store's
+credential files to tell its state, as `start` does, and prints none of them.
+
+**What stays.** A box without a Fable login: the policy is unchanged, and
+`start --check` stops when `credentials-fable/` is missing and prints nothing.
+The no-change tests (`TestNoFableLoginNoChange`,
+`TestFableTickNoChangeWithoutAStore`, `nofable-state.json`) pass unedited.
+The status-line record is unchanged: a Fable session on the default login is
+still recorded with no store.
+
+**Limits.** Nothing moves a running session: only `/exit` and a resume on the
+right model do (A103). The line appears only where the status line runs
+`start --check`. A credential file the state read cannot read is logged as for
+any reader.
+
+**A corrupt Fable login in `start`'s snapshots.** `start`'s snapshots of the
+default login (`readStartSnapshotFor`) and of the Fable store
+(`readFableStartSnapshot`), which the check now also takes, read through a
+store view whose logger is nil, so that they write nothing (A90). The Fable
+scope (`ForFable`) builds its credential store with that logger, and a Fable
+login file that could not be decoded made it warn on nil: `start` panicked
+before launching anything while start logins were marked and auto-switch was
+on, and the check printed nothing (found in the round-1 review). A nil
+`logging.Logger` now writes nothing. The views stay silent; the file is
+logged by each read that meets it with the store's logger, as for any
+reader (twice per `start` or `start --check` run), and such an account
+has no usable Fable login, so `start` sends the Fable session to the default
+login (A105.6) and the check names that cause. `--continue` and the `--resume` picker still give `start` no
+family (A103), so a Fable session resumed so starts on the default login, and
+the check names it.
+
+**Tests.** In `reporting`: `TestDefaultPolicyIgnoresAFableSessionOnTheDefaultLogin`
+(alone: no family, no `Sessions`, no counted model, the reservation kept;
+beside an Opus session the Opus-only box's result; the store off: Fable
+counted) and `TestCountingCaptionNamesFableSessionsOnTheDefaultLogin` (one
+and two such sessions, alone and beside an Opus session; a Fable session on
+its store and the store off read as before). In `cli`: `TestDefaultTickIgnoresAFableSessionOnTheDefaultLogin` (a
+real `auto --once --json` on the reported shape: the default login stays and
+counts 5h and 7d only, where the code before switched it to the account with
+Fable room, `at-limit`; with the store off it follows the session as 0.17.0
+did), `TestStartCheckNamesASessionOnTheWrongStore` (every row, a provider id,
+an unknown model, a non-UUID or missing session id, empty and malformed input,
+the store off, unusable and without Fable logins, the Fable store's variable;
+the model id echoed, lower-cased and quoted with `[1m]`, only ASCII of it
+reaching the output; the home and the store byte-identical after every run),
+`TestStartCheckAgreesWithStartOnAFableSession` (a marked start login without
+a Fable login, one whose Fable login is quarantined, one with a usable Fable
+login, no marks, auto-switch off: the line and the store a resume with
+`--model fable` starts on agree), `TestStoreTreeSeesALockTakenAndReleased`
+(the no-write snapshot sees a lock directory made and removed),
+`TestStartCheckPrintsNothingUnderAStartOverride` (every override, empty
+values included, on either store),
+`TestStartWithACorruptFableLoginOfAMarkedAccount` (no panic, the
+default login, the cause, the file in `tycswap.log`),
+`TestStartCheckReadsNoTerminal` (Linux, a pseudo-terminal),
+`TestAutoViewNamesAFableSessionOnTheDefaultLogin` (the dashboard's
+`auto.counting`),
+`TestStartCheckIsAManagementForm` and `TestStartHelpNamesCheck`; in
+`logging`, `TestNilLoggerWritesNothing`.

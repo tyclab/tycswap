@@ -98,6 +98,33 @@ func TestDefaultPolicyBesideTheFableStore(t *testing.T) {
 	}
 }
 
+// A Fable session on the default login (its record names no store) is not
+// followed while the Fable store is usable: beside an Opus session the policy
+// is an Opus-only box's, alone it adds nothing; with the store off it counts
+// Fable as before (DESIGN A108).
+func TestDefaultPolicyIgnoresAFableSessionOnTheDefaultLogin(t *testing.T) {
+	opusOnly, now := fableIncident(t, map[string]string{"s-opus": "claude-opus-5-5"}, nil, "8", incidentSlots...)
+	want := DefaultSessionPolicyResult(opusOnly, settings.Default(), now)
+	s, now := fableIncident(t, fableAndOpus, nil, "8", incidentSlots...)
+	r := DefaultSessionPolicyResult(s, settings.Default(), now)
+	if deref(r.Settings.Model) != deref(want.Settings.Model) || !reflect.DeepEqual(r.Sessions, want.Sessions) ||
+		!reflect.DeepEqual(r.Unservable, want.Unservable) || reservedOf(r) != reservedOf(want) || reservedOf(r) != "3,8,11" {
+		t.Fatalf("model %q, sessions %v, unservable %v, reserved %s; want the Opus-only box's %q, %v, %v, %s",
+			deref(r.Settings.Model), r.Sessions, r.Unservable, reservedOf(r), deref(want.Settings.Model), want.Sessions, want.Unservable, reservedOf(want))
+	}
+	s, now = fableIncident(t, fableSession, nil, "8", incidentSlots...)
+	r = DefaultSessionPolicyResult(s, settings.Default(), now)
+	if r.Settings.Model != nil || len(r.Sessions) != 0 || len(r.Unservable) != 0 || reservedOf(r) != "3,8,11" {
+		t.Fatalf("Fable session alone: model %q, sessions %v, unservable %v, reserved %s; want nothing followed, 3,8,11 reserved",
+			deref(r.Settings.Model), r.Sessions, r.Unservable, reservedOf(r))
+	}
+	s, now = fableIncident(t, fableAndOpus, nil, "", incidentSlots...)
+	r = DefaultSessionPolicyResult(s, settings.Default(), now)
+	if deref(r.Settings.Model) != "Fable" || r.Reserved != nil || !reflect.DeepEqual(r.Sessions, []string{"fable", "opus"}) {
+		t.Fatalf("store off: model %q, reserved %s, sessions %v; want A91's Fable counted", deref(r.Settings.Model), reservedOf(r), r.Sessions)
+	}
+}
+
 // A live session without a record keeps the reservation: the Fable store
 // needs its accounts whatever the default store's sessions run.
 func TestFableReservationSurvivesAnUnrecordedSession(t *testing.T) {
@@ -247,5 +274,34 @@ func TestRecordCarriesTheStore(t *testing.T) {
 	raw, _ := os.ReadFile(filepath.Join(root, "default_models.json"))
 	if want := `{"schemaVersion":1,"sessions":{"s1":{"family":"fable","seenAt":130,"store":"fable"}}}`; string(raw) != want {
 		t.Fatalf("default_models.json = %s, want %s", raw, want)
+	}
+}
+
+// The caption names the Fable sessions on the default login the policy does
+// not follow while the Fable store is usable, in place of "no live session has
+// reported its model" or "no live Fable session"; every other state reads as
+// before (DESIGN A108).
+func TestCountingCaptionNamesFableSessionsOnTheDefaultLogin(t *testing.T) {
+	notFollowed := func(n string) string {
+		return "counting 5h + 7d; " + n + " on the default login not followed (start --check names it) — accounts with Fable room reserved: 3, 8, 11"
+	}
+	for name, tc := range map[string]struct {
+		sessions map[string]string
+		onFable  []string
+		live     string
+		want     string
+	}{
+		"fable alone":        {fableSession, nil, "8", notFollowed("1 Fable session")},
+		"fable and opus":     {fableAndOpus, nil, "8", notFollowed("1 Fable session")},
+		"two fable":          {map[string]string{"s-fable": "claude-fable-5-1", "s-fable-2": "claude-fable-5-2"}, nil, "8", notFollowed("2 Fable sessions")},
+		"fable on its store": {fableAndOpus, []string{"s-fable"}, "8", "counting 5h + 7d; no live Fable session — accounts with Fable room reserved: 3, 8, 11"},
+		"store off":          {fableAndOpus, nil, "", "counting 5h + 7d + Fable (live Fable sessions)"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := fableIncident(t, tc.sessions, tc.onFable, tc.live, incidentSlots...)
+			if got := CountedForSwitch(s).Caption; got != tc.want {
+				t.Fatalf("caption %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

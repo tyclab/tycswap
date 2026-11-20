@@ -78,7 +78,7 @@ const MythosModel = "Mythos"
 // us.anthropic.claude-fable-5-2-v1:0, answers the one family it names as a
 // whole word.
 func ModelFamily(model string) string {
-	if family := claudeFamily(model); family != "" {
+	if family := ClaudeFamily(model); family != "" {
 		return family
 	}
 	m := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(model)), "[1m]")
@@ -94,9 +94,9 @@ func ModelFamily(model string) string {
 	return found
 }
 
-// claudeFamily is the family of a Claude model alias or claude-<family>-… id,
+// ClaudeFamily is the family of a Claude model alias or claude-<family>-… id,
 // "" for anything else, a provider's id included.
-func claudeFamily(model string) string {
+func ClaudeFamily(model string) string {
 	m := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(model)), "[1m]")
 	for _, ch := range m {
 		if !(ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '-') {
@@ -118,7 +118,7 @@ func claudeFamily(model string) string {
 // store (A77). An unknown model, a provider's id (such a session runs on no
 // login of tycswap's; v0.15.1 recorded none) or a busy lock records nothing.
 func RecordDefaultSessionModel(root, sessionID, model, store string, now time.Time) (bool, error) {
-	family := claudeFamily(model)
+	family := ClaudeFamily(model)
 	if sessionID == "" || family == "" {
 		return false, nil
 	}
@@ -165,6 +165,9 @@ type PolicyResult struct {
 	// sequence order, while such a session runs (DESIGN A106).
 	Serves func(num string) bool
 	Mythos []string
+	// FableOnDefault counts the live Fable sessions on the default login the
+	// policy does not follow while the Fable store is usable (A108).
+	FableOnDefault int
 }
 
 // DefaultSessionPolicy is DefaultSessionPolicyResult at the store's clock.
@@ -182,10 +185,10 @@ func DefaultSessionPolicy(s *store.Store, base settings.AutoSwitchSettings) (set
 // nothing. A live Mythos session restricts the login to the accounts marked
 // for Mythos, while one is in the pool (A106).
 //
-// While the Fable store is usable (A102) it counts the default store's
-// sessions only, those whose record names no store, and always reserves the
-// Fable pool's accounts with Fable room and the Fable store's live account,
-// the latter last.
+// While the Fable store is usable (A102) it follows neither the Fable
+// store's sessions nor a Fable session on the default login (A108), and
+// always reserves the Fable pool's accounts with Fable room and the Fable
+// store's live account, the latter last.
 func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings, now time.Time) PolicyResult {
 	base.Model = nil
 	r := PolicyResult{Settings: base}
@@ -220,6 +223,10 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 			continue
 		}
 		if fable.Usable && rec.Store == "fable" {
+			continue
+		}
+		if fable.Usable && rec.Family == "fable" {
+			r.FableOnDefault++
 			continue
 		}
 		families[rec.Family] = true

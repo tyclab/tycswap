@@ -320,7 +320,7 @@ func (a *autoFacade) counting(s settings.AutoSwitchSettings, hosted bool) (*web.
 	default:
 		r := reporting.DefaultSessionPolicyResult(a.sw.Store, s, a.clk.Now())
 		c.Models, c.Sessions, c.Unservable = settings.ParseModelNames(r.Settings.Model), r.Sessions, r.Unservable
-		c.Reserved, c.Mythos, policy = r.ReservedIn(a.sw.Store), r.Mythos, r
+		c.Reserved, c.Mythos, c.FableOnDefault, policy = r.ReservedIn(a.sw.Store), r.Mythos, r.FableOnDefault, r
 	}
 	for _, list := range []*[]string{&c.Sessions, &c.Unservable, &c.Reserved} {
 		if *list == nil {

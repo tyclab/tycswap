@@ -85,7 +85,7 @@ func parseStartArguments(argv []string) (startArguments, error) {
 				}
 				parsed.action, parsed.id = tok, argv[i]
 			}
-		case "--list", "--started":
+		case "--list", "--started", "--check":
 			if parsed.action != "" || parsed.account != "" {
 				return parsed, fmt.Errorf("management options are exclusive")
 			}
@@ -119,6 +119,10 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 	}
 	if parsed.action == "--started" {
 		startStarted(streams.in)
+		return 0
+	}
+	if parsed.action == "--check" {
+		startCheck(streams.in, streams.out)
 		return 0
 	}
 	if parsed.action != "" {
@@ -352,17 +356,17 @@ func selectFableStartLogin(account string, stderr io.Writer, token string) (hold
 		}
 	}
 	snapshot := func() (autoswitch.StartSnapshot, error) { return readFableStartSnapshot(sw, account) }
-	snap, err := snapshot()
+	snap, toDefault, err := fableStartsOnDefault(sw, account)
 	if err != nil {
 		reportStartSelection(sw, stderr, "Fable store: Could not select a start login: "+err.Error()+"; continuing with the current login.")
 		return "", false
 	}
+	if toDefault {
+		reportStartSelection(sw, stderr, noFableStartLogin+"; starting on the default login.")
+		return "", true
+	}
 	if account == "" && (len(snap.Marked) == 0 || !snap.Settings.Enabled) {
 		return "", false
-	}
-	if len(snap.Candidates) == 0 {
-		reportStartSelection(sw, stderr, "no start login has a Fable login; starting on the default login.")
-		return "", true
 	}
 	outcome := autoswitch.StartSelection(a, account, snapshot, autoswitch.WithClock(sw.Clk), autoswitch.WithOAuthClient(sw.OAuth),
 		autoswitch.WithStatePath(a.fable.StatePath()), autoswitch.WithStartHoldToken(token))
@@ -373,6 +377,22 @@ func selectFableStartLogin(account string, stderr io.Writer, token string) (hold
 		sw.Log.Action("Switched the Fable store to account "+outcome.To, "start")
 	}
 	return outcome.Hold, false
+}
+
+// noFableStartLogin is why start sends a Fable session to the default login
+// although the Fable store is usable (DESIGN A105, A108).
+const noFableStartLogin = "no start login has a Fable login"
+
+// fableStartsOnDefault is start's snapshot of the Fable store and whether
+// start sends a Fable session to the default login on it: marks are set and
+// auto-switch is on, or account is named, and none of them is in the Fable
+// pool. start --check asks the same (DESIGN A108).
+func fableStartsOnDefault(sw *core.Switcher, account string) (autoswitch.StartSnapshot, bool, error) {
+	snap, err := readFableStartSnapshot(sw, account)
+	if err != nil {
+		return snap, false, err
+	}
+	return snap, (account != "" || len(snap.Marked) > 0 && snap.Settings.Enabled) && len(snap.Candidates) == 0, nil
 }
 
 func reportStartSelection(sw *core.Switcher, stderr io.Writer, detail string) {
@@ -557,6 +577,7 @@ func renderStartHelp(prog string, out io.Writer) int {
 	fmt.Fprintf(out, "usage: %s start [--account ID] [--] [command [args...]]\n", prog)
 	fmt.Fprintf(out, "       %s start --allow ID | --disallow ID | --list\n", prog)
 	fmt.Fprintf(out, "       %s start --started\n", prog)
+	fmt.Fprintf(out, "       %s start --check\n", prog)
 	fmt.Fprintln(out, "\nStart on a marked login, then launch once (default: real Claude). A marked login with room")
 	fmt.Fprintln(out, "comes first; one at its limit is still used, and auto-switch leaves it there until the session")
 	fmt.Fprintln(out, "is up: --started, run as Claude Code's SessionStart hook, says so, else the hold ends after 30 s.")
@@ -568,5 +589,6 @@ func renderStartHelp(prog string, out io.Writer) int {
 	fmt.Fprintln(out, "The environment passes unchanged, except CLAUDE_SECURESTORAGE_CONFIG_DIR: start sets it to the Fable store")
 	fmt.Fprintln(out, "for a Fable session while that store is usable, and removes it from any other session when it names that store;")
 	fmt.Fprintln(out, "and TYCSWAP_START_HOLD: start sets it for a session it holds a login at its limit for, and removes it from any other.")
+	fmt.Fprintln(out, "--check, run by the status line, prints one line when the session runs on the other store than its model's.")
 	return 0
 }
