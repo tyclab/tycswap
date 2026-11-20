@@ -1537,11 +1537,9 @@ fable"`: only the child's own arguments are read).
 
 | Family | Fable store | Child environment | Selection | Notice on stderr |
 | --- | --- | --- | --- | --- |
-| Family | Fable store | Child environment | Selection | Notice on stderr |
-| --- | --- | --- | --- | --- |
-| Fable | on and usable, a marked account with a usable Fable login | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | runs, then runs on the Fable store too | the selections' own, the Fable store's starting `Fable store: ` |
+| Fable | on and usable, a marked account with a usable Fable login | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | Fable store only | the selection's own, starting `Fable store: ` |
 | Fable | on and usable, marks but none with a usable Fable login | that variable removed if it named the store | runs | `tycswap start: no start login has a Fable login; starting on the default login.` |
-| Fable | on and usable, no marks, or auto-switch off without `--account` | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | runs; the Fable store stays | none |
+| Fable | on and usable, no marks, or auto-switch off without `--account` | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | keeps the current Fable login | none |
 | Fable | off or unusable, with Fable logins | that variable removed if it named the store | runs | `tycswap start: the Fable store has no usable login (<reason>); starting on the default login.` |
 | other, none, or no Fable login | – | that variable removed if it named the store | runs | none |
 
@@ -1553,9 +1551,8 @@ switch moves the Fable store only (`tycswap start: Fable store: Switched to
 start login Account-<n>.`, logged `Switched the Fable store to account <n> by
 start`), stamped in `fable/autoswitch_state.json`. A selection there that
 fails otherwise says so and the session starts on the Fable store where it
-sits. `--account ID` selects the default login and is the Fable store's only
-candidate when it has a usable Fable login; otherwise the session starts on the
-default login with the notice above.
+sits. `--account ID` selects the requested account on the store serving the
+child. A fallback selects the default login and prints the notice above.
 
 Every other variable passes unchanged, but `TYCSWAP_START_HOLD` (below) and
 `TYCSWAP_START_FAMILY` ([tycswap mythos](#tycswap-mythos)). The

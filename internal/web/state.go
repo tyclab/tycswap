@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/brand"
@@ -198,15 +199,19 @@ func (s *Server) buildState(o stateOpts) State {
 	}
 	sv := s.d.Sessions()
 	var stores map[string]string
-	if st.Fable != nil {
+	if len(sv.Claude) > 0 {
 		stores = reporting.SessionStores(s.d.Facade.BackupDir())
 	}
 	for _, c := range sv.Claude {
 		item := s.claudeSessionJSON(c, sv.ConfigDir[c.PID], sv.Profile[c.PID])
 		if store, ok := stores[c.SessionID]; ok && item.Profile == "" && item.Group == "" {
-			item.Store = "default"
-			if store == "fable" {
+			switch {
+			case strings.HasPrefix(store, "mythos/"):
+				item.Store = "mythos"
+			case store == "fable" && st.Fable != nil:
 				item.Store = "fable"
+			case store == "" && st.Fable != nil:
+				item.Store = "default"
 			}
 		}
 		st.Sessions.Claude = append(st.Sessions.Claude, item)

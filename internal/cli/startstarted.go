@@ -63,7 +63,7 @@ func startStarted(in io.Reader) {
 }
 
 func releaseStartHolds(sw *core.Switcher, token string) []string {
-	// One token holds both stores: the default one and the Fable store's.
+	// Older launchers could record the same token in both files.
 	statePaths := []string{sw.StatePath()}
 	if f, err := sw.Store.ForFable(); err == nil {
 		statePaths = append(statePaths, f.StatePath())

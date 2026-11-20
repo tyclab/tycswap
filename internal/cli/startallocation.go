@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/core"
@@ -103,7 +104,7 @@ func readSharedStartException(root string, fable bool, family string) (sharedSta
 	if os.IsNotExist(err) {
 		return none, nil
 	}
-	checkAllocation := family == "opus" || family == "fable"
+	checkAllocation := family == "opus" || family == "fable" || family == mythosFamily
 	if problem := startStoreProblem(root); problem != "" {
 		if checkAllocation {
 			return none, fmt.Errorf("could not verify this launch's allocation in the account store")
@@ -164,18 +165,23 @@ func readSharedStartException(root string, fable bool, family string) (sharedSta
 	}
 	id := usage.Identity{Email: email, OrgUUID: org}
 	entry := view.Usage.Entries(map[string]usage.Identity{number: id})[number]
-	v, _ := entry.DecisionValue().(map[string]any)
-	u := oauth.NewUsage(oauth.AsOf(v, view.Clk.Now()))
-	if u != nil {
-		var scoped []string
-		for _, window := range u.Scoped {
-			if strings.Contains(strings.ToLower(window.Name), family) {
-				scoped = append(scoped, window.Name)
-			}
-		}
-		if room := oauth.AccountHeadroom(u, scoped); room != nil && *room <= 0 {
-			return none, fmt.Errorf("Account-%s has no remaining quota for this %s start", number, family)
-		}
+	if room := startModelHeadroom(entry, family, view.Clk.Now()); room != nil && *room <= 0 {
+		return none, fmt.Errorf("Account-%s has no remaining quota for this %s start", number, family)
 	}
 	return sharedStartException{number: number, allocation: strings.Join(models, ", "), identity: id}, nil
+}
+
+func startModelHeadroom(entry usage.UsageEntry, family string, now time.Time) *float64 {
+	v, _ := entry.DecisionValue().(map[string]any)
+	u := oauth.NewUsage(oauth.AsOf(v, now))
+	if u == nil {
+		return nil
+	}
+	var scoped []string
+	for _, window := range u.Scoped {
+		if family != "" && strings.Contains(strings.ToLower(window.Name), family) {
+			scoped = append(scoped, window.Name)
+		}
+	}
+	return oauth.AccountHeadroom(u, scoped)
 }

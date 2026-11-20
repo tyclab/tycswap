@@ -137,9 +137,14 @@ func locateMythosLogin(root, model, account, session string) (mythosPlacement, e
 		entry.AuthDeadStrikes = 0 // credential failures belong to the default grant, independently of shared quota
 		entries[num] = entry
 	}
-	ranked := autoswitch.InitialPlacementTargets(candidates, entries, settings, nil, view.Clk.Now())
+	now := view.Clk.Now()
+	candidates = slices.DeleteFunc(candidates, func(num string) bool {
+		room := startModelHeadroom(entries[num], model, now)
+		return room != nil && *room <= 0
+	})
+	ranked := autoswitch.InitialPlacementTargets(candidates, entries, settings, nil, now)
 	if len(ranked) == 0 {
-		return mythosPlacement{}, fmt.Errorf("no available Mythos login has shared quota for this start")
+		return mythosPlacement{}, fmt.Errorf("no available Mythos login has quota for this %s start", model)
 	}
 	for _, num := range ranked {
 		if placements[num].allocation == "" {

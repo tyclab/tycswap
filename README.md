@@ -617,9 +617,8 @@ requiring a mark, and works while auto-switch is off; all other eligibility
 checks still apply. This does not grant model access or change managed policy.
 
 A Fable session that starts on the Fable store (see [The Fable
-store](#run-accounts-in-parallel)) gets a start login there too, besides the
-default login's: the marked accounts with a usable Fable login are the
-candidates, ranked the same way, and `start` moves the Fable store to the
+store](#run-accounts-in-parallel)) selects a login in that store only. The marked
+accounts with a usable Fable login are its candidates, ranked the same way, and `start` moves the Fable store to the
 first (`tycswap start: Fable store: Switched to start login Account-2.`). With
 marks but no usable Fable login among them, the session starts on the default
 login (`tycswap start: no start login has a Fable login; starting on the
@@ -645,7 +644,7 @@ hook in Claude Code's settings (`~/.claude/settings.json`):
 ```
 
 A Fable session held on the Fable store's start login holds the Fable
-store's check the same way; one token holds both stores. `tycswap start
+store's check with its own token. `tycswap start
 --started` ends the session's holds and, once no other session is starting,
 runs one auto-switch check, which moves the logins on. Without the hook a login
 stays for 30 s, then moves at the next check, and the session's first request

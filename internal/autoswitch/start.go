@@ -27,6 +27,7 @@ type StartSnapshot struct {
 	Current         string
 	CurrentDisabled bool
 	IdleOpus        bool
+	ReservedLast    func(string) bool
 	CurrentMarked   bool
 	Marked          []string
 	Candidates      []string
@@ -257,6 +258,10 @@ func (s StartSnapshot) hasIdlePreference() bool {
 func (s StartSnapshot) rank(candidates, models []string, now time.Time) []startTarget {
 	order := startOrder{idleOpus: s.IdleOpus, soonestBinding: s.IdleOpus && s.Settings.Strategy == "soonest-reset"}
 	ranked := orderStartTargets(candidates, s.Entries, s.Settings, models, now, order)
+	if s.IdleOpus && s.ReservedLast != nil {
+		ordinary := func(row startTarget) bool { return row.tier != startAtLimit && !s.ReservedLast(row.num) }
+		sort.SliceStable(ranked, func(i, j int) bool { return ordinary(ranked[i]) && !ordinary(ranked[j]) })
+	}
 	if len(s.FableAllocationExceptions) > 0 {
 		ordinary := func(row startTarget) bool { return row.tier != startAtLimit && !s.FableAllocationExceptions[row.num] }
 		sort.SliceStable(ranked, func(i, j int) bool { return ordinary(ranked[i]) && !ordinary(ranked[j]) })
@@ -318,6 +323,32 @@ func orderStartTargets(candidates []string, entries map[string]usage.UsageEntry,
 		return a.room > b.room
 	})
 	return ranked
+}
+
+// A below-threshold Opus session can use an earlier reset while both logins
+// still have room. Require a known, strictly earlier binding reset, so ties
+// and missing telemetry leave the current login alone.
+func (e *Engine) earlierOpusTarget(current string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, quarantined map[string]bool) string {
+	candidates := slices.DeleteFunc(slices.Clone(e.sw.SwitchableAccountNumbers()), func(num string) bool {
+		return num != current && (quarantined[num] || e.isReserved(num) || !e.servesAccount(num) || e.sw.AccountKindFor(num) != "oauth")
+	})
+	rows := orderStartTargets(candidates, entries, set, e.models, e.clk.Now(), startOrder{soonestBinding: true, idleOpus: true})
+	var source *startTarget
+	for i := range rows {
+		if rows[i].num == current {
+			source = &rows[i]
+			break
+		}
+	}
+	if source == nil || source.reset == nil || source.tier != startBelowBars {
+		return ""
+	}
+	for _, row := range rows {
+		if row.tier == startBelowBars && row.reset != nil && *row.reset < *source.reset && (!source.spentPremium || row.spentPremium) {
+			return row.num
+		}
+	}
+	return ""
 }
 
 // A missing premium window provides no evidence its quota is spent.

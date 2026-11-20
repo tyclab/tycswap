@@ -75,13 +75,19 @@ func TestStartDropsTheFableStoreVariableBeforeItSelects(t *testing.T) {
 			if code, _, errb := runCLI(t, args, false, false); code != 23 || rec.execs != 1 {
 				t.Fatalf("exit %d, execs %d, stderr %q", code, rec.execs, errb)
 			}
-			if want := filepath.Join(home, ".claude.lock"); cred != want {
-				t.Errorf("credential lock %s, want %s", cred, want)
-			}
-			if want := filepath.Join(home, ".claude", ".storage-write.lock"); storage != want {
-				t.Errorf("storage lock %s, want %s", storage, want)
-			}
 			fable := args[len(args)-1] == "fable"
+			if fable {
+				if cred != "" || storage != "" {
+					t.Fatal("dedicated start unexpectedly selected the default login")
+				}
+			} else {
+				if want := filepath.Join(home, ".claude.lock"); cred != want {
+					t.Errorf("credential lock %s, want %s", cred, want)
+				}
+				if want := filepath.Join(home, ".claude", ".storage-write.lock"); storage != want {
+					t.Errorf("storage lock %s, want %s", storage, want)
+				}
+			}
 			if got := envValue(rec.env, secureStorageVar); (got == fableStoreDir()) != fable {
 				t.Errorf("child %s = %q, Fable session %v", secureStorageVar, got, fable)
 			}

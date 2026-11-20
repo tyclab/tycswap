@@ -4,6 +4,7 @@ package cli
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -48,9 +49,18 @@ func (a fableAdapter) CurrentAccountNumber() *string {
 	return nil
 }
 
-func (a fableAdapter) HasLiveLogin() bool                      { return a.fable.HasLiveLogin() }
-func (a fableAdapter) AccountEmail(num string) string          { return a.def.AccountEmail(num) }
-func (a fableAdapter) SwitchableAccountNumbers() []string      { return reporting.FablePool(a.def.Store) }
+func (a fableAdapter) HasLiveLogin() bool             { return a.fable.HasLiveLogin() }
+func (a fableAdapter) AccountEmail(num string) string { return a.def.AccountEmail(num) }
+func (a fableAdapter) SwitchableAccountNumbers() []string {
+	data, err := a.def.Store.SequenceForUpdate()
+	if err != nil {
+		return nil
+	}
+	return slices.DeleteFunc(reporting.FablePool(a.def.Store), func(num string) bool {
+		models, explicit := store.ModelsFrom(data, num)
+		return explicit && !slices.Contains(models, "fable")
+	})
+}
 func (a fableAdapter) AccountKindFor(num string) string        { return a.def.AccountKindFor(num) }
 func (a fableAdapter) BackfillAccountUUID(num, uuid string)    { a.def.BackfillAccountUUID(num, uuid) }
 func (a fableAdapter) LiveSessionPidsFor(string, string) []int { return nil }
@@ -260,6 +270,10 @@ func leaveDeadFableLogin(a fableAdapter, sw *core.Switcher, dead, email string, 
 	switched := false
 	held, err := autoswitch.EngineSwitch(a.fable.StatePath(), sw.Clk, s, warn, func() (string, error) {
 		if stays() {
+			return "", nil
+		}
+		if !slices.Contains(a.SwitchableAccountNumbers(), target) {
+			stay = true
 			return "", nil
 		}
 		r, err := a.SwitchTo(target, true)

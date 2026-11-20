@@ -167,7 +167,9 @@ type PolicyResult struct {
 	Mythos []string
 	// FableOnDefault counts the live Fable sessions on the default login the
 	// policy does not follow while the Fable store is usable (A108).
-	FableOnDefault int
+	FableOnDefault      int
+	OpusOnly            bool
+	IndependentSessions map[int]string
 }
 
 // DefaultSessionPolicy is DefaultSessionPolicyResult at the store's clock.
@@ -210,7 +212,7 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 	if len(records) == 0 {
 		return r
 	}
-	sessions, _, err := procdetect.GetRunningInstancesErr(s.DefaultProfileDir())
+	sessions, ides, err := procdetect.GetRunningInstancesErr(s.DefaultProfileDir())
 	if err != nil || len(sessions) == 0 {
 		return r
 	}
@@ -223,6 +225,10 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 			continue
 		}
 		if strings.HasPrefix(rec.Store, "mythos/") || fable.Usable && rec.Store == "fable" {
+			if r.IndependentSessions == nil {
+				r.IndependentSessions = map[int]string{}
+			}
+			r.IndependentSessions[session.PID] = rec.Store
 			continue
 		}
 		if fable.Usable && rec.Family == "fable" {
@@ -231,6 +237,30 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 		}
 		families[rec.Family] = true
 	}
+	occupied := map[string]bool{}
+	for _, scope := range r.IndependentSessions {
+		if strings.HasPrefix(scope, "mythos/") {
+			occupied[scope] = true
+		}
+	}
+	if len(occupied) > 0 {
+		data, err := s.SequenceForUpdate()
+		if err == nil {
+			active := map[string]bool{}
+			for _, n := range data.Sequence {
+				num := strconv.Itoa(n)
+				_, email, org, err := s.ResolveAccountFrom(data, num)
+				if err == nil && occupied["mythos/"+filepath.Base(store.MythosLoginDir(s.BackupDir(), email, org))] {
+					active[num] = true
+				}
+			}
+			before := r.ReservedLast
+			r.ReservedLast = func(num string) bool { return active[num] || before != nil && before(num) }
+			reserved := r.Reserved
+			r.Reserved = func(num string) bool { return active[num] || reserved != nil && reserved(num) }
+		}
+	}
+	r.OpusOnly = allKnown && len(ides) == 0 && r.FableOnDefault == 0 && len(families) == 1 && families["opus"]
 	if len(families) == 0 {
 		return r
 	}
@@ -263,7 +293,8 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 		return r
 	}
 	room := view.fableBelow(base.ModelThreshold)
-	r.Reserved = func(num string) bool { return room[num] && s.FableCapable(num) }
+	reserved := r.Reserved
+	r.Reserved = func(num string) bool { return reserved != nil && reserved(num) || room[num] && s.FableCapable(num) }
 	return r
 }
 

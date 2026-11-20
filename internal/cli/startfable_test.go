@@ -190,9 +190,8 @@ func TestStartPicksTheStoreBySessionModel(t *testing.T) {
 			if !reflect.DeepEqual(rec.env, want) {
 				t.Fatalf("child environment differs in %q", envDiff(rec.env, want))
 			}
-			// The default selection runs for every session (DESIGN A105).
-			if len(rec.selections) != 1 || rec.selections[0] != "" {
-				t.Fatalf("selections = %q, want the default selection once", rec.selections)
+			if tc.wantVar && len(rec.selections) != 0 || !tc.wantVar && !reflect.DeepEqual(rec.selections, []string{""}) {
+				t.Fatalf("Fable store=%v, unexpected default selections %q", tc.wantVar, rec.selections)
 			}
 			if after, _ := os.ReadFile(filepath.Join(storeDir, ".credentials.json")); string(after) != string(liveBefore) {
 				t.Fatal("start changed the Fable store")
@@ -284,8 +283,8 @@ func TestStartAccountWithAFableSession(t *testing.T) {
 				if code != 23 || strings.Contains(stderr, "--account selects") {
 					t.Fatalf("code=%d stderr=%q", code, stderr)
 				}
-				if !reflect.DeepEqual(rec.selections, []string{"2"}) {
-					t.Fatalf("selections = %q, want the default login's selection of account 2", rec.selections)
+				if plan == "pro" && !reflect.DeepEqual(rec.selections, []string{"2"}) || plan == "max" && len(rec.selections) != 0 {
+					t.Fatalf("plan %s: unexpected default selections %q", plan, rec.selections)
 				}
 				liveAfter, _ := os.ReadFile(filepath.Join(storeDir, ".credentials.json"))
 				chainAfter, _ := os.ReadFile(filepath.Join(paths.FableScopeDir(paths.GetBackupRoot()), "live_lineage.json"))
@@ -353,8 +352,8 @@ func TestStartOnWindowsMatchesTheVariableCaseInsensitively(t *testing.T) {
 			if !reflect.DeepEqual(rec.env, want) {
 				t.Fatalf("child environment differs in %q", envDiff(rec.env, want))
 			}
-			if len(rec.selections) != 1 {
-				t.Fatalf("selections = %q", rec.selections)
+			if tc.wantVar && len(rec.selections) != 0 || !tc.wantVar && len(rec.selections) != 1 {
+				t.Fatalf("Fable store=%v, unexpected default selections %q", tc.wantVar, rec.selections)
 			}
 		})
 	}

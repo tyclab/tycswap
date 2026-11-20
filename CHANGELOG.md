@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The command menu now offers model allocations and independent sign-ins. A saved independent session keeps its credential identity across long breaks. The dashboard shows its login.
+- Startup and scheduled placement honor model allocations and known model limits. A dedicated Fable launch selects only its own login. Opus can use an earlier binding reset when every known default session is running Opus.
+
 - **Added:** An existing account can enroll an independent Mythos sign-in on Linux, WSL and Windows. New Mythos sessions select one of these logins. An explicit model allocation can require a one-time decision before launch.
 - **Changed:** New Opus starts that already need to select a login on an idle profile prefer accounts with spent premium quota. Disabled accounts require re-enabling before a managed start or manual switch.
 

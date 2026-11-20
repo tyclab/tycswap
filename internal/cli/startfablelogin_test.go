@@ -79,7 +79,7 @@ func defaultLive(t *testing.T, sw *core.Switcher) string {
 
 // The Fable store sits on unmarked account 2; the one marked account, 1, has a
 // Fable login at its Fable limit. start moves the Fable store to 1 and holds
-// the Fable tick, the default selection runs as well, and once the session is
+// the Fable tick, the default login stays put, and once the session is
 // up the Fable tick moves on (the reviewer's probe turned around).
 func TestFableSessionStartsOnAStartLogin(t *testing.T) {
 	fx := fableTickFixture{def: "3", live: "2", logins: []string{"1", "2"},
@@ -87,8 +87,7 @@ func TestFableSessionStartsOnAStartLogin(t *testing.T) {
 	sw, rec := fableStartLogin(t, fx, "1")
 	setRecord(t, sw, "2", "subscriptionType", "enterprise", "fableContinue", true)
 	stderr := startFable(t)
-	want := "tycswap start: Switched to start login Account-1.\n" +
-		"tycswap start: Fable store: Switched to start login Account-1, which is at its limit; auto-switch moves on once the session is up.\n"
+	want := "tycswap start: Fable store: Switched to start login Account-1, which is at its limit; auto-switch moves on once the session is up.\n"
 	if stderr != want {
 		t.Fatalf("stderr %q, want %q", stderr, want)
 	}
@@ -96,7 +95,7 @@ func TestFableSessionStartsOnAStartLogin(t *testing.T) {
 	if !holdTokenPattern.MatchString(token) || envValue(rec.env, secureStorageVar) != fableStoreDir() {
 		t.Fatalf("child: hold token %v, on the Fable store %v", holdTokenPattern.MatchString(token), envValue(rec.env, secureStorageVar) == fableStoreDir())
 	}
-	if !strings.Contains(storeLive(t, sw), "at-f1") || !strings.Contains(defaultLive(t, sw), "at-d1") || !reflect.DeepEqual(rec.selections, []string{""}) {
+	if !strings.Contains(storeLive(t, sw), "at-f1") || !strings.Contains(defaultLive(t, sw), "at-d3") || len(rec.selections) != 0 {
 		t.Fatalf("Fable store %s, default login %s, default selections %q", storeLive(t, sw), defaultLive(t, sw), rec.selections)
 	}
 	var state map[string]any
@@ -183,7 +182,7 @@ func TestFableStartWithoutAMarkedFableLogin(t *testing.T) {
 			}
 			live := storeLive(t, sw)
 			stderr := startFable(t)
-			if stderr != "tycswap start: Switched to start login Account-1.\n"+fableStartNotice {
+			if stderr != fableStartNotice+"tycswap start: Switched to start login Account-1.\n" {
 				t.Fatalf("stderr %q", stderr)
 			}
 			if envValue(rec.env, secureStorageVar) != "" || !strings.Contains(defaultLive(t, sw), "at-d1") || storeLive(t, sw) != live {
@@ -245,17 +244,17 @@ func TestFableStartAccount(t *testing.T) {
 	t.Run("with a Fable login", func(t *testing.T) {
 		sw, rec := fableStartLogin(t, fableTickFixture{def: "3", live: "1", logins: []string{"1", "2"}, usage: usage, off: true})
 		stderr := startFable(t, "--account", "2")
-		if stderr != "tycswap start: Switched to start login Account-2.\ntycswap start: Fable store: Switched to start login Account-2.\n" {
+		if stderr != "tycswap start: Fable store: Switched to start login Account-2.\n" {
 			t.Fatalf("stderr %q", stderr)
 		}
-		if !strings.Contains(storeLive(t, sw), "at-f2") || !strings.Contains(defaultLive(t, sw), "at-d2") || envValue(rec.env, secureStorageVar) != fableStoreDir() {
+		if !strings.Contains(storeLive(t, sw), "at-f2") || !strings.Contains(defaultLive(t, sw), "at-d3") || envValue(rec.env, secureStorageVar) != fableStoreDir() {
 			t.Fatalf("Fable store %s, default login %s", storeLive(t, sw), defaultLive(t, sw))
 		}
 	})
 	t.Run("without one", func(t *testing.T) {
 		sw, rec := fableStartLogin(t, fableTickFixture{def: "1", live: "1", logins: []string{"1", "2"}, usage: usage})
 		stderr := startFable(t, "--account", "3")
-		if stderr != "tycswap start: Switched to start login Account-3.\n"+fableStartNotice {
+		if stderr != fableStartNotice+"tycswap start: Switched to start login Account-3.\n" {
 			t.Fatalf("stderr %q", stderr)
 		}
 		if !strings.Contains(storeLive(t, sw), "at-f1") || !strings.Contains(defaultLive(t, sw), "at-d3") || envValue(rec.env, secureStorageVar) != "" {
@@ -264,20 +263,19 @@ func TestFableStartAccount(t *testing.T) {
 	})
 }
 
-// A session held on both stores gets one token, recorded in both state files;
-// --started releases both and its one tick moves both logins on.
-func TestFableStartOneTokenHoldsBothStores(t *testing.T) {
+// The default login is idle throughout this dedicated launch.
+func TestFableStartHoldsOnlyItsOwnStore(t *testing.T) {
 	fx := fableTickFixture{def: "3", live: "2", logins: []string{"1", "2"},
 		usage: map[string][3]float64{"1": {10, 100, 100}, "2": {10, 20, 10}, "3": {10, 20, 30}, "4": {10, 20, 30}}}
 	sw, rec := fableStartLogin(t, fx, "1")
 	startFable(t)
 	token := envValue(rec.env, holdVar)
 	want := map[string]any{token: clock.Seconds(sw.Clk) + 30}
-	if !holdTokenPattern.MatchString(token) || !reflect.DeepEqual(holdsIn(t, sw.StatePath()), want) || !reflect.DeepEqual(holdsIn(t, fableStatePath(sw)), want) {
+	if !holdTokenPattern.MatchString(token) || len(holdsIn(t, sw.StatePath())) != 0 || !reflect.DeepEqual(holdsIn(t, fableStatePath(sw)), want) {
 		t.Fatalf("holds: default %v, Fable %v", holdsIn(t, sw.StatePath()), holdsIn(t, fableStatePath(sw)))
 	}
-	if !strings.Contains(storeLive(t, sw), "at-f1") || !strings.Contains(defaultLive(t, sw), "at-d1") {
-		t.Fatal("the logins are not on the start login")
+	if !strings.Contains(storeLive(t, sw), "at-f1") || !strings.Contains(defaultLive(t, sw), "at-d3") {
+		t.Fatal("expected only the Fable login to move")
 	}
 	t.Setenv(holdVar, token)
 	if code, out, errb := runCodex(t, `{"source":"startup"}`, "start", "--started"); code != 0 || out != "" || errb != "" {

@@ -207,7 +207,7 @@ func TestStartConcurrentWithEngineSwitch(t *testing.T) {
 		StartSelection(f, "", snapshot, WithClock(clk), WithStatePath(path))
 	})
 	workers.Go(func() {
-		if _, err := engine.perform("2", f.emails["2"], "proactive", "7d"); err != nil {
+		if _, err := engine.perform("1", "2", f.emails["2"], "proactive", "7d"); err != nil {
 			t.Error(err)
 		}
 	})

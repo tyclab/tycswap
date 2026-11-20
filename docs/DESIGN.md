@@ -9372,3 +9372,20 @@ default login, the cause, the file in `tycswap.log`),
 `auto.counting`),
 `TestStartCheckIsAManagementForm` and `TestStartHelpNamesCheck`; in
 `logging`, `TestNilLoggerWritesNothing`.
+
+### Startup allocation, independent credentials and automatic placement
+
+Each launch selects its own credential store. A dedicated Fable launch takes
+a start hold in the Fable store alone. Older hold tokens can still be released
+from either state file. A shared Mythos launch follows the account's explicit
+model allocation. Resuming an independent login checks known shared and
+model-specific limits at the current time. The dashboard labels the recorded
+credential even when the model changes inside a session.
+
+An automatic move can choose only a login allocated to every known premium
+model it will serve. A local allocation exception applies to the individual
+launch which requested it. With soonest-reset ordering, an Opus-only workload
+below its thresholds can move to an eligible login whose binding window resets
+strictly earlier. Unknown or equal resets leave it in place. An account serving
+an independent session is reserved. Before committing, the engine rechecks the
+source and target under the switch lock. A drain also rechecks the workload.

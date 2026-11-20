@@ -17,6 +17,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"sync"
 	"syscall"
@@ -29,6 +30,7 @@ import (
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 const autoProg = "tycswap auto"
@@ -246,10 +248,42 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	return code
 }
 
+// Automatic moves honor the allocations of every known model on this login.
+type scheduledDefault struct {
+	autoswitchAdapter
+	families []string
+}
+
+func (a scheduledDefault) SwitchableAccountNumbers() []string {
+	candidates := a.autoswitchAdapter.SwitchableAccountNumbers()
+	if len(a.families) == 0 {
+		return candidates
+	}
+	data, err := a.SequenceForUpdate()
+	if err != nil {
+		return nil
+	}
+	return slices.DeleteFunc(candidates, func(num string) bool {
+		models, explicit := store.ModelsFrom(data, num)
+		return explicit && slices.ContainsFunc(a.families, func(family string) bool {
+			return (family == "opus" || family == "fable" || family == mythosFamily) && !slices.Contains(models, family)
+		})
+	})
+}
+
 // defaultEngine is the default store's engine `auto` runs under policy.
 func defaultEngine(sw *core.Switcher, policy reporting.PolicyResult, onEvent func(autoswitch.Event), dryRun bool) *autoswitch.Engine {
 	root := sw.BackupDir()
-	return autoswitch.NewEngine(autoswitchAdapter{engineSwitcher(sw, dryRun)}, policy.Settings, onEvent, dryRun,
+	families := policy.Sessions
+	if policy.FableOnDefault > 0 {
+		families = append(slices.Clone(families), "fable")
+	}
+	var opusOnly func() bool
+	if policy.OpusOnly {
+		opusOnly = func() bool { return defaultSessionPolicy(sw.Store, policy.Settings, sw.Clk.Now()).OpusOnly }
+	}
+	return autoswitch.NewEngine(scheduledDefault{autoswitchAdapter{engineSwitcher(sw, dryRun)}, families}, policy.Settings, onEvent, dryRun,
+		autoswitch.WithOpusDrain(opusOnly),
 		autoswitch.WithOAuthClient(sw.OAuth),
 		autoswitch.WithLogger(sw.Log),
 		autoswitch.WithClock(sw.Clk),

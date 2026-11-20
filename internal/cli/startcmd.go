@@ -199,23 +199,20 @@ func startSharedLogin(env, args []string, root, storeDir, account, model string,
 	if notice != "" {
 		startNotice(streams.err, notice)
 	}
-	// Every session starts on a start login of the default store, a
-	// Fable-store session on one of the Fable store's too, under the
-	// same token (DESIGN A105); a Mythos session on an account marked
-	// for Mythos (A106).
-	if model == mythosFamily {
-		family = mythosFamily
-		hold = startSelectMythos(account, streams.err)
-	} else {
-		hold = startSelect(account, model, streams.err)
-	}
 	if onFable {
-		fableHold, toDefault := startSelectFable(account, streams.err, hold, native)
+		var toDefault bool
+		hold, toDefault = startSelectFable(account, streams.err, "", native)
 		if toDefault {
 			childEnv = withoutFableStore(env, storeDir)
 			onFable = false
-		} else if fableHold != "" {
-			hold = fableHold
+		}
+	}
+	if !onFable {
+		if model == mythosFamily {
+			family = mythosFamily
+			hold = startSelectMythos(account, streams.err)
+		} else {
+			hold = startSelect(account, model, streams.err)
 		}
 	}
 	if err := confirmSharedStart(root, onFable, model, args[1:], streams); err != nil {
@@ -487,7 +484,8 @@ func readStartSnapshotFor(sw *core.Switcher, account, family string) (autoswitch
 	snap.CurrentMarked = snap.CurrentMarked && serves(snap.Current)
 	if family == "opus" && account == "" && !snap.CurrentMarked && set.Enabled {
 		pids, err := store.LiveProfilePIDs(view.DefaultProfileDir())
-		snap.IdleOpus = err == nil && len(pids) == 0
+		snap.IdleOpus = err == nil && !slices.ContainsFunc(pids, func(pid int) bool { return policy.IndependentSessions[pid] == "" })
+		snap.ReservedLast = policy.ReservedLast
 	}
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
