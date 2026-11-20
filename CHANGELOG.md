@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Disabling an idle selected account now moves the login to an eligible replacement. If none is available, tycswap saves the grant and clears the selection. A running client keeps its current login.
+- The command picker supports dashboard modes, status checks from a file, and selecting an enrolled Fable login for a new session while its store is idle.
 - The command menu now offers model allocations and independent sign-ins. A saved independent session keeps its credential identity across long breaks. The dashboard shows its login.
 - Startup and scheduled placement honor model allocations and known model limits. A dedicated Fable launch selects only its own login. Opus can use an earlier binding reset when every known default session is running Opus.
 
