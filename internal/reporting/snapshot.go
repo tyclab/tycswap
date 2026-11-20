@@ -33,6 +33,8 @@ type AccountSnapshot struct {
 	LimitingWindows      []string
 	// "" means ProviderClaude so existing literals keep working; read it through ProviderName or Key.
 	Provider string
+	// Codex identifies accounts by a stable key even if two workspaces have the same display name.
+	AccountKey string `json:"-"`
 	// FableLogin is the account's Fable login; nil without one (DESIGN A104).
 	FableLogin *FableLogin
 }

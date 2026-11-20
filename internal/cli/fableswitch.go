@@ -14,6 +14,8 @@ func dispatchFableSwitch(p *parsed, sw *core.Switcher, payload *any) error {
 	var err error
 	if p.empty {
 		res, err = sw.EmptyFableBy(p.json, cliActor())
+	} else if p.ifIdle {
+		res, err = sw.SelectIdleFable(*p.switchTo, cliActor())
 	} else {
 		res, err = sw.SwitchFableBy(*p.switchTo, p.json, cliActor())
 	}

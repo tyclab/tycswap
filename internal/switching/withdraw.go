@@ -54,7 +54,9 @@ func WithdrawLogin(s *store.Store, from groups.Account, to string, check func(*s
 		if to == "" {
 			result, err = emptyFableWhen(s, guard)
 		} else {
-			result, err = SwitchFable(s, to, FableSwitchOptions{check: guard})
+			result, err = SwitchFable(s, to, FableSwitchOptions{
+				BeforeChange: func(_ *store.Store, current *store.SequenceData) error { return guard(current) },
+			})
 		}
 		return result["switched"] == true, err
 	}

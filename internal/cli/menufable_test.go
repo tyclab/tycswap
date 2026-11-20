@@ -46,6 +46,9 @@ func menuScript(t *testing.T, picks ...string) map[string][]string {
 		}
 		pick := picks[0]
 		picks = picks[1:]
+		if choices == nil {
+			return 0, pick, true
+		}
 		for i, c := range choices {
 			if pick != "" && strings.HasPrefix(c, pick) {
 				return i, "", true

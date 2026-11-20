@@ -166,6 +166,9 @@ the plan says nothing or **Disallow Fable** where a mark decides (see
 command help. Choose **Manage accounts… → Preferred models…** to change or clear
 a Claude account's allocation. **Add account…** includes independent native
 sign-in for an enabled OAuth account marked for Mythos on supported platforms.
+To select an enrolled Fable login before a new native session, choose
+**Browse commands and options… → switch --store fable --if-idle**. The current
+login stays in place if a Fable session is running or starting.
 **Import / export…** guides Claude and Codex file transfers.
 **Open web dashboard** reuses the running app, starting it in the background if needed.
 Closing the menu leaves the tray running.

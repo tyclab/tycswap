@@ -2640,7 +2640,13 @@ and, where it changes the answer, *Allow Fable* (the plan says nothing) or
 to see its options or its CLI help. Select options, then choose *Run*. Account,
 setting and model inputs use named choices. For native login or launch arguments
 after `--`, enter one literal argument at a time. File transfers use a source
-or destination path. Tokens go directly to the command's hidden prompt.
+or destination path. For `start --check`, select a saved Claude status-line JSON
+file. The check reads the file on stdin in the current login environment.
+Tokens go directly to the command's hidden prompt.
+On systems with file-based credential stores, `switch --store fable --if-idle ID`
+selects an existing Fable login before the next native launch. A current or
+starting Fable session, or a process whose credential store cannot be verified,
+leaves the login in place. A known session on another store can continue.
 The browse menu also offers output formats, automatic switching, account marks,
 startup, dashboard and tray options, migration, upgrade and the Codex registry import.
 

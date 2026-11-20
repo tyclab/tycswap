@@ -11,9 +11,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/launch"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/testutil"
 )
 
 func TestMenuModelAllocationAndIndependentEnrollment(t *testing.T) {
@@ -107,7 +109,7 @@ func TestMenuCommandsPreserveProviderAndArgumentBoundaries(t *testing.T) {
 	for _, tc := range []struct {
 		input, want []string
 	}{
-		{[]string{"codex alias", "Name", "two words", "--debug", "Run", "codex #3"}, []string{"codex", "alias", "3", "two words", "--debug"}},
+		{[]string{"codex alias   Set", "--debug", "Run", "codex #3", "two words"}, []string{"codex", "alias", "3", "two words", "--debug"}},
 		{[]string{"start   Start", "--account", "claude #1", "--   Pass", "claude", "--model", "opus", "--name", "a $(echo nope)", "", "Run"}, []string{"start", "--account", "1", "--", "claude", "--model", "opus", "--name", "a $(echo nope)"}},
 		{[]string{"app ", "--autostart", "status", "Run"}, []string{"app", "--autostart", "status"}},
 		{[]string{"auto   Run", "--once", "--model-threshold", "87", "--dry-run", "Run"}, []string{"auto", "--once", "--model-threshold", "87", "--dry-run"}},
@@ -134,6 +136,127 @@ func TestMenuCommandsPreserveProviderAndArgumentBoundaries(t *testing.T) {
 		menuCommands(ioStreams{err: io.Discard})
 		if len(answers) != 0 || !reflect.DeepEqual(*commands, [][]string{tc.want}) {
 			t.Fatalf("inputs %q: remaining %q, got %q, want %q", tc.input, answers, *commands, tc.want)
+		}
+	}
+}
+
+func TestMenuStatusCheckReadsAFileAndKeepsItsStore(t *testing.T) {
+	cleanHome(t)
+	for _, key := range append([]string{"CLAUDE_CONFIG_DIR"}, launch.AuthOverrideEnvVars...) {
+		testutil.Unsetenv(t, key)
+	}
+	status := filepath.Join(t.TempDir(), "status input.json")
+	if err := os.WriteFile(status, []byte(`{"session_id":"fixture","model":{"id":"claude-opus-5-5"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dir := store.MythosLoginDir(paths.GetBackupRoot(), "fixture@example.invalid", "")
+	t.Setenv(secureStorageEnv, dir)
+	dropFableStoreEnv()
+	t.Cleanup(func() { mythosSessionDir = "" })
+	original := menuExecute
+	t.Cleanup(func() { menuExecute = original })
+	menuExecute = func(s ioStreams, args ...string) int {
+		if !reflect.DeepEqual(args, []string{"start", "--check"}) {
+			t.Fatalf("unexpected diagnostic command %q", args)
+		}
+		startCheck(s.in, s.out)
+		return 0
+	}
+	menuScript(t, "start --check", "Run", status)
+	var out bytes.Buffer
+	menuCommands(ioStreams{out: &out, err: io.Discard})
+	if got := out.String(); got != "Claude reports opus on the independent Mythos login.\n" {
+		t.Fatalf("status diagnostic %q", got)
+	}
+}
+
+func TestMenuSeparatesExclusiveCommandModes(t *testing.T) {
+	oldAsk := askMenu
+	t.Cleanup(func() { askMenu = oldAsk })
+	commands := workflowCommands(t)
+	for _, tc := range []struct {
+		command         string
+		present, absent []string
+	}{
+		{"web   Run", []string{"--port=Port", "--no-open"}, []string{"--reuse"}},
+		{"web --reuse", nil, []string{"--debug", "--port=Port", "--no-open"}},
+		{"app   Run", []string{"--headless", "--port=Port"}, []string{"--remote=URL", "--token-file=Path"}},
+		{"app --remote", []string{"--token-file=Path"}, []string{"--headless", "--port=Port", "--interval=Seconds"}},
+		{"codex switch   Select", nil, []string{"--strategy=best"}},
+		{"codex alias   Set", nil, []string{"--unset"}},
+	} {
+		askMenu = func(_ ioStreams, title string, choices []string, _ string) (int, string, bool) {
+			if title == "Choose a command" {
+				for i, choice := range choices {
+					if strings.HasPrefix(choice, tc.command) {
+						return i, "", true
+					}
+				}
+				t.Fatalf("command unavailable: %s", tc.command)
+			}
+			for _, value := range tc.present {
+				if !contains(choices, value) {
+					t.Errorf("%s: missing %s", tc.command, value)
+				}
+			}
+			for _, value := range tc.absent {
+				if contains(choices, value) {
+					t.Errorf("%s: offered %s", tc.command, value)
+				}
+			}
+			return 0, "", false
+		}
+		menuCommands(ioStreams{err: io.Discard})
+	}
+	if len(*commands) != 0 {
+		t.Fatalf("browsing ran commands: %q", *commands)
+	}
+}
+
+func TestMenuSelectsAnIdleEnrolledFableLogin(t *testing.T) {
+	fableMenuPlatform(t, true)
+	sw := fableCLISwitcher(t)
+	active := reporting.AccountSnapshot{Number: "1", Email: "alice@example.com", Kind: "oauth"}
+	second := reporting.AccountSnapshot{Number: "2", Email: "bob@example.com", Kind: "oauth"}
+	oldAccounts, oldExec := menuAccounts, menuExecute
+	t.Cleanup(func() { menuAccounts, menuExecute = oldAccounts, oldExec })
+	menuAccounts = func(ioStreams) ([]reporting.AccountSnapshot, error) {
+		return []reporting.AccountSnapshot{active, second, {Number: "3", Kind: "oauth", Disabled: true}, {Number: "4", Kind: "oauth"}}, nil
+	}
+	fableMenuRows(t, capable("1", active.Email, true), capable("2", second.Email, true), capable("3", "disabled@example.com", true), capable("4", "missing@example.com", false))
+	menuExecute = func(_ ioStreams, args ...string) int {
+		if !reflect.DeepEqual(args, []string{"switch", "--store", "fable", "--if-idle", "2", "--json"}) {
+			t.Fatalf("command %v", args)
+		}
+		code, _, msg := runHuman(t, args...)
+		if code != 0 {
+			t.Fatal(msg)
+		}
+		return code
+	}
+	choices := menuScript(t, "switch --store fable --if-idle", "--json", "Run", "claude #2")
+	menuCommands(ioStreams{err: io.Discard})
+	if len(choices["Use which saved Fable login?"]) != 2 || sw.FableStore().Live.Slot != "2" {
+		t.Fatalf("choices %v, store %v", choices, sw.FableStore().Live.Slot)
+	}
+}
+
+func TestMenuRechecksStableAccountIdentity(t *testing.T) {
+	previous := menuAccounts
+	t.Cleanup(func() { menuAccounts = previous })
+	for _, selected := range []reporting.AccountSnapshot{
+		{Number: "1", Provider: reporting.ProviderCodex, Email: "same@example.invalid", OrgName: "Same team", AccountKey: "workspace-a", Kind: "oauth"},
+		{Number: "1", Email: "same@example.invalid", BaseURL: "https://a.example.invalid", Kind: "api_key"},
+	} {
+		current := selected
+		if current.ProviderName() == reporting.ProviderCodex {
+			current.AccountKey = "workspace-b"
+		} else {
+			current.BaseURL = "https://b.example.invalid"
+		}
+		menuAccounts = func(ioStreams) ([]reporting.AccountSnapshot, error) { return []reporting.AccountSnapshot{current}, nil }
+		if menuAccountCurrent(ioStreams{err: io.Discard}, selected) {
+			t.Fatal("menu accepted a different native account or API endpoint with the same displayed identity")
 		}
 	}
 }

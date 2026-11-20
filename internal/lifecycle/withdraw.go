@@ -49,7 +49,7 @@ func withdrawDisabled(s *store.Store, account groups.Account) error {
 			if !selectedDisabled(view, data, account) {
 				return "", nil
 			}
-			busy, err := withdrawalBusy(view)
+			busy, err := SelectedStoreBusy(view)
 			if err != nil || busy {
 				return "", err
 			}
@@ -61,7 +61,7 @@ func withdrawDisabled(s *store.Store, account groups.Account) error {
 				if withdrawalTarget(def, view, current) != target {
 					return errors.New("the eligible replacement changed before withdrawal; retry disable")
 				}
-				if busy, err := withdrawalBusy(view); err != nil {
+				if busy, err := SelectedStoreBusy(view); err != nil {
 					return err
 				} else if busy {
 					return errWithdrawalSuperseded
@@ -100,7 +100,9 @@ func selectedDisabled(s *store.Store, data *store.SequenceData, a groups.Account
 	return data != nil && store.DisabledFrom(data, a.Number) && s.FindAccountSlot(data, a.Email, a.OrgUUID) == a.Number && s.ResolveOwnerSlot(data).Slot == a.Number
 }
 
-func withdrawalBusy(s *store.Store) (bool, error) {
+// SelectedStoreBusy reports whether a managed launch or a live client may
+// depend on this store. Callers recheck under the native write locks.
+func SelectedStoreBusy(s *store.Store) (bool, error) {
 	if held, err := autoswitch.StartHeld(s.StatePath(), s.Clk.Now()); held || err != nil {
 		return held, err
 	}

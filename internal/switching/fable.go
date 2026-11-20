@@ -10,8 +10,8 @@ import (
 // FableSwitchOptions configures a switch of the Fable store. Actor names who
 // switched in the log line ("hand"); "" writes none: the engine logs its own.
 type FableSwitchOptions struct {
-	Actor string
-	check func(*store.SequenceData) error
+	Actor        string
+	BeforeChange func(*store.Store, *store.SequenceData) error
 }
 
 // fableBeforeInstall is a test seam: it runs under the locks just before the
@@ -58,11 +58,6 @@ func SwitchFable(fable *store.Store, id string, opts FableSwitchOptions) (map[st
 		if err != nil {
 			return err
 		}
-		if opts.check != nil {
-			if err := opts.check(current); err != nil {
-				return err
-			}
-		}
 		if f.FindAccountSlot(current, email, org) != num {
 			return cerr.Switch("Account-%s changed while the switch waited for the store lock; nothing switched. Retry the command.", num)
 		}
@@ -76,6 +71,11 @@ func SwitchFable(fable *store.Store, id string, opts FableSwitchOptions) (map[st
 		incoming, _ := f.ReadAccountCredentials(num, email)
 		if incoming == "" {
 			return cerr.Switch("Account-%s's Fable login is gone", num)
+		}
+		if opts.BeforeChange != nil {
+			if err := opts.BeforeChange(f, current); err != nil {
+				return err
+			}
 		}
 		if from, err = backUpFableOutgoing(f, current, ls); err != nil {
 			return err

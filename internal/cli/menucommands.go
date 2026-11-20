@@ -38,6 +38,7 @@ var menuActions = []menuAction{
 	{"switch", "", "--strategy=best|next-available --json --debug", "Rotate the default login"},
 	{"switch", "Account", "--force --yes --json --debug", "Select the default login"},
 	{"start", "", "--account=Account NativeArgs", "Start a new native process"},
+	{"start --check", "", "", "Check a Claude status-line file against this login store"},
 	{"start --list", "", "", "List startup accounts"},
 	{"start --allow", "Account", "", "Mark a startup account"},
 	{"start --disallow", "Account", "", "Remove a startup mark"},
@@ -60,9 +61,10 @@ var menuActions = []menuAction{
 	{"import", "ImportFile", "--force --debug", "Import accounts from a file"},
 	{"tui", "", "--debug", "Open the terminal dashboard"},
 	{"watch", "", "--debug", "Open the live watch page"},
-	{"web", "", "--reuse --port=Port --no-open --interval=Seconds --debug", "Open the web dashboard"},
-	{"app", "", "--open --headless --port=Port --interval=Seconds --no-update-check --remote=URL --token-file=Path --autostart=on|off|status --debug", "Run or configure the tray app"},
-	{"menubar", "", "--debug", "Open the macOS menu bar app"},
+	{"web", "", "--port=Port --no-open --interval=Seconds --debug", "Run the web dashboard"},
+	{"web --reuse", "", "", "Open the running dashboard"},
+	{"app", "", "--open --headless --port=Port --interval=Seconds --no-update-check --autostart=on|off|status --debug", "Run or configure the tray app"},
+	{"app --remote", "URL", "--open --no-update-check --token-file=Path --autostart=on|off|status --debug", "Connect the tray to a remote dashboard"},
 	{"upgrade", "", "--debug", "Install the latest release"},
 	{"migrate", "", "--dry-run --json", "Import the old Claude store"},
 	{"purge", "", "--debug", "Purge Claude data"},
@@ -74,6 +76,7 @@ func menuCommands(s ioStreams) {
 	actions := slices.Clone(menuActions)
 	if menuFableStore() {
 		actions = append(actions, mythosEnrollment,
+			menuAction{"switch --store fable --if-idle", "FableLogin", "--json --debug", "Select a saved login before starting Fable"},
 			menuAction{"add --login --lineage fable", "", "--slot=Slot --debug NativeArgs", "Enroll an independent Fable login"},
 			menuAction{"switch --store fable --empty", "", "--json --debug", "Turn the Fable store off"})
 	}
@@ -97,12 +100,18 @@ func menuCommands(s ioStreams) {
 				fields = append(fields, "Slot")
 			}
 		}
-		if verb == "switch" {
-			opts = append(opts, "Account")
-		} else if verb == "alias" {
-			opts = append(opts, "Name")
+		switch verb {
+		case "switch":
+			actions = append(actions, menuAction{"codex switch", "Account", "--debug", "Select a specific Codex account"})
+			action.description = "Rotate Codex accounts"
+		case "alias":
+			actions = append(actions, menuAction{"codex alias --unset", "Account", "--debug", "Clear a Codex alias"})
+			fields = append(fields, "Name")
+			action.description = "Set a Codex alias"
 		}
-		opts = append(opts, spec.bools...)
+		if verb != "alias" {
+			opts = append(opts, spec.bools...)
+		}
 		for _, flag := range spec.values {
 			field := map[string]string{"--strategy": "best", "--alias": "Name", "--account": "Account"}[flag]
 			opts = append(opts, flag+"="+field)
@@ -138,30 +147,49 @@ type menuInvocation struct {
 
 func (cmd *menuInvocation) field(s ioStreams, name string) (string, bool) {
 	switch name {
-	case "Account", "OtherAccount", "MythosAccount":
+	case "Account", "OtherAccount", "MythosAccount", "FableLogin":
 		provider := reporting.ProviderClaude
 		if cmd.args[0] == "codex" {
 			provider = reporting.ProviderCodex
 		}
 		var a reporting.AccountSnapshot
 		var code int
-		if name == "MythosAccount" {
+		if name == "MythosAccount" || name == "FableLogin" {
 			accounts, err := menuAccounts(s)
 			if err != nil {
 				fmt.Fprintln(s.err, err)
 				return "", false
 			}
 			var eligible []reporting.AccountSnapshot
+			fable := map[string]bool{}
+			if name == "FableLogin" {
+				rows, err := menuFableRows(s)
+				if err != nil {
+					fmt.Fprintln(s.err, err)
+					return "", false
+				}
+				for _, row := range rows {
+					fable[row.Number] = row.Login && row.Answer.Capable
+				}
+			}
 			for _, row := range accounts {
-				if row.ProviderName() == provider && !row.Disabled && row.Kind == "oauth" && row.Mythos {
+				if row.ProviderName() == provider && !row.Disabled && row.Kind == "oauth" && (name == "MythosAccount" && row.Mythos || name == "FableLogin" && fable[row.Number]) {
 					eligible = append(eligible, row)
 				}
 			}
 			if len(eligible) == 0 {
-				fmt.Fprintln(s.err, "Independent sign-in needs an enabled Claude OAuth account marked for Mythos.")
+				if name == "FableLogin" {
+					fmt.Fprintln(s.err, "No enabled account has an eligible saved Fable login.")
+				} else {
+					fmt.Fprintln(s.err, "Independent sign-in needs an enabled Claude OAuth account marked for Mythos.")
+				}
 				return "", false
 			}
-			a, code = pickAccountRows(s, "Sign in independently as which account?", eligible)
+			title := "Sign in independently as which account?"
+			if name == "FableLogin" {
+				title = "Use which saved Fable login?"
+			}
+			a, code = pickAccountRows(s, title, eligible)
 		} else {
 			title := "Choose the account"
 			if name == "OtherAccount" {
@@ -239,6 +267,14 @@ func runMenuAction(s ioStreams, action menuAction) {
 				if !menuAccountCurrent(s, account) {
 					return
 				}
+			}
+			if action.command == "start --check" {
+				file, ok := menuStatusFile(s)
+				if !ok {
+					return
+				}
+				defer file.Close()
+				s.in = file
 			}
 			args := append(cmd.args, optional...)
 			menuExecute(s, append(args, cmd.tail...)...)

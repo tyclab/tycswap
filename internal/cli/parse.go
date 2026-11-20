@@ -62,8 +62,9 @@ type parsed struct {
 	// a switch onto the account points Claude Code at it (DESIGN A46).
 	baseURL *string
 	// store and empty select the Fable store for a switch (DESIGN A100).
-	store *string
-	empty bool
+	store  *string
+	empty  bool
+	ifIdle bool
 }
 
 // parseResult is the outcome of parseArgs: either a populated *parsed (done ==
@@ -181,6 +182,8 @@ func parseArgs(prog string, argv []string, stdout, stderr io.Writer) parseResult
 			p.full = true
 		case "--yes":
 			p.yes = true
+		case "--if-idle":
+			p.ifIdle = true
 		case "--empty":
 			p.empty = true
 

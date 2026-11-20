@@ -1,9 +1,12 @@
 package core
 
 import (
+	"fmt"
+
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/lifecycle"
+	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/switching"
 )
 
@@ -27,12 +30,32 @@ func (sw *Switcher) SwitchFable(id string, jsonOut bool) (map[string]any, error)
 // SwitchFableBy is SwitchFable with the log line's actor ("" writes none, for
 // a caller that logs the switch itself).
 func (sw *Switcher) SwitchFableBy(id string, jsonOut bool, actor string) (map[string]any, error) {
+	return sw.switchFableWith(id, switching.FableSwitchOptions{Actor: actor})
+}
+
+// SelectIdleFable picks an enrolled login for a future native session.
+func (sw *Switcher) SelectIdleFable(id, actor string) (map[string]any, error) {
+	return sw.switchFableWith(id, switching.FableSwitchOptions{Actor: actor, BeforeChange: fableStoreIdle})
+}
+
+func fableStoreIdle(f *store.Store, _ *store.SequenceData) error {
+	busy, err := lifecycle.SelectedStoreBusy(f)
+	if err != nil {
+		return err
+	}
+	if busy {
+		return fmt.Errorf("the Fable store is in use or a Claude session has no recorded store")
+	}
+	return nil
+}
+
+func (sw *Switcher) switchFableWith(id string, opts switching.FableSwitchOptions) (map[string]any, error) {
 	f, err := sw.Store.ForFable()
 	if err != nil {
 		return nil, err
 	}
 	run := func() (map[string]any, error) {
-		return switching.SwitchFable(f, id, switching.FableSwitchOptions{Actor: actor})
+		return switching.SwitchFable(f, id, opts)
 	}
 	if !f.HasFableLogins() {
 		return run() // refused before the Fable scope exists, so nothing creates it

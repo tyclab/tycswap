@@ -6,7 +6,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/usage"
 )
@@ -150,5 +152,40 @@ func TestExhaustedSharedAllocationIsNotOfferedAndReleasesItsHold(t *testing.T) {
 	code, _, stderr := runCLI(t, []string{"start", "--", "claude", "--model", "opus"}, false, false)
 	if code != 1 || child.execs != 0 || !strings.Contains(stderr, "no remaining quota") || len(holdsIn(t, sw.StatePath())) != 0 {
 		t.Fatalf("code=%d execs=%d stderr=%q", code, child.execs, stderr)
+	}
+}
+
+func TestBoundResumeRechecksIndependentIdentityAndQuotaAfterApproval(t *testing.T) {
+	for _, change := range []string{"identity", "quota"} {
+		t.Run(change, func(t *testing.T) {
+			sw, child := fableStartLogin(t, fableTickFixture{def: "1", off: true}, "1")
+			setRecord(t, sw, "1", "mythos", true, store.ModelsKey, []string{"mythos"})
+			dir := store.MythosLoginDir(sw.BackupDir(), fableEmail("1"), "")
+			writeFile(t, filepath.Join(dir, ".credentials.json"), dryCreds("synthetic-eligible", "synthetic-refresh"))
+			const id = "11111111-2222-4333-8444-555555555555"
+			if _, err := reporting.RecordDefaultSessionModel(sw.BackupDir(), id, "opus", "mythos/"+filepath.Base(dir), sw.Clk.Now()); err != nil {
+				t.Fatal(err)
+			}
+			startResolve = func(string) (string, error) { return "/fake/claude", nil }
+			prev := askPlacement
+			t.Cleanup(func() { askPlacement = prev })
+			asked := 0
+			askPlacement = func(_ ioStreams, _ string, _ bool) (bool, error) {
+				asked++
+				if change == "identity" {
+					setRecord(t, sw, "1", "organizationUuid", "another-fixture-org")
+				} else {
+					u := map[string]any{"five_hour": map[string]any{"pct": 100.0, "resets_at": sw.Clk.Now().Add(time.Hour).Format(time.RFC3339)}}
+					if err := sw.Usage.Record(map[string]usage.FetchRecord{"1": {Usage: u}}, map[string]usage.Identity{"1": {Email: fableEmail("1")}}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				return true, nil
+			}
+			code, _, msg := runCLI(t, []string{"start", "--", "claude", "--resume", id}, false, false)
+			if asked != 1 || code == 0 || child.execs != 0 {
+				t.Fatalf("asked %d, code %d, execs %d: %s", asked, code, child.execs, msg)
+			}
+		})
 	}
 }

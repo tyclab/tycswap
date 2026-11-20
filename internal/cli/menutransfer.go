@@ -39,6 +39,23 @@ func menuFilePath(s ioStreams, title, initial string) (string, bool) {
 	return abs, true
 }
 
+func menuStatusFile(s ioStreams) (*os.File, bool) {
+	path, ok := menuFilePath(s, "Claude status-line JSON file", "")
+	if !ok {
+		return nil, false
+	}
+	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+		fmt.Fprintln(s.err, "Choose an existing Claude status-line JSON file.")
+		return nil, false
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		fmt.Fprintln(s.err, err)
+		return nil, false
+	}
+	return file, true
+}
+
 func menuTransferFile(s ioStreams, export bool, initial string) (string, bool) {
 	title := "File to import"
 	if export {

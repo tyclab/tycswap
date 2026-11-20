@@ -348,6 +348,7 @@ func (s *Switcher) AccountsSnapshot(ctx context.Context, fetch map[string]bool) 
 			Number:           sl.Number,
 			Email:            sl.Email,
 			OrgName:          sl.WorkspaceName,
+			AccountKey:       sl.AccountKey,
 			IsActive:         sl.Number == active,
 			Kind:             kind,
 			Switchable:       switchable,

@@ -144,6 +144,7 @@ const visibleOptions = `options:
   --store {default,fable}
                         With 'switch': fable switches the Fable store, to an
                         account (switch --store fable <num|email>) or off
+  --if-idle             Select an enrolled Fable login only when its store is idle
   --empty               With 'switch --store fable': turn the Fable store off
   --force               Overwrite existing accounts during import; with
                         'switch <num|email>', activate without backing up first

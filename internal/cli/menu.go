@@ -25,6 +25,12 @@ var menuExecute = func(s ioStreams, args ...string) int {
 	cmd := exec.Command(exePath(), args...)
 	if len(args) == 0 || args[0] != "start" {
 		cmd.Env = append(os.Environ(), "TYCSWAP_NO_PROMPT=1")
+	} else if len(args) == 2 && args[1] == "--check" {
+		if mythosSessionDir != "" {
+			cmd.Env = withFableStore(os.Environ(), mythosSessionDir)
+		} else if fableSessionProcess {
+			cmd.Env = withFableStore(os.Environ(), paths.FableStoreDir(paths.GetBackupRoot()))
+		}
 	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.in, s.out, s.err
 	if err := cmd.Run(); err != nil {
@@ -220,7 +226,8 @@ func menuAccountCurrent(s ioStreams, selected reporting.AccountSnapshot) bool {
 	accounts, err := menuAccounts(s)
 	if err == nil {
 		for _, a := range accounts {
-			if a.Key() == selected.Key() && a.Email == selected.Email && a.OrgUUID == selected.OrgUUID && a.OrgName == selected.OrgName {
+			if a.Key() == selected.Key() && a.Email == selected.Email && a.OrgUUID == selected.OrgUUID && a.OrgName == selected.OrgName &&
+				a.AccountKey == selected.AccountKey && a.Kind == selected.Kind && a.BaseURL == selected.BaseURL {
 				return true
 			}
 		}
