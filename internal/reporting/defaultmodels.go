@@ -2,6 +2,7 @@ package reporting
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -35,7 +36,8 @@ type defaultSessionModel struct {
 	SeenAt float64 `json:"seenAt"`
 	// Store is "fable" for a session on the Fable store, "" for the default
 	// store's (DESIGN A100).
-	Store string `json:"store,omitempty"`
+	Store   string `json:"store,omitempty"`
+	Binding string `json:"binding,omitempty"`
 }
 
 // RecordedSession is the model family and store recorded for a session, ok
@@ -55,17 +57,47 @@ func SessionStores(root string) map[string]string {
 	return out
 }
 
+func (r defaultSessionModel) binding() string {
+	if r.Binding != "" {
+		return r.Binding
+	}
+	if strings.HasPrefix(r.Store, "mythos/") {
+		return r.Store
+	}
+	return ""
+}
+
+func SessionBinding(root, sessionID string) (string, error) {
+	sessions, err := loadDefaultSessionModels(root)
+	if err != nil {
+		return "", err
+	}
+	return sessions[sessionID].binding(), nil
+}
+
 func readDefaultSessionModels(root string) map[string]defaultSessionModel {
+	sessions, _ := loadDefaultSessionModels(root)
+	return sessions
+}
+
+func loadDefaultSessionModels(root string) (map[string]defaultSessionModel, error) {
+	raw, err := os.ReadFile(filepath.Join(root, defaultModelsFile))
+	if os.IsNotExist(err) {
+		return map[string]defaultSessionModel{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	var file struct {
 		Sessions map[string]defaultSessionModel `json:"sessions"`
 	}
-	if raw, err := os.ReadFile(filepath.Join(root, defaultModelsFile)); err == nil {
-		_ = json.Unmarshal(raw, &file)
+	if err := json.Unmarshal(raw, &file); err != nil {
+		return nil, fmt.Errorf("could not read saved session identities: %w", err)
 	}
 	if file.Sessions == nil {
-		file.Sessions = map[string]defaultSessionModel{}
+		return nil, fmt.Errorf("saved session identities are missing the sessions map")
 	}
-	return file.Sessions
+	return file.Sessions, nil
 }
 
 var modelFamilies = []string{"fable", "mythos", "opus", "sonnet", "haiku"}
@@ -119,25 +151,48 @@ func ClaudeFamily(model string) string {
 // store (A77). An unknown model, a provider's id (such a session runs on no
 // login of tycswap's; v0.15.1 recorded none) or a busy lock records nothing.
 func RecordDefaultSessionModel(root, sessionID, model, store string, now time.Time) (bool, error) {
+	return recordSessionModel(root, sessionID, model, store, now, 50*time.Millisecond)
+}
+
+func RecordSessionStart(root, sessionID, model, store string, now time.Time) error {
+	_, err := recordSessionModel(root, sessionID, model, store, now, filelock.DefaultTimeout)
+	return err
+}
+
+func recordSessionModel(root, sessionID, model, store string, now time.Time, timeout time.Duration) (bool, error) {
 	family := ClaudeFamily(model)
 	if sessionID == "" || family == "" {
 		return false, nil
 	}
-	lock := filelock.New(filepath.Join(root, ".default_models.lock"), 50*time.Millisecond)
-	if ok, err := lock.Acquire(0); err != nil || !ok {
+	lock := filelock.New(filepath.Join(root, ".default_models.lock"), timeout)
+	ok, err := lock.Acquire(0)
+	if err != nil {
 		return false, err
 	}
+	if !ok {
+		if timeout == filelock.DefaultTimeout {
+			return false, fmt.Errorf("timed out recording session identity")
+		}
+		return false, nil
+	}
 	defer lock.Release()
-	sessions := readDefaultSessionModels(root)
+	sessions, err := loadDefaultSessionModels(root)
+	if err != nil {
+		return false, err
+	}
 	at := float64(now.UnixNano()) / 1e9
 	old, seen := sessions[sessionID]
 	changed := !seen || old.Family != family || old.Store != store
 	if !changed && at-old.SeenAt < defaultModelRefresh.Seconds() && at >= old.SeenAt {
 		return false, nil
 	}
-	sessions[sessionID] = defaultSessionModel{Family: family, SeenAt: at, Store: store}
+	next := defaultSessionModel{Family: family, SeenAt: at, Store: store, Binding: old.binding()}
+	if next.Binding == next.Store {
+		next.Binding = ""
+	}
+	sessions[sessionID] = next
 	for id, rec := range sessions {
-		if at-rec.SeenAt > defaultModelKeep.Seconds() && !strings.HasPrefix(rec.Store, "mythos/") {
+		if at-rec.SeenAt > defaultModelKeep.Seconds() && rec.binding() == "" {
 			delete(sessions, id)
 		}
 	}

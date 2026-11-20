@@ -69,9 +69,16 @@ func mythosStartDir(root, model, account string, args []string, streams ioStream
 func locateMythosLogin(root, model, account, session string) (mythosPlacement, error) {
 	var scope string
 	if sessionUUID.MatchString(session) {
-		_, scope, _ = reporting.RecordedSession(root, session)
+		var err error
+		scope, err = reporting.SessionBinding(root, session)
+		if err != nil {
+			return mythosPlacement{}, err
+		}
 	}
 	bound, dedicated := strings.CutPrefix(scope, "mythos/")
+	if scope != "" && !dedicated {
+		return mythosPlacement{}, fmt.Errorf("the session's recorded login identity is invalid")
+	}
 	if !dedicated && model != mythosFamily {
 		return mythosPlacement{}, nil
 	}

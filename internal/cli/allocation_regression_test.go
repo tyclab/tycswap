@@ -100,3 +100,63 @@ func TestIdleOpusReservesLiveIndependentLogin(t *testing.T) {
 		t.Fatalf("exit %d, default %s: %s", code, sw.ResolveOwnerSlot(data).Slot, message)
 	}
 }
+
+func TestDedicatedStartupHookBindsBeforeFirstStatusLine(t *testing.T) {
+	sw, _ := fableStartLogin(t, fableTickFixture{def: "1", off: true}, "1")
+	root := sw.BackupDir()
+	dir := store.MythosLoginDir(root, fableEmail("1"), "")
+	const session = "aaaaaaaa-bbbb-4ccc-8ccc-dddddddddddd"
+	setRecord(t, sw, "1", "mythos", true, store.ModelsKey, []string{"mythos", "opus"})
+	writeFile(t, filepath.Join(dir, ".credentials.json"), dryCreds("synthetic-eligible", "synthetic-refresh"))
+	t.Setenv(secureStorageEnv, dir)
+	t.Setenv(startFamilyEnv, "mythos")
+	t.Setenv(startHoldEnv, "")
+	code, stdout, stderr := runCodex(t, `{"source":"startup","session_id":"`+session+`","model":"claude-opus-5-5"}`, "start", "--started")
+	if code != 0 || stdout != "" || stderr != "" {
+		t.Fatalf("hook exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	family, scope, ok := reporting.RecordedSession(root, session)
+	if !ok || family != "opus" || scope != "mythos/"+filepath.Base(dir) {
+		t.Fatalf("startup association %q %q present=%v", family, scope, ok)
+	}
+	resume, err := locateMythosLogin(root, "opus", "", session)
+	if err != nil || resume.dir != dir {
+		t.Fatalf("resume before status: got %+v, err %v", resume, err)
+	}
+}
+
+func TestRecordedBindingSurvivesSharedObservationAndCorruptState(t *testing.T) {
+	sw, _ := fableStartLogin(t, fableTickFixture{def: "1", off: true}, "1")
+	root := sw.BackupDir()
+	dir := store.MythosLoginDir(root, fableEmail("1"), "")
+	const id = "12345678-1234-4234-8234-123456789abc"
+	setRecord(t, sw, "1", "mythos", true)
+	writeFile(t, filepath.Join(dir, ".credentials.json"), dryCreds("synthetic-grant", "synthetic-refresh"))
+	now := sw.Clk.Now()
+	old := fmt.Sprintf(`{"schemaVersion":1,"sessions":{%q:{"family":"mythos","seenAt":%d,"store":%q}}}`, id, now.Unix(), "mythos/"+filepath.Base(dir))
+	path := filepath.Join(root, "default_models.json")
+	writeFile(t, path, old)
+	if _, err := reporting.RecordDefaultSessionModel(root, id, "opus", "", now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reporting.RecordDefaultSessionModel(root, "unrelated", "sonnet", "", now.Add(48*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, seen, ok := reporting.RecordedSession(root, id); !ok || seen != "" {
+		t.Fatalf("observed store %q, found %v", seen, ok)
+	}
+	got, err := locateMythosLogin(root, "opus", "", id)
+	if err != nil || got.dir != dir {
+		t.Fatalf("bound resume %+v: %v", got, err)
+	}
+	writeFile(t, path, "{")
+	if _, err := locateMythosLogin(root, "opus", "", id); err == nil {
+		t.Fatal("resume accepted an unreadable saved identity")
+	}
+	if _, err := reporting.RecordDefaultSessionModel(root, id, "opus", "", now); err == nil {
+		t.Fatal("status write replaced corrupt state")
+	}
+	if after := readOrAbsent(t, path); after != "{" {
+		t.Fatalf("corrupt file was changed to %q", after)
+	}
+}

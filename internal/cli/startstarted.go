@@ -10,6 +10,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -26,16 +27,28 @@ import (
 // and its problems go to the log; the caller exits 0 whatever happens.
 func startStarted(in io.Reader) {
 	token, family := os.Getenv(startHoldEnv), os.Getenv(startFamilyEnv)
-	if token == "" && family == "" {
+	if token == "" && family == "" && mythosSessionDir == "" {
 		return
 	}
-	started, session := sessionStarted(in)
+	started, session, observedModel := sessionStarted(in)
 	if !started || startStoreProblem(paths.GetBackupRoot()) != "" {
 		return
 	}
+	scope := ""
+	if mythosSessionDir != "" {
+		if !sessionUUID.MatchString(session) {
+			return
+		}
+		scope = observedStore()
+		if actual := reporting.ClaudeFamily(observedModel); actual != "" {
+			family = actual
+		}
+	}
 	// A box without a store gets none: the record's lock would create it.
 	if info, err := os.Stat(paths.GetBackupRoot()); family != "" && err == nil && info.IsDir() {
-		_, _ = reporting.RecordDefaultSessionModel(paths.GetBackupRoot(), session, family, "", time.Now())
+		if err := reporting.RecordSessionStart(paths.GetBackupRoot(), session, family, scope, time.Now()); err != nil {
+			logging.New(paths.GetBackupRoot(), false).Warningf("start --started: %v", err)
+		}
 	}
 	if token == "" {
 		return
@@ -79,15 +92,16 @@ func releaseStartHolds(sw *core.Switcher, token string) []string {
 // sessionStarted reports whether the SessionStart hook's input starts a
 // session, as every source but clear and compact does, and the session's id.
 // A terminal is not read; an unreadable or empty input counts as a start.
-func sessionStarted(in io.Reader) (bool, string) {
+func sessionStarted(in io.Reader) (bool, string, string) {
 	if f, ok := in.(*os.File); ok && isTTY(f) {
-		return true, ""
+		return true, "", ""
 	}
 	raw, _ := io.ReadAll(io.LimitReader(in, 1<<20))
 	var hook struct {
 		Source    string `json:"source"`
 		SessionID string `json:"session_id"`
+		Model     string `json:"model"`
 	}
 	_ = json.Unmarshal(raw, &hook)
-	return hook.Source != "clear" && hook.Source != "compact", hook.SessionID
+	return hook.Source != "clear" && hook.Source != "compact", hook.SessionID, hook.Model
 }

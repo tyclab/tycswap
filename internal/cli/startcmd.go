@@ -168,6 +168,7 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 			return 1
 		}
 		if dir != "" {
+			family = model
 			childEnv = withFableStore(env, dir)
 		} else {
 			env = withoutFableStore(env, mythosSessionDir)

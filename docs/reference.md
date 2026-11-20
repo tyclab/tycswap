@@ -1688,6 +1688,8 @@ requires native Windows integration validation; cross-vet is insufficient.
 
 ---
 
+An independently signed-in session records its account at the native SessionStart hook and status line. The first recorded identity stays with its UUID even after a status report from another store. The dashboard separately reports the observed store. Resuming a recorded UUID checks the original identity and the requested model’s available quota.
+
 ## tycswap mythos
 
 ### Synopsis
