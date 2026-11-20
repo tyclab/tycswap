@@ -6,6 +6,7 @@ package cli
 import (
 	"io"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -71,7 +72,7 @@ func TestMenuAddFableSignInAsksForTheAccount(t *testing.T) {
 	offered := menuScript(t, "add --login --lineage fable", "#5")
 	menuAdd(ioStreams{err: io.Discard})
 	add := offered["Add account"]
-	if len(add) != 6 || add[5] != "add --login --lineage fable  Sign in for Fable" {
+	if !slices.Contains(add, "add --login --lineage fable  Sign in for Fable") {
 		t.Fatalf("Add account choices = %q", add)
 	}
 	want := []string{"#2  b@example.com", "#4  d@example.com", "#1  a@example.com · sign in again", "#5  e@example.com · sign in again"}

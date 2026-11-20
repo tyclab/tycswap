@@ -2582,7 +2582,7 @@ Done: 0 imported, 0 overwritten, 1 skipped
 
 ## tycswap menu
 
-`tycswap menu [add]` opens the guided action menu or account setup directly.
+`tycswap menu [add|manage|transfer]` opens the action menu or its selected section.
 Bare `tycswap` opens the same menu when stdin, stdout and stderr are terminals,
 `TERM` is not `dumb`, and `TYCSWAP_NO_PROMPT`, `CLAUDECODE` and
 `CODEX_THREAD_ID` are unset. Scripts retain the no-command usage error.
@@ -2609,17 +2609,31 @@ still clears that alias. Explicit arguments remain the unattended interface.
 Type to filter choices; arrows move; Enter selects; Escape returns. The menu
 supports browser sign-in for Claude and Codex, saving either provider's current
 login, Claude token entry, switching, aliases, disable/enable, moving and removal.
-Except on macOS, which has no Fable store, *Add account* ends with
+Except on macOS, which uses the system Keychain, *Add account* includes
 `add --login --lineage fable  Sign in for Fable`: it asks for the account among
 those that run Fable (`tycswap fable --list`), those without a Fable login first
 and then those with one (`· sign in again`), each in roster order, and runs
 `add --login --lineage fable --slot N`; with none it names `tycswap fable --allow`.
-A Claude OAuth account's own menu ends with *Sign in for Fable…* (*Sign in again
+A Claude OAuth account's own menu includes *Sign in for Fable…* (*Sign in again
 for Fable…* when it holds a Fable login), the same command for that account,
 and, where it changes the answer, *Allow Fable* (the plan says nothing) or
 *Disallow Fable* (a mark decides), which asks first and runs `tycswap fable
 --allow N` or `--disallow N`; an account whose plan decides gets neither
 (DESIGN A107).
+*Browse commands and options…* lists commands by name and purpose. Choose a command
+to see its options or its CLI help. Select options, then choose *Run*. Account,
+setting and model inputs use named choices. For native login or launch arguments
+after `--`, enter one literal argument at a time. File transfers use a source
+or destination path. Tokens go directly to the command's hidden prompt.
+The browse menu also offers output formats, automatic switching, account marks,
+startup, dashboard and tray options, migration, upgrade and the Codex registry import.
+
+*Manage accounts… → Preferred models…* edits the allocation of a Claude account.
+Choose a combination of Mythos, Fable and Opus or clear the explicit allocation.
+On platforms with separate file-based storage, *Add account… → Sign in independently
+for Mythos* lists enabled Claude OAuth accounts marked for Mythos. The command runs
+the native sign-in and verifies the returned identity before saving it.
+
 The selected account's identity is checked again before dispatching an action.
 Advanced settings use the shared setting definitions and validation. The tray
 can remain running; closing the menu never stops it. Its Start tray app action

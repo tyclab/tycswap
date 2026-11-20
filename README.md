@@ -162,6 +162,10 @@ Fable sign-in, asking for the account (those without a Fable login first), and a
 Claude account's menu offers **Sign in for Fable…**, and **Allow Fable** where
 the plan says nothing or **Disallow Fable** where a mark decides (see
 [Run accounts in parallel](#run-accounts-in-parallel)).
+**Browse commands and options…** lists Claude and Codex commands, their options and
+command help. Choose **Manage accounts… → Preferred models…** to change or clear
+a Claude account's allocation. **Add account…** includes independent native
+sign-in for an enabled OAuth account marked for Mythos on supported platforms.
 **Import / export…** guides Claude and Codex file transfers.
 **Open web dashboard** reuses the running app, starting it in the background if needed.
 Closing the menu leaves the tray running.
