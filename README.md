@@ -1233,6 +1233,14 @@ jq -r --arg k "$(jq -r '.oauthAccount | "\(.emailAddress)|\(.organizationUuid //
 
 The schema is under STATUS LINE STATE in [`docs/reference.md`](docs/reference.md).
 
+With a Fable store, pipe the status line's JSON into `tycswap start --check`
+too. It prints one line when the session runs on the wrong store, a Fable
+session on the default login while the Fable store is usable or another model
+on the Fable store, with the command that moves it:
+`⚠ Fable session on the default login: /exit, then claude --resume <id> --model fable puts it on the Fable store`.
+Otherwise it prints nothing; it always exits 0. Auto-switch does not follow
+such a Fable session on the default login (DESIGN A108).
+
 ### Codex (ChatGPT) accounts
 
 tycswap also switches [Codex](https://github.com/openai/codex) accounts, under a
