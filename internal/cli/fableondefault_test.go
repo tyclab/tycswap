@@ -16,8 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/cclock"
 	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/testutil"
@@ -179,6 +181,50 @@ func TestStartCheckNamesASessionOnTheWrongStore(t *testing.T) {
 			}
 			if after := storeTree(t); after != before {
 				t.Fatalf("start --check changed the home or the store:\nbefore\n%s\nafter\n%s", before, after)
+			}
+		})
+	}
+}
+
+// start --check and start agree on where a Fable session goes: while start
+// sends Fable sessions to the default login because no start login has a
+// usable Fable login, the check names that cause, not a resume that lands on
+// the default login again (DESIGN A105, A108).
+func TestStartCheckAgreesWithStartOnAFableSession(t *testing.T) {
+	cause := "⚠ Fable session on the default login: no start login has a Fable login; mark one: tycswap start --allow ID\n"
+	for _, tc := range []struct {
+		name           string
+		logins, marked []string
+		dead           string
+		off, toDefault bool
+	}{
+		{"marked login without a Fable login", []string{"2"}, []string{"1"}, "", false, true},
+		{"marked login's Fable login quarantined", []string{"1", "2"}, []string{"1"}, "1", false, true},
+		{"marked login with a Fable login", []string{"1", "2"}, []string{"1"}, "", false, false},
+		{"no marks", []string{"2"}, nil, "", false, false},
+		{"marks with auto-switch off", []string{"2"}, []string{"1"}, "", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := fableTickFixture{def: "3", live: "2", logins: tc.logins, off: tc.off,
+				usage: map[string][3]float64{"1": {10, 20, 10}, "2": {10, 20, 10}, "3": {10, 20, 30}, "4": {10, 20, 30}}}
+			sw, rec := fableStartLogin(t, fx, tc.marked...)
+			if tc.dead != "" {
+				if err := autoswitch.Quarantine(fableStatePath(sw), sw.Clk, tc.dead, fableEmail(tc.dead), oauth.ErrInvalidGrant, fableLoginOf(tc.dead, farExpiry), func(autoswitch.Event) {}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			testutil.Unsetenv(t, secureStorageVar)
+			before := storeTree(t)
+			code, out, errb := runCodex(t, statusLine(checkSession, "claude-fable-5-1"), "start", "--check")
+			if code != 0 || errb != "" || storeTree(t) != before {
+				t.Fatalf("start --check: code=%d stderr=%q, store unchanged %v", code, errb, storeTree(t) == before)
+			}
+			if tc.toDefault && out != cause || !tc.toDefault && !strings.Contains(out, "puts it on the Fable store") {
+				t.Fatalf("start --check printed %q; start sends the session to the default login: %v", out, tc.toDefault)
+			}
+			code, _, stderr := runCLI(t, []string{"start", "--", "command", "--resume", checkSession, "--model", "fable"}, false, false)
+			if onFable := envValue(rec.env, secureStorageVar) == fableStoreDir(); code != 23 || onFable == tc.toDefault {
+				t.Fatalf("start: code=%d stderr=%q, child on the Fable store %v", code, stderr, onFable)
 			}
 		})
 	}

@@ -1637,6 +1637,7 @@ line on stdout:
 | Session | Line |
 | --- | --- |
 | Fable on the default login, the Fable store usable | `⚠ Fable session on the default login: /exit, then claude --resume <session_id> --model fable puts it on the Fable store` |
+| Fable on the default login, the Fable store usable, while `start` sends Fable sessions to the default login (start logins marked, auto-switch on, none of them with a usable Fable login) | `⚠ Fable session on the default login: no start login has a Fable login; mark one: tycswap start --allow ID` |
 | Opus, Mythos, Sonnet or Haiku on the Fable store | `⚠ <Family> session on the Fable store: /exit, then claude --resume <session_id> --model <family> puts it on the default login` |
 
 The session runs on the Fable store when `CLAUDE_SECURESTORAGE_CONFIG_DIR`
@@ -1645,7 +1646,9 @@ alias or a `claude-<family>-…` id; a provider's id or an unknown model prints
 nothing). A `session_id` that is not a UUID is not printed: the line then ends
 `: restart it with --model <family>`. Any other session, a box without a Fable
 login, and a Fable session on the default login while the Fable store is off
-or unusable (where `start` puts it) print nothing. It exits 0
+or unusable (where `start` puts it) print nothing. Where `start` sends a Fable
+session is asked of the function `start` decides with, so a resume never lands
+where the line said it would not. It exits 0
 whatever happens, creates nothing, takes no lock, makes no network request and
 logs nothing of its own. While the Fable store is usable, auto-switch does not
 follow a Fable session on the default login (DESIGN A108): it runs on whatever

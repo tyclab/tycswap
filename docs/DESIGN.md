@@ -9282,11 +9282,22 @@ not read).
 | Session | Prints |
 | --- | --- |
 | Fable on the default login, the Fable store usable | `⚠ Fable session on the default login: /exit, then claude --resume <session_id> --model fable puts it on the Fable store` |
+| the same, while `start` sends Fable sessions to the default login (A105.6) | `⚠ Fable session on the default login: no start login has a Fable login; mark one: tycswap start --allow ID` |
 | Opus, Mythos, Sonnet or Haiku on the Fable store | `⚠ <Family> session on the Fable store: /exit, then claude --resume <session_id> --model <family> puts it on the default login` |
 | any other, or a box without a Fable login | nothing |
 
 `session_id` is printed only when it is a UUID; otherwise the line ends `:
 restart it with --model <family>`. Nothing else from stdin reaches the output.
+
+A105.6 sends every Fable session to the default login, with `no start login
+has a Fable login; starting on the default login.`, while start logins are
+marked, auto-switch is on and none of them is in the Fable pool. A resume
+with `--model fable` then lands on the default login again (round-1 review of
+this entry, 2026-11-20: the first version printed the resume line there too).
+`cli.fableStartsOnDefault`, start's snapshot of the Fable store
+(`readFableStartSnapshot`) and its decision, is what `start`'s Fable selection
+and `start --check` both ask, so the line names that cause and the way out
+instead.
 The hint names `--model`: Claude Code's `/model` rewrites the global `model`
 setting (`~/.claude/settings.json` held `"model": "opus"` on the box that
 day), so a bare `--resume` can come up on the other model; `start` reads
@@ -9321,5 +9332,10 @@ did), `TestStartCheckNamesASessionOnTheWrongStore` (every row, a provider id,
 an unknown model, a non-UUID or missing session id, empty and malformed input,
 the store off, unusable and without Fable logins, the Fable store's variable;
 the home and the store byte-identical after every run),
+`TestStartCheckAgreesWithStartOnAFableSession` (a marked start login without
+a Fable login, one whose Fable login is quarantined, one with a usable Fable
+login, no marks, auto-switch off: the line and the store a resume with
+`--model fable` starts on agree), `TestStoreTreeSeesALockTakenAndReleased`
+(the no-write snapshot sees a lock directory made and removed),
 `TestStartCheckReadsNoTerminal` (Linux, a pseudo-terminal),
 `TestStartCheckIsAManagementForm` and `TestStartHelpNamesCheck`.
