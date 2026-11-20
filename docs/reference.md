@@ -1636,23 +1636,19 @@ line on stdout:
 
 | Session | Line |
 | --- | --- |
-| Fable on the default login, the Fable store usable | `⚠ Fable session on the default login: /exit, then claude --resume <session_id> --model <model> puts it on the Fable store` |
-| Fable on the default login, the Fable store usable, while `start` sends Fable sessions to the default login (start logins marked, auto-switch on, none of them with a usable Fable login) | `⚠ Fable session on the default login: no start login has a Fable login; mark one: tycswap start --allow ID` |
-| Opus, Mythos, Sonnet or Haiku on the Fable store | `⚠ <Family> session on the Fable store: /exit, then claude --resume <session_id> --model <model> puts it on the default login` |
+| Fable on the default login, the Fable store usable | `⚠ Fable session on the default login. Use the Fable store with an account approved for Fable.` |
+| Fable on the default login, the Fable store usable, while `start` sends Fable sessions to the default login (start logins marked, auto-switch on, none of them with a usable Fable login) | `⚠ Fable session on the default login (no start login has a Fable login). Use the Fable store with an account approved for Fable.` |
+| Opus, Mythos, Sonnet or Haiku on the Fable store | `⚠ <Family> session on the Fable store. Use the default login with an account approved for <Family>.` |
 
 The session runs on the Fable store when `CLAUDE_SECURESTORAGE_CONFIG_DIR`
 names it, else on the default login; its family is that of `model.id` (an
 alias or a `claude-<family>-…` id; a provider's id or an unknown model prints
-nothing). `<model>` is the session's own `model.id`, lower-cased, so a pinned
-version and `[1m]` survive the resume; with `[1m]` it is single-quoted
-(`--model 'claude-fable-5-2[1m]'`). A `session_id` that is not a UUID is not
-printed: the line then ends `: restart it with --model <model>`. Any other session, a box without a Fable
+nothing). The check reports placement using the family name and the active store.
+Any other session, a box without a Fable
 login, a Fable session on the default login while the Fable store is off or
 unusable (where `start` puts it), and every session under one of `start`'s
 overrides (`CLAUDE_CONFIG_DIR`, an auth override such as `ANTHROPIC_API_KEY`,
-or a `CLAUDE_SECURESTORAGE_CONFIG_DIR` of your own; see above) print nothing. Where `start` sends a Fable
-session is asked of the function `start` decides with, so a resume never lands
-where the line said it would not. It exits 0
+or a `CLAUDE_SECURESTORAGE_CONFIG_DIR` of your own; see above) print nothing. The launcher and the status line use the same fallback check. It exits 0
 whatever happens, creates nothing, takes no lock, makes no network request and
 logs nothing of its own. While the Fable store is usable, auto-switch does not
 follow a Fable session on the default login (DESIGN A108): it runs on whatever

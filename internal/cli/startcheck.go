@@ -32,7 +32,7 @@ func startCheck(in io.Reader, out io.Writer) {
 		return
 	}
 	raw, _ := io.ReadAll(io.LimitReader(in, 1<<20))
-	session, model := observedSessionModel(raw)
+	_, model := observedSessionModel(raw)
 	family := reporting.ClaudeFamily(model)
 	if family == "" || fableSessionProcess == (family == "fable") {
 		return
@@ -41,30 +41,16 @@ func startCheck(in io.Reader, out io.Writer) {
 	if !hasFableLogins || !fableSessionProcess && !fable.Usable {
 		return
 	}
-	on, to := "the default login", "the Fable store"
+	on, intended := "the default login", "the Fable store"
 	if fableSessionProcess {
-		on, to = to, on
+		on, intended = intended, on
 	}
-	line := "⚠ " + strings.ToUpper(family[:1]) + family[1:] + " session on " + on + ": "
+	name := strings.ToUpper(family[:1]) + family[1:]
+	line := "⚠ " + name + " session on " + on
 	if !fableSessionProcess && sendsFableToDefault() {
-		line += noFableStartLogin + "; mark one: tycswap start --allow ID"
-	} else if sessionUUID.MatchString(session) {
-		line += "/exit, then claude --resume " + session + " --model " + modelArg(model) + " puts it on " + to
-	} else {
-		line += "restart it with --model " + modelArg(model)
+		line += " (" + noFableStartLogin + ")"
 	}
-	fmt.Fprintln(out, line)
-}
-
-// modelArg is the session's own model id for a shell, as ClaudeFamily read
-// and validated it (lower case, letters, digits and dashes, an optional
-// [1m]), single-quoted with [1m] so the shell does not take it as a pattern.
-func modelArg(model string) string {
-	id := strings.ToLower(strings.TrimSpace(model))
-	if strings.HasSuffix(id, "[1m]") {
-		return "'" + id + "'"
-	}
-	return id
+	fmt.Fprintln(out, line+". Use "+intended+" with an account approved for "+name+".")
 }
 
 // sendsFableToDefault reports whether start sends a Fable session to the
