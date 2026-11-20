@@ -98,6 +98,33 @@ func TestDefaultPolicyBesideTheFableStore(t *testing.T) {
 	}
 }
 
+// A Fable session on the default login (its record names no store) is not
+// followed while the Fable store is usable: beside an Opus session the policy
+// is an Opus-only box's, alone it adds nothing; with the store off it counts
+// Fable as before (DESIGN A108).
+func TestDefaultPolicyIgnoresAFableSessionOnTheDefaultLogin(t *testing.T) {
+	opusOnly, now := fableIncident(t, map[string]string{"s-opus": "claude-opus-5-5"}, nil, "8", incidentSlots...)
+	want := DefaultSessionPolicyResult(opusOnly, settings.Default(), now)
+	s, now := fableIncident(t, fableAndOpus, nil, "8", incidentSlots...)
+	r := DefaultSessionPolicyResult(s, settings.Default(), now)
+	if deref(r.Settings.Model) != deref(want.Settings.Model) || !reflect.DeepEqual(r.Sessions, want.Sessions) ||
+		!reflect.DeepEqual(r.Unservable, want.Unservable) || reservedOf(r) != reservedOf(want) || reservedOf(r) != "3,8,11" {
+		t.Fatalf("model %q, sessions %v, unservable %v, reserved %s; want the Opus-only box's %q, %v, %v, %s",
+			deref(r.Settings.Model), r.Sessions, r.Unservable, reservedOf(r), deref(want.Settings.Model), want.Sessions, want.Unservable, reservedOf(want))
+	}
+	s, now = fableIncident(t, fableSession, nil, "8", incidentSlots...)
+	r = DefaultSessionPolicyResult(s, settings.Default(), now)
+	if r.Settings.Model != nil || len(r.Sessions) != 0 || len(r.Unservable) != 0 || reservedOf(r) != "3,8,11" {
+		t.Fatalf("Fable session alone: model %q, sessions %v, unservable %v, reserved %s; want nothing followed, 3,8,11 reserved",
+			deref(r.Settings.Model), r.Sessions, r.Unservable, reservedOf(r))
+	}
+	s, now = fableIncident(t, fableAndOpus, nil, "", incidentSlots...)
+	r = DefaultSessionPolicyResult(s, settings.Default(), now)
+	if deref(r.Settings.Model) != "Fable" || r.Reserved != nil || !reflect.DeepEqual(r.Sessions, []string{"fable", "opus"}) {
+		t.Fatalf("store off: model %q, reserved %s, sessions %v; want A91's Fable counted", deref(r.Settings.Model), reservedOf(r), r.Sessions)
+	}
+}
+
 // A live session without a record keeps the reservation: the Fable store
 // needs its accounts whatever the default store's sessions run.
 func TestFableReservationSurvivesAnUnrecordedSession(t *testing.T) {
