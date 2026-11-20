@@ -14,6 +14,21 @@ const LauncherMarker = "tycswap-start-launcher"
 
 func Resolve(command string) (string, error) { return exec.LookPath(command) }
 
+// IsClaudeCommand also recognizes the versioned executable a provisioner's
+// launcher passes after following the native installer's symlink.
+func IsClaudeCommand(bin string) bool {
+	switch strings.ToLower(filepath.Base(bin)) {
+	case "claude", "claude.exe", "claude.cmd":
+		return true
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	dir := filepath.Join(home, ".local", "bin")
+	return sameFile(bin, filepath.Join(dir, "claude")) || sameFile(bin, filepath.Join(dir, "claude.exe"))
+}
+
 // ResolveDefault skips the provisioner's launcher so a plain start cannot recurse.
 func ResolveDefault() (string, error) {
 	self, _ := os.Executable()

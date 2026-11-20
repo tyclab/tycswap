@@ -510,6 +510,9 @@ func (m *Model) doSwitch(id string) tea.Cmd {
 	if t.codex != nil {
 		return m.codexSwitch(t)
 	}
+	if row := m.accountByID(id); row != nil && row.Disabled {
+		return m.notify("Enable account "+t.number+" before selecting it.", "Account disabled", "warning")
+	}
 	number := t.number
 	return m.startAction("Switch to account "+number, func() (map[string]any, error) {
 		res, err := m.facade.SwitchTo(number, true)

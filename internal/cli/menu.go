@@ -229,13 +229,21 @@ func menuManage(s ioStreams) {
 		toggle = "Enable automatic rotation"
 	}
 	const removeAlias = "Remove alias"
-	choices := []string{"Switch to this account", "Rename…"}
+	allowSwitch := a.ProviderName() != reporting.ProviderClaude || !a.Disabled
+	var choices []string
+	if allowSwitch {
+		choices = append(choices, "Switch to this account")
+	}
+	choices = append(choices, "Rename…")
 	if a.Alias != "" {
 		choices = append(choices, removeAlias)
 	}
 	choices = append(choices, toggle, "Move to another slot…", "Remove stored account")
 	if a.ProviderName() == reporting.ProviderClaude {
-		choices = append(choices, "Sign in again…", "Use saved login")
+		choices = append(choices, "Sign in again…")
+		if allowSwitch {
+			choices = append(choices, "Use saved login")
+		}
 	}
 	fableSignIn, fableMark := fableAccountEntries(s, a)
 	for _, entry := range []string{fableSignIn, fableMark} {

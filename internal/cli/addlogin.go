@@ -29,6 +29,7 @@ import (
 	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 // claudeLookPath resolves the claude binary on PATH (so a Windows .cmd shim
@@ -90,8 +91,8 @@ func splitAddArgs(argv []string) addArgs {
 
 func (a *addArgs) setLineage(v string) {
 	a.lineage = v
-	if v != "default" && v != "fable" && a.lineageErr == "" {
-		a.lineageErr = "unknown lineage: " + v + " (default or fable)"
+	if v != "default" && v != "fable" && v != "mythos" && a.lineageErr == "" {
+		a.lineageErr = "unknown lineage: " + v + " (default, fable or mythos)"
 	}
 }
 
@@ -146,6 +147,28 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 	}
 	setSigintJSON(false)
 	fable := a.lineage == "fable"
+	mythos := a.lineage == "mythos"
+	if mythos {
+		if a.switchAfter || p.alias != nil {
+			errorTo(s.err, "Error: a Mythos sign-in enrolls an existing account for new sessions")
+			return 1
+		}
+		if _, err := sw.Store.ForFable(); err != nil {
+			errorTo(s.err, "Error: the Mythos login needs file-based secure storage")
+			return 1
+		}
+		if p.slot != nil {
+			data, err := sw.Store.SequenceForUpdate()
+			if err != nil {
+				return renderDomainError(err, false, s.out, s.err)
+			}
+			num := strconv.Itoa(*p.slot)
+			if store.DisabledFrom(data, num) || !store.MythosFrom(data, num) || sw.Store.AccountKindFor(num) != "oauth" {
+				errorTo(s.err, "Error: choose an enabled Claude account marked for Mythos")
+				return 1
+			}
+		}
+	}
 	if fable {
 		if code, refused := fableLoginPreflight(sw, p, s); refused {
 			return code
@@ -192,6 +215,9 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 	if fable {
 		store = func() (string, error) { return sw.AddFableLogin(src, p.slot) }
 	}
+	if mythos {
+		store = func() (string, error) { return lifecycle.AddMythosLogin(sw.Store, src, p.slot) }
+	}
 	num, err := storeLoginWhenComplete(src, login, store, s)
 	if err != nil {
 		return renderDomainError(err, false, s.out, s.err)
@@ -199,6 +225,10 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 	// The stored copy is all that is needed from here on; drop the scratch
 	// before the switch so a switch failure cannot leave a login behind.
 	_ = removeScratch()
+	if mythos {
+		fmt.Fprintf(s.out, "Stored the independent Mythos login for Account-%s.\n", num)
+		return 0
+	}
 	if fable {
 		if err := activateFableLogin(sw, num, a.switchAfter, s); err != nil {
 			return renderDomainError(err, false, s.out, s.err)

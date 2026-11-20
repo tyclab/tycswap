@@ -1140,7 +1140,7 @@
     var l = a.fableLogin;
     if (!l || l.status !== 'ok') { return null; }
     var b = el('button', { type: 'button', class: 'btn btn-sm', 'data-post': '/api/switch/' + keyPath(a) + '?store=fable', 'data-label': 'Use for Fable', 'aria-label': 'Use account ' + a.number + ' for Fable', text: l.live ? 'Fable here' : 'Use for Fable' });
-    b.disabled = !!l.live;
+    b.disabled = !!l.live || !!a.disabled;
     return b;
   }
 
@@ -1316,7 +1316,7 @@
       } else {
         sw.setAttribute('data-post', '/api/switch/' + keyPath(a));
       }
-      if (a.isActive || !a.switchable || a.ownershipBlockReason) { sw.disabled = true; }
+      if (a.isActive || a.disabled || !a.switchable || a.ownershipBlockReason) { sw.disabled = true; }
       if (a.ownershipBlockReason) { sw.title = a.ownershipBlockReason; }
       acts.appendChild(sw);
       var useFable = fableButton(a);
@@ -1326,13 +1326,15 @@
       menu.appendChild(el('summary', { class: 'btn btn-sm btn-icon', 'aria-label': 'More actions for account ' + a.number, 'aria-haspopup': 'menu', text: '⋯' }));
       var listEl = el('div', { class: 'menu-list', role: 'menu' });
       var k = rowKey(a);
-      listEl.appendChild(menuButton('Use saved login…', { 'data-action': 'force-switch', 'data-id': k, 'data-name': accountLabel(a) }));
+      if (!a.disabled) {
+        listEl.appendChild(menuButton('Use saved login…', { 'data-action': 'force-switch', 'data-id': k, 'data-name': accountLabel(a) }));
+      }
       listEl.appendChild(startLoginAction(a));
       listEl.appendChild(mythosAction(a));
       if (a.disabled) {
-        listEl.appendChild(menuButton('Enable for rotation', { 'data-post': '/api/accounts/' + keyPath(a) + '/enable', 'data-label': 'Enable' }));
+        listEl.appendChild(menuButton('Enable account', { 'data-post': '/api/accounts/' + keyPath(a) + '/enable', 'data-label': 'Enable' }));
       } else {
-        listEl.appendChild(menuButton('Disable (hold out of rotation)', { 'data-post': '/api/accounts/' + keyPath(a) + '/disable', 'data-label': 'Disable' }));
+        listEl.appendChild(menuButton('Disable account', { 'data-post': '/api/accounts/' + keyPath(a) + '/disable', 'data-label': 'Disable' }));
       }
       listEl.appendChild(el('div', { class: 'menu-sep' }));
       listEl.appendChild(menuButton(a.alias ? 'Change alias…' : 'Set alias…', { 'data-action': 'alias', 'data-id': k, 'data-alias': a.alias || '', 'data-name': accountLabel(a) }));

@@ -1255,8 +1255,8 @@ ranked set.
 line (`miniAccountText`), both in `internal/tui/widgets.go`, render their
 `(disabled)` marker in the warning color (`colSevWarn`) in place of the muted color
 (`colMuted`); text, spacing, and position are unchanged. This tracks the
-marker's meaning under this amendment: a disabled slot is a valid explicit
-switch/watch target but is never an automatic one. CLI (non-TUI) output is
+marker's current meaning: a disabled Claude account remains visible for
+inspection. Explicit and automatic switching both require an enabled account. CLI (non-TUI) output is
 untouched — `tycswap list`'s `(disabled)` marker
 (`internal/reporting/list.go`, via `printer.Muted`) stays exactly as it is,
 preserving byte-fidelity with the Python original for CLI surfaces.

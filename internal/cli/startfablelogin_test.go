@@ -44,9 +44,9 @@ func fableStartLogin(t *testing.T, fx fableTickFixture, marked ...string) (*core
 	}
 	startResolve = func(string) (string, error) { return "/verified/command", nil }
 	startResolveDefault = func() (string, error) { return "/verified/claude", nil }
-	startSelect = func(account string, stderr io.Writer) string {
+	startSelect = func(account, family string, stderr io.Writer) string {
 		rec.selections = append(rec.selections, account)
-		return prevSelect(account, stderr)
+		return prevSelect(account, family, stderr)
 	}
 	t.Chdir(t.TempDir())
 	return sw, rec

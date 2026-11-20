@@ -65,7 +65,7 @@ func SetAccountDisabled(s *store.Store, identifier string, disabled bool) error 
 				active = strconv.Itoa(*data.ActiveAccountNumber)
 			}
 			if active == accountNum {
-				emitLine(printer.Dimmed("  It is the active account — it stays live until you switch away; it just won't be an automatic switch target."))
+				emitLine(printer.Dimmed("  It is the active account. Existing sessions keep their login until you switch away. Managed starts on this login are blocked."))
 			}
 			// SwitchableAccountNumbers re-reads sequence.json. That read is inside
 			// the lock and after the commit above, so it sees the roster this call

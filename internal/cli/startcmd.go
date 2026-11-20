@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -29,7 +30,7 @@ var startResolveDefault = launch.ResolveDefault
 
 // startSelect is the default start-login selection; tests watch it. It
 // returns the start hold's token for the child, "" for none (DESIGN A105).
-var startSelect = selectStartLogin
+var startSelect = selectStartLoginFor
 
 // startSelectMythos is the selection for a session on Claude Mythos: among
 // the accounts marked for Mythos (DESIGN A106).
@@ -154,29 +155,26 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 			startNotice(streams.err, "Skipping the requested start login because "+reason+"; launching unchanged.")
 		}
 	} else {
-		fable, hasFableLogins := startFableStore(root)
-		var onFable bool
-		var notice string
-		childEnv, onFable, notice = startEnvironment(env, args, fable, hasFableLogins, storeDir)
-		if notice != "" {
-			startNotice(streams.err, notice)
-		}
-		// Every session starts on a start login of the default store, a
-		// Fable-store session on one of the Fable store's too, under the
-		// same token (DESIGN A105); a Mythos session on an account marked
-		// for Mythos (A106).
-		if startSessionFamily(args, env) == mythosFamily {
-			family = mythosFamily
-			hold = startSelectMythos(parsed.account, streams.err)
+		model := startSessionFamily(args, env)
+		var dir string
+		native := launch.IsClaudeCommand(bin)
+		if model == mythosFamily || native {
+			dir, err = mythosStartDir(root, model, parsed.account, args[1:], streams)
 		} else {
-			hold = startSelect(parsed.account, streams.err)
+			model = ""
 		}
-		if onFable {
-			fableHold, toDefault := startSelectFable(parsed.account, streams.err, hold)
-			if toDefault {
-				childEnv = withoutFableStore(env, storeDir)
-			} else if fableHold != "" {
-				hold = fableHold
+		if err != nil {
+			startNotice(streams.err, err.Error())
+			return 1
+		}
+		if dir != "" {
+			childEnv = withFableStore(env, dir)
+		} else {
+			env = withoutFableStore(env, mythosSessionDir)
+			var code int
+			childEnv, hold, family, code = startSharedLogin(env, args, root, storeDir, parsed.account, model, native, streams)
+			if code != 0 {
+				return code
 			}
 		}
 	}
@@ -193,13 +191,53 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 	return code
 }
 
+func startSharedLogin(env, args []string, root, storeDir, account, model string, native bool, streams ioStreams) (childEnv []string, hold, family string, code int) {
+	fable, hasFableLogins := startFableStore(root)
+	var onFable bool
+	var notice string
+	childEnv, onFable, notice = startEnvironment(env, args, fable, hasFableLogins, storeDir)
+	if notice != "" {
+		startNotice(streams.err, notice)
+	}
+	// Every session starts on a start login of the default store, a
+	// Fable-store session on one of the Fable store's too, under the
+	// same token (DESIGN A105); a Mythos session on an account marked
+	// for Mythos (A106).
+	if model == mythosFamily {
+		family = mythosFamily
+		hold = startSelectMythos(account, streams.err)
+	} else {
+		hold = startSelect(account, model, streams.err)
+	}
+	if onFable {
+		fableHold, toDefault := startSelectFable(account, streams.err, hold, native)
+		if toDefault {
+			childEnv = withoutFableStore(env, storeDir)
+			onFable = false
+		} else if fableHold != "" {
+			hold = fableHold
+		}
+	}
+	if err := confirmSharedStart(root, onFable, model, args[1:], streams); err != nil {
+		startNotice(streams.err, err.Error())
+		if hold != "" {
+			sw, err := newSwitcher(store.Options{Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
+			if err == nil {
+				releaseStartHolds(sw, hold)
+			}
+		}
+		return nil, "", "", 1
+	}
+	return childEnv, hold, family, 0
+}
+
 func startOverride(env, command []string, storeDir string) string {
 	for _, entry := range env {
 		key, value, _ := strings.Cut(entry, "=")
 		if envKeyIs(key, "CLAUDE_CONFIG_DIR") {
 			return key + " is set"
 		}
-		if envKeyIs(key, secureStorageEnv) && namesFableStore(value, storeDir, startWindows()) {
+		if envKeyIs(key, secureStorageEnv) && (namesFableStore(value, storeDir, startWindows()) || isMythosDirectory(paths.GetBackupRoot(), value)) {
 			continue
 		}
 		for _, override := range launch.AuthOverrideEnvVars {
@@ -242,10 +280,6 @@ func startStoreProblem(root string) string {
 		return "Start login selection is unavailable as root" + fallback
 	}
 	return ""
-}
-
-func selectStartLogin(account string, stderr io.Writer) (hold string) {
-	return selectStartLoginFor(account, "", stderr)
 }
 
 // selectStartLoginFor is start's selection on the default login for a
@@ -337,7 +371,7 @@ func withStartVar(env []string, name, value string) []string {
 // one. With none of them in the pool toDefault is true: the session starts on
 // the default login. Without marks, or with auto-switch off and no account,
 // it changes nothing (DESIGN A105).
-func selectFableStartLogin(account string, stderr io.Writer, token string) (hold string, toDefault bool) {
+func selectFableStartLogin(account string, stderr io.Writer, token string, native bool) (hold string, toDefault bool) {
 	sw, err := newSwitcher(store.Options{OAuth: oauth.NewHTTPClient(), Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
 	if err != nil {
 		return "", false
@@ -355,7 +389,7 @@ func selectFableStartLogin(account string, stderr io.Writer, token string) (hold
 			return "", false
 		}
 	}
-	snapshot := func() (autoswitch.StartSnapshot, error) { return readFableStartSnapshot(sw, account) }
+	snapshot := func() (autoswitch.StartSnapshot, error) { return readFableStartSnapshot(sw, account, native) }
 	snap, toDefault, err := fableStartsOnDefault(sw, account)
 	if err != nil {
 		reportStartSelection(sw, stderr, "Fable store: Could not select a start login: "+err.Error()+"; continuing with the current login.")
@@ -388,7 +422,7 @@ const noFableStartLogin = "no start login has a Fable login"
 // auto-switch is on, or account is named, and none of them is in the Fable
 // pool. start --check asks the same (DESIGN A108).
 func fableStartsOnDefault(sw *core.Switcher, account string) (autoswitch.StartSnapshot, bool, error) {
-	snap, err := readFableStartSnapshot(sw, account)
+	snap, err := readFableStartSnapshot(sw, account, false)
 	if err != nil {
 		return snap, false, err
 	}
@@ -437,7 +471,8 @@ func readStartSnapshotFor(sw *core.Switcher, account, family string) (autoswitch
 	}
 	live := view.ResolveLiveSlot(data)
 	snap.Current = live.Slot
-	snap.CurrentMarked = marked(data, snap.Current)
+	snap.CurrentDisabled = store.DisabledFrom(data, snap.Current)
+	snap.CurrentMarked = !snap.CurrentDisabled && marked(data, snap.Current)
 	current := account == "" && snap.CurrentMarked || account != "" && snap.Current == account
 	if current && live.Source == store.SourceConfig && view.AccountKindFor(snap.Current) == "oauth" {
 		return snap, fmt.Errorf("current login ownership could not be verified from cached credentials; run tycswap status to reconcile it")
@@ -450,11 +485,23 @@ func readStartSnapshotFor(sw *core.Switcher, account, family string) (autoswitch
 	serves := func(num string) bool { return policy.Serves == nil || policy.Serves(num) }
 	snap.Settings = policy.Settings
 	snap.CurrentMarked = snap.CurrentMarked && serves(snap.Current)
+	if family == "opus" && account == "" && !snap.CurrentMarked && set.Enabled {
+		pids, err := store.LiveProfilePIDs(view.DefaultProfileDir())
+		snap.IdleOpus = err == nil && len(pids) == 0
+	}
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
+		if snap.IdleOpus {
+			if models, allocated := store.ModelsFrom(data, num); allocated && !slices.Contains(models, "opus") {
+				continue
+			}
+		}
 		if (account == "" && marked(data, num) && serves(num) || account == num) && view.RotationEligible(data, num) {
 			snap.Candidates = append(snap.Candidates, num)
 		}
+	}
+	if family == "fable" && account == "" {
+		preferFableAllocations(&snap, view, data, true)
 	}
 	snap.Entries = (&core.Switcher{Store: view}).UsageEntriesByAccount(map[string]bool{})
 	return snap, nil
@@ -464,7 +511,7 @@ func readStartSnapshotFor(sw *core.Switcher, account, family string) (autoswitch
 // slot from backup or chain only, the candidates the marked accounts (or
 // account) in the Fable pool, counted on the Fable windows as the Fable tick
 // counts them. It makes no request.
-func readFableStartSnapshot(sw *core.Switcher, account string) (autoswitch.StartSnapshot, error) {
+func readFableStartSnapshot(sw *core.Switcher, account string, native bool) (autoswitch.StartSnapshot, error) {
 	view := sw.Store.WithoutLineageWrites()
 	view.OAuth, view.Log = nil, nil
 	data, err := view.SequenceForUpdate()
@@ -489,6 +536,7 @@ func readFableStartSnapshot(sw *core.Switcher, account string) (autoswitch.Start
 		pool[num] = true
 	}
 	snap.Current = view.FableStore().Live.Slot
+	snap.CurrentDisabled = store.DisabledFrom(data, snap.Current)
 	snap.CurrentMarked = pool[snap.Current] && store.StartLoginFrom(data, snap.Current)
 	snap.Settings.Model = nil
 	if names := reporting.FableWindowNames(view, view.Clk.Now()); len(names) > 0 {
@@ -500,6 +548,9 @@ func readFableStartSnapshot(sw *core.Switcher, account string) (autoswitch.Start
 		if (account == "" && store.StartLoginFrom(data, num) || account == num) && pool[num] {
 			snap.Candidates = append(snap.Candidates, num)
 		}
+	}
+	if native && account == "" {
+		preferFableAllocations(&snap, view, data, false)
 	}
 	snap.Entries = (&core.Switcher{Store: view}).UsageEntriesByAccount(map[string]bool{})
 	return snap, nil

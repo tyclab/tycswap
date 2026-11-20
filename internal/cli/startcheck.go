@@ -34,6 +34,12 @@ func startCheck(in io.Reader, out io.Writer) {
 	raw, _ := io.ReadAll(io.LimitReader(in, 1<<20))
 	_, model := observedSessionModel(raw)
 	family := reporting.ClaudeFamily(model)
+	if mythosSessionDir != "" {
+		if family != "" && family != mythosFamily {
+			fmt.Fprintf(out, "Claude reports %s on the independent Mythos login.\n", family)
+		}
+		return
+	}
 	if family == "" || fableSessionProcess == (family == "fable") {
 		return
 	}

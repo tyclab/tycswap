@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
+	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -49,6 +50,19 @@ func startStarted(in io.Reader) {
 		}
 	}()
 	defer oauth.RedirectOutput(io.Discard)()
+	statePaths := releaseStartHolds(sw, token)
+	autoswitch.WaitStartHolds(statePaths, sw.Clk)
+	logProblems := func(ev autoswitch.Event) {
+		if ev.Kind() == "error" {
+			sw.Log.Warningf("start --started: %s", ev.Human())
+		}
+	}
+	merged := settings.Load(sw.BackupDir())
+	policy := defaultSessionPolicy(sw.Store, merged, sw.Clk.Now())
+	onceTicks(sw, defaultEngine(sw, policy, logProblems, false), merged, logProblems, false)
+}
+
+func releaseStartHolds(sw *core.Switcher, token string) []string {
 	// One token holds both stores: the default one and the Fable store's.
 	statePaths := []string{sw.StatePath()}
 	if f, err := sw.Store.ForFable(); err == nil {
@@ -59,15 +73,7 @@ func startStarted(in io.Reader) {
 			sw.Log.Warningf("start --started: the start hold was not released: %v", err)
 		}
 	}
-	autoswitch.WaitStartHolds(statePaths, sw.Clk)
-	logProblems := func(ev autoswitch.Event) {
-		if ev.Kind() == "error" {
-			sw.Log.Warningf("start --started: %s", ev.Human())
-		}
-	}
-	merged := settings.Load(sw.BackupDir())
-	policy := defaultSessionPolicy(sw.Store, merged, sw.Clk.Now())
-	onceTicks(sw, defaultEngine(sw, policy, logProblems, false), merged, logProblems, false)
+	return statePaths
 }
 
 // sessionStarted reports whether the SessionStart hook's input starts a

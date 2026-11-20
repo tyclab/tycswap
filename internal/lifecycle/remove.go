@@ -129,6 +129,9 @@ func RemoveAccount(s *store.Store, identifier string, assumeYes bool) error {
 		if err := s.DeleteAccountFiles(accountNum, email); err != nil {
 			return err
 		}
+		if err := deleteMythosLogin(s, email, org); err != nil {
+			return err
+		}
 		delete(data.Accounts, accountNum)
 		if n, ok := parseSlot(accountNum); ok {
 			data.Sequence = removeInt(data.Sequence, n)

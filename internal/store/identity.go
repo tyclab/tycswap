@@ -402,9 +402,9 @@ func (s *Store) StartLoginNumbers() []string {
 	return out
 }
 
-// disabledFromData reports whether a slot is flagged out of rotation in
+// DisabledFrom reports whether a slot is flagged out of rotation in
 // already-loaded data (spec 01§8.4 _disabled_from_data).
-func disabledFromData(data *SequenceData, num string) bool {
+func DisabledFrom(data *SequenceData, num string) bool {
 	rec, ok := recordFor(data, num)
 	if !ok {
 		return false
@@ -416,7 +416,7 @@ func disabledFromData(data *SequenceData, num string) bool {
 // IsAccountDisabled reports whether a slot is currently held out of rotation.
 func (s *Store) IsAccountDisabled(num string) bool {
 	data, _ := s.ReadSequence()
-	return disabledFromData(data, num)
+	return DisabledFrom(data, num)
 }
 
 // DisabledAccountNumbers returns the disabled slots in sequence order.
@@ -428,7 +428,7 @@ func (s *Store) DisabledAccountNumbers() []string {
 	var out []string
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
-		if disabledFromData(data, num) {
+		if DisabledFrom(data, num) {
 			out = append(out, num)
 		}
 	}
@@ -472,7 +472,7 @@ func (s *Store) RotationEligible(data *SequenceData, num string) bool {
 	if data == nil {
 		return false
 	}
-	if !s.AccountIsSwitchable(num) || disabledFromData(data, num) || s.AccountKindFor(num) == "api_key" {
+	if !s.AccountIsSwitchable(num) || DisabledFrom(data, num) || s.AccountKindFor(num) == "api_key" {
 		return false
 	}
 	return s.RotationOwnershipBlockReason(num) == ""
@@ -499,7 +499,7 @@ func (s *Store) RotationBlockReasons() map[string]string {
 	}
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
-		if disabledFromData(data, num) || !s.AccountIsSwitchable(num) || s.AccountKindFor(num) == "api_key" {
+		if DisabledFrom(data, num) || !s.AccountIsSwitchable(num) || s.AccountKindFor(num) == "api_key" {
 			continue
 		}
 		if reason := s.RotationOwnershipBlockReason(num); reason != "" {
