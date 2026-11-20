@@ -165,6 +165,9 @@ type PolicyResult struct {
 	// sequence order, while such a session runs (DESIGN A106).
 	Serves func(num string) bool
 	Mythos []string
+	// FableOnDefault counts the live Fable sessions on the default login the
+	// policy does not follow while the Fable store is usable (A108).
+	FableOnDefault int
 }
 
 // DefaultSessionPolicy is DefaultSessionPolicyResult at the store's clock.
@@ -219,7 +222,11 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 			allKnown = false
 			continue
 		}
-		if fable.Usable && (rec.Store == "fable" || rec.Family == "fable") {
+		if fable.Usable && rec.Store == "fable" {
+			continue
+		}
+		if fable.Usable && rec.Family == "fable" {
+			r.FableOnDefault++
 			continue
 		}
 		families[rec.Family] = true

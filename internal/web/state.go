@@ -72,14 +72,17 @@ type CountingView struct {
 	Reserved   []string `json:"reserved"`
 	// Mythos is the accounts marked for Mythos while a Mythos session runs;
 	// absent otherwise (DESIGN A106).
-	Mythos  []string `json:"mythos,omitempty"`
-	Caption string   `json:"caption"`
+	Mythos []string `json:"mythos,omitempty"`
+	// FableOnDefault is the live Fable sessions on the default login the
+	// policy does not follow; absent when none (DESIGN A108).
+	FableOnDefault int    `json:"fableOnDefault,omitempty"`
+	Caption        string `json:"caption"`
 }
 
 // countingCaption is the one line the Auto tab, the tray and the strategy
 // tile show for c, the one a switch by strategy prints (DESIGN A98).
 func countingCaption(c CountingView) string {
-	return reporting.CountingCaption(c.Mode == "hosted", c.Models, c.Sessions, c.Unservable, c.Reserved, c.Mythos)
+	return reporting.CountingCaption(c.Mode == "hosted", c.Models, c.Sessions, c.Unservable, c.Reserved, c.Mythos, c.FableOnDefault)
 }
 
 // SessionsJSON is the sessions section.

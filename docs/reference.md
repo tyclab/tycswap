@@ -1657,7 +1657,8 @@ whatever happens, creates nothing, takes no lock, makes no network request and
 logs nothing of its own. While the Fable store is usable, auto-switch does not
 follow a Fable session on the default login (DESIGN A108): it runs on whatever
 account the default login's other sessions need until it is resumed on the
-Fable store.
+Fable store, and the counting caption says so: `1 Fable session on the
+default login not followed (start --check names it)`.
 
 ### Launchers
 
@@ -3395,7 +3396,9 @@ counts now (DESIGN A91, A97): `{"mode", "models", "sessions",
 "unservable", "reserved", "caption"}`, `mode` `sessions` (`models` derived from the
 model families the live default sessions run, in `sessions`, minus
 `unservable`, with the accounts left to Fable work in `reserved`, and, while a
-Mythos session runs, the marked accounts in `mythos`, DESIGN A106) or `hosted`
+Mythos session runs, the marked accounts in `mythos`, DESIGN A106; while the
+Fable store is usable, the live Fable sessions on the default login the count
+does not follow in `fableOnDefault`, absent when none, DESIGN A108) or `hosted`
 (an engine hosted in this process, which does not follow sessions and counts
 5h and 7d only); `caption` says it in one line, e.g. `counting 5h + 7d; Fable not
 counted: no usable account can serve it`. `auto.ranking` is the order the

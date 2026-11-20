@@ -276,3 +276,32 @@ func TestRecordCarriesTheStore(t *testing.T) {
 		t.Fatalf("default_models.json = %s, want %s", raw, want)
 	}
 }
+
+// The caption names the Fable sessions on the default login the policy does
+// not follow while the Fable store is usable, in place of "no live session has
+// reported its model" or "no live Fable session"; every other state reads as
+// before (DESIGN A108).
+func TestCountingCaptionNamesFableSessionsOnTheDefaultLogin(t *testing.T) {
+	notFollowed := func(n string) string {
+		return "counting 5h + 7d; " + n + " on the default login not followed (start --check names it) — accounts with Fable room reserved: 3, 8, 11"
+	}
+	for name, tc := range map[string]struct {
+		sessions map[string]string
+		onFable  []string
+		live     string
+		want     string
+	}{
+		"fable alone":        {fableSession, nil, "8", notFollowed("1 Fable session")},
+		"fable and opus":     {fableAndOpus, nil, "8", notFollowed("1 Fable session")},
+		"two fable":          {map[string]string{"s-fable": "claude-fable-5-1", "s-fable-2": "claude-fable-5-2"}, nil, "8", notFollowed("2 Fable sessions")},
+		"fable on its store": {fableAndOpus, []string{"s-fable"}, "8", "counting 5h + 7d; no live Fable session — accounts with Fable room reserved: 3, 8, 11"},
+		"store off":          {fableAndOpus, nil, "", "counting 5h + 7d + Fable (live Fable sessions)"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := fableIncident(t, tc.sessions, tc.onFable, tc.live, incidentSlots...)
+			if got := CountedForSwitch(s).Caption; got != tc.want {
+				t.Fatalf("caption %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

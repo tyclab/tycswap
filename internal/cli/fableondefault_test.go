@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -76,6 +77,26 @@ func TestDefaultTickIgnoresAFableSessionOnTheDefaultLogin(t *testing.T) {
 			t.Fatalf("store off: the Fable session is not followed (live %s):\n%s", liveSlot(sw), out)
 		}
 	})
+}
+
+// The dashboard's Auto tab names a Fable session on the default login the
+// default tick does not follow (DESIGN A108).
+func TestAutoViewNamesAFableSessionOnTheDefaultLogin(t *testing.T) {
+	sw, _ := fableOnDefault.build(t)
+	liveFableSessionOnDefault(t, sw)
+	status, body := serveFableDashboard(t, sw).call(http.MethodGet, "/api/state")
+	var state struct {
+		Auto struct {
+			Counting map[string]any `json:"counting"`
+		} `json:"auto"`
+	}
+	if err := json.Unmarshal(body, &state); err != nil || status != http.StatusOK {
+		t.Fatalf("state: %d %v", status, err)
+	}
+	want := "counting 5h + 7d; 1 Fable session on the default login not followed (start --check names it) — accounts with Fable room reserved: 2, 3"
+	if c := state.Auto.Counting; c["caption"] != want || c["fableOnDefault"] != 1.0 {
+		t.Fatalf("auto.counting %v, want caption %q and fableOnDefault 1", c, want)
+	}
 }
 
 const checkSession = "3d2dc434-6c1e-4a52-9f0b-1c2d3e4f5a6b"

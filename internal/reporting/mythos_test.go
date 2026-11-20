@@ -146,7 +146,7 @@ func TestCountingCaptionNamesMythos(t *testing.T) {
 		"both":        {[]string{"fable", "mythos"}, []string{"Fable", "Mythos"}, nil, "counting 5h + 7d; Fable not counted: no usable account can serve it; Mythos not served: no account marked"},
 		"without":     {[]string{"opus"}, nil, nil, "counting 5h + 7d; no live Fable session"},
 	} {
-		if got := CountingCaption(false, nil, tc.sessions, tc.unservable, nil, tc.mythos); got != tc.want {
+		if got := CountingCaption(false, nil, tc.sessions, tc.unservable, nil, tc.mythos, 0); got != tc.want {
 			t.Errorf("%s: %q, want %q", name, got, tc.want)
 		}
 	}

@@ -9266,6 +9266,16 @@ The dashboard's counting, `start`'s ranking and `switch --strategy` read the
 same result. The session keeps running on the default login, on whatever
 account the Opus sessions need; the status line says so.
 
+**What the operator reads.** `PolicyResult.FableOnDefault` counts the live
+Fable sessions on the default login the policy does not follow, and the
+counting caption (`reporting.CountingCaption`: the Auto tab, the tray,
+`switch --strategy`) names them in place of `no live session has reported
+its model` or `no live Fable session`, which it read for them before (round-1
+review): `counting 5h + 7d; 1 Fable session on the default login not followed
+(start --check names it) — accounts with Fable room reserved: 3, 8, 11`.
+`auto.counting` carries the count as `fableOnDefault`, absent when none, so
+every other state's caption and document read as before.
+
 **`tycswap start --check`.** A management form like `--started`: exclusive
 with the other forms and with launching (exit 2, `management options are
 exclusive` or `management options cannot launch a command`). The status line
@@ -9335,7 +9345,9 @@ the check names it.
 **Tests.** In `reporting`: `TestDefaultPolicyIgnoresAFableSessionOnTheDefaultLogin`
 (alone: no family, no `Sessions`, no counted model, the reservation kept;
 beside an Opus session the Opus-only box's result; the store off: Fable
-counted). In `cli`: `TestDefaultTickIgnoresAFableSessionOnTheDefaultLogin` (a
+counted) and `TestCountingCaptionNamesFableSessionsOnTheDefaultLogin` (one
+and two such sessions, alone and beside an Opus session; a Fable session on
+its store and the store off read as before). In `cli`: `TestDefaultTickIgnoresAFableSessionOnTheDefaultLogin` (a
 real `auto --once --json` on the reported shape: the default login stays and
 counts 5h and 7d only, where the code before switched it to the account with
 Fable room, `at-limit`; with the store off it follows the session as 0.17.0
@@ -9352,4 +9364,6 @@ login, no marks, auto-switch off: the line and the store a resume with
 `TestStartCheckPrintsNothingUnderAStartOverride` (every override, empty
 values included, on either store),
 `TestStartCheckReadsNoTerminal` (Linux, a pseudo-terminal),
+`TestAutoViewNamesAFableSessionOnTheDefaultLogin` (the dashboard's
+`auto.counting`),
 `TestStartCheckIsAManagementForm` and `TestStartHelpNamesCheck`.
