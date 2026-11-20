@@ -81,7 +81,9 @@ func statusLine(session, model string) string {
 }
 
 // storeTree is every path under the home and the store with its mode and
-// content, to show a run wrote nothing.
+// content, and a file's mtime, to show a run wrote nothing. A directory's
+// mtime is left out: Windows reports a stale one in a listing, and an entry
+// made or removed under it shows as a path anyway.
 func storeTree(t *testing.T) string {
 	t.Helper()
 	home, _ := os.UserHomeDir()
@@ -93,11 +95,12 @@ func storeTree(t *testing.T) string {
 				return nil
 			}
 			info, _ := d.Info()
-			raw := []byte{}
+			raw, mtime := []byte{}, int64(0)
 			if d.Type().IsRegular() {
 				raw, _ = os.ReadFile(path)
+				mtime = info.ModTime().UnixNano()
 			}
-			lines = append(lines, fmt.Sprintf("%s %v %d %x", path, info.Mode(), info.ModTime().UnixNano(), raw))
+			lines = append(lines, fmt.Sprintf("%s %v %d %x", path, info.Mode(), mtime, raw))
 			return nil
 		})
 	}
