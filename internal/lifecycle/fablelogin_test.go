@@ -348,3 +348,38 @@ func TestAddOfTheLiveLoginRefusesAFableSessionsConfig(t *testing.T) {
 	}
 	sameFiles(t, "the refusal", before, everyFile(t, s))
 }
+
+// A recovered reader's stable identity wins over an ambiguous last-install
+// record. An independent re-enrollment can still update the saved login.
+func TestFableRenewalKeepsRecoveredReaderIdentity(t *testing.T) {
+	s := fableLifecycleStore(t)
+	captureOut(t)
+	f, _ := s.ForFable()
+	original := planCreds("at-original", "rt-original", "max")
+	if _, err := AddFableLogin(s, signIn(t, "a@example.com", original), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := switching.SwitchFable(f, "1", switching.FableSwitchOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	// The native grant and the recovered consumer identify a different
+	// organization than the roster's slot currently does.
+	before := planCreds("at-unattributed", "rt-unattributed", "max")
+	if err := f.Creds.WriteActiveAccount(before); err != nil {
+		t.Fatal(err)
+	}
+	if owner := fableOwnerOf(f); owner.Slot != "1" || owner.Source != store.SourceLastInstall {
+		t.Fatalf("fixture has no ambiguous last install: %+v", owner)
+	}
+	if err := f.PinFableReader(store.AccountIdentityDigest("a@example.com", "fixture-other-org")); err != nil {
+		t.Fatal(err)
+	}
+	fresh := planCreds("at-reenrolled", "rt-reenrolled", "max")
+	if _, err := AddFableLogin(s, signIn(t, "a@example.com", fresh), ip(1)); err != nil {
+		t.Fatal(err)
+	}
+	live, _, err := f.Creds.ReadActive()
+	if err != nil || !oauth.SameAccountBlock(live, before) || fableLoginOf(t, s, "1", "a@example.com") != fresh {
+		t.Fatal("the independent enrollment changed a different recovered identity")
+	}
+}

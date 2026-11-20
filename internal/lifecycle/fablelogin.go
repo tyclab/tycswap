@@ -72,7 +72,11 @@ func AddFableLogin(s *store.Store, src AddSource, slot *int) (string, error) {
 		err = f.WithFableLocks(func() error {
 			now, _, _ := f.Creds.ReadActive()
 			owner := fableOwnerOf(f)
-			if now != live && owner.Slot != num {
+			readers, err := store.ReadFableReaders(s.BackupDir())
+			if err != nil {
+				return err
+			}
+			if readers.Identity != "" && readers.Identity != store.AccountIdentityDigest(email, orgUUID) || now != live && owner.Slot != num {
 				renew = false
 				return write()
 			}

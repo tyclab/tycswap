@@ -75,7 +75,7 @@ func (s *Store) ParkingStatus() (*FableParking, error) {
 		return nil, err
 	}
 	num, email, org, err := s.ResolveAccountFrom(data, p.ReadyAccount)
-	if err != nil || num != p.ReadyAccount || filepath.Base(MythosLoginDir(s.BackupDir(), email, org)) != p.Identity {
+	if err != nil || num != p.ReadyAccount || AccountIdentityDigest(email, org) != p.Identity {
 		return &FableParking{}, nil
 	}
 	return p, nil

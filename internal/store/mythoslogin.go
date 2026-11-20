@@ -17,8 +17,12 @@ func MythosLoginRoot(root string) string {
 // The identity, including the organization, is stable across slot moves.
 // A running Claude keeps this directory for its entire session.
 func MythosLoginDir(root, email, org string) string {
+	return filepath.Join(MythosLoginRoot(root), AccountIdentityDigest(email, org))
+}
+
+func AccountIdentityDigest(email, org string) string {
 	hash := sha256.Sum256([]byte(email + "\x00" + org))
-	return filepath.Join(MythosLoginRoot(root), hex.EncodeToString(hash[:]))
+	return hex.EncodeToString(hash[:])
 }
 
 func (s *Store) MythosLoginReady(data *SequenceData, num string) (string, bool) {

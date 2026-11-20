@@ -2,7 +2,6 @@ package lifecycle
 
 import (
 	"errors"
-	"path/filepath"
 	"slices"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
@@ -165,7 +164,7 @@ func PrepareRecoveredFableStart(s *store.Store, account, bound string) (string, 
 		if target.Number == "" {
 			return "", errors.New("no eligible independently signed-in Fable startup account has quota for this session")
 		}
-		digest := filepath.Base(store.MythosLoginDir(f.BackupDir(), target.Email, target.OrgUUID))
+		digest := store.AccountIdentityDigest(target.Email, target.OrgUUID)
 		check := func(_ *store.Store, current *store.SequenceData) error {
 			if targetFor(current) != target {
 				return errors.New("the eligible Fable login changed; retry the start")
@@ -232,7 +231,7 @@ func recoveredCandidate(def, f *store.Store, data *store.SequenceData, account, 
 		if err != nil {
 			return false
 		}
-		digest := filepath.Base(store.MythosLoginDir(f.BackupDir(), email, org))
+		digest := store.AccountIdentityDigest(email, org)
 		return (bound == "" || bound == digest) && (serving == "" || serving == digest)
 	})
 }
@@ -273,7 +272,7 @@ func UpdateParkedFableReady(s *store.Store) error {
 			target := recoveredCandidate(def, f, data, "", "", "", "")
 			if target.Number != "" {
 				next.ReadyAccount = target.Number
-				next.Identity = filepath.Base(store.MythosLoginDir(s.BackupDir(), target.Email, target.OrgUUID))
+				next.Identity = store.AccountIdentityDigest(target.Email, target.OrgUUID)
 			}
 		}
 		if next == *p {
