@@ -150,7 +150,6 @@ func (l *Logger) Prefixed(prefix string) *Logger {
 	return &Logger{w: l.w, level: l.level, debug: l.debug, clk: l.clk, console: l.console, prefix: l.prefix + prefix}
 }
 
-// emit writes msg at level; a nil logger writes nothing.
 func (l *Logger) emit(level Level, msg string) {
 	if l == nil || level < l.level {
 		return

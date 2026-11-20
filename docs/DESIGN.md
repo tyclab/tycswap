@@ -9268,8 +9268,8 @@ account the Opus sessions need; the status line says so.
 
 **What the operator reads.** `PolicyResult.FableOnDefault` counts the live
 Fable sessions on the default login the policy does not follow, and the
-counting caption (`reporting.CountingCaption`: the Auto tab, the tray,
-`switch --strategy`) names them in place of `no live session has reported
+counting caption (`reporting.CountingCaption`: the Auto tab, the tray; `switch
+--strategy` prints its caption only while a model window is counted) names them in place of `no live session has reported
 its model` or `no live Fable session`, which it read for them before (round-1
 review): `counting 5h + 7d; 1 Fable session on the default login not followed
 (start --check names it) — accounts with Fable room reserved: 3, 8, 11`.
@@ -9351,8 +9351,8 @@ login file that could not be decoded made it warn on nil: `start` panicked
 before launching anything while start logins were marked and auto-switch was
 on, and the check printed nothing (found in the round-1 review). A nil
 `logging.Logger` now writes nothing. The views stay silent; the file is
-logged by the Fable store's state read that runs before them with the
-store's logger (`startFableStore`), as for any reader, and such an account
+logged by each read that meets it with the store's logger, as for any
+reader (twice per `start` or `start --check` run), and such an account
 has no usable Fable login, so `start` sends the Fable session to the default
 login (A105.6) and the check names that cause. `--continue` and the `--resume` picker still give `start` no
 family (A103), so a Fable session resumed so starts on the default login, and
