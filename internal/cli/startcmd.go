@@ -156,10 +156,12 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 		}
 	} else {
 		model := startSessionFamily(args, env)
-		if model == "opus" && !launch.IsClaudeCommand(bin) {
+		var dir string
+		if model == mythosFamily || launch.IsClaudeCommand(bin) {
+			dir, err = mythosStartDir(root, model, parsed.account, args[1:], streams)
+		} else if model == "opus" {
 			model = ""
 		}
-		dir, err := mythosStartDir(root, model, parsed.account, args[1:], streams)
 		if err != nil {
 			startNotice(streams.err, err.Error())
 			return 1

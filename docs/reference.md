@@ -1504,8 +1504,12 @@ Fable store (`<backup root>/fable/store`, compared cleaned; case-insensitively
 on Windows). No new profile or claim is created.
 Marks are managed independently of these launch-only overrides.
 
-Without an override, `start` picks the session's credential store by its
-model family. The settings it reads are, in this order, the `--settings`
+Without an override, an explicit UUID resume of a session recorded on an
+independently enrolled login uses that same identity, including after a
+native model change. If the recorded login is disabled or removed, the
+resume stops. A one-time allocation question names the model being resumed
+or explicitly requested. Other starts pick the credential store by model
+family. The settings it reads are, in this order, the `--settings`
 value (`--settings X` or `--settings=X`, the last one: JSON when it starts
 with `{`, else a file relative to the working directory),
 `<cwd>/.claude/settings.local.json`, `<cwd>/.claude/settings.json` and

@@ -21,7 +21,10 @@ func isMythosDirectory(root, dir string) bool {
 	if dir == "" || !namesFableStore(filepath.Dir(dir), store.MythosLoginRoot(root), startWindows()) {
 		return false
 	}
-	digest := filepath.Base(dir)
+	return validMythosDigest(filepath.Base(dir))
+}
+
+func validMythosDigest(digest string) bool {
 	_, err := hex.DecodeString(digest)
 	return len(digest) == 64 && err == nil
 }
@@ -59,7 +62,11 @@ func mythosStartDir(root, model, account string, args []string, streams ioStream
 	if cwd, err := os.Getwd(); err == nil {
 		start = fmt.Sprintf("%q, %s", filepath.Base(cwd), start)
 	}
-	question := fmt.Sprintf("Use Account-%s, allocated to %s, for this Mythos session (%s) and use its shared quota?", proposed.number, proposed.allocation, start)
+	family := "Claude"
+	if model != "" {
+		family = strings.ToUpper(model[:1]) + model[1:]
+	}
+	question := fmt.Sprintf("Use Account-%s, allocated to %s, for this %s session (%s) and use its shared quota?", proposed.number, proposed.allocation, family, start)
 	if stop := slices.Index(args, "--"); stop >= 0 {
 		args = args[:stop]
 	}
@@ -68,7 +75,7 @@ func mythosStartDir(root, model, account string, args []string, streams ioStream
 		return "", err
 	}
 	if !ok {
-		return "", fmt.Errorf("Mythos start deferred. Start again when an eligible placement is available")
+		return "", fmt.Errorf("%s start deferred. Start again when an eligible placement is available", family)
 	}
 	current, err := locateMythosLogin(root, model, account, session)
 	if err != nil {
@@ -81,10 +88,21 @@ func mythosStartDir(root, model, account string, args []string, streams ioStream
 }
 
 func locateMythosLogin(root, model, account, session string) (mythosPlacement, error) {
-	if model != mythosFamily {
+	var scope string
+	if sessionUUID.MatchString(session) {
+		_, scope, _ = reporting.RecordedSession(root, session)
+	}
+	bound, dedicated := strings.CutPrefix(scope, "mythos/")
+	if !dedicated && model != mythosFamily {
 		return mythosPlacement{}, nil
 	}
+	if dedicated && !validMythosDigest(bound) {
+		return mythosPlacement{}, fmt.Errorf("the session's recorded login identity is invalid")
+	}
 	if _, err := os.Stat(store.MythosLoginRoot(root)); os.IsNotExist(err) {
+		if dedicated {
+			return mythosPlacement{}, fmt.Errorf("the session's recorded login is unavailable")
+		}
 		return mythosPlacement{}, nil
 	} else if err != nil {
 		return mythosPlacement{}, err
@@ -108,20 +126,13 @@ func locateMythosLogin(root, model, account, session string) (mythosPlacement, e
 			return mythosPlacement{}, err
 		}
 	}
-	var bound string
-	if sessionUUID.MatchString(session) {
-		_, scope, _ := reporting.RecordedSession(root, session)
-		if digest, ok := strings.CutPrefix(scope, "mythos/"); ok {
-			bound = digest
-		}
-	}
 	var candidates []string
 	placements := map[string]mythosPlacement{}
 	ids := map[string]usage.Identity{}
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
 		dir, ready := view.MythosLoginReady(data, num)
-		if ready && (account == "" || account == num) && (bound == "" || filepath.Base(dir) == bound) {
+		if ready && (account == "" || account == num) && (!dedicated || filepath.Base(dir) == bound) {
 			candidates = append(candidates, num)
 			placement := mythosPlacement{dir: dir, number: num}
 			if models, explicit := store.ModelsFrom(data, num); explicit && !slices.Contains(models, model) {
@@ -133,6 +144,9 @@ func locateMythosLogin(root, model, account, session string) (mythosPlacement, e
 		}
 	}
 	if len(candidates) == 0 {
+		if dedicated {
+			return mythosPlacement{}, fmt.Errorf("the session's recorded login is unavailable for this resume")
+		}
 		return mythosPlacement{}, fmt.Errorf("no enabled, marked account with an independent Mythos login is available for this start")
 	}
 	settings, err := loadStartSettings(root)
