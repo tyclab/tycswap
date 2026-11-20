@@ -16,6 +16,7 @@ import (
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/reporting"
+	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
@@ -120,6 +121,42 @@ func TestDisablePreservesInUseStoresAndRetries(t *testing.T) {
 				t.Fatalf("retry on an already-disabled account did not withdraw the idle selection: %v", err)
 			}
 		})
+	}
+}
+
+func TestScheduledWithdrawalAfterLastClientExits(t *testing.T) {
+	sw := withdrawalFixture(t)
+	pid := strconv.Itoa(os.Getpid())
+	registration := filepath.Join(sw.DefaultProfileDir(), "sessions", pid+".json")
+	writeFile(t, registration, `{"pid":`+pid+`,"sessionId":"busy-fable"}`)
+	if _, err := reporting.RecordDefaultSessionModel(sw.BackupDir(), "busy-fable", "fable", "fable", sw.Clk.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := sw.SetAccountDisabled("1", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(registration); err != nil {
+		t.Fatal(err)
+	}
+	tick := func(extra ...string) string {
+		t.Helper()
+		_, out, _ := runCLI(t, append([]string{"auto", "--once", "--json"}, extra...), false, false)
+		return out
+	}
+	tick()
+	if !strings.Contains(defaultLive(t, sw), "at-d1") || !strings.Contains(storeLive(t, sw), "at-f1") {
+		t.Fatal("an off tick changed a deferred selection")
+	}
+	if _, err := settings.SetSetting(sw.BackupDir(), "autoswitch.enabled", "true"); err != nil {
+		t.Fatal(err)
+	}
+	tick("--dry-run")
+	if !strings.Contains(defaultLive(t, sw), "at-d1") || !strings.Contains(storeLive(t, sw), "at-f1") {
+		t.Fatal("a dry run changed a deferred selection")
+	}
+	out := tick()
+	if !strings.Contains(out, "disabled-account") || !strings.Contains(defaultLive(t, sw), "at-d2") || !strings.Contains(storeLive(t, sw), "at-f3") {
+		t.Fatalf("scheduled tick did not complete the disable after exit: %s", out)
 	}
 }
 

@@ -417,7 +417,8 @@ A disabled Claude account stays in the roster. Enable it before selecting it
 by hand or launching a managed session on it. An idle store moves to an eligible
 replacement even with automatic rotation off. If no replacement is available,
 tycswap clears the selection and keeps the saved login. A live session retains
-its credential. Repeating disable retries the withdrawal.
+its credential. Once the last client exits, an enabled auto-switch tick completes
+the withdrawal. With auto-switch off, repeating disable retries it.
 
 ```
 $ tycswap disable 2

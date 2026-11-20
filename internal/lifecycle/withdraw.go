@@ -19,7 +19,23 @@ import (
 
 var errWithdrawalSuperseded = errors.New("the login or account changed before withdrawal")
 
-func withdrawDisabled(s *store.Store, account groups.Account) error {
+// RetryDisabledSelections completes an earlier disable once the last client
+// releases its login. The caller supplies the live auto-switch setting so it
+// can be checked again under the native write locks.
+func RetryDisabledSelections(s *store.Store, enabled func() bool, report func(bool, groups.Account, groups.Account)) error {
+	data, err := s.SequenceForUpdate()
+	if err != nil {
+		return err
+	}
+	for _, n := range data.Sequence {
+		if store.DisabledFrom(data, strconv.Itoa(n)) {
+			return withdrawDisabled(s, nil, enabled, report)
+		}
+	}
+	return nil
+}
+
+func withdrawDisabled(s *store.Store, requested *groups.Account, enabled func() bool, report func(bool, groups.Account, groups.Account)) error {
 	def := s.WithoutLineageWrites()
 	def.OAuth = nil
 	scopes := []*store.Store{s}
@@ -38,7 +54,16 @@ func withdrawDisabled(s *store.Store, account groups.Account) error {
 		if err != nil {
 			return err
 		}
-		if view.ResolveOwnerSlot(data).Slot != account.Number {
+		num := view.ResolveOwnerSlot(data).Slot
+		if num == "" || !store.DisabledFrom(data, num) {
+			continue
+		}
+		_, email, org, err := view.ResolveAccountFrom(data, num)
+		if err != nil {
+			return err
+		}
+		account := groups.Account{Number: num, Email: email, OrgUUID: org}
+		if requested != nil && *requested != account {
 			continue
 		}
 		err = autoswitch.HandSwitch(scope.StatePath(), scope.Clk, nil, func() (string, error) {
@@ -46,7 +71,7 @@ func withdrawDisabled(s *store.Store, account groups.Account) error {
 			if err != nil {
 				return "", err
 			}
-			if !selectedDisabled(view, data, account) {
+			if !enabled() || !selectedDisabled(view, data, account) {
 				return "", nil
 			}
 			busy, err := SelectedStoreBusy(view)
@@ -55,7 +80,7 @@ func withdrawDisabled(s *store.Store, account groups.Account) error {
 			}
 			target := withdrawalTarget(def, view, data)
 			check := func(current *store.SequenceData) error {
-				if !selectedDisabled(view, current, account) {
+				if !enabled() || !selectedDisabled(view, current, account) {
 					return errWithdrawalSuperseded
 				}
 				if withdrawalTarget(def, view, current) != target {
@@ -80,20 +105,24 @@ func withdrawDisabled(s *store.Store, account groups.Account) error {
 			if !changed {
 				return "", nil
 			}
-			name := "default"
-			if scope.IsFable() {
-				name = "Fable"
-			}
-			if target.Number == "" {
-				emitLine(fmt.Sprintf("  No eligible %s login is available. Account-%s is saved.", name, account.Number))
-			} else {
-				emitLine(fmt.Sprintf("  The %s login is now Account-%s.", name, target.Number))
-			}
+			report(scope.IsFable(), account, target)
 			return target.Number, nil
 		})
 		result = errors.Join(result, err)
 	}
 	return result
+}
+
+func reportWithdrawal(fable bool, from, to groups.Account) {
+	name := "default"
+	if fable {
+		name = "Fable"
+	}
+	if to.Number == "" {
+		emitLine(fmt.Sprintf("  No eligible %s login is available. Account-%s is saved.", name, from.Number))
+	} else {
+		emitLine(fmt.Sprintf("  The %s login is now Account-%s.", name, to.Number))
+	}
 }
 
 func selectedDisabled(s *store.Store, data *store.SequenceData, a groups.Account) bool {

@@ -1131,7 +1131,7 @@ Writes the `disabled` flag on the account's `sequence.json` record.
 
 `Disabled Account-<n> (<email>).` When the disabled account is also the active
 login, a second line follows: `  It is the active account. Existing sessions keep their login. New managed starts cannot use it.`
-An idle withdrawal also names the new selection or says that no eligible login is available.
+An idle withdrawal also names the new selection or says that no eligible login is available. An enabled auto-switch tick retries a deferred withdrawal after the last client exits.
 
 ### Errors
 

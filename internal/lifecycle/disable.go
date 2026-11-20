@@ -85,7 +85,7 @@ func SetAccountDisabled(s *store.Store, identifier string, disabled bool) error 
 	if err != nil || !disabled {
 		return err
 	}
-	return withdrawDisabled(s, selected)
+	return withdrawDisabled(s, &selected, func() bool { return true }, reportWithdrawal)
 }
 
 func sequenceFileExists(s *store.Store) bool {
