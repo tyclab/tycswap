@@ -14,7 +14,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/tyclab/tycswap/internal/cclock"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -80,32 +82,53 @@ func statusLine(session, model string) string {
 	return string(raw)
 }
 
-// storeTree is every path under the home and the store with its mode and
-// content, and a file's mtime, to show a run wrote nothing. A directory's
-// mtime is left out: Windows reports a stale one in a listing, and an entry
-// made or removed under it shows as a path anyway.
+// storeTree is every path under the home and the store with its mode, mtime
+// and content, to show a run wrote nothing: a directory made and removed
+// shows in its parent's mtime. Each path is read with Lstat, since a Windows
+// listing reports a directory's time from its parent's index, which lags.
 func storeTree(t *testing.T) string {
 	t.Helper()
 	home, _ := os.UserHomeDir()
 	var lines []string
 	for _, root := range []string{home, paths.GetBackupRoot()} {
-		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				lines = append(lines, path+" "+err.Error())
+		_ = filepath.WalkDir(root, func(path string, _ fs.DirEntry, err error) error {
+			info, statErr := os.Lstat(path)
+			if err != nil || statErr != nil {
+				lines = append(lines, fmt.Sprintf("%s %v %v", path, err, statErr))
 				return nil
 			}
-			info, _ := d.Info()
-			raw, mtime := []byte{}, int64(0)
-			if d.Type().IsRegular() {
+			raw := []byte{}
+			if info.Mode().IsRegular() {
 				raw, _ = os.ReadFile(path)
-				mtime = info.ModTime().UnixNano()
 			}
-			lines = append(lines, fmt.Sprintf("%s %v %d %x", path, info.Mode(), mtime, raw))
+			lines = append(lines, fmt.Sprintf("%s %v %d %x", path, info.Mode(), info.ModTime().UnixNano(), raw))
 			return nil
 		})
 	}
 	sort.Strings(lines)
 	return strings.Join(lines, "\n")
+}
+
+// A Claude Code lock (a directory made, then removed) and a temporary file
+// made and removed in the store between two snapshots show in storeTree.
+func TestStoreTreeSeesALockTakenAndReleased(t *testing.T) {
+	fableStart(t, "on")
+	before := storeTree(t)
+	time.Sleep(20 * time.Millisecond)
+	lock, err := cclock.AcquireProfileCredentials(paths.FableStoreDir(paths.GetBackupRoot()), 0, nil)
+	if err != nil {
+		t.Fatalf("lock: %v", err)
+	}
+	lock.Release()
+	f, err := os.CreateTemp(paths.FableScopeDir(paths.GetBackupRoot()), ".tmp-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	_ = os.Remove(f.Name())
+	if storeTree(t) == before {
+		t.Fatal("storeTree saw no change after a lock directory and a temporary file were made and removed in the store")
+	}
 }
 
 // start --check prints one line for a session on the store its model does
