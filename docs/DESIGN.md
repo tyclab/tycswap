@@ -9304,6 +9304,7 @@ take it as a pattern. The first version named the family alias, which
 dropped both (round-1 review). `session_id` is printed only when it is a
 UUID; otherwise the line ends `: restart it with --model <model>`. Nothing
 else from stdin reaches the output.
+
 Under one of `start`'s overrides (`cli.startOverride` of the process's
 environment: `CLAUDE_CONFIG_DIR`, a `launch.AuthOverrideEnvVars` variable, or
 a `CLAUDE_SECURESTORAGE_CONFIG_DIR` that does not name the Fable store) it
@@ -9319,6 +9320,7 @@ this entry, 2026-11-20: the first version printed the resume line there too).
 (`readFableStartSnapshot`) and its decision, is what `start`'s Fable selection
 and `start --check` both ask, so the line names that cause and the way out
 instead.
+
 The hint names `--model`: Claude Code's `/model` rewrites the global `model`
 setting (`~/.claude/settings.json` held `"model": "opus"` on the box that
 day), so a bare `--resume` can come up on the other model; `start` reads
