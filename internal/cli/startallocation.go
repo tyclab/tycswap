@@ -174,14 +174,5 @@ func readSharedStartException(root string, fable bool, family string) (sharedSta
 func startModelHeadroom(entry usage.UsageEntry, family string, now time.Time) *float64 {
 	v, _ := entry.DecisionValue().(map[string]any)
 	u := oauth.NewUsage(oauth.AsOf(v, now))
-	if u == nil {
-		return nil
-	}
-	var scoped []string
-	for _, window := range u.Scoped {
-		if family != "" && strings.Contains(strings.ToLower(window.Name), family) {
-			scoped = append(scoped, window.Name)
-		}
-	}
-	return oauth.AccountHeadroom(u, scoped)
+	return oauth.AccountHeadroom(u, oauth.FamilyWindows(u, family))
 }

@@ -726,8 +726,11 @@ credential. Moving the same account to a new slot preserves the credential.
 
 `tycswap models --list` shows explicit allocations. Use
 `tycswap models 2 --derived` to clear the allocation for account 2.
-If an independent Mythos start needs an allocation exception, it asks
-before launching Claude. Each computer needs its own browser sign-in.
+A launch outside the account's explicit allocation asks before starting
+Claude. A resumed independent session keeps its original identity across
+restarts and checks both shared and model quota. When a known window is full,
+the login becomes available again after its reset. Each computer needs its
+own browser sign-in.
 
 ### Run accounts in parallel
 

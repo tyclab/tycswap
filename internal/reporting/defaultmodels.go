@@ -157,8 +157,7 @@ type PolicyResult struct {
 	Reserved   func(num string) bool
 	Unservable []string
 	Sessions   []string
-	// ReservedLast is the reserved account the default tick takes last and
-	// leaves for any other below every bar: the Fable store's live one (A102).
+	// Accounts serving a dedicated login are last in the default rotation.
 	ReservedLast func(num string) bool
 	// Serves is the accounts the default login may run on while a live
 	// session runs Mythos and Mythos can be served, the accounts marked for

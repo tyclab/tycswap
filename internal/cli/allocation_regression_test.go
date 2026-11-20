@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -76,5 +77,26 @@ func TestDedicatedResumeRespectsScopedReset(t *testing.T) {
 		if offset > 0 && (err == nil || placement.dir != "") || offset < 0 && (err != nil || placement.dir != dir) {
 			t.Fatalf("reset offset %v: placement %+v, err %v", offset, placement, err)
 		}
+	}
+}
+
+func TestIdleOpusReservesLiveIndependentLogin(t *testing.T) {
+	sw, child := fableStartLogin(t, fableTickFixture{def: "1", usage: map[string][3]float64{
+		"1": {20, 20, 20}, "2": {5, 10, 20}, "3": {10, 30, 20},
+	}}, "2", "3")
+	startResolve = func(string) (string, error) { return "/fake/claude", nil }
+	const id = "aaaaaaaa-bbbb-4111-8111-cccccccccccc"
+	scope := store.MythosLoginDir(sw.BackupDir(), fableEmail("2"), "")
+	writeFile(t, filepath.Join(sw.DefaultProfileDir(), "sessions", fmt.Sprint(os.Getpid())+".json"), fmt.Sprintf(`{"pid":%d,"sessionId":%q}`, os.Getpid(), id))
+	if _, err := reporting.RecordDefaultSessionModel(sw.BackupDir(), id, "mythos", "mythos/"+filepath.Base(scope), sw.Clk.Now()); err != nil {
+		t.Fatal(err)
+	}
+	code, _, message := runCLI(t, []string{"start", "--", "claude", "--model", "opus"}, false, false)
+	data, err := sw.SequenceForUpdate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != 23 || child.execs != 1 || sw.ResolveOwnerSlot(data).Slot != "3" {
+		t.Fatalf("exit %d, default %s: %s", code, sw.ResolveOwnerSlot(data).Slot, message)
 	}
 }

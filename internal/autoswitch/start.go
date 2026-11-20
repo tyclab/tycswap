@@ -249,7 +249,10 @@ func rankStartTargets(candidates []string, entries map[string]usage.UsageEntry, 
 	return orderStartTargets(candidates, entries, set, models, now, startOrder{})
 }
 
-type startOrder struct{ soonestBinding, idleOpus bool }
+type startOrder struct {
+	soonestBinding, idleOpus bool
+	family                   string
+}
 
 func (s StartSnapshot) hasIdlePreference() bool {
 	return s.IdleOpus || len(s.FableAllocationExceptions) > 0
@@ -282,6 +285,8 @@ func orderStartTargets(candidates []string, entries map[string]usage.UsageEntry,
 		spent := false
 		if order.idleOpus {
 			applicable, spent = opusQuota(value, models)
+		} else if order.family != "" {
+			applicable = oauth.FamilyWindows(oauth.NewUsage(value), order.family)
 		}
 		h := usage.AccountHeadroomByClass(value, applicable)
 		room := h.Binding()
@@ -397,8 +402,8 @@ func StartTargets(candidates []string, entries map[string]usage.UsageEntry, set 
 }
 
 // InitialPlacementTargets orders independently signed-in candidates for a new native session.
-func InitialPlacementTargets(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, models []string, now time.Time) []string {
-	return startTargetsWithRoom(orderStartTargets(candidates, entries, set, models, now, startOrder{soonestBinding: set.Strategy == "soonest-reset"}))
+func InitialPlacementTargets(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, family string, now time.Time) []string {
+	return startTargetsWithRoom(orderStartTargets(candidates, entries, set, nil, now, startOrder{soonestBinding: set.Strategy == "soonest-reset", family: family}))
 }
 
 func startTargetsWithRoom(rows []startTarget) []string {

@@ -90,7 +90,8 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 		return tickResult{Outcome: NoAction}, nil
 	}
 	cur := *current
-	currentEmail := e.sw.AccountEmail(cur)
+	source := e.slotIdentity(cur)
+	currentEmail := source.email
 	activeRef := refOf(cur, currentEmail)
 	e.noteLiveLogin(cur)
 	if !e.dryRun {
@@ -283,10 +284,11 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 	transientFailure := false
 	ownershipFailure := false
 	for _, num := range ordered {
-		email := e.sw.AccountEmail(num)
+		target := e.slotIdentity(num)
+		email := target.email
 		if e.dryRun {
 			// Dry-run stops at the decision: no refresh, no quarantine writes.
-			return e.perform(cur, num, email, trigger, axisName)
+			return e.perform(source, target, trigger, axisName)
 		}
 		switch e.freshenTarget(num, email) {
 		case "identity-conflict":
@@ -305,7 +307,7 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 		case "skip-live-session":
 			held[num] = true // no event of its own
 		default: // "ok"
-			return e.perform(cur, num, email, trigger, axisName)
+			return e.perform(source, target, trigger, axisName)
 		}
 	}
 
@@ -700,9 +702,17 @@ func sortQualifying(qualifying []qual, strategy string) {
 	})
 }
 
+type slotIdentity struct{ number, email, organization string }
+
+func (e *Engine) slotIdentity(number string) slotIdentity {
+	identity := e.sw.AccountIdentity(number)
+	return slotIdentity{number, identity["email"], identity["organizationUuid"]}
+}
+
 // perform runs (or, in dry-run, reports) the switch decision (05§12). axis is
 // the window that made the tick move ("" under failover, DESIGN A34).
-func (e *Engine) perform(source, number, email, trigger, axis string) (tickResult, error) {
+func (e *Engine) perform(source, target slotIdentity, trigger, axis string) (tickResult, error) {
+	number, email := target.number, target.email
 	if e.dryRun {
 		var from map[string]any
 		if current := e.sw.CurrentAccountNumber(); current != nil {
@@ -733,7 +743,9 @@ func (e *Engine) perform(source, number, email, trigger, axis string) (tickResul
 			return nil
 		}
 		current := e.sw.CurrentAccountNumber()
-		if current == nil || *current != source || !slices.Contains(e.sw.SwitchableAccountNumbers(), number) || trigger == "drain" && !e.opusOnly() {
+		if current == nil || *current != source.number || e.slotIdentity(*current) != source ||
+			e.slotIdentity(number) != target || !slices.Contains(e.sw.SwitchableAccountNumbers(), number) ||
+			trigger == "drain" && !e.opusOnly() {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "selection-changed", Detail: "active account or target eligibility changed during selection"})
 			return nil
 		}

@@ -187,6 +187,20 @@ const (
 	SevenDayLabel = "7d"
 )
 
+// FamilyWindows names the model-specific windows this account actually reports.
+func FamilyWindows(u *Usage, family string) []string {
+	if u == nil || family == "" {
+		return nil
+	}
+	var names []string
+	for _, window := range u.Scoped {
+		if strings.Contains(strings.ToLower(window.Name), family) {
+			names = append(names, window.Name)
+		}
+	}
+	return names
+}
+
 // ClassPcts is the highest utilization in each window class: fiveHour from the
 // rate window, sevenDay from the week, model from the counted per-model
 // windows. Each is nil when the account reports no window of that class —

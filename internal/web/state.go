@@ -102,8 +102,8 @@ type ClaudeSessionJSON struct {
 	Title      string  `json:"title"`   // from the transcript; "" when none yet
 	Profile    string  `json:"profile"` // slot of a former `run`/`env` profile still running; "" for the default login
 	Group      string  `json:"group,omitempty"`
-	// Store is "fable" or "default" while an account has a Fable login and
-	// the session's status line recorded its store (DESIGN A102); else absent.
+	// A dedicated session reports "mythos". The shared stores report
+	// "default" or "fable" when the Fable store is configured.
 	Store string `json:"store,omitempty"`
 }
 

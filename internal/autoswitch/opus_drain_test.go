@@ -51,8 +51,21 @@ func TestSwitchCommitRejectsChangedActiveAccount(t *testing.T) {
 	rec := &recorder{}
 	engine := build(t, f, settings.Default(), rec, clk, false)
 	f.current = strp("3")
-	result, err := engine.perform("1", "2", f.emails["2"], "at-limit", "7d")
+	result, err := engine.perform(engine.slotIdentity("1"), engine.slotIdentity("2"), "at-limit", "7d")
 	if err != nil || result.Outcome != NoAction || deref(f.current) != "3" || rec.last("no-switch").(NoSwitchEvent).Reason != "selection-changed" {
+		t.Fatalf("result %+v err %v, current %s, events %v", result, err, deref(f.current), rec.kinds())
+	}
+}
+
+func TestSwitchCommitRejectsReassignedSlot(t *testing.T) {
+	clk := newClk()
+	f := twoAccounts(clk, dictEntry(usageOf(10, 96)), dictEntry(usageOf(10, 10)))
+	rec := &recorder{}
+	engine := build(t, f, settings.Default(), rec, clk, false)
+	source, target := engine.slotIdentity("1"), engine.slotIdentity("2")
+	f.identities["2"] = map[string]string{"email": target.email, "organizationUuid": "other-org"}
+	result, err := engine.perform(source, target, "at-limit", "7d")
+	if err != nil || result.Outcome != NoAction || deref(f.current) != "1" || rec.last("no-switch").(NoSwitchEvent).Reason != "selection-changed" {
 		t.Fatalf("result %+v err %v, current %s, events %v", result, err, deref(f.current), rec.kinds())
 	}
 }
