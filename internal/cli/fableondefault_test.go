@@ -293,6 +293,41 @@ func TestStartCheckPrintsNothingUnderAStartOverride(t *testing.T) {
 	}
 }
 
+// A marked account whose Fable login file is corrupt has no usable Fable
+// login. start must not panic on it: it starts the Fable session on the
+// default login (A105.6), and start --check names that cause; the corrupt
+// file is logged by the reads that log as any reader does.
+func TestStartWithACorruptFableLoginOfAMarkedAccount(t *testing.T) {
+	fx := fableTickFixture{def: "3", live: "2", logins: []string{"1", "2"},
+		usage: map[string][3]float64{"1": {10, 20, 10}, "2": {10, 20, 10}, "3": {10, 20, 30}, "4": {10, 20, 30}}}
+	sw, rec := fableStartLogin(t, fx, "1")
+	corrupt := filepath.Join(paths.FableCredentialsDir(sw.BackupDir()), ".creds-1-"+fableEmail("1")+".enc")
+	if _, err := os.Stat(corrupt); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, corrupt, "not base64 !!!")
+	testutil.Unsetenv(t, secureStorageVar)
+	run := func(argv []string, stdin string) (code int, out, errb string) {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("%v panicked: %v", argv, r)
+			}
+		}()
+		return runCodex(t, stdin, argv...)
+	}
+	cause := "⚠ Fable session on the default login: no start login has a Fable login; mark one: tycswap start --allow ID\n"
+	if code, out, errb := run([]string{"start", "--check"}, statusLine(checkSession, "claude-fable-5-1")); code != 0 || out != cause || errb != "" {
+		t.Errorf("start --check: code=%d out=%q err=%q; want %q", code, out, errb, cause)
+	}
+	code, _, stderr := run([]string{"start", "--", "command", "--model", "fable"}, "")
+	if code != 23 || !strings.Contains(stderr, fableStartNotice) || envValue(rec.env, secureStorageVar) != "" {
+		t.Fatalf("start: code=%d stderr=%q, child's %s %q", code, stderr, secureStorageVar, envValue(rec.env, secureStorageVar))
+	}
+	if log := readOrAbsent(t, filepath.Join(sw.BackupDir(), "tycswap.log")); !strings.Contains(log, "illegal base64") {
+		t.Fatalf("the corrupt Fable login is not in the log:\n%s", log)
+	}
+}
+
 func TestStartCheckIsAManagementForm(t *testing.T) {
 	calls := startTestLaunch(t)
 	for _, args := range [][]string{{"--check", "--list"}, {"--check", "command"}, {"--account", "1", "--check"}, {"--check", "--", "command"}, {"--started", "--check"}, {"--check", "--allow", "1"}} {

@@ -117,6 +117,18 @@ func TestDebugGatedByLevel(t *testing.T) {
 	}
 }
 
+// A nil logger writes nothing, at every level: a store view made quiet with
+// a nil logger hands it to the credential store it builds (DESIGN A108).
+func TestNilLoggerWritesNothing(t *testing.T) {
+	var lg *Logger
+	lg.Debugf("d %d", 1)
+	lg.Infof("i %d", 1)
+	lg.Warningf("w %d", 1)
+	lg.Errorf("e %d", 1)
+	lg.Action("Switched to account 1", "test")
+	lg.Prefixed("p: ").Warning("w")
+}
+
 func TestRotation(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tycswap.log")

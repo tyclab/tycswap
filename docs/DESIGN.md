@@ -9340,7 +9340,21 @@ still recorded with no store.
 **Limits.** Nothing moves a running session: only `/exit` and a resume on the
 right model do (A103). The line appears only where the status line runs
 `start --check`. A credential file the state read cannot read is logged as for
-any reader. `--continue` and the `--resume` picker still give `start` no
+any reader.
+
+**A corrupt Fable login in `start`'s snapshots.** `start`'s snapshots of the
+default login (`readStartSnapshotFor`) and of the Fable store
+(`readFableStartSnapshot`), which the check now also takes, read through a
+store view whose logger is nil, so that they write nothing (A90). The Fable
+scope (`ForFable`) builds its credential store with that logger, and a Fable
+login file that could not be decoded made it warn on nil: `start` panicked
+before launching anything while start logins were marked and auto-switch was
+on, and the check printed nothing (found in the round-1 review). A nil
+`logging.Logger` now writes nothing. The views stay silent; the file is
+logged by the Fable store's state read that runs before them with the
+store's logger (`startFableStore`), as for any reader, and such an account
+has no usable Fable login, so `start` sends the Fable session to the default
+login (A105.6) and the check names that cause. `--continue` and the `--resume` picker still give `start` no
 family (A103), so a Fable session resumed so starts on the default login, and
 the check names it.
 
@@ -9365,7 +9379,10 @@ login, no marks, auto-switch off: the line and the store a resume with
 (the no-write snapshot sees a lock directory made and removed),
 `TestStartCheckPrintsNothingUnderAStartOverride` (every override, empty
 values included, on either store),
+`TestStartWithACorruptFableLoginOfAMarkedAccount` (no panic, the
+default login, the cause, the file in `tycswap.log`),
 `TestStartCheckReadsNoTerminal` (Linux, a pseudo-terminal),
 `TestAutoViewNamesAFableSessionOnTheDefaultLogin` (the dashboard's
 `auto.counting`),
-`TestStartCheckIsAManagementForm` and `TestStartHelpNamesCheck`.
+`TestStartCheckIsAManagementForm` and `TestStartHelpNamesCheck`; in
+`logging`, `TestNilLoggerWritesNothing`.
