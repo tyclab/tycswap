@@ -9281,13 +9281,19 @@ not read).
 
 | Session | Prints |
 | --- | --- |
-| Fable on the default login, the Fable store usable | `⚠ Fable session on the default login: /exit, then claude --resume <session_id> --model fable puts it on the Fable store` |
+| Fable on the default login, the Fable store usable | `⚠ Fable session on the default login: /exit, then claude --resume <session_id> --model <model> puts it on the Fable store` |
 | the same, while `start` sends Fable sessions to the default login (A105.6) | `⚠ Fable session on the default login: no start login has a Fable login; mark one: tycswap start --allow ID` |
-| Opus, Mythos, Sonnet or Haiku on the Fable store | `⚠ <Family> session on the Fable store: /exit, then claude --resume <session_id> --model <family> puts it on the default login` |
+| Opus, Mythos, Sonnet or Haiku on the Fable store | `⚠ <Family> session on the Fable store: /exit, then claude --resume <session_id> --model <model> puts it on the default login` |
 | any other, or a box without a Fable login | nothing |
 
-`session_id` is printed only when it is a UUID; otherwise the line ends `:
-restart it with --model <family>`. Nothing else from stdin reaches the output.
+`<model>` is the session's own `model.id` as `ClaudeFamily` validated it,
+lower-cased: letters, digits and dashes and an optional `[1m]`, so the
+version the session pinned and its 1M context survive the resume; with
+`[1m]` it is single-quoted (`--model 'claude-fable-5-2[1m]'`) so zsh does not
+take it as a pattern. The first version named the family alias, which
+dropped both (round-1 review). `session_id` is printed only when it is a
+UUID; otherwise the line ends `: restart it with --model <model>`. Nothing
+else from stdin reaches the output.
 Under one of `start`'s overrides (`cli.startOverride` of the process's
 environment: `CLAUDE_CONFIG_DIR`, a `launch.AuthOverrideEnvVars` variable, or
 a `CLAUDE_SECURESTORAGE_CONFIG_DIR` that does not name the Fable store) it
@@ -9336,7 +9342,8 @@ Fable room, `at-limit`; with the store off it follows the session as 0.17.0
 did), `TestStartCheckNamesASessionOnTheWrongStore` (every row, a provider id,
 an unknown model, a non-UUID or missing session id, empty and malformed input,
 the store off, unusable and without Fable logins, the Fable store's variable;
-the home and the store byte-identical after every run),
+the model id echoed, lower-cased and quoted with `[1m]`, only ASCII of it
+reaching the output; the home and the store byte-identical after every run),
 `TestStartCheckAgreesWithStartOnAFableSession` (a marked start login without
 a Fable login, one whose Fable login is quarantined, one with a usable Fable
 login, no marks, auto-switch off: the line and the store a resume with

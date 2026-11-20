@@ -19,13 +19,12 @@ import (
 // the wrong store: a Fable session on the default login while the Fable store
 // is usable, or another family's session on the Fable store; nothing else,
 // and nothing under start's overrides. While start itself sends Fable
-// sessions to the default login, the line names that cause. It reads the status line's JSON unless stdin is a
-// terminal, and the Fable store as start reads it; it writes nothing and
-// never fails.
+// sessions to the default login, the line names that cause. It reads the
+// status line's JSON unless stdin is a terminal, and the Fable store as start
+// reads it; it writes nothing and never fails.
 func startCheck(in io.Reader, out io.Writer) {
 	defer func() { _ = recover() }()
 	root := paths.GetBackupRoot()
-	// Under start's overrides the session runs on no login start chose.
 	if startOverride(os.Environ(), nil, filepath.Clean(paths.FableStoreDir(root))) != "" {
 		return
 	}
@@ -50,11 +49,22 @@ func startCheck(in io.Reader, out io.Writer) {
 	if !fableSessionProcess && sendsFableToDefault() {
 		line += noFableStartLogin + "; mark one: tycswap start --allow ID"
 	} else if sessionUUID.MatchString(session) {
-		line += "/exit, then claude --resume " + session + " --model " + family + " puts it on " + to
+		line += "/exit, then claude --resume " + session + " --model " + modelArg(model) + " puts it on " + to
 	} else {
-		line += "restart it with --model " + family
+		line += "restart it with --model " + modelArg(model)
 	}
 	fmt.Fprintln(out, line)
+}
+
+// modelArg is the session's own model id for a shell, as ClaudeFamily read
+// and validated it (lower case, letters, digits and dashes, an optional
+// [1m]), single-quoted with [1m] so the shell does not take it as a pattern.
+func modelArg(model string) string {
+	id := strings.ToLower(strings.TrimSpace(model))
+	if strings.HasSuffix(id, "[1m]") {
+		return "'" + id + "'"
+	}
+	return id
 }
 
 // sendsFableToDefault reports whether start sends a Fable session to the

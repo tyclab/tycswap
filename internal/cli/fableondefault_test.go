@@ -137,25 +137,31 @@ func TestStoreTreeSeesALockTakenAndReleased(t *testing.T) {
 // start --check prints one line for a session on the store its model does
 // not belong on, nothing otherwise, exits 0 and writes nothing (DESIGN A108).
 func TestStartCheckNamesASessionOnTheWrongStore(t *testing.T) {
-	onDefault := "⚠ Fable session on the default login: /exit, then claude --resume " + checkSession + " --model fable puts it on the Fable store\n"
-	onFable := func(name, family string) string {
-		return "⚠ " + name + " session on the Fable store: /exit, then claude --resume " + checkSession + " --model " + family + " puts it on the default login\n"
+	onDefault := func(model string) string {
+		return "⚠ Fable session on the default login: /exit, then claude --resume " + checkSession + " --model " + model + " puts it on the Fable store\n"
+	}
+	onFable := func(name, model string) string {
+		return "⚠ " + name + " session on the Fable store: /exit, then claude --resume " + checkSession + " --model " + model + " puts it on the default login\n"
 	}
 	for _, tc := range []struct {
 		name, state, stdin string
 		fableStore         bool
 		want               string
 	}{
-		{"fable on the default login", "on", statusLine(checkSession, "claude-fable-5-1"), false, onDefault},
-		{"fable alias with 1m", "on", statusLine(checkSession, "fable[1m]"), false, onDefault},
-		{"fable on an unknown live slot", "unknown", statusLine(checkSession, "claude-fable-5-1"), false, onDefault},
-		{"fable without a uuid", "on", statusLine("s-1", "claude-fable-5-1"), false, "⚠ Fable session on the default login: restart it with --model fable\n"},
-		{"fable without a session id", "on", `{"model":{"id":"claude-fable-5-1"}}`, false, "⚠ Fable session on the default login: restart it with --model fable\n"},
-		{"session id not echoed", "on", statusLine("$(rm -rf ~); "+checkSession, "claude-fable-5-1"), false, "⚠ Fable session on the default login: restart it with --model fable\n"},
-		{"opus on the Fable store", "on", statusLine(checkSession, "claude-opus-5-5"), true, onFable("Opus", "opus")},
-		{"mythos on the Fable store", "on", statusLine(checkSession, "claude-mythos-5-2"), true, onFable("Mythos", "mythos")},
+		{"fable on the default login", "on", statusLine(checkSession, "claude-fable-5-1"), false, onDefault("claude-fable-5-1")},
+		{"fable alias", "on", statusLine(checkSession, "fable"), false, onDefault("fable")},
+		{"fable alias with 1m", "on", statusLine(checkSession, "fable[1m]"), false, onDefault("'fable[1m]'")},
+		{"pinned fable with 1m", "on", statusLine(checkSession, "claude-fable-5-2[1m]"), false, onDefault("'claude-fable-5-2[1m]'")},
+		{"model id in capitals with spaces", "on", statusLine(checkSession, " CLAUDE-FABLE-5-2[1M] "), false, onDefault("'claude-fable-5-2[1m]'")},
+		{"fable on an unknown live slot", "unknown", statusLine(checkSession, "claude-fable-5-1"), false, onDefault("claude-fable-5-1")},
+		{"fable without a uuid", "on", statusLine("s-1", "claude-fable-5-1"), false, "⚠ Fable session on the default login: restart it with --model claude-fable-5-1\n"},
+		{"fable with 1m without a session id", "on", `{"model":{"id":"claude-fable-5-1[1m]"}}`, false, "⚠ Fable session on the default login: restart it with --model 'claude-fable-5-1[1m]'\n"},
+		{"session id not echoed", "on", statusLine("$(rm -rf ~); "+checkSession, "claude-fable-5-1"), false, "⚠ Fable session on the default login: restart it with --model claude-fable-5-1\n"},
+		{"opus on the Fable store", "on", statusLine(checkSession, "claude-opus-5-5"), true, onFable("Opus", "claude-opus-5-5")},
+		{"mythos on the Fable store", "on", statusLine(checkSession, "claude-mythos-5-2"), true, onFable("Mythos", "claude-mythos-5-2")},
 		{"sonnet on the Fable store", "on", statusLine(checkSession, "sonnet"), true, onFable("Sonnet", "sonnet")},
-		{"haiku on the Fable store", "on", statusLine(checkSession, "claude-haiku-5-1"), true, onFable("Haiku", "haiku")},
+		{"haiku on the Fable store", "on", statusLine(checkSession, "claude-haiku-5-1"), true, onFable("Haiku", "claude-haiku-5-1")},
+		{"opus with 1m on the Fable store", "on", statusLine(checkSession, "claude-opus-5-5[1m]"), true, onFable("Opus", "'claude-opus-5-5[1m]'")},
 		{"opus without a uuid on the Fable store", "on", statusLine("", "opus"), true, "⚠ Opus session on the Fable store: restart it with --model opus\n"},
 		{"fable on the Fable store", "on", statusLine(checkSession, "claude-fable-5-1"), true, ""},
 		{"opus on the default login", "on", statusLine(checkSession, "claude-opus-5-5"), false, ""},
@@ -165,6 +171,7 @@ func TestStartCheckNamesASessionOnTheWrongStore(t *testing.T) {
 		{"no Fable login, opus under the store's variable", "none", statusLine(checkSession, "claude-opus-5-5"), true, ""},
 		{"provider id", "on", statusLine(checkSession, "us.anthropic.claude-fable-5-2-v1:0"), false, ""},
 		{"unknown model", "on", statusLine(checkSession, "gpt-5"), false, ""},
+		{"only ASCII of the model id reaches the output", "on", statusLine(checkSession, "claude-fable-5-1\u212a"), false, onDefault("claude-fable-5-1k")},
 		{"empty stdin", "on", "", false, ""},
 		{"malformed stdin", "on", `{"session_id":`, false, ""},
 	} {

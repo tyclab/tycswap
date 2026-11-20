@@ -1237,7 +1237,8 @@ With a Fable store, pipe the status line's JSON into `tycswap start --check`
 too. It prints one line when the session runs on the wrong store, a Fable
 session on the default login while the Fable store is usable or another model
 on the Fable store, with the command that moves it:
-`⚠ Fable session on the default login: /exit, then claude --resume <id> --model fable puts it on the Fable store`.
+`⚠ Fable session on the default login: /exit, then claude --resume <id> --model claude-fable-5-2 puts it on the Fable store`
+(the session's own model id; quoted when it ends in `[1m]`).
 Otherwise it prints nothing; it always exits 0. Auto-switch does not follow
 such a Fable session on the default login (DESIGN A108).
 
