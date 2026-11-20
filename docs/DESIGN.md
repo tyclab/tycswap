@@ -9288,6 +9288,11 @@ not read).
 
 `session_id` is printed only when it is a UUID; otherwise the line ends `:
 restart it with --model <family>`. Nothing else from stdin reaches the output.
+Under one of `start`'s overrides (`cli.startOverride` of the process's
+environment: `CLAUDE_CONFIG_DIR`, a `launch.AuthOverrideEnvVars` variable, or
+a `CLAUDE_SECURESTORAGE_CONFIG_DIR` that does not name the Fable store) it
+prints nothing: such a session runs on no login `start` chose, and `start`
+would launch a resume of it unchanged (round-1 review).
 
 A105.6 sends every Fable session to the default login, with `no start login
 has a Fable login; starting on the default login.`, while start logins are
@@ -9337,5 +9342,7 @@ a Fable login, one whose Fable login is quarantined, one with a usable Fable
 login, no marks, auto-switch off: the line and the store a resume with
 `--model fable` starts on agree), `TestStoreTreeSeesALockTakenAndReleased`
 (the no-write snapshot sees a lock directory made and removed),
+`TestStartCheckPrintsNothingUnderAStartOverride` (every override, empty
+values included, on either store),
 `TestStartCheckReadsNoTerminal` (Linux, a pseudo-terminal),
 `TestStartCheckIsAManagementForm` and `TestStartHelpNamesCheck`.

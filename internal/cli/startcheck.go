@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/keychain"
@@ -16,13 +17,18 @@ import (
 
 // startCheck prints one line for the status line's session when it runs on
 // the wrong store: a Fable session on the default login while the Fable store
-// is usable, or another family's session on the Fable store; nothing else.
-// While start itself sends Fable sessions to the default login, the line
-// names that cause. It reads the status line's JSON unless stdin is a
+// is usable, or another family's session on the Fable store; nothing else,
+// and nothing under start's overrides. While start itself sends Fable
+// sessions to the default login, the line names that cause. It reads the status line's JSON unless stdin is a
 // terminal, and the Fable store as start reads it; it writes nothing and
 // never fails.
 func startCheck(in io.Reader, out io.Writer) {
 	defer func() { _ = recover() }()
+	root := paths.GetBackupRoot()
+	// Under start's overrides the session runs on no login start chose.
+	if startOverride(os.Environ(), nil, filepath.Clean(paths.FableStoreDir(root))) != "" {
+		return
+	}
 	if f, ok := in.(*os.File); ok && isTTY(f) {
 		return
 	}
@@ -32,7 +38,7 @@ func startCheck(in io.Reader, out io.Writer) {
 	if family == "" || fableSessionProcess == (family == "fable") {
 		return
 	}
-	fable, hasFableLogins := startFableStore(paths.GetBackupRoot())
+	fable, hasFableLogins := startFableStore(root)
 	if !hasFableLogins || !fableSessionProcess && !fable.Usable {
 		return
 	}

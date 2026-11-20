@@ -19,6 +19,7 @@ import (
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/cclock"
 	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/launch"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -227,6 +228,40 @@ func TestStartCheckAgreesWithStartOnAFableSession(t *testing.T) {
 				t.Fatalf("start: code=%d stderr=%q, child on the Fable store %v", code, stderr, onFable)
 			}
 		})
+	}
+}
+
+// Under one of start's overrides the session runs on no login start chose,
+// and start would leave a resume as it is: start --check prints nothing.
+func TestStartCheckPrintsNothingUnderAStartOverride(t *testing.T) {
+	type override struct{ key, value string }
+	cases := []override{{"CLAUDE_CONFIG_DIR", ""}, {"CLAUDE_CONFIG_DIR", "dir"}, {secureStorageVar, ""}, {secureStorageVar, "dir"}}
+	for _, key := range launch.AuthOverrideEnvVars {
+		if key != secureStorageVar {
+			cases = append(cases, override{key, "x-check"})
+		}
+	}
+	for _, tc := range cases {
+		for _, fableStore := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s=%s, on the Fable store %v", tc.key, tc.value, fableStore), func(t *testing.T) {
+				fableStart(t, "on")
+				model := "claude-fable-5-1"
+				if fableStore {
+					testutil.Setenv(t, secureStorageVar, paths.FableStoreDir(paths.GetBackupRoot()))
+					model = "claude-opus-5-5"
+				} else {
+					testutil.Unsetenv(t, secureStorageVar)
+				}
+				value := tc.value
+				if value == "dir" {
+					value = t.TempDir()
+				}
+				testutil.Setenv(t, tc.key, value)
+				if code, out, errb := runCodex(t, statusLine(checkSession, model), "start", "--check"); code != 0 || out != "" || errb != "" {
+					t.Fatalf("code=%d out=%q err=%q; want nothing", code, out, errb)
+				}
+			})
+		}
 	}
 }
 

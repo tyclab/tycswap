@@ -1645,8 +1645,10 @@ names it, else on the default login; its family is that of `model.id` (an
 alias or a `claude-<family>-…` id; a provider's id or an unknown model prints
 nothing). A `session_id` that is not a UUID is not printed: the line then ends
 `: restart it with --model <family>`. Any other session, a box without a Fable
-login, and a Fable session on the default login while the Fable store is off
-or unusable (where `start` puts it) print nothing. Where `start` sends a Fable
+login, a Fable session on the default login while the Fable store is off or
+unusable (where `start` puts it), and every session under one of `start`'s
+overrides (`CLAUDE_CONFIG_DIR`, an auth override such as `ANTHROPIC_API_KEY`,
+or a `CLAUDE_SECURESTORAGE_CONFIG_DIR` of your own; see above) print nothing. Where `start` sends a Fable
 session is asked of the function `start` decides with, so a resume never lands
 where the line said it would not. It exits 0
 whatever happens, creates nothing, takes no lock, makes no network request and
