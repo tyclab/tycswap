@@ -58,7 +58,18 @@ func TestMythosEnrollmentAndNativeStart(t *testing.T) {
 	}
 	previousAsk := askPlacement
 	t.Cleanup(func() { askPlacement = previousAsk })
-	askPlacement = func(_ ioStreams, question string) (bool, error) {
+	id := "12345678-1234-4123-8123-1234567890ab"
+	askPlacement = func(_ ioStreams, question string, printMode bool) (bool, error) {
+		if !printMode || !strings.Contains(question, id) {
+			t.Fatalf("print-mode placement omitted its session ID: %s", question)
+		}
+		return false, nil
+	}
+	code, _, msg = f.run(t, "start", "command", "--model", "mythos", "--session-id", id, "-p")
+	if code != 1 || calls != 1 || !strings.Contains(msg, "deferred") {
+		t.Fatalf("deferred print-mode start: code=%d calls=%d message=%q", code, calls, msg)
+	}
+	askPlacement = func(_ ioStreams, question string, _ bool) (bool, error) {
 		if !strings.Contains(question, "Account-1, allocated to opus") || !strings.Contains(question, "this Mythos session") {
 			t.Fatalf("incomplete question: %s", question)
 		}
@@ -68,7 +79,7 @@ func TestMythosEnrollmentAndNativeStart(t *testing.T) {
 	if code != 19 || calls != 2 {
 		t.Fatalf("approved exception: code=%d calls=%d message=%q", code, calls, msg)
 	}
-	askPlacement = func(_ ioStreams, _ string) (bool, error) {
+	askPlacement = func(_ ioStreams, _ string, _ bool) (bool, error) {
 		if code, _, msg := f.run(t, "disable", "1"); code != 0 {
 			t.Fatal(msg)
 		}

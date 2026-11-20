@@ -30,10 +30,10 @@ type mythosPlacement struct {
 	dir, number, allocation string
 }
 
-var askPlacement = func(streams ioStreams, question string) (bool, error) {
+var askPlacement = func(streams ioStreams, question string, printMode bool) (bool, error) {
 	in, inputOK := streams.in.(*os.File)
 	out, outputOK := streams.err.(*os.File)
-	if !inputOK || !outputOK || !humanTerminal(isTTY(in), isTTY(out)) {
+	if printMode || !inputOK || !outputOK || !humanTerminal(isTTY(in), isTTY(out)) {
 		if broker := os.Getenv("TYCSWAP_PLACEMENT_BROKER"); broker != "" {
 			fmt.Fprintln(streams.err, "Operator decision needed:", question)
 			return askPlacementBroker(broker, question)
@@ -44,20 +44,26 @@ var askPlacement = func(streams ioStreams, question string) (bool, error) {
 	return ok && i == 1, nil
 }
 
-func mythosStartDir(root, model, account, session string, streams ioStreams) (string, error) {
+func mythosStartDir(root, model, account string, args []string, streams ioStreams) (string, error) {
+	session := resumedSession(args)
 	proposed, err := locateMythosLogin(root, model, account, session)
 	if err != nil || proposed.allocation == "" {
 		return proposed.dir, err
 	}
 	start := fmt.Sprintf("start %d", os.Getpid())
-	if sessionUUID.MatchString(session) {
+	if newID, _ := flagValue(args, "--session-id"); sessionUUID.MatchString(newID) {
+		start = newID
+	} else if sessionUUID.MatchString(session) {
 		start = session
 	}
 	if cwd, err := os.Getwd(); err == nil {
 		start = fmt.Sprintf("%q, %s", filepath.Base(cwd), start)
 	}
 	question := fmt.Sprintf("Use Account-%s, allocated to %s, for this Mythos session (%s) and use its shared quota?", proposed.number, proposed.allocation, start)
-	ok, err := askPlacement(streams, question)
+	if stop := slices.Index(args, "--"); stop >= 0 {
+		args = args[:stop]
+	}
+	ok, err := askPlacement(streams, question, slices.Contains(args, "-p") || slices.Contains(args, "--print"))
 	if err != nil {
 		return "", err
 	}

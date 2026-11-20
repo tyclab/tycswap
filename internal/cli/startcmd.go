@@ -159,7 +159,7 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 		if model == "opus" && !launch.IsClaudeCommand(bin) {
 			model = ""
 		}
-		dir, err := mythosStartDir(root, model, parsed.account, resumedSession(args[1:]), streams)
+		dir, err := mythosStartDir(root, model, parsed.account, args[1:], streams)
 		if err != nil {
 			startNotice(streams.err, err.Error())
 			return 1

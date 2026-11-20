@@ -48,7 +48,7 @@ func TestPlacementQuestionBroker(t *testing.T) {
 	} {
 		t.Run(tc.answer, func(t *testing.T) {
 			t.Setenv("TEST_PLACEMENT_REPLY", tc.answer)
-			ok, err := askPlacement(ioStreams{err: io.Discard}, "Use the synthetic account for this placement?")
+			ok, err := askPlacement(ioStreams{err: io.Discard}, "Use the synthetic account for this placement?", false)
 			if ok != tc.allow || (err != nil) != tc.failure {
 				t.Fatalf("approval=%v, err=%v", ok, err)
 			}
