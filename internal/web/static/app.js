@@ -1034,7 +1034,7 @@
     var active = accts.filter(function (a) { return a.isActive; })[0];
     var sig = JSON.stringify(active ? [active.number, active.email, active.alias, active.usage, active.usageStatus, active.atLimit] : null);
     var fable = fableLine(st);
-    if (fable) { sig += JSON.stringify([st.fable.state, st.fable.number, st.fable.email, st.fable.reason, accts.map(accountName)]); }
+    if (fable) { sig += JSON.stringify([st.fable.state, st.fable.number, st.fable.email, st.fable.reason, st.fable.startup, accts.map(accountName)]); }
     if (box.getAttribute('data-sig') === sig) { return; }
     box.setAttribute('data-sig', sig);
     clear(box);
@@ -1070,6 +1070,9 @@
   function fableLine(st) {
     var f = st.fable;
     if (!f) { return null; }
+    if (f.state === 'parked') {
+      return el('div', { class: 'hdr-fable', text: 'Fable store: ' + (f.startup || 'parked') });
+    }
     if (f.state === 'off') {
       return el('div', { class: 'hdr-fable', text: 'Fable store off', title: 'Turn it on: ' + NAME + ' switch --store fable <account>' });
     }
@@ -1701,6 +1704,9 @@
   // and only while auto-switch and the store are on.
   function fableAutoLine(st) {
     var a = st.auto, f = a && a.fable;
+    if (st.fable && st.fable.state === 'parked') {
+      return el('p', { class: 'auto-line', id: 'auto-fable', text: 'Fable store: ' + (st.fable.startup || 'parked') });
+    }
     if (!f) { return null; }
     var text = "Fable store: this dashboard's checks do not move it; a scheduler running " + NAME + ' auto --once does';
     if (st.fable && st.fable.state === 'off') {
