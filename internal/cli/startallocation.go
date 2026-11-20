@@ -15,28 +15,30 @@ import (
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/termsafe"
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
-func confirmStartAllocation(number, allocation, model string, args []string, streams ioStreams) error {
+func confirmStartAllocation(name, allocation, model string, args []string, streams ioStreams) error {
 	start := fmt.Sprintf("start %d", os.Getpid())
 	if newID, _ := flagValue(args, "--session-id"); sessionUUID.MatchString(newID) {
 		start = newID
 	} else if resumed := resumedSession(args); sessionUUID.MatchString(resumed) {
 		start = resumed
 	}
+	where := ""
 	if cwd, err := os.Getwd(); err == nil {
-		start = fmt.Sprintf("%q, %s", filepath.Base(cwd), start)
+		where = " in " + termsafe.Strip(filepath.Base(cwd))
 	}
 	family := "Claude"
 	if model != "" {
 		family = strings.ToUpper(model[:1]) + model[1:]
 	}
-	question := fmt.Sprintf("Use Account-%s, allocated to %s, for this %s session (%s) and use its shared quota?", number, allocation, family, start)
+	question := fmt.Sprintf("Use %s’s shared quota for this %s session%s? It is allocated to %s.", termsafe.Strip(name), family, where, allocation)
 	if stop := slices.Index(args, "--"); stop >= 0 {
 		args = args[:stop]
 	}
-	ok, err := askPlacement(streams, question, slices.Contains(args, "-p") || slices.Contains(args, "--print"))
+	ok, err := askPlacement(streams, question, start, slices.Contains(args, "-p") || slices.Contains(args, "--print"))
 	if err != nil {
 		return err
 	}
@@ -47,8 +49,8 @@ func confirmStartAllocation(number, allocation, model string, args []string, str
 }
 
 type sharedStartException struct {
-	number, allocation string
-	identity           usage.Identity
+	number, name, allocation string
+	identity                 usage.Identity
 }
 
 // Rank an ordinary eligible choice ahead of an exception only when start is
@@ -85,7 +87,7 @@ func confirmSharedStart(root string, fable bool, family string, args []string, s
 	if err != nil || proposed.allocation == "" {
 		return err
 	}
-	if err := confirmStartAllocation(proposed.number, proposed.allocation, family, args, streams); err != nil {
+	if err := confirmStartAllocation(proposed.name, proposed.allocation, family, args, streams); err != nil {
 		return err
 	}
 	current, err := readSharedStartException(root, fable, family)
@@ -168,7 +170,7 @@ func readSharedStartException(root string, fable bool, family string) (sharedSta
 	if room := startModelHeadroom(entry, family, view.Clk.Now()); room != nil && *room <= 0 {
 		return none, fmt.Errorf("Account-%s has no remaining quota for this %s start", number, family)
 	}
-	return sharedStartException{number: number, allocation: strings.Join(models, ", "), identity: id}, nil
+	return sharedStartException{number: number, name: store.AccountNameFrom(data, number), allocation: strings.Join(models, ", "), identity: id}, nil
 }
 
 func startModelHeadroom(entry usage.UsageEntry, family string, now time.Time) *float64 {

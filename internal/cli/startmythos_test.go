@@ -76,16 +76,19 @@ func TestResumeKeepsIndependentIdentityAfterModelChange(t *testing.T) {
 		t.Fatalf("native status: code=%d calls=%d %s", code, calls, msg)
 	}
 	run("models", "1", "mythos")
-	question := ""
-	askPlacement = func(_ ioStreams, q string, _ bool) (bool, error) { question = q; return false, nil }
+	var question, detail string
+	askPlacement = func(_ ioStreams, q, d string, _ bool) (bool, error) {
+		question, detail = q, d
+		return false, nil
+	}
 	for _, family := range []string{"Opus", "Fable"} {
 		args := resume
 		if family == "Fable" {
 			args = append(args, "--model", "fable")
 		}
 		if code, _, msg := f.run(t, args...); code != 1 || calls != 1 ||
-			!strings.Contains(question, "this "+family+" session") || !strings.Contains(question, id) ||
-			!strings.Contains(question, "Account-1, allocated to mythos") {
+			!strings.Contains(question, "this "+family+" session") || !strings.Contains(detail, id) ||
+			!strings.Contains(question, "a@example.com’s shared quota") {
 			t.Fatalf("allocation on resume: code=%d calls=%d question=%q %s", code, calls, question, msg)
 		}
 	}
@@ -157,8 +160,8 @@ func TestMythosEnrollmentAndNativeStart(t *testing.T) {
 	previousAsk := askPlacement
 	t.Cleanup(func() { askPlacement = previousAsk })
 	id := "12345678-1234-4123-8123-1234567890ab"
-	askPlacement = func(_ ioStreams, question string, printMode bool) (bool, error) {
-		if !printMode || !strings.Contains(question, id) {
+	askPlacement = func(_ ioStreams, question, detail string, printMode bool) (bool, error) {
+		if !printMode || !strings.Contains(detail, id) {
 			t.Fatalf("print-mode placement omitted its session ID: %s", question)
 		}
 		return false, nil
@@ -167,8 +170,8 @@ func TestMythosEnrollmentAndNativeStart(t *testing.T) {
 	if code != 1 || calls != 1 || !strings.Contains(msg, "deferred") {
 		t.Fatalf("deferred print-mode start: code=%d calls=%d message=%q", code, calls, msg)
 	}
-	askPlacement = func(_ ioStreams, question string, _ bool) (bool, error) {
-		if !strings.Contains(question, "Account-1, allocated to opus") || !strings.Contains(question, "this Mythos session") {
+	askPlacement = func(_ ioStreams, question, detail string, _ bool) (bool, error) {
+		if !strings.Contains(question, "a@example.com’s shared quota") || !strings.Contains(question, "this Mythos session") {
 			t.Fatalf("incomplete question: %s", question)
 		}
 		return true, nil
@@ -177,7 +180,7 @@ func TestMythosEnrollmentAndNativeStart(t *testing.T) {
 	if code != 19 || calls != 2 {
 		t.Fatalf("approved exception: code=%d calls=%d message=%q", code, calls, msg)
 	}
-	askPlacement = func(_ ioStreams, _ string, _ bool) (bool, error) {
+	askPlacement = func(_ ioStreams, _, _ string, _ bool) (bool, error) {
 		if code, _, msg := f.run(t, "disable", "1"); code != 0 {
 			t.Fatal(msg)
 		}

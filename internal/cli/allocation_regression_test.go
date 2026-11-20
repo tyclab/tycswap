@@ -15,17 +15,17 @@ import (
 
 func TestSharedMythosStartAsksBeforeSpendingExcludedAllocation(t *testing.T) {
 	sw, child := fableStartLogin(t, fableTickFixture{def: "1", off: true}, "1")
-	setRecord(t, sw, "1", "mythos", true, store.ModelsKey, []string{"fable"})
+	setRecord(t, sw, "1", "alias", "workstation", "mythos", true, store.ModelsKey, []string{"fable"})
 	startResolve = func(string) (string, error) { return "/fake/claude", nil }
 	previous := askPlacement
 	t.Cleanup(func() { askPlacement = previous })
 	var questions []string
-	askPlacement = func(_ ioStreams, question string, _ bool) (bool, error) {
+	askPlacement = func(_ ioStreams, question, detail string, _ bool) (bool, error) {
 		questions = append(questions, question)
 		return false, nil
 	}
 	code, _, message := runCLI(t, []string{"start", "--", "claude", "--model", "mythos"}, false, false)
-	if code == 0 || child.execs != 0 || len(questions) != 1 || !strings.Contains(questions[0], "allocated to fable") || !strings.Contains(message, "deferred") {
+	if code == 0 || child.execs != 0 || len(questions) != 1 || !strings.Contains(questions[0], "Use workstation") || !strings.Contains(questions[0], "allocated to fable") || !strings.Contains(message, "deferred") {
 		t.Fatalf("exit %d, launches %d, questions %q, message %q", code, child.execs, questions, message)
 	}
 }

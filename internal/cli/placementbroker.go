@@ -16,7 +16,7 @@ const placementUse = "Use this time"
 
 // Only the start requesting a placement owns this connection. Closing stdin
 // cancels its outstanding question in the broker; no store lock is held.
-func askPlacementBroker(path, question string) (bool, error) {
+func askPlacementBroker(path, question, detail string) (bool, error) {
 	if !filepath.IsAbs(path) {
 		return false, errors.New("TYCSWAP_PLACEMENT_BROKER must name an absolute executable path")
 	}
@@ -36,7 +36,7 @@ func askPlacementBroker(path, question string) (bool, error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	stopClose := context.AfterFunc(ctx, func() { in.Close() })
-	answer, err := placementExchange(in, out, question)
+	answer, err := placementExchange(in, out, question, detail)
 	stopClose()
 	in.Close()
 	if waitErr := cmd.Wait(); err == nil && waitErr != nil {
@@ -53,11 +53,12 @@ func askPlacementBroker(path, question string) (bool, error) {
 
 // The broker accepts one JSON question and sends its final decision. An open
 // input pipe means the requesting process still wants the answer.
-func placementExchange(in io.Writer, out io.Reader, question string) (bool, error) {
+func placementExchange(in io.Writer, out io.Reader, question, detail string) (bool, error) {
 	request := struct {
 		Question string   `json:"question"`
+		Context  string   `json:"context,omitempty"`
 		Options  []string `json:"options"`
-	}{question, []string{"Wait", placementUse}}
+	}{question, detail, []string{"Wait", placementUse}}
 	if err := json.NewEncoder(in).Encode(request); err != nil {
 		return false, errors.New("could not send the placement question")
 	}

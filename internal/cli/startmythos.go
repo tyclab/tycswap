@@ -30,16 +30,16 @@ func validMythosDigest(digest string) bool {
 }
 
 type mythosPlacement struct {
-	dir, number, allocation string
+	dir, number, name, allocation string
 }
 
-var askPlacement = func(streams ioStreams, question string, printMode bool) (bool, error) {
+var askPlacement = func(streams ioStreams, question, detail string, printMode bool) (bool, error) {
 	in, inputOK := streams.in.(*os.File)
 	out, outputOK := streams.err.(*os.File)
 	if printMode || !inputOK || !outputOK || !humanTerminal(isTTY(in), isTTY(out)) {
 		if broker := os.Getenv("TYCSWAP_PLACEMENT_BROKER"); broker != "" {
 			fmt.Fprintln(streams.err, "Operator decision needed:", question)
-			return askPlacementBroker(broker, question)
+			return askPlacementBroker(broker, question, detail)
 		}
 		return false, fmt.Errorf("operator decision needed: %s Run in a terminal or configure TYCSWAP_PLACEMENT_BROKER", question)
 	}
@@ -53,7 +53,7 @@ func mythosStartDir(root, model, account string, args []string, streams ioStream
 	if err != nil || proposed.allocation == "" {
 		return proposed.dir, err
 	}
-	if err := confirmStartAllocation(proposed.number, proposed.allocation, model, args, streams); err != nil {
+	if err := confirmStartAllocation(proposed.name, proposed.allocation, model, args, streams); err != nil {
 		return "", err
 	}
 	current, err := locateMythosLogin(root, model, account, session)
@@ -120,7 +120,7 @@ func locateMythosLogin(root, model, account, session string) (mythosPlacement, e
 		dir, ready := view.MythosLoginReady(data, num)
 		if ready && (account == "" || account == num) && (!dedicated || filepath.Base(dir) == bound) {
 			candidates = append(candidates, num)
-			placement := mythosPlacement{dir: dir, number: num}
+			placement := mythosPlacement{dir: dir, number: num, name: store.AccountNameFrom(data, num)}
 			if models, explicit := store.ModelsFrom(data, num); explicit && !slices.Contains(models, model) {
 				placement.allocation = strings.Join(models, ", ")
 			}

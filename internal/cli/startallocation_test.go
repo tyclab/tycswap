@@ -41,9 +41,9 @@ func TestNativeStartConfirmsActualSharedAllocation(t *testing.T) {
 			prev := askPlacement
 			t.Cleanup(func() { askPlacement = prev })
 			questions := 0
-			askPlacement = func(_ ioStreams, question string, printMode bool) (bool, error) {
+			askPlacement = func(_ ioStreams, question, detail string, printMode bool) (bool, error) {
 				questions++
-				if !strings.Contains(question, "Account-"+tc.wantAccount+", allocated to "+tc.allocated) || !printMode {
+				if !strings.Contains(question, fableEmail(tc.wantAccount)) || !strings.Contains(question, "allocated to "+tc.allocated) || !printMode {
 					t.Fatalf("unexpected question %q, print=%v", question, printMode)
 				}
 				return tc.allow, nil
@@ -69,7 +69,7 @@ func TestSharedAllocationRevalidatedBeforeExec(t *testing.T) {
 			prev := askPlacement
 			t.Cleanup(func() { askPlacement = prev })
 			questions := 0
-			askPlacement = func(_ ioStreams, _ string, _ bool) (bool, error) {
+			askPlacement = func(_ ioStreams, _, _ string, _ bool) (bool, error) {
 				questions++
 				switch change {
 				case "disabled":
@@ -121,7 +121,7 @@ func TestPendingNativeFableSelectionPrefersAnOrdinaryCandidate(t *testing.T) {
 			startResolve = func(string) (string, error) { return "/verified/claude", nil }
 			code, _, stderr := runCLI(t, []string{"start", "--", "claude", "--model", "fable"}, false, false)
 			if name == "live session" {
-				if code != 1 || child.execs != 0 || !strings.Contains(stderr, "Use Account-2, allocated to opus") {
+				if code != 1 || child.execs != 0 || !strings.Contains(stderr, "Use "+fableEmail("2")+"’s shared quota") {
 					t.Fatalf("active login preference changed: code=%d execs=%d stderr=%q", code, child.execs, stderr)
 				}
 				return
@@ -170,7 +170,7 @@ func TestBoundResumeRechecksIndependentIdentityAndQuotaAfterApproval(t *testing.
 			prev := askPlacement
 			t.Cleanup(func() { askPlacement = prev })
 			asked := 0
-			askPlacement = func(_ ioStreams, _ string, _ bool) (bool, error) {
+			askPlacement = func(_ ioStreams, _, _ string, _ bool) (bool, error) {
 				asked++
 				if change == "identity" {
 					setRecord(t, sw, "1", "organizationUuid", "another-fixture-org")
