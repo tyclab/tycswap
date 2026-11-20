@@ -17,6 +17,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"sync"
 	"syscall"
@@ -25,10 +26,13 @@ import (
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
 	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/groups"
 	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/store"
 )
 
 const autoProg = "tycswap auto"
@@ -214,6 +218,9 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	// The retirement runs whatever the setting; the Codex tick follows it
 	// each round, as the Claude tick does, and a dry run still decides (A83).
 	codexRound := func(ctx context.Context) {
+		if !once && !dryRun {
+			reconcileDisabledTick(sw, onEvent)
+		}
 		retireGroups(sw, onEvent, dryRun)
 		retireProfiles(sw, dryRun)
 		if dryRun || autoSwitchOn(root) {
@@ -246,10 +253,42 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	return code
 }
 
+// Automatic moves honor the allocations of every known model on this login.
+type scheduledDefault struct {
+	autoswitchAdapter
+	families []string
+}
+
+func (a scheduledDefault) SwitchableAccountNumbers() []string {
+	candidates := a.autoswitchAdapter.SwitchableAccountNumbers()
+	if len(a.families) == 0 {
+		return candidates
+	}
+	data, err := a.SequenceForUpdate()
+	if err != nil {
+		return nil
+	}
+	return slices.DeleteFunc(candidates, func(num string) bool {
+		models, explicit := store.ModelsFrom(data, num)
+		return explicit && slices.ContainsFunc(a.families, func(family string) bool {
+			return (family == "opus" || family == "fable" || family == mythosFamily) && !slices.Contains(models, family)
+		})
+	})
+}
+
 // defaultEngine is the default store's engine `auto` runs under policy.
 func defaultEngine(sw *core.Switcher, policy reporting.PolicyResult, onEvent func(autoswitch.Event), dryRun bool) *autoswitch.Engine {
 	root := sw.BackupDir()
-	return autoswitch.NewEngine(autoswitchAdapter{engineSwitcher(sw, dryRun)}, policy.Settings, onEvent, dryRun,
+	families := policy.Sessions
+	if policy.FableOnDefault > 0 {
+		families = append(slices.Clone(families), "fable")
+	}
+	var opusOnly func() bool
+	if policy.OpusOnly {
+		opusOnly = func() bool { return defaultSessionPolicy(sw.Store, policy.Settings, sw.Clk.Now()).OpusOnly }
+	}
+	return autoswitch.NewEngine(scheduledDefault{autoswitchAdapter{engineSwitcher(sw, dryRun)}, families}, policy.Settings, onEvent, dryRun,
+		autoswitch.WithOpusDrain(opusOnly),
 		autoswitch.WithOAuthClient(sw.OAuth),
 		autoswitch.WithLogger(sw.Log),
 		autoswitch.WithClock(sw.Clk),
@@ -261,10 +300,45 @@ func defaultEngine(sw *core.Switcher, policy reporting.PolicyResult, onEvent fun
 	)
 }
 
+func reconcileDisabledTick(sw *core.Switcher, onEvent func(autoswitch.Event)) autoswitch.TickOutcome {
+	enabled := func() bool { return autoSwitchOn(sw.BackupDir()) }
+	if !enabled() {
+		return autoswitch.NoAction
+	}
+	outcome := autoswitch.NoAction
+	err := lifecycle.RetryDisabledSelections(sw.Store, enabled, func(fable bool, from, to groups.Account) {
+		ts := sw.Clk.Now().UTC().Format(time.RFC3339)
+		var event autoswitch.Event = autoswitch.NoSwitchEvent{Ts: ts, Reason: "withdrawn",
+			Detail: "Disabled Account-" + from.Number + " is saved; no eligible replacement is available"}
+		if to.Number != "" {
+			event = autoswitch.SwitchEvent{Ts: ts, Trigger: "disabled-account",
+				FromRef: map[string]any{"number": slotNumber(from.Number), "email": from.Email},
+				ToRef:   map[string]any{"number": slotNumber(to.Number), "email": to.Email}}
+		}
+		if fable {
+			event = fableEvent{event}
+		}
+		onEvent(event)
+		outcome = autoswitch.Switched
+	})
+	if err != nil {
+		onEvent(autoswitch.ErrorEvent{Ts: sw.Clk.Now().UTC().Format(time.RFC3339), Message: err.Error()})
+		return autoswitch.Error
+	}
+	return outcome
+}
+
 // onceTicks is `auto --once`'s tick: engine's, then the Fable store's while
 // auto-switch is on (or in a dry run), and the more significant outcome.
 func onceTicks(sw *core.Switcher, engine *autoswitch.Engine, merged settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool) autoswitch.TickOutcome {
-	outcome := engine.Tick()
+	outcome := autoswitch.NoAction
+	if !dryRun {
+		outcome = reconcileDisabledTick(sw, onEvent)
+		if outcome == autoswitch.Error {
+			return outcome
+		}
+	}
+	outcome = significantOutcome(outcome, engine.Tick())
 	if dryRun || autoSwitchOn(sw.BackupDir()) {
 		if fable, ran := fableTick(sw, merged, onEvent, dryRun); ran {
 			outcome = significantOutcome(outcome, fable)
@@ -325,14 +399,22 @@ func autoOnOffCommand(verb string, rest []string, s ioStreams) int {
 	switch {
 	case verb == "status":
 		on := autoSwitchOn(root)
+		parking, err := sw.Store.ParkingStatus()
+		if err != nil {
+			return autoError(err, jsonMode, s)
+		}
 		if jsonMode {
 			writeJSONCompact(s.out, struct {
-				SchemaVersion int  `json:"schemaVersion"`
-				Enabled       bool `json:"enabled"`
-			}{jsonout.SchemaVersion, on})
+				SchemaVersion int    `json:"schemaVersion"`
+				Enabled       bool   `json:"enabled"`
+				FableStartup  string `json:"fableStartup,omitempty"`
+			}{jsonout.SchemaVersion, on, parking.Description()})
 			return 0
 		}
 		fmt.Fprintln(s.out, "Auto-switch: "+onOffWord(on))
+		if parking != nil {
+			fmt.Fprintln(s.out, "Fable store: "+parking.Description())
+		}
 		return 0
 	case ifUnset:
 		seeded, err := settings.SeedSetting(root, "autoswitch.enabled", "true")

@@ -3,6 +3,7 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/reporting"
 )
 
 func fableLogin(access string) string {
@@ -280,5 +282,49 @@ func TestSwitchStoreFableRefusalExits1(t *testing.T) {
 	code, _, errb := runSub(t, "switch", "--store", "fable", "3")
 	if code != 1 || !strings.Contains(errb, "Account-3 is an API-key account") {
 		t.Fatalf("exit %d, stderr %q", code, errb)
+	}
+}
+
+func TestFableIdleSelectionBeforeNativeLaunch(t *testing.T) {
+	for _, scope := range []string{"idle", "fable", "unknown", "other store", "corrupt registry", "start hold"} {
+		t.Run(scope, func(t *testing.T) {
+			sw := fableCLISwitcher(t)
+			reg := filepath.Join(sw.DefaultProfileDir(), "sessions", fmt.Sprint(os.Getpid())+".json")
+			fable, err := sw.ForFable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch scope {
+			case "idle":
+			case "corrupt registry":
+				writeFile(t, reg, "{")
+			case "start hold":
+				writeFile(t, fable.StatePath(), fmt.Sprintf(`{"startHolds":{"fixture":%f}}`, float64(sw.Clk.Now().Unix())+5))
+			default:
+				writeFile(t, reg, fmt.Sprintf(`{"pid":%d,"sessionId":"fixture"}`, os.Getpid()))
+				if scope != "unknown" {
+					recorded := "fable"
+					if scope == "other store" {
+						recorded = ""
+					}
+					if _, err := reporting.RecordDefaultSessionModel(sw.BackupDir(), "fixture", "opus", recorded, sw.Clk.Now()); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			before, err := os.ReadFile(filepath.Join(paths.FableStoreDir(sw.BackupDir()), ".credentials.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			code, _, msg := runHuman(t, "switch", "--store", "fable", "--if-idle", "2", "--json")
+			after, err := os.ReadFile(filepath.Join(paths.FableStoreDir(sw.BackupDir()), ".credentials.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			allowed := scope == "idle" || scope == "other store"
+			if (code == 0) != allowed || (string(before) != string(after)) != allowed {
+				t.Fatalf("exit %d, change %v: %s", code, string(before) != string(after), msg)
+			}
+		})
 	}
 }

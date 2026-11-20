@@ -1104,7 +1104,20 @@ Legacy: `tycswap --disable-account <id>`.
 
 Disables selection of this Claude account across the default and Fable stores.
 Direct switches, forced switches, and new managed starts on the disabled account
-require it to be enabled again. The roster and saved credentials retain it.
+require it to be enabled again. Disabling an idle selected account immediately
+moves its store to an eligible replacement, including with automatic switching
+off. The default store accepts an ordinary Opus allocation and the secondary
+store requires a Fable-compatible login. Without a replacement, the store keeps
+the account backup and clears its selection. Disabling the same account again
+retries a withdrawal.
+
+A registered live session, IDE or managed startup hold keeps the login it is
+using. A default change also writes shared Claude configuration, so any registered
+native client holds it. The secondary credential store can change independently
+when every registered process is known to use another store. Native clients that
+start outside tycswap register themselves after launch and do not take tycswap's
+locks. If ownership or process state cannot be verified, disable reports the
+error and keeps the disabled mark.
 
 ### Files
 
@@ -1117,7 +1130,8 @@ Writes the `disabled` flag on the account's `sequence.json` record.
 ### Output
 
 `Disabled Account-<n> (<email>).` When the disabled account is also the active
-login, a second line follows: `  It is the active account. Existing sessions keep their login until you switch away. Managed starts on this login are blocked.`
+login, a second line follows: `  It is the active account. Existing sessions keep their login. New managed starts cannot use it.`
+An idle withdrawal also names the new selection or says that no eligible login is available. An enabled auto-switch tick retries a deferred withdrawal after the last client exits.
 
 ### Errors
 
@@ -1128,7 +1142,7 @@ login, a second line follows: `  It is the active account. Existing sessions kee
 ```
 $ tycswap disable 1
 Disabled Account-1 (alice@example.com).
-  It is the active account. Existing sessions keep their login until you switch away. Managed starts on this login are blocked.
+  It is the active account. Existing sessions keep their login. New managed starts cannot use it.
 ```
 
 ### See also
@@ -1537,11 +1551,9 @@ fable"`: only the child's own arguments are read).
 
 | Family | Fable store | Child environment | Selection | Notice on stderr |
 | --- | --- | --- | --- | --- |
-| Family | Fable store | Child environment | Selection | Notice on stderr |
-| --- | --- | --- | --- | --- |
-| Fable | on and usable, a marked account with a usable Fable login | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | runs, then runs on the Fable store too | the selections' own, the Fable store's starting `Fable store: ` |
+| Fable | on and usable, a marked account with a usable Fable login | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | Fable store only | the selection's own, starting `Fable store: ` |
 | Fable | on and usable, marks but none with a usable Fable login | that variable removed if it named the store | runs | `tycswap start: no start login has a Fable login; starting on the default login.` |
-| Fable | on and usable, no marks, or auto-switch off without `--account` | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | runs; the Fable store stays | none |
+| Fable | on and usable, no marks, or auto-switch off without `--account` | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | keeps the current Fable login | none |
 | Fable | off or unusable, with Fable logins | that variable removed if it named the store | runs | `tycswap start: the Fable store has no usable login (<reason>); starting on the default login.` |
 | other, none, or no Fable login | – | that variable removed if it named the store | runs | none |
 
@@ -1553,9 +1565,8 @@ switch moves the Fable store only (`tycswap start: Fable store: Switched to
 start login Account-<n>.`, logged `Switched the Fable store to account <n> by
 start`), stamped in `fable/autoswitch_state.json`. A selection there that
 fails otherwise says so and the session starts on the Fable store where it
-sits. `--account ID` selects the default login and is the Fable store's only
-candidate when it has a usable Fable login; otherwise the session starts on the
-default login with the notice above.
+sits. `--account ID` selects the requested account on the store serving the
+child. A fallback selects the default login and prints the notice above.
 
 Every other variable passes unchanged, but `TYCSWAP_START_HOLD` (below) and
 `TYCSWAP_START_FAMILY` ([tycswap mythos](#tycswap-mythos)). The
@@ -1671,6 +1682,22 @@ account the default login's other sessions need until it is resumed on the
 Fable store, and the counting caption says so: `1 Fable session on the
 default login not followed (start --check names it)`.
 
+When a model allocation or Fable capability change removes the selected
+account from Fable, tycswap saves its independently signed-in login and parks
+the idle Fable store. With a native client still using it, the client keeps
+its identity and new managed Fable starts wait. A new native Fable start can
+refill a parked store with an enabled startup account whose plan supports new
+Fable sessions, whose allocation includes Fable and whose known quota has room.
+Without an eligible login the command explains the wait and exits. Enabled
+auto-switch ticks record a ready account when quota becomes available. Both
+`status` and `auto status` show this choice. The shared credential stays empty
+until the next native start rechecks eligibility.
+
+The recovered process keeps one account until exit. Its SessionStart hook
+records that identity for UUID resumes. A resume waits if its account is
+unavailable. Explicitly emptying the idle store with
+`tycswap switch --store fable --empty` turns this recovery off.
+
 ### Launchers
 
 Use an explicit verified real path for a manual launcher:
@@ -1690,6 +1717,8 @@ standard streams and returns the child status. Windows console Ctrl+C behavior
 requires native Windows integration validation; cross-vet is insufficient.
 
 ---
+
+An independently signed-in session records its account at the native SessionStart hook and status line. The first recorded identity stays with its UUID even after a status report from another store. The dashboard separately reports the observed store. Resuming a recorded UUID checks the original identity and the requested model’s available quota.
 
 ## tycswap mythos
 
@@ -2585,7 +2614,7 @@ Done: 0 imported, 0 overwritten, 1 skipped
 
 ## tycswap menu
 
-`tycswap menu [add]` opens the guided action menu or account setup directly.
+`tycswap menu [add|manage|transfer]` opens the action menu or its selected section.
 Bare `tycswap` opens the same menu when stdin, stdout and stderr are terminals,
 `TERM` is not `dumb`, and `TYCSWAP_NO_PROMPT`, `CLAUDECODE` and
 `CODEX_THREAD_ID` are unset. Scripts retain the no-command usage error.
@@ -2612,17 +2641,37 @@ still clears that alias. Explicit arguments remain the unattended interface.
 Type to filter choices; arrows move; Enter selects; Escape returns. The menu
 supports browser sign-in for Claude and Codex, saving either provider's current
 login, Claude token entry, switching, aliases, disable/enable, moving and removal.
-Except on macOS, which has no Fable store, *Add account* ends with
+Except on macOS, which uses the system Keychain, *Add account* includes
 `add --login --lineage fable  Sign in for Fable`: it asks for the account among
 those that run Fable (`tycswap fable --list`), those without a Fable login first
 and then those with one (`· sign in again`), each in roster order, and runs
 `add --login --lineage fable --slot N`; with none it names `tycswap fable --allow`.
-A Claude OAuth account's own menu ends with *Sign in for Fable…* (*Sign in again
+A Claude OAuth account's own menu includes *Sign in for Fable…* (*Sign in again
 for Fable…* when it holds a Fable login), the same command for that account,
 and, where it changes the answer, *Allow Fable* (the plan says nothing) or
 *Disallow Fable* (a mark decides), which asks first and runs `tycswap fable
 --allow N` or `--disallow N`; an account whose plan decides gets neither
 (DESIGN A107).
+*Browse commands and options…* lists commands by name and purpose. Choose a command
+to see its options or its CLI help. Select options, then choose *Run*. Account,
+setting and model inputs use named choices. For native login or launch arguments
+after `--`, enter one literal argument at a time. File transfers use a source
+or destination path. For `start --check`, select a saved Claude status-line JSON
+file. The check reads the file on stdin in the current login environment.
+Tokens go directly to the command's hidden prompt.
+On systems with file-based credential stores, `switch --store fable --if-idle ID`
+selects an existing Fable login before the next native launch. A current or
+starting Fable session, or a process whose credential store cannot be verified,
+leaves the login in place. A known session on another store can continue.
+The browse menu also offers output formats, automatic switching, account marks,
+startup, dashboard and tray options, migration, upgrade and the Codex registry import.
+
+*Manage accounts… → Preferred models…* edits the allocation of a Claude account.
+Choose a combination of Mythos, Fable and Opus or clear the explicit allocation.
+On platforms with separate file-based storage, *Add account… → Sign in independently
+for Mythos* lists enabled Claude OAuth accounts marked for Mythos. The command runs
+the native sign-in and verifies the returned identity before saving it.
+
 The selected account's identity is checked again before dispatching an action.
 Advanced settings use the shared setting definitions and validation. The tray
 can remain running; closing the menu never stops it. Its Start tray app action
@@ -5384,7 +5433,7 @@ tycswap reads the following environment variables.
 
 | Variable | Effect |
 |----------|--------|
-| `TYCSWAP_PLACEMENT_BROKER` | Absolute path to a trusted question broker. With `--ask` it accepts a JSON question and options on stdin and returns a confirmed JSON answer on stdout. An unattended Mythos start can ask the operator to use an eligible account outside its allocation for this placement. Each start owns its own question. An explicit “Use this time” answer lets tycswap check the identity, cached shared quota limits and allocation again before launch. A missing broker, cancellation or expiry ends this invocation. |
+| `TYCSWAP_PLACEMENT_BROKER` | Absolute path to a trusted question broker. With `--ask` it accepts a JSON question, options and optional context on stdin and returns a confirmed JSON answer on stdout. An unattended Mythos start can ask the operator to use an eligible account outside its allocation for this placement. Each start owns its own question. The question names the account by alias or email, and its inbox context identifies the session or requesting process. An explicit “Use this time” answer lets tycswap check the identity, known shared and model quota limits, and allocation again before launch. A missing broker, cancellation or expiry ends this invocation. |
 | `CLAUDE_CONFIG_DIR` | Overrides the Claude Code config home: the global config is `<dir>/.claude.json` and credentials are `<dir>/.credentials.json`. `tycswap start` skips startup selection and passes any set value unchanged, even empty. For every other command the effect depends on the value: a former session profile — a value inside `<backup_root>/sessions/`, as `tycswap env` set it before its removal — is ignored, and the command operates on the default login and prints `CLAUDE_CONFIG_DIR names a retired tycswap profile; operating on the default login. Unset it so plain claude stops using that profile: unset CLAUDE_CONFIG_DIR (fish: set -e CLAUDE_CONFIG_DIR; PowerShell: Remove-Item Env:CLAUDE_CONFIG_DIR).` to stderr (where `TYCSWAP_DEFAULT_PROFILE_DIR` names a custom default it is restored, and the notice says to set `CLAUDE_CONFIG_DIR` back to it); a custom value outside `<backup_root>/sessions/` is honored. |
 | `XDG_DATA_HOME` | On Linux/WSL, selects the backup-root parent: `<XDG_DATA_HOME>/tycswap` (and, for `tycswap migrate`, the old store `<XDG_DATA_HOME>/claude-swap`). Ignored when unset, empty, or non-absolute; a leading `~` is expanded. |
 | `HOME` | The user's home directory; the base for `~/.claude.json`, `~/.claude/`, `~/.local/share`, `~/.tycswap`, the old `~/.claude-swap-backup` (read only by `tycswap migrate`), and `~/go/bin`. |

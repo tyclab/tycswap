@@ -96,6 +96,8 @@ func validateStore(prog string, p *parsed, stderr io.Writer) (parseResult, bool)
 	}
 	fable := p.store != nil && *p.store == "fable"
 	switch {
+	case p.ifIdle && (!fable || p.switchTo == nil || p.empty):
+		return fail("--if-idle needs switch --store fable and an account")
 	case p.store == nil:
 	case *p.store != "fable" && *p.store != "default":
 		return fail("unknown store: " + *p.store)

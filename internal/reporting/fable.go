@@ -40,21 +40,23 @@ const (
 // is resolved as BuildAccountsInfo resolves it, without writing the Fable
 // chain record.
 type fableView struct {
-	state  store.FableState
-	live   store.LiveSlot
-	logins map[string]FableLogin
+	parking *store.FableParking
+	state   store.FableState
+	live    store.LiveSlot
+	logins  map[string]FableLogin
 }
 
 // readFableView is nil while no account has a Fable login, and on a Fable
 // scope.
 func readFableView(s *store.Store, data *store.SequenceData) *fableView {
-	if data == nil || s.IsFable() || !s.HasFableLogins() {
+	parking, _ := s.ParkingStatus()
+	if data == nil || s.IsFable() || !s.HasFableLogins() && parking == nil {
 		return nil
 	}
 	if _, err := s.ForFable(); err != nil {
 		return nil
 	}
-	v := &fableView{state: s.FableStore(), logins: map[string]FableLogin{}}
+	v := &fableView{parking: parking, state: s.FableStore(), logins: map[string]FableLogin{}}
 	if v.state.On {
 		v.live = s.WithoutLineageWrites().ResolveFableLiveSlot(data)
 	}
@@ -136,6 +138,8 @@ func (v *fableView) accountNumber() any {
 
 func (v *fableView) stateName() string {
 	switch {
+	case !v.state.On && v.parking != nil:
+		return "parked"
 	case !v.state.On:
 		return "off"
 	case !v.state.Usable:
@@ -153,6 +157,9 @@ func (v *fableView) object(s *store.Store, data *store.SequenceData, entry usage
 		"storeDir": filepath.Clean(paths.FableStoreDir(s.BackupDir())),
 		"number":   v.accountNumber(),
 		"source":   nil,
+	}
+	if v.parking != nil {
+		obj["startup"] = v.parking.Description()
 	}
 	if v.state.Reason != "" {
 		obj["reason"] = v.state.Reason
@@ -180,6 +187,8 @@ func (v *fableView) object(s *store.Store, data *store.SequenceData, entry usage
 func (v *fableView) line(data *store.SequenceData, entry usage.UsageEntry) string {
 	head := printer.Bolded("Fable store:") + " "
 	switch {
+	case !v.state.On && v.parking != nil:
+		return head + v.parking.Description()
 	case !v.state.On:
 		return head + "off"
 	case v.live.Slot == "":
@@ -187,6 +196,9 @@ func (v *fableView) line(data *store.SequenceData, entry usage.UsageEntry) strin
 	}
 	rec, _ := recordFor(data, v.live.Slot)
 	line := head + printer.Accent("Account-"+v.live.Slot) + " (" + termsafe.Strip(recStr(rec, "email")) + ")"
+	if v.parking != nil {
+		line += " · " + v.parking.Description()
+	}
 	if !v.state.Usable {
 		return line + " · " + printer.Yellowed("Fable login: sign in again")
 	}

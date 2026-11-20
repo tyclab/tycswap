@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -48,16 +49,29 @@ func TestIndependentPlacementUsesTheResetOfTheBindingWindow(t *testing.T) {
 	}
 	candidates := []string{"unknown-usage", "unknown-reset", "later", "tied-windows", "full", "sooner"}
 	set := settings.Default()
-	got := InitialPlacementTargets(candidates, entries, set, nil, baseTime)
+	got := InitialPlacementTargets(candidates, entries, set, "", baseTime)
 	want := []string{"sooner", "later", "tied-windows", "unknown-reset", "unknown-usage"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("soonest binding reset: got %v, want %v", got, want)
 	}
 	shared := StartTargets(candidates, entries, set, nil, baseTime)
 	set.Strategy = "best"
-	got = InitialPlacementTargets(candidates, entries, set, nil, baseTime)
+	got = InitialPlacementTargets(candidates, entries, set, "", baseTime)
 	if !reflect.DeepEqual(got, shared) || got[0] != "unknown-reset" {
 		t.Fatalf("headroom strategy: got %v, shared recovery order %v", got, shared)
+	}
+}
+
+func TestDedicatedPlacementRanksTheRequestedModelWindow(t *testing.T) {
+	at := func(hours int) string { return baseTime.Add(time.Duration(hours) * time.Hour).Format(time.RFC3339) }
+	entries := map[string]usage.UsageEntry{
+		"1": dictEntry(map[string]any{"seven_day": win(55, at(1)), "scoped": []any{scopedWin("Opus weekly", 60, at(48))}}),
+		"2": dictEntry(map[string]any{"seven_day": win(25, at(72)), "scoped": []any{scopedWin("Opus", 65, at(3))}}),
+		"3": dictEntry(map[string]any{"seven_day": win(15, at(5)), "scoped": []any{scopedWin("Fable", 100, at(6))}}),
+	}
+	got := InitialPlacementTargets([]string{"1", "2", "3"}, entries, settings.Default(), "opus", baseTime)
+	if want := []string{"2", "3", "1"}; !slices.Equal(got, want) {
+		t.Fatalf("rank %v, want %v", got, want)
 	}
 }
 
@@ -207,7 +221,7 @@ func TestStartConcurrentWithEngineSwitch(t *testing.T) {
 		StartSelection(f, "", snapshot, WithClock(clk), WithStatePath(path))
 	})
 	workers.Go(func() {
-		if _, err := engine.perform("2", f.emails["2"], "proactive", "7d"); err != nil {
+		if _, err := engine.perform(engine.slotIdentity("1"), engine.slotIdentity("2"), "proactive", "7d"); err != nil {
 			t.Error(err)
 		}
 	})

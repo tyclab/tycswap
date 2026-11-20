@@ -61,7 +61,7 @@ Commands:
   tycswap watch                      dashboard, opened on the live watch page
   tycswap web                        browser dashboard on 127.0.0.1
   tycswap app                        the same dashboard as a menu-bar/tray app, in the foreground
-  tycswap menubar                    macOS menu bar app (see tycswap app)
+  tycswap menubar                    retired menu bar entry (use tycswap app)
   tycswap upgrade                    self-upgrade to latest
   tycswap purge                      remove all tycswap data
   tycswap migrate [--dry-run]        copy the claude-swap store into this one, once
@@ -144,6 +144,7 @@ const visibleOptions = `options:
   --store {default,fable}
                         With 'switch': fable switches the Fable store, to an
                         account (switch --store fable <num|email>) or off
+  --if-idle             Select an enrolled Fable login only when its store is idle
   --empty               With 'switch --store fable': turn the Fable store off
   --force               Overwrite existing accounts during import; with
                         'switch <num|email>', activate without backing up first

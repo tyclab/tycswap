@@ -39,6 +39,50 @@ func menuFilePath(s ioStreams, title, initial string) (string, bool) {
 	return abs, true
 }
 
+func menuStatusFile(s ioStreams) (*os.File, bool) {
+	path, ok := menuFilePath(s, "Claude status-line JSON file", "")
+	if !ok {
+		return nil, false
+	}
+	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+		fmt.Fprintln(s.err, "Choose an existing Claude status-line JSON file.")
+		return nil, false
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		fmt.Fprintln(s.err, err)
+		return nil, false
+	}
+	return file, true
+}
+
+func menuTransferFile(s ioStreams, export bool, initial string) (string, bool) {
+	title := "File to import"
+	if export {
+		title = "Save export to"
+	}
+	path, ok := menuFilePath(s, title, initial)
+	if !ok {
+		return "", false
+	}
+	if export {
+		if _, err := os.Lstat(path); err == nil {
+			fmt.Fprintln(s.err, "That path already exists. Choose a new export file.")
+			return "", false
+		} else if !os.IsNotExist(err) {
+			fmt.Fprintln(s.err, err)
+			return "", false
+		}
+		return path, menuConfirm(s, "Export to "+termsafe.Strip(path)+"? The file contains account tokens.")
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		fmt.Fprintln(s.err, "Choose an existing account export file.")
+		return "", false
+	}
+	return path, true
+}
+
 func menuTransfer(s ioStreams) {
 	operation, _, ok := askMenu(s, "Import / export", []string{"Export accounts…", "Import accounts…"}, "")
 	if !ok {
@@ -72,31 +116,15 @@ func menuTransfer(s ioStreams) {
 	} else {
 		args = append(args, "import")
 	}
-	initial, title := "", "File to import"
+	initial := ""
 	if operation == 0 {
-		initial, title = name+"-accounts.tycswap", "Save export to"
+		initial = name + "-accounts.tycswap"
 	}
-	path, ok := menuFilePath(s, title, initial)
+	path, ok := menuTransferFile(s, operation == 0, initial)
 	if !ok {
 		return
 	}
-	if operation == 0 {
-		if _, err := os.Lstat(path); err == nil {
-			fmt.Fprintln(s.err, "That path already exists. Choose a new export file.")
-			return
-		} else if !os.IsNotExist(err) {
-			fmt.Fprintln(s.err, err)
-			return
-		}
-		if !menuConfirm(s, "Export to "+termsafe.Strip(path)+"? The file contains account tokens.") {
-			return
-		}
-	} else {
-		info, err := os.Stat(path)
-		if err != nil || !info.Mode().IsRegular() {
-			fmt.Fprintln(s.err, "Choose an existing account export file.")
-			return
-		}
+	if operation == 1 {
 		mode, _, ok := askMenu(s, "Accounts already saved here", []string{"Keep existing accounts", "Replace matching accounts"}, "")
 		if !ok {
 			return

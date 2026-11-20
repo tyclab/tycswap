@@ -336,6 +336,23 @@ func BaseURLFrom(data *SequenceData, num string) string {
 	return strField(rec, "baseUrl")
 }
 
+// AccountNameFrom identifies the login in an operator prompt from the same
+// roster snapshot used to choose it. A shared email needs its slot as well.
+func AccountNameFrom(data *SequenceData, number string) string {
+	rec, _ := recordFor(data, number)
+	if alias := strField(rec, "alias"); alias != "" {
+		return alias
+	}
+	email := strField(rec, "email")
+	if email == "" {
+		return "Account-" + number
+	}
+	if resolved, err := resolveIdentifier(data, email); err != nil || resolved != number {
+		return email + " (Account-" + number + ")"
+	}
+	return email
+}
+
 func (s *Store) AccountEmail(num string) string {
 	data, _ := s.ReadSequence()
 	rec, _ := recordFor(data, num)

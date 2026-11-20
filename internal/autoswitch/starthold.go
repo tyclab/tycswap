@@ -3,6 +3,9 @@ package autoswitch
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/atomicfile"
@@ -41,6 +44,29 @@ func startHoldLeft(state map[string]any, now float64) float64 {
 		}
 	}
 	return left
+}
+
+// StartHeld reports whether a launching session still owns a start hold.
+func StartHeld(statePath string, now time.Time) (bool, error) {
+	raw, err := os.ReadFile(statePath)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var state map[string]any
+	if err := json.Unmarshal(raw, &state); err != nil || state == nil {
+		return false, fmt.Errorf("cannot verify launch holds in %s", statePath)
+	}
+	for _, key := range []string{startHoldsKey, "quarantine"} {
+		if v, exists := state[key]; exists {
+			if _, ok := v.(map[string]any); !ok {
+				return false, fmt.Errorf("invalid %s in %s", key, statePath)
+			}
+		}
+	}
+	return startHoldLeft(state, float64(now.UnixNano())/1e9) > 0, nil
 }
 
 // settleStartHolds drops the holds in state that no longer run and, with

@@ -23,7 +23,15 @@ func humanTerminal(stdinTTY, stdoutTTY bool) bool {
 var menuExecute = func(s ioStreams, args ...string) int {
 	showMenuCommand(s, args)
 	cmd := exec.Command(exePath(), args...)
-	cmd.Env = append(os.Environ(), "TYCSWAP_NO_PROMPT=1")
+	if len(args) == 0 || args[0] != "start" {
+		cmd.Env = append(os.Environ(), "TYCSWAP_NO_PROMPT=1")
+	} else if len(args) == 2 && args[1] == "--check" {
+		if mythosSessionDir != "" {
+			cmd.Env = withFableStore(os.Environ(), mythosSessionDir)
+		} else if fableSessionProcess {
+			cmd.Env = withFableStore(os.Environ(), paths.FableStoreDir(paths.GetBackupRoot()))
+		}
+	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.in, s.out, s.err
 	if err := cmd.Run(); err != nil {
 		if e, ok := err.(*exec.ExitError); ok {
@@ -83,9 +91,9 @@ func humanMenu(prog, start string, s ioStreams) int {
 	for {
 		i, _, ok := askMenu(s, "tycswap", []string{
 			"Add account…", "Manage accounts…", "Live dashboard", "Open web dashboard",
-			"Import / export…", "Advanced settings…", "Start tray app", "Close menu",
+			"Import / export…", "Advanced settings…", "Start tray app", "Browse commands and options…", "Close menu",
 		}, "")
-		if !ok || i == 7 {
+		if !ok || i == 8 {
 			return 0
 		}
 		switch i {
@@ -103,6 +111,8 @@ func humanMenu(prog, start string, s ioStreams) int {
 			menuSettings(s)
 		case 6:
 			startBackgroundApp(prog, s)
+		case 7:
+			menuCommands(s)
 		}
 	}
 }
@@ -113,7 +123,7 @@ func menuAdd(s ioStreams) {
 		"add            Save current Claude login", "codex add      Save current Codex login", "add-token      Claude setup token or API key",
 	}
 	if menuFableStore() {
-		choices = append(choices, fableSignInEntry)
+		choices = append(choices, fableSignInEntry, mythosSignInEntry)
 	}
 	i, _, ok := askMenu(s, "Add account", choices, "")
 	if !ok {
@@ -150,6 +160,8 @@ func menuAdd(s ioStreams) {
 		menuExecute(s, args...)
 	case 5:
 		menuFableSignIn(s)
+	case 6:
+		runMenuAction(s, mythosEnrollment)
 	}
 }
 
@@ -178,6 +190,10 @@ func selectProviderAccount(s ioStreams, title, provider string) (reporting.Accou
 		}
 		accounts = filtered
 	}
+	return pickAccountRows(s, title, accounts)
+}
+
+func pickAccountRows(s ioStreams, title string, accounts []reporting.AccountSnapshot) (reporting.AccountSnapshot, int) {
 	if len(accounts) == 0 {
 		fmt.Fprintln(s.err, "No matching accounts. Run tycswap menu add to sign in.")
 		return reporting.AccountSnapshot{}, 1
@@ -210,7 +226,8 @@ func menuAccountCurrent(s ioStreams, selected reporting.AccountSnapshot) bool {
 	accounts, err := menuAccounts(s)
 	if err == nil {
 		for _, a := range accounts {
-			if a.Key() == selected.Key() && a.Email == selected.Email && a.OrgUUID == selected.OrgUUID && a.OrgName == selected.OrgName {
+			if a.Key() == selected.Key() && a.Email == selected.Email && a.OrgUUID == selected.OrgUUID && a.OrgName == selected.OrgName &&
+				a.AccountKey == selected.AccountKey && a.Kind == selected.Kind && a.BaseURL == selected.BaseURL {
 				return true
 			}
 		}
@@ -243,6 +260,12 @@ func menuManage(s ioStreams) {
 		choices = append(choices, "Sign in again…")
 		if allowSwitch {
 			choices = append(choices, "Use saved login")
+		}
+	}
+	if a.ProviderName() == reporting.ProviderClaude {
+		choices = append(choices, "Preferred models…")
+		if menuFableStore() && a.Mythos && !a.Disabled && a.Kind == "oauth" {
+			choices = append(choices, mythosSignInEntry)
 		}
 	}
 	fableSignIn, fableMark := fableAccountEntries(s, a)
@@ -309,6 +332,14 @@ func menuManage(s ioStreams) {
 			return
 		}
 		args = []string{"switch", a.Number, "--force"}
+	case "Preferred models…":
+		allocation, ok := pickMenuAllocation(s)
+		if !ok {
+			return
+		}
+		args = []string{"models", a.Number, allocation}
+	case mythosSignInEntry:
+		args = []string{"add", "--login", "--lineage", "mythos", "--slot", a.Number}
 	case fableSignIn:
 		args = fableSignInArgs(a.Number)
 	case fableMark:

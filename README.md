@@ -162,6 +162,13 @@ Fable sign-in, asking for the account (those without a Fable login first), and a
 Claude account's menu offers **Sign in for Fable…**, and **Allow Fable** where
 the plan says nothing or **Disallow Fable** where a mark decides (see
 [Run accounts in parallel](#run-accounts-in-parallel)).
+**Browse commands and options…** lists Claude and Codex commands, their options and
+command help. Choose **Manage accounts… → Preferred models…** to change or clear
+a Claude account's allocation. **Add account…** includes independent native
+sign-in for an enabled OAuth account marked for Mythos on supported platforms.
+To select an enrolled Fable login before a new native session, choose
+**Browse commands and options… → switch --store fable --if-idle**. The current
+login stays in place if a Fable session is running or starting.
 **Import / export…** guides Claude and Codex file transfers.
 **Open web dashboard** reuses the running app, starting it in the background if needed.
 Closing the menu leaves the tray running.
@@ -407,7 +414,16 @@ Removed alias for Account 3
 ### Disable and enable accounts
 
 A disabled Claude account stays in the roster. Enable it before selecting it
-by hand or launching a managed session on it. Automatic rotation also skips it.
+by hand or launching a managed session on it. An idle store moves to an eligible
+replacement even with automatic rotation off. If no replacement is available,
+tycswap clears the selection and keeps the saved login. A live session retains
+its credential. Once the last client exits, an enabled auto-switch tick completes
+the withdrawal. With auto-switch off, repeating disable retries it.
+
+When a model allocation leaves the Fable store parked, enabled ticks prepare
+an eligible startup account with known room. `tycswap status` and
+`tycswap auto status` show it. The next fresh native Fable start rechecks and
+installs its own login. A manual `switch --store fable --empty` stays off.
 
 ```
 $ tycswap disable 2
@@ -617,9 +633,8 @@ requiring a mark, and works while auto-switch is off; all other eligibility
 checks still apply. This does not grant model access or change managed policy.
 
 A Fable session that starts on the Fable store (see [The Fable
-store](#run-accounts-in-parallel)) gets a start login there too, besides the
-default login's: the marked accounts with a usable Fable login are the
-candidates, ranked the same way, and `start` moves the Fable store to the
+store](#run-accounts-in-parallel)) selects a login in that store only. The marked
+accounts with a usable Fable login are its candidates, ranked the same way, and `start` moves the Fable store to the
 first (`tycswap start: Fable store: Switched to start login Account-2.`). With
 marks but no usable Fable login among them, the session starts on the default
 login (`tycswap start: no start login has a Fable login; starting on the
@@ -645,7 +660,7 @@ hook in Claude Code's settings (`~/.claude/settings.json`):
 ```
 
 A Fable session held on the Fable store's start login holds the Fable
-store's check the same way; one token holds both stores. `tycswap start
+store's check with its own token. `tycswap start
 --started` ends the session's holds and, once no other session is starting,
 runs one auto-switch check, which moves the logins on. Without the hook a login
 stays for 30 s, then moves at the next check, and the session's first request
@@ -723,8 +738,11 @@ credential. Moving the same account to a new slot preserves the credential.
 
 `tycswap models --list` shows explicit allocations. Use
 `tycswap models 2 --derived` to clear the allocation for account 2.
-If an independent Mythos start needs an allocation exception, it asks
-before launching Claude. Each computer needs its own browser sign-in.
+A launch outside the account's explicit allocation asks before starting
+Claude. A resumed independent session keeps its original identity across
+restarts and checks both shared and model quota. When a known window is full,
+the login becomes available again after its reset. Each computer needs its
+own browser sign-in.
 
 ### Run accounts in parallel
 

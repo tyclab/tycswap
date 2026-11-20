@@ -1420,6 +1420,7 @@
   // login only the session's recorded store names it (DESIGN A102); without
   // a record nothing is said.
   function storeChip(c) {
+    if (c.store === 'mythos') { return chip('Mythos login', 'accent', 'Runs on an independently signed-in Mythos login'); }
     if (c.store === 'fable') { return chip('Fable store', 'accent', "Runs on the Fable store's login"); }
     if (c.store === 'default' || !(state && state.fable)) { return chip('default login', 'outline'); }
     return null;

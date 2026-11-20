@@ -13,9 +13,10 @@ import (
 func fakePlacementBroker(in io.Reader, out io.Writer, decide func(string) string) int {
 	var request struct {
 		Question string
+		Context  string
 		Options  []string
 	}
-	if json.NewDecoder(in).Decode(&request) != nil || request.Question == "" ||
+	if json.NewDecoder(in).Decode(&request) != nil || request.Question == "" || request.Context == "" ||
 		strings.Join(request.Options, "|") != "Wait|Use this time" {
 		return 1
 	}
@@ -48,7 +49,7 @@ func TestPlacementQuestionBroker(t *testing.T) {
 	} {
 		t.Run(tc.answer, func(t *testing.T) {
 			t.Setenv("TEST_PLACEMENT_REPLY", tc.answer)
-			ok, err := askPlacement(ioStreams{err: io.Discard}, "Use the synthetic account for this placement?", false)
+			ok, err := askPlacement(ioStreams{err: io.Discard}, "Use the synthetic account for this placement?", "start A", false)
 			if ok != tc.allow || (err != nil) != tc.failure {
 				t.Fatalf("approval=%v, err=%v", ok, err)
 			}
@@ -76,7 +77,7 @@ func TestConcurrentPlacementQuestions(t *testing.T) {
 		}()
 		go func() {
 			defer client.Close()
-			approved, err := placementExchange(client, client, question)
+			approved, err := placementExchange(client, client, question, "independent start")
 			result <- outcome{question, approved, err}
 		}()
 	}

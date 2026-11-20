@@ -2,6 +2,7 @@ package reporting
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -25,7 +26,8 @@ const (
 	// The status line reruns every few seconds; an unchanged model is
 	// rewritten at most this often, a changed one at once.
 	defaultModelRefresh = time.Minute
-	// Records of sessions that no longer run are dropped after a day.
+	// Shared-store status records expire after a day. An independent login
+	// binds its session to that identity for future native resumes.
 	defaultModelKeep = 24 * time.Hour
 )
 
@@ -34,7 +36,8 @@ type defaultSessionModel struct {
 	SeenAt float64 `json:"seenAt"`
 	// Store is "fable" for a session on the Fable store, "" for the default
 	// store's (DESIGN A100).
-	Store string `json:"store,omitempty"`
+	Store   string `json:"store,omitempty"`
+	Binding string `json:"binding,omitempty"`
 }
 
 // RecordedSession is the model family and store recorded for a session, ok
@@ -54,17 +57,47 @@ func SessionStores(root string) map[string]string {
 	return out
 }
 
+func (r defaultSessionModel) binding() string {
+	if r.Binding != "" {
+		return r.Binding
+	}
+	if strings.HasPrefix(r.Store, "mythos/") {
+		return r.Store
+	}
+	return ""
+}
+
+func SessionBinding(root, sessionID string) (string, error) {
+	sessions, err := loadDefaultSessionModels(root)
+	if err != nil {
+		return "", err
+	}
+	return sessions[sessionID].binding(), nil
+}
+
 func readDefaultSessionModels(root string) map[string]defaultSessionModel {
+	sessions, _ := loadDefaultSessionModels(root)
+	return sessions
+}
+
+func loadDefaultSessionModels(root string) (map[string]defaultSessionModel, error) {
+	raw, err := os.ReadFile(filepath.Join(root, defaultModelsFile))
+	if os.IsNotExist(err) {
+		return map[string]defaultSessionModel{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	var file struct {
 		Sessions map[string]defaultSessionModel `json:"sessions"`
 	}
-	if raw, err := os.ReadFile(filepath.Join(root, defaultModelsFile)); err == nil {
-		_ = json.Unmarshal(raw, &file)
+	if err := json.Unmarshal(raw, &file); err != nil {
+		return nil, fmt.Errorf("could not read saved session identities: %w", err)
 	}
 	if file.Sessions == nil {
-		file.Sessions = map[string]defaultSessionModel{}
+		return nil, fmt.Errorf("saved session identities are missing the sessions map")
 	}
-	return file.Sessions
+	return file.Sessions, nil
 }
 
 var modelFamilies = []string{"fable", "mythos", "opus", "sonnet", "haiku"}
@@ -118,25 +151,55 @@ func ClaudeFamily(model string) string {
 // store (A77). An unknown model, a provider's id (such a session runs on no
 // login of tycswap's; v0.15.1 recorded none) or a busy lock records nothing.
 func RecordDefaultSessionModel(root, sessionID, model, store string, now time.Time) (bool, error) {
+	return recordSessionModel(root, sessionID, model, store, now, 50*time.Millisecond)
+}
+
+func RecordSessionStart(root, sessionID, model, store string, now time.Time) error {
+	_, err := recordSessionModel(root, sessionID, model, store, now, filelock.DefaultTimeout)
+	return err
+}
+
+func recordSessionModel(root, sessionID, model, store string, now time.Time, timeout time.Duration) (bool, error) {
 	family := ClaudeFamily(model)
 	if sessionID == "" || family == "" {
 		return false, nil
 	}
-	lock := filelock.New(filepath.Join(root, ".default_models.lock"), 50*time.Millisecond)
-	if ok, err := lock.Acquire(0); err != nil || !ok {
+	lock := filelock.New(filepath.Join(root, ".default_models.lock"), timeout)
+	ok, err := lock.Acquire(0)
+	if err != nil {
 		return false, err
 	}
+	if !ok {
+		if timeout == filelock.DefaultTimeout {
+			return false, fmt.Errorf("timed out recording session identity")
+		}
+		return false, nil
+	}
 	defer lock.Release()
-	sessions := readDefaultSessionModels(root)
+	sessions, err := loadDefaultSessionModels(root)
+	if err != nil {
+		return false, err
+	}
 	at := float64(now.UnixNano()) / 1e9
 	old, seen := sessions[sessionID]
-	changed := !seen || old.Family != family || old.Store != store
+	binding := old.binding()
+	if strings.HasPrefix(store, "fable/") {
+		if binding != "" && binding != store {
+			return false, fmt.Errorf("the session already belongs to another native login")
+		}
+		binding, store = store, "fable"
+	}
+	changed := !seen || old.Family != family || old.Store != store || binding != old.binding()
 	if !changed && at-old.SeenAt < defaultModelRefresh.Seconds() && at >= old.SeenAt {
 		return false, nil
 	}
-	sessions[sessionID] = defaultSessionModel{Family: family, SeenAt: at, Store: store}
+	next := defaultSessionModel{Family: family, SeenAt: at, Store: store, Binding: binding}
+	if next.Binding == next.Store {
+		next.Binding = ""
+	}
+	sessions[sessionID] = next
 	for id, rec := range sessions {
-		if at-rec.SeenAt > defaultModelKeep.Seconds() {
+		if at-rec.SeenAt > defaultModelKeep.Seconds() && rec.binding() == "" {
 			delete(sessions, id)
 		}
 	}
@@ -156,8 +219,7 @@ type PolicyResult struct {
 	Reserved   func(num string) bool
 	Unservable []string
 	Sessions   []string
-	// ReservedLast is the reserved account the default tick takes last and
-	// leaves for any other below every bar: the Fable store's live one (A102).
+	// Accounts serving a dedicated login are last in the default rotation.
 	ReservedLast func(num string) bool
 	// Serves is the accounts the default login may run on while a live
 	// session runs Mythos and Mythos can be served, the accounts marked for
@@ -167,7 +229,9 @@ type PolicyResult struct {
 	Mythos []string
 	// FableOnDefault counts the live Fable sessions on the default login the
 	// policy does not follow while the Fable store is usable (A108).
-	FableOnDefault int
+	FableOnDefault      int
+	OpusOnly            bool
+	IndependentSessions map[int]string
 }
 
 // DefaultSessionPolicy is DefaultSessionPolicyResult at the store's clock.
@@ -210,7 +274,7 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 	if len(records) == 0 {
 		return r
 	}
-	sessions, _, err := procdetect.GetRunningInstancesErr(s.DefaultProfileDir())
+	sessions, ides, err := procdetect.GetRunningInstancesErr(s.DefaultProfileDir())
 	if err != nil || len(sessions) == 0 {
 		return r
 	}
@@ -223,6 +287,10 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 			continue
 		}
 		if strings.HasPrefix(rec.Store, "mythos/") || fable.Usable && rec.Store == "fable" {
+			if r.IndependentSessions == nil {
+				r.IndependentSessions = map[int]string{}
+			}
+			r.IndependentSessions[session.PID] = rec.Store
 			continue
 		}
 		if fable.Usable && rec.Family == "fable" {
@@ -231,6 +299,30 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 		}
 		families[rec.Family] = true
 	}
+	occupied := map[string]bool{}
+	for _, scope := range r.IndependentSessions {
+		if strings.HasPrefix(scope, "mythos/") {
+			occupied[scope] = true
+		}
+	}
+	if len(occupied) > 0 {
+		data, err := s.SequenceForUpdate()
+		if err == nil {
+			active := map[string]bool{}
+			for _, n := range data.Sequence {
+				num := strconv.Itoa(n)
+				_, email, org, err := s.ResolveAccountFrom(data, num)
+				if err == nil && occupied["mythos/"+filepath.Base(store.MythosLoginDir(s.BackupDir(), email, org))] {
+					active[num] = true
+				}
+			}
+			before := r.ReservedLast
+			r.ReservedLast = func(num string) bool { return active[num] || before != nil && before(num) }
+			reserved := r.Reserved
+			r.Reserved = func(num string) bool { return active[num] || reserved != nil && reserved(num) }
+		}
+	}
+	r.OpusOnly = allKnown && len(ides) == 0 && r.FableOnDefault == 0 && len(families) == 1 && families["opus"]
 	if len(families) == 0 {
 		return r
 	}
@@ -263,7 +355,8 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 		return r
 	}
 	room := view.fableBelow(base.ModelThreshold)
-	r.Reserved = func(num string) bool { return room[num] && s.FableCapable(num) }
+	reserved := r.Reserved
+	r.Reserved = func(num string) bool { return reserved != nil && reserved(num) || room[num] && s.FableCapable(num) }
 	return r
 }
 

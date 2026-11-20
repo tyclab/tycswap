@@ -241,6 +241,8 @@ func TestStartRefusesDisabledLoginWithAutomaticSwitchingOff(t *testing.T) {
 	for _, model := range []string{"opus", "fable"} {
 		t.Run(model, func(t *testing.T) {
 			sw, rec := fableStart(t, "on")
+			pid := strconv.Itoa(os.Getpid())
+			writeFile(t, filepath.Join(sw.DefaultProfileDir(), "sessions", pid+".json"), `{"pid":`+pid+`,"sessionId":"existing"}`)
 			if err := sw.SetAccountDisabled("1", true); err != nil {
 				t.Fatal(err)
 			}

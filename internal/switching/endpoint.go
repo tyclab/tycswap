@@ -78,7 +78,8 @@ func (p *profilePlan) changed() bool { return p != nil && (p.applied || p.revert
 // credential of it).
 func planProfile(s *store.Store, data *store.SequenceData, target, targetCreds string) (*profilePlan, error) {
 	p := &profilePlan{settingsPath: claudeSettingsPath(), sidecarPath: ProfileSidecarPath(s)}
-	if targetCreds == "" {
+	// An empty target withdraws the live selection and reverts its managed endpoint.
+	if target != "" && targetCreds == "" {
 		// Nothing to switch to: the switch stops at its own check for a
 		// stored credential, with that error, before it writes anything.
 		return p, nil

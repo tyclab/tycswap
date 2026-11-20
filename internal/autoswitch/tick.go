@@ -10,6 +10,7 @@ package autoswitch
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -89,7 +90,8 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 		return tickResult{Outcome: NoAction}, nil
 	}
 	cur := *current
-	currentEmail := e.sw.AccountEmail(cur)
+	source := e.slotIdentity(cur)
+	currentEmail := source.email
 	activeRef := refOf(cur, currentEmail)
 	e.noteLiveLogin(cur)
 	if !e.dryRun {
@@ -105,7 +107,7 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 	// qualification gate and the hysteresis all talk about the same resource
 	// (DESIGN A34). held collects targets an ownership hold refused.
 	axis := usage.ClassWeek
-	var trigger string
+	var trigger, drain string
 	held := map[string]bool{}
 	defer func() {
 		if err == nil && result.Outcome != Error {
@@ -154,6 +156,9 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 			}
 		}
 		hot, ok := hotAxis(activeByClass, s)
+		if !ok && e.opusOnly != nil && s.Strategy == "soonest-reset" {
+			drain = e.earlierOpusTarget(cur, entries, s, quarantined)
+		}
 		switch {
 		case ok && *activeHeadroom <= 0:
 			axis, trigger = hot, "at-limit"
@@ -172,6 +177,8 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 			// while this profile never needs it: an account that cannot,
 			// below every bar, takes over (DESIGN A71).
 			trigger = "reserved"
+		case drain != "":
+			trigger = "drain"
 		default:
 			// No window is over its own bar. Name the one closest to its
 			// bar, so the line says which window to watch.
@@ -217,6 +224,9 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 	}
 
 	ordered, oauthCandidates, anyKnown, blk := e.selectCandidates(cur, quarantined, s, trigger, axis, activeByClass, headroom, usageMap)
+	if trigger == "drain" {
+		ordered = slices.DeleteFunc(ordered, func(num string) bool { return num != drain })
+	}
 	if isHandover(trigger) && (blk != nil || len(ordered) == 0) {
 		// Nothing to hand over to: the account stays (DESIGN A71, A73).
 		detail := "the active account can run Fable; no account without Fable is below every bar"
@@ -274,10 +284,11 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 	transientFailure := false
 	ownershipFailure := false
 	for _, num := range ordered {
-		email := e.sw.AccountEmail(num)
+		target := e.slotIdentity(num)
+		email := target.email
 		if e.dryRun {
 			// Dry-run stops at the decision: no refresh, no quarantine writes.
-			return e.perform(num, email, trigger, axisName)
+			return e.perform(source, target, trigger, axisName)
 		}
 		switch e.freshenTarget(num, email) {
 		case "identity-conflict":
@@ -296,7 +307,7 @@ func (e *Engine) tickInner() (result tickResult, err error) {
 		case "skip-live-session":
 			held[num] = true // no event of its own
 		default: // "ok"
-			return e.perform(num, email, trigger, axisName)
+			return e.perform(source, target, trigger, axisName)
 		}
 	}
 
@@ -349,7 +360,7 @@ func withSkipReason(detail string, entry usage.UsageEntry) string {
 // tick had no readable usage, so no window decided it and the label is empty
 // (DESIGN A34); a reserved hand-over moved for the account, not a window.
 func axisLabel(axis usage.Class, trigger string) string {
-	if trigger == "failover" || isHandover(trigger) {
+	if trigger == "failover" || trigger == "drain" || isHandover(trigger) {
 		return ""
 	}
 	return axis.Name()
@@ -363,7 +374,9 @@ func isHandover(trigger string) bool { return trigger == "reserved" || trigger =
 // holds back; a switch by hand holds every trigger (DESIGN A94). A login that
 // cannot serve a counted model moves at once: its sessions cannot run until
 // it does (DESIGN A77).
-func heldByCooldown(trigger string) bool { return trigger == "proactive" || trigger == "reserved" }
+func heldByCooldown(trigger string) bool {
+	return trigger == "proactive" || trigger == "reserved" || trigger == "drain"
+}
 
 func (e *Engine) missesCountedModel(cur string, usageMap map[string]any) bool {
 	required := requiredModels(e.models)
@@ -689,9 +702,17 @@ func sortQualifying(qualifying []qual, strategy string) {
 	})
 }
 
+type slotIdentity struct{ number, email, organization string }
+
+func (e *Engine) slotIdentity(number string) slotIdentity {
+	identity := e.sw.AccountIdentity(number)
+	return slotIdentity{number, identity["email"], identity["organizationUuid"]}
+}
+
 // perform runs (or, in dry-run, reports) the switch decision (05§12). axis is
 // the window that made the tick move ("" under failover, DESIGN A34).
-func (e *Engine) perform(number, email, trigger, axis string) (tickResult, error) {
+func (e *Engine) perform(source, target slotIdentity, trigger, axis string) (tickResult, error) {
+	number, email := target.number, target.email
 	if e.dryRun {
 		var from map[string]any
 		if current := e.sw.CurrentAccountNumber(); current != nil {
@@ -719,6 +740,13 @@ func (e *Engine) perform(number, email, trigger, axis string) (tickResult, error
 		if detail, held := e.cooldownHold(trigger, state); held {
 			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "cooldown", Detail: detail})
 			outcome = NoAction
+			return nil
+		}
+		current := e.sw.CurrentAccountNumber()
+		if current == nil || *current != source.number || e.slotIdentity(*current) != source ||
+			e.slotIdentity(number) != target || !slices.Contains(e.sw.SwitchableAccountNumbers(), number) ||
+			trigger == "drain" && !e.opusOnly() {
+			e.emit(NoSwitchEvent{Ts: e.nowISO(), Reason: "selection-changed", Detail: "active account or target eligibility changed during selection"})
 			return nil
 		}
 		r, err := e.sw.SwitchTo(number, true)

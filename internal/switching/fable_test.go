@@ -357,3 +357,40 @@ func TestEmptyFable(t *testing.T) {
 		})
 	}
 }
+
+func TestFailedRecoveryWriteLeavesNoReaderAndCanRetry(t *testing.T) {
+	s, f := fableSwitchStore(t)
+	if err := f.SetFableAllocationParked(true); err != nil {
+		t.Fatal(err)
+	}
+	path := fableStorePath(s)
+	fableBeforeInstall = func() {
+		if err := os.Mkdir(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { fableBeforeInstall = nil })
+	identity := strings.Repeat("a", 64)
+	check := func(*store.Store, *store.SequenceData) error { return nil }
+	if err := RecoverFable(f, "2", identity, check); err == nil {
+		t.Fatal("expected failed credential write")
+	}
+	reader, err := store.ReadFableReaders(s.BackupDir())
+	if err != nil || reader.Identity != "" {
+		t.Fatalf("failed write reserved a reader: %+v, %v", reader, err)
+	}
+	if parked, err := store.FableAllocationParked(s.BackupDir()); err != nil || !parked {
+		t.Fatalf("lost parked state: %v %v", parked, err)
+	}
+	fableBeforeInstall = nil
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecoverFable(f, "2", identity, check); err != nil {
+		t.Fatal(err)
+	}
+	reader, err = store.ReadFableReaders(s.BackupDir())
+	if err != nil || reader.Identity != identity || !reader.InUse() {
+		t.Fatalf("completed write lacks reader: %+v, %v", reader, err)
+	}
+}

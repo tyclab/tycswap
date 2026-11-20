@@ -9,11 +9,7 @@ import (
 )
 
 func SetModels(s *store.Store, identifier string, set []string) error {
-	return s.WithRosterLocked(func(data *store.SequenceData) error {
-		num, _, _, err := s.ResolveAccountFrom(data, identifier)
-		if err != nil {
-			return err
-		}
+	return withFableAllocationEdit(s, identifier, func(data *store.SequenceData, num string) error {
 		want, err := store.ParseModels(strings.Join(set, ","))
 		if err != nil {
 			return cerr.Validation("%s", err.Error())
@@ -32,11 +28,7 @@ func SetModels(s *store.Store, identifier string, set []string) error {
 
 // ClearModels removes the account's models key, so its set is derived again.
 func ClearModels(s *store.Store, identifier string) error {
-	return s.WithRosterLocked(func(data *store.SequenceData) error {
-		num, _, _, err := s.ResolveAccountFrom(data, identifier)
-		if err != nil {
-			return err
-		}
+	return withFableAllocationEdit(s, identifier, func(data *store.SequenceData, num string) error {
 		rec, _ := recordAt(data, num)
 		if !rec.has(store.ModelsKey) {
 			return nil

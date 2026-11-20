@@ -9,11 +9,7 @@ import (
 // decides again, under the roster lock (DESIGN A107). A mark that cannot
 // change the answer is refused: an API-key account, and a plan without Fable.
 func SetFableMark(s *store.Store, identifier string, allowed bool) error {
-	return s.WithRosterLocked(func(data *store.SequenceData) error {
-		num, _, _, err := s.ResolveAccountFrom(data, identifier)
-		if err != nil {
-			return err
-		}
+	return withFableAllocationEdit(s, identifier, func(data *store.SequenceData, num string) error {
 		rec, _ := recordAt(data, num)
 		if allowed {
 			switch a := s.FableEntitlement(data, num); {

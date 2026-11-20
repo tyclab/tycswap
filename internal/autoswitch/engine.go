@@ -45,6 +45,7 @@ type Engine struct {
 	// reserved: accounts this profile leaves to Fable work (DESIGN A71); nil reserves none.
 	reserved     func(num string) bool
 	reservedLast func(num string) bool
+	opusOnly     func() bool
 	holdToken    string
 	// unservable: derived models the policy dropped, named in the poll event (DESIGN A91).
 	unservable  []string
@@ -100,6 +101,8 @@ func WithServes(model string, serves func(num string) bool) Option {
 
 // WithStartHoldToken is the token StartSelection holds under, "" for new (DESIGN A105).
 func WithStartHoldToken(token string) Option { return func(e *Engine) { e.holdToken = token } }
+
+func WithOpusDrain(opusOnly func() bool) Option { return func(e *Engine) { e.opusOnly = opusOnly } }
 
 // WithEnabled is the on/off each tick reads first (DESIGN A83); nil means on.
 func WithEnabled(enabled func() bool) Option { return func(e *Engine) { e.enabled = enabled } }

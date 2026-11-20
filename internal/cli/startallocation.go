@@ -8,34 +8,37 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/termsafe"
 	"github.com/tyclab/tycswap/internal/usage"
 )
 
-func confirmStartAllocation(number, allocation, model string, args []string, streams ioStreams) error {
+func confirmStartAllocation(name, allocation, model string, args []string, streams ioStreams) error {
 	start := fmt.Sprintf("start %d", os.Getpid())
 	if newID, _ := flagValue(args, "--session-id"); sessionUUID.MatchString(newID) {
 		start = newID
 	} else if resumed := resumedSession(args); sessionUUID.MatchString(resumed) {
 		start = resumed
 	}
+	where := ""
 	if cwd, err := os.Getwd(); err == nil {
-		start = fmt.Sprintf("%q, %s", filepath.Base(cwd), start)
+		where = " in " + termsafe.Strip(filepath.Base(cwd))
 	}
 	family := "Claude"
 	if model != "" {
 		family = strings.ToUpper(model[:1]) + model[1:]
 	}
-	question := fmt.Sprintf("Use Account-%s, allocated to %s, for this %s session (%s) and use its shared quota?", number, allocation, family, start)
+	question := fmt.Sprintf("Use %s’s shared quota for this %s session%s? It is allocated to %s.", termsafe.Strip(name), family, where, allocation)
 	if stop := slices.Index(args, "--"); stop >= 0 {
 		args = args[:stop]
 	}
-	ok, err := askPlacement(streams, question, slices.Contains(args, "-p") || slices.Contains(args, "--print"))
+	ok, err := askPlacement(streams, question, start, slices.Contains(args, "-p") || slices.Contains(args, "--print"))
 	if err != nil {
 		return err
 	}
@@ -46,8 +49,8 @@ func confirmStartAllocation(number, allocation, model string, args []string, str
 }
 
 type sharedStartException struct {
-	number, allocation string
-	identity           usage.Identity
+	number, name, allocation string
+	identity                 usage.Identity
 }
 
 // Rank an ordinary eligible choice ahead of an exception only when start is
@@ -84,7 +87,7 @@ func confirmSharedStart(root string, fable bool, family string, args []string, s
 	if err != nil || proposed.allocation == "" {
 		return err
 	}
-	if err := confirmStartAllocation(proposed.number, proposed.allocation, family, args, streams); err != nil {
+	if err := confirmStartAllocation(proposed.name, proposed.allocation, family, args, streams); err != nil {
 		return err
 	}
 	current, err := readSharedStartException(root, fable, family)
@@ -103,7 +106,7 @@ func readSharedStartException(root string, fable bool, family string) (sharedSta
 	if os.IsNotExist(err) {
 		return none, nil
 	}
-	checkAllocation := family == "opus" || family == "fable"
+	checkAllocation := family == "opus" || family == "fable" || family == mythosFamily
 	if problem := startStoreProblem(root); problem != "" {
 		if checkAllocation {
 			return none, fmt.Errorf("could not verify this launch's allocation in the account store")
@@ -164,18 +167,14 @@ func readSharedStartException(root string, fable bool, family string) (sharedSta
 	}
 	id := usage.Identity{Email: email, OrgUUID: org}
 	entry := view.Usage.Entries(map[string]usage.Identity{number: id})[number]
-	v, _ := entry.DecisionValue().(map[string]any)
-	u := oauth.NewUsage(oauth.AsOf(v, view.Clk.Now()))
-	if u != nil {
-		var scoped []string
-		for _, window := range u.Scoped {
-			if strings.Contains(strings.ToLower(window.Name), family) {
-				scoped = append(scoped, window.Name)
-			}
-		}
-		if room := oauth.AccountHeadroom(u, scoped); room != nil && *room <= 0 {
-			return none, fmt.Errorf("Account-%s has no remaining quota for this %s start", number, family)
-		}
+	if room := startModelHeadroom(entry, family, view.Clk.Now()); room != nil && *room <= 0 {
+		return none, fmt.Errorf("Account-%s has no remaining quota for this %s start", number, family)
 	}
-	return sharedStartException{number: number, allocation: strings.Join(models, ", "), identity: id}, nil
+	return sharedStartException{number: number, name: store.AccountNameFrom(data, number), allocation: strings.Join(models, ", "), identity: id}, nil
+}
+
+func startModelHeadroom(entry usage.UsageEntry, family string, now time.Time) *float64 {
+	v, _ := entry.DecisionValue().(map[string]any)
+	u := oauth.NewUsage(oauth.AsOf(v, now))
+	return oauth.AccountHeadroom(u, oauth.FamilyWindows(u, family))
 }
