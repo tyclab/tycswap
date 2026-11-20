@@ -70,6 +70,7 @@ var menuActions = []menuAction{
 	{"purge", "", "--debug", "Purge Claude data"},
 	{"--version", "", "", "Print the version"},
 	{"help", "", "", "Show CLI help"},
+	{"codex --help", "", "", "Show all Codex account commands"},
 }
 
 func menuCommands(s ioStreams) {

@@ -18,6 +18,45 @@ import (
 	"github.com/tyclab/tycswap/internal/testutil"
 )
 
+// The root help is the public command inventory. Each documented verb should
+// lead to an action in the command picker, including the Codex subcommands.
+func TestMenuCoversDocumentedCommands(t *testing.T) {
+	choices := menuScript(t)
+	menuCommands(ioStreams{err: io.Discard})
+	offered := map[string]bool{"menu": true}
+	for _, label := range choices["Choose a command"] {
+		command, _, _ := strings.Cut(label, "   ")
+		words := strings.Fields(command)
+		if words[0] == "codex" {
+			offered["codex "+words[1]] = true
+		} else {
+			offered[words[0]] = true
+		}
+	}
+	for _, row := range strings.Split(mainDescription, "\n") {
+		usage, _, _ := strings.Cut(strings.TrimSpace(row), "  ")
+		words := strings.Fields(usage)
+		if len(words) < 2 || words[0] != "tycswap" {
+			continue
+		}
+		prefix, verb := "", words[1]
+		if verb == "menubar" {
+			verb = "app" // The retired CLI entry only points to the tray command.
+		}
+		if verb == "codex" {
+			prefix, verb = "codex ", "--help"
+			if len(words) >= 3 {
+				verb = words[2]
+			}
+		}
+		for _, name := range strings.Split(verb, "|") {
+			if !offered[prefix+name] {
+				t.Errorf("menu is missing documented command %s%s", prefix, name)
+			}
+		}
+	}
+}
+
 func TestMenuModelAllocationAndIndependentEnrollment(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		t.Skip("independent file-based storage unavailable")
