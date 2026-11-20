@@ -182,10 +182,10 @@ func DefaultSessionPolicy(s *store.Store, base settings.AutoSwitchSettings) (set
 // nothing. A live Mythos session restricts the login to the accounts marked
 // for Mythos, while one is in the pool (A106).
 //
-// While the Fable store is usable (A102) it counts the default store's
-// sessions only, those whose record names no store, and always reserves the
-// Fable pool's accounts with Fable room and the Fable store's live account,
-// the latter last.
+// While the Fable store is usable (A102) it follows neither the Fable
+// store's sessions nor a Fable session on the default login (A108), and
+// always reserves the Fable pool's accounts with Fable room and the Fable
+// store's live account, the latter last.
 func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings, now time.Time) PolicyResult {
 	base.Model = nil
 	r := PolicyResult{Settings: base}
@@ -219,7 +219,7 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 			allKnown = false
 			continue
 		}
-		if fable.Usable && rec.Store == "fable" {
+		if fable.Usable && (rec.Store == "fable" || rec.Family == "fable") {
 			continue
 		}
 		families[rec.Family] = true
