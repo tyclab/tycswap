@@ -35,7 +35,7 @@ func startStarted(in io.Reader) {
 		return
 	}
 	scope := ""
-	if mythosSessionDir != "" {
+	if mythosSessionDir != "" || fableSessionProcess && validMythosDigest(os.Getenv(recoveredFableEnv)) {
 		if !sessionUUID.MatchString(session) {
 			return
 		}

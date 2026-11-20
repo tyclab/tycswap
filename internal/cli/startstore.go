@@ -205,6 +205,23 @@ func flagValue(args []string, flag string) (value string, ok bool) {
 	return value, ok && value != ""
 }
 
+func freshNativeLaunch(args []string) bool {
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		key, _, _ := strings.Cut(arg, "=")
+		if strings.HasPrefix(key, "-") && !strings.HasPrefix(key, "--") && strings.ContainsAny(key[1:], "rc") {
+			return false
+		}
+		switch key {
+		case "--resume", "-r", "--continue", "-c", "--from-pr", "--fork-session":
+			return false
+		}
+	}
+	return true
+}
+
 // resumedSession is the id --resume / -r names, "" for a bare --resume (the
 // picker).
 func resumedSession(args []string) string {

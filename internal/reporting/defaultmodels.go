@@ -182,11 +182,18 @@ func recordSessionModel(root, sessionID, model, store string, now time.Time, tim
 	}
 	at := float64(now.UnixNano()) / 1e9
 	old, seen := sessions[sessionID]
-	changed := !seen || old.Family != family || old.Store != store
+	binding := old.binding()
+	if strings.HasPrefix(store, "fable/") {
+		if binding != "" && binding != store {
+			return false, fmt.Errorf("the session already belongs to another native login")
+		}
+		binding, store = store, "fable"
+	}
+	changed := !seen || old.Family != family || old.Store != store || binding != old.binding()
 	if !changed && at-old.SeenAt < defaultModelRefresh.Seconds() && at >= old.SeenAt {
 		return false, nil
 	}
-	next := defaultSessionModel{Family: family, SeenAt: at, Store: store, Binding: old.binding()}
+	next := defaultSessionModel{Family: family, SeenAt: at, Store: store, Binding: binding}
 	if next.Binding == next.Store {
 		next.Binding = ""
 	}

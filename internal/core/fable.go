@@ -2,10 +2,12 @@ package core
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/lifecycle"
+	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/switching"
 )
@@ -101,13 +103,18 @@ func (sw *Switcher) EmptyFableBy(jsonOut bool, actor string) (map[string]any, er
 	if err != nil {
 		return nil, err
 	}
-	if !f.HasLiveLogin() {
+	if _, err := os.Stat(paths.FableScopeDir(f.BackupDir())); os.IsNotExist(err) {
 		return switching.EmptyFable(f)
+	} else if err != nil {
+		return nil, err
 	}
 	var result map[string]any
 	err = autoswitch.HandSwitch(f.StatePath(), sw.Clk, nil, func() (string, error) {
 		var err error
 		result, err = switching.EmptyFable(f)
+		if err == nil {
+			err = f.SetFableAllocationParked(false)
+		}
 		return "", err
 	})
 	if err == nil && result["switched"] == true && sw.Log != nil && actor != "" {

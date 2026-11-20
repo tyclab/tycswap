@@ -75,6 +75,9 @@ func locateMythosLogin(root, model, account, session string) (mythosPlacement, e
 			return mythosPlacement{}, err
 		}
 	}
+	if strings.HasPrefix(scope, "fable/") {
+		return mythosPlacement{}, nil
+	}
 	bound, dedicated := strings.CutPrefix(scope, "mythos/")
 	if scope != "" && !dedicated {
 		return mythosPlacement{}, fmt.Errorf("the session's recorded login identity is invalid")

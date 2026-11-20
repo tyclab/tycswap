@@ -399,14 +399,22 @@ func autoOnOffCommand(verb string, rest []string, s ioStreams) int {
 	switch {
 	case verb == "status":
 		on := autoSwitchOn(root)
+		parking, err := sw.Store.ParkingStatus()
+		if err != nil {
+			return autoError(err, jsonMode, s)
+		}
 		if jsonMode {
 			writeJSONCompact(s.out, struct {
-				SchemaVersion int  `json:"schemaVersion"`
-				Enabled       bool `json:"enabled"`
-			}{jsonout.SchemaVersion, on})
+				SchemaVersion int    `json:"schemaVersion"`
+				Enabled       bool   `json:"enabled"`
+				FableStartup  string `json:"fableStartup,omitempty"`
+			}{jsonout.SchemaVersion, on, parking.Description()})
 			return 0
 		}
 		fmt.Fprintln(s.out, "Auto-switch: "+onOffWord(on))
+		if parking != nil {
+			fmt.Fprintln(s.out, "Fable store: "+parking.Description())
+		}
 		return 0
 	case ifUnset:
 		seeded, err := settings.SeedSetting(root, "autoswitch.enabled", "true")

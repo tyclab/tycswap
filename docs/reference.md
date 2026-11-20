@@ -1682,6 +1682,22 @@ account the default login's other sessions need until it is resumed on the
 Fable store, and the counting caption says so: `1 Fable session on the
 default login not followed (start --check names it)`.
 
+When a model allocation or Fable capability change removes the selected
+account from Fable, tycswap saves its independently signed-in login and parks
+the idle Fable store. With a native client still using it, the client keeps
+its identity and new managed Fable starts wait. A new native Fable start can
+refill a parked store with an enabled startup account whose plan supports new
+Fable sessions, whose allocation includes Fable and whose known quota has room.
+Without an eligible login the command explains the wait and exits. Enabled
+auto-switch ticks record a ready account when quota becomes available. Both
+`status` and `auto status` show this choice. The shared credential stays empty
+until the next native start rechecks eligibility.
+
+The recovered process keeps one account until exit. Its SessionStart hook
+records that identity for UUID resumes. A resume waits if its account is
+unavailable. Explicitly emptying the idle store with
+`tycswap switch --store fable --empty` turns this recovery off.
+
 ### Launchers
 
 Use an explicit verified real path for a manual launcher:

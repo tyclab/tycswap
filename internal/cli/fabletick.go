@@ -12,6 +12,7 @@ import (
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -142,6 +143,11 @@ func (e fableEvent) Human() string {
 // harvests the store's rotated login first and keeps one idle login alive
 // after. With the store off a real run only keeps one idle login alive.
 func fableTick(sw *core.Switcher, merged settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool) (outcome autoswitch.TickOutcome, ran bool) {
+	if !dryRun && merged.Enabled {
+		if err := lifecycle.UpdateParkedFableReady(sw.Store); err != nil {
+			sw.Log.Warningf("Fable startup readiness: %v", err)
+		}
+	}
 	if !sw.Store.FableStore().On {
 		if !dryRun && sw.Store.HasFableLogins() {
 			if a, err := newFableAdapter(sw, sw.Log); err == nil {

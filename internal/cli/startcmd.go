@@ -149,13 +149,15 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 	}
 	root := paths.GetBackupRoot()
 	storeDir := filepath.Clean(paths.FableStoreDir(root))
+	env = withStartVar(env, recoveredFableEnv, "")
 	childEnv, hold, family := env, "", ""
 	if reason := startOverride(env, parsed.command, storeDir); reason != "" {
 		if parsed.account != "" {
 			startNotice(streams.err, "Skipping the requested start login because "+reason+"; launching unchanged.")
 		}
 	} else {
-		model := startSessionFamily(args, env)
+		requestedFamily := startSessionFamily(args, env)
+		model := requestedFamily
 		var dir string
 		native := launch.IsClaudeCommand(bin)
 		if model == mythosFamily || native {
@@ -167,7 +169,18 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 			startNotice(streams.err, err.Error())
 			return 1
 		}
-		if dir != "" {
+		var recovered string
+		if dir == "" && (native || requestedFamily == "fable") {
+			recovered, err = recoveredFableStart(root, requestedFamily, parsed.account, args[1:], native)
+			if err != nil {
+				startNotice(streams.err, err.Error())
+				return 1
+			}
+		}
+		if recovered != "" {
+			childEnv = withStartVar(withFableStore(env, storeDir), recoveredFableEnv, recovered)
+			family = "fable"
+		} else if dir != "" {
 			family = model
 			childEnv = withFableStore(env, dir)
 		} else {

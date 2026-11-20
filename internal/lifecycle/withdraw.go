@@ -78,12 +78,12 @@ func withdrawDisabled(s *store.Store, requested *groups.Account, enabled func() 
 			if err != nil || busy {
 				return "", err
 			}
-			target := withdrawalTarget(def, view, data)
+			target := withdrawalTarget(def, view, data, nil)
 			check := func(current *store.SequenceData) error {
 				if !enabled() || !selectedDisabled(view, current, account) {
 					return errWithdrawalSuperseded
 				}
-				if withdrawalTarget(def, view, current) != target {
+				if withdrawalTarget(def, view, current, nil) != target {
 					return errors.New("the eligible replacement changed before withdrawal; retry disable")
 				}
 				if busy, err := SelectedStoreBusy(view); err != nil {
@@ -132,6 +132,12 @@ func selectedDisabled(s *store.Store, data *store.SequenceData, a groups.Account
 // SelectedStoreBusy reports whether a managed launch or a live client may
 // depend on this store. Callers recheck under the native write locks.
 func SelectedStoreBusy(s *store.Store) (bool, error) {
+	if s.IsFable() {
+		readers, err := store.ReadFableReaders(s.BackupDir())
+		if err != nil || readers.InUse() {
+			return true, err
+		}
+	}
 	if held, err := autoswitch.StartHeld(s.StatePath(), s.Clk.Now()); held || err != nil {
 		return held, err
 	}
@@ -176,7 +182,7 @@ func SelectedStoreBusy(s *store.Store) (bool, error) {
 	return false, nil
 }
 
-func withdrawalTarget(def, scope *store.Store, data *store.SequenceData) groups.Account {
+func withdrawalTarget(def, scope *store.Store, data *store.SequenceData, accepts func(string) bool) groups.Account {
 	family := "opus"
 	if scope.IsFable() {
 		family = "fable"
@@ -187,6 +193,9 @@ func withdrawalTarget(def, scope *store.Store, data *store.SequenceData) groups.
 
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
+		if accepts != nil && !accepts(num) {
+			continue
+		}
 		if _, bad := held[num]; bad || !def.RotationEligible(data, num) || def.EnsureAccountAvailable(num) != nil {
 			continue
 		}
@@ -203,7 +212,11 @@ func withdrawalTarget(def, scope *store.Store, data *store.SequenceData) groups.
 		ids[num] = usage.Identity{Email: email, OrgUUID: org}
 		candidates = append(candidates, num)
 	}
-	ordered := autoswitch.InitialPlacementTargets(candidates, def.Usage.Entries(ids), settings.Load(def.BackupDir()), family, def.Clk.Now())
+	rank := autoswitch.InitialPlacementTargets
+	if accepts != nil {
+		rank = autoswitch.KnownRoomTargets
+	}
+	ordered := rank(candidates, def.Usage.Entries(ids), settings.Load(def.BackupDir()), family, def.Clk.Now())
 	if len(ordered) == 0 {
 		return groups.Account{}
 	}

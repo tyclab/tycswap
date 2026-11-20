@@ -119,6 +119,9 @@ func observedStore() string {
 		return "mythos/" + filepath.Base(mythosSessionDir)
 	}
 	if fableSessionProcess {
+		if digest := os.Getenv(recoveredFableEnv); validMythosDigest(digest) {
+			return "fable/" + digest
+		}
 		return "fable"
 	}
 	return ""

@@ -46,6 +46,9 @@ func WithdrawLogin(s *store.Store, from groups.Account, to string, check func(*s
 		} else if live.Source == store.SourceConfig || live.Source == store.SourceLastInstall {
 			return cerr.Session("Account-%s is disabled, but its live credential ownership cannot be verified", from.Number)
 		}
+		if s.IsFable() && to == "" {
+			return s.SetFableAllocationParked(true)
+		}
 		return nil
 	}
 	if s.IsFable() {

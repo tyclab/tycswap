@@ -403,7 +403,16 @@ func StartTargets(candidates []string, entries map[string]usage.UsageEntry, set 
 
 // InitialPlacementTargets orders independently signed-in candidates for a new native session.
 func InitialPlacementTargets(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, family string, now time.Time) []string {
-	return startTargetsWithRoom(orderStartTargets(candidates, entries, set, nil, now, startOrder{soonestBinding: set.Strategy == "soonest-reset", family: family}))
+	return startTargetsWithRoom(initialPlacementRows(candidates, entries, set, family, now))
+}
+
+func KnownRoomTargets(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, family string, now time.Time) []string {
+	rows := initialPlacementRows(candidates, entries, set, family, now)
+	return startTargetsWithRoom(slices.DeleteFunc(rows, func(r startTarget) bool { return !r.known }))
+}
+
+func initialPlacementRows(candidates []string, entries map[string]usage.UsageEntry, set settings.AutoSwitchSettings, family string, now time.Time) []startTarget {
+	return orderStartTargets(candidates, entries, set, nil, now, startOrder{soonestBinding: set.Strategy == "soonest-reset", family: family})
 }
 
 func startTargetsWithRoom(rows []startTarget) []string {

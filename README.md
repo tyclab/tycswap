@@ -420,6 +420,11 @@ tycswap clears the selection and keeps the saved login. A live session retains
 its credential. Once the last client exits, an enabled auto-switch tick completes
 the withdrawal. With auto-switch off, repeating disable retries it.
 
+When a model allocation leaves the Fable store parked, enabled ticks prepare
+an eligible startup account with known room. `tycswap status` and
+`tycswap auto status` show it. The next fresh native Fable start rechecks and
+installs its own login. A manual `switch --store fable --empty` stays off.
+
 ```
 $ tycswap disable 2
 Disabled Account-2 (bob@example.com).

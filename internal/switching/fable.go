@@ -10,13 +10,25 @@ import (
 // FableSwitchOptions configures a switch of the Fable store. Actor names who
 // switched in the log line ("hand"); "" writes none: the engine logs its own.
 type FableSwitchOptions struct {
-	Actor        string
-	BeforeChange func(*store.Store, *store.SequenceData) error
+	recoverIdentity string
+	Actor           string
+	BeforeChange    func(*store.Store, *store.SequenceData) error
 }
 
 // fableBeforeInstall is a test seam: it runs under the locks just before the
 // incoming login is installed.
 var fableBeforeInstall func()
+
+// RecoverFable starts a new, identity-pinned session on an empty store.
+// Eligibility is checked under the native lock and the future process is
+// registered before unlocking. A failed install never registers a reader.
+func RecoverFable(f *store.Store, id, identity string, check func(*store.Store, *store.SequenceData) error) error {
+	r, err := SwitchFable(f, id, FableSwitchOptions{recoverIdentity: identity, BeforeChange: check})
+	if err == nil && r["switched"] != true {
+		return cerr.Switch("The Fable login changed during recovery; retry the new start")
+	}
+	return err
+}
 
 // SwitchFable makes account id's Fable login the Fable store's live login
 // (DESIGN A100). Under the store lock and the Fable store's own Claude Code
@@ -72,6 +84,24 @@ func SwitchFable(fable *store.Store, id string, opts FableSwitchOptions) (map[st
 		if incoming == "" {
 			return cerr.Switch("Account-%s's Fable login is gone", num)
 		}
+		parked, err := store.FableAllocationParked(f.BackupDir())
+		if err != nil {
+			return err
+		}
+		if opts.recoverIdentity != "" && !parked {
+			return cerr.Switch("The Fable store was turned off during recovery")
+		}
+		if parked && opts.recoverIdentity == "" {
+			if opts.Actor == "" {
+				return cerr.Switch("The Fable login is parked for a new native session")
+			}
+			if err := f.CheckFableIdle(); err != nil {
+				return err
+			}
+		}
+		if err := f.ReleaseIdleFableReaders(); err != nil {
+			return err
+		}
 		if opts.BeforeChange != nil {
 			if err := opts.BeforeChange(f, current); err != nil {
 				return err
@@ -88,6 +118,12 @@ func SwitchFable(fable *store.Store, id string, opts FableSwitchOptions) (map[st
 		}
 		if err := f.RecordFableLive(num, incoming); err != nil && f.Log != nil {
 			f.Log.Debugf("Could not record the Fable store's live lineage: %v", err)
+		}
+		if opts.recoverIdentity != "" {
+			return f.PinFableReader(opts.recoverIdentity)
+		}
+		if parked && opts.recoverIdentity == "" {
+			return f.SetFableAllocationParked(false)
 		}
 		return nil
 	})
@@ -128,6 +164,18 @@ func emptyFableWhen(fable *store.Store, check func(*store.SequenceData) error) (
 	err = f.WithFableLocks(func() error {
 		current, err := f.ReadSequence()
 		if err != nil {
+			return err
+		}
+		parked, err := store.FableAllocationParked(f.BackupDir())
+		if err != nil {
+			return err
+		}
+		if parked && check == nil {
+			if err := f.CheckFableIdle(); err != nil {
+				return err
+			}
+		}
+		if err := f.ReleaseIdleFableReaders(); err != nil {
 			return err
 		}
 		if check != nil {
