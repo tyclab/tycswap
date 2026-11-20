@@ -11,6 +11,7 @@ import (
 // switched in the log line ("hand"); "" writes none: the engine logs its own.
 type FableSwitchOptions struct {
 	Actor string
+	check func(*store.SequenceData) error
 }
 
 // fableBeforeInstall is a test seam: it runs under the locks just before the
@@ -57,6 +58,11 @@ func SwitchFable(fable *store.Store, id string, opts FableSwitchOptions) (map[st
 		if err != nil {
 			return err
 		}
+		if opts.check != nil {
+			if err := opts.check(current); err != nil {
+				return err
+			}
+		}
 		if f.FindAccountSlot(current, email, org) != num {
 			return cerr.Switch("Account-%s changed while the switch waited for the store lock; nothing switched. Retry the command.", num)
 		}
@@ -101,6 +107,10 @@ func SwitchFable(fable *store.Store, id string, opts FableSwitchOptions) (map[st
 // goes back into its account's Fable login, the store keeps its seat-wide
 // keys only, or no file when it has none, and its chain record goes.
 func EmptyFable(fable *store.Store) (map[string]any, error) {
+	return emptyFableWhen(fable, nil)
+}
+
+func emptyFableWhen(fable *store.Store, check func(*store.SequenceData) error) (map[string]any, error) {
 	f, err := fable.ForFable()
 	if err != nil {
 		return nil, err
@@ -116,8 +126,15 @@ func EmptyFable(fable *store.Store) (map[string]any, error) {
 	f.ResolveFableLiveSlot(data) // asks the profile endpoint, if at all, before the locks
 	var from map[string]any
 	err = f.WithFableLocks(func() error {
-		current, _ := f.ReadSequence()
-		var err error
+		current, err := f.ReadSequence()
+		if err != nil {
+			return err
+		}
+		if check != nil {
+			if err := check(current); err != nil {
+				return err
+			}
+		}
 		if from, err = backUpFableOutgoing(f, current, f.ResolveOwnerSlot(current)); err != nil {
 			return err
 		}

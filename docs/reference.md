@@ -1104,7 +1104,20 @@ Legacy: `tycswap --disable-account <id>`.
 
 Disables selection of this Claude account across the default and Fable stores.
 Direct switches, forced switches, and new managed starts on the disabled account
-require it to be enabled again. The roster and saved credentials retain it.
+require it to be enabled again. Disabling an idle selected account immediately
+moves its store to an eligible replacement, including with automatic switching
+off. The default store accepts an ordinary Opus allocation and the secondary
+store requires a Fable-compatible login. Without a replacement, the store keeps
+the account backup and clears its selection. Disabling the same account again
+retries a withdrawal.
+
+A registered live session, IDE or managed startup hold keeps the login it is
+using. A default change also writes shared Claude configuration, so any registered
+native client holds it. The secondary credential store can change independently
+when every registered process is known to use another store. Native clients that
+start outside tycswap register themselves after launch and do not take tycswap's
+locks. If ownership or process state cannot be verified, disable reports the
+error and keeps the disabled mark.
 
 ### Files
 
@@ -1117,7 +1130,8 @@ Writes the `disabled` flag on the account's `sequence.json` record.
 ### Output
 
 `Disabled Account-<n> (<email>).` When the disabled account is also the active
-login, a second line follows: `  It is the active account. Existing sessions keep their login until you switch away. Managed starts on this login are blocked.`
+login, a second line follows: `  It is the active account. Existing sessions keep their login. New managed starts cannot use it.`
+An idle withdrawal also names the new selection or says that no eligible login is available.
 
 ### Errors
 
@@ -1128,7 +1142,7 @@ login, a second line follows: `  It is the active account. Existing sessions kee
 ```
 $ tycswap disable 1
 Disabled Account-1 (alice@example.com).
-  It is the active account. Existing sessions keep their login until you switch away. Managed starts on this login are blocked.
+  It is the active account. Existing sessions keep their login. New managed starts cannot use it.
 ```
 
 ### See also

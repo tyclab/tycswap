@@ -11,6 +11,8 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/tyclab/tycswap/internal/groups"
+
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/store"
@@ -21,11 +23,13 @@ func SetAccountDisabled(s *store.Store, identifier string, disabled bool) error 
 		return cerr.Config("No accounts are managed yet")
 	}
 
-	return s.WithRosterLocked(func(data *store.SequenceData) error {
-		accountNum, email, _, err := s.ResolveAccountFrom(data, identifier)
+	var selected groups.Account
+	err := s.WithRosterLocked(func(data *store.SequenceData) error {
+		accountNum, email, org, err := s.ResolveAccountFrom(data, identifier)
 		if err != nil {
 			return err
 		}
+		selected = groups.Account{Number: accountNum, Email: email, OrgUUID: org}
 		rec, ok := recordAt(data, accountNum)
 		if !ok {
 			return cerr.AccountNotFound("Account-%s does not exist", accountNum)
@@ -65,7 +69,7 @@ func SetAccountDisabled(s *store.Store, identifier string, disabled bool) error 
 				active = strconv.Itoa(*data.ActiveAccountNumber)
 			}
 			if active == accountNum {
-				emitLine(printer.Dimmed("  It is the active account. Existing sessions keep their login until you switch away. Managed starts on this login are blocked."))
+				emitLine(printer.Dimmed("  It is the active account. Existing sessions keep their login. New managed starts cannot use it."))
 			}
 			// SwitchableAccountNumbers re-reads sequence.json. That read is inside
 			// the lock and after the commit above, so it sees the roster this call
@@ -78,6 +82,10 @@ func SetAccountDisabled(s *store.Store, identifier string, disabled bool) error 
 		}
 		return nil
 	})
+	if err != nil || !disabled {
+		return err
+	}
+	return withdrawDisabled(s, selected)
 }
 
 func sequenceFileExists(s *store.Store) bool {

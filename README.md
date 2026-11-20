@@ -411,7 +411,10 @@ Removed alias for Account 3
 ### Disable and enable accounts
 
 A disabled Claude account stays in the roster. Enable it before selecting it
-by hand or launching a managed session on it. Automatic rotation also skips it.
+by hand or launching a managed session on it. An idle store moves to an eligible
+replacement even with automatic rotation off. If no replacement is available,
+tycswap clears the selection and keeps the saved login. A live session retains
+its credential. Repeating disable retries the withdrawal.
 
 ```
 $ tycswap disable 2

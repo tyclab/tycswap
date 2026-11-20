@@ -28,6 +28,10 @@ import (
 // the op's Warnings. forceActivate routes through the direct-activation path
 // even with a managed live login. prov may be nil (resolved here).
 func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActivate bool, prov *Provenance) (switchOp, error) {
+	return performSwitchWhen(s, targetAccount, emitOutput, forceActivate, prov, nil)
+}
+
+func performSwitchWhen(s *store.Store, targetAccount string, emitOutput, forceActivate bool, prov *Provenance, check func(*store.SequenceData) error) (switchOp, error) {
 	if s.GroupID() != "" {
 		return switchOp{}, cerr.Session("session groups are retired; the default login switches by itself")
 	}
@@ -38,8 +42,10 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 	if err := checkSwitchEnabled(preData, targetAccount); err != nil {
 		return switchOp{}, err
 	}
-	if err := ReleaseIdleLegacy(s, targetAccount); err != nil {
-		return switchOp{}, err
+	if check == nil {
+		if err := ReleaseIdleLegacy(s, targetAccount); err != nil {
+			return switchOp{}, err
+		}
 	}
 	warningsOut := []string{}
 
@@ -80,6 +86,11 @@ func performSwitch(s *store.Store, targetAccount string, emitOutput, forceActiva
 		data, err := s.ReadSequence()
 		if err != nil {
 			return err
+		}
+		if check != nil {
+			if err := check(data); err != nil {
+				return err
+			}
 		}
 		if err := checkSwitchEnabled(data, targetAccount); err != nil {
 			return err
