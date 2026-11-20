@@ -42,10 +42,20 @@ func TestResumeKeepsIndependentIdentityAfterModelChange(t *testing.T) {
 	root := paths.GetBackupRoot()
 	dir := store.MythosLoginDir(root, "a@example.com", "")
 	const id = "11111111-2222-4333-8444-555555555555"
+	observed := time.Now()
 	for _, family := range []string{"mythos", "opus"} {
-		if _, err := reporting.RecordDefaultSessionModel(root, id, family, "mythos/"+filepath.Base(dir), time.Now()); err != nil {
+		if _, err := reporting.RecordDefaultSessionModel(root, id, family, "mythos/"+filepath.Base(dir), observed); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if _, err := reporting.RecordDefaultSessionModel(root, "old-shared-session", "opus", "", observed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reporting.RecordDefaultSessionModel(root, "new-shared-session", "opus", "", observed.Add(48*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, recorded := reporting.RecordedSession(root, "old-shared-session"); recorded {
+		t.Fatal("an inactive shared session kept its transient status")
 	}
 	oldExec, oldResolve, oldAsk := startExec, startResolve, askPlacement
 	t.Cleanup(func() { startExec, startResolve, askPlacement = oldExec, oldResolve, oldAsk })

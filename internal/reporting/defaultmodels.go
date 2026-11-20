@@ -25,7 +25,8 @@ const (
 	// The status line reruns every few seconds; an unchanged model is
 	// rewritten at most this often, a changed one at once.
 	defaultModelRefresh = time.Minute
-	// Records of sessions that no longer run are dropped after a day.
+	// Shared-store status records expire after a day. An independent login
+	// binds its session to that identity for future native resumes.
 	defaultModelKeep = 24 * time.Hour
 )
 
@@ -136,7 +137,7 @@ func RecordDefaultSessionModel(root, sessionID, model, store string, now time.Ti
 	}
 	sessions[sessionID] = defaultSessionModel{Family: family, SeenAt: at, Store: store}
 	for id, rec := range sessions {
-		if at-rec.SeenAt > defaultModelKeep.Seconds() {
+		if at-rec.SeenAt > defaultModelKeep.Seconds() && !strings.HasPrefix(rec.Store, "mythos/") {
 			delete(sessions, id)
 		}
 	}
