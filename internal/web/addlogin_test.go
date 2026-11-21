@@ -5,20 +5,13 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-
-	"github.com/tyclab/tycswap/internal/reporting"
 )
 
 // A new login becomes the active account and the answer names it.
 func TestAddCurrentLogin_NewAccount(t *testing.T) {
 	h := newHarness(t)
-	added := &reporting.AccountsSnapshot{ActiveNumber: "4", Accounts: append(sampleSnapshot().Accounts,
-		reporting.AccountSnapshot{Number: "4", Email: "dave@example.com", Kind: "oauth", IsActive: true})}
-	for i := range added.Accounts[:3] {
-		added.Accounts[i].IsActive = false
-	}
 	h.fa.mu.Lock()
-	h.fa.afterAdd = added
+	h.fa.addResult = AddLoginResult{Number: "4", Email: "dave@example.com"}
 	h.fa.mu.Unlock()
 	resp := h.post("/api/accounts/add")
 	if resp.StatusCode != http.StatusOK {
@@ -33,18 +26,15 @@ func TestAddCurrentLogin_NewAccount(t *testing.T) {
 // A login that is one of the accounts already is refreshed, and says so.
 func TestAddCurrentLogin_Refreshed(t *testing.T) {
 	h := newHarness(t)
+	h.fa.mu.Lock()
+	h.fa.addResult = AddLoginResult{Number: "1", Email: "alice@example.com", Refreshed: true}
+	h.fa.mu.Unlock()
 	res, err := h.s.AddCurrentLogin()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var active reporting.AccountSnapshot
-	for _, a := range sampleSnapshot().Accounts {
-		if a.IsActive {
-			active = a
-		}
-	}
-	if !res.Refreshed || res.Number != active.Number || res.Email != active.Email {
-		t.Errorf("result %+v, want the active account %s %s refreshed", res, active.Number, active.Email)
+	if !res.Refreshed || res.Number != "1" || res.Email != "alice@example.com" {
+		t.Errorf("result %+v, want the active account refreshed", res)
 	}
 }
 
@@ -59,8 +49,8 @@ func TestAddCurrentLogin_NoLogin(t *testing.T) {
 		t.Errorf("status %d: %s", resp.StatusCode, body)
 	}
 	for _, c := range h.fa.Calls() {
-		if strings.HasPrefix(c, "AddAccount(") {
-			t.Errorf("AddAccount ran without a login: %v", h.fa.Calls())
+		if c == "SaveCurrentLogin()" {
+			t.Errorf("SaveCurrentLogin ran without a login: %v", h.fa.Calls())
 		}
 	}
 	if _, err := h.s.AddCurrentLogin(); !errors.Is(err, ErrNoLogin) {

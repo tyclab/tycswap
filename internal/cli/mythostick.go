@@ -69,7 +69,7 @@ func tickMythosSelection(sw *core.Switcher, set settings.AutoSwitchSettings, dry
 		if hold != "" {
 			return mythosCooldown(hold)
 		}
-		next, err = chooseMythosLogin(sw.Store, mythosFamily, "", "", filepath.Join(store.MythosLoginRoot(root), selected), selected, set)
+		next, err = chooseMythosLogin(sw.Store, mythosFamily, mythosLoginRequest{source: filepath.Join(store.MythosLoginRoot(root), selected), selected: selected}, set)
 		if err != nil || next.dir == "" {
 			return err
 		}

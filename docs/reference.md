@@ -441,11 +441,20 @@ selection can succeed while a busy session stays on its current login. Repeat
 the command to retry the pending moves and restart the switch cooldown.
 On the dashboard and tray, **Use for Mythos** tries each client's refresh lock
 once and reports pending moves (HTTP 409 over the API), while an individual
-session move on either surface or with `tycswap use` waits up to nine seconds. The default and Fable stores have their own selections.
+session move on either surface or with `tycswap use` waits up to nine seconds.
+A change of the selected Mythos login writes one INFO entry to `tycswap.log`
+with its account number and the command, menu, dashboard or tray actor.
+An individual session move records the initiating dashboard or tray, or
+`use` for the command. The default and Fable stores have their own selections.
 `list`, `status`, the dashboard and the tray show the selected account,
-counted windows and linked session count. For example, a login that reports
-5h, 7d and Fable shows `counting 5h + 7d + Fable`. The JSON field is
-`mythos`. An unavailable count is null.
+counted windows and linked session count. A login at its limit can read
+`counting 7d + Fable, at limit: Fable until Nov 28 09:59, 0 linked sessions`.
+The JSON `mythos` object in `list --json`, `status --json` and `/api/state`
+reports `atLimit` and `limitingWindows`. With room these are `false` and `[]`.
+Without a usable reading both are null. `resetsAt` is the latest reset among
+the limiting windows, in UTC. It is null while the login has room or any
+limiting window lacks a known reset. When available, `resetClock` gives the
+same time in the host's local clock format. An unavailable session count is null.
 
 Bare `tycswap switch` rotates to the next account in the sequence. `tycswap switch
 <NUM|EMAIL|ALIAS>` activates a specific account. `--strategy best` takes
@@ -805,6 +814,10 @@ its profile is marked for deferred invalidation instead. An account a retired se
 still holds is refused, naming the group: its stored login stays the group's
 until the next auto-switch tick after its last session exits hands it back
 (DESIGN A74, A78).
+
+When other accounts are marked as start logins, saving a new account prints
+`tycswap start --allow N` with its assigned slot. The dashboard's **Save current
+login** shows the same hint. Refreshing an existing identity preserves its mark.
 
 With `--login`, `add` stores a login the live one never sees. It creates a
 private scratch profile (`login.*`, mode 0700) under the backup root and runs
@@ -1514,7 +1527,9 @@ Use `--next clear` or `--next mythos` to replace a damaged request.
 
 If every eligible independent login is at a known limit, explicit and queued
 Mythos starts exit 1 with `no available Mythos login has quota for mythos`.
-The queued request stays in place.
+When at least one return time is known, the refusal names the first eligible
+login to regain quota, for example `Account-8 returns Nov 28 09:59`. With
+`--account`, only that login counts. The queued request stays in place.
 
 `tycswap start --next show` prints `mythos` for a queued request or `none` for
 an empty queue, then exits 0. It reads the saved request without consuming it

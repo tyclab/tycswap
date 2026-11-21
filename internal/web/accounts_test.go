@@ -198,7 +198,7 @@ func TestAddCurrent_CallsFacade(t *testing.T) {
 			t.Fatalf("status %d: %s", resp.StatusCode, readBody(t, resp))
 		}
 	}
-	want := []string{"AddAccount(<nil>,true,<nil>)", "AddAccount(<nil>,true,<nil>)", "AddAccount(<nil>,true,<nil>)"}
+	want := []string{"SaveCurrentLogin()", "SaveCurrentLogin()", "SaveCurrentLogin()"}
 	if got := h.fa.Calls(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("calls %v", got)
 	}
@@ -226,7 +226,7 @@ func TestAddCurrent_ProviderCodex(t *testing.T) {
 	if resp := h.postJSON("/api/accounts/add", map[string]any{"provider": "claude"}); resp.StatusCode != http.StatusOK {
 		t.Fatalf("claude: status %d", resp.StatusCode)
 	}
-	if got := h.fa.Calls(); !reflect.DeepEqual(got, []string{"AddAccount(<nil>,true,<nil>)"}) {
+	if got := h.fa.Calls(); !reflect.DeepEqual(got, []string{"SaveCurrentLogin()"}) {
 		t.Fatalf("claude calls %v", got)
 	}
 	for _, body := range []any{map[string]any{"provider": "gemini"}, `{"provider":`} {
@@ -273,7 +273,7 @@ func TestSwitch_Codex_ReturnsRunningPids(t *testing.T) {
 func TestAddCurrent_ErrorMapping(t *testing.T) {
 	h := newHarness(t)
 	h.fa.mu.Lock()
-	h.fa.errs = map[string]error{"AddAccount": cerr.Credential("no current login")}
+	h.fa.errs = map[string]error{"SaveCurrentLogin": cerr.Credential("no current login")}
 	h.fa.mu.Unlock()
 	resp := h.post("/api/accounts/add")
 	if resp.StatusCode != http.StatusInternalServerError {

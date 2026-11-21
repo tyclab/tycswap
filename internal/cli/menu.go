@@ -22,11 +22,16 @@ func humanTerminal(stdinTTY, stdoutTTY bool) bool {
 		os.Getenv("TYCSWAP_NO_PROMPT") == "" && os.Getenv("CLAUDECODE") == "" && os.Getenv("CODEX_THREAD_ID") == ""
 }
 
+const menuActionEnv = "TYCSWAP_MENU_ACTION"
+
 var menuExecute = func(s ioStreams, args ...string) int {
 	showMenuCommand(s, args)
 	cmd := exec.Command(exePath(), args...)
 	if len(args) == 0 || args[0] != "start" {
 		cmd.Env = append(os.Environ(), "TYCSWAP_NO_PROMPT=1")
+		if len(args) > 0 && args[0] == "switch" {
+			cmd.Env = append(cmd.Env, menuActionEnv+"=1")
+		}
 		if len(args) > 0 && args[0] == "use" && sessionLinkPath != "" {
 			cmd.Env = withStartVar(cmd.Env, secureStorageEnv, sessionLinkPath)
 		}

@@ -266,6 +266,31 @@ func AccountHeadroom(u *Usage, models []string) *float64 {
 	return &h
 }
 
+// LimitingWindows names the counted windows at or over 100%. The account has
+// room again only after every limiting window resets. A zero time means the
+// reading does not establish a return time.
+func LimitingWindows(u *Usage, models []string) ([]string, time.Time) {
+	var labels []string
+	var latest time.Time
+	known := true
+	for _, w := range RelevantWindows(u, models) {
+		if w.Pct < 100 {
+			continue
+		}
+		labels = append(labels, w.Label)
+		reset, ok := parseResetTime(w.ResetsAt)
+		if !ok {
+			known = false
+		} else if reset.After(latest) {
+			latest = reset
+		}
+	}
+	if !known {
+		return labels, time.Time{}
+	}
+	return labels, latest
+}
+
 func RenewalTS(u *Usage, models []string) *float64 {
 	var latest *float64
 	for _, w := range RelevantWindows(u, models) {

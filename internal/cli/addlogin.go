@@ -211,7 +211,12 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 		return renderDomainError(lifecycle.ErrLoginIncomplete(), false, s.out, s.err)
 	}
 	src := lifecycle.LoginDir(scratch, kc)
-	store := func() (string, error) { return sw.AddAccountFromLogin(src, p.slot, false, p.alias) }
+	var added lifecycle.AddLoginResult
+	store := func() (string, error) {
+		var err error
+		added, err = lifecycle.SaveLogin(sw.Store, src, p.slot, false, p.alias)
+		return added.Number, err
+	}
 	if fable {
 		store = func() (string, error) { return sw.AddFableLogin(src, p.slot) }
 	}
@@ -221,6 +226,9 @@ func addLogin(p *parsed, a addArgs, s ioStreams) int {
 	num, err := storeLoginWhenComplete(src, login, store, s)
 	if err != nil {
 		return renderDomainError(err, false, s.out, s.err)
+	}
+	if added.StartLoginHint != "" {
+		fmt.Fprintln(s.out, added.StartLoginHint)
 	}
 	// The stored copy is all that is needed from here on; drop the scratch
 	// before the switch so a switch failure cannot leave a login behind.

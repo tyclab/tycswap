@@ -820,14 +820,14 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 
 func (c *remoteClient) SwitchMythos(key string) (string, error) {
 	var out struct{ Result struct{ Message string } }
-	err := c.call(http.MethodPost, "/api/switch/"+neturl.PathEscape(key)+"?store=mythos", nil, &out)
+	err := c.call(http.MethodPost, "/api/switch/"+neturl.PathEscape(key)+"?store=mythos&source=tray", nil, &out)
 	if err == nil {
 		_, _ = c.State()
 	}
 	return out.Result.Message, err
 }
 func (c *remoteClient) UseSession(id, dest string) error {
-	return c.mutate("/api/sessions/"+neturl.PathEscape(id)+"/use", map[string]string{"store": dest})
+	return c.mutate("/api/sessions/"+neturl.PathEscape(id)+"/use?source=tray", map[string]string{"store": dest})
 }
 func (c *remoteClient) SetNextStartModel(model string) error {
 	return c.mutate("/api/sessions/next-start", map[string]string{"model": model})

@@ -67,12 +67,12 @@ func formatResetAt(reset, now time.Time) (countdown, clock string) {
 	default:
 		countdown = fmt.Sprintf("%dm", minutes)
 	}
-	return countdown, resetClockString(reset, now)
+	return countdown, ResetClockString(reset, now)
 }
 
-// resetClockString renders the absolute reset time in local time: "20:39" when
+// ResetClockString renders the absolute reset time in local time: "20:39" when
 // it falls on the same local date as now, else "Jul 5 08:59" (no zero-pad day).
-func resetClockString(reset, now time.Time) string {
+func ResetClockString(reset, now time.Time) string {
 	rl := reset.In(time.Local)
 	nl := now.In(time.Local)
 	ry, rm, rd := rl.Date()

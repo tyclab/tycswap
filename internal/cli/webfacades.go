@@ -618,13 +618,15 @@ type dashboardAccounts struct {
 	*dashboard
 }
 
-func (d *dashboard) SwitchMythos(id string) (map[string]any, error) { return switchMythos(d.sw, id) }
-func (d *dashboard) SessionMoves(id string) ([]string, error)       { return sessionMoveChoices(d.sw, id) }
-func (d *dashboard) UseSession(id, dest string) error {
+func (d *dashboard) SwitchMythos(id, actor string) (map[string]any, error) {
+	return switchMythosBy(d.sw, id, actor)
+}
+func (d *dashboard) SessionMoves(id string) ([]string, error) { return sessionMoveChoices(d.sw, id) }
+func (d *dashboard) UseSession(id, dest, actor string) error {
 	if !sessionUUID.MatchString(id) || dest != "default" && dest != "mythos" && dest != "fable" {
 		return cerr.Validation("invalid session or login")
 	}
-	_, err := placeSession(d.sw, id, "", "", dest, false, "use")
+	_, err := placeSession(d.sw, id, "", "", dest, false, actor)
 	if errors.Is(err, errNoMythosLogin) || errors.Is(err, errNoMythosQuota) {
 		return cerr.Validation("%s", err).Wrap(err)
 	}

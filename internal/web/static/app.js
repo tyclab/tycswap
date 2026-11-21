@@ -1112,13 +1112,19 @@
     var parts = [];
     if (selected) {
       parts.push(Array.isArray(m.countedWindows) && m.countedWindows.length ? 'counting ' + m.countedWindows.join(' + ') : 'usage unavailable');
+      if (m.atLimit && Array.isArray(m.limitingWindows)) {
+        var limit = 'at limit: ' + m.limitingWindows.join(', ');
+        if (m.resetClock) { limit += ' until ' + m.resetClock; }
+        parts.push(limit);
+      }
       if (typeof m.linkedSessions === 'number') {
         parts.push(m.linkedSessions + (m.linkedSessions === 1 ? ' linked session' : ' linked sessions'));
       } else if (!m.reason) { parts.push('linked session count unavailable'); }
       if (m.reason) { parts.push(m.reason); }
     }
-    var detail = parts.join(' · ');
-    return el('div', { class: 'hdr-mythos', title: 'Mythos login: ' + account + (detail ? ' · ' + detail : '') }, [
+    var separator = m.atLimit ? ', ' : ' · ';
+    var detail = parts.join(separator);
+    return el('div', { class: 'hdr-mythos', title: 'Mythos login: ' + account + (detail ? separator + detail : '') }, [
       el('span', { class: 'ellipsis', text: 'Mythos login: ' + account }),
       detail ? el('span', { class: 'hdr-mythos-detail', text: detail }) : null
     ]);

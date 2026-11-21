@@ -21,11 +21,11 @@ type fixtureLoginControls struct {
 	readErr, writeErr error
 }
 
-func (o *fixtureLoginControls) SwitchMythos(id string) (map[string]any, error) {
+func (o *fixtureLoginControls) SwitchMythos(id, actor string) (map[string]any, error) {
 	o.record("switch " + id)
 	return nil, o.writeErr
 }
-func (o *fixtureLoginControls) UseSession(id, store string) error {
+func (o *fixtureLoginControls) UseSession(id, store, actor string) error {
 	o.record("use " + id + " " + store)
 	return o.writeErr
 }
