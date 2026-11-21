@@ -57,6 +57,45 @@ window.addEventListener('load', () => {
           tracks.some((w,i) => (viewport > 900 && w === 0) || w + 0.5 < oldTracks[i])) errors.push('narrower than v0.21.2');
       if (errors.length) failures.push(viewport + 'px ' + errors.join(', ') + ': ' + JSON.stringify({headerHeight,mythosHeight,active,oldActive,row,oldRow,tracks,oldTracks}));
     }
+    function renderHeader(view, viewport) {
+      page.style.width = viewport + 'px';
+      page.contentWindow.events.dispatchEvent(new MessageEvent('state', {data: JSON.stringify(view)}));
+    }
+    function accountBesideBrand() {
+      const range = doc.createRange();
+      range.selectNodeContents(doc.querySelector('#hdr-acct'));
+      const accounts = range.getBoundingClientRect(), brand = doc.querySelector('.brand').getBoundingClientRect();
+      return accounts.left >= brand.right && accounts.top < brand.bottom && accounts.bottom > brand.top;
+    }
+    renderHeader(state, 1920);
+    if (!accountBesideBrand()) failures.push('wide header puts the account strip on a separate row');
+
+    const short = structuredClone(state);
+    short.accounts[0].email = 'a@x.test';
+    short.fable.email = 'b@x.test';
+    short.mythos.email = 'c@x.test';
+    short.mythos.atLimit = false;
+    renderHeader(short, 1200);
+    if (!accountBesideBrand()) failures.push('short accounts wrap at 1200px with room beside the brand');
+
+    const long = structuredClone(short);
+    long.mythos.email = 'infrastructure.monitoring.production-oncall+north-region@regional.engineering.example.test';
+    renderHeader(long, 1200);
+    if (accountBesideBrand()) failures.push('long account does not reflow at the same 1200px viewport');
+    const label = doc.querySelector('.hdr-mythos').firstElementChild;
+    const accountRange = doc.createRange();
+    accountRange.selectNodeContents(label);
+    const text = accountRange.getBoundingClientRect(), labelBox = label.getBoundingClientRect();
+    if (label.textContent !== 'Mythos login: #8 ' + long.mythos.email || accountRange.getClientRects().length !== 1 ||
+        text.right > labelBox.right + 0.5 || text.right > doc.documentElement.clientWidth ||
+        !label.contains(doc.elementFromPoint(text.right - 1, (text.top + text.bottom) / 2))) failures.push('long account is clipped or wrapped');
+
+    renderHeader(short, 1200);
+    // Text-only scaling leaves the viewport width unchanged.
+    const typeSizes = [...doc.querySelectorAll('html, header, header *')].map(el =>
+      [el, parseFloat(page.contentWindow.getComputedStyle(el).fontSize)]);
+    for (const [el, px] of typeSizes) el.style.fontSize = px * 2 + 'px';
+    if (accountBesideBrand()) failures.push('double-size header text does not reflow at the same 1200px viewport');
     result.textContent = failures.length ? failures.join('\n') : 'PASS';
   } catch (error) { result.textContent = String(error.stack || error); }
 });
