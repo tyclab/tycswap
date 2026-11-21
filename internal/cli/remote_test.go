@@ -1217,6 +1217,14 @@ func TestRemoteModeRunsTheTray(t *testing.T) {
 	if checks.count.Load() != 1 || len(*opened) != 2 || (*opened)[1] != fx.srv.URL()+"&show=updates" {
 		t.Fatalf("manual dashboard check: %d, opened %q", checks.count.Load(), *opened)
 	}
+	if item, ok := ft.item("sessions-open"); ok && item.Title == "Sessions…" && item.Clickable() {
+		o.OnPanelAction(tray.PanelAction{Kind: "command", Key: item.Choice()})
+		if len(*opened) != 3 || (*opened)[2] != fx.srv.URL()+"&show=sessions" || checks.count.Load() != 1 {
+			t.Error("Sessions… did not open the remote engine's sessions launch URL independently of update checks")
+		}
+	} else {
+		t.Error("remote tray has no Sessions… command")
+	}
 	ft.mu.Lock()
 	notes := append([]string(nil), ft.notes...)
 	ft.mu.Unlock()

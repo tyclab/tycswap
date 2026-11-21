@@ -80,7 +80,7 @@ func TestDashboardMythosSelectionAndSessionMoveActors(t *testing.T) {
 	requireMoveLog(t, sw, tickSessionA, "by dashboard(cookie,127.0.0.1:", "Mythos login (Account-2)", "default login (Account-1)")
 }
 
-func TestTrayMythosSelectionAndSessionMoveActors(t *testing.T) {
+func TestTrayMythosSelectionActor(t *testing.T) {
 	for _, surface := range []string{"local", "remote"} {
 		t.Run(surface, func(t *testing.T) {
 			appTestHome(t)
@@ -103,8 +103,9 @@ func TestTrayMythosSelectionAndSessionMoveActors(t *testing.T) {
 			})
 			waitUntil(t, "tray menu", func() bool { _, ok := ft.item("open"); return ok })
 			if surface == "local" {
+				opts.Load().OnClick("use:" + tickSessionA + ":default")
+				requireLinkTarget(t, link, from)
 				for range 2 {
-					opts.Load().OnClick("use:" + tickSessionA + ":default")
 					opts.Load().OnClick("mythos:claude:3")
 				}
 			} else {
@@ -113,17 +114,12 @@ func TestTrayMythosSelectionAndSessionMoveActors(t *testing.T) {
 					t.Fatalf("remote connection: %v", err)
 				}
 				for range 2 {
-					if err := rc.UseSession(tickSessionA, "default"); err != nil {
-						t.Fatal(err)
-					}
 					if _, err := rc.SwitchMythos("claude:3"); err != nil {
 						t.Fatal(err)
 					}
 				}
 			}
-			requireLinkTarget(t, link, sw.DefaultProfileDir())
 			checkMythosSelectionLog(t, sw, `tray(\(bearer,127\.0\.0\.1:[0-9]+\))?`)
-			requireMoveLog(t, sw, tickSessionA, "by tray", "Mythos login (Account-2)", "default login (Account-1)")
 		})
 	}
 }

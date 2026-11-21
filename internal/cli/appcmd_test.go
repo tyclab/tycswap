@@ -280,6 +280,14 @@ func TestAppRunsTheTray(t *testing.T) {
 	if len(*opened) != 1 || !strings.HasPrefix((*opened)[0], "http://127.0.0.1:") || !strings.Contains((*opened)[0], "/?token=") {
 		t.Errorf("browser got %q", *opened)
 	}
+	if item, ok := ft.item("sessions-open"); ok && item.Title == "Sessions…" && item.Clickable() {
+		o.OnClick(item.Choice())
+		if len(*opened) != 2 || (*opened)[1] != (*opened)[0]+"&show=sessions" {
+			t.Error("Sessions… did not open the app's launch URL with show=sessions")
+		}
+	} else {
+		t.Error("local tray has no Sessions… command")
+	}
 	o.OnClick("quit")
 	if code := waitExit(t, done, &errb); code != 0 {
 		t.Errorf("exit = %d, stderr = %q", code, errb.String())
