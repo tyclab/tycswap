@@ -16,6 +16,7 @@ import (
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/launch"
+	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
@@ -141,18 +142,29 @@ func mythosMovePlacement(view *store.Store) (mythosPlacement, error) {
 	if err != nil {
 		return mythosPlacement{}, err
 	}
-	return mythosTickPlacement(view, "", set)
+	return mythosTickPlacement(view, "", set, false)
+}
+
+func mythosHandSelection(view *store.Store, set settings.AutoSwitchSettings, readOnly bool) (string, string) {
+	path := mythosStatePath(view.BackupDir())
+	var warn func(error)
+	if !readOnly {
+		warn = func(err error) {
+			logging.NewWithClock(view.BackupDir(), false, view.Clk).Warningf("Ignoring unreadable Mythos switch cooldown at %s: %v", path, err)
+		}
+	}
+	return autoswitch.HandSelection(path, view.Clk, set, warn)
 }
 
 // handMythosChoice resolves a manual cooldown against the current selection.
-func handMythosChoice(view *store.Store, selected string, set settings.AutoSwitchSettings) (mythosPlacement, string, error) {
+func handMythosChoice(view *store.Store, selected string, set settings.AutoSwitchSettings, dryRun bool) (mythosPlacement, string, error) {
 	var none mythosPlacement
 	if selected == "" {
 		return none, "", nil
 	}
-	num, hold, err := autoswitch.HandSelection(mythosStatePath(view.BackupDir()), view.Clk, set)
-	if err != nil || num == "" {
-		return none, "", err
+	num, hold := mythosHandSelection(view, set, dryRun)
+	if num == "" {
+		return none, "", nil
 	}
 	data, err := view.SequenceForUpdate()
 	if err != nil {
@@ -165,13 +177,13 @@ func handMythosChoice(view *store.Store, selected string, set settings.AutoSwitc
 	return mythosPlacement{dir: login.Dir, number: num, name: store.AccountNameFrom(data, num)}, hold, nil
 }
 
-func mythosTickPlacement(view *store.Store, sourceDir string, set settings.AutoSwitchSettings) (mythosPlacement, error) {
+func mythosTickPlacement(view *store.Store, sourceDir string, set settings.AutoSwitchSettings, dryRun bool) (mythosPlacement, error) {
 	selected, err := store.SelectedMythosDigest(view.BackupDir())
 	if err != nil {
 		return mythosPlacement{}, err
 	}
 	if sourceDir != "" {
-		choice, hold, err := handMythosChoice(view, selected, set)
+		choice, hold, err := handMythosChoice(view, selected, set, dryRun)
 		if err != nil {
 			return mythosPlacement{}, err
 		}
@@ -257,10 +269,7 @@ func chooseMythosLogin(view *store.Store, model, account, bound, source, selecte
 	// A hand-selected account with room is the start target, including when
 	// the existing allocation question must be answered before launch.
 	if selected != "" && source == "" && filepath.Base(placements[ranked[0]].dir) == selected && placements[ranked[0]].allocation != "" {
-		hand, _, err := autoswitch.HandSelection(mythosStatePath(view.BackupDir()), view.Clk, set)
-		if err != nil {
-			return mythosPlacement{}, err
-		}
+		hand, _ := mythosHandSelection(view, set, true)
 		if hand == ranked[0] {
 			return placements[hand], nil
 		}

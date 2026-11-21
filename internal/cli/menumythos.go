@@ -78,6 +78,9 @@ func menuMoveSession(s ioStreams, wanted string) (string, []string, bool) {
 			continue
 		}
 		label := id
+		if owner := sessionLoginLabel(sessionLogin(sw, id)); owner != "" {
+			label += "  " + owner
+		}
 		if session.CWD != "" {
 			label += "  " + filepath.Clean(session.CWD)
 		}

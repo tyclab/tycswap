@@ -169,6 +169,9 @@ func InspectSessionLink(root, id string, now time.Time) (SessionLink, error) {
 	return resolveSessionBinding(root, id, "", records, now, []SessionLinkRecovery{{}}, false)
 }
 
+// ErrSessionRefreshing means the client owns the source login's refresh lock.
+var ErrSessionRefreshing = cerr.Lock("The session login is refreshing.")
+
 // SessionTargetAvailable probes the move guard without taking the native client's lock.
 func SessionTargetAvailable(root, source, target string) error {
 	if target == source {
@@ -182,7 +185,7 @@ func SessionTargetAvailable(root, source, target string) error {
 		if err != nil {
 			return err
 		}
-		return cerr.Lock("client refresh lock is busy: %s", lock)
+		return ErrSessionRefreshing
 	}
 	return nil
 }

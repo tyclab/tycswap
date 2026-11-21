@@ -248,8 +248,8 @@ func pickAccountRows(s ioStreams, title string, accounts []reporting.AccountSnap
 		if a.IsActive {
 			label += " · active"
 		}
-		if a.MythosLogin != nil && a.MythosLogin.Live {
-			label += " · selected Mythos login"
+		if login := a.MythosLogin.Label(); login != "" {
+			label += " · " + login
 			if a.MythosLogin.ChoiceNote != "" {
 				label += " (only ready login)"
 			}

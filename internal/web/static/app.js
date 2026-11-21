@@ -1329,7 +1329,7 @@
       var nameRow = el('div', { class: 'acct-name' }, [el('span', { class: 'primary', text: a.alias || a.email || '(no email)', title: a.email || '' })]);
       var login = a.mythosLogin;
       if (login) {
-        var label = login.status === 'ok' ? 'Mythos login' : 'Mythos login: ' + (login.status || 'unavailable');
+        var label = login.status === 'ok' ? (login.live ? 'Mythos login: in use' : 'Mythos login') : 'Mythos login: ' + (login.status || 'unavailable');
         nameRow.appendChild(chip(label, login.status !== 'ok' ? 'warn' : login.live ? 'accent' : 'outline',
           login.status === 'sign in again' ? 'Sign in again: ' + NAME + ' add --login --lineage mythos --slot ' + a.number : 'Independent Mythos sign-in'));
       }
@@ -1479,6 +1479,10 @@
   // login only the session's recorded store names it (DESIGN A102); without
   // a record nothing is said.
   function storeChip(c) {
+    if (c.login) {
+      var owner = c.accountNumber && c.accountNumber !== 'unknown' ? '#' + c.accountNumber : 'unknown';
+      return chip(c.login === 'unknown' ? 'unknown' : c.login + ' · ' + owner, c.login === 'default login' ? 'outline' : 'accent');
+    }
     if (c.store === 'mythos') { return chip('Mythos login', 'accent', 'Runs on an independently signed-in Mythos login'); }
     if (c.store === 'fable') { return chip('Fable store', 'accent', "Runs on the Fable store's login"); }
     if (c.store === 'default' || (!c.movesError && !(state && (state.fable || state.mythos)))) { return chip('default login', 'outline'); }
@@ -1507,7 +1511,6 @@
           'data-id': c.sessionId, 'data-store': store, text: labels[store] }));
       }
     });
-    if (c.movesError) { actions.appendChild(el('span', { class: 'cell-sub session-move-error', text: c.movesError })); }
     actions.appendChild(stop);
     tr.appendChild(el('td', { class: 'c-actions td-actions' }, [actions]));
     return tr;
@@ -1580,7 +1583,12 @@
       var tbl = el('table', { class: 'tbl compact sess-tbl' });
       tbl.appendChild(el('thead', {}, [el('tr', {}, [el('th', { scope: 'col', class: 'c-title', text: 'Session' }), el('th', { scope: 'col', class: 'c-pid', text: 'PID' }), el('th', { scope: 'col', class: 'c-kind', text: 'Kind · entrypoint' }), el('th', { scope: 'col', class: 'c-status', text: 'Status' }), el('th', { scope: 'col', class: 'c-started', text: 'Started' }), el('th', { scope: 'col', class: 'c-actions' }, [el('span', { class: 'sr-only', text: 'Actions' })])])]));
       var tb = el('tbody');
-      members.forEach(function (c) { tb.appendChild(sessionRow(c)); });
+      members.forEach(function (c) {
+        tb.appendChild(sessionRow(c));
+        if (c.movesError) {
+          tb.appendChild(el('tr', { class: 'session-move-error' }, [el('td', { colspan: '6', text: c.movesError })]));
+        }
+      });
       tbl.appendChild(tb);
       det.appendChild(tbl);
       groupsBox.appendChild(det);

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -188,14 +189,23 @@ func runStart(bin string, parsed startArguments, selectedDir string, env []strin
 	var link string
 	native := launch.IsClaudeCommand(bin)
 	override := startOverride(env, parsed.command, storeDir)
+	warnNextStart := func(err error) {
+		startNotice(streams.err, fmt.Sprintf("Ignoring %v. Use tycswap start --next clear to clear the request.", err))
+	}
 	var next store.NextStartRequest
 	if checkNext && native && store.SupportsMythosStart() && !parsed.mythos && parsed.account == "" && len(args) == 1 && override == "" && startStoreProblem(root) == "" {
 		var err error
 		next, err = store.ReadNextStart(root)
 		if err != nil {
-			startNotice(streams.err, err.Error())
-			return 1
+			warnNextStart(err)
 		}
+	}
+	refuseStart := func(reason string) int {
+		if next.Model == mythosFamily {
+			reason = "Next start is set to Mythos: " + strings.TrimSuffix(reason, ".") + ". Use tycswap start --next clear to start without it."
+		}
+		startNotice(streams.err, reason)
+		return 1
 	}
 	strictMythos := parsed.mythos || next.Model == mythosFamily
 	if strictMythos {
@@ -204,8 +214,7 @@ func runStart(bin string, parsed startArguments, selectedDir string, env []strin
 			return 1
 		}
 		if reason := independentAuthOverride(env, root); reason != "" {
-			startNotice(streams.err, "Cannot start an independent Mythos session because "+reason+".")
-			return 1
+			return refuseStart("Cannot start an independent Mythos session because " + reason + ".")
 		}
 		args = append(slices.Clone(args), "--model", nativeMythosModel)
 	}
@@ -267,8 +276,7 @@ func runStart(bin string, parsed startArguments, selectedDir string, env []strin
 			model = ""
 		}
 		if err != nil {
-			startNotice(streams.err, err.Error())
-			return 1
+			return refuseStart(err.Error())
 		}
 		var recovered string
 		if dir == "" && (native || requestedFamily == "fable") && (savedTarget == "" || savedTarget == storeDir) {
@@ -316,10 +324,12 @@ func runStart(bin string, parsed startArguments, selectedDir string, env []strin
 				_ = os.Remove(link)
 			}
 			if err != nil {
-				startNotice(streams.err, err.Error())
-				return 1
+				if !errors.Is(err, store.ErrUnreadableNextStart) {
+					return refuseStart(err.Error())
+				}
+				warnNextStart(err)
 			}
-			// Another launch consumed the one-shot choice, or the operator cleared it.
+			// The observed request is no longer available. Start without it.
 			return runStart(bin, parsed, selectedDir, env, streams, false)
 		}
 	}

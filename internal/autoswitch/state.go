@@ -212,7 +212,37 @@ func (e *Engine) cooldownHold(trigger string, state map[string]any) (detail stri
 }
 
 // HandSelection returns the account last selected by hand and its current hold.
-func HandSelection(statePath string, clk clock.Clock, set settings.AutoSwitchSettings) (number, hold string, err error) {
+// An unreadable stamp imposes no hold. The marker records that the warning
+// was logged, even when the next observer runs in a different process.
+// Pass nil for a read-only preview.
+func HandSelection(statePath string, clk clock.Clock, set settings.AutoSwitchSettings, warn func(error)) (number, hold string) {
+	number, hold, readErr := readHandSelection(statePath, clk, set)
+	if warn == nil {
+		return number, hold
+	}
+	marker := statePath + ".warned"
+	_, markerErr := os.Lstat(marker)
+	if readErr == nil && os.IsNotExist(markerErr) || readErr != nil && markerErr == nil {
+		return number, hold
+	}
+	// Serialize episode changes with a hand switch. A successful stamp or an
+	// observed recovery rearms the warning. Never gate a move on diagnostics.
+	_ = filelock.New(stateLockPath(statePath), 0).With(func() error {
+		number, hold, readErr = readHandSelection(statePath, clk, set)
+		if readErr == nil {
+			return os.Remove(marker)
+		}
+		f, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_ = f.Close()
+			warn(readErr)
+		}
+		return err
+	})
+	return number, hold
+}
+
+func readHandSelection(statePath string, clk clock.Clock, set settings.AutoSwitchSettings) (number, hold string, err error) {
 	raw, err := os.ReadFile(statePath)
 	if os.IsNotExist(err) {
 		return "", "", nil
@@ -221,16 +251,19 @@ func HandSelection(statePath string, clk clock.Clock, set settings.AutoSwitchSet
 		return "", "", err
 	}
 	var state map[string]any
-	if err := json.Unmarshal(raw, &state); err != nil || state == nil {
-		return "", "", fmt.Errorf("the Mythos switch cooldown is unreadable")
+	if err := json.Unmarshal(raw, &state); err != nil {
+		return "", "", err
+	}
+	if state == nil {
+		return "", "", fmt.Errorf("expected a JSON object")
 	}
 	number, _ = state["lastSwitchTo"].(string)
 	by, _ := state["lastSwitchBy"].(string)
 	if by != byHand || number == "" {
-		return "", "", fmt.Errorf("the Mythos switch cooldown is missing its hand selection")
+		return "", "", fmt.Errorf("missing hand selection")
 	}
 	if _, ok := numOfAny(state["lastSwitchAt"]); !ok {
-		return "", "", fmt.Errorf("the Mythos switch cooldown is missing its time")
+		return "", "", fmt.Errorf("missing hand selection time")
 	}
 	e := &Engine{clk: clk}
 	e.settings.Store(&set)
@@ -296,7 +329,9 @@ func stampedSwitch(statePath string, clk clock.Clock, engine *settings.AutoSwitc
 		}
 		state = readStateFile(statePath)
 		stampSwitch(state, slot, clock.Seconds(clk), engine == nil)
-		if err := atomicfile.WriteJSON(statePath, state, atomicfile.Opts{}); err != nil && warn != nil {
+		if err := atomicfile.WriteJSON(statePath, state, atomicfile.Opts{}); err == nil {
+			_ = os.Remove(statePath + ".warned")
+		} else if warn != nil {
 			warn(err)
 		}
 		return nil

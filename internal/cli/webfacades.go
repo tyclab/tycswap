@@ -611,7 +611,7 @@ func (d *dashboard) UseSession(id, dest string) error {
 	if !sessionUUID.MatchString(id) || dest != "default" && dest != "mythos" && dest != "fable" {
 		return cerr.Validation("invalid session or login")
 	}
-	_, err := placeSession(d.sw, id, "", "", dest, false)
+	_, err := placeSession(d.sw, id, "", "", dest, false, "use")
 	if errors.Is(err, errNoMythosLogin) || errors.Is(err, errNoMythosQuota) {
 		return cerr.Validation("%s", err).Wrap(err)
 	}

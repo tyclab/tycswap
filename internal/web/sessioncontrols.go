@@ -97,11 +97,8 @@ func (s *Server) handleSessionUse(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.PathValue("id")
 	s.mutateLogin(w, func() (map[string]any, error) {
-		err := ops.UseSession(id, dest)
-		if err == nil {
-			s.logAction(r, "Moved session "+id+" to "+dest)
-		}
-		return nil, err
+		// The move guard logs the committed outcome for every surface.
+		return nil, ops.UseSession(id, dest)
 	})
 }
 

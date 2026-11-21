@@ -27,23 +27,28 @@ type NextStartRequest struct {
 	ID    string `json:"id"`
 }
 
+const nextStartFile = "next-start.json"
+
+var ErrUnreadableNextStart = errors.New("unreadable next start")
+
 func ReadNextStart(root string) (NextStartRequest, error) {
-	raw, err := os.ReadFile(filepath.Join(root, "next-start.json"))
+	path := filepath.Join(root, nextStartFile)
+	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return NextStartRequest{}, nil
 	}
 	if err != nil {
-		return NextStartRequest{}, err
+		return NextStartRequest{}, fmt.Errorf("%w: %w", ErrUnreadableNextStart, err)
 	}
 	var value struct {
 		Model *string
 		ID    string
 	}
 	if err := json.Unmarshal(raw, &value); err != nil {
-		return NextStartRequest{}, fmt.Errorf("could not read next start: %w", err)
+		return NextStartRequest{}, fmt.Errorf("%w at %s: %w", ErrUnreadableNextStart, path, err)
 	}
 	if value.ID == "" || value.Model == nil || (*value.Model != "" && *value.Model != "mythos") {
-		return NextStartRequest{}, errors.New("invalid next start setting")
+		return NextStartRequest{}, fmt.Errorf("%w at %s: invalid next start setting", ErrUnreadableNextStart, path)
 	}
 	return NextStartRequest{*value.Model, value.ID}, nil
 }
@@ -86,16 +91,18 @@ func changeNextStart(root string, expected *NextStartRequest, next NextStartRequ
 	}
 	changed := false
 	err := filelock.New(filepath.Join(root, ".next-start.lock"), filelock.DefaultTimeout).With(func() error {
-		old, err := ReadNextStart(root)
-		if err != nil {
-			return err
-		}
-		if expected != nil && old != *expected {
-			return nil
+		if expected != nil {
+			old, err := ReadNextStart(root)
+			if err != nil {
+				return err
+			}
+			if old != *expected {
+				return nil
+			}
 		}
 		raw, err := json.Marshal(next)
 		if err == nil {
-			err = atomicfile.Write(filepath.Join(root, "next-start.json"), raw, atomicfile.Opts{})
+			err = atomicfile.Write(filepath.Join(root, nextStartFile), raw, atomicfile.Opts{})
 		}
 		changed = err == nil
 		return err

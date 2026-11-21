@@ -191,8 +191,8 @@ func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries ma
 		if fableMarkers := fableTag(fable.login(num)); fableMarkers != "" {
 			markers += " " + fableMarkers
 		}
-		if tag := mythos.logins[num].tag(); tag != "" {
-			markers += " " + printer.Muted(tag)
+		if login := mythos.logins[num].Label(); login != "" {
+			markers += " " + printer.Muted("("+login+")")
 		}
 		fmt.Fprintf(w, "  %s: %s %s%s\n", num, label, printer.Muted("["+tag+"]"), markers)
 		for _, line := range usageEntryLines(entries[num]) {

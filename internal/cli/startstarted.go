@@ -51,7 +51,7 @@ func startStarted(in io.Reader) {
 				logging.New(root, false).Warningf("start --started: %v", err)
 			} else if source == "resume" && observedModel != "" {
 				// A picker or --continue first identifies the session in this hook.
-				defer checkLinkedSession(session, observedModel)
+				defer checkLinkedSession(session, observedModel, "hook")
 			}
 		}
 	} else if info, err := os.Stat(paths.GetBackupRoot()); family != "" && err == nil && info.IsDir() {

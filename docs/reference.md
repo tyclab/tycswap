@@ -437,8 +437,10 @@ tycswap switch --store mythos <NUM|EMAIL|ALIAS> [--json] [--debug]
 login and moves running linked Mythos sessions to it. Each move checks the session
 binding and the client refresh lock. A refusal names the affected session. The
 selection can succeed while a busy session stays on its current login. Repeat
-the command to retry the pending moves. A change holds automatic Mythos moves
-for the switch cooldown. The default and Fable stores have their own selections.
+the command to retry the pending moves and restart the switch cooldown.
+On the dashboard and tray, **Use for Mythos** tries each client's refresh lock
+once and reports pending moves (HTTP 409 over the API), while an individual
+session move on either surface or with `tycswap use` waits up to nine seconds. The default and Fable stores have their own selections.
 `list` and `status` show the selected account, counted windows and linked session
 count. Their JSON field is `mythos`. An unavailable count is null.
 
@@ -1501,8 +1503,10 @@ in the terminal menu offers the ready accounts.
 this box on Linux, WSL or Windows. On macOS the control reports that independent
 starts are unavailable. An explicit model, resume, or command with arguments leaves the request
 pending. Two concurrent bare starts can claim it only once. Use
-`start --next clear` to cancel. **Set next start** on the menu, dashboard and
-tray reads and changes this same request.
+`start --next clear` to cancel. **Set next start** in the menu and dashboard
+and **Next start: Mythos** in the tray change this same request. If the saved
+request is unreadable, a bare start reports its path and continues normally.
+Either explicit `--next` command can replace the damaged request.
 
 The management forms set, clear or list the operator's startup marks. They are
 exclusive with each other and with launching. IDs use the ordinary account

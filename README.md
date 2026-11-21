@@ -173,7 +173,7 @@ login stays in place if a Fable session is running or starting.
 and future Mythos starts. The CLI equivalent is `tycswap switch --store mythos 3`.
 The dashboard and tray show which account is selected, its counted windows, and
 how many linked sessions use it. Open **Sessions…** to move one linked session.
-Choose **Set next start** to use Mythos for the next bare `claude` on this box.
+Choose **Set next start** (**Next start: Mythos** in the tray) to use Mythos for the next bare `claude` on this box.
 Choose **Start Mythos session…** in the terminal menu to start one immediately.
 **Import / export…** guides Claude and Codex file transfers.
 **Open web dashboard** reuses the running app, starting it in the background if needed.

@@ -42,15 +42,14 @@ func switchMythos(sw *core.Switcher, id string) (map[string]any, error) {
 		if err != nil {
 			return err
 		}
-		if selected == filepath.Base(dir) {
-			return nil
-		}
 		var stampErr error
 		if err := autoswitch.HandSwitch(mythosStatePath(root), sw.Clk, func(err error) { stampErr = err }, func() (string, error) {
-			if err := store.SelectMythosLogin(root, dir); err != nil {
-				return "", err
+			if selected != filepath.Base(dir) {
+				if err := store.SelectMythosLogin(root, dir); err != nil {
+					return "", err
+				}
+				changed = true
 			}
-			changed = true
 			return num, nil
 		}); err != nil {
 			return err
@@ -75,7 +74,7 @@ func switchMythos(sw *core.Switcher, id string) (map[string]any, error) {
 			continue
 		}
 		redirected := false
-		err := reporting.UpdateSessionLink(root, link.ID, filepath.Join(root, "links", link.Token), sw.Clk.Now(), func(current *reporting.SessionLink) error {
+		err := reporting.MoveSessionLink(sw.Store, "switch --store mythos", link.ID, filepath.Join(root, "links", link.Token), false, func(current *reporting.SessionLink) error {
 			if !wantsMythosLogin(*current) {
 				return nil
 			}

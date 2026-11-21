@@ -495,15 +495,15 @@
       <article class="card guide-section" id="g-mythos">
         <h2>Mythos login</h2>
         <p>On Linux and WSL, each account can have an independent Mythos sign-in alongside its default and Fable logins. Mark the account with <strong>Allow for Mythos</strong>, then run <code>{{.Name}} add --login --lineage mythos --slot N</code> to sign in. Claude checks the account’s access.</p>
-        <p><strong>Use for Mythos</strong> selects a ready login for new Mythos sessions and moves the linked Mythos sessions to it. The command is <code>{{.Name}} switch --store mythos N</code>. Automatic Mythos moves wait for the switch cooldown. The header shows the selected account, the quota windows it counts and how many linked sessions use it.</p>
+        <p><strong>Use for Mythos</strong> selects a ready login for new Mythos sessions and moves the linked Mythos sessions to it. The command is <code>{{.Name}} switch --store mythos N</code>. Automatic Mythos moves wait for the switch cooldown. The header shows the selected account, the quota windows it counts and how many linked sessions use it. Its account row reads <em>Mythos login: in use</em>.</p>
         <p><strong>Edit models…</strong> in an account’s menu sets its model allocation. Clear all three choices to restore the derived allocation. A <em>Mythos login: sign in again</em> chip gives the command to renew that account’s sign-in.</p>
         <p>In Sessions, <strong>Set next start to Mythos</strong> applies once to the next bare <code>claude</code> on this host. Turn the switch off to clear the choice.</p>
       </article>
 
       <article class="card guide-section" id="g-sessions">
         <h2>Sessions</h2>
-        <p>Each linked session offers the moves available to it: <strong>Move to Mythos login</strong>, <strong>Move to Fable store</strong> or <strong>Move to default login</strong>. After a move, use the model command shown in the session’s status line.</p>
-        <p>The Sessions tab lists the running Claude Code sessions and the IDEs with the Claude Code extension. <strong>Stop</strong> ends a session; <code>claude --continue</code> in its folder resumes it. While an account has a Fable login, a session shows <em>Fable store</em> or <em>default login</em> once its status line has reported it, and nothing before.</p>
+        <p>Each linked session names its login and account, for example <em>Mythos login · #8</em>. An unknown owner is shown as <em>unknown</em>. The session offers its available moves: <strong>Move to Mythos login</strong>, <strong>Move to Fable store</strong> or <strong>Move to default login</strong>. After a move, use the model command shown in the session’s status line.</p>
+        <p>The Sessions tab lists the running Claude Code sessions and the IDEs with the Claude Code extension. <strong>Stop</strong> ends a session; <code>claude --continue</code> in its folder resumes it.</p>
       </article>
 
       <article class="card guide-section" id="g-updates">

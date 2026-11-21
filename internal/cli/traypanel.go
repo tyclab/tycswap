@@ -337,18 +337,27 @@ func trayMythosLogin(row map[string]any) (label, action string) {
 	if rowProvider(row) != reporting.ProviderClaude {
 		return
 	}
-	switch login["status"] {
-	case "ok":
-		label = "Mythos login"
-		if login["selectable"] == true && login["live"] == false && row["disabled"] != true {
-			action = "Use for Mythos"
-		}
-	case "sign in again":
-		label = "Mythos login: sign in again"
-	case "unavailable":
-		label = "Mythos login: unavailable"
+	if login == nil {
+		return
+	}
+	status, _ := login["status"].(string)
+	live, _ := login["live"].(bool)
+	label = (&reporting.MythosLogin{Status: status, Live: live}).Label()
+	if status == "ok" && login["selectable"] == true && login["live"] == false && row["disabled"] != true {
+		action = "Use for Mythos"
 	}
 	return
+}
+
+// sessionLoginLabel is shared by the terminal session picker and the tray.
+func sessionLoginLabel(login, number string) string {
+	if login == "" || login == "unknown" {
+		return login
+	}
+	if number == "" || number == "unknown" {
+		return login + " · unknown"
+	}
+	return login + " · #" + number
 }
 
 func loginControls(st web.State, offline bool) []tray.Item {
@@ -375,7 +384,7 @@ func loginControls(st web.State, offline bool) []tray.Item {
 		if s.MovesError != "" {
 			moves = append(moves, tray.Item{Title: s.MovesError, Disabled: true})
 		}
-		if len(moves) > 0 {
+		if owner := sessionLoginLabel(s.Login, s.AccountNumber); owner != "" || len(moves) > 0 {
 			title := s.Title
 			if title == "" {
 				title = s.CWD
@@ -383,18 +392,21 @@ func loginControls(st web.State, offline bool) []tray.Item {
 			if title != "" {
 				title += " · "
 			}
-			sessions = append(sessions, tray.Item{ID: "session:" + s.SessionID, Title: title + s.SessionID, Children: moves})
+			if owner != "" {
+				title = owner + " · " + title
+			}
+			sessions = append(sessions, tray.Item{ID: "session:" + s.SessionID, Title: title + s.SessionID, Children: moves, Disabled: len(moves) == 0})
 		}
 	}
 	if len(sessions) > 0 {
 		items = append(items, tray.Item{ID: "move-sessions", Title: "Sessions…", Children: sessions, Disabled: offline})
 	}
 	if st.NextStartModel != nil || st.NextStartError != "" {
-		next := tray.Item{ID: "next-start", Title: "Set next start", Sub: "Use Mythos for the next bare Claude start", Kind: tray.KindToggle, ShownState: true, Disabled: offline || st.NextStartModel == nil}
+		next := tray.Item{ID: "next-start", Title: "Next start: Mythos", Sub: "Use Mythos for the next bare Claude start", Kind: tray.KindToggle, ShownState: true, Disabled: offline || st.NextStartModel == nil}
 		if st.NextStartModel != nil {
 			next.Checked = *st.NextStartModel == "mythos"
 		} else {
-			next.Title = "Set next start: unavailable"
+			next.Title = "Next start: Mythos (unavailable)"
 			next.Kind = tray.KindPlain
 			next.Sub = st.NextStartError
 		}

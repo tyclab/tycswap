@@ -193,12 +193,19 @@ func MythosLoginLine(obj map[string]any) string {
 	return line
 }
 
-func (l *MythosLogin) tag() string {
+// Label names the account’s independent login on the human-facing surfaces.
+func (l *MythosLogin) Label() string {
 	if l == nil {
 		return ""
 	}
 	if l.Status == FableLoginOK {
-		return "(Mythos login)"
+		if l.Live {
+			return "Mythos login: in use"
+		}
+		return "Mythos login"
 	}
-	return "(Mythos login: " + l.Status + ")"
+	if l.Status == "" {
+		return "Mythos login: unavailable"
+	}
+	return "Mythos login: " + l.Status
 }

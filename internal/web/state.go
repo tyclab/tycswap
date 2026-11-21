@@ -109,9 +109,11 @@ type ClaudeSessionJSON struct {
 	Group      string  `json:"group,omitempty"`
 	// A dedicated session reports "mythos". The shared stores report
 	// "default" or "fable" when the Fable store is configured.
-	Store      string   `json:"store,omitempty"`
-	Moves      []string `json:"moves,omitempty"`
-	MovesError string   `json:"movesError,omitempty"`
+	Store         string   `json:"store,omitempty"`
+	Moves         []string `json:"moves,omitempty"`
+	Login         string   `json:"login,omitempty"`
+	AccountNumber string   `json:"accountNumber,omitempty"`
+	MovesError    string   `json:"movesError,omitempty"`
 }
 
 // IdeInstanceJSON is one running IDE instance.
@@ -214,6 +216,9 @@ func (s *Server) buildState(o stateOpts) State {
 		}
 	}
 	mover, _ := s.d.Accounts.(sessionMover)
+	owners, _ := s.d.Accounts.(interface {
+		SessionLogin(id string) (string, string)
+	})
 	sv := s.d.Sessions()
 	var stores map[string]string
 	if len(sv.Claude) > 0 {
@@ -230,6 +235,9 @@ func (s *Server) buildState(o stateOpts) State {
 			case store == "" && (st.Fable != nil || st.Mythos != nil):
 				item.Store = "default"
 			}
+		}
+		if owners != nil && item.SessionID != "" {
+			item.Login, item.AccountNumber = owners.SessionLogin(item.SessionID)
 		}
 		if mover != nil && item.SessionID != "" && item.Profile == "" && item.Group == "" {
 			moves, err := mover.SessionMoves(item.SessionID)

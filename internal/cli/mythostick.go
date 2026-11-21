@@ -62,7 +62,7 @@ func tickMythosSelection(sw *core.Switcher, set settings.AutoSwitchSettings, dry
 		if err != nil || selected == "" || !dryRun && !autoSwitchOn(root) {
 			return err
 		}
-		_, hold, err := handMythosChoice(sw.Store, selected, set)
+		_, hold, err := handMythosChoice(sw.Store, selected, set, dryRun)
 		if err != nil {
 			return err
 		}
@@ -175,7 +175,7 @@ func mythosTick(sw *core.Switcher, set settings.AutoSwitchSettings, emit func(au
 			if !dryRun {
 				currentSettings.Enabled = autoSwitchOn(root)
 			}
-			placement, err = mythosTickPlacement(sw.Store, current.Target, currentSettings)
+			placement, err = mythosTickPlacement(sw.Store, current.Target, currentSettings, dryRun)
 			if err != nil {
 				return err
 			}
@@ -196,7 +196,7 @@ func mythosTick(sw *core.Switcher, set settings.AutoSwitchSettings, emit func(au
 		if dryRun {
 			err = apply(&link)
 		} else {
-			err = reporting.UpdateSessionLink(root, link.ID, filepath.Join(root, "links", link.Token), sw.Clk.Now(), apply)
+			err = reporting.MoveSessionLink(sw.Store, "tick", link.ID, filepath.Join(root, "links", link.Token), false, apply)
 		}
 		if err != nil {
 			outcome = significantOutcome(outcome, problem(err))
