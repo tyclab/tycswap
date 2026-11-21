@@ -475,13 +475,14 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 			counted = withMythos
 			r.CountedWindows = append(r.CountedWindows, meters...)
 			sort.Strings(r.CountedWindows)
-			r.CountedWindows = slices.Compact(r.CountedWindows)
 		} else {
 			r.Unservable = append(r.Unservable, MythosModel)
 		}
 	}
 	if model := strings.Join(counted, ","); model != "" {
 		r.Settings.Model = &model
+		display := strings.Join(r.CountedWindows, ",")
+		r.CountedWindows = settings.ParseModelNames(&display)
 	}
 	if fable.Usable || !allKnown || families["fable"] {
 		return r
