@@ -30,12 +30,13 @@ type pageChip struct {
 
 // pageView is what testdata/pagestates.cjs reports for one state.
 type pageView struct {
-	Name     string    `json:"name"`
-	Problems []string  `json:"problems"`
-	Best     *string   `json:"best"`
-	AtLimit  []string  `json:"atLimit"`
-	NextBest []pageRow `json:"nextBest"`
-	Chips    struct {
+	Name         string    `json:"name"`
+	MythosDetail string    `json:"mythosDetail"`
+	Problems     []string  `json:"problems"`
+	Best         *string   `json:"best"`
+	AtLimit      []string  `json:"atLimit"`
+	NextBest     []pageRow `json:"nextBest"`
+	Chips        struct {
 		NextBest *pageChip `json:"nextBest"`
 		Accounts *pageChip `json:"accounts"`
 	} `json:"chips"`

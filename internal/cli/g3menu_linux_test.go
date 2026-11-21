@@ -110,6 +110,50 @@ func TestMenuStartPreferenceSurvivesPlacementRefusal(t *testing.T) {
 	assertNativeStore(t, rec.env, dir)
 }
 
+func TestMythosStartCountsFableQuota(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		queued     bool
+		otherFable float64
+	}{
+		{"explicit start with room", false, 30},
+		{"next start with room", true, 30},
+		{"explicit start all spent", false, 100},
+		{"next start all spent", true, 100},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sw, child := fableStartLogin(t, fableTickFixture{def: "1", usage: map[string][3]float64{
+				"2": {5, 15, 100}, "3": {5, 15, tc.otherFable},
+			}})
+			spent, other := addMythosTestLogins(t, sw)
+			if err := store.SeedMythosSelection(sw.BackupDir(), spent); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"--mythos"}
+			if tc.queued {
+				expectStartCode(t, 0, "--next", "mythos")
+				args = nil
+			}
+			if tc.otherFable < 100 {
+				expectStartCode(t, 23, args...)
+				assertNativeStore(t, child.env, other)
+				return
+			}
+			msg := expectStartCode(t, 1, args...)
+			want := "tycswap start: no available Mythos login has quota for mythos\n"
+			if tc.queued {
+				want = "tycswap start: Next start is set to Mythos: no available Mythos login has quota for mythos. Use tycswap start --next clear to start without it.\n"
+				if model, err := store.NextStartModel(sw.BackupDir()); err != nil || model != "mythos" {
+					t.Fatalf("request after refusal = %q, %v", model, err)
+				}
+			}
+			if child.execs != 0 || msg != want {
+				t.Fatalf("all ready logins spent: %d launches, refusal %q; want %q", child.execs, msg, want)
+			}
+		})
+	}
+}
+
 func TestMenuStartPreferenceConcurrent(t *testing.T) {
 	if os.Getenv("TYCSWAP_FIXTURE_RACING_START") == "1" {
 		startResolveDefault = func() (string, error) { return "/fixture/claude", nil }

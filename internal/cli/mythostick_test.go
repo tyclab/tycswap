@@ -24,9 +24,13 @@ func mythosTickFixture(t *testing.T, spent, room float64, off bool) (*core.Switc
 	sw, _ := (fableTickFixture{def: "1", off: off, usage: map[string][3]float64{
 		"1": {5, 15, 25}, "2": {5, 15, spent}, "3": {5, 15, room}, "4": {1, 1, 1},
 	}}).build(t)
+	from, to := addMythosTestLogins(t, sw)
+	return sw, from, to
+}
+
+func addMythosTestLogins(t *testing.T, sw *core.Switcher) (string, string) {
+	t.Helper()
 	root := sw.BackupDir()
-	cache := filepath.Join(root, "cache", "usage.json")
-	writeFile(t, cache, strings.ReplaceAll(readOrAbsent(t, cache), `"Fable"`, `"Mythos"`))
 	for _, num := range []string{"2", "3", "4"} {
 		if err := sw.SetMythos(num, true); err != nil {
 			t.Fatal(err)
@@ -36,7 +40,7 @@ func mythosTickFixture(t *testing.T, spent, room float64, off bool) (*core.Switc
 			writeFile(t, filepath.Join(dir, ".credentials.json"), dryCreds("mythos-"+num, "refresh-"+num))
 		}
 	}
-	return sw, store.MythosLoginDir(root, fableEmail("2"), ""), store.MythosLoginDir(root, fableEmail("3"), "")
+	return store.MythosLoginDir(root, fableEmail("2"), ""), store.MythosLoginDir(root, fableEmail("3"), "")
 }
 
 func bindTickSession(t *testing.T, sw *core.Switcher, id, family, target string) string {
@@ -76,8 +80,17 @@ func TestTickMovesOnlyMythosSessionsAndRetainsTheSelection(t *testing.T) {
 	requireLinkTarget(t, first, from)
 	requireLinkTarget(t, second, from)
 	code, out, errText := runCodex(t, "", "auto", "--once", "--json")
-	if code != 0 {
-		t.Fatalf("auto --once exited %d: %s %s", code, out, errText)
+	moved := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		event := decodeJSON(t, line)
+		if event["event"] == "switch" && event["trigger"] == "mythos-at-limit" {
+			if id, ok := event["sessionId"].(string); ok {
+				moved[id] = true
+			}
+		}
+	}
+	if code != 0 || len(moved) != 2 || !moved[tickSessionA] || !moved[tickSessionB] {
+		t.Fatalf("expected both linked sessions to move for mythos-at-limit, got exit %d: %s %s", code, out, errText)
 	}
 	requireLinkTarget(t, first, to)
 	requireLinkTarget(t, second, to)
@@ -87,6 +100,24 @@ func TestTickMovesOnlyMythosSessionsAndRetainsTheSelection(t *testing.T) {
 	if err != nil || next.dir != to {
 		t.Fatalf("new start selected %s, want retained %s (%v)", next.dir, to, err)
 	}
+}
+
+func TestTickWithoutAnotherReadyMythosLoginReportsQuota(t *testing.T) {
+	sw, from, other := mythosTickFixture(t, 100, 30, false)
+	if err := os.Remove(filepath.Join(other, ".credentials.json")); err != nil {
+		t.Fatal(err)
+	}
+	link := bindTickSession(t, sw, tickSessionA, "mythos", from)
+	code, out, msg := runCodex(t, "", "auto", "--once", "--json")
+	requireLinkTarget(t, link, from)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		event := decodeJSON(t, line)
+		if code == 3 && event["event"] == "no-switch" && event["reason"] == "mythos-session" &&
+			event["detail"] == "no available Mythos login has quota for mythos" {
+			return
+		}
+	}
+	t.Fatalf("expected a blocked tick with a Mythos quota event, got exit %d: %s %s", code, out, msg)
 }
 
 func TestTickLeavesMythosSessionsWhenRotationCannotProceed(t *testing.T) {

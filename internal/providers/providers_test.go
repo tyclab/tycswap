@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/tyclab/tycswap/internal/codex/api"
 	"github.com/tyclab/tycswap/internal/codex/authfile"
 	"github.com/tyclab/tycswap/internal/codex/store"
 	"github.com/tyclab/tycswap/internal/codex/switcher"
@@ -231,11 +232,14 @@ func TestProviderLabelsAreShortEnoughForARowBadge(t *testing.T) {
 
 // ---- MultiSnapshotSource -----------------------------------------------------
 
-type claudeSource struct{ fetches []map[string]bool }
+type claudeSource struct {
+	snapshot reporting.AccountsSnapshot
+	fetches  []map[string]bool
+}
 
 func (c *claudeSource) AccountsSnapshot(fetch map[string]bool) *reporting.AccountsSnapshot {
 	c.fetches = append(c.fetches, fetch)
-	return &reporting.AccountsSnapshot{ActiveNumber: "1", Accounts: []reporting.AccountSnapshot{{Number: "1", IsActive: true}}}
+	return &c.snapshot
 }
 
 func TestMultiSnapshotSourceFollowsTheStoreOnlyRule(t *testing.T) {
@@ -258,7 +262,7 @@ func TestMultiSnapshotSourceFollowsTheStoreOnlyRule(t *testing.T) {
 }
 
 func TestMultiSnapshotSourceWithoutCodexIsClaudeOnly(t *testing.T) {
-	src := &claudeSource{}
+	src := &claudeSource{snapshot: reporting.AccountsSnapshot{ActiveNumber: "1", Accounts: []reporting.AccountSnapshot{{Number: "1", IsActive: true}}}}
 	m := NewMultiSnapshotSource(context.Background(), src, nil)
 	snap := m.AccountsSnapshot(set("claude:1", "codex:9"))
 	if !reflect.DeepEqual(keys(*snap), []string{"claude:1"}) || snap.ActiveNumber != "1" {
@@ -269,6 +273,35 @@ func TestMultiSnapshotSourceWithoutCodexIsClaudeOnly(t *testing.T) {
 	}
 	if Switcher(m.Providers()[0]) != nil {
 		t.Error("Switcher of the Claude provider is not nil")
+	}
+}
+
+func TestMultiSnapshotSourcePreservesMythosLoginAndModels(t *testing.T) {
+	for _, name := range []string{"Claude only", "Claude and Codex"} {
+		t.Run(name, func(t *testing.T) {
+			isolate(t)
+			var codex *switcher.Switcher
+			wantKeys := []string{"claude:1"}
+			if name == "Claude and Codex" {
+				addCodexSlot(t)
+				codex = switcher.New(switcher.Options{Platform: platform.Linux, Keychain: keychain.NewFake(), Client: &api.FakeClient{}})
+				wantKeys = append(wantKeys, "codex:1")
+			}
+
+			summary := map[string]any{"number": 1, "countedWindows": []string{"5h", "7d", "Fable"}, "linkedSessions": 1}
+			row := reporting.AccountSnapshot{Number: "1", MythosLogin: &reporting.MythosLogin{Live: true, Status: "ok"}, Models: []string{"mythos"}}
+			src := &claudeSource{snapshot: reporting.AccountsSnapshot{Mythos: summary, Accounts: []reporting.AccountSnapshot{row}}}
+			snap := NewMultiSnapshotSource(context.Background(), src, codex).AccountsSnapshot(set())
+			if !reflect.DeepEqual(keys(*snap), wantKeys) {
+				t.Fatalf("merged rows %v, want %v", keys(*snap), wantKeys)
+			}
+			if !reflect.DeepEqual(snap.Mythos, summary) {
+				t.Errorf("merged Mythos summary %v, want %v", snap.Mythos, summary)
+			}
+			if got := snap.Accounts[0]; !reflect.DeepEqual(got.MythosLogin, row.MythosLogin) || !reflect.DeepEqual(got.Models, row.Models) {
+				t.Errorf("merged Claude row has login %+v, models %v", got.MythosLogin, got.Models)
+			}
+		})
 	}
 }
 
