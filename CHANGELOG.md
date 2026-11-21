@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Managed native Claude sessions on Linux and WSL can follow model changes across logins or move individually with `tycswap use <mythos|fable|default> [--session ID]`. The status line shows the pending model command and the tick can move Mythos sessions off a login at its limit.
+
 - Disabling an idle selected account now moves the login to an eligible replacement. If none is available, tycswap saves the grant and clears the selection. A running client keeps its current login.
 - The command picker supports dashboard modes, status checks from a file, and selecting an enrolled Fable login for a new session while its store is idle.
 - The command menu now offers model allocations and independent sign-ins. A saved independent session keeps its credential identity across long breaks. The dashboard shows its login.

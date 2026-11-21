@@ -45,7 +45,8 @@ tycswap start --allow ID | --disallow ID | --list
 tycswap fable --allow ID | --disallow ID | --list [--json]
                                             mark the accounts that run Fable
 tycswap start --started                     end a session's start hold (a SessionStart hook)
-tycswap start --check                       name a session on the wrong store (a status line)
+tycswap start --check                       place a linked session or check a direct session’s login
+tycswap use <mythos|fable|default> [--session ID]  move a linked session to the selected login
 tycswap mythos --allow ID | --disallow ID | --list
                                             manage the marks of accounts that run Mythos
 tycswap auto [--once] [--json] [--interval SECONDS] [--five-hour-threshold PCT]
@@ -1514,8 +1515,9 @@ or any variable in the existing Claude auth-override contract skips selection.
 The inherited environment and arguments are passed unchanged, even with an
 explicit `--account`, less an inherited `TYCSWAP_START_HOLD`.
 `CLAUDE_SECURESTORAGE_CONFIG_DIR` counts as an override unless it names the
-Fable store (`<backup root>/fable/store`, compared cleaned; case-insensitively
-on Windows). No new profile or claim is created.
+Fable store, a managed independent Mythos login, or a managed session link on
+Linux or WSL. A nested native launch receives a fresh link of its own. An
+unmanaged child of a linked session inherits its resolved login directly.
 Marks are managed independently of these launch-only overrides.
 
 Without an override, an explicit UUID resume of a session recorded on an
@@ -1548,6 +1550,8 @@ model named anywhere, `--model default` or a settings `model` of `default`
 `ANTHROPIC_DEFAULT_OPUS_MODEL` naming a Fable model reads as Opus), managed
 settings, and a wrapper command (`tycswap start -- bash -lc "claude --model
 fable"`: only the child's own arguments are read).
+
+For direct launches, the child environment in this table names the chosen store. A linked launch uses its session link to reach the same store.
 
 | Family | Fable store | Child environment | Selection | Notice on stderr |
 | --- | --- | --- | --- | --- |
@@ -1658,7 +1662,14 @@ Claude rows carry the boolean, and Codex rows omit it.
 
 `tycswap start --check` reads the status-line JSON Claude Code passes on stdin
 (`session_id`, `model.id`) unless stdin is a terminal, and prints at most one
-line on stdout:
+line on stdout. With a session link, it compares the reported model with the
+bound login, tries a guarded move and reports a refusal or a pending
+`/model` command. `auto --observe` uses the same placement rules.
+An automatic move encountering a native refresh defers until a later
+observation or tick. An allocation question runs outside the observer or
+hook process. An affirmative answer triggers a fresh eligibility check.
+
+For a session with a direct login, the check uses the following messages.
 
 | Session | Line |
 | --- | --- |
@@ -1666,7 +1677,7 @@ line on stdout:
 | Fable on the default login, the Fable store usable, while `start` sends Fable sessions to the default login (start logins marked, auto-switch on, none of them with a usable Fable login) | `⚠ Fable session on the default login (no start login has a Fable login). Use the Fable store with an account approved for Fable.` |
 | Opus, Mythos, Sonnet or Haiku on the Fable store | `⚠ <Family> session on the Fable store. Use the default login with an account approved for <Family>.` |
 
-The session runs on the Fable store when `CLAUDE_SECURESTORAGE_CONFIG_DIR`
+A direct session runs on the Fable store when `CLAUDE_SECURESTORAGE_CONFIG_DIR`
 names it, else on the default login; its family is that of `model.id` (an
 alias or a `claude-<family>-…` id; a provider's id or an unknown model prints
 nothing). The check reports placement using the family name and the active store.
@@ -1718,7 +1729,38 @@ requires native Windows integration validation; cross-vet is insufficient.
 
 ---
 
-An independently signed-in session records its account at the native SessionStart hook and status line. The first recorded identity stays with its UUID even after a status report from another store. The dashboard separately reports the observed store. Resuming a recorded UUID checks the original identity and the requested model’s available quota.
+A direct independent session keeps its first recorded account identity across observations. A linked session updates its binding on a committed move. A resume uses the saved binding and rechecks the requested model’s available quota.
+
+## tycswap use
+
+```text
+tycswap use <mythos|fable|default> [--session ID]
+```
+
+Moves a running linked Linux or WSL session to the requested login. The
+default target session comes from the caller's session link. `--session`
+accepts the UUID from the SessionStart hook and also works outside the
+session. `use` changes that one link. Claude chooses its model separately.
+
+After `use mythos` or `use fable`, the status line holds placement and shows
+`Mythos login ready: /model claude-mythos-5-2` or
+`Fable login ready: /model fable` until Claude reports that family.
+`use default` selects the shared default login. A successful command exits
+0. An unavailable login, missing binding, or busy source refresh lock exits
+1 with a reason. A busy-lock message includes the lock’s last-modification
+age when available. Invalid arguments are a usage error. An explicit choice
+consents to an allocation exception for this move. Login readiness, known
+quota and ownership checks still apply.
+
+Managed native starts on Linux and WSL receive
+`CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/links/<token>`.
+`start --started` binds the link to the session UUID, process and selected
+store. A resume gets a fresh link. The scheduled tick removes links for
+ended processes and moves eligible Mythos sessions when another ready
+Mythos login has room. Link setup failure falls back to direct launch with
+a notice. Machines without managed Claude accounts, native Windows and
+macOS use direct launches. A session already running on a direct login
+keeps its original status-line behavior. See [DESIGN A109](DESIGN.md#a109-session-links-for-native-claude-on-linux-and-wsl).
 
 ## tycswap mythos
 
@@ -5469,7 +5511,9 @@ A `CLAUDE_SECURESTORAGE_CONFIG_DIR` that names the Fable store
 to case) is what a Fable-store session's children inherit: a tycswap command
 other than `start` unsets it for its own process before it does anything, so
 it acts on the default login under the default store's locks (DESIGN A100).
-Any other value is left as it is.
+The same normalization applies to a managed independent Mythos login and,
+on Linux and WSL, to the resolved target of a managed session link. A
+user-supplied storage override passes through.
 
 ## FILES
 
@@ -5523,7 +5567,9 @@ Inside the backup root:
 | `configs/` | Per-account config snapshots, `.claude-config-<n>-<email>.json`. `<email>` is the account's email as `add` accepts it (one `@`, at most 254 bytes, no whitespace, control character, `/`, `\` or `< > : " | ? *`), so the name is a single path component. |
 | `credentials/` | Per-account credential files, `.creds-<n>-<email>.enc` and the retained previous generation `.creds-<n>-<email>.enc.prev` (file backend; `<email>` as for `configs/`). macOS stores these in the Keychain instead, except a credential too large to reach the `security` command over stdin (a command line over 4032 bytes, so a credential over about 2 KB, for example one carrying many `mcpOAuth` tokens), which stays in this file (mode 0600) rather than on a command line. The live Claude Code credential falls back to `.credentials.json` the same way. |
 | `sessions/` | Former per-account profiles of the removed `tycswap run` / `tycswap env`, `<n>-<email>` (the `@` in the email replaced by `_`); kept for their history (DESIGN A92). |
-| `default_models.json` | The model family each default-profile session runs, as `--observe` records it from the status line (DESIGN A76): `{"schemaVersion": 1, "sessions": {"<session id>": {"family", "seenAt", "store"?}}}`, `store` being `"fable"` for a session on the Fable store and absent otherwise (DESIGN A100); while the Fable store is usable the default store counts only the records without it (DESIGN A102). Kept a day; no credentials. |
+| `.session-record-warnings/` | One warning marker per damaged session ID, so repeated commands can skip that record and continue processing its healthy siblings. |
+| `links/` | Linux and WSL session links to credential directories. Each linked process has its own entry, retired by the tick after exit (DESIGN A109). |
+| `default_models.json` | Per-session model family, observation time, store and optional link binding (DESIGN A76, A100, A109). Ended ordinary records expire after a day. An independent Mythos identity remains available for resume. |
 | `observe_state.json` | The time of the last near-bar observation that ran a tick, for the 15-second slot (DESIGN A75). |
 | `groups/` | What retired session groups left (DESIGN A78): `claims.json` (also the former `run` profiles' claims, and under `held` each refused profile release as `{"<n>": {"reason", "digest"}}`, the digest being the SHA-256 of the account-only profile login it was refused for; absent when none, DESIGN A92), and per group a `profile/` directory kept for its history, plus `retired.json` once the group is retired. |
 | `recovery/` | `state.json` and `state.json.lock` of the removed handover after a limit (DESIGN A95); no longer read or written, and not deleted. |

@@ -182,6 +182,9 @@ func randBytes() []byte {
 }
 
 func savedLink(root, id string, rec defaultSessionModel) (SessionLink, bool, error) {
+	if rec.bad != nil {
+		return SessionLink{}, false, rec.bad.err
+	}
 	if rec.Link == nil {
 		return SessionLink{}, false, nil
 	}
@@ -210,6 +213,9 @@ func LinkedSessions(root string) ([]SessionLink, error) {
 	}
 	var links []SessionLink
 	for id, rec := range records {
+		if rec.bad != nil {
+			continue
+		}
 		link, ok, err := savedLink(root, id, rec)
 		if err != nil {
 			return nil, err
@@ -225,6 +231,10 @@ func withLinkRecords(root string, fn func(map[string]defaultSessionModel) error)
 	if _, err := linksDir(root); err != nil {
 		return err
 	}
+	return withSessionRecords(root, fn)
+}
+
+func withSessionRecords(root string, fn func(map[string]defaultSessionModel) error) error {
 	return filelock.New(filepath.Join(root, ".lock"), filelock.DefaultTimeout).With(func() error {
 		return filelock.New(filepath.Join(root, ".default_models.lock"), filelock.DefaultTimeout).With(func() error {
 			records, err := loadDefaultSessionModels(root)
@@ -294,6 +304,7 @@ func BindSessionLink(root, id, path, model, scope string, now time.Time) error {
 		}
 		rec := defaultSessionModel{Family: link.Family, Store: targetStore, Binding: binding, Link: &link, SeenAt: float64(now.UnixNano()) / 1e9}
 		records[id] = rec
+		expireSessionModels(records, now)
 		return saveSessionModels(root, records)
 	})
 }
@@ -326,6 +337,13 @@ func committedLinkRecord(root string, rec defaultSessionModel) (defaultSessionMo
 	}
 	actual, err := os.Readlink(path)
 	switch {
+	case os.IsNotExist(err):
+		// With no commit point the last confirmed identity is the only one safe to resume.
+		if old.Link.ResumeMythos != "" && old.binding() == "" {
+			old.Binding = "mythos/" + old.Link.ResumeMythos
+		}
+		old.Link = nil
+		return *old, nil
 	case err != nil:
 		return rec, err
 	case actual == rec.Link.Target:
@@ -337,35 +355,68 @@ func committedLinkRecord(root string, rec defaultSessionModel) (defaultSessionMo
 	}
 }
 
-func UpdateSessionLink(root, id, path string, now time.Time, decide func(*SessionLink) error) error {
-	return withLinkRecords(root, func(records map[string]defaultSessionModel) error {
-		if id == "" && IsSessionLink(root, path) {
-			for candidate, rec := range records {
-				if rec.Link != nil && rec.Link.Token == filepath.Base(path) {
-					id = candidate
-					break
-				}
+func currentSessionLink(root, id, path string, records map[string]defaultSessionModel) (SessionLink, error) {
+	if id == "" && IsSessionLink(root, path) {
+		for candidate, rec := range records {
+			if rec.Link != nil && rec.Link.Token == filepath.Base(path) {
+				id = candidate
+				break
 			}
 		}
+	}
+	link, ok, err := savedLink(root, id, records[id])
+	if err != nil {
+		return SessionLink{}, err
+	}
+	if !ok {
+		return SessionLink{}, errors.New("session has no linked login binding")
+	}
+	bound := filepath.Join(root, "links", link.Token)
+	if path != "" && path != bound {
+		return SessionLink{}, errors.New("session does not own this link")
+	}
+	target, err := ResolveSessionLink(root, bound)
+	if err != nil {
+		return SessionLink{}, err
+	}
+	if target != link.Target || !procdetect.RecordAlive(link.PID, link.ProcStart, "") {
+		return SessionLink{}, errors.New("session link binding is no longer current")
+	}
+	return link, nil
+}
+
+// UseSessionLink can wait for a client refresh. Read its source before waiting,
+// then verify the binding and run the decision on fresh state under both store locks.
+func UseSessionLink(root, id, path string, now time.Time, decide func(*SessionLink) error) error {
+	records, err := loadDefaultSessionModels(root)
+	if err != nil {
+		return err
+	}
+	source, err := currentSessionLink(root, id, path, records)
+	if err != nil {
+		return err
+	}
+	return withSessionRefreshLock(source.Target, cclock.DefaultTimeoutS, func() error {
+		return updateSessionLink(root, source.ID, path, now, &source, decide)
+	})
+}
+
+// UpdateSessionLink defers automatic moves when the client's refresh lock is busy.
+func UpdateSessionLink(root, id, path string, now time.Time, decide func(*SessionLink) error) error {
+	return updateSessionLink(root, id, path, now, nil, decide)
+}
+
+func updateSessionLink(root, id, path string, now time.Time, guarded *SessionLink, decide func(*SessionLink) error) error {
+	return withLinkRecords(root, func(records map[string]defaultSessionModel) error {
+		link, err := currentSessionLink(root, id, path, records)
+		if err != nil {
+			return err
+		}
+		if guarded != nil && (guarded.Token != link.Token || guarded.Target != link.Target) {
+			return errors.New("the session binding changed while waiting for the refresh lock. Retry the move.")
+		}
+		id = link.ID
 		old := records[id]
-		link, ok, err := savedLink(root, id, old)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return errors.New("session has no linked login binding")
-		}
-		bound := filepath.Join(root, "links", link.Token)
-		if path != "" && path != bound {
-			return errors.New("session does not own this link")
-		}
-		target, err := ResolveSessionLink(root, bound)
-		if err != nil {
-			return err
-		}
-		if target != link.Target || !procdetect.RecordAlive(link.PID, link.ProcStart, "") {
-			return errors.New("session link binding is no longer current")
-		}
 		before := link
 		if err := decide(&link); err != nil {
 			return err
@@ -392,7 +443,8 @@ func UpdateSessionLink(root, id, path string, now time.Time, decide func(*Sessio
 		if err := checkTarget(root, link.Target); err != nil {
 			return err
 		}
-		return withSessionRefreshLock(target, cclock.DefaultTimeoutS, func() error {
+		commit := func() error {
+			bound := filepath.Join(root, "links", link.Token)
 			tmp := filepath.Join(root, "links", "."+link.Token)
 			// An interrupted mover may have left its staging link before rename.
 			if err := removeStagedLink(tmp); err != nil {
@@ -422,7 +474,11 @@ func UpdateSessionLink(root, id, path string, now time.Time, decide func(*Sessio
 			// If compaction fails, the durable pending record already describes the committed move.
 			_ = saveSessionModels(root, records)
 			return nil
-		})
+		}
+		if guarded != nil {
+			return commit()
+		}
+		return withSessionRefreshLock(before.Target, 0, commit)
 	})
 }
 
@@ -445,16 +501,31 @@ func PruneSessionLinks(root string) error {
 		return nil
 	}
 	if _, err := linksDir(root); os.IsNotExist(err) {
-		return nil
+		if _, err := os.Stat(filepath.Join(root, defaultModelsFile)); os.IsNotExist(err) {
+			return nil
+		}
+	} else if err != nil {
+		return err
 	}
-	return withLinkRecords(root, func(records map[string]defaultSessionModel) error {
-		dir := filepath.Join(root, "links")
-		entries, err := os.ReadDir(dir)
-		if err != nil {
+	return withSessionRecords(root, func(records map[string]defaultSessionModel) error {
+		var entries []os.DirEntry
+		dir, err := linksDir(root)
+		if err == nil {
+			entries, err = os.ReadDir(dir)
+		}
+		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
 		var ended []string
 		for _, entry := range entries {
+			if entry.Type().IsRegular() && strings.HasPrefix(entry.Name(), ".") && strings.HasSuffix(entry.Name(), ".ask") {
+				token := strings.TrimSuffix(entry.Name()[1:], ".ask")
+				pid, start, valid := linkOwner(token)
+				if valid && !procdetect.RecordAlive(pid, start, "") {
+					ended = append(ended, filepath.Join(dir, entry.Name()))
+				}
+				continue
+			}
 			if entry.Type()&os.ModeSymlink == 0 {
 				continue
 			}
@@ -464,11 +535,18 @@ func PruneSessionLinks(root string) error {
 				ended = append(ended, filepath.Join(dir, entry.Name()))
 			}
 		}
-		if len(ended) == 0 {
+		dirty := expireSessionModels(records, time.Now())
+		for _, rec := range records {
+			if rec.recovered {
+				dirty = true
+				break
+			}
+		}
+		if len(ended) == 0 && !dirty {
 			return nil
 		}
 		// Save recovered bindings before deleting the links that resolved a pending move.
-		if len(records) > 0 {
+		if len(records) > 0 || dirty {
 			if err := saveSessionModels(root, records); err != nil {
 				return err
 			}

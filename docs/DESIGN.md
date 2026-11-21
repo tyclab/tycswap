@@ -9389,3 +9389,73 @@ below its thresholds can move to an eligible login whose binding window resets
 strictly earlier. Unknown or equal resets leave it in place. An account serving
 an independent session is reserved. Before committing, the engine rechecks the
 source and target under the switch lock. A drain also rechecks the workload.
+
+## A109. Session links for native Claude on Linux and WSL
+
+On a machine with managed Claude accounts, `start` gives each native
+process a symlink under the private backup root, `links/<token>`, in
+`CLAUDE_SECURESTORAGE_CONFIG_DIR`. Its target is the default profile, the
+Fable store or one ready independent Mythos login. The SessionStart hook
+binds the process identity, session UUID and target in `default_models.json`.
+A resume gets a new link and a nested native launch gets its own. Hooks and
+tycswap commands resolve inherited links before choosing their store.
+The scheduled tick retires ended links. An independent Mythos binding
+retains the identity needed to resume after a long absence. Direct sessions
+keep the earlier placement behavior, including native Windows and macOS.
+An unreadable or uncreatable launch link gives one notice and a direct launch.
+
+**Moving a session.** A native refresh trace showed the client acquiring
+`.oauth_refresh.lock` through its link before taking the lock beside the
+resolved storage directory. It then re-read `.credentials.json` through the
+link, refreshed, wrote the replacement grant and released the refresh lock
+last. Replacing the link during that interval can send the grant to the
+wrong store. A mover takes the refresh lock on the resolved source before
+renaming a fresh symlink over the old one. A client already refreshing
+finishes in the source. A client that retries after the rename resolves the
+new link and reads the destination grant. The mover leaves the client's lock
+in place regardless of its age.
+
+Status-line and hook observers and the scheduled tick try the refresh lock
+once. A busy source defers placement. An explicit `use` may wait up to the
+client's acquisition timeout (9 s), with the tycswap store and session-record
+locks free. The final move validates the current binding, source, eligible
+destination and account allocation under the tycswap locks. The tick can
+rotate the selected Mythos login at a known limit when another ready login
+has room. An automatic allocation exception requires an affirmative answer
+for this session and destination. A separate process owns that question and
+rechecks the proposal after the answer. A later observation can replace an
+asker that has died.
+
+**Manual choice.** `tycswap use <mythos|fable|default> [--session ID]`
+takes the session from the calling shell's link or its explicit UUID.
+It holds the chosen login while the user enters the status line's
+`/model claude-mythos-5-2` or `/model fable` command. The first report
+of the requested family clears the hint. A later model change resumes
+automatic placement. In-process subagents share the parent's link.
+Remote Control belongs to the signed-in account and disconnects on an
+account change. Run `/remote-control` again on the destination.
+
+**Shared default and Mythos.** When a linked session on the default login
+changes to Mythos and no independent login is ready, the status line reads
+`no enabled, marked account with an independent Mythos login is available for this start`.
+If every eligible login is at a known limit, it reads
+`no available Mythos login has quota for mythos`. The link stays in place.
+In 0.19.0 this change could trigger `model-missing` and switch the shared
+default login for every session. The linked session no longer drives that
+switch. A session initially launched on the shared Mythos fallback retains
+the existing shared policy.
+
+**Returning to default or Fable.** Placement checks the target store's
+actual OAuth credential locally. After a native refresh rotates a login,
+its backup and recorded fingerprint can both be out of date. Missing or
+unreadable credentials can also leave the owner unresolved. The default
+config can name a different session's account. The last installed slot
+comes from the active roster on default or the Fable chain record on Fable.
+Either clue alone leaves the link on its current login and the status line
+says `cannot verify the current default login for the session` or
+`cannot verify the current fable login for the session`. There is no
+timer that makes the inference sufficient. A later observation can move
+as soon as the credential matches an account backup or verified chain,
+for example after an identity-resolving read and harvest or installation
+of a known login. While that evidence is missing, the refusal can persist
+indefinitely. Its frequency and duration on a live machine were not measured.

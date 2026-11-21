@@ -666,7 +666,12 @@ runs one auto-switch check, which moves the logins on. Without the hook a login
 stays for 30 s, then moves at the next check, and the session's first request
 can hit the limit.
 
-The child's arguments pass unchanged, and so does its environment, except
+On Linux and WSL, a managed native Claude start gets a private link to its
+selected login. The SessionStart hook above binds the link to the session.
+A nested native start gets another link. On a machine with no managed Claude
+accounts, the launcher starts Claude directly.
+
+For direct launches, the child's arguments pass unchanged, and so does its environment, except
 `TYCSWAP_START_HOLD` (set for a session with a start hold, removed from any
 other) and `CLAUDE_SECURESTORAGE_CONFIG_DIR` while a Fable store exists: a
 session whose model is Fable (`--model`, `ANTHROPIC_MODEL`, a settings
@@ -739,10 +744,28 @@ credential. Moving the same account to a new slot preserves the credential.
 `tycswap models --list` shows explicit allocations. Use
 `tycswap models 2 --derived` to clear the allocation for account 2.
 A launch outside the account's explicit allocation asks before starting
-Claude. A resumed independent session keeps its original identity across
-restarts and checks both shared and model quota. When a known window is full,
+Claude. An independent session's binding survives restarts. A linked session
+updates that binding on a move. Resume checks both shared and model quota. When a known window is full,
 the login becomes available again after its reset. Each computer needs its
 own browser sign-in.
+
+### Move a running session to a login
+
+On Linux or WSL, run `tycswap use` in a shell inside the linked session, or
+give its UUID from another shell. For example:
+
+```sh
+tycswap use mythos
+tycswap use fable --session 9421a2ec-67ef-4ff6-9e22-dad93a8d0b87
+tycswap use default
+```
+
+For Mythos, follow the hint with `/model claude-mythos-5-2` in Claude.
+For Fable, use `/model fable`. Once the status line sees the requested
+family, the hint disappears. Subsequent model changes can move the session
+again. Sessions already running when you upgrade keep their direct login.
+In-process subagents share their parent's login. After a move across
+accounts, use `/remote-control` again to reconnect Remote Control.
 
 ### Run accounts in parallel
 
@@ -1275,7 +1298,9 @@ jq -r --arg k "$(jq -r '.oauthAccount | "\(.emailAddress)|\(.organizationUuid //
 
 The schema is under STATUS LINE STATE in [`docs/reference.md`](docs/reference.md).
 
-With a Fable store, the status line can pipe its JSON into `tycswap start --check`.
+Pipe the status-line JSON into `tycswap start --check` to place a linked
+session for its reported model and display a pending model hint or refusal.
+For a direct session with a Fable store, the same command checks its login.
 When a Fable session is on the default login, or another model is on the Fable store,
 the check identifies the model family, the active store and where to use an
 account approved for that model. If none of the start logins

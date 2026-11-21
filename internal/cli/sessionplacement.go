@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -65,13 +66,24 @@ func modelHint(wanted string) string {
 }
 
 type sessionMoveResult struct {
-	line string
-	news bool
-	// The status line can wait for its own question after the tick and outside both locks.
-	ask func() error
+	line     string
+	news     bool
+	question *sessionQuestion
+}
+
+type sessionQuestion struct {
+	id, path, model, claim, text string
 }
 
 func placeSession(sw *core.Switcher, id, path, reportedModel, requested string, observe bool) (sessionMoveResult, error) {
+	result, err := evaluateSessionPlacement(sw, id, path, reportedModel, requested, observe, "")
+	if err == nil && result.question != nil {
+		err = startSessionAsker(*result.question)
+	}
+	return result, err
+}
+
+func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, requested string, observe bool, expected string) (sessionMoveResult, error) {
 	var result sessionMoveResult
 	family := reporting.ClaudeFamily(reportedModel)
 	if requested == "" && (strings.TrimSpace(reportedModel) == "" || !sessionUUID.MatchString(id)) {
@@ -79,115 +91,113 @@ func placeSession(sw *core.Switcher, id, path, reportedModel, requested string, 
 	}
 	view := sw.Store.WithoutLineageWrites()
 	view.OAuth, view.Log = nil, nil
-	var claim, question, contextID, approved string
-	update := func() error {
-		return reporting.UpdateSessionLink(view.BackupDir(), id, path, view.Clk.Now(), func(rec *reporting.SessionLink) error {
-			if approved != "" && (rec.Question != approved || rec.Family != family) {
-				return errors.New("the session changed while awaiting the placement answer")
-			}
-			oldFamily, oldTarget := rec.Family, rec.Target
-			defer func() {
-				rec.ObservePending = rec.ObservePending || rec.Family != oldFamily || rec.Target != oldTarget
-				if observe && approved == "" {
-					result.news, rec.ObservePending = rec.ObservePending, false
-				}
-			}()
-			explicit := requested != ""
-			wanted, model := requested, requested
-			if explicit && wanted == "default" {
-				model = ""
-				if reporting.SessionLoginForFamily(oldFamily) == "default" {
-					model = oldFamily
-				}
-			}
-			if !explicit {
-				rec.Family = family
-				wanted, model = reporting.SessionLoginForFamily(family), family
-				if rec.Wanted != "" && rec.Wanted != wanted {
-					if reporting.SessionLoginForFamily(oldFamily) == rec.Wanted && oldFamily != "" {
-						rec.Wanted = ""
-					} else {
-						wanted, model = rec.Wanted, rec.Wanted
-					}
-				}
-			}
-			if explicit || wanted != mythosFamily {
-				rec.ResumeMythos = ""
-			}
-			target, identity, err := sessionDestination(view, rec, wanted, model, explicit)
-			if err != nil {
-				if explicit || approved != "" {
-					return err
-				}
-				rec.Question = ""
-				result.line = err.Error()
-				return nil
-			}
-			if target.dir == "" {
-				target.dir = rec.Target
-			}
-			if target.dir != rec.Target && !explicit && target.allocation != "" {
-				fingerprint := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join([]string{rec.Token, rec.Target, model, target.dir, target.number, identity, target.name, target.allocation}, "\x00"))))
-				prefix := fingerprint + "/"
-				if approved != "" && !strings.HasPrefix(approved, prefix) {
-					return errors.New("the account or allocation changed while awaiting the placement answer")
-				}
-				if !(strings.HasPrefix(rec.Question, prefix) && strings.HasSuffix(rec.Question, "/approved")) {
-					result.line = "Waiting for the allocation decision for this " + model + " session."
-					switch {
-					case !strings.HasPrefix(rec.Question, prefix):
-						claim = prefix + rand.Text()
-						rec.Question = claim
-						question = fmt.Sprintf("Use %s’s shared quota for this %s session? It is allocated to %s.", termsafe.Strip(target.name), model, target.allocation)
-						contextID = rec.ID
-					case strings.HasSuffix(rec.Question, "/declined"):
-						result.line = "The allocation decision deferred this " + model + " session move."
-					case strings.HasSuffix(rec.Question, "/unanswered"):
-						result.line = "No allocation decision was received for this " + model + " session move."
-					}
-					return nil
-				}
-			} else if approved != "" {
-				return errors.New("the placement changed while awaiting the answer")
-			}
-			rec.Target, rec.Question, rec.ResumeMythos = target.dir, "", ""
-			if explicit {
-				rec.Wanted = requested
-			}
-			result.line = modelHint(rec.Wanted)
-			return nil
-		})
+	update := reporting.UpdateSessionLink
+	if requested != "" {
+		update = reporting.UseSessionLink
 	}
-	err := update()
-	if err == nil && claim != "" {
-		result.ask = func() error {
-			ok, answerErr := askPlacement(ioStreams{err: io.Discard}, question, contextID, true)
-			answer := "/approved"
-			if answerErr != nil {
-				answer = "/unanswered"
-			} else if !ok {
-				answer = "/declined"
-				answerErr = errors.New("session move deferred by the allocation decision")
+	err := update(view.BackupDir(), id, path, view.Clk.Now(), func(rec *reporting.SessionLink) error {
+		if expected != "" && (rec.Question != expected || rec.Family != family) {
+			return errors.New("the session changed while awaiting the placement answer")
+		}
+		oldFamily, oldTarget := rec.Family, rec.Target
+		defer func() {
+			rec.ObservePending = rec.ObservePending || rec.Family != oldFamily || rec.Target != oldTarget
+			if observe {
+				result.news, rec.ObservePending = rec.ObservePending, false
 			}
-			// Keep the answer if a client refresh defers the move to a later observation.
-			err := reporting.UpdateSessionLink(view.BackupDir(), id, path, view.Clk.Now(), func(rec *reporting.SessionLink) error {
-				if rec.Question != claim || rec.Family != family {
-					return errors.New("the session changed while awaiting the placement answer")
+		}()
+		explicit := requested != ""
+		wanted, model := requested, requested
+		if explicit && wanted == "default" {
+			model = ""
+			if reporting.SessionLoginForFamily(oldFamily) == "default" {
+				model = oldFamily
+			}
+		}
+		if !explicit {
+			rec.Family = family
+			wanted, model = reporting.SessionLoginForFamily(family), family
+			if rec.Wanted != "" && rec.Wanted != wanted {
+				if reporting.SessionLoginForFamily(oldFamily) == rec.Wanted && oldFamily != "" {
+					rec.Wanted = ""
+				} else {
+					wanted, model = rec.Wanted, rec.Wanted
 				}
-				rec.Question += answer
-				return nil
-			})
-			if err != nil {
+			}
+		}
+		if explicit || wanted != mythosFamily {
+			rec.ResumeMythos = ""
+		}
+		target, identity, err := sessionDestination(view, rec, wanted, model, explicit)
+		if err != nil {
+			if explicit || expected != "" {
 				return err
 			}
-			if answerErr != nil {
-				return answerErr
-			}
-			approved = claim + answer
-			return update()
+			rec.Question = ""
+			result.line = err.Error()
+			return nil
 		}
-	}
+		if target.dir == "" {
+			target.dir = rec.Target
+		}
+		if target.dir != rec.Target && !explicit && target.allocation != "" {
+			fingerprint := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join([]string{rec.Token, rec.Target, model, target.dir, target.number, identity, target.name, target.allocation}, "\x00"))))
+			prefix := fingerprint + "/"
+			if expected != "" && !strings.HasPrefix(expected, prefix) {
+				return errors.New("the account or allocation changed while awaiting the placement answer")
+			}
+			if !(strings.HasPrefix(rec.Question, prefix) && strings.HasSuffix(rec.Question, "/approved")) {
+				result.line = "Waiting for the allocation decision for this " + model + " session."
+				if !strings.HasPrefix(rec.Question, prefix) {
+					rec.Question = prefix + rand.Text()
+				}
+				switch {
+				case strings.HasSuffix(rec.Question, "/declined"):
+					result.line = "The allocation decision deferred this " + model + " session move."
+				case strings.HasSuffix(rec.Question, "/unanswered"):
+					result.line = "No allocation decision was received for this " + model + " session move."
+				default:
+					result.question = &sessionQuestion{
+						id: rec.ID, path: filepath.Join(view.BackupDir(), "links", rec.Token), model: reportedModel, claim: rec.Question,
+						text: fmt.Sprintf("Use %s’s shared quota for this %s session? It is allocated to %s.", termsafe.Strip(target.name), model, target.allocation),
+					}
+				}
+				return nil
+			}
+		} else if expected != "" {
+			return errors.New("the placement changed while awaiting the answer")
+		}
+		rec.Target, rec.Question, rec.ResumeMythos = target.dir, "", ""
+		if explicit {
+			rec.Wanted = requested
+		}
+		if rec.Wanted != reporting.SessionLoginForFamily(rec.Family) {
+			result.line = modelHint(rec.Wanted)
+		}
+		return nil
+	})
 	return result, err
+}
+
+func answerSessionQuestion(sw *core.Switcher, q sessionQuestion, granted bool, answerErr error) error {
+	answer := "/approved"
+	if answerErr != nil {
+		answer = "/unanswered"
+	} else if !granted {
+		answer = "/declined"
+	}
+	err := reporting.UpdateSessionLink(sw.BackupDir(), q.id, q.path, sw.Clk.Now(), func(rec *reporting.SessionLink) error {
+		if rec.Question != q.claim || rec.Family != reporting.ClaudeFamily(q.model) {
+			return errors.New("the session changed while awaiting the placement answer")
+		}
+		rec.Question += answer
+		return nil
+	})
+	if err != nil || answer != "/approved" {
+		return err
+	}
+	_, err = evaluateSessionPlacement(sw, q.id, q.path, q.model, "", false, q.claim+answer)
+	return err
 }
 
 func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, model string, explicit bool) (mythosPlacement, string, error) {
@@ -290,12 +300,6 @@ func checkLinkedSession(id, model string) string {
 	result, err := placeSession(sw, id, sessionLinkPath, model, "", false)
 	if err != nil {
 		return err.Error()
-	}
-	if result.ask != nil {
-		if err := result.ask(); err != nil {
-			return err.Error()
-		}
-		return ""
 	}
 	return result.line
 }

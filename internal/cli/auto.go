@@ -163,13 +163,6 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 				sw.Log.Debugf("Session placement: %v", err)
 			} else {
 				linkedNews = result.news && on
-				if result.ask != nil {
-					defer func() {
-						if err := result.ask(); err != nil {
-							sw.Log.Debugf("Session placement: %v", err)
-						}
-					}()
-				}
 			}
 		}
 		if !observeTicks(sw, raw, merged, on || dryRun) && !linkedNews {

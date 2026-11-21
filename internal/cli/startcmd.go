@@ -178,7 +178,7 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 		requestedFamily := startSessionFamily(args, env)
 		model := requestedFamily
 		var dir string
-		linked := native && runtime.GOOS == "linux"
+		linked := native && runtime.GOOS == "linux" && hasSessionLinkAccounts(root)
 		var savedTarget string
 		linkErr := sessionLinkErr
 		if id := resumedSession(args[1:]); linked && sessionUUID.MatchString(id) {
@@ -262,6 +262,20 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 		startNotice(streams.err, "Could not launch command: "+err.Error())
 	}
 	return code
+}
+
+// An unmanaged start goes through the ordinary direct launcher, which also
+// owns the diagnostics for an unreadable roster.
+func hasSessionLinkAccounts(root string) bool {
+	if startStoreProblem(root) != "" {
+		return false
+	}
+	sw, err := newSwitcher(store.Options{Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
+	if err != nil {
+		return false
+	}
+	data, err := sw.SequenceForUpdate()
+	return err == nil && len(data.Accounts) != 0
 }
 
 func startSharedLogin(env, args []string, root, storeDir, account, model, savedTarget string, native bool, streams ioStreams) (childEnv []string, hold, family string, code int) {

@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
+	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
@@ -112,7 +113,7 @@ func mythosTick(sw *core.Switcher, set settings.AutoSwitchSettings, emit func(au
 		emit(mythosSwitchEvent{autoswitch.SwitchEvent{Ts: ts, Trigger: "mythos-at-limit", ToRef: map[string]any{"number": slotNumber(p.number)}, DryRun: dryRun}, session})
 	}
 	problem := func(err error) autoswitch.TickOutcome {
-		if errors.Is(err, errNoMythosQuota) || errors.Is(err, errNoMythosLogin) || errors.Is(err, errMythosAllocation) {
+		if errors.Is(err, errNoMythosQuota) || errors.Is(err, errNoMythosLogin) || errors.Is(err, errMythosAllocation) || cerr.TypeName(err) == string(cerr.KindClaudeCodeLockTimeout) {
 			emit(autoswitch.NoSwitchEvent{Ts: ts, Reason: "mythos-session", Detail: err.Error()})
 			return autoswitch.Blocked
 		}
