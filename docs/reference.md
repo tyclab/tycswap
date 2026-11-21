@@ -1798,6 +1798,10 @@ same placement checks as an explicit UUID. A click checks the current binding
 again, including any client refresh in progress. A legacy session without a
 link has no move actions.
 
+The terminal picker shows the dashboard’s session title, the first eight characters
+of its ID, its login and account, and its folder. A session without a title appears
+as `session <short ID>`. Choosing a row passes the full ID to `tycswap use --session`.
+
 ```text
 tycswap use <mythos|fable|default> [--session ID]
 ```

@@ -3,6 +3,7 @@
 ## Unreleased
 
 - **Sessions…** in the local and remote tray opens the dashboard’s Sessions tab. Move an individual session there. The dashboard header shows the full Mythos account and separates quota and session details with middle dots.
+- The terminal **Sessions…** picker shows the dashboard’s session titles and short IDs so you can tell sessions in the same folder apart.
 - The terminal account menu labels its Mythos sign-in actions **Sign in for Mythos…** and **Sign in again for Mythos…**.
 
 - The selected Mythos login now shows which quota windows are full and when all of them reset in the CLI, dashboard and tray. A refused Mythos start names the eligible login with the earliest known return.
