@@ -165,8 +165,8 @@ p { margin: 0; }
 
 /* ---------- brand bar (header) ---------- */
 .top {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--s4);
-  padding: 10px var(--gutter);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .25em 1em;
+  padding: .375em var(--gutter);
   background: linear-gradient(180deg, var(--bar-2), var(--bar));
   color: var(--bar-fg);
   border-bottom: 1px solid var(--bar-line);
@@ -197,32 +197,21 @@ p { margin: 0; }
 .sess-tbl .c-title .title { display: block; font-weight: 600; max-width: 320px; }
 .notice { margin-top: var(--s3); padding: var(--s3); border-radius: 10px; border: 1px solid; font-size: var(--t13); line-height: 1.5; }
 .notice-crit { border-color: var(--crit); background: color-mix(in srgb, var(--crit) 12%, transparent); }
-.hdr-acct { display: flex; align-items: center; gap: var(--s4); flex: 1; min-width: 0; margin: 0 var(--s3); padding-left: var(--s4); border-left: 1px solid var(--bar-line); }
-.top:has(.hdr-mythos) { flex-wrap: wrap; row-gap: var(--s1); padding-block: 6px; }
-.hdr-acct:has(.hdr-mythos) {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px var(--s4);
-  flex-basis: 100%; order: 1; border: 0; padding: 0; margin: 0;
-}
+.hdr-acct { display: grid; grid-template-columns: minmax(0, 1fr); gap: .125em; flex: 1 1 max-content; min-width: 0; }
+.hdr-usage { display: flex; flex-wrap: wrap; align-items: center; gap: .25em 1em; }
 .hdr-who { display: inline-flex; align-items: center; gap: var(--s2); min-width: 0; }
-.hdr-name { max-width: 300px; font-weight: 600; color: var(--bar-fg); }
-.hdr-meters { display: flex; gap: var(--s4); min-width: 0; }
-.hdr-meters .meter { width: 128px; }
+.hdr-name { font-weight: 600; color: var(--bar-fg); }
+.hdr-meters { display: flex; flex: 1 1 max-content; gap: 1em; min-width: 0; }
+.hdr-meters .meter { flex: 1 1 auto; grid-template-columns: minmax(0, 1fr); }
 .hdr-meters .meter-label { color: var(--bar-muted); }
 .hdr-meters .meter-val { color: var(--bar-fg); }
 .hdr-meters .meter-foot { color: var(--bar-muted); }
 .hdr-none { font-size: var(--t12); }
-.hdr-stack { display: grid; gap: 2px; min-width: 0; }
-.hdr-fable { display: inline-flex; align-items: center; gap: var(--s2); min-width: 0; font-size: var(--t12); color: var(--bar-muted); }
-.hdr-acct > .hdr-fable, .hdr-mythos { grid-column: 1 / -1; }
-.hdr-mythos { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1px var(--s2); min-width: 0; overflow-wrap: anywhere; font-size: var(--t12); color: var(--bar-muted); }
-.hdr-mythos > span { min-width: 0; }
+.hdr-fable { display: inline-flex; flex: 1 1 max-content; align-items: center; gap: var(--s2); min-width: 0; font-size: var(--t12); color: var(--bar-muted); }
+.hdr-mythos { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 .65em; min-width: 0; overflow-wrap: anywhere; font-size: var(--t12); color: var(--bar-muted); }
+.hdr-mythos > :first-child { flex: none; max-inline-size: 100%; }
+.hdr-mythos-detail { flex: 1 1 min-content; min-width: 0; overflow: hidden; overflow-wrap: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
 .top .slot-chip { background: var(--brand); color: var(--brand-tile); }
-@media (max-width: 900px) { .sess-tbl .c-title { max-width: 320px; }
-.sess-tbl .c-title .title { display: block; font-weight: 600; max-width: 320px; }
-.hdr-acct { display: none; }
-.hdr-acct:has(.hdr-mythos) { grid-template-columns: minmax(0, 1fr); }
-.hdr-acct:has(.hdr-mythos) .hdr-meters { display: none; }
-}
 .conn { display: inline-flex; align-items: center; gap: var(--s2); font-size: var(--t12); color: var(--bar-fg-2); padding: 4px 11px; border: 1px solid var(--bar-line); border-radius: 999px; white-space: nowrap; background: rgba(255, 255, 255, .04); }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--muted); }
 .dot-on { background: var(--good); box-shadow: 0 0 0 3px rgba(34, 197, 94, .22); }
@@ -549,7 +538,6 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
   .acct-tbl .row-actions .btn-primary { flex: 1; justify-content: center; }
   .menu-list { right: auto; left: 0; }
   .tbl:not(.acct-tbl) { display: block; overflow-x: auto; }
-  .top { padding: var(--s2) var(--gutter); }
   .brand-sub { display: none; }
   .card { padding: var(--s4); }
   .wrap { padding-top: var(--gutter); }

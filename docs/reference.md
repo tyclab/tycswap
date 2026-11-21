@@ -447,8 +447,11 @@ with its account number and the command, menu, dashboard or tray actor.
 An individual session move records the dashboard actor or `use` for the command.
 The default and Fable stores have their own selections.
 `list`, `status`, the dashboard and the tray show the selected account,
-counted windows and linked session count. The dashboard gives the Mythos login
-its own row below the active account and usage bars. Its detail can read
+counted windows and linked session count. The dashboard fits the account summary
+beside the header controls when space allows. Longer names, larger text or a
+narrower window can move it below the controls. The usage bars remain visible.
+The Mythos row shows the full account and shortens its detail when space is tight.
+Hover over the row to read the full detail. It can read
 `counting 7d + Fable · at limit: Fable until Nov 28 09:59 · 0 linked sessions`.
 The JSON `mythos` object in `list --json`, `status --json` and `/api/state`
 reports `atLimit` and `limitingWindows`. With room these are `false` and `[]`.
