@@ -135,7 +135,7 @@ func TestTrayFableMenu(t *testing.T) {
 	sh, ft, _ := fableShell(t)
 	sh.update(fableTrayState(1))
 	ids, _ := menuShape(ft)
-	if want := "brand,open,switch:claude:1,switch:claude:2,switch:claude:3,switch:claude:4,switch:claude:5,switch:claude:6,switch:claude:7,fable:claude:2,switch:codex:1,auto,autostart,update,quit"; ids != want {
+	if want := "brand,open,switch:claude:1,switch:claude:2,switch:claude:3,switch:claude:4,switch:claude:5,switch:claude:6,switch:claude:7,fable:claude:2,sessions-open,switch:codex:1,auto,autostart,update,quit"; ids != want {
 		t.Fatalf("menu order %s\nwant %s", ids, want)
 	}
 	it, _ := ft.item("fable:claude:2")
@@ -153,13 +153,13 @@ func TestTrayFableMenu(t *testing.T) {
 	}
 	sh.act.AccountSetup = func(string) error { return nil }
 	sh.update(fableTrayState(1))
-	if ids, _ := menuShape(ft); !strings.Contains(ids, "switch:claude:7,fable:claude:2,account-setup,menu:main,switch:codex:1") {
+	if ids, _ := menuShape(ft); !strings.Contains(ids, "switch:claude:7,fable:claude:2,sessions-open,account-setup,menu:main,switch:codex:1") {
 		t.Fatalf("with account setup %s", ids)
 	}
 	st := fableTrayState(1)
 	st.Accounts = append(st.Accounts, manyAccounts(inlineAccounts+12, 0)[inlineAccounts:]...)
 	sh.update(st)
-	if ids, _ := menuShape(ft); !strings.Contains(ids, "switch:claude:2,accounts,fable:claude:2,account-setup") {
+	if ids, _ := menuShape(ft); !strings.Contains(ids, "switch:claude:2,accounts,fable:claude:2,sessions-open,account-setup") {
 		t.Fatalf("with a submenu %s", ids)
 	}
 	sh.act.SwitchFable = nil

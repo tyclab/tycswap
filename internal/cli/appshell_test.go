@@ -141,7 +141,7 @@ func TestShellTitleTooltipAndMenu(t *testing.T) {
 		t.Errorf("other row = %+v", a2)
 	}
 	ids, headers := menuShape(ft)
-	if ids != "brand,open,switch:claude:1,switch:claude:2,auto,autostart,update,quit" {
+	if ids != "brand,open,switch:claude:1,switch:claude:2,sessions-open,auto,autostart,update,quit" {
 		t.Errorf("menu order = %v", ids)
 	}
 	if br := ft.menu[0]; br.Kind != tray.KindBrand || br.Title != "tycswap" || !strings.Contains(br.Sub, "auto-switch off") || br.Clickable() {
@@ -898,7 +898,7 @@ func TestShellCodexRowsUnderOwnHeader(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
 	sh.update(codexState())
 	ids, headers := menuShape(ft)
-	if ids != "brand,open,switch:claude:1,switch:claude:2,switch:codex:1,switch:codex:2,switch:codex:3,auto,autostart,update,quit" {
+	if ids != "brand,open,switch:claude:1,switch:claude:2,sessions-open,switch:codex:1,switch:codex:2,switch:codex:3,auto,autostart,update,quit" {
 		t.Errorf("menu order = %s", ids)
 	}
 	if headers != "Accounts,Codex,Automation,App" {
@@ -951,7 +951,7 @@ func TestShellCodexRowsUnderOwnHeader(t *testing.T) {
 	if !ok || sub.Title != "All 12 Codex accounts" || len(sub.Children) != 12 || sub.Children[0].ID != "switch:codex:1" {
 		t.Fatalf("codex submenu = %+v (present %v)", sub, ok)
 	}
-	if ids, _ := menuShape(ft); !strings.Contains(ids, "switch:claude:1,switch:claude:2,switch:codex:4,codex-accounts,auto") {
+	if ids, _ := menuShape(ft); !strings.Contains(ids, "switch:claude:1,switch:claude:2,sessions-open,switch:codex:4,codex-accounts,auto") {
 		t.Errorf("menu order = %s", ids)
 	}
 }
@@ -966,7 +966,7 @@ func TestShellClaudeOnlyMenuUnchanged(t *testing.T) {
 		sh, ft, _ := newTestShell(t)
 		sh.update(st)
 		ids, headers := menuShape(ft)
-		if ids != "brand,open,switch:claude:1,switch:claude:2,auto,autostart,update,quit" || headers != "Accounts,Automation,App" {
+		if ids != "brand,open,switch:claude:1,switch:claude:2,sessions-open,auto,autostart,update,quit" || headers != "Accounts,Automation,App" {
 			t.Errorf("menu = %s / %s", ids, headers)
 		}
 		if strings.Contains(ft.tooltip, "codex") {
