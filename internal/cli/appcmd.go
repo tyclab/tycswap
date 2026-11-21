@@ -351,31 +351,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		return 0
 	}
 
-	// Where this app's output goes: the terminal it runs in, or the log a
-	// background or start-at-login app writes to.
-	outputPlace := appLogPath()
-	if f, ok := s.err.(*os.File); ok && isTTY(f) {
-		outputPlace = "the terminal running " + brandName() + " app"
-	}
-	openDashboardAt := func(showUpdates bool) error {
-		u, err := srv.LaunchURL()
-		if err != nil {
-			return err
-		}
-		if showUpdates {
-			u += "&show=updates"
-		}
-		if err := openBrowser(u); err != nil {
-			// Leave a way in (A41): the address, single-use like the one
-			// printed at start, goes to the app's output, and the message
-			// leads with where to find it — Windows cuts a notification's
-			// text at 255 characters.
-			fmt.Fprintln(s.err, "Dashboard: "+u)
-			return fmt.Errorf("open the Dashboard address from %s in your browser (%v)", outputPlace, err)
-		}
-		return nil
-	}
-	openDashboard := func() error { return openDashboardAt(false) }
+	openDashboard := func(show string) error { return openTrayDashboard(srv.LaunchURL, s.err, show) }
 	var quitOnce sync.Once
 	quit := func() { quitOnce.Do(func() { cancel(); t.Quit() }) }
 	var restart atomic.Bool
@@ -395,7 +371,6 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 	readAutostart, writeAutostart := trayAutostart(autostart.Config{})
 	sh = newAppShell(t, shellActions{
 		OpenDashboard: openDashboard,
-		OpenUpdates:   func() error { return openDashboardAt(true) },
 		CheckUpdates:  updates.Check,
 		AccountSetup:  openAccountSetup,
 		// A row key: the Claude switcher or the Codex one (A47).
@@ -412,7 +387,6 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 			msg, _ := result["message"].(string)
 			return msg, err
 		},
-		UseSession:        func(id, dest string) error { return d.UseSession(id, dest, "tray") },
 		SetNextStartModel: d.SetNextStartModel,
 		AddCurrent:        func() (web.AddLoginResult, error) { return srv.AddCurrentLogin() },
 		AutoRunning:       func() bool { return d.auto.View().Running },
@@ -472,7 +446,7 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 		t.Quit()
 	}()
 	if o.open {
-		_ = openDashboard()
+		_ = openDashboard("")
 	}
 	// The brand row names the installed Claude Code at once; the full check
 	// (network) follows later, and only with updates on.

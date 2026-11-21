@@ -704,25 +704,7 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	}
 	fmt.Fprintf(s.err, "Remote engine: %s (token from %s)\n", o.remote, o.tokenFile)
 
-	outputPlace := appLogPath()
-	if f, ok := s.err.(*os.File); ok && isTTY(f) {
-		outputPlace = "the terminal running " + brandName() + " app"
-	}
-	openDashboardAt := func(showUpdates bool) error {
-		u, err := rc.Launch()
-		if err != nil {
-			return err
-		}
-		if showUpdates {
-			u += "&show=updates"
-		}
-		if err := openBrowser(u); err != nil {
-			fmt.Fprintln(s.err, "Dashboard: "+u)
-			return fmt.Errorf("open the Dashboard address from %s in your browser (%v)", outputPlace, err)
-		}
-		return nil
-	}
-	openDashboard := func() error { return openDashboardAt(false) }
+	openDashboard := func(show string) error { return openTrayDashboard(rc.Launch, s.err, show) }
 	var quitOnce sync.Once
 	quit := func() { quitOnce.Do(func() { cancel(); t.Quit() }) }
 	var restart atomic.Bool
@@ -734,21 +716,21 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 	buildHint := appUpgradeHint()
 	sh = newAppShell(t, shellActions{
 		OpenDashboard: openDashboard,
-		OpenUpdates:   func() error { return openDashboardAt(true) },
 		CheckUpdates:  rc.CheckUpdates,
 		AccountSetup: func(section string) error {
 			return openRemoteAccountSetup(o.tokenFile, func() error { return rc.call("POST", "/api/accounts/setup", map[string]any{"section": section}, nil) }, section)
 		},
-		SwitchTo:     rc.Switch,
-		SwitchFable:  rc.SwitchFable,
-		SwitchMythos: rc.SwitchMythos, UseSession: rc.UseSession, SetNextStartModel: rc.SetNextStartModel,
-		AutoRunning:  rc.AutoRunning,
-		AutoStart:    rc.AutoStart,
-		AutoStop:     rc.AutoStop,
-		Upgrade:      func() (string, error) { return upgradeForShell() },
-		UpgradeHint:  func() string { return buildHint },
-		Autostart:    readAutostart,
-		SetAutostart: writeAutostart,
+		SwitchTo:          rc.Switch,
+		SwitchFable:       rc.SwitchFable,
+		SwitchMythos:      rc.SwitchMythos,
+		SetNextStartModel: rc.SetNextStartModel,
+		AutoRunning:       rc.AutoRunning,
+		AutoStart:         rc.AutoStart,
+		AutoStop:          rc.AutoStop,
+		Upgrade:           func() (string, error) { return upgradeForShell() },
+		UpgradeHint:       func() string { return buildHint },
+		Autostart:         readAutostart,
+		SetAutostart:      writeAutostart,
 		// ApproveAPIKey / RestartNotice stay nil: the tray refuses an API-key
 		// switch and points at the dashboard (A33). RunClaudeCode and
 		// CheckClaudeCode stay nil: Claude Code lives in the distro, not here
@@ -784,7 +766,7 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 		t.Quit()
 	}()
 	if o.open {
-		_ = openDashboard()
+		_ = openDashboard("")
 	}
 	if !o.noUpdates {
 		// The same test hooks as the local app (appcmd.go).
@@ -825,9 +807,6 @@ func (c *remoteClient) SwitchMythos(key string) (string, error) {
 		_, _ = c.State()
 	}
 	return out.Result.Message, err
-}
-func (c *remoteClient) UseSession(id, dest string) error {
-	return c.mutate("/api/sessions/"+neturl.PathEscape(id)+"/use?source=tray", map[string]string{"store": dest})
 }
 func (c *remoteClient) SetNextStartModel(model string) error {
 	return c.mutate("/api/sessions/next-start", map[string]string{"model": model})

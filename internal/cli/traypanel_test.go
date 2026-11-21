@@ -535,7 +535,7 @@ func TestTraySwitchApprovesAnAPIKeyOnlyWhenItSwitches(t *testing.T) {
 func TestTrayPanelNoteTellsEveryAction(t *testing.T) {
 	sh, ft, rig := updatesShell(t, false)
 	note := func() (string, bool) { p := sh.panel(sh.last); return p.Note, p.Alert }
-	sh.act.OpenDashboard = func() error { return errors.New("no browser") }
+	sh.act.OpenDashboard = func(string) error { return errors.New("no browser") }
 	sh.click("open")
 	if text, alert := note(); text != "Could not open the dashboard: no browser" || !alert {
 		t.Fatalf("open: %q %v", text, alert)
@@ -674,7 +674,7 @@ func TestTrayPanelUpdatesShortcut(t *testing.T) {
 		t.Fatalf("shortcut feedback: %+v", pt.panel)
 	}
 	sh.act.CheckUpdates = func() error { return errors.New("engine offline") }
-	sh.act.OpenUpdates = func() error { *calls = append(*calls, "open-failed-check"); return errors.New("no browser") }
+	sh.act.OpenDashboard = func(string) error { *calls = append(*calls, "open-failed-check"); return errors.New("no browser") }
 	sh.click("updates-open")
 	if (*calls)[len(*calls)-1] != "open-failed-check" || !pt.panel.Alert ||
 		!strings.Contains(pt.panel.Note, "engine offline") || !strings.Contains(pt.panel.Note, "no browser") {

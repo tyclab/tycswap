@@ -607,29 +607,25 @@ func (t *windowsTray) showMenu() {
 	t.mu.Lock()
 	snap := t.menu // set replaces items and flat, never mutates them
 	t.mu.Unlock()
-	var pt point
-	pGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
-	if id, ok := t.chooseMenu(snap, pt); ok && t.opts.OnClick != nil {
-		go t.opts.OnClick(id)
-	}
-}
-
-func (t *windowsTray) chooseMenu(snap menuModel, pt point) (string, bool) {
 	theme := readMenuTheme()
 	plan := themedMenuPlan(menuPlan(snap.items), theme)
 	t.painter = newMenuPainter(plan, theme)
 	defer func() { t.painter.close(); t.painter = nil }()
 	hmenu := buildMenu(plan)
 	if hmenu == 0 {
-		return "", false
+		return
 	}
 	if theme == menuDark {
 		setMenuBackground(hmenu, t.painter.background)
 	}
-	defer pDestroyMenu.Call(hmenu)             // frees the attached submenus as well
+	defer pDestroyMenu.Call(hmenu) // frees the attached submenus as well
+	var pt point
+	pGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
 	pSetForegroundWindow.Call(uintptr(t.hwnd)) // otherwise the menu does not dismiss on outside clicks
 	cmd, _, _ := pTrackPopupMenu.Call(hmenu, tpmReturnCmd|tpmNonotify|tpmBottomAlign|tpmRightAlign, uintptr(pt.x), uintptr(pt.y), 0, uintptr(t.hwnd), 0)
-	return snap.idAt(int(cmd) - 1)
+	if id, ok := snap.idAt(int(cmd) - 1); ok && t.opts.OnClick != nil {
+		go t.opts.OnClick(id)
+	}
 }
 
 func trayWndProc(hwnd windows.HWND, message uint32, wParam, lParam uintptr) uintptr {

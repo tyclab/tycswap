@@ -50,6 +50,16 @@ func menuStartMythos(s ioStreams) (int, bool) {
 	return startCommandFor("tycswap", args, s, expected), true
 }
 
+func sessionLoginLabel(login, number string) string {
+	if login == "" || login == "unknown" {
+		return login
+	}
+	if number == "" || number == "unknown" {
+		return login + " · unknown"
+	}
+	return login + " · #" + number
+}
+
 func menuMoveSession(s ioStreams, wanted string) (string, []string, bool) {
 	sw, err := constructSwitcher(false, s.err)
 	if err != nil {

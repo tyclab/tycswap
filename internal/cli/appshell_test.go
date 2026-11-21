@@ -100,13 +100,19 @@ func newTestShell(t *testing.T) (*appShell, *fakeTray, *[]string) {
 	var calls []string
 	running := false
 	act := shellActions{
-		OpenDashboard: func() error { calls = append(calls, "open"); return nil },
-		OpenUpdates:   func() error { calls = append(calls, "open-updates"); return nil },
-		CheckUpdates:  func() error { calls = append(calls, "check-updates"); return nil },
-		SwitchTo:      func(key string) ([]int, error) { calls = append(calls, "switch:"+key); return nil, nil },
-		AutoRunning:   func() bool { return running },
-		AutoStart:     func() error { running = true; calls = append(calls, "auto-start"); return nil },
-		AutoStop:      func() error { running = false; calls = append(calls, "auto-stop"); return nil },
+		OpenDashboard: func(show string) error {
+			call := "open"
+			if show != "" {
+				call += "-" + show
+			}
+			calls = append(calls, call)
+			return nil
+		},
+		CheckUpdates: func() error { calls = append(calls, "check-updates"); return nil },
+		SwitchTo:     func(key string) ([]int, error) { calls = append(calls, "switch:"+key); return nil, nil },
+		AutoRunning:  func() bool { return running },
+		AutoStart:    func() error { running = true; calls = append(calls, "auto-start"); return nil },
+		AutoStop:     func() error { running = false; calls = append(calls, "auto-stop"); return nil },
 		Upgrade: func() (string, error) {
 			calls = append(calls, "upgrade")
 			return "Updated tycswap 2.0.0 → 2.1.0", nil
@@ -328,7 +334,7 @@ func TestShellClickErrorsBecomeNotifications(t *testing.T) {
 // notification's text at 255 characters (A41).
 func TestOpenDashboardFailureNotifies(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
-	sh.act.OpenDashboard = func() error {
+	sh.act.OpenDashboard = func(string) error {
 		return errors.New("open the Dashboard address from C:\\Users\\a\\app.log in your browser (could not open a browser (ShellExecuteW: returned 31))")
 	}
 	sh.click("open")

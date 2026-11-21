@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -85,6 +86,27 @@ func runningDashboard() (*remoteClient, bool, error) {
 		return client, true, nil
 	}
 	return nil, false, nil
+}
+
+// Both tray modes get a one-time launch URL from their engine for every click.
+func openTrayDashboard(launch func() (string, error), out io.Writer, show string) error {
+	u, err := launch()
+	if err != nil {
+		return err
+	}
+	if show != "" {
+		u += "&show=" + url.QueryEscape(show)
+	}
+	if err := openBrowser(u); err != nil {
+		// A41: leave the address in the app's output and lead the notification with where to find it.
+		outputPlace := appLogPath()
+		if f, ok := out.(*os.File); ok && isTTY(f) {
+			outputPlace = "the terminal running " + brandName() + " app"
+		}
+		fmt.Fprintln(out, "Dashboard: "+u)
+		return fmt.Errorf("open the Dashboard address from %s in your browser (%v)", outputPlace, err)
+	}
+	return nil
 }
 
 var menuStartApp = startBackgroundApp

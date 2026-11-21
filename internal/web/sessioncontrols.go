@@ -101,7 +101,7 @@ func (s *Server) handleSessionUse(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	s.mutateLogin(w, func() (map[string]any, error) {
 		// The move guard logs the committed outcome for every surface.
-		return nil, ops.UseSession(id, dest, s.loginActor(r))
+		return nil, ops.UseSession(id, dest, s.dashboardActor(r))
 	})
 }
 

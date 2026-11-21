@@ -401,22 +401,12 @@ func (p *windowsPanel) command(id int, notification int) {
 		return
 	}
 	if action, ok := p.actionFor(id); ok && panelCommandEnabled(p.panel, action) {
-		if len(action.Children) != 0 {
-			var choices menuModel
-			choices.set(action.Children)
-			var box menuRect
-			user32.NewProc("GetWindowRect").Call(p.controls[id], uintptr(unsafe.Pointer(&box)))
-			if key, ok := p.tray.chooseMenu(choices, point{x: box.right, y: box.top}); ok {
-				p.dispatch(PanelAction{Kind: "command", Key: key})
-			}
-			return
-		}
 		p.dispatch(PanelAction{Kind: "command", Key: action.Choice()})
 	}
 }
 
 func (p *windowsPanel) dispatch(action PanelAction) {
-	if action.Key == "open" {
+	if action.Key == "open" || action.Key == "sessions-open" {
 		p.hide()
 	}
 	// Off the UI thread: a switch waits on locks and the engine. Its
