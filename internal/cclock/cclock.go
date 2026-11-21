@@ -85,7 +85,7 @@ func AcquireStorageWrite(timeout time.Duration, clk clock.Clock) (*Handle, error
 
 // acquire is Acquire with the lock's own staleness.
 func acquire(lockDir string, staleness, timeout time.Duration, clk clock.Clock) (*Handle, error) {
-	if timeout <= 0 {
+	if timeout <= 0 && staleness > 0 {
 		timeout = DefaultTimeoutS
 	}
 	// proper-lockfile: lock_dir.parent.mkdir(parents=True, exist_ok=True).
@@ -102,10 +102,17 @@ func acquire(lockDir string, staleness, timeout time.Duration, clk clock.Clock) 
 		if !errors.Is(err, fs.ErrExist) && !pendingDelete(err) {
 			return nil, err
 		}
-		if time.Since(start) > timeout {
+		if time.Since(start) >= timeout {
+			name := filepath.Base(lockDir)
+			if staleness == 0 {
+				if fi, err := os.Stat(lockDir); err == nil {
+					age := max(0, clk.Now().Sub(fi.ModTime())).Round(time.Second)
+					name = fmt.Sprintf("%s (last modified %s ago)", name, age)
+				}
+			}
 			return nil, cerr.ClaudeCodeLockTimeout(
 				"Could not acquire %s — Claude Code appears to be refreshing credentials. "+
-					"Retry in a few seconds.", filepath.Base(lockDir))
+					"Retry in a few seconds.", name)
 		}
 		fi, statErr := os.Stat(lockDir)
 		if statErr != nil {
@@ -118,7 +125,7 @@ func acquire(lockDir string, staleness, timeout time.Duration, clk clock.Clock) 
 			}
 			return nil, statErr
 		}
-		if clk.Now().Sub(fi.ModTime()) > staleness {
+		if staleness > 0 && clk.Now().Sub(fi.ModTime()) > staleness {
 			breakStale(lockDir, staleness, clk)
 			continue
 		}

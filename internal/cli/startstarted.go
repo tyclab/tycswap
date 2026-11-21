@@ -27,16 +27,16 @@ import (
 // and its problems go to the log; the caller exits 0 whatever happens.
 func startStarted(in io.Reader) {
 	token, family := os.Getenv(startHoldEnv), os.Getenv(startFamilyEnv)
-	if token == "" && family == "" && mythosSessionDir == "" {
+	if token == "" && family == "" && mythosSessionDir == "" && sessionLinkPath == "" {
 		return
 	}
-	started, session, observedModel := sessionStarted(in)
-	if !started || startStoreProblem(paths.GetBackupRoot()) != "" {
+	source, session, observedModel := sessionStarted(in)
+	if source == "clear" || source == "compact" || startStoreProblem(paths.GetBackupRoot()) != "" {
 		return
 	}
 	scope := ""
-	if mythosSessionDir != "" || fableSessionProcess && validMythosDigest(os.Getenv(recoveredFableEnv)) {
-		if !sessionUUID.MatchString(session) {
+	if sessionLinkPath != "" || mythosSessionDir != "" || fableSessionProcess && validMythosDigest(os.Getenv(recoveredFableEnv)) {
+		if sessionLinkPath == "" && !sessionUUID.MatchString(session) {
 			return
 		}
 		scope = observedStore()
@@ -44,8 +44,17 @@ func startStarted(in io.Reader) {
 			family = actual
 		}
 	}
-	// A box without a store gets none: the record's lock would create it.
-	if info, err := os.Stat(paths.GetBackupRoot()); family != "" && err == nil && info.IsDir() {
+	if sessionLinkPath != "" {
+		if sessionUUID.MatchString(session) {
+			root := paths.GetBackupRoot()
+			if err := reporting.BindSessionLink(root, session, sessionLinkPath, family, scope, time.Now()); err != nil {
+				logging.New(root, false).Warningf("start --started: %v", err)
+			} else if source == "resume" && observedModel != "" {
+				// A picker or --continue first identifies the session in this hook.
+				defer checkLinkedSession(session, observedModel)
+			}
+		}
+	} else if info, err := os.Stat(paths.GetBackupRoot()); family != "" && err == nil && info.IsDir() {
 		if err := reporting.RecordSessionStart(paths.GetBackupRoot(), session, family, scope, time.Now()); err != nil {
 			logging.New(paths.GetBackupRoot(), false).Warningf("start --started: %v", err)
 		}
@@ -89,12 +98,10 @@ func releaseStartHolds(sw *core.Switcher, token string) []string {
 	return statePaths
 }
 
-// sessionStarted reports whether the SessionStart hook's input starts a
-// session, as every source but clear and compact does, and the session's id.
-// A terminal is not read; an unreadable or empty input counts as a start.
-func sessionStarted(in io.Reader) (bool, string, string) {
+// A terminal is not read. An empty source still releases an existing hold.
+func sessionStarted(in io.Reader) (string, string, string) {
 	if f, ok := in.(*os.File); ok && isTTY(f) {
-		return true, "", ""
+		return "", "", ""
 	}
 	raw, _ := io.ReadAll(io.LimitReader(in, 1<<20))
 	var hook struct {
@@ -103,5 +110,5 @@ func sessionStarted(in io.Reader) (bool, string, string) {
 		Model     string `json:"model"`
 	}
 	_ = json.Unmarshal(raw, &hook)
-	return hook.Source != "clear" && hook.Source != "compact", hook.SessionID, hook.Model
+	return hook.Source, hook.SessionID, hook.Model
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -151,18 +152,58 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 	storeDir := filepath.Clean(paths.FableStoreDir(root))
 	env = withStartVar(env, recoveredFableEnv, "")
 	childEnv, hold, family := env, "", ""
+	var link string
+	native := launch.IsClaudeCommand(bin)
 	if reason := startOverride(env, parsed.command, storeDir); reason != "" {
+		if native && sessionLinkPath != "" {
+			// An unmanaged child can inherit the login but must not own the parent's link.
+			dir := mythosSessionDir
+			if fableSessionProcess {
+				dir = storeDir
+			}
+			childEnv = withStartVar(env, secureStorageEnv, dir)
+			if sessionLinkErr != nil {
+				startNotice(streams.err, "Could not read the inherited session link: "+sessionLinkErr.Error())
+			}
+		}
 		if parsed.account != "" {
 			startNotice(streams.err, "Skipping the requested start login because "+reason+"; launching unchanged.")
 		}
 	} else {
+		// Route a nested launch from scratch, including when its parent's link
+		// has already disappeared. Never hand that link to a second session.
+		if sessionLinkPath != "" {
+			env = withStartVar(env, secureStorageEnv, "")
+		}
 		requestedFamily := startSessionFamily(args, env)
 		model := requestedFamily
 		var dir string
-		native := launch.IsClaudeCommand(bin)
-		if model == mythosFamily || native {
-			dir, err = mythosStartDir(root, model, parsed.account, args[1:], streams)
-		} else {
+		linked := native && runtime.GOOS == "linux" && hasSessionLinkAccounts(root)
+		var savedTarget string
+		linkErr := sessionLinkErr
+		if id := resumedSession(args[1:]); linked && sessionUUID.MatchString(id) {
+			saved, ok, readErr := reporting.LookupSessionLink(root, id)
+			if readErr != nil {
+				linkErr = readErr
+			} else if ok {
+				savedTarget = saved.Target
+			}
+		}
+		if (model == mythosFamily || native) && (savedTarget == "" || isMythosDirectory(root, savedTarget)) {
+			selectStart := func(useSelection bool, approved mythosPlacement) (mythosPlacement, error) {
+				return selectMythosStart(root, model, parsed.account, args[1:], streams, useSelection, approved)
+			}
+			var placement mythosPlacement
+			placement, err = selectStart(linked && linkErr == nil, mythosPlacement{})
+			if err == nil && placement.dir != "" && linked && linkErr == nil {
+				link, linkErr = reporting.CreateSessionLink(root, placement.dir)
+				if linkErr != nil && savedTarget == "" && parsed.account == "" {
+					// A direct launch uses the original ranking. Keep consent only for the exact proposal.
+					placement, err = selectStart(false, placement)
+				}
+			}
+			dir = placement.dir
+		} else if !native {
 			model = ""
 		}
 		if err != nil {
@@ -170,8 +211,8 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 			return 1
 		}
 		var recovered string
-		if dir == "" && (native || requestedFamily == "fable") {
-			recovered, err = recoveredFableStart(root, requestedFamily, parsed.account, args[1:], native)
+		if dir == "" && (native || requestedFamily == "fable") && (savedTarget == "" || savedTarget == storeDir) {
+			recovered, err = recoveredFableStart(root, requestedFamily, parsed.account, args[1:], native, savedTarget == storeDir)
 			if err != nil {
 				startNotice(streams.err, err.Error())
 				return 1
@@ -186,9 +227,24 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 		} else {
 			env = withoutFableStore(env, mythosSessionDir)
 			var code int
-			childEnv, hold, family, code = startSharedLogin(env, args, root, storeDir, parsed.account, model, native, streams)
+			childEnv, hold, family, code = startSharedLogin(env, args, root, storeDir, parsed.account, model, savedTarget, native, streams)
 			if code != 0 {
 				return code
+			}
+		}
+		if linked {
+			target := envValue(childEnv, secureStorageEnv)
+			if target == "" {
+				target = paths.GetClaudeConfigHome()
+			}
+			if link == "" && linkErr == nil {
+				link, linkErr = reporting.CreateSessionLink(root, target)
+			}
+			if linkErr != nil {
+				startNotice(streams.err, "Session link unavailable; launching on the selected login: "+linkErr.Error())
+			} else {
+				childEnv = withFableStore(childEnv, link)
+				family = requestedFamily
 			}
 		}
 	}
@@ -200,16 +256,37 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 	defer release()
 	code, err := startExec(bin, args, childEnv)
 	if err != nil {
+		if link != "" {
+			_ = os.Remove(link)
+		}
 		startNotice(streams.err, "Could not launch command: "+err.Error())
 	}
 	return code
 }
 
-func startSharedLogin(env, args []string, root, storeDir, account, model string, native bool, streams ioStreams) (childEnv []string, hold, family string, code int) {
+// An unmanaged start goes through the ordinary direct launcher, which also
+// owns the diagnostics for an unreadable roster.
+func hasSessionLinkAccounts(root string) bool {
+	if startStoreProblem(root) != "" {
+		return false
+	}
+	sw, err := newSwitcher(store.Options{Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
+	if err != nil {
+		return false
+	}
+	data, err := sw.SequenceForUpdate()
+	return err == nil && len(data.Accounts) != 0
+}
+
+func startSharedLogin(env, args []string, root, storeDir, account, model, savedTarget string, native bool, streams ioStreams) (childEnv []string, hold, family string, code int) {
 	fable, hasFableLogins := startFableStore(root)
 	var onFable bool
 	var notice string
-	childEnv, onFable, notice = startEnvironment(env, args, fable, hasFableLogins, storeDir)
+	if savedTarget == "" {
+		childEnv, onFable, notice = startEnvironment(env, args, fable, hasFableLogins, storeDir)
+	} else {
+		childEnv, onFable, notice = startStoreEnvironment(env, fable, savedTarget == storeDir, storeDir)
+	}
 	if notice != "" {
 		startNotice(streams.err, notice)
 	}
@@ -248,7 +325,7 @@ func startOverride(env, command []string, storeDir string) string {
 		if envKeyIs(key, "CLAUDE_CONFIG_DIR") {
 			return key + " is set"
 		}
-		if envKeyIs(key, secureStorageEnv) && (namesFableStore(value, storeDir, startWindows()) || isMythosDirectory(paths.GetBackupRoot(), value)) {
+		if envKeyIs(key, secureStorageEnv) && (namesFableStore(value, storeDir, startWindows()) || isMythosDirectory(paths.GetBackupRoot(), value) || reporting.IsSessionLink(paths.GetBackupRoot(), value)) {
 			continue
 		}
 		for _, override := range launch.AuthOverrideEnvVars {
@@ -649,9 +726,11 @@ func renderStartHelp(prog string, out io.Writer) int {
 	fmt.Fprintln(out, "Sessions on a Fable model start on the Fable store when one is on (tycswap add --login --lineage fable),")
 	fmt.Fprintln(out, "which moves to a marked login with a Fable login too; with marks but none such, they start on the default login.")
 	fmt.Fprintln(out, "Sessions on Mythos start on an account marked with tycswap mythos --allow ID, while one is marked.")
-	fmt.Fprintln(out, "The environment passes unchanged, except CLAUDE_SECURESTORAGE_CONFIG_DIR: start sets it to the Fable store")
-	fmt.Fprintln(out, "for a Fable session while that store is usable, and removes it from any other session when it names that store;")
-	fmt.Fprintln(out, "and TYCSWAP_START_HOLD: start sets it for a session it holds a login at its limit for, and removes it from any other.")
-	fmt.Fprintln(out, "--check, run by the status line, prints one line when the session runs on the other store than its model's.")
+	fmt.Fprintln(out, "For native Claude on Linux and WSL, CLAUDE_SECURESTORAGE_CONFIG_DIR points to a per-session link.")
+	fmt.Fprintln(out, "--started binds that link. The status line moves it when Claude changes model. To prepare")
+	fmt.Fprintln(out, "for Mythos, run ! tycswap use mythos in the session, then /model claude-mythos-5-2.")
+	fmt.Fprintln(out, "In-process subagents share this login. If Remote Control disconnects after a move, reconnect with /remote-control.")
+	fmt.Fprintln(out, "macOS, Windows and existing unlinked sessions keep their original login. --check reports a mismatch.")
+	fmt.Fprintln(out, "TYCSWAP_START_HOLD records a start hold until the SessionStart hook releases it.")
 	return 0
 }

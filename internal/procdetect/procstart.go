@@ -22,16 +22,33 @@ func RecordAlive(pid int, procStart any, pidDomain string) bool {
 		return false
 	}
 	if want := procStartText(procStart); want != "" && sameNamespace(pidDomain) {
-		if got, ok := procStartTime(pid); ok {
+		if got, ok := ProcStartTime(pid); ok {
 			return got == want
 		}
 	}
 	return IsPIDAlive(pid)
 }
 
-// procStartTime is field 22 of <procRoot>/<pid>/stat. The command name, field
+// A foreign record or an unreadable process stamp cannot establish ownership.
+// Unlike RecordAlive, this path never falls back to kill(pid, 0).
+func localRecordStart(pid int, record map[string]any) (string, bool) {
+	if value, present := record["pidDomain"]; present {
+		domain, valid := value.(string)
+		if !valid || !sameNamespace(domain) {
+			return "", false
+		}
+	}
+	start, ok := ProcStartTime(pid)
+	if !ok || pid <= 1 {
+		return "", false
+	}
+	value, present := record["procStart"]
+	return start, !present || procStartText(value) == start
+}
+
+// ProcStartTime is field 22 of <procRoot>/<pid>/stat. The command name, field
 // 2, may hold spaces and parentheses, so fields count from its last ")".
-func procStartTime(pid int) (string, bool) {
+func ProcStartTime(pid int) (string, bool) {
 	raw, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(pid), "stat"))
 	if err != nil {
 		return "", false

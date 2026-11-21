@@ -56,7 +56,7 @@ func observedNearBar(raw []byte, s settings.AutoSwitchSettings) bool {
 func observeTicks(sw *core.Switcher, raw []byte, s settings.AutoSwitchSettings, enabled bool) bool {
 	group := observedGroup(sw.BackupDir())
 	modelNews := false
-	if group == "" {
+	if group == "" && sessionLinkPath == "" {
 		session, model := observedSessionModel(raw)
 		news, err := reporting.RecordDefaultSessionModel(sw.BackupDir(), session, model, observedStore(), sw.Clk.Now())
 		if err != nil {

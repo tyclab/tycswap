@@ -67,6 +67,12 @@ func TestMain(m *testing.M) {
 // runTestChild reports what the child sees, on its own stdout/stderr.
 func runTestChild(role string) int {
 	switch role {
+	case "session-placement-cli":
+		code := Main()
+		if len(os.Args) > 1 && os.Args[1] == "_placement-ask" {
+			_ = os.WriteFile(filepath.Join(os.Getenv("ASK_DIR"), "finished"), nil, 0600)
+		}
+		return code
 	case "placement-broker":
 		if len(os.Args) != 2 || os.Args[1] != "--ask" {
 			return 1

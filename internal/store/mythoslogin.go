@@ -3,8 +3,12 @@ package store
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/tyclab/tycswap/internal/atomicfile"
 
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/oauth"
@@ -37,4 +41,36 @@ func (s *Store) MythosLoginReady(data *SequenceData, num string) (string, bool) 
 		return "", false
 	}
 	return dir, true
+}
+
+func SelectedMythosDigest(root string) (string, error) {
+	raw, err := os.ReadFile(filepath.Join(root, "mythos", "selected"))
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	digest := strings.TrimSpace(string(raw))
+	if bytes, err := hex.DecodeString(digest); err != nil || len(bytes) != sha256.Size {
+		return "", fmt.Errorf("the saved Mythos login identity is unreadable")
+	}
+	return digest, nil
+}
+
+// SeedMythosSelection records a box's first linked Mythos login under the caller's root lock.
+func SeedMythosSelection(root, target string) error {
+	current, err := SelectedMythosDigest(root)
+	if err != nil || current != "" {
+		return err
+	}
+	return SelectMythosLogin(root, target)
+}
+
+func SelectMythosLogin(root, target string) error {
+	digest := filepath.Base(target)
+	if bytes, err := hex.DecodeString(digest); err != nil || len(bytes) != sha256.Size || filepath.Dir(target) != MythosLoginRoot(root) {
+		return fmt.Errorf("invalid Mythos login directory")
+	}
+	return atomicfile.Write(filepath.Join(root, "mythos", "selected"), []byte(digest+"\n"), atomicfile.Opts{})
 }

@@ -1,7 +1,9 @@
 package reporting
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/filelock"
+	"github.com/tyclab/tycswap/internal/logging"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/settings"
@@ -36,8 +39,44 @@ type defaultSessionModel struct {
 	SeenAt float64 `json:"seenAt"`
 	// Store is "fable" for a session on the Fable store, "" for the default
 	// store's (DESIGN A100).
-	Store   string `json:"store,omitempty"`
-	Binding string `json:"binding,omitempty"`
+	Store   string       `json:"store,omitempty"`
+	Binding string       `json:"binding,omitempty"`
+	Link    *SessionLink `json:"link,omitempty"`
+	// Before is the saved record until the atomic link rename commits a move.
+	Before    *defaultSessionModel `json:"beforeMove,omitempty"`
+	bad       *invalidSessionRecord
+	recovered bool
+}
+
+type invalidSessionRecord struct {
+	raw json.RawMessage
+	err error
+}
+
+func (r defaultSessionModel) MarshalJSON() ([]byte, error) {
+	if r.bad != nil {
+		return r.bad.raw, nil
+	}
+	type fields defaultSessionModel
+	return json.Marshal(fields(r))
+}
+
+func (r *defaultSessionModel) UnmarshalJSON(raw []byte) error {
+	type fields defaultSessionModel
+	var v struct {
+		fields
+		Family *string  `json:"family"`
+		SeenAt *float64 `json:"seenAt"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return err
+	}
+	if v.Family == nil || v.SeenAt == nil {
+		return errors.New("missing session family or observation time")
+	}
+	*r = defaultSessionModel(v.fields)
+	r.Family, r.SeenAt = *v.Family, *v.SeenAt
+	return nil
 }
 
 // RecordedSession is the model family and store recorded for a session, ok
@@ -72,11 +111,20 @@ func SessionBinding(root, sessionID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return sessions[sessionID].binding(), nil
+	rec := sessions[sessionID]
+	if rec.bad != nil {
+		return "", rec.bad.err
+	}
+	return rec.binding(), nil
 }
 
 func readDefaultSessionModels(root string) map[string]defaultSessionModel {
 	sessions, _ := loadDefaultSessionModels(root)
+	for id, rec := range sessions {
+		if rec.bad != nil {
+			delete(sessions, id)
+		}
+	}
 	return sessions
 }
 
@@ -89,7 +137,7 @@ func loadDefaultSessionModels(root string) (map[string]defaultSessionModel, erro
 		return nil, err
 	}
 	var file struct {
-		Sessions map[string]defaultSessionModel `json:"sessions"`
+		Sessions map[string]json.RawMessage `json:"sessions"`
 	}
 	if err := json.Unmarshal(raw, &file); err != nil {
 		return nil, fmt.Errorf("could not read saved session identities: %w", err)
@@ -97,7 +145,57 @@ func loadDefaultSessionModels(root string) (map[string]defaultSessionModel, erro
 	if file.Sessions == nil {
 		return nil, fmt.Errorf("saved session identities are missing the sessions map")
 	}
-	return file.Sessions, nil
+	records := make(map[string]defaultSessionModel, len(file.Sessions))
+	for id, raw := range file.Sessions {
+		var rec defaultSessionModel
+		err := json.Unmarshal(raw, &rec)
+		if err == nil {
+			_, _, err = savedLink(root, id, rec)
+		}
+		if err == nil && rec.Before != nil {
+			if _, _, err = savedLink(root, id, *rec.Before); err == nil {
+				rec, err = committedLinkRecord(root, rec)
+				rec.recovered = err == nil
+			}
+		}
+		if err != nil {
+			rec = defaultSessionModel{bad: &invalidSessionRecord{raw: raw, err: fmt.Errorf("unreadable session %q: %w", id, err)}}
+			warnInvalidSession(root, id, rec.bad.err)
+		}
+		records[id] = rec
+	}
+	return records, nil
+}
+
+func warnInvalidSession(root, id string, why error) {
+	dir := filepath.Join(root, ".session-record-warnings")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return
+	}
+	// O_EXCL claims the warning across status lines, ticks and independent CLI processes.
+	name := fmt.Sprintf("%x", sha256.Sum256([]byte(id)))
+	f, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return
+	}
+	f.Close()
+	logging.New(root, false).Warning(why.Error())
+}
+
+func expireSessionModels(records map[string]defaultSessionModel, now time.Time) bool {
+	cutoff := float64(now.Add(-defaultModelKeep).UnixNano()) / 1e9
+	changed := false
+	for id, rec := range records {
+		if rec.bad != nil || rec.SeenAt >= cutoff || rec.binding() != "" {
+			continue
+		}
+		if link := rec.Link; link != nil && (link.ResumeMythos != "" || procdetect.RecordAlive(link.PID, link.ProcStart, "")) {
+			continue
+		}
+		delete(records, id)
+		changed = true
+	}
+	return changed
 }
 
 var modelFamilies = []string{"fable", "mythos", "opus", "sonnet", "haiku"}
@@ -182,6 +280,19 @@ func recordSessionModel(root, sessionID, model, store string, now time.Time, tim
 	}
 	at := float64(now.UnixNano()) / 1e9
 	old, seen := sessions[sessionID]
+	if old.bad != nil {
+		return false, old.bad.err
+	}
+	if old.Link != nil {
+		link, _, err := savedLink(root, sessionID, old)
+		if err != nil {
+			return false, err
+		}
+		if procdetect.RecordAlive(link.PID, link.ProcStart, "") {
+			return false, nil
+		}
+		// A direct resume took the fail-open path after this linked process ended.
+	}
 	binding := old.binding()
 	if strings.HasPrefix(store, "fable/") {
 		if binding != "" && binding != store {
@@ -189,7 +300,7 @@ func recordSessionModel(root, sessionID, model, store string, now time.Time, tim
 		}
 		binding, store = store, "fable"
 	}
-	changed := !seen || old.Family != family || old.Store != store || binding != old.binding()
+	changed := !seen || old.Link != nil || old.Family != family || old.Store != store || binding != old.binding()
 	if !changed && at-old.SeenAt < defaultModelRefresh.Seconds() && at >= old.SeenAt {
 		return false, nil
 	}
@@ -198,16 +309,16 @@ func recordSessionModel(root, sessionID, model, store string, now time.Time, tim
 		next.Binding = ""
 	}
 	sessions[sessionID] = next
-	for id, rec := range sessions {
-		if at-rec.SeenAt > defaultModelKeep.Seconds() && rec.binding() == "" {
-			delete(sessions, id)
-		}
-	}
+	expireSessionModels(sessions, now)
+	return changed, saveSessionModels(root, sessions)
+}
+
+func saveSessionModels(root string, sessions map[string]defaultSessionModel) error {
 	raw, err := json.Marshal(map[string]any{"schemaVersion": 1, "sessions": sessions})
 	if err != nil {
-		return false, err
+		return err
 	}
-	return changed, atomicfile.Write(filepath.Join(root, defaultModelsFile), raw, atomicfile.Opts{})
+	return atomicfile.Write(filepath.Join(root, defaultModelsFile), raw, atomicfile.Opts{})
 }
 
 // PolicyResult is the default-session policy for one tick (DESIGN A76, A77,
@@ -295,6 +406,10 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 		}
 		if fable.Usable && rec.Family == "fable" {
 			r.FableOnDefault++
+			continue
+		}
+		if rec.Link != nil && !rec.Link.SharedMythos && rec.Store == "" && rec.Family == "mythos" {
+			// Moving the shared login would also move unrelated sessions.
 			continue
 		}
 		families[rec.Family] = true

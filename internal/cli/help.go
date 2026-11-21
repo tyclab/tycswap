@@ -44,6 +44,7 @@ Commands:
   tycswap enable <num|email>         allow a disabled Claude account to be selected
   tycswap start [-- command args]    launch once on a marked login, even at its limit
   tycswap start --allow|--disallow ID mark or unmark a start login (--list lists)
+  tycswap use <mythos|fable|default> [--session ID]  move a linked session to that login
   tycswap mythos --allow|--disallow ID mark or unmark an account that runs Mythos
   tycswap models --list | ID SET     show or choose the account's preferred models
   tycswap fable --allow|--disallow ID mark an account that runs Fable (--list lists)

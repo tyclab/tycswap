@@ -378,16 +378,16 @@ func TestStartHelpNamesTheFableStore(t *testing.T) {
 	}
 }
 
-// The help says what passes unchanged: the arguments, and the environment but
-// for the Fable store's variable (DESIGN A103) and the start hold's (A105).
+// The launcher documents both the per-session store and its start hold.
 func TestStartHelpNamesTheVariablesItChanges(t *testing.T) {
 	cleanHome(t)
 	code, out, _ := runCLI(t, []string{"start", "--help"}, false, false)
 	for _, want := range []string{
 		"\nSelection failures launch on the current login. Arguments pass unchanged.\n",
-		"\nThe environment passes unchanged, except CLAUDE_SECURESTORAGE_CONFIG_DIR: start sets it to the Fable store\n" +
-			"for a Fable session while that store is usable, and removes it from any other session when it names that store;\n" +
-			"and TYCSWAP_START_HOLD: start sets it for a session it holds a login at its limit for, and removes it from any other.\n",
+		"CLAUDE_SECURESTORAGE_CONFIG_DIR points to a per-session link",
+		"TYCSWAP_START_HOLD",
+		"tycswap use mythos",
+		"/remote-control",
 	} {
 		if code != 0 || !strings.Contains(out, want) {
 			t.Errorf("help lacks %q:\n%s", want, out)

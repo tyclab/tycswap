@@ -13,7 +13,7 @@ import (
 
 const recoveredFableEnv = "TYCSWAP_RECOVERED_FABLE_IDENTITY"
 
-func recoveredFableStart(root, model, account string, args []string, native bool) (string, error) {
+func recoveredFableStart(root, model, account string, args []string, native, resumeOnFable bool) (string, error) {
 	var bound string
 	if session := resumedSession(args); sessionUUID.MatchString(session) {
 		scope, err := reporting.SessionBinding(root, session)
@@ -27,7 +27,7 @@ func recoveredFableStart(root, model, account string, args []string, native bool
 			bound = digest
 		}
 	}
-	if model != "fable" && bound == "" {
+	if model != "fable" && bound == "" && !resumeOnFable {
 		return "", nil
 	}
 	if bound != "" && model != "" && model != "fable" {

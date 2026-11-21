@@ -63,9 +63,7 @@ func TestResumeKeepsIndependentIdentityAfterModelChange(t *testing.T) {
 	calls := 0
 	startExec = func(_ string, args, env []string) (int, error) {
 		calls++
-		if got := envValue(env, secureStorageEnv); got != dir {
-			t.Fatalf("explicit resume used %q, want its recorded dedicated identity %q", got, dir)
-		}
+		assertNativeStore(t, env, dir)
 		if strings.Join(args, " ") != "claude --resume "+id || envValue(env, startHoldEnv) != "" {
 			t.Fatalf("resume arguments or hold changed: %v", args)
 		}

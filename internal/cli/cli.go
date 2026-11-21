@@ -37,6 +37,9 @@ func Main() int {
 
 // run is the testable front controller. argv excludes the program name.
 func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int {
+	if len(argv) > 0 && argv[0] == "_placement-ask" {
+		return sessionAskerCommand(argv[1:])
+	}
 	if len(argv) > 0 && argv[0] == "start" {
 		return startCommand(prog, argv[1:], s)
 	}
@@ -96,6 +99,8 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 			return configCommand(prog, argv[1:], s)
 		case "alias":
 			return aliasCommand(prog, argv[1:], s)
+		case "use":
+			return useCommand(prog, argv[1:], s)
 		case "models":
 			return modelsCommand(prog, argv[1:], s)
 		case "mythos":
