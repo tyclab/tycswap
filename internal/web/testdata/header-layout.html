@@ -33,6 +33,7 @@ window.addEventListener('load', () => {
     const meters = header.querySelector('.hdr-meters');
     header.querySelector('.hdr-mythos')?.remove();
     strip.replaceChildren(stack, meters);
+    header.insertBefore(strip, header.querySelector('.conn'));
     base.body.append(header);
     base.body.style.minHeight = '200vh'; // Same scrollbar as the dashboard beneath the header.
 
@@ -90,12 +91,49 @@ window.addEventListener('load', () => {
         text.right > labelBox.right + 0.5 || text.right > doc.documentElement.clientWidth ||
         !label.contains(doc.elementFromPoint(text.right - 1, (text.top + text.bottom) / 2))) failures.push('long account is clipped or wrapped');
 
+    function doubleTextSize() {
+      const sizes = [...doc.querySelectorAll('html, header, header *')].map(el =>
+        [el, parseFloat(page.contentWindow.getComputedStyle(el).fontSize)]);
+      for (const [el, px] of sizes) el.style.fontSize = px * 2 + 'px';
+      return () => { for (const [el] of sizes) el.style.removeProperty('font-size'); };
+    }
     renderHeader(short, 1200);
-    // Text-only scaling leaves the viewport width unchanged.
-    const typeSizes = [...doc.querySelectorAll('html, header, header *')].map(el =>
-      [el, parseFloat(page.contentWindow.getComputedStyle(el).fontSize)]);
-    for (const [el, px] of typeSizes) el.style.fontSize = px * 2 + 'px';
+    const restore = doubleTextSize();
     if (accountBesideBrand()) failures.push('double-size header text does not reflow at the same 1200px viewport');
+    restore();
+
+    function readableText(el, expected, bounds) {
+      if (!el || el.textContent !== expected) return false;
+      const range = doc.createRange();
+      range.selectNodeContents(el);
+      const lines = [...range.getClientRects()];
+      return lines.length > 0 && lines.every(r => r.width > 0 && r.height > 0 &&
+        r.left >= Math.max(0, bounds.left) - 0.5 && r.right <= Math.min(doc.documentElement.clientWidth, bounds.right) + 0.5 &&
+        [r.left + 1, r.right - 1].every(x => el.contains(doc.elementFromPoint(x, (r.top + r.bottom) / 2))));
+    }
+    const basic = structuredClone(short);
+    delete basic.mythos;
+    page.style.height = '100vh';
+    for (const [view, viewport, enlarged] of [[basic, 320, false], [state, 360, false], [basic, 360, true], [short, 320, true]]) {
+      renderHeader(view, viewport);
+      const resetSize = enlarged ? doubleTextSize() : () => {};
+      const prefix = viewport + 'px' + (enlarged ? ' double text: ' : ': ');
+      const title = doc.querySelector(view.mythos ? '.hdr-mythos > :first-child' : '.hdr-name');
+      const expected = view.mythos ? 'Mythos login: #8 ' + view.mythos.email : view.accounts[0].email;
+      if (!readableText(title, expected, doc.querySelector('header').getBoundingClientRect())) {
+        failures.push(prefix + 'unreadable account ' + expected);
+      }
+      const meters = [...doc.querySelectorAll('.hdr-meters .meter')];
+      const percentages = ['64%', '87%', '100%'];
+      if (meters.length !== percentages.length) failures.push(prefix + 'missing usage meters');
+      for (const [i, meter] of meters.entries()) {
+        const track = meter.querySelector('.meter-track').getBoundingClientRect();
+        if (!track.width || !track.height || !readableText(meter.querySelector('.meter-val'), percentages[i], meter.getBoundingClientRect())) {
+          failures.push(prefix + 'hidden, clipped or overlapping meter ' + percentages[i]);
+        }
+      }
+      resetSize();
+    }
     result.textContent = failures.length ? failures.join('\n') : 'PASS';
   } catch (error) { result.textContent = String(error.stack || error); }
 });
