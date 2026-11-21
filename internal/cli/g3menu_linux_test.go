@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/reporting"
@@ -111,25 +112,40 @@ func TestMenuStartPreferenceSurvivesPlacementRefusal(t *testing.T) {
 }
 
 func TestMythosStartCountsFableQuota(t *testing.T) {
+	early := time.Date(2026, 11, 24, 10, 0, 0, 0, time.Local).UTC().Format(time.RFC3339)
+	middle := time.Date(2026, 11, 26, 8, 15, 0, 0, time.Local).UTC().Format(time.RFC3339)
+	late := time.Date(2026, 11, 28, 9, 59, 0, 0, time.Local).UTC().Format(time.RFC3339)
 	for _, tc := range []struct {
 		name       string
 		queued     bool
+		account    string
 		otherFable float64
+		reset2     string
+		reset3     string
+		wantReturn string
 	}{
-		{"explicit start with room", false, 30},
-		{"next start with room", true, 30},
-		{"explicit start all spent", false, 100},
-		{"next start all spent", true, 100},
+		{"explicit start with room", false, "", 30, late, middle, ""},
+		{"next start with room", true, "", 30, late, middle, ""},
+		{"explicit start all spent", false, "", 100, late, middle, "; Account-3 returns Nov 26 08:15"},
+		{"next start all spent", true, "", 100, late, middle, "; Account-3 returns Nov 26 08:15"},
+		{"only requested login counts", false, "2", 100, late, middle, "; Account-2 returns Nov 28 09:59"},
+		{"one complete reading", false, "", 100, "", middle, "; Account-3 returns Nov 26 08:15"},
+		{"no known return", false, "", 100, "", "invalid", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sw, child := fableStartLogin(t, fableTickFixture{def: "1", usage: map[string][3]float64{
-				"2": {5, 15, 100}, "3": {5, 15, tc.otherFable},
-			}})
+			sw, child := fableStartLogin(t, fableTickFixture{def: "1"})
 			spent, other := addMythosTestLogins(t, sw)
 			if err := store.SeedMythosSelection(sw.BackupDir(), spent); err != nil {
 				t.Fatal(err)
 			}
+			writeMythosTestUsage(t, sw, "2", 100, 100, early, tc.reset2)
+			writeMythosTestUsage(t, sw, "3", 53, tc.otherFable, late, tc.reset3)
+			// Account 4 would return earlier, but it has no independent login.
+			writeMythosTestUsage(t, sw, "4", 53, 100, late, early)
 			args := []string{"--mythos"}
+			if tc.account != "" {
+				args = append(args, "--account", tc.account)
+			}
 			if tc.queued {
 				expectStartCode(t, 0, "--next", "mythos")
 				args = nil
@@ -140,9 +156,10 @@ func TestMythosStartCountsFableQuota(t *testing.T) {
 				return
 			}
 			msg := expectStartCode(t, 1, args...)
-			want := "tycswap start: no available Mythos login has quota for mythos\n"
+			refusal := "no available Mythos login has quota for mythos" + tc.wantReturn
+			want := "tycswap start: " + refusal + "\n"
 			if tc.queued {
-				want = "tycswap start: Next start is set to Mythos: no available Mythos login has quota for mythos. Use tycswap start --next clear to start without it.\n"
+				want = "tycswap start: Next start is set to Mythos: " + refusal + ". Use tycswap start --next clear to start without it.\n"
 				if model, err := store.NextStartModel(sw.BackupDir()); err != nil || model != "mythos" {
 					t.Fatalf("request after refusal = %q, %v", model, err)
 				}

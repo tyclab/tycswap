@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -57,6 +58,7 @@ func TestManualMythosChoiceDefersOnlyRefreshingSessions(t *testing.T) {
 	if got, err := store.SelectedMythosDigest(sw.BackupDir()); err != nil || got != filepath.Base(to) {
 		t.Fatalf("manual selection during refresh: %q, %v", got, err)
 	}
+	checkMythosSelectionLog(t, sw, regexp.QuoteMeta(wantCLIActor(t)))
 	requireLinkTarget(t, moved, from)
 	if err := os.Remove(lock); err != nil {
 		t.Fatal(err)
