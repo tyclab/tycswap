@@ -1075,7 +1075,6 @@
         ? chip('API key · ' + hostOf(active.baseUrl), 'crit', 'Claude Code sends its requests to ' + active.baseUrl)
         : chip('API key · billed per token', 'crit', 'Claude Code is on a managed API-key account'));
     }
-    box.appendChild(who);
     var u = active.usage || {};
     var meters = el('div', { class: 'hdr-meters' });
     meters.appendChild(u.fiveHour ? meter({ label: '5h', pct: u.fiveHour.pct, resetsAt: u.fiveHour.resetsAt, size: 'compact' }) : emptyMeter('5h', 'compact'));
@@ -1083,7 +1082,8 @@
     var scoped = (u.scoped || []).slice();
     var top = scoped.sort(function (x, y) { return (pctNum(y.pct) || 0) - (pctNum(x.pct) || 0); })[0];
     meters.appendChild(top ? meter({ label: top.name || 'model', pct: top.pct, resetsAt: top.resetsAt, size: 'compact' }) : emptyMeter('model', 'compact'));
-    box.appendChild(el('div', { class: 'hdr-usage' }, [fable, meters]));
+    box.appendChild(el('div', { class: 'hdr-usage' }, [who, meters]));
+    if (fable) { box.appendChild(fable); }
     if (mythos) { box.appendChild(mythos); }
   }
 
