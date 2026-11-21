@@ -221,6 +221,7 @@ for (const c of cases) {
     };
   });
   if (problems.length) { failed++; }
-  console.log(JSON.stringify({ name: c.name, problems, best, atLimit, nextBest, chips: { nextBest: chipIn(d, 'nextbest-sub'), accounts: chipIn(d, 'accounts-sub') } }));
+  const mythosDetail = text(d.getElementById('hdr-acct').querySelector('.hdr-mythos-detail'));
+  console.log(JSON.stringify({ name: c.name, mythosDetail, problems, best, atLimit, nextBest, chips: { nextBest: chipIn(d, 'nextbest-sub'), accounts: chipIn(d, 'accounts-sub') } }));
 }
 process.exitCode = failed ? 1 : 0;

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Mythos starts and linked-session rotation now count the account's Fable window when it reports no Mythos-named window. This keeps both explicit and queued starts off logins with known spent quota. The dashboard and tray now receive the Mythos login summary and show the window that counts.
 - `tycswap start --next show` prints `mythos` or `none` without consuming the queued start.
 
 - Select a ready Mythos login with `tycswap switch --store mythos N` or **Use for Mythos** in the menu, dashboard or tray. The login summary shows the counted windows and linked session count. The Sessions controls show each linked session’s login and verified account number and offer moves to other logins. Committed moves and changes in the reason a move is deferred appear in `tycswap.log`. The dashboard can edit a Claude account’s preferred models.

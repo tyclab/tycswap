@@ -240,8 +240,9 @@ func TestSessionPrunePreservesLiveLinkAndResume(t *testing.T) {
 func TestSharedMythosStartAndUnplacedSwitchHaveDifferentEffectsOnOtherSessions(t *testing.T) {
 	for _, initial := range []string{"mythos", "opus"} {
 		t.Run(initial, func(t *testing.T) {
-			s, now := (incident{live: "3", sessions: map[string]string{linkSessionID: initial}}).store(t)
-			markMythos("8")(t, s)
+			five := 10.0
+			s, now := (incident{live: "3", sessions: map[string]string{linkSessionID: initial}, five11: &five}).store(t)
+			markMythos("11")(t, s)
 			link, err := CreateSessionLink(s.BackupDir(), s.DefaultProfileDir())
 			if err != nil {
 				t.Fatal(err)

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/settings"
@@ -374,6 +375,41 @@ func TestAtLimitUsesDerivedPolicy(t *testing.T) {
 				t.Fatalf("human list marks Account-4 at its Fable limit = %v, want %v:\n%s", marked, tc.want4 != nil, out.String())
 			}
 		})
+	}
+}
+
+func TestSharedMythosMarksTheWindowThatMetersEachAccount(t *testing.T) {
+	five := 10.0
+	s, now := incident{live: "7", sessions: mythosSession, five11: &five}.store(t)
+	markMythos("4", "7", "11")(t, s)
+	row4 := usageRow(t, s, "4")
+	usage4 := row4["lastGood"].(map[string]any)
+	usage4["scoped"] = append(usage4["scoped"].([]any), map[string]any{"name": "Mythos", "pct": 10.0})
+	// 4 and 7 have spent Fable. Only 4 has its own Mythos window; 11 still has Fable room.
+	writeUsageRows(t, s, map[string]any{"4": row4, "7": usageRow(t, s, "7"), "11": usageRow(t, s, "11")})
+	payload, err := ListAccounts(s, false, true, map[string]bool{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := listRows(t, payload.(map[string]any))
+	if rows["4"]["atLimit"] != nil || rows["7"]["atLimit"] != true || !jsonEqual(t, rows["7"]["limitingWindows"], []string{"Fable"}) {
+		t.Errorf("list: 4 limited by %v, 7 limited by %v", rows["4"]["limitingWindows"], rows["7"]["limitingWindows"])
+	}
+	active := buildStatusPayload(s)["active"].(map[string]any)
+	if active["atLimit"] != true || !jsonEqual(t, active["limitingWindows"], []string{"Fable"}) {
+		t.Errorf("status: active account limited by %v", active["limitingWindows"])
+	}
+	values := map[string]any{}
+	for _, a := range Snapshot(s, map[string]bool{}).Accounts {
+		values[a.Number] = a.Usage.DecisionValue()
+		if a.AtLimit != (a.Number == "7") {
+			t.Errorf("snapshot: account %s atLimit = %v on %v", a.Number, a.AtLimit, a.LimitingWindows)
+		}
+	}
+	counted := CountedForSwitch(s)
+	ranking := autoswitch.RankTargets([]string{"4", "7", "11"}, values, counted.Settings, counted.Models, counted.Reserved, now)
+	if !equalStrings(ranking, []string{"4", "11"}) {
+		t.Errorf("ranked %v, want 4 (Mythos room) then 11 (Fable room, reserved)", ranking)
 	}
 }
 

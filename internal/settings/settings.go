@@ -100,9 +100,8 @@ type AutoSwitchSettings struct {
 	HysteresisPct   float64
 	Strategy        string
 	UnhealthyTicks  int
-	// Model is the counted model windows as a comma-separated list of display
-	// names ("Fable"), or nil for 5h/7d only. Only the default-session policy
-	// sets it; settings.json no longer holds it (DESIGN A97).
+	// Model selects scoped windows by name. "Mythos" resolves to each account's
+	// meter (A111). A nil value counts only 5h/7d. Derived at runtime (A97).
 	Model *string
 }
 

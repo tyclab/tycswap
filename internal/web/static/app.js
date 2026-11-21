@@ -470,8 +470,10 @@
 
   // countedModelNames: the model windows auto-switch counts now, as the state
   // reports them (auto.counting, DESIGN A91, A97); none when it does not.
-  function countedModelNames(st) {
+  function countedModelNames(st, account) {
     var c = (st.auto || {}).counting;
+    var own = account && c && c.modelsByAccount && c.modelsByAccount[account.number];
+    if (Array.isArray(own)) { return parseModelNames(own); }
     return c && Array.isArray(c.models) ? parseModelNames(c.models) : [];
   }
 
@@ -480,9 +482,8 @@
     var ranked = rankCandidates(st).ranked;
     var ranks = {};
     ranked.forEach(function (r, i) { ranks[r.number] = i; });
-    var models = countedModelNames(st);
     function values(a) {
-      var cls = classPcts(relevantWindows(a.usage, models));
+      var cls = classPcts(relevantWindows(a.usage, countedModelNames(st, a)));
       var model = bindingPct(((a.usage || {}).scoped || []).map(function (w) { return { pct: pctNum(w.pct) }; }).filter(function (w) { return w.pct !== null; }));
       return { fiveHour: cls.fiveHour, sevenDay: cls.sevenDay, model: ordering.key === 'model' ? model : cls.model };
     }
@@ -604,7 +605,6 @@
     var now = Date.now() / 1000;
     var auto = st.auto || {};
     var models = countedModelNames(st);
-    var required = models;
     var strat = engineSetting(st, 'autoswitch.strategy') || 'soonest-reset';
     // One bar per window, as the running engine or the saved settings have it.
     var bars = {
@@ -617,6 +617,7 @@
     claudeRows(st).forEach(function (a) {
       if (a.isActive || !a.rotationEligible) { return; }
       var num = String(a.number);
+      var required = countedModelNames(st, a);
       var r = { account: a, number: num, bestKey: 0, tier: 0, pct: 0, renewal: null, label: '', windows: [], order: [], readyAt: null, soonReset: false };
       if (Object.prototype.hasOwnProperty.call(quarantine, num)) {
         var reason = quarantineReason(quarantine[num]);
@@ -627,7 +628,7 @@
       } else if (a.usage && missingModelWindows(a.usage, required).length) {
         r.label = 'model usage missing: ' + missingModelWindows(a.usage, required).join(', '); r.bestKey = 998; r.tier = 5;
       } else {
-        var wins = relevantWindows(a.usage, models);
+        var wins = relevantWindows(a.usage, required);
         var pct = bindingPct(wins);
         if (pct === null) {
           r.label = 'usage unknown'; r.bestKey = 999; r.tier = 6;
@@ -1766,7 +1767,8 @@
       ])]));
       tr.appendChild(el('td', { class: 'c-mini' }, [windowCell(u, 'fiveHour', '5h', 'compact')]));
       tr.appendChild(el('td', { class: 'c-mini' }, [windowCell(u, 'sevenDay', '7d', 'compact')]));
-      var scopedMatch = (u && u.scoped || []).filter(function (w) { return res.models.indexOf(String(w.name || '').toLowerCase()) >= 0; });
+      var counted = countedModelNames(st, acc);
+      var scopedMatch = (u && u.scoped || []).filter(function (w) { return counted.indexOf(String(w.name || '').toLowerCase()) >= 0; });
       var top = scopedMatch.slice().sort(function (x, y) { return (pctNum(y.pct) || 0) - (pctNum(x.pct) || 0); })[0];
       var modelCell;
       if (top) {

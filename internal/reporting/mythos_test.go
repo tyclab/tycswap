@@ -85,13 +85,14 @@ func TestPolicyRestrictsTheLoginToMythosAccounts(t *testing.T) {
 		mythos     string
 		unservable string
 	}{
-		"marked":            {in: incident{live: "3", sessions: mythosSession}, prepare: markMythos("8", "11"), serves: true, mythos: "8,11"},
+		"marked":            {in: incident{live: "3", sessions: mythosSession, five11: &ten}, prepare: markMythos("8", "11"), serves: true, mythos: "8,11"},
 		"none-marked":       {in: incident{live: "3", sessions: mythosSession}, unservable: "Mythos"},
-		"marked-disabled":   {in: incident{live: "3", sessions: mythosSession, disabled: []string{"8"}}, prepare: markMythos("8"), mythos: "8", unservable: "Mythos"},
-		"marked-live":       {in: incident{live: "8", sessions: mythosSession, disabled: []string{"8"}}, prepare: markMythos("8"), serves: true, mythos: "8"},
+		"marked-disabled":   {in: incident{live: "3", sessions: mythosSession, disabled: []string{"11"}, five11: &ten}, prepare: markMythos("11"), mythos: "11", unservable: "Mythos"},
+		"marked-live":       {in: incident{live: "11", sessions: mythosSession, disabled: []string{"11"}, five11: &ten}, prepare: markMythos("11"), serves: true, mythos: "11"},
 		"marked-full":       {in: incident{live: "4", sessions: mythosSession}, prepare: markMythos("3", "11"), mythos: "3,11", unservable: "Mythos"},
 		"live-over-its-bar": {in: incident{live: "11", sessions: mythosSession, five11: &ninety}, prepare: markMythos("11"), serves: true, mythos: "11"},
 		"live-at-a-limit":   {in: incident{live: "11", sessions: mythosSession}, prepare: markMythos("11"), mythos: "11", unservable: "Mythos"},
+		"live-fable-spent":  {in: incident{live: "8", sessions: mythosSession}, prepare: markMythos("8"), mythos: "8", unservable: "Mythos"},
 		"counted-spent":     {in: incident{live: "3", sessions: both, five11: &ten}, prepare: markMythos("4"), mythos: "4", unservable: "Mythos"},
 		"session-closed":    {in: incident{live: "3", sessions: map[string]string{"s-opus": "claude-opus-5-5"}}, prepare: recordGone},
 		"no-mythos-session": {in: incident{live: "3", sessions: fableSession}, prepare: markMythos("8"), unservable: "Fable"},
@@ -112,23 +113,54 @@ func TestPolicyRestrictsTheLoginToMythosAccounts(t *testing.T) {
 	}
 }
 
-// Beside a Mythos session the reservation and the counted models are the
-// ones without it: Fable sessions still count Fable, and Mythos alone
-// reserves the accounts with Fable room (A77, A91).
+// Both families use Fable on these accounts. Only a Fable session lifts
+// the reservation for accounts with Fable room (A77, A91).
 func TestPolicyMythosKeepsTheOtherRules(t *testing.T) {
 	five := 10.0
 	both := map[string]string{"s-mythos": "claude-mythos-5-2", "s-fable": "claude-fable-5-2"}
 	s, now := incident{live: "3", sessions: both, five11: &five}.store(t)
 	markMythos("11")(t, s)
 	r := DefaultSessionPolicyResult(s, settings.Default(), now)
-	if deref(r.Settings.Model) != "Fable" || strings.Join(r.Sessions, ",") != "fable,mythos" || r.Reserved != nil {
-		t.Fatalf("model %q sessions %v reserved %v", deref(r.Settings.Model), r.Sessions, r.Reserved != nil)
+	if caption := CountedForSwitch(s).Caption; !strings.HasPrefix(caption, "counting 5h + 7d + Fable") || strings.Join(r.Sessions, ",") != "fable,mythos" || r.Reserved != nil {
+		t.Fatalf("caption %q sessions %v reserved %v", caption, r.Sessions, r.Reserved != nil)
 	}
 	s, now = incident{live: "3", sessions: mythosSession, five11: &five}.store(t)
 	markMythos("11")(t, s)
 	r = DefaultSessionPolicyResult(s, settings.Default(), now)
-	if r.Settings.Model != nil || reservedOf(r) == "" {
-		t.Fatalf("model %q reserved %q", deref(r.Settings.Model), reservedOf(r))
+	if caption := CountedForSwitch(s).Caption; !strings.HasPrefix(caption, "counting 5h + 7d + Fable") || strings.Contains(caption, "(live Fable sessions)") || reservedOf(r) != "3,11" {
+		t.Fatalf("caption %q reserved %q", caption, reservedOf(r))
+	}
+}
+
+func TestSharedMythosUsesTheMarkedAccountsMeter(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		fable  float64
+		mythos float64
+		serves bool
+	}{
+		{"named-window-has-room", 100, 10, true},
+		{"named-window-spent", 10, 100, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, now := incident{live: "3", sessions: mythosSession}.store(t)
+			markMythos("11")(t, s)
+			row := func(num string, scoped ...any) map[string]any {
+				return map[string]any{
+					"email": "acct" + num + "@example.com", "organizationUuid": "", "fetchedAt": now.Unix(),
+					"lastGood": map[string]any{"seven_day": map[string]any{"pct": 20}, "scoped": scoped},
+				}
+			}
+			writeUsageRows(t, s, map[string]any{
+				"3": row("3", map[string]any{"name": "Fable", "pct": 10}),
+				"11": row("11", map[string]any{"name": "Fable", "pct": tc.fable},
+					map[string]any{"name": "Weekly Mythos", "pct": tc.mythos}),
+			})
+			r := DefaultSessionPolicyResult(s, settings.Default(), now)
+			if (r.Serves != nil) != tc.serves || containsFold(r.Unservable, MythosModel) == tc.serves {
+				t.Errorf("marked account serves = %v, unservable = %v, want serves = %v", r.Serves != nil, r.Unservable, tc.serves)
+			}
+		})
 	}
 }
 

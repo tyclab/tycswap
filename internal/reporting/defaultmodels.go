@@ -202,7 +202,7 @@ var modelFamilies = []string{"fable", "mythos", "opus", "sonnet", "haiku"}
 
 // MythosModel names Claude Mythos in the policy's unservable list, the
 // engine's events and the counting caption (DESIGN A106).
-const MythosModel = "Mythos"
+const MythosModel = oauth.MythosModel
 
 // ModelFamily is the family of a Claude model id or alias ("fable", "mythos",
 // "opus", "sonnet", "haiku"), "" for anything else. A provider's id, such as
@@ -326,10 +326,11 @@ func saveSessionModels(root string, sessions map[string]defaultSessionModel) err
 // reserves none), the derived models dropped because no usable account can
 // serve them, and the model families the live default sessions run.
 type PolicyResult struct {
-	Settings   settings.AutoSwitchSettings
-	Reserved   func(num string) bool
-	Unservable []string
-	Sessions   []string
+	Settings       settings.AutoSwitchSettings
+	CountedWindows []string // Reported names for display. Settings.Model selects the meter per account.
+	Reserved       func(num string) bool
+	Unservable     []string
+	Sessions       []string
 	// Accounts serving a dedicated login are last in the default rotation.
 	ReservedLast func(num string) bool
 	// Serves is the accounts the default login may run on while a live
@@ -446,25 +447,42 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 	}
 	sort.Strings(r.Sessions)
 	view := viewOf()
-	var counted []string
+	followMythos := families["mythos"]
+	delete(families, "mythos")
 	for _, name := range scopedNamesFor(view.usage, families) {
 		if view.serves(name, base) {
-			counted = append(counted, name)
+			r.CountedWindows = append(r.CountedWindows, name)
 		} else {
 			r.Unservable = append(r.Unservable, name)
 		}
 	}
-	if model := strings.Join(counted, ","); model != "" {
-		r.Settings.Model = &model
-	}
-	if families["mythos"] {
+	counted := r.CountedWindows
+	if followMythos {
 		data, _ := s.ReadSequence()
 		r.Mythos = markedForMythos(data)
-		if view.mythosServed(data, base, counted) {
+		var meters []string
+		for _, num := range r.Mythos {
+			if view.pool[num] {
+				meters = append(meters, oauth.FamilyWindows(view.serving[num], "mythos")...)
+			}
+		}
+		withMythos := counted
+		if len(meters) > 0 {
+			withMythos = append(slices.Clone(counted), MythosModel)
+		}
+		if view.mythosServed(data, base, withMythos) {
 			r.Serves = s.MythosCapable
+			counted = withMythos
+			r.CountedWindows = append(r.CountedWindows, meters...)
+			sort.Strings(r.CountedWindows)
 		} else {
 			r.Unservable = append(r.Unservable, MythosModel)
 		}
+	}
+	if model := strings.Join(counted, ","); model != "" {
+		r.Settings.Model = &model
+		display := strings.Join(r.CountedWindows, ",")
+		r.CountedWindows = settings.ParseModelNames(&display)
 	}
 	if fable.Usable || !allKnown || families["fable"] {
 		return r
@@ -518,7 +536,7 @@ func belowBars(u *oauth.Usage, bars settings.AutoSwitchSettings, counted []strin
 	if u.SevenDay == nil || u.SevenDay.Pct >= bars.SevenDayThreshold || u.FiveHour != nil && u.FiveHour.Pct >= bars.FiveHourThreshold {
 		return false
 	}
-	for _, name := range counted {
+	for _, name := range oauth.ResolveModelWindows(u, counted) {
 		found := false
 		for _, w := range u.Scoped {
 			if strings.EqualFold(w.Name, name) {

@@ -75,6 +75,27 @@ func TestDedicatedPlacementRanksTheRequestedModelWindow(t *testing.T) {
 	}
 }
 
+func TestIndependentPlacementUsesEachAccountsModelWindow(t *testing.T) {
+	scoped := func(windows ...any) usage.UsageEntry {
+		return dictEntry(map[string]any{"seven_day": win(20, ""), "scoped": windows})
+	}
+	entries := map[string]usage.UsageEntry{
+		"1": scoped(scopedWin("Fable", 100, "")),
+		"2": scoped(scopedWin("Fable", 100, ""), scopedWin("Weekly MYTHOS", 15, "")),
+		"3": scoped(scopedWin("Fable", 15, ""), scopedWin("Weekly MYTHOS", 100, "")),
+	}
+	for family, want := range map[string][]string{
+		"mythos": {"2"},
+		"fable":  {"3"},
+		"opus":   {"1", "2", "3"},
+	} {
+		got := InitialPlacementTargets([]string{"1", "2", "3"}, entries, settings.Default(), family, baseTime)
+		if !slices.Equal(got, want) {
+			t.Errorf("%s placement = %v, want %v", family, got, want)
+		}
+	}
+}
+
 func TestOpusStartPreservesUsefulPremiumAndCountsItsOwnWindow(t *testing.T) {
 	snap := StartSnapshot{IdleOpus: true, Settings: settings.Default(), Entries: map[string]usage.UsageEntry{}}
 	for num, windows := range map[string][]any{

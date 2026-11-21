@@ -442,8 +442,10 @@ the command to retry the pending moves and restart the switch cooldown.
 On the dashboard and tray, **Use for Mythos** tries each client's refresh lock
 once and reports pending moves (HTTP 409 over the API), while an individual
 session move on either surface or with `tycswap use` waits up to nine seconds. The default and Fable stores have their own selections.
-`list` and `status` show the selected account, counted windows and linked session
-count. Their JSON field is `mythos`. An unavailable count is null.
+`list`, `status`, the dashboard and the tray show the selected account,
+counted windows and linked session count. For example, a login that reports
+5h, 7d and Fable shows `counting 5h + 7d + Fable`. The JSON field is
+`mythos`. An unavailable count is null.
 
 Bare `tycswap switch` rotates to the next account in the sequence. `tycswap switch
 <NUM|EMAIL|ALIAS>` activates a specific account. `--strategy best` takes
@@ -1510,6 +1512,10 @@ and **Next start: Mythos** in the tray change this same request. If the saved
 request is unreadable, a bare start reports its path and continues normally.
 Use `--next clear` or `--next mythos` to replace a damaged request.
 
+If every eligible independent login is at a known limit, explicit and queued
+Mythos starts exit 1 with `no available Mythos login has quota for mythos`.
+The queued request stays in place.
+
 `tycswap start --next show` prints `mythos` for a queued request or `none` for
 an empty queue, then exits 0. It reads the saved request without consuming it
 or taking the writer lock. On hosts without independent Mythos starts it
@@ -1816,11 +1822,13 @@ tycswap mythos --list
 
 ### Description
 
-Only some accounts may run Claude Mythos, and nothing tycswap reads tells
-them apart: every account reports the same per-model windows, and the
-profile answer carries no entitlement. Claude Code checks Mythos access on
-every request against the live login, so a Mythos session fails while the
-shared login sits on an account without it (DESIGN A106).
+Only some accounts may run Claude Mythos. Their profile and usage readings
+do not establish that entitlement, so tycswap uses the account's mark.
+For quota, Mythos counts the reported 5-hour and weekly windows and any
+scoped window whose name contains `mythos` (case-insensitive). When the
+account reports no such window, Mythos counts its Fable window. Claude Code
+checks Mythos access on every request against the live login, so a Mythos
+session fails while the shared login sits on an account without it (DESIGN A106).
 
 The forms set, clear or list the operator's Mythos marks, with the forms and
 exit codes of `start`'s management forms: one form at a time, `--list` prints
@@ -3548,6 +3556,9 @@ counted: no usable account can serve it`. `auto.ranking` is the order the
 engine would take the other accounts in over what `auto.counting` counts,
 best first (`autoswitch.strategy`, the engine's `sortQualifying`; an account
 at a counted limit, quarantined or without usage is left out; DESIGN A99).
+When a shared Mythos session uses different meter names across accounts,
+`auto.counting.modelsByAccount` gives the counted names for rows that differ
+from `auto.counting.models`, keyed by account number.
 While an account has a Fable login (DESIGN A104) the document carries `fable`,
 the object `status --json` carries; each Claude row with a Fable login
 carries `fableLogin` as in `list --json`; and `auto.fable` is the Fable

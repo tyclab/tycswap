@@ -71,11 +71,12 @@ type State struct {
 // Reserved to Fable; "hosted": the engine hosted here keeps the models it was
 // built with. Caption says it in one line.
 type CountingView struct {
-	Mode       string   `json:"mode"`
-	Models     []string `json:"models"`
-	Sessions   []string `json:"sessions"`
-	Unservable []string `json:"unservable"`
-	Reserved   []string `json:"reserved"`
+	Mode            string              `json:"mode"`
+	Models          []string            `json:"models"`
+	ModelsByAccount map[string][]string `json:"modelsByAccount,omitempty"`
+	Sessions        []string            `json:"sessions"`
+	Unservable      []string            `json:"unservable"`
+	Reserved        []string            `json:"reserved"`
 	// Mythos is the accounts marked for Mythos while a Mythos session runs;
 	// absent otherwise (DESIGN A106).
 	Mythos         []string `json:"mythos,omitempty"`

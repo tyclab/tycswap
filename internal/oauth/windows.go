@@ -10,6 +10,7 @@ package oauth
 
 import (
 	"math"
+	"slices"
 	"strings"
 	"time"
 )
@@ -148,8 +149,8 @@ func projectSpend(v any) *Spend {
 
 // RelevantWindows returns every (label, pct, resets_at) window that gates this
 // account: always 5h and 7d, plus each named scoped window when models is
-// non-empty. Matching is case-insensitive; the sentinel "all" (any case)
-// matches every scoped window. Scoped windows use the display_name as label.
+// non-empty. Matching is case-insensitive. "Mythos" selects the account's
+// Mythos meter and "all" selects every scoped window. Labels are display names.
 // spend is deliberately excluded (a separate axis).
 func RelevantWindows(u *Usage, models []string) []RelevantWindow {
 	if u == nil {
@@ -165,7 +166,7 @@ func RelevantWindows(u *Usage, models []string) []RelevantWindow {
 	if len(models) > 0 {
 		wanted := make(map[string]bool, len(models))
 		matchAll := false
-		for _, m := range models {
+		for _, m := range ResolveModelWindows(u, models) {
 			lm := strings.ToLower(m)
 			wanted[lm] = true
 			if lm == "all" {
@@ -185,9 +186,10 @@ const (
 	// usage.FiveHourLabel / SevenDayLabel are the same constants on the engine side (DESIGN A34).
 	FiveHourLabel = "5h"
 	SevenDayLabel = "7d"
+	MythosModel   = "Mythos"
 )
 
-// FamilyWindows names the model-specific windows this account actually reports.
+// FamilyWindows names the reported windows that meter a family on this account.
 func FamilyWindows(u *Usage, family string) []string {
 	if u == nil || family == "" {
 		return nil
@@ -198,7 +200,30 @@ func FamilyWindows(u *Usage, family string) []string {
 			names = append(names, window.Name)
 		}
 	}
+	if family == "mythos" && len(names) == 0 {
+		return FamilyWindows(u, "fable")
+	}
 	return names
+}
+
+// ResolveModelWindows expands a shared login's Mythos selector at the account
+// being evaluated. A missing meter stays in the required list for model guards.
+func ResolveModelWindows(u *Usage, models []string) []string {
+	i := slices.IndexFunc(models, func(name string) bool { return strings.EqualFold(name, MythosModel) })
+	if i < 0 {
+		return models
+	}
+	names := FamilyWindows(u, "mythos")
+	if len(names) == 0 {
+		return models
+	}
+	out := slices.Concat(models[:i], models[i+1:])
+	for _, name := range names {
+		if !slices.ContainsFunc(out, func(existing string) bool { return strings.EqualFold(existing, name) }) {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // ClassPcts is the highest utilization in each window class: fiveHour from the

@@ -1297,7 +1297,7 @@ func serveDashboard(t *testing.T, sw *core.Switcher, owner string) (*dashboard, 
 }
 
 // serveDashboardPage is serveDashboard with a GET helper that answers the
-// body of a page or static file the dashboard serves.
+// body of a page, static file or API response the dashboard serves.
 func serveDashboardPage(t *testing.T, sw *core.Switcher, owner string) (*dashboard, func(path, body string) (int, map[string]any), func(path string) string) {
 	t.Helper()
 	t.Setenv(brand.Sanitized().EnvPrefix+"_AUTO_MANAGED_BY", owner)
@@ -1331,7 +1331,12 @@ func serveDashboardPage(t *testing.T, sw *core.Switcher, owner string) (*dashboa
 	base := launch[:strings.Index(launch, "/?token=")]
 	get := func(path string) string {
 		t.Helper()
-		resp, err := c.Get(base + path)
+		req, err := http.NewRequest(http.MethodGet, base+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("X-CSRF-Token", d.srv.Token())
+		resp, err := c.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}

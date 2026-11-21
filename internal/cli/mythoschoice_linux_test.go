@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,6 +12,7 @@ import (
 	"github.com/tyclab/tycswap/internal/clock"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/web"
 )
 
 func TestManualMythosChoiceMovesSessionsAndHoldsRotation(t *testing.T) {
@@ -130,7 +132,7 @@ func TestMythosLoginReportsChoiceWindowsAndSessions(t *testing.T) {
 			}
 			doc := decodeJSON(t, out)
 			m, _ := doc["mythos"].(map[string]any)
-			if m["number"] != 2.0 || m["linkedSessions"] != 1.0 || !reflect.DeepEqual(m["countedWindows"], []any{"5h", "7d", "Mythos"}) {
+			if m["number"] != 2.0 || m["linkedSessions"] != 1.0 || !reflect.DeepEqual(m["countedWindows"], []any{"5h", "7d", "Fable"}) {
 				t.Fatalf("%s Mythos login: %v", command, m)
 			}
 			if command == "list" {
@@ -154,10 +156,33 @@ func TestMythosLoginReportsChoiceWindowsAndSessions(t *testing.T) {
 				}
 			}
 			code, human, msg := runHuman(t, command)
-			if code != 0 || !strings.Contains(human, "Mythos login:") || !strings.Contains(human, "1 linked session") {
+			if code != 0 || !strings.Contains(human, "Mythos login:") || !strings.Contains(human, "counting 5h + 7d + Fable, 1 linked session") {
 				t.Fatalf("human %s: %d %q %s", command, code, human, msg)
 			}
 		})
+	}
+}
+
+func TestDashboardAndTrayShowTheMeteredMythosWindow(t *testing.T) {
+	sw, from, _ := mythosTickFixture(t, 20, 30, false)
+	bindTickSession(t, sw, tickSessionA, "mythos", from)
+	_, _, get := serveDashboardPage(t, sw, testOwner)
+	var state web.State
+	if err := json.Unmarshal([]byte(get("/api/state")), &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.Mythos["number"] != 2.0 || state.Mythos["linkedSessions"] != 1.0 ||
+		!reflect.DeepEqual(state.Mythos["countedWindows"], []any{"5h", "7d", "Fable"}) {
+		t.Errorf("GET /api/state Mythos summary: %v", state.Mythos)
+	}
+	sh, _, _ := newTestShell(t)
+	const want = "counting 5h + 7d + Fable"
+	if got := sh.panel(state).MythosSummary; !strings.Contains(got, want+", 1 linked session") {
+		t.Errorf("tray Mythos summary: %q", got)
+	}
+	views := renderPage(t, servedPage(get), []pageCase{{Name: "mythos", State: state}})
+	if got := views["mythos"].MythosDetail; got != want+" · 1 linked session" {
+		t.Errorf("dashboard Mythos summary: %q", got)
 	}
 }
 

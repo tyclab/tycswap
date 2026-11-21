@@ -307,6 +307,18 @@ func (in incident) store(t *testing.T) (*store.Store, time.Time) {
 
 var fableSession = map[string]string{"s-fable": "claude-fable-5-1"}
 
+func TestFableCountingCaptionUsesTheSameNamesAsTheEngine(t *testing.T) {
+	five := 10.0
+	s, _ := incident{live: "11", sessions: fableSession, five11: &five}.store(t)
+	row := usageRow(t, s, "4")
+	row["lastGood"].(map[string]any)["scoped"].([]any)[0].(map[string]any)["name"] = "fable"
+	writeUsageRows(t, s, map[string]any{"4": row, "11": usageRow(t, s, "11")})
+	count := CountedForSwitch(s)
+	if strings.Join(count.Models, ",") != "Fable" || count.Caption != "counting 5h + 7d + Fable (live Fable sessions)" {
+		t.Fatalf("counted models %v, caption %q", count.Models, count.Caption)
+	}
+}
+
 // A live Fable session no usable account can serve blocks nobody: every
 // account with Fable room is at its 5h limit (DESIGN A91).
 func TestPolicyDropsUnservableModel(t *testing.T) {

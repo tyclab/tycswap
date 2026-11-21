@@ -7,6 +7,7 @@ package oauth
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"testing"
 	"time"
 )
@@ -137,6 +138,10 @@ func TestBuildUsageResultScoped(t *testing.T) {
 	scoped, ok := got["scoped"].([]any)
 	if !ok || len(scoped) != 1 {
 		t.Fatalf("scoped = %v, want exactly the model-scoped entry", got["scoped"])
+	}
+	u := NewUsage(got)
+	if names := FamilyWindows(u, "mythos"); !slices.Equal(names, []string{"Fable"}) {
+		t.Errorf("Mythos windows for the API response = %v, want [Fable]", names)
 	}
 	entry := scoped[0].(map[string]any)
 	if entry["name"] != "Fable" {
