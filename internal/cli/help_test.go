@@ -22,6 +22,7 @@ func TestHelpFlag(t *testing.T) {
 		"tycswap switch <num|email>",
 		"tycswap list",
 		"tycswap status",
+		"tycswap start --next show",
 		"tycswap add",
 		"tycswap add-token [TOKEN|-]",
 		"tycswap export <path>",
@@ -56,6 +57,14 @@ func TestHelpFlag(t *testing.T) {
 		if strings.Contains(optionsSection, legacy) {
 			t.Errorf("options section must not contain %q", legacy)
 		}
+	}
+}
+
+func TestStartHelpListsNextStartQuery(t *testing.T) {
+	cleanHome(t)
+	code, out, stderr := runCLI(t, []string{"start", "--help"}, false, false)
+	if code != 0 || !strings.Contains(out, "tycswap start --next show") {
+		t.Fatalf("start --help returned %d, missing next-start query: stdout=%q stderr=%q", code, out, stderr)
 	}
 }
 
