@@ -146,6 +146,102 @@ window.addEventListener('load', () => {
       }
       return hi;
     }
+    function textLines(group) {
+      const lines = [], nodes = doc.createTreeWalker(group, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = nodes.nextNode())) {
+        if (!node.data.trim()) continue;
+        const range = doc.createRange();
+        range.selectNodeContents(node);
+        lines.push(...[...range.getClientRects()].filter(r => r.width && r.height));
+      }
+      return lines;
+    }
+    function textRows(lines) {
+      // Count disjoint vertical text intervals, so simultaneous lines in different columns count once.
+      let rows = 0, bottom = -Infinity;
+      for (const rect of [...lines].sort((a, b) => a.bottom - b.bottom)) {
+        if (rect.top >= bottom) { rows++; bottom = rect.bottom; }
+      }
+      return rows;
+    }
+
+    // Use the widest bar's max-content size as its readable minimum: its label and
+    // percentage fit side by side, and its reset fits on one line.
+    function meterRowMinimum(group) {
+      let widest = 0;
+      for (const meter of [...group.children]) {
+        const probe = meter.cloneNode(true);
+        probe.style.cssText = 'position: absolute; visibility: hidden; inline-size: max-content; min-inline-size: 0; max-inline-size: none;';
+        group.appendChild(probe);
+        widest = Math.max(widest, probe.getBoundingClientRect().width);
+        probe.remove();
+      }
+      const gap = parseFloat(win.getComputedStyle(group).columnGap) || 0;
+      return group.children.length * widest + (group.children.length - 1) * gap;
+    }
+
+    function checkArrangement(condition) {
+      const fail = [], rect = selector => header.querySelector(selector).getBoundingClientRect();
+      const overlaps = (a, b) => a.top < b.bottom && b.top < a.bottom;
+      const brand = rect('.brand'), chip = rect('.conn'), acct = rect('#hdr-acct'), who = rect('.hdr-who');
+      const fable = rect('.hdr-fable'), mythos = rect('.hdr-mythos'), group = header.querySelector('.hdr-meters');
+      const meters = group.getBoundingClientRect(), bars = [...group.querySelectorAll('.meter')].map(e => e.getBoundingClientRect());
+      const labels = [...group.querySelectorAll('.meter-label')].map(e => e.getBoundingClientRect());
+      const box = header.getBoundingClientRect(), lines = textLines(header);
+      const border = win.getComputedStyle(header);
+      const top = Math.min(...lines.map(r => r.top)) - box.top - parseFloat(border.borderTopWidth);
+      const bottom = box.bottom - parseFloat(border.borderBottomWidth) - Math.max(...lines.map(r => r.bottom));
+      if (Math.abs(top - bottom) > 1) fail.push('unbalanced space above/below text (' + top.toFixed(1) + '/' + bottom.toFixed(1) + ')');
+      if (!overlaps(brand, chip) || Math.abs((box.right - chip.right) - (brand.left - box.left)) > 1) {
+        fail.push('status chip is not at the inline end of the brand row');
+      }
+      // The bar labels identify their owner. A reset below a bar can extend below
+      // the active line; a label on the Fable or Mythos login's row cannot.
+      if (labels.some(label => label.bottom <= who.top || overlaps(label, fable) || overlaps(label, mythos) || label.top >= fable.bottom) ||
+          mythos.top < fable.bottom - 1) fail.push('bars must precede both alternate logins');
+      const wide = brand.right <= acct.left + 1 && acct.right <= chip.left + 1 &&
+        overlaps(brand, acct) && overlaps(chip, acct) && overlaps(who, meters);
+      const stacked = Math.max(brand.bottom, chip.bottom) <= who.top + 1 && who.bottom <= meters.top + 1 &&
+        meters.bottom <= fable.top + 1;
+      if (!wide && !stacked) fail.push('neither wide band nor stacked brand/status, active, bars, Fable, Mythos');
+      if (meters.width >= meterRowMinimum(group) && bars.some(bar => !overlaps(bar, bars[0]))) {
+        fail.push('bars wrap despite room for all three');
+      }
+      if (report.font === 16 && report.zoom === 1 && box.width / report.font >= 88 && textRows(lines) > 4) {
+        // v0.21.3 shows four text rows for this fixture at 88, 100, 120 and 160 rem.
+        fail.push('more than the four text rows of v0.21.3 (' + textRows(lines) + ')');
+      }
+      if (fail.length) report.failures.push(condition + ': ' + fail.join('; '));
+      return wide ? 'wide' : stacked ? 'stacked' : 'mixed';
+    }
+
+    render(state);
+    page.style.removeProperty('width');
+    checkArrangement('window');
+    for (const rem of [20, 38, 50, 56, 63, 75, 88, 100, 120, 160]) {
+      room(rem);
+      checkArrangement(rem + 'rem');
+    }
+    page.style.width = '320px';
+    checkArrangement('320px viewport');
+
+    // Change the component allocation independently of its document. The same
+    // allocation must produce the same arrangement in both host pages.
+    for (const [width, mode] of [[38, 'stacked'], [100, 'wide']]) {
+      for (const host of [width, 160]) {
+        room(host);
+        header.style.inlineSize = width + 'rem';
+        if (Math.abs(header.getBoundingClientRect().width / report.font - width) > 1 / report.font) {
+          throw new Error('header did not receive the requested component width');
+        }
+        if (checkArrangement(width + 'rem header in ' + host + 'rem page') !== mode) {
+          report.failures.push(width + 'rem header in ' + host + 'rem page must be ' + mode);
+        }
+      }
+    }
+    header.style.removeProperty('inline-size');
+
     report.wrapRem = wrapPoint(state);
     function accountWidths(rem) {
       room(rem);
@@ -157,7 +253,12 @@ window.addEventListener('load', () => {
     }
     const long = structuredClone(state);
     long.mythos.email = 'infrastructure.monitoring.production-oncall+north-region@regional.engineering.example.test';
-    if (wrapPoint(long) <= report.wrapRem) report.failures.push('longer content did not change the wrap point');
+    room(20);
+    checkFacts(long, 'long address in narrow header');
+    const identity = header.querySelector('.hdr-mythos > :first-child');
+    const narrowRows = textRows(textLines(identity));
+    room(120);
+    if (narrowRows <= textRows(textLines(identity))) report.failures.push('long address did not reflow in the narrow header');
     room(80);
     for (const selector of ['.brand-name', '#version', '#conn-text', '.hdr-name', '.hdr-fable', '.hdr-mythos-detail',
       '.hdr-acct .slot-chip', '.hdr-who .chip-crit', '.hdr-meters .meter-label', '.hdr-meters .meter-val', '.hdr-meters .meter-foot']) {
