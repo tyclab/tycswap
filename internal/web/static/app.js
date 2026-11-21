@@ -106,7 +106,6 @@
     return Math.round(p) + '%';
   }
 
-  function accountName(a) { return a.alias || a.email || ('#' + a.number); }
   // Rows carry provider and key: the Claude rows come first, then, on a
   // machine with Codex accounts, the Codex rows, whose slot numbers overlap
   // the Claude ones (DESIGN A47). What is about Claude Code (the header
@@ -120,6 +119,7 @@
   function rowKey(a) { return a.key || ((a.provider || 'claude') + ':' + a.number); }
   function keyPath(a) { return encodeURIComponent(rowKey(a)); }
   function accountIdentity(a) { return [a.alias, a.email].filter(Boolean).join(' \u00b7 '); }
+  function accountName(a) { return accountIdentity(a) || ('#' + a.number); }
   function accountLabel(a) {
     var identity = accountIdentity(a);
     return '#' + a.number + (identity ? ' ' + identity : '');
@@ -1067,7 +1067,7 @@
     }
     var who = el('div', { class: 'hdr-who' }, [
       el('span', { class: 'slot-chip', text: '#' + active.number }),
-      el('span', { class: 'hdr-name', text: accountIdentity(active) || accountName(active), title: active.email || '' })
+      el('span', { class: 'hdr-name', text: accountName(active), title: active.email || '' })
     ]);
     if (active.atLimit) { who.appendChild(chip('at limit', 'crit')); }
     if (active.kind === 'api_key') {
@@ -1146,13 +1146,13 @@
 
     box.appendChild(tile('Accounts', String(accts.length), [eligible + ' eligible for rotation']));
     if (active) {
-      box.appendChild(tile('Active account', '#' + active.number, [el('span', { class: 'ellipsis', text: accountName(active), title: active.email })], 'accent'));
+      box.appendChild(tile('Active account', '#' + active.number, accountName(active), 'accent'));
     } else {
       box.appendChild(tile('Active account', '—', ['no managed account is live']));
     }
     box.appendChild(tile('At limit', String(atLimit.length), [atLimit.length ? atLimit.map(function (a) { return '#' + a.number; }).join(' ') : 'no window exhausted'], atLimit.length ? 'crit' : 'good'));
     if (best) {
-      box.appendChild(tile('Best candidate', '#' + best.number, [el('span', { class: 'ellipsis', text: accountName(best.account) }), chip((100 - best.pct).toFixed(0) + '% headroom', 'good')], 'good'));
+      box.appendChild(tile('Best candidate', '#' + best.number, [el('span', { text: accountName(best.account) }), chip((100 - best.pct).toFixed(0) + '% headroom', 'good')], 'good'));
     } else {
       box.appendChild(tile('Best candidate', '—', [res.ranked.length ? 'no account can take over now' : 'no other account'], res.ranked.length ? 'warn' : ''));
     }
@@ -1759,10 +1759,6 @@
       tr.appendChild(el('td', { class: 'c-rank', text: String(idx + 1) }));
       var acc = r.account;
       var u = acc.usage || null;
-      var inlineParts = [];
-      if (u && u.fiveHour) { inlineParts.push('5h ' + fmtPct(pctNum(u.fiveHour.pct))); }
-      if (u && u.sevenDay) { inlineParts.push('7d ' + fmtPct(pctNum(u.sevenDay.pct))); }
-      (u && u.scoped || []).forEach(function (w) { inlineParts.push((w.name || 'model') + ' ' + fmtPct(pctNum(w.pct))); });
       var verdict;
       if (r.tier === 4) { verdict = chip(r.label, 'warn'); }
       else if (r.tier === 5) { verdict = chip(r.label, 'serious'); }
@@ -1770,27 +1766,28 @@
       else if (r.tier === 3) { verdict = chip(r.soonReset ? 'at limit · resets <5h' : 'at limit', r.soonReset ? 'accent' : 'crit', r.soonReset ? 'All counted full windows reset within five hours; not available yet' : ''); }
       else if (r.tier === 2) { verdict = chip('at threshold', 'warn'); }
       else { verdict = chip(idx === 0 ? 'next pick' : 'eligible', idx === 0 ? 'good' : 'outline'); }
-      var inline = el('div', { class: 'nb-inline cell-sub' }, [verdict.cloneNode(true), el('span', { text: r.label ? '' : (inlineParts.length ? inlineParts.join(' · ') : 'no usage data') })]);
-      tr.appendChild(el('td', {}, [el('div', { class: 'acct' }, [
-        el('div', { class: 'acct-name' }, [el('span', { class: 'slot-chip', text: '#' + acc.number }), el('span', { class: 'primary', text: accountName(acc), title: acc.email || '' })]),
-        inline
+      tr.appendChild(el('td', {}, [el('div', { class: 'acct-name' }, [
+        el('span', { class: 'slot-chip', text: '#' + acc.number }),
+        el('span', { class: 'primary', text: accountName(acc) })
       ])]));
       tr.appendChild(el('td', { class: 'c-mini' }, [windowCell(u, 'fiveHour', '5h', 'compact')]));
       tr.appendChild(el('td', { class: 'c-mini' }, [windowCell(u, 'sevenDay', '7d', 'compact')]));
       var counted = countedModelNames(st, acc);
-      var scopedMatch = (u && u.scoped || []).filter(function (w) { return counted.indexOf(String(w.name || '').toLowerCase()) >= 0; });
-      var top = scopedMatch.slice().sort(function (x, y) { return (pctNum(y.pct) || 0) - (pctNum(x.pct) || 0); })[0];
-      var modelCell;
-      if (top) {
-        modelCell = meter({ label: top.name || 'model', pct: top.pct, resetsAt: top.resetsAt, size: 'compact' });
-      } else if (u && u.scoped && u.scoped.length) {
-        modelCell = meter({ label: u.scoped[0].name || 'model', pct: u.scoped[0].pct, resetsAt: u.scoped[0].resetsAt, size: 'compact' });
-        modelCell.classList.add('not-counted');
-        modelCell.title = (u.scoped[0].name || 'model') + ' is not counted now';
-      } else {
-        modelCell = emptyMeter('model', 'compact');
-      }
-      tr.appendChild(el('td', { class: 'c-mini' }, [modelCell]));
+      var scoped = u && u.scoped || [];
+      var countedWindows = scoped.filter(function (w) { return counted.indexOf(String(w.name || '').toLowerCase()) >= 0; });
+      var primary = countedWindows.sort(function (x, y) { return (pctNum(y.pct) || 0) - (pctNum(x.pct) || 0); })[0] || scoped[0];
+      var models = el('td', { class: 'c-mini' });
+      scoped.forEach(function (w) {
+        var bar = meter({ label: w.name || 'model', pct: w.pct, resetsAt: w.resetsAt, size: 'compact' });
+        if (w !== primary) { bar.classList.add('nb-extra'); }
+        if (countedWindows.indexOf(w) < 0) {
+          bar.classList.add('not-counted');
+          bar.title = (w.name || 'model') + ' is not counted now';
+        }
+        models.appendChild(bar);
+      });
+      if (!primary) { models.appendChild(emptyMeter('model', 'compact')); }
+      tr.appendChild(models);
       tr.appendChild(el('td', { class: 'c-head num strong', text: r.label ? '—' : (100 - r.pct).toFixed(0) + '%' }));
       tr.appendChild(el('td', { class: 'c-verdict' }, [verdict]));
       tb.appendChild(tr);

@@ -198,12 +198,14 @@
     </div>
     <div class="card">
       <div class="card-head">
-        <div class="head-l"><h2>IDE instances</h2><span id="ide-count" class="chip chip-outline"></span></div>
+        <div class="head-l"><h2 id="ide-heading">IDE instances</h2><span id="ide-count" class="chip chip-outline"></span></div>
       </div>
-      <table class="tbl compact" id="ide-tbl">
-        <thead><tr><th scope="col">IDE</th><th scope="col" class="num">PID</th><th scope="col" class="num">Port</th><th scope="col">Workspace</th></tr></thead>
-        <tbody id="ide-list"></tbody>
-      </table>
+      <div class="table-scroll" role="region" aria-labelledby="ide-heading" tabindex="0">
+        <table class="tbl compact" id="ide-tbl">
+          <thead><tr><th scope="col">IDE</th><th scope="col" class="num">PID</th><th scope="col" class="num">Port</th><th scope="col">Workspace</th></tr></thead>
+          <tbody id="ide-list"></tbody>
+        </table>
+      </div>
       <div id="ide-empty" class="empty-state" hidden><span class="title">No IDE instances</span><span>VS Code, Cursor and friends register here while the Claude Code extension is running.</span></div>
     </div>
   </section>
@@ -262,6 +264,7 @@
       <svg class="g-svg" viewBox="0 0 320 320" role="img" aria-labelledby="gd-what-t gd-what-d">
         <title id="gd-what-t">Your accounts, the live login, the Fable store and the sessions that use them</title>
         <desc id="gd-what-d">Three accounts are saved: number 1, alias work, with its saved login and a Fable login; number 2; number 3, alias spare. Switch copies number 2's saved login into the live login, Claude Code's own sign-in. Use for Fable puts number 1's Fable login into the Fable store, which exists only once an account has a Fable login. In this example the Fable session uses the Fable store and the other session uses the live login.</desc>
+        <g font-size="16">
         <rect class="gd-box" x="1" y="1" width="318" height="134" rx="8"/>
         <text class="gd-h" x="12" y="20">Your accounts, saved by {{.Name}}</text>
         <rect class="gd-row" x="10" y="30" width="300" height="28" rx="6"/>
@@ -297,6 +300,7 @@
         <rect class="gd-box" x="165" y="266" width="154" height="52" rx="8"/>
         <text class="gd-h" x="176" y="286">Fable sessions</text>
         <text class="gd-s" x="176" y="304">via {{.Name}} start</text>
+        </g>
       </svg>
           <figcaption>
             <ul>
@@ -323,6 +327,7 @@
       <svg class="g-svg" viewBox="0 0 320 445" role="img" aria-labelledby="gd-switch-t gd-switch-d">
         <title id="gd-switch-t">What a switch by hand does</title>
         <desc id="gd-switch-d">You click Switch on account 2. {{.Name}} saves the outgoing login back to its account, number 1, with its latest tokens, and number 2's saved login becomes the live login. Running sessions on the live login use number 2 from their next message; on macOS within about 30 seconds, or at once after a restart. Sessions on the Fable store are not touched. A switch onto an API-key account asks first, and running sessions keep their old login until they are restarted. Auto-switch makes no switch for the Switch cooldown, 5 minutes by default.</desc>
+        <g font-size="16">
         <rect class="gd-q" x="1" y="1" width="318" height="30" rx="14"/>
         <text class="gd-t" x="12" y="20">You click Switch on #2</text>
         <line class="gd-a" x1="160" y1="31" x2="160" y2="49" />
@@ -353,6 +358,7 @@
         <rect class="gd-end" x="1" y="399" width="318" height="44" rx="14"/>
         <text class="gd-t" x="12" y="418">And Auto-switch makes no switch</text>
         <text class="gd-s" x="12" y="432">for the Switch cooldown (5 minutes by default)</text>
+        </g>
       </svg>
           <figcaption>Between subscription accounts no restart is needed. After a switch onto an API-key account, restart the sessions.</figcaption>
         </figure>
@@ -372,6 +378,7 @@
       <svg class="g-svg" viewBox="0 0 320 668" role="img" aria-labelledby="gd-auto-t gd-auto-d">
         <title id="gd-auto-t">What Auto-switch does on each check</title>
         <desc id="gd-auto-d">Each check, by a scheduler or by this dashboard: if Auto-switch is off, nothing happens. If you switched by hand within the Switch cooldown, it waits. It counts the 5-hour and weekly use; a scheduler also counts each model your sessions run. If the live account is not over a threshold, not at its limit and not failing 3 polls in a row, it stays. Otherwise the targets are the accounts that are enabled, not API-key accounts, not quarantined and not at a limit, those below every threshold first; a threshold move needs 10 points more room on that window. With no target it stays. Otherwise it switches to the first target by Account order: the soonest weekly reset by default, or the most weekly room. Its next threshold move then waits the Switch cooldown.</desc>
+        <g font-size="16">
         <rect class="gd-box" x="1" y="1" width="216" height="44" rx="8"/>
         <text class="gd-h" x="12" y="20">Each check</text>
         <text class="gd-s" x="12" y="34">by a scheduler or this dashboard</text>
@@ -444,6 +451,7 @@
         <rect class="gd-end" x="1" y="621" width="216" height="45" rx="14"/>
         <text class="gd-t" x="12" y="640">Its next threshold move waits</text>
         <text class="gd-t" x="12" y="655">the Switch cooldown</text>
+        </g>
       </svg>
           <figcaption>
             <ul>

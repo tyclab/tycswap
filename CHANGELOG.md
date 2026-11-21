@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Dashboard tabs and the Guide follow the browser’s font size. Account addresses, usage limits and reset times, and session logins stay readable on narrow screens.
 - **Sessions…** in the local and remote tray opens the dashboard’s Sessions tab. Move an individual session there.
 - The dashboard fits account details beside the header controls or wraps them below. Account addresses, usage bars, limits and reset times stay visible on narrow screens and with larger browser fonts. The Mythos row separates quota and session details with middle dots.
 - The terminal **Sessions…** picker shows the dashboard’s session titles and short IDs so you can tell sessions in the same folder apart.
