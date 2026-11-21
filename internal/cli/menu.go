@@ -311,13 +311,18 @@ func menuManage(s ioStreams) {
 			choices = append(choices, "Use saved login")
 		}
 	}
+	mythosSignIn := ""
 	if a.ProviderName() == reporting.ProviderClaude {
 		choices = append(choices, "Preferred models…")
 		if a.MythosLogin != nil && a.MythosLogin.Selectable {
 			choices = append(choices, "Use for Mythos")
 		}
 		if menuFableStore() && a.Mythos && !a.Disabled && a.Kind == "oauth" {
-			choices = append(choices, mythosSignInEntry)
+			mythosSignIn = "Sign in for Mythos…"
+			if a.MythosLogin != nil {
+				mythosSignIn = "Sign in again for Mythos…"
+			}
+			choices = append(choices, mythosSignIn)
 		}
 	}
 	fableSignIn, fableMark := fableAccountEntries(s, a)
@@ -392,7 +397,7 @@ func menuManage(s ioStreams) {
 			return
 		}
 		args = []string{"models", a.Number, allocation}
-	case mythosSignInEntry:
+	case mythosSignIn:
 		args = []string{"add", "--login", "--lineage", "mythos", "--slot", a.Number}
 	case fableSignIn:
 		args = fableSignInArgs(a.Number)

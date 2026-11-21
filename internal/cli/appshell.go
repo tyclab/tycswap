@@ -39,8 +39,7 @@ import (
 // shellActions are the things a menu click can do; the app command wires
 // them to the switcher, the engine, the browser and the updater.
 type shellActions struct {
-	OpenDashboard func() error
-	OpenUpdates   func() error
+	OpenDashboard func(show string) error
 	CheckUpdates  func() error
 	AccountSetup  func(string) error
 	// SwitchTo switches to the account a row key names ("claude:2",
@@ -50,7 +49,6 @@ type shellActions struct {
 	// SwitchFable is Use for Fable on a Claude row key (A104); nil hides it.
 	SwitchFable       func(key string) error
 	SwitchMythos      func(key string) (string, error)
-	UseSession        func(id, store string) error
 	SetNextStartModel func(model string) error
 	// AddCurrent stores the login Claude Code is signed in with as an
 	// account (A37; web.Server.AddCurrentLogin). nil hides the row.
@@ -526,8 +524,12 @@ func (a *appShell) click(id string) {
 		}
 	case id == "add-current":
 		a.addCurrentClick()
-	case id == "open":
-		err := a.act.OpenDashboard()
+	case id == "open" || id == "sessions-open":
+		show := ""
+		if id == "sessions-open" {
+			show = "sessions"
+		}
+		err := a.act.OpenDashboard(show)
 		a.setNote("", false)
 		if err != nil {
 			a.setNote("Could not open the dashboard: "+err.Error(), true)
@@ -536,7 +538,7 @@ func (a *appShell) click(id string) {
 		a.repaint()
 	case strings.HasPrefix(id, "switch:"):
 		a.switchClick(strings.TrimPrefix(id, "switch:"))
-	case strings.HasPrefix(id, "mythos:") || strings.HasPrefix(id, "use:") || strings.HasPrefix(id, "next-start:"):
+	case strings.HasPrefix(id, "mythos:") || strings.HasPrefix(id, "next-start:"):
 		a.loginClick(id)
 	case strings.HasPrefix(id, "fable:"):
 		a.fableClick(strings.TrimPrefix(id, "fable:"))
@@ -554,11 +556,11 @@ func (a *appShell) click(id string) {
 		}
 		a.repaint()
 	case id == "updates-open":
-		if a.act.CheckUpdates == nil || a.act.OpenUpdates == nil {
+		if a.act.CheckUpdates == nil || a.act.OpenDashboard == nil {
 			return
 		}
 		checkErr := a.act.CheckUpdates()
-		openErr := a.act.OpenUpdates()
+		openErr := a.act.OpenDashboard("updates")
 		a.setNote("Updates opened in the dashboard.", false)
 		var failures []string
 		if checkErr != nil {
@@ -1362,13 +1364,6 @@ func (a *appShell) loginClick(id string) {
 			return
 		}
 		msg, err = a.act.SwitchMythos(key)
-	case "use":
-		session, dest, ok := strings.Cut(key, ":")
-		if !ok || a.act.UseSession == nil {
-			return
-		}
-		err = a.act.UseSession(session, dest)
-		msg = "Session login updated."
 	case "next-start":
 		if a.act.SetNextStartModel == nil {
 			return

@@ -106,11 +106,7 @@ func TestMythosLimitFeedbackAcrossSurfaces(t *testing.T) {
 				t.Errorf("tray: got %q, want %q", got, want)
 			}
 			view := renderPage(t, servedPage(get), []pageCase{{Name: "mythos", State: state}})["mythos"]
-			separator := ", "
-			if tc.detail == "" {
-				separator = " · "
-			}
-			if wantDetail := strings.Join(parts, separator); view.MythosDetail != wantDetail {
+			if wantDetail := strings.Join(parts, " · "); view.MythosDetail != wantDetail {
 				t.Errorf("dashboard: got %q, want %q", view.MythosDetail, wantDetail)
 			}
 		})

@@ -100,13 +100,19 @@ func newTestShell(t *testing.T) (*appShell, *fakeTray, *[]string) {
 	var calls []string
 	running := false
 	act := shellActions{
-		OpenDashboard: func() error { calls = append(calls, "open"); return nil },
-		OpenUpdates:   func() error { calls = append(calls, "open-updates"); return nil },
-		CheckUpdates:  func() error { calls = append(calls, "check-updates"); return nil },
-		SwitchTo:      func(key string) ([]int, error) { calls = append(calls, "switch:"+key); return nil, nil },
-		AutoRunning:   func() bool { return running },
-		AutoStart:     func() error { running = true; calls = append(calls, "auto-start"); return nil },
-		AutoStop:      func() error { running = false; calls = append(calls, "auto-stop"); return nil },
+		OpenDashboard: func(show string) error {
+			call := "open"
+			if show != "" {
+				call += "-" + show
+			}
+			calls = append(calls, call)
+			return nil
+		},
+		CheckUpdates: func() error { calls = append(calls, "check-updates"); return nil },
+		SwitchTo:     func(key string) ([]int, error) { calls = append(calls, "switch:"+key); return nil, nil },
+		AutoRunning:  func() bool { return running },
+		AutoStart:    func() error { running = true; calls = append(calls, "auto-start"); return nil },
+		AutoStop:     func() error { running = false; calls = append(calls, "auto-stop"); return nil },
 		Upgrade: func() (string, error) {
 			calls = append(calls, "upgrade")
 			return "Updated tycswap 2.0.0 → 2.1.0", nil
@@ -141,7 +147,7 @@ func TestShellTitleTooltipAndMenu(t *testing.T) {
 		t.Errorf("other row = %+v", a2)
 	}
 	ids, headers := menuShape(ft)
-	if ids != "brand,open,switch:claude:1,switch:claude:2,auto,autostart,update,quit" {
+	if ids != "brand,open,switch:claude:1,switch:claude:2,sessions-open,auto,autostart,update,quit" {
 		t.Errorf("menu order = %v", ids)
 	}
 	if br := ft.menu[0]; br.Kind != tray.KindBrand || br.Title != "tycswap" || !strings.Contains(br.Sub, "auto-switch off") || br.Clickable() {
@@ -328,7 +334,7 @@ func TestShellClickErrorsBecomeNotifications(t *testing.T) {
 // notification's text at 255 characters (A41).
 func TestOpenDashboardFailureNotifies(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
-	sh.act.OpenDashboard = func() error {
+	sh.act.OpenDashboard = func(string) error {
 		return errors.New("open the Dashboard address from C:\\Users\\a\\app.log in your browser (could not open a browser (ShellExecuteW: returned 31))")
 	}
 	sh.click("open")
@@ -898,7 +904,7 @@ func TestShellCodexRowsUnderOwnHeader(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
 	sh.update(codexState())
 	ids, headers := menuShape(ft)
-	if ids != "brand,open,switch:claude:1,switch:claude:2,switch:codex:1,switch:codex:2,switch:codex:3,auto,autostart,update,quit" {
+	if ids != "brand,open,switch:claude:1,switch:claude:2,sessions-open,switch:codex:1,switch:codex:2,switch:codex:3,auto,autostart,update,quit" {
 		t.Errorf("menu order = %s", ids)
 	}
 	if headers != "Accounts,Codex,Automation,App" {
@@ -951,7 +957,7 @@ func TestShellCodexRowsUnderOwnHeader(t *testing.T) {
 	if !ok || sub.Title != "All 12 Codex accounts" || len(sub.Children) != 12 || sub.Children[0].ID != "switch:codex:1" {
 		t.Fatalf("codex submenu = %+v (present %v)", sub, ok)
 	}
-	if ids, _ := menuShape(ft); !strings.Contains(ids, "switch:claude:1,switch:claude:2,switch:codex:4,codex-accounts,auto") {
+	if ids, _ := menuShape(ft); !strings.Contains(ids, "switch:claude:1,switch:claude:2,sessions-open,switch:codex:4,codex-accounts,auto") {
 		t.Errorf("menu order = %s", ids)
 	}
 }
@@ -966,7 +972,7 @@ func TestShellClaudeOnlyMenuUnchanged(t *testing.T) {
 		sh, ft, _ := newTestShell(t)
 		sh.update(st)
 		ids, headers := menuShape(ft)
-		if ids != "brand,open,switch:claude:1,switch:claude:2,auto,autostart,update,quit" || headers != "Accounts,Automation,App" {
+		if ids != "brand,open,switch:claude:1,switch:claude:2,sessions-open,auto,autostart,update,quit" || headers != "Accounts,Automation,App" {
 			t.Errorf("menu = %s / %s", ids, headers)
 		}
 		if strings.Contains(ft.tooltip, "codex") {

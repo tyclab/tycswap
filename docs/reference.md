@@ -441,14 +441,15 @@ selection can succeed while a busy session stays on its current login. Repeat
 the command to retry the pending moves and restart the switch cooldown.
 On the dashboard and tray, **Use for Mythos** tries each client's refresh lock
 once and reports pending moves (HTTP 409 over the API), while an individual
-session move on either surface or with `tycswap use` waits up to nine seconds.
+session move on the dashboard or with `tycswap use` waits up to nine seconds.
 A change of the selected Mythos login writes one INFO entry to `tycswap.log`
 with its account number and the command, menu, dashboard or tray actor.
-An individual session move records the initiating dashboard or tray, or
-`use` for the command. The default and Fable stores have their own selections.
+An individual session move records the dashboard actor or `use` for the command.
+The default and Fable stores have their own selections.
 `list`, `status`, the dashboard and the tray show the selected account,
-counted windows and linked session count. A login at its limit can read
-`counting 7d + Fable, at limit: Fable until Nov 28 09:59, 0 linked sessions`.
+counted windows and linked session count. The dashboard gives the Mythos login
+its own row below the active account and usage bars. Its detail can read
+`counting 7d + Fable · at limit: Fable until Nov 28 09:59 · 0 linked sessions`.
 The JSON `mythos` object in `list --json`, `status --json` and `/api/state`
 reports `atLimit` and `limitingWindows`. With room these are `false` and `[]`.
 Without a usable reading both are null. `resetsAt` is the latest reset among
@@ -1789,12 +1790,17 @@ A direct independent session keeps its first recorded account identity across ob
 
 ## tycswap use
 
-The dashboard Sessions tab, terminal menu and tray show **Move to Mythos
-login**, **Move to Fable store** and **Move to default login** for a running
+The tray’s **Sessions…** opens the Sessions tab of the local or remote dashboard
+through its one-time launch URL. The Sessions tab and terminal menu show
+**Move to Mythos login**, **Move to Fable store** and **Move to default login** for a running
 linked session with a usable destination. The displayed choices come from the
 same placement checks as an explicit UUID. A click checks the current binding
 again, including any client refresh in progress. A legacy session without a
 link has no move actions.
+
+The terminal picker shows the dashboard’s session title, the first eight characters
+of its ID, its login and account, and its folder. A session without a title appears
+as `session <short ID>`. Choosing a row passes the full ID to `tycswap use --session`.
 
 ```text
 tycswap use <mythos|fable|default> [--session ID]
@@ -2758,7 +2764,8 @@ for Fable…* when it holds a Fable login), the same command for that account,
 and, where it changes the answer, *Allow Fable* (the plan says nothing) or
 *Disallow Fable* (a mark decides), which asks first and runs `tycswap fable
 --allow N` or `--disallow N`; an account whose plan decides gets neither
-(DESIGN A107).
+(DESIGN A107). An eligible account offers *Sign in for Mythos…*, or *Sign in
+again for Mythos…* when it already has an independent Mythos login.
 *Browse commands and options…* lists commands by name and purpose. Choose a command
 to see its options or its CLI help. Select options, then choose *Run*. Account,
 setting and model inputs use named choices. For native login or launch arguments
@@ -3780,7 +3787,7 @@ the active account. One line under the list says what the last action did,
 or why the engine is out of reach, which disables Switch and Auto-switch;
 Start at login and pending local update actions stay usable.
 The footer holds **Quit**, **Check for updates…**, **Update tycswap** and **Update Claude** while
-one waits, the **Auto-switch** and **Start at login** switches and **Open
+one waits, **Sessions…**, the **Auto-switch** and **Start at login** switches and **Open
 dashboard**. **Check for updates…** starts the dashboard's update check and
 opens its Updates section without installing anything. In remote mode it checks
 the server's installation and is unavailable while that server is unreachable.
@@ -3829,7 +3836,7 @@ window, `#<slot> · <pct>%`, led by `⟳` while auto-switch runs and replaced by
   DESIGN A46) and leaves auto-switch as it is: like every switch by hand it
   holds the engine for `autoswitch.cooldownSeconds` (DESIGN A94); more than
   ten accounts move into *All N accounts* ▸, beside
-  the active one; *Add
+  the active one; *Sessions…* opens the dashboard’s Sessions tab; *Add
   current login* stores the login Claude Code has;
 - **Automation**: *Auto-switch* (on or off; its second line names the
   threshold of each window; it writes `autoswitch.enabled`, so it also turns

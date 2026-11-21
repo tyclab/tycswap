@@ -123,15 +123,27 @@ for (const available of [false, true]) {
 const csrfStart = js.indexOf('  var CSRF = (function () {');
 const csrfEnd = js.indexOf('  // The command name', csrfStart);
 const token = 'a'.repeat(32);
-const stored = {};
-const launch = {
-  window: { location: { hash: '#csrf=' + token, pathname: '/', search: '?show=updates' } },
-  sessionStorage: { setItem(k, v) { stored[k] = v; }, getItem(k) { return stored[k]; } },
-  history: { replaceState(_, __, target) { assert.equal(target, '/?show=updates'); } }
-};
-vm.runInNewContext(js.slice(csrfStart, csrfEnd), launch);
-assert.equal(launch.CSRF, token);
-assert.equal(stored.csrf, token);
+for (const show of ['updates', 'sessions']) {
+  const search = '?show=' + show;
+  const stored = {};
+  const launch = {
+    window: { location: { hash: '#csrf=' + token, pathname: '/', search } },
+    sessionStorage: { setItem(k, v) { stored[k] = v; }, getItem(k) { return stored[k]; } },
+    history: { replaceState(_, __, target) {
+      const url = new URL(target, 'http://localhost/');
+      launch.window.location.hash = url.hash;
+      launch.window.location.search = url.search;
+    } }
+  };
+  vm.runInNewContext(js.slice(csrfStart, csrfEnd), launch);
+  assert.equal(launch.CSRF, token);
+  assert.equal(stored.csrf, token);
+  const { hash, search: afterExchange } = launch.window.location;
+  assert.equal(hash, '');
+  assert.equal(afterExchange, search);
+  const p = page(hash, afterExchange);
+  p.assertTab(show === 'sessions' ? 'sessions' : 'dashboard', '#' + show);
+}
 console.log('Updates launch, deferred navigation and repaint focus passed');
 
 const changedBeforeLoad = page('#updates');

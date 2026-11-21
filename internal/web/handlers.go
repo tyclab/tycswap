@@ -298,8 +298,8 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			SameSite: http.SameSiteLaxMode,
 		})
 		target := "/"
-		if r.URL.Query().Get("show") == "updates" {
-			target += "?show=updates"
+		if show := r.URL.Query().Get("show"); show == "updates" || show == "sessions" {
+			target += "?show=" + show
 		}
 		http.Redirect(w, r, target+"#csrf="+s.token, http.StatusSeeOther)
 		return

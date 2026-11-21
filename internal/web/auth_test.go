@@ -477,21 +477,24 @@ func TestUnknownAPIRoute404(t *testing.T) {
 	}
 }
 
-func TestTokenBootstrapUpdatesDestination(t *testing.T) {
-	for _, show := range []string{"updates", "https://example.test/", "//example.test", "settings", "updates%26next%3Dhttps://example.test"} {
+func TestTokenBootstrapDestination(t *testing.T) {
+	for _, show := range []string{"updates", "sessions", "https://example.test/", "//example.test", "settings", "updates%26next%3Dhttps://example.test"} {
 		t.Run(show, func(t *testing.T) {
 			h := newHarness(t)
 			path := "/?token=" + fixedLaunch + "&show=" + show
 			resp := h.do(h.newReq(http.MethodGet, path, nil))
 			want := "/#csrf=" + fixedToken
-			if show == "updates" {
-				want = "/?show=updates#csrf=" + fixedToken
+			if show == "updates" || show == "sessions" {
+				want = "/?show=" + show + "#csrf=" + fixedToken
 			}
 			if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != want {
 				t.Fatalf("redirect: %d %q, want %q", resp.StatusCode, resp.Header.Get("Location"), want)
 			}
+			if cookies := resp.Cookies(); len(cookies) != 1 || cookies[0].Value != fixedCookie || !cookies[0].HttpOnly {
+				t.Fatal("launch did not set the dashboard cookie")
+			}
 			if again := h.do(h.newReq(http.MethodGet, path, nil)); again.StatusCode != http.StatusForbidden || len(again.Cookies()) != 0 {
-				t.Fatalf("updates replay accepted: %d", again.StatusCode)
+				t.Fatalf("launch replay accepted: %d", again.StatusCode)
 			}
 		})
 	}
