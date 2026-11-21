@@ -65,7 +65,8 @@ func TestParkedFableRefillsOnlyForEligibleFreshNativeStart(t *testing.T) {
 	run(23, "start", "--", "claude", "--model", "fable")
 	parked(false)
 	digest := envValue(rec.env, recoveredFableEnv)
-	if !validMythosDigest(digest) || envValue(rec.env, secureStorageVar) != fableStoreDir() || rec.execs != 1 || !strings.Contains(storeLive(t, sw), "at-f2") {
+	assertNativeStore(t, rec.env, fableStoreDir())
+	if !validMythosDigest(digest) || rec.execs != 1 || !strings.Contains(storeLive(t, sw), "at-f2") {
 		t.Fatalf("native recovery did not select eligible Fable-only login: execs=%d", rec.execs)
 	}
 	r, err := store.ReadFableReaders(sw.BackupDir())
@@ -159,9 +160,10 @@ func TestParkedFableExplicitEmptyStaysOff(t *testing.T) {
 		t.Fatalf("manual off: %v/%v", parked, err)
 	}
 	code, _, msg := runCLI(t, []string{"start", "--", "claude", "--model", "fable"}, false, false)
-	if code != 23 || rec.execs != 1 || envValue(rec.env, secureStorageVar) != "" || storeLive(t, sw) != "<absent>" {
+	if code != 23 || rec.execs != 1 || storeLive(t, sw) != "<absent>" {
 		t.Fatalf("manual off: %d, %s", code, msg)
 	}
+	assertNativeStore(t, rec.env, "")
 }
 
 func TestFableReallocationWaitsForObservedUsers(t *testing.T) {
