@@ -16,6 +16,7 @@ import (
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/web"
 )
 
 const fixtureMythosModel = "claude-mythos-5-2"
@@ -267,10 +268,62 @@ func TestMenuSessionMovesInvokeExplicitUse(t *testing.T) {
 	cmds := workflowCommands(t)
 	s := ioStreams{err: io.Discard, out: io.Discard}
 	for _, target := range []struct{ label, arg string }{{"Move to Mythos login", "mythos"}, {"Move to Fable store", "fable"}} {
-		menuScript(t, "Sessions", placementSession, target.label)
+		menuScript(t, "Sessions", "session "+placementSession[:8], target.label)
 		humanMenu("tycswap", "", s)
 		if len(*cmds) == 0 || !slices.Equal((*cmds)[len(*cmds)-1], []string{"use", target.arg, "--session", placementSession}) {
 			t.Fatalf("session action %q dispatched %v", target.label, *cmds)
+		}
+	}
+}
+
+func TestMenuSessionPickerUsesDashboardTitles(t *testing.T) {
+	sw, _, _ := menuStartFixture(t)
+	const cwd = "/work/shared-project"
+	const title = "Inspect the quota report"
+	const other = "704ac64c-eed0-43b4-b091-65045b486cc2"
+	const unlinked = "e06751cb-2e10-4608-92ff-f17cab245f61"
+	const prompt = `{"type":"user","message":{"role":"user","content":"Inspect the quota report"}}`
+	register := func(id, transcript string, linked bool) {
+		t.Helper()
+		proc := exec.CommandContext(t.Context(), "cat")
+		in, err := proc.StdinPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := proc.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { in.Close(); proc.Wait() })
+		pid := proc.Process.Pid
+		writeFile(t, filepath.Join(sw.DefaultProfileDir(), "sessions", fmt.Sprintf("%d.json", pid)),
+			fmt.Sprintf(`{"pid":%d,"sessionId":%q,"cwd":%q}`, pid, id, cwd))
+		writeFile(t, web.TranscriptPath(sw.DefaultProfileDir(), cwd, id), transcript)
+		if linked {
+			bindTickSession(t, sw, id, "opus", sw.DefaultProfileDir())
+		}
+	}
+	register(placementSession, `{"type":"user","message":{"role":"user","content":"Earlier prompt"}}
+{"type":"summary","summary":"Inspect the quota report"}`, true)
+	register(other, `{"type":"user","message":{"role":"user","content":"<command>"}}
+`+prompt, true)
+	register(unlinked, prompt, false)
+	s := ioStreams{err: io.Discard, out: io.Discard}
+	choices := menuScript(t)
+	menuMoveSession(s, "fable")
+	rows := choices["Move which session?"]
+	if len(rows) != 2 {
+		t.Fatalf("expected two movable sessions, got %q", rows)
+	}
+	commands := workflowCommands(t)
+	for _, id := range []string{placementSession, other} {
+		row := fmt.Sprintf("%s  %s  default login · #1  %s", title, id[:8], cwd)
+		if !slices.Contains(rows, row) {
+			t.Errorf("expected row %q in picker choices %q", row, rows)
+		}
+		menuScript(t, row, "Move to Fable store")
+		menuSessionDestination(s)
+		if len(*commands) == 0 || !slices.Equal((*commands)[len(*commands)-1], []string{"use", "fable", "--session", id}) {
+			t.Errorf("choosing %q dispatched %q", row, *commands)
 		}
 	}
 }
