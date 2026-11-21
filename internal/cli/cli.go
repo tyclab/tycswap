@@ -96,6 +96,8 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 			return configCommand(prog, argv[1:], s)
 		case "alias":
 			return aliasCommand(prog, argv[1:], s)
+		case "use":
+			return useCommand(prog, argv[1:], s)
 		case "models":
 			return modelsCommand(prog, argv[1:], s)
 		case "mythos":

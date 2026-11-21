@@ -155,7 +155,24 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	}
 	if observe {
 		raw, _ := io.ReadAll(io.LimitReader(s.in, 1<<20))
-		if !observeTicks(sw, raw, merged, on || dryRun) {
+		var linkedNews bool
+		if sessionLinkPath != "" && !dryRun {
+			id, model := observedSessionModel(raw)
+			result, err := placeSession(sw, id, sessionLinkPath, model, "", true)
+			if err != nil {
+				sw.Log.Debugf("Session placement: %v", err)
+			} else {
+				linkedNews = result.news && on
+				if result.ask != nil {
+					defer func() {
+						if err := result.ask(); err != nil {
+							sw.Log.Debugf("Session placement: %v", err)
+						}
+					}()
+				}
+			}
+		}
+		if !observeTicks(sw, raw, merged, on || dryRun) && !linkedNews {
 			if !on && !dryRun {
 				sayDisabled()
 			}
@@ -168,6 +185,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 			// Retiring a former session group or profile never moves the
 			// default login, and `add` tells its user the next tick does it
 			// (DESIGN A78, A92).
+			mythosTick(sw, merged, onEvent, false)
 			retireGroups(sw, onEvent, false)
 			retireProfiles(sw, false)
 			// Nor does storing a login Claude Code rotated in the Fable
@@ -218,6 +236,9 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 	// The retirement runs whatever the setting; the Codex tick follows it
 	// each round, as the Claude tick does, and a dry run still decides (A83).
 	codexRound := func(ctx context.Context) {
+		if !once {
+			mythosTick(sw, merged, onEvent, dryRun)
+		}
 		if !once && !dryRun {
 			reconcileDisabledTick(sw, onEvent)
 		}
@@ -344,7 +365,7 @@ func onceTicks(sw *core.Switcher, engine *autoswitch.Engine, merged settings.Aut
 			outcome = significantOutcome(outcome, fable)
 		}
 	}
-	return outcome
+	return significantOutcome(outcome, mythosTick(sw, merged, onEvent, dryRun))
 }
 
 // autoForegroundNotice says once what a foreground run finds: off, a stderr

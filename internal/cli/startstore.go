@@ -34,7 +34,11 @@ var sessionUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 // session loses it when it names the store. Without Fable logins the
 // session's model is not even read.
 func startEnvironment(env, argv []string, fable store.FableState, hasFableLogins bool, storeDir string) (childEnv []string, onFable bool, notice string) {
-	if !hasFableLogins || startSessionFamily(argv, env) != "fable" {
+	return startStoreEnvironment(env, fable, hasFableLogins && startSessionFamily(argv, env) == "fable", storeDir)
+}
+
+func startStoreEnvironment(env []string, fable store.FableState, wantsFable bool, storeDir string) (childEnv []string, onFable bool, notice string) {
+	if !wantsFable {
 		return withoutFableStore(env, storeDir), false, ""
 	}
 	if fable.On && fable.Usable {

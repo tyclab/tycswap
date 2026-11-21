@@ -36,8 +36,11 @@ type defaultSessionModel struct {
 	SeenAt float64 `json:"seenAt"`
 	// Store is "fable" for a session on the Fable store, "" for the default
 	// store's (DESIGN A100).
-	Store   string `json:"store,omitempty"`
-	Binding string `json:"binding,omitempty"`
+	Store   string       `json:"store,omitempty"`
+	Binding string       `json:"binding,omitempty"`
+	Link    *SessionLink `json:"link,omitempty"`
+	// Before is the saved record until the atomic link rename commits a move.
+	Before *defaultSessionModel `json:"beforeMove,omitempty"`
 }
 
 // RecordedSession is the model family and store recorded for a session, ok
@@ -96,6 +99,15 @@ func loadDefaultSessionModels(root string) (map[string]defaultSessionModel, erro
 	}
 	if file.Sessions == nil {
 		return nil, fmt.Errorf("saved session identities are missing the sessions map")
+	}
+	for id, rec := range file.Sessions {
+		if rec.Before != nil {
+			resolved, err := committedLinkRecord(root, rec)
+			if err != nil {
+				return nil, err
+			}
+			file.Sessions[id] = resolved
+		}
 	}
 	return file.Sessions, nil
 }
@@ -182,6 +194,16 @@ func recordSessionModel(root, sessionID, model, store string, now time.Time, tim
 	}
 	at := float64(now.UnixNano()) / 1e9
 	old, seen := sessions[sessionID]
+	if old.Link != nil {
+		link, _, err := savedLink(root, sessionID, old)
+		if err != nil {
+			return false, err
+		}
+		if procdetect.RecordAlive(link.PID, link.ProcStart, "") {
+			return false, nil
+		}
+		// A direct resume took the fail-open path after this linked process ended.
+	}
 	binding := old.binding()
 	if strings.HasPrefix(store, "fable/") {
 		if binding != "" && binding != store {
@@ -189,7 +211,7 @@ func recordSessionModel(root, sessionID, model, store string, now time.Time, tim
 		}
 		binding, store = store, "fable"
 	}
-	changed := !seen || old.Family != family || old.Store != store || binding != old.binding()
+	changed := !seen || old.Link != nil || old.Family != family || old.Store != store || binding != old.binding()
 	if !changed && at-old.SeenAt < defaultModelRefresh.Seconds() && at >= old.SeenAt {
 		return false, nil
 	}
@@ -199,15 +221,19 @@ func recordSessionModel(root, sessionID, model, store string, now time.Time, tim
 	}
 	sessions[sessionID] = next
 	for id, rec := range sessions {
-		if at-rec.SeenAt > defaultModelKeep.Seconds() && rec.binding() == "" {
+		if at-rec.SeenAt > defaultModelKeep.Seconds() && rec.binding() == "" && rec.Link == nil {
 			delete(sessions, id)
 		}
 	}
+	return changed, saveSessionModels(root, sessions)
+}
+
+func saveSessionModels(root string, sessions map[string]defaultSessionModel) error {
 	raw, err := json.Marshal(map[string]any{"schemaVersion": 1, "sessions": sessions})
 	if err != nil {
-		return false, err
+		return err
 	}
-	return changed, atomicfile.Write(filepath.Join(root, defaultModelsFile), raw, atomicfile.Opts{})
+	return atomicfile.Write(filepath.Join(root, defaultModelsFile), raw, atomicfile.Opts{})
 }
 
 // PolicyResult is the default-session policy for one tick (DESIGN A76, A77,
@@ -295,6 +321,10 @@ func DefaultSessionPolicyResult(s *store.Store, base settings.AutoSwitchSettings
 		}
 		if fable.Usable && rec.Family == "fable" {
 			r.FableOnDefault++
+			continue
+		}
+		if rec.Link != nil && !rec.Link.SharedMythos && rec.Store == "" && rec.Family == "mythos" {
+			// Moving the shared login would also move unrelated sessions.
 			continue
 		}
 		families[rec.Family] = true

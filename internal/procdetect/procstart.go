@@ -22,16 +22,16 @@ func RecordAlive(pid int, procStart any, pidDomain string) bool {
 		return false
 	}
 	if want := procStartText(procStart); want != "" && sameNamespace(pidDomain) {
-		if got, ok := procStartTime(pid); ok {
+		if got, ok := ProcStartTime(pid); ok {
 			return got == want
 		}
 	}
 	return IsPIDAlive(pid)
 }
 
-// procStartTime is field 22 of <procRoot>/<pid>/stat. The command name, field
+// ProcStartTime is field 22 of <procRoot>/<pid>/stat. The command name, field
 // 2, may hold spaces and parentheses, so fields count from its last ")".
-func procStartTime(pid int) (string, bool) {
+func ProcStartTime(pid int) (string, bool) {
 	raw, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(pid), "stat"))
 	if err != nil {
 		return "", false

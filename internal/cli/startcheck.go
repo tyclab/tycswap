@@ -13,15 +13,10 @@ import (
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/store"
+	"github.com/tyclab/tycswap/internal/termsafe"
 )
 
-// startCheck prints one line for the status line's session when it runs on
-// the wrong store: a Fable session on the default login while the Fable store
-// is usable, or another family's session on the Fable store; nothing else,
-// and nothing under start's overrides. While start itself sends Fable
-// sessions to the default login, the line names that cause. It reads the
-// status line's JSON unless stdin is a terminal, and the Fable store as start
-// reads it; it writes nothing and never fails.
+// The status line places linked sessions and keeps the original warnings for direct stores.
 func startCheck(in io.Reader, out io.Writer) {
 	defer func() { _ = recover() }()
 	root := paths.GetBackupRoot()
@@ -32,7 +27,13 @@ func startCheck(in io.Reader, out io.Writer) {
 		return
 	}
 	raw, _ := io.ReadAll(io.LimitReader(in, 1<<20))
-	_, model := observedSessionModel(raw)
+	session, model := observedSessionModel(raw)
+	if sessionLinkPath != "" {
+		if line := checkLinkedSession(session, model); line != "" {
+			fmt.Fprintln(out, termsafe.Strip(line))
+		}
+		return
+	}
 	family := reporting.ClaudeFamily(model)
 	if mythosSessionDir != "" {
 		if family != "" && family != mythosFamily {

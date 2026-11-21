@@ -118,7 +118,7 @@ func acquire(lockDir string, staleness, timeout time.Duration, clk clock.Clock) 
 			}
 			return nil, statErr
 		}
-		if clk.Now().Sub(fi.ModTime()) > staleness {
+		if staleness > 0 && clk.Now().Sub(fi.ModTime()) > staleness {
 			breakStale(lockDir, staleness, clk)
 			continue
 		}
