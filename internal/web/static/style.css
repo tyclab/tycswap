@@ -243,7 +243,7 @@ p { margin: 0; }
 .dot-off { background: var(--crit); }
 .dot-wait { background: var(--warn); }
 
-.tabs { z-index: 5; background: var(--card); border-bottom: 1px solid var(--line); box-shadow: 0 1px 0 rgba(0, 0, 0, .02); }
+.tabs { z-index: 5; background: var(--card); border-bottom: 1px solid var(--line); overflow-x: auto; box-shadow: 0 1px 0 rgba(0, 0, 0, .02); }
 @media (min-width: 32rem) { .tabs { position: sticky; top: 0; } }
 .tabs [role="tablist"] { display: flex; flex-wrap: wrap; gap: 0 .125rem; padding: 0 var(--s2); max-width: 73.75rem; margin: 0 auto; }
 .tabs [role="tab"] {
@@ -414,7 +414,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 1rem; height: 1rem;
 .cell-main { font-weight: 600; min-width: 0; }
 .cell-sub { color: var(--muted); font-size: var(--t12); }
 #ide-tbl, #quarantine-tbl { overflow-wrap: anywhere; }
-.table-scroll { max-inline-size: 100%; overflow-x: auto; }
+.table-scroll { position: relative; max-inline-size: 100%; overflow-x: auto; }
 .table-scroll:has(> [hidden]) { display: none; }
 #ide-tbl th, .acct-tbl th, .sess-tbl th, .nb-tbl th { white-space: nowrap; }
 
@@ -545,6 +545,11 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 .group .tbl td { padding: .4375rem var(--s3); }
 .sess-tbl .c-title { max-width: 20rem; }
 .sess-tbl .c-title .title { display: block; font-weight: 600; max-width: min(100%, 20rem); }
+/* Give the ellipsized title a share of a tight table without its full text displacing actions. */
+@container data-card (40rem <= inline-size < 54rem) {
+  .sess-tbl .c-title { width: 40%; }
+  .sess-tbl .c-title .title { contain: inline-size; }
+}
 .sess-tbl .c-pid { width: 4.75rem; }
 .sess-tbl .c-status { width: 5.75rem; }
 .sess-tbl .c-started { width: 6.875rem; }

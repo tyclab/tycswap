@@ -1601,7 +1601,7 @@
         }
       });
       tbl.appendChild(tb);
-      det.appendChild(tbl);
+      det.appendChild(el('div', { class: 'table-scroll', role: 'region', 'aria-label': 'Sessions in ' + k, tabindex: '0' }, [tbl]));
       groupsBox.appendChild(det);
     });
 
