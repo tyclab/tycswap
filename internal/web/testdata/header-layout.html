@@ -147,6 +147,14 @@ window.addEventListener('load', () => {
       return hi;
     }
     report.wrapRem = wrapPoint(state);
+    function accountWidths(rem) {
+      room(rem);
+      return [...header.querySelectorAll('#hdr-acct, .hdr-meters .meter')].map(e => e.clientWidth);
+    }
+    const narrow = accountWidths(20), roomy = accountWidths(120), wider = accountWidths(160);
+    if (narrow[0] >= roomy[0] || roomy.some((width, i) => width !== wider[i])) {
+      report.failures.push('account summary must adapt to available space and stop growing on a wide screen');
+    }
     const long = structuredClone(state);
     long.mythos.email = 'infrastructure.monitoring.production-oncall+north-region@regional.engineering.example.test';
     if (wrapPoint(long) <= report.wrapRem) report.failures.push('longer content did not change the wrap point');
