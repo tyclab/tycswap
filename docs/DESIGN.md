@@ -9011,9 +9011,10 @@ session stopped while unmarked accounts had room (round-1 review, A91's fault
 of 2026-11-15 again). The counted windows join the test because the engine
 refuses a target over a counted window: a marked account with 5-hour and
 weekly room but a spent Fable week, while Fable counts, would freeze the
-login the same way. The counted models and the reservation are as before:
-Mythos has no window of its own, and Mythos-only sessions still reserve the
-Fable-capable accounts with Fable room (A77, A91). Mythos sessions on the
+login the same way. A Mythos session counts the account's Fable window
+when the account reports no Mythos-named window (A111). A Mythos-only
+session on the default login still reserves Fable-capable accounts with
+Fable room under A77 and A91. Mythos sessions on the
 Fable store are skipped as before (A102) and restrict nothing. Like every
 followed session, a Mythos session counts while its process lives, idle or
 not, and closing it lifts the restriction: its record outlives it for a day
@@ -9505,3 +9506,33 @@ bare start on its ordinary path. An explicit set or clear repairs it. A failed l
 overwriting a newer choice. An explicit `start --mythos --account ID` uses
 the selected account for that invocation. The terminal menu runs it in the
 terminal that opened the menu.
+
+## A111. The model window that meters Mythos
+
+In a three-day transcript sample checked on 2026-11-21, 28 limit messages
+from sessions running `claude-mythos-5-2` named Fable and zero named Mythos.
+At 16:16 CET on November 21, a Mythos session reported
+`You've hit your Fable limit` with a November 28, 10 am reset. At 18:40 CET
+the same account's usage showed 53% of its shared week used and a single
+scoped window, Fable, at 100% with a November 28, 09:59 reset. In v0.21.0
+the Mythos login summary showed only `counting 7d` and a new Mythos start
+selected the spent login.
+
+On that release, `status --json` included the selected Mythos login and its
+linked-session count, but the dashboard's `GET /api/state` omitted the summary
+even though its account rows carried the Mythos sign-in status. The combined
+provider snapshot now copies the Claude summary alongside the Fable summary,
+including on installations that also have Codex accounts.
+
+For each account, Mythos counts scoped windows whose names contain
+`mythos` (case-insensitive). If no scoped name matches, it counts the account's
+Fable window. The reported shared windows also count. This rule applies to
+start placement, linked-session rotation, the Mythos login summary and
+the shared default login's model-window decisions.
+
+Reservations follow the session family. An independent Mythos start
+selects among its eligible Mythos logins. On the shared default login,
+a Mythos-only session still leaves Fable-capable accounts with Fable room
+reserved when the Fable store is unavailable. With a usable Fable store,
+the default login reserves that store's pool members with Fable room and
+its live account regardless of room (A102).

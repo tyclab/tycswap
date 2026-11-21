@@ -7,16 +7,6 @@ import (
 	"github.com/tyclab/tycswap/internal/oauth"
 )
 
-func reportedModels(value any) map[string]bool {
-	names := map[string]bool{}
-	if u := oauth.NewUsage(usageDict(value)); u != nil {
-		for _, w := range u.Scoped {
-			names[strings.ToLower(w.Name)] = true
-		}
-	}
-	return names
-}
-
 func requiredModels(models []string) []string {
 	names := map[string]bool{}
 	for _, model := range models {
@@ -31,9 +21,19 @@ func requiredModels(models []string) []string {
 }
 
 func hasRequiredModels(value any, required []string) bool {
-	present := reportedModels(value)
-	for _, name := range required {
-		if !present[name] {
+	if len(required) == 0 {
+		return true
+	}
+	u := oauth.NewUsage(usageDict(value))
+	if u == nil {
+		return false
+	}
+	present := map[string]bool{}
+	for _, w := range u.Scoped {
+		present[strings.ToLower(w.Name)] = true
+	}
+	for _, name := range oauth.ResolveModelWindows(u, required) {
+		if !present[strings.ToLower(name)] {
 			return false
 		}
 	}

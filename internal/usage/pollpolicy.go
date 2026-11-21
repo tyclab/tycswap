@@ -3,9 +3,8 @@
 // Implements spec 04§3.3 (binding_pct, limiting_reset_ts,
 // earliest_future_reset_ts, parse_reset_ts) and 04§3.4 (plan_after_fetch). The
 // window/headroom helpers operate directly on the normalized usage map
-// (Amendment A1: the persisted form is map[string]any) rather than importing
-// oauth's typed *Usage projection, keeping this package a self-contained leaf;
-// they mirror oauth relevant_windows/account_headroom (04§1.19-1.20).
+// (Amendment A1: the persisted form is map[string]any), resolving the model
+// names with the same account-specific rule as the switch decisions.
 package usage
 
 import (
@@ -13,6 +12,8 @@ import (
 	"math/rand/v2"
 	"strings"
 	"time"
+
+	"github.com/tyclab/tycswap/internal/oauth"
 )
 
 // winTuple mirrors oauth.relevant_windows' (label, pct, resets_at). An empty
@@ -48,7 +49,7 @@ func relevantWindows(usage map[string]any, models []string) []winTuple {
 	}
 	if len(models) > 0 {
 		wanted := make(map[string]bool, len(models))
-		for _, m := range models {
+		for _, m := range oauth.ResolveModelWindows(oauth.NewUsage(usage), models) {
 			wanted[strings.ToLower(m)] = true
 		}
 		if scoped, ok := usage["scoped"].([]any); ok {

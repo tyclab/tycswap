@@ -203,7 +203,7 @@ func (a *appShell) paint(st web.State) {
 	}
 	title, tooltip := "", head+" — no active account"
 	if ok {
-		models := countedModels(st)
+		models := accountModels(st, active)
 		title = fmt.Sprintf("#%s · %s", rowNumber(active), fmtPctShort(maxWindowPct(active, models)))
 		tooltip = head + " — #" + rowNumber(active) + " " + rowName(active) + " · " + windowsLine(active, models)
 	}
@@ -485,7 +485,7 @@ func (a *appShell) thresholdLabel(st web.State) string {
 	bars := barsOf(st)
 	label := "5h " + fmtPctShort(bars.fiveHour) + " · 7d " + fmtPctShort(bars.sevenDay)
 	if countsModelLimits(st) {
-		label += " · " + modelWindowLabel(st) + " " + fmtPctShort(bars.model)
+		label += " · " + modelWindowLabel(st, countedModels(st)) + " " + fmtPctShort(bars.model)
 	}
 	// The Codex engine's one bar, beside the Claude ones (A47).
 	if st.Auto != nil && st.Auto.Codex != nil && st.Auto.Codex.Enabled {
@@ -981,7 +981,8 @@ func (a *appShell) thresholdAlert(st web.State, active map[string]any, ok bool) 
 	}
 	num, key := rowNumber(active), rowKey(active)
 	bars := barsOf(st)
-	pcts := classPcts(active, countedModels(st))
+	models := accountModels(st, active)
+	pcts := classPcts(active, models)
 	// Costliest first: losing the week costs days across every model, a model's
 	// week costs days for that model, the 5h window costs a wait.
 	axes := []struct {
@@ -990,7 +991,7 @@ func (a *appShell) thresholdAlert(st web.State, active map[string]any, ok bool) 
 		subject string
 	}{
 		{pcts.sevenDay, bars.sevenDay, "of its week"},
-		{pcts.model, bars.model, "of its " + modelWindowLabel(st) + " week"},
+		{pcts.model, bars.model, "of its " + modelWindowLabel(st, models) + " week"},
 		{pcts.fiveHour, bars.fiveHour, "of its 5h window"},
 	}
 	var over *float64
@@ -1012,7 +1013,7 @@ func (a *appShell) thresholdAlert(st web.State, active map[string]any, ok bool) 
 	case over != nil && !a.alerted[key]:
 		a.alerted[key] = true
 		a.notify(fmt.Sprintf("Account #%s has used %s %s", num, fmtPctShort(*over, true), subject),
-			windowsLine(active, countedModels(st))+" — the dashboard shows the next best account.")
+			windowsLine(active, models)+" — the dashboard shows the next best account.")
 	case clear && a.alerted[key]:
 		delete(a.alerted, key)
 	}
@@ -1137,10 +1138,18 @@ func countedModels(st web.State) []string {
 	return nil
 }
 
+func accountModels(st web.State, row map[string]any) []string {
+	if st.Auto != nil && st.Auto.Counting != nil {
+		if models, ok := st.Auto.Counting.ModelsByAccount[rowNumber(row)]; ok {
+			return models
+		}
+	}
+	return countedModels(st)
+}
+
 // modelWindowLabel names the per-model window the accounts actually report,
 // so the switch that counts it can say so. Falls back to "model".
-func modelWindowLabel(st web.State) string {
-	models := countedModels(st)
+func modelWindowLabel(st web.State, models []string) string {
 	if len(models) > 0 && !countsWindow(models, "all") {
 		return strings.Join(models, ", ")
 	}

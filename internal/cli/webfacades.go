@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +26,7 @@ import (
 	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/lifecycle"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
@@ -218,7 +220,18 @@ func (a *autoFacade) View() web.AutoView {
 		return v
 	}
 	values := reporting.UsageByAccount(a.sw.Store)
-	v.Ranking = a.ranking(data, values, s, v.Counting.Models, policy)
+	models := settings.ParseModelNames(policy.Settings.Model)
+	if slices.Contains(models, oauth.MythosModel) {
+		v.Counting.ModelsByAccount = make(map[string][]string)
+		for num, value := range values {
+			reading, _ := value.(map[string]any)
+			names := oauth.ResolveModelWindows(oauth.NewUsage(reading), models)
+			if !slices.Equal(names, v.Counting.Models) {
+				v.Counting.ModelsByAccount[num] = names
+			}
+		}
+	}
+	v.Ranking = a.ranking(data, values, s, models, policy)
 	v.Fable = a.fable(data, values, s)
 	return v
 }
@@ -315,16 +328,16 @@ func quarantineView(entries map[string]autoswitch.QuarantineEntry) map[string]an
 // what the default-session policy derives.
 func (a *autoFacade) counting(s settings.AutoSwitchSettings, hosted bool) (*web.CountingView, reporting.PolicyResult) {
 	c := &web.CountingView{Mode: "sessions", Models: settings.ParseModelNames(s.Model)}
-	var policy reporting.PolicyResult
+	policy := reporting.PolicyResult{Settings: s}
 	switch {
 	case hosted:
 		c.Mode = "hosted"
 	default:
 		r := reporting.DefaultSessionPolicyResult(a.sw.Store, s, a.clk.Now())
-		c.Models, c.Sessions, c.Unservable = settings.ParseModelNames(r.Settings.Model), r.Sessions, r.Unservable
+		c.Models, c.Sessions, c.Unservable = r.CountedWindows, r.Sessions, r.Unservable
 		c.Reserved, c.Mythos, c.FableOnDefault, policy = r.ReservedIn(a.sw.Store), r.Mythos, r.FableOnDefault, r
 	}
-	for _, list := range []*[]string{&c.Sessions, &c.Unservable, &c.Reserved} {
+	for _, list := range []*[]string{&c.Models, &c.Sessions, &c.Unservable, &c.Reserved} {
 		if *list == nil {
 			*list = []string{}
 		}

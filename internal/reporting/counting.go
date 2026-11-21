@@ -41,7 +41,7 @@ func CountingCaption(hosted bool, models, sessions, unservable, reserved, mythos
 	if hosted {
 		return line + " (the engine hosted here does not follow sessions)"
 	}
-	if len(models) > 0 {
+	if len(models) > 0 && !containsFold(sessions, "mythos") {
 		line += " (live " + strings.Join(models, ", ") + " sessions)"
 	}
 	var windows []string
@@ -104,6 +104,6 @@ func CountedForSwitch(s *store.Store) switching.Counting {
 	for num := range autoswitch.ReadQuarantineEntries(autoswitch.StatePath(s.BackupDir())) {
 		quarantined[num] = true
 	}
-	return switching.Counting{Models: models, Caption: CountingCaption(false, models, r.Sessions, r.Unservable, r.ReservedIn(s), r.Mythos, r.FableOnDefault),
+	return switching.Counting{Models: models, Caption: CountingCaption(false, r.CountedWindows, r.Sessions, r.Unservable, r.ReservedIn(s), r.Mythos, r.FableOnDefault),
 		Settings: set, Reserved: r.Reserved, Quarantined: quarantined, Serves: r.Serves}
 }
