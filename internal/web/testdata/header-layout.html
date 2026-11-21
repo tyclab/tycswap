@@ -1,0 +1,63 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Dashboard header layout</title>
+<pre id="result">Browser measurement did not complete.</pre>
+<iframe id="page" src="/dashboard#csrf=1234"></iframe>
+<iframe id="reference" srcdoc="<!doctype html><link rel='stylesheet' href='/header-v0212.css'><body>"></iframe>
+<script>
+window.addEventListener('load', () => {
+  const result = document.querySelector('#result');
+  try {
+    const page = document.querySelector('#page'), reference = document.querySelector('#reference');
+    const doc = page.contentDocument, base = reference.contentDocument;
+    const email = 'alex@example.dev', account = 'Mythos login: #8 ' + email;
+    const state = {
+      version: '0.21.2', updates: {available: true}, settings: [], sessions: {claude: []},
+      accounts: [{number: 1, isActive: true, email: 'current.login@example.test', atLimit: true,
+        usage: {fiveHour: {pct: 64}, sevenDay: {pct: 87}, scoped: [{name: 'Fable', pct: 100}]}}],
+      fable: {state: 'on', number: 2, email: 'other.login@example.test'},
+      mythos: {number: 8, email, countedWindows: ['7d','Fable'], atLimit: true, limitingWindows: ['Fable'], resetClock: 'Jan 25 18:30', linkedSessions: 2},
+    };
+    page.contentWindow.events.dispatchEvent(new MessageEvent('state', {data: JSON.stringify(state)}));
+    const detail = 'counting 7d + Fable · at limit: Fable until Jan 25 18:30 · 2 linked sessions';
+
+    // Rebuild the release's account strip: active account, Fable and Mythos in a grid beside the three meters.
+    const header = doc.querySelector('header').cloneNode(true), strip = header.querySelector('#hdr-acct');
+    const stack = base.createElement('div'), mythos = base.createElement('div');
+    stack.className = 'hdr-stack';
+    mythos.className = 'hdr-mythos';
+    mythos.innerHTML = '<span class="ellipsis"></span><span class="hdr-mythos-detail"></span>';
+    mythos.firstChild.textContent = account;
+    mythos.lastChild.textContent = detail.replaceAll(' · ', ', ');
+    stack.append(header.querySelector('.hdr-who'), header.querySelector('.hdr-fable'), mythos);
+    const meters = header.querySelector('.hdr-meters');
+    header.querySelector('.hdr-mythos')?.remove();
+    strip.replaceChildren(stack, meters);
+    base.body.append(header);
+    base.body.style.minHeight = '200vh'; // Same scrollbar as the dashboard beneath the header.
+
+    function width(doc, selector) { return doc.querySelector(selector).getBoundingClientRect().width; }
+    function bars(doc) { return [...doc.querySelectorAll('header .meter-track')].map(el => el.getBoundingClientRect().width); }
+    const failures = [];
+    for (const viewport of [800,900,950,1000,1100,1200,1300,1400,1600]) {
+      page.style.width = reference.style.width = viewport + 'px';
+      const line = doc.querySelector('.hdr-mythos'), label = line.firstElementChild;
+      const range = doc.createRange();
+      range.selectNodeContents(label);
+      const rects = [...range.getClientRects()], rect = rects[0], box = label.getBoundingClientRect();
+      const headerHeight = doc.querySelector('header').getBoundingClientRect().height, mythosHeight = line.getBoundingClientRect().height;
+      const active = width(doc, '.hdr-name'), oldActive = width(base, '.hdr-name'), tracks = bars(doc), oldTracks = bars(base);
+      const row = width(doc, '.hdr-who'), oldRow = width(base, '.hdr-who');
+      const errors = [];
+      if (label.textContent !== account || rects.length !== 1 || rect.width < 1 || rect.left < box.left - 0.5 || rect.right > box.right + 0.5 || rect.right > viewport || rect.left < 0 ||
+          !label.contains(doc.elementFromPoint(rect.right - 1, (rect.top + rect.bottom) / 2))) errors.push('account clipped or wrapped');
+      if (line.querySelector('.hdr-mythos-detail')?.textContent !== detail) errors.push('missing detail');
+      if (headerHeight > 130 || mythosHeight > 36) errors.push('header or Mythos block too tall');
+      if (row + 0.5 < oldRow || active + 0.5 < oldActive || tracks.length !== 3 || oldTracks.length !== 3 ||
+          tracks.some((w,i) => (viewport > 900 && w === 0) || w + 0.5 < oldTracks[i])) errors.push('narrower than v0.21.2');
+      if (errors.length) failures.push(viewport + 'px ' + errors.join(', ') + ': ' + JSON.stringify({headerHeight,mythosHeight,active,oldActive,row,oldRow,tracks,oldTracks}));
+    }
+    result.textContent = failures.length ? failures.join('\n') : 'PASS';
+  } catch (error) { result.textContent = String(error.stack || error); }
+});
+</script>
