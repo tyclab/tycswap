@@ -3,7 +3,7 @@
 ## Unreleased
 
 - **Sessions…** in the local and remote tray opens the dashboard’s Sessions tab. Move an individual session there.
-- The dashboard shows account details beside the header controls when they fit and below them when they need more room. Usage bars stay visible on small screens. The Mythos address takes priority over quota and session details, which are separated by middle dots.
+- The dashboard fits account details beside the header controls or wraps them below. Account addresses, usage bars, limits and reset times stay visible on narrow screens and with larger browser fonts. The Mythos row separates quota and session details with middle dots.
 - The terminal **Sessions…** picker shows the dashboard’s session titles and short IDs so you can tell sessions in the same folder apart.
 - The terminal account menu labels its Mythos sign-in actions **Sign in for Mythos…** and **Sign in again for Mythos…**.
 
