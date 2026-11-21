@@ -12,7 +12,7 @@
 window.addEventListener('load', () => {
   const page = document.querySelector('#page'), doc = page.contentDocument, win = page.contentWindow;
   const font = parseFloat(getComputedStyle(document.documentElement).fontSize);
-  const report = {font, zoom: devicePixelRatio, viewport: innerWidth, type: {}, glyphHeights: [], failures: []};
+  const report = {font, zoom: devicePixelRatio, viewport: innerWidth, type: {}, failures: []};
   const state = dashboardFixture();
   for (const a of state.accounts) a.rotationEligible = a.switchable = true;
   state.accounts[1].alias = 'Editing team';
@@ -22,6 +22,11 @@ window.addEventListener('load', () => {
   const owners = [['default login', '1'], ['Fable login', '2'], ['Mythos login', '8']];
   for (const [i, session] of state.sessions.claude.entries()) {
     [session.login, session.accountNumber] = owners[i % owners.length];
+    session.pid = 13000 + i;
+    session.kind = 'interactive';
+    session.entrypoint = 'cli';
+    session.startedAt = Date.now() - (i + 1) * 3600000;
+    session.status = i % 3 === 0 ? 'waiting' : 'busy';
     session.moves = ['default', 'fable', 'mythos'].filter((_, j) => j !== i % owners.length);
   }
   const $ = selector => doc.querySelector(selector);
@@ -164,6 +169,23 @@ window.addEventListener('load', () => {
     check(guide.getBoundingClientRect().width < wide, 'content does not shrink with the page');
 
     $('#tab-sessions').click();
+    // The table can need a local scrollbar just after the session cards become a table.
+    // Its actions column (including the accessible heading) must stay inside that scroller.
+    const root = doc.documentElement, scrollbar = win.innerWidth - root.clientWidth;
+    page.style.width = 'calc(45rem + ' + scrollbar + 'px)';
+    context = 'session table at ' + root.clientWidth;
+    check(root.scrollWidth <= root.clientWidth, 'page scroll width ' + root.scrollWidth + ' exceeds viewport ' + root.clientWidth);
+
+    const sessionRows = all('.sess-tbl tbody tr');
+    for (const session of state.sessions.claude) {
+      const row = sessionRows.find(r => r.querySelector('.c-pid').textContent === String(session.pid));
+      for (const store of session.moves) {
+        const button = row.querySelector('[data-action="session-use"][data-store="' + store + '"]');
+        check(button && button.textContent.trim() && hasVisibleText(button, button.textContent), 'unreachable move to ' + store);
+      }
+      check(hasVisibleText(row.querySelector('[aria-label="Stop session ' + session.pid + '"]'), 'Stop'), 'unreachable stop');
+    }
+
     function controlsShareRow(rem) {
       page.style.width = rem + 'rem';
       return overlaps($('#sess-filter').getBoundingClientRect(), $('#sess-status').getBoundingClientRect());
