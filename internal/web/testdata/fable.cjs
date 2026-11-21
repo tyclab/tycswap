@@ -32,7 +32,7 @@ document.querySelectorAll = () => [];
 const ids = {};
 for (const id of ['hdr-acct', 'accounts-body', 'accounts-empty', 'add-callout', 'add-callout-email', 'add-hint', 'accounts-tbl', 'add-current-codex', 'accounts-sub',
   'auto-badge', 'auto-body', 'auto-state', 'auto-counting', 'quarantine-body', 'quarantine-section', 'nextbest-list', 'nextbest-sub', 'nextbest-empty', 'nextbest-tbl', 'toasts',
-  'sess-filter', 'sess-status', 'sess-sort']) { ids[id] = new Node('div'); }
+  'sess-filter', 'sess-status', 'sess-sort', 'next-mythos']) { ids[id] = new Node('div'); }
 ids['auto-switch'] = new Node('label').appendChild(new Node('input'));
 const requests = [];
 const ctx = {document, console, Promise, setTimeout, Math, Date, JSON, Object, Array, String, Number, isNaN, parseFloat, parseInt, encodeURIComponent,
@@ -81,6 +81,61 @@ function render(st) {
   ctx.renderActiveStrip(st); ctx.renderAccounts(st); ctx.renderAuto(st);
 }
 
+if (process.argv[3] === 'editor') {
+  for (const id of ['modal','modal-form','modal-title','modal-message','modal-error','modal-fields','modal-ok','modal-cancel']) ids[id] = new Node('div');
+  Node.prototype.focus = function () { document.activeElement = this; };
+  Node.prototype.querySelector = function () { return this.all().find(n => n.tagName === 'INPUT'); };
+  ctx.$ = id => ids[id] || ids['modal-fields'].all().find(n => n.getAttribute('id') === id);
+  block('  var modal =', '  // ---- shared derivations');
+  block('  function showUpdates(', "  document.addEventListener('click'");
+  const st = plainState();
+  st.accounts[0].models = ['opus'];
+  render(st);
+  const edit = rowOf(1).all().find(b => b.tagName === 'BUTTON' && /edit models/i.test(text(b)));
+  assert.ok(edit, 'a known allocation needs an editor');
+  edit.click();
+  const fields = ids['modal-fields'].all().filter(n => n.tagName === 'INPUT');
+  const field = name => fields.find(n => n.getAttribute('name') === name);
+  assert.equal(field('opus').checked, true);
+  field('mythos').checked = true;
+  ctx.fetch = async (url, opts) => {
+    assert.equal(url, '/api/accounts/claude%3A1/models');
+    assert.deepEqual(JSON.parse(opts.body).models.sort(), ['mythos','opus']);
+    return {ok: false, status: 409, text: async () => '{"error":"readonly fixture: store busy"}'};
+  };
+  ids['modal-form'].events.submit[0]({preventDefault(){}});
+  setImmediate(() => {
+    assert.match(text(ids['modal-error']), /store busy/);
+    assert.notEqual(ids.modal.getAttribute('open'), null, 'refusal closed the editor');
+    assert.ok(field('opus').checked && field('mythos').checked, 'refusal erased input');
+  });
+} else if (process.argv[3] === 'mythos') {
+  const st = plainState();
+  const longEmail = 'long'.repeat(25) + '@example.com';
+  st.mythos = {number: 1, email: longEmail, linkedSessions: 2, countedWindows: ['5h', '7d', 'Mythos']};
+  st.accounts[0].email = longEmail;
+  st.accounts[0].mythosLogin = {live: true, selectable: true, status: 'ok'};
+  st.accounts[1].mythosLogin = {live: false, selectable: true, status: 'ok'};
+  st.accounts[1].models = ['opus', 'fable'];
+  st.accounts[2].mythosLogin = {live: false, selectable: false, status: 'sign in again'};
+  render(st);
+  const header = text(ids['hdr-acct']);
+  assert.match(header, /Mythos login.*#1/);
+  for (const value of [longEmail, '5h', '7d', '2 linked sessions']) assert.ok(header.includes(value), header);
+  const labels = n => rowOf(n).all().filter(e => e.tagName === 'BUTTON').map(text);
+  assert.ok(labels(2).includes('Use for Mythos'));
+  for (const n of [1,3,4]) assert.ok(!labels(n).includes('Use for Mythos'));
+  assert.ok(chips(1).some(c => c[0] === 'Mythos login'));
+  assert.ok(chips(3).some(c => c[0] === 'Mythos login: sign in again'));
+  assert.ok(labels(2).some(l => /edit models/i.test(l)));
+  assert.ok(!labels(3).some(l => /edit models/i.test(l)), 'unreadable models cannot be overwritten');
+  const moves = c => ctx.sessionRow(c).all().filter(e => e.tagName === 'BUTTON' && text(e).startsWith('Move to')).map(text);
+  assert.deepEqual(moves({pid: 12, sessionId: 'test', moves: ['mythos', 'fable', 'default']}), ['Move to Mythos login','Move to Fable store','Move to default login']);
+  assert.deepEqual(moves({pid: 13, sessionId: 'legacy'}), []);
+  process.exit(0);
+}
+
+if (!process.argv[3]) {
 // With a Fable store: the header's second line, the chips, the buttons, the
 // menu note and the Auto tab's line.
 render(fableState());
@@ -170,3 +225,4 @@ assert.deepEqual(storeChips(session(undefined)), ['default login']);
   assert.deepEqual(requests, [['POST', '/api/switch/claude%3A3?store=fable']]);
   console.log('fable: header, chips, Use for Fable, menu note and Auto line passed');
 })().catch(e => { console.error(e); process.exitCode = 1; });
+}
