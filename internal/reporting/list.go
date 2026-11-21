@@ -78,6 +78,7 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 	data, _ := s.ReadSequence()
 	models := configuredModels(s)
 	fable := readFableView(s, data)
+	mythos := readMythosView(s, data)
 	var activeNum any
 	accounts := make([]any, 0, len(infos))
 	for _, info := range infos {
@@ -112,12 +113,18 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 		if login := fable.login(num); login != nil {
 			row["fableLogin"] = *login
 		}
+		if login := mythos.logins[num]; login != nil {
+			row["mythosLogin"] = login
+		}
 		accounts = append(accounts, row)
 	}
 	payload := map[string]any{
 		"schemaVersion":       jsonout.SchemaVersion,
 		"activeAccountNumber": activeNum,
 		"accounts":            accounts,
+	}
+	if mythos.object != nil {
+		payload["mythos"] = mythos.object
 	}
 	if fable != nil {
 		payload["fableAccountNumber"] = fable.accountNumber()
@@ -147,6 +154,7 @@ func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries ma
 	data, _ := s.ReadSequence()
 	models := configuredModels(s)
 	fable := readFableView(s, data)
+	mythos := readMythosView(s, data)
 	fmt.Fprintln(w, printer.Bolded("Accounts:"))
 	for i, info := range infos {
 		num := strconv.Itoa(info.Number)
@@ -183,6 +191,9 @@ func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries ma
 		if fableMarkers := fableTag(fable.login(num)); fableMarkers != "" {
 			markers += " " + fableMarkers
 		}
+		if tag := mythos.logins[num].tag(); tag != "" {
+			markers += " " + printer.Muted(tag)
+		}
 		fmt.Fprintf(w, "  %s: %s %s%s\n", num, label, printer.Muted("["+tag+"]"), markers)
 		for _, line := range usageEntryLines(entries[num]) {
 			fmt.Fprintf(w, "     %s\n", line)
@@ -197,6 +208,9 @@ func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries ma
 		}
 	}
 
+	if line := MythosLoginLine(mythos.object); line != "" {
+		fmt.Fprintln(w, line)
+	}
 	dup := duplicateAccountWarnings(s, infos)
 	lockstep := lockstepUsageWarnings(infos, entries)
 	if len(dup) > 0 || len(lockstep) > 0 {

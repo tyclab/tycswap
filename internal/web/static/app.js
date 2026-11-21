@@ -387,6 +387,7 @@
         fields.appendChild(label);
       });
       var ok = $('modal-ok');
+      ok.disabled = false;
       ok.textContent = opts.okLabel || 'OK';
       ok.className = 'btn ' + (opts.danger ? 'btn-danger' : 'btn-primary');
       modalState = { opts: opts, resolve: resolve };
@@ -416,6 +417,21 @@
       if (f.required && !values[f.name] && !missing) { missing = f.label; }
     });
     if (missing) { $('modal-error').textContent = missing + ' is required.'; return; }
+    if (modalState.opts.submit) {
+      var current = modalState, ok = $('modal-ok');
+      if (ok.disabled) { return; }
+      ok.disabled = true;
+      $('modal-error').textContent = '';
+      current.opts.submit(values).then(function () {
+        if (modalState === current) { closeModal(values); }
+      }).catch(function (err) {
+        if (modalState === current) {
+          $('modal-error').textContent = err.message;
+          ok.disabled = false;
+        }
+      });
+      return;
+    }
     closeModal(values);
   });
   $('modal-cancel').addEventListener('click', function () { closeModal(null); });
@@ -1034,6 +1050,8 @@
     var active = accts.filter(function (a) { return a.isActive; })[0];
     var sig = JSON.stringify(active ? [active.number, active.email, active.alias, active.usage, active.usageStatus, active.atLimit] : null);
     var fable = fableLine(st);
+    var mythos = mythosLine(st);
+    if (mythos) { sig += JSON.stringify(st.mythos); }
     if (fable) { sig += JSON.stringify([st.fable.state, st.fable.number, st.fable.email, st.fable.reason, st.fable.startup, accts.map(accountName)]); }
     if (box.getAttribute('data-sig') === sig) { return; }
     box.setAttribute('data-sig', sig);
@@ -1041,6 +1059,7 @@
     if (!active) {
       box.appendChild(el('span', { class: 'hdr-none muted', text: 'no active account' }));
       if (fable) { box.appendChild(fable); }
+      if (mythos) { box.appendChild(mythos); }
       return;
     }
     var who = el('div', { class: 'hdr-who' }, [
@@ -1053,7 +1072,7 @@
         ? chip('API key · ' + hostOf(active.baseUrl), 'crit', 'Claude Code sends its requests to ' + active.baseUrl)
         : chip('API key · billed per token', 'crit', 'Claude Code is on a managed API-key account'));
     }
-    box.appendChild(fable ? el('div', { class: 'hdr-stack' }, [who, fable]) : who);
+    box.appendChild(fable || mythos ? el('div', { class: 'hdr-stack' }, [who, fable, mythos]) : who);
     var u = active.usage || {};
     var meters = el('div', { class: 'hdr-meters' });
     meters.appendChild(u.fiveHour ? meter({ label: '5h', pct: u.fiveHour.pct, resetsAt: u.fiveHour.resetsAt, size: 'compact' }) : emptyMeter('5h', 'compact'));
@@ -1081,6 +1100,27 @@
     var line = el('div', { class: 'hdr-fable', title: f.email || '' }, [el('span', { class: 'ellipsis', text: 'Fable: ' + who })]);
     if (f.state === 'unusable') { line.appendChild(chip('Fable login: sign in again', 'warn', f.reason || '')); }
     return line;
+  }
+
+  function mythosLine(st) {
+    var m = st.mythos;
+    if (!m) { return null; }
+    var selected = typeof m.number === 'number';
+    var account = selected ? '#' + m.number + (m.email ? ' ' + m.email : '') :
+      m.reason || (m.number === null ? 'none selected' : 'selection unavailable');
+    var parts = [];
+    if (selected) {
+      parts.push(Array.isArray(m.countedWindows) && m.countedWindows.length ? 'counting ' + m.countedWindows.join(' + ') : 'usage unavailable');
+      if (typeof m.linkedSessions === 'number') {
+        parts.push(m.linkedSessions + (m.linkedSessions === 1 ? ' linked session' : ' linked sessions'));
+      } else if (!m.reason) { parts.push('linked session count unavailable'); }
+      if (m.reason) { parts.push(m.reason); }
+    }
+    var detail = parts.join(' · ');
+    return el('div', { class: 'hdr-mythos', title: 'Mythos login: ' + account + (detail ? ' · ' + detail : '') }, [
+      el('span', { class: 'ellipsis', text: 'Mythos login: ' + account }),
+      detail ? el('span', { class: 'hdr-mythos-detail', text: detail }) : null
+    ]);
   }
 
   function renderSummary(st) {
@@ -1287,6 +1327,12 @@
 
       var acct = el('div', { class: 'acct' });
       var nameRow = el('div', { class: 'acct-name' }, [el('span', { class: 'primary', text: a.alias || a.email || '(no email)', title: a.email || '' })]);
+      var login = a.mythosLogin;
+      if (login) {
+        var label = login.status === 'ok' ? 'Mythos login' : 'Mythos login: ' + (login.status || 'unavailable');
+        nameRow.appendChild(chip(label, login.status !== 'ok' ? 'warn' : login.live ? 'accent' : 'outline',
+          login.status === 'sign in again' ? 'Sign in again: ' + NAME + ' add --login --lineage mythos --slot ' + a.number : 'Independent Mythos sign-in'));
+      }
       statusChips(a).concat(fableChips(a)).forEach(function (c) { nameRow.appendChild(c); });
       acct.appendChild(nameRow);
       var meta = el('div', { class: 'acct-meta' });
@@ -1324,7 +1370,14 @@
       acts.appendChild(sw);
       var useFable = fableButton(a);
       if (useFable) { acts.appendChild(useFable); }
+      if (login && login.status === 'ok' && login.selectable === true && login.live === false && !a.disabled) {
+        acts.appendChild(el('button', { type: 'button', class: 'btn btn-sm', 'data-post': '/api/switch/' + keyPath(a) + '?store=mythos',
+          'data-label': 'Use for Mythos', 'aria-label': 'Use account ' + a.number + ' for Mythos', text: 'Use for Mythos' }));
+      }
 
+      if (login && login.live && st.mythos && st.mythos.choiceNote) {
+        acts.appendChild(el('span', { class: 'cell-sub', text: st.mythos.choiceNote }));
+      }
       var menu = el('details', { class: 'menu' });
       menu.appendChild(el('summary', { class: 'btn btn-sm btn-icon', 'aria-label': 'More actions for account ' + a.number, 'aria-haspopup': 'menu', text: '⋯' }));
       var listEl = el('div', { class: 'menu-list', role: 'menu' });
@@ -1334,6 +1387,9 @@
       }
       listEl.appendChild(startLoginAction(a));
       listEl.appendChild(mythosAction(a));
+      if (Array.isArray(a.models)) {
+        listEl.appendChild(menuButton('Edit models…', { 'data-action': 'models', 'data-id': k, 'data-models': JSON.stringify(a.models), 'data-name': accountLabel(a) }));
+      }
       if (a.disabled) {
         listEl.appendChild(menuButton('Enable account', { 'data-post': '/api/accounts/' + keyPath(a) + '/enable', 'data-label': 'Enable' }));
       } else {
@@ -1425,7 +1481,7 @@
   function storeChip(c) {
     if (c.store === 'mythos') { return chip('Mythos login', 'accent', 'Runs on an independently signed-in Mythos login'); }
     if (c.store === 'fable') { return chip('Fable store', 'accent', "Runs on the Fable store's login"); }
-    if (c.store === 'default' || !(state && state.fable)) { return chip('default login', 'outline'); }
+    if (c.store === 'default' || (!c.movesError && !(state && (state.fable || state.mythos)))) { return chip('default login', 'outline'); }
     return null;
   }
 
@@ -1443,7 +1499,17 @@
     tr.appendChild(el('td', { class: 'c-status' }, [statusChip(c.status)]));
     tr.appendChild(el('td', { class: 'c-started cell-sub' }, [el('span', { 'data-started': String(c.startedAt || 0), text: '' })]));
     var stop = el('button', { type: 'button', class: 'btn btn-sm btn-danger', 'data-post': '/api/sessions/' + encodeURIComponent(c.pid) + '/stop', 'data-label': 'Stop', 'data-confirm': 'Stop Claude Code session ' + c.pid + (c.cwd ? ' in ' + c.cwd : '') + '? `claude --continue` in that directory resumes it.', 'aria-label': 'Stop session ' + c.pid, text: 'Stop' });
-    tr.appendChild(el('td', { class: 'c-actions td-actions' }, [stop]));
+    var actions = el('div', { class: 'session-actions' });
+    var labels = { mythos: 'Move to Mythos login', fable: 'Move to Fable store', default: 'Move to default login' };
+    (c.moves || []).forEach(function (store) {
+      if (Object.prototype.hasOwnProperty.call(labels, store)) {
+        actions.appendChild(el('button', { type: 'button', class: 'btn btn-sm', 'data-action': 'session-use',
+          'data-id': c.sessionId, 'data-store': store, text: labels[store] }));
+      }
+    });
+    if (c.movesError) { actions.appendChild(el('span', { class: 'cell-sub session-move-error', text: c.movesError })); }
+    actions.appendChild(stop);
+    tr.appendChild(el('td', { class: 'c-actions td-actions' }, [actions]));
     return tr;
   }
 
@@ -1542,6 +1608,19 @@
     });
   }
 
+  if ($('next-mythos')) { $('next-mythos').addEventListener('change', function () {
+    var box = this, selected = box.checked;
+    var update = api('POST', '/api/sessions/next-start', { model: selected ? 'mythos' : '' }).then(function (response) {
+      if (state && (state.sequence || 0) <= response.stateSequence) { state.nextStartModel = selected ? 'mythos' : ''; }
+      box.checked = !!state && state.nextStartModel === 'mythos';
+    }).catch(function (err) {
+      box.checked = !!state && state.nextStartModel === 'mythos';
+      throw err;
+    });
+    run(box, 'Set next start', update, selected ? 'Mythos selected for the next plain claude.' : 'Next Claude start selection cleared.').then(function () {
+      box.disabled = !state || typeof state.nextStartModel !== 'string';
+    });
+  }); }
   $('sess-filter').addEventListener('input', function (ev) { sessFilter.q = ev.target.value; if (state) { renderSessions(state.sessions); tickCountdowns(); } });
   $('sess-status').addEventListener('change', function (ev) { sessFilter.status = ev.target.value; if (state) { renderSessions(state.sessions); tickCountdowns(); } });
   $('sess-sort').addEventListener('change', function (ev) { sessFilter.sort = ev.target.value; if (state) { renderSessions(state.sessions); tickCountdowns(); } });
@@ -1967,7 +2046,15 @@
       { auto: st.auto, accounts: st.accounts, active: st.activeNumber, settings: st.settings },
       function () { renderAuto(st); });
     renderGuarded('settings', 'panel-settings', { settings: st.settings }, function () { renderSettings(st); });
-    renderGuarded('sessions', 'panel-sessions', { sessions: st.sessions, fable: !!st.fable }, function () { renderSessions(st.sessions); });
+    var next = $('next-mythos');
+    if (next) {
+      $('next-mythos-control').hidden = typeof st.nextStartModel !== 'string' && !st.nextStartError;
+      next.indeterminate = typeof st.nextStartModel !== 'string';
+      next.disabled = typeof st.nextStartModel !== 'string' || next.getAttribute('aria-busy') === 'true';
+      if (next.getAttribute('aria-busy') !== 'true') { next.checked = st.nextStartModel === 'mythos'; }
+      $('next-mythos-error').textContent = st.nextStartError || '';
+    }
+    renderGuarded('sessions', 'panel-sessions', { sessions: st.sessions, fable: !!st.fable, mythos: !!st.mythos }, function () { renderSessions(st.sessions); });
     applyFolds(st);
     if (pendingUpdatesNavigation && st.updates) { showUpdates(); }
     tickCountdowns();
@@ -2105,6 +2192,21 @@
       return confirmModal('Use saved login', 'Replace the current Claude login with the saved login for ' + btn.getAttribute('data-name') + '? Unsaved changes to the current login are lost.', 'Use saved login').then(function (ok) {
         if (!ok) { return; }
         return run(btn, 'Use saved login', api('POST', '/api/switch/' + encodeURIComponent(id) + '?force=1'));
+      });
+    },
+    'session-use': function (btn) {
+      var store = btn.getAttribute('data-store');
+      return run(btn, btn.textContent, api('POST', '/api/sessions/' + encodeURIComponent(btn.getAttribute('data-id')) + '/use', { store: store }));
+    },
+    'models': function (btn) {
+      var id = btn.getAttribute('data-id'), models = JSON.parse(btn.getAttribute('data-models'));
+      var names = ['mythos', 'fable', 'opus'];
+      return openModal({
+        title: 'Models for ' + btn.getAttribute('data-name'),
+        message: 'Choose the models allocated to this account. Clear all three to restore the derived allocation.',
+        fields: names.map(function (m) { return { name: m, label: m.charAt(0).toUpperCase() + m.slice(1), type: 'checkbox', value: models.indexOf(m) >= 0 }; }),
+        okLabel: 'Save',
+        submit: function (v) { return api('POST', '/api/accounts/' + encodeURIComponent(id) + '/models', { models: names.filter(function (m) { return v[m]; }) }); }
       });
     },
     'alias': function (btn) {

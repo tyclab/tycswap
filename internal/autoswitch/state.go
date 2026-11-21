@@ -211,6 +211,33 @@ func (e *Engine) cooldownHold(trigger string, state map[string]any) (detail stri
 	return fmt.Sprintf("switched by hand to account %s; held for another %.0fs", to, left), true
 }
 
+// HandSelection returns the account last selected by hand and its current hold.
+func HandSelection(statePath string, clk clock.Clock, set settings.AutoSwitchSettings) (number, hold string, err error) {
+	raw, err := os.ReadFile(statePath)
+	if os.IsNotExist(err) {
+		return "", "", nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	var state map[string]any
+	if err := json.Unmarshal(raw, &state); err != nil || state == nil {
+		return "", "", fmt.Errorf("the Mythos switch cooldown is unreadable")
+	}
+	number, _ = state["lastSwitchTo"].(string)
+	by, _ := state["lastSwitchBy"].(string)
+	if by != byHand || number == "" {
+		return "", "", fmt.Errorf("the Mythos switch cooldown is missing its hand selection")
+	}
+	if _, ok := numOfAny(state["lastSwitchAt"]); !ok {
+		return "", "", fmt.Errorf("the Mythos switch cooldown is missing its time")
+	}
+	e := &Engine{clk: clk}
+	e.settings.Store(&set)
+	hold, _ = e.cooldownHold("failover", state)
+	return number, hold, nil
+}
+
 // stateLockPath is the state file's lock, beside it.
 func stateLockPath(statePath string) string {
 	return filepath.Join(filepath.Dir(statePath), ".autoswitch_state.lock")

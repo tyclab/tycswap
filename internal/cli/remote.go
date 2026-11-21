@@ -741,6 +741,7 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 		},
 		SwitchTo:     rc.Switch,
 		SwitchFable:  rc.SwitchFable,
+		SwitchMythos: rc.SwitchMythos, UseSession: rc.UseSession, SetNextStartModel: rc.SetNextStartModel,
 		AutoRunning:  rc.AutoRunning,
 		AutoStart:    rc.AutoStart,
 		AutoStop:     rc.AutoStop,
@@ -815,4 +816,19 @@ func runRemoteApp(o appOptions, s ioStreams) int {
 		}
 	}
 	return 0
+}
+
+func (c *remoteClient) SwitchMythos(key string) (string, error) {
+	var out struct{ Result struct{ Message string } }
+	err := c.call(http.MethodPost, "/api/switch/"+neturl.PathEscape(key)+"?store=mythos", nil, &out)
+	if err == nil {
+		_, _ = c.State()
+	}
+	return out.Result.Message, err
+}
+func (c *remoteClient) UseSession(id, dest string) error {
+	return c.mutate("/api/sessions/"+neturl.PathEscape(id)+"/use", map[string]string{"store": dest})
+}
+func (c *remoteClient) SetNextStartModel(model string) error {
+	return c.mutate("/api/sessions/next-start", map[string]string{"model": model})
 }

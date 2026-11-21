@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Select a ready Mythos login with `tycswap switch --store mythos N` or **Use for Mythos** in the menu, dashboard or tray. The login summary shows the counted windows and linked session count. The Sessions controls move an individual linked session, and the dashboard can edit a Claude account’s preferred models.
+- **Set next start** requests Mythos for one bare Claude start. The terminal menu can also start a Mythos session immediately.
+
 - Managed native Claude sessions on Linux and WSL can follow model changes across logins or move individually with `tycswap use <mythos|fable|default> [--session ID]`. The status line shows the pending model command and the tick can move Mythos sessions off a login at its limit.
 
 - Disabling an idle selected account now moves the login to an eligible replacement. If none is available, tycswap saves the grant and clears the selection. A running client keeps its current login.

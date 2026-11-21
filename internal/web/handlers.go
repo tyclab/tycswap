@@ -68,10 +68,13 @@ func (s *Server) routes() http.Handler {
 	api.HandleFunc("POST /api/accounts/{id}/mythos/allow", s.handleMythos(true))
 	api.HandleFunc("POST /api/accounts/{id}/mythos/disallow", s.handleMythos(false))
 	api.HandleFunc("POST /api/accounts/{id}/remove", s.handleRemove)
+	api.HandleFunc("POST /api/accounts/{id}/models", s.handleAccountModels)
 	api.HandleFunc("POST /api/accounts/{id}/alias", s.handleAlias)
 	api.HandleFunc("POST /api/accounts/{id}/move", s.handleMove)
 
 	// sessions
+	api.HandleFunc("POST /api/sessions/{id}/use", s.handleSessionUse)
+	api.HandleFunc("POST /api/sessions/next-start", s.handleNextStartModel)
 	api.HandleFunc("POST /api/sessions/{pid}/stop", s.handleStop)
 
 	// settings
@@ -533,11 +536,14 @@ func (s *Server) handleSwitch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if q := r.URL.Query(); q.Has("store") {
-		if store := q.Get("store"); store != "fable" {
-			writeError(w, http.StatusBadRequest, "unknown store "+strconv.Quote(store)+"; the switch takes store=fable or none")
-			return
+		switch store := q.Get("store"); store {
+		case "fable":
+			s.handleFableSwitch(w, r, provider, id)
+		case "mythos":
+			s.handleMythosSwitch(w, r, provider, id)
+		default:
+			writeError(w, http.StatusBadRequest, "unknown store "+strconv.Quote(store)+"; the switch takes store=fable, store=mythos or none")
 		}
-		s.handleFableSwitch(w, r, provider, id)
 		return
 	}
 	if provider == reporting.ProviderCodex {

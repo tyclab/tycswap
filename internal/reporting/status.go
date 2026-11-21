@@ -38,6 +38,16 @@ func Status(s *store.Store, jsonOut bool) (any, error) {
 		if fable, _, ok := fableStatus(s); ok {
 			payload["fable"] = fable
 		}
+		data, _ := s.ReadSequence()
+		m := readMythosView(s, data)
+		if m.object != nil {
+			payload["mythos"] = m.object
+			if active, ok := payload["active"].(map[string]any); ok {
+				if num, ok := active["number"].(int); ok && m.logins[strconv.Itoa(num)] != nil {
+					active["mythosLogin"] = m.logins[strconv.Itoa(num)]
+				}
+			}
+		}
 		return payload, nil
 	}
 	renderStatus(os.Stdout, s)
@@ -139,6 +149,10 @@ func unmanagedStatus(email string) map[string]any {
 func renderStatus(w io.Writer, s *store.Store) {
 	renderActiveStatus(w, s)
 	if _, line, ok := fableStatus(s); ok {
+		fmt.Fprintln(w, line)
+	}
+	data, _ := s.ReadSequence()
+	if line := MythosLoginLine(readMythosView(s, data).object); line != "" {
 		fmt.Fprintln(w, line)
 	}
 }

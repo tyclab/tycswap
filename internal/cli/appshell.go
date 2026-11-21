@@ -48,7 +48,10 @@ type shellActions struct {
 	// old Codex account (nil for a Claude switch).
 	SwitchTo func(key string) (runningPIDs []int, err error)
 	// SwitchFable is Use for Fable on a Claude row key (A104); nil hides it.
-	SwitchFable func(key string) error
+	SwitchFable       func(key string) error
+	SwitchMythos      func(key string) (string, error)
+	UseSession        func(id, store string) error
+	SetNextStartModel func(model string) error
 	// AddCurrent stores the login Claude Code is signed in with as an
 	// account (A37; web.Server.AddCurrentLogin). nil hides the row.
 	AddCurrent   func() (web.AddLoginResult, error)
@@ -125,6 +128,7 @@ type appShell struct {
 	// finds it held is dropped (DESIGN A94). fableMu is the same for Use for Fable.
 	autoMu  sync.Mutex
 	fableMu sync.Mutex
+	loginMu sync.Mutex
 	// refresh lays the panel out again when no state came for panelRefresh
 	// (the constant unless a test sets it), so its countdowns stay current.
 	refresh      *time.Timer
@@ -301,10 +305,18 @@ func (a *appShell) accountRows(st web.State, withModels []string) []tray.Item {
 	claude, codex := rowsByProvider(st.Accounts)
 	items := gaugeGroup(claude, withModels, "accounts", "All %d accounts")
 	for _, r := range claude {
+		if _, action := trayMythosLogin(r); action != "" {
+			items = append(items, tray.Item{ID: "mythos:" + rowKey(r), Title: action + ": #" + rowNumber(r) + "  " + rowName(r)})
+		}
 		if a.act.SwitchFable != nil && fableSwitchable(st, r) {
 			items = append(items, tray.Item{ID: "fable:" + rowKey(r), Title: "Use for Fable: #" + rowNumber(r) + "  " + rowName(r)})
 		}
 	}
+	if summary := reporting.MythosLoginLine(st.Mythos); summary != "" {
+		items = append(items, tray.Header(summary))
+	}
+	down, _ := a.offline()
+	items = append(items, loginControls(st, down)...)
 	if a.act.AccountSetup != nil {
 		items = append(items, tray.Item{ID: "account-setup", Title: "Add account…", Dismiss: true}, tray.Item{ID: "menu:main", Title: "Interactive menu…", Dismiss: true})
 	}
@@ -373,6 +385,9 @@ func gaugeGroup(rows []map[string]any, withModels []string, subID, subTitle stri
 		}
 		if sub == "" {
 			sub = "no usage data yet"
+		}
+		if label, _ := trayMythosLogin(r); label != "" {
+			sub += " · " + label
 		}
 		if fableLive(r) {
 			sub += " · Fable"
@@ -521,6 +536,8 @@ func (a *appShell) click(id string) {
 		a.repaint()
 	case strings.HasPrefix(id, "switch:"):
 		a.switchClick(strings.TrimPrefix(id, "switch:"))
+	case strings.HasPrefix(id, "mythos:") || strings.HasPrefix(id, "use:") || strings.HasPrefix(id, "next-start:"):
+		a.loginClick(id)
 	case strings.HasPrefix(id, "fable:"):
 		a.fableClick(strings.TrimPrefix(id, "fable:"))
 	case id == "auto:on" || id == "auto:off":
@@ -1317,4 +1334,54 @@ func capitalizeFirst(s string) string {
 		return s
 	}
 	return string(unicode.ToUpper(r)) + s[n:]
+}
+
+func (a *appShell) loginClick(id string) {
+	if !a.loginMu.TryLock() {
+		return
+	}
+	defer a.loginMu.Unlock()
+	if down, _ := a.offline(); down {
+		return
+	}
+	var msg string
+	var err error
+	action, key, _ := strings.Cut(id, ":")
+	switch action {
+	case "mythos":
+		if a.act.SwitchMythos == nil {
+			return
+		}
+		msg, err = a.act.SwitchMythos(key)
+	case "use":
+		session, dest, ok := strings.Cut(key, ":")
+		if !ok || a.act.UseSession == nil {
+			return
+		}
+		err = a.act.UseSession(session, dest)
+		msg = "Session login updated."
+	case "next-start":
+		if a.act.SetNextStartModel == nil {
+			return
+		}
+		model := "mythos"
+		msg = "The next bare Claude start will use Mythos."
+		if key == "on" {
+			model = ""
+			msg = "Next start cleared."
+		} else if key != "off" {
+			return
+		}
+		err = a.act.SetNextStartModel(model)
+	default:
+		return
+	}
+	if err != nil {
+		a.setNote(err.Error(), true)
+		a.notify("Login action", err.Error())
+	} else {
+		a.setNote(msg, false)
+		a.dashboardChanged()
+	}
+	a.repaint()
 }

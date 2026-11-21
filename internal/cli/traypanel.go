@@ -25,9 +25,14 @@ func (a *appShell) panelAt(st web.State, now time.Time) tray.Panel {
 	if st.Auto == nil && len(st.Accounts) == 0 {
 		p.Empty = "No data yet"
 	}
+	p.MythosSummary = reporting.MythosLoginLine(st.Mythos)
 	a.mu.Lock()
 	p.Note, p.Alert = a.note, a.noteAlert
 	a.mu.Unlock()
+	if p.Note == "" && st.NextStartError != "" {
+		p.Note = st.NextStartError
+		p.Alert = true
+	}
 	down, why := a.offline()
 	if down {
 		p.Offline, p.Note, p.Alert = true, capitalizeFirst(why), true
@@ -42,6 +47,7 @@ func (a *appShell) panelAt(st web.State, now time.Time) tray.Panel {
 		r := tray.PanelRow{ID: rowKey(row), Name: "#" + rowNumber(row) + " " + rowName(row),
 			Active: boolOf(row["isActive"]), Disabled: !boolOf(row["switchable"]),
 			Fable: fableLive(row), FableSwitch: a.act.SwitchFable != nil && fableSwitchable(st, row)}
+		r.MythosLogin, r.MythosAction = trayMythosLogin(row)
 		if rowProvider(row) == "codex" {
 			r.Name = "Codex " + r.Name
 		}
@@ -59,7 +65,7 @@ func (a *appShell) panelAt(st web.State, now time.Time) tray.Panel {
 			}
 			r.Tag += "start login"
 		}
-		if rowProvider(row) != "codex" && boolOf(row["mythos"]) {
+		if rowProvider(row) != "codex" && boolOf(row["mythos"]) && r.MythosLogin == "" {
 			if r.Tag != "" {
 				r.Tag += " · "
 			}
@@ -108,6 +114,7 @@ func (a *appShell) panelAt(st web.State, now time.Time) tray.Panel {
 		action.Sub = ""
 		p.Actions = append(p.Actions, action)
 	}
+	p.Actions = append(p.Actions, loginControls(st, down)...)
 	p.Actions = append(p.Actions, tray.Item{ID: "auto", Title: "Auto-switch", Kind: tray.KindToggle, Checked: a.autoRunning(), ShownState: true,
 		Disabled: down || a.act.AutoStart == nil || a.act.AutoStop == nil})
 	if a.act.Autostart != nil {
@@ -323,4 +330,75 @@ func (a *appShell) armPanelRefresh() {
 		every = panelRefresh
 	}
 	a.refresh = time.AfterFunc(every, a.repaint)
+}
+
+func trayMythosLogin(row map[string]any) (label, action string) {
+	login, _ := row["mythosLogin"].(map[string]any)
+	if rowProvider(row) != reporting.ProviderClaude {
+		return
+	}
+	switch login["status"] {
+	case "ok":
+		label = "Mythos login"
+		if login["selectable"] == true && login["live"] == false && row["disabled"] != true {
+			action = "Use for Mythos"
+		}
+	case "sign in again":
+		label = "Mythos login: sign in again"
+	case "unavailable":
+		label = "Mythos login: unavailable"
+	}
+	return
+}
+
+func loginControls(st web.State, offline bool) []tray.Item {
+	var items, sessions []tray.Item
+	for _, s := range st.Sessions.Claude {
+		if !sessionUUID.MatchString(s.SessionID) {
+			continue
+		}
+		var moves []tray.Item
+		for _, dest := range s.Moves {
+			label := ""
+			switch dest {
+			case "default":
+				label = "Move to default login"
+			case "mythos":
+				label = "Move to Mythos login"
+			case "fable":
+				label = "Move to Fable store"
+			default:
+				continue
+			}
+			moves = append(moves, tray.Item{ID: "use:" + s.SessionID + ":" + dest, Title: label, Disabled: offline})
+		}
+		if s.MovesError != "" {
+			moves = append(moves, tray.Item{Title: s.MovesError, Disabled: true})
+		}
+		if len(moves) > 0 {
+			title := s.Title
+			if title == "" {
+				title = s.CWD
+			}
+			if title != "" {
+				title += " · "
+			}
+			sessions = append(sessions, tray.Item{ID: "session:" + s.SessionID, Title: title + s.SessionID, Children: moves})
+		}
+	}
+	if len(sessions) > 0 {
+		items = append(items, tray.Item{ID: "move-sessions", Title: "Sessions…", Children: sessions, Disabled: offline})
+	}
+	if st.NextStartModel != nil || st.NextStartError != "" {
+		next := tray.Item{ID: "next-start", Title: "Set next start", Sub: "Use Mythos for the next bare Claude start", Kind: tray.KindToggle, ShownState: true, Disabled: offline || st.NextStartModel == nil}
+		if st.NextStartModel != nil {
+			next.Checked = *st.NextStartModel == "mythos"
+		} else {
+			next.Title = "Set next start: unavailable"
+			next.Kind = tray.KindPlain
+			next.Sub = st.NextStartError
+		}
+		items = append(items, next)
+	}
+	return items
 }

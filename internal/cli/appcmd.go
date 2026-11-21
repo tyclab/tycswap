@@ -403,6 +403,16 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 			return d.switchTo(key)
 		},
 		SwitchFable: d.switchFable,
+		SwitchMythos: func(key string) (string, error) {
+			provider, id := splitRowKey(key)
+			if provider != reporting.ProviderClaude {
+				return "", cerr.Validation("expected a Claude account")
+			}
+			result, err := d.SwitchMythos(id)
+			msg, _ := result["message"].(string)
+			return msg, err
+		},
+		UseSession: d.UseSession, SetNextStartModel: d.SetNextStartModel,
 		AddCurrent:  func() (web.AddLoginResult, error) { return srv.AddCurrentLogin() },
 		AutoRunning: func() bool { return d.auto.View().Running },
 		AutoStart: func() error {

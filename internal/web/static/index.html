@@ -180,6 +180,7 @@
       <div class="card-head">
         <div class="head-l"><h2>Claude Code sessions</h2></div>
         <div class="stat-chips" id="sessions-stats"></div>
+        <label class="switch" id="next-mythos-control" hidden><input type="checkbox" id="next-mythos"> <span>Set next start to Mythos</span><small id="next-mythos-error" role="status"></small></label>
       </div>
       <div class="sess-controls">
         <label class="sr-only" for="sess-filter">Filter sessions</label>
@@ -244,6 +245,7 @@
           <li><a href="#g-settings">The settings that steer it</a></li>
           <li><a href="#g-concepts">Reading the meters</a></li>
           <li><a href="#g-fable">Fable logins</a></li>
+          <li><a href="#g-mythos">Mythos login</a></li>
           <li><a href="#g-sessions">Sessions</a></li>
           <li><a href="#g-updates">Updates</a></li>
           <li><a href="#g-codex">Codex accounts</a></li>
@@ -259,7 +261,7 @@
         <figure class="g-fig">
       <svg class="g-svg" viewBox="0 0 320 320" role="img" aria-labelledby="gd-what-t gd-what-d">
         <title id="gd-what-t">Your accounts, the live login, the Fable store and the sessions that use them</title>
-        <desc id="gd-what-d">Three accounts are saved: number 1, alias work, with its saved login and a Fable login; number 2; number 3, alias spare. Switch copies number 2's saved login into the live login, Claude Code's own sign-in. Use for Fable puts number 1's Fable login into the Fable store, which exists only once an account has a Fable login. All other sessions use the live login; Fable sessions started via {{.Name}} start use the Fable store.</desc>
+        <desc id="gd-what-d">Three accounts are saved: number 1, alias work, with its saved login and a Fable login; number 2; number 3, alias spare. Switch copies number 2's saved login into the live login, Claude Code's own sign-in. Use for Fable puts number 1's Fable login into the Fable store, which exists only once an account has a Fable login. In this example the Fable session uses the Fable store and the other session uses the live login.</desc>
         <rect class="gd-box" x="1" y="1" width="318" height="134" rx="8"/>
         <text class="gd-h" x="12" y="20">Your accounts, saved by {{.Name}}</text>
         <rect class="gd-row" x="10" y="30" width="300" height="28" rx="6"/>
@@ -299,7 +301,7 @@
           <figcaption>
             <ul>
               <li>Every Claude Code session uses the live login, so one switch moves all of them.</li>
-              <li>Only Fable sessions started through <code>{{.Name}} start</code> can use the second login, the <a href="#g-fable">Fable store</a>.</li>
+              <li>Linked sessions started through <code>{{.Name}} start</code> can also use the <a href="#g-fable">Fable store</a> or an independent <a href="#g-mythos">Mythos login</a>.</li>
             </ul>
           </figcaption>
         </figure>
@@ -483,15 +485,24 @@
         <p>An account can be signed in twice. The second sign-in, its <em>Fable login</em>, can go into the Fable store, which Fable sessions use, so they and your other sessions run on different accounts at once.</p>
         <ul>
           <li><strong>Add one:</strong> <code>{{.Name}} add --login --lineage fable --slot N</code> in a terminal. The first one turns the Fable store on. Not on macOS.</li>
-          <li><strong>Which sessions:</strong> those started through <code>{{.Name}} start</code> whose model is Fable. All others use the live login.</li>
+          <li><strong>Which sessions:</strong> sessions placed on the Fable store at start and linked sessions moved there later.</li>
           <li><strong>On the page:</strong> <em>Fable</em> marks the Fable store's account, <em>Fable login</em> one it can use. <strong>Use for Fable</strong> moves the Fable store there and, like any switch by hand, holds its automatic moves for the <em>Switch cooldown</em>.</li>
           <li><strong>Automatic moves:</strong> only a scheduler's checks move the Fable store, never this dashboard's. They also keep the live login off the accounts the Fable store needs while another account is below every threshold.</li>
           <li><strong>Off:</strong> <code>{{.Name}} switch --store fable --empty</code>. Fable sessions then use the live login.</li>
         </ul>
       </article>
 
+      <article class="card guide-section" id="g-mythos">
+        <h2>Mythos login</h2>
+        <p>On Linux and WSL, each account can have an independent Mythos sign-in alongside its default and Fable logins. Mark the account with <strong>Allow for Mythos</strong>, then run <code>{{.Name}} add --login --lineage mythos --slot N</code> to sign in. Claude checks the account’s access.</p>
+        <p><strong>Use for Mythos</strong> selects a ready login for new Mythos sessions and moves the linked Mythos sessions to it. The command is <code>{{.Name}} switch --store mythos N</code>. Automatic Mythos moves wait for the switch cooldown. The header shows the selected account, the quota windows it counts and how many linked sessions use it.</p>
+        <p><strong>Edit models…</strong> in an account’s menu sets its model allocation. Clear all three choices to restore the derived allocation. A <em>Mythos login: sign in again</em> chip gives the command to renew that account’s sign-in.</p>
+        <p>In Sessions, <strong>Set next start to Mythos</strong> applies once to the next bare <code>claude</code> on this host. Turn the switch off to clear the choice.</p>
+      </article>
+
       <article class="card guide-section" id="g-sessions">
         <h2>Sessions</h2>
+        <p>Each linked session offers the moves available to it: <strong>Move to Mythos login</strong>, <strong>Move to Fable store</strong> or <strong>Move to default login</strong>. After a move, use the model command shown in the session’s status line.</p>
         <p>The Sessions tab lists the running Claude Code sessions and the IDEs with the Claude Code extension. <strong>Stop</strong> ends a session; <code>claude --continue</code> in its folder resumes it. While an account has a Fable login, a session shows <em>Fable store</em> or <em>default login</em> once its status line has reported it, and nothing before.</p>
       </article>
 

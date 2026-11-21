@@ -43,6 +43,8 @@ Commands:
   tycswap disable <num|email>        exclude a Claude account from selection
   tycswap enable <num|email>         allow a disabled Claude account to be selected
   tycswap start [-- command args]    launch once on a marked login, even at its limit
+  tycswap start --mythos [--account ID]  start an independent Mythos session
+  tycswap start --next mythos|clear  set or clear Mythos for the next bare Claude start
   tycswap start --allow|--disallow ID mark or unmark a start login (--list lists)
   tycswap use <mythos|fable|default> [--session ID]  move a linked session to that login
   tycswap mythos --allow|--disallow ID mark or unmark an account that runs Mythos
@@ -142,10 +144,11 @@ const visibleOptions = `options:
   --lineage {default,fable,mythos}
                         With 'add --login': store the account's independent
                         sign-in for the selected credential store
-  --store {default,fable}
+  --store {default,fable,mythos}
                         With 'switch': fable switches the Fable store, to an
                         account (switch --store fable <num|email>) or off
   --if-idle             Select an enrolled Fable login only when its store is idle
+                        Select the Mythos login with switch --store mythos <num|email>.
   --empty               With 'switch --store fable': turn the Fable store off
   --force               Overwrite existing accounts during import; with
                         'switch <num|email>', activate without backing up first

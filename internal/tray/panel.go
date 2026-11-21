@@ -3,7 +3,8 @@ package tray
 // Panel is the Windows tray's one page, the daily view (DESIGN A84): a row
 // per account with its limits, one note line, and a footer of commands.
 type Panel struct {
-	Title string
+	Title         string
+	MythosSummary string
 	// Note is the last action's result or why the engine is out of reach.
 	Note    string
 	Alert   bool // draws Note as a warning
@@ -22,15 +23,17 @@ type Column struct {
 
 type PanelRow struct {
 	// ID is the row key a Switch dispatches as "switch:<ID>".
-	ID, Name    string
-	Plan        string // drawn in an outlined label; "" draws none
-	Tag         string // muted, such as "not rotated"
-	Warning     string // in the limit colour, such as a usage status
-	Active      bool
-	Disabled    bool // the account cannot be switched to
-	Fable       bool // the Fable store's live account: an outlined "Fable" label
-	FableSwitch bool // Use for Fable, dispatched as "fable:<ID>"
-	Cells       []PanelCell
+	ID, Name     string
+	Plan         string // drawn in an outlined label; "" draws none
+	Tag          string // muted, such as "not rotated"
+	Warning      string // in the limit colour, such as a usage status
+	Active       bool
+	Disabled     bool   // the account cannot be switched to
+	Fable        bool   // the Fable store's live account: an outlined "Fable" label
+	MythosLogin  string // current status of the independent login
+	MythosAction string // button label when this login can be selected
+	FableSwitch  bool   // Use for Fable, dispatched as "fable:<ID>"
+	Cells        []PanelCell
 }
 
 // PanelCell is one limit: Share, a bar filled to Pct, Reset under them.

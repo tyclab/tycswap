@@ -47,7 +47,7 @@ type panelGeometry struct {
 	metrics                  panelMetrics
 	width, height            int
 	title, header, list      panelRect
-	note                     panelRect
+	note, summary            panelRect
 	footer                   int // the rule above the footer buttons
 	columns                  []panelSpan
 	row, line1, line2, share int
@@ -55,6 +55,7 @@ type panelGeometry struct {
 	content                  int
 	scroll                   bool
 	buttons                  []panelRect // one per Panel.Actions entry
+	mythos                   int         // width of the Mythos action when offered
 	fable                    int         // Use for Fable's width; 0 while no row has one
 }
 
@@ -75,6 +76,9 @@ func panelLabels(row PanelRow) []string {
 	}
 	if row.Fable {
 		labels = append(labels, "Fable")
+	}
+	if row.MythosLogin != "" {
+		labels = append(labels, row.MythosLogin)
 	}
 	return labels
 }
@@ -125,7 +129,19 @@ func panelColumnWidths(p Panel, m panelMeasure, metrics panelMetrics) []int {
 	if fable := panelFableWidth(p, m, metrics); fable > 0 {
 		widths[limits+1] += fable + metrics.gap
 	}
+	if mythos := panelMythosWidth(p, m, metrics); mythos > 0 {
+		widths[limits+1] += mythos + metrics.gap
+	}
 	return widths
+}
+
+func panelMythosWidth(p Panel, m panelMeasure, metrics panelMetrics) int {
+	for _, r := range p.Rows {
+		if r.MythosAction != "" {
+			return m.textWidth(panelBody, r.MythosAction) + 2*metrics.inset
+		}
+	}
+	return 0
 }
 
 // panelFableWidth is Use for Fable's button, which sits left of Switch; 0
@@ -233,7 +249,7 @@ func panelFooterMinWidth(widths []int, right []bool, gap int) int {
 // gains a scroll bar; too wide, the account column gives way.
 func layoutPanel(p Panel, m panelMeasure, maxWidth, maxHeight, scrollbar int) panelGeometry {
 	metrics := panelMetricsOf(m)
-	g := panelGeometry{metrics: metrics, share: panelShareWidth(m), fable: panelFableWidth(p, m, metrics)}
+	g := panelGeometry{metrics: metrics, share: panelShareWidth(m), fable: panelFableWidth(p, m, metrics), mythos: panelMythosWidth(p, m, metrics)}
 	unit, pad := metrics.unit, metrics.pad
 	small := m.lineHeight(panelSmall)
 	first := max(m.lineHeight(panelStrong), metrics.line)
@@ -269,6 +285,10 @@ func layoutPanel(p Panel, m panelMeasure, maxWidth, maxHeight, scrollbar int) pa
 		}
 		g.title = panelRect{pad, unit + unit/2, g.width - 2*pad, m.lineHeight(panelHeading)}
 		g.header = panelRect{0, g.title.y + g.title.height + unit, g.width, metrics.line + unit}
+		if p.MythosSummary != "" {
+			g.summary = panelRect{pad, g.header.y, g.width - 2*pad, metrics.line}
+			g.header.y += metrics.line + unit/2
+		}
 		g.list = panelRect{0, g.header.y + g.header.height, g.width, max(1, len(p.Rows)) * g.row}
 		inner := g.width - 2*pad
 		places := panelFooterPlace(buttonWidths, right, inner, metrics.gap, 2*unit)
@@ -329,6 +349,9 @@ func (g panelGeometry) switchRect(i, scroll int) panelRect {
 	if g.fable > 0 {
 		left = g.fable + g.metrics.gap
 	}
+	if g.mythos > 0 {
+		left += g.mythos + g.metrics.gap
+	}
 	return panelRect{action.x + left, i*g.row + (g.row-g.metrics.control)/2 - scroll, action.width - left, g.metrics.control}
 }
 
@@ -336,6 +359,15 @@ func (g panelGeometry) switchRect(i, scroll int) panelRect {
 func (g panelGeometry) fableRect(i, scroll int) panelRect {
 	r := g.switchRect(i, scroll)
 	return panelRect{g.columns[len(g.columns)-1].x, r.y, g.fable, r.height}
+}
+
+func (g panelGeometry) mythosRect(i, scroll int) panelRect {
+	r := g.fableRect(i, scroll)
+	if g.fable > 0 {
+		r.x += g.fable + g.metrics.gap
+	}
+	r.width = g.mythos
+	return r
 }
 
 func (g panelGeometry) maxScroll() int { return max(0, g.content-g.list.height) }
@@ -371,6 +403,9 @@ func panelSummary(columns []Column, row PanelRow) string {
 	}
 	if row.Fable {
 		parts = append(parts, "Fable store")
+	}
+	if row.MythosLogin != "" {
+		parts = append(parts, row.MythosLogin)
 	}
 	return strings.Join(parts, ", ")
 }

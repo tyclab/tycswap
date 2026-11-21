@@ -11,6 +11,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ import (
 	codexauto "github.com/tyclab/tycswap/internal/codex/autoswitch"
 	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
@@ -597,3 +599,34 @@ var (
 	_ web.AutoFacade     = (*autoFacade)(nil)
 	_ autoEngine         = (*autoswitch.Engine)(nil)
 )
+
+type dashboardAccounts struct {
+	*core.Switcher
+	*dashboard
+}
+
+func (d *dashboard) SwitchMythos(id string) (map[string]any, error) { return switchMythos(d.sw, id) }
+func (d *dashboard) SessionMoves(id string) ([]string, error)       { return sessionMoveChoices(d.sw, id) }
+func (d *dashboard) UseSession(id, dest string) error {
+	if !sessionUUID.MatchString(id) || dest != "default" && dest != "mythos" && dest != "fable" {
+		return cerr.Validation("invalid session or login")
+	}
+	_, err := placeSession(d.sw, id, "", "", dest, false)
+	if errors.Is(err, errNoMythosLogin) || errors.Is(err, errNoMythosQuota) {
+		return cerr.Validation("%s", err).Wrap(err)
+	}
+	return err
+}
+func (d *dashboard) NextStartModel() (string, error) { return store.NextStartModel(d.sw.BackupDir()) }
+func (d *dashboard) SetNextStartModel(model string) error {
+	return store.SetNextStartModel(d.sw.BackupDir(), model)
+}
+func (d *dashboard) SetModels(id string, models []string) error {
+	if models == nil {
+		return cerr.Validation("missing models")
+	}
+	if len(models) == 0 {
+		return lifecycle.ClearModels(d.sw.Store, id)
+	}
+	return lifecycle.SetModels(d.sw.Store, id, models)
+}

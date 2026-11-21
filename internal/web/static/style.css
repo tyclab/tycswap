@@ -208,10 +208,18 @@ p { margin: 0; }
 .hdr-none { font-size: var(--t12); }
 .hdr-stack { display: grid; gap: 2px; min-width: 0; }
 .hdr-fable { display: inline-flex; align-items: center; gap: var(--s2); min-width: 0; font-size: var(--t12); color: var(--bar-muted); }
+.hdr-mythos { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; font-size: var(--t12); color: var(--bar-muted); }
+.hdr-mythos-detail { flex: none; }
 .top .slot-chip { background: var(--brand); color: var(--brand-tile); }
 @media (max-width: 900px) { .sess-tbl .c-title { max-width: 320px; }
 .sess-tbl .c-title .title { display: block; font-weight: 600; max-width: 320px; }
-.hdr-acct { display: none; } }
+.hdr-acct { display: none; }
+.top:has(.hdr-mythos) { flex-wrap: wrap; }
+.hdr-acct:has(.hdr-mythos) { display: block; flex-basis: 100%; order: 1; border: 0; padding: 0; margin: 0; }
+.hdr-acct:has(.hdr-mythos) .hdr-meters { display: none; }
+.hdr-mythos { flex-wrap: wrap; column-gap: var(--s2); row-gap: 1px; }
+.hdr-mythos-detail { flex-shrink: 1; overflow-wrap: anywhere; }
+}
 .conn { display: inline-flex; align-items: center; gap: var(--s2); font-size: var(--t12); color: var(--bar-fg-2); padding: 4px 11px; border: 1px solid var(--bar-line); border-radius: 999px; white-space: nowrap; background: rgba(255, 255, 255, .04); }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--muted); }
 .dot-on { background: var(--good); box-shadow: 0 0 0 3px rgba(34, 197, 94, .22); }
@@ -478,6 +486,12 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 .sess-tbl .c-status { width: 92px; }
 .sess-tbl .c-started { width: 110px; }
 .sess-tbl .c-actions { width: 80px; }
+.session-actions { display: grid; justify-items: end; gap: 4px; }
+.session-move-error { max-width: 18em; white-space: normal; overflow-wrap: anywhere; }
+.row-actions .cell-sub { max-width: 14em; white-space: normal; }
+.acct-tbl .row-actions { flex-wrap: wrap; }
+.acct-tbl .c-acct { overflow-wrap: anywhere; }
+.modal h2, #next-mythos-error { overflow-wrap: anywhere; }
 
 /* ---------- modal ---------- */
 .modal { border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--fg); padding: 0; width: min(480px, calc(100vw - 2 * var(--gutter))); box-shadow: var(--shadow-pop); }
@@ -502,6 +516,8 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 
 /* ---------- phone: accounts as designed cards ---------- */
 @media (max-width: 719px) {
+  #accounts-sub { max-width: 100%; min-width: 0; }
+  #accounts-sub .chip { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
   .acct-tbl thead { display: none; }
   .acct-tbl, .acct-tbl tbody { display: block; }
   .acct-tbl tr { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--s2) var(--s2); padding: var(--s3); border: 1px solid var(--line); border-radius: 11px; margin-bottom: var(--s2); background: var(--card); }

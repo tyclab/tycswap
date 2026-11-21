@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/atomicfile"
@@ -29,18 +30,108 @@ func AccountIdentityDigest(email, org string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-func (s *Store) MythosLoginReady(data *SequenceData, num string) (string, bool) {
+type MythosLoginInfo struct {
+	Dir      string
+	SignedIn bool
+	Ready    bool // Marked, enabled OAuth account with its own signed-in credential.
+}
+
+// MythosLogin reads the independent login. Marked OAuth accounts without a
+// credential still need a sign-in. A filesystem error is reported separately.
+func (s *Store) MythosLogin(data *SequenceData, num string) (MythosLoginInfo, error) {
 	rec, ok := recordFor(data, num)
-	if !ok || DisabledFrom(data, num) || kindFrom(data, num) != "oauth" || !MythosFrom(data, num) {
-		return "", false
+	if !ok || kindFrom(data, num) != "oauth" {
+		return MythosLoginInfo{}, nil
 	}
 	email, org := strField(rec, "email"), strField(rec, "organizationUuid")
-	dir := MythosLoginDir(s.BackupDir(), email, org)
-	raw, err := os.ReadFile(filepath.Join(dir, ccfile.CredentialsFileName))
-	if err != nil || oauth.ExtractAccessToken(string(raw)) == "" {
+	login := MythosLoginInfo{Dir: MythosLoginDir(s.BackupDir(), email, org)}
+	marked := MythosFrom(data, num)
+	raw, err := os.ReadFile(filepath.Join(login.Dir, ccfile.CredentialsFileName))
+	if os.IsNotExist(err) {
+		if !marked {
+			return MythosLoginInfo{}, nil
+		}
+		return login, nil
+	}
+	if err != nil {
+		return login, err
+	}
+	login.SignedIn = oauth.ExtractAccessToken(string(raw)) != ""
+	login.Ready = marked && !DisabledFrom(data, num) && login.SignedIn
+	return login, nil
+}
+
+func (s *Store) MythosLoginReady(data *SequenceData, num string) (string, bool) {
+	// The ranker never needs to inspect an unmarked or disabled account's login.
+	if DisabledFrom(data, num) || !MythosFrom(data, num) {
 		return "", false
 	}
-	return dir, true
+	login, _ := s.MythosLogin(data, num)
+	if !login.Ready {
+		return "", false
+	}
+	return login.Dir, true
+}
+
+// SelectedMythosAccount resolves the identity without guessing through an
+// unreadable credential. Empty means it is no longer a ready, eligible login.
+func (s *Store) SelectedMythosAccount(data *SequenceData, digest string) (string, error) {
+	if data == nil || data.Accounts == nil || data.Sequence == nil {
+		return "", fmt.Errorf("the account roster is unavailable or incomplete")
+	}
+	if digest == "" {
+		return "", nil
+	}
+	var unreadable error
+	for _, n := range data.Sequence {
+		num := strconv.Itoa(n)
+		rec, ok := recordFor(data, num)
+		email, validEmail := rec["email"].(string)
+		org, validOrg := rec["organizationUuid"].(string)
+		if !ok || !validEmail || email == "" {
+			unreadable = fmt.Errorf("cannot verify the identity of Account-%s", num)
+			continue
+		}
+		if AccountIdentityDigest(email, org) != digest {
+			if !validOrg {
+				unreadable = fmt.Errorf("cannot verify the organization of Account-%s", num)
+			}
+			continue
+		}
+		// An absent mark or disabled flag is the normal false representation.
+		// A value of another type cannot authorize deleting a saved selection.
+		for _, field := range []string{"mythos", "disabled"} {
+			if value, present := rec[field]; present {
+				if _, ok := value.(bool); !ok {
+					return "", fmt.Errorf("cannot verify %s for Account-%s", field, num)
+				}
+			}
+		}
+		if DisabledFrom(data, num) || !MythosFrom(data, num) {
+			return "", nil
+		}
+		login, err := s.MythosLogin(data, num)
+		if err != nil {
+			return "", err
+		}
+		if login.Ready {
+			return num, nil
+		}
+	}
+	return "", unreadable
+}
+
+// ClearInvalidMythosSelection runs under the root lock with a verified roster.
+func (s *Store) ClearInvalidMythosSelection(data *SequenceData) error {
+	digest, err := SelectedMythosDigest(s.BackupDir())
+	if err != nil || digest == "" {
+		return err
+	}
+	num, err := s.SelectedMythosAccount(data, digest)
+	if err != nil || num != "" {
+		return err
+	}
+	return os.Remove(filepath.Join(s.BackupDir(), "mythos", "selected"))
 }
 
 func SelectedMythosDigest(root string) (string, error) {

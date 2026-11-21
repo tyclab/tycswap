@@ -39,6 +39,8 @@ tycswap alias <NUM|EMAIL|ALIAS> --unset       remove an account's alias
 tycswap move <NUM|EMAIL|ALIAS> <SLOT>         assign an account to a slot (swaps if taken)
 tycswap swap <A> <B>                          exchange two accounts' slot numbers
 tycswap start [--account ID] [--] [command [args...]]
+tycswap start --mythos [--account ID]
+tycswap start --next {mythos|clear}
                                             choose a startup login, then launch once
 tycswap start --allow ID | --disallow ID | --list
                                             manage startup marks (Claude accounts)
@@ -414,6 +416,7 @@ tycswap switch <NUM|EMAIL|ALIAS> [--json] [--force] [--yes] [--debug]
 tycswap switch --strategy {best|next-available} [--json] [--debug]
 tycswap switch --store fable <NUM|EMAIL|ALIAS> [--json] [--debug]
 tycswap switch --store fable --empty [--json] [--debug]
+tycswap switch --store mythos <NUM|EMAIL|ALIAS> [--json] [--debug]
 ```
 
 ### Options
@@ -424,11 +427,20 @@ tycswap switch --store fable --empty [--json] [--debug]
 | `--force` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; activates without backing up the current login first. When the live credential already belongs to the target while `~/.claude.json` names another slot, it repairs the config instead, as without `--force` (DESIGN A68). |
 | `--yes` / `-y` | flag | off | Only with `switch <NUM\|EMAIL\|ALIAS>`; answers the API-key confirmation below, for scripts. |
 | `--strategy` | choice `best` \| `next-available` | unset | Only with bare `switch` (no target). |
-| `--store` | `fable` \| `default` | `default` | Only with `switch`. `fable` switches the Fable store (below) and takes an account or `--empty`, never `--strategy` or `--force`; with it the account, `--store fable` and the options come in any order. `default` is the switch without `--store`, whose account comes before its options. |
+| `--store` | `mythos` \| `fable` \| `default` | `default` | Only with `switch`. `fable` switches the Fable store (below) and takes an account or `--empty`, never `--strategy` or `--force`; with it the account, `--store fable` and the options come in any order. `default` is the switch without `--store`, whose account comes before its options. |
 | `--empty` | flag | off | Only with `--store fable`: turns the Fable store off. |
 | `--debug` | flag | off | — |
 
 ### Description
+
+**Use for Mythos** selects an enabled, marked account with a ready independent
+login and moves running linked Mythos sessions to it. Each move checks the session
+binding and the client refresh lock. A refusal names the affected session. The
+selection can succeed while a busy session stays on its current login. Repeat
+the command to retry the pending moves. A change holds automatic Mythos moves
+for the switch cooldown. The default and Fable stores have their own selections.
+`list` and `status` show the selected account, counted windows and linked session
+count. Their JSON field is `mythos`. An unavailable count is null.
 
 Bare `tycswap switch` rotates to the next account in the sequence. `tycswap switch
 <NUM|EMAIL|ALIAS>` activates a specific account. `--strategy best` takes
@@ -1481,6 +1493,17 @@ tycswap start --check
 
 ### Description
 
+`start --mythos` opens a new native Claude conversation on Mythos. Use
+`--account ID` to choose a specific independent login. **Start Mythos session…**
+in the terminal menu offers the ready accounts.
+
+`start --next mythos` requests Mythos for the next bare native Claude start on
+this box on Linux, WSL or Windows. On macOS the control reports that independent
+starts are unavailable. An explicit model, resume, or command with arguments leaves the request
+pending. Two concurrent bare starts can claim it only once. Use
+`start --next clear` to cancel. **Set next start** on the menu, dashboard and
+tray reads and changes this same request.
+
 The management forms set, clear or list the operator's startup marks. They are
 exclusive with each other and with launching. IDs use the ordinary account
 resolution above. Marks are an optional boolean `startLogin` in Claude account
@@ -1732,6 +1755,13 @@ requires native Windows integration validation; cross-vet is insufficient.
 A direct independent session keeps its first recorded account identity across observations. A linked session updates its binding on a committed move. A resume uses the saved binding and rechecks the requested model’s available quota.
 
 ## tycswap use
+
+The dashboard Sessions tab, terminal menu and tray show **Move to Mythos
+login**, **Move to Fable store** and **Move to default login** for a running
+linked session with a usable destination. The displayed choices come from the
+same placement checks as an explicit UUID. A click checks the current binding
+again, including any client refresh in progress. A legacy session without a
+link has no move actions.
 
 ```text
 tycswap use <mythos|fable|default> [--session ID]
@@ -3615,6 +3645,10 @@ anything else `500`.
 | `POST /api/accounts/add-token` | `{"token", "email", "slot", "alias", "baseUrl"}` | `tycswap add-token [--base-url]` (the token is never echoed or logged); `503` with a `baseUrl` when the facade cannot store one | `400` empty token, the token `-`, or a slot that is not a whole number >= 1; `404` alias given with neither slot nor a findable email (the account was added) |
 | `POST /api/accounts/{key}/enable`, `/disable`, `/remove` | | `tycswap enable`, `disable`, `remove -y`; for a `codex:` key `tycswap codex enable`, `disable`, `remove -y`, holding the Codex store lock throughout | `400` bare key, `404` unknown provider, `503` a `codex:` key without Codex accounts, `409` the Codex store stayed busy (a Codex switch or a token refresh held it) for 10 s |
 | `POST /api/accounts/{key}/start-login/allow`, `/start-login/disallow` | | `tycswap start --allow ID` / `--disallow ID`; updates Claude startup metadata only | `400` bare or Codex key, `404` unknown provider/account, `503` account operations unavailable |
+| `POST /api/switch/{key}?store=mythos` | | Select the independent Mythos login and move its linked sessions | A refusal identifies an unavailable account or a pending move |
+| `POST /api/sessions/{id}/use` | `{"store":"mythos"}` | Move one linked session to `mythos`, `fable` or `default` | Reports the move guard’s refusal |
+| `POST /api/accounts/{key}/models` | `{"models":["opus","fable"]}` | Edit preferred models for a Claude account. An empty array restores the derived allocation | Missing or invalid models are refused |
+| `POST /api/sessions/next-start` | `{"model":"mythos"}` | Request the next bare start. An empty string clears it | Missing or unsupported model is refused |
 | `POST /api/accounts/{key}/mythos/allow`, `/mythos/disallow` | | `tycswap mythos --allow ID` / `--disallow ID` (DESIGN A106) | `400` bare or Codex key, `404` unknown provider/account, `503` account operations without the mark |
 | `POST /api/accounts/{key}/alias` | `{"alias": "<name>"}` (empty unsets) | `tycswap alias` | `400` bare key, `404` a `codex:` key or an unknown provider |
 | `POST /api/accounts/{key}/move` | `{"slot": "<n>"}` | `tycswap move` | `400` missing slot or bare key, `404` a `codex:` key or an unknown provider |

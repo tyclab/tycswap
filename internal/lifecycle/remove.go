@@ -144,7 +144,7 @@ func RemoveAccount(s *store.Store, identifier string, assumeYes bool) error {
 			s.Log.Infof("Removed account %s: %s", accountNum, email)
 		}
 		emitLine(printer.Accent("Removed") + " Account-" + accountNum + " (" + email + ")")
-		return nil
+		return s.ClearInvalidMythosSelection(data)
 	})
 }
 

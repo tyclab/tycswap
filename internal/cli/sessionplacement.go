@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/paths"
@@ -122,11 +123,8 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 		}()
 		explicit := requested != ""
 		wanted, model := requested, requested
-		if explicit && wanted == "default" {
-			model = ""
-			if reporting.SessionLoginForFamily(oldFamily) == "default" {
-				model = oldFamily
-			}
+		if explicit {
+			model = explicitSessionModel(wanted, oldFamily)
 		}
 		if !explicit {
 			rec.Family = family
@@ -232,7 +230,7 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 		}
 		if isMythosDirectory(root, source) && !explicit {
 			set, err := loadStartSettings(root)
-			if err != nil || !set.Enabled {
+			if err != nil {
 				return target, "", err
 			}
 			target, err = mythosTickPlacement(view, source, set)
@@ -254,7 +252,7 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 				return target, "", err
 			}
 			if parked || readers.Identity != "" {
-				return target, "", errors.New("the Fable login is reserved for a parked or recovered native session")
+				return target, "", cerr.Validation("the Fable login is reserved for a parked or recovered native session")
 			}
 		}
 		st := view.FableStore()
@@ -270,10 +268,10 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 					return target, "", err
 				}
 			} else if explicit || rec.Wanted == "fable" {
-				return target, "", errors.New(noFableStartLogin)
+				return target, "", cerr.Validation(noFableStartLogin)
 			}
 		} else if explicit || rec.Wanted == "fable" {
-			return target, "", fmt.Errorf("the Fable store has no usable login (%s)", st.Reason)
+			return target, "", cerr.Validation("the Fable store has no usable login (%s)", st.Reason)
 		}
 	}
 	if source == target.dir && !explicit {
@@ -285,19 +283,19 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 	}
 	owner := view.ResolveOwnerSlot(data)
 	if owner.Slot == "" || view.AccountKindFor(owner.Slot) == "oauth" && (owner.Source == store.SourceConfig || owner.Source == store.SourceLastInstall) {
-		return target, "", fmt.Errorf("cannot verify the current %s login for the session", wanted)
+		return target, "", cerr.Validation("cannot verify the current %s login for the session", wanted)
 	}
 	num, email, org, err := view.ResolveAccountFrom(data, owner.Slot)
 	if err != nil {
 		return target, "", err
 	}
 	if store.DisabledFrom(data, num) {
-		return target, "", fmt.Errorf("Account-%s is disabled", num)
+		return target, "", cerr.Validation("Account-%s is disabled", num)
 	}
 	id := usage.Identity{Email: email, OrgUUID: org}
 	entry := view.Usage.Entries(map[string]usage.Identity{num: id})[num]
 	if room := startModelHeadroom(entry, model, view.Clk.Now()); room != nil && *room <= 0 {
-		return target, "", fmt.Errorf("Account-%s has no remaining quota for this session", num)
+		return target, "", cerr.Validation("Account-%s has no remaining quota for this session", num)
 	}
 	target.number, target.name = num, store.AccountNameFrom(data, num)
 	if models, set := store.ModelsFrom(data, num); set && (model == "opus" || model == "fable") && !slices.Contains(models, model) {
@@ -316,4 +314,49 @@ func checkLinkedSession(id, model string) string {
 		return err.Error()
 	}
 	return result.line
+}
+
+func explicitSessionModel(store, family string) string {
+	if store != "default" {
+		return store
+	}
+	if reporting.SessionLoginForFamily(family) == "default" {
+		return family
+	}
+	return ""
+}
+
+// sessionMoveChoices previews explicit use against the current binding. The command
+// checks it again under both store locks when the operator chooses a destination.
+func sessionMoveChoices(sw *core.Switcher, id string) ([]string, error) {
+	if runtime.GOOS != "linux" || !sessionUUID.MatchString(id) {
+		return nil, cerr.AccountNotFound("session has no linked login binding")
+	}
+	view := sw.Store.WithoutLineageWrites()
+	view.OAuth, view.Log = nil, nil
+	rec, err := reporting.InspectSessionLink(view.BackupDir(), id, view.Clk.Now())
+	if err != nil {
+		return nil, err
+	}
+	rec.ResumeMythos = ""
+	choices := []string{}
+	var diagnostics, reasons []error
+	for _, dest := range []string{"mythos", "fable", "default"} {
+		target, _, err := sessionDestination(view, &rec, dest, explicitSessionModel(dest, rec.Family), true)
+		if err == nil {
+			err = reporting.SessionTargetAvailable(view.BackupDir(), rec.Target, target.dir)
+		}
+		if err != nil {
+			reasons = append(reasons, err)
+			if cerr.TypeName(err) != string(cerr.KindValidation) && !errors.Is(err, errNoMythosQuota) && !errors.Is(err, errNoMythosLogin) {
+				diagnostics = append(diagnostics, fmt.Errorf("%s: %w", dest, err))
+			}
+			continue
+		}
+		choices = append(choices, dest)
+	}
+	if len(choices) == 0 {
+		return choices, errors.Join(reasons...)
+	}
+	return choices, errors.Join(diagnostics...)
 }

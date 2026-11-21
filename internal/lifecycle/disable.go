@@ -24,6 +24,7 @@ func SetAccountDisabled(s *store.Store, identifier string, disabled bool) error 
 	}
 
 	var selected groups.Account
+	var selectionErr error
 	err := s.WithRosterLocked(func(data *store.SequenceData) error {
 		accountNum, email, org, err := s.ResolveAccountFrom(data, identifier)
 		if err != nil {
@@ -42,6 +43,9 @@ func SetAccountDisabled(s *store.Store, identifier string, disabled bool) error 
 		}
 		if rec.boolVal("disabled") == disabled {
 			emitLine(printer.Dimmed("Account-" + accountNum + " (" + email + ") is already " + verb + "."))
+			if disabled {
+				selectionErr = s.ClearInvalidMythosSelection(data)
+			}
 			return nil
 		}
 
@@ -56,6 +60,9 @@ func SetAccountDisabled(s *store.Store, identifier string, disabled bool) error 
 		data.LastUpdated = timestamp(s)
 		if err := s.WriteSequence(data); err != nil {
 			return err
+		}
+		if disabled {
+			selectionErr = s.ClearInvalidMythosSelection(data)
 		}
 		if s.Log != nil {
 			s.Log.Infof("%s account %s: %s", Verb, accountNum, email)
@@ -85,7 +92,7 @@ func SetAccountDisabled(s *store.Store, identifier string, disabled bool) error 
 	if err != nil || !disabled {
 		return err
 	}
-	return withdrawDisabled(s, &selected, func() bool { return true }, reportWithdrawal)
+	return errors.Join(selectionErr, withdrawDisabled(s, &selected, func() bool { return true }, reportWithdrawal))
 }
 
 func sequenceFileExists(s *store.Store) bool {

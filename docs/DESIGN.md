@@ -9475,3 +9475,25 @@ as soon as the credential matches an account backup or verified chain,
 for example after an identity-resolving read and harvest or installation
 of a known login. While that evidence is missing, the refusal can persist
 indefinitely. Its frequency and duration on a live machine were not measured.
+
+## A110. Selecting a Mythos login and starting once on Mythos
+
+**Use for Mythos** resolves the requested account under the roster lock and
+records the independent login's identity. A hand switch holds automatic
+Mythos moves for the configured switch cooldown (A94). Each running linked
+Mythos session moves through the A109 guard. If one source is busy, its link
+stays in place and the result identifies the pending move. A retry against
+the selected account can finish these moves. Disabling or unmarking the account
+or losing its ready login invalidates that selection.
+
+The CLI, dashboard and tray read the same account and usage snapshot. The
+linked-session count follows the actual link targets. Unavailable state carries
+a reason. A session's menu of destinations previews an explicit A109 move.
+The command checks the binding, destination and refresh lock again on click.
+
+The menu, dashboard and tray share one **Set next start** preference with
+`start --next mythos` and `start --next clear`. A bare start claims the saved
+request by identity. A failed launch can restore that request without
+overwriting a newer choice. An explicit `start --mythos --account ID` uses
+the selected account for that invocation. The terminal menu runs it in the
+terminal that opened the menu.
