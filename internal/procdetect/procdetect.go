@@ -12,19 +12,26 @@ package procdetect
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/paths"
 )
+
+var SessionUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // ClaudeSession is a running Claude Code session read from
 // <claude_dir>/sessions/{pid}.json.
 type ClaudeSession struct {
 	PID        int
+	ProcStart  string    `json:"-"` // verified start stamp for LocalSessions
+	PIDOnlyAt  time.Time `json:"-"` // registry mtime when the native record has no procStart
 	SessionID  string
 	CWD        string
 	StartedAt  int64   // epoch milliseconds
@@ -74,6 +81,15 @@ func ListSessions(claudeDir string) []ClaudeSession {
 // list_sessions, whose in-loop try/except catches per-file errors while a
 // failure iterating sessions_dir.glob("*.json") propagates to the caller.
 func ListSessionsErr(claudeDir string) ([]ClaudeSession, error) {
+	return listSessions(claudeDir, false)
+}
+
+// LocalSessions returns only registry entries that can identify a local session link owner.
+func LocalSessions(claudeDir string) ([]ClaudeSession, error) {
+	return listSessions(claudeDir, true)
+}
+
+func listSessions(claudeDir string, localOnly bool) ([]ClaudeSession, error) {
 	out := []ClaudeSession{}
 	sessionsDir := filepath.Join(claudeDir, "sessions")
 	isDir, err := statDir(sessionsDir)
@@ -88,7 +104,7 @@ func ListSessionsErr(claudeDir string) ([]ClaudeSession, error) {
 		return out, err
 	}
 	for _, path := range matches {
-		data, err := os.ReadFile(path)
+		data, modified, err := readSessionFile(path, localOnly)
 		if err != nil {
 			continue
 		}
@@ -104,11 +120,22 @@ func ListSessionsErr(claudeDir string) ([]ClaudeSession, error) {
 		if !ok {
 			continue
 		}
-		if !RecordAlive(pid, m["procStart"], getString(m, "pidDomain", "")) {
+		var localStart string
+		if localOnly {
+			localStart, ok = localRecordStart(pid, m)
+			if !ok || filepath.Base(path) != strconv.Itoa(pid)+".json" || !SessionUUID.MatchString(getString(m, "sessionId", "")) {
+				continue
+			}
+		} else if !RecordAlive(pid, m["procStart"], getString(m, "pidDomain", "")) {
 			continue
+		}
+		if _, stamped := m["procStart"]; stamped {
+			modified = time.Time{}
 		}
 		out = append(out, ClaudeSession{
 			PID:        pid,
+			ProcStart:  localStart,
+			PIDOnlyAt:  modified,
 			SessionID:  getString(m, "sessionId", ""),
 			CWD:        getString(m, "cwd", ""),
 			StartedAt:  getInt64(m, "startedAt", 0),
@@ -119,6 +146,26 @@ func ListSessionsErr(claudeDir string) ([]ClaudeSession, error) {
 		})
 	}
 	return out, nil
+}
+
+// Read the registry timestamp and data from the same file if it can be used
+// to join a PID-only native record to a local launch.
+func readSessionFile(path string, local bool) ([]byte, time.Time, error) {
+	if !local {
+		data, err := os.ReadFile(path)
+		return data, time.Time{}, err
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	data, err := io.ReadAll(file)
+	return data, info.ModTime(), err
 }
 
 // ListIDEInstances globs <claudeDir>/ide/*.lock and returns the IDE

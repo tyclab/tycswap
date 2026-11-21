@@ -9404,6 +9404,21 @@ retains the identity needed to resume after a long absence. Direct sessions
 keep the earlier placement behavior, including native Windows and macOS.
 An unreadable or uncreatable launch link gives one notice and a direct launch.
 
+**Older writers and rollback.** A 0.19.0 status-line writer rewrites the
+whole session map using the fields it knows (`family`, `seenAt`, `store`
+and `binding`). That write drops the `link` field even on other sessions'
+rows. The running process still has its link. A current status-line
+observation or `tycswap use` can bind it again, just as when SessionStart
+never recorded it. Outside the session, `use --session ID` finds the
+session's local process and matches its PID and start time to a live link.
+If the native process record has only a PID, its timestamp must be at least
+as recent as the link. A direct observation with the session UUID and link
+can repair an older PID-only record's missing binding. A conflicting owner
+or ambiguous process match refuses the repair. A rollback to 0.19.0
+makes its status lines classify linked Fable and independent Mythos sessions
+as default-login sessions until those sessions restart. Their links still
+point at the same credentials.
+
 **Moving a session.** A native refresh trace showed the client acquiring
 `.oauth_refresh.lock` through its link before taking the lock beside the
 resolved storage directory. It then re-read `.credentials.json` through the
@@ -9416,12 +9431,13 @@ new link and reads the destination grant. The mover leaves the client's lock
 in place regardless of its age.
 
 Status-line and hook observers and the scheduled tick try the refresh lock
-once. A busy source defers placement. An explicit `use` may wait up to the
-client's acquisition timeout (9 s), with the tycswap store and session-record
-locks free. The final move validates the current binding, source, eligible
-destination and account allocation under the tycswap locks. The tick can
-rotate the selected Mythos login at a known limit when another ready login
-has room. An automatic allocation exception requires an affirmative answer
+once. A busy source defers placement. Explicit `use` retries a busy client
+lock for up to 9 s. Each attempt takes the tycswap store lock, then the
+session-record lock, and rechecks the binding, source, eligible destination
+and account allocation. Only a move ready to commit tries the source's
+refresh lock. A busy attempt releases the tycswap locks before retrying.
+The tick can rotate the selected Mythos login at a known limit when another
+ready login has room. An automatic allocation exception requires an affirmative answer
 for this session and destination. A separate process owns that question and
 rechecks the proposal after the answer. A later observation can replace an
 asker that has died.

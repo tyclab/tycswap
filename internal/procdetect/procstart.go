@@ -29,6 +29,23 @@ func RecordAlive(pid int, procStart any, pidDomain string) bool {
 	return IsPIDAlive(pid)
 }
 
+// A foreign record or an unreadable process stamp cannot establish ownership.
+// Unlike RecordAlive, this path never falls back to kill(pid, 0).
+func localRecordStart(pid int, record map[string]any) (string, bool) {
+	if value, present := record["pidDomain"]; present {
+		domain, valid := value.(string)
+		if !valid || !sameNamespace(domain) {
+			return "", false
+		}
+	}
+	start, ok := ProcStartTime(pid)
+	if !ok || pid <= 1 {
+		return "", false
+	}
+	value, present := record["procStart"]
+	return start, !present || procStartText(value) == start
+}
+
 // ProcStartTime is field 22 of <procRoot>/<pid>/stat. The command name, field
 // 2, may hold spaces and parentheses, so fields count from its last ")".
 func ProcStartTime(pid int) (string, bool) {

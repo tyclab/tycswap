@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -95,7 +96,20 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 	if requested != "" {
 		update = reporting.UseSessionLink
 	}
+	var repair []reporting.SessionLinkRecovery
+	if expected == "" {
+		source := reporting.SessionLinkRecovery{ObservedFamily: family}
+		if path != "" && path == sessionLinkPath {
+			source.LaunchFamily = os.Getenv(startFamilyEnv)
+			if digest := os.Getenv(recoveredFableEnv); validMythosDigest(digest) {
+				source.FableBinding = "fable/" + digest
+			}
+		}
+		repair = append(repair, source)
+	}
 	err := update(view.BackupDir(), id, path, view.Clk.Now(), func(rec *reporting.SessionLink) error {
+		// Explicit use can retry after a client refresh. Each attempt produces its own result.
+		result = sessionMoveResult{}
 		if expected != "" && (rec.Question != expected || rec.Family != family) {
 			return errors.New("the session changed while awaiting the placement answer")
 		}
@@ -175,7 +189,7 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 			result.line = modelHint(rec.Wanted)
 		}
 		return nil
-	})
+	}, repair...)
 	return result, err
 }
 

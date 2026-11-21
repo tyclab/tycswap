@@ -7,12 +7,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
+	"github.com/tyclab/tycswap/internal/procdetect"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/store"
 )
@@ -25,7 +25,7 @@ var startWindows = platform.IsWindows
 // transcriptTail is how much of a transcript's end start reads for its model.
 const transcriptTail = 1 << 20
 
-var sessionUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var sessionUUID = procdetect.SessionUUID
 
 // startEnvironment is the child environment for argv (program first) when no
 // override holds, whether the session starts on the Fable store, where start

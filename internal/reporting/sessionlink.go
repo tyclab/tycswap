@@ -3,6 +3,7 @@ package reporting
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/atomicfile"
 	"github.com/tyclab/tycswap/internal/cclock"
+	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/procdetect"
@@ -227,16 +229,30 @@ func LinkedSessions(root string) ([]SessionLink, error) {
 	return links, nil
 }
 
-func withLinkRecords(root string, fn func(map[string]defaultSessionModel) error) error {
+func withLinkRecords(root string, deadline time.Time, fn func(map[string]defaultSessionModel) error) error {
 	if _, err := linksDir(root); err != nil {
 		return err
 	}
-	return withSessionRecords(root, fn)
+	return withSessionRecords(root, deadline, fn)
 }
 
-func withSessionRecords(root string, fn func(map[string]defaultSessionModel) error) error {
-	return filelock.New(filepath.Join(root, ".lock"), filelock.DefaultTimeout).With(func() error {
-		return filelock.New(filepath.Join(root, ".default_models.lock"), filelock.DefaultTimeout).With(func() error {
+func withSessionRecords(root string, deadline time.Time, fn func(map[string]defaultSessionModel) error) error {
+	withLock := func(name string, body func() error) error {
+		timeout := filelock.DefaultTimeout
+		if !deadline.IsZero() {
+			timeout = time.Until(deadline)
+			if timeout <= 0 {
+				return cerr.Lock("Timed out waiting for %s", name)
+			}
+		}
+		return filelock.New(filepath.Join(root, name), timeout).With(body)
+	}
+	return withLock(".lock", func() error {
+		return withLock(".default_models.lock", func() error {
+			// flock can succeed on its final poll, just past the acquisition deadline.
+			if !deadline.IsZero() && !time.Now().Before(deadline) {
+				return cerr.Lock("Timed out waiting for the session store locks")
+			}
 			records, err := loadDefaultSessionModels(root)
 			if err != nil {
 				return err
@@ -250,63 +266,79 @@ func BindSessionLink(root, id, path, model, scope string, now time.Time) error {
 	if id == "" || !IsSessionLink(root, path) {
 		return errors.New("missing session id or invalid session link")
 	}
-	return withLinkRecords(root, func(records map[string]defaultSessionModel) error {
-		target, err := ResolveSessionLink(root, path)
-		if err != nil {
-			return err
-		}
-		targetStore, _ := targetScope(root, target)
-		binding := ""
-		if targetStore == "fable" && strings.HasPrefix(scope, "fable/") {
-			binding, scope = scope, "fable"
-		}
-		if targetStore != scope {
-			return errors.New("session store changed before binding")
-		}
-		token := filepath.Base(path)
-		pid, start, _ := linkOwner(token)
-		if !procdetect.RecordAlive(pid, start, "") {
-			return errors.New("session process ended")
-		}
-		for other, rec := range records {
-			if rec.Link != nil && rec.Link.Token == token && id != other {
-				return errors.New("link is already bound to another session")
-			}
-		}
-		old, ok, err := savedLink(root, id, records[id])
-		if err != nil {
-			return err
-		}
-		if ok && old.Token != token && procdetect.RecordAlive(old.PID, old.ProcStart, "") {
-			return errors.New("session already has a live link")
-		}
-		if ok && old.Token == token {
-			return nil
-		}
-		family, wanted := ClaudeFamily(model), old.Wanted
-		if family == "" {
-			family = old.Family
-		} else if family != old.Family && wanted != "" && SessionLoginForFamily(old.Family) == wanted && SessionLoginForFamily(family) != wanted {
-			wanted = ""
-		}
-		link := SessionLink{Token: token, PID: pid, ProcStart: start, Target: target, Wanted: wanted, Family: family, ObservePending: true,
-			SharedMythos: family == "mythos" && targetStore == "" && (!ok || old.SharedMythos)}
-		if ok && (wanted == "mythos" || wanted == "" && family == "mythos") {
-			digest := old.ResumeMythos
-			if digest == "" {
-				if recorded, dedicated := strings.CutPrefix(records[id].Store, "mythos/"); dedicated {
-					digest = recorded
-				}
-			}
-			if digest != "" && targetStore != "mythos/"+digest {
-				link.ResumeMythos = digest
-			}
-		}
-		rec := defaultSessionModel{Family: link.Family, Store: targetStore, Binding: binding, Link: &link, SeenAt: float64(now.UnixNano()) / 1e9}
-		records[id] = rec
-		expireSessionModels(records, now)
-		return saveSessionModels(root, records)
+	return withLinkRecords(root, time.Time{}, func(records map[string]defaultSessionModel) error {
+		return bindSessionLink(root, id, path, model, scope, true, now, records)
 	})
+}
+
+// bindSessionLink runs with both tycswap locks held and saves the record before returning.
+func bindSessionLink(root, id, path, model, scope string, sharedMythos bool, now time.Time, records map[string]defaultSessionModel) error {
+	target, err := ResolveSessionLink(root, path)
+	if err != nil {
+		return err
+	}
+	targetStore, _ := targetScope(root, target)
+	binding := ""
+	if targetStore == "fable" && strings.HasPrefix(scope, "fable/") {
+		binding, scope = scope, "fable"
+	}
+	if targetStore != scope {
+		return errors.New("session store changed before binding")
+	}
+	token := filepath.Base(path)
+	pid, start, _ := linkOwner(token)
+	if actual, alive := procdetect.ProcStartTime(pid); !alive || actual != start {
+		return errors.New("session process ended")
+	}
+	for other, rec := range records {
+		if id != other && recordNamesToken(rec, token) {
+			return errors.New("link is already bound to another session")
+		}
+	}
+	old, ok, err := savedLink(root, id, records[id])
+	if err != nil {
+		return err
+	}
+	if ok && old.Token != token && procdetect.RecordAlive(old.PID, old.ProcStart, "") {
+		return errors.New("session already has a live link")
+	}
+	if ok && old.Token == token {
+		return nil
+	}
+	family, wanted := ClaudeFamily(model), old.Wanted
+	if family == "" {
+		family = old.Family
+	} else if family != old.Family && wanted != "" && SessionLoginForFamily(old.Family) == wanted && SessionLoginForFamily(family) != wanted {
+		wanted = ""
+	}
+	link := SessionLink{Token: token, PID: pid, ProcStart: start, Target: target, Wanted: wanted, Family: family, ObservePending: true,
+		SharedMythos: family == "mythos" && targetStore == "" && sharedMythos && (!ok || old.SharedMythos)}
+	if ok && (wanted == "mythos" || wanted == "" && family == "mythos") {
+		digest := old.ResumeMythos
+		if digest == "" {
+			if recorded, dedicated := strings.CutPrefix(records[id].Store, "mythos/"); dedicated {
+				digest = recorded
+			}
+		}
+		if digest != "" && targetStore != "mythos/"+digest {
+			link.ResumeMythos = digest
+		}
+	}
+	rec := defaultSessionModel{Family: link.Family, Store: targetStore, Binding: binding, Link: &link, SeenAt: float64(now.UnixNano()) / 1e9}
+	records[id] = rec
+	expireSessionModels(records, now)
+	return saveSessionModels(root, records)
+}
+
+// A damaged sibling still owns a token that is recognizable in its saved link.
+func recordNamesToken(rec defaultSessionModel, token string) bool {
+	if rec.bad == nil {
+		return rec.Link != nil && rec.Link.Token == token
+	}
+	var saved struct {
+		Link struct{ Token string }
+	}
+	return json.Unmarshal(rec.bad.raw, &saved) == nil && saved.Link.Token == token
 }
 
 func SessionLoginForFamily(family string) string {
@@ -369,7 +401,7 @@ func currentSessionLink(root, id, path string, records map[string]defaultSession
 		return SessionLink{}, err
 	}
 	if !ok {
-		return SessionLink{}, errors.New("session has no linked login binding")
+		return SessionLink{}, errNoSessionBinding
 	}
 	bound := filepath.Join(root, "links", link.Token)
 	if path != "" && path != bound {
@@ -385,35 +417,40 @@ func currentSessionLink(root, id, path string, records map[string]defaultSession
 	return link, nil
 }
 
-// UseSessionLink can wait for a client refresh. Read its source before waiting,
-// then verify the binding and run the decision on fresh state under both store locks.
-func UseSessionLink(root, id, path string, now time.Time, decide func(*SessionLink) error) error {
-	records, err := loadDefaultSessionModels(root)
-	if err != nil {
-		return err
-	}
-	source, err := currentSessionLink(root, id, path, records)
-	if err != nil {
-		return err
-	}
-	return withSessionRefreshLock(source.Target, cclock.DefaultTimeoutS, func() error {
-		return updateSessionLink(root, source.ID, path, now, &source, decide)
+// UseSessionLink retries client contention. Each attempt reads the binding and
+// recomputes the proposed move. The decision must have no external side effects.
+func UseSessionLink(root, id, path string, now time.Time, decide func(*SessionLink) error, recovery ...SessionLinkRecovery) error {
+	var source SessionLink
+	return cclock.RetryOAuthRefresh(func(deadline time.Time) error {
+		return updateSessionLink(root, id, path, now, deadline, &source, decide, recovery...)
 	})
 }
 
 // UpdateSessionLink defers automatic moves when the client's refresh lock is busy.
-func UpdateSessionLink(root, id, path string, now time.Time, decide func(*SessionLink) error) error {
-	return updateSessionLink(root, id, path, now, nil, decide)
+func UpdateSessionLink(root, id, path string, now time.Time, decide func(*SessionLink) error, recovery ...SessionLinkRecovery) error {
+	return updateSessionLink(root, id, path, now, time.Time{}, nil, decide, recovery...)
 }
 
-func updateSessionLink(root, id, path string, now time.Time, guarded *SessionLink, decide func(*SessionLink) error) error {
-	return withLinkRecords(root, func(records map[string]defaultSessionModel) error {
-		link, err := currentSessionLink(root, id, path, records)
+func updateSessionLink(root, id, path string, now, deadline time.Time, original *SessionLink, decide func(*SessionLink) error, recovery ...SessionLinkRecovery) error {
+	return withLinkRecords(root, deadline, func(records map[string]defaultSessionModel) error {
+		if original != nil && original.Token != "" {
+			// A legacy writer can strip this binding between attempts. Give
+			// repair the verified ID and link, and check its source before it writes.
+			id, path = original.ID, filepath.Join(root, "links", original.Token)
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			if target != original.Target {
+				return errors.New("the session binding changed while waiting for the refresh lock. Retry the move.")
+			}
+		}
+		link, err := sessionLinkForUpdate(root, id, path, records, now, recovery)
 		if err != nil {
 			return err
 		}
-		if guarded != nil && (guarded.Token != link.Token || guarded.Target != link.Target) {
-			return errors.New("the session binding changed while waiting for the refresh lock. Retry the move.")
+		if original != nil && original.Token == "" {
+			*original = link
 		}
 		id = link.ID
 		old := records[id]
@@ -443,7 +480,10 @@ func updateSessionLink(root, id, path string, now time.Time, guarded *SessionLin
 		if err := checkTarget(root, link.Target); err != nil {
 			return err
 		}
-		commit := func() error {
+		if !deadline.IsZero() && !time.Now().Before(deadline) {
+			return errors.New("timed out preparing the session move")
+		}
+		return withSessionRefreshLock(before.Target, 0, func() error {
 			bound := filepath.Join(root, "links", link.Token)
 			tmp := filepath.Join(root, "links", "."+link.Token)
 			// An interrupted mover may have left its staging link before rename.
@@ -474,11 +514,7 @@ func updateSessionLink(root, id, path string, now time.Time, guarded *SessionLin
 			// If compaction fails, the durable pending record already describes the committed move.
 			_ = saveSessionModels(root, records)
 			return nil
-		}
-		if guarded != nil {
-			return commit()
-		}
-		return withSessionRefreshLock(before.Target, 0, commit)
+		})
 	})
 }
 
@@ -507,7 +543,7 @@ func PruneSessionLinks(root string) error {
 	} else if err != nil {
 		return err
 	}
-	return withSessionRecords(root, func(records map[string]defaultSessionModel) error {
+	return withSessionRecords(root, time.Time{}, func(records map[string]defaultSessionModel) error {
 		var entries []os.DirEntry
 		dir, err := linksDir(root)
 		if err == nil {
