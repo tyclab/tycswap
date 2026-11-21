@@ -95,19 +95,35 @@ func TestUseWaitAllowsOtherCommandsAndRechecksDestination(t *testing.T) {
 	if took := time.Since(start); code != 0 || took > time.Second {
 		t.Fatalf("mythos --disallow took %s: exit %d, %q", took, code, commandNotice.String())
 	}
+	// Once the sole destination is unmarked there is no move to guard.
+	// Its eligibility refusal must arrive while the client still owns the source.
 	select {
-	case code := <-done:
+	case code = <-done:
 		done = nil
-		t.Fatalf("use returned before the client released its lock: %d, %q", code, notice.String())
-	default:
+	case <-time.After(2 * time.Second):
+		t.Fatal("use kept waiting on the refresh lock after the destination became ineligible")
 	}
-	if err := os.Remove(lock); err != nil {
-		t.Fatal(err)
+	if _, err := os.Stat(lock); err != nil {
+		t.Fatalf("lost the client's refresh lock: %v", err)
 	}
-	code = <-done
-	done = nil
 	if code != 1 || !strings.Contains(strings.ToLower(notice.String()), "mythos") {
 		t.Fatalf("use did not recheck the unmarked login: %d, %q", code, notice.String())
+	}
+	checkLinkTarget(t, link, sw.DefaultProfileDir())
+}
+
+func TestUseCurrentLoginLeavesClientRefreshAlone(t *testing.T) {
+	sw, launch := fableStartLogin(t, fableTickFixture{def: "1", off: true})
+	link := linkedTestStart(t, launch, placementSession, "opus")
+	lock := filepath.Join(sw.DefaultProfileDir(), ".oauth_refresh.lock")
+	if err := os.Mkdir(lock, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, msg := runCLI(t, []string{"use", "default", "--session", placementSession}, false, false); code != 0 {
+		t.Fatalf("request for the current login waited for a client refresh: %d, %s", code, msg)
+	}
+	if _, err := os.Stat(lock); err != nil {
+		t.Fatalf("client lost its refresh lock: %v", err)
 	}
 	checkLinkTarget(t, link, sw.DefaultProfileDir())
 }
