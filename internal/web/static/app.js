@@ -119,9 +119,10 @@
   // key ("claude:2"), never a bare slot, because slot numbers are per provider.
   function rowKey(a) { return a.key || ((a.provider || 'claude') + ':' + a.number); }
   function keyPath(a) { return encodeURIComponent(rowKey(a)); }
+  function accountIdentity(a) { return [a.alias, a.email].filter(Boolean).join(' \u00b7 '); }
   function accountLabel(a) {
-    var parts = [a.alias, a.email].filter(Boolean);
-    return '#' + a.number + (parts.length ? ' ' + parts.join(' \u00b7 ') : '');
+    var identity = accountIdentity(a);
+    return '#' + a.number + (identity ? ' ' + identity : '');
   }
   // hostOf is the host (and port) of an API-key account's base URL, which is
   // what a row shows; the whole URL is in its tooltip (DESIGN A46).
@@ -1054,7 +1055,7 @@
     var fable = fableLine(st);
     var mythos = mythosLine(st);
     if (mythos) { sig += JSON.stringify(st.mythos); }
-    if (fable) { sig += JSON.stringify([st.fable.state, st.fable.number, st.fable.email, st.fable.reason, st.fable.startup, accts.map(accountName)]); }
+    if (fable) { sig += JSON.stringify([st.fable.state, st.fable.number, st.fable.email, st.fable.reason, st.fable.startup, accts.map(accountLabel)]); }
     if (box.getAttribute('data-sig') === sig) { return; }
     box.setAttribute('data-sig', sig);
     clear(box);
@@ -1066,7 +1067,7 @@
     }
     var who = el('div', { class: 'hdr-who' }, [
       el('span', { class: 'slot-chip', text: '#' + active.number }),
-      el('span', { class: 'hdr-name ellipsis', text: accountName(active), title: active.email || '' })
+      el('span', { class: 'hdr-name', text: accountIdentity(active) || accountName(active), title: active.email || '' })
     ]);
     if (active.atLimit) { who.appendChild(chip('at limit', 'crit')); }
     if (active.kind === 'api_key') {
@@ -1074,7 +1075,6 @@
         ? chip('API key · ' + hostOf(active.baseUrl), 'crit', 'Claude Code sends its requests to ' + active.baseUrl)
         : chip('API key · billed per token', 'crit', 'Claude Code is on a managed API-key account'));
     }
-    box.appendChild(fable ? el('div', { class: 'hdr-stack' }, [who, fable]) : who);
     var u = active.usage || {};
     var meters = el('div', { class: 'hdr-meters' });
     meters.appendChild(u.fiveHour ? meter({ label: '5h', pct: u.fiveHour.pct, resetsAt: u.fiveHour.resetsAt, size: 'compact' }) : emptyMeter('5h', 'compact'));
@@ -1082,7 +1082,8 @@
     var scoped = (u.scoped || []).slice();
     var top = scoped.sort(function (x, y) { return (pctNum(y.pct) || 0) - (pctNum(x.pct) || 0); })[0];
     meters.appendChild(top ? meter({ label: top.name || 'model', pct: top.pct, resetsAt: top.resetsAt, size: 'compact' }) : emptyMeter('model', 'compact'));
-    box.appendChild(meters);
+    box.appendChild(el('div', { class: 'hdr-usage' }, [who, meters]));
+    if (fable) { box.appendChild(fable); }
     if (mythos) { box.appendChild(mythos); }
   }
 
@@ -1099,8 +1100,10 @@
       return el('div', { class: 'hdr-fable', text: 'Fable store off', title: 'Turn it on: ' + NAME + ' switch --store fable <account>' });
     }
     var row = claudeRows(st).filter(function (a) { return String(a.number) === String(f.number); })[0];
-    var who = f.number === null || f.number === undefined ? 'account unknown' : '#' + f.number + ' ' + (row ? accountName(row) : f.email || '');
-    var line = el('div', { class: 'hdr-fable', title: f.email || '' }, [el('span', { class: 'ellipsis', text: 'Fable: ' + who })]);
+    var who = f.number == null ? 'account unknown' : accountLabel({
+      number: f.number, alias: row && row.alias, email: (row && row.email) || f.email
+    });
+    var line = el('div', { class: 'hdr-fable', title: f.email || '' }, [el('span', { text: 'Fable: ' + who })]);
     if (f.state === 'unusable') { line.appendChild(chip('Fable login: sign in again', 'warn', f.reason || '')); }
     return line;
   }

@@ -14,18 +14,18 @@
 <body>
 <header class="top">
   <h1 class="brand">
-    <img class="logo" src="/static/icon.svg" alt="" width="30" height="30">
+    <img class="logo" src="/static/icon.svg" alt="">
     <span class="brand-text"><span class="brand-name">{{.DisplayName}}</span><span class="brand-sub">dashboard</span></span>
     <span id="version" class="chip chip-outline" aria-label="version"></span>
   </h1>
   <!-- Updates indicator (DESIGN A27): on every tab while something can be updated. -->
   <button type="button" class="hdr-upd" id="hdr-updates" data-action="updates-show" aria-controls="updates-card" hidden><span class="hdr-upd-count" id="hdr-updates-count" aria-hidden="true">1</span><span id="hdr-updates-text">Update available</span></button>
-  <div class="hdr-acct" id="hdr-acct" aria-label="Active account and its limits"></div>
   <div class="conn" role="status" aria-live="polite">
     <span id="conn-dot" class="dot dot-off" aria-hidden="true"></span>
     <span id="conn-text">connecting…</span>
     <span id="conn-age" class="muted small"></span>
   </div>
+  <div class="hdr-acct" id="hdr-acct" aria-label="Active account and its limits"></div>
 </header>
 
 <nav class="tabs" aria-label="Sections">

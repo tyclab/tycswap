@@ -1,63 +1,270 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>Dashboard header layout</title>
-<pre id="result">Browser measurement did not complete.</pre>
+<style>
+  html, body { margin: 0; overflow: hidden; }
+  iframe { display: block; border: 0; width: 100vw; height: 100vh; }
+</style>
+<pre id="result" hidden>Browser measurement did not complete.</pre>
 <iframe id="page" src="/dashboard#csrf=1234"></iframe>
-<iframe id="reference" srcdoc="<!doctype html><link rel='stylesheet' href='/header-v0212.css'><body>"></iframe>
 <script>
 window.addEventListener('load', () => {
-  const result = document.querySelector('#result');
+  const page = document.querySelector('#page'), win = page.contentWindow, doc = page.contentDocument;
+  const report = {failures: [], font: parseFloat(getComputedStyle(document.documentElement).fontSize),
+    viewport: innerWidth, zoom: devicePixelRatio, type: {}};
   try {
-    const page = document.querySelector('#page'), reference = document.querySelector('#reference');
-    const doc = page.contentDocument, base = reference.contentDocument;
-    const email = 'alex@example.dev', account = 'Mythos login: #8 ' + email;
-    const state = {
-      version: '0.21.2', updates: {available: true}, settings: [], sessions: {claude: []},
-      accounts: [{number: 1, isActive: true, email: 'current.login@example.test', atLimit: true,
-        usage: {fiveHour: {pct: 64}, sevenDay: {pct: 87}, scoped: [{name: 'Fable', pct: 100}]}}],
-      fable: {state: 'on', number: 2, email: 'other.login@example.test'},
-      mythos: {number: 8, email, countedWindows: ['7d','Fable'], atLimit: true, limitingWindows: ['Fable'], resetClock: 'Jan 25 18:30', linkedSessions: 2},
+    const header = doc.querySelector('header');
+    const usage = {
+      fiveHour: {pct: 64}, sevenDay: {pct: 87}, scoped: [{name: 'Fable', pct: 100}],
     };
-    page.contentWindow.events.dispatchEvent(new MessageEvent('state', {data: JSON.stringify(state)}));
-    const detail = 'counting 7d + Fable · at limit: Fable until Jan 25 18:30 · 2 linked sessions';
-
-    // Rebuild the release's account strip: active account, Fable and Mythos in a grid beside the three meters.
-    const header = doc.querySelector('header').cloneNode(true), strip = header.querySelector('#hdr-acct');
-    const stack = base.createElement('div'), mythos = base.createElement('div');
-    stack.className = 'hdr-stack';
-    mythos.className = 'hdr-mythos';
-    mythos.innerHTML = '<span class="ellipsis"></span><span class="hdr-mythos-detail"></span>';
-    mythos.firstChild.textContent = account;
-    mythos.lastChild.textContent = detail.replaceAll(' · ', ', ');
-    stack.append(header.querySelector('.hdr-who'), header.querySelector('.hdr-fable'), mythos);
-    const meters = header.querySelector('.hdr-meters');
-    header.querySelector('.hdr-mythos')?.remove();
-    strip.replaceChildren(stack, meters);
-    base.body.append(header);
-    base.body.style.minHeight = '200vh'; // Same scrollbar as the dashboard beneath the header.
-
-    function width(doc, selector) { return doc.querySelector(selector).getBoundingClientRect().width; }
-    function bars(doc) { return [...doc.querySelectorAll('header .meter-track')].map(el => el.getBoundingClientRect().width); }
-    const failures = [];
-    for (const viewport of [800,900,950,1000,1100,1200,1300,1400,1600]) {
-      page.style.width = reference.style.width = viewport + 'px';
-      const line = doc.querySelector('.hdr-mythos'), label = line.firstElementChild;
-      const range = doc.createRange();
-      range.selectNodeContents(label);
-      const rects = [...range.getClientRects()], rect = rects[0], box = label.getBoundingClientRect();
-      const headerHeight = doc.querySelector('header').getBoundingClientRect().height, mythosHeight = line.getBoundingClientRect().height;
-      const active = width(doc, '.hdr-name'), oldActive = width(base, '.hdr-name'), tracks = bars(doc), oldTracks = bars(base);
-      const row = width(doc, '.hdr-who'), oldRow = width(base, '.hdr-who');
-      const errors = [];
-      if (label.textContent !== account || rects.length !== 1 || rect.width < 1 || rect.left < box.left - 0.5 || rect.right > box.right + 0.5 || rect.right > viewport || rect.left < 0 ||
-          !label.contains(doc.elementFromPoint(rect.right - 1, (rect.top + rect.bottom) / 2))) errors.push('account clipped or wrapped');
-      if (line.querySelector('.hdr-mythos-detail')?.textContent !== detail) errors.push('missing detail');
-      if (headerHeight > 130 || mythosHeight > 36) errors.push('header or Mythos block too tall');
-      if (row + 0.5 < oldRow || active + 0.5 < oldActive || tracks.length !== 3 || oldTracks.length !== 3 ||
-          tracks.some((w,i) => (viewport > 900 && w === 0) || w + 0.5 < oldTracks[i])) errors.push('narrower than v0.21.2');
-      if (errors.length) failures.push(viewport + 'px ' + errors.join(', ') + ': ' + JSON.stringify({headerHeight,mythosHeight,active,oldActive,row,oldRow,tracks,oldTracks}));
+    const windows = [usage.fiveHour, usage.sevenDay, usage.scoped[0]];
+    for (const [i, w] of windows.entries()) w.resetsAt = new Date(Date.now() + (i + 2.5) * 86400000).toISOString();
+    const accounts = Array.from({length: 8}, (_, i) => ({
+      number: i+1, email: 'user' + (i+1) + '@demo.test', isActive: i === 0, atLimit: true, usage,
+    }));
+    const sessions = Array.from({length: 10}, (_, i) => ({
+      sessionId: '11111111-1111-4111-8111-' + String(i).padStart(12,'0'), pid: i+2, cwd: '/work/shared',
+      title: 'Review the weekly usage report and the reset time for the integration account ' + (i+1),
+      status: 'busy', login: 'default login', accountNumber: '1',
+    }));
+    const state = {version: '0.21.3', updates: {available: true}, settings: [], accounts, sessions: {claude: sessions},
+      fable: {state: 'on', number: 2, email: accounts[1].email},
+      mythos: {number: 8, email: accounts[7].email, countedWindows: ['7d','Fable'], atLimit: true,
+        limitingWindows: ['Fable'], resetClock: 'Jan 25 18:30', linkedSessions: 0}};
+    function render(view) {
+      win.events.dispatchEvent(new MessageEvent('state', {data: JSON.stringify(view)}));
     }
-    result.textContent = failures.length ? failures.join('\n') : 'PASS';
-  } catch (error) { result.textContent = String(error.stack || error); }
+
+    function readable(el, expected) {
+      if (!el || !expected || el.textContent !== expected) return false;
+      if (el.clientWidth && el.scrollWidth > el.clientWidth || el.clientHeight && el.scrollHeight > el.clientHeight) return false;
+      const range = doc.createRange();
+      range.selectNodeContents(el);
+      return visibleRange(el, range);
+    }
+    function visibleRange(el, range) {
+      const lines = [...range.getClientRects()];
+      return lines.length > 0 && lines.every(r => {
+        if (r.width <= 0 || r.height <= 0 || r.left < 0 || r.right > doc.documentElement.clientWidth) return false;
+        // A user can scroll vertically to a line, including one below the initial viewport at 200%.
+        const y = (r.top + r.bottom) / 2;
+        const fromTop = win.scrollY;
+        win.scrollBy({top: y - win.innerHeight / 2, behavior: 'instant'});
+        const screenY = y - (win.scrollY - fromTop);
+        const inset = Math.min(1 / win.devicePixelRatio, r.width / 2);
+        const visible = [r.left + inset, (r.left + r.right) / 2, r.right - inset].every(x => el.contains(doc.elementFromPoint(x, screenY)));
+        win.scrollTo({top: fromTop, behavior: 'instant'});
+        return visible;
+      });
+    }
+
+    function checkFacts(view, condition) {
+      render(view);
+      const facts = [
+        ['active account', header.querySelector('.hdr-name'), view.accounts[0].email],
+        ['active limit', header.querySelector('.hdr-who .chip-crit'), 'at limit'],
+        ['Fable login', header.querySelector('.hdr-fable > span'), 'Fable: #2 ' + view.fable.email],
+      ];
+      if (view.mythos) {
+        facts.push(['Mythos login', header.querySelector('.hdr-mythos > :first-child'), 'Mythos login: #8 ' + view.mythos.email],
+          ['Mythos limit and reset', header.querySelector('.hdr-mythos-detail'), 'counting 7d + Fable · at limit: Fable until Jan 25 18:30 · 0 linked sessions']);
+      }
+      const meters = [...header.querySelectorAll('.hdr-meters .meter')];
+      if (meters.length !== windows.length) report.failures.push(condition + ': missing meters');
+      for (const [i, m] of meters.entries()) {
+        const label = ['5h','7d','Fable'][i], foot = m.querySelector('.meter-foot'), track = m.querySelector('.meter-track');
+        facts.push([label, m.querySelector('.meter-label'), label], [label + ' usage', m.querySelector('.meter-val'), windows[i].pct + '%'],
+          [label + ' reset', foot, foot.textContent]);
+        if (!/^↻ \d+d \d+h$/.test(foot.textContent) || foot.dataset.resets !== windows[i].resetsAt ||
+            !track.clientWidth || !track.clientHeight) report.failures.push(condition + ': missing usage or reset for ' + label);
+      }
+      for (const [name, el, expected] of facts) {
+        if (!readable(el, expected)) report.failures.push(condition + ': clipped, covered or missing ' + name);
+      }
+      if (header.scrollWidth > header.clientWidth || doc.documentElement.scrollWidth > doc.documentElement.clientWidth) {
+        report.failures.push(condition + ': sideways scrolling');
+      }
+    }
+
+    checkFacts(state, 'window');
+    page.style.width = '320px';
+    if (win.innerWidth !== 320) throw new Error('320 CSS pixel viewport was not applied');
+    checkFacts(state, 'narrow viewport');
+    const basic = {...state, mythos: null};
+    checkFacts(basic, 'narrow viewport without Mythos');
+    render(state);
+    const aliased = structuredClone(state);
+    aliased.accounts[0].alias = 'Build team';
+    aliased.accounts[1].alias = 'Editing team';
+    function checkAliases() {
+      render(aliased);
+      for (const [row, selector] of [[aliased.accounts[0], '.hdr-who'], [aliased.accounts[1], '.hdr-fable']]) {
+        const group = header.querySelector(selector);
+        for (const text of [row.alias, row.email]) {
+          const nodes = doc.createTreeWalker(group, NodeFilter.SHOW_TEXT);
+          let node, seen = false;
+          while ((node = nodes.nextNode())) {
+            const at = node.data.indexOf(text);
+            if (at < 0) continue;
+            const range = doc.createRange();
+            range.setStart(node, at);
+            range.setEnd(node, at + text.length);
+            if (visibleRange(node.parentElement, range)) { seen = true; break; }
+          }
+          if (!seen) report.failures.push('aliased login: clipped, covered or missing ' + text);
+        }
+      }
+    }
+    checkAliases();
+    aliased.accounts[1].email = 'fresh.fable@demo.test';
+    aliased.fable.email = aliased.accounts[1].email;
+    checkAliases();
+    aliased.accounts[0].email = 'fresh.active@demo.test';
+    checkAliases();
+    render(state);
+
+    function besideBrand() {
+      const range = doc.createRange();
+      range.selectNodeContents(doc.querySelector('#hdr-acct'));
+      const accounts = range.getBoundingClientRect(), brand = header.querySelector('.brand').getBoundingClientRect();
+      return accounts.left >= brand.right && accounts.top < brand.bottom && accounts.bottom > brand.top;
+    }
+    const scrollbar = win.innerWidth - doc.documentElement.clientWidth;
+    function room(rem) { page.style.width = 'calc(' + rem + 'rem + ' + scrollbar + 'px)'; }
+    // Measure the first whole rem with the brand and accounts side by side.
+    function wrapPoint(view) {
+      render(view);
+      let lo = 20, hi = 160;
+      room(lo);
+      if (besideBrand()) throw new Error('header does not wrap in a narrow container');
+      room(hi);
+      if (!besideBrand()) throw new Error('header wraps despite ample space');
+      while (hi - lo > 1) {
+        const mid = Math.floor((lo + hi) / 2);
+        room(mid);
+        if (besideBrand()) hi = mid; else lo = mid;
+      }
+      return hi;
+    }
+    function textLines(group) {
+      const lines = [], nodes = doc.createTreeWalker(group, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = nodes.nextNode())) {
+        if (!node.data.trim()) continue;
+        const range = doc.createRange();
+        range.selectNodeContents(node);
+        lines.push(...[...range.getClientRects()].filter(r => r.width && r.height));
+      }
+      return lines;
+    }
+    function textRows(lines) {
+      // Count disjoint vertical text intervals, so simultaneous lines in different columns count once.
+      let rows = 0, bottom = -Infinity;
+      for (const rect of [...lines].sort((a, b) => a.bottom - b.bottom)) {
+        if (rect.top >= bottom) { rows++; bottom = rect.bottom; }
+      }
+      return rows;
+    }
+
+    // Use the widest bar's max-content size as its readable minimum: its label and
+    // percentage fit side by side, and its reset fits on one line.
+    function meterRowMinimum(group) {
+      let widest = 0;
+      for (const meter of [...group.children]) {
+        const probe = meter.cloneNode(true);
+        probe.style.cssText = 'position: absolute; visibility: hidden; inline-size: max-content; min-inline-size: 0; max-inline-size: none;';
+        group.appendChild(probe);
+        widest = Math.max(widest, probe.getBoundingClientRect().width);
+        probe.remove();
+      }
+      const gap = parseFloat(win.getComputedStyle(group).columnGap) || 0;
+      return group.children.length * widest + (group.children.length - 1) * gap;
+    }
+
+    function checkArrangement(condition) {
+      const fail = [], rect = selector => header.querySelector(selector).getBoundingClientRect();
+      const overlaps = (a, b) => a.top < b.bottom && b.top < a.bottom;
+      const brand = rect('.brand'), chip = rect('.conn'), acct = rect('#hdr-acct'), who = rect('.hdr-who');
+      const fable = rect('.hdr-fable'), mythos = rect('.hdr-mythos'), group = header.querySelector('.hdr-meters');
+      const meters = group.getBoundingClientRect(), bars = [...group.querySelectorAll('.meter')].map(e => e.getBoundingClientRect());
+      const labels = [...group.querySelectorAll('.meter-label')].map(e => e.getBoundingClientRect());
+      const box = header.getBoundingClientRect(), lines = textLines(header);
+      const border = win.getComputedStyle(header);
+      const top = Math.min(...lines.map(r => r.top)) - box.top - parseFloat(border.borderTopWidth);
+      const bottom = box.bottom - parseFloat(border.borderBottomWidth) - Math.max(...lines.map(r => r.bottom));
+      if (Math.abs(top - bottom) > 1) fail.push('unbalanced space above/below text (' + top.toFixed(1) + '/' + bottom.toFixed(1) + ')');
+      if (!overlaps(brand, chip) || Math.abs((box.right - chip.right) - (brand.left - box.left)) > 1) {
+        fail.push('status chip is not at the inline end of the brand row');
+      }
+      // The bar labels identify their owner. A reset below a bar can extend below
+      // the active line; a label on the Fable or Mythos login's row cannot.
+      if (labels.some(label => label.bottom <= who.top || overlaps(label, fable) || overlaps(label, mythos) || label.top >= fable.bottom) ||
+          mythos.top < fable.bottom - 1) fail.push('bars must precede both alternate logins');
+      const wide = brand.right <= acct.left + 1 && acct.right <= chip.left + 1 &&
+        overlaps(brand, acct) && overlaps(chip, acct) && overlaps(who, meters);
+      const stacked = Math.max(brand.bottom, chip.bottom) <= who.top + 1 && who.bottom <= meters.top + 1 &&
+        meters.bottom <= fable.top + 1;
+      if (!wide && !stacked) fail.push('neither wide band nor stacked brand/status, active, bars, Fable, Mythos');
+      if (meters.width >= meterRowMinimum(group) && bars.some(bar => !overlaps(bar, bars[0]))) {
+        fail.push('bars wrap despite room for all three');
+      }
+      if (report.font === 16 && report.zoom === 1 && box.width / report.font >= 88 && textRows(lines) > 4) {
+        // v0.21.3 shows four text rows for this fixture at 88, 100, 120 and 160 rem.
+        fail.push('more than the four text rows of v0.21.3 (' + textRows(lines) + ')');
+      }
+      if (fail.length) report.failures.push(condition + ': ' + fail.join('; '));
+      return wide ? 'wide' : stacked ? 'stacked' : 'mixed';
+    }
+
+    render(state);
+    page.style.removeProperty('width');
+    checkArrangement('window');
+    for (const rem of [20, 38, 50, 56, 63, 75, 88, 100, 120, 160]) {
+      room(rem);
+      checkArrangement(rem + 'rem');
+    }
+    page.style.width = '320px';
+    checkArrangement('320px viewport');
+
+    // Change the component allocation independently of its document. The same
+    // allocation must produce the same arrangement in both host pages.
+    for (const [width, mode] of [[38, 'stacked'], [100, 'wide']]) {
+      for (const host of [width, 160]) {
+        room(host);
+        header.style.inlineSize = width + 'rem';
+        if (Math.abs(header.getBoundingClientRect().width / report.font - width) > 1 / report.font) {
+          throw new Error('header did not receive the requested component width');
+        }
+        if (checkArrangement(width + 'rem header in ' + host + 'rem page') !== mode) {
+          report.failures.push(width + 'rem header in ' + host + 'rem page must be ' + mode);
+        }
+      }
+    }
+    header.style.removeProperty('inline-size');
+
+    report.wrapRem = wrapPoint(state);
+    function accountWidths(rem) {
+      room(rem);
+      return [...header.querySelectorAll('#hdr-acct, .hdr-meters .meter')].map(e => e.clientWidth);
+    }
+    const narrow = accountWidths(20), roomy = accountWidths(120), wider = accountWidths(160);
+    if (narrow[0] >= roomy[0] || roomy.some((width, i) => width !== wider[i])) {
+      report.failures.push('account summary must adapt to available space and stop growing on a wide screen');
+    }
+    const long = structuredClone(state);
+    long.mythos.email = 'infrastructure.monitoring.production-oncall+north-region@regional.engineering.example.test';
+    room(20);
+    checkFacts(long, 'long address in narrow header');
+    const identity = header.querySelector('.hdr-mythos > :first-child');
+    const narrowRows = textRows(textLines(identity));
+    room(120);
+    if (narrowRows <= textRows(textLines(identity))) report.failures.push('long address did not reflow in the narrow header');
+    room(80);
+    for (const selector of ['.brand-name', '#version', '#conn-text', '.hdr-name', '.hdr-fable', '.hdr-mythos-detail',
+      '.hdr-acct .slot-chip', '.hdr-who .chip-crit', '.hdr-meters .meter-label', '.hdr-meters .meter-val', '.hdr-meters .meter-foot']) {
+      report.type[selector] = parseFloat(win.getComputedStyle(header.querySelector(selector)).fontSize) / report.font;
+    }
+  } catch (error) { report.failures.push(String(error.stack || error)); }
+  document.querySelector('#result').textContent = JSON.stringify(report);
 });
 </script>
