@@ -1074,7 +1074,7 @@
         ? chip('API key · ' + hostOf(active.baseUrl), 'crit', 'Claude Code sends its requests to ' + active.baseUrl)
         : chip('API key · billed per token', 'crit', 'Claude Code is on a managed API-key account'));
     }
-    box.appendChild(fable || mythos ? el('div', { class: 'hdr-stack' }, [who, fable, mythos]) : who);
+    box.appendChild(fable ? el('div', { class: 'hdr-stack' }, [who, fable]) : who);
     var u = active.usage || {};
     var meters = el('div', { class: 'hdr-meters' });
     meters.appendChild(u.fiveHour ? meter({ label: '5h', pct: u.fiveHour.pct, resetsAt: u.fiveHour.resetsAt, size: 'compact' }) : emptyMeter('5h', 'compact'));
@@ -1083,6 +1083,7 @@
     var top = scoped.sort(function (x, y) { return (pctNum(y.pct) || 0) - (pctNum(x.pct) || 0); })[0];
     meters.appendChild(top ? meter({ label: top.name || 'model', pct: top.pct, resetsAt: top.resetsAt, size: 'compact' }) : emptyMeter('model', 'compact'));
     box.appendChild(meters);
+    if (mythos) { box.appendChild(mythos); }
   }
 
   // fableLine: the header's second line while an account has a Fable login
