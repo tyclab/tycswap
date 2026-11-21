@@ -290,11 +290,11 @@ func TestTrayPanelFooterActions(t *testing.T) {
 	sh.tray = pt
 	sh.act.Autostart = func() (bool, error) { return true, nil }
 	sh.repaint()
-	if ids := footerIDs(pt.panel); !slices.Equal(ids, []string{"quit", "updates-open", "auto", "autostart", "open"}) {
+	if ids := footerIDs(pt.panel); !slices.Equal(ids, []string{"quit", "updates-open", "sessions-open", "auto", "autostart", "open"}) {
 		t.Fatalf("footer without an update %v", ids)
 	}
 	for _, action := range pt.panel.Actions {
-		want := map[string]string{"quit": "Quit", "updates-open": "Check for updates…", "auto": "Auto-switch", "autostart": "Start at login", "open": "Open dashboard"}[action.ID]
+		want := map[string]string{"quit": "Quit", "updates-open": "Check for updates…", "sessions-open": "Sessions…", "auto": "Auto-switch", "autostart": "Start at login", "open": "Open dashboard"}[action.ID]
 		toggle := action.ID == "auto" || action.ID == "autostart"
 		if action.Title != want || (action.Kind == tray.KindToggle) != toggle || action.Disabled {
 			t.Fatalf("footer action %+v", action)
@@ -310,7 +310,7 @@ func TestTrayPanelFooterActions(t *testing.T) {
 	}
 	sh.checkClaudeCode(false)
 	sh.repaint()
-	if ids := footerIDs(pt.panel); !slices.Equal(ids, []string{"quit", "updates-open", "install-update", "claude-code", "auto", "autostart", "open"}) {
+	if ids := footerIDs(pt.panel); !slices.Equal(ids, []string{"quit", "updates-open", "install-update", "claude-code", "sessions-open", "auto", "autostart", "open"}) {
 		t.Fatalf("footer with updates %v", ids)
 	}
 	if pt.panel.Actions[2].Title != "Update tycswap" || pt.panel.Actions[3].Title != "Update Claude" {
@@ -329,7 +329,7 @@ func TestTrayPanelOfflineAndBeforeTheFirstState(t *testing.T) {
 		t.Fatalf("offline panel %+v", p)
 	}
 	for _, action := range p.Actions {
-		if (action.ID == "auto" || action.ID == "updates-open") != action.Disabled {
+		if (action.ID == "auto" || action.ID == "updates-open" || action.ID == "sessions-open") != action.Disabled {
 			t.Fatalf("offline action %+v", action)
 		}
 	}
@@ -535,7 +535,7 @@ func TestTraySwitchApprovesAnAPIKeyOnlyWhenItSwitches(t *testing.T) {
 func TestTrayPanelNoteTellsEveryAction(t *testing.T) {
 	sh, ft, rig := updatesShell(t, false)
 	note := func() (string, bool) { p := sh.panel(sh.last); return p.Note, p.Alert }
-	sh.act.OpenDashboard = func() error { return errors.New("no browser") }
+	sh.act.OpenDashboard = func(string) error { return errors.New("no browser") }
 	sh.click("open")
 	if text, alert := note(); text != "Could not open the dashboard: no browser" || !alert {
 		t.Fatalf("open: %q %v", text, alert)
@@ -674,7 +674,7 @@ func TestTrayPanelUpdatesShortcut(t *testing.T) {
 		t.Fatalf("shortcut feedback: %+v", pt.panel)
 	}
 	sh.act.CheckUpdates = func() error { return errors.New("engine offline") }
-	sh.act.OpenUpdates = func() error { *calls = append(*calls, "open-failed-check"); return errors.New("no browser") }
+	sh.act.OpenDashboard = func(string) error { *calls = append(*calls, "open-failed-check"); return errors.New("no browser") }
 	sh.click("updates-open")
 	if (*calls)[len(*calls)-1] != "open-failed-check" || !pt.panel.Alert ||
 		!strings.Contains(pt.panel.Note, "engine offline") || !strings.Contains(pt.panel.Note, "no browser") {

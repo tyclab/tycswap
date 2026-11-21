@@ -26,7 +26,7 @@ func (o *fixtureLoginControls) SwitchMythos(id, actor string) (map[string]any, e
 	return nil, o.writeErr
 }
 func (o *fixtureLoginControls) UseSession(id, store, actor string) error {
-	o.record("use " + id + " " + store)
+	o.record("use " + id + " " + store + " by " + actor)
 	return o.writeErr
 }
 func (o *fixtureLoginControls) SessionMoves(id string) ([]string, error) {
@@ -83,6 +83,7 @@ func fixtureControlsServer(t *testing.T) (*Server, *fixtureLoginControls) {
 }
 func fixtureRequest(s *Server, method, path, body string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, "http://127.0.0.1:8123"+path, strings.NewReader(body))
+	req.RemoteAddr = httptest.DefaultRemoteAddr
 	req.Header.Set("Authorization", "Bearer fixture")
 	out := httptest.NewRecorder()
 	s.handler.ServeHTTP(out, req)
@@ -137,6 +138,7 @@ func TestDashboardLinkedLoginState(t *testing.T) {
 
 func TestDashboardLinkedLoginMutations(t *testing.T) {
 	session := "/api/sessions/" + fixtureSession + "/use"
+	dashboardActor := " by dashboard(bearer," + httptest.DefaultRemoteAddr + ")"
 	models := "/api/accounts/claude:1/models"
 	next := "/api/sessions/next-start"
 	sw := "/api/switch/claude:1?store=mythos"
@@ -149,9 +151,10 @@ func TestDashboardLinkedLoginMutations(t *testing.T) {
 		{"select", sw, "", nil, 200, "switch 1"}, {"busy login", sw, "", cerr.Lock("fixture busy"), 409, "switch 1"},
 		{"missing login", sw, "", cerr.AccountNotFound("fixture gone"), 404, "switch 1"},
 		{"codex switch", "/api/switch/codex:1?store=mythos", "", nil, 400, ""}, {"empty switch", sw + "&empty=1", "", nil, 400, ""},
-		{"move", session, `{"store":"fable"}`, nil, 200, "use " + fixtureSession + " fable"},
-		{"busy move", session, `{"store":"mythos"}`, cerr.Lock("fixture busy"), 409, "use " + fixtureSession + " mythos"},
-		{"missing move", session, `{"store":"default"}`, cerr.AccountNotFound("fixture gone"), 404, "use " + fixtureSession + " default"},
+		{"move", session, `{"store":"fable"}`, nil, 200, "use " + fixtureSession + " fable" + dashboardActor},
+		{"move with old tray query", session + "?source=tray", `{"store":"default"}`, nil, 200, "use " + fixtureSession + " default" + dashboardActor},
+		{"busy move", session, `{"store":"mythos"}`, cerr.Lock("fixture busy"), 409, "use " + fixtureSession + " mythos" + dashboardActor},
+		{"missing move", session, `{"store":"default"}`, cerr.AccountNotFound("fixture gone"), 404, "use " + fixtureSession + " default" + dashboardActor},
 		{"missing store", session, `{}`, nil, 400, ""}, {"wrong store", session, `{"store":"opus"}`, nil, 400, ""},
 		{"allocate", models, `{"models":["mythos","fable"]}`, nil, 200, "models 1 [mythos fable]"},
 		{"clear allocation", models, `{"models":[]}`, nil, 200, "models 1 []"}, {"busy editor", models, `{"models":["opus"]}`, cerr.Lock("fixture busy"), 409, "models 1 [opus]"},

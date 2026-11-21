@@ -142,6 +142,9 @@ if (process.argv[3] === 'editor') {
   const header = text(ids['hdr-acct']);
   assert.match(header, /Mythos login.*#1/);
   for (const value of [longEmail, '5h', '7d', '2 linked sessions']) assert.ok(header.includes(value), header);
+  const mythosLine = ids['hdr-acct'].all().find(e => e.className === 'hdr-mythos');
+  assert.ok(!mythosLine.all().some(e => e.classList.contains('ellipsis') && text(e).includes(longEmail)),
+    'the Mythos account must remain readable when the header is narrow');
   const labels = n => rowOf(n).all().filter(e => e.tagName === 'BUTTON').map(text);
   assert.ok(labels(2).includes('Use for Mythos'));
   for (const n of [1,3,4]) assert.ok(!labels(n).includes('Use for Mythos'));

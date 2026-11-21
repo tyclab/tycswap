@@ -11,6 +11,7 @@ import (
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/termsafe"
+	"github.com/tyclab/tycswap/internal/web"
 )
 
 func menuMythosAccount(s ioStreams, forSwitch bool) (reporting.AccountSnapshot, int) {
@@ -50,13 +51,24 @@ func menuStartMythos(s ioStreams) (int, bool) {
 	return startCommandFor("tycswap", args, s, expected), true
 }
 
+func sessionLoginLabel(login, number string) string {
+	if login == "" || login == "unknown" {
+		return login
+	}
+	if number == "" || number == "unknown" {
+		return login + " · unknown"
+	}
+	return login + " · #" + number
+}
+
 func menuMoveSession(s ioStreams, wanted string) (string, []string, bool) {
 	sw, err := constructSwitcher(false, s.err)
 	if err != nil {
 		fmt.Fprintln(s.err, err)
 		return "", nil, false
 	}
-	sessions, err := procdetect.ListSessionsErr(sw.DefaultProfileDir())
+	profileDir := sw.DefaultProfileDir()
+	sessions, err := procdetect.ListSessionsErr(profileDir)
 	if err != nil {
 		fmt.Fprintln(s.err, err)
 		return "", nil, false
@@ -77,7 +89,11 @@ func menuMoveSession(s ioStreams, wanted string) (string, []string, bool) {
 		if len(options) == 0 || (wanted != "" && !slices.Contains(options, wanted)) {
 			continue
 		}
-		label := id
+		shortID := id[:8]
+		label := "session " + shortID
+		if title := termsafe.Strip(web.DefaultSessionTitle(profileDir, session.CWD, id)); title != "" {
+			label = title + "  " + shortID
+		}
 		if owner := sessionLoginLabel(sessionLogin(sw, id)); owner != "" {
 			label += "  " + owner
 		}

@@ -282,8 +282,9 @@
   // ---- tabs ----------------------------------------------------------------
 
   var pendingUpdatesNavigation = false;
-  if (new URLSearchParams(window.location.search).get('show') === 'updates') {
-    try { history.replaceState(null, '', window.location.pathname + '#updates'); } catch (e) { /* ignore */ }
+  var launchDestination = new URLSearchParams(window.location.search).get('show');
+  if (launchDestination === 'updates' || launchDestination === 'sessions') {
+    try { history.replaceState(null, '', window.location.pathname + '#' + launchDestination); } catch (e) { /* ignore */ }
   }
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
   function selectTab(name, focus, hash) {
@@ -1073,7 +1074,7 @@
         ? chip('API key · ' + hostOf(active.baseUrl), 'crit', 'Claude Code sends its requests to ' + active.baseUrl)
         : chip('API key · billed per token', 'crit', 'Claude Code is on a managed API-key account'));
     }
-    box.appendChild(fable || mythos ? el('div', { class: 'hdr-stack' }, [who, fable, mythos]) : who);
+    box.appendChild(fable ? el('div', { class: 'hdr-stack' }, [who, fable]) : who);
     var u = active.usage || {};
     var meters = el('div', { class: 'hdr-meters' });
     meters.appendChild(u.fiveHour ? meter({ label: '5h', pct: u.fiveHour.pct, resetsAt: u.fiveHour.resetsAt, size: 'compact' }) : emptyMeter('5h', 'compact'));
@@ -1082,6 +1083,7 @@
     var top = scoped.sort(function (x, y) { return (pctNum(y.pct) || 0) - (pctNum(x.pct) || 0); })[0];
     meters.appendChild(top ? meter({ label: top.name || 'model', pct: top.pct, resetsAt: top.resetsAt, size: 'compact' }) : emptyMeter('model', 'compact'));
     box.appendChild(meters);
+    if (mythos) { box.appendChild(mythos); }
   }
 
   // fableLine: the header's second line while an account has a Fable login
@@ -1122,10 +1124,9 @@
       } else if (!m.reason) { parts.push('linked session count unavailable'); }
       if (m.reason) { parts.push(m.reason); }
     }
-    var separator = m.atLimit ? ', ' : ' · ';
-    var detail = parts.join(separator);
-    return el('div', { class: 'hdr-mythos', title: 'Mythos login: ' + account + (detail ? separator + detail : '') }, [
-      el('span', { class: 'ellipsis', text: 'Mythos login: ' + account }),
+    var detail = parts.join(' · ');
+    return el('div', { class: 'hdr-mythos', title: 'Mythos login: ' + account + (detail ? ' · ' + detail : '') }, [
+      el('span', { text: 'Mythos login: ' + account }),
       detail ? el('span', { class: 'hdr-mythos-detail', text: detail }) : null
     ]);
   }
