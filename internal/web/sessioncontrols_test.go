@@ -35,6 +35,13 @@ func (o *fixtureLoginControls) SessionMoves(id string) ([]string, error) {
 	}
 	return nil, errors.New("session has no binding")
 }
+func (o *fixtureLoginControls) SessionLogin(id string) (string, string) {
+	if id == fixtureSession {
+		return "Mythos login", "8"
+	}
+	return "", ""
+}
+
 func (o *fixtureLoginControls) NextStartModel() (string, error) { return o.next, o.readErr }
 func (o *fixtureLoginControls) SetNextStartModel(model string) error {
 	o.record("next " + model)
@@ -107,6 +114,12 @@ func TestDashboardLinkedLoginState(t *testing.T) {
 	sessions := doc["sessions"].(map[string]any)["claude"].([]any)
 	if !reflect.DeepEqual(sessions[0].(map[string]any)["moves"], []any{"mythos", "fable"}) || sessions[1].(map[string]any)["moves"] != nil {
 		t.Error("move offers must come from the session verifier")
+	}
+	if row := sessions[0].(map[string]any); row["login"] != "Mythos login" || row["accountNumber"] != "8" {
+		t.Errorf("linked session identity = (%v,%v)", row["login"], row["accountNumber"])
+	}
+	if row := sessions[1].(map[string]any); row["login"] != nil || row["accountNumber"] != nil {
+		t.Error("unlinked session acquired an owner")
 	}
 	if doc["nextStartModel"] != "mythos" {
 		t.Errorf("next start = %v", doc["nextStartModel"])
@@ -192,5 +205,15 @@ func TestDashboardModelEditorRefusalKeepsInput(t *testing.T) {
 	}
 	if out, err := exec.Command(node, "testdata/fable.cjs", "static/app.js", "editor").CombinedOutput(); err != nil {
 		t.Fatalf("model editor: %v\n%s", err, out)
+	}
+}
+
+func TestDashboardSessionOwnerAndRefusal(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	if out, err := exec.Command(node, "testdata/fable.cjs", "static/app.js", "session-owner").CombinedOutput(); err != nil {
+		t.Fatalf("session rows: %v\n%s", err, out)
 	}
 }

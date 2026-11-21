@@ -14,17 +14,32 @@ import (
 func TestTrayProjectsMythosSessionActions(t *testing.T) {
 	sh, _, _ := newTestShell(t)
 	var state web.State
-	err := json.Unmarshal([]byte(`{"accounts":[{"provider":"claude","number":2,"alias":"a-long-account-name-for-the-tray","mythosLogin":{"status":"ok","live":false,"selectable":true}},{"provider":"claude","number":3,"mythosLogin":{"status":"sign in again","selectable":false}}],"mythos":{"number":1,"countedWindows":["5h","7d","Mythos"],"linkedSessions":2},"sessions":{"claude":[{"sessionId":"9421a2ec-67ef-4ff6-9e22-dad93a8d0b87","title":"Review","moves":["fable"]}]},"nextStartModel":"mythos"}`), &state)
+	err := json.Unmarshal([]byte(`{"accounts":[{"provider":"claude","number":2,"alias":"a-long-account-name-for-the-tray","mythosLogin":{"status":"ok","live":false,"selectable":true}},{"provider":"claude","number":1,"mythosLogin":{"status":"ok","live":true,"selectable":false}},{"provider":"claude","number":3,"mythosLogin":{"status":"sign in again","selectable":false}}],"mythos":{"number":1,"countedWindows":["5h","7d","Mythos"],"linkedSessions":2},"sessions":{"claude":[{"sessionId":"9421a2ec-67ef-4ff6-9e22-dad93a8d0b87","title":"Review","login":"Mythos login","accountNumber":"1","moves":["fable"]},{"sessionId":"7421a2ec-67ef-4ff6-9e22-dad93a8d0b87","title":"Refreshing","login":"default login","accountNumber":"unknown","movesError":"The session login is refreshing."}]},"nextStartModel":"mythos"}`), &state)
 	if err != nil {
 		t.Fatal(err)
 	}
 	panel := sh.panel(state)
 	raw, _ := json.Marshal(panel)
-	for _, want := range []string{"Use for Mythos", "Mythos login: sign in again", "5h", "2 linked sessions", "Move to Fable store", "Set next start"} {
+	for _, want := range []string{"Use for Mythos", "Mythos login: sign in again", "5h", "2 linked sessions", "Move to Fable store", "Mythos login: in use", "Next start: Mythos", "Mythos login · #1", "default login · unknown"} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("tray panel missing %q", want)
 		}
 	}
+	var checked bool
+	for _, group := range loginControls(state, false) {
+		for _, child := range group.Children {
+			if strings.Contains(child.Title, "Refreshing") {
+				checked = true
+				if len(child.Children) != 1 || !child.Children[0].Disabled || child.Children[0].Title != "The session login is refreshing." {
+					t.Errorf("refresh submenu %#v", child.Children)
+				}
+			}
+		}
+	}
+	if !checked {
+		t.Error("refreshing session missing from the tray")
+	}
+
 	if strings.Contains(string(raw), "Move to default login") {
 		t.Error("tray offered a refused destination")
 	}

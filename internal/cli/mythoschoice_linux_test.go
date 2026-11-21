@@ -98,6 +98,26 @@ func TestInvalidMythosChoiceCannotRemainSelected(t *testing.T) {
 	}
 }
 
+func TestListNamesTheMythosLoginInUse(t *testing.T) {
+	sw, from, _ := mythosTickFixture(t, 20, 30, false)
+	bindTickSession(t, sw, tickSessionA, "mythos", from)
+	code, out, err := runHuman(t, "list")
+	if code != 0 {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ email, tag string }{{fableEmail("2"), "(Mythos login: in use)"}, {fableEmail("3"), "(Mythos login)"}} {
+		found := false
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, c.email) && strings.Contains(line, c.tag) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("missing %s on %s in %s", c.tag, c.email, out)
+		}
+	}
+}
+
 func TestMythosLoginReportsChoiceWindowsAndSessions(t *testing.T) {
 	sw, from, _ := mythosTickFixture(t, 20, 30, false)
 	bindTickSession(t, sw, tickSessionA, "mythos", from)

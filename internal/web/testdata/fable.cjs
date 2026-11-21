@@ -109,6 +109,26 @@ if (process.argv[3] === 'editor') {
     assert.notEqual(ids.modal.getAttribute('open'), null, 'refusal closed the editor');
     assert.ok(field('opus').checked && field('mythos').checked, 'refusal erased input');
   });
+ } else if (process.argv[3] === 'session-owner') {
+  for (const id of ['sessions-groups','sessions-stats','sessions-empty','ide-list','ide-count','ide-empty','ide-tbl']) ids[id] = new Node('div');
+  document.querySelector = () => new Node('div');
+  ctx.sessFilter = {q: '', status: '', sort: 'busy'};
+  ctx.openGroups = {};
+  ctx.state = fableState();
+  const message = 'The session login is refreshing.';
+  ctx.renderSessions({claude: [
+    {pid: 31, sessionId: 'refreshing', cwd:'/fixture', status:'busy', store:'default', login:'Mythos login', accountNumber:'8', movesError:message},
+    {pid: 32, sessionId: 'fresh', cwd:'/fixture', status:'busy', login:'Fable store', accountNumber:'unknown'},
+    {pid: 33, sessionId: 'normal', cwd:'/fixture', status:'busy', login:'default login', accountNumber:'3'},
+  ]});
+  const body = ids['sessions-groups'].all().find(n => n.tagName === 'TBODY');
+  const cells = body.children.filter(n => n.tagName === 'TR');
+  const ix = cells.findIndex(r => text(r).includes(message));
+  assert.ok(ix > 0 && cells[ix].children.length === 1 && cells[ix].children[0].getAttribute('colspan') === '6',
+    'put one refresh warning in its own full-width row below the session');
+  assert.ok(text(cells[ix-1]).includes('Mythos login · #8'));
+  assert.ok(text(body).includes('Fable store · unknown'));
+  assert.ok(text(body).includes('default login · #3'));
 } else if (process.argv[3] === 'mythos') {
   const st = plainState();
   const longEmail = 'long'.repeat(25) + '@example.com';
@@ -125,7 +145,8 @@ if (process.argv[3] === 'editor') {
   const labels = n => rowOf(n).all().filter(e => e.tagName === 'BUTTON').map(text);
   assert.ok(labels(2).includes('Use for Mythos'));
   for (const n of [1,3,4]) assert.ok(!labels(n).includes('Use for Mythos'));
-  assert.ok(chips(1).some(c => c[0] === 'Mythos login'));
+  assert.ok(chips(1).some(c => c[0] === 'Mythos login: in use'), 'selected Mythos login needs an explicit label');
+  assert.ok(chips(2).some(c => c[0] === 'Mythos login'));
   assert.ok(chips(3).some(c => c[0] === 'Mythos login: sign in again'));
   assert.ok(labels(2).some(l => /edit models/i.test(l)));
   assert.ok(!labels(3).some(l => /edit models/i.test(l)), 'unreadable models cannot be overwritten');

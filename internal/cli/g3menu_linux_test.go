@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
@@ -100,8 +101,9 @@ func TestMenuStartPreferenceSurvivesPlacementRefusal(t *testing.T) {
 	sw, rec, dir := menuStartFixture(t)
 	expectStartCode(t, 0, "--next", "mythos")
 	setRecord(t, sw, "3", "disabled", true)
-	if msg := expectStartCode(t, 1, "--", "claude"); msg == "" || rec.execs != 0 {
-		t.Fatal("unavailable queued login was silently bypassed")
+	if msg := expectStartCode(t, 1, "--", "claude"); rec.execs != 0 || strings.Count(msg, "\n") != 1 ||
+		!strings.Contains(strings.ToLower(msg), "next start is set to mythos") || !strings.Contains(msg, "no enabled, marked") || !strings.Contains(msg, "tycswap start --next clear") {
+		t.Fatalf("queued placement refusal lacks the request, reason or recovery: %q", msg)
 	}
 	setRecord(t, sw, "3", "disabled", false)
 	expectStartCode(t, 23, "--", "claude")
@@ -205,16 +207,55 @@ func TestMenuSessionMovesInvokeExplicitUse(t *testing.T) {
 	}
 }
 
-func TestMenuNextStartRejectsUnreadablePreference(t *testing.T) {
+func TestMenuNextStartFallsBackForUnreadablePreference(t *testing.T) {
 	sw, rec, _ := menuStartFixture(t)
-	for _, raw := range []string{`{}`, `{"model":null}`, `{"model":"other"}`, `[`} {
-		path := filepath.Join(sw.BackupDir(), "next-start.json")
+	path := filepath.Join(sw.BackupDir(), "next-start.json")
+	for i, raw := range []string{`{}`, `{"model":null}`, `{"model":"other"}`, `[`} {
 		writeFile(t, path, raw)
-		if msg := expectStartCode(t, 1, "--", "claude"); msg == "" || rec.execs != 0 {
-			t.Fatalf("unreadable preference %q silently cleared or launched", raw)
+		msg := expectStartCode(t, 23, "--", "claude")
+		if rec.execs != i+1 || !slices.Equal(rec.args, []string{"claude"}) || strings.Count(msg, "\n") != 1 || !strings.Contains(msg, path) || !strings.Contains(msg, "tycswap start --next clear") {
+			t.Fatalf("invalid request %q: launches=%d args=%v notice=%q", raw, rec.execs, rec.args, msg)
 		}
 		if got := readOrAbsent(t, path); got != raw {
 			t.Fatalf("unreadable preference rewritten to %q", got)
 		}
+	}
+}
+
+func TestExplicitNextStartReplacesUnreadablePreference(t *testing.T) {
+	sw, _, _ := menuStartFixture(t)
+	for _, choice := range []string{"clear", "mythos"} {
+		t.Run(choice, func(t *testing.T) {
+			path := filepath.Join(sw.BackupDir(), "next-start.json")
+			writeFile(t, path, "[")
+			expectStartCode(t, 0, "--next", choice)
+			got, err := store.NextStartModel(sw.BackupDir())
+			want := choice
+			if choice == "clear" {
+				want = ""
+			}
+			if err != nil || got != want {
+				t.Fatalf("saved request after repair = %q, %v; want %q", got, err, want)
+			}
+		})
+	}
+}
+func TestMenuShowsLoginInUseAndLinkedOwner(t *testing.T) {
+	_, rec, _ := menuStartFixture(t)
+	linkedTestStart(t, rec, placementSession, "opus")
+	sessionRegistryEntry(t, placementSession, "")
+	streams := ioStreams{err: io.Discard, out: io.Discard}
+	offered := menuScript(t)
+	menuMoveSession(streams, "")
+	if !strings.Contains(strings.Join(offered["Move which session?"], " "), "default login · #1") {
+		t.Errorf("session choices %v", offered)
+	}
+	pickAccountRows(streams, "Choose an account", []reporting.AccountSnapshot{
+		{Number: "2", MythosLogin: &reporting.MythosLogin{Status: "ok", Live: true}},
+		{Number: "3", MythosLogin: &reporting.MythosLogin{Status: "ok", Selectable: true}},
+	})
+	choices := offered["Choose an account"]
+	if len(choices) != 2 || !strings.HasSuffix(choices[0], "Mythos login: in use") || !strings.HasSuffix(choices[1], "Mythos login") {
+		t.Errorf("account choices %q", choices)
 	}
 }
