@@ -16,13 +16,18 @@ window.addEventListener('load', () => {
   const state = dashboardFixture();
   for (const a of state.accounts) a.rotationEligible = a.switchable = true;
   state.accounts[1].alias = 'Editing team';
+  state.accounts.slice(3, 6).forEach((account, i) => { account.number = 10 + i; });
+  state.accounts[3].fableLogin = {status: 'ok', live: false};
+  state.accounts[3].mythosLogin = {status: 'ok', selectable: true, live: false};
   state.auto = {running: true, counting: {mode: 'sessions', models: ['Fable']}};
   state.settings = [{key: 'autoswitch.fiveHourThreshold', label: '5-hour threshold', description: 'Switch when this threshold is reached.',
     kind: 'int', min: 1, max: 100, value: 85, default: 90, isDefault: false}];
+  state.sessions.ide = [{ideName: 'Visual Studio Code', pid: 194028, port: 47231,
+    workspaceFolders: ['/work/shared/weekly-integration-report']}];
   const owners = [['default login', '1'], ['Fable login', '2'], ['Mythos login', '8']];
   for (const [i, session] of state.sessions.claude.entries()) {
     [session.login, session.accountNumber] = owners[i % owners.length];
-    session.pid = 13000 + i;
+    session.pid = i === 0 ? 4504 : 173742 + i;
     session.kind = 'interactive';
     session.entrypoint = 'cli';
     session.startedAt = Date.now() - (i + 1) * 3600000;
@@ -32,6 +37,7 @@ window.addEventListener('load', () => {
   const $ = selector => doc.querySelector(selector);
   const all = selector => [...doc.querySelectorAll(selector)];
   const overlaps = (a, b) => Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top);
+  const tabs = ['dashboard', 'auto', 'sessions', 'settings', 'guide'];
   const failures = new Set();
   let context;
   function check(condition, message) { if (!condition) failures.add(context + ': ' + message); }
@@ -84,6 +90,29 @@ window.addEventListener('load', () => {
     for (const fact of facts) check(hasVisibleText(row, fact), 'missing or clipped ' + fact + ' in account #' + account.number);
   }
 
+  function checkShortTokens(group) {
+    const nodes = doc.createTreeWalker(group, NodeFilter.SHOW_TEXT), range = doc.createRange();
+    const broken = new Set();
+    let node;
+    while ((node = nodes.nextNode())) {
+      const token = node.data.trim(), element = node.parentElement;
+      if (!token || token.length > 14 || /\s/.test(token) || element.closest('.sr-only') ||
+          !element.checkVisibility({visibilityProperty: true})) continue;
+
+      // A short token is one line. A hyphen can finish a line, so measure each
+      // hyphen-delimited part. Long addresses, paths and titles can still wrap.
+      let start = node.data.indexOf(token);
+      for (const part of token.split(/(?<=-)/)) {
+        range.setStart(node, start);
+        start += part.length;
+        range.setEnd(node, start);
+        const lines = new Set([...range.getClientRects()].filter(r => r.width > 0).map(r => Math.round(r.top)));
+        if (lines.size > 1) broken.add(token + ' (' + lines.size + ' lines)');
+      }
+    }
+    check(broken.size === 0, 'short tokens split across lines: ' + [...broken].join(', '));
+  }
+
   function checkGuideDiagrams() {
     for (const svg of all('.g-svg')) {
       const boxes = [...svg.querySelectorAll('rect')].map(r => r.getBoundingClientRect());
@@ -105,7 +134,7 @@ window.addEventListener('load', () => {
     win.events.dispatchEvent(new MessageEvent('state', {data: JSON.stringify(state)}));
     for (const width of ['100vw', '320px']) {
       page.style.width = width;
-      for (const tab of ['dashboard', 'auto', 'sessions', 'settings', 'guide']) {
+      for (const tab of tabs) {
         $('#tab-' + tab).click();
         context = tab + ' at ' + win.innerWidth;
         const panel = $('#panel-' + tab);
@@ -144,6 +173,27 @@ window.addEventListener('load', () => {
       }
     }
 
+    const root = doc.documentElement, scrollbar = win.innerWidth - root.clientWidth;
+    const widthAt = rem => 'calc(' + rem + 'rem + ' + scrollbar + 'px)';
+    for (const width of ['100vw', '320px', ...[24, 28, 44, 50, 56, 63].map(widthAt)]) {
+      page.style.width = width;
+      for (const tab of tabs) {
+        $('#tab-' + tab).click();
+        context = tab + ' at ' + root.clientWidth + ' CSS px';
+        checkShortTokens(doc.body);
+        if (tab === 'dashboard') {
+          const row = $('#accounts-body [data-key="claude:10"]');
+          const toggle = row.querySelector('.menu > summary');
+          check(hasVisibleText(row.querySelector('[data-label="Switch"]'), 'Switch'), 'Switch is not visible');
+          toggle.click();
+          const menu = row.querySelector('.menu-list');
+          check(hasVisibleText(menu.querySelector('[data-action="remove"]'), 'Remove…'), 'Remove… is not visible');
+          checkShortTokens(menu);
+          toggle.click();
+        }
+      }
+    }
+
     // Compare text, text-related spacing and content caps at the same font-relative allocation.
     page.style.width = '100rem';
     for (const [tab, selectors] of Object.entries({
@@ -171,8 +221,7 @@ window.addEventListener('load', () => {
     $('#tab-sessions').click();
     // The table can need a local scrollbar just after the session cards become a table.
     // Its actions column (including the accessible heading) must stay inside that scroller.
-    const root = doc.documentElement, scrollbar = win.innerWidth - root.clientWidth;
-    page.style.width = 'calc(45rem + ' + scrollbar + 'px)';
+    page.style.width = widthAt(45);
     context = 'session table at ' + root.clientWidth;
     check(root.scrollWidth <= root.clientWidth, 'page scroll width ' + root.scrollWidth + ' exceeds viewport ' + root.clientWidth);
 
