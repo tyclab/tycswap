@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The selected Mythos login now shows which quota windows are full and when all of them reset in the CLI, dashboard and tray. A refused Mythos start names the eligible login with the earliest known return.
+- Manual Mythos selections log the account number and actor once per change. Session moves from the dashboard and tray record their source.
+- When start logins are marked, saving a new account shows the command to include it in future starts.
+
 - Mythos starts and linked-session rotation now count the account's Fable window when it reports no Mythos-named window. This keeps both explicit and queued starts off logins with known spent quota. The dashboard and tray now receive the Mythos login summary and show the window that counts.
 - `tycswap start --next show` prints `mythos` or `none` without consuming the queued start.
 

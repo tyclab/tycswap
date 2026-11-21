@@ -62,9 +62,7 @@ type fakeFacade struct {
 	lastToken     string           // AddAccountFromToken's token, kept out of calls
 	backupDir     string           // BackupDir's answer; "" is /tmp/backups
 	postAddSnap   *reporting.AccountsSnapshot
-	// afterAdd, when set, is the roster AddAccount leaves behind: the
-	// snapshot reads it from then on.
-	afterAdd *reporting.AccountsSnapshot
+	addResult     AddLoginResult
 	// gate, when non-nil, holds every AccountsSnapshot call until it is
 	// closed, so a test can keep the serve loop inside one state build.
 	gate chan struct{}
@@ -140,25 +138,13 @@ func (f *fakeFacade) RemoveAccount(id string, yes bool) error {
 	return f.errFor("RemoveAccount")
 }
 
-func (f *fakeFacade) AddAccount(slot *int, assumeYes bool, alias *string) error {
-	s := "<nil>"
-	if slot != nil {
-		s = fmt.Sprint(*slot)
-	}
-	a := "<nil>"
-	if alias != nil {
-		a = *alias
-	}
-	f.record(fmt.Sprintf("AddAccount(%s,%v,%s)", s, assumeYes, a))
-	if err := f.errFor("AddAccount"); err != nil {
-		return err
-	}
+func (f *fakeFacade) AddAccount(*int, bool, *string) error { return nil }
+
+func (f *fakeFacade) SaveCurrentLogin() (AddLoginResult, error) {
+	f.record("SaveCurrentLogin()")
 	f.mu.Lock()
-	if f.afterAdd != nil {
-		f.snap = f.afterAdd
-	}
-	f.mu.Unlock()
-	return nil
+	defer f.mu.Unlock()
+	return f.addResult, f.errs["SaveCurrentLogin"]
 }
 
 func (f *fakeFacade) AddAccountFromToken(token string, email, slotArg *string, assumeYes bool) error {

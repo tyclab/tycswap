@@ -50,7 +50,7 @@ func TestLinkedSessionActionsUseCurrentBinding(t *testing.T) {
 	d := &dashboard{sw: sw}
 	api, ok := any(d).(interface {
 		SessionMoves(string) ([]string, error)
-		UseSession(string, string) error
+		UseSession(string, string, string) error
 	})
 	if !ok {
 		t.Fatal("dashboard has no linked-session placement actions")
@@ -74,7 +74,7 @@ func TestLinkedSessionActionsUseCurrentBinding(t *testing.T) {
 	if err := os.Remove(lock); err != nil {
 		t.Fatal(err)
 	}
-	if err := api.UseSession(tickSessionA, "default"); err != nil {
+	if err := api.UseSession(tickSessionA, "default", "tray"); err != nil {
 		t.Fatal(err)
 	}
 	requireLinkTarget(t, link, sw.DefaultProfileDir())

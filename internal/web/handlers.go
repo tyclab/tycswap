@@ -376,11 +376,15 @@ func (s *Server) mutate(w http.ResponseWriter, fn func() (map[string]any, error)
 // logAction records a change this request made, naming the dashboard, how
 // the request authenticated and where it came from.
 func (s *Server) logAction(r *http.Request, change string) {
+	s.d.ActionLog(change, s.dashboardActor(r))
+}
+
+func (s *Server) dashboardActor(r *http.Request) string {
 	auth := "cookie"
 	if s.hasBearer(r) {
 		auth = "bearer"
 	}
-	s.d.ActionLog(change, "dashboard("+auth+","+r.RemoteAddr+")")
+	return "dashboard(" + auth + "," + r.RemoteAddr + ")"
 }
 
 func (s *Server) runMutation(fn func() (map[string]any, error)) (map[string]any, uint64, error) {
@@ -711,7 +715,11 @@ func (s *Server) handleAddCurrent(w http.ResponseWriter, r *http.Request) {
 			writeError(w, statusFor(err), err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": res})
+		reply := map[string]any{"ok": true, "result": res}
+		if res.StartLoginHint != "" {
+			reply["message"] = res.StartLoginHint
+		}
+		writeJSON(w, http.StatusOK, reply)
 	case strings.EqualFold(p, reporting.ProviderCodex):
 		if !s.codexOps(w) {
 			return

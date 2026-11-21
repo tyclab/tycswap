@@ -167,14 +167,14 @@ func readSharedStartException(root string, fable bool, family string) (sharedSta
 	}
 	id := usage.Identity{Email: email, OrgUUID: org}
 	entry := view.Usage.Entries(map[string]usage.Identity{number: id})[number]
-	if room := startModelHeadroom(entry, family, view.Clk.Now()); room != nil && *room <= 0 {
+	if limits, _ := modelLimitWindows(entry, family, view.Clk.Now()); len(limits) > 0 {
 		return none, fmt.Errorf("Account-%s has no remaining quota for this %s start", number, family)
 	}
 	return sharedStartException{number: number, name: store.AccountNameFrom(data, number), allocation: strings.Join(models, ", "), identity: id}, nil
 }
 
-func startModelHeadroom(entry usage.UsageEntry, family string, now time.Time) *float64 {
+func modelLimitWindows(entry usage.UsageEntry, family string, now time.Time) ([]string, time.Time) {
 	v, _ := entry.DecisionValue().(map[string]any)
 	u := oauth.NewUsage(oauth.AsOf(v, now))
-	return oauth.AccountHeadroom(u, oauth.FamilyWindows(u, family))
+	return oauth.LimitingWindows(u, oauth.FamilyWindows(u, family))
 }

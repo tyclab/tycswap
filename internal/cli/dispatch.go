@@ -17,6 +17,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/core"
+	"github.com/tyclab/tycswap/internal/lifecycle"
 	"github.com/tyclab/tycswap/internal/platform"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/transfer"
@@ -69,7 +70,7 @@ func dispatchMain(prog string, p *parsed, s ioStreams) int {
 	}
 
 	var payload any
-	derr := runMainAction(p, sw, &payload)
+	derr := runMainAction(p, sw, &payload, s.out)
 	if derr != nil {
 		return renderDomainError(derr, p.json, s.out, s.err)
 	}
@@ -84,10 +85,14 @@ func dispatchMain(prog string, p *parsed, s ioStreams) int {
 
 // runMainAction invokes the selected switcher action, capturing the JSON
 // payload (spec 08§5 dispatch table). Human output is written by the method.
-func runMainAction(p *parsed, sw *core.Switcher, payload *any) error {
+func runMainAction(p *parsed, sw *core.Switcher, payload *any, out io.Writer) error {
 	switch {
 	case p.addAccount:
-		return sw.AddAccount(p.slot, false, p.alias)
+		added, err := lifecycle.SaveLogin(sw.Store, lifecycle.LiveLogin, p.slot, false, p.alias)
+		if err == nil && added.StartLoginHint != "" {
+			fmt.Fprintln(out, added.StartLoginHint)
+		}
+		return err
 	case p.addToken != nil:
 		return sw.AddAccountFromTokenWithBaseURL(*p.addToken, derefStr(p.baseURL), p.email, intToStrPtr(p.slot), false)
 	case p.removeAccount != nil:

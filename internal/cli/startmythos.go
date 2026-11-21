@@ -11,12 +11,14 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/launch"
 	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
@@ -134,7 +136,7 @@ func locateStartMythos(root, model, account, session string, linked bool) (mytho
 		// The link creator reports a damaged selection and falls back to this direct placement.
 		selected, _ = store.SelectedMythosDigest(root)
 	}
-	return chooseMythosLogin(view, model, account, bound, "", selected, set)
+	return chooseMythosLogin(view, model, mythosLoginRequest{account: account, bound: bound, selected: selected, start: true}, set)
 }
 
 func mythosMovePlacement(view *store.Store) (mythosPlacement, error) {
@@ -194,16 +196,21 @@ func mythosTickPlacement(view *store.Store, sourceDir string, set settings.AutoS
 			return mythosPlacement{}, nil
 		}
 	}
-	return chooseMythosLogin(view, mythosFamily, "", "", sourceDir, selected, set)
+	return chooseMythosLogin(view, mythosFamily, mythosLoginRequest{source: sourceDir, selected: selected}, set)
 }
 
-func chooseMythosLogin(view *store.Store, model, account, bound, source, selected string, set settings.AutoSwitchSettings) (mythosPlacement, error) {
+type mythosLoginRequest struct {
+	account, bound, source, selected string
+	start                            bool
+}
+
+func chooseMythosLogin(view *store.Store, model string, req mythosLoginRequest, set settings.AutoSwitchSettings) (mythosPlacement, error) {
 	data, err := view.SequenceForUpdate()
 	if err != nil {
 		return mythosPlacement{}, err
 	}
-	if account != "" {
-		account, _, _, err = view.ResolveAccountFrom(data, account)
+	if req.account != "" {
+		req.account, _, _, err = view.ResolveAccountFrom(data, req.account)
 		if err != nil {
 			return mythosPlacement{}, err
 		}
@@ -215,9 +222,9 @@ func chooseMythosLogin(view *store.Store, model, account, bound, source, selecte
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
 		dir, ready := view.MythosLoginReady(data, num)
-		if ready && (account == "" || account == num) && (bound == "" || filepath.Base(dir) == bound) {
+		if ready && (req.account == "" || req.account == num) && (req.bound == "" || filepath.Base(dir) == req.bound) {
 			candidates = append(candidates, num)
-			if dir == source {
+			if dir == req.source {
 				sourceNumber = num
 			}
 			placement := mythosPlacement{dir: dir, number: num, name: store.AccountNameFrom(data, num)}
@@ -230,7 +237,7 @@ func chooseMythosLogin(view *store.Store, model, account, bound, source, selecte
 		}
 	}
 	if len(candidates) == 0 {
-		if bound != "" {
+		if req.bound != "" {
 			return mythosPlacement{}, fmt.Errorf("the session's recorded login is unavailable for this resume")
 		}
 		return mythosPlacement{}, fmt.Errorf("%w for this start", errNoMythosLogin)
@@ -240,27 +247,34 @@ func chooseMythosLogin(view *store.Store, model, account, bound, source, selecte
 		entry.AuthDeadStrikes = 0 // credential failures belong to the default grant, independently of shared quota
 		entries[num] = entry
 	}
+	now := view.Clk.Now()
 	rank := autoswitch.InitialPlacementTargets
-	if source != "" {
+	if req.source != "" {
 		rank = autoswitch.KnownRoomTargets
 		// Finish an earlier rotation even if the old login's quota has since reset.
-		if selected != "" && filepath.Base(source) != selected {
-			for _, n := range rank(candidates, entries, set, model, view.Clk.Now()) {
-				if filepath.Base(placements[n].dir) == selected {
+		if req.selected != "" && filepath.Base(req.source) != req.selected {
+			for _, n := range rank(candidates, entries, set, model, now) {
+				if filepath.Base(placements[n].dir) == req.selected {
 					return placements[n], nil
 				}
 			}
 		}
-		if remaining := startModelHeadroom(entries[sourceNumber], model, view.Clk.Now()); sourceNumber != "" && (remaining == nil || *remaining > 0) {
+		if limits, _ := modelLimitWindows(entries[sourceNumber], model, now); sourceNumber != "" && len(limits) == 0 {
 			return mythosPlacement{}, nil
 		}
 	}
-	ranked := rank(candidates, entries, set, model, view.Clk.Now())
+	ranked := rank(candidates, entries, set, model, now)
 	if len(ranked) == 0 {
-		return mythosPlacement{}, fmt.Errorf("%w for %s", errNoMythosQuota, model)
+		err := fmt.Errorf("%w for %s", errNoMythosQuota, model)
+		if req.start {
+			if number, reset := firstMythosReturn(candidates, entries, model, now); number != "" {
+				err = fmt.Errorf("%w; Account-%s returns %s", err, number, oauth.ResetClockString(reset, now))
+			}
+		}
+		return mythosPlacement{}, err
 	}
-	if selected != "" {
-		if preferred := slices.IndexFunc(ranked, func(num string) bool { return filepath.Base(placements[num].dir) == selected }); preferred > 0 {
+	if req.selected != "" {
+		if preferred := slices.IndexFunc(ranked, func(num string) bool { return filepath.Base(placements[num].dir) == req.selected }); preferred > 0 {
 			num := ranked[preferred]
 			copy(ranked[1:], ranked[:preferred])
 			ranked[0] = num
@@ -268,7 +282,7 @@ func chooseMythosLogin(view *store.Store, model, account, bound, source, selecte
 	}
 	// A hand-selected account with room is the start target, including when
 	// the existing allocation question must be answered before launch.
-	if selected != "" && source == "" && filepath.Base(placements[ranked[0]].dir) == selected && placements[ranked[0]].allocation != "" {
+	if req.selected != "" && req.source == "" && filepath.Base(placements[ranked[0]].dir) == req.selected && placements[ranked[0]].allocation != "" {
 		hand, _ := mythosHandSelection(view, set, true)
 		if hand == ranked[0] {
 			return placements[hand], nil
@@ -280,6 +294,18 @@ func chooseMythosLogin(view *store.Store, model, account, bound, source, selecte
 		}
 	}
 	return placements[ranked[0]], nil
+}
+
+func firstMythosReturn(candidates []string, entries map[string]usage.UsageEntry, model string, now time.Time) (string, time.Time) {
+	var number string
+	var earliest time.Time
+	for _, num := range candidates {
+		_, reset := modelLimitWindows(entries[num], model, now)
+		if !reset.IsZero() && (earliest.IsZero() || reset.Before(earliest)) {
+			number, earliest = num, reset
+		}
+	}
+	return number, earliest
 }
 
 const nativeMythosModel = "claude-mythos-5-2"

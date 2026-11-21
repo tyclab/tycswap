@@ -34,9 +34,11 @@ package lifecycle
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 
+	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/groups"
@@ -50,13 +52,25 @@ func AddAccount(s *store.Store, slot *int, assumeYes bool, alias *string) error 
 	return err
 }
 
-func AddAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, alias *string) (string, error) {
-	var accountNum string
-	err := addAccountFrom(s, src, slot, assumeYes, alias, &accountNum)
-	return accountNum, err
+type AddLoginResult struct {
+	Number         string `json:"number"`
+	Email          string `json:"email"`
+	Refreshed      bool   `json:"refreshed"`
+	StartLoginHint string `json:"-"`
 }
 
-func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, alias *string, landed *string) error {
+func AddAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, alias *string) (string, error) {
+	added, err := SaveLogin(s, src, slot, assumeYes, alias)
+	return added.Number, err
+}
+
+func SaveLogin(s *store.Store, src AddSource, slot *int, assumeYes bool, alias *string) (AddLoginResult, error) {
+	var added AddLoginResult
+	err := addAccountFrom(s, src, slot, assumeYes, alias, &added)
+	return added, err
+}
+
+func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, alias *string, added *AddLoginResult) error {
 	if err := s.SetupDirectories(); err != nil {
 		return err
 	}
@@ -109,8 +123,11 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 				if err := refuseGroupHeld(s, existing); err != nil {
 					return err
 				}
-				*landed = existing
-				return addRefreshInPlace(s, src, data, existing, email, orgUUID, alias, normAlias)
+				if err := addRefreshInPlace(s, src, data, existing, email, orgUUID, alias, normAlias); err != nil {
+					return err
+				}
+				*added = AddLoginResult{Number: existing, Email: email, Refreshed: true}
+				return nil
 			}
 		}
 
@@ -254,7 +271,12 @@ func addAccountFrom(s *store.Store, src AddSource, slot *int, assumeYes bool, al
 		if migrateFrom != "" {
 			renumbered = map[string]string{migrateFrom: accountNum}
 		}
-		*landed = accountNum
+		*added = AddLoginResult{Number: accountNum, Email: email, Refreshed: metadata != nil}
+		if metadata == nil && slices.ContainsFunc(data.Sequence, func(n int) bool {
+			return store.StartLoginFrom(data, strconv.Itoa(n))
+		}) {
+			added.StartLoginHint = fmt.Sprintf("To include Account-%s among the marked start logins, run %s start --allow %s.", accountNum, brand.Sanitized().Name, accountNum)
+		}
 
 		tag := displayTag(email, cfgOrgName)
 		if s.Log != nil {

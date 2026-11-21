@@ -408,13 +408,14 @@ func appCommand(prog string, argv []string, s ioStreams) int {
 			if provider != reporting.ProviderClaude {
 				return "", cerr.Validation("expected a Claude account")
 			}
-			result, err := d.SwitchMythos(id)
+			result, err := d.SwitchMythos(id, "tray")
 			msg, _ := result["message"].(string)
 			return msg, err
 		},
-		UseSession: d.UseSession, SetNextStartModel: d.SetNextStartModel,
-		AddCurrent:  func() (web.AddLoginResult, error) { return srv.AddCurrentLogin() },
-		AutoRunning: func() bool { return d.auto.View().Running },
+		UseSession:        func(id, dest string) error { return d.UseSession(id, dest, "tray") },
+		SetNextStartModel: d.SetNextStartModel,
+		AddCurrent:        func() (web.AddLoginResult, error) { return srv.AddCurrentLogin() },
+		AutoRunning:       func() bool { return d.auto.View().Running },
 		AutoStart: func() error {
 			if err := d.auto.Start(); err != nil {
 				return err

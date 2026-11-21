@@ -234,7 +234,7 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 			if err != nil {
 				return target, "", err
 			}
-			target, err = chooseMythosLogin(view, model, "", rec.ResumeMythos, "", "", set)
+			target, err = chooseMythosLogin(view, model, mythosLoginRequest{bound: rec.ResumeMythos}, set)
 			if !errors.Is(err, errNoMythosQuota) {
 				return target, target.dir, err
 			}
@@ -306,7 +306,7 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 	}
 	id := usage.Identity{Email: email, OrgUUID: org}
 	entry := view.Usage.Entries(map[string]usage.Identity{num: id})[num]
-	if room := startModelHeadroom(entry, model, view.Clk.Now()); room != nil && *room <= 0 {
+	if limits, _ := modelLimitWindows(entry, model, view.Clk.Now()); len(limits) > 0 {
 		return target, "", cerr.Validation("Account-%s has no remaining quota for this session", num)
 	}
 	target.number, target.name = num, store.AccountNameFrom(data, num)

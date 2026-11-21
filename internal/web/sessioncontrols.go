@@ -13,12 +13,12 @@ import (
 
 // The local dashboard and its remote tray both use the host's CLI operations.
 type mythosSwitcher interface {
-	SwitchMythos(id string) (map[string]any, error)
+	SwitchMythos(id, actor string) (map[string]any, error)
 }
 
 type sessionMover interface {
 	SessionMoves(id string) ([]string, error)
-	UseSession(id, store string) error
+	UseSession(id, store, actor string) error
 }
 
 type allocationEditor interface {
@@ -28,6 +28,13 @@ type allocationEditor interface {
 type nextStartSelection interface {
 	NextStartModel() (string, error)
 	SetNextStartModel(model string) error
+}
+
+func (s *Server) loginActor(r *http.Request) string {
+	if r.URL.Query().Get("source") == "tray" && s.hasBearer(r) {
+		return "tray"
+	}
+	return s.dashboardActor(r)
 }
 
 func (s *Server) handleMythosSwitch(w http.ResponseWriter, r *http.Request, provider, id string) {
@@ -45,11 +52,7 @@ func (s *Server) handleMythosSwitch(w http.ResponseWriter, r *http.Request, prov
 		return
 	}
 	s.mutateLogin(w, func() (map[string]any, error) {
-		res, err := ops.SwitchMythos(id)
-		if err == nil {
-			s.logAction(r, "Selected Mythos login "+id)
-		}
-		return res, err
+		return ops.SwitchMythos(id, s.loginActor(r))
 	})
 }
 
@@ -98,7 +101,7 @@ func (s *Server) handleSessionUse(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	s.mutateLogin(w, func() (map[string]any, error) {
 		// The move guard logs the committed outcome for every surface.
-		return nil, ops.UseSession(id, dest)
+		return nil, ops.UseSession(id, dest, s.loginActor(r))
 	})
 }
 

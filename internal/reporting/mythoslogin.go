@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/procdetect"
@@ -33,7 +34,10 @@ func readMythosView(s *store.Store, data *store.SequenceData) mythosView {
 		return v
 	}
 	digest, selectionErr := store.SelectedMythosDigest(s.BackupDir())
-	obj := map[string]any{"number": nil, "linkedSessions": nil, "countedWindows": nil}
+	obj := map[string]any{
+		"number": nil, "linkedSessions": nil, "countedWindows": nil,
+		"atLimit": nil, "limitingWindows": nil, "resetsAt": nil,
+	}
 	if data == nil || data.Accounts == nil || data.Sequence == nil {
 		if digest != "" || selectionErr != nil {
 			obj["reason"] = "the Mythos account roster is unavailable"
@@ -92,12 +96,23 @@ func readMythosView(s *store.Store, data *store.SequenceData) mythosView {
 	obj["email"] = email
 	entry := s.Usage.Entries(map[string]usage.Identity{active: {Email: email, OrgUUID: org}})[active]
 	value, _ := entry.DecisionValue().(map[string]any)
-	u := oauth.NewUsage(oauth.AsOf(value, s.Clk.Now()))
+	now := s.Clk.Now()
+	u := oauth.NewUsage(oauth.AsOf(value, now))
+	models := oauth.FamilyWindows(u, "mythos")
 	var names []string
-	for _, w := range oauth.RelevantWindows(u, oauth.FamilyWindows(u, "mythos")) {
+	for _, w := range oauth.RelevantWindows(u, models) {
 		names = append(names, w.Label)
 	}
 	obj["countedWindows"] = names
+	if len(names) > 0 {
+		limiting, reset := oauth.LimitingWindows(u, models)
+		obj["atLimit"] = len(limiting) > 0
+		obj["limitingWindows"] = append([]string{}, limiting...)
+		if !reset.IsZero() {
+			obj["resetsAt"] = reset.UTC().Format(time.RFC3339Nano)
+			obj["resetClock"] = oauth.ResetClockString(reset, now)
+		}
+	}
 	n, err := countLinksOnLogin(s.BackupDir(), store.MythosLoginDir(s.BackupDir(), email, org))
 	if err != nil {
 		obj["reason"] = err.Error()
@@ -147,12 +162,15 @@ func MythosLoginLine(obj map[string]any) string {
 		return ""
 	}
 	var summary struct {
-		Number         *int
-		Email          string
-		CountedWindows []string
-		LinkedSessions *int
-		Reason         string
-		ChoiceNote     string
+		Number          *int
+		Email           string
+		CountedWindows  []string
+		AtLimit         bool
+		LimitingWindows []string
+		ResetClock      string
+		LinkedSessions  *int
+		Reason          string
+		ChoiceNote      string
 	}
 	raw, err := json.Marshal(obj)
 	if err != nil || json.Unmarshal(raw, &summary) != nil {
@@ -173,6 +191,13 @@ func MythosLoginLine(obj map[string]any) string {
 		parts = append(parts, "usage unavailable")
 	} else {
 		parts = append(parts, "counting "+termsafe.Strip(strings.Join(summary.CountedWindows, " + ")))
+	}
+	if summary.AtLimit {
+		limit := "at limit: " + termsafe.Strip(strings.Join(summary.LimitingWindows, ", "))
+		if summary.ResetClock != "" {
+			limit += " until " + termsafe.Strip(summary.ResetClock)
+		}
+		parts = append(parts, limit)
 	}
 	if summary.LinkedSessions != nil {
 		word := "linked sessions"

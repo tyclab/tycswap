@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
@@ -18,9 +19,17 @@ func mythosStatePath(root string) string {
 	return autoswitch.StatePath(filepath.Join(root, "mythos"))
 }
 
-// switchMythos commits the box's choice even when the client is refreshing a
-// particular session. Each pending move rechecks that choice under the root lock.
 func switchMythos(sw *core.Switcher, id string) (map[string]any, error) {
+	actor := cliActor()
+	if os.Getenv(menuActionEnv) == "1" {
+		actor = "menu"
+	}
+	return switchMythosBy(sw, id, actor)
+}
+
+// switchMythosBy commits the box's choice even when the client is refreshing a
+// particular session. Each pending move rechecks that choice under the root lock.
+func switchMythosBy(sw *core.Switcher, id, actor string) (map[string]any, error) {
 	root := sw.BackupDir()
 	var num, email, dir string
 	var changed bool
@@ -49,6 +58,7 @@ func switchMythos(sw *core.Switcher, id string) (map[string]any, error) {
 					return "", err
 				}
 				changed = true
+				sw.Log.Action("Switched the Mythos login to account "+num, actor)
 			}
 			return num, nil
 		}); err != nil {
@@ -74,7 +84,7 @@ func switchMythos(sw *core.Switcher, id string) (map[string]any, error) {
 			continue
 		}
 		redirected := false
-		err := reporting.MoveSessionLink(sw.Store, "switch --store mythos", link.ID, filepath.Join(root, "links", link.Token), false, func(current *reporting.SessionLink) error {
+		err := reporting.MoveSessionLink(sw.Store, actor+" (switch --store mythos)", link.ID, filepath.Join(root, "links", link.Token), false, func(current *reporting.SessionLink) error {
 			if !wantsMythosLogin(*current) {
 				return nil
 			}

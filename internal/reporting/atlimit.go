@@ -30,17 +30,8 @@ func atLimitFor(decisionValue any, models []string, now time.Time) (bool, []stri
 		return false, nil
 	}
 	u := oauth.NewUsage(oauth.AsOf(m, now))
-	h := oauth.AccountHeadroom(u, models)
-	if h == nil || *h > 0 {
-		return false, nil
-	}
-	var limiting []string
-	for _, w := range oauth.RelevantWindows(u, models) {
-		if w.Pct >= 100 {
-			limiting = append(limiting, w.Label)
-		}
-	}
-	return true, limiting
+	limiting, _ := oauth.LimitingWindows(u, models)
+	return len(limiting) != 0, limiting
 }
 
 // atLimitMarker returns the styled human marker ("at limit: 7d, Fable 5") for an

@@ -6,6 +6,10 @@ func (sw *Switcher) AddAccount(slot *int, assumeYes bool, alias *string) error {
 	return lifecycle.AddAccount(sw.Store, slot, assumeYes, alias)
 }
 
+func (sw *Switcher) SaveCurrentLogin() (lifecycle.AddLoginResult, error) {
+	return lifecycle.SaveLogin(sw.Store, lifecycle.LiveLogin, nil, true, nil)
+}
+
 func (sw *Switcher) AddAccountFromToken(token string, email, slotArg *string, assumeYes bool) error {
 	return lifecycle.AddAccountFromToken(sw.Store, token, email, slotArg, assumeYes)
 }
