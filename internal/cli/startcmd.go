@@ -78,8 +78,8 @@ func parseStartArguments(argv []string) (startArguments, error) {
 			}
 			parsed.mythos = true
 		case "--next":
-			if parsed.action != "" || parsed.account != "" || i+1 == len(argv) || (argv[i+1] != "mythos" && argv[i+1] != "clear") {
-				return parsed, fmt.Errorf("--next requires mythos or clear and cannot be combined with management options")
+			if parsed.action != "" || parsed.account != "" || i+1 == len(argv) || !slices.Contains([]string{"mythos", "clear", "show"}, argv[i+1]) {
+				return parsed, fmt.Errorf("--next requires mythos, clear or show and cannot be combined with management options")
 			}
 			i++
 			parsed.action, parsed.id = tok, argv[i]
@@ -125,9 +125,6 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 }
 
 func startCommandFor(prog string, argv []string, streams ioStreams, selectedDir string) int {
-	env := os.Environ()
-	// The child gets env; this process acts on the default login under its locks.
-	dropFableStoreEnv()
 	parsed, err := parseStartArguments(argv)
 	if err != nil {
 		return subError(prog+" start", streams.err, err.Error())
@@ -138,6 +135,12 @@ func startCommandFor(prog string, argv []string, streams ioStreams, selectedDir 
 	if parsed.mythos && (parsed.action != "" || len(parsed.command) > 0) {
 		return subError(prog+" start", streams.err, "--mythos takes only an optional --account ID")
 	}
+	if parsed.action == "--next" && parsed.id == "show" {
+		return showNextStart(streams)
+	}
+	env := os.Environ()
+	// The child gets env; this process acts on the default login under its locks.
+	dropFableStoreEnv()
 	if parsed.action == "--next" {
 		model := parsed.id
 		if model == "clear" {
@@ -189,15 +192,12 @@ func runStart(bin string, parsed startArguments, selectedDir string, env []strin
 	var link string
 	native := launch.IsClaudeCommand(bin)
 	override := startOverride(env, parsed.command, storeDir)
-	warnNextStart := func(err error) {
-		startNotice(streams.err, fmt.Sprintf("Ignoring %v. Use tycswap start --next clear to clear the request.", err))
-	}
 	var next store.NextStartRequest
 	if checkNext && native && store.SupportsMythosStart() && !parsed.mythos && parsed.account == "" && len(args) == 1 && override == "" && startStoreProblem(root) == "" {
 		var err error
 		next, err = store.ReadNextStart(root)
 		if err != nil {
-			warnNextStart(err)
+			warnNextStart(streams.err, err)
 		}
 	}
 	refuseStart := func(reason string) int {
@@ -327,7 +327,7 @@ func runStart(bin string, parsed startArguments, selectedDir string, env []strin
 				if !errors.Is(err, store.ErrUnreadableNextStart) {
 					return refuseStart(err.Error())
 				}
-				warnNextStart(err)
+				warnNextStart(streams.err, err)
 			}
 			// The observed request is no longer available. Start without it.
 			return runStart(bin, parsed, selectedDir, env, streams, false)
@@ -791,6 +791,26 @@ func startManagement(args startArguments, streams ioStreams) int {
 	return 0
 }
 
+func showNextStart(streams ioStreams) int {
+	model := "none"
+	if store.SupportsMythosStart() {
+		request, err := store.ReadNextStart(paths.GetBackupRoot())
+		if err != nil {
+			warnNextStart(streams.err, err)
+			return 1
+		}
+		if request.Model != "" {
+			model = request.Model
+		}
+	}
+	fmt.Fprintln(streams.out, model)
+	return 0
+}
+
+func warnNextStart(stderr io.Writer, err error) {
+	startNotice(stderr, fmt.Sprintf("Ignoring %v. Use tycswap start --next clear to clear the request.", err))
+}
+
 func startNotice(stderr io.Writer, message string) string {
 	line := strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
@@ -806,12 +826,14 @@ func renderStartHelp(prog string, out io.Writer) int {
 	fmt.Fprintf(out, "usage: %s start [--account ID] [--] [command [args...]]\n", prog)
 	fmt.Fprintf(out, "       %s start --mythos [--account ID]\n", prog)
 	fmt.Fprintf(out, "       %s start --next mythos|clear\n", prog)
+	fmt.Fprintf(out, "       %s start --next show\n", prog)
 	fmt.Fprintf(out, "       %s start --allow ID | --disallow ID | --list\n", prog)
 	fmt.Fprintf(out, "       %s start --started\n", prog)
 	fmt.Fprintf(out, "       %s start --check\n", prog)
 	fmt.Fprintln(out, "\nStart on a marked login, then launch once (default: real Claude). A marked login with room")
 	fmt.Fprintln(out, "comes first; one at its limit is still used, and auto-switch leaves it there until the session")
 	fmt.Fprintln(out, "is up: --started, run as Claude Code's SessionStart hook, says so, else the hold ends after 30 s.")
+	fmt.Fprintln(out, "--next show prints mythos or none and leaves the request in place.")
 	fmt.Fprintln(out, "Selection failures launch on the current login. Arguments pass unchanged.")
 	fmt.Fprintln(out, "--account also works with auto-switch off; inherited auth/profile overrides skip selection.")
 	fmt.Fprintln(out, "Sessions on a Fable model start on the Fable store when one is on (tycswap add --login --lineage fable),")

@@ -43,6 +43,7 @@ var menuActions = []menuAction{
 	{"start", "", "--account=Account NativeArgs", "Start a new native process"},
 	{"start --check", "", "", "Check a Claude status-line file against this login store"},
 	{"start --list", "", "", "List startup accounts"},
+	{"start --next show", "", "", "Show the model requested for the next bare Claude start"},
 	{"start --allow", "Account", "", "Mark a startup account"},
 	{"start --disallow", "Account", "", "Remove a startup mark"},
 	{"mythos --list", "", "", "List accounts marked for Mythos"},

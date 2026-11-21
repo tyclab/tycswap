@@ -45,6 +45,7 @@ Commands:
   tycswap start [-- command args]    launch once on a marked login, even at its limit
   tycswap start --mythos [--account ID]  start an independent Mythos session
   tycswap start --next mythos|clear  set or clear Mythos for the next bare Claude start
+  tycswap start --next show          print mythos or none for the next bare Claude start
   tycswap start --allow|--disallow ID mark or unmark a start login (--list lists)
   tycswap use <mythos|fable|default> [--session ID]  move a linked session to that login
   tycswap mythos --allow|--disallow ID mark or unmark an account that runs Mythos

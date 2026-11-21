@@ -153,7 +153,7 @@ func TestMenuMythosActionParity(t *testing.T) {
 	fableMenuPlatform(t, true)
 	catalog := menuScript(t)
 	menuCommands(ioStreams{err: io.Discard})
-	for _, command := range []string{"use mythos", "use fable", "use default", "switch --store mythos", "start --mythos", "start --next mythos", "start --next clear"} {
+	for _, command := range []string{"use mythos", "use fable", "use default", "switch --store mythos", "start --mythos", "start --next mythos", "start --next clear", "start --next show"} {
 		if !slices.ContainsFunc(catalog["Choose a command"], func(s string) bool { return strings.HasPrefix(s, command+"   ") }) {
 			t.Errorf("Browse commands and options is missing %q", command)
 		}
@@ -164,6 +164,13 @@ func TestMenuMythosActionParity(t *testing.T) {
 		if !slices.ContainsFunc(list["Options for "+tc.cmd], func(s string) bool { return strings.HasPrefix(s, tc.flag) }) {
 			t.Errorf("%s is missing option %s", tc.cmd, tc.flag)
 		}
+	}
+	fableMenuPlatform(t, false)
+	commands := workflowCommands(t)
+	menuScript(t, "start --next show   ", "Run start --next show")
+	menuCommands(ioStreams{out: io.Discard, err: io.Discard})
+	if !reflect.DeepEqual(*commands, [][]string{{"start", "--next", "show"}}) {
+		t.Errorf("query from the menu without independent starts ran %v", *commands)
 	}
 }
 
@@ -215,6 +222,10 @@ func TestMenuNextStartFallsBackForUnreadablePreference(t *testing.T) {
 		msg := expectStartCode(t, 23, "--", "claude")
 		if rec.execs != i+1 || !slices.Equal(rec.args, []string{"claude"}) || strings.Count(msg, "\n") != 1 || !strings.Contains(msg, path) || !strings.Contains(msg, "tycswap start --next clear") {
 			t.Fatalf("invalid request %q: launches=%d args=%v notice=%q", raw, rec.execs, rec.args, msg)
+		}
+		code, out, notice := runSub(t, "start", "--next", "show")
+		if code != 1 || out != "" || notice != msg {
+			t.Fatalf("show returned %d, stdout %q, stderr %q; want the bare start's notice %q", code, out, notice, msg)
 		}
 		if got := readOrAbsent(t, path); got != raw {
 			t.Fatalf("unreadable preference rewritten to %q", got)
