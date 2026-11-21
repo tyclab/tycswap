@@ -512,6 +512,7 @@ tr.active-row .slot-chip { background: var(--accent); color: var(--accent-fg); b
 .setting-id .desc { font-size: var(--t12); color: var(--muted); }
 .setting-ctl { display: flex; gap: var(--s2); align-items: center; min-width: 0; }
 .setting-ctl input[type="number"], .setting-ctl select, .setting-ctl input[type="text"] { max-width: min(100%, 15rem); }
+.setting-ctl input[type="number"] { line-height: 1.25rem; }
 .setting-ctl .range-note { flex: none; max-inline-size: 100%; font-size: var(--t11); color: var(--muted); font-variant-numeric: tabular-nums; }
 .setting-default { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .375rem; min-width: 0; font-size: var(--t12); color: var(--muted); }
 .setting-default .def, .setting-default .eff { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
