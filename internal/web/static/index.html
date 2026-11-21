@@ -146,11 +146,13 @@
         <p id="auto-counting" class="auto-line"></p>
         <div id="auto-body"></div>
         <div id="quarantine-section" class="section" hidden>
-          <h3>Quarantine</h3>
-          <table class="tbl compact" id="quarantine-tbl">
-            <thead><tr><th scope="col">Slot</th><th scope="col">Reason</th><th scope="col">Since</th></tr></thead>
-            <tbody id="quarantine-body"></tbody>
-          </table>
+          <h3 id="quarantine-title">Quarantine</h3>
+          <div class="table-scroll" role="region" aria-labelledby="quarantine-title" tabindex="0">
+            <table class="tbl compact" id="quarantine-tbl">
+              <thead><tr><th scope="col">Slot</th><th scope="col">Reason</th><th scope="col">Since</th></tr></thead>
+              <tbody id="quarantine-body"></tbody>
+            </table>
+          </div>
         </div>
       </div>
       <div class="card">
@@ -464,21 +466,23 @@
       </article>
 
       <article class="card guide-section" id="g-settings">
-        <h2>The settings that steer it</h2>
-        <table class="tbl compact guide-tbl g-set">
-          <thead><tr><th scope="col">Setting, default</th><th scope="col">What it does</th></tr></thead>
-          <tbody>
-            <tr><td>5-hour threshold<span class="g-def">85 %</span></td><td>Move when the 5-hour window passes this; low, because parallel work fills it fast.</td></tr>
-            <tr><td>Weekly threshold<span class="g-def">97 %</span></td><td>The same for the weekly window.</td></tr>
-            <tr><td>Model threshold<span class="g-def">95 %</span></td><td>The same for a counted model's weekly limit.</td></tr>
-            <tr><td>Account order<span class="g-def">soonest-reset</span></td><td><em>soonest-reset</em>: the weekly window that renews first, so all accounts get used; <em>best</em>: the most weekly room.</td></tr>
-            <tr><td>Minimum improvement<span class="g-def">10</span></td><td>Points of extra room a threshold move needs, so it does not flip back and forth.</td></tr>
-            <tr><td>Switch cooldown<span class="g-def">300 s</span></td><td>After an automatic threshold move the next one waits this long; after a switch by hand, every automatic switch does.</td></tr>
-            <tr><td>Failed polls<span class="g-def">3</span></td><td>Failed usage reads of the live account in a row before Auto-switch moves off it.</td></tr>
-            <tr><td>Poll interval<span class="g-def">60 s</span></td><td>How often this dashboard checks.</td></tr>
-            <tr><td>Codex auto-switch, Codex threshold<span class="g-def">on, 0</span></td><td>Codex accounts, on one bar; 0 means the weekly threshold.</td></tr>
-          </tbody>
-        </table>
+        <h2 id="g-settings-heading">The settings that steer it</h2>
+        <div class="table-scroll" role="region" aria-labelledby="g-settings-heading" tabindex="0">
+          <table class="tbl compact guide-tbl g-set">
+            <thead><tr><th scope="col">Setting, default</th><th scope="col">What it does</th></tr></thead>
+            <tbody>
+              <tr><td>5-hour threshold<span class="g-def">85 %</span></td><td>Move when the 5-hour window passes this; low, because parallel work fills it fast.</td></tr>
+              <tr><td>Weekly threshold<span class="g-def">97 %</span></td><td>The same for the weekly window.</td></tr>
+              <tr><td>Model threshold<span class="g-def">95 %</span></td><td>The same for a counted model's weekly limit.</td></tr>
+              <tr><td>Account order<span class="g-def">soonest-reset</span></td><td><em>soonest-reset</em>: the weekly window that renews first, so all accounts get used; <em>best</em>: the most weekly room.</td></tr>
+              <tr><td>Minimum improvement<span class="g-def">10</span></td><td>Points of extra room a threshold move needs, so it does not flip back and forth.</td></tr>
+              <tr><td>Switch cooldown<span class="g-def">300 s</span></td><td>After an automatic threshold move the next one waits this long; after a switch by hand, every automatic switch does.</td></tr>
+              <tr><td>Failed polls<span class="g-def">3</span></td><td>Failed usage reads of the live account in a row before Auto-switch moves off it.</td></tr>
+              <tr><td>Poll interval<span class="g-def">60 s</span></td><td>How often this dashboard checks.</td></tr>
+              <tr><td>Codex auto-switch, Codex threshold<span class="g-def">on, 0</span></td><td>Codex accounts, on one bar; 0 means the weekly threshold.</td></tr>
+            </tbody>
+          </table>
+        </div>
         <p class="muted">Change them on the Settings tab.</p>
       </article>
 
@@ -541,19 +545,21 @@
       </article>
 
       <article class="card guide-section" id="g-cli">
-        <h2>Commands</h2>
-        <table class="tbl compact guide-tbl">
-          <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
-          <tbody>
-            <tr><td><code>{{.Name}}</code></td><td>The menu: add, manage, import and export accounts, start the tray</td></tr>
-            <tr><td><code>{{.Name}} list</code></td><td>The accounts and their usage</td></tr>
-            <tr><td><code>{{.Name}} switch 2</code></td><td>Switch to account 2 (number, alias or email)</td></tr>
-            <tr><td><code>{{.Name}} auto on</code> · <code>auto off</code></td><td>Auto-switch on or off</td></tr>
-            <tr><td><code>{{.Name}} add --login</code></td><td>Sign in another account beside the live one</td></tr>
-            <tr><td><code>{{.Name}} config</code></td><td>Show or change a setting</td></tr>
-            <tr><td><code>{{.Name}} export FILE</code> · <code>import FILE</code></td><td>Move accounts to another machine (a login works on one machine at a time). The file holds live credentials in plain text: treat it like a password.</td></tr>
-          </tbody>
-        </table>
+        <h2 id="g-cli-heading">Commands</h2>
+        <div class="table-scroll" role="region" aria-labelledby="g-cli-heading" tabindex="0">
+          <table class="tbl compact guide-tbl">
+            <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+            <tbody>
+              <tr><td><code>{{.Name}}</code></td><td>The menu: add, manage, import and export accounts, start the tray</td></tr>
+              <tr><td><code>{{.Name}} list</code></td><td>The accounts and their usage</td></tr>
+              <tr><td><code>{{.Name}} switch 2</code></td><td>Switch to account 2 (number, alias or email)</td></tr>
+              <tr><td><code>{{.Name}} auto on</code> · <code>auto off</code></td><td>Auto-switch on or off</td></tr>
+              <tr><td><code>{{.Name}} add --login</code></td><td>Sign in another account beside the live one</td></tr>
+              <tr><td><code>{{.Name}} config</code></td><td>Show or change a setting</td></tr>
+              <tr><td><code>{{.Name}} export FILE</code> · <code>import FILE</code></td><td>Move accounts to another machine (a login works on one machine at a time). The file holds live credentials in plain text: treat it like a password.</td></tr>
+            </tbody>
+          </table>
+        </div>
         <p class="muted"><code>{{.Name}} --help</code> lists every command; the README and <code>docs/reference.md</code> in the {{.Name}} repository describe each one.</p>
       </article>
 
