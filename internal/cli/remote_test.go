@@ -9,10 +9,13 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -23,6 +26,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/tyclab/tycswap/internal/cerr"
@@ -892,41 +896,51 @@ func TestRemoteStreamWatchdogEndsASilentStream(t *testing.T) {
 	}
 }
 
-// Pings keep a stream alive: with pings well inside the watchdog nothing
-// happens for longer than the watchdog would wait.
+// Virtual time advances only once the HTTP client has consumed each ping.
 func TestRemoteStreamPingsKeepItAlive(t *testing.T) {
-	fastRemote(t, 100*time.Millisecond)
-	f := startSSEFake(t, func(w http.ResponseWriter, flush func(), r *http.Request) {
-		tick := time.NewTicker(10 * time.Millisecond)
-		defer tick.Stop()
-		for {
-			select {
-			case <-r.Context().Done():
-				return
-			case <-tick.C:
-				if _, err := w.Write([]byte(": ping\n\n")); err != nil {
-					return
-				}
-				flush()
+	synctest.Test(t, func(t *testing.T) {
+		client, server := net.Pipe()
+		defer server.Close()
+		var dials atomic.Int32
+		rc := newRemoteClient("http://127.0.0.1:7337", "")
+		rc.stream.Transport.(*http.Transport).DialContext = func(context.Context, string, string) (net.Conn, error) {
+			if dials.Add(1) > 1 {
+				return nil, errors.New("unexpected reconnect")
+			}
+			return client, nil
+		}
+		rec := newLinkRecorder()
+		startLoop(t, rc, rec)
+		if _, err := http.ReadRequest(bufio.NewReader(server)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(server, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\nevent: state\ndata: {}\n\n"); err != nil {
+			t.Fatal(err)
+		}
+		waitState(t, rec.states)
+
+		for range 12 {
+			time.Sleep(15 * time.Second)
+			if _, err := io.WriteString(server, ": ping\n\n"); err != nil {
+				t.Fatalf("write ping: %v", err)
 			}
 		}
+		synctest.Wait()
+		select {
+		case up := <-rec.links:
+			t.Fatalf("link change %v on a pinging stream", up)
+		default:
+		}
+		if n := dials.Load(); n != 1 {
+			t.Errorf("connections = %d, want the one", n)
+		}
+		if down, _ := rc.Offline(); down {
+			t.Error("a pinging stream counts as reachable")
+		}
+
+		time.Sleep(remoteStaleAfter)
+		waitLink(t, rec.links, false)
 	})
-	rc := newFakeStreamClient(t, f)
-	rec := newLinkRecorder()
-	startLoop(t, rc, rec)
-	waitState(t, rec.states)
-	time.Sleep(300 * time.Millisecond)
-	select {
-	case up := <-rec.links:
-		t.Fatalf("link change %v on a pinging stream", up)
-	default:
-	}
-	if n := f.conns.Load(); n != 1 {
-		t.Errorf("connections = %d, want the one", n)
-	}
-	if down, _ := rc.Offline(); down {
-		t.Error("a pinging stream counts as reachable")
-	}
 }
 
 // A line that never ends, or data that never stops accumulating, ends the
