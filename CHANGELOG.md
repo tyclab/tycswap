@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `tycswap start --next show` prints `mythos` or `none` without consuming the queued start.
+
 - Select a ready Mythos login with `tycswap switch --store mythos N` or **Use for Mythos** in the menu, dashboard or tray. The login summary shows the counted windows and linked session count. The Sessions controls show each linked session’s login and verified account number and offer moves to other logins. Committed moves and changes in the reason a move is deferred appear in `tycswap.log`. The dashboard can edit a Claude account’s preferred models.
 - **Set next start** requests Mythos for one bare Claude start. The terminal menu can also start a Mythos session immediately.
 

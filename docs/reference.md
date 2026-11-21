@@ -41,6 +41,7 @@ tycswap swap <A> <B>                          exchange two accounts' slot number
 tycswap start [--account ID] [--] [command [args...]]
 tycswap start --mythos [--account ID]
 tycswap start --next {mythos|clear}
+tycswap start --next show
                                             choose a startup login, then launch once
 tycswap start --allow ID | --disallow ID | --list
                                             manage startup marks (Claude accounts)
@@ -1489,6 +1490,7 @@ tycswap start [--account ID] [--] [command [args...]]
 tycswap start --allow ID
 tycswap start --disallow ID
 tycswap start --list
+tycswap start --next {mythos|clear|show}
 tycswap start --started
 tycswap start --check
 ```
@@ -1506,7 +1508,13 @@ pending. Two concurrent bare starts can claim it only once. Use
 `start --next clear` to cancel. **Set next start** in the menu and dashboard
 and **Next start: Mythos** in the tray change this same request. If the saved
 request is unreadable, a bare start reports its path and continues normally.
-Either explicit `--next` command can replace the damaged request.
+Use `--next clear` or `--next mythos` to replace a damaged request.
+
+`tycswap start --next show` prints `mythos` for a queued request or `none` for
+an empty queue, then exits 0. It reads the saved request without consuming it
+or taking the writer lock. On hosts without independent Mythos starts it
+prints `none`. An unreadable request produces the same diagnostic as a bare
+start on stderr, leaves stdout empty and exits 1.
 
 The management forms set, clear or list the operator's startup marks. They are
 exclusive with each other and with launching. IDs use the ordinary account
