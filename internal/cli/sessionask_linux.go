@@ -34,7 +34,7 @@ func startSessionAsker(q sessionQuestion) error {
 		}
 		return err
 	}
-	cmd := exec.Command(exePath(), "_placement-ask", q.id, q.model, q.claim)
+	cmd := exec.Command(exePath(), "_placement-ask", q.id, q.model, q.claim, q.actor)
 	cmd.ExtraFiles = []*os.File{lock}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
@@ -45,7 +45,7 @@ func startSessionAsker(q sessionQuestion) error {
 }
 
 func sessionAskerCommand(args []string) int {
-	if len(args) != 3 || !sessionUUID.MatchString(args[0]) {
+	if (len(args) != 3 && len(args) != 4) || !sessionUUID.MatchString(args[0]) {
 		return 2
 	}
 	root := paths.GetBackupRoot()
@@ -72,7 +72,11 @@ func sessionAskerCommand(args []string) int {
 	if err != nil {
 		return 1
 	}
-	result, err := evaluateSessionPlacement(sw, rec.ID, link, args[1], "", false, args[2])
+	actor := "status line"
+	if len(args) == 4 && args[3] == "hook" {
+		actor = "hook"
+	}
+	result, err := evaluateSessionPlacement(sw, rec.ID, link, args[1], "", false, args[2], actor)
 	if err != nil || result.question == nil {
 		return 1
 	}

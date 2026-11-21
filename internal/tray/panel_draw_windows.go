@@ -172,6 +172,9 @@ func (p *windowsPanel) paint(dc uintptr) {
 	p.fill(dc, client, p.palette.background)
 	g := p.geometry
 	p.text(dc, p.titleFont, p.palette.text, panelBox(g.title), p.panel.Title, panelLine)
+	if p.panel.MythosSummary != "" {
+		p.text(dc, p.font, p.palette.text, panelBox(g.summary), p.panel.MythosSummary, panelLine)
+	}
 	header := panelBox(g.header)
 	header.right = client.right
 	p.fill(dc, header, p.palette.header)
@@ -302,6 +305,8 @@ func (p *windowsPanel) drawButton(draw *drawMenuItem) bool {
 			return true
 		}
 		label = "Switch"
+	} else if i, ok := p.rowKeyed(id, panelMythosKey); ok {
+		label = p.panel.Rows[i].MythosAction
 	} else if _, ok := p.fableFor(id); ok {
 		label = "Use for Fable"
 	} else if action, ok := p.actionFor(id); ok {

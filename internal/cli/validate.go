@@ -99,10 +99,12 @@ func validateStore(prog string, p *parsed, stderr io.Writer) (parseResult, bool)
 	case p.ifIdle && (!fable || p.switchTo == nil || p.empty):
 		return fail("--if-idle needs switch --store fable and an account")
 	case p.store == nil:
-	case *p.store != "fable" && *p.store != "default":
+	case *p.store != "fable" && *p.store != "default" && *p.store != "mythos":
 		return fail("unknown store: " + *p.store)
 	case !p.switchFlag && p.switchTo == nil:
 		return fail("--store can only be used with 'switch'")
+	case *p.store == "mythos" && (p.switchTo == nil || p.strategy != nil || p.force || p.empty):
+		return fail("--store mythos takes an account")
 	case fable && (p.strategy != nil || p.force || p.empty == (p.switchTo != nil)):
 		return fail("--store fable takes an account or --empty")
 	}

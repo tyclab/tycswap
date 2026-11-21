@@ -23,17 +23,18 @@ import (
 )
 
 type SessionLink struct {
-	ID             string `json:"-"`
-	Family         string `json:"-"`
-	Token          string `json:"token"`
-	PID            int    `json:"pid"`
-	ProcStart      string `json:"procStart"`
-	Target         string `json:"target"`
-	Wanted         string `json:"wanted,omitempty"`
-	ResumeMythos   string `json:"resumeMythos,omitempty"`
-	Question       string `json:"question,omitempty"`
-	SharedMythos   bool   `json:"sharedMythos,omitempty"`
-	ObservePending bool   `json:"observePending,omitempty"`
+	ID               string `json:"-"`
+	Family           string `json:"-"`
+	Token            string `json:"token"`
+	PID              int    `json:"pid"`
+	ProcStart        string `json:"procStart"`
+	Target           string `json:"target"`
+	Wanted           string `json:"wanted,omitempty"`
+	ResumeMythos     string `json:"resumeMythos,omitempty"`
+	Question         string `json:"question,omitempty"`
+	SharedMythos     bool   `json:"sharedMythos,omitempty"`
+	ObservePending   bool   `json:"observePending,omitempty"`
+	LastMoveDeferral string `json:"lastMoveDeferral,omitempty"`
 }
 
 func linkOwner(token string) (int, string, bool) {
@@ -267,11 +268,14 @@ func BindSessionLink(root, id, path, model, scope string, now time.Time) error {
 		return errors.New("missing session id or invalid session link")
 	}
 	return withLinkRecords(root, time.Time{}, func(records map[string]defaultSessionModel) error {
-		return bindSessionLink(root, id, path, model, scope, true, now, records)
+		if err := bindSessionLink(root, id, path, model, scope, true, now, records); err != nil {
+			return err
+		}
+		return saveSessionModels(root, records)
 	})
 }
 
-// bindSessionLink runs with both tycswap locks held and saves the record before returning.
+// bindSessionLink validates the binding and updates the supplied snapshot.
 func bindSessionLink(root, id, path, model, scope string, sharedMythos bool, now time.Time, records map[string]defaultSessionModel) error {
 	target, err := ResolveSessionLink(root, path)
 	if err != nil {
@@ -312,7 +316,8 @@ func bindSessionLink(root, id, path, model, scope string, sharedMythos bool, now
 		wanted = ""
 	}
 	link := SessionLink{Token: token, PID: pid, ProcStart: start, Target: target, Wanted: wanted, Family: family, ObservePending: true,
-		SharedMythos: family == "mythos" && targetStore == "" && sharedMythos && (!ok || old.SharedMythos)}
+		LastMoveDeferral: old.LastMoveDeferral,
+		SharedMythos:     family == "mythos" && targetStore == "" && sharedMythos && (!ok || old.SharedMythos)}
 	if ok && (wanted == "mythos" || wanted == "" && family == "mythos") {
 		digest := old.ResumeMythos
 		if digest == "" {
@@ -327,7 +332,7 @@ func bindSessionLink(root, id, path, model, scope string, sharedMythos bool, now
 	rec := defaultSessionModel{Family: link.Family, Store: targetStore, Binding: binding, Link: &link, SeenAt: float64(now.UnixNano()) / 1e9}
 	records[id] = rec
 	expireSessionModels(records, now)
-	return saveSessionModels(root, records)
+	return nil
 }
 
 // A damaged sibling still owns a token that is recognizable in its saved link.
@@ -405,14 +410,14 @@ func currentSessionLink(root, id, path string, records map[string]defaultSession
 	}
 	bound := filepath.Join(root, "links", link.Token)
 	if path != "" && path != bound {
-		return SessionLink{}, errors.New("session does not own this link")
+		return SessionLink{}, cerr.Validation("session does not own this link")
 	}
 	target, err := ResolveSessionLink(root, bound)
 	if err != nil {
 		return SessionLink{}, err
 	}
 	if target != link.Target || !procdetect.RecordAlive(link.PID, link.ProcStart, "") {
-		return SessionLink{}, errors.New("session link binding is no longer current")
+		return SessionLink{}, cerr.Validation("session link binding is no longer current")
 	}
 	return link, nil
 }
@@ -420,19 +425,32 @@ func currentSessionLink(root, id, path string, records map[string]defaultSession
 // UseSessionLink retries client contention. Each attempt reads the binding and
 // recomputes the proposed move. The decision must have no external side effects.
 func UseSessionLink(root, id, path string, now time.Time, decide func(*SessionLink) error, recovery ...SessionLinkRecovery) error {
-	var source SessionLink
-	return cclock.RetryOAuthRefresh(func(deadline time.Time) error {
-		return updateSessionLink(root, id, path, now, deadline, &source, decide, recovery...)
-	})
+	return (sessionMoveLog{}).apply(root, id, path, now, true, decide, recovery...)
 }
 
 // UpdateSessionLink defers automatic moves when the client's refresh lock is busy.
 func UpdateSessionLink(root, id, path string, now time.Time, decide func(*SessionLink) error, recovery ...SessionLinkRecovery) error {
-	return updateSessionLink(root, id, path, now, time.Time{}, nil, decide, recovery...)
+	return (sessionMoveLog{}).update(root, id, path, now, time.Time{}, nil, decide, recovery...)
 }
 
-func updateSessionLink(root, id, path string, now, deadline time.Time, original *SessionLink, decide func(*SessionLink) error, recovery ...SessionLinkRecovery) error {
-	return withLinkRecords(root, deadline, func(records map[string]defaultSessionModel) error {
+// MoveSessionLink records placement outcomes under the same locks as the link
+// transaction. Explicit use retries client contention; automatic moves try once.
+func MoveSessionLink(view *store.Store, actor, id, path string, wait bool, decide func(*SessionLink) error, recovery ...SessionLinkRecovery) error {
+	return (sessionMoveLog{view, actor}).apply(view.BackupDir(), id, path, view.Clk.Now(), wait, decide, recovery...)
+}
+
+func (log sessionMoveLog) apply(root, id, path string, now time.Time, wait bool, decide func(*SessionLink) error, recovery ...SessionLinkRecovery) error {
+	if !wait {
+		return log.update(root, id, path, now, time.Time{}, nil, decide, recovery...)
+	}
+	var source SessionLink
+	return cclock.RetryOAuthRefresh(func(deadline time.Time) error {
+		return log.update(root, id, path, now, deadline, &source, decide, recovery...)
+	})
+}
+
+func (log sessionMoveLog) update(root, id, path string, now, deadline time.Time, original *SessionLink, decide func(*SessionLink) error, recovery ...SessionLinkRecovery) error {
+	return withLinkRecords(root, deadline, func(records map[string]defaultSessionModel) (result error) {
 		if original != nil && original.Token != "" {
 			// A legacy writer can strip this binding between attempts. Give
 			// repair the verified ID and link, and check its source before it writes.
@@ -442,7 +460,14 @@ func updateSessionLink(root, id, path string, now, deadline time.Time, original 
 				return err
 			}
 			if target != original.Target {
-				return errors.New("the session binding changed while waiting for the refresh lock. Retry the move.")
+				refusal := cerr.Validation("the session binding changed while waiting for the refresh lock. Retry the move.")
+				// Only the current authenticated binding may retain this refusal.
+				if log.view != nil {
+					if current, err := currentSessionLink(root, id, path, records); err == nil {
+						return log.outcome(root, records, records[id], current, current, refusal)
+					}
+				}
+				return refusal
 			}
 		}
 		link, err := sessionLinkForUpdate(root, id, path, records, now, recovery)
@@ -455,6 +480,13 @@ func updateSessionLink(root, id, path string, now, deadline time.Time, original 
 		id = link.ID
 		old := records[id]
 		before := link
+		if log.view != nil {
+			// The client guard is released before this runs. Both tycswap
+			// locks still protect the account identities and the last refusal.
+			defer func() {
+				result = log.outcome(root, records, old, before, link, result)
+			}()
+		}
 		if err := decide(&link); err != nil {
 			return err
 		}
@@ -477,6 +509,7 @@ func updateSessionLink(root, id, path string, now, deadline time.Time, original 
 			records[id] = next
 			return saveSessionModels(root, records)
 		}
+		link.LastMoveDeferral = ""
 		if err := checkTarget(root, link.Target); err != nil {
 			return err
 		}

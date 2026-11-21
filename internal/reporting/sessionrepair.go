@@ -8,10 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/procdetect"
 )
 
-var errNoSessionBinding = errors.New("session has no linked login binding")
+var errNoSessionBinding = cerr.AccountNotFound("session has no linked login binding")
 
 // SessionLinkRecovery enables repair by an observer or an explicit use command.
 // Only the caller's own link supplies launch metadata.
@@ -24,6 +25,10 @@ type SessionLinkRecovery struct {
 // sessionLinkForUpdate runs under both tycswap locks. Repair only a genuinely absent
 // binding: a damaged row or a recorded link with a different owner remains a refusal.
 func sessionLinkForUpdate(root, id, path string, records map[string]defaultSessionModel, now time.Time, recovery []SessionLinkRecovery) (SessionLink, error) {
+	return resolveSessionBinding(root, id, path, records, now, recovery, true)
+}
+
+func resolveSessionBinding(root, id, path string, records map[string]defaultSessionModel, now time.Time, recovery []SessionLinkRecovery, persist bool) (SessionLink, error) {
 	link, err := currentSessionLink(root, id, path, records)
 	if !errors.Is(err, errNoSessionBinding) || len(recovery) == 0 {
 		return link, err
@@ -66,6 +71,11 @@ func sessionLinkForUpdate(root, id, path string, records map[string]defaultSessi
 	}
 	if err := bindSessionLink(root, id, path, family, scope, source.LaunchFamily == "mythos", now, records); err != nil {
 		return SessionLink{}, err
+	}
+	if persist {
+		if err := saveSessionModels(root, records); err != nil {
+			return SessionLink{}, err
+		}
 	}
 	return currentSessionLink(root, id, path, records)
 }
@@ -117,6 +127,9 @@ func locateSessionLink(root, id, path string) (string, string, error) {
 	}
 	dir := filepath.Join(root, "links")
 	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return "", "", errNoSessionBinding
+	}
 	if err != nil {
 		return "", "", err
 	}
@@ -144,4 +157,35 @@ func registryCoversLink(session *procdetect.ClaudeSession, path string) bool {
 	}
 	info, err := os.Lstat(path)
 	return err == nil && !session.PIDOnlyAt.Before(info.ModTime())
+}
+
+// InspectSessionLink checks the same ownership and recovery rules as explicit use
+// against a private in-memory snapshot. A refresh of the UI never binds a session.
+func InspectSessionLink(root, id string, now time.Time) (SessionLink, error) {
+	records, err := loadDefaultSessionModels(root)
+	if err != nil {
+		return SessionLink{}, err
+	}
+	return resolveSessionBinding(root, id, "", records, now, []SessionLinkRecovery{{}}, false)
+}
+
+// ErrSessionRefreshing means the client owns the source login's refresh lock.
+var ErrSessionRefreshing = cerr.Lock("The session login is refreshing.")
+
+// SessionTargetAvailable probes the move guard without taking the native client's lock.
+func SessionTargetAvailable(root, source, target string) error {
+	if target == source {
+		return nil
+	}
+	if err := checkTarget(root, target); err != nil {
+		return err
+	}
+	lock := filepath.Join(source, ".oauth_refresh.lock")
+	if _, err := os.Lstat(lock); !os.IsNotExist(err) {
+		if err != nil {
+			return err
+		}
+		return ErrSessionRefreshing
+	}
+	return nil
 }

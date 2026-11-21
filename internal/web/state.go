@@ -13,6 +13,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/ccfile"
+	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/jsonout"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/procdetect"
@@ -57,7 +59,10 @@ type State struct {
 	UI *UIView `json:"ui"`
 	// Fable is the Fable store as status --json shows it; absent while no
 	// account has a Fable login (DESIGN A104).
-	Fable map[string]any `json:"fable,omitempty"`
+	Fable          map[string]any `json:"fable,omitempty"`
+	Mythos         map[string]any `json:"mythos,omitempty"`
+	NextStartModel *string        `json:"nextStartModel,omitempty"`
+	NextStartError string         `json:"nextStartError,omitempty"`
 }
 
 // CountingView is what auto-switch counts now (DESIGN A91, A97). Mode
@@ -104,7 +109,11 @@ type ClaudeSessionJSON struct {
 	Group      string  `json:"group,omitempty"`
 	// A dedicated session reports "mythos". The shared stores report
 	// "default" or "fable" when the Fable store is configured.
-	Store string `json:"store,omitempty"`
+	Store         string   `json:"store,omitempty"`
+	Moves         []string `json:"moves,omitempty"`
+	Login         string   `json:"login,omitempty"`
+	AccountNumber string   `json:"accountNumber,omitempty"`
+	MovesError    string   `json:"movesError,omitempty"`
 }
 
 // IdeInstanceJSON is one running IDE instance.
@@ -144,6 +153,7 @@ func (s *Server) buildState(o stateOpts) State {
 			st.ActiveNumber = n
 		}
 		st.Fable = snap.Fable
+		st.Mythos = snap.Mythos
 		now := s.d.Clock.Now()
 		for _, a := range snap.Accounts {
 			if a.ProviderName() == reporting.ProviderClaude {
@@ -197,6 +207,18 @@ func (s *Server) buildState(o stateOpts) State {
 		}
 		st.Auto = &v
 	}
+	if ops, ok := s.d.Accounts.(nextStartSelection); ok {
+		model, err := ops.NextStartModel()
+		if err != nil {
+			st.NextStartError = err.Error()
+		} else {
+			st.NextStartModel = &model
+		}
+	}
+	mover, _ := s.d.Accounts.(sessionMover)
+	owners, _ := s.d.Accounts.(interface {
+		SessionLogin(id string) (string, string)
+	})
 	sv := s.d.Sessions()
 	var stores map[string]string
 	if len(sv.Claude) > 0 {
@@ -210,8 +232,19 @@ func (s *Server) buildState(o stateOpts) State {
 				item.Store = "mythos"
 			case store == "fable" && st.Fable != nil:
 				item.Store = "fable"
-			case store == "" && st.Fable != nil:
+			case store == "" && (st.Fable != nil || st.Mythos != nil):
 				item.Store = "default"
+			}
+		}
+		if owners != nil && item.SessionID != "" {
+			item.Login, item.AccountNumber = owners.SessionLogin(item.SessionID)
+		}
+		if mover != nil && item.SessionID != "" && item.Profile == "" && item.Group == "" {
+			moves, err := mover.SessionMoves(item.SessionID)
+			item.Moves = moves
+			var ce *cerr.Error
+			if err != nil && !(len(moves) == 0 && errors.As(err, &ce) && ce.Kind == cerr.KindAccountNotFound) {
+				item.MovesError = err.Error()
 			}
 		}
 		st.Sessions.Claude = append(st.Sessions.Claude, item)
@@ -323,6 +356,12 @@ func accountRow(a reporting.AccountSnapshot) map[string]any {
 	}
 	if a.ProviderName() == reporting.ProviderClaude {
 		row["startLogin"] = a.StartLogin
+		if a.Models != nil {
+			row["models"] = a.Models
+		}
+		if l := a.MythosLogin; l != nil {
+			row["mythosLogin"] = map[string]any{"live": l.Live, "status": l.Status, "selectable": l.Selectable}
+		}
 		if a.Mythos {
 			row["mythos"] = true
 		}

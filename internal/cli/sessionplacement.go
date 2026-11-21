@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/keychain"
 	"github.com/tyclab/tycswap/internal/paths"
@@ -44,7 +45,7 @@ func useCommand(prog string, args []string, streams ioStreams) int {
 	sw, err := newSwitcher(store.Options{Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
 	var result sessionMoveResult
 	if err == nil {
-		result, err = placeSession(sw, id, path, "", args[0], false)
+		result, err = placeSession(sw, id, path, "", args[0], false, "use")
 	}
 	if err != nil {
 		errorTo(streams.err, err.Error())
@@ -73,18 +74,18 @@ type sessionMoveResult struct {
 }
 
 type sessionQuestion struct {
-	id, path, model, claim, text string
+	id, path, model, placementModel, claim, text, actor string
 }
 
-func placeSession(sw *core.Switcher, id, path, reportedModel, requested string, observe bool) (sessionMoveResult, error) {
-	result, err := evaluateSessionPlacement(sw, id, path, reportedModel, requested, observe, "")
+func placeSession(sw *core.Switcher, id, path, reportedModel, requested string, observe bool, actor string) (sessionMoveResult, error) {
+	result, err := evaluateSessionPlacement(sw, id, path, reportedModel, requested, observe, "", actor)
 	if err == nil && result.question != nil {
 		err = startSessionAsker(*result.question)
 	}
 	return result, err
 }
 
-func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, requested string, observe bool, expected string) (sessionMoveResult, error) {
+func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, requested string, observe bool, expected, actor string) (sessionMoveResult, error) {
 	var result sessionMoveResult
 	family := reporting.ClaudeFamily(reportedModel)
 	if requested == "" && (strings.TrimSpace(reportedModel) == "" || !sessionUUID.MatchString(id)) {
@@ -92,10 +93,6 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 	}
 	view := sw.Store.WithoutLineageWrites()
 	view.OAuth, view.Log = nil, nil
-	update := reporting.UpdateSessionLink
-	if requested != "" {
-		update = reporting.UseSessionLink
-	}
 	var repair []reporting.SessionLinkRecovery
 	if expected == "" {
 		source := reporting.SessionLinkRecovery{ObservedFamily: family}
@@ -107,7 +104,7 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 		}
 		repair = append(repair, source)
 	}
-	err := update(view.BackupDir(), id, path, view.Clk.Now(), func(rec *reporting.SessionLink) error {
+	err := reporting.MoveSessionLink(sw.Store, actor, id, path, requested != "", func(rec *reporting.SessionLink) error {
 		// Explicit use can retry after a client refresh. Each attempt produces its own result.
 		result = sessionMoveResult{}
 		if expected != "" && (rec.Question != expected || rec.Family != family) {
@@ -122,11 +119,8 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 		}()
 		explicit := requested != ""
 		wanted, model := requested, requested
-		if explicit && wanted == "default" {
-			model = ""
-			if reporting.SessionLoginForFamily(oldFamily) == "default" {
-				model = oldFamily
-			}
+		if explicit {
+			model = explicitSessionModel(wanted, oldFamily)
 		}
 		if !explicit {
 			rec.Family = family
@@ -149,6 +143,7 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 			}
 			rec.Question = ""
 			result.line = err.Error()
+			rec.LastMoveDeferral = result.line
 			return nil
 		}
 		if target.dir == "" {
@@ -165,17 +160,15 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 				if !strings.HasPrefix(rec.Question, prefix) {
 					rec.Question = prefix + rand.Text()
 				}
-				switch {
-				case strings.HasSuffix(rec.Question, "/declined"):
-					result.line = "The allocation decision deferred this " + model + " session move."
-				case strings.HasSuffix(rec.Question, "/unanswered"):
-					result.line = "No allocation decision was received for this " + model + " session move."
-				default:
+				if reason := allocationDeferral(rec.Question, model); reason != "" {
+					result.line = reason
+				} else {
 					result.question = &sessionQuestion{
-						id: rec.ID, path: filepath.Join(view.BackupDir(), "links", rec.Token), model: reportedModel, claim: rec.Question,
+						id: rec.ID, path: filepath.Join(view.BackupDir(), "links", rec.Token), model: reportedModel, placementModel: model, claim: rec.Question, actor: actor,
 						text: fmt.Sprintf("Use %s’s shared quota for this %s session? It is allocated to %s.", termsafe.Strip(target.name), model, target.allocation),
 					}
 				}
+				rec.LastMoveDeferral = result.line
 				return nil
 			}
 		} else if expected != "" {
@@ -188,9 +181,23 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 		if rec.Wanted != reporting.SessionLoginForFamily(rec.Family) {
 			result.line = modelHint(rec.Wanted)
 		}
+		if explicit && oldTarget == rec.Target {
+			label, _ := reporting.SessionLoginOwner(view, rec.Target)
+			result.line = strings.TrimSpace("Session is already on the " + label + ". " + result.line)
+		}
 		return nil
 	}, repair...)
 	return result, err
+}
+
+func allocationDeferral(claim, model string) string {
+	switch {
+	case strings.HasSuffix(claim, "/declined"):
+		return "The allocation decision deferred this " + model + " session move."
+	case strings.HasSuffix(claim, "/unanswered"):
+		return "No allocation decision was received for this " + model + " session move."
+	}
+	return ""
 }
 
 func answerSessionQuestion(sw *core.Switcher, q sessionQuestion, granted bool, answerErr error) error {
@@ -200,17 +207,20 @@ func answerSessionQuestion(sw *core.Switcher, q sessionQuestion, granted bool, a
 	} else if !granted {
 		answer = "/declined"
 	}
-	err := reporting.UpdateSessionLink(sw.BackupDir(), q.id, q.path, sw.Clk.Now(), func(rec *reporting.SessionLink) error {
+	err := reporting.MoveSessionLink(sw.Store, q.actor, q.id, q.path, false, func(rec *reporting.SessionLink) error {
 		if rec.Question != q.claim || rec.Family != reporting.ClaudeFamily(q.model) {
 			return errors.New("the session changed while awaiting the placement answer")
 		}
 		rec.Question += answer
+		if reason := allocationDeferral(answer, q.placementModel); reason != "" {
+			rec.LastMoveDeferral = reason
+		}
 		return nil
 	})
 	if err != nil || answer != "/approved" {
 		return err
 	}
-	_, err = evaluateSessionPlacement(sw, q.id, q.path, q.model, "", false, q.claim+answer)
+	_, err = evaluateSessionPlacement(sw, q.id, q.path, q.model, "", false, q.claim+answer, q.actor)
 	return err
 }
 
@@ -232,10 +242,10 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 		}
 		if isMythosDirectory(root, source) && !explicit {
 			set, err := loadStartSettings(root)
-			if err != nil || !set.Enabled {
+			if err != nil {
 				return target, "", err
 			}
-			target, err = mythosTickPlacement(view, source, set)
+			target, err = mythosTickPlacement(view, source, set, false)
 			return target, target.dir, err
 		}
 		target, err = mythosMovePlacement(view)
@@ -254,7 +264,7 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 				return target, "", err
 			}
 			if parked || readers.Identity != "" {
-				return target, "", errors.New("the Fable login is reserved for a parked or recovered native session")
+				return target, "", cerr.Validation("the Fable login is reserved for a parked or recovered native session")
 			}
 		}
 		st := view.FableStore()
@@ -270,10 +280,10 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 					return target, "", err
 				}
 			} else if explicit || rec.Wanted == "fable" {
-				return target, "", errors.New(noFableStartLogin)
+				return target, "", cerr.Validation(noFableStartLogin)
 			}
 		} else if explicit || rec.Wanted == "fable" {
-			return target, "", fmt.Errorf("the Fable store has no usable login (%s)", st.Reason)
+			return target, "", cerr.Validation("the Fable store has no usable login (%s)", st.Reason)
 		}
 	}
 	if source == target.dir && !explicit {
@@ -285,19 +295,19 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 	}
 	owner := view.ResolveOwnerSlot(data)
 	if owner.Slot == "" || view.AccountKindFor(owner.Slot) == "oauth" && (owner.Source == store.SourceConfig || owner.Source == store.SourceLastInstall) {
-		return target, "", fmt.Errorf("cannot verify the current %s login for the session", wanted)
+		return target, "", cerr.Validation("cannot verify the current %s login for the session", wanted)
 	}
 	num, email, org, err := view.ResolveAccountFrom(data, owner.Slot)
 	if err != nil {
 		return target, "", err
 	}
 	if store.DisabledFrom(data, num) {
-		return target, "", fmt.Errorf("Account-%s is disabled", num)
+		return target, "", cerr.Validation("Account-%s is disabled", num)
 	}
 	id := usage.Identity{Email: email, OrgUUID: org}
 	entry := view.Usage.Entries(map[string]usage.Identity{num: id})[num]
 	if room := startModelHeadroom(entry, model, view.Clk.Now()); room != nil && *room <= 0 {
-		return target, "", fmt.Errorf("Account-%s has no remaining quota for this session", num)
+		return target, "", cerr.Validation("Account-%s has no remaining quota for this session", num)
 	}
 	target.number, target.name = num, store.AccountNameFrom(data, num)
 	if models, set := store.ModelsFrom(data, num); set && (model == "opus" || model == "fable") && !slices.Contains(models, model) {
@@ -306,14 +316,70 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 	return target, store.AccountIdentityDigest(email, org), nil
 }
 
-func checkLinkedSession(id, model string) string {
+func checkLinkedSession(id, model, actor string) string {
 	sw, err := newSwitcher(store.Options{Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
 	if err != nil {
 		return err.Error()
 	}
-	result, err := placeSession(sw, id, sessionLinkPath, model, "", false)
+	result, err := placeSession(sw, id, sessionLinkPath, model, "", false, actor)
 	if err != nil {
 		return err.Error()
 	}
 	return result.line
+}
+
+func explicitSessionModel(store, family string) string {
+	if store != "default" {
+		return store
+	}
+	if reporting.SessionLoginForFamily(family) == "default" {
+		return family
+	}
+	return ""
+}
+
+// sessionMoveChoices previews explicit use against the current binding. The command
+// checks it again under both store locks when the operator chooses a destination.
+func sessionMoveChoices(sw *core.Switcher, id string) ([]string, error) {
+	if runtime.GOOS != "linux" || !sessionUUID.MatchString(id) {
+		return nil, cerr.AccountNotFound("session has no linked login binding")
+	}
+	view := sw.Store.WithoutLineageWrites()
+	view.OAuth, view.Log = nil, nil
+	rec, err := reporting.InspectSessionLink(view.BackupDir(), id, view.Clk.Now())
+	if err != nil {
+		return nil, err
+	}
+	rec.ResumeMythos = ""
+	choices := []string{}
+	var diagnostics, reasons []error
+	seen := make(map[string]bool)
+	for _, dest := range []string{"mythos", "fable", "default"} {
+		target, _, err := sessionDestination(view, &rec, dest, explicitSessionModel(dest, rec.Family), true)
+		if err == nil {
+			if target.dir == rec.Target {
+				continue
+			}
+			err = reporting.SessionTargetAvailable(view.BackupDir(), rec.Target, target.dir)
+		}
+		if err != nil {
+			if errors.Is(err, reporting.ErrSessionRefreshing) {
+				return nil, err // The source lock blocks every destination.
+			}
+			if seen[err.Error()] {
+				continue
+			}
+			seen[err.Error()] = true
+			reasons = append(reasons, err)
+			if cerr.TypeName(err) != string(cerr.KindValidation) && !errors.Is(err, errNoMythosQuota) && !errors.Is(err, errNoMythosLogin) {
+				diagnostics = append(diagnostics, err)
+			}
+			continue
+		}
+		choices = append(choices, dest)
+	}
+	if len(choices) == 0 {
+		return choices, errors.Join(reasons...)
+	}
+	return choices, errors.Join(diagnostics...)
 }

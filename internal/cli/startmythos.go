@@ -13,7 +13,11 @@ import (
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/autoswitch"
+	"github.com/tyclab/tycswap/internal/ccfile"
 	"github.com/tyclab/tycswap/internal/keychain"
+	"github.com/tyclab/tycswap/internal/launch"
+	"github.com/tyclab/tycswap/internal/logging"
+	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
 	"github.com/tyclab/tycswap/internal/store"
@@ -138,13 +142,57 @@ func mythosMovePlacement(view *store.Store) (mythosPlacement, error) {
 	if err != nil {
 		return mythosPlacement{}, err
 	}
-	return mythosTickPlacement(view, "", set)
+	return mythosTickPlacement(view, "", set, false)
 }
 
-func mythosTickPlacement(view *store.Store, sourceDir string, set settings.AutoSwitchSettings) (mythosPlacement, error) {
+func mythosHandSelection(view *store.Store, set settings.AutoSwitchSettings, readOnly bool) (string, string) {
+	path := mythosStatePath(view.BackupDir())
+	var warn func(error)
+	if !readOnly {
+		warn = func(err error) {
+			logging.NewWithClock(view.BackupDir(), false, view.Clk).Warningf("Ignoring unreadable Mythos switch cooldown at %s: %v", path, err)
+		}
+	}
+	return autoswitch.HandSelection(path, view.Clk, set, warn)
+}
+
+// handMythosChoice resolves a manual cooldown against the current selection.
+func handMythosChoice(view *store.Store, selected string, set settings.AutoSwitchSettings, dryRun bool) (mythosPlacement, string, error) {
+	var none mythosPlacement
+	if selected == "" {
+		return none, "", nil
+	}
+	num, hold := mythosHandSelection(view, set, dryRun)
+	if num == "" {
+		return none, "", nil
+	}
+	data, err := view.SequenceForUpdate()
+	if err != nil {
+		return none, "", err
+	}
+	login, err := view.MythosLogin(data, num)
+	if err != nil || !login.Ready || filepath.Base(login.Dir) != selected {
+		return none, "", err
+	}
+	return mythosPlacement{dir: login.Dir, number: num, name: store.AccountNameFrom(data, num)}, hold, nil
+}
+
+func mythosTickPlacement(view *store.Store, sourceDir string, set settings.AutoSwitchSettings, dryRun bool) (mythosPlacement, error) {
 	selected, err := store.SelectedMythosDigest(view.BackupDir())
 	if err != nil {
 		return mythosPlacement{}, err
+	}
+	if sourceDir != "" {
+		choice, hold, err := handMythosChoice(view, selected, set, dryRun)
+		if err != nil {
+			return mythosPlacement{}, err
+		}
+		if !set.Enabled || hold != "" {
+			if choice.dir != sourceDir {
+				return choice, nil
+			}
+			return mythosPlacement{}, nil
+		}
 	}
 	return chooseMythosLogin(view, mythosFamily, "", "", sourceDir, selected, set)
 }
@@ -203,7 +251,7 @@ func chooseMythosLogin(view *store.Store, model, account, bound, source, selecte
 				}
 			}
 		}
-		if remaining := startModelHeadroom(entries[sourceNumber], model, view.Clk.Now()); remaining == nil || *remaining > 0 {
+		if remaining := startModelHeadroom(entries[sourceNumber], model, view.Clk.Now()); sourceNumber != "" && (remaining == nil || *remaining > 0) {
 			return mythosPlacement{}, nil
 		}
 	}
@@ -218,10 +266,76 @@ func chooseMythosLogin(view *store.Store, model, account, bound, source, selecte
 			ranked[0] = num
 		}
 	}
+	// A hand-selected account with room is the start target, including when
+	// the existing allocation question must be answered before launch.
+	if selected != "" && source == "" && filepath.Base(placements[ranked[0]].dir) == selected && placements[ranked[0]].allocation != "" {
+		hand, _ := mythosHandSelection(view, set, true)
+		if hand == ranked[0] {
+			return placements[hand], nil
+		}
+	}
 	for _, num := range ranked {
 		if placements[num].allocation == "" {
 			return placements[num], nil
 		}
 	}
 	return placements[ranked[0]], nil
+}
+
+const nativeMythosModel = "claude-mythos-5-2"
+
+func independentAuthOverride(env []string, root string) string {
+	if reason := startOverride(env, nil, paths.FableStoreDir(root)); reason != "" {
+		return reason
+	}
+	for _, entry := range env {
+		key, value, _ := strings.Cut(entry, "=")
+		if value != "" && independentProviderOverride(key) {
+			return key + " is set"
+		}
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "the current directory is unavailable"
+	}
+	for _, path := range []string{paths.GetClaudeSettingsPath(), filepath.Join(cwd, ".claude", "settings.json"), filepath.Join(cwd, ".claude", "settings.local.json")} {
+		settings, err := ccfile.ReadGlobalConfigStrict(path)
+		if err != nil {
+			return "the Claude settings at " + path + " could not be verified"
+		}
+		if helper, set := settings["apiKeyHelper"]; set && helper != "" {
+			return path + " sets apiKeyHelper"
+		}
+		value, set := settings["env"]
+		vars, ok := value.(map[string]any)
+		if set && !ok {
+			return "the environment in " + path + " could not be verified"
+		}
+		for key, value := range vars {
+			if value != "" && (independentProviderOverride(key) || identitySetting(key)) {
+				return path + " sets env." + key
+			}
+		}
+	}
+	return ""
+}
+
+func identitySetting(key string) bool {
+	for _, override := range launch.AuthOverrideEnvVars {
+		if envKeyIs(key, override) {
+			return true
+		}
+	}
+	return envKeyIs(key, "CLAUDE_CONFIG_DIR")
+}
+
+func independentProviderOverride(key string) bool {
+	if startWindows() {
+		key = strings.ToUpper(key)
+	}
+	switch key {
+	case "ANTHROPIC_CUSTOM_HEADERS", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_FOUNDRY":
+		return true
+	}
+	return strings.HasPrefix(key, "ANTHROPIC_") && strings.HasSuffix(key, "_BASE_URL")
 }

@@ -37,6 +37,9 @@ var menuActions = []menuAction{
 	{"remove", "Account", "--debug", "Remove an account"},
 	{"switch", "", "--strategy=best|next-available --json --debug", "Rotate the default login"},
 	{"switch", "Account", "--force --yes --json --debug", "Select the default login"},
+	{"use mythos", "", "--session=Session", "Move a session to the Mythos login"},
+	{"use fable", "", "--session=Session", "Move a session to the Fable store"},
+	{"use default", "", "--session=Session", "Move a session to the default login"},
 	{"start", "", "--account=Account NativeArgs", "Start a new native process"},
 	{"start --check", "", "", "Check a Claude status-line file against this login store"},
 	{"start --list", "", "", "List startup accounts"},
@@ -77,6 +80,10 @@ func menuCommands(s ioStreams) {
 	actions := slices.Clone(menuActions)
 	if menuFableStore() {
 		actions = append(actions, mythosEnrollment,
+			menuAction{"start --mythos", "", "--account=MythosStart", "Start a native Mythos session"},
+			menuAction{"start --next mythos", "", "", "Set Mythos for the next bare Claude start"},
+			menuAction{"start --next clear", "", "", "Clear Mythos for the next bare Claude start"},
+			menuAction{"switch --store mythos", "MythosLogin", "--json --debug", "Use this login for Mythos"},
 			menuAction{"switch --store fable --if-idle", "FableLogin", "--json --debug", "Select a saved login before starting Fable"},
 			menuAction{"add --login --lineage fable", "", "--slot=Slot --debug NativeArgs", "Enroll an independent Fable login"},
 			menuAction{"switch --store fable --empty", "", "--json --debug", "Turn the Fable store off"})
@@ -148,6 +155,16 @@ type menuInvocation struct {
 
 func (cmd *menuInvocation) field(s ioStreams, name string) (string, bool) {
 	switch name {
+	case "Session":
+		id, _, ok := menuMoveSession(s, cmd.args[1])
+		return id, ok
+	case "MythosStart", "MythosLogin":
+		a, code := menuMythosAccount(s, name == "MythosLogin")
+		if code != 0 {
+			return "", false
+		}
+		cmd.accounts = append(cmd.accounts, a)
+		return a.Number, true
 	case "Account", "OtherAccount", "MythosAccount", "FableLogin":
 		provider := reporting.ProviderClaude
 		if cmd.args[0] == "codex" {

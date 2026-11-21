@@ -22,6 +22,9 @@ func setMark(s *store.Store, identifier, key string, allowed bool) error {
 		}
 		rec, _ := recordAt(data, num)
 		if rec.boolVal(key) == allowed {
+			if key == "mythos" && !allowed {
+				return s.ClearInvalidMythosSelection(data)
+			}
 			return nil
 		}
 		if allowed {
@@ -33,7 +36,13 @@ func setMark(s *store.Store, identifier, key string, allowed bool) error {
 			return err
 		}
 		data.LastUpdated = timestamp(s)
-		return s.WriteSequence(data)
+		if err := s.WriteSequence(data); err != nil {
+			return err
+		}
+		if key == "mythos" && !allowed {
+			return s.ClearInvalidMythosSelection(data)
+		}
+		return nil
 	})
 }
 

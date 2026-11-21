@@ -236,16 +236,10 @@ func (s *Store) ResolveFableLiveSlot(data *SequenceData) LiveSlot {
 // fableLiveSlot resolves live on the Fable scope f; network allows the
 // profile endpoint, which the store lock also keeps out.
 func (s *Store) fableLiveSlot(data *SequenceData, live string, network bool) LiveSlot {
+	if owner := s.LocalCredentialSlot(data, live); owner.Slot != "" || !network {
+		return owner
+	}
 	if data == nil {
-		return LiveSlot{}
-	}
-	if y, ok := s.fableBackupSlot(data, live); ok {
-		return LiveSlot{Slot: y, Source: SourceBackup}
-	}
-	if y, id := s.fableChainSlot(data, live); y != "" {
-		return LiveSlot{Slot: y, Source: SourceChain, Identity: id}
-	}
-	if !network {
 		return LiveSlot{}
 	}
 	if y, id := s.fableProfileSlot(data, live); y != "" {
@@ -254,9 +248,25 @@ func (s *Store) fableLiveSlot(data *SequenceData, live string, network bool) Liv
 	return LiveSlot{}
 }
 
-// fableBackupSlot is the one OAuth slot whose Fable login holds live's
+// LocalCredentialSlot identifies this store's credential from a unique backup
+// or its fingerprinted lineage record. Other sessions can rewrite the shared
+// config, so its account number cannot identify a bound session's login.
+func (s *Store) LocalCredentialSlot(data *SequenceData, live string) LiveSlot {
+	if data == nil || live == "" {
+		return LiveSlot{}
+	}
+	if y, ok := s.uniqueBackupSlot(data, live); ok {
+		return LiveSlot{Slot: y, Source: SourceBackup}
+	}
+	if y, id := s.recordedLoginSlot(data, live); y != "" {
+		return LiveSlot{Slot: y, Source: SourceChain, Identity: id}
+	}
+	return LiveSlot{}
+}
+
+// uniqueBackupSlot is the one OAuth slot whose backup holds live's
 // lineage; a login copied into two slots is no evidence.
-func (s *Store) fableBackupSlot(data *SequenceData, live string) (string, bool) {
+func (s *Store) uniqueBackupSlot(data *SequenceData, live string) (string, bool) {
 	match := ""
 	for _, num := range sortedSlotKeys(data) {
 		if kindFrom(data, num) != "oauth" || !s.holdsLineage(data, num, live) {
@@ -270,7 +280,7 @@ func (s *Store) fableBackupSlot(data *SequenceData, live string) (string, bool) 
 	return match, match != ""
 }
 
-func (s *Store) fableChainSlot(data *SequenceData, live string) (string, *oauth.Identity) {
+func (s *Store) recordedLoginSlot(data *SequenceData, live string) (string, *oauth.Identity) {
 	fp := oauth.CredentialFingerprint(live)
 	rec, ok := s.readLiveLineage()
 	if fp == nil || !ok || rec.Fingerprint != *fp {

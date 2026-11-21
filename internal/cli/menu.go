@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/providers"
 	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/settings"
+	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/termsafe"
 	"github.com/tyclab/tycswap/internal/web"
 )
@@ -25,6 +27,9 @@ var menuExecute = func(s ioStreams, args ...string) int {
 	cmd := exec.Command(exePath(), args...)
 	if len(args) == 0 || args[0] != "start" {
 		cmd.Env = append(os.Environ(), "TYCSWAP_NO_PROMPT=1")
+		if len(args) > 0 && args[0] == "use" && sessionLinkPath != "" {
+			cmd.Env = withStartVar(cmd.Env, secureStorageEnv, sessionLinkPath)
+		}
 	} else if len(args) == 2 && args[1] == "--check" {
 		if mythosSessionDir != "" {
 			cmd.Env = withFableStore(os.Environ(), mythosSessionDir)
@@ -89,29 +94,62 @@ func humanMenu(prog, start string, s ioStreams) int {
 		menuTransfer(s)
 	}
 	for {
-		i, _, ok := askMenu(s, "tycswap", []string{
+		entries := []string{
 			"Add account…", "Manage accounts…", "Live dashboard", "Open web dashboard",
-			"Import / export…", "Advanced settings…", "Start tray app", "Browse commands and options…", "Close menu",
-		}, "")
-		if !ok || i == 8 {
+			"Import / export…", "Advanced settings…", "Start tray app", "Browse commands and options…",
+		}
+		var next string
+		var prefErr error
+		nextLabel := "Set next start · Mythos off"
+		if menuFableStore() {
+			next, prefErr = store.NextStartModel(paths.GetBackupRoot())
+			if prefErr != nil {
+				nextLabel = "Set next start · unavailable"
+			} else if next == mythosFamily {
+				nextLabel = "Set next start · Mythos on"
+			}
+			entries = append(entries, "Start Mythos session…", nextLabel)
+		}
+		if runtime.GOOS == "linux" {
+			entries = append(entries, "Sessions…")
+		}
+		entries = append(entries, "Close menu")
+		i, _, ok := askMenu(s, "tycswap", entries, "")
+		if !ok || entries[i] == "Close menu" {
 			return 0
 		}
-		switch i {
-		case 0:
+		switch entries[i] {
+		case "Start Mythos session…":
+			if code, picked := menuStartMythos(s); picked {
+				return code
+			}
+		case nextLabel:
+			if prefErr != nil {
+				fmt.Fprintln(s.err, prefErr)
+				break
+			}
+			value := "mythos"
+			if next == mythosFamily {
+				value = "clear"
+			}
+			menuExecute(s, "start", "--next", value)
+		case "Sessions…":
+			menuSessionDestination(s)
+		case "Add account…":
 			menuAdd(s)
-		case 1:
+		case "Manage accounts…":
 			menuManage(s)
-		case 2:
+		case "Live dashboard":
 			menuExecute(s, "tui")
-		case 3:
+		case "Open web dashboard":
 			menuOpenDashboard(prog, s)
-		case 4:
+		case "Import / export…":
 			menuTransfer(s)
-		case 5:
+		case "Advanced settings…":
 			menuSettings(s)
-		case 6:
+		case "Start tray app":
 			startBackgroundApp(prog, s)
-		case 7:
+		case "Browse commands and options…":
 			menuCommands(s)
 		}
 	}
@@ -210,6 +248,12 @@ func pickAccountRows(s ioStreams, title string, accounts []reporting.AccountSnap
 		if a.IsActive {
 			label += " · active"
 		}
+		if login := a.MythosLogin.Label(); login != "" {
+			label += " · " + login
+			if a.MythosLogin.ChoiceNote != "" {
+				label += " (only ready login)"
+			}
+		}
 		if a.Disabled {
 			label += " · disabled"
 		}
@@ -264,6 +308,9 @@ func menuManage(s ioStreams) {
 	}
 	if a.ProviderName() == reporting.ProviderClaude {
 		choices = append(choices, "Preferred models…")
+		if a.MythosLogin != nil && a.MythosLogin.Selectable {
+			choices = append(choices, "Use for Mythos")
+		}
 		if menuFableStore() && a.Mythos && !a.Disabled && a.Kind == "oauth" {
 			choices = append(choices, mythosSignInEntry)
 		}
@@ -332,6 +379,8 @@ func menuManage(s ioStreams) {
 			return
 		}
 		args = []string{"switch", a.Number, "--force"}
+	case "Use for Mythos":
+		args = []string{"switch", "--store", "mythos", a.Number}
 	case "Preferred models…":
 		allocation, ok := pickMenuAllocation(s)
 		if !ok {

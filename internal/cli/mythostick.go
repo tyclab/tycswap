@@ -28,9 +28,17 @@ func rememberMythosPlacement(view *store.Store, proposed mythosPlacement) error 
 	return store.SelectMythosLogin(root, proposed.dir)
 }
 
-func runsOnMythos(root string, rec reporting.SessionLink) bool {
-	return isMythosDirectory(root, rec.Target) && (rec.Wanted == mythosFamily || rec.Wanted == "" && rec.Family == mythosFamily)
+func wantsMythosLogin(rec reporting.SessionLink) bool {
+	return rec.Wanted == mythosFamily || rec.Wanted == "" && rec.Family == mythosFamily
 }
+
+func runsOnMythos(root string, rec reporting.SessionLink) bool {
+	return isMythosDirectory(root, rec.Target) && wantsMythosLogin(rec)
+}
+
+type mythosCooldown string
+
+func (h mythosCooldown) Error() string { return string(h) }
 
 var errMythosAllocation = errors.New("Mythos session move requires an allocation decision")
 
@@ -40,11 +48,28 @@ func tickMythosSelection(sw *core.Switcher, set settings.AutoSwitchSettings, dry
 		return next, err
 	}
 	choose := func() error {
+		if !dryRun {
+			// A missing roster cannot establish that the selected identity was removed.
+			data, err := sw.ReadSequence()
+			if err != nil {
+				return err
+			}
+			if err := sw.ClearInvalidMythosSelection(data); err != nil {
+				return err
+			}
+		}
 		selected, err := store.SelectedMythosDigest(root)
 		if err != nil || selected == "" || !dryRun && !autoSwitchOn(root) {
 			return err
 		}
-		next, err = mythosTickPlacement(sw.Store, filepath.Join(store.MythosLoginRoot(root), selected), set)
+		_, hold, err := handMythosChoice(sw.Store, selected, set, dryRun)
+		if err != nil {
+			return err
+		}
+		if hold != "" {
+			return mythosCooldown(hold)
+		}
+		next, err = chooseMythosLogin(sw.Store, mythosFamily, "", "", filepath.Join(store.MythosLoginRoot(root), selected), selected, set)
 		if err != nil || next.dir == "" {
 			return err
 		}
@@ -105,14 +130,16 @@ func mythosTick(sw *core.Switcher, set settings.AutoSwitchSettings, emit func(au
 		if err := reporting.PruneSessionLinks(root); err != nil {
 			return failure(err)
 		}
-		if !autoSwitchOn(root) {
-			return autoswitch.NoAction
-		}
 	}
 	sayMove := func(p mythosPlacement, session string) {
 		emit(mythosSwitchEvent{autoswitch.SwitchEvent{Ts: ts, Trigger: "mythos-at-limit", ToRef: map[string]any{"number": slotNumber(p.number)}, DryRun: dryRun}, session})
 	}
 	problem := func(err error) autoswitch.TickOutcome {
+		var hold mythosCooldown
+		if errors.As(err, &hold) {
+			emit(autoswitch.NoSwitchEvent{Ts: ts, Reason: "cooldown", Detail: hold.Error()})
+			return autoswitch.NoAction
+		}
 		if errors.Is(err, errNoMythosQuota) || errors.Is(err, errNoMythosLogin) || errors.Is(err, errMythosAllocation) || cerr.TypeName(err) == string(cerr.KindClaudeCodeLockTimeout) {
 			emit(autoswitch.NoSwitchEvent{Ts: ts, Reason: "mythos-session", Detail: err.Error()})
 			return autoswitch.Blocked
@@ -140,11 +167,15 @@ func mythosTick(sw *core.Switcher, set settings.AutoSwitchSettings, emit func(au
 		}
 		var placement mythosPlacement
 		apply := func(current *reporting.SessionLink) error {
-			if !runsOnMythos(root, *current) || !dryRun && !autoSwitchOn(root) {
+			if !runsOnMythos(root, *current) {
 				return nil
 			}
 			var err error
-			placement, err = mythosTickPlacement(sw.Store, current.Target, set)
+			currentSettings := set
+			if !dryRun {
+				currentSettings.Enabled = autoSwitchOn(root)
+			}
+			placement, err = mythosTickPlacement(sw.Store, current.Target, currentSettings, dryRun)
 			if err != nil {
 				return err
 			}
@@ -165,7 +196,7 @@ func mythosTick(sw *core.Switcher, set settings.AutoSwitchSettings, emit func(au
 		if dryRun {
 			err = apply(&link)
 		} else {
-			err = reporting.UpdateSessionLink(root, link.ID, filepath.Join(root, "links", link.Token), sw.Clk.Now(), apply)
+			err = reporting.MoveSessionLink(sw.Store, "tick", link.ID, filepath.Join(root, "links", link.Token), false, apply)
 		}
 		if err != nil {
 			outcome = significantOutcome(outcome, problem(err))

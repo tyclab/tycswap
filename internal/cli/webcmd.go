@@ -302,10 +302,11 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 		host = newUpdatesHost(sw.BackupDir())
 		updates = host
 	}
+	d := &dashboard{sw: sw, auto: auto, codex: codex}
 	srv, err := web.New(web.Deps{
 		Facade:             sw,
 		Snapshot:           providers.NewMultiSnapshotSource(ctx, sw, codexSw),
-		Accounts:           sw,
+		Accounts:           dashboardAccounts{Switcher: sw, dashboard: d},
 		Codex:              codex,
 		Fable:              quietFable{sw},
 		Settings:           settingsFacade{root: sw.BackupDir()},
@@ -340,7 +341,8 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 	if host != nil {
 		host.onChange = srv.Refresh
 	}
-	return &dashboard{sw: sw, srv: srv, auto: auto, codex: codex}, 0
+	d.srv = srv
+	return d, 0
 }
 
 func renderWebHelp(prog string, out io.Writer) int {

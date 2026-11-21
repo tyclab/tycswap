@@ -47,6 +47,7 @@ const (
 	panelOwnerDraw     = 0xb
 	panelActionBase    = 300
 	panelRowBase       = 1000
+	panelMythosKey     = "\x00mythos"
 	panelFableKey      = "\x00fable" // after a row ID: that row's Use for Fable
 )
 
@@ -312,10 +313,16 @@ func (p *windowsPanel) syncRows() {
 		if row.FableSwitch {
 			keys, rows = append(keys, row.ID+panelFableKey), append(rows, i)
 		}
+		if row.MythosAction != "" {
+			keys, rows = append(keys, row.ID+panelMythosKey), append(rows, i)
+		}
 		keys, rows = append(keys, row.ID), append(rows, i)
 	}
 	p.syncControls(p.list, 0, keys, p.rowIDs, &p.nextRow, func(i int) (string, bool) {
 		row := p.panel.Rows[rows[i]]
+		if keys[i] == row.ID+panelMythosKey {
+			return "Use " + row.Name + " for Mythos", !p.panel.Offline
+		}
 		if keys[i] != row.ID {
 			return panelFableText(row), panelFableEnabled(p.panel, row)
 		}
@@ -386,7 +393,24 @@ func (p *windowsPanel) command(id int, notification int) {
 		}
 		return
 	}
+	if i, ok := p.rowKeyed(id, panelMythosKey); ok {
+		row := p.panel.Rows[i]
+		if !p.panel.Offline && row.MythosAction != "" {
+			p.dispatch(PanelAction{Kind: "command", Key: "mythos:" + row.ID})
+		}
+		return
+	}
 	if action, ok := p.actionFor(id); ok && panelCommandEnabled(p.panel, action) {
+		if len(action.Children) != 0 {
+			var choices menuModel
+			choices.set(action.Children)
+			var box menuRect
+			user32.NewProc("GetWindowRect").Call(p.controls[id], uintptr(unsafe.Pointer(&box)))
+			if key, ok := p.tray.chooseMenu(choices, point{x: box.right, y: box.top}); ok {
+				p.dispatch(PanelAction{Kind: "command", Key: key})
+			}
+			return
+		}
 		p.dispatch(PanelAction{Kind: "command", Key: action.Choice()})
 	}
 }
@@ -415,6 +439,9 @@ func (p *windowsPanel) reveal(focus uintptr) {
 	i, ok := p.rowFor(int(id))
 	if !ok {
 		i, ok = p.fableFor(int(id))
+	}
+	if !ok {
+		i, ok = p.rowKeyed(int(id), panelMythosKey)
 	}
 	if ok {
 		p.scrollTo(p.geometry.scrollToShow(i, p.scroll))

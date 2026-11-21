@@ -104,8 +104,22 @@ func fixture(now time.Time) tray.Panel {
 		Columns: []tray.Column{{ID: "account", Label: "Account"}, {ID: "fiveHour", Label: "5-hour"}, {ID: "sevenDay", Label: "Weekly"}, {ID: "model:Fable", Label: "Fable"}},
 		Actions: []tray.Item{{ID: "quit", Title: "Quit"}, {ID: "updates-open", Title: "Check for updates…"}, {ID: "auto", Title: "Auto-switch", Kind: tray.KindToggle, Checked: true},
 			{ID: "autostart", Title: "Start at login", Kind: tray.KindToggle, Checked: true}, {ID: "open", Title: "Open dashboard"}}}
+	p.MythosSummary = "Mythos login: #3 · 5h, 7d, Mythos · 2 linked sessions"
+	p.Actions = append(p.Actions[:2], append([]tray.Item{
+		{ID: "move-sessions", Title: "Sessions…", Children: []tray.Item{{ID: "session:fixture", Title: "Mythos login · #3 · Fixture session", Children: []tray.Item{{ID: "use:fixture:fable", Title: "Move to Fable store"}}}}},
+		{ID: "next-start", Title: "Next start: Mythos", Kind: tray.KindToggle, Checked: true, ShownState: true},
+	}, p.Actions[2:]...)...)
 	for _, r := range rows {
 		row := tray.PanelRow{ID: r.id, Name: r.name, Plan: r.plan, Active: r.active}
+		switch r.id {
+		case "claude:1":
+			row.MythosLogin, row.MythosAction = "Mythos login", "Use for Mythos"
+			row.Name = "#1 research-and-documentation-with-a-long-account-name@example.test"
+		case "claude:3":
+			row.MythosLogin = "Mythos login: in use"
+		case "claude:4":
+			row.MythosLogin = "Mythos login: sign in again"
+		}
 		for i, l := range r.limits {
 			row.Cells = append(row.Cells, cell(l, i == 0))
 		}

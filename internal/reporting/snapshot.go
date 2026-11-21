@@ -36,7 +36,9 @@ type AccountSnapshot struct {
 	// Codex identifies accounts by a stable key even if two workspaces have the same display name.
 	AccountKey string `json:"-"`
 	// FableLogin is the account's Fable login; nil without one (DESIGN A104).
-	FableLogin *FableLogin
+	FableLogin  *FableLogin
+	MythosLogin *MythosLogin
+	Models      []string
 }
 
 const (
@@ -75,7 +77,8 @@ type AccountsSnapshot struct {
 	Provider     string
 	// Fable is the Fable store as status --json shows it; nil while no
 	// account has a Fable login (DESIGN A104).
-	Fable map[string]any
+	Fable  map[string]any
+	Mythos map[string]any
 }
 
 func (s AccountsSnapshot) ProviderName() string { return providerOrDefault(s.Provider) }
@@ -91,6 +94,7 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 	data, _ := s.ReadSequence()
 	models := configuredModels(s)
 	fable := readFableView(s, data)
+	mythos := readMythosView(s, data)
 
 	var activeNumber string
 	accounts := make([]AccountSnapshot, 0, len(infos))
@@ -103,6 +107,14 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 		switchable := s.AccountIsSwitchable(num)
 		disabled := recordDisabled(data, num)
 		ownershipBlock := s.RotationOwnershipBlockReason(num)
+		var allocation []string
+		if rec, ok := recordFor(data, num); ok {
+			if _, has := rec[store.ModelsKey]; !has {
+				allocation = []string{}
+			} else if models, valid := store.ModelsFrom(data, num); valid {
+				allocation = models
+			}
+		}
 		accounts = append(accounts, AccountSnapshot{
 			Number:               num,
 			Email:                info.Email,
@@ -123,14 +135,14 @@ func Snapshot(s *store.Store, fetch map[string]bool) *AccountsSnapshot {
 			AtLimit:              atLimit,
 			LimitingWindows:      limiting,
 			Provider:             ProviderClaude,
-			FableLogin:           fable.login(num),
+			FableLogin:           fable.login(num), MythosLogin: mythos.logins[num], Models: allocation,
 		})
 	}
 	snap := &AccountsSnapshot{
-		ActiveNumber: activeNumber,
-		Accounts:     accounts,
-		TakenAt:      clock.Seconds(s.Clk),
-		Provider:     ProviderClaude,
+		ActiveNumber: activeNumber, Mythos: mythos.object,
+		Accounts: accounts,
+		TakenAt:  clock.Seconds(s.Clk),
+		Provider: ProviderClaude,
 	}
 	if fable != nil {
 		snap.Fable = fable.object(s, data, entries[fable.live.Slot])

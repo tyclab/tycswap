@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -56,7 +57,7 @@ const mythosFamily = "mythos"
 type startArguments struct {
 	account, action, id string
 	command             []string
-	help                bool
+	help, mythos        bool
 }
 
 func parseStartArguments(argv []string) (startArguments, error) {
@@ -71,6 +72,17 @@ func parseStartArguments(argv []string) (startArguments, error) {
 			break
 		}
 		switch tok {
+		case "--mythos":
+			if parsed.mythos {
+				return parsed, fmt.Errorf("--mythos may be given only once")
+			}
+			parsed.mythos = true
+		case "--next":
+			if parsed.action != "" || parsed.account != "" || i+1 == len(argv) || (argv[i+1] != "mythos" && argv[i+1] != "clear") {
+				return parsed, fmt.Errorf("--next requires mythos or clear and cannot be combined with management options")
+			}
+			i++
+			parsed.action, parsed.id = tok, argv[i]
 		case "--allow", "--disallow", "--account":
 			if i+1 == len(argv) || argv[i+1] == "" || strings.HasPrefix(argv[i+1], "--") {
 				return parsed, fmt.Errorf("%s requires an account identifier", tok)
@@ -109,6 +121,10 @@ func parseStartArguments(argv []string) (startArguments, error) {
 }
 
 func startCommand(prog string, argv []string, streams ioStreams) int {
+	return startCommandFor(prog, argv, streams, "")
+}
+
+func startCommandFor(prog string, argv []string, streams ioStreams, selectedDir string) int {
 	env := os.Environ()
 	// The child gets env; this process acts on the default login under its locks.
 	dropFableStoreEnv()
@@ -118,6 +134,20 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 	}
 	if parsed.help {
 		return renderStartHelp(prog, streams.out)
+	}
+	if parsed.mythos && (parsed.action != "" || len(parsed.command) > 0) {
+		return subError(prog+" start", streams.err, "--mythos takes only an optional --account ID")
+	}
+	if parsed.action == "--next" {
+		model := parsed.id
+		if model == "clear" {
+			model = ""
+		}
+		if err := store.SetNextStartModel(paths.GetBackupRoot(), model); err != nil {
+			startNotice(streams.err, err.Error())
+			return 1
+		}
+		return 0
 	}
 	if parsed.action == "--started" {
 		startStarted(streams.in)
@@ -140,6 +170,10 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 		startNotice(streams.err, "Could not launch command: "+err.Error())
 		return launch.ExitCode(err)
 	}
+	return runStart(bin, parsed, selectedDir, env, streams, true)
+}
+
+func runStart(bin string, parsed startArguments, selectedDir string, env []string, streams ioStreams, checkNext bool) int {
 	args := []string{bin}
 	if len(parsed.command) > 0 {
 		args = parsed.command
@@ -154,7 +188,37 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 	childEnv, hold, family := env, "", ""
 	var link string
 	native := launch.IsClaudeCommand(bin)
-	if reason := startOverride(env, parsed.command, storeDir); reason != "" {
+	override := startOverride(env, parsed.command, storeDir)
+	warnNextStart := func(err error) {
+		startNotice(streams.err, fmt.Sprintf("Ignoring %v. Use tycswap start --next clear to clear the request.", err))
+	}
+	var next store.NextStartRequest
+	if checkNext && native && store.SupportsMythosStart() && !parsed.mythos && parsed.account == "" && len(args) == 1 && override == "" && startStoreProblem(root) == "" {
+		var err error
+		next, err = store.ReadNextStart(root)
+		if err != nil {
+			warnNextStart(err)
+		}
+	}
+	refuseStart := func(reason string) int {
+		if next.Model == mythosFamily {
+			reason = "Next start is set to Mythos: " + strings.TrimSuffix(reason, ".") + ". Use tycswap start --next clear to start without it."
+		}
+		startNotice(streams.err, reason)
+		return 1
+	}
+	strictMythos := parsed.mythos || next.Model == mythosFamily
+	if strictMythos {
+		if !native || !store.SupportsMythosStart() {
+			startNotice(streams.err, "Independent Mythos logins require native Claude on Linux, WSL, or Windows.")
+			return 1
+		}
+		if reason := independentAuthOverride(env, root); reason != "" {
+			return refuseStart("Cannot start an independent Mythos session because " + reason + ".")
+		}
+		args = append(slices.Clone(args), "--model", nativeMythosModel)
+	}
+	if reason := override; reason != "" {
 		if native && sessionLinkPath != "" {
 			// An unmanaged child can inherit the login but must not own the parent's link.
 			dir := mythosSessionDir
@@ -180,6 +244,7 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 		var dir string
 		linked := native && runtime.GOOS == "linux" && hasSessionLinkAccounts(root)
 		var savedTarget string
+		var err error
 		linkErr := sessionLinkErr
 		if id := resumedSession(args[1:]); linked && sessionUUID.MatchString(id) {
 			saved, ok, readErr := reporting.LookupSessionLink(root, id)
@@ -191,7 +256,11 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 		}
 		if (model == mythosFamily || native) && (savedTarget == "" || isMythosDirectory(root, savedTarget)) {
 			selectStart := func(useSelection bool, approved mythosPlacement) (mythosPlacement, error) {
-				return selectMythosStart(root, model, parsed.account, args[1:], streams, useSelection, approved)
+				placement, err := selectMythosStart(root, model, parsed.account, args[1:], streams, useSelection, approved)
+				if err == nil && strictMythos && (placement.dir == "" || selectedDir != "" && selectedDir != placement.dir) {
+					err = fmt.Errorf("the independent Mythos login is unavailable or has changed")
+				}
+				return placement, err
 			}
 			var placement mythosPlacement
 			placement, err = selectStart(linked && linkErr == nil, mythosPlacement{})
@@ -207,8 +276,7 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 			model = ""
 		}
 		if err != nil {
-			startNotice(streams.err, err.Error())
-			return 1
+			return refuseStart(err.Error())
 		}
 		var recovered string
 		if dir == "" && (native || requestedFamily == "fable") && (savedTarget == "" || savedTarget == storeDir) {
@@ -249,6 +317,22 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 		}
 	}
 	childEnv = withStartVar(withStartHold(childEnv, hold), startFamilyEnv, family)
+	if next.Model != "" {
+		claimed, err := next.Claim(root)
+		if !claimed {
+			if link != "" {
+				_ = os.Remove(link)
+			}
+			if err != nil {
+				if !errors.Is(err, store.ErrUnreadableNextStart) {
+					return refuseStart(err.Error())
+				}
+				warnNextStart(err)
+			}
+			// The observed request is no longer available. Start without it.
+			return runStart(bin, parsed, selectedDir, env, streams, false)
+		}
+	}
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
@@ -258,6 +342,11 @@ func startCommand(prog string, argv []string, streams ioStreams) int {
 	if err != nil {
 		if link != "" {
 			_ = os.Remove(link)
+		}
+		if next.Model != "" {
+			if restoreErr := next.Restore(root); restoreErr != nil {
+				startNotice(streams.err, "Could not restore the next start: "+restoreErr.Error())
+			}
 		}
 		startNotice(streams.err, "Could not launch command: "+err.Error())
 	}
@@ -715,6 +804,8 @@ func startNotice(stderr io.Writer, message string) string {
 
 func renderStartHelp(prog string, out io.Writer) int {
 	fmt.Fprintf(out, "usage: %s start [--account ID] [--] [command [args...]]\n", prog)
+	fmt.Fprintf(out, "       %s start --mythos [--account ID]\n", prog)
+	fmt.Fprintf(out, "       %s start --next mythos|clear\n", prog)
 	fmt.Fprintf(out, "       %s start --allow ID | --disallow ID | --list\n", prog)
 	fmt.Fprintf(out, "       %s start --started\n", prog)
 	fmt.Fprintf(out, "       %s start --check\n", prog)

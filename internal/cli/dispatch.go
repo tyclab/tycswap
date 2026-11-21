@@ -9,6 +9,7 @@
 package cli
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -105,6 +106,16 @@ func runMainAction(p *parsed, sw *core.Switcher, payload *any) error {
 		out, err := sw.ListAccounts(p.tokenStatus, p.json, nil)
 		if out != nil {
 			*payload = out
+		}
+		return err
+	case p.store != nil && *p.store == "mythos":
+		res, err := switchMythos(sw, *p.switchTo)
+		if err == nil {
+			if p.json {
+				*payload = res
+			} else {
+				fmt.Fprintln(os.Stdout, res["message"])
+			}
 		}
 		return err
 	case p.store != nil && *p.store == "fable":

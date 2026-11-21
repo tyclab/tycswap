@@ -110,11 +110,9 @@ func normalizedState(t *testing.T, srv served, home string) string {
 	return volatile.ReplaceAllString(out, "<T>") + "\n"
 }
 
-// Without a Fable login the state document is the one v0.15.1 served,
-// byte for byte (DESIGN A104, plan 1.1): testdata/nofable-state.json was
-// recorded from the tree before the Fable surfaces existed. The full bytes
-// are compared on Linux, where it was recorded; every platform compares
-// its key paths.
+// This fixture records the dashboard without Fable logins, including the shared
+// models and next-start controls. Linux compares the bytes; each platform
+// checks the contract's key paths and the absence of the Fable fields.
 func TestDashboardStateWithoutFableLogins(t *testing.T) {
 	for _, name := range launch.AuthOverrideEnvVars {
 		t.Setenv(name, "")

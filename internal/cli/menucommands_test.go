@@ -33,7 +33,6 @@ func TestMenuCoversDocumentedCommands(t *testing.T) {
 			offered[words[0]] = true
 		}
 	}
-	foundSessionUse := false
 	for _, row := range strings.Split(mainDescription, "\n") {
 		usage, _, _ := strings.Cut(strings.TrimSpace(row), "  ")
 		words := strings.Fields(usage)
@@ -41,11 +40,6 @@ func TestMenuCoversDocumentedCommands(t *testing.T) {
 			continue
 		}
 		prefix, verb := "", words[1]
-		if verb == "use" {
-			// Placement is invoked in a linked shell or against an explicit session ID.
-			foundSessionUse = usage == "tycswap use <mythos|fable|default> [--session ID]"
-			continue
-		}
 		if verb == "menubar" {
 			verb = "app" // The retired CLI entry only points to the tray command.
 		}
@@ -60,9 +54,6 @@ func TestMenuCoversDocumentedCommands(t *testing.T) {
 				t.Errorf("menu is missing documented command %s%s", prefix, name)
 			}
 		}
-	}
-	if !foundSessionUse {
-		t.Error("root help is missing the session placement command and its selector")
 	}
 }
 

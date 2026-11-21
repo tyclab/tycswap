@@ -158,7 +158,7 @@ func autoCommand(_ string, argv []string, s ioStreams) int {
 		var linkedNews bool
 		if sessionLinkPath != "" && !dryRun {
 			id, model := observedSessionModel(raw)
-			result, err := placeSession(sw, id, sessionLinkPath, model, "", true)
+			result, err := placeSession(sw, id, sessionLinkPath, model, "", true, "status line")
 			if err != nil {
 				sw.Log.Debugf("Session placement: %v", err)
 			} else {
