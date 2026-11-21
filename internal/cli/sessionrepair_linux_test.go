@@ -149,3 +149,25 @@ func TestRepairDoesNotEnableSharedMythosOnModelChange(t *testing.T) {
 	}
 	checkLinkTarget(t, link, sw.DefaultProfileDir())
 }
+
+func TestFirstObservationRecordsModelWhileRefreshDefersMove(t *testing.T) {
+	sw, launch := fableStartLogin(t, fableTickFixture{def: "1", live: "2", logins: []string{"2"}, off: true})
+	link := startWithoutHook(t, launch, "opus")
+	lock := filepath.Join(sw.DefaultProfileDir(), ".oauth_refresh.lock")
+	if err := os.Mkdir(lock, 0700); err != nil {
+		t.Fatal(err)
+	}
+	line := sessionStatus(t, link, placementSession, "claude-fable-5-2", false)
+	family, scope, found := reporting.RecordedSession(sw.BackupDir(), placementSession)
+	if !found || family != "fable" || scope != "" || !strings.Contains(line, ".oauth_refresh.lock") {
+		t.Fatalf("first report during refresh: found=%t family=%q scope=%q status=%q", found, family, scope, line)
+	}
+	checkLinkTarget(t, link, sw.DefaultProfileDir())
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+	if line := sessionStatus(t, link, placementSession, "claude-fable-5-2", false); line != "" {
+		t.Fatal(line)
+	}
+	checkLinkTarget(t, link, fableStoreDir())
+}
