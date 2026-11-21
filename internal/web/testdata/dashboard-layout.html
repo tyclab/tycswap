@@ -151,9 +151,11 @@ window.addEventListener('load', () => {
     }
     context = 'guide width';
     const guide = $('.guide'), wide = guide.getBoundingClientRect().width;
-    // SVG font-size is in viewBox units. Measure the screen glyph after the diagram transform.
-    report.glyphHeights = all('.g-svg text:first-of-type').map(label => label.getBoundingClientRect().height / font);
-    check(report.glyphHeights.length === all('.g-svg').length && report.glyphHeights.length > 0, 'missing diagram labels');
+    // SVG font-size is in viewBox units. Apply the screen transform before comparing it with HTML type.
+    for (const svg of all('.g-svg')) {
+      const label = svg.querySelector('text'), matrix = label.getScreenCTM();
+      report.type[svg.getAttribute('aria-labelledby')] = parseFloat(win.getComputedStyle(label).fontSize) * Math.hypot(matrix.c, matrix.d) / font;
+    }
     report.type['guide width cap'] = wide / font;
     report.type['guide card vertical padding'] = parseFloat(win.getComputedStyle($('.guide-section')).paddingTop) / font;
     page.style.width = '160rem';

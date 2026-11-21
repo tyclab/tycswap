@@ -50,7 +50,6 @@ func testBrowserLayout(t *testing.T, fixture, transition string) {
 	type measurement struct {
 		Font, Viewport, Zoom, WrapRem float64
 		Type                          map[string]float64
-		GlyphHeights                  []float64
 		Failures                      []string
 	}
 	var standard measurement
@@ -91,16 +90,6 @@ func testBrowserLayout(t *testing.T, fixture, transition string) {
 			// The search resolves the transition to one rem.
 			if math.Abs(got.WrapRem-standard.WrapRem) > 1 {
 				t.Errorf("%s at %g rem, default %g rem", transition, got.WrapRem, standard.WrapRem)
-			}
-			// Chromium rounds SVG glyph boxes to device pixels at each font and zoom.
-			if len(got.GlyphHeights) != len(standard.GlyphHeights) {
-				t.Errorf("got %d diagrams, default %d", len(got.GlyphHeights), len(standard.GlyphHeights))
-			} else {
-				for i, height := range got.GlyphHeights {
-					if math.Abs(height-standard.GlyphHeights[i]) > 1/standard.Font {
-						t.Errorf("diagram %d glyph height is %.3g rem, default %.3g rem", i+1, height, standard.GlyphHeights[i])
-					}
-				}
 			}
 			for label, ratio := range standard.Type {
 				if math.Abs(got.Type[label]-ratio) > 0.01 {
