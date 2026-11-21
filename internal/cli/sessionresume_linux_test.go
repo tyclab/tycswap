@@ -59,35 +59,40 @@ func TestPickerResumeRecoversTheSessionsMythosLogin(t *testing.T) {
 				link = assertNativeStore(t, env, selected)
 				return 23, nil
 			}
-			questions := 0
-			askPlacement = func(_ ioStreams, q, _ string, _ bool) (bool, error) {
-				questions++
-				if !ask || !strings.Contains(q, "opus") {
-					t.Fatalf("unexpected question %q", q)
-				}
-				if reason == "disabled during approval" {
-					if err := sw.SetAccountDisabled("2", true); err != nil {
-						t.Fatal(err)
-					}
-					return true, nil
-				}
-				return false, nil
-			}
+
 			if code, _, msg := runCodex(t, "", "start", "--", "claude", "--model", "mythos", "--resume"); code != 23 {
 				t.Fatalf("picker: %d %s", code, msg)
 			}
 			t.Setenv(secureStorageEnv, link)
-			if code, out, msg := runCodex(t, `{"source":"resume","session_id":"`+id+`","model":"mythos"}`, "start", "--started"); code != 0 || out != "" || msg != "" {
-				t.Fatalf("resume hook: %d %q %q", code, out, msg)
+			hook := func() string {
+				code, out, msg := runCodex(t, `{"source":"resume","session_id":"`+id+`","model":"mythos"}`, "start", "--started")
+				if code != 0 || out != "" || msg != "" {
+					t.Errorf("resume hook: %d %q %q", code, out, msg)
+				}
+				return out
+			}
+			if ask {
+				b := installAllocationBroker(t)
+				b.decide(t, hook, func(q, _ string) bool {
+					if !strings.Contains(q, "opus") {
+						t.Fatalf("unexpected question %q", q)
+					}
+					if reason == "disabled during approval" {
+						if err := sw.SetAccountDisabled("2", true); err != nil {
+							t.Fatal(err)
+						}
+						return true
+					}
+					return false
+				})
+			} else {
+				hook()
 			}
 			want := selected
 			if reason == "eligible" {
 				want = saved
 			}
 			requireLinkTarget(t, link, want)
-			if ask != (questions == 1) {
-				t.Fatalf("placement questions: %d", questions)
-			}
 			if current, err := store.SelectedMythosDigest(root); err != nil || current != filepath.Base(selected) {
 				t.Fatalf("resuming switched the global selection: %q %v", current, err)
 			}

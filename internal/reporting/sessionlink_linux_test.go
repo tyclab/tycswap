@@ -63,16 +63,26 @@ func TestClientRefreshAndRacingObserver(t *testing.T) {
 	second := make(chan error, 1)
 	go func() {
 		second <- UpdateSessionLink(root, linkSessionID, link, time.Now(), func(s *SessionLink) error {
-			if s.Target != dest || s.Family != "fable" {
-				return errors.New("racing observer saw stale binding")
+			if s.Target != source || s.Family != "opus" {
+				return errors.New("racing observer saw an uncommitted move")
 			}
 			return nil
 		})
 	}()
 	select {
 	case err := <-first:
-		t.Fatalf("move finished while client held refresh lock: %v", err)
-	case <-time.After(35 * time.Millisecond):
+		if err == nil {
+			t.Fatal("observer moved during a client refresh")
+		}
+	case <-time.After(time.Second):
+		// Let both observers finish before the fixture is removed.
+		_ = os.Remove(clientLock)
+		<-first
+		<-second
+		t.Fatal("observer waited for the client's refresh lock")
+	}
+	if err := <-second; err != nil {
+		t.Fatal(err)
 	}
 	if target, err := os.Readlink(link); err != nil || target != source {
 		t.Fatalf("client was redirected before write: %q, %v", target, err)
@@ -86,10 +96,14 @@ func TestClientRefreshAndRacingObserver(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, done := range []chan error{first, second} {
-		if err := <-done; err != nil {
-			t.Fatal(err)
-		}
+	if err := UpdateSessionLink(root, linkSessionID, link, time.Now(), func(s *SessionLink) error {
+		s.Family, s.Target = "fable", dest
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if target, err := os.Readlink(link); err != nil || target != dest {
+		t.Fatalf("retry targeted %q: %v", target, err)
 	}
 	for path, want := range map[string]string{source: replacement, dest: oauthCreds("second", "target", 0)} {
 		got, err := os.ReadFile(filepath.Join(path, ".credentials.json"))

@@ -108,27 +108,22 @@ func TestSessionMoveAsksOnceAndExplicitUseBypassesRefusal(t *testing.T) {
 	setRecord(t, sw, "2", "mythos", true, store.ModelsKey, []string{"opus"})
 	dir := store.MythosLoginDir(sw.BackupDir(), fableEmail("2"), "")
 	writeFile(t, filepath.Join(dir, ".credentials.json"), dryCreds("independent", "fixture-refresh"))
-	prev := askPlacement
-	t.Cleanup(func() { askPlacement = prev })
-	asked := 0
-	askPlacement = func(_ ioStreams, question, detail string, _ bool) (bool, error) {
-		asked++
+	b := installAllocationBroker(t)
+	line := b.decide(t, func() string { return sessionStatus(t, link, placementSession, "claude-mythos-5-2", false) }, func(question, detail string) bool {
 		if !strings.Contains(detail, placementSession) || !strings.Contains(question, fableEmail("2")) {
 			t.Fatalf("allocation question %q, %q", question, detail)
 		}
-		return false, nil
-	}
-	for i := 0; i < 2; i++ {
-		if line := sessionStatus(t, link, placementSession, "claude-mythos-5-2", false); line == "" {
-			t.Fatal("missing refused placement status")
-		}
+		return false
+	})
+	if line == "" || sessionStatus(t, link, placementSession, "claude-mythos-5-2", false) == "" {
+		t.Fatal("missing placement status")
 	}
 	checkLinkTarget(t, link, sw.DefaultProfileDir())
 	if code, _, errb := runCLI(t, []string{"use", "mythos", "--session", placementSession}, false, false); code != 0 {
 		t.Fatalf("explicit use: %d %q", code, errb)
 	}
 	checkLinkTarget(t, link, dir)
-	if asked != 1 {
+	if asked := len(b.requests()); asked != 1 {
 		t.Fatalf("allocation questions = %d, want 1", asked)
 	}
 }
@@ -160,17 +155,13 @@ func TestSessionApprovalRechecksPlacement(t *testing.T) {
 			setRecord(t, sw, "2", "mythos", true, store.ModelsKey, []string{"opus"})
 			dir := store.MythosLoginDir(sw.BackupDir(), fableEmail("2"), "")
 			writeFile(t, filepath.Join(dir, ".credentials.json"), dryCreds("independent", "fixture-refresh"))
-			prev := askPlacement
-			t.Cleanup(func() { askPlacement = prev })
-			asks := 0
-			askPlacement = func(_ ioStreams, _, _ string, _ bool) (bool, error) {
-				asks++
+			b := installAllocationBroker(t)
+			line := b.decide(t, func() string { return sessionStatus(t, link, placementSession, "claude-mythos-5-2", false) }, func(_, _ string) bool {
 				if change {
 					setRecord(t, sw, "2", "mythos", false)
 				}
-				return true, nil
-			}
-			line := sessionStatus(t, link, placementSession, "claude-mythos-5-2", false)
+				return true
+			})
 			if change {
 				checkLinkTarget(t, link, sw.DefaultProfileDir())
 				if line == "" {
@@ -179,7 +170,7 @@ func TestSessionApprovalRechecksPlacement(t *testing.T) {
 			} else {
 				checkLinkTarget(t, link, dir)
 			}
-			if asks != 1 {
+			if asks := len(b.requests()); asks != 1 {
 				t.Fatalf("questions = %d", asks)
 			}
 		})
@@ -218,7 +209,7 @@ func TestSessionUseRefusesWhileRefreshIsBusy(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, _, msg := runCLI(t, []string{"use", "fable", "--session", placementSession}, false, false)
-	if code != 1 || !strings.Contains(strings.ToLower(msg), "refresh") {
+	if code != 1 || !strings.Contains(msg, ".oauth_refresh.lock") || !strings.Contains(msg, "2h") {
 		t.Fatalf("busy refresh = %d, %q", code, msg)
 	}
 	checkLinkTarget(t, link, sw.DefaultProfileDir())
