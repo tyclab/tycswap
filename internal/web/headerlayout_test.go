@@ -15,6 +15,15 @@ import (
 )
 
 func TestDashboardHeaderLayout(t *testing.T) {
+	testBrowserLayout(t, "header-layout.html", "accounts beside the brand")
+}
+
+func TestDashboardLayout(t *testing.T) {
+	testBrowserLayout(t, "dashboard-layout.html", "session controls side by side")
+}
+
+func testBrowserLayout(t *testing.T, fixture, transition string) {
+	t.Helper()
 	chrome := os.Getenv("CHROME_BIN")
 	if chrome == "" {
 		for _, name := range []string{"google-chrome", "chromium", "chromium-browser"} {
@@ -57,7 +66,7 @@ func TestDashboardHeaderLayout(t *testing.T) {
 				t.Fatal(err)
 			}
 			cmd := exec.CommandContext(t.Context(), chrome, "--headless", "--no-sandbox", "--disable-dev-shm-usage", "--disable-background-networking", "--disable-component-update", "--no-first-run",
-				"--user-data-dir="+profile, "--force-device-scale-factor=1", "--window-size=1280,900", "--dump-dom", server.URL+"/header-layout.html")
+				"--user-data-dir="+profile, "--force-device-scale-factor=1", "--window-size=1280,900", "--dump-dom", server.URL+"/"+fixture)
 			out, err := cmd.Output()
 			if err != nil {
 				t.Fatalf("Chrome: %v", err)
@@ -80,11 +89,11 @@ func TestDashboardHeaderLayout(t *testing.T) {
 			}
 			// The search resolves the transition to one rem.
 			if math.Abs(got.WrapRem-standard.WrapRem) > 1 {
-				t.Errorf("accounts fit beside the brand at %g rem, default %g rem", got.WrapRem, standard.WrapRem)
+				t.Errorf("%s at %g rem, default %g rem", transition, got.WrapRem, standard.WrapRem)
 			}
 			for label, ratio := range standard.Type {
 				if math.Abs(got.Type[label]-ratio) > 0.01 {
-					t.Errorf("%s type is %.3g rem, default %.3g rem", label, got.Type[label], ratio)
+					t.Errorf("%s is %.3g rem, default %.3g rem", label, got.Type[label], ratio)
 				}
 			}
 		})

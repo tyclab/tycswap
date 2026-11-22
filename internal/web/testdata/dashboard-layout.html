@@ -1,0 +1,254 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Dashboard tab layout</title>
+<style>
+  html, body { margin: 0; overflow: hidden; }
+  iframe { display: block; border: 0; width: 100vw; height: 100vh; }
+</style>
+<pre id="result" hidden>Browser measurement did not complete.</pre>
+<script src="/layout-fixture.js"></script>
+<iframe id="page" src="/dashboard#csrf=1234"></iframe>
+<script>
+window.addEventListener('load', () => {
+  const page = document.querySelector('#page'), doc = page.contentDocument, win = page.contentWindow;
+  const font = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  const report = {font, zoom: devicePixelRatio, viewport: innerWidth, type: {}, failures: []};
+  const state = dashboardFixture();
+  for (const a of state.accounts) a.rotationEligible = a.switchable = true;
+  state.accounts[1].alias = 'Editing team';
+  state.accounts.slice(3, 6).forEach((account, i) => { account.number = 10 + i; });
+  state.accounts[3].fableLogin = {status: 'ok', live: false};
+  state.accounts[3].mythosLogin = {status: 'ok', selectable: true, live: false};
+  state.auto = {running: true, counting: {mode: 'sessions', models: ['Fable']}};
+  state.settings = [{key: 'autoswitch.fiveHourThreshold', label: '5-hour threshold', description: 'Switch when this threshold is reached.',
+    kind: 'int', min: 1, max: 100, value: 85, default: 90, isDefault: false}];
+  state.sessions.ide = [{ideName: 'Visual Studio Code', pid: 194028, port: 47231,
+    workspaceFolders: ['/work/shared/weekly-integration-report']}];
+  const owners = [['default login', '1'], ['Fable login', '2'], ['Mythos login', '8']];
+  for (const [i, session] of state.sessions.claude.entries()) {
+    [session.login, session.accountNumber] = owners[i % owners.length];
+    session.pid = i === 0 ? 4504 : 173742 + i;
+    session.kind = 'interactive';
+    session.entrypoint = 'cli';
+    session.startedAt = Date.now() - (i + 1) * 3600000;
+    session.status = i % 3 === 0 ? 'waiting' : 'busy';
+    session.moves = ['default', 'fable', 'mythos'].filter((_, j) => j !== i % owners.length);
+  }
+  const $ = selector => doc.querySelector(selector);
+  const all = selector => [...doc.querySelectorAll(selector)];
+  const overlaps = (a, b) => Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top);
+  const tabs = ['dashboard', 'auto', 'sessions', 'settings', 'guide'];
+  const failures = new Set();
+  let context;
+  function check(condition, message) { if (!condition) failures.add(context + ': ' + message); }
+
+  // Test what the user can see. Scroll vertically to each line and pan a data
+  // table if it has its own scrollbar. Never pan the page or an overflow:hidden
+  // ancestor to reveal text which an ordinary reader cannot reach.
+  function visibleRange(element, range) {
+    const rects = range.getClientRects();
+    if (!rects.length) return false;
+    const scrollers = [];
+    for (let p = element; p && p !== doc.body; p = p.parentElement) {
+      if (p.scrollWidth > p.clientWidth && /^(auto|scroll)$/.test(win.getComputedStyle(p).overflowX)) scrollers.push(p);
+    }
+    for (let i = 0; i < rects.length; i++) {
+      const rect = () => range.getClientRects()[i];
+      const line = rect();
+      if (!line.width || !line.height) return false;
+      win.scrollBy({top: (line.top + line.bottom - win.innerHeight) / 2, behavior: 'instant'});
+      const inset = Math.min(1 / win.devicePixelRatio, line.width / 2);
+      for (const offset of [inset, line.width / 2, line.width - inset]) {
+        const x = () => rect().left + offset;
+        for (const scroller of scrollers) {
+          const box = scroller.getBoundingClientRect();
+          if (x() < box.left || x() >= box.right) scroller.scrollLeft += x() - (box.left + box.right) / 2;
+        }
+        const hit = doc.elementFromPoint(x(), (rect().top + rect().bottom) / 2);
+        if (!element.contains(hit)) return false;
+      }
+    }
+    return true;
+  }
+
+  function hasVisibleText(group, expected) {
+    if (!group) return false;
+    const nodes = doc.createTreeWalker(group, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = nodes.nextNode())) {
+      const start = node.data.indexOf(expected);
+      if (start < 0) continue;
+      const range = doc.createRange();
+      range.setStart(node, start);
+      range.setEnd(node, start + expected.length);
+      if (visibleRange(node.parentElement, range)) return true;
+    }
+    return false;
+  }
+  function accountFacts(row, account) {
+    const facts = [account.email, account.alias, '64%', '87%', '100%', '2d 6h', '3d 6h', '4d 6h'].filter(Boolean);
+    for (const fact of facts) check(hasVisibleText(row, fact), 'missing or clipped ' + fact + ' in account #' + account.number);
+  }
+
+  function checkShortTokens(group) {
+    const nodes = doc.createTreeWalker(group, NodeFilter.SHOW_TEXT), range = doc.createRange();
+    const broken = new Set();
+    let node;
+    while ((node = nodes.nextNode())) {
+      const token = node.data.trim(), element = node.parentElement;
+      if (!token || token.length > 14 || /\s/.test(token) || element.closest('.sr-only') ||
+          !element.checkVisibility({visibilityProperty: true})) continue;
+
+      // A short token is one line. A hyphen can finish a line, so measure each
+      // hyphen-delimited part. Long addresses, paths and titles can still wrap.
+      let start = node.data.indexOf(token);
+      for (const part of token.split(/(?<=-)/)) {
+        range.setStart(node, start);
+        start += part.length;
+        range.setEnd(node, start);
+        const lines = new Set([...range.getClientRects()].filter(r => r.width > 0).map(r => Math.round(r.top)));
+        if (lines.size > 1) broken.add(token + ' (' + lines.size + ' lines)');
+      }
+    }
+    check(broken.size === 0, 'short tokens split across lines: ' + [...broken].join(', '));
+  }
+
+  function checkGuideDiagrams() {
+    for (const svg of all('.g-svg')) {
+      const boxes = [...svg.querySelectorAll('rect')].map(r => r.getBoundingClientRect());
+      for (const label of svg.querySelectorAll('text')) {
+        const anchor = new DOMPoint(label.x.baseVal[0].value, label.y.baseVal[0].value).matrixTransform(label.getScreenCTM());
+        // A label anchored in a node belongs to the smallest such node; arrow labels
+        // between nodes have only the illustration's boundary.
+        const node = boxes.filter(b => b.left <= anchor.x && anchor.x <= b.right && b.top <= anchor.y && anchor.y <= b.bottom)
+          .sort((a, b) => a.width * a.height - b.width * b.height)[0] || svg.getBoundingClientRect();
+        const glyphs = label.getBoundingClientRect();
+        check(glyphs.width > 0 && glyphs.height > 0 && glyphs.left >= node.left - 1 && glyphs.right <= node.right + 1 &&
+          glyphs.top >= node.top - 1 && glyphs.bottom <= node.bottom + 1, 'diagram label leaves its node: ' + label.textContent);
+      }
+    }
+  }
+
+  try {
+    context = 'fixture';
+    win.events.dispatchEvent(new MessageEvent('state', {data: JSON.stringify(state)}));
+    for (const width of ['100vw', '320px']) {
+      page.style.width = width;
+      for (const tab of tabs) {
+        $('#tab-' + tab).click();
+        context = tab + ' at ' + win.innerWidth;
+        const panel = $('#panel-' + tab);
+        check(!panel.hidden && panel.clientHeight > 0, 'tab did not open');
+        check(doc.documentElement.scrollWidth <= doc.documentElement.clientWidth, 'page scrolls horizontally');
+        if (tab === 'dashboard') {
+          for (const a of state.accounts) accountFacts($('#accounts-body [data-key="claude:' + a.number + '"]'), a);
+        } else if (tab === 'auto') {
+          const rows = all('#nextbest-list tr');
+          check(rows.length === state.accounts.length - 1, 'ranked accounts missing');
+          for (const a of state.accounts.slice(1)) {
+            const row = rows.find(r => r.querySelector('.slot-chip').textContent === '#' + a.number);
+            accountFacts(row, a);
+          }
+        } else if (tab === 'sessions') {
+          const rows = all('.sess-tbl tbody tr');
+          check(rows.length === state.sessions.claude.length, 'sessions missing');
+          for (const session of state.sessions.claude) {
+            const row = rows.find(r => r.querySelector('.c-pid').textContent === String(session.pid));
+            const login = session.login + ' · #' + session.accountNumber;
+            check(hasVisibleText(row, login), 'missing or clipped ' + login);
+            const title = row && row.querySelector('.title');
+            check(hasVisibleText(title, session.title) || (title && title.getClientRects().length &&
+              title.title === session.title && hasVisibleText(title, session.title.split(' ')[0])), 'unreachable long session title');
+          }
+        } else if (tab === 'settings') {
+          for (const value of ['5-hour threshold', 'Save', 'Reset']) check(hasVisibleText($('.setting-row'), value), 'clipped ' + value);
+          const select = $('#appearance-theme'), style = win.getComputedStyle(select);
+          check(select.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) >= parseFloat(style.fontSize),
+            'theme selector clips its value');
+        } else {
+          checkGuideDiagrams();
+          for (const link of all('.guide-toc a')) check(hasVisibleText(link, link.textContent), 'clipped contents link ' + link.textContent);
+          check(hasVisibleText($('#g-mythos h2'), 'Mythos login'), 'clipped guide heading');
+        }
+      }
+    }
+
+    const root = doc.documentElement, scrollbar = win.innerWidth - root.clientWidth;
+    const widthAt = rem => 'calc(' + rem + 'rem + ' + scrollbar + 'px)';
+    for (const width of ['100vw', '320px', ...[24, 28, 44, 50, 56, 63].map(widthAt)]) {
+      page.style.width = width;
+      for (const tab of tabs) {
+        $('#tab-' + tab).click();
+        context = tab + ' at ' + root.clientWidth + ' CSS px';
+        checkShortTokens(doc.body);
+        if (tab === 'dashboard') {
+          const row = $('#accounts-body [data-key="claude:10"]');
+          const toggle = row.querySelector('.menu > summary');
+          check(hasVisibleText(row.querySelector('[data-label="Switch"]'), 'Switch'), 'Switch is not visible');
+          toggle.click();
+          const menu = row.querySelector('.menu-list');
+          check(hasVisibleText(menu.querySelector('[data-action="remove"]'), 'Remove…'), 'Remove… is not visible');
+          checkShortTokens(menu);
+          toggle.click();
+        }
+      }
+    }
+
+    // Compare text, text-related spacing and content caps at the same font-relative allocation.
+    page.style.width = '100rem';
+    for (const [tab, selectors] of Object.entries({
+      dashboard: ['#tab-dashboard', '#accounts-card h2', '.tile-value', '.acct-name .primary', '#accounts-body .meter-foot'],
+      auto: ['#nextbest-sub', '#nextbest-list .primary'], sessions: ['.sess-tbl .title', '.sess-tbl .chip', '#sess-status'],
+      settings: ['.setting-id .label', '.setting-id .desc', '.setting-ctl input'], guide: ['.guide-toc li', '.guide-section p'],
+    })) {
+      $('#tab-' + tab).click();
+      for (const selector of selectors) report.type[selector] = parseFloat(win.getComputedStyle($(selector)).fontSize) / font;
+    }
+    context = 'guide width';
+    const guide = $('.guide'), wide = guide.getBoundingClientRect().width;
+    // SVG font-size is in viewBox units. Apply the screen transform before comparing it with HTML type.
+    for (const svg of all('.g-svg')) {
+      const label = svg.querySelector('text'), matrix = label.getScreenCTM();
+      report.type[svg.getAttribute('aria-labelledby')] = parseFloat(win.getComputedStyle(label).fontSize) * Math.hypot(matrix.c, matrix.d) / font;
+    }
+    report.type['guide width cap'] = wide / font;
+    report.type['guide card vertical padding'] = parseFloat(win.getComputedStyle($('.guide-section')).paddingTop) / font;
+    page.style.width = '160rem';
+    check(guide.getBoundingClientRect().width === wide, 'content continues to stretch on wider screens');
+    page.style.width = '20rem';
+    check(guide.getBoundingClientRect().width < wide, 'content does not shrink with the page');
+
+    $('#tab-sessions').click();
+    // The table can need a local scrollbar just after the session cards become a table.
+    // Its actions column (including the accessible heading) must stay inside that scroller.
+    page.style.width = widthAt(45);
+    context = 'session table at ' + root.clientWidth;
+    check(root.scrollWidth <= root.clientWidth, 'page scroll width ' + root.scrollWidth + ' exceeds viewport ' + root.clientWidth);
+
+    const sessionRows = all('.sess-tbl tbody tr');
+    for (const session of state.sessions.claude) {
+      const row = sessionRows.find(r => r.querySelector('.c-pid').textContent === String(session.pid));
+      for (const store of session.moves) {
+        const button = row.querySelector('[data-action="session-use"][data-store="' + store + '"]');
+        check(button && button.textContent.trim() && hasVisibleText(button, button.textContent), 'unreachable move to ' + store);
+      }
+      check(hasVisibleText(row.querySelector('[aria-label="Stop session ' + session.pid + '"]'), 'Stop'), 'unreachable stop');
+    }
+
+    function controlsShareRow(rem) {
+      page.style.width = rem + 'rem';
+      return overlaps($('#sess-filter').getBoundingClientRect(), $('#sess-status').getBoundingClientRect());
+    }
+    let lo = 10, hi = 120;
+    context = 'session controls';
+    check(!controlsShareRow(lo) && controlsShareRow(hi), 'filters must stack when narrow and share a row when wide');
+    while (hi - lo > 1) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (controlsShareRow(mid)) hi = mid; else lo = mid;
+    }
+    report.wrapRem = hi;
+  } catch (error) { failures.add(String(error.stack || error)); }
+  report.failures = [...failures];
+  document.querySelector('#result').textContent = JSON.stringify(report);
+});
+</script>

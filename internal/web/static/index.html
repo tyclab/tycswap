@@ -146,11 +146,13 @@
         <p id="auto-counting" class="auto-line"></p>
         <div id="auto-body"></div>
         <div id="quarantine-section" class="section" hidden>
-          <h3>Quarantine</h3>
-          <table class="tbl compact" id="quarantine-tbl">
-            <thead><tr><th scope="col">Slot</th><th scope="col">Reason</th><th scope="col">Since</th></tr></thead>
-            <tbody id="quarantine-body"></tbody>
-          </table>
+          <h3 id="quarantine-title">Quarantine</h3>
+          <div class="table-scroll" role="region" aria-labelledby="quarantine-title" tabindex="0">
+            <table class="tbl compact" id="quarantine-tbl">
+              <thead><tr><th scope="col">Slot</th><th scope="col">Reason</th><th scope="col">Since</th></tr></thead>
+              <tbody id="quarantine-body"></tbody>
+            </table>
+          </div>
         </div>
       </div>
       <div class="card">
@@ -198,12 +200,14 @@
     </div>
     <div class="card">
       <div class="card-head">
-        <div class="head-l"><h2>IDE instances</h2><span id="ide-count" class="chip chip-outline"></span></div>
+        <div class="head-l"><h2 id="ide-heading">IDE instances</h2><span id="ide-count" class="chip chip-outline"></span></div>
       </div>
-      <table class="tbl compact" id="ide-tbl">
-        <thead><tr><th scope="col">IDE</th><th scope="col" class="num">PID</th><th scope="col" class="num">Port</th><th scope="col">Workspace</th></tr></thead>
-        <tbody id="ide-list"></tbody>
-      </table>
+      <div class="table-scroll" role="region" aria-labelledby="ide-heading" tabindex="0">
+        <table class="tbl compact" id="ide-tbl">
+          <thead><tr><th scope="col">IDE</th><th scope="col" class="num">PID</th><th scope="col" class="num">Port</th><th scope="col">Workspace</th></tr></thead>
+          <tbody id="ide-list"></tbody>
+        </table>
+      </div>
       <div id="ide-empty" class="empty-state" hidden><span class="title">No IDE instances</span><span>VS Code, Cursor and friends register here while the Claude Code extension is running.</span></div>
     </div>
   </section>
@@ -262,6 +266,7 @@
       <svg class="g-svg" viewBox="0 0 320 320" role="img" aria-labelledby="gd-what-t gd-what-d">
         <title id="gd-what-t">Your accounts, the live login, the Fable store and the sessions that use them</title>
         <desc id="gd-what-d">Three accounts are saved: number 1, alias work, with its saved login and a Fable login; number 2; number 3, alias spare. Switch copies number 2's saved login into the live login, Claude Code's own sign-in. Use for Fable puts number 1's Fable login into the Fable store, which exists only once an account has a Fable login. In this example the Fable session uses the Fable store and the other session uses the live login.</desc>
+        <g font-size="16">
         <rect class="gd-box" x="1" y="1" width="318" height="134" rx="8"/>
         <text class="gd-h" x="12" y="20">Your accounts, saved by {{.Name}}</text>
         <rect class="gd-row" x="10" y="30" width="300" height="28" rx="6"/>
@@ -297,6 +302,7 @@
         <rect class="gd-box" x="165" y="266" width="154" height="52" rx="8"/>
         <text class="gd-h" x="176" y="286">Fable sessions</text>
         <text class="gd-s" x="176" y="304">via {{.Name}} start</text>
+        </g>
       </svg>
           <figcaption>
             <ul>
@@ -323,6 +329,7 @@
       <svg class="g-svg" viewBox="0 0 320 445" role="img" aria-labelledby="gd-switch-t gd-switch-d">
         <title id="gd-switch-t">What a switch by hand does</title>
         <desc id="gd-switch-d">You click Switch on account 2. {{.Name}} saves the outgoing login back to its account, number 1, with its latest tokens, and number 2's saved login becomes the live login. Running sessions on the live login use number 2 from their next message; on macOS within about 30 seconds, or at once after a restart. Sessions on the Fable store are not touched. A switch onto an API-key account asks first, and running sessions keep their old login until they are restarted. Auto-switch makes no switch for the Switch cooldown, 5 minutes by default.</desc>
+        <g font-size="16">
         <rect class="gd-q" x="1" y="1" width="318" height="30" rx="14"/>
         <text class="gd-t" x="12" y="20">You click Switch on #2</text>
         <line class="gd-a" x1="160" y1="31" x2="160" y2="49" />
@@ -353,6 +360,7 @@
         <rect class="gd-end" x="1" y="399" width="318" height="44" rx="14"/>
         <text class="gd-t" x="12" y="418">And Auto-switch makes no switch</text>
         <text class="gd-s" x="12" y="432">for the Switch cooldown (5 minutes by default)</text>
+        </g>
       </svg>
           <figcaption>Between subscription accounts no restart is needed. After a switch onto an API-key account, restart the sessions.</figcaption>
         </figure>
@@ -372,6 +380,7 @@
       <svg class="g-svg" viewBox="0 0 320 668" role="img" aria-labelledby="gd-auto-t gd-auto-d">
         <title id="gd-auto-t">What Auto-switch does on each check</title>
         <desc id="gd-auto-d">Each check, by a scheduler or by this dashboard: if Auto-switch is off, nothing happens. If you switched by hand within the Switch cooldown, it waits. It counts the 5-hour and weekly use; a scheduler also counts each model your sessions run. If the live account is not over a threshold, not at its limit and not failing 3 polls in a row, it stays. Otherwise the targets are the accounts that are enabled, not API-key accounts, not quarantined and not at a limit, those below every threshold first; a threshold move needs 10 points more room on that window. With no target it stays. Otherwise it switches to the first target by Account order: the soonest weekly reset by default, or the most weekly room. Its next threshold move then waits the Switch cooldown.</desc>
+        <g font-size="16">
         <rect class="gd-box" x="1" y="1" width="216" height="44" rx="8"/>
         <text class="gd-h" x="12" y="20">Each check</text>
         <text class="gd-s" x="12" y="34">by a scheduler or this dashboard</text>
@@ -444,6 +453,7 @@
         <rect class="gd-end" x="1" y="621" width="216" height="45" rx="14"/>
         <text class="gd-t" x="12" y="640">Its next threshold move waits</text>
         <text class="gd-t" x="12" y="655">the Switch cooldown</text>
+        </g>
       </svg>
           <figcaption>
             <ul>
@@ -456,21 +466,23 @@
       </article>
 
       <article class="card guide-section" id="g-settings">
-        <h2>The settings that steer it</h2>
-        <table class="tbl compact guide-tbl g-set">
-          <thead><tr><th scope="col">Setting, default</th><th scope="col">What it does</th></tr></thead>
-          <tbody>
-            <tr><td>5-hour threshold<span class="g-def">85 %</span></td><td>Move when the 5-hour window passes this; low, because parallel work fills it fast.</td></tr>
-            <tr><td>Weekly threshold<span class="g-def">97 %</span></td><td>The same for the weekly window.</td></tr>
-            <tr><td>Model threshold<span class="g-def">95 %</span></td><td>The same for a counted model's weekly limit.</td></tr>
-            <tr><td>Account order<span class="g-def">soonest-reset</span></td><td><em>soonest-reset</em>: the weekly window that renews first, so all accounts get used; <em>best</em>: the most weekly room.</td></tr>
-            <tr><td>Minimum improvement<span class="g-def">10</span></td><td>Points of extra room a threshold move needs, so it does not flip back and forth.</td></tr>
-            <tr><td>Switch cooldown<span class="g-def">300 s</span></td><td>After an automatic threshold move the next one waits this long; after a switch by hand, every automatic switch does.</td></tr>
-            <tr><td>Failed polls<span class="g-def">3</span></td><td>Failed usage reads of the live account in a row before Auto-switch moves off it.</td></tr>
-            <tr><td>Poll interval<span class="g-def">60 s</span></td><td>How often this dashboard checks.</td></tr>
-            <tr><td>Codex auto-switch, Codex threshold<span class="g-def">on, 0</span></td><td>Codex accounts, on one bar; 0 means the weekly threshold.</td></tr>
-          </tbody>
-        </table>
+        <h2 id="g-settings-heading">The settings that steer it</h2>
+        <div class="table-scroll" role="region" aria-labelledby="g-settings-heading" tabindex="0">
+          <table class="tbl compact guide-tbl g-set">
+            <thead><tr><th scope="col">Setting, default</th><th scope="col">What it does</th></tr></thead>
+            <tbody>
+              <tr><td>5-hour threshold<span class="g-def">85 %</span></td><td>Move when the 5-hour window passes this; low, because parallel work fills it fast.</td></tr>
+              <tr><td>Weekly threshold<span class="g-def">97 %</span></td><td>The same for the weekly window.</td></tr>
+              <tr><td>Model threshold<span class="g-def">95 %</span></td><td>The same for a counted model's weekly limit.</td></tr>
+              <tr><td>Account order<span class="g-def">soonest-reset</span></td><td><em>soonest-reset</em>: the weekly window that renews first, so all accounts get used; <em>best</em>: the most weekly room.</td></tr>
+              <tr><td>Minimum improvement<span class="g-def">10</span></td><td>Points of extra room a threshold move needs, so it does not flip back and forth.</td></tr>
+              <tr><td>Switch cooldown<span class="g-def">300 s</span></td><td>After an automatic threshold move the next one waits this long; after a switch by hand, every automatic switch does.</td></tr>
+              <tr><td>Failed polls<span class="g-def">3</span></td><td>Failed usage reads of the live account in a row before Auto-switch moves off it.</td></tr>
+              <tr><td>Poll interval<span class="g-def">60 s</span></td><td>How often this dashboard checks.</td></tr>
+              <tr><td>Codex auto-switch, Codex threshold<span class="g-def">on, 0</span></td><td>Codex accounts, on one bar; 0 means the weekly threshold.</td></tr>
+            </tbody>
+          </table>
+        </div>
         <p class="muted">Change them on the Settings tab.</p>
       </article>
 
@@ -533,19 +545,21 @@
       </article>
 
       <article class="card guide-section" id="g-cli">
-        <h2>Commands</h2>
-        <table class="tbl compact guide-tbl">
-          <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
-          <tbody>
-            <tr><td><code>{{.Name}}</code></td><td>The menu: add, manage, import and export accounts, start the tray</td></tr>
-            <tr><td><code>{{.Name}} list</code></td><td>The accounts and their usage</td></tr>
-            <tr><td><code>{{.Name}} switch 2</code></td><td>Switch to account 2 (number, alias or email)</td></tr>
-            <tr><td><code>{{.Name}} auto on</code> · <code>auto off</code></td><td>Auto-switch on or off</td></tr>
-            <tr><td><code>{{.Name}} add --login</code></td><td>Sign in another account beside the live one</td></tr>
-            <tr><td><code>{{.Name}} config</code></td><td>Show or change a setting</td></tr>
-            <tr><td><code>{{.Name}} export FILE</code> · <code>import FILE</code></td><td>Move accounts to another machine (a login works on one machine at a time). The file holds live credentials in plain text: treat it like a password.</td></tr>
-          </tbody>
-        </table>
+        <h2 id="g-cli-heading">Commands</h2>
+        <div class="table-scroll" role="region" aria-labelledby="g-cli-heading" tabindex="0">
+          <table class="tbl compact guide-tbl">
+            <thead><tr><th scope="col">Command</th><th scope="col">What it does</th></tr></thead>
+            <tbody>
+              <tr><td><code>{{.Name}}</code></td><td>The menu: add, manage, import and export accounts, start the tray</td></tr>
+              <tr><td><code>{{.Name}} list</code></td><td>The accounts and their usage</td></tr>
+              <tr><td><code>{{.Name}} switch 2</code></td><td>Switch to account 2 (number, alias or email)</td></tr>
+              <tr><td><code>{{.Name}} auto on</code> · <code>auto off</code></td><td>Auto-switch on or off</td></tr>
+              <tr><td><code>{{.Name}} add --login</code></td><td>Sign in another account beside the live one</td></tr>
+              <tr><td><code>{{.Name}} config</code></td><td>Show or change a setting</td></tr>
+              <tr><td><code>{{.Name}} export FILE</code> · <code>import FILE</code></td><td>Move accounts to another machine (a login works on one machine at a time). The file holds live credentials in plain text: treat it like a password.</td></tr>
+            </tbody>
+          </table>
+        </div>
         <p class="muted"><code>{{.Name}} --help</code> lists every command; the README and <code>docs/reference.md</code> in the {{.Name}} repository describe each one.</p>
       </article>
 

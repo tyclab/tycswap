@@ -3639,6 +3639,8 @@ to the packages the CLI commands use, so the dashboard and
 in the dashboard: writing live credentials to a path a page names is the
 CLI's job, where the user sees the path and the file.
 
+Dashboard text, spacing and page breakpoints follow the browser’s default font size. Controls and tables size to their contents and the available space, with bounds in rem or ch. A card or header that changes layout with its own width uses a container query. Account addresses, quota limits and reset times, and session logins wrap in full. Short identifiers, slot badges and control labels keep whole words. A hyphenated name can wrap at its hyphen. Secondary text such as a session title may use an ellipsis when its full text is accessible. Borders and focus outlines keep their hairline widths. Guide diagrams scale their lettering and geometry together inside a font-relative frame.
+
 **Threat model.** The dashboard can switch, add, remove and re-slot accounts,
 drive the auto-switch engine and stop Claude Code sessions. Anything on the
 machine can send requests to a loopback port, and any web page the user
