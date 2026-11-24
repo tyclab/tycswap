@@ -328,3 +328,21 @@ func TestFableQuarantineLeavesOutLoginsSignedInAgain(t *testing.T) {
 		t.Errorf("Fable pool = %s, want 4", pool)
 	}
 }
+
+// The hint for accounts with Fable room but no Fable login names the command
+// that signs them all in, in one sentence (DESIGN A114).
+func TestFableRoomHintNamesTheWalk(t *testing.T) {
+	for _, tc := range []struct {
+		nums []string
+		want string
+	}{
+		{nil, ""},
+		{[]string{"11"}, "Account-11 has Fable room but no Fable login: tycswap fable --login"},
+		{[]string{"7", "11"}, "Accounts 7 and 11 have Fable room but no Fable login: tycswap fable --login"},
+		{[]string{"7", "11", "12"}, "Accounts 7, 11 and 12 have Fable room but no Fable login: tycswap fable --login"},
+	} {
+		if got := FableRoomHint(tc.nums); got != tc.want {
+			t.Errorf("FableRoomHint(%q) = %q, want %q", tc.nums, got, tc.want)
+		}
+	}
+}

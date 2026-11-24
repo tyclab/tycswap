@@ -49,12 +49,15 @@ func setFablePct(t *testing.T, sw *core.Switcher, num string, pct float64) {
 	writeFile(t, path, string(raw))
 }
 
+// fableRoomHintFor is the hint for one account or two (DESIGN A114).
 func fableRoomHintFor(nums ...string) string {
-	var parts []string
-	for _, num := range nums {
-		parts = append(parts, "Account-"+num+" has Fable room but no Fable login: tycswap add --login --lineage fable --slot "+num)
+	switch len(nums) {
+	case 0:
+		return ""
+	case 1:
+		return "Account-" + nums[0] + " has Fable room but no Fable login: tycswap fable --login"
 	}
-	return strings.Join(parts, "; ")
+	return "Accounts " + nums[0] + " and " + nums[1] + " have Fable room but no Fable login: tycswap fable --login"
 }
 
 // A Fable session that starts while no Fable login has room starts on the
@@ -186,7 +189,7 @@ func TestFableRoomWithoutALoginIsNamed(t *testing.T) {
 				for _, line := range lines {
 					found = found || hint != "" && strings.TrimSpace(line) == hint
 				}
-				if hint != "" && !found || hint == "" && strings.Contains(human, "has Fable room but no Fable login") {
+				if hint != "" && !found || hint == "" && strings.Contains(human, "Fable room but no Fable login") {
 					t.Fatalf("%s: want the line %q:\n%s", argv[0], hint, human)
 				}
 			}
@@ -200,7 +203,7 @@ func fableRoomWarnings(t *testing.T, sw *core.Switcher) []string {
 	t.Helper()
 	var out []string
 	for _, line := range strings.Split(readOrAbsent(t, filepath.Join(sw.BackupDir(), "tycswap.log")), "\n") {
-		if rec, ok := logging.ParseLine(line); ok && rec.Level == logging.LevelWarning && strings.Contains(rec.Message, "has Fable room but no Fable login") {
+		if rec, ok := logging.ParseLine(line); ok && rec.Level == logging.LevelWarning && strings.Contains(rec.Message, "Fable room but no Fable login") {
 			out = append(out, rec.Message)
 		}
 	}

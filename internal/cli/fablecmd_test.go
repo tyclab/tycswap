@@ -53,11 +53,11 @@ func TestFableCommandArguments(t *testing.T) {
 		argv []string
 		want string
 	}{
-		{[]string{"fable"}, "expected --allow ID, --disallow ID or --list"},
+		{[]string{"fable"}, "expected --allow ID, --disallow ID, --list or --login"},
 		{[]string{"fable", "--allow"}, "--allow requires an account identifier"},
 		{[]string{"fable", "--disallow", "--list"}, "--disallow requires an account identifier"},
-		{[]string{"fable", "--allow", "1", "--list"}, "--allow, --disallow and --list are exclusive"},
-		{[]string{"fable", "--list", "--disallow", "1"}, "--allow, --disallow and --list are exclusive"},
+		{[]string{"fable", "--allow", "1", "--list"}, "--allow, --disallow, --list and --login are exclusive"},
+		{[]string{"fable", "--list", "--disallow", "1"}, "--allow, --disallow, --list and --login are exclusive"},
 		{[]string{"fable", "--allow", "1", "--json"}, "--json goes with --list"},
 		{[]string{"fable", "--list", "--force"}, "unrecognized option: --force"},
 		{[]string{"fable", "--list", "3"}, "unrecognized arguments: 3"},
