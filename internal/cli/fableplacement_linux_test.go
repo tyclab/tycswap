@@ -79,6 +79,41 @@ func TestStatusLinePlacesAFableSessionByFableRoom(t *testing.T) {
 	})
 }
 
+// A held choice is not ruled: a session on the Fable store whose record holds
+// fable, as tycswap use fable leaves it before Claude reports the model,
+// stays there through status-line observations and a tick, with no move or
+// deferral line, while no Fable login has room.
+func TestHeldFableChoiceIsNotPlacedByFableRoom(t *testing.T) {
+	sw, _ := fableStartLogin(t, poolAtFableLimit, "1", "2")
+	link, err := reporting.CreateSessionLink(sw.BackupDir(), fableStoreDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reporting.BindSessionLink(sw.BackupDir(), placementSession, link, "claude-opus-5-5", "fable", sw.Clk.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := reporting.UpdateSessionLink(sw.BackupDir(), placementSession, link, sw.Clk.Now(), func(rec *reporting.SessionLink) error {
+		rec.Wanted = "fable"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []struct{ model, line string }{
+		{"claude-opus-5-5", "Fable login ready: /model fable\n"},
+		{"claude-fable-5-2", ""},
+	} {
+		if line := sessionStatus(t, link, placementSession, step.model, false); line != step.line {
+			t.Fatalf("status line for %s: %q, want %q", step.model, line, step.line)
+		}
+		requireLinkTarget(t, link, fableStoreDir())
+	}
+	runCodex(t, "", "auto", "--once", "--json")
+	requireLinkTarget(t, link, fableStoreDir())
+	if lines := sessionMoveLogLines(t, sw, placementSession); len(lines) != 0 {
+		t.Fatalf("log: %q", lines)
+	}
+}
+
 // After the Fable store's tick an idle linked Fable session gets the same
 // placement through the move guard; a dry run and auto-switch off move
 // nothing, and a busy refresh lock defers the move to a later tick.
