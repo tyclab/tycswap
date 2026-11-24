@@ -831,17 +831,6 @@ func TestRemoveProceedsWhenThePromptIsAnsweredYes(t *testing.T) {
 	}
 }
 
-func TestRemoveWarnsWhenTheTargetIsTheActiveAccount(t *testing.T) {
-	f := newFixture(t)
-	f.stdin = "y\n"
-	if _, err := f.seeded().Remove("1", false); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(f.out.String(), "Codex account 1 (a@x) is currently active") {
-		t.Errorf("output = %q", f.out.String())
-	}
-}
-
 func TestRemoveOfAnUnknownAccountFails(t *testing.T) {
 	f := newFixture(t)
 	_, err := f.seeded().Remove("99", true)

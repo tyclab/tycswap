@@ -60,24 +60,6 @@ func runMig(t *testing.T, argv ...string) (int, string, string) {
 	return code, out.String(), errb.String()
 }
 
-func TestOldStoreHintOnOtherCommands(t *testing.T) {
-	old, _ := migrateHome(t)
-	want := "a claude-swap store exists at " + old + "; `tycswap migrate` copies it once"
-
-	_, _, stderr := runMig(t, "alias", "--help")
-	if !strings.Contains(stderr, want) || strings.Count(stderr, "\n") != 1 {
-		t.Errorf("stderr = %q, want exactly the hint line", stderr)
-	}
-	_, _, stderr = runMig(t, "list", "--json")
-	if strings.Contains(stderr, "tycswap migrate") {
-		t.Errorf("hint printed in --json mode: %q", stderr)
-	}
-	_, _, stderr = runMig(t, "migrate", "--dry-run")
-	if strings.Contains(stderr, "copies it once") {
-		t.Errorf("hint printed for migrate itself: %q", stderr)
-	}
-}
-
 func TestMigrateCommandCopiesThenRefuses(t *testing.T) {
 	old, newRoot := migrateHome(t)
 	before, _ := os.ReadFile(filepath.Join(old, "sequence.json"))

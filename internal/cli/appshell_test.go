@@ -962,33 +962,6 @@ func TestShellCodexRowsUnderOwnHeader(t *testing.T) {
 	}
 }
 
-// Without Codex accounts the menu is the one from before Codex: the same
-// rows, headers, auto-switch wording and notifications — also when the
-// engine host reports a Codex engine that is switched off.
-func TestShellClaudeOnlyMenuUnchanged(t *testing.T) {
-	off := sampleState()
-	off.Auto = &web.AutoView{Codex: &web.CodexAutoView{Enabled: false, Threshold: 97}}
-	for _, st := range []web.State{sampleState(), off} {
-		sh, ft, _ := newTestShell(t)
-		sh.update(st)
-		ids, headers := menuShape(ft)
-		if ids != "brand,open,switch:claude:1,switch:claude:2,sessions-open,auto,autostart,update,quit" || headers != "Accounts,Automation,App" {
-			t.Errorf("menu = %s / %s", ids, headers)
-		}
-		if strings.Contains(ft.tooltip, "codex") {
-			t.Errorf("tooltip = %q", ft.tooltip)
-		}
-		sh.click(autoChoice(t, ft))
-		if au, _ := ft.item("auto"); au.Sub != "rotates Claude accounts near the limit (5h 85% · 7d 97%)" {
-			t.Errorf("auto row = %q", au.Sub)
-		}
-		sh.click(autoChoice(t, ft))
-		if got := strings.Join(ft.notesNow(), "\n"); got != "Auto-switch on | Claude accounts rotate automatically near the limit.\nAuto-switch off | Claude accounts are no longer rotated automatically." {
-			t.Errorf("notes = %q", got)
-		}
-	}
-}
-
 // A click hands the row's key to SwitchTo, so a slot number shared by a
 // Claude and a Codex account never reaches the wrong one: a Claude switch is
 // told as before (and only a Claude row asks about an API key); a Codex

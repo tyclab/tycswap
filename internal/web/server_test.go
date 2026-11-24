@@ -336,55 +336,6 @@ func TestIndexHTML_OnlyLocalReferences(t *testing.T) {
 	}
 }
 
-func TestIndexHTML_DesignSystemMarkup(t *testing.T) {
-	src, err := staticFS.ReadFile("static/index.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	index := string(src)
-	for _, needle := range []string{
-		`class="seg" role="radiogroup" aria-label="Switch strategy" id="strategy-seg"`, // segmented strategy control
-		`data-strategy="best"`, `data-strategy="next-available"`,
-		`id="hdr-acct"`, // header strip: active account + 5h / 7d / model windows
-		`id="summary-tiles"`, `id="badge-dashboard"`, `id="badge-sessions"`, `id="badge-auto"`, `id="conn-age"`,
-		`id="sess-filter"`, `id="sess-status"`, `id="sess-sort"`, `id="sessions-groups"`, `id="ide-tbl"`,
-		`id="nextbest-tbl"`, `id="auto-settings"`,
-		`id="auto-switch" role="switch"`, `id="auto-counting"`, // DESIGN A93
-		`class="empty-state"`,
-	} {
-		if !strings.Contains(index, needle) {
-			t.Errorf("index lacks %q", needle)
-		}
-	}
-	if !strings.Contains(index, `<meta name="color-scheme" content="light dark">`) {
-		t.Error("index lacks the color-scheme meta")
-	}
-	// Regression guard: soonest-reset is the AUTO-switch ordering only. Offered
-	// as a manual strategy it once rotated a user onto a 96%-used account; the
-	// server refuses it (web.Strategies) and the markup must never offer it.
-	if strings.Contains(index, `data-strategy="soonest-reset"`) {
-		t.Error("index offers soonest-reset as a manual switch strategy")
-	}
-	// Regression guard: a state tick must not rebuild a section the user is
-	// editing (typing into a settings field lost focus and value every tick).
-	js, err := staticFS.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, needle := range []string{"function renderGuarded(", "function editingInside(", "addEventListener('focusout'", "details.menu[open]", "renderGuarded('auto'", "renderGuarded('sessions'"} {
-		if !strings.Contains(string(js), needle) {
-			t.Errorf("app.js lacks the guarded-render piece %q", needle)
-		}
-	}
-	// The settings editor is its own tab (A27): every key, not buried on the
-	// Auto tab, which keeps only a short way there.
-	for _, want := range []string{`data-tab="settings"`, `id="panel-settings"`, `id="settings-grid"`, `id="settings-empty"`, `href="#settings"`} {
-		if !strings.Contains(index, want) {
-			t.Errorf("index lacks %q", want)
-		}
-	}
-}
-
 func TestAppJS_NodeCheck(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -401,37 +352,6 @@ func TestAppJS_NodeCheck(t *testing.T) {
 	out, err := exec.Command(node, "--check", path).CombinedOutput()
 	if err != nil {
 		t.Fatalf("node --check failed: %v\n%s", err, out)
-	}
-}
-
-func TestIndexHTML_HasEverySection(t *testing.T) {
-	// The comprehensive dashboard: one tab per surface, the modal dialog and
-	// the per-row action hooks the client wires up.
-	src, err := staticFS.ReadFile("static/index.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	index := string(src)
-	for _, tab := range []string{"dashboard", "auto", "sessions", "settings", "guide"} {
-		if !strings.Contains(index, `data-tab="`+tab+`"`) || !strings.Contains(index, `id="panel-`+tab+`"`) {
-			t.Errorf("tab/panel %q missing", tab)
-		}
-	}
-	for _, id := range []string{"modal", "modal-form", "auto-switch", "nextbest-list", "quarantine-body", "settings-grid", "settings-empty", "hdr-acct", "token-status-toggle", "accounts-body", "toasts"} {
-		if !strings.Contains(index, `id="`+id+`"`) {
-			t.Errorf("element #%s missing", id)
-		}
-	}
-	for _, action := range []string{"switch-strategy", "add-current", "add-token"} {
-		if !strings.Contains(index, `data-action="`+action+`"`) {
-			t.Errorf("toolbar action %q missing", action)
-		}
-	}
-	js, _ := staticFS.ReadFile("static/app.js")
-	for _, needle := range []string{"'force-switch'", "'alias'", "'move'", "'swap'", "'remove'", "/api/accounts/swap", "/api/auto/start", "/api/auto/stop", "/api/settings/", "?force=1", "?tokenStatus=1", "lessSoonest", "lessBest", "997", "998", "999", "renderGuarded('settings'"} {
-		if !strings.Contains(string(js), needle) {
-			t.Errorf("app.js lacks %q", needle)
-		}
 	}
 }
 

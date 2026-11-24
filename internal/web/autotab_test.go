@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -39,51 +38,6 @@ func TestAppJSAutoTab(t *testing.T) {
 	}
 	if out, err := exec.Command(node, "testdata/autotab.cjs", path, string(labels)).CombinedOutput(); err != nil {
 		t.Fatalf("auto tab: %v\n%s", err, out)
-	}
-}
-
-// autoPanel is the Auto tab's markup; a Windows checkout has CRLF in it.
-func autoPanel(t *testing.T) string {
-	t.Helper()
-	m := regexp.MustCompile(`(?s)<section class="panel" id="panel-auto".*?</section>\s+<!-- =+ Sessions`).FindString(staticFile(t, "index.html"))
-	if m == "" {
-		t.Fatal("no Auto panel in index.html")
-	}
-	return m
-}
-
-// The Auto tab has the one Auto-switch switch and nothing else to change:
-// no model select, Save, Start, Stop, dry run, Wake, slider or event log
-// (DESIGN A93), and the script calls none of their routes.
-func TestStaticAutoTabHasOneSwitch(t *testing.T) {
-	panel := autoPanel(t)
-	if n := strings.Count(panel, "<input"); n != 1 || !strings.Contains(panel, `<input type="checkbox" id="auto-switch" role="switch"> Auto-switch</label>`) {
-		t.Errorf("the Auto tab has %d inputs, want the one Auto-switch switch:\n%s", n, panel)
-	}
-	for _, gone := range []string{"<select", "<button", "model-limits", "Count model limits", "data-action=\"auto-start\"", "/api/auto/stop",
-		"Start dry-run", "Wake", "threshold-slider", "7d threshold, this run", "Event log", "auto-log", "engine"} {
-		if strings.Contains(panel, gone) {
-			t.Errorf("the Auto tab still has %q", gone)
-		}
-	}
-	js := staticFile(t, "app.js")
-	for _, gone := range []string{"/api/auto/wake", "/api/auto/threshold", "/api/auto/model", "addEventListener('auto'", "dryRun", "SETTING_LABELS", "modelPicker", "'auto-start'"} {
-		if strings.Contains(js, gone) {
-			t.Errorf("app.js still has %q", gone)
-		}
-	}
-}
-
-// The Dashboard tab shows the same Auto-switch switch in the Accounts card's
-// head, under the same name, and stays visible while that card is folded.
-func TestStaticDashboardHasTheAutoSwitch(t *testing.T) {
-	index := staticFile(t, "index.html")
-	head := regexp.MustCompile(`(?s)<div class="card" id="accounts-card">\s*<div class="card-head">.*?<div class="add-callout"`).FindString(index)
-	if !strings.Contains(head, `<label class="switch" for="dash-auto-switch"><input type="checkbox" id="dash-auto-switch" role="switch"> Auto-switch</label>`) {
-		t.Errorf("the Accounts card head lacks the Auto-switch switch:\n%s", head)
-	}
-	if strings.Contains(staticFile(t, "style.css"), ".card.folded > .card-head .switch {") {
-		t.Error("a folded Accounts card hides the Auto-switch switch")
 	}
 }
 

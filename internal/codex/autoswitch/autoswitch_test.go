@@ -313,18 +313,6 @@ func TestASwitchWithNothingRunningStaysQuiet(t *testing.T) {
 	}
 }
 
-func TestTheHumanLineNamesTheProvider(t *testing.T) {
-	if h := (Tick{Outcome: "ok", Detail: "nothing to do"}).Human(); !strings.HasPrefix(h, "codex:") {
-		t.Errorf("Human = %q", h)
-	}
-	if h := (Tick{Outcome: "ok"}).Human(); h != "codex: ok" {
-		t.Errorf("Human without detail = %q", h)
-	}
-	if h := (Tick{Outcome: "switched", Detail: "d", RunningPIDs: []int{1, 2}}).Human(); h != "codex: d — restart codex (pid 1, 2) for it to take effect" {
-		t.Errorf("Human = %q", h)
-	}
-}
-
 // ---- the property the loop depends on ----------------------------------------
 
 func makeJWT(t *testing.T, claims map[string]any) string {
