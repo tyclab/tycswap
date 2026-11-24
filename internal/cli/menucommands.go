@@ -87,6 +87,7 @@ func menuCommands(s ioStreams) {
 			menuAction{"switch --store mythos", "MythosLogin", "--json --debug", "Use this login for Mythos"},
 			menuAction{"switch --store fable --if-idle", "FableLogin", "--json --debug", "Select a saved login before starting Fable"},
 			menuAction{"add --login --lineage fable", "", "--slot=Slot --debug NativeArgs", "Enroll an independent Fable login"},
+			menuAction{"fable --login", "", "", "Sign in for Fable each account without a Fable login"},
 			menuAction{"switch --store fable --empty", "", "--json --debug", "Turn the Fable store off"})
 	}
 	for _, verb := range codexVerbOrder {

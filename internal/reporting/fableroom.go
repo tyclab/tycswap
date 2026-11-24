@@ -103,14 +103,18 @@ func ReadFableRoom(s *store.Store) FableRoom {
 	return out
 }
 
-// FableRoomHint names accounts with Fable room but no Fable login, each with
-// the command that signs it in for Fable.
+// FableRoomHint names accounts with Fable room but no Fable login and the
+// command that signs them in for Fable, one after another (DESIGN A114).
 func FableRoomHint(nums []string) string {
-	parts := make([]string, len(nums))
-	for i, num := range nums {
-		parts[i] = "Account-" + num + " has Fable room but no Fable login: tycswap add --login --lineage fable --slot " + num
+	const tail = " Fable room but no Fable login: tycswap fable --login"
+	switch len(nums) {
+	case 0:
+		return ""
+	case 1:
+		return "Account-" + nums[0] + " has" + tail
 	}
-	return strings.Join(parts, "; ")
+	last := len(nums) - 1
+	return "Accounts " + strings.Join(nums[:last], ", ") + " and " + nums[last] + " have" + tail
 }
 
 // fableRoomWithoutLogin is what status and list add while no account the
