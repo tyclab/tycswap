@@ -1,8 +1,8 @@
 // Package statusline builds <store root>/statusline.json, the small file a
 // Claude Code status line reads for the live account's label and quota
 // (DESIGN A54). The file is derived state: every write rebuilds it wholly from
-// the roster and the usage table under <root>/.statusline.lock and never reads
-// it back. That lock is always the last one taken and nothing is acquired
+// the roster, the usage table and the logins' credentials (A113) under
+// <root>/.statusline.lock and never reads it back. That lock is always the last one taken and nothing is acquired
 // while it is held.
 package statusline
 
@@ -48,12 +48,16 @@ type Record struct {
 	Email, OrganizationUUID, OrgName, Alias, Plan string
 }
 
+// Login is the identity whose credential a login holds now.
+type Login struct{ Email, OrganizationUUID string }
+
 // Input is everything one rebuild is made from.
 type Input struct {
 	ProducerVersion string
 	Now             time.Time
 	Records         []Record
 	Usage           map[int]usage.UsageEntry // by slot
+	Logins          map[string]Login         // by resolved login directory (DESIGN A113)
 }
 
 // Document is the published file.
@@ -63,6 +67,7 @@ type Document struct {
 	ProducerVersion string             `json:"producerVersion"`
 	WrittenAt       int64              `json:"writtenAt"`
 	Accounts        map[string]Account `json:"accounts"`
+	Logins          map[string]string  `json:"logins,omitempty"`
 }
 
 // Account is one published account.
@@ -96,6 +101,7 @@ type Scoped struct {
 }
 
 // Two records with one identity publish the lower slot; labels are stripped of terminal control characters.
+// A login names only a key accounts has.
 func Build(in Input) Document {
 	doc := Document{
 		SchemaVersion:   SchemaVersion,
@@ -122,7 +128,20 @@ func Build(in Input) Document {
 		}
 		doc.Accounts[key] = acct
 	}
+	for dir, l := range in.Logins {
+		if key := Key(l.Email, l.OrganizationUUID); hasKey(doc.Accounts, key) {
+			if doc.Logins == nil {
+				doc.Logins = map[string]string{}
+			}
+			doc.Logins[dir] = key
+		}
+	}
 	return doc
+}
+
+func hasKey(accounts map[string]Account, key string) bool {
+	_, ok := accounts[key]
+	return ok
 }
 
 // buildUsage projects the last good measurement through oauth.NewUsage, as

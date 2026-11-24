@@ -5733,8 +5733,11 @@ The codex CLI's files that tycswap reads and writes:
 `<backup root>/statusline.json` lets a Claude Code status line show the live
 account's label and quota without running tycswap (DESIGN A54). It is rebuilt
 whole, atomically and mode 0600 (not on Windows), after every `sequence.json`
-write (switches included) and every usage merge or poll-plan change. A failure
-to write it is logged and never fails the operation.
+write (switches included) and every usage merge or poll-plan change, and when
+a login's account changes without either: a Fable store switch or emptying, a
+login the profile endpoint re-attributes (its chain record written), and a
+Mythos sign-in (DESIGN A113). A failure to write it is logged and never fails
+the operation.
 
 ```json
 {"schemaVersion": 1, "producer": "tycswap", "producerVersion": "0.7.8", "writtenAt": 1784278800,
@@ -5742,12 +5745,29 @@ to write it is logged and never fails the operation.
    "usage": {"fetchedAt": 1784278700, "pollIntervalS": 180,
              "fiveHour": {"pct": 6, "resetsAt": 1784291400},
              "sevenDay": {"pct": 88, "resetsAt": 1784505600},
-             "scoped": [{"name": "Fable", "pct": 12, "resetsAt": 1784448000}]}}}}
+             "scoped": [{"name": "Fable", "pct": 12, "resetsAt": 1784448000}]}}},
+ "logins": {"/home/u/.claude": "a@x.com|org-b"}}
 ```
 
-- **Key.** `<emailAddress>|<organizationUuid>` from the session's
-  `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json` `oauthAccount`, a null
-  organization as `""`. API-key accounts are found under `<email>|`.
+- **Key.** `<emailAddress>|<organizationUuid>`, a null organization as `""`.
+  Find the session's key in `logins` (below), else from the session's
+  `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json` `oauthAccount`, which every
+  session on the box rewrites with its own. API-key accounts are found under
+  `<email>|`.
+- **Logins** (DESIGN A113). Present on Linux and WSL while some login's
+  account is known. Each key is the physical directory of a login a session
+  link can point at, symlinks resolved: the default login
+  (`$HOME/.claude`), the Fable store (`<backup root>/fable/store`) and each
+  independent Mythos login (`<backup root>/mythos/accounts/<digest>`). Each
+  value is the `accounts` key of the account whose credential that login
+  holds now, resolved from the credential (a backup or the chain record
+  holding it) or, for a Mythos login, from the one account its directory is
+  named for; never from `~/.claude.json`. A login whose account is not known
+  is absent, and a value is always a key of `accounts`. A status line
+  resolves `CLAUDE_SECURESTORAGE_CONFIG_DIR`, else
+  `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`, to its physical directory (`cd -P --
+  "$dir" && pwd -P`), looks that up in `logins`, and falls back to
+  `oauthAccount` in `.claude.json` when it is absent.
 - **Accounts.** One per identity (the lower slot on a duplicate). `label` is
   the alias, else the organization name, else the email, control characters
   stripped; Claude.ai's placeholder "<email>'s Organization" counts as no

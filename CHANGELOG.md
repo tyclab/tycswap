@@ -10,6 +10,7 @@
 - The dashboard fits account details beside the header controls or wraps them below. Account addresses, usage bars, limits and reset times stay visible on narrow screens and with larger browser fonts. The Mythos row separates quota and session details with middle dots.
 - The terminal **Sessions…** picker shows the dashboard’s session titles and short IDs so you can tell sessions in the same folder apart.
 - The terminal account menu labels its Mythos sign-in actions **Sign in for Mythos…** and **Sign in again for Mythos…**.
+- On Linux and WSL, `statusline.json` gains `logins`, which names the account each login directory (the default login, the Fable store, each Mythos login) holds now, so a status line can show the session's own account instead of the one `~/.claude.json` names for every session.
 
 - The selected Mythos login now shows which quota windows are full and when all of them reset in the CLI, dashboard and tray. A refused Mythos start names the eligible login with the earliest known return.
 - Manual Mythos selections log the account number and actor once per change. Dashboard session moves record their source.

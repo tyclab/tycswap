@@ -9680,3 +9680,65 @@ auto-switch off; a busy refresh lock defers, then moves). The no-change tests
 pass unedited. `TestStatusFableObject` in `reporting` reads the Fable store
 line rather than the last line: its fixture has no room in the pool and
 Account-11 with room and no Fable login, so the hint follows.
+
+## A113. statusline.json names each login's current account
+
+**Why.** A status line read the account from the shared `~/.claude.json`
+`oauthAccount`, which names one account for every session and which any
+client rewrites with its own. A session linked to the Fable store or an
+independent Mythos login (A109) therefore showed the default login's account,
+label and Fable week: on 2026-11-24 a session on a spent account displayed
+another account at `fable:8%`. The status bar plugin now resolves the
+session's own login directory and looks it up in `statusline.json`; this is
+the producer side.
+
+**The rule.** `statusline.json` (A54, `schemaVersion` still 1) gains an
+optional `logins` object: the physical directory of each login a session link
+can point at, symlinks resolved as `realpath` of `links/<token>` yields them,
+to the `accounts` key (`statusline.Key`) of the account whose credential that
+login holds now. The logins are the default login
+(`store.DefaultProfileDir()`, the `paths.GetClaudeConfigHome()` start links),
+the Fable store (`paths.FableStoreDir`) and each directory under
+`mythos/accounts/`. Their owner is `Store.LoginOwnerSlot`, which
+`reporting.SessionLoginOwner` now calls too: for the default login and the
+Fable store the slot a unique backup or the chain record names for the live
+credential (`LocalCredentialSlot`), for a Mythos login the one account its
+directory's digest names (`MythosLoginOwner`); never `~/.claude.json`, never
+the network. It reads the default login's credential from the default store
+whatever scope publishes (`rootScope`). A login whose owner is not known, or
+whose directory does not resolve, is absent; `statusline.Build` keeps only
+values that are keys of `accounts`, so a duplicate identity names its lower
+slot's key. Only Linux gathers logins, where session links exist; a box
+without managed accounts, macOS and Windows write no `logins` key
+(`omitempty`), and the rest of the file is as before. No credential, token or
+fingerprint is written.
+
+**Freshness.** Every `sequence.json` write and every usage change already
+rebuilt the file. A login's account can change without either, so a rebuild
+now also follows every write and removal of a chain record
+(`writeLiveLineage`, `forgetLiveLineage`): a Fable store switch
+(`RecordFableLive`), its emptying (`ForgetFableLive`) and a login the profile
+endpoint re-attributes, after which a harvest only stores what the chain
+record already says. A Mythos sign-in (`lifecycle.AddMythosLogin`) writes no
+roster and now publishes too. Selecting another Mythos login changes no
+login's account: each Mythos directory belongs to one identity, and the
+selected one is published from its sign-in on.
+
+**Limits.** A credential Claude Code rotated is unnamed until a resolution
+re-attributes it (its chain record) or a harvest stores it; a rebuild in
+between leaves that login out, and the status line falls back to
+`~/.claude.json`. The default login's key follows the publishing process's
+`CLAUDE_CONFIG_DIR`, which `start` treats as an override, so linked sessions
+never run under one.
+
+**Tests.** In `store` (Linux): `TestStatuslineNamesEachLoginsAccount` (three
+logins held by three accounts, `~/.claude` a symlink, `~/.claude.json` naming
+a fourth), `TestStatuslineLeavesOutAnUnverifiedLogin` (an unknown fingerprint;
+no credential), `TestStatuslineLoginsOnlyWhereThereAreLogins` (the default
+login only; no managed accounts: five keys),
+`TestStatuslineLoginValueIsAnAccountsKey` (a duplicate identity) and
+`TestStatuslineFollowsALoginItsProfileReattributes`; in `switching`,
+`TestFableSwitchAndEmptyPublishTheStoresAccount`; in `lifecycle`,
+`TestMythosSignInPublishesItsLogin` (and still after selecting it). In
+`reporting`, `TestCollectReadsTheLiveCredentialOncePerPass` no longer counts
+the reads of the rebuilds a pass's usage merges trigger.

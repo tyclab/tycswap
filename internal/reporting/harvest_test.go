@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -164,7 +165,8 @@ func TestCollectNeverHarvestsOnStoreOnlyRead(t *testing.T) {
 }
 
 // countingCreds counts the active store's credential reads, outside the store
-// lock and under it.
+// lock and under it. statusline.json's rebuild, which each usage merge
+// triggers, reads the login on its own and is not the pass's (DESIGN A113).
 type countingCreds struct {
 	credstore.Store
 	lock            *filelock.FileLock
@@ -172,12 +174,28 @@ type countingCreds struct {
 }
 
 func (c *countingCreds) ReadActive() (string, bool, error) {
-	if c.lock != nil && c.lock.Held() {
+	switch {
+	case rebuildingStatusline():
+	case c.lock != nil && c.lock.Held():
 		c.locked++
-	} else {
+	default:
 		c.outside++
 	}
 	return c.Store.ReadActive()
+}
+
+func rebuildingStatusline() bool {
+	pc := make([]uintptr, 64)
+	frames := runtime.CallersFrames(pc[:runtime.Callers(3, pc)])
+	for {
+		f, more := frames.Next()
+		if strings.HasSuffix(f.Function, ".statuslineInput") {
+			return true
+		}
+		if !more {
+			return false
+		}
+	}
 }
 
 // A pass reads the live credential once outside the lock: the resolution and

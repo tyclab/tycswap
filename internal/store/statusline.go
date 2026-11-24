@@ -4,12 +4,17 @@
 package store
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"runtime"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/statusline"
 	"github.com/tyclab/tycswap/internal/usage"
 	"github.com/tyclab/tycswap/internal/version"
@@ -18,8 +23,8 @@ import (
 // statuslinePublish is a seam for the failure test.
 var statuslinePublish = statusline.Publish
 
-// PublishStatusline rebuilds <root>/statusline.json from the roster and the
-// usage table. The triggering write has already committed, so a failure (or a
+// PublishStatusline rebuilds <root>/statusline.json from the roster, the
+// usage table and the logins' credentials. The triggering write has already committed, so a failure (or a
 // panic) is logged and swallowed. A Store without a backup root publishes
 // nothing.
 func (s *Store) PublishStatusline() {
@@ -81,5 +86,35 @@ func (s *Store) statuslineInput() (statusline.Input, bool, error) {
 			in.Usage[slots[num]] = e
 		}
 	}
+	in.Logins = s.statuslineLogins(data)
 	return in, true, nil
+}
+
+// statuslineLogins maps each login a session link can point at, by its
+// directory with symlinks resolved, to the identity whose credential it holds
+// now (LoginOwnerSlot): the default login, the Fable store and each
+// independent Mythos login. A login whose owner is not known, or whose
+// directory does not resolve, is left out; nothing is gathered where there
+// are no session links (DESIGN A113).
+func (s *Store) statuslineLogins(data *SequenceData) map[string]statusline.Login {
+	if runtime.GOOS != "linux" || len(data.Accounts) == 0 {
+		return nil
+	}
+	root := s.rootScope()
+	dirs := map[string]string{root.DefaultProfileDir(): "", paths.FableStoreDir(s.backupDir): "fable"}
+	entries, _ := os.ReadDir(MythosLoginRoot(s.backupDir))
+	for _, e := range entries {
+		if b, err := hex.DecodeString(e.Name()); err == nil && len(b) == sha256.Size && e.IsDir() {
+			dirs[filepath.Join(MythosLoginRoot(s.backupDir), e.Name())] = "mythos/" + e.Name()
+		}
+	}
+	out := map[string]statusline.Login{}
+	for dir, scope := range dirs {
+		key, err := filepath.EvalSymlinks(dir)
+		rec, ok := recordFor(data, root.LoginOwnerSlot(data, scope))
+		if err == nil && ok {
+			out[key] = statusline.Login{Email: strField(rec, "email"), OrganizationUUID: strField(rec, "organizationUuid")}
+		}
+	}
+	return out
 }
