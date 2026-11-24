@@ -13,7 +13,7 @@ import (
 	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/keychain"
-	"github.com/tyclab/tycswap/internal/oauth"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/store"
 	"github.com/tyclab/tycswap/internal/termsafe"
 	"github.com/tyclab/tycswap/internal/usage"
@@ -73,6 +73,9 @@ func preferFableAllocations(snap *autoswitch.StartSnapshot, view *store.Store, d
 	}
 	if defaultSelection && view.FableStore().Usable {
 		_, toDefault, err := fableStartsOnDefault(&core.Switcher{Store: view}, "")
+		if err == nil && !toDefault {
+			toDefault, _ = fableSessionOnDefault(view)
+		}
 		if err != nil || !toDefault {
 			return
 		}
@@ -174,7 +177,5 @@ func readSharedStartException(root string, fable bool, family string) (sharedSta
 }
 
 func modelLimitWindows(entry usage.UsageEntry, family string, now time.Time) ([]string, time.Time) {
-	v, _ := entry.DecisionValue().(map[string]any)
-	u := oauth.NewUsage(oauth.AsOf(v, now))
-	return oauth.LimitingWindows(u, oauth.FamilyWindows(u, family))
+	return reporting.ModelLimitWindows(entry, family, now)
 }

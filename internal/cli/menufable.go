@@ -50,7 +50,7 @@ func fableSignInArgs(num string) []string {
 
 // menuFableSignIn asks for the account to sign in for Fable: those that run
 // Fable and hold no Fable login first, then those that hold one, each in
-// roster order.
+// roster order; with two or more that fable --login asks, all of them first.
 func menuFableSignIn(s ioStreams) {
 	rows, err := menuFableRows(s)
 	if err != nil {
@@ -58,7 +58,11 @@ func menuFableSignIn(s ioStreams) {
 		return
 	}
 	var fresh, again []fableRow
+	missing := 0
 	for _, r := range rows {
+		if r.Missing {
+			missing++
+		}
 		switch {
 		case !r.Answer.Capable:
 		case r.Login:
@@ -72,18 +76,26 @@ func menuFableSignIn(s ioStreams) {
 		fmt.Fprintln(s.err, "No account runs Fable yet. If one does, choose Allow Fable in its menu (tycswap fable --allow N).")
 		return
 	}
-	labels := make([]string, len(accounts))
-	for i, r := range accounts {
-		labels[i] = termsafe.Strip("#" + r.Number + "  " + r.Email)
+	var labels []string
+	if missing > 1 {
+		labels = append(labels, fmt.Sprintf("All %d accounts without a Fable login, one after another", missing))
+	}
+	walk := len(labels)
+	for _, r := range accounts {
+		label := termsafe.Strip("#" + r.Number + "  " + r.Email)
 		if r.Login {
-			labels[i] += " · sign in again"
+			label += " · sign in again"
 		}
+		labels = append(labels, label)
 	}
 	i, _, ok := askMenu(s, "Sign in for Fable as which account?", labels, "")
-	if !ok {
-		return
+	switch {
+	case !ok:
+	case i < walk:
+		menuExecute(s, "fable", "--login")
+	default:
+		menuExecute(s, fableSignInArgs(accounts[i-walk].Number)...)
 	}
-	menuExecute(s, fableSignInArgs(accounts[i].Number)...)
 }
 
 // fableAccountEntries are an account menu's Fable sign-in and, where it

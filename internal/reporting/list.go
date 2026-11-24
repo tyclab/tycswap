@@ -128,6 +128,9 @@ func buildListPayload(s *store.Store, infos []AccountInfo, entries map[string]us
 	}
 	if fable != nil {
 		payload["fableAccountNumber"] = fable.accountNumber()
+		if nums, _ := fableRoomWithoutLogin(s); nums != nil {
+			payload["fableRoomWithoutLogin"] = nums
+		}
 	}
 	if dup := duplicateAccountWarnings(s, infos); len(dup) > 0 {
 		payload["duplicateAccountWarnings"] = dup
@@ -208,6 +211,11 @@ func renderAccounts(w io.Writer, s *store.Store, infos []AccountInfo, entries ma
 		}
 	}
 
+	if fable != nil {
+		if _, hint := fableRoomWithoutLogin(s); hint != "" {
+			fmt.Fprintln(w, hint)
+		}
+	}
 	if line := MythosLoginLine(mythos.object); line != "" {
 		fmt.Fprintln(w, line)
 	}

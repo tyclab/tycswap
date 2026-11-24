@@ -51,6 +51,7 @@ Commands:
   tycswap mythos --allow|--disallow ID mark or unmark an account that runs Mythos
   tycswap models --list | ID SET     show or choose the account's preferred models
   tycswap fable --allow|--disallow ID mark an account that runs Fable (--list lists)
+  tycswap fable --login              sign in for Fable each account without a Fable login
   tycswap alias <num|email> <name>   set a short alias for an account
   tycswap alias <num|email> --unset  remove an account's alias
   tycswap alias                      list all aliases

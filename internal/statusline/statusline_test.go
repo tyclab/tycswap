@@ -110,3 +110,23 @@ func TestBuildUsage(t *testing.T) {
 		t.Errorf("never measured = %v, want usage null and no other keys", c)
 	}
 }
+
+// A login names only an identity accounts publishes (DESIGN A113): one whose
+// record is missing, or has no email, is left out, and no login at all leaves
+// the key out.
+func TestBuildLoginsNameOnlyPublishedAccounts(t *testing.T) {
+	in := Input{Now: now, Records: []Record{{Slot: 1, Email: "a@example.com", OrganizationUUID: "org-a"}},
+		Logins: map[string]Login{
+			"/home/u/.claude":                          {Email: "a@example.com", OrganizationUUID: "org-a"},
+			"/home/u/.local/share/tycswap/fable/store": {Email: "b@example.com", OrganizationUUID: "org-b"},
+			"/home/u/.local/share/tycswap/mythos/x":    {},
+		}}
+	logins, _ := decode(t, Build(in))["logins"].(map[string]any)
+	if len(logins) != 1 || logins["/home/u/.claude"] != "a@example.com|org-a" {
+		t.Errorf("logins = %v, want only the default login's", logins)
+	}
+	in.Logins = map[string]Login{"/home/u/.claude": {Email: "b@example.com"}}
+	if m := decode(t, Build(in)); m["logins"] != nil {
+		t.Errorf("logins = %v, want the key left out", m["logins"])
+	}
+}

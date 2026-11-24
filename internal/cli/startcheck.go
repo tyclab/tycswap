@@ -54,19 +54,31 @@ func startCheck(in io.Reader, out io.Writer) {
 	}
 	name := strings.ToUpper(family[:1]) + family[1:]
 	line := "⚠ " + name + " session on " + on
-	if !fableSessionProcess && sendsFableToDefault() {
-		line += " (" + noFableStartLogin + ")"
+	if !fableSessionProcess {
+		if cause := fableToDefaultCause(); cause != "" {
+			line += " (" + cause + ")"
+		}
 	}
 	fmt.Fprintln(out, line+". Use "+intended+" with an account approved for "+name+".")
 }
 
-// sendsFableToDefault reports whether start sends a Fable session to the
-// default login although the Fable store is usable, as start decides it.
-func sendsFableToDefault() bool {
+// fableToDefaultCause is why start sends a Fable session to the default login
+// although the Fable store is usable, as start decides it; "" when it does
+// not (DESIGN A105, A112).
+func fableToDefaultCause() string {
 	sw, err := newSwitcher(store.Options{Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
 	if err != nil {
-		return false
+		return ""
 	}
 	_, toDefault, err := fableStartsOnDefault(sw, "")
-	return err == nil && toDefault
+	switch {
+	case err != nil:
+		return ""
+	case toDefault:
+		return noFableStartLogin
+	}
+	if byRoom, _ := fableSessionOnDefault(sw.Store); byRoom {
+		return noFableRoom
+	}
+	return ""
 }

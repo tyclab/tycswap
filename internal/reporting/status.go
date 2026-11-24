@@ -36,6 +36,9 @@ func Status(s *store.Store, jsonOut bool) (any, error) {
 	if jsonOut {
 		payload := buildStatusPayload(s)
 		if fable, _, ok := fableStatus(s); ok {
+			if nums, _ := fableRoomWithoutLogin(s); nums != nil {
+				fable["roomWithoutLogin"] = nums
+			}
 			payload["fable"] = fable
 		}
 		data, _ := s.ReadSequence()
@@ -145,11 +148,14 @@ func unmanagedStatus(email string) map[string]any {
 
 // renderStatus prints the human status view to w (spec 02§12), and the
 // Fable store's line after it while an account has a Fable login (DESIGN
-// A104).
+// A104), then the accounts with Fable room but no Fable login (A112).
 func renderStatus(w io.Writer, s *store.Store) {
 	renderActiveStatus(w, s)
 	if _, line, ok := fableStatus(s); ok {
 		fmt.Fprintln(w, line)
+		if _, hint := fableRoomWithoutLogin(s); hint != "" {
+			fmt.Fprintln(w, hint)
+		}
 	}
 	data, _ := s.ReadSequence()
 	if line := MythosLoginLine(readMythosView(s, data).object); line != "" {

@@ -158,7 +158,9 @@ enables/disables, moves, or removes an account, and offers **Remove alias** on
 an account that has one. It also offers **Sign in again…**
 and **Use saved login** for Claude; renewing the active account activates its new login.
 Where a Fable store can exist (not on macOS), **Add account…** also offers the
-Fable sign-in, asking for the account (those without a Fable login first), and a
+Fable sign-in, asking for the account (those without a Fable login first; with
+two or more of those, first an entry that signs them all in, one after
+another), and a
 Claude account's menu offers **Sign in for Fable…**, and **Allow Fable** where
 the plan says nothing or **Disallow Fable** where a mark decides (see
 [Run accounts in parallel](#run-accounts-in-parallel)).
@@ -647,7 +649,14 @@ marks but no usable Fable login among them, the session starts on the default
 login (`tycswap start: no start login has a Fable login; starting on the
 default login.`). `--account ID` is the Fable store's only candidate when it
 has a usable Fable login, else the same notice. Without marks, or with
-auto-switch off and no `--account`, the Fable store stays where it is.
+auto-switch off and no `--account`, the Fable store stays where it is. While
+no account the Fable store can hold has Fable room and the default login's
+account has, a Fable session starts on the default login instead
+(`tycswap start: Fable store: no Fable login has room (first back: Account-2
+at 14:00); starting on the default login.`), followed by the accounts with
+Fable room but no Fable login and `tycswap fable --login`, which signs them
+in; the status line and the scheduled tick move linked Fable sessions the
+same way.
 
 Selection is best effort. Missing marks and an already-marked current login
 are silent. An unavailable target or store prints a clear error on stderr,
@@ -810,6 +819,10 @@ The Fable store now uses Account-2.
 ```
 
 The browser flow is the one `add --login` runs; sign in as the account named.
+`tycswap fable --login` does this for every account that runs Fable and has no
+usable Fable login, one after another: it names each account and waits for
+Enter (`s` skips, `q` stops), so the browser can be put on that account first,
+then sums up and says when some are left for another run.
 An account runs Fable by its plan (Max or Ultra). An organization's login often
 names no plan; mark it if it runs Fable, before its sign-in:
 

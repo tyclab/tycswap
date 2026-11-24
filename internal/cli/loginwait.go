@@ -37,7 +37,7 @@ type loginProcess struct {
 var startClaudeLogin = func(binary string, args, env []string, s ioStreams) (*loginProcess, error) {
 	cmd := launch.CLICommand(context.Background(), binary, args...)
 	cmd.Env = env
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.in, s.out, s.err
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = s.in, s.out, loginStderr(s.err)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}

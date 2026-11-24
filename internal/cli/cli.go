@@ -114,7 +114,7 @@ func run(prog string, argv []string, s ioStreams, stdinTTY, stdoutTTY bool) int 
 		case "migrate":
 			return migrateCommand(prog, argv[1:], s)
 		case "fable":
-			return fableCommand(prog, argv[1:], s)
+			return fableCommand(prog, argv[1:], s, stdinTTY && stdoutTTY)
 		case "web":
 			return webCommand(prog, argv[1:], s)
 		case "app":

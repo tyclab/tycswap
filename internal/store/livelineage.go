@@ -56,15 +56,19 @@ func (s *Store) readLiveLineage() (liveLineage, bool) {
 }
 
 // forgetLiveLineage removes the chain record: the store holds no login.
+// statusline.json then names its login no more (DESIGN A113).
 func (s *Store) forgetLiveLineage() error {
 	if err := os.Remove(s.liveLineagePath()); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	s.PublishStatusline()
 	return nil
 }
 
 // writeLiveLineage records that the credential with fingerprint fp is slot's,
 // writing only when the record changes, so seenAt is when it was first seen.
+// A write names the login's account anew, so statusline.json is rebuilt: a
+// Fable switch and a re-attribution write no roster (DESIGN A113).
 func (s *Store) writeLiveLineage(fp, slot string, id *oauth.Identity) error {
 	rec := liveLineage{SchemaVersion: 1, Fingerprint: fp, Slot: slot,
 		Identity: lineageIdentity{UUID: id.UUID, Email: id.Email, OrgUUID: id.OrgUUID}}
@@ -72,5 +76,9 @@ func (s *Store) writeLiveLineage(fp, slot string, id *oauth.Identity) error {
 		return nil
 	}
 	rec.SeenAt = clock.Seconds(s.Clk)
-	return atomicfile.WriteJSON(s.liveLineagePath(), rec, atomicfile.Opts{FileMode: 0o600})
+	if err := atomicfile.WriteJSON(s.liveLineagePath(), rec, atomicfile.Opts{FileMode: 0o600}); err != nil {
+		return err
+	}
+	s.PublishStatusline()
+	return nil
 }

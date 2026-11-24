@@ -198,7 +198,7 @@ func TestStatusFableObject(t *testing.T) {
 		}
 		var buf bytes.Buffer
 		renderStatus(&buf, s)
-		if line := lastLine(buf.String()); line != "Fable store: Account-8 (acct8@example.com) · Fable 100% · 7d 93%" {
+		if line := fableStoreLine(buf.String()); line != "Fable store: Account-8 (acct8@example.com) · Fable 100% · 7d 93%" {
 			t.Errorf("human line = %q\n%s", line, buf.String())
 		}
 	})
@@ -211,7 +211,7 @@ func TestStatusFableObject(t *testing.T) {
 		}
 		var buf bytes.Buffer
 		renderStatus(&buf, s)
-		if line := lastLine(buf.String()); line != "Fable store: Account-8 (acct8@example.com) · Fable login: sign in again" {
+		if line := fableStoreLine(buf.String()); line != "Fable store: Account-8 (acct8@example.com) · Fable login: sign in again" {
 			t.Errorf("human line = %q", line)
 		}
 	})
@@ -232,15 +232,21 @@ func TestStatusFableObject(t *testing.T) {
 		}
 		var buf bytes.Buffer
 		renderStatus(&buf, s)
-		if line := lastLine(buf.String()); line != "Fable store: off" {
+		if line := fableStoreLine(buf.String()); line != "Fable store: off" {
 			t.Errorf("human line = %q", line)
 		}
 	})
 }
 
-func lastLine(out string) string {
-	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	return lines[len(lines)-1]
+// fableStoreLine is status's Fable store line; the line naming accounts with
+// Fable room but no Fable login may follow it (DESIGN A112).
+func fableStoreLine(out string) string {
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "Fable store: ") {
+			return line
+		}
+	}
+	return ""
 }
 
 // The snapshot the dashboard serves carries the same fable object and each
@@ -320,5 +326,23 @@ func TestFableQuarantineLeavesOutLoginsSignedInAgain(t *testing.T) {
 	}
 	if pool := strings.Join(FablePool(s), ","); pool != "4" {
 		t.Errorf("Fable pool = %s, want 4", pool)
+	}
+}
+
+// The hint for accounts with Fable room but no Fable login names the command
+// that signs them all in, in one sentence (DESIGN A114).
+func TestFableRoomHintNamesTheWalk(t *testing.T) {
+	for _, tc := range []struct {
+		nums []string
+		want string
+	}{
+		{nil, ""},
+		{[]string{"11"}, "Account-11 has Fable room but no Fable login: tycswap fable --login"},
+		{[]string{"7", "11"}, "Accounts 7 and 11 have Fable room but no Fable login: tycswap fable --login"},
+		{[]string{"7", "11", "12"}, "Accounts 7, 11 and 12 have Fable room but no Fable login: tycswap fable --login"},
+	} {
+		if got := FableRoomHint(tc.nums); got != tc.want {
+			t.Errorf("FableRoomHint(%q) = %q, want %q", tc.nums, got, tc.want)
+		}
 	}
 }

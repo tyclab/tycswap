@@ -74,6 +74,10 @@ func AddMythosLogin(s *store.Store, src AddSource, slot *int) (string, error) {
 			return atomicfile.Write(path, []byte(updated), atomicfile.Opts{})
 		})
 	})
+	if err == nil {
+		// A new login writes no roster; statusline.json names it now (DESIGN A113).
+		s.PublishStatusline()
+	}
 	return num, err
 }
 
