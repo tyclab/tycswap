@@ -442,3 +442,24 @@ func TestFableLoginWalkAgainAsksOnlyTheRest(t *testing.T) {
 		t.Fatalf("third run: exit %d out %q", code, out)
 	}
 }
+
+// q stops the walk at once: the accounts after it are not asked, none is
+// signed in, and each is named as skipped once.
+func TestFableLoginWalkStopsAtQWithAccountsLeft(t *testing.T) {
+	f := newFableWalkFixture(t)
+	logins := walkSignIns(t, nil)
+	code, out, errb := f.walk(t, "q\n\n\n", true)
+	if code != 0 || len(logins.emails) != 0 {
+		t.Fatalf("exit %d, signed in as %q, stderr %q", code, logins.emails, errb)
+	}
+	if strings.Count(out, walkPrompt) != 1 || strings.Contains(out, "Fable sign-in 2 of 3") {
+		t.Fatalf("asked after q:\n%s", out)
+	}
+	want := "Skipped: a@example.com (Account-1), b@example.com (Account-2), c@example.com (Account-3).\n" + walkAgain
+	if !strings.HasSuffix(out, want) {
+		t.Fatalf("out:\n%s", out)
+	}
+	if got := fableLoginSlots(t, "1", "2", "3"); len(got) != 0 {
+		t.Fatalf("Fable logins stored for %v", got)
+	}
+}
