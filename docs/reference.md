@@ -47,6 +47,7 @@ tycswap start --allow ID | --disallow ID | --list
                                             manage startup marks (Claude accounts)
 tycswap fable --allow ID | --disallow ID | --list [--json]
                                             mark the accounts that run Fable
+tycswap fable --login                       sign in for Fable each account without a Fable login
 tycswap start --started                     end a session's start hold (a SessionStart hook)
 tycswap start --check                       place a linked session or check a direct session’s login
 tycswap use <mythos|fable|default> [--session ID]  move a linked session to the selected login
@@ -315,10 +316,11 @@ Account-N (<email>) · Fable 34% · 7d 61%` (the account's fullest Fable window
 and its weekly window, each when known), `Fable store: Account-N (<email>) ·
 Fable login: sign in again` while its login is quarantined, `Fable store: on,
 its account unknown`, or `Fable store: off`. While no account the Fable store
-can hold has room for Fable, a line under it names each account with Fable
-room but no Fable login and the command that adds it (DESIGN A112):
-`Account-11 has Fable room but no Fable login: tycswap add --login --lineage
-fable --slot 11`, several joined by `; `.
+can hold has room for Fable, a line under it names the accounts with Fable
+room but no Fable login and the command that signs them in (DESIGN A112,
+A114): `Account-11 has Fable room but no Fable login: tycswap fable --login`,
+or `Accounts 7, 11 and 12 have Fable room but no Fable login: tycswap fable
+--login`.
 
 ### Files
 
@@ -1460,6 +1462,7 @@ Swapped Account 1 and Account 2:
 tycswap fable --allow ID
 tycswap fable --disallow ID
 tycswap fable --list [--json]
+tycswap fable --login
 ```
 
 ### Description
@@ -1501,11 +1504,40 @@ With `--json`:
 
 `by` is `plan`, `mark`, `unknown` or `api-key`; `plan` appears only when known.
 
+`--login` (DESIGN A114) signs in for Fable, one after another, every enabled
+account that runs Fable (as `--list` reads it; never an API-key account) and
+has no Fable login, or one that reads *sign in again*, in roster order. With
+none it prints `Every account that runs Fable has a Fable login.` and exits
+0. Before each account it prints `Fable sign-in <i> of <count>: <email>
+(Account-<n>).` and asks `Enter to open the browser, s to skip, q to stop:`,
+so the browser can be put on that account first; the end of input is `q`.
+Enter runs `tycswap add --login --lineage fable --slot <n>` for it, in the same
+process: its output, refusals, locks and log lines are that command's. Never
+two sign-ins run at once. A sign-in that fails or names another account
+prints its error and the next account is asked. At the end:
+
+```
+Signed in for Fable: <email> (Account-<n>), ….
+Skipped: <email> (Account-<n>), ….
+Failed: <email> (Account-<n>): <the sign-in's error>
+Run tycswap fable --login again for the rest.
+```
+
+each line only when it has an account, `Failed:` once per account, and the
+last line when any was skipped or failed; `q` skips the account it answers
+and every one after it. Exit `0` when none failed, `1` otherwise. Ctrl-C
+during a sign-in ends the command after that sign-in's own cleanup (its
+scratch profile, as for `add --login`) with `Fable sign-ins stopped. Run
+tycswap fable --login again for the rest.` and exit 130. A second run asks
+only for the accounts still missing.
+
 ### Errors
 
 | Condition | Exit |
 |-----------|------|
-| no option, an option without its account, two of `--allow`, `--disallow`, `--list`, `--json` without `--list`, an unknown option or a positional argument | `2`, `tycswap fable: error: …` |
+| no option, an option without its account, two of `--allow`, `--disallow`, `--list`, `--login`, `--json` without `--list`, an unknown option or a positional argument | `2`, `tycswap fable: error: …` |
+| `--login` with accounts to ask and stdin or stdout not a terminal: `tycswap fable --login needs a terminal on stdin and stdout: it asks before each browser sign-in` | `1`, nothing asked or started |
+| `--login` on macOS: `The Fable store needs a file-based credential store; macOS keeps Claude Code's login in the Keychain` | `1` |
 | unknown account | `1`, `Error: …` |
 | `--list --json` and the store cannot be read | `1`, the JSON error envelope on stdout |
 | `--allow` of an API-key account: `Account-<n> is an API-key account; a Fable mark is for OAuth logins only.` | `1` |
@@ -1656,7 +1688,7 @@ account without a reading has room, and nothing is fetched. `first back`
 names the account whose limit ends first among those the store can hold, and
 is left out when no reset is known. The notice then names each account with
 Fable room but no Fable login, as `status` does: `Account-11 has Fable room
-but no Fable login: tycswap add --login --lineage fable --slot 11`. With an
+but no Fable login: tycswap fable --login`. With an
 account in the Fable pool that has room the selection above runs as before,
 a marked login at its limit included.
 
@@ -2802,6 +2834,9 @@ Except on macOS, which uses the system Keychain, *Add account* includes
 those that run Fable (`tycswap fable --list`), those without a Fable login first
 and then those with one (`· sign in again`), each in roster order, and runs
 `add --login --lineage fable --slot N`; with none it names `tycswap fable --allow`.
+When two or more accounts are those `tycswap fable --login` asks, the first
+choice is *All N accounts without a Fable login, one after another*, which runs
+it (DESIGN A114).
 A Claude OAuth account's own menu includes *Sign in for Fable…* (*Sign in again
 for Fable…* when it holds a Fable login), the same command for that account,
 and, where it changes the answer, *Allow Fable* (the plan says nothing) or
@@ -5803,8 +5838,8 @@ line `<change> by <actor>` beside the change's own line.
 - **Fable room without a Fable login.** A real Fable tick, while no account
   the Fable store can hold has room for Fable, logs the warning `Fable store:
   no Fable login has room; Account-<n> has Fable room but no Fable login:
-  tycswap add --login --lineage fable --slot <n>` (several accounts joined by
-  `; `) once per set of accounts: the set is kept as
+  tycswap fable --login` (`Accounts <n>, <m> and <k> have …` for several)
+  once per set of accounts: the set is kept as
   `lastFableRoomWithoutLogin` in `fable/autoswitch_state.json`, and a tick
   with room clears it (DESIGN A112).
 

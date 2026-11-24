@@ -9639,9 +9639,10 @@ Linux only, where links exist.
 accounts that are enabled, rotation-eligible, able to run Fable
 (`FableCapable`), not allocated away from it, have room for Fable and hold no
 Fable login could serve Fable once signed in
-(`reporting.FableRoom.WithoutLogin`). `reporting.FableRoomHint` names them:
-`Account-11 has Fable room but no Fable login: tycswap add --login --lineage
-fable --slot 11`, several joined by `; `. It ends start's notice; `status`
+(`reporting.FableRoom.WithoutLogin`). `reporting.FableRoomHint` names them
+and the command that signs them in (A114): `Account-11 has Fable room but no
+Fable login: tycswap fable --login`, several in one sentence (`Accounts 7, 11
+and 12 have …`). It ends start's notice; `status`
 prints it under the Fable store line and `list` after its accounts, and their
 JSON gains `fable.roomWithoutLogin` and `fableRoomWithoutLogin` (account
 numbers, only when there is one). A real Fable tick logs it as one WARNING,
@@ -9680,3 +9681,97 @@ auto-switch off; a busy refresh lock defers, then moves). The no-change tests
 pass unedited. `TestStatusFableObject` in `reporting` reads the Fable store
 line rather than the last line: its fixture has no room in the pool and
 Account-11 with room and no Fable login, so the hint follows.
+
+## A114. Every account without a Fable login, signed in one after another
+
+**Why.** An account serves the Fable store only after its second browser
+sign-in (A101), one account per `add --login --lineage fable --slot N`. On
+the operator's box three of six accounts that run Fable never got one, so the
+Fable pool was half the roster and ran dry while an account with 82 % Fable
+room stood outside it (A112). The operator on 2026-11-24, of the single
+command: "is nice but need to manually know what account to add so is there
+more user friednly way?", and of signing in every missing account in one go:
+"yes, remember login one after another".
+
+**The accounts.** `tycswap fable --login` asks, in roster order, for each
+account that is enabled, runs Fable as `fable --list` reads it
+(`FableEntitlement`'s `Capable`: never an API-key account or a Pro or Free
+plan) and has no usable Fable login: none, or one that reads *sign in again*
+(its quarantine entry, `reporting.FableQuarantine`, as every surface reads
+it). `fableRows` marks them (`fableRow.Missing`), so the menu counts what the
+command asks. With none it prints `Every account that runs Fable has a Fable
+login.` and exits 0, with or without a terminal.
+
+**The walk.** A fourth action of `tycswap fable`, exclusive with `--allow`,
+`--disallow` and `--list`; `--json` is refused as with `--allow` (exit 2).
+macOS refuses it with `ErrFableUnsupported`'s text, as `add --login --lineage
+fable` does. With accounts to ask it needs a terminal on stdin and stdout
+(`run`'s `stdinTTY && stdoutTTY`, not `humanTerminal`: the menu runs it as a
+child with `TYCSWAP_NO_PROMPT`); without one it refuses with a
+`ValidationError`, exit 1, before anything is asked. Per account it prints
+`Fable sign-in <i> of <count>: <email> (Account-<n>).` and asks `Enter to
+open the browser, s to skip, q to stop:`, so the operator can put the browser
+on that account first. The answer is read a byte at a time: the sign-in's
+`claude` reads the same stdin next. The end of input is `q`. Enter calls
+`fableWalkSignIn`, which is `addCommand(prog, ["--login", "--lineage",
+"fable", "--slot", N], s)`: that command's parser, `addLogin`,
+`fableLoginPreflight`, scratch profile, `storeLoginWhenComplete`,
+`AddFableLogin` and `activateFableLogin`, in this process, one call returning
+before the next starts. Nothing of the sign-in is reimplemented: its output,
+refusals, locks and log lines are the single command's, and the first Fable
+login still turns the store on. A failed sign-in prints its own error and the
+walk asks the next account.
+
+**The reason.** The summary names each failure with its reason. The walk
+hands the sign-in a stderr (`signInErrors`) that passes everything on and
+keeps the text; the reason is its last `Error: ` line. `claude auth login`
+gets the stream underneath (`loginStderr` in `startClaudeLogin`), so it keeps
+the terminal: through a pipe, `exec.Cmd.Wait` would also wait for any process
+that inherited it, a browser the login started included.
+
+**The summary.** `Signed in for Fable: …`, `Skipped: …` (an `s`, and with `q`
+that account and every one after it), one `Failed: <email> (Account-<n>):
+<reason>` per failure, and `Run tycswap fable --login again for the rest.`
+when any was skipped or failed. Exit 0 when none failed, 1 otherwise. A
+second run reads the roster again and asks only for the accounts still
+missing.
+
+**Ctrl-C.** The sign-ins run in the walk's process, so Ctrl-C reaches
+tycswap's SIGINT handler (A7): it runs the registered cleanups, the running
+sign-in's scratch-profile removal among them (A56), releases Claude Code's
+locks (A55) and exits 130. The walk sets the note that exit prints, `Fable
+sign-ins stopped. Run tycswap fable --login again for the rest.`; no further
+account is asked. A login stored before the Ctrl-C (A82) stays stored.
+
+**The menu.** *Sign in for Fable* (`menuFableSignIn`) offers first, when two
+or more accounts are `Missing`, `All <n> accounts without a Fable login, one
+after another`, which runs `tycswap fable --login` as the menu runs every
+command; the account entries after it are as before. The command browser
+lists `fable --login` where a Fable store can exist.
+
+**The hint.** A112's hint names this command instead of one `add --login
+--lineage fable --slot N` per account: `Account-11 has Fable room but no Fable
+login: tycswap fable --login`, `Accounts 7 and 11 have …`, `Accounts 7, 11
+and 12 have …`. The walk signs in every missing account, not only those the
+hint names.
+
+**Limits.** The walk cannot see which account the browser is on: a sign-in as
+another account is refused after the browser flow by `AddFableLogin`, as for
+the single command, and the walk goes on. The passive update notice the
+single command prints after a sign-in may follow each sign-in. A sign-in
+waiting on its browser holds the walk, without a time limit, as `add --login`
+does. The accounts are read once, at the start.
+
+**Tests.** In `cli`: `TestFableLoginWalkSignsInEachAccountInTurn` (three
+accounts in roster order, each through the single sign-in for its slot, each
+login started only after the one before had removed its scratch profile; the
+Ctrl-C note), `TestFableLoginWalkSkipsAndStops`,
+`TestFableLoginWalkGoesOnAfterAFailedSignIn` (another account signed in, a
+login that does not complete), `TestFableLoginWalkAsksOnlyAccountsWithoutAUsableFableLogin`
+(a usable Fable login, a disabled account, an API key and a Pro plan not
+asked; a quarantined Fable login asked), `TestFableLoginWalkWithEveryLoginInPlace`,
+`TestFableLoginWalkRefusals` (no terminal, macOS, `--json`, the other
+actions, help), `TestMenuFableSignInOffersTheWalk` and
+`TestFableLoginWalkAgainAsksOnlyTheRest`; in `reporting`
+`TestFableRoomHintNamesTheWalk`. `TestFableCommandArguments` names `--login`
+in its two messages, and the cli tests' hint helper follows the new sentence.

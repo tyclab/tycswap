@@ -9,18 +9,22 @@ import (
 
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/jsonout"
+	"github.com/tyclab/tycswap/internal/reporting"
 	"github.com/tyclab/tycswap/internal/store"
 )
 
-// fableRow is one account of `tycswap fable --list` (DESIGN A107).
+// fableRow is one account of `tycswap fable --list` (DESIGN A107). Missing:
+// `fable --login` asks it (DESIGN A114).
 type fableRow struct {
-	Number, Email string
-	Answer        store.FableAnswer
-	Login         bool
+	Number, Email  string
+	Answer         store.FableAnswer
+	Login, Missing bool
 }
 
+const errFableExclusive = "--allow, --disallow, --list and --login are exclusive"
+
 // fableArguments are `tycswap fable`'s options: --allow and --disallow
-// take an account, --list takes --json; the three exclude each other.
+// take an account, --list takes --json; the four actions exclude each other.
 type fableArguments struct {
 	action, id string
 	json, help bool
@@ -35,13 +39,13 @@ func parseFableArguments(argv []string) (fableArguments, error) {
 				return parsed, fmt.Errorf("%s requires an account identifier", tok)
 			}
 			if parsed.action != "" {
-				return parsed, fmt.Errorf("--allow, --disallow and --list are exclusive")
+				return parsed, fmt.Errorf(errFableExclusive)
 			}
 			i++
 			parsed.action, parsed.id = tok, argv[i]
-		case "--list":
+		case "--list", "--login":
 			if parsed.action != "" {
-				return parsed, fmt.Errorf("--allow, --disallow and --list are exclusive")
+				return parsed, fmt.Errorf(errFableExclusive)
 			}
 			parsed.action = tok
 		case "--json":
@@ -58,15 +62,16 @@ func parseFableArguments(argv []string) (fableArguments, error) {
 	switch {
 	case parsed.help:
 	case parsed.action == "":
-		return parsed, fmt.Errorf("expected --allow ID, --disallow ID or --list")
+		return parsed, fmt.Errorf("expected --allow ID, --disallow ID, --list or --login")
 	case parsed.json && parsed.action != "--list":
 		return parsed, fmt.Errorf("--json goes with --list")
 	}
 	return parsed, nil
 }
 
-// fableCommand handles `tycswap fable ...`; argv excludes "fable".
-func fableCommand(prog string, argv []string, s ioStreams) int {
+// fableCommand handles `tycswap fable ...`; argv excludes "fable". terminal:
+// stdin and stdout are terminals, which --login needs.
+func fableCommand(prog string, argv []string, s ioStreams, terminal bool) int {
 	parsed, err := parseFableArguments(argv)
 	if err != nil {
 		return subError(prog+" fable", s.err, err.Error())
@@ -82,6 +87,9 @@ func fableCommand(prog string, argv []string, s ioStreams) int {
 		return code
 	}
 	setSigintJSON(parsed.json)
+	if parsed.action == "--login" {
+		return fableLoginWalk(prog, sw, s, terminal)
+	}
 	if parsed.action != "--list" {
 		if err := sw.SetFableMark(parsed.id, parsed.action == "--allow"); err != nil {
 			return renderDomainError(err, false, s.out, s.err)
@@ -108,13 +116,15 @@ func fableCommand(prog string, argv []string, s ioStreams) int {
 	return 0
 }
 
-// fableRows is every roster account in order, with its Fable answer and
-// whether it holds a Fable login.
+// fableRows is every roster account in order, with its Fable answer, whether
+// it holds a Fable login, and whether `fable --login` asks it: enabled, able
+// to run Fable (never an API key), and no Fable login or one to sign in again.
 func fableRows(sw *core.Switcher) ([]fableRow, error) {
 	data, err := sw.ReadSequence()
 	if err != nil {
 		return nil, err
 	}
+	dead := reporting.FableQuarantine(sw.Store)
 	rows := make([]fableRow, 0, len(data.Sequence))
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
@@ -122,8 +132,10 @@ func fableRows(sw *core.Switcher) ([]fableRow, error) {
 		if err != nil {
 			continue
 		}
-		rows = append(rows, fableRow{Number: num, Email: email,
-			Answer: sw.Store.FableEntitlement(data, num), Login: sw.Store.HasFableLogin(num)})
+		r := fableRow{Number: num, Email: email, Answer: sw.Store.FableEntitlement(data, num), Login: sw.Store.HasFableLogin(num)}
+		_, quarantined := dead[num]
+		r.Missing = r.Answer.Capable && !store.DisabledFrom(data, num) && (!r.Login || quarantined)
+		rows = append(rows, r)
 	}
 	return rows, nil
 }
@@ -165,10 +177,13 @@ func fableListJSON(rows []fableRow) map[string]any {
 }
 
 func renderFableHelp(prog string, out io.Writer) int {
-	fmt.Fprintf(out, "usage: %s fable --allow ID | --disallow ID | --list [--json]\n", prog)
+	fmt.Fprintf(out, "usage: %s fable --allow ID | --disallow ID | --list [--json] | --login\n", prog)
 	fmt.Fprintln(out, "\nMark an account that runs Fable when its plan does not say so (an organization's login, say):")
 	fmt.Fprintln(out, "--allow records it, --disallow removes the mark so the plan decides again. --list shows, per")
 	fmt.Fprintln(out, "account, whether it runs Fable, by plan or mark, and whether it holds a Fable login.")
 	fmt.Fprintln(out, "A Pro or Free plan cannot be marked, nor an API-key account.")
+	fmt.Fprintln(out, "\n--login signs in for Fable, one after another, every enabled account that runs Fable and")
+	fmt.Fprintln(out, "has no Fable login or one to sign in again; before each browser sign-in it asks: Enter, s to")
+	fmt.Fprintln(out, "skip, q to stop. It needs a terminal.")
 	return 0
 }
