@@ -343,7 +343,8 @@ func reconcileDisabledTick(sw *core.Switcher, onEvent func(autoswitch.Event)) au
 }
 
 // onceTicks is `auto --once`'s tick: engine's, then the Fable store's while
-// auto-switch is on (or in a dry run), and the more significant outcome.
+// auto-switch is on (or in a dry run), after a real one the linked Fable
+// sessions' placement (DESIGN A112), and the more significant outcome.
 func onceTicks(sw *core.Switcher, engine *autoswitch.Engine, merged settings.AutoSwitchSettings, onEvent func(autoswitch.Event), dryRun bool) autoswitch.TickOutcome {
 	outcome := autoswitch.NoAction
 	if !dryRun {
@@ -356,6 +357,9 @@ func onceTicks(sw *core.Switcher, engine *autoswitch.Engine, merged settings.Aut
 	if dryRun || autoSwitchOn(sw.BackupDir()) {
 		if fable, ran := fableTick(sw, merged, onEvent, dryRun); ran {
 			outcome = significantOutcome(outcome, fable)
+			if !dryRun {
+				placeFableSessions(sw)
+			}
 		}
 	}
 	return significantOutcome(outcome, mythosTick(sw, merged, onEvent, dryRun))

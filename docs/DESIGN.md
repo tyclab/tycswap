@@ -8553,7 +8553,7 @@ case-insensitively, the name too) is tycswap's own, not an override.
 
 | Family | Fable store | Child environment | Default start-login selection | Notice |
 | --- | --- | --- | --- | --- |
-| `fable` | on and usable | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<FableStoreDir>`, in place of an inherited entry or appended; removed when no marked account has a usable Fable login (A105) | runs, and start's selection runs on the Fable store too (A105) | none, or A105's |
+| `fable` | on and usable | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<FableStoreDir>`, in place of an inherited entry or appended; removed when no marked account has a usable Fable login (A105), or when no account the store can hold has room for Fable and the default login's account has (A112) | runs, and start's selection runs on the Fable store too (A105) | none, or A105's or A112's |
 | `fable` | off or unusable, with Fable logins | the variable removed if it named the store | as before | `tycswap start: the Fable store has no usable login (<reason>); starting on the default login.` |
 | other or none, or no Fable logins | – | the variable removed if it named the store | as before | none |
 
@@ -8918,7 +8918,12 @@ session's start satisfies both:
   default login, without `CLAUDE_SECURESTORAGE_CONFIG_DIR`, and stderr and the
   log say `tycswap start: no start login has a Fable login; starting on the
   default login.` Without marks, and with auto-switch off, the Fable store is
-  left where it sits, as before. A selection that fails otherwise (no
+  left where it sits, as before. Before the selection, a session without
+  `--account` follows the Fable placement rule (A112): while no account the
+  Fable store can hold has room for Fable and the default login's account
+  has, it starts on the default login, marks or not; with an account in the
+  pool that has room the selection runs as above, a marked login at its
+  limit included. A selection that fails otherwise (no
   candidate could be prepared, a change under the lock) says so and the
   session starts on the Fable store where it sits.
 - `--account ID` keeps its meaning for the default login and is the Fable
@@ -9296,6 +9301,7 @@ not read).
 | --- | --- |
 | Fable on the default login, the Fable store usable | `⚠ Fable session on the default login. Use the Fable store with an account approved for Fable.` |
 | the same, while `start` sends Fable sessions to the default login (A105.6) | `⚠ Fable session on the default login (no start login has a Fable login). Use the Fable store with an account approved for Fable.` |
+| the same, while `start` sends Fable sessions to the default login because no Fable login has room (A112) | `⚠ Fable session on the default login (no Fable login has room). Use the Fable store with an account approved for Fable.` |
 | Opus, Mythos, Sonnet or Haiku on the Fable store | `⚠ <Family> session on the Fable store. Use the default login with an account approved for <Family>.` |
 | any other, or a box without a Fable login | nothing |
 
@@ -9313,7 +9319,8 @@ A105.6 sends every Fable session to the default login, with `no start login
 has a Fable login; starting on the default login.`, while start logins are
 marked, auto-switch is on and none of them is in the Fable pool.
 `cli.fableStartsOnDefault` is shared by the launcher's Fable selection and this
-diagnostic, so both use the same fallback condition.
+diagnostic, so both use the same fallback condition; so is the Fable
+placement rule, `cli.fableSessionOnDefault` (A112).
 
 The form prints at most one line and exits 0 whatever happens, a panic
 included. It creates no file or directory, takes no lock, makes no network
@@ -9327,8 +9334,9 @@ The no-change tests (`TestNoFableLoginNoChange`,
 The status-line record is unchanged: a Fable session on the default login is
 still recorded with no store.
 
-**Limits.** Nothing moves a running session: only `/exit` and a resume on the
-right model do (A103). The line appears only where the status line runs
+**Limits.** Nothing moves a running direct session: only `/exit` and a resume
+on the right model do (A103); a linked one moves by A109 and A112. The line
+appears only where the status line runs
 `start --check`. A credential file the state read cannot read is logged as for
 any reader.
 
@@ -9440,7 +9448,9 @@ session-record lock, and rechecks the binding, source, eligible destination
 and account allocation. Only a move ready to commit tries the source's
 refresh lock. A busy attempt releases the tycswap locks before retrying.
 The tick can rotate the selected Mythos login at a known limit when another
-ready login has room. An automatic allocation exception requires an affirmative answer
+ready login has room. After a real Fable tick it places linked Fable
+sessions by the Fable placement rule (A112), one refresh-lock try each.
+An automatic allocation exception requires an affirmative answer
 for this session and destination. A separate process owns that question and
 rechecks the proposal after the answer. A later observation can replace an
 asker that has died.
@@ -9538,3 +9548,135 @@ a Mythos-only session still leaves Fable-capable accounts with Fable room
 reserved when the Fable store is unavailable. With a usable Fable store,
 the default login reserves that store's pool members with Fable room and
 its live account regardless of room (A102).
+
+## A112. A Fable session goes where Fable has room
+
+**Why.** Observed on a live box on 2026-11-24 (tycswap 0.21.5): start
+logins marked on six accounts, the Fable store on and usable, the Fable pool
+three accounts with every Fable window at 100 %, and the default login's
+account a marked start login with Fable at 8 % and no Fable login. A
+`claude` on Fable went through `tycswap start` onto the Fable store and
+answered every message with `You've hit your Fable limit`. A session
+started as Opus on the default login and switched with `/model fable` kept
+working; its status line logged `Session … move deferred by status line:
+Account-4 has no remaining quota for this session`. The Fable tick reported
+`all-exhausted` every 2 minutes while its own poll showed the default
+login's account with 82 % headroom, and nothing named that this account had
+Fable room but no Fable login. Three places decided which login serves a
+Fable session, by three rules: start sent it to the Fable store whenever a
+marked start login was in the Fable pool and never read quota (A105.6); the
+status line sent it to the Fable store when its live account had room and
+never looked at a session already there; the Fable tick rotated the store
+inside the pool and never moved a linked session.
+
+**The rule** (`cli.fableSessionOnDefault`). For an automatically placed
+Fable session the Fable store would serve (on and usable, and A105.6 not
+sending it to the default login):
+
+1. The Fable store, when an account it can hold has room for Fable: its live
+   account (backup or chain; an unknown one counts as room), or an account
+   the Fable tick may switch it to (`reporting.FableSwitchable`, what
+   `fableAdapter.SwitchableAccountNumbers` answers: the Fable pool less the
+   accounts whose explicit model allocation leaves Fable out).
+2. Otherwise the default login, when its current account has room for
+   Fable: resolved from the credential as the status line resolves it, not
+   from the shared config or the last install, and enabled
+   (`cli.verifiedLoginOwner`, A109).
+3. Otherwise the Fable store, as before.
+
+Room is no limiting window for Fable in the cached usage as
+`reporting.ModelLimitWindows(entry, "fable", now)` reads it, the one
+`modelLimitWindows` now delegates to: no 5h, 7d or Fable window at 100 %. An
+account without a reading has room. `reporting.ReadFableRoom` reads the
+roster, the Fable store's state and the usage cache, and nothing else: no
+request, no write, no lock.
+
+What stays: the store off or unusable, no marked start login in the Fable
+pool (A105.6) and a box without Fable logins send a Fable session where they
+did. The parked or recovered Fable path (`recoveredFableStart`,
+`store.FableAllocationParked`, the readers) is decided before the rule. An
+explicit choice is not ruled: `start --account`, `tycswap use fable|default`
+and a held `Wanted` keep their behaviour. The allocation question for an
+account allocated away from the model is asked or not as before.
+
+**Start.** `selectFableStartLogin` asks the rule after A105.6 and before the
+Fable store's start-login selection, for a fresh Fable start and for a
+resume whose saved link names the Fable store. When it answers the default
+login, the child gets no Fable store, the default start-login selection runs
+as for any default start, a linked start's link names the default login, and
+stderr and `tycswap.log` say `tycswap start: Fable store: no Fable login has
+room (first back: Account-N at <time>); starting on the default login.`,
+followed by the hint below. `first back` is the account whose limit ends
+first among those the store can hold (`oauth.ResetClockString`), left out
+when no reset is known. With an account in the pool that has room, A105 is
+unchanged: start still takes a marked login at its limit and the tick moves
+on. The default selection ranks ordinary choices before allocation
+exceptions under the rule as under A105.6 (`preferFableAllocations`), and
+`start --check` names the cause as start decides it: `⚠ Fable session on the
+default login (no Fable login has room). Use the Fable store with an account
+approved for Fable.`
+
+**Status line and hook.** `sessionDestination` takes the rule's target for an
+automatic Fable placement. A linked session on the Fable store moves to the
+default login when the rule says so, logged as every move (`Session <id>
+moved from Fable store (Account-N) to default login (Account-M) by status
+line`). A session on the default login behaves as before: it moves back once
+an account the store can hold has room and the store's live account has.
+
+**Tick.** After a real Fable tick (`auto --once` from the timer, the quota
+hook or a status line, and `start --started`), `cli.placeFableSessions` gives
+each live linked session recorded as Fable without a held choice the same
+placement, actor `tick`, in either direction, through the A109 move guard
+with one try of the refresh lock: a busy lock defers it (`Session <id> move
+deferred by tick: source login is refreshing (.oauth_refresh.lock)`). A dry
+run and auto-switch off move nothing, and auto-switch turned off since the
+tick began holds the move. A move to an account allocated away from Fable is
+left alone, the record untouched: the tick never asks. It writes no event;
+the move guard's log line names the move. Like the Mythos tick it runs on
+Linux only, where links exist.
+
+**The hint.** While no account the Fable store can hold has room, the
+accounts that are enabled, rotation-eligible, able to run Fable
+(`FableCapable`), not allocated away from it, have room for Fable and hold no
+Fable login could serve Fable once signed in
+(`reporting.FableRoom.WithoutLogin`). `reporting.FableRoomHint` names them:
+`Account-11 has Fable room but no Fable login: tycswap add --login --lineage
+fable --slot 11`, several joined by `; `. It ends start's notice; `status`
+prints it under the Fable store line and `list` after its accounts, and their
+JSON gains `fable.roomWithoutLogin` and `fableRoomWithoutLogin` (account
+numbers, only when there is one). A real Fable tick logs it as one WARNING,
+`Fable store: no Fable login has room; <hint>`, when the set changes: the set
+is kept as `lastFableRoomWithoutLogin` in `fable/autoswitch_state.json` by
+`autoswitch.RememberSet`, the limiter `Blocked on Account-N although …` uses,
+and forgotten once there is room. Status and list name them with the store
+off or unusable too, when no account in the pool has room: adding such a
+login turns an empty store on (A101).
+
+**Limits.** The rule does not make the default login follow the session:
+while the Fable store is usable A108 still leaves a Fable session on the
+default login uncounted, so the default tick may move the default login to an
+account without Fable room for its Opus sessions. The rule then answers the
+Fable store, and the move there waits for room (`Account-N has no remaining
+quota for this session`). Start judges the default login's current account;
+the default start-login selection after it ranks the marked accounts by 5h
+and 7d, not by Fable, and may switch to one without Fable room. Direct
+sessions (macOS, Windows, unlinked) are placed by start only. The cached
+usage can be stale.
+
+**Tests.** In `cli`: `TestFableStartPlacementByFableRoom` (the observed state:
+the default login, the notice and its log line; a pool account other than the
+store's with room, and no room anywhere: the Fable store and A105's hold),
+`TestStartCheckAgreesWithStartOnFableRoom` (the three states),
+`TestFableRoomWithoutALoginIsNamed` (`status` and `list`, human and JSON: an
+account named; a disabled one, one allocated to Opus, one without Fable room,
+one on a Pro plan not; none while a pool account has room),
+`TestFableTickWarnsOnceAboutFableRoomWithoutALogin` (a dry run, two ticks,
+a changed set); on Linux `TestFableStartWithoutFableRoomLinksTheDefaultLogin`
+(a fresh start, and a resume whose saved link names the Fable store),
+`TestStatusLinePlacesAFableSessionByFableRoom` (off the Fable store with the
+move logged; back once the store's account has room, with no deferral before)
+and `TestTickPlacesLinkedFableSessionsByFableRoom` (moved after a dry run;
+auto-switch off; a busy refresh lock defers, then moves). The no-change tests
+pass unedited. `TestStatusFableObject` in `reporting` reads the Fable store
+line rather than the last line: its fixture has no room in the pool and
+Account-11 with room and no Fable login, so the hint follows.

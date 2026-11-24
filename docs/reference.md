@@ -197,7 +197,12 @@ With `--json`, exactly one indented JSON document is written to stdout:
 While an account has a Fable login the document also carries
 `fableAccountNumber`: the Fable store's account (int), or `null` while the
 store is off or its account unknown (DESIGN A104). Without a Fable login it
-is absent.
+is absent. While no account the Fable store can hold has room for Fable, it
+also carries `fableRoomWithoutLogin`: the accounts (ints) that are enabled,
+rotation-eligible, able to run Fable, not allocated away from it, have room
+for Fable and hold no Fable login, present only when there is one (DESIGN
+A112). The human list then ends its accounts with the line `status` prints
+for them.
 
 An `<account-row>` object contains these keys.
 
@@ -309,7 +314,11 @@ also reports the Fable store (DESIGN A104) in one more line, `Fable store:
 Account-N (<email>) · Fable 34% · 7d 61%` (the account's fullest Fable window
 and its weekly window, each when known), `Fable store: Account-N (<email>) ·
 Fable login: sign in again` while its login is quarantined, `Fable store: on,
-its account unknown`, or `Fable store: off`.
+its account unknown`, or `Fable store: off`. While no account the Fable store
+can hold has room for Fable, a line under it names each account with Fable
+room but no Fable login and the command that adds it (DESIGN A112):
+`Account-11 has Fable room but no Fable login: tycswap add --login --lineage
+fable --slot 11`, several joined by `; `.
 
 ### Files
 
@@ -361,6 +370,7 @@ object (DESIGN A104), whatever `active` is; without one it is absent:
 | `email`, `organizationName`, `plan`, `usageStatus`, `usage` | | That account's, in the shapes of `active`, while it is known (`plan` when recorded). The usage is the account's shared row, fetched with its default login, never with the Fable one. |
 | `source` | string \| null | What named the account: `backup`, `chain` or `profile` (DESIGN A68); `null` while unknown. |
 | `reason` | string | Present while the store is off or unusable: `the store is empty`, `Account-N's Fable login: sign in again`. |
+| `roomWithoutLogin` | int array | Present while no account the Fable store can hold has room for Fable and an account has Fable room but no Fable login: those accounts, as `list`'s `fableRoomWithoutLogin` (DESIGN A112). |
 
 ### Errors
 
@@ -1618,6 +1628,7 @@ For direct launches, the child environment in this table names the chosen store.
 | --- | --- | --- | --- | --- |
 | Fable | on and usable, a marked account with a usable Fable login | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | Fable store only | the selection's own, starting `Fable store: ` |
 | Fable | on and usable, marks but none with a usable Fable login | that variable removed if it named the store | runs | `tycswap start: no start login has a Fable login; starting on the default login.` |
+| Fable | on and usable, no account it can hold with room for Fable, the default login's account with room, no `--account` | that variable removed if it named the store | runs | `tycswap start: Fable store: no Fable login has room (first back: Account-<n> at <time>); starting on the default login.`, then the accounts with Fable room but no Fable login (see below) |
 | Fable | on and usable, no marks, or auto-switch off without `--account` | `CLAUDE_SECURESTORAGE_CONFIG_DIR=<backup root>/fable/store` | keeps the current Fable login | none |
 | Fable | off or unusable, with Fable logins | that variable removed if it named the store | runs | `tycswap start: the Fable store has no usable login (<reason>); starting on the default login.` |
 | other, none, or no Fable login | – | that variable removed if it named the store | runs | none |
@@ -1632,6 +1643,22 @@ start`), stamped in `fable/autoswitch_state.json`. A selection there that
 fails otherwise says so and the session starts on the Fable store where it
 sits. `--account ID` selects the requested account on the store serving the
 child. A fallback selects the default login and prints the notice above.
+
+Before that selection, a Fable session without `--account`, fresh or a resume
+whose saved link names the Fable store, follows the Fable placement rule
+(DESIGN A112). The Fable store serves it while an account the store can hold
+has room for Fable: its live account (an unknown one counts as room) or an
+account the Fable tick may switch it to. Otherwise the session starts on the
+default login when that login's current account, resolved from its
+credential and enabled, has room for Fable; else on the Fable store, as
+before. Room is no 5h, 7d or Fable window at 100 % in the cached usage; an
+account without a reading has room, and nothing is fetched. `first back`
+names the account whose limit ends first among those the store can hold, and
+is left out when no reset is known. The notice then names each account with
+Fable room but no Fable login, as `status` does: `Account-11 has Fable room
+but no Fable login: tycswap add --login --lineage fable --slot 11`. With an
+account in the Fable pool that has room the selection above runs as before,
+a marked login at its limit included.
 
 Every other variable passes unchanged, but `TYCSWAP_START_HOLD` (below) and
 `TYCSWAP_START_FAMILY` ([tycswap mythos](#tycswap-mythos)). The
@@ -1725,7 +1752,11 @@ Claude rows carry the boolean, and Codex rows omit it.
 (`session_id`, `model.id`) unless stdin is a terminal, and prints at most one
 line on stdout. With a session link, it compares the reported model with the
 bound login, tries a guarded move and reports a refusal or a pending
-`/model` command. `auto --observe` uses the same placement rules.
+`/model` command. `auto --observe` uses the same placement rules. A linked
+Fable session without a held `use` choice follows start's Fable placement
+rule (DESIGN A112): it moves from the Fable store to the default login while
+no Fable login has room and the default login's account has, and back once
+the Fable store's account has room again.
 An automatic move encountering a native refresh defers until a later
 observation or tick. An allocation question runs outside the observer or
 hook process. An affirmative answer triggers a fresh eligibility check.
@@ -1736,6 +1767,7 @@ For a session with a direct login, the check uses the following messages.
 | --- | --- |
 | Fable on the default login, the Fable store usable | `⚠ Fable session on the default login. Use the Fable store with an account approved for Fable.` |
 | Fable on the default login, the Fable store usable, while `start` sends Fable sessions to the default login (start logins marked, auto-switch on, none of them with a usable Fable login) | `⚠ Fable session on the default login (no start login has a Fable login). Use the Fable store with an account approved for Fable.` |
+| Fable on the default login, the Fable store usable, while `start` sends Fable sessions to the default login because no Fable login has room (DESIGN A112) | `⚠ Fable session on the default login (no Fable login has room). Use the Fable store with an account approved for Fable.` |
 | Opus, Mythos, Sonnet or Haiku on the Fable store | `⚠ <Family> session on the Fable store. Use the default login with an account approved for <Family>.` |
 
 A direct session runs on the Fable store when `CLAUDE_SECURESTORAGE_CONFIG_DIR`
@@ -1830,7 +1862,9 @@ Managed native starts on Linux and WSL receive
 `start --started` binds the link to the session UUID, process and selected
 store. A resume gets a fresh link. The scheduled tick removes links for
 ended processes and moves eligible Mythos sessions when another ready
-Mythos login has room. Link setup failure falls back to direct launch with
+Mythos login has room. After a real Fable store tick it also gives each
+linked Fable session without a held `use` choice the placement the status
+line gives it (DESIGN A112). Link setup failure falls back to direct launch with
 a notice. Machines without managed Claude accounts, native Windows and
 macOS use direct launches. A session already running on a direct login
 keeps its original status-line behavior. See [DESIGN A109](DESIGN.md#a109-session-links-for-native-claude-on-linux-and-wsl).
@@ -2248,7 +2282,12 @@ trigger `failover`, logged `by engine:failover`), or, with none, it is emptied
 sessions to the default login and says so). A switch of the Fable store by
 hand holds that move for the cooldown, as it holds the tick; the quarantined
 login already counts as unusable for `start`. The default login is never read
-or written. `--dry-run` runs both ticks dry. The loop and
+or written. `--dry-run` runs both ticks dry. After a real Fable tick, each
+live linked Fable session without a held `use` choice gets the status line's
+placement (DESIGN A112), actor `tick`, in either direction, with one try of
+its refresh lock: a busy one defers the move to a later tick, and a move
+that needs an allocation decision is left alone. The tick prints no event
+for it; `tycswap.log` names the move. The loop and
 the dashboard's hosted engine run no Fable tick. A dead default login leaves
 the account's usage unknown, so neither store takes it until it is signed in
 again.
@@ -5761,6 +5800,13 @@ line `<change> by <actor>` beside the change's own line.
   <a>, <b> are below their 5h and 7d bars`, once per set of accounts: the
   set is kept as `lastBlockedWithRoom` in `autoswitch_state.json`, and a tick
   without such a block clears it.
+- **Fable room without a Fable login.** A real Fable tick, while no account
+  the Fable store can hold has room for Fable, logs the warning `Fable store:
+  no Fable login has room; Account-<n> has Fable room but no Fable login:
+  tycswap add --login --lineage fable --slot <n>` (several accounts joined by
+  `; `) once per set of accounts: the set is kept as
+  `lastFableRoomWithoutLogin` in `fable/autoswitch_state.json`, and a tick
+  with room clears it (DESIGN A112).
 
 ## SETTINGS
 

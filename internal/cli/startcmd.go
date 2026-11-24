@@ -545,9 +545,10 @@ func withStartVar(env []string, name, value string) []string {
 // account alone; the Fable store's live account is the current one; the
 // switch is the engine's Fable switch, stamped and held in the Fable state
 // file under its lock, the hold under token when the default selection holds
-// one. With none of them in the pool toDefault is true: the session starts on
-// the default login. Without marks, or with auto-switch off and no account,
-// it changes nothing (DESIGN A105).
+// one. With none of them in the pool, or without account by the Fable
+// placement rule, toDefault is true: the session starts on the default login.
+// Without marks, or with auto-switch off and no account, it changes nothing
+// (DESIGN A105, A112).
 func selectFableStartLogin(account string, stderr io.Writer, token string, native bool) (hold string, toDefault bool) {
 	sw, err := newSwitcher(store.Options{OAuth: oauth.NewHTTPClient(), Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
 	if err != nil {
@@ -575,6 +576,12 @@ func selectFableStartLogin(account string, stderr io.Writer, token string, nativ
 	if toDefault {
 		reportStartSelection(sw, stderr, noFableStartLogin+"; starting on the default login.")
 		return "", true
+	}
+	if account == "" {
+		if toDefault, notice := fableSessionOnDefault(sw.Store); toDefault {
+			reportStartSelection(sw, stderr, notice)
+			return "", true
+		}
 	}
 	if account == "" && (len(snap.Marked) == 0 || !snap.Settings.Enabled) {
 		return "", false
@@ -838,6 +845,7 @@ func renderStartHelp(prog string, out io.Writer) int {
 	fmt.Fprintln(out, "--account also works with auto-switch off; inherited auth/profile overrides skip selection.")
 	fmt.Fprintln(out, "Sessions on a Fable model start on the Fable store when one is on (tycswap add --login --lineage fable),")
 	fmt.Fprintln(out, "which moves to a marked login with a Fable login too; with marks but none such, they start on the default login.")
+	fmt.Fprintln(out, "While no Fable login has room, they start on the default login when its account has Fable room.")
 	fmt.Fprintln(out, "Sessions on Mythos start on an account marked with tycswap mythos --allow ID, while one is marked.")
 	fmt.Fprintln(out, "For native Claude on Linux and WSL, CLAUDE_SECURESTORAGE_CONFIG_DIR points to a per-session link.")
 	fmt.Fprintln(out, "--started binds that link. The status line moves it when Claude changes model. To prepare")

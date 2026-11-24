@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A Fable session no longer starts on, or stays on, a Fable store whose logins are all at their limit while the default login's account has Fable room: `tycswap start`, the status line and the scheduled tick put it on the default login, the start notice says why and names the login that comes back first, and the session returns once a Fable login has room.
+- `tycswap status`, `tycswap list`, that start notice and one `tycswap.log` warning name each account that has Fable room but no Fable login, with the `tycswap add --login --lineage fable --slot N` command that adds it.
+
 - Dashboard tabs and the Guide follow the browser’s font size. Account addresses, usage limits and reset times, and session logins stay readable on narrow screens. Process IDs and slot numbers stay on one line, and action labels wrap between words.
 - **Sessions…** in the local and remote tray opens the dashboard’s Sessions tab. Move an individual session there.
 - The dashboard fits account details beside the header controls or wraps them below. Account addresses, usage bars, limits and reset times stay visible on narrow screens and with larger browser fonts. The Mythos row separates quota and session details with middle dots.

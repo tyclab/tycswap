@@ -101,19 +101,7 @@ func (e *Engine) noteBlockedWithRoom(cur, trigger string, axis usage.Class, bloc
 		}
 		return
 	}
-	if last, _ := e.readState()[blockedWithRoomKey].(string); last == key {
-		return
-	}
-	changed := false
-	_, err := e.mutateState(func(st map[string]any) {
-		last, _ := st[blockedWithRoomKey].(string)
-		changed = last != key
-		if key == "" {
-			delete(st, blockedWithRoomKey)
-		} else {
-			st[blockedWithRoomKey] = key
-		}
-	})
+	changed, err := e.rememberSet(blockedWithRoomKey, key)
 	if err != nil {
 		if e.log != nil {
 			e.log.Warningf("Blocked-with-room not recorded: %v; it is checked again next tick", err)
@@ -127,6 +115,32 @@ func (e *Engine) noteBlockedWithRoom(cur, trigger string, axis usage.Class, bloc
 	if e.log != nil {
 		e.log.Warningf("Blocked on Account-%s although %s are below their 5h and 7d bars", cur, strings.Join(room, ", "))
 	}
+}
+
+// rememberSet keeps value, the set a report names, under key in the state
+// file ("" removes it) and reports a change: one report per set.
+func (e *Engine) rememberSet(key, value string) (bool, error) {
+	if last, _ := e.readState()[key].(string); last == value {
+		return false, nil
+	}
+	changed := false
+	_, err := e.mutateState(func(st map[string]any) {
+		last, _ := st[key].(string)
+		changed = last != value
+		if value == "" {
+			delete(st, key)
+		} else {
+			st[key] = value
+		}
+	})
+	return changed, err
+}
+
+// RememberSet is rememberSet on the state file at statePath, for a report
+// made outside the engine (DESIGN A112).
+func RememberSet(statePath, key, value string) (bool, error) {
+	e := &Engine{statePath: statePath, lockPath: stateLockPath(statePath)}
+	return e.rememberSet(key, value)
 }
 
 // keptOut names, after a tick the live account's bars made move (at-limit,

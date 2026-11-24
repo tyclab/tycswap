@@ -273,13 +273,17 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 			if err != nil {
 				return target, "", err
 			}
+			held := explicit || rec.Wanted == "fable"
+			if !toDefault && !held {
+				toDefault, _ = fableSessionOnDefault(view)
+			}
 			if !toDefault {
 				target.dir = paths.FableStoreDir(root)
 				view, err = view.ForFable()
 				if err != nil {
 					return target, "", err
 				}
-			} else if explicit || rec.Wanted == "fable" {
+			} else if held {
 				return target, "", cerr.Validation(noFableStartLogin)
 			}
 		} else if explicit || rec.Wanted == "fable" {
@@ -293,16 +297,9 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 	if err != nil {
 		return target, "", err
 	}
-	owner := view.ResolveOwnerSlot(data)
-	if owner.Slot == "" || view.AccountKindFor(owner.Slot) == "oauth" && (owner.Source == store.SourceConfig || owner.Source == store.SourceLastInstall) {
-		return target, "", cerr.Validation("cannot verify the current %s login for the session", wanted)
-	}
-	num, email, org, err := view.ResolveAccountFrom(data, owner.Slot)
+	num, email, org, err := verifiedLoginOwner(view, data, wanted)
 	if err != nil {
 		return target, "", err
-	}
-	if store.DisabledFrom(data, num) {
-		return target, "", cerr.Validation("Account-%s is disabled", num)
 	}
 	id := usage.Identity{Email: email, OrgUUID: org}
 	entry := view.Usage.Entries(map[string]usage.Identity{num: id})[num]
@@ -314,6 +311,23 @@ func sessionDestination(view *store.Store, rec *reporting.SessionLink, wanted, m
 		target.allocation = strings.Join(models, ", ")
 	}
 	return target, store.AccountIdentityDigest(email, org), nil
+}
+
+// verifiedLoginOwner is the enabled account whose login view's store holds,
+// resolved from the credential itself: neither the shared config nor the
+// last install is evidence enough (DESIGN A109).
+func verifiedLoginOwner(view *store.Store, data *store.SequenceData, wanted string) (num, email, org string, err error) {
+	owner := view.ResolveOwnerSlot(data)
+	if owner.Slot == "" || view.AccountKindFor(owner.Slot) == "oauth" && (owner.Source == store.SourceConfig || owner.Source == store.SourceLastInstall) {
+		return "", "", "", cerr.Validation("cannot verify the current %s login for the session", wanted)
+	}
+	if num, email, org, err = view.ResolveAccountFrom(data, owner.Slot); err != nil {
+		return "", "", "", err
+	}
+	if store.DisabledFrom(data, num) {
+		return "", "", "", cerr.Validation("Account-%s is disabled", num)
+	}
+	return num, email, org, nil
 }
 
 func checkLinkedSession(id, model, actor string) string {
