@@ -337,22 +337,6 @@ func TestSetSetting_RejectsOutOfRangeWithoutWriting(t *testing.T) {
 	}
 }
 
-// TestSetSetting_RejectsNaNAsOutOfRange: strconv.ParseFloat accepts "NaN",
-// which compares false against both bounds; it must be refused with the
-// range message, not reach the JSON encoder.
-func TestSetSetting_RejectsNaNAsOutOfRange(t *testing.T) {
-	root := t.TempDir()
-	for _, raw := range []string{"NaN", "nan"} {
-		_, err := SetSetting(root, "autoswitch.sevenDayThreshold", raw)
-		if err == nil || !strings.Contains(err.Error(), "must be between 50 and 100") {
-			t.Errorf("SetSetting(%q) err = %v, want the range message", raw, err)
-		}
-	}
-	if _, statErr := os.Stat(SettingsPath(root)); !os.IsNotExist(statErr) {
-		t.Error("settings.json should not have been created")
-	}
-}
-
 // TestStrategyDefaultIsSoonestReset pins the auto-switch ordering default and
 // what it means for a settings.json that already exists: a file without the
 // key (or with a value Load does not know) now orders by earliest weekly

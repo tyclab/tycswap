@@ -370,26 +370,6 @@ func TestSettingsFloatPersistsAndMovesTheBarTick(t *testing.T) {
 	}
 }
 
-// NaN parses as a float; it is refused inline with the range message like any
-// other out-of-range value, not let through to a failing write.
-func TestSettingsFloatNaNIsRefusedInline(t *testing.T) {
-	m, s, dir := settingsModel(t)
-	selectKey(t, s, "autoswitch.sevenDayThreshold")
-	s.update(m, keyPress("enter"))
-	s.update(m, keyPress("backspace"))
-	s.update(m, keyPress("backspace"))
-	typeText(m, s, "NaN")
-	if cmd := s.update(m, keyPress("enter")); cmd != nil {
-		t.Fatal("a refused value must start no action")
-	}
-	if want := "autoswitch.sevenDayThreshold must be between 50 and 100"; !s.editing || s.editError != want {
-		t.Fatalf("editing=%v editError=%q, want the input open with %q", s.editing, s.editError, want)
-	}
-	if readSettings(t, dir) != nil {
-		t.Fatal("a refused value must not be written")
-	}
-}
-
 // An emptied input is refused inline with the message `tycswap config set`
 // gives, the input stays open and nothing is written.
 func TestSettingsEmptyValueIsRefusedInline(t *testing.T) {

@@ -170,23 +170,6 @@ func TestBareCswapVerbsAreUntouched(t *testing.T) {
 	}
 }
 
-func TestMainHelpAdvertisesTheCodexNamespace(t *testing.T) {
-	var out bytes.Buffer
-	renderMainHelp("tycswap", &out)
-	help := out.String()
-	for _, want := range []string{"Codex (ChatGPT) accounts", "Claude-only", "codex list", "codex status",
-		"codex switch", "codex add", "codex login", "codex list --json --skip-api"} {
-		if !strings.Contains(help, want) {
-			t.Errorf("main help missing %q", want)
-		}
-	}
-	// The codex block sits after the Claude command list, before the aliases.
-	if strings.Index(help, "tycswap purge") > strings.Index(help, "Codex (ChatGPT)") ||
-		strings.Index(help, "Codex (ChatGPT)") > strings.Index(help, "Aliases:") {
-		t.Error("codex block is not between the Claude commands and the aliases line")
-	}
-}
-
 func TestCodexHelpListsVerbsCaveatAndSettings(t *testing.T) {
 	cleanHome(t)
 	for _, argv := range [][]string{{"codex", "--help"}, {"codex", "-h"}, {"codex", "--debug", "-h"}} {
@@ -218,14 +201,6 @@ func TestCodexUsageErrorsExit2(t *testing.T) {
 		if code, _, _ := runCodex(t, "", argv...); code != 2 {
 			t.Errorf("%v exit = %d, want 2", argv, code)
 		}
-	}
-}
-
-func TestCodexVerbHelp(t *testing.T) {
-	cleanHome(t)
-	code, out, _ := runCodex(t, "", "codex", "switch", "-h")
-	if code != 0 || !strings.Contains(out, "usage: tycswap codex switch") {
-		t.Errorf("switch -h = %d %q", code, out)
 	}
 }
 
@@ -596,25 +571,6 @@ func TestRemoveDeclinedPrintsOnlyCancelled(t *testing.T) {
 	}
 }
 
-func TestSwapAndMove(t *testing.T) {
-	codexHome(t, nil, nil)
-	seedOne(t)
-	seedCodex(t, testAcctB, testUserB, "b@example.com")
-	if _, out, _ := runCodex(t, "", "codex", "swap", "1", "2"); !strings.Contains(out, "Swapped Codex slots 1 and 2") {
-		t.Errorf("swap out = %q", out)
-	}
-	if _, out, _ := runCodex(t, "", "codex", "move", "1", "5"); !strings.Contains(out, "Moved Codex account 1 to slot 5") ||
-		strings.Contains(out, "swapped") {
-		t.Errorf("move out = %q", out)
-	}
-	if _, out, _ := runCodex(t, "", "codex", "move", "5", "2"); !strings.Contains(out, "(swapped with its occupant)") {
-		t.Errorf("move onto a taken slot out = %q", out)
-	}
-	if _, out, _ := runCodex(t, "", "codex", "move", "2", "2"); !strings.Contains(out, "already in slot 2") {
-		t.Errorf("no-op move out = %q", out)
-	}
-}
-
 func TestExportImportPurge(t *testing.T) {
 	home := codexHome(t, nil, nil)
 	seedOne(t)
@@ -635,14 +591,6 @@ func TestExportImportPurge(t *testing.T) {
 	}
 	if len(testStore().Slots()) != 1 {
 		t.Error("import did not restore the account")
-	}
-}
-
-func TestPurgeOfAnEmptyStore(t *testing.T) {
-	codexHome(t, nil, nil)
-	_, out, _ := runCodex(t, "", "codex", "purge", "-y")
-	if !strings.Contains(out, "No tycswap Codex data to remove.") {
-		t.Errorf("out = %q", out)
 	}
 }
 

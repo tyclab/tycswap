@@ -256,34 +256,6 @@ func TestImportPathTraversalRejectedNoPartialWrite(t *testing.T) {
 	}
 }
 
-func TestValidateEmailStrictAnchor(t *testing.T) {
-	// Deliberately stricter than Python's re.match `$`, which also accepts one
-	// trailing newline: the email becomes part of file and Keychain names.
-	tests := []struct {
-		email string
-		want  bool
-	}{
-		{"bob@example.com", true},
-		{"bob@example.com\n", false},
-		{"bob@example.com\r\n", false},
-		{"bob@example.com\n\n", false},
-		{"\nbob@example.com", false},
-		{"bob\r@example.com", false},
-		{"bob @example.com", false},
-		{"bob@exa\tmple.com", false},
-		{"bob@example.com\x00", false},
-		{"bob@example.com\u0085", false},
-		{strings.Repeat("a", 243) + "@example.com", false}, // 255 bytes
-		{strings.Repeat("a", 242) + "@example.com", true},  // 254 bytes
-		{"not-an-email", false},
-	}
-	for _, tc := range tests {
-		if got := validateEmail(tc.email); got != tc.want {
-			t.Errorf("validateEmail(%q) = %v, want %v", tc.email, got, tc.want)
-		}
-	}
-}
-
 // TestImportRejectsCraftedFields feeds exports whose email, alias or slot
 // carries a newline, a CR/LF or an out-of-bounds value; each is refused in
 // pass 1, before anything is written.

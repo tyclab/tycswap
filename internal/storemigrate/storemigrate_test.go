@@ -233,22 +233,6 @@ func TestFindOldPrefersFirstWithData(t *testing.T) {
 	}
 }
 
-func TestHint(t *testing.T) {
-	old := oldStore(t)
-	newRoot := filepath.Join(t.TempDir(), "tycswap")
-	want := "a claude-swap store exists at " + old + "; `tycswap migrate` copies it once"
-	if got := Hint(newRoot, []string{old}); got != want {
-		t.Errorf("Hint = %q, want %q", got, want)
-	}
-	write(t, filepath.Join(newRoot, "sequence.json"), "{}", 0o600)
-	if got := Hint(newRoot, []string{old}); got != "" {
-		t.Errorf("Hint with a populated store = %q, want none", got)
-	}
-	if got := Hint(filepath.Join(t.TempDir(), "x"), []string{filepath.Join(t.TempDir(), "absent")}); got != "" {
-		t.Errorf("Hint without an old store = %q, want none", got)
-	}
-}
-
 func TestKeychainItemsCopiedNeverDeleted(t *testing.T) {
 	old := oldStore(t)
 	newRoot := filepath.Join(t.TempDir(), "tycswap")

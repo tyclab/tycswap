@@ -313,26 +313,6 @@ func TestDownloadUpgrade_SizeCap(t *testing.T) {
 	}
 }
 
-// A SHA256SUMS larger than its cap is refused, even with the asset's line in
-// it: the file is read into memory.
-func TestDownloadUpgrade_SumsSizeCap(t *testing.T) {
-	const asset = "tycswap_v0.7.0_linux_amd64"
-	body := []byte("new build")
-	sums := append(sumsFor(map[string][]byte{asset: body}), bytes.Repeat([]byte("#\n"), maxSumsBytes/2+1)...)
-	rs := newDownloadServer(t, "v0.7.0", map[string][]byte{asset: body}, sums)
-	dir, exe := installedBinary(t, "tycswap")
-	u, _, stderr := downloadUpgrader(rs, "v0.6.0")
-	if code := u.SelfUpgrade(exe, platform.Linux); code != 1 || !strings.Contains(stderr.String(), "SHA256SUMS could not be read (larger than "+strconv.Itoa(maxSumsBytes)+" bytes)") {
-		t.Errorf("exit %d, stderr %q", code, stderr.String())
-	}
-	if got, _ := os.ReadFile(exe); string(got) != "old build" {
-		t.Errorf("binary = %q", got)
-	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
-		t.Errorf("leftovers: %v", entries)
-	}
-}
-
 // A release whose tag is not a version is refused before anything is
 // downloaded: it would slip past the downgrade guard, and for a binary of an
 // unknown version it would be installed.

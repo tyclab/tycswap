@@ -9227,10 +9227,7 @@ entry, the order of the accounts, the command),
 (the entries and their order, each confirmation and its cancel, the sign-in, a
 marked account, a plan that decides: the sign-in and no toggle, macOS, an API
 key, Codex; the answer read for the chosen account only, and only there),
-`TestMenuManageWithoutAFableAnswerOffersNoToggle`; in `reporting`
-`TestSnapshotReadsNoStoredLoginForFable` (a corrupt backup logs one warning
-per read: four per account per snapshot, as on origin/main 5969cfa, where
-round 1's snapshot field made five).
+`TestMenuManageWithoutAFableAnswerOffersNoToggle`.
 
 ## A108. The default login does not follow a Fable session while the Fable store is usable
 

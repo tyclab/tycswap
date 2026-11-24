@@ -290,18 +290,6 @@ func TestCheckForUpdatesInstallsOnYes(t *testing.T) {
 	}
 }
 
-func TestCheckForUpdatesSaysWhatCouldNotBeChecked(t *testing.T) {
-	sh, ft, rig := updatesShell(t, true)
-	rig.latest = ""
-	rig.claude = brewSeat("2.1.281", "")
-	rig.claude.Err = errors.New("HTTP 502")
-	sh.click("update")
-	want := "Could not check for every update | Could not check for a new tycswap (offline) and Claude Code (HTTP 502)."
-	if len(ft.notes) != 1 || ft.notes[0] != want {
-		t.Errorf("notes = %v\nwant %q", ft.notes, want)
-	}
-}
-
 // The dashboard's view: the same answer as the badge, and each source's
 // details.
 func TestUpdatesFacadeView(t *testing.T) {

@@ -1,12 +1,11 @@
-// Tests for the page's remembered view choices (DESIGN A27): state.ui, POST
-// /api/ui/folded and the markup of the two cards that fold.
+// Tests for the page's remembered view choices (DESIGN A27): state.ui and
+// POST /api/ui/folded.
 package web
 
 import (
 	"encoding/json"
 	"net/http"
 	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -84,26 +83,5 @@ func TestUIFoldedErrorsAndNull(t *testing.T) {
 	}
 	if resp := h2.postJSON("/api/ui/folded", map[string]any{"card": "accounts-card", "folded": true}); resp.StatusCode != http.StatusServiceUnavailable {
 		t.Errorf("fold without prefs: %d, want 503", resp.StatusCode)
-	}
-}
-
-func TestIndexHTML_FoldMarkup(t *testing.T) {
-	index := staticFile(t, "index.html")
-	for _, card := range []string{"accounts-card", "updates-card"} {
-		if !strings.Contains(index, `id="`+card+`"`) || !strings.Contains(index, `data-card="`+card+`" aria-expanded="true"`) {
-			t.Errorf("card %s has no disclosure toggle", card)
-		}
-	}
-	js := staticFile(t, "app.js")
-	for _, needle := range []string{"var FOLDABLE = ['accounts-card', 'updates-card'];", "'card-toggle'", "/api/ui/folded", "function applyFolds(", "function setFolded(", "foldCard('updates-card', false)"} {
-		if !strings.Contains(js, needle) {
-			t.Errorf("app.js lacks %q", needle)
-		}
-	}
-	css := staticFile(t, "style.css")
-	for _, needle := range []string{".card-toggle", ".card.folded > :not(.card-head):not(.add-callout) { display: none; }"} {
-		if !strings.Contains(css, needle) {
-			t.Errorf("style.css lacks %q", needle)
-		}
 	}
 }

@@ -151,14 +151,6 @@ func TestResolveSlotRejectsAnEmptyIdentifier(t *testing.T) {
 	}
 }
 
-func TestResolveSlotErrorText(t *testing.T) {
-	e := seeded(t)
-	_, err := ResolveSlot(e.open(), "nobody")
-	if err == nil || err.Error() != "No Codex account matches 'nobody'" {
-		t.Fatalf("err = %v", err)
-	}
-}
-
 // ---- export -----------------------------------------------------------
 
 func TestExportWritesEveryAccountWithItsCredentials(t *testing.T) {

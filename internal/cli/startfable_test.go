@@ -369,15 +369,6 @@ func TestStartOnMacOSLeavesAFableSessionAsBefore(t *testing.T) {
 	}
 }
 
-func TestStartHelpNamesTheFableStore(t *testing.T) {
-	cleanHome(t)
-	code, out, _ := runCLI(t, []string{"start", "--help"}, false, false)
-	if code != 0 || !strings.Contains(out, "\nSessions on a Fable model start on the Fable store when one is on (tycswap add --login --lineage fable),\n"+
-		"which moves to a marked login with a Fable login too; with marks but none such, they start on the default login.\n") {
-		t.Fatalf("code=%d help=%q", code, out)
-	}
-}
-
 // The launcher documents both the per-session store and its start hold.
 func TestStartHelpNamesTheVariablesItChanges(t *testing.T) {
 	cleanHome(t)

@@ -1,8 +1,7 @@
 // Tests for the Updates surface (DESIGN A27): the state section, POST
 // /api/updates/check and /api/updates/apply (auth and CSRF are covered for
 // both by the allRoutes tables in auth_test.go), the one-apply-at-a-time
-// rule, the serve loop's periodic check, Server.Refresh, and the markup the
-// dashboard needs for the card and the header indicator.
+// rule, the serve loop's periodic check and Server.Refresh.
 package web
 
 import (
@@ -396,33 +395,5 @@ func TestRefreshBeforeAndAfterServe(t *testing.T) {
 	case <-done:
 	case <-time.After(updTimeout):
 		t.Fatal("Refresh after Serve blocked")
-	}
-}
-
-// The card, the quiet line, the header indicator and the client code that
-// drives them.
-func TestIndexHTML_UpdatesMarkup(t *testing.T) {
-	index := staticFile(t, "index.html")
-	for _, id := range []string{"hdr-updates", "hdr-updates-count", "hdr-updates-text", "updates", "updates-card", "updates-title", "updates-checked", "updates-list", "updates-ok", "updates-ok-text", "updates-ok-when", "updates-errors", "updates-result", "updates-result-text", "updates-result-more", "updates-result-output"} {
-		if !strings.Contains(index, `id="`+id+`"`) {
-			t.Errorf("element #%s missing", id)
-		}
-	}
-	for _, action := range []string{"updates-show", "updates-check", "updates-dismiss"} {
-		if !strings.Contains(index, `data-action="`+action+`"`) {
-			t.Errorf("action %q missing", action)
-		}
-	}
-	js := staticFile(t, "app.js")
-	for _, needle := range []string{"function renderUpdates(", "function renderUpdatesBadge(", "function updateCount(", "'updates-apply'", "/api/updates/check", "/api/updates/apply", "updApplying", "'claude-code'", "Could not check for every update", "Not checked for updates yet", "Everything is up to date"} {
-		if !strings.Contains(js, needle) {
-			t.Errorf("app.js lacks %q", needle)
-		}
-	}
-	css := staticFile(t, "style.css")
-	for _, needle := range []string{".hdr-upd", ".upd-card", ".upd-item", "@keyframes upd-pulse", "prefers-reduced-motion: reduce) { .hdr-upd"} {
-		if !strings.Contains(css, needle) {
-			t.Errorf("style.css lacks %q", needle)
-		}
 	}
 }

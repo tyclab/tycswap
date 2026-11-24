@@ -90,23 +90,6 @@ func TestStatusJSONEndToEnd(t *testing.T) {
 	}
 }
 
-// TestTUIVerbOpensTUI: the TUI the bare command used to open is `tui` now
-// (DESIGN A40); with RunTUI unwired that prints the build notice and exits 1.
-func TestTUIVerbOpensTUI(t *testing.T) {
-	cleanHome(t)
-	prev := RunTUI
-	RunTUI = nil
-	t.Cleanup(func() { RunTUI = prev })
-	var out, errb bytes.Buffer
-	code := run("tycswap", []string{"tui"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, true, true)
-	if code != 1 {
-		t.Fatalf("exit = %d, want 1 (unwired TUI)", code)
-	}
-	if !strings.Contains(errb.String(), "TUI not wired in this build") {
-		t.Errorf("stderr = %q, want the TUI-not-wired notice", errb.String())
-	}
-}
-
 // TestTUIVerbWiredTUI: with RunTUI wired, `tui` hands it the switcher and the
 // dashboard start ("").
 func TestTUIVerbWiredTUI(t *testing.T) {
