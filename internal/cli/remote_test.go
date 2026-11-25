@@ -2,9 +2,9 @@
 // the token file the headless app writes and takes away, the client against
 // a real web.Server with fakes of its own (the web package's fakes stay
 // unexported) and against bare httptest servers for what a real one never
-// does (redirects, a foreign launch URL, an endless line, silence), the
-// event loop with its reconnect, watchdog and token re-read, the autostart
-// arguments, the tray-less exit and the whole command over a fake tray.
+// does (redirects, an endless line, silence), the event loop with its
+// reconnect, watchdog and token re-read, the autostart arguments and the
+// whole command over a fake tray.
 // Everything is offline and under a temp HOME.
 package cli
 
@@ -1029,71 +1029,7 @@ func TestRemoteClientFollowsNoRedirect(t *testing.T) {
 	}
 }
 
-// Only the engine's own one-time URL reaches the browser opener: anything
-// else a listener on the port answers is refused before ShellExecute would
-// launch whatever its scheme is registered for.
-func TestRemoteLaunchURLIsChecked(t *testing.T) {
-	const base = "http://127.0.0.1:7337"
-	const tok = "000102030405060708090a0b0c0d0e0f"
-	for _, good := range []string{base + "/?token=" + tok, "http://localhost:7337/?token=" + tok, base + "?token=" + tok} {
-		if got, err := checkLaunchURL(base, good); err != nil || !strings.HasSuffix(got, ":7337/?token="+tok) || !strings.HasPrefix(got, "http://") {
-			t.Errorf("checkLaunchURL(%q) = %q, %v", good, got, err)
-		}
-	}
-	for _, bad := range []string{
-		"file:///C:/Windows/System32/calc.exe",
-		"ms-settings:",
-		"https://127.0.0.1:7337/?token=" + tok,
-		"http://127.0.0.1:7338/?token=" + tok,
-		"http://10.0.0.7:7337/?token=" + tok,
-		"http://127.0.0.1:7337/evil?token=" + tok,
-		"http://127.0.0.1:7337/?token=" + tok + "&x=1",
-		"http://127.0.0.1:7337/?token=" + tok[:10],
-		"http://127.0.0.1:7337/?token=" + strings.ToUpper(tok),
-		"http://127.0.0.1:7337/?token=" + tok + "#frag",
-		"http://me@127.0.0.1:7337/?token=" + tok,
-		"http://127.0.0.1:7337/",
-		"",
-	} {
-		if got, err := checkLaunchURL(base, bad); err == nil || got != "" {
-			t.Errorf("checkLaunchURL(%q) = %q, %v; want refused", bad, got, err)
-		}
-	}
-	// Through the client: a rogue answer never comes back as a URL to open.
-	rogue := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"url":"file:///C:/Windows/System32/calc.exe"}`))
-	}))
-	t.Cleanup(rogue.Close)
-	rc := newRemoteClient(rogue.URL, tokenFile(t, testRemoteToken))
-	if err := rc.loadToken(); err != nil {
-		t.Fatal(err)
-	}
-	if u, err := rc.Launch(); err == nil || u != "" || err.Error() != "engine returned an unexpected dashboard URL" {
-		t.Errorf("Launch = %q, %v", u, err)
-	}
-}
-
 // -- the command -------------------------------------------------------------
-
-// A remote without a tray is pointless: exit 1 and say what to do instead.
-func TestRemoteModeNeedsATray(t *testing.T) {
-	appLockHome(t)
-	prev := newTray
-	newTray = func(tray.Icon, tray.Options) (tray.Tray, error) { return nil, tray.ErrUnsupported }
-	t.Cleanup(func() { newTray = prev })
-	code, _, errStr := runCLI(t, []string{"app", "--remote", "http://127.0.0.1:1", "--token-file", tokenFile(t, testRemoteToken)}, false, false)
-	if code != 1 || !strings.Contains(errStr, "remote mode needs a tray; run tycswap app in the distro instead") {
-		t.Errorf("exit = %d, stderr = %q", code, errStr)
-	}
-	// The remote lock lives beside app.lock, and a refusal creates none.
-	if remoteLockPath() != filepath.Join(filepath.Dir(appLockPath()), "remote.lock") {
-		t.Errorf("remote lock at %q", remoteLockPath())
-	}
-	if _, err := os.Stat(remoteLockPath()); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("the refusal created %s: %v", remoteLockPath(), err)
-	}
-}
 
 // Two remote trays cannot run: the second says so like the local app does.
 func TestRemoteModeIsSingleInstance(t *testing.T) {

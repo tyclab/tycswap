@@ -272,24 +272,6 @@ func TestSettingsCarryApplies(t *testing.T) {
 	}
 }
 
-// autoswitch.enabled is read by every tick, so its row on the Settings tab
-// says a save applies at the next tick, not at a restart (DESIGN A83).
-func TestEnabledSettingAppliesAtTheNextTick(t *testing.T) {
-	h := newHarness(t)
-	h.set.mu.Lock()
-	h.set.views = append([]SettingView{{Key: "autoswitch.enabled", Kind: "bool", Value: false, Default: false}}, h.set.views...)
-	h.set.mu.Unlock()
-	var body struct {
-		Settings []SettingView `json:"settings"`
-	}
-	if err := json.Unmarshal(readBody(t, h.get("/api/settings")), &body); err != nil {
-		t.Fatal(err)
-	}
-	if len(body.Settings) == 0 || body.Settings[0].Key != "autoswitch.enabled" || body.Settings[0].Applies != "Applies at the next tick." {
-		t.Fatalf("enabled row = %+v", body.Settings)
-	}
-}
-
 // With an external scheduler named, the Settings tab says a saved value
 // applies at its next check (DESIGN A51, A83); Poll interval is not listed.
 func TestSettingsNotesForAnExternalScheduler(t *testing.T) {

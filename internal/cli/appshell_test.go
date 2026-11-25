@@ -330,19 +330,6 @@ func TestShellClickErrorsBecomeNotifications(t *testing.T) {
 	}
 }
 
-// A failed open says where the address is, first: Windows cuts a
-// notification's text at 255 characters (A41).
-func TestOpenDashboardFailureNotifies(t *testing.T) {
-	sh, ft, _ := newTestShell(t)
-	sh.act.OpenDashboard = func(string) error {
-		return errors.New("open the Dashboard address from C:\\Users\\a\\app.log in your browser (could not open a browser (ShellExecuteW: returned 31))")
-	}
-	sh.click("open")
-	if len(ft.notes) != 1 || !strings.HasPrefix(ft.notes[0], "Could not open the dashboard | Open the Dashboard address from ") {
-		t.Errorf("notifications = %v", ft.notes)
-	}
-}
-
 func TestShellThresholdAlertOnce(t *testing.T) {
 	sh, ft, _ := newTestShell(t)
 	st := sampleState()

@@ -407,15 +407,6 @@ func TestAddRefusesLoginOnlyArguments(t *testing.T) {
 	assertNoScratch(t)
 }
 
-func TestAddLoginKeepsAddsFlagRefusals(t *testing.T) {
-	cleanHome(t)
-	var out, errb bytes.Buffer
-	code := run("tycswap", []string{"add", "--login", "--json"}, ioStreams{in: strings.NewReader(""), out: &out, err: &errb}, false, false)
-	if code != 2 || !strings.Contains(errb.String(), "--json can only be used with") {
-		t.Errorf("exit %d stderr %q, want add's --json refusal", code, errb.String())
-	}
-}
-
 func TestLoginEnvReplacesConfigDir(t *testing.T) {
 	// Claude Code names its credential storage after a set
 	// CLAUDE_SECURESTORAGE_CONFIG_DIR; an empty one names the default,

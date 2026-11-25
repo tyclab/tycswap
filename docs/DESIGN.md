@@ -8941,8 +8941,7 @@ session's start satisfies both:
 `TestStartTakesAnExplicitAccountAtItsLimit` (auto-switch on and off),
 `TestStartHoldsALoginAlreadyCurrentAtItsLimit`,
 `TestStartHoldsATargetFoundCurrentUnderTheLock`,
-`TestStartHoldsNothingOnceTheCurrentLoginMoved`,
-`TestStartHoldThatCannotBeWritten`, `TestStartDropsExpiredHolds`,
+`TestStartHoldsNothingOnceTheCurrentLoginMoved`, `TestStartDropsExpiredHolds`,
 `TestStartHoldHoldsEveryTrigger`, `TestStartHoldPreparesNoTarget`,
 `TestStartHoldHoldsASwitchUnderWay` (the check under `perform`'s lock),
 `TestStartHoldHoldsTheEnginesOwnSwitchOnly` (`EngineSwitch`, `HandSwitch`),
@@ -8962,7 +8961,8 @@ turned around: the move, the hold, the default selection beside it and the
 Fable tick after `--started`), `TestFableStartLoginRanksAndHolds`,
 `TestFableStartWithoutAMarkedFableLogin`,
 `TestFableStartWithoutMarksOrAutoSwitchIsAsBefore` (no file written),
-`TestFableStartAccount` and `TestFableStartOneTokenHoldsBothStores`.
+`TestStartAccountWithAFableSession` (`--account`) and
+`TestFableStartOneTokenHoldsBothStores`.
 
 ## A106. The login stays on an account that runs Mythos while a Mythos session runs
 
