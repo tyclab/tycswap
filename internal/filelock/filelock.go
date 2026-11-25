@@ -3,7 +3,8 @@
 // Implements spec 03§7 (locking.py). POSIX uses flock(LOCK_EX|LOCK_NB) with a
 // 0.1s poll and a monotonic timeout (default 10s); Windows uses LockFileEx on a
 // single byte. The lock is NON-REENTRANT — callers never nest it. A failed With
-// acquisition raises cerr.Lock (Python LockError).
+// acquisition raises cerr.Lock (Python LockError). Each acquisition tells
+// locknest which goroutine holds the file (DESIGN A118).
 package filelock
 
 import (
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/tyclab/tycswap/internal/cerr"
+	"github.com/tyclab/tycswap/internal/locknest"
 )
 
 const pollInterval = 100 * time.Millisecond
@@ -27,6 +29,7 @@ type FileLock struct {
 	mu      sync.Mutex
 	file    *os.File
 	locked  bool
+	unhold  func()
 }
 
 // New returns a FileLock for path. A non-positive timeout uses DefaultTimeout.
@@ -43,6 +46,8 @@ func (l *FileLock) Acquire(timeout time.Duration) (bool, error) {
 	if timeout <= 0 {
 		timeout = l.timeout
 	}
+	site := locknest.Here()
+	nested := locknest.Nested(l, l.path, nil, site)
 	// Serialize in-process holders: hold stays locked until Release, so a
 	// concurrent caller waits here instead of clobbering the file descriptor.
 	// It is unlocked here on any failure and by Release on success.
@@ -60,6 +65,10 @@ func (l *FileLock) Acquire(timeout time.Duration) (bool, error) {
 		l.hold.Unlock()
 		return false, err
 	}
+	info, _ := f.Stat()
+	if !nested {
+		locknest.Nested(nil, "", info, site)
+	}
 
 	start := time.Now()
 	for {
@@ -73,6 +82,7 @@ func (l *FileLock) Acquire(timeout time.Duration) (bool, error) {
 			l.mu.Lock()
 			l.file = f
 			l.locked = true
+			l.unhold = locknest.Hold(l, l.path, info, site)
 			l.mu.Unlock()
 			return true, nil
 		}
@@ -90,14 +100,17 @@ func (l *FileLock) Release() error {
 	l.mu.Lock()
 	f := l.file
 	locked := l.locked
+	unhold := l.unhold
 	l.file = nil
 	l.locked = false
+	l.unhold = nil
 	l.mu.Unlock()
 	if f == nil || !locked {
 		// Nothing held: either never acquired or already released. Do not
 		// touch hold (a failed Acquire / prior Release already unlocked it).
 		return nil
 	}
+	unhold()
 	unlock(f)
 	err := f.Close()
 	l.hold.Unlock()

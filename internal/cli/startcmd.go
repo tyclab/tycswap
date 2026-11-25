@@ -615,11 +615,16 @@ const noFableStartLogin = "no start login has a Fable login"
 // pool. start --check asks the same (DESIGN A108).
 func fableStartsOnDefault(sw *core.Switcher, account string) (autoswitch.StartSnapshot, bool, error) {
 	snap, err := readFableStartSnapshot(sw, account, false)
-	if err != nil {
-		return snap, false, err
+	toDefault := err == nil && (account != "" || len(snap.Marked) > 0 && snap.Settings.Enabled) && len(snap.Candidates) == 0
+	if observeFableStartsOnDefault != nil {
+		observeFableStartsOnDefault(snap, toDefault, err)
 	}
-	return snap, (account != "" || len(snap.Marked) > 0 && snap.Settings.Enabled) && len(snap.Candidates) == 0, nil
+	return snap, toDefault, err
 }
+
+// observeFableStartsOnDefault is a test seam, nil in production: it is told
+// of every snapshot and answer fableStartsOnDefault gives.
+var observeFableStartsOnDefault func(autoswitch.StartSnapshot, bool, error)
 
 func reportStartSelection(sw *core.Switcher, stderr io.Writer, detail string) {
 	line := startNotice(stderr, detail)

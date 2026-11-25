@@ -14,6 +14,7 @@ import (
 
 	"github.com/tyclab/tycswap/internal/cerr"
 	"github.com/tyclab/tycswap/internal/clock"
+	"github.com/tyclab/tycswap/internal/locknest"
 	"github.com/tyclab/tycswap/internal/paths"
 	"github.com/tyclab/tycswap/internal/platform"
 )
@@ -60,11 +61,12 @@ func StorageWriteLockDir() string {
 // Handle is a held proper-lockfile lock. Release stops its toucher goroutine and
 // removes the lock directory.
 type Handle struct {
-	dir  string
-	clk  clock.Clock
-	stop chan struct{}
-	done chan struct{}
-	once sync.Once
+	dir    string
+	clk    clock.Clock
+	stop   chan struct{}
+	done   chan struct{}
+	once   sync.Once
+	unhold func()
 }
 
 func Acquire(lockDir string, timeout time.Duration, clk clock.Clock) (*Handle, error) {
@@ -92,6 +94,8 @@ func acquire(lockDir string, staleness, timeout time.Duration, clk clock.Clock) 
 	if err := os.MkdirAll(filepath.Dir(lockDir), 0o700); err != nil {
 		return nil, err
 	}
+	site := locknest.Here()
+	locknest.Nested(nil, lockDir, nil, site)
 
 	start := time.Now() // monotonic reading embedded; time.Since below is monotonic.
 	for {
@@ -133,10 +137,11 @@ func acquire(lockDir string, staleness, timeout time.Duration, clk clock.Clock) 
 	}
 
 	h := &Handle{
-		dir:  lockDir,
-		clk:  clk,
-		stop: make(chan struct{}),
-		done: make(chan struct{}),
+		dir:    lockDir,
+		clk:    clk,
+		stop:   make(chan struct{}),
+		done:   make(chan struct{}),
+		unhold: locknest.Hold(nil, lockDir, nil, site),
 	}
 	heldMu.Lock()
 	held[h] = struct{}{}
@@ -193,6 +198,7 @@ func (h *Handle) Release() {
 		heldMu.Lock()
 		delete(held, h)
 		heldMu.Unlock()
+		h.unhold()
 		close(h.stop)
 		select {
 		case <-h.done:
