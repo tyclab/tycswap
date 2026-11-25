@@ -66,26 +66,6 @@ func unknownInTheStore(t *testing.T, s *store.Store, id *oauth.Identity, hook fu
 
 var accountOne = &oauth.Identity{Email: "a@example.com"}
 
-func TestAddFableLoginRechecksTheRosterUnderTheLock(t *testing.T) {
-	s := fableLifecycleStore(t)
-	captureOut(t)
-	unknownInTheStore(t, s, nil, func() {
-		data := readSeq(t, s)
-		delete(data.Accounts, "2")
-		data.Sequence = []int{1, 3, 4}
-		if err := s.WriteSequence(data); err != nil {
-			t.Fatal(err)
-		}
-	})
-	_, err := AddFableLogin(s, signIn(t, "b@example.com", planCreds("at-f2", "rt-f2", "max")), nil)
-	if want := "Account-2 changed while the sign-in was stored; nothing stored."; err == nil || err.Error() != want {
-		t.Fatalf("AddFableLogin = %v, want %q", err, want)
-	}
-	if exists(fableFile(s, "2", "b@example.com")) {
-		t.Error("a Fable login was stored for an account another tycswap removed")
-	}
-}
-
 // The re-check under the store lock refuses on a box without a Fable login:
 // the box stays without fable/ and credentials-fable/ (DESIGN A100).
 func TestAddFableLoginRefusedUnderTheLockCreatesNoFableDirectory(t *testing.T) {

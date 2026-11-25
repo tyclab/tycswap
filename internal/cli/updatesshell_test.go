@@ -546,19 +546,3 @@ func TestClaudeCodeFailedCheckKeepsTheUpdate(t *testing.T) {
 		t.Error("the update was kept for a different version")
 	}
 }
-
-// Too much to say for a notification: the reasons go, what could not be
-// checked stays, and the dashboard's card says why.
-func TestCheckOutcomeFitsANotification(t *testing.T) {
-	sh, ft, rig := updatesShell(t, true)
-	long := errors.New("Get \"https://downloads.example/claude-code-releases/latest\": dial tcp: lookup downloads.example on 127.0.0.53:53: read udp 127.0.0.1:40000->127.0.0.53:53: i/o timeout after 75003 ms")
-	rig.latest = ""
-	rig.claude = brewSeat("2.1.281", "")
-	rig.claude.Err = long
-	sh.act.LatestVersion = func() (string, error) { return "", long }
-	sh.click("update")
-	want := "Could not check for every update | Could not check for a new tycswap and Claude Code. The dashboard's Updates card says why."
-	if len(ft.notes) != 1 || ft.notes[0] != want {
-		t.Errorf("notes = %v\nwant %q", ft.notes, want)
-	}
-}

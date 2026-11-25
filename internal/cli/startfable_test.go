@@ -264,8 +264,9 @@ func TestStartOverridesKeepAFableSessionUnchanged(t *testing.T) {
 
 // --account with a Fable session selects the default login and is the Fable
 // store's sole candidate: with a usable Fable login the Fable store moves to
-// it; without one (here its plan offers no Fable) the session starts on the
-// default login and the Fable store does not move (DESIGN A105).
+// it; without one (its plan offers no Fable, or it has no Fable login at all)
+// the session starts on the default login and the Fable store does not move
+// (DESIGN A105).
 func TestStartAccountWithAFableSession(t *testing.T) {
 	for _, state := range []string{"on", "unknown"} {
 		for _, plan := range []string{"pro", "max"} {
@@ -317,6 +318,17 @@ func TestStartAccountWithAFableSession(t *testing.T) {
 			})
 		}
 	}
+	t.Run("no Fable login at all", func(t *testing.T) {
+		usage := map[string][3]float64{"1": {10, 20, 10}, "2": {10, 20, 10}, "3": {10, 20, 30}, "4": {10, 20, 30}}
+		sw, rec := fableStartLogin(t, fableTickFixture{def: "1", live: "1", logins: []string{"1", "2"}, usage: usage})
+		stderr := startFable(t, "--account", "3")
+		if stderr != fableStartNotice+"tycswap start: Switched to start login Account-3.\n" {
+			t.Fatalf("stderr %q", stderr)
+		}
+		if !strings.Contains(storeLive(t, sw), "at-f1") || !strings.Contains(defaultLive(t, sw), "at-d3") || envValue(rec.env, secureStorageVar) != "" {
+			t.Fatalf("Fable store %s, default login %s", storeLive(t, sw), defaultLive(t, sw))
+		}
+	})
 }
 
 func TestStartOnWindowsMatchesTheVariableCaseInsensitively(t *testing.T) {

@@ -349,6 +349,19 @@ func TestSettingsIntOutOfRangeIsRefusedWithTheMessage(t *testing.T) {
 	if want := `autoswitch.unhealthyTicks expects an integer, got "x"`; s.editError != want {
 		t.Fatalf("editError = %q, want %q", s.editError, want)
 	}
+	// An emptied input too: the input stays open and nothing is written.
+	for s.input != "" {
+		s.update(m, keyPress("backspace"))
+	}
+	if cmd := s.update(m, keyPress("enter")); cmd != nil || !s.editing {
+		t.Fatalf("an empty value: action %v, editing %v; want none and the input open", cmd != nil, s.editing)
+	}
+	if want := `autoswitch.unhealthyTicks expects an integer, got ""`; s.editError != want {
+		t.Fatalf("editError = %q, want %q", s.editError, want)
+	}
+	if readSettings(t, dir) != nil {
+		t.Fatal("an empty value must not be written")
+	}
 }
 
 func TestSettingsFloatPersistsAndMovesTheBarTick(t *testing.T) {
@@ -367,26 +380,6 @@ func TestSettingsFloatPersistsAndMovesTheBarTick(t *testing.T) {
 	}
 	if m.thresholdPct == nil || *m.thresholdPct != 80 {
 		t.Fatalf("dashboard bar tick = %v, want 80 after the write", m.thresholdPct)
-	}
-}
-
-// An emptied input is refused inline with the message `tycswap config set`
-// gives, the input stays open and nothing is written.
-func TestSettingsEmptyValueIsRefusedInline(t *testing.T) {
-	m, s, dir := settingsModel(t)
-	selectKey(t, s, "autoswitch.sevenDayThreshold")
-	s.update(m, keyPress("enter"))
-	for s.input != "" {
-		s.update(m, keyPress("backspace"))
-	}
-	if cmd := s.update(m, keyPress("enter")); cmd != nil {
-		t.Fatal("an empty value must start no action")
-	}
-	if want := `autoswitch.sevenDayThreshold expects a number, got ""`; !s.editing || s.editError != want {
-		t.Fatalf("editing=%v editError=%q, want the input open with %q", s.editing, s.editError, want)
-	}
-	if readSettings(t, dir) != nil {
-		t.Fatal("an empty value must not be written")
 	}
 }
 

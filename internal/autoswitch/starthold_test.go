@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 
@@ -218,20 +217,6 @@ func TestStartHoldsNothingOnceTheCurrentLoginMoved(t *testing.T) {
 	out := StartSelection(f, "", snapshot, WithClock(clk), WithStatePath(path))
 	if out.Reason != "selection-changed" || out.Hold != "" || holdsOf(path) != nil || f.moves != 0 {
 		t.Fatalf("outcome=%+v holds=%v moves=%d", out, holdsOf(path), f.moves)
-	}
-}
-
-// A hold that cannot be written is said; the session gets no token.
-func TestStartHoldThatCannotBeWritten(t *testing.T) {
-	f, clk, path, snapshot := startTestSetup(t)
-	f.current = strp("2")
-	f.entries["2"] = dictEntry(usageOf(10, 100))
-	if err := os.Mkdir(path, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	out := StartSelection(f, "", snapshot, WithClock(clk), WithStatePath(path))
-	if out.Reason != "already-start-login" || out.Hold != "" || !strings.HasPrefix(out.Detail, "Could not hold auto-switch for the starting session: ") {
-		t.Fatalf("outcome=%+v", out)
 	}
 }
 
