@@ -10018,3 +10018,104 @@ is removed), `TestSnapshotsDoNotShareOwnershipReads`,
 `TestCredentialOwnersAsRecorded` the owners as recorded before;
 `TestReadOAuthIdentityKeepsItsTolerance` the identity read against the
 whole-file decode.
+
+## A117. One state build is one read operation, and what no session owns is read once
+
+**Why.** After A116, on the operator's box (2026-11-25, 0.23.1: 8 accounts,
+four former session profiles with a 200 to 300 KiB `.claude.json` each, 12
+linked sessions), `tycswap app --headless` still used 43 % of a core: one
+dashboard state build cost about 2 CPU-seconds every 5 seconds, 77 % of it in
+the session moves. `buildState` asked `SessionMoves` and `SessionLogin` once
+per session; `sessionMoveChoices` tries three destinations, and
+`sessionDestination` recomputed for each what does not depend on the session:
+the Fable start snapshot, the Mythos selection, each login's verified owner.
+Each of those was a read operation of its own, and the settings list asked the
+Auto view a second time. The cost grew with sessions × destinations × accounts.
+
+**One build, one read operation.** `web.Deps.BuildReads` gives each state
+build its own `web.StateReads`: functions for the snapshot, the token-status
+listing, the current login, the Auto view, the next start and each session's
+login and moves. `buildState` asks for them once, at its start, and reads
+through nothing else; the settings list takes the build's Auto view. The
+dashboard's (`dashboard.buildReads`) are one `Store.OneRead` copy (A116) for
+the snapshot, the listing, the current login and the Auto view
+(`autoFacade.viewIn`), and one shared `placementInputs` over the same copy for
+the sessions. Without `BuildReads` a build reads through the façades as before.
+
+**Read once for every session.** Shared, `placementInputs` reads once the
+Fable store's state, the Fable start snapshot's answer (`fableStartsOnDefault`
+for no account), the Mythos move placement (`mythosMovePlacement`), each
+login's roster, verified owner (`verifiedLoginOwner`; `loginOwner.of` names the
+login in its refusal) and cached usage, by login (the default login, the
+Fable store), and each link target's owner label
+(`reporting.SessionLoginOwner`). Each session is judged against them with its
+own link record: its target, held choice and family, the refresh lock of its
+source (`InspectSessionLink`, `SessionTargetAvailable`) and the parked or
+recovered Fable check. A preview is explicit and never asks the Fable room
+rule, so that is not kept. `sessionMoveChoices` and `sessionLogin` (the
+terminal menu) and every decision read through an unshared `placementInputs`,
+which reads every input on every question as before.
+
+**What stays apart.** A build's reads live in the `StateReads` its build holds
+and end with it. Two builds that overlap read each their own, so the later
+one reports what holds at its start; the hub still drops the older document
+(A26). `StateReads` holds reads only: the mutation routes call the façades of
+`Deps`, whose stores carry no memo, so a switch's guards and a session move's
+decision read afresh as before.
+
+**Every move stays per session.** `tycswap use`, the status line, the
+dashboard's move route and the tick decide inside the A109 move guard on their
+own reads (`placementFor(…, false)`), as before. A tick pass could share its
+inputs only by checking them again under each session's guard: between two
+sessions of a pass another process can switch the Fable store, or a fetch
+rewrite the usage cache, and the second session must see it. So
+`placeFableSessions` keeps one decision, with its own Fable start snapshot,
+per session.
+
+**Measured.** On the tests' fixture (8 accounts, three former profiles, an
+Opus group, the Fable store, Mythos logins on two accounts, every account a
+start login) one state build with 1, 4 and 12 linked sessions read an
+identity file up to 8, 20 and 52 times (68, 170 and 442 reads), scanned a
+profile up to 6, 15 and 39 times, read the roster 657, 951 and 1,735 times and
+took 1, 4 and 12 Fable start snapshots; now each identity file and profile
+once (11 and 9 reads), the roster 465 to 467 times and one snapshot, whatever
+the number of sessions. `BenchmarkStateBuild` (four 250 KiB identity files,
+12 linked sessions): 3.5 s, 167 MB and 1.11 million allocations per build
+before, 0.37 s, 22 MB and 286,000 after, on a loaded box. On the operator's
+store, the snapshot store-only, one whole build cost 2.9 CPU-seconds on
+0.23.1 and 0.45 after, measured back to back under the same load.
+
+**Limits.** A tick pass over 12 Fable sessions still takes 12 Fable start
+snapshots (343 identity reads of 4 files and 877 roster reads on the tests'
+Fable fixture, as before). What A116 reads per question is still read per
+question: `CredentialOwner` is two thirds of the build's CPU left, and grows
+with accounts, not sessions. Each session's link record is read twice per
+build, for its login and for its moves, each time parsing `default_models.json`.
+
+**Found while measuring, not changed here.** A placement for Fable decided
+inside the move guard holds `<root>/.lock` (`reporting.withSessionRecords`)
+and reads the Fable start snapshot there; `BuildAccountsInfo` reads the
+credential of an account a profile or group owns through
+`Store.ReadOwnedCredentials`, which takes the same lock file through its own
+`FileLock`. The second lock waits its 10 seconds and the credential is read as
+empty, twice per snapshot: one tick placement of one Fable session took 60 s
+on the tests' ownership fixture, 0.09 s outside the guard. The decision uses
+the pool and the candidates only and comes out the same. Two ticks watched on
+the operator's box did not wait.
+
+**Tests.** In `cli`, on Linux: `TestStateBuildReadsEachInputOncePerBuild` (1,
+4 and 12 linked sessions, through `dashboardDeps`, newDashboard's wiring, with
+the test's session list), `TestStateBuildWithTokenStatusReadsEachInputOnce`,
+`TestStateBuildsDoNotShareTheirReads` (overlapping and in turn: a profile's
+identity, the default config and the default login changed between the two),
+`TestMutationsDuringAStateBuildReadAfresh` (a switch to an account a running
+profile signed in as; a move to a default login no longer verified),
+`TestStateBuildAnswersEachSessionAsAlone` (nine sessions on every kind of
+login, held and not, one refreshing, one on a login no account owns, in ten
+states, five of them against the answers recorded before),
+`TestFablePlacementDecidesEachSessionOnItsOwnReads`,
+`TestFablePlacementPassSeesAFableStoreSwitchBetweenSessions` and
+`BenchmarkStateBuild`; in `web`, `TestEachStateBuildReadsThroughItsOwnReads`.
+`ownertest` counts roster reads (`store.ObserveRosterRead`) and can mark start
+logins and give accounts Mythos logins; `observeFableStartSnapshot` counts
+Fable start snapshots.

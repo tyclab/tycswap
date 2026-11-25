@@ -25,6 +25,7 @@ import (
 	"github.com/tyclab/tycswap/internal/brand"
 	"github.com/tyclab/tycswap/internal/browser"
 	"github.com/tyclab/tycswap/internal/cerr"
+	codexswitcher "github.com/tyclab/tycswap/internal/codex/switcher"
 	"github.com/tyclab/tycswap/internal/core"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/providers"
@@ -303,36 +304,11 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 		updates = host
 	}
 	d := &dashboard{sw: sw, auto: auto, codex: codex}
-	srv, err := web.New(web.Deps{
-		Facade:             sw,
-		Snapshot:           providers.NewMultiSnapshotSource(ctx, sw, codexSw),
-		Accounts:           dashboardAccounts{Switcher: sw, dashboard: d},
-		Codex:              codex,
-		Fable:              quietFable{sw},
-		Settings:           settingsFacade{root: sw.BackupDir()},
-		Auto:               auto,
-		AutoEvents:         auto.Events(),
-		Updates:            updates,
-		UpdatesOwnSchedule: host == nil || o.noUpdateSchedule,
-		RemoteToken:        o.remoteToken,
-		AccountSetup:       openAccountSetup,
-		UIPrefs:            uiPrefs{path: appStatePath(sw.BackupDir())},
-		// The live login's email, for the "Add your current login" callout
-		// (A27); the store reads it from Claude Code's config file.
-		CurrentLogin: func() (string, bool) {
-			email, _, ok := sw.GetCurrentAccount()
-			return email, ok && email != ""
-		},
-		Sessions: web.SessionsIn(sw.BackupDir()),
-		Kill:     web.DefaultKill,
-		Interval: time.Duration(interval * float64(time.Second)),
-		Logger: func(m string) {
-			if debug {
-				fmt.Fprintln(s.err, m)
-			}
-		},
-		ActionLog: sw.Log.Action,
-	})
+	deps := dashboardDeps(ctx, d, codexSw, interval, debug, s)
+	deps.Updates = updates
+	deps.UpdatesOwnSchedule = host == nil || o.noUpdateSchedule
+	deps.RemoteToken = o.remoteToken
+	srv, err := web.New(deps)
 	if err != nil {
 		errorTo(s.err, "Error: "+err.Error())
 		return nil, 1
@@ -343,6 +319,42 @@ func newDashboard(ctx context.Context, interval float64, debug bool, s ioStreams
 	}
 	d.srv = srv
 	return d, 0
+}
+
+// dashboardDeps is the dashboard's wiring over d's switcher, engine host and
+// Codex façade, which newDashboard serves with its updates and remote token.
+func dashboardDeps(ctx context.Context, d *dashboard, codexSw *codexswitcher.Switcher, interval float64, debug bool, s ioStreams) web.Deps {
+	sw := d.sw
+	return web.Deps{
+		Facade:       sw,
+		Snapshot:     providers.NewMultiSnapshotSource(ctx, sw, codexSw),
+		Accounts:     dashboardAccounts{Switcher: sw, dashboard: d},
+		Codex:        d.codex,
+		Fable:        quietFable{sw},
+		Settings:     settingsFacade{root: sw.BackupDir()},
+		Auto:         d.auto,
+		AutoEvents:   d.auto.Events(),
+		AccountSetup: openAccountSetup,
+		UIPrefs:      uiPrefs{path: appStatePath(sw.BackupDir())},
+		CurrentLogin: func() (string, bool) { return currentLogin(sw) },
+		BuildReads:   d.buildReads(ctx, codexSw),
+		Sessions:     web.SessionsIn(sw.BackupDir()),
+		Kill:         web.DefaultKill,
+		Interval:     time.Duration(interval * float64(time.Second)),
+		Logger: func(m string) {
+			if debug {
+				fmt.Fprintln(s.err, m)
+			}
+		},
+		ActionLog: sw.Log.Action,
+	}
+}
+
+// currentLogin is the live login's email, for the "Add your current login"
+// callout (A27); the store reads it from Claude Code's config file.
+func currentLogin(sw *core.Switcher) (string, bool) {
+	email, _, ok := sw.GetCurrentAccount()
+	return email, ok && email != ""
 }
 
 func renderWebHelp(prog string, out io.Writer) int {
