@@ -10234,5 +10234,13 @@ states), `TestTheFableStartSnapshotOutsideTheGuardTakesTheStoreLock` and, in
 the read wait); in `locknest`, `TestNestingNamesBothSites`,
 `TestAnotherGoroutineIsNoNesting` and `TestNestingFailsTheTestBinary`; in
 `filelock` and `cclock`, `TestNestedAcquisitionFailsAtOnce`, and in
-`filelock` `TestContendingGoroutinesStillWait`. The reproduction took 60.4 s
+`filelock` `TestContendingGoroutinesStillWait`. `Lend`'s contract, in
+`filelock`: `TestALentLockTakesTheLendersHold` (the file stays held against
+other locks meanwhile), `TestOnlyAHeldLockCanBeLent`,
+`TestALentLockTakesTheFileOnceTheLendingEnds`,
+`TestALentLockHasOneHolderAtATime` and `TestLendWaitsForAHolderOfTheLentLock`
+(a goroutine still waiting for the lent lock as the lending ends goes to the
+file); in `reporting`, `TestAStoreKeptFromTheGuardTakesTheStoreLockAfterIt`.
+They wait on what a goroutine is doing, read from the goroutine dump
+(`testutil.Parked`), never on a duration. The reproduction took 60.4 s
 before and 0.08 to 0.11 s after, on a box at a load of about 100.

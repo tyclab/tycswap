@@ -2,9 +2,12 @@ package testutil
 
 import (
 	"errors"
+	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/tyclab/tycswap/internal/filelock"
 	"github.com/tyclab/tycswap/internal/locknest"
@@ -60,4 +63,26 @@ func NestedLocks(t testing.TB) func() []locknest.Nesting {
 		defer mu.Unlock()
 		return slices.Clone(seen)
 	}
+}
+
+// Parked reports true once a goroutine running frame is parked with wait
+// reason state (a goroutine dump's "sleep", "sync.Mutex.Lock"), false once
+// done reports true first. It polls the goroutine dump: a test waits on what
+// a goroutine is doing, not on a duration.
+func Parked(done func() bool, frame, state string) bool {
+	buf := make([]byte, 1<<16)
+	for !done() {
+		n := runtime.Stack(buf, true)
+		if n == len(buf) {
+			buf = make([]byte, 2*len(buf))
+			continue
+		}
+		for _, g := range strings.Split(string(buf[:n]), "\n\n") {
+			if head, _, _ := strings.Cut(g, "\n"); strings.Contains(head, "["+state) && strings.Contains(g, frame) {
+				return true
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return false
 }
