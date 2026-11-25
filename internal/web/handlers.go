@@ -1022,9 +1022,14 @@ func (s *Server) handleSettingsList(w http.ResponseWriter, r *http.Request) {
 // serve loop and to a request at once. The caller has checked that Settings
 // is set.
 func (s *Server) settingsViews() []SettingView {
+	return s.settingsList(s.d.Auto != nil && s.d.Auto.View().Owner != "")
+}
+
+// settingsList is the settings as listed while managed, a scheduler named by
+// the Auto view runs the ticks, or not.
+func (s *Server) settingsList(managed bool) []SettingView {
 	eff := s.d.Settings.Effective()
 	list := make([]SettingView, 0, len(eff))
-	managed := s.d.Auto != nil && s.d.Auto.View().Owner != ""
 	for _, sv := range eff {
 		if managed && sv.Key == "autoswitch.intervalSeconds" {
 			continue

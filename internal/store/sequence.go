@@ -41,8 +41,15 @@ const (
 	seqUnreadable                      // the file is there but yields no roster: corruption
 )
 
+// ObserveRosterRead is a test seam, nil in production: it is told of every
+// read of sequence.json.
+var ObserveRosterRead func()
+
 // Classified from this one read, not a later Stat: a file created or removed in between would flip the answer.
 func (s *Store) readSequenceState() (*SequenceData, sequenceState, string, error) {
+	if ObserveRosterRead != nil {
+		ObserveRosterRead()
+	}
 	raw, err := os.ReadFile(s.SequenceFile)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
