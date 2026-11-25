@@ -46,7 +46,7 @@ func TestHumanMenuGate(t *testing.T) {
 
 func TestMenuWhileTrayRuns(t *testing.T) {
 	appLockHome(t)
-	lock, held, err := acquireAppLock()
+	lock, held, err := heldElsewhere(acquireAppLock)
 	if err != nil || !held {
 		t.Fatal(err)
 	}

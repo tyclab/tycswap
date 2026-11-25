@@ -1,6 +1,7 @@
 package filelock
 
 import (
+	"errors"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -34,20 +35,36 @@ func TestAcquireReleaseReacquire(t *testing.T) {
 	}
 }
 
+// holdElsewhere takes the lock at path on a goroutine of its own, as another
+// process would hold it: the test's goroutine asking for a file it held
+// itself would be a nesting (DESIGN A118).
+func holdElsewhere(t *testing.T, path string) *FileLock {
+	t.Helper()
+	l := New(path, DefaultTimeout)
+	took := make(chan error)
+	go func() {
+		ok, err := l.Acquire(time.Second)
+		if err == nil && !ok {
+			err = errors.New("the lock is busy")
+		}
+		took <- err
+	}()
+	if err := <-took; err != nil {
+		t.Fatalf("holder Acquire failed: %v", err)
+	}
+	return l
+}
+
 func TestContentionTimesOut(t *testing.T) {
 	// Two independent open file descriptions on the same path contend under
 	// flock, mirroring two processes.
 	path := filepath.Join(t.TempDir(), "tycswap.lock")
-	holder := New(path, DefaultTimeout)
-	ok, err := holder.Acquire(time.Second)
-	if err != nil || !ok {
-		t.Fatalf("holder Acquire failed: %v", err)
-	}
+	holder := holdElsewhere(t, path)
 	defer holder.Release()
 
 	other := New(path, DefaultTimeout)
 	start := time.Now()
-	ok, err = other.Acquire(500 * time.Millisecond)
+	ok, err := other.Acquire(500 * time.Millisecond)
 	if err != nil {
 		t.Fatalf("contended Acquire error: %v", err)
 	}
@@ -69,10 +86,7 @@ func TestContentionTimesOut(t *testing.T) {
 
 func TestWithReturnsLockErrorOnContention(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tycswap.lock")
-	holder := New(path, DefaultTimeout)
-	if ok, err := holder.Acquire(time.Second); err != nil || !ok {
-		t.Fatalf("holder Acquire failed: %v", err)
-	}
+	holder := holdElsewhere(t, path)
 	defer holder.Release()
 
 	other := New(path, 300*time.Millisecond)

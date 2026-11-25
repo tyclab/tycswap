@@ -225,7 +225,9 @@ func (l *FileLock) Release() error                       // safe twice
 func (l *FileLock) With(fn func() error) error           // ctx-manager form → cerr.Lock on false
 ```
 POSIX `unix.Flock(fd, LOCK_EX|LOCK_NB)` 0.1s poll; Windows `LockFileEx` 1 byte.
-**Non-reentrant** — documented; callers never nest.
+**Non-reentrant** — documented; callers never nest. Since A118 a goroutine
+asking for a file it holds is refused at once, and code running under a held
+lock takes the lock it lends (`Lend`).
 
 Three measured facts (Linux; Windows status is A20 Known limitation (vii))
 govern every caller built on `FileLock`, and are load-bearing for A20's RULE 4:
@@ -10094,16 +10096,8 @@ question: `CredentialOwner` is two thirds of the build's CPU left, and grows
 with accounts, not sessions. Each session's link record is read twice per
 build, for its login and for its moves, each time parsing `default_models.json`.
 
-**Found while measuring, not changed here.** A placement for Fable decided
-inside the move guard holds `<root>/.lock` (`reporting.withSessionRecords`)
-and reads the Fable start snapshot there; `BuildAccountsInfo` reads the
-credential of an account a profile or group owns through
-`Store.ReadOwnedCredentials`, which takes the same lock file through its own
-`FileLock`. The second lock waits its 10 seconds and the credential is read as
-empty, twice per snapshot: one tick placement of one Fable session took 60 s
-on the tests' ownership fixture, 0.09 s outside the guard. The decision uses
-the pool and the candidates only and comes out the same. Two ticks watched on
-the operator's box did not wait.
+**Found while measuring.** A placement for Fable decided inside the move
+guard waited for the store lock the guard held; A118 fixes it.
 
 **Tests.** In `cli`, on Linux: `TestStateBuildReadsEachInputOncePerBuild` (1,
 4 and 12 linked sessions, through `dashboardDeps`, newDashboard's wiring, with
@@ -10121,3 +10115,134 @@ states, five of them against the answers recorded before),
 `ownertest` counts roster reads (`store.ObserveRosterRead`) and can mark start
 logins and give accounts Mythos logins; `observeFableStartSnapshot` counts
 Fable start snapshots.
+
+## A118. A read inside the session move guard takes the guard's lock, not the file again
+
+**Why.** The A109 move guard holds `<root>/.lock` through a `FileLock` of
+its own (`reporting.withSessionRecords`), then `.default_models.lock`, and
+decides the move inside. Since 0.20.0 a decision for a Fable destination
+reads the Fable start snapshot there (`fableStartsOnDefault`), which builds
+`BuildAccountsInfo` twice (`FableWindowNames`, `UsageEntriesByAccount`). For
+an account a former session profile or a session group owns, that reads the
+credential through `Store.ReadOwnedCredentials`, which takes `s.Lock`: the
+same file through a second `FileLock`. `flock` refuses it to the process
+that holds it, so the read polled for `filelock.DefaultTimeout` and came back
+empty, per such account and twice per snapshot, with the store lock held all
+the while. On the ownership fixture (two former profiles and the Opus group
+own an account) one tick placement of one Fable session took 60.4 s, the
+same snapshot outside the guard under 0.1 s. The tick, the status line
+(`auto --observe`), `tycswap use fable`, the dashboard's move route and the
+allocation answer reached it whenever the destination was Fable and the
+Fable store usable.
+
+**The guard lends its lock.** `FileLock.Lend` runs a function with a lock for
+the same file that the code it calls takes instead of the file while the
+lender holds it: its `Acquire` succeeds at once and asks the file nothing,
+one holder at a time; once the function has returned it is an ordinary lock
+again. `Store.UnderLock` is a copy of the store with such a lock as its
+`Lock`; copies made from it (`OneRead`, `ForFable`, `WithoutLineageWrites`)
+keep it. The move guard lends its hold of `<root>/.lock`, and `decide` now
+receives `MoveSessionLink`'s view under it: the five entries and the
+Mythos tick's and `switch --store mythos`'s moves read through that store.
+`ReadOwnedCredentials` there runs under the guard's hold, and so does every
+other store-lock taker the decision can reach (below).
+
+**What the lock protects.** Inside the guard the file stays held by the
+guard for the whole decision, so the owner and the credential
+`ReadOwnedCredentials` reads still belong together against every other
+process, and the lent lock serializes the decision's own holders as the
+store's lock serializes a process's. Outside the guard nothing changes: each
+store keeps its own lock and takes the file, and a holder in another process
+or goroutine makes it wait.
+
+**What the wait changed.** The credential `BuildAccountsInfo` reads feeds
+only the usage collection's static sentinel (an API key, no credential, an
+owned login expired), a fetch (none here: placement's views have no OAuth
+client and fetch nothing), `list`'s token status and the duplicate-account
+warnings. Plan (`RecordPlan`), usage identity (the roster's email and
+organization) and "sign in again" (the Fable quarantine) come from
+elsewhere. In the decisions the empty
+credential reached only the snapshot's usage entries, as `no credentials`
+for the owned accounts, and the policy view's serving readings behind
+`FableWindowNames`, which takes the last good readings only. Start's answer
+is the marked accounts, auto-switch and the candidates; the room rule and
+the Mythos placement read the cached usage directly. No decision differed,
+in nine states that vary each of these inputs. The wait did change two
+outcomes: an explicit move retries a busy client for up to 9 s (A109) and
+refuses to commit past that deadline, so `tycswap use fable` and the
+dashboard's move to the Fable store failed with
+`timed out preparing the session move` after about a minute. The tick, the
+status line and the allocation answer moved the session, a minute late.
+
+**A nested request fails at once.** `locknest` records which goroutine holds
+each `filelock` and `cclock` lock, by its number in the goroutine's stack
+header, and is asked before either waits. A goroutine that asks for a lock
+file it holds, through the same lock, another lock on the path or the file
+under another path, is refused at once with what its timeout would give
+(`false`, Claude Code's lock timeout): it is the holder the wait would wait
+for, so the wait could end only in that answer, 10 s later, unless another
+goroutine released the holder's lock for it, which no tycswap code does (the
+sweep below).
+Another goroutine's request waits as before, and other processes see no
+change. In a test binary a nesting panics on a fresh goroutine, which the
+code under test cannot recover, naming the lock and both call sites, unless
+a test observes nestings (`testutil.NestedLocks`). A test that stands in for
+another holder holds the lock on a goroutine of its own (`testutil.HoldLock`);
+25 tests did so on their own goroutine and passed only because the nested
+request timed out. An acquisition and release take about 15 µs and 5
+allocations more (the goroutine's number, 48 frames, a `Stat` of the lock
+file): 34 µs against 16 µs on a loaded box.
+
+**What the sweep found.** The suite run with every nesting recorded found 39
+in those 25 tests and none in tycswap's own code. A call graph (VTA) from the
+span of every holder of `<root>/.lock`, `.default_models.lock`, the Fable
+store's locks and the engine state locks found a second acquisition of a
+lock held only from the move guard's decisions: `ReadOwnedCredentials` (the
+fault), `SequenceMigrated`'s organization backfill (only for a roster
+without organization fields), the harvest's `withTripleLock` and a usage
+fetch's `RefreshBackupGuarded` (neither runs without an OAuth client). All
+four now run under the lent lock. The engine state lock reaches
+`RenumberLive` and `stampedSwitch` only through the first-run setup, which
+needs an empty roster in the middle of a switch, and they lock the Fable
+engine's state file, not the root one. The other holders' spans call their
+lock takers one after another, outside the held span.
+
+**Rejected.** A reentrant `FileLock`, per goroutine: it hides the class
+instead of catching it and is wrong for a decision that hands work to other
+goroutines. Dropping the lock from `ReadOwnedCredentials`, a shorter
+timeout, the decision outside the guard (A109). A store flag that skips the
+lock in `ReadOwnedCredentials` alone: the lent lock covers every store-lock
+taker on the view, in every package. Taking the guard's `.lock` through the
+store's own `FileLock`: its in-process `hold` mutex ignores the move's
+deadline (F3, §2.8) and the nested read would block on it for good. A
+placement snapshot without credentials: start and placement would read
+different inputs. Failing at once only in tests: production would keep a
+10-second wait whose only possible end is the same refusal.
+
+**Limits.** A holder that waits for a goroutine of its own, which asks for
+the same file, still waits out that goroutine's timeout: the check knows
+goroutines, not who waits for whom. A lent lock used after its lending ended
+takes the file, as any lock does.
+
+**Tests.** `TestFableMovesDecideWithoutANestedLock` (in `cli`, Linux: the
+tick, the status line, `use fable`, the dashboard's move and the allocation
+answer on the ownership fixture: no nested request, the Fable start snapshot
+read inside the guard equals the one read outside, it is read while the
+store lock is held, and the move goes where the decision outside the guard
+sends it), `TestTheEmptyOwnedCredentialChangedNoDecision` (the nested read
+reproduced inside the guard, its answers against those outside in nine
+states), `TestTheFableStartSnapshotOutsideTheGuardTakesTheStoreLock` and, in
+`store`, `TestReadOwnedCredentialsTakesTheStoreLock` (a holder elsewhere makes
+the read wait); in `locknest`, `TestNestingNamesBothSites`,
+`TestAnotherGoroutineIsNoNesting` and `TestNestingFailsTheTestBinary`; in
+`filelock` and `cclock`, `TestNestedAcquisitionFailsAtOnce`, and in
+`filelock` `TestContendingGoroutinesStillWait`. `Lend`'s contract, in
+`filelock`: `TestALentLockTakesTheLendersHold` (the file stays held against
+other locks meanwhile), `TestOnlyAHeldLockCanBeLent`,
+`TestALentLockTakesTheFileOnceTheLendingEnds`,
+`TestALentLockHasOneHolderAtATime` and `TestLendWaitsForAHolderOfTheLentLock`
+(a goroutine still waiting for the lent lock as the lending ends goes to the
+file); in `reporting`, `TestAStoreKeptFromTheGuardTakesTheStoreLockAfterIt`.
+They wait on what a goroutine is doing, read from the goroutine dump
+(`testutil.Parked`), never on a duration. The reproduction took 60.4 s
+before and 0.08 to 0.11 s after, on a box at a load of about 100.

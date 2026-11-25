@@ -122,11 +122,7 @@ func TestFetchActiveUsageSkipReason_WriteError(t *testing.T) {
 func TestFetchActiveUsageSkipReason_LockContention(t *testing.T) {
 	s, creds := refreshingStore(t, nil)
 	s.Lock = filelock.New(s.LockFile, 20*time.Millisecond)
-	holder := filelock.New(s.LockFile, time.Second)
-	if ok, err := holder.Acquire(time.Second); err != nil || !ok {
-		t.Fatalf("holder.Acquire = (%v, %v)", ok, err)
-	}
-	t.Cleanup(func() { _ = holder.Release() })
+	testutil.HoldLock(t, s.LockFile)
 	assertSkip(t, fetchActiveUsage(s, "1", skipEmail, creds),
 		"refresh discarded: Failed to acquire lock - another instance may be running")
 }

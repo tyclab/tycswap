@@ -99,11 +99,11 @@ func placeFableSessions(sw *core.Switcher) {
 		if link.Family != "fable" || link.Wanted != "" {
 			continue
 		}
-		err := reporting.MoveSessionLink(sw.Store, "tick", link.ID, filepath.Join(root, "links", link.Token), false, func(rec *reporting.SessionLink) error {
+		err := reporting.MoveSessionLink(sw.Store, "tick", link.ID, filepath.Join(root, "links", link.Token), false, func(locked *store.Store, rec *reporting.SessionLink) error {
 			if rec.Family != "fable" || rec.Wanted != "" || !autoSwitchOn(root) {
 				return nil
 			}
-			target, _, err := sessionDestination(placementFor(sw.Store, false), rec, "fable", "fable", false)
+			target, _, err := sessionDestination(placementFor(locked, false), rec, "fable", "fable", false)
 			if err != nil || target.dir == "" || target.dir == rec.Target || target.allocation != "" {
 				return err
 			}

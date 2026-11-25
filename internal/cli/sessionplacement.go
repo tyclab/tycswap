@@ -90,8 +90,6 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 	if requested == "" && (strings.TrimSpace(reportedModel) == "" || !sessionUUID.MatchString(id)) {
 		return result, nil
 	}
-	place := placementFor(sw.Store, false)
-	view := place.view
 	var repair []reporting.SessionLinkRecovery
 	if expected == "" {
 		source := reporting.SessionLinkRecovery{ObservedFamily: family}
@@ -103,9 +101,11 @@ func evaluateSessionPlacement(sw *core.Switcher, id, path, reportedModel, reques
 		}
 		repair = append(repair, source)
 	}
-	err := reporting.MoveSessionLink(sw.Store, actor, id, path, requested != "", func(rec *reporting.SessionLink) error {
+	err := reporting.MoveSessionLink(sw.Store, actor, id, path, requested != "", func(locked *store.Store, rec *reporting.SessionLink) error {
 		// Explicit use can retry after a client refresh. Each attempt produces its own result.
 		result = sessionMoveResult{}
+		place := placementFor(locked, false)
+		view := place.view
 		if expected != "" && (rec.Question != expected || rec.Family != family) {
 			return errors.New("the session changed while awaiting the placement answer")
 		}
@@ -206,7 +206,7 @@ func answerSessionQuestion(sw *core.Switcher, q sessionQuestion, granted bool, a
 	} else if !granted {
 		answer = "/declined"
 	}
-	err := reporting.MoveSessionLink(sw.Store, q.actor, q.id, q.path, false, func(rec *reporting.SessionLink) error {
+	err := reporting.MoveSessionLink(sw.Store, q.actor, q.id, q.path, false, func(_ *store.Store, rec *reporting.SessionLink) error {
 		if rec.Question != q.claim || rec.Family != reporting.ClaudeFamily(q.model) {
 			return errors.New("the session changed while awaiting the placement answer")
 		}

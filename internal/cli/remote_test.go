@@ -1034,7 +1034,7 @@ func TestRemoteClientFollowsNoRedirect(t *testing.T) {
 // Two remote trays cannot run: the second says so like the local app does.
 func TestRemoteModeIsSingleInstance(t *testing.T) {
 	appLockHome(t)
-	lock, held, err := acquireRemoteLock()
+	lock, held, err := heldElsewhere(acquireRemoteLock)
 	if err != nil || !held {
 		t.Fatalf("first lock: %v, %v", held, err)
 	}

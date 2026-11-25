@@ -374,15 +374,10 @@ func TestLockedSpansFailClosedWhenTheLockIsHeld(t *testing.T) {
 			s := op.seed(t)
 			s.Lock = filelock.New(s.LockFile, 250*time.Millisecond)
 
-			holder := filelock.New(s.LockFile, 5*time.Second)
-			ok, err := holder.Acquire(5 * time.Second)
-			if err != nil || !ok {
-				t.Fatalf("precondition: could not hold the lock (%v, %v)", ok, err)
-			}
-			defer holder.Release()
+			defer testutil.HoldLock(t, s.LockFile)()
 
 			before := snapshotStore(t, s)
-			err = op.run(s)
+			err := op.run(s)
 			if errKind(err) != "LockError" {
 				t.Fatalf("%s with the lock held: want LockError, got %v (%q)", op.name, err, errKind(err))
 			}

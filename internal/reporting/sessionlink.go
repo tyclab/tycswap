@@ -230,15 +230,17 @@ func LinkedSessions(root string) ([]SessionLink, error) {
 	return links, nil
 }
 
-func withLinkRecords(root string, deadline time.Time, fn func(map[string]defaultSessionModel) error) error {
+func withLinkRecords(root string, deadline time.Time, fn func(map[string]defaultSessionModel, *filelock.FileLock) error) error {
 	if _, err := linksDir(root); err != nil {
 		return err
 	}
 	return withSessionRecords(root, deadline, fn)
 }
 
-func withSessionRecords(root string, deadline time.Time, fn func(map[string]defaultSessionModel) error) error {
-	withLock := func(name string, body func() error) error {
+// withSessionRecords runs fn under the store lock and the session-record lock
+// with the records and the store lock it holds, which fn may lend.
+func withSessionRecords(root string, deadline time.Time, fn func(map[string]defaultSessionModel, *filelock.FileLock) error) error {
+	withLock := func(name string, body func(*filelock.FileLock) error) error {
 		timeout := filelock.DefaultTimeout
 		if !deadline.IsZero() {
 			timeout = time.Until(deadline)
@@ -246,10 +248,11 @@ func withSessionRecords(root string, deadline time.Time, fn func(map[string]defa
 				return cerr.Lock("Timed out waiting for %s", name)
 			}
 		}
-		return filelock.New(filepath.Join(root, name), timeout).With(body)
+		lock := filelock.New(filepath.Join(root, name), timeout)
+		return lock.With(func() error { return body(lock) })
 	}
-	return withLock(".lock", func() error {
-		return withLock(".default_models.lock", func() error {
+	return withLock(".lock", func(storeLock *filelock.FileLock) error {
+		return withLock(".default_models.lock", func(*filelock.FileLock) error {
 			// flock can succeed on its final poll, just past the acquisition deadline.
 			if !deadline.IsZero() && !time.Now().Before(deadline) {
 				return cerr.Lock("Timed out waiting for the session store locks")
@@ -258,7 +261,7 @@ func withSessionRecords(root string, deadline time.Time, fn func(map[string]defa
 			if err != nil {
 				return err
 			}
-			return fn(records)
+			return fn(records, storeLock)
 		})
 	})
 }
@@ -267,7 +270,7 @@ func BindSessionLink(root, id, path, model, scope string, now time.Time) error {
 	if id == "" || !IsSessionLink(root, path) {
 		return errors.New("missing session id or invalid session link")
 	}
-	return withLinkRecords(root, time.Time{}, func(records map[string]defaultSessionModel) error {
+	return withLinkRecords(root, time.Time{}, func(records map[string]defaultSessionModel, _ *filelock.FileLock) error {
 		if err := bindSessionLink(root, id, path, model, scope, true, now, records); err != nil {
 			return err
 		}
@@ -425,21 +428,27 @@ func currentSessionLink(root, id, path string, records map[string]defaultSession
 // UseSessionLink retries client contention. Each attempt reads the binding and
 // recomputes the proposed move. The decision must have no external side effects.
 func UseSessionLink(root, id, path string, now time.Time, decide func(*SessionLink) error, recovery ...SessionLinkRecovery) error {
-	return (sessionMoveLog{}).apply(root, id, path, now, true, decide, recovery...)
+	return (sessionMoveLog{}).apply(root, id, path, now, true, withoutView(decide), recovery...)
 }
 
 // UpdateSessionLink defers automatic moves when the client's refresh lock is busy.
 func UpdateSessionLink(root, id, path string, now time.Time, decide func(*SessionLink) error, recovery ...SessionLinkRecovery) error {
-	return (sessionMoveLog{}).update(root, id, path, now, time.Time{}, nil, decide, recovery...)
+	return (sessionMoveLog{}).update(root, id, path, now, time.Time{}, nil, withoutView(decide), recovery...)
+}
+
+func withoutView(decide func(*SessionLink) error) func(*store.Store, *SessionLink) error {
+	return func(_ *store.Store, rec *SessionLink) error { return decide(rec) }
 }
 
 // MoveSessionLink records placement outcomes under the same locks as the link
 // transaction. Explicit use retries client contention; automatic moves try once.
-func MoveSessionLink(view *store.Store, actor, id, path string, wait bool, decide func(*SessionLink) error, recovery ...SessionLinkRecovery) error {
+// decide reads through the view it is handed: view under the store lock the
+// guard holds, which it takes instead of asking for the file again (DESIGN A118).
+func MoveSessionLink(view *store.Store, actor, id, path string, wait bool, decide func(*store.Store, *SessionLink) error, recovery ...SessionLinkRecovery) error {
 	return (sessionMoveLog{view, actor}).apply(view.BackupDir(), id, path, view.Clk.Now(), wait, decide, recovery...)
 }
 
-func (log sessionMoveLog) apply(root, id, path string, now time.Time, wait bool, decide func(*SessionLink) error, recovery ...SessionLinkRecovery) error {
+func (log sessionMoveLog) apply(root, id, path string, now time.Time, wait bool, decide func(*store.Store, *SessionLink) error, recovery ...SessionLinkRecovery) error {
 	if !wait {
 		return log.update(root, id, path, now, time.Time{}, nil, decide, recovery...)
 	}
@@ -449,105 +458,114 @@ func (log sessionMoveLog) apply(root, id, path string, now time.Time, wait bool,
 	})
 }
 
-func (log sessionMoveLog) update(root, id, path string, now, deadline time.Time, original *SessionLink, decide func(*SessionLink) error, recovery ...SessionLinkRecovery) error {
-	return withLinkRecords(root, deadline, func(records map[string]defaultSessionModel) (result error) {
-		if original != nil && original.Token != "" {
-			// A legacy writer can strip this binding between attempts. Give
-			// repair the verified ID and link, and check its source before it writes.
-			id, path = original.ID, filepath.Join(root, "links", original.Token)
-			target, err := os.Readlink(path)
-			if err != nil {
-				return err
+func (log sessionMoveLog) update(root, id, path string, now, deadline time.Time, original *SessionLink, decide func(*store.Store, *SessionLink) error, recovery ...SessionLinkRecovery) error {
+	return withLinkRecords(root, deadline, func(records map[string]defaultSessionModel, storeLock *filelock.FileLock) error {
+		return storeLock.Lend(func(lent *filelock.FileLock) error {
+			if log.view != nil {
+				log.view = log.view.UnderLock(lent)
 			}
-			if target != original.Target {
-				refusal := cerr.Validation("the session binding changed while waiting for the refresh lock. Retry the move.")
-				// Only the current authenticated binding may retain this refusal.
-				if log.view != nil {
-					if current, err := currentSessionLink(root, id, path, records); err == nil {
-						return log.outcome(root, records, records[id], current, current, refusal)
-					}
-				}
-				return refusal
-			}
-		}
-		link, err := sessionLinkForUpdate(root, id, path, records, now, recovery)
-		if err != nil {
-			return err
-		}
-		if original != nil && original.Token == "" {
-			*original = link
-		}
-		id = link.ID
-		old := records[id]
-		before := link
-		if log.view != nil {
-			// The client guard is released before this runs. Both tycswap
-			// locks still protect the account identities and the last refusal.
-			defer func() {
-				result = log.outcome(root, records, old, before, link, result)
-			}()
-		}
-		if err := decide(&link); err != nil {
-			return err
-		}
-		if link.Family != "mythos" || link.Target != before.Target || link.Wanted != before.Wanted {
-			link.SharedMythos = false
-		}
-		if link == before {
-			return nil
-		}
-		if link.ID != before.ID || link.Token != before.Token || link.PID != before.PID || link.ProcStart != before.ProcStart {
-			return errors.New("cannot change the session process binding")
-		}
-		scope, err := targetScope(root, link.Target)
-		if err != nil {
-			return err
-		}
-		next := defaultSessionModel{Link: &link, Family: link.Family, Store: scope, SeenAt: float64(now.UnixNano()) / 1e9}
-		if link.Target == before.Target {
-			next.Binding = old.Binding
-			records[id] = next
-			return saveSessionModels(root, records)
-		}
-		link.LastMoveDeferral = ""
-		if err := checkTarget(root, link.Target); err != nil {
-			return err
-		}
-		if !deadline.IsZero() && !time.Now().Before(deadline) {
-			return errors.New("timed out preparing the session move")
-		}
-		return withSessionRefreshLock(before.Target, 0, func() error {
-			bound := filepath.Join(root, "links", link.Token)
-			tmp := filepath.Join(root, "links", "."+link.Token)
-			// An interrupted mover may have left its staging link before rename.
-			if err := removeStagedLink(tmp); err != nil {
-				return err
-			}
-			if err := os.Symlink(link.Target, tmp); err != nil {
-				return err
-			}
-			defer os.Remove(tmp)
-			// The symlink is the commit point. Readers recover either complete record after a crash.
-			next.Before = &old
-			records[id] = next
-			if err := saveSessionModels(root, records); err != nil {
-				return err
-			}
-			if strings.HasPrefix(scope, "mythos/") {
-				if err := store.SeedMythosSelection(root, link.Target); err != nil {
-					return err
-				}
-			}
-			if err := os.Rename(tmp, bound); err != nil {
-				return err
-			}
-			atomicfile.SyncDir(filepath.Dir(bound))
-			next.Before = nil
-			records[id] = next
-			// If compaction fails, the durable pending record already describes the committed move.
-			_ = saveSessionModels(root, records)
-			return nil
+			return log.commit(root, id, path, now, deadline, original, records, decide, recovery)
 		})
+	})
+}
+
+func (log sessionMoveLog) commit(root, id, path string, now, deadline time.Time, original *SessionLink, records map[string]defaultSessionModel, decide func(*store.Store, *SessionLink) error, recovery []SessionLinkRecovery) (result error) {
+	if original != nil && original.Token != "" {
+		// A legacy writer can strip this binding between attempts. Give
+		// repair the verified ID and link, and check its source before it writes.
+		id, path = original.ID, filepath.Join(root, "links", original.Token)
+		target, err := os.Readlink(path)
+		if err != nil {
+			return err
+		}
+		if target != original.Target {
+			refusal := cerr.Validation("the session binding changed while waiting for the refresh lock. Retry the move.")
+			// Only the current authenticated binding may retain this refusal.
+			if log.view != nil {
+				if current, err := currentSessionLink(root, id, path, records); err == nil {
+					return log.outcome(root, records, records[id], current, current, refusal)
+				}
+			}
+			return refusal
+		}
+	}
+	link, err := sessionLinkForUpdate(root, id, path, records, now, recovery)
+	if err != nil {
+		return err
+	}
+	if original != nil && original.Token == "" {
+		*original = link
+	}
+	id = link.ID
+	old := records[id]
+	before := link
+	if log.view != nil {
+		// The client guard is released before this runs. Both tycswap
+		// locks still protect the account identities and the last refusal.
+		defer func() {
+			result = log.outcome(root, records, old, before, link, result)
+		}()
+	}
+	if err := decide(log.view, &link); err != nil {
+		return err
+	}
+	if link.Family != "mythos" || link.Target != before.Target || link.Wanted != before.Wanted {
+		link.SharedMythos = false
+	}
+	if link == before {
+		return nil
+	}
+	if link.ID != before.ID || link.Token != before.Token || link.PID != before.PID || link.ProcStart != before.ProcStart {
+		return errors.New("cannot change the session process binding")
+	}
+	scope, err := targetScope(root, link.Target)
+	if err != nil {
+		return err
+	}
+	next := defaultSessionModel{Link: &link, Family: link.Family, Store: scope, SeenAt: float64(now.UnixNano()) / 1e9}
+	if link.Target == before.Target {
+		next.Binding = old.Binding
+		records[id] = next
+		return saveSessionModels(root, records)
+	}
+	link.LastMoveDeferral = ""
+	if err := checkTarget(root, link.Target); err != nil {
+		return err
+	}
+	if !deadline.IsZero() && !time.Now().Before(deadline) {
+		return errors.New("timed out preparing the session move")
+	}
+	return withSessionRefreshLock(before.Target, 0, func() error {
+		bound := filepath.Join(root, "links", link.Token)
+		tmp := filepath.Join(root, "links", "."+link.Token)
+		// An interrupted mover may have left its staging link before rename.
+		if err := removeStagedLink(tmp); err != nil {
+			return err
+		}
+		if err := os.Symlink(link.Target, tmp); err != nil {
+			return err
+		}
+		defer os.Remove(tmp)
+		// The symlink is the commit point. Readers recover either complete record after a crash.
+		next.Before = &old
+		records[id] = next
+		if err := saveSessionModels(root, records); err != nil {
+			return err
+		}
+		if strings.HasPrefix(scope, "mythos/") {
+			if err := store.SeedMythosSelection(root, link.Target); err != nil {
+				return err
+			}
+		}
+		if err := os.Rename(tmp, bound); err != nil {
+			return err
+		}
+		atomicfile.SyncDir(filepath.Dir(bound))
+		next.Before = nil
+		records[id] = next
+		// If compaction fails, the durable pending record already describes the committed move.
+		_ = saveSessionModels(root, records)
+		return nil
 	})
 }
 
@@ -576,7 +594,7 @@ func PruneSessionLinks(root string) error {
 	} else if err != nil {
 		return err
 	}
-	return withSessionRecords(root, time.Time{}, func(records map[string]defaultSessionModel) error {
+	return withSessionRecords(root, time.Time{}, func(records map[string]defaultSessionModel, _ *filelock.FileLock) error {
 		var entries []os.DirEntry
 		dir, err := linksDir(root)
 		if err == nil {

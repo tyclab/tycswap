@@ -162,7 +162,7 @@ func TestMenuRemoveAliasIsItsOwnChoice(t *testing.T) {
 
 func TestDashboardReuseAuthenticatesAndDoesNotStartAnotherApp(t *testing.T) {
 	appLockHome(t)
-	lock, held, err := acquireAppLock()
+	lock, held, err := heldElsewhere(acquireAppLock)
 	if err != nil || !held {
 		t.Fatal(err)
 	}
