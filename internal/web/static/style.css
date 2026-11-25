@@ -179,6 +179,8 @@ p { margin: 0; }
   --line: var(--bar-line); --line-2: var(--bar-line);
   --card: var(--bar-2); --card-2: var(--bar-2);
   --neutral-soft: rgba(255, 255, 255, .1);
+  /* status text too: the light theme's inks are dark, for light surfaces */
+  --good-ink: #5fd98a; --warn-ink: #f6c65a; --serious-ink: #f5a888; --crit-ink: #f58484;
   /* on the dark bar the bright blue is the accent, in both themes */
   --accent: var(--brand); --accent-ink: var(--brand); --accent-fg: var(--brand-tile); --focus: var(--brand);
   color-scheme: dark;
