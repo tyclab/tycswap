@@ -2096,7 +2096,7 @@ next round.
 ### Synopsis
 
 ```
-tycswap recovery [VERB] [ARGS...]
+tycswap recovery record [ARGS...]
 ```
 
 ### Description
@@ -2104,21 +2104,21 @@ tycswap recovery [VERB] [ARGS...]
 Removed on the operator's ruling of 2026-11-17 (DESIGN A95) with the rest of
 the handover after a limit: the dashboard's *Continue after a limit* card, its
 *Continue in Codex…* button, the `/api/recovery/*` routes, the tray's
-*Session at limit* item and `autoswitch.handoverWaitMinutes`. Every verb
-(`record`, `observe`, `list`, `dismiss`, `prepare`, `plan`, `reclaim`, or none)
-prints, before reading the store,
+*Session at limit* item and `autoswitch.handoverWaitMinutes`. Only `record`,
+the lifecycle hook a former session group installed (DESIGN A78), still
+answers. It prints, before reading the store,
 
 ```
 tycswap: error: tycswap recovery was removed: a session parked on a limit goes on when the login has room.
 ```
 
-on standard error and nothing on standard output. The `recovery/` directory
-the feature wrote in the backup root is left as it is and never read.
+on standard error and nothing on standard output. Any other `tycswap recovery`
+is an unrecognized argument (exit `2`). The `recovery/` directory the feature
+wrote in the backup root is left as it is and never read.
 
 ### Exit status
 
-`2`; `0` for `recovery record`, the lifecycle hook a former session group
-installed (DESIGN A78), so a session that still runs it is not blocked.
+`0`, so a session that still runs the hook is not blocked.
 
 ---
 

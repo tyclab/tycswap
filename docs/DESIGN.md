@@ -7668,7 +7668,9 @@ goes on when the login has room. `recovery record` prints the same line and
 exits 0: it is the lifecycle hook a former group session may still run
 (A78), and a Claude Code hook that exits 2 blocks the prompt and keeps a
 Stop from ending the turn. `groups guard` stays and no longer writes the
-recovery store.
+recovery store. (Since 2026-11-25 only `recovery record` answers: nothing
+called the other verbs, and the operator ordered such leftovers removed. Any
+other `tycswap recovery` is an unrecognized argument, exit 2.)
 
 A stored `handoverWaitMinutes` is read as nothing, `config` refuses it as
 unknown, and every settings write drops it (`retiredKeys`), unlike an
