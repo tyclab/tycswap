@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -28,36 +29,49 @@ const fableRoomKey = "lastFableRoomWithoutLogin"
 // belongs on the default login when no account the Fable store can hold has
 // room for Fable and the default login's current account, verified by its
 // credential and enabled, has; otherwise on the Fable store, as before. notice
-// says why and where. It reads files only; s is the default store.
-func fableSessionOnDefault(s *store.Store) (toDefault bool, notice string) {
+// says why and where; hinted: it ends in A112's hint. It reads files only; s
+// is the default store.
+func fableSessionOnDefault(s *store.Store) (toDefault bool, notice string, hinted bool) {
 	view := s.WithoutLineageWrites()
 	view.OAuth, view.Log = nil, nil
 	room := reporting.ReadFableRoom(view)
 	if room.Room {
-		return false, ""
+		return false, "", false
 	}
 	data, err := view.SequenceForUpdate()
 	if err != nil {
-		return false, ""
+		return false, "", false
 	}
 	num, email, org, err := verifiedLoginOwner(view, data, "default")
 	if err != nil {
-		return false, ""
+		return false, "", false
 	}
 	now := view.Clk.Now()
 	entry := view.Usage.Entries(map[string]usage.Identity{num: {Email: email, OrgUUID: org}})[num]
 	if limits, _ := modelLimitWindows(entry, "fable", now); len(limits) > 0 {
-		return false, ""
+		return false, "", false
 	}
 	notice = "Fable store: " + noFableRoom
 	if room.Back != "" {
 		notice += " (first back: Account-" + room.Back + " at " + oauth.ResetClockString(room.BackAt, now) + ")"
 	}
 	notice += "; starting on the default login."
-	if hint := reporting.FableRoomHint(room.WithoutLogin); hint != "" {
+	hint := reporting.FableRoomHint(room.WithoutLogin)
+	if hint != "" {
 		notice += " " + hint
 	}
-	return true, notice
+	return true, notice, hint != ""
+}
+
+// noteFableSignIn names, on stderr only, the accounts that need a Fable
+// sign-in, for a start that reached the Fable start selection (DESIGN A115).
+// It reads files only; s is the default store.
+func noteFableSignIn(s *store.Store, stderr io.Writer) {
+	view := s.WithoutLineageWrites()
+	view.OAuth, view.Log = nil, nil
+	if hint := reporting.FableSignInHint(reporting.FableSignInNeeded(view)); hint != "" {
+		startNotice(stderr, hint)
+	}
 }
 
 // placeFableSessions follows a real Fable tick. It warns once per set of

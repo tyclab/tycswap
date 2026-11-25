@@ -91,7 +91,7 @@ func TestFableStartPlacementByFableRoom(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			sw, rec := fableStartLogin(t, fx, "1", "2")
-			if stderr := startFable(t); stderr != "" {
+			if stderr := startFable(t); stderr != signIn14Notice {
 				t.Fatalf("stderr %q", stderr)
 			}
 			token := envValue(rec.env, holdVar)

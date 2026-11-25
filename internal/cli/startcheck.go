@@ -77,7 +77,7 @@ func fableToDefaultCause() string {
 	case toDefault:
 		return noFableStartLogin
 	}
-	if byRoom, _ := fableSessionOnDefault(sw.Store); byRoom {
+	if byRoom, _, _ := fableSessionOnDefault(sw.Store); byRoom {
 		return noFableRoom
 	}
 	return ""

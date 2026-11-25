@@ -1,5 +1,6 @@
 // fableroom.go — room for Fable as the Fable placement rule reads it (DESIGN
-// A112), and the accounts that have room but no Fable login.
+// A112), the accounts that have room but no Fable login, and those that need
+// a Fable sign-in (A115).
 package reporting
 
 import (
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tyclab/tycswap/internal/autoswitch"
 	"github.com/tyclab/tycswap/internal/oauth"
 	"github.com/tyclab/tycswap/internal/printer"
 	"github.com/tyclab/tycswap/internal/store"
@@ -90,10 +92,7 @@ func ReadFableRoom(s *store.Store) FableRoom {
 	}
 	for _, n := range data.Sequence {
 		num := strconv.Itoa(n)
-		if s.HasFableLogin(num) || !s.RotationEligible(data, num) || !s.FableCapable(num) {
-			continue
-		}
-		if models, explicit := store.ModelsFrom(data, num); explicit && !slices.Contains(models, "fable") {
+		if s.HasFableLogin(num) || !fableServable(s, data, num) {
 			continue
 		}
 		if ok, _ := room(num); ok {
@@ -103,18 +102,79 @@ func ReadFableRoom(s *store.Store) FableRoom {
 	return out
 }
 
+// fableServable: num is enabled, rotation-eligible, able to run Fable and not
+// allocated away from it by an explicit model allocation (DESIGN A112).
+func fableServable(s *store.Store, data *store.SequenceData, num string) bool {
+	if !s.RotationEligible(data, num) || !s.FableCapable(num) {
+		return false
+	}
+	models, explicit := store.ModelsFrom(data, num)
+	return !explicit || slices.Contains(models, "fable")
+}
+
+// NoUsableFableLogin: num holds no Fable login, or one that reads "sign in
+// again": quarantine, FableQuarantine's answer, holds it (DESIGN A114).
+func NoUsableFableLogin(s *store.Store, quarantine map[string]autoswitch.QuarantineEntry, num string) bool {
+	_, dead := quarantine[num]
+	return dead || !s.HasFableLogin(num)
+}
+
+// FableSignInNeeded is, in roster order, the fableServable accounts with
+// NoUsableFableLogin, none unless an account has a Fable login (DESIGN A115).
+// It reads roster, Fable logins and quarantine only. s is the default store.
+func FableSignInNeeded(s *store.Store) []string {
+	data, _ := s.ReadSequence()
+	if data == nil || s.IsFable() || !s.HasFableLogins() {
+		return nil
+	}
+	if _, err := s.ForFable(); err != nil {
+		return nil
+	}
+	dead := FableQuarantine(s)
+	var out []string
+	for _, n := range data.Sequence {
+		num := strconv.Itoa(n)
+		if fableServable(s, data, num) && NoUsableFableLogin(s, dead, num) {
+			out = append(out, num)
+		}
+	}
+	return out
+}
+
 // FableRoomHint names accounts with Fable room but no Fable login and the
 // command that signs them in for Fable, one after another (DESIGN A114).
 func FableRoomHint(nums []string) string {
-	const tail = " Fable room but no Fable login: tycswap fable --login"
+	return accountsHint(nums, "has", "have", " Fable room but no Fable login: tycswap fable --login")
+}
+
+// FableSignInHint names the accounts that need a Fable sign-in (DESIGN A115).
+func FableSignInHint(nums []string) string {
+	return accountsHint(nums, "needs", "need", " a Fable sign-in: tycswap fable --login")
+}
+
+// accountsHint is nums with verb one or several, then rest; "" for none.
+func accountsHint(nums []string, one, several, rest string) string {
 	switch len(nums) {
 	case 0:
 		return ""
 	case 1:
-		return "Account-" + nums[0] + " has" + tail
+		return "Account-" + nums[0] + " " + one + rest
 	}
 	last := len(nums) - 1
-	return "Accounts " + strings.Join(nums[:last], ", ") + " and " + nums[last] + " have" + tail
+	return "Accounts " + strings.Join(nums[:last], ", ") + " and " + nums[last] + " " + several + rest
+}
+
+// accountNumbers is nums as JSON carries account numbers; nil for none.
+func accountNumbers(nums []string) []int {
+	if len(nums) == 0 {
+		return nil
+	}
+	out := make([]int, 0, len(nums))
+	for _, num := range nums {
+		n, _ := strconv.Atoi(num)
+		out = append(out, n)
+	}
+	return out
 }
 
 // fableRoomWithoutLogin is what status and list add while no account the
@@ -125,10 +185,17 @@ func fableRoomWithoutLogin(s *store.Store) ([]int, string) {
 	if room.Room || len(room.WithoutLogin) == 0 {
 		return nil, ""
 	}
-	nums := make([]int, 0, len(room.WithoutLogin))
-	for _, num := range room.WithoutLogin {
-		n, _ := strconv.Atoi(num)
-		nums = append(nums, n)
+	return accountNumbers(room.WithoutLogin), printer.Yellowed(FableRoomHint(room.WithoutLogin))
+}
+
+// fableLoginLine is status's and list's line for accounts without a usable
+// Fable login: A112's hint, else A115's sentence; "" for neither.
+func fableLoginLine(s *store.Store) string {
+	if _, hint := fableRoomWithoutLogin(s); hint != "" {
+		return hint
 	}
-	return nums, printer.Yellowed(FableRoomHint(room.WithoutLogin))
+	if hint := FableSignInHint(FableSignInNeeded(s)); hint != "" {
+		return printer.Yellowed(hint)
+	}
+	return ""
 }

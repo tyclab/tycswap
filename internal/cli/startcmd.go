@@ -548,12 +548,19 @@ func withStartVar(env []string, name, value string) []string {
 // one. With none of them in the pool, or without account by the Fable
 // placement rule, toDefault is true: the session starts on the default login.
 // Without marks, or with auto-switch off and no account, it changes nothing
-// (DESIGN A105, A112).
+// (DESIGN A105, A112). Its last notice names the accounts that need a Fable
+// sign-in, unless the rule's notice ended in A112's hint (A115).
 func selectFableStartLogin(account string, stderr io.Writer, token string, native bool) (hold string, toDefault bool) {
 	sw, err := newSwitcher(store.Options{OAuth: oauth.NewHTTPClient(), Keychain: keychain.Security{}, Stderr: io.Discard, SkipMigrations: true})
 	if err != nil {
 		return "", false
 	}
+	hinted := false
+	defer func() {
+		if !hinted {
+			noteFableSignIn(sw.Store, stderr)
+		}
+	}()
 	a, err := newFableAdapter(sw, sw.Log)
 	if err != nil {
 		return "", false
@@ -578,8 +585,9 @@ func selectFableStartLogin(account string, stderr io.Writer, token string, nativ
 		return "", true
 	}
 	if account == "" {
-		if toDefault, notice := fableSessionOnDefault(sw.Store); toDefault {
+		if toDefault, notice, roomHint := fableSessionOnDefault(sw.Store); toDefault {
 			reportStartSelection(sw, stderr, notice)
+			hinted = roomHint
 			return "", true
 		}
 	}
@@ -846,6 +854,7 @@ func renderStartHelp(prog string, out io.Writer) int {
 	fmt.Fprintln(out, "Sessions on a Fable model start on the Fable store when one is on (tycswap add --login --lineage fable),")
 	fmt.Fprintln(out, "which moves to a marked login with a Fable login too; with marks but none such, they start on the default login.")
 	fmt.Fprintln(out, "While no Fable login has room, they start on the default login when its account has Fable room.")
+	fmt.Fprintln(out, "With the Fable store on and usable, they also name the accounts that need a Fable sign-in (tycswap fable --login).")
 	fmt.Fprintln(out, "Sessions on Mythos start on an account marked with tycswap mythos --allow ID, while one is marked.")
 	fmt.Fprintln(out, "For native Claude on Linux and WSL, CLAUDE_SECURESTORAGE_CONFIG_DIR points to a per-session link.")
 	fmt.Fprintln(out, "--started binds that link. The status line moves it when Claude changes model. To prepare")

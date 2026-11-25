@@ -9834,3 +9834,90 @@ actions, help), `TestMenuFableSignInOffersTheWalk` and
 `TestFableLoginWalkAgainAsksOnlyTheRest`; in `reporting`
 `TestFableRoomHintNamesTheWalk`. `TestFableCommandArguments` names `--login`
 in its two messages, and the cli tests' hint helper follows the new sentence.
+
+## A115. The accounts that need a Fable sign-in are named before the pool runs dry
+
+**Why.** A112 names accounts without a Fable login only in the urgent case:
+no account the Fable store can hold has room, and the named account has. The
+operator's box ran for days with three of six accounts that run Fable outside
+the Fable pool, and nothing said so until the pool was spent. The operator on
+2026-11-24, after signing them in with `tycswap fable --login`: "also there
+should be notice/warning on dashboard and maybe also when starting claude?"
+So the gap itself is named, not only its consequence, and the dashboard
+shows it.
+
+**The set** (`reporting.FableSignInNeeded`). In roster order, the accounts
+that are enabled and rotation-eligible, able to run Fable (`FableCapable`)
+and not allocated away from it by an explicit model allocation
+(`fableServable`, the three conditions A112's `FableRoom.WithoutLogin`
+applies, now one function), and that have no usable Fable login
+(`reporting.NoUsableFableLogin`): none, or one that reads *sign in again*
+because `FableQuarantine` holds it. That last test is the one definition the
+walk's `fableRows` (`Missing`, A114) uses as well; the walk's own set is
+unchanged (it still asks accounts allocated away from Fable, and works
+without any Fable login). The set is empty unless an account has a Fable
+login: a box that does not use the Fable store is not nagged. It reads the
+roster, the Fable logins and the Fable quarantine only: no request, no write,
+no lock. `reporting.FableSignInHint` is its sentence: `Account-7 needs a
+Fable sign-in: tycswap fable --login`, `Accounts 7, 11 and 12 need a Fable
+sign-in: tycswap fable --login`; it shares its wording of the accounts with
+`FableRoomHint`.
+
+**Where it shows.** `status` and `list` print, where A112's hint stands, A112's
+hint while it applies and otherwise this sentence, in the same yellow; never
+both lines (`fableLoginLine`). Their JSON carries the set as account numbers,
+present only when not empty and independent of `roomWithoutLogin`:
+`fable.withoutLogin` in `status --json`, built in the fable object itself
+(`fableView.object`), so the dashboard's state, which takes that object from
+the snapshot, carries it too; `fableWithoutLogin` in `list --json`. A start
+that reaches the selection on the Fable store (`selectFableStartLogin`: the
+store on and usable for a Fable start or a resume of a link to it) names the
+set once, as its own notice line on stderr after that selection's notices,
+through `startNotice`: never in `tycswap.log`. It does not when the placement
+rule's notice ended in A112's hint (`fableSessionOnDefault`'s `hinted`); A112's
+notice without a hint is followed by the sentence. No other start prints it.
+The dashboard reads `fable.withoutLogin`: the Fable line in the header adds a
+warn chip `N need a Fable sign-in` (`1 needs …`) whose tooltip is the whole
+instruction, and the header's change signature includes the set, so the chip
+comes and goes without a reload; a warn notice (`.notice-warn`, from the warn
+colour variables) beside the auth-overrides notice names the accounts as the
+page names them (`accountLabel`) with `tycswap fable --login` in `<code>`, and
+is hidden without a set; a row of the set without a Fable login carries a
+warn chip `no Fable login` whose tooltip is the command, while a row whose
+Fable login reads *sign in again* keeps the chip it has. The account table
+re-renders when the set changes. The Guide's *Something looks wrong* lists
+the case. The tray and the terminal menu are unchanged.
+
+**What stays from A112.** Its urgent hint, `fable.roomWithoutLogin` and
+`fableRoomWithoutLogin`, the Fable tick's warning and `start --check` are as
+they were.
+
+**Limits.** The set is read when a surface is drawn, not watched: a start
+names it only when it reaches the Fable store's selection, and a box whose
+store is off or unusable hears of it from `status`, `list` and the dashboard
+only. A parked Fable start without any Fable login shows a Fable store line
+but no set. Whether an account can run Fable is the plan or mark
+`FableCapable` reads; an account whose plan is unknown is not named.
+
+**Tests.** In `reporting`: `TestAccountsThatNeedAFableSignIn` (a usable Fable
+login, none, one to sign in again, a disabled account, an API key, a Pro plan
+and an Opus-only allocation: the second and third; no Fable login anywhere:
+none), `TestFableSignInHintNamesTheWalk` and
+`TestSnapshotCarriesTheFableSignInSet` (the store off; every login usable).
+In `cli`: `TestFableSignInIsNamedOnStatusAndList` (`status` and `list`, human
+and JSON: a gap with room in the pool, A112's urgent case, no gap) and
+`TestFableStartNamesTheAccountsThatNeedAFableSignIn` (room in the pool and a
+gap: once, not logged; A112's notice with its hint: not again; A112's notice
+without a hint: after it; no gap; not a Fable start). In `web`:
+`TestStateCarriesTheFableSignInSet` and `TestAppJSFableSignIn` (the header
+chip, singular and plural, gone on the next state without the set and kept
+with the store off; the notice and its markup; the row chip on exactly the
+rows of the set without a Fable login; the Guide's case; `.notice-warn`).
+Every Fable start fixture leaves accounts that run Fable without a Fable
+login, so the start tests that pin stderr whole now expect the sentence:
+`TestFableStartPlacementByFableRoom` (two cases),
+`TestFableSessionStartsOnAStartLogin`, `TestFableStartLoginRanksAndHolds`,
+`TestFableStartWithoutAMarkedFableLogin`,
+`TestFableStartWithoutMarksOrAutoSwitchIsAsBefore`, `TestFableStartAccount`
+and, on Linux, `TestNativeSessionLinkFailureLaunchesWithOriginalStore` (two
+notice lines for the Fable start). The walk's tests pass unedited.

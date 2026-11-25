@@ -25,6 +25,14 @@ var everyLogin = func() fableTickFixture {
 
 const signIn14 = "Accounts 1 and 4 need a Fable sign-in: tycswap fable --login"
 
+// The start notices for the accounts that need a Fable sign-in in the
+// fixtures of the Fable start tests.
+const (
+	signIn14Notice  = "tycswap start: " + signIn14 + "\n"
+	signIn34Notice  = "tycswap start: Accounts 3 and 4 need a Fable sign-in: tycswap fable --login\n"
+	signIn134Notice = "tycswap start: Accounts 1, 3 and 4 need a Fable sign-in: tycswap fable --login\n"
+)
+
 // fableLoginLines is every line of out that names accounts without a Fable
 // login: A112's hint or A115's sentence.
 func fableLoginLines(out string) string {
@@ -116,7 +124,7 @@ func TestFableStartNamesTheAccountsThatNeedAFableSignIn(t *testing.T) {
 	}
 	t.Run("room in the pool and a gap", func(t *testing.T) {
 		sw, _ := fableStartLogin(t, roomInPool, "1", "2")
-		if stderr := startFable(t); stderr != "tycswap start: "+signIn14+"\n" {
+		if stderr := startFable(t); stderr != signIn14Notice {
 			t.Fatalf("stderr %q, want the sentence once", stderr)
 		}
 		noLog(t, sw.BackupDir())

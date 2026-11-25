@@ -49,6 +49,8 @@
         <p id="auth-overrides-env" hidden>The environment <code>{{.Name}} web</code> runs in sets <strong id="auth-overrides-env-keys"></strong>. A <code>claude</code> started from the same shell inherits them and signs in with them instead of the login shown here. Unset them in that shell, or start <code>claude</code> from one without them.</p>
         <p id="auth-overrides-settings" hidden><code id="auth-overrides-path">settings.json</code> sets <strong id="auth-overrides-settings-keys"></strong>. Claude Code signs in with these instead of the stored login. Remove them from the file to use the accounts below.</p>
       </section>
+      <!-- The accounts that need a Fable sign-in (DESIGN A115). -->
+      <div class="notice notice-warn" id="fable-signin" role="status" hidden><span id="fable-signin-text"></span> In a terminal: <code>{{.Name}} fable --login</code></div>
     </div>
 
     <!-- Updates (DESIGN A27): this program and Claude Code. -->
@@ -539,6 +541,7 @@
           <li class="g-case"><p class="g-see"><span class="g-tag">You see: </span><em>usage unavailable</em>, empty meters</p><p class="g-why"><span class="g-tag">Why: </span>The last reading failed or is too old.</p><p class="g-do"><span class="g-tag">Do this: </span>Wait: the line under the account says when it tries again.</p></li>
           <li class="g-case"><p class="g-see"><span class="g-tag">You see: </span><em>not switchable</em></p><p class="g-why"><span class="g-tag">Why: </span>The saved login is incomplete.</p><p class="g-do"><span class="g-tag">Do this: </span>Sign in as that account again with <strong>Add account…</strong>.</p></li>
           <li class="g-case"><p class="g-see"><span class="g-tag">You see: </span><em>Fable login: sign in again</em></p><p class="g-why"><span class="g-tag">Why: </span>That Fable login stopped working.</p><p class="g-do"><span class="g-tag">Do this: </span>Run the command in the tooltip of the chip in that account's row.</p></li>
+          <li class="g-case"><p class="g-see"><span class="g-tag">You see: </span><em>2 need a Fable sign-in</em>, or <em>no Fable login</em> on an account</p><p class="g-why"><span class="g-tag">Why: </span>Those accounts run Fable but have no usable Fable login, so the Fable store cannot use them.</p><p class="g-do"><span class="g-tag">Do this: </span>Run <code>{{.Name}} fable --login</code> in a terminal: it signs them in one after another.</p></li>
           <li class="g-case"><p class="g-see"><span class="g-tag">You see: </span>Auto-switch did not switch, or went elsewhere</p><p class="g-why"><span class="g-tag">Why: </span>A switch by hand holds it for the <em>Switch cooldown</em>, or other windows counted than you thought.</p><p class="g-do"><span class="g-tag">Do this: </span>The Auto tab says who checks and when, <em>Counting now</em> what counts, <em>Next best</em> why an account is blocked.</p></li>
           <li class="g-case"><p class="g-see"><span class="g-tag">You see: </span><em>reconnecting…</em> or <em>session ended</em></p><p class="g-why"><span class="g-tag">Why: </span>The dashboard was stopped or started again.</p><p class="g-do"><span class="g-tag">Do this: </span>Open it again from the tray or with <code>{{.Name}} web</code>.</p></li>
         </ol>

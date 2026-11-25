@@ -74,7 +74,7 @@ func preferFableAllocations(snap *autoswitch.StartSnapshot, view *store.Store, d
 	if defaultSelection && view.FableStore().Usable {
 		_, toDefault, err := fableStartsOnDefault(&core.Switcher{Store: view}, "")
 		if err == nil && !toDefault {
-			toDefault, _ = fableSessionOnDefault(view)
+			toDefault, _, _ = fableSessionOnDefault(view)
 		}
 		if err != nil || !toDefault {
 			return
